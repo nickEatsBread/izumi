@@ -8,7 +8,7 @@
   import { onDestroy } from 'svelte'
   import { flip } from 'svelte/animate'
   import { fade } from 'svelte/transition'
-  import { pushState } from '$app/navigation'
+  import { goto, pushState } from '$app/navigation'
   import { streamPicker, gameMode, bingeSource, debridCaching, connecting, bumpPlayerOverlay } from '$lib/player/session'
   import { rankInfos, pickCandidates, preferDirectStartupCandidates, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
   import { isDead, markDead, markRouteDead } from '$lib/stremio/dead-sources'
@@ -305,6 +305,12 @@
   // exactly this stream. Set only together with `error`, cleared wherever `error` is.
   let blockedRetry = $state<StreamInfo | null>(null)
   const playbackError = $derived(error || pick?.playbackError || '')
+  const sourceSettingsHelpful = $derived(
+    !!playbackError && (
+      classifyPlaybackFailure(playbackError) === 'no-results'
+      || /(?:sources?|stream add-ons?).*(?:disabled|configured)/i.test(playbackError)
+    ),
+  )
 
   // Autoplay countdown: once the resolve reports a trustworthy pick, fill the Auto button then
   // play it. Cancelled by hovering/focusing the Auto button or by interacting (picking a source,
@@ -586,6 +592,7 @@
   }
   // Dismissal is always authoritative, including while automatic selection is resolving. Leaving
   // the picker mounted here caused its automatic effect to start again immediately after Cancel.
+  let replacePickerHistory = false
   function close() {
     cancelAuto()
     cancelResolve()
@@ -593,6 +600,14 @@
     busy = false
     error = ''
     streamPicker.set(null)
+  }
+  function openSourceSettings() {
+    // Mobile adds a shallow history entry while this dialog is open. Replace that entry so Back
+    // returns to the title instead of briefly reopening the dismissed source picker.
+    const replaceState = $isMobile && backTrapOpen
+    replacePickerHistory = replaceState
+    close()
+    void goto('/app/settings/sources?tab=manage', { replaceState })
   }
 
   // Android's hardware Back arrives as webView.goBack() (WryActivity installs exactly that
@@ -615,7 +630,8 @@
       window.removeEventListener('popstate', onPop)
       // Dismissed some other way (✕, a chosen source, Escape): drop our entry too, or the next
       // Back gets swallowed by a modal that is no longer there.
-      if (pushed) history.back()
+      if (pushed && !replacePickerHistory) history.back()
+      replacePickerHistory = false
     }
   })
 
@@ -1011,15 +1027,23 @@
       {/if}
 
       {#if playbackError}
-        <p class="sp-inset shrink-0 border-b border-border bg-destructive/10 px-4 py-2 text-sm text-destructive">
-          {playbackError}
-          {#if blockedRetry}
-            <!-- The one recovery from a debrid block. As an inline underline it was a ~14px-tall
-                 target inside a wrapping paragraph; on mobile it gets its own row. -->
-            <button data-focusable onclick={watchP2p}
-                    class="{$isMobile ? 'mt-2 flex h-10 w-full items-center justify-center rounded-lg bg-destructive/20 font-bold active:bg-destructive/30' : 'ml-1 font-semibold underline underline-offset-2 transition-opacity hover:opacity-75'}">Watch this P2P?</button>
+        <div role="alert" class="sp-inset shrink-0 border-b border-border bg-destructive/10 px-4 py-2 text-sm text-destructive">
+          <p>{playbackError}</p>
+          {#if blockedRetry || sourceSettingsHelpful}
+            <div class="flex flex-wrap gap-2 {$isMobile ? 'mt-2' : 'mt-1.5'}">
+              {#if blockedRetry}
+                <!-- The one recovery from a debrid block. As an inline underline it was a ~14px-tall
+                     target inside a wrapping paragraph; on mobile it gets its own row. -->
+                <button data-focusable onclick={watchP2p}
+                        class="{$isMobile ? 'flex h-10 flex-1 items-center justify-center rounded-lg bg-destructive/20 px-3 font-bold active:bg-destructive/30' : 'rounded-md bg-destructive/15 px-2.5 py-1.5 font-semibold transition-colors hover:bg-destructive/25'}">Watch this P2P?</button>
+              {/if}
+              {#if sourceSettingsHelpful}
+                <button data-focusable onclick={openSourceSettings}
+                        class="{$isMobile ? 'flex h-10 flex-1 items-center justify-center rounded-lg bg-theme px-3 font-bold text-white active:opacity-80' : 'rounded-md bg-theme px-2.5 py-1.5 font-semibold text-white transition-opacity hover:opacity-90'}">Open Sources</button>
+              {/if}
+            </div>
           {/if}
-        </p>
+        </div>
       {/if}
 
       <!-- Results — reveal sources the instant each addon/extension lands;

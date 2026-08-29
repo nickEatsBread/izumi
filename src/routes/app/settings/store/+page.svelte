@@ -6,7 +6,7 @@
   import { addonUrls, disabledSources, normalizeBase, replaceAddonBase } from '$lib/stremio/sources'
   import { fetchManifest } from '$lib/stremio/manifest'
   import { findAddonConfigureUrl } from '$lib/stremio/configure'
-  import { resolveAddonLogo } from '$lib/stremio/addon-logo'
+  import { resolveStoreAddonLogo } from '$lib/stremio/addon-logo'
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   import AddonConfigurator from '$lib/components/settings/AddonConfigurator.svelte'
   import ExtensionServiceSettings from '$lib/components/settings/ExtensionServiceSettings.svelte'
@@ -287,7 +287,7 @@
           {@const off = installed && $disabledSources.includes(installedBase)}
           <article class="flex gap-3 rounded-xl border border-border bg-secondary/25 p-4 lg:items-center lg:p-3" class:opacity-60={installed && off}>
             <AddonLogo
-              logo={resolveAddonLogo(addon.manifest.logo, base)}
+              logo={resolveStoreAddonLogo(addon.manifest.logo, base)}
               name={addon.manifest.name}
               id={addon.manifest.id}
               size={48}
@@ -376,7 +376,7 @@
                 <span class="skeloader size-9 rounded"></span><span class="flex-1 text-sm text-muted-foreground">Loading manifest…</span>
               {:then manifest}
                 <AddonLogo
-                  logo={resolveAddonLogo(manifest?.logo, base)}
+                  logo={resolveStoreAddonLogo(manifest?.logo, base)}
                   name={manifest?.name ?? addonLocation(base)}
                   id={manifest?.id ?? base}
                   size={36}

@@ -25,6 +25,43 @@ export function resolveAddonLogo(logo: string | undefined, base: string): string
   }
 }
 
+const DUCKDUCKGO_IMAGE_PROXY = 'https://external-content.duckduckgo.com/iu/?u='
+const UK_TIME_ZONES = new Set(['Europe/London', 'Europe/Belfast'])
+
+function localeRegion(locale?: string): string | undefined {
+  try {
+    return new Intl.Locale(locale || (typeof navigator !== 'undefined' ? navigator.language : '')).region
+  } catch {
+    return undefined
+  }
+}
+
+function isUkUser(locale?: string, timeZone?: string): boolean {
+  const detectedTimeZone = timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+  return localeRegion(locale) === 'GB' || UK_TIME_ZONES.has(detectedTimeZone)
+}
+
+function isImgurImage(url?: string): boolean {
+  try {
+    return !!url && new URL(url).hostname.toLowerCase() === 'i.imgur.com'
+  } catch {
+    return false
+  }
+}
+
+/** Resolve a logo displayed in the add-on store, proxying UK-blocked Imgur artwork. */
+export function resolveStoreAddonLogo(
+  logo: string | undefined,
+  base: string,
+  locale?: string,
+  timeZone?: string,
+): string | undefined {
+  const resolved = resolveAddonLogo(logo, base)
+  return isImgurImage(resolved) && isUkUser(locale, timeZone)
+    ? `${DUCKDUCKGO_IMAGE_PROXY}${resolved}`
+    : resolved
+}
+
 // A source with no usable icon used to get a deterministic colour-hashed tile stamped with its
 // initial, generated here. It has been removed rather than reused: the coloured tiles read as real
 // branding next to real logos, and they were only ever half the story — the store and the

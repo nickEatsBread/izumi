@@ -23,7 +23,7 @@ describe('series page gamepad fast lane', () => {
   it('keeps the fast target actionable while episode metadata is loading', () => {
     const skeleton = list.slice(list.indexOf('{#if metaLoading}'), list.indexOf('{:else if $episodeLayout'))
     expect(skeleton).toContain("data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}")
-    expect(skeleton).toContain('onclick={() => tap(ep)}')
+    expect(skeleton).toContain('onclick={(event) => tap(ep, event)}')
   })
 
   it('does not turn genre metadata into controller stops', () => {

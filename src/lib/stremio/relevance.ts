@@ -5,8 +5,11 @@ import { BATCH_MARKER, type Stream } from './parse'
 // torrents or a same-title different production (One Piece's id also maps to the
 // 2023 live action); these guard the picker/auto-play without dropping legit files.
 
+const lexicalTitleTokens = (s: string): string[] =>
+  s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean)
+
 export function titleTokens(s: string): string[] {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter((t) => t.length > 2)
+  return lexicalTitleTokens(s).filter((t) => t.length > 2)
 }
 
 /** The same normalisation titleTokens uses, minus the length filter, so a phrase keeps its short
@@ -44,6 +47,23 @@ const HEAD_JUNK = /^(?:nc(?:op|ed|bd)\d*|creditless|textless|preview|teaser|trai
 // label is unsafe ("Loner Life In Another World" is a title, not an indexer called "Loner").
 const SOURCE_HOST_PREFIX = /^\s*(?:(?:https?:\/\/)|www\.)[a-z0-9-]+(?:\.[a-z0-9-]+)+\s*[-–|]\s*/i
 
+// What may immediately follow a complete official title in a normalized release filename. This
+// lets punctuation/numeric identities (M*A*S*H, MI-5, 9-1-1, 1917) match exactly before the fuzzy
+// parser quite reasonably mistakes their numbers for episode/year metadata.
+const RELEASE_IDENTITY_BOUNDARY = /^(?:s\d{1,2}e\d{1,3}|e\d{1,3}|\d{1,2}x\d{1,3}|episode\s+\d+|ep\s+\d+|\d{1,4}(?:v\d)?|19\d{2}|20\d{2}|\d{3,4}p|4k|uhd|bluray|bdrip|web|webrip|webdl|mkv|mp4)\b/i
+
+function hasExactReleaseIdentity(name: string, wanted: string[]): boolean {
+  const bare = name.replace(/^\s*\[[^\]]*\]\s*/, '').replace(SOURCE_HOST_PREFIX, '')
+  const release = norm(bare)
+  return wanted.some((alias) => {
+    const identity = norm(alias)
+    if (!identity || !release.startsWith(identity)) return false
+    if (release.length === identity.length) return true
+    if (release[identity.length] !== ' ') return false
+    return RELEASE_IDENTITY_BOUNDARY.test(release.slice(identity.length + 1))
+  })
+}
+
 /** The release's OWN claimed title, as tokens: everything before its bracketed metadata (or a
  *  bracketed alternate title), before the episode/season marker, and before the first
  *  quality/codec/number token.
@@ -60,10 +80,13 @@ export function releaseTitleTokens(name: string): string[] {
   const head = bare.split(/[[({]/)[0] // bracketed metadata / alternate title is not the title
   const end = head.search(EPISODE_MARKER)
   const out: string[] = []
-  for (const t of titleTokens(end >= 0 ? head.slice(0, end) : head)) {
+  for (const t of lexicalTitleTokens(end >= 0 ? head.slice(0, end) : head)) {
     // First metadata token ends the title run: everything after it is release description
     // ("One Piece 1071 1080p Multi Subs"), never more of the title.
-    if (RELEASE_JUNK.test(t) || HEAD_JUNK.test(t) || SCENE_CODE.test(t) || /^\d+$/.test(t)) break
+    // S2/S03 is release season shorthand rather than a literal title word. Short title identity
+    // markers themselves (Z, GT, X, II, Dr) are retained: dropping them made sibling productions
+    // collapse to the same title.
+    if (RELEASE_JUNK.test(t) || HEAD_JUNK.test(t) || SCENE_CODE.test(t) || /^s\d{1,2}$/.test(t) || /^\d+$/.test(t)) break
     out.push(t)
   }
   return out
@@ -74,7 +97,13 @@ export function releaseTitleTokens(name: string): string[] {
 export function relevant(stream: Stream, wanted: string[]): boolean {
   const name = nameOf(stream)
   const toks = new Set(titleTokens(name))
-  if (!toks.size) return true
+  const known = new Set(wanted.flatMap((w) => lexicalTitleTokens(w)))
+  const head = releaseTitleTokens(name)
+  if (hasExactReleaseIdentity(name, wanted)) return true
+  // A CJK/opaque or quality-only label has no readable title run and remains unknown. A readable
+  // short title ("Us", "It", "X") is not unknown merely because every word has ≤2 characters:
+  // compare its complete identity run exactly enough to distinguish it from the requested title.
+  if (!toks.size) return !head.length || (head.length > 0 && head.every((t) => known.has(t)))
   // ANCHOR. Both tests below measure how much of the REQUESTED title a release carries, and
   // neither can see a release that carries ALL of it and then names something else: every
   // long-running series has spin-offs whose titles START with the base title ("One Piece Fan
@@ -90,10 +119,15 @@ export function relevant(stream: Stream, wanted: string[]): boolean {
   // the request ("Loner Life In Another World" vs "Starting Life In Another World"). A head with
   // nothing recognisable in it at all (a CJK or Cyrillic release name, or an empty one) anchors
   // vacuously — never drop on uncertainty, and the tests below still have to find evidence.
-  const known = new Set(wanted.flatMap((w) => titleTokens(w)))
-  const head = releaseTitleTokens(name)
   const titleStart = head.findIndex((t) => known.has(t))
   if (titleStart > 0 || (titleStart === 0 && !head.every((t) => known.has(t)))) return false
+  // Exact normalized identity is decisive even when every token is short and therefore absent
+  // from the fuzzy token set (for example M*A*S*H). This is intentionally alias-by-alias rather
+  // than a union comparison, so a partial franchise title does not become exact by mixing aliases.
+  if (wanted.some((alias) => {
+    const identity = lexicalTitleTokens(alias)
+    return identity.length === head.length && identity.every((token, index) => token === head[index])
+  })) return true
   // The release's OWN title words: its tokens minus quality/codec/hash junk, bare
   // numbers, the leading [Group] tag, and scene episode codes. A short-title release
   // ("[SubsPlease] Dr STONE S04E25 NF WEB-DL") must reduce to just {stone} — NOT
@@ -144,7 +178,12 @@ export function hasExplicitTitleConflict(stream: Stream, wanted: string[]): bool
 
   // No Latin title run means the value is opaque to this matcher. A number/quality-only label also
   // lands here. Preserve the existing "never drop on uncertainty" behaviour for both.
-  if (!releaseTitleTokens(claimed).length) return false
+  if (!releaseTitleTokens(claimed).length) {
+    // A provider's canonical source title is stronger than a filename parse. Numeric-only titles
+    // have no release-title run, but are still readable and exactly comparable; CJK remains opaque
+    // to this ASCII matcher and is preserved as unknown.
+    return !!sourceTitle && !!norm(claimed) && !relevant({ behaviorHints: { filename: claimed } }, wanted)
+  }
   return !relevant({ behaviorHints: { filename: claimed } }, wanted)
 }
 

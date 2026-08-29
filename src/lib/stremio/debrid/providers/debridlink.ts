@@ -75,7 +75,7 @@ export const debridlink: DebridProvider = {
   credential: 'apikey',
   // Debrid-Link's /api/v2/seedbox/cached is undocumented and sources conflict: StremThru has
   // carried "Deprecated: Debrid-Link removed the endpoint" since 2024-11-25 and routes around
-  // it, while harbor uses it as its only Debrid-Link cache check (file touched 2026-07-11). The
+  // it, while another client uses it as its only Debrid-Link cache check. The
   // route answers 401 badToken unauthenticated while a fake sibling route answers 404, so it is
   // registered and auth-gated rather than removed — but nobody has verified it with a real key.
   // Shipping an unverified endpoint would fabricate badges. Promote to 'native' once confirmed.

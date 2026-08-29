@@ -98,6 +98,20 @@ describe('release routes', () => {
   })
 })
 
+describe('empty source recovery', () => {
+  it('links source-related playback failures directly to source management', () => {
+    expect(source).toContain("classifyPlaybackFailure(playbackError) === 'no-results'")
+    expect(source).toContain('onclick={openSourceSettings}')
+    expect(source).toContain('>Open Sources</button>')
+    expect(source).toContain("goto('/app/settings/sources?tab=manage', { replaceState })")
+  })
+
+  it('replaces the mobile picker history entry when opening source management', () => {
+    expect(source).toContain('const replaceState = $isMobile && backTrapOpen')
+    expect(source).toContain('if (pushed && !replacePickerHistory) history.back()')
+  })
+})
+
 describe('adaptive source rollout', () => {
   it('keeps shadow as a preview and gates planned selection on active mode', () => {
     expect(source).toContain("$adaptiveSourceMode !== 'off'")

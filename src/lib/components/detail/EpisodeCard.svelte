@@ -29,7 +29,7 @@
     filler?: boolean
     dl?: DownloadItem
     next?: { episode: number; timeUntilAiring: number } | null
-    onplay: (ep: number) => void
+    onplay: (ep: number, event?: MouseEvent) => void
     // Download select mode (driven by EpisodeList): a tap toggles selection instead of
     // playing, and the card shows a checkbox instead of the play affordance.
     selecting?: boolean
@@ -66,7 +66,7 @@
     : dl.status === 'queued' ? 'Queued' : 'Paused',
   )
 
-  function play() { if (released) onplay(ep) }
+  function play(event?: MouseEvent) { if (released) onplay(ep, event) }
   function countdown(sec?: number) {
     if (!sec) return ''
     const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60)
@@ -103,7 +103,7 @@
   onclick={play}
   onkeydown={(e) => { if (released && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); play() } }}
   title={selecting ? (released ? (selectedEp ? 'Selected — tap to unselect' : 'Tap to select') : 'Not yet aired') : released ? `Play — ${labels.primary}` : isNext ? `Airing in ${countdown(next?.timeUntilAiring)}` : 'Not yet aired'}
-  class="group overflow-hidden rounded-xl text-left sm:rounded-lg {showThumb && img ? 'grid grid-cols-[42%_1fr] sm:flex sm:flex-col' : 'flex flex-col'}
+  class="group select-none overflow-hidden rounded-xl text-left sm:rounded-lg {showThumb && img ? 'grid grid-cols-[42%_1fr] sm:flex sm:flex-col' : 'flex flex-col'}
     {released ? 'cursor-pointer bg-secondary transition-transform hover:scale-[1.02] hover:bg-accent' : 'cursor-not-allowed bg-background/40 opacity-60'}
     {selecting && selectedEp ? 'ring-2 ring-theme' : ''}"
 >

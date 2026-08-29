@@ -76,7 +76,10 @@ import { describe as describeStream, languageMismatch, rankStreams } from './add
 import { fetchAddonStreams } from './addon'
 import { torbox } from './debrid/providers/torbox'
 import { fetchManifest } from './manifest'
+import type { Media } from '$lib/anilist/types'
 import type { Stream } from './parse'
+import { refineStreams, type RejectReason } from './refine'
+import { releaseTitleTokens } from './relevance'
 import { planRecoveryCandidates, planSources } from './source-planner'
 import { buildStreamIds } from './stream-ids'
 
@@ -85,6 +88,7 @@ const live = describe.skipIf(!enabled)
 const ADDON = process.env.IZUMI_LIVE_STREMIO_ADDON?.trim() || 'https://torrentio.strem.fun'
 const TMDB_TOKEN = process.env.IZUMI_TMDB_TOKEN?.trim() || ''
 const TORBOX_KEY = process.env.IZUMI_TORBOX_KEY?.trim() || ''
+const SKIP_TORBOX = process.env.IZUMI_LIVE_SOURCE_500_SKIP_TORBOX === '1'
 const ANILIST = 'https://graphql.anilist.co'
 const ANIZIP = 'https://api.ani.zip/mappings'
 const TMDB = 'https://api.themoviedb.org/3'
@@ -115,6 +119,7 @@ interface EvaluationTitle {
   kind: MediaKind
   catalogId: string
   title: string
+  aliases: string[]
   year: number
   era: string
   kitsu?: number
@@ -130,7 +135,9 @@ interface EvaluatedTitle extends EvaluationTitle {
   streams: Stream[]
   rawRows: number
   elapsedMs: number
-  zeroReason?: 'no-mapping' | 'addon-empty'
+  rejectedRows: number
+  rejectReasons: Partial<Record<RejectReason, number>>
+  zeroReason?: 'no-mapping' | 'addon-empty' | 'all-filtered'
 }
 
 interface AniListMedia {
@@ -221,6 +228,8 @@ async function buildAniListTitles(kind: MediaKind): Promise<EvaluationTitle[]> {
       kind,
       catalogId: String(media.id),
       title: media.title?.english ?? media.title?.romaji ?? `AniList ${media.id}`,
+      aliases: [...new Set([media.title?.english, media.title?.romaji]
+        .filter((value): value is string => !!value))],
       year: media.startDate?.year ?? era.from,
       era: era.id,
     }))
@@ -247,6 +256,8 @@ interface TmdbListItem {
   id: number
   title?: string
   name?: string
+  original_title?: string
+  original_name?: string
   release_date?: string
   first_air_date?: string
 }
@@ -290,6 +301,8 @@ async function buildTmdbApiTitles(kind: MediaKind, excludedTmdb: Set<string>, ex
         tmdb: String(item.id),
         imdb: detail.external_ids?.imdb_id ?? undefined,
         title: item.title ?? item.name ?? `TMDB ${item.id}`,
+        aliases: [...new Set([item.title ?? item.name, item.original_title ?? item.original_name]
+          .filter((value): value is string => !!value))],
         year,
         era: era.id,
         season: kind === 'series' ? 1 : undefined,
@@ -345,6 +358,7 @@ async function buildCinemetaTmdbTitles(kind: MediaKind, excludedTmdb: Set<string
       tmdb: item.tmdb,
       imdb: item.imdb,
       title: item.title,
+      aliases: [item.title],
       year: item.year,
       era: era.id,
       season: kind === 'series' ? (item.firstVideo?.season ?? 1) : undefined,
@@ -386,6 +400,78 @@ function streamIds(entry: EvaluationTitle): string[] {
   })
 }
 
+function refinementMedia(entry: EvaluationTitle): Media {
+  const aliases = [...new Set([entry.title, ...entry.aliases].filter(Boolean))]
+  return {
+    id: Number(entry.catalogId) || -1,
+    type: 'ANIME',
+    title: {
+      userPreferred: aliases[0],
+      english: aliases[0],
+      romaji: aliases[1] ?? aliases[0],
+    },
+    format: entry.kind === 'movie' ? 'MOVIE' : 'TV',
+    episodes: entry.kind === 'movie' ? 1 : 12,
+    duration: entry.kind === 'movie' ? 90 : 24,
+    startDate: { year: entry.year },
+  } as Media
+}
+
+/** Exercise the exact trust boundaries that caused cross-title playback, once for every real
+ * catalog item. Each requested title receives a different real title through all three source
+ * families, plus matching high-confidence/direct controls to catch over-filtering. */
+function checkAdversarialTitleMatrix(titles: EvaluationTitle[]) {
+  const recognizable = titles.filter((entry) => releaseTitleTokens(entry.title).length)
+  let rejected = 0
+  let matchingControls = 0
+  for (const [index, entry] of titles.entries()) {
+    const own = new Set(entry.aliases.map((alias) => titleKey(alias, entry.year).split('|')[0]))
+    let wrong: EvaluationTitle | undefined
+    for (let offset = 1; offset <= recognizable.length; offset++) {
+      const candidate = recognizable[(index * 97 + offset) % recognizable.length]
+      if (candidate.kind !== entry.kind) continue
+      if (candidate.aliases.some((alias) => own.has(titleKey(alias, entry.year).split('|')[0]))) continue
+      wrong = candidate
+      break
+    }
+    expect(wrong, `No distinct adversarial title found for ${entry.title}`).toBeDefined()
+    const suffix = entry.kind === 'movie' ? `${wrong!.year}.1080p.BluRay` : 'S01E01.1080p.WEB'
+    const wrongFilename = `${wrong!.title}.${suffix}.mkv`
+    const rows: Stream[] = [
+      { behaviorHints: { filename: wrongFilename } },
+      { __accuracy: 'high', behaviorHints: { filename: wrongFilename } },
+      {
+        __stream: true,
+        __sourceTitle: wrong!.title,
+        behaviorHints: { filename: entry.kind === 'movie' ? wrong!.title : `${wrong!.title} — Episode 1` },
+      },
+    ]
+    for (const row of rows) {
+      const result = refineStreams(refinementMedia(entry), [row])
+      expect(result.kept, `${entry.title} accepted adversarial ${wrong!.title}`).toHaveLength(0)
+      expect(result.rejected).toHaveLength(1)
+      rejected++
+    }
+
+    const correctFilename = entry.kind === 'movie'
+      ? `${entry.title}.${entry.year}.1080p.BluRay.mkv`
+      : `${entry.title}.S01E01.1080p.WEB.mkv`
+    for (const row of [
+      { __accuracy: 'high' as const, behaviorHints: { filename: correctFilename } },
+      {
+        __stream: true,
+        __sourceTitle: entry.title,
+        behaviorHints: { filename: entry.kind === 'movie' ? entry.title : `${entry.title} — Episode 1` },
+      },
+    ]) {
+      expect(refineStreams(refinementMedia(entry), [row]).kept,
+        `${entry.title} rejected its matching trusted control`).toHaveLength(1)
+      matchingControls++
+    }
+  }
+  return { titles: titles.length, rejected, matchingControls }
+}
+
 async function evaluateSources(titles: EvaluationTitle[]): Promise<EvaluatedTitle[]> {
   // Resolve the manifest before fan-out so its declared idPrefixes gate every request. Production
   // deliberately does not block the first interactive lookup on this enhancement, but a bulk run
@@ -395,17 +481,25 @@ async function evaluateSources(titles: EvaluationTitle[]): Promise<EvaluatedTitl
   return mapConcurrent(titles, 6, async (entry) => {
     const ids = streamIds(entry)
     if (!ids.length) return {
-      ...entry, ids, streams: [], rawRows: 0, elapsedMs: 0, zeroReason: 'no-mapping',
+      ...entry, ids, streams: [], rawRows: 0, elapsedMs: 0,
+      rejectedRows: 0, rejectReasons: {}, zeroReason: 'no-mapping',
     }
     const started = performance.now()
     const result = await fetchAddonStreams(ADDON, ids, entry.kind === 'movie' ? 'movie' : 'series')
+    const refined = refineStreams(refinementMedia(entry), normalizeCandidates(result.streams))
+    const rejectReasons = refined.rejected.reduce<Partial<Record<RejectReason, number>>>((counts, rejection) => {
+      counts[rejection.reason] = (counts[rejection.reason] ?? 0) + 1
+      return counts
+    }, {})
     return {
       ...entry,
       ids,
-      streams: rankStreams(normalizeCandidates(result.streams)),
+      streams: rankStreams(refined.kept),
       rawRows: result.total,
       elapsedMs: Math.round(performance.now() - started),
-      zeroReason: result.streams.length ? undefined : 'addon-empty',
+      rejectedRows: refined.rejected.length,
+      rejectReasons,
+      zeroReason: !result.streams.length ? 'addon-empty' : refined.kept.length ? undefined : 'all-filtered',
     }
   })
 }
@@ -532,6 +626,8 @@ live('500-title adaptive source evaluation', () => {
       'tmdb-movie': 125,
     })
     expect(new Set(titles.map((entry) => `${entry.source}:${entry.kind}:${entry.catalogId}`)).size).toBe(500)
+    const adversarialTitles = checkAdversarialTitleMatrix(titles)
+    expect(adversarialTitles).toEqual({ titles: 500, rejected: 1500, matchingControls: 1000 })
     const aniTmdb = new Set(titles.filter((entry) => entry.source === 'anilist').flatMap((entry) => entry.tmdb ? [entry.tmdb] : []))
     expect(titles.filter((entry) => entry.source === 'tmdb' && aniTmdb.has(entry.tmdb ?? ''))).toHaveLength(0)
     for (const source of ['anilist', 'tmdb'] as const) {
@@ -626,11 +722,19 @@ live('500-title adaptive source evaluation', () => {
     expect(syntheticChanged).toBe(syntheticEligible)
     expect(recoveryCases).toBeGreaterThanOrEqual(100)
 
-    const torboxReport = await checkTorBox(results)
-    const zeroReasons = Object.fromEntries(['no-mapping', 'addon-empty'].map((reason) => [
+    const torboxReport = SKIP_TORBOX
+      ? { skipped: true, reason: 'IZUMI_LIVE_SOURCE_500_SKIP_TORBOX=1' }
+      : await checkTorBox(results)
+    const zeroReasons = Object.fromEntries(['no-mapping', 'addon-empty', 'all-filtered'].map((reason) => [
       reason,
       results.filter((result) => result.zeroReason === reason).length,
     ]))
+    const filteredReasons = results.reduce<Partial<Record<RejectReason, number>>>((counts, result) => {
+      for (const [reason, count] of Object.entries(result.rejectReasons) as Array<[RejectReason, number]>) {
+        counts[reason] = (counts[reason] ?? 0) + count
+      }
+      return counts
+    }, {})
     const eraCoverage = Object.fromEntries(ERAS.map((era) => [
       era.id,
       results.filter((result) => result.era === era.id && result.streams.length).length,
@@ -647,6 +751,8 @@ live('500-title adaptive source evaluation', () => {
         titleCoverage: coverage,
         eraCoverage,
         zeroReasons,
+        filteredRows: results.reduce((sum, result) => sum + result.rejectedRows, 0),
+        filteredReasons,
         usableRows: allStreams.length,
         uniqueHashes: new Set(allStreams.flatMap((stream) => stream.infoHash ? [stream.infoHash.toLowerCase()] : [])).size,
         medianMs: percentile(results.map((result) => result.elapsedMs), 0.5),
@@ -660,6 +766,7 @@ live('500-title adaptive source evaluation', () => {
         privacyLeaks,
         collapsedP2pProfiles,
       },
+      adversarialTitles,
       torbox: torboxReport,
       http: {
         statuses: Object.fromEntries([...network.statuses].sort(([left], [right]) => left - right)),

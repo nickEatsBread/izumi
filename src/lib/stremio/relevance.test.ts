@@ -32,6 +32,34 @@ describe('hasExplicitTitleConflict (trusted source evidence)', () => {
     expect(hasExplicitTitleConflict(s('コクリコ坂から.mkv'), poppyHill)).toBe(false)
     expect(hasExplicitTitleConflict(s('Direct HLS · Server 1'), poppyHill)).toBe(false)
   })
+
+  it('retains short franchise identity markers such as Z and GT', () => {
+    expect(hasExplicitTitleConflict(
+      s('Dragon.Ball.Z.S01E01.1080p.WEB.mkv'), ['Dragon Ball GT'],
+    )).toBe(true)
+    expect(hasExplicitTitleConflict(
+      s('Dragon.Ball.GT.S01E01.1080p.WEB.mkv'), ['Dragon Ball GT'],
+    )).toBe(false)
+  })
+
+  it('treats a readable short title as identity rather than opaque text', () => {
+    expect(hasExplicitTitleConflict(s('Us'), ['Josee, the Tiger and the Fish'])).toBe(true)
+    expect(hasExplicitTitleConflict(s('Us'), ['Us'])).toBe(false)
+    expect(hasExplicitTitleConflict(s('映画.mkv'), ['Us'])).toBe(false)
+  })
+
+  it('keeps exact punctuation-separated short-letter titles', () => {
+    expect(hasExplicitTitleConflict(s('M*A*S*H.1970.1080p.BluRay.mkv'), ['M*A*S*H'])).toBe(false)
+    expect(hasExplicitTitleConflict(s('M*A*S*H.1970.1080p.BluRay.mkv'), ['S.W.A.T.'])).toBe(true)
+  })
+
+  it('keeps exact hyphenated and numeric title identities at release boundaries', () => {
+    expect(hasExplicitTitleConflict(s('MI-5.S01E01.1080p.WEB.mkv'), ['MI-5'])).toBe(false)
+    expect(hasExplicitTitleConflict(s('9-1-1.S01E01.1080p.WEB.mkv'), ['9-1-1'])).toBe(false)
+    expect(hasExplicitTitleConflict(s('1917.2019.1080p.BluRay.mkv'), ['1917'])).toBe(false)
+    expect(hasExplicitTitleConflict(s('MI-6.S01E01.1080p.WEB.mkv'), ['MI-5'])).toBe(true)
+    expect(hasExplicitTitleConflict({ __sourceTitle: '1917' }, ['From Up on Poppy Hill'])).toBe(true)
+  })
 })
 
 describe('relevant (a title that reduces to one distinct word)', () => {

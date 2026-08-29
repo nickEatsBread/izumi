@@ -14,6 +14,7 @@
     absoluteEpisodeNumbers, type Quality, type EpisodeLayout,
   } from '$lib/settings/ui'
   import { localHistory, sessionProgress, manualProgressOverrides } from '$lib/player/history'
+  import { markWatched } from '$lib/trackers'
   import { positions, progressKey, episodeBarPercent } from '$lib/player/progress'
   import { episodeLabels, episodeNumberLabel } from '$lib/anilist/episode-labels'
   import { fillerEpisodes } from '$lib/anime/filler'
@@ -189,11 +190,16 @@
   let batchCodec = $state<'any' | 'h264' | 'h265' | 'av1'>('any')
   const airedList = $derived(Array.from({ length: aired }, (_, i) => i + 1))
   const subscription = $derived($autoDownloadRules.find((rule) => rule.mediaId === media.id))
-  // A tap on a released episode plays it — or, in select mode, toggles its selection.
+  // A tap on a released episode plays it — or, in select mode, toggles its selection. On desktop,
+  // Shift+click marks the series watched through that episode without opening the player.
   // Upcoming (unaired) episodes are neither playable nor selectable.
-  function tap(ep: number) {
+  function tap(ep: number, event?: MouseEvent) {
     if (ep > aired) return
-    if (!selecting) { play(ep); return }
+    if (!selecting) {
+      if (event?.shiftKey) { markWatched(media, ep); return }
+      play(ep)
+      return
+    }
     const n = new Set(selected)
     n.has(ep) ? n.delete(ep) : n.add(ep)
     selected = n
@@ -455,13 +461,13 @@
     <!-- Immediate skeleton grid (shape matches the setting) so the list appears at
          once and doesn't flip layouts; real cards then fade their thumbnails in. -->
     {#if $episodeLayout === 'cards'}
-      <div class="grid grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
+      <div class="grid select-none grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
         {#each eps as ep (ep)}
           <button data-focusable={ep === quickEpisode ? '' : undefined}
                   data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
                   data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
                   tabindex={ep === quickEpisode ? 0 : -1} disabled={ep !== quickEpisode}
-                  onclick={() => tap(ep)} aria-label={`Play episode ${numberLabel(ep)}`}
+                  onclick={(event) => tap(ep, event)} aria-label={`Play episode ${numberLabel(ep)}`}
                   class="grid grid-cols-[42%_1fr] overflow-hidden rounded-xl bg-secondary text-left sm:block sm:rounded-lg disabled:opacity-100">
             <div class="aspect-video h-full w-full skeloader"></div>
             <div class="flex items-center p-3 sm:block sm:p-2"><div class="skeloader h-3.5 w-2/3 rounded"></div></div>
@@ -469,24 +475,24 @@
         {/each}
       </div>
     {:else if $episodeLayout === 'grid'}
-      <div class="grid grid-cols-[repeat(auto-fill,minmax(3.25rem,1fr))] gap-2">
+      <div class="grid select-none grid-cols-[repeat(auto-fill,minmax(3.25rem,1fr))] gap-2">
         {#each eps as ep (ep)}
           <button data-focusable={ep === quickEpisode ? '' : undefined}
                   data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
                   data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
                   tabindex={ep === quickEpisode ? 0 : -1} disabled={ep !== quickEpisode}
-                  onclick={() => tap(ep)} aria-label={`Play episode ${numberLabel(ep)}`}
+                  onclick={(event) => tap(ep, event)} aria-label={`Play episode ${numberLabel(ep)}`}
                   class="skeloader h-11 rounded-lg disabled:opacity-100"></button>
         {/each}
       </div>
     {:else}
-      <div class="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2">
+      <div class="grid select-none grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2">
         {#each eps as ep (ep)}
           <button data-focusable={ep === quickEpisode ? '' : undefined}
                   data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
                   data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
                   tabindex={ep === quickEpisode ? 0 : -1} disabled={ep !== quickEpisode}
-                  onclick={() => tap(ep)} aria-label={`Play episode ${numberLabel(ep)}`}
+                  onclick={(event) => tap(ep, event)} aria-label={`Play episode ${numberLabel(ep)}`}
                   class="flex items-center gap-3 rounded-md bg-secondary px-3 py-2 text-left disabled:opacity-100">
             <div class="skeloader size-8 shrink-0 rounded"></div>
             <div class="skeloader h-3.5 flex-1 rounded"></div>
@@ -497,7 +503,7 @@
   {:else if $episodeLayout === 'grid'}
     <!-- Dense number tiles: a compact shape for browsing long-runners at a glance. Tile states
          mirror what a card shows, so switching layouts never changes what the list is telling you. -->
-    <div class="grid grid-cols-[repeat(auto-fill,minmax(3.25rem,1fr))] gap-2">
+    <div class="grid select-none grid-cols-[repeat(auto-fill,minmax(3.25rem,1fr))] gap-2">
       {#each rows as ep (ep)}
         {@const tile = episodeTileState({
           ep,
@@ -507,7 +513,7 @@
         })}
         <button data-focusable data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
                 data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
-                disabled={!tile.playable} onclick={() => { h.tap(); tap(ep) }}
+                disabled={!tile.playable} onclick={(event) => { h.tap(); tap(ep, event) }}
                 aria-label={`Episode ${numberLabel(ep)}`}
                 class="relative grid h-11 place-items-center overflow-hidden rounded-lg text-sm font-bold transition-colors
                   {tile.kind === 'watched' ? 'bg-primary text-primary-foreground' : 'bg-secondary'}
@@ -522,7 +528,7 @@
       {/each}
     </div>
   {:else if $episodeLayout === 'cards'}
-    <div class="grid grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
+    <div class="grid select-none grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
       {#each rows as ep (ep)}
         <EpisodeCard
           {media}
@@ -545,7 +551,7 @@
       {/each}
     </div>
   {:else}
-    <div class="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2">
+    <div class="grid select-none grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2">
       {#each rows as ep (ep)}
         {@const released = ep <= aired}
         {@const isNext = next?.episode === ep}
@@ -566,7 +572,7 @@
           tabindex="0"
           aria-disabled={!released || resolving}
           aria-pressed={selecting ? sel : undefined}
-          onclick={() => { if (!resolving) { h.tap(); tap(ep) } }}
+          onclick={(event) => { if (!resolving) { h.tap(); tap(ep, event) } }}
           onkeydown={(e) => { if (!resolving && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); tap(ep) } }}
           title={selecting ? (released ? (sel ? 'Selected — tap to unselect' : 'Tap to select') : 'Not yet aired') : released ? `Play episode ${ep}${filler ? ' (filler)' : ''}` : isNext ? `Airing in ${countdown(next?.timeUntilAiring)}` : 'Not yet aired'}
           class="group relative flex items-center gap-3 overflow-hidden rounded-md px-2.5 py-1.5 text-left transition-colors sm:px-3 sm:py-2

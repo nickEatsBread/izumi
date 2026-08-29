@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { resolveAddonLogo, iconSrc } from './addon-logo'
+import { resolveAddonLogo, resolveStoreAddonLogo, iconSrc } from './addon-logo'
 
 describe('resolveAddonLogo', () => {
   it('passes an absolute url through', () => {
@@ -37,6 +37,29 @@ describe('resolveAddonLogo', () => {
 
   it('returns undefined rather than a broken src when the base is unusable', () => {
     expect(resolveAddonLogo('/logo.png', 'not a url')).toBeUndefined()
+  })
+})
+
+describe('resolveStoreAddonLogo', () => {
+  const imgurLogo = 'https://i.imgur.com/jmVoVMu.jpeg'
+  const secondImgurLogo = 'https://i.imgur.com/KVpfrAk.png'
+
+  it('proxies all i.imgur.com logos through DuckDuckGo for UK users', () => {
+    expect(resolveStoreAddonLogo(imgurLogo, 'https://addon.test', 'en-GB', 'America/New_York'))
+      .toBe(`https://external-content.duckduckgo.com/iu/?u=${imgurLogo}`)
+    expect(resolveStoreAddonLogo(secondImgurLogo, 'https://addon.test', 'cy-GB', 'America/New_York'))
+      .toBe(`https://external-content.duckduckgo.com/iu/?u=${secondImgurLogo}`)
+    expect(resolveStoreAddonLogo(secondImgurLogo, 'https://addon.test', 'en-US', 'Europe/London'))
+      .toBe(`https://external-content.duckduckgo.com/iu/?u=${secondImgurLogo}`)
+  })
+
+  it('leaves that logo direct outside the UK', () => {
+    expect(resolveStoreAddonLogo(imgurLogo, 'https://addon.test', 'en-US', 'America/New_York')).toBe(imgurLogo)
+  })
+
+  it('does not proxy unrelated logos in the UK', () => {
+    expect(resolveStoreAddonLogo('https://cdn.example.com/logo.jpeg', 'https://addon.test', 'en-GB', 'Europe/London'))
+      .toBe('https://cdn.example.com/logo.jpeg')
   })
 })
 
