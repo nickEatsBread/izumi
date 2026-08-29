@@ -137,7 +137,7 @@
   })
 </script>
 
-<div class="min-h-full pb-20" style={brandStyle}>
+<div class="brand-{brand.id} min-h-full pb-20" style={brandStyle}>
   <header class="relative overflow-hidden border-b border-white/10 px-4 pb-6 pt-5 sm:px-8 sm:pb-8 sm:pt-8">
     <div class="provider-backdrop pointer-events-none absolute inset-0"></div>
     <div class="relative mx-auto max-w-[96rem]">
@@ -145,7 +145,11 @@
         <ArrowLeft size={17} /> Home
       </a>
       <div class="flex items-center gap-4 sm:gap-5">
-        {#if logo}<img src={logo} alt="" class="size-20 rounded-[1.35rem] bg-white object-cover shadow-2xl ring-1 ring-white/15 sm:size-24" />{/if}
+        {#if brand.mark || logo}
+          <div class="grid size-20 shrink-0 place-items-center rounded-[1.35rem] bg-black/30 p-3 shadow-2xl ring-1 ring-white/15 backdrop-blur sm:size-24 sm:p-4">
+            <img src={brand.mark ?? logo} alt="" class="provider-hub-mark size-full object-contain" />
+          </div>
+        {/if}
         <div class="min-w-0">
           <p class="mb-1 flex items-center gap-1.5 text-xs font-black uppercase tracking-[0.18em] text-white/55"><MapPin size={13} /> Streaming in {regionName}</p>
           <h1 class="truncate text-3xl font-black tracking-tight text-white sm:text-5xl">{name}</h1>
@@ -197,6 +201,8 @@
 </div>
 
 <style>
+  .provider-hub-mark { filter: brightness(0) invert(1); }
+  :global(.brand-netflix) .provider-hub-mark { filter: none; }
   .provider-backdrop {
     background:
       radial-gradient(circle at 13% 34%, color-mix(in srgb, var(--service-primary) 34%, transparent), transparent 34%),

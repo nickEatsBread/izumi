@@ -45,21 +45,16 @@ describe('featured TMDB home sections', () => {
     expect(search).toContain('watchProvider,')
   })
 
-  it('reveals service colour on hover and uses a branded selection transition', () => {
-    expect(streamingRow).toContain('group-hover:grayscale-0')
+  it('uses local vector marks, service-specific hover scenes, and a branded selection transition', () => {
     expect(streamingRow).toContain('streamingBrand(feature.title)')
-    expect(streamingRow).toContain('provider-card motion-{brand.motion}')
-    expect(streamingRow).toContain('provider-art absolute inset-0 size-full object-cover')
-    expect(streamingRow).toContain('@keyframes service-arc')
-    expect(streamingRow).toContain('provider-transition motion-{active.brand.motion}')
+    expect(streamingRow).toContain('provider-card brand-{brand.id} motion-{brand.motion}')
+    expect(streamingRow).toContain('src={brand.mark}')
+    expect(streamingRow).not.toContain('src={feature.image}')
+    expect(streamingRow).toContain('.brand-netflix .scene-a')
+    expect(streamingRow).toContain('.brand-disney .scene-a')
+    expect(streamingRow).toContain('.brand-prime-video .scene-a')
+    expect(streamingRow).toContain('provider-transition brand-{active.brand.id}')
     expect(streamingRow).toContain('prefers-reduced-motion: reduce')
   })
 
-  it('renders stable condensed SVG numerals for Top 10 shelves', () => {
-    expect(row).toContain('<svg')
-    expect(row).toContain('class="rank-number')
-    expect(row).toContain('paint-order: stroke fill')
-    expect(row).toContain("font-family: Impact")
-    expect(row).not.toContain('-webkit-text-stroke')
-  })
 })
