@@ -35,14 +35,6 @@ export interface MediaRating {
   url?: string
 }
 
-export interface MediaWatchProvider {
-  id?: number
-  name: string
-  logoImage?: string
-  kind: 'subscription' | 'free' | 'ads' | 'rent' | 'buy'
-  url?: string
-}
-
 /** Context supplied by the catalogue that selected a title for the featured carousel. */
 export interface MediaFeaturedRank {
   position: number
@@ -114,8 +106,6 @@ export interface Media {
   tagline?: string
   releaseDate?: string
   originalLanguage?: string
-  watchRegion?: string
-  watchProviders?: MediaWatchProvider[]
   featuredRank?: MediaFeaturedRank
   popularity?: number
   trending?: number

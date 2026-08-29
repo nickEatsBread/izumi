@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mapTmdb, parseCinemetaRating, pickTmdbLogo, tmdbContentRating, tmdbDiscoverFilterParams, tmdbRegion, tmdbRegionName, tmdbWatchProviders } from './tmdb'
+import { mapTmdb, parseCinemetaRating, pickTmdbLogo, tmdbContentRating, tmdbDiscoverFilterParams, tmdbRegion, tmdbRegionName } from './tmdb'
 
 describe('TMDB catalog mapping', () => {
   it('maps movies to a provider-owned identity instead of an AniList id', () => {
@@ -89,7 +89,7 @@ describe('TMDB catalog mapping', () => {
     expect(tmdbRegionName('GB')).toBe('United Kingdom')
   })
 
-  it('maps regional certification and viewing providers with sensible fallbacks', () => {
+  it('maps regional certification with sensible fallbacks', () => {
     expect(tmdbContentRating({
       release_dates: { results: [{ iso_3166_1: 'GB', release_dates: [
         { certification: '12A', type: 3 },
@@ -99,21 +99,6 @@ describe('TMDB catalog mapping', () => {
       content_ratings: { results: [{ iso_3166_1: 'US', rating: 'TV-14' }] },
     }, 'CA')).toBe('TV-14')
 
-    expect(tmdbWatchProviders({ results: { GB: {
-      link: 'https://www.themoviedb.org/movie/1/watch?locale=GB',
-      flatrate: [{ provider_id: 8, provider_name: 'Example Plus', logo_path: '/logo.jpg' }],
-      rent: [{ provider_id: 8, provider_name: 'Example Plus' }, { provider_id: 3, provider_name: 'Example Store' }],
-    } } }, 'GB')).toEqual([
-      {
-        id: 8, name: 'Example Plus', kind: 'subscription',
-        logoImage: 'https://image.tmdb.org/t/p/w92/logo.jpg',
-        url: 'https://www.themoviedb.org/movie/1/watch?locale=GB',
-      },
-      {
-        id: 3, name: 'Example Store', kind: 'rent', logoImage: undefined,
-        url: 'https://www.themoviedb.org/movie/1/watch?locale=GB',
-      },
-    ])
   })
 
   it('derives a locale region and validates keyless IMDb ratings', () => {

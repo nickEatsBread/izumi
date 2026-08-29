@@ -73,9 +73,6 @@
     const date = new Date(`${media.releaseDate}T00:00:00`)
     return Number.isNaN(date.valueOf()) ? media.releaseDate : new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(date)
   })
-  const watchKind = (kind: NonNullable<Media['watchProviders']>[number]['kind']) => ({
-    subscription: 'Stream', free: 'Free', ads: 'Free with ads', rent: 'Rent', buy: 'Buy',
-  })[kind]
   const attributedMedia = $derived.by(() => {
     if (!media || media.catalog?.provider !== 'jvm') return media
     const remembered = $detailHints[media.id]
@@ -207,24 +204,6 @@
           {#if media.originalLanguage}<div><dt class="text-[0.7rem] font-semibold text-muted-foreground">Original language</dt><dd class="mt-0.5 text-sm font-bold uppercase">{media.originalLanguage}</dd></div>{/if}
           {#if media.studios?.nodes?.length}<div class="max-w-xl"><dt class="text-[0.7rem] font-semibold text-muted-foreground">Studios & networks</dt><dd class="mt-0.5 text-sm font-bold">{media.studios.nodes.map((studio) => studio.name).join(', ')}</dd></div>{/if}
         </dl>
-      </section>
-    {/if}
-
-    {#if media.watchProviders?.length}
-      <section class="mt-8 px-5 sm:px-8" aria-label="Where to watch">
-        <div class="mb-3 flex flex-wrap items-baseline gap-x-3">
-          <h2 class="text-xl font-black">Where to watch</h2>
-          <span class="text-xs text-muted-foreground">{media.watchRegion} · availability by JustWatch</span>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          {#each media.watchProviders as watch (`${watch.id ?? watch.name}:${watch.kind}`)}
-            <button data-focusable disabled={!watch.url} onclick={() => watch.url && openUrl(watch.url)}
-              class="flex min-h-11 items-center gap-2 rounded-lg border border-border bg-secondary/65 px-2.5 py-2 text-left transition hover:bg-secondary disabled:cursor-default">
-              {#if watch.logoImage}<img src={watch.logoImage} alt="" loading="lazy" class="size-8 rounded-md bg-white object-cover" />{/if}
-              <span><span class="block text-sm font-bold">{watch.name}</span><span class="block text-[0.65rem] text-muted-foreground">{watchKind(watch.kind)}</span></span>
-            </button>
-          {/each}
-        </div>
       </section>
     {/if}
 

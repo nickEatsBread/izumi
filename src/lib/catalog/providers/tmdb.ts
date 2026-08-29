@@ -4,7 +4,7 @@ import { phttp } from '$lib/net/http'
 import { showAdult } from '$lib/settings/ui'
 import { tmdbReadToken } from '$lib/settings/catalog'
 import { CINEMETA_BASE } from '$lib/stremio/sources'
-import type { Media, MediaRating, MediaVideo, MediaWatchProvider } from '$lib/anilist/types'
+import type { Media, MediaRating, MediaVideo } from '$lib/anilist/types'
 import { catalogHomeLayouts, resolveCatalogHomeRows } from '../home-layout'
 import { TMDB_HOME_ROWS } from '../home-options'
 import { compatibilityMediaId, type MediaRef } from '../identity'
@@ -99,15 +99,6 @@ interface TmdbWatchProviderPage {
   results?: TmdbWatchProvider[]
 }
 
-interface TmdbWatchEntry {
-  link?: string
-  flatrate?: TmdbWatchProvider[]
-  free?: TmdbWatchProvider[]
-  ads?: TmdbWatchProvider[]
-  rent?: TmdbWatchProvider[]
-  buy?: TmdbWatchProvider[]
-}
-
 interface TmdbReleaseCountry {
   iso_3166_1?: string
   release_dates?: { certification?: string; type?: number }[]
@@ -136,7 +127,6 @@ interface TmdbDetail extends TmdbListItem {
   recommendations?: TmdbPage
   similar?: TmdbPage
   images?: TmdbImages
-  'watch/providers'?: { results?: Record<string, TmdbWatchEntry> }
   release_dates?: { results?: TmdbReleaseCountry[] }
   content_ratings?: { results?: TmdbContentRating[] }
   keywords?: { keywords?: { id?: number; name?: string }[]; results?: { id?: number; name?: string }[] }
@@ -200,29 +190,6 @@ export function tmdbContentRating(raw: Pick<TmdbDetail, 'release_dates' | 'conte
   const releases = regionalValue(raw.release_dates?.results ?? [], region)?.release_dates ?? []
   return (releases.find((release) => release.type === 3 && release.certification?.trim())
     ?? releases.find((release) => release.certification?.trim()))?.certification?.trim() || undefined
-}
-
-export function tmdbWatchProviders(raw: TmdbDetail['watch/providers'], region: string): MediaWatchProvider[] {
-  const results = raw?.results ?? {}
-  const entry = results[region] ?? results.US ?? results.GB ?? Object.values(results)[0]
-  if (!entry) return []
-  const groups: [MediaWatchProvider['kind'], TmdbWatchProvider[] | undefined][] = [
-    ['subscription', entry.flatrate], ['free', entry.free], ['ads', entry.ads], ['rent', entry.rent], ['buy', entry.buy],
-  ]
-  const seen = new Set<string>()
-  return groups.flatMap(([kind, providers]) => (providers ?? []).flatMap((provider) => {
-    if (!provider.provider_name) return []
-    const key = String(provider.provider_id ?? provider.provider_name).toLowerCase()
-    if (seen.has(key)) return []
-    seen.add(key)
-    return [{
-      id: provider.provider_id,
-      name: provider.provider_name,
-      logoImage: image(provider.logo_path, 'w92'),
-      kind,
-      url: entry.link,
-    } satisfies MediaWatchProvider]
-  }))
 }
 
 export function parseCinemetaRating(value: unknown): MediaRating | undefined {
@@ -489,7 +456,6 @@ async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHom
     sections: selected.flatMap((row): CatalogHomeSection[] => {
       if (row.id === 'streaming-providers') return providers.length ? [{
         id: row.id, title: row.title, media: [], presentation: 'providers', features: providers,
-        attribution: 'Availability by JustWatch',
       } satisfies CatalogHomeSection] : []
       const request = requests.get(row.id)
       const media = mediaById.get(row.id) ?? []
@@ -706,8 +672,6 @@ function detailedMedia(raw: TmdbDetail, kind: TmdbKind): Media | null {
   media.logoImage = pickTmdbLogo(raw.images)
   const region = tmdbRegion()
   media.contentRating = tmdbContentRating(raw, region)
-  media.watchRegion = region
-  media.watchProviders = tmdbWatchProviders(raw['watch/providers'], region)
   return media
 }
 
@@ -715,8 +679,8 @@ async function detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null
   if (ref.provider !== 'tmdb' || (ref.type !== 'movie' && ref.type !== 'series')) return null
   const kind: TmdbKind = ref.type === 'movie' ? 'movie' : 'tv'
   const append = kind === 'movie'
-    ? 'videos,credits,recommendations,similar,external_ids,images,watch/providers,release_dates,keywords'
-    : 'videos,aggregate_credits,recommendations,similar,external_ids,images,watch/providers,content_ratings,keywords'
+    ? 'videos,credits,recommendations,similar,external_ids,images,release_dates,keywords'
+    : 'videos,aggregate_credits,recommendations,similar,external_ids,images,content_ratings,keywords'
   const raw = await tmdb<TmdbDetail>(`/${kind}/${encodeURIComponent(ref.id)}`, {
     language: TMDB_LANGUAGE, include_image_language: 'en,null', append_to_response: append,
   }, signal)

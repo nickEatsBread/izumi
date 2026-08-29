@@ -13,6 +13,7 @@ describe('featured TMDB home sections', () => {
   const search = read('./CatalogSearchPage.svelte')
   const streamingRow = read('./StreamingProviderRow.svelte')
   const streamingHub = read('./StreamingProviderHub.svelte')
+  const detail = read('./CatalogMediaDetail.svelte')
 
   it('offers ranking and regional streaming rows to the Home editor without Collections', () => {
     expect(TMDB_HOME_ROWS).toEqual(expect.arrayContaining([
@@ -35,7 +36,8 @@ describe('featured TMDB home sections', () => {
   it('uses live regional provider data and opens a personalized service hub', () => {
     expect(provider).toContain("['movie', 'tv']")
     expect(provider).toContain('/watch/providers/${kind}')
-    expect(provider).toContain('Availability by JustWatch')
+    expect(provider).not.toContain('attribution:')
+    expect(detail).not.toContain('media.watchProviders')
     expect(provider).toContain('/app/streaming/${provider.provider_id}')
     expect(streamingHub).toContain('Top 10 Movies on ${name} in ${regionName}')
     expect(streamingHub).toContain('Top 10 TV Shows on ${name} in ${regionName}')
