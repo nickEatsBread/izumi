@@ -276,7 +276,7 @@
             type="button"
             data-focusable
             onclick={editHome}
-            class="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold transition hover:bg-theme/10 hover:text-theme focus:bg-theme/10 focus:text-theme"
+            class="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold text-muted-foreground transition hover:bg-accent hover:text-foreground focus:bg-accent focus:text-foreground"
           >
             <Pencil size={17} />
             <span class="flex-1">Edit this Home</span>
@@ -285,7 +285,7 @@
             href="/app/settings/catalog"
             data-focusable
             onclick={() => { h.tap(); open = false }}
-            class="flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-bold text-muted-foreground transition hover:bg-accent hover:text-foreground focus:bg-accent"
+            class="flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-bold text-muted-foreground transition hover:bg-accent hover:text-foreground focus:bg-accent focus:text-foreground"
           >
             <SlidersHorizontal size={17} />
             <span class="flex-1">Manage catalogs</span>

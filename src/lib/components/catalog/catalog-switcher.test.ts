@@ -55,5 +55,6 @@ describe('catalog switcher', () => {
     expect(source).toContain('Edit this Home')
     expect(source).toContain('homeEditorOpen.set(true)')
     expect(source).toContain('<Pencil')
+    expect(source).toContain('text-left text-sm font-bold text-muted-foreground transition hover:bg-accent hover:text-foreground')
   })
 })
