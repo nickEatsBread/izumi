@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Logo from '../Logo.svelte'
+  import CatalogBrandLogo from '../catalog/CatalogBrandLogo.svelte'
   import CatalogSwitcher from '../catalog/CatalogSwitcher.svelte'
   import Home from '@lucide/svelte/icons/house'
   import Calendar from '@lucide/svelte/icons/calendar'
@@ -16,7 +16,7 @@
   import { anilistUser } from '$lib/anilist/account'
   import { incognito, toggleIncognito } from '$lib/stores/incognito'
   import { offlineMode } from '$lib/stores/offline'
-  import { catalogSwitcherPlacement, enabledCatalogScreens, resolveCatalogSwitcherPlacement } from '$lib/settings/catalog'
+  import { catalogScreen, catalogSwitcherPlacement, enabledCatalogScreens, resolveCatalogSwitcherPlacement } from '$lib/settings/catalog'
   import * as h from '$lib/haptics'
   import { m } from '$lib/paraglide/messages.js'
   // Nav items (top). Settings + profile are pinned to the BOTTOM.
@@ -90,7 +90,7 @@
     {:else}
       <a href="/app/home" onclick={() => h.tap()} aria-label={m.nav_home()} title={m.nav_home()} tabindex={-1}
          class="ml-2 grid size-10 shrink-0 place-items-center transition-transform duration-200 group-hover:scale-110">
-        <Logo />
+        <CatalogBrandLogo platform={$catalogScreen} />
       </a>
     {/if}
     <span class="whitespace-nowrap text-lg font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">izumi</span>

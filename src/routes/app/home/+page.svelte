@@ -34,6 +34,7 @@
   import CatalogHome from '$lib/components/catalog/CatalogHome.svelte'
   import MergedCatalogHome from '$lib/components/catalog/MergedCatalogHome.svelte'
   import CatalogSwitcher from '$lib/components/catalog/CatalogSwitcher.svelte'
+  import CatalogBrandLogo from '$lib/components/catalog/CatalogBrandLogo.svelte'
   import HomeEditor from '$lib/components/catalog/HomeEditor.svelte'
   import HomeRowFrame from '$lib/components/catalog/HomeRowFrame.svelte'
   import { mediaHref } from '$lib/anilist/media'
@@ -136,7 +137,7 @@
         <CatalogSwitcher display="brand" showWordmark />
       {:else}
         <div class="flex items-center gap-2" aria-label="izumi">
-          <img src="/brand/izumi-mark-color.svg" alt="" class="h-7 w-7" draggable="false" />
+          <CatalogBrandLogo platform={$catalogScreen} />
           <img src="/brand/izumi-wordmark-white.svg" alt="izumi" class="home-wordmark h-5" draggable="false" />
         </div>
       {/if}
