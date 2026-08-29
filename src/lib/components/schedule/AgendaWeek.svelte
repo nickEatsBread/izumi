@@ -75,14 +75,14 @@
             <a
               data-focusable
               href={`/app/anime/${a.media.id}`}
-              class="flex items-center gap-4 rounded-lg bg-secondary p-2.5 transition-colors hover:bg-accent {aired(a.airingAt) ? 'opacity-55' : ''} {mine ? 'border border-theme/60' : 'border border-transparent'}"
+              class="flex items-center gap-4 rounded-lg border bg-secondary p-2.5 transition-colors hover:bg-accent {aired(a.airingAt) ? 'opacity-55' : ''} {mine ? 'border-border/80' : 'border-transparent'}"
             >
               <img src={cover(a.media)} alt="" loading="lazy" decoding="async"
                    class="h-24 w-16 shrink-0 rounded object-cover" />
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
                   <p class="line-clamp-2 text-base font-bold leading-tight">{title(a.media)}</p>
-                  {#if mine}<span class="shrink-0 rounded bg-theme/15 px-1.5 py-0.5 text-[0.6rem] font-black uppercase tracking-wide text-theme">{mine === 'watching' ? 'Watching' : 'Planning'}</span>{/if}
+                  {#if mine}<span class="shrink-0 rounded bg-foreground/[0.08] px-1.5 py-0.5 text-[0.6rem] font-black uppercase tracking-wide text-foreground/70">{mine === 'watching' ? 'Watching' : 'Planning'}</span>{/if}
                 </div>
                 <p class="mt-1 text-sm text-muted-foreground">EP {a.episode} · {airTime(a.airingAt)}</p>
                 {#if delay}

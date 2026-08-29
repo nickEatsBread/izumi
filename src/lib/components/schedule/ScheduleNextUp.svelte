@@ -25,15 +25,15 @@
 {#if items.length}
   <div class="mb-6">
     <h2 class="mb-2 flex items-center gap-1.5 text-sm font-black">
-      <Radio size={15} class="text-theme" /> Next up
+      <Radio size={15} class="text-sky-400" /> Next up
     </h2>
     <div class="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {#each items as a (a.media.id + '-' + a.episode)}
         {@const soon = a.airingAt * 1000 > now}
         {@const kind = classifyMine(a.media, sets)}
         <a data-focusable href={`/app/anime/${a.media.id}`}
-           class="group relative w-40 shrink-0 overflow-hidden rounded-lg bg-secondary transition-colors hover:bg-accent
-                  {kind ? 'border border-theme/60' : 'border border-transparent'}">
+           class="group relative w-40 shrink-0 overflow-hidden rounded-lg border bg-secondary transition-colors hover:bg-accent
+                  {kind ? 'border-border/80' : 'border-transparent'}">
           <div class="relative h-24 w-full overflow-hidden">
             <img src={cover(a.media)} alt="" loading="lazy" decoding="async" class="h-full w-full object-cover transition-transform group-hover:scale-105" />
             <span class="absolute left-1.5 top-1.5 rounded px-1.5 py-0.5 text-[0.65rem] font-black
