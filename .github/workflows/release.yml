@@ -210,7 +210,9 @@ jobs:
           set -euo pipefail
           brew update
           brew install mpv ffmpeg dylibbundler
-          mpv --version | head -1 | grep -E '^mpv 0\.(4[1-9]|[5-9][0-9])'
+          mpv_version="$(mpv --version | sed -n '1p')"
+          echo "$mpv_version"
+          grep -Eq '^mpv v?0\.(4[1-9]|[5-9][0-9])' <<<"$mpv_version"
           BREW="$(brew --prefix)"
           echo "PKG_CONFIG_PATH=$BREW/lib/pkgconfig" >> "$GITHUB_ENV"
           echo "LIBRARY_PATH=$BREW/lib" >> "$GITHUB_ENV"
