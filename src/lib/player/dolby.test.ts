@@ -12,13 +12,17 @@ import {
 const base: AudioOutputSettings = {
   mode: 'pcm', device: 'auto', exclusive: false,
   ac3: true, eac3: true, truehd: true, hasAudioFilter: false, playbackSpeed: 1,
+  dts: true, dtsHd: true,
 }
 
 const reported: DolbyCapabilities = {
   ...UNKNOWN_DOLBY_CAPABILITIES,
   platform: 'android',
   audioConfidence: 'reported',
-  audio: { ac3: true, eac3: true, eac3Joc: true, truehd: false, mat: true },
+  audio: {
+    ac3: true, eac3: true, eac3Joc: true, truehd: false, mat: true,
+    dts: true, dtsHd: true, dtsHdMa: true, dtsX: true,
+  },
 }
 
 describe('Dolby audio output policy', () => {
@@ -28,15 +32,15 @@ describe('Dolby audio output policy', () => {
     expect(Object.fromEntries(decision.opts)['audio-spdif']).toBe('')
   })
 
-  it('limits optical to AC-3 even when every codec is selected', () => {
-    expect(resolveAudioPassthrough({ ...base, mode: 'optical' }, reported).codecs).toEqual(['ac3'])
+  it('limits optical to AC-3 and DTS core even when every codec is selected', () => {
+    expect(resolveAudioPassthrough({ ...base, mode: 'optical' }, reported).codecs).toEqual(['ac3', 'dts'])
   })
 
   it('allows explicit HDMI E-AC3 and TrueHD passthrough', () => {
     const decision = resolveAudioPassthrough({ ...base, mode: 'hdmi', exclusive: true }, reported)
-    expect(decision.codecs).toEqual(['ac3', 'eac3', 'truehd'])
+    expect(decision.codecs).toEqual(['ac3', 'eac3', 'truehd', 'dts-hd'])
     expect(Object.fromEntries(decision.opts)).toMatchObject({
-      'audio-spdif': 'ac3,eac3,truehd',
+      'audio-spdif': 'ac3,eac3,truehd,dts-hd',
       'audio-exclusive': 'yes',
     })
   })
@@ -55,8 +59,17 @@ describe('Dolby audio output policy', () => {
 
   it('uses reported route capabilities in Auto and accepts MAT for TrueHD', () => {
     expect(resolveAudioPassthrough({ ...base, mode: 'auto' }, reported).codecs)
-      .toEqual(['ac3', 'eac3', 'truehd'])
+      .toEqual(['ac3', 'eac3', 'truehd', 'dts-hd'])
     expect(resolveAudioPassthrough({ ...base, mode: 'auto' }, UNKNOWN_DOLBY_CAPABILITIES).codecs)
+      .toEqual([])
+  })
+
+  it('does not treat DTS-UHD/DTS:X as mpv DTS-HD capability', () => {
+    const dtsUhdOnly: DolbyCapabilities = {
+      ...reported,
+      audio: { ...reported.audio, dts: false, dtsHd: false, dtsHdMa: false, dtsX: true },
+    }
+    expect(resolveAudioPassthrough({ ...base, mode: 'auto', ac3: false, eac3: false, truehd: false }, dtsUhdOnly).codecs)
       .toEqual([])
   })
 })
@@ -89,6 +102,7 @@ describe('live output classification', () => {
     const current = { ...UNKNOWN_DOLBY_CAPABILITIES.current, audioFormat: 'spdif-eac3', audioCodec: 'eac3' }
     expect(classifyAudioOutput(current)).toBe('eac3')
     expect(classifyAudioOutput({ ...current, audioFormat: 'float', audioCodec: 'eac3' })).toBe('pcm')
+    expect(classifyAudioOutput({ ...current, audioFormat: 'spdif-dts-hd', audioCodec: 'dts-hd' })).toBe('dts-hd')
   })
 
   it('does not infer Media3 passthrough from its source MIME', () => {
@@ -102,5 +116,7 @@ describe('live output classification', () => {
   it('reports PQ/BT.2020 as HDR10 output, not Dolby Vision output', () => {
     const current = { ...UNKNOWN_DOLBY_CAPABILITIES.current, videoTransfer: 'pq', videoPrimaries: 'bt.2020' }
     expect(classifyVideoOutput(current)).toBe('hdr10')
+    expect(classifyVideoOutput(current, 'hdr10-plus')).toBe('hdr10-plus')
+    expect(classifyVideoOutput({ ...current, videoTransfer: 'arib-std-b67' }, 'hlg')).toBe('hlg')
   })
 })

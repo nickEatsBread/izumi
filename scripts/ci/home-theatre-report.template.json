@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "appCommit": "REPLACE_WITH_GIT_COMMIT",
+  "tester": "REPLACE_WITH_TESTER",
+  "executedAt": null,
+  "fixtures": {
+    "audio": "Record fixture names and SHA-256 hashes here",
+    "video": "Record fixture names and SHA-256 hashes here"
+  },
+  "topologies": [
+    {
+      "id": "desktop-avr-tv",
+      "source": "REPLACE: desktop, OS, GPU and driver",
+      "display": "REPLACE: TV model and firmware",
+      "audioSink": "REPLACE: AVR model and firmware",
+      "connection": "Desktop HDMI -> AVR -> TV",
+      "results": [
+        { "caseId": "ac3-5.1", "status": "not-run" },
+        { "caseId": "eac3-joc-atmos", "status": "not-run" },
+        { "caseId": "truehd-atmos", "status": "not-run" },
+        { "caseId": "dts-core", "status": "not-run" },
+        { "caseId": "dts-hd-ma", "status": "not-run" },
+        { "caseId": "dts-x-hd-ma", "status": "not-run" },
+        { "caseId": "dts-uhd", "status": "not-run" },
+        { "caseId": "hdr10", "status": "not-run" },
+        { "caseId": "hdr10-plus", "status": "not-run" },
+        { "caseId": "hlg", "status": "not-run" },
+        { "caseId": "dv-profile-5", "status": "not-run" },
+        { "caseId": "dv-profile-7-mel", "status": "not-run" },
+        { "caseId": "dv-profile-7-fel", "status": "not-run" },
+        { "caseId": "dv-profile-8.1", "status": "not-run" },
+        { "caseId": "dv-profile-8.4", "status": "not-run" },
+        { "caseId": "hevc-main10-level-5.1", "status": "not-run" },
+        { "caseId": "av1-main10", "status": "not-run" },
+        { "caseId": "vp9-profile-2", "status": "not-run" },
+        { "caseId": "audio-filter-pcm-fallback", "status": "not-run" },
+        { "caseId": "speed-pcm-fallback", "status": "not-run" },
+        { "caseId": "route-change-refresh", "status": "not-run" }
+      ]
+    },
+    {
+      "id": "desktop-tv-earc-avr",
+      "source": "REPLACE: desktop, OS, GPU and driver",
+      "display": "REPLACE: TV model and firmware",
+      "audioSink": "REPLACE: AVR/eARC soundbar model and firmware",
+      "connection": "Desktop HDMI -> TV -> eARC audio sink",
+      "results": [
+        { "caseId": "ac3-5.1", "status": "not-run" },
+        { "caseId": "eac3-joc-atmos", "status": "not-run" },
+        { "caseId": "truehd-atmos", "status": "not-run" },
+        { "caseId": "dts-core", "status": "not-run" },
+        { "caseId": "dts-hd-ma", "status": "not-run" },
+        { "caseId": "dts-x-hd-ma", "status": "not-run" },
+        { "caseId": "dts-uhd", "status": "not-run" },
+        { "caseId": "hdr10", "status": "not-run" },
+        { "caseId": "hdr10-plus", "status": "not-run" },
+        { "caseId": "hlg", "status": "not-run" },
+        { "caseId": "dv-profile-5", "status": "not-run" },
+        { "caseId": "dv-profile-7-mel", "status": "not-run" },
+        { "caseId": "dv-profile-7-fel", "status": "not-run" },
+        { "caseId": "dv-profile-8.1", "status": "not-run" },
+        { "caseId": "dv-profile-8.4", "status": "not-run" },
+        { "caseId": "hevc-main10-level-5.1", "status": "not-run" },
+        { "caseId": "av1-main10", "status": "not-run" },
+        { "caseId": "vp9-profile-2", "status": "not-run" },
+        { "caseId": "audio-filter-pcm-fallback", "status": "not-run" },
+        { "caseId": "speed-pcm-fallback", "status": "not-run" },
+        { "caseId": "route-change-refresh", "status": "not-run" }
+      ]
+    },
+    {
+      "id": "android-tv-earc-avr",
+      "source": "REPLACE: Android TV model, OS build and Izumi flavor",
+      "display": "REPLACE: TV model and firmware",
+      "audioSink": "REPLACE: AVR/eARC soundbar model and firmware",
+      "connection": "Android TV HDMI -> TV -> eARC audio sink",
+      "results": [
+        { "caseId": "ac3-5.1", "status": "not-run" },
+        { "caseId": "eac3-joc-atmos", "status": "not-run" },
+        { "caseId": "truehd-atmos", "status": "not-run" },
+        { "caseId": "dts-core", "status": "not-run" },
+        { "caseId": "dts-hd-ma", "status": "not-run" },
+        { "caseId": "dts-x-hd-ma", "status": "not-run" },
+        { "caseId": "dts-uhd", "status": "not-run" },
+        { "caseId": "hdr10", "status": "not-run" },
+        { "caseId": "hdr10-plus", "status": "not-run" },
+        { "caseId": "hlg", "status": "not-run" },
+        { "caseId": "dv-profile-5", "status": "not-run" },
+        { "caseId": "dv-profile-7-mel", "status": "not-run" },
+        { "caseId": "dv-profile-7-fel", "status": "not-run" },
+        { "caseId": "dv-profile-8.1", "status": "not-run" },
+        { "caseId": "dv-profile-8.4", "status": "not-run" },
+        { "caseId": "hevc-main10-level-5.1", "status": "not-run" },
+        { "caseId": "av1-main10", "status": "not-run" },
+        { "caseId": "vp9-profile-2", "status": "not-run" },
+        { "caseId": "audio-filter-pcm-fallback", "status": "not-run" },
+        { "caseId": "speed-pcm-fallback", "status": "not-run" },
+        { "caseId": "route-change-refresh", "status": "not-run" }
+      ]
+    }
+  ]
+}

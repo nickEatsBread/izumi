@@ -38,6 +38,8 @@ mod gif_capture;
 #[cfg(not(target_os = "android"))]
 mod gif_playback;
 #[cfg(not(target_os = "android"))]
+mod home_theatre;
+#[cfg(not(target_os = "android"))]
 mod player;
 #[cfg(not(target_os = "android"))]
 mod subsync;

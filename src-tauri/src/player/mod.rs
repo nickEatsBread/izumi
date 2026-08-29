@@ -1019,10 +1019,66 @@ impl PlayerHandle {
         let vo = property("current-vo");
         let platform = std::env::consts::OS;
         let aware = vo == "gpu-next" || (vo.is_empty() && platform == "windows");
+        let (audio_devices, recommended_audio_device) = self
+            .mpv
+            .lock()
+            .ok()
+            .and_then(|guard| {
+                guard.as_ref().map(|mpv| {
+                    let count: i64 = mpv.get_property("audio-device-list/count").unwrap_or(0);
+                    let devices = (0..count)
+                        .map(|index| {
+                            let id: String = mpv
+                                .get_property(&format!("audio-device-list/{index}/name"))
+                                .unwrap_or_default();
+                            let description: String = mpv
+                                .get_property(&format!("audio-device-list/{index}/description"))
+                                .unwrap_or_default();
+                            let name = if description.is_empty() {
+                                id.clone()
+                            } else {
+                                description
+                            };
+                            (id, name)
+                        })
+                        .collect::<Vec<_>>();
+                    let recommended = devices
+                        .iter()
+                        .find(|(id, name)| {
+                            crate::home_theatre::looks_like_receiver(id)
+                                || crate::home_theatre::looks_like_receiver(name)
+                        })
+                        .map(|(id, _)| id.clone())
+                        .unwrap_or_default();
+                    (devices, recommended)
+                })
+            })
+            .unwrap_or_default();
+        let mut audio_device_json = audio_devices
+            .iter()
+            .map(|(id, name)| serde_json::json!({ "id": id, "name": name, "selectable": true }))
+            .collect::<Vec<_>>();
+        let os_audio_devices = crate::home_theatre::probe_audio_devices();
+        for device in &os_audio_devices {
+            if !audio_devices.iter().any(|(_, name)| name == &device.name) {
+                audio_device_json.push(serde_json::json!(device));
+            }
+        }
+        let displays = crate::home_theatre::probe_displays();
+        let hdr10_display = displays
+            .iter()
+            .any(|display| display.hdr_supported == Some(true));
+        let receiver_detected = !recommended_audio_device.is_empty()
+            || os_audio_devices
+                .iter()
+                .any(|device| crate::home_theatre::looks_like_receiver(&device.name));
         let mut limitations = vec![
-            "Desktop receiver formats cannot be proven until the selected output device accepts the IEC-61937 stream.".to_string(),
+            "An HDMI/AVR device name is only a routing hint; desktop encoded formats are not enabled automatically without an OS format report.".to_string(),
             "Dolby Vision metadata is rendered or converted; this path does not emit a certified native Dolby Vision signal.".to_string(),
         ];
+        if platform == "linux" {
+            limitations.push("Linux KMS exposes connected outputs and colour depth here, but no portable sysfs HDR-enabled flag; HDR remains unknown rather than being guessed from EDID.".to_string());
+        }
         if !aware {
             limitations.push("The active video output is not gpu-next, so Dolby Vision reshaping is not guaranteed.".to_string());
         }
@@ -1030,15 +1086,35 @@ impl PlayerHandle {
             "platform": platform,
             "engine": "libmpv",
             "mpvVersion": libmpv_version(),
-            "audioConfidence": "unknown",
-            "audio": { "ac3": false, "eac3": false, "eac3Joc": false, "truehd": false, "mat": false },
-            "audioDevices": [],
+            "audioConfidence": if receiver_detected { "inferred" } else { "unknown" },
+            "audio": {
+                "ac3": false, "eac3": false, "eac3Joc": false, "truehd": false, "mat": false,
+                "dts": false, "dtsHd": false, "dtsHdMa": false, "dtsX": false,
+            },
+            "audioDevices": audio_device_json,
+            "receiverDetected": receiver_detected,
+            "recommendedAudioDevice": recommended_audio_device,
+            "displays": displays,
             "video": {
-                "hdr10Display": false,
+                "hdr10Display": hdr10_display,
+                "hdr10PlusDisplay": false,
+                "hlgDisplay": false,
                 "dolbyVisionDisplay": false,
                 "dolbyVisionDecoder": false,
                 "dolbyVisionNativePath": false,
+                "hdr10PlusNativePath": false,
+                "hlgNativePath": false,
+                "nativeHdrType": "",
                 "dolbyVisionAwareRenderer": aware,
+            },
+            "codecs": {
+                "dolbyVisionProfiles": [],
+                "hevcMain10": false,
+                "av1Main10": false,
+                "vp9Profile2": false,
+                "currentCodecString": property("video-codec"),
+                "currentSupported": null,
+                "currentReason": "Desktop decode support is negotiated by libmpv/FFmpeg; this probe describes the active output, not a hardware-decoder promise.",
             },
             "current": {
                 "ao": property("current-ao"),

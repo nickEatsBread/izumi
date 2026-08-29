@@ -6,7 +6,8 @@
     videoQualityPreset, rawMpvOptions, gifIncludeSubtitles, gifScale, gifMaxSeconds, androidAutoPip,
     audioProcessing, windowsVsr, systemMediaControls, discordRichPresence, subtitleLineNavigation,
     audioOutputMode, audioOutputDevice, audioExclusive,
-    audioPassthroughAc3, audioPassthroughEac3, audioPassthroughTruehd, dolbyVisionOutputMode,
+    audioPassthroughAc3, audioPassthroughEac3, audioPassthroughTruehd,
+    audioPassthroughDts, audioPassthroughDtsHd, dolbyVisionOutputMode,
     p2pStatusVisibility,
     continueSourcePreference,
   } from '$lib/settings/ui'
@@ -52,7 +53,7 @@
   const audioOutput = $derived(classifyAudioOutput($dolbyCapabilities.current))
   const videoOutput = $derived(classifyVideoOutput(
     $dolbyCapabilities.current,
-    $dolbyCapabilities.video.dolbyVisionNativePath,
+    $dolbyCapabilities.video.nativeHdrType || $dolbyCapabilities.video.dolbyVisionNativePath,
   ))
 </script>
 
@@ -159,7 +160,7 @@
     <div class="flex items-start justify-between gap-3">
       <div>
         <h3 class="font-bold">Home-theatre audio</h3>
-        <p class="mt-1 text-xs text-muted-foreground">Atmos is preserved by sending the original E-AC3 or TrueHD stream to an Atmos receiver. Izumi does not perform Dolby object rendering itself.</p>
+        <p class="mt-1 text-xs text-muted-foreground">Atmos and DTS:X are preserved by sending their original carrier to a compatible receiver. Izumi does not perform object rendering itself.</p>
       </div>
       <button data-focusable class="shrink-0 rounded bg-secondary px-2 py-1 text-xs font-bold hover:bg-accent" onclick={() => void refreshDolbyCapabilities()}>Recheck</button>
     </div>
@@ -177,9 +178,11 @@
         <Toggle label="Dolby Digital" desc="AC-3" value={$audioPassthroughAc3} onToggle={() => ($audioPassthroughAc3 = !$audioPassthroughAc3)} />
         <Toggle label="Dolby Digital Plus" desc="E-AC3 / Atmos" value={$audioPassthroughEac3} onToggle={() => ($audioPassthroughEac3 = !$audioPassthroughEac3)} />
         <Toggle label="Dolby TrueHD" desc="TrueHD / Atmos" value={$audioPassthroughTruehd} onToggle={() => ($audioPassthroughTruehd = !$audioPassthroughTruehd)} />
+        <Toggle label="DTS" desc="DTS core" value={$audioPassthroughDts} onToggle={() => ($audioPassthroughDts = !$audioPassthroughDts)} />
+        <Toggle label="DTS-HD / DTS:X" desc="DTS-HD MA carrier" value={$audioPassthroughDtsHd} onToggle={() => ($audioPassthroughDtsHd = !$audioPassthroughDtsHd)} />
       </div>
       {#if $audioOutputMode === 'optical'}
-        <p class="mt-2 text-xs text-amber-500">Optical output is restricted to AC-3. Dolby Digital Plus and TrueHD Atmos require HDMI/eARC.</p>
+        <p class="mt-2 text-xs text-amber-500">Optical output is restricted to AC-3 and DTS core. E-AC3, TrueHD, DTS-HD MA and object-audio extensions require HDMI/eARC.</p>
       {/if}
       <div class="mt-3">
         <Toggle label="Exclusive audio device" desc="Allow the player to open the output directly where the operating system supports it." value={$audioExclusive} onToggle={() => ($audioExclusive = !$audioExclusive)} />
@@ -187,8 +190,12 @@
       {#if !$isAndroid}
         <label class="mt-3 flex flex-col gap-1">
           <span class="text-sm font-bold">mpv audio device</span>
-          <input data-focusable class="rounded-md bg-input px-3 py-2 text-sm" bind:value={$audioOutputDevice} placeholder="auto" />
-          <span class="text-xs text-muted-foreground">Use <code>auto</code> unless you know the mpv audio-device id for the HDMI receiver.</span>
+          <input data-focusable list="home-theatre-audio-devices" class="rounded-md bg-input px-3 py-2 text-sm" bind:value={$audioOutputDevice} placeholder="auto" />
+          <datalist id="home-theatre-audio-devices">
+            <option value="auto">Operating-system default</option>
+            {#each $dolbyCapabilities.audioDevices.filter((device) => device.selectable !== false) as device}<option value={device.id}>{device.name}</option>{/each}
+          </datalist>
+          <span class="text-xs text-muted-foreground">Detected outputs are offered here automatically. A matching HDMI/AVR name is a route hint, not proof that it accepts every encoded format.</span>
         </label>
       {/if}
     {/if}
@@ -209,7 +216,7 @@
 
   <section class="mb-4 max-w-2xl rounded-md border border-border bg-secondary/35 p-3 text-xs">
     <div class="flex items-center justify-between gap-3">
-      <h3 class="text-sm font-bold">Dolby capability diagnostics</h3>
+      <h3 class="text-sm font-bold">Home-theatre capability diagnostics</h3>
       <span class="rounded bg-background px-2 py-1 font-mono">{$dolbyCapabilities.engine}</span>
     </div>
     <div class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
@@ -218,9 +225,20 @@
       <span class="text-muted-foreground">Video output</span><span class="col-span-1 font-mono sm:col-span-2">{videoOutput}</span>
       <span class="text-muted-foreground">Route probe</span><span class="col-span-1 font-mono sm:col-span-2">{$dolbyCapabilities.audioConfidence}</span>
       <span class="text-muted-foreground">Atmos formats</span><span class="col-span-1 font-mono sm:col-span-2">E-AC3 JOC {$dolbyCapabilities.audio.eac3Joc ? 'yes' : 'no'} · TrueHD {$dolbyCapabilities.audio.truehd ? 'yes' : 'no'} · MAT {$dolbyCapabilities.audio.mat ? 'yes' : 'no'}</span>
+      <span class="text-muted-foreground">DTS formats</span><span class="col-span-1 font-mono sm:col-span-2">core {$dolbyCapabilities.audio.dts ? 'yes' : 'no'} · HD {$dolbyCapabilities.audio.dtsHd ? 'yes' : 'no'} · MA {$dolbyCapabilities.audio.dtsHdMa ? 'yes' : 'no'} · X/UHD {$dolbyCapabilities.audio.dtsX ? 'yes' : 'no'}</span>
       <span class="text-muted-foreground">Dolby Vision</span><span class="col-span-1 font-mono sm:col-span-2">display {$dolbyCapabilities.video.dolbyVisionDisplay ? 'yes' : 'no'} · decoder {$dolbyCapabilities.video.dolbyVisionDecoder ? 'yes' : 'no'} · native path {$dolbyCapabilities.video.dolbyVisionNativePath ? 'yes' : 'no'}</span>
+      <span class="text-muted-foreground">Android HDR</span><span class="col-span-1 font-mono sm:col-span-2">HDR10+ {$dolbyCapabilities.video.hdr10PlusDisplay ? 'yes' : 'no'} / native {$dolbyCapabilities.video.hdr10PlusNativePath ? 'yes' : 'no'} · HLG {$dolbyCapabilities.video.hlgDisplay ? 'yes' : 'no'} / native {$dolbyCapabilities.video.hlgNativePath ? 'yes' : 'no'}</span>
+      <span class="text-muted-foreground">10-bit decoders</span><span class="col-span-1 font-mono sm:col-span-2">HEVC {$dolbyCapabilities.codecs.hevcMain10 ? 'yes' : 'no'} · AV1 {$dolbyCapabilities.codecs.av1Main10 ? 'yes' : 'no'} · VP9 P2 {$dolbyCapabilities.codecs.vp9Profile2 ? 'yes' : 'no'}</span>
+      <span class="text-muted-foreground">DV profiles</span><span class="col-span-1 font-mono sm:col-span-2">{$dolbyCapabilities.codecs.dolbyVisionProfiles.join(', ') || 'none reported'}</span>
+      <span class="text-muted-foreground">Current codec</span><span class="col-span-1 font-mono sm:col-span-2">{$dolbyCapabilities.codecs.currentCodecString || 'not available'} · {$dolbyCapabilities.codecs.currentSupported == null ? 'not checked' : $dolbyCapabilities.codecs.currentSupported ? 'supported' : 'unsupported'}</span>
       <span class="text-muted-foreground">DRM path</span><span class="col-span-1 font-mono sm:col-span-2">DV {$drmDolbyStatus.dolbyVision} · Atmos carrier {$drmDolbyStatus.atmos}{$drmDolbyStatus.fallbackApplied ? ' · fallback active' : ''}</span>
     </div>
+    {#each $dolbyCapabilities.displays as display}
+      <p class="mt-1 font-mono text-muted-foreground">{display.name} · {display.connection} · HDR {display.hdrSupported == null ? 'unknown' : display.hdrSupported ? 'supported' : 'no'}{display.hdrEnabled == null ? '' : display.hdrEnabled ? ' / enabled' : ' / disabled'}{display.bitsPerColor ? ` · ${display.bitsPerColor}-bit` : ''}</p>
+    {/each}
+    {#if $dolbyCapabilities.audioDevices.length}
+      <p class="mt-1 font-mono text-muted-foreground">Outputs: {$dolbyCapabilities.audioDevices.map((device) => device.name).join(' · ')}</p>
+    {/if}
     {#if $dolbyCapabilityError}<p class="mt-2 text-amber-500">Probe unavailable: {$dolbyCapabilityError}</p>{/if}
     {#each $dolbyCapabilities.limitations as limitation}
       <p class="mt-1 text-muted-foreground">• {limitation}</p>

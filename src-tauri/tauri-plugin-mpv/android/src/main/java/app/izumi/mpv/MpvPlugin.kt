@@ -21,6 +21,7 @@ import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.media.MediaMetadataRetriever
 import android.media.MediaFormat
@@ -43,6 +44,7 @@ import org.json.JSONArray
 import android.view.OrientationEventListener
 import android.view.Display
 import android.view.PixelCopy
+import android.view.SurfaceView
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Locale
@@ -105,9 +107,9 @@ class LoadArgs {
     var slang: String? = null
     var headers: Map<String, String> = emptyMap()
     var autoplay: Boolean = true
-    /** Request direct MediaCodec/Surface playback for a known Dolby Vision source. The native side
-     * still verifies both the current display and an exact Dolby Vision decoder before using it. */
-    var preferNativeDolbyVision: Boolean = false
+    /** Request direct MediaCodec/SurfaceView playback for a known HDR source. The native side
+     * still verifies the current display and a matching 10-bit/Dolby Vision decoder. */
+    var preferNativeHdr: String? = null
 }
 
 private data class PendingSubtitles(
@@ -282,6 +284,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     private var nativeDvFirstFrame = false
     private var nativeDvSeeking = false
     private var nativeDvProgressTask: Runnable? = null
+    private var nativeHdrType: String? = null
     private var preferredSubLanguage: String? = null
     private var pendingSubtitles: PendingSubtitles? = null
     /** The first load must wait for SurfaceView.surfaceCreated or mpv can initialize its VO with
@@ -595,10 +598,49 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         return m
     }
 
-    private fun deviceSupportsNativeDolbyVision(): Boolean {
-        if (Build.VERSION.SDK_INT < 24 || !hasDolbyVisionDecoder()) return false
-        val hdrTypes = activity.display?.hdrCapabilities?.supportedHdrTypes ?: return false
-        return hdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION)
+    private fun decoderSupportsProfile(mime: String, profiles: Set<Int>): Boolean = runCatching {
+        MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { codec ->
+            !codec.isEncoder && codec.supportedTypes.any { it.equals(mime, ignoreCase = true) } &&
+                codec.getCapabilitiesForType(mime).profileLevels.any { it.profile in profiles }
+        }
+    }.getOrDefault(false)
+
+    @Suppress("DEPRECATION")
+    private fun supportedHdrTypes(): IntArray = if (Build.VERSION.SDK_INT >= 34) {
+        activity.display?.mode?.supportedHdrTypes ?: intArrayOf()
+    } else {
+        activity.display?.hdrCapabilities?.supportedHdrTypes ?: intArrayOf()
+    }
+
+    private fun deviceSupportsNativeHdr(kind: String): Boolean {
+        if (Build.VERSION.SDK_INT < 24) return false
+        val hdrTypes = supportedHdrTypes()
+        return when (kind) {
+            "dolby-vision" -> hasDolbyVisionDecoder() &&
+                hdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION)
+            "hdr10-plus" -> Build.VERSION.SDK_INT >= 29 &&
+                hdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_HDR10_PLUS) && (
+                    decoderSupportsProfile(MediaFormat.MIMETYPE_VIDEO_HEVC, setOf(MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10Plus)) ||
+                    decoderSupportsProfile(MediaFormat.MIMETYPE_VIDEO_VP9, setOf(MediaCodecInfo.CodecProfileLevel.VP9Profile2HDR10Plus)) ||
+                    decoderSupportsProfile(MediaFormat.MIMETYPE_VIDEO_AV1, setOf(MediaCodecInfo.CodecProfileLevel.AV1ProfileMain10HDR10Plus))
+                )
+            "hlg" -> hdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_HLG) && (
+                decoderSupportsProfile(MediaFormat.MIMETYPE_VIDEO_HEVC, setOf(
+                    MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10,
+                    MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10,
+                    MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10Plus,
+                )) || decoderSupportsProfile(MediaFormat.MIMETYPE_VIDEO_VP9, setOf(
+                    MediaCodecInfo.CodecProfileLevel.VP9Profile2,
+                    MediaCodecInfo.CodecProfileLevel.VP9Profile2HDR,
+                    MediaCodecInfo.CodecProfileLevel.VP9Profile2HDR10Plus,
+                )) || decoderSupportsProfile(MediaFormat.MIMETYPE_VIDEO_AV1, setOf(
+                    MediaCodecInfo.CodecProfileLevel.AV1ProfileMain10,
+                    MediaCodecInfo.CodecProfileLevel.AV1ProfileMain10HDR10,
+                    MediaCodecInfo.CodecProfileLevel.AV1ProfileMain10HDR10Plus,
+                ))
+            )
+            else -> false
+        }
     }
 
     private fun subtitleMime(url: String): String = when {
@@ -655,7 +697,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             nativeDvFirstFrame = true
             mediaLoaded = true
             trigger("event", JSObject().put("id", 21)) // MPV_EVENT_PLAYBACK_RESTART contract
-            trigger("dolby", JSObject().put("reason", "native-dolby-vision-active"))
+            trigger("dolby", JSObject().put("reason", "native-${nativeHdrType ?: "hdr"}-active"))
             publishPipParams()
         }
 
@@ -677,8 +719,8 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
 
         override fun onPlayerError(error: PlaybackException) {
             val args = nativeDvLoad ?: return
-            Log.w("MpvPlugin", "native Dolby Vision path failed; falling back to mpv: ${error.message}")
-            trigger("dolby", JSObject().put("reason", "native-dolby-vision-fallback"))
+            Log.w("MpvPlugin", "native HDR path failed; falling back to mpv: ${error.message}")
+            trigger("dolby", JSObject().put("reason", "native-${nativeHdrType ?: "hdr"}-fallback"))
             activity.runOnUiThread {
                 releaseNativeDolbyVision(removeContainer = true)
                 loadWithMpv(args)
@@ -719,7 +761,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         return playerContainer
     }
 
-    private fun loadNativeDolbyVision(args: LoadArgs) {
+    private fun loadNativeHdr(args: LoadArgs, kind: String) {
         mpv?.command(arrayOf("stop"))
         container?.let { (it.parent as? ViewGroup)?.removeView(it) }
         container = null
@@ -740,12 +782,21 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             this.player = player
             setShutterBackgroundColor(Color.BLACK)
         }
+        // TextureView may be composed through an SDR intermediate on Android 13. PlayerView's
+        // SurfaceView is the documented HDR path; fail closed if a future UI default changes it.
+        if (playerView.videoSurfaceView !is SurfaceView) {
+            player.release()
+            trigger("dolby", JSObject().put("reason", "native-hdr-surface-unavailable"))
+            loadWithMpv(args)
+            return
+        }
         setupVideoContainer(playerView)
         nativeDvPlayer = player
         nativeDvView = playerView
         nativeDvLoad = args
         nativeDvFirstFrame = false
         nativeDvSeeking = false
+        nativeHdrType = kind
         mediaLoaded = false
         corePaused = args.autoplay.not()
 
@@ -793,6 +844,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         nativeDvLoad = null
         nativeDvFirstFrame = false
         nativeDvSeeking = false
+        nativeHdrType = null
         if (removeContainer) {
             container?.let { (it.parent as? ViewGroup)?.removeView(it) }
             container = null
@@ -1376,11 +1428,12 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     fun load(invoke: Invoke) {
         val args = invoke.parseArgs(LoadArgs::class.java)
         activity.runOnUiThread {
-            if (args.preferNativeDolbyVision && deviceSupportsNativeDolbyVision()) {
-                loadNativeDolbyVision(args)
+            val nativeHdr = args.preferNativeHdr?.lowercase(Locale.ROOT)
+            if (nativeHdr != null && deviceSupportsNativeHdr(nativeHdr)) {
+                loadNativeHdr(args, nativeHdr)
             } else {
-                if (args.preferNativeDolbyVision) {
-                    trigger("dolby", JSObject().put("reason", "native-dolby-vision-unavailable"))
+                if (nativeHdr != null) {
+                    trigger("dolby", JSObject().put("reason", "native-$nativeHdr-unavailable"))
                 }
                 loadWithMpv(args)
             }
@@ -1812,6 +1865,11 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         AudioFormat.ENCODING_E_AC3_JOC -> "eac3-joc"
         AudioFormat.ENCODING_DOLBY_TRUEHD -> "truehd"
         AudioFormat.ENCODING_DOLBY_MAT -> "mat"
+        AudioFormat.ENCODING_DTS -> "dts"
+        AudioFormat.ENCODING_DTS_HD -> "dts-hd"
+        AudioFormat.ENCODING_DTS_HD_MA -> "dts-hd-ma"
+        AudioFormat.ENCODING_DTS_UHD_P1 -> "dts-uhd-p1"
+        AudioFormat.ENCODING_DTS_UHD_P2 -> "dts-uhd-p2"
         else -> encoding.toString()
     }
 
@@ -1866,6 +1924,42 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         }
     }.getOrDefault(false)
 
+    private fun decoderProfiles(mime: String): List<MediaCodecInfo.CodecProfileLevel> = runCatching {
+        MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+            .asSequence()
+            .filter { !it.isEncoder && it.supportedTypes.any { type -> type.equals(mime, ignoreCase = true) } }
+            .flatMap { it.getCapabilitiesForType(mime).profileLevels.asSequence() }
+            .toList()
+    }.getOrDefault(emptyList())
+
+    private fun dolbyVisionProfileName(profile: Int): String? = when (profile) {
+        MediaCodecInfo.CodecProfileLevel.DolbyVisionProfileDvheDer,
+        MediaCodecInfo.CodecProfileLevel.DolbyVisionProfileDvheDen -> "4"
+        MediaCodecInfo.CodecProfileLevel.DolbyVisionProfileDvheStn -> "5"
+        MediaCodecInfo.CodecProfileLevel.DolbyVisionProfileDvheDtr,
+        MediaCodecInfo.CodecProfileLevel.DolbyVisionProfileDvheDth,
+        MediaCodecInfo.CodecProfileLevel.DolbyVisionProfileDvheDtb -> "7"
+        MediaCodecInfo.CodecProfileLevel.DolbyVisionProfileDvheSt -> "8"
+        MediaCodecInfo.CodecProfileLevel.DolbyVisionProfileDvavPen,
+        MediaCodecInfo.CodecProfileLevel.DolbyVisionProfileDvavPer,
+        MediaCodecInfo.CodecProfileLevel.DolbyVisionProfileDvavSe -> "9"
+        MediaCodecInfo.CodecProfileLevel.DolbyVisionProfileDvav110 -> "10"
+        else -> null
+    }
+
+    private fun currentVideoTrackSupport(): Pair<Boolean?, String> {
+        val groups = nativeDvPlayer?.currentTracks?.groups ?: return null to ""
+        for (group in groups) {
+            if (group.type != C.TRACK_TYPE_VIDEO) continue
+            for (index in 0 until group.length) {
+                if (group.isTrackSelected(index)) {
+                    return group.isTrackSupported(index) to group.getTrackFormat(index).codecs.orEmpty()
+                }
+            }
+        }
+        return null to ""
+    }
+
     private fun dolbyCapabilitiesSnapshot(): JSObject {
         val manager = activity.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val devices = routedAudioDevices(manager)
@@ -1885,17 +1979,49 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         val truehd = directAudioSupported(manager, AudioFormat.ENCODING_DOLBY_TRUEHD)
         val mat = Build.VERSION.SDK_INT >= 29 &&
             directAudioSupported(manager, AudioFormat.ENCODING_DOLBY_MAT)
-        val hdrTypes = if (Build.VERSION.SDK_INT >= 24) {
-            activity.display?.hdrCapabilities?.supportedHdrTypes ?: intArrayOf()
-        } else intArrayOf()
+        val dts = directAudioSupported(manager, AudioFormat.ENCODING_DTS)
+        val dtsHd = directAudioSupported(manager, AudioFormat.ENCODING_DTS_HD)
+        val dtsHdMa = Build.VERSION.SDK_INT >= 35 &&
+            directAudioSupported(manager, AudioFormat.ENCODING_DTS_HD_MA)
+        val dtsUhdP1 = Build.VERSION.SDK_INT >= 34 &&
+            directAudioSupported(manager, AudioFormat.ENCODING_DTS_UHD_P1)
+        val dtsUhdP2 = Build.VERSION.SDK_INT >= 36 &&
+            directAudioSupported(manager, AudioFormat.ENCODING_DTS_UHD_P2)
+        val hdrTypes = if (Build.VERSION.SDK_INT >= 24) supportedHdrTypes() else intArrayOf()
         val dvDisplay = Build.VERSION.SDK_INT >= 24 &&
             hdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION)
         val hdr10Display = Build.VERSION.SDK_INT >= 24 &&
             hdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_HDR10)
+        val hlgDisplay = Build.VERSION.SDK_INT >= 24 &&
+            hdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_HLG)
+        val hdr10PlusDisplay = Build.VERSION.SDK_INT >= 29 &&
+            hdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_HDR10_PLUS)
         val decoder = hasDolbyVisionDecoder()
         val nativeVideo = nativeDvPlayer?.videoFormat
-        val nativeDvActive = nativeDvPlayer != null &&
-            nativeVideo?.sampleMimeType == MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION
+        val (currentSupported, currentCodecString) = currentVideoTrackSupport()
+        val nativeDvActive = nativeHdrType == "dolby-vision" && nativeDvPlayer != null &&
+            nativeVideo?.sampleMimeType == MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION && currentSupported == true
+        val nativeHdr10PlusActive = nativeHdrType == "hdr10-plus" && nativeDvPlayer != null &&
+            nativeVideo?.colorInfo?.colorTransfer == C.COLOR_TRANSFER_ST2084 && currentSupported == true
+        val nativeHlgActive = nativeHdrType == "hlg" && nativeDvPlayer != null &&
+            nativeVideo?.colorInfo?.colorTransfer == C.COLOR_TRANSFER_HLG && currentSupported == true
+        val dvProfiles = decoderProfiles(MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION)
+            .mapNotNull { dolbyVisionProfileName(it.profile) }.distinct().sorted()
+        val hevcMain10 = decoderProfiles(MediaFormat.MIMETYPE_VIDEO_HEVC).any { it.profile in setOf(
+            MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10,
+            MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10,
+            MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10Plus,
+        ) }
+        val av1Main10 = decoderProfiles(MediaFormat.MIMETYPE_VIDEO_AV1).any { it.profile in setOf(
+            MediaCodecInfo.CodecProfileLevel.AV1ProfileMain10,
+            MediaCodecInfo.CodecProfileLevel.AV1ProfileMain10HDR10,
+            MediaCodecInfo.CodecProfileLevel.AV1ProfileMain10HDR10Plus,
+        ) }
+        val vp9Profile2 = decoderProfiles(MediaFormat.MIMETYPE_VIDEO_VP9).any { it.profile in setOf(
+            MediaCodecInfo.CodecProfileLevel.VP9Profile2,
+            MediaCodecInfo.CodecProfileLevel.VP9Profile2HDR,
+            MediaCodecInfo.CodecProfileLevel.VP9Profile2HDR10Plus,
+        ) }
         val currentVo = nativeProperty("current-vo") ?: mpv?.getPropertyString("current-vo").orEmpty()
         val limitations = JSONArray()
             .put("Android Atmos is IEC-61937 passthrough; the connected receiver performs object rendering.")
@@ -1911,14 +2037,41 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             .put("audioConfidence", if (Build.VERSION.SDK_INT >= 33) "reported" else "inferred")
             .put("audio", JSObject()
                 .put("ac3", ac3).put("eac3", eac3).put("eac3Joc", joc)
-                .put("truehd", truehd).put("mat", mat))
+                .put("truehd", truehd).put("mat", mat)
+                .put("dts", dts).put("dtsHd", dtsHd).put("dtsHdMa", dtsHdMa)
+                .put("dtsX", dtsUhdP1 || dtsUhdP2))
             .put("audioDevices", deviceJson)
+            .put("receiverDetected", devices.isNotEmpty())
+            .put("recommendedAudioDevice", devices.firstOrNull()?.id?.toString().orEmpty())
+            .put("displays", JSONArray().put(JSObject()
+                .put("id", activity.display?.displayId?.toString() ?: "android-display")
+                .put("name", "Android display")
+                .put("connection", "Android routed display")
+                .put("hdrSupported", hdrTypes.isNotEmpty())
+                .put("hdrEnabled", null as Boolean?)
+                .put("bitsPerColor", null as Int?)
+                .put("source", "os")))
             .put("video", JSObject()
                 .put("hdr10Display", hdr10Display)
+                .put("hdr10PlusDisplay", hdr10PlusDisplay)
+                .put("hlgDisplay", hlgDisplay)
                 .put("dolbyVisionDisplay", dvDisplay)
                 .put("dolbyVisionDecoder", decoder)
                 .put("dolbyVisionNativePath", nativeDvActive)
+                .put("hdr10PlusNativePath", nativeHdr10PlusActive)
+                .put("hlgNativePath", nativeHlgActive)
+                .put("nativeHdrType", nativeHdrType.orEmpty())
                 .put("dolbyVisionAwareRenderer", currentVo == "gpu-next" || nativeDvActive))
+            .put("codecs", JSObject()
+                .put("dolbyVisionProfiles", JSONArray(dvProfiles))
+                .put("hevcMain10", hevcMain10)
+                .put("av1Main10", av1Main10)
+                .put("vp9Profile2", vp9Profile2)
+                .put("currentCodecString", currentCodecString)
+                .put("currentSupported", currentSupported)
+                .put("currentReason", if (currentSupported == null)
+                    "No native Media3 video track is active."
+                else "Media3 checked the selected profile, level, size and frame rate against CodecCapabilities."))
             .put("current", JSObject()
                 .put("ao", nativeProperty("current-ao") ?: mpv?.getPropertyString("current-ao").orEmpty())
                 .put("vo", currentVo)

@@ -172,11 +172,15 @@ rustls-platform-verifier = "0.7.0"
 aws-lc-rs = { version = "1.17.3", features = ["prebuilt-nasm"] }
 windows = { version = "0.61", features = [
   "Win32_Foundation",
+  "Win32_Devices_Display",
   "Win32_Graphics_Gdi",
+  "Win32_Media_Audio",
   # SetThreadExecutionState — keep the display + system awake while a video plays.
   "Win32_System_Power",
   "Win32_System_Com",
   "Win32_System_Com_StructuredStorage",
+  "Win32_System_Variant",
+  "Win32_UI_Shell_PropertiesSystem",
   "Win32_UI_WindowsAndMessaging",
 ] }
 webview2-com = "0.38"
@@ -185,6 +189,8 @@ webview2-com = "0.38"
 objc2 = "0.6.4"
 objc2-foundation = { version = "0.3.2", features = ["NSGeometry", "NSString", "NSValue"] }
 objc2-app-kit = { version = "0.3.2", features = [
+  "NSScreen",
+  "objc2-core-foundation",
   "NSView",
   "NSWindow",
   "NSResponder",

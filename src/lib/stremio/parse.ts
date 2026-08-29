@@ -187,7 +187,7 @@ export interface StreamInfo {
   group?: string
   codec?: string // HEVC | H264 | AV1 | XviD
   bitDepth?: string // 10bit | 8bit
-  hdr?: string // DV | HDR10+ | HDR
+  hdr?: string // DV | HDR10+ | HLG | HDR10 | HDR
   dualAudio?: boolean
   audio?: string // primary audio codec token
   /** Spoken audio languages named in the release (ISO-ish 3-letter codes, plus 'multi'). Empty
@@ -408,6 +408,7 @@ function parseStream(s: Stream): StreamInfo {
   // no word boundary between R and 1.
   const hdr = /\b(?:dolby\s?vision|dovi|\bdv\b)\b/i.test(low) ? 'DV'
     : /\bhdr10\+|\bhdr10plus\b/i.test(low) ? 'HDR10+'
+    : /\bhlg(?:10)?\b|\bhybrid[ ._-]?log[ ._-]?gamma\b/i.test(low) ? 'HLG'
     : /\bhdr10\b/i.test(low) ? 'HDR10'
     : /\bhdr\b/i.test(low) ? 'HDR' : undefined
   const source = /\bblu-?ray\b|\bbd(?:rip|mux)?\b|\bremux\b/i.test(low) ? 'BluRay'

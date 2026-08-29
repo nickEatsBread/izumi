@@ -73,6 +73,9 @@ suite('hdr', () => {
   it('badges HDR10+', () => {
     expect(describe({ url: 'u', ...bh('Show.01.2160p.HDR10+.mkv') }).hdr).toBe('HDR10+')
   })
+  it('badges HLG without collapsing it into generic HDR', () => {
+    expect(describe({ url: 'u', ...bh('Show.01.2160p.HLG10.HEVC.mkv') }).hdr).toBe('HLG')
+  })
   it('prefers the combined Dolby Vision form', () => {
     expect(describe({ url: 'u', ...bh('Show.01.2160p.DV.HDR10.mkv') }).hdr).toBe('DV')
   })

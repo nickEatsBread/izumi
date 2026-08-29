@@ -22,8 +22,8 @@ export interface MpvLoad {
   slang?: string
   headers?: Record<string, string>
   autoplay?: boolean
-  /** Direct Android MediaCodec/Surface path for a positively identified Dolby Vision source. */
-  preferNativeDolbyVision?: boolean
+  /** Direct Android MediaCodec/SurfaceView path for a positively identified HDR source. */
+  preferNativeHdr?: 'dolby-vision' | 'hdr10-plus' | 'hlg'
 }
 
 /** True while the embedded player overlay is showing (drives the transparent hole + AndroidPlayer). */
@@ -300,7 +300,7 @@ export async function mpvLoad(p: MpvLoad): Promise<void> {
       slang: p.slang ?? null,
       headers: p.headers ?? {},
       autoplay: p.autoplay !== false,
-      preferNativeDolbyVision: p.preferNativeDolbyVision === true,
+      preferNativeHdr: p.preferNativeHdr ?? null,
     },
   })
   // The reusable core can be paused by keep-open at EOF. Reassert the

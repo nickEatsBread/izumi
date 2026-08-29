@@ -24,8 +24,9 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
-    // A direct Surface/MediaCodec path is required for genuine Dolby Vision signalling. libmpv's
-    // mediacodec-copy path reads decoded frames back into OpenGL and cannot preserve that signal.
+    // A direct SurfaceView/MediaCodec path is required for native HDR signalling. libmpv's
+    // mediacodec-copy path reads decoded frames back into OpenGL and cannot preserve DV/HDR10+
+    // dynamic metadata as a display signal.
     val media3Version = "1.11.0"
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-exoplayer-dash:$media3Version")

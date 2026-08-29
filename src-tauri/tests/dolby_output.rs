@@ -23,6 +23,8 @@ fn android_probes_the_routed_sink_instead_of_trusting_a_badge() {
         "ENCODING_E_AC3_JOC",
         "ENCODING_DOLBY_TRUEHD",
         "ENCODING_DOLBY_MAT",
+        "ENCODING_DTS_HD_MA",
+        "ENCODING_DTS_UHD_P1",
         "registerAudioDeviceCallback",
         "fun setDolbyOpts",
         "storedDolbyOpts",
@@ -37,12 +39,19 @@ fn android_probes_the_routed_sink_instead_of_trusting_a_badge() {
 }
 
 #[test]
-fn android_has_a_guarded_native_dolby_vision_surface_path() {
+fn android_has_guarded_native_hdr_surface_paths_and_profile_checks() {
     let plugin =
         include_str!("../tauri-plugin-mpv/android/src/main/java/app/izumi/mpv/MpvPlugin.kt");
     assert!(plugin.contains("setOptionString(\"hwdec\", \"mediacodec-copy\")"));
     assert!(plugin.contains("MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION"));
-    assert!(plugin.contains("deviceSupportsNativeDolbyVision()"));
+    assert!(plugin.contains("deviceSupportsNativeHdr(kind: String)"));
+    assert!(plugin.contains("playerView.videoSurfaceView !is SurfaceView"));
+    assert!(plugin.contains("HDR_TYPE_HDR10_PLUS"));
+    assert!(plugin.contains("HDR_TYPE_HLG"));
+    assert!(plugin.contains("HEVCProfileMain10HDR10Plus"));
+    assert!(plugin.contains("AV1ProfileMain10"));
+    assert!(plugin.contains("VP9Profile2"));
+    assert!(plugin.contains("group.isTrackSupported(index)"));
     assert!(
         plugin.contains("nativeVideo?.sampleMimeType == MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION")
     );

@@ -3028,13 +3028,15 @@ export async function playStream(
           slang: preferred,
           headers,
           autoplay,
-          // Native MediaCodec/Surface playback is the only Android path that can preserve a
-          // genuine Dolby Vision display signal. Keep libmpv when audio filtering is requested:
+          // Native MediaCodec/SurfaceView playback is Android's HDR-preserving path. Keep libmpv when audio filtering is requested:
           // the native route deliberately bypasses mpv/libavfilter.
-          preferNativeDolbyVision: describe(stream).hdr === 'DV'
-            && get(dolbyVisionOutputMode) === 'auto'
-            && get(audioProcessing) === 'off'
-            && !userFilterChains(get(videoQualityPreset), get(rawMpvOptions)).af,
+          preferNativeHdr: get(audioProcessing) === 'off'
+            && !userFilterChains(get(videoQualityPreset), get(rawMpvOptions)).af
+            ? describe(stream).hdr === 'DV' && get(dolbyVisionOutputMode) === 'auto'
+              ? 'dolby-vision'
+              : describe(stream).hdr === 'HDR10+' ? 'hdr10-plus'
+                : describe(stream).hdr === 'HLG' ? 'hlg' : undefined
+            : undefined,
         })
         if (await abandonIfStale()) return
         // This episode+source is now the one on screen, so the watchdog may recover against it.

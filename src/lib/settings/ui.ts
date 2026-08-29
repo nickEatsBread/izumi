@@ -234,6 +234,8 @@ export const audioExclusive = persisted<boolean>('player-audio-exclusive', false
 export const audioPassthroughAc3 = persisted<boolean>('player-audio-passthrough-ac3', true)
 export const audioPassthroughEac3 = persisted<boolean>('player-audio-passthrough-eac3', true)
 export const audioPassthroughTruehd = persisted<boolean>('player-audio-passthrough-truehd', true)
+export const audioPassthroughDts = persisted<boolean>('player-audio-passthrough-dts', true)
+export const audioPassthroughDtsHd = persisted<boolean>('player-audio-passthrough-dts-hd', true)
 /** Dolby Vision is rendered through gpu-next where available. `auto` follows the display,
  * `hdr10` deliberately converts dynamic DV metadata to HDR10, and `sdr` tone-maps to BT.709. */
 export type DolbyVisionOutputMode = 'auto' | 'hdr10' | 'sdr'
