@@ -9,6 +9,8 @@ describe('rating source mark', () => {
   it('uses bundled provider artwork before the numeric score', () => {
     expect(mark).toContain('/brand/anilist.svg')
     expect(mark).toContain('/brand/myanimelist.svg')
+    expect(mark).toContain('/brand/metacritic.svg')
+    expect(mark).not.toContain("source === 'Metacritic' ? 'MC'")
     expect(mark).toContain('themoviedb.org/assets/v4/logos/v2/blue_square_2-')
     expect(mark).toContain('avatars.githubusercontent.com/u/7648832')
     expect(mark).toContain('simkl.com/favicon.ico')

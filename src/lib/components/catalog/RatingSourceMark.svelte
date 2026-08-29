@@ -5,7 +5,6 @@
   let failedSource = $state('')
   const imageFailed = $derived(failedSource === normalized)
   const text = $derived(source === 'Rotten Tomatoes' ? 'RT'
-    : source === 'Metacritic' ? 'MC'
     : source === 'MyAnimeList' ? 'MAL'
     : source === 'Source' ? 'SRC'
     : source)
@@ -22,6 +21,8 @@
       alt=""
       class="size-4 rounded-sm object-contain"
     />
+  {:else if normalized === 'metacritic'}
+    <img src="/brand/metacritic.svg" alt="" class="size-4 object-contain" />
   {:else if normalized === 'kitsu' && !imageFailed}
     <img src="https://avatars.githubusercontent.com/u/7648832?s=64&amp;v=4" alt="" class="size-4 rounded-sm object-cover" onerror={() => (failedSource = normalized)} />
   {:else if normalized === 'simkl' && !imageFailed}
