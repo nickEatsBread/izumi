@@ -1,8 +1,38 @@
 import { describe, it, expect } from 'vitest'
-import { relevant, likelyOtherProduction, isEpisodeExtra, isStandaloneMovie, wrongFranchiseSeason } from './relevance'
+import {
+  relevant,
+  hasExplicitTitleConflict,
+  likelyOtherProduction,
+  isEpisodeExtra,
+  isStandaloneMovie,
+  wrongFranchiseSeason,
+} from './relevance'
 import type { Stream } from './parse'
 
 const s = (filename: string): Stream => ({ behaviorHints: { filename } })
+
+describe('hasExplicitTitleConflict (trusted source evidence)', () => {
+  const poppyHill = ['Coquelicot-zaka kara', 'From Up on Poppy Hill']
+
+  it('rejects a filename or canonical provider title that names another movie', () => {
+    expect(hasExplicitTitleConflict(
+      s('Castle.in.the.Sky.1986.1080p.BluRay.x265.mkv'), poppyHill,
+    )).toBe(true)
+    expect(hasExplicitTitleConflict({
+      __stream: true,
+      __sourceTitle: 'Castle in the Sky',
+      behaviorHints: { filename: 'Direct HLS' },
+    }, poppyHill)).toBe(true)
+  })
+
+  it('keeps matching, opaque, and transport-only trusted labels', () => {
+    expect(hasExplicitTitleConflict(
+      s('From.Up.on.Poppy.Hill.2011.1080p.BluRay.x265.mkv'), poppyHill,
+    )).toBe(false)
+    expect(hasExplicitTitleConflict(s('コクリコ坂から.mkv'), poppyHill)).toBe(false)
+    expect(hasExplicitTitleConflict(s('Direct HLS · Server 1'), poppyHill)).toBe(false)
+  })
+})
 
 describe('relevant (a title that reduces to one distinct word)', () => {
   // AniList 2507: romaji "Tsuma Tsuma", english "Wife with Wife". Both collapse to a single

@@ -112,14 +112,55 @@ describe('refineStreams', () => {
     expect(pickBest(r.kept, 'any')).toBeUndefined()
   })
 
-  it('lets id verification bypass fuzzy title matching and trusts direct streams', () => {
+  it('lets trust cover opaque labels, but not an explicit different title', () => {
     const r = refineStreams(media, [
       named('[SubsPlease] Dr STONE S04E25 1080p'),
-      named('Totally Unrelated Thing', { __accuracy: 'high' }),
-      named('Also Unrelated', { __stream: true }),
+      named('氷菓子 - 01.mkv', { __accuracy: 'high' }),
+      named('Direct HLS', { __stream: true }),
+      named('Dr. Stone — Episode 4 · The Final Season', {
+        __stream: true,
+        __sourceTitle: 'Dr. Stone',
+      }),
+      named('Completely.Different.Show.S01E01.1080p.mkv', { __accuracy: 'high' }),
+      named('Completely Different Show — Episode 1', {
+        __stream: true,
+        __sourceTitle: 'Completely Different Show',
+      }),
     ] as never)
-    expect(r.kept).toHaveLength(3)
-    expect(r.rejected).toHaveLength(0)
+    expect(r.kept).toHaveLength(4)
+    expect(r.rejected).toHaveLength(2)
+    expect(r.rejected.every(({ reason }) => reason === 'title-mismatch')).toBe(true)
+  })
+
+  it('never lets source confidence auto-pick a different movie', () => {
+    const poppyHill = {
+      title: { romaji: 'Coquelicot-zaka kara', english: 'From Up on Poppy Hill' },
+      format: 'MOVIE',
+      episodes: 1,
+      duration: 91,
+      startDate: { year: 2011 },
+    } as never
+    const correct = named('From.Up.on.Poppy.Hill.2011.1080p.BluRay.x265.mkv', {
+      __accuracy: 'high',
+      behaviorHints: {
+        filename: 'From.Up.on.Poppy.Hill.2011.1080p.BluRay.x265.mkv',
+        videoSize: 2_400_000_000,
+      },
+    })
+    const wrong = named('Castle.in.the.Sky.1986.2160p.BluRay.x265.mkv', {
+      __accuracy: 'high',
+      behaviorHints: {
+        filename: 'Castle.in.the.Sky.1986.2160p.BluRay.x265.mkv',
+        videoSize: 8_000_000_000,
+      },
+    })
+    const r = refineStreams(poppyHill, [correct, wrong] as never)
+
+    expect(r.kept).toEqual([expect.objectContaining({
+      behaviorHints: expect.objectContaining({ filename: expect.stringContaining('Poppy.Hill') }),
+    })])
+    expect(r.rejected).toEqual([expect.objectContaining({ reason: 'title-mismatch' })])
+    expect(pickBest(r.kept, 'any')?.behaviorHints?.filename).toContain('Poppy.Hill')
   })
 
   it('rejects an explicit wrong season even when the source marks the row id-verified', () => {

@@ -16,6 +16,10 @@ const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 const nameOf = (s: Stream) =>
   s.behaviorHints?.filename || s.title?.split('\n')[0] || s.description?.split('\n')[0] || s.name || ''
 
+// Direct providers occasionally have no useful episode label and fall back to a transport-only
+// filename. That is absence of title evidence, not evidence for a title called "Direct HLS".
+const DIRECT_TRANSPORT_LABEL = /^direct\s+(?:hls|mp4|dash)(?:\s|$)/i
+
 // Release-name tokens that don't identify the anime (quality/codec/source/container/
 // language/crc). Stripped so a short-title release's title ratio isn't diluted.
 const RELEASE_JUNK = /^(?:\d{3,4}p|4k|uhd|x26[45]|h26[45]|hevc|avc|av1|xvid|10bit|8bit|hi10p?|bluray|bdrip|bd|blu|ray|web|webrip|webdl|hdtv|dvd|dvdrip|remux|batch|complete|repack|uncensored|dual|multi|subs?|dub|eng|jpn|jap|mkv|mp4|avi|aac|flac|opus|ac3|eac3|ddp?|dts|hdr|dv|nf|cr|amzn|[0-9a-f]{8})$/i
@@ -123,6 +127,25 @@ export function relevant(stream: Stream, wanted: string[]): boolean {
     if (content.length && content.filter((t) => wt.includes(t)).length / content.length >= 0.6) return true
   }
   return false
+}
+
+/**
+ * Whether a trusted row explicitly identifies a different title.
+ *
+ * Trust is allowed to cover missing/opaque text (a CJK filename, a bare quality label, or a direct
+ * transport placeholder), but it must never erase contradictory identity evidence. Torrent
+ * extensions put the release name in `behaviorHints.filename`; online providers additionally keep
+ * the canonical title selected by their search/detail flow in `__sourceTitle`.
+ */
+export function hasExplicitTitleConflict(stream: Stream, wanted: string[]): boolean {
+  const sourceTitle = stream.__sourceTitle?.trim()
+  const claimed = sourceTitle || stream.behaviorHints?.filename?.trim()
+  if (!claimed || (!sourceTitle && DIRECT_TRANSPORT_LABEL.test(claimed))) return false
+
+  // No Latin title run means the value is opaque to this matcher. A number/quality-only label also
+  // lands here. Preserve the existing "never drop on uncertainty" behaviour for both.
+  if (!releaseTitleTokens(claimed).length) return false
+  return !relevant({ behaviorHints: { filename: claimed } }, wanted)
 }
 
 // Non-episode EXTRA files (openings/endings/creditless/previews/menus) that addons

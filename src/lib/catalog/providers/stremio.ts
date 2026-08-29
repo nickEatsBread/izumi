@@ -41,12 +41,21 @@ interface StremioMeta {
 const contentType = (type?: string): CatalogContentType => type === 'movie'
   ? 'movie' : type === 'anime' ? 'anime' : type === 'manga' ? 'manga' : 'series'
 
-/** URL-safe opaque identity. It contains no configured URL or credentials, only the add-on's
- * fingerprint, Stremio type and native meta id. */
+export interface StremioIdentity {
+  addonId: string
+  type: string
+  id: string
+  /** Catalog-summary facts used to ensure the meta endpoint answers for the card that was clicked. */
+  expectedTitle?: string
+  expectedYear?: number
+}
+
+/** URL-safe stable identity. It contains no configured URL or credentials, only the add-on's
+ * fingerprint, Stremio type, and native meta id. */
 export const encodeStremioIdentity = (addonId: string, type: string, id: string): string =>
   encodeURIComponent(JSON.stringify([addonId, type, id]))
 
-export function decodeStremioIdentity(value: string): { addonId: string; type: string; id: string } | null {
+export function decodeStremioIdentity(value: string): StremioIdentity | null {
   try {
     const parsed = JSON.parse(decodeURIComponent(value)) as unknown
     if (!Array.isArray(parsed) || parsed.length !== 3 || parsed.some((item) => typeof item !== 'string')) return null
@@ -75,11 +84,34 @@ function runtimeMinutes(value?: string): number | undefined {
   return hours * 60 + minutes || Number(/\d+/.exec(value)?.[0]) || undefined
 }
 
-function mapMeta(raw: StremioMeta, base: string, forcedType?: string): Media | null {
+const normalizedMetaTitle = (value: string): string => value
+  .replace(/\s*[([{]\s*(?:18|19|20|21)\d{2}\s*[)\]}]\s*$/, '')
+  .normalize('NFKD')
+  .replace(/\p{M}/gu, '')
+  .toLowerCase()
+  .replace(/[^\p{L}\p{N}]+/gu, ' ')
+  .trim()
+  .replace(/\s+/g, ' ')
+
+/** A Stremio meta response must identify the native item and summary title that were requested. */
+export function stremioMetaMatchesIdentity(raw: StremioMeta, identity: StremioIdentity): boolean {
+  if (!raw.id || raw.id !== identity.id) return false
+  if (identity.expectedTitle) {
+    if (!raw.name || normalizedMetaTitle(raw.name) !== normalizedMetaTitle(identity.expectedTitle)) return false
+  }
+  const actualYear = year(raw.releaseInfo ?? raw.released)
+  if (identity.expectedYear && actualYear && actualYear !== identity.expectedYear) return false
+  return true
+}
+
+function mapMeta(raw: StremioMeta, base: string, forcedType?: string, forcedIdentity?: string): Media | null {
   if (!raw.id || !raw.name) return null
+  // Stremio catalogs can mix movies and series under a custom catalog type, so a row's explicit
+  // type wins. `forcedType` is the fallback for the common compact-preview shape that omits it.
   const stremioType = raw.type ?? forcedType ?? 'series'
   const addonId = addonOriginId(base)
-  const opaqueId = encodeStremioIdentity(addonId, stremioType, raw.id)
+  const releaseYear = year(raw.releaseInfo ?? raw.released)
+  const opaqueId = forcedIdentity ?? encodeStremioIdentity(addonId, stremioType, raw.id)
   const ref = { provider: 'stremio' as const, type: contentType(stremioType), id: opaqueId, addonId }
   const videos: MediaVideo[] = (raw.videos ?? []).map((video, index) => ({
     id: video.id,
@@ -93,7 +125,6 @@ function mapMeta(raw: StremioMeta, base: string, forcedType?: string): Media | n
   }))
   if (!videos.length && stremioType === 'movie') videos.push({ id: raw.id, number: 1, title: raw.name })
   const rating = Number(raw.imdbRating)
-  const releaseYear = year(raw.releaseInfo ?? raw.released)
   return {
     id: compatibilityMediaId(ref),
     catalog: ref,
@@ -126,6 +157,18 @@ function mapMeta(raw: StremioMeta, base: string, forcedType?: string): Media | n
   }
 }
 
+// If an add-on later answers its native meta route with a different item, the card the user
+// actually clicked is the safe fallback. Bound the cache for long-running sessions.
+const summaryCache = new Map<string, Media>()
+function rememberSummary(media: Media): Media {
+  const id = media.catalog?.id
+  if (!id) return media
+  summaryCache.delete(id)
+  summaryCache.set(id, media)
+  if (summaryCache.size > 1000) summaryCache.delete(summaryCache.keys().next().value as string)
+  return media
+}
+
 const hasResource = (manifest: AddonManifest, name: string) => (manifest.resources ?? []).some((resource: AddonResource) =>
   typeof resource === 'string' ? resource === name : resource.name === name)
 
@@ -155,7 +198,7 @@ async function catalog(base: string, entry: AddonCatalog, extra: Record<string, 
   const response = await getJson<{ metas?: StremioMeta[] }>(url, signal)
   return (response.metas ?? []).flatMap((meta) => {
     const media = mapMeta(meta, normalized, entry.type)
-    return media ? [media] : []
+    return media ? [rememberSummary(media)] : []
   })
 }
 
@@ -249,7 +292,18 @@ async function detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null
   const response = await getJson<{ meta?: StremioMeta }>(
     stremioMetaUrl(base, decoded.type, decoded.id), signal,
   )
-  const media = response.meta ? mapMeta(response.meta, base, decoded.type) : null
+  const summary = summaryCache.get(ref.id)
+  const expected: StremioIdentity = summary ? {
+    ...decoded,
+    expectedTitle: summary.title.english ?? summary.title.romaji ?? summary.title.userPreferred,
+    expectedYear: summary.startDate?.year,
+  } : decoded
+  if (!response.meta) return summary ? enrichOmdbRatings(summary, signal) : null
+  if (!stremioMetaMatchesIdentity(response.meta, expected)) {
+    if (summary) return enrichOmdbRatings(summary, signal)
+    throw new Error('The Stremio metadata add-on returned a different title for this catalog item, so it was blocked.')
+  }
+  const media = mapMeta(response.meta, base, decoded.type, ref.id)
   return media ? enrichOmdbRatings(media, signal) : null
 }
 

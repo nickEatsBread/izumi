@@ -1,6 +1,13 @@
 import type { Media } from '$lib/anilist/types'
 import { title, totalEpisodes } from '$lib/anilist/media'
-import { relevant, likelyOtherProduction, isEpisodeExtra, isStandaloneMovie, wrongFranchiseSeason } from './relevance'
+import {
+  relevant,
+  hasExplicitTitleConflict,
+  likelyOtherProduction,
+  isEpisodeExtra,
+  isStandaloneMovie,
+  wrongFranchiseSeason,
+} from './relevance'
 import { dedupeStreams } from './dedupe'
 import { candidateIds } from './candidate-model'
 import { describe, type Stream } from './parse'
@@ -83,19 +90,21 @@ export function refineStreams(media: Media, raw: Stream[]): Refined {
     if (isSeries && expectedSeconds >= 10 * 60 && size != null && size < expectedSeconds * 16 * 1024) {
       return 'implausibly-small'
     }
-    // A resolved online stream is already the provider's exact episode and has no torrent release
-    // name to validate. An id-verified torrent may also use a CJK-only name, so it skips fuzzy title
-    // matching. Neither form of trust can make an impossibly small file into a full episode.
-    if (s.__stream || s.__origin?.kind === 'online-extension') return null
+    // Trust can cover absent/opaque text, but it cannot turn an explicit different title into the
+    // requested one. Online rows have already passed provider search + detail validation and carry
+    // that canonical match in __sourceTitle; transport-only fallback labels remain "unknown".
+    const trustedOnline = s.__stream || s.__origin?.kind === 'online-extension'
     const idVerified = s.__accuracy === 'high'
+    // Prefer the more actionable reason when the explicit contradiction is a sequel season.
+    if (!trustedOnline && wrongFranchiseSeason(s, wantedTitles)) return 'wrong-franchise-season'
+    if ((trustedOnline || idVerified) && hasExplicitTitleConflict(s, wantedTitles)) return 'title-mismatch'
+    if (trustedOnline) return null
     if (!idVerified && !relevant(s, wantedTitles)) return 'title-mismatch'
-    if (!idVerified && likelyOtherProduction(s, animeYear, absoluteNumbered)) return 'other-production'
+    // `high` is a source-declared confidence value, not an independently verified guarantee. An
+    // explicit year/production/shape contradiction therefore still wins over that claim.
+    if (likelyOtherProduction(s, animeYear, absoluteNumbered)) return 'other-production'
     if (isEpisodeExtra(s)) return 'episode-extra'
-    if (!idVerified && isSeries && isStandaloneMovie(s)) return 'standalone-movie'
-    // Same-franchise wrong season: a number-less season gate cannot catch an explicitly named
-    // sequel. Some episode-id feeds contain such rows despite labelling the lookup exact, so the
-    // filename contradiction must beat source confidence.
-    if (wrongFranchiseSeason(s, wantedTitles)) return 'wrong-franchise-season'
+    if (isSeries && isStandaloneMovie(s)) return 'standalone-movie'
     return null
   }
 
