@@ -32,9 +32,13 @@ const EPISODE_MARKER = /\bS\d{1,2}E\d{1,3}\b|\b\d{1,2}x\d{1,3}\b|\s[-–]\s?\d{1
 
 // Metadata words that can sit INSIDE a release's title run, before any episode marker or bracket.
 // Only the creditless-extra family: "Dr. Stone NCOP 2" has to stay title-relevant so refineStreams
-// reports it as an opening rather than as a different show (an extra is never restored by the
-// empty-picker safety net, a title mismatch is).
+// reports it as an opening rather than as a different show.
 const HEAD_JUNK = /^(?:nc(?:op|ed|bd)\d*|creditless|textless|preview|teaser|trailer|promo)$/i
+
+// A few indexers put their hostname in front of the actual release title without brackets.
+// Remove only an unmistakable host-shaped prefix; treating any unknown leading word as a source
+// label is unsafe ("Loner Life In Another World" is a title, not an indexer called "Loner").
+const SOURCE_HOST_PREFIX = /^\s*(?:(?:https?:\/\/)|www\.)[a-z0-9-]+(?:\.[a-z0-9-]+)+\s*[-–|]\s*/i
 
 /** The release's OWN claimed title, as tokens: everything before its bracketed metadata (or a
  *  bracketed alternate title), before the episode/season marker, and before the first
@@ -46,7 +50,9 @@ const HEAD_JUNK = /^(?:nc(?:op|ed|bd)\d*|creditless|textless|preview|teaser|trai
  *  This is what anchors the title test. Counting tokens anywhere in the name only ever answered
  *  "does this release mention the show", which every spin-off of a long-running series does. */
 export function releaseTitleTokens(name: string): string[] {
-  const bare = name.replace(/^\s*\[[^\]]*\]\s*/, '') // drop a leading [Group] tag
+  const bare = name
+    .replace(/^\s*\[[^\]]*\]\s*/, '') // drop a leading [Group] tag
+    .replace(SOURCE_HOST_PREFIX, '') // drop an explicit unbracketed indexer hostname
   const head = bare.split(/[[({]/)[0] // bracketed metadata / alternate title is not the title
   const end = head.search(EPISODE_MARKER)
   const out: string[] = []
@@ -74,15 +80,16 @@ export function relevant(stream: Stream, wanted: string[]): boolean {
   // So once the release's title starts, it must introduce no word the request has never heard of.
   // Compared against the UNION of the requested titles, so a release naming both the romaji and the
   // English title ("Kusuriya no Hitorigoto - The Apothecary Diaries - 01") is still anchored.
-  // Words BEFORE the title starts are skipped — some indexers prefix their own site name without
-  // bracketing it ("www.example.org - One Piece - 001"); it is what comes after the title that
-  // names a different production. A head with nothing recognisable in it at all (a CJK or Cyrillic
-  // release name, or an empty one) anchors vacuously — never drop on uncertainty, and the tests
-  // below still have to find evidence.
+  // An explicit host-shaped source prefix was already stripped by releaseTitleTokens. Any other
+  // unknown word before the first recognised title word belongs to the claimed title and is a
+  // contradiction, not harmless decoration. This catches titles that share a generic suffix with
+  // the request ("Loner Life In Another World" vs "Starting Life In Another World"). A head with
+  // nothing recognisable in it at all (a CJK or Cyrillic release name, or an empty one) anchors
+  // vacuously — never drop on uncertainty, and the tests below still have to find evidence.
   const known = new Set(wanted.flatMap((w) => titleTokens(w)))
   const head = releaseTitleTokens(name)
   const titleStart = head.findIndex((t) => known.has(t))
-  if (titleStart >= 0 && !head.slice(titleStart).every((t) => known.has(t))) return false
+  if (titleStart > 0 || (titleStart === 0 && !head.every((t) => known.has(t)))) return false
   // The release's OWN title words: its tokens minus quality/codec/hash junk, bare
   // numbers, the leading [Group] tag, and scene episode codes. A short-title release
   // ("[SubsPlease] Dr STONE S04E25 NF WEB-DL") must reduce to just {stone} — NOT

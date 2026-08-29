@@ -86,7 +86,7 @@ export function refineStreams(media: Media, raw: Stream[]): Refined {
     // A resolved online stream is already the provider's exact episode and has no torrent release
     // name to validate. An id-verified torrent may also use a CJK-only name, so it skips fuzzy title
     // matching. Neither form of trust can make an impossibly small file into a full episode.
-    if (s.__stream) return null
+    if (s.__stream || s.__origin?.kind === 'online-extension') return null
     const idVerified = s.__accuracy === 'high'
     if (!idVerified && !relevant(s, wantedTitles)) return 'title-mismatch'
     if (!idVerified && likelyOtherProduction(s, animeYear, absoluteNumbered)) return 'other-production'
@@ -113,14 +113,9 @@ export function refineStreams(media: Media, raw: Stream[]): Refined {
     if (k) seenRejects.add(k)
     rejected.push({ stream: s, reason })
   }
-  // Safety net, matching the season verifier's: five heuristics firing at once must never be the
-  // reason the user sees nothing. Hand back the unfiltered pool and claim no rejections, because
-  // showing everything and saying "12 filtered" at the same time would be a lie.
-  // Never restore a known extra or physically implausible file just because every source was bad.
-  // The safety net remains for fuzzy title/season heuristics, where uncertainty is real.
-  if (!kept.length && !rejected.some(({ reason }) =>
-    reason === 'episode-extra' || reason === 'implausibly-small' || reason === 'wrong-franchise-season')) {
-    return { kept: dedupeStreams(pool), rejected: [] }
-  }
+  // Rejected rows stay quarantined even when every addon returned the wrong thing. The picker can
+  // still expose them under "Filtered" for an explicit manual override; restoring them here makes
+  // a known title/production mismatch eligible for Auto, binge continuation, recovery and
+  // downloads precisely when no correct result happened to arrive beside it.
   return { kept: dedupeStreams(kept), rejected }
 }

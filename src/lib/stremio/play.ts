@@ -26,8 +26,11 @@ const sourceInventoryError = (enabledAddons: string[]) => (
     ? ALL_ADDONS_DISABLED_MESSAGE
     : 'No sources configured — add an addon URL or install an anime package in Settings.'
 )
-const emptyStreamsError = (total: number, enabledAddons: string[]) => {
+const emptyStreamsError = (total: number, enabledAddons: string[], rejected = 0) => {
   if (!enabledAddons.length && get(addonUrls).length) return ALL_ADDONS_DISABLED_MESSAGE
+  if (rejected > 0) {
+    return 'Sources were found, but every candidate appears to be a different title, production, season, or non-episode extra. You can inspect them under Filtered.'
+  }
   return total > 0
     ? `Found ${total} torrents but none are usable (all dead or notice entries). Try another source.`
     : 'No streams found for this title/episode yet.'
@@ -964,7 +967,8 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
   const seasonP = episode != null ? mediaSeasonMap(media) : Promise.resolve({} as Record<number, { season?: number; abs?: number }>)
   const { streams: addonStreams, total, cachedCount } = await getStreams(bases, requestIds, streamType(media))
 
-  let streams = refineStreams(media, addonStreams).kept
+  const refined = refineStreams(media, addonStreams)
+  let streams = refined.kept
 
   // Season enforcement: pair the requested episode with its AniZip season/absolute
   // number, then hard-drop returned files that contradict it. `want` is threaded to
@@ -979,7 +983,7 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
   // Only hard-fail when there's nothing playable AND no extensions to fall back on;
   // otherwise let the picker fill from extensions asynchronously.
   if (!streams.length && !await hasConfiguredExtensions()) {
-    throw new Error(emptyStreamsError(total, bases))
+    throw new Error(emptyStreamsError(total, bases, refined.rejected.length))
   }
   return { streams, cachedCount, want, kitsu }
 }
@@ -2287,7 +2291,7 @@ export async function playEpisode(
 
     // Nothing playable → honest error.
     if (!get(streamPicker)?.streams.length) {
-      return showPickerError(emptyStreamsError(totalRaw, bases))
+      return showPickerError(emptyStreamsError(totalRaw, bases, get(streamPicker)?.rejected?.length))
     }
     traceResolve(trace, 'picker ready for source selection', {
       rawRows: totalRaw,

@@ -94,6 +94,19 @@ describe('relevant', () => {
     expect(relevant(s('Dr STONE - Science Future - S04E25 (WEB E).mkv'), drStone)).toBe(true)
     expect(relevant(s('Dr STONE S04E25 CR WEB-DL.mkv'), drStone)).toBe(true)
   })
+
+  it('rejects a different title that replaces the distinctive leading words', () => {
+    const reZero = [
+      'Re:Zero kara Hajimeru Isekai Seikatsu',
+      'Re:ZERO -Starting Life in Another World-',
+    ]
+    expect(relevant(s('[UF+]Loner Life In Another World - 01 [BDrip 1080p].mkv'), reZero)).toBe(false)
+    expect(relevant(s('Loner.Life.In.Another.World - 01 [BDrip 1080p].mkv'), reZero)).toBe(false)
+  })
+
+  it('still accepts an explicit unbracketed indexer hostname before the title', () => {
+    expect(relevant(s('www.example.org - One Piece - 001 [1080p].mkv'), ['One Piece'])).toBe(true)
+  })
 })
 
 describe('relevant (a spin-off whose release name EXTENDS the requested title)', () => {

@@ -80,15 +80,36 @@ describe('refineStreams', () => {
     expect(r.rejected[0]?.reason).toBe('implausibly-small')
   })
 
-  it('restores the whole pool rather than returning an empty list', () => {
-    // Every predicate firing at once used to leave the picker empty and blame dead torrents for
-    // the app's own filtering. The season verifier has always had this guard; refine needs it too.
+  it('quarantines the whole pool rather than auto-playing when every title is unrelated', () => {
     const r = refineStreams(media, [
       named('[Group] Completely Different Show S01E01 1080p'),
       named('[Group] Another Unrelated Thing S01E02 1080p'),
     ] as never)
-    expect(r.kept).toHaveLength(2)
-    expect(r.rejected).toHaveLength(0)
+    expect(r.kept).toHaveLength(0)
+    expect(r.rejected).toHaveLength(2)
+    expect(r.rejected.every(({ reason }) => reason === 'title-mismatch')).toBe(true)
+  })
+
+  it('never makes a shared-suffix title eligible for the Re:Zero episode-one auto-pick', () => {
+    const reZero = {
+      title: {
+        romaji: 'Re:Zero kara Hajimeru Isekai Seikatsu',
+        english: 'Re:ZERO -Starting Life in Another World-',
+      },
+      format: 'TV',
+      episodes: 25,
+      duration: 25,
+      startDate: { year: 2016 },
+    } as never
+    const wrong = named('[UF+]Loner Life In Another World - 01 [BDrip 1080p] [3C2AA61D].mkv', {
+      infoHash: '73487030b8bd526cfc01741b8341f749e0ae81ed',
+      title: 'TorrentsDB\n1080p',
+    })
+    const r = refineStreams(reZero, [wrong] as never)
+
+    expect(r.kept).toHaveLength(0)
+    expect(r.rejected).toEqual([expect.objectContaining({ reason: 'title-mismatch' })])
+    expect(pickBest(r.kept, 'any')).toBeUndefined()
   })
 
   it('lets id verification bypass fuzzy title matching and trusts direct streams', () => {
