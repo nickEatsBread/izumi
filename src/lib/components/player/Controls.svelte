@@ -26,6 +26,7 @@
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
   import ServerIcon from '@lucide/svelte/icons/server'
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
+  import DesktopCastButton from './DesktopCastButton.svelte'
   import { get } from 'svelte/store'
   import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, playerSideSheetOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery, bumpPlayerOverlay } from '$lib/player/session'
   import { listenSafe } from '$lib/util/listen'
@@ -1256,6 +1257,7 @@
         <!-- Screenshot the current frame → Pictures/izumi. Game mode keeps this off the visual
              bar because Izumi maps its own screenshot action to L4 (R4 is Izumi's GIF recorder). -->
         {#if !gm}
+          <DesktopCastButton {pos} buttonClass={iconBtn} iconSize={icSize} {cmd} onopen={closePlayerMenus} />
           <button data-focusable class={iconBtn} onclick={screenshot} aria-label="Screenshot"><Camera size={icSize} /></button>
           <button data-focusable class={iconBtn} onclick={togglePictureInPicture} aria-label="Picture in picture"><PictureInPicture size={icSize} /></button>
         {/if}

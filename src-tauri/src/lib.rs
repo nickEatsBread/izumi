@@ -30,6 +30,8 @@ mod torrent_download;
 mod watch_room;
 // The native libmpv player is desktop-only; Android delegates playback to an external app.
 #[cfg(not(target_os = "android"))]
+mod desktop_cast;
+#[cfg(not(target_os = "android"))]
 mod desktop_presence;
 #[cfg(not(target_os = "android"))]
 mod gif_capture;
@@ -5445,7 +5447,8 @@ pub fn run() {
     #[cfg(not(target_os = "android"))]
     let builder = builder
         .manage(PipWindowState::default())
-        .manage(DrmGifCapture::default());
+        .manage(DrmGifCapture::default())
+        .manage(desktop_cast::DesktopCastState::default());
     #[cfg(not(target_os = "android"))]
     let builder = builder
         .manage(doh_socks::DohSocksProxy::default())
@@ -6133,6 +6136,9 @@ pub fn run() {
             direct_torrent::torrent_playback_first_frame,
             direct_torrent::torrent_playback_stop,
             cast_relay::cast_prepare_source,
+            desktop_cast::desktop_cast_discover,
+            desktop_cast::desktop_cast_start,
+            desktop_cast::desktop_cast_stop,
             torrent_download::torrent_download_start,
             torrent_download::torrent_download_cancel,
             net_interfaces::list_network_interfaces,

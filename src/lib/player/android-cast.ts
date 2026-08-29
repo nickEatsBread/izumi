@@ -13,6 +13,8 @@ export interface CastTrack {
   codec?: string
   codecProfile?: string
   format?: string
+  title?: string
+  lang?: string
   externalFilename?: string
 }
 

@@ -136,6 +136,12 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 # (no C toolchain), `chardetng` guesses the legacy encoding, `encoding_rs` decodes it.
 tar = "0.4"
 realfft = "3"
+# Desktop Google Cast sender. Cast receivers advertise through DNS-SD and accept the CastV2
+# protocol over TLS on the advertised port. The web sender SDK is unavailable inside Tauri's
+# embedded webviews, so desktop performs discovery and the media LOAD handshake natively.
+mdns-sd = { version = "0.21", default-features = false }
+rust_cast = "0.21"
+rustls = "0.23"
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 # Embedded libmpv player for the Android "full" flavor (optional; see the `android-mpv` feature).

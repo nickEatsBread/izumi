@@ -5,8 +5,10 @@
   import Square from '@lucide/svelte/icons/square'
   import Copy from '@lucide/svelte/icons/copy'
   import X from '@lucide/svelte/icons/x'
+  import Cast from '@lucide/svelte/icons/cast'
   import { commentsOpen, gifRecordingStart, playerNotice } from '$lib/player/session'
   import { playerGifStop } from '$lib/player/native'
+  import { desktopCastSession, stopDesktopCast } from '$lib/player/desktop-cast'
   import { isMacOS } from '$lib/platform'
 
   const win = getCurrentWindow()
@@ -43,6 +45,17 @@
       )
     }
   }
+
+  async function stopCasting(event: MouseEvent) {
+    event.stopPropagation()
+    try {
+      await stopDesktopCast()
+      desktopCastSession.set(null)
+      playerNotice.set('Casting stopped')
+    } catch (error) {
+      playerNotice.set(typeof error === 'string' ? error : 'Could not stop casting')
+    }
+  }
 </script>
 
 <!--
@@ -73,6 +86,19 @@
       </button>
     {/if}
   </div>
+  {#if $desktopCastSession}
+    <!-- Keep a receiver control reachable after the user leaves the player overlay. Clicking the
+         active Cast chip is the explicit disconnect action, matching the player popover. -->
+    <button
+      class="absolute top-1 flex h-6 max-w-48 items-center gap-1.5 rounded-full bg-primary/20 px-2 text-[10px] font-semibold text-primary transition hover:bg-primary/30 {$isMacOS ? 'right-2' : 'right-[8.75rem]'}"
+      onclick={stopCasting}
+      aria-label="Stop casting to {$desktopCastSession.deviceName}"
+      title="Stop casting to {$desktopCastSession.deviceName}"
+    >
+      <Cast size={12} />
+      <span class="truncate">{$desktopCastSession.deviceName}</span>
+    </button>
+  {/if}
   {#if !$isMacOS}
   <div class="flex items-center">
   <button
