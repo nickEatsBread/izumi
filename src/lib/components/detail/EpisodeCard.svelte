@@ -14,9 +14,11 @@
   import Loader from '@lucide/svelte/icons/loader-circle'
   import Pause from '@lucide/svelte/icons/pause'
   import Check from '@lucide/svelte/icons/check'
+  import ListPlus from '@lucide/svelte/icons/list-plus'
+  import { m } from '$lib/paraglide/messages.js'
 
   let {
-    media, ep, meta, showThumb, released, isNext, watchedThrough, filler = false, dl, next, onplay,
+    media, ep, meta, showThumb, released, isNext, watchedThrough, filler = false, dl, next, onplay, onqueue,
     selecting = false, selectedEp = false, numberLabel, navId, navUp,
   }: {
     media: Media
@@ -30,6 +32,7 @@
     dl?: DownloadItem
     next?: { episode: number; timeUntilAiring: number } | null
     onplay: (ep: number, event?: MouseEvent) => void
+    onqueue?: (ep: number) => void
     // Download select mode (driven by EpisodeList): a tap toggles selection instead of
     // playing, and the card shows a checkbox instead of the play affordance.
     selecting?: boolean
@@ -67,6 +70,10 @@
   )
 
   function play(event?: MouseEvent) { if (released) onplay(ep, event) }
+  function queue(event: MouseEvent) {
+    event.stopPropagation()
+    if (released) onqueue?.(ep)
+  }
   function countdown(sec?: number) {
     if (!sec) return ''
     const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60)
@@ -126,6 +133,12 @@
           <span class="rounded px-1.5 py-0.5 text-[0.65rem] font-black text-white {ratingBg(rating)}">{rating}%</span>
         {/if}
         {@render statusBadge('')}
+        {#if released && !selecting && onqueue}
+          <button data-focusable onclick={queue} aria-label={m.lists_queue_episode({ episode: ep })} title={m.lists_queue_episode({ episode: ep })}
+            class="grid size-7 place-items-center rounded-full bg-black/70 text-white hover:bg-black">
+            <ListPlus size={14} />
+          </button>
+        {/if}
       </div>
 
       {#if filler}
@@ -181,6 +194,13 @@
       {/if}
 
       {@render statusBadge('shrink-0')}
+
+      {#if released && !selecting && onqueue}
+        <button data-focusable onclick={queue} aria-label={m.lists_queue_episode({ episode: ep })} title={m.lists_queue_episode({ episode: ep })}
+          class="grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-background/60 hover:text-foreground">
+          <ListPlus size={15} />
+        </button>
+      {/if}
 
       {#if dling}
         <span class="absolute inset-x-0 bottom-0 h-1 bg-white/20"><span class="block h-full bg-blue-400 transition-[width] duration-300 ease-out" style={`width:${dlPct}%`}></span></span>

@@ -87,7 +87,7 @@ import { recordPlay, localHistory } from '$lib/player/history'
 import { maybeAutoEnterIncognito } from '$lib/player/auto-incognito'
 import { incognito } from '$lib/stores/incognito'
 import { episodeSourceOrigins, rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
-import { connecting, nextEpisodeReady, playing, playerLoadId, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, playerSleep, playbackRecovery } from '$lib/player/session'
+import { connecting, nextEpisodeReady, upNextPrompt, playing, playerLoadId, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, playerSleep, playbackRecovery } from '$lib/player/session'
 import {
   DIRECT_TORRENT_START_TIMEOUT_MS,
   DIRECT_TORRENT_HARD_START_TIMEOUT_MS,
@@ -105,7 +105,7 @@ import { markAlive, markDead, markRouteDead } from './dead-sources'
 import { shareableSourceForDevice } from '$lib/watch-together/source'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller, seadexAnnotations,
-  autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
+  autoplayNext, upNextOverlay, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
   playerCacheMb, playerCacheBytes, torrentPlaybackMode,
   sourcePriority, sourcePriorityMode, continueSourcePreference, promoteToWatching, adaptiveSourceMode,
   audioProcessing, dolbyVisionOutputMode, rawMpvOptions, videoQualityPreset,
@@ -133,6 +133,30 @@ import {
   androidStreamInfo, waitForMpvFirstFrame,
 } from '$lib/player/android-mpv'
 import { waitForRecoveryFirstFrame, type RecoveryFirstFrameResult } from '$lib/player/recovery-first-frame'
+
+function continueToNextEpisode(
+  media: Media,
+  currentEpisode: number,
+  nextEpisode: number,
+  onState: (s: PlayState) => void,
+): void {
+  const play = () => {
+    const active = get(nowPlaying)
+    if (active.id !== media.id || active.episode !== currentEpisode) return
+    upNextPrompt.set(null)
+    resolveAndPlayBest(media, nextEpisode, onState, true)
+  }
+  if (!get(upNextOverlay)) { play(); return }
+  upNextPrompt.set({
+    mediaId: media.id,
+    episode: nextEpisode,
+    title: title(media),
+    artwork: banner(media) || cover(media),
+    seconds: 10,
+    play,
+    stay: () => upNextPrompt.set(null),
+  })
+}
 import { shouldBeginNextEpisodePreload } from '$lib/player/preload-policy'
 import type { Media } from '$lib/anilist/types'
 import {
@@ -616,7 +640,7 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
     // Bail if a newer play has since taken over (this ended-event belongs to a superseded
     // episode) — otherwise two overlapping plays both advance and skip an episode.
     if (gen !== playGen) return
-    if (next <= airedTotal) resolveAndPlayBest(media, next, onState, true)
+    if (next <= airedTotal) continueToNextEpisode(media, episode, next, onState)
   }
   pushListen('player-ended', () => { void onEnded() })
   const onDrmEnded = () => { void onEnded() }
@@ -671,7 +695,7 @@ function attachAndroid(
       const filler = anilistId ? await fillerEpisodes(anilistId) : []
       while (next <= airedTotal && filler.includes(next)) next++
     }
-    if (next <= airedTotal) resolveAndPlayBest(media, next, onState, true)
+    if (next <= airedTotal) continueToNextEpisode(media, episode, next, onState)
   }
   // mpvState updates on every observed time-pos/duration/pause/eof — same cadence as the desktop
   // player-progress event, so the throttle + watch-threshold logic transfers directly.
@@ -2468,6 +2492,7 @@ export async function playStream(
   report: (s: PlayState) => void,
   options: PlayStreamOptions = {},
 ) {
+  upNextPrompt.set(null)
   const trace = currentResolveTrace(media.id, episode) ?? beginResolveTrace({
     mediaId: media.id,
     episode,

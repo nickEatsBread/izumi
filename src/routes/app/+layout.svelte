@@ -56,6 +56,8 @@
   import { startUpdateChecks } from '$lib/updater'
   import { startExtensionUpdateChecks, extensionUpdateNotice } from '$lib/extensions/auto-update'
   import UpdateToast from '$lib/components/shell/UpdateToast.svelte'
+  import FirstRunSetup from '$lib/components/onboarding/FirstRunSetup.svelte'
+  import UpNextOverlay from '$lib/components/player/UpNextOverlay.svelte'
   import { get } from 'svelte/store'
   import { initCrashReporting } from '$lib/diagnostics'
   import { initDeveloperLogging } from '$lib/debug/native-logging'
@@ -455,3 +457,5 @@
 {/if}
 <!-- Cross-platform update toast (available → downloading → ready); opt-in to apply. -->
 <UpdateToast />
+<FirstRunSetup />
+<UpNextOverlay />

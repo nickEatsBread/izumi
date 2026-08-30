@@ -70,6 +70,18 @@ export const streamPickerDismissedAt = writable(-1e9)
  *  normal state and saying so would be noise rather than information. */
 export const nextEpisodeReady = writable<{ mediaId: number; episode: number } | null>(null)
 
+/** Optional end-of-episode prompt. The callbacks own stale-play guards in play.ts; the component
+ * only presents them and never needs to understand source resolution. */
+export const upNextPrompt = writable<{
+  mediaId: number
+  episode: number
+  title: string
+  artwork?: string
+  seconds: number
+  play: () => void
+  stay: () => void
+} | null>(null)
+
 // Single-window player session. `playing` toggles the in-app player overlay (and
 // the transparent "hole" that lets mpv, embedded in the main window, show
 // through). `nowPlaying` tells the overlay what to display + which ids to fetch

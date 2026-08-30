@@ -113,6 +113,7 @@
   import P2PStatusOverlay from './P2PStatusOverlay.svelte'
   import BufferSpinner from './BufferSpinner.svelte'
   import SubtitleEditor from './SubtitleEditor.svelte'
+  import { matchRememberedTrack, rememberSeriesTrack, rememberedSeriesTrack } from '$lib/player/track-preferences'
 
   let controlsShown = $state(true)
   let scrubbing = $state(false)
@@ -337,11 +338,16 @@
     const key = segKey
     if (!firstFrameSeen || !key || subtitlePolicyKey === key) return
     subtitlePolicyKey = key
-    void getTracks().then((list) => {
+    void getTracks().then(async (list) => {
       if (key !== segKey) return
+      const rememberedAudio = matchRememberedTrack(list.filter((track) => track.type === 'audio'), rememberedSeriesTrack(np.id, 'audio'))
+      if (rememberedAudio) await setAudioTrack(rememberedAudio.id)
+      const subPref = rememberedSeriesTrack(np.id, 'subtitle')
+      const rememberedSub = matchRememberedTrack(list.filter((track) => track.type === 'sub'), subPref)
+      if (rememberedSub === null) return setSubTrack('no')
+      if (rememberedSub) return setSubTrack(rememberedSub.id)
       const id = pickSubtitleTrackId(list, get(preferredAudioLang), get(preferredSubLang))
-      if (id === undefined) return
-      return setSubTrack(id)
+      if (id !== undefined) return setSubTrack(id)
     }).catch(() => {})
     const af = audioFilter(get(audioProcessing))
     void mpvCommand(['set', 'af', af || '']).catch(() => {})
@@ -1159,8 +1165,16 @@
       : settingsPage === 'chapters' ? 'Chapters'
       : 'Video settings'
   }
-  async function pickAudio(id: number) { await setAudioTrack(id); tracks = await getTracks() }
-  async function pickSub(id: number | 'no') { await setSubTrack(id); tracks = await getTracks() }
+  async function pickAudio(id: number) {
+    const selected = tracks.find((track) => track.type === 'audio' && track.id === id) ?? null
+    rememberSeriesTrack(np.id, 'audio', selected)
+    await setAudioTrack(id); tracks = await getTracks()
+  }
+  async function pickSub(id: number | 'no') {
+    const selected = id === 'no' ? null : tracks.find((track) => track.type === 'sub' && track.id === id) ?? null
+    rememberSeriesTrack(np.id, 'subtitle', selected)
+    await setSubTrack(id); tracks = await getTracks()
+  }
   function openSubtitleEditor() {
     clearTimeout(sheetCloseTimer)
     cancelAnimationFrame(sheetOpenFrame)

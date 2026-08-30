@@ -15,6 +15,8 @@ import {
   sourceOrigins,
   type RememberedSource,
 } from './source-origin'
+import { localLibrary, mergeLocalLibrary, type LocalLibraryState } from '$lib/library/local-lists'
+import { mergeSeriesTrackPreferences, seriesTrackPreferences, type SeriesTrackPreferences } from './track-preferences'
 
 // Import / export of the on-device watch history, so it can be backed up, moved between installs,
 // or used to seed an AniList/MyAnimeList account (or another tracker). Two export formats:
@@ -33,6 +35,10 @@ interface ExportBundle {
   origins?: Record<number, RememberedSource>
   /** Exact per-episode source preferences used by the default Continue Watching mode. */
   episodeOrigins?: Record<string, RememberedSource>
+  /** Account-free saved lists, smart-list inputs, and manual episode queue. */
+  localLibrary?: LocalLibraryState
+  /** Stable per-series audio/subtitle identities (never credential-bearing URLs). */
+  trackPreferences?: Record<string, SeriesTrackPreferences>
 }
 
 interface WatchJsonOptions {
@@ -48,6 +54,8 @@ export function exportJson(options: WatchJsonOptions = {}): string {
     positions: get(durablePositions),
     origins: get(sourceOrigins),
     episodeOrigins: get(episodeSourceOrigins),
+    localLibrary: get(localLibrary),
+    trackPreferences: get(seriesTrackPreferences),
   }
   return JSON.stringify(bundle, null, 2)
 }
@@ -162,6 +170,15 @@ export function importJson(text: string, options: WatchJsonOptions = {}): {
   }
   const originsImported = mergeSourceOrigins(data.origins)
   const episodeOriginsImported = mergeEpisodeSourceOrigins(data.episodeOrigins)
+  if (data.localLibrary && typeof data.localLibrary === 'object' && Array.isArray(data.localLibrary.lists) && data.localLibrary.entries && typeof data.localLibrary.entries === 'object') {
+    localLibrary.update((current) => {
+      const merged = mergeLocalLibrary(current, data.localLibrary!)
+      // Preserve the store identity when a peer only echoed our latest snapshot. This prevents
+      // the sync subscriber from scheduling an otherwise endless push/pull feedback loop.
+      return JSON.stringify(merged) === JSON.stringify(current) ? current : merged
+    })
+  }
+  mergeSeriesTrackPreferences(data.trackPreferences)
   return { imported, positionsImported, originsImported, episodeOriginsImported }
 }
 

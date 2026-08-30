@@ -61,6 +61,7 @@
   import PlayIcon from '@lucide/svelte/icons/play'
   import PauseIcon from '@lucide/svelte/icons/pause'
   import PartyPresence from '$lib/components/watch/PartyPresence.svelte'
+  import { matchRememberedTrack, rememberedSeriesTrack } from '$lib/player/track-preferences'
 
   // In-app player overlay. mpv is embedded into the MAIN window (behind the
   // webview) by `player_embed`; this transparent overlay paints the controls on
@@ -631,8 +632,8 @@
     if (firstFrame) cmd('set', ['panscan', $videoFit === 'fill' ? '1.0' : '0.0'])
   })
 
-  // slang is language-only, so a Signs & Songs track listed first wins on BD remuxes.
-  // Re-select once the file is actually loaded: full dialogue for sub watches, signs/off for dubs.
+  // Re-select once the file is actually loaded. A per-series semantic preference (language,
+  // title, codec) wins; global language policy remains the fallback for unseen shows.
   let subtitlePolicyKey = ''
   $effect(() => {
     const key = loadedKey
@@ -641,9 +642,20 @@
     void playerTracks()
       .then((raw) => {
         if (key !== loadedKey) return
-        const id = pickSubtitleTrackId(JSON.parse(raw) as Track[], get(preferredAudioLang), get(preferredSubLang))
-        if (id === undefined) return
-        cmd('set', ['sid', String(id)])
+        const tracks = JSON.parse(raw) as Track[]
+        const audioPref = rememberedSeriesTrack(np.id, 'audio')
+        const rememberedAudio = matchRememberedTrack(tracks.filter((track) => track.type === 'audio'), audioPref)
+        if (rememberedAudio) cmd('set', ['aid', String(rememberedAudio.id)])
+
+        const subPref = rememberedSeriesTrack(np.id, 'subtitle')
+        const rememberedSub = matchRememberedTrack(
+          tracks.filter((track) => track.type === 'sub' || track.type === 'caption'),
+          subPref,
+        )
+        if (rememberedSub === null) { cmd('set', ['sid', 'no']); return }
+        if (rememberedSub) { cmd('set', [rememberedSub.type === 'caption' ? 'ccid' : 'sid', String(rememberedSub.id)]); return }
+        const id = pickSubtitleTrackId(tracks, get(preferredAudioLang), get(preferredSubLang))
+        if (id !== undefined) cmd('set', ['sid', String(id)])
       })
       .catch(() => {})
   })

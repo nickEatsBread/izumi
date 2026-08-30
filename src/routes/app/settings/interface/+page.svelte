@@ -6,6 +6,7 @@
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import { m } from '$lib/paraglide/messages.js'
   import { getLocale, setLocale, type Locale } from '$lib/paraglide/runtime.js'
+  import { restartOnboarding } from '$lib/settings/onboarding'
 
   const locale = getLocale()
   const changeLocale = (value: string) => setLocale(value as Locale)
@@ -64,6 +65,11 @@
         { value: 'en', label: m.language_english() }, { value: 'ja', label: m.language_japanese() },
       ]} />
     </label>
+
+    <div class="mb-5 flex items-center justify-between gap-3 rounded-md border border-border p-4 sm:p-3">
+      <span><span class="block font-bold">{m.settings_setup_assistant()}</span><span class="text-xs text-muted-foreground">{m.settings_setup_assistant_hint()}</span></span>
+      <button data-focusable onclick={restartOnboarding} class="shrink-0 rounded-lg bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">{m.settings_run_setup()}</button>
+    </div>
 
     <label data-setting-key="title-language" class="mb-5 flex flex-col gap-1">
       <span class="text-sm font-bold">Title language</span>

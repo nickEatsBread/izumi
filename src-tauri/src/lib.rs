@@ -6140,6 +6140,8 @@ pub fn run() {
             cast_relay::cast_prepare_source,
             desktop_cast::desktop_cast_discover,
             desktop_cast::desktop_cast_start,
+            desktop_cast::desktop_cast_status,
+            desktop_cast::desktop_cast_control,
             desktop_cast::desktop_cast_stop,
             torrent_download::torrent_download_start,
             torrent_download::torrent_download_cancel,

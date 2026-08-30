@@ -20,7 +20,9 @@
   import type { Media } from '$lib/anilist/types'
   import type { PlayState } from '$lib/stremio/play'
   import { watchlistLayout, watchlistSort, type WatchlistLayout, type WatchlistSort } from '$lib/settings/ui'
-  import { WATCHLIST_ID, availableLocalLists, localEntriesForList, localLibrary } from '$lib/library/local-lists'
+  import { WATCHLIST_ID, RECENTLY_ADDED_ID, CURRENTLY_AIRING_ID, EPISODE_QUEUE_ID, browsableLocalLists, localEntriesForList, localLibrary, removeQueuedEpisode, reorderQueuedEpisode } from '$lib/library/local-lists'
+  import LocalListManager from '$lib/components/library/LocalListManager.svelte'
+  import { m } from '$lib/paraglide/messages.js'
   import { isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
   import Search from '@lucide/svelte/icons/search'
@@ -30,6 +32,10 @@
   import Play from '@lucide/svelte/icons/play'
   import Plus from '@lucide/svelte/icons/plus'
   import Loader from '@lucide/svelte/icons/loader-circle'
+  import Settings2 from '@lucide/svelte/icons/settings-2'
+  import ChevronUp from '@lucide/svelte/icons/chevron-up'
+  import ChevronDown from '@lucide/svelte/icons/chevron-down'
+  import Trash2 from '@lucide/svelte/icons/trash-2'
 
   const client = getContextClient()
   const listUser = $derived($anilistUserName || $anilistUser)
@@ -41,7 +47,12 @@
   let trackerMalMedia = $state<Media[]>([])
   let loading = $state(true)
   let selectedListId = $state(WATCHLIST_ID)
-  const savedLists = $derived(availableLocalLists($localLibrary))
+  const savedLists = $derived(browsableLocalLists($localLibrary))
+  const queue = $derived($localLibrary.queue ?? [])
+  let managingLists = $state(false)
+  const listName = (id: string, fallback: string) => id === RECENTLY_ADDED_ID ? m.lists_recent()
+    : id === CURRENTLY_AIRING_ID ? m.lists_airing()
+      : id === EPISODE_QUEUE_ID ? m.lists_queue() : fallback
   const selectedList = $derived(savedLists.find((list) => list.id === selectedListId) ?? savedLists[0])
   const localEntries = $derived(localEntriesForList($localLibrary, selectedListId))
   const localWatchEntries = $derived(localEntries.map((entry): Entry => ({
@@ -191,6 +202,17 @@
       })
     } catch { resolvingId = null }
   }
+  async function playQueued(media: Media, episode: number) {
+    if (resolvingId != null) return
+    resolvingId = media.id
+    try {
+      const { playEpisode } = await loadPlayback()
+      await playEpisode(media, episode, (state: PlayState) => {
+        if (state.status !== 'resolving') resolvingId = null
+        if (state.status === 'error') playError = state.message ?? 'No source was found.'
+      })
+    } catch { resolvingId = null }
+  }
 
   // MAL-Sync's signature +1: bump the tracked episode count straight from the list. Optimistic —
   // updateProgress is best-effort (queues + retries on its own), so the row moves immediately.
@@ -213,7 +235,7 @@
     : ''
 </script>
 
-{#if loading}
+{#if loading && selectedListId === WATCHLIST_ID}
   {#if $watchlistLayout === 'cards'}
     <div class="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-3 sm:grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))]">
       {#each Array.from({ length: 12 }) as _}
@@ -233,11 +255,32 @@
       <span class="shrink-0 text-muted-foreground">My list</span>
       <select bind:value={selectedListId} data-focusable aria-label="Choose saved list"
         class="h-10 min-w-0 max-w-60 rounded-xl bg-secondary px-3 text-sm font-bold outline-none focus:ring-2 focus:ring-accent">
-        {#each savedLists as list (list.id)}<option value={list.id}>{list.name}</option>{/each}
+        {#each savedLists as list (list.id)}<option value={list.id}>{listName(list.id, list.name)}</option>{/each}
       </select>
     </label>
+    <button data-focusable onclick={() => (managingLists = true)} aria-label={m.lists_manage()} title={m.lists_manage()} class="grid size-10 place-items-center rounded-xl bg-secondary hover:bg-accent"><Settings2 size={17} /></button>
   </div>
-  {#if !items.length}
+  {#if selectedListId === EPISODE_QUEUE_ID}
+    {#if queue.length}
+      <div class="space-y-2">
+        {#each queue as queued, index (queued.id)}
+          <div class="flex items-center gap-3 rounded-xl border border-border bg-card p-2.5">
+            <img src={cardCover(queued.media, 56)} alt="" class="h-16 w-11 shrink-0 rounded bg-muted object-cover" />
+            <button data-focusable onclick={() => playQueued(queued.media, queued.episode)} class="min-w-0 flex-1 text-left">
+              <span class="block truncate text-sm font-bold">{mediaTitle(queued.media)}</span>
+              <span class="block text-xs text-muted-foreground">Episode {queued.episode}</span>
+            </button>
+            <button data-focusable onclick={() => playQueued(queued.media, queued.episode)} aria-label={`Play episode ${queued.episode}`} class="grid size-9 place-items-center rounded-lg bg-secondary hover:bg-accent"><Play size={15} class="fill-current" /></button>
+            <button data-focusable onclick={() => reorderQueuedEpisode(queued.id, -1)} disabled={index === 0} aria-label={m.lists_move_up()} class="grid size-9 place-items-center rounded-lg hover:bg-accent disabled:opacity-30"><ChevronUp size={16} /></button>
+            <button data-focusable onclick={() => reorderQueuedEpisode(queued.id, 1)} disabled={index === queue.length - 1} aria-label={m.lists_move_down()} class="grid size-9 place-items-center rounded-lg hover:bg-accent disabled:opacity-30"><ChevronDown size={16} /></button>
+            <button data-focusable onclick={() => removeQueuedEpisode(queued.id)} aria-label={m.lists_delete()} class="grid size-9 place-items-center rounded-lg text-red-400 hover:bg-red-500/10"><Trash2 size={16} /></button>
+          </div>
+        {/each}
+      </div>
+    {:else}
+      <p class="rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">{m.lists_queue_empty()}</p>
+    {/if}
+  {:else if !items.length}
     <div class="rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
       <p class="font-bold text-foreground">{selectedListId === WATCHLIST_ID ? 'Your watchlist is empty' : `${selectedList?.name ?? 'This list'} is empty`}</p>
       <p class="mt-1">Save a show from its card or details page. No account is required.</p>
@@ -378,3 +421,5 @@
   {/if}
   {/if}
 {/if}
+
+{#if managingLists}<LocalListManager onclose={() => (managingLists = false)} />{/if}

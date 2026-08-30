@@ -9,6 +9,8 @@ import { kitsuToken, malToken, simklToken } from "$lib/trackers/config";
 import { durableHistory } from "$lib/player/history";
 import { durablePositions } from "$lib/player/progress";
 import { episodeSourceOrigins, sourceOrigins } from "$lib/player/source-origin";
+import { localLibrary } from "$lib/library/local-lists";
+import { seriesTrackPreferences } from "$lib/player/track-preferences";
 import { exportJson, importJson } from "$lib/player/history-io";
 import {
   applyManualSnapshot,
@@ -199,6 +201,12 @@ export function initDeviceSync() {
     if (primed) scheduleWatchPush();
   });
   episodeSourceOrigins.subscribe(() => {
+    if (primed) scheduleWatchPush();
+  });
+  localLibrary.subscribe(() => {
+    if (primed) scheduleWatchPush();
+  });
+  seriesTrackPreferences.subscribe(() => {
     if (primed) scheduleWatchPush();
   });
   anilistToken.subscribe(() => {

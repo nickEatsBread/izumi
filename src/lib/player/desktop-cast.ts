@@ -13,6 +13,16 @@ export interface DesktopCastDevice {
 export interface DesktopCastSession {
   deviceId: string
   deviceName: string
+  subtitles: { trackId: number; title: string; lang?: string }[]
+  activeTrackIds: number[]
+}
+
+export interface DesktopCastStatus {
+  state: 'playing' | 'paused' | 'buffering' | 'idle'
+  positionSeconds: number
+  durationSeconds?: number
+  volume?: number
+  muted?: boolean
 }
 
 /** Survives the player's auto-hiding Controls component being unmounted and remounted. */
@@ -60,20 +70,20 @@ export function discoverDesktopCast(waitMs = 1_800): Promise<DesktopCastDevice[]
 
 export function prepareDesktopCast(
   source: CastSourceWithSubtitles,
-  subtitle: CastSubtitleSource | null,
+  subtitles: CastSubtitleSource[],
 ): Promise<PreparedCastSource> {
   return invoke('cast_prepare_source', {
     request: {
       url: source.url,
       headers: source.headers ?? {},
       manifest: source.manifest,
-      subtitles: subtitle ? [{
+      subtitles: subtitles.map((subtitle) => ({
         url: subtitle.url,
         lang: subtitle.lang,
         title: subtitle.title,
         format: castSubtitleFormat(subtitle.url),
         headers: subtitle.headers ?? {},
-      }] : [],
+      })),
     },
   })
 }
@@ -85,8 +95,23 @@ export function startDesktopCast(request: {
   contentType: string
   positionSeconds: number
   subtitles: PreparedCastSource['subtitles']
-}): Promise<DesktopCastSession> {
+  activeTrackIds: number[]
+}): Promise<Omit<DesktopCastSession, 'subtitles' | 'activeTrackIds'>> {
   return invoke('desktop_cast_start', { request })
+}
+
+export function getDesktopCastStatus(): Promise<DesktopCastStatus> {
+  return invoke('desktop_cast_status')
+}
+
+export function controlDesktopCast(request: {
+  action: 'play' | 'pause' | 'seek' | 'volume' | 'tracks' | 'status'
+  positionSeconds?: number
+  volume?: number
+  muted?: boolean
+  activeTrackIds?: number[]
+}): Promise<DesktopCastStatus> {
+  return invoke('desktop_cast_control', { request })
 }
 
 export function stopDesktopCast(): Promise<void> {

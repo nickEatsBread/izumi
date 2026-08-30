@@ -48,6 +48,7 @@
   import Brush from '@lucide/svelte/icons/brush'
   import { chapters as chapterStore } from '$lib/player/session'
   import { activeChapterIndex, formatChapterTime, isGenericChapterTitle } from '$lib/player/chapters'
+  import { rememberSeriesTrack } from '$lib/player/track-preferences'
 
   const np = $derived($nowPlaying)
   const hasPrev = $derived(np.episode != null && np.episode > 1)
@@ -618,6 +619,8 @@
     cmd('set', [kind, String(id)])
     if (kind === 'secondary-sid') { secondaryId = String(id); return }
     const type = kind === 'sid' ? 'sub' : kind === 'ccid' ? 'caption' : 'audio'
+    const selected = tracks.find((track) => track.type === type && track.id === id) ?? null
+    rememberSeriesTrack($nowPlaying.id, type === 'audio' ? 'audio' : 'subtitle', selected)
     tracks = tracks.map((t) => {
       if (t.type === type) return { ...t, selected: t.id === id }
       if ((kind === 'sid' || kind === 'ccid') && (t.type === 'sub' || t.type === 'caption')) {
@@ -676,6 +679,7 @@
     if (detailCat === 'secondary') { cmd('set', ['secondary-sid', 'no']); secondaryId = 'no'; return }
     const type = detailCat === 'audio' ? 'audio' : detailCat === 'captions' ? 'caption' : 'sub'
     cmd('set', [leafKind, 'no'])
+    if (type !== 'audio') rememberSeriesTrack($nowPlaying.id, 'subtitle', null)
     tracks = tracks.map((t) => (t.type === type ? { ...t, selected: false } : t))
   }
 

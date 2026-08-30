@@ -21,7 +21,8 @@
     warmCapturePresentation,
     type CapturePresentation,
   } from '$lib/player/capture-presentation'
-  import { playerNotice } from '$lib/player/session'
+  import { nowPlaying, playerNotice } from '$lib/player/session'
+  import { matchRememberedTrack, rememberedSeriesTrack } from '$lib/player/track-preferences'
   import { listenSafe } from '$lib/util/listen'
   import {
     applyPlayerCommand,
@@ -740,10 +741,15 @@
       }))
     }
     syncTextTracks()
+    const rememberedAudio = matchRememberedTrack(audioTracks, rememberedSeriesTrack(get(nowPlaying).id, 'audio'))
+    if (rememberedAudio && !rememberedAudio.selected) setAid(rememberedAudio.id)
     applyPreferredSubtitles()
   }
 
   function applyPreferredSubtitles() {
+    const remembered = matchRememberedTrack(textTracks, rememberedSeriesTrack(get(nowPlaying).id, 'subtitle'))
+    if (remembered === null) { setSid(-1); return }
+    if (remembered) { remembered.type === 'caption' ? setCcid(remembered.id) : setSid(remembered.id); return }
     const audioPref = (liveAudioLang || audioLang || get(preferredAudioLang) || '').toLowerCase()
     const audioCode = audioPref.startsWith('en') ? 'eng' : 'jpn'
     const id = pickSubtitleTrackId(textTracks, audioCode, get(preferredSubLang))

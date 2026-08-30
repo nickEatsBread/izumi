@@ -22,6 +22,7 @@
   import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, subtitlePresetSourceName, type SubtitleStylePreset } from '$lib/settings/subtitle-presets'
   import { serverSiblings, variantLabels } from '$lib/player/source-variants'
   import type { Stream } from '$lib/stremio/addon'
+  import { rememberSeriesTrack } from '$lib/player/track-preferences'
 
   // Game-mode (Deck) audio/subtitle/server picker: a controller-navigable CASCADING column menu.
   // Opens on the ☰ (start) button; d-pad up/down moves within a column, →/A descends into the
@@ -239,6 +240,8 @@
     cmd('set', [leaf.kind, leaf.id === -1 ? 'no' : String(leaf.id)])
     // Reflect the new selection locally so the check mark is instant.
     const type = leaf.kind === 'aid' ? 'audio' : leaf.kind === 'ccid' ? 'caption' : 'sub'
+    const selected = leaf.id === -1 ? null : tracks.find((track) => track.type === type && track.id === leaf.id) ?? null
+    rememberSeriesTrack($nowPlayingMedia?.media.id, type === 'audio' ? 'audio' : 'subtitle', selected)
     tracks = tracks.map((t) => {
       if (t.type === type) return { ...t, selected: leaf.id !== -1 && t.id === leaf.id }
       if ((leaf.kind === 'sid' || leaf.kind === 'ccid') && (t.type === 'sub' || t.type === 'caption')) {

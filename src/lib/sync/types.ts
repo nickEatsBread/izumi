@@ -1,6 +1,8 @@
 import type { HistoryEntry } from "$lib/player/history";
 import type { Pos } from "$lib/player/progress";
 import type { RememberedSource } from "$lib/player/source-origin";
+import type { LocalLibraryState } from "$lib/library/local-lists";
+import type { SeriesTrackPreferences } from "$lib/player/track-preferences";
 
 export type SyncStatus =
   | { state: "disabled" }
@@ -43,6 +45,8 @@ export interface WatchSnapshot {
   history: Record<number, HistoryEntry>;
   positions: Record<string, Pos>;
   origins?: Record<number, RememberedSource>;
+  localLibrary?: LocalLibraryState;
+  trackPreferences?: Record<string, SeriesTrackPreferences>;
 }
 
 export interface ManualSnapshot {

@@ -145,6 +145,9 @@ export const seadexAnnotations = persisted<boolean>('seadex-annotations', true)
 export const p2pStatusVisibility = persisted<P2PStatusVisibility>('player-p2p-status-visibility', 'initial')
 /** Auto-play the next episode when one finishes. Default on. */
 export const autoplayNext = persisted<boolean>('player-autoplay-next', true)
+/** Show a cancellable countdown before autoplaying the next episode. Kept opt-in so existing
+ * binge playback remains uninterrupted unless the viewer explicitly asks for the prompt. */
+export const upNextOverlay = persisted<boolean>('player-up-next-overlay', false)
 /** Binge next episode: keep the SAME release across episodes (Stremio bingeGroup) so
  *  the next one doesn't re-pick a source, and pre-resolve + warm-buffer it as the
  *  current episode nears the end so Next/auto-advance starts instantly. Default on. */

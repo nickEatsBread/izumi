@@ -37,6 +37,9 @@
   import ListChecks from '@lucide/svelte/icons/list-checks'
   import LayoutGrid from '@lucide/svelte/icons/layout-grid'
   import Rows3 from '@lucide/svelte/icons/rows-3'
+  import ListPlus from '@lucide/svelte/icons/list-plus'
+  import { enqueueEpisode } from '$lib/library/local-lists'
+  import { m } from '$lib/paraglide/messages.js'
   let { media, offline = false }: { media: Media; offline?: boolean } = $props()
 
   // Offline: the playable set is exactly the DOWNLOADED episodes (the download keys carry the
@@ -175,6 +178,18 @@
     if (aired < 1 || resolving) return
     play(1 + Math.floor(Math.random() * aired))
   }
+  const nextQueueEpisode = $derived(Math.max(1, Math.min(watchedThrough + 1, aired || 1)))
+  let queuedNotice = $state(false)
+  function queueEpisode(episode: number) {
+    enqueueEpisode(media, episode)
+    h.select()
+    queuedNotice = true
+    setTimeout(() => (queuedNotice = false), 1800)
+  }
+  function queueNextEpisode() {
+    if (aired < 1) return
+    queueEpisode(nextQueueEpisode)
+  }
 
   // Downloads are a deliberate MULTI-SELECT mode instead of a per-episode button under
   // every card (which doubled the D-pad stops and cluttered the grid). A "Download" button
@@ -291,6 +306,11 @@
                 class="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold hover:bg-accent sm:h-auto sm:rounded-md sm:py-2">
           <Shuffle size={15} /> Random
         </button>
+        <button data-focusable onclick={queueNextEpisode} disabled={aired < 1}
+                title={`${m.lists_add_queue()} — Episode ${nextQueueEpisode}`}
+                class="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold hover:bg-accent disabled:opacity-40 sm:h-auto sm:rounded-md sm:py-2">
+          <ListPlus size={15} /> {queuedNotice ? m.lists_queued_episode({ episode: nextQueueEpisode }) : m.lists_add_queue()}
+        </button>
         {#if !selecting}
           {#if !offline}
             <button data-focusable onclick={startSelect}
@@ -301,6 +321,10 @@
         {/if}
       {/if}
       {#if $isMobile}
+        <button data-focusable onclick={queueNextEpisode} disabled={aired < 1}
+                class="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold disabled:opacity-40">
+          <ListPlus size={16} /> {m.lists_add_queue()}
+        </button>
         <!-- Layout switch: mobile-only. Rendering it unconditionally added two data-focusable
              stops to the desktop toolbar and the Deck's controller focus order for a layout that
              doesn't apply there. -->
@@ -547,6 +571,7 @@
           navId={ep === quickEpisode ? 'series-quick-episode' : undefined}
           navUp={ep === quickEpisode ? 'series-primary-action' : undefined}
           onplay={tap}
+          onqueue={queueEpisode}
         />
       {/each}
     </div>
@@ -609,6 +634,13 @@
               {:else if dl.status === 'queued'}<Loader size={13} class="animate-spin text-muted-foreground" />
               {:else}<Pause size={12} class="text-amber-400" />{/if}
             </span>
+          {/if}
+          {#if released && !selecting}
+            <button data-focusable onclick={(event) => { event.stopPropagation(); queueEpisode(ep) }}
+              aria-label={m.lists_queue_episode({ episode: ep })} title={m.lists_queue_episode({ episode: ep })}
+              class="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-background/60 hover:text-foreground">
+              <ListPlus size={14} />
+            </button>
           {/if}
           <!-- Resume/watched bar, identical to the card layout: a real saved position wins, and a
                tracker-counted episode fills it as the fallback. -->

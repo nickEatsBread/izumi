@@ -1,7 +1,7 @@
 <script lang="ts">
   import {
     autoSkip, skipFiller, preferredAudioLang, preferredSubLang,
-    autoplayNext, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
+    autoplayNext, upNextOverlay, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
     scrubThumbnails, playerProgressAnimations, playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying,
     videoQualityPreset, rawMpvOptions, gifIncludeSubtitles, gifScale, gifMaxSeconds, androidAutoPip,
     audioProcessing, windowsVsr, systemMediaControls, discordRichPresence, subtitleLineNavigation,
@@ -21,6 +21,7 @@
   import { open } from '@tauri-apps/plugin-dialog'
   import { isAndroid } from '$lib/platform'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
+  import { m } from '$lib/paraglide/messages.js'
 
   let pendingAnime = $state(false) // shows the one-time shader consent
 
@@ -63,15 +64,15 @@
 
   <div class="mb-4 grid max-w-2xl gap-3 sm:grid-cols-2">
     <label class="flex flex-col gap-1">
-      <span class="text-sm font-bold">Audio language</span>
-      <SelectMenu bind:value={$preferredAudioLang} ariaLabel="Audio language" options={[
+      <span class="text-sm font-bold">{m.player_audio_language()}</span>
+      <SelectMenu bind:value={$preferredAudioLang} ariaLabel={m.player_audio_language()} options={[
         { value: 'jpn', label: 'Japanese' },
         { value: 'eng', label: 'English' },
       ]} />
     </label>
     <label class="flex flex-col gap-1">
-      <span class="text-sm font-bold">Subtitle language</span>
-      <SelectMenu bind:value={$preferredSubLang} ariaLabel="Subtitle language" options={[
+      <span class="text-sm font-bold">{m.player_subtitle_language()}</span>
+      <SelectMenu bind:value={$preferredSubLang} ariaLabel={m.player_subtitle_language()} options={[
         { value: 'eng', label: 'English' },
         { value: 'jpn', label: 'Japanese' },
         { value: 'none', label: 'Off' },
@@ -284,7 +285,8 @@
     </div>
   {:else}
   <div class="max-w-2xl space-y-3">
-    <Toggle label="Auto-play next episode" desc="Play the next episode automatically when one finishes." value={$autoplayNext} onToggle={() => ($autoplayNext = !$autoplayNext)} />
+    <Toggle label={m.player_autoplay_next()} desc={m.player_autoplay_next_hint()} value={$autoplayNext} onToggle={() => ($autoplayNext = !$autoplayNext)} />
+    <Toggle label={m.player_up_next_overlay()} desc={m.player_up_next_overlay_hint()} value={$upNextOverlay} onToggle={() => ($upNextOverlay = !$upNextOverlay)} />
     {#if !$isAndroid}
       <Toggle label="System media controls" desc="Show playback metadata and Play, Pause, Previous, Next, and seek actions in Windows SMTC or Linux MPRIS controls. Adult titles show no name, series, or artwork there — only the controls." value={$systemMediaControls} onToggle={() => ($systemMediaControls = !$systemMediaControls)} />
       <Toggle label="Discord Rich Presence" desc="Share the current series, episode, cover art, and progress with Discord. On by default; adult titles are never shared." value={$discordRichPresence} onToggle={() => ($discordRichPresence = !$discordRichPresence)} />

@@ -26,6 +26,7 @@ export const SYNCED_SETTING_KEYS = [
   "show-dead-sources",
   "preferred-stream-sort",
   "player-autoplay-next",
+  "player-up-next-overlay",
   "player-binge-preload",
   "player-seek-seconds",
   "player-subtitle-line-navigation",

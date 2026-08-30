@@ -18,6 +18,7 @@ use rust_cast::{
     channels::{
         connection::ConnectionChannel,
         heartbeat::HeartbeatChannel,
+        media::{MediaChannel, ResumeState},
         receiver::{CastDeviceApp, ReceiverChannel},
     },
     message_manager::{CastMessage, CastMessagePayload, MessageManager},
@@ -63,6 +64,7 @@ struct CachedDevice {
 struct ActiveCast {
     device: DesktopCastDevice,
     app_session_id: String,
+    media_session_id: i32,
 }
 
 #[derive(Default)]
@@ -102,6 +104,8 @@ pub struct DesktopCastStartRequest {
     position_seconds: f64,
     #[serde(default)]
     subtitles: Vec<DesktopCastSubtitle>,
+    #[serde(default)]
+    active_track_ids: Vec<u32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -109,6 +113,26 @@ pub struct DesktopCastStartRequest {
 pub struct DesktopCastSession {
     device_id: String,
     device_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopCastControlRequest {
+    action: String,
+    position_seconds: Option<f64>,
+    volume: Option<f32>,
+    muted: Option<bool>,
+    active_track_ids: Option<Vec<u32>>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopCastStatus {
+    state: String,
+    position_seconds: f32,
+    duration_seconds: Option<f32>,
+    volume: Option<f32>,
+    muted: Option<bool>,
 }
 
 struct CastConnection {
@@ -172,7 +196,7 @@ pub async fn desktop_cast_start(
     };
 
     let cast_device = device.clone();
-    let app_session_id =
+    let (app_session_id, media_session_id) =
         tauri::async_runtime::spawn_blocking(move || launch_media(&cast_device, &request))
             .await
             .map_err(|error| format!("Cast sender stopped unexpectedly: {error}"))??;
@@ -180,6 +204,7 @@ pub async fn desktop_cast_start(
     let session = ActiveCast {
         device: device.clone(),
         app_session_id,
+        media_session_id,
     };
     *state
         .active
@@ -190,6 +215,37 @@ pub async fn desktop_cast_start(
         device_id: device.id,
         device_name: device.name,
     })
+}
+
+#[tauri::command]
+pub async fn desktop_cast_status(
+    state: tauri::State<'_, DesktopCastState>,
+) -> Result<DesktopCastStatus, String> {
+    let active = active_session(&state)?;
+    tauri::async_runtime::spawn_blocking(move || read_session_status(&active))
+        .await
+        .map_err(|error| format!("Cast sender stopped unexpectedly: {error}"))?
+}
+
+#[tauri::command]
+pub async fn desktop_cast_control(
+    state: tauri::State<'_, DesktopCastState>,
+    request: DesktopCastControlRequest,
+) -> Result<DesktopCastStatus, String> {
+    validate_control_request(&request)?;
+    let active = active_session(&state)?;
+    tauri::async_runtime::spawn_blocking(move || control_session(&active, &request))
+        .await
+        .map_err(|error| format!("Cast sender stopped unexpectedly: {error}"))?
+}
+
+fn active_session(state: &tauri::State<'_, DesktopCastState>) -> Result<ActiveCast, String> {
+    state
+        .active
+        .lock()
+        .map_err(|_| "Cast session state is unavailable".to_string())?
+        .clone()
+        .ok_or_else(|| "There is no active Cast session".to_string())
 }
 
 #[tauri::command]
@@ -315,6 +371,14 @@ fn validate_start_request(request: &DesktopCastStartRequest) -> Result<(), Strin
     if request.subtitles.len() > 8 {
         return Err("Cast received too many subtitle tracks".into());
     }
+    if request.active_track_ids.len() > request.subtitles.len()
+        || request
+            .active_track_ids
+            .iter()
+            .any(|id| *id == 0 || *id > request.subtitles.len() as u32)
+    {
+        return Err("Cast received invalid active subtitle tracks".into());
+    }
     for subtitle in &request.subtitles {
         validate_http_url(&subtitle.url, "subtitle")?;
         if !supported_subtitle_type(&subtitle.content_type) {
@@ -401,7 +465,7 @@ fn connect(device: &DesktopCastDevice) -> Result<CastConnection, String> {
 fn launch_media(
     device: &DesktopCastDevice,
     request: &DesktopCastStartRequest,
-) -> Result<String, String> {
+) -> Result<(String, i32), String> {
     let cast = connect(device)?;
     let app = cast
         .receiver
@@ -427,8 +491,8 @@ fn launch_media(
         })
         .map_err(|error| format!("Could not send media to the Cast receiver: {error}"))?;
 
-    wait_for_load(&cast, request_id, &request.url)?;
-    Ok(app.session_id)
+    let media_session_id = wait_for_load(&cast, request_id, &request.url)?;
+    Ok((app.session_id, media_session_id))
 }
 
 fn load_payload(request_id: u32, session_id: &str, request: &DesktopCastStartRequest) -> Value {
@@ -449,7 +513,12 @@ fn load_payload(request_id: u32, session_id: &str, request: &DesktopCastStartReq
             })
         })
         .collect::<Vec<_>>();
-    let active_track_ids = (1..=tracks.len() as u32).collect::<Vec<_>>();
+    let active_track_ids = request
+        .active_track_ids
+        .iter()
+        .copied()
+        .filter(|id| *id > 0 && *id <= tracks.len() as u32)
+        .collect::<Vec<_>>();
     json!({
         "type": "LOAD",
         "requestId": request_id,
@@ -469,6 +538,143 @@ fn load_payload(request_id: u32, session_id: &str, request: &DesktopCastStartReq
             "tracks": tracks
         }
     })
+}
+
+fn validate_control_request(request: &DesktopCastControlRequest) -> Result<(), String> {
+    match request.action.as_str() {
+        "play" | "pause" | "status" => {}
+        "seek" => {
+            let value = request
+                .position_seconds
+                .ok_or_else(|| "Cast seek needs a position".to_string())?;
+            if !value.is_finite() || value < 0.0 {
+                return Err("Cast received an invalid seek position".into());
+            }
+        }
+        "volume" => {
+            if let Some(value) = request.volume {
+                if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+                    return Err("Cast volume must be between 0 and 1".into());
+                }
+            }
+            if request.volume.is_none() && request.muted.is_none() {
+                return Err("Cast volume control needs a value".into());
+            }
+        }
+        "tracks" => {
+            let ids = request.active_track_ids.as_deref().unwrap_or(&[]);
+            if ids.len() > 8 || ids.iter().any(|id| *id == 0 || *id > 8) {
+                return Err("Cast received invalid subtitle track ids".into());
+            }
+        }
+        _ => return Err("Cast received an unknown control action".into()),
+    }
+    Ok(())
+}
+
+fn connected_active(active: &ActiveCast) -> Result<(CastConnection, String), String> {
+    let cast = connect(&active.device)?;
+    let receiver_status = cast
+        .receiver
+        .get_status()
+        .map_err(|error| format!("Could not read Cast session state: {error}"))?;
+    let app = receiver_status
+        .applications
+        .into_iter()
+        .find(|app| app.session_id == active.app_session_id)
+        .ok_or_else(|| "The Cast receiver is no longer playing this session".to_string())?;
+    cast.connection
+        .connect(app.transport_id.as_str())
+        .map_err(|error| format!("Could not reconnect to the Cast media receiver: {error}"))?;
+    Ok((cast, app.transport_id))
+}
+
+fn read_session_status(active: &ActiveCast) -> Result<DesktopCastStatus, String> {
+    let (cast, transport_id) = connected_active(active)?;
+    let media = MediaChannel::new(SENDER_ID, Rc::clone(&cast.manager));
+    let status = media
+        .get_status(transport_id, Some(active.media_session_id))
+        .map_err(|error| format!("Could not read Cast playback state: {error}"))?;
+    let entry = status
+        .entries
+        .into_iter()
+        .find(|entry| entry.media_session_id == active.media_session_id)
+        .ok_or_else(|| "The Cast media session has ended".to_string())?;
+    let receiver = cast
+        .receiver
+        .get_status()
+        .map_err(|error| format!("Could not read Cast volume: {error}"))?;
+    Ok(DesktopCastStatus {
+        state: entry.player_state.to_string().to_ascii_lowercase(),
+        position_seconds: entry.current_time.unwrap_or(0.0),
+        duration_seconds: entry.media.and_then(|media| media.duration),
+        volume: receiver.volume.level,
+        muted: receiver.volume.muted,
+    })
+}
+
+fn control_session(
+    active: &ActiveCast,
+    request: &DesktopCastControlRequest,
+) -> Result<DesktopCastStatus, String> {
+    let (cast, transport_id) = connected_active(active)?;
+    let media = MediaChannel::new(SENDER_ID, Rc::clone(&cast.manager));
+    match request.action.as_str() {
+        "play" => {
+            media
+                .play(transport_id.as_str(), active.media_session_id)
+                .map_err(|error| format!("Could not resume Cast playback: {error}"))?;
+        }
+        "pause" => {
+            media
+                .pause(transport_id.as_str(), active.media_session_id)
+                .map_err(|error| format!("Could not pause Cast playback: {error}"))?;
+        }
+        "seek" => {
+            media
+                .seek(
+                    transport_id.as_str(),
+                    active.media_session_id,
+                    request.position_seconds.map(|value| value as f32),
+                    Some(ResumeState::PlaybackStart),
+                )
+                .map_err(|error| format!("Could not seek Cast playback: {error}"))?;
+        }
+        "volume" => {
+            let volume = rust_cast::channels::receiver::Volume {
+                level: request.volume,
+                muted: request.muted,
+            };
+            cast.receiver
+                .set_volume(volume)
+                .map_err(|error| format!("Could not change Cast volume: {error}"))?;
+        }
+        "tracks" => {
+            let request_id = cast.manager.generate_request_id().get();
+            let encoded = serde_json::to_string(&json!({
+                "type": "EDIT_TRACKS_INFO",
+                "requestId": request_id,
+                "mediaSessionId": active.media_session_id,
+                "activeTrackIds": request.active_track_ids.as_deref().unwrap_or(&[]),
+            }))
+            .map_err(|error| format!("Could not prepare Cast subtitle selection: {error}"))?;
+            cast.manager
+                .send(CastMessage {
+                    namespace: MEDIA_NAMESPACE.into(),
+                    source: SENDER_ID.into(),
+                    destination: transport_id,
+                    payload: CastMessagePayload::String(encoded),
+                })
+                .map_err(|error| format!("Could not change Cast subtitles: {error}"))?;
+        }
+        "status" => {}
+        _ => unreachable!("validated above"),
+    }
+    // The status helper establishes a fresh receiver connection. Close this one first so a
+    // Chromecast that limits concurrent senders does not reject the follow-up status request.
+    drop(media);
+    drop(cast);
+    read_session_status(active)
 }
 
 fn wait_for_load(cast: &CastConnection, request_id: u32, content_id: &str) -> Result<i32, String> {
@@ -578,6 +784,7 @@ mod tests {
                 title: Some("English".into()),
                 content_type: "text/vtt; charset=utf-8".into(),
             }],
+            active_track_ids: vec![1],
         }
     }
 

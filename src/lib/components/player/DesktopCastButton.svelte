@@ -1,20 +1,31 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import Cast from '@lucide/svelte/icons/cast'
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
   import Square from '@lucide/svelte/icons/square'
+  import Play from '@lucide/svelte/icons/play'
+  import Pause from '@lucide/svelte/icons/pause'
+  import RotateCcw from '@lucide/svelte/icons/rotate-ccw'
+  import RotateCw from '@lucide/svelte/icons/rotate-cw'
+  import Smartphone from '@lucide/svelte/icons/smartphone'
+  import Captions from '@lucide/svelte/icons/captions'
+  import Volume2 from '@lucide/svelte/icons/volume-2'
   import { playerGetProperty, playerTracks } from '$lib/player/native'
   import { nowPlaying, nowPlayingStream, playerMenuOpen, playerNotice } from '$lib/player/session'
-  import { castSourceDecision, type CastTrack } from '$lib/player/android-cast'
+  import { castSourceDecision, castSubtitleFormat, type CastTrack } from '$lib/player/android-cast'
   import {
     desktopCastSession,
+    controlDesktopCast,
     discoverDesktopCast,
+    getDesktopCastStatus,
     prepareDesktopCast,
     selectedCastSubtitle,
     startDesktopCast,
     stopDesktopCast,
     type DesktopCastDevice,
+    type DesktopCastStatus,
   } from '$lib/player/desktop-cast'
+  import { m } from '$lib/paraglide/messages.js'
 
   let {
     pos,
@@ -34,6 +45,8 @@
   let scanning = $state(false)
   let connectingId = $state<string | null>(null)
   let devices = $state<DesktopCastDevice[]>([])
+  let status = $state<DesktopCastStatus | null>(null)
+  let controlling = $state(false)
 
   function message(error: unknown): string {
     if (typeof error === 'string') return error
@@ -83,15 +96,31 @@
 
       const selectedTrack = tracks.find((track) => track.type === 'sub' && track.selected)
       const subtitle = selectedCastSubtitle(source, tracks)
-      const prepared = await prepareDesktopCast(source, subtitle)
-      const session = await startDesktopCast({
+      const compatible = (source.subtitles ?? []).filter((candidate) => !!castSubtitleFormat(candidate.url))
+      const compatibleSubtitles = subtitle
+        ? [subtitle, ...compatible.filter((candidate) => candidate.url !== subtitle.url)].slice(0, 8)
+        : compatible.slice(0, 8)
+      const prepared = await prepareDesktopCast(source, compatibleSubtitles)
+      const selectedIndex = subtitle ? compatibleSubtitles.findIndex((candidate) => candidate.url === subtitle.url) : -1
+      const activeTrackIds = selectedIndex >= 0 ? [selectedIndex + 1] : []
+      const nativeSession = await startDesktopCast({
         deviceId: device.id,
         url: prepared.url,
         title: $nowPlaying.animeTitle || $nowPlaying.title || 'Izumi',
         contentType: decision.contentType,
         positionSeconds: Math.max(0, pos),
         subtitles: prepared.subtitles,
+        activeTrackIds,
       })
+      const session = {
+        ...nativeSession,
+        subtitles: prepared.subtitles.map((item, index) => ({
+          trackId: index + 1,
+          title: item.title || item.lang || `Subtitle ${index + 1}`,
+          lang: item.lang,
+        })),
+        activeTrackIds,
+      }
       desktopCastSession.set(session)
       // The receiver starts at this exact position; pause the duplicate local audio only after the
       // LOAD has been confirmed, so a failed Cast attempt never interrupts playback.
@@ -101,12 +130,51 @@
         : ''
       const detail = subtitleWarning.trim() || decision.warnings[0] || ''
       playerNotice.set(`Casting to ${session.deviceName}${detail ? `. ${detail}` : ''}`)
+      void refreshStatus()
       close()
     } catch (error) {
       playerNotice.set(message(error))
     } finally {
       connectingId = null
     }
+  }
+
+  async function refreshStatus(showError = false) {
+    if (!$desktopCastSession) return
+    try { status = await getDesktopCastStatus() }
+    catch (error) {
+      const detail = message(error)
+      if (/no active cast|ended|no longer active/i.test(detail)) {
+        desktopCastSession.set(null)
+        status = null
+      } else if (showError) playerNotice.set(detail)
+    }
+  }
+
+  async function control(action: 'play' | 'pause' | 'seek' | 'volume' | 'tracks', extra: Record<string, unknown> = {}) {
+    if (controlling) return
+    controlling = true
+    try { status = await controlDesktopCast({ action, ...extra }) }
+    catch (error) { playerNotice.set(message(error)) }
+    finally { controlling = false }
+  }
+
+  async function pickCastSubtitle(trackId: number | null) {
+    const activeTrackIds = trackId == null ? [] : [trackId]
+    await control('tracks', { activeTrackIds })
+    if ($desktopCastSession) desktopCastSession.set({ ...$desktopCastSession, activeTrackIds })
+  }
+
+  async function handoff() {
+    try {
+      const latest = await getDesktopCastStatus().catch(() => status)
+      await stopDesktopCast()
+      desktopCastSession.set(null)
+      if (latest) cmd('seek', [String(latest.positionSeconds), 'absolute+exact'])
+      cmd('set', ['pause', 'no'])
+      playerNotice.set('Playback continued on this device')
+      close()
+    } catch (error) { playerNotice.set(message(error)) }
   }
 
   async function stop() {
@@ -123,6 +191,10 @@
   onDestroy(() => {
     if (open) playerMenuOpen.set(false)
   })
+  onMount(() => {
+    const timer = setInterval(() => { if ($desktopCastSession) void refreshStatus() }, 2500)
+    return () => clearInterval(timer)
+  })
 </script>
 
 <div class="relative">
@@ -130,9 +202,9 @@
     data-focusable
     class="{buttonClass} {$desktopCastSession ? 'bg-primary/25 text-primary' : ''}"
     onclick={toggle}
-    aria-label={$desktopCastSession ? `Casting to ${$desktopCastSession.deviceName}` : 'Cast to TV'}
+    aria-label={$desktopCastSession ? `Casting to ${$desktopCastSession.deviceName}` : m.cast_title()}
     aria-pressed={!!$desktopCastSession}
-    title={$desktopCastSession ? `Casting to ${$desktopCastSession.deviceName}` : 'Cast to TV'}
+    title={$desktopCastSession ? `Casting to ${$desktopCastSession.deviceName}` : m.cast_title()}
   >
     <Cast size={iconSize} />
   </button>
@@ -141,9 +213,9 @@
     <button class="fixed inset-0 z-20 cursor-default" onclick={close} aria-label="Close Cast devices"></button>
     <div class="absolute bottom-full right-0 z-30 mb-2 w-72 overflow-hidden rounded-xl border border-white/10 bg-neutral-900 p-2 text-sm text-white shadow-2xl [transform:translateZ(0)]">
       <div class="flex items-center justify-between px-2 py-1.5">
-        <span class="font-semibold">Cast to TV</span>
+        <span class="font-semibold">{m.cast_title()}</span>
         {#if !$desktopCastSession}
-          <button data-focusable class="grid size-8 place-items-center rounded-lg text-white/60 hover:bg-white/10" onclick={refresh} disabled={scanning} aria-label="Scan again">
+          <button data-focusable class="grid size-8 place-items-center rounded-lg text-white/60 hover:bg-white/10" onclick={refresh} disabled={scanning} aria-label={m.cast_scan()}>
             <RefreshCw size={16} class={scanning ? 'animate-spin' : ''} />
           </button>
         {/if}
@@ -151,16 +223,45 @@
 
       {#if $desktopCastSession}
         <div class="rounded-lg bg-white/5 px-3 py-2.5">
-          <span class="block text-xs uppercase tracking-wide text-white/45">Now casting</span>
+          <span class="block text-xs uppercase tracking-wide text-white/45">{m.cast_now_casting()}</span>
           <span class="block truncate font-semibold">{$desktopCastSession.deviceName}</span>
+          {#if status}
+            <span class="mt-1 block text-xs capitalize text-white/45">{status.state} · {Math.floor(status.positionSeconds / 60)}:{String(Math.floor(status.positionSeconds % 60)).padStart(2, '0')}</span>
+          {/if}
         </div>
+        <div class="mt-1 grid grid-cols-4 gap-1">
+          <button data-focusable onclick={() => control('seek', { positionSeconds: Math.max(0, (status?.positionSeconds ?? 0) - 10) })} aria-label={m.cast_seek_back()} class="grid h-9 place-items-center rounded-lg hover:bg-white/10"><RotateCcw size={16} /></button>
+          {#if status?.state === 'paused'}
+            <button data-focusable onclick={() => control('play')} aria-label={m.cast_play()} class="grid h-9 place-items-center rounded-lg hover:bg-white/10"><Play size={16} class="fill-current" /></button>
+          {:else}
+            <button data-focusable onclick={() => control('pause')} aria-label={m.cast_pause()} class="grid h-9 place-items-center rounded-lg hover:bg-white/10"><Pause size={16} class="fill-current" /></button>
+          {/if}
+          <button data-focusable onclick={() => control('seek', { positionSeconds: (status?.positionSeconds ?? 0) + 10 })} aria-label={m.cast_seek_forward()} class="grid h-9 place-items-center rounded-lg hover:bg-white/10"><RotateCw size={16} /></button>
+          <button data-focusable onclick={handoff} aria-label={m.cast_handoff()} class="grid h-9 place-items-center rounded-lg hover:bg-white/10"><Smartphone size={16} /></button>
+        </div>
+        <label class="mt-2 flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-xs text-white/60">
+          <Volume2 size={15} /><span class="sr-only">{m.cast_volume()}</span>
+          <input data-focusable type="range" min="0" max="1" step="0.05" value={status?.volume ?? 0.5} oninput={(event) => control('volume', { volume: Number(event.currentTarget.value) })} class="min-w-0 flex-1" />
+        </label>
+        {#if $desktopCastSession.subtitles.length}
+          <div class="mt-2 rounded-lg bg-white/5 p-2">
+            <p class="mb-1 flex items-center gap-1.5 px-1 text-xs font-bold text-white/50"><Captions size={14} />{m.cast_subtitles()}</p>
+            <button data-focusable onclick={() => pickCastSubtitle(null)} class="block w-full rounded-md px-2 py-1.5 text-left text-xs hover:bg-white/10 {$desktopCastSession.activeTrackIds.length ? '' : 'text-theme'}">{m.cast_subtitles_off()}</button>
+            {#each $desktopCastSession.subtitles as subtitle (subtitle.trackId)}
+              <button data-focusable onclick={() => pickCastSubtitle(subtitle.trackId)} class="block w-full truncate rounded-md px-2 py-1.5 text-left text-xs hover:bg-white/10 {$desktopCastSession.activeTrackIds.includes(subtitle.trackId) ? 'text-theme' : ''}">{subtitle.title}</button>
+            {/each}
+          </div>
+        {/if}
+        <button data-focusable class="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={handoff}>
+          <Smartphone size={15} /> {m.cast_handoff()}
+        </button>
         <button data-focusable class="mt-1 flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-red-300 transition hover:bg-white/10" onclick={stop}>
-          <Square size={14} fill="currentColor" /> Stop casting
+          <Square size={14} fill="currentColor" /> {m.cast_stop()}
         </button>
       {:else if scanning && !devices.length}
         <div class="flex items-center gap-2 px-3 py-4 text-white/55">
           <span class="size-3 animate-spin rounded-full border-2 border-white/20 border-t-white/70"></span>
-          Looking for TVs on this network…
+          {m.cast_scanning()}
         </div>
       {:else if devices.length}
         {#each devices as device (device.id)}
@@ -182,7 +283,7 @@
           </button>
         {/each}
       {:else}
-        <p class="px-3 py-4 text-white/45">No Cast devices found. Make sure this computer and TV are on the same network.</p>
+        <p class="px-3 py-4 text-white/45">{m.cast_empty()}</p>
       {/if}
     </div>
   {/if}
