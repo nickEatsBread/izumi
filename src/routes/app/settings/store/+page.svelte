@@ -233,7 +233,7 @@
   }
 </script>
 
-<div class="p-4 sm:p-8">
+<div class="min-w-0 overflow-x-hidden p-4 sm:p-8">
   <div class="mb-5 max-w-5xl">
     <h2 class="text-xl font-black">Source Store</h2>
     <p class="mt-1 text-sm text-muted-foreground">
@@ -257,8 +257,8 @@
   {#if error}<p class="mb-4 max-w-5xl rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>{/if}
 
   {#if tab !== 'installed'}
-    <div class="mb-4 flex max-w-5xl flex-wrap gap-2">
-      <label class="relative min-w-60 flex-1">
+    <div class="mb-4 flex min-w-0 max-w-5xl flex-wrap gap-2">
+      <label class="relative min-w-0 basis-full sm:min-w-60 sm:basis-auto sm:flex-1">
         <Search size={16} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input bind:value={query} data-focusable placeholder={tab === 'addons' ? 'Search community addons…' : 'Search anime packages…'}
                class="w-full rounded-lg bg-input py-2.5 pl-9 pr-3 text-base sm:text-sm" />
@@ -279,13 +279,13 @@
     {#if loading && !addons.length}
       <div class="grid max-w-5xl gap-3 sm:grid-cols-2">{#each Array(6) as _}<div class="skeloader h-32 rounded-xl"></div>{/each}</div>
     {:else}
-      <div class="grid max-w-5xl gap-3 sm:grid-cols-2">
+      <div class="grid min-w-0 max-w-5xl gap-3 sm:grid-cols-2">
         {#each addons as addon (addon.uuid)}
           {@const base = addonBase(addon)}
           {@const installedBase = installedAddonBases[addon.manifest.id] ?? (configuredBases.has(base) ? base : '')}
           {@const installed = !!installedBase}
           {@const off = installed && $disabledSources.includes(installedBase)}
-          <article class="flex gap-3 rounded-xl border border-border bg-secondary/25 p-4 lg:items-center lg:p-3" class:opacity-60={installed && off}>
+          <article class="flex w-full min-w-0 max-w-full gap-3 overflow-hidden rounded-xl border border-border bg-secondary/25 p-4 lg:items-center lg:p-3" class:opacity-60={installed && off}>
             <AddonLogo
               logo={resolveStoreAddonLogo(addon.manifest.logo, base)}
               name={addon.manifest.name}
@@ -325,11 +325,11 @@
     <p class="mb-3 text-xs text-muted-foreground">
       {extensionResults.length} packages · signed/hash-pinned catalog from nickEatsBread/izumi-extension-repo
     </p>
-    <div class="grid max-w-5xl gap-3 sm:grid-cols-2">
+    <div class="grid min-w-0 max-w-5xl gap-3 sm:grid-cols-2">
       {#each extensionResults as item (item.id)}
         {@const installed = packageById.get(item.id)}
         {@const off = $disabledPlugins.includes(item.id)}
-        <article class="rounded-xl border border-border bg-secondary/25 p-4 lg:flex lg:items-center lg:gap-3 lg:p-3" class:opacity-60={!!installed && off}>
+        <article class="w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-border bg-secondary/25 p-4 lg:flex lg:items-center lg:gap-3 lg:p-3" class:opacity-60={!!installed && off}>
           <div class="flex items-start gap-3 lg:min-w-0 lg:flex-1">
             <!-- The package's own artwork once we have it (installed launcher icon, or a manifest
                  icon when the same provider is served by one of the user's sources), else the

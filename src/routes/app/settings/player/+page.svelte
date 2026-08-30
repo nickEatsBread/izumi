@@ -10,6 +10,7 @@
     audioPassthroughDts, audioPassthroughDtsHd, dolbyVisionOutputMode,
     p2pStatusVisibility,
     continueSourcePreference,
+    developerLogging,
   } from '$lib/settings/ui'
   import { qualityNotice, qualityFailedKeys } from '$lib/player/quality'
   import {
@@ -215,6 +216,7 @@
     </label>
   </section>
 
+  {#if $developerLogging}
   <section class="mb-4 max-w-2xl rounded-md border border-border bg-secondary/35 p-3 text-xs">
     <div class="flex items-center justify-between gap-3">
       <h3 class="text-sm font-bold">Home-theatre capability diagnostics</h3>
@@ -245,6 +247,7 @@
       <p class="mt-1 text-muted-foreground">• {limitation}</p>
     {/each}
   </section>
+  {/if}
 
   <label class="mb-4 flex max-w-2xl flex-col gap-3 rounded-md border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
     <span class="min-w-0">
