@@ -16,6 +16,8 @@
   import {
     desktopCastSession,
     controlDesktopCast,
+    desktopCastContentType,
+    desktopCastSupportsDlnaSubtitles,
     discoverDesktopCast,
     getDesktopCastStatus,
     prepareDesktopCast,
@@ -91,41 +93,61 @@
         playerGetProperty('file-format').catch(() => ''),
       ])
       const tracks = JSON.parse(rawTracks) as CastTrack[]
-      const decision = castSourceDecision(source, tracks, fileFormat)
+      const decision = castSourceDecision(source, tracks, fileFormat, device.protocol === 'googleCast' ? 'googleCast' : 'tv')
       if (!decision.ok) throw new Error(decision.error)
 
       const selectedTrack = tracks.find((track) => track.type === 'sub' && track.selected)
       const subtitle = selectedCastSubtitle(source, tracks)
-      const compatible = (source.subtitles ?? []).filter((candidate) => !!castSubtitleFormat(candidate.url))
-      const compatibleSubtitles = subtitle
-        ? [subtitle, ...compatible.filter((candidate) => candidate.url !== subtitle.url)].slice(0, 8)
+      const samsungDlnaSubtitles = desktopCastSupportsDlnaSubtitles(device)
+      const compatible = (source.subtitles ?? []).filter((candidate) => {
+        const format = castSubtitleFormat(candidate.url)
+        return !!format && (!samsungDlnaSubtitles || format === 'srt' || format === 'vtt')
+      })
+      const selectedSubtitle = subtitle && compatible.some((candidate) => candidate.url === subtitle.url)
+        ? subtitle
+        : null
+      const compatibleSubtitles = selectedSubtitle
+        ? [selectedSubtitle, ...compatible.filter((candidate) => candidate.url !== selectedSubtitle.url)].slice(0, 8)
         : compatible.slice(0, 8)
-      const prepared = await prepareDesktopCast(source, compatibleSubtitles)
-      const selectedIndex = subtitle ? compatibleSubtitles.findIndex((candidate) => candidate.url === subtitle.url) : -1
+      const receiverContentType = desktopCastContentType(device, decision.contentType)
+      const selectedIndex = selectedSubtitle
+        ? compatibleSubtitles.findIndex((candidate) => candidate.url === selectedSubtitle.url)
+        : -1
       const activeTrackIds = selectedIndex >= 0 ? [selectedIndex + 1] : []
+      const prepared = await prepareDesktopCast(source, compatibleSubtitles, {
+        // Samsung's 2018 AllShare player fails on otherwise valid modern HTTPS CDN endpoints.
+        // Give every DLNA renderer a stable LAN HTTP URL; Google Cast remains direct when possible.
+        forceRelay: device.protocol === 'dlna',
+        contentType: receiverContentType,
+        subtitleDelivery: samsungDlnaSubtitles ? 'samsungDlna' : 'web',
+      })
       const nativeSession = await startDesktopCast({
+        device,
         deviceId: device.id,
         url: prepared.url,
         title: $nowPlaying.animeTitle || $nowPlaying.title || 'Izumi',
-        contentType: decision.contentType,
+        contentType: receiverContentType,
         positionSeconds: Math.max(0, pos),
         subtitles: prepared.subtitles,
         activeTrackIds,
       })
+      const exposesSubtitles = nativeSession.backend !== 'dlna' || samsungDlnaSubtitles
+      const remoteSubtitles = exposesSubtitles ? prepared.subtitles : []
+      const remoteTrackIds = exposesSubtitles ? activeTrackIds : []
       const session = {
         ...nativeSession,
-        subtitles: prepared.subtitles.map((item, index) => ({
+        subtitles: remoteSubtitles.map((item, index) => ({
           trackId: index + 1,
           title: item.title || item.lang || `Subtitle ${index + 1}`,
           lang: item.lang,
         })),
-        activeTrackIds,
+        activeTrackIds: remoteTrackIds,
       }
       desktopCastSession.set(session)
       // The receiver starts at this exact position; pause the duplicate local audio only after the
       // LOAD has been confirmed, so a failed Cast attempt never interrupts playback.
       cmd('set', ['pause', 'yes'])
-      const subtitleWarning = selectedTrack && !subtitle
+      const subtitleWarning = selectedTrack && !selectedSubtitle
         ? ' The selected subtitle is not available to Cast.'
         : ''
       const detail = subtitleWarning.trim() || decision.warnings[0] || ''
@@ -278,7 +300,11 @@
             {/if}
             <span class="min-w-0">
               <span class="block truncate font-medium">{device.name}</span>
-              <span class="block truncate text-xs text-white/40">{device.model ?? 'Google Cast device'}</span>
+              <span class="block truncate text-xs text-white/40">
+                {device.protocol === 'dlna'
+                  ? `${device.model ?? device.manufacturer ?? 'Smart TV'} · ${/samsung/i.test(`${device.manufacturer ?? ''} ${device.name}`) ? 'Izumi receiver / DLNA' : 'DLNA'}`
+                  : device.model ?? 'Google Cast device'}
+              </span>
             </span>
           </button>
         {/each}

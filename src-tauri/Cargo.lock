@@ -3736,6 +3736,7 @@ dependencies = [
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
+ "quick-xml 0.39.4",
  "raw-window-handle",
  "realfft",
  "regex",

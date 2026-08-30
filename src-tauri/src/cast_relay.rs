@@ -14,7 +14,7 @@ use std::{
 
 use axum::{
     body::Body,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
@@ -41,6 +41,11 @@ pub struct CastPrepareRequest {
     manifest: Option<String>,
     #[serde(default)]
     subtitles: Vec<CastSubtitleRequest>,
+    #[serde(default)]
+    force_relay: bool,
+    content_type: Option<String>,
+    #[serde(default)]
+    subtitle_delivery: SubtitleDelivery,
 }
 
 #[derive(Debug, Deserialize)]
@@ -62,11 +67,32 @@ enum SubtitleFormat {
     Ttml,
 }
 
-impl SubtitleFormat {
-    fn content_type(self) -> &'static str {
+#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum SubtitleDelivery {
+    #[default]
+    Web,
+    SamsungDlna,
+}
+
+impl SubtitleDelivery {
+    fn content_type(self, source: SubtitleFormat) -> &'static str {
         match self {
-            Self::Vtt | Self::Srt => "text/vtt; charset=utf-8",
-            Self::Ttml => "application/ttml+xml; charset=utf-8",
+            Self::SamsungDlna => "text/srt; charset=utf-8",
+            Self::Web => match source {
+                SubtitleFormat::Vtt | SubtitleFormat::Srt => "text/vtt; charset=utf-8",
+                SubtitleFormat::Ttml => "application/ttml+xml; charset=utf-8",
+            },
+        }
+    }
+
+    fn extension(self, source: SubtitleFormat) -> &'static str {
+        match self {
+            Self::SamsungDlna => "srt",
+            Self::Web => match source {
+                SubtitleFormat::Vtt | SubtitleFormat::Srt => "vtt",
+                SubtitleFormat::Ttml => "ttml",
+            },
         }
     }
 }
@@ -90,8 +116,21 @@ struct CastPreparedSubtitle {
 
 #[derive(Clone)]
 enum ResourceKind {
-    Media { hls: bool },
-    Subtitle(SubtitleFormat),
+    Media {
+        hls: bool,
+        content_type: Option<String>,
+        caption_urls: Vec<String>,
+    },
+    Subtitle {
+        source: SubtitleFormat,
+        delivery: SubtitleDelivery,
+    },
+}
+
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RelayQuery {
+    caption: Option<usize>,
 }
 
 #[derive(Clone)]
@@ -151,7 +190,8 @@ pub async fn cast_prepare_source(
         parse_http_url(&subtitle.url)?;
     }
 
-    let needs_relay = is_loopback(&media)
+    let needs_relay = request.force_relay
+        || is_loopback(&media)
         || !request.headers.is_empty()
         || !request.subtitles.is_empty()
         || request.manifest.as_deref() == Some("hls")
@@ -214,21 +254,13 @@ impl CastRelay {
     ) -> Result<CastPreparedSource, String> {
         let token = random_token()?;
         let public_base = format!("http://{public_ip}:{}", self.port);
-        let media_kind = ResourceKind::Media {
-            hls: request.manifest.as_deref() == Some("hls")
-                || media.path().to_ascii_lowercase().ends_with(".m3u8"),
-        };
-        let mut resources = HashMap::from([(
-            "media".to_string(),
-            RelayResource {
-                upstream: media,
-                headers: request.headers.clone(),
-                kind: media_kind,
-            },
-        )]);
+        let mut resources = HashMap::new();
         let mut prepared_subtitles = Vec::new();
         for (index, subtitle) in request.subtitles.into_iter().enumerate() {
-            let resource_id = format!("subtitle-{index}");
+            let resource_id = format!(
+                "subtitle-{index}.{}",
+                request.subtitle_delivery.extension(subtitle.format)
+            );
             let upstream = parse_http_url(&subtitle.url)?;
             let mut headers = request.headers.clone();
             headers.extend(subtitle.headers.clone());
@@ -237,11 +269,32 @@ impl CastRelay {
                 RelayResource {
                     upstream,
                     headers,
-                    kind: ResourceKind::Subtitle(subtitle.format),
+                    kind: ResourceKind::Subtitle {
+                        source: subtitle.format,
+                        delivery: request.subtitle_delivery,
+                    },
                 },
             );
             prepared_subtitles.push((resource_id, subtitle));
         }
+
+        let caption_urls = prepared_subtitles
+            .iter()
+            .map(|(resource, _)| format!("{public_base}/cast/{token}/{resource}"))
+            .collect();
+        resources.insert(
+            "media".to_string(),
+            RelayResource {
+                upstream: media,
+                headers: request.headers.clone(),
+                kind: ResourceKind::Media {
+                    hls: request.manifest.as_deref() == Some("hls")
+                        || request.url.to_ascii_lowercase().contains(".m3u8"),
+                    content_type: request.content_type.as_deref().and_then(valid_content_type),
+                    caption_urls,
+                },
+            },
+        );
 
         let session = Arc::new(RelaySession {
             public_base,
@@ -272,7 +325,10 @@ impl CastRelay {
                     url: session.local_url(&token, &resource),
                     lang: subtitle.lang,
                     title: subtitle.title,
-                    content_type: subtitle.format.content_type().to_string(),
+                    content_type: request
+                        .subtitle_delivery
+                        .content_type(subtitle.format)
+                        .to_string(),
                 })
                 .collect(),
         })
@@ -341,6 +397,7 @@ async fn cors_preflight() -> Response {
 async fn relay_resource(
     State(state): State<Arc<RelayState>>,
     Path((token, resource_id)): Path<(String, String)>,
+    Query(query): Query<RelayQuery>,
     method: Method,
     request_headers: HeaderMap,
 ) -> Response {
@@ -361,7 +418,16 @@ async fn relay_resource(
         return relay_error(StatusCode::NOT_FOUND, "Unknown Cast relay resource");
     };
 
-    match fetch_resource(&token, &session, resource, method, request_headers).await {
+    match fetch_resource(
+        &token,
+        &session,
+        resource,
+        query.caption,
+        method,
+        request_headers,
+    )
+    .await
+    {
         Ok(response) => response,
         Err(error) => relay_error(StatusCode::BAD_GATEWAY, &error),
     }
@@ -371,6 +437,7 @@ async fn fetch_resource(
     token: &str,
     session: &Arc<RelaySession>,
     resource: RelayResource,
+    caption: Option<usize>,
     method: Method,
     request_headers: HeaderMap,
 ) -> Result<Response, String> {
@@ -399,37 +466,81 @@ async fn fetch_resource(
     let upstream = request.send().await.map_err(|error| error.to_string())?;
     let status = upstream.status();
     let final_url = upstream.url().clone();
-    let upstream_headers = upstream.headers().clone();
+    let mut upstream_headers = upstream.headers().clone();
     let upstream_type = upstream_headers
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
         .unwrap_or("application/octet-stream")
         .to_string();
 
+    if let ResourceKind::Media {
+        content_type,
+        caption_urls,
+        ..
+    } = &resource.kind
+    {
+        if let Some(content_type) = content_type
+            .as_deref()
+            .and_then(|value| HeaderValue::from_str(value).ok())
+        {
+            // CDN/torrent endpoints commonly return application/octet-stream. Samsung's DMR uses
+            // the HTTP type as well as DIDL protocolInfo when deciding whether to open the item.
+            upstream_headers.insert(header::CONTENT_TYPE, content_type);
+        }
+        upstream_headers
+            .entry(HeaderName::from_static("transfermode.dlna.org"))
+            .or_insert(HeaderValue::from_static("Streaming"));
+        upstream_headers
+            .entry(HeaderName::from_static("contentfeatures.dlna.org"))
+            .or_insert(HeaderValue::from_static(
+                "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000",
+            ));
+        if let Some(caption_url) = caption
+            .and_then(|index| index.checked_sub(1))
+            .and_then(|index| caption_urls.get(index))
+            .and_then(|value| HeaderValue::from_str(value).ok())
+        {
+            // Samsung asks for this during its HEAD probe (getCaptionInfo.sec: 1). Supplying it on
+            // GET too is harmless and covers firmware versions that skip the probe.
+            upstream_headers.insert(HeaderName::from_static("captioninfo.sec"), caption_url);
+        }
+    }
+
     if method == Method::HEAD {
-        return Ok(build_response(
-            status,
-            &upstream_headers,
-            Body::empty(),
-            None,
-        ));
+        let mut response = build_response(status, &upstream_headers, Body::empty(), None);
+        if let ResourceKind::Subtitle { source, delivery } = resource.kind {
+            if let Ok(value) = HeaderValue::from_str(delivery.content_type(source)) {
+                response.headers_mut().insert(header::CONTENT_TYPE, value);
+            }
+            // A converted WebVTT payload has a different length. Omitting the upstream length is
+            // safer than telling the renderer to truncate the generated SRT response.
+            response.headers_mut().remove(header::CONTENT_LENGTH);
+        }
+        return Ok(response);
     }
 
     match resource.kind {
-        ResourceKind::Subtitle(format) => {
+        ResourceKind::Subtitle { source, delivery } => {
             let bytes = read_limited(upstream, MAX_SUBTITLE_BYTES).await?;
-            let body = match format {
-                SubtitleFormat::Srt => srt_to_webvtt(&bytes)?.into_bytes(),
-                SubtitleFormat::Vtt | SubtitleFormat::Ttml => bytes,
+            let body = match (delivery, source) {
+                (SubtitleDelivery::SamsungDlna, SubtitleFormat::Vtt) => {
+                    webvtt_to_srt(&bytes)?.into_bytes()
+                }
+                (SubtitleDelivery::SamsungDlna, SubtitleFormat::Srt) => bytes,
+                (SubtitleDelivery::SamsungDlna, SubtitleFormat::Ttml) => {
+                    return Err("Samsung DLNA captions support SRT or WebVTT sidecars".into());
+                }
+                (SubtitleDelivery::Web, SubtitleFormat::Srt) => srt_to_webvtt(&bytes)?.into_bytes(),
+                (SubtitleDelivery::Web, SubtitleFormat::Vtt | SubtitleFormat::Ttml) => bytes,
             };
             Ok(build_response(
                 status,
                 &HeaderMap::new(),
                 Body::from(body.clone()),
-                Some((format.content_type(), body.len())),
+                Some((delivery.content_type(source), body.len())),
             ))
         }
-        ResourceKind::Media { hls } => {
+        ResourceKind::Media { hls, .. } => {
             let is_playlist = hls
                 || final_url.path().to_ascii_lowercase().ends_with(".m3u8")
                 || upstream_type.to_ascii_lowercase().contains("mpegurl");
@@ -527,7 +638,11 @@ fn register_hls_resource(
             RelayResource {
                 upstream: resolved,
                 headers: headers.clone(),
-                kind: ResourceKind::Media { hls },
+                kind: ResourceKind::Media {
+                    hls,
+                    content_type: None,
+                    caption_urls: Vec::new(),
+                },
             },
         );
     Ok(session.local_url(token, &resource_id))
@@ -571,6 +686,55 @@ fn srt_to_webvtt(bytes: &[u8]) -> Result<String, String> {
     Ok(output)
 }
 
+fn webvtt_to_srt(bytes: &[u8]) -> Result<String, String> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| "Cast subtitle is not UTF-8".to_string())?
+        .trim_start_matches('\u{feff}')
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
+    let mut output = String::new();
+    let mut cue_number = 1;
+    for block in text.split("\n\n") {
+        let lines = block.lines().collect::<Vec<_>>();
+        let Some(timing_index) = lines.iter().position(|line| line.contains("-->")) else {
+            continue;
+        };
+        let Some((start, end_and_settings)) = lines[timing_index].split_once("-->") else {
+            continue;
+        };
+        let Some(end) = end_and_settings.split_whitespace().next() else {
+            continue;
+        };
+        let timestamp = |value: &str| {
+            let value = value.trim().replace('.', ",");
+            if value.matches(':').count() == 1 {
+                format!("00:{value}")
+            } else {
+                value
+            }
+        };
+        let cue = lines[timing_index + 1..].join("\n");
+        if cue.trim().is_empty() {
+            continue;
+        }
+        output.push_str(&format!(
+            "{cue_number}\n{} --> {}\n{cue}\n\n",
+            timestamp(start),
+            timestamp(end)
+        ));
+        cue_number += 1;
+    }
+    if output.is_empty() {
+        return Err("WebVTT subtitle contains no usable cues".into());
+    }
+    Ok(output)
+}
+
+fn valid_content_type(value: &str) -> Option<String> {
+    let value = value.split(';').next()?.trim().to_ascii_lowercase();
+    (!value.is_empty() && value.len() <= 128 && value.contains('/')).then_some(value)
+}
+
 fn build_response(
     status: StatusCode,
     upstream_headers: &HeaderMap,
@@ -602,7 +766,11 @@ fn build_response(
                 response.headers_mut().insert(name, value.clone());
             }
         }
-        for name in ["transfermode.dlna.org", "contentfeatures.dlna.org"] {
+        for name in [
+            "transfermode.dlna.org",
+            "contentfeatures.dlna.org",
+            "captioninfo.sec",
+        ] {
             let name = HeaderName::from_static(name);
             if let Some(value) = upstream_headers.get(&name) {
                 response.headers_mut().insert(name, value.clone());
@@ -628,7 +796,7 @@ fn add_cors(headers: &mut HeaderMap) {
     );
     headers.insert(
         header::ACCESS_CONTROL_EXPOSE_HEADERS,
-        HeaderValue::from_static("Content-Length, Content-Range, Accept-Ranges"),
+        HeaderValue::from_static("Content-Length, Content-Range, Accept-Ranges, CaptionInfo.sec"),
     );
 }
 
@@ -672,5 +840,25 @@ mod tests {
         assert!(!is_loopback(
             &Url::parse("https://cdn.example/video.mp4").unwrap()
         ));
+    }
+
+    #[test]
+    fn normalizes_safe_declared_content_types() {
+        assert_eq!(
+            valid_content_type("video/x-mkv; charset=binary").as_deref(),
+            Some("video/x-mkv")
+        );
+        assert_eq!(valid_content_type("not-a-content-type"), None);
+    }
+
+    #[test]
+    fn converts_webvtt_to_samsung_srt() {
+        let converted =
+            webvtt_to_srt(b"WEBVTT\n\nintro\n00:01.250 --> 00:03.500 align:start\nHello\nworld\n")
+                .unwrap();
+        assert_eq!(
+            converted,
+            "1\n00:00:01,250 --> 00:00:03,500\nHello\nworld\n\n"
+        );
     }
 }

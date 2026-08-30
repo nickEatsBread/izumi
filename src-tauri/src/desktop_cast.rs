@@ -1,9 +1,9 @@
-//! Native desktop sender for Google Cast / Chromecast targets.
+//! Native desktop sender for content-only TV receivers.
 //!
 //! Tauri desktop webviews do not expose Chrome's Web Sender API. We therefore discover receivers
-//! through their `_googlecast._tcp.local.` DNS-SD advertisement and speak CastV2 directly. Media
-//! bytes still travel receiver-to-origin (or through `cast_relay` when credentials/loopback make
-//! that necessary); this module only owns discovery and the sender control handshake.
+//! through Google Cast DNS-SD and UPnP MediaRenderer SSDP advertisements, then speak CastV2 or
+//! AVTransport respectively. Media bytes still travel receiver-to-origin (or through `cast_relay`
+//! when credentials/loopback make that necessary); this module only owns discovery and control.
 
 use std::{
     collections::HashMap,
@@ -29,6 +29,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use url::Url;
 
+use crate::dlna_cast::{self, DlnaDevice, DlnaSubtitle};
+
 const CAST_SERVICE: &str = "_googlecast._tcp.local.";
 const SENDER_ID: &str = "sender-0";
 const RECEIVER_ID: &str = "receiver-0";
@@ -44,14 +46,25 @@ const MAX_CAST_MESSAGE_BYTES: usize = 64 * 1024;
 type CastIo = StreamOwned<ClientConnection, TcpStream>;
 type CastManager = Rc<MessageManager<CastIo>>;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DesktopCastProtocol {
+    GoogleCast,
+    Dlna,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DesktopCastDevice {
     id: String,
     name: String,
     model: Option<String>,
+    manufacturer: Option<String>,
     address: Ipv4Addr,
     port: u16,
+    protocol: DesktopCastProtocol,
+    #[serde(skip)]
+    dlna: Option<DlnaDevice>,
 }
 
 #[derive(Clone)]
@@ -61,10 +74,21 @@ struct CachedDevice {
 }
 
 #[derive(Clone, Debug)]
+enum ActiveCastBackend {
+    GoogleCast {
+        app_session_id: String,
+        media_session_id: i32,
+    },
+    Dlna {
+        request: DesktopCastStartRequest,
+    },
+}
+
+#[derive(Clone, Debug)]
 struct ActiveCast {
     device: DesktopCastDevice,
-    app_session_id: String,
-    media_session_id: i32,
+    backend: ActiveCastBackend,
+    started_at: Instant,
 }
 
 #[derive(Default)]
@@ -93,7 +117,7 @@ pub struct DesktopCastSubtitle {
     content_type: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DesktopCastStartRequest {
     device_id: String,
@@ -113,6 +137,7 @@ pub struct DesktopCastStartRequest {
 pub struct DesktopCastSession {
     device_id: String,
     device_name: String,
+    backend: DesktopCastProtocol,
 }
 
 #[derive(Debug, Deserialize)]
@@ -148,9 +173,37 @@ pub async fn desktop_cast_discover(
     request: DesktopCastDiscoverRequest,
 ) -> Result<Vec<DesktopCastDevice>, String> {
     let wait = Duration::from_millis(request.wait_ms.clamp(100, MAX_DISCOVERY_MS));
-    let discovered = tauri::async_runtime::spawn_blocking(move || discover_devices(wait))
-        .await
-        .map_err(|error| format!("Cast discovery stopped unexpectedly: {error}"))??;
+    let google = tauri::async_runtime::spawn_blocking(move || discover_google_devices(wait));
+    let dlna = dlna_cast::discover(wait);
+    let (google, dlna) = tokio::join!(google, dlna);
+    let google = google.map_err(|error| format!("Cast discovery stopped unexpectedly: {error}"))?;
+    let mut discovered = match (google, dlna) {
+        (Ok(google), Ok(dlna)) => {
+            let google_addresses = google
+                .iter()
+                .map(|device| device.address)
+                .collect::<Vec<_>>();
+            let mut devices = google;
+            devices.extend(dlna.into_iter().filter_map(|device| {
+                (!google_addresses.contains(&device.address)).then(|| dlna_device(device))
+            }));
+            devices
+        }
+        (Ok(google), Err(error)) => {
+            eprintln!("DLNA discovery unavailable: {error}");
+            google
+        }
+        (Err(error), Ok(dlna)) => {
+            eprintln!("Google Cast discovery unavailable: {error}");
+            dlna.into_iter().map(dlna_device).collect()
+        }
+        (Err(google), Err(dlna)) => {
+            return Err(format!(
+                "TV discovery failed (Google Cast: {google}; DLNA: {dlna})"
+            ));
+        }
+    };
+    discovered.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
     let mut cache = state
         .devices
@@ -195,16 +248,39 @@ pub async fn desktop_cast_start(
         cached.device.clone()
     };
 
-    let cast_device = device.clone();
-    let (app_session_id, media_session_id) =
-        tauri::async_runtime::spawn_blocking(move || launch_media(&cast_device, &request))
-            .await
-            .map_err(|error| format!("Cast sender stopped unexpectedly: {error}"))??;
+    let backend = match device.protocol {
+        DesktopCastProtocol::GoogleCast => {
+            let cast_device = device.clone();
+            let (app_session_id, media_session_id) =
+                tauri::async_runtime::spawn_blocking(move || launch_media(&cast_device, &request))
+                    .await
+                    .map_err(|error| format!("Cast sender stopped unexpectedly: {error}"))??;
+            ActiveCastBackend::GoogleCast {
+                app_session_id,
+                media_session_id,
+            }
+        }
+        DesktopCastProtocol::Dlna => {
+            let dlna = device.dlna.as_ref().ok_or_else(|| {
+                "That DLNA receiver is no longer available; scan again".to_string()
+            })?;
+            dlna_cast::start(
+                dlna,
+                &request.url,
+                request.title.as_deref().unwrap_or("Izumi"),
+                &request.content_type,
+                request.position_seconds,
+                selected_dlna_subtitle(&request, &request.active_track_ids),
+            )
+            .await?;
+            ActiveCastBackend::Dlna { request }
+        }
+    };
 
     let session = ActiveCast {
         device: device.clone(),
-        app_session_id,
-        media_session_id,
+        backend,
+        started_at: Instant::now(),
     };
     *state
         .active
@@ -214,6 +290,7 @@ pub async fn desktop_cast_start(
     Ok(DesktopCastSession {
         device_id: device.id,
         device_name: device.name,
+        backend: device.protocol,
     })
 }
 
@@ -222,9 +299,21 @@ pub async fn desktop_cast_status(
     state: tauri::State<'_, DesktopCastState>,
 ) -> Result<DesktopCastStatus, String> {
     let active = active_session(&state)?;
-    tauri::async_runtime::spawn_blocking(move || read_session_status(&active))
-        .await
-        .map_err(|error| format!("Cast sender stopped unexpectedly: {error}"))?
+    match &active.backend {
+        ActiveCastBackend::GoogleCast { .. } => {
+            tauri::async_runtime::spawn_blocking(move || read_session_status(&active))
+                .await
+                .map_err(|error| format!("Cast sender stopped unexpectedly: {error}"))?
+        }
+        ActiveCastBackend::Dlna { .. } => {
+            let device = active
+                .device
+                .dlna
+                .as_ref()
+                .ok_or_else(|| "The DLNA receiver is no longer available".to_string())?;
+            Ok(dlna_status(dlna_cast::status(device).await?))
+        }
+    }
 }
 
 #[tauri::command]
@@ -234,9 +323,51 @@ pub async fn desktop_cast_control(
 ) -> Result<DesktopCastStatus, String> {
     validate_control_request(&request)?;
     let active = active_session(&state)?;
-    tauri::async_runtime::spawn_blocking(move || control_session(&active, &request))
-        .await
-        .map_err(|error| format!("Cast sender stopped unexpectedly: {error}"))?
+    match &active.backend {
+        ActiveCastBackend::GoogleCast { .. } => {
+            tauri::async_runtime::spawn_blocking(move || control_session(&active, &request))
+                .await
+                .map_err(|error| format!("Cast sender stopped unexpectedly: {error}"))?
+        }
+        ActiveCastBackend::Dlna {
+            request: start_request,
+        } => {
+            let device = active
+                .device
+                .dlna
+                .as_ref()
+                .ok_or_else(|| "The DLNA receiver is no longer available".to_string())?;
+            if request.action == "tracks" {
+                let previous = dlna_cast::status(device).await?;
+                let active_track_ids = request.active_track_ids.as_deref().unwrap_or_default();
+                dlna_cast::start(
+                    device,
+                    &start_request.url,
+                    start_request.title.as_deref().unwrap_or("Izumi"),
+                    &start_request.content_type,
+                    previous.position_seconds as f64,
+                    selected_dlna_subtitle(start_request, active_track_ids),
+                )
+                .await?;
+                if previous.state == "paused" {
+                    return Ok(dlna_status(
+                        dlna_cast::control(device, "pause", None, None, None).await?,
+                    ));
+                }
+                return Ok(dlna_status(dlna_cast::status(device).await?));
+            }
+            Ok(dlna_status(
+                dlna_cast::control(
+                    device,
+                    &request.action,
+                    request.position_seconds,
+                    request.volume,
+                    request.muted,
+                )
+                .await?,
+            ))
+        }
+    }
 }
 
 fn active_session(state: &tauri::State<'_, DesktopCastState>) -> Result<ActiveCast, String> {
@@ -258,10 +389,26 @@ pub async fn desktop_cast_stop(state: tauri::State<'_, DesktopCastState>) -> Res
     let Some(active) = active else {
         return Ok(());
     };
-    let stopping = active.clone();
-    tauri::async_runtime::spawn_blocking(move || stop_session(&stopping))
-        .await
-        .map_err(|error| format!("Cast sender stopped unexpectedly: {error}"))??;
+    match &active.backend {
+        ActiveCastBackend::GoogleCast { .. } => {
+            let stopping = active.clone();
+            tauri::async_runtime::spawn_blocking(move || stop_session(&stopping))
+                .await
+                .map_err(|error| format!("Cast sender stopped unexpectedly: {error}"))??;
+        }
+        ActiveCastBackend::Dlna { .. } => {
+            let device = active
+                .device
+                .dlna
+                .as_ref()
+                .ok_or_else(|| "The DLNA receiver is no longer available".to_string())?;
+            // A renderer may already have returned to NO_MEDIA_PRESENT at EOF. Stop is therefore
+            // best-effort; the local sender session must still be cleared so it never gets stuck.
+            if let Err(error) = dlna_cast::stop(device).await {
+                eprintln!("DLNA receiver was already stopped or unavailable: {error}");
+            }
+        }
+    }
 
     let mut slot = state
         .active
@@ -269,14 +416,40 @@ pub async fn desktop_cast_stop(state: tauri::State<'_, DesktopCastState>) -> Res
         .map_err(|_| "Cast session state is unavailable".to_string())?;
     if slot
         .as_ref()
-        .is_some_and(|current| current.app_session_id == active.app_session_id)
+        .is_some_and(|current| current.started_at == active.started_at)
     {
         *slot = None;
     }
     Ok(())
 }
 
-fn discover_devices(wait: Duration) -> Result<Vec<DesktopCastDevice>, String> {
+fn dlna_status(status: dlna_cast::DlnaStatus) -> DesktopCastStatus {
+    DesktopCastStatus {
+        state: status.state,
+        position_seconds: status.position_seconds,
+        duration_seconds: status.duration_seconds,
+        volume: status.volume,
+        muted: status.muted,
+    }
+}
+
+fn selected_dlna_subtitle<'a>(
+    request: &'a DesktopCastStartRequest,
+    active_track_ids: &[u32],
+) -> Option<DlnaSubtitle<'a>> {
+    let track_id = *active_track_ids.first()?;
+    let subtitle = request.subtitles.get(track_id.checked_sub(1)? as usize)?;
+    subtitle
+        .content_type
+        .to_ascii_lowercase()
+        .starts_with("text/srt")
+        .then_some(DlnaSubtitle {
+            track_id,
+            url: &subtitle.url,
+        })
+}
+
+fn discover_google_devices(wait: Duration) -> Result<Vec<DesktopCastDevice>, String> {
     let mdns =
         ServiceDaemon::new().map_err(|error| format!("Could not start Cast discovery: {error}"))?;
     let events = mdns
@@ -310,8 +483,11 @@ fn discover_devices(wait: Duration) -> Result<Vec<DesktopCastDevice>, String> {
                         id,
                         name,
                         model,
+                        manufacturer: Some("Google Cast".into()),
                         address,
                         port,
+                        protocol: DesktopCastProtocol::GoogleCast,
+                        dlna: None,
                     },
                 );
             }
@@ -323,6 +499,19 @@ fn discover_devices(wait: Duration) -> Result<Vec<DesktopCastDevice>, String> {
     let _ = mdns.stop_browse(CAST_SERVICE);
     let _ = mdns.shutdown();
     Ok(devices.into_values().collect())
+}
+
+fn dlna_device(device: DlnaDevice) -> DesktopCastDevice {
+    DesktopCastDevice {
+        id: format!("dlna:{}", device.id),
+        name: device.name.clone(),
+        model: device.model.clone(),
+        manufacturer: device.manufacturer.clone(),
+        address: device.address,
+        port: device.port,
+        protocol: DesktopCastProtocol::Dlna,
+        dlna: Some(device),
+    }
 }
 
 fn preferred_ipv4(addresses: impl IntoIterator<Item = IpAddr>) -> Option<Ipv4Addr> {
@@ -414,7 +603,7 @@ fn supported_subtitle_type(value: &str) -> bool {
             .next()
             .unwrap_or("")
             .trim(),
-        "text/vtt" | "application/ttml+xml"
+        "text/vtt" | "text/srt" | "application/ttml+xml"
     )
 }
 
@@ -573,6 +762,9 @@ fn validate_control_request(request: &DesktopCastControlRequest) -> Result<(), S
 }
 
 fn connected_active(active: &ActiveCast) -> Result<(CastConnection, String), String> {
+    let ActiveCastBackend::GoogleCast { app_session_id, .. } = &active.backend else {
+        return Err("The active receiver is not a Google Cast device".into());
+    };
     let cast = connect(&active.device)?;
     let receiver_status = cast
         .receiver
@@ -581,7 +773,7 @@ fn connected_active(active: &ActiveCast) -> Result<(CastConnection, String), Str
     let app = receiver_status
         .applications
         .into_iter()
-        .find(|app| app.session_id == active.app_session_id)
+        .find(|app| app.session_id == *app_session_id)
         .ok_or_else(|| "The Cast receiver is no longer playing this session".to_string())?;
     cast.connection
         .connect(app.transport_id.as_str())
@@ -590,15 +782,21 @@ fn connected_active(active: &ActiveCast) -> Result<(CastConnection, String), Str
 }
 
 fn read_session_status(active: &ActiveCast) -> Result<DesktopCastStatus, String> {
+    let ActiveCastBackend::GoogleCast {
+        media_session_id, ..
+    } = &active.backend
+    else {
+        return Err("The active receiver is not a Google Cast device".into());
+    };
     let (cast, transport_id) = connected_active(active)?;
     let media = MediaChannel::new(SENDER_ID, Rc::clone(&cast.manager));
     let status = media
-        .get_status(transport_id, Some(active.media_session_id))
+        .get_status(transport_id, Some(*media_session_id))
         .map_err(|error| format!("Could not read Cast playback state: {error}"))?;
     let entry = status
         .entries
         .into_iter()
-        .find(|entry| entry.media_session_id == active.media_session_id)
+        .find(|entry| entry.media_session_id == *media_session_id)
         .ok_or_else(|| "The Cast media session has ended".to_string())?;
     let receiver = cast
         .receiver
@@ -617,24 +815,30 @@ fn control_session(
     active: &ActiveCast,
     request: &DesktopCastControlRequest,
 ) -> Result<DesktopCastStatus, String> {
+    let ActiveCastBackend::GoogleCast {
+        media_session_id, ..
+    } = &active.backend
+    else {
+        return Err("The active receiver is not a Google Cast device".into());
+    };
     let (cast, transport_id) = connected_active(active)?;
     let media = MediaChannel::new(SENDER_ID, Rc::clone(&cast.manager));
     match request.action.as_str() {
         "play" => {
             media
-                .play(transport_id.as_str(), active.media_session_id)
+                .play(transport_id.as_str(), *media_session_id)
                 .map_err(|error| format!("Could not resume Cast playback: {error}"))?;
         }
         "pause" => {
             media
-                .pause(transport_id.as_str(), active.media_session_id)
+                .pause(transport_id.as_str(), *media_session_id)
                 .map_err(|error| format!("Could not pause Cast playback: {error}"))?;
         }
         "seek" => {
             media
                 .seek(
                     transport_id.as_str(),
-                    active.media_session_id,
+                    *media_session_id,
                     request.position_seconds.map(|value| value as f32),
                     Some(ResumeState::PlaybackStart),
                 )
@@ -654,7 +858,7 @@ fn control_session(
             let encoded = serde_json::to_string(&json!({
                 "type": "EDIT_TRACKS_INFO",
                 "requestId": request_id,
-                "mediaSessionId": active.media_session_id,
+                "mediaSessionId": media_session_id,
                 "activeTrackIds": request.active_track_ids.as_deref().unwrap_or(&[]),
             }))
             .map_err(|error| format!("Could not prepare Cast subtitle selection: {error}"))?;
@@ -749,6 +953,9 @@ fn load_response(value: &Value, request_id: u32, content_id: &str) -> Option<Res
 }
 
 fn stop_session(active: &ActiveCast) -> Result<(), String> {
+    let ActiveCastBackend::GoogleCast { app_session_id, .. } = &active.backend else {
+        return Err("The active receiver is not a Google Cast device".into());
+    };
     let cast = connect(&active.device)?;
     let status = cast
         .receiver
@@ -757,10 +964,10 @@ fn stop_session(active: &ActiveCast) -> Result<(), String> {
     if status
         .applications
         .iter()
-        .any(|app| app.session_id == active.app_session_id)
+        .any(|app| app.session_id == *app_session_id)
     {
         cast.receiver
-            .stop_app(active.app_session_id.as_str())
+            .stop_app(app_session_id.as_str())
             .map_err(|error| format!("Could not stop casting: {error}"))?;
     }
     Ok(())
@@ -829,6 +1036,19 @@ mod tests {
         assert!(validate_start_request(&value)
             .unwrap_err()
             .contains("subtitle content type"));
+    }
+
+    #[test]
+    fn selects_only_srt_delivery_for_dlna() {
+        let mut value = request();
+        value.subtitles[0].content_type = "text/srt; charset=utf-8".into();
+        let subtitle = selected_dlna_subtitle(&value, &[1]).unwrap();
+        assert_eq!(subtitle.track_id, 1);
+        assert_eq!(subtitle.url, value.subtitles[0].url);
+        assert!(selected_dlna_subtitle(&value, &[]).is_none());
+
+        value.subtitles[0].content_type = "text/vtt; charset=utf-8".into();
+        assert!(selected_dlna_subtitle(&value, &[1]).is_none());
     }
 
     #[test]

@@ -34,6 +34,8 @@ mod desktop_cast;
 #[cfg(not(target_os = "android"))]
 mod desktop_presence;
 #[cfg(not(target_os = "android"))]
+mod dlna_cast;
+#[cfg(not(target_os = "android"))]
 mod gif_capture;
 #[cfg(not(target_os = "android"))]
 mod gif_playback;

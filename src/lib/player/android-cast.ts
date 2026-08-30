@@ -36,6 +36,8 @@ function contentTypeFor(source: CastSource, url: URL, fileFormat?: string | null
   if (extension === 'm3u8') return 'application/vnd.apple.mpegurl'
   if (extension === 'mpd') return 'application/dash+xml'
   if (['mp4', 'm4v'].includes(extension)) return 'video/mp4'
+  if (extension === 'mkv') return 'video/x-matroska'
+  if (extension === 'avi') return 'video/x-msvideo'
   if (extension === 'webm') return 'video/webm'
   if (['ts', 'm2ts'].includes(extension)) return 'video/mp2t'
   if (extension === 'mp3') return 'audio/mpeg'
@@ -48,6 +50,8 @@ function contentTypeFor(source: CastSource, url: URL, fileFormat?: string | null
   if (format.includes('hls')) return 'application/vnd.apple.mpegurl'
   if (format.includes('dash')) return 'application/dash+xml'
   if (/\b(?:mov|mp4|m4a|3gp|3g2|mj2)\b/.test(format)) return 'video/mp4'
+  if (format.includes('matroska')) return 'video/x-matroska'
+  if (/\bavi\b/.test(format)) return 'video/x-msvideo'
   if (format.includes('webm')) return 'video/webm'
   if (format.includes('mpegts')) return 'video/mp2t'
   if (format === 'mp3') return 'audio/mpeg'
@@ -67,6 +71,7 @@ export function castSourceDecision(
   source: CastSource | null | undefined,
   tracks: CastTrack[] = [],
   fileFormat?: string | null,
+  target: 'googleCast' | 'tv' = 'googleCast',
 ): CastSourceDecision {
   const rawUrl = source?.url?.trim()
   if (!rawUrl) return { ok: false, error: 'Cast needs a playable stream.' }
@@ -84,7 +89,8 @@ export function castSourceDecision(
   const activeSource = source as CastSource
 
   const extension = extensionOf(activeSource, url)
-  if (['mkv', 'avi', 'wmv', 'flv'].includes(extension) || /matroska|avi|asf/.test(fileFormat?.toLowerCase() ?? '')) {
+  if (target === 'googleCast'
+    && (['mkv', 'avi', 'wmv', 'flv'].includes(extension) || /matroska|avi|asf/.test(fileFormat?.toLowerCase() ?? ''))) {
     return { ok: false, error: `Cast cannot direct-play ${extension ? `.${extension}` : 'this container'}; keep playing it in libmpv.` }
   }
 
@@ -105,13 +111,13 @@ export function castSourceDecision(
   const audioCodec = normalizedCodec(audio?.codec)
   const profile = video?.codecProfile?.toLowerCase() ?? ''
 
-  if (/high\s*10|high10|10-bit h\.264/.test(profile) && ['h264', 'avc1'].includes(videoCodec)) {
+  if (target === 'googleCast' && /high\s*10|high10|10-bit h\.264/.test(profile) && ['h264', 'avc1'].includes(videoCodec)) {
     return { ok: false, error: 'Cast cannot direct-play 10-bit H.264; keep playing it in libmpv.' }
   }
-  if (contentType === 'video/mp2t' && ['hevc', 'h265'].includes(videoCodec)) {
+  if (target === 'googleCast' && contentType === 'video/mp2t' && ['hevc', 'h265'].includes(videoCodec)) {
     return { ok: false, error: 'Cast does not support HEVC inside an MPEG-TS stream.' }
   }
-  if (['dts', 'dtshd', 'truehd'].includes(audioCodec)) {
+  if (target === 'googleCast' && ['dts', 'dtshd', 'truehd'].includes(audioCodec)) {
     return { ok: false, error: `Cast cannot direct-play ${audio?.codec ?? 'this audio codec'}.` }
   }
 

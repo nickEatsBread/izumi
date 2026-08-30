@@ -38,6 +38,13 @@ describe('Android Cast direct-play policy', () => {
     })).toMatchObject({ ok: false, error: expect.stringContaining('.mkv') })
   })
 
+  it('allows Matroska for TV-native DLNA and Tizen receivers', () => {
+    expect(castSourceDecision({
+      url: 'https://cdn.example/episode',
+      filename: '[Group] Episode.mkv',
+    }, [], null, 'tv')).toMatchObject({ ok: true, contentType: 'video/x-matroska' })
+  })
+
   it('rejects 10-bit H.264 and DTS', () => {
     expect(castSourceDecision({ url: 'https://cdn.example/e.mp4' }, [
       { type: 'video', selected: true, codec: 'h264', codecProfile: 'High 10' },
