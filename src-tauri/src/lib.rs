@@ -5561,7 +5561,14 @@ pub fn run() {
                 let external_opener = app.handle().clone();
                 let popup_app = app.handle().clone();
                 let gamescope = std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some();
-                let main_window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+                // Start on the real shell route. Tauri's app protocol falls back to index.html for
+                // unknown asset paths, so SvelteKit receives /app/home directly and never has to
+                // load the root redirect node and perform a second client navigation.
+                let main_window = WebviewWindowBuilder::new(
+                    app,
+                    "main",
+                    WebviewUrl::App("app/home".into()),
+                )
                     .title("izumi")
                     // Keep decoded video in the HTML compositor so GIF/screenshot can read
                     // the <video> bitmap (mpv-style: OSD stays on screen, file is video only).
@@ -5862,13 +5869,12 @@ pub fn run() {
                     let overlay = WebviewWindowBuilder::new(
                         app,
                         CAPTURE_CONTROLS_WINDOW,
-                        WebviewUrl::default(),
+                        // This inert mirror has its own route. Opening it directly avoids loading
+                        // the normal root page, changing the query string, then redirecting.
+                        WebviewUrl::App("capture-overlay".into()),
                     )
                     .title("izumi capture controls")
                     .additional_browser_args(DESKTOP_WEBVIEW_ARGS)
-                    .initialization_script(
-                        "if(location.pathname==='/'&&!location.search.includes('capture-overlay'))location.replace('/?capture-overlay=1')",
-                    )
                     .decorations(false)
                     .transparent(true)
                     .background_color(tauri::window::Color(0, 0, 0, 0))

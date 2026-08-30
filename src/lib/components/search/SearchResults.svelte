@@ -4,9 +4,9 @@
   // 1 and results never mix across filter sets. Pages are fetched imperatively and
   // appended.
   //
-  // Uses a plain window SCROLL listener, NOT IntersectionObserver: the app sets a CSS
-  // `zoom` on <html>, which breaks IO's intersection geometry (the sentinel never fires).
-  // And fetches `network-only` so the normalized (graphcache) cache — which can't key the
+  // VirtualGrid owns one RAF-throttled scroll path and converts visual coordinates back through
+  // the document zoom; IntersectionObserver geometry is unreliable under the app's CSS `zoom`.
+  // Fetches `network-only` so the normalized (graphcache) cache — which can't key the
   // unkeyed `Page` type — can't hand back a stale/embedded page for page 2+.
   import { onMount } from 'svelte'
   import { getContextClient } from '@urql/svelte'
@@ -19,6 +19,7 @@
   import { isAndroid } from '$lib/platform'
   import { gameMode } from '$lib/player/session'
   import * as h from '$lib/haptics'
+  import VirtualGrid from '$lib/components/VirtualGrid.svelte'
 
   let { filters }: { filters: SearchFilters } = $props()
 
@@ -77,9 +78,6 @@
       hasNext = false
     } finally {
       loading = false
-      // After the DOM updates, keep filling while the content is shorter than the
-      // viewport (short pages / tall screens) or the user is near the bottom.
-      setTimeout(maybeLoad, 120)
     }
   }
 
@@ -94,31 +92,25 @@
     loadMore()
   }
 
-  function nearBottom(): boolean {
-    const doc = document.documentElement
-    return window.scrollY + window.innerHeight >= doc.scrollHeight - 1000
-  }
   function maybeLoad() {
-    if (hasNext && !loading && nearBottom()) loadMore()
+    if (hasNext && !loading) loadMore()
   }
-
-  onMount(() => {
-    loadMore()
-    window.addEventListener('scroll', maybeLoad, { passive: true })
-    window.addEventListener('resize', maybeLoad)
-    return () => {
-      window.removeEventListener('scroll', maybeLoad)
-      window.removeEventListener('resize', maybeLoad)
-    }
-  })
+  onMount(() => { void loadMore() })
 </script>
 
 {#if $browseLayout === 'list'}
   <!-- List: a vertical run of compact rows (small cover + title + meta) — denser, text-forward. -->
-  <div class="flex flex-col gap-1.5">
-    {#each media as m (m.id)}
+  <VirtualGrid
+    items={media}
+    getKey={(m) => m.id}
+    className="grid grid-cols-1 gap-1.5"
+    itemClassName="min-w-0"
+    endThresholdPx={1000}
+    onEndReached={maybeLoad}
+  >
+    {#snippet children(m)}
       <a href={`/app/anime/${m.id}`} data-focusable onclick={() => { rememberDetail(m); h.tap() }}
-         class="browse-render-list-item load-in flex items-center gap-3 rounded-lg p-2 transition-[color,background-color,transform] active:bg-accent hover:bg-secondary {$isAndroid ? 'android-row-press' : ''}">
+         class="browse-render-list-item load-in flex w-full items-center gap-3 rounded-lg p-2 transition-[color,background-color,transform] active:bg-accent hover:bg-secondary {$isAndroid ? 'android-row-press' : ''}">
         <img src={cover(m)} alt="" loading="lazy" decoding="async"
              class="aspect-[2/3] w-12 shrink-0 rounded-md bg-muted object-cover" />
         <div class="min-w-0 flex-1">
@@ -130,26 +122,36 @@
           </div>
         </div>
       </a>
-    {/each}
-    {#if loading}
+    {/snippet}
+  </VirtualGrid>
+  {#if loading}
+    <div class="mt-1.5 flex flex-col gap-1.5">
       {#each Array.from({ length: media.length ? 4 : 8 }) as _}
         <div class="flex items-center gap-3 p-2"><div class="aspect-[2/3] w-12 shrink-0 animate-pulse rounded-md bg-muted"></div><div class="h-4 flex-1 animate-pulse rounded bg-muted"></div></div>
       {/each}
-    {/if}
-  </div>
+    </div>
+  {/if}
 {:else}
   <!-- Grid: cover-art tiles. Three across on phones (fills edge-to-edge, no dead right margin);
        an auto-fill responsive grid on desktop. -->
-  <div class="grid grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-3">
-    {#each media as m (m.id)}
-      <div class="browse-render-grid-item"><SmallCard media={m} fill /></div>
-    {/each}
-    {#if loading}
+  <VirtualGrid
+    items={media}
+    getKey={(m) => m.id}
+    className="grid grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-3"
+    endThresholdPx={1000}
+    onEndReached={maybeLoad}
+  >
+    {#snippet children(m)}
+      <div class="browse-render-grid-item"><SmallCard media={m} fill reserveTitleLines /></div>
+    {/snippet}
+  </VirtualGrid>
+  {#if loading}
+    <div class="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-3">
       {#each Array.from({ length: media.length ? 6 : 12 }) as _}
         <div class="aspect-[2/3] w-full animate-pulse rounded-md bg-muted"></div>
       {/each}
-    {/if}
-  </div>
+    </div>
+  {/if}
 {/if}
 
 {#if error}

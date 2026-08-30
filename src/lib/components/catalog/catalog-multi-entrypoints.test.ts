@@ -195,7 +195,7 @@ describe('multi-platform catalog entry points', () => {
 
   it('does not let Browse invalidate its own provider request', () => {
     const browse = read('./CatalogSearchPage.svelte')
-    expect(browse).toContain("import { onMount, untrack } from 'svelte'")
+    expect(browse).toContain("import { untrack } from 'svelte'")
     expect(browse).toContain('untrack(() => {')
     expect(browse).toContain('requestAbort?.abort()')
     expect(browse).toContain('signal: abort?.signal')

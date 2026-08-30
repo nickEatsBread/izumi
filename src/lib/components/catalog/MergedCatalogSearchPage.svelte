@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack } from 'svelte'
+  import { untrack } from 'svelte'
   import Search from '@lucide/svelte/icons/search'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import { mediaKey } from '$lib/catalog/identity'
@@ -11,6 +11,7 @@
     type CatalogSelection,
   } from '$lib/settings/catalog'
   import { rankQuickSearchResults } from '$lib/search/global-search'
+  import VirtualGrid from '$lib/components/VirtualGrid.svelte'
 
   let { query = $bindable('') }: { query?: string } = $props()
   let settled = $state(query.trim())
@@ -88,15 +89,7 @@
     return catalogLabel(provider)
   }
 
-  function nearBottom() {
-    return window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 900
-  }
-  onMount(() => {
-    const more = () => { if (nearBottom()) void loadMore() }
-    window.addEventListener('scroll', more, { passive: true })
-    window.addEventListener('resize', more)
-    return () => { window.removeEventListener('scroll', more); window.removeEventListener('resize', more) }
-  })
+  const loadAtEnd = () => { void loadMore() }
 </script>
 
 <div class="px-4 pb-20 pt-4 sm:px-8">
@@ -120,11 +113,16 @@
   {/if}
 
   {#if media.length}
-    <div class="mt-6 grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:gap-5">
-      {#each media as item (mediaKey(item))}
-        <SmallCard media={item} fill subline={providerLabel(item)} />
-      {/each}
-    </div>
+    <VirtualGrid
+      items={media}
+      getKey={mediaKey}
+      className="mt-6 grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:gap-5"
+      onEndReached={loadAtEnd}
+    >
+      {#snippet children(item)}
+        <SmallCard media={item} fill reserveTitleLines subline={providerLabel(item)} />
+      {/snippet}
+    </VirtualGrid>
   {:else if settled && !loading && !error}
     <div class="mt-6 rounded-xl bg-secondary/40 p-8 text-center text-muted-foreground">No results for “{settled}”.</div>
   {:else if !settled}

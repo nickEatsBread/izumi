@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack } from 'svelte'
+  import { untrack } from 'svelte'
   import { page } from '$app/state'
   import { replaceState } from '$app/navigation'
   import Search from '@lucide/svelte/icons/search'
@@ -21,6 +21,7 @@
     type JvmSourceFilter,
   } from '$lib/extensions/manager'
   import type { Media } from '$lib/anilist/types'
+  import VirtualGrid from '$lib/components/VirtualGrid.svelte'
 
   let { selection, embedded = false, onQueryChange }: {
     selection?: CatalogSelection
@@ -307,15 +308,7 @@
     return sourceCount > 1 ? `${sourceCount} sources` : item.catalog?.sourceName ?? ''
   }
 
-  function nearBottom() {
-    return window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 900
-  }
-  onMount(() => {
-    const more = () => { if (nearBottom()) void loadMore() }
-    window.addEventListener('scroll', more, { passive: true })
-    window.addEventListener('resize', more)
-    return () => { window.removeEventListener('scroll', more); window.removeEventListener('resize', more) }
-  })
+  const loadAtEnd = () => { void loadMore() }
 </script>
 
 <div class="pb-20 {embedded ? 'px-4 pt-4 sm:px-8' : 'p-4 sm:p-8'}">
@@ -378,11 +371,16 @@
   {/if}
 
   {#if media.length}
-    <div class="grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:gap-5">
-      {#each media as item (mediaKey(item))}
-        <SmallCard media={item} fill subline={isTmdb ? tmdbMetadata(item) : isJvm ? jvmMetadata(item) : undefined} />
-      {/each}
-    </div>
+    <VirtualGrid
+      items={media}
+      getKey={mediaKey}
+      className="grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:gap-5"
+      onEndReached={loadAtEnd}
+    >
+      {#snippet children(item)}
+        <SmallCard media={item} fill reserveTitleLines subline={isTmdb ? tmdbMetadata(item) : isJvm ? jvmMetadata(item) : undefined} />
+      {/snippet}
+    </VirtualGrid>
   {:else if !loading && !error}
     <div class="rounded-xl bg-secondary/40 p-8 text-center text-muted-foreground">No results.</div>
   {/if}

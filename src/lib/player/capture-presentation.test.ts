@@ -69,7 +69,7 @@ describe('protected capture presentation', () => {
 
   it('reuses the main WebView2 environment and handshakes without a missed ready event', () => {
     expect(rust).toContain('.additional_browser_args(DESKTOP_WEBVIEW_ARGS)')
-    expect(rust).toContain('WebviewUrl::default()')
+    expect(rust).toContain('WebviewUrl::App("capture-overlay".into())')
     expect(presentation).toContain("invoke('capture_controls_overlay_prepare')")
     expect(presentation).toContain('PROBE_EVENT')
     expect(overlay).toContain('captureControlsEvents.probe')
@@ -105,5 +105,16 @@ describe('protected capture presentation', () => {
     const layout = readFileSync('src/routes/+layout.svelte', 'utf8')
     expect(layout).toContain("getCurrentWindow().label === 'capture-controls'")
     expect(layout).toContain('if (captureControlsWindow) return')
+  })
+
+  it('opens both bundled webviews on their final SPA route', () => {
+    const android = JSON.parse(readFileSync('src-tauri/tauri.android.conf.json', 'utf8'))
+    const rootPage = readFileSync('src/routes/+page.ts', 'utf8')
+    expect(rust).toContain('WebviewUrl::App("app/home".into())')
+    expect(rust).toContain('WebviewUrl::App("capture-overlay".into())')
+    expect(rust).not.toContain("location.replace('/?capture-overlay=1')")
+    expect(android.app.windows[0].url).toBe('app/home')
+    // Opening the Vite dev server at `/` still has a useful browser fallback.
+    expect(rootPage).toContain("'/app/home'")
   })
 })

@@ -28,7 +28,7 @@
   import RatingSourceMark from '$lib/components/catalog/RatingSourceMark.svelte'
   // `fill`: fill the parent's width (for a responsive grid cell) instead of the fixed carousel
   // width. Used by the 3-up browse grid so tiles reach the screen edges (no dead right margin).
-  let { media, fill = false, badge, subline, simpleHover = false, showCatalogSource = true, showRating, preferLinkedRating = false }: {
+  let { media, fill = false, badge, subline, simpleHover = false, showCatalogSource = true, showRating, preferLinkedRating = false, reserveTitleLines = false }: {
     media: Media
     fill?: boolean
     /** Optional context owned by a specialized row (for example, the released episode number). */
@@ -43,6 +43,8 @@
     showRating?: boolean
     /** Automatic anime hover previews use the first linked tracker's community score. */
     preferLinkedRating?: boolean
+    /** Keep responsive virtual-grid rows a fixed height even when a title only needs one line. */
+    reserveTitleLines?: boolean
   } = $props()
 
   let hovered = $state(false)
@@ -166,7 +168,7 @@
         </span>
       {/if}
     </div>
-    <div class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight">
+    <div class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight {reserveTitleLines ? 'min-h-[2rem]' : ''}">
       {#if dot(media)}<span class="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={`background:${dot(media)}`}></span>{/if}{title(media)}
     </div>
     {#if subline}

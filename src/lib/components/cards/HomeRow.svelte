@@ -23,7 +23,7 @@
   // AniList's 30/min cap) with no staggered reveal. `pause: !visible` keeps the store off the
   // network until `visible` flips on scroll, so only rows you actually reach get fetched — and each
   // resolves as you scroll to it (the per-row stagger). NOT IntersectionObserver: the app's <html>
-  // CSS `zoom` breaks IO's geometry (the same reason SearchResults uses a scroll listener).
+  // CSS `zoom` breaks IO's geometry (search grids solve the same problem with VirtualGrid).
   let visible = $state(false)
   const active = $derived(visible)
   const reveal = () => { visible = true }
