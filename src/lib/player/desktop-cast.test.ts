@@ -1,16 +1,27 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
 
 import { invoke } from '@tauri-apps/api/core'
+import { get } from 'svelte/store'
 import {
+  desktopCastSession,
+  desktopCastStatus,
   desktopCastContentType,
   desktopCastSupportsDlnaSubtitles,
   prepareDesktopCast,
+  reconcileDesktopCastStatus,
+  seekActiveDesktopCast,
   selectedCastSubtitle,
 } from './desktop-cast'
 
 describe('desktop Cast subtitle selection', () => {
+  afterEach(() => {
+    desktopCastSession.set(null)
+    desktopCastStatus.set(null)
+    vi.mocked(invoke).mockReset()
+  })
+
   const source = {
     url: 'https://media.example/episode.mp4',
     subtitles: [
@@ -56,5 +67,57 @@ describe('desktop Cast subtitle selection', () => {
     expect(invoke).toHaveBeenCalledWith('cast_prepare_source', {
       request: expect.objectContaining({ subtitleDelivery: 'samsungDlna' }),
     })
+  })
+
+  it('keeps a usable remote clock when a legacy renderer omits position fields', () => {
+    const previous = {
+      state: 'playing' as const,
+      positionSeconds: 725,
+      durationSeconds: 2_751,
+      volume: 0.4,
+    }
+    expect(reconcileDesktopCastStatus(previous, {
+      state: 'idle',
+      positionSeconds: 0,
+    })).toEqual({
+      state: 'idle',
+      positionSeconds: 725,
+      durationSeconds: 2_751,
+      volume: 0.4,
+    })
+  })
+
+  it('accepts an intentional seek back to the beginning', () => {
+    expect(reconcileDesktopCastStatus({
+      state: 'playing', positionSeconds: 725, durationSeconds: 2_751,
+    }, {
+      state: 'playing', positionSeconds: 0,
+    }, true).positionSeconds).toBe(0)
+  })
+
+  it('routes a matching player seek to the active remote session', async () => {
+    desktopCastSession.set({
+      deviceId: 'tv', deviceName: 'TV', backend: 'dlna', mediaId: 42, episode: 3,
+      subtitles: [], activeTrackIds: [],
+    })
+    desktopCastStatus.set({ state: 'playing', positionSeconds: 100, durationSeconds: 1_400 })
+    vi.mocked(invoke).mockResolvedValueOnce({
+      state: 'playing', positionSeconds: 100, durationSeconds: 1_400,
+    })
+
+    await expect(seekActiveDesktopCast(615, 42, 3)).resolves.toBe(true)
+    expect(invoke).toHaveBeenCalledWith('desktop_cast_control', {
+      request: { action: 'seek', positionSeconds: 615 },
+    })
+    expect(get(desktopCastStatus)?.positionSeconds).toBe(615)
+  })
+
+  it('does not send a seek from a different player item to the cast', async () => {
+    desktopCastSession.set({
+      deviceId: 'tv', deviceName: 'TV', backend: 'dlna', mediaId: 42, episode: 3,
+      subtitles: [], activeTrackIds: [],
+    })
+    await expect(seekActiveDesktopCast(615, 99, 1)).resolves.toBe(false)
+    expect(invoke).not.toHaveBeenCalled()
   })
 })

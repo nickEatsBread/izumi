@@ -443,7 +443,10 @@ async fn fetch_resource(
 ) -> Result<Response, String> {
     let upstream_method = reqwest::Method::from_bytes(method.as_str().as_bytes())
         .map_err(|error| error.to_string())?;
-    let mut request = crate::ext_http_client()
+    // A media GET commonly remains open for the whole episode. The ordinary extension client has
+    // a 30-second total API timeout, so using it here deterministically severed every relayed DLNA
+    // stream. The streaming variant retains the same cookie jar/DoH behavior without that cap.
+    let mut request = crate::ext_stream_http_client()
         .request(upstream_method, resource.upstream.clone())
         .header(reqwest::header::ACCEPT_ENCODING, "identity");
     for (name, value) in &resource.headers {

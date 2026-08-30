@@ -939,6 +939,10 @@ static HTTP_DL: std::sync::OnceLock<std::sync::RwLock<reqwest::Client>> =
 // rebuild swaps the transport WITHOUT dropping live sessions.
 static HTTP_EXT: std::sync::OnceLock<std::sync::RwLock<reqwest::Client>> =
     std::sync::OnceLock::new();
+// Cast media needs the extension cookie jar too, but unlike an API request it may stay open for
+// hours. Keep a separate client with an idle/read timeout rather than HTTP_EXT's 30s total timeout.
+static HTTP_EXT_STREAM: std::sync::OnceLock<std::sync::RwLock<reqwest::Client>> =
+    std::sync::OnceLock::new();
 static HTTP_EXT_JAR: std::sync::OnceLock<std::sync::Arc<reqwest::cookie::Jar>> =
     std::sync::OnceLock::new();
 // Applied DoH endpoint; `None` = no DoH, which is ALSO what the lazily-built clients default to.
@@ -975,14 +979,18 @@ fn build_http_client(doh: Option<String>, download: bool) -> reqwest::Client {
 }
 
 /// The extension client: same tuning as the shared pool, plus the persistent extension cookie jar.
-fn build_ext_client(doh: Option<String>) -> reqwest::Client {
+fn build_ext_client(doh: Option<String>, streaming: bool) -> reqwest::Client {
     let mut b = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
         .connect_timeout(std::time::Duration::from_secs(10))
         .pool_max_idle_per_host(8)
         .tcp_keepalive(std::time::Duration::from_secs(90))
-        .timeout(std::time::Duration::from_secs(30))
         .cookie_provider(ext_cookie_jar());
+    b = if streaming {
+        b.read_timeout(std::time::Duration::from_secs(60))
+    } else {
+        b.timeout(std::time::Duration::from_secs(30))
+    };
     if let Some(url) = doh {
         b = b.dns_resolver(std::sync::Arc::new(doh::DohResolver::new(url)));
     }
@@ -996,7 +1004,10 @@ fn http_dl_lock() -> &'static std::sync::RwLock<reqwest::Client> {
     HTTP_DL.get_or_init(|| std::sync::RwLock::new(build_http_client(None, true)))
 }
 fn http_ext_lock() -> &'static std::sync::RwLock<reqwest::Client> {
-    HTTP_EXT.get_or_init(|| std::sync::RwLock::new(build_ext_client(None)))
+    HTTP_EXT.get_or_init(|| std::sync::RwLock::new(build_ext_client(None, false)))
+}
+fn http_ext_stream_lock() -> &'static std::sync::RwLock<reqwest::Client> {
+    HTTP_EXT_STREAM.get_or_init(|| std::sync::RwLock::new(build_ext_client(None, true)))
 }
 
 pub(crate) fn http_client() -> reqwest::Client {
@@ -1005,6 +1016,11 @@ pub(crate) fn http_client() -> reqwest::Client {
 /// Cookie-jar-backed client for source-extension HTTP only.
 pub(crate) fn ext_http_client() -> reqwest::Client {
     http_ext_lock().read().unwrap().clone()
+}
+/// Cookie-jar-backed source client for long-lived Cast media responses. It has no total timeout;
+/// only a per-read idle timeout, so healthy episode/movie streams are never cut off at 30 seconds.
+pub(crate) fn ext_stream_http_client() -> reqwest::Client {
+    http_ext_stream_lock().read().unwrap().clone()
 }
 /// A client tuned for large file downloads: no total timeout (only a per-read idle timeout).
 pub(crate) fn download_http_client() -> reqwest::Client {
@@ -1036,7 +1052,8 @@ fn apply_http_doh(doh: Option<String>) {
     }
     *http_lock().write().unwrap() = build_http_client(doh.clone(), false);
     *http_dl_lock().write().unwrap() = build_http_client(doh.clone(), true);
-    *http_ext_lock().write().unwrap() = build_ext_client(doh);
+    *http_ext_lock().write().unwrap() = build_ext_client(doh.clone(), false);
+    *http_ext_stream_lock().write().unwrap() = build_ext_client(doh, true);
 }
 
 #[cfg(target_os = "android")]

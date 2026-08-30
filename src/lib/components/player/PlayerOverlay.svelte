@@ -62,6 +62,7 @@
   import PauseIcon from '@lucide/svelte/icons/pause'
   import PartyPresence from '$lib/components/watch/PartyPresence.svelte'
   import { matchRememberedTrack, rememberedSeriesTrack } from '$lib/player/track-preferences'
+  import { desktopCastSession, desktopCastStatus, desktopCastSessionMatchesPlayback, seekActiveDesktopCast } from '$lib/player/desktop-cast'
 
   // In-app player overlay. mpv is embedded into the MAIN window (behind the
   // webview) by `player_embed`; this transparent overlay paints the controls on
@@ -99,6 +100,15 @@
   let autoSkipped = $state(new Set<number>())
   let autoSkipPending = $state(new Set<number>())
   let autoSkipFailed = $state(new Set<number>())
+
+  const remoteCastOwnsPlayback = $derived(
+    desktopCastSessionMatchesPlayback($desktopCastSession, np.id, np.episode),
+  )
+  const transportPos = $derived(remoteCastOwnsPlayback ? ($desktopCastStatus?.positionSeconds ?? pos) : pos)
+  const transportDur = $derived(remoteCastOwnsPlayback ? ($desktopCastStatus?.durationSeconds ?? dur) : dur)
+  const transportPaused = $derived(remoteCastOwnsPlayback
+    ? $desktopCastStatus?.state === 'paused'
+    : paused)
 
   let visible = $state(true)
   let hideT: ReturnType<typeof setTimeout>
@@ -247,6 +257,12 @@
   let overlayRoot = $state<HTMLDivElement | undefined>(undefined)
   let lastDrmError = ''
   function cmd(name: string, args: string[] = []): Promise<void> {
+    if (name === 'seek' && remoteCastOwnsPlayback) {
+      const value = Number(args[0])
+      if (!Number.isFinite(value)) return Promise.resolve()
+      const target = args[1]?.startsWith('relative') ? transportPos + value : value
+      return seekTo(target).then(() => undefined)
+    }
     // Reflect pause intent immediately. Waiting exclusively for mpv's property-change event left
     // the snapshotted Game-mode icon one state behind on a quick A/touch toggle. The native event
     // remains authoritative and reconciles this optimistic value after the command lands.
@@ -402,13 +418,17 @@
   // snap back into it and re-skip forever).
   const seekTo = (t: number): Promise<boolean> => {
     const previous = pos
-    const next = Math.max(0, Number.isFinite(dur) && dur > 0 ? Math.min(dur, t) : t)
-    pos = next
-    const request = playerCommand('seek', [next.toFixed(3), 'absolute+exact'])
+    const next = Math.max(0, Number.isFinite(transportDur) && transportDur > 0 ? Math.min(transportDur, t) : t)
+    if (!remoteCastOwnsPlayback) pos = next
+    const request = (remoteCastOwnsPlayback
+      ? seekActiveDesktopCast(next, np.id, np.episode).then((handled) => {
+          if (!handled) throw new Error('Cast session changed before the seek was sent')
+        })
+      : playerCommand('seek', [next.toFixed(3), 'absolute+exact']))
       .then(() => true)
       .catch((error) => {
-        if (pos === next) pos = previous
-        console.warn('player_command', 'seek', [next.toFixed(3), 'absolute+exact'], error)
+        if (!remoteCastOwnsPlayback && pos === next) pos = previous
+        console.warn(remoteCastOwnsPlayback ? 'desktop_cast_control' : 'player_command', 'seek', [next.toFixed(3), 'absolute+exact'], error)
         return false
       })
     // One snapshot per tap-seek so the HTML bar moves. Hold-skim uses the native ASS bar
@@ -444,8 +464,8 @@
   $effect(() => {
     if (!gmMode || !$playing) return
     const stop = startNativeGamepadSeek({
-      getPos: () => pos,
-      getDur: () => dur,
+      getPos: () => transportPos,
+      getDur: () => transportDur,
       seek: (t, source) => source === 'dpad' ? quietDpadSeekTo(t) : seekTo(t),
       beginScrub: (t, source) => {
         beginScrub(t, source === 'dpad' ? 'dpad' : 'pad')
@@ -821,7 +841,7 @@
   const gmScrubFreezesProgress = $derived(gmMode && $scrub.active)
   const gmDynamicPos = $derived(gmScrubFreezesProgress ? gmScrubBasePos : (dpadVisualPos ?? pos))
   const gmDynamicBuffer = $derived(gmScrubFreezesProgress ? gmScrubBaseBuffer : buffer)
-  const controlsPos = $derived(gmScrubFreezesProgress ? $scrub.time : (dpadVisualPos ?? pos))
+  const controlsPos = $derived(gmScrubFreezesProgress ? $scrub.time : (dpadVisualPos ?? transportPos))
   const controlsBuffer = $derived(gmScrubFreezesProgress ? gmScrubBaseBuffer : buffer)
 
   const hiddenGmDynamicState = () => ({
@@ -1322,18 +1342,18 @@
         else if (get(fullscreen)) exitFullscreen()
       }
       else if (action === 'playerPlayPause') togglePlayback()
-      else if (action === 'playerSeekBack') (gmMode ? quietDpadSeekTo : seekTo)(pos - get(seekDuration))
-      else if (action === 'playerSeekForward') (gmMode ? quietDpadSeekTo : seekTo)(pos + get(seekDuration))
+      else if (action === 'playerSeekBack') (gmMode ? quietDpadSeekTo : seekTo)(transportPos - get(seekDuration))
+      else if (action === 'playerSeekForward') (gmMode ? quietDpadSeekTo : seekTo)(transportPos + get(seekDuration))
       else if (action === 'playerPreviousChapter') {
         // No chapters means no-op, deliberately: a key that silently turns into a plain seek is
         // worse than one that does nothing, because you cannot tell which happened.
         // `chapters` is sorted at the point it is stored (see the load effect above), so it can
         // be passed straight to these binary-search-based lookups.
-        const t = prevChapterTarget(chapters, pos)
+        const t = prevChapterTarget(chapters, transportPos)
         if (t !== null) seekTo(t)
       }
       else if (action === 'playerNextChapter') {
-        const t = nextChapterTarget(chapters, pos)
+        const t = nextChapterTarget(chapters, transportPos)
         if (t !== null) seekTo(t)
       }
       else if (action === 'playerVolumeUp') cmd('add', ['volume', '5'])
@@ -1575,7 +1595,7 @@
   {:else if controlsMounted}
     <!-- XWayland measures this bar for Rust's native 60Hz OSD. Native Wayland paints it live. -->
     <div class="izumi-hud" class:opacity-0={(gmBitmapMode && gmDynamicOwnsChrome || quietDpadScrub) && !$playerSideSheetOpen}>
-      <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {cmd} onclose={close} gm={gmMode} native={gmBitmapMode} ontoggleplay={togglePlayback} oneditsubtitles={() => (subtitleEditorOpen = true)} onscrubinput={scheduleGmDynamicOverlay} />
+      <Controls pos={controlsPos} dur={transportDur} buffer={controlsBuffer} paused={transportPaused} {segments} {cmd} onclose={close} gm={gmMode} native={gmBitmapMode} ontoggleplay={togglePlayback} oneditsubtitles={() => (subtitleEditorOpen = true)} onscrubinput={scheduleGmDynamicOverlay} />
     </div>
   {/if}
 

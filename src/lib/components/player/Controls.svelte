@@ -1261,7 +1261,7 @@
         <!-- Screenshot the current frame → Pictures/izumi. Game mode keeps this off the visual
              bar because Izumi maps its own screenshot action to L4 (R4 is Izumi's GIF recorder). -->
         {#if !gm}
-          <DesktopCastButton {pos} buttonClass={iconBtn} iconSize={icSize} {cmd} onopen={closePlayerMenus} />
+          <DesktopCastButton {pos} {dur} buttonClass={iconBtn} iconSize={icSize} {cmd} onopen={closePlayerMenus} />
           <button data-focusable class={iconBtn} onclick={screenshot} aria-label="Screenshot"><Camera size={icSize} /></button>
           <button data-focusable class={iconBtn} onclick={togglePictureInPicture} aria-label="Picture in picture"><PictureInPicture size={icSize} /></button>
         {/if}

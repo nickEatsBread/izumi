@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import { writable } from 'svelte/store'
+import { get, writable } from 'svelte/store'
 import { castSubtitleFormat, type CastTrack } from './android-cast'
 import { SamsungSmartViewChannel } from './samsung-smart-view'
 
@@ -17,6 +17,9 @@ export interface DesktopCastSession {
   deviceId: string
   deviceName: string
   backend: 'googleCast' | 'dlna' | 'tizenReceiver'
+  /** Playback identity prevents a surviving cast from controlling a newly opened item. */
+  mediaId?: number | null
+  episode?: number | null
   subtitles: { trackId: number; title: string; lang?: string }[]
   activeTrackIds: number[]
 }
@@ -43,6 +46,28 @@ let activeTizenCast: ActiveTizenCast | null = null
 
 /** Survives the player's auto-hiding Controls component being unmounted and remounted. */
 export const desktopCastSession = writable<DesktopCastSession | null>(null)
+/** Latest receiver clock, shared by the player, history, titlebar, and Cast popover. */
+export const desktopCastStatus = writable<DesktopCastStatus | null>(null)
+
+/** A cast belongs to the player item that started it. Unscoped sessions are retained for
+ * compatibility with sessions created before playback identity was added. */
+export function desktopCastSessionMatchesPlayback(
+  session: DesktopCastSession | null,
+  mediaId: number | null | undefined,
+  episode: number | null | undefined,
+): boolean {
+  if (!session) return false
+  if (session.mediaId != null && session.mediaId !== mediaId) return false
+  if (session.episode != null && session.episode !== (episode ?? null)) return false
+  return true
+}
+
+const PLAYING_POLL_MS = 3_000
+const IDLE_POLL_MS = 6_000
+let pollGeneration = 0
+let pollTimer: ReturnType<typeof setTimeout> | null = null
+let renderingPoll = 0
+let pollFailures = 0
 
 export interface CastSubtitleSource {
   url: string
@@ -208,7 +233,7 @@ export async function startDesktopCast(
   return invoke('desktop_cast_start', { request: nativeRequest })
 }
 
-export async function getDesktopCastStatus(): Promise<DesktopCastStatus> {
+export async function getDesktopCastStatus(includeRendering = true): Promise<DesktopCastStatus> {
   const active = activeTizenCast
   if (active) {
     if (!active.channel.connected) {
@@ -218,7 +243,88 @@ export async function getDesktopCastStatus(): Promise<DesktopCastStatus> {
     active.channel.publish('izumi.control', { sessionId: active.sessionId, action: 'status' }, 'host')
     return active.status
   }
-  return invoke('desktop_cast_status')
+  return invoke('desktop_cast_status', { includeRendering })
+}
+
+const validDuration = (value: number | undefined): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0
+
+/** Preserve the last useful clock fields when older renderers omit position fields. */
+export function reconcileDesktopCastStatus(
+  previous: DesktopCastStatus | null,
+  next: DesktopCastStatus,
+  acceptZero = false,
+): DesktopCastStatus {
+  const durationSeconds = validDuration(next.durationSeconds)
+    ? next.durationSeconds
+    : previous?.durationSeconds
+  let positionSeconds = Number.isFinite(next.positionSeconds) && next.positionSeconds >= 0
+    ? next.positionSeconds
+    : previous?.positionSeconds ?? 0
+  if (!acceptZero && positionSeconds === 0 && (previous?.positionSeconds ?? 0) > 1) {
+    positionSeconds = previous!.positionSeconds
+  }
+  if (validDuration(durationSeconds)) positionSeconds = Math.min(positionSeconds, durationSeconds)
+  return {
+    ...previous,
+    ...next,
+    positionSeconds,
+    durationSeconds,
+    volume: next.volume ?? previous?.volume,
+    muted: next.muted ?? previous?.muted,
+  }
+}
+
+const terminalCastError = (error: unknown) =>
+  /no active cast|ended|no longer active/i.test(error instanceof Error ? error.message : String(error))
+
+export async function refreshDesktopCastStatus(includeRendering = true): Promise<DesktopCastStatus> {
+  const next = await getDesktopCastStatus(includeRendering)
+  let reconciled = next
+  desktopCastStatus.update((previous) => (reconciled = reconcileDesktopCastStatus(previous, next)))
+  return reconciled
+}
+
+function scheduleDesktopCastPoll(generation: number, delay: number) {
+  if (generation !== pollGeneration) return
+  pollTimer = setTimeout(() => { void pollDesktopCastStatus(generation) }, delay)
+}
+
+async function pollDesktopCastStatus(generation: number) {
+  if (generation !== pollGeneration || !get(desktopCastSession)) return
+  try {
+    await refreshDesktopCastStatus(renderingPoll++ % 10 === 0)
+    pollFailures = 0
+  } catch (error) {
+    if (generation !== pollGeneration) return
+    pollFailures += 1
+    if (terminalCastError(error) && pollFailures >= 2) {
+      desktopCastSession.set(null)
+      desktopCastStatus.set(null)
+      return
+    }
+  }
+  if (generation !== pollGeneration || !get(desktopCastSession)) return
+  const state = get(desktopCastStatus)?.state
+  const base = state === 'playing' || state === 'buffering' ? PLAYING_POLL_MS : IDLE_POLL_MS
+  const backoff = pollFailures ? Math.min(4, 2 ** pollFailures) : 1
+  scheduleDesktopCastPoll(generation, base * backoff)
+}
+
+export function startDesktopCastStatusPolling(seed?: DesktopCastStatus) {
+  stopDesktopCastStatusPolling(false)
+  if (seed) desktopCastStatus.set(seed)
+  renderingPoll = 0
+  pollFailures = 0
+  const generation = ++pollGeneration
+  void pollDesktopCastStatus(generation)
+}
+
+export function stopDesktopCastStatusPolling(clearStatus = true) {
+  pollGeneration += 1
+  if (pollTimer) clearTimeout(pollTimer)
+  pollTimer = null
+  if (clearStatus) desktopCastStatus.set(null)
 }
 
 export async function controlDesktopCast(request: {
@@ -228,36 +334,77 @@ export async function controlDesktopCast(request: {
   muted?: boolean
   activeTrackIds?: number[]
 }): Promise<DesktopCastStatus> {
-  const active = activeTizenCast
-  if (active) {
-    active.channel.publish('izumi.control', { ...request, sessionId: active.sessionId }, 'host')
-    if (request.action === 'play') active.status = { ...active.status, state: 'playing' }
-    if (request.action === 'pause') active.status = { ...active.status, state: 'paused' }
-    if (request.action === 'seek' && request.positionSeconds != null) {
-      active.status = { ...active.status, positionSeconds: request.positionSeconds }
-    }
-    if (request.action === 'volume') {
-      active.status = {
-        ...active.status,
-        volume: request.volume ?? active.status.volume,
-        muted: request.muted ?? active.status.muted,
-      }
-    }
-    return active.status
+  const previous = get(desktopCastStatus)
+  const seekTarget = request.action === 'seek' && Number.isFinite(request.positionSeconds)
+    ? Math.max(0, request.positionSeconds!)
+    : null
+  if (seekTarget != null) {
+    desktopCastStatus.update((status) => status && ({ ...status, positionSeconds: seekTarget }))
   }
-  return invoke('desktop_cast_control', { request })
+  try {
+    const active = activeTizenCast
+    let next: DesktopCastStatus
+    if (active) {
+      active.channel.publish('izumi.control', { ...request, sessionId: active.sessionId }, 'host')
+      if (request.action === 'play') active.status = { ...active.status, state: 'playing' }
+      if (request.action === 'pause') active.status = { ...active.status, state: 'paused' }
+      if (request.action === 'seek' && request.positionSeconds != null) {
+        active.status = { ...active.status, positionSeconds: request.positionSeconds }
+      }
+      if (request.action === 'volume') {
+        active.status = {
+          ...active.status,
+          volume: request.volume ?? active.status.volume,
+          muted: request.muted ?? active.status.muted,
+        }
+      }
+      next = active.status
+    } else {
+      next = await invoke<DesktopCastStatus>('desktop_cast_control', { request })
+    }
+    // DLNA renderers can briefly return the pre-seek clock after accepting Seek.
+    const settled = seekTarget == null ? next : { ...next, positionSeconds: seekTarget }
+    let reconciled = settled
+    desktopCastStatus.update((current) => (
+      reconciled = reconcileDesktopCastStatus(current, settled, seekTarget != null)
+    ))
+    return reconciled
+  } catch (error) {
+    if (seekTarget != null) desktopCastStatus.set(previous)
+    throw error
+  }
+}
+
+/** Route a seek only when the active cast still belongs to this player item. */
+export async function seekActiveDesktopCast(
+  positionSeconds: number,
+  mediaId: number | null | undefined,
+  episode: number | null | undefined,
+): Promise<boolean> {
+  if (!desktopCastSessionMatchesPlayback(get(desktopCastSession), mediaId, episode)) return false
+  if (!Number.isFinite(positionSeconds)) return true
+  await controlDesktopCast({ action: 'seek', positionSeconds: Math.max(0, positionSeconds) })
+  return true
 }
 
 export async function stopDesktopCast(): Promise<void> {
-  const active = activeTizenCast
-  if (active) {
-    try {
-      active.channel.publish('izumi.control', { sessionId: active.sessionId, action: 'stop' }, 'host')
-    } finally {
-      active.channel.disconnect()
-      activeTizenCast = null
+  try {
+    const active = activeTizenCast
+    if (active) {
+      try {
+        active.channel.publish('izumi.control', { sessionId: active.sessionId, action: 'stop' }, 'host')
+      } finally {
+        active.channel.disconnect()
+        activeTizenCast = null
+      }
+      return
     }
-    return
+    return await invoke('desktop_cast_stop')
+  } finally {
+    stopDesktopCastStatusPolling()
   }
-  return invoke('desktop_cast_stop')
 }
+
+desktopCastSession.subscribe((session) => {
+  if (!session) stopDesktopCastStatusPolling()
+})

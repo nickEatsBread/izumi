@@ -7,6 +7,7 @@
 use std::{
     collections::{HashMap, HashSet},
     net::{Ipv4Addr, SocketAddr, UdpSocket},
+    sync::OnceLock,
     time::{Duration, Instant},
 };
 
@@ -21,6 +22,7 @@ const MAX_SSDP_PACKET: usize = 16 * 1024;
 const MAX_DEVICE_DESCRIPTIONS: usize = 32;
 const MAX_XML_BYTES: usize = 512 * 1024;
 const HTTP_TIMEOUT: Duration = Duration::from_secs(6);
+static CONTROL_CLIENT: OnceLock<Client> = OnceLock::new();
 
 #[derive(Clone, Debug)]
 pub struct DlnaDevice {
@@ -453,40 +455,53 @@ async fn ensure_transport_healthy(device: &DlnaDevice) -> Result<(), String> {
     Ok(())
 }
 
-pub async fn status(device: &DlnaDevice) -> Result<DlnaStatus, String> {
+pub async fn status(device: &DlnaDevice, include_rendering: bool) -> Result<DlnaStatus, String> {
+    // Many television UPnP servers are tiny, single-threaded HTTP implementations. Keep queries
+    // serialized so one progress poll cannot open four simultaneous SOAP connections and
+    // destabilize the renderer. The shared client below reuses a connection when the TV permits.
     let transport = soap_call(
         &device.av_transport,
         "GetTransportInfo",
         "<InstanceID>0</InstanceID>",
-    );
+    )
+    .await?;
     let position = soap_call(
         &device.av_transport,
         "GetPositionInfo",
         "<InstanceID>0</InstanceID>",
-    );
-    let volume = async {
-        let endpoint = device.rendering_control.as_ref()?;
-        soap_call(
-            endpoint,
-            "GetVolume",
-            "<InstanceID>0</InstanceID><Channel>Master</Channel>",
-        )
-        .await
-        .ok()
+    )
+    .await
+    .unwrap_or_default();
+    let volume = if include_rendering {
+        if let Some(endpoint) = device.rendering_control.as_ref() {
+            soap_call(
+                endpoint,
+                "GetVolume",
+                "<InstanceID>0</InstanceID><Channel>Master</Channel>",
+            )
+            .await
+            .ok()
+        } else {
+            None
+        }
+    } else {
+        None
     };
-    let muted = async {
-        let endpoint = device.rendering_control.as_ref()?;
-        soap_call(
-            endpoint,
-            "GetMute",
-            "<InstanceID>0</InstanceID><Channel>Master</Channel>",
-        )
-        .await
-        .ok()
+    let muted = if include_rendering {
+        if let Some(endpoint) = device.rendering_control.as_ref() {
+            soap_call(
+                endpoint,
+                "GetMute",
+                "<InstanceID>0</InstanceID><Channel>Master</Channel>",
+            )
+            .await
+            .ok()
+        } else {
+            None
+        }
+    } else {
+        None
     };
-    let (transport, position, volume, muted) = tokio::join!(transport, position, volume, muted);
-    let transport = transport?;
-    let position = position.unwrap_or_default();
     let state = match element_text(&transport, "CurrentTransportState").as_deref() {
         Some("PLAYING") => "playing",
         Some("PAUSED_PLAYBACK" | "PAUSED_RECORDING") => "paused",
@@ -558,7 +573,7 @@ pub async fn control(
         "tracks" => return Err("DLNA receivers do not support remote subtitle switching".into()),
         _ => return Err("Unknown DLNA control action".into()),
     }
-    status(device).await
+    status(device, action == "volume").await
 }
 
 pub async fn stop(device: &DlnaDevice) -> Result<(), String> {
@@ -589,10 +604,7 @@ async fn soap_call(
         "<?xml version=\"1.0\" encoding=\"utf-8\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body><u:{action} xmlns:u=\"{}\">{arguments}</u:{action}></s:Body></s:Envelope>",
         endpoint.service_type
     );
-    let response = Client::builder()
-        .timeout(HTTP_TIMEOUT)
-        .build()
-        .map_err(|error| format!("Could not configure DLNA control: {error}"))?
+    let response = control_client()?
         .post(endpoint.control_url.clone())
         .header(header::CONTENT_TYPE, "text/xml; charset=\"utf-8\"")
         .header(
@@ -626,6 +638,23 @@ async fn soap_call(
         return Err(format!("DLNA {action} failed: {detail}"));
     }
     Ok(body)
+}
+
+fn control_client() -> Result<&'static Client, String> {
+    if let Some(client) = CONTROL_CLIENT.get() {
+        return Ok(client);
+    }
+    let client = Client::builder()
+        .timeout(HTTP_TIMEOUT)
+        .connect_timeout(Duration::from_secs(3))
+        .pool_max_idle_per_host(1)
+        .tcp_keepalive(Duration::from_secs(30))
+        .build()
+        .map_err(|error| format!("Could not configure DLNA control: {error}"))?;
+    let _ = CONTROL_CLIENT.set(client);
+    CONTROL_CLIENT
+        .get()
+        .ok_or_else(|| "Could not configure DLNA control".to_string())
 }
 
 fn element_text(xml: &str, wanted: &str) -> Option<String> {

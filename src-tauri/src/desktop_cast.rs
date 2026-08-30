@@ -297,6 +297,7 @@ pub async fn desktop_cast_start(
 #[tauri::command]
 pub async fn desktop_cast_status(
     state: tauri::State<'_, DesktopCastState>,
+    include_rendering: Option<bool>,
 ) -> Result<DesktopCastStatus, String> {
     let active = active_session(&state)?;
     match &active.backend {
@@ -311,7 +312,9 @@ pub async fn desktop_cast_status(
                 .dlna
                 .as_ref()
                 .ok_or_else(|| "The DLNA receiver is no longer available".to_string())?;
-            Ok(dlna_status(dlna_cast::status(device).await?))
+            Ok(dlna_status(
+                dlna_cast::status(device, include_rendering.unwrap_or(true)).await?,
+            ))
         }
     }
 }
@@ -338,7 +341,7 @@ pub async fn desktop_cast_control(
                 .as_ref()
                 .ok_or_else(|| "The DLNA receiver is no longer available".to_string())?;
             if request.action == "tracks" {
-                let previous = dlna_cast::status(device).await?;
+                let previous = dlna_cast::status(device, false).await?;
                 let active_track_ids = request.active_track_ids.as_deref().unwrap_or_default();
                 dlna_cast::start(
                     device,
@@ -354,7 +357,7 @@ pub async fn desktop_cast_control(
                         dlna_cast::control(device, "pause", None, None, None).await?,
                     ));
                 }
-                return Ok(dlna_status(dlna_cast::status(device).await?));
+                return Ok(dlna_status(dlna_cast::status(device, false).await?));
             }
             Ok(dlna_status(
                 dlna_cast::control(

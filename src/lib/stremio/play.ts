@@ -83,6 +83,7 @@ import { torrentQueryIdFields, type TorrentResult } from '$lib/extensions/types'
 import { extToStream } from './ext-stream'
 import { markWatched, setStatus } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched, positions, progressKey } from '$lib/player/progress'
+import { desktopCastSession, desktopCastStatus } from '$lib/player/desktop-cast'
 import { recordPlay, localHistory } from '$lib/player/history'
 import { maybeAutoEnterIncognito } from '$lib/player/auto-incognito'
 import { incognito } from '$lib/stores/incognito'
@@ -568,6 +569,26 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
       }
     }
   }
+  // Casting pauses the duplicate local mpv instance, so its player-progress clock stops. Feed the
+  // receiver clock through the same history and watch-threshold path.
+  let previousCastState: string | null = null
+  const unlistenCastProgress = desktopCastStatus.subscribe((remote) => {
+    const cast = get(desktopCastSession)
+    const remoteDuration = remote?.durationSeconds
+    if (!cast || cast.mediaId !== media.id || cast.episode !== episode
+      || !remote || remoteDuration == null
+      || !Number.isFinite(remoteDuration) || remoteDuration <= 0) {
+      previousCastState = null
+      return
+    }
+    onProgress(remote.positionSeconds, remoteDuration)
+    if (remote.state === 'idle' && previousCastState && previousCastState !== 'idle'
+      && watched(remote.positionSeconds, remoteDuration)) {
+      clearPosition(media.id, episode)
+    }
+    previousCastState = remote.state
+  })
+  stop.push(unlistenCastProgress)
   pushListen<[number, number]>('player-progress', (e) => onProgress(e.payload[0], e.payload[1]))
   const onDrmProgress = (event: Event) => {
     const detail = (event as CustomEvent<{ pos?: number; dur?: number }>).detail
@@ -582,7 +603,15 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
   // save neither. The player dispatches `player-finalize` with its last pos/dur on close; persist
   // the resume point + mark watched here (idempotent — recordProgress maxes, `marked` guards).
   const onFinalize = (ev: Event) => {
-    const { pos, dur } = (ev as CustomEvent<{ pos: number; dur: number }>).detail ?? {}
+    const local = (ev as CustomEvent<{ pos: number; dur: number }>).detail ?? {}
+    const cast = get(desktopCastSession)
+    const remote = cast?.mediaId === media.id && cast.episode === episode
+      ? get(desktopCastStatus)
+      : null
+    const pos = remote?.positionSeconds ?? local.pos
+    const dur = remote?.durationSeconds && remote.durationSeconds > 0
+      ? remote.durationSeconds
+      : local.dur
     if (!dur || dur <= 0) return
     // If EOF already tombstoned this episode (cleared), a near-end finalize must NOT resurrect a
     // ~100% resume point — that would reopen the episode seeked to the very end AND destroy the
