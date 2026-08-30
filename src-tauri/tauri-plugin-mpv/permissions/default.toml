@@ -5,6 +5,7 @@ description = "Allow controlling the embedded libmpv player."
 permissions = [
     "allow-mpv-prepare",
     "allow-mpv-load",
+    "allow-mpv-inspect-source",
     "allow-mpv-command",
     "allow-mpv-get",
     "allow-mpv-set",

@@ -130,6 +130,7 @@ import {
 import { playViaIntent } from '$lib/player/android-playback'
 import {
   hasEmbeddedPlayer, prepareEmbeddedPlayer, mpvLoad, mpvCommand, androidMpvActive, androidMiniPlayer, mpvState, startMpvEvents,
+  confirmedNativeAndroidAudioRoute, inspectAndroidMediaSource, nativeAndroidAudioRoute,
   androidStreamInfo, waitForMpvFirstFrame,
 } from '$lib/player/android-mpv'
 import { waitForRecoveryFirstFrame, type RecoveryFirstFrameResult } from '$lib/player/recovery-first-frame'
@@ -3074,6 +3075,23 @@ export async function playStream(
         // replacement. Stop its episode tracker first so those events cannot recover/advance the
         // previous episode during a manual Next transition.
         detachAndroid()
+        const streamInfo = describe(stream)
+        const filterChains = userFilterChains(get(videoQualityPreset), get(rawMpvOptions))
+        const nativeTransformsOff = get(audioProcessing) === 'off' && !filterChains.af && !filterChains.vf
+        const nativeAudioCandidate = nativeTransformsOff
+          ? nativeAndroidAudioRoute(`${streamInfo.audio ?? ''} ${streamInfo.label}`, streamInfo.hdr)
+          : undefined
+        let nativeAudio: 'ac4' | undefined
+        if (nativeAudioCandidate) {
+          const inspection = await inspectAndroidMediaSource({
+            url: stream.url,
+            headers,
+            timeoutMs: 1_000,
+            byteBudget: 4 * 1024 * 1024,
+          }).catch(() => undefined)
+          if (await abandonIfStale()) return
+          nativeAudio = confirmedNativeAndroidAudioRoute(nativeAudioCandidate, inspection)
+        }
         await mpvLoad({
           url: stream.url,
           title: label,
@@ -3085,13 +3103,13 @@ export async function playStream(
           autoplay,
           // Native MediaCodec/SurfaceView playback is Android's HDR-preserving path. Keep libmpv when audio filtering is requested:
           // the native route deliberately bypasses mpv/libavfilter.
-          preferNativeHdr: get(audioProcessing) === 'off'
-            && !userFilterChains(get(videoQualityPreset), get(rawMpvOptions)).af
-            ? describe(stream).hdr === 'DV' && get(dolbyVisionOutputMode) === 'auto'
+          preferNativeHdr: nativeTransformsOff
+            ? streamInfo.hdr === 'DV' && get(dolbyVisionOutputMode) === 'auto'
               ? 'dolby-vision'
-              : describe(stream).hdr === 'HDR10+' ? 'hdr10-plus'
-                : describe(stream).hdr === 'HLG' ? 'hlg' : undefined
+              : streamInfo.hdr === 'HDR10+' ? 'hdr10-plus'
+                : streamInfo.hdr === 'HLG' ? 'hlg' : undefined
             : undefined,
+          preferNativeAudio: nativeAudio,
         })
         if (await abandonIfStale()) return
         // This episode+source is now the one on screen, so the watchdog may recover against it.

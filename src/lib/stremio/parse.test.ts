@@ -83,6 +83,19 @@ suite('describe() release author', () => {
   })
 })
 
+suite('describe() modern media formats', () => {
+  it('recognizes formats that need a platform-specific playback route', () => {
+    const ac4 = describe({ behaviorHints: { filename: 'Show.S01E01.2160p.HEVC.AC-4.mkv' } })
+    expect(ac4.audio).toBe('AC-4')
+    expect(ac4.badges).toContain('AC-4')
+
+    expect(describe({ behaviorHints: { filename: 'Show.S01E01.1080p.VVC.H266.mkv' } }).codec).toBe('VVC')
+    expect(describe({ behaviorHints: { filename: 'Show.S01E01.1080p.VP9.webm' } }).codec).toBe('VP9')
+    expect(describe({ behaviorHints: { filename: 'Show.S01E01.1080p.xHE-AAC.mp4' } }).audio).toBe('XHE-AAC')
+    expect(describe({ behaviorHints: { filename: 'Show.S01E01.1080p.IAMF.mp4' } }).audio).toBe('IAMF')
+  })
+})
+
 suite('describe() cache classification', () => {
   it('treats a bare infoHash with no url and no marker as unknown', () => {
     expect(describe({ infoHash: 'abc123', title: '[Group] Show - 01 (1080p)' }).cached).toBe('unknown')

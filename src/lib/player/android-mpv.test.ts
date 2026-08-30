@@ -234,6 +234,14 @@ describe('Android mpv loading signals', () => {
     mocks.event?.({ id: 7 })
     expect(get(mpvState)).toMatchObject({ dur: 1400, eof: true })
   })
+
+  it('passes a native AC-4 hint without making it mandatory', async () => {
+    await mpvLoad({ url: 'https://example.com/episode-ac4.mp4', preferNativeAudio: 'ac4' })
+
+    expect(mocks.invoke).toHaveBeenCalledWith('plugin:mpv|mpv_load', {
+      payload: expect.objectContaining({ preferNativeAudio: 'ac4' }),
+    })
+  })
 })
 
 describe('getChapterList', () => {

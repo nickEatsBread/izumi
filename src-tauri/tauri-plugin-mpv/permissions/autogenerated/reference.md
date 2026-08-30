@@ -6,6 +6,7 @@ Allow controlling the embedded libmpv player.
 
 - `allow-mpv-prepare`
 - `allow-mpv-load`
+- `allow-mpv-inspect-source`
 - `allow-mpv-command`
 - `allow-mpv-get`
 - `allow-mpv-set`
@@ -323,6 +324,32 @@ Enables the mpv_haptic command without any pre-configured scope.
 <td>
 
 Denies the mpv_haptic command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:allow-mpv-inspect-source`
+
+</td>
+<td>
+
+Enables the mpv_inspect_source command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-mpv-inspect-source`
+
+</td>
+<td>
+
+Denies the mpv_inspect_source command without any pre-configured scope.
 
 </td>
 </tr>

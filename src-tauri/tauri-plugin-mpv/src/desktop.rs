@@ -3,9 +3,9 @@ use tauri::{plugin::PluginApi, AppHandle, Runtime};
 
 use crate::models::{
     AutoPipRequest, BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest,
-    GifSaveRequest, GifStartRequest, HapticRequest, KeepScreenAwakeRequest, LoadRequest,
-    MediaSessionRequest, RenderOptsRequest, SetRequest, ThumbRequest, TransformRequest,
-    ViewportRequest,
+    GifSaveRequest, GifStartRequest, HapticRequest, InspectRequest, KeepScreenAwakeRequest,
+    LoadRequest, MediaSessionRequest, RenderOptsRequest, SetRequest, ThumbRequest,
+    TransformRequest, ViewportRequest,
 };
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
@@ -27,6 +27,15 @@ impl<R: Runtime> Mpv<R> {
 
     pub fn load(&self, _payload: LoadRequest) -> crate::Result<()> {
         Ok(())
+    }
+
+    pub fn inspect_source(&self, _payload: InspectRequest) -> crate::Result<serde_json::Value> {
+        Ok(serde_json::json!({
+            "status": "unavailable",
+            "bounded": true,
+            "redacted": true,
+            "platform": std::env::consts::OS
+        }))
     }
 
     pub fn command(&self, _payload: CommandRequest) -> crate::Result<()> {

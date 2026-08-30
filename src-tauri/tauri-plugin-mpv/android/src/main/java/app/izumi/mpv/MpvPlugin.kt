@@ -71,11 +71,15 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.common.util.MediaFormatUtil
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.inspector.MetadataRetriever
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import app.tauri.annotation.Command
@@ -87,6 +91,10 @@ import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import dev.jdtech.mpv.MPVLib
+import java.io.IOException
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.max
 
 @InvokeArg
@@ -110,6 +118,34 @@ class LoadArgs {
     /** Request direct MediaCodec/SurfaceView playback for a known HDR source. The native side
      * still verifies the current display and a matching 10-bit/Dolby Vision decoder. */
     var preferNativeHdr: String? = null
+    /** Request Media3 for a source whose audio cannot be decoded by the bundled FFmpeg build.
+     * The native side still requires a matching decoder or active bitstream output. */
+    var preferNativeAudio: String? = null
+}
+
+@InvokeArg
+class InspectArgs {
+    var url: String = ""
+    var headers: Map<String, String> = emptyMap()
+    /** Absolute wall-clock ceiling; the command clamps this to one second. */
+    var timeoutMs: Int = 1_000
+    /** Aggregate bytes across manifests, initialization segments, and container reads. */
+    var byteBudget: Long = 4L * 1024L * 1024L
+}
+
+/** Shares one aggregate read budget across every DataSource opened by a metadata retrieval. */
+private class InspectionBudgetDataSource(
+    private val upstream: DataSource,
+    private val remaining: AtomicLong,
+) : DataSource by upstream {
+    override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+        val available = remaining.get()
+        if (available <= 0L) throw IOException("inspection-byte-budget-exceeded")
+        val requested = available.coerceAtMost(length.toLong()).toInt()
+        val read = upstream.read(buffer, offset, requested)
+        if (read > 0) remaining.addAndGet(-read.toLong())
+        return read
+    }
 }
 
 private data class PendingSubtitles(
@@ -284,7 +320,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     private var nativeDvFirstFrame = false
     private var nativeDvSeeking = false
     private var nativeDvProgressTask: Runnable? = null
-    private var nativeHdrType: String? = null
+    private var nativeRouteType: String? = null
     private var preferredSubLanguage: String? = null
     private var pendingSubtitles: PendingSubtitles? = null
     /** The first load must wait for SurfaceView.surfaceCreated or mpv can initialize its VO with
@@ -335,6 +371,8 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
      * scaler preset is replaced wholesale and must never clear the receiver configuration. */
     private val storedDolbyOpts = LinkedHashMap<String, String>()
     private var audioDeviceCallback: AudioDeviceCallback? = null
+    /** Inspection is serialized so a preflight and diagnostics cannot create a probe storm. */
+    private val inspectionActive = AtomicBoolean(false)
 
     override fun load(webView: WebView) {
         if (Build.VERSION.SDK_INT >= 23 && audioDeviceCallback == null) {
@@ -539,7 +577,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
 
     /** Attach the prepared core to a SurfaceView on first playback. UI thread only. */
     private fun ensure(): MPVLib {
-        if (nativeDvPlayer != null) releaseNativeDolbyVision(removeContainer = true)
+        if (nativeDvPlayer != null) releaseNativeMedia(removeContainer = true)
         val m = ensureCore()
         if (view != null) return m
         val content = activity.findViewById<ViewGroup>(android.R.id.content)
@@ -643,9 +681,27 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         }
     }
 
+    /** AC-4 is demuxable but not decodable by the pinned FFmpeg build. Prefer Android's licensed
+     * codec when present, or a routed endpoint that explicitly accepts the AC-4 bitstream. */
+    private fun deviceSupportsNativeAudio(kind: String): Boolean {
+        if (kind != "ac4" || Build.VERSION.SDK_INT < 29) return false
+        val decoder = runCatching {
+            MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { codec ->
+                !codec.isEncoder && codec.supportedTypes.any {
+                    it.equals(MimeTypes.AUDIO_AC4, ignoreCase = true)
+                }
+            }
+        }.getOrDefault(false)
+        val manager = activity.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        return decoder || directAudioSupported(manager, AudioFormat.ENCODING_AC4)
+    }
+
     private fun subtitleMime(url: String): String = when {
-        url.substringBefore('?').endsWith(".ass", true) || url.substringBefore('?').endsWith(".ssa", true) -> MimeTypes.TEXT_SSA
-        url.substringBefore('?').endsWith(".srt", true) -> MimeTypes.APPLICATION_SUBRIP
+        url.substringBefore('?').substringBefore('#').endsWith(".ass", true) ||
+            url.substringBefore('?').substringBefore('#').endsWith(".ssa", true) -> MimeTypes.TEXT_SSA
+        url.substringBefore('?').substringBefore('#').endsWith(".srt", true) -> MimeTypes.APPLICATION_SUBRIP
+        url.substringBefore('?').substringBefore('#').endsWith(".ttml", true) ||
+            url.substringBefore('?').substringBefore('#').endsWith(".dfxp", true) -> MimeTypes.APPLICATION_TTML
         else -> MimeTypes.TEXT_VTT
     }
 
@@ -697,7 +753,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             nativeDvFirstFrame = true
             mediaLoaded = true
             trigger("event", JSObject().put("id", 21)) // MPV_EVENT_PLAYBACK_RESTART contract
-            trigger("dolby", JSObject().put("reason", "native-${nativeHdrType ?: "hdr"}-active"))
+            trigger("dolby", JSObject().put("reason", "native-${nativeRouteType ?: "media"}-active"))
             publishPipParams()
         }
 
@@ -720,9 +776,9 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         override fun onPlayerError(error: PlaybackException) {
             val args = nativeDvLoad ?: return
             Log.w("MpvPlugin", "native HDR path failed; falling back to mpv: ${error.message}")
-            trigger("dolby", JSObject().put("reason", "native-${nativeHdrType ?: "hdr"}-fallback"))
+            trigger("dolby", JSObject().put("reason", "native-${nativeRouteType ?: "media"}-fallback"))
             activity.runOnUiThread {
-                releaseNativeDolbyVision(removeContainer = true)
+                releaseNativeMedia(removeContainer = true)
                 loadWithMpv(args)
             }
         }
@@ -761,46 +817,61 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         return playerContainer
     }
 
-    private fun loadNativeHdr(args: LoadArgs, kind: String) {
+    /** Load through Media3's SurfaceView path. An existing native player is deliberately reused:
+     * rebuilding ExoPlayer, its renderers, codecs and AudioTrack on every next episode adds cold
+     * transition work that the persistent libmpv path already avoids. */
+    private fun loadNativeMedia(args: LoadArgs, kind: String) {
         mpv?.command(arrayOf("stop"))
-        container?.let { (it.parent as? ViewGroup)?.removeView(it) }
-        container = null
-        view = null
-        releaseNativeDolbyVision(removeContainer = false)
+        val existingPlayer = nativeDvPlayer
+        val existingView = nativeDvView
+        val canReuse = existingPlayer != null && existingView != null && container != null
+        Log.i("MpvPlugin", "native media load route=$kind reused=$canReuse")
+        val player: ExoPlayer
+        val playerView: PlayerView
+        if (canReuse) {
+            player = existingPlayer!!
+            playerView = existingView!!
+        } else {
+            container?.let { (it.parent as? ViewGroup)?.removeView(it) }
+            container = null
+            view = null
+            releaseNativeMedia(removeContainer = false)
 
-        val httpFactory = DefaultHttpDataSource.Factory()
-            .setDefaultRequestProperties(args.headers)
-            .setConnectTimeoutMs(30_000)
-            .setReadTimeoutMs(30_000)
-        val dataSourceFactory = DefaultDataSource.Factory(activity, httpFactory)
-        val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
-        val renderers = DefaultRenderersFactory(activity).setEnableDecoderFallback(true)
-        val player = ExoPlayer.Builder(activity, renderers, mediaSourceFactory).build()
-        val playerView = PlayerView(activity).apply {
-            useController = false
-            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-            this.player = player
-            setShutterBackgroundColor(Color.BLACK)
+            val renderers = DefaultRenderersFactory(activity).setEnableDecoderFallback(true)
+            player = ExoPlayer.Builder(activity, renderers).build()
+            playerView = PlayerView(activity).apply {
+                useController = false
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                this.player = player
+                setShutterBackgroundColor(Color.BLACK)
+            }
+            // TextureView may be composed through an SDR intermediate on Android 13. PlayerView's
+            // SurfaceView is the documented HDR path; fail closed if a future UI default changes it.
+            if (playerView.videoSurfaceView !is SurfaceView) {
+                player.release()
+                trigger("dolby", JSObject().put("reason", "native-media-surface-unavailable"))
+                loadWithMpv(args)
+                return
+            }
+            setupVideoContainer(playerView)
+            nativeDvPlayer = player
+            nativeDvView = playerView
+            player.addListener(nativeDolbyListener)
         }
-        // TextureView may be composed through an SDR intermediate on Android 13. PlayerView's
-        // SurfaceView is the documented HDR path; fail closed if a future UI default changes it.
-        if (playerView.videoSurfaceView !is SurfaceView) {
-            player.release()
-            trigger("dolby", JSObject().put("reason", "native-hdr-surface-unavailable"))
-            loadWithMpv(args)
-            return
-        }
-        setupVideoContainer(playerView)
-        nativeDvPlayer = player
-        nativeDvView = playerView
         nativeDvLoad = args
         nativeDvFirstFrame = false
         nativeDvSeeking = false
-        nativeHdrType = kind
+        nativeRouteType = kind
         mediaLoaded = false
         corePaused = args.autoplay.not()
 
+        // Reuse must not leak a prior episode's track override or language into the next item.
         val trackParameters = player.trackSelectionParameters.buildUpon()
+            .clearOverrides()
+            .setPreferredAudioLanguages()
+            .setPreferredTextLanguages()
+            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
         args.alang?.trim()?.takeIf { it.isNotEmpty() && it != "auto" }?.let {
             trackParameters.setPreferredAudioLanguage(it)
         }
@@ -824,16 +895,23 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             .setUri(args.url)
             .setSubtitleConfigurations(subtitleConfigs)
             .build()
-        player.addListener(nativeDolbyListener)
+        // The player is reusable, but authorization headers are per source. Build a fresh source
+        // factory for each item so an episode never inherits the previous signed request headers.
+        val httpFactory = DefaultHttpDataSource.Factory()
+            .setDefaultRequestProperties(args.headers)
+            .setConnectTimeoutMs(30_000)
+            .setReadTimeoutMs(30_000)
+        val dataSourceFactory = DefaultDataSource.Factory(activity, httpFactory)
+        val mediaSource = DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(item)
         trigger("event", JSObject().put("id", 6)) // MPV_EVENT_START_FILE contract
-        player.setMediaItem(item, (args.startPos * 1000.0).toLong().coerceAtLeast(0L))
+        player.setMediaSource(mediaSource, (args.startPos * 1000.0).toLong().coerceAtLeast(0L))
         player.prepare()
         player.playWhenReady = args.autoplay
         startNativeDolbyProgress()
         publishPipParams()
     }
 
-    private fun releaseNativeDolbyVision(removeContainer: Boolean) {
+    private fun releaseNativeMedia(removeContainer: Boolean) {
         nativeDvProgressTask?.let { activity.window.decorView.removeCallbacks(it) }
         nativeDvProgressTask = null
         nativeDvPlayer?.removeListener(nativeDolbyListener)
@@ -844,7 +922,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         nativeDvLoad = null
         nativeDvFirstFrame = false
         nativeDvSeeking = false
-        nativeHdrType = null
+        nativeRouteType = null
         if (removeContainer) {
             container?.let { (it.parent as? ViewGroup)?.removeView(it) }
             container = null
@@ -868,6 +946,185 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
                 invoke.reject(error.message ?: "mpv-prepare-failed")
             }
         }
+    }
+
+    private fun inspectionTrackType(format: Format): String = when (
+        format.sampleMimeType?.let { MimeTypes.getTrackType(it) }
+    ) {
+        C.TRACK_TYPE_VIDEO -> "video"
+        C.TRACK_TYPE_AUDIO -> "audio"
+        C.TRACK_TYPE_TEXT -> "text"
+        C.TRACK_TYPE_METADATA -> "metadata"
+        C.TRACK_TYPE_IMAGE -> "image"
+        else -> "unknown"
+    }
+
+    /** Query both Android's documented exact-format entry point and Media3's richer support check. */
+    private fun inspectedDecoder(format: Format, secure: Boolean): JSObject {
+        val mime = format.sampleMimeType
+        if (mime.isNullOrBlank() || (!MimeTypes.isVideo(mime) && !MimeTypes.isAudio(mime))) {
+            return JSObject()
+                .put("framework", "")
+                .put("media3", "")
+                .put("available", false)
+        }
+        val framework = runCatching {
+            MediaCodecList(MediaCodecList.REGULAR_CODECS)
+                .findDecoderForFormat(MediaFormatUtil.createMediaFormatFromFormat(format))
+        }.getOrNull().orEmpty()
+        val media3 = runCatching {
+            MediaCodecSelector.DEFAULT.getDecoderInfos(mime, secure, false)
+                .firstOrNull { it.isFormatSupported(activity, format) }
+                ?.name
+        }.getOrNull().orEmpty()
+        return JSObject()
+            .put("framework", framework)
+            .put("media3", media3)
+            .put("available", framework.isNotEmpty() || media3.isNotEmpty())
+            .put("secureRequested", secure)
+    }
+
+    private fun inspectedTrack(format: Format, groupIndex: Int, trackIndex: Int): JSObject {
+        val color = format.colorInfo
+        val drm = format.drmInitData
+        val result = JSObject()
+            .put("group", groupIndex)
+            .put("index", trackIndex)
+            .put("type", inspectionTrackType(format))
+            .put("id", format.id.orEmpty())
+            .put("label", format.label.orEmpty())
+            .put("language", format.language.orEmpty())
+            .put("containerMimeType", format.containerMimeType.orEmpty())
+            .put("sampleMimeType", format.sampleMimeType.orEmpty())
+            .put("codecs", format.codecs.orEmpty())
+            .put("selectionFlags", format.selectionFlags)
+            .put("roleFlags", format.roleFlags)
+            .put("averageBitrate", format.averageBitrate)
+            .put("peakBitrate", format.peakBitrate)
+            .put("width", format.width)
+            .put("height", format.height)
+            .put("frameRate", format.frameRate.toDouble())
+            .put("channelCount", format.channelCount)
+            .put("sampleRate", format.sampleRate)
+            .put("initializationDataCount", format.initializationData.size)
+            .put("cryptoType", format.cryptoType)
+            .put("drm", JSObject()
+                .put("present", drm != null)
+                .put("schemeType", drm?.schemeType.orEmpty())
+                .put("schemeDataCount", drm?.schemeDataCount ?: 0))
+            .put("color", JSObject()
+                .put("space", color?.colorSpace ?: Format.NO_VALUE)
+                .put("range", color?.colorRange ?: Format.NO_VALUE)
+                .put("transfer", color?.colorTransfer ?: Format.NO_VALUE)
+                .put("hdrStaticInfo", color?.hdrStaticInfo != null))
+
+        val codecs = format.codecs.orEmpty()
+        val dolby = Regex("(?:^|,)(dvhe|dvh1|dvav|dva1|dav1)\\.(\\d{2})\\.(\\d{2})(?:\\.|$)", RegexOption.IGNORE_CASE)
+            .find(codecs.replace(" ", ""))
+        result.put("dolbyVision", JSObject()
+            .put("signaled", dolby != null || format.sampleMimeType == MimeTypes.VIDEO_DOLBY_VISION)
+            .put("sampleEntry", dolby?.groupValues?.getOrNull(1).orEmpty())
+            .put("profile", dolby?.groupValues?.getOrNull(2).orEmpty())
+            .put("level", dolby?.groupValues?.getOrNull(3).orEmpty()))
+        result.put("decoder", inspectedDecoder(format, drm != null))
+        return result
+    }
+
+    private fun inspectionFailureKind(error: Throwable): String {
+        var root = error
+        while (root.cause != null && root.cause !== root) root = root.cause!!
+        return when {
+            root is TimeoutException || root is InterruptedException -> "timeout"
+            root is IOException && root.message == "inspection-byte-budget-exceeded" -> "byte-budget"
+            else -> "error"
+        }
+    }
+
+    /**
+     * Bounded source inspection. It does not touch either player; the caller may use its redacted
+     * format facts as one input to a fail-closed route decision.
+     * Results deliberately omit the URI, request headers, initialization data, and exception text.
+     */
+    @Command
+    fun inspectSource(invoke: Invoke) {
+        val args = invoke.parseArgs(InspectArgs::class.java)
+        if (args.url.isBlank()) {
+            invoke.reject("inspection-url-required")
+            return
+        }
+        if (!inspectionActive.compareAndSet(false, true)) {
+            invoke.resolve(JSObject()
+                .put("status", "busy")
+                .put("bounded", true)
+                .put("redacted", true))
+            return
+        }
+        val timeoutMs = args.timeoutMs.coerceIn(100, 1_000)
+        val byteBudget = args.byteBudget.coerceIn(256L * 1024L, 8L * 1024L * 1024L)
+        Thread({
+            val started = System.nanoTime()
+            val remaining = AtomicLong(byteBudget)
+            var retriever: MetadataRetriever? = null
+            var tracksFuture: com.google.common.util.concurrent.ListenableFuture<androidx.media3.exoplayer.source.TrackGroupArray>? = null
+            var durationFuture: com.google.common.util.concurrent.ListenableFuture<Long>? = null
+            try {
+                val httpFactory = DefaultHttpDataSource.Factory()
+                    .setDefaultRequestProperties(args.headers)
+                    .setConnectTimeoutMs(timeoutMs)
+                    .setReadTimeoutMs(timeoutMs)
+                val upstream = DefaultDataSource.Factory(activity, httpFactory)
+                val limited = DataSource.Factory {
+                    InspectionBudgetDataSource(upstream.createDataSource(), remaining)
+                }
+                val item = MediaItem.Builder().setUri(args.url).build()
+                retriever = MetadataRetriever.Builder(activity, item)
+                    .setMediaSourceFactory(DefaultMediaSourceFactory(limited))
+                    .build()
+                tracksFuture = retriever.retrieveTrackGroups()
+                durationFuture = retriever.retrieveDurationUs()
+                val deadline = started + TimeUnit.MILLISECONDS.toNanos(timeoutMs.toLong())
+                fun remainingNanos(): Long {
+                    val value = deadline - System.nanoTime()
+                    if (value <= 0L) throw TimeoutException("inspection-deadline")
+                    return value
+                }
+                val groups = tracksFuture.get(remainingNanos(), TimeUnit.NANOSECONDS)
+                val durationUs = durationFuture.get(remainingNanos(), TimeUnit.NANOSECONDS)
+                val tracks = JSONArray()
+                for (groupIndex in 0 until groups.length) {
+                    val group = groups[groupIndex]
+                    for (trackIndex in 0 until group.length) {
+                        tracks.put(inspectedTrack(group.getFormat(trackIndex), groupIndex, trackIndex))
+                    }
+                }
+                invoke.resolve(JSObject()
+                    .put("status", "ok")
+                    .put("bounded", true)
+                    .put("redacted", true)
+                    .put("elapsedMs", (System.nanoTime() - started) / 1_000_000)
+                    .put("timeoutMs", timeoutMs)
+                    .put("byteBudget", byteBudget)
+                    .put("bytesRead", byteBudget - remaining.get().coerceAtLeast(0L))
+                    .put("durationUs", durationUs)
+                    .put("tracks", tracks))
+            } catch (error: Throwable) {
+                tracksFuture?.cancel(true)
+                durationFuture?.cancel(true)
+                invoke.resolve(JSObject()
+                    .put("status", inspectionFailureKind(error))
+                    .put("bounded", true)
+                    .put("redacted", true)
+                    .put("errorClass", error.javaClass.simpleName)
+                    .put("elapsedMs", (System.nanoTime() - started) / 1_000_000)
+                    .put("timeoutMs", timeoutMs)
+                    .put("byteBudget", byteBudget)
+                    .put("bytesRead", byteBudget - remaining.get().coerceAtLeast(0L))
+                    .put("tracks", JSONArray()))
+            } finally {
+                retriever?.close()
+                inspectionActive.set(false)
+            }
+        }, "izumi-media-inspector").start()
     }
 
     // --- Picture-in-picture -------------------------------------------------------------------
@@ -1429,11 +1686,17 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         val args = invoke.parseArgs(LoadArgs::class.java)
         activity.runOnUiThread {
             val nativeHdr = args.preferNativeHdr?.lowercase(Locale.ROOT)
+            val nativeAudio = args.preferNativeAudio?.lowercase(Locale.ROOT)
             if (nativeHdr != null && deviceSupportsNativeHdr(nativeHdr)) {
-                loadNativeHdr(args, nativeHdr)
+                loadNativeMedia(args, nativeHdr)
+            } else if (nativeHdr == null && nativeAudio != null && deviceSupportsNativeAudio(nativeAudio)) {
+                loadNativeMedia(args, "audio-$nativeAudio")
             } else {
                 if (nativeHdr != null) {
                     trigger("dolby", JSObject().put("reason", "native-$nativeHdr-unavailable"))
+                }
+                if (nativeAudio != null) {
+                    trigger("dolby", JSObject().put("reason", "native-audio-$nativeAudio-unavailable"))
                 }
                 loadWithMpv(args)
             }
@@ -1861,6 +2124,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
 
     private fun encodingName(encoding: Int): String = when (encoding) {
         AudioFormat.ENCODING_AC3 -> "ac3"
+        AudioFormat.ENCODING_AC4 -> "ac4"
         AudioFormat.ENCODING_E_AC3 -> "eac3"
         AudioFormat.ENCODING_E_AC3_JOC -> "eac3-joc"
         AudioFormat.ENCODING_DOLBY_TRUEHD -> "truehd"
@@ -1999,11 +2263,11 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         val decoder = hasDolbyVisionDecoder()
         val nativeVideo = nativeDvPlayer?.videoFormat
         val (currentSupported, currentCodecString) = currentVideoTrackSupport()
-        val nativeDvActive = nativeHdrType == "dolby-vision" && nativeDvPlayer != null &&
+        val nativeDvActive = nativeRouteType == "dolby-vision" && nativeDvPlayer != null &&
             nativeVideo?.sampleMimeType == MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION && currentSupported == true
-        val nativeHdr10PlusActive = nativeHdrType == "hdr10-plus" && nativeDvPlayer != null &&
+        val nativeHdr10PlusActive = nativeRouteType == "hdr10-plus" && nativeDvPlayer != null &&
             nativeVideo?.colorInfo?.colorTransfer == C.COLOR_TRANSFER_ST2084 && currentSupported == true
-        val nativeHlgActive = nativeHdrType == "hlg" && nativeDvPlayer != null &&
+        val nativeHlgActive = nativeRouteType == "hlg" && nativeDvPlayer != null &&
             nativeVideo?.colorInfo?.colorTransfer == C.COLOR_TRANSFER_HLG && currentSupported == true
         val dvProfiles = decoderProfiles(MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION)
             .mapNotNull { dolbyVisionProfileName(it.profile) }.distinct().sorted()
@@ -2060,7 +2324,8 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
                 .put("dolbyVisionNativePath", nativeDvActive)
                 .put("hdr10PlusNativePath", nativeHdr10PlusActive)
                 .put("hlgNativePath", nativeHlgActive)
-                .put("nativeHdrType", nativeHdrType.orEmpty())
+                .put("nativeHdrType", nativeRouteType?.takeUnless { it.startsWith("audio-") }.orEmpty())
+                .put("nativeRouteType", nativeRouteType.orEmpty())
                 .put("dolbyVisionAwareRenderer", currentVo == "gpu-next" || nativeDvActive))
             .put("codecs", JSObject()
                 .put("dolbyVisionProfiles", JSONArray(dvProfiles))
@@ -2483,7 +2748,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         keepScreenAwakeOn = false
         activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         container?.let { (it.parent as? ViewGroup)?.removeView(it) }
-        releaseNativeDolbyVision(removeContainer = false)
+        releaseNativeMedia(removeContainer = false)
         mpv?.let {
             it.command(arrayOf("stop"))
             it.removeObserver(this)

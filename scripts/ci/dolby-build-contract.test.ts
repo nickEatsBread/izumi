@@ -21,7 +21,16 @@ describe('reproducible Dolby playback engine floor', () => {
   })
 
   it('rejects an old Homebrew mpv and pins stable Media3', () => {
-    expect(read('.github/workflows/release.yml')).toContain("grep -E '^mpv 0\\.(4[1-9]|[5-9][0-9])'")
+    expect(read('.github/workflows/release.yml')).toContain("grep -Eq '^mpv v?0\\.(4[1-9]|[5-9][0-9])'")
     expect(read('src-tauri/tauri-plugin-mpv/android/build.gradle.kts')).toContain('media3Version = "1.11.0"')
+  })
+
+  it('publishes evidence for the actual native artifacts', () => {
+    const release = read('.github/workflows/release.yml')
+    expect(release).toContain('player-capability-manifest.mjs')
+    expect(release).toContain('--artifact src-tauri/libmpv-2.dll')
+    expect(release).toContain('--windows-script scripts/ci/libmpv-windows.ps1')
+    expect(release).toContain('--artifact src-tauri/tauri-plugin-mpv/android/libs/libmpv.aar')
+    expect(release).toContain('gh release upload "$T" "$MANIFEST"')
   })
 })

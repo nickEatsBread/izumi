@@ -3,9 +3,9 @@ use tauri::{command, AppHandle, Runtime};
 use crate::{
     models::{
         AutoPipRequest, BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest,
-        GifSaveRequest, GifStartRequest, HapticRequest, KeepScreenAwakeRequest, LoadRequest,
-        MediaSessionRequest, RenderOptsRequest, SetRequest, ThumbRequest, TransformRequest,
-        ViewportRequest,
+        GifSaveRequest, GifStartRequest, HapticRequest, InspectRequest, KeepScreenAwakeRequest,
+        LoadRequest, MediaSessionRequest, RenderOptsRequest, SetRequest, ThumbRequest,
+        TransformRequest, ViewportRequest,
     },
     MpvExt, Result,
 };
@@ -18,6 +18,14 @@ pub(crate) async fn mpv_prepare<R: Runtime>(app: AppHandle<R>) -> Result<serde_j
 #[command]
 pub(crate) async fn mpv_load<R: Runtime>(app: AppHandle<R>, payload: LoadRequest) -> Result<()> {
     app.mpv().load(payload)
+}
+
+#[command]
+pub(crate) async fn mpv_inspect_source<R: Runtime>(
+    app: AppHandle<R>,
+    payload: InspectRequest,
+) -> Result<serde_json::Value> {
+    app.mpv().inspect_source(payload)
 }
 
 #[command]

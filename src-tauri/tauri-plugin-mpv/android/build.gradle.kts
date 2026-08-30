@@ -31,6 +31,9 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-exoplayer-dash:$media3Version")
     implementation("androidx.media3:media3-exoplayer-hls:$media3Version")
+    // MetadataRetriever inspects real container tracks without constructing another player.
+    // Reads are serialized, byte-capped, deadline-capped and omitted from ordinary formats.
+    implementation("androidx.media3:media3-inspector:$media3Version")
     implementation("androidx.media3:media3-ui:$media3Version")
     // The Tauri Android runtime (Plugin, Invoke, annotations). Resolved from the app's
     // included tauri-android build when the plugin is assembled by the CLI.

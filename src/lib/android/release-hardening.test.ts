@@ -40,12 +40,13 @@ describe('Android release hardening', () => {
     }
     expect(verifyNative).toContain('ZIPALIGN" -c -P 16 -v 4')
     expect(verifyNative).toContain('alignment < 0x4000')
-    expect(release).toContain('needs: [create-release, build, flatpak, android, cleanup-release-signatures]')
+    expect(release).toContain('needs: [create-release, build, flatpak, android, tizen, tv-installer, cleanup-release-signatures]')
   })
 
   it('builds the shipped player from the libass 0.17.5 source pin', () => {
     expect(libmpvBuild).toContain('f77f62c316c6b222e75ece48e1fbf1e798fd83e7')
-    expect(libmpvBuild).toContain("grep -q '^v_libass=0\\.17\\.5$'")
+    expect(libmpvBuild).toContain('readonly LIBASS_VERSION="0.17.5"')
+    expect(libmpvBuild).toContain('grep -q "^v_libass=${LIBASS_VERSION}$"')
     expect(libmpvBuild).toContain("grep 'commit: 0\\.17\\.5-'")
     expect(preview).toContain('Build libmpv with libass 0.17.5')
     expect(release).toContain('Build libmpv with libass 0.17.5')

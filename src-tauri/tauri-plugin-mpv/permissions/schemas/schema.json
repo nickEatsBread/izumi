@@ -427,6 +427,18 @@
           "markdownDescription": "Denies the mpv_haptic command without any pre-configured scope."
         },
         {
+          "description": "Enables the mpv_inspect_source command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mpv-inspect-source",
+          "markdownDescription": "Enables the mpv_inspect_source command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mpv_inspect_source command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mpv-inspect-source",
+          "markdownDescription": "Denies the mpv_inspect_source command without any pre-configured scope."
+        },
+        {
           "description": "Enables the mpv_keep_screen_awake command without any pre-configured scope.",
           "type": "string",
           "const": "allow-mpv-keep-screen-awake",
@@ -619,10 +631,10 @@
           "markdownDescription": "Denies the removeListener command without any pre-configured scope."
         },
         {
-          "description": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-prepare`\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-set-render-opts`\n- `allow-mpv-set-dolby-opts`\n- `allow-mpv-dolby-capabilities`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-auto-pip`\n- `allow-mpv-media-session`\n- `allow-mpv-request-notifications`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-keep-screen-awake`\n- `allow-mpv-transform`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-mpv-snapshot`\n- `allow-mpv-gif-start`\n- `allow-mpv-gif-stop`\n- `allow-mpv-gif-abort`\n- `allow-mpv-gif-save`\n- `allow-registerListener`\n- `allow-removeListener`",
+          "description": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-prepare`\n- `allow-mpv-load`\n- `allow-mpv-inspect-source`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-set-render-opts`\n- `allow-mpv-set-dolby-opts`\n- `allow-mpv-dolby-capabilities`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-auto-pip`\n- `allow-mpv-media-session`\n- `allow-mpv-request-notifications`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-keep-screen-awake`\n- `allow-mpv-transform`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-mpv-snapshot`\n- `allow-mpv-gif-start`\n- `allow-mpv-gif-stop`\n- `allow-mpv-gif-abort`\n- `allow-mpv-gif-save`\n- `allow-registerListener`\n- `allow-removeListener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-prepare`\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-set-render-opts`\n- `allow-mpv-set-dolby-opts`\n- `allow-mpv-dolby-capabilities`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-auto-pip`\n- `allow-mpv-media-session`\n- `allow-mpv-request-notifications`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-keep-screen-awake`\n- `allow-mpv-transform`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-mpv-snapshot`\n- `allow-mpv-gif-start`\n- `allow-mpv-gif-stop`\n- `allow-mpv-gif-abort`\n- `allow-mpv-gif-save`\n- `allow-registerListener`\n- `allow-removeListener`"
+          "markdownDescription": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-prepare`\n- `allow-mpv-load`\n- `allow-mpv-inspect-source`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-set-render-opts`\n- `allow-mpv-set-dolby-opts`\n- `allow-mpv-dolby-capabilities`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-auto-pip`\n- `allow-mpv-media-session`\n- `allow-mpv-request-notifications`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-keep-screen-awake`\n- `allow-mpv-transform`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-mpv-snapshot`\n- `allow-mpv-gif-start`\n- `allow-mpv-gif-stop`\n- `allow-mpv-gif-abort`\n- `allow-mpv-gif-save`\n- `allow-registerListener`\n- `allow-removeListener`"
         }
       ]
     }

@@ -4,6 +4,7 @@
 const COMMANDS: &[&str] = &[
     "mpv_prepare",
     "mpv_load",
+    "mpv_inspect_source",
     "mpv_command",
     "mpv_get",
     "mpv_set",

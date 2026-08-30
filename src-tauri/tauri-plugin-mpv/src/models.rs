@@ -32,10 +32,34 @@ pub struct LoadRequest {
     pub headers: std::collections::HashMap<String, String>,
     #[serde(default = "default_true")]
     pub autoplay: bool,
-    /// Ask Android to use the direct Media3/MediaCodec Surface path for a known Dolby Vision
-    /// source. The native plugin verifies the display and decoder before honoring it.
+    /// Ask Android to use its direct Media3/MediaCodec Surface path for a known HDR kind. The
+    /// native plugin independently verifies the display and decoder before honoring it.
     #[serde(default)]
-    pub prefer_native_dolby_vision: bool,
+    pub prefer_native_hdr: Option<String>,
+    /// Ask Android to use Media3 for an exactly inspected audio kind missing from FFmpeg.
+    #[serde(default)]
+    pub prefer_native_audio: Option<String>,
+}
+
+/// Bounded, redacted Android Media3 metadata probe used by preflight and qualification tooling.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InspectRequest {
+    pub url: String,
+    #[serde(default)]
+    pub headers: std::collections::HashMap<String, String>,
+    #[serde(default = "default_inspection_timeout_ms")]
+    pub timeout_ms: u32,
+    #[serde(default = "default_inspection_byte_budget")]
+    pub byte_budget: u64,
+}
+
+fn default_inspection_timeout_ms() -> u32 {
+    1_000
+}
+
+fn default_inspection_byte_budget() -> u64 {
+    4 * 1024 * 1024
 }
 
 fn default_true() -> bool {
@@ -201,7 +225,7 @@ mod tests {
 
     #[test]
     fn load_request_camel_case() {
-        let j = r#"{"url":"http://x/v.mkv","title":"Ep 1","startPos":42.5,"subtitles":[{"url":"http://x/s.ass","title":"English","lang":"eng","selected":true}],"alang":"jpn","slang":"eng","headers":{"Referer":"https://x/"}}"#;
+        let j = r#"{"url":"http://x/v.mkv","title":"Ep 1","startPos":42.5,"subtitles":[{"url":"http://x/s.ass","title":"English","lang":"eng","selected":true}],"alang":"jpn","slang":"eng","headers":{"Referer":"https://x/"},"preferNativeHdr":"dolby-vision","preferNativeAudio":"ac4"}"#;
         let r: LoadRequest = serde_json::from_str(j).unwrap();
         assert_eq!(r.url, "http://x/v.mkv");
         assert_eq!(r.title.as_deref(), Some("Ep 1"));
@@ -210,7 +234,12 @@ mod tests {
         assert_eq!(r.subtitles[0].lang.as_deref(), Some("eng"));
         assert!(r.subtitles[0].selected);
         assert_eq!(r.slang.as_deref(), Some("eng"));
-        assert_eq!(r.headers.get("Referer").map(String::as_str), Some("https://x/"));
+        assert_eq!(r.prefer_native_hdr.as_deref(), Some("dolby-vision"));
+        assert_eq!(r.prefer_native_audio.as_deref(), Some("ac4"));
+        assert_eq!(
+            r.headers.get("Referer").map(String::as_str),
+            Some("https://x/")
+        );
     }
 
     #[test]
@@ -220,6 +249,17 @@ mod tests {
         assert_eq!(r.title, None);
         assert_eq!(r.start_pos, 0.0);
         assert!(r.subtitles.is_empty());
+        assert!(r.headers.is_empty());
+        assert!(r.prefer_native_hdr.is_none());
+        assert!(r.prefer_native_audio.is_none());
+    }
+
+    #[test]
+    fn inspect_request_has_bounded_defaults() {
+        let r: InspectRequest =
+            serde_json::from_str(r#"{"url":"https://example.test/video.mp4"}"#).unwrap();
+        assert_eq!(r.timeout_ms, 1_000);
+        assert_eq!(r.byte_budget, 4 * 1024 * 1024);
         assert!(r.headers.is_empty());
     }
 
@@ -260,8 +300,10 @@ mod tests {
 
     #[test]
     fn transform_request_supports_horizontal_miniplayer_motion() {
-        let r: TransformRequest =
-            serde_json::from_str(r#"{"scale":0.42,"translateY":900,"translateX":-240,"floating":true}"#).unwrap();
+        let r: TransformRequest = serde_json::from_str(
+            r#"{"scale":0.42,"translateY":900,"translateX":-240,"floating":true}"#,
+        )
+        .unwrap();
         assert_eq!(r.scale, 0.42);
         assert_eq!(r.translate_y, 900);
         assert_eq!(r.translate_x, -240);

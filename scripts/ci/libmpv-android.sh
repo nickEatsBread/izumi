@@ -5,6 +5,10 @@ set -euo pipefail
 
 readonly REPO="https://github.com/jarnedemeulemeester/libmpv-android.git"
 readonly COMMIT="f77f62c316c6b222e75ece48e1fbf1e798fd83e7"
+readonly MPV_VERSION="0.41.0"
+readonly FFMPEG_VERSION="8.1.2"
+readonly LIBPLACEBO_VERSION="7.360.1"
+readonly LIBASS_VERSION="0.17.5"
 readonly CACHE_ROOT="${HOME}/.cache/izumi-libmpv-android/${COMMIT}"
 readonly CACHED_AAR="${CACHE_ROOT}/libmpv-release.aar"
 readonly DEST="src-tauri/tauri-plugin-mpv/android/libs/libmpv.aar"
@@ -21,7 +25,10 @@ if [ ! -s "$CACHED_AAR" ]; then
 
   # Pin proof before spending time compiling the native dependency graph.
   grep -q '^v_ndk=29\.' "$WORK/source/buildscripts/include/depinfo.sh"
-  grep -q '^v_libass=0\.17\.5$' "$WORK/source/buildscripts/include/depinfo.sh"
+  grep -q "^v_mpv=${MPV_VERSION}$" "$WORK/source/buildscripts/include/depinfo.sh"
+  grep -q "^v_ffmpeg=${FFMPEG_VERSION}$" "$WORK/source/buildscripts/include/depinfo.sh"
+  grep -q "^v_libplacebo=${LIBPLACEBO_VERSION}$" "$WORK/source/buildscripts/include/depinfo.sh"
+  grep -q "^v_libass=${LIBASS_VERSION}$" "$WORK/source/buildscripts/include/depinfo.sh"
 
   # The libmpv AAR module declares no abiFilters, so its Gradle assembly compiles the CMake
   # wrapper (libplayer.so) for every default ABI — but `--arch arm64` below stages native deps

@@ -24,6 +24,15 @@ export interface MpvLoad {
   autoplay?: boolean
   /** Direct Android MediaCodec/SurfaceView path for a positively identified HDR source. */
   preferNativeHdr?: 'dolby-vision' | 'hdr10-plus' | 'hlg'
+  /** Android decoder/passthrough fallback for audio absent from the bundled FFmpeg decoder set. */
+  preferNativeAudio?: 'ac4'
+}
+
+/** AC-4 is recognized by FFmpeg's demuxer but needs Android's device codec/output path to play.
+ * Do not move an HDR source merely for audio: the HDR eligibility check owns that output route. */
+export function nativeAndroidAudioRoute(audio?: string, hdr?: string): 'ac4' | undefined {
+  if (hdr) return undefined
+  return /\bac-?4\b/i.test(audio ?? '') ? 'ac4' : undefined
 }
 
 /** True while the embedded player overlay is showing (drives the transparent hole + AndroidPlayer). */
@@ -306,6 +315,7 @@ export async function mpvLoad(p: MpvLoad): Promise<void> {
       headers: p.headers ?? {},
       autoplay: p.autoplay !== false,
       preferNativeHdr: p.preferNativeHdr ?? null,
+      preferNativeAudio: p.preferNativeAudio ?? null,
     },
   })
   // The reusable core can be paused by keep-open at EOF. Reassert the
@@ -318,6 +328,72 @@ export async function mpvCommand(args: string[]): Promise<void> {
   if (speed != null && speed !== 1) await setDolbyPlaybackSpeed(speed)
   await invoke('plugin:mpv|mpv_command', { payload: { args } })
   if (speed === 1) await setDolbyPlaybackSpeed(speed)
+}
+
+export interface AndroidMediaInspectionTrack {
+  group: number
+  index: number
+  type: 'video' | 'audio' | 'text' | 'metadata' | 'image' | 'unknown'
+  id: string
+  label: string
+  language: string
+  containerMimeType: string
+  sampleMimeType: string
+  codecs: string
+  width: number
+  height: number
+  frameRate: number
+  channelCount: number
+  sampleRate: number
+  drm: { present: boolean; schemeType: string; schemeDataCount: number }
+  color: { space: number; range: number; transfer: number; hdrStaticInfo: boolean }
+  dolbyVision: { signaled: boolean; sampleEntry: string; profile: string; level: string }
+  decoder: { framework: string; media3: string; available: boolean; secureRequested: boolean }
+}
+
+export interface AndroidMediaInspection {
+  status: 'ok' | 'timeout' | 'byte-budget' | 'busy' | 'error' | 'unavailable'
+  bounded: true
+  redacted: true
+  elapsedMs?: number
+  timeoutMs?: number
+  byteBudget?: number
+  bytesRead?: number
+  durationUs?: number
+  errorClass?: string
+  tracks?: AndroidMediaInspectionTrack[]
+}
+
+/** Bounded, redacted preflight used only for rare formats that need a device-native route. */
+export function inspectAndroidMediaSource(input: {
+  url: string
+  headers?: Record<string, string>
+  timeoutMs?: number
+  byteBudget?: number
+}): Promise<AndroidMediaInspection> {
+  return invoke('plugin:mpv|mpv_inspect_source', {
+    payload: {
+      url: input.url,
+      headers: input.headers ?? {},
+      timeoutMs: Math.min(1_000, Math.max(100, Math.round(input.timeoutMs ?? 1_000))),
+      byteBudget: Math.min(8 * 1024 * 1024, Math.max(256 * 1024, Math.round(input.byteBudget ?? 4 * 1024 * 1024))),
+    },
+  })
+}
+
+/** A release-name token is only a cheap candidate filter. The route becomes eligible after the
+ * bounded container inspection confirms that an extracted audio track is actually AC-4. */
+export function confirmedNativeAndroidAudioRoute(
+  candidate: 'ac4' | undefined,
+  inspection: ({
+    status: AndroidMediaInspection['status']
+    tracks?: Pick<AndroidMediaInspectionTrack, 'type' | 'sampleMimeType'>[]
+  }) | undefined,
+): 'ac4' | undefined {
+  if (candidate !== 'ac4' || inspection?.status !== 'ok') return undefined
+  return inspection.tracks?.some((track) =>
+    track.type === 'audio' && track.sampleMimeType.toLowerCase() === 'audio/ac4'
+  ) ? 'ac4' : undefined
 }
 
 export async function mpvGet(property: string): Promise<string | null> {

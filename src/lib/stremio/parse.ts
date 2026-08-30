@@ -185,7 +185,7 @@ export interface StreamInfo {
   label: string // best human label (release filename)
   filename?: string
   group?: string
-  codec?: string // HEVC | H264 | AV1 | XviD
+  codec?: string // VVC | HEVC | H264 | AV1 | VP9 | XviD
   bitDepth?: string // 10bit | 8bit
   hdr?: string // DV | HDR10+ | HLG | HDR10 | HDR
   dualAudio?: boolean
@@ -398,8 +398,10 @@ function parseStream(s: Stream): StreamInfo {
 
   const label = (filename || s.description?.split('\n')[0] || name.split('\n')[0] || 'Stream').trim()
 
-  const codec = /\b(?:hevc|x\.?265|h\.?265)\b/i.test(low) ? 'HEVC'
+  const codec = /\b(?:vvc|x\.?266|h\.?266)\b/i.test(low) ? 'VVC'
+    : /\b(?:hevc|x\.?265|h\.?265)\b/i.test(low) ? 'HEVC'
     : /\bav1\b/i.test(low) ? 'AV1'
+    : /\bvp9\b/i.test(low) ? 'VP9'
     : /\b(?:avc|x\.?264|h\.?264)\b/i.test(low) ? 'H264'
     : /\bxvid\b/i.test(low) ? 'XviD' : undefined
   const bitDepth = /\b10\s?-?bit\b/i.test(low) ? '10bit' : /\b8\s?-?bit\b/i.test(low) ? '8bit' : undefined
@@ -421,7 +423,7 @@ function parseStream(s: Stream): StreamInfo {
   // Dub-only: an English/multi dub track with no separate sub audio (Dual Audio is badged on its own).
   const dubOnly = !dualAudio && /\b(?:eng(?:lish)?[\s._-]*dub(?:bed)?|dubbed|multi[\s._-]*audio)\b/i.test(low)
   const audio = dualAudio ? undefined
-    : hay.match(/\b(e-?ac-?3|ddp?\+?|atmos|truehd|dts(?:-hd)?|flac|aac|opus|ac-?3)\b/i)?.[1]?.toUpperCase()
+    : hay.match(/\b(ac-?4|xhe-?aac|usac|mpeg-?h|iamf|e-?ac-?3|ddp?\+?|atmos|truehd|dts(?:[:-]?x|-uhd|-hd)?|flac|aac|opus|ac-?3)\b/i)?.[1]?.toUpperCase()
   const batch = BATCH_MARKER.test(low)
     && !/\bS\d{1,2}E\d{1,3}\b/i.test(low) // a single SxxExx is not a batch
   const audioLanguages = audioLanguagesOf(hay)
@@ -432,7 +434,7 @@ function parseStream(s: Stream): StreamInfo {
   // "-DL" from WEB-DL) so they never masquerade as the group. This feeds the picker heading AND the
   // cross-episode same-release continuity in play.ts, so a false group would mis-continue.
   const fn = s.behaviorHints?.filename
-  const NOISE = /^(?:\d{3,4}p?|x?\.?26[45]|h\.?26[45]|hevc|avc|av1|hi10p?|\d{1,2}\s?-?bit|[0-9a-f]{8}|web|web-?dl|dl|blu-?ray|ray|bd(?:rip|mux)?|hdtv|dvd(?:rip)?|remux|rip|dual\s?audio|multi(?:-?sub|-?audio)?|batch|complete|uncensored|uhd|hd|4k|sd|hdr(?:10\+?)?|dv|flac|aac|opus|ac-?3|e?-?ac-?3|ddp?\+?|atmos|truehd|dts(?:-hd)?)$/i
+  const NOISE = /^(?:\d{3,4}p?|x?\.?26[456]|h\.?26[456]|vvc|hevc|avc|av1|vp9|hi10p?|\d{1,2}\s?-?bit|[0-9a-f]{8}|web|web-?dl|dl|blu-?ray|ray|bd(?:rip|mux)?|hdtv|dvd(?:rip)?|remux|rip|dual\s?audio|multi(?:-?sub|-?audio)?|batch|complete|uncensored|uhd|hd|4k|sd|hdr(?:10\+?)?|dv|flac|aac|xhe-?aac|usac|mpeg-?h|iamf|opus|ac-?[34]|e?-?ac-?3|ddp?\+?|atmos|truehd|dts(?:[:-]?x|-uhd|-hd)?)$/i
   const lead = fn?.match(/^\s*\[([^\]]+)\]/)?.[1]?.trim()
   // Scene-style groups appear before the media extension (and often an optional CRC tag), not
   // literally at the end of the full filename. The old end anchor therefore missed e.g.

@@ -257,6 +257,32 @@ jobs:
           # macOS injects the dynamically-built frameworks list (MAC_ARGS) from the bundling step.
           args: ${{ startsWith(matrix.platform, 'macos') && env.MAC_ARGS || matrix.args }}
 
+      - name: Publish native player capability manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          name="player-capabilities-${RUNNER_OS,,}-${RUNNER_ARCH,,}.json"
+          args=(--platform "${RUNNER_OS,,}-${RUNNER_ARCH,,}" --output "$name")
+          case "$RUNNER_OS" in
+            Windows)
+              args+=(--artifact src-tauri/libmpv-2.dll)
+              args+=(--windows-script scripts/ci/libmpv-windows.ps1)
+              ;;
+            macOS)
+              args+=(--artifact src-tauri/macos-frameworks/libmpv.2.dylib)
+              args+=(--mpv auto --ffmpeg src-tauri/macos-tools/ffmpeg --pkg-config true)
+              ;;
+            Linux)
+              args+=(--artifact "$(pkg-config --variable=libdir mpv)/libmpv.so.2")
+              args+=(--pkg-config true)
+              ;;
+          esac
+          node scripts/ci/player-capability-manifest.mjs "${args[@]}"
+          tag="${{ github.ref_name }}"; [[ "$tag" == *-* ]] && tag=beta
+          gh release upload "$tag" "$name" --repo "${{ github.repository }}" --clobber
+
       # Upload version-less COPIES beside Tauri's versioned artifacts, so the README can link
       # permanent /releases/latest/download/<name> URLs that never change — GitHub-native, no
       # third party, no README edits per release. The versioned files stay; these are extra copies.
@@ -633,9 +659,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           T="${{ steps.meta.outputs.tag }}"
           VER="izumi-$T-android-arm64-${{ matrix.flavor }}.apk"
+          MANIFEST="player-capabilities-$T-android-arm64-${{ matrix.flavor }}.json"
+          args=(--platform "android-arm64-${{ matrix.flavor }}" --output "$MANIFEST" --artifact "$VER")
+          if [ "${{ matrix.flavor }}" = "full" ]; then
+            args+=(--artifact src-tauri/tauri-plugin-mpv/android/libs/libmpv.aar)
+            args+=(--android-script scripts/ci/libmpv-android.sh)
+            args+=(--media3-gradle src-tauri/tauri-plugin-mpv/android/build.gradle.kts)
+          fi
+          node scripts/ci/player-capability-manifest.mjs "${args[@]}"
           gh release upload "$T" "$VER" --repo "${{ github.repository }}" --clobber
+          gh release upload "$T" "$MANIFEST" --repo "${{ github.repository }}" --clobber
           # Version-less copy for the README's permanent /latest/download link (versioned one stays).
           cp "$VER" "izumi-android-${{ matrix.flavor }}.apk"
           gh release upload "$T" "izumi-android-${{ matrix.flavor }}.apk" --repo "${{ github.repository }}" --clobber
