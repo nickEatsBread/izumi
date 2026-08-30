@@ -3,7 +3,7 @@ import { writable, get } from 'svelte/store'
 import type { SubtitleStyle } from '$lib/player/subtitle-style'
 import {
   subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
-  subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
+  subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
 } from './ui'
 
 // Saved subtitle "fonting" presets — a release's captured ASS typesetting (or any style snapshot)
@@ -71,6 +71,7 @@ export function applyPresetGlobally(preset: SubtitleStylePreset): void {
   subtitleBorderSize.set(preset.style.borderSize)
   subtitleShadow.set(preset.style.shadow)
   subtitlePosition.set(preset.style.position)
+  subtitleAssSnapshot.set(preset.style.assSnapshot ?? null)
   subtitleStyleEnabled.set(true)
 }
 

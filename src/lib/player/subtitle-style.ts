@@ -9,8 +9,7 @@ import type { SubtitleOverrideScope } from '$lib/settings/ui'
  *  bundled `sub-fonts-dir`). Used when the setting has been cleared to an empty string. */
 export const DEFAULT_SUBTITLE_FONT = 'Nunito'
 
-export interface SubtitleStyle {
-  enabled: boolean
+export interface SubtitleStyleAppearance {
   scope: SubtitleOverrideScope
   font: string
   bold: boolean
@@ -22,6 +21,24 @@ export interface SubtitleStyle {
   shadow: number
   /** mpv `sub-pos`: 0 is the top of the frame, 100 the bottom. */
   position: number
+}
+
+/**
+ * Lossless ASS data captured from a subtitle track. The normal appearance fields above are a
+ * convenient 720-line approximation for the settings UI; replaying those rounded values inside
+ * the source script's own coordinate system is not lossless. Keep the original script/style
+ * values so saving a release style is visually a no-op and later episodes from that release can
+ * receive the same complete style table.
+ */
+export interface SubtitleAssStyleSnapshot {
+  reference: SubtitleStyleAppearance
+  scriptInfo: [field: string, value: string][]
+  styles: { name: string; fields: [field: string, value: string][] }[]
+}
+
+export interface SubtitleStyle extends SubtitleStyleAppearance {
+  enabled: boolean
+  assSnapshot?: SubtitleAssStyleSnapshot
 }
 
 /**
@@ -49,6 +66,67 @@ const safeAssFont = (font: string): string =>
 const dialogueMargin = (position: number): number =>
   Math.round(Math.max(0, Math.min(100, 100 - position)) * 7.2)
 
+const ASS_SCRIPT_NUMBER_FIELDS = new Set(['PlayResX', 'PlayResY', 'LayoutResX', 'LayoutResY', 'WrapStyle'])
+const ASS_SCRIPT_BOOL_FIELDS = new Set(['ScaledBorderAndShadow', 'Kerning'])
+const ASS_STYLE_NUMBER_FIELDS = new Set([
+  'FontSize', 'Bold', 'Italic', 'Underline', 'StrikeOut', 'ScaleX', 'ScaleY', 'Spacing', 'Angle',
+  'BorderStyle', 'Outline', 'Shadow', 'Alignment', 'Justify', 'MarginL', 'MarginR', 'MarginV',
+  'Encoding', 'AlphaLevel', 'Blur',
+])
+const ASS_STYLE_COLOR_FIELDS = new Set(['PrimaryColour', 'SecondaryColour', 'OutlineColour', 'BackColour'])
+const ASS_YCBCR_VALUES = new Set([
+  'none', 'tv.601', 'pc.601', 'tv.709', 'pc.709', 'tv.240m', 'pc.240m', 'tv.fcc', 'pc.fcc',
+])
+const ASS_NUMBER = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/
+const ASS_COLOR = /^(?:&H[0-9a-f]{1,8}&?|[+-]?\d+)$/i
+
+function safeAssScriptOverride(field: string, value: string): string | null {
+  const clean = value.trim()
+  if (ASS_SCRIPT_NUMBER_FIELDS.has(field) && ASS_NUMBER.test(clean)) return `${field}=${clean}`
+  if (ASS_SCRIPT_BOOL_FIELDS.has(field) && /^(?:yes|no|true|false|[+-]?\d+)$/i.test(clean)) {
+    return `${field}=${clean}`
+  }
+  if (field === 'YCbCr Matrix' && ASS_YCBCR_VALUES.has(clean.toLowerCase())) return `${field}=${clean}`
+  return null
+}
+
+function safeAssStyleOverride(styleName: string, field: string, value: string): string | null {
+  // mpv receives this as a comma-separated string list and libass splits at the last '='.
+  // Reject separators even for a locally persisted snapshot: subtitle headers are untrusted input.
+  const name = styleName.trim()
+  const clean = value.trim()
+  if (!name || /[,=\r\n]/.test(name)) return null
+  if (field === 'FontName') {
+    return clean && !/[,=\r\n]/.test(clean) ? `${name}.${field}=${clean}` : null
+  }
+  if (ASS_STYLE_NUMBER_FIELDS.has(field) && ASS_NUMBER.test(clean)) return `${name}.${field}=${clean}`
+  if (ASS_STYLE_COLOR_FIELDS.has(field) && ASS_COLOR.test(clean)) return `${name}.${field}=${clean}`
+  return null
+}
+
+function snapshotMatchesAppearance(style: SubtitleStyle, snapshot: SubtitleAssStyleSnapshot): boolean {
+  const reference = snapshot.reference
+  return style.scope === reference.scope
+    && style.font === reference.font
+    && style.bold === reference.bold
+    && Number(style.fontSize) === Number(reference.fontSize)
+    && style.textColor.toLowerCase() === reference.textColor.toLowerCase()
+    && style.borderColor.toLowerCase() === reference.borderColor.toLowerCase()
+    && Number(style.borderSize) === Number(reference.borderSize)
+    && Number(style.shadow) === Number(reference.shadow)
+    && Number(style.position) === Number(reference.position)
+}
+
+function exactAssOverrides(snapshot: SubtitleAssStyleSnapshot): string[] {
+  const script = snapshot.scriptInfo
+    .map(([field, value]) => safeAssScriptOverride(field, value))
+    .filter((value): value is string => value !== null)
+  const styles = snapshot.styles.flatMap((style) => style.fields
+    .map(([field, value]) => safeAssStyleOverride(style.name, field, value))
+    .filter((value): value is string => value !== null))
+  return [...script, ...styles]
+}
+
 /**
  * `set <property> <value>` pairs for the current appearance settings.
  *
@@ -71,6 +149,16 @@ export function subtitleStyleProps(style: SubtitleStyle): [string, string][] {
     ['sub-border-color', mpvColor(style.borderColor)],
     ['sub-border-size', String(style.borderSize)],
     ['sub-shadow-offset', String(style.shadow)],
+  ]
+
+  const exact = style.assSnapshot && snapshotMatchesAppearance(style, style.assSnapshot)
+    ? exactAssOverrides(style.assSnapshot)
+    : []
+  if (exact.length) return [
+    ['sub-ass-style-overrides', exact.join(',')],
+    ['sub-ass-override', 'yes'],
+    ...normal,
+    ['sub-pos', '100'],
   ]
 
   if (style.scope === 'all') return [

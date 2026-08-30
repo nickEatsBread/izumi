@@ -70,7 +70,7 @@
   import {
     autoSkip, seekDuration, scrubThumbnails, openSubtitlesToken,
     subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
-    subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
+    subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
     gifIncludeSubtitles, androidAutoPip, keepAwakeWhilePlaying,
     preferredAudioLang, preferredSubLang, audioProcessing,
   } from '$lib/settings/ui'
@@ -214,6 +214,7 @@
       borderSize: $subtitleBorderSize,
       shadow: $subtitleShadow,
       position: $subtitlePosition,
+      assSnapshot: $subtitleAssSnapshot ?? undefined,
     }))) void mpvCommand(['set', property, value]).catch(() => {})
   })
   const playedPct = $derived(dur > 0 ? Math.min(100, (pos / dur) * 100) : 0)

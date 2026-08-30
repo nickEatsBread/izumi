@@ -6,7 +6,7 @@ import {
 } from './subtitle-presets'
 import {
   subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
-  subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
+  subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
 } from './ui'
 import type { SubtitleStyle } from '$lib/player/subtitle-style'
 
@@ -18,6 +18,7 @@ const STYLE: Omit<SubtitleStyle, 'enabled'> = {
 beforeEach(() => {
   savedSubtitleStyles.set([])
   sessionSubtitleStyle.set(null)
+  subtitleAssSnapshot.set(null)
 })
 
 describe('saveSubtitlePreset', () => {
@@ -77,6 +78,17 @@ describe('applyPresetGlobally', () => {
     expect(get(subtitleBorderSize)).toBe(2.6)
     expect(get(subtitleShadow)).toBe(0)
     expect(get(subtitlePosition)).toBe(94)
+  })
+
+  it('keeps the lossless ASS snapshot when a captured preset is made global', () => {
+    const assSnapshot = {
+      reference: STYLE,
+      scriptInfo: [['PlayResY', '1080']] as [string, string][],
+      styles: [{ name: 'Default', fields: [['FontSize', '78']] as [string, string][] }],
+    }
+    const preset = saveSubtitlePreset('Exact', { ...STYLE, assSnapshot })
+    applyPresetGlobally(preset)
+    expect(get(subtitleAssSnapshot)).toEqual(assSnapshot)
   })
 })
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { parseAssStyles, pickPrimaryStyle, toSubtitleStyle, captureFromExtradata } from './ass-style-capture'
+import { subtitleStyleProps } from './subtitle-style'
 
 // Shaped like real muxed-fansub extradata: full Script Info + V4+ header, a dialogue style and
 // sign/typesetting styles, ASS &HAABBGGRR colours.
@@ -27,6 +28,7 @@ describe('parseAssStyles', () => {
   it('reads PlayResY and every style with its fields', () => {
     const parsed = parseAssStyles(SUBSPLEASE)!
     expect(parsed.playResY).toBe(1080)
+    expect(parsed.isAss).toBe(true)
     expect(parsed.styles.map((s) => s.name)).toEqual(['Default', 'Sign'])
     const def = parsed.styles[0]
     expect(def.fontname).toBe('Roboto Medium')
@@ -38,10 +40,18 @@ describe('parseAssStyles', () => {
     expect(def.shadow).toBe(0)
     expect(def.alignment).toBe(2)
     expect(def.marginV).toBe(69)
+    expect(def.fields).toContainEqual(['FontSize', '78'])
+    expect(def.fields).toContainEqual(['ScaleX', '1'])
+    expect(def.fields).toContainEqual(['MarginV', '69'])
+    expect(parsed.scriptInfo).toEqual([
+      ['PlayResX', '1920'],
+      ['PlayResY', '1080'],
+    ])
   })
 
   it('handles the legacy [V4 Styles] header', () => {
     const parsed = parseAssStyles(LEGACY)!
+    expect(parsed.isAss).toBe(false)
     expect(parsed.playResY).toBe(480)
     expect(parsed.styles[0].name).toBe('OP')
     expect(parsed.styles[0].outline).toBe(2)
@@ -107,6 +117,30 @@ describe('captureFromExtradata', () => {
     const style = captureFromExtradata(SUBSPLEASE)!
     expect(style.font).toBe('Roboto Medium')
     expect(style.fontSize).toBe(52)
+  })
+  it('replays exact script-space values instead of writing rounded 720-line UI values back', () => {
+    const captured = captureFromExtradata(SUBSPLEASE)!
+    const props = Object.fromEntries(subtitleStyleProps({ enabled: true, ...captured }))
+    const overrides = props['sub-ass-style-overrides']
+
+    expect(props['sub-ass-override']).toBe('yes')
+    expect(overrides).toContain('PlayResY=1080')
+    expect(overrides).toContain('Default.FontSize=78')
+    expect(overrides).toContain('Default.Outline=3.9')
+    expect(overrides).toContain('Default.MarginV=69')
+    expect(overrides).toContain('Sign.FontName=Verdana')
+    expect(overrides).toContain('Sign.ScaleX=1')
+    expect(overrides).toContain('Sign.Alignment=10')
+    expect(overrides).not.toContain('Default.FontSize=52')
+    expect(overrides).not.toContain('Default.MarginV=43')
+  })
+  it('falls back to editable UI overrides after a captured value is changed', () => {
+    const captured = captureFromExtradata(SUBSPLEASE)!
+    const props = Object.fromEntries(subtitleStyleProps({ enabled: true, ...captured, fontSize: 53 }))
+    const overrides = props['sub-ass-style-overrides']
+
+    expect(overrides).toContain('FontSize=53')
+    expect(overrides).not.toContain('Default.FontSize=78')
   })
   it('is null when there is nothing to capture', () => {
     expect(captureFromExtradata(null)).toBeNull()

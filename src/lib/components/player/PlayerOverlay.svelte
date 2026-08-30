@@ -31,7 +31,7 @@
   import {
     autoSkip, seekDuration, videoFit, uiScale, keepAwakeWhilePlaying,
     subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
-    subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
+    subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
     subtitleAutoSync, gifIncludeSubtitles,
     hotkeyBindings, systemMediaControls, discordRichPresence, p2pStatusVisibility, playerProgressAnimations,
     preferredAudioLang, preferredSubLang,
@@ -412,6 +412,7 @@
       borderSize: $subtitleBorderSize,
       shadow: $subtitleShadow,
       position: $subtitlePosition,
+      assSnapshot: $subtitleAssSnapshot ?? undefined,
     }))) cmd('set', [property, value])
   })
   // Exact absolute seek so auto-skip/skip land past the segment (a keyframe seek could

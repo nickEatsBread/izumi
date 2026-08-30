@@ -8,7 +8,7 @@
   import X from '@lucide/svelte/icons/x'
   import {
     subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
-    subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
+    subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
   } from '$lib/settings/ui'
   import { effectiveSubtitleStyle, sessionSubtitleStyle } from '$lib/settings/subtitle-presets'
   import { subtitleStyleProps, type SubtitleStyle } from '$lib/player/subtitle-style'
@@ -155,6 +155,7 @@
       subtitleBorderSize.set(style.borderSize)
       subtitleShadow.set(style.shadow)
       subtitlePosition.set(style.position)
+      subtitleAssSnapshot.set(null)
       subtitleStyleEnabled.set(true)
       // The visible style becomes the global style instead of being masked by a session preset.
       sessionSubtitleStyle.set(null)

@@ -3,6 +3,7 @@ import { derived } from 'svelte/store'
 import type { StreamSort } from '$lib/stremio/addon'
 import type { SourcePriorityMode } from '$lib/stremio/source-priority'
 import type { P2PStatusVisibility } from '$lib/player/p2p-status'
+import type { SubtitleAssStyleSnapshot } from '$lib/player/subtitle-style'
 
 /** How the episode list renders. Names are intentionally generic.
  *  `grid` is the dense number-tile layout — the only workable shape for a long-runner. */
@@ -74,6 +75,9 @@ export const subtitleBorderSize = persisted<number>('subtitle-border-size', 3)
 export const subtitleShadow = persisted<number>('subtitle-shadow', 1)
 /** mpv's vertical subtitle position: 0 is top and 100 is bottom. */
 export const subtitlePosition = persisted<number>('subtitle-position', 92)
+/** Exact ASS data belonging to a globally applied saved preset. Scalar edits automatically make
+ * it inapplicable; see subtitleStyleProps' reference comparison. */
+export const subtitleAssSnapshot = persisted<SubtitleAssStyleSnapshot | null>('subtitle-ass-snapshot', null)
 /** Analyze speech with ffmpeg and align external text subtitles when a track is selected. */
 export const subtitleAutoSync = persisted<boolean>('subtitle-auto-sync', false)
 /** Show a second subtitle track through mpv's secondary-sid support. */
