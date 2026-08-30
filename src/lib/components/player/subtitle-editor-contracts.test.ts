@@ -22,7 +22,8 @@ describe('subtitle editor cross-platform contract', () => {
     expect(editor).toContain('subtitleStyleEnabled.set(true)')
   })
   it('is reachable from desktop and Game Mode player settings', () => {
-    expect(controls).toContain('Edit subtitle position &amp; size…')
+    expect(controls).toContain('Subtitle appearance')
+    expect(controls).toContain('Position &amp; size')
     expect(controls).toContain('<span>Edit subtitles</span>')
     expect(desktop).toContain('playerEditorSnapshot(pos)')
     expect(desktop).toContain('<SubtitleEditor')

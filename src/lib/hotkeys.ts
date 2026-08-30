@@ -16,6 +16,7 @@ export type HotkeyId =
   | 'playerNextEpisode'
   | 'playerPreviousEpisode'
   | 'playerScreenshot'
+  | 'playerBookmark'
   | 'playerSubtitleCycle'
   | 'playerSubDelayDown'
   | 'playerSubDelayUp'
@@ -45,6 +46,7 @@ export const HOTKEYS: HotkeyDefinition[] = [
   { id: 'playerFullscreen', scope: 'Player', group: 'Playback', label: 'Toggle fullscreen', description: 'Enter or leave fullscreen.', defaultBinding: 'f' },
   { id: 'playerMute', scope: 'Player', group: 'Playback', label: 'Toggle mute', description: 'Mute or restore player audio.', defaultBinding: 'm' },
   { id: 'playerScreenshot', scope: 'Player', group: 'Playback', label: 'Screenshot', description: 'Save the current frame to Pictures/izumi.', defaultBinding: 'p' },
+  { id: 'playerBookmark', scope: 'Player', group: 'Tools', label: 'Save scene bookmark', description: 'Save this exact moment, subtitle line, and episode.', defaultBinding: 'k' },
   { id: 'playerStats', scope: 'Player', group: 'Tools', label: 'Stats overlay', description: 'Show or hide live playback diagnostics.', defaultBinding: 'i' },
   { id: 'playerGif', scope: 'Player', group: 'Tools', label: 'Record GIF', description: 'Start or stop a GIF recording.', defaultBinding: 'o' },
   { id: 'playerClip', scope: 'Player', group: 'Tools', label: 'Save recent clip', description: 'Save the previous 30 seconds as MP4.', defaultBinding: 'c' },

@@ -11,7 +11,7 @@
   import type { EpMeta } from '$lib/anizip/types'
   import {
     episodeLayout, hideSpoilers, downloadQuality, downloadAudio, downloadCodec, downloadCachedOnly,
-    absoluteEpisodeNumbers, type Quality, type EpisodeLayout,
+    absoluteEpisodeNumbers, episodeQueueEnabled, type Quality, type EpisodeLayout,
   } from '$lib/settings/ui'
   import { localHistory, sessionProgress, manualProgressOverrides } from '$lib/player/history'
   import { markWatched } from '$lib/trackers'
@@ -311,11 +311,11 @@
                 class="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold hover:bg-accent sm:h-auto sm:rounded-md sm:py-2">
           <Shuffle size={15} /> Random
         </button>
-        <button data-focusable onclick={queueNextEpisode} disabled={aired < 1}
+        {#if $episodeQueueEnabled}<button data-focusable onclick={queueNextEpisode} disabled={aired < 1}
                 title={`${m.lists_add_queue()} — Episode ${nextQueueEpisode}`}
                 class="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold hover:bg-accent disabled:opacity-40 sm:h-auto sm:rounded-md sm:py-2">
           <ListPlus size={15} /> {queuedNotice ? m.lists_queued_episode({ episode: nextQueueEpisode }) : m.lists_add_queue()}
-        </button>
+        </button>{/if}
         {#if !selecting}
           {#if !offline}
             <button data-focusable onclick={startSelect}
@@ -326,10 +326,10 @@
         {/if}
       {/if}
       {#if $isMobile}
-        <button data-focusable onclick={queueNextEpisode} disabled={aired < 1}
+        {#if $episodeQueueEnabled}<button data-focusable onclick={queueNextEpisode} disabled={aired < 1}
                 class="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold disabled:opacity-40">
           <ListPlus size={16} /> {m.lists_add_queue()}
-        </button>
+        </button>{/if}
         <!-- Layout switch: mobile-only. Rendering it unconditionally added two data-focusable
              stops to the desktop toolbar and the Deck's controller focus order for a layout that
              doesn't apply there. -->
@@ -581,7 +581,7 @@
           navUp={ep === quickEpisode ? 'series-primary-action' : undefined}
           onplay={tap}
           onintent={intent}
-          onqueue={queueEpisode}
+          onqueue={$episodeQueueEnabled ? queueEpisode : undefined}
         />
       {/each}
     </div>
@@ -646,7 +646,7 @@
               {:else}<Pause size={12} class="text-amber-400" />{/if}
             </span>
           {/if}
-          {#if released && !selecting}
+          {#if $episodeQueueEnabled && released && !selecting}
             <button data-focusable onclick={(event) => { event.stopPropagation(); queueEpisode(ep) }}
               aria-label={m.lists_queue_episode({ episode: ep })} title={m.lists_queue_episode({ episode: ep })}
               class="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-background/60 hover:text-foreground">

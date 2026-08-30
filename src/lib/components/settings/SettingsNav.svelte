@@ -20,6 +20,7 @@
   import DatabaseBackup from '@lucide/svelte/icons/database-backup'
   import HardDrive from '@lucide/svelte/icons/hard-drive'
   import Library from '@lucide/svelte/icons/library'
+  import Bookmark from '@lucide/svelte/icons/bookmark'
 
   // Grouped for the mobile list index (desktop rail renders them flat, in order).
   const groups = [
@@ -38,6 +39,7 @@
       { title: 'Interface', href: '/app/settings/interface', icon: LayoutGrid, subtitle: 'Appearance and layout' },
       { title: 'Navigation', href: '/app/settings/navigation', icon: PanelBottom, subtitle: 'Bottom bar and shortcuts' },
       { title: 'History', href: '/app/settings/history', icon: History, subtitle: 'Watch history and progress' },
+      { title: 'Scene bookmarks', href: '/app/settings/scenes', icon: Bookmark, subtitle: 'Saved moments, quotes and notes' },
       { title: 'Device sync', href: '/app/settings/sync', icon: RefreshCw, subtitle: 'Sync between your devices' },
       { title: 'Backup & restore', href: '/app/settings/backup', icon: DatabaseBackup, subtitle: 'Export and import your data' },
       { title: 'Accounts', href: '/app/settings/accounts', icon: User, subtitle: 'AniList, MyAnimeList and debrid' },

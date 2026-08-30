@@ -19,7 +19,7 @@
   import { buildWatchlist, type WatchlistItem } from './watchlist'
   import type { Media } from '$lib/anilist/types'
   import type { PlayState } from '$lib/stremio/play'
-  import { watchlistLayout, watchlistSort, type WatchlistLayout, type WatchlistSort } from '$lib/settings/ui'
+  import { episodeQueueEnabled, watchlistLayout, watchlistSort, type WatchlistLayout, type WatchlistSort } from '$lib/settings/ui'
   import { WATCHLIST_ID, RECENTLY_ADDED_ID, CURRENTLY_AIRING_ID, EPISODE_QUEUE_ID, browsableLocalLists, localEntriesForList, localLibrary, removeQueuedEpisode, reorderQueuedEpisode } from '$lib/library/local-lists'
   import LocalListManager from '$lib/components/library/LocalListManager.svelte'
   import { m } from '$lib/paraglide/messages.js'
@@ -47,7 +47,7 @@
   let trackerMalMedia = $state<Media[]>([])
   let loading = $state(true)
   let selectedListId = $state(WATCHLIST_ID)
-  const savedLists = $derived(browsableLocalLists($localLibrary))
+  const savedLists = $derived(browsableLocalLists($localLibrary).filter((list) => $episodeQueueEnabled || list.id !== EPISODE_QUEUE_ID))
   const queue = $derived($localLibrary.queue ?? [])
   let managingLists = $state(false)
   const listName = (id: string, fallback: string) => id === RECENTLY_ADDED_ID ? m.lists_recent()

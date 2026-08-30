@@ -10,7 +10,7 @@
   import TrackMenu from './TrackMenu.svelte'
   import CommentsPanel from './CommentsPanel.svelte'
   import DrmSurface from './DrmSurface.svelte'
-  import { playerCommand, playerEditorSnapshot, playerGifAbort, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
+  import { playerCommand, playerEditorSnapshot, playerGetProperty, playerGifAbort, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
   import type { DrmSnapshot } from '$lib/player/drm'
   import { overlayIsLoading } from '$lib/player/overlay-loading'
   import { getSkipSegments, SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
@@ -62,6 +62,8 @@
   import PauseIcon from '@lucide/svelte/icons/pause'
   import PartyPresence from '$lib/components/watch/PartyPresence.svelte'
   import { matchRememberedTrack, rememberedSeriesTrack } from '$lib/player/track-preferences'
+  import { addSceneBookmark } from '$lib/player/scene-bookmarks'
+  import { sceneBookmarksEnabled } from '$lib/settings/ui'
   import { desktopCastSession, desktopCastStatus, desktopCastSessionMatchesPlayback, seekActiveDesktopCast } from '$lib/player/desktop-cast'
 
   // In-app player overlay. mpv is embedded into the MAIN window (behind the
@@ -344,6 +346,24 @@
     } catch {
       playerNotice.set('Screenshot failed')
     }
+  }
+  async function bookmarkScene() {
+    if (!get(sceneBookmarksEnabled)) {
+      playerNotice.set('Enable Scene bookmarks in Settings → Interface')
+      return
+    }
+    if (get(incognito)) {
+      playerNotice.set('Scene bookmarks are unavailable in incognito mode')
+      return
+    }
+    const current = get(nowPlayingMedia)
+    if (!current) {
+      playerNotice.set('No episode is available to bookmark')
+      return
+    }
+    const quote = await playerGetProperty('sub-text').catch(() => '')
+    const result = addSceneBookmark({ media: current.media, episode: current.episode, position: pos, duration: dur, quote })
+    playerNotice.set(result.created ? 'Scene bookmark saved' : 'This scene is already bookmarked')
   }
   async function capture(kind: 'gif' | 'clip') {
     if (kind === 'gif') {
@@ -1367,6 +1387,7 @@
       else if (action === 'playerPreviousEpisode') playPrev(undefined, !paused)
       else if (action === 'playerFullscreen') toggleFullscreen()
       else if (action === 'playerScreenshot') void takeScreenshot()
+      else if (action === 'playerBookmark') void bookmarkScene()
       else if (action === 'playerStats') playerStatsOpen.update((value) => !value)
       else if (action === 'playerGif') void capture('gif')
       else if (action === 'playerClip') void capture('clip')

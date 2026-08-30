@@ -20,6 +20,8 @@ import {
   absoluteEpisodeNumbers,
   torrentBindInterface,
   p2pStatusVisibility,
+  episodeQueueEnabled,
+  sceneBookmarksEnabled,
 } from './ui'
 
 describe('source autoplay defaults', () => {
@@ -45,6 +47,10 @@ describe('android playback defaults', () => {
 describe('episode list defaults', () => {
   it('keeps series-wide episode numbering out of the way until it is asked for', () => {
     expect(get(absoluteEpisodeNumbers)).toBe(false)
+  })
+  it('keeps the episode queue and scene bookmarks opt-in', () => {
+    expect(get(episodeQueueEnabled)).toBe(false)
+    expect(get(sceneBookmarksEnabled)).toBe(false)
   })
 })
 

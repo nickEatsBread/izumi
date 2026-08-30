@@ -48,7 +48,7 @@
     '/app/settings/sources/priority': 'Source priority',
     '/app/settings/sources': 'Sources',
     '/app/settings/downloads': 'Downloads', '/app/settings/interface': 'Interface',
-    '/app/settings/history': 'History', '/app/settings/sync': 'Device sync',
+    '/app/settings/history': 'History', '/app/settings/scenes': 'Scene bookmarks', '/app/settings/sync': 'Device sync',
     '/app/settings/backup': 'Backup & restore',
     '/app/settings/accounts': 'Accounts', '/app/settings/network': 'Network',
     '/app/settings/changelog': 'Changelog',

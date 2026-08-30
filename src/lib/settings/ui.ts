@@ -274,6 +274,12 @@ export const wheelScrollAcross = persisted<boolean>('carousel-wheel-scroll', fal
  *  Kept on by default because row dragging was the established desktop behaviour before this
  *  became configurable. Touch swipes remain available independently on mobile. */
 export const dragCarousels = persisted<boolean>('carousel-mouse-drag', true)
+/** Optional library workflow for building a manually ordered list of episodes to watch next.
+ * Hidden by default so the episode list and Watchlist picker stay focused until requested. */
+export const episodeQueueEnabled = persisted<boolean>('episode-queue-enabled', false)
+/** Optional player workflow for saving an exact timestamp, subtitle line, and note. Existing
+ * bookmarks are retained while disabled; only their creation entry points are hidden. */
+export const sceneBookmarksEnabled = persisted<boolean>('scene-bookmarks-enabled', false)
 /** WebView zoom factor for the whole UI (0.5–2.0). */
 export const uiScale = persisted<number>('ui-scale', 1)
 /** Include 18+ / adult titles in browse + search (AniList isAdult filter). */

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, dragCarousels, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, cwDismissAction, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, titleLanguage, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
+  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, dragCarousels, episodeQueueEnabled, sceneBookmarksEnabled, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, cwDismissAction, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, titleLanguage, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid } from '$lib/platform'
   import { setAiringNotificationsEnabled } from '$lib/notifications/airing'
@@ -113,6 +113,13 @@
         <Toggle label={m.settings_haptics()} desc={m.settings_haptics_hint()} value={$haptics} onToggle={() => ($haptics = !$haptics)} />
       </div>
     {/if}
+
+    <h3 class="mb-1 text-sm font-black">Optional features</h3>
+    <p class="mb-2 text-xs text-muted-foreground">Keep less-used library and player tools out of the way until you need them.</p>
+    <div class="mb-5 space-y-3">
+      <Toggle label="Episode queue" desc="Add per-episode queue buttons and an ordered Episode queue list under Watchlist." value={$episodeQueueEnabled} onToggle={() => ($episodeQueueEnabled = !$episodeQueueEnabled)} />
+      <Toggle label="Scene bookmarks" desc="Save an exact player timestamp with its current subtitle line, then manage saved scenes in Settings." value={$sceneBookmarksEnabled} onToggle={() => ($sceneBookmarksEnabled = !$sceneBookmarksEnabled)} />
+    </div>
 
     <p class="mb-1 text-sm font-bold">{m.settings_episode_layout()}</p>
     <div class="mb-4 grid gap-2 sm:grid-cols-2">

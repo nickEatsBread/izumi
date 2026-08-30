@@ -72,7 +72,7 @@
     subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
     gifIncludeSubtitles, androidAutoPip, keepAwakeWhilePlaying,
-    preferredAudioLang, preferredSubLang, audioProcessing,
+    preferredAudioLang, preferredSubLang, audioProcessing, sceneBookmarksEnabled,
   } from '$lib/settings/ui'
   import { subtitleStyleProps } from '$lib/player/subtitle-style'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
@@ -102,6 +102,7 @@
   import List from '@lucide/svelte/icons/list'
   import Server from '@lucide/svelte/icons/server'
   import Film from '@lucide/svelte/icons/film'
+  import Bookmark from '@lucide/svelte/icons/bookmark'
   import Gauge from '@lucide/svelte/icons/gauge'
   import Captions from '@lucide/svelte/icons/captions'
   import Volume2 from '@lucide/svelte/icons/volume-2'
@@ -114,6 +115,8 @@
   import BufferSpinner from './BufferSpinner.svelte'
   import SubtitleEditor from './SubtitleEditor.svelte'
   import { matchRememberedTrack, rememberSeriesTrack, rememberedSeriesTrack } from '$lib/player/track-preferences'
+  import { addSceneBookmark } from '$lib/player/scene-bookmarks'
+  import { incognito } from '$lib/stores/incognito'
 
   let controlsShown = $state(true)
   let scrubbing = $state(false)
@@ -1341,6 +1344,26 @@
   // outgoing native frame avoids a black/old-episode flash while the next watch details pre-load.
   const overlayHidden = $derived($streamPicker != null || $connecting != null || $debridCaching != null || $commentsOpen || $androidPipActive)
 
+  async function bookmarkScene() {
+    if (!$sceneBookmarksEnabled) {
+      flashToast('Enable Scene bookmarks in Settings → Interface')
+      return
+    }
+    if ($incognito) {
+      flashToast('Scene bookmarks are unavailable in incognito mode')
+      return
+    }
+    const current = $nowPlayingMedia
+    if (!current) {
+      flashToast('No episode is available to bookmark')
+      return
+    }
+    const quote = (await mpvGet('sub-text').catch(() => '')) ?? ''
+    const result = addSceneBookmark({ media: current.media, episode: current.episode, position: pos, duration: dur, quote })
+    haptic(15)
+    flashToast(result.created ? 'Scene bookmark saved' : 'This scene is already bookmarked')
+  }
+
   // --- GIF recording ---
   // Same 30s bound the desktop recorder uses. The native worker stops itself there too; the UI stop
   // keeps the badge honest instead of counting up forever against a capture that already ended.
@@ -2019,6 +2042,12 @@
             <p class="rounded-xl bg-white/[0.07] px-4 py-4 text-sm text-white/50">This stream only has its default audio track.</p>
           {/each}
         {:else if settingsPage === 'capture'}
+          {#if $sceneBookmarksEnabled}
+            <button onclick={() => void bookmarkScene()} class="mb-2 flex w-full items-center gap-3 rounded-2xl bg-theme/20 px-4 py-4 text-left text-theme">
+              <Bookmark size={20} />
+              <span class="min-w-0"><span class="block text-sm font-bold">Save scene bookmark</span><span class="block text-xs opacity-70">Keep this timestamp and the current subtitle line.</span></span>
+            </button>
+          {/if}
           <button onclick={() => void toggleGifRecording()} disabled={gifBusy} class="flex w-full items-center gap-3 rounded-2xl bg-white/[0.07] px-4 py-4 text-left disabled:opacity-50">
             {#if gifRecording}<span class="grid h-5 w-5 place-items-center"><span class="h-2.5 w-2.5 rounded-full bg-red-500"></span></span>{:else}<Film size={20} />{/if}
             <span class="text-sm font-bold">{gifBusy ? 'Working…' : gifRecording ? `Stop recording (${gifElapsed}s)` : 'Record GIF'}</span>

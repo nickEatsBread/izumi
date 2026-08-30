@@ -17,6 +17,10 @@
   import SkipBack from '@lucide/svelte/icons/skip-back'
   import SkipForward from '@lucide/svelte/icons/skip-forward'
   import Camera from '@lucide/svelte/icons/camera'
+  import Bookmark from '@lucide/svelte/icons/bookmark'
+  import Gauge from '@lucide/svelte/icons/gauge'
+  import Ratio from '@lucide/svelte/icons/ratio'
+  import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import ArrowLeft from '@lucide/svelte/icons/arrow-left'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
@@ -34,7 +38,7 @@
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from '@lucide/svelte/icons/wrench'
   import { discussionExpanded } from '$lib/comments'
-  import { videoFit, playerTitleTop, openSubtitlesToken, subtitleAutoSync, secondarySubtitles, subtitleLineNavigation, gifIncludeSubtitles } from '$lib/settings/ui'
+  import { videoFit, playerTitleTop, openSubtitlesToken, subtitleAutoSync, secondarySubtitles, subtitleLineNavigation, gifIncludeSubtitles, sceneBookmarksEnabled } from '$lib/settings/ui'
   import { playPrev, playNext, playEpisode, playStream, searchOnlineSubtitles } from '$lib/stremio/play'
   import { serverSiblings, variantLabels } from '$lib/player/source-variants'
   import type { Stream } from '$lib/stremio/addon'
@@ -49,6 +53,8 @@
   import { chapters as chapterStore } from '$lib/player/session'
   import { activeChapterIndex, formatChapterTime, isGenericChapterTitle } from '$lib/player/chapters'
   import { rememberSeriesTrack } from '$lib/player/track-preferences'
+  import { addSceneBookmark } from '$lib/player/scene-bookmarks'
+  import { incognito } from '$lib/stores/incognito'
 
   const np = $derived($nowPlaying)
   const hasPrev = $derived(np.episode != null && np.episode > 1)
@@ -147,6 +153,10 @@
 
   // Playback options menu (speed / fit / delays / subtitle size).
   let showOptions = $state(false)
+  type DesktopOptionsPage = 'root' | 'speed' | 'quality' | 'fit' | 'tools' | 'timing'
+  let optionsPage = $state<DesktopOptionsPage>('root')
+  let optionsRootH = $state(0)
+  let optionsDetailH = $state(0)
   let speed = $state(1)
   const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2]
   function setSpeed(v: number) { speed = v; cmd('set', ['speed', String(v)]) }
@@ -199,7 +209,7 @@
     if (gmSettingsPage === 'speed') return 1 + speeds.length
     if (gmSettingsPage === 'quality') return 2 + qualityInfo.heights.length
     if (gmSettingsPage === 'fit') return 3
-    return 6
+    return 6 + ($sceneBookmarksEnabled ? 1 : 0)
   }
   function gmMove(delta: number) {
     const n = gmRowCount()
@@ -239,11 +249,15 @@
       else void setVideoQuality(qualityInfo.heights[i - 1] ?? 'auto')
     } else if (gmSettingsPage === 'fit') setFit(i === 0 ? 'best' : 'fill')
     else if (gmSettingsPage === 'tools') {
-      if (i === 0) playerStatsOpen.update((value) => !value)
-      else if (i === 1) setSleep('off')
-      else if (i === 2) setSleep('15')
-      else if (i === 3) setSleep('30')
-      else setSleep('end')
+      if ($sceneBookmarksEnabled && i === 0) void bookmarkScene()
+      else {
+        const tool = i - ($sceneBookmarksEnabled ? 1 : 0)
+        if (tool === 0) playerStatsOpen.update((value) => !value)
+        else if (tool === 1) setSleep('off')
+        else if (tool === 2) setSleep('15')
+        else if (tool === 3) setSleep('30')
+        else setSleep('end')
+      }
     }
     bumpPlayerOverlay()
   }
@@ -329,6 +343,31 @@
   async function screenshot() {
     try { await playerScreenshot(); playerNotice.set('Screenshot saved to Pictures/izumi') }
     catch { playerNotice.set('Screenshot failed') }
+  }
+
+  async function bookmarkScene() {
+    if (!get(sceneBookmarksEnabled)) {
+      playerNotice.set('Enable Scene bookmarks in Settings → Interface')
+      return
+    }
+    if (get(incognito)) {
+      playerNotice.set('Scene bookmarks are unavailable in incognito mode')
+      return
+    }
+    const current = get(nowPlayingMedia)
+    if (!current) {
+      playerNotice.set('No episode is available to bookmark')
+      return
+    }
+    const quote = await playerGetProperty('sub-text').catch(() => '')
+    const result = addSceneBookmark({
+      media: current.media,
+      episode: current.episode,
+      position: pos,
+      duration: dur,
+      quote,
+    })
+    playerNotice.set(result.created ? `Scene saved at ${fmt(pos)}` : 'This scene is already bookmarked')
   }
 
   async function navigateSubtitleLine(skip: -1 | 0 | 1) {
@@ -860,70 +899,137 @@
         <div class="relative {gm ? 'order-last' : ''}">
           <button data-focusable class={iconBtn} onclick={toggleOptions} aria-label="Playback options"><Settings size={icSize} /></button>
           {#if showOptions && !gm}
-            <div class="absolute bottom-full right-0 mb-2 w-64 rounded-lg bg-neutral-900 p-3 text-sm text-white shadow-xl [transform:translateZ(0)] [will-change:transform]">
-              <button data-focusable onclick={changeSource} class="mb-3 w-full rounded bg-white/10 px-2.5 py-2 text-left text-sm font-bold transition hover:bg-white/20">Change source…</button>
-              <p class="mb-1 text-xs uppercase tracking-wide text-white/50">Speed</p>
-              <!-- Fixed 6-col grid so all speeds sit on ONE even row (flex-wrap dropped "2×"
-                   onto a lonely second line). -->
-              <div class="mb-3 grid grid-cols-6 gap-1">
-                {#each speeds as s}
-                  <button data-focusable onclick={() => setSpeed(s)} class="rounded py-1 text-center text-xs tabular-nums transition {speed === s ? 'bg-primary text-primary-foreground' : 'hover:bg-white/15'}">{s}×</button>
-                {/each}
-              </div>
-              {#if qualityInfo.heights.length}
-                <p class="mb-1 text-xs uppercase tracking-wide text-white/50">Quality</p>
-                <div class="mb-3 flex flex-wrap gap-1">
-                  <button
-                    data-focusable
-                    aria-label="Video quality Auto"
-                    onclick={() => setVideoQuality('auto')}
-                    class="rounded px-2 py-1 text-xs transition {qualityInfo.mode === 'auto' ? 'bg-primary text-primary-foreground' : 'bg-white/10 hover:bg-white/15'}"
-                  >Auto{#if qualityInfo.mode === 'auto' && qualityInfo.activeHeight} · {qualityInfo.activeHeight}p{/if}</button>
-                  {#each qualityInfo.heights as height}
-                    <button
-                      data-focusable
-                      aria-label="Video quality {height}p"
-                      onclick={() => setVideoQuality(height)}
-                      class="rounded px-2 py-1 text-xs transition {qualityInfo.mode === height ? 'bg-primary text-primary-foreground' : 'bg-white/10 hover:bg-white/15'}"
-                    >{height}p</button>
-                  {/each}
+            <!-- Match the subtitle picker: a compact summary column drills into one focused list
+                 instead of exposing every control in one tall wall. -->
+            <div data-options-menu class="absolute bottom-full right-0 mb-2 w-72 overflow-hidden rounded-xl border border-white/10 bg-neutral-900 text-sm text-white shadow-2xl [transform:translateZ(0)] [will-change:transform]">
+              <div class="overflow-hidden transition-[height] duration-200 ease-out" style="height:{optionsPage === 'root' ? optionsRootH : optionsDetailH}px">
+                <div class="flex w-[200%] [transition:transform_200ms_cubic-bezier(.25,1,.5,1)]" style="transform:translateX({optionsPage === 'root' ? '0' : '-50%'})">
+                  <div class="w-1/2 p-2" bind:clientHeight={optionsRootH}>
+                    <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={changeSource}>
+                      <span class="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2">
+                        <ServerIcon size={16} class="row-span-2 shrink-0 text-white/55" />
+                        <span class="text-xs uppercase tracking-wide text-white/45">Source</span>
+                        <span class="truncate">Change source</span>
+                      </span>
+                      <ChevronRight size={18} class="shrink-0 text-white/40" />
+                    </button>
+                    <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => (optionsPage = 'speed')}>
+                      <span class="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2">
+                        <Gauge size={16} class="row-span-2 shrink-0 text-white/55" />
+                        <span class="text-xs uppercase tracking-wide text-white/45">Speed</span>
+                        <span class="truncate tabular-nums">{speed}×</span>
+                      </span>
+                      <ChevronRight size={18} class="shrink-0 text-white/40" />
+                    </button>
+                    {#if qualityInfo.heights.length}
+                      <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => (optionsPage = 'quality')}>
+                        <span class="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2">
+                          <Gauge size={16} class="row-span-2 shrink-0 text-white/55" />
+                          <span class="text-xs uppercase tracking-wide text-white/45">Quality</span>
+                          <span class="truncate">{qualityInfo.mode === 'auto' ? `Auto${qualityInfo.activeHeight ? ` · ${qualityInfo.activeHeight}p` : ''}` : `${qualityInfo.mode}p`}</span>
+                        </span>
+                        <ChevronRight size={18} class="shrink-0 text-white/40" />
+                      </button>
+                    {/if}
+                    <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => (optionsPage = 'fit')}>
+                      <span class="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2">
+                        <Ratio size={16} class="row-span-2 shrink-0 text-white/55" />
+                        <span class="text-xs uppercase tracking-wide text-white/45">Video fit</span>
+                        <span class="truncate">{$videoFit === 'fill' ? 'Fill' : 'Best fit'}</span>
+                      </span>
+                      <ChevronRight size={18} class="shrink-0 text-white/40" />
+                    </button>
+                    <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={openSubtitleEditor}>
+                      <span class="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2">
+                        <Captions size={16} class="row-span-2 shrink-0 text-white/55" />
+                        <span class="text-xs uppercase tracking-wide text-white/45">Subtitle appearance</span>
+                        <span class="truncate">Position &amp; size</span>
+                      </span>
+                      <ChevronRight size={18} class="shrink-0 text-white/40" />
+                    </button>
+                    <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => (optionsPage = 'timing')}>
+                      <span class="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2">
+                        <SlidersHorizontal size={16} class="row-span-2 shrink-0 text-white/55" />
+                        <span class="text-xs uppercase tracking-wide text-white/45">Sync &amp; size</span>
+                        <span class="truncate">Delays and subtitle scale</span>
+                      </span>
+                      <ChevronRight size={18} class="shrink-0 text-white/40" />
+                    </button>
+                    <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => (optionsPage = 'tools')}>
+                      <span class="grid min-w-0 flex-1 grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2">
+                        <Wrench size={16} class="row-span-2 shrink-0 text-white/55" />
+                        <span class="text-xs uppercase tracking-wide text-white/45">Tools</span>
+                        <span class="truncate">Sleep, loops &amp; capture</span>
+                      </span>
+                      <ChevronRight size={18} class="shrink-0 text-white/40" />
+                    </button>
+                  </div>
+
+                  <div class="w-1/2 p-2" bind:clientHeight={optionsDetailH}>
+                    <button data-focusable class="mb-1 flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-left font-semibold transition hover:bg-white/10" onclick={() => (optionsPage = 'root')}>
+                      <ChevronLeft size={18} class="shrink-0 text-white/60" />
+                      {optionsPage === 'speed' ? 'Speed' : optionsPage === 'quality' ? 'Quality' : optionsPage === 'fit' ? 'Video fit' : optionsPage === 'timing' ? 'Sync & size' : 'Tools'}
+                    </button>
+                    <div class="max-h-72 overflow-y-auto">
+                      {#if optionsPage === 'speed'}
+                        {#each speeds as s}
+                          <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left tabular-nums transition hover:bg-white/10" onclick={() => { setSpeed(s); optionsPage = 'root' }}>
+                            <span>{s}×</span>{#if speed === s}<Check size={18} class="shrink-0 text-primary" />{/if}
+                          </button>
+                        {/each}
+                      {:else if optionsPage === 'quality'}
+                        <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => { void setVideoQuality('auto'); optionsPage = 'root' }}>
+                          <span>Auto{#if qualityInfo.activeHeight} · {qualityInfo.activeHeight}p{/if}</span>{#if qualityInfo.mode === 'auto'}<Check size={18} class="shrink-0 text-primary" />{/if}
+                        </button>
+                        {#each qualityInfo.heights as height}
+                          <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => { void setVideoQuality(height); optionsPage = 'root' }}>
+                            <span>{height}p</span>{#if qualityInfo.mode === height}<Check size={18} class="shrink-0 text-primary" />{/if}
+                          </button>
+                        {/each}
+                      {:else if optionsPage === 'fit'}
+                        {#each [['best', 'Best fit'], ['fill', 'Fill']] as [value, label]}
+                          <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => { setFit(value as 'best' | 'fill'); optionsPage = 'root' }}>
+                            <span>{label}</span>{#if $videoFit === value}<Check size={18} class="shrink-0 text-primary" />{/if}
+                          </button>
+                        {/each}
+                      {:else if optionsPage === 'timing'}
+                        {#each ($nowPlayingStream.drm ? [['Subtitle size', 'sub-scale']] : [['Subtitle delay', 'sub-delay'], ['Audio delay', 'audio-delay'], ['Subtitle size', 'sub-scale']]) as [label, prop]}
+                          <div class="flex items-center justify-between gap-2 rounded-lg px-3 py-2.5">
+                            <span>{label}</span>
+                            <span class="flex shrink-0 items-center gap-1">
+                              <button data-focusable onclick={() => adjust(prop, -0.1)} class="grid size-7 place-items-center rounded-lg bg-white/10 hover:bg-white/20" aria-label="Decrease {label}">−</button>
+                              <button data-focusable onclick={() => resetProp(prop)} title="Reset {label}" class="w-12 text-center text-xs tabular-nums text-white/70 transition-colors hover:text-white" aria-label="Reset {label}">{fmtDelay(prop, delays[prop] ?? 0)}</button>
+                              <button data-focusable onclick={() => adjust(prop, 0.1)} class="grid size-7 place-items-center rounded-lg bg-white/10 hover:bg-white/20" aria-label="Increase {label}">+</button>
+                            </span>
+                          </div>
+                        {/each}
+                      {:else if optionsPage === 'tools'}
+                        {#if $sceneBookmarksEnabled}
+                          <button data-focusable onclick={() => void bookmarkScene()} class="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10"><span>Save scene bookmark</span></button>
+                        {/if}
+                        <button data-focusable onclick={() => playerStatsOpen.update((value) => !value)} class="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10"><span>{$playerStatsOpen ? 'Hide stats' : 'Show stats'}</span></button>
+                        <label class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2">
+                          <span>Sleep timer</span>
+                          <select data-focusable aria-label="Sleep timer" onchange={(event) => setSleep((event.currentTarget as HTMLSelectElement).value)} class="max-w-36 rounded-lg bg-white/10 px-2 py-1.5 text-xs">
+                            <option value="off">Off</option>
+                            <option value="15">15 minutes</option>
+                            <option value="30">30 minutes</option>
+                            <option value="45">45 minutes</option>
+                            <option value="end">Episode end</option>
+                          </select>
+                        </label>
+                        <button data-focusable onclick={markLoopA} class="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10"><span>Set loop A</span>{#if $playerAbLoop.a != null}<Check size={18} class="text-primary" />{/if}</button>
+                        <button data-focusable onclick={markLoopB} class="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10"><span>Set loop B</span>{#if $playerAbLoop.b != null}<Check size={18} class="text-primary" />{/if}</button>
+                        {#if $playerAbLoop.a != null}<button data-focusable onclick={clearLoop} class="flex w-full items-center rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10">Clear loop</button>{/if}
+                        <button data-focusable disabled={captureBusy} onclick={toggleGifRecording} class="flex w-full items-center rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10 disabled:opacity-40">{$gifRecordingStart == null ? 'Record GIF' : 'Stop GIF'}</button>
+                        {#if !$nowPlayingStream.drm}
+                          <button data-focusable disabled={captureBusy} onclick={saveRecentClip} class="flex w-full items-center rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10 disabled:opacity-40">Save last 30s</button>
+                        {/if}
+                      {/if}
+                    </div>
+                  </div>
                 </div>
-              {/if}
-              <p class="mb-1 text-xs uppercase tracking-wide text-white/50">Video fit</p>
-              <div class="mb-3 flex gap-1">
-                {#each [['best', 'Best fit'], ['fill', 'Fill']] as [v, l]}
-                  <button data-focusable onclick={() => setFit(v as 'best' | 'fill')} class="flex-1 rounded px-2 py-1 text-xs transition {$videoFit === v ? 'bg-primary text-primary-foreground' : 'hover:bg-white/15'}">{l}</button>
-                {/each}
               </div>
-              <button data-focusable onclick={openSubtitleEditor} class="mb-3 w-full rounded bg-white/10 px-2.5 py-2 text-left text-sm font-bold transition hover:bg-white/20">Edit subtitle position &amp; size…</button>
-              <p class="mb-1 text-xs uppercase tracking-wide text-white/50">Tools</p>
-              <div class="mb-3 grid grid-cols-2 gap-1">
-                <button data-focusable onclick={() => playerStatsOpen.update((value) => !value)} class="rounded bg-white/10 px-2 py-1.5 text-xs hover:bg-white/20">{$playerStatsOpen ? 'Hide stats' : 'Show stats'}</button>
-                <select data-focusable aria-label="Sleep timer" onchange={(event) => setSleep((event.currentTarget as HTMLSelectElement).value)} class="rounded bg-white/10 px-2 py-1.5 text-xs">
-                  <option value="off">Sleep: off</option>
-                  <option value="15">Sleep: 15 min</option>
-                  <option value="30">Sleep: 30 min</option>
-                  <option value="45">Sleep: 45 min</option>
-                  <option value="end">Sleep: episode end</option>
-                </select>
-                <button data-focusable onclick={markLoopA} class="rounded bg-white/10 px-2 py-1.5 text-xs hover:bg-white/20">Set loop A{#if $playerAbLoop.a != null} ✓{/if}</button>
-                <button data-focusable onclick={markLoopB} class="rounded bg-white/10 px-2 py-1.5 text-xs hover:bg-white/20">Set loop B{#if $playerAbLoop.b != null} ✓{/if}</button>
-                {#if $playerAbLoop.a != null}<button data-focusable onclick={clearLoop} class="rounded bg-white/10 px-2 py-1.5 text-xs hover:bg-white/20">Clear loop</button>{/if}
-                <button data-focusable disabled={captureBusy} onclick={toggleGifRecording} class="rounded bg-white/10 px-2 py-1.5 text-xs hover:bg-white/20 disabled:opacity-40">{$gifRecordingStart == null ? 'Record GIF' : 'Stop GIF'}</button>
-                {#if !$nowPlayingStream.drm}
-                  <button data-focusable disabled={captureBusy} onclick={saveRecentClip} class="rounded bg-white/10 px-2 py-1.5 text-xs hover:bg-white/20 disabled:opacity-40">Save last 30s</button>
-                {/if}
-              </div>
-              {#each ($nowPlayingStream.drm ? [['Subtitle size', 'sub-scale']] : [['Subtitle delay', 'sub-delay'], ['Audio delay', 'audio-delay'], ['Subtitle size', 'sub-scale']]) as [label, prop]}
-                <div class="flex items-center justify-between gap-2 py-0.5">
-                  <span>{label}</span>
-                  <span class="flex items-center gap-1">
-                    <button data-focusable onclick={() => adjust(prop, -0.1)} class="grid size-6 place-items-center rounded bg-white/10 hover:bg-white/20" aria-label="Decrease {label}">−</button>
-                    <button data-focusable onclick={() => resetProp(prop)} title="Reset {label}" class="w-12 text-center text-xs tabular-nums text-white/70 transition-colors hover:text-white" aria-label="Reset {label}">{fmtDelay(prop, delays[prop] ?? 0)}</button>
-                    <button data-focusable onclick={() => adjust(prop, 0.1)} class="grid size-6 place-items-center rounded bg-white/10 hover:bg-white/20" aria-label="Increase {label}">+</button>
-                  </span>
-                </div>
-              {/each}
             </div>
           {/if}
         </div>
@@ -1262,6 +1368,7 @@
              bar because Izumi maps its own screenshot action to L4 (R4 is Izumi's GIF recorder). -->
         {#if !gm}
           <DesktopCastButton {pos} {dur} buttonClass={iconBtn} iconSize={icSize} {cmd} onopen={closePlayerMenus} />
+          {#if $sceneBookmarksEnabled}<button data-focusable class={iconBtn} onclick={() => void bookmarkScene()} aria-label="Save scene bookmark" title="Save scene bookmark"><Bookmark size={icSize} /></button>{/if}
           <button data-focusable class={iconBtn} onclick={screenshot} aria-label="Screenshot"><Camera size={icSize} /></button>
           <button data-focusable class={iconBtn} onclick={togglePictureInPicture} aria-label="Picture in picture"><PictureInPicture size={icSize} /></button>
         {/if}
@@ -1310,11 +1417,14 @@
           <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 1} class:text-black={gmSetIdx === 1} onclick={() => setFit('best')}>Best fit</button>
           <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 2} class:text-black={gmSetIdx === 2} onclick={() => setFit('fill')}>Fill</button>
         {:else}
-          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 1} class:text-black={gmSetIdx === 1} onclick={() => playerStatsOpen.update((value) => !value)}>{$playerStatsOpen ? 'Hide stats' : 'Show stats'}</button>
-          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 2} class:text-black={gmSetIdx === 2} onclick={() => setSleep('off')}>Sleep: off</button>
-          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 3} class:text-black={gmSetIdx === 3} onclick={() => setSleep('15')}>Sleep: 15 min</button>
-          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 4} class:text-black={gmSetIdx === 4} onclick={() => setSleep('30')}>Sleep: 30 min</button>
-          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 5} class:text-black={gmSetIdx === 5} onclick={() => setSleep('end')}>Sleep: episode end</button>
+          {#if $sceneBookmarksEnabled}
+            <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 1} class:text-black={gmSetIdx === 1} onclick={() => void bookmarkScene()}>Save scene bookmark</button>
+          {/if}
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 1 + ($sceneBookmarksEnabled ? 1 : 0)} class:text-black={gmSetIdx === 1 + ($sceneBookmarksEnabled ? 1 : 0)} onclick={() => playerStatsOpen.update((value) => !value)}>{$playerStatsOpen ? 'Hide stats' : 'Show stats'}</button>
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 2 + ($sceneBookmarksEnabled ? 1 : 0)} class:text-black={gmSetIdx === 2 + ($sceneBookmarksEnabled ? 1 : 0)} onclick={() => setSleep('off')}>Sleep: off</button>
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 3 + ($sceneBookmarksEnabled ? 1 : 0)} class:text-black={gmSetIdx === 3 + ($sceneBookmarksEnabled ? 1 : 0)} onclick={() => setSleep('15')}>Sleep: 15 min</button>
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 4 + ($sceneBookmarksEnabled ? 1 : 0)} class:text-black={gmSetIdx === 4 + ($sceneBookmarksEnabled ? 1 : 0)} onclick={() => setSleep('30')}>Sleep: 30 min</button>
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 5 + ($sceneBookmarksEnabled ? 1 : 0)} class:text-black={gmSetIdx === 5 + ($sceneBookmarksEnabled ? 1 : 0)} onclick={() => setSleep('end')}>Sleep: episode end</button>
         {/if}
       {/if}
     </div>
