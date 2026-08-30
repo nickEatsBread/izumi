@@ -119,6 +119,7 @@ export interface MpvPreparation {
 }
 let preparation: MpvPreparation = { ready: false, created: false, durationMs: 0 }
 let preparationPromise: Promise<boolean> | null = null
+let rewarmTimer: ReturnType<typeof setTimeout> | null = null
 
 /** Snapshot included in redacted resolve diagnostics; contains timing/state only. */
 export const mpvPreparationSnapshot = (): MpvPreparation => ({ ...preparation })
@@ -283,6 +284,10 @@ export async function startMpvEvents(): Promise<void> {
 }
 
 export async function mpvLoad(p: MpvLoad): Promise<void> {
+  if (rewarmTimer) {
+    clearTimeout(rewarmTimer)
+    rewarmTimer = null
+  }
   seekGeneration++
   clearPendingSeekTimers()
   awaitingLoadStart = true
@@ -334,6 +339,15 @@ export async function mpvStop(): Promise<void> {
   mpvState.set({ ...IDLE_STATE })
   androidStreamInfo.set(null)
   androidPipActive.set(false)
+  // Recreate only the viewless core once teardown has restored the browse WebView. The next play
+  // can then attach a SurfaceView without repaying libmpv/font initialization.
+  if (typeof window !== 'undefined') {
+    if (rewarmTimer) clearTimeout(rewarmTimer)
+    rewarmTimer = setTimeout(() => {
+      rewarmTimer = null
+      void prepareEmbeddedPlayer()
+    }, 1_500)
+  }
 }
 
 /** Enter Android picture-in-picture. Video keeps rendering into the SurfaceView in the PIP window. */

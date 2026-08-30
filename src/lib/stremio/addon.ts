@@ -273,6 +273,65 @@ export async function getStreams(
 
 export interface AddonStreams { streams: Stream[]; total: number }
 
+// A deliberate play-intent prefetch is short-lived because addon URLs can carry expiring tokens.
+// Keep the full in-flight promise so a click can join the exact HTTP request hover/focus started,
+// rather than merely reusing its result after both requests have already gone over the wire.
+export const STREAM_PREFETCH_TTL_MS = 20_000
+const streamPrefetches = new Map<string, { expiresAt: number; promise: Promise<AddonStreams> }>()
+
+const normalizedAddonBase = (base: string) => {
+  let value = base.replace(/^http:\/\//i, 'https://')
+  if (!/^https?:\/\//i.test(value)) value = `https://${value}`
+  return value
+}
+
+const streamPrefetchKey = (base: string, id: string | string[], type: string) =>
+  `${normalizedAddonBase(base)}|${type}|${JSON.stringify(Array.isArray(id) ? id : [id])}`
+
+export function clearStreamPrefetches(): void {
+  streamPrefetches.clear()
+}
+
+/** Warm one exact Stremio stream resource after a clear pointer/focus intent. */
+export function prefetchAddonStreams(
+  base: string,
+  id: string | string[],
+  type = 'series',
+): Promise<AddonStreams> {
+  const cacheKey = streamPrefetchKey(base, id, type)
+  const existing = streamPrefetches.get(cacheKey)
+  if (existing && existing.expiresAt > Date.now()) return existing.promise
+  if (existing) streamPrefetches.delete(cacheKey)
+
+  // fetchAddonStreams checks the cache before this entry is installed, so this call creates the
+  // one underlying request. Empty/timed-out results are not retained: the real click gets a fresh
+  // attempt instead of inheriting a speculative miss.
+  const promise = fetchAddonStreams(base, id, type).then((result) => {
+    if (!result.streams.length && streamPrefetches.get(cacheKey)?.promise === promise) {
+      streamPrefetches.delete(cacheKey)
+    }
+    return result
+  })
+  streamPrefetches.set(cacheKey, { expiresAt: Date.now() + STREAM_PREFETCH_TTL_MS, promise })
+  return promise
+}
+
+function joinPrefetch(
+  promise: Promise<AddonStreams>,
+  signal?: AbortSignal,
+): Promise<AddonStreams> {
+  if (!signal) return promise
+  if (signal.aborted) return Promise.resolve({ streams: [], total: 0 })
+  return new Promise((resolve) => {
+    const abort = () => resolve({ streams: [], total: 0 })
+    signal.addEventListener('abort', abort, { once: true })
+    void promise.then((result) => {
+      signal.removeEventListener('abort', abort)
+      if (!signal.aborted) resolve(result)
+    })
+  })
+}
+
 // Per-addon time budget. A flat cap can only be wrong in one of two directions: addons that
 // run a real-time debrid cache check before answering (they resolve every hash against the
 // service) legitimately need far longer than an indexer that just returns rows, so a cap tight
@@ -305,9 +364,14 @@ export async function fetchAddonStreams(
   onLate?: (r: AddonStreams) => void,
   signal?: AbortSignal,
 ): Promise<AddonStreams> {
-  let b = base.replace(/^http:\/\//i, 'https://')
-  if (!/^https?:\/\//i.test(b)) b = 'https://' + b
+  const b = normalizedAddonBase(base)
   const ids = Array.isArray(id) ? id : [id]
+  const cacheKey = streamPrefetchKey(b, ids, type)
+  const prefetched = streamPrefetches.get(cacheKey)
+  if (prefetched) {
+    if (prefetched.expiresAt > Date.now()) return joinPrefetch(prefetched.promise, signal)
+    streamPrefetches.delete(cacheKey)
+  }
 
   // The manifest carries IDENTITY (logo + display name), never content, so it must never gate
   // the streams: joining the two under one await meant a host whose /manifest.json hung returned

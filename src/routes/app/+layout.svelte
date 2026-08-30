@@ -207,13 +207,17 @@
       ])
       for (const base of get(enabledAddonUrls)) await fetchManifest(base).catch(() => undefined)
     }, 1800)
-    // Warm the lazily-split player chunk once boot is quiet, so the FIRST Play / source pick pays
-    // no module-load delay — the bytes are just off the first-paint critical path, not off the
-    // device. Browser-cached, so these resolve instantly when the real mount happens.
+    // Warm both the lazily-split UI and native player core once boot is quiet, so the first Play /
+    // source pick pays neither module-load nor libmpv-initialization latency. This stays off the
+    // first-paint critical path.
     void scheduleBootWork('player', async () => {
+      const core = get(isAndroid)
+        ? import('$lib/player/android-mpv').then(({ prepareEmbeddedPlayer }) => prepareEmbeddedPlayer())
+        : invoke('prepare_player').catch(() => false)
       await Promise.all([
         loadStreamPicker(), loadSourceConnecting(),
         get(isAndroid) ? loadAndroidPlayer() : loadPlayerOverlay(),
+        core,
       ])
     }, 2500)
     // Profile refreshes are useful but never launch-critical. Their modules and network requests

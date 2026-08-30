@@ -143,6 +143,7 @@ export async function prepareDirectTorrentNext(input: {
     timeoutMs?: number
   }
   preferredFilename?: string
+  preferredFileIndex?: number
   seriesTitle: string
   episode: number
   absoluteEpisode?: number
@@ -165,6 +166,7 @@ export async function prepareDirectTorrentNext(input: {
     infoHash: input.infoHash,
     magnet: input.magnet,
     preferredFilename: input.preferredFilename,
+    preferredFileIndex: input.preferredFileIndex,
     seriesTitle: input.seriesTitle,
     episode: input.episode,
     absoluteEpisode: input.absoluteEpisode,

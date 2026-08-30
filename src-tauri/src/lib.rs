@@ -225,11 +225,43 @@ fn open_developer_tools(window: tauri::WebviewWindow) {
 /// `nowPlaying` store (same webview), so nothing is emitted here.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
+async fn prepare_player(
+    app: AppHandle,
+    player: tauri::State<'_, player::PlayerHandle>,
+) -> Result<serde_json::Value, String> {
+    let started = std::time::Instant::now();
+    #[cfg(windows)]
+    let created = {
+        let main = app.get_webview_window("main").ok_or("no main window")?;
+        let main_handle = main.hwnd().map_err(|e| e.to_string())?.0 as isize;
+        let container = MPV_CONTAINER.load(std::sync::atomic::Ordering::Relaxed);
+        let wid = if container != 0 {
+            container as i64
+        } else {
+            main_handle as i64
+        };
+        player.prepare_embedded(wid, app.clone())?
+    };
+    #[cfg(not(windows))]
+    let created = {
+        let _ = (&app, &player);
+        false
+    };
+    Ok(serde_json::json!({
+        "created": created,
+        "durationMs": started.elapsed().as_millis() as u64,
+    }))
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
 async fn player_embed(
     app: AppHandle,
     url: String,
     start_seconds: Option<f64>,
     autoplay: Option<bool>,
+    initial_buffer_seconds: Option<f64>,
+    cache_bytes: Option<u64>,
     alang: Option<String>,
     slang: Option<String>,
     headers: Option<std::collections::HashMap<String, String>>,
@@ -238,6 +270,12 @@ async fn player_embed(
     player: tauri::State<'_, player::PlayerHandle>,
 ) -> Result<(), String> {
     let autoplay = autoplay.unwrap_or(true);
+    if let Some(bytes) = cache_bytes {
+        player::PLAYER_CACHE_BYTES.store(
+            bytes.max(8 * 1024 * 1024),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+    }
     let url = hls_proxy::prepare_playback_url(&url, headers.as_ref()).await?;
     let mut subtitles = subtitles;
     if let Some(tracks) = subtitles.as_mut() {
@@ -272,6 +310,7 @@ async fn player_embed(
             app.clone(),
             start_seconds,
             autoplay,
+            initial_buffer_seconds,
             alang,
             slang,
             headers.clone(),
@@ -296,6 +335,7 @@ async fn player_embed(
                 app.clone(),
                 start_seconds,
                 autoplay,
+                initial_buffer_seconds,
                 alang,
                 slang,
                 &main,
@@ -315,6 +355,7 @@ async fn player_embed(
                 app.clone(),
                 start_seconds,
                 autoplay,
+                initial_buffer_seconds,
                 alang,
                 slang,
                 headers.clone(),
@@ -335,6 +376,7 @@ async fn player_embed(
             app.clone(),
             start_seconds,
             autoplay,
+            initial_buffer_seconds,
             alang,
             slang,
             &main,
@@ -349,19 +391,21 @@ async fn player_embed(
     player::require_live_core(player.has_core())
 }
 
-/// Stop playback: drop the mpv core, which destroys mpv's child surface inside the
-/// main window so the (opaque again) browse UI shows through. The overlay itself is
+/// Stop playback and clear the current media. Windows/macOS keep the initialized mpv core and its
+/// hidden child surface ready for reuse; Linux tears down its X11 container. The overlay itself is
 /// torn down by the frontend (`playing = false`).
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 async fn close_player(player: tauri::State<'_, player::PlayerHandle>) -> Result<(), String> {
-    // Stop the mpv core. On Linux this also tears down the embed subsurface +
-    // render context (via `PlayerHandle::stop` → `linux_embed::detach`) before the
-    // core is quit. On Windows it destroys mpv's child inside the container (which
-    // is created once on the UI thread and reused for the next play).
+    // Windows/macOS keep the initialized core behind the now-opaque browse webview. Linux still
+    // performs a full teardown because the Gamescope/X11 path destroys its native host container.
     #[cfg(target_os = "linux")]
-    player::linux_x11::destroy_container();
-    player.stop()
+    {
+        player::linux_x11::destroy_container();
+        player.stop()
+    }
+    #[cfg(any(windows, target_os = "macos"))]
+    player.idle()
 }
 
 /// Game mode (gamescope / Steam Deck) detection — the frontend renders a fullscreen layout
@@ -4401,6 +4445,7 @@ fn player_play_embedded(
         None,
         None,
         None,
+        None,
     )
 }
 
@@ -6020,6 +6065,7 @@ pub fn run() {
             take_pending_magnet,
             player_play,
             player_play_embedded,
+            prepare_player,
             player_embed,
             close_player,
             player_is_game_mode,

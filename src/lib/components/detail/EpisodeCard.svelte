@@ -18,7 +18,7 @@
   import { m } from '$lib/paraglide/messages.js'
 
   let {
-    media, ep, meta, showThumb, released, isNext, watchedThrough, filler = false, dl, next, onplay, onqueue,
+    media, ep, meta, showThumb, released, isNext, watchedThrough, filler = false, dl, next, onplay, onintent, onqueue,
     selecting = false, selectedEp = false, numberLabel, navId, navUp,
   }: {
     media: Media
@@ -32,6 +32,7 @@
     dl?: DownloadItem
     next?: { episode: number; timeUntilAiring: number } | null
     onplay: (ep: number, event?: MouseEvent) => void
+    onintent?: (ep: number) => void
     onqueue?: (ep: number) => void
     // Download select mode (driven by EpisodeList): a tap toggles selection instead of
     // playing, and the card shows a checkbox instead of the play affordance.
@@ -107,6 +108,8 @@
   role="button"
   tabindex="0"
   aria-disabled={!released}
+  onpointerenter={() => { if (released) onintent?.(ep) }}
+  onfocus={() => { if (released) onintent?.(ep) }}
   onclick={play}
   onkeydown={(e) => { if (released && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); play() } }}
   title={selecting ? (released ? (selectedEp ? 'Selected — tap to unselect' : 'Tap to select') : 'Not yet aired') : released ? `Play — ${labels.primary}` : isNext ? `Airing in ${countdown(next?.timeUntilAiring)}` : 'Not yet aired'}

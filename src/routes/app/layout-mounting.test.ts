@@ -72,7 +72,7 @@ describe('app layout mounting', () => {
     expect(layout).not.toContain('<GlobalSearch />')
   })
 
-  it('never initializes the Android mpv core during deferred boot or source resolution', () => {
+  it('warms the embedded mpv core only after first paint or explicit play intent', () => {
     const playerBoot = layout.slice(
       layout.indexOf("scheduleBootWork('player'"),
       layout.indexOf("}, 2500)") + "}, 2500)".length,
@@ -81,7 +81,8 @@ describe('app layout mounting', () => {
       play.indexOf('export async function playStream'),
       play.indexOf("traceResolve(trace, 'torrent episode mapping ready'"),
     )
-    expect(playerBoot).not.toContain('prepareEmbeddedPlayer()')
+    expect(playerBoot).toContain('prepareEmbeddedPlayer()')
+    expect(playerBoot).toContain("invoke('prepare_player')")
     expect(sourceSelection).not.toContain('prepareEmbeddedPlayer()')
     expect(sourceSelection).toContain('hasEmbeddedPlayer()')
   })

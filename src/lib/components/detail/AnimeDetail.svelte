@@ -9,7 +9,7 @@
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import { banner, title, cover, format, status, season, seasonBrowseHref, ratingBg, resumeEp, totalEpisodes } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
-  import { resumeEpisode, playEpisode, type PlayState } from '$lib/stremio/play'
+  import { resumeEpisode, playEpisode, prefetchEpisodeSources, type PlayState } from '$lib/stremio/play'
   import { offlineMode } from '$lib/stores/offline'
   import { downloads, downloadedMedia } from '$lib/downloads/state'
   import { localHistory, sessionProgress, manualProgressOverrides } from '$lib/player/history'
@@ -177,6 +177,7 @@
   const ctaHasProgress = (m: Media) => ($offlineMode ? (m.mediaListEntry?.progress ?? 0) : watchedThrough) > 0
   function playCta(m: Media) {
     h.impact('medium')
+    prefetchEpisodeSources(m, ctaEp(m), 0)
     if ($offlineMode) playEpisode(m, offlineResumeEp(m), (s) => (heroPlay = s))
     else resumeEpisode(m, ctaEp(m), (s) => (heroPlay = s))
   }
@@ -472,6 +473,8 @@
 
         <!-- Primary CTA -->
         <button data-focusable use:focusOnMount
+                onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
+                onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
                 onclick={() => playCta(m)}
                 class="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3 font-bold text-primary-foreground">
           <Play size={18} />{ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
@@ -641,6 +644,8 @@
         <div class="flex flex-wrap items-center gap-2">
           <button data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
                   data-nav-down={$gameMode ? 'series-quick-episode' : undefined}
+                  onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
+                  onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
                   use:focusOnMount onclick={() => playCta(m)}
                   class="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">
             <Play size={16} />{ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}

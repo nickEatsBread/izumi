@@ -217,7 +217,7 @@ pub struct PlayerHandle {
 }
 
 impl PlayerHandle {
-    /// Create an empty handle. No mpv core exists until the first playback.
+    /// Create an empty handle. The delayed boot warm-up or first playback initializes mpv.
     pub fn new() -> Self {
         PlayerHandle {
             mpv: Mutex::new(None),
@@ -276,6 +276,7 @@ impl PlayerHandle {
                 url,
                 start_seconds,
                 true,
+                None,
                 &None,
                 &[],
                 &[],
@@ -298,6 +299,7 @@ impl PlayerHandle {
             url,
             start_seconds,
             true,
+            None,
             &None,
             &[],
             &[],
@@ -326,6 +328,7 @@ impl PlayerHandle {
         app: AppHandle,
         start_seconds: Option<f64>,
         autoplay: bool,
+        initial_buffer_seconds: Option<f64>,
         alang: Option<String>,
         slang: Option<String>,
         headers: Option<HashMap<String, String>>,
@@ -349,6 +352,7 @@ impl PlayerHandle {
                     url,
                     start_seconds,
                     autoplay,
+                    initial_buffer_seconds,
                     &headers,
                     &subs,
                     &audio,
@@ -388,6 +392,7 @@ impl PlayerHandle {
             url,
             start_seconds,
             autoplay,
+            initial_buffer_seconds,
             &headers,
             &subs,
             &audio,
@@ -424,6 +429,7 @@ impl PlayerHandle {
         app: AppHandle,
         start_seconds: Option<f64>,
         autoplay: bool,
+        initial_buffer_seconds: Option<f64>,
         alang: Option<String>,
         slang: Option<String>,
         window: &tauri::WebviewWindow,
@@ -444,6 +450,7 @@ impl PlayerHandle {
                     url,
                     start_seconds,
                     autoplay,
+                    initial_buffer_seconds,
                     &headers,
                     &subs,
                     &audio,
@@ -475,6 +482,7 @@ impl PlayerHandle {
             url,
             start_seconds,
             autoplay,
+            initial_buffer_seconds,
             &headers,
             &subs,
             &audio,
@@ -494,6 +502,7 @@ impl PlayerHandle {
     /// down → the event thread observes `Shutdown`, exits, and drops its client →
     /// the core is fully destroyed. Then we drop the main handle. Used by
     /// `close_player`.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub fn stop(&self) -> Result<(), String> {
         self.gif_abort()?;
 
@@ -531,6 +540,42 @@ impl PlayerHandle {
         // meant every episode ever hovered accumulated ~9KB per tile, up to 144 tiles, forever.
         self.discard_sprite_tiles(None);
         Ok(())
+    }
+
+    /// Stop the current file but retain the initialized core and embedded surface. The browse
+    /// webview becomes opaque before this runs, so keeping the idle surface costs no visual state
+    /// and lets the next episode/source skip libmpv initialization entirely.
+    pub fn idle(&self) -> Result<(), String> {
+        self.gif_abort()?;
+        if let Some(mpv) = self.mpv.lock().map_err(|e| e.to_string())?.as_ref() {
+            let _ = mpv.command("stop", &[]);
+        }
+        *self.current_url.lock().map_err(|e| e.to_string())? = None;
+        *self
+            .pending_external_tracks
+            .lock()
+            .map_err(|e| e.to_string())? = None;
+        // The render core is reusable; stream-specific scrub work is not. Retire the secondary
+        // decoder and its tiles just as a full teardown would, so warming cannot accumulate files.
+        self.headless.stop();
+        self.discard_sprite_tiles(None);
+        Ok(())
+    }
+
+    /// Windows can initialize directly against the permanent mpv container without loading a
+    /// file or making the webview transparent. Linux/macOS render surfaces are attached lazily by
+    /// their platform-specific first-play paths.
+    #[cfg(windows)]
+    pub fn prepare_embedded(&self, wid: i64, app: AppHandle) -> Result<bool, String> {
+        let mut guard = self.mpv.lock().map_err(|e| e.to_string())?;
+        if guard.is_some() {
+            return Ok(false);
+        }
+        let mpv = create_mpv_for_embed(Some(wid), &app)?;
+        spawn_event_loop(&mpv, app, self.pending_external_tracks.clone())
+            .map_err(|e| e.to_string())?;
+        *guard = Some(mpv);
+        Ok(true)
     }
 
     /// Delete the tile directories of finished sprite jobs, keeping `keep`'s if given. The unlink
@@ -1425,6 +1470,7 @@ fn load_file(
     url: &str,
     start_seconds: Option<f64>,
     autoplay: bool,
+    initial_buffer_seconds: Option<f64>,
     headers: &Option<HashMap<String, String>>,
     subtitles: &[Subtitle],
     audio_tracks: &[AudioTrack],
@@ -1433,6 +1479,12 @@ fn load_file(
     // Apply the user's cache-size setting to this file's demuxer (overrides the init default).
     let cache = PLAYER_CACHE_BYTES.load(std::sync::atomic::Ordering::Relaxed);
     let _ = mpv.set_property("demuxer-max-bytes", cache.to_string().as_str());
+    // Network sources get a small initial cushion; direct P2P can request the more conservative
+    // one-second default. Local files pass zero and never enter initial buffering. mpv documents
+    // this as the explicit smooth-start versus first-frame-latency tradeoff.
+    let initial_buffer = initial_buffer_seconds.unwrap_or(1.0).clamp(0.0, 5.0);
+    let _ = mpv.set_property("cache-pause-initial", initial_buffer > 0.0);
+    let _ = mpv.set_property("cache-pause-wait", initial_buffer);
     // Always set `start` explicitly so a resumed file doesn't leak its start
     // position onto the next (fresh) file loaded into the same core.
     let start = match start_seconds {

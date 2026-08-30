@@ -4,7 +4,7 @@
   // for the next one. Long-runners (One Piece) are paginated. The layout (rich
   // `cards` vs simple `compact` rows) follows the persisted Appearance setting;
   // per-episode thumbnails/titles/ratings come from AniZip.
-  import { playEpisode, type PlayState } from '$lib/stremio/play'
+  import { playEpisode, prefetchEpisodeSources, type PlayState } from '$lib/stremio/play'
   import { airedCount, totalEpisodes } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
   import { getEpisodeMeta } from '$lib/anizip'
@@ -168,7 +168,12 @@
 
   let playState = $state<PlayState>({ status: 'idle' })
   const resolving = $derived(playState.status === 'resolving')
-  function play(ep: number) { if (!resolving) playEpisode(media, ep, (s) => (playState = s)) }
+  const intent = (ep: number, delayMs = 120) => { if (ep <= aired && !resolving) prefetchEpisodeSources(media, ep, delayMs) }
+  function play(ep: number) {
+    if (resolving) return
+    intent(ep, 0)
+    playEpisode(media, ep, (s) => (playState = s))
+  }
   // Series-wide numbering is a Settings → Interface preference, not a control on this page. The
   // per-episode `abs` mapping is still loaded and still available to everything that needs it —
   // this only decides which number the badge prints.
@@ -491,6 +496,7 @@
                   data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
                   data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
                   tabindex={ep === quickEpisode ? 0 : -1} disabled={ep !== quickEpisode}
+                  onpointerenter={() => intent(ep)} onfocus={() => intent(ep)}
                   onclick={(event) => tap(ep, event)} aria-label={`Play episode ${numberLabel(ep)}`}
                   class="grid grid-cols-[42%_1fr] overflow-hidden rounded-xl bg-secondary text-left sm:block sm:rounded-lg disabled:opacity-100">
             <div class="aspect-video h-full w-full skeloader"></div>
@@ -505,6 +511,7 @@
                   data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
                   data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
                   tabindex={ep === quickEpisode ? 0 : -1} disabled={ep !== quickEpisode}
+                  onpointerenter={() => intent(ep)} onfocus={() => intent(ep)}
                   onclick={(event) => tap(ep, event)} aria-label={`Play episode ${numberLabel(ep)}`}
                   class="skeloader h-11 rounded-lg disabled:opacity-100"></button>
         {/each}
@@ -516,6 +523,7 @@
                   data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
                   data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
                   tabindex={ep === quickEpisode ? 0 : -1} disabled={ep !== quickEpisode}
+                  onpointerenter={() => intent(ep)} onfocus={() => intent(ep)}
                   onclick={(event) => tap(ep, event)} aria-label={`Play episode ${numberLabel(ep)}`}
                   class="flex items-center gap-3 rounded-md bg-secondary px-3 py-2 text-left disabled:opacity-100">
             <div class="skeloader size-8 shrink-0 rounded"></div>
@@ -537,7 +545,8 @@
         })}
         <button data-focusable data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
                 data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
-                disabled={!tile.playable} onclick={(event) => { h.tap(); tap(ep, event) }}
+                disabled={!tile.playable} onpointerenter={() => intent(ep)} onfocus={() => intent(ep)}
+                onclick={(event) => { h.tap(); tap(ep, event) }}
                 aria-label={`Episode ${numberLabel(ep)}`}
                 class="relative grid h-11 place-items-center overflow-hidden rounded-lg text-sm font-bold transition-colors
                   {tile.kind === 'watched' ? 'bg-primary text-primary-foreground' : 'bg-secondary'}
@@ -571,6 +580,7 @@
           navId={ep === quickEpisode ? 'series-quick-episode' : undefined}
           navUp={ep === quickEpisode ? 'series-primary-action' : undefined}
           onplay={tap}
+          onintent={intent}
           onqueue={queueEpisode}
         />
       {/each}
@@ -598,6 +608,7 @@
           aria-disabled={!released || resolving}
           aria-pressed={selecting ? sel : undefined}
           onclick={(event) => { if (!resolving) { h.tap(); tap(ep, event) } }}
+          onpointerenter={() => intent(ep)} onfocus={() => intent(ep)}
           onkeydown={(e) => { if (!resolving && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); tap(ep) } }}
           title={selecting ? (released ? (sel ? 'Selected — tap to unselect' : 'Tap to select') : 'Not yet aired') : released ? `Play episode ${ep}${filler ? ' (filler)' : ''}` : isNext ? `Airing in ${countdown(next?.timeUntilAiring)}` : 'Not yet aired'}
           class="group relative flex items-center gap-3 overflow-hidden rounded-md px-2.5 py-1.5 text-left transition-colors sm:px-3 sm:py-2

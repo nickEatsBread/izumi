@@ -14,8 +14,14 @@ describe('connecting loader startup', () => {
     expect(css).toMatch(/\.bar-loader::before[\s\S]*will-change: transform/)
   })
 
-  it('paints the loader before playback setup continues', () => {
-    expect(play).toContain('async function paintConnectingLoader()')
-    expect(play).toMatch(/connecting\.set\(\{[\s\S]{0,700}await paintConnectingLoader\(\)[\s\S]{0,100}if \(!stillOwnsPlayback\(\)\) return/)
+  it('commits the loader without charging playback two animation frames', () => {
+    expect(play).toContain('async function commitConnectingLoader()')
+    expect(play).toMatch(/connecting\.set\(\{[\s\S]{0,700}await commitConnectingLoader\(\)[\s\S]{0,100}if \(!stillOwnsPlayback\(\)\) return/)
+    const helper = play.slice(
+      play.indexOf('async function commitConnectingLoader()'),
+      play.indexOf('function continueRememberedSource'),
+    )
+    expect(helper).not.toContain('requestAnimationFrame')
+    expect(helper).not.toContain('setTimeout')
   })
 })

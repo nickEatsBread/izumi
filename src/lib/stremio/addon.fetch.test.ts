@@ -11,13 +11,17 @@ vi.mock('./manifest', async (actual) => ({
   peekManifest: mocks.peekManifest,
 }))
 
-import { fetchAddonStreams, streamBudgetMs } from './addon'
+import {
+  clearStreamPrefetches, fetchAddonStreams, prefetchAddonStreams,
+  STREAM_PREFETCH_TTL_MS, streamBudgetMs,
+} from './addon'
 
 const streamResponse = (streams: unknown[]) => ({ ok: true, json: async () => ({ streams }) })
 const never = () => new Promise<never>(() => {})
 
 beforeEach(() => {
   vi.useFakeTimers()
+  clearStreamPrefetches()
   mocks.phttp.mockReset()
   mocks.fetchManifest.mockReset()
   mocks.peekManifest.mockReset()
@@ -162,5 +166,47 @@ describe('late responses are folded in, not discarded', () => {
     await vi.advanceTimersByTimeAsync(10)
 
     expect(late).not.toHaveBeenCalled()
+  })
+})
+
+describe('play-intent prefetch', () => {
+  it('lets the real click join the exact warmed stream request', async () => {
+    let release!: (value: unknown) => void
+    mocks.phttp.mockReturnValue(new Promise((resolve) => { release = resolve }))
+
+    const warm = prefetchAddonStreams('https://plain.example.org', 'kitsu:1:1')
+    const click = fetchAddonStreams('https://plain.example.org', 'kitsu:1:1')
+    expect(mocks.phttp).toHaveBeenCalledTimes(1)
+
+    release(streamResponse([{ url: 'u1', name: 'warmed' }]))
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(warm).resolves.toMatchObject({ streams: [{ url: 'u1' }] })
+    await expect(click).resolves.toMatchObject({ streams: [{ url: 'u1' }] })
+    expect(mocks.phttp).toHaveBeenCalledTimes(1)
+  })
+
+  it('expires token-bearing stream results after the short TTL', async () => {
+    mocks.phttp.mockResolvedValue(streamResponse([{ url: 'u1', name: 'warmed' }]))
+    await prefetchAddonStreams('https://plain.example.org', 'kitsu:1:1')
+    expect(mocks.phttp).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(STREAM_PREFETCH_TTL_MS + 1)
+    await fetchAddonStreams('https://plain.example.org', 'kitsu:1:1')
+    expect(mocks.phttp).toHaveBeenCalledTimes(2)
+  })
+
+  it('allows an aborted click to leave the shared warm request alive', async () => {
+    let release!: (value: unknown) => void
+    mocks.phttp.mockReturnValue(new Promise((resolve) => { release = resolve }))
+    const warm = prefetchAddonStreams('https://plain.example.org', 'kitsu:1:1')
+    const controller = new AbortController()
+    const click = fetchAddonStreams('https://plain.example.org', 'kitsu:1:1', 'series', undefined, controller.signal)
+    controller.abort()
+
+    await expect(click).resolves.toEqual({ streams: [], total: 0 })
+    release(streamResponse([{ url: 'u1' }]))
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(warm).resolves.toMatchObject({ streams: [{ url: 'u1' }] })
+    expect(mocks.phttp).toHaveBeenCalledTimes(1)
   })
 })

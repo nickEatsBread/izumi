@@ -106,6 +106,42 @@ describe('resolveOnlineStreams incremental delivery', () => {
     expect(await resolveOnlineStreams(media, 1, undefined, (rs) => batches.push(rs))).toEqual([])
     expect(batches).toEqual([])
   })
+
+  it('emits a fast server without waiting for a slow server from the same provider', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const multiServer = {
+      id: 'multi', name: 'MultiServer', lang: 'en',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      call: async (method: string, ...args: unknown[]): Promise<any> => {
+        if (method === 'getSettings') return { episodeServers: ['fast', 'slow'], supportsDub: false }
+        if (method === 'search') return [{ id: 'show', title: 'Frieren' }]
+        if (method === 'findEpisodes') return [{ id: 'episode', number: 1, title: 'Episode 1' }]
+        if (method === 'findEpisodeServer') {
+          const server = String(args[1])
+          if (server === 'slow') await gate
+          return { server, videoSources: [{ url: `https://cdn/${server}.m3u8`, type: 'm3u8' }] }
+        }
+        return null
+      },
+    }
+    runningStreamExtensions.mockResolvedValue([multiServer])
+    const batches: string[][] = []
+    const done = resolveOnlineStreams(media, 1, undefined, (rows) => {
+      batches.push(rows.map((row) => row.url!).filter(Boolean))
+    })
+
+    for (let i = 0; i < 10; i++) await tick()
+    expect(batches).toEqual([['https://cdn/fast.m3u8']])
+
+    release()
+    const all = await done
+    expect(batches).toEqual([['https://cdn/fast.m3u8'], ['https://cdn/slow.m3u8']])
+    expect(all.map((row) => row.url)).toEqual([
+      'https://cdn/fast.m3u8',
+      'https://cdn/slow.m3u8',
+    ])
+  })
 })
 
 describe('provider title identity', () => {

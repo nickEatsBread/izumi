@@ -51,10 +51,10 @@ function hasEpisodeTitlesThrough(res: AniZipResponse, episode: number): boolean 
  *  cache first; on a miss, fetches + caches. Best-effort: returns `undefined` on
  *  any error. Shared by both `getEpisodeMeta` and `getKitsuId` so they hit the
  *  same cache. */
-// In-flight dedupe. Concurrent cold-cache callers (play.ts resolves the season map and the
-// extension ids at the same time) each issued their own GET + idb write for the same id. Same
-// shape as the manifest cache. Cleared on settle so errors and staleness still refetch.
-const inflight = new Map<string, Promise<AniZipResponse | undefined>>()
+// Only the NETWORK refresh is shared. Each caller still evaluates its own episode/title/freshness
+// requirement against IDB first; keying the old whole-operation promise by those requirements
+// allowed concurrent play setup to issue duplicate, byte-identical AniZip GETs for one title.
+const networkInflight = new Map<number, Promise<AniZipResponse | undefined>>()
 
 export function fetchAniZip(
   anilistId: number,
@@ -62,13 +62,28 @@ export function fetchAniZip(
   requireTitlesThrough?: number,
   maxAgeMs?: number,
 ): Promise<AniZipResponse | undefined> {
-  const k = `${anilistId}|${wantEpisode ?? ''}|${requireTitlesThrough ?? ''}|${maxAgeMs ?? ''}`
-  const running = inflight.get(k)
+  return fetchAniZipUncached(anilistId, wantEpisode, requireTitlesThrough, maxAgeMs)
+}
+
+function refreshAniZip(anilistId: number): Promise<AniZipResponse | undefined> {
+  const running = networkInflight.get(anilistId)
   if (running) return running
-  const p = fetchAniZipUncached(anilistId, wantEpisode, requireTitlesThrough, maxAgeMs)
-    .finally(() => inflight.delete(k))
-  inflight.set(k, p)
-  return p
+  const promise = (async () => {
+    try {
+      const response = await phttp(`https://api.ani.zip/mappings?anilist_id=${anilistId}`)
+      if (!response.ok) return undefined
+      const fresh = (await response.json()) as AniZipResponse
+      await Promise.all([
+        set(key(anilistId), fresh),
+        set(fetchedAtKey(anilistId), Date.now()),
+      ])
+      return fresh
+    } catch {
+      return undefined
+    }
+  })().finally(() => networkInflight.delete(anilistId))
+  networkInflight.set(anilistId, promise)
+  return promise
 }
 
 async function fetchAniZipUncached(
@@ -90,18 +105,7 @@ async function fetchAniZipUncached(
     const refreshDue = maxAgeMs != null && (fetchedAt == null || Date.now() - fetchedAt >= maxAgeMs)
     if ((titlesReady || recentlyFetched) && !refreshDue) return cached
   }
-  try {
-    const r = await phttp(`https://api.ani.zip/mappings?anilist_id=${anilistId}`)
-    if (!r.ok) return cached
-    const j = (await r.json()) as AniZipResponse
-    await Promise.all([
-      set(key(anilistId), j),
-      set(fetchedAtKey(anilistId), Date.now()),
-    ])
-    return j
-  } catch {
-    return cached
-  }
+  return (await refreshAniZip(anilistId)) ?? cached
 }
 
 /** Per-episode metadata (thumbnail/title/rating) for an AniList id.

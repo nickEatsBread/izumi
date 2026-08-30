@@ -18,6 +18,14 @@ fn is_video(name: &str) -> bool {
         .any(|candidate| ext.eq_ignore_ascii_case(candidate))
 }
 
+/** Honor the Stremio stream object's authoritative zero-based torrent file index. */
+pub(crate) fn select_file_by_index(files: &[TorrentFile], index: usize) -> Option<TorrentFile> {
+    files
+        .iter()
+        .find(|file| file.index == index && is_video(&file.name))
+        .cloned()
+}
+
 fn is_subtitle(name: &str) -> bool {
     let ext = name.rsplit('.').next().unwrap_or_default();
     SUBTITLE_EXTENSIONS
@@ -379,6 +387,20 @@ mod tests {
             name: name.into(),
             length,
         }
+    }
+
+    #[test]
+    fn authoritative_file_index_selects_only_a_video_entry() {
+        let files = vec![
+            file(3, "Subs/episode.ass", 10),
+            file(7, "Show - 02.mkv", 900),
+        ];
+        assert_eq!(
+            select_file_by_index(&files, 7).unwrap().name,
+            "Show - 02.mkv"
+        );
+        assert!(select_file_by_index(&files, 3).is_none());
+        assert!(select_file_by_index(&files, 99).is_none());
     }
 
     #[test]

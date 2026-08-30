@@ -564,6 +564,20 @@ export async function resolveOnlineStreams(
       })
       const servers = settings?.episodeServers?.length ? settings.episodeServers : ['default']
       // One audio flavour: search with the dub flag, resolve the episode, fan out over servers.
+      // Callback delivery is provider-scoped rather than pass-scoped: a provider which ignores
+      // the dub flag can return the same URL from both passes, and the picker must still see it
+      // only once. The final return below is independently rebuilt in deterministic pass/server
+      // order, so completion order never makes manual browsing jump around.
+      const emittedUrls = new Set<string>()
+      const emitProviderRows = (rows: Stream[]) => {
+        if (!onBatch || !rows.length) return
+        const fresh = rows.filter((row) => {
+          if (!row.url || emittedUrls.has(row.url)) return false
+          emittedUrls.add(row.url)
+          return true
+        })
+        if (fresh.length) onBatch(fresh)
+      }
       const resolvePass = async (dub: boolean): Promise<Stream[]> => {
       if (signal?.aborted) return []
       const match = await findEp(ext, dub)
@@ -583,6 +597,7 @@ export async function resolveOnlineStreams(
       // is a plausible rate-limit trigger. Results are collected in the original server order.
       const CONCURRENCY = 3
       const found: (SnEpisodeServer | null)[] = new Array(servers.length).fill(null)
+      const foundRows: Stream[][] = new Array(servers.length).fill(null).map(() => [])
       let cursor = 0
       await Promise.all(Array.from({ length: Math.min(CONCURRENCY, servers.length) }, async () => {
         for (;;) {
@@ -601,26 +616,30 @@ export async function resolveOnlineStreams(
             durationMs: Math.round(performance.now() - serverStartedAt),
             videoSources: found[idx]?.videoSources?.length ?? 0,
           })
+          const resolved = found[idx]
+          if (resolved?.videoSources?.length) {
+            foundRows[idx] = resolved.videoSources.map((vs, sourceIndex) => videoSourceToStream(
+              vs,
+              resolved.server ?? servers[idx],
+              resolved.headers ?? {},
+              ext.name,
+              epLabel,
+              audio,
+              ext.id,
+              ext.lang,
+              !matchesPreferredLang(ext.lang, prefLang) && !!ext.lang,
+              subLang,
+              matchedTitle,
+              // Preserve the configured server order even when server 3 answers before server 1.
+              idx * 1_000 + sourceIndex,
+            ))
+            // Do not hold a good CDN URL behind the slowest embed host. The outer picker already
+            // coalesces/ranks waves and holds a stable best candidate briefly before autoplay.
+            emitProviderRows(foundRows[idx])
+          }
         }
       }))
-      for (const [idx, es] of found.entries()) {
-        if (es?.videoSources?.length) {
-          for (const vs of es.videoSources) out.push(videoSourceToStream(
-            vs,
-            es.server ?? servers[idx],
-            es.headers ?? {},
-            ext.name,
-            epLabel,
-            audio,
-            ext.id,
-            ext.lang,
-            !matchesPreferredLang(ext.lang, prefLang) && !!ext.lang,
-            subLang,
-            matchedTitle,
-            out.length,
-          ))
-        }
-      }
+      for (const rows of foundRows) out.push(...rows)
         return out
       }
       // Run the audio flavours concurrently rather than dub-then-fallback, so a title that has BOTH
@@ -651,9 +670,8 @@ export async function resolveOnlineStreams(
           rows.push(s)
         }
       }
-      // Hand this provider's rows over the moment they exist, rather than holding them until every
-      // other provider has finished.
-      if (onBatch && rows.length) onBatch(rows)
+      // `resolvePass` emitted each server wave as it landed. `rows` remains the stable, complete
+      // provider result returned to non-interactive callers and used by the final aggregate.
       traceResolve(trace, 'online provider finish', {
         provider: ext.name,
         durationMs: Math.round(performance.now() - providerStartedAt),

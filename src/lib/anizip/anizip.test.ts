@@ -90,4 +90,19 @@ describe('fetchAniZip watched titles', () => {
     await vi.waitFor(() => expect(refreshed).toHaveBeenCalledOnce())
     expect(refreshed.mock.calls[0][0][1]).toMatchObject({ image: 'new.jpg', title: 'New' })
   })
+
+  it('shares one network refresh across callers with different episode requirements', async () => {
+    let release!: (value: unknown) => void
+    mocks.get.mockResolvedValue(undefined)
+    mocks.phttp.mockReturnValue(new Promise((resolve) => { release = resolve }))
+
+    const general = fetchAniZip(7)
+    const episodeSpecific = fetchAniZip(7, 2)
+    await vi.waitFor(() => expect(mocks.phttp).toHaveBeenCalledOnce())
+
+    release({ ok: true, json: async () => RES })
+    await expect(general).resolves.toBe(RES)
+    await expect(episodeSpecific).resolves.toBe(RES)
+    expect(mocks.set).toHaveBeenCalledTimes(2)
+  })
 })

@@ -25,7 +25,7 @@ use tokio::{
 };
 
 use crate::direct_torrent_select::{
-    select_file_for_title, select_subtitles, subtitle_language, TorrentFile,
+    select_file_by_index, select_file_for_title, select_subtitles, subtitle_language, TorrentFile,
 };
 
 const METADATA_TIMEOUT: Duration = Duration::from_secs(60);
@@ -1044,6 +1044,7 @@ pub async fn torrent_playback_url(
     app: AppHandle,
     state: tauri::State<'_, DirectTorrentState>,
     magnet: String,
+    preferred_file_index: Option<usize>,
     preferred_filename: Option<String>,
     series_title: Option<String>,
     episode: Option<u32>,
@@ -1243,22 +1244,26 @@ pub async fn torrent_playback_url(
         .iter()
         .fold(0u64, |total, file| total.saturating_add(file.length));
     let piece_count = piece_hash_bytes / 20;
-    let selected = select_file_for_title(
-        &files,
-        preferred_filename.as_deref(),
-        series_title.as_deref(),
-        episode,
-        absolute_episode,
-        season,
-    )
-    .ok_or_else(|| {
-        if episode.is_some() || absolute_episode.is_some() {
-            "Could not identify the requested episode inside this torrent. Try another source."
-                .to_string()
-        } else {
-            "This torrent does not contain a supported video file.".to_string()
-        }
-    })?;
+    let selected = preferred_file_index
+        .and_then(|index| select_file_by_index(&files, index))
+        .or_else(|| {
+            select_file_for_title(
+                &files,
+                preferred_filename.as_deref(),
+                series_title.as_deref(),
+                episode,
+                absolute_episode,
+                season,
+            )
+        })
+        .ok_or_else(|| {
+            if episode.is_some() || absolute_episode.is_some() {
+                "Could not identify the requested episode inside this torrent. Try another source."
+                    .to_string()
+            } else {
+                "This torrent does not contain a supported video file.".to_string()
+            }
+        })?;
     // Direct sidecars are tiny and selected alongside the video, but nothing waits for their
     // pieces here. The active video HTTP stream retains librqbit's priority; Windows attaches
     // these tracks live once player_embed has returned.
@@ -1560,6 +1565,7 @@ pub async fn torrent_playback_prepare_next(
     playback_id: u64,
     info_hash: String,
     magnet: Option<String>,
+    preferred_file_index: Option<usize>,
     preferred_filename: Option<String>,
     series_title: Option<String>,
     episode: Option<u32>,
@@ -1581,15 +1587,19 @@ pub async fn torrent_playback_prepare_next(
         .ok_or("This torrent playback is no longer active.")?;
     if current.handle.info_hash().as_string() == info_hash {
         let files = managed_torrent_files(&current.handle)?;
-        let selected = select_file_for_title(
-            &files,
-            preferred_filename.as_deref(),
-            series_title.as_deref(),
-            episode,
-            absolute_episode,
-            season,
-        )
-        .ok_or("Could not identify the next episode inside the active season pack.")?;
+        let selected = preferred_file_index
+            .and_then(|index| select_file_by_index(&files, index))
+            .or_else(|| {
+                select_file_for_title(
+                    &files,
+                    preferred_filename.as_deref(),
+                    series_title.as_deref(),
+                    episode,
+                    absolute_episode,
+                    season,
+                )
+            })
+            .ok_or("Could not identify the next episode inside the active season pack.")?;
         if selected.index == current.selected_file_index {
             return Err("The next-episode mapping selected the episode already playing.".into());
         }
@@ -1693,15 +1703,19 @@ pub async fn torrent_playback_prepare_next(
             length: details.len,
         })
         .collect::<Vec<_>>();
-    let selected = select_file_for_title(
-        &files,
-        preferred_filename.as_deref(),
-        series_title.as_deref(),
-        episode,
-        absolute_episode,
-        season,
-    )
-    .ok_or("Could not identify the episode inside the prepared torrent.")?;
+    let selected = preferred_file_index
+        .and_then(|index| select_file_by_index(&files, index))
+        .or_else(|| {
+            select_file_for_title(
+                &files,
+                preferred_filename.as_deref(),
+                series_title.as_deref(),
+                episode,
+                absolute_episode,
+                season,
+            )
+        })
+        .ok_or("Could not identify the episode inside the prepared torrent.")?;
     let subtitle_indices = select_subtitles(&files, &selected)
         .into_iter()
         .map(|file| file.index)

@@ -7,7 +7,7 @@ import { get } from 'svelte/store'
 import { addonUrls, enabledAddonUrls } from './sources'
 import { getIndex, lookupKitsu } from './idmap'
 import { resolveKitsuMapping } from './kitsu-resolution'
-import { getStreams, fetchAddonStreams, pickBest, pickCandidates, preferDirectStartupCandidates, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
+import { getStreams, fetchAddonStreams, prefetchAddonStreams, pickBest, pickCandidates, preferDirectStartupCandidates, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
 import { refineStreams, type Rejection } from './refine'
 import { buildStreamIds } from './stream-ids'
 import { shouldShowCachingScreen } from './caching-screen'
@@ -129,7 +129,7 @@ import {
 } from '$lib/player/playback-owner'
 import { playViaIntent } from '$lib/player/android-playback'
 import {
-  hasEmbeddedPlayer, mpvLoad, mpvCommand, androidMpvActive, androidMiniPlayer, mpvState, startMpvEvents,
+  hasEmbeddedPlayer, prepareEmbeddedPlayer, mpvLoad, mpvCommand, androidMpvActive, androidMiniPlayer, mpvState, startMpvEvents,
   androidStreamInfo, waitForMpvFirstFrame,
 } from '$lib/player/android-mpv'
 import { waitForRecoveryFirstFrame, type RecoveryFirstFrameResult } from '$lib/player/recovery-first-frame'
@@ -1217,6 +1217,41 @@ function pickSameRelease(media: Media, streams: Stream[], want?: EpisodeWant): S
   return streams.find((s) => matchesRelease(s, c) && playableNow(s) && !isUncached(s) && !(want && isWrongSeason(s, want)))
 }
 
+let sourceIntentTimer: ReturnType<typeof setTimeout> | undefined
+let sourceIntentKey = ''
+
+/**
+ * Turn a sustained episode hover/focus into useful click-to-play work. Only deterministic,
+ * short-lived inputs are fetched: AniZip mappings, the Android player core, and exact Stremio
+ * stream resources. Online extractor URLs are intentionally excluded because many are one-use or
+ * login-backed and would make merely moving across an episode grid expensive.
+ */
+export function prefetchEpisodeSources(media: Media, episode: number | undefined, delayMs = 120): void {
+  if (get(offlineMode)) return
+  const intentKey = `${media.id}:${episode ?? 'movie'}`
+  if (sourceIntentTimer && sourceIntentKey === intentKey && delayMs > 0) return
+  if (sourceIntentTimer) clearTimeout(sourceIntentTimer)
+  sourceIntentKey = intentKey
+  sourceIntentTimer = setTimeout(() => {
+    sourceIntentTimer = undefined
+    if (sourceIntentKey !== intentKey) return
+    promoteBootWork('player')
+    if (get(isAndroid)) void prepareEmbeddedPlayer()
+    void (async () => {
+      const [kitsu] = await Promise.all([
+        resolveKitsu(media),
+        episode == null ? Promise.resolve({}) : mediaSeasonMap(media),
+        mediaExtensionIds(media, episode),
+      ])
+      const ids = primaryStreamIds(media, episode, kitsu)
+      if (!ids.length) return
+      await Promise.allSettled(
+        get(enabledAddonUrls).map((base) => prefetchAddonStreams(base, ids, streamType(media))),
+      )
+    })().catch(() => {})
+  }, Math.max(0, delayMs))
+}
+
 /** Pick the next episode without ever starting a debrid download. Release continuity is the first
  * choice, but it is not a reason to abandon preloading altogether: per-episode torrents commonly
  * change hash and release group between episodes. In that case the best already-cached source is
@@ -1493,6 +1528,7 @@ async function prefetchNext(media: Media, episode: number) {
         infoHash: s.infoHash,
         magnet: s.__magnet ?? `magnet:?xt=urn:btih:${s.infoHash}`,
         metadata: s.__torrentUrl ? directMetadataPrefetchRequest(s) : undefined,
+        preferredFileIndex: s.fileIdx,
         preferredFilename: s.behaviorHints?.filename,
         seriesTitle: title(media),
         episode: next,
@@ -2338,21 +2374,11 @@ const DAY_MS = 24 * 60 * 60 * 1000
 export const REMEMBERED_SOURCE_MAX_AGE_MS = 30 * DAY_MS
 export const REMEMBERED_SOURCE_PRIORITY_MS = 1500
 
-/** Let Svelte commit and paint the connecting loader before source/native setup continues. Two
- * frames guarantee a paint between callbacks; the timeout keeps backgrounded windows moving. */
-async function paintConnectingLoader(): Promise<void> {
-  if (typeof requestAnimationFrame !== 'function') return
-  await new Promise<void>((resolve) => {
-    let finished = false
-    const finish = () => {
-      if (finished) return
-      finished = true
-      clearTimeout(timeout)
-      resolve()
-    }
-    const timeout = setTimeout(finish, 50)
-    requestAnimationFrame(() => requestAnimationFrame(finish))
-  })
+/** Commit the connecting-store update before the first native/network await. A microtask is enough
+ * for Svelte's state propagation; the following async invoke/fetch yields the actual paint without
+ * charging every play two animation frames (or 50 ms in a backgrounded window). */
+async function commitConnectingLoader(): Promise<void> {
+  await Promise.resolve()
 }
 
 function continueRememberedSource(mediaId: number, episode: number): RememberedSource | undefined {
@@ -2394,9 +2420,9 @@ async function refreshContinueMedia(media: Media): Promise<Media> {
   }
 }
 
-/** Resume from Continue Watching / the detail Continue button. Refresh the trimmed home-card Media
- *  snapshot first, then try the remembered origin. A miss or playback error falls through to the
- *  same unrestricted picker used by a direct episode click — without retrying the failed release. */
+/** Resume from Continue Watching / the detail Continue button. Start from the stored home-card
+ *  snapshot immediately while refreshing richer metadata in the background. A miss or playback
+ *  error falls through to the unrestricted picker without retrying the failed release. */
 export async function resumeEpisode(media: Media, episode: number, onState: (s: PlayState) => void) {
   onState({ status: 'resolving' })
   // Nothing is on screen yet: the picker is not open and no source has been chosen, but the media
@@ -2409,7 +2435,11 @@ export async function resumeEpisode(media: Media, episode: number, onState: (s: 
     episode,
     cancel: () => { connecting.set(null); cancelResolve() },
   })
-  const current = await refreshContinueMedia(media)
+  // A home card can carry a deliberately trimmed Media snapshot, but AniList id + title are enough
+  // to start the mapping/source fan-out. Refresh the richer object for future renders without
+  // charging this click up to 750 ms before any source request can begin.
+  void refreshContinueMedia(media)
+  const current = media
   // Use the normal progressive fan-out immediately and carry the remembered release as its hidden
   // continuation target. The old path queried that provider serially, then repeated the complete
   // query after a miss; a slow provider therefore produced an unbounded blank wait before P2P even
@@ -2556,7 +2586,7 @@ export async function playStream(
       recovering: same ? current.recovering : false,
     }
   })
-  let androidFrameTracePending = false
+  let frameTracePending = false
   // Every exit from this function goes through the state callback, so wrapping it once clears the
   // connecting screen on all of them — including the early returns.
   const onState = (s: PlayState) => {
@@ -2570,9 +2600,7 @@ export async function playStream(
     // For local P2P, player_embed only means mpv accepted the loopback URL. Keep the trace alive
     // until an actual duration/progress event so the headline timing is click-to-first-frame,
     // rather than hiding peer/download/probe delay behind an optimistic "playing" result.
-    const awaitsMeasuredFirstFrame = directPlaybackId != null
-      && !get(enableExternalPlayer)
-      && (!get(isAndroid) || androidFrameTracePending)
+    const awaitsMeasuredFirstFrame = frameTracePending && !get(enableExternalPlayer)
     if (s.status === 'playing' && !awaitsMeasuredFirstFrame) {
       finishResolveTrace(trace, 'playing', streamTraceDetails(stream))
     }
@@ -2589,7 +2617,7 @@ export async function playStream(
     episode,
     cancel: cancelPlaybackStart,
   })
-  await paintConnectingLoader()
+  await commitConnectingLoader()
   if (!stillOwnsPlayback()) return
   const abandonIfStale = async () => {
     if (stillOwnsPlayback()) return false
@@ -2673,6 +2701,7 @@ export async function playStream(
         }
         const playback = await invoke<DirectTorrentPlayback>('torrent_playback_url', {
           magnet: stream.__magnet ?? `magnet:?xt=urn:btih:${torrent}`,
+          preferredFileIndex: stream.fileIdx,
           preferredFilename: stream.behaviorHints?.filename,
           seriesTitle: title(media),
           episode: want?.episode,
@@ -2973,8 +3002,9 @@ export async function playStream(
         // the live player below instead of being dropped. Direct P2P skips the gate entirely: the
         // torrent's own muxed/companion subs are already in hand, external results attach live via
         // sub-add, and the swarm wait dwarfs anything a 1.5s hold could buy — it was pure latency.
-        const subGateMs = directPlaybackId != null ? 0 : 1500
-        const addonSubs = await Promise.race([subsP, new Promise<SubtitleCandidate[]>((r) => setTimeout(() => r([]), subGateMs))])
+        // External subtitle discovery is never a video-start dependency. Source/torrent tracks are
+        // already in hand; add-on results attach live below as soon as they settle.
+        const addonSubs: SubtitleCandidate[] = []
         if (await abandonIfStale()) return
         onlineSubCandidates.set({
           status: addonSubs.length ? 'ready' : 'searching',
@@ -3072,28 +3102,34 @@ export async function playStream(
         androidMiniPlayer.set(false)
         androidMpvActive.set(true)
         rememberSuccess()
-        androidFrameTracePending = directPlaybackId != null
+        frameTracePending = true
         onState({ status: 'playing' })
         if (episode != null) attachAndroid(media, episode, onState, directPlaybackId != null, observation, recoveryOriginal)
-        if (directPlaybackId != null) {
-          const playbackId = directPlaybackId
-          traceResolve(trace, 'waiting for Android first video frame')
-          void waitForMpvFirstFrame(DIRECT_TORRENT_HARD_START_TIMEOUT_MS).then((ready) => {
-            if (!stillOwnsPlayback()) return
-            // The native HTTP request normally retired this cursor already. This remains a safe
-            // fallback for players/platform events that reached a frame without the notification.
-            void directTorrentPlayerAttached(playbackId)
-            androidFrameTracePending = false
-            if (ready) markSourceObservation(observation, 'first-frame')
-            finishResolveTrace(
-              trace,
-              ready ? 'Android first video frame' : 'Android first video frame timeout',
-              streamTraceDetails(stream),
-            )
-          })
-        }
-        // Late online subtitles (Android mirror of the desktop path): if the short race above lost
-        // to a slow subtitle addon, fold results in once they land. `androidStreamInfo.url` pins
+        const playbackId = directPlaybackId
+        traceResolve(trace, 'waiting for Android first video frame')
+        void waitForMpvFirstFrame(
+          playbackId != null ? DIRECT_TORRENT_HARD_START_TIMEOUT_MS : 30_000,
+        ).then((ready) => {
+          if (!stillOwnsPlayback()) return
+          // The native HTTP request normally retired this cursor already. This remains a safe
+          // fallback for players/platform events that reached a frame without the notification.
+          if (playbackId != null) void directTorrentPlayerAttached(playbackId)
+          frameTracePending = false
+          if (ready) {
+            markSourceObservation(observation, 'first-frame')
+            markClientPerformance('izumi:first-video-frame', {
+              mediaId: media.id, episode: episode ?? 0, transport: playbackId != null ? 'p2p' : 'http', platform: 'android',
+              ...(trace ? { clickToFirstFrameMs: Math.round(performance.now() - trace.startedAt) } : {}),
+            })
+          }
+          finishResolveTrace(
+            trace,
+            ready ? 'Android first video frame' : 'Android first video frame timeout',
+            streamTraceDetails(stream),
+          )
+        })
+        // Late online subtitles (Android mirror of the desktop path): fold results in once they
+        // land without putting subtitle discovery on the video-start path. `androidStreamInfo.url` pins
         // the results to THIS load — a newer episode replaces it before its own mpvLoad.
         if (!addonSubs.length) {
           const loadUrl = stream.url
@@ -3178,34 +3214,17 @@ export async function playStream(
     // bitrate (videoSize ÷ runtime), so a 4K Blu-ray buffers as many seconds as the preset holds for
     // 1080p instead of rebuffering on a fixed byte cap. Applied on the next load (this one).
     const durationSec = media.duration ? media.duration * 60 : undefined
-    const playerCacheStartedAt = performance.now()
-    traceResolve(trace, 'configure player cache start')
-    await invoke('set_player_cache', {
-      bytes: playerCacheBytes(get(playerCacheMb), stream.behaviorHints?.videoSize, durationSec),
-    }).catch(() => {})
-    traceResolve(trace, 'configure player cache finish', {
-      durationMs: Math.round(performance.now() - playerCacheStartedAt),
-    })
-    if (await abandonIfStale()) return
+    const cacheBytes = playerCacheBytes(get(playerCacheMb), stream.behaviorHints?.videoSize, durationSec)
+    const initialBufferSeconds = directPlaybackId != null ? 1 : /^https?:/i.test(stream.url ?? '') ? 0.25 : 0
     // Await the addon subtitles (bounded — a slow subtitle addon must not hold up playback), and merge
     // them with any the source itself carried (online-stream __subtitles). mpv sub-adds all of them;
     // slang auto-selects the preferred language. The bound used to be 4s, which was the single
     // biggest fixed cost on click-to-video whenever a subtitle addon was having a slow day; late
     // results now attach to the live player below instead of being dropped, so the gate only needs
     // to cover the COMMON fast case (subs land during the debrid resolve and cost nothing here).
-    let subtitleGateTimedOut = false
-    let subtitleGate: ReturnType<typeof setTimeout> | undefined
-    const candidates = directPlaybackId == null
-      ? await Promise.race([
-          subsP,
-          new Promise<SubtitleCandidate[]>((resolve) => {
-            subtitleGate = setTimeout(() => { subtitleGateTimedOut = true; resolve([]) }, 1500)
-          }),
-        ])
-      : []
-    if (subtitleGate) clearTimeout(subtitleGate)
+    const candidates: SubtitleCandidate[] = []
     traceResolve(trace, 'subtitle startup gate finish', {
-      timedOut: subtitleGateTimedOut,
+      deferred: true,
       candidates: candidates.length,
       skippedForDirectP2p: directPlaybackId != null,
     })
@@ -3246,11 +3265,14 @@ export async function playStream(
       subtitles: subtitles.length,
       audioTracks: audioTracks.length,
       resumeSeconds: Math.round(startSeconds),
+      initialBufferSeconds,
     })
     await invoke('player_embed', {
       url: stream.url,
       startSeconds: startSeconds || undefined,
       autoplay,
+      initialBufferSeconds,
+      cacheBytes,
       alang: get(preferredAudioLang),
       slang: get(preferredSubLang),
       headers: mergedHeaders && Object.keys(mergedHeaders).length ? mergedHeaders : undefined,
@@ -3282,29 +3304,40 @@ export async function playStream(
     }
     rememberSuccess()
     playing.set(true)
+    frameTracePending = true
     onState({ status: 'playing' })
     // Progress now fires on *actual watch* (~85%), not on play — see attach().
     if (episode != null) attach(media, episode, onState, observation, recoveryOriginal)
-    if (directPlaybackId != null) {
-      const playbackId = directPlaybackId
-      traceResolve(trace, 'waiting for first video frame')
-      void waitForDesktopFirstFrame(stream.url!, DIRECT_TORRENT_START_TIMEOUT_MS, trace).then((result) => {
-        if (!stillOwnsPlayback()) return
-        // The native localhost server normally releases the synthetic byte-zero cursor on mpv's
-        // first real HTTP request. A first frame is the safe fallback; player_embed merely accepting
-        // a URL is too early and used to leave a gap with no active range priority at all.
-        void directTorrentPlayerAttached(playbackId)
-        if (result === 'ready') markSourceObservation(observation, 'first-frame')
-        else if (result === 'load-error') failSourceObservation(observation, 'Player load error', 'player')
-        finishResolveTrace(
-          trace,
-          result === 'ready' ? 'first video frame'
-            : result === 'load-error' ? 'player load error'
-              : 'first video frame timeout',
-          streamTraceDetails(stream),
-        )
-      })
-    }
+    const playbackId = directPlaybackId
+    traceResolve(trace, 'waiting for first video frame')
+    void waitForDesktopFirstFrame(
+      stream.url!,
+      playbackId != null ? DIRECT_TORRENT_START_TIMEOUT_MS : 30_000,
+      trace,
+      playbackId != null,
+    ).then((result) => {
+      if (!stillOwnsPlayback()) return
+      // The native localhost server normally releases the synthetic byte-zero cursor on mpv's
+      // first real HTTP request. A first frame is the safe fallback; player_embed merely accepting
+      // a URL is too early and used to leave a gap with no active range priority at all.
+      if (playbackId != null) void directTorrentPlayerAttached(playbackId)
+      frameTracePending = false
+      if (result === 'ready') {
+        markSourceObservation(observation, 'first-frame')
+        markClientPerformance('izumi:first-video-frame', {
+          mediaId: media.id, episode: episode ?? 0, transport: playbackId != null ? 'p2p' : 'http', platform: 'desktop',
+          ...(trace ? { clickToFirstFrameMs: Math.round(performance.now() - trace.startedAt) } : {}),
+        })
+      }
+      else if (result === 'load-error') failSourceObservation(observation, 'Player load error', 'player')
+      finishResolveTrace(
+        trace,
+        result === 'ready' ? 'first video frame'
+          : result === 'load-error' ? 'player load error'
+            : 'first video frame timeout',
+        streamTraceDetails(stream),
+      )
+    })
     // Late online subtitles: when the embed's short race above lost to a slow subtitle addon, fold
     // the results in once they land — menu entries plus URL tracks attached to the live player —
     // instead of dropping them for the whole episode. `playGen` pins the results to THIS play.
@@ -3335,56 +3368,74 @@ export async function playStream(
 
 /** `player_embed` resolving means mpv accepted the URL, not that the replacement produced video.
  * Direct torrents can sit there downloading indefinitely, so recovery must wait for a real
- * duration/progress event before declaring a candidate healthy. */
+ * progress or rendered-frame state before declaring a candidate healthy. */
 async function waitForDesktopFirstFrame(
   expectedUrl: string,
   timeoutMs: number,
   trace = currentResolveTrace(),
+  monitorTorrent = true,
 ): Promise<RecoveryFirstFrameResult> {
   if (get(enableExternalPlayer)) return 'ready'
   return await new Promise<RecoveryFirstFrameResult>(async (resolve) => {
     let settled = false
     let unlistenProgress: (() => void) | null = null
     let unlistenLoaded: (() => void) | null = null
+    let unlistenCoreIdle: (() => void) | null = null
     let unlistenError: (() => void) | null = null
+    let fileLoaded = false
     let lastDownloadedBytes = 0
     let lastAdvancedAt = Date.now()
     const startedAt = Date.now()
+    let healthTimer: ReturnType<typeof setInterval> | undefined
+    const absoluteTimeoutMs = monitorTorrent ? DIRECT_TORRENT_HARD_START_TIMEOUT_MS : timeoutMs
+    const hardTimer = setTimeout(() => finish('timeout'), absoluteTimeoutMs)
     const finish = (result: RecoveryFirstFrameResult) => {
       if (settled) return
       settled = true
-      clearInterval(timer)
+      clearTimeout(hardTimer)
+      if (healthTimer) clearInterval(healthTimer)
       unlistenProgress?.()
       unlistenLoaded?.()
+      unlistenCoreIdle?.()
       unlistenError?.()
       resolve(result)
     }
-    const timer = setInterval(() => {
-      void directTorrentHealth().then((health) => {
-        if (settled) return
-        const now = Date.now()
-        if (health && health.downloadedBytes > lastDownloadedBytes) {
-          lastDownloadedBytes = health.downloadedBytes
-          lastAdvancedAt = now
-        }
-        if (now - startedAt >= DIRECT_TORRENT_HARD_START_TIMEOUT_MS
-          || (now - startedAt >= timeoutMs
-            && now - lastAdvancedAt >= DIRECT_TORRENT_NO_PROGRESS_TIMEOUT_MS)) {
-          finish('timeout')
-        }
-      })
-    }, 1_000)
+    if (monitorTorrent) {
+      healthTimer = setInterval(() => {
+        void directTorrentHealth().then((health) => {
+          if (settled) return
+          const now = Date.now()
+          if (health && health.downloadedBytes > lastDownloadedBytes) {
+            lastDownloadedBytes = health.downloadedBytes
+            lastAdvancedAt = now
+          }
+          if (now - startedAt >= DIRECT_TORRENT_HARD_START_TIMEOUT_MS
+            || (now - startedAt >= timeoutMs
+              && now - lastAdvancedAt >= DIRECT_TORRENT_NO_PROGRESS_TIMEOUT_MS)) {
+            finish('timeout')
+          }
+        })
+      }, 1_000)
+    }
     try {
       const listeners = await Promise.all([
         listen<[number, number]>('player-progress', (event) => {
           if (event.payload[1] > 0) finish('ready')
         }),
         listen<string>('player-file-loaded', (event) => {
-          if (event.payload !== expectedUrl) return
+          // Direct torrent paths are stable and can be matched exactly. Generic HLS URLs may be
+          // rewritten through the native proxy, so the first post-load event owns this play.
+          if (monitorTorrent && event.payload !== expectedUrl) return
+          fileLoaded = true
           traceResolve(trace, 'desktop mpv FILE_LOADED')
         }),
+        listen<boolean>('player-core-idle', (event) => {
+          // The native loop re-states core-idle immediately after FileLoaded. False means mpv has
+          // a frame on its output; gating on FileLoaded avoids accepting a queued prior-file flag.
+          if (fileLoaded && !event.payload) finish('ready')
+        }),
         listen<string>('player-load-error', (event) => {
-          if (event.payload !== expectedUrl) return
+          if (monitorTorrent && event.payload !== expectedUrl) return
           traceResolve(trace, 'desktop mpv load error')
           finish('load-error')
         }),
@@ -3393,7 +3444,7 @@ async function waitForDesktopFirstFrame(
         listeners.forEach((off) => off())
         return
       }
-      ;[unlistenProgress, unlistenLoaded, unlistenError] = listeners
+      ;[unlistenProgress, unlistenLoaded, unlistenCoreIdle, unlistenError] = listeners
     } catch {
       finish('timeout')
     }
