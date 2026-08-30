@@ -70,7 +70,7 @@
     { value: 'all', label: 'All platforms' },
   ]
   const switcherPlacementOptions = [
-    { value: 'automatic', label: 'Automatic · desktop logo, below on Android' },
+    { value: 'automatic', label: 'Automatic · integrated into Izumi logo' },
     { value: 'below', label: 'Below Izumi logo' },
     { value: 'integrated', label: 'Integrated into Izumi logo' },
   ]
@@ -225,7 +225,7 @@
     <SettingsRow
       settingKey="catalog-switcher-placement"
       title="Catalog switcher"
-      description="Automatic integrates catalog selection into the Izumi logo on desktop and places it below the logo on Android."
+      description="Automatic integrates catalog selection into the Izumi logo beside the Home actions on every platform."
       control={switcherPlacementControl}
       controlLayout="stack"
     />

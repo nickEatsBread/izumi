@@ -80,9 +80,9 @@ describe('catalog platform selection', () => {
     expect(resolveCatalogScreenStartup('merged', 'merged', ['auto'])).toBe('auto')
   })
 
-  it('places the automatic catalog switcher in the desktop logo and below it on Android', () => {
+  it('places the automatic catalog switcher in the Izumi logo on desktop and Android', () => {
     expect(resolveCatalogSwitcherPlacement('automatic', false)).toBe('integrated')
-    expect(resolveCatalogSwitcherPlacement('automatic', true)).toBe('below')
+    expect(resolveCatalogSwitcherPlacement('automatic', true)).toBe('integrated')
     expect(resolveCatalogSwitcherPlacement('below', false)).toBe('below')
     expect(resolveCatalogSwitcherPlacement('integrated', true)).toBe('integrated')
   })

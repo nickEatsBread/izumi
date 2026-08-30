@@ -171,17 +171,18 @@ export const continueWatchingCatalogScope = persisted<ContinueWatchingCatalogSco
   'provider',
 )
 
-/** Resolve the responsive default without taking either explicit placement away from the user. */
+/** Keep the branded picker as the default on every platform without taking either explicit
+ * placement away from the user. */
 export function resolveCatalogSwitcherPlacement(
   placement: unknown,
-  android: boolean,
+  _android: boolean,
 ): Exclude<CatalogSwitcherPlacement, 'automatic'> {
   if (placement === 'integrated' || placement === 'below') return placement
-  return android ? 'below' : 'integrated'
+  return 'integrated'
 }
 
 /** Controls whether Home's catalog picker shares the Izumi brand control or gets its own,
- * more explicit row below it. Automatic follows the native layout convention for each platform. */
+ * more explicit row below it. Automatic keeps the original integrated brand picker. */
 export const catalogSwitcherPlacement = persisted<CatalogSwitcherPlacement>(
   'catalog-switcher-placement',
   'automatic',

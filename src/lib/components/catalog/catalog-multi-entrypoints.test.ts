@@ -37,7 +37,7 @@ describe('multi-platform catalog entry points', () => {
     expect(catalogStore).toContain("export type CatalogSwitcherPlacement = 'automatic' | 'integrated' | 'below'")
     expect(catalogStore).toContain("'catalog-switcher-placement'")
     expect(catalogStore).toContain("'automatic',")
-    expect(catalogSettings).toContain('Automatic · desktop logo, below on Android')
+    expect(catalogSettings).toContain('Automatic · integrated into Izumi logo')
     expect(catalogSettings).toContain('Integrated into Izumi logo')
     expect(catalogSettings).toContain('Below Izumi logo')
     expect(catalogSettings).toContain('settingKey="catalog-switcher-placement"')
