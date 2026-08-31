@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const worker = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/src/index.js', import.meta.url)), 'utf8')
+const resolver = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/src/resolver.js', import.meta.url)), 'utf8')
 const config = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/wrangler.jsonc', import.meta.url)), 'utf8')
 const manifest = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/package.json', import.meta.url)), 'utf8')
 const companionMigration = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/migrations/0002_companion_wake.sql', import.meta.url)), 'utf8')
 const resolverMigration = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/migrations/0003_cloud_resolver.sql', import.meta.url)), 'utf8')
+const resolverGenerator = fileURLToPath(new URL('../../../scripts/generate-cloudflare-resolver-core.mjs', import.meta.url))
 
 describe('Cloudflare Worker deployment contract', () => {
   it('uses an auto-provisioned D1 binding and deploy-time migration', () => {
@@ -43,5 +46,12 @@ describe('Cloudflare Worker deployment contract', () => {
     expect(resolverMigration).toContain('CREATE TABLE resolver_profiles')
     expect(resolverMigration).toContain('last_resolve_at')
     expect(worker).not.toMatch(/media[_ -]?proxy|stream[_ -]?relay/i)
+  })
+
+  it('ships a current, self-contained copy of the shared resolver core', () => {
+    expect(resolver).toContain("from './generated/resolver-core/resolver-core.ts'")
+    expect(resolver).not.toMatch(/from\s+['"]\.\.\//)
+    const result = spawnSync(process.execPath, [resolverGenerator, '--check'], { encoding: 'utf8' })
+    expect(result.status, result.stderr || result.stdout).toBe(0)
   })
 })

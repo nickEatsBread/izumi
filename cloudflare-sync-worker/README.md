@@ -25,7 +25,7 @@ profile from Izumi.
 
 - The TV sends a media identifier and episode to this Worker using its TV-scoped pairing token.
 - This Worker maps AniList identifiers through AniZip, queries the owner's configured add-ons, and
-  runs the same normalization and ranking modules compiled into the Izumi client.
+  runs a generated copy of the same normalization and ranking modules compiled into Izumi.
 - The response contains a short ranked list of direct HTTP/HLS/DASH candidates. The TV downloads
   the selected media directly from its source; media bytes never pass through this Worker.
 - Torrent-only results, loopback/private URLs, `notWebReady` results, and sources requiring playback
@@ -36,6 +36,18 @@ Resolver add-on URLs may contain credentials. Unlike ordinary sync records, the 
 these URLs in order to contact the add-ons, so resolver profiles are deliberately separate from
 end-to-end encrypted sync data. They are never returned to the TV. Disable the feature or delete
 the profile from Izumi to remove them from D1.
+
+The Deploy to Cloudflare button treats this directory as a standalone repository, so Worker code
+must not import files from the parent Izumi checkout. The canonical resolver remains under
+`src/lib/stremio/` in the main repository; maintainers regenerate the dependency closure committed
+under `src/generated/resolver-core/` with:
+
+```sh
+node scripts/generate-cloudflare-resolver-core.mjs
+```
+
+The main repository's Worker contract test fails if that generated copy is missing or stale. Users'
+isolated Worker repositories need only the already-generated files and never run this command.
 
 ## Private TV notifications
 

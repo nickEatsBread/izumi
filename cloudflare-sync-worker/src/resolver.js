@@ -8,7 +8,7 @@ import {
   isNotice,
   normalizeStreamBehavior,
   pickCandidates,
-} from '../../src/lib/stremio/resolver-core.ts'
+} from './generated/resolver-core/resolver-core.ts'
 
 const MAX_ADDONS = 8
 const MAX_ADDON_URL_BYTES = 2048
