@@ -39,6 +39,7 @@ export const pairedCompanions = persisted<PairedCompanion[]>('paired-tizen-compa
 
 export interface PendingCompanionPlayback {
   device: PairedCompanion
+  media: CompanionMedia
   requestId?: string
   pairingId?: string
   expiresAt?: number
@@ -50,9 +51,9 @@ export const pendingCompanionPlayback = writable<PendingCompanionPlayback | null
 export function acceptCompanionPlayRequest(
   media: CompanionMedia,
   device: PairedCompanion,
-  remote: Omit<PendingCompanionPlayback, 'device'> = {},
+  remote: Omit<PendingCompanionPlayback, 'device' | 'media'> = {},
 ): string {
-  pendingCompanionPlayback.set({ device, ...remote })
+  pendingCompanionPlayback.set({ device, media, ...remote })
   const ref = media.ref
   const base = ref.provider === 'anilist'
     ? ref.type === 'manga' ? `/app/manga/${encodeURIComponent(ref.id)}` : `/app/anime/${encodeURIComponent(ref.id)}`

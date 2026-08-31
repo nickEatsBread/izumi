@@ -135,6 +135,7 @@ import {
   androidStreamInfo, waitForMpvFirstFrame,
 } from '$lib/player/android-mpv'
 import { waitForRecoveryFirstFrame, type RecoveryFirstFrameResult } from '$lib/player/recovery-first-frame'
+import { startPendingCompanionCast } from '$lib/companion/playback'
 
 function continueToNextEpisode(
   media: Media,
@@ -2977,6 +2978,28 @@ export async function playStream(
     if (prefetched && prefetched.mediaId === media.id && !matchesRelease(prefetched.stream, releaseIdentity)) {
       prefetched = null
       nextEpisodeReady.set(null)
+    }
+
+    const companionHandled = await startPendingCompanionCast({
+      media,
+      episode,
+      stream,
+      startSeconds,
+      subtitles: [
+        ...(stream.__subtitles ?? []),
+        ...directTorrentSubtitles.map((subtitle) => ({
+          url: subtitle.url,
+          lang: subtitle.lang,
+          title: subtitle.title,
+        })),
+      ],
+    })
+    if (companionHandled) {
+      if (await abandonIfStale()) return
+      recordPlaybackIdentity({ media, episode, stream: recoveryOriginal })
+      rememberSuccess()
+      onState({ status: 'playing' })
+      return
     }
 
     // Encrypted DASH (Widevine etc.) cannot go through mpv — it would paint CENC as rainbow
