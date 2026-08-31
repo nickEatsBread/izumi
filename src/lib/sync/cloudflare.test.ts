@@ -86,6 +86,8 @@ describe('Cloudflare self-hosted sync', () => {
       requestId,
       ref: { provider: 'anilist', type: 'anime', id: '21' },
       episode: 4,
+      season: 2,
+      resolver: { streamType: 'series' },
       issuedAt,
       expiresAt,
     }))
@@ -110,8 +112,10 @@ describe('Cloudflare self-hosted sync', () => {
     const request = await readCloudflareCompanionRequest(pairingId, requestId, credential)
     expect(request.media).toEqual({
       ref: { provider: 'anilist', type: 'anime', id: '21' },
+      resolver: { streamType: 'series' },
       title: '',
       episode: 4,
+      season: 2,
     })
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })

@@ -143,6 +143,8 @@ async function encryptedPlayRequest(
     requestId,
     ref: media.ref,
     episode: media.episode,
+    season: media.season,
+    resolver: media.resolver,
     issuedAt,
     expiresAt: issuedAt + REMOTE_REQUEST_TTL_MS,
   }))
@@ -341,6 +343,8 @@ export class CompanionReceiver {
     this.publish('izumi.companion.play', {
       ref: media.ref,
       episode: media.episode,
+      season: media.season,
+      resolver: media.resolver,
       pairingId,
       requestId,
     }, 'broadcast')

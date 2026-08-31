@@ -333,7 +333,14 @@ function keepConnection(
       } else sendSnapshot(connection, initialSnapshot)
     }),
     channel.on('izumi.companion.play', (value, from) => {
-      const request = value as Partial<CompanionMedia> & { ref?: CompanionMedia['ref']; pairingId?: unknown; requestId?: unknown; episode?: unknown }
+      const request = value as Partial<CompanionMedia> & {
+        ref?: CompanionMedia['ref']
+        pairingId?: unknown
+        requestId?: unknown
+        episode?: unknown
+        season?: unknown
+        resolver?: unknown
+      }
       const pairingId = device.cloudflare?.pairingId ?? device.credential.slice(0, 16)
       if (request.pairingId !== pairingId || !request.ref) return
       if (typeof request.requestId === 'string' && /^[A-Za-z0-9_-]{16,80}$/.test(request.requestId)) {
@@ -342,7 +349,18 @@ function keepConnection(
           requestId: request.requestId,
         }, from?.id || 'host')
       }
-      onPlay?.({ ref: request.ref, title: '', episode: typeof request.episode === 'number' ? request.episode : undefined }, device)
+      const resolver = request.resolver && typeof request.resolver === 'object'
+        && ((request.resolver as { streamType?: unknown }).streamType === 'movie'
+          || (request.resolver as { streamType?: unknown }).streamType === 'series')
+        ? request.resolver as CompanionMedia['resolver']
+        : undefined
+      onPlay?.({
+        ref: request.ref,
+        resolver,
+        title: '',
+        episode: typeof request.episode === 'number' ? request.episode : undefined,
+        season: typeof request.season === 'number' ? request.season : undefined,
+      }, device)
     }),
     channel.on('izumi.companion.catalog', (value) => {
       const request = value as { screen?: unknown; pairingId?: unknown } | null

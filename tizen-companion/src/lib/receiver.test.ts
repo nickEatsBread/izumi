@@ -14,6 +14,7 @@ const media: CompanionMedia = {
   ref: { provider: 'tmdb', type: 'movie', id: '550' },
   resolver: { streamType: 'movie' },
   title: 'Fight Club',
+  season: 0,
 }
 
 class MemoryStorage {
@@ -33,6 +34,8 @@ interface SentRequest {
   headers: Record<string, string>
   body: unknown
 }
+
+let encryptedPlaintext = ''
 
 class FakeXmlHttpRequest {
   static responder: (request: SentRequest) => { status: number; body: unknown }
@@ -85,6 +88,7 @@ const events = (): ReceiverEvents => ({
 beforeEach(() => {
   vi.useFakeTimers()
   FakeXmlHttpRequest.sent = []
+  encryptedPlaintext = ''
   const storage = new MemoryStorage()
   storage.setItem('izumi.companion.credential', credential)
   storage.setItem('izumi.companion.cloudflare', JSON.stringify(transport))
@@ -99,7 +103,10 @@ beforeEach(() => {
     },
     subtle: {
       importKey: vi.fn(async () => ({})),
-      encrypt: vi.fn(async () => new Uint8Array([1, 2, 3]).buffer),
+      encrypt: vi.fn(async (_algorithm: unknown, _key: unknown, data: Uint8Array) => {
+        encryptedPlaintext = new TextDecoder().decode(data)
+        return new Uint8Array([1, 2, 3]).buffer
+      }),
     },
   })
 })
@@ -130,7 +137,7 @@ describe('companion play routing', () => {
       url: 'https://private-worker.example/v1/companion/pairings/private_pairing_1/resolve',
       timeout: 30_000,
       headers: { Authorization: `Bearer ${transport.tvToken}` },
-      body: { ref: media.ref, streamType: 'movie' },
+      body: { ref: media.ref, season: 0, streamType: 'movie' },
     })
   })
 
@@ -146,5 +153,10 @@ describe('companion play routing', () => {
       'https://private-worker.example/v1/companion/pairings/private_pairing_1/resolve',
       expect.stringMatching(/^https:\/\/private-worker\.example\/v1\/companion\/pairings\/private_pairing_1\/requests\//),
     ])
+    expect(JSON.parse(encryptedPlaintext)).toMatchObject({
+      ref: media.ref,
+      resolver: { streamType: 'movie' },
+      season: 0,
+    })
   })
 })

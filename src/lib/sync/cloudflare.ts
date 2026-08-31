@@ -327,11 +327,19 @@ export async function readCloudflareCompanionRequest(
     const episode = typeof value.episode === 'number' && Number.isFinite(value.episode) && value.episode > 0
       ? value.episode
       : undefined
+    const season = typeof value.season === 'number' && Number.isInteger(value.season) && value.season >= 0 && value.season <= 1_000
+      ? value.season
+      : undefined
+    const resolver = value.resolver && typeof value.resolver === 'object'
+      && ((value.resolver as Record<string, unknown>).streamType === 'movie'
+        || (value.resolver as Record<string, unknown>).streamType === 'series')
+      ? { streamType: (value.resolver as { streamType: 'movie' | 'series' }).streamType }
+      : undefined
     await updateCloudflareCompanionRequest(pairingId, requestId, 'opened')
     return {
       pairingId,
       requestId,
-      media: { ref: value.ref, title: '', episode },
+      media: { ref: value.ref, resolver, title: '', episode, season },
       issuedAt,
       expiresAt,
     }
