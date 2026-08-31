@@ -101,7 +101,11 @@
     const target = companionPlaybackTarget(pending.media, current, isMovie ? undefined : 1)
     if (!target) return
     startedCompanionRequest = pending
-    void playEpisode(current, target.episode, (state) => (playState = state))
+    void playEpisode(current, target.episode, (state) => (playState = state), {
+      forceManual: pending.media.playback?.selection === 'manual',
+      autoplay: true,
+      startSeconds: pending.media.playback?.positionSeconds,
+    })
   })
 
   function watchTrailer() {

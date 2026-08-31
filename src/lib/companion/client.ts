@@ -385,9 +385,20 @@ function keepConnection(
           || (request.resolver as { streamType?: unknown }).streamType === 'series')
         ? request.resolver as CompanionMedia['resolver']
         : undefined
+      const playback = request.playback && typeof request.playback === 'object'
+        && (request.playback as { selection?: unknown }).selection === 'manual'
+        ? {
+            selection: 'manual' as const,
+            positionSeconds: typeof (request.playback as { positionSeconds?: unknown }).positionSeconds === 'number'
+              && Number.isFinite((request.playback as { positionSeconds: number }).positionSeconds)
+              ? Math.max(0, Math.min((request.playback as { positionSeconds: number }).positionSeconds, 604_800))
+              : undefined,
+          }
+        : undefined
       onPlay?.({
         ref: request.ref,
         resolver,
+        playback,
         title: '',
         episode: typeof request.episode === 'number' ? request.episode : undefined,
         season: typeof request.season === 'number' ? request.season : undefined,

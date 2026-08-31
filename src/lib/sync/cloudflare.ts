@@ -353,11 +353,21 @@ export async function readCloudflareCompanionRequest(
         || (value.resolver as Record<string, unknown>).streamType === 'series')
       ? { streamType: (value.resolver as { streamType: 'movie' | 'series' }).streamType }
       : undefined
+    const playback = value.playback && typeof value.playback === 'object'
+      && (value.playback as Record<string, unknown>).selection === 'manual'
+      ? {
+          selection: 'manual' as const,
+          positionSeconds: typeof (value.playback as Record<string, unknown>).positionSeconds === 'number'
+            && Number.isFinite((value.playback as Record<string, number>).positionSeconds)
+            ? Math.max(0, Math.min((value.playback as Record<string, number>).positionSeconds, 604_800))
+            : undefined,
+        }
+      : undefined
     await updateCloudflareCompanionRequest(pairingId, requestId, 'opened')
     return {
       pairingId,
       requestId,
-      media: { ref: value.ref, resolver, title: '', episode, season },
+      media: { ref: value.ref, resolver, playback, title: '', episode, season },
       issuedAt,
       expiresAt,
     }

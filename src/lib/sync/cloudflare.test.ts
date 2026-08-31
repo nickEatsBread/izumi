@@ -89,6 +89,7 @@ describe('Cloudflare self-hosted sync', () => {
       episode: 4,
       season: 2,
       resolver: { streamType: 'series' },
+      playback: { selection: 'manual', positionSeconds: 523.75 },
       issuedAt,
       expiresAt,
     }))
@@ -114,6 +115,7 @@ describe('Cloudflare self-hosted sync', () => {
     expect(request.media).toEqual({
       ref: { provider: 'anilist', type: 'anime', id: '21' },
       resolver: { streamType: 'series' },
+      playback: { selection: 'manual', positionSeconds: 523.75 },
       title: '',
       episode: 4,
       season: 2,

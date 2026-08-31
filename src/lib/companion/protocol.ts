@@ -17,10 +17,19 @@ export interface CompanionResolverHint {
   streamType: 'movie' | 'series'
 }
 
+export interface CompanionPlaybackHint {
+  /** Manual requests open the linked client's source picker instead of choosing automatically. */
+  selection: 'manual'
+  /** TV position to retain when the replacement source starts. */
+  positionSeconds?: number
+}
+
 export interface CompanionMedia {
   ref: MediaRef
   /** Non-secret metadata a TV can pass to the owner's Worker when Izumi is unavailable. */
   resolver?: CompanionResolverHint
+  /** Transient playback intent. Snapshot/catalog media never needs to persist this field. */
+  playback?: CompanionPlaybackHint
   title: string
   subtitle?: string
   description?: string

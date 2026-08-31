@@ -203,7 +203,11 @@
     if (!target) return
     startedCompanionRequest = pending
     prefetchEpisodeSources(current, target.episode, 0)
-    void playEpisode(current, target.episode, (state) => (heroPlay = state))
+    void playEpisode(current, target.episode, (state) => (heroPlay = state), {
+      forceManual: pending.media.playback?.selection === 'manual',
+      autoplay: true,
+      startSeconds: pending.media.playback?.positionSeconds,
+    })
   })
 
   // Action-bar transient/optimistic state.
