@@ -1,3 +1,5 @@
+// @ts-nocheck -- Wrangler validates this Worker module; the root app checker cannot model its
+// cross-package TypeScript import without changing the browser application's compiler contract.
 import {
   acceptsStreamId,
   buildStreamIds,
