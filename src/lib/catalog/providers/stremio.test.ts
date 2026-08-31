@@ -4,9 +4,11 @@ import {
   encodeStremioIdentity,
   mapStremioMeta,
   stremioCatalogVariants,
+  stremioHomeRowOptionsForSources,
   stremioCatalogUrl,
   stremioMetaMatchesIdentity,
   stremioMetaUrl,
+  supportsStremioCatalogManifest,
 } from './stremio'
 
 describe('Stremio catalog identity', () => {
@@ -92,5 +94,38 @@ describe('Stremio catalog identity', () => {
       releaseDate: '2026-05-15',
       genres: ['Drama'],
     })
+  })
+
+  it('accepts catalog-only manifests used by Trakt and MDBList', () => {
+    expect(supportsStremioCatalogManifest({
+      id: 'community.trakt-tv', name: 'Trakt TV', version: '1.0.0',
+      resources: [{ name: 'meta', types: ['movie', 'series'] }],
+      catalogs: [{ type: 'trakt', id: 'watchlist', name: 'Watchlist' }],
+    })).toBe(true)
+    expect(supportsStremioCatalogManifest({
+      id: 'com.mdblist.lists', name: 'MDBList', version: '1.0.0', resources: ['catalog'],
+      catalogs: [{ type: 'movie', id: 'my-list', name: 'My List' }],
+    })).toBe(true)
+    expect(supportsStremioCatalogManifest({
+      id: 'streams-only', name: 'Streams', version: '1.0.0', resources: ['stream'], catalogs: [],
+    })).toBe(false)
+  })
+
+  it('offers account-backed lists as opt-in Home elements', () => {
+    const rows = stremioHomeRowOptionsForSources([{
+      base: 'https://2ecbbd610840-trakt.baby-beamup.club/u/private',
+      manifest: {
+        id: 'community.trakt-tv', name: 'Trakt TV', version: '1.0.0',
+        catalogs: [
+          { type: 'movie', id: 'watchlist', name: 'Watchlist' },
+          { type: 'series', id: 'recommendations', name: 'Recommendations' },
+        ],
+      },
+    }])
+    expect(rows[0].id).toBe('continue')
+    expect(rows.slice(1).map((row) => ({ title: row.title, group: row.group, defaultEnabled: row.defaultEnabled }))).toEqual([
+      { title: 'Watchlist Movies', group: 'Trakt lists · Movies', defaultEnabled: false },
+      { title: 'Recommendations TV', group: 'Trakt lists · TV', defaultEnabled: false },
+    ])
   })
 })

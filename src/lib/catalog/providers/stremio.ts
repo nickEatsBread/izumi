@@ -1,7 +1,8 @@
 import { get } from 'svelte/store'
 import { phttp } from '$lib/net/http'
-import { enabledAddonUrls, addonOriginId, normalizeBase } from '$lib/stremio/sources'
+import { CINEMETA_BASE, enabledAddonUrls, addonOriginId, normalizeBase } from '$lib/stremio/sources'
 import { fetchManifest, type AddonCatalog, type AddonManifest, type AddonResource } from '$lib/stremio/manifest'
+import { listProviderByAddonId } from '$lib/stremio/list-providers'
 import type { Media, MediaVideo } from '$lib/anilist/types'
 import { catalogHomeLayouts, resolveCatalogHomeRows } from '../home-layout'
 import { CONTINUE_HOME_ROW } from '../home-options'
@@ -185,6 +186,14 @@ function rememberSummary(media: Media): Media {
 const hasResource = (manifest: AddonManifest, name: string) => (manifest.resources ?? []).some((resource: AddonResource) =>
   typeof resource === 'string' ? resource === name : resource.name === name)
 
+/** Some established catalog add-ons (notably Trakt TV) publish working `/catalog` routes but omit
+ * `catalog` from `resources`; MDBList correctly declares `catalog` but deliberately has no `meta`
+ * endpoint. A non-empty catalog declaration is sufficient to browse either shape. Detail can be
+ * supplied by the add-on, Cinemeta for IMDb ids, or the catalog summary itself. */
+export function supportsStremioCatalogManifest(manifest: AddonManifest | null): manifest is AddonManifest {
+  return !!manifest?.catalogs?.length
+}
+
 function extraPath(extra: Record<string, string | number | undefined>): string {
   const entries = Object.entries(extra).filter(([, value]) => value != null && value !== '')
   if (!entries.length) return ''
@@ -217,12 +226,11 @@ async function catalog(base: string, entry: AddonCatalog, extra: Record<string, 
 
 async function manifests(): Promise<{ base: string; manifest: AddonManifest }[]> {
   const bases = get(enabledAddonUrls)
-  if (!bases.length) throw new CatalogConfigurationError('Add a Stremio metadata add-on in Settings → Sources first.')
+  if (!bases.length) throw new CatalogConfigurationError('Add a Stremio metadata add-on in Settings → Sources or connect a list provider in Accounts first.')
   const loaded = await Promise.all(bases.map(async (base) => ({ base: normalizeBase(base), manifest: await fetchManifest(base) })))
-  const capable = loaded.flatMap((item) => item.manifest && hasResource(item.manifest, 'catalog')
-    && hasResource(item.manifest, 'meta') && item.manifest.catalogs?.length
+  const capable = loaded.flatMap((item) => supportsStremioCatalogManifest(item.manifest)
     ? [{ base: item.base, manifest: item.manifest }] : [])
-  if (!capable.length) throw new CatalogConfigurationError('None of the enabled Stremio add-ons declares both catalog and meta resources.')
+  if (!capable.length) throw new CatalogConfigurationError('None of the enabled Stremio add-ons declares a catalog.')
   return capable
 }
 
@@ -307,13 +315,19 @@ type StremioHomeEntry = {
   rankLabel: string
 }
 
-function stremioHomeEntries(sources: { base: string; manifest: AddonManifest }[]): StremioHomeEntry[] {
+export interface StremioCatalogSource {
+  base: string
+  manifest: AddonManifest
+}
+
+function stremioHomeEntries(sources: StremioCatalogSource[]): StremioHomeEntry[] {
   const multipleSources = sources.length > 1
   return sources.flatMap(({ base, manifest }) => (manifest.catalogs ?? []).flatMap((entry) =>
     stremioCatalogVariants(entry).map((variant) => {
       const rootId = `${addonOriginId(base)}:${entry.type}:${entry.id}`
       const title = multipleSources ? `${variant.title} · ${manifest.name}` : variant.title
       const trending = /^trending(?:\s+now)?$/i.test(entry.name.trim())
+      const listProvider = listProviderByAddonId(manifest.id)
       return {
         base,
         manifest,
@@ -322,8 +336,12 @@ function stremioHomeEntries(sources: { base: string; manifest: AddonManifest }[]
         extra: variant.extra,
         title,
         description: variant.description,
-        group: `${manifest.name} · ${contentLabel(entry.type)}`,
-        defaultEnabled: variant.defaultEnabled,
+        group: listProvider
+          ? `${listProvider.name} lists · ${contentLabel(entry.type)}`
+          : `${manifest.name} · ${contentLabel(entry.type)}`,
+        // Account-backed lists are personal choices. Discover them in Available rows and let the
+        // user add only the watchlists/recommendations/custom lists they actually want on Home.
+        defaultEnabled: listProvider ? false : variant.defaultEnabled,
         rankLabel: trending ? `${contentLabel(entry.type)} Today` : title,
       }
     })))
@@ -339,8 +357,14 @@ function stremioHomeOptions(entries: StremioHomeEntry[]): CatalogHomeRowOption[]
   }))]
 }
 
+/** Pure manifest-to-row adapter shared with Accounts so each personal list can be shown as an
+ * individually addable Home element without making another network request. */
+export function stremioHomeRowOptionsForSources(sources: StremioCatalogSource[]): CatalogHomeRowOption[] {
+  return stremioHomeOptions(stremioHomeEntries(sources))
+}
+
 async function homeRows(): Promise<CatalogHomeRowOption[]> {
-  return stremioHomeOptions(stremioHomeEntries(await manifests()))
+  return stremioHomeRowOptionsForSources(await manifests())
 }
 
 async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHome> {
@@ -403,22 +427,40 @@ async function detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null
   if (!decoded) return null
   const base = get(enabledAddonUrls).map(normalizeBase).find((url) => addonOriginId(url) === decoded.addonId)
   if (!base) throw new CatalogConfigurationError('The Stremio metadata add-on that supplied this item is no longer enabled.')
-  const response = await getJson<{ meta?: StremioMeta }>(
-    stremioMetaUrl(base, decoded.type, decoded.id), signal,
-  )
   const summary = summaryCache.get(ref.id)
   const expected: StremioIdentity = summary ? {
     ...decoded,
     expectedTitle: summary.title.english ?? summary.title.romaji ?? summary.title.userPreferred,
     expectedYear: summary.startDate?.year,
   } : decoded
-  if (!response.meta) return summary ? enrichOmdbRatings(summary, signal) : null
-  if (!stremioMetaMatchesIdentity(response.meta, expected)) {
-    if (summary) return enrichOmdbRatings(summary, signal)
-    throw new Error('The Stremio metadata add-on returned a different title for this catalog item, so it was blocked.')
+
+  const manifest = await fetchManifest(base).catch(() => null)
+  const candidates = [
+    ...(manifest && hasResource(manifest, 'meta') ? [{ base, identity: expected }] : []),
+    ...(/^tt\d+$/i.test(decoded.id) && (decoded.type === 'movie' || decoded.type === 'series')
+      // Cinemeta's route is keyed by the exact IMDb id. Its localized title may legitimately
+      // differ from the catalog card, so the id/type contract is the authoritative check here.
+      ? [{ base: CINEMETA_BASE, identity: decoded }]
+      : []),
+  ]
+  const seenCandidates = new Set<string>()
+  for (const candidate of candidates) {
+    if (seenCandidates.has(candidate.base)) continue
+    seenCandidates.add(candidate.base)
+    try {
+      const response = await getJson<{ meta?: StremioMeta }>(
+        stremioMetaUrl(candidate.base, decoded.type, decoded.id), signal,
+      )
+      if (!response.meta || !stremioMetaMatchesIdentity(response.meta, candidate.identity)) continue
+      const media = mapStremioMeta(response.meta, base, decoded.type, ref.id)
+      if (media) return enrichOmdbRatings(media, signal)
+    } catch (error) {
+      if (signal?.aborted) throw error
+      // Catalog-only add-ons are expected to miss this route. A transient add-on metadata error
+      // should likewise fall through to Cinemeta/the already rendered catalog record.
+    }
   }
-  const media = mapStremioMeta(response.meta, base, decoded.type, ref.id)
-  return media ? enrichOmdbRatings(media, signal) : null
+  return summary ? enrichOmdbRatings(summary, signal) : null
 }
 
 export const stremioCatalog: CatalogProvider = {

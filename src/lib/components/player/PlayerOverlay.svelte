@@ -13,7 +13,8 @@
   import { playerCommand, playerEditorSnapshot, playerGetProperty, playerGifAbort, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
   import type { DrmSnapshot } from '$lib/player/drm'
   import { overlayIsLoading } from '$lib/player/overlay-loading'
-  import { getSkipSegments, SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
+  import { SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
+  import { getMediaSkipSegments } from '$lib/stremio/skip-segments'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting } from '$lib/player/session'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
@@ -600,7 +601,8 @@
     // Do not wait on mpv chapters before painting AniSkip — on Deck a slow/empty chapter
     // probe for a still-buffering torrent left the skip button missing even when AniSkip
     // already had the opening.
-    const segs = await getSkipSegments(malId, episode, length)
+    const media = $nowPlayingMedia?.media
+    const segs = await getMediaSkipSegments(media, episode, length)
     if (key !== loadedKey) return
     segments = mergeSkipSegments(segs, [])
     void invoke<string>('player_chapters')
@@ -617,7 +619,7 @@
       for (const delay of SKIP_RETRY_MS.slice(1)) {
         window.setTimeout(() => {
           if (key !== loadedKey || skipResolved) return
-          void getSkipSegments(malId, episode, length).then((retry) => {
+          void getMediaSkipSegments(media, episode, length).then((retry) => {
             if (key !== loadedKey || skipResolved || !retry.length) return
             skipResolved = true
             segments = mergeSkipSegments(retry, segmentsFromChapters(chapters, length))

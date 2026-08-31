@@ -275,9 +275,9 @@
 
   {#if hasPlatform('stremio')}
     <SettingsGroup icon={Boxes} title="Stremio metadata">
-      <SettingsRow title="Configured add-ons" description="Only add-ons declaring catalog and meta resources are used.">
+      <SettingsRow title="Configured add-ons" description="Add-ons declaring catalogs provide Home rows; catalog-only list providers use metadata fallbacks for details.">
         <p class="text-xs text-muted-foreground">{$addonUrls.length ? `${$addonUrls.length} configured add-on${$addonUrls.length === 1 ? '' : 's'} will be checked.` : 'No add-ons are configured yet.'}</p>
-        {#if !$addonUrls.length}<a href="/app/settings/sources" data-focusable class="mt-3 inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Add a source</a>{/if}
+        {#if !$addonUrls.length}<div class="mt-3 flex flex-wrap gap-2"><a href="/app/settings/accounts" data-focusable class="inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Connect a list provider</a><a href="/app/settings/sources" data-focusable class="inline-flex min-h-10 items-center rounded-md bg-secondary px-4 text-sm font-bold">Add a source</a></div>{/if}
       </SettingsRow>
     </SettingsGroup>
   {/if}

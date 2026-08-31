@@ -7,10 +7,12 @@ const source = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.
 describe('Accounts settings information architecture', () => {
   it('puts connected trackers before optional public profiles and sync behaviour', () => {
     const trackers = source.indexOf('title="Tracker accounts"')
+    const listProviders = source.indexOf('<ListProviderAccounts />')
     const publicProfiles = source.indexOf('title="Public libraries"')
     const sync = source.indexOf('title="Sync behaviour"')
     expect(trackers).toBeGreaterThan(0)
-    expect(trackers).toBeLessThan(publicProfiles)
+    expect(trackers).toBeLessThan(listProviders)
+    expect(listProviders).toBeLessThan(publicProfiles)
     expect(publicProfiles).toBeLessThan(sync)
   })
 

@@ -4,6 +4,7 @@
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
   import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte'
   import TrackerProviderBadge from '$lib/components/settings/TrackerProviderBadge.svelte'
+  import ListProviderAccounts from '$lib/components/settings/ListProviderAccounts.svelte'
   import { promoteToWatching } from '$lib/settings/ui'
   import {
     anilistToken,
@@ -253,7 +254,7 @@
 
 <div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">Accounts</h2>
-  <p class="mb-5 max-w-2xl text-sm text-muted-foreground">Connect tracking services, choose optional public libraries, and control when progress is sent.</p>
+  <p class="mb-5 max-w-2xl text-sm text-muted-foreground">Connect tracking and list services, choose optional public libraries, and control when progress is sent.</p>
 
   <SettingsGroup
     icon={Link2}
@@ -301,6 +302,8 @@
       {#if simklError}<p role="alert" class="mt-2 text-xs text-destructive">{simklError}</p>{/if}
     </SettingsRow>
   </SettingsGroup>
+
+  <ListProviderAccounts />
 
   <SettingsGroup icon={Eye} title="Public libraries" desc="Browse a public AniList or MyAnimeList library without signing in. These profiles are never updated.">
     <SettingsRow

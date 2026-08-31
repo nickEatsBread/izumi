@@ -78,7 +78,8 @@
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
   import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, effectiveSubtitleStyle, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
   import { bingeSource } from '$lib/player/session'
-  import { getSkipSegments, SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
+  import { SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
+  import { getMediaSkipSegments } from '$lib/stremio/skip-segments'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { playNext, playPrev, playEpisode, playStream, finalizeAndroidWatch, searchOnlineSubtitles } from '$lib/stremio/play'
   import { serverSiblings, variantLabel, variantLabels } from '$lib/player/source-variants'
@@ -322,7 +323,7 @@
       segKey = key
       void (async () => {
         const [segs, chapterList] = await Promise.all([
-          getSkipSegments(np.malId, np.episode, dur),
+          getMediaSkipSegments($nowPlayingMedia?.media, np.episode, dur),
           getChapterList().catch(() => []),
         ])
         if (key !== segKey) return
@@ -334,7 +335,7 @@
           for (const delay of SKIP_RETRY_MS.slice(1)) {
             window.setTimeout(() => {
               if (key !== segKey || skipResolved) return
-              void getSkipSegments(np.malId, np.episode, dur).then((retry) => {
+              void getMediaSkipSegments($nowPlayingMedia?.media, np.episode, dur).then((retry) => {
                 if (key !== segKey || skipResolved || !retry.length) return
                 skipResolved = true
                 segments = mergeSkipSegments(retry, segmentsFromChapters(chapterList, dur))

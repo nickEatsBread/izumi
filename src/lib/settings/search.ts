@@ -116,6 +116,8 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'MyAnimeList account', category: 'Accounts', href: '/app/settings/accounts', keywords: 'mal oauth login tracker connect', anchored: true },
   { title: 'Kitsu account', category: 'Accounts', href: '/app/settings/accounts', keywords: 'username password login tracker connect', anchored: true },
   { title: 'Simkl account', category: 'Accounts', href: '/app/settings/accounts', keywords: 'device code browser login tracker connect', anchored: true },
+  { title: 'Trakt list provider', category: 'Accounts', href: '/app/settings/accounts', keywords: 'watchlist recommendations history personal lists connect stremio', anchored: true },
+  { title: 'MDBList list provider', category: 'Accounts', href: '/app/settings/accounts', keywords: 'mdblist dynamic ranked curated custom lists connect stremio', anchored: true },
   { title: 'AniList public profile', category: 'Accounts', href: '/app/settings/accounts', keywords: 'username library read only no login', anchored: true },
   { title: 'MyAnimeList public profile', category: 'Accounts', href: '/app/settings/accounts', keywords: 'mal username library read only no login', anchored: true },
 

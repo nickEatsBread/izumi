@@ -42,7 +42,7 @@
       { title: 'Scene bookmarks', href: '/app/settings/scenes', icon: Bookmark, subtitle: 'Saved moments, quotes and notes' },
       { title: 'Device sync', href: '/app/settings/sync', icon: RefreshCw, subtitle: 'Sync between your devices' },
       { title: 'Backup & restore', href: '/app/settings/backup', icon: DatabaseBackup, subtitle: 'Export and import your data' },
-      { title: 'Accounts', href: '/app/settings/accounts', icon: User, subtitle: 'AniList, MyAnimeList and debrid' },
+      { title: 'Accounts', href: '/app/settings/accounts', icon: User, subtitle: 'Trackers, Trakt and MDBList' },
       { title: 'Network', href: '/app/settings/network', icon: Globe, subtitle: 'Proxy, DNS and connectivity' },
     ] },
     { label: 'About', items: [
