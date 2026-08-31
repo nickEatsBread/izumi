@@ -21,3 +21,13 @@ npm run build
 The finished `dist/` contains the app, `config.xml`, icon, Samsung Smart View receiver library, legacy browser chunks, and the AVPlay bootstrap. Package that directory with the Tizen CLI or Tizen Studio.
 
 The production app opens on the pairing/ready state. A companion snapshot opens the home UI; a cast request is handed to the typed AVPlay controller.
+
+## Playback routing
+
+The TV always asks an open paired Izumi client first. If no client acknowledges and this TV was
+paired to the owner's self-hosted Worker, it can ask that same Worker for a direct source only when
+the owner has explicitly enabled **Resolve TV sources in my Worker**. The TV validates the response
+and gives the selected URL to AVPlay; Cloudflare never carries the media bytes.
+
+If resolving is disabled, fails, or returns no portable source, Android can receive the existing
+encrypted Web Push request. A TV without a private Worker simply asks the user to open Izumi.

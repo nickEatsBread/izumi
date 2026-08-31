@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  defaultResolverProfile,
   normalizeAddonBase,
   normalizeResolveRequest,
   normalizeResolverProfile,
@@ -13,6 +14,16 @@ const json = (value: unknown, status = 200) => new Response(JSON.stringify(value
 })
 
 describe('self-hosted Cloudflare source resolver', () => {
+  it('is disabled with no uploaded add-ons by default', () => {
+    expect(defaultResolverProfile()).toEqual({
+      enabled: false,
+      addons: [],
+      quality: 'any',
+      sort: 'quality',
+      audioLang: '',
+    })
+  })
+
   it('accepts public configured add-ons while rejecting local and recursive targets', () => {
     expect(normalizeAddonBase('stremio://addon.example/config/manifest.json'))
       .toBe('https://addon.example/config')
