@@ -49,6 +49,7 @@
   } from '$lib/sync/cloudflare'
   import { preferredAudioLang, preferredQuality, preferredStreamSort } from '$lib/settings/ui'
   import { enabledAddonUrls } from '$lib/stremio/sources'
+  import { isAndroid } from '$lib/platform'
   import { anilistToken } from '$lib/anilist/auth'
   import { malToken } from '$lib/trackers/config'
   import type { ManualDevice, NearbyDevice, PairOutgoing, PairRequest, PairingWindow, SyncStatus } from '$lib/sync/types'
@@ -509,7 +510,7 @@
                 <p class="truncate text-xs text-muted-foreground">{device.address}{device.cloudflare ? ' · private Worker route' : ' · available while Izumi is open'}</p>
               </div>
               <div class="flex flex-wrap gap-2">
-                {#if device.cloudflare}
+                {#if device.cloudflare && $isAndroid}
                   <button type="button" data-focusable disabled={!!busy} onclick={() => { h.tap(); openTvNotificationSetup(device) }} class="min-h-10 rounded-lg bg-secondary px-3 py-2 text-xs font-bold disabled:opacity-50">
                     {busy === `tv-notifications-${device.deviceId}` ? 'Opening…' : 'Notifications'}
                   </button>

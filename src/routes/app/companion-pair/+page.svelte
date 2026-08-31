@@ -8,6 +8,7 @@
   import LoaderCircle from '@lucide/svelte/icons/loader-circle'
   import Check from '@lucide/svelte/icons/check'
   import { pairCompanion, type PairedCompanion } from '$lib/companion/client'
+  import { isAndroid } from '$lib/platform'
   import { parseCompanionPairingLink, type CompanionPairingLink } from '$lib/companion/protocol'
   import { createCompanionSnapshot } from '$lib/companion/snapshot'
   import {
@@ -77,7 +78,9 @@
       pairedDevice = await pairCompanion(link, snapshot, $syncDeviceName.trim() || 'Izumi sync group')
       complete = true
       detail = pairedDevice.cloudflare
-        ? 'This TV is linked. Enable private Worker notifications to let it reach this phone while Izumi is closed.'
+        ? $isAndroid
+          ? 'This TV is linked. Enable private Worker notifications to let it reach this phone while Izumi is closed.'
+          : 'This TV is linked to your opt-in private Worker resolver. The desktop app will not receive closed-app requests.'
         : 'This TV is linked. Continue Watching and your selected catalog are ready.'
     } catch (reason) {
       error = reason instanceof Error ? reason.message : String(reason)
@@ -146,7 +149,7 @@
           {#if busy}<LoaderCircle size={18} class="animate-spin" />{/if}{busy ? 'Adding TV…' : actionLabel}
         </button>
       {/if}
-      {#if complete && pairedDevice?.cloudflare}
+      {#if complete && pairedDevice?.cloudflare && $isAndroid}
         <button type="button" data-focusable disabled={notificationBusy} onclick={enableTvNotifications}
           class="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-5 font-black text-primary-foreground disabled:opacity-50">
           {#if notificationBusy}<LoaderCircle size={18} class="animate-spin" />{/if}

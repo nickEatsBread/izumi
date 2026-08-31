@@ -18,6 +18,7 @@ import {
   syncProvider,
   type CloudflareCompanionTransport,
 } from '$lib/sync/client'
+import { getCloudflareResolverProfile } from '$lib/sync/cloudflare'
 import {
   COMPANION_PROTOCOL,
   type CompanionHomeSnapshot,
@@ -102,6 +103,29 @@ export async function discoverCompanionReceivers(): Promise<DiscoveredCompanion[
 export function normalizeCompanionPairingCode(value: string): string | null {
   const code = value.replace(/[^0-9a-f]/gi, '').toUpperCase()
   return /^[0-9A-F]{6}$/.test(code) ? code : null
+}
+
+/** Android always provisions the route for mobile wake-ups. Desktop provisions it only after the
+ * user explicitly enables Worker source resolving; desktop notification enrollment stays absent. */
+export function shouldProvisionCompanionWorkerRoute(input: {
+  provider: 'iroh' | 'cloudflare'
+  android: boolean
+  tv: boolean
+  resolverEnabled: boolean
+}): boolean {
+  return input.provider === 'cloudflare' && !input.tv && (input.android || input.resolverEnabled)
+}
+
+async function companionWorkerRouteEnabled(): Promise<boolean> {
+  const provider = get(syncProvider)
+  const android = get(isAndroid)
+  const tv = get(isTv)
+  let resolverEnabled = false
+  if (provider === 'cloudflare' && !android && !tv) {
+    try { resolverEnabled = (await getCloudflareResolverProfile()).profile.enabled }
+    catch { /* Local desktop pairing remains available when its Worker is old or unreachable. */ }
+  }
+  return shouldProvisionCompanionWorkerRoute({ provider, android, tv, resolverEnabled })
 }
 
 async function pairingChallengeAt(address: string, code: string): Promise<CompanionPairingLink | null> {
@@ -248,7 +272,7 @@ export async function pairCompanion(
     const credential = randomCredential()
     const endpoint = await bridge(snapshot)
     await publishCompanionSnapshot(snapshot)
-    cloudflare = get(isAndroid) && !get(isTv) && get(syncProvider) === 'cloudflare'
+    cloudflare = await companionWorkerRouteEnabled()
       ? await createCloudflareCompanionPairing()
       : undefined
     const paired = waitForPairResult(channel, link.deviceId)
