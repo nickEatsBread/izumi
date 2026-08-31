@@ -1,0 +1,37 @@
+import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
+const worker = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/src/index.js', import.meta.url)), 'utf8')
+const config = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/wrangler.jsonc', import.meta.url)), 'utf8')
+const manifest = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/package.json', import.meta.url)), 'utf8')
+const companionMigration = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/migrations/0002_companion_wake.sql', import.meta.url)), 'utf8')
+
+describe('Cloudflare Worker deployment contract', () => {
+  it('uses an auto-provisioned D1 binding and deploy-time migration', () => {
+    expect(config).toContain('"binding": "DB"')
+    expect(manifest).toContain('wrangler d1 migrations apply DB --remote')
+  })
+
+  it('requires a one-time bootstrap secret without Cloudflare credentials', () => {
+    expect(worker).toContain("request.headers.get('x-izumi-bootstrap')")
+    expect(worker).not.toMatch(/cloudflare[_ -]?api[_ -]?(key|token)/i)
+  })
+
+  it('bounds records, devices, and invitations', () => {
+    expect(worker).toContain('MAX_BODY_BYTES = 512 * 1024')
+    expect(worker).toContain('MAX_DEVICES = 32')
+    expect(worker).toContain('MAX_INVITES = 16')
+    expect(worker).toContain('INVITE_TTL_MS = 10 * 60 * 1000')
+  })
+
+  it('keeps private TV waking inside the existing Worker', () => {
+    expect(worker).toContain("features: ['companion-wake-v1', 'web-push-v1']")
+    expect(worker).toContain("import webpush from 'web-push'")
+    expect(worker).toContain('companion_push_subscriptions')
+    expect(worker).not.toMatch(/firebase|izumi.*wake.*(?:service|relay)/i)
+    expect(companionMigration).toContain('CREATE TABLE companion_pairings')
+    expect(companionMigration).toContain('CREATE TABLE companion_requests')
+    expect(companionMigration).toContain('CREATE TABLE companion_push_subscriptions')
+  })
+})

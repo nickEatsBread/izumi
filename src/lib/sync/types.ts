@@ -3,6 +3,7 @@ import type { Pos } from "$lib/player/progress";
 import type { RememberedSource } from "$lib/player/source-origin";
 import type { LocalLibraryState } from "$lib/library/local-lists";
 import type { SeriesTrackPreferences } from "$lib/player/track-preferences";
+import type { SceneBookmarkRecords } from "$lib/player/scene-bookmarks";
 
 export type SyncStatus =
   | { state: "disabled" }
@@ -47,6 +48,7 @@ export interface WatchSnapshot {
   origins?: Record<number, RememberedSource>;
   localLibrary?: LocalLibraryState;
   trackPreferences?: Record<string, SeriesTrackPreferences>;
+  sceneBookmarks?: SceneBookmarkRecords;
 }
 
 export interface ManualSnapshot {
