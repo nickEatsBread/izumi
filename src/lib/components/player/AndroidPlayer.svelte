@@ -87,6 +87,17 @@
   import { candidateKey, candidateTitle, providerBadge, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
   import { stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { castSourceDecision, castSubtitleFormat } from '$lib/player/android-cast'
+  import {
+    controlTizenReceiver,
+    getTizenReceiverStatus,
+    hasActiveTizenReceiverCast,
+    setTizenReceiverRelayForeground,
+    startTizenReceiverCast,
+    stopTizenReceiverCast,
+    subscribeTizenReceiverStatus,
+    type TizenReceiverStatus,
+  } from '$lib/player/tizen-receiver-cast'
+  import { discoverCompanionReceivers, type DiscoveredCompanion } from '$lib/companion/client'
   import { BUFFER_SPINNER_DELAY_MS } from '$lib/player/overlay-loading'
   import { setAndroidRelatedHandler } from '$lib/player/android-watch-navigation'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
@@ -1118,7 +1129,7 @@
 
   // --- Sheets ---
   type Sheet = null | 'settings'
-  type SettingsPage = 'main' | 'speed' | 'display' | 'subtitles' | 'audio' | 'capture' | 'servers' | 'chapters'
+  type SettingsPage = 'main' | 'speed' | 'display' | 'subtitles' | 'audio' | 'capture' | 'servers' | 'chapters' | 'cast'
   let sheet = $state<Sheet>(null)
   let subtitleEditorOpen = $state(false)
   let subtitleEditorFrame = $state({ top: 0, height: 0 })
@@ -1164,6 +1175,7 @@
       : settingsPage === 'display' ? 'Resize'
       : settingsPage === 'subtitles' ? 'Subtitles'
       : settingsPage === 'audio' ? 'Audio track'
+      : settingsPage === 'cast' ? 'Play on another device'
       : settingsPage === 'capture' ? 'Capture'
       : settingsPage === 'servers' ? 'Server'
       : settingsPage === 'chapters' ? 'Chapters'
@@ -1189,10 +1201,48 @@
       : { top: safeTop, height: portraitVideoHeight ?? window.innerWidth * 9 / 16 }
     subtitleEditorOpen = true
   }
-  async function castToDevice() {
+  type AndroidReceiverDevice = DiscoveredCompanion
+  let receiverDevices = $state<AndroidReceiverDevice[]>([])
+  let receiverScanning = $state(false)
+  let receiverConnecting = $state('')
+  let receiverDeviceName = $state('')
+  let receiverStatus = $state<TizenReceiverStatus | null>(null)
+
+  function castStyle() {
+    return effectiveSubtitleStyle($sessionSubtitleStyle, {
+      enabled: $subtitleStyleEnabled,
+      scope: $subtitleOverrideScope,
+      font: $subtitleFont,
+      bold: $subtitleBold,
+      fontSize: $subtitleFontSize,
+      textColor: $subtitleTextColor,
+      borderColor: $subtitleBorderColor,
+      borderSize: $subtitleBorderSize,
+      shadow: $subtitleShadow,
+      position: $subtitlePosition,
+    })
+  }
+
+  async function openCastDevices() {
+    settingsPage = 'cast'
+    if (hasActiveTizenReceiverCast()) {
+      try { receiverStatus = getTizenReceiverStatus() } catch { receiverStatus = null }
+    }
+    receiverScanning = true
+    try {
+      receiverDevices = await discoverCompanionReceivers()
+    } catch (error) {
+      playerNotice.set(error instanceof Error ? error.message : String(error))
+      receiverDevices = []
+    } finally {
+      receiverScanning = false
+    }
+  }
+
+  async function castToDevice(receiver?: AndroidReceiverDevice) {
     const source = get(nowPlayingStream)
     const [liveTracks, fileFormat] = await Promise.all([getTracks(), mpvGet('file-format')])
-    const decision = castSourceDecision(source, liveTracks, fileFormat)
+    const decision = castSourceDecision(source, liveTracks, fileFormat, receiver ? 'tv' : 'googleCast')
     if (!decision.ok) {
       playerNotice.set(decision.error)
       return
@@ -1200,8 +1250,11 @@
     try {
       const selectedSubtitle = liveTracks.find((track) => track.type === 'sub' && track.selected)
       const selectedExternal = selectedSubtitle?.externalFilename
-      const subtitle = (source.subtitles ?? []).find((candidate) => {
-        if (!castSubtitleFormat(candidate.url)) return false
+      const availableSubtitles = (source.subtitles ?? []).filter((candidate) => {
+        const format = castSubtitleFormat(candidate.url)
+        return !!format && (receiver != null || format !== 'ass')
+      })
+      const subtitle = availableSubtitles.find((candidate) => {
         if (selectedExternal) return candidate.url === selectedExternal
         return !!selectedSubtitle && (
           (!!candidate.title && candidate.title === selectedSubtitle.title)
@@ -1217,15 +1270,42 @@
           url: decision.url,
           headers: source.headers,
           manifest: source.manifest,
-          subtitles: subtitle ? [{
-            url: subtitle.url,
-            lang: subtitle.lang,
-            title: subtitle.title,
-            format: castSubtitleFormat(subtitle.url),
-            headers: subtitle.headers ?? {},
-          }] : [],
+          // Izumi casting transfers the source to the TV; it is not screen mirroring. The native
+          // bridge is selected later only for a source the TV cannot fetch directly.
+          forceRelay: false,
+          contentType: decision.contentType,
+          subtitleDelivery: receiver ? 'tizenReceiver' : 'web',
+          subtitles: (receiver
+            ? (subtitle ? [subtitle, ...availableSubtitles.filter((item) => item.url !== subtitle.url)] : availableSubtitles).slice(0, 8)
+            : subtitle ? [subtitle] : []).map((item) => ({
+              url: item.url,
+              lang: item.lang,
+              title: item.title,
+              format: castSubtitleFormat(item.url),
+              headers: item.headers ?? {},
+            })),
         },
       })
+      if (receiver) {
+        receiverConnecting = receiver.id
+        const activeTrackIds = subtitle ? [1] : []
+        const castTitle = np.animeTitle ?? np.title
+        receiverStatus = await startTizenReceiverCast(receiver, {
+          url: prepared.url,
+          title: castTitle,
+          contentRating: $nowPlayingMedia?.media.contentRating || ($nowPlayingMedia?.media.isAdult ? '18' : undefined),
+          contentType: decision.contentType,
+          positionSeconds: get(mpvState).pos,
+          subtitles: prepared.subtitles,
+          activeTrackIds,
+          subtitleStyle: castStyle(),
+        }, 'Izumi Android')
+        if (prepared.relayed) await setTizenReceiverRelayForeground(true, castTitle)
+        receiverDeviceName = receiver.name
+        await setPaused(true)
+        playerNotice.set(`Casting to ${receiver.name}`)
+        return
+      }
       playerNotice.set(decision.warnings[0] ?? 'Choose a Cast device…')
       await invoke('plugin:extplayer|cast_media', {
         payload: {
@@ -1238,7 +1318,29 @@
       })
     } catch (error) {
       playerNotice.set(error instanceof Error ? error.message : String(error))
+    } finally {
+      receiverConnecting = ''
     }
+  }
+
+  async function receiverControl(action: 'play' | 'pause') {
+    try { receiverStatus = controlTizenReceiver({ action }) }
+    catch (error) { playerNotice.set(error instanceof Error ? error.message : String(error)) }
+  }
+
+  async function stopReceiver(resumeHere: boolean) {
+    try {
+      const position = receiverStatus?.positionSeconds ?? getTizenReceiverStatus().positionSeconds
+      await stopTizenReceiverCast()
+      receiverStatus = null
+      receiverDeviceName = ''
+      if (resumeHere) {
+        await seekAbsolute(position)
+        await setPaused(false)
+        playerNotice.set('Playback continued on this device')
+        sheet = null
+      } else playerNotice.set('Casting stopped')
+    } catch (error) { playerNotice.set(error instanceof Error ? error.message : String(error)) }
   }
   // Subtitle style presets: capture the active ASS track's fonting when the subtitles page opens,
   // save it under the release group's name, or apply a saved preset for this session only.
@@ -1675,6 +1777,9 @@
   onMount(() => {
     let destroyed = false
     let castListener: PluginListener | undefined
+    const stopReceiverStatus = subscribeTizenReceiverStatus((status) => {
+      receiverStatus = status
+    })
     void addPluginListener('extplayer', 'cast', (event: unknown) => {
       const { action, error, device } = event as { action?: unknown; error?: unknown; device?: unknown }
       if (action === 'playing') {
@@ -1712,6 +1817,7 @@
     scheduleViewportSync()
     return () => {
       destroyed = true
+      stopReceiverStatus()
       void castListener?.unregister()
       clearTimeout(hideTimer); clearTimeout(pendingToggle); clearTimeout(seekModeTimer)
       clearTimeout(lockToggleTimer); clearTimeout(toastTimer)
@@ -1957,7 +2063,7 @@
             <button onclick={() => (settingsPage = 'display')} class="settings-row"><Ratio size={20} /><span class="flex-1 font-bold">Resize</span><span class="text-sm text-white/50">{FITS[fitIdx]}</span><ChevronRight size={18} class="text-white/35" /></button>
             <button onclick={() => (settingsPage = 'subtitles')} class="settings-row"><Captions size={20} /><span class="flex-1 font-bold">Subtitles</span><span class="max-w-28 truncate text-sm text-white/50">{selectedTrackLabel('sub')}</span><ChevronRight size={18} class="text-white/35" /></button>
             <button onclick={() => (settingsPage = 'audio')} class="settings-row"><Volume2 size={20} /><span class="flex-1 font-bold">Audio track</span><span class="max-w-28 truncate text-sm text-white/50">{selectedTrackLabel('audio')}</span><ChevronRight size={18} class="text-white/35" /></button>
-            <button onclick={() => void castToDevice()} class="settings-row"><Cast size={20} /><span class="flex-1 font-bold">Play on another device</span><span class="text-sm text-white/50">Cast</span></button>
+            <button onclick={() => void openCastDevices()} class="settings-row"><Cast size={20} /><span class="flex-1 font-bold">Play on another device</span><span class="text-sm text-white/50">{receiverDeviceName || 'Cast'}</span><ChevronRight size={18} class="text-white/35" /></button>
             <button onclick={() => (settingsPage = 'capture')} class="settings-row"><Film size={20} /><span class="flex-1 font-bold">Capture</span><span class="text-sm text-white/50">GIF</span><ChevronRight size={18} class="text-white/35" /></button>
             {#if chapters.length}
               <button onclick={() => (settingsPage = 'chapters')} class="settings-row">
@@ -1998,6 +2104,35 @@
               <button onclick={() => setFit(i)} class="settings-choice {fitIdx === i ? 'settings-choice-selected' : ''}"><span>{fit}</span>{#if fitIdx === i}<Check size={18} />{/if}</button>
             {/each}
           </div>
+        {:else if settingsPage === 'cast'}
+          {#if receiverStatus}
+            <div class="mb-3 rounded-2xl bg-theme/15 p-4">
+              <span class="block text-xs font-bold uppercase tracking-wide text-theme">Casting now</span>
+              <strong class="mt-1 block truncate">{receiverDeviceName || 'Samsung TV'}</strong>
+              <span class="mt-1 block text-sm capitalize text-white/55">{receiverStatus.state} · {fmt(receiverStatus.positionSeconds)}</span>
+              <div class="mt-3 grid grid-cols-3 gap-2">
+                <button onclick={() => void receiverControl(receiverStatus?.state === 'paused' ? 'play' : 'pause')} class="rounded-xl bg-white/10 px-3 py-3 text-sm font-bold">{receiverStatus.state === 'paused' ? 'Play' : 'Pause'}</button>
+                <button onclick={() => void stopReceiver(true)} class="rounded-xl bg-white/10 px-3 py-3 text-sm font-bold">Play here</button>
+                <button onclick={() => void stopReceiver(false)} class="rounded-xl bg-red-500/15 px-3 py-3 text-sm font-bold text-red-300">Stop</button>
+              </div>
+            </div>
+          {/if}
+          <p class="mb-2 text-xs font-bold uppercase tracking-wide text-white/50">izumi Companion</p>
+          {#if receiverScanning}
+            <p class="rounded-2xl bg-white/[0.07] px-4 py-4 text-sm text-white/55">Searching this Wi-Fi network for Samsung TVs…</p>
+          {:else}
+            {#each receiverDevices as device (device.address)}
+              <button disabled={!!receiverConnecting} onclick={() => void castToDevice(device)} class="settings-choice disabled:opacity-50">
+                <span class="min-w-0"><span class="block truncate">{device.name}</span><span class="block truncate text-xs text-white/45">{device.model || device.address}</span></span>
+                {#if receiverConnecting === device.id}<span class="text-xs text-theme">Connecting…</span>{/if}
+              </button>
+            {:else}
+              <p class="rounded-2xl bg-white/[0.07] px-4 py-4 text-sm text-white/55">No Samsung TVs found. Open izumi Companion on the TV and make sure both devices use the same Wi-Fi.</p>
+            {/each}
+          {/if}
+          <button onclick={() => void openCastDevices()} disabled={receiverScanning} class="mt-2 w-full rounded-xl bg-white/10 px-4 py-3 text-sm font-bold disabled:opacity-50">Scan again</button>
+          <p class="mb-2 mt-5 text-xs font-bold uppercase tracking-wide text-white/50">Other displays</p>
+          <button onclick={() => void castToDevice()} class="settings-choice"><span>Google Cast device</span><Cast size={18} /></button>
         {:else if settingsPage === 'subtitles'}
           <button onclick={openSubtitleEditor} class="mb-3 flex w-full items-center gap-3 rounded-2xl bg-theme/20 px-4 py-3.5 text-left text-theme">
             <Captions size={20} /><span class="min-w-0 flex-1"><span class="block font-bold">Edit position &amp; size</span><span class="block text-xs opacity-70">Pause on this frame and drag a subtitle preview into place.</span></span><ChevronRight size={18} />

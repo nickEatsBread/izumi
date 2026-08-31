@@ -3328,6 +3328,15 @@ export async function playStream(
       headers: mergedHeaders ?? {},
       infoHash: stream.infoHash ?? null,
       filename: stream.behaviorHints?.filename,
+      manifest: stream.__manifest,
+      subtitles: subtitles.map((subtitle) => ({
+        url: subtitle.url,
+        lang: subtitle.lang,
+        title: 'title' in subtitle ? subtitle.title : undefined,
+        isDefault: 'isDefault' in subtitle ? subtitle.isDefault : undefined,
+        kind: 'kind' in subtitle ? subtitle.kind : undefined,
+        headers: 'headers' in subtitle ? subtitle.headers : undefined,
+      })),
     })
     // alang/slang drive mpv's preferred-language track auto-selection.
     const embedStartedAt = performance.now()

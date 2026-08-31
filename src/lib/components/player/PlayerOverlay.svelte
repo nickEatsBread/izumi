@@ -64,7 +64,7 @@
   import { matchRememberedTrack, rememberedSeriesTrack } from '$lib/player/track-preferences'
   import { addSceneBookmark } from '$lib/player/scene-bookmarks'
   import { sceneBookmarksEnabled } from '$lib/settings/ui'
-  import { desktopCastSession, desktopCastStatus, desktopCastSessionMatchesPlayback, seekActiveDesktopCast } from '$lib/player/desktop-cast'
+  import { controlDesktopCast, desktopCastSession, desktopCastStatus, desktopCastSessionMatchesPlayback, seekActiveDesktopCast } from '$lib/player/desktop-cast'
 
   // In-app player overlay. mpv is embedded into the MAIN window (behind the
   // webview) by `player_embed`; this transparent overlay paints the controls on
@@ -264,6 +264,12 @@
       if (!Number.isFinite(value)) return Promise.resolve()
       const target = args[1]?.startsWith('relative') ? transportPos + value : value
       return seekTo(target).then(() => undefined)
+    }
+    if (remoteCastOwnsPlayback && args[0] === 'pause' && (name === 'cycle' || name === 'set')) {
+      const action = name === 'cycle'
+        ? (transportPaused ? 'play' : 'pause')
+        : args[1] === 'yes' ? 'pause' : 'play'
+      return controlDesktopCast({ action }).then(() => undefined)
     }
     // Reflect pause intent immediately. Waiting exclusively for mpv's property-change event left
     // the snapshotted Game-mode icon one state behind on a quick A/touch toggle. The native event

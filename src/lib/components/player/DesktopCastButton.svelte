@@ -11,7 +11,7 @@
   import Captions from '@lucide/svelte/icons/captions'
   import Volume2 from '@lucide/svelte/icons/volume-2'
   import { playerGetProperty, playerTracks } from '$lib/player/native'
-  import { nowPlaying, nowPlayingStream, playerMenuOpen, playerNotice } from '$lib/player/session'
+  import { nowPlaying, nowPlayingMedia, nowPlayingStream, playerMenuOpen, playerNotice } from '$lib/player/session'
   import { castSourceDecision, castSubtitleFormat, type CastTrack } from '$lib/player/android-cast'
   import {
     desktopCastSession,
@@ -21,6 +21,7 @@
     desktopCastSupportsDlnaSubtitles,
     discoverDesktopCast,
     refreshDesktopCastStatus,
+    hasTizenReceiver,
     prepareDesktopCast,
     selectedCastSubtitle,
     startDesktopCast,
@@ -28,6 +29,12 @@
     stopDesktopCast,
     type DesktopCastDevice,
   } from '$lib/player/desktop-cast'
+  import {
+    subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize,
+    subtitleTextColor, subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
+  } from '$lib/settings/ui'
+  import { effectiveSubtitleStyle, sessionSubtitleStyle } from '$lib/settings/subtitle-presets'
+  import { discoverCompanionReceivers } from '$lib/companion/client'
   import { m } from '$lib/paraglide/messages.js'
 
   let {
@@ -66,7 +73,20 @@
   async function refresh() {
     scanning = true
     try {
-      devices = await discoverDesktopCast()
+      const [native, companions] = await Promise.all([
+        discoverDesktopCast().catch(() => []),
+        discoverCompanionReceivers().catch(() => []),
+      ])
+      const byAddress = new Map(native.map((device) => [device.address, device]))
+      for (const companion of companions) {
+        byAddress.set(companion.address, {
+          ...companion,
+          manufacturer: 'Samsung',
+          port: 8001,
+          protocol: 'tizenReceiver',
+        })
+      }
+      devices = [...byAddress.values()].sort((a, b) => a.name.localeCompare(b.name))
     } catch (error) {
       playerNotice.set(message(error))
     } finally {
@@ -101,9 +121,14 @@
       const selectedTrack = tracks.find((track) => track.type === 'sub' && track.selected)
       const subtitle = selectedCastSubtitle(source, tracks)
       const samsungDlnaSubtitles = desktopCastSupportsDlnaSubtitles(device)
+      // A discovered Companion may be installed but closed. Its Application connection below
+      // launches it, so preserve receiver-only subtitle formats during source preparation.
+      const receiverAvailable = device.protocol === 'tizenReceiver' || await hasTizenReceiver(device)
       const compatible = (source.subtitles ?? []).filter((candidate) => {
         const format = castSubtitleFormat(candidate.url)
-        return !!format && (!samsungDlnaSubtitles || format === 'srt' || format === 'vtt')
+        if (!format) return false
+        if (format === 'ass') return receiverAvailable
+        return receiverAvailable || !samsungDlnaSubtitles || format === 'srt' || format === 'vtt'
       })
       const selectedSubtitle = subtitle && compatible.some((candidate) => candidate.url === subtitle.url)
         ? subtitle
@@ -118,20 +143,41 @@
       const activeTrackIds = selectedIndex >= 0 ? [selectedIndex + 1] : []
       const prepared = await prepareDesktopCast(source, compatibleSubtitles, {
         // Samsung's 2018 AllShare player fails on otherwise valid modern HTTPS CDN endpoints.
-        // Give every DLNA renderer a stable LAN HTTP URL; Google Cast remains direct when possible.
-        forceRelay: device.protocol === 'dlna',
+        // Give the DLNA fallback a stable LAN HTTP URL. Izumi Companion receives the original
+        // source and streams it on the TV; cast_prepare_source still bridges individual resources
+        // that are loopback-only or require request headers.
+        forceRelay: device.protocol === 'dlna' && !receiverAvailable,
         contentType: receiverContentType,
-        subtitleDelivery: samsungDlnaSubtitles ? 'samsungDlna' : 'web',
+        subtitleDelivery: receiverAvailable ? 'tizenReceiver' : samsungDlnaSubtitles ? 'samsungDlna' : 'web',
       })
+      // Discovery and relay preparation can take several seconds while local playback continues.
+      // Read mpv's clock at the LOAD boundary so the TV starts where the viewer actually is now,
+      // rather than at the position captured when the cast menu was first opened.
+      const livePosition = Number.parseFloat(await playerGetProperty('time-pos').catch(() => ''))
+      const castPosition = Number.isFinite(livePosition) ? Math.max(0, livePosition) : Math.max(0, pos)
       const nativeSession = await startDesktopCast({
         device,
         deviceId: device.id,
         url: prepared.url,
         title: $nowPlaying.animeTitle || $nowPlaying.title || 'Izumi',
+        contentRating: $nowPlayingMedia?.media.contentRating || ($nowPlayingMedia?.media.isAdult ? '18' : undefined),
         contentType: receiverContentType,
-        positionSeconds: Math.max(0, pos),
+        positionSeconds: castPosition,
         subtitles: prepared.subtitles,
         activeTrackIds,
+        receiverPreferred: receiverAvailable,
+        subtitleStyle: effectiveSubtitleStyle($sessionSubtitleStyle, {
+          enabled: $subtitleStyleEnabled,
+          scope: $subtitleOverrideScope,
+          font: $subtitleFont,
+          bold: $subtitleBold,
+          fontSize: $subtitleFontSize,
+          textColor: $subtitleTextColor,
+          borderColor: $subtitleBorderColor,
+          borderSize: $subtitleBorderSize,
+          shadow: $subtitleShadow,
+          position: $subtitlePosition,
+        }),
       })
       const exposesSubtitles = nativeSession.backend !== 'dlna' || samsungDlnaSubtitles
       const remoteSubtitles = exposesSubtitles ? prepared.subtitles : []
@@ -147,15 +193,15 @@
         })),
         activeTrackIds: remoteTrackIds,
       }
-      desktopCastSession.set(session)
-      startDesktopCastStatusPolling({
-        state: 'playing',
-        positionSeconds: Math.max(0, pos),
-        durationSeconds: dur > 0 ? dur : undefined,
-      })
       // The receiver starts at this exact position; pause the duplicate local audio only after the
       // LOAD has been confirmed, so a failed Cast attempt never interrupts playback.
       cmd('set', ['pause', 'yes'])
+      desktopCastSession.set(session)
+      startDesktopCastStatusPolling({
+        state: 'playing',
+        positionSeconds: castPosition,
+        durationSeconds: dur > 0 ? dur : undefined,
+      })
       const subtitleWarning = selectedTrack && !selectedSubtitle
         ? ' The selected subtitle is not available to Cast.'
         : ''
@@ -168,7 +214,6 @@
       connectingId = null
     }
   }
-
 
   async function control(action: 'play' | 'pause' | 'seek' | 'volume' | 'tracks', extra: Record<string, unknown> = {}) {
     if (controlling) return
@@ -210,7 +255,6 @@
   onDestroy(() => {
     if (open) playerMenuOpen.set(false)
   })
-
 </script>
 
 <div class="relative">
@@ -243,6 +287,9 @@
           <span class="block truncate font-semibold">{$desktopCastSession.deviceName}</span>
           {#if $desktopCastStatus}
             <span class="mt-1 block text-xs capitalize text-white/45">{$desktopCastStatus.state} · {Math.floor($desktopCastStatus.positionSeconds / 60)}:{String(Math.floor($desktopCastStatus.positionSeconds % 60)).padStart(2, '0')}</span>
+            {#if $desktopCastStatus.subtitleError}
+              <span class="mt-1 block text-xs text-amber-300">Subtitle: {$desktopCastStatus.subtitleError}</span>
+            {/if}
           {/if}
         </div>
         <div class="mt-1 grid grid-cols-4 gap-1">
@@ -295,7 +342,9 @@
             <span class="min-w-0">
               <span class="block truncate font-medium">{device.name}</span>
               <span class="block truncate text-xs text-white/40">
-                {device.protocol === 'dlna'
+                {device.protocol === 'tizenReceiver'
+                  ? `${device.model ?? 'Samsung TV'} · Companion receiver`
+                  : device.protocol === 'dlna'
                   ? `${device.model ?? device.manufacturer ?? 'Smart TV'} · ${/samsung/i.test(`${device.manufacturer ?? ''} ${device.name}`) ? 'Izumi receiver / DLNA' : 'DLNA'}`
                   : device.model ?? 'Google Cast device'}
               </span>
