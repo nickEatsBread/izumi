@@ -1,9 +1,9 @@
 import { get, writable } from 'svelte/store'
 import { persisted } from 'svelte-persisted-store'
-import type { CompanionMedia } from '$lib/companion/protocol'
+import type { CompanionMedia, CompanionPlaybackMode } from '$lib/companion/protocol'
 import type { SyncRecord, SyncStatus } from './types'
 
-export const CLOUDFLARE_WORKER_VERSION = '1.2.0'
+export const CLOUDFLARE_WORKER_VERSION = '1.3.0'
 export const CLOUDFLARE_WORKER_PROTOCOL = 1
 export const CLOUDFLARE_DEPLOY_URL =
   'https://deploy.workers.cloudflare.com/?url=https://github.com/nickEatsBread/izumi/tree/main/cloudflare-sync-worker'
@@ -52,6 +52,8 @@ export interface CloudflareCompanionTransport {
   endpoint: string
   pairingId: string
   tvToken: string
+  playbackMode: CompanionPlaybackMode
+  wakeWhenClosed: boolean
 }
 
 export interface CloudflareCompanionRequest {
@@ -68,6 +70,8 @@ export interface CloudflareResolverProfile {
   quality: '2160' | '1440' | '1080' | '720' | '480' | '360' | 'any'
   sort: 'quality' | 'seeders' | 'size'
   audioLang: string
+  /** Ask an explicitly linked Izumi device only when the Worker has no TV-ready source. */
+  connectedDeviceFallback: boolean
 }
 
 interface EncryptedEnvelope {
@@ -189,6 +193,10 @@ function cloudResolverSupported(status: WorkerStatus): boolean {
   return status.features?.includes('cloud-resolver-v1') === true
 }
 
+function connectedResolverSupported(status: WorkerStatus): boolean {
+  return status.features?.includes('cloud-resolver-v2') === true
+}
+
 function companionConfig(): CloudflareSyncConfig {
   const config = get(cloudflareSyncConfig)
   if (!configReady(config)) throw new Error('Connect this phone to your Cloudflare Worker first.')
@@ -196,7 +204,10 @@ function companionConfig(): CloudflareSyncConfig {
 }
 
 /** Create a TV-only capability inside this user's Worker. No Izumi-operated service is involved. */
-export async function createCloudflareCompanionPairing(): Promise<CloudflareCompanionTransport> {
+export async function createCloudflareCompanionPairing(policy: {
+  playbackMode: CompanionPlaybackMode
+  wakeWhenClosed: boolean
+} = { playbackMode: 'device-only', wakeWhenClosed: false }): Promise<CloudflareCompanionTransport> {
   const config = companionConfig()
   const status = await getCloudflareWorkerStatus(config.endpoint)
   if (!companionWakeSupported(status)) {
@@ -208,7 +219,7 @@ export async function createCloudflareCompanionPairing(): Promise<CloudflareComp
     method: 'POST',
     body: JSON.stringify({ pairingId, tvToken }),
   }, config.deviceToken)
-  return { protocol: 1, endpoint: config.endpoint, pairingId, tvToken }
+  return { protocol: 1, endpoint: config.endpoint, pairingId, tvToken, ...policy }
 }
 
 export async function removeCloudflareCompanionPairing(pairingId: string): Promise<void> {
@@ -245,15 +256,22 @@ export async function getCloudflareResolverProfile(): Promise<{ profile: Cloudfl
   const config = companionConfig()
   const status = await getCloudflareWorkerStatus(config.endpoint)
   if (!cloudResolverSupported(status)) throw new Error('Update your Izumi Cloudflare Worker before enabling TV source resolving.')
-  return workerRequest<{ profile: CloudflareResolverProfile; updatedAt: number | null }>(
+  const result = await workerRequest<{ profile: CloudflareResolverProfile; updatedAt: number | null }>(
     config.endpoint, '/v1/resolver/profile', {}, config.deviceToken,
   )
+  return {
+    ...result,
+    profile: { ...result.profile, connectedDeviceFallback: result.profile.connectedDeviceFallback === true },
+  }
 }
 
 export async function saveCloudflareResolverProfile(profile: CloudflareResolverProfile): Promise<{ updatedAt: number }> {
   const config = companionConfig()
   const status = await getCloudflareWorkerStatus(config.endpoint)
   if (!cloudResolverSupported(status)) throw new Error('Update your Izumi Cloudflare Worker before enabling TV source resolving.')
+  if (profile.connectedDeviceFallback && !connectedResolverSupported(status)) {
+    throw new Error('Update your Izumi Cloudflare Worker before enabling connected-device source fallback.')
+  }
   return workerRequest<{ updatedAt: number }>(config.endpoint, '/v1/resolver/profile', {
     method: 'PUT',
     body: JSON.stringify(profile),

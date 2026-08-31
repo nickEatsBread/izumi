@@ -69,6 +69,7 @@ describe('Cloudflare self-hosted sync', () => {
     const pairing = await createCloudflareCompanionPairing()
     expect(pairing.endpoint).toBe('https://private.example.workers.dev')
     expect(pairing.pairingId).toMatch(/^[A-Za-z0-9_-]{24}$/)
+    expect(pairing).toMatchObject({ playbackMode: 'device-only', wakeWhenClosed: false })
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(String(fetchMock.mock.calls[1][0])).toBe('https://private.example.workers.dev/v1/companion/pairings')
     expect(JSON.stringify(fetchMock.mock.calls)).not.toContain('izumi.app')
@@ -142,9 +143,36 @@ describe('Cloudflare self-hosted sync', () => {
       quality: '1080',
       sort: 'quality',
       audioLang: 'jpn',
+      connectedDeviceFallback: false,
     })
     expect(String(fetchMock.mock.calls[1][0])).toBe('https://private.example.workers.dev/v1/resolver/profile')
     expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: 'PUT' })
     expect(JSON.stringify(fetchMock.mock.calls)).not.toContain('debrid')
+  })
+
+  it('requires the updated private Worker before enabling connected-device fallback', async () => {
+    cloudflareSyncConfig.set({
+      enabled: true,
+      endpoint: 'https://private.example.workers.dev',
+      deviceId: '0123456789abcdef01234567',
+      deviceToken: 'D'.repeat(43),
+      groupKey: 'G'.repeat(43),
+      workerVersion: '1.2.0',
+    })
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+      app: 'izumi-sync', version: '1.2.0', protocol: 1, claimed: true,
+      features: ['companion-wake-v1', 'web-push-v1', 'cloud-resolver-v1'],
+    })))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(saveCloudflareResolverProfile({
+      enabled: true,
+      addons: ['https://addon.example/config'],
+      quality: '1080',
+      sort: 'quality',
+      audioLang: 'jpn',
+      connectedDeviceFallback: true,
+    })).rejects.toThrow(/Update your Izumi Cloudflare Worker/)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

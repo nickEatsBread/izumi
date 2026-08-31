@@ -18,7 +18,7 @@ import {
   syncProvider,
   type CloudflareCompanionTransport,
 } from '$lib/sync/client'
-import { getCloudflareResolverProfile } from '$lib/sync/cloudflare'
+import { getCloudflareResolverProfile, type CloudflareResolverProfile } from '$lib/sync/cloudflare'
 import {
   COMPANION_PROTOCOL,
   type CompanionHomeSnapshot,
@@ -116,16 +116,38 @@ export function shouldProvisionCompanionWorkerRoute(input: {
   return input.provider === 'cloudflare' && !input.tv && (input.android || input.resolverEnabled)
 }
 
-async function companionWorkerRouteEnabled(): Promise<boolean> {
+interface CompanionWorkerRoutePolicy {
+  provision: boolean
+  playbackMode: CloudflareCompanionTransport['playbackMode']
+  wakeWhenClosed: boolean
+}
+
+export function companionWorkerPlaybackPolicy(input: {
+  provider: 'iroh' | 'cloudflare'
+  android: boolean
+  tv: boolean
+  profile?: Pick<CloudflareResolverProfile, 'enabled' | 'connectedDeviceFallback'>
+}): CompanionWorkerRoutePolicy {
+  const resolverEnabled = input.profile?.enabled === true
+  return {
+    provision: shouldProvisionCompanionWorkerRoute({ ...input, resolverEnabled }),
+    playbackMode: resolverEnabled
+      ? input.profile?.connectedDeviceFallback ? 'cloud-and-device' : 'cloud-only'
+      : 'device-only',
+    wakeWhenClosed: input.android,
+  }
+}
+
+async function companionWorkerRoutePolicy(profileOverride?: CloudflareResolverProfile): Promise<CompanionWorkerRoutePolicy> {
   const provider = get(syncProvider)
   const android = get(isAndroid)
   const tv = get(isTv)
-  let resolverEnabled = false
-  if (provider === 'cloudflare' && !android && !tv) {
-    try { resolverEnabled = (await getCloudflareResolverProfile()).profile.enabled }
-    catch { /* Local desktop pairing remains available when its Worker is old or unreachable. */ }
+  let profile = profileOverride
+  if (provider === 'cloudflare' && !tv && !profile) {
+    try { profile = (await getCloudflareResolverProfile()).profile }
+    catch { /* Android wake-only pairing and local desktop pairing remain available with an old Worker. */ }
   }
-  return shouldProvisionCompanionWorkerRoute({ provider, android, tv, resolverEnabled })
+  return companionWorkerPlaybackPolicy({ provider, android, tv, profile })
 }
 
 async function pairingChallengeAt(address: string, code: string): Promise<CompanionPairingLink | null> {
@@ -272,8 +294,9 @@ export async function pairCompanion(
     const credential = randomCredential()
     const endpoint = await bridge(snapshot)
     await publishCompanionSnapshot(snapshot)
-    cloudflare = await companionWorkerRouteEnabled()
-      ? await createCloudflareCompanionPairing()
+    const workerPolicy = await companionWorkerRoutePolicy()
+    cloudflare = workerPolicy.provision
+      ? await createCloudflareCompanionPairing(workerPolicy)
       : undefined
     const paired = waitForPairResult(channel, link.deviceId)
     channel.publish('izumi.companion.pair', {
@@ -440,18 +463,23 @@ async function reconnect(
 
 /** Add private Worker capabilities to TVs paired before source resolving was enabled. The route is
  * stored immediately and delivered over the authenticated local channel whenever each TV is open. */
-export async function provisionCompanionResolverRoutes(): Promise<number> {
+export async function provisionCompanionResolverRoutes(profileOverride?: CloudflareResolverProfile): Promise<number> {
   if (get(syncProvider) !== 'cloudflare' || get(isTv)) return 0
-  const profile = await getCloudflareResolverProfile()
-  if (!profile.profile.enabled) return 0
+  const policy = await companionWorkerRoutePolicy(profileOverride)
   let provisioned = 0
-  for (const device of get(pairedCompanions).filter((candidate) => !candidate.cloudflare)) {
-    const cloudflare = await createCloudflareCompanionPairing()
+  for (const device of get(pairedCompanions)) {
+    const cloudflare = device.cloudflare
+      ? { ...device.cloudflare, playbackMode: policy.playbackMode, wakeWhenClosed: policy.wakeWhenClosed }
+      : policy.provision ? await createCloudflareCompanionPairing(policy) : undefined
+    if (!cloudflare) continue
+    if (!device.cloudflare) provisioned += 1
     const updated = { ...device, cloudflare }
     upsertCompanion(updated)
-    provisioned += 1
-    connections.get(device.deviceId)?.dispose()
-    if (backgroundSnapshotFactory && backgroundPlayHandler && backgroundSearchHandler) {
+    const connection = connections.get(device.deviceId)
+    if (connection) {
+      connection.device = updated
+      sendWorkerTransport(connection)
+    } else if (backgroundSnapshotFactory && backgroundPlayHandler && backgroundSearchHandler) {
       void reconnect(updated, backgroundSnapshotFactory, backgroundPlayHandler, backgroundSearchHandler)
     }
   }

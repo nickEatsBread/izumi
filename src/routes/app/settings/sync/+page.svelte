@@ -47,6 +47,7 @@
     deleteCloudflareResolverProfile,
     getCloudflareResolverProfile,
     saveCloudflareResolverProfile,
+    type CloudflareResolverProfile,
   } from '$lib/sync/cloudflare'
   import { preferredAudioLang, preferredQuality, preferredStreamSort } from '$lib/settings/ui'
   import { enabledAddonUrls } from '$lib/stremio/sources'
@@ -79,6 +80,7 @@
   let tvPairingCode = $state('')
   let confirmTvForget = $state('')
   let cloudResolverEnabled = $state(false)
+  let cloudResolverConnectedDevices = $state(false)
   let cloudResolverLoaded = $state(false)
   let cloudResolverError = $state('')
   let cloudResolverUpdatedAt = $state<number | null>(null)
@@ -182,9 +184,12 @@
     try {
       const result = await getCloudflareResolverProfile()
       cloudResolverEnabled = result.profile.enabled
+      cloudResolverConnectedDevices = result.profile.connectedDeviceFallback
       cloudResolverUpdatedAt = result.updatedAt
+      await provisionCompanionResolverRoutes(result.profile)
     } catch (e) {
       cloudResolverEnabled = false
+      cloudResolverConnectedDevices = false
       cloudResolverError = e instanceof Error ? e.message : String(e)
     } finally {
       cloudResolverLoaded = true
@@ -192,25 +197,36 @@
   }
 
   async function uploadCloudResolverProfile() {
-    const result = await saveCloudflareResolverProfile({
+    const profile: CloudflareResolverProfile = {
       enabled: true,
       addons: [...$enabledAddonUrls],
       quality: $preferredQuality,
       sort: $preferredStreamSort,
       audioLang: $preferredAudioLang,
-    })
+      connectedDeviceFallback: cloudResolverConnectedDevices,
+    }
+    const result = await saveCloudflareResolverProfile(profile)
     cloudResolverEnabled = true
     cloudResolverLoaded = true
     cloudResolverUpdatedAt = result.updatedAt
     cloudResolverError = ''
-    await provisionCompanionResolverRoutes()
+    await provisionCompanionResolverRoutes(profile)
   }
 
   function toggleCloudResolver() {
     void action('cloud-resolver-toggle', async () => {
       if (cloudResolverEnabled) {
         await deleteCloudflareResolverProfile()
+        await provisionCompanionResolverRoutes({
+          enabled: false,
+          addons: [],
+          quality: 'any',
+          sort: 'quality',
+          audioLang: '',
+          connectedDeviceFallback: false,
+        })
         cloudResolverEnabled = false
+        cloudResolverConnectedDevices = false
         cloudResolverUpdatedAt = null
         showMessage('TV source resolving is off and its Worker profile was deleted.')
       } else {
@@ -226,6 +242,23 @@
       if (!$enabledAddonUrls.length) throw new Error('Enable at least one Stremio stream add-on first.')
       await uploadCloudResolverProfile()
       showMessage('The Worker resolver profile now matches this device.')
+    })
+  }
+
+  function toggleCloudResolverConnectedDevices() {
+    if (!cloudResolverEnabled) return
+    const previous = cloudResolverConnectedDevices
+    cloudResolverConnectedDevices = !previous
+    void action('cloud-resolver-mode', async () => {
+      try {
+        await uploadCloudResolverProfile()
+        showMessage(cloudResolverConnectedDevices
+          ? 'The TV will use your Worker first, then this linked device when needed.'
+          : 'The TV will now use only your Worker for source resolving.')
+      } catch (error) {
+        cloudResolverConnectedDevices = previous
+        throw error
+      }
     })
   }
 
@@ -265,6 +298,7 @@
     resetPairingUi()
     cloudResolverLoaded = false
     cloudResolverEnabled = false
+    cloudResolverConnectedDevices = false
     cloudResolverError = ''
     await setSyncProvider(provider)
     await refresh()
@@ -665,8 +699,24 @@
             >{busy === 'cloud-resolver-toggle' ? 'Saving…' : cloudResolverEnabled ? 'Turn off' : 'Enable'}</button>
           </div>
           <div class="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">
-            This is separate from encrypted sync: configured add-on URLs can contain credentials and must be readable by your own Worker to contact those add-ons. JVM extensions, torrent-only results, debrid API keys, and media proxying are not included.
+            This is separate from encrypted sync: configured add-on URLs can contain credentials and must be readable by your own Worker. Debrid-enabled add-ons can return direct TV-playable links. Izumi’s own debrid key, P2P engine, JVM extensions, and media bytes are never uploaded to the Worker.
           </div>
+          <button
+            type="button"
+            data-focusable
+            aria-pressed={cloudResolverConnectedDevices}
+            disabled={!!busy || !cloudResolverEnabled}
+            onclick={() => { h.impact(); toggleCloudResolverConnectedDevices() }}
+            class="mt-3 flex w-full items-start gap-3 rounded-lg border p-3 text-left disabled:opacity-50 {cloudResolverConnectedDevices ? 'border-primary/50 bg-primary/10' : 'border-border bg-secondary/30'}"
+          >
+            <span class="mt-0.5 grid size-5 shrink-0 place-items-center rounded border {cloudResolverConnectedDevices ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/50'}">
+              {#if cloudResolverConnectedDevices}<Check size={14} />{/if}
+            </span>
+            <span>
+              <span class="block text-sm font-black">Cloudflare + connected Izumi device</span>
+              <span class="mt-0.5 block text-xs leading-5 text-muted-foreground">Off by default. If the Worker has no TV-ready link, an open linked device can resolve debrid or P2P and relay only the stream to the TV over your LAN. Android may use your private Worker notification when closed; desktop is used only while Izumi is open.</span>
+            </span>
+          </button>
           {#if cloudResolverError}
             <p class="mt-3 text-xs text-amber-300">{cloudResolverError}</p>
           {/if}
@@ -674,6 +724,7 @@
             <span>{$enabledAddonUrls.length} enabled add-on{$enabledAddonUrls.length === 1 ? '' : 's'}</span>
             {#if cloudResolverEnabled}
               <span>· {$preferredQuality === 'any' ? 'Best available' : `${$preferredQuality}p preferred`}</span>
+              <span>· {cloudResolverConnectedDevices ? 'Cloudflare + device' : 'Cloudflare only'}</span>
               {#if cloudResolverUpdatedAt}<span>· Updated {new Date(cloudResolverUpdatedAt).toLocaleString()}</span>{/if}
               <button type="button" data-focusable disabled={!!busy || !$enabledAddonUrls.length} onclick={() => { h.tap(); updateCloudResolver() }} class="ml-auto min-h-9 rounded-lg bg-secondary px-3 py-1.5 font-bold disabled:opacity-50">
                 {busy === 'cloud-resolver-update' ? 'Updating…' : 'Update from this device'}

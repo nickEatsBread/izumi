@@ -119,12 +119,18 @@ export interface CompanionCloudflareInvite {
   ticket: string
 }
 
+export type CompanionPlaybackMode = 'device-only' | 'cloud-only' | 'cloud-and-device'
+
 /** Private Web Push route hosted entirely by the user's existing Izumi Worker. */
 export interface CompanionCloudflareTransport {
   protocol: 1
   endpoint: string
   pairingId: string
   tvToken: string
+  /** Determines whether a TV resolves in the Worker, asks this device, or uses both in order. */
+  playbackMode: CompanionPlaybackMode
+  /** Android may opt into browser Web Push; desktop always leaves this false. */
+  wakeWhenClosed: boolean
 }
 
 export interface CompanionPairRequest {
