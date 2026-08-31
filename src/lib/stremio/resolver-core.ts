@@ -3,6 +3,13 @@
 // persistence so the Worker always runs the same normalization/ranking code as the client.
 
 export { buildStreamIds, type StreamIdInput } from './stream-ids'
+export {
+  acceptsStreamId,
+  type AddonCatalog,
+  type AddonCatalogExtra,
+  type AddonManifest,
+  type AddonResource,
+} from './manifest-capability'
 export { dedupeStreams } from './dedupe'
 export { normalizeStreamBehavior, safeProxyHeaders } from './stream-behavior'
 export {
