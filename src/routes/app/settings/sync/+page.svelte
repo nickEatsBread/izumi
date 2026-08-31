@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { goto } from '$app/navigation'
   import { listen } from '@tauri-apps/api/event'
+  import { invoke } from '@tauri-apps/api/core'
+  import { openUrl } from '@tauri-apps/plugin-opener'
   import Check from '@lucide/svelte/icons/check'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Copy from '@lucide/svelte/icons/copy'
@@ -12,8 +15,19 @@
   import Ticket from '@lucide/svelte/icons/ticket'
   import Unlink from '@lucide/svelte/icons/unlink'
   import Upload from '@lucide/svelte/icons/upload'
+  import Cloud from '@lucide/svelte/icons/cloud'
+  import ExternalLink from '@lucide/svelte/icons/external-link'
+  import KeyRound from '@lucide/svelte/icons/key-round'
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw'
   import SettingsGroup from '$lib/components/settings/SettingsGroup.svelte'
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
+  import {
+    forgetCompanion,
+    normalizeCompanionPairingCode,
+    pairedCompanions,
+    resolveCompanionPairingCode,
+    type PairedCompanion,
+  } from '$lib/companion/client'
   import * as h from '$lib/haptics'
   import { copyToClipboard } from '$lib/util/clipboard'
   import {
@@ -21,8 +35,13 @@
     joinNearbyDevice, listNearbyDevices, openNearbyPairing, respondToPairRequest,
     listManualDevices, listSyncMembers, publishPresence, pullWatchProgress,
     receiveManualSnapshot, sendManualSnapshot, syncDeviceName,
+    checkCloudflareWorkerUpdate, claimCloudflareWorker, cloudflareSetupSecret,
+    cloudflareSyncConfig, cloudflareWorkerUpdateAvailable, createCloudflareInvite,
+    createCloudflareCompanionEnrollment, generateCloudflareSetupSecret, joinCloudflareInvite,
+    setSyncProvider, syncProvider,
     type SyncMember,
   } from '$lib/sync/client'
+  import { CLOUDFLARE_DEPLOY_URL, CLOUDFLARE_UPDATE_GUIDE } from '$lib/sync/cloudflare'
   import { anilistToken } from '$lib/anilist/auth'
   import { malToken } from '$lib/trackers/config'
   import type { ManualDevice, NearbyDevice, PairOutgoing, PairRequest, PairingWindow, SyncStatus } from '$lib/sync/types'
@@ -46,6 +65,10 @@
   let confirmReceive = $state('')
   let confirmLeave = $state(false)
   let now = $state(Date.now())
+  let cloudflareEndpoint = $state('')
+  let cloudflareInvite = $state('')
+  let tvPairingCode = $state('')
+  let confirmTvForget = $state('')
 
   const paired = $derived(status.state === 'ready' && status.paired)
   const ticket = $derived(status.state === 'ready' ? (status.ticket ?? '') : '')
@@ -58,6 +81,7 @@
   })
   const roomDeviceCount = $derived(Math.max(1, members.length))
   const currentRoomName = $derived(members.find((member) => member.isThisDevice)?.name || $syncDeviceName.trim() || 'This device')
+  const validTvPairingCode = $derived(Boolean(normalizeCompanionPairingCode(tvPairingCode)))
 
   function showMessage(text: string) {
     clearTimeout(messageTimer)
@@ -65,6 +89,49 @@
     messageTimer = setTimeout(() => {
       if (message === text) message = ''
     }, 4000)
+  }
+
+  function updateTvPairingCode(event: Event) {
+    const raw = (event.currentTarget as HTMLInputElement).value.replace(/[^0-9a-f]/gi, '').slice(0, 6).toUpperCase()
+    tvPairingCode = raw.length > 3 ? `${raw.slice(0, 3)} ${raw.slice(3)}` : raw
+  }
+
+  function pairTvWithCode() {
+    if (!validTvPairingCode) return
+    void action('tv-pair', async () => {
+      const link = await resolveCompanionPairingCode(tvPairingCode)
+      const query = new URLSearchParams({
+        v: String(link.protocol),
+        tv: link.address,
+        device: link.deviceId,
+        challenge: link.challenge,
+      })
+      await goto(`/app/companion-pair?${query}`)
+    })
+  }
+
+  function openTvNotificationSetup(device: PairedCompanion) {
+    void action(`tv-notifications-${device.deviceId}`, async () => {
+      if (!device.cloudflare || device.cloudflare.endpoint !== $cloudflareSyncConfig.endpoint) {
+        throw new Error('Connect this phone to the private Worker used by that TV first.')
+      }
+      const enrollment = await createCloudflareCompanionEnrollment()
+      await invoke('plugin:extplayer|open_browser', { payload: { url: enrollment.url } })
+      showMessage('Grant browser notification permission, then return to Izumi.')
+    })
+  }
+
+  function forgetTv(device: PairedCompanion) {
+    if (confirmTvForget !== device.deviceId) {
+      confirmTvForget = device.deviceId
+      showMessage(`Press Forget again to remove ${device.name}.`)
+      return
+    }
+    confirmTvForget = ''
+    void action(`tv-forget-${device.deviceId}`, async () => {
+      await forgetCompanion(device.deviceId)
+      showMessage(`${device.name} was forgotten.`)
+    })
   }
 
   async function refreshRoom() {
@@ -121,6 +188,63 @@
       showMessage('Paired. This device will now reconnect automatically.')
       h.success()
     })
+  }
+
+  async function selectProvider(provider: 'iroh' | 'cloudflare') {
+    if ($syncProvider === provider) return
+    status = { state: 'starting' }
+    presenceSent = false
+    members = []
+    devices = []
+    resetPairingUi()
+    await setSyncProvider(provider)
+    await refresh()
+  }
+
+  function prepareCloudflare() {
+    if (!$cloudflareSetupSecret) generateCloudflareSetupSecret()
+  }
+
+  function deployCloudflare() {
+    prepareCloudflare()
+    void openUrl(CLOUDFLARE_DEPLOY_URL)
+  }
+
+  function connectCloudflare() {
+    if (!cloudflareEndpoint.trim() || !$cloudflareSetupSecret.trim()) return
+    void action('cloudflare-connect', async () => {
+      await claimCloudflareWorker(cloudflareEndpoint, $cloudflareSetupSecret, $syncDeviceName.trim() || 'Izumi device')
+      await publishPresence()
+      await pullWatchProgress()
+      showMessage('Your self-hosted Worker is connected.')
+      h.success()
+    })
+  }
+
+  function joinCloudflare() {
+    if (!joinTicket.trim()) return
+    void action('cloudflare-join', async () => {
+      await joinCloudflareInvite(joinTicket, $syncDeviceName.trim() || 'Izumi device')
+      joinTicket = ''
+      await publishPresence()
+      await pullWatchProgress()
+      showMessage('Paired through your Cloudflare Worker.')
+      h.success()
+    })
+  }
+
+  function makeCloudflareInvite() {
+    void action('cloudflare-invite', async () => {
+      cloudflareInvite = await createCloudflareInvite()
+      showMessage('A single-use invite was created for ten minutes.')
+      h.success()
+    })
+  }
+
+  function copyCloudflare(value: string, label: string) {
+    if (!copyToClipboard(value)) return
+    showMessage(`${label} copied.`)
+    h.success()
   }
 
   function resetPairingUi() {
@@ -245,6 +369,7 @@
   })
 
   onMount(() => {
+    cloudflareEndpoint = $cloudflareSyncConfig.endpoint
     void refresh()
     const poll = setInterval(() => { if (status.state === 'starting') void refresh() }, 1200)
     const clock = setInterval(() => (now = Date.now()), 1000)
@@ -266,7 +391,7 @@
 <div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">Device sync</h2>
   <p class="mb-5 max-w-2xl text-sm text-muted-foreground">
-    Keep your progress and setup in step across Izumi devices. No account required, and everything is end-to-end encrypted.
+    Keep your progress and setup in step across Izumi devices. Records are end-to-end encrypted with either connection method.
   </p>
 
   {#if message}
@@ -279,7 +404,204 @@
     <div role="alert" class="mb-4 max-w-2xl rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
   {/if}
 
-  {#if status.state === 'starting'}
+  <SettingsGroup title="Samsung TV" desc="Add Izumi Companion without scanning the QR code" icon={MonitorSmartphone}>
+    <div class="flex flex-col gap-3 p-3 sm:flex-row sm:items-end">
+      <label for="tv-pairing-code" class="min-w-0 flex-1">
+        <span class="block text-sm font-bold">Pairing code</span>
+        <span class="block text-[11px] text-muted-foreground">Enter the six characters shown on the TV. Both devices must use the same Wi-Fi.</span>
+        <input
+          id="tv-pairing-code"
+          value={tvPairingCode}
+          oninput={updateTvPairingCode}
+          onkeydown={(event) => { if (event.key === 'Enter') pairTvWithCode() }}
+          maxlength="7"
+          inputmode="text"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="A82 B04"
+          aria-label="TV pairing code"
+          data-focusable
+          class="mt-2 w-full rounded-lg bg-input px-3 py-2.5 font-mono text-lg font-black uppercase tracking-[.16em]"
+        />
+      </label>
+      <button
+        type="button"
+        data-focusable
+        disabled={!!busy || !validTvPairingCode}
+        onclick={() => { h.impact(); pairTvWithCode() }}
+        class="min-h-11 shrink-0 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50"
+      >{busy === 'tv-pair' ? 'Finding TV…' : 'Pair TV'}</button>
+    </div>
+    {#if $pairedCompanions.length}
+      <div class="border-t border-border/70 p-3">
+        <p class="mb-2 text-xs font-black uppercase tracking-wide text-muted-foreground">Paired TVs</p>
+        <ul class="space-y-2">
+          {#each $pairedCompanions as device (device.deviceId)}
+            <li class="flex flex-col gap-3 rounded-lg bg-secondary/50 p-3 sm:flex-row sm:items-center">
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-bold">{device.name}</p>
+                <p class="truncate text-xs text-muted-foreground">{device.address}{device.cloudflare ? ' · private Worker route' : ' · available while Izumi is open'}</p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                {#if device.cloudflare}
+                  <button type="button" data-focusable disabled={!!busy} onclick={() => { h.tap(); openTvNotificationSetup(device) }} class="min-h-10 rounded-lg bg-secondary px-3 py-2 text-xs font-bold disabled:opacity-50">
+                    {busy === `tv-notifications-${device.deviceId}` ? 'Opening…' : 'Notifications'}
+                  </button>
+                {/if}
+                <button type="button" data-focusable disabled={!!busy} onclick={() => { h.warn(); forgetTv(device) }} class="min-h-10 rounded-lg px-3 py-2 text-xs font-bold text-destructive active:bg-destructive/10 disabled:opacity-50">
+                  {busy === `tv-forget-${device.deviceId}` ? 'Forgetting…' : confirmTvForget === device.deviceId ? 'Confirm forget' : 'Forget'}
+                </button>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+  </SettingsGroup>
+
+  <SettingsGroup title="Connection" desc="Choose where encrypted device records travel" icon={Cloud}>
+    <div class="grid grid-cols-2 gap-2 p-3">
+      <button type="button" data-focusable onclick={() => { h.tap(); void selectProvider('iroh') }}
+        class="min-h-12 rounded-lg px-3 py-2 text-sm font-bold {$syncProvider === 'iroh' ? 'bg-primary text-primary-foreground' : 'bg-secondary'}">
+        Peer-to-peer <span class="mt-0.5 block text-[10px] font-normal opacity-75">No account</span>
+      </button>
+      <button type="button" data-focusable onclick={() => { h.tap(); void selectProvider('cloudflare') }}
+        class="min-h-12 rounded-lg px-3 py-2 text-sm font-bold {$syncProvider === 'cloudflare' ? 'bg-primary text-primary-foreground' : 'bg-secondary'}">
+        My Cloudflare <span class="mt-0.5 block text-[10px] font-normal opacity-75">Self-hosted Worker</span>
+      </button>
+    </div>
+  </SettingsGroup>
+
+  {#if $syncProvider === 'cloudflare'}
+    {#if status.state === 'starting'}
+      <SettingsGroup title="Cloudflare sync" desc="Checking your Worker">
+        <SettingsRow title="Connecting…" description="This normally takes only a moment." />
+      </SettingsGroup>
+    {:else if status.state === 'disabled'}
+      {#snippet cloudflareEnableControl()}
+        <button type="button" data-focusable disabled={!!busy} onclick={() => { h.impact(); enable() }}
+          class="min-h-10 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
+          {busy === 'enable' ? 'Enabling…' : 'Enable Cloudflare sync'}
+        </button>
+      {/snippet}
+      <SettingsGroup title="Cloudflare sync" desc="Nothing leaves this device while sync is off">
+        <SettingsRow title="Self-hosted sync is off" description="Your Worker and local records are unchanged." control={cloudflareEnableControl} />
+      </SettingsGroup>
+    {:else if status.state === 'failed'}
+      <section class="mb-5 max-w-2xl rounded-xl border border-destructive/30 bg-destructive/10 p-4">
+        <h3 class="font-black">Couldn’t reach your Worker</h3>
+        <p class="mt-1 text-sm text-muted-foreground">{status.error}</p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <button type="button" data-focusable onclick={() => { status = { state: 'starting' }; void refresh() }} class="min-h-10 rounded-lg bg-secondary px-3 py-2 text-sm font-bold">Try again</button>
+          <button type="button" data-focusable onclick={() => openUrl(CLOUDFLARE_UPDATE_GUIDE)} class="inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={15} /> Worker guide</button>
+        </div>
+      </section>
+    {:else if !paired}
+      <div class="max-w-2xl space-y-5">
+        <section class="rounded-xl border border-border p-4">
+          <div class="flex items-start gap-3">
+            <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><Cloud size={18} /></span>
+            <div class="min-w-0 flex-1">
+              <h3 class="font-black">Create my private Worker</h3>
+              <p class="mt-1 text-sm leading-5 text-muted-foreground">Cloudflare signs you in, clones the isolated Worker, provisions D1, and deploys it. Izumi never receives a Cloudflare API key.</p>
+            </div>
+          </div>
+          <ol class="mt-4 space-y-4">
+            <li>
+              <p class="text-xs font-black uppercase tracking-wide text-muted-foreground">1. Generate the setup secret</p>
+              {#if $cloudflareSetupSecret}
+                <div class="mt-2 flex gap-2">
+                  <input readonly value={$cloudflareSetupSecret} aria-label="Cloudflare setup secret" class="min-w-0 flex-1 rounded-lg bg-input px-3 py-2 font-mono text-xs" />
+                  <button type="button" data-focusable aria-label="Copy setup secret" onclick={() => copyCloudflare($cloudflareSetupSecret, 'Setup secret')} class="grid min-h-10 min-w-10 place-items-center rounded-lg bg-secondary"><Copy size={16} /></button>
+                </div>
+                <p class="mt-1 text-xs text-amber-400">Paste this as <code>BOOTSTRAP_SECRET</code> during deployment. Keep it private.</p>
+              {:else}
+                <button type="button" data-focusable onclick={() => { h.impact(); prepareCloudflare() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><KeyRound size={16} /> Generate secret</button>
+              {/if}
+            </li>
+            <li>
+              <p class="text-xs font-black uppercase tracking-wide text-muted-foreground">2. Deploy through Cloudflare</p>
+              <button type="button" data-focusable onclick={() => { h.impact(); deployCloudflare() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground"><ExternalLink size={16} /> Deploy with Cloudflare</button>
+            </li>
+            <li>
+              <label for="cloudflare-endpoint" class="text-xs font-black uppercase tracking-wide text-muted-foreground">3. Connect the deployed URL</label>
+              <input id="cloudflare-endpoint" type="url" data-focusable bind:value={cloudflareEndpoint} placeholder="https://izumi-sync.you.workers.dev" class="mt-2 w-full rounded-lg bg-input px-3 py-2.5 text-base sm:text-sm" />
+              <button type="button" data-focusable disabled={!!busy || !cloudflareEndpoint.trim() || !$cloudflareSetupSecret.trim()} onclick={() => { h.impact(); connectCloudflare() }} class="mt-2 min-h-10 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">{busy === 'cloudflare-connect' ? 'Connecting…' : 'Connect this Worker'}</button>
+            </li>
+          </ol>
+        </section>
+
+        <section class="rounded-xl border border-border p-4">
+          <h3 class="font-black">Join my existing Worker</h3>
+          <p class="mt-1 text-sm text-muted-foreground">Paste a single-use invite created on a paired device. It expires after ten minutes.</p>
+          <textarea bind:value={joinTicket} rows="4" data-focusable spellcheck="false" autocomplete="off" placeholder="izumi-cloudflare:…" class="mt-3 w-full resize-y rounded-lg bg-input px-3 py-2.5 font-mono text-xs"></textarea>
+          <button type="button" data-focusable disabled={!!busy || !joinTicket.trim()} onclick={() => { h.impact(); joinCloudflare() }} class="mt-2 min-h-10 rounded-lg bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50">{busy === 'cloudflare-join' ? 'Joining…' : 'Join with invite'}</button>
+        </section>
+      </div>
+    {:else}
+      <div class="max-w-2xl space-y-5">
+        <section class="rounded-xl border border-border p-4">
+          <div class="flex items-start gap-3">
+            <span class="relative grid size-10 shrink-0 place-items-center rounded-full bg-primary/15 text-primary"><Cloud size={19} /><span class="absolute right-0 top-0 size-2.5 rounded-full border-2 border-background bg-emerald-400"></span></span>
+            <div class="min-w-0 flex-1">
+              <p class="text-[10px] font-black uppercase tracking-[0.14em] text-emerald-400">Worker connected</p>
+              <h3 class="truncate font-black">{roomDeviceCount} {roomDeviceCount === 1 ? 'device' : 'devices'} syncing</h3>
+              <p class="mt-0.5 truncate text-xs text-muted-foreground">{$cloudflareSyncConfig.endpoint}</p>
+            </div>
+            <button type="button" data-focusable disabled={!!busy} onclick={() => { h.impact(); makeCloudflareInvite() }} class="min-h-10 shrink-0 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">{busy === 'cloudflare-invite' ? 'Creating…' : 'Add device'}</button>
+          </div>
+          {#if cloudflareInvite}
+            <div class="mt-4 rounded-lg bg-secondary/50 p-3">
+              <p class="text-xs font-bold">Single-use invite · expires in ten minutes</p>
+              <textarea readonly value={cloudflareInvite} rows="4" aria-label="Cloudflare device invite" class="mt-2 w-full resize-y rounded-lg bg-input px-3 py-2 font-mono text-xs"></textarea>
+              <button type="button" data-focusable onclick={() => copyCloudflare(cloudflareInvite, 'Invite')} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><Copy size={16} /> Copy invite</button>
+            </div>
+          {/if}
+        </section>
+
+        {#if $cloudflareWorkerUpdateAvailable}
+          <section class="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4">
+            <h3 class="font-black text-amber-300">Worker update {$cloudflareWorkerUpdateAvailable} is available</h3>
+            <p class="mt-1 text-xs leading-5 text-muted-foreground">Izumi checks automatically, but does not hold an API token that could change your Cloudflare account. Sync your Cloudflare-created repository with upstream and Workers Builds will deploy it.</p>
+            <button type="button" data-focusable onclick={() => openUrl(CLOUDFLARE_UPDATE_GUIDE)} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={15} /> Open update guide</button>
+          </section>
+        {/if}
+
+        <section class="rounded-xl border border-border p-4">
+          <label data-setting-key="device-name">
+            <span class="block text-sm font-black">This device</span>
+            <span class="block text-xs text-muted-foreground">Name shown to your paired devices.</span>
+            <input bind:value={$syncDeviceName} placeholder={currentRoomName} data-focusable class="mt-2 w-full rounded-lg bg-input px-3 py-2.5 text-base sm:text-sm" />
+          </label>
+          <div class="mt-4 border-t border-border/70 pt-4">
+            <div class="flex items-center justify-between gap-3">
+              <div><h4 class="text-sm font-black">Encrypted records</h4><p class="text-xs text-muted-foreground">Cloudflare stores ciphertext only; the key stays in Izumi invite tickets.</p></div>
+              <button type="button" data-focusable disabled={!!busy} onclick={() => void action('worker-check', async () => { await checkCloudflareWorkerUpdate(); showMessage('Worker version checked.') })} class="grid min-h-10 min-w-10 place-items-center rounded-lg bg-secondary" aria-label="Check Worker version"><RefreshCw size={16} class={busy === 'worker-check' ? 'animate-spin' : ''} /></button>
+            </div>
+          </div>
+        </section>
+
+        <section class="rounded-xl border border-border p-4">
+          <h3 class="font-black">Settings & sources</h3>
+          <p class="mt-1 text-xs leading-5 text-amber-400">This can include add-on URLs and debrid credentials. It remains encrypted, and is only applied when you choose a device below.</p>
+          <button type="button" data-focusable disabled={!!busy} onclick={() => { h.impact(); sendManual() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50"><Upload size={16} /> {busy === 'send' ? 'Sending…' : 'Share this device’s setup'}</button>
+          {#if devices.some((device) => !device.isThisDevice)}
+            <ul class="mt-3 space-y-2">
+              {#each devices.filter((device) => !device.isThisDevice) as device (device.deviceId)}
+                <li class="flex items-center gap-2 rounded-lg bg-secondary/50 p-3"><div class="min-w-0 flex-1"><div class="truncate text-sm font-bold">{device.deviceName}</div><div class="text-xs text-muted-foreground">{new Date(device.updatedAt).toLocaleString()}</div></div><button type="button" data-focusable disabled={!!busy} onclick={() => { h.tap(); receive(device) }} class="min-h-10 rounded-lg bg-secondary px-3 py-2 text-sm font-bold">{confirmReceive === device.deviceId ? 'Confirm replace' : 'Use setup'}</button></li>
+              {/each}
+            </ul>
+          {/if}
+        </section>
+
+        <section class="flex flex-col gap-3 rounded-xl border border-border p-4 sm:flex-row sm:items-center">
+          <div class="min-w-0 flex-1"><h3 class="font-black">Disconnect this device</h3><p class="text-xs text-muted-foreground">The encrypted records on your other devices and Worker remain.</p></div>
+          <button type="button" data-focusable disabled={!!busy} onclick={() => { h.warn(); requestLeave() }} class="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-bold text-destructive active:bg-destructive/10 disabled:opacity-50"><Unlink size={16} /> {busy === 'leave' ? 'Leaving…' : confirmLeave ? 'Confirm leave' : 'Leave Worker'}</button>
+        </section>
+      </div>
+    {/if}
+
+  {:else if status.state === 'starting'}
     <SettingsGroup title="Device sync" desc="Preparing the encrypted connection">
       <SettingsRow title="Starting…" description="This normally takes only a moment." />
     </SettingsGroup>

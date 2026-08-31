@@ -13,6 +13,18 @@ describe('deep links', () => {
     expect(parseDeepLink('izumi://anime/21')?.path).toBe('/app/anime/21')
     expect(parseDeepLink('izumi://watch/21/1070')?.path).toBe('/app/anime/21?episode=1070')
   })
+  it('routes only private-LAN companion pairing links', () => {
+    expect(parseDeepLink('izumi://companion/pair?v=1&tv=192.168.1.40&device=0123456789abcdef01234567&challenge=0123456789abcdef0123456789abcdef')?.path)
+      .toContain('/app/companion-pair?')
+    expect(parseDeepLink('izumi://companion/pair?v=1&tv=example.com&device=0123456789abcdef01234567&challenge=0123456789abcdef0123456789abcdef'))
+      .toBeNull()
+  })
+  it('routes bounded private-Worker companion requests', () => {
+    expect(parseDeepLink('izumi://companion/request?worker=https%3A%2F%2Fexample.workers.dev&pairing=abcdefghijklmnopqrstuvwx&request=0123456789abcdefghijklmn')?.path)
+      .toContain('/app/companion-request?')
+    expect(parseDeepLink('izumi://companion/request?worker=http%3A%2F%2Fevil.example&pairing=abcdefghijklmnopqrstuvwx&request=0123456789abcdefghijklmn'))
+      .toBeNull()
+  })
   it('routes magnets through search without autoplay', () => {
     expect(parseDeepLink('magnet:?xt=urn:btih:abc&dn=Frieren%2001')?.path).toBe('/app/search?q=Frieren%2001')
   })
