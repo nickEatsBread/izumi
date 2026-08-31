@@ -190,7 +190,7 @@
 
     <section class="rounded-md border border-border p-3">
       <div class="font-bold">Peer-to-peer relay</div>
-      <p class="mt-1 text-xs text-muted-foreground">Device Sync and Watch Together use separate encrypted connections, but may independently use this Iroh relay when a direct path is unavailable. A custom relay changes routing only; it never combines their data.</p>
+      <p class="mt-1 text-xs text-muted-foreground">Peer-to-peer Device Sync (when selected) and Watch Together use separate encrypted connections, but may independently use this Iroh relay when a direct path is unavailable. Cloudflare Device Sync does not use this relay.</p>
       <div class="mt-3 grid grid-cols-2 gap-2">
         <button data-focusable onclick={() => ($syncRelayMode = 'public')} class="rounded-md px-3 py-2.5 text-sm font-bold sm:py-2 {$syncRelayMode === 'public' ? 'bg-theme text-white' : 'bg-secondary'}">Public relay</button>
         <button data-focusable onclick={() => ($syncRelayMode = 'custom')} class="rounded-md px-3 py-2.5 text-sm font-bold sm:py-2 {$syncRelayMode === 'custom' ? 'bg-theme text-white' : 'bg-secondary'}">Custom relay</button>
