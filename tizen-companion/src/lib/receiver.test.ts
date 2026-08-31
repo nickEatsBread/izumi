@@ -36,6 +36,22 @@ interface SentRequest {
 }
 
 let encryptedPlaintext = ''
+let storage: MemoryStorage
+
+class FakeSmartViewChannel {
+  readonly handlers = new Map<string, (...args: unknown[]) => void>()
+  readonly publish = vi.fn()
+  readonly disconnect = vi.fn()
+  on(event: string, callback: (...args: unknown[]) => void) {
+    this.handlers.set(event, callback)
+  }
+  connect(_options: unknown, callback: (error?: unknown) => void) {
+    callback()
+  }
+  emit(event: string, ...args: unknown[]) {
+    this.handlers.get(event)?.(...args)
+  }
+}
 
 class FakeXmlHttpRequest {
   static responder: (request: SentRequest) => { status: number; body: unknown }
@@ -89,12 +105,12 @@ beforeEach(() => {
   vi.useFakeTimers()
   FakeXmlHttpRequest.sent = []
   encryptedPlaintext = ''
-  const storage = new MemoryStorage()
+  storage = new MemoryStorage()
   storage.setItem('izumi.companion.credential', credential)
   storage.setItem('izumi.companion.cloudflare', JSON.stringify(transport))
   vi.stubGlobal('localStorage', storage)
   vi.stubGlobal('location', { hostname: '192.168.1.20' })
-  vi.stubGlobal('window', { setTimeout, clearTimeout })
+  vi.stubGlobal('window', { setTimeout, clearTimeout, setInterval, clearInterval })
   vi.stubGlobal('XMLHttpRequest', FakeXmlHttpRequest)
   vi.stubGlobal('crypto', {
     getRandomValues: (values: Uint8Array) => {
@@ -117,6 +133,29 @@ afterEach(() => {
 })
 
 describe('companion play routing', () => {
+  it('accepts a credential-authenticated Worker route for an already-paired TV', async () => {
+    const channel = new FakeSmartViewChannel()
+    Object.assign(window, {
+      msf: {
+        local: (callback: (error: unknown, service: unknown) => void) => callback(null, {
+          channel: () => channel,
+        }),
+      },
+    })
+    const receiver = new CompanionReceiver(events())
+    await receiver.connect()
+    const replacement = { ...transport, pairingId: 'replacement_pair', tvToken: 'x'.repeat(40) }
+
+    channel.emit('izumi.companion.transport', { credential: 'wrong', cloudflare: replacement }, 'client')
+    expect(JSON.parse(storage.getItem('izumi.companion.cloudflare') || '{}').pairingId).toBe(transport.pairingId)
+    channel.emit('izumi.companion.transport', { credential, cloudflare: replacement }, 'client')
+    expect(JSON.parse(storage.getItem('izumi.companion.cloudflare') || '{}')).toEqual(replacement)
+    expect(channel.publish).toHaveBeenCalledWith('izumi.companion.transport-ready', {
+      pairingId: replacement.pairingId,
+    }, 'client')
+    receiver.disconnect()
+  })
+
   it('plays a resolved source on the TV without creating a phone request', async () => {
     FakeXmlHttpRequest.responder = () => ({
       status: 200,

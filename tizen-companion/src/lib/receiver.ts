@@ -286,6 +286,18 @@ export class CompanionReceiver {
       this.events.onControl(request, sender)
     })
     this.channel.on('izumi.companion.pair', (value, from) => this.receivePair(value, peerId(from)))
+    this.channel.on('izumi.companion.transport', (value, from) => {
+      const message = parseMessage(value)
+      if (!message || typeof message !== 'object') return
+      const input = message as Record<string, unknown>
+      const transport = parseCloudflareTransport(input.cloudflare)
+      if (!this.credential || input.credential !== this.credential || !transport) return
+      this.cloudflare = transport
+      localStorage.setItem('izumi.companion.cloudflare', JSON.stringify(transport))
+      this.publish('izumi.companion.transport-ready', {
+        pairingId: transport.pairingId,
+      }, peerId(from) || 'host')
+    })
     this.channel.on('izumi.companion.snapshot', (value) => this.receiveSnapshot(value))
     this.channel.on('izumi.companion.search-results', (value) => {
       const message = parseMessage(value)

@@ -25,6 +25,7 @@
     forgetCompanion,
     normalizeCompanionPairingCode,
     pairedCompanions,
+    provisionCompanionResolverRoutes,
     resolveCompanionPairingCode,
     type PairedCompanion,
   } from '$lib/companion/client'
@@ -202,6 +203,7 @@
     cloudResolverLoaded = true
     cloudResolverUpdatedAt = result.updatedAt
     cloudResolverError = ''
+    await provisionCompanionResolverRoutes()
   }
 
   function toggleCloudResolver() {

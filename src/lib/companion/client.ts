@@ -314,6 +314,14 @@ function sendSnapshot(connection: CompanionConnection, snapshot: CompanionHomeSn
   }, 'host')
 }
 
+function sendWorkerTransport(connection: CompanionConnection): void {
+  if (!connection.channel.connected || !connection.device.cloudflare) return
+  connection.channel.publish('izumi.companion.transport', {
+    credential: connection.device.credential,
+    cloudflare: connection.device.cloudflare,
+  }, 'host')
+}
+
 function keepConnection(
   device: PairedCompanion,
   channel: SamsungSmartViewChannel,
@@ -422,10 +430,32 @@ async function reconnect(
     if (!await channel.waitForReceiver()) return channel.disconnect()
     const snapshot = await createSnapshot()
     keepConnection(device, channel, snapshot, createSnapshot, onPlay, onSearch)
-    sendSnapshot(connections.get(device.deviceId)!, snapshot)
+    const connection = connections.get(device.deviceId)!
+    sendSnapshot(connection, snapshot)
+    sendWorkerTransport(connection)
   } catch {
     channel.disconnect()
   }
+}
+
+/** Add private Worker capabilities to TVs paired before source resolving was enabled. The route is
+ * stored immediately and delivered over the authenticated local channel whenever each TV is open. */
+export async function provisionCompanionResolverRoutes(): Promise<number> {
+  if (get(syncProvider) !== 'cloudflare' || get(isTv)) return 0
+  const profile = await getCloudflareResolverProfile()
+  if (!profile.profile.enabled) return 0
+  let provisioned = 0
+  for (const device of get(pairedCompanions).filter((candidate) => !candidate.cloudflare)) {
+    const cloudflare = await createCloudflareCompanionPairing()
+    const updated = { ...device, cloudflare }
+    upsertCompanion(updated)
+    provisioned += 1
+    connections.get(device.deviceId)?.dispose()
+    if (backgroundSnapshotFactory && backgroundPlayHandler && backgroundSearchHandler) {
+      void reconnect(updated, backgroundSnapshotFactory, backgroundPlayHandler, backgroundSearchHandler)
+    }
+  }
+  return provisioned
 }
 
 /** Maintains lightweight channels only for TVs the user explicitly paired. */
