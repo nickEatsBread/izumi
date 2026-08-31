@@ -3,7 +3,7 @@ import { persisted } from 'svelte-persisted-store'
 import type { CompanionMedia } from '$lib/companion/protocol'
 import type { SyncRecord, SyncStatus } from './types'
 
-export const CLOUDFLARE_WORKER_VERSION = '1.1.0'
+export const CLOUDFLARE_WORKER_VERSION = '1.2.0'
 export const CLOUDFLARE_WORKER_PROTOCOL = 1
 export const CLOUDFLARE_DEPLOY_URL =
   'https://deploy.workers.cloudflare.com/?url=https://github.com/nickEatsBread/izumi/tree/main/cloudflare-sync-worker'
@@ -60,6 +60,14 @@ export interface CloudflareCompanionRequest {
   media: CompanionMedia
   issuedAt: number
   expiresAt: number
+}
+
+export interface CloudflareResolverProfile {
+  enabled: boolean
+  addons: string[]
+  quality: '2160' | '1440' | '1080' | '720' | '480' | '360' | 'any'
+  sort: 'quality' | 'seeders' | 'size'
+  audioLang: string
 }
 
 interface EncryptedEnvelope {
@@ -177,6 +185,10 @@ function companionWakeSupported(status: WorkerStatus): boolean {
   return status.features?.includes('companion-wake-v1') === true
 }
 
+function cloudResolverSupported(status: WorkerStatus): boolean {
+  return status.features?.includes('cloud-resolver-v1') === true
+}
+
 function companionConfig(): CloudflareSyncConfig {
   const config = get(cloudflareSyncConfig)
   if (!configReady(config)) throw new Error('Connect this phone to your Cloudflare Worker first.')
@@ -225,6 +237,33 @@ export async function createCloudflareCompanionEnrollment(): Promise<{ url: stri
     method: 'POST',
     body: JSON.stringify({}),
   }, config.deviceToken)
+}
+
+/** Read the opt-in profile separately from encrypted sync records. Add-on URLs remain visible to
+ * the user's Worker because it must contact them while Izumi is closed. */
+export async function getCloudflareResolverProfile(): Promise<{ profile: CloudflareResolverProfile; updatedAt: number | null }> {
+  const config = companionConfig()
+  const status = await getCloudflareWorkerStatus(config.endpoint)
+  if (!cloudResolverSupported(status)) throw new Error('Update your Izumi Cloudflare Worker before enabling TV source resolving.')
+  return workerRequest<{ profile: CloudflareResolverProfile; updatedAt: number | null }>(
+    config.endpoint, '/v1/resolver/profile', {}, config.deviceToken,
+  )
+}
+
+export async function saveCloudflareResolverProfile(profile: CloudflareResolverProfile): Promise<{ updatedAt: number }> {
+  const config = companionConfig()
+  const status = await getCloudflareWorkerStatus(config.endpoint)
+  if (!cloudResolverSupported(status)) throw new Error('Update your Izumi Cloudflare Worker before enabling TV source resolving.')
+  return workerRequest<{ updatedAt: number }>(config.endpoint, '/v1/resolver/profile', {
+    method: 'PUT',
+    body: JSON.stringify(profile),
+  }, config.deviceToken)
+}
+
+/** Disabling removes credential-bearing add-on URLs instead of leaving a dormant plaintext copy. */
+export async function deleteCloudflareResolverProfile(): Promise<void> {
+  const config = companionConfig()
+  await workerRequest(config.endpoint, '/v1/resolver/profile', { method: 'DELETE' }, config.deviceToken)
 }
 
 export async function updateCloudflareCompanionRequest(

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   cloudflareSyncConfig,
   createCloudflareCompanionPairing,
+  saveCloudflareResolverProfile,
   normalizeCloudflareEndpoint,
   parseCloudflareInvite,
   readCloudflareCompanionRequest,
@@ -113,5 +114,33 @@ describe('Cloudflare self-hosted sync', () => {
       episode: 4,
     })
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('uploads the explicit resolver profile only to the configured private Worker', async () => {
+    cloudflareSyncConfig.set({
+      enabled: true,
+      endpoint: 'https://private.example.workers.dev',
+      deviceId: '0123456789abcdef01234567',
+      deviceToken: 'D'.repeat(43),
+      groupKey: 'G'.repeat(43),
+      workerVersion: '1.2.0',
+    })
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        app: 'izumi-sync', version: '1.2.0', protocol: 1, claimed: true,
+        features: ['companion-wake-v1', 'web-push-v1', 'cloud-resolver-v1'],
+      })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, updatedAt: 123 })))
+    vi.stubGlobal('fetch', fetchMock)
+    await saveCloudflareResolverProfile({
+      enabled: true,
+      addons: ['https://addon.example/config'],
+      quality: '1080',
+      sort: 'quality',
+      audioLang: 'jpn',
+    })
+    expect(String(fetchMock.mock.calls[1][0])).toBe('https://private.example.workers.dev/v1/resolver/profile')
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: 'PUT' })
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain('debrid')
   })
 })
