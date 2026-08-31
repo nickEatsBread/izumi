@@ -6,6 +6,7 @@ const worker = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-work
 const config = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/wrangler.jsonc', import.meta.url)), 'utf8')
 const manifest = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/package.json', import.meta.url)), 'utf8')
 const companionMigration = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/migrations/0002_companion_wake.sql', import.meta.url)), 'utf8')
+const resolverMigration = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/migrations/0003_cloud_resolver.sql', import.meta.url)), 'utf8')
 
 describe('Cloudflare Worker deployment contract', () => {
   it('uses an auto-provisioned D1 binding and deploy-time migration', () => {
@@ -26,12 +27,21 @@ describe('Cloudflare Worker deployment contract', () => {
   })
 
   it('keeps private TV waking inside the existing Worker', () => {
-    expect(worker).toContain("features: ['companion-wake-v1', 'web-push-v1']")
+    expect(worker).toContain("features: ['companion-wake-v1', 'web-push-v1', 'cloud-resolver-v1']")
     expect(worker).toContain("import webpush from 'web-push'")
     expect(worker).toContain('companion_push_subscriptions')
     expect(worker).not.toMatch(/firebase|izumi.*wake.*(?:service|relay)/i)
     expect(companionMigration).toContain('CREATE TABLE companion_pairings')
     expect(companionMigration).toContain('CREATE TABLE companion_requests')
     expect(companionMigration).toContain('CREATE TABLE companion_push_subscriptions')
+  })
+
+  it('intertwines opt-in source resolving without adding a media proxy', () => {
+    expect(worker).toContain("'/v1/resolver/profile'")
+    expect(worker).toContain('resolveForTv')
+    expect(worker).toContain('resolver_profiles')
+    expect(resolverMigration).toContain('CREATE TABLE resolver_profiles')
+    expect(resolverMigration).toContain('last_resolve_at')
+    expect(worker).not.toMatch(/media[_ -]?proxy|stream[_ -]?relay/i)
   })
 })

@@ -15,7 +15,27 @@ Never share the setup secret or an Izumi invite ticket publicly. Invites are sin
 
 Izumi checks the Worker's public version automatically. When an update is available, sync settings links back here. Sync your Cloudflare-created repository with this upstream directory and let Workers Builds deploy the resulting commit. Izumi deliberately never requests or stores a Cloudflare API token, so it cannot silently mutate your Cloudflare account.
 
-Database migrations are applied by the deploy command before the Worker update. Version 1.1 adds the companion pairing, short-lived request, browser enrollment, and Web Push subscription tables to the same private D1 database.
+Database migrations are applied by the deploy command before the Worker update. Version 1.1 adds the companion pairing, short-lived request, browser enrollment, and Web Push subscription tables. Version 1.2 adds the optional direct-source resolver profile to the same private D1 database.
+
+## Optional TV source resolving
+
+Version 1.2 can ask the user's configured Stremio stream add-ons for an episode while the paired
+Izumi client is closed. The option is off until the owner enables it and uploads a separate resolver
+profile from Izumi.
+
+- The TV sends a media identifier and episode to this Worker using its TV-scoped pairing token.
+- This Worker maps AniList identifiers through AniZip, queries the owner's configured add-ons, and
+  runs the same normalization and ranking modules compiled into the Izumi client.
+- The response contains a short ranked list of direct HTTP/HLS/DASH candidates. The TV downloads
+  the selected media directly from its source; media bytes never pass through this Worker.
+- Torrent-only results, loopback/private URLs, `notWebReady` results, and sources requiring playback
+  headers the TV cannot apply are omitted. The TV can then fall back to opening the paired client.
+- JVM/Android extensions and debrid-account APIs are not executed by this version of the Worker.
+
+Resolver add-on URLs may contain credentials. Unlike ordinary sync records, the Worker must read
+these URLs in order to contact the add-ons, so resolver profiles are deliberately separate from
+end-to-end encrypted sync data. They are never returned to the TV. Disable the feature or delete
+the profile from Izumi to remove them from D1.
 
 ## Private TV notifications
 
@@ -32,7 +52,7 @@ On Android, pairing a TV can create a TV-specific capability in this Worker. Izu
 - One Worker is intended for one person's devices, with at most 32 devices.
 - Records are capped at 512 KiB of ciphertext and one current record per device/category.
 - Cloudflare plan quotas and Developer Platform terms still apply.
-- Do not use this Worker for media files, health data, unlawful content, or as a proxy.
+- Do not use this Worker for media files, health data, unlawful content, or as a media proxy.
 - Deleting a Worker/D1 database or ending the Cloudflare subscription may permanently delete its copy. Izumi remains the source of truth on each device.
 
 Current Cloudflare references: [Deploy buttons](https://developers.cloudflare.com/workers/platform/deploy-buttons/), [Workers limits](https://developers.cloudflare.com/workers/platform/limits/), [Developer Platform terms](https://www.cloudflare.com/service-specific-terms-developer-platform/), and [Self-Serve Subscription Agreement](https://www.cloudflare.com/terms/).

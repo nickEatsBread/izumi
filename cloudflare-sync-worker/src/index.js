@@ -1,6 +1,7 @@
 import webpush from 'web-push'
+import { defaultResolverProfile, normalizeResolverProfile, resolveDirectSources } from './resolver.js'
 
-const VERSION = '1.1.0'
+const VERSION = '1.2.0'
 const PROTOCOL = 1
 const CATEGORIES = new Set(['watch', 'manual', 'presence', 'companion'])
 const MAX_BODY_BYTES = 512 * 1024
@@ -13,6 +14,7 @@ const MAX_COMPANION_REQUESTS = 32
 const INVITE_TTL_MS = 10 * 60 * 1000
 const ENROLLMENT_TTL_MS = 10 * 60 * 1000
 const COMPANION_REQUEST_TTL_MS = 5 * 60 * 1000
+const RESOLVER_MIN_INTERVAL_MS = 1_500
 const encoder = new TextEncoder()
 
 const corsHeaders = {
@@ -422,6 +424,56 @@ async function removeCompanionPairing(request, env, pairingId) {
   return json({ ok: true })
 }
 
+async function resolverProfile(request, env) {
+  const deviceId = await authenticate(request, env)
+  if (!deviceId) return json({ error: 'Authentication failed.' }, 401)
+  if (request.method === 'GET') {
+    const row = await env.DB.prepare('SELECT profile_json AS profile, updated_at AS updatedAt FROM resolver_profiles WHERE owner_device_id = ?')
+      .bind(deviceId).first()
+    if (!row) return json({ profile: defaultResolverProfile(), updatedAt: null })
+    try { return json({ profile: JSON.parse(row.profile), updatedAt: Number(row.updatedAt) }) } catch {
+      return json({ profile: defaultResolverProfile(), updatedAt: null })
+    }
+  }
+  if (request.method === 'DELETE') {
+    await env.DB.prepare('DELETE FROM resolver_profiles WHERE owner_device_id = ?').bind(deviceId).run()
+    return json({ ok: true })
+  }
+  try {
+    const profile = normalizeResolverProfile(await body(request), new URL(request.url).origin)
+    const now = Date.now()
+    await env.DB.prepare('INSERT INTO resolver_profiles (owner_device_id, profile_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(owner_device_id) DO UPDATE SET profile_json = excluded.profile_json, updated_at = excluded.updated_at')
+      .bind(deviceId, JSON.stringify(profile), now).run()
+    return json({ ok: true, profile, updatedAt: now })
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : 'Invalid resolver profile.' }, 400)
+  }
+}
+
+async function resolveForTv(request, env, pairingId) {
+  const pairing = await authenticateTv(request, env, pairingId)
+  if (!pairing) return json({ error: 'TV authentication failed.' }, 401)
+  const now = Date.now()
+  const gate = await env.DB.prepare('UPDATE companion_pairings SET last_resolve_at = ? WHERE pairing_id = ? AND last_resolve_at <= ?')
+    .bind(now, pairingId, now - RESOLVER_MIN_INTERVAL_MS).run()
+  if (!Number(gate.meta?.changes || 0)) return json({ error: 'Wait before starting another source lookup.' }, 429)
+  const row = await env.DB.prepare('SELECT profile_json AS profile FROM resolver_profiles WHERE owner_device_id = ?')
+    .bind(String(pairing.owner_device_id)).first()
+  if (!row) return json({ error: 'Cloud source resolving has not been configured for this TV.' }, 409)
+  let profile
+  try { profile = JSON.parse(row.profile) } catch { return json({ error: 'The cloud resolver profile is invalid. Open Izumi and save it again.' }, 409) }
+  try {
+    const result = await resolveDirectSources(profile, await body(request))
+    return json({
+      ok: true,
+      ...result,
+      fallback: result.candidates.length ? null : 'paired-device',
+    })
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : 'Source resolution failed.' }, 409)
+  }
+}
+
 const ENROLMENT_SCRIPT = `
 const status = document.querySelector('[data-status]')
 const button = document.querySelector('[data-enable]')
@@ -519,7 +571,7 @@ export default {
           version: VERSION,
           protocol: PROTOCOL,
           claimed: await claimed(env),
-          features: ['companion-wake-v1', 'web-push-v1'],
+          features: ['companion-wake-v1', 'web-push-v1', 'cloud-resolver-v1'],
         })
       }
       if (request.method === 'GET' && url.pathname === '/v1/companion/enrol') return companionEnrolmentPage(request)
@@ -552,6 +604,10 @@ export default {
       if (companionStatusMatch && (request.method === 'GET' || request.method === 'POST')) {
         return await companionRequestStatus(request, env, companionStatusMatch[1], companionStatusMatch[2])
       }
+      const companionResolveMatch = url.pathname.match(/^\/v1\/companion\/pairings\/([A-Za-z0-9_-]{16,80})\/resolve$/)
+      if (companionResolveMatch && request.method === 'POST') {
+        return await resolveForTv(request, env, companionResolveMatch[1])
+      }
       const companionPairingMatch = url.pathname.match(/^\/v1\/companion\/pairings\/([A-Za-z0-9_-]{16,80})$/)
       if (companionPairingMatch && request.method === 'DELETE') {
         return await removeCompanionPairing(request, env, companionPairingMatch[1])
@@ -564,6 +620,9 @@ export default {
         return deviceId ? json({ deviceId }) : json({ error: 'Authentication failed.' }, 401)
       }
       if (request.method === 'DELETE' && url.pathname === '/v1/devices/me') return await leave(request, env)
+      if (url.pathname === '/v1/resolver/profile' && ['GET', 'PUT', 'DELETE'].includes(request.method)) {
+        return await resolverProfile(request, env)
+      }
       const match = url.pathname.match(/^\/v1\/records\/([a-z]+)$/)
       if (match && (request.method === 'GET' || request.method === 'PUT')) return await records(request, env, match[1])
       return json({ error: 'Not found.' }, 404)
