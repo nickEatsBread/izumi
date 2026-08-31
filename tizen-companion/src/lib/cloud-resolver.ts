@@ -1,4 +1,4 @@
-import type { CastLoadRequest, CastSubtitleTrack, CompanionMedia } from '../types'
+import type { CastLoadRequest, CastSubtitleTrack, CompanionMedia, PlaybackSourceChoice } from '../types'
 
 export interface CloudResolveRequest {
   ref: CompanionMedia['ref']
@@ -10,6 +10,10 @@ export interface CloudResolveRequest {
 interface DirectSourceCandidate {
   id: string
   url: string
+  title?: string
+  quality?: string
+  badges: string[]
+  source?: string
   contentType?: string
   subtitles: CastSubtitleTrack[]
   cookies?: string
@@ -84,11 +88,23 @@ function normalizeCandidate(value: unknown): DirectSourceCandidate | null {
   return {
     id,
     url,
+    title: boundedText(input.title, 240),
+    quality: boundedText(input.quality, 40),
+    badges: (Array.isArray(input.badges) ? input.badges : [])
+      .slice(0, 6)
+      .flatMap((badge) => boundedText(badge, 80) ?? []),
+    source: boundedText(input.source, 120),
     contentType: boundedText(input.contentType, 120),
     subtitles,
     cookies: headerValue(input.cookies, 4096),
     userAgent: headerValue(input.userAgent, 512),
   }
+}
+
+export interface CloudResolveSelection {
+  selectedId: string
+  request: CastLoadRequest
+  sources: PlaybackSourceChoice[]
 }
 
 function resumePosition(media: CompanionMedia): number {
@@ -109,8 +125,16 @@ export function cloudResolveRequest(media: CompanionMedia): CloudResolveRequest 
   }
 }
 
-/** Convert a private Worker response into the same load contract used by a paired Izumi client. */
-export function cloudResolveLoad(value: unknown, media: CompanionMedia, requestId: string): CastLoadRequest | null {
+function sourceLabel(candidate: DirectSourceCandidate, index: number): { label: string; detail?: string } {
+  const label = candidate.title ?? candidate.quality ?? candidate.source ?? `Source ${index + 1}`
+  const details = [candidate.quality, candidate.source, ...candidate.badges]
+    .filter((part): part is string => Boolean(part) && part !== label)
+    .filter((part, partIndex, all) => all.indexOf(part) === partIndex)
+  return { label, detail: details.length ? details.join(' · ').slice(0, 240) : undefined }
+}
+
+/** Preserve the Worker's ranked candidates so the TV can switch sources without resolving again. */
+export function cloudResolveSelection(value: unknown, media: CompanionMedia, requestId: string): CloudResolveSelection | null {
   if (!value || typeof value !== 'object') return null
   const input = value as Record<string, unknown>
   if (input.ok !== true || !Array.isArray(input.candidates)) return null
@@ -121,16 +145,31 @@ export function cloudResolveLoad(value: unknown, media: CompanionMedia, requestI
   const selectedId = boundedText(input.selectedId, 160)
   const selected = candidates.find((candidate) => candidate.id === selectedId) ?? candidates[0]
   if (!selected) return null
+  const selectedCandidateId = selected.id
+  const sources = candidates.map((candidate, index): PlaybackSourceChoice => ({
+    id: candidate.id,
+    ...sourceLabel(candidate, index),
+    request: {
+      sessionId: `cloud-${requestId.slice(0, 80)}-${index + 1}`,
+      url: candidate.url,
+      title: boundedText(media.title, 240) ?? 'Izumi',
+      contentRating: boundedText(media.contentRating, 32),
+      contentType: candidate.contentType,
+      positionSeconds: resumePosition(media),
+      subtitles: candidate.subtitles,
+      activeTrackIds: [],
+      cookies: candidate.cookies,
+      userAgent: candidate.userAgent,
+    },
+  }))
   return {
-    sessionId: `cloud-${requestId.slice(0, 96)}`,
-    url: selected.url,
-    title: boundedText(media.title, 240) ?? 'Izumi',
-    contentRating: boundedText(media.contentRating, 32),
-    contentType: selected.contentType,
-    positionSeconds: resumePosition(media),
-    subtitles: selected.subtitles,
-    activeTrackIds: [],
-    cookies: selected.cookies,
-    userAgent: selected.userAgent,
+    selectedId: selectedCandidateId,
+    request: sources.find((source) => source.id === selectedCandidateId)!.request,
+    sources,
   }
+}
+
+/** Convert a private Worker response into the same load contract used by a paired Izumi client. */
+export function cloudResolveLoad(value: unknown, media: CompanionMedia, requestId: string): CastLoadRequest | null {
+  return cloudResolveSelection(value, media, requestId)?.request ?? null
 }

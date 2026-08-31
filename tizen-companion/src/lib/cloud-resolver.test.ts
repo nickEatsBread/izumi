@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { CompanionMedia } from '../types'
-import { cloudResolveLoad, cloudResolveRequest } from './cloud-resolver'
+import { cloudResolveLoad, cloudResolveRequest, cloudResolveSelection } from './cloud-resolver'
 
 const media: CompanionMedia = {
   ref: { provider: 'anilist', type: 'anime', id: '21' },
@@ -41,7 +41,7 @@ describe('private Worker source resolution', () => {
     }, media, 'request-id')
 
     expect(load).toMatchObject({
-      sessionId: 'cloud-request-id',
+      sessionId: 'cloud-request-id-2',
       url: 'https://cdn.example/master.m3u8?token=private',
       title: 'One Piece',
       contentRating: 'TV-14',
@@ -52,6 +52,34 @@ describe('private Worker source resolution', () => {
       userAgent: 'Izumi TV',
       subtitles: [{ id: 1, url: 'https://cdn.example/subtitles.vtt', lang: 'en', contentType: 'text/vtt' }],
     })
+  })
+
+  it('keeps the ranked Worker candidates available for in-player source switching', () => {
+    const selection = cloudResolveSelection({
+      ok: true,
+      selectedId: '1080p',
+      candidates: [
+        {
+          id: '1080p',
+          url: 'https://video.example/1080.m3u8',
+          title: 'SubsPlease release',
+          quality: '1080p',
+          source: 'Torrentio',
+          badges: ['Cached', 'HEVC'],
+        },
+        { id: '720p', url: 'https://video.example/720.mp4', quality: '720p', source: 'MediaFusion' },
+      ],
+    }, media, 'source-menu')
+
+    expect(selection).toMatchObject({
+      selectedId: '1080p',
+      request: { url: 'https://video.example/1080.m3u8' },
+      sources: [
+        { id: '1080p', label: 'SubsPlease release', detail: '1080p · Torrentio · Cached · HEVC' },
+        { id: '720p', label: '720p', detail: 'MediaFusion' },
+      ],
+    })
+    expect(selection?.sources[1].request.sessionId).toBe('cloud-source-menu-2')
   })
 
   it('rejects private-network sources and uses the next portable candidate', () => {

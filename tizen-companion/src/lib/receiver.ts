@@ -6,9 +6,10 @@ import type {
   CompanionMedia,
   PairingInfo,
   PlaybackSnapshot,
+  PlaybackSourceChoice,
 } from '../types'
 import { isCompanionSnapshot } from '../types'
-import { cloudResolveLoad, cloudResolveRequest } from './cloud-resolver'
+import { cloudResolveRequest, cloudResolveSelection } from './cloud-resolver'
 
 const CHANNEL_ID = 'com.nicho.izumi.cast'
 const PAIRING_LIFETIME_MS = 5 * 60_000
@@ -23,7 +24,7 @@ export type CompanionPlayResult =
   | 'open-client'
   | 'worker-error'
   | 'no-source'
-  | { kind: 'resolved'; request: CastLoadRequest }
+  | { kind: 'resolved'; request: CastLoadRequest; sources: PlaybackSourceChoice[]; selectedId: string }
 
 export interface ReceiverEvents {
   onConnection(connected: boolean): void
@@ -33,6 +34,7 @@ export interface ReceiverEvents {
   onSearchResults(query: string, items: CompanionMedia[], error?: string): void
   onLoad(request: CastLoadRequest, senderId: string): void
   onControl(request: CastControlRequest, senderId: string): void
+  onDeviceSourceAvailability?(available: boolean): void
 }
 
 function parseMessage(value: unknown): unknown {
@@ -167,6 +169,7 @@ async function encryptedPlayRequest(
     episode: media.episode,
     season: media.season,
     resolver: media.resolver,
+    playback: media.playback,
     issuedAt,
     expiresAt: issuedAt + REMOTE_REQUEST_TTL_MS,
   }))
@@ -279,6 +282,7 @@ export class CompanionReceiver {
   constructor(private readonly events: ReceiverEvents) {
     this.events.onPairingInfo(this.pairing)
     this.events.onPaired(Boolean(this.credential))
+    this.events.onDeviceSourceAvailability?.(this.canRequestDeviceSourceChange())
     const snapshot = this.credential ? storedSnapshot() : null
     if (snapshot) this.events.onSnapshot(snapshot)
   }
@@ -316,6 +320,7 @@ export class CompanionReceiver {
       if (!this.credential || input.credential !== this.credential || !transport) return
       this.cloudflare = transport
       localStorage.setItem('izumi.companion.cloudflare', JSON.stringify(transport))
+      this.events.onDeviceSourceAvailability?.(this.canRequestDeviceSourceChange())
       this.publish('izumi.companion.transport-ready', {
         pairingId: transport.pairingId,
       }, peerId(from) || 'host')
@@ -376,8 +381,8 @@ export class CompanionReceiver {
           cloudResolveRequest(media),
           30_000,
         )
-        const request = cloudResolveLoad(result, media, requestId)
-        if (request) return { kind: 'resolved', request }
+        const selection = cloudResolveSelection(result, media, requestId)
+        if (selection) return { kind: 'resolved', ...selection }
         // A successful Worker response is authoritative. Cloudflare-only never wakes or contacts a
         // linked device; combined mode does so only when the saved profile explicitly requests it.
         if (result.fallback !== 'paired-device') return 'no-source'
@@ -389,6 +394,33 @@ export class CompanionReceiver {
       }
     }
 
+    return this.requestFromDevice(media, requestId, secureRequestId)
+  }
+
+  canRequestDeviceSourceChange(): boolean {
+    return Boolean(this.credential) && (this.cloudflare?.playbackMode ?? 'device-only') !== 'cloud-only'
+  }
+
+  /** Ask the linked client for an explicit replacement while the current TV source keeps playing. */
+  requestDeviceSourceChange(media: CompanionMedia, positionSeconds: number): Promise<CompanionPlayResult> {
+    if (!this.canRequestDeviceSourceChange()) return Promise.resolve('no-source')
+    const secureRequestId = secureRandomHex(16)
+    const requestId = secureRequestId ?? randomHex(16)
+    return this.requestFromDevice({
+      ...media,
+      playback: {
+        selection: 'manual',
+        positionSeconds: Math.max(0, Math.min(Number(positionSeconds) || 0, 604_800)),
+      },
+    }, requestId, secureRequestId)
+  }
+
+  private async requestFromDevice(
+    media: CompanionMedia,
+    requestId: string,
+    secureRequestId: string | null,
+  ): Promise<CompanionPlayResult> {
+    const pairingId = this.cloudflare?.pairingId ?? this.credential.slice(0, 16)
     const accepted = new Promise<boolean>((resolve) => {
       const finish = (value: boolean) => {
         window.clearTimeout(timer)
@@ -403,6 +435,7 @@ export class CompanionReceiver {
       episode: media.episode,
       season: media.season,
       resolver: media.resolver,
+      playback: media.playback,
       pairingId,
       requestId,
     }, 'broadcast')
@@ -465,6 +498,7 @@ export class CompanionReceiver {
     this.pairing = this.createPairingInfo()
     this.events.onPairingInfo(this.pairing)
     this.events.onPaired(false)
+    this.events.onDeviceSourceAvailability?.(false)
     this.publish('izumi.companion.unpaired', { deviceId: this.pairing.deviceId }, 'broadcast')
     this.sendChallenge('broadcast')
   }
@@ -480,6 +514,7 @@ export class CompanionReceiver {
     this.pairing = this.createPairingInfo()
     this.events.onPairingInfo(this.pairing)
     this.events.onPaired(false)
+    this.events.onDeviceSourceAvailability?.(false)
     this.sendChallenge('broadcast')
   }
 
@@ -536,6 +571,7 @@ export class CompanionReceiver {
       ? parseCloudflareTransport((input.transport as Record<string, unknown>).cloudflare)
       : null
     this.cloudflare = transport
+    this.events.onDeviceSourceAvailability?.(this.canRequestDeviceSourceChange())
     if (transport) localStorage.setItem('izumi.companion.cloudflare', JSON.stringify(transport))
     else localStorage.removeItem('izumi.companion.cloudflare')
     this.events.onPaired(true)

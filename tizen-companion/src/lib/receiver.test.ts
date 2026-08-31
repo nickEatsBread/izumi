@@ -248,6 +248,41 @@ describe('companion play routing', () => {
     receiver.disconnect()
   })
 
+  it('opens the linked-device picker for source changes without resolving again', async () => {
+    storage.setItem('izumi.companion.cloudflare', JSON.stringify({
+      ...transport,
+      playbackMode: 'cloud-and-device',
+      wakeWhenClosed: false,
+    }))
+    const channel = new FakeSmartViewChannel()
+    Object.assign(window, {
+      msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) },
+    })
+    const receiver = new CompanionReceiver(events())
+    await receiver.connect()
+
+    const pending = receiver.requestDeviceSourceChange(media, 523.75)
+    await vi.advanceTimersByTimeAsync(0)
+    const play = channel.publish.mock.calls.find(([event]) => event === 'izumi.companion.play')?.[1] as {
+      pairingId: string
+      requestId: string
+      playback: { selection: string; positionSeconds: number }
+    }
+    expect(play.playback).toEqual({ selection: 'manual', positionSeconds: 523.75 })
+    expect(FakeXmlHttpRequest.sent).toHaveLength(0)
+    channel.emit('izumi.companion.play-accepted', { pairingId: play.pairingId, requestId: play.requestId })
+
+    await expect(pending).resolves.toBe('local')
+    receiver.disconnect()
+  })
+
+  it('does not offer linked-device source changes in Cloudflare-only mode', async () => {
+    const receiver = new CompanionReceiver(events())
+    expect(receiver.canRequestDeviceSourceChange()).toBe(false)
+    await expect(receiver.requestDeviceSourceChange(media, 30)).resolves.toBe('no-source')
+    expect(FakeXmlHttpRequest.sent).toHaveLength(0)
+  })
+
   it('never queues a closed desktop request in combined mode', async () => {
     storage.setItem('izumi.companion.cloudflare', JSON.stringify({
       ...transport,

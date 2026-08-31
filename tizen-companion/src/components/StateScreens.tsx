@@ -14,6 +14,7 @@ import { useEffect, useState } from 'preact/hooks'
 import wordmark from '../../../brand/svg/izumi-wordmark-white.svg'
 import type {
   PlaybackState,
+  PlaybackSourceChoice,
   PlaybackTrack,
   PlayerMenu,
   SubtitleChoice,
@@ -196,6 +197,9 @@ export function PlayerScreen({
   controlsFocused,
   menu,
   menuFocus,
+  sourceChoices,
+  activeSourceId,
+  deviceSourceChangeAvailable,
   audioTracks,
   subtitleChoices,
   activeAudio,
@@ -207,6 +211,8 @@ export function PlayerScreen({
   onControlFocus,
   onControl,
   onMenuFocus,
+  onSource,
+  onDeviceSources,
   onAudio,
   onSubtitle,
   onAppearance,
@@ -220,6 +226,9 @@ export function PlayerScreen({
   controlsFocused: boolean
   menu: PlayerMenu | null
   menuFocus: number
+  sourceChoices: PlaybackSourceChoice[]
+  activeSourceId?: string
+  deviceSourceChangeAvailable: boolean
   audioTracks: PlaybackTrack[]
   subtitleChoices: SubtitleChoice[]
   activeAudio?: number
@@ -231,6 +240,8 @@ export function PlayerScreen({
   onControlFocus(index: number): void
   onControl(index: number): void
   onMenuFocus(index: number): void
+  onSource(source: PlaybackSourceChoice): void
+  onDeviceSources(): void
   onAudio(track: PlaybackTrack): void
   onSubtitle(choice: SubtitleChoice): void
   onAppearance(setting: 'size' | 'background' | 'delay'): void
@@ -238,6 +249,7 @@ export function PlayerScreen({
   const progress = isLive ? 100 : duration ? Math.min(100, position / duration * 100) : 0
   const selectedAudio = audioTracks.find((track) => track.index === activeAudio)?.label ?? 'Default'
   const selectedSubtitle = subtitleChoices.find((track) => track.id === activeSubtitle)?.label ?? 'Off'
+  const selectedSource = sourceChoices.find((source) => source.id === activeSourceId)?.label ?? 'Current source'
   const appearanceLabel = subtitlePreferences.size === 'source' && subtitlePreferences.background === 'source'
     ? 'Original'
     : subtitlePreferences.size === 'source' ? 'Custom' : subtitlePreferences.size
@@ -255,6 +267,7 @@ export function PlayerScreen({
       : undefined,
   } : undefined
   const controls = [
+    { label: 'Change source', detail: selectedSource, icon: RefreshCcw },
     { label: 'Audio', detail: selectedAudio, icon: Volume2 },
     { label: 'Subtitles', detail: selectedSubtitle, icon: Captions },
     { label: 'Appearance', detail: appearanceLabel, icon: SlidersHorizontal },
@@ -300,7 +313,33 @@ export function PlayerScreen({
 
       {menu && (
         <section class="player-menu" aria-label={`${menu} options`}>
-          <p>{menu === 'audio' ? 'Audio' : menu === 'subtitles' ? 'Subtitles' : 'Subtitle appearance'}</p>
+          <p>{menu === 'source' ? 'Change source' : menu === 'audio' ? 'Audio' : menu === 'subtitles' ? 'Subtitles' : 'Subtitle appearance'}</p>
+          {menu === 'source' && (
+            <div class="player-menu-options">
+              {sourceChoices.map((source, index) => (
+                <button
+                  type="button"
+                  class={`${menuFocus === index ? 'is-focused' : ''}${activeSourceId === source.id ? ' is-selected' : ''}`}
+                  aria-pressed={activeSourceId === source.id}
+                  onFocus={() => onMenuFocus(index)}
+                  onClick={() => onSource(source)}
+                  key={source.id}
+                >
+                  <span>{source.label}</span><small>{activeSourceId === source.id ? 'Current' : source.detail ?? ''}</small>
+                </button>
+              ))}
+              {deviceSourceChangeAvailable && (
+                <button
+                  type="button"
+                  class={menuFocus === sourceChoices.length ? 'is-focused' : ''}
+                  onFocus={() => onMenuFocus(sourceChoices.length)}
+                  onClick={onDeviceSources}
+                >
+                  <span>More sources on linked device</span><small>Debrid · P2P · device sources</small>
+                </button>
+              )}
+            </div>
+          )}
           {menu === 'audio' && (
             <div class="player-menu-options">
               {audioTracks.map((track, index) => (

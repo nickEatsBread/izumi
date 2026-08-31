@@ -29,6 +29,7 @@ import type {
   FocusLocation,
   PairingInfo,
   PlaybackState,
+  PlaybackSourceChoice,
   PlaybackTrack,
   PlayerMenu,
   ScreenName,
@@ -158,6 +159,9 @@ export function App() {
   const [playerControlsVisible, setPlayerControlsVisible] = useState(true)
   const [playerMenu, setPlayerMenu] = useState<PlayerMenu | null>(null)
   const [playerMenuFocus, setPlayerMenuFocus] = useState(0)
+  const [sourceChoices, setSourceChoices] = useState<PlaybackSourceChoice[]>([])
+  const [activeSourceId, setActiveSourceId] = useState<string>()
+  const [deviceSourceChangeAvailable, setDeviceSourceChangeAvailable] = useState(false)
   const [audioTracks, setAudioTracks] = useState<PlaybackTrack[]>(showPreviewTools ? previewAudioTracks : [])
   const [activeAudio, setActiveAudio] = useState<number | undefined>(showPreviewTools ? 0 : undefined)
   const [subtitleChoices, setSubtitleChoices] = useState<SubtitleChoice[]>(showPreviewTools ? previewSubtitleChoices : [offSubtitle])
@@ -305,6 +309,8 @@ export function App() {
     externalSubtitlesRef.current.clear()
     setSubtitleText('')
     setPlayerMenu(null)
+    setSourceChoices([])
+    setActiveSourceId(undefined)
     updatePlayer({ position: 0 })
     setScreen(destination)
   }
@@ -463,8 +469,13 @@ export function App() {
         setSearchPending(false)
         setSearchError(error ?? '')
       },
-      onLoad: (request) => void startAvPlay(request),
+      onLoad: (request) => {
+        setSourceChoices([])
+        setActiveSourceId(undefined)
+        void startAvPlay(request)
+      },
       onControl: handleControl,
+      onDeviceSourceAvailability: setDeviceSourceChangeAvailable,
     })
     receiverRef.current = receiver
     void receiver.connect().catch((error) => {
@@ -758,6 +769,8 @@ export function App() {
     const generation = ++playRequestGenerationRef.current
     if (simulationTimerRef.current) window.clearTimeout(simulationTimerRef.current)
     setSelected(media)
+    setSourceChoices([])
+    setActiveSourceId(undefined)
     setLoadingProgress(18)
     updatePlayer({ title: media.title, state: 'buffering', position: media.progress ? 523 : 0, duration: 1_422, isLive: false })
     setScreen('loading')
@@ -773,6 +786,8 @@ export function App() {
     const result = await receiverRef.current?.requestPlay(media) ?? 'open-client'
     if (generation !== playRequestGenerationRef.current) return
     if (typeof result !== 'string') {
+      setSourceChoices(result.sources)
+      setActiveSourceId(result.selectedId)
       await startAvPlay(result.request)
     } else if (result === 'open-client') {
       setErrorMessage('Open Izumi on your linked device, then try again.')
@@ -872,8 +887,38 @@ export function App() {
 
   const activatePlayerControl = (index: number) => {
     setPlayerControlFocus(index)
-    setPlayerMenu(index === 0 ? 'audio' : index === 1 ? 'subtitles' : 'appearance')
+    if (index === 0 && sourceChoices.length + Number(deviceSourceChangeAvailable) === 0) {
+      showNotice('No alternate sources are available for this playback.')
+      return
+    }
+    setPlayerMenu(index === 0 ? 'source' : index === 1 ? 'audio' : index === 2 ? 'subtitles' : 'appearance')
     setPlayerMenuFocus(0)
+  }
+
+  const selectPlaybackSource = (choice: PlaybackSourceChoice) => {
+    setPlayerMenu(null)
+    if (choice.id === activeSourceId) {
+      showNotice('That source is already playing.')
+      return
+    }
+    const positionSeconds = playerRef.current.position
+    setActiveSourceId(choice.id)
+    void startAvPlay({ ...choice.request, positionSeconds })
+  }
+
+  const requestLinkedDeviceSources = async () => {
+    setPlayerMenu(null)
+    const result = await receiverRef.current?.requestDeviceSourceChange(selected, playerRef.current.position) ?? 'open-client'
+    if (typeof result !== 'string') {
+      setSourceChoices(result.sources)
+      setActiveSourceId(result.selectedId)
+      await startAvPlay({ ...result.request, positionSeconds: playerRef.current.position })
+    } else if (result === 'local') showNotice('Choose the replacement source on your linked device.')
+    else if (result === 'notified') showNotice('A source-picker notification was sent to your linked phone.')
+    else if (result === 'queued') showNotice('Open Izumi on your linked phone to choose a source.')
+    else if (result === 'worker-error') showNotice('Your private Izumi Worker could not send the source request.')
+    else if (result === 'no-source') showNotice('Linked-device sources are disabled in Cloudflare-only mode.')
+    else showNotice('Open Izumi on your linked device to choose a source.')
   }
 
   const togglePlayback = () => {
@@ -887,12 +932,18 @@ export function App() {
     publishStatus(true)
   }
 
-  const playerMenuLength = playerMenu === 'audio'
+  const playerMenuLength = playerMenu === 'source'
+    ? sourceChoices.length + Number(deviceSourceChangeAvailable)
+    : playerMenu === 'audio'
     ? audioTracks.length
     : playerMenu === 'subtitles' ? subtitleChoices.length : 3
 
   const activatePlayerMenuItem = () => {
-    if (playerMenu === 'audio') {
+    if (playerMenu === 'source') {
+      const source = sourceChoices[playerMenuFocus]
+      if (source) selectPlaybackSource(source)
+      else if (deviceSourceChangeAvailable && playerMenuFocus === sourceChoices.length) void requestLinkedDeviceSources()
+    } else if (playerMenu === 'audio') {
       const track = audioTracks[playerMenuFocus]
       if (track) selectAudioTrack(track)
     } else if (playerMenu === 'subtitles') {
@@ -1242,7 +1293,7 @@ export function App() {
         ? setPlayerControlFocus((index) => Math.max(0, index - 1))
         : seekFromRemote(-10)
       else if (action === 'right') playerToolsActive
-        ? setPlayerControlFocus((index) => Math.min(2, index + 1))
+        ? setPlayerControlFocus((index) => Math.min(3, index + 1))
         : seekFromRemote(10)
       else if (action === 'rewind') seekFromRemote(-10)
       else if (action === 'fastForward') seekFromRemote(10)
@@ -1462,6 +1513,9 @@ export function App() {
           controlsFocused={playerToolsActive}
           menu={playerMenu}
           menuFocus={playerMenuFocus}
+          sourceChoices={sourceChoices}
+          activeSourceId={activeSourceId}
+          deviceSourceChangeAvailable={deviceSourceChangeAvailable}
           audioTracks={audioTracks}
           subtitleChoices={subtitleChoices}
           activeAudio={activeAudio}
@@ -1477,6 +1531,8 @@ export function App() {
           }}
           onControl={activatePlayerControl}
           onMenuFocus={setPlayerMenuFocus}
+          onSource={selectPlaybackSource}
+          onDeviceSources={() => void requestLinkedDeviceSources()}
           onAudio={selectAudioTrack}
           onSubtitle={selectSubtitleChoice}
           onAppearance={changeSubtitleAppearance}

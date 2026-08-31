@@ -23,6 +23,8 @@ export interface CompanionMedia {
   ref: MediaRef
   /** Non-secret hint used only when this TV's private Worker resolver is explicitly enabled. */
   resolver?: { streamType: 'movie' | 'series' }
+  /** Transient intent used when the TV asks a linked Izumi client for a replacement source. */
+  playback?: { selection: 'manual'; positionSeconds?: number }
   title: string
   subtitle?: string
   description?: string
@@ -151,6 +153,13 @@ export interface CastLoadRequest {
   userAgent?: string
 }
 
+export interface PlaybackSourceChoice {
+  id: string
+  label: string
+  detail?: string
+  request: CastLoadRequest
+}
+
 export type CastControlRequest = {
   sessionId: string
   action: 'status' | 'play' | 'pause' | 'seek' | 'tracks' | 'volume' | 'stop'
@@ -215,7 +224,7 @@ export interface SubtitlePreferences {
   castStyle?: SubtitleStyle
 }
 
-export type PlayerMenu = 'audio' | 'subtitles' | 'appearance'
+export type PlayerMenu = 'source' | 'audio' | 'subtitles' | 'appearance'
 
 export type FocusLocation =
   | { zone: 'nav'; index: number }
