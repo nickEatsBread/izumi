@@ -772,7 +772,9 @@ export function App() {
     }
     const result = await receiverRef.current?.requestPlay(media) ?? 'open-client'
     if (generation !== playRequestGenerationRef.current) return
-    if (result === 'open-client') {
+    if (typeof result !== 'string') {
+      await startAvPlay(result.request)
+    } else if (result === 'open-client') {
       setErrorMessage('Open Izumi on your linked device, then try again.')
       setScreen('error')
     } else if (result === 'queued') {

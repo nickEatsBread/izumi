@@ -8,6 +8,7 @@ import type {
   PlaybackSnapshot,
 } from '../types'
 import { isCompanionSnapshot } from '../types'
+import { cloudResolveLoad, cloudResolveRequest } from './cloud-resolver'
 
 const CHANNEL_ID = 'com.nicho.izumi.cast'
 const PAIRING_LIFETIME_MS = 5 * 60_000
@@ -15,7 +16,13 @@ const LOCAL_PLAY_ACK_MS = 1_200
 const REMOTE_REQUEST_TTL_MS = 5 * 60_000
 const SNAPSHOT_STORAGE_KEY = 'izumi.companion.snapshot'
 
-export type CompanionPlayResult = 'local' | 'notified' | 'queued' | 'open-client' | 'worker-error'
+export type CompanionPlayResult =
+  | 'local'
+  | 'notified'
+  | 'queued'
+  | 'open-client'
+  | 'worker-error'
+  | { kind: 'resolved'; request: CastLoadRequest }
 
 export interface ReceiverEvents {
   onConnection(connected: boolean): void
@@ -102,11 +109,12 @@ function workerRequest(
   path: string,
   method: 'GET' | 'POST' | 'DELETE',
   payload?: unknown,
+  timeoutMs = 10_000,
 ): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest()
     request.open(method, `${transport.endpoint}${path}`, true)
-    request.timeout = 10_000
+    request.timeout = timeoutMs
     request.setRequestHeader('Authorization', `Bearer ${transport.tvToken}`)
     if (payload !== undefined) request.setRequestHeader('Content-Type', 'application/json')
     request.onload = () => {
@@ -337,7 +345,19 @@ export class CompanionReceiver {
       requestId,
     }, 'broadcast')
     if (await accepted) return 'local'
-    if (!this.cloudflare || !secureRequestId || !crypto.subtle) return 'open-client'
+    if (!this.cloudflare) return 'open-client'
+    try {
+      const result = await workerRequest(
+        this.cloudflare,
+        `/v1/companion/pairings/${encodeURIComponent(pairingId)}/resolve`,
+        'POST',
+        cloudResolveRequest(media),
+        30_000,
+      )
+      const request = cloudResolveLoad(result, media, requestId)
+      if (request) return { kind: 'resolved', request }
+    } catch { /* Disabled, unavailable and unsuccessful resolving all fall back to the paired device. */ }
+    if (!secureRequestId || !crypto.subtle) return 'open-client'
     try {
       const payload = await encryptedPlayRequest(this.credential, pairingId, requestId, media)
       const result = await workerRequest(

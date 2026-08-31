@@ -21,6 +21,8 @@ export interface MediaRef {
 
 export interface CompanionMedia {
   ref: MediaRef
+  /** Non-secret hint used only when this TV's private Worker resolver is explicitly enabled. */
+  resolver?: { streamType: 'movie' | 'series' }
   title: string
   subtitle?: string
   description?: string
