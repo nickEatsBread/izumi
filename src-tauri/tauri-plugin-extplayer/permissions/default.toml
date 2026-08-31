@@ -2,4 +2,4 @@
 
 [default]
 description = "Allow Android playback, casting, sharing, browser authentication, self-update, and power/network checks."
-permissions = ["allow-play-external", "allow-cast-media", "allow-install-apk", "allow-device-status", "allow-download-foreground", "allow-download-notifications", "allow-open-browser", "allow-share-text", "allow-da-reaction-state", "allow-da-react", "allow-da-login", "allow-save-text-file"]
+permissions = ["allow-play-external", "allow-cast-media", "allow-discover-tizen-receivers", "allow-install-apk", "allow-device-status", "allow-download-foreground", "allow-companion-cast-foreground", "allow-download-notifications", "allow-open-browser", "allow-share-text", "allow-da-reaction-state", "allow-da-react", "allow-da-login", "allow-save-text-file"]

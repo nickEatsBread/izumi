@@ -14,6 +14,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <application>
         <meta-data
             android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
@@ -22,6 +23,10 @@
             android:name="app.izumi.extplayer.DownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <service
+            android:name="app.izumi.extplayer.CompanionCastService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
         <!-- Share a downloaded file to the external video player through a content:// URI
              (a raw file path can't be ACTION_VIEW'd across apps since Android 7). A UNIQUE
              subclass + authority so the library-manifest merge never collides with a

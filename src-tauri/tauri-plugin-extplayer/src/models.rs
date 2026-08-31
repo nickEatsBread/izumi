@@ -80,6 +80,20 @@ pub struct CastMediaRequest {
     pub subtitles_json: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TizenReceiverDevice {
+    pub id: String,
+    pub name: String,
+    pub address: String,
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TizenReceiverDiscovery {
+    pub devices: Vec<TizenReceiverDevice>,
+}
+
 fn default_json_array() -> String {
     "[]".to_string()
 }
@@ -178,6 +192,13 @@ pub struct DownloadForegroundRequest {
     pub progress: Option<u32>,
     /// Active + queued item count, shown under the title.
     pub count: Option<u32>,
+}
+
+/// Keep the app process/network relay alive only while a TV is actively consuming phone-hosted media.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CompanionCastForegroundRequest {
+    pub active: bool,
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

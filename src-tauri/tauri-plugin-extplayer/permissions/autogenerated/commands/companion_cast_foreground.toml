@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-companion-cast-foreground"
+description = "Enables the companion_cast_foreground command without any pre-configured scope."
+commands.allow = ["companion_cast_foreground"]
+
+[[permission]]
+identifier = "deny-companion-cast-foreground"
+description = "Denies the companion_cast_foreground command without any pre-configured scope."
+commands.deny = ["companion_cast_foreground"]

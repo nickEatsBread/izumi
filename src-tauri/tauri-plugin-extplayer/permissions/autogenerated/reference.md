@@ -6,9 +6,11 @@ Allow Android playback, casting, sharing, browser authentication, self-update, a
 
 - `allow-play-external`
 - `allow-cast-media`
+- `allow-discover-tizen-receivers`
 - `allow-install-apk`
 - `allow-device-status`
 - `allow-download-foreground`
+- `allow-companion-cast-foreground`
 - `allow-download-notifications`
 - `allow-open-browser`
 - `allow-share-text`
@@ -48,6 +50,32 @@ Enables the cast_media command without any pre-configured scope.
 <td>
 
 Denies the cast_media command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:allow-companion-cast-foreground`
+
+</td>
+<td>
+
+Enables the companion_cast_foreground command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:deny-companion-cast-foreground`
+
+</td>
+<td>
+
+Denies the companion_cast_foreground command without any pre-configured scope.
 
 </td>
 </tr>
@@ -152,6 +180,32 @@ Enables the device_status command without any pre-configured scope.
 <td>
 
 Denies the device_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:allow-discover-tizen-receivers`
+
+</td>
+<td>
+
+Enables the discover_tizen_receivers command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:deny-discover-tizen-receivers`
+
+</td>
+<td>
+
+Denies the discover_tizen_receivers command without any pre-configured scope.
 
 </td>
 </tr>

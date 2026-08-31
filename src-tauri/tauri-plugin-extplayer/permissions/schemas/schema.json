@@ -307,6 +307,18 @@
           "markdownDescription": "Denies the cast_media command without any pre-configured scope."
         },
         {
+          "description": "Enables the companion_cast_foreground command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-companion-cast-foreground",
+          "markdownDescription": "Enables the companion_cast_foreground command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the companion_cast_foreground command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-companion-cast-foreground",
+          "markdownDescription": "Denies the companion_cast_foreground command without any pre-configured scope."
+        },
+        {
           "description": "Enables the da_login command without any pre-configured scope.",
           "type": "string",
           "const": "allow-da-login",
@@ -353,6 +365,18 @@
           "type": "string",
           "const": "deny-device-status",
           "markdownDescription": "Denies the device_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the discover_tizen_receivers command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-discover-tizen-receivers",
+          "markdownDescription": "Enables the discover_tizen_receivers command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the discover_tizen_receivers command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-discover-tizen-receivers",
+          "markdownDescription": "Denies the discover_tizen_receivers command without any pre-configured scope."
         },
         {
           "description": "Enables the download_foreground command without any pre-configured scope.",
@@ -439,10 +463,10 @@
           "markdownDescription": "Denies the share_text command without any pre-configured scope."
         },
         {
-          "description": "Allow Android playback, casting, sharing, browser authentication, self-update, and power/network checks.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-cast-media`\n- `allow-install-apk`\n- `allow-device-status`\n- `allow-download-foreground`\n- `allow-download-notifications`\n- `allow-open-browser`\n- `allow-share-text`\n- `allow-da-reaction-state`\n- `allow-da-react`\n- `allow-da-login`\n- `allow-save-text-file`",
+          "description": "Allow Android playback, casting, sharing, browser authentication, self-update, and power/network checks.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-cast-media`\n- `allow-discover-tizen-receivers`\n- `allow-install-apk`\n- `allow-device-status`\n- `allow-download-foreground`\n- `allow-companion-cast-foreground`\n- `allow-download-notifications`\n- `allow-open-browser`\n- `allow-share-text`\n- `allow-da-reaction-state`\n- `allow-da-react`\n- `allow-da-login`\n- `allow-save-text-file`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allow Android playback, casting, sharing, browser authentication, self-update, and power/network checks.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-cast-media`\n- `allow-install-apk`\n- `allow-device-status`\n- `allow-download-foreground`\n- `allow-download-notifications`\n- `allow-open-browser`\n- `allow-share-text`\n- `allow-da-reaction-state`\n- `allow-da-react`\n- `allow-da-login`\n- `allow-save-text-file`"
+          "markdownDescription": "Allow Android playback, casting, sharing, browser authentication, self-update, and power/network checks.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-cast-media`\n- `allow-discover-tizen-receivers`\n- `allow-install-apk`\n- `allow-device-status`\n- `allow-download-foreground`\n- `allow-companion-cast-foreground`\n- `allow-download-notifications`\n- `allow-open-browser`\n- `allow-share-text`\n- `allow-da-reaction-state`\n- `allow-da-react`\n- `allow-da-login`\n- `allow-save-text-file`"
         }
       ]
     }

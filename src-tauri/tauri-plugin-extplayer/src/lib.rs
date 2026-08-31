@@ -17,7 +17,7 @@ pub use models::{
     AniyomiCallRequest, AniyomiRuntimeRequest, BrowserRequest, CastMediaRequest, DeviceStatus,
     DownloadForegroundRequest, InstallRequest, JsonResponse, LanDiscoveryRequest,
     NotificationPermissionResponse, OAuthRequest, OAuthResponse, PlayRequest, SaveTextFileRequest,
-    SaveTextFileResponse, ShareTextRequest,
+    SaveTextFileResponse, ShareTextRequest, TizenReceiverDevice, TizenReceiverDiscovery,
 };
 
 #[cfg(desktop)]
@@ -43,9 +43,11 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
         .invoke_handler(tauri::generate_handler![
             commands::play_external,
             commands::cast_media,
+            commands::discover_tizen_receivers,
             commands::install_apk,
             commands::device_status,
             commands::download_foreground,
+            commands::companion_cast_foreground,
             commands::download_notifications,
             commands::open_browser,
             commands::share_text,

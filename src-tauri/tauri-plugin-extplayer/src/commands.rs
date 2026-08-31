@@ -2,10 +2,10 @@ use tauri::{command, AppHandle, Runtime};
 
 use crate::{
     models::{
-        BrowserRequest, CastMediaRequest, DaLoginRequest, DaLoginResponse, DaReactRequest,
+        BrowserRequest, CastMediaRequest, CompanionCastForegroundRequest, DaLoginRequest, DaLoginResponse, DaReactRequest,
         DaReactionStateRequest, DeviceStatus, DownloadForegroundRequest, InstallRequest,
         NotificationPermissionResponse, PlayRequest, ReactResponse, ReactionStateResponse,
-        SaveTextFileRequest, SaveTextFileResponse, ShareTextRequest,
+        SaveTextFileRequest, SaveTextFileResponse, ShareTextRequest, TizenReceiverDiscovery,
     },
     ExtPlayerExt, Result,
 };
@@ -26,6 +26,13 @@ pub(crate) async fn cast_media<R: Runtime>(
     app.extplayer().cast_media(payload)
 }
 
+#[command]
+pub(crate) async fn discover_tizen_receivers<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<TizenReceiverDiscovery> {
+    app.extplayer().discover_tizen_receivers()
+}
+
 /// Snapshot the Android network metering and charging signals. The frontend checks this at the
 /// moment external/embedded playback closes before permitting optional post-play seeding.
 #[command]
@@ -40,6 +47,14 @@ pub(crate) async fn download_foreground<R: Runtime>(
     payload: DownloadForegroundRequest,
 ) -> Result<()> {
     app.extplayer().download_foreground(payload)
+}
+
+#[command]
+pub(crate) async fn companion_cast_foreground<R: Runtime>(
+    app: AppHandle<R>,
+    payload: CompanionCastForegroundRequest,
+) -> Result<()> {
+    app.extplayer().companion_cast_foreground(payload)
 }
 
 /// Hand a downloaded APK to the system package installer (Android self-update).

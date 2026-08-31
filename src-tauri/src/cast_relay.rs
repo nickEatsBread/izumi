@@ -1,9 +1,11 @@
-//! Temporary, capability-scoped LAN relay for Google Cast.
+//! Temporary, capability-scoped LAN bridge for cast-source edge cases.
 //!
-//! Cast receivers cannot reach Android/desktop loopback URLs and cannot attach provider headers.
-//! This server does only that missing transport work: it forwards Range requests to the existing
-//! source (including librqbit's localhost stream), rewrites HLS resource URLs, and normalizes SRT
-//! sidecars to WebVTT. It never demuxes, remuxes, or transcodes media.
+//! Ordinary Izumi receiver sessions get the original source URL and the TV streams it itself. This
+//! server is only used when a receiver cannot reach Android/desktop loopback URLs, cannot attach
+//! provider headers, or needs a subtitle-format compatibility conversion. It forwards Range
+//! requests to the existing source (including librqbit's localhost stream), rewrites HLS resource
+//! URLs when necessary, and normalizes subtitle sidecars. It never demuxes, remuxes, or transcodes
+//! media.
 
 use std::{
     collections::HashMap,
@@ -29,6 +31,8 @@ const SESSION_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 const MAX_SESSIONS: usize = 16;
 const MAX_PLAYLIST_BYTES: usize = 2 * 1024 * 1024;
 const MAX_SUBTITLE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_COMPANION_SNAPSHOT_BYTES: usize = 512 * 1024;
+const COMPANION_TTL: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
 static RELAY: OnceCell<Arc<CastRelay>> = OnceCell::const_new();
 
@@ -65,6 +69,7 @@ enum SubtitleFormat {
     Vtt,
     Srt,
     Ttml,
+    Ass,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize)]
@@ -73,6 +78,7 @@ enum SubtitleDelivery {
     #[default]
     Web,
     SamsungDlna,
+    TizenReceiver,
 }
 
 impl SubtitleDelivery {
@@ -82,6 +88,13 @@ impl SubtitleDelivery {
             Self::Web => match source {
                 SubtitleFormat::Vtt | SubtitleFormat::Srt => "text/vtt; charset=utf-8",
                 SubtitleFormat::Ttml => "application/ttml+xml; charset=utf-8",
+                SubtitleFormat::Ass => "text/x-ssa; charset=utf-8",
+            },
+            Self::TizenReceiver => match source {
+                SubtitleFormat::Vtt => "text/vtt; charset=utf-8",
+                SubtitleFormat::Srt => "application/x-subrip; charset=utf-8",
+                SubtitleFormat::Ttml => "application/ttml+xml; charset=utf-8",
+                SubtitleFormat::Ass => "text/x-ssa; charset=utf-8",
             },
         }
     }
@@ -92,6 +105,13 @@ impl SubtitleDelivery {
             Self::Web => match source {
                 SubtitleFormat::Vtt | SubtitleFormat::Srt => "vtt",
                 SubtitleFormat::Ttml => "ttml",
+                SubtitleFormat::Ass => "ass",
+            },
+            Self::TizenReceiver => match source {
+                SubtitleFormat::Vtt => "vtt",
+                SubtitleFormat::Srt => "srt",
+                SubtitleFormat::Ttml => "ttml",
+                SubtitleFormat::Ass => "ass",
             },
         }
     }
@@ -103,6 +123,12 @@ pub struct CastPreparedSource {
     url: String,
     relayed: bool,
     subtitles: Vec<CastPreparedSubtitle>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CompanionBridge {
+    url: String,
+    token: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -146,6 +172,25 @@ struct RelaySession {
     resources: RwLock<HashMap<String, RelayResource>>,
 }
 
+struct CompanionSnapshot {
+    payload: String,
+    bearer: String,
+    expires_at: Mutex<Instant>,
+}
+
+impl CompanionSnapshot {
+    fn touch(&self) -> bool {
+        let Ok(mut expires_at) = self.expires_at.lock() else {
+            return false;
+        };
+        if *expires_at <= Instant::now() {
+            return false;
+        }
+        *expires_at = Instant::now() + COMPANION_TTL;
+        true
+    }
+}
+
 impl RelaySession {
     fn touch(&self) -> bool {
         let Ok(mut expires_at) = self.expires_at.lock() else {
@@ -174,6 +219,7 @@ impl RelaySession {
 #[derive(Default)]
 struct RelayState {
     sessions: RwLock<HashMap<String, Arc<RelaySession>>>,
+    companion: RwLock<HashMap<String, Arc<CompanionSnapshot>>>,
 }
 
 struct CastRelay {
@@ -186,39 +232,84 @@ pub async fn cast_prepare_source(
     request: CastPrepareRequest,
 ) -> Result<CastPreparedSource, String> {
     let media = parse_http_url(&request.url)?;
-    for subtitle in &request.subtitles {
-        parse_http_url(&subtitle.url)?;
-    }
-
-    let needs_relay = request.force_relay
-        || is_loopback(&media)
-        || !request.headers.is_empty()
-        || !request.subtitles.is_empty()
-        || request.manifest.as_deref() == Some("hls")
-        || media.path().to_ascii_lowercase().ends_with(".m3u8");
-    if !needs_relay {
+    let (relay_media, relay_subtitles) = relay_plan(&request, &media)?;
+    if !relay_media && !relay_subtitles.iter().any(|relay| *relay) {
+        let delivery = request.subtitle_delivery;
         return Ok(CastPreparedSource {
             url: media.to_string(),
             relayed: false,
-            subtitles: Vec::new(),
+            subtitles: request
+                .subtitles
+                .into_iter()
+                .map(|subtitle| CastPreparedSubtitle {
+                    url: subtitle.url,
+                    lang: subtitle.lang,
+                    title: subtitle.title,
+                    content_type: delivery.content_type(subtitle.format).to_string(),
+                })
+                .collect(),
         });
     }
 
     let relay = RELAY.get_or_try_init(start_relay).await?;
     let public_ip = lan_ipv4().await?;
-    relay.register(public_ip, media, request)
+    relay.register(public_ip, media, request, relay_media, relay_subtitles)
+}
+
+#[tauri::command]
+pub async fn companion_publish_snapshot(snapshot: String) -> Result<CompanionBridge, String> {
+    if snapshot.len() > MAX_COMPANION_SNAPSHOT_BYTES {
+        return Err("The companion snapshot is too large".into());
+    }
+    let parsed: serde_json::Value = serde_json::from_str(&snapshot)
+        .map_err(|_| "The companion snapshot is not valid JSON".to_string())?;
+    if parsed.get("app").and_then(serde_json::Value::as_str) != Some("izumi")
+        || parsed.get("kind").and_then(serde_json::Value::as_str) != Some("companion-home")
+        || parsed.get("version").and_then(serde_json::Value::as_u64) != Some(1)
+    {
+        return Err("The companion snapshot has an unsupported format".into());
+    }
+    let relay = RELAY.get_or_try_init(start_relay).await?;
+    relay.register_companion(lan_ipv4().await?, snapshot)
 }
 
 fn parse_http_url(value: &str) -> Result<Url, String> {
     let url = Url::parse(value).map_err(|_| "Cast received an invalid media URL".to_string())?;
     if !matches!(url.scheme(), "http" | "https") {
-        return Err("Cast can only relay HTTP or HTTPS media".into());
+        return Err("Cast only supports HTTP or HTTPS media".into());
     }
     Ok(url)
 }
 
 fn is_loopback(url: &Url) -> bool {
     matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "::1"))
+}
+
+fn relay_plan(request: &CastPrepareRequest, media: &Url) -> Result<(bool, Vec<bool>), String> {
+    let izumi_receiver = matches!(request.subtitle_delivery, SubtitleDelivery::TizenReceiver);
+    let relay_subtitles = request
+        .subtitles
+        .iter()
+        .map(|subtitle| {
+            let url = parse_http_url(&subtitle.url)?;
+            // Izumi's TV client can fetch ordinary remote sidecars itself. A local-only URL or
+            // provider-specific request headers are the only reasons to bridge one through the
+            // source device. Other receiver types retain their format-conversion path.
+            Ok(!izumi_receiver
+                || is_loopback(&url)
+                || !request.headers.is_empty()
+                || !subtitle.headers.is_empty())
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let hls = request.manifest.as_deref() == Some("hls")
+        || media.path().to_ascii_lowercase().ends_with(".m3u8");
+    let relay_media = request.force_relay
+        || is_loopback(media)
+        || !request.headers.is_empty()
+        // AVPlay resolves ordinary remote HLS resources on the TV. Web/DLNA compatibility still
+        // uses the established playlist/subtitle bridge behavior.
+        || (!izumi_receiver && (!request.subtitles.is_empty() || hls));
+    Ok((relay_media, relay_subtitles))
 }
 
 async fn start_relay() -> Result<Arc<CastRelay>, String> {
@@ -237,6 +328,10 @@ async fn start_relay() -> Result<Arc<CastRelay>, String> {
                 "/cast/{token}/{resource}",
                 get(relay_resource).options(cors_preflight),
             )
+            .route(
+                "/companion/{token}",
+                get(companion_snapshot).options(cors_preflight),
+            )
             .with_state(server_state);
         if let Err(error) = axum::serve(listener, router).await {
             eprintln!("Cast relay stopped: {error:#}");
@@ -246,55 +341,107 @@ async fn start_relay() -> Result<Arc<CastRelay>, String> {
 }
 
 impl CastRelay {
+    fn register_companion(
+        &self,
+        public_ip: Ipv4Addr,
+        payload: String,
+    ) -> Result<CompanionBridge, String> {
+        let token = random_token()?;
+        let bearer = random_token()?;
+        let entry = Arc::new(CompanionSnapshot {
+            payload,
+            bearer: bearer.clone(),
+            expires_at: Mutex::new(Instant::now() + COMPANION_TTL),
+        });
+        let mut snapshots = self
+            .state
+            .companion
+            .write()
+            .map_err(|_| "Companion bridge state is unavailable".to_string())?;
+        snapshots.retain(|_, snapshot| snapshot.touch());
+        if snapshots.len() >= MAX_SESSIONS {
+            if let Some(oldest) = snapshots.keys().next().cloned() {
+                snapshots.remove(&oldest);
+            }
+        }
+        snapshots.insert(token.clone(), entry);
+        Ok(CompanionBridge {
+            url: format!("http://{public_ip}:{}/companion/{token}", self.port),
+            token: bearer,
+        })
+    }
+
     fn register(
         &self,
         public_ip: Ipv4Addr,
         media: Url,
         request: CastPrepareRequest,
+        relay_media: bool,
+        relay_subtitles: Vec<bool>,
     ) -> Result<CastPreparedSource, String> {
         let token = random_token()?;
         let public_base = format!("http://{public_ip}:{}", self.port);
         let mut resources = HashMap::new();
         let mut prepared_subtitles = Vec::new();
-        for (index, subtitle) in request.subtitles.into_iter().enumerate() {
+        for (index, (subtitle, relay_subtitle)) in request
+            .subtitles
+            .into_iter()
+            .zip(relay_subtitles)
+            .enumerate()
+        {
             let resource_id = format!(
                 "subtitle-{index}.{}",
                 request.subtitle_delivery.extension(subtitle.format)
             );
             let upstream = parse_http_url(&subtitle.url)?;
-            let mut headers = request.headers.clone();
-            headers.extend(subtitle.headers.clone());
-            resources.insert(
-                resource_id.clone(),
-                RelayResource {
-                    upstream,
-                    headers,
-                    kind: ResourceKind::Subtitle {
-                        source: subtitle.format,
-                        delivery: request.subtitle_delivery,
+            let url = if relay_subtitle {
+                let mut headers = request.headers.clone();
+                headers.extend(subtitle.headers.clone());
+                resources.insert(
+                    resource_id.clone(),
+                    RelayResource {
+                        upstream,
+                        headers,
+                        kind: ResourceKind::Subtitle {
+                            source: subtitle.format,
+                            delivery: request.subtitle_delivery,
+                        },
                     },
-                },
-            );
-            prepared_subtitles.push((resource_id, subtitle));
+                );
+                format!("{public_base}/cast/{token}/{resource_id}")
+            } else {
+                upstream.to_string()
+            };
+            prepared_subtitles.push(CastPreparedSubtitle {
+                url,
+                lang: subtitle.lang,
+                title: subtitle.title,
+                content_type: request
+                    .subtitle_delivery
+                    .content_type(subtitle.format)
+                    .to_string(),
+            });
         }
 
         let caption_urls = prepared_subtitles
             .iter()
-            .map(|(resource, _)| format!("{public_base}/cast/{token}/{resource}"))
+            .map(|subtitle| subtitle.url.clone())
             .collect();
-        resources.insert(
-            "media".to_string(),
-            RelayResource {
-                upstream: media,
-                headers: request.headers.clone(),
-                kind: ResourceKind::Media {
-                    hls: request.manifest.as_deref() == Some("hls")
-                        || request.url.to_ascii_lowercase().contains(".m3u8"),
-                    content_type: request.content_type.as_deref().and_then(valid_content_type),
-                    caption_urls,
+        if relay_media {
+            resources.insert(
+                "media".to_string(),
+                RelayResource {
+                    upstream: media.clone(),
+                    headers: request.headers.clone(),
+                    kind: ResourceKind::Media {
+                        hls: request.manifest.as_deref() == Some("hls")
+                            || request.url.to_ascii_lowercase().contains(".m3u8"),
+                        content_type: request.content_type.as_deref().and_then(valid_content_type),
+                        caption_urls,
+                    },
                 },
-            },
-        );
+            );
+        }
 
         let session = Arc::new(RelaySession {
             public_base,
@@ -317,22 +464,48 @@ impl CastRelay {
         }
 
         Ok(CastPreparedSource {
-            url: session.local_url(&token, "media"),
+            url: if relay_media {
+                session.local_url(&token, "media")
+            } else {
+                media.to_string()
+            },
             relayed: true,
-            subtitles: prepared_subtitles
-                .into_iter()
-                .map(|(resource, subtitle)| CastPreparedSubtitle {
-                    url: session.local_url(&token, &resource),
-                    lang: subtitle.lang,
-                    title: subtitle.title,
-                    content_type: request
-                        .subtitle_delivery
-                        .content_type(subtitle.format)
-                        .to_string(),
-                })
-                .collect(),
+            subtitles: prepared_subtitles,
         })
     }
+}
+
+async fn companion_snapshot(
+    State(state): State<Arc<RelayState>>,
+    Path(token): Path<String>,
+    request_headers: HeaderMap,
+) -> Response {
+    let snapshot = state
+        .companion
+        .read()
+        .ok()
+        .and_then(|snapshots| snapshots.get(&token).cloned());
+    let Some(snapshot) = snapshot.filter(|snapshot| snapshot.touch()) else {
+        return relay_error(StatusCode::NOT_FOUND, "Companion snapshot expired");
+    };
+    let authorized = request_headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .is_some_and(|value| value.as_bytes() == snapshot.bearer.as_bytes());
+    if !authorized {
+        return relay_error(StatusCode::UNAUTHORIZED, "Companion authorization failed");
+    }
+    let mut response = Response::new(Body::from(snapshot.payload.clone()));
+    response.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    add_cors(response.headers_mut());
+    response
 }
 
 fn random_token() -> Result<String, String> {
@@ -533,8 +706,15 @@ async fn fetch_resource(
                 (SubtitleDelivery::SamsungDlna, SubtitleFormat::Ttml) => {
                     return Err("Samsung DLNA captions support SRT or WebVTT sidecars".into());
                 }
+                (SubtitleDelivery::SamsungDlna, SubtitleFormat::Ass) => {
+                    return Err("Samsung DLNA captions do not support ASS sidecars".into());
+                }
                 (SubtitleDelivery::Web, SubtitleFormat::Srt) => srt_to_webvtt(&bytes)?.into_bytes(),
-                (SubtitleDelivery::Web, SubtitleFormat::Vtt | SubtitleFormat::Ttml) => bytes,
+                (
+                    SubtitleDelivery::Web,
+                    SubtitleFormat::Vtt | SubtitleFormat::Ttml | SubtitleFormat::Ass,
+                ) => bytes,
+                (SubtitleDelivery::TizenReceiver, _) => bytes,
             };
             Ok(build_response(
                 status,
@@ -795,7 +975,7 @@ fn add_cors(headers: &mut HeaderMap) {
     );
     headers.insert(
         header::ACCESS_CONTROL_ALLOW_HEADERS,
-        HeaderValue::from_static("Range, If-Range, Content-Type, Accept-Encoding"),
+        HeaderValue::from_static("Authorization, Range, If-Range, Content-Type, Accept-Encoding"),
     );
     headers.insert(
         header::ACCESS_CONTROL_EXPOSE_HEADERS,
@@ -843,6 +1023,52 @@ mod tests {
         assert!(!is_loopback(
             &Url::parse("https://cdn.example/video.mp4").unwrap()
         ));
+    }
+
+    #[test]
+    fn passes_ordinary_tizen_media_and_subtitles_directly_to_the_tv() {
+        let request = CastPrepareRequest {
+            url: "https://cdn.example/master.m3u8".into(),
+            headers: HashMap::new(),
+            manifest: Some("hls".into()),
+            subtitles: vec![CastSubtitleRequest {
+                url: "https://cdn.example/en.ass".into(),
+                lang: Some("en".into()),
+                title: Some("English".into()),
+                format: SubtitleFormat::Ass,
+                headers: HashMap::new(),
+            }],
+            force_relay: false,
+            content_type: Some("application/vnd.apple.mpegurl".into()),
+            subtitle_delivery: SubtitleDelivery::TizenReceiver,
+        };
+        assert_eq!(
+            relay_plan(&request, &Url::parse(&request.url).unwrap()).unwrap(),
+            (false, vec![false])
+        );
+    }
+
+    #[test]
+    fn bridges_only_tizen_resources_the_tv_cannot_fetch_directly() {
+        let request = CastPrepareRequest {
+            url: "https://cdn.example/video.mp4".into(),
+            headers: HashMap::new(),
+            manifest: None,
+            subtitles: vec![CastSubtitleRequest {
+                url: "http://127.0.0.1:9000/en.srt".into(),
+                lang: Some("en".into()),
+                title: None,
+                format: SubtitleFormat::Srt,
+                headers: HashMap::new(),
+            }],
+            force_relay: false,
+            content_type: Some("video/mp4".into()),
+            subtitle_delivery: SubtitleDelivery::TizenReceiver,
+        };
+        assert_eq!(
+            relay_plan(&request, &Url::parse(&request.url).unwrap()).unwrap(),
+            (false, vec![true])
+        );
     }
 
     #[test]

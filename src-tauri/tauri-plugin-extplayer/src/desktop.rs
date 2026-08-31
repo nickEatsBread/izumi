@@ -2,11 +2,11 @@ use serde::de::DeserializeOwned;
 use tauri::{plugin::PluginApi, AppHandle, Runtime};
 
 use crate::models::{
-    BrowserRequest, CastMediaRequest, DaLoginRequest, DaLoginResponse, DaReactRequest,
+    BrowserRequest, CastMediaRequest, CompanionCastForegroundRequest, DaLoginRequest, DaLoginResponse, DaReactRequest,
     DaReactionStateRequest, DeviceStatus, DownloadForegroundRequest, InstallRequest,
     LanDiscoveryRequest, NotificationPermissionResponse, OAuthRequest, OAuthResponse, PlayRequest,
     ReactResponse, ReactionStateResponse, SaveTextFileRequest, SaveTextFileResponse,
-    ShareTextRequest,
+    ShareTextRequest, TizenReceiverDiscovery,
 };
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
@@ -27,6 +27,12 @@ impl<R: Runtime> ExtPlayer<R> {
 
     pub fn cast_media(&self, _payload: CastMediaRequest) -> crate::Result<()> {
         Ok(())
+    }
+
+    pub fn discover_tizen_receivers(&self) -> crate::Result<TizenReceiverDiscovery> {
+        Ok(TizenReceiverDiscovery {
+            devices: Vec::new(),
+        })
     }
 
     pub fn install_apk(&self, _payload: InstallRequest) -> crate::Result<()> {
@@ -54,6 +60,10 @@ impl<R: Runtime> ExtPlayer<R> {
 
     // Desktop processes are not frozen when backgrounded — there is no service to run.
     pub fn download_foreground(&self, _payload: DownloadForegroundRequest) -> crate::Result<()> {
+        Ok(())
+    }
+
+    pub fn companion_cast_foreground(&self, _payload: CompanionCastForegroundRequest) -> crate::Result<()> {
         Ok(())
     }
 

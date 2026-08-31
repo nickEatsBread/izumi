@@ -13,7 +13,9 @@ use std::{
     time::{Duration, Instant},
 };
 
+use futures_util::{stream, StreamExt};
 use mdns_sd::{ServiceDaemon, ServiceEvent};
+use reqwest::{header, Client};
 use rust_cast::{
     channels::{
         connection::ConnectionChannel,
@@ -42,6 +44,10 @@ const IO_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_DISCOVERY_MS: u64 = 1_800;
 const MAX_DISCOVERY_MS: u64 = 5_000;
 const MAX_CAST_MESSAGE_BYTES: usize = 64 * 1024;
+const SAMSUNG_SERVICE_PORT: u16 = 8001;
+const IZUMI_TIZEN_APPLICATION_ID: &str = "IzumiTV001.IzumiTV";
+const SAMSUNG_PROBE_TIMEOUT: Duration = Duration::from_millis(550);
+const MAX_SAMSUNG_PROBES: usize = 128;
 
 type CastIo = StreamOwned<ClientConnection, TcpStream>;
 type CastManager = Rc<MessageManager<CastIo>>;
@@ -65,6 +71,15 @@ pub struct DesktopCastDevice {
     protocol: DesktopCastProtocol,
     #[serde(skip)]
     dlna: Option<DlnaDevice>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanionReceiverDevice {
+    id: String,
+    name: String,
+    address: Ipv4Addr,
+    model: Option<String>,
 }
 
 #[derive(Clone)]
@@ -224,6 +239,136 @@ pub async fn desktop_cast_discover(
         .values()
         .map(|item| item.device.clone())
         .collect::<Vec<_>>();
+    devices.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(devices)
+}
+
+fn companion_probe_addresses() -> Vec<Ipv4Addr> {
+    let all_interfaces = netdev::get_interfaces();
+    // Host-only VM, container, and VPN adapters commonly have private addresses but cannot reach
+    // living-room devices. Prefer adapters with a real gateway; fall back only on platforms where
+    // gateway metadata is unavailable.
+    let mut interfaces = all_interfaces
+        .iter()
+        .filter(|interface| {
+            interface.is_up() && !interface.is_loopback() && interface.gateway.is_some()
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if interfaces.is_empty() {
+        interfaces = netdev::get_default_interface().ok().into_iter().collect();
+    }
+    if interfaces.is_empty() {
+        interfaces = all_interfaces;
+    }
+
+    let mut addresses = interfaces
+        .into_iter()
+        .filter(|interface| interface.is_up() && !interface.is_loopback())
+        .flat_map(|interface| interface.ipv4.into_iter().map(|network| network.addr()))
+        .filter(|address| address.is_private() && !address.is_loopback())
+        .flat_map(|address| {
+            let octets = address.octets();
+            (1_u8..=254).filter_map(move |host| {
+                let candidate = Ipv4Addr::new(octets[0], octets[1], octets[2], host);
+                (candidate != address).then_some(candidate)
+            })
+        })
+        .collect::<Vec<_>>();
+    addresses.sort_unstable();
+    addresses.dedup();
+    addresses
+}
+
+fn samsung_text<'a>(device: &'a Value, root: &'a Value, names: &[&str]) -> Option<&'a str> {
+    names.iter().find_map(|name| {
+        device
+            .get(*name)
+            .or_else(|| root.get(*name))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    })
+}
+
+fn parse_samsung_service(body: &[u8], address: Ipv4Addr) -> Option<CompanionReceiverDevice> {
+    let root: Value = serde_json::from_slice(body).ok()?;
+    let device = root.get("device").unwrap_or(&root);
+    let kind = samsung_text(device, &root, &["type"])?;
+    let name = samsung_text(device, &root, &["name", "Name"]).unwrap_or("Samsung TV");
+    let samsung = kind.to_ascii_lowercase().contains("samsung")
+        || name.to_ascii_lowercase().contains("samsung")
+        || name.to_ascii_lowercase().starts_with("[tv]");
+    if !samsung {
+        return None;
+    }
+    Some(CompanionReceiverDevice {
+        id: samsung_text(device, &root, &["id"])
+            .map(str::to_owned)
+            .unwrap_or_else(|| address.to_string()),
+        name: name.chars().take(128).collect(),
+        address,
+        model: samsung_text(device, &root, &["modelName", "Model"])
+            .map(|value| value.chars().take(128).collect()),
+    })
+}
+
+fn is_installed_companion(body: &[u8]) -> bool {
+    serde_json::from_slice::<Value>(body)
+        .ok()
+        .and_then(|value| value.get("id").and_then(Value::as_str).map(str::to_owned))
+        .as_deref()
+        == Some(IZUMI_TIZEN_APPLICATION_ID)
+}
+
+async fn probe_samsung_service(
+    client: Client,
+    address: Ipv4Addr,
+) -> Option<CompanionReceiverDevice> {
+    let response = client
+        .get(format!("http://{address}:{SAMSUNG_SERVICE_PORT}/api/v2/"))
+        .header(header::ACCEPT, "application/json")
+        .send()
+        .await
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let body = response.bytes().await.ok()?;
+    (body.len() <= 128 * 1024).then_some(())?;
+    let device = parse_samsung_service(&body, address)?;
+    // Samsung exposes installed-application metadata independently from whether the app is
+    // running. This keeps closed Companions discoverable without listing TVs lacking the app.
+    let application = client
+        .get(format!(
+            "http://{address}:{SAMSUNG_SERVICE_PORT}/api/v2/applications/{IZUMI_TIZEN_APPLICATION_ID}"
+        ))
+        .header(header::ACCEPT, "application/json")
+        .send()
+        .await
+        .ok()?;
+    if !application.status().is_success() {
+        return None;
+    }
+    let body = application.bytes().await.ok()?;
+    (body.len() <= 64 * 1024 && is_installed_companion(&body)).then_some(device)
+}
+
+/// Discover Samsung's local service independently from DLNA and verify the installed application
+/// endpoint, which remains available while the receiver itself is closed.
+#[tauri::command]
+pub async fn companion_discover() -> Result<Vec<CompanionReceiverDevice>, String> {
+    let client = Client::builder()
+        .connect_timeout(SAMSUNG_PROBE_TIMEOUT)
+        .timeout(SAMSUNG_PROBE_TIMEOUT)
+        .build()
+        .map_err(|error| format!("Could not configure Companion discovery: {error}"))?;
+    let mut devices = stream::iter(companion_probe_addresses())
+        .map(|address| probe_samsung_service(client.clone(), address))
+        .buffer_unordered(MAX_SAMSUNG_PROBES)
+        .filter_map(|device| async move { device })
+        .collect::<Vec<_>>()
+        .await;
     devices.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     Ok(devices)
 }
@@ -1065,5 +1210,40 @@ mod tests {
             preferred_ipv4(addresses),
             Some(Ipv4Addr::new(192, 168, 1, 40))
         );
+    }
+
+    #[test]
+    fn parses_samsung_service_for_companion_discovery() {
+        let body = br#"{
+            "device": {
+                "id": "uuid:living-room",
+                "name": "[TV] Samsung Q6 Series (65)",
+                "type": "Samsung SmartTV",
+                "modelName": "QE65Q6FNA"
+            }
+        }"#;
+        let device = parse_samsung_service(body, Ipv4Addr::new(192, 168, 1, 192)).unwrap();
+        assert_eq!(device.id, "uuid:living-room");
+        assert_eq!(device.name, "[TV] Samsung Q6 Series (65)");
+        assert_eq!(device.model.as_deref(), Some("QE65Q6FNA"));
+        assert_eq!(device.address, Ipv4Addr::new(192, 168, 1, 192));
+    }
+
+    #[test]
+    fn rejects_non_samsung_service_responses() {
+        let body = br#"{"device":{"name":"Living room speaker","type":"Audio device"}}"#;
+        assert!(parse_samsung_service(body, Ipv4Addr::new(192, 168, 1, 9)).is_none());
+    }
+
+    #[test]
+    fn recognizes_an_installed_companion_even_when_it_is_not_running() {
+        let installed = br#"{
+            "id":"IzumiTV001.IzumiTV",
+            "name":"izumi Companion",
+            "running":false,
+            "visible":false
+        }"#;
+        assert!(is_installed_companion(installed));
+        assert!(!is_installed_companion(br#"{"id":"SomeOtherApp.TV"}"#));
     }
 }

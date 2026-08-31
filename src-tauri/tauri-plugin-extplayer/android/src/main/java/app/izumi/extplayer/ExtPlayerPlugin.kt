@@ -51,10 +51,17 @@ import dalvik.system.DexClassLoader
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
+import java.net.Inet4Address
 import java.net.URL
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.zip.ZipFile
 import org.json.JSONArray
 import org.json.JSONObject
+
+private const val IZUMI_TIZEN_APPLICATION_ID = "IzumiTV001.IzumiTV"
 
 // Uniquely-named FileProvider subclass so the merged app manifest never clashes with a
 // FileProvider another plugin registers (two <provider> nodes sharing android:name collide).
@@ -143,6 +150,12 @@ class DownloadForegroundArgs {
     /** 0-100, or null/absent for indeterminate. */
     var progress: Int? = null
     var count: Int? = null
+}
+
+@InvokeArg
+class CompanionCastForegroundArgs {
+    var active: Boolean = false
+    var title: String? = null
 }
 
 @InvokeArg
@@ -308,6 +321,92 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
                 invoke.reject(error.message ?: "Google Cast is unavailable on this device", error)
             }
         }
+    }
+
+    /** Find Samsung's local Smart View service without relying on WebView multicast support.
+     * Samsung's browser sender performs the same subnet scan; the TV receiver connection itself
+     * remains in the shared TypeScript channel client so Android and desktop use one protocol. */
+    @Command
+    fun discoverTizenReceivers(invoke: Invoke) {
+        Thread {
+            try {
+                val connectivity = activity.applicationContext
+                    .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                val network = connectivity.activeNetwork
+                    ?: error("Connect this device and the TV to the same Wi-Fi network")
+                val local = connectivity.getLinkProperties(network)?.linkAddresses
+                    ?.asSequence()
+                    ?.map { it.address }
+                    ?.filterIsInstance<Inet4Address>()
+                    ?.firstOrNull { !it.isLoopbackAddress && !it.isLinkLocalAddress }
+                    ?: error("Could not determine the local Wi-Fi address")
+                val octets = local.hostAddress?.split('.')
+                    ?: error("Could not determine the local Wi-Fi subnet")
+                require(octets.size == 4) { "Only IPv4 home networks are supported for TV discovery" }
+                val prefix = octets.take(3).joinToString(".")
+                val devices = Collections.synchronizedList(mutableListOf<JSONObject>())
+                val pool = Executors.newFixedThreadPool(48)
+                val done = CountDownLatch(254)
+
+                for (host in 1..254) {
+                    pool.execute {
+                        try {
+                            val address = "$prefix.$host"
+                            val connection = URL("http://$address:8001/api/v2/")
+                                .openConnection() as HttpURLConnection
+                            connection.connectTimeout = 450
+                            connection.readTimeout = 450
+                            connection.requestMethod = "GET"
+                            connection.setRequestProperty("Accept", "application/json")
+                            if (connection.responseCode in 200..299) {
+                                val body = connection.inputStream.bufferedReader().use { it.readText() }
+                                val response = JSONObject(body)
+                                val device = response.optJSONObject("device") ?: response
+                                val type = device.optString("type", response.optString("type"))
+                                val name = device.optString("name",
+                                    device.optString("Name", response.optString("name", "Samsung TV")))
+                                if (type.contains("Samsung", true) || name.contains("Samsung", true) ||
+                                    name.startsWith("[TV]", true)) {
+                                    // The application endpoint exists while Companion is closed,
+                                    // so discovery remains passive without advertising TVs where
+                                    // the receiver has not been installed.
+                                    val application = URL(
+                                        "http://$address:8001/api/v2/applications/$IZUMI_TIZEN_APPLICATION_ID",
+                                    ).openConnection() as HttpURLConnection
+                                    application.connectTimeout = 450
+                                    application.readTimeout = 450
+                                    application.requestMethod = "GET"
+                                    application.setRequestProperty("Accept", "application/json")
+                                    if (application.responseCode in 200..299) {
+                                        val appBody = application.inputStream.bufferedReader().use { it.readText() }
+                                        if (JSONObject(appBody).optString("id") == IZUMI_TIZEN_APPLICATION_ID) {
+                                            devices.add(JSONObject()
+                                                .put("id", device.optString("id", response.optString("id", address)))
+                                                .put("name", name)
+                                                .put("address", address)
+                                                .put("model", device.optString("modelName", device.optString("Model"))))
+                                        }
+                                    }
+                                    application.disconnect()
+                                }
+                            }
+                            connection.disconnect()
+                        } catch (_: Exception) {
+                            // Most addresses have no TV; discovery failures are expected.
+                        } finally {
+                            done.countDown()
+                        }
+                    }
+                }
+                done.await(8, TimeUnit.SECONDS)
+                pool.shutdownNow()
+                val sorted = devices.distinctBy { it.optString("address") }
+                    .sortedBy { it.optString("name").lowercase() }
+                invoke.resolve(JSObject().put("devices", JSONArray(sorted)))
+            } catch (error: Exception) {
+                invoke.reject(error.message ?: "Could not scan for Samsung TVs", error)
+            }
+        }.start()
     }
 
     private fun loadAniyomiRuntime(runtimePath: String) {
@@ -797,6 +896,24 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
                 androidx.core.content.ContextCompat.startForegroundService(context, intent)
             } catch (e: Exception) {
                 Log.w("ExtPlayerPlugin", "download service start failed: $e")
+            }
+        } else {
+            context.stopService(intent)
+        }
+        invoke.resolve()
+    }
+
+    @Command
+    fun companionCastForeground(invoke: Invoke) {
+        val args = invoke.parseArgs(CompanionCastForegroundArgs::class.java)
+        val context = activity.applicationContext
+        val intent = Intent(context, CompanionCastService::class.java)
+        if (args.active) {
+            intent.putExtra(CompanionCastService.EXTRA_TITLE, args.title)
+            try {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (error: Exception) {
+                Log.w("ExtPlayerPlugin", "TV relay service start failed", error)
             }
         } else {
             context.stopService(intent)

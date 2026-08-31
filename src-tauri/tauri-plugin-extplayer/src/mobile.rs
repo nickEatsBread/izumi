@@ -5,11 +5,12 @@ use tauri::{
 };
 
 use crate::models::{
-    AniyomiCallRequest, AniyomiRuntimeRequest, BrowserRequest, CastMediaRequest, DaLoginRequest,
+    AniyomiCallRequest, AniyomiRuntimeRequest, BrowserRequest, CastMediaRequest, CompanionCastForegroundRequest, DaLoginRequest,
     DaLoginResponse, DaReactRequest, DaReactionStateRequest, DeviceStatus,
     DownloadForegroundRequest, InstallRequest, JsonResponse, LanDiscoveryRequest,
     NotificationPermissionResponse, OAuthRequest, OAuthResponse, PlayRequest, ReactResponse,
     ReactionStateResponse, SaveTextFileRequest, SaveTextFileResponse, ShareTextRequest,
+    TizenReceiverDiscovery,
 };
 
 #[cfg(target_os = "android")]
@@ -40,6 +41,12 @@ impl<R: Runtime> ExtPlayer<R> {
             .map_err(Into::into)
     }
 
+    pub fn discover_tizen_receivers(&self) -> crate::Result<TizenReceiverDiscovery> {
+        self.0
+            .run_mobile_plugin("discoverTizenReceivers", ())
+            .map_err(Into::into)
+    }
+
     pub fn install_apk(&self, payload: InstallRequest) -> crate::Result<()> {
         self.0
             .run_mobile_plugin("installApk", payload)
@@ -67,6 +74,12 @@ impl<R: Runtime> ExtPlayer<R> {
     pub fn download_foreground(&self, payload: DownloadForegroundRequest) -> crate::Result<()> {
         self.0
             .run_mobile_plugin("downloadForeground", payload)
+            .map_err(Into::into)
+    }
+
+    pub fn companion_cast_foreground(&self, payload: CompanionCastForegroundRequest) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("companionCastForeground", payload)
             .map_err(Into::into)
     }
 

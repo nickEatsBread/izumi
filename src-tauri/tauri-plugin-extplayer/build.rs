@@ -1,9 +1,11 @@
 const COMMANDS: &[&str] = &[
     "play_external",
     "cast_media",
+    "discover_tizen_receivers",
     "install_apk",
     "device_status",
     "download_foreground",
+    "companion_cast_foreground",
     "download_notifications",
     "open_browser",
     "share_text",
