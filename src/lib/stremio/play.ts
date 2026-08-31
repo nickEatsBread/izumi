@@ -199,6 +199,9 @@ export type PlayEpisodeOptions = {
   continuationPriorityMs?: number
   forceManual?: boolean
   autoplay?: boolean
+  /** Explicit resume point used by Scene Bookmarks. It follows the request through source
+   * discovery and overrides the episode's ordinary saved progress only for this play. */
+  startSeconds?: number
 }
 
 export type PlayStreamOptions = {
@@ -1742,7 +1745,7 @@ export async function playEpisode(
       episode,
       stream,
       onState,
-      { autoplay },
+      { autoplay, startSeconds: options.startSeconds },
     )
   }
   onState({ status: 'resolving' })
@@ -1763,6 +1766,7 @@ export async function playEpisode(
     hidden: hideForContinuation,
     manualOnly: options.forceManual,
     autoplay,
+    startSeconds: options.startSeconds,
   })
   markClientPerformance('izumi:source-picker-state-ready', { mediaId: media.id, episode: episode ?? 0 })
   // The picker is the UI from here — unless it is hidden (binge continuation), in which case the
@@ -1887,7 +1891,11 @@ export async function playEpisode(
       const pre = takePrefetched(media.id, episode)
       if (pre) {
         streamPicker.set(null)
-        return await playStream(media, episode, pre, onState, { autoplay, automatic: true })
+        return await playStream(media, episode, pre, onState, {
+          autoplay,
+          automatic: true,
+          startSeconds: options.startSeconds,
+        })
       }
     }
 
@@ -1965,7 +1973,7 @@ export async function playEpisode(
           const result = applyContinuationState(state, () => streamPicker.set(null), onState)
           played ||= result.played
           continuationError ||= result.error
-        }, { autoplay, automatic: true })
+        }, { autoplay, automatic: true, startSeconds: options.startSeconds })
         return played
       })().finally(() => {
         continuationPending = false
@@ -2083,6 +2091,7 @@ export async function playEpisode(
         hidden: hideForContinuation,
         manualOnly: options.forceManual,
         autoplay,
+        startSeconds: options.startSeconds,
       })
       // Binge continuity: the instant a same-release, ready-to-play source appears, continue on it
       // automatically (close the picker, no interaction). An uncached same-release is handled once
