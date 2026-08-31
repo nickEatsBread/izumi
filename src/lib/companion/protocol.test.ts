@@ -65,6 +65,7 @@ describe('companion home snapshot', () => {
     })
     expect(item).toMatchObject({
       ref: { provider: 'tmdb', id: '1399', type: 'series' },
+      resolver: { streamType: 'series' },
       title: 'Example show',
       description: 'Summary line two',
       contentRating: 'TV-14',
@@ -88,6 +89,7 @@ describe('companion home snapshot', () => {
         relationType: 'SEQUEL',
         media: {
           ref: { provider: 'tmdb', id: '1400', type: 'series' },
+          resolver: { streamType: 'series' },
           title: 'Example show: season two',
           subtitle: '2026 · TV',
           seasonEpisodeCounts: [8],
@@ -96,6 +98,17 @@ describe('companion home snapshot', () => {
       placement: { position: 2, label: 'Popular Series Today', kind: 'ranking' },
     })
     expect(JSON.stringify(item)).not.toMatch(/token|api.?key|addonUrls/i)
+  })
+
+  it('preserves the movie stream type for AniList media', () => {
+    expect(companionMedia({
+      id: 1,
+      format: 'MOVIE',
+      title: { english: 'Example movie' },
+    })).toMatchObject({
+      ref: { provider: 'anilist', id: '1', type: 'anime' },
+      resolver: { streamType: 'movie' },
+    })
   })
 
   it('recognizes only the versioned snapshot envelope', () => {

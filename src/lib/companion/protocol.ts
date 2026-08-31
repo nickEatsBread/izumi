@@ -12,8 +12,15 @@ export interface CompanionPlacement {
   kind: 'continue' | 'ranking' | 'recommendation' | 'catalog'
 }
 
+export interface CompanionResolverHint {
+  /** Stremio resource type; AniList's provider-neutral `anime` type cannot express movies. */
+  streamType: 'movie' | 'series'
+}
+
 export interface CompanionMedia {
   ref: MediaRef
+  /** Non-secret metadata a TV can pass to the owner's Worker when Izumi is unavailable. */
+  resolver?: CompanionResolverHint
   title: string
   subtitle?: string
   description?: string
@@ -154,10 +161,17 @@ function stripMarkup(value: string | undefined): string | undefined {
   return text ? text.slice(0, 900) : undefined
 }
 
+function resolverHint(media: Pick<Media, 'format' | 'catalog'>): CompanionResolverHint {
+  return {
+    streamType: media.format === 'MOVIE' || media.catalog?.type === 'movie' ? 'movie' : 'series',
+  }
+}
+
 function companionRelationMedia(media: Media): CompanionMedia {
   const total = Math.max(0, media.episodes ?? 0)
   return {
     ref: mediaRef(media),
+    resolver: resolverHint(media),
     title: title(media),
     subtitle: [media.seasonYear, format(media)].filter(Boolean).join(' · ') || undefined,
     description: stripMarkup(media.description),
@@ -189,6 +203,7 @@ export function companionMedia(
   const total = Math.max(0, media.episodes ?? 0)
   return {
     ref: mediaRef(media),
+    resolver: resolverHint(media),
     title: title(media),
     subtitle: options.subtitle || format(media) || undefined,
     description: stripMarkup(media.description),
