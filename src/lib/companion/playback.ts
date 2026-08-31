@@ -61,6 +61,18 @@ export function companionPlaybackTarget(
   return companionPlaybackMatches(requested, media, episode) ? { episode } : null
 }
 
+/** Clear a TV handoff when the user explicitly dismisses source selection. Without this, a later
+ * local Play press for the same episode could unexpectedly consume the abandoned TV target. */
+export function cancelPendingCompanionPlayback(): boolean {
+  const pending = get(pendingCompanionPlayback)
+  if (!pending) return false
+  pendingCompanionPlayback.set(null)
+  if (pending.pairingId && pending.requestId) {
+    void updateCloudflareCompanionRequest(pending.pairingId, pending.requestId, 'cancelled').catch(() => {})
+  }
+  return true
+}
+
 function castStyle() {
   const style = effectiveSubtitleStyle(get(sessionSubtitleStyle), {
     enabled: get(subtitleStyleEnabled),
@@ -103,10 +115,7 @@ export async function startPendingCompanionCast(input: {
     throw new Error('The TV playback request expired. Start it again from the TV.')
   }
   if (!companionPlaybackMatches(pending.media, input.media, input.episode)) {
-    pendingCompanionPlayback.set(null)
-    if (pending.pairingId && pending.requestId) {
-      void updateCloudflareCompanionRequest(pending.pairingId, pending.requestId, 'cancelled').catch(() => {})
-    }
+    cancelPendingCompanionPlayback()
     return false
   }
 

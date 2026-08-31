@@ -1,5 +1,7 @@
+import { get } from 'svelte/store'
 import { describe, expect, it } from 'vitest'
-import { companionPlaybackMatches, companionPlaybackTarget } from './playback'
+import { pendingCompanionPlayback } from './client'
+import { cancelPendingCompanionPlayback, companionPlaybackMatches, companionPlaybackTarget } from './playback'
 import type { CompanionMedia } from './protocol'
 
 const requested = (episode?: number): CompanionMedia => ({
@@ -37,5 +39,21 @@ describe('companion playback target', () => {
       format: 'MOVIE',
       catalog: { provider: 'tmdb', type: 'movie', id: '550' },
     })).toEqual({ episode: undefined })
+  })
+
+  it('forgets a dismissed TV target so a later local play is not redirected', () => {
+    pendingCompanionPlayback.set({
+      device: {
+        deviceId: 'tv-one',
+        name: 'Living room TV',
+        address: '192.168.1.40',
+        credential: 'ab'.repeat(32),
+        pairedAt: 1,
+      },
+      media: requested(3),
+    })
+    expect(cancelPendingCompanionPlayback()).toBe(true)
+    expect(get(pendingCompanionPlayback)).toBeNull()
+    expect(cancelPendingCompanionPlayback()).toBe(false)
   })
 })

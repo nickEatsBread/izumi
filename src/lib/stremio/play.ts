@@ -135,7 +135,7 @@ import {
   androidStreamInfo, waitForMpvFirstFrame,
 } from '$lib/player/android-mpv'
 import { waitForRecoveryFirstFrame, type RecoveryFirstFrameResult } from '$lib/player/recovery-first-frame'
-import { startPendingCompanionCast } from '$lib/companion/playback'
+import { cancelPendingCompanionPlayback, startPendingCompanionCast } from '$lib/companion/playback'
 
 function continueToNextEpisode(
   media: Media,
@@ -482,6 +482,7 @@ export function cancelResolve() {
   finishResolveTrace(currentResolveTrace(), 'canceled by user')
   resolveAbort?.abort()
   resolveAbort = null
+  cancelPendingCompanionPlayback()
   // The fetches were "best-effort background" once; on a click they are contention on the very
   // lanes the picked source needs. Cut them loose — reissued fresh next resolve.
   cancelExtensionFetches()
