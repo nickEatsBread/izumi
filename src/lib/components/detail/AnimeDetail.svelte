@@ -51,6 +51,8 @@
   import { kitsuIdOf } from '$lib/catalog/identity'
   import { detailTrackerLinks } from './tracker-links'
   import TrackerProviderBadge from '$lib/components/settings/TrackerProviderBadge.svelte'
+  import { pendingCompanionPlayback, type PendingCompanionPlayback } from '$lib/companion/client'
+  import { companionPlaybackTarget } from '$lib/companion/playback'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -184,6 +186,25 @@
 
   let active = $state('Episodes')
   let heroPlay = $state<PlayState>({ status: 'idle' })
+
+  // A TV request already chose the title/episode. Once its detail data is ready, open the same
+  // source picker as a local Play press; selecting (or auto-selecting) a source then consumes the
+  // pending target in startPendingCompanionCast and sends that source to the TV.
+  let startedCompanionRequest: PendingCompanionPlayback | null = null
+  $effect(() => {
+    const pending = $pendingCompanionPlayback
+    const current = media
+    if (!pending || !current || pending === startedCompanionRequest) return
+    const target = companionPlaybackTarget(
+      pending.media,
+      current,
+      current.format === 'MOVIE' ? undefined : ctaEp(current),
+    )
+    if (!target) return
+    startedCompanionRequest = pending
+    prefetchEpisodeSources(current, target.episode, 0)
+    void playEpisode(current, target.episode, (state) => (heroPlay = state))
+  })
 
   // Action-bar transient/optimistic state.
   let copied = $state(false)

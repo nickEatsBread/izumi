@@ -207,9 +207,10 @@ export function companionMedia(
 ): CompanionMedia {
   const watched = Math.max(0, options.watched ?? media.mediaListEntry?.progress ?? 0)
   const total = Math.max(0, media.episodes ?? 0)
+  const resolver = resolverHint(media)
   return {
     ref: mediaRef(media),
-    resolver: resolverHint(media),
+    resolver,
     title: title(media),
     subtitle: options.subtitle || format(media) || undefined,
     description: stripMarkup(media.description),
@@ -218,7 +219,9 @@ export function companionMedia(
     backdrop: banner(media) || undefined,
     trailer: media.trailer?.id ? { id: media.trailer.id, site: media.trailer.site } : undefined,
     progress: options.progress ?? (total ? Math.min(1, watched / total) : undefined),
-    episode: options.episode ?? resumeEp(media, watched),
+    // A movie is addressed by its title id alone. Supplying the resume helper's synthetic
+    // episode 1 makes the linked device reject the resolved movie as the wrong playback target.
+    ...(resolver.streamType === 'movie' ? {} : { episode: options.episode ?? resumeEp(media, watched) }),
     episodeTitle: options.episodeTitle,
     episodeImage: options.episodeImage,
     season: options.season,

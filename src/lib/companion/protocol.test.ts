@@ -101,14 +101,16 @@ describe('companion home snapshot', () => {
   })
 
   it('preserves the movie stream type for AniList media', () => {
-    expect(companionMedia({
+    const item = companionMedia({
       id: 1,
       format: 'MOVIE',
       title: { english: 'Example movie' },
-    })).toMatchObject({
+    })
+    expect(item).toMatchObject({
       ref: { provider: 'anilist', id: '1', type: 'anime' },
       resolver: { streamType: 'movie' },
     })
+    expect(item).not.toHaveProperty('episode')
   })
 
   it('recognizes only the versioned snapshot envelope', () => {

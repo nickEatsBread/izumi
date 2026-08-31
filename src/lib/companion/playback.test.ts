@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { companionPlaybackMatches } from './playback'
+import { companionPlaybackMatches, companionPlaybackTarget } from './playback'
 import type { CompanionMedia } from './protocol'
 
 const requested = (episode?: number): CompanionMedia => ({
@@ -18,5 +18,24 @@ describe('companion playback target', () => {
 
   it('allows episode selection when the TV requested a title without a specific episode', () => {
     expect(companionPlaybackMatches(requested(), { id: 21, type: 'ANIME' }, 9)).toBe(true)
+  })
+
+  it('opens the requested episode in the existing source picker', () => {
+    const media = { id: 21, type: 'ANIME' as const }
+    expect(companionPlaybackTarget(requested(3), media, 9)).toEqual({ episode: 3 })
+    expect(companionPlaybackTarget(requested(), media, 9)).toEqual({ episode: 9 })
+    expect(companionPlaybackTarget(requested(3), { ...media, id: 22 }, 9)).toBeNull()
+  })
+
+  it('supports a title-level movie target without inventing an episode', () => {
+    expect(companionPlaybackTarget({
+      ref: { provider: 'tmdb', type: 'movie', id: '550' },
+      resolver: { streamType: 'movie' },
+      title: 'Fight Club',
+    }, {
+      id: -1,
+      format: 'MOVIE',
+      catalog: { provider: 'tmdb', type: 'movie', id: '550' },
+    })).toEqual({ episode: undefined })
   })
 })

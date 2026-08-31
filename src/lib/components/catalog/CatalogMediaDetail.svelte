@@ -24,6 +24,8 @@
   import LocalListPicker from '$lib/components/library/LocalListPicker.svelte'
   import { localLibrary, mediaIsSaved } from '$lib/library/local-lists'
   import { openTrailerPopup } from '$lib/stores/trailer'
+  import { pendingCompanionPlayback, type PendingCompanionPlayback } from '$lib/companion/client'
+  import { companionPlaybackTarget } from '$lib/companion/playback'
 
   let { provider, type, id }: { provider: CatalogProviderId; type: CatalogContentType; id: string } = $props()
   const ref = $derived({ provider, type, id } as MediaRef)
@@ -87,6 +89,20 @@
     const episode = isMovie ? undefined : video?.number ?? 1
     void playEpisode(media, episode, (state) => (playState = state))
   }
+
+  // Local and notification-delivered TV requests both arrive here after the app has loaded the
+  // provider detail. Open the normal picker exactly once for that request; movies deliberately use
+  // no episode while a title-level series request starts at episode one.
+  let startedCompanionRequest: PendingCompanionPlayback | null = null
+  $effect(() => {
+    const pending = $pendingCompanionPlayback
+    const current = media
+    if (!pending || !current || pending === startedCompanionRequest) return
+    const target = companionPlaybackTarget(pending.media, current, isMovie ? undefined : 1)
+    if (!target) return
+    startedCompanionRequest = pending
+    void playEpisode(current, target.episode, (state) => (playState = state))
+  })
 
   function watchTrailer() {
     if (!media?.trailer?.id) return

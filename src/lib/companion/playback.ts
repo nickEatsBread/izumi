@@ -50,6 +50,17 @@ export function companionPlaybackMatches(
     && (requested.episode == null || requested.episode === episode)
 }
 
+/** Resolve the episode that the existing source picker should open for a pending TV request.
+ * A TV can request either an exact episode or a title-level fallback (for example a movie). */
+export function companionPlaybackTarget(
+  requested: CompanionMedia,
+  media: Pick<Media, 'id' | 'type' | 'format' | 'catalog'>,
+  fallbackEpisode?: number,
+): { episode?: number } | null {
+  const episode = requested.episode ?? fallbackEpisode
+  return companionPlaybackMatches(requested, media, episode) ? { episode } : null
+}
+
 function castStyle() {
   const style = effectiveSubtitleStyle(get(sessionSubtitleStyle), {
     enabled: get(subtitleStyleEnabled),
