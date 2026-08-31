@@ -75,7 +75,7 @@ export function castSourceDecision(
 ): CastSourceDecision {
   const rawUrl = source?.url?.trim()
   if (!rawUrl) return { ok: false, error: 'Cast needs a playable stream.' }
-  if (source?.drm) return { ok: false, error: 'This protected stream needs a dedicated Cast receiver.' }
+  if (source?.drm && target !== 'tv') return { ok: false, error: 'This protected stream needs a dedicated Cast receiver.' }
 
   let url: URL
   try {
@@ -124,7 +124,7 @@ export function castSourceDecision(
   const warnings: string[] = []
   const subtitleCodec = normalizedCodec(subtitle?.codec)
   const subtitleName = subtitle?.externalFilename?.toLowerCase() ?? ''
-  if (subtitle && (['ass', 'ssa', 'substationalpha', 'asssubtitle'].includes(subtitleCodec)
+  if (target === 'googleCast' && subtitle && (['ass', 'ssa', 'substationalpha', 'asssubtitle'].includes(subtitleCodec)
     || /\.(?:ass|ssa)(?:$|[?#])/.test(subtitleName))) {
     warnings.push('Selected ASS subtitles cannot be sent to the Default Media Receiver.')
   }
@@ -132,11 +132,12 @@ export function castSourceDecision(
   return { ok: true, url: rawUrl, contentType, warnings }
 }
 
-export function castSubtitleFormat(url: string): 'vtt' | 'srt' | 'ttml' | null {
+export function castSubtitleFormat(url: string): 'vtt' | 'srt' | 'ttml' | 'ass' | null {
   let pathname: string
   try { pathname = new URL(url).pathname.toLowerCase() } catch { return null }
   if (pathname.endsWith('.vtt')) return 'vtt'
   if (pathname.endsWith('.srt')) return 'srt'
+  if (pathname.endsWith('.ass') || pathname.endsWith('.ssa')) return 'ass'
   if (pathname.endsWith('.ttml') || pathname.endsWith('.xml')) return 'ttml'
   return null
 }

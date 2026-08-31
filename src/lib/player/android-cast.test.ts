@@ -63,6 +63,7 @@ describe('Android Cast direct-play policy', () => {
   it('recognizes text formats the relay can expose to Cast', () => {
     expect(castSubtitleFormat('https://subs.example/en.vtt?token=x')).toBe('vtt')
     expect(castSubtitleFormat('https://subs.example/en.srt')).toBe('srt')
-    expect(castSubtitleFormat('https://subs.example/en.ass')).toBeNull()
+    expect(castSubtitleFormat('https://subs.example/en.ass')).toBe('ass')
+    expect(castSubtitleFormat('https://subs.example/en.ssa')).toBe('ass')
   })
 })

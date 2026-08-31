@@ -43,8 +43,19 @@ describe('desktop Cast subtitle selection', () => {
       .toBe('https://subs.example/fr.vtt')
   })
 
-  it('does not send ASS/SSA tracks to the Default Media Receiver', () => {
-    expect(selectedCastSubtitle(source, [{ type: 'sub', selected: true, title: 'Signs' }])).toBeNull()
+  it('falls back to metadata when mpv exposes a transformed cache filename', () => {
+    expect(selectedCastSubtitle(source, [{
+      type: 'sub',
+      selected: true,
+      lang: 'en',
+      title: 'Signs',
+      externalFilename: 'http://127.0.0.1:41821/sidecar/hashed-cache-file.ass',
+    }])?.url).toBe('https://subs.example/signs.ass')
+  })
+
+  it('preserves ASS/SSA tracks for the styled TV receiver', () => {
+    expect(selectedCastSubtitle(source, [{ type: 'sub', selected: true, title: 'Signs' }]))
+      .toEqual(source.subtitles[2])
   })
 
   it('uses the MIME aliases advertised by Samsung AllShare TVs', () => {
@@ -113,6 +124,7 @@ describe('desktop Cast subtitle selection', () => {
   })
 
   it('does not send a seek from a different player item to the cast', async () => {
+    vi.mocked(invoke).mockClear()
     desktopCastSession.set({
       deviceId: 'tv', deviceName: 'TV', backend: 'dlna', mediaId: 42, episode: 3,
       subtitles: [], activeTrackIds: [],
