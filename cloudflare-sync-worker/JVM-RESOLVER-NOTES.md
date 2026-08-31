@@ -1,6 +1,6 @@
 # JVM resolver feasibility
 
-Status: research only. Version 1.2 does not execute JVM extensions.
+Status: rejected for the Worker resolver. Version 1.2 does not execute JVM extensions.
 
 ## Boundary
 
@@ -33,30 +33,25 @@ References:
 - [TeaVM overview and compatibility boundaries](https://teavm.org/docs/intro/overview.html)
 - [AnymeX extension runtime bridge](https://github.com/RyanYuuki/AnymeXExtensionRuntimeBridge)
 
-## Non-container experiment worth testing
+## CheerpJ / Browser Run decision
 
 Cloudflare Browser Run can launch full Chromium from a binding on the user's Worker. CheerpJ runs
 Java 8/11/17 bytecode inside a browser and documents support for reflection and dynamic class
-loading. Its library mode exposes Java classes and methods to JavaScript, so it is the only
-currently credible non-container route for exercising the existing bridge with limited changes.
+loading. A local probe confirmed that CheerpJ 4.3 could initialize Java 17, load the real 41.9 MiB
+AnymeX v2.3.0 desktop runtime JAR, resolve its Gson/coroutines/OkHttp classes, create its writable
+filesystem directory, and complete an empty extension scan. Cold bridge-library readiness took
+roughly 3.5–7.8 seconds on the test machine.
 
-This is not ready to add to Izumi. A spike should proceed in this order:
+That result proves bytecode loading only; it does not make this a viable Izumi architecture.
+CheerpJ transparently supports HTTP(S) to the browser page's same origin, while real extensions use
+OkHttp against arbitrary provider origins. Supporting them would require a fetch/proxy adapter,
+URL rewriting or runtime changes, and a second browser execution environment. Source work would
+then be split across the Worker, headless browser, extension runtime, and TV. This creates unclear
+ownership, duplicated failure modes, and a large compatibility/security surface.
 
-1. Run CheerpJ in local headless Chromium and load the desktop bridge plus one simple, converted
-   AniYomi extension.
-2. Expose only `search`, `getDetail`, and `getVideoList` through CheerpJ library mode.
-3. Route extension HTTP through a same-origin, authenticated fetch adapter with strict response
-   limits and SSRF protections. Return source metadata only.
-4. Prove a direct non-localhost source is returned with the extension unchanged.
-5. Repeat the exact harness using Browser Run from the user's own Worker and measure cold start,
-   warm start, browser minutes, memory, and provider compatibility.
-6. Before production work, confirm this server-side Browser Run use with Leaning Technologies.
-   The community licence permits FOSS/evaluation use from their hosted runtime, while self-hosting
-   is a commercial feature.
-
-The spike succeeds only if a real extension works unchanged, cold resolution is tolerable, all
-control traffic stays within the user's Worker deployment, and no media bytes cross Cloudflare.
-Failure should leave the current Stremio resolver and paired-client fallback untouched.
+Izumi will therefore not pursue CheerpJ or Browser Run for JVM source resolution. The short-lived
+probe artifacts were not committed. The direct Stremio resolver and paired-client fallback remain
+the supported paths.
 
 References:
 
@@ -68,8 +63,8 @@ References:
 
 ## Alternatives not selected
 
-- **CheerpJ in the Worker isolate:** it expects browser facilities and still encounters the
-  isolate's memory and startup constraints.
+- **CheerpJ in the Worker isolate or Browser Run:** rejected above. Loading works in Chromium, but
+  provider networking and split execution make the complete source flow unsuitable.
 - **JavaBox:** technically interesting, but its project maturity, memory profile, Web Worker
   requirements, and unclear top-level licensing make it unsuitable for an automatic deployment.
 - **TeaVM/JWebAssembly/Kotlin Wasm:** useful for controlled applications, not for loading arbitrary
