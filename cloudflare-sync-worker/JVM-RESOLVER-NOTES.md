@@ -1,6 +1,6 @@
 # JVM resolver feasibility
 
-Status: rejected for the Worker resolver. Version 1.2 does not execute JVM extensions.
+Status: rejected for the Worker resolver. The Worker does not execute JVM extensions.
 
 ## Boundary
 

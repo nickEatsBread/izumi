@@ -21,6 +21,7 @@ describe('self-hosted Cloudflare source resolver', () => {
       quality: 'any',
       sort: 'quality',
       audioLang: '',
+      connectedDeviceFallback: false,
     })
   })
 
@@ -44,6 +45,7 @@ describe('self-hosted Cloudflare source resolver', () => {
       quality: '1080',
       sort: 'quality',
       audioLang: 'eng',
+      connectedDeviceFallback: false,
     })
   })
 
@@ -85,6 +87,7 @@ describe('self-hosted Cloudflare source resolver', () => {
       quality: '1080',
       sort: 'quality',
       audioLang: '',
+      connectedDeviceFallback: false,
     }, {
       ref: { provider: 'kitsu', type: 'anime', id: '42' },
       episode: 1,
@@ -95,6 +98,37 @@ describe('self-hosted Cloudflare source resolver', () => {
     ])
     expect(result.selectedId).toBe(result.candidates[0].id)
     expect(result.rejected).toBe(2)
+  })
+
+  it('keeps direct debrid URLs that are not browser-ready for Samsung AVPlay', async () => {
+    const fetcher = vi.fn(async (raw: RequestInfo | URL) => {
+      const url = String(raw)
+      if (url.endsWith('/manifest.json')) return json({
+        id: 'debrid', name: 'Configured debrid add-on', version: '1', resources: ['stream'],
+      })
+      if (url.includes('/stream/movie/')) return json({ streams: [{
+        url: 'https://debrid-cdn.example/download/opaque-token',
+        name: 'Debrid 1080p',
+        behaviorHints: { notWebReady: true, filename: 'Movie.1080p.mkv' },
+      }] })
+      return json({}, 404)
+    })
+    const result = await resolveDirectSources({
+      enabled: true,
+      addons: ['https://addon.example/configured-token'],
+      quality: '1080',
+      sort: 'quality',
+      audioLang: '',
+      connectedDeviceFallback: false,
+    }, {
+      ref: { provider: 'tmdb', type: 'movie', id: '550' },
+    }, fetcher)
+
+    expect(result.candidates).toHaveLength(1)
+    expect(result.candidates[0]).toMatchObject({
+      url: 'https://debrid-cdn.example/download/opaque-token',
+      contentType: 'video/x-matroska',
+    })
   })
 
   it('does not accept arbitrary or JVM media references', () => {

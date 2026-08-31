@@ -1,7 +1,7 @@
 import webpush from 'web-push'
 import { defaultResolverProfile, normalizeResolverProfile, resolveDirectSources } from './resolver.js'
 
-const VERSION = '1.2.0'
+const VERSION = '1.3.0'
 const PROTOCOL = 1
 const CATEGORIES = new Set(['watch', 'manual', 'presence', 'companion'])
 const MAX_BODY_BYTES = 512 * 1024
@@ -431,7 +431,12 @@ async function resolverProfile(request, env) {
     const row = await env.DB.prepare('SELECT profile_json AS profile, updated_at AS updatedAt FROM resolver_profiles WHERE owner_device_id = ?')
       .bind(deviceId).first()
     if (!row) return json({ profile: defaultResolverProfile(), updatedAt: null })
-    try { return json({ profile: JSON.parse(row.profile), updatedAt: Number(row.updatedAt) }) } catch {
+    try {
+      return json({
+        profile: normalizeResolverProfile(JSON.parse(row.profile), new URL(request.url).origin),
+        updatedAt: Number(row.updatedAt),
+      })
+    } catch {
       return json({ profile: defaultResolverProfile(), updatedAt: null })
     }
   }
@@ -459,18 +464,23 @@ async function resolveForTv(request, env, pairingId) {
   if (!Number(gate.meta?.changes || 0)) return json({ error: 'Wait before starting another source lookup.' }, 429)
   const row = await env.DB.prepare('SELECT profile_json AS profile FROM resolver_profiles WHERE owner_device_id = ?')
     .bind(String(pairing.owner_device_id)).first()
-  if (!row) return json({ error: 'Cloud source resolving has not been configured for this TV.' }, 409)
+  if (!row) return json({
+    error: 'Cloud source resolving has not been configured for this TV.',
+    code: 'RESOLVER_NOT_CONFIGURED',
+  }, 409)
   let profile
-  try { profile = JSON.parse(row.profile) } catch { return json({ error: 'The cloud resolver profile is invalid. Open Izumi and save it again.' }, 409) }
+  try { profile = normalizeResolverProfile(JSON.parse(row.profile), new URL(request.url).origin) } catch {
+    return json({ error: 'The cloud resolver profile is invalid. Open Izumi and save it again.', code: 'RESOLVER_INVALID' }, 409)
+  }
   try {
     const result = await resolveDirectSources(profile, await body(request))
     return json({
       ok: true,
       ...result,
-      fallback: result.candidates.length ? null : 'paired-device',
+      fallback: result.candidates.length || !profile.connectedDeviceFallback ? null : 'paired-device',
     })
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : 'Source resolution failed.' }, 409)
+    return json({ error: error instanceof Error ? error.message : 'Source resolution failed.', code: 'RESOLVER_FAILED' }, 409)
   }
 }
 
@@ -571,7 +581,7 @@ export default {
           version: VERSION,
           protocol: PROTOCOL,
           claimed: await claimed(env),
-          features: ['companion-wake-v1', 'web-push-v1', 'cloud-resolver-v1'],
+          features: ['companion-wake-v1', 'web-push-v1', 'cloud-resolver-v1', 'cloud-resolver-v2'],
         })
       }
       if (request.method === 'GET' && url.pathname === '/v1/companion/enrol') return companionEnrolmentPage(request)

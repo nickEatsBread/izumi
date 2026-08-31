@@ -31,6 +31,7 @@ const DEFAULT_PROFILE = Object.freeze({
   quality: 'any',
   sort: 'quality',
   audioLang: '',
+  connectedDeviceFallback: false,
 })
 
 function publicHostname(hostname) {
@@ -75,7 +76,14 @@ export function normalizeResolverProfile(value, workerOrigin = '') {
   const audioLang = typeof input.audioLang === 'string' && /^[a-z]{2,3}$/i.test(input.audioLang.trim())
     ? input.audioLang.trim().toLowerCase().slice(0, 3)
     : ''
-  return { enabled: input.enabled === true, addons, quality, sort, audioLang }
+  return {
+    enabled: input.enabled === true,
+    addons,
+    quality,
+    sort,
+    audioLang,
+    connectedDeviceFallback: input.connectedDeviceFallback === true,
+  }
 }
 
 export function normalizeResolveRequest(value) {
@@ -244,12 +252,20 @@ function playbackHeaders(stream) {
 function contentType(stream) {
   if (stream.__manifest === 'hls' || /\.m3u8(?:[?#]|$)/i.test(stream.url || '')) return 'application/vnd.apple.mpegurl'
   if (stream.__manifest === 'dash' || /\.mpd(?:[?#]|$)/i.test(stream.url || '')) return 'application/dash+xml'
-  if (/\.webm(?:[?#]|$)/i.test(stream.url || '')) return 'video/webm'
+  const filename = stream.behaviorHints?.filename || stream.url || ''
+  if (/\.mkv(?:[?#]|$)/i.test(filename)) return 'video/x-matroska'
+  if (/\.avi(?:[?#]|$)/i.test(filename)) return 'video/x-msvideo'
+  if (/\.(?:ts|m2ts)(?:[?#]|$)/i.test(filename)) return 'video/mp2t'
+  if (/\.webm(?:[?#]|$)/i.test(filename)) return 'video/webm'
   return 'video/mp4'
 }
 
 function directCandidate(stream) {
-  if (!stream.url || stream.behaviorHints?.notWebReady === true || stream.__hosted) return null
+  // Stremio's `notWebReady` means the URL is unsuitable for its browser player (for example an
+  // MKV, plain HTTP URL, or a stream carrying proxyHeaders). Samsung AVPlay is not a browser, so
+  // the hint alone must not discard otherwise portable debrid/direct URLs. Required headers and
+  // non-public URLs are checked independently below.
+  if (!stream.url || stream.__hosted) return null
   const url = cleanUrl(stream.url)
   const headers = playbackHeaders(stream)
   if (!url || !headers) return null
