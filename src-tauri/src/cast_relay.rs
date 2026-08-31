@@ -1026,6 +1026,30 @@ mod tests {
     }
 
     #[test]
+    fn relays_phone_p2p_but_not_direct_debrid_to_the_tizen_client() {
+        let request = |url: &str| CastPrepareRequest {
+            url: url.into(),
+            headers: HashMap::new(),
+            manifest: None,
+            subtitles: Vec::new(),
+            force_relay: false,
+            content_type: Some("video/x-matroska".into()),
+            subtitle_delivery: SubtitleDelivery::TizenReceiver,
+        };
+        let p2p = request("http://127.0.0.1:49152/torrents/session/stream/0");
+        let debrid = request("https://debrid-cdn.example/download/signed-file");
+
+        assert_eq!(
+            relay_plan(&p2p, &Url::parse(&p2p.url).unwrap()).unwrap(),
+            (true, Vec::<bool>::new())
+        );
+        assert_eq!(
+            relay_plan(&debrid, &Url::parse(&debrid.url).unwrap()).unwrap(),
+            (false, Vec::<bool>::new())
+        );
+    }
+
+    #[test]
     fn passes_ordinary_tizen_media_and_subtitles_directly_to_the_tv() {
         let request = CastPrepareRequest {
             url: "https://cdn.example/master.m3u8".into(),

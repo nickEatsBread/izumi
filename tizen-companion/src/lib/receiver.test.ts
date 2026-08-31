@@ -8,6 +8,8 @@ const transport = {
   endpoint: 'https://private-worker.example',
   pairingId: 'private_pairing_1',
   tvToken: 'private_tv_token_12345678901234567890',
+  playbackMode: 'cloud-only',
+  wakeWhenClosed: false,
 }
 
 const media: CompanionMedia = {
@@ -181,6 +183,11 @@ describe('companion play routing', () => {
   })
 
   it('falls back to the encrypted mobile notification when resolving is disabled', async () => {
+    storage.setItem('izumi.companion.cloudflare', JSON.stringify({
+      ...transport,
+      playbackMode: 'cloud-and-device',
+      wakeWhenClosed: true,
+    }))
     FakeXmlHttpRequest.responder = (request) => request.url.endsWith('/resolve')
       ? { status: 409, body: { error: 'Cloud source resolving is disabled for this TV.' } }
       : { status: 201, body: { ok: true, notified: 1 } }
@@ -197,5 +204,74 @@ describe('companion play routing', () => {
       resolver: { streamType: 'movie' },
       season: 0,
     })
+  })
+
+  it('does not contact or wake a linked device in Cloudflare-only mode', async () => {
+    FakeXmlHttpRequest.responder = () => ({
+      status: 200,
+      body: { ok: true, selectedId: null, candidates: [], fallback: null },
+    })
+
+    await expect(new CompanionReceiver(events()).requestPlay(media)).resolves.toBe('no-source')
+    expect(FakeXmlHttpRequest.sent.map((request) => request.url)).toEqual([
+      'https://private-worker.example/v1/companion/pairings/private_pairing_1/resolve',
+    ])
+  })
+
+  it('asks an open linked device after the Worker in combined mode', async () => {
+    storage.setItem('izumi.companion.cloudflare', JSON.stringify({
+      ...transport,
+      playbackMode: 'cloud-and-device',
+      wakeWhenClosed: false,
+    }))
+    FakeXmlHttpRequest.responder = () => ({
+      status: 200,
+      body: { ok: true, selectedId: null, candidates: [], fallback: 'paired-device' },
+    })
+    const channel = new FakeSmartViewChannel()
+    Object.assign(window, {
+      msf: { local: (callback: (error: unknown, service: unknown) => void) => callback(null, { channel: () => channel }) },
+    })
+    const receiver = new CompanionReceiver(events())
+    await receiver.connect()
+    const pending = receiver.requestPlay(media)
+    await vi.advanceTimersByTimeAsync(0)
+    const play = channel.publish.mock.calls.find(([event]) => event === 'izumi.companion.play')?.[1] as {
+      pairingId: string
+      requestId: string
+    }
+    expect(play).toBeTruthy()
+    channel.emit('izumi.companion.play-accepted', { pairingId: play.pairingId, requestId: play.requestId })
+
+    await expect(pending).resolves.toBe('local')
+    expect(FakeXmlHttpRequest.sent).toHaveLength(1)
+    receiver.disconnect()
+  })
+
+  it('never queues a closed desktop request in combined mode', async () => {
+    storage.setItem('izumi.companion.cloudflare', JSON.stringify({
+      ...transport,
+      playbackMode: 'cloud-and-device',
+      wakeWhenClosed: false,
+    }))
+    FakeXmlHttpRequest.responder = () => ({
+      status: 200,
+      body: { ok: true, selectedId: null, candidates: [], fallback: 'paired-device' },
+    })
+    const pending = new CompanionReceiver(events()).requestPlay(media)
+    await vi.advanceTimersByTimeAsync(1_200)
+
+    await expect(pending).resolves.toBe('open-client')
+    expect(FakeXmlHttpRequest.sent).toHaveLength(1)
+  })
+
+  it('does not assume a legacy Worker route may wake a closed desktop', async () => {
+    const { playbackMode: _playbackMode, wakeWhenClosed: _wakeWhenClosed, ...legacy } = transport
+    storage.setItem('izumi.companion.cloudflare', JSON.stringify(legacy))
+    const pending = new CompanionReceiver(events()).requestPlay(media)
+    await vi.advanceTimersByTimeAsync(1_200)
+
+    await expect(pending).resolves.toBe('open-client')
+    expect(FakeXmlHttpRequest.sent).toHaveLength(0)
   })
 })

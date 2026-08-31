@@ -22,6 +22,7 @@ export type CompanionPlayResult =
   | 'queued'
   | 'open-client'
   | 'worker-error'
+  | 'no-source'
   | { kind: 'resolved'; request: CastLoadRequest }
 
 export interface ReceiverEvents {
@@ -85,7 +86,19 @@ function parseCloudflareTransport(value: unknown): CompanionCloudflareTransport 
     const endpoint = new URL(input.endpoint)
     if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.search || endpoint.hash
       || endpoint.pathname !== '/' && endpoint.pathname !== '') return null
-    return { protocol: 1, endpoint: endpoint.toString().replace(/\/$/, ''), pairingId: input.pairingId, tvToken: input.tvToken }
+    const playbackMode = input.playbackMode === 'cloud-only' || input.playbackMode === 'cloud-and-device'
+      ? input.playbackMode
+      : 'device-only'
+    return {
+      protocol: 1,
+      endpoint: endpoint.toString().replace(/\/$/, ''),
+      pairingId: input.pairingId,
+      tvToken: input.tvToken,
+      playbackMode,
+      // Older routes did not identify whether they came from Android or desktop. Defaulting to no
+      // wake avoids queuing a closed desktop request; an open Android app upgrades the policy.
+      wakeWhenClosed: input.wakeWhenClosed === true,
+    }
   } catch { return null }
 }
 
@@ -102,6 +115,12 @@ function storedSnapshot(): CompanionHomeSnapshot | null {
 
 function storeSnapshot(snapshot: CompanionHomeSnapshot): void {
   try { localStorage.setItem(SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshot)) } catch { /* TV storage is best-effort. */ }
+}
+
+class WorkerRequestError extends Error {
+  constructor(message: string, readonly code = '') {
+    super(message)
+  }
 }
 
 function workerRequest(
@@ -121,7 +140,10 @@ function workerRequest(
       let value: Record<string, unknown> = {}
       try { value = JSON.parse(request.responseText || '{}') as Record<string, unknown> } catch { /* handled below */ }
       if (request.status >= 200 && request.status < 300) resolve(value)
-      else reject(new Error(typeof value.error === 'string' ? value.error : `Worker returned ${request.status}.`))
+      else reject(new WorkerRequestError(
+        typeof value.error === 'string' ? value.error : `Worker returned ${request.status}.`,
+        typeof value.code === 'string' ? value.code : '',
+      ))
     }
     request.onerror = () => reject(new Error('The private Worker could not be reached.'))
     request.ontimeout = () => reject(new Error('The private Worker did not respond in time.'))
@@ -343,6 +365,30 @@ export class CompanionReceiver {
     const secureRequestId = secureRandomHex(16)
     const requestId = secureRequestId ?? randomHex(16)
     const pairingId = this.cloudflare?.pairingId ?? this.credential.slice(0, 16)
+    const playbackMode = this.cloudflare?.playbackMode ?? 'device-only'
+
+    if (this.cloudflare && playbackMode !== 'device-only') {
+      try {
+        const result = await workerRequest(
+          this.cloudflare,
+          `/v1/companion/pairings/${encodeURIComponent(pairingId)}/resolve`,
+          'POST',
+          cloudResolveRequest(media),
+          30_000,
+        )
+        const request = cloudResolveLoad(result, media, requestId)
+        if (request) return { kind: 'resolved', request }
+        // A successful Worker response is authoritative. Cloudflare-only never wakes or contacts a
+        // linked device; combined mode does so only when the saved profile explicitly requests it.
+        if (result.fallback !== 'paired-device') return 'no-source'
+      } catch (error) {
+        const resolverWasRemoved = error instanceof WorkerRequestError && error.code === 'RESOLVER_NOT_CONFIGURED'
+        if (playbackMode === 'cloud-only' && !resolverWasRemoved) return 'worker-error'
+        // Combined mode is also an availability fallback: continue through the linked device when
+        // the user's Worker is temporarily unavailable.
+      }
+    }
+
     const accepted = new Promise<boolean>((resolve) => {
       const finish = (value: boolean) => {
         window.clearTimeout(timer)
@@ -362,17 +408,7 @@ export class CompanionReceiver {
     }, 'broadcast')
     if (await accepted) return 'local'
     if (!this.cloudflare) return 'open-client'
-    try {
-      const result = await workerRequest(
-        this.cloudflare,
-        `/v1/companion/pairings/${encodeURIComponent(pairingId)}/resolve`,
-        'POST',
-        cloudResolveRequest(media),
-        30_000,
-      )
-      const request = cloudResolveLoad(result, media, requestId)
-      if (request) return { kind: 'resolved', request }
-    } catch { /* Disabled, unavailable and unsuccessful resolving all fall back to the paired device. */ }
+    if (!this.cloudflare.wakeWhenClosed) return 'open-client'
     if (!secureRequestId || !crypto.subtle) return 'open-client'
     try {
       const payload = await encryptedPlayRequest(this.credential, pairingId, requestId, media)

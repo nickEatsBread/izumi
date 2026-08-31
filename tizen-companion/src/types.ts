@@ -180,11 +180,15 @@ export interface PairingInfo {
   link: string
 }
 
+export type CompanionPlaybackMode = 'device-only' | 'cloud-only' | 'cloud-and-device'
+
 export interface CompanionCloudflareTransport {
   protocol: 1
   endpoint: string
   pairingId: string
   tvToken: string
+  playbackMode: CompanionPlaybackMode
+  wakeWhenClosed: boolean
 }
 
 export interface PlaybackTrack {
