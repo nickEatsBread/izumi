@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const trailer = readFileSync(fileURLToPath(new URL('./YoutubeTrailer.svelte', import.meta.url)), 'utf8')
+const dialog = readFileSync(fileURLToPath(new URL('./TrailerDialog.svelte', import.meta.url)), 'utf8')
 
 describe('hover trailer keyboard mute', () => {
   it('lets the active preview own M without interfering with text input', () => {
@@ -23,5 +24,12 @@ describe('hover trailer keyboard mute', () => {
     expect(trailer).toContain("if (key === 't' && !playing) return")
     expect(trailer).toContain("send('mute')")
     expect(trailer).toContain('openTrailerPopup(id, title)')
+  })
+
+  it('routes both trailer surfaces through the macOS-compatible embed source', () => {
+    expect(trailer).toContain("youtubeEmbedSource(videoId, { controls: false, muted: true })")
+    expect(dialog).toContain("youtubeEmbedSource(popup.id, { controls: true, muted: false })")
+    expect(trailer).not.toContain('credentialless')
+    expect(trailer).toContain("json.event === 'onError'")
   })
 })

@@ -23,6 +23,7 @@
   import { WATCHLIST_ID, RECENTLY_ADDED_ID, CURRENTLY_AIRING_ID, EPISODE_QUEUE_ID, browsableLocalLists, localEntriesForList, localLibrary, removeQueuedEpisode, reorderQueuedEpisode, syncWatchedHistoryToWatchlist } from '$lib/library/local-lists'
   import { durableHistory, localHistory } from '$lib/player/history'
   import LocalListManager from '$lib/components/library/LocalListManager.svelte'
+  import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import { m } from '$lib/paraglide/messages.js'
   import { isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
@@ -54,6 +55,10 @@
   const listName = (id: string, fallback: string) => id === RECENTLY_ADDED_ID ? m.lists_recent()
     : id === CURRENTLY_AIRING_ID ? m.lists_airing()
       : id === EPISODE_QUEUE_ID ? m.lists_queue() : fallback
+  const savedListOptions = $derived(savedLists.map((list) => ({
+    value: list.id,
+    label: listName(list.id, list.name),
+  })))
   const selectedList = $derived(savedLists.find((list) => list.id === selectedListId) ?? savedLists[0])
   const localEntries = $derived(localEntriesForList($localLibrary, selectedListId))
   const localWatchEntries = $derived(localEntries.map((entry): Entry => ({
@@ -264,13 +269,11 @@
   {/if}
 {:else}
   <div class="mb-4 flex items-center gap-2">
-    <label class="flex min-w-0 items-center gap-2 text-sm font-bold">
+    <div class="flex min-w-0 items-center gap-2 text-sm font-bold">
       <span class="shrink-0 text-muted-foreground">My list</span>
-      <select bind:value={selectedListId} data-focusable aria-label="Choose saved list"
-        class="h-10 min-w-0 max-w-60 rounded-xl bg-secondary px-3 text-sm font-bold outline-none focus:ring-2 focus:ring-accent">
-        {#each savedLists as list (list.id)}<option value={list.id}>{listName(list.id, list.name)}</option>{/each}
-      </select>
-    </label>
+      <SelectMenu bind:value={selectedListId} options={savedListOptions}
+        ariaLabel="Choose saved list" className="w-48 min-w-0 max-w-60" />
+    </div>
     <button data-focusable onclick={() => (managingLists = true)} aria-label={m.lists_manage()} title={m.lists_manage()} class="grid size-10 place-items-center rounded-xl bg-secondary hover:bg-accent"><Settings2 size={17} /></button>
   </div>
   {#if selectedListId === EPISODE_QUEUE_ID}

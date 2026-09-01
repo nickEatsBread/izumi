@@ -118,6 +118,10 @@
           All
         </button>
       </div>
+      {#if offset !== 0}
+        <button data-focusable onclick={() => (offset = 0)}
+          class="rounded-md bg-secondary px-2.5 py-1.5 text-xs font-bold hover:bg-accent">Today</button>
+      {/if}
       <div class="flex items-center gap-1">
         <button data-focusable onclick={() => (offset -= 1)} title="Previous week"
           class="grid size-9 place-items-center rounded-lg bg-secondary hover:bg-accent sm:size-8 sm:rounded-md">
@@ -129,10 +133,6 @@
           <ChevronRight size={19} />
         </button>
       </div>
-      {#if offset !== 0}
-        <button data-focusable onclick={() => (offset = 0)}
-          class="rounded-md bg-secondary px-2.5 py-1.5 text-xs font-bold hover:bg-accent">Today</button>
-      {/if}
     {/if}
   </div>
 

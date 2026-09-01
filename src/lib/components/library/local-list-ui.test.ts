@@ -28,4 +28,11 @@ describe('account-independent saved lists UI', () => {
     expect(watchlist).toContain('No account is required.')
     expect(watchlist).not.toContain('No tracker linked')
   })
+
+  it('uses the client dropdown for the Watchlist list picker instead of macOS native select chrome', () => {
+    expect(watchlist).toContain("import SelectMenu from '$lib/components/settings/SelectMenu.svelte'")
+    expect(watchlist).toContain('<SelectMenu bind:value={selectedListId}')
+    expect(watchlist).toContain('ariaLabel="Choose saved list"')
+    expect(watchlist).not.toContain('<select bind:value={selectedListId}')
+  })
 })

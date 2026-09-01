@@ -64,6 +64,16 @@ describe('schedule page header', () => {
     expect(headerRow).toContain("pick('all')")
   })
 
+  it('keeps Today to the left of week navigation so repeated Next clicks stay on Next', () => {
+    const headerRow = headerRowSlice(page)
+    const today = headerRow.indexOf('onclick={() => (offset = 0)}')
+    const previous = headerRow.indexOf('title="Previous week"')
+    const next = headerRow.indexOf('title="Next week"')
+    expect(today).toBeGreaterThan(-1)
+    expect(today).toBeLessThan(previous)
+    expect(previous).toBeLessThan(next)
+  })
+
   it('feeds the toggle state down into ScheduleGrid instead of duplicating it there', () => {
     expect(page).toContain('bind:view')
     expect(page).toContain('bind:viewTouched')

@@ -1,10 +1,24 @@
 <script lang="ts">
   import { trailerPopup, closeTrailerPopup } from '$lib/stores/trailer'
+  import { youtubeEmbedSource, type YoutubeEmbedSource } from './youtube-embed'
 
   let dialog = $state<HTMLDivElement>()
+  let embed = $state<YoutubeEmbedSource>()
+  let embedFailed = $state(false)
   $effect(() => {
     if (!$trailerPopup) return
     requestAnimationFrame(() => dialog?.focus({ preventScroll: true }))
+  })
+  $effect(() => {
+    const popup = $trailerPopup
+    embed = undefined
+    embedFailed = false
+    if (!popup) return
+    let cancelled = false
+    void youtubeEmbedSource(popup.id, { controls: true, muted: false })
+      .then((source) => { if (!cancelled) embed = source })
+      .catch(() => { if (!cancelled) embedFailed = true })
+    return () => { cancelled = true }
   })
 </script>
 
@@ -19,9 +33,16 @@
        onwheel={(e) => e.preventDefault()}>
     <div class="aspect-video w-full max-w-4xl sm:px-0">
       {#key $trailerPopup.id}
-        <iframe class="h-full w-full rounded-lg" title={`${$trailerPopup.title} trailer`}
-                src={`https://www.youtube-nocookie.com/embed/${$trailerPopup.id}?autoplay=1`}
-                allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>
+        {#if embed}
+          <iframe class="h-full w-full rounded-lg" title={`${$trailerPopup.title} trailer`}
+                  src={embed.src} referrerpolicy="strict-origin-when-cross-origin"
+                  allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>
+        {:else if embedFailed}
+          <div class="grid h-full w-full place-items-center rounded-lg bg-black text-sm text-white/70"
+               role="status">Trailer unavailable</div>
+        {:else}
+          <div class="h-full w-full rounded-lg bg-black" aria-label="Loading trailer"></div>
+        {/if}
       {/key}
     </div>
     <button data-focusable onclick={closeTrailerPopup}
