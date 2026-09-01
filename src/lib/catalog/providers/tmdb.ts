@@ -167,6 +167,7 @@ async function tmdb<T>(path: string, params: Record<string, string | number | bo
 
 const image = (path: string | null | undefined, size: string) => path ? `${IMAGE}/${size}${path}` : undefined
 const yearOf = (date?: string) => /^\d{4}/.exec(date ?? '')?.[0]
+const isoDate = (date?: string) => /^\d{4}-\d{2}-\d{2}$/.test(date ?? '') ? date : undefined
 
 export function tmdbRegion(locale?: string): string {
   try {
@@ -480,6 +481,7 @@ export function tmdbDiscoverFilterParams(
   request: CatalogSearchRequest,
   genre?: number,
   animeOnly = false,
+  excludedGenres: number[] = [],
 ): Record<string, string | number | boolean | undefined> {
   return {
     page: request.page ?? 1,
@@ -487,12 +489,22 @@ export function tmdbDiscoverFilterParams(
     language: TMDB_LANGUAGE,
     sort_by: sortBy(kind, request.sort),
     with_genres: [animeOnly ? 16 : undefined, genre].filter((value) => value != null).join(',') || undefined,
+    without_genres: excludedGenres.length ? excludedGenres.join(',') : undefined,
     with_origin_country: request.country || (animeOnly && kind === 'tv' ? 'JP' : undefined),
     with_original_language: request.language || (animeOnly && kind === 'movie' ? 'ja' : undefined),
     ...(kind === 'movie'
-      ? { primary_release_year: request.year }
-      : { first_air_date_year: request.year }),
+      ? {
+          primary_release_year: request.year,
+          'primary_release_date.gte': isoDate(request.releaseDateFrom),
+          'primary_release_date.lte': isoDate(request.releaseDateTo),
+        }
+      : {
+          first_air_date_year: request.year,
+          'first_air_date.gte': isoDate(request.releaseDateFrom),
+          'first_air_date.lte': isoDate(request.releaseDateTo),
+        }),
     'vote_average.gte': request.minScore ? request.minScore / 10 : undefined,
+    'vote_average.lte': request.maxScore != null ? request.maxScore / 10 : undefined,
     'vote_count.gte': request.minVotes ?? (request.sort === 'rating' ? 100 : undefined),
     watch_region: request.watchProvider ? tmdbRegion() : undefined,
     with_watch_providers: request.watchProvider,
@@ -501,8 +513,18 @@ export function tmdbDiscoverFilterParams(
 }
 
 async function discover(kind: TmdbKind, request: CatalogSearchRequest, animeOnly = false): Promise<TmdbPage> {
-  const genre = request.genre ? await genreId(kind, request.genre, request.signal) : undefined
-  return tmdb<TmdbPage>(`/discover/${kind}`, tmdbDiscoverFilterParams(kind, request, genre, animeOnly), request.signal)
+  const needsGenres = !!request.genre || !!request.excludedGenres?.length
+  const maps = needsGenres ? await genreMaps(request.signal) : undefined
+  const genre = request.genre ? maps?.[kind].get(request.genre.toLowerCase()) : undefined
+  const excludedGenres = (request.excludedGenres ?? []).flatMap((name) => {
+    const id = maps?.[kind].get(name.toLowerCase())
+    return id == null ? [] : [id]
+  })
+  return tmdb<TmdbPage>(
+    `/discover/${kind}`,
+    tmdbDiscoverFilterParams(kind, request, genre, animeOnly, excludedGenres),
+    request.signal,
+  )
 }
 
 let genresPromise: Promise<{ movie: Map<string, number>; tv: Map<string, number> }> | null = null
@@ -515,11 +537,6 @@ async function genreMaps(signal?: AbortSignal) {
     tv: new Map((tv.genres ?? []).flatMap((genre) => genre.id != null && genre.name ? [[genre.name.toLowerCase(), genre.id]] : [])),
   })).catch((error) => { genresPromise = null; throw error })
   return genresPromise
-}
-
-async function genreId(kind: TmdbKind, name: string, signal?: AbortSignal) {
-  const maps = await genreMaps(signal)
-  return maps[kind].get(name.toLowerCase())
 }
 
 async function search(request: CatalogSearchRequest): Promise<CatalogPage> {
@@ -549,18 +566,32 @@ async function search(request: CatalogSearchRequest): Promise<CatalogPage> {
     }
   }
   const forced = request.type === 'movie' ? 'movie' : request.type === 'series' ? 'tv' : undefined
-  if (query) result.results = await filterSearchResults(result.results ?? [], request, forced)
+  if (query || request.withPoster) result.results = await filterSearchResults(result.results ?? [], request, forced)
   return {
     media: mapList(result, forced),
     page: result.page ?? pageNumber,
     hasNextPage: (result.page ?? pageNumber) < (result.total_pages ?? 1),
-    total: result.total_results,
+    // TMDB does not have a Discover parameter for requiring artwork, so its server total would be
+    // misleading after the local poster check.
+    total: request.withPoster ? undefined : result.total_results,
   }
 }
 
 async function filterSearchResults(items: TmdbListItem[], request: CatalogSearchRequest, forcedKind?: TmdbKind): Promise<TmdbListItem[]> {
-  const maps = request.genre ? await genreMaps(request.signal) : undefined
+  const maps = request.genre || request.excludedGenres?.length ? await genreMaps(request.signal) : undefined
   const genre = request.genre?.toLowerCase()
+  const from = isoDate(request.releaseDateFrom)
+  const to = isoDate(request.releaseDateTo)
+  const excludedByKind = {
+    movie: new Set((request.excludedGenres ?? []).flatMap((name) => {
+      const id = maps?.movie.get(name.toLowerCase())
+      return id == null ? [] : [id]
+    })),
+    tv: new Set((request.excludedGenres ?? []).flatMap((name) => {
+      const id = maps?.tv.get(name.toLowerCase())
+      return id == null ? [] : [id]
+    })),
+  }
   const animeOnly = request.type === 'anime'
   const filtered = items.filter((item) => {
     const kind = forcedKind ?? item.media_type
@@ -568,13 +599,18 @@ async function filterSearchResults(items: TmdbListItem[], request: CatalogSearch
     const date = kind === 'movie' ? item.release_date : item.first_air_date
     if (request.year && Number(yearOf(date)) !== request.year) return false
     if (request.minScore && (item.vote_average ?? 0) * 10 < request.minScore) return false
+    if (request.maxScore != null && (item.vote_average == null || item.vote_average * 10 > request.maxScore)) return false
     if (request.minVotes && (item.vote_count ?? 0) < request.minVotes) return false
     if (request.language && item.original_language !== request.language) return false
     if (request.country && !item.origin_country?.includes(request.country)) return false
+    if (from && (!date || date < from)) return false
+    if (to && (!date || date > to)) return false
+    if (request.withPoster && !item.poster_path) return false
     if (genre) {
       const wanted = maps?.[kind].get(genre)
       if (wanted != null && !item.genre_ids?.includes(wanted)) return false
     }
+    if (excludedByKind[kind].size && item.genre_ids?.some((id) => excludedByKind[kind].has(id))) return false
     if (animeOnly && (!item.genre_ids?.includes(16)
       || (!(item.origin_country?.includes('JP')) && item.original_language !== 'ja'))) return false
     return true

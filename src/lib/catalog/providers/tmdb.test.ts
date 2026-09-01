@@ -54,17 +54,25 @@ describe('TMDB catalog mapping', () => {
       year: 2024,
       sort: 'rating',
       minScore: 75,
+      maxScore: 90,
       minVotes: 500,
       language: 'ko',
       country: 'KR',
-    }, 18)).toMatchObject({
+      releaseDateFrom: '2024-02-01',
+      releaseDateTo: '2024-11-30',
+      excludedGenres: ['Horror', 'Thriller'],
+    }, 18, false, [27, 53])).toMatchObject({
       page: 3,
       sort_by: 'vote_average.desc',
       with_genres: '18',
+      without_genres: '27,53',
       with_original_language: 'ko',
       with_origin_country: 'KR',
       primary_release_year: 2024,
+      'primary_release_date.gte': '2024-02-01',
+      'primary_release_date.lte': '2024-11-30',
       'vote_average.gte': 7.5,
+      'vote_average.lte': 9,
       'vote_count.gte': 500,
     })
   })
@@ -75,6 +83,12 @@ describe('TMDB catalog mapping', () => {
     })
     expect(tmdbDiscoverFilterParams('tv', { sort: 'oldest' })).toMatchObject({
       sort_by: 'first_air_date.asc',
+    })
+    expect(tmdbDiscoverFilterParams('tv', {
+      releaseDateFrom: '2010-01-01', releaseDateTo: '2019-12-31',
+    })).toMatchObject({
+      'first_air_date.gte': '2010-01-01',
+      'first_air_date.lte': '2019-12-31',
     })
     expect(tmdbDiscoverFilterParams('movie', { sort: 'title' })).toMatchObject({
       sort_by: 'original_title.asc',

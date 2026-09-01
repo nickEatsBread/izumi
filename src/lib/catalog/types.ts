@@ -25,11 +25,20 @@ export interface CatalogPage {
 export interface CatalogAdvancedSearchFilters {
   /** Inclusive minimum score on Izumi's shared 0–100 scale. */
   minScore?: number
+  /** Inclusive maximum score on Izumi's shared 0–100 scale. */
+  maxScore?: number
   minVotes?: number
   /** ISO 639-1 original-language code. */
   language?: string
   /** ISO 3166-1 country-of-origin code. */
   country?: string
+  /** Inclusive release/first-air date boundaries in YYYY-MM-DD form. */
+  releaseDateFrom?: string
+  releaseDateTo?: string
+  /** Provider genre names to omit from results. */
+  excludedGenres?: string[]
+  /** Only return titles that have poster artwork. */
+  withPoster?: boolean
 }
 
 export interface CatalogSearchRequest extends CatalogAdvancedSearchFilters {

@@ -38,9 +38,14 @@
   let year = $state(page.url.searchParams.get('year') ?? '')
   let sort = $state<CatalogSort>((page.url.searchParams.get('sort') as CatalogSort | null) ?? 'popular')
   let minScore = $state<number | undefined>(Number(page.url.searchParams.get('score')) || undefined)
+  let maxScore = $state<number | undefined>(Number(page.url.searchParams.get('maxScore')) || undefined)
   let minVotes = $state<number | undefined>(Number(page.url.searchParams.get('votes')) || undefined)
   let language = $state(page.url.searchParams.get('language') ?? '')
   let country = $state(page.url.searchParams.get('country') ?? '')
+  let releaseDateFrom = $state(page.url.searchParams.get('releaseFrom') ?? '')
+  let releaseDateTo = $state(page.url.searchParams.get('releaseTo') ?? '')
+  let excludedGenres = $state<string[]>((page.url.searchParams.get('excludeGenres') ?? '').split(',').filter(Boolean))
+  let withPoster = $state(page.url.searchParams.get('withPoster') === '1')
   let watchProvider = $state<number | undefined>(Number(page.url.searchParams.get('watchProvider')) || undefined)
   let watchProviderName = $state(page.url.searchParams.get('watchProviderName') ?? '')
   let jvmSourceId = $state(page.url.searchParams.get('source') ?? '')
@@ -95,12 +100,19 @@
   ])
   const advancedFilters = $derived<CatalogAdvancedSearchFilters>({
     minScore,
+    maxScore,
     minVotes,
     language: language || undefined,
     country: country || undefined,
+    releaseDateFrom: releaseDateFrom || undefined,
+    releaseDateTo: releaseDateTo || undefined,
+    excludedGenres: excludedGenres.length ? excludedGenres : undefined,
+    withPoster: withPoster || undefined,
   })
   const advancedCount = $derived(
-    (minScore ? 1 : 0) + (minVotes ? 1 : 0) + (language ? 1 : 0) + (country ? 1 : 0),
+    (minScore ? 1 : 0) + (maxScore ? 1 : 0) + (minVotes ? 1 : 0) +
+    (language ? 1 : 0) + (country ? 1 : 0) + (releaseDateFrom || releaseDateTo ? 1 : 0) +
+    (excludedGenres.length ? 1 : 0) + (withPoster ? 1 : 0),
   )
   const jvmSourceOptions = $derived([
     { value: '', label: 'All enabled sources' },
@@ -118,9 +130,14 @@
     if (selection !== 'tmdb' && (sort === 'oldest' || sort === 'title')) sort = 'popular'
     if (selection !== 'tmdb') {
       minScore = undefined
+      maxScore = undefined
       minVotes = undefined
       language = ''
       country = ''
+      releaseDateFrom = ''
+      releaseDateTo = ''
+      excludedGenres = []
+      withPoster = false
       watchProvider = undefined
       watchProviderName = ''
       filterOptions = {}
@@ -184,7 +201,8 @@
   })
 
   const requestKey = $derived(JSON.stringify([
-    activeSelection, settled, type, genre, year, sort, minScore, minVotes, language, country, watchProvider,
+    activeSelection, settled, type, genre, year, sort, minScore, maxScore, minVotes, language, country,
+    releaseDateFrom, releaseDateTo, excludedGenres, withPoster, watchProvider,
     jvmSourceId, jvmFilters, jvmFiltersLoading,
   ]))
   $effect(() => {
@@ -219,9 +237,14 @@
     if (year) params.set('year', year)
     if (sort !== 'popular') params.set('sort', sort)
     if (minScore) params.set('score', String(minScore))
+    if (maxScore) params.set('maxScore', String(maxScore))
     if (minVotes) params.set('votes', String(minVotes))
     if (language) params.set('language', language)
     if (country) params.set('country', country)
+    if (releaseDateFrom) params.set('releaseFrom', releaseDateFrom)
+    if (releaseDateTo) params.set('releaseTo', releaseDateTo)
+    if (excludedGenres.length) params.set('excludeGenres', excludedGenres.join(','))
+    if (withPoster) params.set('withPoster', '1')
     if (isTmdb && watchProvider) params.set('watchProvider', String(watchProvider))
     if (isTmdb && watchProviderName) params.set('watchProviderName', watchProviderName)
     if (isJvm && jvmSourceId) params.set('source', jvmSourceId)
@@ -249,9 +272,14 @@
         year: Number(year) || undefined,
         sort,
         minScore,
+        maxScore,
         minVotes,
         language: language || undefined,
         country: country || undefined,
+        releaseDateFrom: releaseDateFrom || undefined,
+        releaseDateTo: releaseDateTo || undefined,
+        excludedGenres: excludedGenres.length ? excludedGenres : undefined,
+        withPoster: withPoster || undefined,
         watchProvider,
         sourceId: isJvm ? jvmSourceId || undefined : undefined,
         jvmFilters: isJvm && jvmSourceId ? jvmFilters : undefined,
@@ -270,10 +298,10 @@
       }
       emptyPageStreak = added ? 0 : emptyPageStreak + 1
       hasNext = result.hasNextPage
-      // Text search cannot send advanced Discover parameters to TMDB. If client-side filtering
-      // empties a page, quietly inspect a few more rather than claiming there are no matches while
-      // later result pages still exist. The cap prevents a narrow filter from crawling the API.
-      seekNextFilteredPage = !!settled && advancedCount > 0 && !added && hasNext && emptyPageStreak < 4
+      // TMDB text search cannot accept Discover filters, and artwork is always checked locally. If
+      // local filtering empties a page, quietly inspect a few more rather than claiming there are no
+      // matches while later pages still exist. The cap prevents a narrow filter from crawling the API.
+      seekNextFilteredPage = advancedCount > 0 && !added && hasNext && emptyPageStreak < 4
       pageNumber++
     } catch (reason) {
       if (generation === requestGeneration && !abort?.signal.aborted) {
@@ -291,9 +319,14 @@
 
   function applyAdvanced(filters: CatalogAdvancedSearchFilters) {
     minScore = filters.minScore
+    maxScore = filters.maxScore
     minVotes = filters.minVotes
     language = filters.language ?? ''
     country = filters.country ?? ''
+    releaseDateFrom = filters.releaseDateFrom ?? ''
+    releaseDateTo = filters.releaseDateTo ?? ''
+    excludedGenres = filters.excludedGenres ?? []
+    withPoster = !!filters.withPoster
     showAdvanced = false
   }
 
@@ -406,6 +439,7 @@
   <TmdbAdvancedFilters
     filters={advancedFilters}
     options={filterOptions}
+    genres={availableGenres}
     queryActive={!!settled}
     onApply={applyAdvanced}
     onClose={() => (showAdvanced = false)}

@@ -21,20 +21,30 @@ describe('TMDB search filters', () => {
   it('round-trips every advanced value through URL and provider requests', () => {
     for (const [state, param] of [
       ['minScore', 'score'],
+      ['maxScore', 'maxScore'],
       ['minVotes', 'votes'],
       ['language', 'language'],
       ['country', 'country'],
+      ['releaseDateFrom', 'releaseFrom'],
+      ['releaseDateTo', 'releaseTo'],
+      ['excludedGenres', 'excludeGenres'],
+      ['withPoster', 'withPoster'],
     ]) {
       expect(page).toContain(`params.set('${param}'`)
       expect(page).toContain(`${state},`)
     }
   })
 
-  it('offers rating, confidence, language, and country controls', () => {
+  it('offers rating, confidence, release, genre, language, country, and artwork controls', () => {
     expect(advanced).toContain('Minimum rating')
+    expect(advanced).toContain('Maximum rating')
     expect(advanced).toContain('Rating confidence')
     expect(advanced).toContain('Original language')
     expect(advanced).toContain('Country of origin')
+    expect(advanced).toContain('Release window')
+    expect(advanced).toContain('Excluded genres')
+    expect(advanced).toContain('Require a poster')
+    expect(advanced).toContain('disabled={datesInvalid}')
   })
 
   it('loads authoritative language and country options from TMDB', () => {
@@ -47,6 +57,14 @@ describe('TMDB search filters', () => {
     expect(page).toContain('emptyPageStreak < 4')
     expect(page).toContain('queueMicrotask(() => void loadMore())')
     expect(page).toContain('Promise.allSettled')
+  })
+
+  it('applies Discover filters server-side and poster filtering locally', () => {
+    expect(provider).toContain("'vote_average.lte': request.maxScore")
+    expect(provider).toContain("'primary_release_date.gte': isoDate(request.releaseDateFrom)")
+    expect(provider).toContain("'first_air_date.lte': isoDate(request.releaseDateTo)")
+    expect(provider).toContain('without_genres: excludedGenres.length')
+    expect(provider).toContain('request.withPoster && !item.poster_path')
   })
 
   it('shows useful TMDB metadata beneath each result', () => {

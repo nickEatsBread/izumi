@@ -2,18 +2,21 @@
   import { onMount, untrack } from 'svelte'
   import X from '@lucide/svelte/icons/x'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
+  import MultiSelect from '$lib/components/search/MultiSelect.svelte'
   import { advancedFiltersOpen } from '$lib/player/session'
   import type { CatalogAdvancedSearchFilters, CatalogSearchOptions } from '$lib/catalog/types'
 
   let {
     filters,
     options,
+    genres = [],
     queryActive = false,
     onApply,
     onClose,
   }: {
     filters: CatalogAdvancedSearchFilters
     options: CatalogSearchOptions
+    genres?: string[]
     queryActive?: boolean
     onApply: (filters: CatalogAdvancedSearchFilters) => void
     onClose: () => void
@@ -42,10 +45,38 @@
   ])
 
   const set = (patch: Partial<CatalogAdvancedSearchFilters>) => (draft = { ...draft, ...patch })
-  const scoreLabel = $derived(draft.minScore ? `${(draft.minScore / 10).toFixed(1)}+` : 'Any')
+  const minScoreLabel = $derived(draft.minScore ? `${(draft.minScore / 10).toFixed(1)}+` : 'Any')
+  const maxScoreLabel = $derived(draft.maxScore ? `Up to ${(draft.maxScore / 10).toFixed(1)}` : 'Any')
+  const datesInvalid = $derived(!!draft.releaseDateFrom && !!draft.releaseDateTo && draft.releaseDateFrom > draft.releaseDateTo)
+
+  function setMinScore(raw: string) {
+    const minScore = Number(raw) || undefined
+    set({
+      minScore,
+      maxScore: minScore && draft.maxScore && minScore > draft.maxScore
+        ? (minScore < 100 ? minScore : undefined)
+        : draft.maxScore,
+    })
+  }
+
+  function setMaxScore(raw: string) {
+    const value = Number(raw)
+    const maxScore = value < 100 ? value : undefined
+    set({ maxScore, minScore: maxScore && draft.minScore && draft.minScore > maxScore ? maxScore : draft.minScore })
+  }
 
   function clearAll() {
-    draft = { minScore: undefined, minVotes: undefined, language: undefined, country: undefined }
+    draft = {
+      minScore: undefined,
+      maxScore: undefined,
+      minVotes: undefined,
+      language: undefined,
+      country: undefined,
+      releaseDateFrom: undefined,
+      releaseDateTo: undefined,
+      excludedGenres: undefined,
+      withPoster: undefined,
+    }
   }
 
   onMount(() => {
@@ -73,7 +104,7 @@
     <div class="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
       <div>
         <h2 class="text-lg font-black">Advanced TMDB filters</h2>
-        <p class="mt-0.5 text-xs text-muted-foreground">Narrow results by audience score, confidence, language, and origin.</p>
+        <p class="mt-0.5 text-xs text-muted-foreground">Build a precise rating, release, genre, language, and artwork query.</p>
       </div>
       <button
         type="button"
@@ -93,20 +124,40 @@
         </p>
       {/if}
 
-      <label class="grid gap-2 rounded-lg border border-border/70 p-3 text-sm font-semibold sm:grid-cols-[10rem_minmax(0,1fr)] sm:items-center">
-        <span>Minimum rating <strong class="text-theme">{scoreLabel}</strong></span>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          step="5"
-          data-focusable
-          value={draft.minScore ?? 0}
-          oninput={(event) => set({ minScore: Number(event.currentTarget.value) || undefined })}
-          aria-label="Minimum TMDB rating"
-          class="w-full accent-theme"
-        />
-      </label>
+      <section class="space-y-3 rounded-lg border border-border/70 p-3">
+        <div>
+          <h3 class="text-sm font-black">Audience rating</h3>
+          <p class="mt-0.5 text-xs text-muted-foreground">Set either edge of the TMDB user-score range.</p>
+        </div>
+        <label class="grid gap-2 text-sm font-semibold sm:grid-cols-[11rem_minmax(0,1fr)] sm:items-center">
+          <span>Minimum rating <strong class="text-theme">{minScoreLabel}</strong></span>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="5"
+            data-focusable
+            value={draft.minScore ?? 0}
+            oninput={(event) => setMinScore(event.currentTarget.value)}
+            aria-label="Minimum TMDB rating"
+            class="w-full accent-theme"
+          />
+        </label>
+        <label class="grid gap-2 text-sm font-semibold sm:grid-cols-[11rem_minmax(0,1fr)] sm:items-center">
+          <span>Maximum rating <strong class="text-theme">{maxScoreLabel}</strong></span>
+          <input
+            type="range"
+            min="5"
+            max="100"
+            step="5"
+            data-focusable
+            value={draft.maxScore ?? 100}
+            oninput={(event) => setMaxScore(event.currentTarget.value)}
+            aria-label="Maximum TMDB rating"
+            class="w-full accent-theme"
+          />
+        </label>
+      </section>
 
       <section class="rounded-lg border border-border/70 p-3">
         <h3 class="mb-1 text-sm font-black">Rating confidence</h3>
@@ -145,6 +196,61 @@
           />
         </section>
       </div>
+
+      <section class="rounded-lg border border-border/70 p-3">
+        <h3 class="mb-1 text-sm font-black">Release window</h3>
+        <p class="mb-2 text-xs text-muted-foreground">Movies use their primary release date; series use their first air date.</p>
+        <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+          <input
+            type="date"
+            data-focusable
+            value={draft.releaseDateFrom ?? ''}
+            oninput={(event) => set({ releaseDateFrom: event.currentTarget.value || undefined })}
+            aria-label="Released from"
+            class="min-w-0 rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent"
+          />
+          <span class="text-xs font-bold text-muted-foreground">to</span>
+          <input
+            type="date"
+            data-focusable
+            value={draft.releaseDateTo ?? ''}
+            oninput={(event) => set({ releaseDateTo: event.currentTarget.value || undefined })}
+            aria-label="Released through"
+            class="min-w-0 rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent"
+          />
+        </div>
+        {#if datesInvalid}
+          <p class="mt-2 text-xs font-semibold text-destructive">The end date must be on or after the start date.</p>
+        {/if}
+      </section>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <section class="rounded-lg border border-border/70 p-3">
+          <h3 class="mb-1 text-sm font-black">Excluded genres</h3>
+          <p class="mb-2 text-xs text-muted-foreground">Remove any title matching one or more of these genres.</p>
+          <MultiSelect
+            label="Choose genres"
+            options={genres}
+            selected={draft.excludedGenres ?? []}
+            onchange={(values) => set({ excludedGenres: values.length ? values : undefined })}
+          />
+        </section>
+
+        <section class="rounded-lg border border-border/70 p-3">
+          <h3 class="mb-1 text-sm font-black">Artwork</h3>
+          <p class="mb-2 text-xs text-muted-foreground">Hide incomplete TMDB entries without poster art.</p>
+          <label class="flex min-h-10 cursor-pointer items-center gap-2 rounded-md bg-secondary px-3 text-sm font-semibold">
+            <input
+              type="checkbox"
+              data-focusable
+              checked={!!draft.withPoster}
+              onchange={(event) => set({ withPoster: event.currentTarget.checked || undefined })}
+              class="accent-theme"
+            />
+            Require a poster
+          </label>
+        </section>
+      </div>
     </div>
 
     <div class="flex shrink-0 items-center justify-between gap-3 border-t border-border px-4 py-3 sm:px-5">
@@ -157,8 +263,9 @@
       <button
         type="button"
         data-focusable
+        disabled={datesInvalid}
         onclick={() => onApply($state.snapshot(draft) as CatalogAdvancedSearchFilters)}
-        class="rounded-md bg-primary px-5 py-2 text-sm font-black text-primary-foreground transition hover:opacity-90"
+        class="rounded-md bg-primary px-5 py-2 text-sm font-black text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
       >Apply filters</button>
     </div>
   </div>
