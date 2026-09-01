@@ -5,6 +5,8 @@ import { SamsungSmartViewChannel } from '$lib/player/samsung-smart-view'
 import type { TizenReceiverDevice } from '$lib/player/tizen-receiver-cast'
 import { isAndroid, isTv } from '$lib/platform'
 import {
+  catalogScreen,
+  catalogLabel,
   catalogProviders,
   catalogScreens,
   selectCatalogScreen,
@@ -441,18 +443,35 @@ function keepConnection(
         || typeof request.choiceId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(request.choiceId)) return
       onSourceSelection?.(request.requestId, request.choiceId, device)
     }),
-    channel.on('izumi.companion.catalog', (value) => {
+    channel.on('izumi.companion.catalog', (value, from) => {
       const request = value as { screen?: unknown; pairingId?: unknown } | null
       if (!request
         || request.pairingId !== device.credential.slice(0, 16)
         || typeof request.screen !== 'string') return
       const options = catalogScreens(get(catalogProviders))
-      if (!options.includes(request.screen as CatalogScreen)) return
-      selectCatalogScreen(request.screen as CatalogScreen)
-      if (!createSnapshot) return
+      const target = request.screen as CatalogScreen
+      const replyTarget = from?.id || 'host'
+      const reject = (error: string) => channel.publish('izumi.companion.catalog-result', {
+        pairingId: device.credential.slice(0, 16),
+        screen: request.screen,
+        error,
+      }, replyTarget)
+      if (!options.includes(target)) {
+        reject('That catalogue is no longer enabled in izumi.')
+        return
+      }
+      if (!createSnapshot) {
+        reject('Open the izumi catalogue screen on this device, then try again.')
+        return
+      }
+      const previous = get(catalogScreen)
+      selectCatalogScreen(target)
       void createSnapshot().then(async (snapshot) => {
         await publishCompanionSnapshot(snapshot).catch(() => {})
         for (const activeConnection of connections.values()) sendSnapshot(activeConnection, snapshot)
+      }).catch(() => {
+        selectCatalogScreen(previous)
+        reject(`${catalogLabel(target)} could not load. Check its enabled sources in izumi.`)
       })
     }),
     channel.on('izumi.companion.search', (value, from) => {
