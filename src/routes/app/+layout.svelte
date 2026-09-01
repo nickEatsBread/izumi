@@ -51,7 +51,7 @@
   import { initDeviceSync } from '$lib/sync/client'
   import { getContextClient } from '@urql/svelte'
   import { acceptCompanionPlayRequest, initCompanionConnections } from '$lib/companion/client'
-  import { createCompanionSearch, createCompanionSnapshot } from '$lib/companion/snapshot'
+  import { createCompanionDetails, createCompanionSearch, createCompanionSnapshot } from '$lib/companion/snapshot'
   import type { CompanionMedia } from '$lib/companion/protocol'
   import { initAutoDownloads } from '$lib/downloads/rules'
   import { initWatchTogether } from '$lib/watch-together/client'
@@ -209,6 +209,7 @@
         void goto(acceptCompanionPlayRequest(media, device))
       },
       (query: string) => createCompanionSearch(companionCatalogClient, query),
+      (media: CompanionMedia) => createCompanionDetails(media),
     )
     const stopAutoDownloads = initAutoDownloads()
     const stopWatchTogether = initWatchTogether()

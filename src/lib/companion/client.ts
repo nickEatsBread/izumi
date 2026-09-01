@@ -205,6 +205,7 @@ const connections = new Map<string, CompanionConnection>()
 let backgroundSnapshotFactory: (() => Promise<CompanionHomeSnapshot>) | undefined
 let backgroundPlayHandler: ((media: CompanionMedia, device: PairedCompanion) => void) | undefined
 let backgroundSearchHandler: ((query: string) => Promise<CompanionMedia[]>) | undefined
+let backgroundDetailsHandler: ((media: CompanionMedia) => Promise<CompanionMedia>) | undefined
 
 function randomCredential(): string {
   const value = new Uint8Array(32)
@@ -317,7 +318,7 @@ export async function pairCompanion(
       cloudflare,
     }
     upsertCompanion(device)
-    keepConnection(device, channel, snapshot, backgroundSnapshotFactory, backgroundPlayHandler, backgroundSearchHandler)
+    keepConnection(device, channel, snapshot, backgroundSnapshotFactory, backgroundPlayHandler, backgroundSearchHandler, backgroundDetailsHandler)
     return device
   } catch (error) {
     clearTimeout(challengeTimer)
@@ -352,6 +353,7 @@ function keepConnection(
   createSnapshot?: () => Promise<CompanionHomeSnapshot>,
   onPlay?: (media: CompanionMedia, device: PairedCompanion) => void,
   onSearch?: (query: string) => Promise<CompanionMedia[]>,
+  onDetails?: (media: CompanionMedia) => Promise<CompanionMedia>,
 ): void {
   connections.get(device.deviceId)?.dispose()
   const unsubscribers = [
@@ -438,6 +440,31 @@ function keepConnection(
         .then((items) => reply({ items: items.slice(0, 40) }))
         .catch((error) => reply({ error: error instanceof Error ? error.message : 'Search unavailable' }))
     }),
+    channel.on('izumi.companion.details', (value, from) => {
+      const request = value as { media?: unknown; requestId?: unknown; pairingId?: unknown } | null
+      const media = request?.media as Partial<CompanionMedia> | undefined
+      const ref = media?.ref
+      if (!request
+        || request.pairingId !== device.credential.slice(0, 16)
+        || typeof request.requestId !== 'string'
+        || !/^[A-Za-z0-9_-]{8,80}$/.test(request.requestId)
+        || !media
+        || typeof media.title !== 'string'
+        || media.title.length > 240
+        || !ref
+        || typeof ref.provider !== 'string'
+        || typeof ref.type !== 'string'
+        || typeof ref.id !== 'string'
+        || !onDetails) return
+      const reply = (payload: Record<string, unknown>) => channel.publish('izumi.companion.details-result', {
+        credential: device.credential,
+        requestId: request.requestId,
+        ...payload,
+      }, from?.id || 'host')
+      void onDetails(media as CompanionMedia)
+        .then((details) => reply({ media: details }))
+        .catch((error) => reply({ error: error instanceof Error ? error.message : 'Episode details unavailable' }))
+    }),
   ]
   const connection: CompanionConnection = {
     device,
@@ -456,6 +483,7 @@ async function reconnect(
   createSnapshot: () => Promise<CompanionHomeSnapshot>,
   onPlay: (media: CompanionMedia, device: PairedCompanion) => void,
   onSearch: (query: string) => Promise<CompanionMedia[]>,
+  onDetails: (media: CompanionMedia) => Promise<CompanionMedia>,
 ): Promise<void> {
   if (connections.get(device.deviceId)?.channel.connected) return
   const channel = new SamsungSmartViewChannel(device.address, { name: 'Izumi' })
@@ -463,7 +491,7 @@ async function reconnect(
     await channel.connect(2_500)
     if (!await channel.waitForReceiver()) return channel.disconnect()
     const snapshot = await createSnapshot()
-    keepConnection(device, channel, snapshot, createSnapshot, onPlay, onSearch)
+    keepConnection(device, channel, snapshot, createSnapshot, onPlay, onSearch, onDetails)
     const connection = connections.get(device.deviceId)!
     sendSnapshot(connection, snapshot)
     sendWorkerTransport(connection)
@@ -490,8 +518,8 @@ export async function provisionCompanionResolverRoutes(profileOverride?: Cloudfl
     if (connection) {
       connection.device = updated
       sendWorkerTransport(connection)
-    } else if (backgroundSnapshotFactory && backgroundPlayHandler && backgroundSearchHandler) {
-      void reconnect(updated, backgroundSnapshotFactory, backgroundPlayHandler, backgroundSearchHandler)
+    } else if (backgroundSnapshotFactory && backgroundPlayHandler && backgroundSearchHandler && backgroundDetailsHandler) {
+      void reconnect(updated, backgroundSnapshotFactory, backgroundPlayHandler, backgroundSearchHandler, backgroundDetailsHandler)
     }
   }
   return provisioned
@@ -502,14 +530,16 @@ export function initCompanionConnections(
   createSnapshot: () => Promise<CompanionHomeSnapshot>,
   onPlay: (media: CompanionMedia, device: PairedCompanion) => void,
   onSearch: (query: string) => Promise<CompanionMedia[]>,
+  onDetails: (media: CompanionMedia) => Promise<CompanionMedia>,
 ): () => void {
   backgroundSnapshotFactory = createSnapshot
   backgroundPlayHandler = onPlay
   backgroundSearchHandler = onSearch
+  backgroundDetailsHandler = onDetails
   let stopped = false
   const refresh = () => {
     if (stopped) return
-    for (const device of get(pairedCompanions)) void reconnect(device, createSnapshot, onPlay, onSearch)
+    for (const device of get(pairedCompanions)) void reconnect(device, createSnapshot, onPlay, onSearch, onDetails)
   }
   refresh()
   const timer = setInterval(refresh, 30_000)
@@ -518,6 +548,7 @@ export function initCompanionConnections(
     if (backgroundSnapshotFactory === createSnapshot) backgroundSnapshotFactory = undefined
     if (backgroundPlayHandler === onPlay) backgroundPlayHandler = undefined
     if (backgroundSearchHandler === onSearch) backgroundSearchHandler = undefined
+    if (backgroundDetailsHandler === onDetails) backgroundDetailsHandler = undefined
     clearInterval(timer)
     for (const connection of connections.values()) connection.dispose()
   }

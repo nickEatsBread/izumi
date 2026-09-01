@@ -22,12 +22,69 @@ import {
   type CatalogSelection,
   type CatalogScreen,
 } from '$lib/settings/catalog'
-import { companionMedia, COMPANION_PROTOCOL, type CompanionHomeRow, type CompanionHomeSnapshot } from './protocol'
+import { hideSpoilers } from '$lib/settings/ui'
+import {
+  companionMedia,
+  COMPANION_PROTOCOL,
+  type CompanionEpisode,
+  type CompanionHomeRow,
+  type CompanionHomeSnapshot,
+  type CompanionMedia,
+} from './protocol'
 
 type QueryClient = Pick<Client, 'query'>
 const SNAPSHOT_CACHE_MS = 60_000
 const EPISODE_PREVIEW_LIMIT = 12
 let cached: { key: string; at: number; snapshot: CompanionHomeSnapshot } | null = null
+
+function episodeCount(media: CompanionMedia): number {
+  return (media.seasonEpisodeCounts ?? []).reduce((total, count) => total + Math.max(0, Math.floor(count)), 0)
+}
+
+/** Enrich one TV title on demand instead of making every home snapshot carry an entire episode
+ * library. AniZip is already the client's canonical episode-metadata source, so the TV remains a
+ * presentation/playback receiver rather than developing a second resolver or metadata stack. */
+export async function createCompanionDetails(
+  media: CompanionMedia,
+  spoilersHidden = get(hideSpoilers),
+): Promise<CompanionMedia> {
+  const counts = media.seasonEpisodeCounts ?? []
+  const total = episodeCount(media)
+  if (!total) return media
+
+  const watchedThrough = Math.max(0, (media.episode ?? 1) - 1)
+  const anilistId = media.ref.provider === 'anilist' ? Number(media.ref.id) : 0
+  let aniZip: Awaited<ReturnType<typeof getEpisodeMeta>> = {}
+  if (anilistId > 0 && Number.isSafeInteger(anilistId)) {
+    aniZip = await getEpisodeMeta(anilistId, watchedThrough).catch(() => ({}))
+  }
+  const supplied = new Map((media.episodes ?? []).map((episode) => [`${episode.season}:${episode.episode}`, episode]))
+  let absolute = 0
+  const episodes: CompanionEpisode[] = counts.flatMap((rawCount, seasonIndex) => {
+    const count = Math.max(0, Math.floor(rawCount))
+    const season = counts.length === 1 && media.season ? media.season : seasonIndex + 1
+    return Array.from({ length: count }, (_, episodeIndex) => {
+      absolute += 1
+      const episode = episodeIndex + 1
+      const existing = supplied.get(`${season}:${episode}`)
+      const meta = aniZip[absolute]
+      const watched = existing?.watched ?? absolute <= watchedThrough
+      const spoiler = spoilersHidden && !watched
+      return {
+        season,
+        episode,
+        title: existing?.title ?? meta?.title,
+        description: existing?.description ?? meta?.overview,
+        image: existing?.image ?? meta?.image,
+        runtimeMinutes: existing?.runtimeMinutes ?? (meta?.runtime ? Math.max(1, Math.round(meta.runtime)) : undefined),
+        progress: existing?.progress ?? (watched ? 1 : absolute === media.episode ? media.episodeProgress : undefined),
+        watched,
+        spoiler,
+      }
+    })
+  })
+  return { ...media, episodes }
+}
 
 async function continueRow(entries: CwEntry[], active: CatalogSelection, all: boolean): Promise<CompanionHomeRow | null> {
   const filtered = filterContinueWatching(entries, active, all ? 'all' : get(continueWatchingCatalogScope))
@@ -138,6 +195,7 @@ export async function createCompanionSnapshot(client: QueryClient, now = Date.no
       const saved = playbackPositions[progressKey(entry.media.id, episode)]
       return [entry.media.id, episode, saved?.pos, saved?.dur, saved?.updatedAt]
     }),
+    spoilersHidden: get(hideSpoilers),
   })
   if (cached?.key === cacheKey && now - cached.at < SNAPSHOT_CACHE_MS) return cached.snapshot
   const home = await selectedHome(client, screen, active)
@@ -176,6 +234,7 @@ export async function createCompanionSnapshot(client: QueryClient, now = Date.no
       label: catalogLabel(screen),
       options: availableScreens.map((option) => ({ screen: option, label: catalogLabel(option) })),
     },
+    spoilersHidden: get(hideSpoilers),
     hero,
     rows,
     views: {

@@ -72,6 +72,8 @@ export interface CompanionEpisode {
   runtimeMinutes?: number
   progress?: number
   watched?: boolean
+  /** The paired client marked this episode as hidden by the user's spoiler preference. */
+  spoiler?: boolean
 }
 
 export interface CompanionRelation {
@@ -100,6 +102,8 @@ export interface CompanionHomeSnapshot {
   revision: string
   generatedAt: number
   catalog: { screen: string; label: string; options?: CompanionCatalogOption[] }
+  /** Mirrors the paired client's interface preference for unwatched episode presentation. */
+  spoilersHidden?: boolean
   hero?: CompanionMedia
   rows: CompanionHomeRow[]
   views?: {
