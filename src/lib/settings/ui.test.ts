@@ -20,6 +20,7 @@ import {
   absoluteEpisodeNumbers,
   torrentBindInterface,
   p2pStatusVisibility,
+  androidTvMode,
   episodeQueueEnabled,
   sceneBookmarksEnabled,
   autoWatchlistEnabled,
@@ -43,6 +44,9 @@ describe('source picker defaults', () => {
 describe('android playback defaults', () => {
   it('shrinks into the miniplayer when leaving the app, like every other mobile video app', () => {
     expect(get(androidAutoPip)).toBe(true)
+  })
+  it('automatically detects TV devices unless the user overrides it', () => {
+    expect(get(androidTvMode)).toBe('auto')
   })
 })
 

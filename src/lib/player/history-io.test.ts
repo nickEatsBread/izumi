@@ -58,6 +58,7 @@ describe('watch history import merge', () => {
       positionsImported: 1,
       originsImported: 0,
       episodeOriginsImported: 0,
+      sceneBookmarksImported: 0,
     })
   })
 

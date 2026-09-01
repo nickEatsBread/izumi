@@ -98,25 +98,46 @@ export function homeSections(now: Date) {
   ]
 }
 
-/** Recommendations from the connected user's highest-scored current/completed titles. */
+const FOR_YOU_SOURCE_FIELDS = gql`
+  fragment ForYouSourceFields on Media {
+    id isAdult genres episodes averageScore
+    title { romaji english native userPreferred }
+    recommendations(perPage: 7, sort: RATING_DESC) {
+      nodes {
+        rating
+        mediaRecommendation { ...CardMediaFields genres }
+      }
+    }
+  }`
+
+/** Candidate edges from the connected user's highest-scored titles plus recent durable history.
+ * Ranking, seen-title removal, adult filtering, and explanations happen locally. */
 export const PERSONAL_RECOMMENDATIONS_QUERY = gql`
   query PersonalRecommendations($userName: String!, $withPreview: Boolean = true) {
-    Page(page: 1, perPage: 8) {
+    MediaListCollection(userName: $userName, type: ANIME) {
+      lists { entries { media { id } } }
+    }
+    account: Page(page: 1, perPage: 10) {
       mediaList(
         userName: $userName
         type: ANIME
-        status_in: [CURRENT, COMPLETED]
+        status_in: [CURRENT, COMPLETED, REPEATING]
         sort: SCORE_DESC
       ) {
-        media {
-          recommendations(perPage: 5, sort: RATING_DESC) {
-            nodes {
-              rating
-              mediaRecommendation { ...CardMediaFields }
-            }
-          }
-        }
+        score(format: POINT_100) progress status
+        media { ...ForYouSourceFields }
       }
     }
   }
+  ${FOR_YOU_SOURCE_FIELDS}
+  ${CARD_MEDIA_FIELDS}`
+
+/** Account-free recommendations sourced entirely from on-device watch history. */
+export const LOCAL_RECOMMENDATIONS_QUERY = gql`
+  query LocalRecommendations($seedIds: [Int], $withPreview: Boolean = true) {
+    history: Page(page: 1, perPage: 8) {
+      media(id_in: $seedIds, type: ANIME) { ...ForYouSourceFields }
+    }
+  }
+  ${FOR_YOU_SOURCE_FIELDS}
   ${CARD_MEDIA_FIELDS}`

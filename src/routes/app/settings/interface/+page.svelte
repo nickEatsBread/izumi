@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, dragCarousels, episodeQueueEnabled, sceneBookmarksEnabled, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, cwDismissAction, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, titleLanguage, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
+  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, dragCarousels, episodeQueueEnabled, sceneBookmarksEnabled, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, androidTvMode, cwDismissAction, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, titleLanguage, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
-  import { isAndroid } from '$lib/platform'
+  import { isAndroid, isAndroidTv } from '$lib/platform'
   import { setAiringNotificationsEnabled } from '$lib/notifications/airing'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import { m } from '$lib/paraglide/messages.js'
@@ -42,7 +42,8 @@
 
   const scheduleTabs: { value: ScheduleTab; label: string; hint: string }[] = [
     { value: 'schedule', label: 'Schedule', hint: 'The weekly airing calendar.' },
-    { value: 'watchlist', label: 'Watchlist', hint: 'Your watching list — shows with new episodes first.' },
+    { value: 'personal', label: 'Movies & TV', hint: 'Releases based on your TMDB and Stremio watch history.' },
+    { value: 'watchlist', label: 'Watchlist', hint: 'Your watching list, with shows that have new episodes first.' },
   ]
   const themes: { value: ThemePreset; label: string; background: string; surface: string; foreground: string; accent: string }[] = [
     { value: 'izumi', label: 'Izumi', background: '#09090b', surface: '#27272a', foreground: '#fafafa', accent: '#e93b69' },
@@ -109,7 +110,13 @@
     </div>
 
     {#if $isAndroid}
-      <div class="mb-4">
+      <div class="mb-4 space-y-3">
+        <label data-setting-key="android-tv-layout" class="flex items-center justify-between gap-3 rounded-md border border-border p-3">
+          <span><span class="block font-bold">Android TV layout</span><span class="text-xs text-muted-foreground">Remote-first wide navigation, larger focus rings, and ten-foot spacing. {$isAndroidTv ? 'Active now.' : 'Phone layout is active.'}</span></span>
+          <SelectMenu bind:value={$androidTvMode} ariaLabel="Android TV layout" options={[
+            { value: 'auto', label: 'Automatic' }, { value: 'on', label: 'On' }, { value: 'off', label: 'Off' },
+          ]} />
+        </label>
         <Toggle label={m.settings_haptics()} desc={m.settings_haptics_hint()} value={$haptics} onToggle={() => ($haptics = !$haptics)} />
       </div>
     {/if}
@@ -179,7 +186,7 @@
     </div>
 
     <p class="mb-1 text-sm font-bold">{m.settings_schedule_default_tab()}</p>
-    <div class="mb-4 grid gap-2 sm:grid-cols-2">
+    <div class="mb-4 grid gap-2 sm:grid-cols-3">
       {#each scheduleTabs as opt (opt.value)}
         <button
           data-focusable
@@ -198,7 +205,7 @@
     </div>
 
     <div class="mb-4 space-y-3">
-      <Toggle label="Pin schedule header" desc="Keep the Schedule/Watchlist tabs, week navigation, and My Shows / All toggle stuck to the top while scrolling the schedule. Off = the header scrolls away with the list (default on Android; ignored in Game mode)." value={$scheduleStickyHeader} onToggle={() => ($scheduleStickyHeader = !$scheduleStickyHeader)} />
+      <Toggle label="Pin schedule header" desc="Keep the calendar tabs, week navigation, and My Shows / All toggle stuck to the top while scrolling. Off = the header scrolls away with the list (default on Android; ignored in Game mode)." value={$scheduleStickyHeader} onToggle={() => ($scheduleStickyHeader = !$scheduleStickyHeader)} />
       <Toggle label={'Show "Next up" on the schedule'} desc="The strip of soonest episodes above the schedule grid." value={$scheduleShowNextUp} onToggle={() => ($scheduleShowNextUp = !$scheduleShowNextUp)} />
     </div>
 

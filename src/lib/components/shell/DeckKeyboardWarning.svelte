@@ -8,6 +8,7 @@
     deckKeyboardWarning,
     warnBeforeThirdPartyLogin,
   } from '$lib/deck/keyboard-warning'
+  import { hasTauriRuntime } from '$lib/platform'
 
   let continueButton = $state<HTMLButtonElement>()
 
@@ -18,6 +19,7 @@
   })
 
   onMount(() => {
+    if (!hasTauriRuntime()) return
     let unlisten: (() => void) | null = null
     let disposed = false
     listen<{ label: string; service: string }>('deck-keyboard-warning', (event) => {

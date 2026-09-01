@@ -345,6 +345,49 @@ html.gamemode .group:hover .group-hover\:scale-105 {
 [data-nav-sidebar] [data-focusable]:focus-visible { outline: none; box-shadow: none; background: hsl(var(--foreground) / 0.12); }
 .gamemode [data-nav-sidebar] [data-focusable]:focus { box-shadow: none; background: hsl(var(--foreground) / 0.16); }
 
+/* Android TV: a wide, remote-first ten-foot surface. This intentionally shares the Deck's visual
+   focus language without inheriting its gamescope/native-snapshot behaviour. */
+.tv-mode { font-size: 18px; }
+.tv-mode, .tv-mode * { cursor: none !important; }
+.tv-mode main { margin-left: 5rem !important; margin-bottom: 0 !important; }
+.tv-mode [data-nav-sidebar] { width: 5rem !important; }
+.tv-mode [data-nav-sidebar]:focus-within { width: 14rem !important; }
+.tv-mode .browse-render-row,
+.tv-mode .browse-render-list-item,
+.tv-mode .browse-render-grid-item {
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
+.tv-mode [data-focusable]:focus {
+  outline: none;
+  box-shadow: 0 0 0 4px #fff, 0 8px 28px rgb(0 0 0 / 0.45);
+  position: relative;
+  z-index: 10;
+}
+.tv-mode [data-focusable]:focus:has(.focus-cover) { box-shadow: none; }
+.tv-mode [data-focusable]:focus .focus-cover {
+  box-shadow: 0 0 0 4px #fff, 0 12px 32px rgb(0 0 0 / 0.55);
+  transform: scale(1.06);
+  transform-origin: center bottom;
+  position: relative;
+  z-index: 10;
+}
+.tv-mode [data-nav-sidebar] [data-focusable]:focus {
+  box-shadow: none;
+  background: hsl(var(--foreground) / 0.18);
+}
+.tv-mode .player-shell button:focus,
+.tv-mode .player-shell [role="slider"]:focus {
+  outline: none;
+  box-shadow: 0 0 0 4px #fff, 0 8px 28px rgb(0 0 0 / 0.55);
+  position: relative;
+  z-index: 50;
+}
+.tv-mode .izumi-player-root button[data-focusable]:focus,
+.tv-mode .player-shell button:focus {
+  transform: scale(1.1);
+}
+
 /* Press ripple (see src/lib/actions/ripple.ts). Transform/opacity only, so it stays off the layout
    path; the span deletes itself on animationend. */
 .ripple-host { position: relative; overflow: hidden; }

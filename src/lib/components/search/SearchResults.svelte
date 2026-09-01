@@ -12,7 +12,7 @@
   import { getContextClient } from '@urql/svelte'
   import { searchQuery, searchVariables, STUDIO_MEDIA_QUERY, STAFF_MEDIA_QUERY, type SearchFilters } from '$lib/anilist/detail-queries'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
-  import { browseLayout } from '$lib/settings/ui'
+  import { browseLayout, showAdult } from '$lib/settings/ui'
   import { title, cover, format, season } from '$lib/anilist/media'
   import { rememberDetail } from '$lib/anilist/detail-hint'
   import type { Media } from '$lib/anilist/types'
@@ -56,10 +56,8 @@
         } | undefined
         const credited = staff?.staffMedia?.nodes ?? []
         const voiced = (staff?.characterMedia?.edges ?? []).map((edge) => edge.node).filter((item): item is Media => !!item)
-        batch = credited.length ? credited : voiced
-        nextPage = credited.length
-          ? !!staff?.staffMedia?.pageInfo?.hasNextPage
-          : !!staff?.characterMedia?.pageInfo?.hasNextPage
+        batch = [...credited, ...voiced]
+        nextPage = !!staff?.staffMedia?.pageInfo?.hasNextPage || !!staff?.characterMedia?.pageInfo?.hasNextPage
       } else {
         const res = await client
           .query(searchQuery(), { ...searchVariables(filters), page, withPreview: !$gameMode }, { requestPolicy: 'network-only' })
@@ -69,10 +67,14 @@
         batch = p?.media ?? []
         nextPage = !!p?.pageInfo?.hasNextPage
       }
+      batch = batch.filter((item) => $showAdult || !item.isAdult)
       let added = 0
       for (const m of batch) if (!seen.has(m.id)) { seen.add(m.id); media.push(m); added++ }
-      hasNext = nextPage && added > 0
+      hasNext = nextPage
       page += 1
+      // A whole page can consist of adult titles or duplicates shared by production and voice
+      // credits. Keep paging rather than mistaking that filtered page for the end of the profile.
+      if (hasNext && added === 0) queueMicrotask(() => void loadMore())
     } catch (e) {
       error = e instanceof Error ? e.message : String(e)
       hasNext = false

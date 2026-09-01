@@ -15,4 +15,10 @@ describe('player quality settings', () => {
     expect(page).toContain('$isAndroid ? []')
     expect(page).toContain("value: 'anime'")
   })
+
+  it('only shows Direct3D driver upscaling on Windows', () => {
+    expect(page).toContain("import { isAndroid, isWindows } from '$lib/platform'")
+    expect(page).toMatch(/\{#if \$isWindows\}[\s\S]{0,200}Windows driver upscaling/)
+    expect(page).not.toMatch(/\{#if !\$isAndroid\}[\s\S]{0,200}Windows driver upscaling/)
+  })
 })

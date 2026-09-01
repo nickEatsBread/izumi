@@ -4,6 +4,7 @@
   import { get } from 'svelte/store'
   import { weekRange } from '$lib/anilist/schedule'
   import ScheduleGrid from '$lib/components/schedule/ScheduleGrid.svelte'
+  import PersonalSchedule from '$lib/components/schedule/PersonalSchedule.svelte'
   import WatchlistView from '$lib/components/schedule/WatchlistView.svelte'
   import { scheduleDefaultTab, scheduleStickyHeader, type ScheduleTab } from '$lib/settings/ui'
   import { heroMedia } from '$lib/stores/hero'
@@ -39,7 +40,7 @@
     const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }
     const from = new Date(start * 1000).toLocaleDateString([], opts)
     const to = new Date((end - 1) * 1000).toLocaleDateString([], opts)
-    return `${from} – ${to}`
+    return `${from} - ${to}`
   })
 
   // My Shows/All toggle — used to live on its own row inside ScheduleGrid, which cost a phone a
@@ -60,7 +61,7 @@
   // Game mode never pinned this header: gamescope repaints a backdrop-blur bar every scroll frame
   // (app.css forces will-change:auto under .gamemode, so the layer is never promoted), and the
   // controller UI has no need for a sticky filter it can reach with one D-pad press.
-  const stickyActive = $derived(tab === 'schedule' && $scheduleStickyHeader && !$gameMode)
+  const stickyActive = $derived(tab !== 'watchlist' && $scheduleStickyHeader && !$gameMode)
   const stickyTop = $derived($isMobile
     ? ($anilistDegraded ? 'top-[calc(env(safe-area-inset-top)+1.75rem)]' : 'top-[env(safe-area-inset-top)]')
     : ($anilistDegraded ? 'top-[3.75rem]' : 'top-8'))
@@ -95,13 +96,17 @@
        class="flex flex-wrap items-center gap-2 sm:gap-4 {stickyActive
          ? `sticky ${stickyTop} z-20 -mx-4 mb-4 border-b border-border/60 bg-background/95 px-4 py-3 backdrop-blur sm:-mx-8 sm:mb-7 sm:px-8`
          : 'mb-4 sm:mb-7'}">
-    <div class="mr-auto inline-flex rounded-lg bg-secondary p-1 text-sm font-black">
+    <div class="mr-auto inline-flex rounded-lg bg-secondary p-1 text-xs font-black sm:text-sm">
       <button data-focusable onclick={() => (tab = 'schedule')}
-        class="rounded-md px-4 py-2 transition-colors {tab === 'schedule' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
+        class="rounded-md px-2.5 py-2 transition-colors sm:px-4 {tab === 'schedule' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
         Schedule
       </button>
+      <button data-focusable onclick={() => (tab = 'personal')}
+        class="rounded-md px-2.5 py-2 transition-colors sm:px-4 {tab === 'personal' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
+        Movies & TV
+      </button>
       <button data-focusable onclick={() => (tab = 'watchlist')}
-        class="rounded-md px-4 py-2 transition-colors {tab === 'watchlist' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
+        class="rounded-md px-2.5 py-2 transition-colors sm:px-4 {tab === 'watchlist' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
         Watchlist
       </button>
     </div>
@@ -118,6 +123,8 @@
           All
         </button>
       </div>
+    {/if}
+    {#if tab !== 'watchlist'}
       {#if offset !== 0}
         <button data-focusable onclick={() => (offset = 0)}
           class="rounded-md bg-secondary px-2.5 py-1.5 text-xs font-bold hover:bg-accent">Today</button>
@@ -139,6 +146,10 @@
   {#if tab === 'schedule'}
     {#key offset}
       <ScheduleGrid {start} {end} {headerOffset} bind:view bind:viewTouched onMineCount={(n) => (mineCount = n)} />
+    {/key}
+  {:else if tab === 'personal'}
+    {#key offset}
+      <PersonalSchedule {start} {end} {headerOffset} />
     {/key}
   {:else}
     <WatchlistView />

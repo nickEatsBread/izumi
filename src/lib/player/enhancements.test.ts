@@ -11,8 +11,10 @@ import {
   audioProcessing, rawMpvOptions, subtitleRegexFilter, subtitleStripSdh, subtitleStripSdhHarder,
   videoQualityPreset, windowsVsr,
 } from '$lib/settings/ui'
+import { isWindows } from '$lib/platform'
 
 function resetSettings() {
+  isWindows.set(true)
   audioProcessing.set('off')
   windowsVsr.set('off')
   subtitleStripSdh.set(false)
@@ -97,6 +99,15 @@ describe('filter-chain composition', () => {
     videoQualityPreset.set('high')
     rawMpvOptions.set('af=lavfi=[acompressor]')
     expect(Object.fromEntries(enhancementOpts()).af).toBe('')
+  })
+
+  it('does not send a synced Windows driver filter to a non-Windows player', () => {
+    isWindows.set(false)
+    windowsVsr.set('nvidia')
+    videoQualityPreset.set('custom')
+    rawMpvOptions.set('vf=hqdn3d')
+
+    expect(Object.fromEntries(enhancementOpts()).vf).toBe('hqdn3d')
   })
 })
 

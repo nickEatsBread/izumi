@@ -11,21 +11,25 @@
   import { desktopCastSession, stopDesktopCast } from '$lib/player/desktop-cast'
   import { isMacOS } from '$lib/platform'
 
-  const win = getCurrentWindow()
+  // Browser previews and packaged web runtimes do not expose Tauri's window metadata.
+  // Keep desktop chrome harmless if platform detection has not hidden it yet.
+  let win: ReturnType<typeof getCurrentWindow> | null = null
+  try { win = getCurrentWindow() } catch { /* non-Tauri runtime */ }
   // Track the real window state so the button shows maximize vs restore correctly —
   // maximize/unmaximize/drag-snap all fire a resize event, which we re-sync on.
   let maximized = $state(false)
-  const sync = async () => { try { maximized = await win.isMaximized() } catch { /* web preview */ } }
+  const sync = async () => { try { maximized = await win?.isMaximized() ?? false } catch { /* web preview */ } }
   onMount(() => {
+    if (!win) return
     sync()
     let un: (() => void) | undefined
     win.onResized(() => sync()).then((f) => (un = f)).catch(() => {})
     return () => un?.()
   })
 
-  const minimize = () => win.minimize()
-  const toggle = async () => { await win.toggleMaximize().catch(() => {}); sync() }
-  const close = () => win.close()
+  const minimize = () => win?.minimize()
+  const toggle = async () => { await win?.toggleMaximize().catch(() => {}); sync() }
+  const close = () => win?.close()
 
   async function stopGif(event: MouseEvent) {
     event.stopPropagation()

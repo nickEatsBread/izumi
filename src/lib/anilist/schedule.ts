@@ -5,6 +5,15 @@ export interface Airing {
   media: Media
   /** A skipped slot restored from the delay timetable rather than a real airing. */
   delayPlaceholder?: boolean
+  /** Provider calendars also carry movie premieres and season-aware TV episodes. */
+  kind?: 'episode' | 'movie'
+  source?: 'tmdb' | 'stremio'
+  season?: number
+  providerEpisode?: number
+  /** TMDB often supplies only a calendar date. Do not invent an exact airtime for it. */
+  timeKnown?: boolean
+  /** Short, factual explanation for a personalized movie match. */
+  context?: string
 }
 // Week window anchored to the user's LOCAL Monday 00:00 (not UTC), so groupByDay's
 // start-relative day index buckets airings into the columns the user actually sees in their
@@ -27,6 +36,18 @@ export const airTime = (unix: number) =>
 
 /** Has this episode already aired? `now` is injectable for tests. */
 export const aired = (unix: number, now: number = Date.now()) => unix * 1000 <= now
+
+export function scheduleItemLabel(item: Airing): string {
+  if (item.kind === 'movie') return 'Movie premiere'
+  if (item.season != null && item.providerEpisode != null) return `S${item.season} E${item.providerEpisode}`
+  return `Episode ${item.episode}`
+}
+
+export const scheduleSourceLabel = (item: Airing): string => item.source === 'tmdb'
+  ? 'TMDB'
+  : item.source === 'stremio'
+    ? 'Stremio'
+    : ''
 
 /** Compact "still to air" countdown ('in 30m' / 'in 5h' / 'in 3d'); '' once aired. */
 export function until(unix: number, now: number = Date.now()): string {

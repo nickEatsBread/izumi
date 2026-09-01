@@ -59,8 +59,9 @@ export function namedProviderAward(value?: string): string {
   if (!value) return ''
   const named = /\b(?:academy awards?|oscars?|emmys?|golden globes?|bafta|screen actors guild|sag awards?|critics[’']? choice|cannes|venice|berlin|sundance|sxsw|film festival|grand jury prize)\b/i
   const genericFamilyTotal = /^(?:won|nominated for)\s+\d+\s+(?:academy awards?|oscars?|(?:primetime\s+)?emmys?|golden globes?|baftas?|sag awards?)\b/i
-  return value
-    .split(/(?<=[.!?;])\s+/)
+  // A look-ahead works on the 2018 Samsung engine; regex look-behind does not.
+  const sentences = value.match(/.*?[.!?;](?=\s+)|.+$/g) ?? [value]
+  return sentences
     .map(compactProviderAwards)
     .find((part) => named.test(part) && !genericFamilyTotal.test(part)) ?? ''
 }

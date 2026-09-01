@@ -12,6 +12,7 @@
   import { startEnhancementSync } from '$lib/player/enhancements'
   import { startDolbySync } from '$lib/player/dolby'
   import { startThemeSync } from '$lib/theme'
+  import { initPlatform } from '$lib/platform'
   import { scheduleBootWork } from '$lib/util/boot-work'
   import { initClientPerformance } from '$lib/performance/client'
   import { getLocale, getTextDirection } from '$lib/paraglide/runtime.js'
@@ -21,7 +22,12 @@
   import { torrentProxyEndpoint } from '$lib/player/torrent-proxy'
   setContextClient(anilist)
   let { children } = $props()
-  const captureControlsWindow = getCurrentWindow().label === 'capture-controls'
+  // Resolve TV mode before the app shell decides whether desktop-only chrome should mount.
+  initPlatform()
+  const captureControlsWindow = (() => {
+    try { return getCurrentWindow().label === 'capture-controls' }
+    catch { return false }
+  })()
   onMount(() => {
     // The controls mirror is a deliberately inert second WebView. Starting the normal client
     // services here would duplicate sync, update, DHT and notification work while recording.

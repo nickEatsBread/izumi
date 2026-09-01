@@ -3,8 +3,8 @@
   // sections. Only days with airings are shown; each row is roomy enough to read
   // on a laptop (unlike the old 7-column grid). Deck/Game mode never uses this.
   import { onMount } from 'svelte'
-  import { type Airing, airTime, aired, until } from '$lib/anilist/schedule'
-  import { title, cover } from '$lib/anilist/media'
+  import { type Airing, airTime, aired, scheduleItemLabel, scheduleSourceLabel, until } from '$lib/anilist/schedule'
+  import { title, cover, mediaHref } from '$lib/anilist/media'
   import { agendaScrollTop, agendaTargetDay, isAgendaScrollKey } from './agenda-scroll'
   import type { Media } from '$lib/anilist/types'
   import type { MineKind } from '$lib/anilist/my-shows'
@@ -72,9 +72,10 @@
           {#each d as a (a.media.id + '-' + a.episode)}
             {@const mine = badgeOf?.(a.media)}
             {@const delay = delayOf(a.media)}
+            {@const source = scheduleSourceLabel(a)}
             <a
               data-focusable
-              href={`/app/anime/${a.media.id}`}
+              href={mediaHref(a.media)}
               class="flex items-center gap-4 rounded-lg border bg-secondary p-2.5 transition-colors hover:bg-accent {aired(a.airingAt) && !a.delayPlaceholder ? 'opacity-55' : ''} {mine ? 'border-border/80' : 'border-transparent'}"
             >
               <img src={cover(a.media)} alt="" loading="lazy" decoding="async"
@@ -83,8 +84,10 @@
                 <div class="flex items-center gap-2">
                   <p class="line-clamp-2 text-base font-bold leading-tight">{title(a.media)}</p>
                   {#if mine}<span class="shrink-0 rounded bg-foreground/[0.08] px-1.5 py-0.5 text-[0.6rem] font-black uppercase tracking-wide text-foreground/70">{mine === 'watching' ? 'Watching' : 'Planning'}</span>{/if}
+                  {#if source}<span class="shrink-0 rounded bg-foreground/[0.08] px-1.5 py-0.5 text-[0.6rem] font-black text-foreground/70">{source}</span>{/if}
                 </div>
-                <p class="mt-1 text-sm text-muted-foreground">EP {a.episode}{#if !a.delayPlaceholder} · {airTime(a.airingAt)}{/if}</p>
+                <p class="mt-1 text-sm text-muted-foreground">{scheduleItemLabel(a)}{#if !a.delayPlaceholder && a.timeKnown !== false} · {airTime(a.airingAt)}{/if}</p>
+                {#if a.context}<p class="mt-0.5 text-xs text-muted-foreground">{a.context}</p>{/if}
                 {#if delay}
                   <p class="mt-0.5 text-xs font-bold text-amber-400">{delay}</p>
                 {/if}

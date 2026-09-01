@@ -1,5 +1,6 @@
 import { get } from 'svelte/store'
 import { gameMode, playing } from '$lib/player/session'
+import { isTv } from '$lib/platform'
 import { pickInDirection, type Dir } from './spatial'
 export * from './input'
 export * from './actions'
@@ -103,10 +104,19 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 const isNavigable = (el: HTMLElement) =>
   (el.checkVisibility?.() ?? true)
+  && el.tabIndex >= 0
+  && el.getAttribute('aria-hidden') !== 'true'
   && !(el instanceof HTMLButtonElement && el.disabled)
 
-const focusables = (root: ParentNode) =>
-  [...root.querySelectorAll<HTMLElement>('[data-focusable]')].filter(isNavigable)
+const focusables = (root: ParentNode) => {
+  // Phone/desktop surfaces opt in deliberately. A television has no pointer fallback, so every
+  // ordinary native control must be reachable even in touch-first components such as the Android
+  // player and its settings sheet.
+  const selector = get(isTv)
+    ? '[data-focusable], button, a[href], input, textarea, select, [tabindex]'
+    : '[data-focusable]'
+  return [...root.querySelectorAll<HTMLElement>(selector)].filter(isNavigable)
+}
 
 export const containedInAxis = (itemStart: number, itemEnd: number, portStart: number, portEnd: number) =>
   itemStart >= portStart && itemEnd <= portEnd
@@ -130,7 +140,7 @@ function visibleRowCandidates(root: HTMLElement): ElCand[] {
  * generic search may still cross into the sidebar.
  */
 function pickInNavRows(active: HTMLElement, dir: Dir): HTMLElement | null | undefined {
-  if (!get(gameMode)) return undefined
+  if (!get(gameMode) && !get(isTv)) return undefined
   const row = active.closest<HTMLElement>('[data-nav-row]')
   if (!row) return undefined
 

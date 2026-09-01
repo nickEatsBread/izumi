@@ -38,6 +38,7 @@
   import HomeEditor from '$lib/components/catalog/HomeEditor.svelte'
   import HomeRowFrame from '$lib/components/catalog/HomeRowFrame.svelte'
   import { mediaHref } from '$lib/anilist/media'
+  import { rankFeaturedMedia } from '$lib/catalog/featured-context'
 
   const client = getContextClient()
   const legacyCatalog = $derived(isLegacyAniListCatalog($catalogProvider))
@@ -102,7 +103,7 @@
   // handful of titles all season; hashing spreads the pick across the whole pool while staying
   // STABLE per title (no reshuffle on every load, no Math.random in a $derived).
   const heroMedias = $derived.by(() => {
-    const all = hero.data?.Page.media ?? []
+    const all = rankFeaturedMedia(hero.data?.Page.media ?? [], 'Top Rated This Season')
     const withArt = all.filter((m) => m.bannerImage ?? m.trailer?.id)
     return (withArt.length ? withArt : all)
       .slice()
@@ -223,7 +224,7 @@
           {/if}
           {#if $malToken || $malUser}<MalListRow title="Your List" status="plan_to_watch" preferLinkedRating={$catalogProvider === 'auto'} />{/if}
         {:else if row === 'recommendations'}
-          {#if listUser}{#key listUser}<PersonalizedRow userName={listUser} preferLinkedRating={$catalogProvider === 'auto'} />{/key}{/if}
+          {#key listUser}<PersonalizedRow userName={listUser} preferLinkedRating={$catalogProvider === 'auto'} />{/key}
         {:else}
           {@const section = sectionMap.get(row)}
           {#if section && !catalogUnavailable}<HomeRow title={section.title} vars={section.vars} preferLinkedRating={$catalogProvider === 'auto'} />{/if}

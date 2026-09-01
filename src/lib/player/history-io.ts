@@ -19,6 +19,7 @@ import {
 import { localLibrary, mergeLocalLibrary, type LocalLibraryState } from '$lib/library/local-lists'
 import { mediaKey } from '$lib/catalog/identity'
 import { mergeSeriesTrackPreferences, seriesTrackPreferences, type SeriesTrackPreferences } from './track-preferences'
+import { mergeSceneBookmarkRecords, sceneBookmarkRecords, type SceneBookmarkRecords } from './scene-bookmarks'
 
 // Import / export of the on-device watch history, so it can be backed up, moved between installs,
 // or used to seed an AniList/MyAnimeList account (or another tracker). Two export formats:
@@ -41,6 +42,8 @@ interface ExportBundle {
   localLibrary?: LocalLibraryState
   /** Stable per-series audio/subtitle identities (never credential-bearing URLs). */
   trackPreferences?: Record<string, SeriesTrackPreferences>
+  /** Timestamped scenes and deletion tombstones, so removal also propagates between devices. */
+  sceneBookmarks?: SceneBookmarkRecords
 }
 
 interface WatchJsonOptions {
@@ -58,6 +61,7 @@ export function exportJson(options: WatchJsonOptions = {}): string {
     episodeOrigins: get(episodeSourceOrigins),
     localLibrary: get(localLibrary),
     trackPreferences: get(seriesTrackPreferences),
+    sceneBookmarks: get(sceneBookmarkRecords),
   }
   return JSON.stringify(bundle, null, 2)
 }
@@ -141,6 +145,7 @@ export function importJson(text: string, options: WatchJsonOptions = {}): {
   positionsImported: number
   originsImported: number
   episodeOriginsImported: number
+  sceneBookmarksImported: number
 } {
   const data = JSON.parse(text) as Partial<ExportBundle>
   if (data.app !== 'izumi' || data.kind !== 'watch-history' || !data.history || typeof data.history !== 'object') {
@@ -207,7 +212,8 @@ export function importJson(text: string, options: WatchJsonOptions = {}): {
     })
   }
   mergeSeriesTrackPreferences(data.trackPreferences)
-  return { imported, positionsImported, originsImported, episodeOriginsImported }
+  const sceneBookmarksImported = mergeSceneBookmarkRecords(data.sceneBookmarks)
+  return { imported, positionsImported, originsImported, episodeOriginsImported, sceneBookmarksImported }
 }
 
 /** Tauri rejects with a plain STRING — permission denials, IO errors, everything — never an Error.

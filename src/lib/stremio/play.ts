@@ -565,7 +565,8 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
     }
   }
   // Casting pauses the duplicate local mpv instance, so its player-progress clock stops. Feed the
-  // receiver clock through the same history and watch-threshold path.
+  // receiver's AVTransport/Tizen clock through the same history and watch-threshold path. This
+  // subscription belongs to the playback attachment, not the auto-hiding Cast controls.
   let previousCastState: string | null = null
   const unlistenCastProgress = desktopCastStatus.subscribe((remote) => {
     const cast = get(desktopCastSession)
@@ -577,6 +578,9 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
       return
     }
     onProgress(remote.positionSeconds, remoteDuration)
+    // Renderers commonly reset RelTime as they enter STOPPED; status reconciliation preserves the
+    // final useful sample. Leave a completion tombstone so closing the paused local player cannot
+    // resurrect a near-end resume point after the TV finishes naturally.
     if (remote.state === 'idle' && previousCastState && previousCastState !== 'idle'
       && watched(remote.positionSeconds, remoteDuration)) {
       clearPosition(media.id, episode)

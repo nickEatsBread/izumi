@@ -104,6 +104,13 @@ export const STUDIO_MEDIA_QUERY = gql`
   }
   ${CARD_MEDIA_FIELDS}`
 
+export const STUDIO_PROFILE_QUERY = gql`
+  query StudioProfile($id: Int!) {
+    Studio(id: $id) {
+      id name isAnimationStudio siteUrl favourites
+    }
+  }`
+
 export const STAFF_MEDIA_QUERY = gql`
   query StaffMedia($id: Int!, $page: Int = 1, $withPreview: Boolean = true) {
     Staff(id: $id) {
@@ -119,6 +126,22 @@ export const STAFF_MEDIA_QUERY = gql`
     }
   }
   ${CARD_MEDIA_FIELDS}`
+
+export const STAFF_PROFILE_QUERY = gql`
+  query StaffProfile($id: Int!) {
+    Staff(id: $id) {
+      id
+      name { full native alternative userPreferred }
+      languageV2
+      image { large medium }
+      description(asHtml: false)
+      primaryOccupations gender
+      dateOfBirth { year month day }
+      dateOfDeath { year month day }
+      age yearsActive homeTown bloodType
+      siteUrl favourites
+    }
+  }`
 
 /** The full, authoritative list of AniList genres (so the filter isn't a stale
  *  hardcoded subset). Returns a plain string[]. */

@@ -17,7 +17,7 @@
   import { get } from 'svelte/store'
   import { gameMode } from '$lib/player/session'
   import { wheelScrollAcross } from '$lib/settings/ui'
-  import { isAndroid, isMobile } from '$lib/platform'
+  import { isAndroid, isMobile, isTv } from '$lib/platform'
   import * as h from '$lib/haptics'
   import Play from '@lucide/svelte/icons/play'
   import PreviewCard from './PreviewCard.svelte'
@@ -51,7 +51,7 @@
   // The card's own painted width, so cardCover can pick the smallest asset that still covers it:
   // `w-36` against the 14.5px mobile root is ~131px, the `sm:` carousel tile is 152px. A fill-width
   // grid cell has no fixed width to state, so it gets the safe (larger) asset.
-  const coverWidth = $derived(fill ? 0 : $isMobile ? 131 : 152)
+  const coverWidth = $derived(fill ? 0 : $isTv ? 198 : $isMobile ? 131 : 152)
   const coverSrc = $derived(cardCover(media, coverWidth))
   let coverReady = $state(false)
   $effect(() => { void coverSrc; coverReady = false })
@@ -87,7 +87,7 @@
   // Game mode (Deck) and mobile: no hover-trailer previews — touch has no real hover (a tap
   // fires pointerenter and would strand the popup), and the autoplaying trailer is a PC-only
   // affordance.
-  function open() { if (simpleHover || get(gameMode) || get(isMobile) || needsPointerMove) return; clearTimeout(closeT); place(); hovered = true }
+  function open() { if (simpleHover || get(gameMode) || get(isMobile) || get(isTv) || needsPointerMove) return; clearTimeout(closeT); place(); hovered = true }
   function openAfterPointerMove() {
     if (!needsPointerMove) return
     needsPointerMove = false
@@ -139,9 +139,9 @@
   $effect(() => () => clearTimeout(closeT))
 </script>
 
-<div bind:this={el} class={fill ? 'w-full' : 'w-36 shrink-0 sm:w-[152px]'} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
+<div bind:this={el} class={fill ? 'w-full' : $isTv ? 'w-44 shrink-0' : 'w-36 shrink-0 sm:w-[152px]'} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
   <a href={mediaHref(media)} data-focusable draggable="false" onclick={() => { rememberDetail(media); h.tap() }}
-     class="group block {fill ? 'w-full' : 'w-36 sm:w-[152px]'} {$isAndroid ? 'android-card-press' : ''}">
+     class="group block {fill ? 'w-full' : $isTv ? 'w-44' : 'w-36 sm:w-[152px]'} {$isAndroid ? 'android-card-press' : ''}">
     <div class="focus-cover relative aspect-[2/3] w-full overflow-hidden rounded-md bg-muted">
       <!-- No `transform-gpu`/`will-change`: those permanently promote EVERY cover to its own
            GPU layer (hundreds on a grid → the Deck iGPU thrashes + lag accumulates). The

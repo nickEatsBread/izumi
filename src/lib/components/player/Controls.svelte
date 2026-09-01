@@ -185,6 +185,7 @@
   function toggleOptions() {
     showOptions = !showOptions
     showTracks = false
+    optionsPage = 'root'
     gmSettingsPage = 'root'
     gmSetIdx = 0
     bumpPlayerOverlay()
@@ -196,6 +197,7 @@
   function closePlayerMenus() {
     showOptions = false
     showTracks = false
+    optionsPage = 'root'
     gmSettingsPage = 'root'
     gmSetIdx = 0
   }

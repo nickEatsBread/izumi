@@ -129,6 +129,7 @@
   import { matchRememberedTrack, rememberSeriesTrack, rememberedSeriesTrack } from '$lib/player/track-preferences'
   import { addSceneBookmark } from '$lib/player/scene-bookmarks'
   import { incognito } from '$lib/stores/incognito'
+  import { isAndroidTv } from '$lib/platform'
 
   let controlsShown = $state(true)
   let scrubbing = $state(false)
@@ -252,7 +253,9 @@
   const mediaArtwork = $derived(
     $nowPlayingMedia?.media.coverImage?.extraLarge ?? $nowPlayingMedia?.media.coverImage?.medium ?? null,
   )
-  $effect(() => { void setAndroidAutoPip($androidAutoPip) })
+  // TV launchers own the Home experience. A phone-style floating PiP would partially obscure the
+  // next app, so only handheld Android follows the user's auto-PiP preference.
+  $effect(() => { void setAndroidAutoPip($androidAutoPip && !$isAndroidTv) })
   $effect(() => {
     void setAndroidMediaSession({
       enabled: true,
@@ -435,7 +438,7 @@
     return `${h > 0 ? h + ':' : ''}${mm}:${sec.toString().padStart(2, '0')}`
   }
 
-  function armHide() { clearTimeout(hideTimer); if (!paused && !scrubbing) hideTimer = setTimeout(() => (controlsShown = false), 3500) }
+  function armHide() { clearTimeout(hideTimer); if (!paused && !scrubbing) hideTimer = setTimeout(() => (controlsShown = false), $isAndroidTv ? 6500 : 3500) }
   function showControls() { controlsShown = true; armHide() }
   function toggleControls() {
     if (scrubbing) { controlsShown = true; return }
@@ -443,6 +446,45 @@
     if (controlsShown) armHide()
   }
   $effect(() => { if (paused) { clearTimeout(hideTimer); controlsShown = true } else if (controlsShown) armHide() })
+
+  function focusTvTransport() {
+    requestAnimationFrame(() => {
+      rootEl?.querySelector<HTMLElement>('[data-tv-primary], button')?.focus({ preventScroll: true })
+    })
+  }
+
+  function onTvKeydown(event: KeyboardEvent) {
+    if (!$isAndroidTv || miniLayout) return
+
+    if (event.key === 'Escape' || event.key === 'BrowserBack' || event.key === 'GoBack') {
+      event.preventDefault()
+      if (sheet) dismissSettings()
+      else void close()
+      return
+    }
+
+    if (event.key === 'MediaPlayPause'
+        || (event.key === 'MediaPlay' && paused)
+        || (event.key === 'MediaPause' && !paused)) {
+      event.preventDefault()
+      pressPause()
+      showControls()
+      focusTvTransport()
+      return
+    }
+
+    if (!controlsShown && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(event.key)) {
+      event.preventDefault()
+      if (event.key === 'Enter') pressPause()
+      else if (event.key === 'ArrowLeft') skip(-$seekDuration)
+      else if (event.key === 'ArrowRight') skip($seekDuration)
+      showControls()
+      focusTvTransport()
+      return
+    }
+
+    if (controlsShown) armHide()
+  }
 
   // --- Seek preview: move the UI thumb while dragging, then issue one exact seek on release ---
   // Bar geometry, measured once per scrub gesture. Reading getBoundingClientRect() on every
@@ -1847,11 +1889,14 @@
   })
 </script>
 
+<svelte:window onkeydown={onTvKeydown} />
+
 <div class="player-shell fixed inset-0 z-50 select-none overflow-hidden text-white" class:hidden={overlayHidden}
   class:pulling-fullscreen={fullscreenPullDragging || miniPullDragging || pullDim > 0} class:mini-shell={miniLayout}
   class:mini-transitioning={miniCommitting}
   style={`--player-safe-top:${safeTop}px;--player-safe-right:${safeRight}px;--player-safe-bottom:${safeBottom}px;--player-safe-left:${safeLeft}px;--portrait-player-height:${portraitVideoHeight == null ? 'calc(100vw * 9 / 16)' : `${portraitVideoHeight}px`}`}>
   <section bind:this={rootEl} class="video-frame relative touch-none bg-transparent"
+    data-nav-trap={$isAndroidTv && controlsShown && !sheet ? '' : undefined}
     style:transform={`translate3d(${pullTranslateX}px, ${pullTranslateY}px, 0) scale(${pullScale})`}
     onpointerdown={onRootDown} onpointermove={onRootMove} onpointerup={onRootUp} onpointercancel={onRootCancel} onlostpointercapture={onRootLostCapture}
     oncontextmenu={(e) => e.preventDefault()}
@@ -1948,7 +1993,7 @@
          its hit target (you can still pause a stream that is still buffering). -->
     <div in:fade|global={{ duration: 180 }} class="pointer-events-none absolute inset-0 flex items-center justify-center gap-10">
       <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip(-$seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Rewind"><RotateCcw size={30} /></button>
-      <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); pressPause() }} class="transport-button pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full transition-transform active:scale-90" aria-label={loading || recovering ? 'Loading' : paused ? 'Play' : 'Pause'} aria-busy={loading || recovering}>
+      <button data-tv-primary onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); pressPause() }} class="transport-button pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full transition-transform active:scale-90" aria-label={loading || recovering ? 'Loading' : paused ? 'Play' : 'Pause'} aria-busy={loading || recovering}>
         {#if loading || recovering}
           <span in:fade={{ duration: 120 }} class="grid place-items-center">
             <BufferSpinner size={40} />
@@ -2038,7 +2083,7 @@
     <!-- The pointer handlers sit on the sheet ROOT so a pull anywhere on it dismisses. They also
          stopPropagation on move+up (not just down) so swiping the sheet / scrolling the list never
          leaks to the video's gesture layer underneath (the "interferes with the video" bug). -->
-    <div bind:this={sheetEl} class="settings-sheet absolute z-40 bg-neutral-900 shadow-2xl" class:sheet-dragging={sheetDragging} class:sheet-closing={sheetClosing} style="transform:translateY({sheetDrag}px)" onpointerdown={handleDown} onpointermove={handleMove} onpointerup={handleUp} onpointercancel={handleCancel} onlostpointercapture={handleLostCapture} onclickcapture={handleSheetClick} role="dialog" aria-modal="true" aria-label="Video settings" tabindex="-1">
+    <div bind:this={sheetEl} class="settings-sheet absolute z-40 bg-neutral-900 shadow-2xl" class:sheet-dragging={sheetDragging} class:sheet-closing={sheetClosing} style="transform:translateY({sheetDrag}px)" onpointerdown={handleDown} onpointermove={handleMove} onpointerup={handleUp} onpointercancel={handleCancel} onlostpointercapture={handleLostCapture} onclickcapture={handleSheetClick} role="dialog" aria-modal="true" aria-label="Video settings" tabindex="-1" data-nav-trap>
       <!-- Grab affordance only — the whole sheet is draggable, so this is decoration, not the target. -->
       <div class="sheet-handle py-4 touch-none">
         <div class="mx-auto h-1 w-10 rounded-full bg-white/25"></div>
@@ -2065,7 +2110,7 @@
             <button onclick={() => (settingsPage = 'subtitles')} class="settings-row"><Captions size={20} /><span class="flex-1 font-bold">Subtitles</span><span class="max-w-28 truncate text-sm text-white/50">{selectedTrackLabel('sub')}</span><ChevronRight size={18} class="text-white/35" /></button>
             <button onclick={() => (settingsPage = 'audio')} class="settings-row"><Volume2 size={20} /><span class="flex-1 font-bold">Audio track</span><span class="max-w-28 truncate text-sm text-white/50">{selectedTrackLabel('audio')}</span><ChevronRight size={18} class="text-white/35" /></button>
             <button onclick={() => void openCastDevices()} class="settings-row"><Cast size={20} /><span class="flex-1 font-bold">Play on another device</span><span class="text-sm text-white/50">{receiverDeviceName || 'Cast'}</span><ChevronRight size={18} class="text-white/35" /></button>
-            <button onclick={() => (settingsPage = 'capture')} class="settings-row"><Film size={20} /><span class="flex-1 font-bold">Capture</span><span class="text-sm text-white/50">GIF</span><ChevronRight size={18} class="text-white/35" /></button>
+            <button onclick={() => (settingsPage = 'capture')} class="settings-row"><Film size={20} /><span class="flex-1 font-bold">Capture</span><span class="text-sm text-white/50">Scenes &amp; GIF</span><ChevronRight size={18} class="text-white/35" /></button>
             {#if chapters.length}
               <button onclick={() => (settingsPage = 'chapters')} class="settings-row">
                 <List size={20} /><span class="flex-1 font-bold">Chapters</span>

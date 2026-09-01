@@ -6,7 +6,7 @@ import {
   MEDIA_BY_ID, SEARCH_QUERY, STAFF_MEDIA_QUERY, STUDIO_MEDIA_QUERY, searchQuery,
 } from './detail-queries'
 import {
-  PAGE_QUERY, PERSONAL_RECOMMENDATIONS_QUERY, RECENT_RELEASES_QUERY,
+  LOCAL_RECOMMENDATIONS_QUERY, PAGE_QUERY, PERSONAL_RECOMMENDATIONS_QUERY, RECENT_RELEASES_QUERY,
   currentSeason, heroQuery, pageQuery,
 } from './queries'
 describe('currentSeason', () => {
@@ -24,7 +24,7 @@ describe('catalogue projection', () => {
     const previous = get(showAdult)
     showAdult.set(true)
     const documents = [
-      PAGE_QUERY, pageQuery(), RECENT_RELEASES_QUERY, PERSONAL_RECOMMENDATIONS_QUERY,
+      PAGE_QUERY, pageQuery(), RECENT_RELEASES_QUERY, PERSONAL_RECOMMENDATIONS_QUERY, LOCAL_RECOMMENDATIONS_QUERY,
       MEDIA_BY_ID, SEARCH_QUERY, searchQuery(), STUDIO_MEDIA_QUERY, STAFF_MEDIA_QUERY,
       LIST_PREVIEW_QUERY,
     ]
@@ -35,6 +35,18 @@ describe('catalogue projection', () => {
       expect(query).toMatch(/\$withPreview:\s*Boolean\s*=\s*(?:true|false)/)
       expect(query).not.toMatch(/\$withPreview:\s*Boolean!\s*=/)
     }
+  })
+
+  it('keeps recommendation candidates explainable and supports account-free history seeds', () => {
+    const accountQuery = PERSONAL_RECOMMENDATIONS_QUERY.loc?.source.body ?? ''
+    const localQuery = LOCAL_RECOMMENDATIONS_QUERY.loc?.source.body ?? ''
+    expect(accountQuery).toContain('score(format: POINT_100)')
+    expect(accountQuery).toContain('MediaListCollection')
+    expect(accountQuery).toContain('account: Page(page: 1, perPage: 10)')
+    expect(accountQuery).not.toContain('$seedIds')
+    expect(localQuery).toContain('history: Page(page: 1, perPage: 8)')
+    expect(localQuery).toContain('media(id_in: $seedIds')
+    expect(localQuery).toContain('recommendations(perPage: 7')
   })
 
   it('does not attach full airing schedules to ordinary cards', () => {

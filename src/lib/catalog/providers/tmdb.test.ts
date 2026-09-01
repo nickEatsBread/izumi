@@ -1,7 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import { mapTmdb, parseCinemetaRating, pickTmdbLogo, tmdbContentRating, tmdbDiscoverFilterParams, tmdbRegion, tmdbRegionName } from './tmdb'
+import { mapTmdb, movieTasteGenres, parseCinemetaRating, pickTmdbLogo, tmdbContentRating, tmdbDiscoverFilterParams, tmdbMovieReleaseParams, tmdbRegion, tmdbRegionName } from './tmdb'
 
 describe('TMDB catalog mapping', () => {
+  it('builds a recent, repeated genre profile for personalized movie releases', () => {
+    expect(movieTasteGenres([
+      { title: {}, genres: ['Sci-Fi', 'Drama'] },
+      { title: {}, genres: ['Drama', 'Thriller'] },
+      { title: {}, genres: ['Drama'] },
+    ] as never)).toEqual(['Drama', 'Science Fiction', 'Thriller'])
+  })
+
+  it('uses the requested local week and OR genre matching for regional premieres', () => {
+    const start = new Date(2026, 8, 1).getTime() / 1000
+    const end = new Date(2026, 8, 8).getTime() / 1000
+    expect(tmdbMovieReleaseParams([18, 878], start, end, 'GB')).toMatchObject({
+      region: 'GB',
+      with_genres: '18|878',
+      with_release_type: '2|3',
+      'release_date.gte': '2026-09-01',
+      'release_date.lte': '2026-09-07',
+    })
+  })
+
   it('maps movies to a provider-owned identity instead of an AniList id', () => {
     const media = mapTmdb({
       id: 550, title: 'Fight Club', original_title: 'Fight Club',

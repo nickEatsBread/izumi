@@ -2,7 +2,8 @@
   import { heroMedia } from '$lib/stores/hero'
   import {
     watchParty, partyParticipants, partyError, partySyncing, partyNotice,
-    createWatchParty, joinWatchParty, leaveWatchParty, refreshWatchParty,
+    partyHostTransfer, createWatchParty, joinWatchParty, leaveWatchParty, refreshWatchParty,
+    transferWatchPartyHost, type PartyParticipant,
   } from '$lib/watch-together/client'
   import Copy from '@lucide/svelte/icons/copy'
   import Users from '@lucide/svelte/icons/users'
@@ -15,11 +16,14 @@
   import CircleCheck from '@lucide/svelte/icons/circle-check'
   import Clock3 from '@lucide/svelte/icons/clock-3'
   import RefreshButton from '$lib/components/RefreshButton.svelte'
+  import Crown from '@lucide/svelte/icons/crown'
 
   heroMedia.set(null)
   let code = $state('')
   let busy = $state(false)
   let localError = $state('')
+  let confirmTransferId = $state('')
+  let confirmTimer: ReturnType<typeof setTimeout>
 
   async function run(action: () => Promise<void>) {
     busy = true; localError = ''
@@ -44,6 +48,17 @@
   function copyCode() {
     if (!$watchParty) return
     copyToClipboard($watchParty.roomCode)
+  }
+  function chooseNewHost(participant: PartyParticipant) {
+    if (confirmTransferId !== participant.deviceId) {
+      confirmTransferId = participant.deviceId
+      clearTimeout(confirmTimer)
+      confirmTimer = setTimeout(() => (confirmTransferId = ''), 5_000)
+      return
+    }
+    confirmTransferId = ''
+    clearTimeout(confirmTimer)
+    run(() => transferWatchPartyHost(participant.deviceId))
   }
   const readinessLabel = (status: 'waiting' | 'loading' | 'ready' | 'buffering', paused: boolean) =>
     status === 'buffering' ? 'Buffering'
@@ -71,6 +86,11 @@
       <p class="mt-3 text-sm text-muted-foreground">{$watchParty.role === 'host' ? 'Start any episode. Its source and your play, pause and seek controls will be sent to the room.' : 'The host’s exact source will open on this device.'}</p>
       {#if $partySyncing}<div class="mt-3 text-sm font-bold text-theme">Resolving the host’s episode…</div>{/if}
       {#if $partyNotice}<div class="mt-3 text-sm font-bold text-muted-foreground">{$partyNotice}</div>{/if}
+      {#if $partyHostTransfer}
+        <div class="mx-auto mt-3 flex w-fit items-center gap-2 rounded-full bg-theme/15 px-3 py-1.5 text-xs font-black text-theme">
+          <LoaderCircle size={13} class="animate-spin" /> Host transfer · {$partyHostTransfer.targetName}
+        </div>
+      {/if}
     </section>
     <div class="mt-5 flex items-center justify-between">
       <h2 class="font-black">Participants ({$partyParticipants.length})</h2>
@@ -107,6 +127,18 @@
             {readinessLabel(participant.readiness, participant.paused)}
           </span>
           <span class="rounded-full bg-background px-2 py-1 text-[0.6rem] font-black uppercase text-muted-foreground">{participant.role}</span>
+          {#if $watchParty.role === 'host' && participant.role === 'guest'}
+            <button
+              type="button"
+              data-focusable
+              disabled={!!$partyHostTransfer || busy}
+              onclick={() => chooseNewHost(participant)}
+              title="Transfer host controls"
+              class="flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-[0.68rem] font-black transition-colors disabled:cursor-not-allowed disabled:opacity-40 {confirmTransferId === participant.deviceId ? 'bg-amber-500 text-black' : 'bg-background hover:bg-accent'}"
+            >
+              <Crown size={13} /> {confirmTransferId === participant.deviceId ? 'Confirm' : 'Make host'}
+            </button>
+          {/if}
         </div>
       {/each}
     </div>

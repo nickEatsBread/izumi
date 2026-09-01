@@ -38,6 +38,9 @@ export const streamPicker = writable<{
   manualOnly?: boolean
   // Preserve play/pause intent while replacing the current file.
   autoplay?: boolean
+  // Explicit scene-bookmark resume point. Kept on the picker so both manual and automatic source
+  // choices land on the saved scene instead of falling back to ordinary episode progress.
+  startSeconds?: number
   // Rendered as nothing while STAYING the current request. Automatic binge continuation uses
   // this while it searches for the previous episode's release; clearing the store would make the
   // resolve flow treat that search as superseded and abandon it.

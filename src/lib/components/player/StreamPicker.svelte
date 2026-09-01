@@ -522,6 +522,7 @@
       else if (s.status === 'idle') { busy = false } // caching canceled — re-enable the list
     }, {
       autoplay: pick.autoplay,
+      startSeconds: pick.startSeconds,
       automatic,
       directStartupTimeoutMs: automatic && directP2p ? AUTO_DIRECT_STARTUP_TIMEOUT_MS : undefined,
     })
@@ -539,7 +540,7 @@
       if (s.status === 'playing') streamPicker.set(null)
       else if (s.status === 'error') { busy = false; error = s.message ?? 'Playback failed.' }
       else if (s.status === 'idle') { busy = false }
-    }, { autoplay: pick.autoplay, forceDirect: true })
+    }, { autoplay: pick.autoplay, forceDirect: true, startSeconds: pick.startSeconds })
   }
   /** Remember the failure and move to the next candidate. False when the chain is exhausted. */
   function advanceAuto(info: StreamInfo, failureClass: PlaybackFailureClass): boolean {

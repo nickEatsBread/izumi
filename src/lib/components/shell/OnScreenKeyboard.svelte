@@ -5,13 +5,14 @@
   import { invoke } from '@tauri-apps/api/core'
   import { gameMode, oskOpen } from '$lib/player/session'
   import { uiScale } from '$lib/settings/ui'
+  import { isTv } from '$lib/platform'
 
   // Game-mode on-screen keyboard (Steam-Deck failover). The Steam OSK can't be reliably summoned
   // from a non-Steam Flatpak under gamescope (SteamAPI init fails in the sandbox, AppID detection
   // is broken, injected keys often don't land) — so we ship our own controller-navigable keyboard,
   // exactly like the crunchy-deck reference. It appears when a text field is focused in Game mode,
   // traps the d-pad (data-nav-trap), and writes straight into the field via the DOM (no perms).
-  const gm = $derived($gameMode)
+  const controllerUi = $derived($gameMode || $isTv)
 
   type Field = HTMLInputElement | HTMLTextAreaElement
   type RemoteKeyboard = {
@@ -123,13 +124,21 @@
 
   onMount(() => {
     const onFocusIn = async (e: FocusEvent) => {
-      if (!gm) return
+      if (!controllerUi) return
       // Ignore focus moving onto the keyboard's own keys, and a re-focus right after Done/close.
       if ((e.target as HTMLElement)?.closest?.('[aria-label="On-screen keyboard"]')) return
       if (performance.now() - closedAt < 400) return
       if (!isTextField(e.target)) return
       const el = e.target as Field
       remote = null
+      // TV mode always uses Izumi's focusable keyboard; Android's touch IME is not reliably
+      // navigable with a five-button remote.
+      if ($isTv) {
+        el.setAttribute('inputmode', 'none')
+        target = el
+        open = true
+        return
+      }
       // Try the Steam Deck OSK first. Its floating keyboard injects OS keystrokes straight into the
       // focused field. Rect is window pixels = CSS px × page-zoom (uiScale × the 1.25 game-mode
       // browse boost) × devicePixelRatio. Only fall back to the built-in keyboard if it declines.
@@ -149,7 +158,7 @@
     // close on focusout.
     const onClose = () => close()
     const onRemoteOpen = (event: Event) => {
-      if (!gm) return
+      if (!controllerUi) return
       const detail = (event as CustomEvent<RemoteKeyboard>).detail
       if (!detail?.insert || !detail.backspace || !detail.submit) return
       target = null
@@ -169,7 +178,7 @@
   })
 </script>
 
-{#if open && gm}
+{#if open && controllerUi}
   <!-- data-nav-trap: the d-pad stays on the keys; B closes (handled by the app-wide translator via
        a focusable Close, and Escape/Done here). -->
   <div

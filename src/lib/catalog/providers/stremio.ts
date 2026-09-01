@@ -533,7 +533,7 @@ export const stremioCatalog: CatalogProvider = {
   label: 'Stremio metadata',
   capabilities: {
     anime: true, movies: true, series: true, search: true, genres: true,
-    episodes: true, cast: true, relations: false,
+    schedule: true, episodes: true, cast: true, relations: false,
   },
   homeRows,
   home,

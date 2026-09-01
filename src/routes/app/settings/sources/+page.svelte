@@ -297,12 +297,12 @@
       <h2 class="text-xl font-black max-sm:hidden">Sources</h2>
       <div class="flex w-full flex-col gap-2 sm:w-auto sm:translate-y-3 sm:flex-row">
         <button type="button" data-focusable disabled={checkingUpdates} onclick={() => void checkForUpdates()}
-          class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-black text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60 sm:w-auto sm:min-w-44">
+          class="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-black text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60 sm:w-auto sm:min-w-44">
           <RefreshCw size={16} class={checkingUpdates ? 'animate-spin' : ''} />
           {checkingUpdates ? 'Checking…' : updateCheckFeedback || 'Check for Updates'}
         </button>
         <a href="/app/settings/store" data-focusable
-           class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-opacity active:opacity-80 sm:w-auto sm:hover:opacity-90">
+           class="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-opacity active:opacity-80 sm:w-auto sm:hover:opacity-90">
           <Store size={16} />
           Add from Store
         </a>

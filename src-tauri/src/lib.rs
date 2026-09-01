@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(dead_code))]
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[cfg(target_os = "android")]
 mod android_tls;
@@ -52,6 +54,30 @@ mod subsync;
 mod steam_osk;
 
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+
+// Unit-test executables do not carry Tauri's production Common Controls v6 manifest. The
+// Windows support crates still leave this unused static import in the image, which makes the
+// legacy Common Controls loader abort before the Rust harness starts. Satisfy that import only
+// for tests; no test opens a native task dialog and normal application builds use the real API.
+#[cfg(all(test, target_os = "windows"))]
+unsafe extern "system" fn test_task_dialog_indirect(
+    _config: *const std::ffi::c_void,
+    _button: *mut i32,
+    _radio_button: *mut i32,
+    _verification_checked: *mut i32,
+) -> i32 {
+    0x8000_4001_u32 as i32 // E_NOTIMPL
+}
+
+#[cfg(all(test, target_os = "windows"))]
+#[no_mangle]
+#[allow(non_upper_case_globals)]
+static __imp_TaskDialogIndirect: unsafe extern "system" fn(
+    *const std::ffi::c_void,
+    *mut i32,
+    *mut i32,
+    *mut i32,
+) -> i32 = test_task_dialog_indirect;
 
 /// Remembers whether the main window was maximized before entering fullscreen, so
 /// exit can re-maximize it. We must un-maximize BEFORE `set_fullscreen`: tao enters
@@ -5438,6 +5464,7 @@ fn configure_gamescope_native_wayland_prototype() {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[cfg(not(test))]
 pub fn run() {
     #[cfg(target_os = "linux")]
     configure_gamescope_native_wayland_prototype();

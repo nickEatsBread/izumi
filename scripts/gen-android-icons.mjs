@@ -21,6 +21,7 @@ function innerSvg(file) {
 
 const markInner = innerSvg('static/brand/izumi-mark-color.svg') // 100x100 viewBox
 const appIcon = readFileSync(resolve(root, 'static/brand/izumi-app-icon.svg'), 'utf8') // 1024 viewBox
+const lockupInner = innerSvg('static/brand/izumi-lockup-color-dark.svg') // 432x130.58 viewBox
 
 // Adaptive FOREGROUND: 108-unit transparent canvas, mark centered at ~44% (48/108).
 const foregroundSvg =
@@ -32,6 +33,14 @@ const roundSvg =
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">` +
   `<circle cx="512" cy="512" r="512" fill="${BRAND_DARK}"/>` +
   `<g transform="translate(194.56,194.56) scale(6.34880)">${markInner}</g></svg>`
+
+// Android TV home banner: the platform requires a text-bearing 320×180 xhdpi drawable. Reuse the
+// path-based brand lockup so generation is deterministic and does not depend on an installed font.
+const tvBannerSvg =
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180">` +
+  `<defs><radialGradient id="tvGlow" cx="15%" cy="15%" r="95%"><stop offset="0" stop-color="#173653"/><stop offset="1" stop-color="${BRAND_DARK}"/></radialGradient></defs>` +
+  `<rect width="320" height="180" rx="10" fill="url(#tvGlow)"/>` +
+  `<g transform="translate(30,51) scale(0.60)">${lockupInner}</g></svg>`
 
 function renderPng(svg, px) {
   return new Resvg(svg, { fitTo: { mode: 'width', value: px }, background: 'rgba(0,0,0,0)' })
@@ -53,4 +62,6 @@ for (const [dpi, mul] of Object.entries(DENSITIES)) {
   write(`mipmap-${dpi}`, 'ic_launcher.png', renderPng(appIcon, legacyPx))
   write(`mipmap-${dpi}`, 'ic_launcher_round.png', renderPng(roundSvg, legacyPx))
 }
+const tvBanner = renderPng(tvBannerSvg, 320)
+write('drawable-xhdpi', 'izumi_tv_banner.png', tvBanner)
 console.log('done')

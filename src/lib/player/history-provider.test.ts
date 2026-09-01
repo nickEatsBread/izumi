@@ -14,14 +14,14 @@ describe('provider media history snapshot', () => {
       videos: [{
         id: '63056', number: 14, season: 2, episode: 4,
         title: 'Garden of Bones', overview: 'Large text is intentionally discarded',
-        thumbnail: 'https://image.test/still.jpg',
+        thumbnail: 'https://image.test/still.jpg', released: '2012-04-22',
       }],
     } as Media
 
     expect(mediaSnapshot(media)).toMatchObject({
       catalog: { provider: 'tmdb', type: 'series', id: '1399' },
       externalIds: { tmdb: 1399, imdb: 'tt0944947' },
-      videos: [{ id: '63056', number: 14, season: 2, episode: 4, title: 'Garden of Bones' }],
+      videos: [{ id: '63056', number: 14, season: 2, episode: 4, title: 'Garden of Bones', released: '2012-04-22' }],
     })
     expect(mediaSnapshot(media).videos?.[0].overview).toBeUndefined()
     expect(mediaSnapshot(media).videos?.[0].thumbnail).toBeUndefined()

@@ -13,7 +13,7 @@ export const ANILIST_HOME_ROWS: CatalogHomeRowOption[] = [
   CONTINUE_HOME_ROW,
   { id: 'recent', title: 'Recently Released', description: 'Episodes released in the last few days.', group: 'Your anime', defaultEnabled: false },
   { id: 'list', title: 'Your List', description: 'Planned titles from your connected tracker.', group: 'Your anime', defaultEnabled: true },
-  { id: 'recommendations', title: 'Recommended for You', description: 'Suggestions based on highly rated titles in your AniList account.', group: 'Your anime', defaultEnabled: true },
+  { id: 'recommendations', title: 'Recommended for You', description: 'Suggestions ranked locally from your watch history and connected AniList account.', group: 'Your anime', defaultEnabled: true },
   { id: 'season', title: 'Popular This Season', description: 'The most popular anime in the current season.', group: 'Discover', defaultEnabled: true },
   { id: 'trending', title: 'Trending Now', description: 'Anime receiving the most attention right now.', group: 'Discover', defaultEnabled: true },
   { id: 'popular', title: 'All Time Popular', description: 'The most popular anime across AniList.', group: 'Discover', defaultEnabled: true },

@@ -129,18 +129,23 @@ interface TmdbDetail extends TmdbListItem {
   images?: TmdbImages
   release_dates?: { results?: TmdbReleaseCountry[] }
   content_ratings?: { results?: TmdbContentRating[] }
+  next_episode_to_air?: TmdbEpisode | null
+  last_episode_to_air?: TmdbEpisode | null
+}
+
+interface TmdbEpisode {
+  id?: number
+  episode_number?: number
+  season_number?: number
+  name?: string
+  overview?: string
+  still_path?: string | null
+  air_date?: string | null
 }
 
 interface TmdbSeasonDetail {
   season_number?: number
-  episodes?: {
-    id?: number
-    episode_number?: number
-    name?: string
-    overview?: string
-    still_path?: string | null
-    air_date?: string | null
-  }[]
+  episodes?: TmdbEpisode[]
 }
 
 const token = () => get(tmdbReadToken).trim()
@@ -539,6 +544,119 @@ async function genreMaps(signal?: AbortSignal) {
   return genresPromise
 }
 
+export interface TmdbTasteRelease {
+  media: Media
+  matchingGenres: string[]
+}
+
+const genreKey = (value: string): string => ({
+  'sci-fi': 'science fiction',
+  'sci fi': 'science fiction',
+} as Record<string, string>)[value.trim().toLowerCase()] ?? value.trim().toLowerCase()
+
+/** Recent movies carry slightly more weight, while repeat genres build a stable taste profile. */
+export function movieTasteGenres(watched: Media[], limit = 3): string[] {
+  const weights = new Map<string, { label: string; weight: number }>()
+  const count = Math.max(1, watched.length)
+  watched.forEach((media, index) => {
+    const weight = 1 - index / (count * 2)
+    for (const raw of media.genres ?? []) {
+      const key = genreKey(raw)
+      const label = key === 'science fiction' ? 'Science Fiction' : raw.trim()
+      if (!key) continue
+      const current = weights.get(key)
+      weights.set(key, { label: current?.label ?? label, weight: (current?.weight ?? 0) + weight })
+    }
+  })
+  return [...weights.values()]
+    .sort((left, right) => right.weight - left.weight || left.label.localeCompare(right.label))
+    .slice(0, limit)
+    .map((item) => item.label)
+}
+
+function localDate(unix: number): string {
+  const date = new Date(unix * 1000)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+export function tmdbMovieReleaseParams(genreIds: number[], start: number, end: number, region: string) {
+  return {
+    include_adult: get(showAdult),
+    include_video: false,
+    language: TMDB_LANGUAGE,
+    page: 1,
+    region,
+    sort_by: 'popularity.desc',
+    with_genres: genreIds.join('|'),
+    with_release_type: '2|3',
+    'release_date.gte': localDate(start),
+    'release_date.lte': localDate(end - 1),
+  }
+}
+
+/** Regional theatrical releases matched to genres in the viewer's recent movie history. */
+export async function tmdbMovieReleasesForTaste(
+  watched: Media[],
+  start: number,
+  end: number,
+  signal?: AbortSignal,
+): Promise<TmdbTasteRelease[]> {
+  const taste = movieTasteGenres(watched)
+  if (!taste.length) return []
+  const maps = await genreMaps(signal)
+  const genreIds = taste.flatMap((name) => {
+    const id = maps.movie.get(genreKey(name))
+    return id == null ? [] : [id]
+  })
+  if (!genreIds.length) return []
+  const byId = new Map([...maps.movie].map(([name, id]) => [
+    id,
+    name.replace(/\b\w/g, (letter) => letter.toUpperCase()),
+  ]))
+  const page = await tmdb<TmdbPage>(
+    '/discover/movie',
+    tmdbMovieReleaseParams(genreIds, start, end, tmdbRegion()),
+    signal,
+  )
+  const watchedTmdbIds = new Set(watched.flatMap((media) =>
+    media.externalIds?.tmdb != null ? [media.externalIds.tmdb] : []))
+  return (page.results ?? []).flatMap((raw) => {
+    if (raw.id == null || watchedTmdbIds.has(raw.id)) return []
+    const media = mapTmdb(raw, 'movie')
+    if (!media || (!get(showAdult) && media.isAdult)) return []
+    media.genres = (raw.genre_ids ?? []).flatMap((id) => byId.get(id) ? [byId.get(id)!] : [])
+    const matchingGenres = media.genres.filter((genre) =>
+      taste.some((wanted) => genreKey(wanted) === genreKey(genre)))
+    return [{ media, matchingGenres }]
+  }).slice(0, 12)
+}
+
+/** Refresh the previous and next TV episode without loading every season in the series. */
+export async function tmdbSeriesAiringHints(id: string, signal?: AbortSignal): Promise<MediaVideo[]> {
+  const raw = await tmdb<TmdbDetail>(`/tv/${encodeURIComponent(id)}`, { language: TMDB_LANGUAGE }, signal)
+  const candidates = [raw.last_episode_to_air, raw.next_episode_to_air]
+  const seen = new Set<string>()
+  return candidates.flatMap((episode) => {
+    if (!episode?.air_date || episode.episode_number == null) return []
+    const key = `${episode.season_number ?? ''}:${episode.episode_number}:${episode.air_date}`
+    if (seen.has(key)) return []
+    seen.add(key)
+    return [{
+      id: episode.id == null ? undefined : String(episode.id),
+      number: episode.episode_number,
+      season: episode.season_number,
+      episode: episode.episode_number,
+      title: episode.name,
+      overview: episode.overview,
+      thumbnail: image(episode.still_path, 'w780'),
+      released: episode.air_date,
+    }]
+  })
+}
+
 async function search(request: CatalogSearchRequest): Promise<CatalogPage> {
   const pageNumber = Math.max(1, request.page ?? 1)
   let result: TmdbPage
@@ -761,7 +879,7 @@ export const tmdbCatalog: CatalogProvider = {
   label: 'TMDB',
   capabilities: {
     anime: true, movies: true, series: true, search: true, genres: true,
-    episodes: true, cast: true, relations: true,
+    schedule: true, episodes: true, cast: true, relations: true,
   },
   homeRows: async () => TMDB_HOME_ROWS,
   home,

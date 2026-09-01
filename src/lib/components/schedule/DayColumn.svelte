@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { type Airing, airTime, aired, until } from '$lib/anilist/schedule'
-  import { title, cover } from '$lib/anilist/media'
+  import { type Airing, airTime, aired, scheduleItemLabel, scheduleSourceLabel, until } from '$lib/anilist/schedule'
+  import { title, cover, mediaHref } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
   import type { MineKind } from '$lib/anilist/my-shows'
   import { delayLines, type ScheduleInfo } from '$lib/anime/animeschedule'
@@ -25,23 +25,26 @@
         {@const mine = badgeOf?.(a.media)}
         {@const delay = delayOf(a.media)}
         {@const nav = scheduleCardNav(big ? navFirst : undefined, i, airings.length)}
+        {@const source = scheduleSourceLabel(a)}
           <a
             data-focusable
             data-nav-id={nav.id}
             data-nav-left={nav.left}
             data-nav-right={nav.right}
-            href={`/app/anime/${a.media.id}`}
+            href={mediaHref(a.media)}
             class="flex min-w-0 items-center gap-3 rounded-xl border bg-secondary p-2.5 transition-colors hover:bg-accent {aired(a.airingAt) && !a.delayPlaceholder ? 'opacity-70' : ''} {mine ? 'border-border/80' : 'border-transparent'}"
           >
             <img src={cover(a.media)} alt="" loading="lazy" decoding="async"
                  class="{big ? 'h-20 w-14' : 'h-14 w-10'} shrink-0 rounded-lg object-cover" />
             <div class="min-w-0 flex-1">
               <p class="line-clamp-2 {big ? 'text-sm' : 'text-xs'} font-bold leading-tight">{title(a.media)}</p>
-              <p class="mt-1 text-[0.7rem] text-muted-foreground">Episode {a.episode}{#if !a.delayPlaceholder} · <span class="font-bold tabular-nums text-foreground">{airTime(a.airingAt)}</span>{/if}</p>
+              <p class="mt-1 text-[0.7rem] text-muted-foreground">{scheduleItemLabel(a)}{#if !a.delayPlaceholder && a.timeKnown !== false} · <span class="font-bold tabular-nums text-foreground">{airTime(a.airingAt)}</span>{/if}</p>
+              {#if a.context}<p class="mt-1 line-clamp-1 text-[0.7rem] text-muted-foreground">{a.context}</p>{/if}
               {#if delay}<p class="mt-1 text-xs font-bold text-amber-400">{delay}</p>{/if}
               <div class="mt-2 flex items-center gap-2">
                 {#if mine}<span class="rounded-full bg-foreground/[0.08] px-2 py-1 text-[0.65rem] font-black uppercase tracking-wide text-foreground/70">{mine === 'watching' ? 'Watching' : 'Planning'}</span>{/if}
-                {#if !a.delayPlaceholder}<span class="text-[0.7rem] font-bold {aired(a.airingAt) ? 'text-muted-foreground' : 'text-emerald-400'}">{aired(a.airingAt) ? 'Aired' : until(a.airingAt)}</span>{/if}
+                {#if source}<span class="rounded-full bg-foreground/[0.08] px-2 py-1 text-[0.65rem] font-black text-foreground/70">{source}</span>{/if}
+                {#if !a.delayPlaceholder}<span class="text-[0.7rem] font-bold {aired(a.airingAt) ? 'text-muted-foreground' : 'text-emerald-400'}">{aired(a.airingAt) ? (a.kind === 'movie' ? 'Released' : 'Aired') : until(a.airingAt)}</span>{/if}
               </div>
             </div>
           </a>

@@ -9,6 +9,8 @@
   import Upload from '@lucide/svelte/icons/upload'
   import Trash2 from '@lucide/svelte/icons/trash-2'
   import X from '@lucide/svelte/icons/x'
+  import RotateCcw from '@lucide/svelte/icons/rotate-ccw'
+  import { dismissedForYouIds } from '$lib/recommendations/for-you'
 
   const entries = $derived(historyEntries($localHistory))
   let msg = $state('')
@@ -50,7 +52,9 @@
   <h2 class="mb-1 text-xl font-black">History</h2>
   <p class="mb-4 max-w-2xl text-sm text-muted-foreground">
     izumi keeps your watch history, progress, and aggregate source reliability on this device, so
-    Continue Watching, resume, and source selection improve locally. It never leaves your machine.
+    Continue Watching, resume, and source selection improve locally. When the For You home row is
+    enabled, up to eight AniList title IDs are used to request suggestions; play times and progress
+    remain on this device.
   </p>
 
   <div class="max-w-2xl space-y-6">
@@ -89,6 +93,21 @@
       </div>
       {#if msg}<p class="mt-3 text-sm text-theme">{msg}</p>{/if}
     </div>
+
+    {#if $dismissedForYouIds.length}
+      <div class="flex items-center justify-between gap-4 rounded-xl border border-border p-4">
+        <div>
+          <h3 class="text-sm font-black">For You feedback</h3>
+          <p class="mt-0.5 text-xs text-muted-foreground">
+            {$dismissedForYouIds.length} {$dismissedForYouIds.length === 1 ? 'title is' : 'titles are'} marked “Not for me”.
+          </p>
+        </div>
+        <button data-focusable onclick={() => { dismissedForYouIds.set([]); flash('Recommendation feedback reset.') }}
+          class="flex shrink-0 items-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-xs font-bold transition-colors active:bg-accent sm:hover:bg-accent">
+          <RotateCcw size={14} /> Reset
+        </button>
+      </div>
+    {/if}
 
     <!-- The stored list -->
     <div>

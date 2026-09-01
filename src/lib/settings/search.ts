@@ -94,6 +94,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Show "Next up" on the schedule', category: 'Interface', href: '/app/settings/interface', keywords: 'airing now countdown strip hide', anchored: true },
   { title: 'Remove from Continue Watching', category: 'Interface', href: '/app/settings/interface', keywords: 'dismiss dropped paused on hold' },
   { title: 'UI scale', category: 'Interface', href: '/app/settings/interface', keywords: 'zoom size accessibility' },
+  { title: 'Android TV layout', category: 'Interface', href: '/app/settings/interface', keywords: 'television remote dpad leanback ten foot focus wide couch', anchored: true, androidOnly: true },
   { title: 'Hide spoilers', category: 'Interface', href: '/app/settings/interface', keywords: 'blur episode thumbnails titles ratings', anchored: true },
   { title: 'Show 18+ content', category: 'Interface', href: '/app/settings/interface', keywords: 'adult nsfw mature', anchored: true },
   { title: 'Incognito for 18+ titles', category: 'Interface', href: '/app/settings/interface', keywords: 'adult nsfw private auto incognito ghost secret no sync', anchored: true },

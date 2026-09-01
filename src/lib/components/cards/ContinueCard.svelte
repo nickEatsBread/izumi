@@ -16,7 +16,7 @@
   import type { EpMeta } from '$lib/anizip/types'
   import Play from '@lucide/svelte/icons/play'
   import Loader from '@lucide/svelte/icons/loader-circle'
-  import { isAndroid } from '$lib/platform'
+  import { isAndroid, isTv } from '$lib/platform'
   import * as h from '$lib/haptics'
   import { rememberDetail } from '$lib/anilist/detail-hint'
   import { anilistIdOf } from '$lib/catalog/identity'
@@ -80,7 +80,7 @@
   onpointerdown={() => void loadPlayback()}
   onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play() } }}
   title={`Resume — ${name} · Episode ${ep}`}
-  class="group flex w-[72vw] shrink-0 cursor-pointer flex-col text-left sm:w-[264px] {$isAndroid ? 'android-card-press' : ''}"
+  class="group flex shrink-0 cursor-pointer flex-col text-left {$isTv ? 'w-80' : 'w-[72vw] sm:w-[264px]'} {$isAndroid ? 'android-card-press' : ''}"
 >
   <div class="focus-cover relative aspect-video w-full overflow-hidden rounded-lg bg-muted">
     {#if !imgReady}<div class="absolute inset-0 skeloader"></div>{/if}

@@ -467,7 +467,7 @@
         <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/65">
           {#if m.studios?.nodes?.[0]}
             {@const studio = m.studios.nodes[0]}
-            <a href={studio.id ? `/app/search?studio=${studio.id}&name=${encodeURIComponent(studio.name)}` : `/app/search?search=${encodeURIComponent(studio.name)}`}
+            <a href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}
                class="font-bold text-foreground/85 underline-offset-2 active:opacity-70">{studio.name}</a>
           {/if}
           {#if m.source}<span class="opacity-35">·</span><span>From {prettyEnum(m.source)}</span>{/if}
@@ -572,7 +572,7 @@
                   {#if m.studios?.nodes?.length}
                     <div class="col-span-2 rounded-xl bg-secondary/40 p-3">
                       <dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Studio</dt>
-                      <dd class="mt-1 font-bold">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ' · ' : ''}<a class="underline-offset-2 active:opacity-70" href={studio.id ? `/app/search?studio=${studio.id}&name=${encodeURIComponent(studio.name)}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd>
+                      <dd class="mt-1 font-bold">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ' · ' : ''}<a class="underline-offset-2 active:opacity-70" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd>
                     </div>
                   {/if}
                   {#if format(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Format</dt><dd class="mt-1 font-bold">{format(m)}</dd></div>{/if}
@@ -740,7 +740,7 @@
         {/if}
         <dl class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
           {#if m.studios?.nodes?.length}
-            <div><dt class="font-bold">Studios</dt><dd class="text-muted-foreground">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ', ' : ''}<a data-focusable class="underline-offset-2 hover:underline" href={studio.id ? `/app/search?studio=${studio.id}&name=${encodeURIComponent(studio.name)}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd></div>
+            <div><dt class="font-bold">Studios</dt><dd class="text-muted-foreground">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ', ' : ''}<a data-focusable class="underline-offset-2 hover:underline" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd></div>
           {/if}
           {#if fmtDate(m.startDate)}
             <div><dt class="font-bold">Start Date</dt><dd class="text-muted-foreground">{fmtDate(m.startDate)}</dd></div>

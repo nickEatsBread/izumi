@@ -284,6 +284,10 @@ export const episodeQueueEnabled = persisted<boolean>('episode-queue-enabled', f
 export const sceneBookmarksEnabled = persisted<boolean>('scene-bookmarks-enabled', false)
 /** WebView zoom factor for the whole UI (0.5–2.0). */
 export const uiScale = persisted<number>('ui-scale', 1)
+/** Ten-foot UI on Android television devices. Auto uses the native WebView marker and common TV
+ * user-agent identifiers; on/off cover unusual firmware and development testing. */
+export type AndroidTvMode = 'auto' | 'on' | 'off'
+export const androidTvMode = persisted<AndroidTvMode>('android-tv-mode', 'auto')
 /** Include 18+ / adult titles in browse + search (AniList isAdult filter). */
 export const showAdult = persisted<boolean>('show-adult', false)
 /** Auto-enter incognito whenever an adult (isAdult) title starts playing, and leave it (purging
@@ -328,9 +332,9 @@ export const scheduleLayout = persisted<ScheduleLayout>('schedule-layout', 'agen
 // reads as un-native on a phone, where the header should scroll away with the list.
 const scheduleStickyDefault = !(typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent))
 export const scheduleStickyHeader = persisted<boolean>('schedule-sticky-header', scheduleStickyDefault)
-/** Which tab the Schedule page opens on: the weekly airing 'schedule' (default) or
- *  'watchlist' — the viewer's watching list ordered by aired-but-unwatched episodes. */
-export type ScheduleTab = 'schedule' | 'watchlist'
+/** Which tab the Schedule page opens on: anime airings, the provider-aware personal calendar,
+ * or the viewer's watching list ordered by aired-but-unwatched episodes. */
+export type ScheduleTab = 'schedule' | 'personal' | 'watchlist'
 export const scheduleDefaultTab = persisted<ScheduleTab>('schedule-default-tab', 'schedule')
 /** Show the "Next up" strip at the top of the schedule. Off means the grid starts immediately. */
 export const scheduleShowNextUp = persisted<boolean>('schedule-show-next-up', true)

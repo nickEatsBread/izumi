@@ -40,7 +40,7 @@ describe('Android release hardening', () => {
     }
     expect(verifyNative).toContain('ZIPALIGN" -c -P 16 -v 4')
     expect(verifyNative).toContain('alignment < 0x4000')
-    expect(release).toContain('needs: [create-release, build, flatpak, android, tizen, tv-installer, cleanup-release-signatures]')
+    expect(release).toContain('needs: [create-release, build, flatpak, android, cleanup-release-signatures]')
   })
 
   it('builds the shipped player from the libass 0.17.5 source pin', () => {

@@ -15,6 +15,14 @@ license = "AGPL-3.0-or-later"
 name = "izumi_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[[bin]]
+name = "izumi"
+path = "src/main.rs"
+# The binary is a two-line launcher with no tests. Skipping its empty harness also avoids
+# linking the complete desktop UI runtime into a test executable that cannot test any logic.
+test = false
+bench = false
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { generateRoomCode, liveRoomHost, participantFromWire } from './client'
+import {
+  generateRoomCode, liveRoomHost, nextHostTransferStep, participantFromWire,
+  reactionRateError, validReaction,
+} from './client'
 
 describe('Watch Together room codes', () => {
   it('generates the six characters required by the join screen', () => {
@@ -65,5 +68,56 @@ describe('Watch Together room validation', () => {
   it('rejects stale hosts', () => {
     const now = 100_000
     expect(liveRoomHost([wire('host', 'ABC234', now - 30_000)], 'ABC234', now)).toBeNull()
+  })
+
+  it('pins authority to the expected device instead of accepting a newer host claim', () => {
+    const now = 100_000
+    const legitimate = wire('host', 'ABC234', now - 1_000)
+    const impostor = JSON.stringify({
+      ...JSON.parse(wire('host', 'ABC234', now)),
+      deviceId: 'guest-claiming-host',
+    })
+    expect(liveRoomHost([legitimate, impostor], 'ABC234', now, 'host-device')?.deviceId)
+      .toBe('host-device')
+  })
+})
+
+describe('Watch Together host transfer', () => {
+  const transfer = { id: 'transfer-123', phase: 'request' as const }
+
+  it('requires the matching accept before commit', () => {
+    expect(nextHostTransferStep(transfer)).toBe('wait')
+    expect(nextHostTransferStep(transfer, { id: 'another-transfer', phase: 'accepted' })).toBe('wait')
+    expect(nextHostTransferStep(transfer, { id: transfer.id, phase: 'ready' })).toBe('wait')
+    expect(nextHostTransferStep(transfer, { id: transfer.id, phase: 'accepted' })).toBe('commit')
+  })
+
+  it('finalizes only after the selected guest saw the commit', () => {
+    const committed = { ...transfer, phase: 'commit' as const }
+    expect(nextHostTransferStep(committed, { id: transfer.id, phase: 'accepted' })).toBe('wait')
+    expect(nextHostTransferStep(committed, { id: transfer.id, phase: 'ready' })).toBe('finalize')
+  })
+})
+
+describe('Watch Together reactions', () => {
+  const reaction = {
+    id: 'device-event-1', sender: 'device', emoji: '🔥' as const, position: 42,
+    mediaId: 7, episode: 3,
+  }
+
+  it('accepts only bounded, supported reaction events', () => {
+    expect(validReaction(reaction)).toBe(true)
+    expect(validReaction({ ...reaction, emoji: '💣' as '🔥' })).toBe(false)
+    expect(validReaction({ ...reaction, position: Number.NaN })).toBe(false)
+    expect(validReaction({ ...reaction, id: 'x' })).toBe(false)
+  })
+
+  it('limits bursts without blocking normal reaction timing', () => {
+    const now = 20_000
+    expect(reactionRateError([], now)).toBe('')
+    expect(reactionRateError([now - 349], now)).toContain('too fast')
+    expect(reactionRateError(Array.from({ length: 8 }, (_, index) => now - 9_000 + index * 1_000), now))
+      .toContain('Take a breath')
+    expect(reactionRateError([now - 10_001], now)).toBe('')
   })
 })

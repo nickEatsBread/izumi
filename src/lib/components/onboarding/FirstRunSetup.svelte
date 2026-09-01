@@ -69,7 +69,7 @@
           <label class="grid gap-2 text-sm font-bold">
             {m.player_audio_language()}
             <select data-focusable bind:value={$preferredAudioLang} class="h-11 rounded-xl bg-input px-3 font-semibold">
-              <option value="jpn">日本語</option><option value="eng">English</option>
+              <option value="jpn">Japanese</option><option value="eng">English</option>
             </select>
           </label>
           <label class="grid gap-2 text-sm font-bold">

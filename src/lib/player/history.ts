@@ -98,7 +98,7 @@ export function mediaSnapshot(m: Media): Media {
     // add-on for the same item after a restart. Drop artwork/synopses to keep long series compact.
     videos: m.videos?.map((video) => ({
       id: video.id, number: video.number, season: video.season,
-      episode: video.episode, title: video.title,
+      episode: video.episode, title: video.title, released: video.released,
     })),
     synonyms: m.synonyms,
   } as Media

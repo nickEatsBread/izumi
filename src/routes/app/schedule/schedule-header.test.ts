@@ -53,10 +53,11 @@ function headerRowSlice(source: string): string {
 }
 
 describe('schedule page header', () => {
-  it('renders both tabs and both My Shows/All options inside the same header row', () => {
+  it('renders all tabs and both My Shows/All options inside the same header row', () => {
     const headerRow = headerRowSlice(page)
     // Both tabs.
     expect(headerRow).toContain("tab = 'schedule'")
+    expect(headerRow).toContain("tab = 'personal'")
     expect(headerRow).toContain("tab = 'watchlist'")
     // Both toggle options — this is the part that regresses if the toggle is pulled back out into
     // its own row below the header, since it would then fall outside the matched slice.
@@ -89,6 +90,11 @@ describe('schedule page header', () => {
   it('masks the transparent desktop titlebar while the schedule header is pinned', () => {
     expect(page).toContain('{#if stickyActive && !$isMobile}')
     expect(page).toMatch(/data-schedule-titlebar-shield[^>]+fixed[^>]+top-0[^>]+z-20[^>]+h-8[^>]+bg-background/)
+  })
+
+  it('renders provider media through the shared catalog route helper', () => {
+    expect(dayColumn).toContain('href={mediaHref(a.media)}')
+    expect(page).toContain('<PersonalSchedule {start} {end} {headerOffset} />')
   })
 
   it('keeps both the normal and sticky schedule header below the degraded alert', () => {

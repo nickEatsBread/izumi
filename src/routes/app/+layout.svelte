@@ -38,11 +38,12 @@
   import { catalogDefaultProvider, catalogLastProvider, catalogProvider, catalogProviders, catalogScreen, catalogScreens, enabledCatalogProviders, enabledCatalogScreens, nextCatalogScreen, previousCatalogScreen, resolveCatalogStartup, selectCatalogProvider, selectCatalogScreen } from '$lib/settings/catalog'
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
+  import { getCurrentWindow } from '@tauri-apps/api/window'
   import { initInput, initDpadNav, suppressNativeContextMenus, suppressNativeTooltips } from '$lib/nav'
   import { startGamepadNav } from '$lib/nav/gamepad'
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { scheduleBootWork } from '$lib/util/boot-work'
-  import { isAndroid, isMacOS, isMobile, initPlatform } from '$lib/platform'
+  import { isAndroid, isMacOS, isMobile, isTv, initPlatform } from '$lib/platform'
   import { initOffline } from '$lib/stores/offline'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
   import { initTrackerQueue } from '$lib/trackers/queue'
@@ -138,6 +139,18 @@
     } else if ($globalSearchOpen && event.key === 'Escape') {
       event.preventDefault()
       closeGlobalSearch()
+    } else if ($isTv && ['Escape', 'BrowserBack', 'GoBack'].includes(event.key)
+        && !$playing && !$androidMpvActive && !isTypingTarget(event.target)) {
+      // The native activity translates remote Back to Escape. Visible modals consume it first;
+      // otherwise match TV launchers: back through screens, then ask before leaving Home.
+      if (document.querySelector('[data-nav-trap]')) return
+      event.preventDefault()
+      if (location.pathname.replace(/\/$/, '') === '/app/home') {
+        // Android TV's Back contract ends at the launcher; closing the native window finishes
+        // the activity instead of showing the desktop confirmation dialog.
+        void getCurrentWindow().close().catch(() => {})
+      }
+      else history.back()
     }
   }
   const skipSpeculativeNetwork = () => {
@@ -260,6 +273,10 @@
     invoke('set_doh', { enabled: $enableDoH, url: $doHUrl }).catch(() => {})
   })
 
+  $effect(() => {
+    document.documentElement.classList.toggle('tv-mode', $isTv)
+  })
+
   // UI scale: WebView (Chromium) zoom on the document root. mpv renders natively
   // behind the webview and is unaffected, so the sidebar-inset math below scales by
   // the same factor to keep the video hole aligned with the (zoomed) sidebar rail.
@@ -375,7 +392,7 @@
   {#if $isMobile}<BottomNav />{:else}<Sidebar />{/if}
   <!-- No window-control titlebar in Game mode (gamescope owns the fullscreen window; the
        minimize/maximize/close icons are meaningless + unreachable there) or on mobile. -->
-  {#if !$gameMode && !$isMobile}<Titlebar />{/if}
+  {#if !$gameMode && !$isMobile && !$isTv}<Titlebar />{/if}
   <OnlineBanner />
   <!-- Incognito remains active during playback, but its persistent browse reminder must not cover
        the video or controls. It returns unchanged as soon as the player closes. -->

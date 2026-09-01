@@ -12,6 +12,7 @@ import {
   type WindowsVsr,
 } from '$lib/settings/ui'
 import { userFilterChains } from './quality'
+import { isWindows } from '$lib/platform'
 
 export function audioFilter(mode: AudioProcessing): string {
   if (mode === 'dialogue') return 'lavfi=[dynaudnorm=f=150:g=12:p=0.9]'
@@ -52,9 +53,12 @@ export function subtitleFilterOptions(strip: boolean, harder: boolean, regex: st
 /** The full enhancement option set for the current settings. */
 export function enhancementOpts(): [string, string][] {
   const user = userFilterChains(get(videoQualityPreset), get(rawMpvOptions))
+  // Preferences can be synced between devices. Preserve the Windows choice, but never send its
+  // Direct3D-only filter to a macOS/Linux mpv core where d3d11vpp cannot exist.
+  const driverUpscaling = get(isWindows) ? get(windowsVsr) : 'off'
   return [
     ['af', audioChain(user.af, get(audioProcessing))],
-    ['vf', videoChain(user.vf, get(windowsVsr))],
+    ['vf', videoChain(user.vf, driverUpscaling)],
     ...subtitleFilterOptions(get(subtitleStripSdh), get(subtitleStripSdhHarder), get(subtitleRegexFilter)),
   ]
 }

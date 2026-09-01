@@ -70,13 +70,12 @@ test -s "$RUSTLS_ANDROID_AAR" \
 mkdir -p src-tauri/gen/android/app/libs
 cp "$RUSTLS_ANDROID_AAR" src-tauri/gen/android/app/libs/rustls-platform-verifier.aar
 cp src-tauri/android/AndroidTlsVerifier.kt "$(dirname "$MAIN_ACTIVITY")/AndroidTlsVerifier.kt"
+cp src-tauri/android/MainActivity.kt "$MAIN_ACTIVITY"
 cp src-tauri/android/proguard-rustls.pro src-tauri/gen/android/app/proguard-rustls.pro
 sed -i '/implementation(files("libs\/rustls-platform-verifier.aar"))/d' \
   src-tauri/gen/android/app/build.gradle.kts
 sed -i '/dependencies {/a\    implementation(files("libs/rustls-platform-verifier.aar"))' \
   src-tauri/gen/android/app/build.gradle.kts
-sed -i '/AndroidTlsVerifier.initialize(applicationContext)/d' "$MAIN_ACTIVITY"
-sed -i '/enableEdgeToEdge()/i\    AndroidTlsVerifier.initialize(applicationContext)' "$MAIN_ACTIVITY"
 test "$(grep -c 'implementation(files("libs/rustls-platform-verifier.aar"))' src-tauri/gen/android/app/build.gradle.kts)" -eq 1 \
   || { echo "rustls Android verifier dependency is missing or duplicated"; exit 1; }
 test "$(grep -c 'AndroidTlsVerifier.initialize(applicationContext)' "$MAIN_ACTIVITY")" -eq 1 \
@@ -90,9 +89,33 @@ cp -R src-tauri/icons/android/. src-tauri/gen/android/app/src/main/res/
 if ! grep -q 'android:roundIcon=' src-tauri/gen/android/app/src/main/AndroidManifest.xml; then
   sed -i 's#android:icon="@mipmap/ic_launcher"#android:icon="@mipmap/ic_launcher"\n        android:roundIcon="@mipmap/ic_launcher_round"#' src-tauri/gen/android/app/src/main/AndroidManifest.xml
 fi
+if ! grep -q 'android:banner=' src-tauri/gen/android/app/src/main/AndroidManifest.xml; then
+  sed -i 's#android:roundIcon="@mipmap/ic_launcher_round"#android:roundIcon="@mipmap/ic_launcher_round"\n        android:banner="@drawable/izumi_tv_banner"#' src-tauri/gen/android/app/src/main/AndroidManifest.xml
+fi
 cmp src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher.png \
     src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+cmp src-tauri/icons/android/drawable-xhdpi/izumi_tv_banner.png \
+    src-tauri/gen/android/app/src/main/res/drawable-xhdpi/izumi_tv_banner.png
 grep -q '#0E1524' src-tauri/gen/android/app/src/main/res/values/ic_launcher_background.xml
+
+# One APK serves handheld Android and television devices. Leanback remains optional for phones,
+# while touchscreen/faketouch are explicitly optional so Play can offer the app to remote-only TVs.
+if ! grep -q 'android.software.leanback' src-tauri/gen/android/app/src/main/AndroidManifest.xml; then
+  sed -i 's#    <application#    <uses-feature android:name="android.software.leanback" android:required="false" />\n    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />\n    <uses-feature android:name="android.hardware.faketouch" android:required="false" />\n\n    <application#' \
+    src-tauri/gen/android/app/src/main/AndroidManifest.xml
+fi
+if ! grep -q 'android.intent.category.LEANBACK_LAUNCHER' src-tauri/gen/android/app/src/main/AndroidManifest.xml; then
+  sed -i '/android.intent.category.LAUNCHER/a\                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />' \
+    src-tauri/gen/android/app/src/main/AndroidManifest.xml
+fi
+grep -q 'android:banner="@drawable/izumi_tv_banner"' src-tauri/gen/android/app/src/main/AndroidManifest.xml \
+  || { echo "Android TV banner patch missed"; exit 1; }
+grep -q 'android.hardware.touchscreen" android:required="false"' src-tauri/gen/android/app/src/main/AndroidManifest.xml \
+  || { echo "Android TV touchscreen declaration patch missed"; exit 1; }
+grep -q 'android.intent.category.LEANBACK_LAUNCHER' src-tauri/gen/android/app/src/main/AndroidManifest.xml \
+  || { echo "Android TV launcher patch missed"; exit 1; }
+grep -q 'IzumiTV/1' "$MAIN_ACTIVITY" \
+  || { echo "Android TV activity marker is missing"; exit 1; }
 
 # navigator.onLine only reflects real connectivity when the app holds ACCESS_NETWORK_STATE; without
 # it the WebView always reports online, so offline mode's launch auto-detect + the offline banner
