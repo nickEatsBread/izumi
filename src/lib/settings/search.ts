@@ -111,7 +111,8 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Watch progress sync', category: 'Device sync', href: '/app/settings/sync', keywords: 'history positions', anchored: true },
   { title: 'Settings and sources sync', category: 'Device sync', href: '/app/settings/sync', keywords: 'extensions addons source setup transfer', anchored: true },
 
-  { title: 'Move to Watching after 90 seconds', category: 'Accounts', href: '/app/settings/accounts', keywords: 'promote planning current tracker auto', anchored: true },
+  { title: 'Automatically add watched shows', category: 'Accounts', href: '/app/settings/accounts', keywords: 'watchlist local watching episodes tracker auto', anchored: true },
+  { title: 'Episodes before Watchlist', category: 'Accounts', href: '/app/settings/accounts', keywords: 'watchlist threshold one three watched auto local', anchored: true },
   { title: 'AniList account', category: 'Accounts', href: '/app/settings/accounts', keywords: 'oauth login tracker connect', anchored: true },
   { title: 'MyAnimeList account', category: 'Accounts', href: '/app/settings/accounts', keywords: 'mal oauth login tracker connect', anchored: true },
   { title: 'Kitsu account', category: 'Accounts', href: '/app/settings/accounts', keywords: 'username password login tracker connect', anchored: true },

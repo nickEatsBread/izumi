@@ -19,8 +19,9 @@
   import { buildWatchlist, type WatchlistItem } from './watchlist'
   import type { Media } from '$lib/anilist/types'
   import type { PlayState } from '$lib/stremio/play'
-  import { episodeQueueEnabled, watchlistLayout, watchlistSort, type WatchlistLayout, type WatchlistSort } from '$lib/settings/ui'
-  import { WATCHLIST_ID, RECENTLY_ADDED_ID, CURRENTLY_AIRING_ID, EPISODE_QUEUE_ID, browsableLocalLists, localEntriesForList, localLibrary, removeQueuedEpisode, reorderQueuedEpisode } from '$lib/library/local-lists'
+  import { autoWatchlistEnabled, autoWatchlistEpisodes, episodeQueueEnabled, watchlistLayout, watchlistSort, type WatchlistLayout, type WatchlistSort } from '$lib/settings/ui'
+  import { WATCHLIST_ID, RECENTLY_ADDED_ID, CURRENTLY_AIRING_ID, EPISODE_QUEUE_ID, browsableLocalLists, localEntriesForList, localLibrary, removeQueuedEpisode, reorderQueuedEpisode, syncWatchedHistoryToWatchlist } from '$lib/library/local-lists'
+  import { durableHistory, localHistory } from '$lib/player/history'
   import LocalListManager from '$lib/components/library/LocalListManager.svelte'
   import { m } from '$lib/paraglide/messages.js'
   import { isMobile } from '$lib/platform'
@@ -57,7 +58,11 @@
   const localEntries = $derived(localEntriesForList($localLibrary, selectedListId))
   const localWatchEntries = $derived(localEntries.map((entry): Entry => ({
     media: entry.media,
-    progress: entry.media.mediaListEntry?.progress ?? 0,
+    progress: Math.max(
+      entry.tracking?.progress ?? 0,
+      entry.media.mediaListEntry?.progress ?? 0,
+      $localHistory[entry.media.id]?.progress ?? 0,
+    ),
     updatedAt: Math.floor(entry.updatedAt / 1000),
   })))
   const items = $derived.by(() => buildWatchlist(
@@ -65,11 +70,19 @@
     selectedListId === WATCHLIST_ID ? trackerMalEntries : [],
     selectedListId === WATCHLIST_ID ? trackerMalMedia : [],
   ))
-  const canTrackProgress = $derived(selectedListId === WATCHLIST_ID && Boolean(listUser || malActive || simklActive))
+  const canTrackProgress = $derived(
+    selectedListId === WATCHLIST_ID
+      || selectedListId === 'status:CURRENT'
+      || selectedListId === 'status:REPEATING',
+  )
 
   $effect(() => {
     if (savedLists.some((list) => list.id === selectedListId)) return
     selectedListId = WATCHLIST_ID
+  })
+
+  $effect(() => {
+    if ($autoWatchlistEnabled) syncWatchedHistoryToWatchlist($durableHistory, $autoWatchlistEpisodes)
   })
 
   // Best-effort per source (same policy as loadMySets): a failing tracker just contributes

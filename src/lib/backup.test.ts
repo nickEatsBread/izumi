@@ -23,6 +23,18 @@ describe('full application backup', () => {
     expect(createBackup(storage, true).localStorage['debrid-key']).toBe('"secret"')
   })
 
+  it('includes local list tracking and its automatic threshold', () => {
+    const storage = new MemoryStorage()
+    storage.setItem('local-media-library-v1', '{"entries":{"anime":{"tracking":{"status":"DROPPED"}}}}')
+    storage.setItem('auto-watchlist-enabled', 'true')
+    storage.setItem('auto-watchlist-episodes', '3')
+    expect(createBackup(storage).localStorage).toMatchObject({
+      'local-media-library-v1': expect.stringContaining('DROPPED'),
+      'auto-watchlist-enabled': 'true',
+      'auto-watchlist-episodes': '3',
+    })
+  })
+
   it('validates and restores values', () => {
     const storage = new MemoryStorage()
     const backup = parseBackup(JSON.stringify({

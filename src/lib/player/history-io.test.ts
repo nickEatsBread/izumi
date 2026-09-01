@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
 import { durableHistory as localHistory } from './history'
-import { exportJson, importJson } from './history-io'
+import { exportJson, exportMalXml, importJson } from './history-io'
 import { durablePositions as positions } from './progress'
 import { episodeSourceOrigins, sourceOrigins } from './source-origin'
+import { WATCHLIST_ID, localLibrary, saveLocalTracking } from '$lib/library/local-lists'
+import type { Media } from '$lib/anilist/types'
 
 const bundle = (position: Record<string, unknown>) => JSON.stringify({
   app: 'izumi', kind: 'watch-history', version: 1, exportedAt: 1,
@@ -16,6 +18,7 @@ describe('watch history import merge', () => {
     positions.set({})
     sourceOrigins.set({})
     episodeSourceOrigins.set({})
+    localLibrary.set({ lists: [{ id: WATCHLIST_ID, name: 'Watchlist', createdAt: 0 }], entries: {}, queue: [] })
   })
 
   it('uses the newest per-episode resume position across devices', () => {
@@ -153,6 +156,33 @@ describe('watch history import merge', () => {
     expect(get(episodeSourceOrigins)['2:4']).toMatchObject({
       origin: { id: 'episode-origin' },
       release: { group: 'Group' },
+    })
+  })
+
+  it('exports account-free list status, progress, and score to tracker XML', () => {
+    const media = {
+      id: 7, idMal: 70, title: { romaji: 'Local Drop' }, episodes: 12,
+    } as Media
+    saveLocalTracking(media, { status: 'DROPPED', progress: 4, score: 80 })
+
+    const result = exportMalXml()
+
+    expect(result).toMatchObject({ total: 1, skipped: 0 })
+    expect(result.xml).toContain('<my_watched_episodes>4</my_watched_episodes>')
+    expect(result.xml).toContain('<my_score>8</my_score>')
+    expect(result.xml).toContain('<my_status>Dropped</my_status>')
+  })
+
+  it('round-trips local list tracking through the Izumi JSON export', () => {
+    const media = { id: 8, title: { romaji: 'Offline List' }, episodes: 12 } as Media
+    saveLocalTracking(media, { status: 'PAUSED', progress: 5, score: 90 })
+    const exported = exportJson()
+
+    localLibrary.set({ lists: [{ id: WATCHLIST_ID, name: 'Watchlist', createdAt: 0 }], entries: {}, queue: [] })
+    importJson(exported)
+
+    expect(get(localLibrary).entries['anilist:anime:8']?.tracking).toEqual({
+      status: 'PAUSED', progress: 5, score: 90,
     })
   })
 })

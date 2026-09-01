@@ -11,6 +11,15 @@ import { getIndex, lookupAnilistByMal } from '$lib/stremio/idmap'
 import { mapMalAnimeListMedia, type MalAnimeListNode } from './mal-list-media'
 import { recordProgress, localHistory } from '$lib/player/history'
 import { incognito } from '$lib/stores/incognito'
+import { autoWatchlistEnabled, autoWatchlistEpisodes, saveLocalHistory } from '$lib/settings/ui'
+import {
+  WATCHLIST_ID,
+  localLibrary,
+  localTrackingForMedia,
+  removeLocalTracking,
+  saveLocalTracking,
+  setMediaInLocalList,
+} from '$lib/library/local-lists'
 import {
   enqueue, markConfirmed, confirmedFloor, flushQueue, registerReplay, classifyStatus, dropSuperseded,
   type TrackerOp, type TrackerName, type PushResult, type ProgressExtras,
@@ -196,7 +205,22 @@ async function push(media: Media, op: Omit<TrackerOp, 'mediaId' | 'idAniList' | 
 }
 
 // Push progress+status (and optional start/finish dates + rewatch count) to every connected tracker.
-export function updateProgress(media: Media, progress: number, status: AniStatus = 'CURRENT', extras: ProgressExtras = {}): Promise<string[]> {
+export function updateProgress(
+  media: Media,
+  progress: number,
+  status: AniStatus = 'CURRENT',
+  extras: ProgressExtras = {},
+  options: { persistLocal?: boolean } = {},
+): Promise<string[]> {
+  if (!get(incognito) && options.persistLocal !== false) {
+    saveLocalTracking(media, {
+      progress: Math.max(0, Math.floor(progress)),
+      status,
+      ...(extras.repeat != null ? { repeat: extras.repeat } : {}),
+      ...(extras.startedAt ? { startedAt: extras.startedAt } : {}),
+      ...(extras.completedAt ? { completedAt: extras.completedAt } : {}),
+    })
+  }
   return push(media, { kind: 'progress', progress, status, extras })
 }
 
@@ -212,13 +236,20 @@ export function updateProgress(media: Media, progress: number, status: AniStatus
 // Returns the pre-bump known count (the Android undo toast needs it).
 export function markWatched(media: Media, episode: number): number {
   const entry = media.mediaListEntry
-  const known = Math.max(entry?.progress ?? 0, get(localHistory)[media.id]?.progress ?? 0)
+  const localEntry = localTrackingForMedia(get(localLibrary), media)
+  const known = Math.max(entry?.progress ?? 0, localEntry?.progress ?? 0, get(localHistory)[media.id]?.progress ?? 0)
   recordProgress(media, episode) // local — always, independent of any linked tracker
+  const persistLocal = get(saveLocalHistory)
+  const threshold = Math.max(1, Math.floor(get(autoWatchlistEpisodes) || 1))
+  if (!get(incognito) && persistLocal && get(autoWatchlistEnabled) && episode >= threshold) {
+    setMediaInLocalList(media, WATCHLIST_ID, true)
+  }
   const finished = media.episodes != null && episode >= media.episodes
   // Already-complete = COMPLETED status OR the known count has reached the (known) total. The count
   // fallback is load-bearing for Continue-Watching plays whose media snapshot omits mediaListEntry.
-  const alreadyComplete = entry?.status === 'COMPLETED' || (media.episodes != null && known >= media.episodes)
-  const rewatch = alreadyComplete || entry?.status === 'REPEATING'
+  const previousStatus = localEntry?.status ?? entry?.status
+  const alreadyComplete = previousStatus === 'COMPLETED' || (media.episodes != null && known >= media.episodes)
+  const rewatch = alreadyComplete || previousStatus === 'REPEATING'
   // #1: behind the known count and not a rewatch/finale → the local bump is enough.
   if (!rewatch && episode <= known && !finished) return known
 
@@ -226,26 +257,34 @@ export function markWatched(media: Media, episode: number): number {
   const extras: ProgressExtras = {}
   const today = fuzzyToday()
   // First-ever watch → stamp a start date (unless the entry already carries one).
-  if (!rewatch && known === 0 && episode >= 1 && !hasFullFuzzy(entry?.startedAt)) extras.startedAt = today
+  const startedAt = localEntry?.startedAt ?? entry?.startedAt
+  const completedAt = localEntry?.completedAt ?? entry?.completedAt
+  if (!rewatch && known === 0 && episode >= 1 && !hasFullFuzzy(startedAt)) extras.startedAt = today
   // Entering a fresh rewatch pass (was COMPLETED, not yet REPEATING) → stamp a new start date.
-  else if (rewatch && entry?.status !== 'REPEATING') extras.startedAt = today
+  else if (rewatch && previousStatus !== 'REPEATING') extras.startedAt = today
   if (finished) {
-    if (rewatch) { extras.completedAt = today; extras.repeat = (entry?.repeat ?? 0) + 1 }
-    else if (!hasFullFuzzy(entry?.completedAt)) extras.completedAt = today // first finish
+    if (rewatch) { extras.completedAt = today; extras.repeat = (localEntry?.repeat ?? entry?.repeat ?? 0) + 1 }
+    else if (!hasFullFuzzy(completedAt)) extras.completedAt = today // first finish
   }
   if (rewatch) extras.isRewatching = !finished // MAL: flag stays on until the pass completes
 
-  updateProgress(media, episode, status, extras).then((t) => t.length && console.log('tracked on', t.join(', '))).catch(() => {})
+  updateProgress(media, episode, status, extras, { persistLocal })
+    .then((t) => t.length && console.log('tracked on', t.join(', '))).catch(() => {})
   return known
 }
 
 // Set the list status (e.g. PLANNING to bookmark) on every connected tracker. Best-effort.
 export function setStatus(media: Media, status: AniStatus): Promise<string[]> {
+  if (!get(incognito)) {
+    saveLocalTracking(media, { status })
+    setMediaInLocalList(media, WATCHLIST_ID, status === 'CURRENT' || status === 'REPEATING')
+  }
   return push(media, { kind: 'status', status })
 }
 
 // Set the viewer's rating (canonical 0-100) on every connected tracker. Best-effort. score 0 clears.
 export function setScore(media: Media, score0to100: number): Promise<string[]> {
+  if (!get(incognito)) saveLocalTracking(media, { score: clamp(score0to100, 0, 100) })
   return push(media, { kind: 'score', score: score0to100 })
 }
 
@@ -253,6 +292,10 @@ export function setScore(media: Media, score0to100: number): Promise<string[]> {
 // DELETE my_list_status). Best-effort; the AniList delete no-ops when we don't have the entry id
 // (e.g. MAL-only). Pass the media whose mediaListEntry.id was fetched by the detail query.
 export function removeFromList(media: Media): Promise<string[]> {
+  if (!get(incognito)) {
+    removeLocalTracking(media)
+    setMediaInLocalList(media, WATCHLIST_ID, false)
+  }
   return push(media, { kind: 'remove', listEntryId: media.mediaListEntry?.id })
 }
 

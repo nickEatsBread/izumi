@@ -7,6 +7,17 @@ export const RECENTLY_ADDED_ID = 'smart:recent'
 export const CURRENTLY_AIRING_ID = 'smart:airing'
 export const EPISODE_QUEUE_ID = 'episode-queue'
 
+export type LocalMediaStatus = 'CURRENT' | 'PLANNING' | 'COMPLETED' | 'PAUSED' | 'DROPPED' | 'REPEATING'
+
+const STATUS_LISTS: Array<{ id: string; name: string; status: LocalMediaStatus }> = [
+  { id: 'status:CURRENT', name: 'Watching', status: 'CURRENT' },
+  { id: 'status:PLANNING', name: 'Planning', status: 'PLANNING' },
+  { id: 'status:COMPLETED', name: 'Completed', status: 'COMPLETED' },
+  { id: 'status:PAUSED', name: 'Paused', status: 'PAUSED' },
+  { id: 'status:DROPPED', name: 'Dropped', status: 'DROPPED' },
+  { id: 'status:REPEATING', name: 'Rewatching', status: 'REPEATING' },
+]
+
 export interface LocalMediaList {
   id: string
   name: string
@@ -19,6 +30,16 @@ export interface LocalMediaEntry {
   listIds: string[]
   addedAt: number
   updatedAt: number
+  /** Account-independent equivalent of AniList's mediaListEntry. All fields are optional so an
+   * older saved-list entry can acquire progress, a status, or a score independently. */
+  tracking?: {
+    status?: LocalMediaStatus
+    progress?: number
+    score?: number
+    repeat?: number
+    startedAt?: { year?: number; month?: number; day?: number } | null
+    completedAt?: { year?: number; month?: number; day?: number } | null
+  }
 }
 
 export interface LocalLibraryState {
@@ -56,6 +77,7 @@ export function availableLocalLists(state: LocalLibraryState): LocalMediaList[] 
 export function browsableLocalLists(state: LocalLibraryState): LocalMediaList[] {
   return [
     ...availableLocalLists(state),
+    ...STATUS_LISTS.map(({ id, name }) => ({ id, name, createdAt: 0 })),
     { id: RECENTLY_ADDED_ID, name: 'Recently added', createdAt: 0 },
     { id: CURRENTLY_AIRING_ID, name: 'Currently airing', createdAt: 0 },
     { id: EPISODE_QUEUE_ID, name: 'Episode queue', createdAt: 0 },
@@ -64,6 +86,9 @@ export function browsableLocalLists(state: LocalLibraryState): LocalMediaList[] 
 
 export function localEntriesForList(state: LocalLibraryState, listId: string): LocalMediaEntry[] {
   const entries = Object.values(state.entries ?? {})
+  const status = STATUS_LISTS.find((list) => list.id === listId)?.status
+  if (status) return entries.filter((entry) => entry.tracking?.status === status)
+    .sort((left, right) => right.updatedAt - left.updatedAt)
   if (listId === RECENTLY_ADDED_ID) return entries.sort((left, right) => right.addedAt - left.addedAt)
   if (listId === CURRENTLY_AIRING_ID) {
     return entries.filter((entry) => entry.media.status === 'RELEASING')
@@ -82,6 +107,10 @@ export function mediaIsSaved(state: LocalLibraryState, media: Media): boolean {
   return Boolean(state.entries?.[mediaKey(media)]?.listIds.length)
 }
 
+export function localTrackingForMedia(state: LocalLibraryState, media: Media): LocalMediaEntry['tracking'] | undefined {
+  return state.entries?.[mediaKey(media)]?.tracking
+}
+
 const snapshotMedia = (media: Media): Media => JSON.parse(JSON.stringify(media)) as Media
 
 export function setMediaInLocalList(media: Media, listId: string, present: boolean): void {
@@ -94,7 +123,7 @@ export function setMediaInLocalList(media: Media, listId: string, present: boole
     else listIds.delete(listId)
     const entries = { ...(state.entries ?? {}) }
     const deletedEntries = { ...(state.deletedEntries ?? {}) }
-    if (!listIds.size) { delete entries[key]; deletedEntries[key] = Date.now() }
+    if (!listIds.size && !previous?.tracking) { delete entries[key]; deletedEntries[key] = Date.now() }
     else {
       const now = Date.now()
       delete deletedEntries[key]
@@ -103,6 +132,7 @@ export function setMediaInLocalList(media: Media, listId: string, present: boole
         listIds: [...listIds],
         addedAt: previous?.addedAt ?? now,
         updatedAt: now,
+        tracking: previous?.tracking,
       }
     }
     return { ...state, lists: availableLocalLists(state), entries, deletedEntries }
@@ -120,7 +150,7 @@ export function toggleMediaInLocalList(media: Media, listId: string): void {
     else listIds.add(listId)
     const entries = { ...(state.entries ?? {}) }
     const deletedEntries = { ...(state.deletedEntries ?? {}) }
-    if (!listIds.size) { delete entries[key]; deletedEntries[key] = Date.now() }
+    if (!listIds.size && !previous?.tracking) { delete entries[key]; deletedEntries[key] = Date.now() }
     else {
       const now = Date.now()
       delete deletedEntries[key]
@@ -129,6 +159,7 @@ export function toggleMediaInLocalList(media: Media, listId: string): void {
         listIds: [...listIds],
         addedAt: previous?.addedAt ?? now,
         updatedAt: now,
+        tracking: previous?.tracking,
       }
     }
     return { ...state, lists: availableLocalLists(state), entries, deletedEntries }
@@ -153,6 +184,79 @@ export function createLocalList(name: string): string | null {
     return { ...state, lists: [...lists, { id, name: clean, createdAt: now, updatedAt: now }], listOrderUpdatedAt: now }
   })
   return createdId
+}
+
+/** Persist list status/progress/score even when no tracker account is connected. */
+export function saveLocalTracking(media: Media, patch: NonNullable<LocalMediaEntry['tracking']>): void {
+  localLibrary.update((state) => {
+    const key = mediaKey(media)
+    const previous = state.entries?.[key]
+    const now = Date.now()
+    const entries = { ...(state.entries ?? {}) }
+    const deletedEntries = { ...(state.deletedEntries ?? {}) }
+    delete deletedEntries[key]
+    entries[key] = {
+      media: snapshotMedia(media),
+      listIds: [...(previous?.listIds ?? [])],
+      addedAt: previous?.addedAt ?? now,
+      updatedAt: now,
+      tracking: { ...(previous?.tracking ?? {}), ...patch },
+    }
+    return { ...state, lists: availableLocalLists(state), entries, deletedEntries }
+  })
+}
+
+/** Remove only the AniList-style local entry; custom-list membership remains intact. */
+export function removeLocalTracking(media: Media): void {
+  localLibrary.update((state) => {
+    const key = mediaKey(media)
+    const previous = state.entries?.[key]
+    if (!previous?.tracking) return state
+    const entries = { ...(state.entries ?? {}) }
+    const deletedEntries = { ...(state.deletedEntries ?? {}) }
+    if (previous.listIds.length) entries[key] = { ...previous, tracking: undefined, updatedAt: Date.now() }
+    else { delete entries[key]; deletedEntries[key] = Date.now() }
+    return { ...state, entries, deletedEntries }
+  })
+}
+
+/** Backfill the default Watchlist from durable history. This makes the feature useful to existing
+ * installs immediately after upgrading or lowering the threshold, without touching incognito data. */
+export function syncWatchedHistoryToWatchlist(
+  history: Record<number, { media: Media; progress: number }>,
+  minimumEpisodes: number,
+): void {
+  const threshold = Math.max(1, Math.floor(minimumEpisodes || 1))
+  localLibrary.update((state) => {
+    const entries = { ...(state.entries ?? {}) }
+    const deletedEntries = { ...(state.deletedEntries ?? {}) }
+    const now = Date.now()
+    let changed = false
+    for (const watched of Object.values(history)) {
+      if (watched.progress < threshold) continue
+      const key = mediaKey(watched.media)
+      const previous = entries[key]
+      const previousStatus = previous?.tracking?.status
+      if (previousStatus && !['CURRENT', 'PLANNING', 'REPEATING'].includes(previousStatus)) continue
+      const listIds = new Set(previous?.listIds ?? [])
+      const progress = Math.max(previous?.tracking?.progress ?? 0, watched.progress)
+      const status: LocalMediaStatus = watched.media.episodes != null && progress >= watched.media.episodes
+        ? 'COMPLETED'
+        : 'CURRENT'
+      if (listIds.has(WATCHLIST_ID) && previousStatus === status && previous?.tracking?.progress === progress) continue
+      listIds.add(WATCHLIST_ID)
+      delete deletedEntries[key]
+      entries[key] = {
+        media: snapshotMedia(watched.media),
+        listIds: [...listIds],
+        addedAt: previous?.addedAt ?? now,
+        updatedAt: now,
+        tracking: { ...(previous?.tracking ?? {}), status, progress },
+      }
+      changed = true
+    }
+    return changed ? { ...state, lists: availableLocalLists(state), entries, deletedEntries } : state
+  })
 }
 
 const cleanListName = (name: string) => name.trim().replace(/\s+/g, ' ').slice(0, 60)
@@ -183,7 +287,7 @@ export function deleteLocalList(id: string): boolean {
     const deletedEntries = { ...(state.deletedEntries ?? {}) }
     const entries = Object.fromEntries(Object.entries(state.entries ?? {}).flatMap(([key, entry]) => {
       const listIds = entry.listIds.filter((listId) => listId !== id)
-      if (listIds.length) return [[key, { ...entry, listIds, updatedAt: now }]]
+      if (listIds.length || entry.tracking) return [[key, { ...entry, listIds, updatedAt: now }]]
       deletedEntries[key] = now
       return []
     }))
@@ -275,7 +379,9 @@ export function mergeLocalLibrary(current: LocalLibraryState, incoming: LocalLib
       listIds: entry.listIds.filter((id) => id === WATCHLIST_ID || byList.has(id)),
     }
   }
-  for (const key of Object.keys(entries)) if (!entries[key]!.listIds.length) delete entries[key]
+  for (const key of Object.keys(entries)) {
+    if (!entries[key]!.listIds.length && !entries[key]!.tracking) delete entries[key]
+  }
 
   const incomingQueueWins = (incoming.queueUpdatedAt ?? 0) > (current.queueUpdatedAt ?? 0)
   return {

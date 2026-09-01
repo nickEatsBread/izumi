@@ -5,7 +5,7 @@
   import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte'
   import TrackerProviderBadge from '$lib/components/settings/TrackerProviderBadge.svelte'
   import ListProviderAccounts from '$lib/components/settings/ListProviderAccounts.svelte'
-  import { promoteToWatching } from '$lib/settings/ui'
+  import { autoWatchlistEnabled, autoWatchlistEpisodes } from '$lib/settings/ui'
   import {
     anilistToken,
     anilistUserName,
@@ -52,6 +52,13 @@
 
   function togglePublicProfile(profile: PublicProfile) {
     publicProfileOpen = publicProfileOpen === profile ? null : profile
+  }
+
+  function updateWatchlistThreshold(event: Event) {
+    const input = event.currentTarget as HTMLInputElement
+    const value = Math.max(1, Math.floor(Number(input.value) || 1))
+    autoWatchlistEpisodes.set(value)
+    input.value = String(value)
   }
 
   function saveAni() {
@@ -237,13 +244,28 @@
   <ChevronDown size={17} class="transition-transform {publicProfileOpen === 'mal' ? 'rotate-180' : ''}" aria-hidden="true" />
 {/snippet}
 
-{#snippet promotionControl()}
+{#snippet autoWatchlistControl()}
   <SettingsSwitch
     interactive={false}
-    label="Move to Watching after 90 seconds"
-    value={$promoteToWatching}
-    onToggle={() => ($promoteToWatching = !$promoteToWatching)}
+    label="Automatically add watched shows"
+    value={$autoWatchlistEnabled}
+    onToggle={() => ($autoWatchlistEnabled = !$autoWatchlistEnabled)}
   />
+{/snippet}
+{#snippet watchlistThresholdControl()}
+  <label class="flex items-center gap-2 text-xs font-bold text-muted-foreground">
+    <input
+      type="number"
+      min="1"
+      step="1"
+      value={$autoWatchlistEpisodes}
+      disabled={!$autoWatchlistEnabled}
+      aria-label="Episodes before adding to Watchlist"
+      onchange={updateWatchlistThreshold}
+      class="h-9 w-20 rounded-md bg-input px-2 text-center text-sm font-black text-foreground disabled:opacity-40"
+    />
+    episodes
+  </label>
 {/snippet}
 {#snippet queueLeading()}
   <span class="grid size-8 place-items-center rounded-lg bg-amber-500/10 text-amber-300" aria-hidden="true"><Clock3 size={16} /></span>
@@ -347,14 +369,20 @@
     </SettingsRow>
   </SettingsGroup>
 
-  <SettingsGroup icon={RefreshCw} title="Sync behaviour" desc="One shared rule for every connected tracker.">
+  <SettingsGroup icon={RefreshCw} title="List behaviour" desc="Local list state works without an account and is mirrored to connected trackers.">
     <SettingsRow
-      settingKey="move-to-watching-after-90-seconds"
-      title="Move to Watching after 90 seconds"
-      description="When a title is Planning or absent, start tracking it after sustained playback."
-      control={promotionControl}
-      onActivate={() => ($promoteToWatching = !$promoteToWatching)}
-      pressed={$promoteToWatching}
+      settingKey="automatically-add-watched-shows"
+      title="Automatically add watched shows"
+      description="After enough episodes are watched, add the title to the device Watchlist."
+      control={autoWatchlistControl}
+      onActivate={() => ($autoWatchlistEnabled = !$autoWatchlistEnabled)}
+      pressed={$autoWatchlistEnabled}
+    />
+    <SettingsRow
+      settingKey="episodes-before-watchlist"
+      title="Episodes before Watchlist"
+      description="Choose any whole number from 1 upwards."
+      control={watchlistThresholdControl}
     />
     {#if $trackerQueue.length}
       <SettingsRow title="Pending tracker updates" leading={queueLeading} meta={queueMeta} />

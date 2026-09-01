@@ -3,6 +3,7 @@ import { save } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { isAndroid } from '$lib/platform'
 import { title } from '$lib/anilist/media'
+import type { Media } from '$lib/anilist/types'
 import { CATALOG_SELECTIONS, type CatalogSelection } from '$lib/settings/catalog'
 // durableHistory/durablePositions, NOT the merged views: an export or device-sync push must never
 // carry this session's incognito entries; an import writes straight to the persisted stores.
@@ -16,6 +17,7 @@ import {
   type RememberedSource,
 } from './source-origin'
 import { localLibrary, mergeLocalLibrary, type LocalLibraryState } from '$lib/library/local-lists'
+import { mediaKey } from '$lib/catalog/identity'
 import { mergeSeriesTrackPreferences, seriesTrackPreferences, type SeriesTrackPreferences } from './track-preferences'
 
 // Import / export of the on-device watch history, so it can be backed up, moved between installs,
@@ -65,17 +67,43 @@ const xmlEscape = (s: string) => s.replace(/]]>/g, ']]]]><![CDATA[>')
 /** MyAnimeList-compatible XML (importable into MAL/AniList). Only entries that carry a MAL id can be
  *  exported — MAL keys anime by that id. Returns the XML plus how many entries were skipped. */
 export function exportMalXml(): { xml: string; total: number; skipped: number } {
-  const entries = historyEntries(get(durableHistory))
-  const withMal = entries.filter((e) => e.media.idMal)
-  const items = withMal.map((e) => {
-    const total = e.media.episodes ?? 0
-    const done = total > 0 && e.progress >= total
+  type ExportEntry = { media: Media; progress: number; status?: string; score?: number }
+  const byMedia = new Map<string, ExportEntry>()
+  for (const entry of historyEntries(get(durableHistory))) {
+    const total = entry.media.episodes ?? 0
+    byMedia.set(mediaKey(entry.media), {
+      media: entry.media,
+      progress: entry.progress,
+      status: total > 0 && entry.progress >= total ? 'COMPLETED' : 'CURRENT',
+    })
+  }
+  for (const entry of Object.values(get(localLibrary).entries ?? {})) {
+    const tracking = entry.tracking
+    if (!tracking && !entry.listIds.includes('watchlist')) continue
+    const key = mediaKey(entry.media)
+    const previous = byMedia.get(key)
+    byMedia.set(key, {
+      media: entry.media,
+      progress: Math.max(previous?.progress ?? 0, tracking?.progress ?? 0),
+      status: tracking?.status ?? previous?.status ?? 'PLANNING',
+      score: tracking?.score ?? previous?.score,
+    })
+  }
+  const entries = [...byMedia.values()]
+  const withMal = entries.filter((entry) => entry.media.idMal)
+  const malStatus = (status?: string) => ({
+    CURRENT: 'Watching', REPEATING: 'Watching', PLANNING: 'Plan to Watch',
+    COMPLETED: 'Completed', PAUSED: 'On-Hold', DROPPED: 'Dropped',
+  }[status ?? 'CURRENT'] ?? 'Watching')
+  const items = withMal.map((entry) => {
+    const total = entry.media.episodes ?? 0
     return `  <anime>
-    <series_animedb_id>${e.media.idMal}</series_animedb_id>
-    <series_title><![CDATA[${xmlEscape(title(e.media))}]]></series_title>
+    <series_animedb_id>${entry.media.idMal}</series_animedb_id>
+    <series_title><![CDATA[${xmlEscape(title(entry.media))}]]></series_title>
     <series_episodes>${total}</series_episodes>
-    <my_watched_episodes>${e.progress}</my_watched_episodes>
-    <my_status>${done ? 'Completed' : 'Watching'}</my_status>
+    <my_watched_episodes>${entry.progress}</my_watched_episodes>
+    <my_score>${Math.round((entry.score ?? 0) / 10)}</my_score>
+    <my_status>${malStatus(entry.status)}</my_status>
     <update_on_import>1</update_on_import>
   </anime>`
   }).join('\n')

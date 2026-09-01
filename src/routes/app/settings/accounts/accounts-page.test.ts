@@ -9,7 +9,7 @@ describe('Accounts settings information architecture', () => {
     const trackers = source.indexOf('title="Tracker accounts"')
     const listProviders = source.indexOf('<ListProviderAccounts />')
     const publicProfiles = source.indexOf('title="Public libraries"')
-    const sync = source.indexOf('title="Sync behaviour"')
+    const sync = source.indexOf('title="List behaviour"')
     expect(trackers).toBeGreaterThan(0)
     expect(trackers).toBeLessThan(listProviders)
     expect(listProviders).toBeLessThan(publicProfiles)
@@ -42,9 +42,11 @@ describe('Accounts settings information architecture', () => {
     expect(source).toContain('Your password is exchanged once and never saved.')
   })
 
-  it('makes the shared sync setting activate from its complete row', () => {
-    expect(source).toContain('settingKey="move-to-watching-after-90-seconds"')
-    expect(source).toContain('onActivate={() => ($promoteToWatching = !$promoteToWatching)}')
+  it('enables the local automatic Watchlist at an editable episode threshold', () => {
+    expect(source).toContain('settingKey="automatically-add-watched-shows"')
+    expect(source).toContain('onActivate={() => ($autoWatchlistEnabled = !$autoWatchlistEnabled)}')
+    expect(source).toContain('settingKey="episodes-before-watchlist"')
+    expect(source).toContain('min="1"')
     expect(source).toContain('interactive={false}')
   })
 

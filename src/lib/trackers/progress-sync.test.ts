@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 
 const mocks = vi.hoisted(() => ({
   aniMutation: vi.fn(),
@@ -15,6 +16,8 @@ vi.mock('./mal-auth', () => ({
 
 import { durableHistory as localHistory, sessionProgress } from '$lib/player/history'
 import { saveLocalHistory } from '$lib/settings/ui'
+import { autoWatchlistEnabled, autoWatchlistEpisodes } from '$lib/settings/ui'
+import { WATCHLIST_ID, localLibrary, mediaIsInLocalList } from '$lib/library/local-lists'
 import { anilistToken, malToken } from './config'
 import { markWatched } from './index'
 import type { Media } from '$lib/anilist/types'
@@ -35,8 +38,11 @@ describe('watched episode tracker sync', () => {
     anilistToken.set('ani-token')
     malToken.set('mal-token')
     saveLocalHistory.set(true)
+    autoWatchlistEnabled.set(true)
+    autoWatchlistEpisodes.set(3)
     localHistory.set({})
     sessionProgress.set({})
+    localLibrary.set({ lists: [{ id: WATCHLIST_ID, name: 'Watchlist', createdAt: 0 }], entries: {}, queue: [] })
   })
 
   afterEach(() => {
@@ -44,6 +50,7 @@ describe('watched episode tracker sync', () => {
     malToken.set(null)
     localHistory.set({})
     sessionProgress.set({})
+    localLibrary.set({ lists: [{ id: WATCHLIST_ID, name: 'Watchlist', createdAt: 0 }], entries: {}, queue: [] })
   })
 
   it('pushes the watched episode to AniList and MyAnimeList', async () => {
@@ -98,5 +105,16 @@ describe('watched episode tracker sync', () => {
     let session: Record<number, number> = {}
     sessionProgress.subscribe((value) => (session = value))()
     expect(session[101]).toBe(4)
+  })
+
+  it('adds the show to the local Watchlist only when the episode threshold is reached', () => {
+    markWatched(media(), 2)
+    expect(mediaIsInLocalList(get(localLibrary), media(), WATCHLIST_ID)).toBe(false)
+
+    markWatched(media(), 3)
+    expect(mediaIsInLocalList(get(localLibrary), media(), WATCHLIST_ID)).toBe(true)
+    expect(get(localLibrary).entries['anilist:anime:101']?.tracking).toMatchObject({
+      status: 'CURRENT', progress: 3,
+    })
   })
 })

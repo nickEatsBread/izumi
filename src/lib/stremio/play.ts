@@ -81,7 +81,7 @@ import { cancelExtensionFetches } from '$lib/extensions/fetch-registry'
 import { queryTorrentProviders, toProviderMedia } from '$lib/extensions/torrentProvider'
 import { torrentQueryIdFields, type TorrentResult } from '$lib/extensions/types'
 import { extToStream } from './ext-stream'
-import { markWatched, setStatus } from '$lib/trackers'
+import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched, positions, progressKey } from '$lib/player/progress'
 import { desktopCastSession, desktopCastStatus } from '$lib/player/desktop-cast'
 import { recordPlay, localHistory } from '$lib/player/history'
@@ -108,7 +108,7 @@ import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller, seadexAnnotations,
   autoplayNext, upNextOverlay, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
   playerCacheMb, playerCacheBytes, torrentPlaybackMode,
-  sourcePriority, sourcePriorityMode, continueSourcePreference, promoteToWatching, adaptiveSourceMode,
+  sourcePriority, sourcePriorityMode, continueSourcePreference, adaptiveSourceMode,
   audioProcessing, dolbyVisionOutputMode, rawMpvOptions, videoQualityPreset,
 } from '$lib/settings/ui'
 import { userFilterChains } from '$lib/player/quality'
@@ -507,14 +507,6 @@ export function commitResolveSelection() {
 // LISTING), which deliberately lets its fetches finish for reuse.
 let activeDebridResolve: AbortController | null = null
 
-function maybePromoteToWatching(media: Media, pos: number, already: { promoted: boolean }): void {
-  if (already.promoted || pos < 90 || !get(promoteToWatching) || get(incognito)) return
-  const status = media.mediaListEntry?.status
-  if (status && status !== 'PLANNING') return
-  already.promoted = true
-  void setStatus(media, 'CURRENT')
-}
-
 // Wire the mpv event stream (emitted from Rust) to progress tracking, resume,
 // and auto next-episode. Called once per play, after playback has started.
 function attach(media: Media, episode: number, onState: (s: PlayState) => void, observation: PlaybackObservation | null, stream: Stream) {
@@ -525,7 +517,6 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
   detach()
   const gen = playGen
   let marked = false
-  const promote = { promoted: false }
   let lastSave = 0
   let warmed = false
   let wrongDurationHandled = false
@@ -562,7 +553,6 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
       marked = true
       markWatched(media, episode)
     }
-    maybePromoteToWatching(media, pos, promote)
     // Binge preload: pre-resolve the next episode in the last stretch so Next /
     // auto-advance starts instantly, then warm the debrid/CDN edge in the final
     // seconds (kept late + small so it can't starve the current episode's tail).
@@ -703,7 +693,6 @@ function attachAndroid(
   detachAndroid()
   resetPrefetchMiss()
   let marked = false
-  const promote = { promoted: false }
   let lastSave = 0
   let ended = false
   let wrongDurationHandled = false
@@ -760,7 +749,6 @@ function attachAndroid(
       marked = true
       markWatched(media, episode)
     }
-    maybePromoteToWatching(media, pos, promote)
     // Preload the next episode's stream near the end so auto-advance / Next starts instantly.
     if ((get(bingePreload) || get(autoplayNext)) && shouldBeginNextEpisodePreload(pos, dur)) prefetchNext(media, episode)
     if (eof && !ended) {

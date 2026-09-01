@@ -35,6 +35,8 @@ export const SYNCED_SETTING_KEYS = [
   "player-cache-mb",
   "video-fit",
   "save-local-history",
+  "auto-watchlist-enabled",
+  "auto-watchlist-episodes",
   "continue-watching-catalog-scope",
   "catalog-default-provider",
   "catalog-providers",

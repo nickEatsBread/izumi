@@ -19,6 +19,7 @@ import { durableHistory, incognitoHistory, sessionProgress } from '$lib/player/h
 import { saveLocalHistory } from '$lib/settings/ui'
 import { anilistToken, malToken } from './config'
 import { trackerQueue } from './queue'
+import { WATCHLIST_ID, localLibrary } from '$lib/library/local-lists'
 import { markWatched, setStatus, setScore, removeFromList, toggleFavourite } from './index'
 import type { Media } from '$lib/anilist/types'
 
@@ -43,6 +44,7 @@ describe('incognito tracker gate', () => {
     incognitoHistory.set({})
     sessionProgress.set({})
     trackerQueue.set([])
+    localLibrary.set({ lists: [{ id: WATCHLIST_ID, name: 'Watchlist', createdAt: 0 }], entries: {}, queue: [] })
   })
 
   afterEach(() => {
@@ -53,6 +55,7 @@ describe('incognito tracker gate', () => {
     incognitoHistory.set({})
     sessionProgress.set({})
     trackerQueue.set([])
+    localLibrary.set({ lists: [{ id: WATCHLIST_ID, name: 'Watchlist', createdAt: 0 }], entries: {}, queue: [] })
   })
 
   it('suppresses every tracker write while incognito, with nothing queued for later', async () => {
@@ -69,6 +72,7 @@ describe('incognito tracker gate', () => {
     // The watch still landed in the session overlay so Continue Watching works.
     expect(get(incognitoHistory)[101]?.progress).toBe(4)
     expect(get(durableHistory)).toEqual({})
+    expect(get(localLibrary).entries).toEqual({})
   })
 
   it('rejects favourite toggles while incognito (the one mutation that bypasses push)', async () => {

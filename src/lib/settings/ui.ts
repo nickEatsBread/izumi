@@ -185,8 +185,10 @@ export const systemMediaControls = persisted<boolean>('system-media-controls', t
 /** Discord activity is on by default and can be disabled at any time. Adult titles are always
  *  suppressed before reaching native IPC. */
 export const discordRichPresence = persisted<boolean>('discord-rich-presence', true)
-/** After ~90s of real playback, move a PLANNING (or unlisted) title to Watching. Off until the user opts in. */
-export const promoteToWatching = persisted<boolean>('tracker-promote-on-play', false)
+/** Automatically save a show to the device Watchlist after this many watched episodes. The rule
+ * is local-first and mirrors progress to connected trackers; 3 is deliberately on by default. */
+export const autoWatchlistEnabled = persisted<boolean>('auto-watchlist-enabled', true)
+export const autoWatchlistEpisodes = persisted<number>('auto-watchlist-episodes', 3)
 /** Player demuxer read-ahead cache in MiB — the main tunable playback RAM cost. Presets:
  *  Low 32 / Balanced 128 / High 256; any value is allowed (Custom); CACHE_UNCAPPED = no ceiling.
  *  The stored value is a BASELINE that auto-scales up with the file's bitrate (see playerCacheBytes)

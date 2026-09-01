@@ -4,8 +4,9 @@ import type { Media } from '$lib/anilist/types'
 import {
   CURRENTLY_AIRING_ID, EPISODE_QUEUE_ID, WATCHLIST_ID, availableLocalLists, browsableLocalLists,
   createLocalList, deleteLocalList, enqueueEpisode, localEntriesForList, localLibrary,
-  mediaIsInLocalList, mergeLocalLibrary, removeQueuedEpisode, renameLocalList, reorderLocalList,
-  reorderQueuedEpisode, setMediaInLocalList,
+  localTrackingForMedia, mediaIsInLocalList, mergeLocalLibrary, removeLocalTracking,
+  removeQueuedEpisode, renameLocalList, reorderLocalList, reorderQueuedEpisode, saveLocalTracking,
+  setMediaInLocalList, syncWatchedHistoryToWatchlist,
 } from './local-lists'
 
 const media = { id: 42, title: { userPreferred: 'Saved show' } } as Media
@@ -36,6 +37,27 @@ describe('device-local media lists', () => {
     setMediaInLocalList(media, WATCHLIST_ID, true)
     setMediaInLocalList(media, WATCHLIST_ID, false)
     expect(get(localLibrary).entries).toEqual({})
+  })
+
+  it('keeps AniList-style status, progress, and score locally without list membership', () => {
+    saveLocalTracking(media, { status: 'DROPPED', progress: 4, score: 70 })
+    expect(localTrackingForMedia(get(localLibrary), media)).toEqual({ status: 'DROPPED', progress: 4, score: 70 })
+    expect(localEntriesForList(get(localLibrary), 'status:DROPPED')).toHaveLength(1)
+
+    setMediaInLocalList(media, WATCHLIST_ID, true)
+    setMediaInLocalList(media, WATCHLIST_ID, false)
+    expect(localTrackingForMedia(get(localLibrary), media)?.status).toBe('DROPPED')
+    removeLocalTracking(media)
+    expect(get(localLibrary).entries).toEqual({})
+  })
+
+  it('backfills the Watchlist at the configured episode threshold', () => {
+    syncWatchedHistoryToWatchlist({ 42: { media, progress: 2 } }, 3)
+    expect(mediaIsInLocalList(get(localLibrary), media, WATCHLIST_ID)).toBe(false)
+
+    syncWatchedHistoryToWatchlist({ 42: { media, progress: 3 } }, 3)
+    expect(mediaIsInLocalList(get(localLibrary), media, WATCHLIST_ID)).toBe(true)
+    expect(localTrackingForMedia(get(localLibrary), media)).toMatchObject({ status: 'CURRENT', progress: 3 })
   })
 
   it('renames, reorders and deletes custom lists without touching the watchlist', () => {

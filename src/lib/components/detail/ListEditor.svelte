@@ -1,12 +1,13 @@
 <script lang="ts">
-  // "Edit list" popover: status + episodes-watched + a 0-10 descriptive score, saved to every
-  // connected tracker (AniList + MyAnimeList) via the shared tracker queue. Replaces the old
-  // favourite heart + Planning-only bookmark + 5-star rating.
+  // "Edit list" popover: status + episodes-watched + a 0-10 descriptive score, always saved on
+  // this device and mirrored to every connected tracker via the shared tracker queue.
   import { onMount, untrack } from 'svelte'
   import type { Media } from '$lib/anilist/types'
   import { updateProgress, setScore, removeFromList, type AniStatus, type ProgressExtras } from '$lib/trackers'
   import { STATUS_ORDER, STATUS_LABEL, STATUS_COLOR, scoreLabel } from '$lib/trackers/status'
   import { listEditorOpen } from '$lib/player/session'
+  import { WATCHLIST_ID, saveLocalTracking, setMediaInLocalList } from '$lib/library/local-lists'
+  import { incognito } from '$lib/stores/incognito'
   import * as h from '$lib/haptics'
   import X from '@lucide/svelte/icons/x'
   import Trash2 from '@lucide/svelte/icons/trash-2'
@@ -80,6 +81,10 @@
     // Compare the quantized 0-10 value, NOT the raw 0-100 init — otherwise an untouched AniList score
     // that isn't a multiple of 10 (e.g. 83) gets silently rounded (→80) on the first save.
     if (score10 !== initScore10) { await setScore(media, score10 * 10); patch.score = score10 * 10 }
+    if (!$incognito) {
+      saveLocalTracking(media, { status, progress: p, score: score10 * 10, ...extras })
+      setMediaInLocalList(media, WATCHLIST_ID, status === 'CURRENT' || status === 'REPEATING')
+    }
     // Any write re-establishes the entry — clear a prior optimistic remove so the pill/badge show it.
     if (patch.status !== undefined || patch.score !== undefined) patch.removed = false
     h.success()

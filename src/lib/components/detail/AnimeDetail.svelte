@@ -24,7 +24,7 @@
   import { mergedProgress, STATUS_LABEL, STATUS_COLOR } from '$lib/trackers/status'
   import ListEditor from '$lib/components/detail/ListEditor.svelte'
   import LocalListPicker from '$lib/components/library/LocalListPicker.svelte'
-  import { localLibrary, mediaIsSaved } from '$lib/library/local-lists'
+  import { localLibrary, localTrackingForMedia, mediaIsSaved } from '$lib/library/local-lists'
   import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus'
   import BookmarkCheck from '@lucide/svelte/icons/bookmark-check'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
@@ -220,19 +220,22 @@
   let showLocalLists = $state(false)
   let listOpt = $state<{ status?: AniStatus; progress?: number; score?: number; removed?: boolean }>({})
   const rawEntry = $derived($store.data?.Media?.mediaListEntry) // AniList list entry (has id/status/score)
+  const localEntry = $derived(media ? localTrackingForMedia($localLibrary, media) : undefined)
   const effStatus = $derived.by((): AniStatus | undefined => {
     if (listOpt.removed) return undefined
     if (listOpt.status) return listOpt.status
-    return (rawEntry?.status as AniStatus | undefined) ?? externalEntry?.status
+    return (localEntry?.status as AniStatus | undefined)
+      ?? (rawEntry?.status as AniStatus | undefined)
+      ?? externalEntry?.status
   })
   // Explicit user actions (optimistic edit, manual override) win outright; between the trackers
   // take the max — an AniList entry at 0 must not `??`-shadow real external progress.
   const effProgress = $derived(listOpt.removed ? 0 : (
     listOpt.progress
     ?? $manualProgressOverrides[id]
-    ?? mergedProgress(rawEntry?.progress, externalEntry?.progress)
+    ?? mergedProgress(localEntry?.progress, rawEntry?.progress, externalEntry?.progress)
   ))
-  const effScore100 = $derived(listOpt.removed ? 0 : (listOpt.score ?? rawEntry?.score ?? externalEntry?.score ?? 0))
+  const effScore100 = $derived(listOpt.removed ? 0 : (listOpt.score ?? localEntry?.score ?? rawEntry?.score ?? externalEntry?.score ?? 0))
   const hasEntry = $derived(!!effStatus)
   const savedLocally = $derived(media ? mediaIsSaved($localLibrary, media) : false)
 
@@ -388,7 +391,6 @@
   <div class="p-8 pt-[max(2rem,env(safe-area-inset-top))] text-muted-foreground">Failed to load: {$store.error.message}</div>
 {:else if media}
   {@const m = media}
-  {@const trackerConnected = !!($anilistToken || $malToken || $kitsuToken || $simklToken)}
   {#if $isMobile}
     <div class="relative pb-8">
       <!-- Floating bar. Transparent over the artwork (with a scrim so the chevron survives light
@@ -533,12 +535,10 @@
             <button type="button" aria-label="Close menu" onclick={() => (showMore = false)}
                     class="fixed inset-0 z-40 cursor-default"></button>
             <div class="absolute bottom-full right-0 z-50 mb-2 w-56 rounded-lg border border-border bg-card p-2 shadow-2xl">
-              {#if trackerConnected}
-                <button data-focusable onclick={() => { h.tap(); showMore = false; showEditor = true }}
-                        class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
-                  <ChevronDown size={15} /> {effStatus ? `Edit ${STATUS_LABEL[effStatus]}` : 'Add to tracker'}
-                </button>
-              {/if}
+              <button data-focusable onclick={() => { h.tap(); showMore = false; showEditor = true }}
+                      class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
+                <ChevronDown size={15} /> {effStatus ? `Edit ${STATUS_LABEL[effStatus]}` : 'Add to list'}
+              </button>
               {#each externalTrackerLinks as tracker (tracker.id)}
                 <button data-focusable onclick={() => { h.tap(); showMore = false; openUrl(tracker.url) }}
                         class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
@@ -681,17 +681,15 @@
             {#if savedLocally}<BookmarkCheck size={18} class="text-theme" /> Saved{:else}<BookmarkPlus size={18} /> Save{/if}
           </button>
 
-          {#if trackerConnected}
-            <button data-focusable onclick={() => (showEditor = true)} title="Edit list status"
-                    class="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 font-bold transition-colors hover:bg-accent">
-              {#if effStatus}
-                <span class="size-2.5 rounded-full" style="background:{STATUS_COLOR[effStatus]}"></span>{STATUS_LABEL[effStatus]}
-              {:else}
-                <BookmarkPlus size={18} /> Add to List
-              {/if}
-              <ChevronDown size={16} class="opacity-60" />
-            </button>
-          {/if}
+          <button data-focusable onclick={() => (showEditor = true)} title="Edit list status"
+                  class="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 font-bold transition-colors hover:bg-accent">
+            {#if effStatus}
+              <span class="size-2.5 rounded-full" style="background:{STATUS_COLOR[effStatus]}"></span>{STATUS_LABEL[effStatus]}
+            {:else}
+              <BookmarkPlus size={18} /> Add to List
+            {/if}
+            <ChevronDown size={16} class="opacity-60" />
+          </button>
 
           <button data-focusable onclick={() => void onShare(m)} title="Copy AniList link"
                   class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">

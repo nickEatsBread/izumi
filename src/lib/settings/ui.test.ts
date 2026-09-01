@@ -22,6 +22,8 @@ import {
   p2pStatusVisibility,
   episodeQueueEnabled,
   sceneBookmarksEnabled,
+  autoWatchlistEnabled,
+  autoWatchlistEpisodes,
 } from './ui'
 
 describe('source autoplay defaults', () => {
@@ -74,10 +76,10 @@ describe('player enhancement defaults', () => {
   })
 })
 
-describe('tracker promote-on-play', () => {
-  it('stays off until the user opts in', async () => {
-    const { promoteToWatching } = await import('./ui')
-    expect(get(promoteToWatching)).toBe(false)
+describe('automatic local watchlist', () => {
+  it('adds shows after three watched episodes by default', () => {
+    expect(get(autoWatchlistEnabled)).toBe(true)
+    expect(get(autoWatchlistEpisodes)).toBe(3)
   })
 })
 
