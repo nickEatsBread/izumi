@@ -46,6 +46,9 @@ export interface PendingCompanionPlayback {
   expiresAt?: number
 }
 
+export type CompanionPlayContext = Omit<PendingCompanionPlayback, 'device' | 'media'>
+export type CompanionSourceSelection = (requestId: string, choiceId: string, device: PairedCompanion) => void
+
 /** Session-only target: the next selected source must be sent to this TV, not played locally. */
 export const pendingCompanionPlayback = writable<PendingCompanionPlayback | null>(null)
 
@@ -203,9 +206,29 @@ type CompanionConnection = {
 
 const connections = new Map<string, CompanionConnection>()
 let backgroundSnapshotFactory: (() => Promise<CompanionHomeSnapshot>) | undefined
-let backgroundPlayHandler: ((media: CompanionMedia, device: PairedCompanion) => void) | undefined
+let backgroundPlayHandler: ((media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void) | undefined
 let backgroundSearchHandler: ((query: string) => Promise<CompanionMedia[]>) | undefined
 let backgroundDetailsHandler: ((media: CompanionMedia) => Promise<CompanionMedia>) | undefined
+let backgroundSourceSelectionHandler: CompanionSourceSelection | undefined
+
+/** Publish only labels plus opaque request-scoped ids. Resolved URLs and provider credentials never
+ * leave the linked device until the TV selects one and the normal cast handoff prepares it. */
+export function publishCompanionSourceOptions(
+  deviceId: string,
+  requestId: string,
+  options: { choices: { id: string; label: string; detail?: string }[]; resolving: boolean; error?: string },
+): boolean {
+  const connection = connections.get(deviceId)
+  if (!connection?.channel.connected || !/^[A-Za-z0-9_-]{16,80}$/.test(requestId)) return false
+  connection.channel.publish('izumi.companion.source-options', {
+    credential: connection.device.credential,
+    requestId,
+    choices: options.choices.slice(0, 40),
+    resolving: options.resolving,
+    error: options.error,
+  }, 'host')
+  return true
+}
 
 function randomCredential(): string {
   const value = new Uint8Array(32)
@@ -318,7 +341,7 @@ export async function pairCompanion(
       cloudflare,
     }
     upsertCompanion(device)
-    keepConnection(device, channel, snapshot, backgroundSnapshotFactory, backgroundPlayHandler, backgroundSearchHandler, backgroundDetailsHandler)
+    keepConnection(device, channel, snapshot, backgroundSnapshotFactory, backgroundPlayHandler, backgroundSearchHandler, backgroundDetailsHandler, backgroundSourceSelectionHandler)
     return device
   } catch (error) {
     clearTimeout(challengeTimer)
@@ -351,9 +374,10 @@ function keepConnection(
   channel: SamsungSmartViewChannel,
   initialSnapshot: CompanionHomeSnapshot,
   createSnapshot?: () => Promise<CompanionHomeSnapshot>,
-  onPlay?: (media: CompanionMedia, device: PairedCompanion) => void,
+  onPlay?: (media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void,
   onSearch?: (query: string) => Promise<CompanionMedia[]>,
   onDetails?: (media: CompanionMedia) => Promise<CompanionMedia>,
+  onSourceSelection?: CompanionSourceSelection,
 ): void {
   connections.get(device.deviceId)?.dispose()
   const unsubscribers = [
@@ -404,7 +428,18 @@ function keepConnection(
         title: '',
         episode: typeof request.episode === 'number' ? request.episode : undefined,
         season: typeof request.season === 'number' ? request.season : undefined,
-      }, device)
+      }, device, {
+        pairingId,
+        requestId: typeof request.requestId === 'string' ? request.requestId : undefined,
+      })
+    }),
+    channel.on('izumi.companion.source-select', (value) => {
+      const request = value as { pairingId?: unknown; requestId?: unknown; choiceId?: unknown } | null
+      const pairingId = device.cloudflare?.pairingId ?? device.credential.slice(0, 16)
+      if (!request || request.pairingId !== pairingId
+        || typeof request.requestId !== 'string' || !/^[A-Za-z0-9_-]{16,80}$/.test(request.requestId)
+        || typeof request.choiceId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(request.choiceId)) return
+      onSourceSelection?.(request.requestId, request.choiceId, device)
     }),
     channel.on('izumi.companion.catalog', (value) => {
       const request = value as { screen?: unknown; pairingId?: unknown } | null
@@ -481,9 +516,10 @@ function keepConnection(
 async function reconnect(
   device: PairedCompanion,
   createSnapshot: () => Promise<CompanionHomeSnapshot>,
-  onPlay: (media: CompanionMedia, device: PairedCompanion) => void,
+  onPlay: (media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void,
   onSearch: (query: string) => Promise<CompanionMedia[]>,
   onDetails: (media: CompanionMedia) => Promise<CompanionMedia>,
+  onSourceSelection?: CompanionSourceSelection,
 ): Promise<void> {
   if (connections.get(device.deviceId)?.channel.connected) return
   const channel = new SamsungSmartViewChannel(device.address, { name: 'Izumi' })
@@ -491,7 +527,7 @@ async function reconnect(
     await channel.connect(2_500)
     if (!await channel.waitForReceiver()) return channel.disconnect()
     const snapshot = await createSnapshot()
-    keepConnection(device, channel, snapshot, createSnapshot, onPlay, onSearch, onDetails)
+    keepConnection(device, channel, snapshot, createSnapshot, onPlay, onSearch, onDetails, onSourceSelection)
     const connection = connections.get(device.deviceId)!
     sendSnapshot(connection, snapshot)
     sendWorkerTransport(connection)
@@ -519,7 +555,7 @@ export async function provisionCompanionResolverRoutes(profileOverride?: Cloudfl
       connection.device = updated
       sendWorkerTransport(connection)
     } else if (backgroundSnapshotFactory && backgroundPlayHandler && backgroundSearchHandler && backgroundDetailsHandler) {
-      void reconnect(updated, backgroundSnapshotFactory, backgroundPlayHandler, backgroundSearchHandler, backgroundDetailsHandler)
+      void reconnect(updated, backgroundSnapshotFactory, backgroundPlayHandler, backgroundSearchHandler, backgroundDetailsHandler, backgroundSourceSelectionHandler)
     }
   }
   return provisioned
@@ -528,18 +564,20 @@ export async function provisionCompanionResolverRoutes(profileOverride?: Cloudfl
 /** Maintains lightweight channels only for TVs the user explicitly paired. */
 export function initCompanionConnections(
   createSnapshot: () => Promise<CompanionHomeSnapshot>,
-  onPlay: (media: CompanionMedia, device: PairedCompanion) => void,
+  onPlay: (media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void,
   onSearch: (query: string) => Promise<CompanionMedia[]>,
   onDetails: (media: CompanionMedia) => Promise<CompanionMedia>,
+  onSourceSelection?: CompanionSourceSelection,
 ): () => void {
   backgroundSnapshotFactory = createSnapshot
   backgroundPlayHandler = onPlay
   backgroundSearchHandler = onSearch
   backgroundDetailsHandler = onDetails
+  backgroundSourceSelectionHandler = onSourceSelection
   let stopped = false
   const refresh = () => {
     if (stopped) return
-    for (const device of get(pairedCompanions)) void reconnect(device, createSnapshot, onPlay, onSearch, onDetails)
+    for (const device of get(pairedCompanions)) void reconnect(device, createSnapshot, onPlay, onSearch, onDetails, onSourceSelection)
   }
   refresh()
   const timer = setInterval(refresh, 30_000)
@@ -549,6 +587,7 @@ export function initCompanionConnections(
     if (backgroundPlayHandler === onPlay) backgroundPlayHandler = undefined
     if (backgroundSearchHandler === onSearch) backgroundSearchHandler = undefined
     if (backgroundDetailsHandler === onDetails) backgroundDetailsHandler = undefined
+    if (backgroundSourceSelectionHandler === onSourceSelection) backgroundSourceSelectionHandler = undefined
     clearInterval(timer)
     for (const connection of connections.values()) connection.dispose()
   }

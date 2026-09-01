@@ -4,7 +4,7 @@ import type { Media } from '$lib/anilist/types'
 import { title } from '$lib/anilist/media'
 import { mediaRef } from '$lib/catalog/identity'
 import type { Stream } from '$lib/stremio/addon'
-import { castSourceDecision, castSubtitleFormat } from '$lib/player/android-cast'
+import { castSourceDecision, castSubtitleFormat, tvCastSource } from '$lib/player/android-cast'
 import { playerNotice } from '$lib/player/session'
 import { setTizenReceiverRelayForeground, startTizenReceiverCast } from '$lib/player/tizen-receiver-cast'
 import { effectiveSubtitleStyle, sessionSubtitleStyle } from '$lib/settings/subtitle-presets'
@@ -22,7 +22,7 @@ import {
 } from '$lib/settings/ui'
 import { updateCloudflareCompanionRequest } from '$lib/sync/cloudflare'
 import { pendingCompanionPlayback } from './client'
-import type { CompanionMedia } from './protocol'
+import { companionMedia, type CompanionMedia } from './protocol'
 
 export interface CompanionCastSubtitle {
   url: string
@@ -59,6 +59,14 @@ export function companionPlaybackTarget(
 ): { episode?: number } | null {
   const episode = requested.episode ?? fallbackEpisode
   return companionPlaybackMatches(requested, media, episode) ? { episode } : null
+}
+
+export function hasPendingCompanionPlayback(
+  media: Pick<Media, 'id' | 'type' | 'format' | 'catalog'>,
+  episode?: number,
+): boolean {
+  const pending = get(pendingCompanionPlayback)
+  return Boolean(pending && companionPlaybackMatches(pending.media, media, episode))
 }
 
 /** Clear a TV handoff when the user explicitly dismisses source selection. Without this, a later
@@ -119,14 +127,16 @@ export async function startPendingCompanionCast(input: {
     return false
   }
 
-  const source = {
+  const source = tvCastSource({
     url: input.stream.url,
     headers: input.stream.__headers ?? {},
     infoHash: input.stream.infoHash,
     filename: input.stream.behaviorHints?.filename,
     manifest: input.stream.__manifest,
     drm: input.stream.__drm,
-  }
+    audioLang: input.stream.__audioLang,
+    audioTracks: input.stream.__audioTracks,
+  }, [])
   // JVM/online providers describe an extensionless non-adaptive result as MP4. Carry that
   // resolver knowledge into the TV policy instead of requiring a file suffix that signed CDN
   // links frequently omit.
@@ -181,6 +191,8 @@ export async function startPendingCompanionCast(input: {
     positionSeconds: input.startSeconds,
     subtitles: prepared.subtitles,
     activeTrackIds: prepared.subtitles.length ? [1] : [],
+    media: companionMedia(input.media, { episode: input.episode }),
+    trackPreferences: input.stream.__audioLang ? { audio: { language: input.stream.__audioLang } } : undefined,
     subtitleStyle: castStyle(),
     adaptive: /mpegurl|dash/i.test(decision.contentType) ? { startBitrate: 'AVERAGE' } : undefined,
     drm: drmSystem && streamDrm?.licenseUrl ? {

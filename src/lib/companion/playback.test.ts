@@ -1,7 +1,7 @@
 import { get } from 'svelte/store'
 import { describe, expect, it } from 'vitest'
 import { pendingCompanionPlayback } from './client'
-import { cancelPendingCompanionPlayback, companionPlaybackMatches, companionPlaybackTarget } from './playback'
+import { cancelPendingCompanionPlayback, companionPlaybackMatches, companionPlaybackTarget, hasPendingCompanionPlayback } from './playback'
 import type { CompanionMedia } from './protocol'
 
 const requested = (episode?: number): CompanionMedia => ({
@@ -55,5 +55,18 @@ describe('companion playback target', () => {
     expect(cancelPendingCompanionPlayback()).toBe(true)
     expect(get(pendingCompanionPlayback)).toBeNull()
     expect(cancelPendingCompanionPlayback()).toBe(false)
+  })
+
+  it('redirects only the exact pending TV title and episode', () => {
+    pendingCompanionPlayback.set({
+      device: {
+        deviceId: 'tv-one', name: 'Living room TV', address: '192.168.1.40',
+        credential: 'ab'.repeat(32), pairedAt: 1,
+      },
+      media: requested(3),
+    })
+    expect(hasPendingCompanionPlayback({ id: 21, type: 'ANIME' }, 3)).toBe(true)
+    expect(hasPendingCompanionPlayback({ id: 21, type: 'ANIME' }, 4)).toBe(false)
+    pendingCompanionPlayback.set(null)
   })
 })

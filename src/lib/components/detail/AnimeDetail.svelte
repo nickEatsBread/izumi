@@ -205,6 +205,8 @@
     prefetchEpisodeSources(current, target.episode, 0)
     void playEpisode(current, target.episode, (state) => (heroPlay = state), {
       forceManual: pending.media.playback?.selection === 'manual',
+      hidden: pending.media.playback?.selection === 'manual',
+      remoteOnly: true,
       autoplay: true,
       startSeconds: pending.media.playback?.positionSeconds,
     })

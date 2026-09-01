@@ -135,7 +135,7 @@ import {
   androidStreamInfo, waitForMpvFirstFrame,
 } from '$lib/player/android-mpv'
 import { waitForRecoveryFirstFrame, type RecoveryFirstFrameResult } from '$lib/player/recovery-first-frame'
-import { cancelPendingCompanionPlayback, startPendingCompanionCast } from '$lib/companion/playback'
+import { cancelPendingCompanionPlayback, hasPendingCompanionPlayback, startPendingCompanionCast } from '$lib/companion/playback'
 
 function continueToNextEpisode(
   media: Media,
@@ -202,6 +202,10 @@ export type PlayEpisodeOptions = {
   /** Explicit resume point used by Scene Bookmarks. It follows the request through source
    * discovery and overrides the episode's ordinary saved progress only for this play. */
   startSeconds?: number
+  /** Resolve invisibly because a paired TV owns the source chooser. */
+  hidden?: boolean
+  /** A paired TV owns the eventual player load; do not supersede local playback ownership. */
+  remoteOnly?: boolean
 }
 
 export type PlayStreamOptions = {
@@ -1694,7 +1698,7 @@ export async function playEpisode(
     cacheCheck: activeCacheCheck(),
   })
   // Cancel a watchdog replacement immediately, before this new episode has even resolved a source.
-  invalidatePlaybackOwner()
+  if (!options.remoteOnly) invalidatePlaybackOwner()
   const cont = options.continuation
   const continuationPriorityMs = cont ? Math.max(0, options.continuationPriorityMs ?? 0) : 0
   const autoplay = options.autoplay ?? true
@@ -1705,10 +1709,10 @@ export async function playEpisode(
   const abort = new AbortController()
   resolveAbort = abort
   const { signal } = abort
-  retainRecoveryCandidates(media, episode, [])
+  if (!options.remoteOnly) retainRecoveryCandidates(media, episode, [])
   // Offline first: a completed local download plays instantly — no resolve, no
   // picker. libmpv opens an absolute local path exactly like a remote URL.
-  const local = episode != null ? downloadOf(media.id, episode) : undefined
+  const local = !options.remoteOnly && episode != null ? downloadOf(media.id, episode) : undefined
   if (local?.status === 'done' && (local.path || local.offlineUri)) {
     traceResolve(trace, 'completed download hit; skipping source discovery')
     let offlineDrm: Stream['__drm'] = local.offlineUri
@@ -1745,7 +1749,8 @@ export async function playEpisode(
   // in its skeleton state for the whole lookup and then close itself the moment continuity landed,
   // so every episode flashed a selector the user never needed to see. Revealed only if the
   // continuation actually fails — see the reveal after the post-settle fallback.
-  let hideForContinuation = !!cont
+  const remoteHidden = options.hidden === true
+  let hideForContinuation = !!cont || remoteHidden
   // Open the picker immediately in a skeleton (resolving) state — no "Resolving
   // stream…" text; it fills in with real sources as EACH addon responds.
   streamPicker.set({
@@ -1763,7 +1768,7 @@ export async function playEpisode(
   markClientPerformance('izumi:source-picker-state-ready', { mediaId: media.id, episode: episode ?? 0 })
   // The picker is the UI from here — unless it is hidden (binge continuation), in which case the
   // connecting screen stays up as the only thing holding the user.
-  if (!hideForContinuation) connecting.set(null)
+  if (!hideForContinuation || remoteHidden) connecting.set(null)
   const stillCurrent = () => {
     const current = get(streamPicker)
     // Media + episode are not a unique request identity: a closed picker can be reopened for the
@@ -1775,10 +1780,10 @@ export async function playEpisode(
   // Make a picker hidden for a binge continuation visible again: the continuation is off the table,
   // so the user has to choose (or at least see why nothing played).
   const revealPicker = () => {
-    hideForContinuation = false
+    hideForContinuation = remoteHidden
     connecting.set(null)
     if (!stillCurrent()) return
-    streamPicker.update((c) => c ? { ...c, hidden: false } : c)
+    streamPicker.update((c) => c ? { ...c, hidden: remoteHidden } : c)
   }
   const showPickerError = (message: string) => {
     if (!stillCurrent()) return
@@ -1791,7 +1796,7 @@ export async function playEpisode(
       playbackError: message,
       // An error is always shown, even for a single source that was otherwise hidden — a silent
       // failure would look exactly like nothing happening.
-      hidden: false,
+      hidden: remoteHidden,
     } : current)
     onState({ status: 'error', message })
   }
@@ -2057,7 +2062,7 @@ export async function playEpisode(
       // mode and whenever no trust order has been stated at all.
       s = applyPriorityFilter(s, get(sourcePriority), get(sourcePriorityMode))
       s = annotateCache(s, cacheAnswers, cacheMode === 'library' ? 'library' : 'native')
-      retainRecoveryCandidates(media, episode, s)
+      if (!options.remoteOnly) retainRecoveryCandidates(media, episode, s)
       const paintTrace = `${acc.length}|${s.length}|${refined.rejected.length}|${resolving}`
       if (paintTrace !== lastPaintTrace) {
         lastPaintTrace = paintTrace
@@ -2546,6 +2551,86 @@ async function resolveAndPlayBest(
   })
 }
 
+/** Resolve a selected row for a paired TV without touching the phone/desktop player's media,
+ * history, track menus, or playback owner. This uses the same torrent/debrid primitives as local
+ * playback and hands the final source to the existing companion cast preparation path. */
+async function playPendingCompanionStream(
+  media: Media,
+  episode: number | undefined,
+  original: Stream,
+  report: (s: PlayState) => void,
+  options: PlayStreamOptions,
+): Promise<void> {
+  let stream = original
+  const resolverHash = torrentioResolverInfoHash(stream.url, stream.__addonName ?? stream.name)
+  if (resolverHash) stream = { ...stream, url: undefined, infoHash: resolverHash }
+  let directTorrentSubtitles: DirectTorrentSubtitle[] = []
+  report({ status: 'resolving' })
+  try {
+    if (!stream.url && stream.infoHash) {
+      const provider = get(debridProvider)
+      const key = get(debridKey)
+      const torrent = stream.__magnet ?? stream.infoHash
+      const want = await episodeWant(media, episode, stream)
+      const direct = options.forceDirect || get(torrentPlaybackMode) === 'direct' || !key
+      if (direct) {
+        const startupId = nextDirectTorrentStartupId()
+        if (stream.__torrentUrl) await prefetchSourceMetadata(stream, 'selected', true)
+        const playback = await invoke<DirectTorrentPlayback>('torrent_playback_url', {
+          magnet: stream.__magnet ?? `magnet:?xt=urn:btih:${torrent}`,
+          preferredFileIndex: stream.fileIdx,
+          preferredFilename: stream.behaviorHints?.filename,
+          seriesTitle: title(media),
+          episode: want?.episode,
+          absoluteEpisode: want?.abs,
+          season: want?.season,
+          startupTimeoutMs: options.directStartupTimeoutMs,
+          startupId,
+          ...torrentEngineNetworkOptions(),
+        })
+        directTorrentSubtitles = playback.subtitles
+        activateDirectTorrentPlayback(playback.playbackId)
+        stream = {
+          ...stream,
+          url: playback.url,
+          behaviorHints: { ...stream.behaviorHints, filename: playback.filename, videoSize: playback.size },
+        }
+      } else {
+        const controller = new AbortController()
+        stream = {
+          ...stream,
+          url: await resolveHash(provider, key, torrent, {
+            signal: controller.signal,
+            timeoutMs: 30 * 60 * 1000,
+            priority: true,
+            want,
+          }),
+        }
+      }
+    }
+    if (!stream.url) throw new Error('That source has no playable link.')
+    const startSeconds = options.startSeconds ?? (episode != null ? getPosition(media.id, episode) : 0)
+    const handled = await startPendingCompanionCast({
+      media,
+      episode,
+      stream,
+      startSeconds,
+      subtitles: [
+        ...(stream.__subtitles ?? []),
+        ...directTorrentSubtitles.map((subtitle) => ({
+          url: subtitle.url,
+          lang: subtitle.lang,
+          title: subtitle.title,
+        })),
+      ],
+    })
+    if (!handled) throw new Error('The TV source request expired. Refresh sources on the TV and try again.')
+    report({ status: 'playing' })
+  } catch (error) {
+    report({ status: 'error', message: error instanceof Error ? error.message : String(error) })
+  }
+}
+
 // Play a specific chosen stream: embed mpv into the main window + wire progress /
 // resume / auto next-episode. Closes the picker.
 export async function playStream(
@@ -2555,6 +2640,9 @@ export async function playStream(
   report: (s: PlayState) => void,
   options: PlayStreamOptions = {},
 ) {
+  if (hasPendingCompanionPlayback(media, episode)) {
+    return playPendingCompanionStream(media, episode, stream, report, options)
+  }
   upNextPrompt.set(null)
   const trace = currentResolveTrace(media.id, episode) ?? beginResolveTrace({
     mediaId: media.id,
@@ -3114,6 +3202,12 @@ export async function playStream(
           filename: stream.behaviorHints?.filename,
           manifest: stream.__manifest,
           startSeconds,
+          audioLang: stream.__audioLang,
+          audioTracks: (stream.__audioTracks ?? []).map((track) => ({
+            lang: track.lang,
+            title: track.title,
+            switchUrl: track.switchUrl,
+          })),
           subtitles: subs.map((subtitle) => ({
             url: subtitle.url,
             lang: subtitle.lang,
@@ -3331,6 +3425,12 @@ export async function playStream(
       infoHash: stream.infoHash ?? null,
       filename: stream.behaviorHints?.filename,
       manifest: stream.__manifest,
+      audioLang: stream.__audioLang,
+      audioTracks: (stream.__audioTracks ?? []).map((track) => ({
+        lang: track.lang,
+        title: track.title,
+        switchUrl: track.switchUrl,
+      })),
       subtitles: subtitles.map((subtitle) => ({
         url: subtitle.url,
         lang: subtitle.lang,

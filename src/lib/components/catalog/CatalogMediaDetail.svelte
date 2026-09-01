@@ -103,6 +103,8 @@
     startedCompanionRequest = pending
     void playEpisode(current, target.episode, (state) => (playState = state), {
       forceManual: pending.media.playback?.selection === 'manual',
+      hidden: pending.media.playback?.selection === 'manual',
+      remoteOnly: true,
       autoplay: true,
       startSeconds: pending.media.playback?.positionSeconds,
     })
