@@ -285,6 +285,46 @@ fn is_loopback(url: &Url) -> bool {
     matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "::1"))
 }
 
+fn safe_url_suffix(url: &Url) -> String {
+    let filename = url
+        .path_segments()
+        .and_then(Iterator::last)
+        .unwrap_or_default();
+    let Some((_, extension)) = filename.rsplit_once('.') else {
+        return String::new();
+    };
+    let extension = extension.to_ascii_lowercase();
+    if extension.is_empty()
+        || extension.len() > 8
+        || !extension.bytes().all(|byte| byte.is_ascii_alphanumeric())
+    {
+        return String::new();
+    }
+    format!(".{extension}")
+}
+
+fn media_resource_id(request: &CastPrepareRequest, media: &Url) -> String {
+    let suffix = match request.manifest.as_deref() {
+        Some("hls") => ".m3u8",
+        Some("dash") => ".mpd",
+        _ => match request
+            .content_type
+            .as_deref()
+            .and_then(valid_content_type)
+            .as_deref()
+        {
+            Some("application/vnd.apple.mpegurl") | Some("application/x-mpegurl") => ".m3u8",
+            Some("application/dash+xml") => ".mpd",
+            Some("video/mp4") => ".mp4",
+            Some("video/x-matroska") | Some("video/x-mkv") => ".mkv",
+            Some("video/webm") => ".webm",
+            Some("video/mp2t") => ".ts",
+            _ => return format!("media{}", safe_url_suffix(media)),
+        },
+    };
+    format!("media{suffix}")
+}
+
 fn relay_plan(request: &CastPrepareRequest, media: &Url) -> Result<(bool, Vec<bool>), String> {
     let izumi_receiver = matches!(request.subtitle_delivery, SubtitleDelivery::TizenReceiver);
     let relay_subtitles = request
@@ -381,6 +421,10 @@ impl CastRelay {
     ) -> Result<CastPreparedSource, String> {
         let token = random_token()?;
         let public_base = format!("http://{public_ip}:{}", self.port);
+        // AVPlay uses the URL suffix as an input to container/stream selection. Keeping the relay
+        // endpoint extensionless made valid header-bound HLS and MP4 sources fail during prepare
+        // with Samsung's unhelpful PLAYER_ERROR_NONE/unknown error.
+        let media_resource_id = media_resource_id(&request, &media);
         let mut resources = HashMap::new();
         let mut prepared_subtitles = Vec::new();
         for (index, (subtitle, relay_subtitle)) in request
@@ -429,7 +473,7 @@ impl CastRelay {
             .collect();
         if relay_media {
             resources.insert(
-                "media".to_string(),
+                media_resource_id.clone(),
                 RelayResource {
                     upstream: media.clone(),
                     headers: request.headers.clone(),
@@ -465,7 +509,7 @@ impl CastRelay {
 
         Ok(CastPreparedSource {
             url: if relay_media {
-                session.local_url(&token, "media")
+                session.local_url(&token, &media_resource_id)
             } else {
                 media.to_string()
             },
@@ -808,9 +852,11 @@ fn register_hls_resource(
     let resolved = base
         .join(value)
         .map_err(|error| format!("Invalid HLS resource URL {value:?}: {error}"))?;
-    let resource_id = blake3::hash(resolved.as_str().as_bytes())
-        .to_hex()
-        .to_string();
+    let resource_id = format!(
+        "{}{}",
+        blake3::hash(resolved.as_str().as_bytes()).to_hex(),
+        safe_url_suffix(&resolved)
+    );
     let hls = resolved.path().to_ascii_lowercase().ends_with(".m3u8");
     session
         .resources
@@ -1102,6 +1148,27 @@ mod tests {
             Some("video/x-mkv")
         );
         assert_eq!(valid_content_type("not-a-content-type"), None);
+    }
+
+    #[test]
+    fn keeps_player_significant_suffixes_on_relay_urls() {
+        let request = CastPrepareRequest {
+            url: "https://cdn.example/tokenized?id=42".into(),
+            headers: HashMap::new(),
+            manifest: Some("hls".into()),
+            subtitles: Vec::new(),
+            force_relay: true,
+            content_type: Some("application/vnd.apple.mpegurl".into()),
+            subtitle_delivery: SubtitleDelivery::TizenReceiver,
+        };
+        assert_eq!(
+            media_resource_id(&request, &Url::parse(&request.url).unwrap()),
+            "media.m3u8"
+        );
+        assert_eq!(
+            safe_url_suffix(&Url::parse("https://cdn.example/segment-01.ts?token=x").unwrap()),
+            ".ts"
+        );
     }
 
     #[test]
