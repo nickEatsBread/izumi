@@ -23,9 +23,12 @@ export type CastSourceDecision =
   | { ok: false; error: string }
 
 const extensionOf = (source: CastSource, url: URL) => {
-  const value = source.filename?.trim() || url.pathname
-  const match = value.match(/\.([a-z0-9]+)(?:$|[?#])/i)
-  return match?.[1]?.toLowerCase() ?? ''
+  const extension = (value: string | null | undefined) =>
+    value?.trim().match(/\.([a-z0-9]+)(?:$|[?#])/i)?.[1]?.toLowerCase() ?? ''
+  // A display label such as "Direct MP4 · Vidstream" is not a filename. It must not hide the
+  // real extension on the resolved URL, otherwise an automatically-selected JVM source reaches
+  // the TV handoff with no identifiable container.
+  return extension(source.filename) || extension(url.pathname)
 }
 
 function contentTypeFor(source: CastSource, url: URL, fileFormat?: string | null): string | null {

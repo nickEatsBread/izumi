@@ -20,6 +20,13 @@ describe('Android Cast direct-play policy', () => {
     ])).toMatchObject({ ok: true, contentType: 'video/mp4' })
   })
 
+  it('does not let a JVM display label hide the resolved URL extension', () => {
+    expect(castSourceDecision({
+      url: 'https://cdn.example/Kotonoha-no-Niwa.mp4?token=abc',
+      filename: 'Direct MP4 · Vidstream',
+    }, [], undefined, 'tv')).toMatchObject({ ok: true, contentType: 'video/mp4' })
+  })
+
   it('rejects local or header-bound DASH until a receiver-aware relay exists', () => {
     expect(castSourceDecision({
       url: 'http://127.0.0.1:3210/manifest',

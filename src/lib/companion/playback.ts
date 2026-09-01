@@ -127,7 +127,11 @@ export async function startPendingCompanionCast(input: {
     manifest: input.stream.__manifest,
     drm: input.stream.__drm,
   }
-  const decision = castSourceDecision(source, [], undefined, 'tv')
+  // JVM/online providers describe an extensionless non-adaptive result as MP4. Carry that
+  // resolver knowledge into the TV policy instead of requiring a file suffix that signed CDN
+  // links frequently omit.
+  const formatHint = source.manifest ?? (input.stream.__stream ? 'mp4' : undefined)
+  const decision = castSourceDecision(source, [], formatHint, 'tv')
   if (!decision.ok) throw new Error(decision.error)
 
   const candidates = input.subtitles
