@@ -10,6 +10,7 @@ import {
   stopTizenReceiverCast,
   subscribeTizenReceiverStatus,
   type CastSubtitleStyle,
+  type TizenReceiverLoad,
 } from './tizen-receiver-cast'
 
 export type { CastSubtitleStyle } from './tizen-receiver-cast'
@@ -110,6 +111,8 @@ export interface DesktopCastStartInput {
   positionSeconds: number
   subtitles: PreparedCastSource['subtitles']
   activeTrackIds: number[]
+  media?: TizenReceiverLoad['media']
+  trackPreferences?: TizenReceiverLoad['trackPreferences']
   subtitleStyle?: CastSubtitleStyle
   receiverPreferred?: boolean
 }
@@ -205,8 +208,8 @@ export function desktopCastContentType(device: DesktopCastDevice, contentType: s
 export async function startDesktopCast(
   request: DesktopCastStartInput,
 ): Promise<Omit<DesktopCastSession, 'subtitles' | 'activeTrackIds'>> {
-  const { device, receiverPreferred, contentRating, ...nativeRequest } = request
-  const receiverRequest = { ...nativeRequest, contentRating }
+  const { device, receiverPreferred, contentRating, media, trackPreferences, ...nativeRequest } = request
+  const receiverRequest = { ...nativeRequest, contentRating, media, trackPreferences }
   if (device.protocol === 'tizenReceiver') {
     await startTizenReceiverCast(device, receiverRequest, 'Izumi Desktop')
     return { deviceId: device.id, deviceName: device.name, backend: 'tizenReceiver' }

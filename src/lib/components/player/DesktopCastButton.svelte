@@ -12,7 +12,7 @@
   import Volume2 from '@lucide/svelte/icons/volume-2'
   import { playerGetProperty, playerTracks } from '$lib/player/native'
   import { nowPlaying, nowPlayingMedia, nowPlayingStream, playerMenuOpen, playerNotice } from '$lib/player/session'
-  import { castSourceDecision, castSubtitleFormat, type CastTrack } from '$lib/player/android-cast'
+  import { castSourceDecision, castSubtitleFormat, castTrackPreferences, tvCastSource, type CastTrack } from '$lib/player/android-cast'
   import {
     desktopCastSession,
     desktopCastStatus,
@@ -35,6 +35,7 @@
   } from '$lib/settings/ui'
   import { effectiveSubtitleStyle, sessionSubtitleStyle } from '$lib/settings/subtitle-presets'
   import { discoverCompanionReceivers } from '$lib/companion/client'
+  import { companionMedia } from '$lib/companion/protocol'
   import { m } from '$lib/paraglide/messages.js'
 
   let {
@@ -115,15 +116,15 @@
         playerGetProperty('file-format').catch(() => ''),
       ])
       const tracks = JSON.parse(rawTracks) as CastTrack[]
-      const decision = castSourceDecision(source, tracks, fileFormat, device.protocol === 'googleCast' ? 'googleCast' : 'tv')
-      if (!decision.ok) throw new Error(decision.error)
-
       const selectedTrack = tracks.find((track) => track.type === 'sub' && track.selected)
       const subtitle = selectedCastSubtitle(source, tracks)
       const samsungDlnaSubtitles = desktopCastSupportsDlnaSubtitles(device)
       // A discovered Companion may be installed but closed. Its Application connection below
       // launches it, so preserve receiver-only subtitle formats during source preparation.
       const receiverAvailable = device.protocol === 'tizenReceiver' || await hasTizenReceiver(device)
+      const castSource = receiverAvailable ? tvCastSource(source, tracks) : source
+      const decision = castSourceDecision(castSource, tracks, fileFormat, device.protocol === 'googleCast' ? 'googleCast' : 'tv')
+      if (!decision.ok) throw new Error(decision.error)
       const compatible = (source.subtitles ?? []).filter((candidate) => {
         const format = castSubtitleFormat(candidate.url)
         if (!format) return false
@@ -141,7 +142,7 @@
         ? compatibleSubtitles.findIndex((candidate) => candidate.url === selectedSubtitle.url)
         : -1
       const activeTrackIds = selectedIndex >= 0 ? [selectedIndex + 1] : []
-      const prepared = await prepareDesktopCast(source, compatibleSubtitles, {
+      const prepared = await prepareDesktopCast(castSource, compatibleSubtitles, {
         // Samsung's 2018 AllShare player fails on otherwise valid modern HTTPS CDN endpoints.
         // Give the DLNA fallback a stable LAN HTTP URL. Izumi Companion receives the original
         // source and streams it on the TV; cast_prepare_source still bridges individual resources
@@ -165,6 +166,8 @@
         positionSeconds: castPosition,
         subtitles: prepared.subtitles,
         activeTrackIds,
+        media: $nowPlayingMedia ? companionMedia($nowPlayingMedia.media, { episode: $nowPlayingMedia.episode }) : undefined,
+        trackPreferences: castTrackPreferences(castSource, tracks),
         receiverPreferred: receiverAvailable,
         subtitleStyle: effectiveSubtitleStyle($sessionSubtitleStyle, {
           enabled: $subtitleStyleEnabled,

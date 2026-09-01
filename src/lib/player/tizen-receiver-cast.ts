@@ -4,6 +4,8 @@ import {
   IZUMI_TIZEN_CHANNEL,
   SamsungSmartViewChannel,
 } from './samsung-smart-view'
+import type { CompanionMedia } from '$lib/companion/protocol'
+import type { CastTrackPreferences } from './android-cast'
 
 export interface TizenReceiverDevice {
   id: string
@@ -46,6 +48,11 @@ export interface TizenReceiverLoad {
   positionSeconds: number
   subtitles: { url: string; lang?: string; title?: string; contentType: string }[]
   activeTrackIds: number[]
+  /** Exact title/episode owning this source. The TV must not use its last browsed card when asking
+   * a linked device for a replacement. */
+  media?: CompanionMedia
+  /** Track indexes are container-local, so send descriptive preferences for the TV to match. */
+  trackPreferences?: CastTrackPreferences
   subtitleStyle?: CastSubtitleStyle
   adaptive?: {
     minBitrateKbps?: number

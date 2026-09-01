@@ -5,6 +5,11 @@ export interface CastSource {
   filename?: string | null
   manifest?: 'hls' | 'dash' | null
   drm?: unknown
+  /** Language reported by a direct-stream provider before mpv exposes its live tracks. */
+  audioLang?: string
+  /** Alternate provider manifests. A switchUrl is already muxed for that audio language and can
+   * be opened by a TV; a bare url is an mpv-only external audio sidecar. */
+  audioTracks?: { lang?: string; title?: string; switchUrl?: string }[]
 }
 
 export interface CastTrack {
@@ -16,6 +21,46 @@ export interface CastTrack {
   title?: string
   lang?: string
   externalFilename?: string
+}
+
+export interface CastTrackPreference {
+  language?: string
+  title?: string
+  codec?: string
+}
+
+export interface CastTrackPreferences {
+  audio?: CastTrackPreference
+  subtitle?: CastTrackPreference
+}
+
+const languageKey = (value: string | undefined) => {
+  const key = value?.trim().toLowerCase().replace('_', '-').split('-')[0] ?? ''
+  return ({ eng: 'en', jpn: 'ja', spa: 'es', fre: 'fr', fra: 'fr', ger: 'de', deu: 'de', ita: 'it', por: 'pt' } as Record<string, string>)[key] ?? key
+}
+
+function trackPreference(track: CastTrack | undefined, fallbackLanguage?: string): CastTrackPreference | undefined {
+  const language = track?.lang?.trim() || fallbackLanguage?.trim()
+  const title = track?.title?.trim()
+  const codec = track?.codec?.trim()
+  return language || title || codec ? { language, title, codec } : undefined
+}
+
+/** Carry the sender's actual mpv selections to a receiver whose track indexes will be different. */
+export function castTrackPreferences(source: CastSource, tracks: CastTrack[]): CastTrackPreferences | undefined {
+  const audio = trackPreference(tracks.find((track) => track.type === 'audio' && track.selected), source.audioLang)
+  const subtitle = trackPreference(tracks.find((track) => track.type === 'sub' && track.selected))
+  return audio || subtitle ? { audio, subtitle } : undefined
+}
+
+/** Provider audio variants represented by switchUrl are complete manifests, unlike mpv audio-add
+ * sidecars. Select the manifest matching the live audio track before handing the source to a TV. */
+export function tvCastSource(source: CastSource, tracks: CastTrack[]): CastSource {
+  const selectedLanguage = tracks.find((track) => track.type === 'audio' && track.selected)?.lang || source.audioLang
+  const switchable = (source.audioTracks ?? []).filter((track) => track.switchUrl)
+  const selected = switchable.find((track) => languageKey(track.lang) === languageKey(selectedLanguage))
+    ?? (switchable.length === 1 ? switchable[0] : undefined)
+  return selected?.switchUrl ? { ...source, url: selected.switchUrl, audioLang: selected.lang || selectedLanguage } : source
 }
 
 export type CastSourceDecision =

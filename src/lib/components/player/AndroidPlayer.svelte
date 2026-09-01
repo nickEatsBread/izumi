@@ -87,7 +87,8 @@
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { candidateKey, candidateTitle, providerBadge, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
   import { stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
-  import { castSourceDecision, castSubtitleFormat } from '$lib/player/android-cast'
+  import { castSourceDecision, castSubtitleFormat, castTrackPreferences, tvCastSource } from '$lib/player/android-cast'
+  import { companionMedia } from '$lib/companion/protocol'
   import {
     controlTizenReceiver,
     getTizenReceiverStatus,
@@ -1285,7 +1286,8 @@
   async function castToDevice(receiver?: AndroidReceiverDevice) {
     const source = get(nowPlayingStream)
     const [liveTracks, fileFormat] = await Promise.all([getTracks(), mpvGet('file-format')])
-    const decision = castSourceDecision(source, liveTracks, fileFormat, receiver ? 'tv' : 'googleCast')
+    const castSource = receiver ? tvCastSource(source, liveTracks) : source
+    const decision = castSourceDecision(castSource, liveTracks, fileFormat, receiver ? 'tv' : 'googleCast')
     if (!decision.ok) {
       playerNotice.set(decision.error)
       return
@@ -1311,8 +1313,8 @@
       }>('cast_prepare_source', {
         request: {
           url: decision.url,
-          headers: source.headers,
-          manifest: source.manifest,
+          headers: castSource.headers,
+          manifest: castSource.manifest,
           // Izumi casting transfers the source to the TV; it is not screen mirroring. The native
           // bridge is selected later only for a source the TV cannot fetch directly.
           forceRelay: false,
@@ -1341,6 +1343,8 @@
           positionSeconds: get(mpvState).pos,
           subtitles: prepared.subtitles,
           activeTrackIds,
+          media: $nowPlayingMedia ? companionMedia($nowPlayingMedia.media, { episode: $nowPlayingMedia.episode }) : undefined,
+          trackPreferences: castTrackPreferences(castSource, liveTracks),
           subtitleStyle: castStyle(),
         }, 'Izumi Android')
         if (prepared.relayed) await setTizenReceiverRelayForeground(true, castTitle)
@@ -1487,7 +1491,7 @@
   // whole shell goes away and the transparent WebView leaves nothing but the video.
   // During an episode/source handover the preparation page owns the visible surface. Hiding the
   // outgoing native frame avoids a black/old-episode flash while the next watch details pre-load.
-  const overlayHidden = $derived($streamPicker != null || $connecting != null || $debridCaching != null || $commentsOpen || $androidPipActive)
+  const overlayHidden = $derived(($streamPicker != null && !$streamPicker.hidden) || $connecting != null || $debridCaching != null || $commentsOpen || $androidPipActive)
 
   async function bookmarkScene() {
     if (!$sceneBookmarksEnabled) {

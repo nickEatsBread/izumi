@@ -220,7 +220,7 @@
   // Triggers and touch retain the established reveal behaviour.
   const quietDpadScrub = $derived(gmMode && $scrub.active && $scrub.source === 'dpad')
   const controlsVisible = $derived(
-    visible || (!(quietPadSeek || quietDpadScrub) && (paused || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen,
+    visible || (!(quietPadSeek || quietDpadScrub) && (transportPaused || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen,
   )
   const controlsMounted = $derived(controlsVisible || quietDpadScrub)
   const currentSeg = $derived(segments.find((s) => pos >= s.start && pos <= s.end))
@@ -563,9 +563,9 @@
       title: np.title,
       series: np.animeTitle,
       episode: np.episode,
-      duration: dur,
-      position: pos,
-      paused,
+      duration: transportDur,
+      position: transportPos,
+      paused: transportPaused,
       coverUrl: media?.coverImage?.extraLarge ?? media?.coverImage?.medium ?? null,
       systemControls: $systemMediaControls,
       discord: $discordRichPresence,
@@ -868,7 +868,7 @@
   })
 
   const gmScrubFreezesProgress = $derived(gmMode && $scrub.active)
-  const gmDynamicPos = $derived(gmScrubFreezesProgress ? gmScrubBasePos : (dpadVisualPos ?? pos))
+  const gmDynamicPos = $derived(gmScrubFreezesProgress ? gmScrubBasePos : (dpadVisualPos ?? transportPos))
   const gmDynamicBuffer = $derived(gmScrubFreezesProgress ? gmScrubBaseBuffer : buffer)
   const controlsPos = $derived(gmScrubFreezesProgress ? $scrub.time : (dpadVisualPos ?? transportPos))
   const controlsBuffer = $derived(gmScrubFreezesProgress ? gmScrubBaseBuffer : buffer)
@@ -999,7 +999,7 @@
       measureSeekBar()
       if (lastBar.w > 0) lastBarLayoutKey = barLayoutKey
     }
-    const chromeLayoutKey = `${barLayoutKey}:${paused}:${gmFocusRev}:${np.title}:${np.episode ?? ''}`
+    const chromeLayoutKey = `${barLayoutKey}:${transportPaused}:${gmFocusRev}:${np.title}:${np.episode ?? ''}`
     const chrome = nativeControls
       ? (lastChrome.controlItems.length > 0 && lastChromeLayoutKey === chromeLayoutKey
           ? lastChrome
@@ -1018,13 +1018,13 @@
       loading: visible && loading,
       firstFrame,
       controls: visible && nativeControls,
-      paused,
+      paused: transportPaused,
       animateControls: $playerProgressAnimations,
       scrubbing: visible && s.active,
       pos: gmDynamicPos,
-      dur,
+      dur: transportDur,
       buffer: gmDynamicBuffer,
-      scrubTime: s.active ? s.time : pos,
+      scrubTime: s.active ? s.time : transportPos,
       width: Math.max(1, window.innerWidth || 1),
       height: Math.max(1, window.innerHeight || 1),
       barX: lastBar.x,
@@ -1067,7 +1067,7 @@
   }
 
   $effect(() => {
-    gmMode; gmBitmapMode; $playing; loading; firstFrame; controlsVisible; paused; gmDynamicPos; dur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive; gmNativeControls; gmFocusRev; $playerProgressAnimations; segments; chapters
+    gmMode; gmBitmapMode; $playing; loading; firstFrame; controlsVisible; transportPaused; gmDynamicPos; transportDur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive; gmNativeControls; gmFocusRev; $playerProgressAnimations; segments; chapters
     scheduleGmDynamicOverlay()
   })
 
@@ -1092,7 +1092,7 @@
   // The first-frame gate avoids inhibiting during the initial/next-episode loading screen.
   // Pause, EOF, player close, navigation away, or disabling the setting releases immediately.
   $effect(() => {
-    const activelyWatching = $playing && firstFrame && !paused && !eof
+    const activelyWatching = $playing && firstFrame && !transportPaused && !eof
     invoke('set_idle_inhibit', { on: $keepAwakeWhilePlaying && activelyWatching }).catch(() => {})
   })
 
@@ -1613,13 +1613,13 @@
       </div>
       <div class="flex items-center gap-3">
         <button data-focusable onclick={(event) => { event.stopPropagation(); cmd('cycle', ['pause']) }}
-                class="pointer-events-auto grid size-10 shrink-0 place-items-center rounded-full bg-white text-black" aria-label={paused ? 'Play' : 'Pause'}>
-          {#if paused}<PlayIcon size={20} fill="currentColor" />{:else}<PauseIcon size={20} fill="currentColor" />{/if}
+                class="pointer-events-auto grid size-10 shrink-0 place-items-center rounded-full bg-white text-black" aria-label={transportPaused ? 'Play' : 'Pause'}>
+          {#if transportPaused}<PlayIcon size={20} fill="currentColor" />{:else}<PauseIcon size={20} fill="currentColor" />{/if}
         </button>
         <div class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/25">
-          <div class="h-full bg-theme" style="width:{dur > 0 ? Math.min(100, pos / dur * 100) : 0}%"></div>
+          <div class="h-full bg-theme" style="width:{transportDur > 0 ? Math.min(100, transportPos / transportDur * 100) : 0}%"></div>
         </div>
-        <span class="text-[0.65rem] tabular-nums text-white/70">{Math.floor(pos / 60)}:{String(Math.floor(pos % 60)).padStart(2, '0')}</span>
+        <span class="text-[0.65rem] tabular-nums text-white/70">{Math.floor(transportPos / 60)}:{String(Math.floor(transportPos % 60)).padStart(2, '0')}</span>
       </div>
     </div>
   {:else if controlsMounted}

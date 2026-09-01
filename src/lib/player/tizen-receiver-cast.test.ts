@@ -109,6 +109,16 @@ describe('Tizen receiver sender', () => {
         lang: 'en',
       }],
       activeTrackIds: [1],
+      media: {
+        ref: { provider: 'anilist', type: 'anime', id: '123' },
+        resolver: { streamType: 'series' },
+        title: 'Episode 1',
+        episode: 1,
+      },
+      trackPreferences: {
+        audio: { language: 'ja-JP', codec: 'aac' },
+        subtitle: { language: 'eng', title: 'English' },
+      },
       subtitleStyle: {
         enabled: true,
         scope: 'dialogue',
@@ -138,6 +148,8 @@ describe('Tizen receiver sender', () => {
     expect(load.params.data.contentRating).toBe('TV-14')
     expect(load.params.data.subtitles[0].contentType).toBe('text/x-ssa')
     expect(load.params.data.subtitleStyle.fontSize).toBe(42)
+    expect(load.params.data.media).toMatchObject({ ref: { id: '123' }, episode: 1 })
+    expect(load.params.data.trackPreferences.audio.language).toBe('ja-JP')
 
     socket.receive({
       event: 'izumi.status',

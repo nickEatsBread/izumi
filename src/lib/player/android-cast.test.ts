@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { castSourceDecision, castSubtitleFormat } from './android-cast'
+import { castSourceDecision, castSubtitleFormat, castTrackPreferences, tvCastSource } from './android-cast'
 
 describe('Android Cast direct-play policy', () => {
   it('accepts extensionless HLS identified by the resolver', () => {
@@ -72,5 +72,26 @@ describe('Android Cast direct-play policy', () => {
     expect(castSubtitleFormat('https://subs.example/en.srt')).toBe('srt')
     expect(castSubtitleFormat('https://subs.example/en.ass')).toBe('ass')
     expect(castSubtitleFormat('https://subs.example/en.ssa')).toBe('ass')
+  })
+
+  it('uses the selected provider audio manifest for a TV handoff', () => {
+    const source = tvCastSource({
+      url: 'https://video.example/video-only.mpd',
+      manifest: 'dash',
+      audioLang: 'ja-JP',
+      audioTracks: [
+        { lang: 'eng', switchUrl: 'https://video.example/english.mpd' },
+        { lang: 'jpn', switchUrl: 'https://video.example/japanese.mpd' },
+      ],
+    }, [{ type: 'audio', selected: true, lang: 'ja', title: 'Japanese', codec: 'aac' }])
+
+    expect(source.url).toBe('https://video.example/japanese.mpd')
+    expect(castTrackPreferences(source, [
+      { type: 'audio', selected: true, lang: 'ja', title: 'Japanese', codec: 'aac' },
+      { type: 'sub', selected: true, lang: 'eng', title: 'English Signs', codec: 'ass' },
+    ])).toEqual({
+      audio: { language: 'ja', title: 'Japanese', codec: 'aac' },
+      subtitle: { language: 'eng', title: 'English Signs', codec: 'ass' },
+    })
   })
 })
