@@ -183,6 +183,50 @@ function rememberSummary(media: Media): Media {
   return media
 }
 
+const searchText = (value?: string): string => (value ?? '')
+  .normalize('NFKD')
+  .replace(/\p{M}/gu, '')
+  .toLocaleLowerCase()
+  .trim()
+
+const releaseDateOf = (media: Media): string | undefined => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(media.releaseDate ?? '')) return media.releaseDate
+  return media.startDate?.year ? `${media.startDate.year}-01-01` : undefined
+}
+
+/** Stremio's catalog protocol standardizes search/genre/skip only. Rich filters therefore run
+ * against the metadata returned by each add-on. Keep this pure so every boundary and sort order
+ * can be verified without network fixtures. Missing metadata does not satisfy an active filter. */
+export function filterAndSortStremioMedia(media: Media[], request: CatalogSearchRequest): Media[] {
+  const excluded = new Set((request.excludedGenres ?? []).map(searchText))
+  const language = searchText(request.language)
+  const country = searchText(request.country)
+  const filtered = media.filter((item) => {
+    if (request.sourceAddonId && item.catalog?.addonId !== request.sourceAddonId) return false
+    if (request.year && item.startDate?.year !== request.year) return false
+    if (excluded.size && item.genres?.some((genre) => excluded.has(searchText(genre)))) return false
+    if (request.withPoster && !item.coverImage?.extraLarge && !item.coverImage?.large && !item.coverImage?.medium) return false
+    if (language && !searchText(item.originalLanguage).includes(language)) return false
+    if (country && !searchText(item.countryOfOrigin).includes(country)) return false
+    if (request.minScore != null && (item.averageScore == null || item.averageScore < request.minScore)) return false
+    if (request.maxScore != null && (item.averageScore == null || item.averageScore > request.maxScore)) return false
+    if (request.runtimeMin != null && (item.duration == null || item.duration < request.runtimeMin)) return false
+    if (request.runtimeMax != null && (item.duration == null || item.duration > request.runtimeMax)) return false
+    const releaseDate = releaseDateOf(item)
+    if (request.releaseDateFrom && (!releaseDate || releaseDate < request.releaseDateFrom)) return false
+    if (request.releaseDateTo && (!releaseDate || releaseDate > request.releaseDateTo)) return false
+    return true
+  })
+
+  const titleOf = (item: Media) => item.title.userPreferred ?? item.title.english ?? item.title.romaji ?? ''
+  const yearOf = (item: Media) => item.startDate?.year ?? 0
+  if (request.sort === 'rating') return filtered.sort((left, right) => (right.averageScore ?? -1) - (left.averageScore ?? -1))
+  if (request.sort === 'recent') return filtered.sort((left, right) => yearOf(right) - yearOf(left))
+  if (request.sort === 'oldest') return filtered.sort((left, right) => (yearOf(left) || Number.MAX_SAFE_INTEGER) - (yearOf(right) || Number.MAX_SAFE_INTEGER))
+  if (request.sort === 'title') return filtered.sort((left, right) => titleOf(left).localeCompare(titleOf(right)))
+  return filtered
+}
+
 const hasResource = (manifest: AddonManifest, name: string) => (manifest.resources ?? []).some((resource: AddonResource) =>
   typeof resource === 'string' ? resource === name : resource.name === name)
 
@@ -404,6 +448,7 @@ async function search(request: CatalogSearchRequest): Promise<CatalogPage> {
   const sources = await manifests()
   const entries = sources.flatMap(({ base, manifest }) => (manifest.catalogs ?? [])
     .filter((entry) => canSearch(entry)
+      && (!request.sourceAddonId || addonOriginId(base) === request.sourceAddonId)
       && (request.type == null || request.type === 'all' || contentType(entry.type) === request.type))
     .map((entry) => ({ base, manifest, entry })))
   if (!entries.length) throw new CatalogConfigurationError('The enabled Stremio metadata add-ons do not declare searchable catalogs.')
@@ -418,7 +463,27 @@ async function search(request: CatalogSearchRequest): Promise<CatalogPage> {
     seen.add(key)
     return true
   })
-  return { media, page: request.page ?? 1, hasNextPage: pages.some((page) => page.length >= 100) }
+  return {
+    media: filterAndSortStremioMedia(media, request),
+    page: request.page ?? 1,
+    hasNextPage: pages.some((page) => page.length >= 100),
+  }
+}
+
+async function genres(): Promise<string[]> {
+  const sources = await manifests()
+  const values = sources.flatMap(({ manifest }) => (manifest.catalogs ?? []).flatMap((entry) => [
+    ...(entry.genres ?? []),
+    ...(entry.extra ?? []).filter((extra) => extra.name === 'genre').flatMap((extra) => extra.options ?? []),
+  ]))
+  return [...new Set(values)].sort((left, right) => left.localeCompare(right))
+}
+
+async function searchOptions() {
+  const sources = await manifests()
+  return {
+    sources: sources.map(({ base, manifest }) => ({ value: addonOriginId(base), label: manifest.name })),
+  }
 }
 
 async function detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null> {
@@ -473,5 +538,7 @@ export const stremioCatalog: CatalogProvider = {
   homeRows,
   home,
   search,
+  genres,
+  searchOptions,
   detail,
 }

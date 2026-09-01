@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest'
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
 const page = read('./CatalogSearchPage.svelte')
 const advanced = read('./TmdbAdvancedFilters.svelte')
+const stremioAdvanced = read('./StremioAdvancedFilters.svelte')
 const provider = read('../../catalog/providers/tmdb.ts')
+const stremioProvider = read('../../catalog/providers/stremio.ts')
 const jvmFilters = read('./JvmSourceFilters.svelte')
 
 describe('TMDB search filters', () => {
@@ -86,5 +88,38 @@ describe('JVM source filters', () => {
     for (const type of ['CheckBox', 'TriState', 'Select', 'Sort', 'Text', 'Group']) {
       expect(jvmFilters).toContain(`filter.type === '${type}'`)
     }
+  })
+})
+
+describe('Stremio search filters', () => {
+  it('reveals a provider-specific advanced panel without crowding the quick bar', () => {
+    expect(page).toContain('isTmdb || isStremio')
+    expect(page).toContain('<StremioAdvancedFilters')
+    expect(page).toContain('showAdvanced && isStremio')
+  })
+
+  it('round-trips runtime and add-on filters through URL and provider requests', () => {
+    for (const [state, param] of [
+      ['runtimeMin', 'runtimeMin'],
+      ['runtimeMax', 'runtimeMax'],
+      ['sourceAddonId', 'addon'],
+    ]) {
+      expect(page).toContain(`params.set('${param}'`)
+      expect(page).toContain(`${state},`)
+    }
+  })
+
+  it('offers source, rating, runtime, release, metadata, genre, and artwork controls', () => {
+    for (const label of [
+      'Metadata add-on', 'Rating range', 'Runtime', 'Release window', 'Original language',
+      'Country of origin', 'Exclude genres', 'Require poster artwork',
+    ]) expect(stremioAdvanced).toContain(label)
+  })
+
+  it('loads add-on and genre options and applies metadata filters in the provider', () => {
+    expect(stremioProvider).toContain('async function genres()')
+    expect(stremioProvider).toContain('async function searchOptions()')
+    expect(stremioProvider).toContain('filterAndSortStremioMedia(media, request)')
+    expect(stremioProvider).toContain('sourceAddonId')
   })
 })

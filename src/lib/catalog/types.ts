@@ -35,10 +35,15 @@ export interface CatalogAdvancedSearchFilters {
   /** Inclusive release/first-air date boundaries in YYYY-MM-DD form. */
   releaseDateFrom?: string
   releaseDateTo?: string
+  /** Inclusive runtime range in minutes. */
+  runtimeMin?: number
+  runtimeMax?: number
   /** Provider genre names to omit from results. */
   excludedGenres?: string[]
   /** Only return titles that have poster artwork. */
   withPoster?: boolean
+  /** Opaque configured add-on fingerprint for aggregated Stremio searches. */
+  sourceAddonId?: string
 }
 
 export interface CatalogSearchRequest extends CatalogAdvancedSearchFilters {
@@ -64,6 +69,7 @@ export interface CatalogFilterOption {
 export interface CatalogSearchOptions {
   languages?: CatalogFilterOption[]
   countries?: CatalogFilterOption[]
+  sources?: CatalogFilterOption[]
 }
 
 export interface CatalogHomeSection {

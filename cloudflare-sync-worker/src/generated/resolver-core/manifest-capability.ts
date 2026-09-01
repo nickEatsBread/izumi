@@ -15,6 +15,8 @@ export interface AddonCatalog {
   type: string
   id: string
   name: string
+  /** Legacy manifest field. Modern add-ons expose these as genre extra options. */
+  genres?: string[]
   extra?: AddonCatalogExtra[]
 }
 

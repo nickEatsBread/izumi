@@ -8,6 +8,7 @@
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import TmdbAdvancedFilters from './TmdbAdvancedFilters.svelte'
+  import StremioAdvancedFilters from './StremioAdvancedFilters.svelte'
   import JvmSourceFilters from './JvmSourceFilters.svelte'
   import { catalogProvider, type CatalogSelection } from '$lib/settings/catalog'
   import { loadCatalogProvider } from '$lib/catalog/registry'
@@ -44,8 +45,11 @@
   let country = $state(page.url.searchParams.get('country') ?? '')
   let releaseDateFrom = $state(page.url.searchParams.get('releaseFrom') ?? '')
   let releaseDateTo = $state(page.url.searchParams.get('releaseTo') ?? '')
+  let runtimeMin = $state<number | undefined>(Number(page.url.searchParams.get('runtimeMin')) || undefined)
+  let runtimeMax = $state<number | undefined>(Number(page.url.searchParams.get('runtimeMax')) || undefined)
   let excludedGenres = $state<string[]>((page.url.searchParams.get('excludeGenres') ?? '').split(',').filter(Boolean))
   let withPoster = $state(page.url.searchParams.get('withPoster') === '1')
+  let sourceAddonId = $state(page.url.searchParams.get('addon') ?? '')
   let watchProvider = $state<number | undefined>(Number(page.url.searchParams.get('watchProvider')) || undefined)
   let watchProviderName = $state(page.url.searchParams.get('watchProviderName') ?? '')
   let jvmSourceId = $state(page.url.searchParams.get('source') ?? '')
@@ -73,6 +77,7 @@
 
   const animeOnly = $derived(activeSelection === 'kitsu' || activeSelection === 'jvm')
   const isTmdb = $derived(activeSelection === 'tmdb')
+  const isStremio = $derived(activeSelection === 'stremio')
   const isJvm = $derived(activeSelection === 'jvm')
   const typeOptions = $derived(animeOnly
     ? [{ value: 'all', label: 'Anime' }]
@@ -84,7 +89,7 @@
       ])
   const sortOptions = $derived(activeSelection === 'jvm'
     ? [{ value: 'popular', label: 'Popular' }, { value: 'recent', label: 'Latest' }]
-    : activeSelection === 'tmdb'
+    : activeSelection === 'tmdb' || activeSelection === 'stremio'
     ? [
         { value: 'popular', label: 'Most popular' }, { value: 'rating', label: 'Highest rated' },
         { value: 'recent', label: 'Newest releases' }, { value: 'oldest', label: 'Oldest releases' },
@@ -106,13 +111,18 @@
     country: country || undefined,
     releaseDateFrom: releaseDateFrom || undefined,
     releaseDateTo: releaseDateTo || undefined,
+    runtimeMin,
+    runtimeMax,
     excludedGenres: excludedGenres.length ? excludedGenres : undefined,
     withPoster: withPoster || undefined,
+    sourceAddonId: sourceAddonId || undefined,
   })
   const advancedCount = $derived(
-    (minScore ? 1 : 0) + (maxScore ? 1 : 0) + (minVotes ? 1 : 0) +
+    (minScore ? 1 : 0) + (maxScore ? 1 : 0) + (isTmdb && minVotes ? 1 : 0) +
     (language ? 1 : 0) + (country ? 1 : 0) + (releaseDateFrom || releaseDateTo ? 1 : 0) +
-    (excludedGenres.length ? 1 : 0) + (withPoster ? 1 : 0),
+    (excludedGenres.length ? 1 : 0) + (withPoster ? 1 : 0) +
+    (isStremio && (runtimeMin != null || runtimeMax != null) ? 1 : 0) +
+    (isStremio && sourceAddonId ? 1 : 0),
   )
   const jvmSourceOptions = $derived([
     { value: '', label: 'All enabled sources' },
@@ -127,28 +137,35 @@
     if (selection === 'auto' || selection === 'anilist') return
     if ((selection === 'kitsu' || selection === 'jvm') && type !== 'all' && type !== 'anime') type = 'all'
     if (selection === 'jvm' && sort !== 'popular' && sort !== 'recent') sort = 'popular'
-    if (selection !== 'tmdb' && (sort === 'oldest' || sort === 'title')) sort = 'popular'
-    if (selection !== 'tmdb') {
+    if (selection !== 'tmdb' && selection !== 'stremio' && (sort === 'oldest' || sort === 'title')) sort = 'popular'
+    if (selection !== 'tmdb' && selection !== 'stremio') {
       minScore = undefined
       maxScore = undefined
-      minVotes = undefined
       language = ''
       country = ''
       releaseDateFrom = ''
       releaseDateTo = ''
       excludedGenres = []
       withPoster = false
+      showAdvanced = false
+    }
+    if (selection !== 'tmdb') {
+      minVotes = undefined
       watchProvider = undefined
       watchProviderName = ''
-      filterOptions = {}
-      showAdvanced = false
+    }
+    if (selection !== 'stremio') {
+      runtimeMin = undefined
+      runtimeMax = undefined
+      sourceAddonId = ''
     }
     const abort = new AbortController()
     availableGenres = []
+    filterOptions = {}
     void loadCatalogProvider(selection).then(async (provider) => {
       const [genres, options] = await Promise.allSettled([
         provider.genres?.(abort.signal) ?? [],
-        selection === 'tmdb' ? provider.searchOptions?.(abort.signal) ?? {} : {},
+        provider.searchOptions?.(abort.signal) ?? {},
       ])
       if (!abort.signal.aborted) {
         if (genres.status === 'fulfilled') availableGenres = genres.value
@@ -202,7 +219,8 @@
 
   const requestKey = $derived(JSON.stringify([
     activeSelection, settled, type, genre, year, sort, minScore, maxScore, minVotes, language, country,
-    releaseDateFrom, releaseDateTo, excludedGenres, withPoster, watchProvider,
+    releaseDateFrom, releaseDateTo, runtimeMin, runtimeMax, excludedGenres, withPoster,
+    sourceAddonId, watchProvider,
     jvmSourceId, jvmFilters, jvmFiltersLoading,
   ]))
   $effect(() => {
@@ -243,8 +261,11 @@
     if (country) params.set('country', country)
     if (releaseDateFrom) params.set('releaseFrom', releaseDateFrom)
     if (releaseDateTo) params.set('releaseTo', releaseDateTo)
+    if (isStremio && runtimeMin != null) params.set('runtimeMin', String(runtimeMin))
+    if (isStremio && runtimeMax != null) params.set('runtimeMax', String(runtimeMax))
     if (excludedGenres.length) params.set('excludeGenres', excludedGenres.join(','))
     if (withPoster) params.set('withPoster', '1')
+    if (isStremio && sourceAddonId) params.set('addon', sourceAddonId)
     if (isTmdb && watchProvider) params.set('watchProvider', String(watchProvider))
     if (isTmdb && watchProviderName) params.set('watchProviderName', watchProviderName)
     if (isJvm && jvmSourceId) params.set('source', jvmSourceId)
@@ -278,8 +299,11 @@
         country: country || undefined,
         releaseDateFrom: releaseDateFrom || undefined,
         releaseDateTo: releaseDateTo || undefined,
+        runtimeMin,
+        runtimeMax,
         excludedGenres: excludedGenres.length ? excludedGenres : undefined,
         withPoster: withPoster || undefined,
+        sourceAddonId: sourceAddonId || undefined,
         watchProvider,
         sourceId: isJvm ? jvmSourceId || undefined : undefined,
         jvmFilters: isJvm && jvmSourceId ? jvmFilters : undefined,
@@ -298,9 +322,9 @@
       }
       emptyPageStreak = added ? 0 : emptyPageStreak + 1
       hasNext = result.hasNextPage
-      // TMDB text search cannot accept Discover filters, and artwork is always checked locally. If
-      // local filtering empties a page, quietly inspect a few more rather than claiming there are no
-      // matches while later pages still exist. The cap prevents a narrow filter from crawling the API.
+      // Some provider filters are applied locally after catalog metadata arrives. If filtering
+      // empties a page, quietly inspect a few more rather than claiming there are no matches while
+      // later result pages still exist. The cap prevents a narrow filter from crawling the API.
       seekNextFilteredPage = advancedCount > 0 && !added && hasNext && emptyPageStreak < 4
       pageNumber++
     } catch (reason) {
@@ -325,8 +349,11 @@
     country = filters.country ?? ''
     releaseDateFrom = filters.releaseDateFrom ?? ''
     releaseDateTo = filters.releaseDateTo ?? ''
+    runtimeMin = filters.runtimeMin
+    runtimeMax = filters.runtimeMax
     excludedGenres = filters.excludedGenres ?? []
     withPoster = !!filters.withPoster
+    sourceAddonId = filters.sourceAddonId ?? ''
     showAdvanced = false
   }
 
@@ -339,6 +366,12 @@
   function jvmMetadata(item: Media): string {
     const sourceCount = 1 + (item.catalogAlternatives?.length ?? 0)
     return sourceCount > 1 ? `${sourceCount} sources` : item.catalog?.sourceName ?? ''
+  }
+
+  function stremioMetadata(item: Media): string {
+    const rating = item.averageScore != null ? `${(item.averageScore / 10).toFixed(1)} ★` : ''
+    const runtime = item.duration ? `${item.duration} min` : ''
+    return [item.startDate?.year, rating, runtime].filter(Boolean).join(' · ')
   }
 
   const loadAtEnd = () => { void loadMore() }
@@ -384,7 +417,7 @@
         <input bind:value={year} inputmode="numeric" maxlength="4" data-focusable placeholder="Year" aria-label="Release year"
           class="h-11 w-24 shrink-0 rounded-lg bg-input px-3 text-base" />
       {/if}
-      {#if isTmdb}
+      {#if isTmdb || isStremio}
         <button
           type="button"
           data-focusable
@@ -397,7 +430,7 @@
     </div>
   </div>
 
-  {#if isTmdb && (media.length || resultTotal != null)}
+  {#if (isTmdb || isStremio) && (media.length || resultTotal != null)}
     <p class="mb-3 text-xs font-semibold text-muted-foreground">
       {settled && advancedCount ? `${media.length} filtered title${media.length === 1 ? '' : 's'} loaded` : `${resultTotal?.toLocaleString() ?? media.length} title${resultTotal === 1 ? '' : 's'}`}
     </p>
@@ -411,7 +444,7 @@
       onEndReached={loadAtEnd}
     >
       {#snippet children(item)}
-        <SmallCard media={item} fill reserveTitleLines subline={isTmdb ? tmdbMetadata(item) : isJvm ? jvmMetadata(item) : undefined} />
+        <SmallCard media={item} fill reserveTitleLines subline={isTmdb ? tmdbMetadata(item) : isStremio ? stremioMetadata(item) : isJvm ? jvmMetadata(item) : undefined} />
       {/snippet}
     </VirtualGrid>
   {:else if !loading && !error}
@@ -441,6 +474,14 @@
     options={filterOptions}
     genres={availableGenres}
     queryActive={!!settled}
+    onApply={applyAdvanced}
+    onClose={() => (showAdvanced = false)}
+  />
+{:else if showAdvanced && isStremio}
+  <StremioAdvancedFilters
+    filters={advancedFilters}
+    options={filterOptions}
+    genres={availableGenres}
     onApply={applyAdvanced}
     onClose={() => (showAdvanced = false)}
   />

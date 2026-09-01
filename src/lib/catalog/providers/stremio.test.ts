@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   decodeStremioIdentity,
   encodeStremioIdentity,
+  filterAndSortStremioMedia,
   mapStremioMeta,
   stremioCatalogVariants,
   stremioHomeRowOptionsForSources,
@@ -94,6 +95,51 @@ describe('Stremio catalog identity', () => {
       releaseDate: '2026-05-15',
       genres: ['Drama'],
     })
+  })
+
+  it('applies rich metadata filters with inclusive boundaries', () => {
+    const matching = mapStremioMeta({
+      id: 'tt0000001', type: 'movie', name: 'Matching title', poster: 'poster.jpg',
+      released: '2024-05-14T00:00:00Z', imdbRating: '8.2', runtime: '1h 42m',
+      genres: ['Drama', 'Mystery'], country: 'South Korea', language: 'Korean',
+    }, 'https://first.test')!
+    const excluded = mapStremioMeta({
+      id: 'tt0000002', type: 'movie', name: 'Excluded title', poster: 'poster.jpg',
+      released: '2024-05-14T00:00:00Z', imdbRating: '8.2', runtime: '102 min',
+      genres: ['Drama', 'Horror'], country: 'South Korea', language: 'Korean',
+    }, 'https://first.test')!
+
+    expect(filterAndSortStremioMedia([matching, excluded], {
+      minScore: 82,
+      maxScore: 82,
+      runtimeMin: 102,
+      runtimeMax: 102,
+      releaseDateFrom: '2024-05-14',
+      releaseDateTo: '2024-05-14',
+      language: 'kore',
+      country: 'south korea',
+      excludedGenres: ['Horror'],
+      withPoster: true,
+    })).toEqual([matching])
+  })
+
+  it('filters to one add-on and supports rating, date, and title ordering', () => {
+    const older = mapStremioMeta({
+      id: 'tt0000010', type: 'movie', name: 'Zulu', released: '2010-01-01', imdbRating: '9.0',
+    }, 'https://first.test')!
+    const newer = mapStremioMeta({
+      id: 'tt0000011', type: 'movie', name: 'Alpha', released: '2024-01-01', imdbRating: '7.0',
+    }, 'https://first.test')!
+    const otherSource = mapStremioMeta({
+      id: 'tt0000012', type: 'movie', name: 'Other', released: '2026-01-01', imdbRating: '10',
+    }, 'https://second.test')!
+    const sourceAddonId = older.catalog?.addonId
+
+    expect(filterAndSortStremioMedia([newer, otherSource, older], { sourceAddonId, sort: 'title' }))
+      .toEqual([newer, older])
+    expect(filterAndSortStremioMedia([newer, older], { sort: 'rating' })).toEqual([older, newer])
+    expect(filterAndSortStremioMedia([older, newer], { sort: 'recent' })).toEqual([newer, older])
+    expect(filterAndSortStremioMedia([newer, older], { sort: 'oldest' })).toEqual([older, newer])
   })
 
   it('accepts catalog-only manifests used by Trakt and MDBList', () => {
