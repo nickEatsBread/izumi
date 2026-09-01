@@ -22,7 +22,9 @@ $Target = "aarch64"
 $RequiredAbi = "arm64-v8a"
 $CargoFeature = "android-mpv"
 $TauriConfig = "src-tauri/tauri.android-mpv.conf.json"
-$PackageId = "com.nicho.izumi"
+# The generated local Android project intentionally uses the debug application id so installs
+# preserve the developer build's existing pairing, settings, and playback data.
+$PackageId = "com.nicho.izumi.debug"
 $KeyAlias = "androiddebugkey"
 $KeyPassword = "android"
 
