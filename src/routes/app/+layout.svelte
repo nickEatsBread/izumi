@@ -56,7 +56,7 @@
   import { initAutoDownloads } from '$lib/downloads/rules'
   import { initWatchTogether } from '$lib/watch-together/client'
   import { initAiringNotifications } from '$lib/notifications/airing'
-  import { deepLinkNotice, initDeepLinks } from '$lib/deep-links'
+  import { deepLinkNotice, initDeepLinks, showDeepLinkNotice } from '$lib/deep-links'
   import { initTorrentVpnToasts, torrentVpnNotice } from '$lib/player/direct-torrent'
   import { startUpdateChecks } from '$lib/updater'
   import { startExtensionUpdateChecks, extensionUpdateNotice } from '$lib/extensions/auto-update'
@@ -205,7 +205,9 @@
     const stopCompanions = initCompanionConnections(
       () => createCompanionSnapshot(companionCatalogClient),
       (media: CompanionMedia, device) => {
-        deepLinkNotice.set('Your TV requested this title. Choose a source to start playback there.')
+        showDeepLinkNotice(media.playback?.selection === 'manual'
+          ? 'Your TV requested a different source. Choose one to continue there.'
+          : 'Finding the best source for your TV…')
         void goto(acceptCompanionPlayRequest(media, device))
       },
       (query: string) => createCompanionSearch(companionCatalogClient, query),

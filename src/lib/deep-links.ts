@@ -9,7 +9,7 @@ import { resolveDeepLinks } from '$lib/deep-link-target'
 export const deepLinkNotice = writable('')
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
 
-function notify(text: string) {
+export function showDeepLinkNotice(text: string) {
   deepLinkNotice.set(text)
   clearTimeout(noticeTimer)
   noticeTimer = setTimeout(() => deepLinkNotice.set(''), 4000)
@@ -19,7 +19,7 @@ async function openUrls(urls: string[] | null) {
   const outcome = resolveDeepLinks(urls)
   if (!outcome) return
   if (outcome.path) await goto(outcome.path)
-  if (outcome.notice) notify(outcome.notice)
+  if (outcome.notice) showDeepLinkNotice(outcome.notice)
 }
 
 export async function initDeepLinks(): Promise<() => void> {
