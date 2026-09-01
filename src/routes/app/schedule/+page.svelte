@@ -6,7 +6,8 @@
   import ScheduleGrid from '$lib/components/schedule/ScheduleGrid.svelte'
   import PersonalSchedule from '$lib/components/schedule/PersonalSchedule.svelte'
   import WatchlistView from '$lib/components/schedule/WatchlistView.svelte'
-  import { scheduleDefaultTab, scheduleStickyHeader, type ScheduleTab } from '$lib/settings/ui'
+  import { resolveScheduleDefaultTab, scheduleDefaultTab, scheduleStickyHeader, type ScheduleTab } from '$lib/settings/ui'
+  import { catalogScreen } from '$lib/settings/catalog'
   import { heroMedia } from '$lib/stores/hero'
   import { offlineMode } from '$lib/stores/offline'
   import { gameMode } from '$lib/player/session'
@@ -22,8 +23,16 @@
   // Offset in whole weeks from the current week (0 = this week).
   let offset = $state(0)
 
-  // Initial tab comes from the setting; switching here is per-visit and never writes back.
-  let tab = $state<ScheduleTab>(get(scheduleDefaultTab))
+  // Movie/TV catalog screens open their matching calendar. Every other catalog honours the saved
+  // preference; switching a tab here remains per-visit and never writes that preference back.
+  let tab = $state<ScheduleTab>(resolveScheduleDefaultTab(get(scheduleDefaultTab), get(catalogScreen)))
+  let previousCatalogScreen = get(catalogScreen)
+  $effect(() => {
+    const current = $catalogScreen
+    if (current === previousCatalogScreen) return
+    previousCatalogScreen = current
+    if (current === 'tmdb' || current === 'stremio') tab = 'personal'
+  })
 
   // Ticking base so the week rolls over if the page is left open across a boundary
   // (Deck parked on the schedule overnight) — a one-shot weekRange would pin last week.

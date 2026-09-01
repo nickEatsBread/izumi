@@ -186,6 +186,7 @@
     </div>
 
     <p class="mb-1 text-sm font-bold">{m.settings_schedule_default_tab()}</p>
+    <p class="mb-2 text-xs text-muted-foreground">TMDB and Stremio automatically open Movies & TV. This choice applies to other catalogs.</p>
     <div class="mb-4 grid gap-2 sm:grid-cols-3">
       {#each scheduleTabs as opt (opt.value)}
         <button

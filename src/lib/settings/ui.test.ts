@@ -25,6 +25,7 @@ import {
   sceneBookmarksEnabled,
   autoWatchlistEnabled,
   autoWatchlistEpisodes,
+  resolveScheduleDefaultTab,
 } from './ui'
 
 describe('source autoplay defaults', () => {
@@ -57,6 +58,19 @@ describe('episode list defaults', () => {
   it('keeps the episode queue and scene bookmarks opt-in', () => {
     expect(get(episodeQueueEnabled)).toBe(false)
     expect(get(sceneBookmarksEnabled)).toBe(false)
+  })
+})
+
+describe('provider-aware schedule default', () => {
+  it('opens the Movies & TV calendar for TMDB and Stremio', () => {
+    expect(resolveScheduleDefaultTab('schedule', 'tmdb')).toBe('personal')
+    expect(resolveScheduleDefaultTab('watchlist', 'stremio')).toBe('personal')
+  })
+
+  it('honours the saved default for anime and merged catalogs', () => {
+    expect(resolveScheduleDefaultTab('watchlist', 'auto')).toBe('watchlist')
+    expect(resolveScheduleDefaultTab('personal', 'merged')).toBe('personal')
+    expect(resolveScheduleDefaultTab('malformed', 'anilist')).toBe('schedule')
   })
 })
 

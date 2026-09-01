@@ -97,6 +97,11 @@ describe('schedule page header', () => {
     expect(page).toContain('<PersonalSchedule {start} {end} {headerOffset} />')
   })
 
+  it('opens Movies & TV when TMDB or Stremio becomes the active catalog', () => {
+    expect(page).toContain('resolveScheduleDefaultTab(get(scheduleDefaultTab), get(catalogScreen))')
+    expect(page).toContain("if (current === 'tmdb' || current === 'stremio') tab = 'personal'")
+  })
+
   it('keeps both the normal and sticky schedule header below the degraded alert', () => {
     expect(page).toContain("$anilistDegraded ? 'pt-[3rem] sm:pt-[4.25rem]' : ''")
     expect(page).toContain("$anilistDegraded ? 'top-[3.75rem]' : 'top-8'")

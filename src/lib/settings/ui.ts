@@ -336,6 +336,13 @@ export const scheduleStickyHeader = persisted<boolean>('schedule-sticky-header',
  * or the viewer's watching list ordered by aired-but-unwatched episodes. */
 export type ScheduleTab = 'schedule' | 'personal' | 'watchlist'
 export const scheduleDefaultTab = persisted<ScheduleTab>('schedule-default-tab', 'schedule')
+/** TMDB and Stremio are movie/TV catalogs, so their Schedule destination should follow the same
+ * mental model. Other catalog screens still honour the viewer's explicit default-tab preference. */
+export function resolveScheduleDefaultTab(defaultTab: unknown, catalogScreen: unknown): ScheduleTab {
+  if (catalogScreen === 'tmdb' || catalogScreen === 'stremio') return 'personal'
+  if (defaultTab === 'personal' || defaultTab === 'watchlist') return defaultTab
+  return 'schedule'
+}
 /** Show the "Next up" strip at the top of the schedule. Off means the grid starts immediately. */
 export const scheduleShowNextUp = persisted<boolean>('schedule-show-next-up', true)
 
