@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { get, writable } from 'svelte/store'
-import { castSubtitleFormat, type CastTrack } from './android-cast'
+import { castSubtitleFormat, castSubtitleTitle, type CastTrack } from './android-cast'
 import {
   controlTizenReceiver,
   getTizenReceiverStatus,
@@ -167,10 +167,10 @@ export function prepareDesktopCast(
       forceRelay: options.forceRelay ?? false,
       contentType: options.contentType,
       subtitleDelivery: options.subtitleDelivery ?? 'web',
-      subtitles: subtitles.map((subtitle) => ({
+      subtitles: subtitles.map((subtitle, index) => ({
         url: subtitle.url,
         lang: subtitle.lang,
-        title: subtitle.title,
+        title: castSubtitleTitle(subtitle, index),
         format: castSubtitleFormat(subtitle.url),
         headers: subtitle.headers ?? {},
       })),

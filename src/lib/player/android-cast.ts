@@ -1,3 +1,5 @@
+import { distinctiveTitle, langName } from './track-label'
+
 export interface CastSource {
   url?: string | null
   headers?: Record<string, string> | null
@@ -32,6 +34,22 @@ export interface CastTrackPreference {
 export interface CastTrackPreferences {
   audio?: CastTrackPreference
   subtitle?: CastTrackPreference
+}
+
+export interface CastSubtitleLabelSource {
+  lang?: string
+  title?: string
+}
+
+/** Never expose provider placeholders such as "Subtitles" as the whole TV track label. */
+export function castSubtitleTitle(
+  subtitle: CastSubtitleLabelSource,
+  index: number,
+): string {
+  const language = langName(subtitle.lang)
+  const title = distinctiveTitle(subtitle.title, subtitle.lang)
+  if (language && title) return `${language} · ${title}`
+  return language ?? title ?? `Subtitle ${index + 1}`
 }
 
 const languageKey = (value: string | undefined) => {

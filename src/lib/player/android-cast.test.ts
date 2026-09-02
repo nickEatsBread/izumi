@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { castSourceDecision, castSubtitleFormat, castTrackPreferences, tvCastSource } from './android-cast'
+import { castSourceDecision, castSubtitleFormat, castSubtitleTitle, castTrackPreferences, tvCastSource } from './android-cast'
 
 describe('Android Cast direct-play policy', () => {
+  it('replaces generic subtitle placeholders with useful TV labels', () => {
+    expect(castSubtitleTitle({ lang: 'eng', title: 'Subtitles' }, 0)).toBe('English')
+    expect(castSubtitleTitle({ lang: 'ja-JP', title: 'Full Subtitles' }, 1)).toBe('Japanese')
+    expect(castSubtitleTitle({ lang: 'eng', title: 'Signs & Songs' }, 2)).toBe('English · Signs & Songs')
+    expect(castSubtitleTitle({ title: 'Subtitles' }, 3)).toBe('Subtitle 4')
+  })
+
   it('accepts extensionless HLS identified by the resolver', () => {
     expect(castSourceDecision({
       url: 'http://127.0.0.1:42123/episode/manifest?id=2',

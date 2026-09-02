@@ -87,7 +87,7 @@
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { candidateKey, candidateTitle, providerBadge, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
   import { stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
-  import { castSourceDecision, castSubtitleFormat, castTrackPreferences, tvCastSource } from '$lib/player/android-cast'
+  import { castSourceDecision, castSubtitleFormat, castSubtitleTitle, castTrackPreferences, tvCastSource } from '$lib/player/android-cast'
   import { companionMedia } from '$lib/companion/protocol'
   import {
     controlTizenReceiver,
@@ -1322,10 +1322,10 @@
           subtitleDelivery: receiver ? 'tizenReceiver' : 'web',
           subtitles: (receiver
             ? (subtitle ? [subtitle, ...availableSubtitles.filter((item) => item.url !== subtitle.url)] : availableSubtitles).slice(0, 8)
-            : subtitle ? [subtitle] : []).map((item) => ({
+            : subtitle ? [subtitle] : []).map((item, index) => ({
               url: item.url,
               lang: item.lang,
-              title: item.title,
+              title: castSubtitleTitle(item, index),
               format: castSubtitleFormat(item.url),
               headers: item.headers ?? {},
             })),

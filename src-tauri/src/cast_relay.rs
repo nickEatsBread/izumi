@@ -331,14 +331,12 @@ fn relay_plan(request: &CastPrepareRequest, media: &Url) -> Result<(bool, Vec<bo
         .subtitles
         .iter()
         .map(|subtitle| {
-            let url = parse_http_url(&subtitle.url)?;
-            // Izumi's TV client can fetch ordinary remote sidecars itself. A local-only URL or
-            // provider-specific request headers are the only reasons to bridge one through the
-            // source device. Other receiver types retain their format-conversion path.
-            Ok(!izumi_receiver
-                || is_loopback(&url)
-                || !request.headers.is_empty()
-                || !subtitle.headers.is_empty())
+            parse_http_url(&subtitle.url)?;
+            // The Tizen client renders sidecars in its Web application. Even a publicly reachable
+            // subtitle URL is unusable there when the provider omits CORS headers, which is common
+            // for addon and debrid captions. Other delivery modes already require the relay for
+            // format conversion, so every validated sidecar gets one stable, CORS-enabled URL.
+            Ok(true)
         })
         .collect::<Result<Vec<_>, String>>()?;
     let hls = request.manifest.as_deref() == Some("hls")
@@ -559,7 +557,7 @@ fn random_token() -> Result<String, String> {
     Ok(data_encoding::HEXLOWER.encode(&bytes))
 }
 
-async fn lan_ipv4() -> Result<Ipv4Addr, String> {
+pub(crate) async fn lan_ipv4() -> Result<Ipv4Addr, String> {
     tokio::task::spawn_blocking(select_lan_ipv4)
         .await
         .map_err(|error| format!("Could not inspect the local network: {error}"))?
@@ -1096,7 +1094,7 @@ mod tests {
     }
 
     #[test]
-    fn passes_ordinary_tizen_media_and_subtitles_directly_to_the_tv() {
+    fn bridges_tizen_subtitles_for_cors_while_leaving_media_direct() {
         let request = CastPrepareRequest {
             url: "https://cdn.example/master.m3u8".into(),
             headers: HashMap::new(),
@@ -1114,12 +1112,12 @@ mod tests {
         };
         assert_eq!(
             relay_plan(&request, &Url::parse(&request.url).unwrap()).unwrap(),
-            (false, vec![false])
+            (false, vec![true])
         );
     }
 
     #[test]
-    fn bridges_only_tizen_resources_the_tv_cannot_fetch_directly() {
+    fn bridges_tizen_subtitles_with_headers_and_loopback_media() {
         let request = CastPrepareRequest {
             url: "https://cdn.example/video.mp4".into(),
             headers: HashMap::new(),

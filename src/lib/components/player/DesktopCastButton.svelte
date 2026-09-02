@@ -142,7 +142,11 @@
         ? compatibleSubtitles.findIndex((candidate) => candidate.url === selectedSubtitle.url)
         : -1
       const activeTrackIds = selectedIndex >= 0 ? [selectedIndex + 1] : []
-      const prepared = await prepareDesktopCast(castSource, compatibleSubtitles, {
+      const prepared = await prepareDesktopCast({
+        url: decision.url,
+        headers: castSource.headers ?? undefined,
+        manifest: castSource.manifest ?? undefined,
+      }, compatibleSubtitles, {
         // Samsung's 2018 AllShare player fails on otherwise valid modern HTTPS CDN endpoints.
         // Give the DLNA fallback a stable LAN HTTP URL. Izumi Companion receives the original
         // source and streams it on the TV; cast_prepare_source still bridges individual resources
