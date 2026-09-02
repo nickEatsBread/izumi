@@ -17,6 +17,7 @@ export interface SamsungChannelPeer {
 
 type SamsungChannelHandler = (data: unknown, from?: SamsungChannelPeer) => void
 type SamsungConnectionHandler = (reconnected: boolean) => void
+type SamsungReceiverHandler = () => void
 
 type ChannelMessage = {
   event?: string
@@ -30,6 +31,7 @@ export class SamsungSmartViewChannel {
   private peers = new Map<string, SamsungChannelPeer>()
   private receiverWaiters = new Set<(available: boolean) => void>()
   private connectionHandlers = new Set<SamsungConnectionHandler>()
+  private receiverHandlers = new Set<SamsungReceiverHandler>()
   private connectPromise: Promise<void> | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private reconnectAttempts = 0
@@ -162,6 +164,11 @@ export class SamsungSmartViewChannel {
           if (message.event === 'ms.channel.clientConnect' && typeof message.data?.id === 'string') {
             this.peers.set(message.data.id, message.data)
             this.notifyReceiverWaiters(true)
+            if (message.data.isHost && message.data.id !== this.clientId) {
+              for (const handler of [...this.receiverHandlers]) {
+                try { handler() } catch { /* one observer must not break the channel */ }
+              }
+            }
             return
           }
           if (message.event === 'ms.channel.clientDisconnect' && typeof message.data?.id === 'string') {
@@ -229,6 +236,13 @@ export class SamsungSmartViewChannel {
   onConnected(handler: SamsungConnectionHandler): () => void {
     this.connectionHandlers.add(handler)
     return () => this.connectionHandlers.delete(handler)
+  }
+
+  /** Fires when the TV application rejoins an otherwise healthy Samsung channel. The sender
+   * socket does not reconnect in this case, so onConnected alone cannot restore its session. */
+  onReceiverConnected(handler: SamsungReceiverHandler): () => void {
+    this.receiverHandlers.add(handler)
+    return () => this.receiverHandlers.delete(handler)
   }
 
   publish(event: string, data: unknown, target: string | string[] = 'broadcast') {

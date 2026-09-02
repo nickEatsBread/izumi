@@ -81,6 +81,16 @@ describe('Tizen receiver sender', () => {
     })
   })
 
+  it('keeps the native relay alive while either cast playback or a trailer owns it', async () => {
+    await setTizenReceiverRelayForeground(true, 'Episode 1')
+    await setTizenReceiverRelayForeground(true, 'TV trailer', 'trailer')
+    await setTizenReceiverRelayForeground(false, undefined, 'trailer')
+    expect(tauri.invoke).toHaveBeenLastCalledWith('plugin:extplayer|companion_cast_foreground', {
+      payload: { active: true, title: 'Episode 1' },
+    })
+    await setTizenReceiverRelayForeground(false)
+  })
+
   it('waits for Samsung to announce the open receiver after sender connection', async () => {
     vi.stubGlobal('WebSocket', FakeWebSocket)
     const result = probeTizenReceiver(device)
@@ -307,6 +317,77 @@ describe('Tizen receiver sender', () => {
       },
     })
     expect(getTizenReceiverStatus().positionSeconds).toBe(91)
+  })
+
+  it('reattaches when only the TV app rejoins the existing Samsung channel', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const started = startTizenReceiverCast(device, {
+      url: 'https://media.example/video.mp4',
+      contentType: 'video/mp4',
+      positionSeconds: 31,
+      subtitles: [],
+      activeTrackIds: [],
+    })
+    const socket = await nextSocket()
+    socket.open()
+    connect(socket)
+    await vi.waitFor(() => expect(socket.sent.some((value) => JSON.parse(value).params?.event === 'izumi.load')).toBe(true))
+    const load = socket.sent.map((value) => JSON.parse(value))
+      .find((value) => value.params?.event === 'izumi.load')
+    socket.receive({
+      event: 'izumi.status',
+      from: 'receiver-one',
+      data: { sessionId: load.params.data.sessionId, state: 'playing', positionSeconds: 31 },
+    })
+    await started
+
+    socket.receive({ event: 'ms.channel.clientDisconnect', data: { id: 'receiver-one' } })
+    socket.receive({ event: 'ms.channel.clientConnect', data: { id: 'receiver-two', isHost: true } })
+    await vi.waitFor(() => expect(socket.sent.some((value) => {
+      const params = JSON.parse(value).params
+      return params?.event === 'izumi.resume' && params.to === 'receiver-two'
+    })).toBe(true))
+  })
+
+  it('keeps the relay alive through a buffering error and releases it only when playback is idle', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const started = startTizenReceiverCast(device, {
+      url: 'http://192.168.1.20:44200/media',
+      contentType: 'video/mp4',
+      positionSeconds: 0,
+      subtitles: [],
+      activeTrackIds: [],
+    })
+    const socket = await nextSocket()
+    socket.open()
+    connect(socket)
+    await vi.waitFor(() => expect(socket.sent.some((value) => JSON.parse(value).params?.event === 'izumi.load')).toBe(true))
+    const load = socket.sent.map((value) => JSON.parse(value))
+      .find((value) => value.params?.event === 'izumi.load')
+    socket.receive({
+      event: 'izumi.status',
+      from: 'receiver-one',
+      data: { sessionId: load.params.data.sessionId, state: 'playing', positionSeconds: 0 },
+    })
+    await started
+    tauri.invoke.mockClear()
+
+    socket.receive({
+      event: 'izumi.status',
+      from: 'receiver-one',
+      data: { sessionId: load.params.data.sessionId, state: 'buffering', positionSeconds: 18, error: 'temporary network error' },
+    })
+    await Promise.resolve()
+    expect(tauri.invoke).not.toHaveBeenCalled()
+
+    socket.receive({
+      event: 'izumi.status',
+      from: 'receiver-one',
+      data: { sessionId: load.params.data.sessionId, state: 'idle', positionSeconds: 18 },
+    })
+    await vi.waitFor(() => expect(tauri.invoke).toHaveBeenCalledWith('plugin:extplayer|companion_cast_foreground', {
+      payload: { active: false, title: undefined },
+    }))
   })
 
   it('stops an old item without exiting the TV app when replacing it', async () => {

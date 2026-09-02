@@ -77,20 +77,32 @@ type ActiveReceiver = {
   status: TizenReceiverStatus
   pendingSeek: { positionSeconds: number; expiresAt: number } | null
   stopConnectionListener: (() => void) | null
+  stopReceiverListener: (() => void) | null
 }
 
 let active: ActiveReceiver | null = null
 const statusListeners = new Set<(status: TizenReceiverStatus) => void>()
+const relayForegroundOwners = new Map<string, string | undefined>()
 
 /**
  * Android may freeze the Rust HTTP relay after Izumi leaves the foreground. Keep it alive only
  * while a TV is consuming a phone-hosted URL. The desktop plugin deliberately implements this
  * command as a no-op.
  */
-export async function setTizenReceiverRelayForeground(active: boolean, title?: string): Promise<void> {
+export async function setTizenReceiverRelayForeground(
+  active: boolean,
+  title?: string,
+  owner = 'cast',
+): Promise<void> {
+  if (active) relayForegroundOwners.set(owner, title)
+  else relayForegroundOwners.delete(owner)
+  const activeTitles = [...relayForegroundOwners.values()].filter((value): value is string => Boolean(value))
   try {
     await invoke('plugin:extplayer|companion_cast_foreground', {
-      payload: { active, title },
+      payload: {
+        active: relayForegroundOwners.size > 0,
+        title: relayForegroundOwners.size ? activeTitles[activeTitles.length - 1] : undefined,
+      },
     })
   } catch {
     // Browser previews and older app builds do not expose the native lifecycle command.
@@ -176,6 +188,7 @@ export async function startTizenReceiverCast(
     status: confirmed,
     pendingSeek: null,
     stopConnectionListener: null,
+    stopReceiverListener: null,
   }
   channel.on('izumi.status', (value) => {
     const status = value as Partial<TizenReceiverStatus> | null
@@ -191,11 +204,14 @@ export async function startTizenReceiverCast(
       }
       receiver.status = next
       emitStatus(next)
-      if (next.error || next.state === 'idle') void setTizenReceiverRelayForeground(false)
+      // A buffering error can be followed by AVPlay's in-place retry. Stopping Android's relay
+      // here severs the media/subtitle URL during that recovery and makes the TV appear to have
+      // disconnected. The explicit idle/stop path owns relay teardown.
+      if (next.state === 'idle') void setTizenReceiverRelayForeground(false)
     }
   })
-  receiver.stopConnectionListener = channel.onConnected((reconnected) => {
-    if (!reconnected || active !== receiver) return
+  const resume = () => {
+    if (active !== receiver) return
     void channel.waitForReceiver(12_000).then((available) => {
       if (!available || active !== receiver || !channel.connected) return
       channel.publish('izumi.resume', {
@@ -203,7 +219,11 @@ export async function startTizenReceiverCast(
         senderId: channel.clientId,
       }, 'host')
     }).catch(() => {})
+  }
+  receiver.stopConnectionListener = channel.onConnected((reconnected) => {
+    if (reconnected) resume()
   })
+  receiver.stopReceiverListener = channel.onReceiverConnected(resume)
   active = receiver
   emitStatus(confirmed)
   return confirmed
@@ -283,6 +303,7 @@ export async function stopTizenReceiverCast(exitTvApp = true): Promise<void> {
   }
   active = null
   receiver.stopConnectionListener?.()
+  receiver.stopReceiverListener?.()
   try {
     // If the user presses Stop during a brief channel interruption, make one bounded attempt to
     // deliver their explicit intent instead of silently abandoning the controller session.

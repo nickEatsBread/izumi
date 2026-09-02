@@ -77,6 +77,26 @@ describe('Samsung Smart View channel', () => {
     await expect(receiver).resolves.toBe(true)
   })
 
+  it('notifies session owners when the TV app rejoins without reconnecting the sender socket', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const channel = new SamsungSmartViewChannel('192.168.1.40', { name: 'Desktop' })
+    const receiverConnections = vi.fn()
+    channel.onReceiverConnected(receiverConnections)
+    const connected = channel.connect()
+    const socket = FakeWebSocket.instances[0]
+    socket.receive({
+      event: 'ms.channel.connect',
+      data: { id: 'sender', clients: [{ id: 'tv-one', isHost: true }, { id: 'sender' }] },
+    })
+    await connected
+    expect(receiverConnections).not.toHaveBeenCalled()
+
+    socket.receive({ event: 'ms.channel.clientDisconnect', data: { id: 'tv-one' } })
+    socket.receive({ event: 'ms.channel.clientConnect', data: { id: 'tv-two', isHost: true } })
+    expect(receiverConnections).toHaveBeenCalledTimes(1)
+    channel.disconnect()
+  })
+
   it('asks Samsung to launch an installed application before opening its channel', async () => {
     vi.stubGlobal('WebSocket', FakeWebSocket)
     const channel = new SamsungSmartViewChannel(
