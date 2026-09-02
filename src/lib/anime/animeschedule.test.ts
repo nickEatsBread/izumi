@@ -579,5 +579,60 @@ describe('lookup', () => {
     )
     expect([...map.keys()]).toEqual([31])
     expect(map.get(31)?.route).toBe('op-31')
+    expect(mocks.phttp).toHaveBeenCalledTimes(2) // one exact batch, one fallback for the missing id
+    const batchUrl = new URL(String(mocks.phttp.mock.calls[0][0]))
+    expect(batchUrl.searchParams.get('mt')).toBe('any')
+    expect(batchUrl.searchParams.getAll('anilist-ids')).toEqual(['31', '32'])
+    expect(batchUrl.searchParams.getAll('anilist-ids')).not.toContain('33')
+    expect(mocks.phttp.mock.calls[1][0]).toContain('?q=Nothing%20Here')
+  })
+
+  it('loads 19 exact ids in two requests instead of 19', async () => {
+    const ids = Array.from({ length: 19 }, (_, index) => 1200 + index)
+    mocks.phttp.mockImplementation(async (input: string) => {
+      const requested = new URL(String(input)).searchParams.getAll('anilist-ids').map(Number)
+      return page(requested.map((id) => linked(id, `op-${id}`)))
+    })
+
+    const map = await getScheduleInfoMany(ids.map((id) => ({ id, titles: [`Title ${id}`] })))
+
+    expect(map.size).toBe(19)
+    expect(mocks.phttp).toHaveBeenCalledTimes(2)
+    const urls = mocks.phttp.mock.calls.map((call) => new URL(String(call[0])))
+    expect(urls.map((url) => url.searchParams.getAll('anilist-ids').length)).toEqual([18, 1])
+    expect(urls.every((url) => url.searchParams.get('mt') === 'any')).toBe(true)
+  })
+
+  it('uses persistent exact-id payloads before building a network batch', async () => {
+    store.set('animeschedule-route-1225', stamped('op-1225'))
+    store.set('animeschedule-anime-op-1225', stamped(linked(1225, 'op-1225')))
+
+    expect((await getScheduleInfoMany([{ id: 1225, titles: ['Cached'] }])).get(1225)?.route).toBe('op-1225')
+    expect(mocks.phttp).not.toHaveBeenCalled()
+  })
+
+  it('refreshes a known unlinked route directly when its payload has expired', async () => {
+    store.set('animeschedule-route-1226', stamped('op-1226'))
+    store.set('animeschedule-anime-op-1226', stamped(linked(1226, 'op-1226'), 7 * 3600e3))
+    mocks.phttp
+      .mockResolvedValueOnce(page([]))
+      .mockResolvedValueOnce(detail(linked(1226, 'op-1226')))
+
+    expect((await getScheduleInfoMany([{ id: 1226, titles: ['Cached'] }])).get(1226)?.route).toBe('op-1226')
+    expect(mocks.phttp).toHaveBeenCalledTimes(2)
+    expect(mocks.phttp.mock.calls[1][0]).toContain('/anime/op-1226')
+    expect(mocks.phttp.mock.calls[1][0]).not.toContain('?q=')
+  })
+
+  it('does not fan a failed batch out into title requests and retries later', async () => {
+    const items = [1230, 1231].map((id) => ({ id, titles: [`Title ${id}`] }))
+    mocks.phttp.mockResolvedValueOnce({ ok: false, status: 429, json: async () => ({}) })
+
+    expect(await getScheduleInfoMany(items)).toEqual(new Map())
+    expect(mocks.phttp).toHaveBeenCalledTimes(1)
+
+    mocks.phttp.mockResolvedValueOnce(page(items.map(({ id }) => linked(id, `op-${id}`))))
+    expect((await getScheduleInfoMany(items)).size).toBe(2)
+    expect(mocks.phttp).toHaveBeenCalledTimes(2)
   })
 })

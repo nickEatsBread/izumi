@@ -464,6 +464,12 @@ const SEARCH_PAGES = 2
 
 interface SearchPage { totalAmount?: number; anime?: RawAnime[] }
 
+// `/anime` returns at most 18 entries per page. Supplying repeated `anilist-ids` with `mt=any`
+// lets one response carry 18 exact records, so the schedule's normal 24-title overlay costs at
+// most two requests instead of one request per title.
+const ANIME_BATCH_SIZE = 18
+const exactBatchInflight = new Map<string, Promise<Map<number, RawAnime> | undefined>>()
+
 /** Exact lookup through AnimeSchedule's documented AniList-id filter. `undefined` means the
  * request failed and should not trigger more requests to the same unhealthy host; `null` means
  * the API answered but has no linked entry, so the legacy title lookup may still recover one. */
@@ -475,6 +481,37 @@ async function animeByAniListId(anilistId: number): Promise<RawAnime | null | un
     const body = ((await r.json()) as SearchPage | null) ?? {}
     return (body.anime ?? []).find((entry) => entry.route && anilistIdOf(entry) === anilistId) ?? null
   } catch { return undefined }
+}
+
+/** Exact multi-id lookup. An empty map is an authoritative answer; `undefined` is a retryable
+ * transport/API failure and must not fan out into many title searches against the same host. */
+function animeByAniListIds(anilistIds: number[]): Promise<Map<number, RawAnime> | undefined> {
+  const ids = [...new Set(anilistIds)].slice(0, ANIME_BATCH_SIZE)
+  if (!ids.length) return Promise.resolve(new Map())
+  const key = [...ids].sort((a, b) => a - b).join(',')
+  const running = exactBatchInflight.get(key)
+  if (running) return running
+
+  const pending = (async () => {
+    const url = new URL(API)
+    url.searchParams.set('mt', 'any')
+    for (const id of ids) url.searchParams.append('anilist-ids', String(id))
+    try {
+      const r = await phttp(url.toString(), { timeoutMs: TIMEOUT_MS })
+      if (r.status === 404) return new Map<number, RawAnime>()
+      if (!r.ok) return undefined
+      const body = ((await r.json()) as SearchPage | null) ?? {}
+      const wanted = new Set(ids)
+      const found = new Map<number, RawAnime>()
+      for (const raw of body.anime ?? []) {
+        const id = anilistIdOf(raw)
+        if (raw.route && id != null && wanted.has(id)) found.set(id, raw)
+      }
+      return found
+    } catch { return undefined }
+  })().finally(() => exactBatchInflight.delete(key))
+  exactBatchInflight.set(key, pending)
+  return pending
 }
 
 /** One page of `?q=`, or null when the request itself never answered — the caller must be able to
@@ -489,25 +526,12 @@ async function searchAnime(query: string, page: number): Promise<SearchPage | nu
   catch { return null }
 }
 
-/** AnimeSchedule route for an AniList id, or null when it can't be resolved. */
-export async function resolveRoute(anilistId: number, titles: (string | undefined)[]): Promise<string | null> {
-  if (unmatched.has(anilistId)) return null
-  const memo = await readCache<string>(ROUTE_KEY(anilistId), ROUTE_TTL_MS)
-  if (memo) return memo
+/** Legacy title fallback for records which AnimeSchedule has not linked to AniList. */
+async function resolveRouteByTitle(anilistId: number, titles: (string | undefined)[]): Promise<string | null> {
   // Romaji and english are the same string on a great many titles; searching it twice would just
   // fetch the same page again.
   const queries = [...new Set(titles.filter((t): t is string => !!t?.trim()))]
   if (!queries.length) return null
-
-  // The exact filter avoids relevance paging and franchise-title ambiguity. Search by title only
-  // when AnimeSchedule answered definitively but the record is missing its AniList link.
-  const exact = await animeByAniListId(anilistId)
-  if (exact?.route) {
-    await writeCache(ROUTE_KEY(anilistId), exact.route)
-    await writeCache(INFO_KEY(exact.route), exact)
-    return exact.route
-  }
-  if (exact === undefined) return null
 
   for (const query of queries) {
     let seen = 0
@@ -520,8 +544,7 @@ export async function resolveRoute(anilistId: number, titles: (string | undefine
         await writeCache(ROUTE_KEY(anilistId), hit.route)
         // A search entry IS the detail payload — same key set, same values, verified field by field
         // against `/anime/{route}` — so keeping it here means fetchAnime's cache read serves it and
-        // the detail GET only happens once this TTL lapses on an already-known route. That halves
-        // a cold schedule page: 24 requests instead of 48.
+        // the detail GET only happens once this TTL lapses on an already-known route.
         await writeCache(INFO_KEY(hit.route), hit)
         return hit.route
       }
@@ -534,6 +557,25 @@ export async function resolveRoute(anilistId: number, titles: (string | undefine
   // whose english would have matched.
   unmatched.add(anilistId)
   return null
+}
+
+/** AnimeSchedule route for an AniList id, or null when it can't be resolved. */
+export async function resolveRoute(anilistId: number, titles: (string | undefined)[]): Promise<string | null> {
+  if (unmatched.has(anilistId)) return null
+  const memo = await readCache<string>(ROUTE_KEY(anilistId), ROUTE_TTL_MS)
+  if (memo) return memo
+  if (!titles.some((title) => !!title?.trim())) return null
+
+  // The exact filter avoids relevance paging and franchise-title ambiguity. Search by title only
+  // when AnimeSchedule answered definitively but the record is missing its AniList link.
+  const exact = await animeByAniListId(anilistId)
+  if (exact?.route) {
+    await writeCache(ROUTE_KEY(anilistId), exact.route)
+    await writeCache(INFO_KEY(exact.route), exact)
+    return exact.route
+  }
+  if (exact === undefined) return null
+  return resolveRouteByTitle(anilistId, titles)
 }
 
 async function fetchAnime(route: string): Promise<RawAnime | null> {
@@ -666,22 +708,95 @@ async function load(anilistId: number, titles: (string | undefined)[]): Promise<
 
 /** Resolve a bounded batch, keyed by AniList id; misses are simply absent from the map.
  *
- *  The cap and the small concurrency window exist because a week of the schedule can list well over
- *  a hundred titles, and this is a public unauthenticated API — a page open should cost it a
- *  handful of requests, not a hundred simultaneous ones. */
+ *  Exact AniList ids are sent 18 at a time (the API's page size), reducing the default 24-title
+ *  overlay to at most two requests. `concurrency` only limits the rare legacy title fallbacks for
+ *  records which AnimeSchedule has not linked to AniList. */
 export async function getScheduleInfoMany(
   items: { id: number; titles: (string | undefined)[] }[],
   { limit = 24, concurrency = 4 }: { limit?: number; concurrency?: number } = {},
 ): Promise<Map<number, ScheduleInfo>> {
   const out = new Map<number, ScheduleInfo>()
-  const queue = items.slice(0, limit)
+  const queue = [...new Map(items.slice(0, Math.max(0, limit)).map((item) => [item.id, item])).values()]
+  const cachedRoutes = new Map<number, string>()
+
+  // Preserve the six-hour persistent cache and coalesce with a detail-page lookup already in
+  // flight. Only genuinely cold/stale ids proceed to the network batch.
+  const states = await Promise.all(queue.map(async (item) => {
+    const hit = infoMemo.get(item.id)
+    if (hit && Date.now() - hit.at < INFO_TTL_MS) return { item, resolved: true, info: normalize(hit.raw) }
+    const running = inflight.get(item.id)
+    if (running) return { item, resolved: true, info: await running }
+    if (unmatched.has(item.id)) return { item, resolved: true, info: null }
+    const route = await readCache<string>(ROUTE_KEY(item.id), ROUTE_TTL_MS)
+    if (route) {
+      const raw = await readCache<RawAnime>(INFO_KEY(route), INFO_TTL_MS)
+      if (raw?.route) {
+        remember(item.id, raw)
+        return { item, resolved: true, info: normalize(raw) }
+      }
+      cachedRoutes.set(item.id, route)
+    }
+    return { item, resolved: false, info: null }
+  }))
+
+  const cold = [] as typeof queue
+  for (const state of states) {
+    if (state.info) out.set(state.item.id, state.info)
+    if (!state.resolved) cold.push(state.item)
+  }
+
+  const fallbacks = [] as typeof queue
+  const chunks = Array.from({ length: Math.ceil(cold.length / ANIME_BATCH_SIZE) }, (_, index) =>
+    cold.slice(index * ANIME_BATCH_SIZE, (index + 1) * ANIME_BATCH_SIZE))
+  const batches = await Promise.all(chunks.map(async (chunk) => ({
+    chunk,
+    found: await animeByAniListIds(chunk.map((item) => item.id)),
+  })))
+
+  const exactMatches: { item: (typeof queue)[number]; raw: RawAnime }[] = []
+  for (const { chunk, found } of batches) {
+    // A failed batch says nothing about these ids. Crucially, do not turn one outage/429 into up
+    // to 24 title searches against the same unhealthy public API.
+    if (!found) continue
+    for (const item of chunk) {
+      const raw = found.get(item.id)
+      if (!raw?.route) {
+        fallbacks.push(item)
+        continue
+      }
+      exactMatches.push({ item, raw })
+    }
+  }
+  await Promise.all(exactMatches.flatMap(({ item, raw }) => [
+    writeCache(ROUTE_KEY(item.id), raw.route!),
+    writeCache(INFO_KEY(raw.route!), raw),
+  ]))
+  for (const { item, raw } of exactMatches) {
+    remember(item.id, raw)
+    const info = normalize(raw)
+    if (info) out.set(item.id, info)
+  }
+
+  const fallbackResults = new Array<ScheduleInfo | null>(fallbacks.length)
   let next = 0
-  await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
-    while (next < queue.length) {
-      const item = queue[next++]
-      const info = await getScheduleInfo(item.id, item.titles)
-      if (info) out.set(item.id, info)
+  const workers = Math.min(Math.max(1, Math.floor(concurrency)), fallbacks.length)
+  await Promise.all(Array.from({ length: workers }, async () => {
+    while (next < fallbacks.length) {
+      const index = next++
+      const item = fallbacks[index]
+      // A route lives longer than its delay payload. If only the payload expired, refresh that
+      // known route directly instead of rediscovering it through a fuzzy title search.
+      const route = cachedRoutes.get(item.id) ?? await resolveRouteByTitle(item.id, item.titles)
+      if (!route) { fallbackResults[index] = null; continue }
+      const raw = await fetchAnime(route)
+      if (!raw) { fallbackResults[index] = null; continue }
+      remember(item.id, raw)
+      fallbackResults[index] = normalize(raw)
     }
   }))
+  for (let index = 0; index < fallbacks.length; index++) {
+    const info = fallbackResults[index]
+    if (info) out.set(fallbacks[index].id, info)
+  }
   return out
 }
