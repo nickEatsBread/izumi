@@ -30,7 +30,6 @@ mod sync;
 mod text_file;
 mod torrent_download;
 mod watch_room;
-#[cfg(not(target_os = "android"))]
 mod youtube_embed;
 // The native libmpv player is desktop-only; Android delegates playback to an external app.
 #[cfg(not(target_os = "android"))]
@@ -6266,7 +6265,8 @@ pub fn run() {
             watch_room::watch_room_join,
             watch_room::watch_room_exchange,
             watch_room::watch_room_leave,
-            youtube_embed::youtube_embed_url
+            youtube_embed::youtube_embed_url,
+            youtube_embed::youtube_embed_lan_url
         ]);
 
     #[cfg(target_os = "android")]
@@ -6317,6 +6317,8 @@ pub fn run() {
         direct_torrent::torrent_playback_stop,
         cast_relay::cast_prepare_source,
         cast_relay::companion_publish_snapshot,
+        youtube_embed::youtube_embed_url,
+        youtube_embed::youtube_embed_lan_url,
         torrent_download::torrent_download_start,
         torrent_download::torrent_download_cancel,
         net_interfaces::list_network_interfaces,

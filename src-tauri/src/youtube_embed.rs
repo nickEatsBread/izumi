@@ -1,9 +1,11 @@
-//! Loopback document for YouTube embeds inside desktop WebViews with a non-HTTP app origin.
+//! Token-scoped HTTP document for YouTube embeds inside non-HTTP application origins.
 //!
 //! WKWebView does not send an HTTP Referer when Izumi's `tauri://localhost` document embeds
 //! YouTube directly. YouTube rejects that request with player error 153. Loading a tiny document
-//! from this loopback-only server gives the nested player a normal HTTP embedding origin while the
-//! message bridge preserves the IFrame Player API used by hover previews.
+//! from this server gives the nested player a normal HTTP embedding origin while the message bridge
+//! preserves the IFrame Player API used by hover previews. The same document can be exposed through
+//! the source device's LAN address for the paired Tizen application, whose `file://` origin has the
+//! same YouTube client-identity problem.
 
 use std::{net::Ipv4Addr, sync::Arc};
 
@@ -49,7 +51,7 @@ const EMBED_HTML: &str = r#"<!doctype html>
 <body>
   <iframe id="player" title="YouTube trailer" allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>
   <script>
-    (() => {
+    (function () {
       const params = new URLSearchParams(location.search)
       const id = params.get('id') || ''
       const appId = params.get('app') || ''
@@ -57,24 +59,29 @@ const EMBED_HTML: &str = r#"<!doctype html>
       const muted = params.get('muted') === '1' ? '1' : '0'
       const player = document.getElementById('player')
       const youtubeOrigin = 'https://www.youtube-nocookie.com'
-      const playerParams = new URLSearchParams({
-        enablejsapi: '1', autoplay: '1', controls, mute: muted,
-        disablekb: controls === '1' ? '0' : '1',
-        cc_lang_pref: 'ja', iv_load_policy: '3', playsinline: '1', rel: '0',
-        origin: location.origin,
-        widget_referrer: `https://${appId}`,
-      })
-      player.src = `${youtubeOrigin}/embed/${encodeURIComponent(id)}?${playerParams}`
+      const playerParams = new URLSearchParams()
+      playerParams.append('enablejsapi', '1')
+      playerParams.append('autoplay', '1')
+      playerParams.append('controls', controls)
+      playerParams.append('mute', muted)
+      playerParams.append('disablekb', controls === '1' ? '0' : '1')
+      playerParams.append('cc_lang_pref', 'ja')
+      playerParams.append('iv_load_policy', '3')
+      playerParams.append('playsinline', '1')
+      playerParams.append('rel', '0')
+      playerParams.append('origin', location.origin)
+      playerParams.append('widget_referrer', 'https://' + appId)
+      player.src = youtubeOrigin + '/embed/' + encodeURIComponent(id) + '?' + playerParams.toString()
 
-      window.addEventListener('message', (event) => {
+      window.addEventListener('message', function (event) {
         if (event.source === player.contentWindow &&
             (event.origin === youtubeOrigin || event.origin === 'https://www.youtube.com')) {
           parent.postMessage({ type: 'izumi-youtube-event', payload: event.data }, '*')
           return
         }
-        if (event.source === parent && event.data?.type === 'izumi-youtube-command' &&
+        if (event.source === parent && event.data && event.data.type === 'izumi-youtube-command' &&
             typeof event.data.payload === 'string') {
-          player.contentWindow?.postMessage(event.data.payload, youtubeOrigin)
+          if (player.contentWindow) player.contentWindow.postMessage(event.data.payload, youtubeOrigin)
         }
       })
     })()
@@ -141,7 +148,9 @@ async fn embed_document(
 }
 
 async fn start_server() -> Result<Arc<YoutubeEmbedServer>, String> {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+    // A random token scopes every document. Binding on all interfaces lets a paired TV use the
+    // bridge while local desktop callers continue to receive a 127.0.0.1 URL.
+    let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))
         .await
         .map_err(|error| format!("Could not start the YouTube embed bridge: {error}"))?;
     let port = listener
@@ -172,6 +181,27 @@ pub async fn youtube_embed_url(
     controls: bool,
     muted: bool,
 ) -> Result<String, String> {
+    youtube_embed_url_at(app, id, controls, muted, Ipv4Addr::LOCALHOST).await
+}
+
+#[tauri::command]
+pub async fn youtube_embed_lan_url(
+    app: tauri::AppHandle,
+    id: String,
+    controls: bool,
+    muted: bool,
+) -> Result<String, String> {
+    let address = crate::cast_relay::lan_ipv4().await?;
+    youtube_embed_url_at(app, id, controls, muted, address).await
+}
+
+async fn youtube_embed_url_at(
+    app: tauri::AppHandle,
+    id: String,
+    controls: bool,
+    muted: bool,
+    address: Ipv4Addr,
+) -> Result<String, String> {
     if !valid_video_id(&id) {
         return Err("Invalid YouTube video ID".into());
     }
@@ -187,7 +217,7 @@ pub async fn youtube_embed_url(
         .append_pair("muted", if muted { "1" } else { "0" })
         .finish();
     Ok(format!(
-        "http://127.0.0.1:{}/{}/youtube?{query}",
+        "http://{address}:{}/{}/youtube?{query}",
         server.port, server.token,
     ))
 }
@@ -209,10 +239,11 @@ mod tests {
     #[test]
     fn bridge_identifies_its_http_origin_and_relays_player_messages() {
         assert!(EMBED_HTML.contains("strict-origin-when-cross-origin"));
-        assert!(EMBED_HTML.contains("origin: location.origin"));
-        assert!(EMBED_HTML.contains("widget_referrer: `https://${appId}`"));
+        assert!(EMBED_HTML.contains("playerParams.append('origin', location.origin)"));
+        assert!(EMBED_HTML.contains("playerParams.append('widget_referrer', 'https://' + appId)"));
         assert!(EMBED_HTML.contains("type: 'izumi-youtube-event'"));
-        assert!(EMBED_HTML.contains("event.data?.type === 'izumi-youtube-command'"));
+        assert!(EMBED_HTML.contains("event.data && event.data.type === 'izumi-youtube-command'"));
+        assert!(!EMBED_HTML.contains("?."));
     }
 
     #[tokio::test]

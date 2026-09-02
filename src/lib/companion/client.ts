@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { get, writable } from 'svelte/store'
 import { persisted } from 'svelte-persisted-store'
 import { SamsungSmartViewChannel } from '$lib/player/samsung-smart-view'
-import type { TizenReceiverDevice } from '$lib/player/tizen-receiver-cast'
+import { setTizenReceiverRelayForeground, type TizenReceiverDevice } from '$lib/player/tizen-receiver-cast'
 import { isAndroid, isTv } from '$lib/platform'
 import {
   catalogScreen,
@@ -382,6 +382,7 @@ function keepConnection(
   onSourceSelection?: CompanionSourceSelection,
 ): void {
   connections.get(device.deviceId)?.dispose()
+  const activeTrailerRequests = new Set<string>()
   const unsubscribers = [
     channel.on('izumi.companion.refresh', () => {
       if (createSnapshot) {
@@ -519,12 +520,48 @@ function keepConnection(
         .then((details) => reply({ media: details }))
         .catch((error) => reply({ error: error instanceof Error ? error.message : 'Episode details unavailable' }))
     }),
+    channel.on('izumi.companion.trailer', (value, from) => {
+      const request = value as { pairingId?: unknown; requestId?: unknown; videoId?: unknown; title?: unknown } | null
+      if (!request
+        || request.pairingId !== device.credential.slice(0, 16)
+        || typeof request.requestId !== 'string'
+        || !/^[A-Za-z0-9_-]{8,80}$/.test(request.requestId)
+        || typeof request.videoId !== 'string'
+        || !/^[A-Za-z0-9_-]{11}$/.test(request.videoId)) return
+      const reply = (payload: Record<string, unknown>) => channel.publish('izumi.companion.trailer-result', {
+        credential: device.credential,
+        requestId: request.requestId,
+        ...payload,
+      }, from?.id || 'host')
+      void invoke<string>('youtube_embed_lan_url', {
+        id: request.videoId,
+        controls: false,
+        muted: false,
+      }).then(async (url) => {
+        await setTizenReceiverRelayForeground(true, typeof request.title === 'string' ? request.title.slice(0, 160) : 'TV trailer', 'trailer')
+        activeTrailerRequests.add(request.requestId as string)
+        reply({ url })
+      }).catch((error) => reply({
+        error: error instanceof Error ? error.message : 'Trailer playback bridge unavailable',
+      }))
+    }),
+    channel.on('izumi.companion.trailer-close', (value) => {
+      const request = value as { pairingId?: unknown; requestId?: unknown } | null
+      if (!request
+        || request.pairingId !== device.credential.slice(0, 16)
+        || typeof request.requestId !== 'string'
+        || !/^[A-Za-z0-9_-]{8,80}$/.test(request.requestId)) return
+      if (activeTrailerRequests.delete(request.requestId) && !activeTrailerRequests.size) {
+        void setTizenReceiverRelayForeground(false, undefined, 'trailer')
+      }
+    }),
   ]
   const connection: CompanionConnection = {
     device,
     channel,
     dispose: () => {
       unsubscribers.forEach((off) => off())
+      if (activeTrailerRequests.size) void setTizenReceiverRelayForeground(false, undefined, 'trailer')
       channel.disconnect()
       connections.delete(device.deviceId)
     },
