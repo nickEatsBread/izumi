@@ -978,6 +978,8 @@ static HTTP_EXT_JAR: std::sync::OnceLock<std::sync::Arc<reqwest::cookie::Jar>> =
 // addon/AniZip warm just opened.
 static HTTP_DOH_STATE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
+const HTTP_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+
 fn ext_cookie_jar() -> std::sync::Arc<reqwest::cookie::Jar> {
     HTTP_EXT_JAR
         .get_or_init(|| std::sync::Arc::new(reqwest::cookie::Jar::default()))
@@ -986,8 +988,12 @@ fn ext_cookie_jar() -> std::sync::Arc<reqwest::cookie::Jar> {
 
 fn build_http_client(doh: Option<String>, download: bool) -> reqwest::Client {
     let mut b = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
-        .connect_timeout(std::time::Duration::from_secs(if download { 15 } else { 10 }))
+        .user_agent(HTTP_USER_AGENT)
+        .connect_timeout(std::time::Duration::from_secs(if download {
+            15
+        } else {
+            10
+        }))
         .pool_max_idle_per_host(8)
         .tcp_keepalive(std::time::Duration::from_secs(90));
     // API/metadata requests get a short TOTAL timeout. Downloads MUST NOT — a multi-GB 4K file takes
@@ -1008,7 +1014,7 @@ fn build_http_client(doh: Option<String>, download: bool) -> reqwest::Client {
 /// The extension client: same tuning as the shared pool, plus the persistent extension cookie jar.
 fn build_ext_client(doh: Option<String>, streaming: bool) -> reqwest::Client {
     let mut b = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+        .user_agent(HTTP_USER_AGENT)
         .connect_timeout(std::time::Duration::from_secs(10))
         .pool_max_idle_per_host(8)
         .tcp_keepalive(std::time::Duration::from_secs(90))
@@ -4687,6 +4693,107 @@ async fn da_cookies(window: tauri::WebviewWindow, base: &str) -> String {
     v
 }
 
+/// Build the forum reaction URL from untrusted frame input. Besides preventing a reaction message
+/// from turning the native client into an arbitrary URL fetcher, using URL path segments correctly
+/// escapes identifiers that contain characters such as `/`, `?`, or `#`.
+#[cfg(not(target_os = "android"))]
+fn da_reaction_url(base: &str, identifier: &str) -> Result<url::Url, String> {
+    if identifier.is_empty() || identifier.len() > 256 {
+        return Err("invalid DiscussAnime reaction identifier".into());
+    }
+    let mut url = url::Url::parse(base.trim()).map_err(|_| "invalid DiscussAnime reaction base")?;
+    let host = url.host_str().unwrap_or_default();
+    if url.scheme() != "https"
+        || !(host == "discussanime.moe" || host.ends_with(".discussanime.moe"))
+    {
+        return Err("invalid DiscussAnime reaction base".into());
+    }
+    url.set_query(None);
+    url.set_fragment(None);
+    let mut path = url
+        .path_segments_mut()
+        .map_err(|_| "invalid DiscussAnime reaction base")?;
+    path.clear()
+        .push("api")
+        .push("threads")
+        .push("by-identifier")
+        .push(identifier)
+        .push("reaction");
+    drop(path);
+    Ok(url)
+}
+
+#[cfg(not(target_os = "android"))]
+fn da_reaction_request(
+    client: &reqwest::Client,
+    url: &url::Url,
+    cookie: &str,
+    post_body: Option<&str>,
+) -> reqwest::RequestBuilder {
+    let mut request = if let Some(body) = post_body {
+        client
+            .post(url.clone())
+            .header("content-type", "application/json")
+            .header("origin", url.origin().ascii_serialization())
+            .body(body.to_owned())
+    } else {
+        client.get(url.clone())
+    };
+    if !cookie.is_empty() {
+        request = request.header("cookie", cookie);
+    }
+    request.header("accept", "application/json")
+}
+
+#[cfg(not(target_os = "android"))]
+fn reqwest_error_chain(error: &reqwest::Error) -> String {
+    let mut message = error.to_string();
+    let mut source = std::error::Error::source(error);
+    while let Some(cause) = source {
+        message.push_str(": ");
+        message.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    message
+}
+
+/// Reaction requests are tiny and setting/clearing a reaction is idempotent. If the shared pool has
+/// a stale HTTP/2 connection (commonly after sleep, a VPN switch, or a network change), retry once on
+/// a fresh HTTP/1.1 connection using system DNS. This also provides a narrow fallback when an enabled
+/// DoH endpoint is temporarily unavailable, without changing the user's global network preference.
+#[cfg(not(target_os = "android"))]
+async fn send_da_reaction_request(
+    url: &url::Url,
+    cookie: &str,
+    post_body: Option<&str>,
+) -> Result<reqwest::Response, String> {
+    let first = da_reaction_request(&http_client(), url, cookie, post_body)
+        .send()
+        .await;
+    let first_error = match first {
+        Ok(response) => return Ok(response),
+        Err(error) => reqwest_error_chain(&error),
+    };
+    eprintln!("[discussanime] reaction transport failed; retrying: {first_error}");
+
+    let fallback = reqwest::Client::builder()
+        .user_agent(HTTP_USER_AGENT)
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(30))
+        .http1_only()
+        .build()
+        .map_err(|error| format!("reaction retry client failed: {error}"))?;
+    da_reaction_request(&fallback, url, cookie, post_body)
+        .send()
+        .await
+        .map_err(|error| {
+            format!(
+                "DiscussAnime reaction request failed ({first_error}); retry failed ({})",
+                reqwest_error_chain(&error)
+            )
+        })
+}
+
 /// Read reaction counts plus the current user's selected key. The browser-side loader can read the
 /// public counts itself, but its cross-site request cannot carry discussanime's session cookie, so it
 /// always sees `selectedKey: null`. Reading through the native cookie jar restores that user state.
@@ -4697,14 +4804,9 @@ async fn da_reaction_state(
     base: String,
     identifier: String,
 ) -> Result<serde_json::Value, String> {
-    let base = base.trim_end_matches('/').to_string();
-    let cookie = da_cookies(window, &base).await;
-    let url = format!("{base}/api/threads/by-identifier/{identifier}/reaction");
-    let mut req = http_client().get(&url);
-    if !cookie.is_empty() {
-        req = req.header("cookie", cookie);
-    }
-    let resp = req.send().await.map_err(|e| e.to_string())?;
+    let url = da_reaction_url(&base, &identifier)?;
+    let cookie = da_cookies(window, url.origin().ascii_serialization().as_str()).await;
+    let resp = send_da_reaction_request(&url, &cookie, None).await?;
     let status = resp.status();
     let text = resp.text().await.map_err(|e| e.to_string())?;
     if !status.is_success() {
@@ -4725,7 +4827,8 @@ async fn da_react(
     identifier: String,
     key: Option<String>,
 ) -> Result<ReactReply, String> {
-    let base = base.trim_end_matches('/').to_string();
+    let url = da_reaction_url(&base, &identifier)?;
+    let base = url.origin().ascii_serialization();
     let cookie = da_cookies(window, &base).await;
     if !has_auth_cookie(&cookie) {
         eprintln!("[da_react] no auth cookie in the jar → needsLogin");
@@ -4735,17 +4838,8 @@ async fn da_react(
             counts: None,
         });
     }
-    let url = format!("{base}/api/threads/by-identifier/{identifier}/reaction");
     let body = serde_json::json!({ "reaction": key }).to_string();
-    let resp = http_client()
-        .post(&url)
-        .header("cookie", &cookie)
-        .header("content-type", "application/json")
-        .header("origin", &base)
-        .body(body)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+    let resp = send_da_reaction_request(&url, &cookie, Some(&body)).await?;
     let st = resp.status().as_u16();
     eprintln!("[da_react] POST {url} reaction={key:?} → HTTP {st}");
     if st == 401 {
@@ -6355,6 +6449,30 @@ pub fn run() {
     builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+#[cfg(not(target_os = "android"))]
+mod discussanime_reaction_tests {
+    use super::*;
+
+    #[test]
+    fn builds_and_escapes_the_reaction_endpoint() {
+        let url =
+            da_reaction_url("https://discussanime.moe/ignored?x=1#frag", "thread/12?#").unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://discussanime.moe/api/threads/by-identifier/thread%2F12%3F%23/reaction"
+        );
+    }
+
+    #[test]
+    fn rejects_non_forum_and_insecure_reaction_bases() {
+        assert!(da_reaction_url("https://example.com", "thread-12").is_err());
+        assert!(da_reaction_url("http://discussanime.moe", "thread-12").is_err());
+        assert!(da_reaction_url("https://notdiscussanime.moe", "thread-12").is_err());
+        assert!(da_reaction_url("https://discussanime.moe", "").is_err());
+    }
 }
 
 #[cfg(test)]
