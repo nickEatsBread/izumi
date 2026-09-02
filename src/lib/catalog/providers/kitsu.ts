@@ -1,6 +1,6 @@
 import { get } from 'svelte/store'
 import { showAdult } from '$lib/settings/ui'
-import { kitsuJson, mapKitsuMedia, type KitsuAnime } from '$lib/anilist/kitsu-catalog'
+import { hydrateKitsuAiring, kitsuJson, mapKitsuMedia, type KitsuAnime } from '$lib/anilist/kitsu-catalog'
 import type { ExternalMediaIds, Media, MediaVideo } from '$lib/anilist/types'
 import { catalogHomeLayouts, resolveCatalogHomeRows } from '../home-layout'
 import { KITSU_HOME_ROWS } from '../home-options'
@@ -252,6 +252,7 @@ async function detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null
   const [videos, credits] = await Promise.all([
     episodes(ref.id, signal).catch(() => []),
     kitsuCredits(ref.id, signal),
+    hydrateKitsuAiring(media),
   ])
   media.videos = videos
   if (media.episodes && media.videos.length < media.episodes) {

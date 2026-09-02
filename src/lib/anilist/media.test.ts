@@ -93,6 +93,17 @@ describe('media helpers', () => {
     expect(hasAiredEpisodeToWatch(malOnly, 7, 8)).toBe(true)
   })
 
+  it('uses a provider-confirmed aired count without confusing it with the planned total', () => {
+    const fallback = {
+      id: 1, title: {}, status: 'RELEASING', episodes: 19, airedEpisodes: 15,
+      nextAiringEpisode: null, airingSchedule: { nodes: [] },
+    } as any
+    expect(totalEpisodes(fallback)).toBe(19)
+    expect(airedCount(fallback)).toBe(15)
+    expect(hasAiredEpisodeToWatch(fallback, 14)).toBe(true)
+    expect(hasAiredEpisodeToWatch(fallback, 15)).toBe(false)
+  })
+
   it('reports zero aired episodes for a not-yet-released title', () => {
     const future = { id: 1, title: {}, status: 'NOT_YET_RELEASED', episodes: 12 } as any
     expect(airedCount(future)).toBe(0)

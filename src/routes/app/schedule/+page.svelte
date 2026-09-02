@@ -153,9 +153,7 @@
   </div>
 
   {#if tab === 'schedule'}
-    {#key offset}
-      <ScheduleGrid {start} {end} {headerOffset} bind:view bind:viewTouched onMineCount={(n) => (mineCount = n)} />
-    {/key}
+    <ScheduleGrid {start} {end} {headerOffset} bind:view bind:viewTouched onMineCount={(n) => (mineCount = n)} />
   {:else if tab === 'personal'}
     {#key offset}
       <PersonalSchedule {start} {end} {headerOffset} />

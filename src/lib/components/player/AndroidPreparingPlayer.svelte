@@ -21,7 +21,10 @@
   } = $props()
 
   const total = $derived(totalEpisodes(media) || null)
-  const aired = $derived(airedCount(media))
+  const aired = $derived.by(() => {
+    const value = airedCount(media)
+    return Number.isFinite(value) ? value : 0
+  })
   const hasPrev = $derived(episode != null && episode > 1)
   const hasNext = $derived(episode != null && episode < aired)
   const art = $derived(banner(media) || cover(media))

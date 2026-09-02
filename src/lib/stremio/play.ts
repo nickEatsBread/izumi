@@ -386,11 +386,11 @@ async function attachDirectOnlineSubtitles(
 // Finite aired-episode count for player bounds (auto-advance / prefetch) + the in-player Next
 // button gate. airedCount() consults the airing schedule — many OVAs/ONAs/adult titles have
 // episodes=null AND nextAiringEpisode=null on AniList yet a full schedule (e.g. id 178445) —
-// and collapses its "unknown" Infinity back to the AniList scalar (0 when absent) so a bound
-// like `next <= airedTotal` and `episode < airedTotal` stay sane instead of always-true.
+// and collapses its "unknown" Infinity to zero. A provider's scalar is the planned total, not
+// proof that those episodes aired; using it here queued future Kitsu episodes for autoplay.
 const airedTotalOf = (media: Media): number => {
   const a = airedCount(media)
-  return Number.isFinite(a) ? a : (media.episodes ?? 0)
+  return Number.isFinite(a) ? a : 0
 }
 
 /** The ACTIVE provider's cache-check capability, for pickBest. Collapses to 'none' when there is

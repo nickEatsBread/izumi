@@ -160,6 +160,44 @@ export function mapKitsuMedia(raw: KitsuAnime, anilistId?: number): Media {
   } as unknown as Media
 }
 
+/** Kitsu's `episodeCount` is the commissioned total, not the released count. AnimeSchedule's
+ * title page carries the missing current/next episode state; enrich detail records so every player
+ * surface can keep future episodes gated. This stays best-effort because Kitsu is itself a
+ * failover, and the safe fallback for an unknown count is now zero playable episodes. */
+export async function hydrateKitsuAiring(media: Media): Promise<Media> {
+  if (!['RELEASING', 'HIATUS', 'NOT_YET_RELEASED'].includes(media.status ?? '')) return media
+  const anilistId = media.externalIds?.anilist
+  if (anilistId == null) return media
+  try {
+    // Dynamic import avoids the schedule fallback's reverse dependency on this catalogue module.
+    const { getAiringProgress, scheduleTitles } = await import('$lib/anime/animeschedule')
+    const progress = await getAiringProgress(anilistId, scheduleTitles(media.title))
+    if (!progress) return media
+    const total = media.episodes && media.episodes > 0 ? media.episodes : Number.POSITIVE_INFINITY
+    media.airedEpisodes = Math.min(total, progress.airedEpisodes)
+    const next = progress.nextEpisode
+    const at = progress.nextAiringAt
+    if (next != null && at != null && next <= total) {
+      media.nextAiringEpisode = {
+        __typename: 'AiringSchedule',
+        episode: next,
+        airingAt: at,
+        timeUntilAiring: Math.max(0, at - Math.floor(Date.now() / 1000)),
+      } as unknown as NonNullable<Media['nextAiringEpisode']>
+    }
+    // AniList's GraphQL detail projection cannot ask for the provider-only `airedEpisodes` field.
+    // Leave one honest "already aired" schedule marker so graphcache carries the count through the
+    // Kitsu failover response even when AnimeSchedule has no next-air countdown.
+    if (media.airedEpisodes > 0 && !media.nextAiringEpisode) {
+      media.airingSchedule = {
+        __typename: 'AiringScheduleConnection',
+        nodes: [{ __typename: 'AiringSchedule', episode: media.airedEpisodes, airingAt: Math.floor(Date.now() / 1000) - 1 }],
+      } as unknown as NonNullable<Media['airingSchedule']>
+    }
+  } catch { /* optional enrichment; conservative episode gating remains in force */ }
+  return media
+}
+
 function animeUrl(request: JikanCatalogRequest): string {
   const v = request.variables
   const requested = Math.min(20, Math.max(1, n(v.perPage) ?? 20))
@@ -202,7 +240,7 @@ const titleKey = (value: string): string => value.toLowerCase().replace(/[^a-z0-
  * ids; Kitsu supplies those without depending on AniList or MyAnimeList, and Fribb keeps the ids
  * canonical for app navigation/playback. */
 export async function fetchKitsuScheduleIndex(
-  year: number, season: string, includeSeason = true,
+  year: number, season: string, includeSeason = true, includeCurrent = true,
 ): Promise<Map<string, Media>> {
   const entries: KitsuAnime[] = []
   const direct = new Map<number, number>()
@@ -233,15 +271,19 @@ export async function fetchKitsuScheduleIndex(
   }
   // Long-running shows began in an older season. Two popularity pages cover the useful tail while
   // keeping degraded Schedule well below Kitsu's normal catalogue request volume.
-  for (const offset of [0, 20]) {
-    const current = new URL(`${API}/anime`)
-    current.searchParams.set('filter[status]', 'current')
-    current.searchParams.set('sort', '-userCount')
-    current.searchParams.set('page[limit]', '20')
-    current.searchParams.set('page[offset]', String(offset))
-    current.searchParams.set('include', 'mappings')
-    const next = await safePage(current.toString())
-    append(next)
+  if (includeCurrent) {
+    // These offsets are independent. Loading them together removes a full network round-trip from
+    // the outage path without increasing its request count.
+    const currentPages = await Promise.all([0, 20].map((offset) => {
+      const current = new URL(`${API}/anime`)
+      current.searchParams.set('filter[status]', 'current')
+      current.searchParams.set('sort', '-userCount')
+      current.searchParams.set('page[limit]', '20')
+      current.searchParams.set('page[offset]', String(offset))
+      current.searchParams.set('include', 'mappings')
+      return safePage(current.toString())
+    }))
+    currentPages.forEach(append)
   }
 
   if (!entries.length) return new Map()
@@ -335,7 +377,8 @@ export async function fetchKitsuDetail(request: KitsuDetailRequest): Promise<Res
   const genres = detail.data.relationships?.categories?.data
     ?.flatMap((item) => item.id && categories.has(item.id) ? [categories.get(item.id)!] : []) ?? []
 
-  const media = mapKitsuMedia(detail.data, request.variables.id) as unknown as Record<string, unknown>
+  const mapped = await hydrateKitsuAiring(mapKitsuMedia(detail.data, request.variables.id))
+  const media = mapped as unknown as Record<string, unknown>
   media.idMal = n(malId) ?? null
   media.genres = genres
   media.isFavourite = null

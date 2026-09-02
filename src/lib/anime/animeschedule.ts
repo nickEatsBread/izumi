@@ -355,10 +355,16 @@ export async function getWeeklySchedule(start: number, end: number): Promise<Air
   if (!cards.length) throw new Error('AnimeSchedule returned no weekly airings')
   const midpoint = new Date((start + 3 * 86400) * 1000)
   const season = ['winter', 'winter', 'winter', 'spring', 'spring', 'spring', 'summer', 'summer', 'summer', 'fall', 'fall', 'fall'][midpoint.getMonth()]
-  const exact = await animeScheduleSeasonIndex(midpoint.getFullYear(), season)
-  let media = new Map<string, Media>()
-  try { media = await fetchKitsuScheduleIndex(midpoint.getFullYear(), season, exact.size < 54) }
-  catch (error) { if (!exact.size) throw error }
+  // Long-running Kitsu titles are independent of the current-season AnimeSchedule index. Start
+  // both together; previously the two full catalogue walks were serialized on the outage path.
+  const [exact, current] = await Promise.all([
+    animeScheduleSeasonIndex(midpoint.getFullYear(), season),
+    fetchKitsuScheduleIndex(midpoint.getFullYear(), season, false, true).catch(() => new Map<string, Media>()),
+  ])
+  const seasonal = exact.size < 54
+    ? await fetchKitsuScheduleIndex(midpoint.getFullYear(), season, true, false).catch(() => new Map<string, Media>())
+    : new Map<string, Media>()
+  const media = new Map([...current, ...seasonal])
   const airings = cards.flatMap((card) => {
     const item = exact.get(card.route.toLowerCase())
       ?? media.get(card.route.toLowerCase()) ?? media.get(titleKey(card.title))
@@ -458,6 +464,19 @@ const SEARCH_PAGES = 2
 
 interface SearchPage { totalAmount?: number; anime?: RawAnime[] }
 
+/** Exact lookup through AnimeSchedule's documented AniList-id filter. `undefined` means the
+ * request failed and should not trigger more requests to the same unhealthy host; `null` means
+ * the API answered but has no linked entry, so the legacy title lookup may still recover one. */
+async function animeByAniListId(anilistId: number): Promise<RawAnime | null | undefined> {
+  try {
+    const r = await phttp(`${API}?anilist-ids=${anilistId}`, { timeoutMs: TIMEOUT_MS })
+    if (r.status === 404) return null
+    if (!r.ok) return undefined
+    const body = ((await r.json()) as SearchPage | null) ?? {}
+    return (body.anime ?? []).find((entry) => entry.route && anilistIdOf(entry) === anilistId) ?? null
+  } catch { return undefined }
+}
+
 /** One page of `?q=`, or null when the request itself never answered — the caller must be able to
  *  tell "AnimeSchedule says no" from "we couldn't ask", since only the former is remembered. */
 async function searchAnime(query: string, page: number): Promise<SearchPage | null> {
@@ -479,6 +498,16 @@ export async function resolveRoute(anilistId: number, titles: (string | undefine
   // fetch the same page again.
   const queries = [...new Set(titles.filter((t): t is string => !!t?.trim()))]
   if (!queries.length) return null
+
+  // The exact filter avoids relevance paging and franchise-title ambiguity. Search by title only
+  // when AnimeSchedule answered definitively but the record is missing its AniList link.
+  const exact = await animeByAniListId(anilistId)
+  if (exact?.route) {
+    await writeCache(ROUTE_KEY(anilistId), exact.route)
+    await writeCache(INFO_KEY(exact.route), exact)
+    return exact.route
+  }
+  if (exact === undefined) return null
 
   for (const query of queries) {
     let seen = 0
@@ -521,6 +550,69 @@ async function fetchAnime(route: string): Promise<RawAnime | null> {
     return raw
   }
   catch { return null }
+}
+
+export interface AiringProgress {
+  airedEpisodes: number
+  nextEpisode: number | null
+  nextAiringAt: number | null
+}
+
+const htmlAttribute = (tag: string, name: string): string | undefined =>
+  new RegExp(`\\b${name}="([^"]*)"`, 'i').exec(tag)?.[1]
+
+/** Read the small server-rendered progress contract on an AnimeSchedule title page. The JSON
+ * anime endpoint exposes the planned episode count but not how many have aired; these attributes
+ * are what its own page uses to render the current/next episode. */
+export function parseAiringProgressPage(html: string, now = Date.now()): AiringProgress | null {
+  const wrapper = /<div\b[^>]*\bid="anime-wrapper"[^>]*>/i.exec(html)?.[0]
+  if (!wrapper) return null
+  const aired = Number(htmlAttribute(wrapper, 'leadingAiredEpisode'))
+  if (!Number.isInteger(aired) || aired < 0) return null
+  const latest = Number(htmlAttribute(wrapper, 'latestEpisode'))
+  const rawCountdown = [...html.matchAll(/<time\b[^>]*>/gi)]
+    .map((match) => match[0])
+    .find((tag) => /\bcountdown-time-raw\b/i.test(htmlAttribute(tag, 'class') ?? ''))
+  const target = rawCountdown ? Date.parse(htmlAttribute(rawCountdown, 'data-countdown-target') ?? '') : NaN
+  const nextAiringAt = Number.isFinite(target) && target > now ? Math.floor(target / 1000) : null
+  const nextEpisode = Number.isInteger(latest) && latest > aired
+    ? latest
+    : nextAiringAt != null ? aired + 1 : null
+  return { airedEpisodes: aired, nextEpisode, nextAiringAt }
+}
+
+const PROGRESS_TTL_MS = 30 * 60e3
+const progressMemo = new Map<string, { at: number; value: AiringProgress }>()
+const progressInflight = new Map<string, Promise<AiringProgress | null>>()
+
+async function fetchAiringProgress(route: string): Promise<AiringProgress | null> {
+  const hit = progressMemo.get(route)
+  if (hit && Date.now() - hit.at < PROGRESS_TTL_MS) return hit.value
+  const running = progressInflight.get(route)
+  if (running) return running
+  const pending = (async () => {
+    try {
+      const response = await phttp(`https://animeschedule.net/anime/${encodeURIComponent(route)}`, {
+        timeoutMs: TIMEOUT_MS, maxBytes: 2 * 1024 * 1024, background: true,
+      })
+      if (!response.ok) return null
+      const value = parseAiringProgressPage(await response.text())
+      if (value) progressMemo.set(route, { at: Date.now(), value })
+      return value
+    } catch { return null }
+  })().finally(() => progressInflight.delete(route))
+  progressInflight.set(route, pending)
+  return pending
+}
+
+/** Confirmed released/next episode information for catalogue fallbacks which only publish a
+ * planned total. Null is deliberately non-fatal: callers retain their conservative unknown gate. */
+export async function getAiringProgress(
+  anilistId: number,
+  titles: (string | undefined)[],
+): Promise<AiringProgress | null> {
+  const route = await resolveRoute(anilistId, titles)
+  return route ? fetchAiringProgress(route) : null
 }
 
 // Coalesce concurrent callers per id. The detail page mounts the badge while the schedule page's

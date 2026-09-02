@@ -81,6 +81,11 @@ export function resolveCandidates(candidates: SkipCandidate[]): Segment[] {
 /** Crowd skip times for a new episode often land hours after broadcast. Retry a
  *  handful of times instead of locking in an empty result for the whole watch. */
 export const SKIP_RETRY_MS = [0, 12_000, 45_000] as const
+const TRANSIENT_RETRY_MS = 650
+
+/** A 404 is a real "no crowd timing" answer. Rate limits and server errors are transient and get
+ * one short retry before the player's longer new-episode retry schedule takes over. */
+export const isTransientAniSkipStatus = (status: number): boolean => status === 429 || status >= 500
 
 /** Build an exact-runtime request plus an unfiltered fallback. Some releases have bumpers or
  *  slightly different cuts, so an exact runtime can legitimately have no matching submission.
@@ -136,10 +141,18 @@ export async function getSkipSegments(
 ): Promise<Segment[]> {
   if (!malId || !episode) return []
   const responses = await Promise.all(skipTimeUrls(malId, episode, duration).map(async (url) => {
-    try {
-      const response = await httpFetch(url)
-      return response.ok ? await response.json() as AniSkipResp : null
-    } catch { return null }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await httpFetch(url)
+        if (response.ok) return await response.json() as AniSkipResp
+        if (!isTransientAniSkipStatus(response.status)) return null
+      } catch {
+        // A transport failure is just as retryable as a 5xx, once. The enclosing playback lookup
+        // remains best-effort and still resolves to [] after this attempt.
+      }
+      if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, TRANSIENT_RETRY_MS))
+    }
+    return null
   }))
   return segmentsFromResponses(responses.filter((response): response is AniSkipResp => response != null), duration)
 }

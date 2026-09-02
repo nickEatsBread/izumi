@@ -61,12 +61,13 @@
   // episodes instead of collapsing to "Episodes TBA".
   const total = $derived(offline ? offlineEps.length : totalEpisodes(media))
   // aired = last episode that has already aired, never more than the total. airedCount can
-  // be Infinity when the count is genuinely unknown — clamp that to the total (0 → "TBA").
+  // be Infinity when the count is genuinely unknown — that is not permission to expose a
+  // provider's planned total, so keep every episode gated until release metadata arrives.
   // Offline: every downloaded episode is playable, so aired = the highest downloaded number.
   const aired = $derived.by(() => {
     if (offline) return offlineEps.at(-1) ?? 0
     const a = airedCount(media)
-    return Math.min(total, Number.isFinite(a) ? a : total)
+    return Math.min(total, Number.isFinite(a) ? a : 0)
   })
   const watchedThrough = $derived(
     $manualProgressOverrides[media.id] ?? Math.max(

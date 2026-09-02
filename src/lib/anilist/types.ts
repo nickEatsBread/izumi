@@ -119,6 +119,10 @@ export interface Media {
   logoImage?: string
   trailer?: { id?: string; site?: string } | null
   nextAiringEpisode?: { episode: number; airingAt?: number; timeUntilAiring: number } | null
+  /** Provider-confirmed number of episodes already released. Catalogue fallbacks such as Kitsu
+   * expose a planned total but no AniList-style schedule, so this must remain distinct from
+   * `episodes` or future entries become playable. */
+  airedEpisodes?: number
   // Per-episode air schedule. AniList populates this on many OVAs/ONAs and adult titles
   // that never get a scalar `episodes` count, so it's our fallback source for the episode
   // total + aired count (see media.ts). airingAt is a unix timestamp in SECONDS.

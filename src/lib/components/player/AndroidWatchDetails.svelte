@@ -316,7 +316,7 @@
   const knownTotal = $derived((total ?? totalEpisodes(media)) || 0)
   const aired = $derived.by(() => {
     const value = airedCount(media)
-    return Math.min(knownTotal, Number.isFinite(value) ? value : knownTotal)
+    return Math.min(knownTotal, Number.isFinite(value) ? value : 0)
   })
   const EPISODES_PER_PAGE = 24
   let episodePage = $state(0)

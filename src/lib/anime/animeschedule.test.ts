@@ -8,7 +8,7 @@ vi.mock('$lib/net/http', () => ({ phttp: mocks.phttp }))
 import {
   activeDelay, anilistIdOf, delayLabel, delayLines, delayPlaceholder, getScheduleInfo, getScheduleInfoMany,
   getWeeklySchedule, isoWeek,
-  mapAnimeScheduleMedia, mergeScheduleAirings, normalize, nextOccurrence, parseTime, parseTimetable,
+  mapAnimeScheduleMedia, mergeScheduleAirings, normalize, nextOccurrence, parseAiringProgressPage, parseTime, parseTimetable,
   pickEntry, resolveRoute,
   scheduleTitles, slotLabel, slotLines, titleKey,
   type RawAnime,
@@ -64,6 +64,24 @@ describe('weekly fallback mapping', () => {
       route: 'backup-anime', episode: 7,
       airingAt: new Date('2026-08-11T15:30+01:00').getTime() / 1000,
     }])
+  })
+
+  it('reads the released count and next broadcast from a title page', () => {
+    const html = `<div id="anime-wrapper" latestEpisode="16" latestEpisodeBaseline="15"
+      leadingAiredEpisode="15" status="Ongoing"></div>
+      <time class="countdown-time countdown-time-raw" data-countdown-target="2026-09-09T13:00:00Z"></time>`
+    expect(parseAiringProgressPage(html, Date.parse('2026-09-02T00:00:00Z'))).toEqual({
+      airedEpisodes: 15,
+      nextEpisode: 16,
+      nextAiringAt: Date.parse('2026-09-09T13:00:00Z') / 1000,
+    })
+  })
+
+  it('keeps a valid zero released count distinct from unknown progress', () => {
+    expect(parseAiringProgressPage(
+      '<div id="anime-wrapper" latestEpisode="1" leadingAiredEpisode="0"></div>',
+    )).toEqual({ airedEpisodes: 0, nextEpisode: 1, nextAiringAt: null })
+    expect(parseAiringProgressPage('<main>no progress contract</main>')).toBeNull()
   })
 
   it('merges a missing delayed episode without duplicating one still in the main feed', () => {
@@ -417,12 +435,12 @@ describe('lookup', () => {
     mocks.phttp.mockReset()
   })
 
-  it('resolves a cold title in ONE request, from the search entry itself', async () => {
+  it('resolves a cold title in one exact-id request, from the result itself', async () => {
     mocks.phttp.mockResolvedValueOnce(page([linked(21, 'one-piece')]))
 
     expect((await getScheduleInfo(21, ['One Piece']))?.route).toBe('one-piece')
     expect(mocks.phttp).toHaveBeenCalledTimes(1) // the search answer IS the detail payload
-    expect(mocks.phttp.mock.calls[0][0]).toContain('?q=One%20Piece')
+    expect(mocks.phttp.mock.calls[0][0]).toContain('?anilist-ids=21')
     expect(mocks.set.mock.calls.map((c) => c[0])).toEqual(['animeschedule-route-21', 'animeschedule-anime-one-piece'])
   })
 
@@ -471,32 +489,35 @@ describe('lookup', () => {
     mocks.phttp.mockResolvedValue(page([]))
     expect(await getScheduleInfo(25, ['Nothing Here'])).toBeNull()
     expect(await getScheduleInfo(25, ['Nothing Here'])).toBeNull()
-    expect(mocks.phttp).toHaveBeenCalledTimes(1)
+    expect(mocks.phttp).toHaveBeenCalledTimes(2) // exact id, then the title fallback once
   })
 
   it('tries every title it was given before writing a show off', async () => {
     mocks.phttp
+      .mockResolvedValueOnce(page([]))
       .mockResolvedValueOnce(page([other(1)]))
       .mockResolvedValueOnce(page([linked(36, 'op-36')]))
 
     expect((await getScheduleInfo(36, ['Romaji Name', 'English Name']))?.route).toBe('op-36')
-    expect(mocks.phttp.mock.calls.map((c) => String(c[0]).split('?q=')[1])).toEqual(['Romaji%20Name', 'English%20Name'])
+    expect(mocks.phttp.mock.calls.slice(1).map((c) => String(c[0]).split('?q=')[1])).toEqual(['Romaji%20Name', 'English%20Name'])
   })
 
   it('reads the second page when the first is full and the id is not on it', async () => {
     const first = Array.from({ length: 18 }, (_, i) => other(i))
     mocks.phttp
+      .mockResolvedValueOnce(page([]))
       .mockResolvedValueOnce(page(first, 40))
       .mockResolvedValueOnce(page([linked(37, 'op-37')], 40))
 
     expect((await getScheduleInfo(37, ['Franchise']))?.route).toBe('op-37')
-    expect(mocks.phttp.mock.calls[1][0]).toContain('&page=2')
+    expect(mocks.phttp.mock.calls[2][0]).toContain('&page=2')
   })
 
   it('does not ask for a page the search says is not there', async () => {
     mocks.phttp.mockResolvedValue(page([other(1)], 1))
     expect(await getScheduleInfo(38, ['Only One Result'])).toBeNull()
-    expect(mocks.phttp).toHaveBeenCalledTimes(1)
+    expect(mocks.phttp).toHaveBeenCalledTimes(2)
+    expect(mocks.phttp.mock.calls[1][0]).not.toContain('&page=2')
   })
 
   it('retries after a failed search instead of pinning the title off', async () => {

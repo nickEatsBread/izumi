@@ -97,7 +97,7 @@ const lastScheduled = (m: Media) => scheduleNodes(m).reduce((max, n) => Math.max
 // only when nothing at all is known. Used everywhere an episode count is shown so a null
 // AniList count falls back to the schedule instead of rendering '?' / 'TBA'.
 export const totalEpisodes = (m: Media) =>
-  m.episodes || lastScheduled(m) || m.nextAiringEpisode?.episode || 0
+  m.episodes || lastScheduled(m) || m.nextAiringEpisode?.episode || m.airedEpisodes || 0
 
 // Episodes aired so far. nextAiringEpisode is authoritative when present (nextAiring-1),
 // followed by actual past schedule nodes. A currently-airing MAL-only row has a planned total but
@@ -107,7 +107,9 @@ export const totalEpisodes = (m: Media) =>
 export const airedCount = (m: Media) => {
   if (m.nextAiringEpisode?.episode) return m.nextAiringEpisode.episode - 1
   const scheduled = lastAiredScheduled(m)
-  if (scheduled) return scheduled
+  const hasSupplied = Number.isFinite(m.airedEpisodes) && (m.airedEpisodes ?? -1) >= 0
+  const supplied = hasSupplied ? m.airedEpisodes! : 0
+  if (scheduled || hasSupplied) return Math.max(scheduled, supplied)
   if (m.status === 'NOT_YET_RELEASED') return 0
   if (m.status === 'RELEASING' || m.status === 'HIATUS') return Infinity
   return m.episodes ?? Infinity

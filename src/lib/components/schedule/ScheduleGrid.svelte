@@ -196,6 +196,12 @@
   let selected = $state(untrack(() =>
     start === weekRange(new Date()).start ? (new Date().getDay() + 6) % 7 : 0,
   ))
+  // The page keeps this component mounted while paging weeks so tracker sets and overlay caches do
+  // not reload. Reset only the week-specific selection that the old keyed remount used to reset.
+  $effect(() => {
+    const week = start
+    selected = week === weekRange(new Date()).start ? (new Date().getDay() + 6) % 7 : 0
+  })
 
   // Keep the selected day card centered in the horizontally-scrollable day strip (mobile).
   let dayRow = $state<HTMLElement>()

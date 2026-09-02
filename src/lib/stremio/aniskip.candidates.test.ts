@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   resolveCandidates,
+  isTransientAniSkipStatus,
   segmentsFromResponses,
   skipTimeUrls,
   SKIP_RETRY_MS,
@@ -16,6 +17,13 @@ describe('skip-time retries', () => {
     expect(SKIP_RETRY_MS[0]).toBe(0)
     expect(SKIP_RETRY_MS[1]).toBeGreaterThan(5_000)
     expect(SKIP_RETRY_MS[2]).toBeGreaterThan(SKIP_RETRY_MS[1])
+  })
+
+  it('distinguishes a real missing episode from transient API failures', () => {
+    expect(isTransientAniSkipStatus(404)).toBe(false)
+    expect(isTransientAniSkipStatus(429)).toBe(true)
+    expect(isTransientAniSkipStatus(500)).toBe(true)
+    expect(isTransientAniSkipStatus(503)).toBe(true)
   })
 })
 

@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest'
-import { mapKitsuMedia } from './kitsu-catalog'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const schedule = vi.hoisted(() => ({ getAiringProgress: vi.fn() }))
+vi.mock('$lib/anime/animeschedule', () => ({
+  getAiringProgress: schedule.getAiringProgress,
+  scheduleTitles: (title: { romaji?: string; english?: string }) => [title.romaji, title.english],
+}))
+
+import { hydrateKitsuAiring, mapKitsuMedia } from './kitsu-catalog'
 import { mapKitsuRelations } from '$lib/catalog/providers/kitsu'
 
 describe('native Kitsu media mapping', () => {
@@ -10,6 +17,8 @@ describe('native Kitsu media mapping', () => {
       status: 'current', startDate: '2026-01-02', episodeCount: 12, averageRating: '82.4',
     },
   }
+
+  beforeEach(() => schedule.getAiringProgress.mockReset())
 
   it('retains the Kitsu identity when no AniList mapping exists', () => {
     const media = mapKitsuMedia(raw)
@@ -23,6 +32,19 @@ describe('native Kitsu media mapping', () => {
     const media = mapKitsuMedia(raw, 7)
     expect(media.id).toBe(7)
     expect(media.externalIds).toEqual({ kitsu: 42, anilist: 7 })
+  })
+
+  it('keeps Kitsu planned episodes separate from the confirmed released count', async () => {
+    schedule.getAiringProgress.mockResolvedValue({
+      airedEpisodes: 8, nextEpisode: 9, nextAiringAt: 2_000_000_000,
+    })
+    const media = await hydrateKitsuAiring(mapKitsuMedia(raw, 7))
+    expect(media).toMatchObject({
+      episodes: 12,
+      airedEpisodes: 8,
+      nextAiringEpisode: { episode: 9, airingAt: 2_000_000_000 },
+    })
+    expect(schedule.getAiringProgress).toHaveBeenCalledWith(7, ['Example', 'Example'])
   })
 
   it('maps Kitsu media relationships to provider-native related cards', () => {
