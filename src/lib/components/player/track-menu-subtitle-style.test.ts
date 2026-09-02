@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 const src = readFileSync(fileURLToPath(new URL('./TrackMenu.svelte', import.meta.url)), 'utf8')
 const controls = readFileSync(fileURLToPath(new URL('./Controls.svelte', import.meta.url)), 'utf8')
+const android = readFileSync(fileURLToPath(new URL('./AndroidPlayer.svelte', import.meta.url)), 'utf8')
 
 describe('Steam Deck subtitle style menu', () => {
   it('offers saved presets and an automatic current-release save action', () => {
@@ -52,5 +53,10 @@ describe('Unified player media menu', () => {
     expect(src).toContain("kind: 'server' as const")
     expect(src).toContain('serverMenuLabels')
     expect(src).toContain('await playStream(')
+  })
+
+  it('distinguishes a source with no subtitle tracks from subtitles that are merely off', () => {
+    expect(controls).toMatch(/!subs\.length\s*\? 'Unavailable'/)
+    expect(android).toContain("subTracks.length ? 'Off' : 'Unavailable'")
   })
 })

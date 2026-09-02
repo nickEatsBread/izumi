@@ -26,7 +26,12 @@ export function pickSubtitleTrackId(
   const subs = tracks.filter((track) => track.type === 'sub')
   if (!subs.length) return undefined
   const inLang = subs.filter((track) => langMatches(track, subLang))
-  const pool = inLang.length ? inLang : subs
+  // An unlabelled track is often the mux's only English track, so it remains a safe fallback.
+  // A positively-labelled foreign track is not: selecting French/Russian merely because English
+  // is absent conceals the source mismatch and is worse than leaving mpv's language policy alone.
+  const unlabelled = subs.filter((track) => !track.lang?.trim() || track.lang.trim().toLowerCase() === 'und')
+  const pool = inLang.length ? inLang : unlabelled
+  if (!pool.length) return undefined
   const dubbing = audioLang === 'eng' && subLang === 'eng'
   if (dubbing) {
     const signs = pool.find((track) => {

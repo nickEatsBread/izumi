@@ -36,4 +36,17 @@ describe('pickSubtitleTrackId', () => {
       sub({ id: 10_001, lang: 'de-DE', title: 'German' }),
     ], 'jpn', 'eng')).toBe(10_000)
   })
+
+  it('does not silently replace requested English with a labelled foreign track', () => {
+    expect(pickSubtitleTrackId([
+      sub({ id: 5, lang: 'fra', title: 'Français' }),
+      sub({ id: 6, lang: 'rus', title: 'Русский' }),
+    ], 'jpn', 'eng')).toBeUndefined()
+  })
+
+  it('still accepts an unlabelled sole subtitle track', () => {
+    expect(pickSubtitleTrackId([
+      sub({ id: 7, title: 'Full Subtitles' }),
+    ], 'jpn', 'eng')).toBe(7)
+  })
 })

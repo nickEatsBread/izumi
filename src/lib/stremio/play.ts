@@ -13,7 +13,7 @@ import { sourceTitleAliases } from './title-aliases'
 import { buildStreamIds } from './stream-ids'
 import { shouldShowCachingScreen } from './caching-screen'
 import type { RankOptions } from './addon'
-import { scoreInfo } from './score'
+import { continuityChoice, scoreInfo } from './score'
 import { directMetadataPrefetchKey, directMetadataPrefetchRequest } from './direct-metadata-prefetch'
 import { developerConsoleEnabled } from '$lib/debug/log-gate'
 
@@ -38,6 +38,7 @@ const emptyStreamsError = (total: number, enabledAddons: string[], rejected = 0)
 }
 const rankOpts = (anilistId?: number): RankOptions => ({
   audioLang: get(preferredAudioLang),
+  subtitleLang: get(preferredSubLang),
   directP2p: directP2pEnabled(),
   // Synchronous by necessity — this is a settings snapshot, not an async step — so it reads what a
   // previous lookup already learned rather than starting one. A cold title simply ranks without the
@@ -59,6 +60,7 @@ function activeSourceCandidates(
   return planSources(baseline, {
     directP2p,
     audioLang: options.audioLang,
+    subtitleLang: options.subtitleLang,
     sourcePriority: options.sourcePriority,
     outcomeOf: sourceOutcomeSummary,
   }).planned
@@ -1175,12 +1177,12 @@ export function pickDirectContinuationCandidate(
   opts: RankOptions = {},
 ): Stream | undefined {
   if (!hint) return undefined
-  const eligible = streams.filter((stream) =>
-    !(want && isWrongSeason(stream, want)) && matchesRelease(stream, hint))
+  const eligible = streams.filter((stream) => !(want && isWrongSeason(stream, want)))
+  const matching = eligible.filter((stream) => matchesRelease(stream, hint))
   const hashOf = (stream: Stream) => stream.infoHash
     ?? torrentioResolverInfoHash(stream.url, stream.__addonName ?? stream.name)
   const exact = hint.active && hint.infoHash
-    ? eligible.find((stream) => hashOf(stream)?.toLowerCase() === hint.infoHash!.toLowerCase())
+    ? matching.find((stream) => hashOf(stream)?.toLowerCase() === hint.infoHash!.toLowerCase())
     : undefined
   if (exact) return exact
 
@@ -1194,7 +1196,14 @@ export function pickDirectContinuationCandidate(
       : DIRECT_CONTINUE_KNOWN_HEALTH_MAX_BYTES
     return info.sizeBytes <= max
   })
-  return pickBest(safe, quality, want, opts)
+  const incumbent = pickBest(safe.filter((stream) => matchesRelease(stream, hint)), quality, want, opts)
+  if (!incumbent) return undefined
+  const baseline = pickBest(safe, quality, want, opts)
+  return continuityChoice(
+    describe(incumbent),
+    baseline ? describe(baseline) : undefined,
+    opts.subtitleLang,
+  )?.stream
 }
 
 /** Pick a torrent that can continue the active release. Input order is already the addon's
@@ -1245,7 +1254,13 @@ const playableNow = (s: Stream) => !!(s.__stream || s.url || describe(s).cached 
 function pickSameRelease(media: Media, streams: Stream[], want?: EpisodeWant): Stream | undefined {
   const c = continueHint(media)
   if (!c) return undefined
-  return streams.find((s) => matchesRelease(s, c) && playableNow(s) && !isUncached(s) && !(want && isWrongSeason(s, want)))
+  return pickReadyContinuationCandidate(
+    streams,
+    c,
+    want,
+    get(preferredQuality),
+    rankOpts(anilistIdOf(media)),
+  )
 }
 
 let sourceIntentTimer: ReturnType<typeof setTimeout> | undefined
@@ -1287,6 +1302,53 @@ export function prefetchEpisodeSources(media: Media, episode: number | undefined
  * choice, but it is not a reason to abandon preloading altogether: per-episode torrents commonly
  * change hash and release group between episodes. In that case the best already-cached source is
  * still a safe, instant fallback and is much better than leaving Next cold. */
+export function pickReadyContinuationCandidate(
+  streams: Stream[],
+  hint: ContinueHint | undefined,
+  want?: EpisodeWant,
+  quality = 'any',
+  opts: RankOptions = { cacheCheck: 'native' },
+): Stream | undefined {
+  if (!hint) return undefined
+  const ready = streams.filter((stream) =>
+    playableNow(stream)
+    && !isUncached(stream)
+    && !(want && isWrongSeason(stream, want)))
+  const sameRelease = pickBest(ready.filter((stream) => matchesRelease(stream, hint)), quality, want, opts)
+  const baseline = pickBest(ready, quality, want, opts)
+  if (!sameRelease) return undefined
+  return continuityChoice(
+    describe(sameRelease),
+    baseline ? describe(baseline) : undefined,
+    opts.subtitleLang,
+  )?.stream
+}
+
+export function pickRankedContinuationCandidate(
+  streams: Stream[],
+  hint: ContinueHint | undefined,
+  want?: EpisodeWant,
+  quality = 'any',
+  opts: RankOptions = {},
+): Stream | undefined {
+  if (!hint) return undefined
+  const eligible = want ? streams.filter((stream) => !isWrongSeason(stream, want)) : streams
+  const options = { ...opts, allowUncached: true }
+  const sameRelease = pickBest(
+    eligible.filter((stream) => matchesRelease(stream, hint)),
+    quality,
+    want,
+    options,
+  )
+  if (!sameRelease) return undefined
+  const baseline = pickBest(eligible, quality, want, options)
+  return continuityChoice(
+    describe(sameRelease),
+    baseline ? describe(baseline) : undefined,
+    opts.subtitleLang,
+  )?.stream
+}
+
 export function pickCachedPreloadCandidate(
   streams: Stream[],
   hint: ContinueHint | undefined,
@@ -1294,14 +1356,11 @@ export function pickCachedPreloadCandidate(
   quality = 'any',
   opts: RankOptions = { cacheCheck: 'native' },
 ): Stream | undefined {
-  const ready = streams.filter((stream) =>
-    playableNow(stream)
-    && !isUncached(stream)
-    && !(want && isWrongSeason(stream, want)))
-  const sameRelease = hint
-    ? ready.find((stream) => matchesRelease(stream, hint))
-    : undefined
-  return sameRelease ?? pickBest(ready, quality, want, opts)
+  return pickReadyContinuationCandidate(streams, hint, want, quality, opts)
+    ?? pickBest(streams.filter((stream) =>
+      playableNow(stream)
+      && !isUncached(stream)
+      && !(want && isWrongSeason(stream, want))), quality, want, opts)
 }
 
 /** A native cache answer proves the provider can serve this torrent instantly. Preload may create
@@ -2098,9 +2157,10 @@ export async function playEpisode(
       // (an uncached manual pick keeps the picker open while it caches).
       if (cont && continuationCanStart() && !continuationAttempted && seasonSettled && !get(debridCaching)) {
         const directTorrentContinuation = directP2pEnabled() && !cont.online
+        const options = rankOpts(anilistIdOf(media))
         const hit = directTorrentContinuation
-          ? pickDirectContinuationCandidate(s, cont, want, get(preferredQuality), rankOpts(anilistIdOf(media)))
-          : s.find((x) => matchesRelease(x, cont) && playableNow(x) && !isUncached(x) && !(want && isWrongSeason(x, want)))
+          ? pickDirectContinuationCandidate(s, cont, want, get(preferredQuality), options)
+          : pickReadyContinuationCandidate(s, cont, want, get(preferredQuality), options)
         if (hit) tryContinuation(hit)
       }
       // Kick off the next batched cache lookup for whatever just folded in. Only while resolving:
@@ -2363,7 +2423,7 @@ export async function playEpisode(
       if (want) s = verifySeason(s, want)
       const hit = directP2pEnabled() && !cont.online
         ? pickDirectContinuationCandidate(s, cont, want, get(preferredQuality), rankOpts(anilistIdOf(media)))
-        : s.find((x) => matchesRelease(x, cont))
+        : pickRankedContinuationCandidate(s, cont, want, get(preferredQuality), rankOpts(anilistIdOf(media)))
       if (hit) {
         tryContinuation(hit)
         if (continuationAttempt && await continuationAttempt) return
@@ -3723,6 +3783,7 @@ export async function recoverPlaybackSource(
     ? planRecoveryCandidates(adaptiveRanked, failed ?? undefined, failureClass, {
         directP2p,
         audioLang: options.audioLang,
+        subtitleLang: options.subtitleLang,
         sourcePriority: options.sourcePriority,
       })
     : adaptiveRanked)

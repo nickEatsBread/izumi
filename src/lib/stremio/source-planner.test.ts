@@ -98,7 +98,7 @@ describe('adaptive source planner', () => {
     expect(plan.candidates[0].confidence).toBe('medium')
   })
 
-  it('never crosses cache, resolution, language, or explicit source-priority walls', () => {
+  it('never crosses cache, resolution, language, subtitle, or explicit source-priority walls', () => {
     const usual = stream('usual')
     const lowerQuality = stream('lower', 720)
     const wrongLanguage = stream('foreign', 1080, { __langMismatch: true })
@@ -109,11 +109,13 @@ describe('adaptive source planner', () => {
       __seeders: 10,
     })
     const preferred = stream('preferred')
-    const all = [usual, lowerQuality, wrongLanguage, uncached, preferred]
+    const wrongSubtitles = stream('french-only', 1080, { title: 'Show S01E01 SUBFRENCH 1080p' })
+    const all = [usual, lowerQuality, wrongLanguage, uncached, preferred, wrongSubtitles]
     const summaries = new Map(all.map((candidate) => [candidate, outcome(candidate === usual ? 0 : 12, candidate === usual ? 12 : 0)]))
     const plan = planSources(all, {
       directP2p: true,
       audioLang: 'jpn',
+      subtitleLang: 'eng',
       sourcePriority: ['usual', 'preferred'],
       outcomeOf: lookup(summaries),
       now: NOW,

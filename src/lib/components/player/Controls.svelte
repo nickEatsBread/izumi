@@ -703,7 +703,9 @@
   const curSubLabel = $derived(
     !subs.length && $torrentSubtitleState.status === 'loading'
       ? 'Loading…'
-      : curLabel(subs),
+      : !subs.length
+        ? 'Unavailable'
+        : curLabel(subs),
   )
   const curCaptionLabel = $derived(curLabel(captions))
   const curServerLabel = $derived(serverMenuLabels[0] ?? 'Current server')

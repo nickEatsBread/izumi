@@ -46,6 +46,19 @@ describe('pickCandidates', () => {
     expect(pickCandidates(streams, 'any').map((s) => s.url)).toEqual(['it'])
   })
 
+  it('does not auto-pick an explicit foreign-sub source while another candidate may match', () => {
+    const frenchCached = row('fr', '1080p', { title: 'Show S01E01 SUBFRENCH 1080p' })
+    const englishUnknown = {
+      infoHash: 'a'.repeat(40),
+      name: 'Torrentio\n1080p',
+      title: '[SubsPlease] Show - 01 (1080p) 👤 200',
+      behaviorHints: { filename: '[SubsPlease] Show - 01 (1080p).mkv' },
+    } as never
+    expect(pickCandidates([frenchCached, englishUnknown], '1080', undefined, undefined, {
+      subtitleLang: 'eng',
+    })).toEqual([englishUnknown])
+  })
+
   it('returns nothing when nothing is cached', () => {
     expect(pickCandidates([{ url: 'x', name: '[RD download] Addon' } as never], 'any')).toEqual([])
     expect(pickBest([{ url: 'x', name: '[RD download] Addon' } as never], 'any')).toBeUndefined()
@@ -56,6 +69,47 @@ describe('pickCandidates', () => {
     const bad = row('bad', '2160p')
     const candidates = pickCandidates([bad, good], 'any', undefined, (s) => s.url === 'bad')
     expect(candidates.map((s) => s.url)).toEqual(['good', 'bad'])
+  })
+
+  it('picks the community-standard English-sub release from the reported episode-8 sources', () => {
+    // Provider-shaped regression for The Insipid Prince episode 8 (Kitsu 47989). Torrentio does
+    // not expose embedded MKV track lists here; all the chooser has is filename/title evidence.
+    const torrent = (hash: string, seeders: number, filename: string, extra = '') => ({
+      infoHash: hash,
+      __seeders: seeders,
+      name: 'Torrentio\n1080p',
+      title: `${filename}\n👤 ${seeders}${extra}`,
+      behaviorHints: { filename },
+    }) as never
+    const subsPlease = torrent(
+      '0c90d59edd464a5347620b183a00fd3f8c60cd0d',
+      415,
+      '[SubsPlease] Saikyou Degarashi Ouji no Anyaku Teii Arasoi - 08 (1080p) [FDFC0C8D].mkv',
+    )
+    const erai = torrent(
+      'd43c644891e0949f6576e41adfc2665e873be30a',
+      176,
+      '[Erai-raws] Degarashi Ouji - 08 [1080p CR WEB-DL AVC AAC][MultiSub][105451A7].mkv',
+      '\nMulti Subs / 🇬🇧 / 🇫🇷 / 🇩🇪',
+    )
+    const amazonUnknown = torrent(
+      '27d0b03576397323ff6bc5017c50a680ca65a032',
+      94,
+      'Saikyou.Degarashi.Ouji.no.Anyaku.Teii.Arasoi.S01E08.1080p.AMZN.WEB-DL.JPN.DDP2.0.H.264-ToonsHub.mkv',
+    )
+    const frenchOnly = torrent(
+      'c2b316b872599a2c2c13363c3b1f1e0c3624c9f3',
+      92,
+      'The Insipid Princes Furtive Grab for the Throne S01E08 SUBFRENCH 1080p CR WEB-DL-Tsundere-Raws.mkv',
+      '\n🇫🇷',
+    )
+
+    expect(pickBest(
+      [amazonUnknown, frenchOnly, erai, subsPlease],
+      '1080',
+      undefined,
+      { subtitleLang: 'eng' },
+    )).toBe(subsPlease)
   })
 })
 

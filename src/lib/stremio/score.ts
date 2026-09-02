@@ -25,6 +25,10 @@ export interface ScoreOptions {
   /** The user's ordered source trust list. Ranks a stated preference above every heuristic about
    * the file — but still under cache state, which rankInfos sorts on first. */
   sourcePriority?: readonly string[]
+  /** Preferred subtitle language. Release-name evidence is deliberately conservative: it can
+   * reward a source that explicitly promises the requested subtitles, but silence is not treated
+   * as proof that a mux has none. */
+  subtitleLang?: string
 }
 
 /** Fansub groups with a track record for encode quality and subtitle accuracy. Anime-first by
@@ -41,16 +45,103 @@ const TRUSTED = new Set(TRUSTED_GROUPS.map(norm))
 
 /** Convert a source-reported swarm count into ranking points.
  *
- * Debrid only needs enough peers for the provider to acquire the release, so it retains the
- * conservative historical cap. Direct playback is different: the swarm supplies the first frame,
- * and flattening every count above 100 made a 100-seeder torrent indistinguishable from a
- * 1,000-seeder one. A logarithmic curve keeps that useful distinction without allowing very large,
- * noisy tracker estimates to dominate every other signal. */
-export function seederPoints(seeders: number, directP2p = false): number {
+ * Direct playback uses the swarm for bytes; debrid playback still benefits from its community
+ * signal. A bounded logarithmic curve keeps 100 and 1,000 meaningfully distinct without allowing
+ * very large, noisy tracker estimates to dominate every other signal. The second argument remains
+ * for API compatibility now that both paths intentionally use the same curve. */
+export function seederPoints(seeders: number, _directP2p = false): number {
   if (!Number.isFinite(seeders) || seeders <= 0) return 0
-  if (!directP2p) return Math.min(Math.floor(seeders / 10), 10)
   if (seeders < 100) return Math.floor(seeders / 10)
   return Math.min(10 + Math.floor(Math.log2(seeders / 100)), 20)
+}
+
+export type SubtitleCompatibility = 'match' | 'unknown' | 'mismatch'
+
+const subLang = (lang?: string) => {
+  const value = lang?.trim().toLowerCase() ?? ''
+  if (value === 'en' || value === 'eng' || value.startsWith('en-') || value.startsWith('en_')) return 'eng'
+  if (value === 'ja' || value === 'jpn' || value.startsWith('ja-') || value.startsWith('ja_')) return 'jpn'
+  if (value === 'fr' || value === 'fra' || value === 'fre' || value.startsWith('fr-') || value.startsWith('fr_')) return 'fra'
+  return value || undefined
+}
+
+/** Subtitle evidence available before opening a torrent. Stremio does not expose embedded MKV
+ * tracks in its stream response, so UNKNOWN must remain neutral. We only claim a match from
+ * explicit sidecars, release markers, Torrentio's language flags, or groups whose releases are
+ * specifically English-subtitled. */
+export function subtitleCompatibility(info: StreamInfo, wanted?: string): SubtitleCompatibility {
+  const target = subLang(wanted)
+  if (!target || target === 'none') return 'unknown'
+
+  const declared = [
+    ...(info.stream.__subtitles ?? []),
+    ...(info.stream.subtitles ?? []),
+  ]
+  if (declared.length) {
+    const languages = declared.map((track) => subLang(track.lang)).filter(Boolean)
+    if (languages.includes(target)) return 'match'
+    // An unlabelled sidecar may still be the requested language. Do not turn missing metadata into
+    // a confident rejection; only a fully-labelled, non-matching list is actionable.
+    return languages.length === declared.length ? 'mismatch' : 'unknown'
+  }
+
+  if (info.stream.__subtitleMode === 'hard') {
+    const hardLang = subLang(info.stream.__lang)
+    return !hardLang ? 'unknown' : hardLang === target ? 'match' : 'mismatch'
+  }
+
+  const text = [
+    info.stream.name,
+    info.stream.title,
+    info.stream.description,
+    info.stream.behaviorHints?.filename,
+  ].filter(Boolean).join('\n')
+  const group = info.group ? norm(info.group) : ''
+  const explicitlyNoSubs = /\b(?:no[ ._-]?subs?|unsubbed)\b/i.test(text)
+    || /(?:无字幕|無字幕)/u.test(text)
+  if (explicitlyNoSubs) return 'mismatch'
+
+  if (target === 'eng') {
+    if (group === norm('SubsPlease') || group === norm('HorribleSubs')) return 'match'
+    if (/\bmulti[ ._-]?(?:sub|subs|subtitle|subtitles)\b/i.test(text)) return 'match'
+    if (/🇬🇧|🇺🇸/u.test(text)
+      || /\b(?:eng(?:lish)?[ ._-]?subs?|subs?[ ._-]?eng(?:lish)?)\b/i.test(text)) return 'match'
+    // These labels explicitly describe a non-English subtitle release. A bare group ending in
+    // "-Raws" is NOT enough: Erai-raws and several encode groups routinely ship English tracks.
+    if (/\b(?:sub[ ._-]?french|french[ ._-]?subs?|vostfr)\b/i.test(text)) return 'mismatch'
+    const flags = text.match(/🇫🇷|🇷🇺|🇵🇹|🇪🇸|🇲🇽|🇨🇳|🇹🇼|🇩🇪|🇵🇱|🇯🇵/gu)
+    if (flags?.length) return 'mismatch'
+  }
+  return 'unknown'
+}
+
+/** A large live swarm is useful community evidence, but only when the alternative is at least the
+ * same resolution. The ratio and absolute gap both have to be large so ordinary tracker jitter
+ * cannot break a user's release continuity. */
+export function communityDominates(challenger: StreamInfo, incumbent: StreamInfo): boolean {
+  const next = challenger.seeders
+  const current = incumbent.seeders
+  return challenger.quality >= incumbent.quality
+    && next != null && current != null
+    && next >= 100
+    && next - current >= 100
+    && next >= Math.max(1, current) * 4
+}
+
+/** Keep the user's current release when choices are comparable; allow a clearly safer baseline to
+ * break continuity when the incumbent explicitly lacks the requested subtitles or has been
+ * overwhelmingly rejected by the live swarm. */
+export function continuityChoice(
+  incumbent: StreamInfo | undefined,
+  baseline: StreamInfo | undefined,
+  wantedSubtitles?: string,
+): StreamInfo | undefined {
+  if (!incumbent || !baseline || incumbent === baseline || incumbent.stream === baseline.stream) return incumbent
+  const currentSubs = subtitleCompatibility(incumbent, wantedSubtitles)
+  const baselineSubs = subtitleCompatibility(baseline, wantedSubtitles)
+  if (currentSubs === 'mismatch' && baselineSubs !== 'mismatch') return baseline
+  if (communityDominates(baseline, incumbent)) return baseline
+  return incumbent
 }
 
 /** Resolution as POINTS, not a veto.
@@ -75,9 +166,14 @@ export function scoreInfo(info: StreamInfo, opts: ScoreOptions = {}): { score: n
   const res = RESOLUTION_POINTS.find(([q]) => info.quality >= q)
   if (res) add(`${info.quality}p`, res[1])
 
-  // A swarm of 5000 is not fifty times better than one of 100. Direct mode keeps a bounded,
-  // logarithmic distinction above 100; debrid uses the smaller historical cap.
+  // A swarm of 5000 is not fifty times better than one of 100. Keep a bounded logarithmic
+  // distinction above 100 in every mode: even when debrid supplies the bytes, the larger swarm is
+  // useful community evidence that this is the normal, well-vetted release rather than an odd mux.
   if (info.seeders != null) add('seeders', seederPoints(info.seeders, !!opts.directP2p))
+
+  const subtitles = subtitleCompatibility(info, opts.subtitleLang)
+  if (subtitles === 'match') add('requested subtitles', 6)
+  else if (subtitles === 'mismatch') add('wrong or missing subtitles', -24)
 
   if (opts.directP2p && info.stream.infoHash && !info.stream.url && info.sizeBytes != null) {
     const mib = info.sizeBytes / (1024 ** 2)
@@ -114,21 +210,19 @@ export function scoreInfo(info: StreamInfo, opts: ScoreOptions = {}): { score: n
   const group = info.group ? norm(info.group) : ''
   if (group && TRUSTED.has(group)) add('known group', 2)
   // Staying on one group across a binge keeps subtitle styling, typesetting and naming consistent,
-  // which is worth more than any single quality signal — swapping group mid-season is jarring in a
-  // way a slightly worse encode is not. Weighted above the seeder cap on purpose: the popular
-  // alternative essentially always has more seeders, so anything lower would mean this never
-  // decided the one case it exists for.
+  // but it is a preference rather than a veto. A large swarm gap is meaningful community evidence,
+  // and the continuation selectors apply an explicit dominance guard before auto-starting too.
   if (group && opts.previousGroup && group === norm(opts.previousGroup)) {
-    // Continuity is a preference, not permission to fetch a much larger torrent on every Next.
-    // Direct P2P keeps a small tie-breaker; debrid/CDN playback retains the strong preference.
-    add('same group as last episode', opts.directP2p ? 2 : 12)
+    // Direct P2P keeps continuity as a very small tie-breaker because swarm health also controls
+    // startup. Debrid can afford a little more, but never more than the health signal itself.
+    add('same group as last episode', opts.directP2p ? 2 : 4)
   }
 
   // Curation deliberately scores NOTHING here; addon.ts promotes a curated row within its own
   // resolution instead, which is a thing points cannot express. What matters
   // for a within-tier preference is the ADJACENT gap, not the 25 → 2 spread: 1440p → 1080p is 2
-  // points and 1080p → 720p is 12, so any weight big enough to beat group continuity (12) also
-  // buys a whole tier — the exact trade the seeder cap of 10 exists to forbid.
+  // points and 1080p → 720p is 12. Curation is a categorical recommendation, so it remains a
+  // within-resolution promotion rather than another point term.
 
   // Nothing to download from and nothing already resolved: not merely worse, effectively unplayable.
   // A penalty rather than a filter, because seeder counts are often stale or simply absent.

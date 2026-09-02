@@ -1,5 +1,5 @@
 import { describe, isWrongSeason, type CacheState, type Stream, type StreamInfo, type StreamSort } from './parse'
-import { scoreInfo, type ScoreOptions } from './score'
+import { scoreInfo, subtitleCompatibility, type ScoreOptions } from './score'
 
 // Runtime-neutral source ordering shared by the app and the self-hosted Cloudflare resolver.
 // Keep network access and persisted stores out of this module so Workers can bundle the exact
@@ -98,7 +98,12 @@ export function pickCandidates(
   const cacheFirst = (i: StreamInfo) => cacheRank(i.cached)
   const tierRank = (i: StreamInfo) =>
     !Number.isFinite(target) ? 0 : i.quality === target ? 0 : i.quality < target ? 1 : 2
-  const eligible = preferred.length ? preferred : all
+  const audioEligible = preferred.length ? preferred : all
+  // Explicitly wrong/missing subtitles are a fallback, not an automatic choice. UNKNOWN remains
+  // eligible because Stremio normally cannot reveal embedded MKV tracks until the file is open.
+  const subtitlePreferred = audioEligible.filter((i) =>
+    subtitleCompatibility(i, opts.subtitleLang) !== 'mismatch')
+  const eligible = subtitlePreferred.length ? subtitlePreferred : audioEligible
   const scored = new Map<StreamInfo, number>()
   const scoreOf = (i: StreamInfo) => {
     let score = scored.get(i)

@@ -4,6 +4,7 @@ import {
   pickCachedPreloadCandidate,
   pickDirectContinuationCandidate,
   pickDirectPreloadCandidate,
+  pickReadyContinuationCandidate,
   preloadResolveNoAdd,
   REMEMBERED_SOURCE_MAX_AGE_MS,
   rememberedContinueHint,
@@ -168,6 +169,28 @@ describe('safe direct-P2P continuation', () => {
       group: 'Group',
     })).toBeUndefined()
   })
+
+  it('does not let a weak prior group bypass the dominant episode-8 English-sub release', () => {
+    const asw = torrent(
+      '[ASW] Saikyou Degarashi Ouji no Anyaku Teii Arasoi - 08 [1080p HEVC].mkv',
+      'ecc27f2b6623cb8e0134a97aa41d28b27b3ebe06',
+      213,
+      7,
+    )
+    const subsPlease = torrent(
+      '[SubsPlease] Saikyou Degarashi Ouji no Anyaku Teii Arasoi - 08 (1080p).mkv',
+      '0c90d59edd464a5347620b183a00fd3f8c60cd0d',
+      1_382,
+      415,
+    )
+    expect(pickDirectContinuationCandidate(
+      [asw, subsPlease],
+      { infoHash: 'episode-7', group: 'ASW' },
+      { season: 1, episode: 8, abs: 8 },
+      '1080',
+      { directP2p: true, subtitleLang: 'eng' },
+    )).toBe(subsPlease)
+  })
 })
 
 describe('cached debrid preload fallback', () => {
@@ -179,11 +202,24 @@ describe('cached debrid preload fallback', () => {
     behaviorHints: { filename: `[${group}] Show - 04 [${quality}p].mkv` },
   } as Stream)
 
-  it('keeps the same cached release ahead of a better-ranked fallback', () => {
+  it('breaks continuity when a same-or-better quality release has overwhelming community support', () => {
     const same = torrent('Current', 'next-current', 720, 'cached')
     const fallback = torrent('Fallback', 'next-fallback', 1080, 'cached')
 
     expect(pickCachedPreloadCandidate(
+      [fallback, same],
+      { infoHash: 'previous-current', group: 'Current' },
+      { season: 1, episode: 4, abs: 4 },
+      '1080',
+      { cacheCheck: 'native' },
+    )).toBe(fallback)
+  })
+
+  it('keeps continuity when the swarm difference is ordinary tracker noise', () => {
+    const same = torrent('Current', 'next-current', 1080, 'cached')
+    const fallback = { ...torrent('Fallback', 'next-fallback', 1080, 'cached'), __seeders: 60 }
+
+    expect(pickReadyContinuationCandidate(
       [fallback, same],
       { infoHash: 'previous-current', group: 'Current' },
       { season: 1, episode: 4, abs: 4 },

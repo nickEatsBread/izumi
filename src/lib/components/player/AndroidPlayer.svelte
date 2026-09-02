@@ -1212,7 +1212,9 @@
   function trackLabel(t: MpvTrack) { return [t.lang?.toUpperCase(), t.title].filter(Boolean).join(' · ') || `Track ${t.id}` }
   function selectedTrackLabel(type: 'audio' | 'sub'): string {
     const selected = tracks.find((track) => track.type === type && track.selected)
-    return selected ? trackLabel(selected) : type === 'sub' ? 'Off' : 'Default'
+    return selected ? trackLabel(selected)
+      : type === 'sub' ? (subTracks.length ? 'Off' : 'Unavailable')
+        : 'Default'
   }
   function settingsTitle(): string {
     return settingsPage === 'speed' ? 'Playback speed'

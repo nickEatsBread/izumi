@@ -1,5 +1,5 @@
 import { describe as suite, it, expect } from 'vitest'
-import { scoreInfo, RESOLUTION_POINTS, TRUSTED_GROUPS, seederPoints } from './score'
+import { scoreInfo, RESOLUTION_POINTS, TRUSTED_GROUPS, seederPoints, subtitleCompatibility } from './score'
 import { describe } from './parse'
 
 const info = (filename: string, extra: Record<string, unknown> = {}) =>
@@ -19,8 +19,10 @@ suite('scoreInfo', () => {
     expect(score('Show - 01 (1080p) 👤 120')).toBeGreaterThan(score('Show - 01 (1080p) 👤 3'))
   })
 
-  it('caps the seeder reward so a swarm cannot outweigh everything else', () => {
-    expect(score('Show - 01 👤 100000')).toBe(score('Show - 01 👤 100'))
+  it('keeps community adoption visible above 100 seeders without making it linear', () => {
+    expect(score('Show - 01 👤 100000')).toBeGreaterThan(score('Show - 01 👤 100'))
+    expect(seederPoints(100_000)).toBe(19)
+    expect(seederPoints(100_000)).toBeLessThan(20)
   })
 
   it('keeps materially healthier swarms distinct for direct P2P without making growth linear', () => {
@@ -137,11 +139,22 @@ suite('scoreInfo', () => {
     expect(score(`[${trusted}] Show - 01 (1080p)`)).toBeGreaterThan(score('[WhoKnows] Show - 01 (1080p)'))
   })
 
-  it('strongly prefers the group the previous episode played from', () => {
-    // Staying on one group across a binge keeps subtitle styling, naming and timing consistent —
-    // it matters more than any single quality signal.
-    const same = score('[Erai-raws] Show - 02 (1080p)', {}, { previousGroup: 'Erai-raws' })
-    const other = score('[SubsPlease] Show - 02 (1080p) 👤 500', {}, { previousGroup: 'Erai-raws' })
+  it('rewards explicit requested-subtitle evidence and rejects explicit foreign-only rows', () => {
+    const english = info('[Erai-raws] Show - 01 [1080p][MultiSub].mkv')
+    const french = info('Show S01E01 SUBFRENCH 1080p.mkv')
+    expect(subtitleCompatibility(english, 'eng')).toBe('match')
+    expect(subtitleCompatibility(french, 'eng')).toBe('mismatch')
+    expect(scoreInfo(english, { subtitleLang: 'eng' }).score)
+      .toBeGreaterThan(scoreInfo(french, { subtitleLang: 'eng' }).score)
+  })
+
+  it('does not pretend that a silent torrent filename proves subtitle availability', () => {
+    expect(subtitleCompatibility(info('[Unknown] Show - 01 (1080p).mkv'), 'eng')).toBe('unknown')
+  })
+
+  it('prefers the previous group when the releases have comparable community support', () => {
+    const same = score('[Erai-raws] Show - 02 (1080p) 👤 80', {}, { previousGroup: 'Erai-raws' })
+    const other = score('[SubsPlease] Show - 02 (1080p) 👤 100', {}, { previousGroup: 'Erai-raws' })
     expect(same).toBeGreaterThan(other)
   })
 
@@ -195,14 +208,13 @@ suite('scoreInfo', () => {
       })
     }
 
-    it('leaves no room for a within-tier bonus that outranks group continuity', () => {
+    it('keeps continuity below the live community-health range', () => {
       const gaps = RESOLUTION_POINTS.slice(0, -1).map(([, p], i) => p - RESOLUTION_POINTS[i + 1][1])
       expect(gaps).toEqual([3, 2, 12, 6])
-      // The seeder cap (10) is calibrated against the 12: health may cross the narrow gaps and
-      // must not cross that one. Anything that has to outrank group continuity (12) to decide the
-      // case it exists for cannot be points at all — it would clear every gap on the ladder. That
-      // is why curation is a promotion inside one resolution rather than a weight.
-      expect(Math.min(...gaps)).toBeLessThan(12)
+      const continuity = scoreInfo(info('[Erai-raws] Show - 02 (1080p)'), { previousGroup: 'Erai-raws' })
+        .reasons.find((reason) => reason.signal === 'same group as last episode')?.delta
+      expect(continuity).toBe(4)
+      expect(seederPoints(100_000)).toBeGreaterThan(continuity!)
     })
   })
 })

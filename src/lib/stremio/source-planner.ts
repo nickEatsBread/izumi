@@ -3,6 +3,7 @@ import { describe, languageMismatch, type Stream } from './addon'
 import { candidateIds } from './candidate-model'
 import { priorityIndexOf } from './source-priority'
 import { torrentioResolverInfoHash } from './resolver-url'
+import { subtitleCompatibility } from './score'
 
 export type SourcePlanConfidence = 'low' | 'medium' | 'high'
 
@@ -36,6 +37,7 @@ export interface SourcePlannerOptions {
   /** Shadow may expose a promising uncertain challenger; active requires conservative confidence. */
   policy?: 'preview' | 'active'
   audioLang?: string
+  subtitleLang?: string
   sourcePriority?: readonly string[]
   outcomeOf?: (stream: Stream, transport: PlaybackTransport) => SourceOutcomeSummary | undefined
   now?: number
@@ -66,9 +68,15 @@ function hardConstraintKey(stream: Stream, options: SourcePlannerOptions): strin
   const priority = options.sourcePriority?.length
     ? priorityIndexOf(stream, options.sourcePriority)
     : -1
-  // Exact cache state, resolution, language compatibility and an explicitly stated source order
-  // are walls, not weights. Learning may only exchange rows whose complete key is identical.
-  return [info.cached, info.quality, languageMismatch(info, options.audioLang), priority].join('|')
+  // Exact cache state, resolution, audio/subtitle compatibility and an explicitly stated source
+  // order are walls, not weights. Learning may only exchange rows whose complete key is identical.
+  return [
+    info.cached,
+    info.quality,
+    languageMismatch(info, options.audioLang),
+    subtitleCompatibility(info, options.subtitleLang),
+    priority,
+  ].join('|')
 }
 
 const weighted = (automatic: SourceOutcomeCounts, manual: SourceOutcomeCounts, field: keyof Pick<
