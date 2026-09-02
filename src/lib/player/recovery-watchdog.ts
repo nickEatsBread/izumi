@@ -3,7 +3,6 @@ export const DIRECT_TORRENT_START_TIMEOUT_MS = 40_000
 export const DIRECT_TORRENT_RECOVERY_TIMEOUT_MS = 25_000
 export const DIRECT_TORRENT_NO_PROGRESS_TIMEOUT_MS = 15_000
 export const DIRECT_TORRENT_HARD_START_TIMEOUT_MS = 60_000
-export const STALL_TIMEOUT_MS = 25_000
 export const POSITION_EPSILON_S = 0.2
 
 /** A full episode resolving to a tiny short is a wrong source, not a valid runtime variation.
@@ -38,12 +37,10 @@ export function prematureEof(
 
 export interface RecoveryWatchState {
   loadedAt: number
-  lastAdvancedAt: number
   lastPosition: number
-  positionAdvanceCount: number
+  playbackObserved: boolean
   lastNetworkBytes: number
   lastNetworkAdvancedAt: number
-  bufferingSince: number | null
 }
 
 export interface TorrentDeliveryState {
@@ -90,7 +87,8 @@ export interface RecoverySignal {
   position: number
   duration: number
   paused: boolean
-  buffering: boolean
+  // Deliberately no `buffering` signal: after playback begins, cache starvation cannot identify
+  // whether the source or the client's network is at fault and must never authorize replacement.
   seeking: boolean
   eof: boolean
   firstFrame: boolean
@@ -104,12 +102,10 @@ export interface RecoverySignal {
 export function resetRecoveryWatch(now: number): RecoveryWatchState {
   return {
     loadedAt: now,
-    lastAdvancedAt: now,
     lastPosition: 0,
-    positionAdvanceCount: 0,
+    playbackObserved: false,
     lastNetworkBytes: 0,
     lastNetworkAdvancedAt: now,
-    bufferingSince: null,
   }
 }
 
@@ -120,54 +116,38 @@ export function recoveryStreamKey(stream: Stream): string {
     ?? `${stream.__origin?.kind ?? ''}:${stream.__origin?.id ?? ''}:${stream.behaviorHints?.filename ?? stream.title ?? stream.name ?? ''}`
 }
 
-/** Update the liveness clock from one player sample and decide whether the current source is dead.
- * Deliberate pauses, seeks, EOF and the final seconds of a file can all hold a stable position and
- * must never be mistaken for a failed stream. */
+/** Update startup liveness from one player sample and decide whether the load never established.
+ * Deliberate pauses, seeks, EOF and any evidence of playback disarm timeout-based replacement. */
 export function recoveryWatchDecision(
   previous: RecoveryWatchState,
   signal: RecoverySignal,
-): { state: RecoveryWatchState; recover: boolean; reason?: 'never-started' | 'stalled' } {
-  const { now, position, duration, paused, buffering, seeking, eof, firstFrame } = signal
+): { state: RecoveryWatchState; recover: boolean; reason?: 'never-started' } {
+  const { now, position, duration, paused, seeking, eof, firstFrame } = signal
   const advanced = position > previous.lastPosition + POSITION_EPSILON_S
-  let state = advanced
-    ? {
-        ...previous,
-        lastAdvancedAt: now,
-        lastPosition: position,
-        positionAdvanceCount: previous.positionAdvanceCount + 1,
-        bufferingSince: null,
-      }
-    : { ...previous, lastPosition: Math.max(previous.lastPosition, position) }
-  let networkAdvanced = false
+  let state = {
+    ...previous,
+    lastPosition: advanced ? position : Math.max(previous.lastPosition, position),
+    playbackObserved: previous.playbackObserved || advanced || firstFrame,
+  }
   if (signal.networkBytes != null
     && Number.isFinite(signal.networkBytes)
     && signal.networkBytes > state.lastNetworkBytes) {
-    networkAdvanced = true
     state = {
       ...state,
       lastNetworkBytes: signal.networkBytes,
       lastNetworkAdvancedAt: now,
-      bufferingSince: null,
     }
   }
 
   if (paused || seeking || eof || (duration > 0 && position >= duration - 3)) {
-    return { state: { ...state, lastAdvancedAt: now, bufferingSince: null }, recover: false }
+    return { state, recover: false }
   }
-  // Two independent clock advances are stronger proof of presented playback than the platform's
-  // one-shot first-frame event. The latter can be dropped while the native player keeps rendering;
-  // a single jump is not enough because loading at a resume offset also looks like advancement.
-  const playbackConfirmed = firstFrame || state.positionAdvanceCount >= 2
+  // Either a presented frame or any moving playhead is evidence that playback may already have
+  // begun. The frame event can be dropped by the platform, and a single position update can be a
+  // resume seek, so neither proves that the SOURCE is bad when later progress stops. In that
+  // ambiguous state user control wins: automatic recovery is only for a load frozen at its origin.
+  const playbackConfirmed = state.playbackObserved
   if (!playbackConfirmed) {
-    // A stream whose CLOCK is moving is alive, whatever the frame flag says. The flag rides a
-    // presentation event (Android: PLAYBACK_RESTART) that can be lost in transit, and a lost flag
-    // used to park a perfectly-playing torrent in this branch forever — recovery then fired on
-    // every startup-timeout lap, "switching" away from a healthy source over and over. Position
-    // advancement is the same ground truth the stalled branch below already trusts; requiring a
-    // real position keeps a stream frozen at 0 on the timeout path it belongs on.
-    if (position > POSITION_EPSILON_S && now - state.lastAdvancedAt < STALL_TIMEOUT_MS) {
-      return { state, recover: false }
-    }
     const startTimeout = signal.startTimeoutMs != null
       && Number.isFinite(signal.startTimeoutMs)
       && signal.startTimeoutMs > 0
@@ -190,17 +170,11 @@ export function recoveryWatchDecision(
     }
     return { state, recover: true, reason: 'never-started' }
   }
-  // A stale JS position sample is not evidence that native playback stopped. Webviews can miss or
-  // batch telemetry while mpv continues to render, which previously force-switched healthy P2P
-  // playback across every OS. Require an explicit, continuous buffering signal and no simultaneous
-  // position or torrent-server delivery progress before declaring a post-frame stall.
-  if (!buffering || advanced || networkAdvanced) {
-    return { state: { ...state, bufferingSince: null }, recover: false }
-  }
-  const bufferingSince = state.bufferingSince ?? now
-  state = { ...state, bufferingSince }
-  return now - bufferingSince >= STALL_TIMEOUT_MS
-    ? { state, recover: true, reason: 'stalled' }
-    : { state, recover: false }
+  // Once playback has presented frames, a stall is not evidence that the SOURCE is bad. The same
+  // paused-for-cache signal is produced by an ordinary client-side outage (weak Wi-Fi, a sleeping
+  // network adapter, temporary packet loss), so using its duration to replace the source destroys
+  // a healthy session and cannot fix the underlying connection. Keep buffering as player/UI state;
+  // automatic replacement remains limited to loads that never established playback at all.
+  return { state, recover: false }
 }
 import type { Stream } from '$lib/stremio/addon'

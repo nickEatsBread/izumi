@@ -1445,7 +1445,6 @@
         // Only a pause after a real frame is deliberate; otherwise this would disable recovery
         // forever on Deck/desktop while the player remains black.
         paused: paused && firstFrame,
-        buffering,
         seeking,
         eof,
         firstFrame,

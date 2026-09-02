@@ -813,7 +813,6 @@ function attachAndroid(
       // never-started clock entirely. That was the "black screen until pause/play is toggled"
       // report: the manual toggle was what re-armed the watchdog.
       paused: latest.paused && latest.frameReady,
-      buffering: latest.buffering || latest.coreIdle,
       seeking: latest.seeking || latest.seekBusy,
       eof: latest.eof,
       firstFrame: latest.frameReady,
@@ -3639,7 +3638,7 @@ async function waitForDesktopFirstFrame(
 export async function recoverPlaybackSource(
   position: number,
   autoplay: boolean,
-  notice = 'Playback stalled — trying another source…',
+  notice = 'Source failed to start — trying another source…',
 ): Promise<boolean> {
   const owner = currentPlaybackOwner()
   if (!owner) return false
