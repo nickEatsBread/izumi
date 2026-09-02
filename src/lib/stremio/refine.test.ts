@@ -132,6 +132,50 @@ describe('refineStreams', () => {
     expect(r.rejected.every(({ reason }) => reason === 'title-mismatch')).toBe(true)
   })
 
+  it('keeps Kitsu synonym and romanization-spacing matches when the English title field is absent', () => {
+    const dogulWang = {
+      title: { romaji: 'Dogul Wang', english: undefined },
+      synonyms: ['Tomb Raider King', 'Toukutsuou'],
+      format: 'TV',
+      episodes: 12,
+      duration: 23,
+      startDate: { year: 2026 },
+    } as never
+    const r = refineStreams(dogulWang, [
+      named('Tomb.Raider.King.S01E08.1080p.CR.WEB-DL.mkv'),
+      named('Toukutsu Ou — Episode 8', {
+        __stream: true,
+        __sourceTitle: 'Toukutsu Ou',
+      }),
+      named('[Erai-raws] Dogulwang - 08 (JA) [1080p CR WEB-DL].mkv'),
+    ] as never)
+
+    expect(r.kept).toHaveLength(3)
+    expect(r.rejected).toHaveLength(0)
+  })
+
+  it('does not let synonym or compact matching admit a sequel or lookalike title', () => {
+    const dogulWang = {
+      title: { romaji: 'Dogul Wang', english: undefined },
+      synonyms: ['Tomb Raider King', 'Toukutsuou'],
+      format: 'TV',
+      episodes: 12,
+      duration: 23,
+      startDate: { year: 2026 },
+    } as never
+    const r = refineStreams(dogulWang, [
+      named('Dogul Wangan Midnight - 08 [1080p].mkv'),
+      named('Dogulwang End Line — Episode 8', {
+        __stream: true,
+        __sourceTitle: 'Dogulwang: End Line',
+      }),
+    ] as never)
+
+    expect(r.kept).toHaveLength(0)
+    expect(r.rejected).toHaveLength(2)
+    expect(r.rejected.every(({ reason }) => reason === 'title-mismatch')).toBe(true)
+  })
+
   it('never lets source confidence auto-pick a different movie', () => {
     const poppyHill = {
       title: { romaji: 'Coquelicot-zaka kara', english: 'From Up on Poppy Hill' },

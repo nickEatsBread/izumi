@@ -9,6 +9,7 @@ import { getIndex, lookupKitsu } from './idmap'
 import { resolveKitsuMapping } from './kitsu-resolution'
 import { getStreams, fetchAddonStreams, prefetchAddonStreams, pickBest, pickCandidates, preferDirectStartupCandidates, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
 import { refineStreams, type Rejection } from './refine'
+import { sourceTitleAliases } from './title-aliases'
 import { buildStreamIds } from './stream-ids'
 import { shouldShowCachingScreen } from './caching-screen'
 import type { RankOptions } from './addon'
@@ -1078,7 +1079,7 @@ async function extToStreams(
     // Sanitized originals stay FIRST — providers that resolve media by trying titles in order
     // (capped at a few attempts) should spend them on the closest-to-canonical forms.
     const sanitize = (t: string) => t.replace(/[()"|]/g, ' ').replace(/\s+/g, ' ').trim()
-    const base = [title(media), media.title.romaji, media.title.english, ...(media.synonyms ?? [])]
+    const base = sourceTitleAliases(media)
       .filter((t): t is string => !!t && t.length > 3)
     const shortVariants = base.map((t) => t.split(/[:~]/, 1)[0].trim())
     const titles = [...new Set([...base.map(sanitize), ...shortVariants.map(sanitize)])]

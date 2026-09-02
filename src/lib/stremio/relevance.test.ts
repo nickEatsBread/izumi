@@ -60,6 +60,12 @@ describe('hasExplicitTitleConflict (trusted source evidence)', () => {
     expect(hasExplicitTitleConflict(s('MI-6.S01E01.1080p.WEB.mkv'), ['MI-5'])).toBe(true)
     expect(hasExplicitTitleConflict({ __sourceTitle: '1917' }, ['From Up on Poppy Hill'])).toBe(true)
   })
+
+  it('accepts exact romanization spacing variants without accepting longer titles', () => {
+    expect(hasExplicitTitleConflict(s('Dogulwang - 08 [1080p].mkv'), ['Dogul Wang'])).toBe(false)
+    expect(hasExplicitTitleConflict({ __sourceTitle: 'Toukutsu Ou' }, ['Toukutsuou'])).toBe(false)
+    expect(hasExplicitTitleConflict(s('Dogulwang End Line - 01 [1080p].mkv'), ['Dogul Wang'])).toBe(true)
+  })
 })
 
 describe('relevant (a title that reduces to one distinct word)', () => {

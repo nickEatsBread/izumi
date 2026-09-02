@@ -126,7 +126,13 @@ export function relevant(stream: Stream, wanted: string[]): boolean {
   // than a union comparison, so a partial franchise title does not become exact by mixing aliases.
   if (wanted.some((alias) => {
     const identity = lexicalTitleTokens(alias)
-    return identity.length === head.length && identity.every((token, index) => token === head[index])
+    if (!identity.length || !head.length) return false
+    if (identity.length === head.length && identity.every((token, index) => token === head[index])) return true
+    // Romanization word boundaries are inconsistent across catalogues and release groups:
+    // Kitsu/AniList may say "Dogul Wang" or "Toukutsuou", while a release says "Dogulwang" or
+    // "Toukutsu Ou". Only collapse separators for an exact WHOLE-title identity; an extended
+    // franchise title still has extra characters and remains rejected by the anchor above/below.
+    return identity.join('') === head.join('')
   })) return true
   // The release's OWN title words: its tokens minus quality/codec/hash junk, bare
   // numbers, the leading [Group] tag, and scene episode codes. A short-title release

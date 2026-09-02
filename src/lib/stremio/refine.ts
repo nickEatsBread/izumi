@@ -1,5 +1,5 @@
 import type { Media } from '$lib/anilist/types'
-import { title, totalEpisodes } from '$lib/anilist/media'
+import { totalEpisodes } from '$lib/anilist/media'
 import {
   relevant,
   hasExplicitTitleConflict,
@@ -11,6 +11,7 @@ import {
 import { dedupeStreams } from './dedupe'
 import { candidateIds } from './candidate-model'
 import { describe, type Stream } from './parse'
+import { sourceTitleAliases } from './title-aliases'
 
 // Season/title refinement shared by addon + extension streams. Pure (no Tauri/stores beyond the
 // title-language preference), so it's unit-testable.
@@ -67,7 +68,7 @@ export function collapseBatches(streams: Stream[]): Stream[] {
 const rowKey = (s: Stream) => candidateIds(s).routeId
 
 export function refineStreams(media: Media, raw: Stream[]): Refined {
-  const wantedTitles = [title(media), media.title.romaji, media.title.english].filter((t): t is string => !!t)
+  const wantedTitles = sourceTitleAliases(media)
   const animeYear = media.startDate?.year ?? undefined
   // Long-running absolute-numbered anime (One Piece, Naruto, Conan…) ship as
   // "One Piece - 001", never scene "S01E01" — so any SxxExx file is a different

@@ -1,13 +1,13 @@
 import type { Stream } from './parse'
 import { get, writable } from 'svelte/store'
 import type { Media } from '$lib/anilist/types'
-import { title } from '$lib/anilist/media'
 import { preferredAudioLang, preferredSubLang, providerLanguages, providerAudio } from '$lib/settings/ui'
 import { runningStreamExtensions } from '$lib/extensions/manager'
 import { isBcp47Locale, normalizeLang, subtitleTitle, trackLang } from './sublang'
 import { parseStreamDrm } from '$lib/player/drm'
 import { memo, cacheableList } from './online-cache'
 import { currentResolveTrace, traceResolve, traceResolveError } from '$lib/debug/resolve-trace'
+import { sourceTitleAliases } from './title-aliases'
 
 // Serial alias-search bounds (see findEp). A provider answers or it doesn't — walking every
 // synonym only multiplies a dead provider's timeout, and it used to do so per episode.
@@ -420,7 +420,7 @@ export async function resolveOnlineStreams(
     queried: exts.map((extension) => extension.name),
     skippedByLanguage: unordered.length - exts.length,
   })
-  const titles = [title(media), media.title.romaji, media.title.english, ...(media.synonyms ?? [])]
+  const titles = sourceTitleAliases(media)
     .filter((t): t is string => !!t && t.length > 1)
   const queries = searchQueries(titles)
   // Providers commonly disambiguate remakes with a year and append the production type even when
