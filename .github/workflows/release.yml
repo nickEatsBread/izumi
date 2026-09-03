@@ -263,8 +263,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          name="player-capabilities-${RUNNER_OS,,}-${RUNNER_ARCH,,}.json"
-          args=(--platform "${RUNNER_OS,,}-${RUNNER_ARCH,,}" --output "$name")
+          runner_os="$(printf '%s' "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')"
+          runner_arch="$(printf '%s' "$RUNNER_ARCH" | tr '[:upper:]' '[:lower:]')"
+          name="player-capabilities-${runner_os}-${runner_arch}.json"
+          args=(--platform "${runner_os}-${runner_arch}" --output "$name")
           case "$RUNNER_OS" in
             Windows)
               args+=(--artifact src-tauri/libmpv-2.dll)

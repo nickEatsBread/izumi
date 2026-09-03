@@ -32,5 +32,7 @@ describe('reproducible Dolby playback engine floor', () => {
     expect(release).toContain('--windows-script scripts/ci/libmpv-windows.ps1')
     expect(release).toContain('--artifact src-tauri/tauri-plugin-mpv/android/libs/libmpv.aar')
     expect(release).toContain('gh release upload "$T" "$MANIFEST"')
+    expect(release).toContain("tr '[:upper:]' '[:lower:]'")
+    expect(release).not.toContain('${RUNNER_OS,,}')
   })
 })
