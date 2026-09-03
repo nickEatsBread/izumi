@@ -26,13 +26,14 @@ describe('TMDB catalog mapping', () => {
     const media = mapTmdb({
       id: 550, title: 'Fight Club', original_title: 'Fight Club',
       release_date: '1999-10-15', poster_path: '/poster.jpg', backdrop_path: '/backdrop.jpg',
-      vote_average: 8.4, vote_count: 2345, original_language: 'en',
+      vote_average: 8.4, vote_count: 2345, original_language: 'en', genre_ids: [18, 53],
     }, 'movie')
     expect(media).toMatchObject({
       catalog: { provider: 'tmdb', type: 'movie', id: '550' },
       externalIds: { tmdb: 550 }, type: 'MOVIE', format: 'MOVIE', episodes: 1,
       startDate: { year: 1999 }, averageScore: 84,
       ratings: [{ source: 'TMDB', score: 8.4, scale: 10, votes: 2345 }],
+      genres: ['Drama', 'Thriller'],
       originalLanguage: 'en', releaseDate: '1999-10-15',
     })
     expect(media!.id).toBeLessThan(0)

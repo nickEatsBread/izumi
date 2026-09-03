@@ -1,6 +1,7 @@
 import type { Media } from '$lib/anilist/types'
 import { banner, cardCover, format, resumeEp, title } from '$lib/anilist/media'
 import { mediaRef, type MediaRef } from '$lib/catalog/identity'
+import { namedProviderAward } from '$lib/catalog/awards'
 
 export const COMPANION_PROTOCOL = 1 as const
 export const COMPANION_CHANNEL = 'com.nicho.izumi.cast'
@@ -24,6 +25,21 @@ export interface CompanionPlaybackHint {
   positionSeconds?: number
 }
 
+export type CompanionAchievementKind = 'trending' | 'rating' | 'popularity' | 'award' | 'score'
+
+export interface CompanionAchievement {
+  kind: CompanionAchievementKind
+  label: string
+  source?: string
+}
+
+export interface CompanionRating {
+  source: string
+  score: number
+  scale: 5 | 10 | 100
+  votes?: number
+}
+
 export interface CompanionMedia {
   ref: MediaRef
   /** Non-secret metadata a TV can pass to the owner's Worker when Izumi is unavailable. */
@@ -35,6 +51,13 @@ export interface CompanionMedia {
   description?: string
   /** Provider-supplied age classification shown briefly while TV playback prepares. */
   contentRating?: string
+  mediaKind?: 'movie' | 'show'
+  genres?: string[]
+  releaseYear?: number
+  runtimeMinutes?: number
+  ratings?: CompanionRating[]
+  /** At most two factual, source-attributed reasons this title stands out. */
+  achievements?: CompanionAchievement[]
   poster?: string
   backdrop?: string
   /** Transparent provider title treatment/clear-logo preferred by cinematic TV layouts. */
@@ -201,11 +224,91 @@ function resolverHint(media: Pick<Media, 'format' | 'catalog'>): CompanionResolv
   }
 }
 
+function releaseYear(media: Media): number | undefined {
+  const value = media.startDate?.year ?? media.seasonYear ?? Number(media.releaseDate?.slice(0, 4))
+  return Number.isInteger(value) && value >= 1888 && value <= 2200 ? value : undefined
+}
+
+function companionRatings(media: Media): CompanionRating[] | undefined {
+  const ratings = (media.ratings ?? [])
+    .filter((rating) => Number.isFinite(rating.score) && rating.score >= 0 && rating.score <= rating.scale)
+    .slice(0, 4)
+    .map(({ source, score, scale, votes }) => ({ source, score, scale, votes }))
+  return ratings.length ? ratings : undefined
+}
+
+function achievementKind(label: string): CompanionAchievementKind {
+  if (/trend/i.test(label)) return 'trending'
+  if (/popular/i.test(label)) return 'popularity'
+  if (/award|emmy|oscar|bafta|cannes|globe/i.test(label)) return 'award'
+  if (/rated|rating/i.test(label)) return 'rating'
+  return 'score'
+}
+
+function companionAchievements(media: Media, placement?: CompanionPlacement): CompanionAchievement[] | undefined {
+  const achievements: CompanionAchievement[] = []
+  const push = (achievement: CompanionAchievement) => {
+    const duplicate = achievements.some((item) => item.label.toLowerCase() === achievement.label.toLowerCase())
+    if (!duplicate && achievements.length < 2) achievements.push(achievement)
+  }
+
+  for (const ranking of media.rankings ?? []) {
+    if (!Number.isInteger(ranking.rank) || ranking.rank < 1 || !ranking.context?.trim()) continue
+    const context = ranking.context.trim()
+    const year = !ranking.allTime && ranking.year && !context.includes(String(ranking.year)) ? ` ${ranking.year}` : ''
+    push({
+      kind: ranking.type === 'POPULAR' ? 'popularity' : 'rating',
+      label: `#${ranking.rank} ${context}${year}`,
+      source: 'AniList',
+    })
+  }
+
+  const award = namedProviderAward(media.awards)
+  if (award) push({ kind: 'award', label: award, source: media.catalog?.sourceName ?? media.catalog?.provider })
+
+  if (placement?.position && placement.label.trim()) {
+    push({
+      kind: achievementKind(placement.label),
+      label: `#${placement.position} ${placement.label.trim()}`,
+      source: media.catalog?.sourceName ?? media.catalog?.provider,
+    })
+  }
+
+  for (const rating of companionRatings(media) ?? []) {
+    const percent = Math.round((rating.score / rating.scale) * 100)
+    if (percent < 75) continue
+    const isTmdb = rating.source.toLowerCase() === 'tmdb'
+    push({
+      kind: 'score',
+      label: isTmdb ? `${percent}% user score` : `${rating.score}/${rating.scale} rating`,
+      source: rating.source,
+    })
+  }
+
+  if (!media.ratings?.length && (media.averageScore ?? 0) >= 75) {
+    push({ kind: 'score', label: `${media.averageScore}% user score`, source: media.catalog?.provider === 'anilist' || !media.catalog ? 'AniList' : media.catalog.sourceName ?? media.catalog.provider })
+  }
+  return achievements.length ? achievements : undefined
+}
+
+function companionFacts(media: Media, resolver: CompanionResolverHint, placement?: CompanionPlacement) {
+  const genres = [...new Set((media.genres ?? []).map((genre) => genre.trim()).filter(Boolean))].slice(0, 5)
+  return {
+    mediaKind: resolver.streamType === 'movie' ? 'movie' as const : 'show' as const,
+    genres: genres.length ? genres : undefined,
+    releaseYear: releaseYear(media),
+    runtimeMinutes: Number.isFinite(media.duration) && (media.duration ?? 0) > 0 ? Math.round(media.duration!) : undefined,
+    ratings: companionRatings(media),
+    achievements: companionAchievements(media, placement),
+  }
+}
+
 function companionRelationMedia(media: Media): CompanionMedia {
   const total = Math.max(0, media.episodes ?? 0)
+  const resolver = resolverHint(media)
   return {
     ref: mediaRef(media),
-    resolver: resolverHint(media),
+    resolver,
     title: title(media),
     subtitle: [media.seasonYear, format(media)].filter(Boolean).join(' · ') || undefined,
     description: stripMarkup(media.description),
@@ -214,6 +317,7 @@ function companionRelationMedia(media: Media): CompanionMedia {
     backdrop: banner(media) || undefined,
     logoImage: media.logoImage || undefined,
     trailer: media.trailer?.id ? { id: media.trailer.id, site: media.trailer.site } : undefined,
+    ...companionFacts(media, resolver),
     seasonEpisodeCounts: total ? [total] : undefined,
   }
 }
@@ -237,6 +341,11 @@ export function companionMedia(
   const watched = Math.max(0, options.watched ?? media.mediaListEntry?.progress ?? 0)
   const total = Math.max(0, media.episodes ?? 0)
   const resolver = resolverHint(media)
+  const placement = options.placement ?? (media.featuredRank ? {
+    label: media.featuredRank.label,
+    position: media.featuredRank.position,
+    kind: 'ranking' as const,
+  } : undefined)
   return {
     ref: mediaRef(media),
     resolver,
@@ -248,6 +357,7 @@ export function companionMedia(
     backdrop: banner(media) || undefined,
     logoImage: media.logoImage || undefined,
     trailer: media.trailer?.id ? { id: media.trailer.id, site: media.trailer.site } : undefined,
+    ...companionFacts(media, resolver, placement),
     progress: options.progress ?? (total ? Math.min(1, watched / total) : undefined),
     // A movie is addressed by its title id alone. Supplying the resume helper's synthetic
     // episode 1 makes the linked device reject the resolved movie as the wrong playback target.
@@ -267,11 +377,7 @@ export function companionMedia(
     recommendations: media.recommendations?.nodes
       .flatMap((node) => node.mediaRecommendation ? [companionRelationMedia(node.mediaRecommendation)] : [])
       .slice(0, 12),
-    placement: options.placement ?? (media.featuredRank ? {
-      label: media.featuredRank.label,
-      position: media.featuredRank.position,
-      kind: 'ranking',
-    } : undefined),
+    placement,
   }
 }
 

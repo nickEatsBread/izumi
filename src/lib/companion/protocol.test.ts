@@ -28,6 +28,10 @@ describe('companion home snapshot', () => {
       title: { english: 'Example show' },
       description: '<b>Summary</b><br>line two',
       contentRating: 'TV-14',
+      genres: ['Drama', 'Fantasy'],
+      startDate: { year: 2025 },
+      duration: 52,
+      ratings: [{ source: 'TMDB', score: 8.4, scale: 10, votes: 2345 }],
       episodes: 10,
       mediaListEntry: { progress: 4 },
       coverImage: { large: 'https://img.example/poster.jpg' },
@@ -80,6 +84,15 @@ describe('companion home snapshot', () => {
       title: 'Example show',
       description: 'Summary line two',
       contentRating: 'TV-14',
+      mediaKind: 'show',
+      genres: ['Drama', 'Fantasy'],
+      releaseYear: 2025,
+      runtimeMinutes: 52,
+      ratings: [{ source: 'TMDB', score: 8.4, scale: 10, votes: 2345 }],
+      achievements: [
+        { kind: 'popularity', label: '#2 Popular Series Today', source: 'tmdb' },
+        { kind: 'score', label: '84% user score', source: 'TMDB' },
+      ],
       logoImage: 'https://img.example/title-logo.png',
       trailer: { id: 'exampleTrailer', site: 'youtube' },
       progress: 0.4,
@@ -129,6 +142,31 @@ describe('companion home snapshot', () => {
       resolver: { streamType: 'movie' },
     })
     expect(item).not.toHaveProperty('episode')
+  })
+
+  it('projects AniList rankings as factual, varied achievements', () => {
+    const item = companionMedia({
+      id: 11757,
+      title: { english: 'Sword Art Online' },
+      seasonYear: 2012,
+      format: 'TV',
+      episodes: 25,
+      genres: ['Action', 'Adventure'],
+      rankings: [
+        { rank: 13, type: 'POPULAR', allTime: true, context: 'most popular all time' },
+        { rank: 59, type: 'RATED', allTime: false, context: 'highest rated', year: 2012 },
+      ],
+    })
+    expect(item.achievements).toEqual([
+      { kind: 'popularity', label: '#13 most popular all time', source: 'AniList' },
+      { kind: 'rating', label: '#59 highest rated 2012', source: 'AniList' },
+    ])
+    expect(item).toMatchObject({
+      mediaKind: 'show',
+      genres: ['Action', 'Adventure'],
+      releaseYear: 2012,
+      seasonEpisodeCounts: [25],
+    })
   })
 
   it('recognizes only the versioned snapshot envelope', () => {

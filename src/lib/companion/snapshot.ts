@@ -1,13 +1,18 @@
 import type { Client } from '@urql/core'
 import { get } from 'svelte/store'
-import { MEDIA_BY_ID, searchQuery, searchVariables } from '$lib/anilist/detail-queries'
+import { MEDIA_BY_ID } from '$lib/anilist/detail-queries'
 import { heroQuery, heroVars, homeSections, pageQuery } from '$lib/anilist/queries'
 import { resumeEp } from '$lib/anilist/media'
 import type { Media } from '$lib/anilist/types'
 import { getEpisodeMeta } from '$lib/anizip'
 import { CONTINUE_HOME_ROW } from '$lib/catalog/home-options'
 import { catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
-import { loadCatalogProvider } from '$lib/catalog/registry'
+import {
+  decodeMergedCatalogHomeRowId,
+  loadCatalogProvider,
+  mergedCatalogHomeRowId,
+  mergedCatalogHomeRowOptions,
+} from '$lib/catalog/registry'
 import { searchMergedCatalogs } from '$lib/catalog/merged-search'
 import type { CatalogHome } from '$lib/catalog/types'
 import { continueWatching, filterContinueWatching, type CwEntry } from '$lib/player/continue-watching'
@@ -19,6 +24,7 @@ import {
   catalogScreen,
   enabledCatalogScreens,
   continueWatchingCatalogScope,
+  mergedCatalogProviders,
   type CatalogSelection,
   type CatalogScreen,
 } from '$lib/settings/catalog'
@@ -141,27 +147,41 @@ function catalogRows(screen: CatalogScreen, home: CatalogHome): CompanionHomeRow
   const options = [CONTINUE_HOME_ROW, ...home.sections.map((section) => ({ id: section.id, title: section.title }))]
   const visible = resolveCatalogHomeRows(screen, options, get(catalogHomeLayouts))
   const sections = new Map(home.sections.map((section) => [section.id, section]))
+  const featured = new Map(home.hero.map((media) => [
+    `${media.catalog?.provider}:${media.catalog?.type}:${media.catalog?.id ?? media.id}`,
+    media,
+  ]))
   return visible.flatMap((row): CompanionHomeRow[] => {
     if (!row.enabled || row.id === CONTINUE_HOME_ROW.id) return []
     const section = sections.get(row.id)
-    const items = section?.media.slice(0, 30).map((media, index) => companionMedia(media, {
-      placement: media.featuredRank ? undefined : {
-        label: section?.title ?? row.title,
-        position: index + 1,
-        kind: row.id === 'recommendations' ? 'recommendation' : 'catalog',
-      },
-    })) ?? []
+    const items = section?.media.slice(0, 30).map((media, index) => {
+      const highlight = featured.get(`${media.catalog?.provider}:${media.catalog?.type}:${media.catalog?.id ?? media.id}`)
+      const displayMedia = highlight ? { ...media, ...highlight, featuredRank: media.featuredRank ?? highlight.featuredRank } : media
+      return companionMedia(displayMedia, {
+        placement: displayMedia.featuredRank ? undefined : {
+          label: section?.title ?? row.title,
+          position: index + 1,
+          kind: row.id === 'recommendations' ? 'recommendation' : 'catalog',
+        },
+      })
+    }) ?? []
     return items.length ? [{ id: row.id, title: section?.title ?? row.title, kind: 'catalog', items }] : []
   })
 }
 
-async function legacyHome(client: QueryClient): Promise<CatalogHome> {
+async function legacyHome(client: QueryClient, requestedRowIds?: string[]): Promise<CatalogHome> {
   const now = new Date()
-  const configured = resolveCatalogHomeRows('anilist', [
-    CONTINUE_HOME_ROW,
-    ...homeSections(now).map((section) => ({ id: section.key, title: section.title })),
-  ], get(catalogHomeLayouts)).filter((row) => row.enabled && row.id !== CONTINUE_HOME_ROW.id)
-  const sectionById = new Map(homeSections(now).map((section) => [section.key, section]))
+  const availableSections = homeSections(now)
+  const sectionById = new Map(availableSections.map((section) => [section.key, section]))
+  const configured = requestedRowIds
+    ? requestedRowIds.flatMap((id) => {
+        const section = sectionById.get(id)
+        return section ? [{ id, title: section.title }] : []
+      })
+    : resolveCatalogHomeRows('anilist', [
+        CONTINUE_HOME_ROW,
+        ...availableSections.map((section) => ({ id: section.key, title: section.title })),
+      ], get(catalogHomeLayouts)).filter((row) => row.enabled && row.id !== CONTINUE_HOME_ROW.id)
   const [heroResult, ...sectionResults] = await Promise.allSettled([
     client.query<{ Page?: { media?: Media[] } }>(heroQuery(), heroVars(now), { requestPolicy: 'cache-first' }).toPromise(),
     ...configured.map((row) => {
@@ -184,17 +204,44 @@ async function legacyHome(client: QueryClient): Promise<CatalogHome> {
   return { hero, sections }
 }
 
+async function mergedHome(client: QueryClient): Promise<CatalogHome> {
+  const selections = mergedCatalogProviders(get(catalogProviders))
+  const options = await mergedCatalogHomeRowOptions(selections)
+  const visible = resolveCatalogHomeRows('merged', options, get(catalogHomeLayouts))
+    .filter((row) => row.enabled && row.id !== CONTINUE_HOME_ROW.id)
+  const requested = new Map<CatalogSelection, string[]>()
+  for (const row of visible) {
+    const decoded = decodeMergedCatalogHomeRowId(row.id)
+    if (!decoded) continue
+    requested.set(decoded.selection, [...(requested.get(decoded.selection) ?? []), decoded.rowId])
+  }
+
+  const batches = await Promise.allSettled(selections.map(async (selection) => {
+    const rowIds = requested.get(selection) ?? []
+    if (!rowIds.length) return { selection, home: { hero: [], sections: [] } as CatalogHome }
+    const home = selection === 'auto' || selection === 'anilist'
+      ? await legacyHome(client, rowIds)
+      : await (await loadCatalogProvider(selection)).home(undefined, rowIds)
+    return { selection, home }
+  }))
+  const homes = batches.flatMap((batch) => batch.status === 'fulfilled' ? [batch.value] : [])
+  const maximumHeroLength = Math.max(0, ...homes.map(({ home }) => home.hero.length))
+  const hero = Array.from({ length: maximumHeroLength }, (_, index) =>
+    homes.flatMap(({ home }) => home.hero[index] ?? [])).flat().slice(0, 15)
+  const sections = homes.flatMap(({ selection, home }) => home.sections.map((section) => ({
+    ...section,
+    id: mergedCatalogHomeRowId(selection, section.id),
+    title: `${section.title} · ${catalogLabel(selection)}`,
+  })))
+  return { hero, sections }
+}
+
 async function selectedHome(client: QueryClient, screen: CatalogScreen, provider: CatalogSelection): Promise<CatalogHome> {
   const load = async (selection: Exclude<CatalogSelection, 'auto' | 'anilist'>) => {
     const selected = await loadCatalogProvider(selection)
     return selected.home ? selected.home() : { hero: [], sections: [] }
   }
-  if (screen === 'merged') {
-    // Merged Home has independent row selection in the client. Until every selected provider has
-    // completed, its existing rendered/cache path can publish a richer snapshot; this baseline
-    // deliberately uses the active provider rather than reimplementing merged-provider arbitration.
-    return provider === 'auto' || provider === 'anilist' ? legacyHome(client) : load(provider)
-  }
+  if (screen === 'merged') return mergedHome(client)
   return screen === 'auto' || screen === 'anilist' ? legacyHome(client) : load(screen)
 }
 
@@ -219,7 +266,7 @@ export async function createCompanionSnapshot(client: QueryClient, now = Date.no
   })
   if (cached?.key === cacheKey && now - cached.at < SNAPSHOT_CACHE_MS) return cached.snapshot
   const home = await selectedHome(client, screen, active)
-  const layoutScreen = screen === 'merged' ? active : screen
+  const layoutScreen = screen
   const watching = await continueRow(watchingEntries, active, screen === 'merged')
   const rows = catalogRows(layoutScreen, home)
   const continueEnabled = resolveCatalogHomeRows(layoutScreen, [CONTINUE_HOME_ROW], get(catalogHomeLayouts))[0]?.enabled ?? true
@@ -269,25 +316,10 @@ export async function createCompanionSnapshot(client: QueryClient, now = Date.no
   return snapshot
 }
 
-export async function createCompanionSearch(client: QueryClient, query: string): Promise<ReturnType<typeof companionMedia>[]> {
+export async function createCompanionSearch(_client: QueryClient, query: string): Promise<ReturnType<typeof companionMedia>[]> {
   const normalized = query.trim().slice(0, 80)
   if (!normalized) return []
-  const screen = get(catalogScreen)
-  let media: Media[] = []
-  if (screen === 'merged') {
-    media = (await searchMergedCatalogs(get(catalogProviders), normalized, 1)).media
-  } else if (screen === 'auto' || screen === 'anilist') {
-    const response = await client.query<{ Page?: { media?: Media[] } }>(searchQuery(), {
-      ...searchVariables({ search: normalized }),
-      page: 1,
-      perPage: 30,
-    }, { requestPolicy: 'network-only' }).toPromise()
-    if (response.error) throw response.error
-    media = response.data?.Page?.media ?? []
-  } else {
-    const provider = await loadCatalogProvider(screen)
-    media = (await provider.search({ query: normalized, page: 1, type: 'all', sort: 'popular' })).media
-  }
+  const media = (await searchMergedCatalogs(get(catalogProviders), normalized, 1)).media
   return media.slice(0, 40).map((item) => companionMedia(item, {
     placement: { label: `Search results for ${normalized}`, kind: 'catalog' },
   }))

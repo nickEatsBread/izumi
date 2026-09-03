@@ -265,6 +265,21 @@ function status(value?: string): string | undefined {
   } as Record<string, string>)[value ?? '']
 }
 
+const TMDB_GENRES: Record<TmdbKind, Record<number, string>> = {
+  movie: {
+    12: 'Adventure', 14: 'Fantasy', 16: 'Animation', 18: 'Drama', 27: 'Horror',
+    28: 'Action', 35: 'Comedy', 36: 'History', 37: 'Western', 53: 'Thriller',
+    80: 'Crime', 99: 'Documentary', 878: 'Science Fiction', 9648: 'Mystery',
+    10402: 'Music', 10749: 'Romance', 10751: 'Family', 10752: 'War', 10770: 'TV Movie',
+  },
+  tv: {
+    16: 'Animation', 18: 'Drama', 35: 'Comedy', 37: 'Western', 80: 'Crime',
+    99: 'Documentary', 9648: 'Mystery', 10751: 'Family', 10759: 'Action & Adventure',
+    10762: 'Kids', 10763: 'News', 10764: 'Reality', 10765: 'Sci-Fi & Fantasy',
+    10766: 'Soap', 10767: 'Talk', 10768: 'War & Politics',
+  },
+}
+
 export function mapTmdb(raw: TmdbListItem, kind: TmdbKind): Media | null {
   if (raw.id == null || raw.media_type === 'person') return null
   const ref = { provider: 'tmdb' as const, type: kind === 'movie' ? 'movie' as const : 'series' as const, id: String(raw.id) }
@@ -295,6 +310,7 @@ export function mapTmdb(raw: TmdbListItem, kind: TmdbKind): Media | null {
     averageScore: raw.vote_average != null ? Math.round(raw.vote_average * 10) : undefined,
     ratings: rating ? [rating] : undefined,
     popularity: raw.popularity != null ? Math.round(raw.popularity) : undefined,
+    genres: (raw.genre_ids ?? []).flatMap((id) => TMDB_GENRES[kind][id] ? [TMDB_GENRES[kind][id]] : []),
     startDate: yearOf(date) ? { year: Number(yearOf(date)) } : undefined,
     countryOfOrigin: raw.origin_country?.[0],
     originalLanguage: raw.original_language,

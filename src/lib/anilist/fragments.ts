@@ -43,7 +43,8 @@ export const CARD_MEDIA_FIELDS = gql`
     id idMal type isAdult
     title { romaji english native userPreferred }
     description(asHtml: false) @include(if: $withPreview)
-    season seasonYear format status episodes averageScore
+    season seasonYear format status episodes duration averageScore genres
+    rankings { rank type allTime context year season format }
     startDate { year month day }
     coverImage { extraLarge large medium color }
     bannerImage @include(if: $withPreview)
@@ -60,6 +61,7 @@ export const HERO_MEDIA_FIELDS = gql`
     title { romaji english native userPreferred }
     description(asHtml: false)
     season seasonYear format status episodes duration averageScore genres
+    rankings { rank type allTime context year season format }
     studios(isMain: true) { nodes { id name } }
     coverImage { extraLarge large medium color }
     bannerImage
@@ -74,6 +76,7 @@ export const MEDIA_FIELDS = gql`
     title { romaji english native userPreferred }
     description(asHtml: false)
     season seasonYear format status episodes duration averageScore popularity trending genres
+    rankings { rank type allTime context year season format }
     synonyms
     startDate { year month day }
     studios(isMain: true) { nodes { id name } }

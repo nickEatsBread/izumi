@@ -41,6 +41,17 @@ export interface MediaFeaturedRank {
   label: string
 }
 
+/** A factual ranking supplied by AniList for the title's format and time span. */
+export interface MediaRanking {
+  rank: number
+  type: 'RATED' | 'POPULAR'
+  allTime?: boolean
+  context: string
+  year?: number
+  season?: string
+  format?: string
+}
+
 /** Cross-database ids are optional capabilities, not the identity of the object. Consumers use
  * whichever namespace they understand (trackers, AniZip, Stremio stream add-ons, etc.). */
 export interface ExternalMediaIds {
@@ -107,6 +118,7 @@ export interface Media {
   releaseDate?: string
   originalLanguage?: string
   featuredRank?: MediaFeaturedRank
+  rankings?: MediaRanking[]
   popularity?: number
   trending?: number
   genres?: string[]
