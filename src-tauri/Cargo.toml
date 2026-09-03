@@ -63,7 +63,7 @@ tauri-plugin-opener = "2"
 # Platform/OS detection (used to branch behavior on Android vs desktop). Registered
 # for all platforms.
 tauri-plugin-os = "2"
-tauri-plugin-notification = "2"
+tauri-plugin-notification = "2.4.0"
 tauri-plugin-deep-link = "2"
 # In-tree plugin: launch an external Android video player via ACTION_VIEW (no-op on desktop).
 tauri-plugin-extplayer = { path = "tauri-plugin-extplayer" }
@@ -72,7 +72,7 @@ serde_json = "1"
 regex = "1"
 # rustls (not native-tls) so the whole HTTP stack cross-compiles for Android — native-tls needs
 # OpenSSL, which has no Android target here.
-tauri-plugin-http = { version = "2.5.9", default-features = false, features = ["rustls-tls"] }
+tauri-plugin-http = { version = "2.6.0", default-features = false, features = ["rustls-tls"] }
 tokio = { version = "1", features = ["time", "fs", "io-util", "net", "sync", "process"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 tokio-util = { version = "0.7", features = ["io"] }
