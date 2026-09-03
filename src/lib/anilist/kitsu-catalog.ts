@@ -130,6 +130,7 @@ export function mapKitsuMedia(raw: KitsuAnime, anilistId?: number): Media {
     popularity: a.userCount ?? null,
     trending: null,
     genres: [],
+    rankings: [],
     // Kitsu's anime resource does not expose AniList's source-material/country fields. Explicit
     // null/empty values are required on the GraphQL wire shape so graphcache can hydrate the richer
     // detail query during an AniList outage instead of rejecting the entire fallback record.

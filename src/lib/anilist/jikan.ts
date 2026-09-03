@@ -159,6 +159,7 @@ export function mapJikanMedia(raw: JikanMedia, anilistId: number): Media {
     popularity: raw.members ?? null,
     trending: null,
     genres: genreNames,
+    rankings: [],
     synonyms: raw.title_synonyms ?? [],
     startDate: fuzzyDate(raw.aired?.from) ?? null,
     studios: { __typename: 'StudioConnection', nodes: [] },
