@@ -31,6 +31,7 @@ describe('companion home snapshot', () => {
       episodes: 10,
       mediaListEntry: { progress: 4 },
       coverImage: { large: 'https://img.example/poster.jpg' },
+      logoImage: 'https://img.example/title-logo.png',
       trailer: { id: 'exampleTrailer', site: 'youtube' },
       featuredRank: { position: 2, label: 'Popular Series Today' },
       relations: {
@@ -79,6 +80,7 @@ describe('companion home snapshot', () => {
       title: 'Example show',
       description: 'Summary line two',
       contentRating: 'TV-14',
+      logoImage: 'https://img.example/title-logo.png',
       trailer: { id: 'exampleTrailer', site: 'youtube' },
       progress: 0.4,
       episode: 5,

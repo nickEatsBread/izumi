@@ -37,6 +37,8 @@ export interface CompanionMedia {
   contentRating?: string
   poster?: string
   backdrop?: string
+  /** Transparent provider title treatment/clear-logo preferred by cinematic TV layouts. */
+  logoImage?: string
   /** Provider trailer used by the TV series page. */
   trailer?: { id: string; site?: string }
   /** Normalized 0–1 progress for a TV card. */
@@ -210,6 +212,7 @@ function companionRelationMedia(media: Media): CompanionMedia {
     contentRating: media.contentRating || (media.isAdult ? '18' : undefined),
     poster: cardCover(media, 220) || undefined,
     backdrop: banner(media) || undefined,
+    logoImage: media.logoImage || undefined,
     trailer: media.trailer?.id ? { id: media.trailer.id, site: media.trailer.site } : undefined,
     seasonEpisodeCounts: total ? [total] : undefined,
   }
@@ -243,6 +246,7 @@ export function companionMedia(
     contentRating: media.contentRating || (media.isAdult ? '18' : undefined),
     poster: cardCover(media, 220) || undefined,
     backdrop: banner(media) || undefined,
+    logoImage: media.logoImage || undefined,
     trailer: media.trailer?.id ? { id: media.trailer.id, site: media.trailer.site } : undefined,
     progress: options.progress ?? (total ? Math.min(1, watched / total) : undefined),
     // A movie is addressed by its title id alone. Supplying the resume helper's synthetic

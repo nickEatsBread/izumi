@@ -521,7 +521,7 @@ function keepConnection(
         .catch((error) => reply({ error: error instanceof Error ? error.message : 'Episode details unavailable' }))
     }),
     channel.on('izumi.companion.trailer', (value, from) => {
-      const request = value as { pairingId?: unknown; requestId?: unknown; videoId?: unknown; title?: unknown } | null
+      const request = value as { pairingId?: unknown; requestId?: unknown; videoId?: unknown; title?: unknown; muted?: unknown } | null
       if (!request
         || request.pairingId !== device.credential.slice(0, 16)
         || typeof request.requestId !== 'string'
@@ -536,7 +536,7 @@ function keepConnection(
       void invoke<string>('youtube_embed_lan_url', {
         id: request.videoId,
         controls: false,
-        muted: false,
+        muted: request.muted === true,
       }).then(async (url) => {
         await setTizenReceiverRelayForeground(true, typeof request.title === 'string' ? request.title.slice(0, 160) : 'TV trailer', 'trailer')
         activeTrailerRequests.add(request.requestId as string)
