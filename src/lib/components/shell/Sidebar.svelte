@@ -27,9 +27,6 @@
     { href: '/app/downloads', icon: Download, label: m.nav_downloads(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
     { href: '/app/watch', icon: Users, label: m.nav_watch_together(), anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
   ]
-  // The accent bar is acknowledgement of a section change, not the only indication of location.
-  // Keep it long enough to register, then let the quieter active row carry the persistent state.
-  const ACTIVE_MARKER_HOLD_MS = 3_000
   const name = $derived($anilistUserName || $malUserName || $anilistUser || $malUser)
   const avatarUrl = $derived($anilistUserAvatar || $malUserAvatar)
   const initial = $derived((name || '').trim().charAt(0).toUpperCase())
@@ -40,7 +37,6 @@
   // + casts a shadow, which is enough to read the labels).
   let focused = $state(false)
   let catalogPickerOpen = $state(false)
-  let activeMarkerVisible = $state(true)
   // Expand only when focus arrived via the d-pad / arrow keys (inputType 'dpad') — never a touch
   // tap or a mouse (which would flash the rail open then closed as it navigates; a tap should
   // just switch pages). `inputType` is the app-wide modality store (set to 'dpad' on arrow keys
@@ -64,14 +60,6 @@
     focused = false
     catalogPickerOpen = false
   })
-  // Briefly bring the strong route marker back after every navigation. Keeping the span mounted
-  // lets opacity do the work, avoiding layout movement when the marker fades away.
-  $effect(() => {
-    void page.url.pathname
-    activeMarkerVisible = true
-    const timer = setTimeout(() => (activeMarkerVisible = false), ACTIVE_MARKER_HOLD_MS)
-    return () => clearTimeout(timer)
-  })
   // No active-item highlight while a video plays — the rail is inert then (you're in the player,
   // not browsing), so highlighting the page you launched from (e.g. Home) reads as "selected".
   const active = (href: string) => !$playing && page.url.pathname.startsWith(href)
@@ -87,9 +75,8 @@
 
 <!-- Rows are always icon + label; the rail's width (+ overflow-hidden) reveals the labels when
      expanded, so no per-state markup swap. `main` keeps its 56px margin — the expanded rail
-     overlays the content (fixed) rather than reflowing it. Selection: the CURRENT page gets a
-     left accent bar + brighter text (no heavy filled box); keyboard/gamepad FOCUS fills the row
-     (see app.css) — no squared ring. -->
+     overlays the content (fixed) rather than reflowing it. Selection uses a quiet active-row fill;
+     keyboard/gamepad FOCUS fills the row more strongly (see app.css) — no squared ring. -->
 <nav data-nav-sidebar onfocusin={onFocusIn} onfocusout={onFocusOut}
      class="fixed inset-y-0 left-0 z-30 flex flex-col gap-1 py-3 pt-9 transition-[width] duration-200 ease-out
        {catalogPickerOpen ? 'overflow-visible' : 'overflow-hidden'}
@@ -117,7 +104,6 @@
     <a href={it.href} title={it.label} data-focusable={df} tabindex={tab} aria-current={on ? 'page' : undefined}
        class="group relative flex h-11 shrink-0 items-center gap-3 rounded-md pl-3 transition-colors hover:bg-accent hover:text-foreground
          {on ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}">
-      {#if on}<span aria-hidden="true" class="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-theme transition-opacity duration-300 motion-reduce:transition-none {activeMarkerVisible || focused ? 'opacity-100' : 'opacity-0'}"></span>{/if}
       <span class="grid w-8 shrink-0 place-items-center"><it.icon size={20} class={it.anim} /></span>
       <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{it.label}</span>
     </a>
@@ -141,7 +127,6 @@
      aria-current={active('/app/settings') ? 'page' : undefined}
      class="group relative flex h-11 shrink-0 items-center gap-3 rounded-md pl-3 transition-colors hover:bg-accent hover:text-foreground
        {active('/app/settings') ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}">
-    {#if active('/app/settings')}<span aria-hidden="true" class="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-theme transition-opacity duration-300 motion-reduce:transition-none {activeMarkerVisible || focused ? 'opacity-100' : 'opacity-0'}"></span>{/if}
     <span class="grid w-8 shrink-0 place-items-center"><Settings size={20} class="group-hover:animate-[spin_0.6s_ease]" /></span>
     <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{m.nav_settings()}</span>
   </a>

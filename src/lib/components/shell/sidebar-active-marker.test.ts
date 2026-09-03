@@ -4,11 +4,11 @@ import { describe, expect, it } from 'vitest'
 
 const sidebar = readFileSync(fileURLToPath(new URL('./Sidebar.svelte', import.meta.url)), 'utf8')
 
-describe('sidebar active marker', () => {
-  it('fades the strong marker after navigation while retaining the quiet active row', () => {
-    expect(sidebar).toContain('const ACTIVE_MARKER_HOLD_MS = 3_000')
-    expect(sidebar).toContain('setTimeout(() => (activeMarkerVisible = false), ACTIVE_MARKER_HOLD_MS)')
-    expect(sidebar).toContain("activeMarkerVisible || focused ? 'opacity-100' : 'opacity-0'")
+describe('sidebar active state', () => {
+  it('uses only the quiet row highlight without an accent line', () => {
+    expect(sidebar).not.toContain('ACTIVE_MARKER_HOLD_MS')
+    expect(sidebar).not.toContain('activeMarkerVisible')
+    expect(sidebar).not.toContain('rounded-full bg-theme transition-opacity')
     expect(sidebar).toContain("on ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'")
   })
 
