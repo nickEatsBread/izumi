@@ -10,7 +10,7 @@ describe('series page gamepad fast lane', () => {
   it('routes Down from the primary action straight to the relevant episode', () => {
     expect(detail).toContain('data-nav-id="series-primary-action"')
     expect(detail).toContain('data-nav-id="series-primary-action" data-nav-scroll-top')
-    expect(detail).toContain("data-nav-down={$gameMode ? 'series-quick-episode' : undefined}")
+    expect(detail).toContain("data-nav-down={controllerUi ? 'series-quick-episode' : undefined}")
     expect(list).toContain("data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}")
   })
 
@@ -27,7 +27,7 @@ describe('series page gamepad fast lane', () => {
   })
 
   it('does not turn genre metadata into controller stops', () => {
-    expect(detail).toContain("data-focusable={$gameMode ? undefined : ''}")
-    expect(detail).toContain('tabindex={$gameMode ? -1 : undefined}')
+    expect(detail).toContain("data-focusable={controllerUi ? undefined : ''}")
+    expect(detail).toContain('tabindex={controllerUi ? -1 : undefined}')
   })
 })

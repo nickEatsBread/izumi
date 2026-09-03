@@ -23,6 +23,7 @@
   import { anilistUser } from '$lib/anilist/account'
   import { localHistory } from '$lib/player/history'
   import { gameMode } from '$lib/player/session'
+  import { controllerMode } from '$lib/nav/input'
   import { scheduleLayout, scheduleShowNextUp } from '$lib/settings/ui'
   import { isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
@@ -51,7 +52,7 @@
   const SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   const FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
   const client = getContextClient()
-  const gm = $derived($gameMode)
+  const gm = $derived($gameMode || $controllerMode)
   const layout = $derived($scheduleLayout)
 
   let airings = $state<Airing[]>([])

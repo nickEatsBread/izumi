@@ -41,7 +41,7 @@ describe('Android TV mode contract', () => {
     expect(layout).toContain("classList.toggle('tv-mode', $isTv)")
     expect(layout).toContain('getCurrentWindow().close()')
     expect(css).toContain('.tv-mode .player-shell button:focus')
-    expect(keyboard).toContain('const controllerUi = $derived($gameMode || $isTv)')
+    expect(keyboard).toContain('const controllerUi = $derived($gameMode || $isTv || $controllerMode)')
   })
 
   it('keeps playback and modal controls inside a TV focus trap', () => {

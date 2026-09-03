@@ -6,6 +6,7 @@ import { inputType } from './input'
 import { acknowledgeDeckKeyboardWarning, deckKeyboardWarning, dismissDeckKeyboardWarning } from '$lib/deck/keyboard-warning'
 import { closeGlobalSearch, globalSearchOpen } from '$lib/search/global-search'
 import { ActiveFrameLoop } from '$lib/util/active-frame-loop'
+import { BROWSER_GAMEPAD_EVENT, type GamepadInputName } from './browser-gamepad'
 
 // App-wide controller translator (Steam Deck Game mode). The Rust backend reads the pad and
 // emits `gamepad-input` = { name, pressed }; here we route each button to izumi's existing
@@ -210,10 +211,23 @@ export function startGamepadNav(): () => void {
     }
   }
 
+  const routeInput = (input: { name: string; pressed: boolean }) => {
+    if (input.pressed) onPress(input.name)
+    else onRelease(input.name)
+  }
+  const onBrowserInput = (event: Event) => {
+    routeInput((event as CustomEvent<{ name: GamepadInputName; pressed: boolean }>).detail)
+  }
+  window.addEventListener(BROWSER_GAMEPAD_EVENT, onBrowserInput)
+
   listen<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
-    if (e.payload.pressed) onPress(e.payload.name)
-    else onRelease(e.payload.name)
+    routeInput(e.payload)
   }).then((u) => { unlisten = u })
 
-  return () => { repeatLoop.stop(); unlisten?.(); unsubPlaying() }
+  return () => {
+    repeatLoop.stop()
+    unlisten?.()
+    unsubPlaying()
+    window.removeEventListener(BROWSER_GAMEPAD_EVENT, onBrowserInput)
+  }
 }

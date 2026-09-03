@@ -6,13 +6,14 @@
   import { gameMode, oskOpen } from '$lib/player/session'
   import { uiScale } from '$lib/settings/ui'
   import { isTv } from '$lib/platform'
+  import { controllerMode } from '$lib/nav/input'
 
   // Game-mode on-screen keyboard (Steam-Deck failover). The Steam OSK can't be reliably summoned
   // from a non-Steam Flatpak under gamescope (SteamAPI init fails in the sandbox, AppID detection
   // is broken, injected keys often don't land) — so we ship our own controller-navigable keyboard,
   // exactly like the crunchy-deck reference. It appears when a text field is focused in Game mode,
   // traps the d-pad (data-nav-trap), and writes straight into the field via the DOM (no perms).
-  const controllerUi = $derived($gameMode || $isTv)
+  const controllerUi = $derived($gameMode || $isTv || $controllerMode)
 
   type Field = HTMLInputElement | HTMLTextAreaElement
   type RemoteKeyboard = {

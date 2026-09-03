@@ -59,16 +59,16 @@ describe('mobile source picker layout', () => {
     expect(source).toContain('trap.isConnected) bumpPlayerOverlay()')
   })
 
-  it('focuses a playable source on every Game-mode picker opening', () => {
+  it('focuses a playable source on every controller-mode picker opening', () => {
     expect(source).toContain('let pickerFocusReady = false')
     expect(source).toContain("trap.querySelector<HTMLElement>('[data-source-row]')")
     expect(source).toContain('bind:this={pickerTrap}')
     expect(source).toContain('setTimeout(focusFirst, 80)')
     expect(source).toContain('data-source-row')
-    expect(source).toContain("$gameMode && $inputType === 'dpad'")
+    expect(source).toContain("controllerUi && $inputType === 'dpad'")
     expect(source).toContain("'focus:bg-accent focus:shadow-[inset_0_0_0_2px_white]'")
     expect(source).toContain("'focus-visible:bg-accent focus-visible:shadow-[inset_0_0_0_2px_white]'")
-    expect(source).toContain('{#if !$gameMode}')
+    expect(source).toContain('{#if !controllerUi}')
     expect(source).not.toContain('let focusedBest = false')
   })
 

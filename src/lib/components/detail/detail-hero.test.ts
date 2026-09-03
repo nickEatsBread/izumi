@@ -63,10 +63,10 @@ describe('mobile series hero', () => {
     const bands = detail.match(/h-\[26vh\] max-h-72 min-h-44/g) ?? []
     expect(bands.length).toBeGreaterThanOrEqual(2)
     // Desktop and Deck use the same compact hero variants and overlap as the loaded branch.
-    expect(detail).toContain("$gameMode ? 'sm:h-[42vh]' : 'sm:h-[48vh]'")
+    expect(detail).toContain("controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'")
     expect(hero).toContain('h-[40vh]')
-    expect(hero).toContain("$gameMode ? 'sm:h-[42vh]' : 'sm:h-[48vh]'")
-    expect(detail.match(/\$gameMode \? '-mt-\[16vh\]' : '-mt-\[18vh\]'/g)?.length).toBeGreaterThanOrEqual(2)
+    expect(hero).toContain("controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'")
+    expect(detail.match(/controllerUi \? '-mt-\[16vh\]' : '-mt-\[18vh\]'/g)?.length).toBeGreaterThanOrEqual(2)
   })
 
   it('settles artwork already painted by the skeleton without replaying a directional slide', () => {

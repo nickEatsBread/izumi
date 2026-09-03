@@ -3,12 +3,13 @@
   import { dragScroll, gameModeCarouselTouch } from '$lib/nav/actions'
   import { wheelScrollAcross } from '$lib/settings/ui'
   import { gameMode } from '$lib/player/session'
+  import { controllerMode } from '$lib/nav/input'
   import { isMobile } from '$lib/platform'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   // Game mode (Deck): controller/touch scrolls the row directly, so the mouse-only
   // page arrows are hidden.
-  const gm = $derived($gameMode)
+  const gm = $derived($gameMode || $controllerMode)
   // Mobile: touch drag-scrolls the row (so the mouse-only page arrows are not rendered),
   // and there's no hover to reveal the "View more" link, so keep it always visible there.
   const mob = $derived($isMobile)

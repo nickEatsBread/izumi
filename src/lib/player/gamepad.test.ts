@@ -114,7 +114,7 @@ describe('ButtonPressLatch', () => {
   })
 })
 
-describe('native Game-mode seek', () => {
+describe('controller event seek', () => {
   it('skims with d-pad left/right as well as the triggers', () => {
     const src = readFileSync(fileURLToPath(new URL('./gamepad.ts', import.meta.url)), 'utf8')
     expect(src).toContain("e.payload.name === 'left'")

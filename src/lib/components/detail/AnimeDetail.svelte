@@ -47,6 +47,7 @@
   import { acquireEdgeToEdge } from '$lib/actions/edge-to-edge'
   import { openTrailerPopup } from '$lib/stores/trailer'
   import { gameMode } from '$lib/player/session'
+  import { controllerMode } from '$lib/nav/input'
   import { getKitsuId } from '$lib/anizip'
   import { kitsuIdOf } from '$lib/catalog/identity'
   import { detailTrackerLinks } from './tracker-links'
@@ -58,6 +59,7 @@
   // remounts with the new id and the query re-fetches — a same-route param change alone
   // would NOT re-run a component captured at mount.
   let { id }: { id: number } = $props()
+  const controllerUi = $derived($gameMode || $controllerMode)
 
   const client = getContextClient()
   // Offline: never touch AniList — feed a static empty store and build media from the local
@@ -355,7 +357,7 @@
     <!-- Match the loaded desktop Hero + overlapping info panel exactly. The previous pt-24
          skeleton started the poster near the window top, then the real page moved it beneath a
          55vh banner — a large avoidable layout jump on every series navigation. -->
-    <div class="relative mb-6 h-[40vh] {$gameMode ? 'sm:h-[42vh]' : 'sm:h-[48vh]'}">
+    <div class="relative mb-6 h-[40vh] {controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'}">
       <div class="absolute left-0 top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-left-14 sm:-top-8">
         {#if detailHint && banner(detailHint)}
           <img src={banner(detailHint)} alt="" onload={() => (loadedHintBanner = banner(detailHint))} class="absolute inset-0 h-full w-full object-cover opacity-30" style="object-position:center 20%" />
@@ -366,7 +368,7 @@
         <div class="absolute inset-y-0 left-0 w-[45%] bg-gradient-to-r from-background/85 via-background/40 to-transparent"></div>
       </div>
     </div>
-    <div class="relative {$gameMode ? '-mt-[16vh]' : '-mt-[18vh]'} px-4 pb-16 sm:px-8">
+    <div class="relative {controllerUi ? '-mt-[16vh]' : '-mt-[18vh]'} px-4 pb-16 sm:px-8">
       <div class="mb-6 flex flex-col gap-6 md:flex-row">
         <!-- Same intrinsic cover sizing as the loaded panel; using the real hint image avoids a
              ratio correction when AniList's artwork is not exactly the fallback 46/65 shape. -->
@@ -621,7 +623,7 @@
   {:else}
   <!-- Title-less banner backdrop; the info panel below overlaps its lower fade. -->
   <Hero medias={[m]} showOverlay={false} initialArtworkVisible={loadedHintBanner === banner(m)} />
-  <div class="relative {$gameMode ? '-mt-[16vh]' : '-mt-[18vh]'} px-4 pb-16 sm:px-8">
+  <div class="relative {controllerUi ? '-mt-[16vh]' : '-mt-[18vh]'} px-4 pb-16 sm:px-8">
     {#if heroPlay.status === 'error'}
       <p class="mb-3 text-sm text-destructive">{heroPlay.message}</p>
     {/if}
@@ -649,29 +651,29 @@
           {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
           {#if season(m)}
             <span class="opacity-40">·</span>
-            <a data-focusable={$gameMode ? undefined : ''} tabindex={$gameMode ? -1 : undefined}
+            <a data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
                href={seasonBrowseHref(m)} class="transition-colors hover:text-foreground hover:underline">{season(m)}</a>
           {/if}
           {#if m.averageScore}<span class="opacity-40">·</span><span class="rounded px-1.5 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>{/if}
-          {#each (m.genres ?? []).slice(0, $gameMode ? 3 : 4) as g (g)}
+          {#each (m.genres ?? []).slice(0, controllerUi ? 3 : 4) as g (g)}
             <span class="opacity-40">·</span>
-            <a data-focusable={$gameMode ? undefined : ''} tabindex={$gameMode ? -1 : undefined}
+            <a data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
                href={`/app/search?genre=${encodeURIComponent(g)}`}
                class="transition-colors hover:text-foreground hover:underline">{g}</a>
           {/each}
-          {#if (m.genres?.length ?? 0) > ($gameMode ? 3 : 4)}
-            <span class="font-medium opacity-60">+{(m.genres?.length ?? 0) - ($gameMode ? 3 : 4)}</span>
+          {#if (m.genres?.length ?? 0) > (controllerUi ? 3 : 4)}
+            <span class="font-medium opacity-60">+{(m.genres?.length ?? 0) - (controllerUi ? 3 : 4)}</span>
           {/if}
         </div>
 
         {#if m.description}
-          <p class="mb-3 {$gameMode ? 'line-clamp-2' : 'line-clamp-3'} max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
+          <p class="mb-3 {controllerUi ? 'line-clamp-2' : 'line-clamp-3'} max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
         {/if}
 
         <!-- Action bar -->
         <div class="flex flex-wrap items-center gap-2">
           <button data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
-                  data-nav-down={$gameMode ? 'series-quick-episode' : undefined}
+                  data-nav-down={controllerUi ? 'series-quick-episode' : undefined}
                   onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
                   onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
                   use:focusOnMount onclick={() => playCta(m)}

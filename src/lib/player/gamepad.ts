@@ -169,12 +169,10 @@ export function startGamepadSeek(d: SeekDeps, debug = false): () => void {
   return () => cancelAnimationFrame(raf)
 }
 
-// Steam Deck path: the webview's Gamepad API doesn't see the Deck controller, so the Rust
-// backend reads it via evdev and emits `gamepad-input` = { name, pressed }. We pick out l2/r2
-// and feed the TriggerScrubbers, driven by a rAF loop (so the accelerating hold-scrub still
-// ticks). The reader itself is started app-wide (see nav/gamepad.ts + the app layout); this
-// only subscribes. Returns a stop function. Used in Game mode.
-export function startNativeGamepadSeek(d: SeekDeps): () => void {
+// Feed logical `gamepad-input` edges into the seek scrubbers. Gamescope emits them from Rust;
+// ordinary clients publish browser Gamepad edges onto the same Tauri event bus. Only Gamescope
+// asks this helper to wake/query the native reader, avoiding duplicate Linux desktop events.
+export function startGamepadEventSeek(d: SeekDeps, nativeReader = false): () => void {
   const l2 = new TriggerScrubber(-1, d)
   const r2 = new TriggerScrubber(+1, d)
   const dpadChain: DpadSeekChain = { target: 0, updatedAt: Number.NEGATIVE_INFINITY }
@@ -184,7 +182,7 @@ export function startNativeGamepadSeek(d: SeekDeps): () => void {
   let unlisten: (() => void) | null = null
   let disposed = false
 
-  invoke('gamepad_start').catch(() => {})
+  if (nativeReader) invoke('gamepad_start').catch(() => {})
 
   const anyHeld = () => held.L || held.R || held.left || held.right
   const tick = () => {
@@ -216,6 +214,7 @@ export function startNativeGamepadSeek(d: SeekDeps): () => void {
   }).then(async (u) => {
     if (disposed) { u(); return }
     unlisten = u
+    if (!nativeReader) return
     try {
       const state = await invoke<{ l2: boolean; r2: boolean }>('gamepad_trigger_state')
       if (!disposed) {

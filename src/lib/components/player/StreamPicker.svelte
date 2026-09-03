@@ -28,7 +28,7 @@
   import { rejectLabel } from '$lib/stremio/refine'
   import { title, banner, cover } from '$lib/anilist/media'
   import { isAndroid, isMobile } from '$lib/platform'
-  import { inputType } from '$lib/nav/input'
+  import { controllerMode, inputType } from '$lib/nav/input'
   import Search from '@lucide/svelte/icons/search'
   import Zap from '@lucide/svelte/icons/zap'
   import ArrowDownWideNarrow from '@lucide/svelte/icons/arrow-down-wide-narrow'
@@ -51,6 +51,7 @@
   } = $props()
 
   const pick = $derived($pickerStore)
+  const controllerUi = $derived($gameMode || $controllerMode)
   const directP2p = $derived($torrentPlaybackMode === 'direct' || !$debridKey)
   const cacheCheck = $derived($debridKey ? cacheCheckMode($debridProvider) : 'none')
 
@@ -385,7 +386,7 @@
   // control in DOM order so grouped-source toggles and the tail actions remain reachable too.
   $effect(() => {
     const trap = pickerTrap
-    if (!$gameMode || !trap || !pickerOpen) return
+    if (!controllerUi || !trap || !pickerOpen) return
     const onNav = (event: Event) => {
       const dir = (event as CustomEvent<'up' | 'down'>).detail
       if (dir !== 'up' && dir !== 'down') return
@@ -450,7 +451,7 @@
       return
     }
     const trap = pickerTrap
-    if (!$gameMode || pickerFocusReady || !rendered.length || !trap) return
+    if (!controllerUi || pickerFocusReady || !rendered.length || !trap) return
     pickerFocusReady = true
     // The first playable row is the predictable controller landing target. Do not prefer the
     // asynchronously-ranked "Best" row: it can move while providers are still arriving, and a
@@ -749,7 +750,7 @@
     onfocus={() => focusSource(info)}
     onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(info) } }}
     class="flex min-w-0 flex-1 items-start gap-3 px-3 text-left transition-colors hover:bg-accent active:bg-accent focus:outline-none
-      {$gameMode && $inputType === 'dpad'
+      {controllerUi && $inputType === 'dpad'
         ? 'focus:bg-accent focus:shadow-[inset_0_0_0_2px_white]'
         : 'focus-visible:bg-accent focus-visible:shadow-[inset_0_0_0_2px_white]'}
       {$isMobile ? 'py-3' : 'py-2.5'} {disabled ? 'cursor-not-allowed' : 'cursor-pointer'}"
@@ -779,7 +780,7 @@
             <!-- Unconditional. Suppressing the name whenever a logo EXISTED meant a logo that
                  failed to load left the row with a broken box and no name — no provenance at all. -->
             {#if info.addon}<span class="text-[0.65rem] font-semibold text-muted-foreground">{info.addon}</span>{/if}
-            {#if !$gameMode}
+            {#if !controllerUi}
               <button type="button" data-focusable onclick={(e) => copyLink(e, info)} title={copiedKey === keyOf(info) ? 'Copied!' : 'Copy link'} aria-label="Copy link" class="opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 {copiedKey === keyOf(info) ? '!opacity-100 text-green-400' : 'text-muted-foreground hover:text-foreground'}">{#if copiedKey === keyOf(info)}<Check size={14} />{:else}<Copy size={14} />{/if}</button>
               <Play size={14} class="text-muted-foreground opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100" />
             {/if}

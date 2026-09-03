@@ -1,10 +1,12 @@
 import { get } from 'svelte/store'
 import { gameMode, playing } from '$lib/player/session'
 import { isTv } from '$lib/platform'
+import { controllerMode } from './input'
 import { pickInDirection, type Dir } from './spatial'
 export * from './input'
 export * from './actions'
 export * from './spatial'
+export * from './browser-gamepad'
 
 interface ElCand { id: string; rect: DOMRect; el: HTMLElement }
 
@@ -140,7 +142,7 @@ function visibleRowCandidates(root: HTMLElement): ElCand[] {
  * generic search may still cross into the sidebar.
  */
 function pickInNavRows(active: HTMLElement, dir: Dir): HTMLElement | null | undefined {
-  if (!get(gameMode) && !get(isTv)) return undefined
+  if (!get(gameMode) && !get(isTv) && !get(controllerMode)) return undefined
   const row = active.closest<HTMLElement>('[data-nav-row]')
   if (!row) return undefined
 

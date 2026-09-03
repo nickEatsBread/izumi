@@ -39,7 +39,8 @@
   } from '$lib/settings/ui'
   import { get } from 'svelte/store'
   import { initScrub, beginScrub, moveScrub, endScrub, scrub, scrubActive } from '$lib/player/scrub'
-  import { ButtonPressLatch, startNativeGamepadSeek } from '$lib/player/gamepad'
+  import { ButtonPressLatch, startGamepadEventSeek } from '$lib/player/gamepad'
+  import { controllerMode } from '$lib/nav/input'
   import { discussionExpanded } from '$lib/comments'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import { reportWatchPlayback } from '$lib/watch-together/client'
@@ -125,6 +126,7 @@
   // composites this webview live over the layer-shell video; XWayland keeps the established
   // native-OSD/bitmap bridge. On touch, a tap reveals the auto-hiding controls.
   const gmMode = $derived($gameMode)
+  const controllerInputMode = $derived(gmMode || $controllerMode)
   const gmBitmapMode = $derived(usesGameModeBitmapCompositor(gmMode, $playerCompositorPath))
   function onOverlayTap(e: MouseEvent) {
     // Clicks inside the discussion panel (links, filter pills) bubble up here — don't let them
@@ -487,11 +489,11 @@
   // The shared scrub store commits through the same absolute seek as touch/skip.
   initScrub((t, source) => source === 'dpad' ? quietDpadSeekTo(t) : seekTo(t))
 
-  // Game mode: read the Deck triggers (L2/R2) via the Rust backend while a video is playing
-  // (the webview's own Gamepad API doesn't see the Deck controller under gamescope).
+  // Controller seek edges arrive from Rust under Gamescope and from the browser Gamepad API on
+  // ordinary clients; both feed the same tested scrubber path.
   $effect(() => {
-    if (!gmMode || !$playing) return
-    const stop = startNativeGamepadSeek({
+    if (!controllerInputMode || !$playing) return
+    const stop = startGamepadEventSeek({
       getPos: () => transportPos,
       getDur: () => transportDur,
       seek: (t, source) => source === 'dpad' ? quietDpadSeekTo(t) : seekTo(t),
@@ -503,7 +505,7 @@
       endScrub: () => { endScrub(); scheduleGmDynamicOverlay() },
       onActivity: () => poke(),
       blocked: () => subtitleEditorOpen || get(commentsOpen) || get(trackMenuOpen) || get(playerMenuOpen),
-    })
+    }, gmMode)
     return stop
   })
 
@@ -1121,7 +1123,7 @@
     chapterStore.set([])
   })
 
-  // Game mode controller: player-specific buttons (the app-wide nav translator leaves A/B/L1/R1
+  // Controller mode: player-specific buttons (the app-wide nav translator leaves A/B/L1/R1
   // to us here so A can be context-aware). A = skip the intro/OP-ED when that button is showing,
   // else play/pause. B = leave the player (back to the series page). Episode changes are the
   // the L1/R1 bumpers, but only on a double-press (see padEpisode) so it can't fire accidentally.
@@ -1153,7 +1155,7 @@
   })
 
   $effect(() => {
-    if (!gmMode || !$playing) return
+    if (!controllerInputMode || !$playing) return
     return listenSafe<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
       if (get(deckKeyboardWarning)) return
       if (e.payload.name === 'l4') {

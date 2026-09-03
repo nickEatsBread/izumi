@@ -16,6 +16,7 @@
   import { cubicOut } from 'svelte/easing'
   import { get } from 'svelte/store'
   import { gameMode } from '$lib/player/session'
+  import { controllerMode } from '$lib/nav/input'
   import { wheelScrollAcross } from '$lib/settings/ui'
   import { isAndroid, isMobile, isTv } from '$lib/platform'
   import * as h from '$lib/haptics'
@@ -84,10 +85,10 @@
   // without dismissing it. `keepOpen` (preview enter) cancels that pending close.
   // `suppressed` blocks opening for a beat after a carousel arrow is used, so
   // clicking an arrow (which scrolls a card under the cursor) can't pop a preview.
-  // Game mode (Deck) and mobile: no hover-trailer previews — touch has no real hover (a tap
+  // Controller mode (including Deck) and mobile: no hover-trailer previews — touch has no real hover (a tap
   // fires pointerenter and would strand the popup), and the autoplaying trailer is a PC-only
   // affordance.
-  function open() { if (simpleHover || get(gameMode) || get(isMobile) || get(isTv) || needsPointerMove) return; clearTimeout(closeT); place(); hovered = true }
+  function open() { if (simpleHover || get(gameMode) || get(controllerMode) || get(isMobile) || get(isTv) || needsPointerMove) return; clearTimeout(closeT); place(); hovered = true }
   function openAfterPointerMove() {
     if (!needsPointerMove) return
     needsPointerMove = false

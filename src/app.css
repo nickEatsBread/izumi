@@ -339,6 +339,43 @@ html.gamemode .group:hover .group-hover\:scale-105 {
   position: relative;
   z-index: 10;
 }
+
+/* Paired controllers on ordinary desktop/mobile clients share the Deck's focus language without
+   inheriting Gamescope-only zoom, compositor snapshots, fullscreen policy, or touch routing. */
+.controller-mode,
+.controller-mode * {
+  cursor: none !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+.controller-mode .browse-render-row,
+.controller-mode .browse-render-list-item,
+.controller-mode .browse-render-grid-item {
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
+.controller-mode [data-focusable]:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px #fff, 0 8px 24px rgb(0 0 0 / 0.4);
+  position: relative;
+  z-index: 10;
+}
+.controller-mode [data-focusable]:focus:has(.focus-cover) { box-shadow: none; }
+.controller-mode [data-focusable]:focus .focus-cover {
+  box-shadow: 0 0 0 3px #fff, 0 10px 28px rgb(0 0 0 / 0.5);
+  transform: scale(1.04);
+  transform-origin: center bottom;
+  position: relative;
+  z-index: 10;
+}
+.controller-mode [data-nav-sidebar] [data-focusable]:focus {
+  box-shadow: none;
+  background: hsl(var(--foreground) / 0.16);
+}
+.controller-mode .izumi-player-root button[data-focusable]:focus,
+.controller-mode .player-shell button:focus {
+  transform: scale(1.08);
+}
 /* Browse sidebar selection: fill the focused row (menu-style highlight) instead of the global
    ring — the squared ring corners read badly across a full-width nav row (rings are for cards).
    Higher specificity than the *:focus-visible and .gamemode :focus rules above, so it wins. */

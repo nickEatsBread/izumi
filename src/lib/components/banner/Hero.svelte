@@ -14,6 +14,7 @@
   import { isAndroid, isMobile } from '$lib/platform'
   import { get } from 'svelte/store'
   import { gameMode, playing } from '$lib/player/session'
+  import { controllerMode } from '$lib/nav/input'
   import { androidMpvActive } from '$lib/player/android-mpv'
   import { airingCountdown, airingCountdownAccessible } from '$lib/anime/airing-labels'
   import { dragCarousels, wheelScrollAcross } from '$lib/settings/ui'
@@ -51,6 +52,7 @@
   let clock = $state(Date.now())
   let countdownOrigin = $state(Date.now())
   let failedLogos = $state<string[]>([])
+  const controllerUi = $derived($gameMode || $controllerMode)
   const DURATION = 15000 // a 15s cadence
 
   function go(n: number, direction?: 1 | -1) {
@@ -351,10 +353,10 @@
   {:else}
   <div
     data-nav-row
-    class="relative mb-6 h-[40vh] touch-pan-y select-none transition-opacity duration-500 {showOverlay ? 'sm:h-[50vh]' : $gameMode ? 'sm:h-[42vh]' : 'sm:h-[48vh]'} {scrolled ? 'opacity-40' : 'opacity-100'}"
+    class="relative mb-6 h-[40vh] touch-pan-y select-none transition-opacity duration-500 {showOverlay ? 'sm:h-[50vh]' : controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'} {scrolled ? 'opacity-40' : 'opacity-100'}"
     class:cursor-grab={$dragCarousels && medias.length > 1}
     class:cursor-grabbing={heroDragging}
-    class:game-home-hero={$gameMode && showOverlay}
+    class:game-home-hero={controllerUi && showOverlay}
     style="--accent:{accent}"
     role="group"
     aria-label="Featured"
@@ -396,14 +398,14 @@
     {#if showOverlay && medias.length > 1}
       <!-- Miruro-style edge navigation: entering an edge reveals the control, while an explicit
            click changes the slide. Hover alone never replaces what the viewer was reading. -->
-      <button type="button" data-focusable={$gameMode ? undefined : ''} tabindex={$gameMode ? -1 : undefined}
+      <button type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
               aria-label="Previous featured title" onclick={() => step(-1)}
               class="hero-edge group absolute left-0 top-1/2 z-20 hidden h-28 w-16 -translate-y-1/2 place-items-center sm:grid">
         <span class="grid size-10 -translate-x-2 place-items-center rounded-full border border-white/15 bg-black/65 text-white opacity-0 shadow-xl backdrop-blur transition-all duration-150 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100">
           <ChevronLeft size={23} />
         </span>
       </button>
-      <button type="button" data-focusable={$gameMode ? undefined : ''} tabindex={$gameMode ? -1 : undefined}
+      <button type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
               aria-label="Next featured title" onclick={() => step(1)}
               class="hero-edge group absolute right-0 top-1/2 z-20 hidden h-28 w-16 -translate-y-1/2 place-items-center sm:grid">
         <span class="grid size-10 translate-x-2 place-items-center rounded-full border border-white/15 bg-black/65 text-white opacity-0 shadow-xl backdrop-blur transition-all duration-150 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100">
@@ -497,7 +499,7 @@
                auto-advances (and would collide with the Watch/Details buttons), so hide them. -->
           <div class="absolute bottom-8 right-8 hidden gap-1.5 sm:flex">
             {#each medias as _, idx}
-              <button data-focusable={$gameMode ? undefined : ''} tabindex={$gameMode ? -1 : undefined}
+              <button data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
                       onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`}
                       class="h-1 overflow-hidden rounded-full bg-white/25 transition-all duration-700"
                       style="width:{idx === i ? '3rem' : '1.5rem'}">

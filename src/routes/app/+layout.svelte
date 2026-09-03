@@ -39,7 +39,7 @@
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
   import { getCurrentWindow } from '@tauri-apps/api/window'
-  import { initInput, initDpadNav, suppressNativeContextMenus, suppressNativeTooltips } from '$lib/nav'
+  import { controllerMode, initInput, initDpadNav, startBrowserGamepadInput, suppressNativeContextMenus, suppressNativeTooltips } from '$lib/nav'
   import { startGamepadNav } from '$lib/nav/gamepad'
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { scheduleBootWork } from '$lib/util/boot-work'
@@ -162,8 +162,8 @@
   // Push a BASELINE player cache to the backend on load + whenever the setting changes (playback
   // re-sizes it per file by bitrate in play.ts). Handles the Uncapped sentinel. Picked up next file.
   $effect(() => { invoke('set_player_cache', { bytes: playerCacheBytes(Number($playerCacheMb)) }).catch(() => {}) })
-  // Game mode (Deck): start the backend controller reader + the app-wide gamepad→nav
-  // translator once gamescope/Deck mode is resolved. Reacts to the async gameMode store.
+  // Start one app-wide controller translator after native Game-mode detection settles. Gamescope
+  // uses the Rust reader; ordinary desktop/mobile clients use the browser Standard Gamepad API.
   let webviewZoomChain: Promise<unknown> = Promise.resolve()
   $effect(() => {
     if (!$gameModeResolved) return
@@ -173,12 +173,16 @@
     return initGmTouchWatchdog()
   })
   $effect(() => {
-    if (!$gameMode) return
-    suppressNativeTooltips() // no native `title` hover popups under controller/touch
-    suppressNativeContextMenus() // held presses must not open WebKit's desktop link menu
-    invoke('gamepad_start').catch(() => {})
+    if (!$gameModeResolved) return
     const stop = startGamepadNav()
-    return () => { stop(); invoke('gamepad_stop').catch(() => {}) }
+    if ($gameMode) {
+      suppressNativeTooltips() // no native `title` hover popups under controller/touch
+      suppressNativeContextMenus() // held presses must not open WebKit's desktop link menu
+      invoke('gamepad_start').catch(() => {})
+      return () => { stop(); invoke('gamepad_stop').catch(() => {}) }
+    }
+    const stopBrowserGamepad = startBrowserGamepadInput()
+    return () => { stopBrowserGamepad(); stop() }
   })
   $effect(() => {
     initCrashReporting()
@@ -307,6 +311,7 @@
 
   $effect(() => {
     document.documentElement.classList.toggle('tv-mode', $isTv)
+    document.documentElement.classList.toggle('controller-mode', $controllerMode && !$gameMode && !$isTv)
   })
 
   // UI scale: WebView (Chromium) zoom on the document root. mpv renders natively

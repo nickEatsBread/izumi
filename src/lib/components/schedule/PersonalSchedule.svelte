@@ -4,6 +4,7 @@
   import { durableHistory } from '$lib/player/history'
   import { loadPersonalSchedule } from '$lib/schedule/personal'
   import { gameMode } from '$lib/player/session'
+  import { controllerMode } from '$lib/nav/input'
   import { scheduleLayout } from '$lib/settings/ui'
   import { isMobile } from '$lib/platform'
   import { listenSafe } from '$lib/util/listen'
@@ -16,7 +17,7 @@
 
   const SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   const FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-  const gm = $derived($gameMode)
+  const gm = $derived($gameMode || $controllerMode)
   const layout = $derived($scheduleLayout)
 
   let airings = $state<Airing[]>([])
