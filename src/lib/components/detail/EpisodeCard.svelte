@@ -113,18 +113,18 @@
   onclick={play}
   onkeydown={(e) => { if (released && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); play() } }}
   title={selecting ? (released ? (selectedEp ? 'Selected — tap to unselect' : 'Tap to select') : 'Not yet aired') : released ? `Play — ${labels.primary}` : isNext ? `Airing in ${countdown(next?.timeUntilAiring)}` : 'Not yet aired'}
-  class="group select-none overflow-hidden rounded-xl text-left sm:rounded-lg {showThumb && img ? 'grid grid-cols-[42%_1fr] sm:flex sm:flex-col' : 'flex flex-col'}
+  class="group isolate select-none overflow-hidden rounded-xl text-left sm:rounded-lg {showThumb && img ? 'grid grid-cols-[42%_1fr] sm:flex sm:flex-col' : 'flex flex-col'}
     {released ? 'cursor-pointer bg-secondary transition-transform hover:scale-[1.02] hover:bg-accent' : 'cursor-not-allowed bg-background/40 opacity-60'}
     {selecting && selectedEp ? 'ring-2 ring-theme' : ''}"
 >
   {#if showThumb && img}
-    <div class="relative aspect-video h-full min-h-24 w-full overflow-hidden bg-muted sm:h-auto sm:min-h-0">
+    <div class="relative z-0 aspect-video h-full min-h-24 w-full overflow-hidden bg-muted sm:h-auto sm:min-h-0">
       {#if !imgReady}<div class="absolute inset-0 skeloader"></div>{/if}
       <!-- No `transform-gpu`/`will-change-transform` — same reason as SmallCard: they permanently
            promote every one of the (up to 48) thumbnails to its own retained GPU layer. The
            browser promotes the hovered card on demand. -->
       <img src={img} alt="" loading="lazy" decoding="async" onload={() => (imgReady = true)}
-           class="h-full w-full object-cover transition-[opacity,transform] duration-500 {imgReady ? 'opacity-100' : 'opacity-0'} {released ? 'group-hover:scale-105' : 'grayscale'}" />
+           class="block h-full w-full object-cover transition-[opacity,transform] duration-500 {imgReady ? 'opacity-100' : 'opacity-0'} {released ? 'group-hover:scale-105' : 'grayscale'}" />
       <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
 
       <span class="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-xs font-black">{shownNumber}</span>
@@ -166,7 +166,9 @@
       {/if}
     </div>
 
-    <div class="flex min-w-0 items-center gap-2 p-3 sm:p-2">
+    <!-- Give the footer an opaque, overlapping surface so the independently scaled thumbnail
+         cannot expose a subpixel seam at their boundary during hover. -->
+    <div class="relative z-10 flex min-w-0 items-center gap-2 bg-inherit p-3 sm:-mt-px sm:p-2">
       <div class="min-w-0 flex-1">
         <span class="line-clamp-2 text-sm font-bold sm:block sm:truncate">{labels.primary}</span>
         <!-- Spoiler mode hides the real title (shows only "Episode N") — no blur. -->

@@ -25,6 +25,6 @@ describe('episode Shift+click', () => {
 
   it('prevents native selection of episode cards while Shift is held', () => {
     expect(list.match(/class="grid select-none/g)).toHaveLength(6)
-    expect(card).toContain('class="group select-none')
+    expect(card).toContain('class="group isolate select-none')
   })
 })
