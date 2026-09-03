@@ -100,10 +100,14 @@ grep -q '#0E1524' src-tauri/gen/android/app/src/main/res/values/ic_launcher_back
 
 # One APK serves handheld Android and television devices. Leanback remains optional for phones,
 # while touchscreen/faketouch are explicitly optional so Play can offer the app to remote-only TVs.
-if ! grep -q 'android.software.leanback' src-tauri/gen/android/app/src/main/AndroidManifest.xml; then
-  sed -i 's#    <application#    <uses-feature android:name="android.software.leanback" android:required="false" />\n    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />\n    <uses-feature android:name="android.hardware.faketouch" android:required="false" />\n\n    <application#' \
-    src-tauri/gen/android/app/src/main/AndroidManifest.xml
-fi
+# Treat each declaration independently: newer Tauri scaffolds may already include Leanback without
+# either touch capability, and using Leanback as the shared gate would skip the two declarations.
+for feature in android.software.leanback android.hardware.touchscreen android.hardware.faketouch; do
+  if ! grep -q "android:name=\"$feature\"" src-tauri/gen/android/app/src/main/AndroidManifest.xml; then
+    sed -i "s#    <application#    <uses-feature android:name=\"$feature\" android:required=\"false\" />\\n\\n    <application#" \
+      src-tauri/gen/android/app/src/main/AndroidManifest.xml
+  fi
+done
 if ! grep -q 'android.intent.category.LEANBACK_LAUNCHER' src-tauri/gen/android/app/src/main/AndroidManifest.xml; then
   sed -i '/android.intent.category.LAUNCHER/a\                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />' \
     src-tauri/gen/android/app/src/main/AndroidManifest.xml

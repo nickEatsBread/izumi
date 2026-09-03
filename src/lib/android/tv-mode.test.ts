@@ -19,6 +19,8 @@ describe('Android TV mode contract', () => {
     expect(scaffold).toContain('android.hardware.touchscreen\" android:required=\"false\"')
     expect(scaffold).toContain('android.intent.category.LEANBACK_LAUNCHER')
     expect(scaffold).toContain('android:banner=\"@drawable/izumi_tv_banner\"')
+    expect(scaffold).toContain('for feature in android.software.leanback android.hardware.touchscreen android.hardware.faketouch; do')
+    expect(scaffold).not.toContain("if ! grep -q 'android.software.leanback'")
   })
 
   it('ships the required 320 by 180 xhdpi home banner', () => {
