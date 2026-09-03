@@ -30,7 +30,7 @@ describe('Cloudflare Worker deployment contract', () => {
   })
 
   it('keeps private TV waking inside the existing Worker', () => {
-    expect(worker).toContain("features: ['companion-wake-v1', 'web-push-v1', 'cloud-resolver-v1', 'cloud-resolver-v2']")
+    expect(worker).toContain("features: ['companion-wake-v1', 'web-push-v1', 'cloud-resolver-v1', 'cloud-resolver-v2', 'companion-details-v1']")
     expect(worker).toContain("import webpush from 'web-push'")
     expect(worker).toContain('companion_push_subscriptions')
     expect(worker).not.toMatch(/firebase|izumi.*wake.*(?:service|relay)/i)

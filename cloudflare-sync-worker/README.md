@@ -15,7 +15,7 @@ Never share the setup secret or an Izumi invite ticket publicly. Invites are sin
 
 Izumi checks the Worker's public version automatically. When an update is available, sync settings links back here. Sync your Cloudflare-created repository with this upstream directory and let Workers Builds deploy the resulting commit. Izumi deliberately never requests or stores a Cloudflare API token, so it cannot silently mutate your Cloudflare account.
 
-Database migrations are applied by the deploy command before the Worker update. Version 1.1 adds the companion pairing, short-lived request, browser enrollment, and Web Push subscription tables. Version 1.2 adds the optional direct-source resolver profile to the same private D1 database. Version 1.3 adds the explicit Cloudflare-only versus Cloudflare-plus-device playback policy; it needs no new migration.
+Database migrations are applied by the deploy command before the Worker update. Version 1.1 adds the companion pairing, short-lived request, browser enrollment, and Web Push subscription tables. Version 1.2 adds the optional direct-source resolver profile to the same private D1 database. Version 1.3 adds the explicit Cloudflare-only versus Cloudflare-plus-device playback policy. Version 1.4 adds authenticated TV episode-metadata lookup for AniList titles so series pages still receive episode titles, summaries, runtimes, and artwork when the paired client is unavailable. Versions 1.3 and 1.4 need no new migration.
 
 ## Optional TV source resolving
 

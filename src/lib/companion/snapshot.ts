@@ -47,6 +47,39 @@ function episodeCount(media: CompanionMedia): number {
   return (media.seasonEpisodeCounts ?? []).reduce((total, count) => total + Math.max(0, Math.floor(count)), 0)
 }
 
+function episodeLibrary(media: Media, source: CompanionMedia, spoilersHidden: boolean): CompanionEpisode[] {
+  const watchedThrough = Math.max(0, (source.episode ?? 1) - 1)
+  return (media.videos ?? []).flatMap((video) => {
+    const absolute = Math.floor(video.number)
+    const episode = Math.floor(video.episode ?? video.number)
+    const season = Math.floor(video.season ?? source.season ?? media.seasonNumber ?? 1)
+    if (absolute < 1 || episode < 1 || season < 0) return []
+    const watched = absolute <= watchedThrough
+    return [{
+      season,
+      episode,
+      title: video.title,
+      description: video.overview,
+      image: video.thumbnail,
+      runtimeMinutes: media.duration ? Math.max(1, Math.round(media.duration)) : undefined,
+      progress: watched ? 1 : absolute === source.episode ? source.episodeProgress : undefined,
+      watched,
+      spoiler: spoilersHidden && !watched,
+    }]
+  })
+}
+
+function seasonSummary(episodes: CompanionEpisode[]): { counts?: number[]; labels?: string[] } {
+  if (!episodes.length) return {}
+  const seasons = new Map<number, number>()
+  for (const episode of episodes) seasons.set(episode.season, Math.max(seasons.get(episode.season) ?? 0, episode.episode))
+  const ordered = [...seasons.entries()].sort(([left], [right]) => left - right)
+  return {
+    counts: ordered.map(([, count]) => count),
+    labels: ordered.map(([season]) => season === 0 ? 'Specials' : `Season ${season}`),
+  }
+}
+
 async function detailedCatalogMedia(media: CompanionMedia, client?: QueryClient): Promise<Media | null> {
   if (media.ref.provider === 'anilist') {
     const id = Number(media.ref.id)
@@ -73,22 +106,51 @@ export async function loadCompanionPlaybackMedia(media: CompanionMedia, client?:
 export async function createCompanionDetails(
   media: CompanionMedia,
   spoilersHidden = get(hideSpoilers),
+  client?: QueryClient,
 ): Promise<CompanionMedia> {
-  const counts = media.seasonEpisodeCounts ?? []
-  const total = episodeCount(media)
-  if (!total) return media
+  const detailed = await detailedCatalogMedia(media, client).catch(() => null)
+  const providerEpisodes = detailed ? episodeLibrary(detailed, media, spoilersHidden) : []
+  const summary = seasonSummary(providerEpisodes)
+  const enriched = detailed ? companionMedia(detailed, {
+    progress: media.progress,
+    episode: media.episode,
+    episodeTitle: media.episodeTitle,
+    episodeImage: media.episodeImage,
+    season: media.season,
+    episodeProgress: media.episodeProgress,
+    episodeRuntimeMinutes: media.episodeRuntimeMinutes,
+    episodes: providerEpisodes.length ? providerEpisodes : media.episodes,
+    placement: media.placement,
+  }) : media
+  const working: CompanionMedia = {
+    ...media,
+    ...enriched,
+    inMyList: media.inMyList ?? enriched.inMyList,
+    episodes: providerEpisodes.length ? providerEpisodes : media.episodes,
+    seasonEpisodeCounts: summary.counts ?? enriched.seasonEpisodeCounts ?? media.seasonEpisodeCounts,
+    seasonLabels: summary.labels ?? media.seasonLabels,
+  }
+  const counts = working.seasonEpisodeCounts ?? []
+  const total = episodeCount(working)
+  if (!total) return working
 
-  const watchedThrough = Math.max(0, (media.episode ?? 1) - 1)
-  const anilistId = media.ref.provider === 'anilist' ? Number(media.ref.id) : 0
+  const watchedThrough = Math.max(0, (working.episode ?? 1) - 1)
+  const anilistId = working.ref.provider === 'anilist'
+    ? Number(working.ref.id)
+    : Number(detailed?.externalIds?.anilist ?? 0)
   let aniZip: Awaited<ReturnType<typeof getEpisodeMeta>> = {}
   if (anilistId > 0 && Number.isSafeInteger(anilistId)) {
     aniZip = await getEpisodeMeta(anilistId, watchedThrough).catch(() => ({}))
   }
-  const supplied = new Map((media.episodes ?? []).map((episode) => [`${episode.season}:${episode.episode}`, episode]))
+  const supplied = new Map((working.episodes ?? []).map((episode) => [`${episode.season}:${episode.episode}`, episode]))
+  const suppliedSeasons = [...new Set((working.episodes ?? []).map((episode) => episode.season))].sort((left, right) => left - right)
   let absolute = 0
   const episodes: CompanionEpisode[] = counts.flatMap((rawCount, seasonIndex) => {
     const count = Math.max(0, Math.floor(rawCount))
-    const season = counts.length === 1 && media.season ? media.season : seasonIndex + 1
+    const labelledSeason = Number(working.seasonLabels?.[seasonIndex]?.match(/\d+/)?.[0])
+    const season = suppliedSeasons[seasonIndex] ?? (Number.isFinite(labelledSeason)
+      ? labelledSeason
+      : counts.length === 1 && working.season ? working.season : seasonIndex + 1)
     return Array.from({ length: count }, (_, episodeIndex) => {
       absolute += 1
       const episode = episodeIndex + 1
@@ -103,13 +165,13 @@ export async function createCompanionDetails(
         description: existing?.description ?? meta?.overview,
         image: existing?.image ?? meta?.image,
         runtimeMinutes: existing?.runtimeMinutes ?? (meta?.runtime ? Math.max(1, Math.round(meta.runtime)) : undefined),
-        progress: existing?.progress ?? (watched ? 1 : absolute === media.episode ? media.episodeProgress : undefined),
+        progress: existing?.progress ?? (watched ? 1 : absolute === working.episode ? working.episodeProgress : undefined),
         watched,
         spoiler,
       }
     })
   })
-  return { ...media, episodes }
+  return { ...working, episodes }
 }
 
 async function continueRow(entries: CwEntry[], active: CatalogSelection, all: boolean): Promise<CompanionHomeRow | null> {

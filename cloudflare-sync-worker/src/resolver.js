@@ -149,6 +149,44 @@ async function metadataFor(request, fetcher) {
   return fetchJson(fetcher, `https://api.ani.zip/mappings?anilist_id=${encodeURIComponent(request.ref.id)}`, METADATA_TIMEOUT_MS)
 }
 
+/** Resolve the public, non-secret episode library used by the TV series screen. Playback sources
+ * stay in the resolver profile; this endpoint only returns titles, summaries and artwork. */
+export async function resolveMediaDetails(value, fetcher = fetch) {
+  const request = normalizeResolveRequest(value)
+  if (request.ref.provider !== 'anilist') return null
+  const metadata = await metadataFor(request, fetcher)
+  const entries = Object.entries(metadata?.episodes ?? {})
+    .flatMap(([key, raw]) => {
+      const absolute = Number(key)
+      if (!Number.isInteger(absolute) || absolute < 1 || !raw || typeof raw !== 'object') return []
+      const season = Number.isInteger(raw.seasonNumber) && raw.seasonNumber >= 0 ? raw.seasonNumber : 1
+      const episode = Number.isInteger(raw.episodeNumber) && raw.episodeNumber > 0 ? raw.episodeNumber : absolute
+      const localizedTitle = raw.title && typeof raw.title === 'object'
+        ? raw.title.en ?? raw.title['x-jat']
+        : undefined
+      const runtime = Number(raw.runtime ?? raw.length)
+      return [{
+        absolute,
+        season,
+        episode,
+        title: cleanText(localizedTitle, 300)?.replace(/`/g, '’'),
+        description: cleanText(raw.overview ?? raw.summary, 1_500),
+        image: cleanUrl(raw.image),
+        runtimeMinutes: Number.isFinite(runtime) && runtime > 0 ? Math.max(1, Math.round(runtime)) : undefined,
+      }]
+    })
+    .sort((left, right) => left.absolute - right.absolute)
+  if (!entries.length) return null
+  const seasons = new Map()
+  for (const entry of entries) seasons.set(entry.season, Math.max(seasons.get(entry.season) ?? 0, entry.episode))
+  const orderedSeasons = [...seasons.entries()].sort(([left], [right]) => left - right)
+  return {
+    episodes: entries.map(({ absolute: _absolute, ...episode }) => episode),
+    seasonEpisodeCounts: orderedSeasons.map(([, count]) => count),
+    seasonLabels: orderedSeasons.map(([season]) => season === 0 ? 'Specials' : `Season ${season}`),
+  }
+}
+
 export async function streamRequestPlan(request, fetcher = fetch) {
   if (request.streamIds.length) {
     return { ids: request.streamIds, want: request.episode ? { episode: request.episode, season: request.season } : undefined }

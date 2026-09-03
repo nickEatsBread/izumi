@@ -1,7 +1,7 @@
 import webpush from 'web-push'
-import { defaultResolverProfile, normalizeResolverProfile, resolveDirectSources } from './resolver.js'
+import { defaultResolverProfile, normalizeResolverProfile, resolveDirectSources, resolveMediaDetails } from './resolver.js'
 
-const VERSION = '1.3.0'
+const VERSION = '1.4.0'
 const PROTOCOL = 1
 const CATEGORIES = new Set(['watch', 'manual', 'presence', 'companion'])
 const MAX_BODY_BYTES = 512 * 1024
@@ -484,6 +484,20 @@ async function resolveForTv(request, env, pairingId) {
   }
 }
 
+async function detailsForTv(request, env, pairingId) {
+  const pairing = await authenticateTv(request, env, pairingId)
+  if (!pairing) return json({ error: 'TV authentication failed.' }, 401)
+  try {
+    const input = await body(request)
+    const details = await resolveMediaDetails(input?.media ?? input)
+    return details
+      ? json({ ok: true, details })
+      : json({ error: 'Cloud episode metadata is unavailable for this catalogue title.', code: 'DETAILS_UNAVAILABLE' }, 404)
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : 'Episode metadata lookup failed.', code: 'DETAILS_FAILED' }, 409)
+  }
+}
+
 const ENROLMENT_SCRIPT = `
 const status = document.querySelector('[data-status]')
 const button = document.querySelector('[data-enable]')
@@ -581,7 +595,7 @@ export default {
           version: VERSION,
           protocol: PROTOCOL,
           claimed: await claimed(env),
-          features: ['companion-wake-v1', 'web-push-v1', 'cloud-resolver-v1', 'cloud-resolver-v2'],
+          features: ['companion-wake-v1', 'web-push-v1', 'cloud-resolver-v1', 'cloud-resolver-v2', 'companion-details-v1'],
         })
       }
       if (request.method === 'GET' && url.pathname === '/v1/companion/enrol') return companionEnrolmentPage(request)
@@ -617,6 +631,10 @@ export default {
       const companionResolveMatch = url.pathname.match(/^\/v1\/companion\/pairings\/([A-Za-z0-9_-]{16,80})\/resolve$/)
       if (companionResolveMatch && request.method === 'POST') {
         return await resolveForTv(request, env, companionResolveMatch[1])
+      }
+      const companionDetailsMatch = url.pathname.match(/^\/v1\/companion\/pairings\/([A-Za-z0-9_-]{16,80})\/details$/)
+      if (companionDetailsMatch && request.method === 'POST') {
+        return await detailsForTv(request, env, companionDetailsMatch[1])
       }
       const companionPairingMatch = url.pathname.match(/^\/v1\/companion\/pairings\/([A-Za-z0-9_-]{16,80})$/)
       if (companionPairingMatch && request.method === 'DELETE') {
