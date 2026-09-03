@@ -19,8 +19,12 @@ describe('full application backup', () => {
     const storage = new MemoryStorage()
     storage.setItem('nav-config-v1', '[]')
     storage.setItem('debrid-key', '"secret"')
+    storage.setItem('stremio-addon-urls', '["https://addon.test/private-token"]')
+    storage.setItem('stremio-account-token', '"session"')
+    storage.setItem('stremio-sync-credential-baseline-v1', '{"urls":[]}')
     expect(createBackup(storage).localStorage).toEqual({ 'nav-config-v1': '[]' })
     expect(createBackup(storage, true).localStorage['debrid-key']).toBe('"secret"')
+    expect(createBackup(storage, true).localStorage['stremio-addon-urls']).toContain('private-token')
   })
 
   it('includes local list tracking and its automatic threshold', () => {

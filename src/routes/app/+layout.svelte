@@ -49,6 +49,7 @@
   import { initTrackerQueue } from '$lib/trackers/queue'
   import { initAutoIncognito } from '$lib/player/auto-incognito'
   import { initDeviceSync } from '$lib/sync/client'
+  import { initStremioAddonSync } from '$lib/stremio/account-sync'
   import { getContextClient } from '@urql/svelte'
   import { acceptCompanionPlayRequest, initCompanionConnections, publishCompanionSourceOptions } from '$lib/companion/client'
   import { companionResolveSession, companionStreamPicker, initCompanionSourceBridge, selectPendingCompanionSource } from '$lib/companion/source-bridge'
@@ -208,6 +209,7 @@
     initTrackerQueue() // wire the online-reconnect flush + boot-flush any tracker writes that failed offline
     initAutoIncognito() // adult play → incognito (setting-gated); exits + purges when playback closes
     initDeviceSync() // account-free Iroh watch sync (automatically gated off by connected trackers)
+    const stopStremioAddonSync = initStremioAddonSync()
     const stopCompanionSources = initCompanionSourceBridge()
     const stopCompanions = initCompanionConnections(
       () => createCompanionSnapshot(companionCatalogClient),
@@ -243,7 +245,7 @@
         }
       },
       (query: string) => createCompanionSearch(companionCatalogClient, query),
-      (media: CompanionMedia) => createCompanionDetails(media),
+      (media: CompanionMedia) => createCompanionDetails(media, undefined, companionCatalogClient),
       selectPendingCompanionSource,
     )
     const stopAutoDownloads = initAutoDownloads()
@@ -299,7 +301,7 @@
       const { warmExtensions } = await import('$lib/extensions/manager')
       await warmExtensions()
     }, 6500)
-    return () => { stopDeveloperLogging(); stopUpdates?.(); stopExtensionUpdates?.(); stopCompanions(); stopCompanionSources(); stopAutoDownloads(); stopWatchTogether(); stopAiringNotifications(); stopVpnToasts(); stopDeepLinks() }
+    return () => { stopDeveloperLogging(); stopUpdates?.(); stopExtensionUpdates?.(); stopStremioAddonSync(); stopCompanions(); stopCompanionSources(); stopAutoDownloads(); stopWatchTogether(); stopAiringNotifications(); stopVpnToasts(); stopDeepLinks() }
   })
 
   // Push the DNS-over-HTTPS setting into the Rust HTTP client. Reactive: runs on

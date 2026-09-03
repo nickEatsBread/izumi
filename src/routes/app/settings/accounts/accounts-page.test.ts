@@ -7,10 +7,13 @@ const source = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.
 describe('Accounts settings information architecture', () => {
   it('puts connected trackers before optional public profiles and sync behaviour', () => {
     const trackers = source.indexOf('title="Tracker accounts"')
+    const stremio = source.indexOf('title="Stremio add-on sync"')
     const listProviders = source.indexOf('<ListProviderAccounts />')
     const publicProfiles = source.indexOf('title="Public libraries"')
     const sync = source.indexOf('title="List behaviour"')
     expect(trackers).toBeGreaterThan(0)
+    expect(stremio).toBeGreaterThan(trackers)
+    expect(stremio).toBeLessThan(listProviders)
     expect(trackers).toBeLessThan(listProviders)
     expect(listProviders).toBeLessThan(publicProfiles)
     expect(publicProfiles).toBeLessThan(sync)
@@ -50,8 +53,17 @@ describe('Accounts settings information architecture', () => {
     expect(source).toContain('interactive={false}')
   })
 
+  it('keeps Stremio authentication add-on-only and the password ephemeral', () => {
+    expect(source).toContain('settingKey="stremio-addon-account"')
+    expect(source).toContain('Other Izumi sources are excluded.')
+    expect(source).toContain('const password = stremioPassword')
+    expect(source).toContain("stremioPassword = ''")
+    expect(source).toContain('await syncStremioAddons()')
+    expect(source).toContain('Your password is exchanged once and never saved.')
+  })
+
   it('uses mobile-first controls that only become horizontal on wider screens', () => {
-    expect(source.match(/flex flex-col gap-2 sm:flex-row/g)).toHaveLength(3)
+    expect(source.match(/flex flex-col gap-2 sm:flex-row/g)).toHaveLength(4)
     expect(source).toContain('grid gap-2 sm:grid-cols-2')
     expect(source).toContain('text-base sm:text-sm')
   })

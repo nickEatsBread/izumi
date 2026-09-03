@@ -18,7 +18,19 @@
     simklUserName,
   } from '$lib/trackers/config'
   import { trackerQueue } from '$lib/trackers/queue'
+  import {
+    connectStremio,
+    disconnectStremio,
+    stremioAccountEmail,
+    stremioAuthKey,
+  } from '$lib/stremio/account'
+  import {
+    resetStremioAddonSync,
+    stremioAddonSyncState,
+    syncStremioAddons,
+  } from '$lib/stremio/account-sync'
   import type { SimklPin } from '$lib/trackers/simkl-auth'
+  import Blocks from '@lucide/svelte/icons/blocks'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Clock3 from '@lucide/svelte/icons/clock-3'
   import Eye from '@lucide/svelte/icons/eye'
@@ -45,6 +57,11 @@
   let simklBusy = $state(false)
   let simklError = $state('')
   let simklPin = $state<SimklPin | null>(null)
+  let stremioFormOpen = $state(false)
+  let stremioEmail = $state($stremioAccountEmail)
+  let stremioPassword = $state('')
+  let stremioBusy = $state<'connect' | 'sync' | 'disconnect' | ''>('')
+  let stremioError = $state('')
 
   const connectedCount = $derived(
     [$anilistToken, $malToken, $kitsuToken, $simklToken].filter(Boolean).length,
@@ -164,6 +181,49 @@
     disconnectSimkl()
     simklError = ''
   }
+
+  async function connectStremioClick() {
+    if (stremioBusy) return
+    stremioError = ''
+    stremioBusy = 'connect'
+    const password = stremioPassword
+    stremioPassword = ''
+    try {
+      await connectStremio(stremioEmail, password)
+      resetStremioAddonSync()
+      await syncStremioAddons()
+      stremioFormOpen = false
+    } catch (error) {
+      stremioError = error instanceof Error ? error.message : String(error)
+    } finally {
+      stremioBusy = ''
+    }
+  }
+
+  async function syncStremioClick() {
+    if (stremioBusy) return
+    stremioError = ''
+    stremioBusy = 'sync'
+    try {
+      await syncStremioAddons()
+    } catch (error) {
+      stremioError = error instanceof Error ? error.message : String(error)
+    } finally {
+      stremioBusy = ''
+    }
+  }
+
+  async function disconnectStremioClick() {
+    if (stremioBusy) return
+    stremioError = ''
+    stremioBusy = 'disconnect'
+    resetStremioAddonSync()
+    await disconnectStremio()
+    stremioEmail = ''
+    stremioPassword = ''
+    stremioFormOpen = false
+    stremioBusy = ''
+  }
 </script>
 
 {#snippet anilistBadge()}<TrackerProviderBadge provider="anilist" />{/snippet}
@@ -252,6 +312,35 @@
     onToggle={() => ($autoWatchlistEnabled = !$autoWatchlistEnabled)}
   />
 {/snippet}
+
+{#snippet stremioLeading()}
+  <span class="grid size-8 place-items-center rounded-lg bg-violet-500/10 text-violet-300" aria-hidden="true"><Blocks size={16} /></span>
+{/snippet}
+{#snippet stremioMeta()}
+  <span class="inline-flex min-w-0 items-center gap-1.5">
+    <span class="size-1.5 shrink-0 rounded-full {$stremioAuthKey ? ($stremioAddonSyncState.state === 'error' ? 'bg-amber-400' : 'bg-emerald-400') : 'bg-white/25'}"></span>
+    <span class="truncate">
+      {#if !$stremioAuthKey}
+        Not connected · account sign-in
+      {:else if $stremioAddonSyncState.state === 'syncing'}
+        Syncing add-ons…
+      {:else if $stremioAddonSyncState.state === 'synced'}
+        {$stremioAddonSyncState.count} add-on{$stremioAddonSyncState.count === 1 ? '' : 's'} synced
+      {:else}
+        Connected{ $stremioAccountEmail ? ` as ${$stremioAccountEmail}` : '' }
+      {/if}
+    </span>
+  </span>
+{/snippet}
+{#snippet stremioControl()}
+  <button
+    type="button"
+    data-focusable
+    onclick={() => (stremioFormOpen = !stremioFormOpen)}
+    disabled={Boolean(stremioBusy)}
+    class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40"
+  >{$stremioAuthKey ? (stremioFormOpen ? 'Close' : 'Manage') : (stremioFormOpen ? 'Cancel' : 'Sign in')}</button>
+{/snippet}
 {#snippet watchlistThresholdControl()}
   <label class="flex items-center gap-2 text-xs font-bold text-muted-foreground">
     <input
@@ -322,6 +411,74 @@
         </div>
       {/if}
       {#if simklError}<p role="alert" class="mt-2 text-xs text-destructive">{simklError}</p>{/if}
+    </SettingsRow>
+  </SettingsGroup>
+
+  <SettingsGroup
+    icon={Blocks}
+    title="Stremio add-on sync"
+    desc="Keep installed Stremio add-ons aligned with your Stremio account. Other Izumi sources are excluded."
+  >
+    <SettingsRow
+      settingKey="stremio-addon-account"
+      title="Stremio"
+      leading={stremioLeading}
+      meta={stremioMeta}
+      control={stremioControl}
+      expanded={stremioFormOpen || Boolean(stremioError) || $stremioAddonSyncState.state === 'error'}
+    >
+      {#if $stremioAuthKey}
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p class="min-w-0 text-[11px] leading-5 text-muted-foreground">
+            Add, remove, or reconfigure a Stremio add-on in either app and the collection is reconciled on the next sync.
+          </p>
+          <div class="flex shrink-0 justify-end gap-2">
+            <button
+              type="button"
+              data-focusable
+              onclick={syncStremioClick}
+              disabled={Boolean(stremioBusy) || $stremioAddonSyncState.state === 'syncing'}
+              class="inline-flex min-h-9 items-center gap-2 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40"
+            ><RefreshCw size={14} class={$stremioAddonSyncState.state === 'syncing' ? 'animate-spin' : ''} />{stremioBusy === 'sync' ? 'Syncing…' : 'Sync now'}</button>
+            <button
+              type="button"
+              data-focusable
+              onclick={disconnectStremioClick}
+              disabled={Boolean(stremioBusy)}
+              class="min-h-9 rounded-md px-3 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-40"
+            >{stremioBusy === 'disconnect' ? 'Disconnecting…' : 'Disconnect'}</button>
+          </div>
+        </div>
+      {:else}
+        <div class="grid gap-2 sm:grid-cols-2">
+          <label for="stremio-email" class="sr-only">Stremio email</label>
+          <input id="stremio-email" bind:value={stremioEmail} autocomplete="username" inputmode="email" data-focusable placeholder="Email" class="h-10 min-w-0 rounded-md bg-input px-3 text-base sm:text-sm" />
+          <label for="stremio-password" class="sr-only">Stremio password</label>
+          <input
+            id="stremio-password"
+            bind:value={stremioPassword}
+            autocomplete="current-password"
+            type="password"
+            data-focusable
+            placeholder="Password"
+            class="h-10 min-w-0 rounded-md bg-input px-3 text-base sm:text-sm"
+            onkeydown={(event) => event.key === 'Enter' && !stremioBusy && connectStremioClick()}
+          />
+        </div>
+        <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <span class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground"><ShieldCheck size={13} aria-hidden="true" />Your password is exchanged once and never saved.</span>
+          <button
+            type="button"
+            data-focusable
+            onclick={connectStremioClick}
+            disabled={Boolean(stremioBusy) || !stremioEmail.trim() || !stremioPassword}
+            class="min-h-9 rounded-md bg-primary px-3 text-xs font-bold text-primary-foreground disabled:opacity-40"
+          >{stremioBusy === 'connect' ? 'Signing in…' : 'Sign in and sync'}</button>
+        </div>
+      {/if}
+      {#if stremioError || $stremioAddonSyncState.state === 'error'}
+        <p role="alert" class="mt-2 text-xs text-destructive">{stremioError || ($stremioAddonSyncState.state === 'error' ? $stremioAddonSyncState.message : '')}</p>
+      {/if}
     </SettingsRow>
   </SettingsGroup>
 

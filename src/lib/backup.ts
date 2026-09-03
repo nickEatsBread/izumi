@@ -7,7 +7,7 @@ export interface AppBackup {
   localStorage: Record<string, string>
 }
 
-const secretKey = /(token|secret|password|credential|api.?key|jwt|debrid|opensubtitles-creds)/i
+const secretKey = /(token|secret|password|credential|api.?key|jwt|debrid|opensubtitles-creds|addon.*url)/i
 
 export function createBackup(storage: Storage, includeSecrets = false): AppBackup {
   const values: Record<string, string> = {}
