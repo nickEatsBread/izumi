@@ -13,7 +13,7 @@ import { getDrmEngine } from '$lib/player/drm'
 
 // Open source-picker: set after Play resolves the cached streams;
 // the picker lists them and `playStream` starts the chosen one. null = closed.
-export const streamPicker = writable<{
+export type StreamPickerState = {
   media: Media
   episode: number | undefined
   streams: Stream[]
@@ -36,6 +36,11 @@ export const streamPicker = writable<{
   playbackError?: string
   // "Change source" is always a user choice, regardless of the global automatic-source setting.
   manualOnly?: boolean
+  // A background TV request has no local cancel window and must not inherit a linked device's
+  // preference to choose sources manually. It still uses the ordinary ranker and fallback chain.
+  forceAuto?: boolean
+  // Only this picker may consume a pending TV target. An unrelated local picker can coexist.
+  companion?: boolean
   // Preserve play/pause intent while replacing the current file.
   autoplay?: boolean
   // Explicit scene-bookmark resume point. Kept on the picker so both manual and automatic source
@@ -45,7 +50,9 @@ export const streamPicker = writable<{
   // this while it searches for the previous episode's release; clearing the store would make the
   // resolve flow treat that search as superseded and abandon it.
   hidden?: boolean
-} | null>(null)
+}
+
+export const streamPicker = writable<StreamPickerState | null>(null)
 
 /** A source is being turned into something playable. Owns the "connecting" screen, which has to
  *  work when there is no picker on screen at all — binge continuation and Continue Watching both

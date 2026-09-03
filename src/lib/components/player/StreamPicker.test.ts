@@ -98,6 +98,16 @@ describe('release routes', () => {
   })
 })
 
+describe('background TV selection', () => {
+  it('can run the same automatic ranker against an isolated hidden store', () => {
+    expect(source).toContain('pickerStore = streamPicker')
+    expect(source).toContain('const pick = $derived($pickerStore)')
+    expect(source).toContain('!!pick?.forceAuto || $autoSelectSource')
+    expect(source).toContain('commitResolveSelection(resolveSession)')
+    expect(source).toContain('if (resolveSession?.local !== false)')
+  })
+})
+
 describe('empty source recovery', () => {
   it('links source-related playback failures directly to source management', () => {
     expect(source).toContain("classifyPlaybackFailure(playbackError) === 'no-results'")

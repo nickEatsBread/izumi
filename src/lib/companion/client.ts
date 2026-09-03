@@ -46,10 +46,12 @@ export interface PendingCompanionPlayback {
   requestId?: string
   pairingId?: string
   expiresAt?: number
+  /** Live local-channel requests resolve without navigating or borrowing the on-screen picker. */
+  headless?: boolean
 }
 
 export type CompanionPlayContext = Omit<PendingCompanionPlayback, 'device' | 'media'>
-export type CompanionSourceSelection = (requestId: string, choiceId: string, device: PairedCompanion) => void
+export type CompanionSourceSelection = (requestId: string, choiceId: string, device: PairedCompanion) => void | Promise<void>
 
 /** Session-only target: the next selected source must be sent to this TV, not played locally. */
 export const pendingCompanionPlayback = writable<PendingCompanionPlayback | null>(null)
@@ -207,8 +209,46 @@ type CompanionConnection = {
 }
 
 const connections = new Map<string, CompanionConnection>()
+export const companionLinkState = writable({ connected: 0, active: false })
+let companionActivityDepth = 0
+
+function syncCompanionLinkState(): void {
+  companionLinkState.set({
+    connected: [...connections.values()].filter((connection) => connection.channel.connected).length,
+    active: companionActivityDepth > 0,
+  })
+}
+
+/** Keep very short channel messages visible long enough to read as intentional activity. */
+export function beginCompanionActivity(minimumMs = 550): () => void {
+  companionActivityDepth += 1
+  syncCompanionLinkState()
+  const startedAt = Date.now()
+  let settled = false
+  return () => {
+    if (settled) return
+    settled = true
+    const finish = () => {
+      companionActivityDepth = Math.max(0, companionActivityDepth - 1)
+      syncCompanionLinkState()
+    }
+    const remaining = minimumMs - (Date.now() - startedAt)
+    if (remaining > 0) setTimeout(finish, remaining)
+    else finish()
+  }
+}
+
+export function pulseCompanionActivity(): void {
+  beginCompanionActivity()()
+}
+
+function duringCompanionActivity<T>(work: () => T | Promise<T>): Promise<T> {
+  const finish = beginCompanionActivity()
+  return Promise.resolve().then(work).finally(finish)
+}
+
 let backgroundSnapshotFactory: (() => Promise<CompanionHomeSnapshot>) | undefined
-let backgroundPlayHandler: ((media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void) | undefined
+let backgroundPlayHandler: ((media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void | Promise<void>) | undefined
 let backgroundSearchHandler: ((query: string) => Promise<CompanionMedia[]>) | undefined
 let backgroundDetailsHandler: ((media: CompanionMedia) => Promise<CompanionMedia>) | undefined
 let backgroundSourceSelectionHandler: CompanionSourceSelection | undefined
@@ -222,6 +262,7 @@ export function publishCompanionSourceOptions(
 ): boolean {
   const connection = connections.get(deviceId)
   if (!connection?.channel.connected || !/^[A-Za-z0-9_-]{16,80}$/.test(requestId)) return false
+  pulseCompanionActivity()
   connection.channel.publish('izumi.companion.source-options', {
     credential: connection.device.credential,
     requestId,
@@ -357,6 +398,7 @@ export async function pairCompanion(
 
 function sendSnapshot(connection: CompanionConnection, snapshot: CompanionHomeSnapshot): void {
   if (!connection.channel.connected) return
+  pulseCompanionActivity()
   connection.channel.publish('izumi.companion.snapshot', {
     credential: connection.device.credential,
     snapshot,
@@ -365,6 +407,7 @@ function sendSnapshot(connection: CompanionConnection, snapshot: CompanionHomeSn
 
 function sendWorkerTransport(connection: CompanionConnection): void {
   if (!connection.channel.connected || !connection.device.cloudflare) return
+  pulseCompanionActivity()
   connection.channel.publish('izumi.companion.transport', {
     credential: connection.device.credential,
     cloudflare: connection.device.cloudflare,
@@ -376,7 +419,7 @@ function keepConnection(
   channel: SamsungSmartViewChannel,
   initialSnapshot: CompanionHomeSnapshot,
   createSnapshot?: () => Promise<CompanionHomeSnapshot>,
-  onPlay?: (media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void,
+  onPlay?: (media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void | Promise<void>,
   onSearch?: (query: string) => Promise<CompanionMedia[]>,
   onDetails?: (media: CompanionMedia) => Promise<CompanionMedia>,
   onSourceSelection?: CompanionSourceSelection,
@@ -385,6 +428,7 @@ function keepConnection(
   const activeTrailerRequests = new Set<string>()
   const unsubscribers = [
     channel.on('izumi.companion.refresh', () => {
+      pulseCompanionActivity()
       if (createSnapshot) {
         void createSnapshot().then(async (snapshot) => {
           await publishCompanionSnapshot(snapshot).catch(() => {})
@@ -403,6 +447,7 @@ function keepConnection(
       }
       const pairingId = device.cloudflare?.pairingId ?? device.credential.slice(0, 16)
       if (request.pairingId !== pairingId || !request.ref) return
+      const ref = request.ref
       if (typeof request.requestId === 'string' && /^[A-Za-z0-9_-]{16,80}$/.test(request.requestId)) {
         channel.publish('izumi.companion.play-accepted', {
           pairingId,
@@ -424,17 +469,19 @@ function keepConnection(
               : undefined,
           }
         : undefined
-      onPlay?.({
-        ref: request.ref,
-        resolver,
-        playback,
-        title: '',
-        episode: typeof request.episode === 'number' ? request.episode : undefined,
-        season: typeof request.season === 'number' ? request.season : undefined,
-      }, device, {
-        pairingId,
-        requestId: typeof request.requestId === 'string' ? request.requestId : undefined,
-      })
+      if (onPlay) {
+        void duringCompanionActivity(() => onPlay({
+          ref,
+          resolver,
+          playback,
+          title: '',
+          episode: typeof request.episode === 'number' ? request.episode : undefined,
+          season: typeof request.season === 'number' ? request.season : undefined,
+        }, device, {
+          pairingId,
+          requestId: typeof request.requestId === 'string' ? request.requestId : undefined,
+        }))
+      }
     }),
     channel.on('izumi.companion.source-select', (value) => {
       const request = value as { pairingId?: unknown; requestId?: unknown; choiceId?: unknown } | null
@@ -442,13 +489,16 @@ function keepConnection(
       if (!request || request.pairingId !== pairingId
         || typeof request.requestId !== 'string' || !/^[A-Za-z0-9_-]{16,80}$/.test(request.requestId)
         || typeof request.choiceId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(request.choiceId)) return
-      onSourceSelection?.(request.requestId, request.choiceId, device)
+      if (onSourceSelection) {
+        void duringCompanionActivity(() => onSourceSelection(request.requestId as string, request.choiceId as string, device))
+      }
     }),
     channel.on('izumi.companion.catalog', (value, from) => {
       const request = value as { screen?: unknown; pairingId?: unknown } | null
       if (!request
         || request.pairingId !== device.credential.slice(0, 16)
         || typeof request.screen !== 'string') return
+      pulseCompanionActivity()
       const options = catalogScreens(get(catalogProviders))
       const target = request.screen as CatalogScreen
       const replyTarget = from?.id || 'host'
@@ -483,6 +533,7 @@ function keepConnection(
         || typeof request.requestId !== 'string'
         || !/^[A-Za-z0-9_-]{8,80}$/.test(request.requestId)
         || !onSearch) return
+      pulseCompanionActivity()
       const query = request.query.trim().slice(0, 80)
       const reply = (payload: Record<string, unknown>) => channel.publish('izumi.companion.search-results', {
         credential: device.credential,
@@ -511,6 +562,7 @@ function keepConnection(
         || typeof ref.type !== 'string'
         || typeof ref.id !== 'string'
         || !onDetails) return
+      pulseCompanionActivity()
       const reply = (payload: Record<string, unknown>) => channel.publish('izumi.companion.details-result', {
         credential: device.credential,
         requestId: request.requestId,
@@ -528,6 +580,7 @@ function keepConnection(
         || !/^[A-Za-z0-9_-]{8,80}$/.test(request.requestId)
         || typeof request.videoId !== 'string'
         || !/^[A-Za-z0-9_-]{11}$/.test(request.videoId)) return
+      pulseCompanionActivity()
       const reply = (payload: Record<string, unknown>) => channel.publish('izumi.companion.trailer-result', {
         credential: device.credential,
         requestId: request.requestId,
@@ -551,6 +604,7 @@ function keepConnection(
         || request.pairingId !== device.credential.slice(0, 16)
         || typeof request.requestId !== 'string'
         || !/^[A-Za-z0-9_-]{8,80}$/.test(request.requestId)) return
+      pulseCompanionActivity()
       if (activeTrailerRequests.delete(request.requestId) && !activeTrailerRequests.size) {
         void setTizenReceiverRelayForeground(false, undefined, 'trailer')
       }
@@ -564,15 +618,17 @@ function keepConnection(
       if (activeTrailerRequests.size) void setTizenReceiverRelayForeground(false, undefined, 'trailer')
       channel.disconnect()
       connections.delete(device.deviceId)
+      syncCompanionLinkState()
     },
   }
   connections.set(device.deviceId, connection)
+  syncCompanionLinkState()
 }
 
 async function reconnect(
   device: PairedCompanion,
   createSnapshot: () => Promise<CompanionHomeSnapshot>,
-  onPlay: (media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void,
+  onPlay: (media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void | Promise<void>,
   onSearch: (query: string) => Promise<CompanionMedia[]>,
   onDetails: (media: CompanionMedia) => Promise<CompanionMedia>,
   onSourceSelection?: CompanionSourceSelection,
@@ -620,7 +676,7 @@ export async function provisionCompanionResolverRoutes(profileOverride?: Cloudfl
 /** Maintains lightweight channels only for TVs the user explicitly paired. */
 export function initCompanionConnections(
   createSnapshot: () => Promise<CompanionHomeSnapshot>,
-  onPlay: (media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void,
+  onPlay: (media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void | Promise<void>,
   onSearch: (query: string) => Promise<CompanionMedia[]>,
   onDetails: (media: CompanionMedia) => Promise<CompanionMedia>,
   onSourceSelection?: CompanionSourceSelection,

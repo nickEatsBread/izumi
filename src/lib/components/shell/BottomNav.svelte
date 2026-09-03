@@ -6,6 +6,7 @@
   import * as h from '$lib/haptics'
   import { effectiveNav, NAV_META, HOME_META } from '$lib/settings/nav'
   import { m } from '$lib/paraglide/messages.js'
+  import CompanionLinkIndicator from './CompanionLinkIndicator.svelte'
 
   const labels = {
     schedule: m.nav_schedule, downloads: m.nav_downloads, watch: m.nav_watch_together,
@@ -38,6 +39,7 @@
   class="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur transition-transform duration-300 ease-out
     {hidden ? 'translate-y-full' : 'translate-y-0'}"
 >
+  <div class="absolute -top-10 right-3"><CompanionLinkIndicator floating /></div>
   <a
     href={HOME_META.href}
     data-focusable

@@ -50,14 +50,15 @@
   import { initAutoIncognito } from '$lib/player/auto-incognito'
   import { initDeviceSync } from '$lib/sync/client'
   import { getContextClient } from '@urql/svelte'
-  import { acceptCompanionPlayRequest, initCompanionConnections } from '$lib/companion/client'
-  import { initCompanionSourceBridge, selectPendingCompanionSource } from '$lib/companion/source-bridge'
-  import { createCompanionDetails, createCompanionSearch, createCompanionSnapshot } from '$lib/companion/snapshot'
+  import { acceptCompanionPlayRequest, initCompanionConnections, publishCompanionSourceOptions } from '$lib/companion/client'
+  import { companionResolveSession, companionStreamPicker, initCompanionSourceBridge, selectPendingCompanionSource } from '$lib/companion/source-bridge'
+  import { createCompanionDetails, createCompanionSearch, createCompanionSnapshot, loadCompanionPlaybackMedia } from '$lib/companion/snapshot'
+  import { cancelPendingCompanionPlayback, companionPlaybackTarget } from '$lib/companion/playback'
   import type { CompanionMedia } from '$lib/companion/protocol'
   import { initAutoDownloads } from '$lib/downloads/rules'
   import { initWatchTogether } from '$lib/watch-together/client'
   import { initAiringNotifications } from '$lib/notifications/airing'
-  import { deepLinkNotice, initDeepLinks, showDeepLinkNotice } from '$lib/deep-links'
+  import { deepLinkNotice, initDeepLinks } from '$lib/deep-links'
   import { initTorrentVpnToasts, torrentVpnNotice } from '$lib/player/direct-torrent'
   import { startUpdateChecks } from '$lib/updater'
   import { startExtensionUpdateChecks, extensionUpdateNotice } from '$lib/extensions/auto-update'
@@ -206,11 +207,36 @@
     const stopCompanionSources = initCompanionSourceBridge()
     const stopCompanions = initCompanionConnections(
       () => createCompanionSnapshot(companionCatalogClient),
-      (media: CompanionMedia, device, context) => {
-        showDeepLinkNotice(media.playback?.selection === 'manual'
-          ? 'Finding sources for your TV. Choose one on the TV screen.'
-          : 'Finding the best source for your TV…')
-        void goto(acceptCompanionPlayRequest(media, device, context))
+      async (media: CompanionMedia, device, context) => {
+        // A live TV request is background work. Keep both the current route and the person's local
+        // source picker untouched while the normal resolver/ranker works in an isolated session.
+        acceptCompanionPlayRequest(media, device, { ...context, headless: true })
+        try {
+          const detailed = await loadCompanionPlaybackMedia(media, companionCatalogClient)
+          const fallbackEpisode = media.resolver?.streamType === 'movie' ? undefined : 1
+          const target = companionPlaybackTarget(media, detailed, fallbackEpisode)
+          if (!target) throw new Error('The TV playback request did not match the resolved title.')
+          const manual = media.playback?.selection === 'manual'
+          const { playEpisode } = await import('$lib/stremio/play')
+          await playEpisode(detailed, target.episode, () => {}, {
+            forceManual: manual,
+            forceAuto: !manual,
+            companion: true,
+            hidden: true,
+            remoteOnly: true,
+            autoplay: true,
+            startSeconds: media.playback?.positionSeconds,
+            pickerStore: companionStreamPicker,
+            resolveSession: companionResolveSession,
+          })
+        } catch (reason) {
+          const message = reason instanceof Error ? reason.message : 'The TV source request could not be resolved.'
+          if (context.requestId) publishCompanionSourceOptions(device.deviceId, context.requestId, {
+            choices: [], resolving: false, error: message,
+          })
+          companionStreamPicker.set(null)
+          cancelPendingCompanionPlayback()
+        }
       },
       (query: string) => createCompanionSearch(companionCatalogClient, query),
       (media: CompanionMedia) => createCompanionDetails(media),
@@ -447,6 +473,11 @@
       {/if}
     {/snippet}
   </Lazy>
+{/if}
+<!-- Live TV requests reuse the same ranker and retry chain, but this isolated instance never paints
+     and never owns the linked device's local picker or route. -->
+{#if $companionStreamPicker}
+  <Lazy load={loadStreamPicker} props={{ pickerStore: companionStreamPicker, resolveSession: companionResolveSession }} />
 {/if}
 {#if $connecting}
   <Lazy load={loadSourceConnecting}>

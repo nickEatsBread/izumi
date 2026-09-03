@@ -9,14 +9,15 @@
   import { flip } from 'svelte/animate'
   import { fade } from 'svelte/transition'
   import { goto, pushState } from '$app/navigation'
-  import { streamPicker, gameMode, bingeSource, debridCaching, connecting, bumpPlayerOverlay } from '$lib/player/session'
+  import { streamPicker, gameMode, bingeSource, debridCaching, connecting, bumpPlayerOverlay, type StreamPickerState } from '$lib/player/session'
+  import type { Writable } from 'svelte/store'
   import { rankInfos, pickCandidates, preferDirectStartupCandidates, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
   import { isDead, markDead, markRouteDead } from '$lib/stremio/dead-sources'
   import AddonLogo from './AddonLogo.svelte'
   import AndroidConnectionStatus from './AndroidConnectionStatus.svelte'
   import SourceLoader from './SourceLoader.svelte'
   import { scoreInfo } from '$lib/stremio/score'
-  import { playStream, cancelResolve, commitResolveSelection, prefetchSourceMetadata, type PlayState } from '$lib/stremio/play'
+  import { playStream, cancelResolve, commitResolveSelection, prefetchSourceMetadata, type PlayState, type ResolveSession } from '$lib/stremio/play'
   import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, preferredSubLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey, fullStreamDescription, seadexAnnotations, sourcePriority, adaptiveSourceMode } from '$lib/settings/ui'
   import { debridProvider } from '$lib/settings/ui'
   import { cacheCheckMode } from '$lib/stremio/debrid'
@@ -41,7 +42,15 @@
   import { classifyPlaybackFailure, sourceOutcomeSummary, type PlaybackFailureClass } from '$lib/player/source-outcomes'
   import { planRecoveryCandidates, planSources } from '$lib/stremio/source-planner'
 
-  const pick = $derived($streamPicker)
+  let {
+    pickerStore = streamPicker,
+    resolveSession,
+  }: {
+    pickerStore?: Writable<StreamPickerState | null>
+    resolveSession?: ResolveSession
+  } = $props()
+
+  const pick = $derived($pickerStore)
   const directP2p = $derived($torrentPlaybackMode === 'direct' || !$debridKey)
   const cacheCheck = $derived($debridKey ? cacheCheckMode($debridProvider) : 'none')
 
@@ -154,7 +163,8 @@
   // resolve screen stands in for the picker, the auto-pick may commit to an uncached source (every
   // torrent-extension row is uncached by construction, so it would otherwise never be eligible),
   // and a failure walks on instead of dropping them back to a list they asked not to see.
-  const autoImmediate = $derived($autoSelectSource && !$autoSelectCountdown && !pick?.manualOnly && !pick?.continuationPending)
+  const autoEnabled = $derived(!!pick?.forceAuto || $autoSelectSource)
+  const autoImmediate = $derived(!!pick?.forceAuto || ($autoSelectSource && !$autoSelectCountdown && !pick?.manualOnly && !pick?.continuationPending))
   // A manual click may intentionally wait for a rare release. Automatic mode has alternatives in
   // hand, so a dead hash gets a much smaller budget before the chain advances. Healthy candidates
   // in field traces return metadata in roughly 2–3s; eight seconds leaves room for a cold mobile
@@ -478,8 +488,8 @@
       autoState = 'off'
       return
     }
-    if (autoState === 'idle' && autoReady && !!best && !busy && $autoSelectSource && !pick?.manualOnly && !pick?.continuationPending) {
-      if (!$autoSelectCountdown) { autoState = 'off'; autoBest(); return }
+    if (autoState === 'idle' && autoReady && !!best && !busy && autoEnabled && !pick?.manualOnly && !pick?.continuationPending) {
+      if (pick?.forceAuto || !$autoSelectCountdown) { autoState = 'off'; autoBest(); return }
       autoState = 'counting'
       autoStart = performance.now()
       autoTimer = setInterval(() => {
@@ -502,16 +512,16 @@
     if (busy || !pick) return
     // Picking a source supersedes the in-flight resolve: stop it folding in more sources (and, for
     // an auto-advance picker, stop its same-release auto-continue from firing over this choice).
-    commitResolveSelection()
+    commitResolveSelection(resolveSession)
     busy = true; error = ''; blockedRetry = null
     chosenLabel = info.filename ?? info.label ?? info.group ?? info.addon ?? ''
-    streamPicker.update((current) => current ? { ...current, playbackError: undefined } : current)
+    pickerStore.update((current) => current ? { ...current, playbackError: undefined } : current)
     // An explicit tap is manual even when "auto-select immediately" is enabled. The automatic
     // picker still calls this with `fromAuto = true`; a retry chosen by the user gets the full
     // native metadata allowance instead of inheriting the short automatic-chain budget.
     const automatic = fromAuto
     await playStream(pick.media, pick.episode, info.stream, (s: PlayState) => {
-      if (s.status === 'playing') streamPicker.set(null)
+      if (s.status === 'playing') pickerStore.set(null)
       else if (s.status === 'error') {
         busy = false
         // Only the AUTOMATIC path walks on. A source the user picked by hand deserves its error
@@ -527,6 +537,7 @@
       startSeconds: pick.startSeconds,
       automatic,
       directStartupTimeoutMs: automatic && directP2p ? AUTO_DIRECT_STARTUP_TIMEOUT_MS : undefined,
+      companion: pick.companion,
     })
   }
   /** Retry the debrid-blocked stream over the local P2P engine — one-off, mode setting untouched. */
@@ -534,15 +545,15 @@
     const info = blockedRetry
     if (!info || busy || !pick) return
     cancelAuto()
-    commitResolveSelection()
+    commitResolveSelection(resolveSession)
     busy = true; error = ''; blockedRetry = null
     chosenLabel = info.filename ?? info.label ?? info.group ?? info.addon ?? ''
-    streamPicker.update((current) => current ? { ...current, playbackError: undefined } : current)
+    pickerStore.update((current) => current ? { ...current, playbackError: undefined } : current)
     await playStream(pick.media, pick.episode, info.stream, (s: PlayState) => {
-      if (s.status === 'playing') streamPicker.set(null)
+      if (s.status === 'playing') pickerStore.set(null)
       else if (s.status === 'error') { busy = false; error = s.message ?? 'Playback failed.' }
       else if (s.status === 'idle') { busy = false }
-    }, { autoplay: pick.autoplay, forceDirect: true, startSeconds: pick.startSeconds })
+    }, { autoplay: pick.autoplay, forceDirect: true, startSeconds: pick.startSeconds, companion: pick.companion })
   }
   /** Remember the failure and move to the next candidate. False when the chain is exhausted. */
   function advanceAuto(info: StreamInfo, failureClass: PlaybackFailureClass): boolean {
@@ -566,14 +577,16 @@
     const next = recoveryOrder[0]
     if (!next || !pick) return false
     const nextInfo = describe(next)
-    connecting.set({
-      title: title(pick.media),
-      detail: nextInfo.filename ?? nextInfo.label,
-      art: backdrop,
-      media: pick.media,
-      episode: pick.episode,
-      cancel: () => { connecting.set(null); cancelResolve() },
-    })
+    if (resolveSession?.local !== false) {
+      connecting.set({
+        title: title(pick.media),
+        detail: nextInfo.filename ?? nextInfo.label,
+        art: backdrop,
+        media: pick.media,
+        episode: pick.episode,
+        cancel: () => { connecting.set(null); cancelResolve(resolveSession) },
+      })
+    }
     autoProgress = 0
     autoState = 'idle' // re-arms the countdown effect on the new best
     return true
@@ -599,11 +612,11 @@
   let replacePickerHistory = false
   function close() {
     cancelAuto()
-    cancelResolve()
+    cancelResolve(resolveSession)
     connecting.set(null)
     busy = false
     error = ''
-    streamPicker.set(null)
+    pickerStore.set(null)
   }
   function openSourceSettings() {
     // Mobile adds a shallow history entry while this dialog is open. Replace that entry so Back

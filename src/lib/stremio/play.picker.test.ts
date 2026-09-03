@@ -107,6 +107,7 @@ vi.mock('$lib/player/source-origin', () => ({
 const {
   cancelResolve,
   commitResolveSelection,
+  createResolveSession,
   playEpisode,
   REMEMBERED_SOURCE_MAX_AGE_MS,
   REMEMBERED_SOURCE_PRIORITY_MS,
@@ -138,6 +139,32 @@ afterEach(() => {
 })
 
 describe('manual episode source chooser', () => {
+  it('keeps background TV resolution isolated from the on-screen picker', async () => {
+    const tvPicker = writable<Record<string, unknown> | null>(null)
+    const tvSession = createResolveSession()
+    const localPicker = { media: { id: 99 }, episode: 7, streams: [], cachedCount: 0 }
+    picker.set(localPicker)
+
+    const resolving = playEpisode(media as never, 2, () => {}, {
+      hidden: true,
+      remoteOnly: true,
+      forceAuto: true,
+      pickerStore: tvPicker as never,
+      resolveSession: tvSession,
+    })
+
+    await vi.waitFor(() => expect(get(tvPicker)).toMatchObject({
+      episode: 2,
+      hidden: true,
+      forceAuto: true,
+    }))
+    expect(get(picker)).toBe(localPicker)
+
+    commitResolveSelection(tvSession)
+    await resolving
+    expect(get(picker)).toBe(localPicker)
+  })
+
   it('reports disabled add-ons instead of claiming that the episode has no streams', async () => {
     configuredAddonUrls.set(['https://disabled-addon.test'])
     hasConfiguredExtensions.mockResolvedValue(false)

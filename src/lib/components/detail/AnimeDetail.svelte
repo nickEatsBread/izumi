@@ -194,7 +194,7 @@
   $effect(() => {
     const pending = $pendingCompanionPlayback
     const current = media
-    if (!pending || !current || pending === startedCompanionRequest) return
+    if (!pending || pending.headless || !current || pending === startedCompanionRequest) return
     const target = companionPlaybackTarget(
       pending.media,
       current,
@@ -205,6 +205,7 @@
     prefetchEpisodeSources(current, target.episode, 0)
     void playEpisode(current, target.episode, (state) => (heroPlay = state), {
       forceManual: pending.media.playback?.selection === 'manual',
+      companion: true,
       hidden: pending.media.playback?.selection === 'manual',
       remoteOnly: true,
       autoplay: true,

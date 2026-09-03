@@ -1,8 +1,8 @@
-import { get } from 'svelte/store'
+import { get, writable } from 'svelte/store'
 import { describe } from '$lib/stremio/addon'
 import type { Stream } from '$lib/stremio/addon'
-import { commitResolveSelection, playStream, type PlayState } from '$lib/stremio/play'
-import { connecting, streamPicker } from '$lib/player/session'
+import { commitResolveSelection, createResolveSession, playStream, type PlayState } from '$lib/stremio/play'
+import { connecting, streamPicker, type StreamPickerState } from '$lib/player/session'
 import {
   pendingCompanionPlayback,
   publishCompanionSourceOptions,
@@ -16,6 +16,17 @@ let ids = new Map<Stream, string>()
 let streamsById = new Map<string, Stream>()
 let lastSignature = ''
 let retryTimer: ReturnType<typeof setTimeout> | null = null
+
+/** TV-owned resolve state is deliberately separate from the on-screen picker. A live Companion
+ * request can therefore rank and prepare a source without replacing anything the linked device's
+ * user is currently looking at. */
+export const companionStreamPicker = writable<StreamPickerState | null>(null)
+export const companionResolveSession = createResolveSession()
+
+function activePicker() {
+  const pending = get(pendingCompanionPlayback)
+  return pending?.headless ? get(companionStreamPicker) : get(streamPicker)
+}
 
 function clearRetry() {
   if (retryTimer !== null) clearTimeout(retryTimer)
@@ -61,7 +72,7 @@ function choiceFor(stream: Stream) {
 
 function publishCurrent(error?: string) {
   const pending = get(pendingCompanionPlayback)
-  const picker = get(streamPicker)
+  const picker = activePicker()
   if (!pending?.requestId || pending.media.playback?.selection !== 'manual' || !picker
     || !companionPlaybackMatches(pending.media, picker.media, picker.episode)) {
     if (activeKey) reset()
@@ -89,35 +100,40 @@ function publishCurrent(error?: string) {
 export function initCompanionSourceBridge(): () => void {
   const update = () => publishCurrent()
   const stopPicker = streamPicker.subscribe(update)
+  const stopCompanionPicker = companionStreamPicker.subscribe(update)
   const stopPending = pendingCompanionPlayback.subscribe(update)
   return () => {
     stopPicker()
+    stopCompanionPicker()
     stopPending()
+    companionStreamPicker.set(null)
     reset()
   }
 }
 
 /** Commit the opaque row selected on TV. The ordinary playStream path still owns debrid/P2P,
  * preparation, and the final receiver load, so there is no second resolver implementation. */
-export function selectPendingCompanionSource(requestId: string, choiceId: string, device: PairedCompanion): void {
+export async function selectPendingCompanionSource(requestId: string, choiceId: string, device: PairedCompanion): Promise<void> {
   const pending = get(pendingCompanionPlayback)
-  const picker = get(streamPicker)
+  const picker = activePicker()
   const key = `${device.deviceId}:${requestId}`
   const stream = key === activeKey ? streamsById.get(choiceId) : undefined
   if (!pending || pending.requestId !== requestId || pending.device.deviceId !== device.deviceId
     || !picker || !stream || !companionPlaybackMatches(pending.media, picker.media, picker.episode)) return
 
-  commitResolveSelection()
-  connecting.set(null)
-  streamPicker.update((current) => current ? { ...current, hidden: true, playbackError: undefined } : current)
-  void playStream(picker.media, picker.episode, stream, (state: PlayState) => {
-    if (state.status === 'playing') streamPicker.set(null)
+  const pickerStore = pending.headless ? companionStreamPicker : streamPicker
+  commitResolveSelection(pending.headless ? companionResolveSession : undefined)
+  if (!pending.headless) connecting.set(null)
+  pickerStore.update((current) => current ? { ...current, hidden: true, playbackError: undefined } : current)
+  await playStream(picker.media, picker.episode, stream, (state: PlayState) => {
+    if (state.status === 'playing') pickerStore.set(null)
     else if (state.status === 'error') {
-      streamPicker.update((current) => current ? { ...current, resolving: false, playbackError: state.message, hidden: true } : current)
+      pickerStore.update((current) => current ? { ...current, resolving: false, playbackError: state.message, hidden: true } : current)
       publishCurrent(state.message ?? 'That source could not be played on the TV.')
     }
   }, {
     autoplay: true,
     startSeconds: picker.startSeconds,
+    companion: true,
   })
 }

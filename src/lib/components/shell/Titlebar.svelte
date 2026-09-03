@@ -10,6 +10,7 @@
   import { playerGifStop } from '$lib/player/native'
   import { desktopCastSession, stopDesktopCast } from '$lib/player/desktop-cast'
   import { isMacOS } from '$lib/platform'
+  import CompanionLinkIndicator from './CompanionLinkIndicator.svelte'
 
   // Browser previews and packaged web runtimes do not expose Tauri's window metadata.
   // Keep desktop chrome harmless if platform detection has not hidden it yet.
@@ -94,7 +95,7 @@
     <!-- Keep a receiver control reachable after the user leaves the player overlay. Clicking the
          active Cast chip is the explicit disconnect action, matching the player popover. -->
     <button
-      class="absolute top-1 flex h-6 max-w-48 items-center gap-1.5 rounded-full bg-primary/20 px-2 text-[10px] font-semibold text-primary transition hover:bg-primary/30 {$isMacOS ? 'right-2' : 'right-[8.75rem]'}"
+      class="absolute top-1 flex h-6 max-w-48 items-center gap-1.5 rounded-full bg-primary/20 px-2 text-[10px] font-semibold text-primary transition hover:bg-primary/30 {$isMacOS ? 'right-2' : 'right-[10.75rem]'}"
       onclick={stopCasting}
       aria-label="Stop casting to {$desktopCastSession.deviceName}"
       title="Stop casting to {$desktopCastSession.deviceName}"
@@ -105,6 +106,7 @@
   {/if}
   {#if !$isMacOS}
   <div class="flex items-center">
+  <CompanionLinkIndicator />
   <button
     onclick={minimize}
     aria-label="Minimize"
@@ -127,5 +129,7 @@
     <X size={16} />
   </button>
   </div>
+  {:else}
+    <div class="absolute top-0 {$desktopCastSession ? 'right-[13rem]' : 'right-2'}"><CompanionLinkIndicator /></div>
   {/if}
 </div>

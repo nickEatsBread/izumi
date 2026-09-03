@@ -1,6 +1,6 @@
 import type { Client } from '@urql/core'
 import { get } from 'svelte/store'
-import { searchQuery, searchVariables } from '$lib/anilist/detail-queries'
+import { MEDIA_BY_ID, searchQuery, searchVariables } from '$lib/anilist/detail-queries'
 import { heroQuery, heroVars, homeSections, pageQuery } from '$lib/anilist/queries'
 import { resumeEp } from '$lib/anilist/media'
 import type { Media } from '$lib/anilist/types'
@@ -39,6 +39,26 @@ let cached: { key: string; at: number; snapshot: CompanionHomeSnapshot } | null 
 
 function episodeCount(media: CompanionMedia): number {
   return (media.seasonEpisodeCounts ?? []).reduce((total, count) => total + Math.max(0, Math.floor(count)), 0)
+}
+
+async function detailedCatalogMedia(media: CompanionMedia, client?: QueryClient): Promise<Media | null> {
+  if (media.ref.provider === 'anilist') {
+    const id = Number(media.ref.id)
+    if (!client || !Number.isSafeInteger(id) || id < 1) return null
+    const result = await client.query<{ Media?: Media }>(MEDIA_BY_ID, { id, withPreview: true }, { requestPolicy: 'network-only' }).toPromise()
+    if (result.error) throw result.error
+    return result.data?.Media ?? null
+  }
+  if (!['kitsu', 'tmdb', 'stremio', 'jvm'].includes(media.ref.provider)) return null
+  const provider = await loadCatalogProvider(media.ref.provider as 'kitsu' | 'tmdb' | 'stremio' | 'jvm')
+  return provider.detail(media.ref)
+}
+
+/** Load the complete playback model without routing the linked device to a detail screen. */
+export async function loadCompanionPlaybackMedia(media: CompanionMedia, client?: QueryClient): Promise<Media> {
+  const detailed = await detailedCatalogMedia(media, client)
+  if (!detailed) throw new Error('The linked device could not load this title for playback.')
+  return detailed
 }
 
 /** Enrich one TV title on demand instead of making every home snapshot carry an entire episode

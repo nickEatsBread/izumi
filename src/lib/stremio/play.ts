@@ -91,7 +91,8 @@ import { recordPlay, localHistory } from '$lib/player/history'
 import { maybeAutoEnterIncognito } from '$lib/player/auto-incognito'
 import { incognito } from '$lib/stores/incognito'
 import { episodeSourceOrigins, rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
-import { connecting, nextEpisodeReady, upNextPrompt, playing, playerLoadId, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, playerSleep, playbackRecovery } from '$lib/player/session'
+import { connecting, nextEpisodeReady, upNextPrompt, playing, playerLoadId, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, playerSleep, playbackRecovery, type StreamPickerState } from '$lib/player/session'
+import type { Writable } from 'svelte/store'
 import {
   DIRECT_TORRENT_START_TIMEOUT_MS,
   DIRECT_TORRENT_HARD_START_TIMEOUT_MS,
@@ -139,6 +140,7 @@ import {
 } from '$lib/player/android-mpv'
 import { waitForRecoveryFirstFrame, type RecoveryFirstFrameResult } from '$lib/player/recovery-first-frame'
 import { cancelPendingCompanionPlayback, hasPendingCompanionPlayback, startPendingCompanionCast } from '$lib/companion/playback'
+import { beginCompanionActivity } from '$lib/companion/client'
 
 function continueToNextEpisode(
   media: Media,
@@ -209,6 +211,13 @@ export type PlayEpisodeOptions = {
   hidden?: boolean
   /** A paired TV owns the eventual player load; do not supersede local playback ownership. */
   remoteOnly?: boolean
+  /** TV automatic playback is an instruction, not the linked device's local picker preference. */
+  forceAuto?: boolean
+  /** The eventual source selection belongs to the pending TV request. */
+  companion?: boolean
+  /** Isolated state used by background TV resolution so it cannot replace the local picker. */
+  pickerStore?: Writable<StreamPickerState | null>
+  resolveSession?: ResolveSession
 }
 
 export type PlayStreamOptions = {
@@ -221,6 +230,8 @@ export type PlayStreamOptions = {
   /** Automatic picks get a bounded native metadata/initialization attempt so one dead hash cannot
    * consume the full manual-source allowance before the picker advances to its next candidate. */
   directStartupTimeoutMs?: number
+  /** Route this selection to the pending linked TV instead of local playback. */
+  companion?: boolean
   /** Whether the planner/picker chose this route without a user click. Observation only. */
   automatic?: boolean
   /** Internal: a watchdog replacement may retain ownership, but can never claim it after a newer
@@ -477,35 +488,44 @@ function pushListen<T>(event: string, handler: EventCallback<T>) {
   stop.push(() => { cancelled = true; unlisten?.(); unlisten = null })
 }
 
-// The in-flight source resolve (playEpisode). A new play or an explicit picker close aborts it
-// so a closed resolve settles to idle at once instead of leaving its caller stuck in `resolving`.
-// A superseded resolve stays silent because the newer request now owns caller state. The signal
-// also cancels the addon stream fetches themselves (only the session-cached manifest lookups run
-// to completion); an explicit pick/close additionally cuts the bridged extension fetches — see
-// cancelExtensionFetches below. A supersede-by-new-play deliberately does NOT cut those: they
-// usually belong to the same title, and their settled answers warm the memo cache the
-// replacement resolve is about to read.
-let resolveAbort: AbortController | null = null
-const committedResolveAborts = new WeakSet<AbortController>()
+// The local picker and a linked TV resolve through the same algorithm but keep independent request
+// ownership. A TV request must never close, replace, or cancel the picker a person is using on this
+// device. Only the local session owns the global bridged-extension cancellation lane.
+export interface ResolveSession {
+  abort: AbortController | null
+  committed: WeakSet<AbortController>
+  local: boolean
+}
+
+const localResolveSession: ResolveSession = {
+  abort: null,
+  committed: new WeakSet<AbortController>(),
+  local: true,
+}
+
+export function createResolveSession(): ResolveSession {
+  return { abort: null, committed: new WeakSet<AbortController>(), local: false }
+}
+
 /** Abort the in-flight source resolve — called when the picker is closed (X / click-off / Esc). */
-export function cancelResolve() {
+export function cancelResolve(session: ResolveSession = localResolveSession) {
   finishResolveTrace(currentResolveTrace(), 'canceled by user')
-  resolveAbort?.abort()
-  resolveAbort = null
-  cancelPendingCompanionPlayback()
+  session.abort?.abort()
+  session.abort = null
+  if (session.local) cancelPendingCompanionPlayback()
   // The fetches were "best-effort background" once; on a click they are contention on the very
   // lanes the picked source needs. Cut them loose — reissued fresh next resolve.
-  cancelExtensionFetches()
+  if (session.local) cancelExtensionFetches()
 }
 
 /** Stop source discovery because one of its rows is being handed to playStream. Unlike a user
  * dismissal, this keeps the active resolve trace open so engine startup and first-frame timings
  * remain part of the same click-to-video trace. */
-export function commitResolveSelection() {
-  if (resolveAbort) committedResolveAborts.add(resolveAbort)
-  resolveAbort?.abort()
-  resolveAbort = null
-  cancelExtensionFetches()
+export function commitResolveSelection(session: ResolveSession = localResolveSession) {
+  if (session.abort) session.committed.add(session.abort)
+  session.abort?.abort()
+  session.abort = null
+  if (session.local) cancelExtensionFetches()
 }
 
 // The in-flight DEBRID resolve (playStream's add/select/poll chain). Owned by the newest
@@ -1730,6 +1750,8 @@ export async function playEpisode(
   onState: (s: PlayState) => void,
   options: PlayEpisodeOptions = {},
 ) {
+  const pickerStore = options.pickerStore ?? streamPicker
+  const resolveSession = options.resolveSession ?? localResolveSession
   markClientPerformance('izumi:play-requested', {
     mediaId: media.id,
     episode: episode ?? 0,
@@ -1764,9 +1786,9 @@ export async function playEpisode(
   // Supersede any resolve still running from a previous click (its fetches keep going in the
   // background, but this one owns the picker now). `signal` also lets an explicit close abort us.
   // Done FIRST so even an offline/instant play cancels a stale resolve that's still holding a picker.
-  resolveAbort?.abort()
+  resolveSession.abort?.abort()
   const abort = new AbortController()
-  resolveAbort = abort
+  resolveSession.abort = abort
   const { signal } = abort
   if (!options.remoteOnly) retainRecoveryCandidates(media, episode, [])
   // Offline first: a completed local download plays instantly — no resolve, no
@@ -1812,7 +1834,7 @@ export async function playEpisode(
   let hideForContinuation = !!cont || remoteHidden
   // Open the picker immediately in a skeleton (resolving) state — no "Resolving
   // stream…" text; it fills in with real sources as EACH addon responds.
-  streamPicker.set({
+  pickerStore.set({
     media,
     episode,
     streams: [],
@@ -1821,35 +1843,37 @@ export async function playEpisode(
     continuationPending: continuationPriorityMs > 0,
     hidden: hideForContinuation,
     manualOnly: options.forceManual,
+    forceAuto: options.forceAuto,
+    companion: options.companion,
     autoplay,
     startSeconds: options.startSeconds,
   })
   markClientPerformance('izumi:source-picker-state-ready', { mediaId: media.id, episode: episode ?? 0 })
   // The picker is the UI from here — unless it is hidden (binge continuation), in which case the
   // connecting screen stays up as the only thing holding the user.
-  if (!hideForContinuation || remoteHidden) connecting.set(null)
+  if (!options.remoteOnly && !hideForContinuation) connecting.set(null)
   const stillCurrent = () => {
-    const current = get(streamPicker)
+    const current = get(pickerStore)
     // Media + episode are not a unique request identity: a closed picker can be reopened for the
     // same episode while this request's uncancelled network work is still settling. Only the latest
     // controller may mutate the picker, otherwise stale batches/errors leak into the new request.
-    return resolveAbort === abort && !signal.aborted
+    return resolveSession.abort === abort && !signal.aborted
       && !!current && current.media.id === media.id && current.episode === episode
   }
   // Make a picker hidden for a binge continuation visible again: the continuation is off the table,
   // so the user has to choose (or at least see why nothing played).
   const revealPicker = () => {
     hideForContinuation = remoteHidden
-    connecting.set(null)
+    if (!options.remoteOnly) connecting.set(null)
     if (!stillCurrent()) return
-    streamPicker.update((c) => c ? { ...c, hidden: remoteHidden } : c)
+    pickerStore.update((c) => c ? { ...c, hidden: remoteHidden } : c)
   }
   const showPickerError = (message: string) => {
     if (!stillCurrent()) return
     traceResolve(trace, 'picker error', { message })
     finishResolveTrace(trace, 'picker error')
     cacheSettled = true
-    streamPicker.update((current) => current ? {
+    pickerStore.update((current) => current ? {
       ...current,
       resolving: false,
       playbackError: message,
@@ -1934,8 +1958,8 @@ export async function playEpisode(
     // Settle that caller before going silent or a home page kept mounted behind the player retains
     // `resolving` forever after Back. This is distinct from a newer play superseding this resolve:
     // that case must remain silent because both requests can share the same local state owner.
-    if (committedResolveAborts.delete(abort)) return onState({ status: 'idle' })
-    if (resolveAbort === null) {
+    if (resolveSession.committed.delete(abort)) return onState({ status: 'idle' })
+    if (resolveSession.abort === null) {
       finishResolveTrace(trace, 'source discovery canceled')
       onState({ status: 'idle' })
     }
@@ -1943,10 +1967,10 @@ export async function playEpisode(
   try {
     // Instant path: this episode was prefetched near the end of the previous one
     // (binge continuity) — skip the picker entirely.
-    if (!options.forceManual && get(autoSelectSource) && episode != null) {
+    if (!options.remoteOnly && !options.forceManual && (options.forceAuto || get(autoSelectSource)) && episode != null) {
       const pre = takePrefetched(media.id, episode)
       if (pre) {
-        streamPicker.set(null)
+        pickerStore.set(null)
         return await playStream(media, episode, pre, onState, {
           autoplay,
           automatic: true,
@@ -2022,11 +2046,11 @@ export async function playEpisode(
       continuationPriorityActive = false
       continuationAttempted = true
       continuationPending = true
-      streamPicker.update((current) => current ? { ...current, continuationPending: true } : current)
+      pickerStore.update((current) => current ? { ...current, continuationPending: true } : current)
       continuationAttempt = (async () => {
         let played = false
         await playStream(media, episode, stream, (state) => {
-          const result = applyContinuationState(state, () => streamPicker.set(null), onState)
+          const result = applyContinuationState(state, () => pickerStore.set(null), onState)
           played ||= result.played
           continuationError ||= result.error
         }, { autoplay, automatic: true, startSeconds: options.startSeconds })
@@ -2034,7 +2058,7 @@ export async function playEpisode(
       })().finally(() => {
         continuationPending = false
         if (stillCurrent()) {
-          streamPicker.update((current) => current ? { ...current, continuationPending: false } : current)
+          pickerStore.update((current) => current ? { ...current, continuationPending: false } : current)
         }
       })
     }
@@ -2135,7 +2159,7 @@ export async function playEpisode(
       }
       if (resolving) scheduleReady(s)
       else { clearReadyTimer(); autoReady = true; resolveSettled = true; cacheSettled = true }
-      streamPicker.set({
+      pickerStore.set({
         media,
         episode,
         streams: s,
@@ -2146,6 +2170,8 @@ export async function playEpisode(
         continuationPending,
         hidden: hideForContinuation,
         manualOnly: options.forceManual,
+        forceAuto: options.forceAuto,
+        companion: options.companion,
         autoplay,
         startSeconds: options.startSeconds,
       })
@@ -2223,7 +2249,7 @@ export async function playEpisode(
         traceResolve(trace, 'remembered source priority expired', { budgetMs: continuationPriorityMs })
         revealPicker()
         if (stillCurrent()) {
-          streamPicker.update((current) => current ? { ...current, continuationPending: false } : current)
+          pickerStore.update((current) => current ? { ...current, continuationPending: false } : current)
         }
       }, continuationPriorityMs)
     }
@@ -2407,7 +2433,7 @@ export async function playEpisode(
     if (continuationError && stillCurrent()) {
       // A failed continuation must be visible, not swallowed behind the hidden picker.
       revealPicker()
-      streamPicker.update((current) => current ? { ...current, playbackError: continuationError } : current)
+      pickerStore.update((current) => current ? { ...current, playbackError: continuationError } : current)
     }
 
     // Binge continuity fallback: no ready-to-play same-release appeared, but a same-release
@@ -2429,7 +2455,7 @@ export async function playEpisode(
         if (continuationAttempt && await continuationAttempt) return
         if (continuationError && stillCurrent()) {
           revealPicker()
-          streamPicker.update((current) => current ? { ...current, playbackError: continuationError } : current)
+          pickerStore.update((current) => current ? { ...current, playbackError: continuationError } : current)
         }
       }
     }
@@ -2441,7 +2467,7 @@ export async function playEpisode(
     continuationPriorityActive = false
     continuationPending = false
     if (stillCurrent()) {
-      streamPicker.update((current) => current ? { ...current, continuationPending: false } : current)
+      pickerStore.update((current) => current ? { ...current, continuationPending: false } : current)
     }
     if (hideForContinuation) revealPicker()
 
@@ -2450,12 +2476,12 @@ export async function playEpisode(
     if (!stillCurrent()) return onState({ status: 'idle' })
 
     // Nothing playable → honest error.
-    if (!get(streamPicker)?.streams.length) {
-      return showPickerError(emptyStreamsError(totalRaw, bases, get(streamPicker)?.rejected?.length))
+    if (!get(pickerStore)?.streams.length) {
+      return showPickerError(emptyStreamsError(totalRaw, bases, get(pickerStore)?.rejected?.length))
     }
     traceResolve(trace, 'picker ready for source selection', {
       rawRows: totalRaw,
-      ...batchTraceDetails(get(streamPicker)?.streams ?? []),
+      ...batchTraceDetails(get(pickerStore)?.streams ?? []),
     })
     onState({ status: 'idle' })
   }
@@ -2621,6 +2647,7 @@ async function playPendingCompanionStream(
   report: (s: PlayState) => void,
   options: PlayStreamOptions,
 ): Promise<void> {
+  const finishActivity = beginCompanionActivity()
   let stream = original
   const resolverHash = torrentioResolverInfoHash(stream.url, stream.__addonName ?? stream.name)
   if (resolverHash) stream = { ...stream, url: undefined, infoHash: resolverHash }
@@ -2688,6 +2715,8 @@ async function playPendingCompanionStream(
     report({ status: 'playing' })
   } catch (error) {
     report({ status: 'error', message: error instanceof Error ? error.message : String(error) })
+  } finally {
+    finishActivity()
   }
 }
 
@@ -2700,7 +2729,7 @@ export async function playStream(
   report: (s: PlayState) => void,
   options: PlayStreamOptions = {},
 ) {
-  if (hasPendingCompanionPlayback(media, episode)) {
+  if (options.companion && hasPendingCompanionPlayback(media, episode)) {
     return playPendingCompanionStream(media, episode, stream, report, options)
   }
   upNextPrompt.set(null)
