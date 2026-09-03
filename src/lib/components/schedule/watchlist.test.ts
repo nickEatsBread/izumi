@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { behindCount, buildWatchlist, lastAiredAt } from './watchlist'
+import { behindCount, buildWatchlist, lastAiredAt, watchlistProgressSegments } from './watchlist'
 import type { Media } from '$lib/anilist/types'
 
 const media = (id: number, extra: Partial<Media> = {}): Media =>
@@ -88,5 +88,24 @@ describe('buildWatchlist', () => {
       [], [],
     )
     expect(items.map((i) => i.media.id)).toEqual([2, 1, 3, 4, 5])
+  })
+})
+
+describe('watchlistProgressSegments', () => {
+  it('separates watched progress from aired episodes still available to watch', () => {
+    expect(watchlistProgressSegments({
+      media: media(1, { episodes: 12 }), progress: 3, behind: 5,
+    })).toEqual({ watched: 25, available: 41.66666666666667 })
+  })
+
+  it('clamps stale tracker values to the known series total', () => {
+    expect(watchlistProgressSegments({
+      media: media(1, { episodes: 10 }), progress: 12, behind: 4,
+    })).toEqual({ watched: 100, available: 0 })
+  })
+
+  it('leaves an unknown-length timeline unfilled', () => {
+    expect(watchlistProgressSegments({ media: media(1), progress: 3, behind: 0 }))
+      .toEqual({ watched: 0, available: 0 })
   })
 })

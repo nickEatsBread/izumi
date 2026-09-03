@@ -1,4 +1,4 @@
-import { airedCount } from '$lib/anilist/media'
+import { airedCount, totalEpisodes } from '$lib/anilist/media'
 import type { Media } from '$lib/anilist/types'
 import type { Entry } from '$lib/anilist/lists'
 import type { MalListEntry } from '$lib/trackers'
@@ -12,6 +12,26 @@ export interface WatchlistItem {
   updatedAt: number
   behind: number
   lastAiredAt?: number // seconds — airingAt of the newest aired schedule node, if known
+}
+
+export interface WatchlistProgressSegments {
+  /** Already watched, as a percentage of the known series total. */
+  watched: number
+  /** Aired but not watched yet, as a percentage of the known series total. */
+  available: number
+}
+
+/** Segments for the progress timeline used by the watchlist's full-width row layout.
+ *  Keeping the aired backlog separate lets the line communicate more than a plain completion bar. */
+export function watchlistProgressSegments(
+  item: Pick<WatchlistItem, 'media' | 'progress' | 'behind'>,
+): WatchlistProgressSegments {
+  const total = totalEpisodes(item.media)
+  if (!total) return { watched: 0, available: 0 }
+
+  const watched = Math.max(0, Math.min(100, item.progress / total * 100))
+  const available = Math.max(0, Math.min(100 - watched, item.behind / total * 100))
+  return { watched, available }
 }
 
 /** Aired-but-unwatched episode count, >= 0. airedCount() returns Infinity when a title

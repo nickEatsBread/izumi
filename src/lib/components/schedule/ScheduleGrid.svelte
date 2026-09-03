@@ -231,8 +231,12 @@
                {i === selected ? 'border-primary bg-primary text-primary-foreground shadow-sm' : 'border-border/70 bg-secondary hover:bg-accent'}">
         {d}
         <span class="mt-1 block text-sm font-medium opacity-65 sm:text-[0.65rem]">{dayDate(i)}</span>
-        {#if i === todayIdx}<span class="absolute left-2.5 top-2.5 size-2 rounded-full bg-sky-400" title="Today"></span>{/if}
-        {#if hasUnaired(i)}<span class="absolute right-2.5 top-2.5 size-2 rounded-full bg-emerald-400" title="Episodes still to air"></span>{/if}
+        {#if i === todayIdx || hasUnaired(i)}
+          <span class="absolute left-2.5 top-2.5 flex -space-x-1">
+            {#if i === todayIdx}<span class="size-2 rounded-full bg-sky-400" title="Today"></span>{/if}
+            {#if hasUnaired(i)}<span class="size-2 rounded-full bg-emerald-400" title="Episodes still to air"></span>{/if}
+          </span>
+        {/if}
       </button>
     {/each}
   </div>

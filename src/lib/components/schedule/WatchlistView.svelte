@@ -14,9 +14,9 @@
   import { getSimklAnimeListEntries } from '$lib/trackers/simkl'
   import { anilistUser } from '$lib/anilist/account'
   import { anilistUserName, malToken, malUser, simklToken } from '$lib/trackers/config'
-  import { title as mediaTitle, cardCover, mediaHref, resumeEp, totalEpisodes } from '$lib/anilist/media'
+  import { title as mediaTitle, banner, cardCover, mediaHref, resumeEp, totalEpisodes } from '$lib/anilist/media'
   import { until } from '$lib/anilist/schedule'
-  import { buildWatchlist, type WatchlistItem } from './watchlist'
+  import { buildWatchlist, watchlistProgressSegments, type WatchlistItem } from './watchlist'
   import type { Media } from '$lib/anilist/types'
   import type { PlayState } from '$lib/stremio/play'
   import { autoWatchlistEnabled, autoWatchlistEpisodes, episodeQueueEnabled, watchlistLayout, watchlistSort, type WatchlistLayout, type WatchlistSort } from '$lib/settings/ui'
@@ -174,7 +174,7 @@
   ]
   const LAYOUTS: { value: WatchlistLayout; label: string; icon: typeof LayoutGrid }[] = [
     { value: 'cards', label: 'Cards', icon: LayoutGrid },
-    { value: 'list', label: 'List', icon: Rows3 },
+    { value: 'list', label: 'Progress list', icon: Rows3 },
     { value: 'compact', label: 'Compact', icon: List },
   ]
 
@@ -244,8 +244,12 @@
   }
 
   const pct = (it: WatchlistItem) => {
-    const total = totalEpisodes(it.media)
-    return total ? Math.min(100, (it.progress / total) * 100) : 0
+    return watchlistProgressSegments(it).watched
+  }
+  const availablePct = (it: WatchlistItem) => watchlistProgressSegments(it).available
+  const rowArtwork = (it: WatchlistItem) => {
+    const episode = resumeEp(it.media, it.progress)
+    return it.media.videos?.find((video) => video.number === episode)?.thumbnail || banner(it.media)
   }
   const nowSec = () => Math.floor(Date.now() / 1000)
   const nextAiring = (it: WatchlistItem) => it.media.nextAiringEpisode
@@ -316,10 +320,10 @@
     <div role="group" aria-label="Watchlist layout"
          class="flex h-11 items-stretch rounded-xl bg-secondary p-1 sm:h-9 sm:rounded-md sm:p-0.5">
       {#each LAYOUTS as l (l.value)}
-        <button data-focusable onclick={() => setLayout(l.value)} aria-label={l.label}
+        <button data-focusable onclick={() => setLayout(l.value)} aria-label={l.label} title={l.label}
                 aria-pressed={$watchlistLayout === l.value}
                 class="grid w-10 place-items-center rounded-lg transition-colors sm:w-9 sm:rounded
-                  {$watchlistLayout === l.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
+                  {$watchlistLayout === l.value ? 'bg-theme text-white' : 'text-muted-foreground hover:text-foreground'}">
           <l.icon size={16} />
         </button>
       {/each}
@@ -337,15 +341,15 @@
               <img src={cardCover(it.media)} alt={mediaTitle(it.media)} loading="lazy" decoding="async"
                    class="h-full w-full object-cover transition-transform duration-150 group-hover:scale-105" />
               {#if it.behind > 0}
-                <span class="absolute left-1.5 top-1.5 rounded-md bg-primary px-1.5 py-0.5 text-[0.62rem] font-black uppercase tracking-wide text-primary-foreground shadow-lg">
+                <span class="absolute left-1.5 top-1.5 rounded-md bg-theme px-1.5 py-0.5 text-[0.62rem] font-black uppercase tracking-wide text-white shadow-lg">
                   +{it.behind} new
                 </span>
               {/if}
               <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/55 to-transparent px-2 pb-1.5 pt-6">
                 <p class="line-clamp-2 text-[0.72rem] font-black leading-tight text-white">{mediaTitle(it.media)}</p>
                 <div class="mt-1 flex items-center gap-1.5">
-                  <div class="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-white/25">
-                    <div class="h-full rounded-full bg-primary transition-[width] duration-300" style="width: {pct(it)}%"></div>
+                  <div class="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-black/45 ring-1 ring-inset ring-white/10">
+                    <div class="h-full rounded-full bg-theme transition-[width] duration-300" style="width: {pct(it)}%"></div>
                   </div>
                   <span class="shrink-0 text-[0.62rem] font-bold tabular-nums text-white/85">{it.progress}/{totalEpisodes(it.media) || '?'}</span>
                 </div>
@@ -357,13 +361,13 @@
           <div class="absolute right-1.5 top-1.5 flex gap-1
             {$isMobile ? '' : 'opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100'}">
             <button data-focusable onclick={() => play(it)} aria-label="Play episode {resumeEp(it.media, it.progress)}"
-                    class="grid size-8 place-items-center rounded-full bg-black/70 text-white shadow-lg transition-colors hover:bg-primary">
+                    class="grid size-8 place-items-center rounded-full bg-black/70 text-white shadow-lg transition-colors hover:bg-theme">
               {#if resolvingId === it.media.id}<Loader size={14} class="animate-spin" />
               {:else}<Play size={14} class="translate-x-px fill-current" />{/if}
             </button>
             {#if canTrackProgress}
               <button data-focusable onclick={() => bump(it)} aria-label="Mark episode {it.progress + 1} watched"
-                      class="grid size-8 place-items-center rounded-full bg-black/70 text-white shadow-lg transition-colors hover:bg-primary">
+                      class="grid size-8 place-items-center rounded-full bg-black/70 text-white shadow-lg transition-colors hover:bg-theme">
                 <Plus size={15} />
               </button>
             {/if}
@@ -372,41 +376,62 @@
       {/each}
     </div>
   {:else if $watchlistLayout === 'list'}
-    <div class="space-y-2">
+    <div class="space-y-1">
       {#each visible as it (it.media.id)}
-        <div class="flex items-center gap-3 rounded-lg border border-border bg-card p-2.5 transition-colors hover:bg-secondary
-                    {it.behind === 0 ? 'opacity-70' : ''}">
-          <a href={mediaHref(it.media)} data-focusable onclick={() => h.tap()} class="flex min-w-0 flex-1 items-center gap-3">
-            <img src={cardCover(it.media, 56)} alt="" loading="lazy" decoding="async"
-                 class="h-16 w-11 shrink-0 rounded bg-muted object-cover" />
-            <div class="min-w-0 flex-1">
-              <p class="truncate text-sm font-bold">{mediaTitle(it.media)}</p>
-              <p class="mt-0.5 truncate text-xs text-muted-foreground">
-                {it.progress}/{totalEpisodes(it.media) || '?'}
-                {#if it.behind === 0 && nextAiring(it)} · {nextAiring(it)}{/if}
-              </p>
-              <div class="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
-                <div class="h-full rounded-full bg-primary transition-[width] duration-300" style="width: {pct(it)}%"></div>
-              </div>
-            </div>
+        <article class="group flex min-w-0 items-stretch gap-3 rounded-xl px-1.5 py-2 transition-colors hover:bg-secondary/55 sm:px-2">
+          <a href={mediaHref(it.media)} data-focusable onclick={() => h.tap()} class="shrink-0">
+            <span class="focus-cover relative block h-[4.5rem] w-28 overflow-hidden rounded-lg bg-muted sm:h-[5.25rem] sm:w-36">
+              <img src={rowArtwork(it)} alt={mediaTitle(it.media)} loading="lazy" decoding="async"
+                   class="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]" />
+              {#if it.behind > 0}
+                <span class="absolute bottom-1.5 left-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[0.6rem] font-black text-white backdrop-blur-sm">
+                  {it.behind} new
+                </span>
+              {/if}
+            </span>
           </a>
-          {#if it.behind > 0}
-            <span class="shrink-0 rounded-full bg-primary/15 px-2.5 py-1 text-xs font-black text-primary">+{it.behind} new</span>
-          {/if}
-          <div class="flex shrink-0 gap-1">
-            <button data-focusable onclick={() => play(it)} aria-label="Play episode {resumeEp(it.media, it.progress)}"
-                    class="grid size-9 place-items-center rounded-md bg-secondary text-foreground/85 transition-colors hover:bg-accent">
-              {#if resolvingId === it.media.id}<Loader size={15} class="animate-spin" />
-              {:else}<Play size={15} class="translate-x-px fill-current" />{/if}
-            </button>
-            {#if canTrackProgress}
-              <button data-focusable onclick={() => bump(it)} aria-label="Mark episode {it.progress + 1} watched"
-                      class="grid size-9 place-items-center rounded-md bg-secondary text-foreground/85 transition-colors hover:bg-accent">
-                <Plus size={16} />
+
+          <div class="flex min-w-0 flex-1 flex-col py-0.5">
+            <div class="flex min-w-0 items-center gap-2 text-[0.68rem] sm:text-xs">
+              <button data-focusable onclick={() => play(it)}
+                      class="flex min-w-0 items-center gap-1.5 truncate font-bold text-muted-foreground transition-colors hover:text-theme"
+                      aria-label="Continue watching {mediaTitle(it.media)} at episode {resumeEp(it.media, it.progress)}">
+                {#if resolvingId === it.media.id}<Loader size={13} class="shrink-0 animate-spin" />
+                {:else}<Play size={12} class="shrink-0 fill-current" />{/if}
+                <span class="truncate">Continue watching →</span>
               </button>
-            {/if}
+              {#if nextAiring(it)}
+                <span class="ml-auto hidden shrink-0 tabular-nums text-muted-foreground sm:inline">{nextAiring(it)}</span>
+              {/if}
+            </div>
+
+            <a href={mediaHref(it.media)} data-focusable onclick={() => h.tap()}
+               class="mt-0.5 block truncate text-sm font-extrabold leading-tight transition-colors hover:text-theme sm:text-lg">
+              {mediaTitle(it.media)}
+            </a>
+
+            <div class="mt-auto flex min-w-0 items-center gap-2 pt-2">
+              <div class="relative h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-foreground/[0.10]"
+                   role="progressbar" aria-label={`${mediaTitle(it.media)} progress`}
+                   aria-valuemin="0" aria-valuemax={totalEpisodes(it.media) || undefined} aria-valuenow={it.progress}>
+                <span class="absolute inset-y-0 left-0 bg-theme transition-[width] duration-300" style="width: {pct(it)}%"></span>
+                {#if availablePct(it) > 0}
+                  <span class="absolute inset-y-0 bg-theme/40 transition-[left,width] duration-300"
+                        style="left: {pct(it)}%; width: {availablePct(it)}%"></span>
+                {/if}
+              </div>
+              <span class="shrink-0 text-xs font-bold tabular-nums text-muted-foreground sm:text-sm">
+                {it.progress}/{totalEpisodes(it.media) || '?'}
+              </span>
+              {#if canTrackProgress}
+                <button data-focusable onclick={() => bump(it)} aria-label="Mark episode {it.progress + 1} watched"
+                        class="grid size-7 shrink-0 place-items-center rounded-md bg-theme/15 text-theme transition-colors hover:bg-theme hover:text-white sm:size-8">
+                  <Plus size={15} />
+                </button>
+              {/if}
+            </div>
           </div>
-        </div>
+        </article>
       {/each}
     </div>
   {:else}
@@ -421,7 +446,7 @@
             <span class="shrink-0 text-xs tabular-nums text-muted-foreground">{it.progress}/{totalEpisodes(it.media) || '?'}</span>
           </a>
           {#if it.behind > 0}
-            <span class="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[0.65rem] font-black text-primary">+{it.behind}</span>
+            <span class="shrink-0 rounded-full bg-theme/15 px-2 py-0.5 text-[0.65rem] font-black text-theme">+{it.behind}</span>
           {:else if nextAiring(it)}
             <span class="hidden shrink-0 text-[0.65rem] text-muted-foreground sm:inline">{nextAiring(it)}</span>
           {/if}

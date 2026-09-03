@@ -115,6 +115,11 @@ describe('schedule page header', () => {
     expect(dayColumn).toContain('data-nav-right={nav.right}')
   })
 
+  it('overlaps the today and still-to-air markers in one corner of the weekday tab', () => {
+    expect(grid).toContain('absolute left-2.5 top-2.5 flex -space-x-1')
+    expect(grid).not.toContain('absolute right-2.5 top-2.5')
+  })
+
   it('shows the backup failure instead of repeating the AniList error', () => {
     expect(grid).toContain('error = `Backup schedule unavailable: ${message}`')
     expect(grid).not.toContain('error = primaryError')
