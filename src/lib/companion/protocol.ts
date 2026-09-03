@@ -60,6 +60,8 @@ export interface CompanionMedia {
   episodes?: CompanionEpisode[]
   /** Shallow provider relations for franchise navigation on a TV. */
   relations?: CompanionRelation[]
+  /** Shallow provider-authored recommendations for the TV's post-play experience. */
+  recommendations?: CompanionMedia[]
   placement?: CompanionPlacement
 }
 
@@ -74,6 +76,17 @@ export interface CompanionEpisode {
   watched?: boolean
   /** The paired client marked this episode as hidden by the user's spoiler preference. */
   spoiler?: boolean
+  /** ISO release timestamp when supplied by the active catalogue. */
+  releasedAt?: string
+}
+
+export type CompanionSkipSegmentType = 'intro' | 'op' | 'mixed-op' | 'recap' | 'outro' | 'ed' | 'mixed-ed' | 'credits' | 'ending'
+
+export interface CompanionSkipSegment {
+  type: CompanionSkipSegmentType
+  startTime: number
+  endTime: number
+  label?: string
 }
 
 export interface CompanionRelation {
@@ -247,6 +260,9 @@ export function companionMedia(
       .filter((edge) => edge.relationType !== 'ADAPTATION' && edge.node.type !== 'MANGA')
       .slice(0, 12)
       .map((edge) => ({ relationType: edge.relationType, media: companionRelationMedia(edge.node) })),
+    recommendations: media.recommendations?.nodes
+      .flatMap((node) => node.mediaRecommendation ? [companionRelationMedia(node.mediaRecommendation)] : [])
+      .slice(0, 12),
     placement: options.placement ?? (media.featuredRank ? {
       label: media.featuredRank.label,
       position: media.featuredRank.position,

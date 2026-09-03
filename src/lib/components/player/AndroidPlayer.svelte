@@ -1346,6 +1346,7 @@
           subtitles: prepared.subtitles,
           activeTrackIds,
           media: $nowPlayingMedia ? companionMedia($nowPlayingMedia.media, { episode: $nowPlayingMedia.episode }) : undefined,
+          skipSegments: segments.map((item) => ({ type: item.type, startTime: item.start, endTime: item.end, label: item.label })),
           trackPreferences: castTrackPreferences(castSource, liveTracks),
           subtitleStyle: castStyle(),
         }, 'Izumi Android')

@@ -4,6 +4,7 @@ import type { Media } from '$lib/anilist/types'
 import { title } from '$lib/anilist/media'
 import { mediaRef } from '$lib/catalog/identity'
 import type { Stream } from '$lib/stremio/addon'
+import { getMediaSkipSegments } from '$lib/stremio/skip-segments'
 import { castSourceDecision, castSubtitleFormat, tvCastSource } from '$lib/player/android-cast'
 import { playerNotice } from '$lib/player/session'
 import { setTizenReceiverRelayForeground, startTizenReceiverCast } from '$lib/player/tizen-receiver-cast'
@@ -179,6 +180,26 @@ export async function startPendingCompanionCast(input: {
   if (streamDrm && (!drmSystem || !streamDrm.licenseUrl)) {
     throw new Error('This protected stream does not expose a Samsung-compatible online license.')
   }
+  const skipSegments = input.episode == null
+    ? []
+    : await getMediaSkipSegments(input.media, input.episode, Math.max(0, Number(input.media.duration) || 0) * 60)
+      .then((segments) => segments.map((segment) => ({
+        type: segment.type,
+        startTime: segment.start,
+        endTime: segment.end,
+        label: segment.label,
+      })))
+      .catch(() => [])
+  const normalizedMedia = companionMedia(input.media, { episode: input.episode })
+  const castMedia: CompanionMedia = {
+    ...normalizedMedia,
+    season: pending.media.season ?? normalizedMedia.season,
+    seasonEpisodeCounts: pending.media.seasonEpisodeCounts ?? normalizedMedia.seasonEpisodeCounts,
+    seasonLabels: pending.media.seasonLabels ?? normalizedMedia.seasonLabels,
+    episodes: pending.media.episodes ?? normalizedMedia.episodes,
+    relations: normalizedMedia.relations?.length ? normalizedMedia.relations : pending.media.relations,
+    recommendations: normalizedMedia.recommendations?.length ? normalizedMedia.recommendations : pending.media.recommendations,
+  }
   await startTizenReceiverCast({
     id: pending.device.deviceId,
     name: pending.device.name,
@@ -191,7 +212,8 @@ export async function startPendingCompanionCast(input: {
     positionSeconds: input.startSeconds,
     subtitles: prepared.subtitles,
     activeTrackIds: prepared.subtitles.length ? [1] : [],
-    media: companionMedia(input.media, { episode: input.episode }),
+    media: castMedia,
+    skipSegments,
     trackPreferences: input.stream.__audioLang ? { audio: { language: input.stream.__audioLang } } : undefined,
     subtitleStyle: castStyle(),
     adaptive: /mpegurl|dash/i.test(decision.contentType) ? { startBitrate: 'AVERAGE' } : undefined,

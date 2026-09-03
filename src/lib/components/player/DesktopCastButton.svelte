@@ -36,6 +36,7 @@
   import { effectiveSubtitleStyle, sessionSubtitleStyle } from '$lib/settings/subtitle-presets'
   import { discoverCompanionReceivers } from '$lib/companion/client'
   import { companionMedia } from '$lib/companion/protocol'
+  import { getMediaSkipSegments } from '$lib/stremio/skip-segments'
   import { m } from '$lib/paraglide/messages.js'
 
   let {
@@ -160,6 +161,11 @@
       // rather than at the position captured when the cast menu was first opened.
       const livePosition = Number.parseFloat(await playerGetProperty('time-pos').catch(() => ''))
       const castPosition = Number.isFinite(livePosition) ? Math.max(0, livePosition) : Math.max(0, pos)
+      const skipSegments = $nowPlayingMedia
+        ? await getMediaSkipSegments($nowPlayingMedia.media, $nowPlayingMedia.episode, dur)
+          .then((items) => items.map((item) => ({ type: item.type, startTime: item.start, endTime: item.end, label: item.label })))
+          .catch(() => [])
+        : []
       const nativeSession = await startDesktopCast({
         device,
         deviceId: device.id,
@@ -171,6 +177,7 @@
         subtitles: prepared.subtitles,
         activeTrackIds,
         media: $nowPlayingMedia ? companionMedia($nowPlayingMedia.media, { episode: $nowPlayingMedia.episode }) : undefined,
+        skipSegments,
         trackPreferences: castTrackPreferences(castSource, tracks),
         receiverPreferred: receiverAvailable,
         subtitleStyle: effectiveSubtitleStyle($sessionSubtitleStyle, {

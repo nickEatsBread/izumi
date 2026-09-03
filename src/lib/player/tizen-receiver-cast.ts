@@ -4,7 +4,7 @@ import {
   IZUMI_TIZEN_CHANNEL,
   SamsungSmartViewChannel,
 } from './samsung-smart-view'
-import type { CompanionMedia } from '$lib/companion/protocol'
+import type { CompanionMedia, CompanionSkipSegment } from '$lib/companion/protocol'
 import type { CastTrackPreferences } from './android-cast'
 
 export interface TizenReceiverDevice {
@@ -51,6 +51,8 @@ export interface TizenReceiverLoad {
   /** Exact title/episode owning this source. The TV must not use its last browsed card when asking
    * a linked device for a replacement. */
   media?: CompanionMedia
+  /** Provider-normalized timing; the TV never needs direct AniSkip or IntroDB access. */
+  skipSegments?: CompanionSkipSegment[]
   /** Track indexes are container-local, so send descriptive preferences for the TV to match. */
   trackPreferences?: CastTrackPreferences
   subtitleStyle?: CastSubtitleStyle

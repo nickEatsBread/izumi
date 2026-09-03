@@ -48,6 +48,16 @@ describe('companion home snapshot', () => {
           },
         }],
       },
+      recommendations: {
+        nodes: [{
+          mediaRecommendation: {
+            id: -14,
+            catalog: { provider: 'tmdb', id: '1401', type: 'series' },
+            title: { english: 'A thoughtful recommendation' },
+            episodes: 12,
+          },
+        }],
+      },
     }, {
       episodeTitle: 'The next chapter',
       episodeImage: 'https://img.example/episode.jpg',
@@ -94,6 +104,12 @@ describe('companion home snapshot', () => {
           subtitle: '2026 · TV',
           seasonEpisodeCounts: [8],
         },
+      }],
+      recommendations: [{
+        ref: { provider: 'tmdb', id: '1401', type: 'series' },
+        resolver: { streamType: 'series' },
+        title: 'A thoughtful recommendation',
+        seasonEpisodeCounts: [12],
       }],
       placement: { position: 2, label: 'Popular Series Today', kind: 'ranking' },
     })
