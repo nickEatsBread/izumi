@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   companionWorkerPlaybackPolicy,
+  normalizeCompanionWorkerSetupRequest,
   normalizeCompanionPairingCode,
   shouldProvisionCompanionWorkerRoute,
 } from './client'
@@ -45,5 +46,30 @@ describe('TV Companion private Worker route', () => {
     expect(shouldProvisionCompanionWorkerRoute({ provider: 'cloudflare', android: false, tv: false, resolverEnabled: false })).toBe(false)
     expect(shouldProvisionCompanionWorkerRoute({ provider: 'cloudflare', android: true, tv: true, resolverEnabled: true })).toBe(false)
     expect(shouldProvisionCompanionWorkerRoute({ provider: 'iroh', android: true, tv: false, resolverEnabled: true })).toBe(false)
+  })
+})
+
+describe('TV-requested Worker setup', () => {
+  const device = { credential: '0123456789abcdef'.repeat(4) }
+
+  it('accepts only the fully authenticated paired TV request', () => {
+    expect(normalizeCompanionWorkerSetupRequest({
+      credential: device.credential,
+      pairingId: device.credential.slice(0, 16),
+      requestId: 'tv_setup_01234567',
+    }, device)).toEqual({ requestId: 'tv_setup_01234567' })
+  })
+
+  it('rejects mismatched credentials and malformed request ids', () => {
+    expect(normalizeCompanionWorkerSetupRequest({
+      credential: 'wrong',
+      pairingId: device.credential.slice(0, 16),
+      requestId: 'tv_setup_01234567',
+    }, device)).toBeNull()
+    expect(normalizeCompanionWorkerSetupRequest({
+      credential: device.credential,
+      pairingId: device.credential.slice(0, 16),
+      requestId: 'short',
+    }, device)).toBeNull()
   })
 })

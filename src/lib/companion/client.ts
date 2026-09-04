@@ -51,12 +51,38 @@ export interface PendingCompanionPlayback {
   headless?: boolean
 }
 
+export interface CompanionWorkerSetupPrompt {
+  deviceId: string
+  deviceName: string
+  requestId: string
+  requestedAt: number
+}
+
+export type CompanionWorkerSetupStatus = 'opened' | 'starting' | 'dismissed' | 'error'
+
 export type CompanionPlayContext = Omit<PendingCompanionPlayback, 'device' | 'media'>
 export type CompanionSourceSelection = (requestId: string, choiceId: string, device: PairedCompanion) => void | Promise<void>
 type CompanionSearchHandler = (query: string, person?: CompanionPersonFilter) => Promise<CompanionMedia[]>
 
 /** Session-only target: the next selected source must be sent to this TV, not played locally. */
 export const pendingCompanionPlayback = writable<PendingCompanionPlayback | null>(null)
+/** A linked TV can surface the setup flow, but only this client can choose and configure a Worker. */
+export const companionWorkerSetupPrompt = writable<CompanionWorkerSetupPrompt | null>(null)
+
+const pendingWorkerSetupReplies = new Map<string, { deviceId: string; target: string }>()
+
+export function normalizeCompanionWorkerSetupRequest(
+  value: unknown,
+  device: Pick<PairedCompanion, 'credential'>,
+): { requestId: string } | null {
+  const request = value as { credential?: unknown; pairingId?: unknown; requestId?: unknown } | null
+  if (!request
+    || request.credential !== device.credential
+    || request.pairingId !== device.credential.slice(0, 16)
+    || typeof request.requestId !== 'string'
+    || !/^[A-Za-z0-9_-]{16,80}$/.test(request.requestId)) return null
+  return { requestId: request.requestId }
+}
 
 export function acceptCompanionPlayRequest(
   media: CompanionMedia,
@@ -215,6 +241,28 @@ type CompanionConnection = {
 const connections = new Map<string, CompanionConnection>()
 export const companionLinkState = writable({ connected: 0, active: false })
 let companionActivityDepth = 0
+
+/** Reply to the TV that opened the setup prompt. No Worker credentials are sent through this path. */
+export function respondToCompanionWorkerSetup(
+  prompt: CompanionWorkerSetupPrompt,
+  status: CompanionWorkerSetupStatus,
+  message?: string,
+): boolean {
+  const pending = pendingWorkerSetupReplies.get(prompt.requestId)
+  const connection = connections.get(prompt.deviceId)
+  if (!pending || pending.deviceId !== prompt.deviceId || !connection?.channel.connected) return false
+  connection.channel.publish('izumi.companion.worker-setup-status', {
+    credential: connection.device.credential,
+    requestId: prompt.requestId,
+    status,
+    message: message?.slice(0, 180),
+  }, pending.target)
+  if (status !== 'opened') {
+    pendingWorkerSetupReplies.delete(prompt.requestId)
+    companionWorkerSetupPrompt.update((current) => current?.requestId === prompt.requestId ? null : current)
+  }
+  return true
+}
 
 function syncCompanionLinkState(): void {
   companionLinkState.set({
@@ -431,6 +479,28 @@ function keepConnection(
   connections.get(device.deviceId)?.dispose()
   const activeTrailerRequests = new Set<string>()
   const unsubscribers = [
+    channel.on('izumi.companion.worker-setup', (value, from) => {
+      const request = normalizeCompanionWorkerSetupRequest(value, device)
+      if (!request) return
+      pulseCompanionActivity()
+      pendingWorkerSetupReplies.set(request.requestId, {
+        deviceId: device.deviceId,
+        target: from?.id || 'host',
+      })
+      const prompt: CompanionWorkerSetupPrompt = {
+        deviceId: device.deviceId,
+        deviceName: device.name || 'Samsung TV',
+        requestId: request.requestId,
+        requestedAt: Date.now(),
+      }
+      companionWorkerSetupPrompt.set(prompt)
+      respondToCompanionWorkerSetup(prompt, 'opened')
+      // A TV request may arrive while izumi is behind another desktop window.
+      void import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+        const window = getCurrentWindow()
+        return window.show().then(() => window.setFocus())
+      }).catch(() => {})
+    }),
     channel.on('izumi.companion.refresh', () => {
       pulseCompanionActivity()
       if (createSnapshot) {
@@ -635,6 +705,10 @@ function keepConnection(
     channel,
     dispose: () => {
       unsubscribers.forEach((off) => off())
+      for (const [requestId, pending] of pendingWorkerSetupReplies) {
+        if (pending.deviceId === device.deviceId) pendingWorkerSetupReplies.delete(requestId)
+      }
+      companionWorkerSetupPrompt.update((prompt) => prompt?.deviceId === device.deviceId ? null : prompt)
       if (activeTrailerRequests.size) void setTizenReceiverRelayForeground(false, undefined, 'trailer')
       channel.disconnect()
       connections.delete(device.deviceId)

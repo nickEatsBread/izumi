@@ -31,6 +31,7 @@
   // set — so a Deck third-party sign-in would open a window that never becomes visible. Small
   // component; it self-gates its own dialog.
   import DeckKeyboardWarning from '$lib/components/shell/DeckKeyboardWarning.svelte'
+  import WorkerSetupPrompt from '$lib/components/companion/WorkerSetupPrompt.svelte'
   const loadLofiPlayer = () => import('$lib/components/shell/LofiPlayer.svelte')
   import { streamPicker, connecting, exitPrompt, nowPlayingMedia } from '$lib/player/session'
   import { playing, fullscreen, pictureInPicture, exitPictureInPicture, gameMode, gameModeResolved, initGameMode, debridCaching } from '$lib/player/session'
@@ -508,6 +509,7 @@
 {#if trailerDialogMounted}<Lazy load={loadTrailerDialog} />{/if}
 <OnScreenKeyboard />
 <DeckKeyboardWarning />
+<WorkerSetupPrompt />
 <!-- Android external-play "marked watched" toast (the in-player overlay isn't mounted on mobile). -->
 {#if $watchToast}
   <div class="fixed inset-x-0 bottom-20 z-[60] mx-auto flex w-fit max-w-[92vw] items-center gap-3 rounded-full bg-neutral-900/95 px-4 py-2.5 text-sm text-white shadow-lg">
