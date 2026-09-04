@@ -15,20 +15,21 @@ export interface MergedCatalogSearchResult {
   failedProviders: CatalogSelection[]
 }
 
-/** The full-page merged search deliberately sends only the title and page. Provider-specific
- * filters become available only after the user scopes the screen to one provider. */
+/** Merged search normally sends only title and page. Genre is the one shared filter every TV
+ * catalogue can expose consistently without forcing viewers to choose a provider first. */
 export async function searchMergedCatalogs(
   providers: unknown,
   query: string,
   page = 1,
   signal?: AbortSignal,
+  genre?: string,
 ): Promise<MergedCatalogSearchResult> {
   const selections = mergedCatalogProviders(providers)
   const perProvider = 20
   const batches = await Promise.allSettled(selections.map(async (selection) => {
     if (selection === 'auto' || selection === 'anilist') {
       const response = await anilist.query<AniListSearchResponse>(searchQuery(), {
-        ...searchVariables({ search: query }),
+        ...searchVariables({ search: query || undefined, genres: genre ? [genre] : undefined, sort: query ? 'SEARCH_MATCH' : 'TRENDING_DESC' }),
         page,
         perPage: perProvider,
       }, { requestPolicy: 'network-only' }).toPromise()
@@ -39,7 +40,8 @@ export async function searchMergedCatalogs(
     }
     const provider = await loadCatalogProvider(selection)
     const result = await provider.search({
-      query,
+      query: query || undefined,
+      genre,
       page,
       type: selection === 'kitsu' || selection === 'jvm' ? 'anime' : 'all',
       sort: 'popular',

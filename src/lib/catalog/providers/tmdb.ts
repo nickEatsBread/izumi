@@ -874,7 +874,10 @@ function detailedMedia(raw: TmdbDetail, kind: TmdbKind): Media | null {
     role: person.job ?? person.jobs?.[0]?.job ?? 'Crew',
     node: { id: person.id, name: { full: person.name }, image: { large: image(person.profile_path, 'w342') } },
   }] : []) }
-  const recommendations = mapList(raw.recommendations ?? raw.similar ?? {}, kind)
+  const recommendations = [...new Map([
+    ...mapList(raw.recommendations ?? {}, kind),
+    ...mapList(raw.similar ?? {}, kind),
+  ].map((item) => [`${item.catalog?.type}:${item.catalog?.id ?? item.id}`, item])).values()]
   media.recommendations = { nodes: recommendations.map((item) => ({ mediaRecommendation: item })) }
   media.logoImage = pickTmdbLogo(raw.images)
   const region = tmdbRegion()

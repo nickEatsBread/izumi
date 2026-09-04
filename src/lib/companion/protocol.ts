@@ -156,11 +156,13 @@ export interface CompanionHomeSnapshot {
   version: typeof COMPANION_PROTOCOL
   revision: string
   generatedAt: number
-  catalog: { screen: string; label: string; options?: CompanionCatalogOption[] }
+  catalog: { screen: string; label: string; options?: CompanionCatalogOption[]; genres?: string[] }
   /** Mirrors the paired client's interface preference for unwatched episode presentation. */
   spoilersHidden?: boolean
   hero?: CompanionMedia
   rows: CompanionHomeRow[]
+  /** Most-recent-first local playback history, kept separate from authored Home shelves. */
+  history?: CompanionMedia[]
   views?: {
     search?: CompanionMedia[]
     trending?: CompanionMedia[]

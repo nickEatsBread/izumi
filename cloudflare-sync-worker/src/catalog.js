@@ -128,8 +128,13 @@ async function aniHome(showAdult) {
   return { rows, hero: rows[0]?.items[0] }
 }
 
-async function aniSearch(query, showAdult) {
-  const data = await aniRequest(`query($q:String,$adult:Boolean){Page(page:1,perPage:40){media(type:ANIME,search:$q,sort:SEARCH_MATCH,isAdult:$adult){${ANI_FIELDS}}}}`, { q: query, adult: showAdult ? null : false })
+async function aniSearch(query, showAdult, genre) {
+  const data = await aniRequest(`query($q:String,$genre:String,$sort:[MediaSort],$adult:Boolean){Page(page:1,perPage:40){media(type:ANIME,search:$q,genre:$genre,sort:$sort,isAdult:$adult){${ANI_FIELDS}}}}`, {
+    q: query || undefined,
+    genre: genre || undefined,
+    sort: [query ? 'SEARCH_MATCH' : 'TRENDING_DESC'],
+    adult: showAdult ? null : false,
+  })
   return (data.Page?.media || []).map(aniMedia).filter(Boolean)
 }
 
@@ -252,8 +257,8 @@ async function stremioManifests(addons) {
   return settled.filter((entry) => entry.status === 'fulfilled' && entry.value.manifest?.catalogs?.length).map((entry) => entry.value)
 }
 
-function catalogUrl(base, catalog, query) {
-  const extras = query ? `/search=${encodeURIComponent(query)}` : ''
+function catalogUrl(base, catalog, query, genre) {
+  const extras = `${genre ? `/genre=${encodeURIComponent(genre)}` : ''}${query ? `/search=${encodeURIComponent(query)}` : ''}`
   return endpoint(base, `/catalog/${encodeURIComponent(catalog.type)}/${encodeURIComponent(catalog.id)}${extras}.json`)
 }
 
@@ -278,6 +283,37 @@ async function stremioSearch(addons, query) {
   return settled.filter((entry) => entry.status === 'fulfilled').flatMap((entry) => entry.value)
 }
 
+async function stremioGenre(addons, genre) {
+  const manifests = await stremioManifests(addons)
+  const specs = manifests.flatMap(({ base, manifest }) => (manifest.catalogs || []).filter((catalog) => {
+    const extra = (catalog.extra || []).find((entry) => entry.name === 'genre')
+    return extra && (!Array.isArray(extra.options) || extra.options.some((option) => String(option).toLowerCase() === genre.toLowerCase()))
+  }).slice(0, 3).map((catalog) => ({ base, catalog }))).slice(0, 8)
+  const settled = await Promise.allSettled(specs.map(async ({ base, catalog }) => {
+    const value = await fetchJson(catalogUrl(base, catalog, undefined, genre), {}, 8_000)
+    return (value.metas || []).map((raw) => stremioMedia(raw, base, catalog.type)).filter(Boolean)
+  }))
+  return settled.filter((entry) => entry.status === 'fulfilled').flatMap((entry) => entry.value)
+}
+
+async function tmdbGenre(profile, genre) {
+  const [movieGenres, televisionGenres] = await Promise.all([
+    tmdbRequest(profile.tmdbToken, '/genre/movie/list'),
+    tmdbRequest(profile.tmdbToken, '/genre/tv/list'),
+  ])
+  const idFor = (value) => (value.genres || []).find((entry) => String(entry.name || '').toLowerCase() === genre.toLowerCase())?.id
+  const movieId = idFor(movieGenres)
+  const televisionId = idFor(televisionGenres)
+  const [movies, television] = await Promise.all([
+    movieId ? tmdbRequest(profile.tmdbToken, '/discover/movie', { with_genres: movieId, sort_by: 'popularity.desc', include_adult: profile.showAdult }) : { results: [] },
+    televisionId ? tmdbRequest(profile.tmdbToken, '/discover/tv', { with_genres: televisionId, sort_by: 'popularity.desc', include_adult: profile.showAdult }) : { results: [] },
+  ])
+  return dedupe([
+    ...(movies.results || []).map((entry) => tmdbMedia(entry, 'movie')).filter(Boolean),
+    ...(television.results || []).map((entry) => tmdbMedia(entry, 'tv')).filter(Boolean),
+  ])
+}
+
 function dedupe(items) {
   const seen = new Set()
   return items.filter((item) => {
@@ -289,6 +325,15 @@ function dedupe(items) {
 }
 
 const label = (screen) => ({ auto: 'Automatic anime', anilist: 'AniList', kitsu: 'Kitsu', tmdb: 'TMDB', stremio: 'Stremio', merged: 'Merged' })[screen] || screen
+const ANIME_GENRES = ['Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 'Horror', 'Mecha', 'Music', 'Mystery', 'Psychological', 'Romance', 'Sci-Fi', 'Slice of Life', 'Sports', 'Supernatural', 'Thriller']
+const TMDB_GENRES = ['Action', 'Adventure', 'Animation', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Fantasy', 'History', 'Horror', 'Kids', 'Music', 'Mystery', 'Reality', 'Romance', 'Science Fiction', 'Thriller', 'War', 'Western']
+
+function snapshotGenres(profile, screen, home) {
+  const visible = home.rows.flatMap((row) => row.items.flatMap((item) => item.genres || []))
+  const sources = screen === 'merged' ? profile.screens : [screen]
+  const configured = sources.flatMap((source) => source === 'tmdb' ? TMDB_GENRES : ['auto', 'anilist', 'kitsu'].includes(source) ? ANIME_GENRES : [])
+  return [...new Set([...visible, ...configured].map((value) => clean(value, 80)).filter(Boolean))].slice(0, 40)
+}
 
 async function providerHome(profile, screen) {
   if (screen === 'auto' || screen === 'anilist') return aniHome(profile.showAdult)
@@ -315,36 +360,45 @@ function snapshot(profile, screen, home) {
   return {
     app: 'izumi', kind: 'companion-home', version: 1,
     revision: `cloud-${screen}-${generatedAt}`, generatedAt,
-    catalog: { screen, label: label(screen), options: profile.screens.filter((entry) => entry !== 'jvm').map((entry) => ({ screen: entry, label: label(entry) })) },
+    catalog: {
+      screen,
+      label: label(screen),
+      options: profile.screens.filter((entry) => entry !== 'jvm').map((entry) => ({ screen: entry, label: label(entry) })),
+      genres: snapshotGenres(profile, screen, home),
+    },
     spoilersHidden: profile.hideSpoilers,
     hero: home.hero,
     rows: home.rows.slice(0, 12).map((row) => ({ ...row, items: dedupe(row.items).slice(0, 20) })).filter((row) => row.items.length),
   }
 }
 
-export async function catalogSearch(profile, requestedScreen, query, person) {
+export async function catalogSearch(profile, requestedScreen, query, person, genre) {
   const cleanQuery = clean(query, 80)
+  const cleanGenre = clean(genre, 80)
   const cleanPerson = person && typeof person === 'object'
     && /^\d{1,12}$/.test(String(person.id || ''))
     && (person.credit === 'cast' || person.credit === 'crew')
     ? { id: String(person.id), provider: String(person.provider || ''), credit: person.credit }
     : null
-  if (!cleanQuery && !cleanPerson) return []
+  if (!cleanQuery && !cleanPerson && !cleanGenre) return []
   if (cleanPerson?.provider === 'anilist') return dedupe(await aniPersonMedia(cleanPerson, profile.showAdult))
   if (cleanPerson?.provider === 'tmdb') return tmdbPersonMedia(profile, cleanPerson)
-  if (!cleanQuery) return []
+  if (!cleanQuery && !cleanGenre) return []
   const screen = profile.screens.includes(requestedScreen) ? requestedScreen : profile.defaultScreen
   if (screen === 'merged') {
-    const settled = await Promise.allSettled(profile.screens.filter((entry) => !['merged', 'jvm'].includes(entry)).map((entry) => catalogSearch(profile, entry, cleanQuery, cleanPerson)))
+    const settled = await Promise.allSettled(profile.screens.filter((entry) => !['merged', 'jvm'].includes(entry)).map((entry) => catalogSearch(profile, entry, cleanQuery, cleanPerson, cleanGenre)))
     return dedupe(settled.filter((entry) => entry.status === 'fulfilled').flatMap((entry) => entry.value))
   }
-  if (screen === 'auto' || screen === 'anilist') return aniSearch(cleanQuery, profile.showAdult)
-  if (screen === 'kitsu') return kitsuPage({ 'filter[text]': cleanQuery, sort: '-userCount' })
+  if (screen === 'auto' || screen === 'anilist') return aniSearch(cleanGenre ? '' : cleanQuery, profile.showAdult, cleanGenre)
+  if (screen === 'kitsu') return kitsuPage(cleanGenre
+    ? { 'filter[categories]': cleanGenre.toLowerCase(), sort: '-userCount' }
+    : { 'filter[text]': cleanQuery, sort: '-userCount' })
   if (screen === 'tmdb') {
+    if (cleanGenre) return tmdbGenre(profile, cleanGenre)
     const value = await tmdbRequest(profile.tmdbToken, '/search/multi', { query: cleanQuery, include_adult: profile.showAdult })
     return dedupe((value.results || []).map((entry) => tmdbMedia(entry)).filter(Boolean))
   }
-  if (screen === 'stremio') return dedupe(await stremioSearch(profile.addons, cleanQuery))
+  if (screen === 'stremio') return dedupe(cleanGenre ? await stremioGenre(profile.addons, cleanGenre) : await stremioSearch(profile.addons, cleanQuery))
   return []
 }
 

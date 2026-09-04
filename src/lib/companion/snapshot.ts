@@ -18,6 +18,7 @@ import { searchMergedCatalogs } from '$lib/catalog/merged-search'
 import { tmdbPersonCredits } from '$lib/catalog/providers/tmdb'
 import type { CatalogHome } from '$lib/catalog/types'
 import { continueWatching, filterContinueWatching, type CwEntry } from '$lib/player/continue-watching'
+import { historyEntries, localHistory } from '$lib/player/history'
 import { positions, positionPercent, progressKey } from '$lib/player/progress'
 import {
   catalogLabel,
@@ -48,6 +49,11 @@ const EPISODE_PREVIEW_LIMIT = 12
 export const COMPANION_SNAPSHOT_TARGET_BYTES = 352 * 1024
 let cached: { key: string; at: number; snapshot: CompanionHomeSnapshot } | null = null
 const companionTitleLogoRequests = new Map<string, Promise<string | undefined>>()
+const ANILIST_GENRES = [
+  'Action', 'Adventure', 'Comedy', 'Drama', 'Ecchi', 'Fantasy', 'Horror', 'Mahou Shoujo',
+  'Mecha', 'Music', 'Mystery', 'Psychological', 'Romance', 'Sci-Fi', 'Slice of Life',
+  'Sports', 'Supernatural', 'Thriller',
+]
 
 function snapshotBytes(snapshot: CompanionHomeSnapshot): number {
   return new TextEncoder().encode(JSON.stringify(snapshot)).byteLength
@@ -78,6 +84,7 @@ export function compactCompanionSnapshot(
     ...base,
     hero: snapshot.hero ? compactHomeMedia(snapshot.hero) : undefined,
     rows,
+    history: snapshot.history?.map((item) => compactHomeMedia(item)),
   }
   if (snapshotBytes(result) <= targetBytes) return result
 
@@ -102,6 +109,9 @@ export function compactCompanionSnapshot(
     hero: result.hero ? compactHomeMedia(result.hero, false) : undefined,
     rows: rows.map((row) => ({ ...row, items: row.items.map((item) => compactHomeMedia(item, false)) })),
   }
+  if (snapshotBytes(result) <= targetBytes) return result
+
+  while ((result.history?.length ?? 0) > 12 && snapshotBytes(result) > targetBytes) result.history!.pop()
   if (snapshotBytes(result) <= targetBytes) return result
 
   // Only pathological custom layouts reach this fallback. Preserve Continue Watching and the
@@ -142,11 +152,39 @@ function seasonSummary(episodes: CompanionEpisode[]): { counts?: number[]; label
   if (!episodes.length) return {}
   const seasons = new Map<number, number>()
   for (const episode of episodes) seasons.set(episode.season, Math.max(seasons.get(episode.season) ?? 0, episode.episode))
-  const ordered = [...seasons.entries()].sort(([left], [right]) => left - right)
+  // Specials (season 0) belong after numbered seasons. This order also matches TMDB's episode
+  // loader, so a TV index always resolves back to the provider's real season number.
+  const ordered = [...seasons.entries()].sort(([left], [right]) =>
+    (left === 0 ? Number.MAX_SAFE_INTEGER : left) - (right === 0 ? Number.MAX_SAFE_INTEGER : right))
   return {
     counts: ordered.map(([, count]) => count),
     labels: ordered.map(([season]) => season === 0 ? 'Specials' : `Season ${season}`),
   }
+}
+
+async function companionGenres(
+  screen: CatalogScreen,
+  active: CatalogSelection,
+  home: CatalogHome,
+): Promise<string[]> {
+  const visible = home.sections.flatMap((section) => section.media.flatMap((media) => media.genres ?? []))
+  const selections = screen === 'merged' ? mergedCatalogProviders(get(catalogProviders)) : [active]
+  const providerGenres = await Promise.all(selections.map(async (selection) => {
+    if (selection === 'auto' || selection === 'anilist') return ANILIST_GENRES
+    try { return await (await loadCatalogProvider(selection)).genres?.() ?? [] } catch { return [] }
+  }))
+  const frequency = new Map<string, { label: string; count: number }>()
+  for (const raw of [...visible, ...providerGenres.flat()]) {
+    const label = raw.trim().replace(/\b\w/g, (letter) => letter.toUpperCase())
+    if (!label) continue
+    const key = label.toLocaleLowerCase()
+    const prior = frequency.get(key)
+    frequency.set(key, { label: prior?.label ?? label, count: (prior?.count ?? 0) + 1 })
+  }
+  return [...frequency.values()]
+    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label))
+    .slice(0, 40)
+    .map((entry) => entry.label)
 }
 
 async function detailedCatalogMedia(media: CompanionMedia, client?: QueryClient, presentationOnly = false): Promise<Media | null> {
@@ -328,7 +366,8 @@ export async function createCompanionDetails(
     aniZip = await getEpisodeMeta(anilistId, watchedThrough).catch(() => ({}))
   }
   const supplied = new Map((working.episodes ?? []).map((episode) => [`${episode.season}:${episode.episode}`, episode]))
-  const suppliedSeasons = [...new Set((working.episodes ?? []).map((episode) => episode.season))].sort((left, right) => left - right)
+  const suppliedSeasons = [...new Set((working.episodes ?? []).map((episode) => episode.season))].sort((left, right) =>
+    (left === 0 ? Number.MAX_SAFE_INTEGER : left) - (right === 0 ? Number.MAX_SAFE_INTEGER : right))
   let absolute = 0
   const episodes: CompanionEpisode[] = counts.flatMap((rawCount, seasonIndex) => {
     const count = Math.max(0, Math.floor(rawCount))
@@ -501,6 +540,7 @@ export async function createCompanionSnapshot(
   const active = screen === 'merged' ? get(catalogProvider) : screen
   const availableScreens = get(enabledCatalogScreens)
   const watchingEntries = get(continueWatching)
+  const localHistoryEntries = historyEntries(get(localHistory))
   const playbackPositions = get(positions)
   const cacheKey = JSON.stringify({
     screen,
@@ -509,6 +549,7 @@ export async function createCompanionSnapshot(
     layouts: get(catalogHomeLayouts),
     tmdbCustomRows: get(tmdbCustomHomeRows),
     watching: watchingEntries.slice(0, 30).map((entry) => [entry.media.id, entry.progress, entry.updatedAt]),
+    history: localHistoryEntries.slice(0, 40).map((entry) => [entry.media.id, entry.episode, entry.progress, entry.updatedAt]),
     positions: watchingEntries.slice(0, 30).map((entry) => {
       const episode = resumeEp(entry.media, entry.progress)
       const saved = playbackPositions[progressKey(entry.media.id, episode)]
@@ -518,8 +559,14 @@ export async function createCompanionSnapshot(
   })
   if (cached?.key === cacheKey && now - cached.at < SNAPSHOT_CACHE_MS) return cached.snapshot
   const home = await selectedHome(client, screen, active)
+  const genres = await companionGenres(screen, active, home)
   const layoutScreen = screen
   const watching = await continueRow(watchingEntries, active, screen === 'merged')
+  const history = localHistoryEntries.slice(0, 40).map((entry) => companionMedia(entry.media, {
+    watched: entry.progress,
+    episode: entry.episode,
+    placement: { label: 'Watch History', kind: 'catalog' },
+  }))
   const rows = catalogRows(layoutScreen, home)
   const continueEnabled = resolveCatalogHomeRows(layoutScreen, [CONTINUE_HOME_ROW], get(catalogHomeLayouts))[0]?.enabled ?? true
   if (watching && continueEnabled) rows.unshift(watching)
@@ -544,10 +591,12 @@ export async function createCompanionSnapshot(
       screen,
       label: catalogLabel(screen),
       options: availableScreens.map((option) => ({ screen: option, label: catalogLabel(option) })),
+      genres,
     },
     spoilersHidden: get(hideSpoilers),
     hero,
     rows,
+    history,
     // The TV derives Search/Trending/Series/Movies/My List from these same rows. Do not serialize
     // five more copies of the catalogue into the pairing payload.
   })
@@ -559,6 +608,7 @@ export async function createCompanionSearch(
   client: QueryClient,
   query: string,
   person?: CompanionPersonFilter,
+  genre?: string,
 ): Promise<ReturnType<typeof companionMedia>[]> {
   const normalized = query.trim().slice(0, 80)
   if (!normalized) return []
@@ -579,10 +629,10 @@ export async function createCompanionSearch(
       ...(staff?.characterMedia?.edges ?? []).flatMap((edge) => edge.node ? [edge.node] : []),
     ].filter((item, index, values) => values.findIndex((candidate) => candidate.id === item.id) === index)
   } else {
-    media = (await searchMergedCatalogs(get(catalogProviders), normalized, 1)).media
+    media = (await searchMergedCatalogs(get(catalogProviders), genre ? '' : normalized, 1, undefined, genre)).media
   }
   media = media.filter((item) => get(showAdult) || !item.isAdult)
   return media.slice(0, 40).map((item) => companionMedia(item, {
-    placement: { label: person ? `Featuring ${person.name}` : `Search results for ${normalized}`, kind: 'catalog' },
+    placement: { label: person ? `Featuring ${person.name}` : genre ? `${genre} titles` : `Search results for ${normalized}`, kind: 'catalog' },
   }))
 }

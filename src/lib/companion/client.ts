@@ -71,7 +71,7 @@ export type CompanionWorkerSetupStatus = 'opened' | 'starting' | 'dismissed' | '
 
 export type CompanionPlayContext = Omit<PendingCompanionPlayback, 'device' | 'media'>
 export type CompanionSourceSelection = (requestId: string, choiceId: string, device: PairedCompanion) => void | Promise<void>
-type CompanionSearchHandler = (query: string, person?: CompanionPersonFilter) => Promise<CompanionMedia[]>
+type CompanionSearchHandler = (query: string, person?: CompanionPersonFilter, genre?: string) => Promise<CompanionMedia[]>
 
 /** Session-only target: the next selected source must be sent to this TV, not played locally. */
 export const pendingCompanionPlayback = writable<PendingCompanionPlayback | null>(null)
@@ -651,7 +651,7 @@ function keepConnection(
       })
     }),
     channel.on('izumi.companion.search', (value, from) => {
-      const request = value as { query?: unknown; requestId?: unknown; pairingId?: unknown; person?: unknown } | null
+      const request = value as { query?: unknown; requestId?: unknown; pairingId?: unknown; person?: unknown; genre?: unknown } | null
       if (!request
         || request.pairingId !== device.credential.slice(0, 16)
         || typeof request.query !== 'string'
@@ -675,15 +675,17 @@ function keepConnection(
             credit: candidate.credit,
           }
         : undefined
+      const genre = typeof request.genre === 'string' ? request.genre.trim().slice(0, 80) : undefined
       const reply = (payload: Record<string, unknown>) => channel.publish('izumi.companion.search-results', {
         credential: device.credential,
         requestId: request.requestId,
         query,
         person,
+        genre,
         ...payload,
       }, from?.id || 'host')
       if (!query) return reply({ items: [] })
-      void onSearch(query, person)
+      void onSearch(query, person, genre)
         .then((items) => reply({ items: items.slice(0, 40) }))
         .catch((error) => reply({ error: error instanceof Error ? error.message : 'Search unavailable' }))
     }),

@@ -79,6 +79,32 @@ describe('companion episode details', () => {
     ])
   })
 
+  it('keeps TMDB seasons distinct and places specials after numbered seasons', async () => {
+    catalog.loadCatalogProvider.mockResolvedValue({
+      detail: vi.fn().mockResolvedValue({
+        id: -8,
+        catalog: { provider: 'tmdb', id: '100', type: 'series' },
+        title: { userPreferred: 'Provider Series' },
+        episodes: 4,
+        videos: [
+          { number: 1, season: 1, episode: 1, title: 'Premiere' },
+          { number: 2, season: 1, episode: 2, title: 'Second' },
+          { number: 3, season: 3, episode: 1, title: 'Return' },
+          { number: 4, season: 0, episode: 1, title: 'Special' },
+        ],
+      }),
+    })
+
+    const details = await createCompanionDetails({
+      ref: { provider: 'tmdb', type: 'series', id: '100' },
+      title: 'Provider Series',
+    }, false)
+
+    expect(details.seasonLabels).toEqual(['Season 1', 'Season 3', 'Specials'])
+    expect(details.seasonEpisodeCounts).toEqual([2, 1, 1])
+    expect(details.episodes?.map((episode) => `${episode.season}:${episode.episode}`)).toEqual(['1:1', '1:2', '3:1', '0:1'])
+  })
+
   it('uses the provider presentation path for TV logo prefetching', async () => {
     const presentation = vi.fn().mockResolvedValue({
       id: -9,

@@ -693,7 +693,7 @@ async function searchForTv(request, env, pairingId) {
   try {
     const profile = normalizeResolverProfile(JSON.parse(row.profile), new URL(request.url).origin)
     const input = await body(request)
-    const items = await searchCatalog(profile, input?.screen, input?.query, input?.person)
+    const items = await searchCatalog(profile, input?.screen, input?.query, input?.person, input?.genre)
     return json({ ok: true, items })
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : 'Search failed.', code: 'SEARCH_FAILED' }, 409)

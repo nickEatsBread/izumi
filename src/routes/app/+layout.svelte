@@ -245,7 +245,7 @@
           cancelPendingCompanionPlayback()
         }
       },
-      (query: string, person?: CompanionPersonFilter) => createCompanionSearch(companionCatalogClient, query, person),
+      (query: string, person?: CompanionPersonFilter, genre?: string) => createCompanionSearch(companionCatalogClient, query, person, genre),
       (media: CompanionMedia, presentationOnly?: boolean) => presentationOnly
         ? createCompanionPresentation(media, companionCatalogClient)
         : createCompanionDetails(media, undefined, companionCatalogClient),

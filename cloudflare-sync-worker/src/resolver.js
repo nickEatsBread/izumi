@@ -726,8 +726,8 @@ export async function resolveCatalogSnapshot(profileValue, screen) {
   return catalogSnapshot(cloudCatalogProfile(profileValue), typeof screen === 'string' ? screen : '')
 }
 
-export async function searchCatalog(profileValue, screen, query, person) {
-  return catalogSearch(cloudCatalogProfile(profileValue), typeof screen === 'string' ? screen : '', query, person)
+export async function searchCatalog(profileValue, screen, query, person, genre) {
+  return catalogSearch(cloudCatalogProfile(profileValue), typeof screen === 'string' ? screen : '', query, person, genre)
 }
 
 export function defaultResolverProfile() {
