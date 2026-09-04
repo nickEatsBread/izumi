@@ -5,12 +5,23 @@ import type { SyncRecord, SyncStatus } from './types'
 
 export const CLOUDFLARE_WORKER_VERSION = '1.4.0'
 export const CLOUDFLARE_WORKER_PROTOCOL = 1
-export const CLOUDFLARE_DEPLOY_URL =
+export const CLOUDFLARE_GIT_DEPLOY_URL =
   'https://deploy.workers.cloudflare.com/?url=https://github.com/nickEatsBread/izumi/tree/main/cloudflare-sync-worker'
+export const CLOUDFLARE_TOKEN_CREATE_URL =
+  'https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22d1%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22account_settings%22%2C%22type%22%3A%22read%22%7D%5D&accountId=%2A&zoneId=all&name=Izumi%20Worker%20setup'
+export const CLOUDFLARE_TOKEN_MANAGE_URL = 'https://dash.cloudflare.com/profile/api-tokens'
+export const CLOUDFLARE_TERMS_URL = 'https://www.cloudflare.com/terms/'
+export const CLOUDFLARE_PRIVACY_URL = 'https://www.cloudflare.com/privacypolicy/'
 export const CLOUDFLARE_UPDATE_GUIDE =
   'https://github.com/nickEatsBread/izumi/tree/main/cloudflare-sync-worker#updating'
 
 export type SyncProvider = 'iroh' | 'cloudflare'
+
+export interface CloudflareDeploymentTarget {
+  accountId: string
+  scriptName: string
+  databaseId: string
+}
 
 export interface CloudflareSyncConfig {
   enabled: boolean
@@ -19,6 +30,8 @@ export interface CloudflareSyncConfig {
   deviceToken: string
   groupKey: string
   workerVersion: string
+  /** Present only on the device that deployed this Worker directly through Izumi. */
+  deployment?: CloudflareDeploymentTarget
 }
 
 const EMPTY_CONFIG: CloudflareSyncConfig = {
@@ -414,6 +427,7 @@ export async function claimCloudflareWorker(
   endpointValue: string,
   bootstrapSecret: string,
   deviceName: string,
+  deployment?: CloudflareDeploymentTarget,
 ): Promise<void> {
   const endpoint = normalizeCloudflareEndpoint(endpointValue)
   const secret = bootstrapSecret.trim()
@@ -434,6 +448,7 @@ export async function claimCloudflareWorker(
     deviceToken: token,
     groupKey: key,
     workerVersion: status.version,
+    deployment,
   })
   cloudflareSetupSecret.set('')
 }
@@ -497,7 +512,12 @@ export async function leaveCloudflareSync(): Promise<void> {
   if (configReady(config)) {
     await workerRequest<{ ok: true }>(config.endpoint, '/v1/devices/me', { method: 'DELETE' }, config.deviceToken)
   }
-  cloudflareSyncConfig.set({ ...EMPTY_CONFIG, enabled: true, endpoint: config.endpoint })
+  cloudflareSyncConfig.set({
+    ...EMPTY_CONFIG,
+    enabled: true,
+    endpoint: config.endpoint,
+    deployment: config.deployment,
+  })
 }
 
 async function encryptionKey(config: CloudflareSyncConfig): Promise<CryptoKey> {

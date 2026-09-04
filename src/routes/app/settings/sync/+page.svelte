@@ -42,11 +42,19 @@
     setSyncProvider, syncProvider,
     type SyncMember,
   } from '$lib/sync/client'
-  import { CLOUDFLARE_DEPLOY_URL, CLOUDFLARE_UPDATE_GUIDE } from '$lib/sync/cloudflare'
+  import {
+    CLOUDFLARE_GIT_DEPLOY_URL,
+    CLOUDFLARE_PRIVACY_URL,
+    CLOUDFLARE_TERMS_URL,
+    CLOUDFLARE_TOKEN_CREATE_URL,
+    CLOUDFLARE_TOKEN_MANAGE_URL,
+    CLOUDFLARE_UPDATE_GUIDE,
+  } from '$lib/sync/cloudflare'
   import {
     deleteCloudflareResolverProfile,
     getCloudflareResolverProfile,
     saveCloudflareResolverProfile,
+    type CloudflareDeploymentTarget,
     type CloudflareResolverProfile,
   } from '$lib/sync/cloudflare'
   import { preferredAudioLang, preferredQuality, preferredStreamSort } from '$lib/settings/ui'
@@ -55,6 +63,13 @@
   import { anilistToken } from '$lib/anilist/auth'
   import { malToken } from '$lib/trackers/config'
   import type { ManualDevice, NearbyDevice, PairOutgoing, PairRequest, PairingWindow, SyncStatus } from '$lib/sync/types'
+
+  type CloudflarePreview = {
+    endpoint: string
+    claimUrl: string
+    claimExpiresAt: string
+    deployment: CloudflareDeploymentTarget
+  }
 
   let status = $state<SyncStatus>({ state: 'starting' })
   let joinTicket = $state('')
@@ -76,6 +91,11 @@
   let confirmLeave = $state(false)
   let now = $state(Date.now())
   let cloudflareEndpoint = $state('')
+  let cloudflareApiToken = $state('')
+  let cloudflareAccounts = $state<{ id: string; name: string }[]>([])
+  let cloudflareAccountId = $state('')
+  let cloudflareTermsAccepted = $state(false)
+  let cloudflarePreview = $state<CloudflarePreview | null>(null)
   let cloudflareInvite = $state('')
   let tvPairingCode = $state('')
   let confirmTvForget = $state('')
@@ -308,9 +328,120 @@
     if (!$cloudflareSetupSecret) generateCloudflareSetupSecret()
   }
 
-  function deployCloudflare() {
+  function openCloudflareTokenSetup() {
+    void openUrl(CLOUDFLARE_TOKEN_CREATE_URL)
+  }
+
+  function updateCloudflareToken(event: Event) {
+    cloudflareApiToken = (event.currentTarget as HTMLInputElement).value.trim()
+    cloudflareAccounts = []
+    cloudflareAccountId = ''
+  }
+
+  function deployCloudflareFromGit() {
     prepareCloudflare()
-    void openUrl(CLOUDFLARE_DEPLOY_URL)
+    void openUrl(CLOUDFLARE_GIT_DEPLOY_URL)
+  }
+
+  function deployCloudflare() {
+    if (!cloudflareApiToken) return
+    prepareCloudflare()
+    void action('cloudflare-deploy', async () => {
+      const apiToken = cloudflareApiToken
+      let accounts = cloudflareAccounts
+      if (!accounts.length) {
+        accounts = await invoke<{ id: string; name: string }[]>('cloudflare_deployment_accounts', { apiToken })
+        cloudflareAccounts = accounts
+        if (accounts.length === 1) cloudflareAccountId = accounts[0].id
+      }
+      if (!cloudflareAccountId) {
+        showMessage('Choose the Cloudflare account that should own this Worker.')
+        return
+      }
+      const result = await invoke<{ endpoint: string; deployment: CloudflareDeploymentTarget }>(
+        'cloudflare_deploy_worker',
+        {
+          apiToken,
+          accountId: cloudflareAccountId,
+          bootstrapSecret: $cloudflareSetupSecret,
+          existing: null,
+        },
+      )
+      cloudflareEndpoint = result.endpoint
+      await claimCloudflareWorker(
+        result.endpoint,
+        $cloudflareSetupSecret,
+        $syncDeviceName.trim() || 'Izumi device',
+        result.deployment,
+      )
+      await invoke('cloudflare_remove_bootstrap_secret', {
+        apiToken,
+        deployment: result.deployment,
+      }).catch(() => {})
+      cloudflareApiToken = ''
+      cloudflareAccounts = []
+      cloudflareAccountId = ''
+      await publishPresence()
+      await pullWatchProgress()
+      showMessage('Your private Worker is deployed and connected. The Cloudflare token was not saved.')
+      h.success()
+    })
+  }
+
+  function createCloudflarePreview() {
+    if (!cloudflareTermsAccepted) return
+    prepareCloudflare()
+    void action('cloudflare-preview', async () => {
+      cloudflarePreview = await invoke<CloudflarePreview>('cloudflare_create_preview', {
+        acceptTerms: cloudflareTermsAccepted,
+        bootstrapSecret: $cloudflareSetupSecret,
+      })
+      await openUrl(cloudflarePreview.claimUrl)
+      showMessage('Your Worker is ready. Claim it in Cloudflare, then return here to connect.')
+    })
+  }
+
+  function connectCloudflarePreview() {
+    if (!cloudflarePreview) return
+    const preview = cloudflarePreview
+    void action('cloudflare-preview-connect', async () => {
+      cloudflareEndpoint = preview.endpoint
+      await claimCloudflareWorker(
+        preview.endpoint,
+        $cloudflareSetupSecret,
+        $syncDeviceName.trim() || 'Izumi device',
+        preview.deployment,
+      )
+      cloudflarePreview = null
+      await publishPresence()
+      await pullWatchProgress()
+      showMessage('Your claimed Cloudflare Worker is connected.')
+      h.success()
+    })
+  }
+
+  function updateCloudflareDeployment() {
+    const deployment = $cloudflareSyncConfig.deployment
+    if (!deployment || !cloudflareApiToken) return
+    void action('cloudflare-update', async () => {
+      const apiToken = cloudflareApiToken
+      const result = await invoke<{ endpoint: string; deployment: CloudflareDeploymentTarget }>(
+        'cloudflare_deploy_worker',
+        {
+          apiToken,
+          accountId: deployment.accountId,
+          bootstrapSecret: null,
+          existing: deployment,
+        },
+      )
+      if (result.endpoint !== $cloudflareSyncConfig.endpoint) {
+        throw new Error('Your workers.dev account address changed. Reconnect devices using the new Worker URL.')
+      }
+      cloudflareApiToken = ''
+      await checkCloudflareWorkerUpdate()
+      showMessage('Your private Worker is up to date. The Cloudflare token was not saved.')
+      h.success()
+    })
   }
 
   function connectCloudflare() {
@@ -606,32 +737,87 @@
             <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/15 text-primary"><Cloud size={18} /></span>
             <div class="min-w-0 flex-1">
               <h3 class="font-black">Create my private Worker</h3>
-              <p class="mt-1 text-sm leading-5 text-muted-foreground">Cloudflare signs you in, clones the isolated Worker, provisions D1, and deploys it. Izumi never receives a Cloudflare API key.</p>
+              <p class="mt-1 text-sm leading-5 text-muted-foreground">Izumi prepares the Worker first; then you sign in to Cloudflare—or create an account—to claim it. No GitHub, repository, command line, token, or technical fields.</p>
             </div>
           </div>
-          <ol class="mt-4 space-y-4">
-            <li>
-              <p class="text-xs font-black uppercase tracking-wide text-muted-foreground">1. Generate the setup secret</p>
-              {#if $cloudflareSetupSecret}
-                <div class="mt-2 flex gap-2">
-                  <input readonly value={$cloudflareSetupSecret} aria-label="Cloudflare setup secret" class="min-w-0 flex-1 rounded-lg bg-input px-3 py-2 font-mono text-xs" />
-                  <button type="button" data-focusable aria-label="Copy setup secret" onclick={() => copyCloudflare($cloudflareSetupSecret, 'Setup secret')} class="grid min-h-10 min-w-10 place-items-center rounded-lg bg-secondary"><Copy size={16} /></button>
-                </div>
-                <p class="mt-1 text-xs text-amber-400">Paste this as <code>BOOTSTRAP_SECRET</code> during deployment. Keep it private.</p>
-              {:else}
-                <button type="button" data-focusable onclick={() => { h.impact(); prepareCloudflare() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><KeyRound size={16} /> Generate secret</button>
-              {/if}
-            </li>
-            <li>
-              <p class="text-xs font-black uppercase tracking-wide text-muted-foreground">2. Deploy through Cloudflare</p>
-              <button type="button" data-focusable onclick={() => { h.impact(); deployCloudflare() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground"><ExternalLink size={16} /> Deploy with Cloudflare</button>
-            </li>
-            <li>
-              <label for="cloudflare-endpoint" class="text-xs font-black uppercase tracking-wide text-muted-foreground">3. Connect the deployed URL</label>
-              <input id="cloudflare-endpoint" type="url" data-focusable bind:value={cloudflareEndpoint} placeholder="https://izumi-sync.you.workers.dev" class="mt-2 w-full rounded-lg bg-input px-3 py-2.5 text-base sm:text-sm" />
-              <button type="button" data-focusable disabled={!!busy || !cloudflareEndpoint.trim() || !$cloudflareSetupSecret.trim()} onclick={() => { h.impact(); connectCloudflare() }} class="mt-2 min-h-10 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">{busy === 'cloudflare-connect' ? 'Connecting…' : 'Connect this Worker'}</button>
-            </li>
-          </ol>
+          {#if !cloudflarePreview}
+            <div class="mt-4 rounded-lg border border-border bg-secondary/30 p-3">
+              <label class="flex items-start gap-3" for="cloudflare-terms">
+                <input id="cloudflare-terms" type="checkbox" bind:checked={cloudflareTermsAccepted} data-focusable class="mt-1 size-4 shrink-0 accent-primary" />
+                <span class="text-sm leading-5">I accept Cloudflare’s Terms of Service and Privacy Policy and ask Izumi to create an expiring deployment for me.</span>
+              </label>
+              <p class="ml-7 mt-1 text-xs text-muted-foreground">
+                Read the <button type="button" onclick={() => openUrl(CLOUDFLARE_TERMS_URL)} class="font-bold text-foreground underline underline-offset-2">Terms</button>
+                and <button type="button" onclick={() => openUrl(CLOUDFLARE_PRIVACY_URL)} class="font-bold text-foreground underline underline-offset-2">Privacy Policy</button>.
+              </p>
+            </div>
+            <button type="button" data-focusable disabled={!!busy || !cloudflareTermsAccepted} onclick={() => { h.impact(); createCloudflarePreview() }} class="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
+              {#if busy === 'cloudflare-preview'}<LoaderCircle size={16} class="animate-spin" />{/if}
+              {busy === 'cloudflare-preview' ? 'Preparing your Worker…' : 'Create my private Worker'}
+            </button>
+            <p class="mt-2 text-xs text-muted-foreground">Cloudflare’s security check can take a few moments. Izumi keeps any temporary deployment credential inside the native app.</p>
+          {:else}
+            <div class="mt-4 rounded-lg border border-emerald-400/30 bg-emerald-400/10 p-3">
+              <p class="text-xs font-black uppercase tracking-wide text-emerald-300">Worker ready to claim</p>
+              <p class="mt-1 text-sm leading-5">Finish the Cloudflare page that opened. The deployment becomes permanent when you sign in or create an account and select <strong>Claim</strong>.</p>
+              <p class="mt-1 text-xs text-muted-foreground">Keep Izumi open. Cloudflare deletes unclaimed deployments after about one hour.</p>
+              <div class="mt-3 flex flex-wrap gap-2">
+                <button type="button" data-focusable onclick={() => openUrl(cloudflarePreview!.claimUrl)} class="inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={15} /> Open Cloudflare claim</button>
+                <button type="button" data-focusable disabled={!!busy} onclick={() => { h.impact(); connectCloudflarePreview() }} class="inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
+                  {#if busy === 'cloudflare-preview-connect'}<LoaderCircle size={16} class="animate-spin" />{/if}
+                  {busy === 'cloudflare-preview-connect' ? 'Connecting…' : 'I claimed it — connect'}
+                </button>
+              </div>
+            </div>
+          {/if}
+          <details class="mt-4 border-t border-border/70 pt-4">
+            <summary class="cursor-pointer text-sm font-bold">Advanced setup</summary>
+            <h4 class="mt-3 text-sm font-black">Deploy into an existing Cloudflare account</h4>
+            <p class="mt-1 text-xs leading-5 text-muted-foreground">Prefer to use an account you already manage? Create a narrowly scoped setup token, paste it once, and Izumi will deploy directly into that account.</p>
+            <button type="button" data-focusable onclick={() => { h.impact(); openCloudflareTokenSetup() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={16} /> Create setup token</button>
+            <input
+              id="cloudflare-api-token"
+              type="password"
+              data-focusable
+              value={cloudflareApiToken}
+              oninput={updateCloudflareToken}
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              aria-label="Cloudflare setup token"
+              placeholder="Paste Cloudflare API token"
+              class="mt-2 w-full rounded-lg bg-input px-3 py-2.5 font-mono text-base sm:text-sm"
+            />
+            {#if cloudflareAccounts.length > 1}
+              <label for="cloudflare-account" class="mt-3 block text-xs font-bold text-muted-foreground">Cloudflare account</label>
+              <select id="cloudflare-account" bind:value={cloudflareAccountId} data-focusable class="mt-1 w-full rounded-lg bg-input px-3 py-2.5 text-base sm:text-sm">
+                <option value="">Choose an account…</option>
+                {#each cloudflareAccounts as account}
+                  <option value={account.id}>{account.name}</option>
+                {/each}
+              </select>
+            {/if}
+            <button type="button" data-focusable disabled={!!busy || !cloudflareApiToken} onclick={() => { h.impact(); deployCloudflare() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50">
+              {#if busy === 'cloudflare-deploy'}<LoaderCircle size={16} class="animate-spin" />{/if}
+              {busy === 'cloudflare-deploy' ? 'Setting up Worker…' : cloudflareAccounts.length > 1 && !cloudflareAccountId ? 'Continue' : 'Deploy into this account'}
+            </button>
+            <p class="mt-1 text-xs text-muted-foreground">The token is not saved. Revoke it in Cloudflare when setup finishes.</p>
+
+            <h4 class="mt-4 border-t border-border/70 pt-4 text-sm font-black">Connect a manually deployed Worker</h4>
+            <p class="mt-1 text-xs leading-5 text-muted-foreground">For Wrangler or the older Git-based deploy. Generate the secret before deploying, configure it as <code>BOOTSTRAP_SECRET</code>, then paste the resulting Worker URL.</p>
+            {#if $cloudflareSetupSecret}
+              <div class="mt-2 flex gap-2">
+                <input readonly value={$cloudflareSetupSecret} aria-label="Cloudflare setup secret" class="min-w-0 flex-1 rounded-lg bg-input px-3 py-2 font-mono text-xs" />
+                <button type="button" data-focusable aria-label="Copy setup secret" onclick={() => copyCloudflare($cloudflareSetupSecret, 'Setup secret')} class="grid min-h-10 min-w-10 place-items-center rounded-lg bg-secondary"><Copy size={16} /></button>
+              </div>
+            {:else}
+              <button type="button" data-focusable onclick={() => { h.impact(); prepareCloudflare() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><KeyRound size={16} /> Generate secret</button>
+            {/if}
+            <button type="button" data-focusable onclick={() => { h.impact(); deployCloudflareFromGit() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={16} /> Optional Git-based deploy</button>
+            <label for="cloudflare-endpoint" class="mt-3 block text-xs font-bold text-muted-foreground">Deployed Worker URL</label>
+            <input id="cloudflare-endpoint" type="url" data-focusable bind:value={cloudflareEndpoint} placeholder="https://izumi-sync.you.workers.dev" class="mt-1 w-full rounded-lg bg-input px-3 py-2.5 text-base sm:text-sm" />
+            <button type="button" data-focusable disabled={!!busy || !cloudflareEndpoint.trim() || !$cloudflareSetupSecret.trim()} onclick={() => { h.impact(); connectCloudflare() }} class="mt-2 min-h-10 rounded-lg bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50">{busy === 'cloudflare-connect' ? 'Connecting…' : 'Connect existing Worker'}</button>
+          </details>
         </section>
 
         <section class="rounded-xl border border-border p-4">
@@ -665,8 +851,32 @@
         {#if $cloudflareWorkerUpdateAvailable}
           <section class="rounded-xl border border-amber-400/30 bg-amber-400/10 p-4">
             <h3 class="font-black text-amber-300">Worker update {$cloudflareWorkerUpdateAvailable} is available</h3>
-            <p class="mt-1 text-xs leading-5 text-muted-foreground">Izumi checks automatically, but does not hold an API token that could change your Cloudflare account. Sync your Cloudflare-created repository with upstream and Workers Builds will deploy it.</p>
-            <button type="button" data-focusable onclick={() => openUrl(CLOUDFLARE_UPDATE_GUIDE)} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={15} /> Open update guide</button>
+            {#if $cloudflareSyncConfig.deployment}
+              <p class="mt-1 text-xs leading-5 text-muted-foreground">Create another temporary setup token and Izumi can update the Worker directly. Your D1 data and device links stay in place.</p>
+              <div class="mt-3 flex flex-wrap gap-2">
+                <button type="button" data-focusable onclick={() => openCloudflareTokenSetup()} class="inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={15} /> Create update token</button>
+                <button type="button" data-focusable onclick={() => openUrl(CLOUDFLARE_TOKEN_MANAGE_URL)} class="min-h-10 rounded-lg bg-secondary px-3 py-2 text-sm font-bold">Manage tokens</button>
+              </div>
+              <input
+                type="password"
+                data-focusable
+                value={cloudflareApiToken}
+                oninput={updateCloudflareToken}
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck="false"
+                aria-label="Temporary Cloudflare update token"
+                placeholder="Paste temporary Cloudflare token"
+                class="mt-3 w-full rounded-lg bg-input px-3 py-2.5 font-mono text-base sm:text-sm"
+              />
+              <button type="button" data-focusable disabled={!!busy || !cloudflareApiToken} onclick={() => { h.impact(); updateCloudflareDeployment() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
+                {#if busy === 'cloudflare-update'}<LoaderCircle size={16} class="animate-spin" />{/if}
+                {busy === 'cloudflare-update' ? 'Updating Worker…' : 'Update Worker'}
+              </button>
+            {:else}
+              <p class="mt-1 text-xs leading-5 text-muted-foreground">This Worker was connected without Izumi deployment details. Follow its original deployment method to update it.</p>
+              <button type="button" data-focusable onclick={() => openUrl(CLOUDFLARE_UPDATE_GUIDE)} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={15} /> Open update guide</button>
+            {/if}
           </section>
         {/if}
 

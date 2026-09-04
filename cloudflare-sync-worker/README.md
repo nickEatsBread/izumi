@@ -4,16 +4,35 @@ This isolated Cloudflare Worker stores Izumi's end-to-end encrypted device-sync 
 
 ## Deploy
 
-1. In Izumi, open **Settings → Device sync**, select **My Cloudflare**, and generate a setup secret.
-2. Use Izumi's **Deploy with Cloudflare** button. Cloudflare signs you in, clones this directory to your own GitHub/GitLab account, provisions D1, applies its migration, and deploys the Worker.
-3. When Cloudflare asks for `BOOTSTRAP_SECRET`, paste the setup secret from Izumi. This is an Izumi one-time claim secret, not a Cloudflare API key.
-4. Copy the resulting `https://…workers.dev` URL back into Izumi and connect it.
+1. In Izumi, open **Settings → Device sync** and select **My Cloudflare**.
+2. Accept Cloudflare's Terms of Service and Privacy Policy, then select **Create my private Worker**.
+3. Izumi creates a temporary Cloudflare account, a D1 database, and the Worker, then opens its private claim link.
+4. Sign in to Cloudflare or create an account, complete the claim within 60 minutes, return to Izumi, and select **I claimed it — connect**.
+
+This path needs no GitHub/GitLab account, repository, command line, API token, account ID, database
+ID, or Worker settings. Izumi solves Cloudflare's required proof-of-work in its native process. The
+temporary API credential never enters the web view, is not saved or synced, and is discarded after
+the initial upload. The claim URL is a bearer credential and is opened only for the user who started
+setup. If the claim is not completed within 60 minutes, Cloudflare deletes the temporary account and
+its resources.
+
+The advanced setup section can instead deploy directly into an existing Cloudflare account using a
+short-lived, pre-scoped API token. Izumi keeps that token only in memory for the operation. The older
+repository-based **Deploy to Cloudflare** flow is also retained as an optional manual route; it needs
+a public GitHub/GitLab repository because that is how Cloudflare deploy buttons work.
 
 Never share the setup secret or an Izumi invite ticket publicly. Invites are single-use and expire after ten minutes.
 
 ## Updating
 
-Izumi checks the Worker's public version automatically. When an update is available, sync settings links back here. Sync your Cloudflare-created repository with this upstream directory and let Workers Builds deploy the resulting commit. Izumi deliberately never requests or stores a Cloudflare API token, so it cannot silently mutate your Cloudflare account.
+Izumi checks the Worker's public version automatically. Claiming a temporary deployment does not
+give Izumi permanent access to the Cloudflare account. To update a Worker created directly by Izumi,
+the owner creates and pastes a new pre-scoped setup token; Izumi updates the Worker in place while
+preserving its D1 database and device links. A manual or Git-based deployment must be updated through
+its original deployment method.
+
+Izumi never stores a Cloudflare API token and cannot silently mutate the account. Every direct
+deployment or update requires the user to approve and paste a token again.
 
 Database migrations are applied by the deploy command before the Worker update. Version 1.1 adds the companion pairing, short-lived request, browser enrollment, and Web Push subscription tables. Version 1.2 adds the optional direct-source resolver profile to the same private D1 database. Version 1.3 adds the explicit Cloudflare-only versus Cloudflare-plus-device playback policy. Version 1.4 adds authenticated TV episode-metadata lookup for AniList titles so series pages still receive episode titles, summaries, runtimes, and artwork when the paired client is unavailable. Versions 1.3 and 1.4 need no new migration.
 
@@ -47,13 +66,20 @@ these URLs in order to contact the add-ons, so resolver profiles are deliberatel
 end-to-end encrypted sync data. They are never returned to the TV. Disable the feature or delete
 the profile from Izumi to remove them from D1.
 
-The Deploy to Cloudflare button treats this directory as a standalone repository, so Worker code
-must not import files from the parent Izumi checkout. The canonical resolver remains under
-`src/lib/stremio/` in the main repository; maintainers regenerate the dependency closure committed
-under `src/generated/resolver-core/` with:
+Both the optional Deploy to Cloudflare button and Izumi's generated direct-upload bundle treat this
+directory as a standalone project, so Worker code must not import files from the parent Izumi
+checkout. The canonical resolver remains under `src/lib/stremio/` in the main repository;
+maintainers regenerate the dependency closure committed under `src/generated/resolver-core/` with:
 
 ```sh
 node scripts/generate-cloudflare-resolver-core.mjs
+```
+
+After changing Worker source, migrations, dependencies, or Wrangler configuration, regenerate the
+bundle embedded in the native app:
+
+```sh
+npm run cloudflare:bundle
 ```
 
 The main repository's Worker contract test fails if that generated copy is missing or stale. Users'
@@ -81,6 +107,6 @@ On Android, pairing a TV can create a TV-specific capability in this Worker. Izu
 - Do not use this Worker for media files, health data, unlawful content, or as a media proxy.
 - Deleting a Worker/D1 database or ending the Cloudflare subscription may permanently delete its copy. Izumi remains the source of truth on each device.
 
-Current Cloudflare references: [Deploy buttons](https://developers.cloudflare.com/workers/platform/deploy-buttons/), [Workers limits](https://developers.cloudflare.com/workers/platform/limits/), [Developer Platform terms](https://www.cloudflare.com/service-specific-terms-developer-platform/), and [Self-Serve Subscription Agreement](https://www.cloudflare.com/terms/).
+Current Cloudflare references: [Claim deployments](https://developers.cloudflare.com/workers/platform/claim-deployments/), [API token template URLs](https://developers.cloudflare.com/fundamentals/api/how-to/account-owned-token-template/), [Worker script uploads](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/), [multipart upload metadata](https://developers.cloudflare.com/workers/configuration/multipart-upload-metadata/), [D1 API](https://developers.cloudflare.com/api/resources/d1/), [Deploy buttons](https://developers.cloudflare.com/workers/platform/deploy-buttons/), [Workers limits](https://developers.cloudflare.com/workers/platform/limits/), [Terms of Service](https://www.cloudflare.com/terms/), and [Privacy Policy](https://www.cloudflare.com/privacypolicy/).
 
 Stremio stream-hint reference: [Stream object and `notWebReady`](https://github.com/Stremio/stremio-addon-sdk/blob/master/docs/api/responses/stream.md).

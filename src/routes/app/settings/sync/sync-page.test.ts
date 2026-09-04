@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-const page = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.url)), 'utf8')
+const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
+const page = read('./+page.svelte')
+const cloudflare = read('../../../../lib/sync/cloudflare.ts')
+const nativeCloudflare = read('../../../../../src-tauri/src/cloudflare_deploy.rs')
 
 describe('Device sync screen', () => {
   it('starts from the old off-state, not a setup wizard', () => {
@@ -71,5 +74,28 @@ describe('Device sync screen', () => {
     expect(room.indexOf('>Devices<')).toBeLessThan(room.indexOf('Syncing automatically'))
     expect(room.indexOf('Syncing automatically')).toBeLessThan(room.indexOf('Advanced tools'))
     expect(room.indexOf('Advanced tools')).toBeLessThan(room.indexOf('Leave room'))
+  })
+
+  it('deploys a claimable private Cloudflare Worker without setup fields or GitHub', () => {
+    expect(page).toContain('No GitHub, repository, command line, token, or technical fields.')
+    expect(page).toContain("'cloudflare_create_preview'")
+    expect(page).toContain('I accept Cloudflare’s')
+    expect(page).toContain('I claimed it — connect')
+    expect(page).toContain("invoke<{ id: string; name: string }[]>('cloudflare_deployment_accounts'")
+    expect(page).toContain("'cloudflare_deploy_worker'")
+    expect(page).toContain("'cloudflare_remove_bootstrap_secret'")
+    expect(page.indexOf('Create my private Worker')).toBeLessThan(page.indexOf('Create setup token'))
+    expect(page.indexOf('Create my private Worker')).toBeLessThan(page.indexOf('Optional Git-based deploy'))
+    expect(cloudflare).toContain('%22key%22%3A%22workers_scripts%22')
+    expect(cloudflare).toContain('%22key%22%3A%22d1%22')
+    expect(cloudflare).toContain('%22key%22%3A%22account_settings%22')
+    expect(nativeCloudflare).toContain('/provisioning/previews/challenge')
+    expect(nativeCloudflare).toContain('/provisioning/previews')
+    expect(nativeCloudflare).toContain('"acceptTermsOfService": "yes"')
+    expect(nativeCloudflare).toContain('solve_preview_challenge')
+    expect(nativeCloudflare).toContain('POST')
+    expect(nativeCloudflare).toContain('/d1/database')
+    expect(nativeCloudflare).toContain('multipart::Form::new()')
+    expect(nativeCloudflare).toContain('"type": "secret_text"')
   })
 })

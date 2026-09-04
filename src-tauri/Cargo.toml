@@ -100,7 +100,7 @@ n0-future = "0.3"
 # Compress metadata/HTML over the wire and transparently decode it before the existing body-size
 # guard. Reqwest deliberately omits Accept-Encoding on Range requests, so resumable media/file
 # downloads keep byte-for-byte range semantics.
-reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "http2", "charset", "cookies", "gzip", "brotli"] }
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "http2", "charset", "cookies", "gzip", "brotli", "multipart", "json"] }
 futures-util = "0.3"
 # Signed `.izumi-ext` packages are installed on desktop and Android. These are all pure-Rust
 # dependencies; keeping them cross-platform lets Android verify exactly the same hashes,

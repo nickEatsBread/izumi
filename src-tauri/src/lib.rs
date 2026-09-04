@@ -5,6 +5,7 @@
 mod android_tls;
 mod cache_gc;
 mod cast_relay;
+mod cloudflare_deploy;
 mod direct_torrent;
 mod direct_torrent_range;
 mod direct_torrent_select;
@@ -6341,6 +6342,10 @@ pub fn run() {
             torrent_download::torrent_download_start,
             torrent_download::torrent_download_cancel,
             net_interfaces::list_network_interfaces,
+            cloudflare_deploy::cloudflare_deployment_accounts,
+            cloudflare_deploy::cloudflare_create_preview,
+            cloudflare_deploy::cloudflare_deploy_worker,
+            cloudflare_deploy::cloudflare_remove_bootstrap_secret,
             sync::sync_status,
             sync::sync_relay_config,
             sync::sync_set_relay,
@@ -6416,6 +6421,10 @@ pub fn run() {
         torrent_download::torrent_download_start,
         torrent_download::torrent_download_cancel,
         net_interfaces::list_network_interfaces,
+        cloudflare_deploy::cloudflare_deployment_accounts,
+        cloudflare_deploy::cloudflare_create_preview,
+        cloudflare_deploy::cloudflare_deploy_worker,
+        cloudflare_deploy::cloudflare_remove_bootstrap_secret,
         sync::sync_status,
         sync::sync_relay_config,
         sync::sync_set_relay,
