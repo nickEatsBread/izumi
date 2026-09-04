@@ -26,6 +26,25 @@ describe('refineStreams', () => {
     expect(r.rejected).toHaveLength(0)
   })
 
+  it('does not mistake a long live-action catalogue with specials for absolute-numbered anime', () => {
+    const skinwalker = {
+      id: -1,
+      catalog: { provider: 'stremio', type: 'series', id: 'skinwalker' },
+      type: 'SERIES',
+      title: { romaji: 'The Secret of Skinwalker Ranch', english: 'The Secret of Skinwalker Ranch' },
+      format: 'TV',
+      episodes: 126,
+      duration: 42,
+      startDate: { year: 2020 },
+    } as never
+    const r = refineStreams(skinwalker, [
+      named('The.Secret.of.Skinwalker.Ranch.S05E01.WEB.x264.mkv'),
+    ] as never)
+
+    expect(r.kept).toHaveLength(1)
+    expect(r.rejected).toHaveLength(0)
+  })
+
   it('rejects an unrelated title with a title-mismatch reason', () => {
     const r = refineStreams(media, [
       named('[SubsPlease] Dr STONE S04E25 1080p'),

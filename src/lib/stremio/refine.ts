@@ -75,7 +75,13 @@ export function refineStreams(media: Media, raw: Stream[]): Refined {
   // production (the live action / a remake). airedTotal covers ongoing shows whose
   // media.episodes is still null.
   const totalEps = totalEpisodes(media)
-  const absoluteNumbered = totalEps > 60
+  // Absolute-only episode naming is an anime convention, not a generic property of every long
+  // series. Cinemeta can expose dozens of specials before ordinary seasons (Skinwalker Ranch has
+  // 126 video rows), and treating that count as anime evidence quarantines every valid SxxExx row.
+  const animeNumbering = media.type === 'ANIME'
+    || media.catalog?.type === 'anime'
+    || (!media.catalog && media.type == null)
+  const absoluteNumbered = animeNumbering && totalEps > 60
   // A MULTI-EPISODE SERIES (not a movie/single-ep OVA): a standalone-movie file (no episode/batch
   // marker) is a different production sharing the id — e.g. the 1995 GitS film / GitS 2: Innocence
   // under the 2026 series. Drop those; keep every S01E01 + season pack. Not applied to movies.
