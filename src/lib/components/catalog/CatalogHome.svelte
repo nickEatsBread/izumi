@@ -16,6 +16,7 @@
   import { catalogProvider, jvmCatalogSourceOverrides, stremioHeroArtwork } from '$lib/settings/catalog'
   import { catalogHomeLayoutKey, catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
   import { CONTINUE_HOME_ROW } from '$lib/catalog/home-options'
+  import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
   import { mediaHref } from '$lib/anilist/media'
   import { anilistUser } from '$lib/anilist/account'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
@@ -58,6 +59,7 @@
       selection,
       $catalogHomeLayouts[catalogHomeLayoutKey(selection)] ?? null,
       selection === 'jvm' ? $jvmCatalogSourceOverrides : null,
+      selection === 'tmdb' ? $tmdbCustomHomeRows : null,
     ])
     const cached = providerHomeCache.get(cacheKey)
     // Keep this local: reading reactive `home` inside its own loading effect subscribes the effect

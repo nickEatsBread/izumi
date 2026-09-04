@@ -5,6 +5,7 @@
   import { catalogHomeLayouts, resetCatalogHomeLayout, resolveCatalogHomeRows, type CatalogHomeTarget } from '$lib/catalog/home-layout'
   import { homeEditorInsertRequest, homeEditorOpen, insertHomeRow } from '$lib/catalog/home-editor'
   import type { CatalogHomeRowOption } from '$lib/catalog/types'
+  import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
   import { catalogLabel, catalogProviders } from '$lib/settings/catalog'
   import Check from '@lucide/svelte/icons/check'
   import Layers3 from '@lucide/svelte/icons/layers-3'
@@ -37,11 +38,13 @@
   })
   const request = $derived($homeEditorInsertRequest?.target === target ? $homeEditorInsertRequest : null)
   const beforeTitle = $derived(request?.beforeId ? rows.find((row) => row.id === request.beforeId)?.title : null)
+  const customRowsKey = $derived(target === 'tmdb' || target === 'merged' ? JSON.stringify($tmdbCustomHomeRows) : '')
 
   $effect(() => {
     if (!$homeEditorOpen) return
     const selection = target
     const providers = $catalogProviders
+    void customRowsKey
     const abort = new AbortController()
     loading = true
     error = ''

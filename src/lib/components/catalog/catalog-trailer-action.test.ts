@@ -17,7 +17,7 @@ describe('catalog detail trailer action', () => {
   })
 
   it('receives trailer ids from both rich metadata providers', () => {
-    expect(read('../../catalog/providers/tmdb.ts')).toContain("media.trailer = trailer?.key ? { id: trailer.key, site: 'youtube' } : null")
+    expect(read('../../catalog/providers/tmdb.ts')).toContain("media.trailer = trailer?.key ? { id: trailer.key, site: 'youtube', language: trailer.iso_639_1 } : null")
     expect(read('../../catalog/providers/stremio.ts')).toContain("? { id: raw.trailers.find((trailer) => trailer.source)!.source, site: 'youtube' }")
   })
 })

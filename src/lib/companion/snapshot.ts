@@ -7,6 +7,7 @@ import type { Media } from '$lib/anilist/types'
 import { getEpisodeMeta } from '$lib/anizip'
 import { CONTINUE_HOME_ROW } from '$lib/catalog/home-options'
 import { catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
+import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
 import {
   decodeMergedCatalogHomeRowId,
   loadCatalogProvider,
@@ -186,7 +187,7 @@ function titleLogoQueries(media: Media, series: boolean): Array<{ title: string;
   if (!series) return [...new Set(titles)].map((title) => ({ title, base: false }))
   const bases = titles.flatMap((title) => {
     const values = [
-      title.replace(/\s+(?:season|part|cour)\s+(?:\d+|[ivxlcdm]+)(?:\s*[-:–—].*)?$/i, '').trim(),
+      title.replace(/\s+(?:season|part|cour)\s+(?:\d+|[ivxlcdm]+)(?:\s*(?:-|:|–|—).*)?$/i, '').trim(),
       title.replace(/\s+[ivxlcdm]+$/i, '').trim(),
     ]
     const colon = title.indexOf(':')
@@ -506,6 +507,7 @@ export async function createCompanionSnapshot(
     active,
     availableScreens,
     layouts: get(catalogHomeLayouts),
+    tmdbCustomRows: get(tmdbCustomHomeRows),
     watching: watchingEntries.slice(0, 30).map((entry) => [entry.media.id, entry.progress, entry.updatedAt]),
     positions: watchingEntries.slice(0, 30).map((entry) => {
       const episode = resumeEp(entry.media, entry.progress)

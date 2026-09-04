@@ -11,6 +11,12 @@ import { compatibilityMediaId, type MediaRef } from '../identity'
 import { CatalogConfigurationError, type CatalogHome, type CatalogHomeFeature, type CatalogHomeSection, type CatalogPage, type CatalogProvider, type CatalogSearchOptions, type CatalogSearchRequest } from '../types'
 import { enrichOmdbRatings } from './omdb'
 import { interleaveFeatured, rankFeaturedMedia } from '../featured-context'
+import {
+  tmdbCustomHomeRequest,
+  tmdbCustomHomeRowOption,
+  tmdbCustomHomeRows,
+  validTmdbCustomHomeRows,
+} from '../tmdb-custom-rows'
 
 const API = 'https://api.themoviedb.org/3'
 const IMAGE = 'https://image.tmdb.org/t/p'
@@ -446,12 +452,17 @@ async function streamingProviderFeatures(region: string, signal?: AbortSignal): 
 }
 
 async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHome> {
+  const customRows = validTmdbCustomHomeRows(get(tmdbCustomHomeRows))
+  const availableRows = [...TMDB_HOME_ROWS, ...customRows.map(tmdbCustomHomeRowOption)]
   const configured = rowIds
-    ? TMDB_HOME_ROWS.map((row) => ({ ...row, enabled: rowIds.includes(row.id) }))
-    : resolveCatalogHomeRows('tmdb', TMDB_HOME_ROWS, get(catalogHomeLayouts))
+    ? availableRows.map((row) => ({ ...row, enabled: rowIds.includes(row.id) }))
+    : resolveCatalogHomeRows('tmdb', availableRows, get(catalogHomeLayouts))
   const selected = configured.filter((row) => row.enabled && row.id !== 'continue')
   const region = tmdbRegion()
-  const requests = new Map(TMDB_HOME_REQUESTS.map((request) => [request.id, request]))
+  const requests = new Map<string, TmdbHomeRequest>(([
+    ...TMDB_HOME_REQUESTS,
+    ...customRows.map((row) => tmdbCustomHomeRequest(row, region)),
+  ] as TmdbHomeRequest[]).map((request) => [request.id, request]))
   // The daily movie and series lists supply an explainable featured mix. Keep the weekly all-media
   // request for its visible carousel, but never describe its cross-type positions as movie ranks.
   const fetchIds = [...new Set([
@@ -940,7 +951,10 @@ export const tmdbCatalog: CatalogProvider = {
     anime: true, movies: true, series: true, search: true, genres: true,
     schedule: true, episodes: true, cast: true, relations: true,
   },
-  homeRows: async () => TMDB_HOME_ROWS,
+  homeRows: async () => [
+    ...TMDB_HOME_ROWS,
+    ...validTmdbCustomHomeRows(get(tmdbCustomHomeRows)).map(tmdbCustomHomeRowOption),
+  ],
   home,
   search,
   detail,

@@ -20,6 +20,7 @@
     mergedCatalogHomeRowOptions,
   } from '$lib/catalog/registry'
   import { CatalogConfigurationError, type CatalogHome, type CatalogHomeRowOption } from '$lib/catalog/types'
+  import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
   import {
     catalogLabel,
     catalogProviders,
@@ -47,7 +48,7 @@
   const hasAniList = $derived(selections.includes('auto') || selections.includes('anilist'))
   const rows = $derived(resolveCatalogHomeRows('merged', options, $catalogHomeLayouts).filter((row) => row.enabled))
   const visibleRowIds = $derived(rows.map((row) => row.id))
-  const optionsKey = $derived(JSON.stringify(selections))
+  const optionsKey = $derived(JSON.stringify([selections, $tmdbCustomHomeRows]))
   const externalRequestKey = $derived(JSON.stringify(rows.flatMap((row) => {
     const decoded = decodeMergedCatalogHomeRowId(row.id)
     return decoded && decoded.selection !== 'auto' && decoded.selection !== 'anilist' ? [row.id] : []
