@@ -5,7 +5,7 @@ import { title } from '$lib/anilist/media'
 import { mediaRef } from '$lib/catalog/identity'
 import type { Stream } from '$lib/stremio/addon'
 import { getMediaSkipSegments } from '$lib/stremio/skip-segments'
-import { castSourceDecision, castSubtitleFormat, tvCastSource } from '$lib/player/android-cast'
+import { castSourceDecision, castSubtitleFormat, castSubtitleTitle, tvCastSource } from '$lib/player/android-cast'
 import { playerNotice } from '$lib/player/session'
 import { setTizenReceiverRelayForeground, startTizenReceiverCast } from '$lib/player/tizen-receiver-cast'
 import { effectiveSubtitleStyle, sessionSubtitleStyle } from '$lib/settings/subtitle-presets'
@@ -160,10 +160,10 @@ export async function startPendingCompanionCast(input: {
       forceRelay: false,
       contentType: decision.contentType,
       subtitleDelivery: 'tizenReceiver',
-      subtitles: candidates.map((item) => ({
+      subtitles: candidates.map((item, index) => ({
         url: item.url,
         lang: item.lang,
-        title: item.title,
+        title: castSubtitleTitle(item, index),
         format: item.format,
         headers: item.headers ?? {},
       })),
