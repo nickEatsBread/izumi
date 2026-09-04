@@ -41,7 +41,72 @@ import {
 type QueryClient = Pick<Client, 'query'>
 const SNAPSHOT_CACHE_MS = 60_000
 const EPISODE_PREVIEW_LIMIT = 12
+// Leave headroom under both the 512 KiB LAN relay cap and Cloudflare sync's 384 KiB plaintext cap.
+export const COMPANION_SNAPSHOT_TARGET_BYTES = 352 * 1024
 let cached: { key: string; at: number; snapshot: CompanionHomeSnapshot } | null = null
+
+function snapshotBytes(snapshot: CompanionHomeSnapshot): number {
+  return new TextEncoder().encode(JSON.stringify(snapshot)).byteLength
+}
+
+function compactHomeMedia(media: CompanionMedia, keepDescription = true): CompanionMedia {
+  const { episodes: _episodes, relations: _relations, recommendations: _recommendations, ...summary } = media
+  return {
+    ...summary,
+    description: keepDescription ? summary.description?.slice(0, 520) : undefined,
+  }
+}
+
+/** Home snapshots are transported through a deliberately bounded local relay. All catalogue
+ * collections can be derived from rows on the TV, while episodes/relations/recommendations are
+ * fetched when a title opens, so repeating those objects in the initial payload only makes pairing
+ * fragile. Retain useful breadth under a conservative budget and degrade row depth before rows. */
+export function compactCompanionSnapshot(
+  snapshot: CompanionHomeSnapshot,
+  targetBytes = COMPANION_SNAPSHOT_TARGET_BYTES,
+): CompanionHomeSnapshot {
+  const { views: _views, ...base } = snapshot
+  const rows = snapshot.rows.map((row) => ({
+    ...row,
+    items: row.items.map((item) => compactHomeMedia(item)),
+  })).filter((row) => row.items.length)
+  let result: CompanionHomeSnapshot = {
+    ...base,
+    hero: snapshot.hero ? compactHomeMedia(snapshot.hero) : undefined,
+    rows,
+  }
+  if (snapshotBytes(result) <= targetBytes) return result
+
+  // Keep Continue Watching broader because it is personal state; catalogue shelves retain at
+  // least eight useful choices before an entire low-priority shelf is considered for removal.
+  const floors = rows.map((row) => Math.min(row.items.length, row.kind === 'continue' ? 12 : 8))
+  while (snapshotBytes(result) > targetBytes) {
+    let reduced = false
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+      if (rows[index].items.length <= floors[index]) continue
+      rows[index].items.pop()
+      reduced = true
+    }
+    if (!reduced) break
+  }
+  if (snapshotBytes(result) <= targetBytes) return result
+
+  // Descriptions are visible presentation data, but title art and navigation must win if an
+  // unusually large number of shelves is configured. Full copy returns via detail prefetch.
+  result = {
+    ...result,
+    hero: result.hero ? compactHomeMedia(result.hero, false) : undefined,
+    rows: rows.map((row) => ({ ...row, items: row.items.map((item) => compactHomeMedia(item, false)) })),
+  }
+  if (snapshotBytes(result) <= targetBytes) return result
+
+  // Only pathological custom layouts reach this fallback. Preserve Continue Watching and the
+  // highest-priority authored shelves rather than failing the entire pairing transaction.
+  while (result.rows.length > 1 && snapshotBytes(result) > targetBytes) result.rows.pop()
+  if (snapshotBytes(result) <= targetBytes) return result
+  while (result.rows[0]?.items.length > 1 && snapshotBytes(result) > targetBytes) result.rows[0].items.pop()
+  return result
+}
 
 function episodeCount(media: CompanionMedia): number {
   return (media.seasonEpisodeCounts ?? []).reduce((total, count) => total + Math.max(0, Math.floor(count)), 0)
@@ -372,16 +437,8 @@ export async function createCompanionSnapshot(client: QueryClient, now = Date.no
       kind: 'catalog' as const,
     },
   } : rows[0]?.items[0])
-  const allItems = rows.flatMap((row) => row.items)
-    .filter((item, index, items) => items.findIndex((candidate) => candidate.ref.provider === item.ref.provider
-      && candidate.ref.type === item.ref.type && candidate.ref.id === item.ref.id) === index)
-  const rankedRows = rows.filter((row) => /trending|popular|top\s*10|top rated/i.test(`${row.id} ${row.title}`))
-  const rankedItems = rankedRows.flatMap((row) => row.items)
-    .concat(allItems.filter((item) => item.placement?.kind === 'ranking'))
-    .filter((item, index, items) => items.findIndex((candidate) => candidate.ref.provider === item.ref.provider
-      && candidate.ref.type === item.ref.type && candidate.ref.id === item.ref.id) === index)
   const revision = `${now.toString(36)}-${rows.reduce((count, row) => count + row.items.length, 0).toString(36)}`
-  const snapshot: CompanionHomeSnapshot = {
+  const snapshot = compactCompanionSnapshot({
     app: 'izumi',
     kind: 'companion-home',
     version: COMPANION_PROTOCOL,
@@ -395,14 +452,9 @@ export async function createCompanionSnapshot(client: QueryClient, now = Date.no
     spoilersHidden: get(hideSpoilers),
     hero,
     rows,
-    views: {
-      search: allItems,
-      trending: rankedItems,
-      series: allItems.filter((item) => item.ref.type !== 'movie'),
-      movies: allItems.filter((item) => item.ref.type === 'movie'),
-      myList: allItems.filter((item) => item.inMyList),
-    },
-  }
+    // The TV derives Search/Trending/Series/Movies/My List from these same rows. Do not serialize
+    // five more copies of the catalogue into the pairing payload.
+  })
   cached = { key: cacheKey, at: now, snapshot }
   return snapshot
 }

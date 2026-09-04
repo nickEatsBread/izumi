@@ -5,7 +5,12 @@ const catalog = vi.hoisted(() => ({ loadCatalogProvider: vi.fn() }))
 vi.mock('$lib/anizip', () => anizip)
 vi.mock('$lib/catalog/registry', () => catalog)
 
-import { createCompanionDetails, createCompanionPresentation } from './snapshot'
+import {
+  COMPANION_SNAPSHOT_TARGET_BYTES,
+  compactCompanionSnapshot,
+  createCompanionDetails,
+  createCompanionPresentation,
+} from './snapshot'
 import type { CompanionMedia } from './protocol'
 
 const media = (): CompanionMedia => ({
@@ -89,5 +94,42 @@ describe('companion episode details', () => {
     expect(presentation).toHaveBeenCalledWith({ provider: 'tmdb', type: 'movie', id: '550' })
     expect(detail).not.toHaveBeenCalled()
     expect(result.logoImage).toBe('https://image.tmdb.org/t/p/w500/fight-club-logo.png')
+  })
+
+  it('bounds merged Home snapshots without duplicating derived views or title-detail trees', () => {
+    const item = (row: number, index: number): CompanionMedia => ({
+      ref: { provider: 'tmdb', type: index % 2 ? 'series' : 'movie', id: `${row}-${index}` },
+      title: `Title ${row}-${index}`,
+      description: 'A'.repeat(900),
+      poster: `https://image.tmdb.org/t/p/w342/${row}-${index}.jpg`,
+      backdrop: `https://image.tmdb.org/t/p/original/${row}-${index}.jpg`,
+      logoImage: `https://image.tmdb.org/t/p/w500/${row}-${index}-logo.png`,
+      relations: Array.from({ length: 12 }, (_, relation) => ({
+        relationType: 'SEQUEL',
+        media: { ref: { provider: 'tmdb', type: 'series', id: `${row}-${index}-r${relation}` }, title: `Related ${relation}`, description: 'R'.repeat(900) },
+      })),
+      recommendations: Array.from({ length: 12 }, (_, recommendation) => ({
+        ref: { provider: 'tmdb', type: 'movie', id: `${row}-${index}-m${recommendation}` }, title: `Recommended ${recommendation}`, description: 'M'.repeat(900),
+      })),
+    })
+    const rows = Array.from({ length: 14 }, (_, row) => ({
+      id: row ? `catalog-${row}` : 'continue',
+      title: row ? `Catalogue ${row}` : 'Continue Watching',
+      kind: row ? 'catalog' as const : 'continue' as const,
+      items: Array.from({ length: 30 }, (_, index) => item(row, index)),
+    }))
+    const all = rows.flatMap((row) => row.items)
+    const compact = compactCompanionSnapshot({
+      app: 'izumi', kind: 'companion-home', version: 1, revision: 'oversized', generatedAt: 1,
+      catalog: { screen: 'merged', label: 'Merged' }, hero: all[0], rows,
+      views: { search: all, trending: all, series: all, movies: all, myList: all },
+    })
+
+    expect(new TextEncoder().encode(JSON.stringify(compact)).byteLength).toBeLessThanOrEqual(COMPANION_SNAPSHOT_TARGET_BYTES)
+    expect(compact.views).toBeUndefined()
+    expect(compact.rows[0].items.length).toBeGreaterThanOrEqual(12)
+    expect(compact.rows.length).toBeGreaterThan(3)
+    expect(compact.rows.every((row) => row.items.every((entry) => !entry.relations && !entry.recommendations && !entry.episodes))).toBe(true)
+    expect(compact.rows[0].items[0].logoImage).toContain('-logo.png')
   })
 })
