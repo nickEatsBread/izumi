@@ -100,6 +100,45 @@ describe('companion episode details', () => {
     expect(result.logoImage).toBe('https://image.tmdb.org/t/p/w500/fight-club-logo.png')
   })
 
+  it('keeps presentation replies small enough for the Samsung channel', async () => {
+    const related = Array.from({ length: 12 }, (_, index) => ({
+      ref: { provider: 'tmdb', type: 'movie', id: `related-${index}` },
+      title: `Related ${index}`,
+      description: 'R'.repeat(900),
+    })) as CompanionMedia[]
+    catalog.loadCatalogProvider.mockResolvedValue({
+      presentation: vi.fn().mockResolvedValue({
+        id: -9,
+        catalog: { provider: 'tmdb', id: '550', type: 'movie' },
+        title: { userPreferred: 'Fight Club' },
+        logoImage: 'https://image.tmdb.org/t/p/w500/fight-club-logo.png',
+        description: 'D'.repeat(900),
+        recommendations: { nodes: related.map((item) => ({ mediaRecommendation: {
+          id: -1,
+          catalog: { provider: item.ref.provider, id: item.ref.id, type: item.ref.type },
+          title: { userPreferred: item.title },
+          description: item.description,
+        } })) },
+        characters: { edges: Array.from({ length: 20 }, (_, index) => ({
+          role: 'Cast',
+          node: { id: index + 1, name: { full: `Actor ${index}` }, image: { large: `https://img.example/actor-${index}.jpg` } },
+        })) },
+      }),
+      detail: vi.fn(),
+    })
+
+    const result = await createCompanionPresentation({
+      ref: { provider: 'tmdb', type: 'movie', id: '550' },
+      title: 'Fight Club',
+    })
+
+    expect(result.logoImage).toBe('https://image.tmdb.org/t/p/w500/fight-club-logo.png')
+    expect(result.description).toHaveLength(520)
+    expect(result.recommendations).toBeUndefined()
+    expect(result.cast).toBeUndefined()
+    expect(new TextEncoder().encode(JSON.stringify(result)).byteLength).toBeLessThan(4 * 1024)
+  })
+
   it('uses an exact TMDB title match for AniList clear-logo artwork', async () => {
     const anilistMedia = {
       id: 154587,

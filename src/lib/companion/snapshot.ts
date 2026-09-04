@@ -267,14 +267,14 @@ export async function createCompanionPresentation(
     episodeRuntimeMinutes: media.episodeRuntimeMinutes,
     placement: media.placement,
   })
-  return {
+  return compactHomeMedia({
     ...media,
     ...enriched,
     inMyList: media.inMyList ?? enriched.inMyList,
     episodes: media.episodes,
     seasonEpisodeCounts: media.seasonEpisodeCounts ?? enriched.seasonEpisodeCounts,
     seasonLabels: media.seasonLabels ?? enriched.seasonLabels,
-  }
+  })
 }
 
 /** Load the complete playback model without routing the linked device to a detail screen. */
