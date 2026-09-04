@@ -2,14 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const anizip = vi.hoisted(() => ({ getEpisodeMeta: vi.fn() }))
 const catalog = vi.hoisted(() => ({ loadCatalogProvider: vi.fn() }))
+const tmdb = vi.hoisted(() => ({ tmdbPersonCredits: vi.fn() }))
 vi.mock('$lib/anizip', () => anizip)
 vi.mock('$lib/catalog/registry', () => catalog)
+vi.mock('$lib/catalog/providers/tmdb', () => tmdb)
 
 import {
   COMPANION_SNAPSHOT_TARGET_BYTES,
   compactCompanionSnapshot,
   createCompanionDetails,
   createCompanionPresentation,
+  createCompanionSearch,
 } from './snapshot'
 import type { CompanionMedia } from './protocol'
 
@@ -29,6 +32,7 @@ describe('companion episode details', () => {
       2: { title: 'It Didn’t Have to Be Magic', image: 'https://img.example/2.jpg', runtime: 24 },
       3: { title: 'Killing Magic', image: 'https://img.example/3.jpg', runtime: 26 },
     })
+    tmdb.tmdbPersonCredits.mockReset()
   })
 
   it('hydrates unique episode artwork and playback progress on demand', async () => {
@@ -209,6 +213,8 @@ describe('companion episode details', () => {
       recommendations: Array.from({ length: 12 }, (_, recommendation) => ({
         ref: { provider: 'tmdb', type: 'movie', id: `${row}-${index}-m${recommendation}` }, title: `Recommended ${recommendation}`, description: 'M'.repeat(900),
       })),
+      cast: [{ id: '101', provider: 'tmdb', name: 'Actor One', role: 'Lead', credit: 'cast' }],
+      crew: [{ id: '202', provider: 'tmdb', name: 'Director Two', role: 'Director', credit: 'crew' }],
     })
     const rows = Array.from({ length: 14 }, (_, row) => ({
       id: row ? `catalog-${row}` : 'continue',
@@ -227,7 +233,25 @@ describe('companion episode details', () => {
     expect(compact.views).toBeUndefined()
     expect(compact.rows[0].items.length).toBeGreaterThanOrEqual(12)
     expect(compact.rows.length).toBeGreaterThan(3)
-    expect(compact.rows.every((row) => row.items.every((entry) => !entry.relations && !entry.recommendations && !entry.episodes))).toBe(true)
+    expect(compact.rows.every((row) => row.items.every((entry) => !entry.relations && !entry.recommendations && !entry.episodes && !entry.cast && !entry.crew))).toBe(true)
     expect(compact.rows[0].items[0].logoImage).toContain('-logo.png')
+  })
+
+  it('uses a provider person identity instead of a title-text search', async () => {
+    tmdb.tmdbPersonCredits.mockResolvedValue([{
+      id: -55,
+      catalog: { provider: 'tmdb', type: 'movie', id: '550' },
+      title: { userPreferred: 'Fight Club' },
+    }])
+
+    const results = await createCompanionSearch({ query: vi.fn() } as never, 'Brad Pitt', {
+      id: '287', provider: 'tmdb', name: 'Brad Pitt', credit: 'cast',
+    })
+
+    expect(tmdb.tmdbPersonCredits).toHaveBeenCalledWith('287', 'cast')
+    expect(results[0]).toMatchObject({
+      title: 'Fight Club',
+      placement: { label: 'Featuring Brad Pitt', kind: 'catalog' },
+    })
   })
 })

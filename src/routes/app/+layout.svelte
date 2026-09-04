@@ -55,7 +55,7 @@
   import { companionResolveSession, companionStreamPicker, initCompanionSourceBridge, selectPendingCompanionSource } from '$lib/companion/source-bridge'
   import { createCompanionDetails, createCompanionPresentation, createCompanionSearch, createCompanionSnapshot, loadCompanionPlaybackMedia } from '$lib/companion/snapshot'
   import { cancelPendingCompanionPlayback, companionPlaybackTarget } from '$lib/companion/playback'
-  import type { CompanionMedia } from '$lib/companion/protocol'
+  import type { CompanionMedia, CompanionPersonFilter } from '$lib/companion/protocol'
   import { initAutoDownloads } from '$lib/downloads/rules'
   import { initWatchTogether } from '$lib/watch-together/client'
   import { initAiringNotifications } from '$lib/notifications/airing'
@@ -244,7 +244,7 @@
           cancelPendingCompanionPlayback()
         }
       },
-      (query: string) => createCompanionSearch(companionCatalogClient, query),
+      (query: string, person?: CompanionPersonFilter) => createCompanionSearch(companionCatalogClient, query, person),
       (media: CompanionMedia, presentationOnly?: boolean) => presentationOnly
         ? createCompanionPresentation(media, companionCatalogClient)
         : createCompanionDetails(media, undefined, companionCatalogClient),

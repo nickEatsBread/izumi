@@ -26,6 +26,7 @@ import {
   type CompanionHomeSnapshot,
   type CompanionMedia,
   type CompanionPairingLink,
+  type CompanionPersonFilter,
   type CompanionTransportEndpoint,
 } from './protocol'
 
@@ -52,6 +53,7 @@ export interface PendingCompanionPlayback {
 
 export type CompanionPlayContext = Omit<PendingCompanionPlayback, 'device' | 'media'>
 export type CompanionSourceSelection = (requestId: string, choiceId: string, device: PairedCompanion) => void | Promise<void>
+type CompanionSearchHandler = (query: string, person?: CompanionPersonFilter) => Promise<CompanionMedia[]>
 
 /** Session-only target: the next selected source must be sent to this TV, not played locally. */
 export const pendingCompanionPlayback = writable<PendingCompanionPlayback | null>(null)
@@ -249,7 +251,7 @@ function duringCompanionActivity<T>(work: () => T | Promise<T>): Promise<T> {
 
 let backgroundSnapshotFactory: (() => Promise<CompanionHomeSnapshot>) | undefined
 let backgroundPlayHandler: ((media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void | Promise<void>) | undefined
-let backgroundSearchHandler: ((query: string) => Promise<CompanionMedia[]>) | undefined
+let backgroundSearchHandler: CompanionSearchHandler | undefined
 let backgroundDetailsHandler: ((media: CompanionMedia) => Promise<CompanionMedia>) | undefined
 let backgroundSourceSelectionHandler: CompanionSourceSelection | undefined
 
@@ -420,7 +422,7 @@ function keepConnection(
   initialSnapshot: CompanionHomeSnapshot,
   createSnapshot?: () => Promise<CompanionHomeSnapshot>,
   onPlay?: (media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void | Promise<void>,
-  onSearch?: (query: string) => Promise<CompanionMedia[]>,
+  onSearch?: CompanionSearchHandler,
   onDetails?: (media: CompanionMedia, presentationOnly?: boolean) => Promise<CompanionMedia>,
   onSourceSelection?: CompanionSourceSelection,
 ): void {
@@ -526,7 +528,7 @@ function keepConnection(
       })
     }),
     channel.on('izumi.companion.search', (value, from) => {
-      const request = value as { query?: unknown; requestId?: unknown; pairingId?: unknown } | null
+      const request = value as { query?: unknown; requestId?: unknown; pairingId?: unknown; person?: unknown } | null
       if (!request
         || request.pairingId !== device.credential.slice(0, 16)
         || typeof request.query !== 'string'
@@ -535,14 +537,30 @@ function keepConnection(
         || !onSearch) return
       pulseCompanionActivity()
       const query = request.query.trim().slice(0, 80)
+      const candidate = request.person && typeof request.person === 'object'
+        ? request.person as Record<string, unknown>
+        : undefined
+      const person: CompanionPersonFilter | undefined = candidate
+        && typeof candidate.id === 'string' && candidate.id.length <= 80
+        && typeof candidate.provider === 'string' && candidate.provider.length <= 40
+        && typeof candidate.name === 'string' && candidate.name.length <= 160
+        && (candidate.credit === 'cast' || candidate.credit === 'crew')
+        ? {
+            id: candidate.id,
+            provider: candidate.provider,
+            name: candidate.name,
+            credit: candidate.credit,
+          }
+        : undefined
       const reply = (payload: Record<string, unknown>) => channel.publish('izumi.companion.search-results', {
         credential: device.credential,
         requestId: request.requestId,
         query,
+        person,
         ...payload,
       }, from?.id || 'host')
       if (!query) return reply({ items: [] })
-      void onSearch(query)
+      void onSearch(query, person)
         .then((items) => reply({ items: items.slice(0, 40) }))
         .catch((error) => reply({ error: error instanceof Error ? error.message : 'Search unavailable' }))
     }),
@@ -629,7 +647,7 @@ async function reconnect(
   device: PairedCompanion,
   createSnapshot: () => Promise<CompanionHomeSnapshot>,
   onPlay: (media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void | Promise<void>,
-  onSearch: (query: string) => Promise<CompanionMedia[]>,
+  onSearch: CompanionSearchHandler,
   onDetails: (media: CompanionMedia, presentationOnly?: boolean) => Promise<CompanionMedia>,
   onSourceSelection?: CompanionSourceSelection,
 ): Promise<void> {
@@ -677,7 +695,7 @@ export async function provisionCompanionResolverRoutes(profileOverride?: Cloudfl
 export function initCompanionConnections(
   createSnapshot: () => Promise<CompanionHomeSnapshot>,
   onPlay: (media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void | Promise<void>,
-  onSearch: (query: string) => Promise<CompanionMedia[]>,
+  onSearch: CompanionSearchHandler,
   onDetails: (media: CompanionMedia, presentationOnly?: boolean) => Promise<CompanionMedia>,
   onSourceSelection?: CompanionSourceSelection,
 ): () => void {

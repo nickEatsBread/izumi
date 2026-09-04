@@ -63,6 +63,14 @@ describe('companion home snapshot', () => {
           },
         }],
       },
+      characters: { edges: [{
+        role: 'Detective',
+        node: { id: 101, name: { full: 'Actor One' }, image: { large: 'https://img.example/actor.jpg' } },
+      }] },
+      staff: { edges: [{
+        role: 'Director',
+        node: { id: 202, name: { full: 'Director Two' }, image: { large: 'https://img.example/director.jpg' } },
+      }] },
     }, {
       episodeTitle: 'The next chapter',
       episodeImage: 'https://img.example/episode.jpg',
@@ -125,6 +133,14 @@ describe('companion home snapshot', () => {
         resolver: { streamType: 'series' },
         title: 'A thoughtful recommendation',
         seasonEpisodeCounts: [12],
+      }],
+      cast: [{
+        id: '101', provider: 'tmdb', name: 'Actor One', role: 'Detective',
+        image: 'https://img.example/actor.jpg', credit: 'cast',
+      }],
+      crew: [{
+        id: '202', provider: 'tmdb', name: 'Director Two', role: 'Director',
+        image: 'https://img.example/director.jpg', credit: 'crew',
       }],
       placement: { position: 2, label: 'Popular Series Today', kind: 'ranking' },
     })

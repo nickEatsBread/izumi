@@ -1,6 +1,6 @@
 import type { Client } from '@urql/core'
 import { get } from 'svelte/store'
-import { MEDIA_BY_ID } from '$lib/anilist/detail-queries'
+import { MEDIA_BY_ID, STAFF_MEDIA_QUERY } from '$lib/anilist/detail-queries'
 import { heroQuery, heroVars, homeSections, pageQuery } from '$lib/anilist/queries'
 import { resumeEp } from '$lib/anilist/media'
 import type { Media } from '$lib/anilist/types'
@@ -14,6 +14,7 @@ import {
   mergedCatalogHomeRowOptions,
 } from '$lib/catalog/registry'
 import { searchMergedCatalogs } from '$lib/catalog/merged-search'
+import { tmdbPersonCredits } from '$lib/catalog/providers/tmdb'
 import type { CatalogHome } from '$lib/catalog/types'
 import { continueWatching, filterContinueWatching, type CwEntry } from '$lib/player/continue-watching'
 import { positions, positionPercent, progressKey } from '$lib/player/progress'
@@ -28,7 +29,7 @@ import {
   type CatalogSelection,
   type CatalogScreen,
 } from '$lib/settings/catalog'
-import { hideSpoilers } from '$lib/settings/ui'
+import { hideSpoilers, showAdult } from '$lib/settings/ui'
 import {
   companionMedia,
   COMPANION_PROTOCOL,
@@ -36,6 +37,7 @@ import {
   type CompanionHomeRow,
   type CompanionHomeSnapshot,
   type CompanionMedia,
+  type CompanionPersonFilter,
 } from './protocol'
 
 type QueryClient = Pick<Client, 'query'>
@@ -51,7 +53,7 @@ function snapshotBytes(snapshot: CompanionHomeSnapshot): number {
 }
 
 function compactHomeMedia(media: CompanionMedia, keepDescription = true): CompanionMedia {
-  const { episodes: _episodes, relations: _relations, recommendations: _recommendations, ...summary } = media
+  const { episodes: _episodes, relations: _relations, recommendations: _recommendations, cast: _cast, crew: _crew, ...summary } = media
   return {
     ...summary,
     description: keepDescription ? summary.description?.slice(0, 520) : undefined,
@@ -547,11 +549,34 @@ export async function createCompanionSnapshot(client: QueryClient, now = Date.no
   return snapshot
 }
 
-export async function createCompanionSearch(_client: QueryClient, query: string): Promise<ReturnType<typeof companionMedia>[]> {
+export async function createCompanionSearch(
+  client: QueryClient,
+  query: string,
+  person?: CompanionPersonFilter,
+): Promise<ReturnType<typeof companionMedia>[]> {
   const normalized = query.trim().slice(0, 80)
   if (!normalized) return []
-  const media = (await searchMergedCatalogs(get(catalogProviders), normalized, 1)).media
+  let media: Media[]
+  if (person?.provider === 'tmdb') {
+    media = await tmdbPersonCredits(person.id, person.credit)
+  } else if (person?.provider === 'anilist' && /^\d+$/.test(person.id)) {
+    const response = await client.query(STAFF_MEDIA_QUERY, {
+      id: Number(person.id), page: 1, withPreview: true,
+    }, { requestPolicy: 'network-only' }).toPromise()
+    if (response.error) throw response.error
+    const staff = response.data?.Staff as {
+      staffMedia?: { nodes?: Media[] }
+      characterMedia?: { edges?: { node?: Media }[] }
+    } | undefined
+    media = [
+      ...(staff?.staffMedia?.nodes ?? []),
+      ...(staff?.characterMedia?.edges ?? []).flatMap((edge) => edge.node ? [edge.node] : []),
+    ].filter((item, index, values) => values.findIndex((candidate) => candidate.id === item.id) === index)
+  } else {
+    media = (await searchMergedCatalogs(get(catalogProviders), normalized, 1)).media
+  }
+  media = media.filter((item) => get(showAdult) || !item.isAdult)
   return media.slice(0, 40).map((item) => companionMedia(item, {
-    placement: { label: `Search results for ${normalized}`, kind: 'catalog' },
+    placement: { label: person ? `Featuring ${person.name}` : `Search results for ${normalized}`, kind: 'catalog' },
   }))
 }

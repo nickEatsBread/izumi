@@ -40,6 +40,16 @@ export interface CompanionRating {
   votes?: number
 }
 
+export interface CompanionPerson {
+  /** Provider-owned identity used for a filtered credits search. */
+  id: string
+  provider: string
+  name: string
+  role?: string
+  image?: string
+  credit: 'cast' | 'crew'
+}
+
 export interface CompanionMedia {
   ref: MediaRef
   /** Non-secret metadata a TV can pass to the owner's Worker when Izumi is unavailable. */
@@ -87,8 +97,13 @@ export interface CompanionMedia {
   relations?: CompanionRelation[]
   /** Shallow provider-authored recommendations for the TV's post-play experience. */
   recommendations?: CompanionMedia[]
+  /** On-demand contributor metadata; omitted from compact home snapshots. */
+  cast?: CompanionPerson[]
+  crew?: CompanionPerson[]
   placement?: CompanionPlacement
 }
+
+export interface CompanionPersonFilter extends Pick<CompanionPerson, 'id' | 'provider' | 'name' | 'credit'> {}
 
 export interface CompanionEpisode {
   season: number
@@ -322,6 +337,64 @@ function companionRelationMedia(media: Media): CompanionMedia {
   }
 }
 
+function companionContributors(media: Media): Pick<CompanionMedia, 'cast' | 'crew'> {
+  const provider = mediaRef(media).provider
+  const seenCast = new Set<string>()
+  const cast: CompanionPerson[] = []
+  for (const edge of media.characters?.edges ?? []) {
+    if (provider === 'anilist') {
+      const character = edge.node.name.full ?? edge.node.name.native
+      for (const person of edge.voiceActors ?? []) {
+        const name = person.name.full ?? person.name.native
+        const key = `${provider}:${person.id}`
+        if (!name || seenCast.has(key)) continue
+        seenCast.add(key)
+        cast.push({
+          id: String(person.id),
+          provider,
+          name,
+          role: character ? `Voice of ${character}` : 'Voice cast',
+          image: person.image?.large,
+          credit: 'cast' as const,
+        })
+      }
+      continue
+    }
+    const name = edge.node.name.full ?? edge.node.name.native
+    const key = `${provider}:${edge.node.id}`
+    if (!name || seenCast.has(key)) continue
+    seenCast.add(key)
+    cast.push({
+      id: String(edge.node.id),
+      provider,
+      name,
+      role: edge.role,
+      image: edge.node.image?.large,
+      credit: 'cast' as const,
+    })
+  }
+  const seenCrew = new Set<string>()
+  const crew: CompanionPerson[] = []
+  for (const edge of media.staff?.edges ?? []) {
+    const name = edge.node.name.full ?? edge.node.name.native
+    const key = `${provider}:${edge.node.id}`
+    if (!name || seenCrew.has(key)) continue
+    seenCrew.add(key)
+    crew.push({
+      id: String(edge.node.id),
+      provider,
+      name,
+      role: edge.role,
+      image: edge.node.image?.large,
+      credit: 'crew' as const,
+    })
+  }
+  return {
+    cast: cast.length ? cast.slice(0, 20) : undefined,
+    crew: crew.length ? crew.slice(0, 16) : undefined,
+  }
+}
+
 export function companionMedia(
   media: Media,
   options: {
@@ -377,6 +450,7 @@ export function companionMedia(
     recommendations: media.recommendations?.nodes
       .flatMap((node) => node.mediaRecommendation ? [companionRelationMedia(node.mediaRecommendation)] : [])
       .slice(0, 12),
+    ...companionContributors(media),
     placement,
   }
 }

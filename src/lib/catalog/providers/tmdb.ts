@@ -48,6 +48,11 @@ interface TmdbPage {
   results?: TmdbListItem[]
 }
 
+interface TmdbPersonCredits {
+  cast?: TmdbListItem[]
+  crew?: TmdbListItem[]
+}
+
 interface TmdbLanguage {
   iso_639_1?: string
   english_name?: string
@@ -64,7 +69,9 @@ interface TmdbCredit {
   id?: number
   name?: string
   character?: string
+  roles?: { character?: string; episode_count?: number }[]
   job?: string
+  jobs?: { job?: string; episode_count?: number }[]
   profile_path?: string | null
 }
 
@@ -711,6 +718,28 @@ async function search(request: CatalogSearchRequest): Promise<CatalogPage> {
   }
 }
 
+/** Provider-filtered filmography used by companion actor and crew discovery. */
+export async function tmdbPersonCredits(
+  id: string,
+  credit: 'cast' | 'crew' = 'cast',
+  signal?: AbortSignal,
+): Promise<Media[]> {
+  if (!/^\d+$/.test(id)) return []
+  const response = await tmdb<TmdbPersonCredits>(`/person/${encodeURIComponent(id)}/combined_credits`, {
+    language: TMDB_LANGUAGE,
+  }, signal)
+  const unique = new Map<string, Media>()
+  ;(response[credit] ?? [])
+    .filter((item) => item.media_type === 'movie' || item.media_type === 'tv')
+    .sort((left, right) => (right.popularity ?? 0) - (left.popularity ?? 0))
+    .forEach((item) => {
+      const kind = item.media_type === 'movie' ? 'movie' : 'tv'
+      const media = mapTmdb(item, kind)
+      if (media) unique.set(`${kind}:${media.id}`, media)
+    })
+  return [...unique.values()].slice(0, 40)
+}
+
 async function filterSearchResults(items: TmdbListItem[], request: CatalogSearchRequest, forcedKind?: TmdbKind): Promise<TmdbListItem[]> {
   const maps = request.genre || request.excludedGenres?.length ? await genreMaps(request.signal) : undefined
   const genre = request.genre?.toLowerCase()
@@ -827,11 +856,11 @@ function detailedMedia(raw: TmdbDetail, kind: TmdbKind): Media | null {
   }
   media.trailer = trailer?.key ? { id: trailer.key, site: 'youtube' } : null
   media.characters = { edges: (credits?.cast ?? []).slice(0, 20).flatMap((person) => person.id != null && person.name ? [{
-    role: person.character ?? 'Cast',
+    role: person.character ?? person.roles?.[0]?.character ?? 'Cast',
     node: { id: person.id, name: { full: person.name }, image: { large: image(person.profile_path, 'w342') } },
   }] : []) }
   media.staff = { edges: (credits?.crew ?? []).slice(0, 20).flatMap((person) => person.id != null && person.name ? [{
-    role: person.job ?? 'Crew',
+    role: person.job ?? person.jobs?.[0]?.job ?? 'Crew',
     node: { id: person.id, name: { full: person.name }, image: { large: image(person.profile_path, 'w342') } },
   }] : []) }
   const recommendations = mapList(raw.recommendations ?? raw.similar ?? {}, kind)
