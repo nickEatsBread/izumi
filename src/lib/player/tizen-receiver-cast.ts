@@ -5,7 +5,7 @@ import {
   SamsungSmartViewChannel,
 } from './samsung-smart-view'
 import type { CompanionMedia, CompanionSkipSegment } from '$lib/companion/protocol'
-import type { CastTrackPreferences } from './android-cast'
+import type { CastTrackHints, CastTrackPreferences } from './android-cast'
 
 export interface TizenReceiverDevice {
   id: string
@@ -55,6 +55,8 @@ export interface TizenReceiverLoad {
   skipSegments?: CompanionSkipSegment[]
   /** Track indexes are container-local, so send descriptive preferences for the TV to match. */
   trackPreferences?: CastTrackPreferences
+  /** Sender-resolved names for embedded tracks whose container labels Samsung may discard. */
+  trackHints?: CastTrackHints
   subtitleStyle?: CastSubtitleStyle
   adaptive?: {
     minBitrateKbps?: number

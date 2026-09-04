@@ -73,7 +73,7 @@ export interface CompanionMedia {
   /** Transparent provider title treatment/clear-logo preferred by cinematic TV layouts. */
   logoImage?: string
   /** Provider trailer used by the TV series page. */
-  trailer?: { id: string; site?: string }
+  trailer?: { id: string; site?: string; language?: string }
   /** Normalized 0–1 progress for a TV card. */
   progress?: number
   /** Resume episode requested when this card is activated. */
@@ -318,6 +318,26 @@ function companionFacts(media: Media, resolver: CompanionResolverHint, placement
   }
 }
 
+const trailerLanguageAliases: Record<string, string> = {
+  english: 'en', japanese: 'ja', korean: 'ko', chinese: 'zh', spanish: 'es', french: 'fr',
+  german: 'de', italian: 'it', portuguese: 'pt', russian: 'ru', hindi: 'hi',
+}
+
+function normalizedTrailerLanguage(value?: string): string | undefined {
+  const key = value?.trim().toLowerCase().replace('_', '-').split('-')[0]
+  if (!key || /^(?:und|unknown|none|mul|zxx)$/.test(key)) return undefined
+  return trailerLanguageAliases[key] ?? key
+}
+
+function companionTrailer(media: Media): CompanionMedia['trailer'] {
+  if (!media.trailer?.id) return undefined
+  const inferredCountryLanguage = ({ JP: 'ja', KR: 'ko', CN: 'zh' } as Record<string, string>)[media.countryOfOrigin ?? '']
+  const language = normalizedTrailerLanguage(media.trailer.language)
+    ?? normalizedTrailerLanguage(media.originalLanguage)
+    ?? inferredCountryLanguage
+  return { id: media.trailer.id, site: media.trailer.site, language }
+}
+
 function companionRelationMedia(media: Media): CompanionMedia {
   const total = Math.max(0, media.episodes ?? 0)
   const resolver = resolverHint(media)
@@ -331,7 +351,7 @@ function companionRelationMedia(media: Media): CompanionMedia {
     poster: cardCover(media, 220) || undefined,
     backdrop: banner(media) || undefined,
     logoImage: media.logoImage || undefined,
-    trailer: media.trailer?.id ? { id: media.trailer.id, site: media.trailer.site } : undefined,
+    trailer: companionTrailer(media),
     ...companionFacts(media, resolver),
     seasonEpisodeCounts: total ? [total] : undefined,
   }
@@ -429,7 +449,7 @@ export function companionMedia(
     poster: cardCover(media, 220) || undefined,
     backdrop: banner(media) || undefined,
     logoImage: media.logoImage || undefined,
-    trailer: media.trailer?.id ? { id: media.trailer.id, site: media.trailer.site } : undefined,
+    trailer: companionTrailer(media),
     ...companionFacts(media, resolver, placement),
     progress: options.progress ?? (total ? Math.min(1, watched / total) : undefined),
     // A movie is addressed by its title id alone. Supplying the resume helper's synthetic

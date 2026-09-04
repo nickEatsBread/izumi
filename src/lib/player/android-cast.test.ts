@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { castSourceDecision, castSubtitleFormat, castSubtitleTitle, castTrackPreferences, tvCastSource } from './android-cast'
+import { castSourceDecision, castSubtitleFormat, castSubtitleTitle, castTrackHints, castTrackPreferences, tvCastSource } from './android-cast'
 
 describe('Android Cast direct-play policy', () => {
   it('replaces generic subtitle placeholders with useful TV labels', () => {
@@ -7,6 +7,18 @@ describe('Android Cast direct-play policy', () => {
     expect(castSubtitleTitle({ lang: 'ja-JP', title: 'Full Subtitles' }, 1)).toBe('Japanese')
     expect(castSubtitleTitle({ lang: 'eng', title: 'Signs & Songs' }, 2)).toBe('English · Signs & Songs')
     expect(castSubtitleTitle({ title: 'Subtitles' }, 3)).toBe('Subtitle 4')
+  })
+
+  it('sends every resolved embedded subtitle name to Samsung receivers', () => {
+    expect(castTrackHints([
+      { type: 'sub', lang: 'eng', title: 'Full Subtitles', codec: 'ass' },
+      { type: 'sub', lang: 'eng', title: 'Full Subtitles', codec: 'ass' },
+      { type: 'sub', lang: 'jpn', title: 'Signs & Songs', codec: 'ass' },
+    ])).toEqual({ subtitles: [
+      { language: 'eng', title: 'Full Subtitles', codec: 'ass', label: 'English · Track 1' },
+      { language: 'eng', title: 'Full Subtitles', codec: 'ass', label: 'English · Track 2' },
+      { language: 'jpn', title: 'Signs & Songs', codec: 'ass', label: 'Japanese · Signs & Songs' },
+    ] })
   })
 
   it('accepts extensionless HLS identified by the resolver', () => {

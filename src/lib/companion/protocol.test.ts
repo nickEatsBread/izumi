@@ -28,6 +28,7 @@ describe('companion home snapshot', () => {
       title: { english: 'Example show' },
       description: '<b>Summary</b><br>line two',
       contentRating: 'TV-14',
+      originalLanguage: 'ja',
       genres: ['Drama', 'Fantasy'],
       startDate: { year: 2025 },
       duration: 52,
@@ -87,6 +88,7 @@ describe('companion home snapshot', () => {
       }],
     })
     expect(item).toMatchObject({
+      mediaId: -12,
       ref: { provider: 'tmdb', id: '1399', type: 'series' },
       resolver: { streamType: 'series' },
       title: 'Example show',
@@ -102,7 +104,7 @@ describe('companion home snapshot', () => {
         { kind: 'score', label: '84% user score', source: 'TMDB' },
       ],
       logoImage: 'https://img.example/title-logo.png',
-      trailer: { id: 'exampleTrailer', site: 'youtube' },
+      trailer: { id: 'exampleTrailer', site: 'youtube', language: 'ja' },
       progress: 0.4,
       episode: 5,
       episodeTitle: 'The next chapter',

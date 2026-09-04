@@ -12,7 +12,7 @@
   import Volume2 from '@lucide/svelte/icons/volume-2'
   import { playerGetProperty, playerTracks } from '$lib/player/native'
   import { nowPlaying, nowPlayingMedia, nowPlayingStream, playerMenuOpen, playerNotice } from '$lib/player/session'
-  import { castSourceDecision, castSubtitleFormat, castTrackPreferences, tvCastSource, type CastTrack } from '$lib/player/android-cast'
+  import { castSourceDecision, castSubtitleFormat, castTrackHints, castTrackPreferences, tvCastSource, type CastTrack } from '$lib/player/android-cast'
   import {
     desktopCastSession,
     desktopCastStatus,
@@ -179,6 +179,7 @@
         media: $nowPlayingMedia ? companionMedia($nowPlayingMedia.media, { episode: $nowPlayingMedia.episode }) : undefined,
         skipSegments,
         trackPreferences: castTrackPreferences(castSource, tracks),
+        trackHints: castTrackHints(tracks),
         receiverPreferred: receiverAvailable,
         subtitleStyle: effectiveSubtitleStyle($sessionSubtitleStyle, {
           enabled: $subtitleStyleEnabled,

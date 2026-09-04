@@ -37,6 +37,7 @@ struct EmbedQuery {
     app: String,
     controls: Option<u8>,
     muted: Option<u8>,
+    captions: Option<u8>,
 }
 
 const EMBED_HTML: &str = r#"<!doctype html>
@@ -57,6 +58,7 @@ const EMBED_HTML: &str = r#"<!doctype html>
       const appId = params.get('app') || ''
       const controls = params.get('controls') === '1' ? '1' : '0'
       const muted = params.get('muted') === '1' ? '1' : '0'
+      const captions = params.get('captions') === '1'
       const player = document.getElementById('player')
       const youtubeOrigin = 'https://www.youtube-nocookie.com'
       const playerParams = new URLSearchParams()
@@ -65,7 +67,8 @@ const EMBED_HTML: &str = r#"<!doctype html>
       playerParams.append('controls', controls)
       playerParams.append('mute', muted)
       playerParams.append('disablekb', controls === '1' ? '0' : '1')
-      playerParams.append('cc_load_policy', '0')
+      playerParams.append('cc_load_policy', captions ? '1' : '0')
+      if (captions) playerParams.append('cc_lang_pref', 'en')
       playerParams.append('iv_load_policy', '3')
       playerParams.append('playsinline', '1')
       playerParams.append('rel', '0')
@@ -120,6 +123,7 @@ async fn embed_document(
         || !valid_app_id(&query.app)
         || query.controls.unwrap_or(0) > 1
         || query.muted.unwrap_or(1) > 1
+        || query.captions.unwrap_or(0) > 1
     {
         return StatusCode::NOT_FOUND.into_response();
     }
@@ -180,8 +184,9 @@ pub async fn youtube_embed_url(
     id: String,
     controls: bool,
     muted: bool,
+    captions: Option<bool>,
 ) -> Result<String, String> {
-    youtube_embed_url_at(app, id, controls, muted, Ipv4Addr::LOCALHOST).await
+    youtube_embed_url_at(app, id, controls, muted, captions.unwrap_or(false), Ipv4Addr::LOCALHOST).await
 }
 
 #[tauri::command]
@@ -190,9 +195,10 @@ pub async fn youtube_embed_lan_url(
     id: String,
     controls: bool,
     muted: bool,
+    captions: Option<bool>,
 ) -> Result<String, String> {
     let address = crate::cast_relay::lan_ipv4().await?;
-    youtube_embed_url_at(app, id, controls, muted, address).await
+    youtube_embed_url_at(app, id, controls, muted, captions.unwrap_or(false), address).await
 }
 
 async fn youtube_embed_url_at(
@@ -200,6 +206,7 @@ async fn youtube_embed_url_at(
     id: String,
     controls: bool,
     muted: bool,
+    captions: bool,
     address: Ipv4Addr,
 ) -> Result<String, String> {
     if !valid_video_id(&id) {
@@ -215,6 +222,7 @@ async fn youtube_embed_url_at(
         .append_pair("app", app_id)
         .append_pair("controls", if controls { "1" } else { "0" })
         .append_pair("muted", if muted { "1" } else { "0" })
+        .append_pair("captions", if captions { "1" } else { "0" })
         .finish();
     Ok(format!(
         "http://{address}:{}/{}/youtube?{query}",
@@ -241,8 +249,8 @@ mod tests {
         assert!(EMBED_HTML.contains("strict-origin-when-cross-origin"));
         assert!(EMBED_HTML.contains("playerParams.append('origin', location.origin)"));
         assert!(EMBED_HTML.contains("playerParams.append('widget_referrer', 'https://' + appId)"));
-        assert!(EMBED_HTML.contains("playerParams.append('cc_load_policy', '0')"));
-        assert!(!EMBED_HTML.contains("cc_lang_pref"));
+        assert!(EMBED_HTML.contains("playerParams.append('cc_load_policy', captions ? '1' : '0')"));
+        assert!(EMBED_HTML.contains("playerParams.append('cc_lang_pref', 'en')"));
         assert!(EMBED_HTML.contains("type: 'izumi-youtube-event'"));
         assert!(EMBED_HTML.contains("event.data && event.data.type === 'izumi-youtube-command'"));
         assert!(!EMBED_HTML.contains("?."));

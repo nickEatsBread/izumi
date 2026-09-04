@@ -36,6 +36,15 @@ export interface CastTrackPreferences {
   subtitle?: CastTrackPreference
 }
 
+export interface CastTrackHints {
+  subtitles: Array<{
+    language?: string
+    title?: string
+    codec?: string
+    label: string
+  }>
+}
+
 export interface CastSubtitleLabelSource {
   lang?: string
   title?: string
@@ -50,6 +59,30 @@ export function castSubtitleTitle(
   const title = distinctiveTitle(subtitle.title, subtitle.lang)
   if (language && title) return `${language} · ${title}`
   return language ?? title ?? `Subtitle ${index + 1}`
+}
+
+/** Samsung often reports only "Subtitles" for embedded tracks. Carry izumi's already-resolved
+ * language/title labels so the receiver can restore them without relying on container metadata. */
+export function castTrackHints(tracks: CastTrack[]): CastTrackHints | undefined {
+  const subtitles = tracks.filter((track) => track.type === 'sub')
+  if (!subtitles.length) return undefined
+  const baseLabels = subtitles.map((track, index) => castSubtitleTitle(track, index))
+  const totals = new Map<string, number>()
+  baseLabels.forEach((label) => totals.set(label, (totals.get(label) ?? 0) + 1))
+  const seen = new Map<string, number>()
+  return {
+    subtitles: subtitles.map((track, index) => {
+      const base = baseLabels[index]
+      const occurrence = (seen.get(base) ?? 0) + 1
+      seen.set(base, occurrence)
+      return {
+        language: track.lang,
+        title: track.title,
+        codec: track.codec,
+        label: (totals.get(base) ?? 0) > 1 ? `${base} · Track ${occurrence}` : base,
+      }
+    }),
+  }
 }
 
 const languageKey = (value: string | undefined) => {

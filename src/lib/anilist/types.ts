@@ -129,7 +129,7 @@ export interface Media {
   bannerImage?: string
   /** Transparent title treatment/clear-logo supplied by the owning metadata provider. */
   logoImage?: string
-  trailer?: { id?: string; site?: string } | null
+  trailer?: { id?: string; site?: string; language?: string } | null
   nextAiringEpisode?: { episode: number; airingAt?: number; timeUntilAiring: number } | null
   /** Provider-confirmed number of episodes already released. Catalogue fallbacks such as Kitsu
    * expose a planned total but no AniList-style schedule, so this must remain distinct from

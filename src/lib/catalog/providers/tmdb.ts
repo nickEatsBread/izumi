@@ -128,7 +128,7 @@ interface TmdbDetail extends TmdbListItem {
   networks?: { id?: number; name?: string }[]
   seasons?: TmdbSeason[]
   external_ids?: { imdb_id?: string | null; tvdb_id?: number | null }
-  videos?: { results?: { key?: string; site?: string; type?: string; official?: boolean }[] }
+  videos?: { results?: { key?: string; site?: string; type?: string; official?: boolean; iso_639_1?: string }[] }
   credits?: { cast?: TmdbCredit[]; crew?: TmdbCredit[] }
   aggregate_credits?: { cast?: TmdbCredit[]; crew?: TmdbCredit[] }
   recommendations?: TmdbPage
@@ -854,7 +854,7 @@ function detailedMedia(raw: TmdbDetail, kind: TmdbKind): Media | null {
     imdb: raw.external_ids?.imdb_id ?? undefined,
     tvdb: raw.external_ids?.tvdb_id ?? undefined,
   }
-  media.trailer = trailer?.key ? { id: trailer.key, site: 'youtube' } : null
+  media.trailer = trailer?.key ? { id: trailer.key, site: 'youtube', language: trailer.iso_639_1 } : null
   media.characters = { edges: (credits?.cast ?? []).slice(0, 20).flatMap((person) => person.id != null && person.name ? [{
     role: person.character ?? person.roles?.[0]?.character ?? 'Cast',
     node: { id: person.id, name: { full: person.name }, image: { large: image(person.profile_path, 'w342') } },

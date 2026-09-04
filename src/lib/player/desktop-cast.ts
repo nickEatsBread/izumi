@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { get, writable } from 'svelte/store'
 import { castSubtitleFormat, castSubtitleTitle, type CastTrack } from './android-cast'
+import type { CastTrackHints } from './android-cast'
 import {
   controlTizenReceiver,
   getTizenReceiverStatus,
@@ -114,6 +115,7 @@ export interface DesktopCastStartInput {
   media?: TizenReceiverLoad['media']
   skipSegments?: TizenReceiverLoad['skipSegments']
   trackPreferences?: TizenReceiverLoad['trackPreferences']
+  trackHints?: CastTrackHints
   subtitleStyle?: CastSubtitleStyle
   receiverPreferred?: boolean
 }
@@ -209,8 +211,8 @@ export function desktopCastContentType(device: DesktopCastDevice, contentType: s
 export async function startDesktopCast(
   request: DesktopCastStartInput,
 ): Promise<Omit<DesktopCastSession, 'subtitles' | 'activeTrackIds'>> {
-  const { device, receiverPreferred, contentRating, media, skipSegments, trackPreferences, ...nativeRequest } = request
-  const receiverRequest = { ...nativeRequest, contentRating, media, skipSegments, trackPreferences }
+  const { device, receiverPreferred, contentRating, media, skipSegments, trackPreferences, trackHints, ...nativeRequest } = request
+  const receiverRequest = { ...nativeRequest, contentRating, media, skipSegments, trackPreferences, trackHints }
   if (device.protocol === 'tizenReceiver') {
     await startTizenReceiverCast(device, receiverRequest, 'Izumi Desktop')
     return { deviceId: device.id, deviceName: device.name, backend: 'tizenReceiver' }
