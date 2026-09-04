@@ -421,7 +421,7 @@ function keepConnection(
   createSnapshot?: () => Promise<CompanionHomeSnapshot>,
   onPlay?: (media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void | Promise<void>,
   onSearch?: (query: string) => Promise<CompanionMedia[]>,
-  onDetails?: (media: CompanionMedia) => Promise<CompanionMedia>,
+  onDetails?: (media: CompanionMedia, presentationOnly?: boolean) => Promise<CompanionMedia>,
   onSourceSelection?: CompanionSourceSelection,
 ): void {
   connections.get(device.deviceId)?.dispose()
@@ -547,7 +547,7 @@ function keepConnection(
         .catch((error) => reply({ error: error instanceof Error ? error.message : 'Search unavailable' }))
     }),
     channel.on('izumi.companion.details', (value, from) => {
-      const request = value as { media?: unknown; requestId?: unknown; pairingId?: unknown } | null
+      const request = value as { media?: unknown; requestId?: unknown; pairingId?: unknown; presentationOnly?: unknown } | null
       const media = request?.media as Partial<CompanionMedia> | undefined
       const ref = media?.ref
       if (!request
@@ -568,7 +568,7 @@ function keepConnection(
         requestId: request.requestId,
         ...payload,
       }, from?.id || 'host')
-      void onDetails(media as CompanionMedia)
+      void onDetails(media as CompanionMedia, request.presentationOnly === true)
         .then((details) => reply({ media: details }))
         .catch((error) => reply({ error: error instanceof Error ? error.message : 'Episode details unavailable' }))
     }),
@@ -630,7 +630,7 @@ async function reconnect(
   createSnapshot: () => Promise<CompanionHomeSnapshot>,
   onPlay: (media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void | Promise<void>,
   onSearch: (query: string) => Promise<CompanionMedia[]>,
-  onDetails: (media: CompanionMedia) => Promise<CompanionMedia>,
+  onDetails: (media: CompanionMedia, presentationOnly?: boolean) => Promise<CompanionMedia>,
   onSourceSelection?: CompanionSourceSelection,
 ): Promise<void> {
   if (connections.get(device.deviceId)?.channel.connected) return
@@ -678,7 +678,7 @@ export function initCompanionConnections(
   createSnapshot: () => Promise<CompanionHomeSnapshot>,
   onPlay: (media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void | Promise<void>,
   onSearch: (query: string) => Promise<CompanionMedia[]>,
-  onDetails: (media: CompanionMedia) => Promise<CompanionMedia>,
+  onDetails: (media: CompanionMedia, presentationOnly?: boolean) => Promise<CompanionMedia>,
   onSourceSelection?: CompanionSourceSelection,
 ): () => void {
   backgroundSnapshotFactory = createSnapshot

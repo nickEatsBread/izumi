@@ -486,7 +486,7 @@ async function searchOptions() {
   }
 }
 
-async function detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null> {
+async function loadDetail(ref: MediaRef, signal?: AbortSignal, includeExternalRatings = true): Promise<Media | null> {
   if (ref.provider !== 'stremio') return null
   const decoded = decodeStremioIdentity(ref.id)
   if (!decoded) return null
@@ -518,15 +518,18 @@ async function detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null
       )
       if (!response.meta || !stremioMetaMatchesIdentity(response.meta, candidate.identity)) continue
       const media = mapStremioMeta(response.meta, base, decoded.type, ref.id)
-      if (media) return enrichOmdbRatings(media, signal)
+      if (media) return includeExternalRatings ? enrichOmdbRatings(media, signal) : media
     } catch (error) {
       if (signal?.aborted) throw error
       // Catalog-only add-ons are expected to miss this route. A transient add-on metadata error
       // should likewise fall through to Cinemeta/the already rendered catalog record.
     }
   }
-  return summary ? enrichOmdbRatings(summary, signal) : null
+  return summary ? includeExternalRatings ? enrichOmdbRatings(summary, signal) : summary : null
 }
+
+const detail = (ref: MediaRef, signal?: AbortSignal) => loadDetail(ref, signal, true)
+const presentation = (ref: MediaRef, signal?: AbortSignal) => loadDetail(ref, signal, false)
 
 export const stremioCatalog: CatalogProvider = {
   id: 'stremio',
@@ -541,4 +544,5 @@ export const stremioCatalog: CatalogProvider = {
   genres,
   searchOptions,
   detail,
+  presentation,
 }

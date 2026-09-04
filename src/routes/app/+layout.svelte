@@ -53,7 +53,7 @@
   import { getContextClient } from '@urql/svelte'
   import { acceptCompanionPlayRequest, initCompanionConnections, publishCompanionSourceOptions } from '$lib/companion/client'
   import { companionResolveSession, companionStreamPicker, initCompanionSourceBridge, selectPendingCompanionSource } from '$lib/companion/source-bridge'
-  import { createCompanionDetails, createCompanionSearch, createCompanionSnapshot, loadCompanionPlaybackMedia } from '$lib/companion/snapshot'
+  import { createCompanionDetails, createCompanionPresentation, createCompanionSearch, createCompanionSnapshot, loadCompanionPlaybackMedia } from '$lib/companion/snapshot'
   import { cancelPendingCompanionPlayback, companionPlaybackTarget } from '$lib/companion/playback'
   import type { CompanionMedia } from '$lib/companion/protocol'
   import { initAutoDownloads } from '$lib/downloads/rules'
@@ -245,7 +245,9 @@
         }
       },
       (query: string) => createCompanionSearch(companionCatalogClient, query),
-      (media: CompanionMedia) => createCompanionDetails(media, undefined, companionCatalogClient),
+      (media: CompanionMedia, presentationOnly?: boolean) => presentationOnly
+        ? createCompanionPresentation(media, companionCatalogClient)
+        : createCompanionDetails(media, undefined, companionCatalogClient),
       selectPendingCompanionSource,
     )
     const stopAutoDownloads = initAutoDownloads()

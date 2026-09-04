@@ -80,7 +80,7 @@ function seasonSummary(episodes: CompanionEpisode[]): { counts?: number[]; label
   }
 }
 
-async function detailedCatalogMedia(media: CompanionMedia, client?: QueryClient): Promise<Media | null> {
+async function detailedCatalogMedia(media: CompanionMedia, client?: QueryClient, presentationOnly = false): Promise<Media | null> {
   if (media.ref.provider === 'anilist') {
     const id = Number(media.ref.id)
     if (!client || !Number.isSafeInteger(id) || id < 1) return null
@@ -90,7 +90,36 @@ async function detailedCatalogMedia(media: CompanionMedia, client?: QueryClient)
   }
   if (!['kitsu', 'tmdb', 'stremio', 'jvm'].includes(media.ref.provider)) return null
   const provider = await loadCatalogProvider(media.ref.provider as 'kitsu' | 'tmdb' | 'stremio' | 'jvm')
+  if (presentationOnly && provider.presentation) return provider.presentation(media.ref)
   return provider.detail(media.ref)
+}
+
+/** Resolve the next TV tiles without making their logos wait for episode libraries or optional
+ * third-party ratings. Opening a title still requests the full createCompanionDetails payload. */
+export async function createCompanionPresentation(
+  media: CompanionMedia,
+  client?: QueryClient,
+): Promise<CompanionMedia> {
+  const detailed = await detailedCatalogMedia(media, client, true).catch(() => null)
+  if (!detailed) return media
+  const enriched = companionMedia(detailed, {
+    progress: media.progress,
+    episode: media.episode,
+    episodeTitle: media.episodeTitle,
+    episodeImage: media.episodeImage,
+    season: media.season,
+    episodeProgress: media.episodeProgress,
+    episodeRuntimeMinutes: media.episodeRuntimeMinutes,
+    placement: media.placement,
+  })
+  return {
+    ...media,
+    ...enriched,
+    inMyList: media.inMyList ?? enriched.inMyList,
+    episodes: media.episodes,
+    seasonEpisodeCounts: media.seasonEpisodeCounts ?? enriched.seasonEpisodeCounts,
+    seasonLabels: media.seasonLabels ?? enriched.seasonLabels,
+  }
 }
 
 /** Load the complete playback model without routing the linked device to a detail screen. */

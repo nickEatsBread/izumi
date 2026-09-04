@@ -5,7 +5,7 @@ const catalog = vi.hoisted(() => ({ loadCatalogProvider: vi.fn() }))
 vi.mock('$lib/anizip', () => anizip)
 vi.mock('$lib/catalog/registry', () => catalog)
 
-import { createCompanionDetails } from './snapshot'
+import { createCompanionDetails, createCompanionPresentation } from './snapshot'
 import type { CompanionMedia } from './protocol'
 
 const media = (): CompanionMedia => ({
@@ -68,5 +68,26 @@ describe('companion episode details', () => {
       expect.objectContaining({ episode: 1, title: 'Arrival', description: 'The journey begins.', image: 'https://img.example/k1.jpg', watched: true }),
       expect.objectContaining({ episode: 2, title: 'Departure', description: 'The group sets out.', image: 'https://img.example/k2.jpg', progress: .25 }),
     ])
+  })
+
+  it('uses the provider presentation path for TV logo prefetching', async () => {
+    const presentation = vi.fn().mockResolvedValue({
+      id: -9,
+      catalog: { provider: 'tmdb', id: '550', type: 'movie' },
+      title: { userPreferred: 'Fight Club' },
+      logoImage: 'https://image.tmdb.org/t/p/w500/fight-club-logo.png',
+      description: 'An insomniac discovers an underground fight club.',
+    })
+    const detail = vi.fn()
+    catalog.loadCatalogProvider.mockResolvedValue({ presentation, detail })
+
+    const result = await createCompanionPresentation({
+      ref: { provider: 'tmdb', type: 'movie', id: '550' },
+      title: 'Fight Club',
+    })
+
+    expect(presentation).toHaveBeenCalledWith({ provider: 'tmdb', type: 'movie', id: '550' })
+    expect(detail).not.toHaveBeenCalled()
+    expect(result.logoImage).toBe('https://image.tmdb.org/t/p/w500/fight-club-logo.png')
   })
 })

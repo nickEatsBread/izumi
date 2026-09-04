@@ -864,6 +864,20 @@ async function detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null
   return enrichOmdbRatings(media, signal)
 }
 
+/** TV rail prefetch needs the title treatment and trailer, not every season page or optional
+ * ratings service. TMDB supplies all of that presentation data in one details response. */
+async function presentation(ref: MediaRef, signal?: AbortSignal): Promise<Media | null> {
+  if (ref.provider !== 'tmdb' || (ref.type !== 'movie' && ref.type !== 'series')) return null
+  const kind: TmdbKind = ref.type === 'movie' ? 'movie' : 'tv'
+  const append = kind === 'movie'
+    ? 'videos,external_ids,images,release_dates'
+    : 'videos,external_ids,images,content_ratings'
+  const raw = await tmdb<TmdbDetail>(`/${kind}/${encodeURIComponent(ref.id)}`, {
+    language: TMDB_LANGUAGE, include_image_language: 'en,null', append_to_response: append,
+  }, signal)
+  return detailedMedia(raw, kind)
+}
+
 async function genres(signal?: AbortSignal): Promise<string[]> {
   const maps = await genreMaps(signal)
   return [...new Set([...maps.movie.keys(), ...maps.tv.keys()])]
@@ -901,6 +915,7 @@ export const tmdbCatalog: CatalogProvider = {
   home,
   search,
   detail,
+  presentation,
   genres,
   searchOptions,
 }

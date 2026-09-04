@@ -121,6 +121,9 @@ export interface CatalogProvider {
   home(signal?: AbortSignal, rowIds?: string[], onUpdate?: CatalogHomeUpdate): Promise<CatalogHome>
   search(request: CatalogSearchRequest): Promise<CatalogPage>
   detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null>
+  /** Lightweight card/hero metadata for TV prefetching. It must not wait for episode libraries or
+   * optional external ratings before returning title art. */
+  presentation?(ref: MediaRef, signal?: AbortSignal): Promise<Media | null>
   genres?(signal?: AbortSignal): Promise<string[]>
   /** Provider-owned values for richer search controls, loaded only when its search page is open. */
   searchOptions?(signal?: AbortSignal): Promise<CatalogSearchOptions>
