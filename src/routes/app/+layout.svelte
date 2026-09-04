@@ -232,7 +232,7 @@
             hidden: true,
             remoteOnly: true,
             autoplay: true,
-            startSeconds: media.playback?.positionSeconds,
+            startSeconds: media.resumePositionSeconds ?? media.playback?.positionSeconds,
             pickerStore: companionStreamPicker,
             resolveSession: companionResolveSession,
           })

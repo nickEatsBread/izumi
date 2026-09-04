@@ -86,6 +86,8 @@ export interface CompanionMedia {
   season?: number
   /** Normalized 0–1 playback position within the resume episode. */
   episodeProgress?: number
+  /** Exact crash-safe TV checkpoint, separate from manual source-selection intent. */
+  resumePositionSeconds?: number
   episodeRuntimeMinutes?: number
   /** True only when this title belongs to the signed-in user's media list. */
   inMyList?: boolean

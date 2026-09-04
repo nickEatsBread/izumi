@@ -489,24 +489,67 @@ function checkpointMedia(media: CompanionMedia): Media {
   } as Media
 }
 
+interface CompanionProgressRecord {
+  recordKey: string
+  media: CompanionMedia
+  positionSeconds: number
+  durationSeconds: number
+  completed: boolean
+  updatedAt: number
+}
+
+function companionProgressRecord(value: unknown): CompanionProgressRecord | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Partial<CompanionProgressRecord>
+  const media = record.media
+  const now = Date.now()
+  if (typeof record.recordKey !== 'string' || !record.recordKey || record.recordKey.length > 480
+    || !media || typeof media.title !== 'string' || !media.title
+    || !media.ref || typeof media.ref.provider !== 'string'
+    || typeof media.ref.type !== 'string' || typeof media.ref.id !== 'string'
+    || typeof record.positionSeconds !== 'number' || !Number.isFinite(record.positionSeconds)
+    || record.positionSeconds < 0 || record.positionSeconds > 604_800
+    || typeof record.durationSeconds !== 'number' || !Number.isFinite(record.durationSeconds)
+    || record.durationSeconds < 0 || record.durationSeconds > 604_800
+    || typeof record.updatedAt !== 'number' || !Number.isFinite(record.updatedAt)
+    || record.updatedAt < now - 180 * 24 * 60 * 60 * 1_000 || record.updatedAt > now + 60_000) return null
+  return {
+    recordKey: record.recordKey,
+    media,
+    positionSeconds: record.positionSeconds,
+    durationSeconds: record.durationSeconds,
+    completed: record.completed === true,
+    updatedAt: record.updatedAt,
+  }
+}
+
+function applyCompanionProgress(device: PairedCompanion, record: CompanionProgressRecord, source: 'cloud' | 'tv'): boolean {
+  const owner = device.cloudflare?.pairingId ?? device.deviceId
+  // Keep the historical Worker key stable so upgrading does not reapply an old cloud checkpoint.
+  const appliedKey = source === 'cloud'
+    ? `${owner}:${record.recordKey}`
+    : `${device.deviceId}:tv:${record.recordKey}`
+  if ((get(appliedCompanionProgress)[appliedKey] ?? 0) >= record.updatedAt) return false
+  const media = checkpointMedia(record.media)
+  const episode = Math.max(1, Math.floor(record.media.episode ?? 1))
+  recordPlay(media, episode)
+  if (record.completed) {
+    markWatched(media, episode)
+    clearPosition(media.id, episode)
+  } else if (record.durationSeconds > 0) {
+    savePosition(media.id, episode, record.positionSeconds, record.durationSeconds)
+  }
+  appliedCompanionProgress.update((current) => ({ ...current, [appliedKey]: record.updatedAt }))
+  return true
+}
+
 async function pullCompanionProgress(device: PairedCompanion): Promise<boolean> {
   if (!device.cloudflare) return false
   const records = await readCloudflareCompanionProgress(device.cloudflare)
   let changed = false
   for (const record of records.sort((left, right) => left.updatedAt - right.updatedAt)) {
-    const appliedKey = `${device.cloudflare.pairingId}:${record.recordKey}`
-    if ((get(appliedCompanionProgress)[appliedKey] ?? 0) >= record.updatedAt) continue
-    const media = checkpointMedia(record.media)
-    const episode = Math.max(1, Math.floor(record.media.episode ?? 1))
-    recordPlay(media, episode)
-    if (record.completed) {
-      markWatched(media, episode)
-      clearPosition(media.id, episode)
-    } else if (record.durationSeconds > 0 && record.positionSeconds >= 0) {
-      savePosition(media.id, episode, record.positionSeconds, record.durationSeconds)
-    }
-    appliedCompanionProgress.update((current) => ({ ...current, [appliedKey]: record.updatedAt }))
-    changed = true
+    const normalized = companionProgressRecord(record)
+    if (normalized && applyCompanionProgress(device, normalized, 'cloud')) changed = true
   }
   return changed
 }
@@ -564,6 +607,19 @@ function keepConnection(
         })
       } else sendSnapshot(connection, initialSnapshot)
     }),
+    channel.on('izumi.companion.progress-result', (value) => {
+      const response = value as { credential?: unknown; records?: unknown } | null
+      if (!response || response.credential !== device.credential || !Array.isArray(response.records)) return
+      let changed = false
+      const records = response.records.slice(0, 24)
+        .map(companionProgressRecord)
+        .filter((record): record is CompanionProgressRecord => Boolean(record))
+        .sort((left, right) => left.updatedAt - right.updatedAt)
+      for (const record of records) {
+        if (applyCompanionProgress(device, record, 'tv')) changed = true
+      }
+      if (changed) pulseCompanionActivity()
+    }),
     channel.on('izumi.companion.play', (value, from) => {
       const request = value as Partial<CompanionMedia> & {
         ref?: CompanionMedia['ref']
@@ -572,6 +628,7 @@ function keepConnection(
         episode?: unknown
         season?: unknown
         resolver?: unknown
+        resumePositionSeconds?: unknown
       }
       const pairingId = device.cloudflare?.pairingId ?? device.credential.slice(0, 16)
       if (request.pairingId !== pairingId || !request.ref) return
@@ -597,11 +654,16 @@ function keepConnection(
               : undefined,
           }
         : undefined
+      const resumePositionSeconds = typeof request.resumePositionSeconds === 'number'
+        && Number.isFinite(request.resumePositionSeconds)
+        ? Math.max(0, Math.min(request.resumePositionSeconds, 604_800))
+        : undefined
       if (onPlay) {
         void duringCompanionActivity(() => onPlay({
           ref,
           resolver,
           playback,
+          resumePositionSeconds,
           title: '',
           episode: typeof request.episode === 'number' ? request.episode : undefined,
           season: typeof request.season === 'number' ? request.season : undefined,
@@ -771,6 +833,9 @@ function keepConnection(
   }
   connections.set(device.deviceId, connection)
   syncCompanionLinkState()
+  channel.publish('izumi.companion.progress-request', {
+    credential: device.credential,
+  }, 'host')
 }
 
 async function reconnect(
