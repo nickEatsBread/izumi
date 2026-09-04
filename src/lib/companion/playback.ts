@@ -39,31 +39,63 @@ interface PreparedCastSource {
   subtitles: { url: string; lang?: string; title?: string; contentType: string }[]
 }
 
-export function companionPlaybackMatches(
+type CompanionPlaybackMedia = Pick<Media, 'id' | 'type' | 'format' | 'catalog' | 'videos'>
+
+function companionPlaybackIdentityMatches(
   requested: CompanionMedia,
   media: Pick<Media, 'id' | 'type' | 'format' | 'catalog'>,
-  episode?: number,
 ): boolean {
   const actual = mediaRef(media)
   return requested.ref.provider === actual.provider
     && requested.ref.type === actual.type
     && requested.ref.id === actual.id
-    && (requested.episode == null || requested.episode === episode)
+}
+
+/** Convert the TV's season-local episode coordinate into the absolute video number used by the
+ * source resolver. Metadata providers may put specials first, so `S1 E1` is not necessarily video
+ * number 1. Returning null when coordinate-rich metadata has no match prevents a wrong episode. */
+export function companionPlaybackEpisode(
+  requested: CompanionMedia,
+  media: Pick<Media, 'videos'>,
+  fallbackEpisode?: number,
+): number | undefined | null {
+  if (requested.episode == null) return fallbackEpisode
+  if (requested.season != null && media.videos?.length) {
+    const coordinate = media.videos.find((video) => (
+      video.season === requested.season && video.episode === requested.episode
+    ))
+    if (coordinate) return coordinate.number
+    const hasSeasonCoordinates = media.videos.some((video) => video.season != null && video.episode != null)
+    if (hasSeasonCoordinates) return null
+  }
+  return requested.episode
+}
+
+export function companionPlaybackMatches(
+  requested: CompanionMedia,
+  media: CompanionPlaybackMedia,
+  episode?: number,
+): boolean {
+  if (!companionPlaybackIdentityMatches(requested, media)) return false
+  if (requested.episode == null) return true
+  const target = companionPlaybackEpisode(requested, media)
+  return target != null && target === episode
 }
 
 /** Resolve the episode that the existing source picker should open for a pending TV request.
  * A TV can request either an exact episode or a title-level fallback (for example a movie). */
 export function companionPlaybackTarget(
   requested: CompanionMedia,
-  media: Pick<Media, 'id' | 'type' | 'format' | 'catalog'>,
+  media: CompanionPlaybackMedia,
   fallbackEpisode?: number,
 ): { episode?: number } | null {
-  const episode = requested.episode ?? fallbackEpisode
-  return companionPlaybackMatches(requested, media, episode) ? { episode } : null
+  if (!companionPlaybackIdentityMatches(requested, media)) return null
+  const episode = companionPlaybackEpisode(requested, media, fallbackEpisode)
+  return episode === null ? null : { episode }
 }
 
 export function hasPendingCompanionPlayback(
-  media: Pick<Media, 'id' | 'type' | 'format' | 'catalog'>,
+  media: CompanionPlaybackMedia,
   episode?: number,
 ): boolean {
   const pending = get(pendingCompanionPlayback)
@@ -170,7 +202,8 @@ export async function startPendingCompanionCast(input: {
     },
   })
 
-  const castTitle = input.episode != null ? `${title(input.media)} — Episode ${input.episode}` : title(input.media)
+  const displayEpisode = pending.media.episode ?? input.episode
+  const castTitle = displayEpisode != null ? `${title(input.media)} — Episode ${displayEpisode}` : title(input.media)
   const streamDrm = input.stream.__drm
   const drmSystem = streamDrm?.keySystem?.toLowerCase().includes('playready')
     ? 'playready'
@@ -193,6 +226,7 @@ export async function startPendingCompanionCast(input: {
   const normalizedMedia = companionMedia(input.media, { episode: input.episode })
   const castMedia: CompanionMedia = {
     ...normalizedMedia,
+    episode: pending.media.episode ?? normalizedMedia.episode,
     season: pending.media.season ?? normalizedMedia.season,
     seasonEpisodeCounts: pending.media.seasonEpisodeCounts ?? normalizedMedia.seasonEpisodeCounts,
     seasonLabels: pending.media.seasonLabels ?? normalizedMedia.seasonLabels,

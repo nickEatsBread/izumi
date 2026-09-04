@@ -1,7 +1,7 @@
 import { get } from 'svelte/store'
 import { describe, expect, it } from 'vitest'
 import { pendingCompanionPlayback } from './client'
-import { cancelPendingCompanionPlayback, companionPlaybackMatches, companionPlaybackTarget, hasPendingCompanionPlayback } from './playback'
+import { cancelPendingCompanionPlayback, companionPlaybackEpisode, companionPlaybackMatches, companionPlaybackTarget, hasPendingCompanionPlayback } from './playback'
 import type { CompanionMedia } from './protocol'
 
 const requested = (episode?: number): CompanionMedia => ({
@@ -39,6 +39,51 @@ describe('companion playback target', () => {
       format: 'MOVIE',
       catalog: { provider: 'tmdb', type: 'movie', id: '550' },
     })).toEqual({ episode: undefined })
+  })
+
+  it('maps a season-local TV episode past specials that appear first in provider metadata', () => {
+    const request: CompanionMedia = {
+      ref: { provider: 'stremio', type: 'series', id: 'skinwalker' },
+      resolver: { streamType: 'series' },
+      title: 'The Secret of Skinwalker Ranch',
+      season: 1,
+      episode: 1,
+    }
+    const resolved = {
+      id: -1,
+      type: 'SERIES' as const,
+      format: 'TV',
+      catalog: { provider: 'stremio' as const, type: 'series' as const, id: 'skinwalker' },
+      videos: [
+        { number: 1, season: 0, episode: 1, id: 'tt10589968:0:1' },
+        { number: 2, season: 1, episode: 1, id: 'tt10589968:1:1' },
+        { number: 3, season: 1, episode: 2, id: 'tt10589968:1:2' },
+      ],
+    }
+
+    expect(companionPlaybackEpisode(request, resolved)).toBe(2)
+    expect(companionPlaybackTarget(request, resolved)).toEqual({ episode: 2 })
+    expect(companionPlaybackMatches(request, resolved, 2)).toBe(true)
+    expect(companionPlaybackMatches(request, resolved, 1)).toBe(false)
+  })
+
+  it('rejects a missing season coordinate instead of silently playing another episode', () => {
+    const request: CompanionMedia = {
+      ref: { provider: 'tmdb', type: 'series', id: '101359' },
+      title: 'The Secret of Skinwalker Ranch',
+      season: 9,
+      episode: 1,
+    }
+    const resolved = {
+      id: -1,
+      type: 'SERIES' as const,
+      format: 'TV',
+      catalog: { provider: 'tmdb' as const, type: 'series' as const, id: '101359' },
+      videos: [{ number: 1, season: 1, episode: 1 }],
+    }
+
+    expect(companionPlaybackEpisode(request, resolved)).toBeNull()
+    expect(companionPlaybackTarget(request, resolved)).toBeNull()
   })
 
   it('forgets a dismissed TV target so a later local play is not redirected', () => {
