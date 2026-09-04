@@ -65,7 +65,7 @@ const EMBED_HTML: &str = r#"<!doctype html>
       playerParams.append('controls', controls)
       playerParams.append('mute', muted)
       playerParams.append('disablekb', controls === '1' ? '0' : '1')
-      playerParams.append('cc_lang_pref', 'ja')
+      playerParams.append('cc_load_policy', '0')
       playerParams.append('iv_load_policy', '3')
       playerParams.append('playsinline', '1')
       playerParams.append('rel', '0')
@@ -241,6 +241,8 @@ mod tests {
         assert!(EMBED_HTML.contains("strict-origin-when-cross-origin"));
         assert!(EMBED_HTML.contains("playerParams.append('origin', location.origin)"));
         assert!(EMBED_HTML.contains("playerParams.append('widget_referrer', 'https://' + appId)"));
+        assert!(EMBED_HTML.contains("playerParams.append('cc_load_policy', '0')"));
+        assert!(!EMBED_HTML.contains("cc_lang_pref"));
         assert!(EMBED_HTML.contains("type: 'izumi-youtube-event'"));
         assert!(EMBED_HTML.contains("event.data && event.data.type === 'izumi-youtube-command'"));
         assert!(!EMBED_HTML.contains("?."));
