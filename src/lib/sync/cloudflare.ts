@@ -3,7 +3,7 @@ import { persisted } from 'svelte-persisted-store'
 import type { CompanionMedia, CompanionPlaybackMode } from '$lib/companion/protocol'
 import type { SyncRecord, SyncStatus } from './types'
 
-export const CLOUDFLARE_WORKER_VERSION = '1.4.0'
+export const CLOUDFLARE_WORKER_VERSION = '1.5.0'
 export const CLOUDFLARE_WORKER_PROTOCOL = 1
 export const CLOUDFLARE_GIT_DEPLOY_URL =
   'https://deploy.workers.cloudflare.com/?url=https://github.com/nickEatsBread/izumi/tree/main/cloudflare-sync-worker'
@@ -85,6 +85,18 @@ export interface CloudflareResolverProfile {
   audioLang: string
   /** Ask an explicitly linked Izumi device only when the Worker has no TV-ready source. */
   connectedDeviceFallback: boolean
+  /** Optional credential used only inside this user's Worker to resolve torrent rows for the TV. */
+  debrid: {
+    provider: 'realdebrid'
+    token: string
+    /** Prefer Real-Debrid's HLS/DASH compatibility output before the original file. */
+    transcode: boolean
+  } | null
+}
+
+export interface CloudflareResolverProfileState extends Omit<CloudflareResolverProfile, 'debrid'> {
+  /** The Worker reports only whether a credential exists; it never echoes the token. */
+  debrid: { provider: 'realdebrid'; configured: true; transcode: boolean } | null
 }
 
 interface EncryptedEnvelope {
@@ -210,6 +222,10 @@ function connectedResolverSupported(status: WorkerStatus): boolean {
   return status.features?.includes('cloud-resolver-v2') === true
 }
 
+function nativeDebridResolverSupported(status: WorkerStatus): boolean {
+  return status.features?.includes('cloud-resolver-debrid-v1') === true
+}
+
 function companionConfig(): CloudflareSyncConfig {
   const config = get(cloudflareSyncConfig)
   if (!configReady(config)) throw new Error('Connect this phone to your Cloudflare Worker first.')
@@ -265,11 +281,11 @@ export async function createCloudflareCompanionEnrollment(): Promise<{ url: stri
 
 /** Read the opt-in profile separately from encrypted sync records. Add-on URLs remain visible to
  * the user's Worker because it must contact them while Izumi is closed. */
-export async function getCloudflareResolverProfile(): Promise<{ profile: CloudflareResolverProfile; updatedAt: number | null }> {
+export async function getCloudflareResolverProfile(): Promise<{ profile: CloudflareResolverProfileState; updatedAt: number | null }> {
   const config = companionConfig()
   const status = await getCloudflareWorkerStatus(config.endpoint)
   if (!cloudResolverSupported(status)) throw new Error('Update your Izumi Cloudflare Worker before enabling TV source resolving.')
-  const result = await workerRequest<{ profile: CloudflareResolverProfile; updatedAt: number | null }>(
+  const result = await workerRequest<{ profile: CloudflareResolverProfileState; updatedAt: number | null }>(
     config.endpoint, '/v1/resolver/profile', {}, config.deviceToken,
   )
   return {
@@ -284,6 +300,9 @@ export async function saveCloudflareResolverProfile(profile: CloudflareResolverP
   if (!cloudResolverSupported(status)) throw new Error('Update your Izumi Cloudflare Worker before enabling TV source resolving.')
   if (profile.connectedDeviceFallback && !connectedResolverSupported(status)) {
     throw new Error('Update your Izumi Cloudflare Worker before enabling connected-device source fallback.')
+  }
+  if (profile.debrid && !nativeDebridResolverSupported(status)) {
+    throw new Error('Update your Izumi Cloudflare Worker before enabling native TV debrid playback.')
   }
   return workerRequest<{ updatedAt: number }>(config.endpoint, '/v1/resolver/profile', {
     method: 'PUT',

@@ -1,7 +1,7 @@
 import webpush from 'web-push'
-import { defaultResolverProfile, normalizeResolverProfile, resolveDirectSources, resolveMediaDetails } from './resolver.js'
+import { defaultResolverProfile, normalizeResolverProfile, publicResolverProfile, resolveDirectSources, resolveMediaDetails } from './resolver.js'
 
-const VERSION = '1.4.0'
+const VERSION = '1.5.0'
 const PROTOCOL = 1
 const CATEGORIES = new Set(['watch', 'manual', 'presence', 'companion'])
 const MAX_BODY_BYTES = 512 * 1024
@@ -430,14 +430,15 @@ async function resolverProfile(request, env) {
   if (request.method === 'GET') {
     const row = await env.DB.prepare('SELECT profile_json AS profile, updated_at AS updatedAt FROM resolver_profiles WHERE owner_device_id = ?')
       .bind(deviceId).first()
-    if (!row) return json({ profile: defaultResolverProfile(), updatedAt: null })
+    if (!row) return json({ profile: publicResolverProfile(defaultResolverProfile()), updatedAt: null })
     try {
+      const profile = normalizeResolverProfile(JSON.parse(row.profile), new URL(request.url).origin)
       return json({
-        profile: normalizeResolverProfile(JSON.parse(row.profile), new URL(request.url).origin),
+        profile: publicResolverProfile(profile, new URL(request.url).origin),
         updatedAt: Number(row.updatedAt),
       })
     } catch {
-      return json({ profile: defaultResolverProfile(), updatedAt: null })
+      return json({ profile: publicResolverProfile(defaultResolverProfile()), updatedAt: null })
     }
   }
   if (request.method === 'DELETE') {
@@ -449,7 +450,7 @@ async function resolverProfile(request, env) {
     const now = Date.now()
     await env.DB.prepare('INSERT INTO resolver_profiles (owner_device_id, profile_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(owner_device_id) DO UPDATE SET profile_json = excluded.profile_json, updated_at = excluded.updated_at')
       .bind(deviceId, JSON.stringify(profile), now).run()
-    return json({ ok: true, profile, updatedAt: now })
+    return json({ ok: true, profile: publicResolverProfile(profile, new URL(request.url).origin), updatedAt: now })
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : 'Invalid resolver profile.' }, 400)
   }
@@ -595,7 +596,7 @@ export default {
           version: VERSION,
           protocol: PROTOCOL,
           claimed: await claimed(env),
-          features: ['companion-wake-v1', 'web-push-v1', 'cloud-resolver-v1', 'cloud-resolver-v2', 'companion-details-v1'],
+          features: ['companion-wake-v1', 'web-push-v1', 'cloud-resolver-v1', 'cloud-resolver-v2', 'cloud-resolver-debrid-v1', 'companion-details-v1'],
         })
       }
       if (request.method === 'GET' && url.pathname === '/v1/companion/enrol') return companionEnrolmentPage(request)

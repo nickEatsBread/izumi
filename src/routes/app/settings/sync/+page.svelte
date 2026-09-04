@@ -57,7 +57,7 @@
     type CloudflareDeploymentTarget,
     type CloudflareResolverProfile,
   } from '$lib/sync/cloudflare'
-  import { preferredAudioLang, preferredQuality, preferredStreamSort } from '$lib/settings/ui'
+  import { debridKey, debridProvider, preferredAudioLang, preferredQuality, preferredStreamSort } from '$lib/settings/ui'
   import { enabledAddonUrls } from '$lib/stremio/sources'
   import { isAndroid } from '$lib/platform'
   import { anilistToken } from '$lib/anilist/auth'
@@ -101,6 +101,7 @@
   let confirmTvForget = $state('')
   let cloudResolverEnabled = $state(false)
   let cloudResolverConnectedDevices = $state(false)
+  let cloudResolverDebridEnabled = $state(false)
   let cloudResolverLoaded = $state(false)
   let cloudResolverError = $state('')
   let cloudResolverUpdatedAt = $state<number | null>(null)
@@ -205,11 +206,13 @@
       const result = await getCloudflareResolverProfile()
       cloudResolverEnabled = result.profile.enabled
       cloudResolverConnectedDevices = result.profile.connectedDeviceFallback
+      cloudResolverDebridEnabled = result.profile.debrid?.configured === true
       cloudResolverUpdatedAt = result.updatedAt
       await provisionCompanionResolverRoutes(result.profile)
     } catch (e) {
       cloudResolverEnabled = false
       cloudResolverConnectedDevices = false
+      cloudResolverDebridEnabled = false
       cloudResolverError = e instanceof Error ? e.message : String(e)
     } finally {
       cloudResolverLoaded = true
@@ -217,6 +220,9 @@
   }
 
   async function uploadCloudResolverProfile() {
+    if (cloudResolverDebridEnabled && ($debridProvider !== 'realdebrid' || !$debridKey.trim())) {
+      throw new Error('Add a Real-Debrid token in Settings → Sources → Playback, or turn off Worker debrid playback.')
+    }
     const profile: CloudflareResolverProfile = {
       enabled: true,
       addons: [...$enabledAddonUrls],
@@ -224,6 +230,9 @@
       sort: $preferredStreamSort,
       audioLang: $preferredAudioLang,
       connectedDeviceFallback: cloudResolverConnectedDevices,
+      debrid: cloudResolverDebridEnabled
+        ? { provider: 'realdebrid', token: $debridKey.trim(), transcode: true }
+        : null,
     }
     const result = await saveCloudflareResolverProfile(profile)
     cloudResolverEnabled = true
@@ -239,10 +248,6 @@
         await deleteCloudflareResolverProfile()
         await provisionCompanionResolverRoutes({
           enabled: false,
-          addons: [],
-          quality: 'any',
-          sort: 'quality',
-          audioLang: '',
           connectedDeviceFallback: false,
         })
         cloudResolverEnabled = false
@@ -277,6 +282,27 @@
           : 'The TV will now use only your Worker for source resolving.')
       } catch (error) {
         cloudResolverConnectedDevices = previous
+        throw error
+      }
+    })
+  }
+
+  function toggleCloudResolverDebrid() {
+    if (!cloudResolverEnabled) return
+    if (!cloudResolverDebridEnabled && ($debridProvider !== 'realdebrid' || !$debridKey.trim())) {
+      cloudResolverError = 'Add a Real-Debrid token in Settings → Sources → Playback first.'
+      return
+    }
+    const previous = cloudResolverDebridEnabled
+    cloudResolverDebridEnabled = !previous
+    void action('cloud-resolver-debrid', async () => {
+      try {
+        await uploadCloudResolverProfile()
+        showMessage(cloudResolverDebridEnabled
+          ? 'Real-Debrid torrent and TV-compatible playback are enabled in your Worker.'
+          : 'The Real-Debrid token was removed from your Worker profile.')
+      } catch (error) {
+        cloudResolverDebridEnabled = previous
         throw error
       }
     })
@@ -897,8 +923,8 @@
         <section class="rounded-xl border border-border p-4">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div class="min-w-0 flex-1">
-              <h3 class="font-black">Resolve TV sources in my Worker</h3>
-              <p class="mt-1 text-xs leading-5 text-muted-foreground">When Izumi is closed, a paired TV can ask this Worker for direct sources from your enabled Stremio add-ons. The TV still downloads and plays the media itself.</p>
+              <h3 class="font-black">TV playback through CF Sync</h3>
+              <p class="mt-1 text-xs leading-5 text-muted-foreground">Your paired TV asks this Worker for sources first, even while Izumi is closed. The TV downloads media directly; Cloudflare only handles discovery, ranking, sync, and optional debrid resolution.</p>
             </div>
             <button
               type="button"
@@ -909,8 +935,24 @@
             >{busy === 'cloud-resolver-toggle' ? 'Saving…' : cloudResolverEnabled ? 'Turn off' : 'Enable'}</button>
           </div>
           <div class="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">
-            This is separate from encrypted sync: configured add-on URLs can contain credentials and must be readable by your own Worker. Debrid-enabled add-ons can return direct TV-playable links. Izumi’s own debrid key, P2P engine, JVM extensions, and media bytes are never uploaded to the Worker.
+            This is separate from encrypted sync: configured add-on URLs and the optional Real-Debrid token must be readable by your own Worker while it resolves a source. The token is never returned by the Worker or sent to the TV. Media bytes still go directly from the source or Real-Debrid to your TV.
           </div>
+          <button
+            type="button"
+            data-focusable
+            aria-pressed={cloudResolverDebridEnabled}
+            disabled={!!busy || !cloudResolverEnabled}
+            onclick={() => { h.impact(); toggleCloudResolverDebrid() }}
+            class="mt-3 flex w-full items-start gap-3 rounded-lg border p-3 text-left disabled:opacity-50 {cloudResolverDebridEnabled ? 'border-primary/50 bg-primary/10' : 'border-border bg-secondary/30'}"
+          >
+            <span class="mt-0.5 grid size-5 shrink-0 place-items-center rounded border {cloudResolverDebridEnabled ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/50'}">
+              {#if cloudResolverDebridEnabled}<Check size={14} />{/if}
+            </span>
+            <span>
+              <span class="block text-sm font-black">Use Real-Debrid when the TV selects a torrent</span>
+              <span class="mt-0.5 block text-xs leading-5 text-muted-foreground">Uses your existing account to turn torrent rows into direct playback. When available, Real-Debrid’s HLS/DASH compatibility stream is preferred—Cloudflare never transcodes or relays the episode.</span>
+            </span>
+          </button>
           <button
             type="button"
             data-focusable
@@ -923,8 +965,8 @@
               {#if cloudResolverConnectedDevices}<Check size={14} />{/if}
             </span>
             <span>
-              <span class="block text-sm font-black">Cloudflare + connected Izumi device</span>
-              <span class="mt-0.5 block text-xs leading-5 text-muted-foreground">Off by default. If the Worker has no TV-ready link, an open linked device can resolve debrid or P2P and relay only the stream to the TV over your LAN. Android may use your private Worker notification when closed; desktop is used only while Izumi is open.</span>
+              <span class="block text-sm font-black">Optional linked-device fallback</span>
+              <span class="mt-0.5 block text-xs leading-5 text-muted-foreground">Off by default. Keep this only for raw P2P, true transcoding/remuxing, client-local sources, or unusual header-bound streams the free Worker cannot handle. Android may be notified when closed; desktop is used only while Izumi is open.</span>
             </span>
           </button>
           {#if cloudResolverError}
@@ -934,6 +976,7 @@
             <span>{$enabledAddonUrls.length} enabled add-on{$enabledAddonUrls.length === 1 ? '' : 's'}</span>
             {#if cloudResolverEnabled}
               <span>· {$preferredQuality === 'any' ? 'Best available' : `${$preferredQuality}p preferred`}</span>
+              {#if cloudResolverDebridEnabled}<span>· Real-Debrid</span>{/if}
               <span>· {cloudResolverConnectedDevices ? 'Cloudflare + device' : 'Cloudflare only'}</span>
               {#if cloudResolverUpdatedAt}<span>· Updated {new Date(cloudResolverUpdatedAt).toLocaleString()}</span>{/if}
               <button type="button" data-focusable disabled={!!busy || !$enabledAddonUrls.length} onclick={() => { h.tap(); updateCloudResolver() }} class="ml-auto min-h-9 rounded-lg bg-secondary px-3 py-1.5 font-bold disabled:opacity-50">

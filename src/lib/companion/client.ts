@@ -147,7 +147,9 @@ export function companionWorkerPlaybackPolicy(input: {
   }
 }
 
-async function companionWorkerRoutePolicy(profileOverride?: CloudflareResolverProfile): Promise<CompanionWorkerRoutePolicy> {
+type CompanionResolverPolicy = Pick<CloudflareResolverProfile, 'enabled' | 'connectedDeviceFallback'>
+
+async function companionWorkerRoutePolicy(profileOverride?: CompanionResolverPolicy): Promise<CompanionWorkerRoutePolicy> {
   const provider = get(syncProvider)
   const android = get(isAndroid)
   const tv = get(isTv)
@@ -668,7 +670,7 @@ async function reconnect(
 
 /** Add private Worker capabilities to TVs paired before source resolving was enabled. The route is
  * stored immediately and delivered over the authenticated local channel whenever each TV is open. */
-export async function provisionCompanionResolverRoutes(profileOverride?: CloudflareResolverProfile): Promise<number> {
+export async function provisionCompanionResolverRoutes(profileOverride?: CompanionResolverPolicy): Promise<number> {
   if (get(syncProvider) !== 'cloudflare' || get(isTv)) return 0
   const policy = await companionWorkerRoutePolicy(profileOverride)
   let provisioned = 0

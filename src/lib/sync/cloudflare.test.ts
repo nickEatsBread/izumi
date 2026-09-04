@@ -146,10 +146,11 @@ describe('Cloudflare self-hosted sync', () => {
       sort: 'quality',
       audioLang: 'jpn',
       connectedDeviceFallback: false,
+      debrid: null,
     })
     expect(String(fetchMock.mock.calls[1][0])).toBe('https://private.example.workers.dev/v1/resolver/profile')
     expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: 'PUT' })
-    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain('debrid')
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toMatchObject({ debrid: null })
   })
 
   it('requires the updated private Worker before enabling connected-device fallback', async () => {
@@ -174,6 +175,65 @@ describe('Cloudflare self-hosted sync', () => {
       sort: 'quality',
       audioLang: 'jpn',
       connectedDeviceFallback: true,
+      debrid: null,
+    })).rejects.toThrow(/Update your Izumi Cloudflare Worker/)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('uploads a debrid credential only to a Worker advertising native debrid resolution', async () => {
+    cloudflareSyncConfig.set({
+      enabled: true,
+      endpoint: 'https://private.example.workers.dev',
+      deviceId: '0123456789abcdef01234567',
+      deviceToken: 'D'.repeat(43),
+      groupKey: 'G'.repeat(43),
+      workerVersion: '1.5.0',
+    })
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        app: 'izumi-sync', version: '1.5.0', protocol: 1, claimed: true,
+        features: ['cloud-resolver-v1', 'cloud-resolver-v2', 'cloud-resolver-debrid-v1'],
+      })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, updatedAt: 456 })))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await saveCloudflareResolverProfile({
+      enabled: true,
+      addons: ['https://addon.example/config'],
+      quality: '1080',
+      sort: 'quality',
+      audioLang: 'jpn',
+      connectedDeviceFallback: false,
+      debrid: { provider: 'realdebrid', token: 'R'.repeat(32), transcode: true },
+    })
+
+    const body = JSON.parse(String(fetchMock.mock.calls[1][1]?.body))
+    expect(body.debrid).toEqual({ provider: 'realdebrid', token: 'R'.repeat(32), transcode: true })
+  })
+
+  it('refuses to upload a debrid credential to an older Worker', async () => {
+    cloudflareSyncConfig.set({
+      enabled: true,
+      endpoint: 'https://private.example.workers.dev',
+      deviceId: '0123456789abcdef01234567',
+      deviceToken: 'D'.repeat(43),
+      groupKey: 'G'.repeat(43),
+      workerVersion: '1.4.0',
+    })
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+      app: 'izumi-sync', version: '1.4.0', protocol: 1, claimed: true,
+      features: ['cloud-resolver-v1', 'cloud-resolver-v2'],
+    })))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(saveCloudflareResolverProfile({
+      enabled: true,
+      addons: ['https://addon.example/config'],
+      quality: '1080',
+      sort: 'quality',
+      audioLang: 'jpn',
+      connectedDeviceFallback: false,
+      debrid: { provider: 'realdebrid', token: 'R'.repeat(32), transcode: true },
     })).rejects.toThrow(/Update your Izumi Cloudflare Worker/)
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })

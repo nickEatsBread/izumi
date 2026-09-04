@@ -34,7 +34,7 @@ its original deployment method.
 Izumi never stores a Cloudflare API token and cannot silently mutate the account. Every direct
 deployment or update requires the user to approve and paste a token again.
 
-Database migrations are applied by the deploy command before the Worker update. Version 1.1 adds the companion pairing, short-lived request, browser enrollment, and Web Push subscription tables. Version 1.2 adds the optional direct-source resolver profile to the same private D1 database. Version 1.3 adds the explicit Cloudflare-only versus Cloudflare-plus-device playback policy. Version 1.4 adds authenticated TV episode-metadata lookup for AniList titles so series pages still receive episode titles, summaries, runtimes, and artwork when the paired client is unavailable. Versions 1.3 and 1.4 need no new migration.
+Database migrations are applied by the deploy command before the Worker update. Version 1.1 adds the companion pairing, short-lived request, browser enrollment, and Web Push subscription tables. Version 1.2 adds the optional direct-source resolver profile to the same private D1 database. Version 1.3 adds the explicit Cloudflare-only versus Cloudflare-plus-device playback policy. Version 1.4 adds authenticated TV episode-metadata lookup for AniList titles so series pages still receive episode titles, summaries, runtimes, and artwork when the paired client is unavailable. Version 1.5 adds TV capability hints and optional native Real-Debrid torrent resolution, including provider-hosted HLS/DASH compatibility variants. Versions 1.3 through 1.5 need no new migration.
 
 ## Optional TV source resolving
 
@@ -50,9 +50,13 @@ profile from Izumi.
 - A configured debrid-enabled Stremio add-on is supported when it returns a public direct URL. A
   `notWebReady` hint does not reject that URL by itself: in Stremio it can simply denote a non-MP4
   or non-HTTPS source that is unsuitable for a browser, while Samsung AVPlay supports more formats.
-- Torrent-only results, loopback/private URLs, and sources requiring playback headers the TV cannot
-  apply are omitted. Izumi's built-in debrid-account APIs, local P2P engine, and JVM/Android
-  extensions are not executed inside the Worker and their credentials are never uploaded to it.
+- The owner can explicitly allow the Worker to use the Real-Debrid token already configured in
+  Izumi. Torrent-only results are then resolved in the user's own account. When Real-Debrid exposes
+  an HLS, DASH, or live-MP4 compatibility stream, that provider-hosted stream is ranked before the
+  original file. The Worker never echoes the account token to an owner device or sends it to the TV.
+- Torrent-only results without configured debrid, loopback/private URLs, and sources requiring
+  playback headers the TV cannot apply are omitted. The local P2P engine and JVM/Android extensions
+  are not executed inside the Worker.
 - The default is **Cloudflare only**. The Worker either returns a TV-ready URL or the TV reports that
   no source was found; it does not silently contact another device.
 - The owner can separately enable **Cloudflare + connected Izumi device**. The TV tries the Worker
@@ -63,8 +67,28 @@ profile from Izumi.
 
 Resolver add-on URLs may contain credentials. Unlike ordinary sync records, the Worker must read
 these URLs in order to contact the add-ons, so resolver profiles are deliberately separate from
-end-to-end encrypted sync data. They are never returned to the TV. Disable the feature or delete
-the profile from Izumi to remove them from D1.
+end-to-end encrypted sync data. The optional Real-Debrid token has the same constraint. Resolver
+credentials are never returned to the TV, and the Real-Debrid token is redacted from profile reads.
+Disable the feature or delete the profile from Izumi to remove them from D1.
+
+## Free-only media boundary
+
+The Worker is a coordinator and resolver, not a media server. It uses Workers Free and D1 Free and
+requires no custom domain. Media downloads go from the public source, the user's debrid provider,
+or a separately approved LAN server directly to the TV.
+
+No paid Cloudflare product is required. Real-Debrid remains an optional third-party subscription;
+without it, direct HTTP/HLS/DASH sources still work but torrent-only results cannot be played by the
+Worker.
+
+- Do not add Cloudflare Stream, Containers, Media Transformations, R2 media storage, or another
+  paid runtime to this project.
+- Do not proxy episode files or adaptive-stream segments through this Worker. Apart from exhausting
+  the per-request free-tier budget, using the self-serve CDN as a general video relay can violate
+  Cloudflare's video-delivery policy.
+- Generic transcoding/remuxing, raw non-debrid BitTorrent, and a source that exists only on an
+  offline Izumi client's `localhost` remain outside the Worker. The linked client is an optional
+  compatibility fallback for those cases, not the TV's primary backend.
 
 Both the optional Deploy to Cloudflare button and Izumi's generated direct-upload bundle treat this
 directory as a standalone project, so Worker code must not import files from the parent Izumi
