@@ -9,18 +9,25 @@ import {
   catalogLabel,
   catalogProviders,
   catalogScreens,
-  selectCatalogScreen,
   type CatalogScreen,
 } from '$lib/settings/catalog'
 import {
   createCloudflareCompanionPairing,
   publishCompanionSnapshot,
+  publishCloudflareCompanionSnapshot,
+  readCloudflareCompanionProgress,
   removeCloudflareCompanionPairing,
   revokeCloudflareCompanionTransport,
   syncProvider,
   type CloudflareCompanionTransport,
 } from '$lib/sync/client'
-import { getCloudflareResolverProfile, type CloudflareResolverProfile } from '$lib/sync/cloudflare'
+import { compatibilityMediaId } from '$lib/catalog/identity'
+import type { Media } from '$lib/anilist/types'
+import { recordPlay } from '$lib/player/history'
+import { clearPosition, savePosition } from '$lib/player/progress'
+import { markWatched } from '$lib/trackers'
+import { getCloudflareResolverProfile, saveCloudflareResolverProfile, type CloudflareResolverProfile } from '$lib/sync/cloudflare'
+import { currentCloudflareCompanionProfile, watchCloudflareCompanionProfile } from './cloud-profile'
 import {
   COMPANION_PROTOCOL,
   type CompanionHomeSnapshot,
@@ -40,6 +47,8 @@ export interface PairedCompanion {
 }
 
 export const pairedCompanions = persisted<PairedCompanion[]>('paired-tizen-companions-v1', [])
+const appliedCompanionProgress = persisted<Record<string, number>>('paired-tizen-progress-applied-v1', {})
+const companionProgressPulling = new Set<string>()
 
 export interface PendingCompanionPlayback {
   device: PairedCompanion
@@ -299,7 +308,7 @@ function duringCompanionActivity<T>(work: () => T | Promise<T>): Promise<T> {
   return Promise.resolve().then(work).finally(finish)
 }
 
-let backgroundSnapshotFactory: (() => Promise<CompanionHomeSnapshot>) | undefined
+let backgroundSnapshotFactory: ((screen?: CatalogScreen) => Promise<CompanionHomeSnapshot>) | undefined
 let backgroundPlayHandler: ((media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void | Promise<void>) | undefined
 let backgroundSearchHandler: CompanionSearchHandler | undefined
 let backgroundDetailsHandler: ((media: CompanionMedia) => Promise<CompanionMedia>) | undefined
@@ -417,6 +426,7 @@ export async function pairCompanion(
     cloudflare = workerPolicy.provision
       ? await createCloudflareCompanionPairing(workerPolicy)
       : undefined
+    if (cloudflare) await publishCloudflareCompanionSnapshot(cloudflare, snapshot)
     const paired = waitForPairResult(channel, link.deviceId)
     channel.publish('izumi.companion.pair', {
       protocol: COMPANION_PROTOCOL,
@@ -455,6 +465,50 @@ function sendSnapshot(connection: CompanionConnection, snapshot: CompanionHomeSn
     credential: connection.device.credential,
     snapshot,
   }, 'host')
+  if (connection.device.cloudflare) {
+    void publishCloudflareCompanionSnapshot(connection.device.cloudflare, snapshot).catch(() => {})
+  }
+}
+
+function checkpointMedia(media: CompanionMedia): Media {
+  const total = media.seasonEpisodeCounts?.reduce((sum, count) => sum + Math.max(0, Number(count) || 0), 0)
+  return {
+    id: Number.isInteger(media.mediaId) ? Number(media.mediaId) : media.ref.provider === 'anilist' && /^\d+$/.test(media.ref.id)
+      ? Number(media.ref.id) : compatibilityMediaId(media.ref),
+    type: media.ref.type === 'manga' ? 'MANGA' : 'ANIME',
+    format: media.mediaKind === 'movie' || media.ref.type === 'movie' ? 'MOVIE' : 'TV',
+    catalog: media.ref,
+    title: { userPreferred: media.title, english: media.title, romaji: media.title },
+    description: media.description,
+    coverImage: { extraLarge: media.poster, large: media.poster, medium: media.poster },
+    bannerImage: media.backdrop,
+    logoImage: media.logoImage,
+    duration: media.episodeRuntimeMinutes ?? media.runtimeMinutes,
+    episodes: total || undefined,
+    genres: media.genres,
+  } as Media
+}
+
+async function pullCompanionProgress(device: PairedCompanion): Promise<boolean> {
+  if (!device.cloudflare) return false
+  const records = await readCloudflareCompanionProgress(device.cloudflare)
+  let changed = false
+  for (const record of records.sort((left, right) => left.updatedAt - right.updatedAt)) {
+    const appliedKey = `${device.cloudflare.pairingId}:${record.recordKey}`
+    if ((get(appliedCompanionProgress)[appliedKey] ?? 0) >= record.updatedAt) continue
+    const media = checkpointMedia(record.media)
+    const episode = Math.max(1, Math.floor(record.media.episode ?? 1))
+    recordPlay(media, episode)
+    if (record.completed) {
+      markWatched(media, episode)
+      clearPosition(media.id, episode)
+    } else if (record.durationSeconds > 0 && record.positionSeconds >= 0) {
+      savePosition(media.id, episode, record.positionSeconds, record.durationSeconds)
+    }
+    appliedCompanionProgress.update((current) => ({ ...current, [appliedKey]: record.updatedAt }))
+    changed = true
+  }
+  return changed
 }
 
 function sendWorkerTransport(connection: CompanionConnection): void {
@@ -470,7 +524,7 @@ function keepConnection(
   device: PairedCompanion,
   channel: SamsungSmartViewChannel,
   initialSnapshot: CompanionHomeSnapshot,
-  createSnapshot?: () => Promise<CompanionHomeSnapshot>,
+  createSnapshot?: (screen?: CatalogScreen) => Promise<CompanionHomeSnapshot>,
   onPlay?: (media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void | Promise<void>,
   onSearch?: CompanionSearchHandler,
   onDetails?: (media: CompanionMedia, presentationOnly?: boolean) => Promise<CompanionMedia>,
@@ -589,13 +643,10 @@ function keepConnection(
         reject('Open the izumi catalogue screen on this device, then try again.')
         return
       }
-      const previous = get(catalogScreen)
-      selectCatalogScreen(target)
-      void createSnapshot().then(async (snapshot) => {
+      void createSnapshot(target).then(async (snapshot) => {
         await publishCompanionSnapshot(snapshot).catch(() => {})
         for (const activeConnection of connections.values()) sendSnapshot(activeConnection, snapshot)
       }).catch(() => {
-        selectCatalogScreen(previous)
         reject(`${catalogLabel(target)} could not load. Check its enabled sources in izumi.`)
       })
     }),
@@ -722,7 +773,7 @@ function keepConnection(
 
 async function reconnect(
   device: PairedCompanion,
-  createSnapshot: () => Promise<CompanionHomeSnapshot>,
+  createSnapshot: (screen?: CatalogScreen) => Promise<CompanionHomeSnapshot>,
   onPlay: (media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void | Promise<void>,
   onSearch: CompanionSearchHandler,
   onDetails: (media: CompanionMedia, presentationOnly?: boolean) => Promise<CompanionMedia>,
@@ -770,7 +821,7 @@ export async function provisionCompanionResolverRoutes(profileOverride?: Compani
 
 /** Maintains lightweight channels only for TVs the user explicitly paired. */
 export function initCompanionConnections(
-  createSnapshot: () => Promise<CompanionHomeSnapshot>,
+  createSnapshot: (screen?: CatalogScreen) => Promise<CompanionHomeSnapshot>,
   onPlay: (media: CompanionMedia, device: PairedCompanion, context: CompanionPlayContext) => void | Promise<void>,
   onSearch: CompanionSearchHandler,
   onDetails: (media: CompanionMedia, presentationOnly?: boolean) => Promise<CompanionMedia>,
@@ -782,9 +833,48 @@ export function initCompanionConnections(
   backgroundDetailsHandler = onDetails
   backgroundSourceSelectionHandler = onSourceSelection
   let stopped = false
+  let profileSyncing = false
+  const syncProfile = async () => {
+    if (stopped || profileSyncing || get(syncProvider) !== 'cloudflare') return
+    profileSyncing = true
+    try {
+      const existing = await getCloudflareResolverProfile()
+      if (!existing.profile.enabled) return
+      const profile = currentCloudflareCompanionProfile(existing.profile.connectedDeviceFallback)
+      await saveCloudflareResolverProfile(profile)
+      await provisionCompanionResolverRoutes(profile)
+      const screens = catalogScreens(get(catalogProviders))
+      const snapshots = []
+      for (const screen of screens) snapshots.push(await createSnapshot(screen))
+      const snapshot = snapshots.find((value) => value.catalog.screen === get(catalogScreen)) ?? snapshots[0]
+      if (snapshot) await publishCompanionSnapshot(snapshot).catch(() => {})
+      for (const device of get(pairedCompanions)) {
+        if (!device.cloudflare) continue
+        for (const value of snapshots) {
+          await publishCloudflareCompanionSnapshot(device.cloudflare, value).catch(() => {})
+        }
+      }
+    } catch { /* Offline/older Workers retry on the next setting change or app launch. */ }
+    finally { profileSyncing = false }
+  }
+  const stopProfile = watchCloudflareCompanionProfile(() => { void syncProfile() })
+  const initialProfileTimer = setTimeout(() => { void syncProfile() }, 1_500)
   const refresh = () => {
     if (stopped) return
-    for (const device of get(pairedCompanions)) void reconnect(device, createSnapshot, onPlay, onSearch, onDetails, onSourceSelection)
+    for (const device of get(pairedCompanions)) {
+      if (!companionProgressPulling.has(device.deviceId)) {
+        companionProgressPulling.add(device.deviceId)
+        void pullCompanionProgress(device).then(async (changed) => {
+          if (!changed || stopped) return
+          const snapshot = await createSnapshot()
+          await publishCompanionSnapshot(snapshot).catch(() => {})
+          const connection = connections.get(device.deviceId)
+          if (connection) sendSnapshot(connection, snapshot)
+          else if (device.cloudflare) await publishCloudflareCompanionSnapshot(device.cloudflare, snapshot)
+        }).catch(() => {}).finally(() => companionProgressPulling.delete(device.deviceId))
+      }
+      void reconnect(device, createSnapshot, onPlay, onSearch, onDetails, onSourceSelection)
+    }
   }
   refresh()
   const timer = setInterval(refresh, 30_000)
@@ -796,6 +886,8 @@ export function initCompanionConnections(
     if (backgroundDetailsHandler === onDetails) backgroundDetailsHandler = undefined
     if (backgroundSourceSelectionHandler === onSourceSelection) backgroundSourceSelectionHandler = undefined
     clearInterval(timer)
+    clearTimeout(initialProfileTimer)
+    stopProfile()
     for (const connection of connections.values()) connection.dispose()
   }
 }

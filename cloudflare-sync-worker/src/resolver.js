@@ -9,8 +9,14 @@ import {
   normalizeStreamBehavior,
   pickCandidates,
 } from './generated/resolver-core/resolver-core.ts'
-import { providerName, providers, resolveHash as resolveDebridHash } from './generated/resolver-core/debrid/index.ts'
+import {
+  providerName,
+  providers,
+  resolveHash as resolveDebridHash,
+  resolveSidecars as resolveDebridSidecars,
+} from './generated/resolver-core/debrid/index.ts'
 import { rdForgetLists } from './generated/resolver-core/debrid/providers/realdebrid.ts'
+import { catalogInternals, catalogSearch, catalogSnapshot, decodeStremioRef } from './catalog.js'
 
 const MAX_ADDONS = 8
 const MAX_ADDON_URL_BYTES = 2048
@@ -25,6 +31,7 @@ const QUALITY = new Set(['any', '2160', '1440', '1080', '720', '480', '360'])
 const SORT = new Set(['quality', 'seeders', 'size'])
 const PROVIDERS = new Set(['anilist', 'kitsu', 'tmdb', 'stremio'])
 const TYPES = new Set(['anime', 'movie', 'series'])
+const CATALOG_SCREENS = new Set(['auto', 'anilist', 'kitsu', 'tmdb', 'stremio', 'merged', 'jvm'])
 const encoder = new TextEncoder()
 
 const DEFAULT_PROFILE = Object.freeze({
@@ -34,7 +41,15 @@ const DEFAULT_PROFILE = Object.freeze({
   sort: 'quality',
   audioLang: '',
   connectedDeviceFallback: false,
+  allowPrivateNetworkSources: false,
   debrid: null,
+  catalog: {
+    screens: ['auto'],
+    defaultScreen: 'auto',
+    showAdult: false,
+    hideSpoilers: false,
+    tmdbToken: '',
+  },
 })
 
 function publicHostname(hostname) {
@@ -92,6 +107,15 @@ export function normalizeResolverProfile(value, workerOrigin = '') {
     }
     debrid = { provider, credential }
   }
+  const catalogValue = input.catalog && typeof input.catalog === 'object' ? input.catalog : {}
+  const suppliedScreens = Array.isArray(catalogValue.screens) ? catalogValue.screens : ['auto']
+  const screens = [...new Set(suppliedScreens.flatMap((entry) => CATALOG_SCREENS.has(String(entry)) ? [String(entry)] : []))]
+  if (!screens.length) screens.push('auto')
+  const defaultScreen = screens.includes(String(catalogValue.defaultScreen))
+    ? String(catalogValue.defaultScreen)
+    : screens.find((entry) => entry !== 'jvm') ?? 'auto'
+  const tmdbToken = typeof catalogValue.tmdbToken === 'string' ? catalogValue.tmdbToken.trim() : ''
+  if (tmdbToken.length > 2_048 || /[\u0000-\u001f\u007f]/.test(tmdbToken)) throw new Error('The TMDB catalogue credential is invalid.')
   return {
     enabled: input.enabled === true,
     addons,
@@ -99,7 +123,15 @@ export function normalizeResolverProfile(value, workerOrigin = '') {
     sort,
     audioLang,
     connectedDeviceFallback: input.connectedDeviceFallback === true,
+    allowPrivateNetworkSources: input.allowPrivateNetworkSources === true,
     debrid,
+    catalog: {
+      screens,
+      defaultScreen,
+      showAdult: catalogValue.showAdult === true,
+      hideSpoilers: catalogValue.hideSpoilers === true,
+      tmdbToken,
+    },
   }
 }
 
@@ -111,6 +143,11 @@ export function publicResolverProfile(profileValue, workerOrigin = '') {
     debrid: profile.debrid
       ? { provider: profile.debrid.provider, configured: true }
       : null,
+    catalog: {
+      ...profile.catalog,
+      tmdbToken: undefined,
+      tmdbConfigured: !!profile.catalog.tmdbToken,
+    },
   }
 }
 
@@ -177,12 +214,146 @@ async function metadataFor(request, fetcher) {
   return fetchJson(fetcher, `https://api.ani.zip/mappings?anilist_id=${encodeURIComponent(request.ref.id)}`, METADATA_TIMEOUT_MS)
 }
 
+function detailEnvelope(episodes, extra = {}) {
+  const cleanEpisodes = episodes.filter((entry) => Number.isInteger(entry.season) && entry.season >= 0
+    && Number.isInteger(entry.episode) && entry.episode > 0).slice(0, 2_000)
+  const seasons = new Map()
+  for (const entry of cleanEpisodes) seasons.set(entry.season, Math.max(seasons.get(entry.season) ?? 0, entry.episode))
+  const ordered = [...seasons.entries()].sort(([left], [right]) => left - right)
+  return {
+    ...extra,
+    episodes: cleanEpisodes,
+    seasonEpisodeCounts: ordered.map(([, count]) => count),
+    seasonLabels: ordered.map(([season]) => season === 0 ? 'Specials' : `Season ${season}`),
+  }
+}
+
+async function kitsuDetails(request) {
+  if (!/^\d{1,12}$/.test(request.ref.id)) return null
+  const detail = await catalogInternals.fetchJson(`https://kitsu.io/api/edge/anime/${encodeURIComponent(request.ref.id)}`)
+  const attrs = detail?.data?.attributes ?? {}
+  const episodes = []
+  let next = `https://kitsu.io/api/edge/episodes?filter%5BmediaId%5D=${encodeURIComponent(request.ref.id)}&sort=number&page%5Blimit%5D=20`
+  for (let page = 0; next && page < 25; page++) {
+    const value = await catalogInternals.fetchJson(next)
+    for (const raw of value?.data ?? []) {
+      const episode = Number(raw?.attributes?.number)
+      if (!Number.isInteger(episode) || episode < 1) continue
+      episodes.push({
+        season: 1, episode,
+        title: cleanText(raw.attributes?.canonicalTitle, 300),
+        description: cleanText(raw.attributes?.synopsis, 1_500),
+        image: cleanUrl(raw.attributes?.thumbnail?.original ?? raw.attributes?.thumbnail?.large),
+        runtimeMinutes: Number(raw.attributes?.length) || Number(attrs.episodeLength) || undefined,
+        releasedAt: cleanText(raw.attributes?.airdate, 40),
+      })
+    }
+    next = typeof value?.links?.next === 'string' ? value.links.next : ''
+  }
+  const summary = catalogInternals.kitsuMedia(detail?.data)
+  return detailEnvelope(episodes, summary ? {
+    description: summary.description, poster: summary.poster, backdrop: summary.backdrop,
+    runtimeMinutes: summary.runtimeMinutes, ratings: summary.ratings,
+  } : {})
+}
+
+async function tmdbDetails(request, profile) {
+  if (!/^\d{1,12}$/.test(request.ref.id) || !profile.catalog.tmdbToken) return null
+  const kind = request.ref.type === 'movie' ? 'movie' : 'tv'
+  const detail = await catalogInternals.tmdbRequest(profile.catalog.tmdbToken, `/${kind}/${encodeURIComponent(request.ref.id)}`, {
+    append_to_response: 'videos,images,release_dates,content_ratings,recommendations,credits,aggregate_credits',
+    include_image_language: 'en,null',
+  })
+  const summary = catalogInternals.tmdbMedia({ ...detail, media_type: kind })
+  const trailers = detail?.videos?.results ?? []
+  const trailer = trailers.find((entry) => entry?.site === 'YouTube' && entry?.type === 'Trailer' && entry?.official)
+    ?? trailers.find((entry) => entry?.site === 'YouTube')
+  const seasons = kind === 'tv' ? (detail?.seasons ?? []).filter((entry) => Number.isInteger(entry?.season_number)).slice(0, 20) : []
+  const settled = await Promise.allSettled(seasons.map((season) => catalogInternals.tmdbRequest(
+    profile.catalog.tmdbToken, `/tv/${encodeURIComponent(request.ref.id)}/season/${season.season_number}`,
+  )))
+  const episodes = kind === 'movie' ? [] : settled
+    .filter((entry) => entry.status === 'fulfilled')
+    .flatMap((entry) => (entry.value?.episodes ?? []).flatMap((raw) => (
+      Number.isInteger(raw?.episode_number) && Number.isInteger(raw?.season_number) ? [{
+        season: raw.season_number,
+        episode: raw.episode_number,
+        title: cleanText(raw.name, 300),
+        description: cleanText(raw.overview, 1_500),
+        image: raw.still_path ? `https://image.tmdb.org/t/p/w780${raw.still_path}` : undefined,
+        runtimeMinutes: Number(raw.runtime) || undefined,
+        releasedAt: cleanText(raw.air_date, 40),
+      }] : []
+    )))
+  const credits = detail?.aggregate_credits ?? detail?.credits ?? {}
+  const cast = (credits.cast ?? []).slice(0, 20).flatMap((entry) => entry?.id && entry?.name ? [{
+    id: String(entry.id), provider: 'tmdb', name: cleanText(entry.name, 160),
+    role: cleanText(entry.character ?? entry.roles?.[0]?.character, 160),
+    image: entry.profile_path ? `https://image.tmdb.org/t/p/w185${entry.profile_path}` : undefined, credit: 'cast',
+  }] : [])
+  const crew = (credits.crew ?? []).slice(0, 20).flatMap((entry) => entry?.id && entry?.name ? [{
+    id: String(entry.id), provider: 'tmdb', name: cleanText(entry.name, 160),
+    role: cleanText(entry.job ?? entry.jobs?.[0]?.job, 160),
+    image: entry.profile_path ? `https://image.tmdb.org/t/p/w185${entry.profile_path}` : undefined, credit: 'crew',
+  }] : [])
+  return detailEnvelope(episodes, {
+    description: summary?.description,
+    poster: summary?.poster,
+    backdrop: summary?.backdrop,
+    runtimeMinutes: Number(detail?.runtime) || Number(detail?.episode_run_time?.[0]) || undefined,
+    genres: (detail?.genres ?? []).map((entry) => cleanText(entry?.name, 80)).filter(Boolean),
+    ratings: summary?.ratings,
+    trailer: trailer?.key ? { id: String(trailer.key).slice(0, 40), site: 'youtube' } : undefined,
+    cast, crew,
+  })
+}
+
+async function stremioDetails(request, profile) {
+  const identity = decodeStremioRef(request.ref.id)
+  if (!identity) return null
+  const base = profile.addons.map(catalogInternals.normalizeBase).find((candidate) => catalogInternals.fnv(candidate) === identity.addonId)
+  if (!base) return null
+  let raw = null
+  try {
+    const url = new URL(base)
+    const search = url.search
+    url.search = ''
+    url.pathname = `${url.pathname.replace(/\/$/, '')}/meta/${encodeURIComponent(identity.type)}/${encodeURIComponent(identity.id)}.json`
+    url.search = search
+    raw = (await catalogInternals.fetchJson(url.toString()))?.meta
+  } catch { /* The compact catalogue summary remains usable. */ }
+  if (!raw) return null
+  const summary = catalogInternals.stremioMedia(raw, base, identity.type)
+  const episodes = (raw.videos ?? []).flatMap((entry, index) => {
+    const episode = Number(entry?.episode ?? index + 1)
+    const season = Number(entry?.season ?? 1)
+    return Number.isInteger(episode) && episode > 0 && Number.isInteger(season) && season >= 0 ? [{
+      season, episode,
+      title: cleanText(entry.title, 300), description: cleanText(entry.overview, 1_500),
+      image: cleanUrl(entry.thumbnail), releasedAt: cleanText(entry.released, 40),
+    }] : []
+  })
+  return detailEnvelope(episodes, summary ? {
+    description: summary.description, poster: summary.poster, backdrop: summary.backdrop,
+    logoImage: summary.logoImage, runtimeMinutes: summary.runtimeMinutes, genres: summary.genres,
+    ratings: summary.ratings, trailer: summary.trailer,
+  } : {})
+}
+
 /** Resolve the public, non-secret episode library used by the TV series screen. Playback sources
  * stay in the resolver profile; this endpoint only returns titles, summaries and artwork. */
-export async function resolveMediaDetails(value, fetcher = fetch) {
+export async function resolveMediaDetails(value, profileOrFetcher = defaultResolverProfile(), maybeFetcher = fetch) {
+  const fetcher = typeof profileOrFetcher === 'function' ? profileOrFetcher : maybeFetcher
+  const profile = typeof profileOrFetcher === 'function' ? defaultResolverProfile() : normalizeResolverProfile(profileOrFetcher)
   const request = normalizeResolveRequest(value)
+  if (request.ref.provider === 'kitsu') return kitsuDetails(request)
+  if (request.ref.provider === 'tmdb') return tmdbDetails(request, profile)
+  if (request.ref.provider === 'stremio') return stremioDetails(request, profile)
   if (request.ref.provider !== 'anilist') return null
-  const metadata = await metadataFor(request, fetcher)
+  const [metadata, catalogue] = await Promise.all([
+    metadataFor(request, fetcher),
+    catalogInternals.aniDetail(request.ref.id, fetcher).catch(() => null),
+  ])
   const entries = Object.entries(metadata?.episodes ?? {})
     .flatMap(([key, raw]) => {
       const absolute = Number(key)
@@ -204,22 +375,33 @@ export async function resolveMediaDetails(value, fetcher = fetch) {
       }]
     })
     .sort((left, right) => left.absolute - right.absolute)
-  if (!entries.length) return null
-  const seasons = new Map()
-  for (const entry of entries) seasons.set(entry.season, Math.max(seasons.get(entry.season) ?? 0, entry.episode))
-  const orderedSeasons = [...seasons.entries()].sort(([left], [right]) => left - right)
-  return {
-    episodes: entries.map(({ absolute: _absolute, ...episode }) => episode),
-    seasonEpisodeCounts: orderedSeasons.map(([, count]) => count),
-    seasonLabels: orderedSeasons.map(([season]) => season === 0 ? 'Specials' : `Season ${season}`),
-  }
+  if (!entries.length && !catalogue) return null
+  const summary = catalogue?.summary
+  return detailEnvelope(entries.map(({ absolute: _absolute, ...episode }) => episode), summary ? {
+    description: summary.description,
+    poster: summary.poster,
+    backdrop: summary.backdrop,
+    runtimeMinutes: summary.runtimeMinutes,
+    genres: summary.genres,
+    ratings: summary.ratings,
+    trailer: summary.trailer,
+    cast: catalogue.cast,
+    crew: catalogue.crew,
+    relations: catalogue.relations,
+    recommendations: catalogue.recommendations,
+  } : {})
 }
 
 export async function streamRequestPlan(request, fetcher = fetch) {
   if (request.streamIds.length) {
     return { ids: request.streamIds, want: request.episode ? { episode: request.episode, season: request.season } : undefined }
   }
-  if (request.ref.provider === 'stremio') return { ids: [request.ref.id], want: undefined }
+  if (request.ref.provider === 'stremio') {
+    const identity = decodeStremioRef(request.ref.id)
+    return identity
+      ? { ids: [identity.id], want: undefined, addonId: identity.addonId }
+      : { ids: [], want: undefined }
+  }
   if (request.ref.provider === 'kitsu') {
     const kitsu = Number(request.ref.id)
     return Number.isInteger(kitsu) && kitsu > 0
@@ -257,7 +439,26 @@ export async function streamRequestPlan(request, fetcher = fetch) {
     season: Number.isInteger(episode?.seasonNumber) ? episode.seasonNumber : request.season,
     abs: Number.isInteger(episode?.absoluteEpisodeNumber) ? episode.absoluteEpisodeNumber : undefined,
   }
-  return { ids, want }
+  return { ids, want, malId: Number(mappings.mal_id) || undefined }
+}
+
+async function resolveSkipSegments(plan, request, fetcher) {
+  if (!plan?.malId || !request.episode) return []
+  const types = ['op', 'ed', 'recap', 'mixed-op', 'mixed-ed']
+    .map((type) => `types=${encodeURIComponent(type)}`).join('&')
+  const value = await fetchJson(fetcher,
+    `https://api.aniskip.com/v2/skip-times/${plan.malId}/${request.episode}/?episodeLength=0&${types}`,
+    METADATA_TIMEOUT_MS)
+  if (!value?.found || !Array.isArray(value.results)) return []
+  const labels = { op: 'Opening', 'mixed-op': 'Opening', ed: 'Ending', 'mixed-ed': 'Ending', recap: 'Recap' }
+  return value.results.slice(0, 16).flatMap((entry) => {
+    const type = typeof entry?.skipType === 'string' && labels[entry.skipType] ? entry.skipType : ''
+    const startTime = Number(entry?.interval?.startTime)
+    const endTime = Number(entry?.interval?.endTime)
+    if (!type || !Number.isFinite(startTime) || !Number.isFinite(endTime)
+      || startTime < 0 || endTime <= startTime || endTime > 86_400) return []
+    return [{ type, startTime, endTime, label: labels[type] }]
+  }).sort((left, right) => left.startTime - right.startTime)
 }
 
 function cleanText(value, maximum) {
@@ -274,10 +475,19 @@ function cleanUrl(value, maximum = 4096) {
   } catch { return undefined }
 }
 
-function sanitizeStream(value) {
+function cleanPlaybackUrl(value, allowPrivate, maximum = 4096) {
+  if (typeof value !== 'string' || value.length > maximum) return undefined
+  try {
+    const url = new URL(value)
+    if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password || !url.hostname) return undefined
+    return publicHostname(url.hostname) || allowPrivate ? url.toString() : undefined
+  } catch { return undefined }
+}
+
+function sanitizeStream(value, allowPrivate = false) {
   if (!value || typeof value !== 'object') return null
   const behavior = value.behaviorHints && typeof value.behaviorHints === 'object' ? value.behaviorHints : {}
-  const url = cleanUrl(value.url)
+  const url = cleanPlaybackUrl(value.url, allowPrivate)
   const infoHash = typeof value.infoHash === 'string' && /^(?:[a-f0-9]{40}|[a-z2-7]{32})$/i.test(value.infoHash)
     ? value.infoHash.toLowerCase()
     : undefined
@@ -335,6 +545,28 @@ async function resolveConfiguredDebrid(stream, profile, want) {
     if (!url) throw new Error(`${providerName(provider)} returned an invalid playback URL.`)
     const info = describe(stream)
     const name = providerName(provider)
+    // Reuse the provider-neutral desktop adapter here. Providers that expose torrent sidecars
+    // return them; every other supported provider safely returns an empty list.
+    const sidecars = await resolveDebridSidecars(provider, credential, magnet, {
+      want: {
+        ...want,
+        filename: stream.behaviorHints?.filename,
+      },
+      timeoutMs: 18_000,
+      pollMs: 1_000,
+      signal: controller.signal,
+      priority: true,
+    })
+    const subtitles = sidecars.slice(0, 8).flatMap((track, index) => {
+      const sidecarUrl = cleanUrl(track?.url)
+      if (!sidecarUrl) return []
+      return [{
+        id: String(index + 1),
+        url: sidecarUrl,
+        title: cleanText(track?.title ?? track?.name, 160),
+        lang: cleanText(track?.lang, 24),
+      }]
+    })
     return {
       id: `${stream.__candidate?.routeId ?? stream.infoHash}-${provider}-direct`,
       url,
@@ -343,7 +575,7 @@ async function resolveConfiguredDebrid(stream, profile, want) {
       badges: [...new Set([...info.badges, name])].slice(0, 10),
       source: name,
       contentType: contentType({ ...stream, url }),
-      subtitles: [],
+      subtitles,
       delivery: 'debrid',
     }
   } finally {
@@ -373,13 +605,13 @@ function contentType(stream) {
   return 'video/mp4'
 }
 
-function directCandidate(stream) {
+function directCandidate(stream, profile) {
   // Stremio's `notWebReady` means the URL is unsuitable for its browser player (for example an
   // MKV, plain HTTP URL, or a stream carrying proxyHeaders). Samsung AVPlay is not a browser, so
   // the hint alone must not discard otherwise portable debrid/direct URLs. Required headers and
   // non-public URLs are checked independently below.
   if (!stream.url || stream.__hosted) return null
-  const url = cleanUrl(stream.url)
+  const url = cleanPlaybackUrl(stream.url, profile.allowPrivateNetworkSources)
   const headers = playbackHeaders(stream)
   if (!url || !headers) return null
   const info = describe(stream)
@@ -399,6 +631,7 @@ function directCandidate(stream) {
     subtitles,
     ...(headers.cookies ? { cookies: headers.cookies } : {}),
     ...(headers.userAgent ? { userAgent: headers.userAgent } : {}),
+    ...(publicHostname(new URL(url).hostname) ? {} : { lan: true }),
   }
 }
 
@@ -415,7 +648,7 @@ async function mapLimit(values, limit, operation) {
   return output
 }
 
-async function resolveAddon(base, ids, type, fetcher) {
+async function resolveAddon(base, ids, type, fetcher, allowPrivate = false) {
   const manifest = await fetchJson(fetcher, addonEndpoint(base, '/manifest.json'), MANIFEST_TIMEOUT_MS)
   const ask = ids.filter((id) => acceptsStreamId(manifest, type, id))
   const responses = await mapLimit(ask, 2, async (id) => {
@@ -424,7 +657,7 @@ async function resolveAddon(base, ids, type, fetcher) {
   })
   const addonName = cleanText(manifest?.name, 120) ?? new URL(base).hostname
   return responses.flatMap((streams, requestIndex) => streams.flatMap((raw, upstreamRank) => {
-    const clean = sanitizeStream(raw)
+    const clean = sanitizeStream(raw, allowPrivate)
     if (!clean) return []
     return [normalizeStreamBehavior({
       ...clean,
@@ -442,7 +675,11 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
   if (!profile.addons.length) throw new Error('No cloud resolver add-ons are configured.')
   const plan = await streamRequestPlan(request, fetcher)
   if (!plan.ids.length) return { candidates: [], selectedId: null, queriedIds: [], rejected: 0 }
-  const batches = await mapLimit(profile.addons, 2, (base) => resolveAddon(base, plan.ids, request.streamType, fetcher))
+  const skipSegmentsPromise = resolveSkipSegments(plan, request, fetcher).catch(() => [])
+  const resolverAddons = plan.addonId
+    ? profile.addons.filter((base) => catalogInternals.fnv(catalogInternals.normalizeBase(base)) === plan.addonId)
+    : profile.addons
+  const batches = await mapLimit(resolverAddons, 2, (base) => resolveAddon(base, plan.ids, request.streamType, fetcher, profile.allowPrivateNetworkSources))
   const normalized = dedupeStreams(batches.flat().filter((stream) => !isNotice(stream)))
   const ordered = pickCandidates(normalized, profile.quality, plan.want, undefined, {
     audioLang: profile.audioLang || undefined,
@@ -450,26 +687,49 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
     allowUncached: !!profile.debrid,
   })
   const candidates = []
+  const failures = []
   let rejected = 0
   let debridAttempted = false
   for (const stream of ordered) {
-    const candidate = directCandidate(stream)
+    const candidate = directCandidate(stream, profile)
     if (candidate) candidates.push({ ...candidate, delivery: 'direct' })
     else if (!debridAttempted && profile.debrid && stream.infoHash) {
       debridAttempted = true
       try {
         const resolved = await resolveConfiguredDebrid(stream, profile, plan.want)
         if (resolved) candidates.push(resolved)
-      } catch {
+      } catch (error) {
         rejected += 1
+        const message = cleanText(error instanceof Error ? error.message : String(error), 240)
+        if (message) failures.push(message)
       }
     } else rejected += 1
     if (candidates.length >= MAX_RESPONSE_CANDIDATES) break
   }
   candidates.splice(MAX_RESPONSE_CANDIDATES)
-  return { candidates, selectedId: candidates[0]?.id ?? null, queriedIds: plan.ids, rejected }
+  return {
+    candidates,
+    selectedId: candidates[0]?.id ?? null,
+    queriedIds: plan.ids,
+    rejected,
+    failures: [...new Set(failures)].slice(0, 3),
+    skipSegments: await skipSegmentsPromise,
+  }
+}
+
+function cloudCatalogProfile(profileValue) {
+  const profile = normalizeResolverProfile(profileValue)
+  return { ...profile.catalog, addons: profile.addons }
+}
+
+export async function resolveCatalogSnapshot(profileValue, screen) {
+  return catalogSnapshot(cloudCatalogProfile(profileValue), typeof screen === 'string' ? screen : '')
+}
+
+export async function searchCatalog(profileValue, screen, query, person) {
+  return catalogSearch(cloudCatalogProfile(profileValue), typeof screen === 'string' ? screen : '', query, person)
 }
 
 export function defaultResolverProfile() {
-  return { ...DEFAULT_PROFILE, addons: [] }
+  return { ...DEFAULT_PROFILE, addons: [], catalog: { ...DEFAULT_PROFILE.catalog, screens: [...DEFAULT_PROFILE.catalog.screens] } }
 }

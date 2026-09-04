@@ -1,7 +1,15 @@
 import webpush from 'web-push'
-import { defaultResolverProfile, normalizeResolverProfile, publicResolverProfile, resolveDirectSources, resolveMediaDetails } from './resolver.js'
+import {
+  defaultResolverProfile,
+  normalizeResolverProfile,
+  publicResolverProfile,
+  resolveCatalogSnapshot,
+  resolveDirectSources,
+  resolveMediaDetails,
+  searchCatalog,
+} from './resolver.js'
 
-const VERSION = '1.5.0'
+const VERSION = '1.6.0'
 const PROTOCOL = 1
 const CATEGORIES = new Set(['watch', 'manual', 'presence', 'companion'])
 const MAX_BODY_BYTES = 512 * 1024
@@ -11,10 +19,15 @@ const MAX_COMPANION_PAIRINGS = 16
 const MAX_COMPANION_PUSH_SUBSCRIPTIONS = 8
 const MAX_COMPANION_REQUEST_BYTES = 12 * 1024
 const MAX_COMPANION_REQUESTS = 32
+const MAX_COMPANION_PROGRESS = 200
+const MAX_COMPANION_TRAILERS = 32
 const INVITE_TTL_MS = 10 * 60 * 1000
 const ENROLLMENT_TTL_MS = 10 * 60 * 1000
 const COMPANION_REQUEST_TTL_MS = 5 * 60 * 1000
+const COMPANION_TRAILER_TTL_MS = 10 * 60 * 1000
 const RESOLVER_MIN_INTERVAL_MS = 1_500
+const CATALOG_MIN_INTERVAL_MS = 750
+const DETAILS_MIN_INTERVAL_MS = 350
 const encoder = new TextEncoder()
 
 const corsHeaders = {
@@ -313,6 +326,146 @@ function validCompanionEnvelope(value) {
   } catch { return false }
 }
 
+function validEncryptedPayload(value, maximum = MAX_BODY_BYTES) {
+  if (typeof value !== 'string' || encoder.encode(value).byteLength > maximum) return false
+  try {
+    const parsed = JSON.parse(value)
+    return parsed?.v === 1 && validPushValue(parsed.iv, 16, 32)
+      && typeof parsed.data === 'string' && parsed.data.length >= 24
+      && parsed.data.length <= Math.ceil(maximum * 1.4)
+      && /^[A-Za-z0-9_-]+$/.test(parsed.data)
+  } catch { return false }
+}
+
+function validCatalogScreen(value) {
+  return typeof value === 'string' && ['auto', 'anilist', 'kitsu', 'tmdb', 'stremio', 'merged', 'jvm'].includes(value)
+}
+
+async function ownerPairing(request, env, pairingId) {
+  const deviceId = await authenticate(request, env)
+  if (!deviceId) return null
+  return env.DB.prepare('SELECT pairing_id, owner_device_id FROM companion_pairings WHERE pairing_id = ? AND owner_device_id = ?')
+    .bind(pairingId, deviceId).first()
+}
+
+/** Store one already-materialized catalogue view. Izumi and the TV share the encryption key; the
+ * Worker sees only its screen selector and ciphertext. */
+async function companionSnapshot(request, env, pairingId) {
+  if (request.method === 'PUT') {
+    if (!await ownerPairing(request, env, pairingId)) return json({ error: 'Companion pairing not found.' }, 404)
+    const value = await body(request)
+    if (!validCatalogScreen(value.screen) || !validEncryptedPayload(value.payload)) {
+      return json({ error: 'The encrypted TV snapshot is invalid.' }, 400)
+    }
+    const now = Date.now()
+    await env.DB.prepare('INSERT INTO companion_snapshots (pairing_id, screen, payload, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(pairing_id, screen) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at')
+      .bind(pairingId, value.screen, value.payload, now).run()
+    return json({ ok: true, updatedAt: now })
+  }
+  if (!await authenticateTv(request, env, pairingId)) return json({ error: 'TV authentication failed.' }, 401)
+  const screen = new URL(request.url).searchParams.get('screen') || ''
+  if (screen && !validCatalogScreen(screen)) return json({ error: 'Unknown catalogue.' }, 400)
+  const row = screen
+    ? await env.DB.prepare('SELECT screen, payload, updated_at AS updatedAt FROM companion_snapshots WHERE pairing_id = ? AND screen = ?').bind(pairingId, screen).first()
+    : await env.DB.prepare('SELECT screen, payload, updated_at AS updatedAt FROM companion_snapshots WHERE pairing_id = ? ORDER BY updated_at DESC LIMIT 1').bind(pairingId).first()
+  return row ? json(row) : json({ error: 'No cloud snapshot has been published for this catalogue.', code: 'SNAPSHOT_UNAVAILABLE' }, 404)
+}
+
+/** Playback checkpoints are encrypted by the TV. The opaque digest permits bounded upserts without
+ * revealing the title or episode to the Worker. */
+async function companionProgress(request, env, pairingId) {
+  if (request.method === 'PUT') {
+    if (!await authenticateTv(request, env, pairingId)) return json({ error: 'TV authentication failed.' }, 401)
+    const value = await body(request)
+    if (typeof value.mediaKey !== 'string' || !/^[A-Za-z0-9_-]{32,64}$/.test(value.mediaKey)
+      || !validEncryptedPayload(value.payload, 96 * 1024)) {
+      return json({ error: 'The encrypted playback checkpoint is invalid.' }, 400)
+    }
+    const now = Date.now()
+    await env.DB.batch([
+      env.DB.prepare('INSERT INTO companion_progress (pairing_id, media_key, payload, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(pairing_id, media_key) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at')
+        .bind(pairingId, value.mediaKey, value.payload, now),
+      env.DB.prepare('DELETE FROM companion_progress WHERE pairing_id = ? AND media_key IN (SELECT media_key FROM companion_progress WHERE pairing_id = ? ORDER BY updated_at DESC LIMIT -1 OFFSET ?)')
+        .bind(pairingId, pairingId, MAX_COMPANION_PROGRESS),
+    ])
+    return json({ ok: true, updatedAt: now })
+  }
+  const pairing = await authenticateTv(request, env, pairingId) || await ownerPairing(request, env, pairingId)
+  if (!pairing) return json({ error: 'Authentication failed.' }, 401)
+  const result = await env.DB.prepare('SELECT media_key AS mediaKey, payload, updated_at AS updatedAt FROM companion_progress WHERE pairing_id = ? ORDER BY updated_at DESC LIMIT ?')
+    .bind(pairingId, MAX_COMPANION_PROGRESS).all()
+  return json({ records: result.results || [] })
+}
+
+/** Issue a short-lived capability for the TV's YouTube bridge. Keeping the TV bearer token in a
+ * POST header means it cannot leak through the iframe URL, browser history, or YouTube Referer. */
+async function createCompanionTrailer(request, env, pairingId) {
+  if (!await authenticateTv(request, env, pairingId)) return json({ error: 'TV authentication failed.' }, 401)
+  const value = await body(request)
+  if (typeof value.videoId !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(value.videoId)) {
+    return json({ error: 'The trailer has an invalid YouTube ID.' }, 400)
+  }
+  const now = Date.now()
+  const expiresAt = now + COMPANION_TRAILER_TTL_MS
+  const code = base64Url(crypto.getRandomValues(new Uint8Array(24)))
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM companion_trailer_tickets WHERE expires_at <= ?').bind(now),
+    env.DB.prepare('INSERT INTO companion_trailer_tickets (code_hash, pairing_id, video_id, muted, captions, expires_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(await hash(code), pairingId, value.videoId, value.muted === true ? 1 : 0, value.captions === true ? 1 : 0, expiresAt),
+    env.DB.prepare('DELETE FROM companion_trailer_tickets WHERE code_hash IN (SELECT code_hash FROM companion_trailer_tickets WHERE pairing_id = ? ORDER BY expires_at DESC LIMIT -1 OFFSET ?)')
+      .bind(pairingId, MAX_COMPANION_TRAILERS),
+  ])
+  const url = new URL('/v1/companion/trailer', request.url)
+  url.searchParams.set('code', code)
+  return json({ requestId: `cloud-${code.slice(0, 24)}`, url: url.toString(), expiresAt })
+}
+
+async function companionTrailerDocument(request, env) {
+  const code = new URL(request.url).searchParams.get('code') || ''
+  if (!validInviteCode(code)) return new Response('Trailer not found.', { status: 404 })
+  const row = await env.DB.prepare('SELECT video_id AS videoId, muted, captions FROM companion_trailer_tickets WHERE code_hash = ? AND expires_at > ?')
+    .bind(await hash(code), Date.now()).first()
+  if (!row || typeof row.videoId !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(row.videoId)) {
+    return new Response('Trailer not found.', { status: 404 })
+  }
+  const muted = Number(row.muted) === 1 ? '1' : '0'
+  const captions = Number(row.captions) === 1
+  const source = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="strict-origin-when-cross-origin"><title>YouTube trailer</title><style>html,body,iframe{width:100%;height:100%;margin:0;border:0;background:#000;overflow:hidden}</style></head>
+<body><iframe id="player" title="YouTube trailer" allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe><script>
+(function () {
+  var player = document.getElementById('player');
+  var youtubeOrigin = 'https://www.youtube-nocookie.com';
+  var params = new URLSearchParams();
+  params.append('enablejsapi', '1'); params.append('autoplay', '1'); params.append('controls', '0');
+  params.append('mute', '${muted}'); params.append('disablekb', '1');
+  params.append('cc_load_policy', '${captions ? '1' : '0'}');
+  ${captions ? "params.append('cc_lang_pref', 'en');" : ''}
+  params.append('iv_load_policy', '3'); params.append('playsinline', '1'); params.append('rel', '0');
+  params.append('origin', location.origin); params.append('widget_referrer', 'https://com.nicho.izumi');
+  player.src = youtubeOrigin + '/embed/${row.videoId}?' + params.toString();
+  window.addEventListener('message', function (event) {
+    if (event.source === player.contentWindow && (event.origin === youtubeOrigin || event.origin === 'https://www.youtube.com')) {
+      parent.postMessage({ type: 'izumi-youtube-event', payload: event.data }, '*'); return;
+    }
+    if (event.source === parent && event.data && event.data.type === 'izumi-youtube-command' && typeof event.data.payload === 'string' && player.contentWindow) {
+      player.contentWindow.postMessage(event.data.payload, youtubeOrigin);
+    }
+  });
+})();
+</script></body></html>`
+  return new Response(source, {
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'Content-Security-Policy': "default-src 'none'; frame-src https://www.youtube-nocookie.com https://www.youtube.com; script-src 'unsafe-inline'; style-src 'unsafe-inline'",
+      'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  })
+}
+
 async function sendCompanionPush(request, env, deviceId, pairingId, requestId) {
   const result = await env.DB.prepare('SELECT endpoint_hash, endpoint, p256dh, auth FROM companion_push_subscriptions WHERE device_id = ? ORDER BY updated_at DESC LIMIT 8')
     .bind(deviceId).all()
@@ -488,14 +641,62 @@ async function resolveForTv(request, env, pairingId) {
 async function detailsForTv(request, env, pairingId) {
   const pairing = await authenticateTv(request, env, pairingId)
   if (!pairing) return json({ error: 'TV authentication failed.' }, 401)
+  const now = Date.now()
+  const gate = await env.DB.prepare('UPDATE companion_pairings SET last_details_at = ? WHERE pairing_id = ? AND last_details_at <= ?')
+    .bind(now, pairingId, now - DETAILS_MIN_INTERVAL_MS).run()
+  if (!Number(gate.meta?.changes || 0)) return json({ error: 'Wait before starting another detail lookup.' }, 429)
+  const row = await env.DB.prepare('SELECT profile_json AS profile FROM resolver_profiles WHERE owner_device_id = ?')
+    .bind(String(pairing.owner_device_id)).first()
+  let profile = defaultResolverProfile()
+  try { if (row) profile = normalizeResolverProfile(JSON.parse(row.profile), new URL(request.url).origin) } catch { /* Public AniList fallback remains available. */ }
   try {
     const input = await body(request)
-    const details = await resolveMediaDetails(input?.media ?? input)
+    const details = await resolveMediaDetails(input?.media ?? input, profile)
     return details
       ? json({ ok: true, details })
       : json({ error: 'Cloud episode metadata is unavailable for this catalogue title.', code: 'DETAILS_UNAVAILABLE' }, 404)
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : 'Episode metadata lookup failed.', code: 'DETAILS_FAILED' }, 409)
+  }
+}
+
+async function catalogForTv(request, env, pairingId) {
+  const pairing = await authenticateTv(request, env, pairingId)
+  if (!pairing) return json({ error: 'TV authentication failed.' }, 401)
+  const now = Date.now()
+  const gate = await env.DB.prepare('UPDATE companion_pairings SET last_catalog_at = ? WHERE pairing_id = ? AND last_catalog_at <= ?')
+    .bind(now, pairingId, now - CATALOG_MIN_INTERVAL_MS).run()
+  if (!Number(gate.meta?.changes || 0)) return json({ error: 'Wait before starting another catalogue request.' }, 429)
+  const row = await env.DB.prepare('SELECT profile_json AS profile FROM resolver_profiles WHERE owner_device_id = ?')
+    .bind(String(pairing.owner_device_id)).first()
+  if (!row) return json({ error: 'Cloud catalogues have not been configured for this TV.', code: 'CATALOG_NOT_CONFIGURED' }, 409)
+  try {
+    const profile = normalizeResolverProfile(JSON.parse(row.profile), new URL(request.url).origin)
+    const input = await body(request)
+    const snapshot = await resolveCatalogSnapshot(profile, input?.screen)
+    return snapshot ? json({ ok: true, snapshot }) : json({ error: 'This catalogue is not available in the Worker.', code: 'CATALOG_UNAVAILABLE' }, 404)
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : 'Catalogue lookup failed.', code: 'CATALOG_FAILED' }, 409)
+  }
+}
+
+async function searchForTv(request, env, pairingId) {
+  const pairing = await authenticateTv(request, env, pairingId)
+  if (!pairing) return json({ error: 'TV authentication failed.' }, 401)
+  const now = Date.now()
+  const gate = await env.DB.prepare('UPDATE companion_pairings SET last_catalog_at = ? WHERE pairing_id = ? AND last_catalog_at <= ?')
+    .bind(now, pairingId, now - CATALOG_MIN_INTERVAL_MS).run()
+  if (!Number(gate.meta?.changes || 0)) return json({ error: 'Wait before starting another search.' }, 429)
+  const row = await env.DB.prepare('SELECT profile_json AS profile FROM resolver_profiles WHERE owner_device_id = ?')
+    .bind(String(pairing.owner_device_id)).first()
+  if (!row) return json({ error: 'Cloud search has not been configured for this TV.', code: 'CATALOG_NOT_CONFIGURED' }, 409)
+  try {
+    const profile = normalizeResolverProfile(JSON.parse(row.profile), new URL(request.url).origin)
+    const input = await body(request)
+    const items = await searchCatalog(profile, input?.screen, input?.query, input?.person)
+    return json({ ok: true, items })
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : 'Search failed.', code: 'SEARCH_FAILED' }, 409)
   }
 }
 
@@ -596,13 +797,14 @@ export default {
           version: VERSION,
           protocol: PROTOCOL,
           claimed: await claimed(env),
-          features: ['companion-wake-v1', 'web-push-v1', 'cloud-resolver-v1', 'cloud-resolver-v2', 'cloud-resolver-debrid-v1', 'companion-details-v1'],
+          features: ['companion-wake-v1', 'web-push-v1', 'cloud-resolver-v1', 'cloud-resolver-v2', 'cloud-resolver-debrid-v1', 'companion-details-v2', 'companion-snapshot-v1', 'companion-progress-v1', 'companion-catalog-v1', 'companion-trailer-v1'],
         })
       }
       if (request.method === 'GET' && url.pathname === '/v1/companion/enrol') return companionEnrolmentPage(request)
       if (request.method === 'GET' && url.pathname === '/v1/companion/enrol.js') return scriptResponse(ENROLMENT_SCRIPT)
       if (request.method === 'GET' && url.pathname === '/v1/companion/sw.js') return scriptResponse(SERVICE_WORKER_SCRIPT)
       if (request.method === 'GET' && url.pathname === '/v1/companion/open.js') return scriptResponse(OPEN_SCRIPT)
+      if (request.method === 'GET' && url.pathname === '/v1/companion/trailer') return await companionTrailerDocument(request, env)
       if (request.method === 'GET' && url.pathname === '/v1/companion/vapid') {
         const vapid = await ensureVapidKeys(env)
         return json({ publicKey: vapid.publicKey })
@@ -636,6 +838,26 @@ export default {
       const companionDetailsMatch = url.pathname.match(/^\/v1\/companion\/pairings\/([A-Za-z0-9_-]{16,80})\/details$/)
       if (companionDetailsMatch && request.method === 'POST') {
         return await detailsForTv(request, env, companionDetailsMatch[1])
+      }
+      const companionSnapshotMatch = url.pathname.match(/^\/v1\/companion\/pairings\/([A-Za-z0-9_-]{16,80})\/snapshots$/)
+      if (companionSnapshotMatch && (request.method === 'GET' || request.method === 'PUT')) {
+        return await companionSnapshot(request, env, companionSnapshotMatch[1])
+      }
+      const companionProgressMatch = url.pathname.match(/^\/v1\/companion\/pairings\/([A-Za-z0-9_-]{16,80})\/progress$/)
+      if (companionProgressMatch && (request.method === 'GET' || request.method === 'PUT')) {
+        return await companionProgress(request, env, companionProgressMatch[1])
+      }
+      const companionCatalogMatch = url.pathname.match(/^\/v1\/companion\/pairings\/([A-Za-z0-9_-]{16,80})\/catalog$/)
+      if (companionCatalogMatch && request.method === 'POST') {
+        return await catalogForTv(request, env, companionCatalogMatch[1])
+      }
+      const companionSearchMatch = url.pathname.match(/^\/v1\/companion\/pairings\/([A-Za-z0-9_-]{16,80})\/search$/)
+      if (companionSearchMatch && request.method === 'POST') {
+        return await searchForTv(request, env, companionSearchMatch[1])
+      }
+      const companionTrailerMatch = url.pathname.match(/^\/v1\/companion\/pairings\/([A-Za-z0-9_-]{16,80})\/trailer$/)
+      if (companionTrailerMatch && request.method === 'POST') {
+        return await createCompanionTrailer(request, env, companionTrailerMatch[1])
       }
       const companionPairingMatch = url.pathname.match(/^\/v1\/companion\/pairings\/([A-Za-z0-9_-]{16,80})$/)
       if (companionPairingMatch && request.method === 'DELETE') {

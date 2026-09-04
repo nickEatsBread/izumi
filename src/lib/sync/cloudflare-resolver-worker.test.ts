@@ -24,7 +24,11 @@ describe('self-hosted Cloudflare source resolver', () => {
       sort: 'quality',
       audioLang: '',
       connectedDeviceFallback: false,
+      allowPrivateNetworkSources: false,
       debrid: null,
+      catalog: {
+        screens: ['auto'], defaultScreen: 'auto', showAdult: false, hideSpoilers: false, tmdbToken: '',
+      },
     })
   })
 
@@ -49,7 +53,11 @@ describe('self-hosted Cloudflare source resolver', () => {
       sort: 'quality',
       audioLang: 'eng',
       connectedDeviceFallback: false,
+      allowPrivateNetworkSources: false,
       debrid: null,
+      catalog: {
+        screens: ['auto'], defaultScreen: 'auto', showAdult: false, hideSpoilers: false, tmdbToken: '',
+      },
     })
   })
 
@@ -168,6 +176,47 @@ describe('self-hosted Cloudflare source resolver', () => {
       url: 'https://debrid-cdn.example/download/opaque-token',
       contentType: 'video/x-matroska',
     })
+  })
+
+  it('allows an explicitly opted-in LAN source without allowing it by default', async () => {
+    const fetcher = vi.fn(async (raw: RequestInfo | URL) => {
+      const url = String(raw)
+      if (url.endsWith('/manifest.json')) return json({ id: 'lan', name: 'LAN', version: '1', resources: ['stream'] })
+      if (url.includes('/stream/series/')) return json({ streams: [{
+        url: 'http://192.168.1.40:8096/video.mkv', title: 'Local media server 1080p',
+      }] })
+      return json({}, 404)
+    })
+    const request = { ref: { provider: 'kitsu', type: 'anime', id: '42' }, episode: 1 }
+    const baseProfile = {
+      enabled: true, addons: ['https://addon.example'], quality: '1080', sort: 'quality',
+      audioLang: '', connectedDeviceFallback: false, debrid: null,
+    }
+
+    expect((await resolveDirectSources(baseProfile, request, fetcher)).candidates).toHaveLength(0)
+    expect((await resolveDirectSources({ ...baseProfile, allowPrivateNetworkSources: true }, request, fetcher)).candidates[0])
+      .toMatchObject({ url: 'http://192.168.1.40:8096/video.mkv', lan: true, delivery: 'direct' })
+  })
+
+  it('carries AniSkip timings alongside Worker-resolved playback', async () => {
+    const fetcher = vi.fn(async (raw: RequestInfo | URL) => {
+      const url = String(raw)
+      if (url.includes('api.ani.zip')) return json({
+        mappings: { mal_id: 21, kitsu_id: 42 }, episodes: { '1': { seasonNumber: 1, episodeNumber: 1 } },
+      })
+      if (url.includes('api.aniskip.com')) return json({
+        found: true, results: [{ skipType: 'op', interval: { startTime: 45, endTime: 135 } }],
+      })
+      if (url.endsWith('/manifest.json')) return json({ id: 'test', name: 'Test', version: '1', resources: ['stream'] })
+      if (url.includes('/stream/series/')) return json({ streams: [{ url: 'https://media.example/e1.mp4' }] })
+      return json({}, 404)
+    })
+    const result = await resolveDirectSources({
+      enabled: true, addons: ['https://addon.example'], quality: 'any', sort: 'quality',
+      audioLang: '', connectedDeviceFallback: false, debrid: null,
+    }, { ref: { provider: 'anilist', type: 'anime', id: '100' }, episode: 1 }, fetcher)
+
+    expect(result.skipSegments).toEqual([{ type: 'op', startTime: 45, endTime: 135, label: 'Opening' }])
   })
 
   it('does not accept arbitrary or JVM media references', () => {

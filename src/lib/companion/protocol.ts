@@ -52,6 +52,8 @@ export interface CompanionPerson {
 
 export interface CompanionMedia {
   ref: MediaRef
+  /** Stable local media identity used when a TV checkpoint rejoins the normal watch-sync path. */
+  mediaId?: number
   /** Non-secret metadata a TV can pass to the owner's Worker when Izumi is unavailable. */
   resolver?: CompanionResolverHint
   /** Transient playback intent. Snapshot/catalog media never needs to persist this field. */
@@ -343,6 +345,7 @@ function companionRelationMedia(media: Media): CompanionMedia {
   const resolver = resolverHint(media)
   return {
     ref: mediaRef(media),
+    mediaId: media.id,
     resolver,
     title: title(media),
     subtitle: [media.seasonYear, format(media)].filter(Boolean).join(' · ') || undefined,
@@ -441,6 +444,7 @@ export function companionMedia(
   } : undefined)
   return {
     ref: mediaRef(media),
+    mediaId: media.id,
     resolver,
     title: title(media),
     subtitle: options.subtitle || format(media) || undefined,

@@ -46,6 +46,8 @@ import {
   getCloudflareSyncStatus,
   joinCloudflareInvite,
   leaveCloudflareSync,
+  publishCloudflareCompanionSnapshot,
+  readCloudflareCompanionProgress,
   readCloudflareRecords,
   removeCloudflareCompanionPairing,
   revokeCloudflareCompanionTransport,
@@ -66,11 +68,13 @@ export {
   claimCloudflareWorker,
   generateCloudflareSetupSecret,
   joinCloudflareInvite,
+  publishCloudflareCompanionSnapshot,
+  readCloudflareCompanionProgress,
   removeCloudflareCompanionPairing,
   revokeCloudflareCompanionTransport,
   syncProvider,
 }
-export type { CloudflareCompanionTransport } from './cloudflare'
+export type { CloudflareCompanionProgress, CloudflareCompanionTransport } from './cloudflare'
 
 export async function setSyncProvider(provider: 'iroh' | 'cloudflare'): Promise<void> {
   if (provider === get(syncProvider)) return

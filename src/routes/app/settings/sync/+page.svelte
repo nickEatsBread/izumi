@@ -49,6 +49,7 @@
     CLOUDFLARE_TOKEN_CREATE_URL,
     CLOUDFLARE_TOKEN_MANAGE_URL,
     CLOUDFLARE_UPDATE_GUIDE,
+    cloudflareAllowLanSources,
   } from '$lib/sync/cloudflare'
   import {
     deleteCloudflareResolverProfile,
@@ -60,6 +61,7 @@
   import { debridKey, debridProvider, preferredAudioLang, preferredQuality, preferredStreamSort } from '$lib/settings/ui'
   import { providerMeta, providerName } from '$lib/stremio/debrid'
   import { enabledAddonUrls } from '$lib/stremio/sources'
+  import { currentCloudflareCompanionProfile } from '$lib/companion/cloud-profile'
   import { isAndroid } from '$lib/platform'
   import { anilistToken } from '$lib/anilist/auth'
   import { malToken } from '$lib/trackers/config'
@@ -221,23 +223,12 @@
   }
 
   async function uploadCloudResolverProfile() {
-    const debrid = $debridKey.trim() && providerMeta($debridProvider)
-      ? { provider: $debridProvider, credential: $debridKey.trim() }
-      : null
-    const profile: CloudflareResolverProfile = {
-      enabled: true,
-      addons: [...$enabledAddonUrls],
-      quality: $preferredQuality,
-      sort: $preferredStreamSort,
-      audioLang: $preferredAudioLang,
-      connectedDeviceFallback: cloudResolverConnectedDevices,
-      debrid,
-    }
+    const profile: CloudflareResolverProfile = currentCloudflareCompanionProfile(cloudResolverConnectedDevices)
     const result = await saveCloudflareResolverProfile(profile)
     cloudResolverEnabled = true
     cloudResolverLoaded = true
     cloudResolverUpdatedAt = result.updatedAt
-    cloudResolverDebridProvider = debrid?.provider ?? ''
+    cloudResolverDebridProvider = profile.debrid?.provider ?? ''
     cloudResolverError = ''
     await provisionCompanionResolverRoutes(profile)
   }
@@ -933,6 +924,22 @@
             <span>
               <span class="block text-sm font-black">Optional linked-device fallback</span>
               <span class="mt-0.5 block text-xs leading-5 text-muted-foreground">Off by default. Keep this only for raw P2P, true transcoding/remuxing, client-local sources, or unusual header-bound streams the free Worker cannot handle. Android may be notified when closed; desktop is used only while Izumi is open.</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            data-focusable
+            aria-pressed={$cloudflareAllowLanSources}
+            disabled={!!busy || !cloudResolverEnabled}
+            onclick={() => { h.impact(); $cloudflareAllowLanSources = !$cloudflareAllowLanSources }}
+            class="mt-3 flex w-full items-start gap-3 rounded-lg border p-3 text-left disabled:opacity-50 {$cloudflareAllowLanSources ? 'border-primary/50 bg-primary/10' : 'border-border bg-secondary/30'}"
+          >
+            <span class="mt-0.5 grid size-5 shrink-0 place-items-center rounded border {$cloudflareAllowLanSources ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/50'}">
+              {#if $cloudflareAllowLanSources}<Check size={14} />{/if}
+            </span>
+            <span>
+              <span class="block text-sm font-black">Allow direct LAN sources</span>
+              <span class="mt-0.5 block text-xs leading-5 text-muted-foreground">The Worker only hands the private URL to this TV; it never fetches or proxies it. Enable only for add-ons and media servers you trust on the same network.</span>
             </span>
           </button>
           {#if cloudResolverError}

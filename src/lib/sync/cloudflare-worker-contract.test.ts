@@ -9,6 +9,7 @@ const config = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-work
 const manifest = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/package.json', import.meta.url)), 'utf8')
 const companionMigration = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/migrations/0002_companion_wake.sql', import.meta.url)), 'utf8')
 const resolverMigration = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/migrations/0003_cloud_resolver.sql', import.meta.url)), 'utf8')
+const independentMigration = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/migrations/0004_companion_independent.sql', import.meta.url)), 'utf8')
 const resolverGenerator = fileURLToPath(new URL('../../../scripts/generate-cloudflare-resolver-core.mjs', import.meta.url))
 const generatedDebridHttp = readFileSync(fileURLToPath(new URL('../../../cloudflare-sync-worker/src/generated/resolver-core/debrid/http.ts', import.meta.url)), 'utf8')
 
@@ -31,13 +32,19 @@ describe('Cloudflare Worker deployment contract', () => {
   })
 
   it('keeps private TV waking inside the existing Worker', () => {
-    expect(worker).toContain("features: ['companion-wake-v1', 'web-push-v1', 'cloud-resolver-v1', 'cloud-resolver-v2', 'cloud-resolver-debrid-v1', 'companion-details-v1']")
+    expect(worker).toContain("'companion-details-v2', 'companion-snapshot-v1', 'companion-progress-v1', 'companion-catalog-v1'")
     expect(worker).toContain("import webpush from 'web-push'")
     expect(worker).toContain('companion_push_subscriptions')
     expect(worker).not.toMatch(/firebase|izumi.*wake.*(?:service|relay)/i)
     expect(companionMigration).toContain('CREATE TABLE companion_pairings')
     expect(companionMigration).toContain('CREATE TABLE companion_requests')
     expect(companionMigration).toContain('CREATE TABLE companion_push_subscriptions')
+    expect(independentMigration).toContain('CREATE TABLE companion_snapshots')
+    expect(independentMigration).toContain('CREATE TABLE companion_progress')
+    expect(independentMigration).toContain('CREATE TABLE companion_trailer_tickets')
+    expect(worker).toContain("'companion-trailer-v1'")
+    expect(worker).toContain("url.searchParams.set('code', code)")
+    expect(worker).toContain("frame-src https://www.youtube-nocookie.com https://www.youtube.com")
   })
 
   it('intertwines opt-in source resolving without adding a media proxy', () => {

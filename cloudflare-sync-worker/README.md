@@ -34,7 +34,15 @@ its original deployment method.
 Izumi never stores a Cloudflare API token and cannot silently mutate the account. Every direct
 deployment or update requires the user to approve and paste a token again.
 
-Database migrations are applied by the deploy command before the Worker update. Version 1.1 adds the companion pairing, short-lived request, browser enrollment, and Web Push subscription tables. Version 1.2 adds the optional direct-source resolver profile to the same private D1 database. Version 1.3 adds the explicit Cloudflare-only versus Cloudflare-plus-device playback policy. Version 1.4 adds authenticated TV episode-metadata lookup for AniList titles so series pages still receive episode titles, summaries, runtimes, and artwork when the paired client is unavailable. Version 1.5 adds native torrent resolution through Izumi's existing multi-provider debrid abstraction. Versions 1.3 through 1.5 need no new migration.
+Database migrations are applied by the deploy command before the Worker update. Version 1.1 adds the companion pairing, short-lived request, browser enrollment, and Web Push subscription tables. Version 1.2 adds the optional direct-source resolver profile to the same private D1 database. Version 1.3 adds the explicit Cloudflare-only versus Cloudflare-plus-device playback policy. Version 1.4 adds authenticated TV episode metadata. Version 1.5 adds native torrent resolution through Izumi's existing multi-provider debrid abstraction. Version 1.6 adds per-TV encrypted catalogue snapshots and playback checkpoints plus live Worker catalogue/search/detail adapters. It requires migration `0004_companion_independent.sql`.
+
+After Version 1.6 has been configured once, the TV's normal data path no longer requires an open
+Izumi client. It reads its encrypted home layouts and personal rows from D1, performs live AniList,
+Kitsu, TMDB, and configured Stremio catalogue/search/detail requests through the Worker, resolves
+playback there, and writes encrypted progress back for Izumi's normal history and sync stores to
+ingest later. Cloudflare can select ciphertext by TV and catalogue screen but cannot decrypt home
+data or viewing progress. Trailer previews use a short-lived Worker URL, so the TV never places its
+long-lived pairing token in an iframe and does not need the linked client to host the YouTube bridge.
 
 ## Optional TV source resolving
 
@@ -55,9 +63,14 @@ profile from Izumi.
   provider implementation used by local playback: Real-Debrid, AllDebrid, Premiumize, TorBox,
   Debrid-Link, Offcloud, EasyDebrid, and Izumi's experimental Deepbrid and Mega-Debrid entries.
   The Worker never echoes the account credential to an owner device or sends it to the TV.
-- Torrent-only results without configured debrid, loopback/private URLs, and sources requiring
-  playback headers the TV cannot apply are omitted. The local P2P engine and JVM/Android extensions
-  are not executed inside the Worker.
+- Torrent-only results without configured debrid and sources requiring playback headers the TV
+  cannot apply are omitted. Cookie and User-Agent source requirements are passed to Samsung AVPlay.
+  Direct private-LAN media-server URLs are disabled by default and can be explicitly enabled in
+  Izumi; they travel from that LAN server straight to the TV and never through Cloudflare.
+  Loopback URLs, the local P2P engine, and JVM/Android extensions are not executed inside the Worker.
+- When a debrid provider exposes external subtitle files, the Worker obtains them through Izumi's
+  existing provider-neutral sidecar adapter. AniList episode playback also carries best-effort
+  AniSkip opening/ending/recap timing. Neither lookup can prevent the video from playing.
 - The default is **Cloudflare only**. The Worker either returns a TV-ready URL or the TV reports that
   no source was found; it does not silently contact another device.
 - The owner can separately enable **Cloudflare + connected Izumi device**. The TV tries the Worker
@@ -88,8 +101,10 @@ cannot be played by the Worker.
   the per-request free-tier budget, using the self-serve CDN as a general video relay can violate
   Cloudflare's video-delivery policy.
 - Generic transcoding/remuxing, raw non-debrid BitTorrent, and a source that exists only on an
-  offline Izumi client's `localhost` remain outside the Worker. The linked client is an optional
-  compatibility fallback for those cases, not the TV's primary backend.
+  offline Izumi client's `localhost` remain outside the Worker. An already-running provider/media
+  server may expose another compatible rendition directly, but the Worker never transforms or
+  relays it. The linked client is an optional compatibility fallback for these cases, not the TV's
+  primary backend.
 
 Both the optional Deploy to Cloudflare button and Izumi's generated direct-upload bundle treat this
 directory as a standalone project, so Worker code must not import files from the parent Izumi

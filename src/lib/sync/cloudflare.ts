@@ -1,9 +1,9 @@
 import { get, writable } from 'svelte/store'
 import { persisted } from 'svelte-persisted-store'
-import type { CompanionMedia, CompanionPlaybackMode } from '$lib/companion/protocol'
+import type { CompanionHomeSnapshot, CompanionMedia, CompanionPlaybackMode } from '$lib/companion/protocol'
 import type { SyncRecord, SyncStatus } from './types'
 
-export const CLOUDFLARE_WORKER_VERSION = '1.5.0'
+export const CLOUDFLARE_WORKER_VERSION = '1.6.0'
 export const CLOUDFLARE_WORKER_PROTOCOL = 1
 export const CLOUDFLARE_GIT_DEPLOY_URL =
   'https://deploy.workers.cloudflare.com/?url=https://github.com/nickEatsBread/izumi/tree/main/cloudflare-sync-worker'
@@ -51,6 +51,9 @@ export const cloudflareSyncConfig = persisted<CloudflareSyncConfig>(
 /** Kept separately so closing Izumi halfway through Cloudflare's deploy flow does not lose it. */
 export const cloudflareSetupSecret = persisted<string>('cloudflare-sync-setup-secret-v1', '')
 export const cloudflareWorkerUpdateAvailable = writable<string>('')
+/** Private URLs are never accepted implicitly: a public add-on could otherwise make the TV probe
+ * arbitrary devices on its LAN. */
+export const cloudflareAllowLanSources = persisted<boolean>('cloudflare-allow-lan-sources-v1', false)
 
 interface WorkerStatus {
   app: 'izumi-sync'
@@ -85,17 +88,39 @@ export interface CloudflareResolverProfile {
   audioLang: string
   /** Ask an explicitly linked Izumi device only when the Worker has no TV-ready source. */
   connectedDeviceFallback: boolean
+  allowPrivateNetworkSources?: boolean
   /** Optional credential used only inside this user's Worker to resolve torrent rows for the TV. */
   debrid: {
     provider: string
     credential: string
   } | null
+  /** Runtime-neutral catalogue settings used only when the TV is browsing without Izumi open. */
+  catalog?: {
+    screens: string[]
+    defaultScreen: string
+    showAdult: boolean
+    hideSpoilers: boolean
+    tmdbToken: string
+  }
 }
 
-export interface CloudflareResolverProfileState extends Omit<CloudflareResolverProfile, 'debrid'> {
+export interface CloudflareResolverProfileState extends Omit<CloudflareResolverProfile, 'debrid' | 'catalog'> {
   /** The Worker reports only whether a credential exists; it never echoes the secret. */
   debrid: { provider: string; configured: true } | null
+  catalog?: Omit<NonNullable<CloudflareResolverProfile['catalog']>, 'tmdbToken'> & { tmdbConfigured?: boolean }
 }
+
+export interface CloudflareCompanionProgress {
+  recordKey: string
+  media: CompanionMedia
+  sessionId: string
+  positionSeconds: number
+  durationSeconds: number
+  state: 'buffering' | 'playing' | 'paused' | 'idle'
+  completed: boolean
+  updatedAt: number
+}
+type EncryptedCloudflareCompanionProgress = Omit<CloudflareCompanionProgress, 'recordKey'>
 
 interface EncryptedEnvelope {
   v: 1
@@ -539,6 +564,79 @@ export async function leaveCloudflareSync(): Promise<void> {
 
 async function encryptionKey(config: CloudflareSyncConfig): Promise<CryptoKey> {
   return crypto.subtle.importKey('raw', base64UrlToBytes(config.groupKey), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
+}
+
+async function companionEncryptionKey(transport: CloudflareCompanionTransport, usages: KeyUsage[]): Promise<CryptoKey> {
+  return crypto.subtle.importKey('raw', base64UrlToBytes(transport.tvToken), { name: 'AES-GCM' }, false, usages)
+}
+
+async function encryptCompanionPayload(
+  transport: CloudflareCompanionTransport,
+  context: string,
+  value: unknown,
+): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const plain = encoder.encode(JSON.stringify(value))
+  if (plain.byteLength > MAX_PLAINTEXT_BYTES) throw new Error('The TV snapshot is too large for Cloudflare Sync.')
+  const encrypted = await crypto.subtle.encrypt({
+    name: 'AES-GCM', iv,
+    additionalData: encoder.encode(`izumi-companion:${transport.pairingId}:${context}`),
+  }, await companionEncryptionKey(transport, ['encrypt']), plain)
+  return JSON.stringify({ v: 1, iv: bytesToBase64Url(iv), data: bytesToBase64Url(new Uint8Array(encrypted)) })
+}
+
+async function decryptCompanionPayload<T>(
+  transport: CloudflareCompanionTransport,
+  context: string,
+  payload: string,
+): Promise<T | null> {
+  try {
+    const envelope = JSON.parse(payload) as Partial<EncryptedEnvelope>
+    if (envelope.v !== 1 || typeof envelope.iv !== 'string' || typeof envelope.data !== 'string') return null
+    const plain = await crypto.subtle.decrypt({
+      name: 'AES-GCM', iv: base64UrlToBytes(envelope.iv),
+      additionalData: encoder.encode(`izumi-companion:${transport.pairingId}:${context}`),
+    }, await companionEncryptionKey(transport, ['decrypt']), base64UrlToBytes(envelope.data))
+    return JSON.parse(decoder.decode(plain)) as T
+  } catch { return null }
+}
+
+/** Publish the existing compact home model without exposing its contents to the Worker. */
+export async function publishCloudflareCompanionSnapshot(
+  transport: CloudflareCompanionTransport,
+  snapshot: CompanionHomeSnapshot,
+): Promise<void> {
+  const payload = await encryptCompanionPayload(transport, `snapshot:${snapshot.catalog.screen}`, snapshot)
+  const config = companionConfig()
+  if (normalizeCloudflareEndpoint(config.endpoint) !== normalizeCloudflareEndpoint(transport.endpoint)) return
+  await workerRequest(transport.endpoint, `/v1/companion/pairings/${encodeURIComponent(transport.pairingId)}/snapshots`, {
+    method: 'PUT', body: JSON.stringify({ screen: snapshot.catalog.screen, payload }),
+  }, config.deviceToken)
+}
+
+/** Pull encrypted TV checkpoints so they enter the same local-history/position and group-sync path
+ * as playback performed by this client. */
+export async function readCloudflareCompanionProgress(
+  transport: CloudflareCompanionTransport,
+): Promise<CloudflareCompanionProgress[]> {
+  const config = companionConfig()
+  if (normalizeCloudflareEndpoint(config.endpoint) !== normalizeCloudflareEndpoint(transport.endpoint)) return []
+  const result = await workerRequest<{ records: Array<{ mediaKey: string; payload: string }> }>(
+    transport.endpoint,
+    `/v1/companion/pairings/${encodeURIComponent(transport.pairingId)}/progress`,
+    {},
+    config.deviceToken,
+  )
+  const records = (Array.isArray(result.records) ? result.records : []).slice(0, 200).filter((record) =>
+    typeof record?.mediaKey === 'string' && /^[A-Za-z0-9_-]{32,64}$/.test(record.mediaKey)
+    && typeof record.payload === 'string')
+  const values = await Promise.all(records.map((record) => decryptCompanionPayload<EncryptedCloudflareCompanionProgress>(
+    transport, `progress:${record.mediaKey}`, record.payload,
+  )))
+  return values.flatMap((value, index): CloudflareCompanionProgress[] => value?.media?.ref
+    && typeof value.sessionId === 'string' && Number.isFinite(value.updatedAt)
+    ? [{ ...value, recordKey: records[index].mediaKey }]
+    : [])
 }
 
 async function encryptPayload(config: CloudflareSyncConfig, category: string, payload: string): Promise<string> {

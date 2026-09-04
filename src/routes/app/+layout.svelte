@@ -213,7 +213,7 @@
     const stopStremioAddonSync = initStremioAddonSync()
     const stopCompanionSources = initCompanionSourceBridge()
     const stopCompanions = initCompanionConnections(
-      () => createCompanionSnapshot(companionCatalogClient),
+      (screen) => createCompanionSnapshot(companionCatalogClient, Date.now(), screen),
       async (media: CompanionMedia, device, context) => {
         // A live TV request is background work. Keep both the current route and the person's local
         // source picker untouched while the normal resolver/ranker works in an isolated session.

@@ -491,9 +491,13 @@ async function selectedHome(client: QueryClient, screen: CatalogScreen, provider
   return screen === 'auto' || screen === 'anilist' ? legacyHome(client) : load(screen)
 }
 
-export async function createCompanionSnapshot(client: QueryClient, now = Date.now()): Promise<CompanionHomeSnapshot> {
-  const screen = get(catalogScreen)
-  const active = get(catalogProvider)
+export async function createCompanionSnapshot(
+  client: QueryClient,
+  now = Date.now(),
+  screenOverride?: CatalogScreen,
+): Promise<CompanionHomeSnapshot> {
+  const screen = screenOverride ?? get(catalogScreen)
+  const active = screen === 'merged' ? get(catalogProvider) : screen
   const availableScreens = get(enabledCatalogScreens)
   const watchingEntries = get(continueWatching)
   const playbackPositions = get(positions)

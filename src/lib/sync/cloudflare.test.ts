@@ -187,11 +187,11 @@ describe('Cloudflare self-hosted sync', () => {
       deviceId: '0123456789abcdef01234567',
       deviceToken: 'D'.repeat(43),
       groupKey: 'G'.repeat(43),
-      workerVersion: '1.5.0',
+      workerVersion: '1.6.0',
     })
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
-        app: 'izumi-sync', version: '1.5.0', protocol: 1, claimed: true,
+        app: 'izumi-sync', version: '1.6.0', protocol: 1, claimed: true,
         features: ['cloud-resolver-v1', 'cloud-resolver-v2', 'cloud-resolver-debrid-v1'],
       })))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, updatedAt: 456 })))
