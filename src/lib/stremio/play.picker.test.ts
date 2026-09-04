@@ -108,6 +108,7 @@ const {
   cancelResolve,
   commitResolveSelection,
   createResolveSession,
+  episodeWant,
   playEpisode,
   REMEMBERED_SOURCE_MAX_AGE_MS,
   REMEMBERED_SOURCE_PRIORITY_MS,
@@ -139,6 +140,23 @@ afterEach(() => {
 })
 
 describe('manual episode source chooser', () => {
+  it('verifies a provider video after specials with its season-local episode number', async () => {
+    const skinwalker = {
+      id: -1,
+      catalog: { provider: 'stremio', type: 'series', id: 'skinwalker' },
+      type: 'SERIES',
+      title: { romaji: 'The Secret of Skinwalker Ranch' },
+      format: 'TV',
+      episodes: 126,
+      videos: [{ number: 85, season: 5, episode: 1, id: 'tt10589968:5:1' }],
+    }
+
+    await expect(episodeWant(skinwalker as never, 85)).resolves.toMatchObject({
+      season: 5,
+      episode: 1,
+    })
+  })
+
   it('keeps background TV resolution isolated from the on-screen picker', async () => {
     const tvPicker = writable<Record<string, unknown> | null>(null)
     const tvSession = createResolveSession()

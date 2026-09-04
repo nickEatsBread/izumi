@@ -1042,8 +1042,10 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
   // TMDB, or the exact id supplied by a Stremio metadata add-on.
   if (!requestIds.length) return { streams: [], cachedCount: 0 }
 
-  // Fetch streams and the AniZip season map CONCURRENTLY (independent round-trips).
-  const seasonP = episode != null ? mediaSeasonMap(media) : Promise.resolve({} as Record<number, { season?: number; abs?: number }>)
+  // Fetch streams and the season-local verification target CONCURRENTLY. Provider-backed series
+  // use an absolute internal video index, while filenames use SxxExx; episodeWant translates once
+  // so video 85 (after 40 specials) is verified as S5 E1 rather than the nonexistent S5 E85.
+  const wantP = episode != null ? episodeWant(media, episode) : Promise.resolve(undefined)
   const { streams: addonStreams, total, cachedCount } = await getStreams(bases, requestIds, streamType(media))
 
   const refined = refineStreams(media, addonStreams)
@@ -1054,9 +1056,8 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
   // pickBest so auto-select can't re-promote a wrong-season file either.
   let want: EpisodeWant | undefined
   if (episode != null) {
-    const w = (await seasonP)[episode]
-    want = { episode, ...(w ?? {}) }
-    streams = verifySeason(streams, want)
+    want = await wantP
+    if (want) streams = verifySeason(streams, want)
   }
 
   // Only hard-fail when there's nothing playable AND no extensions to fall back on;
@@ -1395,7 +1396,7 @@ export function preloadResolveNoAdd(stream: Stream): boolean {
 // season/abs pair disambiguates absolute-numbered files and multi-season packs; the
 // addon's behaviorHints.filename (batch rows name the exact in-pack file) is an exact
 // match hint. Best-effort — an empty want keeps the legacy behavior.
-async function episodeWant(media: Media, episode: number | undefined, stream?: Stream): Promise<EpisodeWant | undefined> {
+export async function episodeWant(media: Media, episode: number | undefined, stream?: Stream): Promise<EpisodeWant | undefined> {
   if (episode == null) return undefined
   const map = await mediaSeasonMap(media)
   const sm = map[episode]
@@ -2015,7 +2016,7 @@ export async function playEpisode(
 
     const type = streamType(media)
     const seasonStartedAt = performance.now()
-    const seasonP = episode != null ? mediaSeasonMap(media) : Promise.resolve({} as Record<number, { season?: number; abs?: number }>)
+    const seasonP = episode != null ? episodeWant(media, episode) : Promise.resolve(undefined)
 
     // Fold each addon's streams into the picker AS IT RESPONDS (one
     // origin loads, the rest stream in, the list re-ranks + animated-sorts live)
@@ -2222,8 +2223,8 @@ export async function playEpisode(
 
     // Resolve the season target, then unblock + re-run auto-continue. `.finally` so a title with
     // no AniZip season data still flips seasonSettled (nothing to wrong-season against).
-    const seasonReady = seasonP.then((m) => {
-      if (episode != null) want = { episode, ...(m[episode] ?? {}) }
+    const seasonReady = seasonP.then((target) => {
+      want = target
     }).catch((error) => {
       traceResolveError(trace, 'episode season mapping failed', error)
     }).finally(() => {
