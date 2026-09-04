@@ -7,9 +7,10 @@ import {
   describe,
   isNotice,
   normalizeStreamBehavior,
-  parseSeasonEp,
   pickCandidates,
 } from './generated/resolver-core/resolver-core.ts'
+import { providerName, providers, resolveHash as resolveDebridHash } from './generated/resolver-core/debrid/index.ts'
+import { rdForgetLists } from './generated/resolver-core/debrid/providers/realdebrid.ts'
 
 const MAX_ADDONS = 8
 const MAX_ADDON_URL_BYTES = 2048
@@ -20,15 +21,10 @@ const MAX_PROVIDER_RESPONSE_BYTES = 512 * 1024
 const METADATA_TIMEOUT_MS = 5_000
 const MANIFEST_TIMEOUT_MS = 4_000
 const STREAM_TIMEOUT_MS = 12_000
-const DEBRID_TIMEOUT_MS = 8_000
-const DEBRID_POLL_ATTEMPTS = 7
-const DEBRID_POLL_INTERVAL_MS = 1_250
 const QUALITY = new Set(['any', '2160', '1440', '1080', '720', '480', '360'])
 const SORT = new Set(['quality', 'seeders', 'size'])
 const PROVIDERS = new Set(['anilist', 'kitsu', 'tmdb', 'stremio'])
 const TYPES = new Set(['anime', 'movie', 'series'])
-const REAL_DEBRID_BASE = 'https://api.real-debrid.com/rest/1.0'
-const VIDEO_FILE = /\.(?:mkv|mp4|m4v|webm|avi|mov|ts|m2ts|mpg|mpeg|wmv|flv)$/i
 const encoder = new TextEncoder()
 
 const DEFAULT_PROFILE = Object.freeze({
@@ -85,14 +81,16 @@ export function normalizeResolverProfile(value, workerOrigin = '') {
     : ''
   let debrid = null
   if (input.debrid != null) {
-    if (!input.debrid || typeof input.debrid !== 'object' || input.debrid.provider !== 'realdebrid') {
-      throw new Error('This Cloudflare resolver supports native Real-Debrid playback only.')
+    const provider = typeof input.debrid?.provider === 'string' ? input.debrid.provider.trim().toLowerCase() : ''
+    if (!providers.has(provider)) {
+      throw new Error('This Cloudflare resolver does not recognise the configured debrid provider.')
     }
-    const token = typeof input.debrid.token === 'string' ? input.debrid.token.trim() : ''
-    if (token.length < 16 || token.length > 512 || /[\u0000-\u0020\u007f]/.test(token)) {
-      throw new Error('The Real-Debrid token is invalid.')
+    const rawCredential = input.debrid.credential ?? input.debrid.token
+    const credential = typeof rawCredential === 'string' ? rawCredential.trim() : ''
+    if (credential.length < 3 || credential.length > 1_024 || /[\u0000-\u001f\u007f]/.test(credential)) {
+      throw new Error(`The ${providerName(provider)} credential is invalid.`)
     }
-    debrid = { provider: 'realdebrid', token, transcode: input.debrid.transcode !== false }
+    debrid = { provider, credential }
   }
   return {
     enabled: input.enabled === true,
@@ -111,7 +109,7 @@ export function publicResolverProfile(profileValue, workerOrigin = '') {
   return {
     ...profile,
     debrid: profile.debrid
-      ? { provider: profile.debrid.provider, configured: true, transcode: profile.debrid.transcode }
+      ? { provider: profile.debrid.provider, configured: true }
       : null,
   }
 }
@@ -143,19 +141,7 @@ export function normalizeResolveRequest(value) {
     const clean = entry.trim()
     return clean && clean.length <= 512 && !/[\u0000-\u001f]/.test(clean) ? [clean] : []
   }))]
-  const rawCapabilities = input.capabilities && typeof input.capabilities === 'object' ? input.capabilities : {}
-  const platformVersion = typeof rawCapabilities.platformVersion === 'string'
-    && /^\d{1,2}(?:\.\d{1,2})?$/.test(rawCapabilities.platformVersion)
-    ? rawCapabilities.platformVersion
-    : ''
-  const capabilities = {
-    platformVersion,
-    hls: rawCapabilities.hls !== false,
-    dash: rawCapabilities.dash !== false,
-    webAssembly: rawCapabilities.webAssembly === true,
-    webRtc: rawCapabilities.webRtc === true,
-  }
-  return { ref: { provider, type, id }, episode, season, streamType, streamIds, capabilities }
+  return { ref: { provider, type, id }, episode, season, streamType, streamIds }
 }
 
 function addonEndpoint(base, suffix) {
@@ -327,172 +313,45 @@ function sanitizeStream(value) {
   }
 }
 
-async function fetchWithTimeout(fetcher, url, init, timeoutMs = DEBRID_TIMEOUT_MS) {
+async function resolveConfiguredDebrid(stream, profile, want) {
+  const provider = profile.debrid?.provider
+  const credential = profile.debrid?.credential
+  if (!provider || !credential || !stream.infoHash) return null
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const timer = setTimeout(() => controller.abort(), 22_000)
   try {
-    return await fetcher(url, { ...init, signal: controller.signal })
+    const magnet = stream.__magnet || `magnet:?xt=urn:btih:${stream.infoHash}`
+    const rawUrl = await resolveDebridHash(provider, credential, magnet, {
+      want: {
+        ...want,
+        filename: stream.behaviorHints?.filename,
+      },
+      timeoutMs: 18_000,
+      pollMs: 1_000,
+      signal: controller.signal,
+      priority: true,
+    })
+    const url = cleanUrl(rawUrl)
+    if (!url) throw new Error(`${providerName(provider)} returned an invalid playback URL.`)
+    const info = describe(stream)
+    const name = providerName(provider)
+    return {
+      id: `${stream.__candidate?.routeId ?? stream.infoHash}-${provider}-direct`,
+      url,
+      title: info.label.slice(0, 500),
+      quality: info.quality,
+      badges: [...new Set([...info.badges, name])].slice(0, 10),
+      source: name,
+      contentType: contentType({ ...stream, url }),
+      subtitles: [],
+      delivery: 'debrid',
+    }
   } finally {
     clearTimeout(timer)
+    // The desktop implementation caches an account listing for faster repeat playback. A Worker
+    // isolate can serve several owners, so do not retain a Real-Debrid credential between calls.
+    if (provider === 'realdebrid') rdForgetLists(credential)
   }
-}
-
-async function realDebridRequest(fetcher, token, method, path, fields) {
-  const body = fields ? new URLSearchParams(fields).toString() : undefined
-  const response = await fetchWithTimeout(fetcher, `${REAL_DEBRID_BASE}${path}`, {
-    method,
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...(body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
-    },
-    body,
-    redirect: 'follow',
-  })
-  const text = await response.text()
-  let value = null
-  try { value = text ? JSON.parse(text) : null } catch { /* A successful 204 has no body. */ }
-  if (!response.ok) {
-    const reason = typeof value?.error === 'string' ? value.error : `HTTP ${response.status}`
-    throw new Error(`Real-Debrid request failed: ${reason}.`)
-  }
-  return value
-}
-
-function debridVideoFiles(value) {
-  return (Array.isArray(value) ? value : []).flatMap((entry, index) => {
-    if (!entry || typeof entry !== 'object') return []
-    const path = typeof entry.path === 'string' ? entry.path : ''
-    const id = Number(entry.id)
-    const bytes = Number(entry.bytes)
-    if (!Number.isInteger(id) || id < 0 || !path || !VIDEO_FILE.test(path)) return []
-    return [{ id, path, bytes: Number.isFinite(bytes) && bytes > 0 ? bytes : 0, selected: Number(entry.selected) === 1, index }]
-  })
-}
-
-function debridFileScore(file, stream, want) {
-  if (Number.isInteger(stream.fileIdx) && file.index === stream.fileIdx) return 10_000_000_000 + file.bytes
-  const parsed = parseSeasonEp({ behaviorHints: { filename: file.path } })
-  const seasonMatches = want?.season == null || parsed.season == null || parsed.season === want.season
-  const episodeMatches = want?.episode != null && parsed.episode === want.episode
-  const absoluteMatches = want?.abs != null && parsed.abs === want.abs
-  if (seasonMatches && (episodeMatches || absoluteMatches)) return 5_000_000_000 + file.bytes
-  if (want?.episode != null && parsed.abs === want.episode) return 4_000_000_000 + file.bytes
-  return file.bytes
-}
-
-function chooseDebridFile(files, stream, want) {
-  return [...files].sort((left, right) => debridFileScore(right, stream, want) - debridFileScore(left, stream, want))[0]
-}
-
-function debridContentType(filename, url) {
-  const value = filename || url || ''
-  if (/\.m3u8(?:[?#]|$)/i.test(value)) return 'application/vnd.apple.mpegurl'
-  if (/\.mpd(?:[?#]|$)/i.test(value)) return 'application/dash+xml'
-  if (/\.mkv(?:[?#]|$)/i.test(value)) return 'video/x-matroska'
-  if (/\.webm(?:[?#]|$)/i.test(value)) return 'video/webm'
-  if (/\.(?:ts|m2ts)(?:[?#]|$)/i.test(value)) return 'video/mp2t'
-  return 'video/mp4'
-}
-
-function closestVariant(value, target) {
-  const entries = Object.entries(value && typeof value === 'object' ? value : {}).flatMap(([quality, rawUrl]) => {
-    const url = cleanUrl(rawUrl)
-    if (!url) return []
-    const height = Number(String(quality).match(/\d{3,4}/)?.[0] ?? 0)
-    return [{ quality, url, height }]
-  })
-  if (!entries.length) return null
-  const wanted = Number(target)
-  return entries.sort((left, right) => {
-    if (!Number.isFinite(wanted)) return right.height - left.height
-    const leftTier = left.height === wanted ? 0 : left.height < wanted ? 1 : 2
-    const rightTier = right.height === wanted ? 0 : right.height < wanted ? 1 : 2
-    return leftTier - rightTier || Math.abs(wanted - left.height) - Math.abs(wanted - right.height)
-  })[0]
-}
-
-function transcodeCandidate(stream, info, variant, kind, contentType) {
-  const suffix = String(variant.quality).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 32) || 'auto'
-  return {
-    id: `${stream.__candidate?.routeId ?? stream.infoHash}-rd-${kind}-${suffix}`,
-    url: variant.url,
-    title: `${info.label.slice(0, 430)} · TV compatible`,
-    quality: variant.height ? `${variant.height}p` : cleanText(String(variant.quality), 40),
-    badges: [...new Set([...info.badges, 'Real-Debrid', 'TV compatible'])].slice(0, 10),
-    source: 'Real-Debrid',
-    contentType,
-    subtitles: [],
-    delivery: 'debrid-transcode',
-  }
-}
-
-async function resolveRealDebrid(stream, profile, want, fetcher) {
-  const token = profile.debrid?.token
-  if (!token || !stream.infoHash) return []
-  const magnet = stream.__magnet || `magnet:?xt=urn:btih:${stream.infoHash}`
-  const added = await realDebridRequest(fetcher, token, 'POST', '/torrents/addMagnet', { magnet })
-  if (!added || typeof added.id !== 'string') throw new Error('Real-Debrid did not create a torrent entry.')
-  let info = await realDebridRequest(fetcher, token, 'GET', `/torrents/info/${encodeURIComponent(added.id)}`)
-  let files = debridVideoFiles(info?.files)
-  for (let attempt = 0; !files.length && attempt < 2; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 250))
-    info = await realDebridRequest(fetcher, token, 'GET', `/torrents/info/${encodeURIComponent(added.id)}`)
-    files = debridVideoFiles(info?.files)
-  }
-  const chosen = chooseDebridFile(files, stream, want)
-  if (!chosen) throw new Error('Real-Debrid found no video file in this torrent.')
-  if (!chosen.selected) {
-    await realDebridRequest(fetcher, token, 'POST', `/torrents/selectFiles/${encodeURIComponent(added.id)}`, { files: String(chosen.id) })
-  }
-  for (let attempt = 0; attempt < DEBRID_POLL_ATTEMPTS; attempt += 1) {
-    info = await realDebridRequest(fetcher, token, 'GET', `/torrents/info/${encodeURIComponent(added.id)}`)
-    if (info?.status === 'downloaded') break
-    if (/error|virus|dead/i.test(String(info?.status || ''))) throw new Error('Real-Debrid could not download this torrent.')
-    if (attempt + 1 < DEBRID_POLL_ATTEMPTS) {
-      await new Promise((resolve) => setTimeout(resolve, DEBRID_POLL_INTERVAL_MS))
-    }
-  }
-  if (info?.status !== 'downloaded') throw new Error('Real-Debrid is still downloading this torrent. Try again shortly.')
-  const readyFiles = debridVideoFiles(info.files)
-  const selected = readyFiles.filter((file) => file.selected)
-  const selectedIndex = selected.findIndex((file) => file.id === chosen.id)
-  const link = selectedIndex >= 0 && Array.isArray(info.links) ? info.links[selectedIndex] : undefined
-  if (typeof link !== 'string' || !link) throw new Error('Real-Debrid did not expose the selected episode.')
-  const unrestricted = await realDebridRequest(fetcher, token, 'POST', '/unrestrict/link', { link })
-  const directUrl = cleanUrl(unrestricted?.download)
-  if (!directUrl) throw new Error('Real-Debrid returned an invalid playback URL.')
-  const parsed = describe(stream)
-  const direct = {
-    id: `${stream.__candidate?.routeId ?? stream.infoHash}-rd-direct`,
-    url: directUrl,
-    title: parsed.label.slice(0, 500),
-    quality: parsed.quality,
-    badges: [...new Set([...parsed.badges, 'Real-Debrid'])].slice(0, 10),
-    source: 'Real-Debrid',
-    contentType: debridContentType(unrestricted?.filename, directUrl),
-    subtitles: [],
-    delivery: 'debrid',
-  }
-  if (!profile.debrid.transcode || typeof unrestricted?.id !== 'string') return [direct]
-  let variants
-  try {
-    variants = await realDebridRequest(fetcher, token, 'GET', `/streaming/transcode/${encodeURIComponent(unrestricted.id)}`)
-  } catch {
-    return [direct]
-  }
-  const transcodes = []
-  if (profile.requestCapabilities?.hls !== false) {
-    const apple = closestVariant(variants?.apple, profile.quality)
-    if (apple) transcodes.push(transcodeCandidate(stream, parsed, apple, 'hls', 'application/vnd.apple.mpegurl'))
-  }
-  if (profile.requestCapabilities?.dash !== false) {
-    const dash = closestVariant(variants?.dash, profile.quality)
-    if (dash) transcodes.push(transcodeCandidate(stream, parsed, dash, 'dash', 'application/dash+xml'))
-  }
-  const liveMp4 = closestVariant(variants?.liveMP4, profile.quality)
-  if (liveMp4) transcodes.push(transcodeCandidate(stream, parsed, liveMp4, 'mp4', 'video/mp4'))
-  return transcodes.length ? [...transcodes, direct] : [direct]
 }
 
 function playbackHeaders(stream) {
@@ -599,10 +458,8 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
     else if (!debridAttempted && profile.debrid && stream.infoHash) {
       debridAttempted = true
       try {
-        candidates.push(...await resolveRealDebrid(stream, {
-          ...profile,
-          requestCapabilities: request.capabilities,
-        }, plan.want, fetcher))
+        const resolved = await resolveConfiguredDebrid(stream, profile, plan.want)
+        if (resolved) candidates.push(resolved)
       } catch {
         rejected += 1
       }

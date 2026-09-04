@@ -180,7 +180,7 @@ describe('Cloudflare self-hosted sync', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('uploads a debrid credential only to a Worker advertising native debrid resolution', async () => {
+  it('uploads the configured debrid provider only to a Worker advertising native debrid resolution', async () => {
     cloudflareSyncConfig.set({
       enabled: true,
       endpoint: 'https://private.example.workers.dev',
@@ -204,11 +204,11 @@ describe('Cloudflare self-hosted sync', () => {
       sort: 'quality',
       audioLang: 'jpn',
       connectedDeviceFallback: false,
-      debrid: { provider: 'realdebrid', token: 'R'.repeat(32), transcode: true },
+      debrid: { provider: 'torbox', credential: 'T'.repeat(32) },
     })
 
     const body = JSON.parse(String(fetchMock.mock.calls[1][1]?.body))
-    expect(body.debrid).toEqual({ provider: 'realdebrid', token: 'R'.repeat(32), transcode: true })
+    expect(body.debrid).toEqual({ provider: 'torbox', credential: 'T'.repeat(32) })
   })
 
   it('refuses to upload a debrid credential to an older Worker', async () => {
@@ -233,7 +233,7 @@ describe('Cloudflare self-hosted sync', () => {
       sort: 'quality',
       audioLang: 'jpn',
       connectedDeviceFallback: false,
-      debrid: { provider: 'realdebrid', token: 'R'.repeat(32), transcode: true },
+      debrid: { provider: 'alldebrid', credential: 'A'.repeat(32) },
     })).rejects.toThrow(/Update your Izumi Cloudflare Worker/)
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })

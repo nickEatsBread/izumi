@@ -87,16 +87,14 @@ export interface CloudflareResolverProfile {
   connectedDeviceFallback: boolean
   /** Optional credential used only inside this user's Worker to resolve torrent rows for the TV. */
   debrid: {
-    provider: 'realdebrid'
-    token: string
-    /** Prefer Real-Debrid's HLS/DASH compatibility output before the original file. */
-    transcode: boolean
+    provider: string
+    credential: string
   } | null
 }
 
 export interface CloudflareResolverProfileState extends Omit<CloudflareResolverProfile, 'debrid'> {
-  /** The Worker reports only whether a credential exists; it never echoes the token. */
-  debrid: { provider: 'realdebrid'; configured: true; transcode: boolean } | null
+  /** The Worker reports only whether a credential exists; it never echoes the secret. */
+  debrid: { provider: string; configured: true } | null
 }
 
 interface EncryptedEnvelope {

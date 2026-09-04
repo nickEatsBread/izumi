@@ -1,4 +1,5 @@
-import { invokeNativeHttp } from '$lib/net/http'
+// GENERATED from src/lib/stremio/debrid/http.ts by scripts/generate-cloudflare-resolver-core.mjs.
+// Edit the canonical source, then regenerate; do not edit this vendored copy.
 import type { DebridInfo, ResolveOpts } from './types'
 
 // Shared helpers across debrid providers. All HTTP goes through the process-wide POOLED Rust
@@ -125,33 +126,28 @@ export function pickLargestVideo<T extends { name: string; bytes: number }>(file
  *  completion. `init.priority` moves a call onto the reserved playback lane instead (a user's
  *  pick must not queue behind list-population traffic); see ResolveOpts.priority. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-// CLOUDFLARE_HTTP_ADAPTER_START
 export async function jfetch(url: string, init?: any): Promise<{ ok: boolean; status: number; json: any }> {
-  const method = String(init?.method ?? 'GET').toUpperCase()
-  const serialized = init?.body == null ? undefined : nativeBody(init.body)
-  const body = serialized?.body
-  const headers = defaultHeader(
-    init?.headers as Record<string, string> | undefined,
-    'Content-Type',
-    serialized?.contentType,
-  )
-  const opts = {
-    signal: init?.signal as AbortSignal | undefined,
-    timeoutMs: init?.timeoutMs as number | undefined,
-    priority: init?.priority as boolean | undefined,
+  const controller = new AbortController()
+  const parentSignal = init?.signal as AbortSignal | undefined
+  const onAbort = () => controller.abort()
+  if (parentSignal?.aborted) controller.abort()
+  else parentSignal?.addEventListener?.('abort', onAbort, { once: true })
+  const timeoutMs = Math.max(1_000, Math.min(20_000, Number(init?.timeoutMs) || 8_000))
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const { priority: _priority, timeoutMs: _timeoutMs, signal: _signal, ...requestInit } = init ?? {}
+  try {
+    const response = await fetch(url, { ...requestInit, signal: controller.signal })
+    const text = await response.text()
+    if (text.length > 4 * 1024 * 1024) throw new Error('Debrid response exceeded the Worker limit.')
+    let json: unknown = {}
+    try { json = text ? JSON.parse(text) : {} } catch { json = {} }
+    return { ok: response.ok, status: response.status, json }
+  } finally {
+    clearTimeout(timer)
+    parentSignal?.removeEventListener?.('abort', onAbort)
   }
-  const r = method === 'GET' && body == null
-    ? await invokeNativeHttp<{ status: number; body: string }>('http_get', { url, headers, background: true }, opts)
-    : method === 'POST'
-      ? await invokeNativeHttp<{ status: number; body: string }>('http_post', { url, body: body ?? '', headers, background: true }, opts)
-      // ext_fetch has no playback lane (it is extension-class on the Rust side), so the flag is
-      // stripped rather than silently ignored — the args sent over IPC say what actually happens.
-      : await invokeNativeHttp<{ status: number; body: string }>('ext_fetch', { url, method, headers, body }, { ...opts, priority: undefined })
-  let json: unknown = {}
-  try { json = r.body ? JSON.parse(r.body) : {} } catch { json = {} }
-  return { ok: r.status >= 200 && r.status < 300, status: r.status, json }
 }
-// CLOUDFLARE_HTTP_ADAPTER_END
+
 
 // --- Transient vs terminal HTTP failures --------------------------------------
 // jfetch never throws on a non-2xx, so every provider has to decide what a status MEANS, and inside

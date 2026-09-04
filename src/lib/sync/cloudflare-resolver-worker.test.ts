@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   defaultResolverProfile,
   normalizeAddonBase,
@@ -15,6 +15,7 @@ const json = (value: unknown, status = 200) => new Response(JSON.stringify(value
 })
 
 describe('self-hosted Cloudflare source resolver', () => {
+  afterEach(() => vi.unstubAllGlobals())
   it('is disabled with no uploaded add-ons by default', () => {
     expect(defaultResolverProfile()).toEqual({
       enabled: false,
@@ -52,7 +53,7 @@ describe('self-hosted Cloudflare source resolver', () => {
     })
   })
 
-  it('never echoes the configured debrid token from an owner profile response', () => {
+  it('never echoes the configured debrid credential from an owner profile response', () => {
     const profile = publicResolverProfile({
       enabled: true,
       addons: ['https://addon.example/a'],
@@ -60,10 +61,29 @@ describe('self-hosted Cloudflare source resolver', () => {
       sort: 'quality',
       audioLang: 'jpn',
       connectedDeviceFallback: false,
-      debrid: { provider: 'realdebrid', token: 'secret-token-value-123456', transcode: true },
+      debrid: { provider: 'torbox', credential: 'secret-token-value-123456' },
     })
-    expect(profile.debrid).toEqual({ provider: 'realdebrid', configured: true, transcode: true })
+    expect(profile.debrid).toEqual({ provider: 'torbox', configured: true })
     expect(JSON.stringify(profile)).not.toContain('secret-token')
+  })
+
+  it('accepts every debrid provider exposed by Izumi’s shared dispatcher', () => {
+    const providerIds = [
+      'realdebrid', 'alldebrid', 'premiumize', 'torbox', 'debridlink', 'offcloud',
+      'easydebrid', 'deepbrid', 'megadebrid',
+    ]
+    for (const provider of providerIds) {
+      expect(normalizeResolverProfile({
+        enabled: true,
+        addons: [],
+        quality: 'any',
+        sort: 'quality',
+        audioLang: '',
+        connectedDeviceFallback: false,
+        debrid: { provider, credential: 'configured-key' },
+      }).debrid)
+        .toEqual({ provider, credential: 'configured-key' })
+    }
   })
 
   it('uses AniZip mappings to build the same Kitsu and IMDb requests as the client', async () => {
@@ -155,7 +175,7 @@ describe('self-hosted Cloudflare source resolver', () => {
       .toThrow(/cannot be resolved/)
   })
 
-  it('resolves a torrent through Real-Debrid and prefers its TV-compatible HLS variant', async () => {
+  it('resolves a torrent through the generated copy of Izumi’s debrid provider code', async () => {
     const hash = 'b'.repeat(40)
     let infoCalls = 0
     const fetcher = vi.fn(async (raw: RequestInfo | URL, init?: RequestInit) => {
@@ -169,13 +189,14 @@ describe('self-hosted Cloudflare source resolver', () => {
         title: 'Show S01E02 1080p',
         sources: ['tracker:https://tracker.example/announce'],
       }] })
+      if (url.includes('/torrents?limit=1000&page=1')) return json([])
       if (url.endsWith('/torrents/addMagnet')) {
         expect(init?.body).toContain(`magnet%3A%3Fxt%3Durn%3Abtih%3A${hash}`)
         expect(init?.body).toContain('tracker.example')
         return json({ id: 'torrent-id' }, 201)
       }
       if (url.endsWith('/torrents/selectFiles/torrent-id')) {
-        expect(init?.body).toBe('files=2')
+        expect(init?.body).toBe('files=1%2C2')
         return new Response(null, { status: 204 })
       }
       if (url.endsWith('/torrents/info/torrent-id')) {
@@ -195,12 +216,9 @@ describe('self-hosted Cloudflare source resolver', () => {
         download: 'https://cdn.real-debrid.example/Show.S01E02.mkv',
         filename: 'Show.S01E02.mkv',
       })
-      if (url.endsWith('/streaming/transcode/download-id')) return json({
-        apple: { '1080p': 'https://stream.real-debrid.example/1080/master.m3u8' },
-        dash: { '1080p': 'https://stream.real-debrid.example/1080/manifest.mpd' },
-      })
       return json({}, 404)
     })
+    vi.stubGlobal('fetch', fetcher)
     const result = await resolveDirectSources({
       enabled: true,
       addons: ['https://addon.example'],
@@ -208,19 +226,18 @@ describe('self-hosted Cloudflare source resolver', () => {
       sort: 'quality',
       audioLang: '',
       connectedDeviceFallback: false,
-      debrid: { provider: 'realdebrid', token: 'R'.repeat(32), transcode: true },
+      debrid: { provider: 'realdebrid', credential: 'R'.repeat(32) },
     }, {
       ref: { provider: 'kitsu', type: 'anime', id: '42' },
       episode: 2,
-      capabilities: { hls: true, dash: true },
     }, fetcher)
 
     expect(result.candidates[0]).toMatchObject({
-      url: 'https://stream.real-debrid.example/1080/master.m3u8',
-      contentType: 'application/vnd.apple.mpegurl',
-      delivery: 'debrid-transcode',
+      url: 'https://cdn.real-debrid.example/Show.S01E02.mkv',
+      contentType: 'video/x-matroska',
+      source: 'Real-Debrid',
+      delivery: 'debrid',
     })
-    expect(result.candidates.some((candidate) => candidate.delivery === 'debrid')).toBe(true)
     expect(JSON.stringify(result)).not.toContain('RRRR')
   })
 })

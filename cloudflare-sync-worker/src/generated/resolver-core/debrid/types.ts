@@ -1,0 +1,124 @@
+// GENERATED from src/lib/stremio/debrid/types.ts by scripts/generate-cloudflare-resolver-core.mjs.
+// Edit the canonical source, then regenerate; do not edit this vendored copy.
+// Multi-provider debrid abstraction. A provider turns a torrent hash/magnet (from
+// a source extension) into a direct, playable HTTP URL that libmpv opens. Only
+// TORRENT-capable services are here — pure hoster-link unrestrictors (Cocoleech,
+// DASAN) can't resolve a bare infoHash and are intentionally omitted.
+
+/** Provider-agnostic poll stage. */
+export type DebridStage = 'queued' | 'downloading' | 'ready' | 'error'
+
+/** What onStatus receives each poll, so the UI can show a slow (uncached) download. */
+export interface DebridInfo {
+  stage: DebridStage
+  progress?: number // 0–100 when the provider reports it
+  seeders?: number // active seeders, when the provider reports them
+  speed?: number // download speed in BYTES/sec
+  downloaded?: number // bytes fetched so far
+  total?: number // total bytes of the file/torrent
+  filename?: string // the file being cached, when known
+  raw?: string // provider's raw status, for honest display/debugging
+}
+
+/** One torrent/magnet on the debrid account. `status` reuses the DebridStage vocabulary. */
+export interface DebridItem {
+  id: string          // provider-specific torrent id
+  name: string        // release/torrent name
+  size: number        // total bytes (0 when the provider's list omits it)
+  status: DebridStage // 'queued' | 'downloading' | 'ready' | 'error'
+  progress?: number   // 0–100 while downloading
+  hash?: string       // btih infohash (lower-cased) when exposed
+  addedAt?: number    // epoch ms, for newest-first sort
+  fileCount?: number  // when the list endpoint carries it (skips listFiles for single-file)
+}
+
+/** One file inside a torrent. `id` is the key resolveFile needs (numeric id, or a direct link). */
+export interface DebridFile {
+  id: string
+  name: string
+  size: number
+  playable: boolean   // is a video file (VIDEO regex, minus JUNK)
+}
+
+/** Which episode the caller actually wants out of a (possibly multi-file) torrent.
+ *  Providers use it to pick the RIGHT file from a batch/season pack instead of the
+ *  legacy largest-file heuristic (see episode-file.ts). All fields optional — an
+ *  empty/missing want keeps the legacy behavior. */
+export interface EpisodeWant {
+  episode?: number  // per-season episode number
+  abs?: number      // absolute episode number (long-runners / TVDB absolute)
+  season?: number   // wanted season — gates files that parse a contradicting season
+  filename?: string // addon behaviorHints.filename: the exact in-pack file, when known
+}
+
+export interface ResolveOpts {
+  onStatus?: (info: DebridInfo) => void
+  pollMs?: number // default 3000
+  timeoutMs?: number // default 10 min
+  signal?: AbortSignal
+  want?: EpisodeWant // episode-aware file selection inside multi-file torrents
+  /** Never add anything to the user's debrid account. Set by background/prefetch callers so a
+   *  speculative resolve can't create torrent entries the user didn't ask for. Every provider
+   *  honours it the same way: serve an entry the account already holds, otherwise THROW — never
+   *  fall through to the add/upload/create endpoint. */
+  noAdd?: boolean
+  /** Set by playStream for a user-picked source: providers thread it into each jfetch. */
+  priority?: boolean
+}
+
+/** One external subtitle file resolved alongside the chosen video. */
+export interface DebridSidecar {
+  url: string   // direct, playable subtitle URL
+  name: string  // in-torrent filename, for debugging and fallback labels
+  lang: string  // ISO 639-2, or 'und'
+  title: string // human label for the track menu
+}
+
+export interface DebridProviderMeta {
+  id: string // stable key (e.g. 'realdebrid')
+  name: string // display name
+  keyHint: string // where to get the credential
+  credential: 'apikey' | 'userpass'
+  experimental?: boolean // true → tag "(experimental)" in the UI
+  /** How (and whether) this provider can answer "is this hash cached?".
+   *  'native'  — a real bulk cache endpoint. May return a definitive 'uncached'.
+   *  'library' — no cache endpoint; we can only scan the user's OWN account. Positive-only:
+   *              proves "you already have this", never "the provider is holding this".
+   *  'none'    — cannot answer at all. Every hash stays 'unknown'. */
+  cacheCheck: 'native' | 'library' | 'none'
+}
+
+/** Provider-neutral account snapshot for the settings dashboard. */
+export interface DebridAccountInfo {
+  username?: string
+  plan?: string
+  premiumUntil?: number // epoch milliseconds
+  quotaUsed?: number // 0..1 fair-use fraction
+  points?: number
+  downloadedBytes?: number // all-time transfer total, when exposed
+}
+
+export interface DebridProvider extends DebridProviderMeta {
+  /** Resolve a torrent hash or magnet to a direct playable URL. MUST throw a
+   *  user-facing Error on failure and NEVER leak the key in the message. */
+  resolveHash(key: string, hashOrMagnet: string, opts?: ResolveOpts): Promise<string>
+  /** Account torrents/magnets, newest first. Absent = "listing not supported". */
+  listItems?(key: string): Promise<DebridItem[]>
+  /** Files inside one torrent. Fetched lazily when a row is opened. */
+  listFiles?(key: string, item: DebridItem): Promise<DebridFile[]>
+  /** Resolve ONE chosen file to a direct playable URL. Drives debridCaching via opts.onStatus. */
+  resolveFile?(key: string, item: DebridItem, file: DebridFile, opts?: ResolveOpts): Promise<string>
+  /** External subtitle files belonging to the video `resolveHash` picked. Optional: a provider
+   *  that cannot expose per-file links simply omits it and playback is unaffected.
+   *  MUST NOT throw — return [] when sidecars cannot be resolved. */
+  resolveSidecars?(key: string, hashOrMagnet: string, opts?: ResolveOpts): Promise<DebridSidecar[]>
+  /** Remove a torrent from the account. */
+  deleteItem?(key: string, item: DebridItem): Promise<void>
+  /** Bulk cache lookup. A hash ABSENT from the returned map means UNKNOWN, never uncached —
+   *  that distinction is what stops a failed lookup from demoting good releases.
+   *  MUST NOT THROW: an auth failure is classified for its message and reported, but the caller
+   *  receives an empty map. A bad key degrades badges; it must not break the picker. */
+  checkCached?(key: string, hashes: string[]): Promise<Map<string, 'cached' | 'uncached'>>
+  /** Current subscription/quota snapshot. Called only from Settings. */
+  accountInfo?(key: string): Promise<DebridAccountInfo>
+}

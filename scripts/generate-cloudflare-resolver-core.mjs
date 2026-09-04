@@ -5,9 +5,34 @@ import { fileURLToPath } from 'node:url'
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const sourceRoot = join(repositoryRoot, 'src', 'lib', 'stremio')
 const outputRoot = join(repositoryRoot, 'cloudflare-sync-worker', 'src', 'generated', 'resolver-core')
-const entryFile = join(sourceRoot, 'resolver-core.ts')
+const entryFiles = [
+  join(sourceRoot, 'resolver-core.ts'),
+  join(sourceRoot, 'debrid', 'index.ts'),
+]
+const debridHttpFile = join(sourceRoot, 'debrid', 'http.ts')
 const checkOnly = process.argv.includes('--check')
 const importPattern = /(?:\bfrom\s*|\bimport\s*(?:\(\s*)?)['"](\.[^'"]+)['"]/g
+const cloudflareJfetch = `export async function jfetch(url: string, init?: any): Promise<{ ok: boolean; status: number; json: any }> {
+  const controller = new AbortController()
+  const parentSignal = init?.signal as AbortSignal | undefined
+  const onAbort = () => controller.abort()
+  if (parentSignal?.aborted) controller.abort()
+  else parentSignal?.addEventListener?.('abort', onAbort, { once: true })
+  const timeoutMs = Math.max(1_000, Math.min(20_000, Number(init?.timeoutMs) || 8_000))
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const { priority: _priority, timeoutMs: _timeoutMs, signal: _signal, ...requestInit } = init ?? {}
+  try {
+    const response = await fetch(url, { ...requestInit, signal: controller.signal })
+    const text = await response.text()
+    if (text.length > 4 * 1024 * 1024) throw new Error('Debrid response exceeded the Worker limit.')
+    let json: unknown = {}
+    try { json = text ? JSON.parse(text) : {} } catch { json = {} }
+    return { ok: response.ok, status: response.status, json }
+  } finally {
+    clearTimeout(timer)
+    parentSignal?.removeEventListener?.('abort', onAbort)
+  }
+}`
 
 function inside(root, candidate) {
   const path = resolve(candidate)
@@ -27,14 +52,24 @@ async function resolveImport(importer, specifier) {
   throw new Error(`Resolver core import cannot be vendored: ${relative(repositoryRoot, importer)} -> ${specifier}`)
 }
 
+function cloudflareSource(path, source) {
+  if (path !== debridHttpFile) return source
+  const withoutNativeImport = source.replace(/^import\s+\{\s*invokeNativeHttp\s*\}\s+from\s+['"]\$lib\/net\/http['"]\r?\n/m, '')
+  const start = withoutNativeImport.indexOf('// CLOUDFLARE_HTTP_ADAPTER_START')
+  const endMarker = '// CLOUDFLARE_HTTP_ADAPTER_END'
+  const end = withoutNativeImport.indexOf(endMarker)
+  if (start < 0 || end < start) throw new Error('Cloudflare HTTP adapter markers are missing from debrid/http.ts')
+  return `${withoutNativeImport.slice(0, start)}${cloudflareJfetch}\n${withoutNativeImport.slice(end + endMarker.length)}`
+}
+
 async function sourceClosure() {
-  const pending = [entryFile]
+  const pending = [...entryFiles]
   const sources = new Map()
   while (pending.length) {
     const path = pending.shift()
     if (!path || sources.has(path)) continue
     if (!inside(sourceRoot, path)) throw new Error(`Resolver dependency escaped its pure source directory: ${path}`)
-    const source = await readFile(path, 'utf8')
+    const source = cloudflareSource(path, await readFile(path, 'utf8'))
     sources.set(path, source)
     for (const match of source.matchAll(importPattern)) pending.push(await resolveImport(path, match[1]))
   }

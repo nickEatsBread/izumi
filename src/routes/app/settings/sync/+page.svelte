@@ -58,6 +58,7 @@
     type CloudflareResolverProfile,
   } from '$lib/sync/cloudflare'
   import { debridKey, debridProvider, preferredAudioLang, preferredQuality, preferredStreamSort } from '$lib/settings/ui'
+  import { providerMeta, providerName } from '$lib/stremio/debrid'
   import { enabledAddonUrls } from '$lib/stremio/sources'
   import { isAndroid } from '$lib/platform'
   import { anilistToken } from '$lib/anilist/auth'
@@ -101,7 +102,7 @@
   let confirmTvForget = $state('')
   let cloudResolverEnabled = $state(false)
   let cloudResolverConnectedDevices = $state(false)
-  let cloudResolverDebridEnabled = $state(false)
+  let cloudResolverDebridProvider = $state('')
   let cloudResolverLoaded = $state(false)
   let cloudResolverError = $state('')
   let cloudResolverUpdatedAt = $state<number | null>(null)
@@ -206,13 +207,13 @@
       const result = await getCloudflareResolverProfile()
       cloudResolverEnabled = result.profile.enabled
       cloudResolverConnectedDevices = result.profile.connectedDeviceFallback
-      cloudResolverDebridEnabled = result.profile.debrid?.configured === true
+      cloudResolverDebridProvider = result.profile.debrid?.configured ? result.profile.debrid.provider : ''
       cloudResolverUpdatedAt = result.updatedAt
       await provisionCompanionResolverRoutes(result.profile)
     } catch (e) {
       cloudResolverEnabled = false
       cloudResolverConnectedDevices = false
-      cloudResolverDebridEnabled = false
+      cloudResolverDebridProvider = ''
       cloudResolverError = e instanceof Error ? e.message : String(e)
     } finally {
       cloudResolverLoaded = true
@@ -220,9 +221,9 @@
   }
 
   async function uploadCloudResolverProfile() {
-    if (cloudResolverDebridEnabled && ($debridProvider !== 'realdebrid' || !$debridKey.trim())) {
-      throw new Error('Add a Real-Debrid token in Settings → Sources → Playback, or turn off Worker debrid playback.')
-    }
+    const debrid = $debridKey.trim() && providerMeta($debridProvider)
+      ? { provider: $debridProvider, credential: $debridKey.trim() }
+      : null
     const profile: CloudflareResolverProfile = {
       enabled: true,
       addons: [...$enabledAddonUrls],
@@ -230,14 +231,13 @@
       sort: $preferredStreamSort,
       audioLang: $preferredAudioLang,
       connectedDeviceFallback: cloudResolverConnectedDevices,
-      debrid: cloudResolverDebridEnabled
-        ? { provider: 'realdebrid', token: $debridKey.trim(), transcode: true }
-        : null,
+      debrid,
     }
     const result = await saveCloudflareResolverProfile(profile)
     cloudResolverEnabled = true
     cloudResolverLoaded = true
     cloudResolverUpdatedAt = result.updatedAt
+    cloudResolverDebridProvider = debrid?.provider ?? ''
     cloudResolverError = ''
     await provisionCompanionResolverRoutes(profile)
   }
@@ -252,12 +252,15 @@
         })
         cloudResolverEnabled = false
         cloudResolverConnectedDevices = false
+        cloudResolverDebridProvider = ''
         cloudResolverUpdatedAt = null
         showMessage('TV source resolving is off and its Worker profile was deleted.')
       } else {
         if (!$enabledAddonUrls.length) throw new Error('Enable at least one Stremio stream add-on first.')
         await uploadCloudResolverProfile()
-        showMessage('Your paired TV can now resolve direct sources through your Worker.')
+        showMessage($debridKey.trim() && providerMeta($debridProvider)
+          ? `Your paired TV can now resolve direct and ${providerName($debridProvider)} sources through your Worker.`
+          : 'Your paired TV can now resolve direct sources through your Worker.')
       }
     })
   }
@@ -282,27 +285,6 @@
           : 'The TV will now use only your Worker for source resolving.')
       } catch (error) {
         cloudResolverConnectedDevices = previous
-        throw error
-      }
-    })
-  }
-
-  function toggleCloudResolverDebrid() {
-    if (!cloudResolverEnabled) return
-    if (!cloudResolverDebridEnabled && ($debridProvider !== 'realdebrid' || !$debridKey.trim())) {
-      cloudResolverError = 'Add a Real-Debrid token in Settings → Sources → Playback first.'
-      return
-    }
-    const previous = cloudResolverDebridEnabled
-    cloudResolverDebridEnabled = !previous
-    void action('cloud-resolver-debrid', async () => {
-      try {
-        await uploadCloudResolverProfile()
-        showMessage(cloudResolverDebridEnabled
-          ? 'Real-Debrid torrent and TV-compatible playback are enabled in your Worker.'
-          : 'The Real-Debrid token was removed from your Worker profile.')
-      } catch (error) {
-        cloudResolverDebridEnabled = previous
         throw error
       }
     })
@@ -935,24 +917,8 @@
             >{busy === 'cloud-resolver-toggle' ? 'Saving…' : cloudResolverEnabled ? 'Turn off' : 'Enable'}</button>
           </div>
           <div class="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">
-            This is separate from encrypted sync: configured add-on URLs and the optional Real-Debrid token must be readable by your own Worker while it resolves a source. The token is never returned by the Worker or sent to the TV. Media bytes still go directly from the source or Real-Debrid to your TV.
+            This is separate from encrypted sync: configured add-on URLs and your existing debrid credential must be readable by your own Worker while it resolves a source. If debrid is configured in Sources → Playback, CF Sync uses that same provider automatically. The credential is never returned by the Worker or sent to the TV. Media still goes directly to your TV.
           </div>
-          <button
-            type="button"
-            data-focusable
-            aria-pressed={cloudResolverDebridEnabled}
-            disabled={!!busy || !cloudResolverEnabled}
-            onclick={() => { h.impact(); toggleCloudResolverDebrid() }}
-            class="mt-3 flex w-full items-start gap-3 rounded-lg border p-3 text-left disabled:opacity-50 {cloudResolverDebridEnabled ? 'border-primary/50 bg-primary/10' : 'border-border bg-secondary/30'}"
-          >
-            <span class="mt-0.5 grid size-5 shrink-0 place-items-center rounded border {cloudResolverDebridEnabled ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/50'}">
-              {#if cloudResolverDebridEnabled}<Check size={14} />{/if}
-            </span>
-            <span>
-              <span class="block text-sm font-black">Use Real-Debrid when the TV selects a torrent</span>
-              <span class="mt-0.5 block text-xs leading-5 text-muted-foreground">Uses your existing account to turn torrent rows into direct playback. When available, Real-Debrid’s HLS/DASH compatibility stream is preferred—Cloudflare never transcodes or relays the episode.</span>
-            </span>
-          </button>
           <button
             type="button"
             data-focusable
@@ -976,7 +942,7 @@
             <span>{$enabledAddonUrls.length} enabled add-on{$enabledAddonUrls.length === 1 ? '' : 's'}</span>
             {#if cloudResolverEnabled}
               <span>· {$preferredQuality === 'any' ? 'Best available' : `${$preferredQuality}p preferred`}</span>
-              {#if cloudResolverDebridEnabled}<span>· Real-Debrid</span>{/if}
+              {#if cloudResolverDebridProvider}<span>· {providerName(cloudResolverDebridProvider)}</span>{/if}
               <span>· {cloudResolverConnectedDevices ? 'Cloudflare + device' : 'Cloudflare only'}</span>
               {#if cloudResolverUpdatedAt}<span>· Updated {new Date(cloudResolverUpdatedAt).toLocaleString()}</span>{/if}
               <button type="button" data-focusable disabled={!!busy || !$enabledAddonUrls.length} onclick={() => { h.tap(); updateCloudResolver() }} class="ml-auto min-h-9 rounded-lg bg-secondary px-3 py-1.5 font-bold disabled:opacity-50">

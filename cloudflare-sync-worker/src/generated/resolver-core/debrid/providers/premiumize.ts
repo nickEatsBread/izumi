@@ -1,0 +1,174 @@
+// GENERATED from src/lib/stremio/debrid/providers/premiumize.ts by scripts/generate-cloudflare-resolver-core.mjs.
+// Edit the canonical source, then regenerate; do not edit this vendored copy.
+import { jfetch, magnetOf, poll, VIDEO, JUNK, authError } from '../http'
+import { pickVideoFile } from '../episode-file'
+import type { DebridProvider, DebridInfo, DebridItem, DebridFile, DebridAccountInfo } from '../types'
+
+// Premiumize. apikey query param on every call. FAST PATH: /transfer/directdl
+// returns direct links immediately for cached torrents (no cloud clutter, no
+// unlock). Fallback: create transfer + poll + resolve folder. Links are directly
+// playable (use `link`, not the deprecated `stream_link`).
+
+const BASE = 'https://www.premiumize.me/api'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function pm(method: string, path: string, key: string, fd?: FormData, priority?: boolean): Promise<any> {
+  const sep = path.includes('?') ? '&' : '?'
+  const { status, json } = await jfetch(`${BASE}${path}${sep}apikey=${encodeURIComponent(key)}`, fd ? { method, body: fd, priority } : { method, priority })
+  // Only throw on an auth/subscription failure; a plain status:'error' (e.g. directdl
+  // "not cached") must still fall through to the caller's slow path.
+  const auth = authError('Premiumize', { status, message: json?.message })
+  if (auth) throw new Error(auth)
+  return json
+}
+
+interface PmFile { name: string; bytes: number; link?: string; stream_link?: string }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function flattenContent(content: any[]): PmFile[] {
+  const out: PmFile[] = []
+  for (const c of content ?? []) {
+    if (c.type === 'folder') out.push(...flattenContent(c.content ?? []))
+    else out.push({ name: c.path ?? c.name ?? '', bytes: c.size ?? 0, link: c.link, stream_link: c.stream_link })
+  }
+  return out
+}
+
+/** Pure map of a Premiumize transfer entry to a DebridInfo. Premiumize exposes progress
+ *  (0..1) and a free-text `message`, but not structured seeders/speed. */
+export function pmStatus(t: { status?: string; progress?: number; message?: string }): DebridInfo {
+  if (t.status === 'finished' || t.status === 'seeding') return { stage: 'ready', progress: 100, raw: t.status }
+  if (t.status === 'error' || t.status === 'timeout') return { stage: 'error', raw: t.status }
+  return {
+    stage: t.status === 'queued' ? 'queued' : 'downloading',
+    progress: (t.progress ?? 0) * 100,
+    raw: t.message ?? t.status,
+  }
+}
+
+interface PmTransfer { id: string; name?: string; status?: string; progress?: number; message?: string; folder_id?: string; file_id?: string; src?: string }
+
+/** Pure map of a Premiumize transfer to a DebridItem. Transfers carry no size; hash from src. */
+export function pmListItem(t: PmTransfer): DebridItem {
+  const info = pmStatus(t)
+  const hash = t.src?.match(/urn:btih:([a-z0-9]+)/i)?.[1]?.toLowerCase()
+  return { id: t.id, name: t.name ?? '', size: 0, hash, status: info.stage, progress: info.progress }
+}
+
+/** Pure map of a Premiumize file to a DebridFile. The direct link is the file id. */
+export function pmFile(f: PmFile): DebridFile {
+  const link = f.link ?? f.stream_link ?? ''
+  return { id: link, name: f.name, size: f.bytes, playable: VIDEO.test(f.name) && !JUNK.test(f.name) }
+}
+
+/** Pure: Premiumize /cache/check response -> cache map. The response is FOUR PARALLEL ARRAYS
+ *  indexed by request order (response[]/filename[]/filesize[]), NOT keyed by hash — so this zips
+ *  positionally against the asked order. A short response maps only the overlap; the remaining
+ *  hashes stay absent (= unknown) rather than being guessed at. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function pmCacheMap(json: any, asked: string[]): Map<string, 'cached' | 'uncached'> {
+  const out = new Map<string, 'cached' | 'uncached'>()
+  if (json?.status !== 'success' || !Array.isArray(json?.response)) return out
+  const n = Math.min(asked.length, json.response.length)
+  for (let i = 0; i < n; i++) out.set(asked[i].toLowerCase(), json.response[i] ? 'cached' : 'uncached')
+  return out
+}
+
+/** Pure: build the /cache/check form body. CRITICAL: append, never set — `set` collapses duplicate
+ *  keys, which would silently reduce a 100-hash batch to a single item, and because the response is
+ *  POSITIONAL every other row would then read as uncached. */
+export function pmCacheBody(hashes: string[]): FormData {
+  const fd = new FormData()
+  for (const h of hashes) fd.append('items[]', magnetOf(h.toLowerCase()))
+  return fd
+}
+
+export function pmAccountInfo(account: { customer_id?: string | number; premium_until?: number | null; limit_used?: number; booster_points?: number }): DebridAccountInfo {
+  return {
+    username: account.customer_id != null ? String(account.customer_id) : undefined,
+    plan: account.premium_until ? 'premium' : 'free',
+    premiumUntil: account.premium_until ? account.premium_until * 1000 : undefined,
+    quotaUsed: Number.isFinite(account.limit_used) ? Math.max(0, Math.min(1, account.limit_used!)) : undefined,
+    points: account.booster_points,
+  }
+}
+
+export const premiumize: DebridProvider = {
+  id: 'premiumize',
+  name: 'Premiumize',
+  keyHint: 'premiumize.me/account',
+  credential: 'apikey',
+  cacheCheck: 'native',
+  async accountInfo(key) {
+    if (!key) throw new Error('No Premiumize API key set.')
+    return pmAccountInfo(await pm('GET', '/account/info', key))
+  },
+  async resolveHash(key, hashOrMagnet, opts) {
+    if (!key) throw new Error('No Premiumize API key set — add it in Settings → Sources → Playback.')
+    const magnet = magnetOf(hashOrMagnet)
+    // Fast path — instant for cached torrents.
+    const fd = new FormData(); fd.set('src', magnet)
+    const dd = await pm('POST', '/transfer/directdl', key, fd, opts?.priority)
+    if (dd?.status === 'success' && Array.isArray(dd.content) && dd.content.length) {
+      const best = pickVideoFile(flattenContent(dd.content), opts?.want)
+      if (best?.link) return best.link
+    }
+    // Fallback — uncached: create + poll + resolve folder. /transfer/directdl above is a pure
+    // cache lookup (it creates nothing), so a background prefetch gets the whole fast path; it is
+    // only this transfer — a permanent entry in the user's cloud — that noAdd forbids.
+    if (opts?.noAdd) throw new Error("Premiumize needs to add this release, which background prefetch isn't allowed to do.")
+    const fd2 = new FormData(); fd2.set('src', magnet)
+    const cr = await pm('POST', '/transfer/create', key, fd2, opts?.priority)
+    if (cr?.status !== 'success' || !cr.id) throw new Error(cr?.message ?? 'Premiumize rejected the magnet.')
+    let folderId: string | undefined
+    let fileId: string | undefined
+    await poll(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const t = (await pm('GET', '/transfer/list', key, undefined, opts?.priority)).transfers?.find((x: any) => x.id === cr.id)
+      folderId = t?.folder_id; fileId = t?.file_id
+      return pmStatus(t ?? {})
+    }, opts)
+    let files: PmFile[]
+    if (folderId) files = flattenContent((await pm('GET', `/folder/list?id=${folderId}`, key, undefined, opts?.priority)).content ?? [])
+    else if (fileId) { const d = await pm('GET', `/item/details?id=${fileId}`, key, undefined, opts?.priority); files = [{ name: d.name ?? '', bytes: d.size ?? 0, link: d.link, stream_link: d.stream_link }] }
+    else files = []
+    const best = pickVideoFile(files, opts?.want)
+    if (!best?.link && !best?.stream_link) throw new Error('No playable file in that torrent.')
+    return (best.link ?? best.stream_link)!
+  },
+  async checkCached(key, hashes) {
+    if (!key || !hashes.length) return new Map()
+    const fd = pmCacheBody(hashes)
+    try {
+      // pm() throws ONLY on an auth/subscription failure; a plain status:'error' falls through,
+      // which is exactly what pmCacheMap wants to see.
+      return pmCacheMap(await pm('POST', '/cache/check', key, fd), hashes)
+    } catch (e) {
+      console.warn(e instanceof Error ? e.message : e)
+      return new Map()
+    }
+  },
+  async listItems(key) {
+    if (!key) throw new Error('No Premiumize API key set — add it in Settings → Sources → Playback.')
+    const r = await pm('GET', '/transfer/list', key)
+    return (r?.transfers ?? []).map(pmListItem)
+  },
+  async listFiles(key, item) {
+    // Re-fetch the transfer to get its folder_id / file_id, then resolve the file list.
+    const list = await pm('GET', '/transfer/list', key)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const t = list?.transfers?.find((x: any) => x.id === item.id)
+    let files: PmFile[] = []
+    if (t?.folder_id) files = flattenContent((await pm('GET', `/folder/list?id=${t.folder_id}`, key)).content ?? [])
+    else if (t?.file_id) { const d = await pm('GET', `/item/details?id=${t.file_id}`, key); files = [{ name: d.name ?? '', bytes: d.size ?? 0, link: d.link, stream_link: d.stream_link }] }
+    return files.map(pmFile)
+  },
+  async resolveFile(_key, _item, file) {
+    if (!file.id) throw new Error('No playable link for that file.')
+    return file.id // Premiumize links are already direct.
+  },
+  async deleteItem(key, item) {
+    const fd = new FormData(); fd.set('id', item.id)
+    const r = await pm('POST', '/transfer/delete', key, fd)
+    if (r?.status !== 'success') throw new Error(r?.message ?? 'Premiumize delete failed.')
+  },
+}
