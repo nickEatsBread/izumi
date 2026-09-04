@@ -96,6 +96,104 @@ describe('companion episode details', () => {
     expect(result.logoImage).toBe('https://image.tmdb.org/t/p/w500/fight-club-logo.png')
   })
 
+  it('uses an exact TMDB title match for AniList clear-logo artwork', async () => {
+    const anilistMedia = {
+      id: 154587,
+      type: 'ANIME' as const,
+      format: 'TV',
+      seasonYear: 2023,
+      startDate: { year: 2023 },
+      title: {
+        romaji: 'Sousou no Frieren',
+        english: "Frieren: Beyond Journey's End",
+        userPreferred: 'Sousou no Frieren',
+      },
+    }
+    const query = vi.fn().mockReturnValue({
+      toPromise: () => Promise.resolve({ data: { Media: anilistMedia } }),
+    })
+    const presentation = vi.fn().mockResolvedValue({
+      id: -21,
+      catalog: { provider: 'tmdb', id: '209867', type: 'series' },
+      title: { userPreferred: "Frieren: Beyond Journey's End" },
+      logoImage: 'https://image.tmdb.org/t/p/w500/frieren-logo.png',
+    })
+    const search = vi.fn().mockResolvedValue({
+      media: [{
+        id: -21,
+        catalog: { provider: 'tmdb', id: '209867', type: 'series' },
+        type: 'SERIES',
+        format: 'TV',
+        startDate: { year: 2023 },
+        title: { userPreferred: "Frieren: Beyond Journey's End" },
+      }],
+      page: 1,
+      hasNextPage: false,
+    })
+    catalog.loadCatalogProvider.mockResolvedValue({ search, presentation })
+
+    const result = await createCompanionPresentation(media(), { query } as never)
+
+    expect(search).toHaveBeenCalledWith(expect.objectContaining({
+      query: "Frieren: Beyond Journey's End",
+      type: 'series',
+      year: 2023,
+    }))
+    expect(presentation).toHaveBeenCalledWith({ provider: 'tmdb', id: '209867', type: 'series' })
+    expect(result.ref).toEqual(media().ref)
+    expect(result.logoImage).toBe('https://image.tmdb.org/t/p/w500/frieren-logo.png')
+  })
+
+  it('maps a separate AniList sequel entry to an exact TMDB parent-series logo', async () => {
+    const sequel = {
+      id: 135865,
+      type: 'ANIME' as const,
+      format: 'TV',
+      seasonYear: 2026,
+      startDate: { year: 2026 },
+      title: {
+        romaji: 'Youjo Senki II',
+        english: 'Saga of Tanya the Evil Season 2',
+        userPreferred: 'Youjo Senki II',
+      },
+    }
+    const query = vi.fn().mockReturnValue({
+      toPromise: () => Promise.resolve({ data: { Media: sequel } }),
+    })
+    const search = vi.fn().mockImplementation(({ query: title }: { query?: string }) => Promise.resolve({
+      media: title === 'Saga of Tanya the Evil' ? [{
+        id: -22,
+        catalog: { provider: 'tmdb', id: '69346', type: 'series' },
+        type: 'SERIES',
+        format: 'TV',
+        startDate: { year: 2017 },
+        title: { userPreferred: 'Saga of Tanya the Evil' },
+      }] : [],
+      page: 1,
+      hasNextPage: false,
+    }))
+    const presentation = vi.fn().mockResolvedValue({
+      id: -22,
+      catalog: { provider: 'tmdb', id: '69346', type: 'series' },
+      title: { userPreferred: 'Saga of Tanya the Evil' },
+      logoImage: 'https://image.tmdb.org/t/p/w500/tanya-logo.png',
+    })
+    catalog.loadCatalogProvider.mockResolvedValue({ search, presentation })
+
+    const result = await createCompanionPresentation({
+      ref: { provider: 'anilist', type: 'anime', id: '135865' },
+      title: 'Youjo Senki II',
+    }, { query } as never)
+
+    expect(search).toHaveBeenCalledWith(expect.objectContaining({
+      query: 'Saga of Tanya the Evil',
+      type: 'series',
+      year: undefined,
+    }))
+    expect(presentation).toHaveBeenCalledWith({ provider: 'tmdb', id: '69346', type: 'series' })
+    expect(result.logoImage).toBe('https://image.tmdb.org/t/p/w500/tanya-logo.png')
+  })
+
   it('bounds merged Home snapshots without duplicating derived views or title-detail trees', () => {
     const item = (row: number, index: number): CompanionMedia => ({
       ref: { provider: 'tmdb', type: index % 2 ? 'series' : 'movie', id: `${row}-${index}` },

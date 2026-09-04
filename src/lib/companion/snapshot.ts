@@ -44,6 +44,7 @@ const EPISODE_PREVIEW_LIMIT = 12
 // Leave headroom under both the 512 KiB LAN relay cap and Cloudflare sync's 384 KiB plaintext cap.
 export const COMPANION_SNAPSHOT_TARGET_BYTES = 352 * 1024
 let cached: { key: string; at: number; snapshot: CompanionHomeSnapshot } | null = null
+const companionTitleLogoRequests = new Map<string, Promise<string | undefined>>()
 
 function snapshotBytes(snapshot: CompanionHomeSnapshot): number {
   return new TextEncoder().encode(JSON.stringify(snapshot)).byteLength
@@ -159,6 +160,92 @@ async function detailedCatalogMedia(media: CompanionMedia, client?: QueryClient,
   return provider.detail(media.ref)
 }
 
+function comparableTitle(value?: string): string {
+  return (value ?? '').toLocaleLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function comparableTitles(media: Media): Set<string> {
+  return new Set([
+    media.title.english,
+    media.title.userPreferred,
+    media.title.romaji,
+    media.title.native,
+  ].map(comparableTitle).filter(Boolean))
+}
+
+function titleLogoQueries(media: Media, series: boolean): Array<{ title: string; base: boolean }> {
+  const titles = [media.title.english, media.title.userPreferred, media.title.romaji]
+    .map((title) => title?.trim())
+    .filter((title): title is string => Boolean(title))
+  if (!series) return [...new Set(titles)].map((title) => ({ title, base: false }))
+  const bases = titles.flatMap((title) => {
+    const values = [
+      title.replace(/\s+(?:season|part|cour)\s+(?:\d+|[ivxlcdm]+)(?:\s*[-:–—].*)?$/i, '').trim(),
+      title.replace(/\s+[ivxlcdm]+$/i, '').trim(),
+    ]
+    const colon = title.indexOf(':')
+    if (colon >= 4) values.push(title.slice(0, colon).trim())
+    return values.filter((value) => value && value !== title)
+  })
+  const queries = new Map<string, { title: string; base: boolean }>()
+  for (const title of titles) queries.set(title, { title, base: false })
+  for (const title of bases) if (!queries.has(title)) queries.set(title, { title, base: true })
+  return [...queries.values()]
+}
+
+/** AniList/Kitsu do not expose clear-logo artwork. When the viewer has configured TMDB, bridge an
+ * exact title/year match through its lightweight presentation endpoint. Exact matching matters:
+ * using the first fuzzy search result is how an unrelated service/network mark can appear where a
+ * programme logo belongs. */
+function companionTitleLogo(media: CompanionMedia, detailed: Media): Promise<string | undefined> {
+  if (detailed.logoImage || media.ref.provider === 'tmdb') return Promise.resolve(detailed.logoImage)
+  const key = `${media.ref.provider}:${media.ref.type}:${media.ref.id}`
+  const existing = companionTitleLogoRequests.get(key)
+  if (existing) return existing
+  const request = (async () => {
+    const tmdb = await loadCatalogProvider('tmdb')
+    if (!tmdb.presentation) return undefined
+    const sourceYear = detailed.seasonYear ?? detailed.startDate?.year
+    const type = detailed.format === 'MOVIE' || detailed.type === 'MOVIE' ? 'movie' as const : 'series' as const
+    const sourceTitles = comparableTitles(detailed)
+    const queries = titleLogoQueries(detailed, type === 'series')
+    for (const { title: query, base: baseQuery } of queries) {
+      const results = await tmdb.search({
+        query,
+        type,
+        // TMDB groups anime seasons under their original series year. A deliberately simplified
+        // base-title retry must therefore omit the sequel's AniList year.
+        year: baseQuery ? undefined : sourceYear,
+        withPoster: true,
+      })
+      const queryKey = comparableTitle(query)
+      const match = results.media.find((candidate) => {
+        const candidateTitles = comparableTitles(candidate)
+        if (baseQuery) return candidateTitles.has(queryKey)
+        const candidateYear = candidate.seasonYear ?? candidate.startDate?.year
+        if (sourceYear && candidateYear && sourceYear !== candidateYear) return false
+        return [...sourceTitles].some((title) => candidateTitles.has(title))
+      })
+      if (!match?.catalog) continue
+      const logo = (await tmdb.presentation(match.catalog))?.logoImage
+      if (logo) return logo
+      // The best exact result had no clear logo. Fuzzier fallbacks must not replace it with art
+      // from a different programme merely because that programme happens to have an image.
+      return undefined
+    }
+    return undefined
+  })().catch((error) => {
+    companionTitleLogoRequests.delete(key)
+    throw error
+  })
+  companionTitleLogoRequests.set(key, request)
+  return request
+}
+
 /** Resolve the next TV tiles without making their logos wait for episode libraries or optional
  * third-party ratings. Opening a title still requests the full createCompanionDetails payload. */
 export async function createCompanionPresentation(
@@ -167,7 +254,8 @@ export async function createCompanionPresentation(
 ): Promise<CompanionMedia> {
   const detailed = await detailedCatalogMedia(media, client, true).catch(() => null)
   if (!detailed) return media
-  const enriched = companionMedia(detailed, {
+  const logoImage = await companionTitleLogo(media, detailed).catch(() => detailed.logoImage)
+  const enriched = companionMedia(logoImage ? { ...detailed, logoImage } : detailed, {
     progress: media.progress,
     episode: media.episode,
     episodeTitle: media.episodeTitle,
