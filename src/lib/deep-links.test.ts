@@ -96,11 +96,17 @@ describe('deep link registration is not user-hostile', () => {
 
   it('does not abort startup when the OS refuses handler registration', () => {
     const setup = nativeMain.slice(nativeMain.indexOf('builder.setup('), nativeMain.indexOf('sync::initialize_if_configured'))
-    expect(setup).toContain('deep_link.register("izumi")')
+    // The scheme is read from the resolved config rather than inlined, so a side-by-side build
+    // (tauri.dev.conf.json) claims its own instead of evicting the release's registration. The
+    // release config still declares izumi:// — asserted in the sibling test above — and the helper
+    // falls back to it, so what actually gets registered here is unchanged.
+    expect(setup).toContain('configured_deep_link_scheme(app.config())')
+    expect(setup).toContain('deep_link.register(&scheme)')
+    expect(nativeMain).toContain('.unwrap_or("izumi")')
     // The failure path logs; propagating it out of `setup` panics the whole app on launch.
-    expect(setup).not.toMatch(/deep_link\.register\("izumi"\)\?/)
+    expect(setup).not.toMatch(/deep_link\.register\(&scheme\)\?/)
     // Re-registering on a launch where we already hold the scheme is pure subprocess cost.
-    expect(setup).toContain('is_registered("izumi")')
+    expect(setup).toContain('is_registered(&scheme)')
   })
 
   it('gives Android the mobile block its intent filters are generated from', () => {
