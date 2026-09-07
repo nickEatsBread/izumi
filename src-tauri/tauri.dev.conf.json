@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "izumi-dev",
+  "identifier": "com.nicho.izumi.dev",
+  "build": {
+    "beforeDevCommand": "npm run dev -- --port 1430 --strictPort",
+    "devUrl": "http://localhost:1430"
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["izumi-dev"]
+      },
+      "mobile": [
+        {
+          "scheme": ["izumi-dev"]
+        }
+      ]
+    },
+    "updater": {
+      "endpoints": ["http://127.0.0.1:9/updates-disabled-in-dev.json"]
+    }
+  }
+}

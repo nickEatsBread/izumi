@@ -22,6 +22,8 @@
     "pretest:watch": "npm run paraglide",
     "test:watch": "vitest",
     "tauri": "tauri",
+    "dev:app": "tauri dev --config src-tauri/tauri.dev.conf.json",
+    "dev:reset": "node scripts/reset-dev-data.mjs",
     "android:studio": "tauri android dev --open",
     "android:studio:full": "tauri android dev --open --features android-mpv --config src-tauri/tauri.android-mpv.conf.json",
     "gen:android-icons": "node scripts/gen-android-icons.mjs",

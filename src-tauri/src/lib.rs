@@ -5464,6 +5464,29 @@ unsafe fn disable_webkit_damage(settings: *mut std::ffi::c_void) {
 /// user explicitly launches the executable with a magnet, it may handle that single request.
 static PENDING_MAGNET: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
+/// The first `deep-link` desktop scheme in the *resolved* config, which a `--config` overlay can
+/// replace (see `tauri.dev.conf.json`).
+///
+/// A URI scheme registration is a single, persistent OS-level record — on Windows one HKCU key
+/// naming exactly one executable. Registering a hardcoded `izumi` from a debug build therefore
+/// does not "share" the scheme with an installed release: it repoints it at a throwaway target
+/// directory binary and leaves it there after the dev process exits. Side-by-side builds get
+/// their own scheme instead (`vscode-insiders://`, `discordcanary://` and friends do the same).
+#[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+fn configured_deep_link_scheme(config: &tauri::Config) -> String {
+    config
+        .plugins
+        .0
+        .get("deep-link")
+        .and_then(|plugin| plugin.get("desktop"))
+        .and_then(|desktop| desktop.get("schemes"))
+        .and_then(serde_json::Value::as_array)
+        .and_then(|schemes| schemes.first())
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("izumi")
+        .to_owned()
+}
+
 /// Extract a magnet URL from a process argument list (argv, including the binary name).
 ///
 /// Mirrors the deep-link plugin's own heuristic: a launch-by-link passes the URL as the *only*
@@ -5645,19 +5668,22 @@ pub fn run() {
                     *slot = Some(url);
                 }
             }
-            // Claim izumi:// — ours alone, so registering it needs no consent — but NEVER let that
-            // abort startup: on Linux the plugin shells out to update-desktop-database/xdg-mime,
-            // which can be missing or fail on a locked-down system, and `setup` errors panic the
-            // process. Also skip the work entirely when we already hold the scheme, so a normal
-            // launch doesn't spawn those two processes every single time.
+            // Claim our configured scheme — ours alone, so registering it needs no consent — but
+            // NEVER let that abort startup: on Linux the plugin shells out to
+            // update-desktop-database/xdg-mime, which can be missing or fail on a locked-down
+            // system, and `setup` errors panic the process. Also skip the work entirely when we
+            // already hold the scheme, so a normal launch doesn't spawn those two processes every
+            // single time. The scheme comes from the config so a side-by-side build claims its own
+            // and never evicts the installed release's registration.
             // `magnet:` is deliberately not touched here — see PENDING_MAGNET.
             #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
+                let scheme = configured_deep_link_scheme(app.config());
                 let deep_link = app.deep_link();
-                if !deep_link.is_registered("izumi").unwrap_or(false) {
-                    if let Err(error) = deep_link.register("izumi") {
-                        eprintln!("[izumi] izumi:// handler registration skipped: {error}");
+                if !deep_link.is_registered(&scheme).unwrap_or(false) {
+                    if let Err(error) = deep_link.register(&scheme) {
+                        eprintln!("[izumi] {scheme}:// handler registration skipped: {error}");
                     }
                 }
             }
@@ -5692,7 +5718,14 @@ pub fn run() {
                     "main",
                     WebviewUrl::App("app/home".into()),
                 )
-                    .title("izumi")
+                    // Product name, not a literal, so a side-by-side build (tauri.dev.conf.json)
+                    // is identifiable in the titlebar, taskbar and alt-tab list at a glance.
+                    .title(
+                        app.config()
+                            .product_name
+                            .clone()
+                            .unwrap_or_else(|| "izumi".into()),
+                    )
                     // Keep decoded video in the HTML compositor so GIF/screenshot can read
                     // the <video> bitmap (mpv-style: OSD stays on screen, file is video only).
                     // wry's default --disable-features must be restated when we set args.
