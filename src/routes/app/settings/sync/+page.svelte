@@ -110,6 +110,7 @@
   let cloudflarePreview = $state<CloudflarePreview | null>(null)
   let cloudflareInvite = $state('')
   let cloudflareUpdatePanel = $state<HTMLElement>()
+  let cloudflareNeedsDeploymentAccess = $state(false)
   let tvPairingCode = $state('')
   let confirmTvForget = $state('')
   let cloudResolverEnabled = $state(false)
@@ -404,7 +405,7 @@
       cloudflareAccountId = ''
       await publishPresence()
       await pullWatchProgress()
-      showMessage('Your private Worker is deployed and connected. The Cloudflare token was not saved.')
+      showMessage('Your private Worker is connected. Future Worker updates will install automatically.')
       h.success()
     })
   }
@@ -444,15 +445,16 @@
   function openCloudflareWorkerUpdate() {
     void action('worker-check', async () => {
       const update = await triggerCloudflareWorkerUpdate()
-      if (update?.configured) {
-        if (update.error) throw new Error(update.error)
+      if (update?.configured && !update.error) {
+        cloudflareNeedsDeploymentAccess = false
         showMessage(update.phase === 'current' ? `Worker ${update.version} is up to date.`
-          : update.phase === 'delayed' ? 'The update is taking longer than expected. Check Cloudflare Builds.'
+          : update.phase === 'delayed' ? 'The update is taking longer than expected. Your Worker will retry automatically.'
           : 'Worker update requested. Check again shortly to verify the installed version.')
         return
       }
+      cloudflareNeedsDeploymentAccess = !!update && (!update.configured || !!update.error)
       const available = await checkCloudflareWorkerUpdate({ throwOnError: true })
-      if (!available) {
+      if (!available && !cloudflareNeedsDeploymentAccess) {
         showMessage('Your Worker is up to date with this version of Izumi.')
         return
       }
@@ -480,10 +482,11 @@
         throw new Error('Your workers.dev account address changed. Reconnect devices using the new Worker URL.')
       }
       cloudflareApiToken = ''
+      cloudflareNeedsDeploymentAccess = false
       if (await checkCloudflareWorkerUpdate({ throwOnError: true })) {
         throw new Error('The Worker update is still becoming available. Wait a moment, then check its version again.')
       }
-      showMessage('Your private Worker is up to date. The Cloudflare token was not saved.')
+      showMessage('Your private Worker is up to date. Future updates will install automatically.')
       h.success()
     })
   }
@@ -850,7 +853,7 @@
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="min-w-0">
           <h3 id="worker-updates-title" class="font-black">Worker updates</h3>
-          <p class="mt-1 text-xs text-muted-foreground">Update here or from your TV. Once configured, your Worker also installs stable updates automatically.</p>
+          <p class="mt-1 text-xs text-muted-foreground">Your Worker installs stable updates automatically. Check here or from your TV to update sooner.</p>
           {#if $cloudflareSyncConfig.workerVersion}
             <p class="mt-1 text-xs text-muted-foreground">Installed version {$cloudflareSyncConfig.workerVersion}</p>
           {/if}
@@ -860,12 +863,11 @@
           {busy === 'worker-check' ? 'Checking…' : 'Update Worker'}
         </button>
       </div>
-      <button type="button" data-focusable onclick={() => openUrl(CLOUDFLARE_UPDATE_GUIDE)} class="mt-3 min-h-10 rounded-lg bg-secondary px-3 py-2 text-sm font-bold">Set up automatic updates</button>
-      {#if $cloudflareWorkerUpdateAvailable}
+      {#if $cloudflareWorkerUpdateAvailable || cloudflareNeedsDeploymentAccess}
         <section bind:this={cloudflareUpdatePanel} tabindex="-1" aria-labelledby="worker-update-available-title" class="mt-4 border-t border-border/70 pt-4">
-          <h4 id="worker-update-available-title" class="font-black text-amber-300">Worker update {$cloudflareWorkerUpdateAvailable} is available</h4>
+          <h4 id="worker-update-available-title" class="font-black text-amber-300">{$cloudflareWorkerUpdateAvailable ? `Worker update ${$cloudflareWorkerUpdateAvailable} is available` : 'Update Worker deployment access'}</h4>
           {#if $cloudflareSyncConfig.deployment}
-            <p class="mt-1 text-xs leading-5 text-muted-foreground">Create another temporary setup token and Izumi can update the Worker directly. Your D1 data and device links stay in place.</p>
+            <p class="mt-1 text-xs leading-5 text-muted-foreground">Authorize this Worker update with your Cloudflare deployment token. Izumi also enables future automatic updates, keeping your existing data and device links.</p>
             <div class="mt-3 flex flex-wrap gap-2">
               <button type="button" data-focusable onclick={() => openCloudflareTokenSetup()} class="inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={15} /> Create update token</button>
               <button type="button" data-focusable onclick={() => openUrl(CLOUDFLARE_TOKEN_MANAGE_URL)} class="min-h-10 rounded-lg bg-secondary px-3 py-2 text-sm font-bold">Manage tokens</button>
@@ -878,10 +880,11 @@
               autocomplete="off"
               autocapitalize="off"
               spellcheck="false"
-              aria-label="Temporary Cloudflare update token"
-              placeholder="Paste temporary Cloudflare token"
+              aria-label="Cloudflare deployment token"
+              placeholder="Paste Cloudflare deployment token"
               class="mt-3 w-full rounded-lg bg-input px-3 py-2.5 font-mono text-base sm:text-sm"
             />
+            <p class="mt-1 text-xs text-muted-foreground">Your private Worker keeps this token as an encrypted secret for future updates. Keep it valid; it is never sent to the TV.</p>
             <button type="button" data-focusable disabled={!!busy || !cloudflareApiToken} onclick={() => { h.impact(); updateCloudflareDeployment() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
               {#if busy === 'cloudflare-update'}<LoaderCircle size={16} class="animate-spin" />{/if}
               {busy === 'cloudflare-update' ? 'Updating Worker…' : 'Install Worker update'}
@@ -995,7 +998,7 @@
               {#if busy === 'cloudflare-deploy'}<LoaderCircle size={16} class="animate-spin" />{/if}
               {busy === 'cloudflare-deploy' ? 'Setting up Worker…' : cloudflareAccounts.length > 1 && !cloudflareAccountId ? 'Continue' : 'Deploy into this account'}
             </button>
-            <p class="mt-1 text-xs text-muted-foreground">The token is not saved. Revoke it in Cloudflare when setup finishes.</p>
+            <p class="mt-1 text-xs text-muted-foreground">Your private Worker stores this token as an encrypted secret for automatic updates. It is never sent to your TV or synced to other devices. Keep it valid for updates to continue.</p>
 
             <h4 class="mt-4 border-t border-border/70 pt-4 text-sm font-black">Connect a manually deployed Worker</h4>
             <p class="mt-1 text-xs leading-5 text-muted-foreground">For Wrangler or the older Git-based deploy. Generate the secret before deploying, configure it as <code>BOOTSTRAP_SECRET</code>, then paste the resulting Worker URL.</p>

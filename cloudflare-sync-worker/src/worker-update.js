@@ -1,8 +1,9 @@
+import { deploymentAccess, deployWorkerRelease, downloadText, validateManifest, UPDATE_MANIFEST } from './worker-self-deploy.js'
+export { UPDATE_MANIFEST } from './worker-self-deploy.js'
 const STATE_KEY = 'worker_update_v1'
-export const UPDATE_MANIFEST = 'https://github.com/nickEatsBread/izumi/releases/latest/download/worker-update.json'
 const CHECK_INTERVAL = 5 * 60_000
 const BUILD_INTERVAL = 6 * 60 * 60_000
-const LEASE = 60_000
+const LEASE = 180_000
 
 export function newerVersion(candidate, installed) {
   if (!/^\d+\.\d+\.\d+$/.test(candidate || '') || !/^\d+\.\d+\.\d+$/.test(installed || '')) return false
@@ -21,7 +22,7 @@ async function readState(env) {
 }
 
 function publicStatus(env, version, state, now) {
-  const configured = validDeployHook(env.WORKER_DEPLOY_HOOK)
+  const configured = !!deploymentAccess(env.WORKER_UPDATE_AUTH) || validDeployHook(env.WORKER_DEPLOY_HOOK)
   const available = newerVersion(state.latestVersion, version)
   const pending = available && !!state.triggeredAt && now - state.triggeredAt < BUILD_INTERVAL
   const error = state.triggeredAt && state.latestVersion && !available ? '' : state.error || ''
@@ -42,21 +43,14 @@ export async function workerUpdateStatus(env, version, now = Date.now()) {
 }
 
 async function fetchJson(fetcher, url, init = {}) {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 8_000)
-  try {
-    const response = await fetcher(url, { ...init, signal: controller.signal })
-    if (!response.ok) throw new Error('Update service unavailable.')
-    const text = await response.text()
-    if (text.length > 16_384) throw new Error('Invalid update response.')
-    return JSON.parse(text)
-  } finally { clearTimeout(timeout) }
+  return JSON.parse(await downloadText(fetcher, url, init))
 }
 
-/** A D1 compare-and-swap prevents concurrent TVs and cron invocations from starting duplicate builds. */
+/** A D1 compare-and-swap prevents concurrent TVs and cron invocations from deploying twice. */
 export async function runWorkerUpdate(env, version, { automatic = false, fetcher = fetch, now = Date.now() } = {}) {
   let stored = await readState(env)
-  if (!validDeployHook(env.WORKER_DEPLOY_HOOK) || (automatic && env.WORKER_AUTO_UPDATE === 'false')) {
+  const access = deploymentAccess(env.WORKER_UPDATE_AUTH)
+  if ((!access && !validDeployHook(env.WORKER_DEPLOY_HOOK)) || (automatic && env.WORKER_AUTO_UPDATE === 'false')) {
     return publicStatus(env, version, stored.value, now)
   }
   if (stored.raw === null) {
@@ -74,26 +68,26 @@ export async function runWorkerUpdate(env, version, { automatic = false, fetcher
   if (!acquired.meta?.changes) return workerUpdateStatus(env, version, now)
   const next = { ...previous, leaseUntil: 0, checkedAt: now, error: '' }
   try {
-    const manifest = await fetchJson(fetcher, UPDATE_MANIFEST, { headers: { Accept: 'application/json' } })
-    if (manifest.schema !== 1 || !/^v\d+\.\d+\.\d+$/.test(manifest.tag || '')
-      || !/^\d+\.\d+\.\d+$/.test(manifest.version || '') || !/^[a-f0-9]{64}$/.test(manifest.sha256 || '')) {
-      throw new Error('Invalid release manifest.')
-    }
+    const manifest = validateManifest(await fetchJson(fetcher, UPDATE_MANIFEST, { headers: { Accept: 'application/json' }, cache: 'no-store' }))
     next.latestVersion = manifest.version
     if (newerVersion(manifest.version, version)) {
-      // Record the attempt before sending: even an ambiguous timeout must not start a build storm.
+      // Record the attempt before sending: an ambiguous timeout must not start a deployment storm.
       next.triggeredAt = now
       const attempting = JSON.stringify({ ...next, leaseUntil: now + LEASE })
       const saved = await env.DB.prepare('UPDATE metadata SET value = ? WHERE key = ? AND value = ?')
         .bind(attempting, STATE_KEY, locked).run()
       if (!saved.meta?.changes) return workerUpdateStatus(env, version, now)
       locked = attempting
-      const result = await fetchJson(fetcher, env.WORKER_DEPLOY_HOOK, { method: 'POST', redirect: 'error' })
-      if (result.success !== true || typeof result.result?.build_uuid !== 'string') throw new Error('Build was not accepted.')
+      if (access) await deployWorkerRelease(access, manifest, fetcher)
+      else {
+        // Preserve installations that already use a private deploy hook.
+        const result = await fetchJson(fetcher, env.WORKER_DEPLOY_HOOK, { method: 'POST', redirect: 'error' })
+        if (result.success !== true || typeof result.result?.build_uuid !== 'string') throw new Error('Build was not accepted.')
+      }
     } else next.triggeredAt = 0
   } catch {
     // Neither provider responses nor transport errors may echo the private deployment credential.
-    next.error = 'The update could not be confirmed. Check Cloudflare Builds; automatic checks will retry.'
+    next.error = 'The update could not be confirmed. Automatic checks will retry. If this persists, update the Worker from Izumi to renew its deployment access.'
   }
   await env.DB.prepare('UPDATE metadata SET value = ? WHERE key = ? AND value = ?')
     .bind(JSON.stringify(next), STATE_KEY, locked).run()

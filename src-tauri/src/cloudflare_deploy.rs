@@ -133,6 +133,7 @@ struct CloudflareApi {
     token: String,
     api_root: String,
     temporary_auth_retry_delays: &'static [Duration],
+    retain_update_access: bool,
 }
 
 impl CloudflareApi {
@@ -151,12 +152,14 @@ impl CloudflareApi {
             token,
             api_root: API_ROOT.into(),
             temporary_auth_retry_delays: &[],
+            retain_update_access: true,
         })
     }
 
     fn new_preview(token: String) -> Result<Self, String> {
         let mut api = Self::new(token)?;
         api.temporary_auth_retry_delays = TEMPORARY_AUTH_RETRY_DELAYS;
+        api.retain_update_access = false;
         Ok(api)
     }
 
@@ -521,6 +524,19 @@ async fn upload_worker(
             "text": secret,
         }));
     }
+    // Preview-account credentials are temporary and cannot provide durable deployment access.
+    if api.retain_update_access {
+        bindings.push(json!({
+            "type": "secret_text",
+            "name": "WORKER_UPDATE_AUTH",
+            "text": json!({
+                "apiToken": api.token,
+                "accountId": target.account_id,
+                "scriptName": target.script_name,
+                "databaseId": target.database_id,
+            }).to_string(),
+        }));
+    }
     let metadata = json!({
         "main_module": "worker.mjs",
         "bindings": bindings,
@@ -578,6 +594,27 @@ async fn enable_worker_subdomain(
 
 async fn wait_for_worker(endpoint: &str) -> Result<(), String> {
     wait_for_worker_with_retry(endpoint, 20, Duration::from_millis(500)).await
+}
+
+async fn ensure_worker_update_schedule(
+    api: &CloudflareApi,
+    target: &CloudflareDeploymentTarget,
+) -> Result<(), String> {
+    if !api.retain_update_access {
+        return Ok(());
+    }
+    let path = format!("/accounts/{}/workers/scripts/{}/schedules", target.account_id, target.script_name);
+    let result: Value = api.json(api.request(Method::GET, &path)).await?;
+    let existing = result.get("schedules").and_then(Value::as_array)
+        .ok_or_else(|| "Cloudflare returned invalid Worker schedules.".to_string())?;
+    let mut schedules: Vec<Value> = existing.iter().filter_map(|item|
+        item.get("cron").and_then(Value::as_str).map(|cron| json!({"cron": cron}))
+    ).collect();
+    if !schedules.iter().any(|item| item["cron"] == "17 */6 * * *") {
+        schedules.push(json!({"cron": "17 */6 * * *"}));
+        api.success(api.request(Method::PUT, &path).json(&schedules)).await?;
+    }
+    Ok(())
 }
 
 async fn wait_for_worker_with_retry(
@@ -669,6 +706,7 @@ async fn deploy_worker_with_api(
         apply_migrations(&api, &target).await?;
         let subdomain = ensure_workers_subdomain(&api, &target.account_id).await?;
         upload_worker(&api, &target, secret).await?;
+        ensure_worker_update_schedule(&api, &target).await?;
         enable_worker_subdomain(&api, &target).await?;
         let endpoint = format!("https://{}.{}.workers.dev", target.script_name, subdomain);
         wait_for_worker(&endpoint).await?;
@@ -1166,6 +1204,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn worker_update_schedule_preserves_existing_triggers_and_is_idempotent() {
+        let (api, requests, server) = mock_api(vec![
+            (StatusCode::OK, json!({"success": true, "result": {"schedules": [{"cron": "0 0 * * *", "created_on": "ignored"}]}})),
+            (StatusCode::OK, json!({"success": true})),
+            (StatusCode::OK, json!({"success": true, "result": {"schedules": [{"cron": "0 0 * * *"}, {"cron": "17 */6 * * *"}]}})),
+        ]).await;
+        ensure_worker_update_schedule(&api, &update_target()).await.unwrap();
+        ensure_worker_update_schedule(&api, &update_target()).await.unwrap();
+        server.abort();
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 3);
+        assert_eq!(requests[1].0, Method::PUT);
+        assert_eq!(serde_json::from_str::<Value>(&requests[1].2).unwrap(), json!([{"cron": "0 0 * * *"}, {"cron": "17 */6 * * *"}]));
+    }
+
+    #[tokio::test]
+    async fn preview_upload_never_retains_temporary_deployment_access() {
+        let (mut api, requests, server) = mock_api(vec![(StatusCode::OK, json!({"success": true}))]).await;
+        api.retain_update_access = false;
+        assert!(!CloudflareApi::new_preview("p".repeat(40)).unwrap().retain_update_access);
+        upload_worker(&api, &update_target(), Some("temporary-bootstrap-value")).await.unwrap();
+        ensure_worker_update_schedule(&api, &update_target()).await.unwrap();
+        server.abort();
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        let metadata = requests[0].2.split("\r\n\r\n").nth(1).unwrap().split("\r\n").next().unwrap();
+        let metadata: Value = serde_json::from_str(metadata).unwrap();
+        assert_eq!(metadata["bindings"].as_array().unwrap().len(), 2);
+        assert!(!metadata.to_string().contains("WORKER_UPDATE_AUTH"));
+    }
+
+    #[tokio::test]
     async fn update_upload_keeps_database_binding_without_recreating_bootstrap_credentials() {
         let (api, requests, server) = mock_api(vec![
             (StatusCode::OK, json!({"success": true})),
@@ -1180,7 +1250,15 @@ mod tests {
         // Inspect the metadata part only: the uploaded program also mentions the binding name.
         let metadata = requests[0].2.split("\r\n\r\n").nth(1).unwrap().split("\r\n").next().unwrap();
         let metadata: Value = serde_json::from_str(metadata).unwrap();
-        assert_eq!(metadata["bindings"], json!([{"type": "d1", "name": "DB", "id": target.database_id}]));
+        assert_eq!(metadata["bindings"][0], json!({"type": "d1", "name": "DB", "id": target.database_id}));
+        assert_eq!(metadata["bindings"][1]["name"], "WORKER_UPDATE_AUTH");
+        assert_eq!(metadata["bindings"][1]["type"], "secret_text");
+        let access: Value = serde_json::from_str(metadata["bindings"][1]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(access["accountId"], target.account_id);
+        assert_eq!(access["scriptName"], target.script_name);
+        assert_eq!(access["databaseId"], target.database_id);
+        assert_eq!(access["apiToken"], api.token);
+        assert_eq!(metadata["bindings"].as_array().unwrap().len(), 2);
         assert_eq!(metadata["keep_bindings"], json!(["secret_text", "plain_text"]));
     }
 

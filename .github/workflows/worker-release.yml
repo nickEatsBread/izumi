@@ -1,0 +1,50 @@
+name: Publish stable Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cloudflare-sync-worker/src/**'
+      - 'cloudflare-sync-worker/migrations/**'
+      - 'cloudflare-sync-worker/package*.json'
+      - 'cloudflare-sync-worker/wrangler.jsonc'
+      - 'src-tauri/src/cloudflare_worker_bundle.mjs'
+      - 'scripts/package-cloudflare-release.mjs'
+      - 'scripts/publish-cloudflare-release.mjs'
+      - '.github/workflows/worker-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stable-worker-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'nickEatsBread/izumi' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm ci --prefix cloudflare-sync-worker
+      - name: Verify the shipped Worker
+        run: |
+          node scripts/build-cloudflare-direct-upload.mjs --check
+          npm run paraglide
+          npx svelte-kit sync
+          npx vitest run cloudflare-sync-worker/tests --maxWorkers 2
+          npm run check --prefix cloudflare-sync-worker
+      - name: Package and publish the stable feed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p 'JSON.parse(require("fs").readFileSync("cloudflare-sync-worker/package.json")).version')
+          node scripts/package-cloudflare-release.mjs "worker-v$VERSION"
+          node scripts/publish-cloudflare-release.mjs

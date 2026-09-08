@@ -17,7 +17,7 @@ setup. If the claim is not completed within 60 minutes, Cloudflare deletes the t
 its resources.
 
 The advanced setup section can instead deploy directly into an existing Cloudflare account using a
-short-lived, pre-scoped API token. Izumi keeps that token only in memory for the operation. The older
+pre-scoped deployment token. The installer stores it as an encrypted secret in your private Worker for future automatic updates; it is never included in device sync or returned to the TV. The older
 repository-based **Deploy to Cloudflare** flow is also retained as an optional manual route; it needs
 a public GitHub/GitLab repository because that is how Cloudflare deploy buttons work.
 
@@ -41,56 +41,33 @@ uploads leave the last complete snapshot readable. Unreferenced chunks expire af
 when another upload runs; the active snapshot is retained. The Worker bounds staged ciphertext
 to 96 MiB per device/category. Chunk contents and manifests remain end-to-end encrypted.
 
-Worker 1.12 supports **Update now** on the TV and **Update Worker** in Izumi. After the one-time
-setup below, these actions request a Cloudflare build using the device's existing authentication.
-The Worker also checks stable releases every six hours, even when every device is closed or off.
-There is no API token to enter for each update. The deployment hook stays in a Worker secret;
-neither the TV nor Izumi receives it. A queued build is reported as pending until the installed
-Worker actually reports the new version. Repeated requests cannot continuously start new builds.
+Worker 1.13 installs stable updates automatically after a normal authorized Worker update from
+Izumi. There is no separate automatic-update setup, repository connection, deploy hook, or TV
+setup button. The installer provisions deployment access and the six-hour schedule during the
+same operation. **Update now** on the TV or **Update Worker** in Izumi checks sooner; devices
+can be switched off between updates.
 
-### Enable automatic updates once
+The private Worker downloads releases from the main Izumi repository, verifies the package's
+SHA-256 checksum, applies pending migrations, and updates its existing script. It keeps the same
+D1 database, address, pairing credentials, and secrets. An update remains pending until the running
+Worker reports the new version. Concurrent requests share one deployment attempt.
 
-1. Open your **existing Worker** in the Cloudflare dashboard. Connect a GitHub/GitLab repository
-   containing this directory to **Settings → Builds**. A private fork is fine; it must initially
-   contain `scripts/deploy-stable.mjs`. Keep the existing Worker name and D1 binding.
-2. Set the build root to `cloudflare-sync-worker` for a full repository, or the repository root
-   for an isolated copy. Use `npm ci` as the build command and
-   `node scripts/deploy-stable.mjs` as the deploy command. Disable non-production branch builds.
-   Set build variables `IZUMI_WORKER_NAME` to the existing Worker name and `IZUMI_DATABASE_ID`
-   to the UUID of its existing `DB` binding. Do not create a replacement database.
-3. Let Cloudflare create/manage the Builds deployment token. In **My Profile → API Tokens**,
-   edit that generated token to include **Account → D1 → Edit** for this account, in addition
-   to its deployment permissions. This is a one-time permission change; no token needs copying
-   into Izumi or the TV. The default Builds token does not include D1 migration access.
-4. In **Settings → Builds → Deploy Hooks**, create a hook for the production branch. Save its
-   URL as an **encrypted runtime secret** named `WORKER_DEPLOY_HOOK` under the Worker's
-   **Variables and Secrets**. Keep this URL private; possession allows build requests.
-5. Run the production build once in Cloudflare. It installs the latest stable Worker package
-   and the six-hour cron trigger (`17 */6 * * *`). This initial deployment also upgrades older
-   Workers that cannot yet handle update requests. Verify the build succeeded and the trigger
-   appears under **Settings → Trigger Events**, then select **Check again** on the TV.
+Deployment access is stored in Cloudflare as an encrypted `WORKER_UPDATE_AUTH` secret, scoped
+by the installer to the existing account, Worker, and database. The supplied token retains its
+Cloudflare permissions; Izumi does not create a broader token or transmit it to paired devices.
+Keep that token valid: revoking it or setting an expiry prevents subsequent deployments. Temporary
+preview-account credentials are discarded and cannot provide durable deployment access. An older
+or claimed preview Worker receives durable access when it is next updated normally from Izumi.
 
-The build helper downloads a versioned official stable release package and verifies its SHA-256
-checksum before applying pending migrations and deploying it. It does not rely on a fork being
-automatically synchronized. The existing D1 database, pairing credentials, and dashboard secrets
-are retained. Stable release publication includes both `worker-update.json` and
-`worker-package.json`; until the first release containing these assets is published, setup builds
-will report that the package is unavailable and leave the running Worker untouched.
+Worker releases publish independently of desktop releases through `.github/workflows/worker-release.yml`.
+The stable feed is `worker-updates/stable.json` in the main repository and points to a versioned
+`worker-vX.Y.Z` release. CI publishes the feed only after both release assets are available. No
+Cloudflare account credentials are stored in the main repository or required by its CI.
 
-Set the runtime variable `WORKER_AUTO_UPDATE` to `false` to pause scheduled installation while
-retaining the TV button. Delete `WORKER_DEPLOY_HOOK` to disable both. Uncertain or delayed builds
-are retried no more than once every six hours; inspect Cloudflare Builds if an update stays pending.
-The build history is the authority for detailed deployment errors.
-
-Cloudflare still needs permission to deploy into your account once. Claiming an existing temporary
-deployment alone does not provide that permission. Automatic updates use
-[Cloudflare Deploy Hooks](https://developers.cloudflare.com/workers/ci-cd/builds/deploy-hooks/) and
-[Cloudflare-managed build authorization](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/#api-token).
-These use Workers Builds within its plan limits; no paid runtime is introduced.
-
-Without automatic-update setup, Izumi retains its bundled-version check and the direct update
-fallback using a temporary setup token. Older Workers can also be upgraded through their original
-deployment method. The app never persists that temporary token.
+Set `WORKER_AUTO_UPDATE` to `false` to pause scheduled installation. Remove `WORKER_UPDATE_AUTH`
+to revoke the Worker's deployment access. Failures retry with a six-hour backoff and never report
+an unconfirmed deployment as installed. Existing private deploy-hook installations remain compatible.
+This uses the Free-compatible Worker and D1 APIs; it does not require Workers Builds or a paid runtime.
 
 Database migrations are applied by the deploy command before the Worker update. Version 1.1 adds the companion pairing, short-lived request, browser enrollment, and Web Push subscription tables. Version 1.2 adds the optional direct-source resolver profile to the same private D1 database. Version 1.3 adds the explicit Cloudflare-only versus Cloudflare-plus-device playback policy. Version 1.4 adds authenticated TV episode metadata. Version 1.5 adds native torrent resolution through Izumi's existing multi-provider debrid abstraction. Version 1.6 adds per-TV encrypted catalogue snapshots and playback checkpoints plus live Worker catalogue/search/detail adapters. It requires migration `0004_companion_independent.sql`.
 

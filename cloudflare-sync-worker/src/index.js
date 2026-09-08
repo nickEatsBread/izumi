@@ -19,7 +19,7 @@ import {
   searchCatalog,
 } from './resolver.js'
 
-const VERSION = '1.12.0'
+const VERSION = '1.13.0'
 const PROTOCOL = 1
 const CATEGORIES = new Set(['watch', 'manual', 'presence', 'companion', 'profiles'])
 const MAX_BODY_BYTES = 512 * 1024
@@ -1041,7 +1041,7 @@ export default {
   async scheduled(_event, env) {
     await runWorkerUpdate(env, VERSION, { automatic: true })
   },
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     try {
       if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders })
       const url = new URL(request.url)
@@ -1063,7 +1063,16 @@ export default {
           ? await authenticateTv(request, env, updatePairing[1]) || await ownerPairing(request, env, updatePairing[1])
           : await authenticate(request, env)
         if (!authorized) return json({ error: 'Authentication failed.' }, 401)
-        return json(request.method === 'POST' ? await runWorkerUpdate(env, VERSION) : await workerUpdateStatus(env, VERSION))
+        if (request.method === 'POST') {
+          const update = runWorkerUpdate(env, VERSION)
+          if (!ctx?.waitUntil) return json(await update)
+          // Keep the deployment alive if the TV leaves this screen. Return progress promptly.
+          ctx.waitUntil(update)
+          let timer
+          try { await Promise.race([update, new Promise(resolve => { timer = setTimeout(resolve, 500) })]) }
+          finally { clearTimeout(timer) }
+        }
+        return json(await workerUpdateStatus(env, VERSION))
       }
       if (request.method === 'GET' && url.pathname === '/v1/companion/enrol') return companionEnrolmentPage(request)
       if (request.method === 'GET' && url.pathname === '/v1/companion/enrol.js') return scriptResponse(ENROLMENT_SCRIPT)

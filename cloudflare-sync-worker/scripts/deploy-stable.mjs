@@ -5,9 +5,10 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 
+import { UPDATE_MANIFEST } from '../src/worker-self-deploy.js'
 const releases = 'https://github.com/nickEatsBread/izumi/releases'
 export function validateManifest(value) {
-  if (value?.schema !== 1 || !/^v\d+\.\d+\.\d+$/.test(value.tag || '')
+  if (value?.schema !== 1 || !/^(worker-)?v\d+\.\d+\.\d+$/.test(value.tag || '')
     || !/^\d+\.\d+\.\d+$/.test(value.version || '') || !/^[a-f0-9]{64}$/.test(value.sha256 || '')) {
     throw new Error('The stable Worker release manifest is invalid.')
   }
@@ -56,7 +57,7 @@ async function download(url, maximum, fetcher) {
 }
 
 export async function deployStable({ fetcher = fetch, execute = spawnSync, env = process.env } = {}) {
-  const manifest = validateManifest(JSON.parse(await download(`${releases}/latest/download/worker-update.json`, 16_384, fetcher)))
+  const manifest = validateManifest(JSON.parse(await download(UPDATE_MANIFEST, 16_384, fetcher)))
   const pkg = validatePackage(await download(`${releases}/download/${manifest.tag}/worker-package.json`, 20 * 1024 * 1024, fetcher), manifest)
   const config = deploymentConfig(env, pkg.compatibilityDate)
   const stage = mkdtempSync(join(tmpdir(), 'izumi-stable-worker-'))

@@ -7,10 +7,11 @@ const root = resolve(import.meta.dirname, '..')
 const worker = join(root, 'cloudflare-sync-worker')
 const tag = process.argv[2]
 const output = resolve(process.argv[3] || join(root, 'artifacts', 'worker'))
-if (!/^v\d+\.\d+\.\d+$/.test(tag || '')) throw new Error('Pass a stable release tag: vX.Y.Z.')
+if (!/^(worker-)?v\d+\.\d+\.\d+$/.test(tag || '')) throw new Error('Pass a stable release tag: vX.Y.Z.')
 const check = spawnSync(process.execPath, [join(root, 'scripts/build-cloudflare-direct-upload.mjs'), '--check'], { encoding: 'utf8' })
 if (check.status !== 0) throw new Error('Rebuild the current Worker bundle before packaging a release.')
 const version = JSON.parse(readFileSync(join(worker, 'package.json'), 'utf8')).version
+if (tag.startsWith('worker-') && tag !== `worker-v${version}`) throw new Error('Worker release tag must match its version.')
 const config = JSON.parse(readFileSync(join(worker, 'wrangler.jsonc'), 'utf8'))
 const script = readFileSync(join(root, 'src-tauri/src/cloudflare_worker_bundle.mjs'), 'utf8')
 const migrations = readdirSync(join(worker, 'migrations')).filter(name => name.endsWith('.sql')).sort()
