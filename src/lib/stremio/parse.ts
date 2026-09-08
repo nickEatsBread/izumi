@@ -259,11 +259,16 @@ const LANG_TOKENS: Record<string, string> = {
   fre: 'fre', fra: 'fre', french: 'fre', vostfr: 'fre', truefrench: 'fre',
   ger: 'ger', deu: 'ger', german: 'ger',
   por: 'por', ptbr: 'por', portuguese: 'por', dublado: 'por',
-  rus: 'rus', russian: 'rus',
+  rus: 'rus', russian: 'rus', ru: 'rus',
   ara: 'ara', arabic: 'ara',
   chi: 'chi', chinese: 'chi',
   kor: 'kor', korean: 'kor',
   hin: 'hin', hindi: 'hin',
+  cze: 'cze', czech: 'cze', cz: 'cze',
+  dut: 'dut', dutch: 'dut', nld: 'dut', nl: 'dut',
+  pol: 'pol', polish: 'pol', pl: 'pol', pldub: 'pol',
+  lat: 'spa',
+  vf: 'fre', vff: 'fre', vfq: 'fre',
   multi: 'multi', multisub: 'multi', multiaudio: 'multi',
 }
 

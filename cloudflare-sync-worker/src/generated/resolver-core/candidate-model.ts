@@ -91,9 +91,16 @@ function routeIdentity(stream: Stream): string {
   const hash = stream.infoHash?.toLowerCase()
     ?? torrentioResolverInfoHash(stream.url, stream.__addonName ?? stream.name)
     ?? ''
+  // Hosted gateways mint a fresh tokenized URL for the same file on every listing, so a raw-URL
+  // identity never matches its own previous answer — exclusions, failover memory and duplicate
+  // collapse all silently stop working. When the row declares which file it plays, identify the
+  // route by that file; the URL then only carries HOW to reach it today.
+  const declaredFile = clean(stream.behaviorHints?.filename)
   const target = kind === 'torrent'
-    ? `${hash}|${stream.url ?? ''}|${stream.__magnet ?? ''}|${stream.__torrentUrl ?? ''}|${clean(stream.behaviorHints?.filename)}`
-    : stream.url ?? stream.ytId ?? stream.externalUrl ?? ''
+    ? `${hash}|${stream.url ?? ''}|${stream.__magnet ?? ''}|${stream.__torrentUrl ?? ''}|${declaredFile}`
+    : kind === 'http' && declaredFile
+      ? `stable-file:${declaredFile}:${stream.behaviorHints?.videoSize ?? ''}`
+      : stream.url ?? stream.ytId ?? stream.externalUrl ?? ''
   return `${kind}:${target}:file=${stream.fileIdx ?? ''}:headers=${headerIdentity(stream.__headers)}`
 }
 
