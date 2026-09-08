@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildIndex, lookupAnilistByKitsu, lookupAnilistByMal, lookupKitsu } from './idmap'
+import { buildIndex, lookupAnilistByKitsu, lookupAnilistByMal, lookupKitsu, lookupMal } from './idmap'
 const FIX = [ { anilist_id: 1, kitsu_id: 11, mal_id: 21 }, { anilist_id: 5, mal_id: 30 } ]
 describe('idmap', () => {
   const idx = buildIndex(FIX as any)
@@ -14,5 +14,10 @@ describe('idmap', () => {
   it('maps Kitsu ids back to canonical AniList ids', () => {
     expect(lookupAnilistByKitsu(idx, 11)).toBe(1)
     expect(lookupAnilistByKitsu(idx, 999)).toBeUndefined()
+  })
+  it('maps AniList ids to MAL for providers whose own mapping table lags', () => {
+    expect(lookupMal(idx, 1)).toBe(21)
+    expect(lookupMal(idx, 5)).toBe(30)
+    expect(lookupMal(idx, 999)).toBeUndefined()
   })
 })

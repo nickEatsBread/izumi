@@ -79,7 +79,12 @@
           const primaryError = err instanceof Error ? err.message : String(err)
           markAniListDegraded(primaryError)
           try {
-            const fallback = await getWeeklySchedule(s, e)
+            // The popularity indices identify about half the week up front; the rest streams in as
+            // the paced per-route lookups resolve, so a followed long-runner still appears.
+            const fallback = await getWeeklySchedule(s, e, {
+              signal: controller.signal,
+              onUpdate: (more) => { if (!cancelled) airings = more },
+            })
             if (!cancelled) {
               airings = fallback
               markCatalogProvider('AnimeSchedule')

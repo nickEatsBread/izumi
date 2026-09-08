@@ -1,6 +1,6 @@
 import { get } from 'svelte/store'
 import { showAdult } from '$lib/settings/ui'
-import { hydrateKitsuAiring, kitsuJson, mapKitsuMedia, type KitsuAnime } from '$lib/anilist/kitsu-catalog'
+import { fillMissingTrackerIds, hydrateKitsuAiring, kitsuJson, mapKitsuMedia, type KitsuAnime } from '$lib/anilist/kitsu-catalog'
 import type { ExternalMediaIds, Media, MediaVideo } from '$lib/anilist/types'
 import { catalogHomeLayouts, resolveCatalogHomeRows } from '../home-layout'
 import { KITSU_HOME_ROWS } from '../home-options'
@@ -93,7 +93,11 @@ async function animePage(
     url.searchParams.set(key, String(value))
   }
   const page = await kitsuJson<Page>(url.toString(), signal)
-  return { page, media: mapPage(page) }
+  const media = mapPage(page)
+  // Kitsu's mapping table lags new seasons; list badges key on the MAL id. Browse rows borrow the
+  // shared id map only when it is already in memory; the detail page loads it on demand.
+  await fillMissingTrackerIds(media, undefined, { load: false })
+  return { page, media }
 }
 
 function currentSeason(date = new Date()): { season: string; year: number } {
@@ -243,6 +247,9 @@ async function detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null
   const page: Page = { data: [result.data], included: result.included }
   const media = mapPage(page)[0]
   if (!media) return null
+  // The detail page reads the viewer's MAL entry and episode progress by MAL id. Kitsu often lists
+  // a new title weeks before linking it to MyAnimeList; the shared id map already knows the link.
+  await fillMissingTrackerIds([media])
 
   const categories = new Map((result.included ?? []).flatMap((item) =>
     item.type === 'categories' && item.id && item.attributes?.title && !item.attributes.nsfw

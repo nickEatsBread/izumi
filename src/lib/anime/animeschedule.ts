@@ -319,22 +319,33 @@ async function fetchSeasonPage(year: number, season: string, page: number): Prom
   } catch { return null }
 }
 
+// A season walk cut short by throttling used to be cached for the full TTL, which silently hid
+// every less-popular title on the later pages for six hours. Keep a partial walk in memory only
+// briefly, so the next visit retries the missing pages instead of hammering the host right away.
+const PARTIAL_SEASON_INDEX_TTL = 10 * 60e3
+let partialSeasonIndex: { key: string; at: number; anime: RawAnime[] } | null = null
+
 async function animeScheduleSeasonIndex(year: number, season: string): Promise<Map<string, Media>> {
   const key = seasonIndexKey(year, season)
   let anime = await readCache<RawAnime[]>(key, SEASON_INDEX_TTL)
+  if (!anime?.length && partialSeasonIndex?.key === key && Date.now() - partialSeasonIndex.at < PARTIAL_SEASON_INDEX_TTL) {
+    anime = partialSeasonIndex.anime
+  }
   if (!anime?.length) {
     const first = await fetchSeasonPage(year, season, 1)
     anime = [...(first?.anime ?? [])]
+    let complete = !!first
     const pages = Math.min(6, Math.max(1, Math.ceil((first?.totalAmount ?? anime.length) / 18)))
     // The endpoint is intentionally paced; it rejects a rapid catalogue burst even though each
     // individual page is public and small.
     for (let page = 2; page <= pages; page++) {
       await new Promise((resolve) => setTimeout(resolve, 350))
       const next = await fetchSeasonPage(year, season, page)
-      if (!next) break
+      if (!next) { complete = false; break }
       anime.push(...(next.anime ?? []))
     }
-    if (anime.length) await writeCache(key, anime)
+    if (anime.length && complete) await writeCache(key, anime)
+    else if (anime.length) partialSeasonIndex = { key, at: Date.now(), anime }
   }
   const out = new Map<string, Media>()
   for (const raw of anime ?? []) {
@@ -344,8 +355,62 @@ async function animeScheduleSeasonIndex(year: number, season: string): Promise<M
   return out
 }
 
-/** Weekly raw-broadcast fallback used only when AniList's airing schedule is unavailable. */
-export async function getWeeklySchedule(start: number, end: number): Promise<Airing[]> {
+// ── Per-route resolution for the weekly fallback ─────────────────────────────
+// The popularity-sorted season index and Kitsu's most-tracked pages cover roughly half of a
+// week's raw broadcasts; long-runners from earlier seasons and niche titles are on neither. The
+// per-route endpoint knows every one of them, but answers a burst with 429, so the remainder is
+// resolved one at a time, paced, and remembered for a month: the AniList/MAL links on a route are
+// permalinks, unlike the delay overlay which `fetchAnime` refreshes every six hours.
+const CARD_KEY = (route: string) => `animeschedule-card-${route}`
+const CARD_TTL_MS = 30 * 864e5
+const ROUTE_PACE_MS = 350
+const ROUTE_RESOLVE_BUDGET = 60
+const ROUTE_UPDATE_BATCH = 5
+// Session memo: a resolved record, or null when AnimeSchedule answered that the route has no entry
+// or no AniList link. A failed request is never memoized, so a throttled route is retried later.
+const routeCards = new Map<string, RawAnime | null>()
+
+// `undefined` = the request itself failed (throttled or offline) and nothing is concluded.
+async function cardByRoute(route: string): Promise<{ raw: RawAnime | null; fetched: boolean } | undefined> {
+  const memo = routeCards.get(route)
+  if (memo !== undefined) return { raw: memo, fetched: false }
+  const cached = await readCache<RawAnime>(CARD_KEY(route), CARD_TTL_MS)
+    ?? await readCache<RawAnime>(INFO_KEY(route), INFO_TTL_MS)
+  if (cached) {
+    routeCards.set(route, cached)
+    return { raw: cached, fetched: false }
+  }
+  try {
+    const response = await phttp(`${API}/${encodeURIComponent(route)}`, { timeoutMs: TIMEOUT_MS, background: true })
+    if (response.status === 404) {
+      routeCards.set(route, null)
+      return { raw: null, fetched: true }
+    }
+    if (!response.ok) return undefined
+    const raw = (await response.json()) as RawAnime | undefined
+    if (!raw?.route) return undefined
+    routeCards.set(route, raw)
+    await writeCache(CARD_KEY(route), raw)
+    await writeCache(INFO_KEY(route), raw)
+    return { raw, fetched: true }
+  } catch { return undefined }
+}
+
+// A throttled answer means the host wants a pause, not the next route. Back off, and give up on
+// this pass after a few in a row; the remaining routes are retried on the next visit.
+const ROUTE_THROTTLE_PAUSE_MS = 1500
+const ROUTE_THROTTLE_LIMIT = 3
+
+export interface WeeklyScheduleOptions {
+  signal?: AbortSignal
+  /** Receives the growing, sorted week as routes outside the popularity indices resolve. */
+  onUpdate?: (airings: Airing[]) => void
+}
+
+/** Weekly raw-broadcast fallback used only when AniList's airing schedule is unavailable. Resolves
+ * with every card the popularity indices can identify at once; the rest of the week arrives
+ * through `onUpdate` as the per-route lookups complete. */
+export async function getWeeklySchedule(start: number, end: number, options: WeeklyScheduleOptions = {}): Promise<Airing[]> {
   const { year, week } = isoWeek(start)
   const response = await phttp(`https://animeschedule.net/?year=${year}&week=${week}`, {
     timeoutMs: 20_000, maxBytes: 12 * 1024 * 1024, background: true,
@@ -365,13 +430,49 @@ export async function getWeeklySchedule(start: number, end: number): Promise<Air
     ? await fetchKitsuScheduleIndex(midpoint.getFullYear(), season, true, false).catch(() => new Map<string, Media>())
     : new Map<string, Media>()
   const media = new Map([...current, ...seasonal])
-  const airings = cards.flatMap((card) => {
-    const item = exact.get(card.route.toLowerCase())
-      ?? media.get(card.route.toLowerCase()) ?? media.get(titleKey(card.title))
-    return item ? [{ airingAt: card.airingAt, episode: card.episode, media: item }] : []
-  })
-  if (!airings.length) throw new Error('AnimeSchedule could not map weekly titles to AniList')
-  return airings.sort((a, b) => a.airingAt - b.airingAt)
+  const airings: Airing[] = []
+  const unresolved = new Map<string, TimetableCard[]>()
+  for (const card of cards) {
+    const route = card.route.toLowerCase()
+    const item = exact.get(route) ?? media.get(route) ?? media.get(titleKey(card.title))
+    if (item) airings.push({ airingAt: card.airingAt, episode: card.episode, media: item })
+    else unresolved.set(route, [...(unresolved.get(route) ?? []), card])
+  }
+  const sorted = () => [...airings].sort((a, b) => a.airingAt - b.airingAt)
+
+  // The indices only know popular and current-season titles. Every other broadcast on the
+  // timetable is resolved by route, cached for a month, and delivered as it arrives; a viewer's
+  // long-runner must not vanish from My Shows just because it began three seasons ago.
+  const resolveRemaining = async () => {
+    let fetched = 0, pending = 0, throttled = 0
+    for (const [route, slots] of unresolved) {
+      if (options.signal?.aborted || fetched >= ROUTE_RESOLVE_BUDGET || throttled >= ROUTE_THROTTLE_LIMIT) break
+      if (fetched > 0 || throttled > 0) {
+        await new Promise((resolve) => setTimeout(resolve, throttled ? ROUTE_THROTTLE_PAUSE_MS : ROUTE_PACE_MS))
+      }
+      const result = await cardByRoute(route)
+      if (!result) { throttled++; continue }
+      throttled = 0
+      if (result.fetched) fetched++
+      const item = result.raw ? mapAnimeScheduleMedia(result.raw) : null
+      if (!item) continue
+      airings.push(...slots.map((card) => ({ airingAt: card.airingAt, episode: card.episode, media: item })))
+      if (++pending >= ROUTE_UPDATE_BATCH && !options.signal?.aborted) {
+        pending = 0
+        options.onUpdate?.(sorted())
+      }
+    }
+    if (pending && !options.signal?.aborted) options.onUpdate?.(sorted())
+  }
+
+  if (!airings.length) {
+    // Nothing identified up front (throttled indices): the per-route walk is the only source left.
+    await resolveRemaining()
+    if (!airings.length) throw new Error('AnimeSchedule could not map weekly titles to AniList')
+    return sorted()
+  }
+  if (unresolved.size && options.onUpdate) void resolveRemaining()
+  return sorted()
 }
 
 /** Recreate the slot which AniList moves directly to its new date after a postponement. The caller

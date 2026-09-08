@@ -1,5 +1,5 @@
 import { phttp } from '$lib/net/http'
-import { getIndex, lookupAnilistByKitsu } from '$lib/stremio/idmap'
+import { cachedIndex, getIndex, lookupAnilistByKitsu, lookupMal, type Index } from '$lib/stremio/idmap'
 import type { Media } from './types'
 import type { JikanCatalogRequest } from './jikan'
 import { compatibilityMediaId } from '$lib/catalog/identity'
@@ -89,6 +89,36 @@ function directAniListIds(page: KitsuPage, site = 'anilist/anime'): Map<number, 
 const n = (value: unknown): number | undefined => {
   const number = Number(value)
   return Number.isFinite(number) ? number : undefined
+}
+
+const kitsuIdOfRecord = (media: Media): number | undefined =>
+  media.externalIds?.kitsu ?? (media.catalog?.provider === 'kitsu' ? n(media.catalog.id) : undefined)
+
+const lacksTrackerIds = (media: Media): boolean =>
+  media.idMal == null || (media.externalIds?.anilist == null && kitsuIdOfRecord(media) != null)
+
+/** Kitsu's mapping table lags new seasons by weeks, and a record without its MAL id is invisible
+ * to a MAL-tracked viewer: no list status, no watched marks, no "My Shows" membership. Fill the
+ * gaps from the shared id map, which playback already caches. Detail pages and the schedule load
+ * it on demand; browse rows (`load: false`) only use a copy that is already in memory, so a Home
+ * row never pays for the multi-megabyte download itself. Identity (`id`, `catalog`) is untouched. */
+export async function fillMissingTrackerIds(media: Media[], index?: Index, options: { load?: boolean } = {}): Promise<void> {
+  const pending = media.filter(lacksTrackerIds)
+  if (!pending.length) return
+  let idMap: Index | null | undefined = index
+  if (!idMap) {
+    try { idMap = options.load === false ? cachedIndex() : await getIndex() }
+    catch { idMap = null }
+  }
+  if (!idMap?.size) return
+  for (const item of pending) {
+    const ids = { ...(item.externalIds ?? {}) }
+    const kitsuId = kitsuIdOfRecord(item)
+    if (ids.anilist == null && kitsuId != null) ids.anilist = lookupAnilistByKitsu(idMap, kitsuId)
+    if (ids.mal == null && ids.anilist != null) ids.mal = lookupMal(idMap, ids.anilist)
+    item.externalIds = ids
+    if (item.idMal == null && ids.mal != null) item.idMal = ids.mal
+  }
 }
 
 const FORMAT: Record<string, string> = {
@@ -260,15 +290,22 @@ export async function fetchKitsuScheduleIndex(
     const kitsuId = n(raw.id)
     return kitsuId != null && !direct.has(kitsuId)
   })
-  const idMap = needsFallback ? await getIndex() : new Map()
-  const out = new Map<string, Media>()
+  const idMap = needsFallback ? await getIndex() : undefined
+  const records: { raw: KitsuAnime; media: Media }[] = []
   for (const raw of entries) {
     const kitsuId = n(raw.id)
     const anilistId = kitsuId == null ? undefined
-      : direct.get(kitsuId) ?? lookupAnilistByKitsu(idMap, kitsuId)
+      : direct.get(kitsuId) ?? (idMap ? lookupAnilistByKitsu(idMap, kitsuId) : undefined)
     if (anilistId == null) continue
     const media = mapKitsuMedia(raw, anilistId)
     media.idMal = kitsuId == null ? undefined : malIds.get(kitsuId)
+    records.push({ raw, media })
+  }
+  // Kitsu frequently lists a new season's titles before linking them to MyAnimeList. Without the
+  // MAL id, a MAL-tracked viewer's own shows never earn the Watching/Watched badge on this feed.
+  await fillMissingTrackerIds(records.map((record) => record.media), idMap)
+  const out = new Map<string, Media>()
+  for (const { raw, media } of records) {
     const a = raw.attributes ?? {}
     const keys = [a.slug, a.canonicalTitle, a.titles?.en, a.titles?.en_jp, a.titles?.ja_jp, ...(a.abbreviatedTitles ?? [])]
     for (const key of keys) if (key) {
@@ -292,7 +329,8 @@ export async function fetchKitsuCatalog(request: JikanCatalogRequest): Promise<R
     const kitsuId = n(item.id)
     return kitsuId != null && !direct.has(kitsuId)
   })
-  const index = needsFallback ? await getIndex() : new Map()
+  const index = needsFallback ? await getIndex() : undefined
+  const malIds = directAniListIds(result, 'myanimelist/anime')
   let raw = result.data ?? []
   if (request.operation.startsWith('Hero')) {
     raw = raw.filter((item) => item.attributes?.status !== 'upcoming' && item.attributes?.subtype !== 'music')
@@ -300,9 +338,18 @@ export async function fetchKitsuCatalog(request: JikanCatalogRequest): Promise<R
   const media = raw.flatMap((item) => {
     const kitsuId = n(item.id)
     const anilistId = kitsuId == null ? undefined
-      : direct.get(kitsuId) ?? lookupAnilistByKitsu(index, kitsuId)
-    return anilistId == null ? [] : [mapKitsuMedia(item, anilistId)]
+      : direct.get(kitsuId) ?? (index ? lookupAnilistByKitsu(index, kitsuId) : undefined)
+    if (anilistId == null) return []
+    const mapped = mapKitsuMedia(item, anilistId)
+    mapped.idMal = kitsuId == null ? undefined : malIds.get(kitsuId)
+    return [mapped]
   })
+  // Records derived from these cards (history, saved lists, Continue Watching) keep matching the
+  // viewer's MAL list by this id. Kitsu's own mapping table lags new seasons; borrow the id map
+  // only when it is already in memory.
+  await fillMissingTrackerIds(media, index, { load: false })
+  // GraphQL wire shape: graphcache rejects an omitted field, so an unknown MAL id must be null.
+  for (const item of media) (item as unknown as Record<string, unknown>).idMal = item.idMal ?? null
   // A non-empty Kitsu page must never masquerade as a successful empty GraphQL page. That used to
   // produce bare Home headings and Browse's misleading "No results" when an id-map response was
   // stale. `include=mappings` supplies canonical AniList ids inline; if Kitsu ever omits them and
@@ -348,8 +395,12 @@ export async function fetchKitsuDetail(request: KitsuDetailRequest): Promise<Res
     ?.flatMap((item) => item.id && categories.has(item.id) ? [categories.get(item.id)!] : []) ?? []
 
   const mapped = await hydrateKitsuAiring(mapKitsuMedia(detail.data, request.variables.id))
+  mapped.idMal = n(malId)
+  // The detail page reads the viewer's MAL entry by this id. Kitsu often lists a new title weeks
+  // before linking it to MyAnimeList; the shared id map already knows the link.
+  await fillMissingTrackerIds([mapped])
   const media = mapped as unknown as Record<string, unknown>
-  media.idMal = n(malId) ?? null
+  media.idMal = mapped.idMal ?? null
   media.genres = genres
   media.isFavourite = null
   media.mediaListEntry = null

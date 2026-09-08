@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
 const mocks = vi.hoisted(() => ({
-  post: vi.fn(), get: vi.fn(), getIndex: vi.fn(), lookupMal: vi.fn(), lookupKitsu: vi.fn(),
+  post: vi.fn(), get: vi.fn(), getIndex: vi.fn(), lookupMal: vi.fn(), lookupKitsu: vi.fn(), malOf: vi.fn(),
 }))
 
 vi.mock('$lib/net/http', () => ({ invokeNativeHttp: mocks.post, phttp: mocks.get }))
@@ -10,6 +10,7 @@ vi.mock('$lib/stremio/idmap', () => ({
   getIndex: mocks.getIndex,
   lookupAnilistByMal: mocks.lookupMal,
   lookupAnilistByKitsu: mocks.lookupKitsu,
+  lookupMal: mocks.malOf,
 }))
 
 import { gql } from '@urql/core'

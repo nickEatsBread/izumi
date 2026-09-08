@@ -10,6 +10,12 @@ export function buildIndex(entries: MapEntry[]): Index {
 export function lookupKitsu(idx: Index, anilistId: number): number | undefined {
   return idx.get(anilistId)?.kitsu_id
 }
+/** MAL id for a canonical AniList id. Kitsu's own mapping table lags new seasons by weeks, and a
+ *  record without its MAL id is invisible to a MAL-tracked viewer (no list status, no watched
+ *  marks, no "My Shows" membership), so every Kitsu-derived record fills this gap from here. */
+export function lookupMal(idx: Index, anilistId: number): number | undefined {
+  return idx.get(anilistId)?.mal_id
+}
 const malIndexes = new WeakMap<Index, Map<number, number>>()
 const kitsuIndexes = new WeakMap<Index, Map<number, number>>()
 /** Reverse lookup for metadata providers such as Jikan, which identify titles by MAL id while the
@@ -45,6 +51,9 @@ let cached: Index | null = null
 // while the boot pre-warm is still in flight started a SECOND full one — neither could see the
 // other because the memo is only written at the end.
 let inflight: Promise<Index> | null = null
+/** The map when it is already in memory, else null. Lets browse rows enrich cards for free
+ *  without triggering the multi-megabyte download on their own account. */
+export const cachedIndex = (): Index | null => cached
 export function getIndex(): Promise<Index> {
   if (cached) return Promise.resolve(cached)
   if (!inflight) inflight = loadIndex().finally(() => { inflight = null })
