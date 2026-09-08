@@ -4,7 +4,7 @@ import type { CompanionHomeSnapshot, CompanionMedia, CompanionPlaybackMode } fro
 import type { SyncRecord, SyncStatus } from './types'
 import { chunkHash, MAX_SYNC_BYTES, parseChunkManifest, splitSyncPayload, type ChunkManifest } from './record-chunks'
 
-export const CLOUDFLARE_WORKER_VERSION = '1.13.1'
+export const CLOUDFLARE_WORKER_VERSION = '1.13.2'
 export const CLOUDFLARE_WORKER_PROTOCOL = 1
 export const CLOUDFLARE_GIT_DEPLOY_URL =
   'https://deploy.workers.cloudflare.com/?url=https://github.com/nickEatsBread/izumi/tree/main/cloudflare-sync-worker'
