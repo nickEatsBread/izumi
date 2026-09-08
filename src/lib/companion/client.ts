@@ -1013,7 +1013,11 @@ export function initCompanionConnections(
           await publishCloudflareCompanionSnapshot(device.cloudflare, value).catch(() => {})
         }
       }
-    } catch { /* Offline/older Workers retry on the next setting change or app launch. */ }
+    } catch (error) {
+      // Offline/older Workers retry on the next setting change or app launch — but never silently:
+      // a persistent failure here is exactly why a TV stops seeing newly added sources.
+      console.warn('[companion] TV playback profile sync failed; retrying on the next settings change or app launch.', error)
+    }
     finally { profileSyncing = false }
   }
   const stopProfile = watchCloudflareCompanionProfile(() => { void syncProfile() })

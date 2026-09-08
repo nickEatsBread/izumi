@@ -408,6 +408,31 @@ export async function getCloudflareResolverProfile(): Promise<{ profile: Cloudfl
   }
 }
 
+/** Mirror of the Worker's per-entry add-on validation (HTTPS, no credentials, public hostname).
+ * Older Workers reject the ENTIRE profile save over one unusable entry or an over-long list —
+ * which silently freezes every later settings change out of the TV — so the client drops exactly
+ * what the Worker would refuse and caps the list at the deployed Worker's limit. */
+export function sanitizeResolverAddonUrls(urls: string[], limit: number): string[] {
+  const cleaned = urls.flatMap((value) => {
+    if (typeof value !== 'string' || !value.trim() || value.length > 2048) return []
+    try {
+      const url = new URL(value.trim().replace(/^stremio:\/\//i, 'https://'))
+      if (url.protocol !== 'https:' || url.username || url.password || url.hash) return []
+      const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+      if (!host || host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')
+        || host.endsWith('.internal') || host.includes(':')) return []
+      const octets = host.split('.').map(Number)
+      if (octets.length === 4 && octets.every((part) => Number.isInteger(part) && part >= 0 && part <= 255)) {
+        const [a, b] = octets
+        if (a === 0 || a === 10 || a === 127 || a >= 224 || (a === 100 && b >= 64 && b <= 127)
+          || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) return []
+      }
+      return [value.trim()]
+    } catch { return [] }
+  })
+  return [...new Set(cleaned)].slice(0, limit)
+}
+
 export async function saveCloudflareResolverProfile(profile: CloudflareResolverProfile): Promise<{ updatedAt: number }> {
   const config = companionConfig()
   const status = await getCloudflareWorkerStatus(config.endpoint)
@@ -418,9 +443,14 @@ export async function saveCloudflareResolverProfile(profile: CloudflareResolverP
   if (profile.debrid && !nativeDebridResolverSupported(status)) {
     throw new Error('Update your Izumi Cloudflare Worker before enabling native TV debrid playback.')
   }
+  const limit = status.features?.includes('cloud-resolver-addons-16') === true ? 16 : 8
+  const addons = sanitizeResolverAddonUrls(profile.addons, limit)
+  if (addons.length < profile.addons.length) {
+    console.warn(`[cloudflare] ${profile.addons.length - addons.length} stream source(s) will not sync to the TV Worker (private/invalid URL, or beyond its ${limit}-source limit).`)
+  }
   return workerRequest<{ updatedAt: number }>(config.endpoint, '/v1/resolver/profile', {
     method: 'PUT',
-    body: JSON.stringify(profile),
+    body: JSON.stringify({ ...profile, addons }),
   }, config.deviceToken)
 }
 

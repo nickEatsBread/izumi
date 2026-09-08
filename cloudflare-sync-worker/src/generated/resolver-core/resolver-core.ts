@@ -35,3 +35,5 @@ export {
   rankStreams,
 } from './ranking'
 export type { RankOptions } from './ranking'
+export { refineStreamsLite } from './refine-lite'
+export type { RefinedLite, RefineLiteContext } from './refine-lite'

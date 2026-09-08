@@ -711,7 +711,9 @@ async function hydrateAccountSources(env, owner, profile, viewer) {
     try {
       const urls = await withAccount(env.DB, owner, profileId, state.service,
         (account, persist) => accountSources(account, persist, state.service))
-      profile.addons = [...new Set([...urls, ...profile.addons])].slice(0, 8)
+      // The user's own configured sources come first: prepending account-derived URLs let the
+      // truncation silently evict a source the user had just added on the desktop.
+      profile.addons = [...new Set([...profile.addons, ...urls])].slice(0, 16)
     } catch { /* Existing enabled sources remain usable when an external account needs reconnection. */ }
   }
   return accounts
@@ -1052,7 +1054,7 @@ export default {
           workerUpdate: 1,
           protocol: PROTOCOL,
           claimed: await claimed(env),
-          features: ['companion-client-link-v1', 'companion-accounts-v1', 'companion-collections-v1', 'companion-profiles-v1', 'profile-sync-v1', 'companion-wake-v1', 'web-push-v1', 'cloud-resolver-v1', 'cloud-resolver-v2', 'cloud-resolver-debrid-v1', 'companion-details-v2', 'companion-snapshot-v1', 'companion-progress-v1', 'companion-catalog-v1', 'companion-trailer-v1', 'companion-discovery-v2'],
+          features: ['companion-client-link-v1', 'companion-accounts-v1', 'companion-collections-v1', 'companion-profiles-v1', 'profile-sync-v1', 'companion-wake-v1', 'web-push-v1', 'cloud-resolver-v1', 'cloud-resolver-v2', 'cloud-resolver-debrid-v1', 'cloud-resolver-addons-16', 'cloud-resolver-refine-v1', 'companion-details-v2', 'companion-snapshot-v1', 'companion-progress-v1', 'companion-catalog-v1', 'companion-trailer-v1', 'companion-discovery-v2'],
         })
       }
       const updatePairing = url.pathname.match(/^\/v1\/companion\/pairings\/([A-Za-z0-9_-]{16,80})\/worker-update$/)

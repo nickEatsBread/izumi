@@ -84,7 +84,9 @@ describe('self-hosted Cloudflare source resolver', () => {
       await vi.advanceTimersByTimeAsync(12_001)
       expect(finished).toBe(true)
       expect((await pending).candidates).toEqual([])
-      expect(fetcher).toHaveBeenCalledTimes(6)
+      // 3 concurrent manifest fetches + 2 stream fetches, plus the Kitsu title-evidence lookup
+      // that runs beside the fan-out for refinement.
+      expect(fetcher).toHaveBeenCalledTimes(7)
     } finally { vi.useRealTimers() }
   })
   it('is disabled with no uploaded add-ons by default', () => {

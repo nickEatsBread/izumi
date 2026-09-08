@@ -108,3 +108,34 @@ it('ignores malformed subtitle capabilities without losing playable streams', as
     async (url: string) => json(url.endsWith('/manifest.json') ? { resources: [null, { name: 'subtitles', idPrefixes: [null] }, 'stream'] } : { streams: [{ url: 'https://media.example/full.mp4' }] }))
   expect(result.candidates[0].url).toBe('https://media.example/full.mp4')
 })
+
+it('refines a same-id different production out of movie playback like the desktop picker', async () => {
+  const result = await resolveDirectSources({ enabled: true, addons: ['https://source.example'] },
+    { ...movie, title: 'The Odyssey (2026)' },
+    async (url: string) => json(url.endsWith('/manifest.json') ? { resources: ['stream'] } : { streams: [
+      { title: 'The.Odyssey.1997.DVDRip.XviD', url: 'https://media.example/miniseries.avi' },
+      { title: '2001.A.Space.Odyssey.1968.REMASTERED.2160p', url: 'https://media.example/kubrick.mkv' },
+      { title: 'The.Odyssey.2026.1080p.WEB-DL', url: 'https://media.example/feature.mkv' },
+    ] }))
+  expect(result.candidates.map(item => item.url)).toEqual(['https://media.example/feature.mkv'])
+  expect(result.selectedId).toBe(result.candidates[0].id)
+  expect(result.rejected).toBe(2)
+})
+
+it('falls back to the unrefined pool instead of blanking the picker when evidence rejects everything', async () => {
+  const result = await resolveDirectSources({ enabled: true, addons: ['https://source.example'] },
+    { ...movie, title: 'The Odyssey (2026)' },
+    async (url: string) => json(url.endsWith('/manifest.json') ? { resources: ['stream'] } : { streams: [
+      { title: 'The.Odyssey.1997.DVDRip.XviD', url: 'https://media.example/miniseries.avi' },
+    ] }))
+  expect(result.candidates.map(item => item.url)).toEqual(['https://media.example/miniseries.avi'])
+  expect(result.rejected).toBe(0)
+})
+
+it('keeps valid resolver add-ons when one entry is unusable instead of rejecting the profile', () => {
+  const addons = Array.from({ length: 20 }, (_, index) => `https://source-${index}.example`)
+  const profile = publicResolverProfile({ addons: ['http://insecure.example', 'https://192.168.1.7/private', ...addons] })
+  expect(profile.addons).toHaveLength(16)
+  expect(profile.addons[0]).toBe('https://source-0.example')
+  expect(profile.addons).not.toContain('http://insecure.example')
+})

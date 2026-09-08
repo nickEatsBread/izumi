@@ -13,6 +13,7 @@ import {
   isTvVideoCompatible,
   normalizeStreamBehavior,
   pickCandidates,
+  refineStreamsLite,
 } from './generated/resolver-core/resolver-core.ts'
 import {
   cacheCheckMode,
@@ -25,7 +26,7 @@ import {
 import { rdForgetLists } from './generated/resolver-core/debrid/providers/realdebrid.ts'
 import { catalogInternals, catalogSearch, catalogSnapshot, decodeStremioRef } from './catalog.js'
 
-const MAX_ADDONS = 8
+const MAX_ADDONS = 16
 const MAX_ADDON_URL_BYTES = 2048
 const MAX_STREAM_IDS = 6
 const MAX_STREAMS_PER_ADDON = 80
@@ -101,10 +102,13 @@ function normalizeSubtitleStyle(style) {
 export function normalizeResolverProfile(value, workerOrigin = '') {
   if (!value || typeof value !== 'object') throw new Error('Resolver profile must be a JSON object.')
   const input = value
-  if (!Array.isArray(input.addons) || input.addons.length > MAX_ADDONS) {
-    throw new Error(`Configure no more than ${MAX_ADDONS} resolver add-ons.`)
-  }
-  const addons = [...new Set(input.addons.map((entry) => normalizeAddonBase(entry, workerOrigin)))]
+  if (!Array.isArray(input.addons)) throw new Error('Resolver add-ons must be a list of URLs.')
+  // One malformed/private entry (or an over-long list) must not reject the whole profile save:
+  // that silently freezes EVERY later settings change out of the TV until the entry is removed.
+  // Keep the valid sources and drop only the entries this Worker could never query.
+  const addons = [...new Set(input.addons.flatMap((entry) => {
+    try { return [normalizeAddonBase(entry, workerOrigin)] } catch { return [] }
+  }))].slice(0, MAX_ADDONS)
   const quality = QUALITY.has(String(input.quality)) ? String(input.quality) : 'any'
   const sort = SORT.has(String(input.sort)) ? String(input.sort) : 'quality'
   const audioLang = typeof input.audioLang === 'string' && /^[a-z]{2,3}$/i.test(input.audioLang.trim())
@@ -538,7 +542,84 @@ export async function streamRequestPlan(request, fetcher = fetch, profile = defa
     season: Number.isInteger(episode?.seasonNumber) ? episode.seasonNumber : request.season,
     abs: Number.isInteger(episode?.absoluteEpisodeNumber) ? episode.absoluteEpisodeNumber : undefined,
   }
-  return { ids, want, malId: Number(mappings.mal_id) || undefined }
+  return { ids, want, malId: Number(mappings.mal_id) || undefined, refine: aniZipRefineHints(metadata, episode) }
+}
+
+/** Title/shape evidence for refineStreamsLite, from the mapping response the plan already fetched. */
+function aniZipRefineHints(metadata, episode) {
+  const titles = Object.values(metadata?.titles ?? {})
+    .flatMap((value) => typeof value === 'string' && value.trim() ? [value.trim()] : []).slice(0, 8)
+  const totalEpisodes = Object.keys(metadata?.episodes ?? {}).filter((key) => /^\d+$/.test(key)).length
+  const runtime = Number(episode?.runtime ?? episode?.length)
+  return {
+    titles,
+    ...(totalEpisodes ? { totalEpisodes } : {}),
+    ...(Number.isFinite(runtime) && runtime > 0 ? { expectedSeconds: Math.round(runtime * 60) } : {}),
+    ...(totalEpisodes > 60 ? { absoluteNumbered: true } : {}),
+  }
+}
+
+/**
+ * Build the refinement context the desktop derives from its AniList `Media`. The Worker only has
+ * the media reference, so each provider contributes what its own catalogue can answer within the
+ * metadata deadline; every field is optional and refineStreamsLite treats absence as "keep".
+ */
+async function refineContextFor(request, plan, profile, fetcher) {
+  const titles = []
+  let year
+  let expectedSeconds = plan.refine?.expectedSeconds
+  let totalEpisodes = plan.refine?.totalEpisodes
+  let absoluteNumbered = plan.refine?.absoluteNumbered
+  if (request.title) {
+    titles.push(request.title)
+    // Catalogue rows occasionally carry a "(2026)" disambiguation suffix; releases never do.
+    const disambiguated = request.title.match(/^(.*?)\s*\(((?:19|20)\d{2})\)\s*$/)
+    if (disambiguated?.[1]) {
+      titles.push(disambiguated[1])
+      year = Number(disambiguated[2])
+    }
+  }
+  titles.push(...(plan.refine?.titles ?? []))
+  if (request.ref.provider === 'kitsu' && /^\d{1,12}$/.test(request.ref.id)) {
+    const detail = await fetchJson(fetcher, `https://kitsu.io/api/edge/anime/${encodeURIComponent(request.ref.id)}`, METADATA_TIMEOUT_MS)
+    const attrs = detail?.data?.attributes
+    if (attrs) {
+      titles.push(...[attrs.canonicalTitle, ...Object.values(attrs.titles ?? {}), ...(Array.isArray(attrs.abbreviatedTitles) ? attrs.abbreviatedTitles : [])]
+        .flatMap((value) => typeof value === 'string' && value.trim() ? [value.trim()] : []))
+      const count = Number(attrs.episodeCount)
+      if (Number.isInteger(count) && count > 0) {
+        totalEpisodes = count
+        absoluteNumbered = absoluteNumbered ?? count > 60
+      }
+      const debut = Number(String(attrs.startDate ?? '').slice(0, 4))
+      if (debut >= 1950 && debut <= 2035) year = debut
+      const minutes = Number(attrs.episodeLength)
+      if (!expectedSeconds && Number.isFinite(minutes) && minutes > 0) expectedSeconds = Math.round(minutes * 60)
+    }
+  }
+  if (request.ref.provider === 'tmdb' && profile.catalog?.tmdbToken && /^\d{1,12}$/.test(request.ref.id)) {
+    const kind = request.ref.type === 'movie' ? 'movie' : 'tv'
+    const detail = await catalogInternals.tmdbRequest(profile.catalog.tmdbToken,
+      `/${kind}/${encodeURIComponent(request.ref.id)}`, {}, fetcher).catch(() => null)
+    if (detail) {
+      titles.push(...[detail.title, detail.name, detail.original_title, detail.original_name]
+        .flatMap((value) => typeof value === 'string' && value.trim() ? [value.trim()] : []))
+      const debut = Number(String(detail.release_date ?? detail.first_air_date ?? '').slice(0, 4))
+      if (debut >= 1950 && debut <= 2035) year = debut
+      const minutes = Number(kind === 'movie' ? detail.runtime : detail.episode_run_time?.[0])
+      if (!expectedSeconds && Number.isFinite(minutes) && minutes > 0) expectedSeconds = Math.round(minutes * 60)
+      const count = Number(detail.number_of_episodes)
+      if (!totalEpisodes && Number.isInteger(count) && count > 0) totalEpisodes = count
+    }
+  }
+  return {
+    titles: [...new Set(titles)].slice(0, 12),
+    streamType: request.streamType,
+    ...(year ? { year } : {}),
+    ...(expectedSeconds ? { expectedSeconds } : {}),
+    ...(totalEpisodes ? { totalEpisodes } : {}),
+    ...(absoluteNumbered ? { absoluteNumbered: true } : {}),
+  }
 }
 
 async function resolveSkipSegments(plan, request, fetcher) {
@@ -837,6 +918,8 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
   if (!profile.addons.length) throw new Error('No cloud resolver add-ons are configured.')
   const plan = options.tvContinuation?.plan ?? await streamRequestPlan(request, fetcher, profile)
   if (!plan.ids.length) return { candidates: [], selectedId: null, queriedIds: [], rejected: 0 }
+  // Runs beside the add-on fan-out, so title/year/runtime evidence costs no wall-clock time.
+  const refineContextPromise = refineContextFor(request, plan, profile, fetcher).catch(() => null)
   const serviceSubtitlesPromise = searchSubtitleServices(profile, request, plan, fetcher).catch(() => [])
   const skipSegmentsPromise = resolveSkipSegments(plan, request, fetcher).catch(() => [])
   // IMDb/TMDB identifiers belong to the title, not the catalogue that displayed it.
@@ -863,29 +946,36 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
       ...await mapLimit(resolverAddons, 3, (base, index) => resolveAddon(base, idsForAddon(base), resourceType, fetcher, profile.allowPrivateNetworkSources, index, sourceDeadline)),
     ]
   const normalized = dedupeStreams(batches.flatMap((batch) => batch.streams).filter((stream) => !isNotice(stream) && !isSupplementalVideo(stream, request.title) && isTvVideoCompatible(stream, request.videoCapabilities)))
+  // The desktop refines add-on rows by title/production/shape before ranking ever sees them; the
+  // TV path skipped that entirely, so a same-id different production could outrank the requested
+  // title. Refine with the evidence gathered above — and if the evidence rejects EVERYTHING, fall
+  // back to the unrefined pool: the TV has no "Filtered" list to rescue rows from.
+  const refineContext = await refineContextPromise
+  const refined = refineContext ? refineStreamsLite(refineContext, normalized) : { kept: normalized, rejectedCount: 0 }
+  const pool = refined.kept.length ? refined.kept : normalized
   // TV lookup returns plain torrent hashes. Check the configured provider before choosing a
   // release so a cached result is not stuck behind several full torrent downloads.
   if (profile.debrid && cacheCheckMode(profile.debrid.provider) === 'native'
-    && !normalized.some((stream) => directCandidate(stream, profile))) {
-    const hashes = [...new Set(normalized.map((stream) => stream.infoHash).filter(Boolean))].slice(0, 240)
+    && !pool.some((stream) => directCandidate(stream, profile))) {
+    const hashes = [...new Set(pool.map((stream) => stream.infoHash).filter(Boolean))].slice(0, 240)
     const cached = await checkCached(profile.debrid.provider, profile.debrid.credential, hashes)
-    for (const stream of normalized) {
+    for (const stream of pool) {
       const state = cached.get(stream.infoHash)
       if (state) { stream.__cache = state; stream.__cacheSource = 'native' }
     }
   }
-  const preferred = pickCandidates(normalized, profile.quality, plan.want, undefined, {
+  const preferred = pickCandidates(pool, profile.quality, plan.want, undefined, {
     audioLang: profile.audioLang || undefined,
     cacheCheck: 'none',
     allowUncached: !!profile.debrid,
   })
   // Automatic language preferences must not erase usable choices from the manual picker.
-  const ordered = [...new Set([...preferred, ...pickCandidates(normalized, profile.quality, plan.want, undefined, {
+  const ordered = [...new Set([...preferred, ...pickCandidates(pool, profile.quality, plan.want, undefined, {
     cacheCheck: 'none', allowUncached: !!profile.debrid,
   })])]
   const candidates = []
   const failures = batches.flatMap((batch) => batch.failures)
-  let rejected = 0
+  let rejected = refined.kept.length ? refined.rejectedCount : 0
   const attemptedDebridHashes = new Set()
   for (const stream of ordered) {
     const candidate = directCandidate(stream, profile)
