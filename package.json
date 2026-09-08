@@ -70,7 +70,7 @@
     "@types/node": "^24.13.3",
     "autoprefixer": "^10.5.4",
     "fake-indexeddb": "^6.2.5",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.1",
     "postcss": "^8.5.26",
     "svelte": "^5.57.0",
     "svelte-check": "^4.7.6",
