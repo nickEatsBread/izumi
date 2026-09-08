@@ -45,6 +45,35 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -e
           VERSION=$(node -p 'JSON.parse(require("fs").readFileSync("cloudflare-sync-worker/package.json")).version')
           node scripts/package-cloudflare-release.mjs "worker-v$VERSION"
-          node scripts/publish-cloudflare-release.mjs
+          # Published releases are immutable, so changed Worker sources under an already-published
+          # version bump themselves here instead of failing the publication after the merge. A
+          # bounded loop, because the next patch version can itself be published already when an
+          # earlier run bumped past this run's checkout.
+          bumped=0
+          for attempt in 1 2 3 4 5 6; do
+            decision=0
+            node scripts/worker-release-needs-bump.mjs || decision=$?
+            if [ "$decision" -eq 1 ]; then break; fi
+            if [ "$decision" -ne 0 ]; then exit "$decision"; fi
+            if [ "$attempt" -eq 6 ]; then echo 'Giving up after five automatic Worker version bumps.'; exit 1; fi
+            NEW=$(node scripts/bump-cloudflare-worker.mjs)
+            node scripts/package-cloudflare-release.mjs "worker-v$NEW"
+            bumped=1
+          done
+          if [ "$bumped" -eq 1 ]; then
+            git config user.name "nickEatsBread"
+            git config user.email "nickEatsBread@users.noreply.github.com"
+            git add cloudflare-sync-worker/package.json cloudflare-sync-worker/package-lock.json \
+              cloudflare-sync-worker/src/index.js src/lib/sync/cloudflare.ts \
+              src-tauri/src/cloudflare_worker_bundle.mjs
+            git commit -m "chore: release Worker v$NEW"
+            git pull --rebase origin main
+            # A rebase that pulled further Worker changes would desynchronize the packaged bundle;
+            # refuse to push a stale artifact — a rerun (or the next Worker change) publishes it.
+            node scripts/build-cloudflare-direct-upload.mjs --check
+            git push origin HEAD:main
+          fi
+          GITHUB_SHA=$(git rev-parse HEAD) node scripts/publish-cloudflare-release.mjs
