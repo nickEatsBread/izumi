@@ -75,6 +75,22 @@ export interface CloudflareAutomaticUpdate {
   error: string
 }
 
+/** What the update panel should say about an automatic-update reply.
+ *
+ * A Worker that already holds deployment access does not need re-authorization just because one
+ * attempt failed — an install can fail for reasons the token cannot fix (an older Worker whose own
+ * updater is broken, a transient upstream error). Asking for a token there tells the user their
+ * access is missing when it is not. Only an unconfigured Worker genuinely needs authorizing; a
+ * configured one that failed needs a direct redeploy, which is a different sentence. */
+export function workerUpdateFeedback(update: CloudflareAutomaticUpdate | null): {
+  needsAccess: boolean
+  failure: string
+} {
+  if (!update) return { needsAccess: false, failure: '' }
+  if (!update.configured) return { needsAccess: true, failure: '' }
+  return { needsAccess: false, failure: update.error }
+}
+
 /** The private Worker owns the deployment hook; clients send only their existing device credential. */
 export async function triggerCloudflareWorkerUpdate(): Promise<CloudflareAutomaticUpdate | null> {
   const config = get(cloudflareSyncConfig)

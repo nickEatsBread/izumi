@@ -3,6 +3,7 @@ import { get } from 'svelte/store'
 import {
   checkCloudflareWorkerUpdate,
   triggerCloudflareWorkerUpdate,
+  workerUpdateFeedback,
   CLOUDFLARE_WORKER_VERSION,
   cloudflareSyncConfig,
   cloudflareWorkerUpdateAvailable,
@@ -135,5 +136,27 @@ describe('Worker update checks', () => {
     await vi.advanceTimersByTimeAsync(6 * 60 * 60_000)
     expect(fetchMock).toHaveBeenCalledTimes(3)
     vi.clearAllTimers()
+  })
+})
+
+describe('workerUpdateFeedback', () => {
+  const reply = (over: Record<string, unknown> = {}) => ({
+    version: '1.0.0', configured: true, automatic: true, phase: 'error',
+    latestVersion: '1.1.0', error: '', ...over,
+  } as never)
+
+  it('asks for deployment access only when the Worker has none', () => {
+    expect(workerUpdateFeedback(reply({ configured: false, phase: 'setup-required' })))
+      .toEqual({ needsAccess: true, failure: '' })
+  })
+
+  it('reports a failed install without claiming access is missing', () => {
+    expect(workerUpdateFeedback(reply({ error: 'The update could not be confirmed.' })))
+      .toEqual({ needsAccess: false, failure: 'The update could not be confirmed.' })
+  })
+
+  it('stays quiet for a healthy reply or an unsupported Worker', () => {
+    expect(workerUpdateFeedback(reply({ phase: 'current' }))).toEqual({ needsAccess: false, failure: '' })
+    expect(workerUpdateFeedback(null)).toEqual({ needsAccess: false, failure: '' })
   })
 })

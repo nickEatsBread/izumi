@@ -39,7 +39,7 @@
     joinNearbyDevice, listNearbyDevices, openNearbyPairing, respondToPairRequest,
     listManualDevices, listSyncMembers, publishPresence, pullWatchProgress,
     receiveManualSnapshot, sendManualSnapshot, syncDeviceName,
-    checkCloudflareWorkerUpdate, triggerCloudflareWorkerUpdate, claimCloudflareWorker, cloudflareSetupSecret,
+    checkCloudflareWorkerUpdate, triggerCloudflareWorkerUpdate, workerUpdateFeedback, claimCloudflareWorker, cloudflareSetupSecret,
     cloudflareSyncConfig, cloudflareWorkerUpdateAvailable, createCloudflareInvite,
     createCloudflareCompanionEnrollment, generateCloudflareSetupSecret, joinCloudflareInvite,
     setSyncProvider, syncProvider, watchSyncError,
@@ -111,6 +111,7 @@
   let cloudflareInvite = $state('')
   let cloudflareUpdatePanel = $state<HTMLElement>()
   let cloudflareNeedsDeploymentAccess = $state(false)
+  let cloudflareUpdateFailure = $state('')
   let tvPairingCode = $state('')
   let confirmTvForget = $state('')
   let cloudResolverEnabled = $state(false)
@@ -447,14 +448,17 @@
       const update = await triggerCloudflareWorkerUpdate()
       if (update?.configured && !update.error) {
         cloudflareNeedsDeploymentAccess = false
+        cloudflareUpdateFailure = ''
         showMessage(update.phase === 'current' ? `Worker ${update.version} is up to date.`
           : update.phase === 'delayed' ? 'The update is taking longer than expected. Your Worker will retry automatically.'
           : 'Worker update requested. Check again shortly to verify the installed version.')
         return
       }
-      cloudflareNeedsDeploymentAccess = !!update && (!update.configured || !!update.error)
+      const feedback = workerUpdateFeedback(update)
+      cloudflareNeedsDeploymentAccess = feedback.needsAccess
+      cloudflareUpdateFailure = feedback.failure
       const available = await checkCloudflareWorkerUpdate({ throwOnError: true })
-      if (!available && !cloudflareNeedsDeploymentAccess) {
+      if (!available && !cloudflareNeedsDeploymentAccess && !cloudflareUpdateFailure) {
         showMessage('Your Worker is up to date with this version of Izumi.')
         return
       }
@@ -483,6 +487,7 @@
       }
       cloudflareApiToken = ''
       cloudflareNeedsDeploymentAccess = false
+      cloudflareUpdateFailure = ''
       if (await checkCloudflareWorkerUpdate({ throwOnError: true })) {
         throw new Error('The Worker update is still becoming available. Wait a moment, then check its version again.')
       }
@@ -863,9 +868,10 @@
           {busy === 'worker-check' ? 'Checking…' : 'Update Worker'}
         </button>
       </div>
-      {#if $cloudflareWorkerUpdateAvailable || cloudflareNeedsDeploymentAccess}
+      {#if $cloudflareWorkerUpdateAvailable || cloudflareNeedsDeploymentAccess || cloudflareUpdateFailure}
         <section bind:this={cloudflareUpdatePanel} tabindex="-1" aria-labelledby="worker-update-available-title" class="mt-4 border-t border-border/70 pt-4">
-          <h4 id="worker-update-available-title" class="font-black text-amber-300">{$cloudflareWorkerUpdateAvailable ? `Worker update ${$cloudflareWorkerUpdateAvailable} is available` : 'Update Worker deployment access'}</h4>
+          <h4 id="worker-update-available-title" class="font-black text-amber-300">{$cloudflareWorkerUpdateAvailable ? `Worker update ${$cloudflareWorkerUpdateAvailable} is available` : cloudflareNeedsDeploymentAccess ? 'Update Worker deployment access' : 'The automatic update could not finish'}</h4>
+          {#if cloudflareUpdateFailure && !cloudflareNeedsDeploymentAccess}<p class="mt-1 text-xs leading-5 text-muted-foreground">{cloudflareUpdateFailure} Installing it directly from here replaces the Worker with the current version.</p>{/if}
           {#if $cloudflareSyncConfig.deployment}
             <p class="mt-1 text-xs leading-5 text-muted-foreground">Authorize this Worker update with your Cloudflare deployment token. Izumi also enables future automatic updates, keeping your existing data and device links.</p>
             <div class="mt-3 flex flex-wrap gap-2">

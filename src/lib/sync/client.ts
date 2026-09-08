@@ -37,6 +37,7 @@ import {
 import {
   checkCloudflareWorkerUpdate,
   triggerCloudflareWorkerUpdate,
+  workerUpdateFeedback,
   cloudflareSetupSecret,
   cloudflareSyncConfig,
   cloudflareWorkerUpdateAvailable,
@@ -72,6 +73,7 @@ export const watchSyncError = writable('')
 export {
   checkCloudflareWorkerUpdate,
   triggerCloudflareWorkerUpdate,
+  workerUpdateFeedback,
   cloudflareSetupSecret,
   cloudflareSyncConfig,
   cloudflareWorkerUpdateAvailable,
