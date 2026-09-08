@@ -13,9 +13,12 @@ if (check.status !== 0) throw new Error('Rebuild the current Worker bundle befor
 const version = JSON.parse(readFileSync(join(worker, 'package.json'), 'utf8')).version
 if (tag.startsWith('worker-') && tag !== `worker-v${version}`) throw new Error('Worker release tag must match its version.')
 const config = JSON.parse(readFileSync(join(worker, 'wrangler.jsonc'), 'utf8'))
-const script = readFileSync(join(root, 'src-tauri/src/cloudflare_worker_bundle.mjs'), 'utf8')
+// Windows checkouts materialize these files with CRLF; the published package must hash the same
+// from every clone, so normalize to the repository's canonical LF before embedding.
+const lf = text => text.replace(/\r\n/g, '\n')
+const script = lf(readFileSync(join(root, 'src-tauri/src/cloudflare_worker_bundle.mjs'), 'utf8'))
 const migrations = readdirSync(join(worker, 'migrations')).filter(name => name.endsWith('.sql')).sort()
-  .map(name => ({ name, sql: readFileSync(join(worker, 'migrations', name), 'utf8') }))
+  .map(name => ({ name, sql: lf(readFileSync(join(worker, 'migrations', name), 'utf8')) }))
 const text = JSON.stringify({ schema: 1, version, compatibilityDate: config.compatibility_date, script, migrations })
 const manifest = { schema: 1, version, tag, sha256: createHash('sha256').update(text).digest('hex') }
 mkdirSync(output, { recursive: true })
