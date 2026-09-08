@@ -35,3 +35,6 @@ export {
 export type { RankOptions } from './ranking'
 export { refineStreamsLite } from './refine-lite'
 export type { RefinedLite, RefineLiteContext } from './refine-lite'
+export { addonOriginId, normalizeBase } from './origin-id'
+export { allowedByPriority, applyPriorityFilter, priorityIndexOf, priorityPoints } from './source-priority'
+export type { SourcePriorityMode } from './source-priority'

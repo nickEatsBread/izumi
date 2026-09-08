@@ -5,6 +5,8 @@ import { normalizeHousehold } from './profiles.js'
 import { createTvSourceLookup, tvSourceRequests, verifyTvSourceLookup } from './tv-source-lookup.js'
 import {
   acceptsStreamId,
+  addonOriginId,
+  applyPriorityFilter,
   buildStreamIds,
   dedupeStreams,
   describe,
@@ -31,7 +33,10 @@ const MAX_ADDON_URL_BYTES = 2048
 const MAX_STREAM_IDS = 6
 const MAX_STREAMS_PER_ADDON = 80
 const MAX_RESPONSE_CANDIDATES = 12
-const MAX_PROVIDER_RESPONSE_BYTES = 512 * 1024
+// Sized for real indexer stream responses: an unlimited-results configuration measures well over
+// 2 MiB for a popular film, and the old 512 KiB cap silently dropped that whole source (and every
+// release it carried) from every TV lookup.
+const MAX_PROVIDER_RESPONSE_BYTES = 4 * 1024 * 1024
 const METADATA_TIMEOUT_MS = 5_000
 const MANIFEST_TIMEOUT_MS = 4_000
 const STREAM_TIMEOUT_MS = 12_000
@@ -111,6 +116,12 @@ export function normalizeResolverProfile(value, workerOrigin = '') {
   }))].slice(0, MAX_ADDONS)
   const quality = QUALITY.has(String(input.quality)) ? String(input.quality) : 'any'
   const sort = SORT.has(String(input.sort)) ? String(input.sort) : 'quality'
+  // The desktop's source trust order, as the same opaque origin ids it stores locally. Strict mode
+  // must exclude unlisted sources on the TV exactly as it does in the desktop picker.
+  const sourcePriority = Array.isArray(input.sourcePriority)
+    ? [...new Set(input.sourcePriority.flatMap((entry) => typeof entry === 'string' && /^[a-f0-9]{16}$/.test(entry) ? [entry] : []))].slice(0, 32)
+    : []
+  const sourcePriorityMode = input.sourcePriorityMode === 'strict' ? 'strict' : 'prefer'
   const audioLang = typeof input.audioLang === 'string' && /^[a-z]{2,3}$/i.test(input.audioLang.trim())
     ? input.audioLang.trim().toLowerCase().slice(0, 3)
     : ''
@@ -154,6 +165,8 @@ export function normalizeResolverProfile(value, workerOrigin = '') {
     quality,
     sort,
     audioLang,
+    ...(sourcePriority.length ? { sourcePriority } : {}),
+    ...(sourcePriorityMode !== 'prefer' ? { sourcePriorityMode } : {}),
     connectedDeviceFallback: input.connectedDeviceFallback === true,
     allowPrivateNetworkSources: input.allowPrivateNetworkSources === true,
     debrid,
@@ -567,6 +580,7 @@ function aniZipRefineHints(metadata, episode) {
 async function refineContextFor(request, plan, profile, fetcher) {
   const titles = []
   let year
+  let releasedAt
   let expectedSeconds = plan.refine?.expectedSeconds
   let totalEpisodes = plan.refine?.totalEpisodes
   let absoluteNumbered = plan.refine?.absoluteNumbered
@@ -597,6 +611,34 @@ async function refineContextFor(request, plan, profile, fetcher) {
       if (!expectedSeconds && Number.isFinite(minutes) && minutes > 0) expectedSeconds = Math.round(minutes * 60)
     }
   }
+  if (request.ref.provider === 'stremio') {
+    // Global title ids carry no year/date evidence by themselves. Ask the user's OWN configured
+    // add-ons for the meta object — the add-on that owns the catalogue row first, then any other
+    // configured source. Never a hardcoded metadata endpoint: which catalogue answers is entirely
+    // the user's configuration.
+    const globalId = [request.ref.id, ...(plan.ids ?? [])].find((id) => /^tt\d+$/.test(String(id ?? '')))
+    if (globalId) {
+      // Most configured add-ons are stream indexers that 404 the meta resource, so probe every
+      // configured source in parallel and keep the first answer in configuration order — with the
+      // add-on that owns the catalogue row moved to the front.
+      const owning = profile.addons.filter((base) => plan.addonId
+        && catalogInternals.fnv(catalogInternals.normalizeBase(base)) === plan.addonId)
+      const bases = [...new Set([...owning, ...profile.addons])]
+      const kind = request.streamType === 'movie' ? 'movie' : 'series'
+      const answers = await mapLimit(bases, 3, (base) => fetchJson(fetcher,
+        addonEndpoint(base, `/meta/${kind}/${encodeURIComponent(globalId)}.json`), METADATA_TIMEOUT_MS))
+      const meta = answers.find((value) => value?.meta)?.meta
+      if (meta) {
+        titles.push(...[meta.name, meta.originalName].flatMap((entry) => typeof entry === 'string' && entry.trim() ? [entry.trim()] : []))
+        const debut = Number(String(meta.year ?? '').slice(0, 4))
+        if (debut >= 1950 && debut <= 2035) year = debut
+        const premiered = Date.parse(String(meta.released ?? ''))
+        if (Number.isFinite(premiered)) releasedAt = premiered
+        const minutes = Number(String(meta.runtime ?? '').match(/\d+/)?.[0])
+        if (!expectedSeconds && Number.isFinite(minutes) && minutes > 0) expectedSeconds = Math.round(minutes * 60)
+      }
+    }
+  }
   if (request.ref.provider === 'tmdb' && profile.catalog?.tmdbToken && /^\d{1,12}$/.test(request.ref.id)) {
     const kind = request.ref.type === 'movie' ? 'movie' : 'tv'
     const detail = await catalogInternals.tmdbRequest(profile.catalog.tmdbToken,
@@ -606,6 +648,8 @@ async function refineContextFor(request, plan, profile, fetcher) {
         .flatMap((value) => typeof value === 'string' && value.trim() ? [value.trim()] : []))
       const debut = Number(String(detail.release_date ?? detail.first_air_date ?? '').slice(0, 4))
       if (debut >= 1950 && debut <= 2035) year = debut
+      const premiered = Date.parse(String(detail.release_date ?? ''))
+      if (Number.isFinite(premiered)) releasedAt = premiered
       const minutes = Number(kind === 'movie' ? detail.runtime : detail.episode_run_time?.[0])
       if (!expectedSeconds && Number.isFinite(minutes) && minutes > 0) expectedSeconds = Math.round(minutes * 60)
       const count = Number(detail.number_of_episodes)
@@ -616,6 +660,7 @@ async function refineContextFor(request, plan, profile, fetcher) {
     titles: [...new Set(titles)].slice(0, 12),
     streamType: request.streamType,
     ...(year ? { year } : {}),
+    ...(releasedAt ? { releasedAt } : {}),
     ...(expectedSeconds ? { expectedSeconds } : {}),
     ...(totalEpisodes ? { totalEpisodes } : {}),
     ...(absoluteNumbered ? { absoluteNumbered: true } : {}),
@@ -863,7 +908,9 @@ async function resolveAddon(base, ids, type, fetcher, allowPrivate = false, addo
     return [normalizeStreamBehavior({
       ...clean,
       __addonName: addonName,
-      __origin: { kind: 'addon', id: `cloud-addon-${new URL(base).hostname}`, name: addonName },
+      // The SAME opaque origin id the desktop stores in its source-priority order, so the synced
+      // trust order recognises this row.
+      __origin: { kind: 'addon', id: addonOriginId(base), name: addonName },
       __evidence: { upstreamRank, requestId: ask[requestIndex] },
     })]
   }))
@@ -899,7 +946,7 @@ async function embeddedStremioStreams(request, bases, plan, fetcher, allowPrivat
     return [normalizeStreamBehavior({
       ...clean,
       __addonName: 'Embedded source',
-      __origin: { kind: 'addon', id: `cloud-addon-${new URL(base).hostname}`, name: 'Embedded source' },
+      __origin: { kind: 'addon', id: addonOriginId(base), name: 'Embedded source' },
       __evidence: { upstreamRank, requestId: selected.id },
     })]
   })
@@ -952,7 +999,13 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
   // back to the unrefined pool: the TV has no "Filtered" list to rescue rows from.
   const refineContext = await refineContextPromise
   const refined = refineContext ? refineStreamsLite(refineContext, normalized) : { kept: normalized, rejectedCount: 0 }
-  const pool = refined.kept.length ? refined.kept : normalized
+  // Strict source trust applies AFTER the empty-kept fallback and never falls back itself: an
+  // empty result under `strict` is the configured answer, exactly as in the desktop picker.
+  const pool = applyPriorityFilter(
+    refined.kept.length ? refined.kept : normalized,
+    profile.sourcePriority ?? [],
+    profile.sourcePriorityMode ?? 'prefer',
+  )
   // TV lookup returns plain torrent hashes. Check the configured provider before choosing a
   // release so a cached result is not stuck behind several full torrent downloads.
   if (profile.debrid && cacheCheckMode(profile.debrid.provider) === 'native'
@@ -968,10 +1021,11 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
     audioLang: profile.audioLang || undefined,
     cacheCheck: 'none',
     allowUncached: !!profile.debrid,
+    sourcePriority: profile.sourcePriority,
   })
   // Automatic language preferences must not erase usable choices from the manual picker.
   const ordered = [...new Set([...preferred, ...pickCandidates(pool, profile.quality, plan.want, undefined, {
-    cacheCheck: 'none', allowUncached: !!profile.debrid,
+    cacheCheck: 'none', allowUncached: !!profile.debrid, sourcePriority: profile.sourcePriority,
   })])]
   const candidates = []
   const failures = batches.flatMap((batch) => batch.failures)

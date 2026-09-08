@@ -5,6 +5,7 @@ import {
   likelyOtherProduction,
   isEpisodeExtra,
   isStandaloneMovie,
+  selfDeclaredOtherProduction,
   wrongFranchiseSeason,
 } from './relevance'
 import type { Stream } from './parse'
@@ -304,5 +305,17 @@ describe('wrongFranchiseSeason (base-entry request pulling in a sequel season â€
     expect(wrongFranchiseSeason(s('[Neo-raws] Shingeki no Kyojin - The Final Season - 01 [2160p].mkv'), aotFinal)).toBe(false)
     const aotS3 = ['Shingeki no Kyojin Season 3', 'Attack on Titan Season 3']
     expect(wrongFranchiseSeason(s('Shingeki no Kyojin Season 3 - 05 [1080p].mkv'), aotS3)).toBe(false)
+  })
+})
+
+describe('selfDeclaredOtherProduction', () => {
+  it('drops a release whose own wording disclaims the production', () => {
+    expect(selfDeclaredOtherProduction(s('Example Film 2026 (NOT the Famous Director FILM) 1080p WEB-DL HEVC x265 5.1 GROUP.mkv'))).toBe(true)
+    expect(selfDeclaredOtherProduction(s('Example Film 2026 NOT the Famous Director FILM 1080p WEB-DL HEVC x265 5 1-GROUP.mkv'))).toBe(true)
+    expect(selfDeclaredOtherProduction(s('Some Show [not a remaster] 1080p.mkv'))).toBe(true)
+  })
+  it('keeps ordinary notes and titles containing the word not', () => {
+    expect(selfDeclaredOtherProduction(s('Example Film 2026 1080p (subs not the best).mkv'))).toBe(false)
+    expect(selfDeclaredOtherProduction(s('Not Okay 2022 1080p WEB-DL.mkv'))).toBe(false)
   })
 })

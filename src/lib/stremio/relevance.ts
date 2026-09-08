@@ -193,6 +193,16 @@ export function hasExplicitTitleConflict(stream: Stream, wanted: string[]): bool
   return !relevant({ behaviorHints: { filename: claimed } }, wanted)
 }
 
+// An uploader's own disclaimer that the file is NOT the requested production — a release named
+// "Example Film 2026 (NOT the acclaimed FILM)" — outranks every fuzzy heuristic: the title run
+// matches perfectly, the year matches, and only that phrase tells the truth. Match it opening a
+// bracket, or inline when it names a production word, so a legitimate note like
+// "(subs not the best)" never triggers it.
+const SELF_DISCLAIMER = /[([]\s*not\s+(?:the|a|an)\b|\bnot\s+(?:the|a|an)\b[^\n]{0,60}?\b(?:film|movie|version|release)\b/i
+export function selfDeclaredOtherProduction(stream: Stream): boolean {
+  return SELF_DISCLAIMER.test(nameOf(stream))
+}
+
 // Non-episode EXTRA files (openings/endings/creditless/previews/menus) that addons
 // sometimes index under an episode. e.g. "Death Note OP 2 [4K 60FPS Creditless].mp4"
 // is 4K + tiny, so it wrongly WINS the quality auto-pick over the real episode. Drop

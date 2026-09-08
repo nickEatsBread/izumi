@@ -6,7 +6,7 @@ import {
   debridKey, debridProvider, hideSpoilers, preferredAudioLang, preferredQuality, preferredStreamSort, showAdult,
   enabledSubtitleProviders, preferredSubLang, cloudSubtitleSession, subtitleStyleEnabled, subtitleOverrideScope,
   subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor, subtitleBorderColor, subtitleBorderSize,
-  subtitleShadow, subtitlePosition,
+  subtitleShadow, subtitlePosition, sourcePriority, sourcePriorityMode,
 } from '$lib/settings/ui'
 import { enabledAddonUrls } from '$lib/stremio/sources'
 import { providerMeta } from '$lib/stremio/debrid'
@@ -33,6 +33,10 @@ export function currentCloudflareCompanionProfile(connectedDeviceFallback: boole
     quality: get(preferredQuality),
     sort: get(preferredStreamSort),
     audioLang: get(preferredAudioLang),
+    // Origin-id fingerprints, never URLs: the Worker recognises its own configured add-ons by the
+    // same ids, so the desktop trust order carries to the TV without copying credentials.
+    sourcePriority: [...get(sourcePriority)],
+    sourcePriorityMode: get(sourcePriorityMode),
     connectedDeviceFallback,
     allowPrivateNetworkSources: get(cloudflareAllowLanSources),
     debrid: key && providerMeta(provider) ? { provider, credential: key } : null,
@@ -50,7 +54,7 @@ export function currentCloudflareCompanionProfile(connectedDeviceFallback: boole
 export function watchCloudflareCompanionProfile(onChange: () => void): () => void {
   const stores: Readable<unknown>[] = [
     enabledSubtitleProviders, preferredSubLang, cloudSubtitleSession, subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor, subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
-    enabledAddonUrls, preferredQuality, preferredStreamSort, preferredAudioLang,
+    enabledAddonUrls, preferredQuality, preferredStreamSort, preferredAudioLang, sourcePriority, sourcePriorityMode,
     debridProvider, debridKey, enabledCatalogScreens, catalogScreen, tmdbReadToken,
     showAdult, hideSpoilers,
     cloudflareAllowLanSources,

@@ -134,6 +134,23 @@ describe('self-hosted Cloudflare source resolver', () => {
     })
   })
 
+  it('bounds and validates the synced source trust order', () => {
+    const profile = normalizeResolverProfile({
+      enabled: true,
+      addons: ['https://addon.example/a'],
+      quality: 'any',
+      sort: 'quality',
+      audioLang: '',
+      sourcePriority: ['00c30d16d735d78a', 'not-a-fingerprint', '00c30d16d735d78a', 42],
+      sourcePriorityMode: 'strict',
+    })
+    expect(profile.sourcePriority).toEqual(['00c30d16d735d78a'])
+    expect(profile.sourcePriorityMode).toBe('strict')
+    const unset = normalizeResolverProfile({ enabled: true, addons: [], quality: 'any', sort: 'quality', audioLang: '' })
+    expect(unset.sourcePriority).toBeUndefined()
+    expect(unset.sourcePriorityMode).toBeUndefined()
+  })
+
   it('never echoes the configured debrid credential from an owner profile response', () => {
     const profile = publicResolverProfile({
       enabled: true,

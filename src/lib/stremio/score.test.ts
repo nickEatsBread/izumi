@@ -218,3 +218,14 @@ suite('scoreInfo', () => {
     })
   })
 })
+
+suite('theatrical cam penalty', () => {
+  it('ranks any clean release above a same-tier cam, but keeps cams orderable', () => {
+    const cam = describe({ url: 'u', behaviorHints: { filename: 'Example.Film.2026.1080p.TELESYNC.HEVC.mkv' }, title: '👤 900' })
+    const clean = describe({ url: 'u', behaviorHints: { filename: 'Example.Film.2026.1080p.WEB-DL.AAC.x264-LuCY.mkv' }, title: '👤 3' })
+    const camScore = scoreInfo(cam).score
+    expect(camScore).toBeLessThan(scoreInfo(clean).score)
+    const lowCam = describe({ url: 'u', behaviorHints: { filename: 'Example.Film.2026.480p.CAMRip.mkv' } })
+    expect(camScore).toBeGreaterThan(scoreInfo(lowCam).score)
+  })
+})

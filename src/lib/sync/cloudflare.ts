@@ -117,6 +117,9 @@ export interface CloudflareResolverProfile {
   quality: '2160' | '1440' | '1080' | '720' | '480' | '360' | 'any'
   sort: 'quality' | 'seeders' | 'size'
   audioLang: string
+  /** Ordered addon origin-id fingerprints (most trusted first); same ids the desktop stores. */
+  sourcePriority?: string[]
+  sourcePriorityMode?: 'prefer' | 'strict'
   /** Ask an explicitly linked Izumi device only when the Worker has no TV-ready source. */
   connectedDeviceFallback: boolean
   allowPrivateNetworkSources?: boolean

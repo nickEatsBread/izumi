@@ -162,3 +162,20 @@ suite('notice detection', () => {
     expect(isNotice({ infoHash: 'abc', description: 'quota used: 40%' })).toBe(false)
   })
 })
+
+suite('theatrical copy detection', () => {
+  it('labels cam-family releases as CAM', () => {
+    for (const name of [
+      'Example.Film.2026.1080p.TELESYNC.HEVC.AAC2.0-SPLiCE.mkv',
+      'Example.Film.2026.V3.1080p.CAMRip.Legendado.mkv',
+      'Movie.2026.HDCAM.x264.mkv',
+      'Movie.2026.HD-TS.720p.mkv',
+      'Movie.2026.DVDScr.XviD.avi',
+    ]) expect(describe({ url: 'u', behaviorHints: { filename: name } }).source).toBe('CAM')
+  })
+  it('does not mistake containers or titles for cams', () => {
+    expect(describe({ url: 'u', behaviorHints: { filename: 'Show.S01E01.1080p.WEB-DL.ts' } }).source).toBe('WEB-DL')
+    expect(describe({ url: 'u', behaviorHints: { filename: 'Cameron.Diaries.2020.1080p.BluRay.mkv' } }).source).toBe('BluRay')
+    expect(describe({ url: 'u', behaviorHints: { filename: 'Example.Voyage.2016.2160p.4K.BluRay.x265.mkv' } }).source).toBe('BluRay')
+  })
+})

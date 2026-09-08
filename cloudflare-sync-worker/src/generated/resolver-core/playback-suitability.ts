@@ -12,7 +12,8 @@ export function isSupplementalVideo(stream: Stream, title = ''): boolean {
     if (!value) return false
     let text = normalize(value)
     if (identity) text = text.split(identity).join(' ')
-    return /\b(?:trailer|teaser|prologue|preview|sample|featurette|promo|behind the scenes|deleted scenes)\b/.test(text)
+    // tlr/tsr are the scene's own trailer/teaser abbreviations ("Title_TLR-2_4K…").
+    return /\b(?:trailer|teaser|prologue|preview|sample|featurette|promo|behind the scenes|deleted scenes|making of|tlr\d*|tsr\d*)\b/.test(text)
   })
 }
 
@@ -22,7 +23,10 @@ export interface TvVideoCapabilities { hdr?: boolean; uhd?: boolean; av1?: boole
 export function isTvVideoCompatible(stream: Stream, capabilities: TvVideoCapabilities = {}): boolean {
   const text = [stream.behaviorHints?.filename, stream.title, stream.description, stream.name].filter(Boolean).join(' ').replace(/[._]/g, ' ')
   const vision = /\b(?:dv|dovi|dolby\s*vision)\b/i.test(text)
-  const hdrBase = /\bhdr(?:10|10\+)?\b/i.test(text)
+  // Dolby Vision needs an explicit HDR10 base layer to be watchable on the DV-less TVs this
+  // client targets: a bare "HDR" word beside "DV" is how single-layer profile-5 encodes are
+  // usually labelled, and those render green/purple without DV decoding.
+  const hdrBase = /\bhdr10\+?\b|\bhdr10plus\b/i.test(text)
   if (vision && !hdrBase) return false
   if (/\b(?:12[ -]?bit|yuv\s?444|4[: ]4[: ]4|hi444p)\b/i.test(text)) return false
   if (/\b(?:hi10p|hi10)\b/i.test(text) || /\b(?:h\s?264|x264|avc)\b/i.test(text) && /\b10[ -]?bit\b/i.test(text)) return false

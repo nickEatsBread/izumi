@@ -5,44 +5,66 @@ import type { Stream } from './parse'
 const named = (filename: string, extra: Record<string, unknown> = {}): Stream =>
   ({ url: `https://host/${encodeURIComponent(filename)}`, behaviorHints: { filename }, ...extra }) as Stream
 
-const movie: RefineLiteContext = { titles: ['The Odyssey'], streamType: 'movie', year: 2026 }
+const movie: RefineLiteContext = { titles: ['Example Film'], streamType: 'movie', year: 2026 }
 
 describe('refineStreamsLite', () => {
   it('keeps the requested movie release', () => {
-    const r = refineStreamsLite(movie, [named('The.Odyssey.2026.2160p.WEB-DL.DDP5.1.mkv')])
+    const r = refineStreamsLite(movie, [named('Example.Film.2026.2160p.WEB-DL.DDP5.1.mkv')])
     expect(r.kept).toHaveLength(1)
     expect(r.rejectedCount).toBe(0)
   })
 
   it('rejects an older production sharing the title id', () => {
     const r = refineStreamsLite(movie, [
-      named('The.Odyssey.2026.1080p.WEB-DL.mkv'),
-      named('The.Odyssey.1997.DVDRip.XviD.avi'),
+      named('Example.Film.2026.1080p.WEB-DL.mkv'),
+      named('Example.Film.1997.DVDRip.XviD.avi'),
     ])
-    expect(r.kept.map((s) => s.behaviorHints?.filename)).toEqual(['The.Odyssey.2026.1080p.WEB-DL.mkv'])
+    expect(r.kept.map((s) => s.behaviorHints?.filename)).toEqual(['Example.Film.2026.1080p.WEB-DL.mkv'])
     expect(r.rejectedCount).toBe(1)
   })
 
   it('rejects an unrelated title that only shares a word', () => {
     const r = refineStreamsLite(movie, [
-      named('The.Odyssey.2026.1080p.WEB-DL.mkv'),
-      named('2001.A.Space.Odyssey.1968.REMASTERED.1080p.mkv'),
+      named('Example.Film.2026.1080p.WEB-DL.mkv'),
+      named('A.Space.Voyage.1968.REMASTERED.1080p.mkv'),
     ])
     expect(r.kept).toHaveLength(1)
     expect(r.rejectedCount).toBe(1)
   })
 
+  it('rejects a release that disclaims its own production even with zero context', () => {
+    const r = refineStreamsLite({ titles: [], streamType: 'movie' }, [
+      named('Example Film 2026 (NOT the Famous Director FILM) 1080p WEB-DL HEVC x265 5.1 BONE.mkv'),
+    ])
+    expect(r.kept).toHaveLength(0)
+    expect(r.rejectedCount).toBe(1)
+  })
+
+  it('rejects clean-release claims inside the theatrical window when cams prove it', () => {
+    const ctx: RefineLiteContext = { ...movie, releasedAt: Date.now() - 50 * 86_400_000 }
+    const rows = [
+      named('Example.Film.2026.1080p.WEBRip.x264.AAC5.1-[YTS.GG - YTS.BZ].mp4'),
+      named('Example.Film.2026.1080p.TELESYNC.HEVC.AAC2.0-SPLiCE.mkv'),
+    ]
+    const r = refineStreamsLite(ctx, rows)
+    expect(r.kept.map((s) => s.behaviorHints?.filename)).toEqual(['Example.Film.2026.1080p.TELESYNC.HEVC.AAC2.0-SPLiCE.mkv'])
+    // Without cam evidence (a real digital release) the same claim is kept.
+    expect(refineStreamsLite(ctx, [rows[0]]).kept).toHaveLength(1)
+    // Outside the window the claim is kept even beside cams lingering in the index.
+    expect(refineStreamsLite({ ...movie, releasedAt: Date.now() - 200 * 86_400_000 }, rows).kept).toHaveLength(2)
+  })
+
   it('rejects trailers and extras regardless of title match', () => {
     const r = refineStreamsLite(movie, [
-      named('The.Odyssey.2026.1080p.mkv'),
-      named('The.Odyssey.2026.Official.Trailer.1080p.mp4'),
+      named('Example.Film.2026.1080p.mkv'),
+      named('Example.Film.2026.Official.Trailer.1080p.mp4'),
     ])
     expect(r.kept).toHaveLength(1)
     expect(r.rejectedCount).toBe(1)
   })
 
   it('keeps opaque names — absence of evidence never rejects', () => {
-    const cjk = named('オデュッセイア')
+    const cjk = named('架空の映画')
     const qualityOnly = { url: 'https://host/stream', title: '💾 1.4 GB', behaviorHints: {} } as Stream
     const r = refineStreamsLite(movie, [cjk, qualityOnly])
     expect(r.kept).toHaveLength(2)
@@ -86,9 +108,9 @@ describe('refineStreamsLite', () => {
   })
 
   it('rejects a standalone movie file under a multi-episode series only when the count is known', () => {
-    const file = named('Ghost.in.the.Shell.1995.BluRay.1080p.mkv')
-    const withCount: RefineLiteContext = { titles: ['Ghost in the Shell'], streamType: 'series', totalEpisodes: 12 }
-    const withoutCount: RefineLiteContext = { titles: ['Ghost in the Shell'], streamType: 'series' }
+    const file = named('Example.Classic.1995.BluRay.1080p.mkv')
+    const withCount: RefineLiteContext = { titles: ['Example Classic'], streamType: 'series', totalEpisodes: 12 }
+    const withoutCount: RefineLiteContext = { titles: ['Example Classic'], streamType: 'series' }
     expect(refineStreamsLite(withCount, [file]).kept).toHaveLength(0)
     expect(refineStreamsLite(withoutCount, [file]).kept).toHaveLength(1)
   })

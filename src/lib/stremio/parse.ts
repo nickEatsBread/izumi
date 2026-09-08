@@ -414,7 +414,11 @@ function parseStream(s: Stream): StreamInfo {
     : /\bhlg(?:10)?\b|\bhybrid[ ._-]?log[ ._-]?gamma\b/i.test(low) ? 'HLG'
     : /\bhdr10\b/i.test(low) ? 'HDR10'
     : /\bhdr\b/i.test(low) ? 'HDR' : undefined
-  const source = /\bblu-?ray\b|\bbd(?:rip|mux)?\b|\bremux\b/i.test(low) ? 'BluRay'
+  // Theatrical-copy markers first: a "1080p TELESYNC HEVC" release matches the WEB/BluRay tests
+  // nowhere, parsed as a clean 1080p row, and auto-play treated a phone-filmed screen as equal to
+  // a real rip. One explicit marker is decisive; a bare ".ts" stays a transport-stream container.
+  const source = /\bhd-?cam\b|\bcam-?rip\b|\bcam\b|\bhd-?ts\b|\btele-?sync\b|\btele-?cine\b|\bhq-?cam\b|\bpre-?dvd(?:rip)?\b|\bpdvd\b|\bdvd-?scr\b|\bscreener\b|\br5\b/i.test(low) ? 'CAM'
+    : /\bblu-?ray\b|\bbd(?:rip|mux)?\b|\bremux\b/i.test(low) ? 'BluRay'
     : /\bweb-?dl\b/i.test(low) ? 'WEB-DL'
     : /\bweb-?rip\b/i.test(low) ? 'WEBRip'
     : /\bweb\b/i.test(low) ? 'WEB'

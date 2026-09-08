@@ -6,6 +6,7 @@ import {
   likelyOtherProduction,
   isEpisodeExtra,
   isStandaloneMovie,
+  selfDeclaredOtherProduction,
   wrongFranchiseSeason,
 } from './relevance'
 import { dedupeStreams } from './dedupe'
@@ -89,6 +90,8 @@ export function refineStreams(media: Media, raw: Stream[]): Refined {
   const expectedSeconds = (media.duration ?? 0) * 60
   // Ordered, so a row is attributed to the FIRST rule that objects to it.
   const why = (s: Stream): RejectReason | null => {
+    // The uploader's own "(NOT the …)" bracket outranks a perfectly matching title and year.
+    if (selfDeclaredOtherProduction(s)) return 'other-production'
     // A source can be title-correct yet point at a mini-episode. Compare its declared bytes with
     // AniList's expected runtime using an extremely conservative 16 KiB/s floor: this rejects a
     // 7 MB, two-minute short masquerading as a 24-minute episode without touching even tiny

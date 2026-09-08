@@ -206,6 +206,10 @@ export function scoreInfo(info: StreamInfo, opts: ScoreOptions = {}): { score: n
   if (info.source === 'BluRay') add('BluRay', 2)
   else if (info.source === 'WEB-DL') add('WEB-DL', 1)
   else if (info.source === 'HDTV') add('broadcast rip', -2)
+  // Larger than every positive signal combined (resolution 25, priority 30, seeders 20): a
+  // theatrical cam must lose to ANY clean release of the same cache state, yet still order by
+  // quality among itself when cams are all that exists for a not-yet-released film.
+  else if (info.source === 'CAM') add('theatrical cam/telesync copy', -50)
 
   if (info.hdr) add('HDR', 2)
 

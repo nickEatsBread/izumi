@@ -19,3 +19,7 @@ it('retains compatible fallback encodes and rejects declared unsupported variant
   expect(isTvVideoCompatible({ title: 'Example 2160p HDR10' }, { hdr: false })).toBe(false)
   expect(isTvVideoCompatible({ title: 'Example 1080p H.264' }, { uhd: false, hdr: false })).toBe(true)
 })
+it('rejects making-of documentaries indexed under the film', () => {
+  expect(isSupplementalVideo({ title: 'Example Film (2026) the Making of an Epic' }, 'Example.Film')).toBe(true)
+  expect(isTvVideoCompatible({ title: 'Example 2160p Dolby Vision HDR ENG mp4' })).toBe(false)
+})
