@@ -233,7 +233,7 @@ export function normalizeResolveRequest(value) {
   const excludeCandidateIds = Array.isArray(input.excludeCandidateIds) ? [...new Set(input.excludeCandidateIds
     .filter(id => typeof id === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(id)))].slice(0, 60) : []
   const videoCapabilities = input.videoCapabilities && typeof input.videoCapabilities === 'object'
-    ? Object.fromEntries(['hdr', 'uhd', 'av1'].flatMap(key => typeof input.videoCapabilities[key] === 'boolean' ? [[key, input.videoCapabilities[key]]] : [])) : undefined
+    ? Object.fromEntries(['hdr', 'uhd', 'av1', 'opus', 'flac'].flatMap(key => typeof input.videoCapabilities[key] === 'boolean' ? [[key, input.videoCapabilities[key]]] : [])) : undefined
   return { ref: { provider, type, id }, episode, season, streamType, nativeType, streamIds,
     ...(title ? { title } : {}), ...(excludeCandidateIds.length ? { excludeCandidateIds } : {}), ...(videoCapabilities ? { videoCapabilities } : {}) }
 }
@@ -580,7 +580,6 @@ function aniZipRefineHints(metadata, episode) {
 async function refineContextFor(request, plan, profile, fetcher) {
   const titles = []
   let year
-  let releasedAt
   let expectedSeconds = plan.refine?.expectedSeconds
   let totalEpisodes = plan.refine?.totalEpisodes
   let absoluteNumbered = plan.refine?.absoluteNumbered
@@ -632,8 +631,6 @@ async function refineContextFor(request, plan, profile, fetcher) {
         titles.push(...[meta.name, meta.originalName].flatMap((entry) => typeof entry === 'string' && entry.trim() ? [entry.trim()] : []))
         const debut = Number(String(meta.year ?? '').slice(0, 4))
         if (debut >= 1950 && debut <= 2035) year = debut
-        const premiered = Date.parse(String(meta.released ?? ''))
-        if (Number.isFinite(premiered)) releasedAt = premiered
         const minutes = Number(String(meta.runtime ?? '').match(/\d+/)?.[0])
         if (!expectedSeconds && Number.isFinite(minutes) && minutes > 0) expectedSeconds = Math.round(minutes * 60)
       }
@@ -648,8 +645,6 @@ async function refineContextFor(request, plan, profile, fetcher) {
         .flatMap((value) => typeof value === 'string' && value.trim() ? [value.trim()] : []))
       const debut = Number(String(detail.release_date ?? detail.first_air_date ?? '').slice(0, 4))
       if (debut >= 1950 && debut <= 2035) year = debut
-      const premiered = Date.parse(String(detail.release_date ?? ''))
-      if (Number.isFinite(premiered)) releasedAt = premiered
       const minutes = Number(kind === 'movie' ? detail.runtime : detail.episode_run_time?.[0])
       if (!expectedSeconds && Number.isFinite(minutes) && minutes > 0) expectedSeconds = Math.round(minutes * 60)
       const count = Number(detail.number_of_episodes)
@@ -660,7 +655,6 @@ async function refineContextFor(request, plan, profile, fetcher) {
     titles: [...new Set(titles)].slice(0, 12),
     streamType: request.streamType,
     ...(year ? { year } : {}),
-    ...(releasedAt ? { releasedAt } : {}),
     ...(expectedSeconds ? { expectedSeconds } : {}),
     ...(totalEpisodes ? { totalEpisodes } : {}),
     ...(absoluteNumbered ? { absoluteNumbered: true } : {}),
@@ -976,11 +970,13 @@ function sourcePool(batches, request, profile, refineContext, complete = true) {
 }
 
 function orderedSources(pool, profile, plan) {
+  // The desktop ranks with the same subtitle-language preference; 'none' means no preference.
+  const subtitleLang = profile.subtitleLang && profile.subtitleLang !== 'none' ? profile.subtitleLang : undefined
   const preferred = pickCandidates(pool, profile.quality, plan.want, undefined, {
-    audioLang: profile.audioLang || undefined, cacheCheck: 'none', allowUncached: !!profile.debrid, sourcePriority: profile.sourcePriority,
+    audioLang: profile.audioLang || undefined, subtitleLang, cacheCheck: 'none', allowUncached: !!profile.debrid, sourcePriority: profile.sourcePriority,
   })
   return [...new Set([...preferred, ...pickCandidates(pool, profile.quality, plan.want, undefined, {
-    cacheCheck: 'none', allowUncached: !!profile.debrid, sourcePriority: profile.sourcePriority,
+    subtitleLang, cacheCheck: 'none', allowUncached: !!profile.debrid, sourcePriority: profile.sourcePriority,
   })])]
 }
 
