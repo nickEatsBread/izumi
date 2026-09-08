@@ -880,7 +880,7 @@ async function mapLimit(values, limit, operation) {
   return output
 }
 
-async function resolveAddon(base, ids, type, fetcher, allowPrivate = false, addonIndex = 0, deadline = Infinity, subtitlesOnly = false, onStreams) {
+async function resolveAddon(base, ids, type, fetcher, allowPrivate = false, addonIndex = 0, deadline = Infinity, subtitlesOnly = false, onStreams, onSubtitles) {
   const failures = []
   const failed = (message) => failures.push(`A configured source ${message}`)
   const manifest = await fetchJson(fetcher, addonEndpoint(base, '/manifest.json'), Math.min(MANIFEST_TIMEOUT_MS, deadline - Date.now()), failed)
@@ -899,6 +899,10 @@ async function resolveAddon(base, ids, type, fetcher, allowPrivate = false, addo
       const url = cleanUrl(track?.url)
       return url ? [{ url, title: cleanText(track.title ?? track.name, 160), lang: cleanText(track.lang, 24) }] : []
     })
+  }).then(lists => {
+    const tracks = lists.flat()
+    if (tracks.length) onSubtitles?.(tracks)
+    return tracks
   })
   const ask = subtitlesOnly ? [] : ids.filter((id) => acceptsStreamId(manifest, type, id))
   const responses = await mapLimit(ask, 2, async (id) => {
@@ -920,7 +924,7 @@ async function resolveAddon(base, ids, type, fetcher, allowPrivate = false, addo
   }))
   const batch = { streams, failures, tvRequests: failures.length ? tvSourceRequests(base, ask, type, addonIndex) : [] }
   onStreams?.(batch)
-  return { ...batch, subtitles: (await subtitlesPromise).flat() }
+  return { ...batch, subtitles: await subtitlesPromise }
 }
 
 async function embeddedStremioStreams(request, bases, plan, fetcher, allowPrivate = false) {
@@ -1037,11 +1041,29 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
     const value = direct ? { ...direct, delivery: 'direct' } : debridResults.get(stream.infoHash)
     return value && !request.excludeCandidateIds?.includes(value.id) ? [value] : []
   }).slice(0, MAX_RESPONSE_CANDIDATES)
+  const addonSubtitleBatches = []
+  let serviceSubtitles = []
+  // Sidecars remain first; independently installed subtitle add-ons fill the remaining slots.
+  // Copies keep shared debrid results unmutated, and the byte bound keeps a full response and
+  // its progress events inside the resolve channel's message limit.
+  const withSubtitles = list => list.map(candidate => {
+    const seen = new Set()
+    const merged = [...(candidate.subtitles ?? []), ...addonSubtitleBatches.flat(), ...(plan.subtitleTracks ?? []), ...serviceSubtitles]
+      .filter(track => {
+        const key = track.url ?? JSON.stringify(track.download)
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      .filter((track, index, tracks) => index < 40 && encoder.encode(JSON.stringify(tracks.slice(0, index + 1))).length < 8_000)
+    return { ...candidate, subtitles: merged }
+  })
   const publishCandidates = async candidates => {
-    const key = JSON.stringify(candidates)
-    if (!candidates.length || key === lastProgressKey) return
+    const merged = withSubtitles(candidates)
+    const key = JSON.stringify(merged)
+    if (!merged.length || key === lastProgressKey) return
     lastProgressKey = key
-    await options.onProgress({ candidates: structuredClone(candidates), selectedId: candidates[0].id, ...sourcePreferences(profile) })
+    await options.onProgress({ candidates: structuredClone(merged), selectedId: merged[0].id, ...sourcePreferences(profile) })
   }
   const prepareOnce = stream => {
     if (!debridAttempts.has(stream.infoHash)) {
@@ -1078,6 +1100,7 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
       await publishCandidates(availableCandidates(orderedSources(pool, profile, plan)))
     }).catch(error => { progressError = error })
   }
+  void serviceSubtitlesPromise.then(tracks => { serviceSubtitles = tracks; showProgress() })
   const showBatch = batch => {
     observed.push(batch)
     showProgress()
@@ -1124,7 +1147,7 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
           }).catch(error => { if (signal?.aborted) progressError = error })
           delegated.push(work)
         }
-      })),
+      }, tracks => { addonSubtitleBatches.push(tracks); showProgress() })),
     ]
   await Promise.all(delegated)
   batches.push(...delegatedBatches)
@@ -1168,17 +1191,8 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
     if (candidates.length >= MAX_RESPONSE_CANDIDATES) break
   }
   candidates.splice(MAX_RESPONSE_CANDIDATES)
-  // Sidecars remain first; independently installed subtitle add-ons fill the remaining slots.
   const addonSubtitles = batches.flatMap(batch => batch.subtitles ?? []).concat(plan.subtitleTracks ?? [], await serviceSubtitlesPromise)
-  for (const candidate of candidates) {
-    const seen = new Set()
-    candidate.subtitles = [...candidate.subtitles, ...addonSubtitles].filter(track => {
-      const key = track.url ?? JSON.stringify(track.download)
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    }).slice(0, 40)
-  }
+  const finalCandidates = withSubtitles(candidates)
   signal?.throwIfAborted()
   const tvSourceLookup = !options.fetchSource && candidates.length < MAX_RESPONSE_CANDIDATES && requestValue.tvSourceLookup === 1 && !options.tvContinuation && options.tvLookupContext
     ? await createTvSourceLookup(profile, request, { ...plan, subtitleTracks: addonSubtitles.filter((track, index, tracks) =>
@@ -1192,8 +1206,8 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
         : `${profile.debrid ? providerName(profile.debrid.provider) + ' is configured, but the' : 'The'} returned sources could not be played on the TV.`)
   }
   return {
-    candidates,
-    selectedId: candidates[0]?.id ?? null,
+    candidates: finalCandidates,
+    selectedId: finalCandidates[0]?.id ?? null,
     queriedIds: plan.ids,
     rejected,
     failures: [...new Set([...failures, ...debridFailures])].slice(0, 3),

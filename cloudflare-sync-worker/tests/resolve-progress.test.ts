@@ -48,6 +48,25 @@ describe('progressive source resolution', () => {
     expect(streamed.candidates).toEqual(http.candidates)
     expect(streamed.selectedId).toBe(http.selectedId)
   })
+  it('publishes add-on and service subtitle tracks to progress listeners before completion', async () => {
+    const { fetcher: base, release } = fetchFixture()
+    const fetcher = vi.fn(async (raw: any) => {
+      const url = String(raw)
+      if (url === 'https://captions.example/manifest.json') return response({ resources: [{ name: 'subtitles', types: ['movie'], idPrefixes: ['tt'] }] })
+      if (url.includes('captions.example/subtitles/')) return response({ subtitles: [{ url: 'https://subs.example/en.srt', lang: 'eng', title: 'English SDH' }] })
+      return base(raw)
+    })
+    const onProgress = vi.fn()
+    const resolving = resolveDirectSources({ ...profile, addons: ['https://fast.example', 'https://captions.example', 'https://slow.example'] }, input, fetcher, { onProgress })
+    try {
+      // A TV that keeps only the latest progress snapshot (channel drop, timeout) must still
+      // receive every discovered subtitle track, not just per-release sidecars.
+      await vi.waitFor(() => expect(onProgress.mock.calls.some(([value]) =>
+        value.candidates[0]?.subtitles?.some((track: any) => track.url === 'https://subs.example/en.srt'))).toBe(true))
+    } finally { release() }
+    const result = await resolving
+    expect(result.candidates[0].subtitles).toContainEqual({ url: 'https://subs.example/en.srt', title: 'English SDH', lang: 'eng' })
+  })
   it('delegates a blocked fetch and prepares its result before unrelated discovery finishes', async () => {
     const { fetcher, release } = fetchFixture()
     const fetchSource = vi.fn(async () => [{ infoHash: 'a'.repeat(40), title: 'Example Movie 1080p', behaviorHints: { filename: 'Example.Movie.mkv' } }])
