@@ -34,3 +34,9 @@ it('rejects releases whose only declared audio the TV platform cannot decode', (
   expect(isTvVideoCompatible({ title: 'Example Film 2016 1080p WEB Opus x264' })).toBe(true)
   expect(isTvVideoCompatible({ title: 'Example Film 2016 1080p WEB FLAC x264' }, { flac: false })).toBe(false)
 })
+it('recognises trailer and teaser labels written in other scripts', () => {
+  expect(isSupplementalVideo({ title: 'Пример / Example Film [2026, ProRes encode, DTS-HD MA/AC-3 5.1 ENG] Трейлер #2 (4K/IMAX4K)' }, 'Example Film')).toBe(true)
+  expect(isSupplementalVideo({ title: 'Example Film 2026 Tráiler oficial 1080p' }, 'Example Film')).toBe(true)
+  expect(isSupplementalVideo({ title: 'Example Film 2026 1080p', behaviorHints: { filename: 'ExampleFilm_IMAX_TLR-2_3840x2024.mkv' } }, 'Example Film')).toBe(true)
+  expect(isSupplementalVideo({ title: 'Пример / Example Film [2026, WEB-DL 1080p]' }, 'Example Film')).toBe(false)
+})

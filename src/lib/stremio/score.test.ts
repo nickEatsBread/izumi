@@ -229,3 +229,25 @@ suite('theatrical cam penalty', () => {
     expect(camScore).toBeGreaterThan(scoreInfo(lowCam).score)
   })
 })
+
+suite('bitrate awareness', () => {
+  const runtime = { runtimeSeconds: 150 * 60 }
+  it('penalises a 1080p feature whose bytes cannot hold a credible 1080p encode', () => {
+    const thin = scoreInfo(info('Example.2026.1080p.WEBRip.x264.mp4', { behaviorHints: { filename: 'Example.2026.1080p.WEBRip.x264.mp4', videoSize: 1_600_000_000 } }), runtime)
+    const full = scoreInfo(info('Example.2026.1080p.WEB-DL.x264.mkv', { behaviorHints: { filename: 'Example.2026.1080p.WEB-DL.x264.mkv', videoSize: 4_300_000_000 } }), runtime)
+    expect(thin.reasons.find((reason) => reason.signal.includes('bitrate'))?.delta).toBe(-8)
+    expect(full.reasons.some((reason) => reason.signal.includes('low bitrate'))).toBe(false)
+    expect(full.score).toBeGreaterThan(thin.score)
+  })
+  it('lets a well-encoded release outrank a thin one that reports more seeders', () => {
+    const thin = score('Example.2026.1080p.WEBRip.x264.mp4 👤 100', { behaviorHints: { filename: 'Example.2026.1080p.WEBRip.x264.mp4', videoSize: 1_700_000_000 } }, runtime)
+    const full = score('Example.2026.1080p.WEB-DL.x264.mkv 👤 70', { behaviorHints: { filename: 'Example.2026.1080p.WEB-DL.x264.mkv', videoSize: 4_300_000_000 } }, runtime)
+    expect(full).toBeGreaterThan(thin)
+  })
+  it('stays neutral without a runtime, without a size, and under direct P2P', () => {
+    const extra = { behaviorHints: { filename: 'Example.2026.1080p.mp4', videoSize: 1_700_000_000 } }
+    expect(scoreInfo(info('Example.2026.1080p.mp4', extra)).reasons.some((reason) => reason.signal.includes('bitrate'))).toBe(false)
+    expect(scoreInfo(info('Example.2026.1080p.mp4'), runtime).reasons.some((reason) => reason.signal.includes('bitrate'))).toBe(false)
+    expect(scoreInfo(info('Example.2026.1080p.mp4', { ...extra, infoHash: 'a'.repeat(40), url: undefined }), { ...runtime, directP2p: true }).reasons.some((reason) => reason.signal.includes('bitrate'))).toBe(false)
+  })
+})

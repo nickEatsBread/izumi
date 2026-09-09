@@ -330,3 +330,12 @@ describe('isEpisodeExtra (scene trailer packs)', () => {
     expect(isEpisodeExtra(s('Settlers.2026.1080p.WEB-DL.mkv'))).toBe(false)
   })
 })
+
+describe('isEpisodeExtra (trailer labels in other scripts)', () => {
+  it('drops a trailer labelled in Cyrillic or Spanish', () => {
+    expect(isEpisodeExtra(s('Пример / Example [2026, ProRes encode] Трейлер #2 (4K).mkv'))).toBe(true)
+    expect(isEpisodeExtra(s('Example.2026.Trailer.Oficial.mkv'))).toBe(true)
+    expect(isEpisodeExtra(s('Example 2026 Tráiler 1080p.mkv'))).toBe(true)
+    expect(isEpisodeExtra(s('Пример / Example [2026, WEB-DL 1080p].mkv'))).toBe(false)
+  })
+})

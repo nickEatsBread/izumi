@@ -107,6 +107,7 @@
   // Ranking inputs the ordering can't derive from a stream alone: the language the user asked to
   // hear, the group the previous episode of THIS title played from, and the curated recommendation.
   const rankOpts = $derived({
+    runtimeSeconds: pick?.media.duration && pick.media.duration > 0 ? pick.media.duration * 60 : undefined,
     audioLang: $preferredAudioLang,
     subtitleLang: $preferredSubLang,
     previousGroup: $bingeSource?.mediaId === pick?.media.id ? $bingeSource?.group : undefined,

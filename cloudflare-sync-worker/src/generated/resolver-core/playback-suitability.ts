@@ -3,8 +3,12 @@
 import type { Stream } from './parse'
 
 /** Explicit extra markers are evidence; missing release metadata is not. */
+// Trailer/teaser vocabulary beyond English: uploaders on non-English trackers label a trailer
+// pack in their own language while the release title stays in English.
+const SUPPLEMENTAL_WORDS = /(?<![\p{L}\p{N}])(?:trailer|teaser|prologue|preview|sample|featurette|promo|behind the scenes|deleted scenes|making of|tlr\d*|tsr\d*|трейлер|тизер|tráiler|bande annonce)(?![\p{L}\p{N}])/iu
+
 export function isSupplementalVideo(stream: Stream, title = ''): boolean {
-  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
   const identity = normalize(title)
   let path = ''
   try { path = decodeURIComponent(new URL(stream.url || '').pathname).split('/').pop() || '' } catch { /* Opaque URLs have no filename evidence. */ }
@@ -13,7 +17,7 @@ export function isSupplementalVideo(stream: Stream, title = ''): boolean {
     let text = normalize(value)
     if (identity) text = text.split(identity).join(' ')
     // tlr/tsr are the scene's own trailer/teaser abbreviations ("Title_TLR-2_4K…").
-    return /\b(?:trailer|teaser|prologue|preview|sample|featurette|promo|behind the scenes|deleted scenes|making of|tlr\d*|tsr\d*)\b/.test(text)
+    return SUPPLEMENTAL_WORDS.test(text)
   })
 }
 

@@ -212,10 +212,13 @@ export function selfDeclaredOtherProduction(stream: Stream): boolean {
 // tlr/tsr are the scene's trailer/teaser abbreviations ("Title_IMAX_TLR-2_3840x2024…"): a trailer
 // pack under a film's id parses as a 4K, correct-year, title-relevant release and wins outright.
 const EPISODE_EXTRA = /\b(?:ncop\d*|nced\d*|ncbd|creditless|textless|non[-\s]?credit|clean\s+(?:opening|ending)|op\s?\d{1,2}|ed\s?\d{1,2}|preview|teaser|\btrailer\b|tlr\d*|tsr\d*|promo|\bpv\b|\bcm\b|menu)\b/i
+// The same markers in other scripts; \b cannot see boundaries next to non-ASCII letters.
+const EPISODE_EXTRA_WORDS = /(?<![\p{L}\p{N}])(?:трейлер|тизер|tráiler|bande[-\s]?annonce)(?![\p{L}\p{N}])/iu
 export function isEpisodeExtra(stream: Stream): boolean {
   // Underscores are word characters, so an underscore-separated release name hides every token
   // from \b. Test it with them as spaces.
-  return EPISODE_EXTRA.test(nameOf(stream).replace(/_/g, ' '))
+  const name = nameOf(stream).replace(/_/g, ' ')
+  return EPISODE_EXTRA.test(name) || EPISODE_EXTRA_WORDS.test(name)
 }
 
 // Same-title, different production. A shared kitsu id (One Piece = the 1999 anime
