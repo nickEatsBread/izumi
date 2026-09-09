@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest'
 
 const src = readFileSync(fileURLToPath(new URL('./Carousel.svelte', import.meta.url)), 'utf8')
 const card = readFileSync(fileURLToPath(new URL('./SmallCard.svelte', import.meta.url)), 'utf8')
+const nav = readFileSync(fileURLToPath(new URL('../../nav/index.ts', import.meta.url)), 'utf8')
 
 /** Each arrow button paired with the `{#if}` condition that guards it. */
 function arrowGuards(): Array<{ direction: string; condition: string }> {
@@ -25,13 +26,18 @@ describe('Carousel edge arrows', () => {
     expect(src).toContain('const mob = $derived($isMobile)')
   })
 
-  it('exposes carousel boundaries and gesture handling only for horizontal rows', () => {
-    for (const attribute of ['data-nav-row', 'data-carousel-scroller', 'data-nav-row-items']) {
-      expect(src).toContain(`${attribute}={!grid ? '' : undefined}`)
-    }
+  it('exposes gesture handling only for horizontal rows but keeps every row nav-discoverable', () => {
+    expect(src).toContain(`data-carousel-scroller={!grid ? '' : undefined}`)
     expect(src).toContain('use:scrollBehavior={!grid}')
     expect(src).toContain('gameModeCarouselTouch(node)')
     expect(src).toContain('touch.destroy()')
+    // Grid rows stay inside the game/TV nav fast path. The section keeps `data-nav-row` and marks
+    // itself wrapping, so pickInNavRows scopes its geometric search to the row's own cards instead
+    // of stepping whole sections (which would skip grid lines) or passing over the whole page.
+    expect(src).toContain('<section data-nav-row data-nav-row-wrap={grid')
+    expect(src).toContain('data-nav-row-items use:scrollBehavior={!grid}')
+    expect(nav).toContain("const wrapping = row.hasAttribute('data-nav-row-wrap')")
+    expect(nav).toContain('if (wrapping && itemRoot.contains(active))')
   })
 
   it('guards both arrows', () => {

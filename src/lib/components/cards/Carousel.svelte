@@ -86,7 +86,10 @@
   })
 </script>
 
-<section data-nav-row={!grid ? '' : undefined} data-theme-row={scope?.().id} data-theme-row-title={scope?.().title ?? title} class="browse-render-row group/carousel relative mb-8" style:margin-bottom={appearance.spacing !== undefined ? `${appearance.spacing}px` : undefined}>
+<!-- Grid rows stay inside the game/TV nav fast path: the section always exposes `data-nav-row`,
+     and `data-nav-row-wrap` tells pickInNavRows the row paints several lines, so vertical moves
+     search this row's own cards instead of stepping whole sections (and skipping grid lines). -->
+<section data-nav-row data-nav-row-wrap={grid ? '' : undefined} data-theme-row={scope?.().id} data-theme-row-title={scope?.().title ?? title} class="browse-render-row group/carousel relative mb-8" style:margin-bottom={appearance.spacing !== undefined ? `${appearance.spacing}px` : undefined}>
   <div class="mb-2 flex items-baseline justify-between" class:px-8={!mob} class:px-4={mob}>
     <div class="flex min-w-0 items-baseline gap-2">
       <h2 class="truncate text-lg font-black" style:font-size={appearance.titleSize ? `${appearance.titleSize}px` : undefined}>{title}</h2>
@@ -101,7 +104,7 @@
     {/if}
   </div>
   <div class="relative">
-    <div bind:this={scroller} data-carousel-scroller={!grid ? '' : undefined} data-nav-row-items={!grid ? '' : undefined} use:scrollBehavior={!grid} onwheel={onWheel} onscroll={update}
+    <div bind:this={scroller} data-carousel-scroller={!grid ? '' : undefined} data-nav-row-items use:scrollBehavior={!grid} onwheel={onWheel} onscroll={update}
          class="flex gap-3 overflow-x-scroll pb-2" class:px-8={!mob} class:px-4={mob} class:pt-3={gm}
          class:theme-grid={grid} style:gap={appearance.gap !== undefined ? `${appearance.gap}px` : undefined} style:--theme-grid-width={`${appearance.width ?? 152}px`}>
       {@render children()}
