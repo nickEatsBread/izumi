@@ -131,7 +131,7 @@
       "endTime": 1788862392051.2942,
       "status": "passed",
       "message": "",
-      "name": "C:/Users/Student/Documents/Coding projects/Testing/anAnimeThemeForStremio/src/lib/companion/checkpoint-regressions.test.ts"
+      "name": "src/lib/companion/checkpoint-regressions.test.ts"
     },
     {
       "assertionResults": [
@@ -428,7 +428,7 @@
       "endTime": 1788862392498.6084,
       "status": "passed",
       "message": "",
-      "name": "C:/Users/Student/Documents/Coding projects/Testing/anAnimeThemeForStremio/src/lib/recommendations/watch-habits-regressions.test.ts"
+      "name": "src/lib/recommendations/watch-habits-regressions.test.ts"
     }
   ]
 }

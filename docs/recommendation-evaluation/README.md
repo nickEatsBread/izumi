@@ -166,6 +166,8 @@ No live user history, account access, deployed Worker or physical TV was used fo
 
 Run from the full-client repository root. Current regressions should pass. Preserve the original
 `results.json`, `existing-tests.json` and `benchmark-results.json` when recording new runs.
+The JSON reporter writes absolute file paths and stack traces; strip the machine-specific prefix
+from any new output before committing it.
 
 ```powershell
 .\node_modules\.bin\vitest.cmd run --config docs/recommendation-evaluation/vitest.config.ts --reporter=json --outputFile docs/recommendation-evaluation/fixed-results.json
