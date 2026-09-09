@@ -3,6 +3,9 @@
 # libass 0.17.4; upstream has not published the 0.17.5 security update as a new AAR yet.
 set -euo pipefail
 
+# NDK_VERSION: the NDK every Android job installs, which must be the one upstream built with.
+source scripts/ci/android-toolchain.env
+
 readonly REPO="https://github.com/jarnedemeulemeester/libmpv-android.git"
 readonly COMMIT="f77f62c316c6b222e75ece48e1fbf1e798fd83e7"
 readonly MPV_VERSION="0.41.0"
@@ -24,7 +27,7 @@ if [ ! -s "$CACHED_AAR" ]; then
   git -C "$WORK/source" checkout --detach "$COMMIT"
 
   # Pin proof before spending time compiling the native dependency graph.
-  grep -q '^v_ndk=29\.' "$WORK/source/buildscripts/include/depinfo.sh"
+  grep -q "^v_ndk=${NDK_VERSION}$" "$WORK/source/buildscripts/include/depinfo.sh"
   grep -q "^v_mpv=${MPV_VERSION}$" "$WORK/source/buildscripts/include/depinfo.sh"
   grep -q "^v_ffmpeg=${FFMPEG_VERSION}$" "$WORK/source/buildscripts/include/depinfo.sh"
   grep -q "^v_libplacebo=${LIBPLACEBO_VERSION}$" "$WORK/source/buildscripts/include/depinfo.sh"
@@ -67,5 +70,5 @@ cp "$CACHED_AAR" "$DEST"
 
 # The mpv binary includes libass's source version string, giving the release job an assertion on
 # the actual payload rather than merely trusting the dependency script used to build it.
-unzip -p "$DEST" jni/arm64-v8a/libmpv.so | strings | grep 'commit: 0\.17\.5-' >/dev/null
-echo "Staged arm64 libmpv with libass 0.17.5: $DEST"
+unzip -p "$DEST" jni/arm64-v8a/libmpv.so | strings | grep -F "commit: ${LIBASS_VERSION}-" >/dev/null
+echo "Staged arm64 libmpv with libass ${LIBASS_VERSION}: $DEST"

@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # upstream-versions.yml dispatches this onto its bot PR branches when the PRs were opened with
+  # GITHUB_TOKEN, which never triggers `pull_request` on its own.
+  workflow_dispatch:
 
 # Least privilege: this workflow only reads the tree to type-check, test and build. Without an
 # explicit block the job inherits the repo default, which can be write — an unnecessary token
@@ -38,6 +41,15 @@ jobs:
         with:
           node-version: 24
           cache: npm
+
+      # The derived halves of the native-build pins (Windows asset + SHA-256, Flatpak tag→commit,
+      # the Android versions and NDK behind the libmpv-android commit) must match their primaries.
+      # Renovate keeps them in step (upstream-versions.yml); this catches a hand edit that forgot
+      # the other half, at PR time instead of in a release run.
+      - name: Upstream pin consistency
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ci/sync-upstream-pins.mjs --check
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -167,12 +179,12 @@ jobs:
   compile-android:
     runs-on: ubuntu-latest
     timeout-minutes: 35
-    env:
-      # r28+ emits 16 KiB-aligned ELF LOAD segments by default. Match the pinned libmpv build.
-      NDK_VERSION: "29.0.14206865"
-      BUILD_TOOLS: "36.0.0"
     steps:
       - uses: actions/checkout@v7
+
+      # NDK_VERSION + BUILD_TOOLS, shared with every other Android job and synced from upstream.
+      - name: Android toolchain pins
+        run: sed -e '/^#/d' -e '/^$/d' scripts/ci/android-toolchain.env >> "$GITHUB_ENV"
 
       - name: Setup JDK 21
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -247,9 +259,9 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.cache/izumi-libmpv-android
-          key: libmpv-android-arm64-f77f62c316c6-${{ hashFiles('scripts/ci/libmpv-android.sh') }}
+          key: libmpv-android-arm64-${{ hashFiles('scripts/ci/libmpv-android.sh', 'scripts/ci/android-toolchain.env') }}
 
-      - name: Build libmpv with libass 0.17.5
+      - name: Build libmpv (reviewed source pin)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: bash scripts/ci/libmpv-android.sh
 

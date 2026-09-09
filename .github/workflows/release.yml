@@ -548,11 +548,12 @@ jobs:
       fail-fast: false
       matrix:
         flavor: [lite, full]
-    env:
-      NDK_VERSION: "29.0.14206865"
-      BUILD_TOOLS: "36.0.0"
     steps:
       - uses: actions/checkout@v7
+
+      # NDK_VERSION + BUILD_TOOLS, shared with every other Android job and synced from upstream.
+      - name: Android toolchain pins
+        run: sed -e '/^#/d' -e '/^$/d' scripts/ci/android-toolchain.env >> "$GITHUB_ENV"
 
       - name: Resolve release tag
         id: meta
@@ -605,7 +606,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: ~/.cache/izumi-libmpv-android
-          key: libmpv-android-arm64-f77f62c316c6-${{ hashFiles('scripts/ci/libmpv-android.sh') }}
+          key: libmpv-android-arm64-${{ hashFiles('scripts/ci/libmpv-android.sh', 'scripts/ci/android-toolchain.env') }}
 
       - name: Restore Gradle cache
         uses: actions/cache/restore@v6
@@ -616,7 +617,7 @@ jobs:
           key: gradle-android-${{ hashFiles('src-tauri/Cargo.lock', 'scripts/ci/android-scaffold.sh') }}
           restore-keys: gradle-android-
 
-      - name: Build libmpv with libass 0.17.5
+      - name: Build libmpv (reviewed source pin)
         if: matrix.flavor == 'full'
         run: bash scripts/ci/libmpv-android.sh
 
