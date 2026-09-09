@@ -10,6 +10,7 @@ import {
   buildStreamIds,
   dedupeStreams,
   describe,
+  hostedRouteInfoHash,
   isNotice,
   isSupplementalVideo,
   isTvVideoCompatible,
@@ -230,12 +231,17 @@ export function normalizeResolveRequest(value) {
     ? input.nativeType
     : undefined
   const title = cleanText(input.title, 240)
+  // Catalogue evidence the TV already displays. Release-year and runtime let the shared refinement
+  // reject a same-title production from another decade when no catalogue lookup can answer here.
+  const year = positiveInt(input.year, 2_100)
+  const runtimeMinutes = positiveInt(input.runtimeMinutes, 10_080)
   const excludeCandidateIds = Array.isArray(input.excludeCandidateIds) ? [...new Set(input.excludeCandidateIds
     .filter(id => typeof id === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(id)))].slice(0, 60) : []
   const videoCapabilities = input.videoCapabilities && typeof input.videoCapabilities === 'object'
     ? Object.fromEntries(['hdr', 'uhd', 'av1', 'opus', 'flac'].flatMap(key => typeof input.videoCapabilities[key] === 'boolean' ? [[key, input.videoCapabilities[key]]] : [])) : undefined
   return { ref: { provider, type, id }, episode, season, streamType, nativeType, streamIds,
-    ...(title ? { title } : {}), ...(excludeCandidateIds.length ? { excludeCandidateIds } : {}), ...(videoCapabilities ? { videoCapabilities } : {}) }
+    ...(title ? { title } : {}), ...(year && year >= 1_900 ? { year } : {}), ...(runtimeMinutes ? { runtimeMinutes } : {}),
+    ...(excludeCandidateIds.length ? { excludeCandidateIds } : {}), ...(videoCapabilities ? { videoCapabilities } : {}) }
 }
 
 function addonEndpoint(base, suffix) {
@@ -651,6 +657,9 @@ async function refineContextFor(request, plan, profile, fetcher) {
       if (!totalEpisodes && Number.isInteger(count) && count > 0) totalEpisodes = count
     }
   }
+  // The TV's own catalogue row is the fallback: it is the same evidence the viewer chose from.
+  year ??= request.year
+  if (!expectedSeconds && request.runtimeMinutes) expectedSeconds = request.runtimeMinutes * 60
   return {
     titles: [...new Set(titles)].slice(0, 12),
     streamType: request.streamType,
@@ -798,6 +807,7 @@ async function resolveConfiguredDebrid(stream, profile, want, budgetMs = 22_000,
       source: name,
       contentType: contentType({ ...stream, url }),
       subtitles,
+      ...candidateOrigin(stream),
       delivery: 'debrid',
     }
   } catch (error) {
@@ -831,12 +841,27 @@ function contentType(stream) {
   return 'video/mp4'
 }
 
-function directCandidate(stream, profile) {
+/** Picker metadata shared by every delivery: who listed the release and how it reads at a glance. */
+function candidateOrigin(stream) {
+  const info = describe(stream)
+  const name = cleanText(stream.__origin?.name ?? stream.__addonName, 120)
+  const logo = cleanUrl(stream.__origin?.logo, 2_048)
+  return {
+    ...(name ? { origin: { name, ...(logo ? { logo } : {}) } } : {}),
+    ...(info.sizeLabel ? { size: cleanText(info.sizeLabel, 24) } : {}),
+    ...(info.seeders != null && Number.isFinite(info.seeders) ? { seeders: Math.max(0, Math.floor(info.seeders)) } : {}),
+    ...(info.group ? { group: cleanText(info.group, 60) } : {}),
+  }
+}
+
+function directCandidate(stream, profile, includeHostedRoute = false) {
   // Stremio's `notWebReady` means the URL is unsuitable for its browser player (for example an
   // MKV, plain HTTP URL, or a stream carrying proxyHeaders). Samsung AVPlay is not a browser, so
   // the hint alone must not discard otherwise portable debrid/direct URLs. Required headers and
   // non-public URLs are checked independently below.
   if (!stream.url || stream.__hosted) return null
+  // A gateway route adopted as a torrent is prepared through the owner's provider first.
+  if (stream.__hostedRoute && stream.infoHash && !includeHostedRoute) return null
   const url = cleanPlaybackUrl(stream.url, profile.allowPrivateNetworkSources)
   const headers = playbackHeaders(stream)
   if (!url || !headers) return null
@@ -855,6 +880,8 @@ function directCandidate(stream, profile) {
     source: cleanText(info.addon ?? stream.__origin?.name, 120),
     contentType: contentType(stream),
     subtitles,
+    ...candidateOrigin(stream),
+    ...(stream.__hostedRoute ? { hosted: true } : {}),
     ...(headers.cookies ? { cookies: headers.cookies } : {}),
     ...(headers.userAgent ? { userAgent: headers.userAgent } : {}),
     ...(publicHostname(new URL(url).hostname) ? {} : { lan: true }),
@@ -874,7 +901,22 @@ async function mapLimit(values, limit, operation) {
   return output
 }
 
-async function resolveAddon(base, ids, type, fetcher, allowPrivate = false, addonIndex = 0, deadline = Infinity, subtitlesOnly = false, onStreams, onSubtitles) {
+/**
+ * A gateway playback route names the torrent it would serve. Those routes are minted for the
+ * network address that fetched the stream list, which here is the Worker rather than the TV, so
+ * the TV can be refused when it connects. When the owner's provider is configured, prepare the
+ * same release through it instead and keep the route only as a last resort.
+ */
+function adoptHostedRoute(stream, resolveHosted) {
+  if (stream.infoHash || !stream.url) return stream
+  const hash = hostedRouteInfoHash(stream.url)
+  if (!hash) return stream
+  return resolveHosted
+    ? { ...stream, infoHash: hash, __hostedRoute: true }
+    : { ...stream, __hostedRoute: true }
+}
+
+async function resolveAddon(base, ids, type, fetcher, allowPrivate = false, addonIndex = 0, deadline = Infinity, subtitlesOnly = false, onStreams, onSubtitles, resolveHosted = false) {
   const failures = []
   const failed = (message) => failures.push(`A configured source ${message}`)
   const manifest = await fetchJson(fetcher, addonEndpoint(base, '/manifest.json'), Math.min(MANIFEST_TIMEOUT_MS, deadline - Date.now()), failed)
@@ -904,24 +946,25 @@ async function resolveAddon(base, ids, type, fetcher, allowPrivate = false, addo
     return Array.isArray(result?.streams) ? result.streams.slice(0, MAX_STREAMS_PER_ADDON) : []
   })
   const addonName = cleanText(manifest?.name, 120) ?? new URL(base).hostname
+  const addonLogo = cleanUrl(manifest?.logo, 2_048)
   const streams = responses.flatMap((streams, requestIndex) => streams.flatMap((raw, upstreamRank) => {
     const clean = sanitizeStream(raw, allowPrivate)
     if (!clean) return []
-    return [normalizeStreamBehavior({
+    return [normalizeStreamBehavior(adoptHostedRoute({
       ...clean,
       __addonName: addonName,
       // The SAME opaque origin id the desktop stores in its source-priority order, so the synced
       // trust order recognises this row.
-      __origin: { kind: 'addon', id: addonOriginId(base), name: addonName },
+      __origin: { kind: 'addon', id: addonOriginId(base), name: addonName, ...(addonLogo ? { logo: addonLogo } : {}) },
       __evidence: { upstreamRank, requestId: ask[requestIndex] },
-    })]
+    }, resolveHosted))]
   }))
   const batch = { streams, failures, tvRequests: failures.length ? tvSourceRequests(base, ask, type, addonIndex) : [] }
   onStreams?.(batch)
   return { ...batch, subtitles: await subtitlesPromise }
 }
 
-async function embeddedStremioStreams(request, bases, plan, fetcher, allowPrivate = false) {
+async function embeddedStremioStreams(request, bases, plan, fetcher, allowPrivate = false, resolveHosted = false) {
   if (request.ref.provider !== 'stremio' || !plan.addonId || !bases.length) {
     return { declared: false, streams: [] }
   }
@@ -947,12 +990,12 @@ async function embeddedStremioStreams(request, bases, plan, fetcher, allowPrivat
   const streams = selected.streams.slice(0, MAX_STREAMS_PER_ADDON).flatMap((raw, upstreamRank) => {
     const clean = sanitizeStream(raw, allowPrivate)
     if (!clean) return []
-    return [normalizeStreamBehavior({
+    return [normalizeStreamBehavior(adoptHostedRoute({
       ...clean,
       __addonName: 'Embedded source',
       __origin: { kind: 'addon', id: addonOriginId(base), name: 'Embedded source' },
       __evidence: { upstreamRank, requestId: selected.id },
-    })]
+    }, resolveHosted))]
   })
   return { declared: true, streams }
 }
@@ -1017,7 +1060,7 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
   const idsForAddon = base => plan.addonId && catalogInternals.fnv(catalogInternals.normalizeBase(base)) !== plan.addonId
     ? globalIds : plan.ids
   const embedded = options.tvContinuation ? { declared: false, streams: [] } : await embeddedStremioStreams(
-    request, resolverAddons, plan, fetcher, profile.allowPrivateNetworkSources,
+    request, resolverAddons, plan, fetcher, profile.allowPrivateNetworkSources, !!profile.debrid,
   )
   const resourceType = request.ref.provider === 'stremio' ? request.nativeType ?? request.streamType : request.streamType
   const sourceDeadline = Date.now() + 12_000
@@ -1034,7 +1077,7 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
   let lastProgressKey = ''
   const availableCandidates = ordered => ordered.flatMap(stream => {
     const direct = directCandidate(stream, profile)
-    const value = direct ? { ...direct, delivery: 'direct' } : debridResults.get(stream.infoHash)
+    const value = direct ? { ...direct, delivery: direct.hosted ? 'hosted' : 'direct' } : debridResults.get(stream.infoHash)
     return value && !request.excludeCandidateIds?.includes(value.id) ? [value] : []
   }).slice(0, MAX_RESPONSE_CANDIDATES)
   const addonSubtitleBatches = []
@@ -1143,7 +1186,7 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
           }).catch(error => { if (signal?.aborted) progressError = error })
           delegated.push(work)
         }
-      }, tracks => { addonSubtitleBatches.push(tracks); showProgress() })),
+      }, tracks => { addonSubtitleBatches.push(tracks); showProgress() }, !!profile.debrid)),
     ]
   await Promise.all(delegated)
   batches.push(...delegatedBatches)
@@ -1161,12 +1204,19 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
   const failures = batches.flatMap((batch) => batch.failures)
   let rejected = refined.kept.length ? refined.rejectedCount : 0
   const attemptedDebridHashes = new Set()
+  // Gateway routes whose release could not be prepared through the owner's provider. They may
+  // refuse the TV's address, so they trail every prepared candidate rather than replacing one.
+  const hostedFallbacks = []
+  const hostedFallback = stream => {
+    const fallback = directCandidate(stream, profile, true)
+    if (fallback && !request.excludeCandidateIds?.includes(fallback.id)) hostedFallbacks.push({ ...fallback, delivery: 'hosted' })
+  }
   for (const stream of ordered) {
     signal?.throwIfAborted()
     const candidate = directCandidate(stream, profile)
     const candidateId = candidate?.id ?? `${stream.__candidate?.routeId ?? stream.infoHash}-${profile.debrid?.provider}-direct`
     if (request.excludeCandidateIds?.includes(candidateId)) continue
-    if (candidate) candidates.push({ ...candidate, delivery: 'direct' })
+    if (candidate) candidates.push({ ...candidate, delivery: candidate.hosted ? 'hosted' : 'direct' })
     else if (candidates.length < MAX_RESPONSE_CANDIDATES && (Date.now() < debridDeadline || debridResults.has(stream.infoHash)) && profile.debrid && stream.infoHash
       && !attemptedDebridHashes.has(stream.infoHash)) {
       attemptedDebridHashes.add(stream.infoHash)
@@ -1176,15 +1226,21 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
         const resolved = await prepareOnce(stream)
         if (resolved) {
           candidates.push(resolved)
-        }
+        } else if (stream.__hostedRoute) hostedFallback(stream)
       } catch (error) {
         rejected += 1
         const message = cleanText(error instanceof Error ? error.message : String(error), 240)
         if (message) failures.push(message)
+        if (stream.__hostedRoute) hostedFallback(stream)
       }
-    } else rejected += 1
+    } else if (stream.__hostedRoute && stream.infoHash && !attemptedDebridHashes.has(stream.infoHash)) hostedFallback(stream)
+    else rejected += 1
     if (options.onProgress) await publishCandidates(availableCandidates(ordered))
     if (candidates.length >= MAX_RESPONSE_CANDIDATES) break
+  }
+  for (const fallback of hostedFallbacks) {
+    if (candidates.length >= MAX_RESPONSE_CANDIDATES) break
+    if (!candidates.some(candidate => candidate.id === fallback.id)) candidates.push(fallback)
   }
   candidates.splice(MAX_RESPONSE_CANDIDATES)
   const addonSubtitles = batches.flatMap(batch => batch.subtitles ?? []).concat(plan.subtitleTracks ?? [], await serviceSubtitlesPromise)

@@ -22,3 +22,33 @@ export function torrentioResolverInfoHash(rawUrl: string | undefined, addonHint?
     return undefined
   }
 }
+
+// Hosted gateway routes: an add-on that resolves torrents on its own server hands back a playback
+// URL on that server instead of the debrid file. Such routes are commonly minted for the network
+// address that fetched the stream list, so a client that did not perform the listing itself can be
+// refused. The public torrent hash the route names is enough to prepare the same release through
+// the user's own provider from wherever playback actually happens.
+const HOSTED_ROUTE_WORDS = /^(?:playback|play|resolve|stream|streams|link|links|download|dl|proxy|magnet|torrent|torrents|hash|infohash|info_hash)$/i
+
+export function hostedRouteInfoHash(rawUrl: string | undefined): string | undefined {
+  if (!rawUrl) return undefined
+  try {
+    const url = new URL(rawUrl)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined
+    const parts = url.pathname.split('/').filter(Boolean).map((part) => {
+      try { return decodeURIComponent(part) } catch { return part }
+    })
+    // A bare hash segment that follows a routing word. Signed CDN paths can carry hex tokens too,
+    // so a hash that no routing word introduces is left alone.
+    for (let index = 1; index < parts.length; index++) {
+      if (!INFO_HASH.test(parts[index])) continue
+      if (parts.slice(0, index).some((part) => HOSTED_ROUTE_WORDS.test(part))) return parts[index].toLowerCase()
+    }
+    for (const [name, value] of url.searchParams) {
+      if (/hash/i.test(name) && INFO_HASH.test(value)) return value.toLowerCase()
+    }
+    return undefined
+  } catch {
+    return undefined
+  }
+}

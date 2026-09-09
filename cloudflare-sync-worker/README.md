@@ -93,6 +93,15 @@ profile from Izumi.
 - A configured debrid-enabled Stremio add-on is supported when it returns a public direct URL. A
   `notWebReady` hint does not reject that URL by itself: in Stremio it can simply denote a non-MP4
   or non-HTTPS source that is unsuitable for a browser, while Samsung AVPlay supports more formats.
+- Some add-ons resolve torrents on their own gateway and return a playback route on that gateway
+  instead of the file. Such routes are commonly bound to the network address that fetched the
+  stream list, which is this Worker rather than the TV, so the TV can be refused when it connects.
+  When the resolver profile carries a debrid credential, the Worker recovers the torrent hash the
+  route names and prepares the same release through the owner's provider. The gateway route is
+  kept only as a trailing fallback and is marked `hosted` so the TV can fail over from it.
+- The TV sends the catalogue's release year and runtime with each request. The Worker uses them as
+  refinement evidence when its own metadata lookups cannot supply a year, so a same-title
+  production from another era is not offered in place of the requested one.
 - When Izumi already has a debrid provider configured, the resolver profile carries that same
   provider and credential automatically. Torrent-only results are resolved through the same shared
   provider implementation used by local playback: Real-Debrid, AllDebrid, Premiumize, TorBox,
