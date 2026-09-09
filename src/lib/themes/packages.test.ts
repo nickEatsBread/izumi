@@ -19,6 +19,10 @@ describe('installable theme packages', () => {
   it('reserves the shared namespace for client-minted export identities', () => {
     expect(() => parseThemePackage({ ...samplePackage, id: 'shared.cinema' })).toThrow('identity')
     expect(parseThemePackage({ ...samplePackage, id: 'test.shared' }).id).toBe('test.shared')
+    expect(() => parseSharedTheme({ ...samplePackage, id: 'shared.cinema' })).toThrow('identity')
+    const entry = { ...samplePackage, id: 'shared.cinema', download: 'https://example.test/theme.json', sha256: 'a'.repeat(64), bytes: 500, tags: [] }
+    expect(() => parseRelease(entry)).toThrow('identity')
+    expect(() => parseCatalog({ app: 'izumi', kind: 'theme-catalog', schemaVersion: 1, themes: [entry] })).toThrow('identity')
   })
   it('requires exact listing integrity metadata and unique catalog identities', () => {
     const entry = { ...samplePackage, download: 'https://example.test/theme.json', sha256: 'a'.repeat(64), bytes: 500, tags: ['Dark'] }

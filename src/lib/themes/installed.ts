@@ -13,10 +13,12 @@ export function normalizeInstalledThemes(value: unknown): InstalledTheme[] {
   const records = new Map<string, InstalledTheme>()
   for (const raw of value.slice(0, 24)) {
     try {
-      const pkg = parseThemePackage(portablePackage(raw.package))
+      // Saved personal imports already have a client-minted shared ID. Validate the complete
+      // package here without applying the namespace restriction for new external packages.
+      const pkg = parseThemePackage(portablePackage(raw.package), { allowSharedId: true })
       if (raw.id !== pkg.id || typeof raw.designId !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/i.test(raw.designId)) continue
       const origin = raw.origin === `file:${pkg.id}` ? raw.origin : themeUrl(raw.origin)
-      const previous = raw.previous ? { package: parseThemePackage(portablePackage(raw.previous.package)), design: normalizeStudioTheme(raw.previous.design) } : undefined
+      const previous = raw.previous ? { package: parseThemePackage(portablePackage(raw.previous.package), { allowSharedId: true }), design: normalizeStudioTheme(raw.previous.design) } : undefined
       if (previous && previous.package.id !== pkg.id) continue
       records.set(pkg.id, { id: pkg.id, designId: raw.designId, origin, package: pkg,
         ...(raw.updateUrl ? { updateUrl: themeUrl(raw.updateUrl) } : {}), ...(previous ? { previous } : {}) })

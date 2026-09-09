@@ -3,42 +3,53 @@ import { MAX_THEME_BYTES, THEME_API, THEME_CATALOG_URL, parseCatalog, parseRelea
 
 const CACHE_KEY = 'theme-catalog-cache-v1'
 const encoder = new TextEncoder()
-// WebKit only shipped AbortSignal.any in 17.4 (early 2024); webkit2gtk and unpatched webviews can
-// lack it, and an unconditional call would fail every theme download before any request is made.
-function withTimeout(signal: AbortSignal, timeout: AbortSignal): AbortSignal {
-  if (typeof AbortSignal.any === 'function') return AbortSignal.any([signal, timeout])
+// Older webviews can lack AbortSignal.any, which would break requests with a caller signal.
+function withTimeout(signal: AbortSignal | undefined, timeout: AbortSignal): { signal: AbortSignal; dispose: () => void } {
+  if (!signal) return { signal: timeout, dispose: () => {} }
+  if (typeof AbortSignal.any === 'function') return { signal: AbortSignal.any([signal, timeout]), dispose: () => {} }
   const combined = new AbortController()
-  for (const source of [signal, timeout]) source.addEventListener('abort', () => { if (!combined.signal.aborted) combined.abort(source.reason) }, { once: true })
-  return combined.signal
+  const listeners: Array<() => void> = []
+  const dispose = () => { for (const remove of listeners.splice(0)) remove() }
+  for (const source of [signal, timeout]) {
+    const abort = () => { combined.abort(source.reason); dispose() }
+    // Abort events are not replayed for listeners added after cancellation.
+    if (source.aborted) { abort(); break }
+    source.addEventListener('abort', abort, { once: true })
+    listeners.push(() => source.removeEventListener('abort', abort))
+  }
+  return { signal: combined.signal, dispose }
 }
 export async function fetchThemeText(url: string, limit = MAX_THEME_BYTES, signal?: AbortSignal): Promise<string> {
   const target = themeUrl(url)
   const timeout = AbortSignal.timeout(20_000)
-  const combined = signal ? withTimeout(signal, timeout) : timeout
-  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-    const response = await phttp(target, { maxBytes: limit, timeoutMs: 20_000, signal: combined, background: true })
-    if (!response.ok) throw new Error(`Theme download failed (HTTP ${response.status}).`)
-    const body = await response.text()
-    if (encoder.encode(body).byteLength > limit) throw new Error('The theme document is too large.')
-    return body
-  }
-  const response = await fetch(target, { signal: combined, credentials: 'omit', referrerPolicy: 'no-referrer' })
-  if (!response.ok) throw new Error(`Theme download failed (HTTP ${response.status}).`)
-  if (!response.body) throw new Error('The theme download was empty.')
-  const reader = response.body.getReader(), chunks: Uint8Array[] = []
-  let size = 0
+  const { signal: combined, dispose } = withTimeout(signal, timeout)
   try {
-    while (true) {
-      const chunk = await reader.read()
-      if (chunk.done) break
-      size += chunk.value.byteLength
-      if (size > limit) throw new Error('The theme document is too large.')
-      chunks.push(chunk.value)
+    if (combined.aborted) throw combined.reason
+    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      const response = await phttp(target, { maxBytes: limit, timeoutMs: 20_000, signal: combined, background: true })
+      if (!response.ok) throw new Error(`Theme download failed (HTTP ${response.status}).`)
+      const body = await response.text()
+      if (encoder.encode(body).byteLength > limit) throw new Error('The theme document is too large.')
+      return body
     }
-  } finally { await reader.cancel().catch(() => {}) }
-  const bytes = new Uint8Array(size); let offset = 0
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
-  return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    const response = await fetch(target, { signal: combined, credentials: 'omit', referrerPolicy: 'no-referrer' })
+    if (!response.ok) throw new Error(`Theme download failed (HTTP ${response.status}).`)
+    if (!response.body) throw new Error('The theme download was empty.')
+    const reader = response.body.getReader(), chunks: Uint8Array[] = []
+    let size = 0
+    try {
+      while (true) {
+        const chunk = await reader.read()
+        if (chunk.done) break
+        size += chunk.value.byteLength
+        if (size > limit) throw new Error('The theme document is too large.')
+        chunks.push(chunk.value)
+      }
+    } finally { await reader.cancel().catch(() => {}) }
+    const bytes = new Uint8Array(size); let offset = 0
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } finally { dispose() }
 }
 export async function loadThemeCatalog(signal?: AbortSignal): Promise<{ catalog: ThemeCatalog; cached: boolean; fetchedAt: number }> {
   try {

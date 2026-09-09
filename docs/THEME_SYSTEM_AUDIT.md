@@ -40,6 +40,13 @@ These are design comparisons, not features to copy wholesale:
 
 ## Recommended sequence
 
+Review follow-ups from [PR 63](https://github.com/nickEatsBread/izumi/pull/63):
+
+- Keep the catalog's validator and format documentation synchronized with the numeric display-field contract; the catalog change is tracked in [izumi-themes PR 1](https://github.com/nickEatsBread/izumi-themes/pull/1).
+- Add contrast checks for template text where its foreground and background can be resolved, with visual checks for transparency and artwork. The current catalog checks structure and integrity, not rendered readability.
+- Restrict theme downloads to HTTPS throughout redirects, including catalog/release documents. This needs a scoped native transport option because the shared HTTP client has other consumers; a package checksum does not authenticate a listing fetched over a downgraded connection.
+- Profile dense themed grids on supported controller hardware before setting an aggregate render budget. The 96-node limit applies per template, and existing navigation assertions do not measure device performance.
+
 1. Finish CI verification, establish the canonical schema and permanent fixture, and address the concrete interaction/recovery gaps before expanding the public contract.
 2. Extend complete component families with responsive/state variants. Publish a coverage matrix so users know what a theme can change. A home preset should remain distinguishable from a theme that covers the shell and detail screens.
 3. Build the visual inspector and author-defined options on that contract; add reusable components, named variants and assets. Require two substantially different example compositions as acceptance evidence for each new family.

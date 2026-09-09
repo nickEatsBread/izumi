@@ -4,7 +4,7 @@ import { get } from 'svelte/store'
 import { studioThemes, defaultStudioTheme, activeStudioThemeId, themeStudioPreview } from '$lib/settings/theme-studio'
 import { themePreset } from '$lib/settings/ui'
 import { installedThemes, installTheme, applyInstalledTheme, removeInstalledTheme, rollbackTheme, rebaseDesign, previewTheme, cancelThemePreview, normalizeInstalledThemes } from './installed'
-import { parseThemePackage } from './packages'
+import { parseSharedTheme, parseThemePackage } from './packages'
 
 const sample = { app: 'izumi', kind: 'theme-package', schemaVersion: 1, themeApi: 1, id: 'test.cinema', name: 'Cinema', author: 'Test', description: 'Cinema presentation.', version: '1.0.0', design: { radius: 1, presentation: { rows: { defaults: { width: 160, gap: 12 } } } } }
 const prepared = (patch = {}) => ({ package: parseThemePackage({ ...sample, ...patch }), origin: 'https://example.test/release.json', updateUrl: 'https://example.test/release.json' })
@@ -66,6 +66,24 @@ describe('theme installation and personal edits', () => {
     const item = installTheme(prepared())
     expect(normalizeInstalledThemes([null, {}, item, { ...item, origin: 'javascript:invalid' }])).toEqual([item])
     expect(normalizeInstalledThemes('broken')).toEqual([])
+  })
+  it.each(['file', 'link'])('retains personal %s imports after saving and loading the library', (kind) => {
+    const pkg = parseSharedTheme({ app: 'izumi', kind: 'theme', version: 1, theme: defaultStudioTheme(0) })
+    const item = installTheme({ package: pkg, origin: kind === 'file' ? `file:${pkg.id}` : 'https://example.test/shared.json' })
+    const saved = JSON.parse(localStorage.getItem('installed-themes-v1')!)
+    expect(normalizeInstalledThemes(saved)).toEqual([item])
+    // A reserved ID must not bypass the rest of the persisted-package validation.
+    saved[0].package.design.tokens.background = 'invalid'
+    expect(normalizeInstalledThemes(saved)).toEqual([])
+  })
+  it('retains valid shared rollback records while rejecting mismatched identities', () => {
+    const pkg = parseSharedTheme({ app: 'izumi', kind: 'theme', version: 1, theme: defaultStudioTheme(0) })
+    const item = installTheme({ package: pkg, origin: `file:${pkg.id}` })
+    const previous = { package: pkg, design: get(studioThemes).find(theme => theme.id === item.designId)! }
+    const saved = JSON.parse(JSON.stringify([{ ...item, previous }]))
+    expect(normalizeInstalledThemes(saved)).toEqual([{ ...item, previous }])
+    saved[0].previous.package.id = 'shared.different'
+    expect(normalizeInstalledThemes(saved)).toEqual([])
   })
   it('can reinstall the same version after its editable design was deleted', () => {
     const item = installTheme(prepared())

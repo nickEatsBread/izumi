@@ -41,17 +41,18 @@ export function newerVersion(candidate: string, current: string): boolean {
   for (let i = 0; i < 3; i++) if (left[i] !== right[i]) return left[i] > right[i]
   return false
 }
-function identity(value: unknown, minted = false): string {
+function identity(value: unknown, allowSharedId = false): string {
   const id = text(value, 64)
   // `shared.` is minted client-side when a Theme Studio export becomes installable (parseSharedTheme),
   // so a catalog or release package must not squat it.
-  if (!/^[a-z0-9][a-z0-9.-]{1,63}$/.test(id) || id === 'constructor' || id === 'prototype' || (!minted && id.startsWith('shared.'))) throw new Error('Invalid theme identity.')
+  if (!/^[a-z0-9][a-z0-9.-]{1,63}$/.test(id) || id === 'constructor' || id === 'prototype' || (!allowSharedId && id.startsWith('shared.'))) throw new Error('Invalid theme identity.')
   return id
 }
-export function parseThemePackage(value: unknown, mintedId = false): ThemePackage {
+/** Shared IDs are allowed only when minting personal exports or reading saved installations. */
+export function parseThemePackage(value: unknown, { allowSharedId = false }: { allowSharedId?: boolean } = {}): ThemePackage {
   const raw = record(value)
   if (raw.app !== 'izumi' || raw.kind !== 'theme-package' || raw.schemaVersion !== 1 || raw.themeApi !== THEME_API) throw new Error('This theme requires a different theme API. Check for a client update.')
-  const id = identity(raw.id, mintedId), name = text(raw.name, 48), design = record(raw.design)
+  const id = identity(raw.id, allowSharedId), name = text(raw.name, 48), design = record(raw.design)
   const allowed = ['tokens', 'radius', 'font', 'fontScale', 'backdrop', 'backdropStrength', 'glassBlur', 'presentation']
   if (Object.keys(design).some(key => !allowed.includes(key))) throw new Error('This theme contains unsupported design settings.')
   if (design.presentation !== undefined) parsePresentation(design.presentation)
@@ -77,7 +78,7 @@ export function parseSharedTheme(value: unknown): ThemePackage {
   const normalized = normalizeStudioTheme(theme)
   const { id, name, createdAt: _created, updatedAt: _updated, ...design } = normalized
   return parseThemePackage({ app: 'izumi', kind: 'theme-package', schemaVersion: 1, themeApi: 1,
-    id: `shared.${id.toLowerCase().slice(0, 48)}`, name, author: 'Shared theme', description: 'A personal Theme Studio design. Customize it after installing.', version: '1.0.0', design }, true)
+    id: `shared.${id.toLowerCase().slice(0, 48)}`, name, author: 'Shared theme', description: 'A personal Theme Studio design. Customize it after installing.', version: '1.0.0', design }, { allowSharedId: true })
 }
 export function parseRelease(value: unknown): ThemeRelease {
   const raw = record(value)
