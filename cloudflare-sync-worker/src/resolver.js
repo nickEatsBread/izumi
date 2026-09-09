@@ -1013,23 +1013,23 @@ function sourcePool(batches, request, profile, refineContext, complete = true) {
   return { normalized, refined, pool }
 }
 
-function orderedSources(pool, profile, plan) {
+function orderedSources(pool, profile, plan, runtimeSeconds) {
   // The desktop ranks with the same subtitle-language preference; 'none' means no preference.
   const subtitleLang = profile.subtitleLang && profile.subtitleLang !== 'none' ? profile.subtitleLang : undefined
   const preferred = pickCandidates(pool, profile.quality, plan.want, undefined, {
-    audioLang: profile.audioLang || undefined, subtitleLang, cacheCheck: 'none', allowUncached: !!profile.debrid, sourcePriority: profile.sourcePriority,
+    audioLang: profile.audioLang || undefined, subtitleLang, cacheCheck: 'none', allowUncached: !!profile.debrid, sourcePriority: profile.sourcePriority, runtimeSeconds,
   })
   return [...new Set([...preferred, ...pickCandidates(pool, profile.quality, plan.want, undefined, {
-    subtitleLang, cacheCheck: 'none', allowUncached: !!profile.debrid, sourcePriority: profile.sourcePriority,
+    subtitleLang, cacheCheck: 'none', allowUncached: !!profile.debrid, sourcePriority: profile.sourcePriority, runtimeSeconds,
   })])]
 }
 
 /** The picker lists releases the way the desktop's does: cache state, then language fit, then the
  * synced sort (quality score, seeders or size). Auto-play keeps orderedSources' stricter order. */
-function pickerOrder(pool, profile) {
+function pickerOrder(pool, profile, runtimeSeconds) {
   const subtitleLang = profile.subtitleLang && profile.subtitleLang !== 'none' ? profile.subtitleLang : undefined
   return rankStreams(pool, profile.sort ?? 'quality', {
-    audioLang: profile.audioLang || undefined, subtitleLang, cacheCheck: 'none', sourcePriority: profile.sourcePriority,
+    audioLang: profile.audioLang || undefined, subtitleLang, cacheCheck: 'none', sourcePriority: profile.sourcePriority, runtimeSeconds,
   })
 }
 
@@ -1159,8 +1159,9 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
     const snapshot = observed.slice()
     progress = progress.then(async () => {
       signal?.throwIfAborted()
-      const { pool } = sourcePool(snapshot, request, profile, await refineContextPromise, false)
-      await publishCandidates(availableCandidates(orderedSources(pool, profile, plan), pickerOrder(pool, profile)))
+      const context = await refineContextPromise
+      const { pool } = sourcePool(snapshot, request, profile, context, false)
+      await publishCandidates(availableCandidates(orderedSources(pool, profile, plan, context?.expectedSeconds), pickerOrder(pool, profile, context?.expectedSeconds)))
     }).catch(error => { progressError = error })
   }
   void serviceSubtitlesPromise.then(tracks => { serviceSubtitles = tracks; showProgress() })
@@ -1172,9 +1173,10 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
     // ranking pass and a reconnect cannot create it again. Direct progress has a separate queue.
     preparing = preparing.then(async () => {
       signal?.throwIfAborted()
-      const { pool } = sourcePool(observed, request, profile, await refineContextPromise, false)
+      const context = await refineContextPromise
+      const { pool } = sourcePool(observed, request, profile, context, false)
       await checkPool(pool)
-      for (const stream of orderedSources(pool, profile, plan).slice(0, MAX_RESPONSE_CANDIDATES)) {
+      for (const stream of orderedSources(pool, profile, plan, context?.expectedSeconds).slice(0, MAX_RESPONSE_CANDIDATES)) {
         signal?.throwIfAborted()
         if (Date.now() >= debridDeadline || debridAttempts.size >= MAX_RESPONSE_CANDIDATES) break
         if (directCandidate(stream, profile) || !stream.infoHash || debridAttempts.has(stream.infoHash)
@@ -1223,8 +1225,8 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
   // TV lookup returns plain torrent hashes. Check the configured provider before choosing a
   // release so a cached result is not stuck behind several full torrent downloads.
   await checkPool(pool)
-  const ordered = orderedSources(pool, profile, plan)
-  const listed = pickerOrder(pool, profile)
+  const ordered = orderedSources(pool, profile, plan, refineContext?.expectedSeconds)
+  const listed = pickerOrder(pool, profile, refineContext?.expectedSeconds)
   const candidates = []
   const candidateStreams = new Map()
   const failures = batches.flatMap((batch) => batch.failures)
