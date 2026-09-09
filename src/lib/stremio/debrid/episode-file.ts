@@ -1,4 +1,4 @@
-import { VIDEO, JUNK, pickLargestVideo } from './http'
+import { VIDEO, isJunkName, pickLargestVideo } from './http'
 import type { EpisodeWant } from './types'
 
 // Episode-aware in-torrent file selection. A batch/season-pack torrent has many video
@@ -109,7 +109,7 @@ export function pickEpisodeVideo<T extends { name: string; bytes: number }>(
 ): T | undefined {
   if (!want) return undefined
   const base = (n: string) => (n.split(/[/\\]/).pop() ?? n).toLowerCase()
-  const candidates = files.filter((f) => VIDEO.test(f.name) && !JUNK.test(f.name) && !EXTRA.test(f.name))
+  const candidates = files.filter((f) => VIDEO.test(f.name) && !isJunkName(f.name) && !EXTRA.test(f.name.replace(/_/g, ' ')))
 
   // An add-on filename is a hint, not permission to violate the requested episode. Some feeds
   // have returned an unnumbered special from a season pack for a normal episode; accepting that

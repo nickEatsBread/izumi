@@ -16,6 +16,7 @@ import {
   isTvVideoCompatible,
   normalizeStreamBehavior,
   pickCandidates,
+  rankStreams,
   refineStreamsLite,
 } from './generated/resolver-core/resolver-core.ts'
 import {
@@ -1023,6 +1024,25 @@ function orderedSources(pool, profile, plan) {
   })])]
 }
 
+/** The picker lists releases the way the desktop's does: cache state, then language fit, then the
+ * synced sort (quality score, seeders or size). Auto-play keeps orderedSources' stricter order. */
+function pickerOrder(pool, profile) {
+  const subtitleLang = profile.subtitleLang && profile.subtitleLang !== 'none' ? profile.subtitleLang : undefined
+  return rankStreams(pool, profile.sort ?? 'quality', {
+    audioLang: profile.audioLang || undefined, subtitleLang, cacheCheck: 'none', sourcePriority: profile.sourcePriority,
+  })
+}
+
+/** Present candidates in picker order while auto-play selects the first available auto-pick. */
+function presentCandidates(byStream, ordered, listed) {
+  const ranked = listed.filter(stream => byStream.has(stream)).map(stream => byStream.get(stream))
+  const auto = ordered.find(stream => byStream.has(stream))
+  const selected = auto ? byStream.get(auto) : ranked[0]
+  const shown = ranked.slice(0, MAX_RESPONSE_CANDIDATES)
+  if (selected && !shown.includes(selected)) shown.splice(Math.max(0, shown.length - 1), 1, selected)
+  return { candidates: shown, selectedId: selected?.id ?? null }
+}
+
 function sourcePreferences(profile) {
   return {
     ...(profile.subtitleLang || profile.audioLang ? { trackPreferences: {
@@ -1075,11 +1095,15 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
   let progress = Promise.resolve()
   let progressError
   let lastProgressKey = ''
-  const availableCandidates = ordered => ordered.flatMap(stream => {
-    const direct = directCandidate(stream, profile)
-    const value = direct ? { ...direct, delivery: direct.hosted ? 'hosted' : 'direct' } : debridResults.get(stream.infoHash)
-    return value && !request.excludeCandidateIds?.includes(value.id) ? [value] : []
-  }).slice(0, MAX_RESPONSE_CANDIDATES)
+  const availableCandidates = (ordered, listed) => {
+    const byStream = new Map()
+    for (const stream of ordered) {
+      const direct = directCandidate(stream, profile)
+      const value = direct ? { ...direct, delivery: direct.hosted ? 'hosted' : 'direct' } : debridResults.get(stream.infoHash)
+      if (value && !request.excludeCandidateIds?.includes(value.id)) byStream.set(stream, value)
+    }
+    return presentCandidates(byStream, ordered, listed)
+  }
   const addonSubtitleBatches = []
   let serviceSubtitles = []
   // Sidecars remain first; independently installed subtitle add-ons fill the remaining slots.
@@ -1097,12 +1121,12 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
       .filter((track, index, tracks) => index < 40 && encoder.encode(JSON.stringify(tracks.slice(0, index + 1))).length < 8_000)
     return { ...candidate, subtitles: merged }
   })
-  const publishCandidates = async candidates => {
+  const publishCandidates = async ({ candidates, selectedId }) => {
     const merged = withSubtitles(candidates)
-    const key = JSON.stringify(merged)
+    const key = JSON.stringify([selectedId, merged])
     if (!merged.length || key === lastProgressKey) return
     lastProgressKey = key
-    await options.onProgress({ candidates: structuredClone(merged), selectedId: merged[0].id, ...sourcePreferences(profile) })
+    await options.onProgress({ candidates: structuredClone(merged), selectedId: selectedId ?? merged[0].id, ...sourcePreferences(profile) })
   }
   const prepareOnce = stream => {
     if (!debridAttempts.has(stream.infoHash)) {
@@ -1136,7 +1160,7 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
     progress = progress.then(async () => {
       signal?.throwIfAborted()
       const { pool } = sourcePool(snapshot, request, profile, await refineContextPromise, false)
-      await publishCandidates(availableCandidates(orderedSources(pool, profile, plan)))
+      await publishCandidates(availableCandidates(orderedSources(pool, profile, plan), pickerOrder(pool, profile)))
     }).catch(error => { progressError = error })
   }
   void serviceSubtitlesPromise.then(tracks => { serviceSubtitles = tracks; showProgress() })
@@ -1200,7 +1224,9 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
   // release so a cached result is not stuck behind several full torrent downloads.
   await checkPool(pool)
   const ordered = orderedSources(pool, profile, plan)
+  const listed = pickerOrder(pool, profile)
   const candidates = []
+  const candidateStreams = new Map()
   const failures = batches.flatMap((batch) => batch.failures)
   let rejected = refined.kept.length ? refined.rejectedCount : 0
   const attemptedDebridHashes = new Set()
@@ -1216,7 +1242,7 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
     const candidate = directCandidate(stream, profile)
     const candidateId = candidate?.id ?? `${stream.__candidate?.routeId ?? stream.infoHash}-${profile.debrid?.provider}-direct`
     if (request.excludeCandidateIds?.includes(candidateId)) continue
-    if (candidate) candidates.push({ ...candidate, delivery: candidate.hosted ? 'hosted' : 'direct' })
+    if (candidate) { candidates.push({ ...candidate, delivery: candidate.hosted ? 'hosted' : 'direct' }); candidateStreams.set(stream, candidates[candidates.length - 1]) }
     else if (candidates.length < MAX_RESPONSE_CANDIDATES && (Date.now() < debridDeadline || debridResults.has(stream.infoHash)) && profile.debrid && stream.infoHash
       && !attemptedDebridHashes.has(stream.infoHash)) {
       attemptedDebridHashes.add(stream.infoHash)
@@ -1226,6 +1252,7 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
         const resolved = await prepareOnce(stream)
         if (resolved) {
           candidates.push(resolved)
+          candidateStreams.set(stream, resolved)
         } else if (stream.__hostedRoute) hostedFallback(stream)
       } catch (error) {
         rejected += 1
@@ -1235,9 +1262,12 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
       }
     } else if (stream.__hostedRoute && stream.infoHash && !attemptedDebridHashes.has(stream.infoHash)) hostedFallback(stream)
     else rejected += 1
-    if (options.onProgress) await publishCandidates(availableCandidates(ordered))
+    if (options.onProgress) await publishCandidates(availableCandidates(ordered, listed))
     if (candidates.length >= MAX_RESPONSE_CANDIDATES) break
   }
+  // Auto-play chose in orderedSources' order; the list the TV shows follows the picker order.
+  const presented = presentCandidates(candidateStreams, ordered, listed)
+  candidates.splice(0, candidates.length, ...presented.candidates)
   for (const fallback of hostedFallbacks) {
     if (candidates.length >= MAX_RESPONSE_CANDIDATES) break
     if (!candidates.some(candidate => candidate.id === fallback.id)) candidates.push(fallback)
@@ -1259,7 +1289,7 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
   }
   return {
     candidates: finalCandidates,
-    selectedId: finalCandidates[0]?.id ?? null,
+    selectedId: finalCandidates.find(candidate => candidate.id === presented.selectedId)?.id ?? finalCandidates[0]?.id ?? null,
     queriedIds: plan.ids,
     rejected,
     failures: [...new Set([...failures, ...debridFailures])].slice(0, 3),

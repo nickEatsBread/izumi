@@ -198,3 +198,18 @@ describe('franchise collection: films must not steal the episode', () => {
     expect(pickEpisodeVideo(dupes, { episode: 1, season: 1 })?.name).toContain('1080p')
   })
 })
+
+describe('trailer packs', () => {
+  const trailers = [
+    { name: 'TheOdyssey_IMAX_TLR-2_3840x2024_HEVC_10bit_DTS-HD-MA_AC3_51.mkv', bytes: 1_238_776_077 },
+    { name: 'TheOdyssey_TLR-2_3840x1608_HEVC_10bit_DTS-HD-MA_AC3_51.mkv', bytes: 1_319_991_198 },
+  ]
+  it('refuses a torrent whose every file is a scene trailer or teaser', () => {
+    expect(pickVideoFile(trailers)).toBeUndefined()
+    expect(pickVideoFile([...trailers, { name: 'Example_TSR-1_1080p.mkv', bytes: 400_000_000 }])).toBeUndefined()
+  })
+  it('skips trailers and samples beside the feature even when underscores hide the token', () => {
+    const feature = { name: 'Example.Film.2026.2160p.WEB-DL.mkv', bytes: 900_000_000 }
+    expect(pickVideoFile([...trailers, feature, { name: 'Example_sample.mkv', bytes: 50_000_000 }])).toBe(feature)
+  })
+})

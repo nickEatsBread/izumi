@@ -319,3 +319,14 @@ describe('selfDeclaredOtherProduction', () => {
     expect(selfDeclaredOtherProduction(s('Not Okay 2022 1080p WEB-DL.mkv'))).toBe(false)
   })
 })
+
+describe('isEpisodeExtra (scene trailer packs)', () => {
+  it('drops tlr/tsr trailer and teaser files, including underscore-separated names', () => {
+    expect(isEpisodeExtra(s('TheOdyssey_IMAX_TLR-2_3840x2024_HEVC_10bit_DTS-HD-MA_AC3_51.mkv'))).toBe(true)
+    expect(isEpisodeExtra(s('Example.Film.2026.TSR1.2160p.WEB-DL.mkv'))).toBe(true)
+  })
+  it('keeps a feature whose group or title merely contains those letters', () => {
+    expect(isEpisodeExtra(s('Example.Film.2026.2160p.WEB-DL-TLRGROUP.mkv'))).toBe(false)
+    expect(isEpisodeExtra(s('Settlers.2026.1080p.WEB-DL.mkv'))).toBe(false)
+  })
+})
