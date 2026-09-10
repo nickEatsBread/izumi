@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { plannedSyncTasks, syncFailures, syncSettled, syncSucceededAny, type SyncTask } from './sync-receipt'
+import { plannedSyncTasks, sourcesLanded, syncFailures, syncSettled, syncSucceededAny, type SyncTask } from './sync-receipt'
 
 const noExtras = { library: false, progress: false, history: false }
 
@@ -50,5 +50,22 @@ describe('sync receipt', () => {
     expect(syncSucceededAny(total)).toBe(false)
     expect(syncFailures(partial).map((entry) => entry.id)).toEqual(['mal'])
     expect(syncFailures(total)).toHaveLength(1)
+  })
+
+  it('counts only source-producing tasks as sources landing', () => {
+    expect(sourcesLanded([task('stremio', { status: 'done', detail: '7 sources' })])).toBe(true)
+    expect(sourcesLanded([task('nuvio-sources', { status: 'done', detail: '3 sources' })])).toBe(true)
+  })
+
+  it('does not treat collections or a tracker as a source', () => {
+    expect(sourcesLanded([
+      task('nuvio-collections', { status: 'done', detail: '4 collections' }),
+      task('mal', { status: 'done', detail: 'alex' }),
+    ])).toBe(false)
+  })
+
+  it('does not count a source task that failed or is still running', () => {
+    expect(sourcesLanded([task('stremio', { status: 'failed', message: 'offline' })])).toBe(false)
+    expect(sourcesLanded([task('nuvio-sources', { status: 'running' })])).toBe(false)
   })
 })

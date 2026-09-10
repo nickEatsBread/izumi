@@ -53,3 +53,12 @@ export function syncSucceededAny(tasks: readonly SyncTask[]): boolean {
 export function syncFailures(tasks: readonly SyncTask[]): SyncTask[] {
   return tasks.filter((task) => task.state.status === 'failed')
 }
+
+/** The tasks that can actually put a playable source in the user's list. Collections are home-screen
+ *  furniture, not sources, so they do not count. */
+const SOURCE_TASKS: readonly SyncTaskId[] = ['stremio', 'nuvio-sources']
+
+/** Whether the next screen can show a review of real sources instead of an empty picker. */
+export function sourcesLanded(tasks: readonly SyncTask[]): boolean {
+  return tasks.some((task) => SOURCE_TASKS.includes(task.id) && task.state.status === 'done')
+}

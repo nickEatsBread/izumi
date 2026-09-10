@@ -20,7 +20,7 @@ export function addonSuggestions(addons: readonly CommunityAddon[], limit: numbe
       id: addon.manifestUrl,
       kind: 'addon' as const,
       name: addon.manifest?.name || addon.slug,
-      description: addon.manifest?.description?.trim() || `${addon.stars} stars`,
+      description: addon.manifest?.description?.trim() || (addon.stars === 1 ? '1 star' : `${addon.stars} stars`),
       url: addon.manifestUrl,
     }))
 }
@@ -29,11 +29,14 @@ export function packageSuggestions(packages: readonly ExtensionCatalogPackage[],
   return packages
     .filter((entry) => !entry.nsfw)
     .slice(0, limit)
-    .map((entry) => ({
-      id: entry.id,
-      kind: 'extension' as const,
-      name: entry.name,
-      description: entry.sources.length === 1 ? '1 source' : `${entry.sources.length} sources`,
-      url: '',
-    }))
+    .map((entry) => {
+      const sources = entry.sources?.length ?? 0
+      return {
+        id: entry.id,
+        kind: 'extension' as const,
+        name: entry.name,
+        description: sources === 1 ? '1 source' : `${sources} sources`,
+        url: '',
+      }
+    })
 }

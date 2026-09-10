@@ -46,6 +46,10 @@ describe('addon suggestions', () => {
     const broken = { ...addon('a', 1, 'Alpha'), manifestUrl: '' }
     expect(addonSuggestions([broken, addon('b', 1, 'Beta')], 6).map((entry) => entry.name)).toEqual(['Beta'])
   })
+
+  it('says one star rather than 1 stars', () => {
+    expect(addonSuggestions([addon('a', 1, 'Alpha')], 6)[0].description).toBe('1 star')
+  })
 })
 
 describe('package suggestions', () => {
@@ -61,5 +65,10 @@ describe('package suggestions', () => {
   it('never suggests an adult package', () => {
     const adult = { ...pkg('two', 'Two', ['x']), nsfw: true }
     expect(packageSuggestions([adult, pkg('three', 'Three', ['y'])], 6).map((entry) => entry.name)).toEqual(['Three'])
+  })
+
+  it('survives a catalog package that declares no sources', () => {
+    const malformed = { ...pkg('four', 'Four', []), sources: undefined } as unknown as ExtensionCatalogPackage
+    expect(packageSuggestions([malformed], 6)[0].description).toBe('0 sources')
   })
 })
