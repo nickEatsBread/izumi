@@ -38,6 +38,7 @@
   import CatalogBrandLogo from '$lib/components/catalog/CatalogBrandLogo.svelte'
   import HomeEditor from '$lib/components/catalog/HomeEditor.svelte'
   import HomeRowFrame from '$lib/components/catalog/HomeRowFrame.svelte'
+  import SetupChecklist from '$lib/components/onboarding/SetupChecklist.svelte'
   import { mediaHref } from '$lib/anilist/media'
   import { rankFeaturedMedia } from '$lib/catalog/featured-context'
 
@@ -173,6 +174,7 @@
 {#if $offlineMode}
   <!-- Offline: local-first Continue Watching + the downloaded-series library. No network fired. -->
   <div class="space-y-4 pb-16 pt-2">
+    <SetupChecklist />
     {#if orderedRows.includes('continue')}
       {#key listUser}
         <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
@@ -188,6 +190,7 @@
   <!-- With no hero, the first row must clear the fixed desktop titlebar + degraded strip. Mobile's
        toolbar above already reserves the alert height, so this extra inset is desktop-only. -->
   <div class="pb-16 {homeNeedsAlertInset ? 'sm:pt-[3.75rem]' : ''}">
+    <SetupChecklist />
     {#if !catalogUnavailable && heroMedias.length}
       <Hero medias={heroMedias} onplay={(m) => goto(mediaHref(m))} oninfo={(m) => goto(mediaHref(m))} />
     {:else if !catalogUnavailable && hero.fetching}
