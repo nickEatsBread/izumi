@@ -9,8 +9,11 @@ describe('setup remainder', () => {
   })
 
   it('lists the unresolved items most important first', () => {
-    expect(remainderFrom({ sources: false, playback: false, tracker: false, metadata: false })).toEqual(REMAINDER_ORDER)
-    expect(REMAINDER_ORDER[0]).toBe('sources')
+    // Asserted as a literal, not against REMAINDER_ORDER: remainderFrom filters that same array,
+    // so comparing the two would hold whatever order it had, and a silent swap would pass.
+    expect(remainderFrom({ sources: false, playback: false, tracker: false, metadata: false }))
+      .toEqual(['sources', 'playback', 'tracker', 'metadata'])
+    expect(REMAINDER_ORDER).toEqual(['sources', 'playback', 'tracker', 'metadata'])
   })
 
   it('reports only what is actually missing', () => {

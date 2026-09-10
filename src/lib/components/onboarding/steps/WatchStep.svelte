@@ -42,9 +42,16 @@
   ])
 
   /** Refuse to untick the last one rather than allowing a state with no library and an error. */
-  function toggle(key: 'anime' | 'films') {
+  function toggle(key: 'anime' | 'films', input: HTMLInputElement) {
     const next = { ...intent, [key]: !intent[key] }
-    if (!next.anime && !next.films) return
+    if (!next.anime && !next.films) {
+      // The browser already flipped the checkbox before this ran. Refusing the change leaves
+      // `intent` untouched, so Svelte never re-renders the input — and because it caches the last
+      // value it applied, it will not correct the DOM later either. A screen reader would then
+      // announce an enabled library as unchecked forever. Put it back by hand.
+      input.checked = intent[key]
+      return
+    }
     intent = next
   }
 
@@ -65,7 +72,7 @@
   <legend class="sr-only">{m.onboarding_watch_title()}</legend>
   {#each [{ key: 'anime' as const, title: m.onboarding_anime_title(), body: m.onboarding_automatic_body(), Icon: Sparkles }, { key: 'films' as const, title: m.onboarding_movies_title(), body: m.onboarding_movies_body(), Icon: Film }] as choice}
     <label class="setup-choice flex w-full cursor-pointer items-center gap-4 p-5 text-left {intent[choice.key] ? 'selected' : ''}">
-      <input type="checkbox" data-focusable class="sr-only" checked={intent[choice.key]} onchange={() => toggle(choice.key)} />
+      <input type="checkbox" data-focusable class="sr-only" checked={intent[choice.key]} onchange={(event) => toggle(choice.key, event.currentTarget)} />
       <choice.Icon size={24} class="shrink-0 text-muted-foreground" />
       <span class="min-w-0 flex-1"><span class="block text-lg font-semibold">{choice.title}</span><span class="mt-1 block text-sm leading-relaxed text-muted-foreground">{choice.body}</span></span>
       <span class="grid size-5 shrink-0 place-items-center rounded border border-foreground/40">{#if intent[choice.key]}<Check size={13} />{/if}</span>
