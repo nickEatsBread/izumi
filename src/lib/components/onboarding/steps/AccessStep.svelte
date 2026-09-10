@@ -8,10 +8,12 @@
   let {
     tmdbToken = $bindable(),
     ratingsKey = $bindable(),
-  }: { tmdbToken: string; ratingsKey: string } = $props()
+    onswitch,
+  }: { tmdbToken: string; ratingsKey: string; onswitch: () => void } = $props()
 
   const tmdbSettingsUrl = 'https://www.themoviedb.org/settings/api'
   const omdbSettingsUrl = 'https://www.omdbapi.com/apikey.aspx'
+  const tmdbGuideUrl = 'https://duckkota.gitlab.io/guides/tmdb/'
   let showTmdbToken = $state(false)
   let showRatingsKey = $state(false)
   let externalError = $state('')
@@ -36,15 +38,13 @@
     <input id="setup-tmdb-token" data-focusable bind:value={tmdbToken} type={showTmdbToken ? 'text' : 'password'} autocomplete="off" spellcheck="false" class="setup-field pr-12 font-mono text-sm" placeholder="eyJhbGciOiJIUzI1NiJ9…" />
     <button type="button" data-focusable onclick={() => showTmdbToken = !showTmdbToken} aria-label={showTmdbToken ? m.onboarding_hide_key() : m.onboarding_show_key()} class="absolute right-1 top-1 grid size-10 place-items-center rounded-md text-muted-foreground hover:bg-secondary">{#if showTmdbToken}<EyeOff size={17} />{:else}<Eye size={17} />{/if}</button>
   </div>
-  <button type="button" data-focusable onclick={() => void openExternal(tmdbSettingsUrl)} class="setup-inline-button mt-3 bg-secondary"><ExternalLink size={15} />{m.onboarding_open_tmdb()}</button>
+  <div class="mt-3 flex flex-wrap gap-2">
+    <button type="button" data-focusable onclick={() => void openExternal(tmdbSettingsUrl)} class="setup-inline-button bg-secondary"><ExternalLink size={15} />{m.onboarding_open_tmdb()}</button>
+    <button type="button" data-focusable onclick={() => void openExternal(tmdbGuideUrl)} class="setup-inline-button bg-secondary"><ExternalLink size={15} />{m.onboarding_access_help()}</button>
+  </div>
 </div>
 
-<details class="mt-6 border-t border-border pt-5">
-  <summary class="cursor-pointer text-sm font-semibold">{m.onboarding_access_help()}</summary>
-  <ol class="mt-4 list-decimal space-y-3 pl-5 text-xs leading-relaxed text-muted-foreground">
-    {#each [m.onboarding_tmdb_instruction_1(), m.onboarding_tmdb_instruction_2(), m.onboarding_tmdb_instruction_3(), m.onboarding_tmdb_instruction_4()] as instruction}<li>{instruction}</li>{/each}
-  </ol>
-</details>
+
 
 <details class="mt-3 border-t border-border pt-5">
   <summary class="cursor-pointer text-sm text-muted-foreground">{m.onboarding_ratings_expand()}</summary>
@@ -56,6 +56,11 @@
   </div>
   <button type="button" data-focusable onclick={() => void openExternal(omdbSettingsUrl)} class="setup-inline-button mt-3 bg-secondary"><ExternalLink size={15} />{m.onboarding_get_omdb()}</button>
 </details>
+
+<div class="mt-6 border-t border-border pt-5">
+  <p class="text-sm leading-relaxed text-muted-foreground">{m.onboarding_access_switch_body()}</p>
+  <button type="button" data-focusable onclick={onswitch} class="setup-inline-button mt-3 bg-secondary">{m.onboarding_access_switch()}</button>
+</div>
 
 <div class="mt-7 flex items-center gap-4"><img src="/brand/tmdb.svg" alt="TMDB" class="h-5 w-auto max-w-20 shrink-0" /><p class="text-xs leading-relaxed text-muted-foreground">{m.onboarding_tmdb_attribution()}</p></div>
 {#if externalError}<p class="mt-3 text-sm text-destructive" role="alert">{externalError}</p>{/if}

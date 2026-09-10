@@ -61,8 +61,8 @@ describe('first-run catalog profile', () => {
 
 describe('first-run step list', () => {
   it('adds the sync screen only when an account was connected', () => {
-    expect(onboardingSteps(false, anime, 'tmdb')).toEqual(['welcome', 'watch', 'connect', 'sources', 'playback', 'ready'])
-    expect(onboardingSteps(true, anime, 'tmdb')).toEqual(['welcome', 'watch', 'connect', 'sync', 'sources', 'playback', 'ready'])
+    expect(onboardingSteps(false, anime, 'tmdb')).toEqual(['watch', 'connect', 'sources', 'playback', 'ready'])
+    expect(onboardingSteps(true, anime, 'tmdb')).toEqual(['watch', 'connect', 'sync', 'sources', 'playback', 'ready'])
   })
 
   it('never asks an anime-only run about film metadata, a TMDB key or a startup library', () => {
@@ -74,7 +74,7 @@ describe('first-run step list', () => {
 
   it('puts the TMDB key on its own screen straight after choosing TMDB', () => {
     const steps = onboardingSteps(false, films, 'tmdb')
-    expect(steps).toEqual(['welcome', 'watch', 'metadata', 'access', 'connect', 'sources', 'playback', 'ready'])
+    expect(steps).toEqual(['watch', 'metadata', 'access', 'connect', 'sources', 'playback', 'ready'])
     expect(steps.indexOf('access')).toBe(steps.indexOf('metadata') + 1)
   })
 
@@ -91,6 +91,6 @@ describe('first-run step list', () => {
 
   it('orders the film screens before connecting accounts', () => {
     const steps = onboardingSteps(true, both, 'tmdb')
-    expect(steps).toEqual(['welcome', 'watch', 'metadata', 'access', 'startup', 'connect', 'sync', 'sources', 'playback', 'ready'])
+    expect(steps).toEqual(['watch', 'metadata', 'access', 'startup', 'connect', 'sync', 'sources', 'playback', 'ready'])
   })
 })

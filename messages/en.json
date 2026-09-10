@@ -324,5 +324,18 @@
   "lists_add_queue": "Add to episode queue",
   "lists_queue_episode": "Add episode {episode} to queue",
   "lists_queued_episode": "Episode {episode} added to queue",
-  "lists_empty_custom": "Create a custom list from any title's Save menu."
+  "lists_empty_custom": "Create a custom list from any title's Save menu.",
+  "onboarding_access_switch": "Use Stremio metadata instead",
+  "onboarding_access_switch_body": "Don't want to fetch a token? Stremio's keyless catalog works straight away, with fewer discovery filters.",
+  "onboarding_stremio_connect": "Connect Stremio account",
+  "onboarding_stremio_link_hint": "Continue on stremio.com using a short link code.",
+  "onboarding_stremio_code_title": "Approve this device on Stremio",
+  "onboarding_stremio_code_body": "Open Stremio below and confirm this code. Return here after approving.",
+  "onboarding_stremio_code_label": "Sign-in code {code}",
+  "onboarding_stremio_open": "Open Stremio to approve",
+  "onboarding_stremio_waiting": "Waiting for approval…",
+  "onboarding_stremio_completing": "Completing sign-in…",
+  "onboarding_stremio_cancel": "Cancel and go back",
+  "onboarding_stremio_password_instead": "Use email and password",
+  "onboarding_stremio_code_instead": "Use a link code instead"
 }

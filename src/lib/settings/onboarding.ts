@@ -10,7 +10,6 @@ export type OnboardingMovieMetadata = 'tmdb' | 'stremio'
 export type OnboardingStartupLibrary = 'movies' | 'auto' | 'merged' | 'adaptive'
 /** Named so the footer, the artwork and the tests stop depending on step numbers. */
 export type StepId =
-  | 'welcome'
   | 'watch'
   | 'metadata'
   | 'access'
@@ -57,7 +56,7 @@ export function onboardingSteps(
   intent: OnboardingIntent,
   movieMetadata: OnboardingMovieMetadata,
 ): StepId[] {
-  const steps: StepId[] = ['welcome', 'watch']
+  const steps: StepId[] = ['watch']
   if (intent.films) {
     steps.push('metadata')
     // Picking TMDB means supplying a token, which is a screen's worth of work on its own.

@@ -11,7 +11,7 @@ const home = read('../../../routes/app/home/+page.svelte')
 // heading styling it used to scope to itself had to move to the global sheet to keep reaching them.
 const css = read('../../../app.css')
 const steps = Object.fromEntries(
-  ['WelcomeStep', 'WatchStep', 'MetadataStep', 'AccessStep', 'StartupStep', 'ConnectStep', 'SyncStep', 'SourcesStep', 'PlaybackStep', 'ReadyStep']
+  ['WatchStep', 'MetadataStep', 'AccessStep', 'StartupStep', 'ConnectStep', 'SyncStep', 'SourcesStep', 'PlaybackStep', 'ReadyStep']
     .map(name => [name, read(`./steps/${name}.svelte`)]),
 ) as Record<string, string>
 const watch = steps.WatchStep
@@ -29,16 +29,20 @@ describe('onboarding presentation contracts', () => {
   })
 
   it('routes by named step rather than by index, so the order can change safely', () => {
-    for (const step of ['welcome', 'watch', 'metadata', 'access', 'startup', 'connect', 'sync', 'sources', 'playback']) {
+    for (const step of ['watch', 'metadata', 'access', 'startup', 'connect', 'sync', 'sources', 'playback']) {
       expect(shell).toContain(`step === '${step}'`)
     }
     expect(shell).not.toMatch(/step === \d/)
   })
 
-  it('shows the full artwork on welcome and the chosen artwork afterwards', () => {
-    expect(shell).toContain("intent={step === 'welcome' ? { anime: true, films: true } : intent}")
+  it('lets the artwork follow the chosen libraries, dogs included', () => {
+    expect(shell).toContain('<SetupArtwork {intent} />')
     expect(shell.indexOf('<SetupArtwork')).toBeLessThan(shell.indexOf('{#key step}'))
-    expect(artwork).toContain('$derived(intent.anime && intent.films')
+    // Choosing neither is allowed, so the wall has an answer for it rather than showing catalogs
+    // the user just opted out of.
+    expect(artwork).toContain('const empty = $derived(!intent.anime && !intent.films)')
+    expect(artwork).toContain('dog.ceo')
+    expect(artwork).toContain('nekos.best')
   })
 
   it('orients keyboard users on each step without an outline on a non-interactive heading', () => {
@@ -78,11 +82,25 @@ describe('onboarding presentation contracts', () => {
   it('offers two independent library checkboxes instead of a third combined mode', () => {
     expect(watch).toContain('type="checkbox"')
     expect(watch).toContain('function toggle(key:')
-    expect(watch).toContain('if (!next.anime && !next.films)')
-    // Refusing the last untick leaves `intent` unchanged, so Svelte never re-renders the input.
-    // The checkbox has to be put back by hand or a screen reader reads an enabled library as off.
-    expect(watch).toContain('input.checked = intent[key]')
     expect(watch).not.toContain("'both'")
+    // Both may be off. The footer holds the flow instead of the control refusing the user, which
+    // is why the checkbox no longer has to be re-synced by hand after a rejected change.
+    expect(watch).not.toContain('input.checked')
+    expect(shell).toContain("const blocked = $derived(step === 'watch' && !intent.anime && !intent.films)")
+    expect(shell).toContain('disabled={busy || blocked}')
+  })
+
+  it('sends both token guides to the maintained walkthrough instead of hardcoding the steps', () => {
+    const access = steps.AccessStep
+    const guide = read('../catalog/TmdbCredentialGuide.svelte')
+    for (const source of [access, guide]) {
+      expect(source).toContain('https://duckkota.gitlab.io/guides/tmdb/')
+    }
+    expect(access).not.toContain('onboarding_tmdb_instruction_1')
+    expect(guide).not.toContain('const steps = [')
+    // Both screens offer the keyless provider so a user without a token is never stuck.
+    expect(access).toContain('onswitch')
+    expect(guide).toContain('onUseKeyless')
   })
 
   it('shows each source its own artwork rather than an unlabelled row', () => {

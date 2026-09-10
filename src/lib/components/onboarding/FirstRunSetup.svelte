@@ -1,7 +1,6 @@
 <script lang="ts">
   import Wordmark from '$lib/components/Wordmark.svelte'
   import SetupArtwork from './SetupArtwork.svelte'
-  import WelcomeStep from './steps/WelcomeStep.svelte'
   import WatchStep from './steps/WatchStep.svelte'
   import MetadataStep from './steps/MetadataStep.svelte'
   import AccessStep from './steps/AccessStep.svelte'
@@ -50,7 +49,7 @@
   const initialBoth = initialProvider === 'merged' || (initialProviders.includes('auto') && initialProviders.some(provider => provider === 'tmdb' || provider === 'stremio'))
 
   let root = $state<HTMLElement>()
-  let step = $state<StepId>('welcome')
+  let step = $state<StepId>('watch')
   let busy = $state(false)
   let keyboardOpen = $state(false)
 
@@ -70,6 +69,8 @@
   const steps = $derived(onboardingSteps(connected, intent, movieMetadata))
   const stepIndex = $derived(steps.indexOf(step))
   const totalSteps = $derived(steps.length)
+  /** Nothing chosen means nothing to set up, so the watch screen holds the flow until one is. */
+  const blocked = $derived(step === 'watch' && !intent.anime && !intent.films)
   const sourceReady = $derived($addonUrls.length > 0 || $extensionUrls.length > 0)
   const trackerReady = $derived(Boolean($anilistToken || $malToken || $kitsuToken || $simklToken))
   const metadataReady = $derived(!intent.films || movieMetadata === 'stremio' || tmdbToken.trim().length > 0)
@@ -80,8 +81,16 @@
     if (!busy && stepIndex > 0) step = steps[stepIndex - 1]
   }
 
+  /** Switching to the keyless provider deletes this very screen from the step list, so the
+   *  destination has to be read before the change or stepIndex lands on -1. */
+  function useStremioMetadata() {
+    const next = steps[stepIndex + 1] ?? 'connect'
+    movieMetadata = 'stremio'
+    step = next
+  }
+
   function goNext() {
-    if (!busy && stepIndex < steps.length - 1) step = steps[stepIndex + 1]
+    if (!busy && !blocked && stepIndex < steps.length - 1) step = steps[stepIndex + 1]
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -150,6 +159,12 @@
     finishOnboarding()
   }
 
+  // A change on an earlier screen can remove the current one from the list entirely. Falling back
+  // to the last still-valid step beats rendering nothing with a broken footer.
+  $effect(() => {
+    if (!$onboardingComplete && stepIndex === -1) step = steps[steps.length - 1]
+  })
+
   $effect(() => {
     if ($onboardingComplete) return
     step
@@ -162,7 +177,7 @@
 
   $effect(() => {
     if ($onboardingComplete) return
-    step = 'welcome'
+    step = 'watch'
     const previousFocus = document.activeElement as HTMLElement | null
     const htmlOverflow = document.documentElement.style.overflow
     const bodyOverflow = document.body.style.overflow
@@ -194,25 +209,23 @@
 </script>
 
 {#if !$onboardingComplete}
-  <div bind:this={root} role="dialog" aria-modal="true" aria-labelledby="setup-title" tabindex="-1" data-nav-trap class:welcome={step === 'welcome'} class:keyboard-open={keyboardOpen} class="onboarding-surface fixed inset-0 z-[160] flex h-[100dvh] w-screen flex-col overflow-hidden bg-background text-foreground" onkeydown={handleKeydown}>
+  <div bind:this={root} role="dialog" aria-modal="true" aria-labelledby="setup-title" tabindex="-1" data-nav-trap class:keyboard-open={keyboardOpen} class="onboarding-surface fixed inset-0 z-[160] flex h-[100dvh] w-screen flex-col overflow-hidden bg-background text-foreground" onkeydown={handleKeydown}>
     <span id="setup-progress" class="sr-only">{m.onboarding_step_count({ current: String(stepIndex + 1), total: String(totalSteps) })}</span>
     <div class="setup-stage min-h-0 flex-1">
       <aside class="setup-art-panel" aria-hidden="true">
-        <SetupArtwork intent={step === 'welcome' ? { anime: true, films: true } : intent} />
+        <SetupArtwork {intent} />
         <div class="art-wordmark"><Wordmark /></div>
       </aside>
       <main class="setup-main min-w-0">
         <div class="setup-step">
           {#key step}
           <section class="setup-content">
-            {#if step === 'welcome'}
-              <WelcomeStep />
-            {:else if step === 'watch'}
+            {#if step === 'watch'}
               <WatchStep bind:intent />
             {:else if step === 'metadata'}
               <MetadataStep bind:movieMetadata />
             {:else if step === 'access'}
-              <AccessStep bind:tmdbToken bind:ratingsKey />
+              <AccessStep bind:tmdbToken bind:ratingsKey onswitch={useStremioMetadata} />
             {:else if step === 'startup'}
               <StartupStep bind:startupLibrary {movieMetadata} />
             {:else if step === 'connect'}
@@ -230,7 +243,7 @@
           {/key}
         </div>
         <footer class="setup-actions flex items-center justify-between gap-3">
-          {#if step === 'welcome'}<button type="button" data-focusable onclick={skip} class="setup-button text-muted-foreground hover:bg-secondary">{m.onboarding_skip()}</button>
+          {#if stepIndex === 0}<button type="button" data-focusable onclick={skip} class="setup-button text-muted-foreground hover:bg-secondary">{m.onboarding_skip()}</button>
           {:else}<button type="button" data-focusable onclick={goBack} disabled={busy} class="setup-button hover:bg-secondary"><ChevronLeft size={17} />{m.onboarding_back()}</button>{/if}
           {#if step === 'ready'}
             <button type="button" data-focusable onclick={complete} class="setup-button bg-foreground text-background"><Check size={17} />{m.onboarding_ready_start()}</button>
@@ -239,7 +252,7 @@
               {#if step === 'connect' || step === 'sources' || step === 'playback'}
                 <button type="button" data-focusable onclick={goNext} disabled={busy} class="setup-button text-muted-foreground hover:bg-secondary">{m.onboarding_skip_step()}</button>
               {/if}
-              <button type="button" data-focusable onclick={goNext} disabled={busy} class="setup-button bg-foreground text-background">{step === 'welcome' ? m.onboarding_start() : m.onboarding_next()}<ArrowRight size={17} /></button>
+              <button type="button" data-focusable onclick={goNext} disabled={busy || blocked} class="setup-button bg-foreground text-background">{m.onboarding_next()}<ArrowRight size={17} /></button>
             </div>
           {/if}
         </footer>
@@ -272,15 +285,11 @@
     /* Keep the forward action off the screen edge on a phone. The last child is the primary button
        on the final screen and the skip/next pair everywhere else, so this targets whichever it is. */
     .setup-actions > :last-child { max-width: 72%; }
-    .welcome .setup-main { padding-top: max(6rem, 34dvh); }
-    .welcome .setup-art-panel::after { background: linear-gradient(180deg, hsl(var(--background) / .08), hsl(var(--background) / .25) 15%, hsl(var(--background) / .96) 40%, hsl(var(--background)) 75%); }
-    .welcome .setup-step { display: flex; align-items: safe center; }
     .keyboard-open .setup-main { padding-top: max(1rem, env(safe-area-inset-top)); }
     .keyboard-open .art-wordmark { display: none; }
     .keyboard-open .setup-art-panel::after { background: hsl(var(--background) / .97); }
   }
   @media (max-height: 600px) and (max-width: 767px), (max-height: 500px) and (pointer: coarse) {
-    .welcome .setup-main { padding-top: max(5rem, calc(env(safe-area-inset-top) + 3.5rem)); }
     .setup-actions { padding-top: .6rem; }
   }
   .setup-button { display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: .5rem; border-radius: .5rem; padding: .65rem 1rem; font-size: .85rem; font-weight: 600; transition: background 180ms, transform 180ms; }

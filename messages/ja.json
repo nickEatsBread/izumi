@@ -324,5 +324,18 @@
   "lists_add_queue": "エピソードキューに追加",
   "lists_queue_episode": "エピソード {episode} をキューに追加",
   "lists_queued_episode": "エピソード {episode} をキューに追加しました",
-  "lists_empty_custom": "各作品の保存メニューからカスタムリストを作成できます。"
+  "lists_empty_custom": "各作品の保存メニューからカスタムリストを作成できます。",
+  "onboarding_access_switch": "Stremio のメタデータを使う",
+  "onboarding_access_switch_body": "トークンを取得したくない場合は、キー不要の Stremio カタログをすぐに使えます。絞り込み機能は少なくなります。",
+  "onboarding_stremio_connect": "Stremio アカウントに接続",
+  "onboarding_stremio_link_hint": "短いリンクコードを使って stremio.com で続行します。",
+  "onboarding_stremio_code_title": "Stremio でこのデバイスを承認",
+  "onboarding_stremio_code_body": "下から Stremio を開き、このコードを確認してください。承認後、ここに戻ります。",
+  "onboarding_stremio_code_label": "サインインコード {code}",
+  "onboarding_stremio_open": "Stremio を開いて承認",
+  "onboarding_stremio_waiting": "承認を待っています…",
+  "onboarding_stremio_completing": "サインインを完了しています…",
+  "onboarding_stremio_cancel": "キャンセルして戻る",
+  "onboarding_stremio_password_instead": "メールアドレスとパスワードを使う",
+  "onboarding_stremio_code_instead": "リンクコードを使う"
 }
