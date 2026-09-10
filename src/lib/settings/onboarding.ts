@@ -55,6 +55,7 @@ export function onboardingSteps(
   connected: boolean,
   intent: OnboardingIntent,
   movieMetadata: OnboardingMovieMetadata,
+  sourcesConfigured = false,
 ): StepId[] {
   const steps: StepId[] = ['watch']
   if (intent.films) {
@@ -66,7 +67,12 @@ export function onboardingSteps(
   if (intent.anime && intent.films) steps.push('startup')
   steps.push('connect')
   if (connected) steps.push('sync')
-  steps.push('sources', 'playback', 'ready')
+  steps.push('sources')
+  // Someone who imported or picked sources already has a way to play. Asking them to choose
+  // between debrid and peer-to-peer before they have watched anything is a decision without a
+  // context; it belongs at first playback, and it stays available in settings meanwhile.
+  if (!sourcesConfigured) steps.push('playback')
+  steps.push('ready')
   return steps
 }
 

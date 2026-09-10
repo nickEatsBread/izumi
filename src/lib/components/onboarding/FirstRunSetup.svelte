@@ -66,15 +66,17 @@
   let syncImported = $state(false)
 
   const connected = $derived(anyConnected(connections))
-  const steps = $derived(onboardingSteps(connected, intent, movieMetadata))
+  const sourceReady = $derived($addonUrls.length > 0 || $extensionUrls.length > 0)
+  const steps = $derived(onboardingSteps(connected, intent, movieMetadata, sourceReady))
   const stepIndex = $derived(steps.indexOf(step))
   const totalSteps = $derived(steps.length)
   /** Nothing chosen means nothing to set up, so the watch screen holds the flow until one is. */
   const blocked = $derived(step === 'watch' && !intent.anime && !intent.films)
-  const sourceReady = $derived($addonUrls.length > 0 || $extensionUrls.length > 0)
   const trackerReady = $derived(Boolean($anilistToken || $malToken || $kitsuToken || $simklToken))
   const metadataReady = $derived(!intent.films || movieMetadata === 'stremio' || tmdbToken.trim().length > 0)
-  const playbackReady = $derived($torrentPlaybackMode === 'direct' || Boolean($debridKey))
+  // Having sources counts: the playback screen is skipped in that case, so reporting it as
+  // unfinished would nag about a question setup deliberately never asked.
+  const playbackReady = $derived($torrentPlaybackMode === 'direct' || Boolean($debridKey) || sourceReady)
   const readiness = $derived<SetupReadiness>({ sources: sourceReady, playback: playbackReady, tracker: trackerReady, metadata: metadataReady })
 
   function goBack() {

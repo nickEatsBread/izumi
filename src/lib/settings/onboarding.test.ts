@@ -89,6 +89,19 @@ describe('first-run step list', () => {
     expect(onboardingSteps(false, both, 'stremio')).toContain('startup')
   })
 
+  it('skips the playback question once sources are configured', () => {
+    // The screen only exists to guarantee a way to play. Someone who imported or picked sources
+    // already has one, and the debrid-versus-P2P call is better made at first playback.
+    expect(onboardingSteps(false, anime, 'tmdb', false)).toContain('playback')
+    expect(onboardingSteps(false, anime, 'tmdb', true)).not.toContain('playback')
+  })
+
+  it('still ends on the readiness card when the playback screen is skipped', () => {
+    const steps = onboardingSteps(false, anime, 'tmdb', true)
+    expect(steps).toEqual(['watch', 'connect', 'sources', 'ready'])
+    expect(steps[steps.length - 1]).toBe('ready')
+  })
+
   it('orders the film screens before connecting accounts', () => {
     const steps = onboardingSteps(true, both, 'tmdb')
     expect(steps).toEqual(['watch', 'metadata', 'access', 'startup', 'connect', 'sync', 'sources', 'playback', 'ready'])
