@@ -7,10 +7,10 @@
   import { addonSuggestions, packageSuggestions, type SourceSuggestion } from '$lib/onboarding/source-suggestions'
   import { listCommunityAddons } from '$lib/stremio/community-store'
   import { fetchManifest } from '$lib/stremio/manifest'
-  import { addonUrls, normalizeBase } from '$lib/stremio/sources'
+  import { addonUrls, disabledSources, normalizeBase } from '$lib/stremio/sources'
   import { OFFICIAL_ANIME_CATALOG, fetchExtensionInfo, installCatalogPackage } from '$lib/extensions/manager'
   import type { ExtensionCatalogPackage } from '$lib/extensions/catalog'
-  import { disabledExtensions, extensionUrls } from '$lib/settings/ui'
+  import { disabledExtensions, disabledPlugins, extensionUrls } from '$lib/settings/ui'
   import type { OnboardingIntent } from '$lib/settings/onboarding'
 
   let { intent, synced = false, busy = $bindable() }: { intent: OnboardingIntent; synced?: boolean; busy: boolean } = $props()
@@ -57,8 +57,12 @@
     loading = true
     error = ''
     try {
+      // An empty intent is unreachable through the UI but a stored profile could hold one, and
+      // onboardingCatalogPlan answers it with the anime library. Match that rather than showing
+      // an empty picker.
+      const anime = intent.anime || !intent.films
       const [catalog, community] = await Promise.all([
-        intent.anime ? fetchExtensionInfo(OFFICIAL_ANIME_CATALOG).catch(() => null) : Promise.resolve(null),
+        anime ? fetchExtensionInfo(OFFICIAL_ANIME_CATALOG).catch(() => null) : Promise.resolve(null),
         intent.films ? listCommunityAddons({ limit: 12, sort: 'stars' }).catch(() => null) : Promise.resolve(null),
       ])
       if (abort.signal.aborted) return
@@ -93,11 +97,15 @@
         if (suggestion.kind === 'addon') {
           const base = normalizeBase(suggestion.url)
           if (base && !$addonUrls.some((url) => normalizeBase(url) === base)) addonUrls.update((urls) => [...urls, base])
+          // A re-run of setup can meet a source the user switched off earlier. Installing it here
+          // has to re-enable it, or it lands in the list already disabled and silently does nothing.
+          if (base) disabledSources.update((urls) => urls.filter((url) => normalizeBase(url) !== base))
           continue
         }
         const entry = packages.find((value) => value.id === id)
         if (!entry) continue
-        await installCatalogPackage(entry)
+        const installed = await installCatalogPackage(entry)
+        disabledPlugins.update((ids) => ids.filter((value) => value !== installed.id))
         // The package came from the maintained catalog, so keep that catalog in the source list
         // the same way the store screen does when it installs from it.
         if (!$extensionUrls.includes(OFFICIAL_ANIME_CATALOG)) extensionUrls.update((urls) => [...urls, OFFICIAL_ANIME_CATALOG])
@@ -136,6 +144,7 @@
     <p class="mt-7 flex items-center gap-2 text-sm text-muted-foreground" role="status"><LoaderCircle size={16} class="tile-spinner" />{m.onboarding_checking()}</p>
   {:else if error}
     <p class="mt-7 text-sm leading-relaxed text-muted-foreground" role="status">{error}</p>
+    <button type="button" data-focusable onclick={() => void load()} class="setup-inline-button mt-4 bg-secondary">{m.onboarding_sources_retry()}</button>
   {:else}
     <fieldset class="mt-7 grid gap-2">
       <legend class="sr-only">{m.onboarding_sources_title()}</legend>
