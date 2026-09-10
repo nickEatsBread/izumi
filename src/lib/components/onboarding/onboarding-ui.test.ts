@@ -11,7 +11,7 @@ const home = read('../../../routes/app/home/+page.svelte')
 // heading styling it used to scope to itself had to move to the global sheet to keep reaching them.
 const css = read('../../../app.css')
 const steps = Object.fromEntries(
-  ['WelcomeStep', 'WatchStep', 'ConnectStep', 'SyncStep', 'SourcesStep', 'PlaybackStep', 'ReadyStep']
+  ['WelcomeStep', 'WatchStep', 'MetadataStep', 'AccessStep', 'StartupStep', 'ConnectStep', 'SyncStep', 'SourcesStep', 'PlaybackStep', 'ReadyStep']
     .map(name => [name, read(`./steps/${name}.svelte`)]),
 ) as Record<string, string>
 const watch = steps.WatchStep
@@ -29,7 +29,7 @@ describe('onboarding presentation contracts', () => {
   })
 
   it('routes by named step rather than by index, so the order can change safely', () => {
-    for (const step of ['welcome', 'watch', 'connect', 'sync', 'sources', 'playback']) {
+    for (const step of ['welcome', 'watch', 'metadata', 'access', 'startup', 'connect', 'sync', 'sources', 'playback']) {
       expect(shell).toContain(`step === '${step}'`)
     }
     expect(shell).not.toMatch(/step === \d/)
@@ -61,6 +61,18 @@ describe('onboarding presentation contracts', () => {
     expect(artwork).toContain('prefers-reduced-motion: reduce')
     expect(shell).toContain('.setup-content { animation: none; }')
     expect(css).toContain('@media (prefers-reduced-motion: reduce) { .tile-spinner { animation: none; } }')
+  })
+
+  it('gives each film decision its own screen instead of nesting them under the checkboxes', () => {
+    // An earlier draft folded the provider choice, the TMDB key and the startup picker into the
+    // watch screen. One decision per screen is the contract; the watch screen owns only the
+    // checkboxes, and the key screen exists separately so it can follow the provider choice.
+    expect(watch).not.toContain('m.onboarding_metadata_title()')
+    expect(watch).not.toContain('m.onboarding_startup_title()')
+    expect(watch).not.toContain('tmdbToken')
+    expect(steps.MetadataStep).toContain('m.onboarding_metadata_title()')
+    expect(steps.AccessStep).toContain('m.onboarding_tmdb_access_title()')
+    expect(steps.StartupStep).toContain('m.onboarding_startup_title()')
   })
 
   it('offers two independent library checkboxes instead of a third combined mode', () => {

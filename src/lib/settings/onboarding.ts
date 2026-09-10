@@ -9,7 +9,17 @@ export interface OnboardingIntent {
 export type OnboardingMovieMetadata = 'tmdb' | 'stremio'
 export type OnboardingStartupLibrary = 'movies' | 'auto' | 'merged' | 'adaptive'
 /** Named so the footer, the artwork and the tests stop depending on step numbers. */
-export type StepId = 'welcome' | 'watch' | 'connect' | 'sync' | 'sources' | 'playback' | 'ready'
+export type StepId =
+  | 'welcome'
+  | 'watch'
+  | 'metadata'
+  | 'access'
+  | 'startup'
+  | 'connect'
+  | 'sync'
+  | 'sources'
+  | 'playback'
+  | 'ready'
 
 export interface OnboardingCatalogPlan {
   providers: CatalogSelection[]
@@ -33,12 +43,32 @@ export function onboardingCatalogPlan(
   return { providers: [defaultProvider], defaultProvider }
 }
 
-/** The screens to show, in order. Only the sync screen is conditional: it has nothing to report
- * unless an account was connected on the screen before it. */
-export function onboardingSteps(connected: boolean): StepId[] {
-  return connected
-    ? ['welcome', 'watch', 'connect', 'sync', 'sources', 'playback', 'ready']
-    : ['welcome', 'watch', 'connect', 'sources', 'playback', 'ready']
+/**
+ * The screens to show, in order.
+ *
+ * Four are conditional, and each is a screen rather than a block folded into the one before it.
+ * An earlier draft nested the metadata choice, the TMDB key and the startup choice underneath the
+ * two library checkboxes; that put four unrelated decisions on one screen and read as a wall.
+ * One decision per screen costs a click and reads far better, and the conditions mean an
+ * anime-only run never sees any of the three film screens.
+ */
+export function onboardingSteps(
+  connected: boolean,
+  intent: OnboardingIntent,
+  movieMetadata: OnboardingMovieMetadata,
+): StepId[] {
+  const steps: StepId[] = ['welcome', 'watch']
+  if (intent.films) {
+    steps.push('metadata')
+    // Picking TMDB means supplying a token, which is a screen's worth of work on its own.
+    if (movieMetadata === 'tmdb') steps.push('access')
+  }
+  // Only meaningful when there are two libraries to choose between.
+  if (intent.anime && intent.films) steps.push('startup')
+  steps.push('connect')
+  if (connected) steps.push('sync')
+  steps.push('sources', 'playback', 'ready')
+  return steps
 }
 
 /** Versioned so a future materially different setup flow can be offered without losing history. */

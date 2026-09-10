@@ -3,6 +3,9 @@
   import SetupArtwork from './SetupArtwork.svelte'
   import WelcomeStep from './steps/WelcomeStep.svelte'
   import WatchStep from './steps/WatchStep.svelte'
+  import MetadataStep from './steps/MetadataStep.svelte'
+  import AccessStep from './steps/AccessStep.svelte'
+  import StartupStep from './steps/StartupStep.svelte'
   import ConnectStep from './steps/ConnectStep.svelte'
   import SyncStep from './steps/SyncStep.svelte'
   import SourcesStep from './steps/SourcesStep.svelte'
@@ -65,7 +68,7 @@
   let syncImported = $state(false)
 
   const connected = $derived(anyConnected(connections))
-  const steps = $derived(onboardingSteps(connected))
+  const steps = $derived(onboardingSteps(connected, intent, movieMetadata))
   const stepIndex = $derived(steps.indexOf(step))
   const totalSteps = $derived(steps.length)
   const sourceReady = $derived($addonUrls.length > 0 || $extensionUrls.length > 0)
@@ -203,7 +206,13 @@
             {#if step === 'welcome'}
               <WelcomeStep />
             {:else if step === 'watch'}
-              <WatchStep bind:intent bind:movieMetadata bind:startupLibrary bind:tmdbToken bind:ratingsKey />
+              <WatchStep bind:intent />
+            {:else if step === 'metadata'}
+              <MetadataStep bind:movieMetadata />
+            {:else if step === 'access'}
+              <AccessStep bind:tmdbToken bind:ratingsKey />
+            {:else if step === 'startup'}
+              <StartupStep bind:startupLibrary {movieMetadata} />
             {:else if step === 'connect'}
               <ConnectStep bind:connections bind:busy />
             {:else if step === 'sync'}
