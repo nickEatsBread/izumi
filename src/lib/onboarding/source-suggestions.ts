@@ -1,3 +1,4 @@
+import { resolveAddonLogo } from '$lib/stremio/addon-logo'
 import type { CommunityAddon } from '$lib/stremio/community-store'
 import type { ExtensionCatalogPackage } from '$lib/extensions/catalog'
 
@@ -9,6 +10,10 @@ export interface SourceSuggestion {
   description: string
   /** Manifest URL for an addon; empty for an extension, which installs from its catalog entry. */
   url: string
+  /** The source's own artwork, when the directory supplies one. Catalog packages have none until
+   *  they are installed — their icon is the launcher icon inside the package — so the row falls
+   *  back to the app's shared source placeholder rather than showing nothing. */
+  logo?: string
 }
 
 /** Directory order is already relevance order, so this only trims and reshapes. */
@@ -22,6 +27,8 @@ export function addonSuggestions(addons: readonly CommunityAddon[], limit: numbe
       name: addon.manifest?.name || addon.slug,
       description: addon.manifest?.description?.trim() || (addon.stars === 1 ? '1 star' : `${addon.stars} stars`),
       url: addon.manifestUrl,
+      // Manifests may declare a relative logo, so it has to be resolved against the manifest URL.
+      logo: resolveAddonLogo(addon.manifest?.logo, addon.manifestUrl),
     }))
 }
 

@@ -4,6 +4,7 @@
   import LoaderCircle from '@lucide/svelte/icons/loader-circle'
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
   import { m } from '$lib/paraglide/messages.js'
+  import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   import { addonSuggestions, packageSuggestions, type SourceSuggestion } from '$lib/onboarding/source-suggestions'
   import { listCommunityAddons } from '$lib/stremio/community-store'
   import { fetchManifest } from '$lib/stremio/manifest'
@@ -146,11 +147,16 @@
     <p class="mt-7 text-sm leading-relaxed text-muted-foreground" role="status">{error}</p>
     <button type="button" data-focusable onclick={() => void load()} class="setup-inline-button mt-4 bg-secondary">{m.onboarding_sources_retry()}</button>
   {:else}
-    <fieldset class="mt-7 grid gap-2">
+    <!-- minmax(0,1fr) is load-bearing: a grid item defaults to min-width:auto, so the implicit
+         column sizes to the widest row's max-content. `truncate` sets white-space:nowrap, which
+         makes that max-content the full untruncated description — the track blows past the
+         container and the text clips at the card edge instead of ellipsising. -->
+    <fieldset class="mt-7 grid grid-cols-[minmax(0,1fr)] gap-2">
       <legend class="sr-only">{m.onboarding_sources_title()}</legend>
       {#each suggestions as suggestion (suggestion.id)}
-        <label class="setup-choice flex cursor-pointer items-center gap-3 p-4 {picked.includes(suggestion.id) ? 'selected' : ''}">
-          <input type="checkbox" data-focusable checked={picked.includes(suggestion.id)} onchange={() => toggle(suggestion.id)} />
+        <label class="setup-choice flex min-w-0 cursor-pointer items-center gap-3 p-4 {picked.includes(suggestion.id) ? 'selected' : ''}">
+          <input type="checkbox" data-focusable class="shrink-0" checked={picked.includes(suggestion.id)} onchange={() => toggle(suggestion.id)} />
+          <AddonLogo logo={suggestion.logo} name={suggestion.name} id={suggestion.id} size={32} />
           <span class="min-w-0 flex-1">
             <span class="block truncate text-sm font-semibold">{suggestion.name}</span>
             <span class="mt-0.5 block truncate text-xs text-muted-foreground">{suggestion.description}</span>

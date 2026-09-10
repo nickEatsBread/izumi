@@ -47,7 +47,7 @@
       </div>
       <button type="button" data-focusable onclick={() => setupChecklistDismissed.set(true)} aria-label={m.setup_checklist_dismiss()} class="grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-secondary"><X size={16} /></button>
     </div>
-    <ul class="mt-3 grid gap-2">
+    <ul class="mt-3 grid grid-cols-[minmax(0,1fr)] gap-2">
       {#each items as item (item)}
         <li class="flex items-center gap-2">
           <button type="button" data-focusable onclick={() => goto(destination[item])} class="flex min-h-11 flex-1 items-center justify-between gap-3 rounded-lg bg-background px-3 text-left text-sm font-semibold hover:bg-accent">

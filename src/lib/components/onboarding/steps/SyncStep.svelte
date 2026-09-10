@@ -149,7 +149,7 @@
 {#if !started && nuvioChosen}
   <h2 class="mt-7 text-base font-semibold">{m.onboarding_sync_extras_title()}</h2>
   <p class="mt-2 text-sm leading-relaxed text-muted-foreground">{m.onboarding_sync_extras_body()}</p>
-  <fieldset class="mt-4 grid gap-2">
+  <fieldset class="mt-4 grid grid-cols-[minmax(0,1fr)] gap-2">
     <legend class="sr-only">{m.onboarding_sync_extras_title()}</legend>
     {#each [{ key: 'library' as const, label: m.onboarding_sync_library() }, { key: 'progress' as const, label: m.onboarding_sync_progress() }, { key: 'history' as const, label: m.onboarding_sync_history() }] as extra}
       <label class="setup-choice flex cursor-pointer items-center gap-3 p-4 text-sm {nuvioExtras[extra.key] ? 'selected' : ''}">

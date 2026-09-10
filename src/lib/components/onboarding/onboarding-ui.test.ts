@@ -85,6 +85,30 @@ describe('onboarding presentation contracts', () => {
     expect(watch).not.toContain("'both'")
   })
 
+  it('shows each source its own artwork rather than an unlabelled row', () => {
+    expect(sources).toContain('<AddonLogo logo={suggestion.logo}')
+  })
+
+  it('never lets a truncating row blow its grid track out past the container', () => {
+    // A grid item defaults to min-width:auto, so a column with no explicit track sizes to the
+    // widest row's max-content. `truncate` is white-space:nowrap, which makes that the whole
+    // untruncated string — the card overflowed and the text clipped hard instead of ellipsising.
+    // Only containers that actually hold truncating rows are checked; a bare `grid` wrapping a
+    // label and an input is fine and must not be flagged.
+    const rowLists: [string, string][] = [
+      ['SourcesStep', steps.SourcesStep],
+      ['ConnectStep', steps.ConnectStep],
+      ['SetupChecklist', checklist],
+    ]
+    for (const [name, source] of rowLists) {
+      const containers = [...source.matchAll(/class="(mt-\d+ grid [^"]*)"/g)].map(match => match[1])
+      expect(containers.length, `${name} has no row container`).toBeGreaterThan(0)
+      for (const classes of containers) {
+        expect(classes, `${name}: "${classes}" needs an explicit track`).toMatch(/grid-cols-/)
+      }
+    }
+  })
+
   it('never pre-selects a source for the user', () => {
     expect(sources).toContain('let picked = $state<string[]>([])')
     expect(sources).not.toMatch(/picked\s*=\s*\[[^\]]/)

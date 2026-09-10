@@ -127,7 +127,7 @@
 <p class="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">{m.onboarding_connect_body()}</p>
 
 <h2 class="mt-7 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{m.onboarding_connect_sources_group()}</h2>
-<div class="mt-3 grid gap-2">
+<div class="mt-3 grid grid-cols-[minmax(0,1fr)] gap-2">
   <ConnectTile name="Stremio" logo="/brand/stremio.svg" initial="S" description={m.onboarding_connect_stremio_body()} state={connections.stremio} expanded={open === 'stremio'} onexpand={() => expand('stremio')}>
     {#snippet panel()}
       <form onsubmit={signInStremio} class="grid gap-3">
@@ -169,7 +169,7 @@
 </div>
 
 <h2 class="mt-7 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{m.onboarding_connect_list_group()}</h2>
-<div class="mt-3 grid gap-2 sm:grid-cols-2">
+<div class="mt-3 grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2">
   <ConnectTile name="AniList" logo="/brand/anilist.svg" initial="A" description={m.onboarding_connect_tracker_body()} state={connections.anilist} expanded={open === 'anilist'} onexpand={() => connectTracker('anilist')} />
   <ConnectTile name="MyAnimeList" logo="/brand/myanimelist.svg" initial="M" description={m.onboarding_connect_tracker_body()} state={connections.mal} expanded={open === 'mal'} onexpand={() => connectTracker('mal')} />
 </div>
