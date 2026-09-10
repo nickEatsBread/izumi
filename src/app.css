@@ -478,7 +478,11 @@ html.gamemode .group:hover .group-hover\:scale-105 {
 .setup-choice { border: 1px solid hsl(var(--border)); border-radius: .75rem; transition: background 150ms, border-color 150ms; }
 .setup-choice:hover { background: hsl(var(--secondary)); }
 .setup-choice.selected { border-color: hsl(var(--foreground) / .6); background: hsl(var(--foreground) / .05); }
-.setup-choice:has(input:focus-visible) { outline: 2px solid hsl(var(--foreground)); outline-offset: 3px; }
+/* Only when the card's OWN control is the invisible one — a choice card is a label wrapping an
+   sr-only checkbox or radio, so the card has to draw the focus ring on its behalf. Cards that
+   contain real inputs (the connect tiles) must not: those inputs draw their own ring, and
+   outlining the whole card around them stacks three borders on one field. */
+.setup-choice:has(> input.sr-only:focus-visible) { outline: 2px solid hsl(var(--foreground)); outline-offset: 3px; }
 .setup-field { width: 100%; min-width: 0; min-height: 3rem; border: 1px solid hsl(var(--border)); border-radius: .5rem; background: hsl(var(--input)); padding: .65rem .85rem; font-size: 16px; font-weight: 400; }
 .setup-inline-button { display: inline-flex; align-items: center; justify-content: center; gap: .6rem; min-height: 3rem; padding: .75rem 1rem; border-radius: .5rem; font-size: .95rem; font-weight: 700; transition: opacity 180ms, transform 180ms; }
 .setup-inline-button:hover:not(:disabled) { opacity: .85; }

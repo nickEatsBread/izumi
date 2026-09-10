@@ -23,7 +23,6 @@
   let picked = $state<string[]>([])
   let installError = $state('')
   let health = $state<'empty' | 'checking' | 'ready' | 'error'>('empty')
-  let pickerOpen = $state(false)
   const abort = new AbortController()
 
   const configured = $derived($addonUrls.length > 0 || $extensionUrls.length > 0)
@@ -114,7 +113,6 @@
       }
       if (abort.signal.aborted) return
       picked = []
-      pickerOpen = false
       await check()
     } catch (cause) {
       if (!abort.signal.aborted) installError = cause instanceof Error ? cause.message : m.onboarding_sources_install_failed()
@@ -137,10 +135,9 @@
       <p class="mt-1 text-sm text-muted-foreground">{health === 'checking' ? m.onboarding_checking() : health === 'error' ? m.onboarding_source_unavailable() : m.onboarding_ready()}</p>
     </div>
   </div>
-  <button type="button" data-focusable onclick={() => { pickerOpen = !pickerOpen; if (pickerOpen && !suggestions.length) void load() }} class="setup-inline-button mt-4 bg-secondary">{m.onboarding_sources_add_more()}</button>
 {/if}
 
-{#if !reviewFace || pickerOpen}
+{#if !reviewFace}
   {#if loading}
     <p class="mt-7 flex items-center gap-2 text-sm text-muted-foreground" role="status"><LoaderCircle size={16} class="tile-spinner" />{m.onboarding_checking()}</p>
   {:else if error}

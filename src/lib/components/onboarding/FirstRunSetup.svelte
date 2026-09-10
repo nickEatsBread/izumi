@@ -20,6 +20,7 @@
   import { m } from '$lib/paraglide/messages.js'
   import { anyConnected, idleConnectStates, type ConnectStates } from '$lib/onboarding/connect-state'
   import { remainderFrom, setupRemainder, type SetupReadiness } from '$lib/onboarding/readiness'
+  import { defaultPlaybackLanguages } from '$lib/onboarding/playback-languages'
   import type { NuvioExtras } from '$lib/onboarding/sync-receipt'
   import {
     catalogDefaultProvider,
@@ -40,7 +41,7 @@
     type OnboardingStartupLibrary,
     type StepId,
   } from '$lib/settings/onboarding'
-  import { debridKey, extensionUrls, preferredAudioLang, preferredSubLang, torrentPlaybackMode } from '$lib/settings/ui'
+  import { debridKey, extensionUrls, preferredAudioLang, preferredSubLang, torrentPlaybackMode, type AudioLang, type SubLang } from '$lib/settings/ui'
   import { addonUrls, CINEMETA_BASE, disabledSources, normalizeBase, replaceAddonBase } from '$lib/stremio/sources'
   import { anilistToken, kitsuToken, malToken, simklToken } from '$lib/trackers/config'
 
@@ -61,8 +62,6 @@
   let startupLibrary = $state<OnboardingStartupLibrary>(initialProvider === 'adaptive' ? 'adaptive' : initialBoth && initialProvider === 'auto' ? 'auto' : initialBoth && (initialProvider === 'tmdb' || initialProvider === 'stremio') ? 'movies' : 'merged')
   let tmdbToken = $state(get(tmdbReadToken))
   let ratingsKey = $state(get(omdbApiKey))
-  let audioLanguage = $state(get(preferredAudioLang))
-  let subtitleLanguage = $state(get(preferredSubLang))
   let connections = $state<ConnectStates>(idleConnectStates())
   let nuvioExtras = $state<NuvioExtras>({ library: false, progress: false, history: false })
   let syncImported = $state(false)
@@ -116,8 +115,11 @@
   }
 
   function applyProfile() {
-    preferredAudioLang.set(audioLanguage)
-    preferredSubLang.set(subtitleLanguage)
+    // Derived rather than asked: an anime library implies Japanese audio with English subtitles,
+    // anything else follows the system language.
+    const languages = defaultPlaybackLanguages(intent, navigator.language)
+    preferredAudioLang.set(languages.audio as AudioLang)
+    preferredSubLang.set(languages.subtitle as SubLang)
     const plan = onboardingCatalogPlan(intent, movieMetadata, startupLibrary)
     catalogProviders.set(plan.providers)
     catalogDefaultProvider.set(plan.defaultProvider)
@@ -220,7 +222,7 @@
             {:else if step === 'sources'}
               <SourcesStep {intent} synced={syncImported} bind:busy />
             {:else if step === 'playback'}
-              <PlaybackStep bind:audioLanguage bind:subtitleLanguage bind:busy />
+              <PlaybackStep bind:busy />
             {:else}
               <ReadyStep {readiness} />
             {/if}

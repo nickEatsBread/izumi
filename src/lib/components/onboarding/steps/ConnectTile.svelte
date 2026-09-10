@@ -47,7 +47,7 @@
       </p>
     </div>
     {#if connection.status === 'connected'}
-      <span class="flex shrink-0 items-center gap-1.5 rounded-md bg-secondary px-2.5 py-1 text-xs font-semibold"><Check size={13} />{m.onboarding_connect_connected()}</span>
+      <span class="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-muted-foreground"><Check size={13} />{m.onboarding_connect_connected()}</span>
     {:else}
       <button type="button" data-focusable onclick={onexpand} disabled={busy} class="setup-inline-button shrink-0 bg-secondary px-3 text-sm">
         {#if busy}<LoaderCircle size={15} class="tile-spinner" />{/if}

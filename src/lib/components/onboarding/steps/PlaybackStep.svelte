@@ -7,16 +7,13 @@
   import LoaderCircle from '@lucide/svelte/icons/loader-circle'
   import Share2 from '@lucide/svelte/icons/share-2'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
-  import { PLAYBACK_LANGUAGES } from '$lib/shared/languages'
   import { m } from '$lib/paraglide/messages.js'
   import { providerList, accountInfo } from '$lib/stremio/debrid'
   import { debridKey, debridProvider, torrentPlaybackMode, type AudioLang, type SubLang } from '$lib/settings/ui'
 
-  let {
-    audioLanguage = $bindable(),
-    subtitleLanguage = $bindable(),
-    busy = $bindable(),
-  }: { audioLanguage: AudioLang; subtitleLanguage: SubLang; busy: boolean } = $props()
+  // Audio and subtitle defaults are derived from the chosen libraries instead of asked for; see
+  // defaultPlaybackLanguages. This screen is only about how a torrent becomes a playable stream.
+  let { busy = $bindable() }: { busy: boolean } = $props()
 
   let showKey = $state(false)
   let checking = $state(false)
@@ -107,9 +104,3 @@
     </div>
   </div>
 {/if}
-
-<h2 class="mt-9 text-base font-semibold">{m.onboarding_preferences_title()}</h2>
-<div class="mt-4 grid gap-4 sm:grid-cols-2">
-  <label class="grid gap-2 text-sm font-semibold">{m.player_audio_language()}<SelectMenu bind:value={audioLanguage} ariaLabel={m.player_audio_language()} searchable options={PLAYBACK_LANGUAGES} /></label>
-  <label class="grid gap-2 text-sm font-semibold">{m.player_subtitle_language()}<SelectMenu bind:value={subtitleLanguage} ariaLabel={m.player_subtitle_language()} searchable options={[...PLAYBACK_LANGUAGES.slice(0, 2), { value: 'none', label: m.cast_subtitles_off() }, ...PLAYBACK_LANGUAGES.slice(2)]} /></label>
-</div>
