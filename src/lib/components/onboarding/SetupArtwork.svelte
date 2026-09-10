@@ -1,7 +1,8 @@
 <script lang="ts">
   import { MediaQuery } from 'svelte/reactivity'
   const mobile = new MediaQuery('(max-width: 767px), (max-height: 500px) and (pointer: coarse)')
-  let { mode = 'both' }: { mode?: 'anime' | 'movies' | 'both' } = $props()
+  let { intent = { anime: true, films: true } }: { intent?: { anime: boolean; films: boolean } } = $props()
+  const mode = $derived(intent.anime && intent.films ? 'both' : intent.films ? 'movies' : 'anime')
   const films = ['oYuLEt3zVCKq57qu2F8dT7NIa6f.jpg', 'gEU2QniE6E77NI6lCU6MxlNBvIx.jpg', '39wmItIWsg5sZMyRUHLkWBcuVCM.jpg', 'qJ2tW6WMUDux911r6m7haRef0WH.jpg', '8Gxv8gSFCU0XGDykEGv7zR1n2ua.jpg', 'd5NXSklXo0qyIYkgV94XAgMIckC.jpg']
     .map(path => 'https://image.tmdb.org/t/p/w342/' + path)
   const anime = ['bx154587-qQTzQnEJJ3oB.jpg', 'bx16498-buvcRTBx4NSm.jpg', 'bx113415-LHBAeoZDIsnF.jpg', 'bx127230-DdP4vAdssLoz.png', 'bx151807-it355ZgzquUd.png', 'bx21-ELSYx3yMPcKM.jpg']
