@@ -38,7 +38,7 @@
     onboardingCatalogPlan,
     onboardingSteps,
     onboardingComplete,
-    type OnboardingFocus,
+    type OnboardingIntent,
     type OnboardingMovieMetadata,
     type OnboardingStartupLibrary,
   } from '$lib/settings/onboarding'
@@ -63,7 +63,11 @@
   let step = $state(0)
   let stremioBusy = $state(false)
   let keyboardOpen = $state(false)
-  let focus = $state<OnboardingFocus>(initialBoth ? 'both' : initialProvider === 'tmdb' || initialProvider === 'stremio' ? 'movies' : 'anime')
+  let intent = $state<OnboardingIntent>({
+    anime: initialBoth || !(initialProvider === 'tmdb' || initialProvider === 'stremio'),
+    films: initialBoth || initialProvider === 'tmdb' || initialProvider === 'stremio',
+  })
+  const focus = $derived(intent.anime && intent.films ? 'both' : intent.films ? 'movies' : 'anime')
   let movieMetadata = $state<OnboardingMovieMetadata>(initialProvider === 'stremio' || (initialProviders.includes('stremio') && !initialProviders.includes('tmdb')) ? 'stremio' : 'tmdb')
   let startupLibrary = $state<OnboardingStartupLibrary>(initialProvider === 'adaptive' ? 'adaptive' : initialBoth && initialProvider === 'auto' ? 'auto' : initialBoth && (initialProvider === 'tmdb' || initialProvider === 'stremio') ? 'movies' : 'merged')
   let tmdbToken = $state(get(tmdbReadToken))
@@ -78,7 +82,7 @@
   const sourceConfigured = $derived($addonUrls.length > 0 || $extensionUrls.length > 0)
   const trackerReady = $derived(Boolean($anilistToken || $malToken || $kitsuToken || $simklToken))
   const debridReady = $derived(Boolean($debridKey))
-  const selectedProvider = $derived(focus === 'anime' ? m.onboarding_automatic_anime() : (focus === 'both' ? m.onboarding_automatic_anime() + ' + ' : '') + (movieMetadata === 'tmdb' ? 'TMDB' : 'Stremio'))
+  const selectedProvider = $derived(!intent.films ? m.onboarding_automatic_anime() : (intent.anime ? m.onboarding_automatic_anime() + ' + ' : '') + (movieMetadata === 'tmdb' ? 'TMDB' : 'Stremio'))
   const startupChoices = $derived([
     { id: 'movies', title: movieMetadata === 'tmdb' ? 'TMDB' : 'Stremio', body: m.onboarding_startup_movies_body(), Icon: Film },
     { id: 'auto', title: m.onboarding_automatic_anime(), body: m.onboarding_startup_anime_body(), Icon: Sparkles },
@@ -86,7 +90,7 @@
     { id: 'adaptive', title: m.onboarding_startup_adaptive(), body: m.onboarding_startup_adaptive_body(), Icon: History },
   ])
   const selectedStartup = $derived(startupChoices.find(choice => choice.id === startupLibrary)?.title)
-  const steps = $derived(onboardingSteps(focus))
+  const steps = $derived(!intent.films ? [0, 1, 2, 6, 7] : intent.anime ? [0, 1, 2, 3, 4, 5, 6, 7] : [0, 1, 2, 3, 4, 6, 7])
   const totalSteps = $derived(steps.length)
   const stepIndex = $derived(steps.indexOf(step))
 
@@ -157,16 +161,16 @@
   function applyProfile() {
     preferredAudioLang.set(audioLanguage)
     preferredSubLang.set(subtitleLanguage)
-    const plan = onboardingCatalogPlan(focus, movieMetadata, startupLibrary)
+    const plan = onboardingCatalogPlan(intent, movieMetadata, startupLibrary)
     catalogProviders.set(plan.providers)
     catalogDefaultProvider.set(plan.defaultProvider)
     selectCatalogScreen(resolveCatalogScreenStartup(plan.defaultProvider, get(catalogLastScreen), plan.providers))
 
-    if (focus !== 'anime' && movieMetadata === 'tmdb') {
+    if (intent.films && movieMetadata === 'tmdb') {
       tmdbReadToken.set(tmdbToken.trim())
       omdbApiKey.set(ratingsKey.trim())
     }
-    if (focus !== 'anime' && movieMetadata === 'stremio') {
+    if (intent.films && movieMetadata === 'stremio') {
       addonUrls.update((urls) => replaceAddonBase(urls, undefined, CINEMETA_BASE))
       disabledSources.update((urls) => urls.filter((url) => normalizeBase(url) !== normalizeBase(CINEMETA_BASE)))
     }
@@ -261,7 +265,7 @@
               {@render heading(m.onboarding_focus_title(), m.onboarding_focus_body())}
               <div class="mt-7 space-y-3">
                 {#each [{ id: 'anime', title: m.onboarding_anime_title(), body: m.onboarding_automatic_body(), Icon: Sparkles }, { id: 'movies', title: m.onboarding_movies_title(), body: m.onboarding_movies_body(), Icon: Film }, { id: 'both', title: m.onboarding_both_title(), body: m.onboarding_both_body(), Icon: LibraryBig }] as choice}
-                  <button type="button" data-focusable onclick={() => focus = choice.id as OnboardingFocus} aria-pressed={focus === choice.id} class="setup-choice flex w-full items-center gap-4 p-5 text-left {focus === choice.id ? 'selected' : ''}">
+                  <button type="button" data-focusable onclick={() => intent = choice.id === 'both' ? { anime: true, films: true } : { anime: choice.id === 'anime', films: choice.id === 'movies' }} aria-pressed={focus === choice.id} class="setup-choice flex w-full items-center gap-4 p-5 text-left {focus === choice.id ? 'selected' : ''}">
                     <choice.Icon size={24} class="shrink-0 text-muted-foreground" />
                     <span class="min-w-0 flex-1"><span class="block text-lg font-semibold">{choice.title}</span><span class="mt-1 block text-sm leading-relaxed text-muted-foreground">{choice.body}</span></span>
                     <span class="grid size-5 shrink-0 place-items-center rounded-full border border-foreground/40">{#if focus === choice.id}<Check size={13} />{/if}</span>
