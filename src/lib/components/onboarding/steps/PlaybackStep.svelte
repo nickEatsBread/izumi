@@ -23,6 +23,8 @@
   let keyState = $state<'idle' | 'valid' | 'invalid'>('idle')
   let keyMessage = $state('')
   let timer: ReturnType<typeof setTimeout> | undefined
+  /** Deliberately not $state: it orders overlapping checks, it is never rendered. */
+  let generation = 0
   onDestroy(() => clearTimeout(timer))
 
   const providerOptions = providerList.map((provider) => ({ value: provider.id, label: provider.name }))
@@ -36,18 +38,25 @@
       keyMessage = ''
       return
     }
+    // Two checks can overlap when a slow one is still in flight as the key is edited again. Only
+    // the newest may write the verdict, or a stale answer lands on top of a fresher one.
+    const attempt = ++generation
     checking = true
     busy = true
     try {
       await accountInfo($debridProvider, key)
+      if (attempt !== generation) return
       keyState = 'valid'
       keyMessage = ''
     } catch (cause) {
+      if (attempt !== generation) return
       keyState = 'invalid'
       keyMessage = cause instanceof Error ? cause.message : m.onboarding_playback_key_invalid()
     } finally {
-      checking = false
-      busy = false
+      if (attempt === generation) {
+        checking = false
+        busy = false
+      }
     }
   }
 

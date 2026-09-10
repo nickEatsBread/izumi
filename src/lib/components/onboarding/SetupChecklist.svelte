@@ -11,7 +11,8 @@
 
   const destination: Record<RemainderItem, string> = {
     sources: '/app/settings/store',
-    playback: '/app/settings/sources',
+    // The debrid key and the P2P toggle sit behind the Playback tab; the screen defaults to My sources.
+    playback: '/app/settings/sources?tab=playback',
     tracker: '/app/settings/accounts',
     metadata: '/app/settings/catalog',
   }

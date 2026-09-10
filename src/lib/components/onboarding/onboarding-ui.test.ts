@@ -80,8 +80,15 @@ describe('onboarding presentation contracts', () => {
 
   it('lets every step be skipped and keeps what was skipped recoverable', () => {
     expect(shell).toContain('m.onboarding_skip_step()')
-    expect(shell).toContain('setupRemainder.set(remainderFrom(readiness))')
     expect(checklist).toContain('$setupRemainder.filter')
+    // Asserted per exit, not once for the file. Abandoning the wizard from the welcome screen is
+    // the state with the most left undone, so it needs the remainder recorded more than finishing
+    // does — and an earlier draft recorded it only on the finish path while still passing a
+    // file-wide check for the same string.
+    for (const exit of ['function complete()', 'function skip()']) {
+      const body = shell.slice(shell.indexOf(exit))
+      expect(body.slice(0, body.indexOf('\n  }'))).toContain('setupRemainder.set(remainderFrom(readiness))')
+    }
     // The home screen picks one of several layouts. Each has to carry the checklist, or skipped
     // setup becomes unreachable for whoever lands on the layout that forgot it.
     const layout = home.slice(home.indexOf('{#if $offlineMode}'))

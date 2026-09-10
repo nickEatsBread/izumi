@@ -133,6 +133,10 @@
   }
 
   async function retry(id: SyncTaskId) {
+    // The run loop is sequential on purpose because two of these write the same source list.
+    // Firing a retry into the middle of it would race those writes and could also clear `busy`
+    // out from under the loop, re-enabling the footer while a write is still in flight.
+    if (busy) return
     busy = true
     await runTask(id)
     if (!abort.signal.aborted) busy = false
@@ -173,7 +177,7 @@
           </span>
         </span>
         {#if task.state.status === 'failed'}
-          <button type="button" data-focusable onclick={() => retry(task.id)} class="setup-inline-button bg-secondary px-3 text-sm"><RefreshCw size={14} />{m.onboarding_sync_retry()}</button>
+          <button type="button" data-focusable onclick={() => retry(task.id)} disabled={busy} class="setup-inline-button bg-secondary px-3 text-sm"><RefreshCw size={14} />{m.onboarding_sync_retry()}</button>
         {/if}
       </li>
     {/each}

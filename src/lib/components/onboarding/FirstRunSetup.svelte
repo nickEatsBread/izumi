@@ -138,8 +138,10 @@
   }
 
   function skip() {
-    // Skipping from the welcome screen records nothing: the user has not answered anything yet, so
-    // there is no remainder to offer to finish.
+    // Skipping the whole wizard is the state with the MOST left undone, not the least, so it needs
+    // the home-screen card more than any other exit does. Without this the likeliest click a new
+    // user makes produces an app with no sources and no playback path and nothing offering to fix it.
+    setupRemainder.set(remainderFrom(readiness))
     finishOnboarding()
   }
 
