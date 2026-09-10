@@ -183,8 +183,10 @@
     <DownloadedLibrary />
   </div>
 {:else if $catalogScreen === 'merged'}
+  <SetupChecklist />
   <MergedCatalogHome anilistHero={heroMedias} />
 {:else if !legacyCatalog}
+  <SetupChecklist />
   <CatalogHome />
 {:else}
   <!-- With no hero, the first row must clear the fixed desktop titlebar + degraded strip. Mobile's
