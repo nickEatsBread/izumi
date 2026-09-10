@@ -39,6 +39,14 @@
 
   onDestroy(() => controller?.abort())
 
+  /** A device code counts as busy, which disables the footer. Without this the user is pinned to
+   *  this screen until the poll gives up — minutes later. Abandoning the code must always be possible. */
+  function cancelNuvio() {
+    controller?.abort()
+    controller = undefined
+    set('nuvio', { status: 'idle' })
+  }
+
   function set(service: ConnectService, state: ConnectStates[ConnectService]) {
     connections = { ...connections, [service]: state }
   }
@@ -141,6 +149,7 @@
         <p aria-label={m.onboarding_nuvio_code_label({ code: connections.nuvio.code })} class="my-4 rounded-xl border border-border bg-background py-4 text-center font-mono text-2xl font-bold tracking-[0.15em]">{connections.nuvio.code}</p>
         <button type="button" data-focusable onclick={() => visit(connections.nuvio.status === 'code' ? connections.nuvio.url : '')} class="setup-inline-button w-full bg-foreground text-background">{m.onboarding_nuvio_open()}<ArrowUpRight size={15} /></button>
         <p role="status" class="mt-3 flex items-center justify-center gap-2 text-sm text-muted-foreground"><LoaderCircle size={15} class="tile-spinner" />{connections.nuvio.completing ? m.onboarding_nuvio_completing() : m.onboarding_nuvio_waiting()}</p>
+        <button type="button" data-focusable onclick={cancelNuvio} class="mt-3 min-h-10 w-full rounded-lg text-sm font-semibold hover:bg-secondary">{m.onboarding_nuvio_cancel()}</button>
       {:else if nuvioMode === 'device'}
         <button type="button" data-focusable onclick={connectNuvioDevice} class="setup-inline-button w-full bg-foreground text-background">{m.onboarding_nuvio_connect()}</button>
         <p class="mt-3 text-center text-xs leading-relaxed text-muted-foreground">{m.onboarding_nuvio_device_hint()}</p>
