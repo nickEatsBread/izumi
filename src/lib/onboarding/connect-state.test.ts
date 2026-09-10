@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   anyConnected,
+  CONNECT_SERVICES,
   connectedServices,
   idleConnectStates,
   tileBusy,
@@ -10,6 +11,10 @@ import {
 const states = (overrides: Partial<ConnectStates>): ConnectStates => ({ ...idleConnectStates(), ...overrides })
 
 describe('connect tile state', () => {
+  it('draws the four services in a fixed order', () => {
+    expect(CONNECT_SERVICES).toEqual(['stremio', 'nuvio', 'anilist', 'mal'])
+  })
+
   it('starts every service idle', () => {
     expect(connectedServices(idleConnectStates())).toEqual([])
     expect(anyConnected(idleConnectStates())).toBe(false)
