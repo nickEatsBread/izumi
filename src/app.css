@@ -483,6 +483,11 @@ html.gamemode .group:hover .group-hover\:scale-105 {
 .setup-inline-button { display: inline-flex; align-items: center; justify-content: center; gap: .6rem; min-height: 3rem; padding: .75rem 1rem; border-radius: .5rem; font-size: .95rem; font-weight: 700; transition: opacity 180ms, transform 180ms; }
 .setup-inline-button:hover:not(:disabled) { opacity: .85; }
 .setup-inline-button:disabled { opacity: .55; cursor: wait; }
+/* Shared by every setup screen that shows in-flight work, so it lives here rather than in whichever
+   component happened to need it first. */
+.tile-spinner { animation: setup-spin 1s linear infinite; }
+@keyframes setup-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .tile-spinner { animation: none; } }
 /* Global rather than scoped to the wizard shell: Svelte scoping stops at the component boundary,
    and every interactive control now lives in a step component instead. */
 .onboarding-surface button:focus-visible,

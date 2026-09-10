@@ -60,9 +60,3 @@
   {/if}
   {#if connection.status === 'error'}<p role="alert" class="mt-3 text-sm leading-relaxed text-destructive">{connection.message}</p>{/if}
 </div>
-
-<style>
-  :global(.tile-spinner) { animation: tile-spin 1s linear infinite; }
-  @keyframes tile-spin { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { :global(.tile-spinner) { animation: none; } }
-</style>

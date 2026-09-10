@@ -87,8 +87,8 @@
       // Same chain the Nuvio account screen uses: pull the collections document, prepare one
       // collection at a time, install it without its required sources — those arrive as their own
       // task, so installing them here would double up.
-      const document = await nuvioCloud.blob('collections', NUVIO_PROFILE, 'izumi', abort.signal)
-      const rows = Array.isArray(document.value) ? document.value : []
+      const stored = await nuvioCloud.blob('collections', NUVIO_PROFILE, 'izumi', abort.signal)
+      const rows = Array.isArray(stored.value) ? stored.value : []
       let installed = 0
       for (const row of rows) {
         if (abort.signal.aborted) break
@@ -119,12 +119,17 @@
     const planned = plannedSyncTasks(services, nuvioExtras)
     tasks = planned.map((id) => ({ id, state: { status: 'pending' } }))
     // Sequential on purpose: two of these write the same source list, and a user watching a
-    // four-row list learn more from rows landing in order than from four spinners at once.
-    for (const id of planned) {
-      if (abort.signal.aborted) return
-      await runTask(id)
+    // four-row list learns more from rows landing in order than from four spinners at once.
+    // The finally matters: `busy` is bound to the shell's own, and leaving it true would disable
+    // Back, Next and Skip for the rest of setup.
+    try {
+      for (const id of planned) {
+        if (abort.signal.aborted) return
+        await runTask(id)
+      }
+    } finally {
+      if (!abort.signal.aborted) busy = false
     }
-    if (!abort.signal.aborted) busy = false
   }
 
   async function retry(id: SyncTaskId) {
