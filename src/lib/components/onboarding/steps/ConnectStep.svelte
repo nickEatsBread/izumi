@@ -126,9 +126,13 @@
 <h1 id="setup-title" data-step-heading tabindex="-1" aria-describedby="setup-progress" class="setup-heading">{m.onboarding_connect_title()}</h1>
 <p class="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">{m.onboarding_connect_body()}</p>
 
+<!-- Official marks, bundled so a tile never depends on an external image request — the same
+     approach the AniList, MyAnimeList and Trakt marks in static/brand/ already take.
+     stremio.png from www.stremio.com; nuvio.png from nuvio.tv, downscaled for the tile.
+     Each tile falls back to a lettered square if its image ever fails to load. -->
 <h2 class="mt-7 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{m.onboarding_connect_sources_group()}</h2>
 <div class="mt-3 grid grid-cols-[minmax(0,1fr)] gap-2">
-  <ConnectTile name="Stremio" logo="/brand/stremio.svg" initial="S" description={m.onboarding_connect_stremio_body()} state={connections.stremio} expanded={open === 'stremio'} onexpand={() => expand('stremio')}>
+  <ConnectTile name="Stremio" logo="/brand/stremio.png" initial="S" description={m.onboarding_connect_stremio_body()} state={connections.stremio} expanded={open === 'stremio'} onexpand={() => expand('stremio')}>
     {#snippet panel()}
       <form onsubmit={signInStremio} class="grid gap-3">
         <label class="grid gap-2 text-sm font-semibold" for="connect-stremio-email">{m.onboarding_stremio_email()}
@@ -141,7 +145,7 @@
     {/snippet}
   </ConnectTile>
 
-  <ConnectTile name="Nuvio" logo="/brand/nuvio.svg" initial="N" description={m.onboarding_connect_nuvio_body()} state={connections.nuvio} expanded={open === 'nuvio'} onexpand={() => expand('nuvio')}>
+  <ConnectTile name="Nuvio" logo="/brand/nuvio.png" initial="N" description={m.onboarding_connect_nuvio_body()} state={connections.nuvio} expanded={open === 'nuvio'} onexpand={() => expand('nuvio')}>
     {#snippet panel()}
       {#if connections.nuvio.status === 'code'}
         <p class="text-sm font-semibold">{m.onboarding_nuvio_code_title()}</p>
