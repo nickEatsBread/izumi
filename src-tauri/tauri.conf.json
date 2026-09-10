@@ -40,12 +40,6 @@
       "mobile": [
         {
           "scheme": ["izumi"]
-        },
-        {
-          "scheme": ["https"],
-          "host": "tv-link.izumi.watch",
-          "pathPrefix": ["/open"],
-          "appLink": true
         }
       ]
     },

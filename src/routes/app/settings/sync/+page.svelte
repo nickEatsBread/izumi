@@ -834,7 +834,6 @@
     {/if}
     </div>
   {:else}
-  <a href="/app/tv-setup" data-focusable class="mb-5 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-4 py-2 text-sm font-bold">Set up a TV with Cloudflare <ExternalLink size={15} /></a>
   <details class="mb-6 max-w-2xl border-b border-border pb-4" open={connectionMethodOpen || !paired}>
     <summary class="cursor-pointer py-2 text-sm font-semibold">Connection method <span class="ml-2 font-normal text-muted-foreground">{$syncProvider === 'cloudflare' ? 'Private Cloudflare' : 'Peer-to-peer'}</span></summary>
   <SettingsGroup title="Connection" desc="Choose where encrypted device records travel" icon={Cloud}>

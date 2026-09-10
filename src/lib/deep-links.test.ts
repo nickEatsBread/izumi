@@ -112,7 +112,6 @@ describe('deep link registration is not user-hostile', () => {
   it('gives Android the mobile block its intent filters are generated from', () => {
     expect(tauriConf.plugins['deep-link'].mobile).toEqual([
       { scheme: ['izumi'] },
-      { scheme: ['https'], host: 'tv-link.izumi.watch', pathPrefix: ['/open'], appLink: true },
     ])
   })
 })
