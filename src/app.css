@@ -483,6 +483,12 @@ html.gamemode .group:hover .group-hover\:scale-105 {
 .setup-inline-button { display: inline-flex; align-items: center; justify-content: center; gap: .6rem; min-height: 3rem; padding: .75rem 1rem; border-radius: .5rem; font-size: .95rem; font-weight: 700; transition: opacity 180ms, transform 180ms; }
 .setup-inline-button:hover:not(:disabled) { opacity: .85; }
 .setup-inline-button:disabled { opacity: .55; cursor: wait; }
+/* Global rather than scoped to the wizard shell: Svelte scoping stops at the component boundary,
+   and every interactive control now lives in a step component instead. */
+.onboarding-surface button:focus-visible,
+.onboarding-surface input:focus-visible,
+.onboarding-surface select:focus-visible,
+.onboarding-surface summary:focus-visible { outline: 2px solid hsl(var(--foreground)); outline-offset: 3px; }
 @media (max-width: 767px), (max-height: 500px) and (pointer: coarse) {
   .setup-heading { font-size: clamp(1.9rem, 7.5vw, 2.6rem); }
 }

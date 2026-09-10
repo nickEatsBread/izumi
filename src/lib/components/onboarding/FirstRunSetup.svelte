@@ -256,6 +256,9 @@
     .setup-content :global(.text-xs) { font-size: 12px; }
     .setup-actions { max-width: 34rem; margin-top: 0; padding: 1rem 0 max(1rem, env(safe-area-inset-bottom)); background: hsl(var(--background)); }
     .setup-actions .setup-button { min-height: 48px; font-size: 14px; }
+    /* Keep the forward action off the screen edge on a phone. The last child is the primary button
+       on the final screen and the skip/next pair everywhere else, so this targets whichever it is. */
+    .setup-actions > :last-child { max-width: 72%; }
     .welcome .setup-main { padding-top: max(6rem, 34dvh); }
     .welcome .setup-art-panel::after { background: linear-gradient(180deg, hsl(var(--background) / .08), hsl(var(--background) / .25) 15%, hsl(var(--background) / .96) 40%, hsl(var(--background)) 75%); }
     .welcome .setup-step { display: flex; align-items: safe center; }
@@ -270,6 +273,5 @@
   .setup-button { display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: .5rem; border-radius: .5rem; padding: .65rem 1rem; font-size: .85rem; font-weight: 600; transition: background 180ms, transform 180ms; }
   .setup-button:disabled { opacity: .5; cursor: wait; }
   .setup-button:active { transform: translateY(1px); }
-  .onboarding-surface button:focus-visible, .onboarding-surface input:focus-visible, .onboarding-surface summary:focus-visible { outline: 2px solid hsl(var(--foreground)); outline-offset: 3px; }
   @media (prefers-reduced-motion: reduce) { .setup-button { transition: none; } .setup-content { animation: none; } }
 </style>
