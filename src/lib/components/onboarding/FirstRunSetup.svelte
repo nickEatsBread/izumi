@@ -1,5 +1,6 @@
 <script lang="ts">
   import Wordmark from '$lib/components/Wordmark.svelte'
+  import IntroSequence, { introAlreadyPlayed } from './IntroSequence.svelte'
   import SetupArtwork from './SetupArtwork.svelte'
   import WatchStep from './steps/WatchStep.svelte'
   import MetadataStep from './steps/MetadataStep.svelte'
@@ -16,6 +17,7 @@
   import ArrowRight from '@lucide/svelte/icons/arrow-right'
   import Check from '@lucide/svelte/icons/check'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
+  import SkipForward from '@lucide/svelte/icons/skip-forward'
   import { m } from '$lib/paraglide/messages.js'
   import { anyConnected, idleConnectStates, type ConnectStates } from '$lib/onboarding/connect-state'
   import { remainderFrom, setupRemainder, type SetupReadiness } from '$lib/onboarding/readiness'
@@ -49,6 +51,9 @@
   const initialBoth = initialProvider === 'merged' || (initialProviders.includes('auto') && initialProviders.some(provider => provider === 'tmdb' || provider === 'stremio'))
 
   let root = $state<HTMLElement>()
+  // Only a brand-new install ever reaches this component, so the ident needs no flag of its own —
+  // "setup has not finished" is already the definition of a new user.
+  let introRunning = $state(!introAlreadyPlayed())
   let step = $state<StepId>('watch')
   let busy = $state(false)
   let keyboardOpen = $state(false)
@@ -245,7 +250,7 @@
           {/key}
         </div>
         <footer class="setup-actions flex items-center justify-between gap-3">
-          {#if stepIndex === 0}<button type="button" data-focusable onclick={skip} class="setup-button text-muted-foreground hover:bg-secondary">{m.onboarding_skip()}</button>
+          {#if stepIndex === 0}<button type="button" data-focusable onclick={skip} class="setup-button text-muted-foreground hover:bg-secondary"><SkipForward size={17} />{m.onboarding_skip()}</button>
           {:else}<button type="button" data-focusable onclick={goBack} disabled={busy} class="setup-button hover:bg-secondary"><ChevronLeft size={17} />{m.onboarding_back()}</button>{/if}
           {#if step === 'ready'}
             <button type="button" data-focusable onclick={complete} class="setup-button bg-foreground text-background"><Check size={17} />{m.onboarding_ready_start()}</button>
@@ -260,6 +265,7 @@
         </footer>
       </main>
     </div>
+    {#if introRunning}<IntroSequence oncomplete={() => (introRunning = false)} />{/if}
   </div>
 {/if}
 

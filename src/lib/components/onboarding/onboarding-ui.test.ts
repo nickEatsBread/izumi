@@ -6,6 +6,7 @@ const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.m
 const shell = read('./FirstRunSetup.svelte')
 const artwork = read('./SetupArtwork.svelte')
 const checklist = read('./SetupChecklist.svelte')
+const intro = read('./IntroSequence.svelte')
 const home = read('../../../routes/app/home/+page.svelte')
 // The shell owns no controls any more — every input lives in a step component — so the focus and
 // heading styling it used to scope to itself had to move to the global sheet to keep reaching them.
@@ -149,6 +150,66 @@ describe('onboarding presentation contracts', () => {
     const branches = layout.match(/^\{(?:#if|:else)/gm) ?? []
     expect(branches.length).toBeGreaterThan(1)
     expect(layout.match(/<SetupChecklist \/>/g) ?? []).toHaveLength(branches.length)
+  })
+
+  it('plays the ident once per launch without persisting a setting for it', () => {
+    // A stored "intro seen" flag would survive a reinstall of the profile and could never be
+    // cleared by rerunning setup. The gate is the wizard itself — it only exists for a new user —
+    // plus a module flag so an /app navigation that re-creates the wizard does not replay it.
+    expect(intro).toContain('<script module')
+    expect(intro).toContain('let played = false')
+    expect(intro).not.toContain('persisted')
+    expect(shell).toContain('let introRunning = $state(!introAlreadyPlayed())')
+    // Inside the dialog, so the skip control is inside the wizard's existing focus trap.
+    const dialog = shell.slice(shell.indexOf('role="dialog"'))
+    const close = dialog.lastIndexOf('{/if}')
+    expect(close).toBeGreaterThan(-1)
+    expect(dialog.indexOf('<IntroSequence')).toBeGreaterThan(dialog.indexOf('</main>'))
+    expect(dialog.indexOf('<IntroSequence')).toBeLessThan(close)
+  })
+
+  it('lets any key, click or the visible control interrupt the ident', () => {
+    for (const event of ['keydown', 'pointerdown']) expect(intro).toContain(`window.addEventListener('${event}'`)
+    for (const event of ['keydown', 'pointerdown']) expect(intro).toContain(`window.removeEventListener('${event}'`)
+    expect(intro).toContain('m.onboarding_intro_skip()')
+    // Completing twice would fire the wizard's reveal mid-fade; the guard is the reason skip and
+    // the scheduled end can both call finish().
+    expect(intro).toContain('if (done) return')
+    expect(intro).toContain('clearTimeout(timer)')
+  })
+
+  it('drops the splash layers under reduced motion instead of freezing them mid-air', () => {
+    // Disabling the animations would leave a droplet parked above the mark and four opaque rings
+    // sitting on top of it, so the layers are never rendered at all.
+    expect(intro).toContain("document.documentElement.dataset.motion === 'reduced'")
+    expect(intro).toContain("window.matchMedia?.('(prefers-reduced-motion: reduce)')")
+    const guarded = intro.slice(intro.indexOf('{#if !reduced}'), intro.indexOf('{/if}'))
+    for (const layer of ['drop', 'flash', 'bloom', 'ring-1', 'ring-2', 'ring-3', 'crest']) {
+      expect(guarded, `${layer} must be inside the reduced-motion guard`).toContain(layer)
+    }
+  })
+
+  it('animates the ident on the compositor only, which is what gamescope can afford', () => {
+    // Every @keyframes block sits at the end of the sheet, so anything declared past the first one
+    // is part of the ident's motion. A width, a filter or a box-shadow in here would repaint a
+    // full-screen layer every frame on the hardware least able to absorb it.
+    const frames = intro.slice(intro.indexOf('@keyframes'))
+    const properties = [...frames.matchAll(/([a-z-]+)\s*:/g)].map(match => match[1])
+    expect(properties.length).toBeGreaterThan(20)
+    expect([...new Set(properties)].sort()).toEqual(['opacity', 'transform'])
+  })
+
+  it('keeps the scheduled hand-off in step with the fade that performs it', () => {
+    // The timer decides when the wizard becomes interactive again. Retuning the CSS exit without
+    // it would either cut the fade short or leave the ident sitting on a finished screen.
+    const runtime = intro.match(/const RUNTIME = reduced \? (\d+) : (\d+)/)
+    const full = intro.match(/animation: intro-out (\d+)ms cubic-bezier\([^)]*\) (\d+)ms both;/)
+    const quiet = intro.match(/\.intro\.reduced \{ animation: intro-out (\d+)ms ease (\d+)ms both; \}/)
+    expect(runtime).toBeTruthy()
+    expect(full).toBeTruthy()
+    expect(quiet).toBeTruthy()
+    expect(Number(runtime![2])).toBeGreaterThanOrEqual(Number(full![1]) + Number(full![2]))
+    expect(Number(runtime![1])).toBeGreaterThanOrEqual(Number(quiet![1]) + Number(quiet![2]))
   })
 
   it.each(['en', 'ja'])('spells the onboarding brand lowercase in %s', locale => {

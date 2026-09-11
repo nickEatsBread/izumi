@@ -115,6 +115,7 @@
   "onboarding_back": "Back",
   "onboarding_next": "Next",
   "onboarding_skip": "Skip setup",
+  "onboarding_intro_skip": "Skip intro",
   "onboarding_finish": "Finish setup",
   "onboarding_once": "One-time setup · about 2 minutes",
   "onboarding_once_detail": "izumi only asks once on this device. You can rerun onboarding later from Settings → Interface.",

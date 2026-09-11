@@ -115,6 +115,7 @@
   "onboarding_back": "戻る",
   "onboarding_next": "次へ",
   "onboarding_skip": "セットアップをスキップ",
+  "onboarding_intro_skip": "イントロをスキップ",
   "onboarding_finish": "セットアップを完了",
   "onboarding_once": "初回のみ・約2分",
   "onboarding_once_detail": "この端末では一度だけ表示されます。後から「設定 → インターフェース」で再実行できます。",
