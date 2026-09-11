@@ -507,6 +507,31 @@ jobs:
       # hiding the other channel's branch and avoids downloading the multi-gigabyte Pages history
       # into every release job. Replacing only the selected destination also bounds repository size;
       # the other channel is untouched by actions-gh-pages' destination_dir behavior.
+      # SteamOS hands a .flatpakref to Discover, which cannot follow this repository's redirect or
+      # add a remote carrying its own GPG key — it opens and closes again with no visible error.
+      # The installer drives the flatpak CLI instead, so it is the path the Deck download points at.
+      # Published from the stable job only: one installer, always installing the stable channel
+      # unless the user passes --beta.
+      - name: Stage the Deck installer and Steam artwork
+        if: steps.meta.outputs.branch == 'stable'
+        run: |
+          set -euxo pipefail
+          install -Dm755 scripts/deck/install.sh flatpak/_legacy_repo/install.sh
+          install -Dm644 scripts/deck/izumi-installer.desktop flatpak/_legacy_repo/install.desktop
+          cp scripts/deck/izumi-installer.desktop \
+            "izumi-${{ steps.meta.outputs.tag }}-steamdeck-installer.desktop"
+          # Only the three cover slots Steam renders for a non-Steam shortcut, per variant, plus the
+          # transparent wordmarks for the logo slot. The rest of the brand set is upload material
+          # for SteamGridDB and has no business being fetched onto a Deck.
+          for variant in flat bold bright solid mark-only light; do
+            for art in izumi-capsule-600x900.png izumi-capsule-920x430.png izumi-hero-1920x620.png; do
+              install -Dm644 "brand/steamgriddb/$variant/$art" "flatpak/_legacy_repo/steamgrid/$variant/$art"
+            done
+          done
+          for logo in izumi-logo-horizontal-white@2x.png izumi-logo-horizontal-color@2x.png; do
+            install -Dm644 "brand/steamgriddb/logo/$logo" "flatpak/_legacy_repo/steamgrid/logo/$logo"
+          done
+
       - name: Publish the channel OSTree repo to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -532,8 +557,11 @@ jobs:
             const release_id = ${{ needs.create-release.outputs.release_id }};
             const release = (await github.rest.repos.getRelease({ owner, repo, release_id })).data;
             if (!release.draft) throw new Error('Only attach build outputs to the draft release.');
-            const files = fs.readdirSync('.').filter(name => /^izumi-.*\.(flatpak|flatpakref)$/.test(name));
-            if (files.length !== 2) throw new Error('Expected the signed Flatpak bundle and installation descriptor.');
+            // The installer .desktop is staged on stable runs only, so it is uploaded when present
+            // rather than required; the bundle and the descriptor are what a release cannot omit.
+            const files = fs.readdirSync('.').filter(name => /^izumi-.*\.(flatpak|flatpakref|desktop)$/.test(name));
+            const missing = ['.flatpak', '.flatpakref'].filter(ext => !files.some(name => name.endsWith(ext)));
+            if (missing.length) throw new Error(`Expected the signed Flatpak bundle and installation descriptor, missing: ${missing}`);
             for (const name of files) {
               const previous = release.assets.find(asset => asset.name === name);
               if (previous) await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: previous.id });

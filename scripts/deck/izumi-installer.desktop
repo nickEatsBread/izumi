@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Install izumi
+GenericName=Anime Client Installer
+Comment=Install izumi and optionally add it to your Steam library
+# Terminal=true makes Plasma open Konsole, so the Flatpak download reports progress instead of
+# looking frozen for several minutes. The script is fetched at run time, which means a packaging
+# fix reaches everyone who downloaded this file without them downloading it again.
+# Double quotes, not single: the Desktop Entry spec only recognises double quotes for grouping an
+# argument, so a single-quoted form is one shell dialect's luck rather than a portable launcher.
+Exec=sh -c "curl -fsSL https://flatpak.izumi.watch/install.sh | bash"
+Icon=utilities-terminal
+Terminal=true
+Categories=System;
+Keywords=izumi;anime;install;steam;deck;
