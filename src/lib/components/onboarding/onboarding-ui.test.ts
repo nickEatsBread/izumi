@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
 const shell = read('./FirstRunSetup.svelte')
 const artwork = read('./SetupArtwork.svelte')
-const checklist = read('./SetupChecklist.svelte')
 const intro = read('./IntroSequence.svelte')
 const home = read('../../../routes/app/home/+page.svelte')
 // The shell owns no controls any more — every input lives in a step component — so the focus and
@@ -117,7 +116,6 @@ describe('onboarding presentation contracts', () => {
     const rowLists: [string, string][] = [
       ['SourcesStep', steps.SourcesStep],
       ['ConnectStep', steps.ConnectStep],
-      ['SetupChecklist', checklist],
     ]
     for (const [name, source] of rowLists) {
       const containers = [...source.matchAll(/class="(mt-\d+ grid [^"]*)"/g)].map(match => match[1])
@@ -133,23 +131,16 @@ describe('onboarding presentation contracts', () => {
     expect(sources).not.toMatch(/picked\s*=\s*\[[^\]]/)
   })
 
-  it('lets every step be skipped and keeps what was skipped recoverable', () => {
+  it('lets every step be skipped, and leaves the home screen alone afterwards', () => {
     expect(shell).toContain('m.onboarding_skip_step()')
-    expect(checklist).toContain('$setupRemainder.filter')
-    // Asserted per exit, not once for the file. Abandoning the wizard from the welcome screen is
-    // the state with the most left undone, so it needs the remainder recorded more than finishing
-    // does — and an earlier draft recorded it only on the finish path while still passing a
-    // file-wide check for the same string.
+    // The home screen used to carry a "Finish setting up izumi" card fed by a remainder store.
+    // Both are gone; nothing may quietly reintroduce them on one of the home layouts.
+    expect(home).not.toContain('SetupChecklist')
+    expect(shell).not.toContain('setupRemainder')
     for (const exit of ['function complete()', 'function skip()']) {
       const body = shell.slice(shell.indexOf(exit))
-      expect(body.slice(0, body.indexOf('\n  }'))).toContain('setupRemainder.set(remainderFrom(readiness))')
+      expect(body.slice(0, body.indexOf('\n  }'))).toContain('finishOnboarding()')
     }
-    // The home screen picks one of several layouts. Each has to carry the checklist, or skipped
-    // setup becomes unreachable for whoever lands on the layout that forgot it.
-    const layout = home.slice(home.indexOf('{#if $offlineMode}'))
-    const branches = layout.match(/^\{(?:#if|:else)/gm) ?? []
-    expect(branches.length).toBeGreaterThan(1)
-    expect(layout.match(/<SetupChecklist \/>/g) ?? []).toHaveLength(branches.length)
   })
 
   it('plays the ident once per launch without persisting a setting for it', () => {

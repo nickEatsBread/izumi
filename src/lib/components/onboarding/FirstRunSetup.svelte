@@ -23,7 +23,7 @@
   import SkipForward from '@lucide/svelte/icons/skip-forward'
   import { m } from '$lib/paraglide/messages.js'
   import { anyConnected, idleConnectStates, type ConnectStates } from '$lib/onboarding/connect-state'
-  import { remainderFrom, setupRemainder, type SetupReadiness } from '$lib/onboarding/readiness'
+  import type { SetupReadiness } from '$lib/onboarding/readiness'
   import { defaultPlaybackLanguages } from '$lib/onboarding/playback-languages'
   import type { NuvioExtras } from '$lib/onboarding/sync-receipt'
   import {
@@ -103,9 +103,8 @@
   }
 
   /** A finished transfer already carries sources, settings and history, so there is nothing left
-   *  for the wizard to ask. Everything it would have set is recorded as done. */
+   *  for the wizard to ask. */
   async function completeTransfer() {
-    setupRemainder.set([])
     finishOnboarding()
     await goto('/app/home')
   }
@@ -187,16 +186,13 @@
 
   async function complete() {
     applyProfile()
-    setupRemainder.set(remainderFrom(readiness))
     finishOnboarding()
     await goto('/app/home')
   }
 
   function skip() {
-    // Skipping the whole wizard is the state with the MOST left undone, not the least, so it needs
-    // the home-screen card more than any other exit does. Without this the likeliest click a new
-    // user makes produces an app with no sources and no playback path and nothing offering to fix it.
-    setupRemainder.set(remainderFrom(readiness))
+    // Nothing is recorded about what was left undone. Settings → Interface reruns setup, and the
+    // Sources and Accounts screens each say what they still need.
     finishOnboarding()
   }
 

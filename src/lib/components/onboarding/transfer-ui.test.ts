@@ -50,8 +50,8 @@ describe('set up from another device', () => {
   it('treats a finished transfer as a finished setup', () => {
     const body = shell.slice(shell.indexOf('async function completeTransfer'))
     const fn = body.slice(0, body.indexOf('\n  }'))
-    expect(fn).toContain('setupRemainder.set([])')
     expect(fn).toContain('finishOnboarding()')
+    expect(fn).toContain("goto('/app/home')")
   })
 
   it('applies accounts under their own label instead of silently inside the setup step', () => {
