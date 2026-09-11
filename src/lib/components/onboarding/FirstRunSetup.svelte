@@ -19,6 +19,7 @@
   import ArrowRight from '@lucide/svelte/icons/arrow-right'
   import Check from '@lucide/svelte/icons/check'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
+  import MonitorSmartphone from '@lucide/svelte/icons/monitor-smartphone'
   import SkipForward from '@lucide/svelte/icons/skip-forward'
   import { m } from '$lib/paraglide/messages.js'
   import { anyConnected, idleConnectStates, type ConnectStates } from '$lib/onboarding/connect-state'
@@ -275,7 +276,7 @@
           {#key step}
           <section class="setup-content">
             {#if step === 'watch'}
-              <WatchStep bind:intent ontransfer={enterTransfer} />
+              <WatchStep bind:intent />
             {:else if step === 'metadata'}
               <MetadataStep bind:movieMetadata />
             {:else if step === 'access'}
@@ -303,6 +304,12 @@
             <button type="button" data-focusable onclick={complete} class="setup-button bg-foreground text-background"><Check size={17} />{m.onboarding_ready_start()}</button>
           {:else}
             <div class="flex items-center gap-3">
+              {#if step === 'watch'}
+                <!-- Sits beside Next because it is the other way forward from this screen, not a
+                     setting on it. Offered only here: mid-wizard it would discard answers already
+                     given. -->
+                <button type="button" data-focusable onclick={enterTransfer} class="setup-button text-muted-foreground hover:bg-secondary"><MonitorSmartphone size={17} />{m.onboarding_transfer_cta()}</button>
+              {/if}
               {#if step === 'connect' || step === 'sources' || step === 'playback'}
                 <button type="button" data-focusable onclick={goNext} disabled={busy} class="setup-button text-muted-foreground hover:bg-secondary">{m.onboarding_skip_step()}</button>
               {/if}

@@ -1,12 +1,11 @@
 <script lang="ts">
   import Check from '@lucide/svelte/icons/check'
   import Film from '@lucide/svelte/icons/film'
-  import MonitorSmartphone from '@lucide/svelte/icons/monitor-smartphone'
   import Sparkles from '@lucide/svelte/icons/sparkles'
   import { m } from '$lib/paraglide/messages.js'
   import type { OnboardingIntent } from '$lib/settings/onboarding'
 
-  let { intent = $bindable(), ontransfer }: { intent: OnboardingIntent; ontransfer: () => void } = $props()
+  let { intent = $bindable() }: { intent: OnboardingIntent } = $props()
 
   /** Both may be off. The footer refuses to advance instead, so the artwork can react to an
    *  empty choice rather than the control fighting the user over it. */
@@ -29,10 +28,3 @@
     </label>
   {/each}
 </fieldset>
-
-<!-- Offered here rather than in the footer: it is an alternative to answering these questions at
-     all, so it belongs next to them, not beside Next. -->
-<button type="button" data-focusable onclick={ontransfer}
-  class="mt-5 inline-flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
-  <MonitorSmartphone size={17} />{m.onboarding_transfer_cta()}
-</button>

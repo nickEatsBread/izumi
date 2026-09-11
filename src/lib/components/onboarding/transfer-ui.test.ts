@@ -32,8 +32,19 @@ describe('set up from another device', () => {
     expect(shell).toContain("let mode = $state<'wizard' | 'transfer'>('wizard')")
     expect(shell).not.toContain("step === 'transfer'")
     expect(shell).not.toMatch(/StepId\s*=\s*[^\n]*'transfer'/)
-    expect(watch).toContain('m.onboarding_transfer_cta()')
-    expect(watch).toContain('onclick={ontransfer}')
+  })
+
+  it('offers the alternative beside Next, and only on the screen it can still replace', () => {
+    // In the footer rather than inside the step: it is the other way forward, not a setting on
+    // the screen. Past the first screen it would throw away answers already given.
+    expect(watch).not.toContain('onboarding_transfer_cta')
+    // The transfer branch has a footer of its own earlier in the file; this is the wizard's.
+    const footer = shell.slice(shell.lastIndexOf('<footer class="setup-actions'))
+    const cta = footer.indexOf('m.onboarding_transfer_cta()')
+    expect(cta).toBeGreaterThan(-1)
+    expect(cta).toBeLessThan(footer.indexOf('m.onboarding_next()'))
+    expect(footer.slice(0, cta)).toContain("{#if step === 'watch'}")
+    expect(footer).toContain('onclick={enterTransfer}')
   })
 
   it('treats a finished transfer as a finished setup', () => {
