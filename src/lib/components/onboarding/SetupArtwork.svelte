@@ -1,11 +1,50 @@
 <script lang="ts">
   import { MediaQuery } from 'svelte/reactivity'
   const mobile = new MediaQuery('(max-width: 767px), (max-height: 500px) and (pointer: coarse)')
-  let { mode = 'both' }: { mode?: 'anime' | 'movies' | 'both' } = $props()
-  const films = ['oYuLEt3zVCKq57qu2F8dT7NIa6f.jpg', 'gEU2QniE6E77NI6lCU6MxlNBvIx.jpg', '39wmItIWsg5sZMyRUHLkWBcuVCM.jpg', 'qJ2tW6WMUDux911r6m7haRef0WH.jpg', '8Gxv8gSFCU0XGDykEGv7zR1n2ua.jpg', 'd5NXSklXo0qyIYkgV94XAgMIckC.jpg']
+  import { phttp } from '$lib/net/http'
+  let { intent = { anime: true, films: true } }: { intent?: { anime: boolean; films: boolean } } = $props()
+
+  /** Neither library chosen. The footer already refuses to advance, so rather than leaving the
+   *  wall showing catalogs the user just opted out of, it fills with dogs and the odd hug. */
+  const empty = $derived(!intent.anime && !intent.films)
+  const mode = $derived(empty || (intent.anime && intent.films) ? 'both' : intent.films ? 'movies' : 'anime')
+
+  const posterFilms = ['oYuLEt3zVCKq57qu2F8dT7NIa6f.jpg', 'gEU2QniE6E77NI6lCU6MxlNBvIx.jpg', '39wmItIWsg5sZMyRUHLkWBcuVCM.jpg', 'qJ2tW6WMUDux911r6m7haRef0WH.jpg', '8Gxv8gSFCU0XGDykEGv7zR1n2ua.jpg', 'd5NXSklXo0qyIYkgV94XAgMIckC.jpg']
     .map(path => 'https://image.tmdb.org/t/p/w342/' + path)
-  const anime = ['bx154587-qQTzQnEJJ3oB.jpg', 'bx16498-buvcRTBx4NSm.jpg', 'bx113415-LHBAeoZDIsnF.jpg', 'bx127230-DdP4vAdssLoz.png', 'bx151807-it355ZgzquUd.png', 'bx21-ELSYx3yMPcKM.jpg']
+  const posterAnime = ['bx154587-qQTzQnEJJ3oB.jpg', 'bx16498-buvcRTBx4NSm.jpg', 'bx113415-LHBAeoZDIsnF.jpg', 'bx127230-DdP4vAdssLoz.png', 'bx151807-it355ZgzquUd.png', 'bx21-ELSYx3yMPcKM.jpg']
     .map(path => 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/' + path)
+
+  let strays = $state.raw<string[]>([])
+  const urls = (value: unknown): string[] =>
+    (Array.isArray(value) ? value : []).flatMap((entry) => {
+      const url = typeof entry === 'string' ? entry : typeof (entry as { url?: unknown })?.url === 'string' ? (entry as { url: string }).url : ''
+      return url.startsWith('https://') ? [url] : []
+    })
+
+  // Fetched once, only when the empty state is actually reached, and only if it has not already
+  // been fetched — this is a flourish, so a failure just leaves the ordinary artwork in place.
+  $effect(() => {
+    if (!empty || strays.length) return
+    let stale = false
+    void (async () => {
+      const [dogs, hugs] = await Promise.all([
+        phttp('https://dog.ceo/api/breeds/image/random/10').then(r => r.json()).then(d => urls((d as { message?: unknown }).message)).catch(() => []),
+        phttp('https://nekos.best/api/v2/hug?amount=2').then(r => r.json()).then(d => urls((d as { results?: unknown }).results)).catch(() => []),
+      ])
+      if (stale || !dogs.length) return
+      // Hugs land a third and two thirds of the way in, so they read as a surprise among the dogs
+      // rather than a block of anime at the end.
+      const mixed = [...dogs]
+      hugs.slice(0, 2).forEach((hug, index) => mixed.splice(Math.round(mixed.length * (index + 1) / 3), 0, hug))
+      strays = mixed
+    })()
+    return () => { stale = true }
+  })
+
+  const pick = (source: string[], offset: number) =>
+    Array.from({ length: 6 }, (_, index) => source[(index + offset) % source.length])
+  const films = $derived(empty && strays.length ? pick(strays, 0) : posterFilms)
+  const anime = $derived(empty && strays.length ? pick(strays, 3) : posterAnime)
 </script>
 
 <div class="artwork-wall" data-mode={mode} aria-hidden="true">

@@ -1,0 +1,125 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { describe, expect, it } from 'vitest'
+
+const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
+const shell = read('./FirstRunSetup.svelte')
+const transfer = read('./steps/TransferStep.svelte')
+const watch = read('./steps/WatchStep.svelte')
+const qr = read('../QrCode.svelte')
+const syncPage = read('../../../routes/app/settings/sync/+page.svelte')
+const deepLink = read('../../deep-link-target.ts')
+
+describe('set up from another device', () => {
+  it('opens on the transfer screen in game mode, but only once the flag has resolved', () => {
+    // `gameMode` is populated asynchronously, so reading it at initialization would always see
+    // false and every Deck would land in the typing-heavy wizard instead.
+    expect(shell).toContain("import { gameMode, gameModeResolved } from '$lib/player/session'")
+    expect(shell).toContain('if (modeSettled || !$gameModeResolved) return')
+    expect(shell).toContain("if ($gameMode) mode = 'transfer'")
+    // A choice the user already made by hand must not be overwritten when the flag lands.
+    const effect = shell.slice(shell.indexOf('$gameModeResolved'))
+    expect(effect.slice(0, effect.indexOf('}'))).toContain('modeSettled = true')
+    for (const handler of ['function enterTransfer', 'function leaveTransfer']) {
+      const body = shell.slice(shell.indexOf(handler))
+      expect(body.slice(0, body.indexOf('\n  }'))).toContain('modeSettled = true')
+    }
+  })
+
+  it('is an alternative to the wizard rather than a step inside it', () => {
+    // Numbering it as a step would put "3 of 8" on a screen that replaces all eight, and would
+    // drag it into the back/next footer it has no use for.
+    expect(shell).toContain("let mode = $state<'wizard' | 'transfer'>('wizard')")
+    expect(shell).not.toContain("step === 'transfer'")
+    expect(shell).not.toMatch(/StepId\s*=\s*[^\n]*'transfer'/)
+  })
+
+  it('offers the alternative beside Next, and only on the screen it can still replace', () => {
+    // In the footer rather than inside the step: it is the other way forward, not a setting on
+    // the screen. Past the first screen it would throw away answers already given.
+    expect(watch).not.toContain('onboarding_transfer_cta')
+    // The transfer branch has a footer of its own earlier in the file; this is the wizard's.
+    const footer = shell.slice(shell.lastIndexOf('<footer class="setup-actions'))
+    const cta = footer.indexOf('m.onboarding_transfer_cta()')
+    expect(cta).toBeGreaterThan(-1)
+    expect(cta).toBeLessThan(footer.indexOf('m.onboarding_next()'))
+    expect(footer.slice(0, cta)).toContain("{#if step === 'watch'}")
+    expect(footer).toContain('onclick={enterTransfer}')
+  })
+
+  it('treats a finished transfer as a finished setup', () => {
+    const body = shell.slice(shell.indexOf('async function completeTransfer'))
+    const fn = body.slice(0, body.indexOf('\n  }'))
+    expect(fn).toContain('finishOnboarding()')
+    expect(fn).toContain("goto('/app/home')")
+  })
+
+  it('applies accounts under their own label instead of silently inside the setup step', () => {
+    expect(transfer).toContain('applyManualSnapshot(snapshot, false)')
+    expect(transfer).toContain('applyAccountTokens(snapshot?.accounts)')
+    expect(transfer).toContain('m.onboarding_transfer_accounts')
+  })
+
+  it('waits for the sender to publish rather than failing on the first empty read', () => {
+    // The room is handed over before the snapshot is written to it, so the first read is
+    // normally empty. Failing there would make the happy path look broken.
+    expect(transfer).toContain('async function waitForSnapshot')
+    expect(transfer).toContain('while (Date.now() < deadline)')
+    expect(transfer).toContain('device.isThisDevice')
+  })
+
+  it('says the code expired instead of leaving a dead one on screen', () => {
+    expect(transfer).toContain('Date.now() >= window_.expiresAt')
+    expect(transfer).toContain('m.onboarding_transfer_expired()')
+  })
+
+  it('animates the signal only while the device is actually working', () => {
+    expect(transfer).toContain('isTransferWorking')
+    expect(transfer).toContain('class:live={working}')
+    expect(transfer).toContain('@media (prefers-reduced-motion: reduce)')
+  })
+
+  it('asks the person to match the code before the ticket is trusted', () => {
+    // Anything on the network can reach an advertising endpoint, so an offer is never acted on
+    // just because it arrived.
+    expect(transfer).toContain('m.onboarding_transfer_offer_hint()')
+    expect(transfer).toContain('respondToPairRequest(pending.requestId, true)')
+    expect(transfer).toContain('respondToPairRequest(pending.requestId, false)')
+  })
+
+  it('gives the QR a quiet zone, without which many scanners never lock on', () => {
+    expect(qr).toContain('const QUIET = 4')
+    expect(qr).toContain('matrix.span')
+    expect(qr).toContain("qrcode(0, 'M')")
+  })
+})
+
+describe('sending a setup from the device that has one', () => {
+  it('never carries an accounts choice over from a previous send', () => {
+    const body = syncPage.slice(syncPage.indexOf('function askToSendSetup'))
+    expect(body.slice(0, body.indexOf('\n  }'))).toContain('offerAccounts = false')
+  })
+
+  it('itemises what leaves, and keeps credentials a separate opt-in', () => {
+    expect(syncPage).toContain('Also send signed-in accounts')
+    expect(syncPage).toContain('bind:checked={offerAccounts}')
+    expect(syncPage).toContain('sendManualSnapshot(withAccounts)')
+    // Default off. `offerAccounts` is only ever initialised to false, never to a stored value.
+    expect(syncPage).toContain('let offerAccounts = $state(false)')
+  })
+
+  it('picks send-vs-join from this device rather than asking the user which way it goes', () => {
+    // A device already in a room cannot join another one — the native command refuses it — so
+    // offering the room is the only action that can succeed.
+    expect(syncPage).toContain('{#if paired}')
+    expect(syncPage).toContain('askToSendSetup(device)')
+    expect(syncPage).toContain('offerSetupToDevice(device.endpointId)')
+  })
+
+  it('treats a scanned code as aiming, not as consent', () => {
+    expect(syncPage).toContain("page.url.searchParams.get('offer')")
+    const body = syncPage.slice(syncPage.indexOf("page.url.searchParams.get('offer')"))
+    expect(body.slice(0, body.indexOf('\n  }'))).toContain('askToSendSetup(match)')
+    expect(deepLink).toContain("path: `/app/settings/sync?offer=${endpoint}`")
+  })
+})

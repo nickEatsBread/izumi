@@ -26,13 +26,15 @@ interface StremioApiEnvelope<T> {
   error?: StremioApiErrorBody
 }
 
+interface StremioUser {
+  _id?: unknown
+  id?: unknown
+  email?: unknown
+}
+
 interface StremioLoginResult {
   authKey?: unknown
-  user?: {
-    _id?: unknown
-    id?: unknown
-    email?: unknown
-  }
+  user?: StremioUser
 }
 
 export class StremioApiError extends Error {
@@ -95,6 +97,20 @@ async function request<T>(method: string, body: Record<string, unknown>): Promis
   return envelope.result as T
 }
 
+/** Persist one Stremio session. Add-on sync keys its baseline on the account id, so a session is
+ *  only adopted once an identity is known. Returns the account's email for display. */
+function adoptSession(authKey: string, user: StremioUser | null | undefined, fallbackEmail = ''): string {
+  const email = typeof user?.email === 'string' ? user.email : fallbackEmail
+  const id = typeof user?._id === 'string' ? user._id
+    : typeof user?.id === 'string' ? user.id
+      : email.toLowerCase()
+  if (!id) throw new Error('Stremio could not identify this account. Try signing in again.')
+  stremioAccountEmail.set(email)
+  stremioAccountId.set(id)
+  stremioAuthKey.set(authKey)
+  return email
+}
+
 /** Email/password login used by Stremio Core. The password is never persisted. */
 export async function connectStremio(email: string, password: string): Promise<void> {
   const normalizedEmail = email.trim()
@@ -108,13 +124,17 @@ export async function connectStremio(email: string, password: string): Promise<v
   if (typeof result.authKey !== 'string' || !result.authKey) {
     throw new Error('Stremio signed in without returning a session key.')
   }
-  const remoteEmail = typeof result.user?.email === 'string' ? result.user.email : normalizedEmail
-  const remoteId = typeof result.user?._id === 'string' ? result.user._id
-    : typeof result.user?.id === 'string' ? result.user.id
-      : remoteEmail.toLowerCase()
-  stremioAccountEmail.set(remoteEmail)
-  stremioAccountId.set(remoteId)
-  stremioAuthKey.set(result.authKey)
+  adoptSession(result.authKey, result.user, normalizedEmail)
+}
+
+/** Adopt a session key Stremio issued elsewhere — the link-code approval flow hands one back
+ *  without ever seeing a password. The key is a full session credential, so it goes nowhere but
+ *  Stremio's own API and the same store a password sign-in fills. */
+export async function connectStremioWithAuthKey(authKey: string): Promise<string> {
+  const key = authKey.trim()
+  if (!key) throw new Error('Stremio did not return a session key.')
+  const result = await request<StremioUser & { user?: StremioUser }>('getUser', { type: 'GetUser', authKey: key })
+  return adoptSession(key, result?.user ?? result)
 }
 
 /** Clear the local session even when Stremio is offline; remote logout is best effort. */

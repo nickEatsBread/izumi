@@ -1,9 +1,24 @@
 import { persisted } from 'svelte-persisted-store'
 import type { CatalogSelection, CatalogDefaultSelection } from './catalog'
 
-export type OnboardingFocus = 'anime' | 'movies' | 'both'
+/** What the user said they watch. Both flags may be true; the UI refuses to leave both false. */
+export interface OnboardingIntent {
+  anime: boolean
+  films: boolean
+}
 export type OnboardingMovieMetadata = 'tmdb' | 'stremio'
 export type OnboardingStartupLibrary = 'movies' | 'auto' | 'merged' | 'adaptive'
+/** Named so the footer, the artwork and the tests stop depending on step numbers. */
+export type StepId =
+  | 'watch'
+  | 'metadata'
+  | 'access'
+  | 'startup'
+  | 'connect'
+  | 'sync'
+  | 'sources'
+  | 'playback'
+  | 'ready'
 
 export interface OnboardingCatalogPlan {
   providers: CatalogSelection[]
@@ -13,22 +28,52 @@ export interface OnboardingCatalogPlan {
 /** Convert the first-run intent into the same catalog settings used by the rest of Izumi. Keeping
  * this pure makes rerunning the assistant predictable and prevents a second onboarding-only config. */
 export function onboardingCatalogPlan(
-  focus: OnboardingFocus,
+  intent: OnboardingIntent,
   movieMetadata: OnboardingMovieMetadata = 'tmdb',
   startupLibrary: OnboardingStartupLibrary = 'merged',
 ): OnboardingCatalogPlan {
-  if (focus === 'both') return {
+  if (intent.anime && intent.films) return {
     providers: ['auto', movieMetadata],
     defaultProvider: startupLibrary === 'movies' ? movieMetadata : startupLibrary,
   }
-  const defaultProvider: CatalogSelection = focus === 'anime' ? 'auto' : movieMetadata
+  // An empty intent cannot be reached through the UI, but a stored profile could still hold one.
+  // Answering with the anime library beats answering with no library at all.
+  const defaultProvider: CatalogSelection = intent.films ? movieMetadata : 'auto'
   return { providers: [defaultProvider], defaultProvider }
 }
 
-export function onboardingSteps(focus: OnboardingFocus): number[] {
-  // Stremio source sync is optional for every catalog, including anime.
-  if (focus === 'anime') return [0, 1, 2, 6, 7]
-  return focus === 'both' ? [0, 1, 2, 3, 4, 5, 6, 7] : [0, 1, 2, 3, 4, 6, 7]
+/**
+ * The screens to show, in order.
+ *
+ * Four are conditional, and each is a screen rather than a block folded into the one before it.
+ * An earlier draft nested the metadata choice, the TMDB key and the startup choice underneath the
+ * two library checkboxes; that put four unrelated decisions on one screen and read as a wall.
+ * One decision per screen costs a click and reads far better, and the conditions mean an
+ * anime-only run never sees any of the three film screens.
+ */
+export function onboardingSteps(
+  connected: boolean,
+  intent: OnboardingIntent,
+  movieMetadata: OnboardingMovieMetadata,
+  sourcesConfigured = false,
+): StepId[] {
+  const steps: StepId[] = ['watch']
+  if (intent.films) {
+    steps.push('metadata')
+    // Picking TMDB means supplying a token, which is a screen's worth of work on its own.
+    if (movieMetadata === 'tmdb') steps.push('access')
+  }
+  // Only meaningful when there are two libraries to choose between.
+  if (intent.anime && intent.films) steps.push('startup')
+  steps.push('connect')
+  if (connected) steps.push('sync')
+  steps.push('sources')
+  // Someone who imported or picked sources already has a way to play. Asking them to choose
+  // between debrid and peer-to-peer before they have watched anything is a decision without a
+  // context; it belongs at first playback, and it stays available in settings meanwhile.
+  if (!sourcesConfigured) steps.push('playback')
+  steps.push('ready')
+  return steps
 }
 
 /** Versioned so a future materially different setup flow can be offered without losing history. */
