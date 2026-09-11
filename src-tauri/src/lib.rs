@@ -4199,6 +4199,12 @@ async fn run_capture_ffmpeg(
 
 #[cfg(not(target_os = "android"))]
 fn capture_failure(output: &std::process::Output) -> String {
+    // A child the kernel refused to run exits with a signal and no stderr — macOS kills a binary
+    // whose ad-hoc signature was invalidated after signing. Surface it as the same actionable
+    // error as a missing encoder instead of a generic failure.
+    if output.status.code().is_none() {
+        return "ffmpeg-unavailable".into();
+    }
     let error = String::from_utf8_lossy(&output.stderr);
     format!(
         "capture-failed: {}",

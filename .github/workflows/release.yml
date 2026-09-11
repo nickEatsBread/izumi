@@ -237,6 +237,11 @@ jobs:
           chmod u+w,+x "$TOOL"
           dylibbundler -of -b -x "$TOOL" -d "$STAGE" -p "@rpath/"
           install_name_tool -add_rpath "@executable_path/../Frameworks" "$TOOL"
+          # The rewrite above invalidated the binary's ad-hoc signature. CI runners run with SIP
+          # disabled so they would still execute it, but a user Mac's kernel SIGKILLs an invalidly
+          # signed binary at exec — GIF capture died with "GIF recording failed" on every machine.
+          # Re-seal LAST, after every load-command modification.
+          codesign --force --sign - "$TOOL"
           # Compact JSON (NO spaces — survives tauri-action splitting args on spaces) listing every
           # staged dylib for Tauri's macOS `frameworks` bundler. Consumed by the build step's args.
           FW="$(python3 -c "import glob,json;print(json.dumps(sorted(glob.glob('$STAGE/*.dylib')),separators=(',',':')))")"
@@ -313,6 +318,9 @@ jobs:
           set -euo pipefail
           FFMPEG="src-tauri/target/release/bundle/macos/izumi.app/Contents/Resources/ffmpeg"
           test -x "$FFMPEG"
+          # Exec-ing alone cannot catch a broken seal: these runners run with SIP disabled, so the
+          # kernel skips the signature check that kills the binary on user Macs. Verify it directly.
+          codesign --verify --strict "$FFMPEG"
           "$FFMPEG" -hide_banner -version
           if otool -L "$FFMPEG" | grep -q '/opt/homebrew'; then
             echo 'Bundled ffmpeg still references Homebrew' >&2
