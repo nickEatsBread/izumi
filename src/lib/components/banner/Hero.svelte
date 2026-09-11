@@ -1,4 +1,8 @@
 <script lang="ts">
+  import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
+  import { themePresentation } from '$lib/themes/runtime'
+  import { motionPreference } from '$lib/settings/ui'
+  import type { DisplayModel } from '$lib/themes/presentation'
   import type { Media } from '$lib/anilist/types'
   import { banner, cover, title, format, status, season, totalEpisodes } from '$lib/anilist/media'
   import { rememberDetail } from '$lib/anilist/detail-hint'
@@ -53,7 +57,8 @@
   let countdownOrigin = $state(Date.now())
   let failedLogos = $state<string[]>([])
   const controllerUi = $derived($gameMode || $controllerMode)
-  const DURATION = 15000 // a 15s cadence
+  const heroTheme = $derived(showOverlay ? $themePresentation?.hero : undefined)
+  const DURATION = $derived((heroTheme?.interval ?? 15) * 1000)
 
   function go(n: number, direction?: 1 | -1) {
     if (n === i) return
@@ -173,7 +178,7 @@
   // Auto-advance + scroll fade, only when there's an overlay (Home).
   $effect(() => {
     const n = medias.length
-    if (!n || !showOverlay) return
+    if (!n || !showOverlay || heroTheme?.hidden) return
     // Track manual navigation too: changing `cycle` tears down/re-arms this one-shot timer and
     // restarts the compositor-only progress animation below.
     void cycle
@@ -185,7 +190,7 @@
     const arm = () => {
       if (timer) clearTimeout(timer)
       timer = undefined
-      if (!stalled()) timer = setTimeout(() => step(1), DURATION)
+      if (!stalled() && heroTheme?.rotate !== false && $motionPreference !== 'reduce' && ($motionPreference === 'full' || !matchMedia('(prefers-reduced-motion: reduce)').matches)) timer = setTimeout(() => step(1), DURATION)
     }
     arm()
     const onWake = () => arm()
@@ -253,10 +258,27 @@
   const scoreColor = (s?: number) =>
     s == null ? 'text-white/70' : s >= 75 ? 'text-green-400' : s >= 65 ? 'text-orange-400' : 'text-red-400'
   const cleanDesc = (d?: string) => (d ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+  const themeModel: DisplayModel = $derived(current ? { title: title(current), description: cleanDesc(current.description), rank: featuredRankLabel,
+    rankPosition: current.featuredRank?.position, poster: cover(current), backdrop: banner(current), logo: currentLogo || '',
+    score: current.averageScore || undefined, format: format(current), year: season(current) } : {})
+  function themeAction(action: () => void) {
+    if (swiped) { swiped = false; return }
+    action()
+  }
 </script>
 
-{#if current}
-  {#if $isMobile && showOverlay}
+{#if current && !heroTheme?.hidden}
+  {#if heroTheme?.template}
+    <section data-nav-row data-theme-hero aria-label="Featured" class="theme-custom-hero" style:min-height={`${($isMobile ? heroTheme.mobileHeight : heroTheme.height) ?? 46}vh`} ontouchstart={onTouchStart} ontouchend={onTouchEnd}>
+      <ThemeNode node={heroTheme.template} model={themeModel} eager titleHeading actions={{
+        details: oninfo ? () => themeAction(() => { rememberDetail(current); oninfo?.(current) }) : undefined,
+        play: onplay ? () => themeAction(() => { rememberDetail(current); onplay?.(current) }) : undefined,
+        favorite: onfav ? () => themeAction(() => onfav?.(current)) : undefined,
+        previous: medias.length > 1 ? () => themeAction(() => step(-1)) : undefined, next: medias.length > 1 ? () => themeAction(() => step(1)) : undefined,
+      }} />
+      <div class="flex flex-wrap justify-between gap-3 pt-3">{#if oninfo}<button type="button" data-focusable onclick={() => themeAction(() => { rememberDetail(current); oninfo?.(current) })}>View details</button>{/if}{#if medias.length > 1}<div class="flex items-center gap-3"><button type="button" data-focusable aria-label="Previous featured title" onclick={() => themeAction(() => step(-1))}>Previous</button><span>{i + 1} / {medias.length}</span><button type="button" data-focusable aria-label="Next featured title" onclick={() => themeAction(() => step(1))}>Next</button></div>{/if}</div>
+    </section>
+  {:else if $isMobile && showOverlay}
     <!-- Mobile Home: a CONTAINED poster block (not a full-bleed banner) — reads far better on a
          phone (Netflix-style). Portrait cover art, dark bottom scrim, title/meta/genres + Watch,
          swipeable with dot pips. -->
@@ -265,6 +287,7 @@
     <div
       class="relative mx-4 mb-6 h-[46vh] touch-pan-y overflow-hidden rounded-2xl shadow-xl {$isAndroid ? 'android-hero-press' : ''}"
       style="--accent:{accent}"
+      style:height={heroTheme?.mobileHeight ? `${heroTheme.mobileHeight}vh` : undefined}
       role="group"
       aria-label="Featured"
       ontouchstart={onTouchStart}
@@ -333,11 +356,13 @@
             <Info size={18} /> Details
           </button>
         </div>
-        {#if featuredRankLabel}
+        {#if featuredRankLabel && !heroTheme?.rankHidden}
           <div class="flex justify-end">
+            {#if heroTheme?.rank}<ThemeNode node={heroTheme.rank} model={themeModel} />{:else}
             <span class="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-black/70 px-2.5 py-1 text-[0.68rem] font-black text-white shadow-lg backdrop-blur">
               <TrendingUp size={12} class="text-orange-300" aria-hidden="true" />{featuredRankLabel}
             </span>
+            {/if}
           </div>
         {/if}
         {#if medias.length > 1}
@@ -358,6 +383,8 @@
     class:cursor-grabbing={heroDragging}
     class:game-home-hero={controllerUi && showOverlay}
     style="--accent:{accent}"
+    style:height={heroTheme?.height ? `${heroTheme.height}vh` : undefined}
+    style:--theme-hero-interval={`${DURATION}ms`}
     role="group"
     aria-label="Featured"
     ontouchstart={onTouchStart}
@@ -414,7 +441,10 @@
       </button>
     {/if}
 
-    {#if showOverlay && featuredRankLabel}
+    {#if showOverlay && featuredRankLabel && !heroTheme?.rankHidden}
+      {#if heroTheme?.rank}
+        <div class="pointer-events-none absolute bottom-16 right-8 z-20"><ThemeNode node={heroTheme.rank} model={themeModel} /></div>
+      {:else}
       <span
         class="pointer-events-none absolute right-8 z-20 hidden items-center gap-2 rounded-md border border-white/15 bg-black/65 px-3 py-1.5 text-sm font-black text-white shadow-lg backdrop-blur sm:inline-flex"
         class:bottom-16={medias.length > 1}
@@ -422,6 +452,7 @@
       >
         <TrendingUp size={15} class="text-orange-300" aria-hidden="true" />{featuredRankLabel}
       </span>
+      {/if}
     {/if}
 
     {#if showOverlay}
@@ -521,6 +552,8 @@
 {/if}
 
 <style>
+  .theme-custom-hero { margin: 1rem clamp(1rem, 3vw, 2rem) 2rem; position: relative; padding: clamp(1rem, 3vw, 2rem); border-radius: var(--radius); background: hsl(var(--card)); }
+  .theme-custom-hero button { min-height: 44px; padding-inline: 12px; font-weight: 800; }
   @keyframes hero-progress-fill {
     from { transform: scaleX(0); }
     to { transform: scaleX(1); }
@@ -528,7 +561,7 @@
   .hero-progress {
     width: 100%;
     transform-origin: left;
-    animation: hero-progress-fill 15s linear forwards;
+    animation: hero-progress-fill var(--theme-hero-interval, 15s) linear forwards;
   }
   @keyframes hero-slide-in {
     from { opacity: 0; transform: translate3d(var(--hero-enter-x), 0, 0) scale(1.015); }

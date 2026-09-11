@@ -1,6 +1,7 @@
 import { persisted } from 'svelte-persisted-store'
 import { derived, get, writable, type Writable } from 'svelte/store'
 import { THEME_PRESETS, type ThemeTokens } from '$lib/theme-tokens'
+import { parsePresentation, type ThemePresentation } from '$lib/themes/presentation'
 
 export type ThemeFont = 'nunito' | 'system' | 'serif' | 'mono'
 export type ThemeBackdrop = 'solid' | 'aurora' | 'spotlight' | 'mesh'
@@ -17,6 +18,7 @@ export interface StudioTheme {
   backdrop: ThemeBackdrop
   backdropStrength: number
   glassBlur: number
+  presentation?: ThemePresentation
 }
 
 export interface StudioThemeExport {
@@ -44,7 +46,6 @@ export function defaultStudioTheme(now = Date.now()): StudioTheme {
   }
 }
 
-const records = persisted<StudioTheme[]>('theme-studio-themes-v1', [defaultStudioTheme(0)])
 export const activeStudioThemeId = persisted('theme-studio-active-v1', STUDIO_ID)
 export const themeStudioPreview = writable<StudioTheme | null>(null)
 
@@ -75,6 +76,8 @@ export function normalizeStudioTheme(value: unknown, fallback = defaultStudioThe
   tokens.scheme = tokenInput.scheme === 'light' || tokenInput.scheme === 'dark' ? tokenInput.scheme : fallback.tokens.scheme
   const fonts: ThemeFont[] = ['nunito', 'system', 'serif', 'mono']
   const backdrops: ThemeBackdrop[] = ['solid', 'aurora', 'spotlight', 'mesh']
+  let presentation: ThemePresentation | undefined
+  try { if (raw.presentation) presentation = parsePresentation(raw.presentation) } catch { /* Recover old or damaged local preferences to the built-in layout. */ }
   return {
     id: typeof raw.id === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/i.test(raw.id) ? raw.id : fallback.id,
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim().slice(0, 48) : fallback.name,
@@ -87,6 +90,7 @@ export function normalizeStudioTheme(value: unknown, fallback = defaultStudioThe
     backdrop: backdrops.includes(raw.backdrop as ThemeBackdrop) ? raw.backdrop as ThemeBackdrop : fallback.backdrop,
     backdropStrength: bounded(raw.backdropStrength, fallback.backdropStrength, 0, 0.65),
     glassBlur: bounded(raw.glassBlur, fallback.glassBlur, 0, 40),
+    ...(presentation ? { presentation } : {}),
   }
 }
 
@@ -100,13 +104,28 @@ function normalizeRecords(value: unknown): StudioTheme[] {
   return unique.size ? [...unique.values()] : [defaultStudioTheme(0)]
 }
 
+const records = persisted<StudioTheme[]>('theme-studio-themes-v1', [defaultStudioTheme(0)], {
+  beforeRead: normalizeRecords,
+  onWriteError: () => { throw new Error('Could not save the theme. Free some device storage and try again.') },
+})
 const normalized = normalizeRecords(get(records))
-if (JSON.stringify(normalized) !== JSON.stringify(get(records))) records.set(normalized)
+if (JSON.stringify(normalized) !== JSON.stringify(get(records))) {
+  try { records.set(normalized) } catch { /* Keep the normalized in-memory recovery state. */ }
+}
+
+function setStudioRecords(value: StudioTheme[]): void {
+  const previous = get(records)
+  try { records.set(normalizeRecords(value)) }
+  catch (error) {
+    try { records.set(previous) } catch { /* Restore in-memory state even if storage remains unavailable. */ }
+    throw error
+  }
+}
 
 export const studioThemes: Writable<StudioTheme[]> = {
   subscribe: records.subscribe,
-  set: (value) => records.set(normalizeRecords(value)),
-  update: (updater) => records.update((value) => normalizeRecords(updater(normalizeRecords(value)))),
+  set: setStudioRecords,
+  update: (updater) => setStudioRecords(updater(normalizeRecords(get(records)))),
 }
 
 export const activeStudioTheme = derived(

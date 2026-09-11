@@ -14,6 +14,8 @@
   import Lazy from '$lib/components/Lazy.svelte'
   import { themeStudioOpen } from '$lib/settings/theme-studio-session'
   const loadThemeStudio = () => import('$lib/components/settings/ThemeStudio.svelte')
+  import { themeInstallPreview } from '$lib/themes/installed'
+  const loadThemeInstallPreview = () => import('$lib/components/themes/ThemeInstallPreview.svelte')
   import PlayFeedback from '$lib/components/PlayFeedback.svelte'
   import { title as mediaTitle, banner as mediaBanner, cover as mediaCover } from '$lib/anilist/media'
   const loadPlayerOverlay = () => import('$lib/components/player/PlayerOverlay.svelte')
@@ -552,3 +554,5 @@
     </Lazy>
   </div>
 {/if}
+
+{#if $themeInstallPreview && !$playing && !$androidMpvActive}<Lazy load={loadThemeInstallPreview} />{/if}

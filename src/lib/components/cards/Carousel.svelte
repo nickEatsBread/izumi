@@ -1,5 +1,7 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte'
+  import { getContext, type Snippet } from 'svelte'
+  import { themePresentation } from '$lib/themes/runtime'
+  import { resolveRow, ROW_CONTEXT, type RowScope } from '$lib/themes/presentation'
   import { dragScroll, gameModeCarouselTouch } from '$lib/nav/actions'
   import { wheelScrollAcross } from '$lib/settings/ui'
   import { gameMode } from '$lib/player/session'
@@ -15,13 +17,30 @@
   const mob = $derived($isMobile)
   // `viewMoreHref` (optional): renders a "View more" link by the title.
   let { title, viewMoreHref, attribution, children }: { title: string; viewMoreHref?: string; attribution?: string; children: Snippet } = $props()
+  const scope = getContext<(() => RowScope) | undefined>(ROW_CONTEXT)
+  const appearance = $derived(scope ? resolveRow($themePresentation, scope().id) : {})
+  const grid = $derived(appearance.layout === 'grid')
 
   let scroller = $state<HTMLDivElement>()
   let canLeft = $state(false)
   let canRight = $state(false)
 
+  function scrollBehavior(node: HTMLElement, enabled: boolean) {
+    let cleanup: (() => void) | undefined
+    const update = (next: boolean) => {
+      cleanup?.(); cleanup = undefined
+      if (next) {
+        const drag = dragScroll(node), touch = gameModeCarouselTouch(node)
+        cleanup = () => { drag.destroy(); touch.destroy() }
+      }
+    }
+    update(enabled)
+    return { update, destroy: () => cleanup?.() }
+  }
+
   function update() {
     if (!scroller) return
+    if (grid) { canLeft = false; canRight = false; return }
     canLeft = scroller.scrollLeft > 4
     canRight = scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 4
   }
@@ -35,6 +54,7 @@
   // and remains entirely owned by the page — scrolling down over a carousel must still go down.
   // A portalled preview forwards horizontal input back here because it sits outside the row DOM.
   function onWheel(e: WheelEvent) {
+    if (grid) return
     if (!$wheelScrollAcross) return // opt-in (Settings → Interface); arrows otherwise
     if (!scroller) return
     const horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY)
@@ -54,6 +74,8 @@
 
   // Keep arrow visibility in sync with content (cards load async) + viewport resize.
   $effect(() => {
+    void grid
+    void appearance
     if (!scroller) return
     update()
     const ro = new ResizeObserver(update)
@@ -64,10 +86,13 @@
   })
 </script>
 
-<section data-nav-row class="browse-render-row group/carousel relative mb-8">
+<!-- Grid rows stay inside the game/TV nav fast path: the section always exposes `data-nav-row`,
+     and `data-nav-row-wrap` tells pickInNavRows the row paints several lines, so vertical moves
+     search this row's own cards instead of stepping whole sections (and skipping grid lines). -->
+<section data-nav-row data-nav-row-wrap={grid ? '' : undefined} data-theme-row={scope?.().id} data-theme-row-title={scope?.().title ?? title} class="browse-render-row group/carousel relative mb-8" style:margin-bottom={appearance.spacing !== undefined ? `${appearance.spacing}px` : undefined}>
   <div class="mb-2 flex items-baseline justify-between" class:px-8={!mob} class:px-4={mob}>
     <div class="flex min-w-0 items-baseline gap-2">
-      <h2 class="truncate text-lg font-black">{title}</h2>
+      <h2 class="truncate text-lg font-black" style:font-size={appearance.titleSize ? `${appearance.titleSize}px` : undefined}>{title}</h2>
       {#if attribution}<span class="shrink-0 text-[0.65rem] font-semibold text-muted-foreground">{attribution}</span>{/if}
     </div>
     {#if viewMoreHref}
@@ -79,8 +104,9 @@
     {/if}
   </div>
   <div class="relative">
-    <div bind:this={scroller} data-carousel-scroller data-nav-row-items use:dragScroll use:gameModeCarouselTouch onwheel={onWheel} onscroll={update}
-         class="flex gap-3 overflow-x-scroll pb-2" class:px-8={!mob} class:px-4={mob} class:pt-3={gm}>
+    <div bind:this={scroller} data-carousel-scroller={!grid ? '' : undefined} data-nav-row-items use:scrollBehavior={!grid} onwheel={onWheel} onscroll={update}
+         class="flex gap-3 overflow-x-scroll pb-2" class:px-8={!mob} class:px-4={mob} class:pt-3={gm}
+         class:theme-grid={grid} style:gap={appearance.gap !== undefined ? `${appearance.gap}px` : undefined} style:--theme-grid-width={`${appearance.width ?? 152}px`}>
       {@render children()}
     </div>
 
@@ -106,3 +132,9 @@
     {/if}
   </div>
 </section>
+
+<style>
+  .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--theme-grid-width)), 1fr)); overflow-x: visible; align-items: start; }
+  .theme-grid > :global(*) { min-width: 0; max-width: 100%; }
+  .theme-grid :global([data-theme-card]), .theme-grid :global([data-theme-card] > a) { width: 100% !important; }
+</style>

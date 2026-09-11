@@ -8,7 +8,8 @@ describe('home hero efficiency', () => {
   it('advances with one timer and animates progress without per-frame Svelte updates', () => {
     expect(hero).not.toContain('requestAnimationFrame(tick)')
     expect(hero).toContain('setTimeout(() => step(1), DURATION)')
-    expect(hero).toContain('animation: hero-progress-fill 15s linear forwards')
+    expect(hero).toContain('animation: hero-progress-fill var(--theme-hero-interval, 15s) linear forwards')
+    expect(hero).toContain('style:--theme-hero-interval={`${DURATION}ms`}')
     expect(hero).toContain('transform: scaleX(1)')
   })
 })

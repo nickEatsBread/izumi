@@ -8,6 +8,10 @@
 </script>
 
 <script lang="ts">
+  import { getContext } from 'svelte'
+  import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
+  import { themePresentation } from '$lib/themes/runtime'
+  import { resolveRow, ROW_CONTEXT, type RowScope } from '$lib/themes/presentation'
   import type { Media } from '$lib/anilist/types'
   import { reliableImage } from '$lib/util/reliable-image'
   import { title, cardCover, season, format, mediaHref, status } from '$lib/anilist/media'
@@ -52,7 +56,9 @@
   // The card's own painted width, so cardCover can pick the smallest asset that still covers it:
   // `w-36` against the 14.5px mobile root is ~131px, the `sm:` carousel tile is 152px. A fill-width
   // grid cell has no fixed width to state, so it gets the safe (larger) asset.
-  const coverWidth = $derived(fill ? 0 : $isTv ? 198 : $isMobile ? 131 : 152)
+  const themeScope = getContext<(() => RowScope) | undefined>(ROW_CONTEXT)
+  const themeRow = $derived(themeScope ? resolveRow($themePresentation, themeScope().id) : {})
+  const coverWidth = $derived(themeRow.width ?? (fill ? 0 : $isTv ? 198 : $isMobile ? 131 : 152))
   const coverSrc = $derived(cardCover(media, coverWidth))
   let coverReady = $state(false)
   $effect(() => { void coverSrc; coverReady = false })
@@ -140,10 +146,14 @@
   $effect(() => () => clearTimeout(closeT))
 </script>
 
-<div bind:this={el} class={fill ? 'w-full' : $isTv ? 'w-44 shrink-0' : 'w-36 shrink-0 sm:w-[152px]'} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
+<div bind:this={el} data-theme-card class={fill ? 'w-full' : $isTv ? 'w-44 shrink-0' : 'w-36 shrink-0 sm:w-[152px]'} style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
   <a href={mediaHref(media)} data-focusable draggable="false" onclick={() => { rememberDetail(media); h.tap() }}
+     aria-label={title(media)} style:width={themeRow.width || themeRow.card ? '100%' : undefined}
      class="group block {fill ? 'w-full' : $isTv ? 'w-44' : 'w-36 sm:w-[152px]'} {$isAndroid ? 'android-card-press' : ''}">
-    <div class="focus-cover relative aspect-[2/3] w-full overflow-hidden rounded-md bg-muted">
+    {#if themeRow.card}
+      <ThemeNode node={themeRow.card} model={{ title: title(media), poster: coverSrc, backdrop: media.bannerImage ?? coverSrc, format: format(media), year: season(media), score: media.averageScore || undefined }} />
+    {:else}
+    <div class="focus-cover relative aspect-[2/3] w-full overflow-hidden rounded-md bg-muted" style:aspect-ratio={themeRow.aspect === 'landscape' ? '16 / 9' : themeRow.aspect === 'square' ? '1' : undefined} style:border-radius={themeRow.radius !== undefined ? `${themeRow.radius}px` : undefined}>
       <!-- No `transform-gpu`/`will-change`: those permanently promote EVERY cover to its own
            GPU layer (hundreds on a grid → the Deck iGPU thrashes + lag accumulates). The
            browser promotes the one card being hovered on demand; that's all this needs. -->
@@ -186,6 +196,7 @@
       <div class="mt-0.5 flex justify-between text-[0.7rem] text-muted-foreground">
         <span>{season(media) || media.startDate?.year || ''}</span><span>{format(media)}</span>
       </div>
+    {/if}
     {/if}
   </a>
 </div>

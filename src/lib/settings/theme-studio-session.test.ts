@@ -5,6 +5,8 @@ import { themePreset } from './ui'
 import { activeStudioTheme, activeStudioThemeId, defaultStudioTheme, saveStudioTheme, studioThemes, themeStudioPreview } from './theme-studio'
 import { closeThemeStudio, currentStudioDesign, openThemeStudio, resetToShippedTheme, themeStudioMinimized, themeStudioOpen } from './theme-studio-session'
 import { startThemeSync, THEME_PRESETS } from '$lib/theme'
+import { previewTheme, themeInstallPreview } from '$lib/themes/installed'
+import { parseThemePackage } from '$lib/themes/packages'
 
 let stopSync: () => void
 beforeEach(() => {
@@ -23,6 +25,12 @@ afterEach(() => {
 })
 
 describe('Theme Studio live client session', () => {
+  it('ends an installation preview before opening an editable draft', () => {
+    previewTheme({ package: parseThemePackage({ app: 'izumi', kind: 'theme-package', schemaVersion: 1, themeApi: 1, id: 'test.preview', name: 'Preview', author: 'Test', description: 'Preview design.', version: '1.0.0', design: { radius: 1.8 } }), origin: 'https://example.test/theme.json' })
+    openThemeStudio()
+    expect(get(themeInstallPreview)).toBeNull()
+    expect(get(themeStudioPreview)?.radius).toBe(currentStudioDesign().radius)
+  })
   it('restores the exact shipped appearance and keeps it after closing, while retaining saved themes', () => {
     const shippedAppearance = document.documentElement.style.cssText
     saveStudioTheme({

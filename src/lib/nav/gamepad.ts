@@ -30,6 +30,7 @@ export function startGamepadNav(): () => void {
     up: new RepeatTimer(cfg), down: new RepeatTimer(cfg), left: new RepeatTimer(cfg), right: new RepeatTimer(cfg),
   }
   let unlisten: (() => void) | null = null
+  let stopped = false
 
   const repeatLoop = new ActiveFrameLoop(() => {
     const now = performance.now()
@@ -220,11 +221,15 @@ export function startGamepadNav(): () => void {
   }
   window.addEventListener(BROWSER_GAMEPAD_EVENT, onBrowserInput)
 
-  listen<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
-    routeInput(e.payload)
-  }).then((u) => { unlisten = u })
+  // Browser previews have their own input bridge and no native event runtime.
+  if ('__TAURI_INTERNALS__' in window) {
+    void listen<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
+      routeInput(e.payload)
+    }).then((u) => { if (stopped) u(); else unlisten = u }).catch(() => {})
+  }
 
   return () => {
+    stopped = true
     repeatLoop.stop()
     unlisten?.()
     unsubPlaying()

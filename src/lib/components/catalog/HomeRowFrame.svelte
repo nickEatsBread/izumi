@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte'
+  import { setContext, type Snippet } from 'svelte'
+  import { ROW_CONTEXT, type RowScope } from '$lib/themes/presentation'
   import type { CatalogHomeTarget } from '$lib/catalog/home-layout'
   import {
     hideHomeRow,
@@ -27,6 +28,8 @@
     visibleIds: string[]
     children: Snippet
   } = $props()
+
+  setContext<() => RowScope>(ROW_CONTEXT, () => ({ id: `${target}:${rowId}`, title }))
 
   let dragging = $state(false)
   let pointerId = $state<number | null>(null)

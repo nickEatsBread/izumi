@@ -90,7 +90,8 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Clear all caches', category: 'Storage', href: '/app/settings/storage', keywords: 'free disk space delete cleanup' },
 
   { title: 'Haptics', category: 'Interface', href: '/app/settings/interface', keywords: 'vibration feedback Android', anchored: true },
-  { title: 'Theme Studio', category: 'Interface', href: '/app/settings/theme-studio', keywords: 'custom theme colours palette typography font radius backdrop contrast import export appearance' },
+  { title: 'Theme Studio', category: 'Themes', href: '/app/settings/theme-studio', keywords: 'custom theme colours palette typography font radius backdrop contrast import export appearance' },
+  { title: 'Themes', category: 'Themes', href: '/app/settings/themes', keywords: 'theme catalog gallery browse install link community appearance layout' },
   { title: 'Episode list layout', category: 'Interface', href: '/app/settings/interface', keywords: 'cards compact' },
   { title: 'Series-wide episode numbers', category: 'Interface', href: '/app/settings/interface', keywords: 'absolute numbering season episode number continuous count', anchored: true },
   { title: 'Browse layout', category: 'Interface', href: '/app/settings/interface', keywords: 'grid list covers' },
