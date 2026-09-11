@@ -29,9 +29,12 @@ describe('catalogue discovery context UI', () => {
   it('explains ranked and award-driven featured placements', () => {
     expect(hero).toContain('`#${current.featuredRank.position} in ${current.featuredRank.label}`')
     expect(hero).toContain('Crunchyroll · {featuredAward.year} {featuredAward.category} winner')
-    expect(hero).toContain('<TrendingUp')
-    expect(hero).toContain('class:bottom-16={medias.length > 1}')
-    expect(hero).toContain('class="flex justify-end"')
+    // Netflix-style floating rank: a red TOP 10 mark for top-ten placements, bare shadowed text
+    // otherwise, anchored bottom-right clear of the edge controls.
+    expect(hero.match(/bg-\[#e50914\]/g)?.length).toBe(2)
+    expect(hero.match(/\{#if featuredRankPosition <= 10\}/g)?.length).toBe(2)
+    expect(hero).toContain("pointer-events-none absolute right-8 flex items-center gap-2 {medias.length > 1 ? 'bottom-16' : 'bottom-8'}")
+    expect(hero.match(/drop-shadow-\[2px_2px_4px_rgba\(0,0,0,\.9\)\]">\{featuredRankLabel\}/g)?.length).toBe(2)
     expect(tmdb).toContain("'Movies Today'")
     expect(tmdb).toContain("'TV Today'")
   })

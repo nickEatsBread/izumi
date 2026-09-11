@@ -15,20 +15,24 @@ describe('featured carousel UX', () => {
 
   it('combines airing context and genres beneath a compact discovery-facts row', () => {
     expect(hero).toContain("current?.studios?.nodes?.[0]?.name || season(current)")
-    expect(hero).toContain('{#if nextAiringLabel || current.genres?.length}')
+    expect(hero.match(/\{#if nextAiringLabel \|\| current\.genres\?\.length\}/g)?.length).toBe(2)
     expect(hero).toContain('{current.averageScore}% score')
     expect(hero).toContain('{totalEpisodes(current)} episodes')
   })
 
-  it('anchors the featured rank to the bottom right of the banner', () => {
-    expect(hero.match(/\{featuredRankLabel\}/g)?.length).toBe(2)
-    // Desktop: pinned to the artwork's bottom-right corner, clearing the carousel dots when the
-    // carousel has more than one title. Mobile has no room for an overlay, so its copy is
-    // right-aligned under the actions — the same corner of the content it belongs to.
+  it('floats a Netflix-style top-10 rank badge outside the pill rows', () => {
+    // A red TOP 10 mark accompanies only top-ten placements; deeper ranks render the bare text.
+    expect(hero.match(/featuredRankPosition <= 10/g)?.length).toBe(2)
+    expect(hero.match(/bg-\[#e50914\]/g)?.length).toBe(2)
+    expect(hero.match(/drop-shadow-\[2px_2px_4px_rgba\(0,0,0,\.9\)\]">\{featuredRankLabel\}/g)?.length).toBe(2)
+    // Original floating anchor: desktop bottom-right above the pips (bottom-16 when pips exist,
+    // bottom-8 otherwise), mobile right-aligned above the dot pips, never blocking pointer input.
     expect(hero).toContain('pointer-events-none absolute right-8')
-    expect(hero).toContain('class:bottom-16={medias.length > 1}')
-    expect(hero).toContain('class:bottom-8={medias.length <= 1}')
-    expect(hero).toContain('flex justify-end')
+    expect(hero).toContain("medias.length > 1 ? 'bottom-16' : 'bottom-8'")
+    expect(hero.match(/flex items-center justify-end gap-1\.5/g)?.length).toBe(1)
+    // The old orange trending pill treatment is fully gone.
+    expect(hero).not.toContain('border-orange-300/25')
+    expect(hero).not.toContain('TrendingUp')
   })
 
   it('uses provider title artwork with a readable text fallback', () => {

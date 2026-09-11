@@ -19,6 +19,9 @@
     rankForYou,
     type ForYouEdge,
   } from '$lib/recommendations/for-you'
+  import { localForYou } from '$lib/recommendations/local-for-you'
+  import { localCandidatePool, localCandidatesLoading, primeLocalCandidates } from '$lib/recommendations/local-candidates'
+  import { catalogProviders } from '$lib/settings/catalog'
   import X from '@lucide/svelte/icons/x'
   import * as h from '$lib/haptics'
 
@@ -29,6 +32,21 @@
   const localSeeds = $derived(historySeeds($durableHistory).filter((seed) => $showAdult || !seed.media.isAdult))
   const seedIds = $derived(localSeeds.map((seed) => seed.media.id))
   const hasTasteData = $derived(!!userName || seedIds.length > 0)
+
+  // Warm the local candidate pool off the critical path: the row below renders from the cached
+  // pool synchronously, and this only schedules an idle-time gather (nothing on first paint).
+  // Without watch history there is no taste to rank with, so don't gather at all.
+  $effect(() => {
+    if (seedIds.length) primeLocalCandidates($catalogProviders)
+  })
+
+  // The local path needs NO account and NO network on the critical path: it taste-ranks the
+  // already-cached cross-catalog pool, so anonymous (Stremio-only) viewers and AniList-outage
+  // states both get the row. Memoized inside localForYou per history/pool identity.
+  const localRecommendations = $derived(localForYou($durableHistory, $localCandidatePool, {
+    dismissedIds: $dismissedForYouIds,
+    showAdult: $showAdult,
+  }))
 
   type SourceMedia = Media & {
     recommendations?: { nodes: { rating?: number; mediaRecommendation?: Media | null }[] }
@@ -91,12 +109,24 @@
     const historyIds = Object.values($durableHistory)
       .map((entry) => anilistIdOf(entry.media))
       .filter((id): id is number => id != null)
-    return rankForYou(hydratedSeeds, edges, {
+    const ranked = rankForYou(hydratedSeeds, edges, {
       excludedIds: [...historyIds, ...accountIds],
       dismissedIds: $dismissedForYouIds,
       showAdult: $showAdult,
     })
+    // Graceful merge: local taste picks lead; AniList community edges fill the remaining slots.
+    // When AniList is down (degraded) or returns nothing, the local path alone still fills the row.
+    if (!ranked.length) return localRecommendations
+    if (!localRecommendations.length) return ranked
+    const localIds = new Set(localRecommendations.map((item) => forYouId(item.media)))
+    return [...localRecommendations, ...ranked.filter((item) => !localIds.has(forYouId(item.media)))].slice(0, 20)
   })
+
+  // One identity for a title across AniList and catalog-native snapshots (compat ids are negative
+  // hashes), so the merge cannot show the same anime twice through different catalog records.
+  function forYouId(media: Media) {
+    return anilistIdOf(media) ?? media.id
+  }
 
   function dismiss(mediaId: number) {
     dismissForYou(mediaId)
@@ -105,7 +135,12 @@
 </script>
 
 <div class:deferred-skeleton={!visible} use:nearViewport={{ onEnter: reveal }}>
-  {#if hasTasteData && (!visible || loading)}
+  <!-- The extra skeleton branch covers the anonymous viewer's brief cold-pool window: it clears by
+       itself when the idle gather settles, so a failed catalog can never pin a permanent shimmer.
+       A pending AniList query must NOT pin it once local picks exist — under a degraded/429-ing
+       AniList the retries run long, and the row would shimmer forever instead of showing the
+       zero-network results it already has. Network edges merge in whenever they do land. -->
+  {#if hasTasteData && (!visible || (loading && !recommendations.length) || (!recommendations.length && $localCandidatesLoading))}
     <Carousel title="Recommended for You">
       {#each Array.from({ length: 8 }) as _}
         <div class="skeloader aspect-[2/3] w-36 shrink-0 rounded-md sm:w-[152px]"></div>

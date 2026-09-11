@@ -8,7 +8,6 @@
   import Clock3 from '@lucide/svelte/icons/clock-3'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
-  import TrendingUp from '@lucide/svelte/icons/trending-up'
   import Award from '@lucide/svelte/icons/award'
   import * as h from '$lib/haptics'
   import { isAndroid, isMobile } from '$lib/platform'
@@ -249,6 +248,8 @@
   const productionLabel = $derived(current?.studios?.nodes?.[0]?.name || season(current))
   const featuredRankLabel = $derived(current?.featuredRank
     ? `#${current.featuredRank.position} in ${current.featuredRank.label}` : '')
+  // TOP 10 mark only accompanies the top ten; deeper placements render the bare rank text.
+  const featuredRankPosition = $derived(current?.featuredRank?.position ?? Number.POSITIVE_INFINITY)
   const featuredAward = $derived(current ? findTopAnimeAward(title(current)) : null)
   const scoreColor = (s?: number) =>
     s == null ? 'text-white/70' : s >= 75 ? 'text-green-400' : s >= 65 ? 'text-orange-400' : 'text-red-400'
@@ -334,10 +335,14 @@
           </button>
         </div>
         {#if featuredRankLabel}
-          <div class="flex justify-end">
-            <span class="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-black/70 px-2.5 py-1 text-[0.68rem] font-black text-white shadow-lg backdrop-blur">
-              <TrendingUp size={12} class="text-orange-300" aria-hidden="true" />{featuredRankLabel}
-            </span>
+          <!-- Netflix-style rank: a red TOP 10 mark for top-ten placements, then the rank as one
+               bold shadowed line with no container. Right-aligned above the dot pips, and
+               pointer-events-none so it never steals taps from them. -->
+          <div class="pointer-events-none flex items-center justify-end gap-1.5">
+            {#if featuredRankPosition <= 10}
+              <span aria-hidden="true" class="flex flex-col items-center rounded-md bg-[#e50914] px-1 py-0.5 text-[0.625rem] font-black leading-[1.1] text-white"><span>TOP</span><span>10</span></span>
+            {/if}
+            <span class="text-xs font-black text-white drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)]">{featuredRankLabel}</span>
           </div>
         {/if}
         {#if medias.length > 1}
@@ -414,16 +419,6 @@
       </button>
     {/if}
 
-    {#if showOverlay && featuredRankLabel}
-      <span
-        class="pointer-events-none absolute right-8 z-20 hidden items-center gap-2 rounded-md border border-white/15 bg-black/65 px-3 py-1.5 text-sm font-black text-white shadow-lg backdrop-blur sm:inline-flex"
-        class:bottom-16={medias.length > 1}
-        class:bottom-8={medias.length <= 1}
-      >
-        <TrendingUp size={15} class="text-orange-300" aria-hidden="true" />{featuredRankLabel}
-      </span>
-    {/if}
-
     {#if showOverlay}
       <div class="absolute inset-x-0 bottom-0 flex flex-col gap-3 px-4 pb-6 sm:px-8 sm:pb-8">
         {#key current.id}
@@ -494,6 +489,18 @@
         </div>
         {/key}
 
+        {#if featuredRankLabel}
+          <!-- Netflix-style rank back at its floating anchor: bottom-right, bottom-16 above the
+               slide pips (bottom-8 when a single slide means no pips). Bare bold shadowed text
+               plus a red TOP 10 mark for top-ten placements — no container — and
+               pointer-events-none so the edge nav and pips underneath stay clickable. -->
+          <div class="pointer-events-none absolute right-8 flex items-center gap-2 {medias.length > 1 ? 'bottom-16' : 'bottom-8'}">
+            {#if featuredRankPosition <= 10}
+              <span aria-hidden="true" class="flex flex-col items-center rounded-md bg-[#e50914] px-1.5 py-1 text-[0.625rem] font-black leading-[1.1] text-white"><span>TOP</span><span>10</span></span>
+            {/if}
+            <span class="text-sm font-black text-white sm:text-base drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)]">{featuredRankLabel}</span>
+          </div>
+        {/if}
         {#if medias.length > 1}
           <!-- Slide pips: hover/click targets are a desktop affordance; on mobile the row
                auto-advances (and would collide with the Watch/Details buttons), so hide them. -->

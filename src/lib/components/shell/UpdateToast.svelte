@@ -11,8 +11,10 @@
 {#if $availableUpdate && !$updateDismissed}
   <!-- Mobile: sit ABOVE the fixed bottom tab bar (~52px + gesture inset) and span the width, instead
        of the desktop bottom-right corner card that otherwise lands on top of the nav. -->
+  <!-- z-[70]: above the titlebar (z-50) and the degraded banner (z-[60]) so shell chrome can never
+       cover the offer; still below modal dialogs (z-80). -->
   <div
-    class="fixed z-50 rounded-lg border border-border bg-secondary p-3 shadow-xl
+    class="fixed z-[70] rounded-lg border border-border bg-secondary p-3 shadow-xl
       {$isMobile ? 'bottom-[calc(4rem+env(safe-area-inset-bottom))] left-3 right-3' : 'bottom-4 right-4 w-80'}"
   >
     {#if $updatePhase === 'available'}

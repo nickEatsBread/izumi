@@ -159,7 +159,9 @@
               {#if listUser}{#key listUser}<ListRow title="Your List · AniList" userName={listUser} status="PLANNING" preferLinkedRating={decoded.selection === 'auto'} />{/key}{/if}
               {#if $malToken || $malUser}<MalListRow title="Your List · MyAnimeList" status="plan_to_watch" preferLinkedRating={decoded.selection === 'auto'} />{/if}
             {:else if decoded.rowId === 'recommendations'}
-              {#if listUser}{#key listUser}<PersonalizedRow userName={listUser} preferLinkedRating={decoded.selection === 'auto'} />{/key}{/if}
+              <!-- No account gate: PersonalizedRow renders the local taste-ranked row for
+                   catalog-only viewers and hides itself when there is truly no taste data. -->
+              {#key listUser}<PersonalizedRow userName={listUser} preferLinkedRating={decoded.selection === 'auto'} />{/key}
             {:else}
               {@const section = anilistSectionMap.get(decoded.rowId)}
               {#if section}<HomeRow title={`${section.title} · AniList`} vars={section.vars} preferLinkedRating={decoded.selection === 'auto'} />{/if}
