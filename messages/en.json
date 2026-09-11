@@ -115,7 +115,6 @@
   "onboarding_back": "Back",
   "onboarding_next": "Next",
   "onboarding_skip": "Skip setup",
-  "onboarding_intro_skip": "Skip intro",
   "onboarding_transfer_cta": "Set up from another device",
   "onboarding_transfer_title": "Set up from another device",
   "onboarding_transfer_intro": "Open izumi on a device you already use, then go to Settings → Sync and pick this one under Nearby sessions.",

@@ -168,10 +168,13 @@ describe('onboarding presentation contracts', () => {
     expect(dialog.indexOf('<IntroSequence')).toBeLessThan(close)
   })
 
-  it('lets any key, click or the visible control interrupt the ident', () => {
+  it('lets any key or click interrupt the ident, with nothing on screen saying so', () => {
     for (const event of ['keydown', 'pointerdown']) expect(intro).toContain(`window.addEventListener('${event}'`)
     for (const event of ['keydown', 'pointerdown']) expect(intro).toContain(`window.removeEventListener('${event}'`)
-    expect(intro).toContain('m.onboarding_intro_skip()')
+    // No visible affordance: the ident only ever plays into first-run setup, so a permanent
+    // "skip" label would advertise an escape from a screen the user sees once.
+    expect(intro).not.toContain('<button')
+    expect(intro).not.toContain('intro-skip')
     // Completing twice would fire the wizard's reveal mid-fade; the guard is the reason skip and
     // the scheduled end can both call finish().
     expect(intro).toContain('if (done) return')

@@ -115,7 +115,6 @@
   "onboarding_back": "戻る",
   "onboarding_next": "次へ",
   "onboarding_skip": "セットアップをスキップ",
-  "onboarding_intro_skip": "イントロをスキップ",
   "onboarding_transfer_cta": "別の端末から設定",
   "onboarding_transfer_title": "別の端末から設定",
   "onboarding_transfer_intro": "すでに使っている端末で izumi を開き、設定 → 同期 の「近くのセッション」からこの端末を選んでください。",

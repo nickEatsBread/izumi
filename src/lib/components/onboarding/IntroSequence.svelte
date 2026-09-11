@@ -10,7 +10,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import Wordmark from '$lib/components/Wordmark.svelte'
-  import { m } from '$lib/paraglide/messages.js'
 
   let { oncomplete }: { oncomplete: () => void } = $props()
 
@@ -76,7 +75,6 @@
     </div>
     <div class="word"><Wordmark /></div>
   </div>
-  <button type="button" class="intro-skip" onclick={skip}>{m.onboarding_intro_skip()}</button>
 </div>
 
 <style>
@@ -129,10 +127,6 @@
   /* The last wave is the wide slow one that carries the eye off the edge of the screen as the
      ident dissolves — the hand-off into the wizard, rather than a cut to it. */
   .crest { width: 620%; height: 620%; border-color: #5CEAD866; border-width: 3px; animation: crest 1500ms cubic-bezier(.1, .72, .22, 1) 830ms both; }
-
-  .intro-skip { position: absolute; right: max(1.5rem, env(safe-area-inset-right)); bottom: max(1.5rem, env(safe-area-inset-bottom)); border-radius: .5rem; padding: .55rem .9rem; font-size: .78rem; font-weight: 600; letter-spacing: .01em; color: #F4F8FF99; animation: fade-in 300ms ease 900ms both; }
-  .intro-skip:hover, .intro-skip:focus-visible { color: #F4F8FF; background: #F4F8FF14; }
-  .intro.reduced .intro-skip { display: none; }
 
   @keyframes drop-fall {
     0% { transform: translate(-50%, calc(-50% - 46vh)) scale(.7, 1.5); opacity: 0; }
