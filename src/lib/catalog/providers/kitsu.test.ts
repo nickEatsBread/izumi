@@ -10,6 +10,8 @@ vi.mock('$lib/anime/animeschedule', () => ({
 
 import { kitsuCatalog } from './kitsu'
 import { getIndex } from '$lib/stremio/idmap'
+import { airedCount } from '$lib/anilist/media'
+import { normalizeAnimeDetail } from '$lib/catalog/anime-detail'
 
 const anime = {
   id: '42',
@@ -46,5 +48,31 @@ describe('native Kitsu tracker identity', () => {
     await getIndex()
     const page = await kitsuCatalog.search({ query: 'example' })
     expect(page.media).toMatchObject([{ idMal: 70, externalIds: { anilist: 7, mal: 70 } }])
+  })
+})
+
+describe('Kitsu detail airing progress', () => {
+  // Kitsu publishes the planned episode list for a currently-airing season with every airdate null,
+  // so the record carries no evidence of its own about what has been released.
+  beforeEach(() => {
+    mocks.http.mockImplementation(async (url: string) => ({
+      ok: true, status: 200,
+      json: async () => url.includes('/episodes?')
+        ? { data: Array.from({ length: 12 }, (_, index) => ({ id: String(index + 1), attributes: { number: index + 1, airdate: null } })), links: {} }
+        : respond(url),
+    }))
+    mocks.airing.mockResolvedValue({ airedEpisodes: 8, nextEpisode: 9, nextAiringAt: 2_000_000_000 })
+  })
+
+  it('keeps the confirmed released count on an airing title whose episodes carry no airdate', async () => {
+    const media = await kitsuCatalog.detail({ provider: 'kitsu', type: 'anime', id: '42' })
+    expect(media?.nextAiringEpisode?.episode).toBe(9)
+    expect(airedCount(normalizeAnimeDetail(media!))).toBe(8)
+  })
+
+  it('leaves the count unknown when the airing provider has nothing', async () => {
+    mocks.airing.mockResolvedValue(null)
+    const media = await kitsuCatalog.detail({ provider: 'kitsu', type: 'anime', id: '42' })
+    expect(airedCount(normalizeAnimeDetail(media!))).toBe(Infinity)
   })
 })
