@@ -33,6 +33,19 @@ function completed(tx: IDBTransaction): Promise<void> {
     tx.onabort = tx.onerror = () => reject(tx.error ?? new Error('Library transaction failed.'))
   })
 }
+/** Reactive proxies (any object read out of a Svelte $state store) cannot be structured-cloned
+ * into IndexedDB — the row write rejects with "could not be cloned" and every save after it
+ * reports the storage-error banner. Plain values keep their identity so the flush diff still
+ * skips unchanged rows; only un-cloneable reactive trees are replaced by a plain JSON snapshot. */
+function plainRowValue<T>(value: T): T {
+  if (!value || typeof value !== 'object') return value
+  try {
+    structuredClone(value)
+    return value
+  } catch {
+    return JSON.parse(JSON.stringify(value)) as T
+  }
+}
 function database(): Promise<IDBDatabase> {
   return connection ??= new Promise((resolve, reject) => {
     const req = indexedDB.open(DATABASE, 1)
@@ -67,7 +80,7 @@ async function patchRows(collection: string, previous: Rows, next: Rows): Promis
   try {
     for (const id of previous.keys()) if (!next.has(id)) records.delete([collection, id])
     for (const [id, value] of next) {
-      if (!previous.has(id) || previous.get(id) !== value) records.put({ collection, id, value }, [collection, id])
+      if (!previous.has(id) || previous.get(id) !== value) records.put({ collection, id, value: plainRowValue(value) }, [collection, id])
     }
     tx.objectStore('collections').put(true, collection)
   } catch (cause) {

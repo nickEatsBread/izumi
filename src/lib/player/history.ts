@@ -67,6 +67,15 @@ export function historyCatalogSelection(media: Pick<Media, 'catalog'>, current: 
   return owner
 }
 
+/** Movies play without an episode number (`playEpisode` passes undefined so the player hides
+ * episode chrome), but history still needs a row — films must appear in Continue Watching and
+ * this log, and the watch threshold must record a completed count instead of NaN. A movie title
+ * therefore records as its single episode; series keep the passed number. */
+export function historyEpisodeOf(media: Pick<Media, 'catalog' | 'format'>, episode: number | undefined): number | undefined {
+  if (episode != null) return episode
+  return media.catalog?.type === 'movie' || media.format === 'MOVIE' ? 1 : undefined
+}
+
 // Only the fields the cards / resume / MAL export actually read — NOT description/relations/etc,
 // which the detail-page media object carries and would bloat localStorage (quota + per-play rewrite).
 // Exported so the Continue-Watching snapshot stores the same trimmed shape.
@@ -114,7 +123,8 @@ export function mediaSnapshot(m: Media): Media {
  *  No-op when history is off; in incognito it records to the in-memory overlay instead (the
  *  session still gets Continue Watching + same-release resume, nothing touches disk). */
 export function recordPlay(media: Media, episode: number | undefined, release?: { group?: string; bingeGroup?: string }) {
-  if (episode == null) return
+  const played = historyEpisodeOf(media, episode)
+  if (played == null) return
   const target = get(incognito) ? incognitoHistory : durableHistory
   if (target === durableHistory && !get(saveLocalHistory)) return
   const rel = release && (release.group || release.bingeGroup) ? release : undefined
@@ -122,7 +132,7 @@ export function recordPlay(media: Media, episode: number | undefined, release?: 
     const prev = h[media.id]
     return { ...h, [media.id]: {
       media: mediaSnapshot(media),
-      episode,
+      episode: played,
       progress: prev?.progress ?? 0,
       updatedAt: Date.now(),
       watchedAt: prev?.watchedAt ?? (prev?.progress ? prev.updatedAt : undefined),
@@ -136,13 +146,15 @@ export function recordPlay(media: Media, episode: number | undefined, release?: 
  *  count, plus persisted local history when enabled. Mirrors what we push to the trackers.
  *  In incognito the bump goes to the in-memory overlay only. */
 export function recordProgress(media: Media, episode: number) {
+  const watchedEpisode = historyEpisodeOf(media, episode)
+  if (watchedEpisode == null) return
   if (get(incognito)) {
     incognitoHistory.update((h) => {
       const prev = h[media.id]
       return { ...h, [media.id]: {
         media: mediaSnapshot(media),
-        episode: Math.max(prev?.episode ?? 0, episode),
-        progress: Math.max(prev?.progress ?? 0, episode),
+        episode: Math.max(prev?.episode ?? 0, watchedEpisode),
+        progress: Math.max(prev?.progress ?? 0, watchedEpisode),
         updatedAt: Date.now(),
         watchedAt: Date.now(),
         catalogSelection: prev?.catalogSelection ?? historyCatalogSelection(media, get(catalogProvider)),
@@ -153,15 +165,15 @@ export function recordProgress(media: Media, episode: number) {
   }
   sessionProgress.update((progress) => ({
     ...progress,
-    [media.id]: Math.max(progress[media.id] ?? 0, episode),
+    [media.id]: Math.max(progress[media.id] ?? 0, watchedEpisode),
   }))
   if (!get(saveLocalHistory)) return
   durableHistory.update((h) => {
     const prev = h[media.id]
     return { ...h, [media.id]: {
       media: mediaSnapshot(media),
-      episode: Math.max(prev?.episode ?? 0, episode),
-      progress: Math.max(prev?.progress ?? 0, episode),
+      episode: Math.max(prev?.episode ?? 0, watchedEpisode),
+      progress: Math.max(prev?.progress ?? 0, watchedEpisode),
       updatedAt: Date.now(),
       watchedAt: Date.now(),
       catalogSelection: prev?.catalogSelection ?? historyCatalogSelection(media, get(catalogProvider)),

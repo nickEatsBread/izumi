@@ -9,7 +9,7 @@ import { pushSimkl, getSimklProgress, invalidateSimklList } from './simkl'
 import { kitsuToAni, malToAni, simklToAni } from './status'
 import { getIndex, lookupAnilistByMal, lookupAnilistByKitsu } from '$lib/stremio/idmap'
 import { mapMalAnimeListMedia, type MalAnimeListNode } from './mal-list-media'
-import { recordProgress, localHistory, durableHistory, importHistoryCheckpoint } from '$lib/player/history'
+import { recordProgress, localHistory, durableHistory, importHistoryCheckpoint, historyEpisodeOf } from '$lib/player/history'
 import { incognito } from '$lib/stores/incognito'
 import { autoWatchlistEnabled, autoWatchlistEpisodes, saveLocalHistory } from '$lib/settings/ui'
 import {
@@ -257,31 +257,36 @@ export function updateProgress(
 //      MAL is_rewatching + num_times_rewatched).
 // Returns the pre-bump known count (the Android undo toast needs it).
 export function markWatched(media: Media, episode: number, options: { importedAt?: number } = {}): number {
+  // Movies play without an episode number (playEpisode passes undefined); resolve it to the
+  // movie's single episode so the watch threshold records progress 1 and completes the title
+  // instead of writing NaN/undefined into tracking.
+  const played = historyEpisodeOf(media, episode)
   const entry = media.mediaListEntry
   const localEntry = localTrackingForMedia(get(localLibrary), media)
   const known = Math.max(entry?.progress ?? 0, localEntry?.progress ?? 0, get(localHistory)[media.id]?.progress ?? 0)
+  if (played == null) return known
   const imported = options.importedAt != null
   if (imported) {
     const previous = get(durableHistory)[media.id]
     if (previous && previous.updatedAt >= options.importedAt!) return known
-    importHistoryCheckpoint(media, episode, true, options.importedAt!)
+    importHistoryCheckpoint(media, played, true, options.importedAt!)
     // A recovery advances known progress but never infers a new rewatch from a completed title.
-    if (episode <= known) return known
-  } else recordProgress(media, episode)
-  void addTraktHistory(media, episode, options.importedAt).catch(() => {})
+    if (played <= known) return known
+  } else recordProgress(media, played)
+  void addTraktHistory(media, played, options.importedAt).catch(() => {})
   const persistLocal = get(saveLocalHistory)
   const threshold = Math.max(1, Math.floor(get(autoWatchlistEpisodes) || 1))
-  if (!get(incognito) && persistLocal && get(autoWatchlistEnabled) && episode >= threshold) {
+  if (!get(incognito) && persistLocal && get(autoWatchlistEnabled) && played >= threshold) {
     setMediaInLocalList(media, WATCHLIST_ID, true, options.importedAt)
   }
-  const finished = media.episodes != null && episode >= media.episodes
+  const finished = media.episodes != null && played >= media.episodes
   // Already-complete = COMPLETED status OR the known count has reached the (known) total. The count
   // fallback is load-bearing for Continue-Watching plays whose media snapshot omits mediaListEntry.
   const previousStatus = localEntry?.status ?? entry?.status
   const alreadyComplete = previousStatus === 'COMPLETED' || (media.episodes != null && known >= media.episodes)
   const rewatch = !imported && (alreadyComplete || previousStatus === 'REPEATING')
   // #1: behind the known count and not a rewatch/finale → the local bump is enough.
-  if (!rewatch && episode <= known && !finished) return known
+  if (!rewatch && played <= known && !finished) return known
 
   const status: AniStatus = finished ? 'COMPLETED' : (rewatch ? 'REPEATING' : 'CURRENT')
   const extras: ProgressExtras = {}
@@ -289,7 +294,7 @@ export function markWatched(media: Media, episode: number, options: { importedAt
   // First-ever watch → stamp a start date (unless the entry already carries one).
   const startedAt = localEntry?.startedAt ?? entry?.startedAt
   const completedAt = localEntry?.completedAt ?? entry?.completedAt
-  if (!rewatch && known === 0 && episode >= 1 && !hasFullFuzzy(startedAt)) extras.startedAt = today
+  if (!rewatch && known === 0 && played >= 1 && !hasFullFuzzy(startedAt)) extras.startedAt = today
   // Entering a fresh rewatch pass (was COMPLETED, not yet REPEATING) → stamp a new start date.
   else if (rewatch && previousStatus !== 'REPEATING') extras.startedAt = today
   if (finished) {
@@ -298,7 +303,7 @@ export function markWatched(media: Media, episode: number, options: { importedAt
   }
   if (rewatch) extras.isRewatching = !finished // MAL: flag stays on until the pass completes
 
-  updateProgress(media, episode, status, extras, { persistLocal, updatedAt: options.importedAt })
+  updateProgress(media, played, status, extras, { persistLocal, updatedAt: options.importedAt })
     .then((t) => t.length && console.log('tracked on', t.join(', '))).catch(() => {})
   return known
 }

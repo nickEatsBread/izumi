@@ -48,6 +48,29 @@ describe('durable library database', () => {
     expect(written).toEqual([{ collection: 'local-history', id: '123', value: { progress: 2 } }])
   })
 
+  it('persists a reactive proxy as a plain snapshot instead of failing the structured clone', async () => {
+    const db = await module()
+    const store = db.databasePersisted<Record<string, { title: string; cover: { url: string } }>>(
+      'local-history', {}, db.mapCodec())
+    await store.ready
+    const put = vi.spyOn(IDBObjectStore.prototype, 'put')
+    // Reads like Svelte's deep $state proxy: every nested object read hands out a fresh proxy.
+    const reactive = <T>(value: T): T => new Proxy(value as object, {
+      get: (target, key, receiver) => {
+        const item = Reflect.get(target, key, receiver)
+        return item && typeof item === 'object' ? reactive(item) : item
+      },
+    }) as T
+    const proxied = reactive({ title: 'Film', cover: { url: 'https://image.test/x.jpg' } })
+    store.update(value => ({ ...value, '-42': proxied }))
+    await store.flush()
+    const written = put.mock.calls.map(([value]) => value).filter(value => value?.collection === 'local-history')
+    expect(written).toHaveLength(1)
+    expect(() => structuredClone(written[0]!.value)).not.toThrow() // the exact IndexedDB failure mode
+    expect(written[0]!.value).not.toBe(proxied)
+    expect(written[0]!.value).toEqual({ title: 'Film', cover: { url: 'https://image.test/x.jpg' } })
+  })
+
   it('replays additions and deletions made during hydration without dropping unrelated titles', async () => {
     let db = await module()
     const original = db.databasePersisted('local-history', { a: 1, b: 2 }, db.mapCodec<number>())
