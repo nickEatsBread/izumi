@@ -1,3 +1,7 @@
 # Scripts are parsed by the test runner, and a CRLF shebang or stray CR breaks that transform.
 # Linux CI would never catch it: only a Windows checkout converts them.
 scripts/**/*.mjs text eol=lf
+# The Deck installer is fetched over HTTPS and run by bash on SteamOS: a CRLF shebang makes the
+# kernel look for an interpreter named "bash\r". The .desktop launcher is parsed the same way.
+scripts/**/*.sh text eol=lf
+scripts/**/*.desktop text eol=lf

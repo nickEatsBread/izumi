@@ -5,19 +5,26 @@ import { join } from 'node:path'
 import { crc32 } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 
-const installer = readFileSync('scripts/deck/install.sh', 'utf8')
-const launcher = readFileSync('scripts/deck/izumi-installer.desktop', 'utf8')
-const workflow = readFileSync('.github/workflows/release.yml', 'utf8')
+// Read line endings out of the picture. A Windows checkout hands these back as CRLF, which silently
+// skipped the shortcut-writer suite here while CI ran it — the worst possible split.
+const read = (path: string) => readFileSync(path, 'utf8').replace(/\r\n/g, '\n')
+
+const installer = read('scripts/deck/install.sh')
+const launcher = read('scripts/deck/izumi-installer.desktop')
+const workflow = read('.github/workflows/release.yml')
 
 // The Steam half of the installer is a python heredoc. Extracting it is what lets the binary VDF
 // writing — the one part that can silently destroy a user's non-Steam library — be tested for real
 // instead of eyeballed.
 const shortcutScript = installer.split("python3 - <<'PYTHON'\n")[1]?.split('\nPYTHON\n')[0]
 
-const python = ['python3', 'python', 'py'].find((candidate) => {
-  const probe = spawnSync(candidate, ['--version'], { encoding: 'utf8' })
-  return probe.status === 0 && /Python 3\./.test(`${probe.stdout}${probe.stderr}`)
-})
+/** Absolute path to a Python 3, so a stub named `python3` can never resolve back to itself. */
+const python = ['python3', 'python', 'py'].reduce<string | undefined>((found, candidate) => {
+  if (found) return found
+  const probe = spawnSync(candidate, ['-c', 'import sys; print(sys.executable)'], { encoding: 'utf8' })
+  const path = probe.stdout?.trim()
+  return probe.status === 0 && path ? path : undefined
+}, undefined)
 
 /** Steam's own id for a non-Steam shortcut, recomputed independently of the installer. */
 const expectedAppId = crc32(Buffer.from('"/usr/bin/flatpak"izumi', 'utf8')) | 0x80000000
@@ -72,6 +79,8 @@ function writeVdf(entries: Record<string, Record<string, string | number>>): Buf
 function runShortcutScript(userDirs: string[], artDir: string, icon = '/icons/izumi.png') {
   return spawnSync(python!, ['-c', shortcutScript!], {
     encoding: 'utf8',
+
+    timeout: RUN_TIMEOUT_MS,
     env: {
       ...process.env,
       PYTHONUTF8: '1',
@@ -206,15 +215,23 @@ while [ $# -gt 0 ]; do case "$1" in -o) target="$2"; shift ;; esac; shift; done
 exit 0`)
   // No Steam process: the installer must not try to shut one down.
   write('pgrep', 'exit 1')
+  // Absolute interpreter path only. `exec python3 "$@"` would re-enter this very stub — the stub
+  // directory leads PATH — and fork until the machine gives up, which is exactly how this hung a
+  // CI runner for half an hour before the path was resolved.
   write('python3', `exec "${python}" "$@"`)
   return { bin, log, marker, home }
 }
+
+/** Every installer run is bounded: a hang must fail this test, not stall the whole job. */
+const RUN_TIMEOUT_MS = 60_000
 
 function runInstaller(args: string[] = []) {
   const home = mkdtempSync(join(tmpdir(), 'izumi-home-'))
   const stubs = stubEnvironment(home)
   const result = spawnSync('bash', ['scripts/deck/install.sh', ...args], {
     encoding: 'utf8',
+
+    timeout: RUN_TIMEOUT_MS,
     env: {
       ...process.env,
       HOME: home,
@@ -236,6 +253,8 @@ describe.runIf(bash && python)('installer end to end, against stubbed flatpak an
     const stubs = stubEnvironment(home)
     const result = spawnSync('bash', ['scripts/deck/install.sh'], {
       encoding: 'utf8',
+
+      timeout: RUN_TIMEOUT_MS,
       env: {
         ...process.env, HOME: home, PATH: `${stubs.bin}:${process.env.PATH}`,
         DISPLAY: '', WAYLAND_DISPLAY: '', PYTHONUTF8: '1',
@@ -264,6 +283,8 @@ describe.runIf(bash && python)('installer end to end, against stubbed flatpak an
     writeFileSync(stubs.marker, '')
     const result = spawnSync('bash', ['scripts/deck/install.sh', '--no-steam'], {
       encoding: 'utf8',
+
+      timeout: RUN_TIMEOUT_MS,
       env: { ...process.env, HOME: home, PATH: `${stubs.bin}:${process.env.PATH}`, DISPLAY: '', WAYLAND_DISPLAY: '' },
     })
     expect(result.status, `${result.stdout}${result.stderr}`).toBe(0)
@@ -281,6 +302,8 @@ describe.runIf(bash && python)('installer end to end, against stubbed flatpak an
     writeFileSync(join(stubs.bin, 'zenity'), '#!/usr/bin/env bash\nexit 1\n', { mode: 0o755 })
     const result = spawnSync('bash', ['scripts/deck/install.sh'], {
       encoding: 'utf8',
+
+      timeout: RUN_TIMEOUT_MS,
       env: {
         // The stub directory leads, so this zenity is found before any the host may have.
         ...process.env, HOME: home, PATH: `${stubs.bin}:${process.env.PATH}`,
