@@ -256,11 +256,18 @@ async function detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null
       ? [[item.id, item.attributes.title] as const] : []))
   media.genres = result.data.relationships?.categories?.data
     ?.flatMap((item) => item.id && categories.has(item.id) ? [categories.get(item.id)!] : []) ?? []
-  const [videos, credits] = await Promise.all([
+  const [videos, credits, airing] = await Promise.all([
     episodes(ref.id, signal).catch(() => []),
     kitsuCredits(ref.id, signal),
     hydrateKitsuAiring(media),
   ])
+  // Kitsu lists a whole airing season's episodes with every airdate null, so the record proves
+  // nothing about what has been released and every episode stays gated as unaired. The airing
+  // provider's confirmed count is the only evidence there is — copy it back onto the record we
+  // return, because hydration answers with a new object rather than mutating this one.
+  media.airedEpisodes = airing.airedEpisodes
+  media.nextAiringEpisode = airing.nextAiringEpisode
+  media.airingSchedule = airing.airingSchedule
   media.videos = videos
   if (media.episodes && media.videos.length < media.episodes) {
     const known = new Set(media.videos.map((video) => video.number))
