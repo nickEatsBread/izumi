@@ -13,7 +13,7 @@ A native anime library manager for browsing, tracking, and playing from the sour
 
 <!-- MANPAGE: BEGIN EXCLUDED SECTION -->
 [![Windows](https://img.shields.io/badge/Windows-.exe-0078D6?style=for-the-badge)][exe]
-[![Steam Deck](https://img.shields.io/badge/Steam%20Deck-.flatpak-1b2838?style=for-the-badge&logo=steamdeck&logoColor=white)][deck]
+[![Steam Deck](https://img.shields.io/badge/Steam%20Deck-installer-1b2838?style=for-the-badge&logo=steamdeck&logoColor=white)][deck]
 [![MacOS](https://img.shields.io/badge/macOS-.dmg-000000?style=for-the-badge&logo=apple&logoColor=white)][dmg]
 [![Android](https://img.shields.io/badge/Android-.apk-3DDC84?style=for-the-badge&logo=android&logoColor=white)][apkf]
 [![All versions](https://img.shields.io/badge/-All_Versions-lightgrey.svg?style=for-the-badge)](https://github.com/nickEatsBread/izumi/releases)
@@ -67,10 +67,18 @@ izumi will notify you of updates to keep izumi up-to-date. Grab your platform be
 
 | Windows | macOS | Linux | Android | Steam Deck |
 |---|---|---|---|---|
-| [`.exe`][exe] | [`.dmg`][dmg] | [`.AppImage`][app] | [`.apk` full][apkf] | [`.flatpakref`][deck] |
-| [`.msi`][msi] | | [`.deb`][deb] [`.rpm`][rpm] | [`.apk` lite][apkl] | |
+| [`.exe`][exe] | [`.dmg`][dmg] | [`.AppImage`][app] | [`.apk` full][apkf] | [installer][deck] |
+| [`.msi`][msi] | | [`.deb`][deb] [`.rpm`][rpm] | [`.apk` lite][apkl] | [`.flatpakref`][deckref] |
 
 Android **full** includes an embedded player; **lite** hands off this to an external app. The non-AppImage/Flatpak Linux builds need your distro's `libmpv` (`mpv` / `libmpv-dev`).
+
+**Steam Deck:** download the installer, then double-click it in Desktop Mode and choose **Execute**. It installs the Flatpak for your user and offers to add izumi to your Steam library with its own artwork, so it is launchable straight from Game Mode. The same thing from a terminal:
+
+```bash
+curl -fsSL https://flatpak.izumi.watch/install.sh | bash
+```
+
+The raw `.flatpakref` is still published for other distributions. Note that SteamOS hands it to Discover, which cannot add a remote that carries its own signing key — it opens and closes again without installing anything, which is what the installer exists to work around.
 
 **Samsung Tizen:** [izumi Companion setup guide](/docs/companion/setup)
 
@@ -85,7 +93,8 @@ Android **full** includes an embedded player; **lite** hands off this to an exte
 [rpm]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-x86_64.rpm
 [apkf]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-android-full.apk
 [apkl]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-android-lite.apk
-[deck]: https://flatpak.izumi.watch/com.nicho.izumi.flatpakref
+[deck]: https://flatpak.izumi.watch/install.desktop
+[deckref]: https://flatpak.izumi.watch/stable/com.nicho.izumi.flatpakref
 
 ## Prerequisites
 
