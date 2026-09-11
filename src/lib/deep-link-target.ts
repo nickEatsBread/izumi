@@ -1,5 +1,6 @@
 import { parseTraktCallback } from '$lib/trakt/oauth'
 import { parseCompanionRestoreLink } from '$lib/companion/restore'
+import { parseDeviceTransferLink } from '$lib/onboarding/device-transfer'
 export type DeepLinkTarget = { path: string; notice?: string }
 
 /** What a batch of incoming links resolves to: somewhere to navigate, something to tell the user,
@@ -22,6 +23,14 @@ export function parseDeepLink(raw: string): DeepLinkTarget | null {
     const kind = parts.shift()
     if (kind === 'companion' && parts[0] === 'pair' && parseCompanionPairingLink(raw)) {
       return { path: `/app/companion-pair?${url.searchParams.toString()}`, notice: 'TV pairing code opened' }
+    }
+    if (kind === 'device' && parts[0] === 'pair') {
+      const endpoint = parseDeviceTransferLink(raw)
+      // Straight to sync settings with the waiting device selected. The confirmation still
+      // happens there: scanning a code is aiming at a device, not agreeing to send it anything.
+      return endpoint
+        ? { path: `/app/settings/sync?offer=${endpoint}`, notice: 'New device ready to set up' }
+        : null
     }
     if (kind === 'companion' && parts[0] === 'push-enrolled') {
       return { path: '/app/home', notice: 'Private TV notifications enabled' }

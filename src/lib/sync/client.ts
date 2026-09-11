@@ -138,10 +138,30 @@ export const respondToPairRequest = (requestId: string, approved: boolean) =>
 export async function joinNearbyDevice(endpointId: string): Promise<void> {
   const status = await getSyncStatus();
   if (status.state !== "ready") throw new Error("Sync is still starting.");
-  const fallback = `${navigator.platform || "Izumi"} - ${status.endpointId.slice(0, 6)}`;
   await invoke<void>("sync_pair_nearby", {
     endpointId,
-    deviceName: get(syncDeviceName) || fallback,
+    deviceName: get(syncDeviceName) || pairingDeviceName(status.endpointId),
+  });
+}
+
+function pairingDeviceName(endpointId: string): string {
+  return `${navigator.platform || "Izumi"} - ${endpointId.slice(0, 6)}`;
+}
+
+/** Advertise this empty device so one that already holds a room can send its setup over. The
+ *  mirror of `openNearbyPairing`, and the direction first-run needs: setup starts on the new
+ *  device, not by walking to the old one. */
+export const openAdoptWindow = () => get(syncProvider) === 'cloudflare'
+  ? Promise.reject(new Error('Setting up from another device needs peer-to-peer sync.'))
+  : invoke<PairingWindow>("sync_adopt_open");
+
+/** Send this device's room to a new one waiting for it. */
+export async function offerSetupToDevice(endpointId: string): Promise<void> {
+  const status = await getSyncStatus();
+  if (status.state !== "ready") throw new Error("Sync is still starting.");
+  await invoke<void>("sync_offer_nearby", {
+    endpointId,
+    deviceName: get(syncDeviceName) || pairingDeviceName(status.endpointId),
   });
 }
 
@@ -276,15 +296,20 @@ export async function pullWatchProgress(): Promise<number> {
   return imported;
 }
 
-export async function sendManualSnapshot(): Promise<void> {
+/** `includeAccounts` is only ever set by a first-run transfer the user confirmed on this device.
+ *  Every other caller leaves it off, so routine snapshots stay credential-free. */
+export async function sendManualSnapshot(includeAccounts = false): Promise<void> {
   const status = await getSyncStatus();
   if (status.state !== "ready" || !status.paired)
     throw new Error("This device is not paired.");
-  const fallback = `${navigator.platform || "Izumi"} - ${status.endpointId.slice(0, 6)}`;
   await write(
     "manual",
     JSON.stringify(
-      createManualSnapshot(status.endpointId, get(syncDeviceName) || fallback),
+      createManualSnapshot(
+        status.endpointId,
+        get(syncDeviceName) || pairingDeviceName(status.endpointId),
+        includeAccounts,
+      ),
     ),
   );
 }

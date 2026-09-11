@@ -1,5 +1,7 @@
 import { get } from "svelte/store";
 import { persisted } from "svelte-persisted-store";
+import { anilistToken } from "$lib/anilist/auth";
+import { kitsuToken, malToken, simklToken } from "$lib/trackers/config";
 import { addonUrls, disabledSources } from "$lib/stremio/sources";
 import {
   debridKey,
@@ -69,11 +71,29 @@ function readSettings(): Record<string, unknown> {
   return result;
 }
 
+/** Only ever true for a one-off first-run transfer the sender confirmed. Defaults to off so the
+ *  routine snapshot that every device publishes keeps carrying no credentials at all. */
+export function readAccountTokens(): NonNullable<ManualSnapshot["accounts"]> {
+  const accounts: NonNullable<ManualSnapshot["accounts"]> = {};
+  const anilist = get(anilistToken);
+  const mal = get(malToken);
+  const kitsu = get(kitsuToken);
+  const simkl = get(simklToken);
+  if (anilist) accounts.anilist = anilist;
+  if (mal) accounts.mal = mal;
+  if (kitsu) accounts.kitsu = kitsu;
+  if (simkl) accounts.simkl = simkl;
+  return accounts;
+}
+
 export function createManualSnapshot(
   deviceId: string,
   deviceName: string,
+  includeAccounts = false,
 ): ManualSnapshot {
+  const accounts = includeAccounts ? readAccountTokens() : {};
   return {
+    ...(Object.keys(accounts).length ? { accounts } : {}),
     app: "izumi",
     kind: "device-sync",
     profileId: get(activeProfileId),
@@ -115,14 +135,34 @@ export function parseManualSnapshot(payload: string): ManualSnapshot | null {
       typeof value.settings !== "object"
     )
       return null;
-    return value as ManualSnapshot;
+    // A record on the wire is untrusted input. Anything that is not a non-empty string for a
+    // known tracker is dropped rather than failing the whole snapshot, so a malformed accounts
+    // block costs the sign-ins and not the sources.
+    const snapshot = value as ManualSnapshot;
+    if (snapshot.accounts) {
+      if (typeof snapshot.accounts !== "object" || Array.isArray(snapshot.accounts)) {
+        delete snapshot.accounts;
+      } else {
+        const clean: NonNullable<ManualSnapshot["accounts"]> = {};
+        for (const key of ["anilist", "mal", "kitsu", "simkl"] as const) {
+          const token = snapshot.accounts[key];
+          if (typeof token === "string" && token) clean[key] = token;
+        }
+        if (Object.keys(clean).length) snapshot.accounts = clean;
+        else delete snapshot.accounts;
+      }
+    }
+    return snapshot;
   } catch {
     return null;
   }
 }
 
 /** Apply a user-selected device snapshot to storage and the live app stores. */
-export function applyManualSnapshot(snapshot: ManualSnapshot): void {
+export function applyManualSnapshot(
+  snapshot: ManualSnapshot,
+  includeAccounts = true,
+): void {
   if ((snapshot.profileId ?? DEFAULT_PROFILE_ID) !== get(activeProfileId)) {
     throw new Error('Switch to the matching profile before receiving these settings.')
   }
@@ -159,4 +199,22 @@ export function applyManualSnapshot(snapshot: ManualSnapshot): void {
       persisted<unknown>(key, value).set(value);
     }
   }
+  if (includeAccounts) applyAccountTokens(snapshot.accounts);
+}
+
+/**
+ * Present only when the sender was asked to include sign-ins for this one transfer. A missing
+ * entry means "nothing to send", never "sign out" — so this only ever writes, never clears.
+ *
+ * Separate from {@link applyManualSnapshot} so first-run setup can apply the sources first and
+ * the sign-ins under their own progress label, instead of claiming a step it already did.
+ */
+export function applyAccountTokens(accounts: ManualSnapshot["accounts"]): boolean {
+  if (!accounts) return false;
+  const { anilist, mal, kitsu, simkl } = accounts;
+  if (anilist) anilistToken.set(anilist);
+  if (mal) malToken.set(mal);
+  if (kitsu) kitsuToken.set(kitsu);
+  if (simkl) simklToken.set(simkl);
+  return Boolean(anilist || mal || kitsu || simkl);
 }

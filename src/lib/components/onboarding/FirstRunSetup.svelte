@@ -10,6 +10,8 @@
   import SyncStep from './steps/SyncStep.svelte'
   import SourcesStep from './steps/SourcesStep.svelte'
   import PlaybackStep from './steps/PlaybackStep.svelte'
+  import TransferStep from './steps/TransferStep.svelte'
+  import { gameMode, gameModeResolved } from '$lib/player/session'
   import ReadyStep from './steps/ReadyStep.svelte'
   import { goto } from '$app/navigation'
   import { onMount } from 'svelte'
@@ -54,6 +56,11 @@
   // Only a brand-new install ever reaches this component, so the ident needs no flag of its own —
   // "setup has not finished" is already the definition of a new user.
   let introRunning = $state(!introAlreadyPlayed())
+  // Game mode means a Steam Deck, where typing a TMDB token and picking languages on a touch
+  // keyboard is the worst version of this flow. There, setting up from a device that is already
+  // configured is the default answer, and the wizard is the escape hatch rather than the reverse.
+  let mode = $state<'wizard' | 'transfer'>('wizard')
+  let modeSettled = false
   let step = $state<StepId>('watch')
   let busy = $state(false)
   let keyboardOpen = $state(false)
@@ -83,6 +90,32 @@
   // unfinished would nag about a question setup deliberately never asked.
   const playbackReady = $derived($torrentPlaybackMode === 'direct' || Boolean($debridKey) || sourceReady)
   const readiness = $derived<SetupReadiness>({ sources: sourceReady, playback: playbackReady, tracker: trackerReady, metadata: metadataReady })
+
+  function enterTransfer() {
+    modeSettled = true
+    mode = 'transfer'
+  }
+
+  function leaveTransfer() {
+    modeSettled = true
+    mode = 'wizard'
+  }
+
+  /** A finished transfer already carries sources, settings and history, so there is nothing left
+   *  for the wizard to ask. Everything it would have set is recorded as done. */
+  async function completeTransfer() {
+    setupRemainder.set([])
+    finishOnboarding()
+    await goto('/app/home')
+  }
+
+  // `gameMode` resolves asynchronously, so the default cannot be read at initialization. Settled
+  // once, and never against a choice the user has already made by hand.
+  $effect(() => {
+    if (modeSettled || !$gameModeResolved) return
+    modeSettled = true
+    if ($gameMode) mode = 'transfer'
+  })
 
   function goBack() {
     if (!busy && stepIndex > 0) step = steps[stepIndex - 1]
@@ -224,11 +257,25 @@
         <div class="art-wordmark"><Wordmark /></div>
       </aside>
       <main class="setup-main min-w-0">
+        {#if mode === 'transfer'}
+          <!-- Its own branch rather than a step: this screen is not "3 of 8" of anything, it is
+               the alternative to the whole wizard, and it owns its own footer. -->
+          <div class="setup-step">
+            <section class="setup-content">
+              <TransferStep oncancel={leaveTransfer} onfinished={completeTransfer} />
+            </section>
+          </div>
+          <footer class="setup-actions flex items-center justify-between gap-3">
+            <button type="button" data-focusable onclick={leaveTransfer} class="setup-button text-muted-foreground hover:bg-secondary">
+              <ChevronLeft size={17} />{m.onboarding_transfer_manual()}
+            </button>
+          </footer>
+        {:else}
         <div class="setup-step">
           {#key step}
           <section class="setup-content">
             {#if step === 'watch'}
-              <WatchStep bind:intent />
+              <WatchStep bind:intent ontransfer={enterTransfer} />
             {:else if step === 'metadata'}
               <MetadataStep bind:movieMetadata />
             {:else if step === 'access'}
@@ -263,6 +310,7 @@
             </div>
           {/if}
         </footer>
+        {/if}
       </main>
     </div>
     {#if introRunning}<IntroSequence oncomplete={() => (introRunning = false)} />{/if}

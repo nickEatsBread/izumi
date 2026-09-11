@@ -53,6 +53,7 @@
     "crypto-js": "^4.2.0",
     "fflate": "^0.8.3",
     "idb-keyval": "^6.3.0",
+    "qrcode-generator": "^2.0.4",
     "shaka-player": "^5.2.9",
     "sucrase": "^3.35.1",
     "svelte-persisted-store": "^0.12.0",

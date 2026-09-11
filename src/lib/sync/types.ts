@@ -38,6 +38,14 @@ export interface PairOutgoing {
   code: string;
 }
 
+/** A device that already holds a room is offering it to this empty one. Carries no capability:
+ *  the ticket only arrives after the code below has been matched and accepted. */
+export interface AdoptOffer {
+  requestId: string;
+  deviceName: string;
+  code: string;
+}
+
 export interface WatchSnapshot {
   app: "izumi";
   kind: "watch-history";
@@ -67,6 +75,20 @@ export interface ManualSnapshot {
     debridKey: string;
   };
   settings: Record<string, unknown>;
+  /**
+   * Signed-in trackers, and the one field here that is a live credential rather than a preference.
+   *
+   * Absent unless the sending device was explicitly asked to include it for a single transfer —
+   * routine device-sync snapshots must never carry it. That is why it is optional and why
+   * `createManualSnapshot` defaults to leaving it out: the safe value has to be the one you get
+   * by forgetting to think about it.
+   */
+  accounts?: {
+    anilist?: string;
+    mal?: string;
+    kitsu?: string;
+    simkl?: string;
+  };
 }
 
 export interface ManualDevice extends ManualSnapshot {
