@@ -291,6 +291,14 @@ html.gamemode .skeloader::before { animation: none; }
 /* Never a cursor, and never text selection. Gamescope passthrough delivers native touch to
    WebKitGTK, whose built-in drag/swipe recognizers own scrolling and kinetic momentum. */
 .gamemode { touch-action: pan-x pan-y; }
+/* WebKitGTK turns a finger drag into synthesized wheel events that carry BOTH axes, hit-tested at
+   the drag's START point, and it never consults `touch-action`. A scrollable overflow-x row accepts
+   any sample whose dx is non-zero and drops the dy, so a vertical swipe that began on a row moved
+   the page only on the rare perfectly-vertical samples. With `overflow: hidden` the row is not a
+   wheel target at all: the document takes every sample (native kinetic scroll, exactly as between
+   rows), while `gameModeCarouselTouch` keeps driving scrollLeft for clearly-horizontal drags,
+   controller focus and programmatic scrollIntoView, all of which work on hidden overflow. */
+.gamemode [data-carousel-scroller] { overflow: hidden; }
 .gamemode, .gamemode * { cursor: none !important; user-select: none !important; -webkit-user-select: none !important; -webkit-touch-callout: none; }
 /* Non-Deck browse containment: long search/list pages retain their DOM so browser find, focus and
    back-navigation stay correct, but Chromium/WebKit can skip style/layout/paint work far outside
