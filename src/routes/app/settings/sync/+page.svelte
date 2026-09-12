@@ -597,8 +597,12 @@
   $effect(() => {
     const wanted = page.url.searchParams.get('offer')
     if (scannedOffer || !wanted || !paired) return
+    // A scanned device need not be on this network at all ("the QR works from anywhere"): the
+    // native side connects by identity through iroh's discovery when there is no nearby address,
+    // so an unlisted endpoint still gets the same confirmation. The short id mirrors the native
+    // `short_id` (first six hex characters, upper-cased) the receiver is showing.
     const match = nearby.find((device) => device.endpointId === wanted)
-    if (!match) return
+      ?? { endpointId: wanted, shortId: wanted.slice(0, 6).toUpperCase(), mode: 'adopt' as const }
     scannedOffer = true
     askToSendSetup(match)
   })

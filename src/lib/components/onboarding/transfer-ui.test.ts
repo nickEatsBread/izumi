@@ -155,6 +155,21 @@ describe('sending a setup from the device that has one', () => {
     expect(syncPage.match(/askToSendSetup\(device\)/g)!.length).toBeGreaterThanOrEqual(2)
   })
 
+  it('offers to a scanned device even when it is not (or no longer) in the nearby list', () => {
+    // The nearby cache forgets a peer 90 s after its last announcement; the native side now
+    // connects by identity when no address is cached, so the page must not bail on `!match`.
+    const effect = syncPage.slice(syncPage.indexOf("page.url.searchParams.get('offer')"))
+    const body = effect.slice(0, effect.indexOf('\n  }'))
+    expect(body).not.toContain('if (!match) return')
+    expect(body).toContain("mode: 'adopt' as const")
+    expect(body).toContain('wanted.slice(0, 6).toUpperCase()')
+    const rust = readFileSync(fileURLToPath(new URL('../../../../src-tauri/src/sync.rs', import.meta.url)), 'utf8')
+    const offer = rust.slice(rust.indexOf('pub async fn sync_offer_nearby'))
+    const command = offer.slice(0, offer.indexOf('#[tauri::command]'))
+    expect(command).not.toContain('That device is no longer visible nearby')
+    expect(command).toContain('None => EndpointAddr::from_parts(remote_id, Vec::<TransportAddr>::new())')
+  })
+
   it('treats a scanned code as aiming, not as consent', () => {
     expect(syncPage).toContain("page.url.searchParams.get('offer')")
     const body = syncPage.slice(syncPage.indexOf("page.url.searchParams.get('offer')"))
