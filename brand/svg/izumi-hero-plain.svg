@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 620" width="1920" height="620" role="img" aria-label="izumi">
+  <!-- Steam library hero backdrop. Deliberately carries NO mark and NO wordmark: Steam paints the
+       logo art on top of this, so anything brand-shaped here ends up as a logo behind a logo. What
+       is left is a calm blue field with enough centre lift for a white wordmark to sit on. -->
+  <defs>
+    <linearGradient id="field" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#08111F"/>
+      <stop offset="0.42" stop-color="#0E2A4D"/>
+      <stop offset="0.78" stop-color="#14508A"/>
+      <stop offset="1" stop-color="#1A6FB5"/>
+    </linearGradient>
+    <!-- The light the logo sits in. Wide and shallow, so it reads as depth rather than as a shape. -->
+    <radialGradient id="lift" cx="0.46" cy="0.44" r="0.62">
+      <stop offset="0" stop-color="#2E8FD6" stop-opacity="0.55"/>
+      <stop offset="0.55" stop-color="#1B6FB5" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#0A1730" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="aqua" cx="0.78" cy="0.28" r="0.5">
+      <stop offset="0" stop-color="#5CEAD8" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#5CEAD8" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Steam draws its own controls and text along the bottom edge; keep that band quiet. -->
+    <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#050C17" stop-opacity="0"/>
+      <stop offset="1" stop-color="#050C17" stop-opacity="0.5"/>
+    </linearGradient>
+    <radialGradient id="vignette" cx="0.5" cy="0.5" r="0.75">
+      <stop offset="0.6" stop-color="#050C17" stop-opacity="0"/>
+      <stop offset="1" stop-color="#050C17" stop-opacity="0.45"/>
+    </radialGradient>
+    <clipPath id="frame"><rect width="1920" height="620"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#frame)">
+    <rect width="1920" height="620" fill="url(#field)"/>
+
+    <!-- Ripples: the whirlpool's echo, not the whirlpool. Struck off-centre and kept under 7%
+         opacity so they survive the Deck's small screen without competing with the logo. -->
+    <g fill="none" stroke="#CFEFFF" stroke-opacity="0.055">
+      <circle cx="1355" cy="292" r="148" stroke-width="2"/>
+      <circle cx="1355" cy="292" r="252" stroke-width="2.5"/>
+      <circle cx="1355" cy="292" r="372" stroke-width="3"/>
+      <circle cx="1355" cy="292" r="512" stroke-width="3"/>
+      <circle cx="1355" cy="292" r="668" stroke-width="2.5"/>
+      <circle cx="1355" cy="292" r="840" stroke-width="2"/>
+    </g>
+    <g fill="none" stroke="#5CEAD8" stroke-opacity="0.07">
+      <circle cx="1355" cy="292" r="196" stroke-width="2"/>
+      <circle cx="1355" cy="292" r="440" stroke-width="2"/>
+    </g>
+
+    <!-- A single slow swell across the field, for depth without a horizon line. -->
+    <path d="M-40 470 C 320 396, 620 500, 980 448 S 1660 336, 1960 402 L1960 620 L-40 620 Z"
+          fill="#0A1D38" fill-opacity="0.42"/>
+    <path d="M-40 536 C 380 470, 700 566, 1060 518 S 1700 428, 1960 486 L1960 620 L-40 620 Z"
+          fill="#07152A" fill-opacity="0.5"/>
+
+    <rect width="1920" height="620" fill="url(#aqua)"/>
+    <rect width="1920" height="620" fill="url(#lift)"/>
+    <rect width="1920" height="620" fill="url(#floor)"/>
+    <rect width="1920" height="620" fill="url(#vignette)"/>
+  </g>
+</svg>
