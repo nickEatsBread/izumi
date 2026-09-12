@@ -587,6 +587,7 @@
 
   /** A device running first-run setup is asking to be handed this one's room. The confirmation
    *  lives here because the data is here: the new device can only ask, never take. */
+  const waitingNearby = $derived(nearby.filter((device) => device.mode === 'adopt'))
   let offerTarget = $state<NearbyDevice | null>(null)
   let offerAccounts = $state(false)
 
@@ -683,7 +684,7 @@
   }
 
   $effect(() => {
-    if (status.state !== 'ready' || paired) return
+    if (status.state !== 'ready') return
     void refreshNearby()
     const poll = setInterval(() => { void refreshNearby() }, 2000)
     return () => clearInterval(poll)
@@ -1221,7 +1222,7 @@
       </section>
     {/if}
 
-    <SettingsGroup title="Nearby sessions" desc="On the same Wi-Fi. Join one, or start your own." icon={Radio}>
+    <SettingsGroup title="Nearby sessions" desc="On the same Wi-Fi. Set up a new device, join a room, or start your own." icon={Radio}>
       <SettingsRow
         title="Start my own"
         description="Visible on this network for two minutes."
@@ -1235,13 +1236,14 @@
             <span class="grid size-9 place-items-center rounded-lg bg-secondary text-foreground"><MonitorSmartphone size={18} /></span>
           {/snippet}
           {#snippet joinControl()}
-            <!-- Which way the setup travels is not a question worth asking the user: a device that
-                 already holds a room cannot join another, so the only thing it can usefully do
-                 with a nearby device is hand its room over. -->
-            {#if paired}
+            <!-- Driven by what THAT device is advertising, never by this one's state. An earlier
+                 version guessed from `paired`, which showed Join against a device waiting to be
+                 set up — the one pairing everybody does first — and the native side rejected it
+                 with "Nearby pairing is not enabled on that device." -->
+            {#if device.mode === 'adopt'}
               <button type="button" onclick={() => { h.impact(); askToSendSetup(device) }} disabled={!!busy} data-focusable
                 class="min-h-10 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
-                {busy === `offer-${device.endpointId}` ? 'Sending…' : 'Send my setup'}
+                {busy === `offer-${device.endpointId}` ? 'Sending…' : 'Set up this device'}
               </button>
             {:else}
               <button type="button" onclick={() => { h.impact(); joinNearby(device) }} disabled={!!busy} data-focusable
@@ -1252,15 +1254,15 @@
           {/snippet}
           <SettingsRow
             title="Izumi device {device.shortId}"
-            description={paired ? 'Waiting to be set up on this network' : 'Found on this local network'}
+            description={device.mode === 'adopt' ? 'Waiting to be set up — send it this device’s setup' : 'Hosting a room you can join'}
             leading={deviceIcon}
             control={joinControl}
           />
         {/each}
       {:else}
         <SettingsRow
-          title="Looking for hosts…"
-          description="Scanning this network. A room shows up here when another device chooses Add a device."
+          title="Looking for devices…"
+          description="Scanning this network. A device appears here while it is running first-run setup, or once it chooses Start my own."
           leading={scanningIcon}
         />
       {/if}
@@ -1384,6 +1386,43 @@
           </p>
         </div>
       </div>
+
+      <!-- The nearby list used to exist only in the unpaired branch, so the moment you had a room
+           there was no way to add anything to it: a device running first-run setup was visible to
+           nobody who could actually help it. Hosting is exactly when you need this. -->
+      <section class="border-t border-border/70" data-setting-key="add-a-device">
+        <div class="py-4">
+          <h3 class="text-sm font-black">Add a device</h3>
+          <p class="mt-0.5 text-[11px] text-muted-foreground">On this Wi-Fi. A device appears while it is running first-run setup.</p>
+
+          {#if waitingNearby.length}
+            <ul class="mt-3 grid grid-cols-[minmax(0,1fr)] gap-2">
+              {#each waitingNearby as device (device.endpointId)}
+                <li class="flex items-center gap-3 rounded-lg bg-secondary/40 p-2.5">
+                  <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-foreground"><MonitorSmartphone size={18} /></span>
+                  <div class="min-w-0 flex-1">
+                    <p class="truncate text-sm font-bold">Izumi device {device.shortId}</p>
+                    <p class="text-[11px] text-muted-foreground">Waiting to be set up</p>
+                  </div>
+                  <button type="button" onclick={() => { h.impact(); askToSendSetup(device) }} disabled={!!busy} data-focusable
+                    class="min-h-10 shrink-0 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
+                    {busy === `offer-${device.endpointId}` ? 'Sending…' : 'Set up'}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="mt-3 rounded-lg bg-secondary/40 px-3 py-2.5 text-xs text-muted-foreground">
+              No device is waiting. Start izumi on the new device and choose “Set up from another device”.
+            </p>
+          {/if}
+
+          <button type="button" onclick={() => { h.impact(); allowNearby() }} disabled={!!busy} data-focusable
+            class="mt-3 min-h-10 rounded-lg bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50">
+            {busy === 'nearby-open' ? 'Opening…' : 'Let a device join instead'}
+          </button>
+        </div>
+      </section>
 
       <section class="border-t border-border/70" data-setting-key="settings-and-sources-sync">
         <button type="button" data-focusable aria-expanded={advancedOpen}

@@ -16,9 +16,15 @@ export interface SyncRecord {
   payload: string;
 }
 
+/** `open` = holds a room and will hand out its ticket (join it).
+ *  `adopt` = holds nothing and is waiting to be given one (send it your setup).
+ *  Which action is valid is a fact about THAT device, so it has to travel with it. */
+export type NearbyMode = "open" | "adopt";
+
 export interface NearbyDevice {
   endpointId: string;
   shortId: string;
+  mode: NearbyMode;
 }
 
 export interface PairingWindow {

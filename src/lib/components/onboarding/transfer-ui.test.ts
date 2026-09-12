@@ -9,6 +9,7 @@ const watch = read('./steps/WatchStep.svelte')
 const qr = read('../QrCode.svelte')
 const syncPage = read('../../../routes/app/settings/sync/+page.svelte')
 const deepLink = read('../../deep-link-target.ts')
+const client = read('../../sync/client.ts')
 
 describe('set up from another device', () => {
   it('opens on the transfer screen in game mode, but only once the flag has resolved', () => {
@@ -108,12 +109,23 @@ describe('sending a setup from the device that has one', () => {
     expect(syncPage).toContain('let offerAccounts = $state(false)')
   })
 
-  it('picks send-vs-join from this device rather than asking the user which way it goes', () => {
-    // A device already in a room cannot join another one — the native command refuses it — so
-    // offering the room is the only action that can succeed.
-    expect(syncPage).toContain('{#if paired}')
+  it('picks send-vs-join from what the peer advertises, never from local state', () => {
+    // Regression: this was gated on `paired`, so a device that had never created a room — the
+    // normal state when pairing your first two devices — offered Join against a Deck waiting to
+    // be adopted, and the native side answered "Nearby pairing is not enabled on that device."
+    expect(syncPage).toContain("{#if device.mode === 'adopt'}")
+    expect(syncPage).not.toContain('{#if paired}\n              <button')
     expect(syncPage).toContain('askToSendSetup(device)')
     expect(syncPage).toContain('offerSetupToDevice(device.endpointId)')
+  })
+
+  it('creates a room before offering one, since an empty device has no ticket to give', () => {
+    const body = client.slice(client.indexOf('export async function offerSetupToDevice'))
+    const fn = body.slice(0, body.indexOf('\n}'))
+    expect(fn).toContain('if (!status.paired)')
+    expect(fn).toContain('await createSyncGroup()')
+    // Re-read: the status captured before the room existed still says unpaired.
+    expect(fn.lastIndexOf('await getSyncStatus()')).toBeGreaterThan(fn.indexOf('createSyncGroup'))
   })
 
   it('treats a scanned code as aiming, not as consent', () => {

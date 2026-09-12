@@ -113,7 +113,7 @@ struct NearbyDiscovery {
 }
 
 enum DiscoveryControl {
-    AdvertiseUntil(Instant),
+    AdvertiseUntil(Instant, NearbyMode),
     Stop(oneshot::Sender<()>),
 }
 
@@ -137,11 +137,44 @@ pub struct SyncRecord {
     payload: String,
 }
 
+/// What an advertising device is actually offering. The two windows are mutually exclusive — a
+/// device either holds a room and will hand out its ticket, or holds nothing and wants one — but
+/// without this on the wire a browser cannot tell them apart, and guessing from LOCAL state gets
+/// it wrong for the commonest case of all: a configured device that has never made a room.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NearbyMode {
+    /// Has a room. Answers `sync_pair_nearby` by handing over its ticket.
+    Open,
+    /// Has nothing. Answers `sync_offer_nearby` by accepting one.
+    Adopt,
+}
+
+impl NearbyMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Adopt => "adopt",
+        }
+    }
+
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "open" => Some(Self::Open),
+            "adopt" => Some(Self::Adopt),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NearbyDevice {
     endpoint_id: String,
     short_id: String,
+    /// A build from before adoption existed advertises no mode, and every such build had a room
+    /// to give — so treating a missing value as `Open` keeps those devices joinable.
+    mode: NearbyMode,
 }
 
 #[derive(Serialize)]
@@ -220,6 +253,7 @@ struct PairingHubState {
 #[derive(Clone)]
 struct NearbyPeer {
     endpoint_addr: EndpointAddr,
+    mode: NearbyMode,
     seen: Instant,
 }
 
@@ -311,7 +345,7 @@ impl PairingHub {
         })
     }
 
-    async fn set_nearby(&self, endpoint_addr: EndpointAddr) {
+    async fn set_nearby(&self, endpoint_addr: EndpointAddr, mode: NearbyMode) {
         let endpoint_id = endpoint_addr.id;
         if endpoint_id == self.local_id {
             return;
@@ -321,6 +355,7 @@ impl PairingHub {
             endpoint_id,
             NearbyPeer {
                 endpoint_addr,
+                mode,
                 seen: Instant::now(),
             },
         );
@@ -354,11 +389,11 @@ impl PairingHub {
         retain_recent_nearby(&mut state.nearby);
         let mut devices = state
             .nearby
-            .keys()
-            .copied()
-            .map(|endpoint_id| NearbyDevice {
+            .iter()
+            .map(|(endpoint_id, peer)| NearbyDevice {
                 endpoint_id: endpoint_id.to_string(),
-                short_id: short_id(endpoint_id),
+                short_id: short_id(*endpoint_id),
+                mode: peer.mode,
             })
             .collect::<Vec<_>>();
         devices.sort_by(|a, b| a.short_id.cmp(&b.short_id));
@@ -567,9 +602,29 @@ fn peer_endpoint_addr(endpoint_id: EndpointId, peer: &Peer) -> EndpointAddr {
     EndpointAddr::from_parts(endpoint_id, addrs)
 }
 
-fn publish_endpoint_addr(discovery: &swarm_discovery::DropGuard, addr: &EndpointAddr) {
+fn peer_nearby_mode(peer: &Peer) -> NearbyMode {
+    match peer.txt_attribute("mode") {
+        Some(Some(mode)) => NearbyMode::parse(mode).unwrap_or(NearbyMode::Open),
+        _ => NearbyMode::Open,
+    }
+}
+
+fn publish_endpoint_addr(
+    discovery: &swarm_discovery::DropGuard,
+    addr: &EndpointAddr,
+    mode: NearbyMode,
+) {
     discovery.remove_all();
     discovery.remove_txt_attribute("relay".to_string());
+    discovery.remove_txt_attribute("mode".to_string());
+
+    // Without this a browsing device cannot tell "ask me for my room" from "give me a room", and
+    // the only remaining signal is its own state — which is not about this peer at all.
+    if let Err(error) =
+        discovery.set_txt_attribute("mode".to_string(), Some(mode.as_str().to_string()))
+    {
+        eprintln!("[sync] failed to advertise nearby pairing mode: {error}");
+    }
 
     let mut by_port: HashMap<u16, Vec<IpAddr>> = HashMap::new();
     for addr in addr.ip_addrs() {
@@ -619,22 +674,25 @@ async fn start_nearby_discovery(
     let task = tokio::spawn(async move {
         let mut latest_addr = None;
         let mut advertise_until = None;
+        let mut advertise_mode = NearbyMode::Open;
         tokio::pin!(endpoint_closed);
         loop {
             tokio::select! {
                 _ = &mut endpoint_closed => break,
                 Some(control) = control_rx.recv() => {
                     match control {
-                        DiscoveryControl::AdvertiseUntil(until) => {
+                        DiscoveryControl::AdvertiseUntil(until, mode) => {
                             advertise_until = Some(until);
+                            advertise_mode = mode;
                             if let Some(addr) = &latest_addr {
-                                publish_endpoint_addr(&discovery, addr);
+                                publish_endpoint_addr(&discovery, addr, mode);
                             }
                         }
                         DiscoveryControl::Stop(done) => {
                             advertise_until = None;
                             discovery.remove_all();
                             discovery.remove_txt_attribute("relay".to_string());
+                            discovery.remove_txt_attribute("mode".to_string());
                             let _ = done.send(());
                         }
                     }
@@ -646,6 +704,7 @@ async fn start_nearby_discovery(
                         advertise_until = None;
                         discovery.remove_all();
                         discovery.remove_txt_attribute("relay".to_string());
+                        discovery.remove_txt_attribute("mode".to_string());
                     }
                 }
                 Some((peer_id, peer)) = peer_rx.recv() => {
@@ -657,7 +716,10 @@ async fn start_nearby_discovery(
                         pairing.remove_nearby(endpoint_id).await;
                     } else {
                         pairing
-                            .set_nearby(peer_endpoint_addr(endpoint_id, &peer))
+                            .set_nearby(
+                                peer_endpoint_addr(endpoint_id, &peer),
+                                peer_nearby_mode(&peer),
+                            )
                             .await;
                     }
                 }
@@ -677,6 +739,7 @@ async fn start_nearby_discovery(
                         publish_endpoint_addr(
                             &discovery,
                             latest_addr.as_ref().expect("address was just stored"),
+                            advertise_mode,
                         );
                     }
                 }
@@ -1140,6 +1203,7 @@ pub async fn sync_pairing_open(
     let window = pairing.open().await.map_err(|error| error.to_string())?;
     let _ = control_tx.send(DiscoveryControl::AdvertiseUntil(
         Instant::now() + PAIRING_WINDOW,
+        NearbyMode::Open,
     ));
     Ok(window)
 }
@@ -1167,6 +1231,7 @@ pub async fn sync_adopt_open(
         .map_err(|error| error.to_string())?;
     let _ = control_tx.send(DiscoveryControl::AdvertiseUntil(
         Instant::now() + PAIRING_WINDOW,
+        NearbyMode::Adopt,
     ));
     Ok(window)
 }
@@ -1596,6 +1661,31 @@ mod tests {
             *state.inner.try_lock().expect("state should be unlocked"),
             RuntimeState::Disabled
         ));
+    }
+
+    #[test]
+    fn nearby_mode_survives_the_wire_and_defaults_to_joinable() {
+        assert_eq!(NearbyMode::parse("open"), Some(NearbyMode::Open));
+        assert_eq!(NearbyMode::parse("adopt"), Some(NearbyMode::Adopt));
+        assert_eq!(NearbyMode::Open.as_str(), "open");
+        assert_eq!(NearbyMode::Adopt.as_str(), "adopt");
+        // A build from before adoption advertises no mode at all, and every one of those had a
+        // room to hand out. Anything unrecognised is treated the same way, so a future mode never
+        // turns an old client's list into dead rows.
+        assert_eq!(NearbyMode::parse("").unwrap_or(NearbyMode::Open), NearbyMode::Open);
+        assert_eq!(
+            NearbyMode::parse("something-newer").unwrap_or(NearbyMode::Open),
+            NearbyMode::Open
+        );
+    }
+
+    /// The two windows are mutually exclusive, and the browse list has to say which is which:
+    /// picking the action from the browsing device's own state showed Join against a device
+    /// waiting to be adopted, which the join branch then refused.
+    #[test]
+    fn the_two_pairing_windows_advertise_different_modes() {
+        assert_ne!(NearbyMode::Open, NearbyMode::Adopt);
+        assert_ne!(NearbyMode::Open.as_str(), NearbyMode::Adopt.as_str());
     }
 
     #[tokio::test]

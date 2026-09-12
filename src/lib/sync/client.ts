@@ -157,8 +157,16 @@ export const openAdoptWindow = () => get(syncProvider) === 'cloudflare'
 
 /** Send this device's room to a new one waiting for it. */
 export async function offerSetupToDevice(endpointId: string): Promise<void> {
-  const status = await getSyncStatus();
+  let status = await getSyncStatus();
   if (status.state !== "ready") throw new Error("Sync is still starting.");
+  // Someone pairing a second device for the first time has never made a room, and a device with
+  // no room has no ticket to hand over. Creating one here is what `allowNearby` already does for
+  // the opposite direction — without it, the commonest case of all fails on a native error.
+  if (!status.paired) {
+    await createSyncGroup();
+    status = await getSyncStatus();
+    if (status.state !== "ready") throw new Error("Sync is still starting.");
+  }
   await invoke<void>("sync_offer_nearby", {
     endpointId,
     deviceName: get(syncDeviceName) || pairingDeviceName(status.endpointId),
