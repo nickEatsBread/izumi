@@ -181,9 +181,34 @@ pub fn scale_premult_bgra(src: &[u8], dst: &mut [u8], alpha_millis: u32) {
         dst[..n].copy_from_slice(&src[..n]);
         return;
     }
-    for i in 0..n {
-        dst[i] = ((src[i] as u32 * alpha_millis) / OVERLAY_FADE_FULL) as u8;
+    let lut = premult_lut(alpha_millis);
+    for (d, s) in dst[..n].iter_mut().zip(&src[..n]) {
+        *d = lut[*s as usize];
     }
+}
+
+/// One owned fade frame straight from the settled snapshot: a single pass and a single
+/// allocation, so the overlay never needs a scratch buffer or a clone before handing pixels to
+/// the mpv dispatcher (which keeps them alive until mpv has copied them).
+pub fn scale_premult_bgra_vec(src: &[u8], alpha_millis: u32) -> Vec<u8> {
+    if alpha_millis == 0 {
+        return vec![0; src.len()];
+    }
+    if alpha_millis >= OVERLAY_FADE_FULL {
+        return src.to_vec();
+    }
+    let lut = premult_lut(alpha_millis);
+    src.iter().map(|&b| lut[b as usize]).collect()
+}
+
+/// The alpha is constant across a frame, so a 256-entry table turns the per-byte multiply and
+/// divide into one load. Same rounding as `(byte * alpha_millis) / OVERLAY_FADE_FULL`.
+fn premult_lut(alpha_millis: u32) -> [u8; 256] {
+    let mut lut = [0u8; 256];
+    for (i, slot) in lut.iter_mut().enumerate() {
+        *slot = ((i as u32 * alpha_millis) / OVERLAY_FADE_FULL) as u8;
+    }
+    lut
 }
 
 /// Idle overlay loops must not raster. Active comment scrolling runs at [`OVERLAY_SCRUB_FPS`].

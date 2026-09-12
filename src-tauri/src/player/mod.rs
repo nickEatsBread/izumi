@@ -998,6 +998,15 @@ impl PlayerHandle {
         } else {
             return;
         };
+        // The 60 Hz OSD timer calls this on scrub/loading edges from GTK's main thread. A scaler
+        // swap makes the VO rebuild its shader chain synchronously inside set_property, so hand
+        // the batch to the dispatcher thread; the direct path remains the fallback before it exists.
+        if self
+            .with_mpv_dispatch(|dispatch| dispatch.render_opts(opts.clone()))
+            .is_ok()
+        {
+            return;
+        }
         if let Ok(guard) = self.mpv.lock() {
             if let Some(mpv) = guard.as_ref() {
                 for (k, v) in &opts {

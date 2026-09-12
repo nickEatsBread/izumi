@@ -28,7 +28,7 @@ use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
 
 use crate::gm_perf::{
     clip_to_strip, overlay_fade_step, overlay_loop_fps, overlay_should_snapshot,
-    scale_premult_bgra, OVERLAY_ACTIVE_POLL_MS, OVERLAY_FADE_FRAME_MS, OVERLAY_FADE_FULL,
+    scale_premult_bgra_vec, OVERLAY_ACTIVE_POLL_MS, OVERLAY_FADE_FRAME_MS, OVERLAY_FADE_FULL,
     OVERLAY_FADE_MS, OVERLAY_MOTION_PX, OVERLAY_SHEET_MOTION_PX,
 };
 use crate::player::PlayerHandle;
@@ -49,9 +49,8 @@ static ALPHA: AtomicU32 = AtomicU32::new(0);
 static PROF_N: AtomicU64 = AtomicU64::new(0);
 static PROF_LAST: Mutex<Option<Instant>> = Mutex::new(None);
 
-/// Persistent premultiplied-BGRA crop buffer. mpv reads this memory by address.
-static BUF: Mutex<Vec<u8>> = Mutex::new(Vec::new());
-/// Opaque snapshot that fade ticks scale into [`BUF`].
+/// Settled opaque snapshot crop (premultiplied BGRA). Every upload derives one owned frame from
+/// it; mpv copies the pixels synchronously inside `overlay-add`, so nothing reads this by address.
 static BASE: Mutex<Vec<u8>> = Mutex::new(Vec::new());
 /// Last uploaded crop geometry: x, y, width, height, stride.
 static GEOM: Mutex<Option<(i64, i64, i64, i64, i64)>> = Mutex::new(None);
@@ -242,15 +241,13 @@ fn present(app: &AppHandle, hidden_millis: u32) {
         let Ok(base) = BASE.lock() else {
             return;
         };
-        let Ok(mut buf) = BUF.lock() else {
-            return;
-        };
-        // Avoid reallocating while composing a frame; size changes go through snapshot_once.
-        if buf.len() != base.len() {
+        // Never compose a frame from a crop that does not match the registered geometry; size
+        // changes go through snapshot_once.
+        let expected = geom.4.saturating_mul(geom.3).max(0) as usize;
+        if base.is_empty() || base.len() != expected {
             return;
         }
-        scale_premult_bgra(&base, &mut buf, alpha);
-        buf.clone()
+        scale_premult_bgra_vec(&base, alpha)
     };
     if let Some(ph) = app.try_state::<PlayerHandle>() {
         let hidden = hidden_millis as i64;
@@ -440,16 +437,12 @@ fn snapshot_once(
                 let geom = (x as i64, y as i64, cw as i64, ch as i64, row_bytes as i64);
                 let geom_changed = GEOM.lock().ok().map(|g| *g != Some(geom)).unwrap_or(true);
 
-                // Move an owned snapshot into the dispatcher. The GTK callback may return and
-                // reuse BUF immediately; mpv still receives immutable pixels for this frame.
+                // Move an owned frame into the dispatcher; BASE keeps the settled crop for the
+                // native fade ticks, and mpv receives immutable pixels for this frame.
                 let pixels = {
                     let mut base = BASE.lock().ok()?;
-                    let mut buf = BUF.lock().ok()?;
                     if base.len() != need_crop {
                         base.resize(need_crop, 0);
-                    }
-                    if buf.len() != need_crop {
-                        buf.resize(need_crop, 0);
                     }
 
                     for row in 0..ch {
@@ -466,8 +459,7 @@ fn snapshot_once(
                         // A late fade is worse than an immediate, responsive result.
                         ALPHA.store(OVERLAY_FADE_FULL, Ordering::Relaxed);
                     }
-                    scale_premult_bgra(&base, &mut buf, ALPHA.load(Ordering::Relaxed));
-                    buf.clone()
+                    scale_premult_bgra_vec(&base, ALPHA.load(Ordering::Relaxed))
                 };
 
                 if let Ok(mut g) = GEOM.lock() {

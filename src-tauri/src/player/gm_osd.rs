@@ -8,7 +8,7 @@
 
 use std::f64::consts::PI;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use gtk::glib;
@@ -55,7 +55,9 @@ static GEN: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Default)]
 struct Runtime {
-    state: GmDynamicOverlay,
+    /// Shared with the 60 Hz loop by reference count: an idle tick reads it without cloning the
+    /// title, control items, timeline segments and chapter marks.
+    state: Arc<GmDynamicOverlay>,
     version: u64,
 }
 
@@ -175,7 +177,7 @@ pub fn update(app: AppHandle, state: GmDynamicOverlay) {
     let visible = state.visible;
     let runtime = RUNTIME.get_or_init(|| Mutex::new(Runtime::default()));
     if let Ok(mut rt) = runtime.lock() {
-        rt.state = sanitize_state(state);
+        rt.state = Arc::new(sanitize_state(state));
         rt.version = rt.version.wrapping_add(1);
     }
 
@@ -208,7 +210,7 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
     let mut shown = Shown::default();
     let mut control_tween = ControlTween::new(t0);
     let mut seekbar_tween = SeekbarTween::new(t0);
-    let mut last_control_state: Option<GmDynamicOverlay> = None;
+    let mut last_control_state: Option<Arc<GmDynamicOverlay>> = None;
 
     glib::timeout_add_local(Duration::from_millis(1000 / OSD_FPS), move || {
         let now = Instant::now();
@@ -222,45 +224,19 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
             return glib::ControlFlow::Break;
         };
         if state.controls {
-            last_control_state = Some(state.clone());
+            last_control_state = Some(Arc::clone(&state));
         }
         let motion = control_tween.step(state.controls, state.animate_controls, now);
 
-        let mut draw_state = state.clone();
         // The frontend unmounts Controls as soon as auto-hide fires. Retain the last measured
         // geometry/content until the short native outro reaches zero instead of snapping away.
-        if !state.controls && motion.main > 0.0 {
-            if let Some(last) = &last_control_state {
-                draw_state.controls = true;
-                draw_state.paused = last.paused;
-                draw_state.pos = last.pos;
-                draw_state.dur = last.dur;
-                draw_state.buffer = last.buffer;
-                draw_state.width = last.width;
-                draw_state.height = last.height;
-                draw_state.bar_x = last.bar_x;
-                draw_state.bar_y = last.bar_y;
-                draw_state.bar_w = last.bar_w;
-                draw_state.bar_h = last.bar_h;
-                draw_state.title.clone_from(&last.title);
-                draw_state.title_x = last.title_x;
-                draw_state.title_y = last.title_y;
-                draw_state.title_size = last.title_size;
-                draw_state.title_weight = last.title_weight;
-                draw_state.episode_text.clone_from(&last.episode_text);
-                draw_state.episode_x = last.episode_x;
-                draw_state.episode_y = last.episode_y;
-                draw_state.episode_size = last.episode_size;
-                draw_state.episode_weight = last.episode_weight;
-                draw_state.control_items.clone_from(&last.control_items);
-                draw_state
-                    .timeline_segments
-                    .clone_from(&last.timeline_segments);
-                draw_state.chapter_marks.clone_from(&last.chapter_marks);
-            }
-        }
-        let (bar_height, bar_animating) = seekbar_tween.step(draw_state.scrubbing, now);
-        draw_state.bar_h = bar_height;
+        let retained = match &last_control_state {
+            Some(last) if !state.controls && motion.main > 0.0 => Some(Arc::clone(last)),
+            _ => None,
+        };
+        let chrome: &GmDynamicOverlay = retained.as_deref().unwrap_or(&state);
+        let controls = state.controls || retained.is_some();
+        let (bar_height, bar_animating) = seekbar_tween.step(state.scrubbing, now);
         if !state.visible && motion.main <= 0.0 && !motion.animating {
             remove(&app);
             RUNNING.store(false, Ordering::SeqCst);
@@ -270,32 +246,63 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
             progress_anchor_pos = state.pos;
             progress_anchor_at = now;
         }
-        let scrub_animating = prepare_scrub_display(&mut draw_state, &mut shown_scrub_time);
-        if draw_state.controls && !draw_state.paused && !draw_state.scrubbing && !draw_state.loading
-        {
-            draw_state.pos = (progress_anchor_pos
-                + now.duration_since(progress_anchor_at).as_secs_f64())
-            .clamp(0.0, draw_state.dur.max(0.0));
-        }
 
-        hold_lite(&app, draw_state.scrubbing || draw_state.loading);
+        hold_lite(&app, state.scrubbing || state.loading);
 
         // Loading animates at OSD_FPS inside mpv. Touch scrub redraws only when input changes.
-        // Pad-trigger scrub gets a native visual tween between stepped repeat targets. Ordinary
-        // playback extrapolates between frontend samples and redraws at a lightweight 10fps.
-        let progress_due = draw_state.controls
+        // Ordinary playback extrapolates between frontend samples and redraws at a lightweight
+        // 10fps. Everything above is decided on the shared snapshot, so an idle tick returns here
+        // without cloning any overlay state.
+        let progress_due = controls
             && (version != last_drawn_version
-                || (!draw_state.paused
+                || (!chrome.paused
                     && now.duration_since(last_progress_draw)
                         >= Duration::from_millis(PROGRESS_FRAME_MS)));
-        if !draw_state.loading
-            && (!draw_state.scrubbing || !scrub_animating)
+        if !state.loading
             && !progress_due
             && !motion.animating
             && !bar_animating
             && version == last_drawn_version
         {
             return glib::ControlFlow::Continue;
+        }
+
+        let mut draw_state = (*state).clone();
+        if let Some(last) = &retained {
+            draw_state.controls = true;
+            draw_state.paused = last.paused;
+            draw_state.pos = last.pos;
+            draw_state.dur = last.dur;
+            draw_state.buffer = last.buffer;
+            draw_state.width = last.width;
+            draw_state.height = last.height;
+            draw_state.bar_x = last.bar_x;
+            draw_state.bar_y = last.bar_y;
+            draw_state.bar_w = last.bar_w;
+            draw_state.bar_h = last.bar_h;
+            draw_state.title.clone_from(&last.title);
+            draw_state.title_x = last.title_x;
+            draw_state.title_y = last.title_y;
+            draw_state.title_size = last.title_size;
+            draw_state.title_weight = last.title_weight;
+            draw_state.episode_text.clone_from(&last.episode_text);
+            draw_state.episode_x = last.episode_x;
+            draw_state.episode_y = last.episode_y;
+            draw_state.episode_size = last.episode_size;
+            draw_state.episode_weight = last.episode_weight;
+            draw_state.control_items.clone_from(&last.control_items);
+            draw_state
+                .timeline_segments
+                .clone_from(&last.timeline_segments);
+            draw_state.chapter_marks.clone_from(&last.chapter_marks);
+        }
+        draw_state.bar_h = bar_height;
+        prepare_scrub_display(&mut draw_state, &mut shown_scrub_time);
+        if draw_state.controls && !draw_state.paused && !draw_state.scrubbing && !draw_state.loading
+        {
+            draw_state.pos = (progress_anchor_pos
+                + now.duration_since(progress_anchor_at).as_secs_f64())
+            .clamp(0.0, draw_state.dur.max(0.0));
         }
 
         draw(&app, &draw_state, spinner_phase(t0), motion, &mut shown);
@@ -322,12 +329,12 @@ fn prepare_scrub_display(state: &mut GmDynamicOverlay, shown_scrub_time: &mut Op
     false
 }
 
-fn latest_state() -> Option<(GmDynamicOverlay, u64)> {
+fn latest_state() -> Option<(Arc<GmDynamicOverlay>, u64)> {
     let rt = RUNTIME
         .get_or_init(|| Mutex::new(Runtime::default()))
         .lock()
         .ok()?;
-    Some((rt.state.clone(), rt.version))
+    Some((Arc::clone(&rt.state), rt.version))
 }
 
 fn sanitize_state(mut state: GmDynamicOverlay) -> GmDynamicOverlay {
