@@ -529,7 +529,9 @@ jobs:
             done
           done
           # One hero for every variant: Steam draws the logo over it, so it must not contain one.
-          for hero in izumi-hero-plain-1920x620.png izumi-hero-plain-3840x1240.png; do
+          # The wall is what the installer fetches; the plain field stays published beside it as the
+          # quiet alternative, and is what someone editing the script would reach for first.
+          for hero in izumi-hero-anime-1920x620.png izumi-hero-plain-1920x620.png izumi-hero-plain-3840x1240.png; do
             install -Dm644 "brand/steamgriddb/hero/$hero" "flatpak/_legacy_repo/steamgrid/hero/$hero"
           done
           for logo in izumi-logo-horizontal-white@2x.png izumi-logo-horizontal-color@2x.png; do

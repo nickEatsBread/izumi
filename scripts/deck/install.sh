@@ -28,7 +28,10 @@ for argument in "$@"; do
   esac
 done
 
-SITE=https://flatpak.izumi.watch
+# IZUMI_SITE points the whole installer at somewhere else — a staging copy, or a directory being
+# served locally — so a change to the descriptor or the artwork can be run end to end on a real Deck
+# before it is published to everybody.
+SITE="${IZUMI_SITE:-https://flatpak.izumi.watch}"
 REF_URL="$SITE/$CHANNEL/com.nicho.izumi.flatpakref"
 ART_URL="$SITE/steamgrid"
 APP_ID=com.nicho.izumi
@@ -238,11 +241,11 @@ fetch_art() {
 #
 # The capsules carry the chosen variant, because a capsule IS the cover. The hero does not: Steam
 # paints the logo slot on top of it, so a hero containing the wordmark — which every SteamGridDB
-# variant does — ends up as a logo sitting on a logo. The hero is a plain backdrop for all six, and
+# variant does — ends up as a logo sitting on a logo. One wordmark-free hero serves all six, and
 # the white wordmark is what goes over it.
 fetch_art "$ART_URL/$VARIANT/izumi-capsule-600x900.png" portrait.png
 fetch_art "$ART_URL/$VARIANT/izumi-capsule-920x430.png" landscape.png
-fetch_art "$ART_URL/hero/izumi-hero-plain-1920x620.png" hero.png
+fetch_art "$ART_URL/hero/izumi-hero-anime-1920x620.png" hero.png
 fetch_art "$ART_URL/logo/izumi-logo-horizontal-white@2x.png" logo.png
 
 ICON=''
@@ -257,6 +260,7 @@ done
 say 'Adding izumi to your Steam library'
 IZUMI_ART_DIR="$ART_DIR" IZUMI_ICON="$ICON" IZUMI_USER_DIRS="$USER_DIRS" \
   python3 - <<'PYTHON'
+import json
 import os
 import shutil
 import struct
@@ -366,6 +370,22 @@ def install_art(config_dir, appid):
         path = os.path.join(art_dir, source)
         if os.path.isfile(path):
             shutil.copyfile(path, os.path.join(grid, target))
+
+    # Steam pins a shortcut's logo to the bottom left unless told otherwise, and this hero is built
+    # around a centred wordmark — the pool of shade it reads against is in the middle of the frame.
+    # Only written when absent: dragging the logo somewhere else is a thing people do, and a re-run
+    # of this installer should not snap it back.
+    position = os.path.join(grid, "%d.json" % appid)
+    if not os.path.exists(position):
+        with open(position, "w", encoding="utf-8") as handle:
+            json.dump({
+                "nVersion": 1,
+                "logoPosition": {
+                    "pinnedPosition": "CenterCenter",
+                    "nWidthPct": 38,
+                    "nHeightPct": 32,
+                },
+            }, handle)
 
 
 def write_shortcut(config_dir):
