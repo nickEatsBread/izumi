@@ -6,6 +6,24 @@
 #![allow(dead_code)]
 
 use std::num::NonZeroU32;
+use std::sync::atomic::AtomicBool;
+
+/// True between player open and stop. The Deck HID grip reader (L4/R4 = player-only actions) keys
+/// its wake cadence off this so an idle browse session does not wake ~60×/s draining hidraw.
+pub static PLAYER_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// Grip reader throttle while the player is open: display cadence keeps rear-button edges snappy.
+pub const GRIP_POLL_ACTIVE_SLEEP_MS: u64 = 16;
+/// Grip reader throttle while browsing: nothing consumes L4/R4, so a 200 ms wake is plenty.
+pub const GRIP_POLL_IDLE_SLEEP_MS: u64 = 200;
+
+/// How long the Deck grip reader sleeps after draining a burst of HID reports.
+pub fn grip_poll_sleep_ms(player_active: bool) -> u64 {
+    if player_active {
+        GRIP_POLL_ACTIVE_SLEEP_MS
+    } else {
+        GRIP_POLL_IDLE_SLEEP_MS
+    }
+}
 
 /// Native ASS overlay cadence. The Deck's touch skim has to track the finger; 30fps
 /// made the native bar feel sticky. Loading spinner phase also uses this clock.

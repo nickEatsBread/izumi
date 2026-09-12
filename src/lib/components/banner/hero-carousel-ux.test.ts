@@ -6,7 +6,9 @@ const hero = readFileSync(fileURLToPath(new URL('./Hero.svelte', import.meta.url
 
 describe('featured carousel UX', () => {
   it('shows a live next-episode countdown', () => {
-    expect(hero).toContain('setInterval(() => (clock = Date.now()), 1_000)')
+    // Live tick, but paced by the label's granularity: 1 s only inside the final minute.
+    expect(hero).toContain('setInterval(() => (clock = Date.now()), heroClockTickMs)')
+    expect(hero).toContain("nextAiringAt - clock / 1000 < 90 ? 1_000 : 15_000")
     expect(hero).toContain('`Episode ${nextAiring.episode} in ${airingCountdown(nextAiringAt, clock)}`')
     expect(hero).toContain('`Episode ${nextAiring.episode} airs in ${airingCountdownAccessible(nextAiringAt, clock)}`')
     expect(hero.match(/aria-label=\{nextAiringAccessibleLabel\}/g)?.length).toBe(2)
