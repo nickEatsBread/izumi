@@ -141,6 +141,20 @@ describe('sending a setup from the device that has one', () => {
     expect(transfer).toContain('const REARM_BEFORE_MS = 30_000')
   })
 
+  it('shows the send-setup dialog and the pairing code from every sender state', () => {
+    // The usual sender already has a room and renders the paired branch; the dialog its "Set up"
+    // button opens (and the code it must show) used to live only inside the not-paired branch, so
+    // pressing the button did nothing visible. Both now sit above the provider/state chain.
+    const chain = syncPage.indexOf("{#if $syncProvider === 'cloudflare'}")
+    expect(chain).toBeGreaterThan(0)
+    expect(syncPage.indexOf('{#if offerTarget}')).toBeLessThan(chain)
+    expect(syncPage.indexOf('{#if outgoing}')).toBeLessThan(chain)
+    expect(syncPage.match(/\{#if offerTarget\}/g)).toHaveLength(1)
+    expect(syncPage.match(/\{#if outgoing\}/g)).toHaveLength(1)
+    // Both branches still offer the button that opens it.
+    expect(syncPage.match(/askToSendSetup\(device\)/g)!.length).toBeGreaterThanOrEqual(2)
+  })
+
   it('treats a scanned code as aiming, not as consent', () => {
     expect(syncPage).toContain("page.url.searchParams.get('offer')")
     const body = syncPage.slice(syncPage.indexOf("page.url.searchParams.get('offer')"))

@@ -946,6 +946,46 @@
     </section>
   {/if}
 
+  <!-- Both "send my setup" surfaces live ABOVE the provider/state branches on purpose. A device
+       that already has a room (the common sender) renders the paired branch, whose "Set up"
+       button opens this dialog; while it sat inside the not-paired branch, that button set
+       `offerTarget` and nothing appeared — measured on a desktop → Deck transfer 2026-09-12. -->
+  {#if outgoing}
+    <section class="mb-5 max-w-2xl rounded-xl border border-primary/40 bg-primary/10 p-4">
+      <p class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Confirm this code on the other device</p>
+      <div class="mt-1 font-mono text-3xl font-black tracking-[0.18em]">{outgoing.code}</div>
+      <p class="mt-1 text-sm text-muted-foreground">Nothing needs to be typed. Wait for approval on the other screen.</p>
+    </section>
+  {/if}
+  {#if offerTarget}
+    <section aria-labelledby="offer-title" class="mb-5 max-w-2xl rounded-xl border border-primary/40 bg-primary/10 p-4">
+      <h3 id="offer-title" class="text-sm font-bold">Send your setup to Izumi device {offerTarget.shortId}?</h3>
+      <ul class="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">
+        <li>· Sources, extensions and your debrid key</li>
+        <li>· Player, catalog and interface preferences</li>
+        <li>· Watch history, progress and local lists</li>
+      </ul>
+      <!-- Separate, and off every time. Everything above is configuration; this is a live
+           credential, and a device that has it can act as you on those services. -->
+      <label class="mt-3 flex items-start gap-2.5 text-xs leading-5">
+        <input type="checkbox" bind:checked={offerAccounts} data-focusable class="mt-0.5 size-4 shrink-0" />
+        <span>
+          <span class="font-bold text-foreground">Also send signed-in accounts</span>
+          <span class="block text-muted-foreground">Copies your AniList, MyAnimeList, Kitsu and SIMKL sign-in tokens to that device. Leave this off and sign in there instead.</span>
+        </span>
+      </label>
+      <p class="mt-3 text-xs leading-5 text-muted-foreground">The other device shows a code. Check it matches before accepting there.</p>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button type="button" onclick={() => { h.impact(); confirmSendSetup() }} disabled={!!busy} data-focusable
+          class="min-h-10 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
+          {busy.startsWith('offer-') ? 'Sending…' : 'Send setup'}
+        </button>
+        <button type="button" onclick={() => { h.tap(); offerTarget = null }} disabled={!!busy} data-focusable
+          class="min-h-10 rounded-lg px-3 py-2 text-sm font-bold hover:bg-secondary disabled:opacity-50">Cancel</button>
+      </div>
+    </section>
+  {/if}
+
   {#if $syncProvider === 'cloudflare'}
     {#if status.state === 'starting'}
       <SettingsGroup title="Cloudflare sync" desc="Checking your Worker">
@@ -1160,14 +1200,6 @@
     </SettingsGroup>
 
   {:else if !paired}
-    {#if outgoing}
-      <section class="mb-5 max-w-2xl rounded-xl border border-primary/40 bg-primary/10 p-4">
-        <p class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Confirm this code on the other device</p>
-        <div class="mt-1 font-mono text-3xl font-black tracking-[0.18em]">{outgoing.code}</div>
-        <p class="mt-1 text-sm text-muted-foreground">Nothing needs to be typed. Wait for approval on the other screen.</p>
-      </section>
-    {/if}
-
     {#snippet startIcon()}
       <span class="grid size-9 place-items-center rounded-lg bg-primary/15 text-primary"><Plus size={18} /></span>
     {/snippet}
@@ -1192,35 +1224,6 @@
       <button type="button" onclick={() => { h.tap(); disable() }} disabled={!!busy} data-focusable
         class="min-h-10 rounded-lg px-3 py-2 text-sm font-bold text-destructive transition-colors active:bg-destructive/10 sm:hover:bg-destructive/10 disabled:opacity-50">Turn off</button>
     {/snippet}
-
-    {#if offerTarget}
-      <section aria-labelledby="offer-title" class="mb-5 max-w-2xl rounded-xl border border-primary/40 bg-primary/10 p-4">
-        <h3 id="offer-title" class="text-sm font-bold">Send your setup to Izumi device {offerTarget.shortId}?</h3>
-        <ul class="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">
-          <li>· Sources, extensions and your debrid key</li>
-          <li>· Player, catalog and interface preferences</li>
-          <li>· Watch history, progress and local lists</li>
-        </ul>
-        <!-- Separate, and off every time. Everything above is configuration; this is a live
-             credential, and a device that has it can act as you on those services. -->
-        <label class="mt-3 flex items-start gap-2.5 text-xs leading-5">
-          <input type="checkbox" bind:checked={offerAccounts} data-focusable class="mt-0.5 size-4 shrink-0" />
-          <span>
-            <span class="font-bold text-foreground">Also send signed-in accounts</span>
-            <span class="block text-muted-foreground">Copies your AniList, MyAnimeList, Kitsu and SIMKL sign-in tokens to that device. Leave this off and sign in there instead.</span>
-          </span>
-        </label>
-        <p class="mt-3 text-xs leading-5 text-muted-foreground">The other device shows a code. Check it matches before accepting there.</p>
-        <div class="mt-3 flex flex-wrap gap-2">
-          <button type="button" onclick={() => { h.impact(); confirmSendSetup() }} disabled={!!busy} data-focusable
-            class="min-h-10 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
-            {busy.startsWith('offer-') ? 'Sending…' : 'Send setup'}
-          </button>
-          <button type="button" onclick={() => { h.tap(); offerTarget = null }} disabled={!!busy} data-focusable
-            class="min-h-10 rounded-lg px-3 py-2 text-sm font-bold hover:bg-secondary disabled:opacity-50">Cancel</button>
-        </div>
-      </section>
-    {/if}
 
     <SettingsGroup title="Nearby sessions" desc="On the same Wi-Fi. Set up a new device, join a room, or start your own." icon={Radio}>
       <SettingsRow
