@@ -5750,6 +5750,15 @@ pub fn run() {
                     .additional_browser_args(DESKTOP_WEBVIEW_ARGS)
                     .inner_size(1280.0, 800.0)
                     .min_inner_size(900.0, 560.0)
+                    // Under gamescope the window IS the screen, so nothing may ever resize it. tao
+                    // gives every undecorated resizable window a 5 px borderless resize band and
+                    // begins an X11 resize drag for any button press OR touch inside it; on the
+                    // Deck the band sits along the bezel, so a finger landing near the edge shrank
+                    // the toplevel (gamescope then upscaled it — the "zoomed in" screen) and every
+                    // further finger movement resized the window instead of scrolling. A
+                    // non-resizable GTK3 window pins min = max = the configured size and still
+                    // honours programmatic set_size. Desktop mode keeps the band for mouse users.
+                    .resizable(!gamescope)
                     // This is only the unknown-position default. The window-state plugin restores
                     // a valid saved main-window position immediately after creation while hidden.
                     .center();

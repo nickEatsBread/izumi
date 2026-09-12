@@ -42,7 +42,7 @@
   import { page } from '$app/state'
   import { invoke } from '@tauri-apps/api/core'
   import { getCurrentWindow } from '@tauri-apps/api/window'
-  import { controllerMode, initInput, initDpadNav, startBrowserGamepadInput, suppressNativeContextMenus, suppressNativeTooltips } from '$lib/nav'
+  import { controllerMode, initInput, initDpadNav, startBrowserGamepadInput, suppressNativeContextMenus, suppressNativeTooltips, suppressPinchZoom } from '$lib/nav'
   import { startGamepadNav } from '$lib/nav/gamepad'
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { scheduleBootWork } from '$lib/util/boot-work'
@@ -179,6 +179,7 @@
     if ($gameMode) {
       suppressNativeTooltips() // no native `title` hover popups under controller/touch
       suppressNativeContextMenus() // held presses must not open WebKit's desktop link menu
+      suppressPinchZoom() // WebKitGTK's pinch gesture ignores the viewport user-scalable=no meta
       invoke('gamepad_start').catch(() => {})
       return () => { stop(); invoke('gamepad_stop').catch(() => {}) }
     }
