@@ -288,6 +288,17 @@ fn gamepad_edges_do_not_touch_the_log_file() {
 }
 
 #[test]
+fn gamescope_never_restores_remembered_window_geometry() {
+    // A Desktop-mode size (1280x560 under KDE's panel) restored under gamescope letterboxes and
+    // crops the whole app. The window-state plugin must not exist in Game mode.
+    let lib = include_str!("../src/lib.rs");
+    assert!(lib.contains("let under_gamescope = std::env::var_os(\"GAMESCOPE_WAYLAND_DISPLAY\").is_some();"));
+    let gate = lib.find("let builder = if under_gamescope {").expect("gamescope gate");
+    let plugin = lib.find("tauri_plugin_window_state::Builder::default()").expect("plugin");
+    assert!(gate < plugin, "the plugin must only be registered on the non-gamescope branch");
+}
+
+#[test]
 fn compositor_probe_is_opt_in() {
     let lib = include_str!("../src/lib.rs");
     assert!(lib.contains("IZUMI_COMPOSITOR_PROBE"));

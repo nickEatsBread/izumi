@@ -5611,22 +5611,34 @@ pub fn run() {
         | tauri_plugin_window_state::StateFlags::MAXIMIZED;
     #[cfg(target_os = "macos")]
     let window_state_flags = tauri_plugin_window_state::StateFlags::POSITION;
+    // Steam Deck Game mode: gamescope presents the toplevel at its own output size, so remembered
+    // geometry has no meaning there — and it is actively harmful. The Deck shares one state file
+    // between Desktop mode and Game mode; a size saved under KDE (1280×560 below the panel,
+    // measured 2026-09-12) was restored under gamescope, which letterboxed the shrunken window and
+    // cropped the page. Under gamescope the plugin is not registered at all: nothing restored,
+    // nothing saved, the window keeps its 1280×800 default (= gamescope's XWayland screen).
     #[cfg(not(target_os = "android"))]
-    let builder = builder
-        // A fresh desktop window starts centered. Once the user moves or resizes it, restore that
-        // preference on later launches instead. Track only the main window and omit transient
-        // visibility/decorations/fullscreen state used by the player and discussion popups.
-        .plugin(
-            tauri_plugin_window_state::Builder::default()
-                // The plugin intentionally cannot distinguish maximized resize events for an
-                // undecorated macOS window (its own source special-cases that state). It therefore
-                // saved transient, sometimes extremely narrow dimensions on alternating exits.
-                // macOS now starts at a safe 1280×800 and only remembers the screen position;
-                // Windows/Linux keep their established size + maximized restoration.
-                .with_state_flags(window_state_flags)
-                .with_filter(|label| label == "main")
-                .build(),
-        );
+    let under_gamescope = std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some();
+    #[cfg(not(target_os = "android"))]
+    let builder = if under_gamescope {
+        builder
+    } else {
+        builder
+            // A fresh desktop window starts centered. Once the user moves or resizes it, restore that
+            // preference on later launches instead. Track only the main window and omit transient
+            // visibility/decorations/fullscreen state used by the player and discussion popups.
+            .plugin(
+                tauri_plugin_window_state::Builder::default()
+                    // The plugin intentionally cannot distinguish maximized resize events for an
+                    // undecorated macOS window (its own source special-cases that state). It therefore
+                    // saved transient, sometimes extremely narrow dimensions on alternating exits.
+                    // macOS now starts at a safe 1280×800 and only remembers the screen position;
+                    // Windows/Linux keep their established size + maximized restoration.
+                    .with_state_flags(window_state_flags)
+                    .with_filter(|label| label == "main")
+                    .build(),
+            )
+    };
     let builder = builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
