@@ -338,6 +338,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # tauri-action merges `latest.json` per matrix job (read, add own platforms, upload with
+      # clobber). Three jobs racing that lost the Windows + macOS entries on v0.1.64 — every desktop
+      # client then failed with "None of the fallback platforms … were found". Rebuild the manifest
+      # ONCE here, after every build, from the `.sig` assets actually attached to the release.
+      - name: Rebuild latest.json from the attached signatures
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          export VERSION="${VERSION#v}"
+          node scripts/ci/merge-updater-json.mjs
+          tag="${{ github.ref_name }}"; [[ "$tag" == *-* ]] && tag=beta
+          gh release upload "$tag" latest.json --repo "${{ github.repository }}" --clobber
+
       - name: Remove standalone updater signature assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
