@@ -7,6 +7,8 @@ const shell = read('./FirstRunSetup.svelte')
 const artwork = read('./SetupArtwork.svelte')
 const intro = read('./IntroSequence.svelte')
 const home = read('../../../routes/app/home/+page.svelte')
+const gamepad = read('../../nav/gamepad.ts')
+const exitPrompt = read('../shell/ExitPrompt.svelte')
 // The shell owns no controls any more — every input lives in a step component — so the focus and
 // heading styling it used to scope to itself had to move to the global sheet to keep reaching them.
 const css = read('../../../app.css')
@@ -170,6 +172,58 @@ describe('onboarding presentation contracts', () => {
     // the scheduled end can both call finish().
     expect(intro).toContain('if (done) return')
     expect(intro).toContain('clearTimeout(timer)')
+  })
+
+  it('holds the ident at frame zero until the window is genuinely on screen', () => {
+    // A Deck launch mounts this while the window is still hidden and, under Gamescope, while the
+    // body waits on the native page zoom. Animations started at mount burn that time off screen and
+    // the viewer joins the ident midway. Pausing costs nothing; a delay would cost everyone.
+    expect(intro).toContain('onLaunchRevealed')
+    expect(intro).toContain('armed = true')
+    expect(intro).toContain('timer = setTimeout(finish, RUNTIME)')
+    expect(intro).toContain('.intro:not(.armed), .intro:not(.armed) :global(*) { animation-play-state: paused; }')
+    // The CSS and the JS runtime have to start together or the fade cuts the animation short.
+    const reveal = intro.slice(intro.indexOf('onLaunchRevealed'))
+    expect(reveal.indexOf('armed = true')).toBeLessThan(reveal.indexOf('setTimeout(finish, RUNTIME)'))
+  })
+
+  it('does not let the press that launched izumi count as skipping the ident', () => {
+    // On a Deck the A press that started the app from Steam can still be travelling when the
+    // wizard mounts. Treating it as a skip cancelled an ident that had not shown a single frame.
+    expect(intro).toContain('if (!armed || leaving || done) return')
+  })
+
+  it('lets a controller end the ident, which produces neither a key nor a pointer event', () => {
+    expect(intro).toContain("window.addEventListener('intro-dismiss', skip)")
+    expect(intro).toContain("window.removeEventListener('intro-dismiss', skip)")
+    expect(gamepad).toContain("window.dispatchEvent(new Event('intro-dismiss'))")
+  })
+
+  it('tells the controller translator what Back means inside the wizard', () => {
+    // The wizard stands in for the home route it covers, so the generic rule — history.back()
+    // anywhere but home — either walks into the page being replaced or opens the exit prompt
+    // underneath an opaque full-screen surface. Both read as "B does nothing".
+    expect(shell).toContain('onboardingNav.set({')
+    expect(shell).toContain('canGoBack: mode === \'wizard\' && stepIndex > 0 && !busy')
+    expect(shell).toContain('back: goBack')
+    expect(shell).toContain('onboardingNav.set(null)')
+
+    const branch = gamepad.slice(gamepad.indexOf('const onboarding = get(onboardingNav)'))
+    const body = branch.slice(0, branch.indexOf('\n    // The source picker'))
+    expect(body).toContain('if (onboarding.canGoBack) onboarding.back()')
+    expect(body).toContain('else exitPrompt.set(true)')
+    // Ahead of the generic B handling, or the generic rule wins and we are back where we started.
+    expect(gamepad.indexOf('const onboarding = get(onboardingNav)')).toBeLessThan(gamepad.indexOf("case 'b':"))
+  })
+
+  it('renders the exit prompt above the wizard that asks for it', () => {
+    // z-160 is the wizard; a prompt below that is invisible, which is exactly how B looked broken.
+    const prompt = Number(exitPrompt.match(/fixed inset-0 z-\[(\d+)\]/)![1])
+    const wizard = Number(shell.match(/onboarding-surface fixed inset-0 z-\[(\d+)\]/)![1])
+    const ident = Number(intro.match(/z-index: (\d+);/)![1])
+    expect(prompt).toBeGreaterThan(wizard)
+    // The ident owns the screen outright while it runs; nothing may paint over it.
+    expect(prompt).toBeLessThan(ident)
   })
 
   it('drops the splash layers under reduced motion instead of freezing them mid-air', () => {

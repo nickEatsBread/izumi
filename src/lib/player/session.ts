@@ -197,6 +197,18 @@ export const exitPrompt = writable(false)
 // to close it (instead of navigating the page back, which would leave the search page).
 export const advancedFiltersOpen = writable(false)
 
+// The first-run wizard, while it owns the screen. It covers the home route it is mounted over, so
+// the controller's usual Back — history.back() on any page but home — has nothing meaningful to do
+// here: the page underneath is the one the wizard is replacing. `back` steps the wizard instead,
+// and a wizard on its first screen has nothing behind it at all, which is when B offers the exit
+// prompt, exactly as it does on home. null = the wizard is not up.
+export const onboardingNav = writable<null | {
+  canGoBack: boolean
+  back: () => void
+  /** The launch ident, while it is still playing over the wizard. Any button ends it. */
+  introRunning: boolean
+}>(null)
+
 // Series-page AniList/MAL editor. While open, the Deck controller keeps directional focus inside
 // the dialog, A activates its controls, and B dismisses it instead of leaving the series page.
 export const listEditorOpen = writable(false)
