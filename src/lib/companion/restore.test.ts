@@ -598,6 +598,6 @@ describe('restore entry points', () => {
     expect(page).toContain('Settings → Connection → Link phone or desktop')
     expect(page).toContain('with your phone’s camera')
     const layout = readFileSync(new URL('../../routes/app/+layout.svelte', import.meta.url), 'utf8')
-    expect(layout).toContain("{#if page.url.pathname !== '/app/companion-restore'}<FirstRunSetup />{/if}")
+    expect(layout).toContain("{#if !$onboardingComplete && page.url.pathname !== '/app/companion-restore'}<Lazy load={loadFirstRunSetup} />{/if}")
   })
 })

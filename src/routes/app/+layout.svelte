@@ -49,25 +49,21 @@
   import { isAndroid, isMacOS, isMobile, isTv, initPlatform } from '$lib/platform'
   import { initOffline } from '$lib/stores/offline'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
-  import { initTrackerQueue } from '$lib/trackers/queue'
-  import { initAutoIncognito } from '$lib/player/auto-incognito'
-  import { initDeviceSync } from '$lib/sync/client'
-  import { initStremioAddonSync } from '$lib/stremio/account-sync'
   import { getContextClient } from '@urql/svelte'
-  import { acceptCompanionPlayRequest, initCompanionConnections, publishCompanionSourceOptions } from '$lib/companion/client'
-  import { companionResolveSession, companionStreamPicker, initCompanionSourceBridge, selectPendingCompanionSource } from '$lib/companion/source-bridge'
-  import { createCompanionDetails, createCompanionPresentation, createCompanionSearch, createCompanionSnapshot, loadCompanionPlaybackMedia } from '$lib/companion/snapshot'
-  import { cancelPendingCompanionPlayback, companionPlaybackTarget } from '$lib/companion/playback'
+  // Only the two companion values the template reads are imported eagerly. The companion client,
+  // snapshot builders, playback, source bridge (and through it the stremio/play stack), tracker
+  // queue, device sync, addon sync, auto-downloads, watch-together, airing notifications and the
+  // updater are loaded by the `services` boot task below — none of them gates first paint.
+  import { companionResolveSession, companionStreamPicker } from '$lib/companion/stores'
   import type { CompanionMedia, CompanionPersonFilter } from '$lib/companion/protocol'
-  import { initAutoDownloads } from '$lib/downloads/rules'
-  import { initWatchTogether } from '$lib/watch-together/client'
-  import { initAiringNotifications } from '$lib/notifications/airing'
   import { deepLinkNotice, initDeepLinks } from '$lib/deep-links'
   import { initTorrentVpnToasts, torrentVpnNotice } from '$lib/player/direct-torrent'
-  import { startUpdateChecks } from '$lib/updater'
   import { startExtensionUpdateChecks, extensionUpdateNotice } from '$lib/extensions/auto-update'
   import UpdateToast from '$lib/components/shell/UpdateToast.svelte'
-  import FirstRunSetup from '$lib/components/onboarding/FirstRunSetup.svelte'
+  // First-run setup is a one-time screen with ten step components behind it; mount it lazily and
+  // only while onboarding is incomplete, so a normal boot never loads that graph.
+  import { onboardingComplete } from '$lib/settings/onboarding'
+  const loadFirstRunSetup = () => import('$lib/components/onboarding/FirstRunSetup.svelte')
   import UpNextOverlay from '$lib/components/player/UpNextOverlay.svelte'
   import ProfileSwitcher from '$lib/components/profiles/ProfileSwitcher.svelte'
   import { get } from 'svelte/store'
@@ -199,8 +195,7 @@
     // Cross-platform update check: a delayed launch check + a 6h interval, always on (there's no
     // opt-out — a stale client is a support problem). Gated to packaged builds so dev never nags.
     // The facade dispatches per platform (desktop/android/flatpak); the toast is still opt-in to APPLY.
-    let stopUpdates: (() => void) | null = null
-    if (!import.meta.env.DEV) stopUpdates = startUpdateChecks()
+    // Started by the `services` boot task below (the check itself is delayed anyway).
     // Same cadence for installed .izumi-ext packages: catalogs are fetched live everywhere else,
     // but an INSTALLED package is a local copy that goes stale until someone reinstalls it. The
     // check reuses the sha-pinned catalog install path and skips itself during playback.
@@ -210,12 +205,38 @@
     initDpadNav()
     initGameMode() // resolve gamescope/Deck fullscreen-touch mode once (drives chrome-hiding)
     attachDownloadEvents() // wire download progress/done events + resume interrupted jobs (guarded, once)
-    initTrackerQueue() // wire the online-reconnect flush + boot-flush any tracker writes that failed offline
-    initAutoIncognito() // adult play → incognito (setting-gated); exits + purges when playback closes
-    initDeviceSync() // account-free Iroh watch sync (automatically gated off by connected trackers)
-    const stopStremioAddonSync = initStremioAddonSync()
-    const stopCompanionSources = initCompanionSourceBridge()
-    const stopCompanions = initCompanionConnections(
+    const stopVpnToasts = initTorrentVpnToasts()
+    let stopDeepLinks: () => void = () => {}
+    initDeepLinks().then((stop) => { stopDeepLinks = stop }).catch(() => {})
+    // Background services. None of them is needed for the first paint, and statically importing
+    // them put ~3k lines of companion / watch-together / device-sync / tracker-queue / updater code
+    // (plus, via the source bridge, the whole play stack) into the shell's boot chunk. They load and
+    // start together once the shell is up; the boot queue yields to any interaction. A teardown that
+    // races the import is handled by the latch: nothing starts after `servicesStopped`.
+    let servicesStopped = false
+    const serviceStops: Array<() => void> = []
+    void scheduleBootWork('services', async () => {
+      if (servicesStopped) return
+      const [
+        { initTrackerQueue }, { initAutoIncognito }, { initDeviceSync }, { initStremioAddonSync },
+        { acceptCompanionPlayRequest, initCompanionConnections, publishCompanionSourceOptions },
+        { initCompanionSourceBridge, selectPendingCompanionSource },
+        { createCompanionDetails, createCompanionPresentation, createCompanionSearch, createCompanionSnapshot, loadCompanionPlaybackMedia },
+        { cancelPendingCompanionPlayback, companionPlaybackTarget },
+        { initAutoDownloads }, { initWatchTogether }, { initAiringNotifications }, { startUpdateChecks },
+      ] = await Promise.all([
+        import('$lib/trackers/queue'), import('$lib/player/auto-incognito'), import('$lib/sync/client'),
+        import('$lib/stremio/account-sync'), import('$lib/companion/client'), import('$lib/companion/source-bridge'),
+        import('$lib/companion/snapshot'), import('$lib/companion/playback'), import('$lib/downloads/rules'),
+        import('$lib/watch-together/client'), import('$lib/notifications/airing'), import('$lib/updater'),
+      ])
+      if (servicesStopped) return
+      initTrackerQueue() // wire the online-reconnect flush + boot-flush any tracker writes that failed offline
+      initAutoIncognito() // adult play → incognito (setting-gated); exits + purges when playback closes
+      initDeviceSync() // account-free Iroh watch sync (automatically gated off by connected trackers)
+      serviceStops.push(initStremioAddonSync())
+      serviceStops.push(initCompanionSourceBridge())
+      serviceStops.push(initCompanionConnections(
       (screen) => createCompanionSnapshot(companionCatalogClient, Date.now(), screen),
       async (media: CompanionMedia, device, context) => {
         // A live TV request is background work. Keep both the current route and the person's local
@@ -253,13 +274,14 @@
         ? createCompanionPresentation(media, companionCatalogClient)
         : createCompanionDetails(media, undefined, companionCatalogClient),
       selectPendingCompanionSource,
-    )
-    const stopAutoDownloads = initAutoDownloads()
-    const stopWatchTogether = initWatchTogether()
-    const stopAiringNotifications = initAiringNotifications()
-    const stopVpnToasts = initTorrentVpnToasts()
-    let stopDeepLinks: () => void = () => {}
-    initDeepLinks().then((stop) => { stopDeepLinks = stop }).catch(() => {})
+      ))
+      serviceStops.push(initAutoDownloads(), initWatchTogether(), initAiringNotifications())
+      // Cross-platform update check: a delayed launch check + a 6h interval, always on (there's no
+      // opt-out — a stale client is a support problem). Gated to packaged builds so dev never nags.
+      if (!import.meta.env.DEV) serviceStops.push(startUpdateChecks())
+      // Torn down while the imports were in flight: stop what just started.
+      if (servicesStopped) for (const stop of serviceStops.splice(0)) stop()
+    }, 800)
     // Aniyomi is a complete Home provider, so its runtime needs to be ready before the user switches
     // to it. Warm only that runtime after first paint when it is enabled; the later extension task
     // reuses the same in-flight/result cache and still owns the broader JS worker startup.
@@ -307,7 +329,11 @@
       const { warmExtensions } = await import('$lib/extensions/manager')
       await warmExtensions()
     }, 6500)
-    return () => { stopDeveloperLogging(); stopUpdates?.(); stopExtensionUpdates?.(); stopStremioAddonSync(); stopCompanions(); stopCompanionSources(); stopAutoDownloads(); stopWatchTogether(); stopAiringNotifications(); stopVpnToasts(); stopDeepLinks() }
+    return () => {
+      servicesStopped = true
+      for (const stop of serviceStops.splice(0)) stop()
+      stopDeveloperLogging(); stopExtensionUpdates?.(); stopVpnToasts(); stopDeepLinks()
+    }
   })
 
   // Push the DNS-over-HTTPS setting into the Rust HTTP client. Reactive: runs on
@@ -541,7 +567,7 @@
 {/if}
 <!-- Cross-platform update toast (available → downloading → ready); opt-in to apply. -->
 <UpdateToast />
-{#if page.url.pathname !== '/app/companion-restore'}<FirstRunSetup />{/if}
+{#if !$onboardingComplete && page.url.pathname !== '/app/companion-restore'}<Lazy load={loadFirstRunSetup} />{/if}
 <UpNextOverlay />
 <ProfileSwitcher />
 {#if $themeStudioOpen}

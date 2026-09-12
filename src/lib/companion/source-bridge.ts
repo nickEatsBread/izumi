@@ -1,14 +1,15 @@
-import { get, writable } from 'svelte/store'
+import { get } from 'svelte/store'
 import { describe } from '$lib/stremio/addon'
 import type { Stream } from '$lib/stremio/addon'
-import { commitResolveSelection, createResolveSession, playStream, type PlayState } from '$lib/stremio/play'
-import { connecting, streamPicker, type StreamPickerState } from '$lib/player/session'
+import { commitResolveSelection, playStream, type PlayState } from '$lib/stremio/play'
+import { connecting, streamPicker } from '$lib/player/session'
 import {
   pendingCompanionPlayback,
   publishCompanionSourceOptions,
   type PairedCompanion,
 } from './client'
 import { companionPlaybackMatches } from './playback'
+import { companionResolveSession, companionStreamPicker } from './stores'
 
 let activeKey = ''
 let nextChoiceId = 1
@@ -19,9 +20,9 @@ let retryTimer: ReturnType<typeof setTimeout> | null = null
 
 /** TV-owned resolve state is deliberately separate from the on-screen picker. A live Companion
  * request can therefore rank and prepare a source without replacing anything the linked device's
- * user is currently looking at. */
-export const companionStreamPicker = writable<StreamPickerState | null>(null)
-export const companionResolveSession = createResolveSession()
+ * user is currently looking at. Defined in ./stores (dependency-free) so the app shell can render
+ * them without pulling this module — and the play stack — into the boot bundle. */
+export { companionResolveSession, companionStreamPicker }
 
 function activePicker() {
   const pending = get(pendingCompanionPlayback)
