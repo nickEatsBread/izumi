@@ -216,12 +216,6 @@
     void medias
     countdownOrigin = Date.now()
   })
-  $effect(() => {
-    if (!showOverlay) return
-    const timer = setInterval(() => (clock = Date.now()), 1_000)
-    return () => clearInterval(timer)
-  })
-
   const current = $derived(medias[Math.min(i, Math.max(0, medias.length - 1))])
   const currentLogo = $derived(current?.logoImage && !failedLogos.includes(current.logoImage) ? current.logoImage : '')
   function logoFailed(event: Event) {
@@ -246,6 +240,15 @@
       ? `Episode ${nextAiring.episode} airs in ${airingCountdownAccessible(nextAiringAt, clock)}`
       : '',
   )
+  // The compact badge only shows seconds inside the last minute; beyond that its text is
+  // minute-granular, so a 1 s tick just recomputed two labels 60×/min for nothing (measurable on
+  // the Deck iGPU while idling on Home). Tick fast only when the countdown is nearly over.
+  const heroClockTickMs = $derived(nextAiringAt && nextAiringAt - clock / 1000 < 90 ? 1_000 : 15_000)
+  $effect(() => {
+    if (!showOverlay) return
+    const timer = setInterval(() => (clock = Date.now()), heroClockTickMs)
+    return () => clearInterval(timer)
+  })
   const productionLabel = $derived(current?.studios?.nodes?.[0]?.name || season(current))
   const featuredRankLabel = $derived(current?.featuredRank
     ? `#${current.featuredRank.position} in ${current.featuredRank.label}` : '')

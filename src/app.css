@@ -125,6 +125,12 @@ html.gamemode, html.gamemode * {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
+/* The mesh Theme-Studio backdrop is a full-viewport `filter: blur()` + scale layer — the same
+   per-frame cost the rule above removes, just spelled with `filter`. Flat gradients only on Deck. */
+html.gamemode .theme-studio-backdrop {
+  filter: none !important;
+  transform: none !important;
+}
 /* Gamescope parks a virtual mouse at the last touch. Hover chrome (play overlays,
    carousel chevrons, cover zoom) must not follow it while you scroll. Focus-within
    still shows the controller highlight. */

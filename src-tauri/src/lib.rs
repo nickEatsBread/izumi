@@ -5416,7 +5416,7 @@ async fn flatpak_update_install(app: tauri::AppHandle, channel: String) -> Resul
 }
 
 /// Turn OFF WebKitGTK's damage-propagation feature flags (`PropagateDamagingInformation`,
-/// `UnifyDamagedRegions`) — enabled by DEFAULT in WebKitGTK 2.50 (which the Deck's GNOME-49
+/// `UnifyDamagedRegions`) — enabled by DEFAULT since WebKitGTK 2.50 (which the Deck's GNOME-49/50
 /// runtime now ships: libwebkit2gtk-4.1.so.0.21.8). They pass only CHANGED rectangles to the
 /// system compositor, so on our TRANSPARENT web view a moving element's VACATED region is
 /// never recomposited — the scrub-tooltip ghost trail + lingering menus that only a window
@@ -6212,7 +6212,12 @@ pub fn run() {
                 // Game-mode video-overlay architecture from measured facts — does gamescope's
                 // XWayland report an RGBA/composited screen, and does its Wayland socket expose
                 // wl_subcompositor. No-op effect on the running player; pure diagnostics.
-                player::linux_embed::probe_compositor(&win);
+                // Opt-in: it opens up to five throwaway Wayland connections (registry roundtrip
+                // each), writes ~15 log lines and swaps WAYLAND_DISPLAY process-wide, all on the
+                // main thread before the first paint. Nothing consumes the answer at runtime.
+                if std::env::var_os("IZUMI_COMPOSITOR_PROBE").is_some() {
+                    player::linux_embed::probe_compositor(&win);
+                }
             }
             #[cfg(not(any(windows, target_os = "linux")))]
             let _ = app;

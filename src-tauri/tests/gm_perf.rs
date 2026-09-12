@@ -265,3 +265,30 @@ fn chrome_ass_omits_empty_layers_and_escapes_text() {
     let notice = chrome_ass("", "Next episode {loading}", 1280.0, 800.0);
     assert!(notice.contains("Next episode \\{loading\\}"));
 }
+
+#[test]
+fn grip_reader_idles_outside_the_player() {
+    assert_eq!(grip_poll_sleep_ms(true), GRIP_POLL_ACTIVE_SLEEP_MS);
+    assert_eq!(grip_poll_sleep_ms(false), GRIP_POLL_IDLE_SLEEP_MS);
+    assert!(GRIP_POLL_IDLE_SLEEP_MS >= 100);
+    assert!(GRIP_POLL_ACTIVE_SLEEP_MS <= 20);
+    let gamepad = include_str!("../src/player/gamepad_linux.rs");
+    assert!(gamepad.contains("grip_poll_sleep_ms("));
+    assert!(!gamepad.contains("sleep(Duration::from_millis(16))"));
+    let player = include_str!("../src/player/mod.rs");
+    assert!(player.contains("PLAYER_ACTIVE.store(true"));
+    assert!(player.contains("PLAYER_ACTIVE.store(false"));
+}
+
+#[test]
+fn gamepad_edges_do_not_touch_the_log_file() {
+    let gamepad = include_str!("../src/player/gamepad_linux.rs");
+    assert!(!gamepad.contains("elog(&format!(\"gamepad: {}={}\""));
+    assert!(gamepad.contains("gamepad_log_enabled()"));
+}
+
+#[test]
+fn compositor_probe_is_opt_in() {
+    let lib = include_str!("../src/lib.rs");
+    assert!(lib.contains("IZUMI_COMPOSITOR_PROBE"));
+}
