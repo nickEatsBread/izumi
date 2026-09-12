@@ -1270,9 +1270,16 @@ pub async fn sync_offer_nearby(
         .ticket()
         .await
         .ok_or("This device has no sync capability to send")?;
-    let remote_addr = pairing.nearby_addr(remote_id).await.ok_or_else(|| {
-        "That device is no longer visible nearby. Start setup on it again.".to_string()
-    })?;
+    // The nearby cache keeps a peer for 90 s after its last mDNS announcement, and a sender
+    // routinely takes longer than that between seeing the device and pressing "Send setup"
+    // (measured 2026-09-12: the sender reported the receiver as not visible any more while the
+    // receiver was still advertising). The identity alone is enough: the endpoint runs the n0 discovery preset, so
+    // iroh resolves it through DNS/relay — which is also what a QR scanned from another network
+    // relies on. A cached LAN address is still preferred when it exists.
+    let remote_addr = match pairing.nearby_addr(remote_id).await {
+        Some(addr) => addr,
+        None => EndpointAddr::from_parts(remote_id, Vec::<TransportAddr>::new()),
+    };
 
     let nonce = hex(&SecretKey::generate().to_bytes());
     let code = pairing_code(remote_id, local_id, &nonce);
