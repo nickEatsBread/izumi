@@ -305,32 +305,6 @@ fn compositor_probe_is_opt_in() {
 }
 
 #[test]
-fn refresh_cycle_targets_whole_fps_and_clears_otherwise() {
-    // NTSC-ish rates round to their integer cadence; gamescope then picks the highest panel
-    // refresh that is a multiple (24 → 72 Hz on the OLED Deck, 30 → 90 Hz).
-    assert_eq!(refresh_target_fps(23.976), Some(24));
-    assert_eq!(refresh_target_fps(24.0), Some(24));
-    assert_eq!(refresh_target_fps(25.0), Some(25));
-    assert_eq!(refresh_target_fps(29.97), Some(30));
-    assert_eq!(refresh_target_fps(59.94), Some(60));
-    // Unknown, variable or absurd container rates leave the panel alone.
-    assert_eq!(refresh_target_fps(0.0), None);
-    assert_eq!(refresh_target_fps(-1.0), None);
-    assert_eq!(refresh_target_fps(f64::NAN), None);
-    assert_eq!(refresh_target_fps(12.5), None);
-    assert_eq!(refresh_target_fps(1000.0), None);
-    assert_eq!(refresh_target_fps(15.0), None);
-    // internal_display | allow_refresh_switching | only_change_refresh_rate — never the fps cap.
-    assert_eq!(REFRESH_CYCLE_FLAGS_INTERNAL, 0x1 | 0x2 | 0x4);
-    assert_eq!(REFRESH_CYCLE_FLAGS_EXTERNAL, 0x2 | 0x4);
-    let player = include_str!("../src/player/mod.rs");
-    assert!(player.contains("gamescope_refresh::on_file_loaded("));
-    assert!(player.contains("gamescope_refresh::clear()"));
-    let lib = include_str!("../src/lib.rs");
-    assert!(lib.contains("gamescope_refresh::clear_blocking()"));
-}
-
-#[test]
 fn overlay_fade_frames_come_from_one_pass_over_the_snapshot() {
     let src: Vec<u8> = (0..=255u8).collect();
     for alpha in [0u32, 1, 137, 500, 999, 1000, 1500] {

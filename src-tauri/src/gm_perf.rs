@@ -25,33 +25,6 @@ pub fn grip_poll_sleep_ms(player_active: bool) -> u64 {
     }
 }
 
-/// `gamescope_control.set_app_target_refresh_cycle` flags for the built-in panel:
-/// `internal_display` (0x1) | `allow_refresh_switching` (0x2) | `only_change_refresh_rate` (0x4).
-/// The last one matters: without it gamescope also engages its frame limiter at `fps`, which would
-/// throttle mpv's presents instead of just re-clocking the panel.
-pub const REFRESH_CYCLE_FLAGS_INTERNAL: u32 = 0x1 | 0x2 | 0x4;
-/// Same request for a docked/external display (the override is tracked per display type).
-pub const REFRESH_CYCLE_FLAGS_EXTERNAL: u32 = 0x2 | 0x4;
-
-/// The whole-number frame rate to hand gamescope for a file whose container reports
-/// `container_fps`, or `None` when the panel should be left at its native refresh.
-///
-/// gamescope answers with the highest advertised refresh that is an integer multiple of the
-/// request (OLED Deck: 24 → 72 Hz, 30 → 90 Hz, 60 → 60 Hz), so NTSC-style rates are rounded to
-/// their cadence (23.976 → 24). Anything that does not sit within 0.2 fps of an integer is a
-/// variable/unknown rate and gets no request; the accepted band covers real video (20–120 fps).
-pub fn refresh_target_fps(container_fps: f64) -> Option<u32> {
-    if !container_fps.is_finite() || container_fps <= 0.0 {
-        return None;
-    }
-    let rounded = container_fps.round();
-    if (container_fps - rounded).abs() > 0.2 {
-        return None;
-    }
-    let fps = rounded as u32;
-    (20..=120).contains(&fps).then_some(fps)
-}
-
 /// Native ASS overlay cadence. The Deck's touch skim has to track the finger; 30fps
 /// made the native bar feel sticky. Loading spinner phase also uses this clock.
 pub const OSD_FPS: u64 = 60;

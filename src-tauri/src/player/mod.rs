@@ -62,10 +62,6 @@ pub mod linux_overlay;
 // fast-moving states do not require WebKit snapshots/readbacks.
 #[cfg(target_os = "linux")]
 pub mod gm_osd;
-// Game mode: ask gamescope for a panel refresh that is a whole multiple of the video's frame rate
-// (24 fps → 72 Hz on the OLED Deck) via its private gamescope_control protocol. See gamescope_refresh.rs.
-#[cfg(target_os = "linux")]
-pub mod gamescope_refresh;
 #[cfg(target_os = "linux")]
 mod mpv_dispatch;
 // Steam Deck L2/R2 seek: read the (Steam-virtual) gamepad via evdev in the backend and forward
@@ -511,9 +507,6 @@ impl PlayerHandle {
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub fn stop(&self) -> Result<(), String> {
         crate::gm_perf::PLAYER_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
-        // Give the Deck panel its native refresh back before anything else can fail.
-        #[cfg(target_os = "linux")]
-        gamescope_refresh::clear();
         self.gif_abort()?;
 
         #[cfg(target_os = "linux")]
@@ -1739,19 +1732,6 @@ pub(crate) fn spawn_event_loop(
                     // fresh stream: force both to emit immediately.
                     last_pos_bucket = i64::MIN;
                     last_buf = f64::MIN;
-                    #[cfg(target_os = "linux")]
-                    {
-                        // Game mode: re-clock the panel to a multiple of this file's frame rate.
-                        // `container-fps` is the muxed rate; fall back to mpv's estimate when the
-                        // container does not declare one. No-op outside gamescope.
-                        let fps = client
-                            .get_property::<f64>("container-fps")
-                            .ok()
-                            .filter(|fps| fps.is_finite() && *fps > 0.0)
-                            .or_else(|| client.get_property::<f64>("estimated-vf-fps").ok())
-                            .unwrap_or(0.0);
-                        gamescope_refresh::on_file_loaded(fps);
-                    }
                     let loaded_url: Result<String, _> = client.get_property("path");
                     if let Ok(loaded_url) = loaded_url {
                         // Include the path so the frontend can associate this event with the exact
