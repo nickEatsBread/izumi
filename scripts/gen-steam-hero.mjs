@@ -252,23 +252,24 @@ function wall(images, style) {
       <stop offset="0.88" stop-color="${SHADE}" stop-opacity="0.52"/>
       <stop offset="1" stop-color="${SHADE}" stop-opacity="0.92"/>
     </radialGradient>`
-    // One gradient does all the work: clear through the middle, closing to solid by the corners.
-    : `<radialGradient id="edge" cx="0.5" cy="0.5" r="0.72">
+    // Barely a gradient at all. A backdrop wants an even fade, so the darkening lives in the flat
+    // dim below and this only eases the frame off — and never to solid, so covers stay faintly
+    // readable right into the corners instead of the middle reading as a spotlight.
+    : `<radialGradient id="edge" cx="0.5" cy="0.5" r="0.78">
       <stop offset="0" stop-color="${SHADE}" stop-opacity="0"/>
-      <stop offset="0.38" stop-color="${SHADE}" stop-opacity="0.06"/>
-      <stop offset="0.62" stop-color="${SHADE}" stop-opacity="0.38"/>
-      <stop offset="0.82" stop-color="${SHADE}" stop-opacity="0.82"/>
-      <stop offset="1" stop-color="${SHADE}" stop-opacity="1"/>
+      <stop offset="0.55" stop-color="${SHADE}" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="${SHADE}" stop-opacity="0.76"/>
     </radialGradient>`
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${HERO_W} ${HERO_H}" width="${HERO_W}" height="${HERO_H}">
   <defs>
     <clipPath id="frame"><rect width="${HERO_W}" height="${HERO_H}"/></clipPath>
     ${edge}
-    <!-- The wordmark lands here, and what is behind it is whatever cover happened to fall there. -->
+    <!-- The wordmark lands here, and what is behind it is whatever cover happened to fall there.
+         Lighter under the even fade, which has already taken most of the contrast out. -->
     <radialGradient id="pool" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="${SHADE}" stop-opacity="0.58"/>
-      <stop offset="0.55" stop-color="${SHADE}" stop-opacity="0.3"/>
+      <stop offset="0" stop-color="${SHADE}" stop-opacity="${style === 'faded' ? 0.58 : 0.4}"/>
+      <stop offset="${style === 'faded' ? 0.55 : 0.6}" stop-color="${SHADE}" stop-opacity="${style === 'faded' ? 0.3 : 0.2}"/>
       <stop offset="1" stop-color="${SHADE}" stop-opacity="0"/>
     </radialGradient>
   </defs>
@@ -277,7 +278,9 @@ function wall(images, style) {
     <g transform="translate(${HERO_W / 2} ${HERO_H / 2}) rotate(${ANGLE}) scale(1.02)">
       ${tiles.map((tile) => `<image href="${tile.href}" x="${tile.x.toFixed(1)}" y="${tile.y.toFixed(1)}" width="${TILE_W}" height="${TILE_H}" preserveAspectRatio="xMidYMid slice"/>${perTileShade(tile)}`).join('\n      ')}
     </g>
-    <rect width="${HERO_W}" height="${HERO_H}" fill="${SHADE}" fill-opacity="${style === 'faded' ? 0.2 : 0.1}"/>
+    <!-- Where the darkening actually happens: one even fade over every cover, which is what keeps
+         this a backdrop. The per-cover style carries less of it, having shaded them already. -->
+    <rect width="${HERO_W}" height="${HERO_H}" fill="${SHADE}" fill-opacity="${style === 'faded' ? 0.2 : 0.58}"/>
     <ellipse cx="${HERO_W / 2}" cy="${HERO_H / 2}" rx="${HERO_W * 0.34}" ry="${HERO_H * 0.42}" fill="url(#pool)"/>
     <rect width="${HERO_W}" height="${HERO_H}" fill="url(#edge)"/>
   </g>
