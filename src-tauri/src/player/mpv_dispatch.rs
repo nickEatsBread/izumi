@@ -22,6 +22,7 @@ enum CoalesceKey {
     Seek,
     Bitmap(i64),
     Ass(i64),
+    RenderOpts,
 }
 
 enum Work {
@@ -49,6 +50,11 @@ enum Work {
         res_y: i64,
         z: i64,
     },
+    /// Live render-option batch (the Game-mode ui-lite scaler swap). Only the newest batch
+    /// matters, so it coalesces like an animated surface.
+    RenderOpts {
+        opts: Vec<(String, String)>,
+    },
 }
 
 impl Work {
@@ -59,6 +65,7 @@ impl Work {
                 Some(CoalesceKey::Bitmap(*id))
             }
             Self::Ass { id, .. } => Some(CoalesceKey::Ass(*id)),
+            Self::RenderOpts { .. } => Some(CoalesceKey::RenderOpts),
             _ => None,
         }
     }
@@ -69,6 +76,7 @@ impl Work {
             Self::BitmapAdd { .. } => "overlay-add",
             Self::BitmapRemove { .. } => "overlay-remove",
             Self::Ass { .. } => "osd-overlay",
+            Self::RenderOpts { .. } => "render-opts",
         }
     }
 }
@@ -144,6 +152,12 @@ impl MpvDispatcher {
 
     pub fn bitmap_remove(&self, id: i64) -> Result<(), String> {
         self.enqueue(Work::BitmapRemove { id })
+    }
+
+    /// Apply a render-option batch on the worker. A scaler/deband swap makes mpv's VO rebuild its
+    /// shader chain synchronously inside `set_property`; that wait must never land on GTK's timer.
+    pub fn render_opts(&self, opts: Vec<(String, String)>) -> Result<(), String> {
+        self.enqueue(Work::RenderOpts { opts })
     }
 
     pub fn ass(
@@ -292,6 +306,13 @@ fn execute(client: &Mpv, work: Work) -> Result<(), String> {
         Work::BitmapRemove { id } => client
             .command("overlay-remove", &[&id.to_string()])
             .map_err(|error| error.to_string()),
+        Work::RenderOpts { opts } => {
+            // Best-effort per key, exactly like the synchronous path in PlayerHandle.
+            for (key, value) in &opts {
+                let _ = client.set_property(key.as_str(), value.as_str());
+            }
+            Ok(())
+        }
         Work::Ass {
             id,
             format,

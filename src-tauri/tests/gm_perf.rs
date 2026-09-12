@@ -318,3 +318,48 @@ fn refresh_cycle_targets_whole_fps_and_clears_otherwise() {
     let lib = include_str!("../src/lib.rs");
     assert!(lib.contains("gamescope_refresh::clear_blocking()"));
 }
+
+#[test]
+fn overlay_fade_frames_come_from_one_pass_over_the_snapshot() {
+    let src: Vec<u8> = (0..=255u8).collect();
+    for alpha in [0u32, 1, 137, 500, 999, 1000, 1500] {
+        let mut dst = vec![255u8; src.len()];
+        scale_premult_bgra(&src, &mut dst, alpha);
+        let owned = scale_premult_bgra_vec(&src, alpha);
+        assert_eq!(owned, dst, "alpha {alpha}");
+        for (i, &b) in owned.iter().enumerate() {
+            let expected = ((i as u32 * alpha.min(OVERLAY_FADE_FULL)) / OVERLAY_FADE_FULL) as u8;
+            assert_eq!(b, expected, "alpha {alpha} byte {i}");
+        }
+    }
+    // Each fade tick hands the dispatcher one owned frame: no scratch buffer, no clone.
+    let overlay = include_str!("../src/player/linux_overlay.rs");
+    assert!(overlay.contains("scale_premult_bgra_vec"));
+    assert!(!overlay.contains("buf.clone()"));
+    assert!(!overlay.contains("static BUF"));
+}
+
+#[test]
+fn ui_lite_scaler_swap_runs_on_the_dispatcher_thread() {
+    let player = include_str!("../src/player/mod.rs");
+    let dispatch = include_str!("../src/player/mpv_dispatch.rs");
+    assert!(player.contains("dispatch.render_opts(opts.clone())"));
+    assert!(dispatch.contains("Work::RenderOpts"));
+    assert!(dispatch.contains("CoalesceKey::RenderOpts"));
+}
+
+#[test]
+fn osd_idle_ticks_share_state_without_cloning() {
+    let osd = include_str!("../src/player/gm_osd.rs");
+    assert!(osd.contains("state: Arc<GmDynamicOverlay>"));
+    assert!(osd.contains("let mut draw_state = (*state).clone();"));
+    assert!(!osd.contains("let mut draw_state = state.clone();"));
+}
+
+#[test]
+fn pointer_unstick_reuses_the_keepalive_connection() {
+    let x11 = include_str!("../src/player/linux_x11.rs");
+    assert!(x11.contains("TouchCmd::Unstick"));
+    assert!(x11.contains("fn existing_touch_worker"));
+    assert!(x11.contains("release_pointer_buttons(dpy, root)"));
+}
