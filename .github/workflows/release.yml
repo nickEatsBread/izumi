@@ -520,13 +520,17 @@ jobs:
           install -Dm644 scripts/deck/izumi-installer.desktop flatpak/_legacy_repo/install.desktop
           cp scripts/deck/izumi-installer.desktop \
             "izumi-${{ steps.meta.outputs.tag }}-steamdeck-installer.desktop"
-          # Only the three cover slots Steam renders for a non-Steam shortcut, per variant, plus the
-          # transparent wordmarks for the logo slot. The rest of the brand set is upload material
-          # for SteamGridDB and has no business being fetched onto a Deck.
+          # Only the cover slots Steam renders for a non-Steam shortcut, per variant, plus the plain
+          # hero backdrop and the transparent wordmarks for the logo slot. The rest of the brand set
+          # is upload material for SteamGridDB and has no business being fetched onto a Deck.
           for variant in flat bold bright solid mark-only light; do
-            for art in izumi-capsule-600x900.png izumi-capsule-920x430.png izumi-hero-1920x620.png; do
+            for art in izumi-capsule-600x900.png izumi-capsule-920x430.png; do
               install -Dm644 "brand/steamgriddb/$variant/$art" "flatpak/_legacy_repo/steamgrid/$variant/$art"
             done
+          done
+          # One hero for every variant: Steam draws the logo over it, so it must not contain one.
+          for hero in izumi-hero-plain-1920x620.png izumi-hero-plain-3840x1240.png; do
+            install -Dm644 "brand/steamgriddb/hero/$hero" "flatpak/_legacy_repo/steamgrid/hero/$hero"
           done
           for logo in izumi-logo-horizontal-white@2x.png izumi-logo-horizontal-color@2x.png; do
             install -Dm644 "brand/steamgriddb/logo/$logo" "flatpak/_legacy_repo/steamgrid/logo/$logo"

@@ -15,7 +15,8 @@ describe('set up from another device', () => {
   it('opens on the transfer screen in game mode, but only once the flag has resolved', () => {
     // `gameMode` is populated asynchronously, so reading it at initialization would always see
     // false and every Deck would land in the typing-heavy wizard instead.
-    expect(shell).toContain("import { gameMode, gameModeResolved } from '$lib/player/session'")
+    const imported = shell.match(/import \{([^}]*)\} from '\$lib\/player\/session'/)![1]
+    for (const name of ['gameMode', 'gameModeResolved']) expect(imported).toContain(name)
     expect(shell).toContain('if (modeSettled || !$gameModeResolved) return')
     expect(shell).toContain("if ($gameMode) mode = 'transfer'")
     // A choice the user already made by hand must not be overwritten when the flag lands.

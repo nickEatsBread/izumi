@@ -11,7 +11,7 @@
   import SourcesStep from './steps/SourcesStep.svelte'
   import PlaybackStep from './steps/PlaybackStep.svelte'
   import TransferStep from './steps/TransferStep.svelte'
-  import { gameMode, gameModeResolved } from '$lib/player/session'
+  import { gameMode, gameModeResolved, onboardingNav } from '$lib/player/session'
   import ReadyStep from './steps/ReadyStep.svelte'
   import { goto } from '$app/navigation'
   import { onMount } from 'svelte'
@@ -225,6 +225,22 @@
       document.body.style.overflow = bodyOverflow
       previousFocus?.focus({ preventScroll: true })
     }
+  })
+
+  // Publish what Back means here for the app-wide controller translator. Without this it applies
+  // its generic rule — history.back() anywhere but home — to a wizard that is itself standing in
+  // for home, so B did nothing a user could see on a Deck's first launch.
+  $effect(() => {
+    if ($onboardingComplete) {
+      onboardingNav.set(null)
+      return
+    }
+    onboardingNav.set({
+      introRunning,
+      canGoBack: mode === 'wizard' && stepIndex > 0 && !busy,
+      back: goBack,
+    })
+    return () => onboardingNav.set(null)
   })
 
   onMount(() => {

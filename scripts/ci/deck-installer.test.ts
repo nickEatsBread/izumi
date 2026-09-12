@@ -170,7 +170,6 @@ describe('artwork the installer downloads', () => {
   it.each([
     'izumi-capsule-600x900.png',
     'izumi-capsule-920x430.png',
-    'izumi-hero-1920x620.png',
   ])('publishes %s for every variant, and it exists in the brand set', (art) => {
     expect(staged).toContain(art)
     expect(installer).toContain(art)
@@ -179,13 +178,24 @@ describe('artwork the installer downloads', () => {
     }
   })
 
-  it.each([
-    'izumi-logo-horizontal-white@2x.png',
-    'izumi-logo-horizontal-color@2x.png',
-  ])('publishes the %s wordmark for the Steam logo slot', (logo) => {
-    expect(staged).toContain(logo)
-    expect(installer).toContain(logo)
-    expect(existsSync(join('brand/steamgriddb/logo', logo))).toBe(true)
+  it('uses a hero with no wordmark in it, because Steam draws the logo on top', () => {
+    // A per-variant hero is a finished composition: cover art, mark AND wordmark. Steam then paints
+    // <appid>_logo.png over it, so the Deck library page showed the izumi wordmark twice.
+    expect(installer).toContain('izumi-hero-plain-1920x620.png')
+    expect(installer).not.toContain('izumi-hero-1920x620.png')
+    expect(staged).toContain('izumi-hero-plain-1920x620.png')
+    for (const size of ['1920x620', '3840x1240']) {
+      expect(existsSync(join('brand/steamgriddb/hero', `izumi-hero-plain-${size}.png`))).toBe(true)
+    }
+    // The one hero serves every variant, so no variant may reintroduce a wordmarked one.
+    const heroLine = installer.split('\n').find((line) => line.includes('hero.png'))!
+    expect(heroLine).not.toContain('$VARIANT')
+  })
+
+  it('publishes the white wordmark the plain hero is designed around', () => {
+    expect(installer).toContain('izumi-logo-horizontal-white@2x.png')
+    expect(staged).toContain('izumi-logo-horizontal-white@2x.png')
+    expect(existsSync(join('brand/steamgriddb/logo', 'izumi-logo-horizontal-white@2x.png'))).toBe(true)
   })
 })
 
@@ -313,6 +323,39 @@ describe.runIf(bash && python)('installer end to end, against stubbed flatpak an
     expect(result.status, `${result.stdout}${result.stderr}`).toBe(0)
     expect(result.stdout).toContain('Skipping the Steam library entry')
     expect(existsSync(join(home, '.local/share/Steam/userdata/76561190000000000/config/shortcuts.vdf'))).toBe(false)
+  })
+
+  it('survives being piped into bash while flatpak reads stdin', () => {
+    // The launcher runs `curl … | bash`, so the script IS bash's stdin. A child that reads stdin
+    // consumes the text bash has not parsed yet and bash stops there without an error — which is
+    // how the Steam question vanished on a first install and came back on the next run, where the
+    // shorter update path happens not to read anything.
+    const home = mkdtempSync(join(tmpdir(), 'izumi-home-'))
+    const config = steamAccount(join(home, '.local/share/Steam'), '76561190000000000')
+    const stubs = stubEnvironment(home)
+    // A flatpak that drains stdin, which is exactly what the real one does on a fresh install.
+    writeFileSync(join(stubs.bin, 'flatpak'), `#!/usr/bin/env bash
+echo "flatpak $*" >> "${stubs.log}"
+cat >/dev/null 2>&1 || true
+case "$1" in
+  info) [ -f "${stubs.marker}" ] ;;
+  install) touch "${stubs.marker}" ;;
+  *) exit 0 ;;
+esac
+`, { mode: 0o755 })
+
+    const result = spawnSync('bash', [], {
+      encoding: 'utf8',
+      timeout: RUN_TIMEOUT_MS,
+      input: readFileSync('scripts/deck/install.sh'),
+      env: {
+        ...process.env, HOME: home, PATH: `${stubs.bin}:${process.env.PATH}`,
+        DISPLAY: '', WAYLAND_DISPLAY: '', PYTHONUTF8: '1',
+      },
+    })
+
+    expect(result.status, `${result.stdout}${result.stderr}`).toBe(0)
+    expect(shortcutsOf(config)['0'].AppName).toBe('izumi')
   })
 
   it('succeeds on a machine with no Steam at all', () => {

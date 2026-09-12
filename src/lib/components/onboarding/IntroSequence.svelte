@@ -10,6 +10,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import Wordmark from '$lib/components/Wordmark.svelte'
+  import { onLaunchRevealed } from '$lib/util/launch-reveal'
 
   let { oncomplete }: { oncomplete: () => void } = $props()
 
@@ -25,6 +26,12 @@
   const SKIP_FADE = 190
 
   let leaving = $state(false)
+  /** Every animation below is paused until this flips. A Deck launch mounts this component while
+   *  the window is still hidden and, under Gamescope, while the body is held invisible waiting for
+   *  the native page zoom — so an ident started at mount plays its drop and its ripples to nobody
+   *  and the viewer joins it somewhere in the middle. Starting on the first visible frame keeps the
+   *  whole sequence on screen without making it a millisecond longer. */
+  let armed = $state(false)
   let done = false
 
   function finish() {
@@ -35,15 +42,22 @@
   }
 
   /** Any key, any click, any tap. An ident nobody can interrupt is an ident that gets resented on
-   *  the second launch, and this one is deliberately the only thing on screen. */
+   *  the second launch, and this one is deliberately the only thing on screen. Input that arrives
+   *  before the first visible frame is NOT a skip: on the Deck that is the A press which launched
+   *  izumi from Steam still working its way through, and it used to cancel an ident that had not
+   *  yet shown a single frame. */
   function skip() {
-    if (leaving || done) return
+    if (!armed || leaving || done) return
     leaving = true
     setTimeout(finish, SKIP_FADE)
   }
 
   onMount(() => {
-    const timer = setTimeout(finish, RUNTIME)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const cancelReveal = onLaunchRevealed(() => {
+      armed = true
+      timer = setTimeout(finish, RUNTIME)
+    })
     const onKey = (event: KeyboardEvent) => {
       if (event.repeat) return
       event.stopPropagation()
@@ -51,15 +65,20 @@
     }
     window.addEventListener('keydown', onKey, true)
     window.addEventListener('pointerdown', skip, true)
+    // A Deck controller never produces either of the above: its buttons arrive as native events the
+    // app-wide translator routes, and it publishes this one while the ident is up.
+    window.addEventListener('intro-dismiss', skip)
     return () => {
+      cancelReveal()
       clearTimeout(timer)
       window.removeEventListener('keydown', onKey, true)
       window.removeEventListener('pointerdown', skip, true)
+      window.removeEventListener('intro-dismiss', skip)
     }
   })
 </script>
 
-<div class="intro" class:reduced class:leaving data-intro>
+<div class="intro" class:reduced class:leaving class:armed data-intro>
   <div class="stage" aria-hidden="true">
     <div class="mark-slot">
       {#if !reduced}
@@ -95,6 +114,10 @@
     animation: intro-out 480ms cubic-bezier(.4, 0, .85, .3) 2160ms both;
   }
   .intro.reduced { animation: intro-out 300ms ease 950ms both; }
+  /* Held at frame zero until the window is genuinely on screen. `both` fill means every layer
+     already shows its own opening frame — the mark invisible, the drop still above the top edge —
+     so the pause reads as the dark backdrop it is, not as a half-built lockup. */
+  .intro:not(.armed), .intro:not(.armed) :global(*) { animation-play-state: paused; }
   /* A skip has to feel like a skip, so it overrides the scheduled exit rather than waiting for it. */
   .intro.leaving { animation: intro-cut 190ms ease both; }
 

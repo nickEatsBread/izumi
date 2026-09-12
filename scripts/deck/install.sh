@@ -53,18 +53,23 @@ command -v curl >/dev/null 2>&1 || die 'curl is required to download the install
 # --system install needs a sudo password the Deck may not even have set, and then disappears on the
 # next update. A --user install lives under ~/.local/share/flatpak and survives both.
 say 'Making sure Flathub is available (the GNOME runtime comes from there)'
-flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo \
+# Every flatpak call reads from /dev/null. Under `curl … | bash` THIS SCRIPT is bash's stdin, and a
+# child that reads stdin consumes the script text bash has not parsed yet: bash then reaches an
+# unexpected end of input and exits quietly, mid-run. That is precisely how the Steam question
+# disappeared after a first install while a second run — which takes the update path instead —
+# still asked it.
+flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo </dev/null \
   || warn 'could not add Flathub — continuing, since the .flatpakref names its own runtime repo'
 
-if flatpak info --user "$APP_ID" >/dev/null 2>&1; then
+if flatpak info --user "$APP_ID" >/dev/null 2>&1 </dev/null; then
   say "izumi is already installed — updating to the latest $CHANNEL build"
-  flatpak update --user --assumeyes "$APP_ID"
+  flatpak update --user --assumeyes "$APP_ID" </dev/null
 else
   say "Installing izumi ($CHANNEL)"
-  flatpak install --user --assumeyes --from "$REF_URL"
+  flatpak install --user --assumeyes --from "$REF_URL" </dev/null
 fi
 
-flatpak info --user "$APP_ID" >/dev/null 2>&1 \
+flatpak info --user "$APP_ID" >/dev/null 2>&1 </dev/null \
   || die 'the install command finished but izumi is not present.'
 say "izumi is installed. Launch it from the applications menu, or with: flatpak run $APP_ID"
 
@@ -224,20 +229,21 @@ fi
 ART_DIR="$(mktemp -d)"
 trap 'rm -rf "$ART_DIR"' EXIT
 
-# The white wordmark sits on every dark cover; `light` is the one variant whose hero is white.
-LOGO_FILE=izumi-logo-horizontal-white@2x.png
-if [ "$VARIANT" = light ]; then LOGO_FILE=izumi-logo-horizontal-color@2x.png; fi
-
 say "Fetching the $VARIANT artwork"
 fetch_art() {
   curl -fsSL --retry 2 -o "$ART_DIR/$2" "$1" || warn "could not download $(basename "$1")"
 }
 # Portrait capsule, landscape capsule, hero and logo: the four slots Steam and Game Mode render for
 # a non-Steam shortcut. A failed download is not fatal — the entry is worth more than its cover.
+#
+# The capsules carry the chosen variant, because a capsule IS the cover. The hero does not: Steam
+# paints the logo slot on top of it, so a hero containing the wordmark — which every SteamGridDB
+# variant does — ends up as a logo sitting on a logo. The hero is a plain backdrop for all six, and
+# the white wordmark is what goes over it.
 fetch_art "$ART_URL/$VARIANT/izumi-capsule-600x900.png" portrait.png
 fetch_art "$ART_URL/$VARIANT/izumi-capsule-920x430.png" landscape.png
-fetch_art "$ART_URL/$VARIANT/izumi-hero-1920x620.png" hero.png
-fetch_art "$ART_URL/logo/$LOGO_FILE" logo.png
+fetch_art "$ART_URL/hero/izumi-hero-plain-1920x620.png" hero.png
+fetch_art "$ART_URL/logo/izumi-logo-horizontal-white@2x.png" logo.png
 
 ICON=''
 for size in 256x256 128x128 512x512 64x64; do

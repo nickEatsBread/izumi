@@ -1,7 +1,7 @@
 import { get } from 'svelte/store'
 import { listen } from '@tauri-apps/api/event'
 import { RepeatTimer } from '$lib/player/repeat'
-import { playing, exitPrompt, trackMenuOpen, streamPicker, streamPickerDismissedAt, oskOpen, debridCaching, advancedFiltersOpen, listEditorOpen, commentsOpen, playerMenuOpen } from '$lib/player/session'
+import { playing, exitPrompt, trackMenuOpen, streamPicker, streamPickerDismissedAt, oskOpen, debridCaching, advancedFiltersOpen, listEditorOpen, commentsOpen, playerMenuOpen, onboardingNav } from '$lib/player/session'
 import { inputType } from './input'
 import { acknowledgeDeckKeyboardWarning, deckKeyboardWarning, dismissDeckKeyboardWarning } from '$lib/deck/keyboard-warning'
 import { closeGlobalSearch, globalSearchOpen } from '$lib/search/global-search'
@@ -134,6 +134,26 @@ export function startGamepadNav(): () => void {
     if (get(exitPrompt)) {
       if (name === 'a') (document.activeElement as HTMLElement | null)?.click()
       else if (name === 'b') exitPrompt.set(false)
+      return
+    }
+    // The first-run wizard covers the home route it is mounted over, so the generic Back below
+    // would either walk history into the page it is replacing or open an exit prompt underneath an
+    // opaque full-screen surface — which is how B came to do nothing at all on a Deck's very first
+    // launch. Own A/B here: back a screen while there is one, otherwise offer the exit prompt, the
+    // same rule home itself follows.
+    const onboarding = get(onboardingNav)
+    if (onboarding) {
+      // The ident owns the screen while it plays. Any button ends it, exactly as any key or tap
+      // does, rather than reaching the wizard behind it.
+      if (onboarding.introRunning) {
+        window.dispatchEvent(new Event('intro-dismiss'))
+        return
+      }
+      if (name === 'a') (document.activeElement as HTMLElement | null)?.click()
+      else if (name === 'b') {
+        if (onboarding.canGoBack) onboarding.back()
+        else exitPrompt.set(true)
+      }
       return
     }
     // The source picker (opened by Play) captures A/B: A picks the focused source; B closes the
