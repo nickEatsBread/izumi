@@ -32,9 +32,15 @@ const DEFERRED = [
 
 describe('app layout boot services', () => {
   it('loads background services behind the boot queue instead of the boot chunk', () => {
+    // A static import is a line that starts with `import` (not `import type`) and names the module
+    // after `from`; the dynamic `import('…')` inside the boot task has no `from`.
+    const staticImports = layout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('import ') && !line.startsWith('import type'))
     for (const module of DEFERRED) {
-      // A static import has a `from`; the dynamic `import('…')` inside the boot task does not.
-      expect(layout, module).not.toMatch(new RegExp(`^[ \\t]*import\\s+(?!type\\b)[^\\n]*from\\s+['"]${module.replace(/[$/]/g, '\\$&')}['"]`, 'm'))
+      const offending = staticImports.filter((line) => line.includes(`from '${module}'`))
+      expect(offending, module).toEqual([])
       expect(layout, module).toContain(`import('${module}')`)
     }
     expect(layout).toContain("scheduleBootWork('services'")
