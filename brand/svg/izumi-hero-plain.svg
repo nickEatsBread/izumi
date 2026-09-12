@@ -1,63 +1,105 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 620" width="1920" height="620" role="img" aria-label="izumi">
-  <!-- Steam library hero backdrop. Deliberately carries NO mark and NO wordmark: Steam paints the
-       logo art on top of this, so anything brand-shaped here ends up as a logo behind a logo. What
-       is left is a calm blue field with enough centre lift for a white wordmark to sit on. -->
+  <!-- Steam library hero backdrop, artwork-free: the one hero carrying nobody else's covers. It
+       holds no mark and no wordmark, because Steam paints the logo art on top of it — anything
+       brand-shaped here ends up as a logo behind a logo.
+
+       The field runs dark at the floor to light overhead, like looking up through water, with
+       light coming down through it in shafts. Nothing is drawn on top of that: no line, no mark,
+       nothing crossing the middle. The wordmark is the only thing in front of it.
+
+       Every fade is `fill-opacity`, `stroke-opacity` or a gradient stop. The `opacity` attribute
+       makes the renderer isolate a layer and it composites those only partially — see
+       scripts/gen-steam-hero.mjs. -->
   <defs>
-    <linearGradient id="field" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#08111F"/>
-      <stop offset="0.42" stop-color="#0E2A4D"/>
-      <stop offset="0.78" stop-color="#14508A"/>
-      <stop offset="1" stop-color="#1A6FB5"/>
+    <!-- Dark at the bottom, opening up as it rises. The steps are uneven on purpose: light falls
+         off fastest just under the surface, and an even ramp reads as a printed gradient. -->
+    <linearGradient id="column" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#03070D"/>
+      <stop offset="0.18" stop-color="#061426"/>
+      <stop offset="0.42" stop-color="#0B2A4C"/>
+      <stop offset="0.68" stop-color="#134E86"/>
+      <stop offset="1" stop-color="#2B86C9"/>
     </linearGradient>
-    <!-- The light the logo sits in. Wide and shallow, so it reads as depth rather than as a shape. -->
-    <radialGradient id="lift" cx="0.46" cy="0.44" r="0.62">
-      <stop offset="0" stop-color="#2E8FD6" stop-opacity="0.55"/>
-      <stop offset="0.55" stop-color="#1B6FB5" stop-opacity="0.22"/>
-      <stop offset="1" stop-color="#0A1730" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="aqua" cx="0.78" cy="0.28" r="0.5">
-      <stop offset="0" stop-color="#5CEAD8" stop-opacity="0.18"/>
-      <stop offset="1" stop-color="#5CEAD8" stop-opacity="0"/>
-    </radialGradient>
-    <!-- Steam draws its own controls and text along the bottom edge; keep that band quiet. -->
-    <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#050C17" stop-opacity="0"/>
-      <stop offset="1" stop-color="#050C17" stop-opacity="0.5"/>
+
+    <!-- Sideways lean, so the frame has a direction and the corners are not twins. -->
+    <linearGradient id="drift" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#04101F" stop-opacity="0.55"/>
+      <stop offset="0.45" stop-color="#04101F" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#1E6FA8" stop-opacity="0.18"/>
     </linearGradient>
-    <radialGradient id="vignette" cx="0.5" cy="0.5" r="0.75">
-      <stop offset="0.6" stop-color="#050C17" stop-opacity="0"/>
-      <stop offset="1" stop-color="#050C17" stop-opacity="0.45"/>
+
+    <!-- Surface light: broad, high, and off to one side. -->
+    <radialGradient id="surface" cx="0.62" cy="-0.08" r="0.78">
+      <stop offset="0" stop-color="#9FE4FF" stop-opacity="0.34"/>
+      <stop offset="0.42" stop-color="#3E9FDC" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#0A1B33" stop-opacity="0"/>
     </radialGradient>
+
+    <!-- The sink is a gradient rather than a colour, so its top edge dissolves instead of drawing
+         a line across the frame. -->
+    <linearGradient id="sink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#02060D" stop-opacity="0"/>
+      <stop offset="0.55" stop-color="#02060D" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#02060D" stop-opacity="0.58"/>
+    </linearGradient>
+
+    <!-- Light coming down through the water. A shaft has no edges, so each one is drawn twice: a
+         wide, almost-invisible pass whose sides disappear into the field, and a narrower brighter
+         core inside it. Peak opacity stays under a tenth — past that the straight sides of the
+         polygon start reading as a printed stripe rather than as light. -->
+    <linearGradient id="shaft" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#BFE9FF" stop-opacity="0.085"/>
+      <stop offset="0.5" stop-color="#8FC8FF" stop-opacity="0.03"/>
+      <stop offset="1" stop-color="#8FC8FF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="shaftWide" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#9FDCFF" stop-opacity="0.04"/>
+      <stop offset="0.6" stop-color="#7FB8FF" stop-opacity="0.014"/>
+      <stop offset="1" stop-color="#7FB8FF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- The frame eases off at its edges, and gently: a tight radial here would put a disc of
+         light in the middle of an otherwise even field, which is the one thing this backdrop
+         must not have. The wordmark's legibility comes from the flat fade below, applied to
+         every pixel alike, not from a pool of shade under the letters. -->
+    <radialGradient id="edge" cx="0.5" cy="0.5" r="0.9">
+      <stop offset="0.55" stop-color="#02060C" stop-opacity="0"/>
+      <stop offset="1" stop-color="#02060C" stop-opacity="0.42"/>
+    </radialGradient>
+
     <clipPath id="frame"><rect width="1920" height="620"/></clipPath>
   </defs>
 
   <g clip-path="url(#frame)">
-    <rect width="1920" height="620" fill="url(#field)"/>
+    <rect width="1920" height="620" fill="url(#column)"/>
+    <rect width="1920" height="620" fill="url(#drift)"/>
+    <rect width="1920" height="620" fill="url(#surface)"/>
 
-    <!-- Ripples: the whirlpool's echo, not the whirlpool. Struck off-centre and kept under 7%
-         opacity so they survive the Deck's small screen without competing with the logo. -->
-    <g fill="none" stroke="#CFEFFF" stroke-opacity="0.055">
-      <circle cx="1355" cy="292" r="148" stroke-width="2"/>
-      <circle cx="1355" cy="292" r="252" stroke-width="2.5"/>
-      <circle cx="1355" cy="292" r="372" stroke-width="3"/>
-      <circle cx="1355" cy="292" r="512" stroke-width="3"/>
-      <circle cx="1355" cy="292" r="668" stroke-width="2.5"/>
-      <circle cx="1355" cy="292" r="840" stroke-width="2"/>
+    <!-- Shafts, struck from the bright side and leaning with the drift. Each is a broad pass with
+         a narrower core inside it, so the sides fall away instead of ending. -->
+    <g fill="url(#shaftWide)">
+      <path d="M1020 -40 L1520 -40 L1200 520 L840 520 Z"/>
+      <path d="M1480 -40 L1900 -40 L1660 470 L1380 470 Z"/>
+      <path d="M690 -40 L1010 -40 L790 440 L580 440 Z"/>
     </g>
-    <g fill="none" stroke="#5CEAD8" stroke-opacity="0.07">
-      <circle cx="1355" cy="292" r="196" stroke-width="2"/>
-      <circle cx="1355" cy="292" r="440" stroke-width="2"/>
+    <g fill="url(#shaft)">
+      <path d="M1180 -40 L1330 -40 L1112 470 L1008 470 Z"/>
+      <path d="M1452 -40 L1548 -40 L1360 430 L1288 430 Z"/>
+      <path d="M886 -40 L940 -40 L772 392 L734 392 Z"/>
+      <path d="M1660 -40 L1770 -40 L1600 372 L1528 372 Z"/>
     </g>
 
-    <!-- A single slow swell across the field, for depth without a horizon line. -->
-    <path d="M-40 470 C 320 396, 620 500, 980 448 S 1660 336, 1960 402 L1960 620 L-40 620 Z"
-          fill="#0A1D38" fill-opacity="0.42"/>
-    <path d="M-40 536 C 380 470, 700 566, 1060 518 S 1700 428, 1960 486 L1960 620 L-40 620 Z"
-          fill="#07152A" fill-opacity="0.5"/>
+    <!-- Depth below, without a silhouette. A hard-edged mass across the bottom reads as a shape
+         pasted over the gradient; these are wide, soft and barely there, so the floor still gets
+         darker but does it by degrees. -->
+    <path d="M-60 470 C 380 414, 760 524, 1140 470 S 1720 368, 1980 412 L1980 620 L-60 620 Z"
+          fill="url(#sink)"/>
+    <path d="M-60 548 C 420 492, 820 590, 1200 540 S 1760 448, 1980 486 L1980 620 L-60 620 Z"
+          fill="#02060D" fill-opacity="0.3"/>
 
-    <rect width="1920" height="620" fill="url(#aqua)"/>
-    <rect width="1920" height="620" fill="url(#lift)"/>
-    <rect width="1920" height="620" fill="url(#floor)"/>
-    <rect width="1920" height="620" fill="url(#vignette)"/>
+    <!-- One even fade across every pixel, so the wordmark has a consistent ground wherever it
+         lands rather than a darker patch behind it. -->
+    <rect width="1920" height="620" fill="#020609" fill-opacity="0.18"/>
+    <rect width="1920" height="620" fill="url(#edge)"/>
   </g>
 </svg>

@@ -127,6 +127,10 @@ describe('Deck installer script', () => {
     expect(installer).toMatch(/0\) printf 'default.*1\) printf 'choose.*\*\) printf 'no/s)
   })
 
+  it('can be pointed at a staging copy, so a change can be tried on a Deck before it ships', () => {
+    expect(installer).toContain('SITE="${IZUMI_SITE:-https://flatpak.izumi.watch}"')
+  })
+
   it('never writes the library entry underneath a running Steam', () => {
     // Steam rewrites shortcuts.vdf from memory when it exits, so a write now is lost later.
     expect(installer).toContain('pgrep -x steam')
@@ -179,17 +183,23 @@ describe('artwork the installer downloads', () => {
   })
 
   it('uses a hero with no wordmark in it, because Steam draws the logo on top', () => {
-    // A per-variant hero is a finished composition: cover art, mark AND wordmark. Steam then paints
-    // <appid>_logo.png over it, so the Deck library page showed the izumi wordmark twice.
-    expect(installer).toContain('izumi-hero-plain-1920x620.png')
+    // A per-variant SteamGridDB hero is a finished composition: cover art, mark AND wordmark. Steam
+    // then paints <appid>_logo.png over it, so the Deck library page showed the wordmark twice.
+    expect(installer).toContain('izumi-hero-anime-1920x620.png')
     expect(installer).not.toContain('izumi-hero-1920x620.png')
-    expect(staged).toContain('izumi-hero-plain-1920x620.png')
-    for (const size of ['1920x620', '3840x1240']) {
-      expect(existsSync(join('brand/steamgriddb/hero', `izumi-hero-plain-${size}.png`))).toBe(true)
-    }
-    // The one hero serves every variant, so no variant may reintroduce a wordmarked one.
+    expect(staged).toContain('izumi-hero-anime-1920x620.png')
+    expect(existsSync(join('brand/steamgriddb/hero', 'izumi-hero-anime-1920x620.png'))).toBe(true)
+    // The one hero serves every cover variant, so no variant may reintroduce a wordmarked one.
     const heroLine = installer.split('\n').find((line) => line.includes('hero.png'))!
     expect(heroLine).not.toContain('$VARIANT')
+  })
+
+  it('pins the logo where the hero was built for it', () => {
+    // Steam defaults a shortcut's logo to the bottom left. This hero's shade pool — the only part
+    // of it a white wordmark reliably reads against — is in the middle of the frame.
+    expect(installer).toContain('"pinnedPosition": "CenterCenter"')
+    // Never rewritten: moving the logo is a thing people do, and a re-run must not undo it.
+    expect(installer).toContain('if not os.path.exists(position):')
   })
 
   it('publishes the white wordmark the plain hero is designed around', () => {
@@ -388,7 +398,23 @@ describe.runIf(python && shortcutScript)('Steam shortcut writer', () => {
 
     const grid = readdirSync(join(config, 'grid')).sort()
     const id = expectedAppId >>> 0
-    expect(grid).toEqual([`${id}.png`, `${id}_hero.png`, `${id}_logo.png`, `${id}p.png`].sort())
+    // Four art slots plus the logo-position file, all keyed on the id written into the shortcut.
+    expect(grid).toEqual([`${id}.json`, `${id}.png`, `${id}_hero.png`, `${id}_logo.png`, `${id}p.png`].sort())
+  })
+
+  it('writes the logo position once, and never over one the user has moved', () => {
+    const root = mkdtempSync(join(tmpdir(), 'izumi-steam-'))
+    const config = steamAccount(root, '123456')
+    const userDir = join(root, 'userdata', '123456')
+
+    expect(runShortcutScript([userDir], artwork()).status).toBe(0)
+    const position = join(config, 'grid', `${expectedAppId >>> 0}.json`)
+    expect(JSON.parse(readFileSync(position, 'utf8')).logoPosition.pinnedPosition).toBe('CenterCenter')
+
+    writeFileSync(position, JSON.stringify({ nVersion: 1, logoPosition: { pinnedPosition: 'BottomLeft' } }))
+    expect(runShortcutScript([userDir], artwork()).status).toBe(0)
+    // Someone who dragged their logo somewhere else keeps it through a reinstall.
+    expect(JSON.parse(readFileSync(position, 'utf8')).logoPosition.pinnedPosition).toBe('BottomLeft')
   })
 
   it('keeps the shortcuts the user already had, and backs the file up first', () => {
