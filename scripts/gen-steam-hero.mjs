@@ -113,10 +113,31 @@ const write = (name, png) => {
   console.log(`${name}  ${(png.length / 1024).toFixed(0)} KB`)
 }
 
+/**
+ * Break up the flat steps a wide, smooth gradient lands on in 8 bits.
+ *
+ * The artwork-free hero is nothing but gradients across 1920 pixels, which is exactly the case
+ * where each step is wide enough to see as a band. A pixel of noise costs nothing and the eye
+ * reads the result as smooth.
+ */
+function dither(rgba, amount = 1.6) {
+  for (let index = 0; index < rgba.length; index += 4) {
+    const noise = (Math.random() - 0.5) * 2 * amount
+    for (let channel = 0; channel < 3; channel++) {
+      rgba[index + channel] = Math.max(0, Math.min(255, Math.round(rgba[index + channel] + noise)))
+    }
+  }
+  return rgba
+}
+
 function plain() {
   const svg = readFileSync(resolve(root, 'brand/svg/izumi-hero-plain.svg'), 'utf8')
   for (const width of [HERO_W, HERO_W * 2]) {
-    write(`izumi-hero-plain-${width}x${Math.round((width * HERO_H) / HERO_W)}.png`, render(svg, width).asPng())
+    const rendered = render(svg, width * SUPERSAMPLE)
+    const renderedW = rendered.width
+    const renderedH = rendered.height
+    const small = downsample(rendered.pixels, renderedW, renderedH, SUPERSAMPLE)
+    write(`izumi-hero-plain-${small.width}x${small.height}.png`, encodePng(small.width, small.height, dither(small.data)))
   }
 }
 
