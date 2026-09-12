@@ -14,6 +14,7 @@
 //   node scripts/gen-steam-hero.mjs                 # all of them
 //   node scripts/gen-steam-hero.mjs plain anime     # just these
 //   node scripts/gen-steam-hero.mjs mixed --faded   # also the per-cover treatment
+//   node scripts/gen-steam-hero.mjs anime --cover=180 --angle=-9   # denser, leaning the other way
 import { Resvg } from '@resvg/resvg-js'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -37,6 +38,14 @@ const SUPERSAMPLE = 2
 const ANIME_CATALOGUE = 'https://kitsu.io/api/edge/anime'
 const CINEMETA = 'https://v3-cinemeta.strem.io'
 const SHADE = '#05080F'
+
+// The wall's shape, both overridable per run.
+//   --cover=<px>   how wide one cover is, and so how many fit. Covers are 2:3, so this sets the
+//                  height and the gap with it; smaller means a denser wall.
+//   --angle=<deg>  which way the columns lean and by how much. Positive tips them to the right,
+//                  negative to the left.
+const COVER_W = 214
+const ANGLE = 9
 
 const render = (svg, width) => new Resvg(svg, { fitTo: { mode: 'width', value: width } }).render()
 
@@ -182,29 +191,35 @@ function interleave(...lists) {
   return out
 }
 
-function wall(images, style) {
+function wall(images, style, { angle = ANGLE, coverWidth = COVER_W } = {}) {
   // Fixed seed: regenerating should refresh the covers, not reshuffle the whole composition.
   let seed = 20260912
   const random = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296
 
-  const TILE_W = 268
-  const TILE_H = 402
-  const GAP = 16
-  const COLUMNS = 11
-  const ROWS = 4
-  const spanW = COLUMNS * (TILE_W + GAP)
-  const spanH = ROWS * (TILE_H + GAP)
+  const TILE_W = Math.max(80, Math.round(coverWidth))
+  // Cover art is 2:3, and a tile that is not gets a slice out of the middle of every poster.
+  const TILE_H = Math.round(TILE_W * 1.5)
+  const GAP = Math.max(6, Math.round(TILE_W * 0.06))
 
-  const ANGLE = -9
-  const radians = (ANGLE * Math.PI) / 180
+  const radians = (angle * Math.PI) / 180
   const cos = Math.cos(radians)
   const sin = Math.sin(radians)
+
+  // Enough wall to cover the frame once it is tilted, whatever the cover size and angle are: the
+  // frame's own footprint under rotation, plus a tile of slack and the range the columns slide by.
+  const coveredW = HERO_W * Math.abs(cos) + HERO_H * Math.abs(sin)
+  const coveredH = HERO_W * Math.abs(sin) + HERO_H * Math.abs(cos)
+  const SLIDE = 1.6
+  const COLUMNS = Math.ceil((coveredW + TILE_W * 2) / (TILE_W + GAP))
+  const ROWS = Math.ceil((coveredH + (TILE_H + GAP) * (SLIDE + 1)) / (TILE_H + GAP))
+  const spanW = COLUMNS * (TILE_W + GAP)
+  const spanH = ROWS * (TILE_H + GAP)
 
   const tiles = []
   let index = 0
   for (let column = 0; column < COLUMNS; column++) {
     // Each column slides by its own amount, which is what stops the wall reading as a grid.
-    const offset = (random() - 0.5) * (TILE_H + GAP) * 1.6
+    const offset = (random() - 0.5) * (TILE_H + GAP) * SLIDE
     for (let row = 0; row < ROWS; row++) {
       const x = column * (TILE_W + GAP) - spanW / 2
       const y = row * (TILE_H + GAP) - spanH / 2 + offset
@@ -275,7 +290,7 @@ function wall(images, style) {
   </defs>
   <g clip-path="url(#frame)">
     <rect width="${HERO_W}" height="${HERO_H}" fill="${SHADE}"/>
-    <g transform="translate(${HERO_W / 2} ${HERO_H / 2}) rotate(${ANGLE}) scale(1.02)">
+    <g transform="translate(${HERO_W / 2} ${HERO_H / 2}) rotate(${angle}) scale(1.02)">
       ${tiles.map((tile) => `<image href="${tile.href}" x="${tile.x.toFixed(1)}" y="${tile.y.toFixed(1)}" width="${TILE_W}" height="${TILE_H}" preserveAspectRatio="xMidYMid slice"/>${perTileShade(tile)}`).join('\n      ')}
     </g>
     <!-- Where the darkening actually happens: one even fade over every cover, which is what keeps
@@ -287,9 +302,9 @@ function wall(images, style) {
 </svg>`
 }
 
-async function carousel(name, images, style) {
+async function carousel(name, images, style, shape) {
   if (images.length < 24) throw new Error(`${name}: only ${images.length} covers downloaded; refusing to build a thin wall`)
-  const rendered = render(wall(images, style), HERO_W * SUPERSAMPLE)
+  const rendered = render(wall(images, style, shape), HERO_W * SUPERSAMPLE)
   const width = rendered.width
   const height = rendered.height
   const small = downsample(rendered.pixels, width, height, SUPERSAMPLE)
@@ -303,6 +318,16 @@ const args = process.argv.slice(2)
 const STYLES = args.includes('--faded') ? ['washed', 'faded'] : ['washed']
 const wanted = args.filter((arg) => !arg.startsWith('--'))
 const want = (name) => !wanted.length || wanted.includes(name)
+
+const numberArg = (name, fallback) => {
+  const match = args.find((arg) => arg.startsWith(`--${name}=`))
+  if (!match) return fallback
+  const value = Number(match.slice(name.length + 3))
+  if (!Number.isFinite(value)) throw new Error(`--${name} needs a number, got ${match}`)
+  return value
+}
+const shape = { angle: numberArg('angle', ANGLE), coverWidth: numberArg('cover', COVER_W) }
+
 mkdirSync(outDir, { recursive: true })
 
 if (want('plain')) plain()
@@ -315,9 +340,9 @@ if (want('anime') || want('films') || want('mixed')) {
   ])
   console.log(`covers: ${anime.length} anime, ${films.length} films, ${shows.length} shows`)
   for (const style of STYLES) {
-    if (want('anime')) await carousel('anime', anime, style)
-    if (want('films')) await carousel('films', interleave(films, shows), style)
+    if (want('anime')) await carousel('anime', anime, style, shape)
+    if (want('films')) await carousel('films', interleave(films, shows), style, shape)
     // The app is anime-first but not anime-only, and this is the wall that says so.
-    if (want('mixed')) await carousel('mixed', interleave(anime, films, shows), style)
+    if (want('mixed')) await carousel('mixed', interleave(anime, films, shows), style, shape)
   }
 }
