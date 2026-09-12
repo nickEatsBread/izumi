@@ -15,8 +15,16 @@ describe('Flatpak SDK deps', () => {
     expect(rust).toContain('command -v rustc')
   })
 
-  it('uses the pre-provisioned GNOME image and installs only the Node extension', () => {
-    expect(workflow).toContain('ghcr.io/flathub-infra/flatpak-github-actions:gnome-49')
+  it('builds in an image carrying the runtime the manifest asks for', () => {
+    // Derived from the manifest, never written out twice. Pinning the tag literally is what let the
+    // manifest move to GNOME 50 against a gnome-49 image: nothing but the release job builds the
+    // Flatpak, so the mismatch surfaced only at release time, as
+    //   error: org.gnome.Sdk/x86_64/50 not installed
+    const runtime = manifest.match(/^runtime-version: '(\d+)'/m)![1]
+    expect(workflow).toContain(`ghcr.io/flathub-infra/flatpak-github-actions:gnome-${runtime}`)
+  })
+
+  it('installs only the Node extension, from the runtime it is built against', () => {
     expect(workflow).toContain('flatpak install -y --noninteractive flathub org.freedesktop.Sdk.Extension.node22//25.08')
     expect(workflow).not.toContain('scripts/ci/flatpak-install-sdk-deps.sh')
     expect(workflow).not.toContain('flatpak-builder --user --install-deps-from=flathub')

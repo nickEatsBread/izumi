@@ -130,7 +130,12 @@ jobs:
             args: ''
           - platform: windows-latest
             args: '--config {"bundle":{"resources":["libmpv-2.dll"]}}'
-          - platform: macos-14        # Apple Silicon (arm64) — unsigned .dmg
+          # Apple Silicon (arm64) — unsigned .dmg. Sequoia rather than Sonoma because Homebrew
+          # stopped bottling shaderc for arm64_sonoma, and mpv pulls it in through libplacebo:
+          # `brew install mpv` on macos-14 now dies with "shaderc: no bottle available!". The
+          # bundled dylibs come from this runner's Homebrew, so the .dmg it produces expects
+          # macOS 15 or newer.
+          - platform: macos-15
             args: ''
     runs-on: ${{ matrix.platform }}
     steps:
@@ -356,11 +361,17 @@ jobs:
     needs: create-release
     runs-on: ubuntu-24.04
     timeout-minutes: 35
-    # Flathub publishes this purpose-built image with GNOME 49 Platform + SDK already installed.
+    # Flathub publishes this purpose-built image with the GNOME Platform + SDK already installed.
     # Pulling it through GHCR is bounded and observable; downloading the SDK from Flathub inside
     # the job took 30 minutes without progress in v0.1.47-10.
+    #
+    # KEEP THE TAG IN STEP WITH `runtime-version` IN flatpak/com.nicho.izumi.yml. Nothing else
+    # builds the Flatpak — CI compiles the app but never packages it — so a manifest moved to a
+    # runtime this image does not carry fails at release time and nowhere earlier, which is exactly
+    # what happened when the manifest went to GNOME 50 against a gnome-49 image:
+    #   error: org.gnome.Sdk/x86_64/50 not installed
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-49
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
       options: --privileged
     steps:
       - uses: actions/checkout@v7
