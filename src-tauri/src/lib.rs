@@ -6486,9 +6486,19 @@ pub fn run() {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     let builder = builder.plugin(tauri_plugin_haptics::init());
 
-    builder
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    let app = builder
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+    app.run(|_app, event| {
+        // Game mode: the gamescope refresh-cycle override is global and outlives this process, so
+        // the panel must be handed back its native refresh on the way out (bounded wait).
+        #[cfg(target_os = "linux")]
+        if matches!(event, tauri::RunEvent::Exit) {
+            player::gamescope_refresh::clear_blocking();
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = event;
+    });
 }
 
 #[cfg(test)]

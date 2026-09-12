@@ -239,6 +239,13 @@ wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
 # a layer-shell BACKGROUND surface and keep the transparent webview toplevel on top → gamescope
 # composites controls over fullscreen video, same UX as Desktop. (Measured on gamescope 3.16.)
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+# gamescope_control (Game mode): ask gamescope for a panel refresh that is a whole multiple of
+# the video's frame rate (24 fps → 72 Hz on the OLED Deck) instead of judder at native 90 Hz.
+# wayland-scanner generates the client bindings from protocols/gamescope-control.xml at compile
+# time; the generated code links against wayland-backend + bitflags directly.
+wayland-scanner = "0.31"
+wayland-backend = "0.3"
+bitflags = "2"
 raw-window-handle = "0.6"
 # Steam Deck L2/R2 seek: webkit2gtk's own Gamepad API (libmanette) doesn't reliably see the
 # Deck's (Steam-virtual) controller, so we read it directly via evdev in the Rust backend and
