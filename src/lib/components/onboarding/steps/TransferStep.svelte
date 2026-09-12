@@ -26,6 +26,9 @@
 
   let { oncancel, onfinished }: { oncancel: () => void; onfinished: () => void } = $props()
 
+  /** Re-open the native adopt window when this much of its two minutes is left. */
+  const REARM_BEFORE_MS = 30_000
+
   let stage = $state<TransferStage>('waiting')
   let window_ = $state<PairingWindow | undefined>()
   let offer = $state<AdoptOffer | undefined>()
@@ -134,11 +137,24 @@
     const accepted = listen<{ ticket: string }>('iroh-adopt-accepted', (event) => {
       void begin(event.payload.ticket)
     })
-    // The native window closes on its own after two minutes. Saying so beats a code that quietly
-    // stops working while the screen still displays it.
+    // The native adopt window — and the nearby advertisement that lets the other device list this
+    // one — lasts two minutes, while this screen routinely sits for much longer (walk to the other
+    // device, find Settings → Sync). Re-arm it before it lapses; the endpoint id, so the QR and the
+    // code, stay the same. Measured on a Deck 2026-09-12: after the window had silently expired,
+    // every "Set up" from the sender was refused as "not waiting for a setup transfer" while this
+    // screen still said "Waiting". Only if re-arming itself keeps failing does the expiry show.
+    let rearming = false
     const expiry = setInterval(() => {
       if (stage !== 'waiting' || !window_) return
-      if (Date.now() >= window_.expiresAt) {
+      const remaining = window_.expiresAt - Date.now()
+      if (remaining < REARM_BEFORE_MS && !rearming) {
+        rearming = true
+        openAdoptWindow()
+          .then((next) => { if (stage === 'waiting') window_ = next })
+          .catch(() => {})
+          .finally(() => { rearming = false })
+      }
+      if (remaining <= 0) {
         error = m.onboarding_transfer_expired()
         stage = 'failed'
       }

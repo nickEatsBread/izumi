@@ -71,7 +71,7 @@ describe('set up from another device', () => {
   })
 
   it('says the code expired instead of leaving a dead one on screen', () => {
-    expect(transfer).toContain('Date.now() >= window_.expiresAt')
+    expect(transfer).toContain('const remaining = window_.expiresAt - Date.now()')
     expect(transfer).toContain('m.onboarding_transfer_expired()')
   })
 
@@ -127,6 +127,18 @@ describe('sending a setup from the device that has one', () => {
     expect(fn).toContain('await createSyncGroup()')
     // Re-read: the status captured before the room existed still says unpaired.
     expect(fn.lastIndexOf('await getSyncStatus()')).toBeGreaterThan(fn.indexOf('createSyncGroup'))
+  })
+
+  it('keeps the adopt window open for as long as the screen is shown', () => {
+    // The native window and its nearby advertisement last two minutes; the screen sits far
+    // longer. Measured on a Deck: once it lapsed, every offer was refused while the screen still
+    // said "Waiting". Re-arm before expiry; the expiry message is only the fallback.
+    const tick = transfer.slice(transfer.indexOf('const expiry = setInterval'), transfer.indexOf('}, 1000)'))
+    expect(tick).toContain('remaining < REARM_BEFORE_MS')
+    expect(tick).toContain('openAdoptWindow()')
+    expect(tick).toContain("if (stage === 'waiting') window_ = next")
+    expect(tick).toContain('if (remaining <= 0)')
+    expect(transfer).toContain('const REARM_BEFORE_MS = 30_000')
   })
 
   it('treats a scanned code as aiming, not as consent', () => {
