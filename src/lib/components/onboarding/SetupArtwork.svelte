@@ -104,4 +104,10 @@
   .mobile-posters .poster { border-radius: .5rem; box-shadow: none; }
   .mobile-posters img { transition: none; }
   @media (prefers-reduced-motion: reduce) { .poster-column { animation: none; will-change: auto; } img { transition: none; } }
+  /* Game mode strips `will-change` app-wide (composited layers capture text pixelated under
+     gamescope), so this drift would be re-rastered on the main thread at the panel rate instead of
+     moved by the compositor. Measured on a Deck OLED: the web process sat at ~60% CPU on the
+     transfer screen with nothing else happening. A static wall is the same designed state the
+     reduced-motion query already uses. */
+  :global(html.gamemode) .poster-column { animation: none; }
 </style>

@@ -165,6 +165,10 @@ html.gamemode .group:hover .group-hover\:scale-105 {
 /* Rows held below the near-viewport fetch gate keep their layout placeholder, but do not spend a
    compositor animation on skeletons the user cannot see yet. The class is removed before fetch. */
 .deferred-skeleton .skeloader::before { animation-play-state: paused; }
+/* Game mode has no compositor promotion (see the `will-change: auto` rule below), so each visible
+   shimmer is a main-thread repaint at the panel rate — dozens of them while Home rows wait behind
+   the AniList limiter. Placeholders stay; only the sweep goes. */
+html.gamemode .skeloader::before { animation: none; }
 /* Indeterminate progress bar (update download with no Content-Length): a short segment sweeps
    the track. Transform-only so WebKitGTK/gamescope composite it without repainting the track. */
 @keyframes indeterminate { from { transform: translateX(-100%); } to { transform: translateX(400%); } }
