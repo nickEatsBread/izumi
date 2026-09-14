@@ -7,9 +7,9 @@ set -euo pipefail
 source scripts/ci/android-toolchain.env
 
 readonly REPO="https://github.com/jarnedemeulemeester/libmpv-android.git"
-readonly COMMIT="f77f62c316c6b222e75ece48e1fbf1e798fd83e7"
+readonly COMMIT="954131900ec078cdb0a67c514caad2af00b2e01c"
 readonly MPV_VERSION="0.41.0"
-readonly FFMPEG_VERSION="8.1.2"
+readonly FFMPEG_VERSION="9.0.1"
 readonly LIBPLACEBO_VERSION="7.360.1"
 readonly LIBASS_VERSION="0.17.5"
 readonly CACHE_ROOT="${HOME}/.cache/izumi-libmpv-android/${COMMIT}"
