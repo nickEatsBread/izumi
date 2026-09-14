@@ -137,8 +137,8 @@ test "$(grep -c 'android.permission.ACCESS_NETWORK_STATE' src-tauri/gen/android/
 # incompatible version of Kotlin" plus a cascade of unresolved references to stdlib members (it,
 # use, toByteArray, bufferedReader). This bump used to be inside the full-only branch, which is
 # exactly why full built and lite did not.
-sed -i -E 's/kotlin-gradle-plugin:[0-9.]+/kotlin-gradle-plugin:2.2.0/' src-tauri/gen/android/build.gradle.kts
-grep -q 'kotlin-gradle-plugin:2.2.0' src-tauri/gen/android/build.gradle.kts \
+sed -i -E 's/kotlin-gradle-plugin:[0-9.]+/kotlin-gradle-plugin:2.4.20/' src-tauri/gen/android/build.gradle.kts
+grep -q 'kotlin-gradle-plugin:2.4.20' src-tauri/gen/android/build.gradle.kts \
   || { echo "kotlin-gradle-plugin bump missed — scaffold shape changed"; exit 1; }
 
 if [ "$FLAVOR" = "full" ]; then
