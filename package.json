@@ -33,7 +33,7 @@
   "dependencies": {
     "@fontsource-variable/nunito": "^5.3.0",
     "@fontsource/geist-mono": "^5.3.0",
-    "@lucide/svelte": "^1.41.0",
+    "@lucide/svelte": "^1.45.0",
     "@nicholasyoannou/hayami-sdk": "github:nicholasyoannou/hayami-sdk",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-deep-link": "^2.4.10",
@@ -54,22 +54,22 @@
     "fflate": "^0.8.3",
     "idb-keyval": "^6.3.0",
     "qrcode-generator": "^2.0.4",
-    "shaka-player": "^5.2.9",
+    "shaka-player": "^5.2.10",
     "sucrase": "^3.35.1",
     "svelte-persisted-store": "^0.12.0",
     "urql": "^5.0.4",
     "wonka": "^6.3.6"
   },
   "devDependencies": {
-    "@inlang/paraglide-js": "^2.25.0",
+    "@inlang/paraglide-js": "^2.25.2",
     "@resvg/resvg-js": "^2.6.2",
     "@sveltejs/adapter-static": "^3.0.6",
     "@sveltejs/kit": "^2.70.3",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@tauri-apps/cli": "^2",
     "@types/crypto-js": "^4.2.2",
-    "@types/node": "^24.13.3",
-    "autoprefixer": "^10.5.5",
+    "@types/node": "^24.13.4",
+    "autoprefixer": "^10.6.0",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^30.0.1",
     "postcss": "^8.5.28",
@@ -77,7 +77,7 @@
     "svelte-check": "^4.7.6",
     "tailwindcss": "^3.4.19",
     "typescript": "~6.0.3",
-    "vite": "^8.2.2",
+    "vite": "^8.3.0",
     "vitest": "^5.0.0"
   }
 }
