@@ -250,7 +250,19 @@ jobs:
           # Compact JSON (NO spaces — survives tauri-action splitting args on spaces) listing every
           # staged dylib for Tauri's macOS `frameworks` bundler. Consumed by the build step's args.
           FW="$(python3 -c "import glob,json;print(json.dumps(sorted(glob.glob('$STAGE/*.dylib')),separators=(',',':')))")"
-          echo "MAC_ARGS=--config {\"bundle\":{\"resources\":{\"macos-tools/ffmpeg\":\"ffmpeg\"},\"macOS\":{\"frameworks\":$FW}}}" >> "$GITHUB_ENV"
+          # `signingIdentity` is what makes Tauri seal the bundle AT ALL: with the key absent its
+          # bundler skips codesign outright, so every release through v0.1.67 shipped a .app with no
+          # Contents/_CodeSignature/CodeResources while the executable still carried the linker's
+          # ad-hoc signature declaring resources must be present. That combination is not merely
+          # "unsigned" — it is INVALID, and Gatekeeper answers a quarantined invalid bundle with
+          # "izumi is damaged and can't be opened. You should move it to the Trash", which
+          # right-click > Open cannot bypass. Every Mac that downloaded the DMG simply could not
+          # launch it. "-" ad-hoc signs, which is the most a repo with no Apple Developer cert can
+          # do, and is enough to make the seal well-formed: the verdict drops back to the ordinary,
+          # bypassable unidentified-developer prompt. hardenedRuntime is OFF deliberately — it only
+          # exists to satisfy notarization, which we do not do, and it turns on library validation,
+          # which would refuse the 48 ad-hoc dylibs bundled above (no Team ID to match).
+          echo "MAC_ARGS=--config {\"bundle\":{\"resources\":{\"macos-tools/ffmpeg\":\"ffmpeg\"},\"macOS\":{\"frameworks\":$FW,\"signingIdentity\":\"-\",\"hardenedRuntime\":false}}}" >> "$GITHUB_ENV"
 
       - name: Install JS deps
         run: npm ci
@@ -332,6 +344,24 @@ jobs:
             otool -L "$FFMPEG" >&2
             exit 1
           fi
+
+      # The seal on the .app is what decides whether a downloaded izumi opens at all, and nothing
+      # here used to look at it: v0.1.67 shipped a bundle with no _CodeSignature, and Gatekeeper
+      # called it damaged on every user's Mac while CI stayed green. These runners have SIP off, so
+      # launching the app proves nothing — assert the seal itself, the same way the encoder above is
+      # checked, and fail the release rather than publish a DMG that cannot be opened.
+      - name: Verify macOS app bundle signature
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          set -euo pipefail
+          APP="src-tauri/target/release/bundle/macos/izumi.app"
+          test -d "$APP"
+          # Absent entirely when Tauri skips signing, which is the exact v0.1.67 failure.
+          test -f "$APP/Contents/_CodeSignature/CodeResources"
+          # --deep so a re-signed bundle cannot hide a nested dylib whose own seal broke.
+          codesign --verify --deep --strict "$APP"
+          # Prove the seal actually covers the payload; "Sealed Resources=none" still verifies.
+          codesign -dvvv "$APP" 2>&1 | grep -q 'Sealed Resources version='
 
   cleanup-release-signatures:
     needs: [create-release, build]

@@ -72,6 +72,8 @@ izumi will notify you of updates to keep izumi up-to-date. Grab your platform be
 
 Android **full** includes an embedded player; **lite** hands off this to an external app. The non-AppImage/Flatpak Linux builds need your distro's `libmpv` (`mpv` / `libmpv-dev`).
 
+**macOS:** izumi is not signed with an Apple Developer certificate, so the first launch needs one extra step. Drag izumi to Applications, then **right-click (or Control-click) it and choose Open**, and confirm once. Double-clicking the first time only shows *"Apple could not verify izumi is free of malware"* with no way past it; opening from the context menu is what offers the Open button. macOS remembers the choice, so every launch after that is a normal double-click.
+
 **Steam Deck:** download the installer, then double-click it in Desktop Mode and choose **Execute**. It installs the Flatpak for your user and offers to add izumi to your Steam library with its own artwork, so it is launchable straight from Game Mode. The same thing from a terminal:
 
 ```bash

@@ -6044,6 +6044,30 @@ pub fn run() {
                     })
                     .build()?;
 
+                // The window above is built hidden and `on_page_load` is the ONLY thing that ever
+                // reveals it. When that first load never reaches Finished — a webview that fails to
+                // start, an app-protocol read that errors, a hang fetching the first document — the
+                // process stays alive holding a window nobody can see, with nothing printed. On
+                // macOS that is indistinguishable from "the app won't launch": the icon bounces and
+                // nothing opens. It is also unrecoverable, because the single-instance plugin hands
+                // every later launch to this invisible instance instead of starting a fresh one, so
+                // relaunching (and reinstalling) changes nothing until the process is killed by hand.
+                // Reveal the window once the grace period lapses so a broken load presents as a
+                // visible, quittable window rather than a headless process.
+                {
+                    let watchdog = main_window.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_secs(10));
+                        if !matches!(watchdog.is_visible(), Ok(true)) {
+                            eprintln!(
+                                "[startup] first page load did not finish within 10s; showing the window anyway"
+                            );
+                            let _ = watchdog.show();
+                            let _ = watchdog.set_focus();
+                        }
+                    });
+                }
+
                 // WebView2 environments must be created while Tauri is setting up its event loop.
                 // Later construction from a WebView IPC callback leaves the new controller waiting
                 // on the same UI thread. The hidden view stays inert until protected capture uses it.
