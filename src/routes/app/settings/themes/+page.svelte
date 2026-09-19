@@ -4,8 +4,9 @@
   import Search from '@lucide/svelte/icons/search'
   import ArrowLeft from '@lucide/svelte/icons/arrow-left'
   import Palette from '@lucide/svelte/icons/palette'
-  import { loadThemeCatalog, prepareRelease, prepareThemeLink } from '$lib/themes/catalog'
-  import { MAX_THEME_BYTES, THEME_API, newerVersion, parseSharedTheme, type PreparedTheme, type ThemeRelease } from '$lib/themes/packages'
+  import { openUrl } from '@tauri-apps/plugin-opener'
+  import { collectLocalThemes, loadThemeCatalog, prepareRelease, prepareThemeLink } from '$lib/themes/catalog'
+  import { THEME_API, THEME_CATALOG_PROJECT_URL, newerVersion, type PreparedTheme, type ThemeRelease } from '$lib/themes/packages'
   import { installedThemes, installTheme, applyInstalledTheme, removeInstalledTheme, rollbackTheme, previewTheme, isCatalogTheme, type InstalledTheme } from '$lib/themes/installed'
   import { themeStudioOpen } from '$lib/settings/theme-studio-session'
   import { activeStudioThemeId, studioThemes } from '$lib/settings/theme-studio'
@@ -21,9 +22,12 @@
   let cached = $state(false)
   let selected = $state<ThemeRelease | null>(null)
   let prepared = $state<PreparedTheme | null>(null)
-  let showLink = $state(false)
+  let showAdd = $state(false)
   let link = $state('')
   let fileInput: HTMLInputElement
+  let folderInput: HTMLInputElement
+  let batch = $state<PreparedTheme[]>([])
+  let batchErrors = $state<string[]>([])
   let abort: AbortController | undefined
   const filtered = $derived(entries.filter(entry => `${entry.name} ${entry.author} ${entry.description} ${entry.tags.join(' ')}`.toLowerCase().includes(query.toLowerCase())))
   const failure = (cause: unknown) => cause instanceof Error ? cause.message : 'The theme could not be loaded.'
@@ -45,21 +49,40 @@
     selected = entry; prepared = null; busy = true; error = ''; notice = ''
     try { prepared = await prepareRelease(entry) } catch (cause) { error = failure(cause) } finally { busy = false }
   }
+  function closeAdd() { showAdd = false; batch = []; batchErrors = [] }
   async function fromLink(event: SubmitEvent) {
     event.preventDefault(); if (busy) return
-    busy = true; error = ''; selected = null; prepared = null
-    try { prepared = await prepareThemeLink(link); showLink = false } catch (cause) { error = failure(cause) } finally { busy = false }
+    busy = true; error = ''; selected = null; prepared = null; batch = []; batchErrors = []
+    try { prepared = await prepareThemeLink(link); closeAdd() } catch (cause) { error = failure(cause) } finally { busy = false }
   }
-  async function fromFile(event: Event) {
-    const input = event.currentTarget as HTMLInputElement, file = input.files?.[0]; input.value = ''
-    if (!file || busy) return
+  async function fromFiles(list: FileList | null) {
+    if (!list?.length || busy) return
     busy = true
-    error = ''; selected = null; prepared = null
+    error = ''; selected = null; prepared = null; batch = []; batchErrors = []
     try {
-      if (file.size > MAX_THEME_BYTES) throw new Error('Use a theme package under 256 KB.')
-      const pkg = parseSharedTheme(JSON.parse(await file.text()))
-      prepared = { package: pkg, origin: `file:${pkg.id}` }
+      const files = await Promise.all([...list].map(async file => ({ name: file.name, text: await file.text(), bytes: file.size })))
+      const result = collectLocalThemes(files)
+      batchErrors = result.errors
+      if (result.prepared.length === 1 && !result.errors.length) {
+        prepared = result.prepared[0]
+        closeAdd()
+      } else {
+        batch = result.prepared
+        showAdd = true
+      }
     } catch (cause) { error = failure(cause) } finally { busy = false }
+  }
+  function installBatch() {
+    if (!batch.length) return
+    const names: string[] = []
+    const failed: string[] = []
+    for (const item of batch) {
+      try { installTheme(item); names.push(item.package.name) }
+      catch (cause) { failed.push(`${item.package.name}: ${failure(cause)}`) }
+    }
+    notice = names.length ? `Installed ${names.join(', ')}. Apply one from Installed.` : ''
+    error = failed.length ? failed.join(' ') : ''
+    closeAdd(); tab = 'installed'; prepared = null; selected = null
   }
   function install() {
     if (!prepared) return
@@ -95,12 +118,41 @@
 </script>
 
 <svelte:head><title>Themes · izumi</title></svelte:head>
+<svelte:window onkeydown={(event) => { if (event.key === 'Escape' && showAdd) closeAdd() }} />
 <div class="themes-page">
   <header class="page-heading"><div><p class="eyebrow">Make it yours</p><h2>Themes</h2><p class="intro">A different look. Still your client.</p></div><a class="control gap-2" href="/app/settings/theme-studio" data-focusable><Palette size={16} aria-hidden="true" /> Theme Studio</a></header>
   {#if $themeStudioOpen}<p class="message">Finish or discard your Theme Studio draft before applying another theme.</p>{/if}
-  <div class="toolbar"><nav aria-label="Theme library"><button type="button" data-focusable aria-pressed={tab === 'browse'} onclick={() => { tab = 'browse'; selected = null; prepared = null }}>Browse</button><button type="button" data-focusable aria-pressed={tab === 'installed'} onclick={() => { tab = 'installed'; selected = null; prepared = null }}>Installed <span>{$installedThemes.length}</span></button></nav><div class="toolbar-actions"><button class="control" data-focusable onclick={() => showLink = !showLink}>Add from link</button><button class="control" data-focusable onclick={() => fileInput.click()}>Import file</button></div></div>
-  <input bind:this={fileInput} type="file" accept=".json,application/json" class="hidden" onchange={fromFile} aria-label="Import theme package" />
-  {#if showLink}<form onsubmit={fromLink} class="link-form"><label for="theme-link">Theme package or release link</label><div><input id="theme-link" type="url" bind:value={link} required placeholder="https://…/theme.json" data-focusable /><button class="control primary" disabled={busy} data-focusable>Load theme</button></div><p>Public HTTPS links work even when a theme is not in the catalog.</p></form>{/if}
+  <div class="toolbar"><nav aria-label="Theme library"><button type="button" data-focusable aria-pressed={tab === 'browse'} onclick={() => { tab = 'browse'; selected = null; prepared = null }}>Browse</button><button type="button" data-focusable aria-pressed={tab === 'installed'} onclick={() => { tab = 'installed'; selected = null; prepared = null }}>Installed <span>{$installedThemes.length}</span></button></nav><div class="toolbar-actions"><button class="control" data-focusable onclick={() => { showAdd = true; error = '' }}>Add theme</button></div></div>
+  <input bind:this={fileInput} type="file" accept=".json,application/json" multiple class="hidden" onchange={(event) => { const input = event.currentTarget; void fromFiles(input.files); input.value = '' }} aria-label="Import theme package files" />
+  <input bind:this={folderInput} type="file" accept=".json,application/json" multiple webkitdirectory class="hidden" onchange={(event) => { const input = event.currentTarget; void fromFiles(input.files); input.value = '' }} aria-label="Import theme package folder" />
+  {#if showAdd}
+    <div class="add-layer">
+      <button type="button" class="add-scrim" aria-label="Close add theme" onclick={closeAdd}></button>
+      <section class="add-dialog" role="dialog" aria-modal="true" aria-labelledby="add-theme-title">
+        <h3 id="add-theme-title">Add a theme</h3>
+        <p>Install from the community catalog, a public HTTPS link, a JSON file, or a folder of packages.</p>
+        <button type="button" class="control catalog-link" data-focusable onclick={() => void openUrl(THEME_CATALOG_PROJECT_URL)}>Open izumi-themes catalog</button>
+        <form onsubmit={fromLink} class="link-form">
+          <label for="theme-link">Theme package or release link</label>
+          <div><input id="theme-link" type="url" bind:value={link} required placeholder="https://…/theme.json" data-focusable /><button class="control primary" disabled={busy} data-focusable>Load link</button></div>
+          <p>Public HTTPS links work even when a theme is not listed in the catalog. GitHub file links are accepted.</p>
+        </form>
+        <div class="add-local">
+          <button class="control" data-focusable disabled={busy} onclick={() => fileInput.click()}>Import file</button>
+          <button class="control" data-focusable disabled={busy} onclick={() => folderInput.click()}>Import folder</button>
+        </div>
+        {#if batch.length}
+          <div class="batch">
+            <p>{batch.length} packages ready. They stay on this device until you apply one from Installed.</p>
+            <ul>{#each batch as item (item.package.id)}<li>{item.package.name} <span>{item.package.version}</span></li>{/each}</ul>
+            {#if batchErrors.length}<p class="batch-errors">{batchErrors.join(' ')}</p>{/if}
+            <button class="control primary" data-focusable disabled={busy || $themeStudioOpen} onclick={installBatch}>Install all</button>
+          </div>
+        {/if}
+        <button class="text-close" data-focusable onclick={closeAdd}>Cancel</button>
+      </section>
+    </div>
+  {/if}
   {#if error}<p role="alert" class="message error">{error}</p>{/if}
   {#if notice}<p role="status" class="message">{notice}</p>{/if}
   {#if selected || prepared}
@@ -114,7 +166,7 @@
     <div class="browse-tools"><label class="search"><Search size={18} /><input bind:value={query} aria-label="Search themes" placeholder="Search themes, authors or styles" data-focusable /></label><button class="control" data-focusable disabled={loading} onclick={refresh}>Refresh</button></div>
     {#if cached}<p class="message">Showing the saved catalog. Refresh when you’re back online.</p>{/if}
     {#if loading && !entries.length}<div class="theme-grid" aria-label="Loading themes" aria-busy="true">{#each [1, 2, 3] as item}<div class="skeleton" aria-hidden="true"></div>{/each}</div>
-    {:else if !filtered.length}<div class="empty"><Palette size={36} /><h3>{entries.length ? 'No matching themes' : 'Your next look starts here'}</h3><p>{entries.length ? 'Try another name or style.' : 'Refresh the catalog or add a theme using its link.'}</p></div>
+    {:else if !filtered.length}<div class="empty"><Palette size={36} /><h3>{entries.length ? 'No matching themes' : 'Your next look starts here'}</h3><p>{entries.length ? 'Try another name or style.' : 'Refresh the catalog, or add a theme from a link, file or folder.'}</p></div>
     {:else}<div class="theme-grid">{#each filtered as entry (entry.id)}<article><button class="theme-card" data-focusable disabled={busy || entry.themeApi !== THEME_API} onclick={() => inspect(entry)}><div class="thumbnail">{#if entry.preview}<img src={entry.preview} alt={`${entry.name} layout preview`} loading="lazy" referrerpolicy="no-referrer" />{:else}<Palette size={42} />{/if}</div><div class="card-title"><h3>{entry.name}</h3>{#if $installedThemes.some(item => item.id === entry.id)}<span>Installed</span>{/if}</div><p class="author">By {entry.author}</p><p class="summary">{entry.description}</p><p class="tags">{entry.themeApi !== THEME_API ? 'Requires a different theme API' : entry.tags.join(' · ')}</p></button></article>{/each}</div>{/if}
   {:else}
     <div class="default-theme"><div><strong>Izumi default</strong><p>The original appearance is always available.</p></div><button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => { $themePreset = 'izumi'; notice = 'Default appearance restored.' }}>Use default</button></div>
@@ -158,11 +210,23 @@
   .tags { margin-top: 12px; }
   .message { padding: 14px 16px; margin: 16px 0; border-radius: 8px; background: hsl(var(--muted)); font-size: 13px; }
   .error { border-inline-start: 3px solid hsl(var(--theme)); }
-  .link-form { margin: 20px 0; padding: 20px; background: hsl(var(--card)); border-radius: 10px; }
+  .link-form { margin: 20px 0 0; padding: 0; background: transparent; border-radius: 0; }
   .link-form label { display: block; font-size: 13px; font-weight: 800; margin-bottom: 8px; }
   .link-form > div { display: flex; flex-wrap: wrap; gap: 10px; }
   .link-form input { flex: 1; min-width: 180px; border-bottom: 1px solid hsl(var(--border)); }
   .link-form p, .detail-hint { font-size: 11px; color: hsl(var(--muted-foreground)); margin-top: 12px; line-height: 1.6; }
+  .add-layer { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 24px; }
+  .add-scrim { position: absolute; inset: 0; background: hsl(var(--background) / .72); border: 0; }
+  .add-dialog { position: relative; width: min(520px, 100%); max-height: min(88vh, 720px); overflow: auto; padding: 24px; border: 1px solid hsl(var(--border)); border-radius: 12px; background: hsl(var(--card)); color: hsl(var(--card-foreground)); }
+  .add-dialog h3 { font-size: 22px; margin-bottom: 8px; }
+  .add-dialog > p { color: hsl(var(--muted-foreground)); font-size: 13px; line-height: 1.6; }
+  .catalog-link { margin-top: 16px; }
+  .add-local { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .batch { margin-top: 18px; padding-top: 16px; border-top: 1px solid hsl(var(--border)); }
+  .batch ul { margin: 10px 0 14px; padding-left: 18px; font-size: 13px; }
+  .batch span { color: hsl(var(--muted-foreground)); font-size: 11px; }
+  .batch-errors { color: hsl(var(--muted-foreground)); font-size: 12px; margin-bottom: 12px; }
+  .text-close { display: block; margin-top: 16px; min-height: 40px; font-size: 12px; font-weight: 800; text-decoration: underline; text-underline-offset: 4px; }
   .empty { min-height: 240px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; color: hsl(var(--muted-foreground)); }
   .empty p { font-size: 13px; }
   .skeleton { aspect-ratio: 16 / 10; background: hsl(var(--muted)); border-radius: 10px; }

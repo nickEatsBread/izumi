@@ -1,6 +1,6 @@
 # Installable themes
 
-Settings → Themes opens the community catalog at [izumi-themes](https://github.com/nickEatsBread/izumi-themes). Users can browse, search, inspect a theme, preview it on their client, and install it. **Add from link** accepts a public HTTPS package or release descriptor, including GitHub file links. **Import file** accepts JSON packages and existing Theme Studio exports.
+Settings → Themes opens the community catalog at [izumi-themes](https://github.com/nickEatsBread/izumi-themes). Users can browse, search, inspect a theme, preview it on their client, and install it. **Add theme** opens a dialog: a public HTTPS package or release descriptor (including GitHub file links), one or more JSON files, or a folder of packages. Theme Studio exports are accepted. The catalog repository link is in that dialog.
 
 The Theme Studio button inside Themes opens the live design editor. Themes is the single settings-menu entry for browsing and customizing themes; the editor remains directly searchable.
 
