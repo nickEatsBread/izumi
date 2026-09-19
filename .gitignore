@@ -14,6 +14,8 @@ src-tauri/gen/
 !/docs/PLAYER_ARCHITECTURE_RESEARCH.md
 !/docs/THEMES.md
 !/docs/THEME_SYSTEM_AUDIT.md
+!/docs/theme-packages/
+!/docs/theme-packages/**
 !/docs/recommendation-watch-habits-research.md
 !/docs/recommendation-evaluation/
 
