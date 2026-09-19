@@ -12,6 +12,7 @@ These are original izumi designs. They chase looks that show up often in living-
 | [Ember](izumi.ember.json) | Warm crimson canvas and tinted cards, red accent, landscape resume art, same split episode rail. |
 | [Kindling](izumi.kindling.json) | Compact true-black library, razor red accent, hidden hero, wrapping poster grid, dense side rail. |
 | [Ledger](izumi.ledger.json) | Teal media-server library, hidden home hero and series banner, wrapping poster grid. Continue Watching stays a landscape carousel. |
+| [Halo](izumi.halo.json) | Frosted aurora glass, top navigation bar, large landscape tiles, split series page. |
 
 ## Shared limitations
 

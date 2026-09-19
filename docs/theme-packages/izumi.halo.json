@@ -1,0 +1,73 @@
+{
+  "app": "izumi",
+  "kind": "theme-package",
+  "schemaVersion": 1,
+  "themeApi": 1,
+  "id": "izumi.halo",
+  "name": "Halo",
+  "version": "1.0.0",
+  "author": "Izumi",
+  "description": "Frosted chrome: a top navigation bar, aurora glass, large landscape tiles and quiet poster titles. The seekbar uses the brand accent.",
+  "design": {
+    "tokens": {
+      "scheme": "dark",
+      "background": "230 18% 6%",
+      "foreground": "210 25% 97%",
+      "muted": "228 16% 14%",
+      "mutedForeground": "220 12% 68%",
+      "primary": "210 25% 97%",
+      "primaryForeground": "230 18% 8%",
+      "secondary": "228 16% 14%",
+      "secondaryForeground": "210 25% 97%",
+      "accent": "228 18% 20%",
+      "accentForeground": "210 25% 97%",
+      "border": "228 14% 24%",
+      "input": "228 14% 18%",
+      "ring": "200 90% 72%",
+      "card": "228 16% 10%",
+      "cardForeground": "210 25% 97%",
+      "theme": "200 90% 62%"
+    },
+    "radius": 1,
+    "font": "nunito",
+    "fontScale": 1.05,
+    "backdrop": "aurora",
+    "backdropStrength": 0.38,
+    "glassBlur": 28,
+    "presentation": {
+      "density": "large",
+      "hideCardLabels": false,
+      "shell": { "nav": "top", "compact": false },
+      "player": { "seekbarHeight": 8, "seekbarColor": "theme" },
+      "hero": { "height": 58, "mobileHeight": 46, "rotate": true, "interval": 10 },
+      "detail": {
+        "layout": "split",
+        "posterWidth": 220,
+        "episodes": { "placement": "right" }
+      },
+      "rows": {
+        "defaults": { "width": 180, "gap": 20, "spacing": 44, "radius": 16, "aspect": "poster", "titleSize": 20 },
+        "byId": { "continue": { "layout": "carousel", "width": 320, "aspect": "landscape", "radius": 16 } }
+      },
+      "cards": {
+        "poster": {
+          "type": "stack",
+          "style": { "gap": 10 },
+          "children": [
+            { "type": "artwork", "artwork": "poster", "style": { "aspect": "2 / 3", "radius": 16, "fit": "cover" } },
+            { "type": "text", "field": "title", "style": { "fontWeight": 800, "fontSize": 14 } },
+            { "type": "text", "field": "year", "style": { "color": "muted-foreground", "fontSize": 11 } }
+          ]
+        },
+        "search": {
+          "type": "stack",
+          "style": { "gap": 8 },
+          "children": [
+            { "type": "artwork", "artwork": "poster", "style": { "aspect": "2 / 3", "radius": 12, "fit": "cover" } },
+            { "type": "text", "field": "title", "style": { "fontWeight": 800, "fontSize": 13 } }
+          ]
+        }
+      }
+    }
+  }
+}
