@@ -36,9 +36,9 @@ Optional templates for three families: `poster` (ordinary tiles), `continue` (re
 
 ### Series page
 
-- Page composition: stacked tabs (`stack`) or a split info + episode rail (`split`).
-- Episode placement: inside the Episodes tab, a right-hand rail, or below the series info. A right-hand rail becomes a list under the info column on narrow windows.
-- Banner visibility and poster width.
+- Page composition: stacked tabs (`stack`), a split info + episode rail (`split`), or a full-bleed overlay (`overlay`) with title, Play and synopsis on the artwork.
+- Episode placement: inside the Episodes tab, a right-hand rail, or below the series info. A right-hand rail becomes a list under the info column on narrow windows. Overlay pages keep episodes below the artwork.
+- Banner visibility and poster width. Overlay pages always show the banner and hide the overlapping poster.
 - Optional episode-card templates (non-interactive, like poster tiles). The cards / compact / grid control in Appearance still chooses how the list is arranged.
 
 ### Player

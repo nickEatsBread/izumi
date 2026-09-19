@@ -21,6 +21,12 @@ describe('theme chrome application', () => {
     expect(editor).toContain('themeCoverage')
     expect(editor).toContain('templateOutline')
   })
+  it('paints custom home heroes as full-bleed banners, not boxed cards', () => {
+    const hero = read('./components/banner/Hero.svelte')
+    expect(hero).toContain('theme-custom-hero')
+    expect(hero).not.toContain('background: hsl(var(--card))')
+    expect(hero).toContain('height={`${($isMobile ? heroTheme.mobileHeight : heroTheme.height) ?? 46}vh`}')
+  })
   it('wires continue and search families through the shared card resolver', () => {
     expect(read('./components/cards/ContinueCard.svelte')).toContain("resolveCard($themePresentation, 'continue')")
     expect(read('./components/search/SearchResults.svelte')).toContain("setContext(CARD_FAMILY, 'search')")

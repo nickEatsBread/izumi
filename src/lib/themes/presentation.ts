@@ -10,7 +10,7 @@ export type ThemeAction = 'play' | 'details' | 'favorite' | 'previous' | 'next' 
 export type CardFamily = 'poster' | 'continue' | 'search'
 export type ThemeDensity = 'compact' | 'comfortable' | 'large'
 export type ThemeNavPlacement = 'sidebar' | 'top' | 'bottom'
-export type DetailLayout = 'stack' | 'split'
+export type DetailLayout = 'stack' | 'split' | 'overlay'
 export type EpisodePlacement = 'tab' | 'right' | 'below'
 export type ThemeSurface = 'Home' | 'Shell' | 'Details' | 'Player' | 'Full'
 export interface ThemeNode {
@@ -157,7 +157,7 @@ function parseRow(value: unknown): RowPresentation {
 function parseDetail(value: unknown): DetailPresentation {
   const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'episodes'])
   const result: DetailPresentation = {}
-  if (raw.layout !== undefined) result.layout = choice(raw.layout, ['stack', 'split'])
+  if (raw.layout !== undefined) result.layout = choice(raw.layout, ['stack', 'split', 'overlay'])
   if (raw.bannerHidden !== undefined) result.bannerHidden = flag(raw.bannerHidden)
   if (raw.posterWidth !== undefined) result.posterWidth = number(raw.posterWidth, 96, 360)
   if (raw.episodes !== undefined) {
@@ -276,20 +276,23 @@ export function resolveCard(layout: ThemePresentation | undefined, family: CardF
 export function resolveDetail(layout?: ThemePresentation): Required<Pick<DetailPresentation, 'layout' | 'bannerHidden'>> & DetailPresentation {
   const detail = layout?.detail ?? {}
   const page = detail.layout ?? 'stack'
-  const placement = detail.episodes?.placement ?? (page === 'split' ? 'right' : 'tab')
+  const placement = detail.episodes?.placement ?? (page === 'split' ? 'right' : page === 'overlay' ? 'below' : 'tab')
   return {
     layout: page,
-    bannerHidden: detail.bannerHidden === true,
+    bannerHidden: page === 'overlay' ? false : detail.bannerHidden === true,
     posterWidth: detail.posterWidth,
     episodes: { placement, card: detail.episodes?.card },
   }
 }
 /** Right-hand episode rail is desktop-only. Narrow viewports fall back to a rail below the info column. */
 export function episodesOnSide(layout?: ThemePresentation, desktop = true): boolean {
-  return desktop && resolveDetail(layout).episodes?.placement === 'right'
+  const detail = resolveDetail(layout)
+  return desktop && detail.layout !== 'overlay' && detail.episodes?.placement === 'right'
 }
 export function episodesBelow(layout?: ThemePresentation, desktop = true): boolean {
-  const placement = resolveDetail(layout).episodes?.placement
+  const detail = resolveDetail(layout)
+  if (detail.layout === 'overlay') return true
+  const placement = detail.episodes?.placement
   return placement === 'below' || (placement === 'right' && !desktop)
 }
 export function densityScale(layout?: ThemePresentation): number {

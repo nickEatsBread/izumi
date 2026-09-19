@@ -273,14 +273,13 @@
 
 {#if current && !heroTheme?.hidden}
   {#if heroTheme?.template}
-    <section data-nav-row data-theme-hero aria-label="Featured" class="theme-custom-hero" style:min-height={`${($isMobile ? heroTheme.mobileHeight : heroTheme.height) ?? 46}vh`} ontouchstart={onTouchStart} ontouchend={onTouchEnd}>
+    <section data-nav-row data-theme-hero aria-label="Featured" class="theme-custom-hero" style:height={`${($isMobile ? heroTheme.mobileHeight : heroTheme.height) ?? 46}vh`} ontouchstart={onTouchStart} ontouchend={onTouchEnd}>
       <ThemeNode node={heroTheme.template} model={themeModel} eager titleHeading actions={{
         details: oninfo ? () => themeAction(() => { rememberDetail(current); oninfo?.(current) }) : undefined,
         play: onplay ? () => themeAction(() => { rememberDetail(current); onplay?.(current) }) : undefined,
         favorite: onfav ? () => themeAction(() => onfav?.(current)) : undefined,
         previous: medias.length > 1 ? () => themeAction(() => step(-1)) : undefined, next: medias.length > 1 ? () => themeAction(() => step(1)) : undefined,
       }} />
-      <div class="flex flex-wrap justify-between gap-3 pt-3">{#if oninfo}<button type="button" data-focusable onclick={() => themeAction(() => { rememberDetail(current); oninfo?.(current) })}>View details</button>{/if}{#if medias.length > 1}<div class="flex items-center gap-3"><button type="button" data-focusable aria-label="Previous featured title" onclick={() => themeAction(() => step(-1))}>Previous</button><span>{i + 1} / {medias.length}</span><button type="button" data-focusable aria-label="Next featured title" onclick={() => themeAction(() => step(1))}>Next</button></div>{/if}</div>
     </section>
   {:else if $isMobile && showOverlay}
     <!-- Mobile Home: a CONTAINED poster block (not a full-bleed banner) — reads far better on a
@@ -556,7 +555,8 @@
 {/if}
 
 <style>
-  .theme-custom-hero { margin: 1rem clamp(1rem, 3vw, 2rem) 2rem; position: relative; padding: clamp(1rem, 3vw, 2rem); border-radius: var(--radius); background: hsl(var(--card)); }
+  .theme-custom-hero { position: relative; margin: 0 0 1.5rem; overflow: hidden; min-height: 24vh; }
+  .theme-custom-hero :global(.theme-template) { height: 100%; min-height: inherit; }
   .theme-custom-hero button { min-height: 44px; padding-inline: 12px; font-weight: 800; }
   @keyframes hero-progress-fill {
     from { transform: scaleX(0); }

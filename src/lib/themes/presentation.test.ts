@@ -107,6 +107,14 @@ describe('theme surface resolution', () => {
     expect(resolveDetail(undefined).layout).toBe('stack')
     expect(episodesOnSide(undefined, true)).toBe(false)
   })
+  it('treats an overlay series page as a full-bleed banner with episodes below', () => {
+    const overlay = parsePresentation({ detail: { layout: 'overlay', bannerHidden: true, episodes: { placement: 'right' } } })
+    expect(resolveDetail(overlay)).toMatchObject({ layout: 'overlay', bannerHidden: false, episodes: { placement: 'right' } })
+    expect(episodesOnSide(overlay, true)).toBe(false)
+    expect(episodesBelow(overlay, true)).toBe(true)
+    expect(episodesBelow(parsePresentation({ detail: { layout: 'overlay' } }), true)).toBe(true)
+    expect(resolveDetail(parsePresentation({ detail: { layout: 'overlay' } })).episodes?.placement).toBe('below')
+  })
   it('resolves card families with row templates taking precedence', () => {
     const layout = parsePresentation({
       rows: { byId: { continue: { card: { type: 'text', field: 'title' } } } },

@@ -132,9 +132,10 @@
     <label class="toggle"><span>Show rank badge</span><input type="checkbox" checked={!hero.rankHidden} onchange={event => setHero({ rankHidden: !event.currentTarget.checked })} data-focusable /></label>
     <p class="help">Reduced motion takes priority over rotation. Custom hero templates can define their own metadata.</p>
   {:else if scope === 'detail'}
-    <label>Page composition<select value={presentation?.detail?.layout ?? 'stack'} onchange={event => { const layout = value(event) as NonNullable<ThemePresentation['detail']>['layout']; setDetail({ layout, episodes: { placement: layout === 'split' ? 'right' : 'tab' } }) }} data-focusable>
+    <label>Page composition<select value={presentation?.detail?.layout ?? 'stack'} onchange={event => { const layout = value(event) as NonNullable<ThemePresentation['detail']>['layout']; setDetail({ layout, episodes: { placement: layout === 'split' ? 'right' : layout === 'overlay' ? 'below' : 'tab' } }) }} data-focusable>
       <option value="stack">Stacked (tabs)</option>
       <option value="split">Split (info + episode rail)</option>
+      <option value="overlay">Overlay (title and play on the artwork)</option>
     </select></label>
     <label>Episode placement<select value={detail.episodes?.placement ?? 'tab'} onchange={event => setDetail({ episodes: { placement: value(event) as NonNullable<NonNullable<ThemePresentation['detail']>['episodes']>['placement'] } })} data-focusable>
       <option value="tab">Inside the Episodes tab</option>
@@ -143,7 +144,7 @@
     </select></label>
     <label class="toggle"><span>Show banner artwork</span><input type="checkbox" checked={!detail.bannerHidden} onchange={event => setDetail({ bannerHidden: !event.currentTarget.checked })} data-focusable /></label>
     <label>Poster width <output>{detail.posterWidth ?? 176}px</output><input type="range" aria-label="Poster width" min="96" max="360" value={detail.posterWidth ?? 176} oninput={event => setDetail({ posterWidth: Number(value(event)) })} data-focusable /></label>
-    <p class="help">A right-hand rail becomes a list below the info column on narrow windows. The cards / compact / grid control still belongs to Appearance.</p>
+    <p class="help">A right-hand rail becomes a list below the info column on narrow windows. Overlay paints title and Play on the banner and keeps episodes below. The cards / compact / grid control still belongs to Appearance.</p>
   {:else if scope === 'player'}
     <label>Seekbar thickness <output>{presentation?.player?.seekbarHeight ?? 4}px</output><input type="range" aria-label="Seekbar thickness" min="2" max="16" value={presentation?.player?.seekbarHeight ?? 4} oninput={event => setPlayer({ seekbarHeight: Number(value(event)) })} data-focusable /></label>
     <label>Seekbar color<select value={presentation?.player?.seekbarColor ?? 'foreground'} onchange={event => setPlayer({ seekbarColor: value(event) })} data-focusable>

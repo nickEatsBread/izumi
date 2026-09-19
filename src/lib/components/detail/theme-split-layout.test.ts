@@ -11,8 +11,10 @@ describe('themed series page composition', () => {
     expect(detail).toContain('resolveDetail($themePresentation)')
     expect(detail).toContain('episodesOnSide($themePresentation, !$isMobile)')
     expect(detail).toContain('episodesBelow($themePresentation, !$isMobile)')
+    expect(detail).toContain('overlayDetail')
     expect(detail).toContain('sideEpisodes')
     expect(detail).toContain('minmax(22rem,40%)')
+    expect(detail).toContain('data-theme-surface="detail-overlay"')
   })
   it('keeps the play-to-episode gamepad lane when the rail moves', () => {
     expect(detail).toContain('data-nav-id="series-primary-action"')
