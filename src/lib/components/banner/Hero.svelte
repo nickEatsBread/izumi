@@ -283,7 +283,7 @@
         previous: medias.length > 1 ? () => themeAction(() => step(-1)) : undefined, next: medias.length > 1 ? () => themeAction(() => step(1)) : undefined,
       }} />
       {#if medias.length > 1}
-        <div class="absolute bottom-5 left-8 z-20 flex items-center gap-2">
+        <div class="absolute bottom-3 left-8 z-20 flex items-center gap-2">
           {#each medias as _, idx (idx)}
             <button type="button" data-focusable onclick={() => go(idx)} aria-label={`Featured title ${idx + 1}`}
                     class="h-[3px] overflow-hidden rounded-sm bg-white/20 transition-[width] duration-300"
@@ -584,8 +584,9 @@
     background: linear-gradient(to top, hsl(var(--background)) 0%, hsl(var(--background) / 0.35) 42%, transparent 70%),
       linear-gradient(to right, hsl(var(--background) / 0.88) 0%, hsl(var(--background) / 0.35) 42%, transparent 62%);
   }
-  .theme-custom-hero :global(.theme-overlay > :not(img)) { position: relative; z-index: 2; }
-  .theme-custom-hero button { min-height: 44px; padding-inline: 12px; font-weight: 800; }
+  .theme-custom-hero :global(.theme-overlay > :not(img)) { position: relative; z-index: 2; padding-bottom: 1.5rem; }
+  .theme-custom-hero :global(.theme-action) { min-height: 40px; }
+  .theme-custom-hero > :global(div.absolute) button { min-height: 0; padding: 0; }
   @keyframes hero-progress-fill {
     from { transform: scaleX(0); }
     to { transform: scaleX(1); }

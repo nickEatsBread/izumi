@@ -53,7 +53,7 @@
             { "type": "artwork", "artwork": "backdrop", "style": { "anchor": "fill", "fit": "cover" } },
             {
               "type": "stack",
-              "style": { "anchor": "bottom-start", "padding": 28, "gap": 10, "maxWidth": 640 },
+              "style": { "anchor": "bottom-start", "padding": 24, "gap": 10, "maxWidth": 640 },
               "children": [
                 { "type": "text", "field": "title", "style": { "color": "#FFFFFF", "fontSize": 44, "fontWeight": 800 } },
                 {
