@@ -1,7 +1,7 @@
 <script lang="ts">
   import { nodeStyle, visibleNode, displayText, type ThemeNode, type DisplayModel, type ThemeAction } from '$lib/themes/presentation'
   let { node, model, actions = {}, eager = false, titleHeading = false }: { node: ThemeNode; model: DisplayModel; actions?: Partial<Record<ThemeAction, () => void>>; eager?: boolean; titleHeading?: boolean } = $props()
-  const labels: Record<ThemeAction, string> = { play: 'Watch', details: 'Details', favorite: 'Favorite', previous: 'Previous slide', next: 'Next slide' }
+  const labels: Record<ThemeAction, string> = { play: 'Watch', details: 'Details', favorite: 'Favorite', previous: 'Previous slide', next: 'Next slide', list: 'Add to list', trailer: 'Trailer', share: 'Share' }
 </script>
 
 {#snippet renderNode(item: ThemeNode)}
