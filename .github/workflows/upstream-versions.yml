@@ -1,0 +1,86 @@
+name: upstream versions
+
+# Weekly check of the native-build pins Dependabot cannot see (mpv, the shinchiro Windows build,
+# libmpv-android, libass, libplacebo, the AndroidX runtimes). Self-hosted Renovate reads
+# .github/renovate.json5 and opens one PR per pin group, then runs scripts/ci/sync-upstream-pins.mjs
+# in the branch so the derived values (asset SHA-256, tag→commit, Android versions, NDK) arrive
+# in the same PR.
+#
+# Token. With a PAT (`RENOVATE_TOKEN`, or the `RELEASE_PAT` RELEASING.md already asks for) the
+# PRs behave like any other: ci.yml and the `build-preview` builds trigger on their own. With only
+# the workflow's GITHUB_TOKEN the PRs are still opened, but GitHub never starts workflows for
+# events that token causes — so the second job dispatches ci.yml and pr-build.yml onto each PR
+# branch by hand (`workflow_dispatch` is the documented exception to that rule).
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Log what would change without touching branches or PRs'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: upstream-versions
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Self-hosted Renovate
+        uses: renovatebot/github-action@v46.2.6
+        with:
+          token: ${{ secrets.RENOVATE_TOKEN || secrets.RELEASE_PAT || github.token }}
+        env:
+          LOG_LEVEL: ${{ runner.debug && 'debug' || 'info' }}
+          RENOVATE_PLATFORM: github
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_ONBOARDING: 'false'
+          RENOVATE_REQUIRE_CONFIG: required
+          RENOVATE_GIT_AUTHOR: 'renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>'
+          RENOVATE_DRY_RUN: ${{ inputs.dry-run && 'full' || 'null' }}
+          # postUpgradeTasks are opt-in per command on the self-hosted side; this is the only one.
+          RENOVATE_ALLOWED_COMMANDS: '["^node scripts/ci/sync-upstream-pins\\.mjs$"]'
+          # The sync script's GitHub reads (release assets, tag objects, depinfo.sh) run inside the
+          # Renovate container, which strips the process environment for post-upgrade commands.
+          RENOVATE_CUSTOM_ENV_VARIABLES: '{"GITHUB_TOKEN":"${{ secrets.RENOVATE_TOKEN || secrets.RELEASE_PAT || github.token }}"}'
+
+  # No-op whenever a PAT is in use (the PRs already have runs). See the header.
+  trigger-checks:
+    needs: renovate
+    if: ${{ !inputs.dry-run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Dispatch ci + preview builds onto bot PRs without a run
+        run: |
+          set -euo pipefail
+          gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 50 \
+            --json number,headRefName,headRefOid \
+            --jq '.[] | select(.headRefName | startswith("upstream/")) | "\(.number) \(.headRefName) \(.headRefOid)"' |
+          while read -r number branch sha; do
+            for workflow in ci.yml pr-build.yml; do
+              runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$sha&per_page=1" --jq '.total_count')
+              if [ "$runs" = "0" ]; then
+                gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref "$branch"
+                echo "dispatched $workflow for #$number ($branch @ ${sha:0:12})"
+              fi
+            done
+          done

@@ -102,6 +102,12 @@ and add it as the repo secret **`RELEASE_PAT`**. GitHub blocks `GITHUB_TOKEN`-pu
 from triggering workflows, so without the PAT the tag is created but you re-run
 `release.yml` manually.
 
+The same PAT serves the weekly **upstream versions** workflow (Renovate, configured in
+`.github/renovate.json5`), which opens PRs for the native-build pins Dependabot cannot see: mpv,
+the shinchiro Windows build, libmpv-android, libass, libplacebo, the AndroidX runtimes. With the
+PAT those PRs trigger CI and the `build-preview` builds like any other; without it they are still
+opened, and the workflow dispatches the checks onto each branch itself.
+
 ### Manual
 
 1. Bump the version in **all of these** (keep in sync — the `version bump` workflow does all of

@@ -148,9 +148,13 @@ if [ "$FLAVOR" = "full" ]; then
   LIBMPV_AAR="src-tauri/tauri-plugin-mpv/android/libs/libmpv.aar"
   test -s "$LIBMPV_AAR" \
     || { echo "secure libmpv AAR missing — run scripts/ci/libmpv-android.sh first"; exit 1; }
+  # The expected libass is whatever the build script pins (one home for the version).
+  LIBASS_VERSION="$(sed -n 's/^readonly LIBASS_VERSION="\(.*\)"$/\1/p' scripts/ci/libmpv-android.sh)"
+  test -n "$LIBASS_VERSION" \
+    || { echo "cannot read LIBASS_VERSION from scripts/ci/libmpv-android.sh"; exit 1; }
   unzip -p "$LIBMPV_AAR" jni/arm64-v8a/libmpv.so \
-    | strings | grep 'commit: 0\.17\.5-' >/dev/null \
-    || { echo "staged libmpv does not contain libass 0.17.5"; exit 1; }
+    | strings | grep -F "commit: ${LIBASS_VERSION}-" >/dev/null \
+    || { echo "staged libmpv does not contain libass ${LIBASS_VERSION}"; exit 1; }
 
   # Picture-in-picture is a full-flavor feature: it needs the embedded player. `resizeableActivity`
   # is the other half of the contract — an activity the system treats as non-resizeable is refused

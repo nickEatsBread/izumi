@@ -261,11 +261,16 @@ const LANG_TOKENS: Record<string, string> = {
   fre: 'fre', fra: 'fre', french: 'fre', vostfr: 'fre', truefrench: 'fre',
   ger: 'ger', deu: 'ger', german: 'ger',
   por: 'por', ptbr: 'por', portuguese: 'por', dublado: 'por',
-  rus: 'rus', russian: 'rus',
+  rus: 'rus', russian: 'rus', ru: 'rus',
   ara: 'ara', arabic: 'ara',
   chi: 'chi', chinese: 'chi',
   kor: 'kor', korean: 'kor',
   hin: 'hin', hindi: 'hin',
+  cze: 'cze', czech: 'cze', cz: 'cze',
+  dut: 'dut', dutch: 'dut', nld: 'dut', nl: 'dut',
+  pol: 'pol', polish: 'pol', pl: 'pol', pldub: 'pol',
+  lat: 'spa',
+  vf: 'fre', vff: 'fre', vfq: 'fre',
   multi: 'multi', multisub: 'multi', multiaudio: 'multi',
 }
 
@@ -352,6 +357,8 @@ export const isNotice = (s: Stream) =>
 // picker's rows are collectable.
 const parsed = new WeakMap<Stream, StreamInfo>()
 
+export const SEEDER_PLACEHOLDERS: ReadonlySet<number> = new Set([32_767, 65_535])
+
 export function describe(s: Stream): StreamInfo {
   const hit = parsed.get(s)
   if (hit) return hit
@@ -379,7 +386,10 @@ function parseStream(s: Stream): StreamInfo {
   const structuralSeeders = s.__seeders != null && Number.isFinite(s.__seeders) && s.__seeders > 0
     ? Math.floor(s.__seeders)
     : undefined
-  const seeders = structuralSeeders ?? (seedersTxt != null ? Number(seedersTxt) : undefined)
+  // The signed and unsigned 16-bit ceilings are placeholders some indexers emit for "many" or
+  // "unknown". Treating them as counts let a placeholder outrank every genuine swarm.
+  const reportedSeeders = structuralSeeders ?? (seedersTxt != null ? Number(seedersTxt) : undefined)
+  const seeders = reportedSeeders != null && SEEDER_PLACEHOLDERS.has(reportedSeeders) ? undefined : reportedSeeders
   const sizeTxt = hay.match(/💾\s*([\d.]+\s*[KMGT]i?B)/i)?.[1]?.replace(/\s+/g, ' ').trim()
   // Structured first (authoritative), then the text the addon wrote. The LABEL keeps the addon's
   // own wording when it gave one — it is what the user sees on the row, and rounding it through

@@ -26,14 +26,7 @@ export interface RefineLiteContext {
   totalEpisodes?: number
   /** Long-running absolute-numbered anime (One Piece-style "- 067" naming). */
   absoluteNumbered?: boolean
-  /** Release date (ms epoch), when a catalogue lookup produced one. */
-  releasedAt?: number
 }
-
-// How long after a theatrical release a claimed WEB/BluRay copy stays implausible. Short enough
-// that a genuinely fast digital release only overlaps briefly, long enough to cover the window
-// where scam uploads carry clean release names precisely because no real digital copy exists yet.
-const PRE_DIGITAL_WINDOW_DAYS = 60
 
 export interface RefinedLite { kept: Stream[]; rejectedCount: number }
 
@@ -52,15 +45,7 @@ export function refineStreamsLite(ctx: RefineLiteContext, streams: Stream[]): Re
   const titleEvidence = ctx.streamType === 'movie' ? titles.length >= 1 : titles.length >= 2
   const isSeries = ctx.streamType === 'series' && (ctx.totalEpisodes ?? 0) > 1
   const expectedSeconds = ctx.expectedSeconds ?? 0
-  // A film still inside its theatrical window has no legitimate WEB/BluRay copy: rows claiming
-  // one beside actual cam rips are scam uploads wearing a clean release name. Both conditions are
-  // required — a known-recent release date AND cam evidence in this very pool — so a real early
-  // digital release (cams gone from relevance) or an unknown date never triggers it.
-  const releaseAgeDays = ctx.releasedAt != null ? (Date.now() - ctx.releasedAt) / 86_400_000 : undefined
-  const theatricalWindow = ctx.streamType === 'movie' && releaseAgeDays != null && releaseAgeDays < PRE_DIGITAL_WINDOW_DAYS
-  const camEvidence = theatricalWindow && streams.some((s) => describe(s).source === 'CAM')
   const why = (s: Stream): boolean => {
-    if (camEvidence && ['WEB-DL', 'WEBRip', 'WEB', 'BluRay', 'DVD'].includes(describe(s).source ?? '')) return true
     // Needs no context at all: the release itself declares it is a different production.
     if (selfDeclaredOtherProduction(s)) return true
     if (isSeries && expectedSeconds >= 10 * 60) {

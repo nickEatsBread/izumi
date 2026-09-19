@@ -1,0 +1,134 @@
+// Renovate, scoped to the version pins Dependabot cannot see.
+//
+// Dependabot (.github/dependabot.yml) owns the three package ecosystems: npm, cargo and the
+// workflows' actions. Everything else this repo builds from is a hand-written version string in a
+// shell script, a PowerShell script, the Flatpak manifest or a Gradle file — the mpv source tag,
+// the shinchiro Windows dev build, the libmpv-android commit, libass/libplacebo, the AndroidX
+// runtimes — and no Dependabot ecosystem reads those. Renovate's regex manager does. This file
+// enables ONLY that manager, so the two bots never open PRs for the same dependency.
+//
+// Two rules keep the bumps mergeable:
+//   - every PR is labelled `build-preview`, so pr-build.yml compiles the real Windows, Flatpak
+//     and Android artifacts against the new pin (ci.yml alone never links libmpv or runs Gradle);
+//   - scripts/ci/sync-upstream-pins.mjs runs after each bump and fills in the values that follow
+//     from it (Windows asset name + SHA-256, Flatpak tag→commit, the Android versions and NDK that
+//     libmpv-android's depinfo.sh declares at the new commit).
+//
+// Runs from .github/workflows/upstream-versions.yml. Validate edits with
+//   npx --package renovate renovate-config-validator .github/renovate.json5
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  enabledManagers: ['custom.regex'],
+  dependencyDashboard: false,
+  branchPrefix: 'upstream/',
+  labels: ['dependencies', 'build-preview'],
+  // Match the Dependabot PRs: `chore: bump X to Y`.
+  semanticCommits: 'disabled',
+  commitMessagePrefix: 'chore:',
+  commitMessageAction: 'bump',
+  prConcurrentLimit: 5,
+  prHourlyLimit: 0,
+  // The workflow's cron sets the cadence; leave Renovate itself unrestricted.
+  schedule: ['at any time'],
+
+  postUpgradeTasks: {
+    commands: ['node scripts/ci/sync-upstream-pins.mjs'],
+    fileFilters: [
+      'scripts/ci/libmpv-windows.ps1',
+      'scripts/ci/libmpv-android.sh',
+      'scripts/ci/android-toolchain.env',
+      'flatpak/com.nicho.izumi.yml',
+    ],
+    executionMode: 'branch',
+  },
+
+  customManagers: [
+    {
+      // mpv, built from source for Linux CI and the Linux release.
+      customType: 'regex',
+      managerFilePatterns: ['/^scripts/ci/libmpv-linux\\.sh$/'],
+      matchStrings: ['readonly MPV_VERSION="(?<currentValue>[0-9][0-9.]*)"'],
+      depNameTemplate: 'mpv-player/mpv',
+      datasourceTemplate: 'github-tags',
+      // The script stores the bare version; upstream tags carry a `v`.
+      extractVersionTemplate: '^v(?<version>.+)$',
+    },
+    {
+      // Every GitHub git source in the Flatpak manifest that pins a tag (mpv, libass, libplacebo).
+      // The value is the tag itself, so a `v` prefix survives the rewrite. Where the manifest also
+      // pins a commit, sync-upstream-pins.mjs re-resolves it after the tag moves.
+      customType: 'regex',
+      managerFilePatterns: ['/^flatpak/com\\.nicho\\.izumi\\.yml$/'],
+      matchStrings: ["url: https://github\\.com/(?<depName>[\\w.-]+/[\\w.-]+)\\.git\\s+tag: '?(?<currentValue>[^'\\s]+)'?"],
+      datasourceTemplate: 'github-tags',
+    },
+    {
+      // The reviewed shinchiro dev build the Windows release links against. Tags are dates;
+      // sync-upstream-pins.mjs derives the asset name and SHA-256 from the new tag.
+      customType: 'regex',
+      managerFilePatterns: ['/^scripts/ci/libmpv-windows\\.ps1$/'],
+      matchStrings: ["\\$PinnedTag = '(?<currentValue>\\d{8})'"],
+      depNameTemplate: 'shinchiro/mpv-winbuild-cmake',
+      datasourceTemplate: 'github-releases',
+      versioningTemplate: 'regex:^(?<major>\\d{4})(?<minor>\\d{2})(?<patch>\\d{2})$',
+    },
+    {
+      // The libmpv-android commit the arm64 AAR is built from. Tracked as a digest of `main`;
+      // sync-upstream-pins.mjs then mirrors that commit's depinfo.sh into the version asserts.
+      customType: 'regex',
+      managerFilePatterns: ['/^scripts/ci/libmpv-android\\.sh$/'],
+      matchStrings: ['readonly COMMIT="(?<currentDigest>[0-9a-f]{40})"'],
+      depNameTemplate: 'jarnedemeulemeester/libmpv-android',
+      packageNameTemplate: 'https://github.com/jarnedemeulemeester/libmpv-android',
+      datasourceTemplate: 'git-refs',
+      currentValueTemplate: 'main',
+    },
+    {
+      // AndroidX WebKit: patched into the generated Android project by the scaffold script and
+      // declared directly by the extplayer plugin. Both lines move together (grouped below).
+      customType: 'regex',
+      managerFilePatterns: [
+        '/^scripts/ci/android-scaffold\\.sh$/',
+        '/^src-tauri/tauri-plugin-extplayer/android/build\\.gradle\\.kts$/',
+      ],
+      matchStrings: ['androidx\\.webkit:webkit:(?<currentValue>[0-9][0-9.]*)'],
+      depNameTemplate: 'androidx.webkit:webkit',
+      datasourceTemplate: 'maven',
+      registryUrlTemplate: 'https://maven.google.com',
+    },
+    {
+      // Kotlin Gradle plugin the scaffold forces onto the generated project.
+      customType: 'regex',
+      managerFilePatterns: ['/^scripts/ci/android-scaffold\\.sh$/'],
+      matchStrings: ['kotlin-gradle-plugin:(?<currentValue>[0-9][0-9.]*)'],
+      depNameTemplate: 'org.jetbrains.kotlin:kotlin-gradle-plugin',
+      datasourceTemplate: 'maven',
+    },
+    {
+      // Media3 (ExoPlayer) in the mpv plugin's Gradle build.
+      customType: 'regex',
+      managerFilePatterns: ['/^src-tauri/tauri-plugin-mpv/android/build\\.gradle\\.kts$/'],
+      matchStrings: ['val media3Version = "(?<currentValue>[0-9][0-9.]*)"'],
+      depNameTemplate: 'androidx.media3:media3-exoplayer',
+      datasourceTemplate: 'maven',
+      registryUrlTemplate: 'https://maven.google.com',
+    },
+  ],
+
+  packageRules: [
+    {
+      // Linux CI script and Flatpak manifest move in one PR.
+      matchDepNames: ['mpv-player/mpv'],
+      groupName: 'mpv',
+    },
+    {
+      matchDepNames: ['androidx.webkit:webkit', 'org.jetbrains.kotlin:kotlin-gradle-plugin'],
+      groupName: 'android-gradle',
+    },
+    {
+      // Upstream commits often; one open PR that keeps re-targeting the newest commit is enough.
+      matchDepNames: ['jarnedemeulemeester/libmpv-android'],
+      groupName: 'libmpv-android',
+    },
+  ],
+}

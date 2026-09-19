@@ -40,20 +40,6 @@ describe('refineStreamsLite', () => {
     expect(r.rejectedCount).toBe(1)
   })
 
-  it('rejects clean-release claims inside the theatrical window when cams prove it', () => {
-    const ctx: RefineLiteContext = { ...movie, releasedAt: Date.now() - 50 * 86_400_000 }
-    const rows = [
-      named('Example.Film.2026.1080p.WEBRip.x264.AAC5.1-[YTS.GG - YTS.BZ].mp4'),
-      named('Example.Film.2026.1080p.TELESYNC.HEVC.AAC2.0-SPLiCE.mkv'),
-    ]
-    const r = refineStreamsLite(ctx, rows)
-    expect(r.kept.map((s) => s.behaviorHints?.filename)).toEqual(['Example.Film.2026.1080p.TELESYNC.HEVC.AAC2.0-SPLiCE.mkv'])
-    // Without cam evidence (a real digital release) the same claim is kept.
-    expect(refineStreamsLite(ctx, [rows[0]]).kept).toHaveLength(1)
-    // Outside the window the claim is kept even beside cams lingering in the index.
-    expect(refineStreamsLite({ ...movie, releasedAt: Date.now() - 200 * 86_400_000 }, rows).kept).toHaveLength(2)
-  })
-
   it('rejects trailers and extras regardless of title match', () => {
     const r = refineStreamsLite(movie, [
       named('Example.Film.2026.1080p.mkv'),

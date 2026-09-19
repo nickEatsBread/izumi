@@ -337,6 +337,7 @@ impl PlayerHandle {
     ) -> Result<(), String> {
         // Remember the URL — the next hover renders fresh frames against the new file.
         *self.current_url.lock().map_err(|e| e.to_string())? = Some(url.to_string());
+        crate::gm_perf::PLAYER_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
 
         let subs = subtitles.unwrap_or_default();
         let audio = audio_tracks.unwrap_or_default();
@@ -438,6 +439,7 @@ impl PlayerHandle {
         audio_tracks: Option<Vec<AudioTrack>>,
     ) -> Result<(), String> {
         *self.current_url.lock().map_err(|e| e.to_string())? = Some(url.to_string());
+        crate::gm_perf::PLAYER_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
 
         let subs = subtitles.unwrap_or_default();
         let audio = audio_tracks.unwrap_or_default();
@@ -504,6 +506,7 @@ impl PlayerHandle {
     /// `close_player`.
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub fn stop(&self) -> Result<(), String> {
+        crate::gm_perf::PLAYER_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
         self.gif_abort()?;
 
         #[cfg(target_os = "linux")]
@@ -988,6 +991,15 @@ impl PlayerHandle {
         } else {
             return;
         };
+        // The 60 Hz OSD timer calls this on scrub/loading edges from GTK's main thread. A scaler
+        // swap makes the VO rebuild its shader chain synchronously inside set_property, so hand
+        // the batch to the dispatcher thread; the direct path remains the fallback before it exists.
+        if self
+            .with_mpv_dispatch(|dispatch| dispatch.render_opts(opts.clone()))
+            .is_ok()
+        {
+            return;
+        }
         if let Ok(guard) = self.mpv.lock() {
             if let Some(mpv) = guard.as_ref() {
                 for (k, v) in &opts {

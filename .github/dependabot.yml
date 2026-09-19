@@ -9,6 +9,11 @@ version: 2
 # Minor + patch bumps arrive as ONE PR per ecosystem; majors come separately because they are
 # the ones that need reading (the Node 20 runtime deprecation is exactly what routine action
 # bumps would have prevented).
+#
+# Not covered here, by design: the native-build pins no Dependabot ecosystem can read — the mpv
+# source tag, the shinchiro Windows dev build, the libmpv-android commit, libass / libplacebo in
+# the Flatpak manifest, the AndroidX runtimes patched into the Android scaffold. Those are
+# Renovate's job: .github/renovate.json5, run weekly by .github/workflows/upstream-versions.yml.
 updates:
   - package-ecosystem: github-actions
     directory: /

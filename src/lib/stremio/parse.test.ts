@@ -203,3 +203,12 @@ suite('isWrongSeason with a TVDB absolute mapping', () => {
     expect(isWrongSeason(named('[Group] Show S02E07 [1080p]'), plain)).toBe(true)
   })
 })
+
+suite('seeder placeholders', () => {
+  it('treats a 16-bit ceiling seeder count as unknown rather than as a huge swarm', () => {
+    expect(describe({ url: 'https://host/a', title: 'Example 1080p\n👤 32767 💾 1.6 GB' }).seeders).toBeUndefined()
+    expect(describe({ url: 'https://host/b', title: 'Example 1080p\n👤 32766 💾 1.6 GB' }).seeders).toBe(32766)
+    expect(describe({ url: 'https://host/c', title: 'Example 1080p\n👤 100000' }).seeders).toBe(100000)
+    expect(describe({ infoHash: 'a'.repeat(40), title: 'Example 1080p', __seeders: 65535 }).seeders).toBeUndefined()
+  })
+})

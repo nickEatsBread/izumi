@@ -40,6 +40,8 @@ jobs:
           npm run paraglide
           npx svelte-kit sync
           npx vitest run cloudflare-sync-worker/tests --maxWorkers 2
+          node cloudflare-sync-worker/tests/resolve-channel-runtime.mjs
+          node cloudflare-sync-worker/tests/worker-update-runtime.mjs
           npm run check --prefix cloudflare-sync-worker
       - name: Package and publish the stable feed
         env:

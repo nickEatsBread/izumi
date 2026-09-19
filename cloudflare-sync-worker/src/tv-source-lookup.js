@@ -5,6 +5,21 @@ const MAX_STREAMS = 80
 const TICKET_TTL_MS = 120_000
 const encoder = new TextEncoder()
 
+/** Both transports accept metadata only; authority remains with the configured resolver. */
+export function sanitizeTvSourceStreams(streams) {
+  if (!Array.isArray(streams) || streams.length > MAX_STREAMS) throw new Error('Invalid TV source results.')
+  const text = (value, size) => typeof value === 'string' ? value.slice(0, size) : undefined
+  return streams.flatMap(stream => {
+    if (!stream || typeof stream.infoHash !== 'string' || !/^(?:[a-f0-9]{40}|[a-z2-7]{32})$/i.test(stream.infoHash)) return []
+    return [{ infoHash: stream.infoHash,
+      fileIdx: Number.isInteger(stream.fileIdx) && stream.fileIdx >= 0 ? stream.fileIdx : undefined,
+      name: text(stream.name, 300), title: text(stream.title, 700), description: text(stream.description, 700),
+      sources: Array.isArray(stream.sources) ? stream.sources.filter(value => typeof value === 'string' && value.length <= 512 && /^tracker:(?:https?|udp):\/\//i.test(value)).slice(0, 8) : [],
+      behaviorHints: { filename: text(stream.behaviorHints?.filename, 500), videoSize: Number(stream.behaviorHints?.videoSize) || undefined },
+    }]
+  })
+}
+
 export function tvSourceRequests(base, ids, type, addonIndex) {
   const url = new URL(base)
   if (url.origin !== 'https://torrentio.strem.fun' || !['movie', 'series', 'anime'].includes(type)) return []
@@ -75,15 +90,7 @@ export async function verifyTvSourceLookup(profile, request, value, context) {
     received.add(result.id)
     // The TV returns metadata only. A caller cannot use this route to fetch a supplied URL,
     // inject player headers, or override ranking/cache evidence generated inside the Worker.
-    for (const stream of result.streams) {
-      if (!stream || typeof stream.infoHash !== 'string' || !/^(?:[a-f0-9]{40}|[a-z2-7]{32})$/i.test(stream.infoHash)) continue
-      streams.push({
-        infoHash: stream.infoHash, fileIdx: stream.fileIdx,
-        name: stream.name, title: stream.title, description: stream.description,
-        sources: stream.sources,
-        behaviorHints: { filename: stream.behaviorHints?.filename, videoSize: stream.behaviorHints?.videoSize },
-      })
-    }
+    streams.push(...sanitizeTvSourceStreams(result.streams))
   }
   return { issuedAt: lookup.issuedAt, plan: lookup.plan, streams }
 }

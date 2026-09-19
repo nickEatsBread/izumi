@@ -41,7 +41,11 @@ const emptyStreamsError = (total: number, enabledAddons: string[], rejected = 0)
     ? `Found ${total} torrents but none are usable (all dead or notice entries). Try another source.`
     : 'No streams found for this title/episode yet.'
 }
-const rankOpts = (anilistId?: number): RankOptions => ({
+const runtimeSecondsOf = (media: Pick<Media, 'duration'> | undefined): number | undefined =>
+  media?.duration && media.duration > 0 ? media.duration * 60 : undefined
+
+const rankOpts = (anilistId?: number, runtimeSeconds?: number): RankOptions => ({
+  runtimeSeconds,
   audioLang: get(preferredAudioLang),
   subtitleLang: get(preferredSubLang),
   directP2p: directP2pEnabled(),
@@ -1318,7 +1322,7 @@ function pickSameRelease(media: Media, streams: Stream[], want?: EpisodeWant): S
     c,
     want,
     get(preferredQuality),
-    rankOpts(anilistIdOf(media)),
+    rankOpts(anilistIdOf(media), runtimeSecondsOf(media)),
   )
 }
 
@@ -1662,7 +1666,7 @@ async function prefetchNext(media: Media, episode: number) {
           directHint,
           want,
           get(preferredQuality),
-          rankOpts(anilistIdOf(media)),
+          rankOpts(anilistIdOf(media), runtimeSecondsOf(media)),
         )
     if (!best) return // no cached source — leave it to the picker rather than force a download
     // Recover the hash from a debrid resolver URL exactly as playStream does. Without this the
@@ -1823,7 +1827,10 @@ export async function playEpisode(
   })
   // Cancel a watchdog replacement immediately, before this new episode has even resolved a source.
   if (!options.remoteOnly) invalidatePlaybackOwner()
-  const cont = options.continuation
+  // A remembered or same-release continuation is an automatic choice. With automatic selection
+  // off the viewer asked to choose every time, so the hint only informs ranking and the picker
+  // opens normally instead of hiding behind a start it did not ask for.
+  const cont = options.forceAuto || get(autoSelectSource) ? options.continuation : undefined
   const continuationPriorityMs = cont ? Math.max(0, options.continuationPriorityMs ?? 0) : 0
   const autoplay = options.autoplay ?? true
   // Supersede any resolve still running from a previous click (its fetches keep going in the
@@ -2150,7 +2157,7 @@ export async function playEpisode(
       // row is even the right episode, so the confident path stays shut (the same gate the
       // same-release continuation uses).
       const directP2p = directP2pEnabled()
-      const options = rankOpts(anilistIdOf(media))
+      const options = rankOpts(anilistIdOf(media), runtimeSecondsOf(media))
       const ranked = seasonSettled
         ? pickCandidates(s, get(preferredQuality), want, undefined, options)
         : []
@@ -2230,7 +2237,7 @@ export async function playEpisode(
       // (an uncached manual pick keeps the picker open while it caches).
       if (cont && continuationCanStart() && !continuationAttempted && seasonSettled && !get(debridCaching)) {
         const directTorrentContinuation = directP2pEnabled() && !cont.online
-        const options = rankOpts(anilistIdOf(media))
+        const options = rankOpts(anilistIdOf(media), runtimeSecondsOf(media))
         const hit = directTorrentContinuation
           ? pickDirectContinuationCandidate(s, cont, want, get(preferredQuality), options)
           : pickReadyContinuationCandidate(s, cont, want, get(preferredQuality), options)
@@ -2495,8 +2502,8 @@ export async function playEpisode(
       let s = refineStreams(media, acc).kept
       if (want) s = verifySeason(s, want)
       const hit = directP2pEnabled() && !cont.online
-        ? pickDirectContinuationCandidate(s, cont, want, get(preferredQuality), rankOpts(anilistIdOf(media)))
-        : pickRankedContinuationCandidate(s, cont, want, get(preferredQuality), rankOpts(anilistIdOf(media)))
+        ? pickDirectContinuationCandidate(s, cont, want, get(preferredQuality), rankOpts(anilistIdOf(media), runtimeSecondsOf(media)))
+        : pickRankedContinuationCandidate(s, cont, want, get(preferredQuality), rankOpts(anilistIdOf(media), runtimeSecondsOf(media)))
       if (hit) {
         tryContinuation(hit)
         if (continuationAttempt && await continuationAttempt) return
@@ -2798,7 +2805,7 @@ export async function playStream(
     title: title(media),
     entry: options.recoveryOwner ? 'watchdog source replacement' : 'source selection',
   })
-  traceResolve(trace, 'source selected', streamTraceDetails(stream, rankOpts(anilistIdOf(media))))
+  traceResolve(trace, 'source selected', streamTraceDetails(stream, rankOpts(anilistIdOf(media), runtimeSecondsOf(media))))
   const playbackOwner = beginPlaybackOwner(options.recoveryOwner)
   if (!playbackOwner) {
     finishResolveTrace(trace, 'stale source selection')
@@ -3855,7 +3862,7 @@ export async function recoverPlaybackSource(
   }
 
   const directP2p = directP2pEnabled()
-  const options = { ...rankOpts(context.media.id), allowUncached: true }
+  const options = { ...rankOpts(context.media.id, runtimeSecondsOf(context.media)), allowUncached: true }
   const allowedStreams = applyPriorityFilter(streams, get(sourcePriority), get(sourcePriorityMode))
   const ranked = pickCandidates(
     allowedStreams,
@@ -4113,7 +4120,7 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
     const preferred = eligible.filter((stream) => patterns[preferences.codec as 'h264' | 'h265' | 'av1'].test(raw(stream)))
     if (preferred.length) eligible = preferred
   }
-  const best = pickBest(eligible, preferences?.quality ?? get(preferredQuality), want, rankOpts(anilistIdOf(media))) ?? eligible[0]
+  const best = pickBest(eligible, preferences?.quality ?? get(preferredQuality), want, rankOpts(anilistIdOf(media), runtimeSecondsOf(media))) ?? eligible[0]
   if (!best) throw new Error('No source found to download.')
   const info = describe(best)
   // The saved name follows the release when it has one; otherwise the title/episode. The extension

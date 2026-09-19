@@ -20,7 +20,7 @@ function fixture() {
   sql.prepare('INSERT INTO devices VALUES (?, ?, ?, ?, ?)').run('owner', 'owner-hash', 'Test', 1, 1)
   sql.prepare('INSERT INTO companion_pairings (pairing_id, owner_device_id, tv_token_hash, created_at, last_seen) VALUES (?, ?, ?, ?, ?)')
     .run(pairing, 'owner', createHash('sha256').update(token).digest('base64url'), 1, 1)
-  const env = { WORKER_DEPLOY_HOOK: hook, DB: { prepare(source: string) {
+  const env = { TV_RESOLVE_SESSIONS: {}, WORKER_DEPLOY_HOOK: hook, DB: { prepare(source: string) {
     let values: (string | number)[] = []
     return { bind(...v: (string | number)[]) { values = v; return this },
       async first() { return sql.prepare(source).get(...values) },
@@ -51,7 +51,7 @@ describe('private Worker updates', () => {
     const result = await response.json()
     expect(result).toMatchObject({ configured: true, automatic: true, phase: 'queued', latestVersion: '9.0.0' })
     expect(JSON.stringify(result)).not.toContain(hook)
-    expect(fetcher).toHaveBeenLastCalledWith(hook, expect.objectContaining({ method: 'POST', redirect: 'error' }))
+    expect(fetcher).toHaveBeenLastCalledWith(hook, expect.objectContaining({ method: 'POST', redirect: 'manual' }))
     expect(fetcher.mock.calls[1][1]).not.toHaveProperty('headers')
   })
   it('coalesces concurrent requests across separate invocations and waits for the installed version', async () => {
@@ -108,13 +108,13 @@ describe('automatic deployment from the official release feed', () => {
     { name: '0002_second.sql', sql: 'ALTER TABLE migration_fixture ADD value TEXT;' }]
   function releaseFixture() {
     const { env, sql } = fixture()
-    const text = JSON.stringify({ schema: 1, version: '9.0.0', compatibilityDate: '2026-08-28', script: 'export default {}', migrations })
+    const text = JSON.stringify({ schema: 1, resolveChannel: 1, version: '9.0.0', compatibilityDate: '2026-08-28', script: 'export default {}', migrations })
     const descriptor = { schema: 1, version: '9.0.0', tag: 'worker-v9.0.0', sha256: createHash('sha256').update(text).digest('hex') }
     const fetcher = vi.fn(async (url: string, init: RequestInit = {}) => {
       if (url === UPDATE_MANIFEST) return Response.json(descriptor)
       if (url.endsWith('/worker-package.json')) return new Response(text)
       expect(url).toMatch(new RegExp(`^https://api\\.cloudflare\\.com/client/v4/accounts/${access.accountId}/`))
-      expect(init.redirect).toBe('error')
+      expect(init.redirect).toBe('manual')
       expect(new Headers(init.headers).get('Authorization')).toBe(`Bearer ${access.apiToken}`)
       if (url.endsWith('/query')) {
         const source = JSON.parse(init.body as string).sql
@@ -126,7 +126,9 @@ describe('automatic deployment from the official release feed', () => {
       expect(init.method).toBe('PUT')
       const form = init.body as FormData
       const metadata = JSON.parse(await (form.get('metadata') as Blob).text())
-      expect(metadata).toMatchObject({ bindings: [{ type: 'd1', name: 'DB', id: access.databaseId }], keep_bindings: ['secret_text', 'plain_text'] })
+      expect(metadata).toMatchObject({ bindings: [{ type: 'd1', name: 'DB', id: access.databaseId },
+        { type: 'durable_object_namespace', name: 'TV_RESOLVE_SESSIONS', class_name: 'CompanionResolveSession' }],
+        exports: { CompanionResolveSession: { type: 'durable-object', storage: 'sqlite' } }, keep_bindings: ['secret_text', 'plain_text'] })
       expect(await (form.get('worker.mjs') as Blob).text()).toBe('export default {}')
       return Response.json({ success: true })
     })
@@ -149,6 +151,16 @@ describe('automatic deployment from the official release feed', () => {
     await runWorkerUpdate(env, '1.0.0', { now, fetcher })
     expect(sql.prepare('SELECT * FROM migration_fixture').all()).toEqual([{ id: 42, value: null }])
     expect(sql.prepare('SELECT COUNT(*) AS count FROM izumi_deploy_migrations').get()).toEqual({ count: 2 })
+  })
+  it('repairs an old updater installation once, respects backoff, and confirms the binding', async () => {
+    const { env, sql, fetcher } = releaseFixture()
+    sql.prepare('INSERT INTO metadata (key, value) VALUES (?, ?)').run('worker_update_v1', JSON.stringify({ latestVersion: '9.0.0', triggeredAt: now - 10 * 60_000, checkedAt: now - 10 * 60_000 }))
+    const missing = { ...env, TV_RESOLVE_SESSIONS: undefined }
+    expect(await runWorkerUpdate(missing, '9.0.0', { now, fetcher })).toMatchObject({ phase: 'queued' })
+    expect(fetcher.mock.calls.filter(([, init]) => init.method === 'PUT')).toHaveLength(1)
+    await runWorkerUpdate(missing, '9.0.0', { now: now + 10 * 60_000, fetcher })
+    expect(fetcher.mock.calls.filter(([, init]) => init.method === 'PUT')).toHaveLength(1)
+    expect(await workerUpdateStatus(env, '9.0.0', now + 10 * 60_000)).toMatchObject({ phase: 'current' })
   })
   it('does not execute migrations or upload after checksum failure', async () => {
     const { descriptor } = releaseFixture()

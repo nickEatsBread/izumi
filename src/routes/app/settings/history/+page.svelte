@@ -17,6 +17,10 @@
   let confirmClear = $state(false)
   let fileInput = $state<HTMLInputElement>()
 
+  // Films play without an episode number (recorded as their single episode), so the row shows
+  // just the date rather than a meaningless "Episode 1".
+  const isFilm = (entry: (typeof entries)[number]) => entry.media.catalog?.type === 'movie' || entry.media.format === 'MOVIE'
+
   const flash = (m: string) => { msg = m; setTimeout(() => { if (msg === m) msg = '' }, 4000) }
   const fmt = (t: number) => new Date(t).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 
@@ -131,7 +135,7 @@
               {/if}
               <div class="min-w-0 flex-1">
                 <a href={`/app/anime/${e.media.id}`} data-focusable class="block truncate text-sm font-bold hover:text-theme">{mediaTitle(e.media)}</a>
-                <p class="text-xs text-muted-foreground">Episode {e.episode} · {fmt(e.updatedAt)}</p>
+                <p class="text-xs text-muted-foreground">{isFilm(e) ? fmt(e.updatedAt) : `Episode ${e.episode} · ${fmt(e.updatedAt)}`}</p>
               </div>
               <button data-focusable onclick={() => forgetMedia(e.media.id)} title="Remove" aria-label="Remove from history"
                 class="grid size-10 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors active:bg-secondary active:text-destructive sm:size-8 sm:hover:bg-secondary sm:hover:text-destructive">

@@ -52,7 +52,16 @@ export function dragScroll(node: HTMLElement) {
  * draggable poster links) claim an ambiguous finger gesture before the document can begin its
  * vertical pan. Advertise native pan-y up front, then own only a clearly-horizontal drag here.
  * Gamescope exposes Deck touch as a synthesized mouse pointer on the shipped GTK port, so this is
- * intentionally pointer-type agnostic while remaining strictly Game-mode gated. */
+ * intentionally pointer-type agnostic while remaining strictly Game-mode gated.
+ *
+ * Native touch scrolling on WebKitGTK is a GTK drag gesture that synthesizes wheel events (both
+ * axes, every sample) and it does NOT read `touch-action` — the `pan-y` above only reaches DOM
+ * pointer-event logic. Rows are therefore `overflow: hidden` in Game mode (app.css) so they are
+ * never a wheel target, and once a drag is clearly horizontal this handler cancels the DOM
+ * `touchmove`: a prevented touch event is the one signal that makes WebKitGTK deny its whole touch
+ * gesture group for that sequence (drag, swipe, zoom, tap), so the page does not creep vertically
+ * under a row drag and no synthesized tap fires when the finger lifts. Pointer events keep
+ * arriving regardless, so the scrollLeft drive below is unaffected. */
 export function gameModeCarouselTouch(node: HTMLElement) {
   const previousTouchAction = node.style.touchAction
   const stopMode = gameMode.subscribe((enabled) => {
@@ -119,6 +128,14 @@ export function gameModeCarouselTouch(node: HTMLElement) {
     lastAt = now
     node.scrollLeft = startLeft - dx
   }
+  // The axis is settled by the pointermove derived from the same touch sample; whichever of the
+  // two the browser dispatches first, the cancel lands at most one sample after the decision —
+  // far inside GTK's own 8 px drag threshold. Vertical and undecided drags stay uncancelled so
+  // the document scrolls natively with its kinetic momentum.
+  const onTouchMove = (event: TouchEvent) => {
+    if (pointer === -1) return
+    if (axis === 'horizontal') event.preventDefault()
+  }
   const onEnd = (event: PointerEvent) => {
     if (pointer !== event.pointerId) return
     const horizontal = axis === 'horizontal'
@@ -138,6 +155,7 @@ export function gameModeCarouselTouch(node: HTMLElement) {
 
   node.addEventListener('pointerdown', onDown)
   node.addEventListener('pointermove', onMove)
+  node.addEventListener('touchmove', onTouchMove, { passive: false })
   node.addEventListener('pointerup', onEnd)
   node.addEventListener('pointercancel', onEnd)
   node.addEventListener('click', onClick, true)
@@ -149,12 +167,28 @@ export function gameModeCarouselTouch(node: HTMLElement) {
       node.style.touchAction = previousTouchAction
       node.removeEventListener('pointerdown', onDown)
       node.removeEventListener('pointermove', onMove)
+      node.removeEventListener('touchmove', onTouchMove)
       node.removeEventListener('pointerup', onEnd)
       node.removeEventListener('pointercancel', onEnd)
       node.removeEventListener('click', onClick, true)
       node.removeEventListener('dragstart', onDragStart)
     },
   }
+}
+
+// Game mode: WebKitGTK's two-finger pinch is a GTK zoom gesture wired straight to the page zoom
+// factor; it only clamps to the min/max zoom and never reads the viewport `user-scalable=no`
+// meta, so a thumb plus a resting palm edge zoomed the whole UI (and fought the persisted Deck
+// UI-scale zoom level). Cancelling the touchstart that brings the second finger down is the one
+// signal that makes WebKitGTK deny its touch gesture group for that sequence, so the zoom
+// gesture can never begin. Single-finger sequences are untouched: native scrolling and taps
+// keep their kinetic drag/swipe/tap recognizers. Idempotent; no-op outside Game mode.
+let pinchZoomSuppressed = false
+export function suppressPinchZoom() {
+  if (pinchZoomSuppressed || !get(gameMode)) return
+  pinchZoomSuppressed = true
+  const onTouchStart = (e: TouchEvent) => { if (e.touches.length > 1) e.preventDefault() }
+  window.addEventListener('touchstart', onTouchStart, { passive: false, capture: true })
 }
 
 // Game mode: kill the native `title` hover tooltips (the little accessibility popups). With a

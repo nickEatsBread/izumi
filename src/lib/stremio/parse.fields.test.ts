@@ -179,3 +179,15 @@ suite('theatrical copy detection', () => {
     expect(describe({ url: 'u', behaviorHints: { filename: 'Example.Voyage.2016.2160p.4K.BluRay.x265.mkv' } }).source).toBe('BluRay')
   })
 })
+
+suite('audio language tags', () => {
+  it('reads regional dub markers so a language preference can order them', () => {
+    expect(describe({ url: 'u', behaviorHints: { filename: 'Example.Film.2026.PLDUB.MD.1080p.mkv' } }).audioLanguages).toContain('pol')
+    expect(describe({ url: 'u', behaviorHints: { filename: 'Example Film (2026) kino CZ dab.mp4' } }).audioLanguages).toContain('cze')
+    expect(describe({ url: 'u', behaviorHints: { filename: 'Example.Film.2026.nl.mkv' } }).audioLanguages).toContain('dut')
+    expect(describe({ url: 'u', behaviorHints: { filename: 'Example Film (2026, ru_MVO,dub).mkv' } }).audioLanguages).toContain('rus')
+    expect(describe({ url: 'u', behaviorHints: { filename: 'Example.Film.2026.720p-Dual-Lat.mkv' } }).audioLanguages).toContain('spa')
+    expect(describe({ url: 'u', behaviorHints: { filename: 'Example.Film.2026.MULTi.VF2.2160p.mkv' } }).audioLanguages).toEqual(expect.arrayContaining(['fre', 'multi']))
+    expect(describe({ url: 'u', behaviorHints: { filename: 'Example.Film.2026.1080p.WEB-DL.H.264-EniaHD.mkv' } }).audioLanguages).toEqual([])
+  })
+})

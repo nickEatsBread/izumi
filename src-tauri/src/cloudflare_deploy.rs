@@ -537,9 +537,13 @@ async fn upload_worker(
             }).to_string(),
         }));
     }
+    bindings.push(json!({
+        "type": "durable_object_namespace", "name": "TV_RESOLVE_SESSIONS", "class_name": "CompanionResolveSession"
+    }));
     let metadata = json!({
         "main_module": "worker.mjs",
         "bindings": bindings,
+        "exports": { "CompanionResolveSession": { "type": "durable-object", "storage": "sqlite" } },
         "keep_bindings": ["secret_text", "plain_text"],
         "compatibility_date": "2026-08-28",
         "compatibility_flags": ["nodejs_compat"],
@@ -1231,7 +1235,7 @@ mod tests {
         assert_eq!(requests.len(), 1);
         let metadata = requests[0].2.split("\r\n\r\n").nth(1).unwrap().split("\r\n").next().unwrap();
         let metadata: Value = serde_json::from_str(metadata).unwrap();
-        assert_eq!(metadata["bindings"].as_array().unwrap().len(), 2);
+        assert_eq!(metadata["bindings"].as_array().unwrap().len(), 3);
         assert!(!metadata.to_string().contains("WORKER_UPDATE_AUTH"));
     }
 
@@ -1251,6 +1255,8 @@ mod tests {
         let metadata = requests[0].2.split("\r\n\r\n").nth(1).unwrap().split("\r\n").next().unwrap();
         let metadata: Value = serde_json::from_str(metadata).unwrap();
         assert_eq!(metadata["bindings"][0], json!({"type": "d1", "name": "DB", "id": target.database_id}));
+        assert_eq!(metadata["bindings"][2], json!({"type": "durable_object_namespace", "name": "TV_RESOLVE_SESSIONS", "class_name": "CompanionResolveSession"}));
+        assert_eq!(metadata["exports"], json!({"CompanionResolveSession": {"type": "durable-object", "storage": "sqlite"}}));
         assert_eq!(metadata["bindings"][1]["name"], "WORKER_UPDATE_AUTH");
         assert_eq!(metadata["bindings"][1]["type"], "secret_text");
         let access: Value = serde_json::from_str(metadata["bindings"][1]["text"].as_str().unwrap()).unwrap();
@@ -1258,7 +1264,7 @@ mod tests {
         assert_eq!(access["scriptName"], target.script_name);
         assert_eq!(access["databaseId"], target.database_id);
         assert_eq!(access["apiToken"], api.token);
-        assert_eq!(metadata["bindings"].as_array().unwrap().len(), 2);
+        assert_eq!(metadata["bindings"].as_array().unwrap().len(), 3);
         assert_eq!(metadata["keep_bindings"], json!(["secret_text", "plain_text"]));
     }
 

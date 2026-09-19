@@ -113,7 +113,7 @@ struct NearbyDiscovery {
 }
 
 enum DiscoveryControl {
-    AdvertiseUntil(Instant),
+    AdvertiseUntil(Instant, NearbyMode),
     Stop(oneshot::Sender<()>),
 }
 
@@ -137,11 +137,44 @@ pub struct SyncRecord {
     payload: String,
 }
 
+/// What an advertising device is actually offering. The two windows are mutually exclusive — a
+/// device either holds a room and will hand out its ticket, or holds nothing and wants one — but
+/// without this on the wire a browser cannot tell them apart, and guessing from LOCAL state gets
+/// it wrong for the commonest case of all: a configured device that has never made a room.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NearbyMode {
+    /// Has a room. Answers `sync_pair_nearby` by handing over its ticket.
+    Open,
+    /// Has nothing. Answers `sync_offer_nearby` by accepting one.
+    Adopt,
+}
+
+impl NearbyMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Adopt => "adopt",
+        }
+    }
+
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "open" => Some(Self::Open),
+            "adopt" => Some(Self::Adopt),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NearbyDevice {
     endpoint_id: String,
     short_id: String,
+    /// A build from before adoption existed advertises no mode, and every such build had a room
+    /// to give — so treating a missing value as `Open` keeps those devices joinable.
+    mode: NearbyMode,
 }
 
 #[derive(Serialize)]
@@ -167,11 +200,34 @@ struct PairOutgoingEvent {
     code: String,
 }
 
+/// Shown on the new device while it waits. The ticket is deliberately NOT in here: a device on
+/// the same network can reach an advertising endpoint, so the offer is confirmed against the
+/// matching code before the capability is handed to the frontend.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AdoptOfferEvent {
+    request_id: String,
+    device_name: String,
+    code: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AdoptAcceptedEvent {
+    ticket: String,
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PairWireRequest {
     device_name: String,
     nonce: String,
+    /// Set only by a device offering ITS room to an empty one ("adoption"), which is the
+    /// direction first-run setup needs: the new device advertises, the device that already holds
+    /// the data reaches out. Absent on an ordinary join request, so an older peer that never
+    /// sends the field still parses — hence `default` rather than a second wire message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    offer_ticket: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -185,6 +241,10 @@ struct PairWireResponse {
 #[derive(Default)]
 struct PairingHubState {
     open_until: Option<Instant>,
+    /// Separate from `open_until` on purpose: that window means "I have a room and will hand my
+    /// ticket to whoever asks and I approve", this one means the opposite — "I have no room and
+    /// will consider a ticket offered to me". A device is only ever in one of the two states.
+    adopt_until: Option<Instant>,
     ticket: Option<String>,
     nearby: HashMap<EndpointId, NearbyPeer>,
     pending: HashMap<String, oneshot::Sender<bool>>,
@@ -193,6 +253,7 @@ struct PairingHubState {
 #[derive(Clone)]
 struct NearbyPeer {
     endpoint_addr: EndpointAddr,
+    mode: NearbyMode,
     seen: Instant,
 }
 
@@ -231,6 +292,11 @@ impl PairingHub {
     async fn set_ticket(&self, ticket: Option<String>) {
         let mut state = self.state.lock().await;
         state.ticket = ticket;
+        if state.ticket.is_some() {
+            // Adoption only makes sense while this device has nothing. Landing in a room closes
+            // the window immediately rather than leaving it advertising for a second offer.
+            state.adopt_until = None;
+        }
         if state.ticket.is_none() {
             state.open_until = None;
             for (_, pending) in state.pending.drain() {
@@ -255,7 +321,31 @@ impl PairingHub {
         })
     }
 
-    async fn set_nearby(&self, endpoint_addr: EndpointAddr) {
+    async fn ticket(&self) -> Option<String> {
+        self.state.lock().await.ticket.clone()
+    }
+
+    /// The first-run side of pairing: this device has no room yet and is asking to be handed one.
+    async fn adopt_open(&self) -> Result<PairingWindow> {
+        let mut state = self.state.lock().await;
+        anyhow::ensure!(
+            state.ticket.is_none(),
+            "this device is already in a sync group"
+        );
+        state.adopt_until = Some(Instant::now() + PAIRING_WINDOW);
+        let expires_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .saturating_add(PAIRING_WINDOW)
+            .as_millis() as u64;
+        Ok(PairingWindow {
+            endpoint_id: self.local_id.to_string(),
+            short_id: short_id(self.local_id),
+            expires_at,
+        })
+    }
+
+    async fn set_nearby(&self, endpoint_addr: EndpointAddr, mode: NearbyMode) {
         let endpoint_id = endpoint_addr.id;
         if endpoint_id == self.local_id {
             return;
@@ -265,6 +355,7 @@ impl PairingHub {
             endpoint_id,
             NearbyPeer {
                 endpoint_addr,
+                mode,
                 seen: Instant::now(),
             },
         );
@@ -298,11 +389,11 @@ impl PairingHub {
         retain_recent_nearby(&mut state.nearby);
         let mut devices = state
             .nearby
-            .keys()
-            .copied()
-            .map(|endpoint_id| NearbyDevice {
+            .iter()
+            .map(|(endpoint_id, peer)| NearbyDevice {
                 endpoint_id: endpoint_id.to_string(),
-                short_id: short_id(endpoint_id),
+                short_id: short_id(*endpoint_id),
+                mode: peer.mode,
             })
             .collect::<Vec<_>>();
         devices.sort_by(|a, b| a.short_id.cmp(&b.short_id));
@@ -343,6 +434,63 @@ impl PairingHub {
 
         let code = pairing_code(self.local_id, remote_id, &request.nonce);
         let request_id = format!("{}-{}", short_id(remote_id), &request.nonce[..16]);
+
+        // Adoption: the remote already holds a room and is offering it to this empty device.
+        if let Some(offered) = request.offer_ticket.clone() {
+            anyhow::ensure!(
+                !offered.trim().is_empty() && offered.len() <= 4096,
+                "invalid sync capability offered"
+            );
+            let (approval_tx, approval_rx) = oneshot::channel();
+            {
+                let mut state = self.state.lock().await;
+                let open = state
+                    .adopt_until
+                    .is_some_and(|until| until > Instant::now());
+                if !open || state.ticket.is_some() {
+                    let response = PairWireResponse {
+                        approved: false,
+                        ticket: None,
+                        error: Some("That device is not waiting for a setup transfer.".into()),
+                    };
+                    write_frame(&mut send, &response).await?;
+                    send.finish()?;
+                    let _ = tokio::time::timeout(Duration::from_secs(5), connection.closed()).await;
+                    return Ok(());
+                }
+                state.pending.insert(request_id.clone(), approval_tx);
+            }
+
+            // Anything on this network can reach an advertising endpoint, so the offer is not
+            // acted on until the person at the new device has matched the code the sender shows.
+            self.app.emit(
+                "iroh-adopt-offer",
+                AdoptOfferEvent {
+                    request_id: request_id.clone(),
+                    device_name,
+                    code,
+                },
+            )?;
+            let approved = matches!(
+                tokio::time::timeout(PAIRING_REQUEST_TIMEOUT, approval_rx).await,
+                Ok(Ok(true))
+            );
+            self.state.lock().await.pending.remove(&request_id);
+            if approved {
+                self.app
+                    .emit("iroh-adopt-accepted", AdoptAcceptedEvent { ticket: offered })?;
+            }
+            let response = PairWireResponse {
+                approved,
+                ticket: None,
+                error: (!approved).then_some("The new device declined or timed out.".into()),
+            };
+            write_frame(&mut send, &response).await?;
+            send.finish()?;
+            let _ = tokio::time::timeout(Duration::from_secs(5), connection.closed()).await;
+            return Ok(());
+        }
+
         let (approval_tx, approval_rx) = oneshot::channel();
         let ticket = {
             let mut state = self.state.lock().await;
@@ -454,9 +602,29 @@ fn peer_endpoint_addr(endpoint_id: EndpointId, peer: &Peer) -> EndpointAddr {
     EndpointAddr::from_parts(endpoint_id, addrs)
 }
 
-fn publish_endpoint_addr(discovery: &swarm_discovery::DropGuard, addr: &EndpointAddr) {
+fn peer_nearby_mode(peer: &Peer) -> NearbyMode {
+    match peer.txt_attribute("mode") {
+        Some(Some(mode)) => NearbyMode::parse(mode).unwrap_or(NearbyMode::Open),
+        _ => NearbyMode::Open,
+    }
+}
+
+fn publish_endpoint_addr(
+    discovery: &swarm_discovery::DropGuard,
+    addr: &EndpointAddr,
+    mode: NearbyMode,
+) {
     discovery.remove_all();
     discovery.remove_txt_attribute("relay".to_string());
+    discovery.remove_txt_attribute("mode".to_string());
+
+    // Without this a browsing device cannot tell "ask me for my room" from "give me a room", and
+    // the only remaining signal is its own state — which is not about this peer at all.
+    if let Err(error) =
+        discovery.set_txt_attribute("mode".to_string(), Some(mode.as_str().to_string()))
+    {
+        eprintln!("[sync] failed to advertise nearby pairing mode: {error}");
+    }
 
     let mut by_port: HashMap<u16, Vec<IpAddr>> = HashMap::new();
     for addr in addr.ip_addrs() {
@@ -506,22 +674,25 @@ async fn start_nearby_discovery(
     let task = tokio::spawn(async move {
         let mut latest_addr = None;
         let mut advertise_until = None;
+        let mut advertise_mode = NearbyMode::Open;
         tokio::pin!(endpoint_closed);
         loop {
             tokio::select! {
                 _ = &mut endpoint_closed => break,
                 Some(control) = control_rx.recv() => {
                     match control {
-                        DiscoveryControl::AdvertiseUntil(until) => {
+                        DiscoveryControl::AdvertiseUntil(until, mode) => {
                             advertise_until = Some(until);
+                            advertise_mode = mode;
                             if let Some(addr) = &latest_addr {
-                                publish_endpoint_addr(&discovery, addr);
+                                publish_endpoint_addr(&discovery, addr, mode);
                             }
                         }
                         DiscoveryControl::Stop(done) => {
                             advertise_until = None;
                             discovery.remove_all();
                             discovery.remove_txt_attribute("relay".to_string());
+                            discovery.remove_txt_attribute("mode".to_string());
                             let _ = done.send(());
                         }
                     }
@@ -533,6 +704,7 @@ async fn start_nearby_discovery(
                         advertise_until = None;
                         discovery.remove_all();
                         discovery.remove_txt_attribute("relay".to_string());
+                        discovery.remove_txt_attribute("mode".to_string());
                     }
                 }
                 Some((peer_id, peer)) = peer_rx.recv() => {
@@ -544,7 +716,10 @@ async fn start_nearby_discovery(
                         pairing.remove_nearby(endpoint_id).await;
                     } else {
                         pairing
-                            .set_nearby(peer_endpoint_addr(endpoint_id, &peer))
+                            .set_nearby(
+                                peer_endpoint_addr(endpoint_id, &peer),
+                                peer_nearby_mode(&peer),
+                            )
                             .await;
                     }
                 }
@@ -564,6 +739,7 @@ async fn start_nearby_discovery(
                         publish_endpoint_addr(
                             &discovery,
                             latest_addr.as_ref().expect("address was just stored"),
+                            advertise_mode,
                         );
                     }
                 }
@@ -1027,8 +1203,131 @@ pub async fn sync_pairing_open(
     let window = pairing.open().await.map_err(|error| error.to_string())?;
     let _ = control_tx.send(DiscoveryControl::AdvertiseUntil(
         Instant::now() + PAIRING_WINDOW,
+        NearbyMode::Open,
     ));
     Ok(window)
+}
+
+/// First-run counterpart of `sync_pairing_open`. A device with nothing on it advertises and waits
+/// to be handed a room, which is what lets setup begin on the new device rather than on the old
+/// one — the new device is the one the person is sitting in front of.
+#[tauri::command]
+pub async fn sync_adopt_open(
+    state: tauri::State<'_, SyncState>,
+) -> Result<PairingWindow, String> {
+    let (pairing, control_tx) = {
+        let guard = state.inner.lock().await;
+        let RuntimeState::Ready(runtime) = &*guard else {
+            return Err("sync is not ready".into());
+        };
+        (
+            runtime.pairing.clone(),
+            runtime.nearby_discovery.control_tx.clone(),
+        )
+    };
+    let window = pairing
+        .adopt_open()
+        .await
+        .map_err(|error| error.to_string())?;
+    let _ = control_tx.send(DiscoveryControl::AdvertiseUntil(
+        Instant::now() + PAIRING_WINDOW,
+        NearbyMode::Adopt,
+    ));
+    Ok(window)
+}
+
+/// Send this device's room to an empty one that is advertising for it. The confirmation lives on
+/// this side: the data is ours, so the decision to hand it over is ours too. The receiving device
+/// still matches the code before the capability is used, so neither end is trusting the network.
+#[tauri::command]
+pub async fn sync_offer_nearby(
+    app: AppHandle,
+    endpoint_id: String,
+    device_name: String,
+    state: tauri::State<'_, SyncState>,
+) -> Result<(), String> {
+    let remote_id = EndpointId::from_str(endpoint_id.trim())
+        .map_err(|_| "That nearby device has an invalid identity".to_string())?;
+    let device_name = device_name.trim().chars().take(80).collect::<String>();
+    if device_name.is_empty() {
+        return Err("Give this device a name before pairing".into());
+    }
+    let (endpoint, local_id, pairing) = {
+        let guard = state.inner.lock().await;
+        let RuntimeState::Ready(runtime) = &*guard else {
+            return Err("sync is not ready".into());
+        };
+        if runtime.doc.is_none() {
+            return Err("Create or join a sync group before sending your setup".into());
+        }
+        (
+            runtime.endpoint.clone(),
+            runtime.endpoint.id(),
+            runtime.pairing.clone(),
+        )
+    };
+    let ticket = pairing
+        .ticket()
+        .await
+        .ok_or("This device has no sync capability to send")?;
+    // The nearby cache keeps a peer for 90 s after its last mDNS announcement, and a sender
+    // routinely takes longer than that between seeing the device and pressing "Send setup"
+    // (measured 2026-09-12: the sender reported the receiver as not visible any more while the
+    // receiver was still advertising). The identity alone is enough: the endpoint runs the n0 discovery preset, so
+    // iroh resolves it through DNS/relay — which is also what a QR scanned from another network
+    // relies on. A cached LAN address is still preferred when it exists.
+    let remote_addr = match pairing.nearby_addr(remote_id).await {
+        Some(addr) => addr,
+        None => EndpointAddr::from_parts(remote_id, Vec::<TransportAddr>::new()),
+    };
+
+    let nonce = hex(&SecretKey::generate().to_bytes());
+    let code = pairing_code(remote_id, local_id, &nonce);
+    app.emit(
+        "iroh-pair-outgoing",
+        PairOutgoingEvent {
+            endpoint_id: remote_id.to_string(),
+            code,
+        },
+    )
+    .map_err(|error| error.to_string())?;
+
+    let connection = tokio::time::timeout(
+        Duration::from_secs(20),
+        endpoint.connect(remote_addr, PAIR_ALPN),
+    )
+    .await
+    .map_err(|_| "Timed out connecting to that nearby device".to_string())?
+    .map_err(|error| error.to_string())?;
+    let (mut send, mut recv) = connection
+        .open_bi()
+        .await
+        .map_err(|error| error.to_string())?;
+    write_frame(
+        &mut send,
+        &PairWireRequest {
+            device_name,
+            nonce,
+            offer_ticket: Some(ticket),
+        },
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    send.finish().map_err(|error| error.to_string())?;
+    let response: PairWireResponse = tokio::time::timeout(
+        PAIRING_REQUEST_TIMEOUT + Duration::from_secs(10),
+        read_frame(&mut recv),
+    )
+    .await
+    .map_err(|_| "The setup transfer timed out".to_string())?
+    .map_err(|error| error.to_string())?;
+    connection.close(0u32.into(), b"offer response received");
+    if !response.approved {
+        return Err(response
+            .error
+            .unwrap_or_else(|| "The new device did not accept the transfer".into()));
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1104,7 +1403,14 @@ pub async fn sync_pair_nearby(
         .open_bi()
         .await
         .map_err(|error| error.to_string())?;
-    write_frame(&mut send, &PairWireRequest { device_name, nonce })
+    write_frame(
+        &mut send,
+        &PairWireRequest {
+            device_name,
+            nonce,
+            offer_ticket: None,
+        },
+    )
         .await
         .map_err(|error| error.to_string())?;
     send.finish().map_err(|error| error.to_string())?;
@@ -1364,6 +1670,31 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn nearby_mode_survives_the_wire_and_defaults_to_joinable() {
+        assert_eq!(NearbyMode::parse("open"), Some(NearbyMode::Open));
+        assert_eq!(NearbyMode::parse("adopt"), Some(NearbyMode::Adopt));
+        assert_eq!(NearbyMode::Open.as_str(), "open");
+        assert_eq!(NearbyMode::Adopt.as_str(), "adopt");
+        // A build from before adoption advertises no mode at all, and every one of those had a
+        // room to hand out. Anything unrecognised is treated the same way, so a future mode never
+        // turns an old client's list into dead rows.
+        assert_eq!(NearbyMode::parse("").unwrap_or(NearbyMode::Open), NearbyMode::Open);
+        assert_eq!(
+            NearbyMode::parse("something-newer").unwrap_or(NearbyMode::Open),
+            NearbyMode::Open
+        );
+    }
+
+    /// The two windows are mutually exclusive, and the browse list has to say which is which:
+    /// picking the action from the browsing device's own state showed Join against a device
+    /// waiting to be adopted, which the join branch then refused.
+    #[test]
+    fn the_two_pairing_windows_advertise_different_modes() {
+        assert_ne!(NearbyMode::Open, NearbyMode::Adopt);
+        assert_ne!(NearbyMode::Open.as_str(), NearbyMode::Adopt.as_str());
+    }
+
     #[tokio::test]
     async fn pairing_frames_round_trip() {
         let (mut writer, mut reader) = tokio::io::duplex(2048);
@@ -1373,6 +1704,7 @@ mod tests {
                 &PairWireRequest {
                     device_name: "Steam Deck".into(),
                     nonce: "a".repeat(64),
+                    offer_ticket: None,
                 },
             )
             .await
@@ -1382,5 +1714,39 @@ mod tests {
         send.await.unwrap();
         assert_eq!(received.device_name, "Steam Deck");
         assert_eq!(received.nonce.len(), 64);
+        assert!(received.offer_ticket.is_none());
+    }
+
+    /// A join request from a build that predates adoption carries no `offerTicket` at all. It has
+    /// to keep parsing, or updating one device in a pair breaks pairing for both.
+    #[tokio::test]
+    async fn pairing_request_without_offer_field_still_parses() {
+        let legacy = br#"{"deviceName":"Old izumi","nonce":"__NONCE__"}"#;
+        let legacy = String::from_utf8(legacy.to_vec())
+            .unwrap()
+            .replace("__NONCE__", &"b".repeat(64));
+        let request: PairWireRequest = serde_json::from_str(&legacy).unwrap();
+        assert_eq!(request.device_name, "Old izumi");
+        assert!(request.offer_ticket.is_none());
+    }
+
+    #[tokio::test]
+    async fn adoption_offer_round_trips_its_ticket() {
+        let (mut writer, mut reader) = tokio::io::duplex(4096);
+        let send = tokio::spawn(async move {
+            write_frame(
+                &mut writer,
+                &PairWireRequest {
+                    device_name: "Desktop".into(),
+                    nonce: "c".repeat(64),
+                    offer_ticket: Some("doc-ticket".into()),
+                },
+            )
+            .await
+            .unwrap();
+        });
+        let received: PairWireRequest = read_frame(&mut reader).await.unwrap();
+        send.await.unwrap();
+        assert_eq!(received.offer_ticket.as_deref(), Some("doc-ticket"));
     }
 }

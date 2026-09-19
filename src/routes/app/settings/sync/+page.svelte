@@ -37,9 +37,10 @@
   import {
     createSyncGroup, disableDeviceSync, enableDeviceSync, getSyncStatus, joinSyncGroup, leaveSyncGroup,
     joinNearbyDevice, listNearbyDevices, openNearbyPairing, respondToPairRequest,
+    offerSetupToDevice, pushWatchProgress,
     listManualDevices, listSyncMembers, publishPresence, pullWatchProgress,
     receiveManualSnapshot, sendManualSnapshot, syncDeviceName,
-    checkCloudflareWorkerUpdate, triggerCloudflareWorkerUpdate, claimCloudflareWorker, cloudflareSetupSecret,
+    checkCloudflareWorkerUpdate, triggerCloudflareWorkerUpdate, workerUpdateFeedback, claimCloudflareWorker, cloudflareSetupSecret,
     cloudflareSyncConfig, cloudflareWorkerUpdateAvailable, createCloudflareInvite,
     createCloudflareCompanionEnrollment, generateCloudflareSetupSecret, joinCloudflareInvite,
     setSyncProvider, syncProvider, watchSyncError,
@@ -111,6 +112,7 @@
   let cloudflareInvite = $state('')
   let cloudflareUpdatePanel = $state<HTMLElement>()
   let cloudflareNeedsDeploymentAccess = $state(false)
+  let cloudflareUpdateFailure = $state('')
   let tvPairingCode = $state('')
   let confirmTvForget = $state('')
   let cloudResolverEnabled = $state(false)
@@ -447,14 +449,17 @@
       const update = await triggerCloudflareWorkerUpdate()
       if (update?.configured && !update.error) {
         cloudflareNeedsDeploymentAccess = false
+        cloudflareUpdateFailure = ''
         showMessage(update.phase === 'current' ? `Worker ${update.version} is up to date.`
           : update.phase === 'delayed' ? 'The update is taking longer than expected. Your Worker will retry automatically.'
           : 'Worker update requested. Check again shortly to verify the installed version.')
         return
       }
-      cloudflareNeedsDeploymentAccess = !!update && (!update.configured || !!update.error)
+      const feedback = workerUpdateFeedback(update)
+      cloudflareNeedsDeploymentAccess = feedback.needsAccess
+      cloudflareUpdateFailure = feedback.failure
       const available = await checkCloudflareWorkerUpdate({ throwOnError: true })
-      if (!available && !cloudflareNeedsDeploymentAccess) {
+      if (!available && !cloudflareNeedsDeploymentAccess && !cloudflareUpdateFailure) {
         showMessage('Your Worker is up to date with this version of Izumi.')
         return
       }
@@ -483,6 +488,7 @@
       }
       cloudflareApiToken = ''
       cloudflareNeedsDeploymentAccess = false
+      cloudflareUpdateFailure = ''
       if (await checkCloudflareWorkerUpdate({ throwOnError: true })) {
         throw new Error('The Worker update is still becoming available. Wait a moment, then check its version again.')
       }
@@ -579,6 +585,52 @@
     })
   }
 
+  /** A device running first-run setup is asking to be handed this one's room. The confirmation
+   *  lives here because the data is here: the new device can only ask, never take. */
+  const waitingNearby = $derived(nearby.filter((device) => device.mode === 'adopt'))
+  let offerTarget = $state<NearbyDevice | null>(null)
+  let offerAccounts = $state(false)
+
+  /** Arriving from a scanned QR. Aiming at a device is not agreeing to send it anything, so this
+   *  only opens the same confirmation the list does, and only once per visit. */
+  let scannedOffer = false
+  $effect(() => {
+    const wanted = page.url.searchParams.get('offer')
+    if (scannedOffer || !wanted || !paired) return
+    // A scanned device need not be on this network at all ("the QR works from anywhere"): the
+    // native side connects by identity through iroh's discovery when there is no nearby address,
+    // so an unlisted endpoint still gets the same confirmation. The short id mirrors the native
+    // `short_id` (first six hex characters, upper-cased) the receiver is showing.
+    const match = nearby.find((device) => device.endpointId === wanted)
+      ?? { endpointId: wanted, shortId: wanted.slice(0, 6).toUpperCase(), mode: 'adopt' as const }
+    scannedOffer = true
+    askToSendSetup(match)
+  })
+
+  function askToSendSetup(device: NearbyDevice) {
+    // Never carried over from a previous send. Including signed-in accounts has to be chosen
+    // every time, not inherited from a decision made for a different device.
+    offerAccounts = false
+    offerTarget = device
+  }
+
+  function confirmSendSetup() {
+    const device = offerTarget
+    if (!device) return
+    const withAccounts = offerAccounts
+    void action(`offer-${device.endpointId}`, async () => {
+      await offerSetupToDevice(device.endpointId)
+      // Only now does anything actually leave: the offer above is a capability, these two calls
+      // are the payload the new device reads once it has joined.
+      await sendManualSnapshot(withAccounts)
+      await pushWatchProgress()
+      offerTarget = null
+      offerAccounts = false
+      showMessage(`Sent this device's setup to Izumi device ${device.shortId}.`)
+      h.success()
+    })
+  }
+
   function respond(approved: boolean) {
     if (!incoming) return
     const request = incoming
@@ -636,7 +688,7 @@
   }
 
   $effect(() => {
-    if (status.state !== 'ready' || paired) return
+    if (status.state !== 'ready') return
     void refreshNearby()
     const poll = setInterval(() => { void refreshNearby() }, 2000)
     return () => clearInterval(poll)
@@ -829,7 +881,6 @@
     {/if}
     </div>
   {:else}
-  <a href="/app/tv-setup" data-focusable class="mb-5 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-4 py-2 text-sm font-bold">Set up a TV with Cloudflare <ExternalLink size={15} /></a>
   <details class="mb-6 max-w-2xl border-b border-border pb-4" open={connectionMethodOpen || !paired}>
     <summary class="cursor-pointer py-2 text-sm font-semibold">Connection method <span class="ml-2 font-normal text-muted-foreground">{$syncProvider === 'cloudflare' ? 'Private Cloudflare' : 'Peer-to-peer'}</span></summary>
   <SettingsGroup title="Connection" desc="Choose where encrypted device records travel" icon={Cloud}>
@@ -863,9 +914,10 @@
           {busy === 'worker-check' ? 'Checking…' : 'Update Worker'}
         </button>
       </div>
-      {#if $cloudflareWorkerUpdateAvailable || cloudflareNeedsDeploymentAccess}
+      {#if $cloudflareWorkerUpdateAvailable || cloudflareNeedsDeploymentAccess || cloudflareUpdateFailure}
         <section bind:this={cloudflareUpdatePanel} tabindex="-1" aria-labelledby="worker-update-available-title" class="mt-4 border-t border-border/70 pt-4">
-          <h4 id="worker-update-available-title" class="font-black text-amber-300">{$cloudflareWorkerUpdateAvailable ? `Worker update ${$cloudflareWorkerUpdateAvailable} is available` : 'Update Worker deployment access'}</h4>
+          <h4 id="worker-update-available-title" class="font-black text-amber-300">{$cloudflareWorkerUpdateAvailable ? `Worker update ${$cloudflareWorkerUpdateAvailable} is available` : cloudflareNeedsDeploymentAccess ? 'Update Worker deployment access' : 'The automatic update could not finish'}</h4>
+          {#if cloudflareUpdateFailure && !cloudflareNeedsDeploymentAccess}<p class="mt-1 text-xs leading-5 text-muted-foreground">{cloudflareUpdateFailure} Installing it directly from here replaces the Worker with the current version.</p>{/if}
           {#if $cloudflareSyncConfig.deployment}
             <p class="mt-1 text-xs leading-5 text-muted-foreground">Authorize this Worker update with your Cloudflare deployment token. Izumi also enables future automatic updates, keeping your existing data and device links.</p>
             <div class="mt-3 flex flex-wrap gap-2">
@@ -895,6 +947,46 @@
           {/if}
         </section>
       {/if}
+    </section>
+  {/if}
+
+  <!-- Both "send my setup" surfaces live ABOVE the provider/state branches on purpose. A device
+       that already has a room (the common sender) renders the paired branch, whose "Set up"
+       button opens this dialog; while it sat inside the not-paired branch, that button set
+       `offerTarget` and nothing appeared — measured on a desktop → Deck transfer 2026-09-12. -->
+  {#if outgoing}
+    <section class="mb-5 max-w-2xl rounded-xl border border-primary/40 bg-primary/10 p-4">
+      <p class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Confirm this code on the other device</p>
+      <div class="mt-1 font-mono text-3xl font-black tracking-[0.18em]">{outgoing.code}</div>
+      <p class="mt-1 text-sm text-muted-foreground">Nothing needs to be typed. Wait for approval on the other screen.</p>
+    </section>
+  {/if}
+  {#if offerTarget}
+    <section aria-labelledby="offer-title" class="mb-5 max-w-2xl rounded-xl border border-primary/40 bg-primary/10 p-4">
+      <h3 id="offer-title" class="text-sm font-bold">Send your setup to Izumi device {offerTarget.shortId}?</h3>
+      <ul class="mt-2 space-y-1 text-xs leading-5 text-muted-foreground">
+        <li>· Sources, extensions and your debrid key</li>
+        <li>· Player, catalog and interface preferences</li>
+        <li>· Watch history, progress and local lists</li>
+      </ul>
+      <!-- Separate, and off every time. Everything above is configuration; this is a live
+           credential, and a device that has it can act as you on those services. -->
+      <label class="mt-3 flex items-start gap-2.5 text-xs leading-5">
+        <input type="checkbox" bind:checked={offerAccounts} data-focusable class="mt-0.5 size-4 shrink-0" />
+        <span>
+          <span class="font-bold text-foreground">Also send signed-in accounts</span>
+          <span class="block text-muted-foreground">Copies your AniList, MyAnimeList, Kitsu and SIMKL sign-in tokens to that device. Leave this off and sign in there instead.</span>
+        </span>
+      </label>
+      <p class="mt-3 text-xs leading-5 text-muted-foreground">The other device shows a code. Check it matches before accepting there.</p>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button type="button" onclick={() => { h.impact(); confirmSendSetup() }} disabled={!!busy} data-focusable
+          class="min-h-10 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
+          {busy.startsWith('offer-') ? 'Sending…' : 'Send setup'}
+        </button>
+        <button type="button" onclick={() => { h.tap(); offerTarget = null }} disabled={!!busy} data-focusable
+          class="min-h-10 rounded-lg px-3 py-2 text-sm font-bold hover:bg-secondary disabled:opacity-50">Cancel</button>
+      </div>
     </section>
   {/if}
 
@@ -1112,14 +1204,6 @@
     </SettingsGroup>
 
   {:else if !paired}
-    {#if outgoing}
-      <section class="mb-5 max-w-2xl rounded-xl border border-primary/40 bg-primary/10 p-4">
-        <p class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Confirm this code on the other device</p>
-        <div class="mt-1 font-mono text-3xl font-black tracking-[0.18em]">{outgoing.code}</div>
-        <p class="mt-1 text-sm text-muted-foreground">Nothing needs to be typed. Wait for approval on the other screen.</p>
-      </section>
-    {/if}
-
     {#snippet startIcon()}
       <span class="grid size-9 place-items-center rounded-lg bg-primary/15 text-primary"><Plus size={18} /></span>
     {/snippet}
@@ -1145,7 +1229,7 @@
         class="min-h-10 rounded-lg px-3 py-2 text-sm font-bold text-destructive transition-colors active:bg-destructive/10 sm:hover:bg-destructive/10 disabled:opacity-50">Turn off</button>
     {/snippet}
 
-    <SettingsGroup title="Nearby sessions" desc="On the same Wi-Fi. Join one, or start your own." icon={Radio}>
+    <SettingsGroup title="Nearby sessions" desc="On the same Wi-Fi. Set up a new device, join a room, or start your own." icon={Radio}>
       <SettingsRow
         title="Start my own"
         description="Visible on this network for two minutes."
@@ -1159,22 +1243,33 @@
             <span class="grid size-9 place-items-center rounded-lg bg-secondary text-foreground"><MonitorSmartphone size={18} /></span>
           {/snippet}
           {#snippet joinControl()}
-            <button type="button" onclick={() => { h.impact(); joinNearby(device) }} disabled={!!busy} data-focusable
-              class="min-h-10 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
-              {busy === `nearby-${device.endpointId}` ? 'Waiting…' : 'Join'}
-            </button>
+            <!-- Driven by what THAT device is advertising, never by this one's state. An earlier
+                 version guessed from `paired`, which showed Join against a device waiting to be
+                 set up — the one pairing everybody does first — and the native side rejected it
+                 with "Nearby pairing is not enabled on that device." -->
+            {#if device.mode === 'adopt'}
+              <button type="button" onclick={() => { h.impact(); askToSendSetup(device) }} disabled={!!busy} data-focusable
+                class="min-h-10 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
+                {busy === `offer-${device.endpointId}` ? 'Sending…' : 'Set up this device'}
+              </button>
+            {:else}
+              <button type="button" onclick={() => { h.impact(); joinNearby(device) }} disabled={!!busy} data-focusable
+                class="min-h-10 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
+                {busy === `nearby-${device.endpointId}` ? 'Waiting…' : 'Join'}
+              </button>
+            {/if}
           {/snippet}
           <SettingsRow
             title="Izumi device {device.shortId}"
-            description="Found on this local network"
+            description={device.mode === 'adopt' ? 'Waiting to be set up — send it this device’s setup' : 'Hosting a room you can join'}
             leading={deviceIcon}
             control={joinControl}
           />
         {/each}
       {:else}
         <SettingsRow
-          title="Looking for hosts…"
-          description="Scanning this network. A room shows up here when another device chooses Add a device."
+          title="Looking for devices…"
+          description="Scanning this network. A device appears here while it is running first-run setup, or once it chooses Start my own."
           leading={scanningIcon}
         />
       {/if}
@@ -1298,6 +1393,43 @@
           </p>
         </div>
       </div>
+
+      <!-- The nearby list used to exist only in the unpaired branch, so the moment you had a room
+           there was no way to add anything to it: a device running first-run setup was visible to
+           nobody who could actually help it. Hosting is exactly when you need this. -->
+      <section class="border-t border-border/70" data-setting-key="add-a-device">
+        <div class="py-4">
+          <h3 class="text-sm font-black">Add a device</h3>
+          <p class="mt-0.5 text-[11px] text-muted-foreground">On this Wi-Fi. A device appears while it is running first-run setup.</p>
+
+          {#if waitingNearby.length}
+            <ul class="mt-3 grid grid-cols-[minmax(0,1fr)] gap-2">
+              {#each waitingNearby as device (device.endpointId)}
+                <li class="flex items-center gap-3 rounded-lg bg-secondary/40 p-2.5">
+                  <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-foreground"><MonitorSmartphone size={18} /></span>
+                  <div class="min-w-0 flex-1">
+                    <p class="truncate text-sm font-bold">Izumi device {device.shortId}</p>
+                    <p class="text-[11px] text-muted-foreground">Waiting to be set up</p>
+                  </div>
+                  <button type="button" onclick={() => { h.impact(); askToSendSetup(device) }} disabled={!!busy} data-focusable
+                    class="min-h-10 shrink-0 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
+                    {busy === `offer-${device.endpointId}` ? 'Sending…' : 'Set up'}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="mt-3 rounded-lg bg-secondary/40 px-3 py-2.5 text-xs text-muted-foreground">
+              No device is waiting. Start izumi on the new device and choose “Set up from another device”.
+            </p>
+          {/if}
+
+          <button type="button" onclick={() => { h.impact(); allowNearby() }} disabled={!!busy} data-focusable
+            class="mt-3 min-h-10 rounded-lg bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50">
+            {busy === 'nearby-open' ? 'Opening…' : 'Let a device join instead'}
+          </button>
+        </div>
+      </section>
 
       <section class="border-t border-border/70" data-setting-key="settings-and-sources-sync">
         <button type="button" data-focusable aria-expanded={advancedOpen}

@@ -79,6 +79,23 @@ it('queries subtitle-only add-ons and preserves descriptive track names and lang
   expect(result.candidates[0].subtitles).toContainEqual({ url: 'https://subs.example/en.srt', title: 'English SDH', lang: 'eng' })
   expect(fetcher.mock.calls.some(([url]) => url.startsWith('https://captions.example/stream/'))).toBe(false)
 })
+it('bounds each candidate subtitle list so channel messages stay deliverable', async () => {
+  const subtitles = Array.from({ length: 32 }, (_, index) => (
+    { url: `https://subs.example/${'segment/'.repeat(50)}track-${index}.srt`, lang: 'eng', title: `English release variant ${index}` }
+  ))
+  const fetcher = vi.fn(async (url: string) => {
+    if (url.includes('captions')) {
+      if (url.endsWith('/manifest.json')) return json({ resources: [{ name: 'subtitles', types: ['movie'], idPrefixes: ['tt'] }] })
+      return json({ subtitles })
+    }
+    if (url.endsWith('/manifest.json')) return json({ resources: ['stream'] })
+    return json({ streams: [{ url: 'https://media.example/full.mp4', title: 'Example Film 1080p' }] })
+  })
+  const result = await resolveDirectSources({ enabled: true, addons: ['https://source.example', 'https://captions-a.example', 'https://captions-b.example'] }, movie, fetcher)
+  const encoded = new TextEncoder().encode(JSON.stringify(result.candidates[0].subtitles)).length
+  expect(result.candidates[0].subtitles.length).toBeGreaterThan(0)
+  expect(encoded).toBeLessThan(9_000)
+})
 it('searches exact episode identity without spending download quota or exposing keys', async () => {
   const services = [{ kind: 'rest-v1', base: 'https://captions.example', apiKey: 'private-search-key' }]
   const fetcher = vi.fn(async () => json({ data: [{ attributes: { language: 'en', files: [{ file_id: 42, file_name: 'English dialogue' }] } }] }))

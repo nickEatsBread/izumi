@@ -6,6 +6,24 @@
 #![allow(dead_code)]
 
 use std::num::NonZeroU32;
+use std::sync::atomic::AtomicBool;
+
+/// True between player open and stop. The Deck HID grip reader (L4/R4 = player-only actions) keys
+/// its wake cadence off this so an idle browse session does not wake ~60×/s draining hidraw.
+pub static PLAYER_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// Grip reader throttle while the player is open: display cadence keeps rear-button edges snappy.
+pub const GRIP_POLL_ACTIVE_SLEEP_MS: u64 = 16;
+/// Grip reader throttle while browsing: nothing consumes L4/R4, so a 200 ms wake is plenty.
+pub const GRIP_POLL_IDLE_SLEEP_MS: u64 = 200;
+
+/// How long the Deck grip reader sleeps after draining a burst of HID reports.
+pub fn grip_poll_sleep_ms(player_active: bool) -> u64 {
+    if player_active {
+        GRIP_POLL_ACTIVE_SLEEP_MS
+    } else {
+        GRIP_POLL_IDLE_SLEEP_MS
+    }
+}
 
 /// Native ASS overlay cadence. The Deck's touch skim has to track the finger; 30fps
 /// made the native bar feel sticky. Loading spinner phase also uses this clock.
@@ -136,9 +154,34 @@ pub fn scale_premult_bgra(src: &[u8], dst: &mut [u8], alpha_millis: u32) {
         dst[..n].copy_from_slice(&src[..n]);
         return;
     }
-    for i in 0..n {
-        dst[i] = ((src[i] as u32 * alpha_millis) / OVERLAY_FADE_FULL) as u8;
+    let lut = premult_lut(alpha_millis);
+    for (d, s) in dst[..n].iter_mut().zip(&src[..n]) {
+        *d = lut[*s as usize];
     }
+}
+
+/// One owned fade frame straight from the settled snapshot: a single pass and a single
+/// allocation, so the overlay never needs a scratch buffer or a clone before handing pixels to
+/// the mpv dispatcher (which keeps them alive until mpv has copied them).
+pub fn scale_premult_bgra_vec(src: &[u8], alpha_millis: u32) -> Vec<u8> {
+    if alpha_millis == 0 {
+        return vec![0; src.len()];
+    }
+    if alpha_millis >= OVERLAY_FADE_FULL {
+        return src.to_vec();
+    }
+    let lut = premult_lut(alpha_millis);
+    src.iter().map(|&b| lut[b as usize]).collect()
+}
+
+/// The alpha is constant across a frame, so a 256-entry table turns the per-byte multiply and
+/// divide into one load. Same rounding as `(byte * alpha_millis) / OVERLAY_FADE_FULL`.
+fn premult_lut(alpha_millis: u32) -> [u8; 256] {
+    let mut lut = [0u8; 256];
+    for (i, slot) in lut.iter_mut().enumerate() {
+        *slot = ((i as u32 * alpha_millis) / OVERLAY_FADE_FULL) as u8;
+    }
+    lut
 }
 
 /// Idle overlay loops must not raster. Active comment scrolling runs at [`OVERLAY_SCRUB_FPS`].

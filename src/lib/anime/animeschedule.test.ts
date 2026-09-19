@@ -121,6 +121,70 @@ describe('weekly fallback mapping', () => {
       episode: 7, media: { id: 1234 },
     }])
   })
+
+  it('resolves timetable routes outside the popularity indices through the per-route API and reports them progressively', async () => {
+    const start = new Date('2026-08-10T00:00:00+01:00').getTime() / 1000
+    const html = `<div route="backup-anime" airedEpisode="7" class="timetable-column-show aired">
+      <h2 class="show-title-bar">Backup Anime</h2>
+      <time datetime="2026-08-11T15:30+01:00"></time><span airType="raw">JPN</span>
+    </div><div route="long-runner" airedEpisode="1100" class="timetable-column-show">
+      <h2 class="show-title-bar">Long Runner</h2>
+      <time datetime="2026-08-12T09:00+01:00"></time><span airType="raw">JPN</span>
+    </div>`
+    const raw: RawAnime = {
+      route: 'backup-anime', title: 'Backup Anime', status: 'Ongoing',
+      websites: { aniList: 'anilist.co/anime/1234/Backup-Anime' },
+    }
+    const longRunner: RawAnime = {
+      route: 'long-runner', title: 'Long Runner', status: 'Ongoing',
+      websites: { aniList: 'anilist.co/anime/21/Long-Runner', mal: 'myanimelist.net/anime/21/Long_Runner' },
+    }
+    mocks.phttp.mockImplementation(async (url: string) => {
+      if (url.startsWith('https://animeschedule.net/?')) {
+        return { ok: true, status: 200, text: async () => html, json: async () => ({}) }
+      }
+      if (url.includes('animeschedule.net/api/v3/anime?years=')) {
+        return { ok: true, status: 200, text: async () => '', json: async () => ({ totalAmount: 1, anime: [raw] }) }
+      }
+      if (url === 'https://animeschedule.net/api/v3/anime/long-runner') {
+        return { ok: true, status: 200, text: async () => '', json: async () => longRunner }
+      }
+      return { ok: false, status: 429, text: async () => 'throttled', json: async () => ({}) }
+    })
+
+    const updates: number[][] = []
+    const initial = await getWeeklySchedule(start, start + 7 * 86400, {
+      onUpdate: (airings) => updates.push(airings.map((airing) => airing.media.id)),
+    })
+    expect(initial.map((airing) => airing.media.id)).toEqual([1234])
+    await vi.waitFor(() => expect(updates.at(-1)).toEqual([1234, 21]))
+    // The per-route record is a permalink: remember it well beyond the delay overlay's TTL.
+    expect(mocks.set).toHaveBeenCalledWith('animeschedule-card-long-runner', expect.objectContaining({ value: longRunner }))
+  })
+
+  it('does not cache a season index truncated by throttling', async () => {
+    const start = new Date('2026-08-10T00:00:00+01:00').getTime() / 1000
+    const html = `<div route="backup-anime" airedEpisode="7" class="timetable-column-show aired">
+      <h2 class="show-title-bar">Backup Anime</h2>
+      <time datetime="2026-08-11T15:30+01:00"></time><span airType="raw">JPN</span>
+    </div>`
+    const raw: RawAnime = {
+      route: 'backup-anime', title: 'Backup Anime', status: 'Ongoing',
+      websites: { aniList: 'anilist.co/anime/1234/Backup-Anime' },
+    }
+    mocks.phttp.mockImplementation(async (url: string) => {
+      if (url.startsWith('https://animeschedule.net/?')) {
+        return { ok: true, status: 200, text: async () => html, json: async () => ({}) }
+      }
+      if (url.includes('animeschedule.net/api/v3/anime?years=') && url.endsWith('page=1')) {
+        return { ok: true, status: 200, text: async () => '', json: async () => ({ totalAmount: 36, anime: [raw] }) }
+      }
+      return { ok: false, status: 429, text: async () => 'throttled', json: async () => ({}) }
+    })
+
+    await expect(getWeeklySchedule(start, start + 7 * 86400)).resolves.toMatchObject([{ media: { id: 1234 } }])
+    expect(mocks.set).not.toHaveBeenCalledWith('animeschedule-season-2026-summer-v1', expect.anything())
+  })
 })
 
 // Shapes lifted from live `/api/v3/anime/{route}` responses.

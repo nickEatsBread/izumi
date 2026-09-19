@@ -21,19 +21,25 @@ async function readState(env) {
   return row ? { raw: row.value, value: JSON.parse(row.value) } : { raw: null, value: {} }
 }
 
+function channelRepairNeeded(env, version) {
+  return !env.TV_RESOLVE_SESSIONS && !newerVersion('1.14.0', version)
+}
+const repairAttemptAt = (state, version) => state.repairVersion === version ? state.repairTriggeredAt || 0 : 0
+
 function publicStatus(env, version, state, now) {
   const configured = !!deploymentAccess(env.WORKER_UPDATE_AUTH) || validDeployHook(env.WORKER_DEPLOY_HOOK)
-  const available = newerVersion(state.latestVersion, version)
-  const pending = available && !!state.triggeredAt && now - state.triggeredAt < BUILD_INTERVAL
+  const available = newerVersion(state.latestVersion, version) || state.latestVersion === version && channelRepairNeeded(env, version)
+  const attemptedAt = state.latestVersion === version && channelRepairNeeded(env, version) ? repairAttemptAt(state, version) : state.triggeredAt
+  const pending = available && !!attemptedAt && now - attemptedAt < BUILD_INTERVAL
   const error = state.triggeredAt && state.latestVersion && !available ? '' : state.error || ''
   return {
     version, configured, automatic: configured && env.WORKER_AUTO_UPDATE !== 'false',
     phase: !configured ? 'setup-required' : state.leaseUntil > now ? 'checking' : error ? 'error'
-      : pending && now - state.triggeredAt < 30 * 60_000 ? 'queued'
+      : pending && now - attemptedAt < 30 * 60_000 ? 'queued'
       : pending ? 'delayed' : available ? 'available'
       : state.latestVersion ? 'current' : 'unchecked',
     latestVersion: state.latestVersion || '', checkedAt: state.checkedAt || 0,
-    retryAt: pending ? state.triggeredAt + BUILD_INTERVAL : 0,
+    retryAt: pending ? attemptedAt + BUILD_INTERVAL : 0,
     error,
   }
 }
@@ -59,7 +65,8 @@ export async function runWorkerUpdate(env, version, { automatic = false, fetcher
   }
   const previous = stored.value
   if (previous.leaseUntil > now || now - (previous.checkedAt || 0) < CHECK_INTERVAL
-    || (newerVersion(previous.latestVersion, version) && now - (previous.triggeredAt || 0) < BUILD_INTERVAL)) {
+    || (newerVersion(previous.latestVersion, version) && now - (previous.triggeredAt || 0) < BUILD_INTERVAL)
+    || (previous.latestVersion === version && channelRepairNeeded(env, version) && now - repairAttemptAt(previous, version) < BUILD_INTERVAL)) {
     return publicStatus(env, version, previous, now)
   }
   let locked = JSON.stringify({ ...previous, leaseUntil: now + LEASE })
@@ -70,9 +77,10 @@ export async function runWorkerUpdate(env, version, { automatic = false, fetcher
   try {
     const manifest = validateManifest(await fetchJson(fetcher, UPDATE_MANIFEST, { headers: { Accept: 'application/json' }, cache: 'no-store' }))
     next.latestVersion = manifest.version
-    if (newerVersion(manifest.version, version)) {
+    if (newerVersion(manifest.version, version) || manifest.version === version && channelRepairNeeded(env, version)) {
       // Record the attempt before sending: an ambiguous timeout must not start a deployment storm.
       next.triggeredAt = now
+      if (manifest.version === version) { next.repairVersion = version; next.repairTriggeredAt = now }
       const attempting = JSON.stringify({ ...next, leaseUntil: now + LEASE })
       const saved = await env.DB.prepare('UPDATE metadata SET value = ? WHERE key = ? AND value = ?')
         .bind(attempting, STATE_KEY, locked).run()
@@ -81,7 +89,7 @@ export async function runWorkerUpdate(env, version, { automatic = false, fetcher
       if (access) await deployWorkerRelease(access, manifest, fetcher)
       else {
         // Preserve installations that already use a private deploy hook.
-        const result = await fetchJson(fetcher, env.WORKER_DEPLOY_HOOK, { method: 'POST', redirect: 'error' })
+        const result = await fetchJson(fetcher, env.WORKER_DEPLOY_HOOK, { method: 'POST', redirect: 'manual' })
         if (result.success !== true || typeof result.result?.build_uuid !== 'string') throw new Error('Build was not accepted.')
       }
     } else next.triggeredAt = 0

@@ -6,6 +6,7 @@ import { collectionOptions, collectionSnapshot, normalizeCollections } from './c
 import { commitChunkedRecord, putRecordChunk } from './record-chunks.js'
 import { validSnapshotSelector, viewerForRequest, viewerAllows, scopeSnapshot } from './profiles.js'
 import { consumeTvSourceLookup } from './tv-source-lookup.js'
+import { resolveSessionClass } from './resolve-session.js'
 import { runWorkerUpdate, workerUpdateStatus } from './worker-update.js'
 import { createClientLinkApi, companionOwnerDevice, companionMemberPairing } from './client-links.js'
 import {
@@ -19,7 +20,7 @@ import {
   searchCatalog,
 } from './resolver.js'
 
-const VERSION = '1.13.2'
+const VERSION = '1.14.4'
 const PROTOCOL = 1
 const CATEGORIES = new Set(['watch', 'manual', 'presence', 'companion', 'profiles'])
 const MAX_BODY_BYTES = 512 * 1024
@@ -792,8 +793,55 @@ async function externalAccountSnapshot(env, owner, profile, viewer, input) {
     rows, collectionPage: { page, hasMore: matching.length > page * 200, errors: [] }, hero: rows[0]?.items[0], history: history.slice(0, 200), views: { myList: pageItems, search: pageItems }, spoilersHidden: profile.catalog.hideSpoilers }
 }
 
-async function resolveForTv(request, env, pairingId) {
+async function authorizeResolveSession(env, identity) {
+  const pairing = await env.DB.prepare('SELECT p.pairing_id, p.owner_device_id, r.profile_json AS profile FROM companion_pairings p JOIN resolver_profiles r ON r.owner_device_id = p.owner_device_id WHERE p.pairing_id = ? AND p.tv_token_hash = ? AND p.owner_device_id = ?')
+    .bind(identity.pairingId, identity.tokenHash, identity.ownerId).first()
+  return pairing && await hash(pairing.profile) === identity.profileHash ? pairing : null
+}
+
+async function resolveChannel(request, env, pairingId, ctx) {
+  if (!env.TV_RESOLVE_SESSIONS || env.TV_RESOLVE_WEBSOCKET === 'false') {
+    if (!env.TV_RESOLVE_SESSIONS && env.TV_RESOLVE_WEBSOCKET !== 'false' && request.method === 'POST' && ctx?.waitUntil
+      && await authenticateTv(request, env, pairingId)) ctx.waitUntil(runWorkerUpdate(env, VERSION, { automatic: true }).catch(() => {}))
+    return json({ code: 'CHANNEL_UNAVAILABLE', error: 'Use the HTTP source lookup.' }, 404)
+  }
+  const session = env.TV_RESOLVE_SESSIONS.get(env.TV_RESOLVE_SESSIONS.idFromName(pairingId))
+  if (request.method === 'GET') return session.fetch(request)
   const pairing = await authenticateTv(request, env, pairingId)
+  if (!pairing) return json({ error: 'TV authentication failed.' }, 401)
+  const row = await env.DB.prepare('SELECT profile_json AS profile FROM resolver_profiles WHERE owner_device_id = ?').bind(String(pairing.owner_device_id)).first()
+  if (!row) return json({ code: 'RESOLVER_NOT_CONFIGURED', error: 'Configure cloud sources in Izumi first.' }, 409)
+  try {
+    const profile = normalizeResolverProfile(JSON.parse(row.profile), new URL(request.url).origin)
+    const viewer = await viewerForRequest(profile, await body(request))
+    const response = await session.fetch(new Request('https://resolve.internal/admit', { method: 'POST', body: JSON.stringify({
+      pairingId, ownerId: String(pairing.owner_device_id), profileId: viewer?.id ?? 'default',
+      tokenHash: await hash(request.headers.get('authorization').slice(7)), profileHash: await hash(row.profile), origin: new URL(request.url).origin,
+    }) }))
+    const result = await response.json()
+    if (!response.ok) return json(result, response.status)
+    const url = new URL(request.url)
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    url.search = `ticket=${result.ticket}`
+    return json({ protocol: result.protocol, url: url.href, expiresAt: result.expiresAt })
+  } catch { return json({ code: 'PROFILE_LOCKED', error: 'Choose and unlock an available profile on your TV.' }, 403) }
+}
+
+export class CompanionResolveSession extends resolveSessionClass({
+  authorize: authorizeResolveSession,
+  resolve: async (env, identity, input, options) => {
+    const { tvSourceResults, profilePin, ...safeInput } = input
+    const response = await resolveForTv(new Request(`${identity.origin}/v1/companion/pairings/${identity.pairingId}/resolve`, {
+      method: 'POST', body: JSON.stringify(safeInput),
+    }), env, identity.pairingId, { ...options, identity })
+    const result = await response.json()
+    if (!response.ok) throw Object.assign(new Error(result.error), { code: result.code || 'RESOLVER_FAILED' })
+    return result
+  },
+}) {}
+
+async function resolveForTv(request, env, pairingId, options = {}) {
+  const pairing = options.identity ? await authorizeResolveSession(env, options.identity) : await authenticateTv(request, env, pairingId)
   if (!pairing) return json({ error: 'TV authentication failed.' }, 401)
   const now = Date.now()
   const input = await body(request)
@@ -813,7 +861,11 @@ async function resolveForTv(request, env, pairingId) {
     return json({ error: 'The cloud resolver profile is invalid. Open Izumi and save it again.', code: 'RESOLVER_INVALID' }, 409)
   }
   try {
-    const viewer = await viewerForRequest(profile, input)
+    const viewer = options.identity
+      ? profile.household?.enabled ? profile.household.profiles.find(item => item.id === options.identity.profileId) : null
+      : await viewerForRequest(profile, input)
+    if (options.identity && profile.household?.enabled && !viewer) throw new Error('Choose an available profile again.')
+    if (viewer) profile.catalog.showAdult = profile.catalog.showAdult && viewer.allowAdult && viewer.ratingLimit === 18
     await hydrateAccountSources(env, String(pairing.owner_device_id), profile, viewer)
     const tvLookupContext = { pairingId, profileId: viewer?.id ?? 'default', startedAt: now }
     const tvContinuation = input.tvSourceResults ? await prepareTvSourceContinuation(profile, input, tvLookupContext) : undefined
@@ -824,20 +876,26 @@ async function resolveForTv(request, env, pairingId) {
       const metadata = await resolveMediaDetails(input, profile)
       if (!viewerAllows(metadata, viewer)) throw new Error('This title is above this profile’s viewing limit.')
     }
-    const result = await resolveDirectSources(profile, input, fetch, { tvLookupContext, tvContinuation })
     const ownerKey = await env.DB.prepare('SELECT token_hash FROM devices WHERE id = ?').bind(String(pairing.owner_device_id)).first()
-    if (ownerKey?.token_hash) {
-      const tickets = new Map()
+    const tickets = new Map()
+    const prepareResult = async value => {
+      const result = structuredClone(value)
       for (const candidate of result.candidates) for (const track of candidate.subtitles) {
         try {
+          if (!ownerKey?.token_hash) continue
           const target = track.download ?? track.url
           const key = JSON.stringify(target)
           if (!tickets.has(key)) tickets.set(key, await subtitleTicket(target, pairingId, ownerKey.token_hash))
           track.url = `${new URL(request.url).origin}/v1/companion/pairings/${pairingId}/subtitles?ticket=${tickets.get(key)}`
-          delete track.download
         } catch { /* Direct delivery remains available for unsupported addresses. */ }
+        finally { delete track.download }
       }
+      return { ok: true, ...result }
     }
+    const result = await prepareResult(await resolveDirectSources(profile, input, fetch, {
+      tvLookupContext, tvContinuation, signal: options.signal, fetchSource: options.fetchSource,
+      onProgress: options.onProgress ? async value => options.onProgress(await prepareResult(value)) : undefined,
+    }))
     return json({
       ok: true,
       ...result,
@@ -1051,6 +1109,7 @@ export default {
           version: VERSION,
           recordChunks: 1,
           tvSourceLookup: 1,
+          resolveChannel: env.TV_RESOLVE_SESSIONS && env.TV_RESOLVE_WEBSOCKET !== 'false' ? 1 : 0,
           workerUpdate: 1,
           protocol: PROTOCOL,
           claimed: await claimed(env),
@@ -1118,6 +1177,8 @@ export default {
         catch { return json({ error: 'The subtitle could not be loaded. Reopen the title or choose another track.' }, 409) }
       }
       const companionResolveMatch = url.pathname.match(/^\/v1\/companion\/pairings\/([A-Za-z0-9_-]{16,80})\/resolve$/)
+      const channelMatch = url.pathname.match(/^\/v1\/companion\/pairings\/([A-Za-z0-9_-]{16,80})\/resolve-channel$/)
+      if (channelMatch && ['GET', 'POST'].includes(request.method)) return await resolveChannel(request, env, channelMatch[1], ctx)
       const accountMatch = url.pathname.match(/^\/v1\/companion\/pairings\/([A-Za-z0-9_-]{16,80})\/accounts$/)
       if (accountMatch && request.method === 'POST') return await tvAccounts(request, env, accountMatch[1])
       if (url.pathname === '/v1/accounts' && ['GET', 'POST'].includes(request.method)) return await ownerAccounts(request, env)

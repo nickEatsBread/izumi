@@ -27,4 +27,37 @@ describe('Flatpak release attachment', () => {
     }
     expect(api.updateRelease).not.toHaveBeenCalled()
   })
+
+  it('uploads the Deck installer launcher alongside the bundle when the stable job staged one', async () => {
+    const api = {
+      getRelease: vi.fn(async () => ({ data: { draft: true, assets: [] } })),
+      uploadReleaseAsset: vi.fn(async (_request: { name: string }) => ({})),
+      updateRelease: vi.fn(async () => ({})),
+    }
+    const files = [
+      'izumi-v1.0.0-steamdeck.flatpak',
+      'izumi-v1.0.0-steamdeck.flatpakref',
+      'izumi-v1.0.0-steamdeck-installer.desktop',
+    ]
+    const fs = { readdirSync: () => [...files, 'notes.txt'], readFileSync: () => Buffer.from('build output') }
+    await run({ rest: { repos: api } }, { repo: { owner: 'owner', repo: 'app' } }, () => fs)
+    expect(api.uploadReleaseAsset.mock.calls.map(([request]) => request.name)).toEqual(files)
+  })
+
+  it('fails the release rather than publishing without the Flatpak itself', async () => {
+    const api = {
+      getRelease: vi.fn(async () => ({ data: { draft: true, assets: [] } })),
+      uploadReleaseAsset: vi.fn(async () => ({})),
+      updateRelease: vi.fn(async () => ({})),
+    }
+    // Only the descriptor and the launcher built: installing either one without the bundle behind
+    // it leaves the user on an older izumi with no error.
+    const fs = {
+      readdirSync: () => ['izumi-v1.0.0-steamdeck.flatpakref', 'izumi-v1.0.0-steamdeck-installer.desktop'],
+      readFileSync: () => Buffer.from(''),
+    }
+    await expect(run({ rest: { repos: api } }, { repo: { owner: 'owner', repo: 'app' } }, () => fs))
+      .rejects.toThrow('.flatpak')
+    expect(api.uploadReleaseAsset).not.toHaveBeenCalled()
+  })
 })

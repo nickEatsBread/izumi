@@ -1,6 +1,9 @@
 id: com.nicho.izumi
 runtime: org.gnome.Platform
-runtime-version: '49'
+# GNOME 50 = WebKitGTK 2.52 (lock-free async scrolling, adaptive tiles, non-blocking composition
+# scheduling, faster text) on the SAME freedesktop 25.08 base as 49, so Mesa/GL/codecs extensions
+# are unchanged. The .flatpak bundle carries --runtime-repo, so the Deck pulls the runtime itself.
+runtime-version: '50'
 sdk: org.gnome.Sdk
 sdk-extensions:
   # rustc comes from rustup inside the izumi module (scripts/ci/ensure-flatpak-rust.sh).

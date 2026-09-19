@@ -3,7 +3,7 @@
   // (the persisted `cwSnapshot` view cache ∪ local watch history), then AniList (CURRENT) + MyAnimeList
   // (watching) reconcile in the BACKGROUND — no skeleton wait on the network. De-duped by media id,
   // resume-aware, most-recent first. All merge/sync logic lives in $lib/player/continue-watching.
-  import { onMount, tick } from 'svelte'
+  import { tick } from 'svelte'
   import { getContextClient } from '@urql/svelte'
   import { continueWatching, reconciling, reconciledOnce, reconcileContinueWatching, dismissContinueWatching, filterContinueWatching } from '$lib/player/continue-watching'
   import { catalogProvider, continueWatchingCatalogScope } from '$lib/settings/catalog'
@@ -62,7 +62,14 @@
   // to crisp. Later home visits reconcile silently (data is already live).
   const provisional = $derived($reconciling && !$reconciledOnce && items.length > 0)
 
-  onMount(() => { void reconcileContinueWatching(client, userName, malActive) })
+  // Re-run whenever the tracker identity changes, not only on mount. With no tracker the reconcile
+  // returns at once; when a device transfer (or a sign-in on the Sync/Accounts screens) then lands
+  // the AniList/MAL token while Home is already mounted, the row stayed empty until a restart —
+  // seen on a Deck straight after "Set up from another device" on 2026-09-12. The TTL inside
+  // reconcileContinueWatching still stops this from re-fetching on every unrelated re-render.
+  $effect(() => {
+    void reconcileContinueWatching(client, userName, malActive)
+  })
 </script>
 
 <svelte:window onkeydown={onKey} />

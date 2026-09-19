@@ -40,16 +40,17 @@ dependencies {
     implementation(project(":tauri-android"))
     testImplementation("junit:junit:4.13.2")
     // Release/preview CI stages an arm64 AAR built from the pinned upstream source commit in
-    // scripts/ci/libmpv-android.sh. It includes libass 0.17.5; Maven Central 1.0.0 still embeds
-    // vulnerable 0.17.4. Keep the Central fallback only for IDE/debug setup until upstream
-    // publishes its next AAR; refusing a release task closes every path around the CI gate.
+    // scripts/ci/libmpv-android.sh. It includes the libass that script pins (0.17.5 or newer);
+    // Maven Central 1.0.0 still embeds vulnerable 0.17.4. Keep the Central fallback only for
+    // IDE/debug setup until upstream publishes its next AAR; refusing a release task closes every
+    // path around the CI gate.
     val stagedLibmpv = file("libs/libmpv.aar")
     val isReleaseBuild = gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) }
     when {
         stagedLibmpv.isFile -> implementation(files(stagedLibmpv))
         !isReleaseBuild -> implementation("dev.jdtech.mpv:libmpv:1.0.0")
         else -> throw GradleException(
-            "Release builds require the libass 0.17.5 AAR. Run scripts/ci/libmpv-android.sh first."
+            "Release builds require the reviewed libass AAR. Run scripts/ci/libmpv-android.sh first."
         )
     }
 }

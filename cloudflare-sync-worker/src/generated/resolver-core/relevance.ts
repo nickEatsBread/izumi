@@ -209,9 +209,16 @@ export function selfDeclaredOtherProduction(stream: Stream): boolean {
 // sometimes index under an episode. e.g. "Death Note OP 2 [4K 60FPS Creditless].mp4"
 // is 4K + tiny, so it wrongly WINS the quality auto-pick over the real episode. Drop
 // them. High-precision tokens only (won't touch a normal "Death Note - 37" release).
-const EPISODE_EXTRA = /\b(?:ncop\d*|nced\d*|ncbd|creditless|textless|non[-\s]?credit|clean\s+(?:opening|ending)|op\s?\d{1,2}|ed\s?\d{1,2}|preview|teaser|\btrailer\b|promo|\bpv\b|\bcm\b|menu)\b/i
+// tlr/tsr are the scene's trailer/teaser abbreviations ("Title_IMAX_TLR-2_3840x2024…"): a trailer
+// pack under a film's id parses as a 4K, correct-year, title-relevant release and wins outright.
+const EPISODE_EXTRA = /\b(?:ncop\d*|nced\d*|ncbd|creditless|textless|non[-\s]?credit|clean\s+(?:opening|ending)|op\s?\d{1,2}|ed\s?\d{1,2}|preview|teaser|\btrailer\b|tlr\d*|tsr\d*|promo|\bpv\b|\bcm\b|menu)\b/i
+// The same markers in other scripts; \b cannot see boundaries next to non-ASCII letters.
+const EPISODE_EXTRA_WORDS = /(?<![\p{L}\p{N}])(?:трейлер|тизер|tráiler|bande[-\s]?annonce)(?![\p{L}\p{N}])/iu
 export function isEpisodeExtra(stream: Stream): boolean {
-  return EPISODE_EXTRA.test(nameOf(stream))
+  // Underscores are word characters, so an underscore-separated release name hides every token
+  // from \b. Test it with them as spaces.
+  const name = nameOf(stream).replace(/_/g, ' ')
+  return EPISODE_EXTRA.test(name) || EPISODE_EXTRA_WORDS.test(name)
 }
 
 // Same-title, different production. A shared kitsu id (One Piece = the 1999 anime

@@ -19,7 +19,7 @@ const lf = text => text.replace(/\r\n/g, '\n')
 const script = lf(readFileSync(join(root, 'src-tauri/src/cloudflare_worker_bundle.mjs'), 'utf8'))
 const migrations = readdirSync(join(worker, 'migrations')).filter(name => name.endsWith('.sql')).sort()
   .map(name => ({ name, sql: lf(readFileSync(join(worker, 'migrations', name), 'utf8')) }))
-const text = JSON.stringify({ schema: 1, version, compatibilityDate: config.compatibility_date, script, migrations })
+const text = JSON.stringify({ schema: 1, resolveChannel: 1, version, compatibilityDate: config.compatibility_date, script, migrations })
 const manifest = { schema: 1, version, tag, sha256: createHash('sha256').update(text).digest('hex') }
 mkdirSync(output, { recursive: true })
 writeFileSync(join(output, 'worker-package.json'), text)

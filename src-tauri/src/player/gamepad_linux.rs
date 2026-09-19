@@ -109,12 +109,24 @@ fn schedule_native_touch_restore(app: &AppHandle) {
     }
 }
 
+/// Per-edge gamepad logging is opt-in (`IZUMI_GAMEPAD_LOG=1`): `elog` opens, appends and closes
+/// the embed log file on every call, which is needless IO on the input path during normal use.
+fn gamepad_log_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var_os("IZUMI_GAMEPAD_LOG").is_some())
+}
+
 fn emit_input(app: &AppHandle, input: &Input) {
     set_trigger_state(input);
     if input.pressed && crate::gm_perf::gamepad_input_restores_touch(input.name) {
         schedule_native_touch_restore(app);
     }
-    crate::player::linux_embed::elog(&format!("gamepad: {}={}", input.name, input.pressed));
+    if gamepad_log_enabled() {
+        crate::player::linux_embed::elog(&format!(
+            "gamepad: {}={}",
+            input.name, input.pressed
+        ));
+    }
     let _ = app.emit("gamepad-input", input.clone());
 }
 
@@ -338,7 +350,10 @@ fn read_deck_grips(app: AppHandle, run_id: u64) {
                 }
             }
             if ready > 0 && !reconnect {
-                std::thread::sleep(Duration::from_millis(16));
+                let active = crate::gm_perf::PLAYER_ACTIVE.load(Ordering::Relaxed);
+                std::thread::sleep(Duration::from_millis(crate::gm_perf::grip_poll_sleep_ms(
+                    active,
+                )));
             }
         }
         // Treat a reconnect as a fresh physical state so a release from a removed device cannot

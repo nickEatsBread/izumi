@@ -60,6 +60,10 @@ export async function deployStable({ fetcher = fetch, execute = spawnSync, env =
   const manifest = validateManifest(JSON.parse(await download(UPDATE_MANIFEST, 16_384, fetcher)))
   const pkg = validatePackage(await download(`${releases}/download/${manifest.tag}/worker-package.json`, 20 * 1024 * 1024, fetcher), manifest)
   const config = deploymentConfig(env, pkg.compatibilityDate)
+  if (pkg.resolveChannel === 1) {
+    config.durable_objects = { bindings: [{ name: 'TV_RESOLVE_SESSIONS', class_name: 'CompanionResolveSession' }] }
+    config.exports = { CompanionResolveSession: { type: 'durable-object', storage: 'sqlite' } }
+  }
   const stage = mkdtempSync(join(tmpdir(), 'izumi-stable-worker-'))
   const wrangler = fileURLToPath(new URL('../node_modules/wrangler/bin/wrangler.js', import.meta.url))
   const configPath = join(stage, 'wrangler.json')

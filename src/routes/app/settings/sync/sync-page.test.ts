@@ -34,8 +34,8 @@ describe('Device sync screen', () => {
     expect(page).toContain('Advanced: pairing ticket')
     expect(page).toContain("import Ticket from '@lucide/svelte/icons/ticket'")
     expect(page).toContain('leading={ticketIcon}')
-    expect(page).toContain('Looking for hosts')
-    expect(page.indexOf('title="Start my own"')).toBeLessThan(page.indexOf('title="Looking for hosts…"'))
+    expect(page).toContain('Looking for devices')
+    expect(page.indexOf('title="Start my own"')).toBeLessThan(page.indexOf('title="Looking for devices…"'))
     expect(page).not.toContain('No sessions yet')
     expect(page).not.toContain('>Scan<')
     expect(page).not.toContain('On this device')
@@ -64,7 +64,12 @@ describe('Device sync screen', () => {
   })
 
   it('gives an active room a clear status, device hierarchy, and tucked-away extras', () => {
+    // A real control in the active-room section, not prose. This previously passed by matching
+    // the phrase inside the nearby empty-state sentence, which described an affordance that did
+    // not exist anywhere — so hosting a room genuinely offered no way to add one.
+    expect(page).toContain('data-setting-key="add-a-device"')
     expect(page).toContain('Add a device')
+    expect(page).toContain('waitingNearby')
     expect(page).toContain('Room active')
     expect(page).toContain('Devices')
     expect(page).toContain('Syncing automatically')

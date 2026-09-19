@@ -125,6 +125,12 @@ html.gamemode, html.gamemode * {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
+/* The mesh Theme-Studio backdrop is a full-viewport `filter: blur()` + scale layer — the same
+   per-frame cost the rule above removes, just spelled with `filter`. Flat gradients only on Deck. */
+html.gamemode .theme-studio-backdrop {
+  filter: none !important;
+  transform: none !important;
+}
 /* Gamescope parks a virtual mouse at the last touch. Hover chrome (play overlays,
    carousel chevrons, cover zoom) must not follow it while you scroll. Focus-within
    still shows the controller highlight. */
@@ -159,6 +165,10 @@ html.gamemode .group:hover .group-hover\:scale-105 {
 /* Rows held below the near-viewport fetch gate keep their layout placeholder, but do not spend a
    compositor animation on skeletons the user cannot see yet. The class is removed before fetch. */
 .deferred-skeleton .skeloader::before { animation-play-state: paused; }
+/* Game mode has no compositor promotion (see the `will-change: auto` rule below), so each visible
+   shimmer is a main-thread repaint at the panel rate — dozens of them while Home rows wait behind
+   the AniList limiter. Placeholders stay; only the sweep goes. */
+html.gamemode .skeloader::before { animation: none; }
 /* Indeterminate progress bar (update download with no Content-Length): a short segment sweeps
    the track. Transform-only so WebKitGTK/gamescope composite it without repainting the track. */
 @keyframes indeterminate { from { transform: translateX(-100%); } to { transform: translateX(400%); } }
@@ -281,6 +291,14 @@ html.gamemode .group:hover .group-hover\:scale-105 {
 /* Never a cursor, and never text selection. Gamescope passthrough delivers native touch to
    WebKitGTK, whose built-in drag/swipe recognizers own scrolling and kinetic momentum. */
 .gamemode { touch-action: pan-x pan-y; }
+/* WebKitGTK turns a finger drag into synthesized wheel events that carry BOTH axes, hit-tested at
+   the drag's START point, and it never consults `touch-action`. A scrollable overflow-x row accepts
+   any sample whose dx is non-zero and drops the dy, so a vertical swipe that began on a row moved
+   the page only on the rare perfectly-vertical samples. With `overflow: hidden` the row is not a
+   wheel target at all: the document takes every sample (native kinetic scroll, exactly as between
+   rows), while `gameModeCarouselTouch` keeps driving scrollLeft for clearly-horizontal drags,
+   controller focus and programmatic scrollIntoView, all of which work on hidden overflow. */
+.gamemode [data-carousel-scroller] { overflow: hidden; }
 .gamemode, .gamemode * { cursor: none !important; user-select: none !important; -webkit-user-select: none !important; -webkit-touch-callout: none; }
 /* Non-Deck browse containment: long search/list pages retain their DOM so browser find, focus and
    back-navigation stay correct, but Chromium/WebKit can skip style/layout/paint work far outside
@@ -472,3 +490,33 @@ html.gamemode .group:hover .group-hover\:scale-105 {
   animation: ripple-expand 420ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }
 @keyframes ripple-expand { to { transform: scale(1); opacity: 0; } }
+
+.setup-heading { font-size: clamp(1.8rem, 2.8vw, 2.75rem); line-height: 1.15; text-wrap: balance; font-weight: 700; letter-spacing: -0.02em; }
+.setup-heading:focus { outline: none; box-shadow: none; }
+.setup-choice { border: 1px solid hsl(var(--border)); border-radius: .75rem; transition: background 150ms, border-color 150ms; }
+.setup-choice:hover { background: hsl(var(--secondary)); }
+.setup-choice.selected { border-color: hsl(var(--foreground) / .6); background: hsl(var(--foreground) / .05); }
+/* Only when the card's OWN control is the invisible one — a choice card is a label wrapping an
+   sr-only checkbox or radio, so the card has to draw the focus ring on its behalf. Cards that
+   contain real inputs (the connect tiles) must not: those inputs draw their own ring, and
+   outlining the whole card around them stacks three borders on one field. */
+.setup-choice:has(> input.sr-only:focus-visible) { outline: 2px solid hsl(var(--foreground)); outline-offset: 3px; }
+.setup-field { width: 100%; min-width: 0; min-height: 3rem; border: 1px solid hsl(var(--border)); border-radius: .5rem; background: hsl(var(--input)); padding: .65rem .85rem; font-size: 16px; font-weight: 400; }
+.setup-inline-button { display: inline-flex; align-items: center; justify-content: center; gap: .6rem; min-height: 3rem; padding: .75rem 1rem; border-radius: .5rem; font-size: .95rem; font-weight: 700; transition: opacity 180ms, transform 180ms; }
+.setup-inline-button:hover:not(:disabled) { opacity: .85; }
+.setup-inline-button:disabled { opacity: .55; cursor: wait; }
+/* Shared by every setup screen that shows in-flight work, so it lives here rather than in whichever
+   component happened to need it first. */
+.tile-spinner { animation: setup-spin 1s linear infinite; }
+@keyframes setup-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .tile-spinner { animation: none; } }
+/* Global rather than scoped to the wizard shell: Svelte scoping stops at the component boundary,
+   and every interactive control now lives in a step component instead. */
+.onboarding-surface button:focus-visible,
+.onboarding-surface input:focus-visible,
+.onboarding-surface select:focus-visible,
+.onboarding-surface summary:focus-visible { outline: 2px solid hsl(var(--foreground)); outline-offset: 3px; }
+@media (max-width: 767px), (max-height: 500px) and (pointer: coarse) {
+  .setup-heading { font-size: clamp(1.9rem, 7.5vw, 2.6rem); }
+}
+@media (prefers-reduced-motion: reduce) { .setup-choice, .setup-inline-button { transition: none; } }

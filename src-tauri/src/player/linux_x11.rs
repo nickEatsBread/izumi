@@ -175,8 +175,17 @@ static STATE: Mutex<Option<X11>> = Mutex::new(None);
 // The sender lives in a Mutex<Option<..>>, NOT a OnceLock: a worker that wedges or whose Display
 // dies must be REPLACEABLE, or Steam's next mode write sticks for the rest of the session with no
 // symptom other than "touch stopped working". touch_worker() judges liveness by the heartbeat.
-static TOUCH_WORKER: Mutex<Option<SyncSender<()>>> = Mutex::new(None);
+static TOUCH_WORKER: Mutex<Option<SyncSender<TouchCmd>>> = Mutex::new(None);
 const TOUCH_KEEPALIVE: Duration = Duration::from_millis(50);
+
+/// Work for the keepalive worker's private connection. `Reassert` republishes passthrough mode
+/// now; `Unstick` releases phantom core-pointer buttons on that same connection, so focus-return
+/// recovery no longer spawns a thread and opens a throwaway Display each time.
+#[derive(Clone, Copy)]
+enum TouchCmd {
+    Reassert,
+    Unstick,
+}
 /// Worker heartbeat (epoch ms), stored every loop tick — including held/skipped ones, so a
 /// legitimate write-hold is never mistaken for a dead worker.
 static TOUCH_ALIVE_MS: AtomicU64 = AtomicU64::new(0);
@@ -206,26 +215,49 @@ fn now_ms() -> u64 {
 }
 
 /// Force-release core-pointer buttons 1-3 at the X server (see the XTest extern's comment for
-/// why). Runs on a throwaway thread with its own short-lived Display: XOpenDisplay can block on a
-/// stalled server, and this is called from watchdog/focus paths that must never wedge. Fire and
-/// forget by design — there is nothing actionable to await.
+/// why). Preferred route: the keepalive worker's own connection (one queued command, no thread,
+/// no XOpenDisplay round trip). Fallback: a throwaway thread with its own short-lived Display —
+/// XOpenDisplay can block on a stalled server, and this is called from watchdog/focus paths that
+/// must never wedge. Fire and forget by design — there is nothing actionable to await.
 pub fn unstick_pointer() {
+    if let Some(sender) = existing_touch_worker() {
+        if sender.try_send(TouchCmd::Unstick).is_ok() {
+            return;
+        }
+    }
     std::thread::spawn(|| unsafe {
         let dpy = XOpenDisplay(std::ptr::null());
         if dpy.is_null() {
             crate::player::linux_embed::elog("x11: unstick: XOpenDisplay failed");
             return;
         }
-        for button in 1..=3u32 {
-            XTestFakeButtonEvent(dpy, button, 0, 0);
-        }
-        // Park the synthesized cursor in the corner so browse :hover does not follow the
-        // last touch as rows scroll underneath it.
         let root = XDefaultRootWindow(dpy);
-        XWarpPointer(dpy, 0, root, 0, 0, 0, 0, 0, 0);
-        XFlush(dpy);
+        release_pointer_buttons(dpy, root);
         XCloseDisplay(dpy);
     });
+}
+
+/// The XTest release burst plus cursor park, on whichever connection the caller owns.
+///
+/// # Safety
+/// `dpy` must be a live Display owned by the calling thread (or otherwise not in concurrent use).
+unsafe fn release_pointer_buttons(dpy: *mut c_void, root: u64) {
+    for button in 1..=3u32 {
+        XTestFakeButtonEvent(dpy, button, 0, 0);
+    }
+    // Park the synthesized cursor in the corner so browse :hover does not follow the
+    // last touch as rows scroll underneath it.
+    XWarpPointer(dpy, 0, root, 0, 0, 0, 0, 0, 0);
+    XFlush(dpy);
+}
+
+/// The keepalive worker's sender only if a worker exists and is heartbeating. Never spawns: the
+/// unstick paths run on GTK's main thread and must not wait on a fresh worker's startup.
+fn existing_touch_worker() -> Option<SyncSender<TouchCmd>> {
+    let guard = TOUCH_WORKER.lock().unwrap_or_else(|p| p.into_inner());
+    let sender = guard.as_ref()?;
+    let age = now_ms().saturating_sub(TOUCH_ALIVE_MS.load(Ordering::Relaxed));
+    (age <= TOUCH_STALE_MS).then(|| sender.clone())
 }
 
 /// Focus can wobble during a valid Deck swipe. Only blind-recover when the webview has not
@@ -347,14 +379,14 @@ pub fn enable_native_touch(window: &tauri::WebviewWindow) -> Result<(), String> 
     // and was replaced) — drop it and spawn a fresh one instead of reporting a dead end.
     for attempt in 0..2 {
         let sender = touch_worker()?;
-        match sender.try_send(()) {
-            Ok(()) | Err(TrySendError::Full(())) => {
+        match sender.try_send(TouchCmd::Reassert) {
+            Ok(()) | Err(TrySendError::Full(_)) => {
                 crate::player::linux_embed::elog(
                     "x11: requested Gamescope native touch passthrough (mode 4)",
                 );
                 return Ok(());
             }
-            Err(TrySendError::Disconnected(())) => {
+            Err(TrySendError::Disconnected(_)) => {
                 let mut guard = TOUCH_WORKER.lock().unwrap_or_else(|p| p.into_inner());
                 *guard = None;
                 if attempt == 1 {
@@ -366,7 +398,7 @@ pub fn enable_native_touch(window: &tauri::WebviewWindow) -> Result<(), String> 
     Ok(())
 }
 
-fn touch_worker() -> Result<SyncSender<()>, String> {
+fn touch_worker() -> Result<SyncSender<TouchCmd>, String> {
     // unwrap_or_else(into_inner): a panic on this path once poisoned the mutex and every later
     // retry errored forever — un-poisoning is safe here, the Option is always coherent.
     let mut guard = TOUCH_WORKER.lock().unwrap_or_else(|p| p.into_inner());
@@ -390,8 +422,8 @@ fn touch_worker() -> Result<SyncSender<()>, String> {
     Ok(sender)
 }
 
-fn start_touch_worker() -> Result<SyncSender<()>, String> {
-    let (wake_tx, wake_rx) = mpsc::sync_channel(1);
+fn start_touch_worker() -> Result<SyncSender<TouchCmd>, String> {
+    let (wake_tx, wake_rx) = mpsc::sync_channel::<TouchCmd>(1);
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
     std::thread::Builder::new()
         .name("izumi-native-touch".into())
@@ -427,10 +459,11 @@ fn start_touch_worker() -> Result<SyncSender<()>, String> {
                 return;
             }
             loop {
-                match wake_rx.recv_timeout(TOUCH_KEEPALIVE) {
-                    Ok(()) | Err(mpsc::RecvTimeoutError::Timeout) => {}
+                let cmd = match wake_rx.recv_timeout(TOUCH_KEEPALIVE) {
+                    Ok(cmd) => Some(cmd),
+                    Err(mpsc::RecvTimeoutError::Timeout) => None,
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                }
+                };
                 TOUCH_ALIVE_MS.store(now_ms(), Ordering::Relaxed);
                 if TOUCH_DPY_DEAD.load(Ordering::Relaxed) {
                     crate::player::linux_embed::elog(
@@ -440,6 +473,10 @@ fn start_touch_worker() -> Result<SyncSender<()>, String> {
                     // libX11 and further calls no-op; closing a dead display double-frees on
                     // some libX11 versions. One leaked Display per XWayland death is fine.
                     return;
+                }
+                if matches!(cmd, Some(TouchCmd::Unstick)) {
+                    // SAFETY: this thread owns `dpy` for its whole lifetime.
+                    unsafe { release_pointer_buttons(dpy, root) };
                 }
                 // A finger is on the screen: stay quiet so OUR write is never the mid-gesture
                 // mode transition. Steam's own writes may still land; the fallout is bounded by

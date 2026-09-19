@@ -4199,6 +4199,12 @@ async fn run_capture_ffmpeg(
 
 #[cfg(not(target_os = "android"))]
 fn capture_failure(output: &std::process::Output) -> String {
+    // A child the kernel refused to run exits with a signal and no stderr — macOS kills a binary
+    // whose ad-hoc signature was invalidated after signing. Surface it as the same actionable
+    // error as a missing encoder instead of a generic failure.
+    if output.status.code().is_none() {
+        return "ffmpeg-unavailable".into();
+    }
     let error = String::from_utf8_lossy(&output.stderr);
     format!(
         "capture-failed: {}",
@@ -5410,7 +5416,7 @@ async fn flatpak_update_install(app: tauri::AppHandle, channel: String) -> Resul
 }
 
 /// Turn OFF WebKitGTK's damage-propagation feature flags (`PropagateDamagingInformation`,
-/// `UnifyDamagedRegions`) — enabled by DEFAULT in WebKitGTK 2.50 (which the Deck's GNOME-49
+/// `UnifyDamagedRegions`) — enabled by DEFAULT since WebKitGTK 2.50 (which the Deck's GNOME-49/50
 /// runtime now ships: libwebkit2gtk-4.1.so.0.21.8). They pass only CHANGED rectangles to the
 /// system compositor, so on our TRANSPARENT web view a moving element's VACATED region is
 /// never recomposited — the scrub-tooltip ghost trail + lingering menus that only a window
@@ -5605,22 +5611,34 @@ pub fn run() {
         | tauri_plugin_window_state::StateFlags::MAXIMIZED;
     #[cfg(target_os = "macos")]
     let window_state_flags = tauri_plugin_window_state::StateFlags::POSITION;
+    // Steam Deck Game mode: gamescope presents the toplevel at its own output size, so remembered
+    // geometry has no meaning there — and it is actively harmful. The Deck shares one state file
+    // between Desktop mode and Game mode; a size saved under KDE (1280×560 below the panel,
+    // measured 2026-09-12) was restored under gamescope, which letterboxed the shrunken window and
+    // cropped the page. Under gamescope the plugin is not registered at all: nothing restored,
+    // nothing saved, the window keeps its 1280×800 default (= gamescope's XWayland screen).
     #[cfg(not(target_os = "android"))]
-    let builder = builder
-        // A fresh desktop window starts centered. Once the user moves or resizes it, restore that
-        // preference on later launches instead. Track only the main window and omit transient
-        // visibility/decorations/fullscreen state used by the player and discussion popups.
-        .plugin(
-            tauri_plugin_window_state::Builder::default()
-                // The plugin intentionally cannot distinguish maximized resize events for an
-                // undecorated macOS window (its own source special-cases that state). It therefore
-                // saved transient, sometimes extremely narrow dimensions on alternating exits.
-                // macOS now starts at a safe 1280×800 and only remembers the screen position;
-                // Windows/Linux keep their established size + maximized restoration.
-                .with_state_flags(window_state_flags)
-                .with_filter(|label| label == "main")
-                .build(),
-        );
+    let under_gamescope = std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some();
+    #[cfg(not(target_os = "android"))]
+    let builder = if under_gamescope {
+        builder
+    } else {
+        builder
+            // A fresh desktop window starts centered. Once the user moves or resizes it, restore that
+            // preference on later launches instead. Track only the main window and omit transient
+            // visibility/decorations/fullscreen state used by the player and discussion popups.
+            .plugin(
+                tauri_plugin_window_state::Builder::default()
+                    // The plugin intentionally cannot distinguish maximized resize events for an
+                    // undecorated macOS window (its own source special-cases that state). It therefore
+                    // saved transient, sometimes extremely narrow dimensions on alternating exits.
+                    // macOS now starts at a safe 1280×800 and only remembers the screen position;
+                    // Windows/Linux keep their established size + maximized restoration.
+                    .with_state_flags(window_state_flags)
+                    .with_filter(|label| label == "main")
+                    .build(),
+            )
+    };
     let builder = builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
@@ -5732,6 +5750,15 @@ pub fn run() {
                     .additional_browser_args(DESKTOP_WEBVIEW_ARGS)
                     .inner_size(1280.0, 800.0)
                     .min_inner_size(900.0, 560.0)
+                    // Under gamescope the window IS the screen, so nothing may ever resize it. tao
+                    // gives every undecorated resizable window a 5 px borderless resize band and
+                    // begins an X11 resize drag for any button press OR touch inside it; on the
+                    // Deck the band sits along the bezel, so a finger landing near the edge shrank
+                    // the toplevel (gamescope then upscaled it — the "zoomed in" screen) and every
+                    // further finger movement resized the window instead of scrolling. A
+                    // non-resizable GTK3 window pins min = max = the configured size and still
+                    // honours programmatic set_size. Desktop mode keeps the band for mouse users.
+                    .resizable(!gamescope)
                     // This is only the unknown-position default. The window-state plugin restores
                     // a valid saved main-window position immediately after creation while hidden.
                     .center();
@@ -6017,6 +6044,30 @@ pub fn run() {
                     })
                     .build()?;
 
+                // The window above is built hidden and `on_page_load` is the ONLY thing that ever
+                // reveals it. When that first load never reaches Finished — a webview that fails to
+                // start, an app-protocol read that errors, a hang fetching the first document — the
+                // process stays alive holding a window nobody can see, with nothing printed. On
+                // macOS that is indistinguishable from "the app won't launch": the icon bounces and
+                // nothing opens. It is also unrecoverable, because the single-instance plugin hands
+                // every later launch to this invisible instance instead of starting a fresh one, so
+                // relaunching (and reinstalling) changes nothing until the process is killed by hand.
+                // Reveal the window once the grace period lapses so a broken load presents as a
+                // visible, quittable window rather than a headless process.
+                {
+                    let watchdog = main_window.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_secs(10));
+                        if !matches!(watchdog.is_visible(), Ok(true)) {
+                            eprintln!(
+                                "[startup] first page load did not finish within 10s; showing the window anyway"
+                            );
+                            let _ = watchdog.show();
+                            let _ = watchdog.set_focus();
+                        }
+                    });
+                }
+
                 // WebView2 environments must be created while Tauri is setting up its event loop.
                 // Later construction from a WebView IPC callback leaves the new controller waiting
                 // on the same UI thread. The hidden view stays inert until protected capture uses it.
@@ -6206,7 +6257,12 @@ pub fn run() {
                 // Game-mode video-overlay architecture from measured facts — does gamescope's
                 // XWayland report an RGBA/composited screen, and does its Wayland socket expose
                 // wl_subcompositor. No-op effect on the running player; pure diagnostics.
-                player::linux_embed::probe_compositor(&win);
+                // Opt-in: it opens up to five throwaway Wayland connections (registry roundtrip
+                // each), writes ~15 log lines and swaps WAYLAND_DISPLAY process-wide, all on the
+                // main thread before the first paint. Nothing consumes the answer at runtime.
+                if std::env::var_os("IZUMI_COMPOSITOR_PROBE").is_some() {
+                    player::linux_embed::probe_compositor(&win);
+                }
             }
             #[cfg(not(any(windows, target_os = "linux")))]
             let _ = app;
@@ -6370,7 +6426,9 @@ pub fn run() {
             sync::sync_join,
             sync::sync_nearby_list,
             sync::sync_pairing_open,
+            sync::sync_adopt_open,
             sync::sync_pair_nearby,
+            sync::sync_offer_nearby,
             sync::sync_pair_respond,
             sync::sync_leave,
             sync::sync_write,
@@ -6450,7 +6508,9 @@ pub fn run() {
         sync::sync_join,
         sync::sync_nearby_list,
         sync::sync_pairing_open,
+        sync::sync_adopt_open,
         sync::sync_pair_nearby,
+        sync::sync_offer_nearby,
         sync::sync_pair_respond,
         sync::sync_leave,
         sync::sync_write,

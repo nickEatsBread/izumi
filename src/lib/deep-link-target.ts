@@ -1,6 +1,6 @@
 import { parseTraktCallback } from '$lib/trakt/oauth'
-import { parseTvSetupLink } from '$lib/companion/tv-setup-link'
 import { parseCompanionRestoreLink } from '$lib/companion/restore'
+import { parseDeviceTransferLink } from '$lib/onboarding/device-transfer'
 export type DeepLinkTarget = { path: string; notice?: string }
 
 /** What a batch of incoming links resolves to: somewhere to navigate, something to tell the user,
@@ -11,8 +11,6 @@ export type DeepLinkOutcome = { path?: string; notice?: string }
 export function parseDeepLink(raw: string): DeepLinkTarget | null {
   try {
     const url = new URL(raw)
-    const tvSetup = parseTvSetupLink(raw)
-    if (tvSetup) return { path: tvSetup, notice: 'TV Cloudflare setup opened' }
     if (url.protocol === 'magnet:') {
       const name = url.searchParams.get('dn')?.trim()
       return name ? { path: `/app/search?q=${encodeURIComponent(name)}`, notice: 'Magnet opened in search' } : { path: '/app/search' }
@@ -25,6 +23,14 @@ export function parseDeepLink(raw: string): DeepLinkTarget | null {
     const kind = parts.shift()
     if (kind === 'companion' && parts[0] === 'pair' && parseCompanionPairingLink(raw)) {
       return { path: `/app/companion-pair?${url.searchParams.toString()}`, notice: 'TV pairing code opened' }
+    }
+    if (kind === 'device' && parts[0] === 'pair') {
+      const endpoint = parseDeviceTransferLink(raw)
+      // Straight to sync settings with the waiting device selected. The confirmation still
+      // happens there: scanning a code is aiming at a device, not agreeing to send it anything.
+      return endpoint
+        ? { path: `/app/settings/sync?offer=${endpoint}`, notice: 'New device ready to set up' }
+        : null
     }
     if (kind === 'companion' && parts[0] === 'push-enrolled') {
       return { path: '/app/home', notice: 'Private TV notifications enabled' }

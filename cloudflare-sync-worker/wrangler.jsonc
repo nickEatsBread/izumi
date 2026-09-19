@@ -6,6 +6,8 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "keep_vars": true,
+  "durable_objects": { "bindings": [{ "name": "TV_RESOLVE_SESSIONS", "class_name": "CompanionResolveSession" }] },
+  "exports": { "CompanionResolveSession": { "type": "durable-object", "storage": "sqlite" } },
   "triggers": { "crons": ["17 */6 * * *"] },
   "d1_databases": [
     {

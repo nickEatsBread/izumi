@@ -10,11 +10,13 @@ import {
   buildStreamIds,
   dedupeStreams,
   describe,
+  hostedRouteInfoHash,
   isNotice,
   isSupplementalVideo,
   isTvVideoCompatible,
   normalizeStreamBehavior,
   pickCandidates,
+  rankStreams,
   refineStreamsLite,
 } from './generated/resolver-core/resolver-core.ts'
 import {
@@ -230,12 +232,17 @@ export function normalizeResolveRequest(value) {
     ? input.nativeType
     : undefined
   const title = cleanText(input.title, 240)
+  // Catalogue evidence the TV already displays. Release-year and runtime let the shared refinement
+  // reject a same-title production from another decade when no catalogue lookup can answer here.
+  const year = positiveInt(input.year, 2_100)
+  const runtimeMinutes = positiveInt(input.runtimeMinutes, 10_080)
   const excludeCandidateIds = Array.isArray(input.excludeCandidateIds) ? [...new Set(input.excludeCandidateIds
     .filter(id => typeof id === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(id)))].slice(0, 60) : []
   const videoCapabilities = input.videoCapabilities && typeof input.videoCapabilities === 'object'
-    ? Object.fromEntries(['hdr', 'uhd', 'av1'].flatMap(key => typeof input.videoCapabilities[key] === 'boolean' ? [[key, input.videoCapabilities[key]]] : [])) : undefined
+    ? Object.fromEntries(['hdr', 'uhd', 'av1', 'opus', 'flac'].flatMap(key => typeof input.videoCapabilities[key] === 'boolean' ? [[key, input.videoCapabilities[key]]] : [])) : undefined
   return { ref: { provider, type, id }, episode, season, streamType, nativeType, streamIds,
-    ...(title ? { title } : {}), ...(excludeCandidateIds.length ? { excludeCandidateIds } : {}), ...(videoCapabilities ? { videoCapabilities } : {}) }
+    ...(title ? { title } : {}), ...(year && year >= 1_900 ? { year } : {}), ...(runtimeMinutes ? { runtimeMinutes } : {}),
+    ...(excludeCandidateIds.length ? { excludeCandidateIds } : {}), ...(videoCapabilities ? { videoCapabilities } : {}) }
 }
 
 function addonEndpoint(base, suffix) {
@@ -580,7 +587,6 @@ function aniZipRefineHints(metadata, episode) {
 async function refineContextFor(request, plan, profile, fetcher) {
   const titles = []
   let year
-  let releasedAt
   let expectedSeconds = plan.refine?.expectedSeconds
   let totalEpisodes = plan.refine?.totalEpisodes
   let absoluteNumbered = plan.refine?.absoluteNumbered
@@ -632,8 +638,6 @@ async function refineContextFor(request, plan, profile, fetcher) {
         titles.push(...[meta.name, meta.originalName].flatMap((entry) => typeof entry === 'string' && entry.trim() ? [entry.trim()] : []))
         const debut = Number(String(meta.year ?? '').slice(0, 4))
         if (debut >= 1950 && debut <= 2035) year = debut
-        const premiered = Date.parse(String(meta.released ?? ''))
-        if (Number.isFinite(premiered)) releasedAt = premiered
         const minutes = Number(String(meta.runtime ?? '').match(/\d+/)?.[0])
         if (!expectedSeconds && Number.isFinite(minutes) && minutes > 0) expectedSeconds = Math.round(minutes * 60)
       }
@@ -648,19 +652,19 @@ async function refineContextFor(request, plan, profile, fetcher) {
         .flatMap((value) => typeof value === 'string' && value.trim() ? [value.trim()] : []))
       const debut = Number(String(detail.release_date ?? detail.first_air_date ?? '').slice(0, 4))
       if (debut >= 1950 && debut <= 2035) year = debut
-      const premiered = Date.parse(String(detail.release_date ?? ''))
-      if (Number.isFinite(premiered)) releasedAt = premiered
       const minutes = Number(kind === 'movie' ? detail.runtime : detail.episode_run_time?.[0])
       if (!expectedSeconds && Number.isFinite(minutes) && minutes > 0) expectedSeconds = Math.round(minutes * 60)
       const count = Number(detail.number_of_episodes)
       if (!totalEpisodes && Number.isInteger(count) && count > 0) totalEpisodes = count
     }
   }
+  // The TV's own catalogue row is the fallback: it is the same evidence the viewer chose from.
+  year ??= request.year
+  if (!expectedSeconds && request.runtimeMinutes) expectedSeconds = request.runtimeMinutes * 60
   return {
     titles: [...new Set(titles)].slice(0, 12),
     streamType: request.streamType,
     ...(year ? { year } : {}),
-    ...(releasedAt ? { releasedAt } : {}),
     ...(expectedSeconds ? { expectedSeconds } : {}),
     ...(totalEpisodes ? { totalEpisodes } : {}),
     ...(absoluteNumbered ? { absoluteNumbered: true } : {}),
@@ -748,11 +752,14 @@ function sanitizeStream(value, allowPrivate = false) {
   }
 }
 
-async function resolveConfiguredDebrid(stream, profile, want, budgetMs = 22_000) {
+async function resolveConfiguredDebrid(stream, profile, want, budgetMs = 22_000, signal) {
   const provider = profile.debrid?.provider
   const credential = profile.debrid?.credential
   if (!provider || !credential || !stream.infoHash) return null
+  signal?.throwIfAborted()
   const controller = new AbortController()
+  const cancel = () => controller.abort()
+  signal?.addEventListener('abort', cancel, { once: true })
   const timer = setTimeout(() => controller.abort(), budgetMs)
   try {
     const magnet = stream.__magnet || `magnet:?xt=urn:btih:${stream.infoHash}`
@@ -801,6 +808,7 @@ async function resolveConfiguredDebrid(stream, profile, want, budgetMs = 22_000)
       source: name,
       contentType: contentType({ ...stream, url }),
       subtitles,
+      ...candidateOrigin(stream),
       delivery: 'debrid',
     }
   } catch (error) {
@@ -808,6 +816,7 @@ async function resolveConfiguredDebrid(stream, profile, want, budgetMs = 22_000)
     throw error
   } finally {
     clearTimeout(timer)
+    signal?.removeEventListener('abort', cancel)
     // The desktop implementation caches an account listing for faster repeat playback. A Worker
     // isolate can serve several owners, so do not retain a Real-Debrid credential between calls.
     if (provider === 'realdebrid') rdForgetLists(credential)
@@ -833,12 +842,27 @@ function contentType(stream) {
   return 'video/mp4'
 }
 
-function directCandidate(stream, profile) {
+/** Picker metadata shared by every delivery: who listed the release and how it reads at a glance. */
+function candidateOrigin(stream) {
+  const info = describe(stream)
+  const name = cleanText(stream.__origin?.name ?? stream.__addonName, 120)
+  const logo = cleanUrl(stream.__origin?.logo, 2_048)
+  return {
+    ...(name ? { origin: { name, ...(logo ? { logo } : {}) } } : {}),
+    ...(info.sizeLabel ? { size: cleanText(info.sizeLabel, 24) } : {}),
+    ...(info.seeders != null && Number.isFinite(info.seeders) ? { seeders: Math.max(0, Math.floor(info.seeders)) } : {}),
+    ...(info.group ? { group: cleanText(info.group, 60) } : {}),
+  }
+}
+
+function directCandidate(stream, profile, includeHostedRoute = false) {
   // Stremio's `notWebReady` means the URL is unsuitable for its browser player (for example an
   // MKV, plain HTTP URL, or a stream carrying proxyHeaders). Samsung AVPlay is not a browser, so
   // the hint alone must not discard otherwise portable debrid/direct URLs. Required headers and
   // non-public URLs are checked independently below.
   if (!stream.url || stream.__hosted) return null
+  // A gateway route adopted as a torrent is prepared through the owner's provider first.
+  if (stream.__hostedRoute && stream.infoHash && !includeHostedRoute) return null
   const url = cleanPlaybackUrl(stream.url, profile.allowPrivateNetworkSources)
   const headers = playbackHeaders(stream)
   if (!url || !headers) return null
@@ -849,7 +873,7 @@ function directCandidate(stream, profile) {
     return [{ id: track.id ?? String(index + 1), url, title: cleanText(track.title, 160), lang: cleanText(track.lang, 24) }]
   })
   return {
-    id: stream.__candidate?.routeId ?? `candidate-${Math.random().toString(36).slice(2)}`,
+    id: stream.__candidate?.routeId ?? `candidate-${catalogInternals.fnv(url)}`,
     url,
     title: info.label.slice(0, 240),
     quality: info.quality,
@@ -857,6 +881,8 @@ function directCandidate(stream, profile) {
     source: cleanText(info.addon ?? stream.__origin?.name, 120),
     contentType: contentType(stream),
     subtitles,
+    ...candidateOrigin(stream),
+    ...(stream.__hostedRoute ? { hosted: true } : {}),
     ...(headers.cookies ? { cookies: headers.cookies } : {}),
     ...(headers.userAgent ? { userAgent: headers.userAgent } : {}),
     ...(publicHostname(new URL(url).hostname) ? {} : { lan: true }),
@@ -876,7 +902,22 @@ async function mapLimit(values, limit, operation) {
   return output
 }
 
-async function resolveAddon(base, ids, type, fetcher, allowPrivate = false, addonIndex = 0, deadline = Infinity, subtitlesOnly = false) {
+/**
+ * A gateway playback route names the torrent it would serve. Those routes are minted for the
+ * network address that fetched the stream list, which here is the Worker rather than the TV, so
+ * the TV can be refused when it connects. When the owner's provider is configured, prepare the
+ * same release through it instead and keep the route only as a last resort.
+ */
+function adoptHostedRoute(stream, resolveHosted) {
+  if (stream.infoHash || !stream.url) return stream
+  const hash = hostedRouteInfoHash(stream.url)
+  if (!hash) return stream
+  return resolveHosted
+    ? { ...stream, infoHash: hash, __hostedRoute: true }
+    : { ...stream, __hostedRoute: true }
+}
+
+async function resolveAddon(base, ids, type, fetcher, allowPrivate = false, addonIndex = 0, deadline = Infinity, subtitlesOnly = false, onStreams, onSubtitles, resolveHosted = false) {
   const failures = []
   const failed = (message) => failures.push(`A configured source ${message}`)
   const manifest = await fetchJson(fetcher, addonEndpoint(base, '/manifest.json'), Math.min(MANIFEST_TIMEOUT_MS, deadline - Date.now()), failed)
@@ -895,6 +936,10 @@ async function resolveAddon(base, ids, type, fetcher, allowPrivate = false, addo
       const url = cleanUrl(track?.url)
       return url ? [{ url, title: cleanText(track.title ?? track.name, 160), lang: cleanText(track.lang, 24) }] : []
     })
+  }).then(lists => {
+    const tracks = lists.flat()
+    if (tracks.length) onSubtitles?.(tracks)
+    return tracks
   })
   const ask = subtitlesOnly ? [] : ids.filter((id) => acceptsStreamId(manifest, type, id))
   const responses = await mapLimit(ask, 2, async (id) => {
@@ -902,22 +947,25 @@ async function resolveAddon(base, ids, type, fetcher, allowPrivate = false, addo
     return Array.isArray(result?.streams) ? result.streams.slice(0, MAX_STREAMS_PER_ADDON) : []
   })
   const addonName = cleanText(manifest?.name, 120) ?? new URL(base).hostname
+  const addonLogo = cleanUrl(manifest?.logo, 2_048)
   const streams = responses.flatMap((streams, requestIndex) => streams.flatMap((raw, upstreamRank) => {
     const clean = sanitizeStream(raw, allowPrivate)
     if (!clean) return []
-    return [normalizeStreamBehavior({
+    return [normalizeStreamBehavior(adoptHostedRoute({
       ...clean,
       __addonName: addonName,
       // The SAME opaque origin id the desktop stores in its source-priority order, so the synced
       // trust order recognises this row.
-      __origin: { kind: 'addon', id: addonOriginId(base), name: addonName },
+      __origin: { kind: 'addon', id: addonOriginId(base), name: addonName, ...(addonLogo ? { logo: addonLogo } : {}) },
       __evidence: { upstreamRank, requestId: ask[requestIndex] },
-    })]
+    }, resolveHosted))]
   }))
-  return { streams, subtitles: (await subtitlesPromise).flat(), failures, tvRequests: failures.length ? tvSourceRequests(base, ask, type, addonIndex) : [] }
+  const batch = { streams, failures, tvRequests: failures.length ? tvSourceRequests(base, ask, type, addonIndex) : [] }
+  onStreams?.(batch)
+  return { ...batch, subtitles: await subtitlesPromise }
 }
 
-async function embeddedStremioStreams(request, bases, plan, fetcher, allowPrivate = false) {
+async function embeddedStremioStreams(request, bases, plan, fetcher, allowPrivate = false, resolveHosted = false) {
   if (request.ref.provider !== 'stremio' || !plan.addonId || !bases.length) {
     return { declared: false, streams: [] }
   }
@@ -943,12 +991,12 @@ async function embeddedStremioStreams(request, bases, plan, fetcher, allowPrivat
   const streams = selected.streams.slice(0, MAX_STREAMS_PER_ADDON).flatMap((raw, upstreamRank) => {
     const clean = sanitizeStream(raw, allowPrivate)
     if (!clean) return []
-    return [normalizeStreamBehavior({
+    return [normalizeStreamBehavior(adoptHostedRoute({
       ...clean,
       __addonName: 'Embedded source',
       __origin: { kind: 'addon', id: addonOriginId(base), name: 'Embedded source' },
       __evidence: { upstreamRank, requestId: selected.id },
-    })]
+    }, resolveHosted))]
   })
   return { declared: true, streams }
 }
@@ -957,8 +1005,62 @@ export function prepareTvSourceContinuation(profileValue, requestValue, context)
   return verifyTvSourceLookup(normalizeResolverProfile(profileValue), normalizeResolveRequest(requestValue), requestValue.tvSourceResults, context)
 }
 
+function sourcePool(batches, request, profile, refineContext, complete = true) {
+  const normalized = dedupeStreams(batches.flatMap(batch => batch.streams).filter(stream => !isNotice(stream) && !isSupplementalVideo(stream, request.title) && isTvVideoCompatible(stream, request.videoCapabilities)))
+  const refined = refineContext ? refineStreamsLite(refineContext, normalized) : { kept: normalized, rejectedCount: 0 }
+  // Only the complete pool may use the existing empty-filter fallback.
+  const pool = applyPriorityFilter(refined.kept.length || !complete ? refined.kept : normalized, profile.sourcePriority ?? [], profile.sourcePriorityMode ?? 'prefer')
+  return { normalized, refined, pool }
+}
+
+function orderedSources(pool, profile, plan, runtimeSeconds) {
+  // The desktop ranks with the same subtitle-language preference; 'none' means no preference.
+  const subtitleLang = profile.subtitleLang && profile.subtitleLang !== 'none' ? profile.subtitleLang : undefined
+  const preferred = pickCandidates(pool, profile.quality, plan.want, undefined, {
+    audioLang: profile.audioLang || undefined, subtitleLang, cacheCheck: 'none', allowUncached: !!profile.debrid, sourcePriority: profile.sourcePriority, runtimeSeconds,
+  })
+  return [...new Set([...preferred, ...pickCandidates(pool, profile.quality, plan.want, undefined, {
+    subtitleLang, cacheCheck: 'none', allowUncached: !!profile.debrid, sourcePriority: profile.sourcePriority, runtimeSeconds,
+  })])]
+}
+
+/** The picker lists releases the way the desktop's does: cache state, then language fit, then the
+ * synced sort (quality score, seeders or size). Auto-play keeps orderedSources' stricter order. */
+function pickerOrder(pool, profile, runtimeSeconds) {
+  const subtitleLang = profile.subtitleLang && profile.subtitleLang !== 'none' ? profile.subtitleLang : undefined
+  return rankStreams(pool, profile.sort ?? 'quality', {
+    audioLang: profile.audioLang || undefined, subtitleLang, cacheCheck: 'none', sourcePriority: profile.sourcePriority, runtimeSeconds,
+  })
+}
+
+/** Present candidates in picker order while auto-play selects the first available auto-pick. */
+function presentCandidates(byStream, ordered, listed) {
+  const ranked = listed.filter(stream => byStream.has(stream)).map(stream => byStream.get(stream))
+  const auto = ordered.find(stream => byStream.has(stream))
+  const selected = auto ? byStream.get(auto) : ranked[0]
+  const shown = ranked.slice(0, MAX_RESPONSE_CANDIDATES)
+  if (selected && !shown.includes(selected)) shown.splice(Math.max(0, shown.length - 1), 1, selected)
+  return { candidates: shown, selectedId: selected?.id ?? null }
+}
+
+function sourcePreferences(profile) {
+  return {
+    ...(profile.subtitleLang || profile.audioLang ? { trackPreferences: {
+      ...(profile.audioLang ? { audio: { language: profile.audioLang } } : {}),
+      ...(profile.subtitleLang && profile.subtitleLang !== 'none' ? { subtitle: { language: profile.subtitleLang } } : {}),
+    } } : {}),
+    ...(profile.subtitleStyle ? { subtitleStyle: profile.subtitleStyle } : {}),
+  }
+}
+
 export async function resolveDirectSources(profileValue, requestValue, fetcher = fetch, options = {}) {
-  const debridDeadline = Date.now() + 25_000
+  const signal = options.signal
+  signal?.throwIfAborted()
+  if (signal) {
+    const upstream = fetcher
+    fetcher = (url, init = {}) => { signal.throwIfAborted(); return upstream(url, { ...init, signal: init.signal ? AbortSignal.any([signal, init.signal]) : signal }) }
+  }
+  const debridDeadline = Date.now() + (options.fetchSource ? 40_000 : 25_000)
   const profile = normalizeResolverProfile(profileValue)
   const request = normalizeResolveRequest(requestValue)
   if (!profile.enabled) throw new Error('Cloud source resolving is disabled for this TV.')
@@ -978,10 +1080,113 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
   const idsForAddon = base => plan.addonId && catalogInternals.fnv(catalogInternals.normalizeBase(base)) !== plan.addonId
     ? globalIds : plan.ids
   const embedded = options.tvContinuation ? { declared: false, streams: [] } : await embeddedStremioStreams(
-    request, resolverAddons, plan, fetcher, profile.allowPrivateNetworkSources,
+    request, resolverAddons, plan, fetcher, profile.allowPrivateNetworkSources, !!profile.debrid,
   )
   const resourceType = request.ref.provider === 'stremio' ? request.nativeType ?? request.streamType : request.streamType
   const sourceDeadline = Date.now() + 12_000
+  const observed = []
+  const delegated = []
+  const delegatedBatches = []
+  const debridAttempts = new Map()
+  const debridResults = new Map()
+  const debridFailures = []
+  const cacheStates = new Map()
+  let preparing = Promise.resolve()
+  let progress = Promise.resolve()
+  let progressError
+  let lastProgressKey = ''
+  const availableCandidates = (ordered, listed) => {
+    const byStream = new Map()
+    for (const stream of ordered) {
+      const direct = directCandidate(stream, profile)
+      const value = direct ? { ...direct, delivery: direct.hosted ? 'hosted' : 'direct' } : debridResults.get(stream.infoHash)
+      if (value && !request.excludeCandidateIds?.includes(value.id)) byStream.set(stream, value)
+    }
+    return presentCandidates(byStream, ordered, listed)
+  }
+  const addonSubtitleBatches = []
+  let serviceSubtitles = []
+  // Sidecars remain first; independently installed subtitle add-ons fill the remaining slots.
+  // Copies keep shared debrid results unmutated, and the byte bound keeps a full response and
+  // its progress events inside the resolve channel's message limit.
+  const withSubtitles = list => list.map(candidate => {
+    const seen = new Set()
+    const merged = [...(candidate.subtitles ?? []), ...addonSubtitleBatches.flat(), ...(plan.subtitleTracks ?? []), ...serviceSubtitles]
+      .filter(track => {
+        const key = track.url ?? JSON.stringify(track.download)
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      .filter((track, index, tracks) => index < 40 && encoder.encode(JSON.stringify(tracks.slice(0, index + 1))).length < 8_000)
+    return { ...candidate, subtitles: merged }
+  })
+  const publishCandidates = async ({ candidates, selectedId }) => {
+    const merged = withSubtitles(candidates)
+    const key = JSON.stringify([selectedId, merged])
+    if (!merged.length || key === lastProgressKey) return
+    lastProgressKey = key
+    await options.onProgress({ candidates: structuredClone(merged), selectedId: selectedId ?? merged[0].id, ...sourcePreferences(profile) })
+  }
+  const prepareOnce = stream => {
+    if (!debridAttempts.has(stream.infoHash)) {
+      const work = resolveConfiguredDebrid(stream, profile, plan.want, Math.min(7_500, Math.max(1, debridDeadline - Date.now())), signal)
+        .then(value => { if (value) debridResults.set(stream.infoHash, value); return value })
+        .catch(error => {
+          const message = cleanText(error instanceof Error ? error.message : String(error), 240)
+          if (message) debridFailures.push(message)
+          return null
+        })
+      debridAttempts.set(stream.infoHash, work)
+    }
+    return debridAttempts.get(stream.infoHash)
+  }
+  const checkPool = async pool => {
+    if (!profile.debrid || cacheCheckMode(profile.debrid.provider) !== 'native' || pool.some(stream => directCandidate(stream, profile))) return
+    const hashes = [...new Set(pool.map(stream => stream.infoHash).filter(hash => hash && !cacheStates.has(hash)))].slice(0, 240)
+    if (hashes.length) {
+      signal?.throwIfAborted()
+      const cached = await checkCached(profile.debrid.provider, profile.debrid.credential, hashes)
+      for (const hash of hashes) cacheStates.set(hash, cached.get(hash) ?? null)
+    }
+    for (const stream of pool) {
+      const state = cacheStates.get(stream.infoHash)
+      if (state) { stream.__cache = state; stream.__cacheSource = 'native' }
+    }
+  }
+  const showProgress = () => {
+    if (!options.onProgress) return
+    const snapshot = observed.slice()
+    progress = progress.then(async () => {
+      signal?.throwIfAborted()
+      const context = await refineContextPromise
+      const { pool } = sourcePool(snapshot, request, profile, context, false)
+      await publishCandidates(availableCandidates(orderedSources(pool, profile, plan, context?.expectedSeconds), pickerOrder(pool, profile, context?.expectedSeconds)))
+    }).catch(error => { progressError = error })
+  }
+  void serviceSubtitlesPromise.then(tracks => { serviceSubtitles = tracks; showProgress() })
+  const showBatch = batch => {
+    observed.push(batch)
+    showProgress()
+    if (!options.onProgress || !profile.debrid) return
+    // Prepare releases alongside source discovery. Memoize the external job so the final
+    // ranking pass and a reconnect cannot create it again. Direct progress has a separate queue.
+    preparing = preparing.then(async () => {
+      signal?.throwIfAborted()
+      const context = await refineContextPromise
+      const { pool } = sourcePool(observed, request, profile, context, false)
+      await checkPool(pool)
+      for (const stream of orderedSources(pool, profile, plan, context?.expectedSeconds).slice(0, MAX_RESPONSE_CANDIDATES)) {
+        signal?.throwIfAborted()
+        if (Date.now() >= debridDeadline || debridAttempts.size >= MAX_RESPONSE_CANDIDATES) break
+        if (directCandidate(stream, profile) || !stream.infoHash || debridAttempts.has(stream.infoHash)
+          || request.excludeCandidateIds?.includes(`${stream.__candidate?.routeId ?? stream.infoHash}-${profile.debrid.provider}-direct`)) continue
+        await prepareOnce(stream)
+        showProgress()
+      }
+    }).catch(error => { progressError = error })
+  }
+  if (!options.tvContinuation) showBatch({ streams: embedded.streams, failures: [] })
   const batches = options.tvContinuation
     ? [{ streams: options.tvContinuation.streams.flatMap((raw, upstreamRank) => {
       const stream = sanitizeStream(raw)
@@ -990,87 +1195,94 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
     }), failures: [] }]
     : [
       { streams: embedded.streams, failures: [] },
-      ...await mapLimit(resolverAddons, 3, (base, index) => resolveAddon(base, idsForAddon(base), resourceType, fetcher, profile.allowPrivateNetworkSources, index, sourceDeadline)),
+      ...await mapLimit(resolverAddons, 3, (base, index) => resolveAddon(base, idsForAddon(base), resourceType, fetcher, profile.allowPrivateNetworkSources, index, sourceDeadline, false, batch => {
+        showBatch(batch)
+        if (!options.fetchSource || !profile.debrid) return
+        for (const query of batch.tvRequests) {
+          const work = options.fetchSource(query).then(raw => {
+            signal?.throwIfAborted()
+            const streams = raw.flatMap((value, upstreamRank) => {
+              const clean = sanitizeStream(value)
+              return clean ? [normalizeStreamBehavior({ ...clean, __addonName: 'TV source',
+                __origin: { kind: 'addon', id: addonOriginId(base), name: 'TV source' }, __evidence: { upstreamRank } })] : []
+            })
+            const received = { streams, failures: [] }
+            delegatedBatches.push(received)
+            showBatch(received)
+          }).catch(error => { if (signal?.aborted) progressError = error })
+          delegated.push(work)
+        }
+      }, tracks => { addonSubtitleBatches.push(tracks); showProgress() }, !!profile.debrid)),
     ]
-  const normalized = dedupeStreams(batches.flatMap((batch) => batch.streams).filter((stream) => !isNotice(stream) && !isSupplementalVideo(stream, request.title) && isTvVideoCompatible(stream, request.videoCapabilities)))
-  // The desktop refines add-on rows by title/production/shape before ranking ever sees them; the
-  // TV path skipped that entirely, so a same-id different production could outrank the requested
-  // title. Refine with the evidence gathered above — and if the evidence rejects EVERYTHING, fall
-  // back to the unrefined pool: the TV has no "Filtered" list to rescue rows from.
+  await Promise.all(delegated)
+  batches.push(...delegatedBatches)
+  await preparing
+  await progress
+  if (progressError) throw progressError
+  signal?.throwIfAborted()
   const refineContext = await refineContextPromise
-  const refined = refineContext ? refineStreamsLite(refineContext, normalized) : { kept: normalized, rejectedCount: 0 }
-  // Strict source trust applies AFTER the empty-kept fallback and never falls back itself: an
-  // empty result under `strict` is the configured answer, exactly as in the desktop picker.
-  const pool = applyPriorityFilter(
-    refined.kept.length ? refined.kept : normalized,
-    profile.sourcePriority ?? [],
-    profile.sourcePriorityMode ?? 'prefer',
-  )
+  const { normalized, refined, pool } = sourcePool(batches, request, profile, refineContext)
   // TV lookup returns plain torrent hashes. Check the configured provider before choosing a
   // release so a cached result is not stuck behind several full torrent downloads.
-  if (profile.debrid && cacheCheckMode(profile.debrid.provider) === 'native'
-    && !pool.some((stream) => directCandidate(stream, profile))) {
-    const hashes = [...new Set(pool.map((stream) => stream.infoHash).filter(Boolean))].slice(0, 240)
-    const cached = await checkCached(profile.debrid.provider, profile.debrid.credential, hashes)
-    for (const stream of pool) {
-      const state = cached.get(stream.infoHash)
-      if (state) { stream.__cache = state; stream.__cacheSource = 'native' }
-    }
-  }
-  const preferred = pickCandidates(pool, profile.quality, plan.want, undefined, {
-    audioLang: profile.audioLang || undefined,
-    cacheCheck: 'none',
-    allowUncached: !!profile.debrid,
-    sourcePriority: profile.sourcePriority,
-  })
-  // Automatic language preferences must not erase usable choices from the manual picker.
-  const ordered = [...new Set([...preferred, ...pickCandidates(pool, profile.quality, plan.want, undefined, {
-    cacheCheck: 'none', allowUncached: !!profile.debrid, sourcePriority: profile.sourcePriority,
-  })])]
+  await checkPool(pool)
+  const ordered = orderedSources(pool, profile, plan, refineContext?.expectedSeconds)
+  const listed = pickerOrder(pool, profile, refineContext?.expectedSeconds)
   const candidates = []
+  const candidateStreams = new Map()
   const failures = batches.flatMap((batch) => batch.failures)
   let rejected = refined.kept.length ? refined.rejectedCount : 0
   const attemptedDebridHashes = new Set()
+  // Gateway routes whose release could not be prepared through the owner's provider. They may
+  // refuse the TV's address, so they trail every prepared candidate rather than replacing one.
+  const hostedFallbacks = []
+  const hostedFallback = stream => {
+    const fallback = directCandidate(stream, profile, true)
+    if (fallback && !request.excludeCandidateIds?.includes(fallback.id)) hostedFallbacks.push({ ...fallback, delivery: 'hosted' })
+  }
   for (const stream of ordered) {
+    signal?.throwIfAborted()
     const candidate = directCandidate(stream, profile)
     const candidateId = candidate?.id ?? `${stream.__candidate?.routeId ?? stream.infoHash}-${profile.debrid?.provider}-direct`
     if (request.excludeCandidateIds?.includes(candidateId)) continue
-    if (candidate) candidates.push({ ...candidate, delivery: 'direct' })
-    else if (candidates.length < MAX_RESPONSE_CANDIDATES && Date.now() < debridDeadline && profile.debrid && stream.infoHash
+    if (candidate) { candidates.push({ ...candidate, delivery: candidate.hosted ? 'hosted' : 'direct' }); candidateStreams.set(stream, candidates[candidates.length - 1]) }
+    else if (candidates.length < MAX_RESPONSE_CANDIDATES && (Date.now() < debridDeadline || debridResults.has(stream.infoHash)) && profile.debrid && stream.infoHash
       && !attemptedDebridHashes.has(stream.infoHash)) {
       attemptedDebridHashes.add(stream.infoHash)
       try {
         const remaining = debridDeadline - Date.now()
-        if (remaining <= 0) throw new Error('Source resolution timed out. Try another cached release.')
-        const resolved = await resolveConfiguredDebrid(stream, profile, plan.want, Math.min(7_500, remaining))
+        if (remaining <= 0 && !debridResults.has(stream.infoHash)) throw new Error('Source resolution timed out. Try another cached release.')
+        const resolved = await prepareOnce(stream)
         if (resolved) {
           candidates.push(resolved)
-        }
+          candidateStreams.set(stream, resolved)
+        } else if (stream.__hostedRoute) hostedFallback(stream)
       } catch (error) {
         rejected += 1
         const message = cleanText(error instanceof Error ? error.message : String(error), 240)
         if (message) failures.push(message)
+        if (stream.__hostedRoute) hostedFallback(stream)
       }
-    } else rejected += 1
+    } else if (stream.__hostedRoute && stream.infoHash && !attemptedDebridHashes.has(stream.infoHash)) hostedFallback(stream)
+    else rejected += 1
+    if (options.onProgress) await publishCandidates(availableCandidates(ordered, listed))
     if (candidates.length >= MAX_RESPONSE_CANDIDATES) break
   }
-  candidates.splice(MAX_RESPONSE_CANDIDATES)
-  // Sidecars remain first; independently installed subtitle add-ons fill the remaining slots.
-  const addonSubtitles = batches.flatMap(batch => batch.subtitles ?? []).concat(plan.subtitleTracks ?? [], await serviceSubtitlesPromise)
-  for (const candidate of candidates) {
-    const seen = new Set()
-    candidate.subtitles = [...candidate.subtitles, ...addonSubtitles].filter(track => {
-      const key = track.url ?? JSON.stringify(track.download)
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    }).slice(0, 40)
+  // Auto-play chose in orderedSources' order; the list the TV shows follows the picker order.
+  const presented = presentCandidates(candidateStreams, ordered, listed)
+  candidates.splice(0, candidates.length, ...presented.candidates)
+  for (const fallback of hostedFallbacks) {
+    if (candidates.length >= MAX_RESPONSE_CANDIDATES) break
+    if (!candidates.some(candidate => candidate.id === fallback.id)) candidates.push(fallback)
   }
-  const tvSourceLookup = candidates.length < MAX_RESPONSE_CANDIDATES && requestValue.tvSourceLookup === 1 && !options.tvContinuation && options.tvLookupContext
+  candidates.splice(MAX_RESPONSE_CANDIDATES)
+  const addonSubtitles = batches.flatMap(batch => batch.subtitles ?? []).concat(plan.subtitleTracks ?? [], await serviceSubtitlesPromise)
+  const finalCandidates = withSubtitles(candidates)
+  signal?.throwIfAborted()
+  const tvSourceLookup = !options.fetchSource && candidates.length < MAX_RESPONSE_CANDIDATES && requestValue.tvSourceLookup === 1 && !options.tvContinuation && options.tvLookupContext
     ? await createTvSourceLookup(profile, request, { ...plan, subtitleTracks: addonSubtitles.filter((track, index, tracks) =>
       encoder.encode(JSON.stringify(tracks.slice(0, index + 1))).length < 8_000) }, batches.flatMap((batch) => batch.tvRequests ?? []), options.tvLookupContext)
     : undefined
-  if (!candidates.length && !failures.length) {
+  if (!candidates.length && !failures.length && !debridFailures.length) {
     failures.push(!normalized.length
       ? 'Your configured source add-ons returned no playable streams for this title.'
       : !profile.debrid && normalized.some((stream) => stream.infoHash)
@@ -1078,17 +1290,13 @@ export async function resolveDirectSources(profileValue, requestValue, fetcher =
         : `${profile.debrid ? providerName(profile.debrid.provider) + ' is configured, but the' : 'The'} returned sources could not be played on the TV.`)
   }
   return {
-    candidates,
-    selectedId: candidates[0]?.id ?? null,
+    candidates: finalCandidates,
+    selectedId: finalCandidates.find(candidate => candidate.id === presented.selectedId)?.id ?? finalCandidates[0]?.id ?? null,
     queriedIds: plan.ids,
     rejected,
-    failures: [...new Set(failures)].slice(0, 3),
+    failures: [...new Set([...failures, ...debridFailures])].slice(0, 3),
     skipSegments: await skipSegmentsPromise,
-    ...(profile.subtitleLang || profile.audioLang ? { trackPreferences: {
-      ...(profile.audioLang ? { audio: { language: profile.audioLang } } : {}),
-      ...(profile.subtitleLang && profile.subtitleLang !== 'none' ? { subtitle: { language: profile.subtitleLang } } : {}),
-    } } : {}),
-    ...(profile.subtitleStyle ? { subtitleStyle: profile.subtitleStyle } : {}),
+    ...sourcePreferences(profile),
     ...(tvSourceLookup ? { tvSourceLookup } : {}),
   }
 }

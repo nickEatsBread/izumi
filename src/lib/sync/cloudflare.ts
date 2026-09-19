@@ -4,7 +4,7 @@ import type { CompanionHomeSnapshot, CompanionMedia, CompanionPlaybackMode } fro
 import type { SyncRecord, SyncStatus } from './types'
 import { chunkHash, MAX_SYNC_BYTES, parseChunkManifest, splitSyncPayload, type ChunkManifest } from './record-chunks'
 
-export const CLOUDFLARE_WORKER_VERSION = '1.13.2'
+export const CLOUDFLARE_WORKER_VERSION = '1.14.4'
 export const CLOUDFLARE_WORKER_PROTOCOL = 1
 export const CLOUDFLARE_GIT_DEPLOY_URL =
   'https://deploy.workers.cloudflare.com/?url=https://github.com/nickEatsBread/izumi/tree/main/cloudflare-sync-worker'
@@ -73,6 +73,22 @@ export interface CloudflareAutomaticUpdate {
   phase: 'setup-required' | 'unchecked' | 'checking' | 'queued' | 'delayed' | 'error' | 'available' | 'current'
   latestVersion: string
   error: string
+}
+
+/** What the update panel should say about an automatic-update reply.
+ *
+ * A Worker that already holds deployment access does not need re-authorization just because one
+ * attempt failed — an install can fail for reasons the token cannot fix (an older Worker whose own
+ * updater is broken, a transient upstream error). Asking for a token there tells the user their
+ * access is missing when it is not. Only an unconfigured Worker genuinely needs authorizing; a
+ * configured one that failed needs a direct redeploy, which is a different sentence. */
+export function workerUpdateFeedback(update: CloudflareAutomaticUpdate | null): {
+  needsAccess: boolean
+  failure: string
+} {
+  if (!update) return { needsAccess: false, failure: '' }
+  if (!update.configured) return { needsAccess: true, failure: '' }
+  return { needsAccess: false, failure: update.error }
 }
 
 /** The private Worker owns the deployment hook; clients send only their existing device credential. */

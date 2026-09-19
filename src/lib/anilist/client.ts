@@ -8,8 +8,11 @@ import { invokeNativeHttp } from '$lib/net/http'
 // We only use the local datastore (reservoir / maxConcurrent / minTime / updateSettings), all of
 // which light.js has.
 import Bottleneck from 'bottleneck/light'
+import { get } from 'svelte/store'
+import { incognito } from '$lib/stores/incognito'
 import { anilistToken, getToken } from './auth'
 import { ANILIST_CACHE_KEYS } from './cache'
+import { createAnilistPersistence, revalidateOnceExchange, type AnilistPersistence } from './persisted-cache'
 import {
   aniListCatalogFailure, aniListNetworkFailure, fetchJikanCatalog, parseJikanCatalogRequest,
 } from './jikan'
@@ -340,14 +343,18 @@ async function fetchWithCatalogFallback(input: RequestInfo | URL, init?: Request
 export const anilistFetch: typeof fetch = (input, init) =>
   fetchWithCatalogFallback(input as RequestInfo | URL, init)
 
-function createAnilistClient() {
+// The normalized cache also lives on disk (IndexedDB) so a cold boot paints from the previous
+// session while the first execution of each query revalidates in the background — see
+// persisted-cache.ts for the two rules that keep network traffic identical to before.
+function createAnilistClient(persisted: AnilistPersistence | null) {
   return new Client({
     url: 'https://graphql.anilist.co',
     // AniList's GraphQL endpoint only accepts POST. urql v6 defaults
     // preferGetMethod to 'within-url-limit' (GET for short queries) -> 404.
     preferGetMethod: false,
     exchanges: [
-      cacheExchange({ keys: ANILIST_CACHE_KEYS }),
+      revalidateOnceExchange(),
+      cacheExchange({ keys: ANILIST_CACHE_KEYS, storage: persisted?.storage }),
       authExchange(async (utils) => ({
         addAuthToOperation(op) {
           const t = getToken()
@@ -368,7 +375,8 @@ function createAnilistClient() {
 // then push A's progress into B's list. Graphcache has no public "clear", so the documented reset
 // is to build a whole new Client, which is what the token subscription below does.
 let activeToken = getToken()
-let client = createAnilistClient()
+let persisted = createAnilistPersistence(() => get(incognito))
+let client = createAnilistClient(persisted)
 
 // `subscribe` fires immediately with the persisted token at startup, and svelte-persisted-store
 // also re-emits on cross-tab storage events — so only a CHANGED token may rebuild, or we'd throw
@@ -376,7 +384,19 @@ let client = createAnilistClient()
 anilistToken.subscribe((t) => {
   if (t === activeToken) return
   activeToken = t
-  client = createAnilistClient()
+  // Memory goes first and synchronously (the old viewer's fields must not serve one more query).
+  // The disk copy is retired — late deltas dropped, database wiped — before the next persisted
+  // client is built, so the new account never hydrates the previous one's list entries.
+  const stale = persisted
+  persisted = null
+  client = createAnilistClient(null)
+  const rebuild = () => {
+    if (activeToken !== t) return
+    persisted = createAnilistPersistence(() => get(incognito))
+    client = createAnilistClient(persisted)
+  }
+  if (stale) void stale.retire().then(rebuild, rebuild)
+  else rebuild()
 })
 
 // A stable facade over the current client. Module imports are live bindings and would have followed

@@ -6,7 +6,10 @@ import type { DebridInfo, ResolveOpts } from './types'
 // client (bypasses webview CORS, keeps TLS warm). Never log the credential.
 
 export const VIDEO = /\.(?:mkv|mp4|avi|mov|webm|flv|wmv|m4v|ts)$/i
-export const JUNK = /\b(?:sample|trailer|teaser|prologue|featurette|promo|extras?|ncop|nced|preview|pv)\b/i
+// tlr/tsr are the scene's own trailer/teaser abbreviations ("Title_TLR-2_4K…"). Underscores are
+// word characters, so names are tested with them turned into spaces (see junkName).
+export const JUNK = /\b(?:sample|trailer|teaser|tlr\d*|tsr\d*|prologue|featurette|promo|extras?|ncop|nced|preview|pv)\b/i
+export const isJunkName = (name: string): boolean => JUNK.test(name.replace(/_/g, ' '))
 
 const ARCHIVE_RE = /\.(?:rar|zip|7z|tar|gz|bz2|r\d{2,}|part\d+)$/i
 
@@ -102,8 +105,10 @@ function defaultHeader(
 
 /** Pick the largest real video from a {name,bytes} list (drops samples/extras). */
 export function pickLargestVideo<T extends { name: string; bytes: number }>(files: T[]): T | undefined {
-  const vids = files.filter((f) => VIDEO.test(f.name) && !JUNK.test(f.name))
-  const pool = vids.length ? vids : files.filter((f) => !JUNK.test(f.name))
+  const vids = files.filter((f) => VIDEO.test(f.name) && !isJunkName(f.name))
+  // A torrent whose every file is a sample/trailer has no feature to play: return nothing so the
+  // provider reports it instead of streaming a trailer as the film.
+  const pool = vids.length ? vids : files.filter((f) => !isJunkName(f.name))
   return [...pool].sort((a, b) => b.bytes - a.bytes)[0]
 }
 

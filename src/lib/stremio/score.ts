@@ -29,6 +29,18 @@ export interface ScoreOptions {
    * reward a source that explicitly promises the requested subtitles, but silence is not treated
    * as proof that a mux has none. */
   subtitleLang?: string
+  /** Declared runtime of the requested feature or episode. With a declared size this exposes the
+   * encode's bitrate, which is what separates a genuine release from a low-bitrate re-encode that
+   * merely claims the same resolution. */
+  runtimeSeconds?: number
+}
+
+/** Lowest bitrate (Mbps) at which a resolution tier is still a credible encode. */
+const BITRATE_FLOOR_MBPS: [number, number][] = [[2160, 8], [1440, 4], [1080, 2], [720, 1]]
+
+export function bitrateMbps(sizeBytes: number | undefined, runtimeSeconds: number | undefined): number | undefined {
+  if (sizeBytes == null || !runtimeSeconds || runtimeSeconds < 60 || sizeBytes <= 0) return undefined
+  return (sizeBytes * 8) / runtimeSeconds / 1_000_000
 }
 
 /** Fansub groups with a track record for encode quality and subtitle accuracy. Anime-first by
@@ -174,6 +186,17 @@ export function scoreInfo(info: StreamInfo, opts: ScoreOptions = {}): { score: n
   const subtitles = subtitleCompatibility(info, opts.subtitleLang)
   if (subtitles === 'match') add('requested subtitles', 6)
   else if (subtitles === 'mismatch') add('wrong or missing subtitles', -24)
+
+  // A file that claims 1080p in a fraction of the bytes a 1080p feature needs is a re-encode at
+  // best. Direct P2P deliberately values small files (below), so this only applies where the
+  // bytes come from a provider or a direct host.
+  const mbps = opts.directP2p ? undefined : bitrateMbps(info.sizeBytes, opts.runtimeSeconds)
+  const floor = mbps != null ? BITRATE_FLOOR_MBPS.find(([q]) => info.quality >= q)?.[1] : undefined
+  if (mbps != null && floor) {
+    if (mbps < floor * 0.75) add('very low bitrate for its resolution', -8)
+    else if (mbps < floor) add('low bitrate for its resolution', -4)
+    else if (mbps >= floor * 3) add('high bitrate', 3)
+  }
 
   if (opts.directP2p && info.stream.infoHash && !info.stream.url && info.sizeBytes != null) {
     const mib = info.sizeBytes / (1024 ** 2)

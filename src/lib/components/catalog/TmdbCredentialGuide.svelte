@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { openUrl } from '@tauri-apps/plugin-opener'
-  import Check from '@lucide/svelte/icons/check'
   import ExternalLink from '@lucide/svelte/icons/external-link'
   import KeyRound from '@lucide/svelte/icons/key-round'
   import X from '@lucide/svelte/icons/x'
@@ -11,28 +10,15 @@
   let openError = $state('')
 
   const apiSettingsUrl = 'https://www.themoviedb.org/settings/api'
-  const steps = [
-    {
-      title: 'Create a free TMDB account',
-      description: 'Open themoviedb.org and sign up, or sign in if you already have an account.',
-    },
-    {
-      title: 'Open the API settings',
-      description: 'Open your account settings, choose API in the sidebar, then request an API key and select Developer.',
-    },
-    {
-      title: 'Complete the application details',
-      description: 'Accept the terms and provide the requested application and contact details. Describe your use as personal and non-commercial.',
-    },
-    {
-      title: 'Copy the API Read Access Token',
-      description: 'After registration, find the long value labelled API Read Access Token in the API settings page.',
-    },
-    {
-      title: 'Paste it into Izumi',
-      description: 'Return to Settings → Catalog and paste the token into the field behind this guide. It is stored only on this device.',
-    },
-  ]
+  const guideUrl = 'https://duckkota.gitlab.io/guides/tmdb/'
+  async function openGuide() {
+    openError = ''
+    try {
+      await openUrl(guideUrl)
+    } catch (cause) {
+      openError = cause instanceof Error ? cause.message : 'Could not open the guide. Please visit duckkota.gitlab.io/guides/tmdb in your browser.'
+    }
+  }
 
   async function openTmdb() {
     openError = ''
@@ -85,28 +71,11 @@
     </header>
 
     <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6 sm:py-6">
-      <ol class="space-y-5">
-        {#each steps as step, index (step.title)}
-          <li class="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-3 sm:grid-cols-[2.5rem_minmax(0,1fr)] sm:gap-4">
-            <span class="grid size-9 place-items-center rounded-full bg-secondary text-sm font-black sm:size-10">{index + 1}</span>
-            <div class="pt-1">
-              <h3 class="text-base font-black">{step.title}</h3>
-              <p class="mt-1 text-sm leading-6 text-muted-foreground">{step.description}</p>
-              {#if index === 2}
-                <div class="mt-3 flex gap-3 rounded-xl border border-theme/30 bg-theme/10 px-4 py-3 text-sm leading-6">
-                  <Check size={18} class="mt-0.5 shrink-0 text-theme" aria-hidden="true" />
-                  <p class="min-w-0"><strong>For Application URL, use Izumi’s project page:</strong> <code class="break-all rounded bg-background/60 px-1 font-mono text-xs">https://github.com/nickEatsBread/izumi</code>. Keep the remaining details accurate.</p>
-                </div>
-              {:else if index === 3}
-                <div class="mt-3 flex gap-3 rounded-xl border border-theme/30 bg-theme/10 px-4 py-3 text-sm leading-6">
-                  <Check size={18} class="mt-0.5 shrink-0 text-theme" aria-hidden="true" />
-                  <p><strong>Use the long token</strong> that usually starts with <code class="rounded bg-background/60 px-1 font-mono text-xs">eyJ</code>, not the short API Key (v3 auth).</p>
-                </div>
-              {/if}
-            </div>
-          </li>
-        {/each}
-      </ol>
+      <p class="text-sm leading-6 text-muted-foreground">A free TMDB account is all you need. The guide below walks through creating the account and copying the long API Read Access Token — the one starting <code class="rounded bg-background/60 px-1 font-mono text-xs">eyJ</code>, not the short v3 API key. Paste it into the field behind this dialog; it is stored only on this device.</p>
+
+      <button type="button" data-focusable onclick={() => void openGuide()} class="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-secondary px-4 text-sm font-black transition-colors hover:bg-accent">
+        How do I get a token? <ExternalLink size={17} aria-hidden="true" />
+      </button>
 
       {#if openError}
         <p class="mt-5 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{openError}</p>

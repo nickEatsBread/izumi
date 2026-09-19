@@ -12,6 +12,7 @@ import {
 import { dedupeStreams } from './dedupe'
 import { candidateIds } from './candidate-model'
 import { describe, type Stream } from './parse'
+import { isSupplementalVideo } from './playback-suitability'
 import { sourceTitleAliases } from './title-aliases'
 
 // Season/title refinement shared by addon + extension streams. Pure (no Tauri/stores beyond the
@@ -114,6 +115,8 @@ export function refineStreams(media: Media, raw: Stream[]): Refined {
     // explicit year/production/shape contradiction therefore still wins over that claim.
     if (likelyOtherProduction(s, animeYear, absoluteNumbered)) return 'other-production'
     if (isEpisodeExtra(s)) return 'episode-extra'
+    // The add-on may put the trailer marker only on a second title line or in its description.
+    if (isSupplementalVideo(s, wantedTitles[0] ?? '')) return 'episode-extra'
     if (isSeries && isStandaloneMovie(s)) return 'standalone-movie'
     return null
   }

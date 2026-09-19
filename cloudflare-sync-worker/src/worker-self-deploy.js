@@ -28,7 +28,7 @@ export async function downloadText(fetcher, url, init = {}, maximum = 16_384) {
   const timeout = setTimeout(() => controller.abort(), 20_000)
   try {
     const response = await fetcher(url, { ...init, signal: controller.signal })
-    if (!response.ok) throw new Error('Update service unavailable.')
+    if (!response.ok) { await response.body?.cancel(); throw new Error('Update service unavailable.') }
     // Bound streaming reads as well as Content-Length; do not buffer an unbounded response.
     const reader = response.body?.getReader()
     if (!reader) throw new Error('Empty update response.')
@@ -68,7 +68,8 @@ export async function deployWorkerRelease(auth, manifest, fetcher) {
   const account = `https://api.cloudflare.com/client/v4/accounts/${auth.accountId}`
   const api = async (path, init) => {
     const value = JSON.parse(await downloadText(fetcher, account + path, {
-      ...init, redirect: 'error', headers: { ...init.headers, Authorization: `Bearer ${auth.apiToken}` },
+      // Workers supports manual redirects; downloadText rejects every non-success status.
+      ...init, redirect: 'manual', headers: { ...init.headers, Authorization: `Bearer ${auth.apiToken}` },
     }, 256 * 1024))
     if (value.success !== true) throw new Error('Worker deployment failed.')
     return value.result
@@ -102,7 +103,10 @@ export async function deployWorkerRelease(auth, manifest, fetcher) {
   const form = new FormData()
   form.set('metadata', new Blob([JSON.stringify({
     main_module: 'worker.mjs', compatibility_date: pkg.compatibilityDate, compatibility_flags: ['nodejs_compat'],
-    bindings: [{ type: 'd1', name: 'DB', id: auth.databaseId }], keep_bindings: ['secret_text', 'plain_text'],
+    bindings: [{ type: 'd1', name: 'DB', id: auth.databaseId }, ...(pkg.resolveChannel === 1
+      ? [{ type: 'durable_object_namespace', name: 'TV_RESOLVE_SESSIONS', class_name: 'CompanionResolveSession' }] : [])],
+    ...(pkg.resolveChannel === 1 ? { exports: { CompanionResolveSession: { type: 'durable-object', storage: 'sqlite' } } } : {}),
+    keep_bindings: ['secret_text', 'plain_text'],
     annotations: { 'workers/message': `Automatic Izumi Worker update ${pkg.version}` },
   })], { type: 'application/json' }))
   form.set('worker.mjs', new Blob([pkg.script], { type: 'application/javascript+module' }), 'worker.mjs')

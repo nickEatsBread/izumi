@@ -5,13 +5,17 @@ import { describe, expect, it } from 'vitest'
 const source = readFileSync(fileURLToPath(new URL('./TmdbCredentialGuide.svelte', import.meta.url)), 'utf8')
 
 describe('TMDB credential guide', () => {
-  it('guides users to the credential accepted by the client', () => {
+  it('names the credential the client accepts, and leaves the steps to the maintained guide', () => {
     expect(source).toContain('Get your free TMDB token')
-    expect(source).toContain('For Application URL, use Izumi’s project page')
-    expect(source).toContain('https://github.com/nickEatsBread/izumi')
+    // The one thing this dialog must say itself rather than link to: which of TMDB's two
+    // credentials izumi takes. Pasting the v3 key is the usual way this goes wrong.
     expect(source).toContain('API Read Access Token')
-    expect(source).toContain('not the short API Key (v3 auth)')
-    expect(source).toContain('Paste it into Izumi')
+    expect(source).toContain('not the short v3 API key')
+    expect(source).toContain('stored only on this device')
+    // The steps are deliberately not duplicated here — they live in the walkthrough that gets
+    // updated when TMDB moves its UI, which is why the old inline copy was removed.
+    expect(source).toContain("const guideUrl = 'https://duckkota.gitlab.io/guides/tmdb/'")
+    expect(source).not.toContain('For Application URL')
   })
 
   it('opens the official API settings and provides accessible dismissal', () => {

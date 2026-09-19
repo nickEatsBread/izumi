@@ -394,3 +394,22 @@ describe('refineStreams', () => {
     expect(r.rejected).toHaveLength(0)
   })
 })
+
+describe('refineStreams (trailer packs)', () => {
+  const film = { title: { romaji: 'Example Film', english: 'Example Film' }, format: 'MOVIE', episodes: 1, duration: 148, startDate: { year: 2026 } } as never
+  it('rejects a correct-year 4K trailer pack that only marks the trailer on its filename', () => {
+    const r = refineStreams(film, [
+      named('Example.Film.2026.2160p.WEB-DL.mkv'),
+      named('Example.Film.2026.TLR-2.2160p.WEB-DL.HEVC.10bit.DTS-HD.MA.AC3.mkv'),
+    ] as never)
+    expect(r.kept).toHaveLength(1)
+    expect(r.rejected).toEqual([expect.objectContaining({ reason: 'episode-extra' })])
+  })
+  it('rejects a trailer marked only in the add-on description', () => {
+    const r = refineStreams(film, [
+      { url: 'https://host/a', title: 'Example Film (2026)', description: 'Example Film (2026)\n📄 ExampleFilm_TLR-2_3840x1608.mkv' },
+    ] as never)
+    expect(r.kept).toHaveLength(0)
+    expect(r.rejected).toEqual([expect.objectContaining({ reason: 'episode-extra' })])
+  })
+})
