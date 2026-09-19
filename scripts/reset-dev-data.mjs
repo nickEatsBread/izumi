@@ -17,8 +17,14 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const devConfigPath = join(root, 'src-tauri', 'tauri.dev.conf.json')
 const releaseConfigPath = join(root, 'src-tauri', 'tauri.conf.json')
 
-const devIdentifier = JSON.parse(readFileSync(devConfigPath, 'utf8')).identifier
-const releaseIdentifier = JSON.parse(readFileSync(releaseConfigPath, 'utf8')).identifier
+const devConfig = JSON.parse(readFileSync(devConfigPath, 'utf8'))
+const releaseConfig = JSON.parse(readFileSync(releaseConfigPath, 'utf8'))
+const devIdentifier = devConfig.identifier
+const devProductName = devConfig.productName
+const releaseIdentifier = releaseConfig.identifier
+const releaseProductName = releaseConfig.productName
+// Must match src-tauri/src/desktop_webview.rs DEV_WKWEBVIEW_STORE_UUID.
+const DEV_WKWEBVIEW_STORE_UUID = '5C8A1D72-9E44-4F0B-B36A-2CD187F04E19'
 
 // Two independent guards. Either one alone is enough to make deleting the installed release's data
 // impossible; both are here because a silent config typo is exactly how that would happen.
@@ -28,6 +34,10 @@ if (!devIdentifier || !devIdentifier.endsWith('.dev')) {
 }
 if (devIdentifier === releaseIdentifier) {
   console.error(`Refusing to reset: the dev overlay does not override the release identifier '${releaseIdentifier}'.`)
+  process.exit(1)
+}
+if (!devProductName || !devProductName.endsWith('-dev') || devProductName === releaseProductName) {
+  console.error(`Refusing to reset: '${devProductName}' is not a -dev product name distinct from the release.`)
   process.exit(1)
 }
 
@@ -41,13 +51,22 @@ function appDirectories(id) {
   }
   if (process.platform === 'darwin') {
     const library = join(home, 'Library')
-    return [
+    const dirs = [
       join(library, 'Application Support', id),
       join(library, 'Caches', id),
       join(library, 'Logs', id),
       join(library, 'WebKit', id),
       join(library, 'HTTPStorages', id),
     ]
+    if (id === devIdentifier) {
+      // WKWebView in `tauri dev` also stores under CFBundleName (izumi-dev), not only the identifier.
+      dirs.push(
+        join(library, 'WebKit', devProductName),
+        join(library, 'HTTPStorages', devProductName),
+        join(library, 'WebKit', 'WebsiteDataStore', DEV_WKWEBVIEW_STORE_UUID),
+      )
+    }
+    return dirs
   }
   const dataHome = process.env.XDG_DATA_HOME ?? join(home, '.local', 'share')
   const configHome = process.env.XDG_CONFIG_HOME ?? join(home, '.config')
@@ -55,12 +74,13 @@ function appDirectories(id) {
   return [join(dataHome, id), join(configHome, id), join(cacheHome, id)]
 }
 
+const allowedLeaves = new Set([devIdentifier, devProductName, DEV_WKWEBVIEW_STORE_UUID])
 const targets = appDirectories(devIdentifier)
-// Final guard: every path must be a real directory literally named after the dev identifier, never
+// Final guard: every path must be a real directory named after the isolated dev identity, never
 // a symlink/junction that could redirect the delete somewhere else.
 for (const target of targets) {
-  if (basename(target) !== devIdentifier) {
-    console.error(`Refusing to reset '${target}': not named after the dev identifier.`)
+  if (!allowedLeaves.has(basename(target))) {
+    console.error(`Refusing to reset '${target}': not named after the isolated dev identity.`)
     process.exit(1)
   }
   let stats

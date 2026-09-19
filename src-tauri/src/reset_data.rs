@@ -12,16 +12,22 @@ fn path_error(action: &str, path: &Path, error: io::Error) -> io::Error {
     )
 }
 
-pub fn validate_roots(roots: &[PathBuf], identifier: &str) -> io::Result<()> {
+fn name_allowed(name: &std::ffi::OsStr, allowed_names: &[&str]) -> bool {
+    allowed_names.iter().any(|allowed| name == *allowed)
+}
+
+pub fn validate_roots(roots: &[PathBuf], allowed_names: &[&str]) -> io::Result<()> {
     for root in roots {
         // Only fixed, app-scoped directories supplied by the native path resolver are accepted.
         // Never accept download locations or any other path from frontend settings.
-        let app_directory = root.file_name().is_some_and(|name| name == identifier);
+        let app_directory = root
+            .file_name()
+            .is_some_and(|name| name_allowed(name, allowed_names));
         let app_logs = root.file_name().is_some_and(|name| name == "logs")
             && root
                 .parent()
                 .and_then(Path::file_name)
-                .is_some_and(|name| name == identifier);
+                .is_some_and(|name| name_allowed(name, allowed_names));
         if !root.is_absolute() || (!app_directory && !app_logs) {
             return Err(io::Error::other(
                 "Refusing to reset a directory outside izumi's app folders",
@@ -41,10 +47,10 @@ pub fn validate_roots(roots: &[PathBuf], identifier: &str) -> io::Result<()> {
     Ok(())
 }
 
-pub fn clear_app_directories(roots: &[PathBuf], marker: &Path, identifier: &str) -> io::Result<()> {
+pub fn clear_app_directories(roots: &[PathBuf], marker: &Path, allowed_names: &[&str]) -> io::Result<()> {
     // Validate ALL roots before deleting anything. Keep the marker until every directory succeeds,
     // so a locked file, crash or power loss retries the reset instead of booting partial old data.
-    validate_roots(roots, identifier)?;
+    validate_roots(roots, allowed_names)?;
     for root in roots {
         let entries = match fs::read_dir(root) {
             Ok(entries) => entries,
@@ -130,12 +136,12 @@ mod tests {
             config.clone(),
             config.join("logs"),
         ];
-        clear_app_directories(&roots, &marker, "com.nicho.izumi").unwrap();
+        clear_app_directories(&roots, &marker, &["com.nicho.izumi"]).unwrap();
         assert!(marker.exists());
         assert_eq!(fs::read_dir(&config).unwrap().count(), 1);
         assert_eq!(fs::read_dir(&cache).unwrap().count(), 0);
         assert_eq!(fs::read_to_string(external).unwrap(), "keep");
-        clear_app_directories(&roots, &marker, "com.nicho.izumi").unwrap();
+        clear_app_directories(&roots, &marker, &["com.nicho.izumi"]).unwrap();
     }
 
     #[test]
@@ -146,7 +152,7 @@ mod tests {
         assert!(clear_app_directories(
             &[config.clone(), fixture.0.clone()],
             &config.join(MARKER),
-            "com.nicho.izumi"
+            &["com.nicho.izumi"]
         )
         .is_err());
         assert!(config.join("credentials").exists());
@@ -161,7 +167,7 @@ mod tests {
         fs::create_dir_all(&external).unwrap();
         fs::write(external.join("keep"), "keep").unwrap();
         std::os::unix::fs::symlink(&external, config.join("downloads")).unwrap();
-        clear_app_directories(&[config.clone()], &config.join(MARKER), "com.nicho.izumi").unwrap();
+        clear_app_directories(&[config.clone()], &config.join(MARKER), &["com.nicho.izumi"]).unwrap();
         assert!(external.join("keep").exists());
         assert!(!config.join("downloads").exists());
     }
@@ -182,13 +188,54 @@ mod tests {
             .open(&path)
             .unwrap();
         let error =
-            clear_app_directories(&[config.clone()], &marker, "com.nicho.izumi").unwrap_err();
+            clear_app_directories(&[config.clone()], &marker, &["com.nicho.izumi"]).unwrap_err();
         assert!(error.to_string().contains(&path.display().to_string()));
         assert!(error.to_string().contains("remove file"));
         assert!(marker.exists());
         drop(lock);
-        clear_app_directories(&[config.clone()], &marker, "com.nicho.izumi").unwrap();
+        clear_app_directories(&[config.clone()], &marker, &["com.nicho.izumi"]).unwrap();
         assert!(!path.exists());
         assert!(marker.exists());
+    }
+
+    #[test]
+    fn allows_the_macos_product_name_and_custom_webkit_store() {
+        let fixture = Fixture::new();
+        let identifier = fixture.app("Application Support");
+        let product = fixture.0.join("WebKit").join("izumi-dev");
+        let store = fixture
+            .0
+            .join("WebKit")
+            .join("WebsiteDataStore")
+            .join("5C8A1D72-9E44-4F0B-B36A-2CD187F04E19");
+        fs::create_dir_all(&product).unwrap();
+        fs::create_dir_all(&store).unwrap();
+        fs::write(product.join("localstorage"), "dev").unwrap();
+        fs::write(store.join("IndexedDB"), "dev").unwrap();
+        let marker = identifier.join(MARKER);
+        fs::write(&marker, "pending").unwrap();
+        let roots = vec![identifier.clone(), product.clone(), store.clone()];
+        clear_app_directories(
+            &roots,
+            &marker,
+            &[
+                "com.nicho.izumi",
+                "izumi-dev",
+                "5C8A1D72-9E44-4F0B-B36A-2CD187F04E19",
+            ],
+        )
+        .unwrap();
+        assert_eq!(fs::read_dir(&product).unwrap().count(), 0);
+        assert_eq!(fs::read_dir(&store).unwrap().count(), 0);
+        assert!(clear_app_directories(
+            &[fixture.0.join("WebKit").join("izumi")],
+            &marker,
+            &[
+                "com.nicho.izumi",
+                "izumi-dev",
+                "5C8A1D72-9E44-4F0B-B36A-2CD187F04E19",
+            ],
+        )
+        .is_err());
     }
 }
