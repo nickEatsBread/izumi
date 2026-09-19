@@ -67,7 +67,7 @@
   const spoiler = $derived($hideSpoilers && !trackedDone)
   const labels = $derived(episodeLabels(ep, meta?.title, spoiler))
   const themeModel = $derived(episodeDisplayModel(media, ep, meta, {
-    episodeTitle: labels.primary,
+    episodeTitle: labels.primary && !labels.primary.includes(String(ep)) ? `${ep}. ${labels.primary}` : (labels.primary || `Episode ${ep}`),
     ...(labels.concealSecondary ? { description: '' } : {}),
     still: img,
     progress: pct,

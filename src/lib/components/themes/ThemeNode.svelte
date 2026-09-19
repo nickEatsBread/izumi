@@ -28,7 +28,7 @@
       {#if item.action && actions[item.action]}<button type="button" data-focusable class="theme-action" style={nodeStyle(item)} onclick={actions[item.action]}>{item.text || labels[item.action]}</button>{/if}
     {:else if item.type === 'icon' && item.icon}
       {@const Icon = icons[item.icon]}
-      <span class="theme-icon" style={nodeStyle(item)} aria-hidden="true"><Icon size={18} /></span>
+      <span class="theme-icon" style={nodeStyle(item)} aria-hidden="true"><Icon size={Number(item.style?.fontSize) || 18} /></span>
     {:else if item.type === 'meter' && item.field}
       {@const amount = model[item.field]}
       <div class="theme-meter" style={nodeStyle(item)} role="presentation">
@@ -46,7 +46,7 @@
 <style>
   .theme-template { position: relative; isolation: isolate; overflow: hidden; min-width: 0; }
   .theme-overlay > :global(*) { grid-area: 1 / 1; }
-  .theme-text { display: block; overflow-wrap: anywhere; white-space: pre-line; }
+  .theme-text { overflow-wrap: anywhere; white-space: pre-line; }
   .theme-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: currentColor; }
   .theme-meter { overflow: hidden; border-radius: 99px; background: hsl(var(--muted)); }
   .theme-meter > span { display: block; height: 100%; min-height: inherit; background: hsl(var(--theme)); }

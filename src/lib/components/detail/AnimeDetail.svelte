@@ -844,8 +844,8 @@
          the whole header. At 13rem it left a poster-height void beneath the much shorter info
          column, delaying Episodes by roughly a full D-pad viewport. An 11rem cover retains a clear
          visual identity while keeping both columns close enough in height for Episodes to follow. -->
-    <div class="mb-4 flex flex-col gap-5 md:flex-row">
-      <img use:reliableImage={cover(m)} alt="" class="h-auto w-44 shrink-0 self-start rounded-lg object-contain shadow-lg" style:width={detailTheme.posterWidth ? `${detailTheme.posterWidth}px` : undefined} />
+    <div class="mb-4 flex flex-col gap-5 md:flex-row {detailTheme.coverAlign === 'end' ? 'md:items-end' : 'md:items-start'}">
+      <img use:reliableImage={cover(m)} alt="" class="h-auto w-44 shrink-0 rounded-lg object-contain shadow-lg {detailTheme.coverAlign === 'end' ? 'self-end' : 'self-start'}" style:width={detailTheme.posterWidth ? `${detailTheme.posterWidth}px` : undefined} />
 
       <div class="min-w-0 flex-1">
         {#if m.title.native || m.title.romaji}
@@ -883,7 +883,7 @@
         </div>
         {/if}
 
-        {#if m.description}
+        {#if m.description && !detailTheme.actionsFirst}
           <p class="mb-3 {controllerUi ? 'line-clamp-2' : 'line-clamp-3'} max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
         {/if}
 
@@ -894,8 +894,8 @@
                   onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
                   onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
                   use:focusOnMount onclick={() => playCta(m)}
-                  class="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">
-            <Play size={16} />{ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
+                  class="inline-flex items-center gap-2 rounded-md bg-primary font-bold text-primary-foreground {detailTheme.cta === 'large' ? 'min-w-56 px-6 py-3 text-base' : 'px-4 py-2'}">
+            <Play size={detailTheme.cta === 'large' ? 18 : 16} />{detailTheme.cta === 'large' ? (effStatus === 'COMPLETED' ? 'Rewatch Now' : ctaHasProgress(m) ? 'Continue Now' : 'Watch Now') : (ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play')}
           </button>
 
           <button data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
@@ -932,6 +932,9 @@
             </button>
           {/each}
         </div>
+        {#if m.description && detailTheme.actionsFirst}
+          <p class="mt-4 {controllerUi ? 'line-clamp-4' : 'line-clamp-6'} max-w-3xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
+        {/if}
       </div>
     </div>
     {/snippet}

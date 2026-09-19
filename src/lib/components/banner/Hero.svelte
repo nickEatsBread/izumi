@@ -557,6 +557,15 @@
 <style>
   .theme-custom-hero { position: relative; margin: 0 0 1.5rem; overflow: hidden; min-height: 24vh; }
   .theme-custom-hero :global(.theme-template) { height: 100%; min-height: inherit; }
+  .theme-custom-hero :global(.theme-overlay)::after {
+    content: '';
+    grid-area: 1 / 1;
+    z-index: 1;
+    pointer-events: none;
+    background: linear-gradient(to top, hsl(var(--background)) 0%, hsl(var(--background) / 0.35) 42%, transparent 70%),
+      linear-gradient(to right, hsl(var(--background) / 0.88) 0%, hsl(var(--background) / 0.35) 42%, transparent 62%);
+  }
+  .theme-custom-hero :global(.theme-overlay > :not(img)) { position: relative; z-index: 2; }
   .theme-custom-hero button { min-height: 44px; padding-inline: 12px; font-weight: 800; }
   @keyframes hero-progress-fill {
     from { transform: scaleX(0); }

@@ -44,6 +44,9 @@ export interface DetailPresentation {
   bannerHidden?: boolean
   posterWidth?: number
   facts?: ThemeNode
+  actionsFirst?: boolean
+  coverAlign?: 'start' | 'end'
+  cta?: 'default' | 'large'
   episodes?: { placement?: EpisodePlacement; arrangement?: EpisodeArrangement; hover?: EpisodeHover; card?: ThemeNode }
 }
 export interface ShellPresentation {
@@ -82,7 +85,7 @@ const artworkKinds = ['poster', 'backdrop', 'logo', 'still'] as const
 const numericStyles: Record<string, [number, number, string]> = {
   gap: [0, 96, 'px'], padding: [0, 96, 'px'], fontSize: [10, 96, 'px'], fontWeight: [400, 900, ''],
   radius: [0, 80, 'px'], opacity: [0, 1, ''], width: [5, 100, '%'], minHeight: [0, 600, 'px'],
-  columns: [1, 6, ''], grow: [0, 1, ''], shrink: [0, 1, ''], maxWidth: [80, 1200, 'px'],
+  columns: [1, 6, ''], grow: [0, 1, ''], shrink: [0, 1, ''], maxWidth: [80, 1200, 'px'], lines: [1, 6, ''],
 }
 const choices: Record<string, string[]> = {
   align: ['start', 'center', 'end', 'stretch'], justify: ['start', 'center', 'end', 'space-between'],
@@ -169,12 +172,15 @@ function parseRow(value: unknown): RowPresentation {
   return result
 }
 function parseDetail(value: unknown): DetailPresentation {
-  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'episodes'])
+  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'episodes'])
   const result: DetailPresentation = {}
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['stack', 'split', 'overlay'])
   if (raw.bannerHidden !== undefined) result.bannerHidden = flag(raw.bannerHidden)
   if (raw.posterWidth !== undefined) result.posterWidth = number(raw.posterWidth, 96, 360)
   if (raw.facts !== undefined) result.facts = parseNode(raw.facts)
+  if (raw.actionsFirst !== undefined) result.actionsFirst = flag(raw.actionsFirst)
+  if (raw.coverAlign !== undefined) result.coverAlign = choice(raw.coverAlign, ['start', 'end'])
+  if (raw.cta !== undefined) result.cta = choice(raw.cta, ['default', 'large'])
   if (raw.episodes !== undefined) {
     const episodes = record(raw.episodes); only(episodes, ['placement', 'arrangement', 'hover', 'card'])
     result.episodes = {}
@@ -269,7 +275,12 @@ export function nodeStyle(node: ThemeNode): string {
   let anchor: string | undefined
   for (const [key, value] of Object.entries(node.style ?? {})) {
     const property = ({ radius: 'border-radius', fontSize: 'font-size', fontWeight: 'font-weight', minHeight: 'min-height', maxWidth: 'max-width', textAlign: 'text-align', align: 'align-items', justify: 'justify-content', fit: 'object-fit', aspect: 'aspect-ratio', grow: 'flex-grow', shrink: 'flex-shrink', wrap: 'flex-wrap' } as Record<string, string>)[key] ?? key
-    if (key === 'columns') styles['grid-template-columns'] = `repeat(${Math.round(Number(value))},minmax(0,1fr))`
+    if (key === 'lines') {
+      styles.overflow = 'hidden'
+      styles.display = '-webkit-box'
+      styles['-webkit-box-orient'] = 'vertical'
+      styles['-webkit-line-clamp'] = String(Math.round(Number(value)))
+    } else if (key === 'columns') styles['grid-template-columns'] = `repeat(${Math.round(Number(value))},minmax(0,1fr))`
     else if (key === 'anchor') anchor = String(value)
     else if (key === 'color' || key === 'background') styles[property] = String(value).startsWith('#') || value === 'transparent' ? String(value) : `hsl(var(--${value}))`
     else styles[property] = `${value}${numericStyles[key]?.[2] ?? ''}`
@@ -300,6 +311,9 @@ export function resolveDetail(layout?: ThemePresentation): Required<Pick<DetailP
     bannerHidden: page === 'overlay' ? false : detail.bannerHidden === true,
     posterWidth: detail.posterWidth,
     facts: detail.facts,
+    actionsFirst: detail.actionsFirst === true,
+    coverAlign: detail.coverAlign,
+    cta: detail.cta,
     episodes: { placement, arrangement: detail.episodes?.arrangement, hover: detail.episodes?.hover, card: detail.episodes?.card },
   }
 }

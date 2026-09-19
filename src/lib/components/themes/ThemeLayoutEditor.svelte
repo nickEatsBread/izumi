@@ -151,6 +151,15 @@
       <option value="none">Subtle lift</option>
       <option value="scale">Grow on hover</option>
     </select></label>
+    <label class="toggle"><span>Play and list actions before synopsis</span><input type="checkbox" checked={!!detail.actionsFirst} onchange={event => setDetail({ actionsFirst: event.currentTarget.checked })} data-focusable /></label>
+    <label>Cover alignment<select value={detail.coverAlign ?? 'start'} onchange={event => setDetail({ coverAlign: value(event) as 'start' | 'end' })} data-focusable>
+      <option value="start">Top</option>
+      <option value="end">Bottom (next to title)</option>
+    </select></label>
+    <label>Play button<select value={detail.cta ?? 'default'} onchange={event => setDetail({ cta: value(event) as 'default' | 'large' })} data-focusable>
+      <option value="default">Compact Play</option>
+      <option value="large">Wide Watch Now</option>
+    </select></label>
     <label class="toggle"><span>Show banner artwork</span><input type="checkbox" checked={!detail.bannerHidden} onchange={event => setDetail({ bannerHidden: !event.currentTarget.checked })} data-focusable /></label>
     <label>Poster width <output>{detail.posterWidth ?? 176}px</output><input type="range" aria-label="Poster width" min="96" max="360" value={detail.posterWidth ?? 176} oninput={event => setDetail({ posterWidth: Number(value(event)) })} data-focusable /></label>
     <p class="help">A right-hand rail becomes a list below the info column on narrow windows. Overlay paints title and Play on the banner and keeps episodes below. One-per-row arrangement stacks full-width episode tiles. Facts and episode-card templates are editable below. The cards / compact / grid control still belongs to Appearance.</p>

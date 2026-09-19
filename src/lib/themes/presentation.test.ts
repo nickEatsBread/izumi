@@ -118,6 +118,8 @@ describe('theme surface resolution', () => {
     expect(resolveDetail(layout).episodes).toMatchObject({ placement: 'right', arrangement: 'list', hover: 'scale' })
     expect(resolveDetail(layout).episodes?.card?.children?.[1]?.type).toBe('meter')
     expect(nodeStyle(resolveDetail(layout).episodes!.card!)).toContain('flex-wrap:nowrap')
+    expect(nodeStyle(parseNode({ type: 'text', field: 'description', style: { lines: 4 } }))).toContain('-webkit-line-clamp:4')
+    expect(resolveDetail(parsePresentation({ detail: { actionsFirst: true, coverAlign: 'end', cta: 'large' } }))).toMatchObject({ actionsFirst: true, coverAlign: 'end', cta: 'large' })
   })
   it('treats an overlay series page as a full-bleed banner with episodes below', () => {
     const overlay = parsePresentation({ detail: { layout: 'overlay', bannerHidden: true, episodes: { placement: 'right' } } })

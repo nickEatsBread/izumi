@@ -35,6 +35,9 @@ describe('themed series page composition', () => {
   it('lets a series-facts template replace the default dotted metadata line', () => {
     expect(detail).toContain('detailTheme.facts')
     expect(detail).toContain('<ThemeNode node={detailTheme.facts}')
+    expect(detail).toContain('actionsFirst')
+    expect(detail).toContain('Watch Now')
+    expect(detail).toContain("coverAlign === 'end'")
   })
   it('collapses a right-hand rail on the phone layout', () => {
     expect(detail).toContain('{#if belowEpisodes}')
