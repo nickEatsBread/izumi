@@ -22,7 +22,7 @@
 
   let {
     media, ep, meta, showThumb, released, isNext, watchedThrough, filler = false, dl, next, onplay, onintent, onqueue,
-    selecting = false, selectedEp = false, numberLabel, navId, navUp, themeCard,
+    selecting = false, selectedEp = false, numberLabel, navId, navUp, themeCard, hoverScale = false, listRow = false,
   }: {
     media: Media
     ep: number
@@ -45,6 +45,8 @@
     navId?: string
     navUp?: string
     themeCard?: EpisodeThemeNode
+    hoverScale?: boolean
+    listRow?: boolean
   } = $props()
   const shownNumber = $derived(numberLabel ?? String(ep))
 
@@ -124,8 +126,8 @@
   onclick={play}
   onkeydown={(e) => { if (released && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); play() } }}
   title={selecting ? (released ? (selectedEp ? 'Selected — tap to unselect' : 'Tap to select') : 'Not yet aired') : released ? `Play — ${labels.primary}` : isNext ? `Airing in ${countdown(next?.timeUntilAiring)}` : 'Not yet aired'}
-  class="group isolate select-none overflow-hidden rounded-xl text-left sm:rounded-lg {themeCard ? '' : showThumb && img ? 'grid grid-cols-[42%_1fr] sm:flex sm:flex-col' : 'flex flex-col'}
-    {released ? 'cursor-pointer bg-secondary transition-transform hover:scale-[1.02] hover:bg-accent' : 'cursor-not-allowed bg-background/40 opacity-60'}
+  class="group isolate select-none rounded-xl text-left sm:rounded-lg {hoverScale ? 'overflow-visible' : 'overflow-hidden'} {themeCard || listRow ? 'flex' : showThumb && img ? 'grid grid-cols-[42%_1fr] sm:flex sm:flex-col' : 'flex flex-col'}
+    {released ? (hoverScale ? 'cursor-pointer bg-secondary transition-transform duration-200 hover:z-10 hover:scale-[1.035]' : 'cursor-pointer bg-secondary transition-transform hover:scale-[1.02] hover:bg-accent') : 'cursor-not-allowed bg-background/40 opacity-60'}
     {selecting && selectedEp ? 'ring-2 ring-theme' : ''}"
 >
   {#if themeCard}

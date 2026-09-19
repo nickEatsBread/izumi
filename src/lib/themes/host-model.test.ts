@@ -34,6 +34,8 @@ describe('theme host display model', () => {
     expect(model.duration).toBe(24)
     expect(displayText('score', model)).toBe('78%')
     expect(displayText('duration', model)).toBe('24m')
+    expect(model.source).toBeUndefined()
+    expect(model.country).toBeUndefined()
   })
   it('adds episode stills, titles and progress without stringifying numbers', () => {
     const model = episodeDisplayModel(media, 8, {
@@ -49,5 +51,10 @@ describe('theme host display model', () => {
     expect(model.progress).toBe(42)
     expect(model.score).toBe(91)
     expect(displayText('progress', model)).toBe('42%')
+  })
+  it('exposes source and country labels for series-facts templates', () => {
+    const model = mediaDisplayModel({ ...media, source: 'MANGA', countryOfOrigin: 'JP' })
+    expect(model.source).toBe('manga')
+    expect(model.country).toBe('Japan')
   })
 })

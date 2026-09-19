@@ -29,6 +29,8 @@ export function mediaDisplayModel(media: Media, extras: Partial<DisplayModel> = 
     members: media.popularity ? compact.format(media.popularity) : undefined,
     episodeCount: media.episodes != null ? String(media.episodes) : undefined,
     duration: media.duration || undefined,
+    source: media.source ? media.source.replace(/_/g, ' ').toLowerCase() : undefined,
+    country: ({ JP: 'Japan', KR: 'South Korea', CN: 'China', TW: 'Taiwan', HK: 'Hong Kong', US: 'United States' } as Record<string, string>)[media.countryOfOrigin ?? ''] ?? media.countryOfOrigin,
     ...extras,
   }
 }

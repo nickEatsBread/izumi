@@ -23,9 +23,16 @@ describe('themed series page composition', () => {
   })
   it('renders episode templates inside the host-owned play control', () => {
     expect(list).toContain('themeCard={episodeCard}')
+    expect(list).toContain('episodeListLayout')
+    expect(list).toContain("arrangement === 'list'")
     expect(card).toContain('{#if themeCard}')
     expect(card).toContain('<ThemeNode node={themeCard}')
+    expect(card).toContain('hoverScale')
     expect(card).not.toContain('actions={{ play:')
+  })
+  it('lets a series-facts template replace the default dotted metadata line', () => {
+    expect(detail).toContain('detailTheme.facts')
+    expect(detail).toContain('<ThemeNode node={detailTheme.facts}')
   })
   it('collapses a right-hand rail on the phone layout', () => {
     expect(detail).toContain('{#if belowEpisodes}')

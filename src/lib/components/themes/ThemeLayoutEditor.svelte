@@ -6,7 +6,7 @@
   let rows = $state<Array<{ id: string; title: string }>>([])
   let templateText = $state('')
   let templateError = $state('')
-  let templateTarget = $state<'template' | 'rank' | 'card' | 'poster' | 'continue' | 'search'>('template')
+  let templateTarget = $state<'template' | 'rank' | 'card' | 'facts' | 'poster' | 'continue' | 'search'>('template')
   const hero = $derived(presentation?.hero ?? {})
   const row = $derived(resolveRow(presentation, scope === 'rows' ? '' : scope))
   const detail = $derived(resolveDetail(presentation))
@@ -47,7 +47,7 @@
   }
   function currentTemplate(): ThemeNode | undefined {
     if (scope === 'hero') return hero[templateTarget === 'rank' ? 'rank' : 'template']
-    if (scope === 'detail') return detail.episodes?.card
+    if (scope === 'detail') return templateTarget === 'facts' ? presentation?.detail?.facts : detail.episodes?.card
     if (scope === 'cards') return presentation?.cards?.[templateTarget === 'continue' ? 'continue' : templateTarget === 'search' ? 'search' : 'poster']
     return row.card
   }
@@ -60,6 +60,7 @@
       const interactive = scope === 'hero' && templateTarget !== 'rank'
       const node = templateText.trim() ? parseNode(JSON.parse(templateText), undefined, 0, interactive) : undefined
       if (scope === 'hero') setHero({ [templateTarget === 'rank' ? 'rank' : 'template']: node })
+      else if (scope === 'detail' && templateTarget === 'facts') setDetail({ facts: node })
       else if (scope === 'detail') setDetail({ episodes: { card: node } })
       else if (scope === 'cards') presentation = { ...presentation, cards: { ...presentation?.cards, [templateTarget === 'continue' ? 'continue' : templateTarget === 'search' ? 'search' : 'poster']: node } }
       else setRow({ card: node })
@@ -94,7 +95,7 @@
   {:else}
     <p class="coverage empty">No extra layout yet — appearance tokens still apply everywhere.</p>
   {/if}
-  <label>Edit<select bind:value={scope} onchange={() => { templateText = ''; templateError = ''; templateTarget = scope === 'hero' ? 'template' : scope === 'cards' ? 'poster' : 'card' }} data-focusable>
+  <label>Edit<select bind:value={scope} onchange={() => { templateText = ''; templateError = ''; templateTarget = scope === 'hero' ? 'template' : scope === 'cards' ? 'poster' : scope === 'detail' ? 'card' : 'card' }} data-focusable>
     <option value="chrome">Density & labels</option>
     <option value="shell">Navigation chrome</option>
     <option value="hero">Home hero</option>
@@ -142,9 +143,17 @@
       <option value="right">Right-hand rail</option>
       <option value="below">Below the series info</option>
     </select></label>
+    <label>Episode arrangement<select value={detail.episodes?.arrangement ?? 'grid'} onchange={event => setDetail({ episodes: { arrangement: value(event) as 'list' | 'grid' } })} data-focusable>
+      <option value="grid">Wrapping grid</option>
+      <option value="list">One per row</option>
+    </select></label>
+    <label>Episode hover<select value={detail.episodes?.hover ?? 'none'} onchange={event => setDetail({ episodes: { hover: value(event) as 'scale' | 'none' } })} data-focusable>
+      <option value="none">Subtle lift</option>
+      <option value="scale">Grow on hover</option>
+    </select></label>
     <label class="toggle"><span>Show banner artwork</span><input type="checkbox" checked={!detail.bannerHidden} onchange={event => setDetail({ bannerHidden: !event.currentTarget.checked })} data-focusable /></label>
     <label>Poster width <output>{detail.posterWidth ?? 176}px</output><input type="range" aria-label="Poster width" min="96" max="360" value={detail.posterWidth ?? 176} oninput={event => setDetail({ posterWidth: Number(value(event)) })} data-focusable /></label>
-    <p class="help">A right-hand rail becomes a list below the info column on narrow windows. Overlay paints title and Play on the banner and keeps episodes below. The cards / compact / grid control still belongs to Appearance.</p>
+    <p class="help">A right-hand rail becomes a list below the info column on narrow windows. Overlay paints title and Play on the banner and keeps episodes below. One-per-row arrangement stacks full-width episode tiles. Facts and episode-card templates are editable below. The cards / compact / grid control still belongs to Appearance.</p>
   {:else if scope === 'player'}
     <label>Seekbar thickness <output>{presentation?.player?.seekbarHeight ?? 4}px</output><input type="range" aria-label="Seekbar thickness" min="2" max="16" value={presentation?.player?.seekbarHeight ?? 4} oninput={event => setPlayer({ seekbarHeight: Number(value(event)) })} data-focusable /></label>
     <label>Seekbar color<select value={presentation?.player?.seekbarColor ?? 'foreground'} onchange={event => setPlayer({ seekbarColor: value(event) })} data-focusable>
@@ -169,6 +178,7 @@
   {#if showTemplate}
   <details><summary data-focusable>Advanced component template</summary><p class="help">Edit the theme’s data-only layout. Leave empty to use the default component.</p>
     {#if scope === 'hero'}<label>Component<select bind:value={templateTarget} onchange={loadTemplate} data-focusable><option value="template">Entire hero</option><option value="rank">Rank badge</option></select></label>{/if}
+    {#if scope === 'detail'}<label>Component<select bind:value={templateTarget} onchange={loadTemplate} data-focusable><option value="card">Episode card</option><option value="facts">Series facts</option></select></label>{/if}
     {#if scope === 'cards'}<label>Family<select bind:value={templateTarget} onchange={loadTemplate} data-focusable><option value="poster">Poster tiles</option><option value="continue">Continue watching</option><option value="search">Search results</option></select></label>{/if}
     {#if outline}
       <div class="inspector">

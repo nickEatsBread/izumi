@@ -3,6 +3,7 @@ export type DisplayField =
   | 'title' | 'description' | 'rank' | 'rankPosition' | 'score' | 'format' | 'year'
   | 'studio' | 'season' | 'status' | 'genres' | 'members' | 'reviews'
   | 'episodeCount' | 'episodeTitle' | 'airDate' | 'duration' | 'episodeNumber' | 'progress'
+  | 'source' | 'country'
 /** Host numbers. `when.atMost` compares these; text nodes render them through `displayText`. */
 export type NumericDisplayField = 'rankPosition' | 'score' | 'duration' | 'episodeNumber' | 'progress'
 export type ArtworkKind = 'poster' | 'backdrop' | 'logo' | 'still'
@@ -12,13 +13,18 @@ export type ThemeDensity = 'compact' | 'comfortable' | 'large'
 export type ThemeNavPlacement = 'sidebar' | 'top' | 'bottom'
 export type DetailLayout = 'stack' | 'split' | 'overlay'
 export type EpisodePlacement = 'tab' | 'right' | 'below'
+export type EpisodeArrangement = 'list' | 'grid'
+export type EpisodeHover = 'scale' | 'none'
+export type ThemeIcon =
+  | 'score' | 'format' | 'episodes' | 'reviews' | 'studio' | 'season' | 'status' | 'source' | 'country' | 'duration'
 export type ThemeSurface = 'Home' | 'Shell' | 'Details' | 'Player' | 'Full'
 export interface ThemeNode {
-  type: 'stack' | 'row' | 'grid' | 'overlay' | 'text' | 'artwork' | 'action'
+  type: 'stack' | 'row' | 'grid' | 'overlay' | 'text' | 'artwork' | 'action' | 'icon' | 'meter'
   text?: string
   field?: DisplayField
   artwork?: ArtworkKind
   action?: ThemeAction
+  icon?: ThemeIcon
   when?: { field: DisplayField; atMost?: number }
   style?: Record<string, string | number>
   children?: ThemeNode[]
@@ -37,7 +43,8 @@ export interface DetailPresentation {
   layout?: DetailLayout
   bannerHidden?: boolean
   posterWidth?: number
-  episodes?: { placement?: EpisodePlacement; card?: ThemeNode }
+  facts?: ThemeNode
+  episodes?: { placement?: EpisodePlacement; arrangement?: EpisodeArrangement; hover?: EpisodeHover; card?: ThemeNode }
 }
 export interface ShellPresentation {
   nav?: ThemeNavPlacement
@@ -67,6 +74,7 @@ const fields = [
   'title', 'description', 'rank', 'rankPosition', 'score', 'format', 'year',
   'studio', 'season', 'status', 'genres', 'members', 'reviews',
   'episodeCount', 'episodeTitle', 'airDate', 'duration', 'episodeNumber', 'progress',
+  'source', 'country',
 ] as const satisfies readonly DisplayField[]
 const numericFields: string[] = ['rankPosition', 'score', 'duration', 'episodeNumber', 'progress'] satisfies NumericDisplayField[]
 const actions = ['play', 'details', 'favorite', 'previous', 'next', 'list', 'trailer', 'share']
@@ -74,14 +82,15 @@ const artworkKinds = ['poster', 'backdrop', 'logo', 'still'] as const
 const numericStyles: Record<string, [number, number, string]> = {
   gap: [0, 96, 'px'], padding: [0, 96, 'px'], fontSize: [10, 96, 'px'], fontWeight: [400, 900, ''],
   radius: [0, 80, 'px'], opacity: [0, 1, ''], width: [5, 100, '%'], minHeight: [0, 600, 'px'],
-  columns: [1, 6, ''], grow: [0, 1, ''], maxWidth: [80, 1200, 'px'],
+  columns: [1, 6, ''], grow: [0, 1, ''], shrink: [0, 1, ''], maxWidth: [80, 1200, 'px'],
 }
 const choices: Record<string, string[]> = {
   align: ['start', 'center', 'end', 'stretch'], justify: ['start', 'center', 'end', 'space-between'],
   textAlign: ['start', 'center', 'end'], position: ['relative', 'absolute'],
   anchor: ['fill', 'bottom-start', 'bottom-end', 'top-start', 'top-end'],
-  fit: ['cover', 'contain'], aspect: ['2 / 3', '16 / 9', '1 / 1'],
+  fit: ['cover', 'contain'], aspect: ['2 / 3', '16 / 9', '1 / 1'], wrap: ['wrap', 'nowrap'],
 }
+const icons = ['score', 'format', 'episodes', 'reviews', 'studio', 'season', 'status', 'source', 'country', 'duration'] as const
 const colors = ['foreground', 'background', 'muted', 'muted-foreground', 'theme', 'card', 'card-foreground', 'primary', 'primary-foreground', 'transparent']
 export function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected a theme object.')
@@ -109,8 +118,8 @@ function themeColor(value: unknown): string {
 export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, interactive = true): ThemeNode {
   if (++budget.count > 96 || depth > 8) throw new Error('This theme template is too complex.')
   const raw = record(value)
-  only(raw, ['type', 'text', 'field', 'artwork', 'action', 'when', 'style', 'children'])
-  const node: ThemeNode = { type: choice(raw.type, ['stack', 'row', 'grid', 'overlay', 'text', 'artwork', 'action']) }
+  only(raw, ['type', 'text', 'field', 'artwork', 'action', 'icon', 'when', 'style', 'children'])
+  const node: ThemeNode = { type: choice(raw.type, ['stack', 'row', 'grid', 'overlay', 'text', 'artwork', 'action', 'icon', 'meter']) }
   if (node.type === 'action' && !interactive) throw new Error('Card and badge templates cannot contain nested actions.')
   if (raw.text !== undefined) {
     if (typeof raw.text !== 'string' || raw.text.length > 300) throw new Error('Theme text is too long.')
@@ -120,6 +129,11 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
   if (raw.artwork !== undefined) node.artwork = choice(raw.artwork, artworkKinds)
   if (node.type === 'artwork' && !node.artwork) throw new Error('Choose artwork for this template.')
   if (node.type === 'action') node.action = choice(raw.action, actions) as ThemeAction
+  if (raw.icon !== undefined || node.type === 'icon') node.icon = choice(raw.icon, icons)
+  if (node.type === 'icon' && !node.icon) throw new Error('Choose an icon for this template.')
+  if (node.type === 'meter') {
+    if (!node.field || !numericFields.includes(node.field)) throw new Error('A meter needs a numeric field.')
+  }
   if (raw.when !== undefined) {
     const condition = record(raw.when); only(condition, ['field', 'atMost'])
     node.when = { field: choice(condition.field, fields) }
@@ -155,15 +169,18 @@ function parseRow(value: unknown): RowPresentation {
   return result
 }
 function parseDetail(value: unknown): DetailPresentation {
-  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'episodes'])
+  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'episodes'])
   const result: DetailPresentation = {}
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['stack', 'split', 'overlay'])
   if (raw.bannerHidden !== undefined) result.bannerHidden = flag(raw.bannerHidden)
   if (raw.posterWidth !== undefined) result.posterWidth = number(raw.posterWidth, 96, 360)
+  if (raw.facts !== undefined) result.facts = parseNode(raw.facts)
   if (raw.episodes !== undefined) {
-    const episodes = record(raw.episodes); only(episodes, ['placement', 'card'])
+    const episodes = record(raw.episodes); only(episodes, ['placement', 'arrangement', 'hover', 'card'])
     result.episodes = {}
     if (episodes.placement !== undefined) result.episodes.placement = choice(episodes.placement, ['tab', 'right', 'below'])
+    if (episodes.arrangement !== undefined) result.episodes.arrangement = choice(episodes.arrangement, ['list', 'grid'])
+    if (episodes.hover !== undefined) result.episodes.hover = choice(episodes.hover, ['scale', 'none'])
     if (episodes.card !== undefined) result.episodes.card = parseNode(episodes.card, undefined, 0, false)
   }
   return result
@@ -246,11 +263,12 @@ export function nodeStyle(node: ThemeNode): string {
     styles.position = 'relative'
   }
   if (node.type === 'artwork') { styles.width = '100%'; styles['object-fit'] = 'cover' }
+  if (node.type === 'meter') { styles.width = '100%'; styles['min-height'] = '4px' }
   // `anchor` is applied after every other style entry so its absolute positioning cannot be
   // reordered away by JSON key order (an explicit `position` entry must never win over it).
   let anchor: string | undefined
   for (const [key, value] of Object.entries(node.style ?? {})) {
-    const property = ({ radius: 'border-radius', fontSize: 'font-size', fontWeight: 'font-weight', minHeight: 'min-height', maxWidth: 'max-width', textAlign: 'text-align', align: 'align-items', justify: 'justify-content', fit: 'object-fit', aspect: 'aspect-ratio', grow: 'flex-grow' } as Record<string, string>)[key] ?? key
+    const property = ({ radius: 'border-radius', fontSize: 'font-size', fontWeight: 'font-weight', minHeight: 'min-height', maxWidth: 'max-width', textAlign: 'text-align', align: 'align-items', justify: 'justify-content', fit: 'object-fit', aspect: 'aspect-ratio', grow: 'flex-grow', shrink: 'flex-shrink', wrap: 'flex-wrap' } as Record<string, string>)[key] ?? key
     if (key === 'columns') styles['grid-template-columns'] = `repeat(${Math.round(Number(value))},minmax(0,1fr))`
     else if (key === 'anchor') anchor = String(value)
     else if (key === 'color' || key === 'background') styles[property] = String(value).startsWith('#') || value === 'transparent' ? String(value) : `hsl(var(--${value}))`
@@ -281,7 +299,8 @@ export function resolveDetail(layout?: ThemePresentation): Required<Pick<DetailP
     layout: page,
     bannerHidden: page === 'overlay' ? false : detail.bannerHidden === true,
     posterWidth: detail.posterWidth,
-    episodes: { placement, card: detail.episodes?.card },
+    facts: detail.facts,
+    episodes: { placement, arrangement: detail.episodes?.arrangement, hover: detail.episodes?.hover, card: detail.episodes?.card },
   }
 }
 /** Right-hand episode rail is desktop-only. Narrow viewports fall back to a rail below the info column. */
@@ -311,7 +330,7 @@ export interface TemplateOutline { type: ThemeNode['type']; label?: string; chil
 export function templateOutline(node: ThemeNode): TemplateOutline {
   return {
     type: node.type,
-    label: node.field || node.action || node.artwork || (node.text ? node.text.slice(0, 40) : undefined),
+    label: node.field || node.action || node.artwork || node.icon || (node.text ? node.text.slice(0, 40) : undefined),
     children: node.children?.map(templateOutline),
   }
 }

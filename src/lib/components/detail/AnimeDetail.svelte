@@ -60,6 +60,8 @@
   import ParentalBlock from '$lib/components/profiles/ParentalBlock.svelte'
   import { themePresentation } from '$lib/themes/runtime'
   import { episodesBelow, episodesOnSide, resolveDetail } from '$lib/themes/presentation'
+  import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
+  import { mediaDisplayModel } from '$lib/themes/host-model'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -851,6 +853,11 @@
         {/if}
         <h1 class="mb-2 text-3xl font-black">{title(m)}</h1>
 
+        {#if detailTheme.facts}
+          <div class="mb-3">
+            <ThemeNode node={detailTheme.facts} model={mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined })} />
+          </div>
+        {:else}
         <!-- One scannable facts line replaces two rows of competing pills. Genres remain useful
              discovery links for pointer users, but are deliberately not D-pad stops in Game mode:
              Down from the primary action is a content path, not a tour through metadata. -->
@@ -874,6 +881,7 @@
             <span class="font-medium opacity-60">+{(m.genres?.length ?? 0) - (controllerUi ? 3 : 4)}</span>
           {/if}
         </div>
+        {/if}
 
         {#if m.description}
           <p class="mb-3 {controllerUi ? 'line-clamp-2' : 'line-clamp-3'} max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>

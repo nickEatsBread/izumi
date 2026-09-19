@@ -75,7 +75,10 @@
     return Math.min(allEpisodes.at(-1) ?? 0, Number.isFinite(a) ? a : 0)
   })
   const watchedThrough = $derived(animeWatchedProgress(media, $localHistory, $sessionProgress, $manualProgressOverrides))
-  const episodeCard = $derived(resolveDetail($themePresentation).episodes?.card)
+  const episodeTheme = $derived(resolveDetail($themePresentation).episodes)
+  const episodeCard = $derived(episodeTheme?.card)
+  const episodeListLayout = $derived(episodeTheme?.arrangement === 'list')
+  const episodeHoverScale = $derived(episodeTheme?.hover === 'scale')
   const PER = 48
   // `page` stays null until the user manually pages; until then we show `autoPage` — the page that
   // holds the next episode to watch — so opening a long-running series (One Piece) lands on where
@@ -498,7 +501,7 @@
     <!-- Immediate skeleton grid (shape matches the setting) so the list appears at
          once and doesn't flip layouts; real cards then fade their thumbnails in. -->
     {#if $episodeLayout === 'cards'}
-      <div class="grid select-none grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
+      <div class="grid select-none {episodeListLayout ? 'grid-cols-1 gap-4' : 'grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]'}">
         {#each eps as ep (ep)}
           <button data-focusable={ep === quickEpisode ? '' : undefined}
                   data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
@@ -569,7 +572,7 @@
       {/each}
     </div>
   {:else if $episodeLayout === 'cards'}
-    <div class="grid select-none grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
+    <div class="grid select-none {episodeListLayout ? 'grid-cols-1 gap-4 px-1' : 'grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]'}">
       {#each rows as ep (ep)}
         <EpisodeCard
           {media}
@@ -591,6 +594,8 @@
           onintent={intent}
           onqueue={$episodeQueueEnabled ? queueEpisode : undefined}
           themeCard={episodeCard}
+          hoverScale={episodeHoverScale}
+          listRow={episodeListLayout}
         />
       {/each}
     </div>

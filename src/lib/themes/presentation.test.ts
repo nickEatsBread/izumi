@@ -107,6 +107,18 @@ describe('theme surface resolution', () => {
     expect(resolveDetail(undefined).layout).toBe('stack')
     expect(episodesOnSide(undefined, true)).toBe(false)
   })
+  it('parses icon facts, list episode rails and progress meters', () => {
+    const layout = parsePresentation({
+      detail: {
+        facts: { type: 'row', children: [{ type: 'icon', icon: 'score' }, { type: 'text', field: 'score' }] },
+        episodes: { placement: 'right', arrangement: 'list', hover: 'scale', card: { type: 'row', style: { wrap: 'nowrap' }, children: [{ type: 'artwork', artwork: 'still', style: { aspect: '1 / 1', width: 36, shrink: 0 } }, { type: 'meter', field: 'progress' }] } },
+      },
+    })
+    expect(resolveDetail(layout).facts?.children?.[0]).toMatchObject({ type: 'icon', icon: 'score' })
+    expect(resolveDetail(layout).episodes).toMatchObject({ placement: 'right', arrangement: 'list', hover: 'scale' })
+    expect(resolveDetail(layout).episodes?.card?.children?.[1]?.type).toBe('meter')
+    expect(nodeStyle(resolveDetail(layout).episodes!.card!)).toContain('flex-wrap:nowrap')
+  })
   it('treats an overlay series page as a full-bleed banner with episodes below', () => {
     const overlay = parsePresentation({ detail: { layout: 'overlay', bannerHidden: true, episodes: { placement: 'right' } } })
     expect(resolveDetail(overlay)).toMatchObject({ layout: 'overlay', bannerHidden: false, episodes: { placement: 'right' } })
