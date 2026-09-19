@@ -932,11 +932,11 @@
             </button>
           {/each}
         </div>
-        {#if m.description && detailTheme.actionsFirst}
-          <p class="mt-4 {controllerUi ? 'line-clamp-4' : 'line-clamp-6'} max-w-3xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
-        {/if}
       </div>
     </div>
+    {#if m.description && detailTheme.actionsFirst}
+      <p class="mb-4 {controllerUi ? 'line-clamp-4' : 'line-clamp-6'} max-w-3xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
+    {/if}
     {/snippet}
 
     {#snippet desktopSecondary()}
