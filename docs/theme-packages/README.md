@@ -13,11 +13,30 @@ These are original izumi designs. They chase looks that show up often in living-
 | [Kindling](izumi.kindling.json) | Compact true-black library, razor red accent, hidden hero, wrapping poster grid, dense side rail. |
 | [Ledger](izumi.ledger.json) | Teal media-server library, hidden home hero and series banner, wrapping poster grid. Continue Watching stays a landscape carousel. |
 | [Halo](izumi.halo.json) | Frosted aurora glass, top navigation bar, large landscape tiles, split series page. |
+| [Orchid](izumi.orchid.json) | Violet living-room canvas, mesh backdrop, titles over posters, split episode rail. |
 
-## Shared limitations
+## How to install
 
-Theme API 1 is data-only. Packages cannot ship arbitrary CSS, HTML, JavaScript, remote wallpapers, extra fonts, or hover/focus/loading template variants. Player skip rules, subtitle files, home-row order and navigation destinations stay with the user.
+Settings → Themes → Import file, then choose one of the JSON files in this folder. Preview before installing.
 
-A right-hand episode rail becomes a list under the series info on narrow windows. Episode templates cannot nest play buttons; the host card owns playback. Poster titles still hide only through `hideCardLabels`, not per-row CSS.
+## What translated well
 
-Community snippet catalogues for other apps are mostly “hide this banner” or “replace this logo”. Izumi can hide the home hero and series banner. It cannot retarget a third-party selector, swap the wordmark, or run a plugin.
+- Palettes (near-black, true black, warm crimson, teal, violet, icy glass).
+- Hiding the home hero and series banner (the usual “hide the banner” snippet).
+- Landscape resume cards vs portrait posters.
+- Compact wrapping grids vs spacious carousels.
+- Split series pages with a right-hand episode rail.
+- Top vs side vs bottom chrome (phones keep the bottom bar).
+- Seekbar colour and thickness.
+
+## What did not
+
+- **Arbitrary CSS / selectors.** Snippet catalogues that hide one DOM node, replace a logo, or restyle a hover tray have no equivalent. Izumi only hides surfaces that have slots (`hero.hidden`, `detail.bannerHidden`, `hideCardLabels`).
+- **Plugins and effects.** Snow overlays, custom CSS managers and executable UI plugins stay out of the format.
+- **Gradients as the accent.** A package has one `theme` token, not a three-stop custom gradient.
+- **Native liquid glass.** `glassBlur` plus an aurora/mesh backdrop is the closest chrome; it is not a platform tab bar.
+- **Extra fonts and wallpapers.** Four font stacks, no remote image packs.
+- **Hover, focus and loading trees.** Templates are one tree. The host still owns focus rings and motion preferences.
+- **User-owned layout.** Home row order, nav destinations, episode cards/compact/grid, skip rules and subtitle files are not overwritten.
+
+Cinema, Ink and Meridian remain the catalog examples for rank treatment, hidden-hero grids and editorial light layouts.
