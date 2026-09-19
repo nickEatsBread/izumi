@@ -520,3 +520,16 @@ html.gamemode .skeloader::before { animation: none; }
   .setup-heading { font-size: clamp(1.9rem, 7.5vw, 2.6rem); }
 }
 @media (prefers-reduced-motion: reduce) { .setup-choice, .setup-inline-button { transition: none; } }
+
+/* Theme chrome. Density/nav/true-black are data-only presentation flags applied on <html>. */
+html { --theme-density: 1; --theme-shell-left: 3.5rem; --theme-seekbar-color: #fff; }
+html[data-theme-density='compact'] { --theme-density: 0.86; }
+html[data-theme-density='large'] { --theme-density: 1.16; }
+html[data-theme-shell-compact] { --theme-shell-left: 3rem; }
+html[data-theme-nav='top'], html[data-theme-nav='bottom'] { --theme-shell-left: 0px; }
+@media (max-width: 640px) { html { --theme-shell-left: 0px; } }
+html.theme-hide-labels [data-theme-card-label] { display: none !important; }
+html.theme-shell-compact [data-nav-sidebar] a,
+html.theme-shell-compact [data-nav-sidebar] button { min-height: 2.25rem; }
+html.theme-true-black { --background: 0 0% 0%; --card: 0 0% 0%; }
+.theme-shell-main { margin-left: var(--theme-shell-left); }

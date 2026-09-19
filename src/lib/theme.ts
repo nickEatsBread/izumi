@@ -40,6 +40,22 @@ function apply() {
   root.dataset.theme = preset
   root.dataset.scheme = tokens.scheme
   root.dataset.themeBackdrop = customActive ? studio.backdrop : 'solid'
+  const presentation = customActive ? studio.presentation : undefined
+  root.dataset.themeDensity = presentation?.density ?? 'comfortable'
+  root.dataset.themeNav = presentation?.shell?.nav ?? 'sidebar'
+  root.classList.toggle('theme-true-black', !!presentation?.trueBlack && tokens.scheme === 'dark')
+  root.classList.toggle('theme-hide-labels', !!presentation?.hideCardLabels)
+  root.classList.toggle('theme-shell-compact', !!presentation?.shell?.compact)
+  if (presentation?.trueBlack && tokens.scheme === 'dark') {
+    root.style.setProperty('--background', '0 0% 0%')
+    root.style.setProperty('--card', '0 0% 0%')
+  }
+  if (presentation?.player?.seekbarHeight) root.style.setProperty('--theme-seekbar-height', `${presentation.player.seekbarHeight}px`)
+  else root.style.removeProperty('--theme-seekbar-height')
+  if (presentation?.player?.seekbarColor) {
+    const color = presentation.player.seekbarColor
+    root.style.setProperty('--theme-seekbar-color', color.startsWith('#') || color === 'transparent' ? color : `hsl(var(--${color}))`)
+  } else root.style.removeProperty('--theme-seekbar-color')
   root.classList.toggle('a11y-high-contrast', get(highContrast))
   root.classList.toggle('a11y-large-targets', get(largeInteractionTargets))
   root.classList.toggle('a11y-reduce-motion', get(motionPreference) === 'reduce')
