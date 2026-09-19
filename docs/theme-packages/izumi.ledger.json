@@ -1,0 +1,53 @@
+{
+  "app": "izumi",
+  "kind": "theme-package",
+  "schemaVersion": 1,
+  "themeApi": 1,
+  "id": "izumi.ledger",
+  "name": "Ledger",
+  "version": "1.0.0",
+  "author": "Izumi",
+  "description": "A media-server library: teal accent, hidden home hero, wrapping poster grid, compact type. Continue Watching keeps a landscape carousel. Community 'hide the banner' snippets map to hero.hidden here.",
+  "design": {
+    "tokens": {
+      "scheme": "dark",
+      "background": "222 14% 7%",
+      "foreground": "210 20% 96%",
+      "muted": "222 12% 14%",
+      "mutedForeground": "215 10% 65%",
+      "primary": "210 20% 96%",
+      "primaryForeground": "222 14% 8%",
+      "secondary": "222 12% 14%",
+      "secondaryForeground": "210 20% 96%",
+      "accent": "222 12% 18%",
+      "accentForeground": "210 20% 96%",
+      "border": "222 10% 22%",
+      "input": "222 10% 18%",
+      "ring": "173 80% 40%",
+      "card": "222 14% 10%",
+      "cardForeground": "210 20% 96%",
+      "theme": "173 80% 40%"
+    },
+    "radius": 0.4,
+    "font": "system",
+    "fontScale": 0.95,
+    "backdrop": "solid",
+    "backdropStrength": 0,
+    "glassBlur": 0,
+    "presentation": {
+      "density": "compact",
+      "shell": { "nav": "sidebar", "compact": false },
+      "player": { "seekbarHeight": 5, "seekbarColor": "theme" },
+      "hero": { "hidden": true },
+      "detail": {
+        "layout": "stack",
+        "bannerHidden": true,
+        "episodes": { "placement": "tab" }
+      },
+      "rows": {
+        "defaults": { "layout": "grid", "width": 132, "gap": 10, "spacing": 26, "radius": 6, "titleSize": 16 },
+        "byId": { "continue": { "layout": "carousel", "width": 256, "aspect": "landscape", "radius": 8 } }
+      }
+    }
+  }
+}
