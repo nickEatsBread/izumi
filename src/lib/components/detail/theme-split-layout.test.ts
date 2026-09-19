@@ -28,6 +28,8 @@ describe('themed series page composition', () => {
     expect(card).toContain('{#if themeCard}')
     expect(card).toContain('<ThemeNode node={themeCard}')
     expect(card).toContain('hoverScale')
+    expect(card).toContain('labels.concealSecondary')
+    expect(card).not.toContain('description: labels.concealSecondary ? undefined : labels.secondary')
     expect(card).not.toContain('actions={{ play:')
   })
   it('lets a series-facts template replace the default dotted metadata line', () => {

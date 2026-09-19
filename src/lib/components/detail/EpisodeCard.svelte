@@ -68,7 +68,7 @@
   const labels = $derived(episodeLabels(ep, meta?.title, spoiler))
   const themeModel = $derived(episodeDisplayModel(media, ep, meta, {
     episodeTitle: labels.primary,
-    description: labels.concealSecondary ? undefined : labels.secondary,
+    ...(labels.concealSecondary ? { description: '' } : {}),
     still: img,
     progress: pct,
     score: rating ?? undefined,
