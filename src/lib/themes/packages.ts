@@ -4,6 +4,7 @@ import { parsePresentation, record } from './presentation'
 export const THEME_API = 1
 export const MAX_THEME_BYTES = 256_000
 export const THEME_CATALOG_URL = 'https://raw.githubusercontent.com/nickEatsBread/izumi-themes/main/index.json'
+export const THEME_CATALOG_PROJECT_URL = 'https://github.com/nickEatsBread/izumi-themes'
 export interface ThemePackage {
   app: 'izumi'; kind: 'theme-package'; schemaVersion: 1; themeApi: 1
   id: string; name: string; version: string; author: string; description: string

@@ -85,3 +85,22 @@ export async function prepareThemeLink(link: string, signal?: AbortSignal): Prom
   if (raw?.app === 'izumi' && raw.kind === 'theme-release' && raw.schemaVersion === 1) return prepareRelease(parseRelease(raw.release), url, url, signal)
   return { package: parseSharedTheme(raw), origin: url }
 }
+export interface LocalThemeFile { name: string; text: string; bytes: number }
+/** JSON files and Theme Studio exports from a picker. Folder imports skip non-JSON names. */
+export function collectLocalThemes(files: LocalThemeFile[]): { prepared: PreparedTheme[]; errors: string[] } {
+  const json = files.filter(file => file.name.toLowerCase().endsWith('.json'))
+  if (!json.length) throw new Error('Choose a theme JSON file, or a folder that contains one.')
+  const prepared: PreparedTheme[] = []
+  const errors: string[] = []
+  for (const file of json.slice(0, 24)) {
+    try {
+      if (file.bytes > MAX_THEME_BYTES) throw new Error('Use a theme package under 256 KB.')
+      const pkg = parseSharedTheme(JSON.parse(file.text))
+      prepared.push({ package: pkg, origin: `file:${pkg.id}` })
+    } catch (cause) {
+      errors.push(`${file.name}: ${cause instanceof Error ? cause.message : 'Could not load this theme.'}`)
+    }
+  }
+  if (!prepared.length) throw new Error(errors[0] ?? 'No valid theme packages in that selection.')
+  return { prepared, errors }
+}

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { webcrypto } from 'node:crypto'
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest'
-import { fetchThemeText, loadThemeCatalog, prepareThemeLink, verifyRelease } from './catalog'
+import { collectLocalThemes, fetchThemeText, loadThemeCatalog, prepareThemeLink, verifyRelease } from './catalog'
 import { MAX_THEME_BYTES, parseRelease } from './packages'
 import { phttp } from '$lib/net/http'
 vi.mock('$lib/net/http', () => ({ phttp: vi.fn() }))
@@ -35,6 +35,23 @@ describe('theme downloads', () => {
   it('bounds downloads even when content-length is omitted', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('x'.repeat(MAX_THEME_BYTES + 1))))
     await expect(fetchThemeText('https://example.test/large.json')).rejects.toThrow('large')
+  })
+})
+
+describe('local theme files', () => {
+  it('loads a folder of JSON packages and skips other files', () => {
+    const result = collectLocalThemes([
+      { name: 'notes.txt', text: 'ignore', bytes: 6 },
+      { name: 'tidal.json', text: JSON.stringify(pkg), bytes: 80 },
+      { name: 'bad.json', text: '{', bytes: 1 },
+    ])
+    expect(result.prepared).toHaveLength(1)
+    expect(result.prepared[0].package.id).toBe('test.cinema')
+    expect(result.prepared[0].origin).toBe('file:test.cinema')
+    expect(result.errors[0]).toContain('bad.json')
+  })
+  it('rejects a folder with no theme JSON', () => {
+    expect(() => collectLocalThemes([{ name: 'readme.md', text: '#', bytes: 1 }])).toThrow('JSON')
   })
 })
 
