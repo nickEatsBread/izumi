@@ -111,8 +111,7 @@ The raw `.flatpakref` is still published for other distributions. Note that Stea
 
 ```sh
 npm install
-npm run tauri dev
-npm run dev
+npm run dev:app
 ```
 
 ## Build

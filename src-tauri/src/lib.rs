@@ -4875,13 +4875,16 @@ async fn da_login(app: tauri::AppHandle, base: String) -> Result<bool, String> {
     if let Some(w) = app.get_webview_window("da-login") {
         let _ = w.close();
     }
-    let win = WebviewWindowBuilder::new(&app, "da-login", WebviewUrl::External(url))
-        .additional_browser_args(DESKTOP_WEBVIEW_ARGS)
-        .title("Sign in — Discuss Anime")
-        .inner_size(520.0, 760.0)
-        .on_new_window(|_u, _f| tauri::webview::NewWindowResponse::Allow) // Disqus OAuth may use a popup
-        .build()
-        .map_err(|e| e.to_string())?;
+    let win = desktop_webview::isolate_webview_data(
+        WebviewWindowBuilder::new(&app, "da-login", WebviewUrl::External(url))
+            .additional_browser_args(DESKTOP_WEBVIEW_ARGS)
+            .title("Sign in — Discuss Anime")
+            .inner_size(520.0, 760.0)
+            .on_new_window(|_u, _f| tauri::webview::NewWindowResponse::Allow), // Disqus OAuth may use a popup
+        &app.config().identifier,
+    )
+    .build()
+    .map_err(|e| e.to_string())?;
     // The cookie poll is the primary signal, but it only fires when the platform can read the jar.
     // Backstop: discussanime ends the OAuth round trip by redirecting the window back to its own site
     // outside /auth/ (its homepage). Once we've seen the flow leave and come back, the login is over —
@@ -5978,6 +5981,10 @@ pub fn run() {
                                     }})();"#,
                                 ));
                             }
+                            let popup = desktop_webview::isolate_webview_data(
+                                popup,
+                                &popup_app.config().identifier,
+                            );
                             match popup.build() {
                                 Ok(window) => {
                                     #[cfg(target_os = "linux")]
@@ -6041,8 +6048,12 @@ pub fn run() {
                             let _ = external_opener.opener().open_url(url.to_string(), None::<String>);
                             NewWindowResponse::Deny
                         }
-                    })
-                    .build()?;
+                    });
+                let main_window = desktop_webview::isolate_webview_data(
+                    main_window,
+                    &app.config().identifier,
+                )
+                .build()?;
 
                 // The window above is built hidden and `on_page_load` is the ONLY thing that ever
                 // reveals it. When that first load never reaches Finished — a webview that fails to
@@ -6532,8 +6543,18 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_haptics::init());
 
     builder
-        .run(tauri::generate_context!())
+        .run(isolate_dev_context(tauri::generate_context!()))
         .expect("error while running tauri application");
+}
+
+#[cfg(not(target_os = "android"))]
+fn isolate_dev_context(context: tauri::Context) -> tauri::Context {
+    crate::desktop_webview::isolate_dev_context(context)
+}
+
+#[cfg(target_os = "android")]
+fn isolate_dev_context(context: tauri::Context) -> tauri::Context {
+    context
 }
 
 #[cfg(test)]

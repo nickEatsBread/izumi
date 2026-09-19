@@ -94,21 +94,24 @@ pub(crate) async fn capture(
     let (capture, receiver) = LoginCapture::new(redirect);
     let navigation = capture.clone();
     let page_load = capture.clone();
-    let win = WebviewWindowBuilder::new(app, next_window_label(), WebviewUrl::External(url))
-        .additional_browser_args(crate::desktop_webview::DESKTOP_WEBVIEW_ARGS)
-        .title("Sign in")
-        .inner_size(520.0, 760.0)
-        // Register cancellation before the user can close the window.
-        .visible(false)
-        .on_navigation(move |url| {
-            // Capture before loading the callback site, even if that site is unavailable.
-            !navigation.capture_redirect(url)
-        })
-        .on_page_load(move |_window, payload| {
-            page_load.capture_redirect(payload.url());
-        })
-        .build()
-        .map_err(|error| error.to_string())?;
+    let win = crate::desktop_webview::isolate_webview_data(
+        WebviewWindowBuilder::new(app, next_window_label(), WebviewUrl::External(url))
+            .additional_browser_args(crate::desktop_webview::DESKTOP_WEBVIEW_ARGS)
+            .title("Sign in")
+            .inner_size(520.0, 760.0)
+            // Register cancellation before the user can close the window.
+            .visible(false)
+            .on_navigation(move |url| {
+                // Capture before loading the callback site, even if that site is unavailable.
+                !navigation.capture_redirect(url)
+            })
+            .on_page_load(move |_window, payload| {
+                page_load.capture_redirect(payload.url());
+            }),
+        &app.config().identifier,
+    )
+    .build()
+    .map_err(|error| error.to_string())?;
     let _cleanup = LoginWindow(win.clone());
     win.on_window_event(move |event| {
         // A URL read can fail during startup/navigation while the window is still alive.
