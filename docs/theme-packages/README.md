@@ -10,6 +10,7 @@ These are original izumi designs. They chase looks that show up often in living-
 | --- | --- |
 | [Tidal](izumi.tidal.json) | Near-black ocean canvas, blue accent, landscape resume cards, split series page with a right-hand episode rail. |
 | [Ember](izumi.ember.json) | Warm crimson canvas and tinted cards, red accent, landscape resume art, same split episode rail. |
+| [Kindling](izumi.kindling.json) | Compact true-black library, razor red accent, hidden hero, wrapping poster grid, dense side rail. |
 
 ## Shared limitations
 

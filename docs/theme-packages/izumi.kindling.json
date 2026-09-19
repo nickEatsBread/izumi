@@ -1,0 +1,66 @@
+{
+  "app": "izumi",
+  "kind": "theme-package",
+  "schemaVersion": 1,
+  "themeApi": 1,
+  "id": "izumi.kindling",
+  "name": "Kindling",
+  "version": "1.0.0",
+  "author": "Izumi",
+  "description": "A compact true-black library: razor red accent, hidden hero, wrapping poster grid and a dense side rail. Built for OLED and fast scanning.",
+  "design": {
+    "tokens": {
+      "scheme": "dark",
+      "background": "220 5% 0%",
+      "foreground": "0 0% 90%",
+      "muted": "220 5% 8%",
+      "mutedForeground": "216 10% 55%",
+      "primary": "0 0% 90%",
+      "primaryForeground": "220 5% 6%",
+      "secondary": "220 5% 8%",
+      "secondaryForeground": "0 0% 90%",
+      "accent": "220 5% 12%",
+      "accentForeground": "0 0% 92%",
+      "border": "220 5% 14%",
+      "input": "220 5% 10%",
+      "ring": "0 99% 43%",
+      "card": "220 5% 5%",
+      "cardForeground": "0 0% 90%",
+      "theme": "0 99% 43%"
+    },
+    "radius": 0.35,
+    "font": "system",
+    "fontScale": 0.95,
+    "backdrop": "solid",
+    "backdropStrength": 0,
+    "glassBlur": 0,
+    "presentation": {
+      "density": "compact",
+      "trueBlack": true,
+      "hideCardLabels": false,
+      "shell": { "nav": "sidebar", "compact": true },
+      "player": { "seekbarHeight": 4, "seekbarColor": "theme" },
+      "hero": { "hidden": true },
+      "detail": {
+        "layout": "stack",
+        "bannerHidden": true,
+        "posterWidth": 160,
+        "episodes": { "placement": "tab" }
+      },
+      "rows": {
+        "defaults": { "layout": "grid", "width": 120, "gap": 8, "spacing": 22, "radius": 4, "titleSize": 15, "aspect": "poster" },
+        "byId": { "continue": { "layout": "carousel", "width": 240, "aspect": "landscape", "radius": 6 } }
+      },
+      "cards": {
+        "poster": {
+          "type": "stack",
+          "style": { "gap": 6 },
+          "children": [
+            { "type": "artwork", "artwork": "poster", "style": { "aspect": "2 / 3", "radius": 4, "fit": "cover" } },
+            { "type": "text", "field": "title", "style": { "fontWeight": 800, "fontSize": 12 } }
+          ]
+        }
+      }
+    }
+  }
+}
