@@ -24,6 +24,11 @@
   import { catalogScreen, catalogSwitcherPlacement, enabledCatalogScreens, resolveCatalogSwitcherPlacement } from '$lib/settings/catalog'
   import * as h from '$lib/haptics'
   import { m } from '$lib/paraglide/messages.js'
+  import { themePresentation } from '$lib/themes/runtime'
+
+  let { placement = 'sidebar' }: { placement?: 'sidebar' | 'top' } = $props()
+  const compact = $derived($themePresentation?.shell?.compact === true)
+  const top = $derived(placement === 'top')
   // Nav items (top). Settings + profile are pinned to the BOTTOM.
   const items = [
     { href: '/app/home', icon: Home, label: m.nav_home(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
@@ -75,7 +80,7 @@
 </script>
 
 <!-- Browse: soft scrim so the banner shows through and fades into the page. Hidden while playing. -->
-{#if !$playing}
+{#if !$playing && !top}
   <div class="pointer-events-none fixed inset-y-0 left-0 z-20 w-32 bg-gradient-to-r from-background/90 via-background/30 to-transparent"></div>
 {/if}
 
@@ -83,10 +88,12 @@
      expanded, so no per-state markup swap. `main` keeps its 56px margin — the expanded rail
      overlays the content (fixed) rather than reflowing it. Selection uses a quiet active-row fill;
      keyboard/gamepad FOCUS fills the row more strongly (see app.css) — no squared ring. -->
-<nav data-nav-sidebar onfocusin={onFocusIn} onfocusout={onFocusOut}
-     class="fixed inset-y-0 left-0 z-30 flex flex-col gap-1 py-3 pt-9 transition-[width] duration-200 ease-out
+<nav data-nav-sidebar data-theme-surface="shell" onfocusin={onFocusIn} onfocusout={onFocusOut}
+     class="fixed z-30 flex gap-1 transition-[width] duration-200 ease-out
+       {top ? 'inset-x-0 top-0 h-[4.75rem] flex-row items-end px-3 pb-1 pt-8' : 'inset-y-0 left-0 flex-col py-3 pt-9'}
        {catalogPickerOpen ? 'overflow-visible' : 'overflow-hidden'}
-       {open ? 'w-[200px]' : 'w-14'} {$playing || open ? 'bg-background' : ''} {open ? 'shadow-2xl' : $playing ? '' : 'drop-shadow-md'}">
+       {top ? 'w-full bg-background/90 backdrop-blur' : open ? 'w-[200px]' : compact ? 'w-12' : 'w-14'}
+       {$playing || open || top ? 'bg-background' : ''} {open ? 'shadow-2xl' : $playing || top ? '' : 'drop-shadow-md'}">
   <!-- On Home, Integrated mode turns the brand into the catalog trigger. Everywhere else it stays
        predictable Home navigation; Below mode keeps the explicit provider row underneath. -->
   <div class="group mb-2 flex h-10 shrink-0 items-center gap-2 text-left">

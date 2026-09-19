@@ -7,6 +7,8 @@
   import { scrubThumbnails } from '$lib/settings/ui'
   import { getDrmEngine } from '$lib/player/drm'
   import type { Segment } from '$lib/stremio/aniskip'
+  import { themePresentation } from '$lib/themes/runtime'
+  import { cssThemeColor } from '$lib/themes/presentation'
 
   // Seekbar for the libmpv player. Renders stacked layers (buffered,
   // OP/ED segment tints, hover-scrub, played) plus chapter ticks and a hover
@@ -65,6 +67,8 @@
   let started = false
   let reqSeq = 0
   const thumbsEnabled = $derived($scrubThumbnails && !gm)
+  const seekHeight = $derived($themePresentation?.player?.seekbarHeight)
+  const seekColor = $derived($themePresentation?.player?.seekbarColor)
   function stopThumbs() {
     if (infoPoll) { clearInterval(infoPoll); infoPoll = undefined }
     if (reqTimer) { clearTimeout(reqTimer); reqTimer = undefined }
@@ -329,6 +333,7 @@
 
 <div
   bind:this={el}
+  data-theme-surface="player"
   class="group/seekbar relative flex w-full cursor-pointer select-none touch-none focus:outline-none focus-visible:shadow-none"
   role="slider"
   tabindex="0"
@@ -351,7 +356,7 @@
     {@const inChap = grabbed && (gm ? pct(scrubT) : hoverPct) > chap.offset && (gm ? pct(scrubT) : hoverPct) < chap.offset + chap.size}
     {@const active = gm ? inChap : (seekActive && hoverPct > chap.offset && hoverPct < chap.offset + chap.size)}
     <div class="flex shrink-0 items-center justify-center {gm ? 'py-5' : 'py-3'}" style="width:{chap.size}%">
-      <div class="relative {gm ? 'h-[10px]' : 'h-1'} w-full overflow-hidden rounded-[3px] {i ? 'ml-0.5' : ''}">
+      <div class="relative {gm ? 'h-[10px]' : 'h-1'} w-full overflow-hidden rounded-[3px] {i ? 'ml-0.5' : ''}" style:height={!gm && seekHeight ? `${seekHeight}px` : undefined}>
         <!-- empty track -->
         <div class="absolute left-0 top-1/2 {gm ? 'h-[8px]' : 'h-0.5'} w-full -translate-y-1/2 bg-white/25 {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[10px]={active && gm}></div>
         <!-- buffered -->
@@ -364,7 +369,7 @@
         {/if}
         <!-- played -->
         <div class="absolute left-0 top-1/2 {gm ? 'h-[8px]' : 'h-0.5'} w-full bg-white {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[10px]={active && gm}
-             style="transform:translate({skewclamp(chap.scale * (progressPct - chap.offset)) - 100}%, -50%)"></div>
+             style="transform:translate({skewclamp(chap.scale * (progressPct - chap.offset)) - 100}%, -50%);{!gm && seekColor ? `background:${cssThemeColor(seekColor)}` : ''}"></div>
       </div>
     </div>
   {/each}

@@ -39,6 +39,7 @@
 
 <nav
   data-nav-sidebar
+  data-theme-surface="shell"
   class="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur transition-transform duration-300 ease-out
     {hidden ? 'translate-y-full' : 'translate-y-0'}"
 >

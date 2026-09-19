@@ -49,6 +49,7 @@
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { scheduleBootWork } from '$lib/util/boot-work'
   import { isAndroid, isMacOS, isMobile, isTv, initPlatform } from '$lib/platform'
+  import { themePresentation } from '$lib/themes/runtime'
   import { initOffline } from '$lib/stores/offline'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
   import { getContextClient } from '@urql/svelte'
@@ -452,6 +453,7 @@
       { path: to?.url.pathname ?? location.pathname },
     )))
   })
+  const shellNav = $derived($isMobile ? 'bottom' : $isTv ? 'sidebar' : ($themePresentation?.shell?.nav ?? 'sidebar'))
 </script>
 
 <svelte:window onkeydown={handleShellKeydown} />
@@ -463,7 +465,7 @@
      touch — no sidebar/titlebar while playing, just the content. -->
 {#if !($playing && ($fullscreen || $gameMode || $pictureInPicture)) && (!$androidMpvActive || $androidMiniPlayer)}
   <!-- Mobile: a bottom tab bar instead of the left rail. -->
-  {#if $isMobile}<BottomNav />{:else}<Sidebar />{/if}
+  {#if $isMobile || shellNav === 'bottom'}<BottomNav />{:else}<Sidebar placement={shellNav === 'top' ? 'top' : 'sidebar'} />{/if}
   <!-- No window-control titlebar in Game mode (gamescope owns the fullscreen window; the
        minimize/maximize/close icons are meaningless + unreachable there) or on mobile. -->
   {#if !$gameMode && !$isMobile && !$isTv}<Titlebar />{/if}
@@ -482,7 +484,7 @@
      (`-left-14 w-screen`) so it never reaches under the sidebar, leaving a black
      column. Horizontal overflow is clipped on <body> instead (app.css).
      Hidden while playing so its opaque content doesn't block the video. -->
-<main class="relative min-h-screen {$isMobile ? 'mb-[calc(4rem+env(safe-area-inset-bottom))]' : 'ml-14'}" class:hidden={$playing || ($androidMpvActive && !$androidMiniPlayer)}>{@render children()}</main>
+<main class="theme-shell-main relative min-h-screen {($isMobile || shellNav === 'bottom') ? 'mb-[calc(4rem+env(safe-area-inset-bottom))]' : ''} {shellNav === 'top' ? 'pt-[4.75rem]' : ''}" class:hidden={$playing || ($androidMpvActive && !$androidMiniPlayer)}>{@render children()}</main>
 {#if $playing}<Lazy load={loadPlayerOverlay} />{/if}
 <!-- One Android watch-details instance spans source preparation and native playback. In particular,
      its Disqus iframe is never destroyed merely because libmpv presented its first frame. -->
