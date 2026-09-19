@@ -11,7 +11,8 @@
   import { getContext } from 'svelte'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { themePresentation } from '$lib/themes/runtime'
-  import { resolveRow, ROW_CONTEXT, type RowScope } from '$lib/themes/presentation'
+  import { mediaDisplayModel } from '$lib/themes/host-model'
+  import { CARD_FAMILY, ROW_CONTEXT, densityScale, resolveCard, resolveRow, type CardFamily, type RowScope } from '$lib/themes/presentation'
   import type { Media } from '$lib/anilist/types'
   import { reliableImage } from '$lib/util/reliable-image'
   import { title, cardCover, season, format, mediaHref, status } from '$lib/anilist/media'
@@ -57,8 +58,10 @@
   // `w-36` against the 14.5px mobile root is ~131px, the `sm:` carousel tile is 152px. A fill-width
   // grid cell has no fixed width to state, so it gets the safe (larger) asset.
   const themeScope = getContext<(() => RowScope) | undefined>(ROW_CONTEXT)
+  const cardFamily = getContext<CardFamily | undefined>(CARD_FAMILY) ?? 'poster'
   const themeRow = $derived(themeScope ? resolveRow($themePresentation, themeScope().id) : {})
-  const coverWidth = $derived(themeRow.width ?? (fill ? 0 : $isTv ? 198 : $isMobile ? 131 : 152))
+  const cardTemplate = $derived(resolveCard($themePresentation, cardFamily, themeScope?.().id ?? ''))
+  const coverWidth = $derived((themeRow.width ?? (fill ? 0 : $isTv ? 198 : $isMobile ? 131 : 152)) * (themeRow.width ? 1 : densityScale($themePresentation)))
   const coverSrc = $derived(cardCover(media, coverWidth))
   let coverReady = $state(false)
   $effect(() => { void coverSrc; coverReady = false })
@@ -146,12 +149,12 @@
   $effect(() => () => clearTimeout(closeT))
 </script>
 
-<div bind:this={el} data-theme-card class={fill ? 'w-full' : $isTv ? 'w-44 shrink-0' : 'w-36 shrink-0 sm:w-[152px]'} style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
+<div bind:this={el} data-theme-card class={fill ? 'w-full' : $isTv ? 'w-44 shrink-0' : 'w-36 shrink-0 sm:w-[152px]'} style:width={!fill ? `${coverWidth}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
   <a href={mediaHref(media)} data-focusable draggable="false" onclick={() => { rememberDetail(media); h.tap() }}
-     aria-label={title(media)} style:width={themeRow.width || themeRow.card ? '100%' : undefined}
+     aria-label={title(media)} style:width={themeRow.width || cardTemplate ? '100%' : undefined}
      class="group block {fill ? 'w-full' : $isTv ? 'w-44' : 'w-36 sm:w-[152px]'} {$isAndroid ? 'android-card-press' : ''}">
-    {#if themeRow.card}
-      <ThemeNode node={themeRow.card} model={{ title: title(media), poster: coverSrc, backdrop: media.bannerImage ?? coverSrc, format: format(media), year: season(media), score: media.averageScore || undefined }} />
+    {#if cardTemplate}
+      <ThemeNode node={cardTemplate} model={mediaDisplayModel(media, { poster: coverSrc, backdrop: media.bannerImage ?? coverSrc }, coverWidth)} />
     {:else}
     <div class="focus-cover relative aspect-[2/3] w-full overflow-hidden rounded-md bg-muted" style:aspect-ratio={themeRow.aspect === 'landscape' ? '16 / 9' : themeRow.aspect === 'square' ? '1' : undefined} style:border-radius={themeRow.radius !== undefined ? `${themeRow.radius}px` : undefined}>
       <!-- No `transform-gpu`/`will-change`: those permanently promote EVERY cover to its own
@@ -179,13 +182,13 @@
         </span>
       {/if}
     </div>
-    <div class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight {reserveTitleLines ? 'min-h-[2rem]' : ''}">
+    <div data-theme-card-label class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight {reserveTitleLines ? 'min-h-[2rem]' : ''}">
       {#if dot(media)}<span class="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={`background:${dot(media)}`}></span>{/if}{title(media)}
     </div>
     {#if subline}
-      <div class="mt-0.5 truncate text-[0.7rem] font-semibold text-foreground/70">{subline}</div>
+      <div data-theme-card-label class="mt-0.5 truncate text-[0.7rem] font-semibold text-foreground/70">{subline}</div>
     {:else if jvmSource}
-      <div class="mt-0.5 flex min-w-0 items-center justify-between gap-1.5 text-[0.7rem] text-muted-foreground">
+      <div data-theme-card-label class="mt-0.5 flex min-w-0 items-center justify-between gap-1.5 text-[0.7rem] text-muted-foreground">
         <span class="flex min-w-0 items-center gap-1">
           <AddonLogo logo={jvmSource.sourceIcon} name={jvmSource.sourceName} id={jvmSource.id} size={13} />
           <span class="truncate">{jvmSource.sourceName}</span>
@@ -193,7 +196,7 @@
         {#if jvmMeta}<span class="shrink-0 font-semibold">{jvmMeta}</span>{/if}
       </div>
     {:else}
-      <div class="mt-0.5 flex justify-between text-[0.7rem] text-muted-foreground">
+      <div data-theme-card-label class="mt-0.5 flex justify-between text-[0.7rem] text-muted-foreground">
         <span>{season(media) || media.startDate?.year || ''}</span><span>{format(media)}</span>
       </div>
     {/if}

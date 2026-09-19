@@ -16,8 +16,8 @@ const studio = read('../settings/ThemeStudio.svelte')
 
 describe('theme display model', () => {
   it('passes the numeric score from every host component', () => {
-    expect(hero).toContain('score: current.averageScore || undefined')
-    expect(card).toContain('score: media.averageScore || undefined')
+    expect(hero).toContain('mediaDisplayModel')
+    expect(card).toContain('mediaDisplayModel')
     expect(hero).not.toMatch(/score: current\.averageScore \?/)
   })
   it('renders bound fields through the shared formatter', () => {

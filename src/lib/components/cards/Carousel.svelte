@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getContext, type Snippet } from 'svelte'
   import { themePresentation } from '$lib/themes/runtime'
-  import { resolveRow, ROW_CONTEXT, type RowScope } from '$lib/themes/presentation'
+  import { densityScale, resolveRow, ROW_CONTEXT, type RowScope } from '$lib/themes/presentation'
   import { dragScroll, gameModeCarouselTouch } from '$lib/nav/actions'
   import { wheelScrollAcross } from '$lib/settings/ui'
   import { gameMode } from '$lib/player/session'
@@ -106,7 +106,7 @@
   <div class="relative">
     <div bind:this={scroller} data-carousel-scroller={!grid ? '' : undefined} data-nav-row-items use:scrollBehavior={!grid} onwheel={onWheel} onscroll={update}
          class="flex gap-3 overflow-x-scroll pb-2" class:px-8={!mob} class:px-4={mob} class:pt-3={gm}
-         class:theme-grid={grid} style:gap={appearance.gap !== undefined ? `${appearance.gap}px` : undefined} style:--theme-grid-width={`${appearance.width ?? 152}px`}>
+         class:theme-grid={grid} style:gap={`${appearance.gap ?? Math.round(12 * densityScale($themePresentation))}px`} style:--theme-grid-width={`${appearance.width ?? Math.round(152 * densityScale($themePresentation))}px`}>
       {@render children()}
     </div>
 

@@ -1,8 +1,8 @@
 <script lang="ts">
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { themePresentation } from '$lib/themes/runtime'
+  import { mediaDisplayModel } from '$lib/themes/host-model'
   import { motionPreference } from '$lib/settings/ui'
-  import type { DisplayModel } from '$lib/themes/presentation'
   import type { Media } from '$lib/anilist/types'
   import { banner, cover, title, format, status, season, totalEpisodes } from '$lib/anilist/media'
   import { rememberDetail } from '$lib/anilist/detail-hint'
@@ -261,9 +261,10 @@
   const scoreColor = (s?: number) =>
     s == null ? 'text-white/70' : s >= 75 ? 'text-green-400' : s >= 65 ? 'text-orange-400' : 'text-red-400'
   const cleanDesc = (d?: string) => (d ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
-  const themeModel: DisplayModel = $derived(current ? { title: title(current), description: cleanDesc(current.description), rank: featuredRankLabel,
-    rankPosition: current.featuredRank?.position, poster: cover(current), backdrop: banner(current), logo: currentLogo || '',
-    score: current.averageScore || undefined, format: format(current), year: season(current) } : {})
+  const themeModel = $derived(current ? mediaDisplayModel(current, {
+    description: cleanDesc(current.description), rank: featuredRankLabel,
+    rankPosition: current.featuredRank?.position, poster: cover(current), backdrop: banner(current), logo: currentLogo || undefined,
+  }) : {})
   function themeAction(action: () => void) {
     if (swiped) { swiped = false; return }
     action()
