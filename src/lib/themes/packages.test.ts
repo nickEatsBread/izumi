@@ -30,6 +30,25 @@ describe('installable theme packages', () => {
     expect(() => parseRelease({ ...entry, sha256: 'none' })).toThrow('checksum')
     expect(() => parseCatalog({ app: 'izumi', kind: 'theme-catalog', schemaVersion: 1, themes: [entry, entry] })).toThrow('duplicate')
   })
+  it('accepts additive series-page and chrome slots on API 1 packages', () => {
+    const parsed = parseThemePackage({
+      ...samplePackage,
+      design: {
+        ...samplePackage.design,
+        presentation: {
+          density: 'compact',
+          trueBlack: true,
+          detail: { layout: 'split', episodes: { placement: 'right', card: { type: 'text', field: 'episodeTitle' } } },
+          shell: { nav: 'top', compact: true },
+          player: { seekbarHeight: 8, seekbarColor: '#c8c8e0' },
+          cards: { continue: { type: 'artwork', artwork: 'still' } },
+        },
+      },
+    })
+    expect(parsed.design.presentation?.detail?.layout).toBe('split')
+    expect(parsed.design.presentation?.cards?.continue?.artwork).toBe('still')
+    expect(parsed.themeApi).toBe(1)
+  })
   it('accepts existing personal exports and validates their optional layouts', () => {
     const theme = { ...defaultStudioTheme(0), presentation: { hero: { hidden: true } } }
     const exported = { app: 'izumi', kind: 'theme', version: 1, theme }

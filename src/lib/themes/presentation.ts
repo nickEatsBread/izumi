@@ -1,13 +1,23 @@
 /** Data-only presentation API. No HTML, executable expressions, selectors, or remote assets. */
-export type DisplayField = 'title' | 'description' | 'rank' | 'rankPosition' | 'score' | 'format' | 'year'
+export type DisplayField =
+  | 'title' | 'description' | 'rank' | 'rankPosition' | 'score' | 'format' | 'year'
+  | 'studio' | 'season' | 'status' | 'genres' | 'members' | 'reviews'
+  | 'episodeCount' | 'episodeTitle' | 'airDate' | 'duration' | 'episodeNumber' | 'progress'
 /** Host numbers. `when.atMost` compares these; text nodes render them through `displayText`. */
-export type NumericDisplayField = 'rankPosition' | 'score'
-export type ThemeAction = 'play' | 'details' | 'favorite' | 'previous' | 'next'
+export type NumericDisplayField = 'rankPosition' | 'score' | 'duration' | 'episodeNumber' | 'progress'
+export type ArtworkKind = 'poster' | 'backdrop' | 'logo' | 'still'
+export type ThemeAction = 'play' | 'details' | 'favorite' | 'previous' | 'next' | 'list' | 'trailer' | 'share'
+export type CardFamily = 'poster' | 'continue' | 'search'
+export type ThemeDensity = 'compact' | 'comfortable' | 'large'
+export type ThemeNavPlacement = 'sidebar' | 'top' | 'bottom'
+export type DetailLayout = 'stack' | 'split'
+export type EpisodePlacement = 'tab' | 'right' | 'below'
+export type ThemeSurface = 'Home' | 'Shell' | 'Details' | 'Player' | 'Full'
 export interface ThemeNode {
   type: 'stack' | 'row' | 'grid' | 'overlay' | 'text' | 'artwork' | 'action'
   text?: string
   field?: DisplayField
-  artwork?: 'poster' | 'backdrop' | 'logo'
+  artwork?: ArtworkKind
   action?: ThemeAction
   when?: { field: DisplayField; atMost?: number }
   style?: Record<string, string | number>
@@ -23,17 +33,44 @@ export interface RowPresentation {
   titleSize?: number
   card?: ThemeNode
 }
+export interface DetailPresentation {
+  layout?: DetailLayout
+  bannerHidden?: boolean
+  posterWidth?: number
+  episodes?: { placement?: EpisodePlacement; card?: ThemeNode }
+}
+export interface ShellPresentation {
+  nav?: ThemeNavPlacement
+  compact?: boolean
+}
+export interface PlayerPresentation {
+  seekbarHeight?: number
+  seekbarColor?: string
+}
 export interface ThemePresentation {
+  density?: ThemeDensity
+  hideCardLabels?: boolean
+  trueBlack?: boolean
   hero?: { hidden?: boolean; height?: number; mobileHeight?: number; rotate?: boolean; interval?: number; rankHidden?: boolean; rank?: ThemeNode; template?: ThemeNode }
   rows?: { defaults?: RowPresentation; byId?: Record<string, RowPresentation> }
+  detail?: DetailPresentation
+  shell?: ShellPresentation
+  player?: PlayerPresentation
+  cards?: Partial<Record<CardFamily, ThemeNode>>
 }
-/** Every host binds the same shapes: `rankPosition` and `score` (0-100) are numbers, the rest strings. */
-export type DisplayModel = Partial<Record<Exclude<DisplayField, NumericDisplayField> | 'poster' | 'backdrop' | 'logo', string> & Record<NumericDisplayField, number>>
+/** Every host binds the same shapes: numeric fields are numbers, the rest strings. */
+export type DisplayModel = Partial<Record<Exclude<DisplayField, NumericDisplayField> | ArtworkKind, string> & Record<NumericDisplayField, number>>
 export const ROW_CONTEXT = Symbol('theme-row')
+export const CARD_FAMILY = Symbol('theme-card-family')
 export interface RowScope { id: string; title: string }
-const fields = ['title', 'description', 'rank', 'rankPosition', 'score', 'format', 'year']
-const numericFields: string[] = ['rankPosition', 'score'] satisfies NumericDisplayField[]
-const actions = ['play', 'details', 'favorite', 'previous', 'next']
+const fields = [
+  'title', 'description', 'rank', 'rankPosition', 'score', 'format', 'year',
+  'studio', 'season', 'status', 'genres', 'members', 'reviews',
+  'episodeCount', 'episodeTitle', 'airDate', 'duration', 'episodeNumber', 'progress',
+] as const satisfies readonly DisplayField[]
+const numericFields: string[] = ['rankPosition', 'score', 'duration', 'episodeNumber', 'progress'] satisfies NumericDisplayField[]
+const actions = ['play', 'details', 'favorite', 'previous', 'next', 'list', 'trailer', 'share']
+const artworkKinds = ['poster', 'backdrop', 'logo', 'still'] as const
 const numericStyles: Record<string, [number, number, string]> = {
   gap: [0, 96, 'px'], padding: [0, 96, 'px'], fontSize: [10, 96, 'px'], fontWeight: [400, 900, ''],
   radius: [0, 80, 'px'], opacity: [0, 1, ''], width: [5, 100, '%'], minHeight: [0, 600, 'px'],
@@ -61,6 +98,14 @@ function choice<const T extends string>(value: unknown, allowed: readonly T[]): 
   if (typeof value !== 'string' || !allowed.includes(value as T)) throw new Error('This theme uses an unsupported presentation value.')
   return value as T
 }
+function flag(value: unknown): boolean {
+  if (typeof value !== 'boolean') throw new Error('Expected a theme toggle.')
+  return value
+}
+function themeColor(value: unknown): string {
+  if (typeof value !== 'string' || !(colors.includes(value) || /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value))) throw new Error('Use a theme color or a hex color.')
+  return value
+}
 export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, interactive = true): ThemeNode {
   if (++budget.count > 96 || depth > 8) throw new Error('This theme template is too complex.')
   const raw = record(value)
@@ -71,15 +116,15 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
     if (typeof raw.text !== 'string' || raw.text.length > 300) throw new Error('Theme text is too long.')
     node.text = raw.text
   }
-  if (raw.field !== undefined) node.field = choice(raw.field, fields) as DisplayField
-  if (raw.artwork !== undefined) node.artwork = choice(raw.artwork, ['poster', 'backdrop', 'logo'])
+  if (raw.field !== undefined) node.field = choice(raw.field, fields)
+  if (raw.artwork !== undefined) node.artwork = choice(raw.artwork, artworkKinds)
   if (node.type === 'artwork' && !node.artwork) throw new Error('Choose artwork for this template.')
   if (node.type === 'action') node.action = choice(raw.action, actions) as ThemeAction
   if (raw.when !== undefined) {
     const condition = record(raw.when); only(condition, ['field', 'atMost'])
-    node.when = { field: choice(condition.field, fields) as DisplayField }
+    node.when = { field: choice(condition.field, fields) }
     if (condition.atMost !== undefined) {
-      if (!numericFields.includes(node.when.field)) throw new Error('atMost only applies to the numeric fields rankPosition and score.')
+      if (!numericFields.includes(node.when.field)) throw new Error('atMost only applies to the numeric fields rankPosition, score, duration, episodeNumber and progress.')
       node.when.atMost = number(condition.atMost, 0, 10000)
     }
   }
@@ -88,10 +133,8 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
     for (const [key, value] of Object.entries(style)) {
       if (numericStyles[key]) node.style[key] = number(value, numericStyles[key][0], numericStyles[key][1])
       else if (choices[key]) node.style[key] = choice(value, choices[key])
-      else if (key === 'color' || key === 'background') {
-        if (typeof value !== 'string' || !(colors.includes(value) || /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value))) throw new Error('Use a theme color or a hex color.')
-        node.style[key] = value
-      } else throw new Error('This theme style is not supported.')
+      else if (key === 'color' || key === 'background') node.style[key] = themeColor(value)
+      else throw new Error('This theme style is not supported.')
     }
   }
   if (raw.children !== undefined) {
@@ -111,16 +154,53 @@ function parseRow(value: unknown): RowPresentation {
   if (raw.card !== undefined) result.card = parseNode(raw.card, undefined, 0, false)
   return result
 }
+function parseDetail(value: unknown): DetailPresentation {
+  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'episodes'])
+  const result: DetailPresentation = {}
+  if (raw.layout !== undefined) result.layout = choice(raw.layout, ['stack', 'split'])
+  if (raw.bannerHidden !== undefined) result.bannerHidden = flag(raw.bannerHidden)
+  if (raw.posterWidth !== undefined) result.posterWidth = number(raw.posterWidth, 96, 360)
+  if (raw.episodes !== undefined) {
+    const episodes = record(raw.episodes); only(episodes, ['placement', 'card'])
+    result.episodes = {}
+    if (episodes.placement !== undefined) result.episodes.placement = choice(episodes.placement, ['tab', 'right', 'below'])
+    if (episodes.card !== undefined) result.episodes.card = parseNode(episodes.card, undefined, 0, false)
+  }
+  return result
+}
+function parseShell(value: unknown): ShellPresentation {
+  const raw = record(value); only(raw, ['nav', 'compact'])
+  const result: ShellPresentation = {}
+  if (raw.nav !== undefined) result.nav = choice(raw.nav, ['sidebar', 'top', 'bottom'])
+  if (raw.compact !== undefined) result.compact = flag(raw.compact)
+  return result
+}
+function parsePlayer(value: unknown): PlayerPresentation {
+  const raw = record(value); only(raw, ['seekbarHeight', 'seekbarColor'])
+  const result: PlayerPresentation = {}
+  if (raw.seekbarHeight !== undefined) result.seekbarHeight = number(raw.seekbarHeight, 2, 16)
+  if (raw.seekbarColor !== undefined) result.seekbarColor = themeColor(raw.seekbarColor)
+  return result
+}
+function parseCards(value: unknown): NonNullable<ThemePresentation['cards']> {
+  const raw = record(value); only(raw, ['poster', 'continue', 'search'])
+  const result: NonNullable<ThemePresentation['cards']> = {}
+  for (const family of ['poster', 'continue', 'search'] as const) {
+    if (raw[family] !== undefined) result[family] = parseNode(raw[family], undefined, 0, false)
+  }
+  return result
+}
 export function parsePresentation(value: unknown): ThemePresentation {
-  const raw = record(value); only(raw, ['hero', 'rows'])
+  const raw = record(value)
+  only(raw, ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'shell', 'player', 'cards'])
   const result: ThemePresentation = {}
+  if (raw.density !== undefined) result.density = choice(raw.density, ['compact', 'comfortable', 'large'])
+  if (raw.hideCardLabels !== undefined) result.hideCardLabels = flag(raw.hideCardLabels)
+  if (raw.trueBlack !== undefined) result.trueBlack = flag(raw.trueBlack)
   if (raw.hero !== undefined) {
     const hero = record(raw.hero); only(hero, ['hidden', 'height', 'mobileHeight', 'rotate', 'interval', 'rankHidden', 'rank', 'template'])
     result.hero = {}
-    for (const key of ['hidden', 'rotate', 'rankHidden'] as const) if (hero[key] !== undefined) {
-      if (typeof hero[key] !== 'boolean') throw new Error('Expected a theme toggle.')
-      result.hero[key] = hero[key]
-    }
+    for (const key of ['hidden', 'rotate', 'rankHidden'] as const) if (hero[key] !== undefined) result.hero[key] = flag(hero[key])
     for (const key of ['height', 'mobileHeight'] as const) if (hero[key] !== undefined) result.hero[key] = number(hero[key], 24, 75)
     if (hero.interval !== undefined) result.hero.interval = number(hero.interval, 5, 60)
     if (hero.rank !== undefined) result.hero.rank = parseNode(hero.rank, undefined, 0, false)
@@ -138,6 +218,10 @@ export function parsePresentation(value: unknown): ThemePresentation {
       }))
     }
   }
+  if (raw.detail !== undefined) result.detail = parseDetail(raw.detail)
+  if (raw.shell !== undefined) result.shell = parseShell(raw.shell)
+  if (raw.player !== undefined) result.player = parsePlayer(raw.player)
+  if (raw.cards !== undefined) result.cards = parseCards(raw.cards)
   return result
 }
 export function visibleNode(node: ThemeNode, model: DisplayModel): boolean {
@@ -149,7 +233,9 @@ export function visibleNode(node: ThemeNode, model: DisplayModel): boolean {
 export function displayText(field: DisplayField, model: DisplayModel): string {
   const value = model[field]
   if (value === undefined || value === '') return ''
-  return field === 'score' ? `${value}%` : String(value)
+  if (field === 'score' || field === 'progress') return `${value}%`
+  if (field === 'duration') return `${value}m`
+  return String(value)
 }
 export function nodeStyle(node: ThemeNode): string {
   const styles: Record<string, string> = { 'min-width': '0', 'box-sizing': 'border-box' }
@@ -180,4 +266,52 @@ export function nodeStyle(node: ThemeNode): string {
 export function resolveRow(layout: ThemePresentation | undefined, id = ''): RowPresentation {
   const role = id.includes(':') ? id.slice(id.indexOf(':') + 1) : id
   return { ...layout?.rows?.defaults, ...layout?.rows?.byId?.[role], ...layout?.rows?.byId?.[id] }
+}
+export function resolveCard(layout: ThemePresentation | undefined, family: CardFamily = 'poster', rowId = ''): ThemeNode | undefined {
+  const rowCard = rowId ? resolveRow(layout, rowId).card : undefined
+  if (rowCard) return rowCard
+  if (family === 'continue') return layout?.cards?.continue
+  return layout?.cards?.[family] ?? layout?.cards?.poster
+}
+export function resolveDetail(layout?: ThemePresentation): Required<Pick<DetailPresentation, 'layout' | 'bannerHidden'>> & DetailPresentation {
+  const detail = layout?.detail ?? {}
+  const page = detail.layout ?? 'stack'
+  const placement = detail.episodes?.placement ?? (page === 'split' ? 'right' : 'tab')
+  return {
+    layout: page,
+    bannerHidden: detail.bannerHidden === true,
+    posterWidth: detail.posterWidth,
+    episodes: { placement, card: detail.episodes?.card },
+  }
+}
+/** Right-hand episode rail is desktop-only. Narrow viewports fall back to a rail below the info column. */
+export function episodesOnSide(layout?: ThemePresentation, desktop = true): boolean {
+  return desktop && resolveDetail(layout).episodes?.placement === 'right'
+}
+export function episodesBelow(layout?: ThemePresentation, desktop = true): boolean {
+  const placement = resolveDetail(layout).episodes?.placement
+  return placement === 'below' || (placement === 'right' && !desktop)
+}
+export function densityScale(layout?: ThemePresentation): number {
+  return layout?.density === 'compact' ? 0.86 : layout?.density === 'large' ? 1.16 : 1
+}
+export function themeCoverage(layout?: ThemePresentation): ThemeSurface[] {
+  if (!layout) return []
+  const surfaces: ThemeSurface[] = []
+  if (layout.hero || layout.rows || layout.cards) surfaces.push('Home')
+  if (layout.shell || layout.density || layout.hideCardLabels || layout.trueBlack) surfaces.push('Shell')
+  if (layout.detail) surfaces.push('Details')
+  if (layout.player) surfaces.push('Player')
+  return surfaces.length === 4 ? ['Full'] : surfaces
+}
+export interface TemplateOutline { type: ThemeNode['type']; label?: string; children?: TemplateOutline[] }
+export function templateOutline(node: ThemeNode): TemplateOutline {
+  return {
+    type: node.type,
+    label: node.field || node.action || node.artwork || (node.text ? node.text.slice(0, 40) : undefined),
+    children: node.children?.map(templateOutline),
+  }
+}
+export function cssThemeColor(value: string): string {
+  return value.startsWith('#') || value === 'transparent' ? value : `hsl(var(--${value}))`
 }

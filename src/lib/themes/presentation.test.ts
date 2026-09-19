@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseNode, parsePresentation, nodeStyle, resolveRow, visibleNode, displayText, type DisplayModel } from './presentation'
+import { parseNode, parsePresentation, nodeStyle, resolveRow, resolveCard, resolveDetail, episodesOnSide, episodesBelow, themeCoverage, densityScale, visibleNode, displayText, type DisplayModel } from './presentation'
 
 describe('theme presentation contract', () => {
   it('composes new layouts from primitives with bounded styles', () => {
@@ -55,5 +55,83 @@ describe('theme presentation contract', () => {
     expect(resolveRow(layout, 'merged:continue')).toEqual({ width: 264, layout: 'carousel', gap: 24 })
     expect(resolveRow(layout, 'merged:popular')).toEqual({ width: 128, layout: 'grid' })
     expect(resolveRow(undefined)).toEqual({})
+  })
+  it('accepts additive page, shell, player and card slots without breaking API 1 packages', () => {
+    const layout = parsePresentation({
+      density: 'compact', hideCardLabels: true, trueBlack: true,
+      hero: { hidden: true },
+      detail: { layout: 'split', bannerHidden: true, posterWidth: 220, episodes: { placement: 'right', card: { type: 'text', field: 'episodeTitle' } } },
+      shell: { nav: 'top', compact: true },
+      player: { seekbarHeight: 8, seekbarColor: 'theme' },
+      cards: { poster: { type: 'artwork', artwork: 'poster' }, continue: { type: 'text', field: 'progress' }, search: { type: 'text', field: 'title' } },
+    })
+    expect(layout.density).toBe('compact')
+    expect(layout.detail?.layout).toBe('split')
+    expect(layout.detail?.episodes?.placement).toBe('right')
+    expect(layout.shell?.nav).toBe('top')
+    expect(layout.player?.seekbarColor).toBe('theme')
+    expect(parsePresentation({ hero: { height: 40 } }).hero?.height).toBe(40)
+  })
+  it('rejects unknown presentation keys, executable seekbar colors and nested episode actions', () => {
+    expect(() => parsePresentation({ wallpaper: 'https://example.test' })).toThrow('unsupported')
+    expect(() => parsePresentation({ player: { seekbarColor: 'url(https://example.test)' } })).toThrow()
+    expect(() => parsePresentation({ detail: { episodes: { card: { type: 'action', action: 'play' } } } })).toThrow('nested actions')
+    expect(() => parsePresentation({ cards: { continue: { type: 'action', action: 'play' } } })).toThrow('nested actions')
+  })
+  it('formats duration and progress through the shared display helper', () => {
+    expect(displayText('duration', { duration: 24 })).toBe('24m')
+    expect(displayText('progress', { progress: 42 })).toBe('42%')
+    expect(displayText('episodeNumber', { episodeNumber: 8 })).toBe('8')
+    expect(displayText('duration', {})).toBe('')
+    const node = parseNode({ type: 'text', field: 'duration', when: { field: 'duration', atMost: 30 } })
+    expect(visibleNode(node, { duration: 24 })).toBe(true)
+    expect(visibleNode(node, { duration: 31 })).toBe(false)
+    expect(() => parseNode({ type: 'text', when: { field: 'episodeTitle', atMost: 1 } })).toThrow('numeric')
+  })
+  it('binds still artwork and the extra host actions', () => {
+    expect(parseNode({ type: 'artwork', artwork: 'still' }).artwork).toBe('still')
+    expect(parseNode({ type: 'action', action: 'trailer' }).action).toBe('trailer')
+    expect(parseNode({ type: 'action', action: 'list' }).action).toBe('list')
+    expect(parseNode({ type: 'action', action: 'share' }).action).toBe('share')
+  })
+})
+
+describe('theme surface resolution', () => {
+  it('defaults a split series page to a right-hand episode rail', () => {
+    const split = parsePresentation({ detail: { layout: 'split' } })
+    expect(resolveDetail(split)).toMatchObject({ layout: 'split', bannerHidden: false, episodes: { placement: 'right' } })
+    expect(episodesOnSide(split, true)).toBe(true)
+    expect(episodesOnSide(split, false)).toBe(false)
+    expect(episodesBelow(split, false)).toBe(true)
+    expect(episodesBelow(parsePresentation({ detail: { episodes: { placement: 'below' } } }), true)).toBe(true)
+    expect(resolveDetail(undefined).layout).toBe('stack')
+    expect(episodesOnSide(undefined, true)).toBe(false)
+  })
+  it('resolves card families with row templates taking precedence', () => {
+    const layout = parsePresentation({
+      rows: { byId: { continue: { card: { type: 'text', field: 'title' } } } },
+      cards: { poster: { type: 'artwork', artwork: 'poster' }, continue: { type: 'text', field: 'progress' }, search: { type: 'text', field: 'year' } },
+    })
+    expect(resolveCard(layout, 'poster')?.artwork).toBe('poster')
+    expect(resolveCard(layout, 'search')?.field).toBe('year')
+    expect(resolveCard(layout, 'continue')?.field).toBe('progress')
+    expect(resolveCard(layout, 'continue', 'anime:continue')?.field).toBe('title')
+    expect(resolveCard(layout, 'search')?.artwork).toBeUndefined()
+    expect(resolveCard(parsePresentation({ cards: { poster: { type: 'text', field: 'title' } } }), 'search')?.field).toBe('title')
+  })
+  it('labels coverage from the slots a package actually uses', () => {
+    expect(themeCoverage(undefined)).toEqual([])
+    expect(themeCoverage(parsePresentation({ hero: { hidden: true } }))).toEqual(['Home'])
+    expect(themeCoverage(parsePresentation({ density: 'large', shell: { compact: true } }))).toEqual(['Shell'])
+    expect(themeCoverage(parsePresentation({ detail: { layout: 'split' } }))).toEqual(['Details'])
+    expect(themeCoverage(parsePresentation({ player: { seekbarHeight: 6 } }))).toEqual(['Player'])
+    expect(themeCoverage(parsePresentation({
+      hero: { hidden: true }, density: 'compact', detail: { layout: 'split' }, player: { seekbarHeight: 4 },
+    }))).toEqual(['Full'])
+  })
+  it('scales default density without inventing a new API version', () => {
+    expect(densityScale(undefined)).toBe(1)
+    expect(densityScale(parsePresentation({ density: 'compact' }))).toBe(0.86)
+    expect(densityScale(parsePresentation({ density: 'large' }))).toBe(1.16)
   })
 })
