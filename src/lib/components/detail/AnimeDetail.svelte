@@ -205,6 +205,7 @@
   let heroPlay = $state<PlayState>({ status: 'idle' })
   const detailTheme = $derived(resolveDetail($themePresentation))
   const overlayDetail = $derived(detailTheme.layout === 'overlay')
+  const bannerOverlap = $derived(detailTheme.bannerHeight ? Math.round(detailTheme.bannerHeight * 0.58) : (controllerUi ? 16 : 18))
   const sideEpisodes = $derived(episodesOnSide($themePresentation, !$isMobile))
   const belowEpisodes = $derived(episodesBelow($themePresentation, !$isMobile))
   const episodeTabbed = $derived(!sideEpisodes && !belowEpisodes)
@@ -833,7 +834,7 @@
   {#if !detailTheme.bannerHidden}
   <Hero medias={[m]} showOverlay={false} initialArtworkVisible={loadedHintBanner === banner(m)} />
   {/if}
-  <div class="relative px-4 pb-16 sm:px-8 {detailTheme.bannerHidden ? 'pt-8' : controllerUi ? '-mt-[16vh]' : '-mt-[18vh]'}" data-theme-surface="detail">
+  <div class="relative px-4 pb-16 sm:px-8 {detailTheme.bannerHidden ? 'pt-8' : ''}" style:margin-top={detailTheme.bannerHidden ? undefined : `-${bannerOverlap}vh`} data-theme-surface="detail">
     {#if heroPlay.status === 'error'}
       <p class="mb-3 text-sm text-destructive">{heroPlay.message}</p>
     {/if}

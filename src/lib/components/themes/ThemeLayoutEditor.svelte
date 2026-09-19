@@ -162,6 +162,7 @@
     </select></label>
     <label class="toggle"><span>Show banner artwork</span><input type="checkbox" checked={!detail.bannerHidden} onchange={event => setDetail({ bannerHidden: !event.currentTarget.checked })} data-focusable /></label>
     <label>Poster width <output>{detail.posterWidth ?? 176}px</output><input type="range" aria-label="Poster width" min="96" max="360" value={detail.posterWidth ?? 176} oninput={event => setDetail({ posterWidth: Number(value(event)) })} data-focusable /></label>
+    <label>Series banner height <output>{detail.bannerHeight ?? 48}% of screen</output><input type="range" aria-label="Series banner height" min="18" max="60" value={detail.bannerHeight ?? 48} oninput={event => setDetail({ bannerHeight: Number(value(event)) })} data-focusable /></label>
     <p class="help">A right-hand rail becomes a list below the info column on narrow windows. Overlay paints title and Play on the banner and keeps episodes below. One-per-row arrangement stacks full-width episode tiles. Facts and episode-card templates are editable below. The cards / compact / grid control still belongs to Appearance.</p>
   {:else if scope === 'player'}
     <label>Seekbar thickness <output>{presentation?.player?.seekbarHeight ?? 4}px</output><input type="range" aria-label="Seekbar thickness" min="2" max="16" value={presentation?.player?.seekbarHeight ?? 4} oninput={event => setPlayer({ seekbarHeight: Number(value(event)) })} data-focusable /></label>

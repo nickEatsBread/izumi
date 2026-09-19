@@ -47,6 +47,7 @@ export interface DetailPresentation {
   actionsFirst?: boolean
   coverAlign?: 'start' | 'end'
   cta?: 'default' | 'large'
+  bannerHeight?: number
   episodes?: { placement?: EpisodePlacement; arrangement?: EpisodeArrangement; hover?: EpisodeHover; card?: ThemeNode }
 }
 export interface ShellPresentation {
@@ -172,7 +173,7 @@ function parseRow(value: unknown): RowPresentation {
   return result
 }
 function parseDetail(value: unknown): DetailPresentation {
-  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'episodes'])
+  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'episodes'])
   const result: DetailPresentation = {}
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['stack', 'split', 'overlay'])
   if (raw.bannerHidden !== undefined) result.bannerHidden = flag(raw.bannerHidden)
@@ -181,6 +182,7 @@ function parseDetail(value: unknown): DetailPresentation {
   if (raw.actionsFirst !== undefined) result.actionsFirst = flag(raw.actionsFirst)
   if (raw.coverAlign !== undefined) result.coverAlign = choice(raw.coverAlign, ['start', 'end'])
   if (raw.cta !== undefined) result.cta = choice(raw.cta, ['default', 'large'])
+  if (raw.bannerHeight !== undefined) result.bannerHeight = number(raw.bannerHeight, 18, 60)
   if (raw.episodes !== undefined) {
     const episodes = record(raw.episodes); only(episodes, ['placement', 'arrangement', 'hover', 'card'])
     result.episodes = {}
@@ -314,6 +316,7 @@ export function resolveDetail(layout?: ThemePresentation): Required<Pick<DetailP
     actionsFirst: detail.actionsFirst === true,
     coverAlign: detail.coverAlign,
     cta: detail.cta,
+    bannerHeight: detail.bannerHeight,
     episodes: { placement, arrangement: detail.episodes?.arrangement, hover: detail.episodes?.hover, card: detail.episodes?.card },
   }
 }

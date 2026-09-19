@@ -1,6 +1,7 @@
 <script lang="ts">
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { themePresentation } from '$lib/themes/runtime'
+  import { resolveDetail } from '$lib/themes/presentation'
   import { mediaDisplayModel } from '$lib/themes/host-model'
   import { motionPreference } from '$lib/settings/ui'
   import type { Media } from '$lib/anilist/types'
@@ -58,6 +59,7 @@
   let failedLogos = $state<string[]>([])
   const controllerUi = $derived($gameMode || $controllerMode)
   const heroTheme = $derived(showOverlay ? $themePresentation?.hero : undefined)
+  const seriesBannerHeight = $derived(!showOverlay ? resolveDetail($themePresentation).bannerHeight : undefined)
   const DURATION = $derived((heroTheme?.interval ?? 15) * 1000)
 
   function go(n: number, direction?: 1 | -1) {
@@ -273,13 +275,28 @@
 
 {#if current && !heroTheme?.hidden}
   {#if heroTheme?.template}
-    <section data-nav-row data-theme-hero aria-label="Featured" class="theme-custom-hero" style:height={`${($isMobile ? heroTheme.mobileHeight : heroTheme.height) ?? 46}vh`} ontouchstart={onTouchStart} ontouchend={onTouchEnd}>
+    <section data-nav-row data-theme-hero aria-label="Featured" class="theme-custom-hero" class:cursor-grab={$dragCarousels && medias.length > 1} class:cursor-grabbing={heroDragging} style:height={`${($isMobile ? heroTheme.mobileHeight : heroTheme.height) ?? 46}vh`} style:--theme-hero-interval={`${DURATION}ms`} ontouchstart={onTouchStart} ontouchend={onTouchEnd} onpointerdown={onHeroPointerDown} onpointermove={onHeroPointerMove} onpointerup={(e) => endHeroPointer(e, true)} onpointercancel={(e) => endHeroPointer(e, false)}>
       <ThemeNode node={heroTheme.template} model={themeModel} eager titleHeading actions={{
         details: oninfo ? () => themeAction(() => { rememberDetail(current); oninfo?.(current) }) : undefined,
         play: onplay ? () => themeAction(() => { rememberDetail(current); onplay?.(current) }) : undefined,
         favorite: onfav ? () => themeAction(() => onfav?.(current)) : undefined,
         previous: medias.length > 1 ? () => themeAction(() => step(-1)) : undefined, next: medias.length > 1 ? () => themeAction(() => step(1)) : undefined,
       }} />
+      {#if medias.length > 1}
+        <div class="absolute bottom-5 left-8 z-20 flex items-center gap-2">
+          {#each medias as _, idx (idx)}
+            <button type="button" data-focusable onclick={() => go(idx)} aria-label={`Featured title ${idx + 1}`}
+                    class="h-[3px] overflow-hidden rounded-sm bg-white/20 transition-[width] duration-300"
+                    style="width:{idx === i ? '5rem' : '2.7rem'}">
+              {#if idx === i}
+                {#key cycle}
+                  <div class="hero-progress h-full bg-white"></div>
+                {/key}
+              {/if}
+            </button>
+          {/each}
+        </div>
+      {/if}
     </section>
   {:else if $isMobile && showOverlay}
     <!-- Mobile Home: a CONTAINED poster block (not a full-bleed banner) — reads far better on a
@@ -381,12 +398,12 @@
   {:else}
   <div
     data-nav-row
-    class="relative mb-6 h-[40vh] touch-pan-y select-none transition-opacity duration-500 {showOverlay ? 'sm:h-[50vh]' : controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'} {scrolled ? 'opacity-40' : 'opacity-100'}"
+    class="relative mb-6 h-[40vh] touch-pan-y select-none transition-opacity duration-500 {seriesBannerHeight ? '' : showOverlay ? 'sm:h-[50vh]' : controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'} {scrolled ? 'opacity-40' : 'opacity-100'}"
     class:cursor-grab={$dragCarousels && medias.length > 1}
     class:cursor-grabbing={heroDragging}
     class:game-home-hero={controllerUi && showOverlay}
     style="--accent:{accent}"
-    style:height={heroTheme?.height ? `${heroTheme.height}vh` : undefined}
+    style:height={seriesBannerHeight ? `${seriesBannerHeight}vh` : heroTheme?.height ? `${heroTheme.height}vh` : undefined}
     style:--theme-hero-interval={`${DURATION}ms`}
     role="group"
     aria-label="Featured"

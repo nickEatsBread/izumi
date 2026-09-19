@@ -5,7 +5,7 @@
   "themeApi": 1,
   "id": "izumi.kindling",
   "name": "Kindling",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "author": "Izumi",
   "description": "Cool gray canvas, rose accent, Nunito. Home opens on a rotating full-bleed featured banner with Watch Now and View Details, then horizontal poster rows. The series page uses icon facts, an overlapping cover, and a right-hand rail with one short episode tile per row — square still on the left, title and synopsis on the right, grow-on-hover.",
   "design": {
@@ -42,8 +42,8 @@
       "player": { "seekbarHeight": 4, "seekbarColor": "theme" },
       "hero": {
         "hidden": false,
-        "height": 52,
-        "mobileHeight": 46,
+        "height": 40,
+        "mobileHeight": 42,
         "rotate": true,
         "interval": 15,
         "rankHidden": true,
@@ -55,7 +55,7 @@
               "type": "stack",
               "style": { "anchor": "bottom-start", "padding": 28, "gap": 10, "maxWidth": 640 },
               "children": [
-                { "type": "text", "field": "title", "style": { "color": "#FFFFFF", "fontSize": 36, "fontWeight": 800 } },
+                { "type": "text", "field": "title", "style": { "color": "#FFFFFF", "fontSize": 44, "fontWeight": 800 } },
                 {
                   "type": "row",
                   "style": { "gap": 6, "align": "center", "wrap": "nowrap" },
@@ -86,9 +86,7 @@
         "layout": "split",
         "bannerHidden": false,
         "posterWidth": 230,
-        "actionsFirst": true,
-        "coverAlign": "end",
-        "cta": "large",
+        "bannerHeight": 28,
         "facts": {
           "type": "stack",
           "style": { "gap": 12 },
