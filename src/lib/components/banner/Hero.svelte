@@ -556,7 +556,9 @@
 
 <style>
   .theme-custom-hero { position: relative; margin: 0 0 1.5rem; overflow: hidden; min-height: 24vh; }
-  .theme-custom-hero :global(.theme-template) { height: 100%; min-height: inherit; }
+  .theme-custom-hero :global(.theme-template),
+  .theme-custom-hero :global(.theme-overlay) { height: 100%; min-height: inherit; }
+  .theme-custom-hero :global(.theme-overlay > img) { width: 100%; height: 100%; object-fit: cover; }
   .theme-custom-hero :global(.theme-overlay)::after {
     content: '';
     grid-area: 1 / 1;

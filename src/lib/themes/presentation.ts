@@ -287,7 +287,7 @@ export function nodeStyle(node: ThemeNode): string {
   }
   if (anchor !== undefined) {
     styles.position = 'absolute'
-    if (anchor === 'fill') styles.inset = '0'
+    if (anchor === 'fill') { styles.inset = '0'; styles.width = '100%'; styles.height = '100%' }
     else { styles[anchor.startsWith('bottom') ? 'bottom' : 'top'] = '0'; styles[`inset-inline-${anchor.endsWith('end') ? 'end' : 'start'}`] = '0' }
   }
   return Object.entries(styles).map(([key, value]) => `${key}:${value}`).join(';')
