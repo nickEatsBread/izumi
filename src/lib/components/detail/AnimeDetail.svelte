@@ -58,6 +58,8 @@
   import { activeProfile } from '$lib/profiles/store'
   import { profileAllowsMedia } from '$lib/profiles/content'
   import ParentalBlock from '$lib/components/profiles/ParentalBlock.svelte'
+  import { themePresentation } from '$lib/themes/runtime'
+  import { episodesBelow, episodesOnSide, resolveDetail } from '$lib/themes/presentation'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -199,6 +201,20 @@
 
   let active = $state('Episodes')
   let heroPlay = $state<PlayState>({ status: 'idle' })
+  const detailTheme = $derived(resolveDetail($themePresentation))
+  const sideEpisodes = $derived(episodesOnSide($themePresentation, !$isMobile))
+  const belowEpisodes = $derived(episodesBelow($themePresentation, !$isMobile))
+  const episodeTabbed = $derived(!sideEpisodes && !belowEpisodes)
+  const desktopTabs = $derived(episodeTabbed
+    ? ['Episodes', 'Relations', 'Cast & Crew', 'Recommended', 'Details']
+    : ['Relations', 'Cast & Crew', 'Recommended', 'Details'])
+  const mobileTabs = $derived(episodeTabbed
+    ? ['Episodes', 'Overview', 'Relations', 'Characters', 'Recommended']
+    : ['Overview', 'Relations', 'Characters', 'Recommended'])
+  $effect(() => {
+    const tabs = $isMobile ? mobileTabs : desktopTabs
+    if (!tabs.includes(active)) active = tabs[0]
+  })
 
   // A TV request already chose the title/episode. Once its detail data is ready, open the same
   // source picker as a local Play press; selecting (or auto-selecting) a source then consumes the
@@ -434,6 +450,7 @@
 
       <!-- Artwork band: a bounded strip that ends in a hard cut. Nothing is written on top of it,
            so legibility no longer depends on how busy the banner is. -->
+      {#if !detailTheme.bannerHidden}
       <div bind:clientHeight={artHeight} class="hero-art relative h-[26vh] max-h-72 min-h-44 w-full overflow-hidden">
         {#if m.bannerImage}
           <img src={m.bannerImage} alt="" onload={() => (artLoaded = true)}
@@ -448,17 +465,19 @@
         {/if}
         <div class="absolute inset-x-0 bottom-0 h-1/6 bg-gradient-to-b from-transparent to-background"></div>
       </div>
+      {/if}
 
       <div class="px-4">
         <!-- `relative z-10`: the artwork band above is positioned, so it paints OVER static
              in-flow content — and this row is pulled up into it. Without a stacking context of its
              own the band covered the top of the poster the moment its image loaded, which read as
              the cover being cropped (and looked fine until then, because the band was transparent). -->
-        <div class="relative z-10 -mt-10 flex gap-4">
+        <div class="relative z-10 {detailTheme.bannerHidden ? 'mt-2' : '-mt-10'} flex gap-4">
           <!-- Covers vary in aspect; forcing them all into one ratio with object-cover crops real
                artwork the user came here to see. Follow the image's own height instead. -->
           <img use:reliableImage={cover(m)} alt=""
-               class="h-auto w-28 shrink-0 self-start rounded-xl object-contain shadow-xl min-[420px]:w-32" />
+               class="h-auto w-28 shrink-0 self-start rounded-xl object-contain shadow-xl min-[420px]:w-32"
+               style:width={detailTheme.posterWidth ? `${Math.min(detailTheme.posterWidth, 160)}px` : undefined} />
           <div class="min-w-0 flex-1 self-end">
             {#if m.title.native || m.title.romaji}
               <div class="truncate text-xs text-muted-foreground">{m.title.native || m.title.romaji}</div>
@@ -573,9 +592,15 @@
           <p class="mt-3 text-sm text-destructive">{heroPlay.message}</p>
         {/if}
 
+        {#if belowEpisodes}
+          <div class="mt-6">
+            <EpisodeList media={m} offline={$offlineMode} />
+          </div>
+        {/if}
+
         <div class="mt-6">
-          <Tabs tabs={['Episodes', 'Overview', 'Relations', 'Characters', 'Recommended']} bind:active />
-          {#if active === 'Episodes'}
+          <Tabs tabs={mobileTabs} bind:active />
+          {#if episodeTabbed && active === 'Episodes'}
             <EpisodeList media={m} offline={$offlineMode} />
           {:else if active === 'Overview'}
             <div class="mt-4 space-y-5">
@@ -637,19 +662,22 @@
     </div>
   {:else}
   <!-- Title-less banner backdrop; the info panel below overlaps its lower fade. -->
+  {#if !detailTheme.bannerHidden}
   <Hero medias={[m]} showOverlay={false} initialArtworkVisible={loadedHintBanner === banner(m)} />
-  <div class="relative {controllerUi ? '-mt-[16vh]' : '-mt-[18vh]'} px-4 pb-16 sm:px-8">
+  {/if}
+  <div class="relative px-4 pb-16 sm:px-8 {detailTheme.bannerHidden ? 'pt-8' : controllerUi ? '-mt-[16vh]' : '-mt-[18vh]'}" data-theme-surface="detail">
     {#if heroPlay.status === 'error'}
       <p class="mb-3 text-sm text-destructive">{heroPlay.message}</p>
     {/if}
 
+    {#snippet seriesInfo()}
     <!-- Hero info panel: cover + title/badges/description + action bar. -->
     <!-- The banner is the dominant artwork; the portrait is an identity anchor, not the ruler for
          the whole header. At 13rem it left a poster-height void beneath the much shorter info
          column, delaying Episodes by roughly a full D-pad viewport. An 11rem cover retains a clear
          visual identity while keeping both columns close enough in height for Episodes to follow. -->
     <div class="mb-4 flex flex-col gap-5 md:flex-row">
-      <img use:reliableImage={cover(m)} alt="" class="h-auto w-44 shrink-0 self-start rounded-lg object-contain shadow-lg" />
+      <img use:reliableImage={cover(m)} alt="" class="h-auto w-44 shrink-0 self-start rounded-lg object-contain shadow-lg" style:width={detailTheme.posterWidth ? `${detailTheme.posterWidth}px` : undefined} />
 
       <div class="min-w-0 flex-1">
         {#if m.title.native || m.title.romaji}
@@ -732,9 +760,11 @@
         </div>
       </div>
     </div>
+    {/snippet}
 
-    <Tabs tabs={['Episodes', 'Relations', 'Cast & Crew', 'Recommended', 'Details']} bind:active />
-    {#if active === 'Episodes'}
+    {#snippet desktopSecondary()}
+    <Tabs tabs={desktopTabs} bind:active />
+    {#if episodeTabbed && active === 'Episodes'}
       <EpisodeList media={m} offline={$offlineMode} />
     {:else if active === 'Relations'}
       {#if m.relations?.edges?.length}
@@ -776,6 +806,27 @@
           </section>
         {/if}
       </div>
+    {/if}
+    {/snippet}
+
+    {#if sideEpisodes}
+      <div class="flex flex-col gap-6 min-[960px]:grid min-[960px]:grid-cols-[minmax(0,1fr)_minmax(22rem,40%)] min-[960px]:items-start min-[960px]:gap-8">
+        <div class="min-w-0">
+          {@render seriesInfo()}
+          {@render desktopSecondary()}
+        </div>
+        <aside class="min-w-0 min-[960px]:sticky min-[960px]:top-10 min-[960px]:max-h-[calc(100vh-5rem)] min-[960px]:overflow-y-auto">
+          <EpisodeList media={m} offline={$offlineMode} />
+        </aside>
+      </div>
+    {:else}
+      {@render seriesInfo()}
+      {#if belowEpisodes}
+        <div class="mb-6">
+          <EpisodeList media={m} offline={$offlineMode} />
+        </div>
+      {/if}
+      {@render desktopSecondary()}
     {/if}
   </div>
   {/if}

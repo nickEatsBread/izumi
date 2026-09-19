@@ -16,10 +16,13 @@
   import Check from '@lucide/svelte/icons/check'
   import ListPlus from '@lucide/svelte/icons/list-plus'
   import { m } from '$lib/paraglide/messages.js'
+  import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
+  import { episodeDisplayModel } from '$lib/themes/host-model'
+  import type { ThemeNode as EpisodeThemeNode } from '$lib/themes/presentation'
 
   let {
     media, ep, meta, showThumb, released, isNext, watchedThrough, filler = false, dl, next, onplay, onintent, onqueue,
-    selecting = false, selectedEp = false, numberLabel, navId, navUp,
+    selecting = false, selectedEp = false, numberLabel, navId, navUp, themeCard,
   }: {
     media: Media
     ep: number
@@ -41,6 +44,7 @@
     numberLabel?: string
     navId?: string
     navUp?: string
+    themeCard?: EpisodeThemeNode
   } = $props()
   const shownNumber = $derived(numberLabel ?? String(ep))
 
@@ -60,6 +64,13 @@
   const pct = $derived(episodeBarPercent(savedPosition, trackedDone, released))
   const spoiler = $derived($hideSpoilers && !trackedDone)
   const labels = $derived(episodeLabels(ep, meta?.title, spoiler))
+  const themeModel = $derived(episodeDisplayModel(media, ep, meta, {
+    episodeTitle: labels.primary,
+    description: labels.concealSecondary ? undefined : labels.secondary,
+    still: img,
+    progress: pct,
+    score: rating ?? undefined,
+  }))
 
   const dlPct = $derived(dl && dl.bytes ? Math.round((dl.downloaded / dl.bytes) * 100) : 0)
   const dling = $derived(!!dl && (dl.status === 'downloading' || dl.status === 'paused') && !!dl.bytes)
@@ -113,11 +124,13 @@
   onclick={play}
   onkeydown={(e) => { if (released && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); play() } }}
   title={selecting ? (released ? (selectedEp ? 'Selected — tap to unselect' : 'Tap to select') : 'Not yet aired') : released ? `Play — ${labels.primary}` : isNext ? `Airing in ${countdown(next?.timeUntilAiring)}` : 'Not yet aired'}
-  class="group isolate select-none overflow-hidden rounded-xl text-left sm:rounded-lg {showThumb && img ? 'grid grid-cols-[42%_1fr] sm:flex sm:flex-col' : 'flex flex-col'}
+  class="group isolate select-none overflow-hidden rounded-xl text-left sm:rounded-lg {themeCard ? '' : showThumb && img ? 'grid grid-cols-[42%_1fr] sm:flex sm:flex-col' : 'flex flex-col'}
     {released ? 'cursor-pointer bg-secondary transition-transform hover:scale-[1.02] hover:bg-accent' : 'cursor-not-allowed bg-background/40 opacity-60'}
     {selecting && selectedEp ? 'ring-2 ring-theme' : ''}"
 >
-  {#if showThumb && img}
+  {#if themeCard}
+    <ThemeNode node={themeCard} model={themeModel} />
+  {:else if showThumb && img}
     <div class="relative z-0 aspect-video h-full min-h-24 w-full overflow-hidden bg-muted sm:h-auto sm:min-h-0">
       {#if !imgReady}<div class="absolute inset-0 skeloader"></div>{/if}
       <!-- No `transform-gpu`/`will-change-transform` — same reason as SmallCard: they permanently

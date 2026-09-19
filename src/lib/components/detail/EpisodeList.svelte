@@ -42,6 +42,8 @@
   import ListPlus from '@lucide/svelte/icons/list-plus'
   import { enqueueEpisode } from '$lib/library/local-lists'
   import { m } from '$lib/paraglide/messages.js'
+  import { themePresentation } from '$lib/themes/runtime'
+  import { resolveDetail } from '$lib/themes/presentation'
   let { media, offline = false }: { media: Media; offline?: boolean } = $props()
 
   // Offline: the playable set is exactly the DOWNLOADED episodes (the download keys carry the
@@ -73,6 +75,7 @@
     return Math.min(allEpisodes.at(-1) ?? 0, Number.isFinite(a) ? a : 0)
   })
   const watchedThrough = $derived(animeWatchedProgress(media, $localHistory, $sessionProgress, $manualProgressOverrides))
+  const episodeCard = $derived(resolveDetail($themePresentation).episodes?.card)
   const PER = 48
   // `page` stays null until the user manually pages; until then we show `autoPage` — the page that
   // holds the next episode to watch — so opening a long-running series (One Piece) lands on where
@@ -587,6 +590,7 @@
           onplay={tap}
           onintent={intent}
           onqueue={$episodeQueueEnabled ? queueEpisode : undefined}
+          themeCard={episodeCard}
         />
       {/each}
     </div>
