@@ -8,15 +8,50 @@ The shipped appearance remains the default. Cinema demonstrates an optional top-
 
 ## Theme API 1 coverage
 
-- Existing appearance controls: semantic colors, font family and scale, corner radius, backdrop and glass effects.
-- Home hero: visibility, desktop/mobile height, rotation interval, rank badge visibility, an optional badge template and an optional entire hero template.
-- Home rows: carousel or wrapping grid, card width and spacing, row spacing, artwork shape and corners (these style the default cover; a custom card template owns its own shape), heading size, and optional ordinary media-card templates.
+API 1 stays additive: existing packages remain valid. New keys are optional.
+
+Coverage chips in Theme Studio (`Home`, `Shell`, `Details`, `Player`, or `Full`) reflect the slots a draft actually uses.
+
+### Appearance
+
+Semantic colors, font family and scale, corner radius, backdrop and glass effects.
+
+### Chrome
+
+- Information density: `compact`, `comfortable`, or `large`.
+- Hide poster titles (`hideCardLabels`).
+- True black canvas on dark palettes (`trueBlack`).
+- Navigation placement: side rail, top bar, or bottom bar. Phones keep the bottom bar. Destination order stays in Settings → Navigation.
+- Compact shell padding.
+
+### Home
+
+- Hero: visibility, desktop/mobile height, rotation interval, rank badge visibility, an optional badge template and an optional entire hero template.
+- Rows: carousel or wrapping grid, card width and spacing, row spacing, artwork shape and corners (these style the default cover; a custom card template owns its own shape), heading size, and optional media-card templates.
 - Per-row overrides follow stable row identities, so reordering a row does not move its visual settings to another row. Resolution is global defaults → semantic row role → exact scoped row ID. For example, `continue` can override every Continue Watching row and `anime:continue` can target one catalog.
-- Theme Studio's Layout tab exposes common controls, discovers rows on the current page, and provides a validated JSON editor for component templates. The existing home editor still owns row content, visibility and order.
 
-This is the first presentation API, not full replacement coverage for every screen. The shell and settings use existing global tokens; their component structures are not replaceable. Detail pages, specialized progress cards, player overlays, native surfaces and the separate TV client do not yet expose layout templates. Row arrangement can affect specialized cards, but custom card templates currently render through `SmallCard`. ZIP archives, remote font/image packs, arbitrary CSS, JavaScript and native plugins are not supported.
+### Cards
 
-See [the theme-system audit](THEME_SYSTEM_AUDIT.md) for remaining limitations, comparisons with established theme systems, and a proposed implementation order.
+Optional templates for three families: `poster` (ordinary tiles), `continue` (resume cards), and `search` (search grids). A home-row `card` template still wins on that row. Search falls back to the poster family when it has no template of its own.
+
+### Series page
+
+- Page composition: stacked tabs (`stack`) or a split info + episode rail (`split`).
+- Episode placement: inside the Episodes tab, a right-hand rail, or below the series info. A right-hand rail becomes a list under the info column on narrow windows.
+- Banner visibility and poster width.
+- Optional episode-card templates (non-interactive, like poster tiles). The cards / compact / grid control in Appearance still chooses how the list is arranged.
+
+### Player
+
+Seekbar thickness and color. Skip rules, subtitle files and playback shortcuts stay in Settings.
+
+### What themes do not own
+
+Home row order and visibility, navigation destinations, episode list density, skip rules, subtitle file style, recovery chrome (Theme Studio and the installation preview bar keep independent palettes), and native/TV shells beyond the tokens already applied.
+
+ZIP archives, remote font/image packs, arbitrary CSS, JavaScript and native plugins are not supported. Wallpaper file upload is reserved for a later additive key.
+
+Theme Studio's Layout tab exposes common controls, discovers rows on the current page, shows a template outline, and provides a validated JSON editor for component templates. The existing home editor still owns row content, visibility and order.
 
 ## Authoring and publishing
 
@@ -24,9 +59,9 @@ The catalog repository owns the [format reference](https://github.com/nickEatsBr
 
 Packages declare `app: "izumi"`, `kind: "theme-package"`, `schemaVersion: 1`, `themeApi: 1`, a stable ID, numeric `major.minor.patch` version, author metadata and `design`. The `design` contains appearance values and optional `presentation`. Packages omit local saved-theme IDs and timestamps. Existing personal exports are normalized into an installable shared theme. The `shared.*` ID namespace is reserved for these client-created imports; external packages and catalog listings cannot claim it. Saved installations and their rollback records retain valid shared IDs when loaded.
 
-Templates compose `stack`, `row`, `grid`, `overlay`, `text`, `artwork` and `action` nodes. Text and artwork bind to a small host display model. Hero actions call the client's existing play, details, favorite and slide-navigation callbacks. Cards keep their host-owned detail links. Field types are fixed across hosts: `rankPosition` and `score` (0-100) are numbers, every other field is a string. Text nodes render `score` as a percentage such as `78%`. Optional conditions check presence for any field; `atMost` is accepted only for the numeric fields. Hosts bind different fields: hero and badge templates see the full model, including `description`, `rank` and `rankPosition`, while card templates see `title`, `poster`, `backdrop`, `format`, `year` and `score` — a card condition on a hero-only field simply never matches.
+Templates compose `stack`, `row`, `grid`, `overlay`, `text`, `artwork` and `action` nodes. Text and artwork bind to a host display model. Hero actions call the client's existing play, details, favorite, list, trailer, share and slide-navigation callbacks when the host provides them. Cards keep their host-owned detail or play links. Field types are fixed across hosts: `rankPosition`, `score` (0-100), `duration` (minutes), `episodeNumber` and `progress` (0-100) are numbers; every other field is a string. Artwork may be `poster`, `backdrop`, `logo` or `still`. Text nodes render `score` and `progress` as a percentage such as `78%`, and `duration` as `24m`. Optional conditions check presence for any field; `atMost` is accepted only for the numeric fields. Hosts bind different fields: a card condition on a missing field simply never matches.
 
-Style values are a bounded allowlist. There are no arbitrary selectors, URLs, HTML or executable expressions. Text is escaped, artwork comes from the host media record, and templates are confined to their component. A template is limited to 96 nodes and eight nesting levels. Card and rank templates cannot nest interactive controls inside a host link. Theme Studio and installation-preview recovery controls keep independent styling.
+Style values are a bounded allowlist. There are no arbitrary selectors, URLs, HTML or executable expressions. Text is escaped, artwork comes from the host media record, and templates are confined to their component. A template is limited to 96 nodes and eight nesting levels. Card, rank and episode templates cannot nest interactive controls inside a host link. Theme Studio and installation-preview recovery controls keep independent styling.
 
 `src/lib/themes/presentation.ts` is the client contract. Its pure validator is mirrored in the catalog's `scripts/presentation.ts`; keep them aligned when extending the API. Changes that break existing packages need an API version change. Existing API 1 packages should remain renderable after compatible additions.
 
@@ -47,16 +82,18 @@ The client retains the existing limit of 24 saved designs. Install writes attemp
 | Area | Location |
 | --- | --- |
 | Presentation contract and resolution | `src/lib/themes/presentation.ts` |
+| Host display-model bindings | `src/lib/themes/host-model.ts` |
 | Package, release and catalog parsing | `src/lib/themes/packages.ts` |
 | Bounded downloads, integrity and cache | `src/lib/themes/catalog.ts` |
 | Install, preview, merge and rollback | `src/lib/themes/installed.ts` |
 | Active presentation store | `src/lib/themes/runtime.ts` |
+| Document chrome (density, true black, seekbar vars) | `src/lib/theme.ts`, `src/app.css` |
 | Declarative renderer and layout editor | `src/lib/components/themes/` |
 | Gallery and installed library | `src/routes/app/settings/themes/+page.svelte` |
-| Host integration | `Hero.svelte`, `HomeRowFrame.svelte`, `Carousel.svelte`, `SmallCard.svelte` |
+| Host integration | `Hero.svelte`, `HomeRowFrame.svelte`, `Carousel.svelte`, `SmallCard.svelte`, `ContinueCard.svelte`, `SearchResults.svelte`, `AnimeDetail.svelte`, `EpisodeCard.svelte`, `Sidebar.svelte`, `Seekbar.svelte` |
 
 ## Validation
 
-Focused tests cover package validation, rejected styles and versions, bounded downloads, checksums, cached listings, stable row overrides, preview cancellation, personal edits through updates, rollback, origin conflicts, reinstalling a removed design and failed-install recovery. Existing Theme Studio, hero and carousel navigation checks are included in the verification run.
+Focused tests cover package validation, rejected styles and versions, bounded downloads, checksums, cached listings, stable row overrides, page composition helpers, card-family resolution, coverage labels, preview cancellation, personal edits through updates, rollback, origin conflicts, reinstalling a removed design and failed-install recovery. Existing Theme Studio, hero, carousel and series-page navigation checks are included in the verification run.
 
-Browser QA uses the real gallery and public package links. A temporary local fixture exercises the real hero, frame, carousel and media card components with deterministic content when the external catalog service is unavailable. The fixture is removed before committing. Responsive checks cover desktop and a 390px viewport. Native player behavior and physical mobile/TV deployment require their normal platform test environments.
+Browser QA uses the real gallery and public package links. Responsive checks cover desktop and a 390px viewport, including a split series page collapsing the episode rail below the info column. Native player behavior and physical mobile/TV deployment require their normal platform test environments.
