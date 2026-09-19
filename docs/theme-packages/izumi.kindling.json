@@ -5,9 +5,9 @@
   "themeApi": 1,
   "id": "izumi.kindling",
   "name": "Kindling",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "Izumi",
-  "description": "Cool gray canvas, rose accent, Nunito. Home opens on a rotating full-bleed featured banner with Watch Now and View Details, then horizontal poster rows. Continue Watching uses 16:9 episode stills. The series page keeps the banner, an overlapping cover, and a right-hand rail of episode stills.",
+  "description": "Cool gray canvas, rose accent, Nunito. Home opens on a rotating full-bleed featured banner with Watch Now and View Details, then horizontal poster rows. The series page uses icon facts, an overlapping cover, and a right-hand rail with one short episode tile per row — square still on the left, title and synopsis on the right, grow-on-hover.",
   "design": {
     "tokens": {
       "scheme": "dark",
@@ -85,26 +85,88 @@
         "layout": "split",
         "bannerHidden": false,
         "posterWidth": 230,
+        "facts": {
+          "type": "stack",
+          "style": { "gap": 12 },
+          "children": [
+            {
+              "type": "row",
+              "style": { "gap": 16, "align": "center" },
+              "children": [
+                { "type": "row", "when": { "field": "score" }, "style": { "gap": 8, "align": "center" }, "children": [
+                  { "type": "icon", "icon": "score" },
+                  { "type": "text", "text": "Rating:", "style": { "fontWeight": 700, "fontSize": 13 } },
+                  { "type": "text", "field": "score", "style": { "fontWeight": 700, "fontSize": 13 } }
+                ]},
+                { "type": "row", "when": { "field": "format" }, "style": { "gap": 8, "align": "center" }, "children": [
+                  { "type": "icon", "icon": "format" },
+                  { "type": "text", "text": "Format:", "style": { "fontWeight": 700, "fontSize": 13 } },
+                  { "type": "text", "field": "format", "style": { "fontWeight": 700, "fontSize": 13 } }
+                ]},
+                { "type": "row", "when": { "field": "episodeCount" }, "style": { "gap": 8, "align": "center" }, "children": [
+                  { "type": "icon", "icon": "episodes" },
+                  { "type": "text", "text": "Episodes:", "style": { "fontWeight": 700, "fontSize": 13 } },
+                  { "type": "text", "field": "episodeCount", "style": { "fontWeight": 700, "fontSize": 13 } }
+                ]},
+                { "type": "row", "when": { "field": "members" }, "style": { "gap": 8, "align": "center" }, "children": [
+                  { "type": "icon", "icon": "reviews" },
+                  { "type": "text", "text": "Members:", "style": { "fontWeight": 700, "fontSize": 13 } },
+                  { "type": "text", "field": "members", "style": { "fontWeight": 700, "fontSize": 13 } }
+                ]}
+              ]
+            },
+            {
+              "type": "row",
+              "style": { "gap": 14, "padding": 10, "background": "muted", "radius": 8, "align": "center" },
+              "children": [
+                { "type": "row", "when": { "field": "season" }, "style": { "gap": 6, "align": "center" }, "children": [
+                  { "type": "icon", "icon": "season" },
+                  { "type": "text", "field": "season", "style": { "fontWeight": 700, "fontSize": 13 } }
+                ]},
+                { "type": "row", "when": { "field": "status" }, "style": { "gap": 6, "align": "center" }, "children": [
+                  { "type": "icon", "icon": "status" },
+                  { "type": "text", "field": "status", "style": { "fontWeight": 700, "fontSize": 13 } }
+                ]},
+                { "type": "row", "when": { "field": "studio" }, "style": { "gap": 6, "align": "center" }, "children": [
+                  { "type": "icon", "icon": "studio" },
+                  { "type": "text", "field": "studio", "style": { "fontWeight": 700, "fontSize": 13 } }
+                ]},
+                { "type": "row", "when": { "field": "source" }, "style": { "gap": 6, "align": "center" }, "children": [
+                  { "type": "icon", "icon": "source" },
+                  { "type": "text", "field": "source", "style": { "fontWeight": 700, "fontSize": 13 } }
+                ]},
+                { "type": "row", "when": { "field": "country" }, "style": { "gap": 6, "align": "center" }, "children": [
+                  { "type": "icon", "icon": "country" },
+                  { "type": "text", "field": "country", "style": { "fontWeight": 700, "fontSize": 13 } }
+                ]}
+              ]
+            }
+          ]
+        },
         "episodes": {
           "placement": "right",
+          "arrangement": "list",
+          "hover": "scale",
           "card": {
-            "type": "stack",
-            "style": { "gap": 8 },
+            "type": "row",
+            "style": { "wrap": "nowrap", "align": "stretch", "gap": 0 },
             "children": [
+              { "type": "artwork", "artwork": "still", "style": { "width": 36, "aspect": "1 / 1", "fit": "cover", "shrink": 0 } },
               {
-                "type": "overlay",
+                "type": "stack",
+                "style": { "grow": 1, "padding": 12, "gap": 6 },
                 "children": [
-                  { "type": "artwork", "artwork": "still", "style": { "aspect": "16 / 9", "radius": 8, "fit": "cover" } },
-                  { "type": "text", "field": "duration", "when": { "field": "duration" }, "style": { "anchor": "bottom-end", "color": "#FFFFFF", "fontSize": 12, "fontWeight": 700, "padding": 8 } }
-                ]
-              },
-              { "type": "text", "field": "title", "style": { "fontWeight": 800, "fontSize": 14 } },
-              {
-                "type": "row",
-                "style": { "justify": "space-between", "align": "center" },
-                "children": [
-                  { "type": "text", "field": "episodeTitle", "when": { "field": "episodeTitle" }, "style": { "color": "muted-foreground", "fontSize": 12, "grow": 1 } },
-                  { "type": "text", "field": "episodeNumber", "style": { "fontWeight": 700, "fontSize": 13 } }
+                  {
+                    "type": "row",
+                    "style": { "justify": "space-between", "align": "start", "wrap": "nowrap", "gap": 8 },
+                    "children": [
+                      { "type": "text", "field": "episodeTitle", "style": { "fontWeight": 800, "fontSize": 14, "grow": 1 } },
+                      { "type": "text", "field": "duration", "when": { "field": "duration" }, "style": { "fontSize": 12, "fontWeight": 700, "shrink": 0 } }
+                    ]
+                  },
+                  { "type": "meter", "field": "progress", "when": { "field": "progress", "atMost": 100 }, "style": { "minHeight": 4 } },
+                  { "type": "text", "field": "description", "when": { "field": "description" }, "style": { "color": "muted-foreground", "fontSize": 12 } },
+                  { "type": "text", "field": "airDate", "when": { "field": "airDate" }, "style": { "color": "muted-foreground", "fontSize": 12 } }
                 ]
               }
             ]

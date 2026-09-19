@@ -24,7 +24,9 @@ describe('example theme packages', () => {
     expect(presentation?.hero?.hidden).not.toBe(true)
     expect(presentation?.hero?.template?.type).toBe('overlay')
     expect(presentation?.rows?.defaults?.layout).toBe('carousel')
-    expect(presentation?.detail).toMatchObject({ layout: 'split', bannerHidden: false, posterWidth: 230, episodes: { placement: 'right' } })
+    expect(presentation?.detail).toMatchObject({ layout: 'split', bannerHidden: false, posterWidth: 230, episodes: { placement: 'right', arrangement: 'list', hover: 'scale' } })
+    expect(presentation?.detail?.facts?.type).toBe('stack')
+    expect(presentation?.detail?.episodes?.card?.type).toBe('row')
     expect(presentation?.shell).toMatchObject({ nav: 'sidebar', compact: true })
   })
   it('recreates Ledger as a continue-watching banner home and fluid series page', () => {

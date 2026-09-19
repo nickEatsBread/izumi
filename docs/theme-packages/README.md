@@ -8,7 +8,7 @@ Kindling, Ledger and Tidal recreate default home and series compositions (featur
 
 | Package | Intent |
 | --- | --- |
-| [Kindling](izumi.kindling.json) | Cool gray canvas, rose accent. Rotating featured banner with Watch Now, horizontal poster rows, 16:9 resume stills, series page with banner + overlapping cover + right-hand episode stills. |
+| [Kindling](izumi.kindling.json) | Cool gray canvas, rose accent. Rotating featured banner with Watch Now, horizontal poster rows, series page with icon facts and a right-hand rail of one short episode tile per row. |
 | [Ledger](izumi.ledger.json) | Near-black canvas, violet accent. Continue-watching banner, landscape resume stills, poster carousels, series page with a tall fluid banner, overlapping cover and episode stills below. |
 | [Tidal](izumi.tidal.json) | Living-room canvas, top navigation, full-bleed featured title, poster rows, series page with Play / title / synopsis on the artwork and episode stills below. |
 | [Ember](izumi.ember.json) | Warm crimson canvas and tinted cards, landscape resume art, split episode rail. |
