@@ -5,48 +5,118 @@
   "themeApi": 1,
   "id": "izumi.ledger",
   "name": "Ledger",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Izumi",
-  "description": "A media-server library: teal accent, hidden home hero, wrapping poster grid, compact type. Continue Watching keeps a landscape carousel. Community 'hide the banner' snippets map to hero.hidden here.",
+  "description": "Near-black media-server look with a violet accent. Home uses a continue-watching banner, large 16:9 resume stills, then poster carousels beside an icon sidebar. The series page is a tall fluid banner, overlapping cover on the left, metadata, and a grid of episode stills below.",
   "design": {
     "tokens": {
       "scheme": "dark",
-      "background": "222 14% 7%",
-      "foreground": "210 20% 96%",
-      "muted": "222 12% 14%",
-      "mutedForeground": "215 10% 65%",
-      "primary": "210 20% 96%",
-      "primaryForeground": "222 14% 8%",
-      "secondary": "222 12% 14%",
-      "secondaryForeground": "210 20% 96%",
-      "accent": "222 12% 18%",
-      "accentForeground": "210 20% 96%",
-      "border": "222 10% 22%",
-      "input": "222 10% 18%",
-      "ring": "173 80% 40%",
-      "card": "222 14% 10%",
-      "cardForeground": "210 20% 96%",
-      "theme": "173 80% 40%"
+      "background": "0 0% 3%",
+      "foreground": "0 0% 90%",
+      "muted": "0 0% 8%",
+      "mutedForeground": "0 0% 58%",
+      "primary": "247 69% 60%",
+      "primaryForeground": "0 0% 100%",
+      "secondary": "0 0% 9%",
+      "secondaryForeground": "0 0% 92%",
+      "accent": "0 0% 12%",
+      "accentForeground": "0 0% 92%",
+      "border": "0 0% 16%",
+      "input": "0 0% 10%",
+      "ring": "247 69% 60%",
+      "card": "0 0% 6%",
+      "cardForeground": "0 0% 92%",
+      "theme": "247 69% 60%"
     },
-    "radius": 0.4,
+    "radius": 0.5,
     "font": "system",
-    "fontScale": 0.95,
+    "fontScale": 1,
     "backdrop": "solid",
     "backdropStrength": 0,
     "glassBlur": 0,
     "presentation": {
-      "density": "compact",
+      "density": "comfortable",
+      "trueBlack": false,
+      "hideCardLabels": false,
       "shell": { "nav": "sidebar", "compact": false },
-      "player": { "seekbarHeight": 5, "seekbarColor": "theme" },
-      "hero": { "hidden": true },
+      "player": { "seekbarHeight": 3, "seekbarColor": "foreground" },
+      "hero": {
+        "hidden": false,
+        "height": 38,
+        "mobileHeight": 36,
+        "rotate": false,
+        "rankHidden": true,
+        "template": {
+          "type": "overlay",
+          "style": { "minHeight": 260 },
+          "children": [
+            { "type": "artwork", "artwork": "backdrop", "style": { "anchor": "fill", "fit": "cover" } },
+            {
+              "type": "stack",
+              "style": { "anchor": "bottom-start", "padding": 32, "gap": 6, "maxWidth": 720 },
+              "children": [
+                { "type": "text", "text": "Continue watching", "style": { "color": "#FFFFFF", "fontSize": 14, "fontWeight": 700 } },
+                { "type": "text", "field": "title", "style": { "color": "#FFFFFF", "fontSize": 32, "fontWeight": 800 } }
+              ]
+            }
+          ]
+        }
+      },
       "detail": {
         "layout": "stack",
-        "bannerHidden": true,
-        "episodes": { "placement": "tab" }
+        "bannerHidden": false,
+        "posterWidth": 230,
+        "episodes": {
+          "placement": "below",
+          "card": {
+            "type": "stack",
+            "style": { "gap": 8 },
+            "children": [
+              { "type": "artwork", "artwork": "still", "style": { "aspect": "16 / 9", "radius": 8, "fit": "cover" } },
+              { "type": "text", "field": "episodeTitle", "when": { "field": "episodeTitle" }, "style": { "fontWeight": 800, "fontSize": 16 } },
+              {
+                "type": "row",
+                "style": { "justify": "space-between", "align": "center" },
+                "children": [
+                  { "type": "text", "field": "episodeNumber", "style": { "color": "muted-foreground", "fontSize": 13, "fontWeight": 700 } },
+                  { "type": "text", "field": "duration", "when": { "field": "duration" }, "style": { "color": "muted-foreground", "fontSize": 12 } }
+                ]
+              }
+            ]
+          }
+        }
       },
       "rows": {
-        "defaults": { "layout": "grid", "width": 132, "gap": 10, "spacing": 26, "radius": 6, "titleSize": 16 },
-        "byId": { "continue": { "layout": "carousel", "width": 256, "aspect": "landscape", "radius": 8 } }
+        "defaults": { "layout": "carousel", "width": 168, "gap": 14, "spacing": 32, "radius": 8, "titleSize": 20, "aspect": "poster" },
+        "byId": { "continue": { "layout": "carousel", "width": 340, "aspect": "landscape", "radius": 8, "gap": 16 } }
+      },
+      "cards": {
+        "poster": {
+          "type": "stack",
+          "style": { "gap": 8 },
+          "children": [
+            { "type": "artwork", "artwork": "poster", "style": { "aspect": "2 / 3", "radius": 8, "fit": "cover" } },
+            { "type": "text", "field": "title", "style": { "fontWeight": 700, "fontSize": 13 } },
+            { "type": "text", "field": "year", "when": { "field": "year" }, "style": { "color": "muted-foreground", "fontSize": 12 } }
+          ]
+        },
+        "continue": {
+          "type": "stack",
+          "style": { "gap": 8 },
+          "children": [
+            { "type": "artwork", "artwork": "still", "style": { "aspect": "16 / 9", "radius": 8, "fit": "cover" } },
+            { "type": "text", "field": "episodeTitle", "when": { "field": "episodeTitle" }, "style": { "fontWeight": 800, "fontSize": 15 } },
+            {
+              "type": "row",
+              "style": { "justify": "space-between", "align": "center" },
+              "children": [
+                { "type": "text", "field": "episodeNumber", "style": { "color": "muted-foreground", "fontSize": 13, "fontWeight": 700 } },
+                { "type": "text", "field": "duration", "when": { "field": "duration" }, "style": { "color": "muted-foreground", "fontSize": 12 } }
+              ]
+            },
+            { "type": "text", "field": "title", "style": { "color": "muted-foreground", "fontSize": 12 } }
+          ]
+        }
       }
     }
   }

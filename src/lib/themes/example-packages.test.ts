@@ -18,4 +18,30 @@ describe('example theme packages', () => {
     expect(pkg.id).toMatch(/^izumi\.[a-z0-9-]+$/)
     expect(themeCoverage(pkg.design.presentation).length).toBeGreaterThan(0)
   })
+  it('recreates Kindling as a featured-banner home and split series page, not a hidden-hero grid', () => {
+    const pkg = parseThemePackage(JSON.parse(readFileSync(new URL('../../../docs/theme-packages/izumi.kindling.json', import.meta.url), 'utf8')))
+    const presentation = pkg.design.presentation
+    expect(presentation?.hero?.hidden).not.toBe(true)
+    expect(presentation?.hero?.template?.type).toBe('overlay')
+    expect(presentation?.rows?.defaults?.layout).toBe('carousel')
+    expect(presentation?.detail).toMatchObject({ layout: 'split', bannerHidden: false, posterWidth: 230, episodes: { placement: 'right' } })
+    expect(presentation?.shell).toMatchObject({ nav: 'sidebar', compact: true })
+  })
+  it('recreates Ledger as a continue-watching banner home and fluid series page', () => {
+    const pkg = parseThemePackage(JSON.parse(readFileSync(new URL('../../../docs/theme-packages/izumi.ledger.json', import.meta.url), 'utf8')))
+    const presentation = pkg.design.presentation
+    expect(presentation?.hero?.hidden).not.toBe(true)
+    expect(presentation?.hero?.template?.type).toBe('overlay')
+    expect(presentation?.detail).toMatchObject({ layout: 'stack', bannerHidden: false, posterWidth: 230, episodes: { placement: 'below' } })
+    expect(presentation?.rows?.byId?.continue?.aspect).toBe('landscape')
+  })
+  it('recreates Tidal as a full-bleed living-room home and overlay series page', () => {
+    const pkg = parseThemePackage(JSON.parse(readFileSync(new URL('../../../docs/theme-packages/izumi.tidal.json', import.meta.url), 'utf8')))
+    const presentation = pkg.design.presentation
+    expect(presentation?.hero?.hidden).not.toBe(true)
+    expect(presentation?.hero?.height).toBeGreaterThanOrEqual(55)
+    expect(presentation?.shell?.nav).toBe('top')
+    expect(presentation?.detail?.layout).toBe('overlay')
+    expect(presentation?.detail?.episodes?.placement).toBe('below')
+  })
 })

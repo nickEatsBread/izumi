@@ -1,37 +1,36 @@
 # Example theme packages
 
-Installable Theme API 1 JSON for Settings → Themes → Import file (or Add from link once published). Each package is a complete appearance: tokens, chrome and optional templates.
+Installable Theme API 1 JSON for Settings → Themes → Import file (or Add from link once published). Each package is a complete appearance: tokens, chrome and templates for home, series, cards and shell.
 
-These are original izumi designs. They chase looks that show up often in living-room clients, compact library managers and community CSS snippets (hidden heroes, true-black canvases, landscape resume cards, split series pages). They are not ports of another client's format.
+Kindling, Ledger and Tidal recreate default home and series compositions (featured banner, poster rows, episode stills, overlay or split series pages). Ember, Halo and Orchid are original izumi looks that exercise other slots. They are not ports of another client's format.
 
 ## Packages
 
 | Package | Intent |
 | --- | --- |
-| [Tidal](izumi.tidal.json) | Near-black ocean canvas, blue accent, landscape resume cards, split series page with a right-hand episode rail. |
-| [Ember](izumi.ember.json) | Warm crimson canvas and tinted cards, red accent, landscape resume art, same split episode rail. |
-| [Kindling](izumi.kindling.json) | Compact true-black library, razor red accent, hidden hero, wrapping poster grid, dense side rail. |
-| [Ledger](izumi.ledger.json) | Teal media-server library, hidden home hero and series banner, wrapping poster grid. Continue Watching stays a landscape carousel. |
+| [Kindling](izumi.kindling.json) | Cool gray canvas, rose accent. Rotating featured banner with Watch Now, horizontal poster rows, 16:9 resume stills, series page with banner + overlapping cover + right-hand episode stills. |
+| [Ledger](izumi.ledger.json) | Near-black canvas, violet accent. Continue-watching banner, landscape resume stills, poster carousels, series page with a tall fluid banner, overlapping cover and episode stills below. |
+| [Tidal](izumi.tidal.json) | Living-room canvas, top navigation, full-bleed featured title, poster rows, series page with Play / title / synopsis on the artwork and episode stills below. |
+| [Ember](izumi.ember.json) | Warm crimson canvas and tinted cards, landscape resume art, split episode rail. |
 | [Halo](izumi.halo.json) | Frosted aurora glass, top navigation bar, large landscape tiles, split series page. |
 | [Orchid](izumi.orchid.json) | Violet living-room canvas, mesh backdrop, titles over posters, split episode rail. |
 
 ## How to install
 
-Settings → Themes → Import file, then choose one of the JSON files in this folder. Preview before installing.
+Settings → Themes → Import file, then choose one of the JSON files in this folder. Preview before installing. Re-import after a package version bump to pick up layout changes.
 
 ## What translated well
 
-- Palettes (near-black, true black, warm crimson, teal, violet, icy glass).
-- Hiding the home hero and series banner (the usual “hide the banner” snippet).
-- Landscape resume cards vs portrait posters.
-- Compact wrapping grids vs spacious carousels.
-- Split series pages with a right-hand episode rail.
-- Top vs side vs bottom chrome (phones keep the bottom bar).
+- Palettes and type stacks the host already ships (including Nunito).
+- Full-bleed home heroes via a hero template (title, metadata, Watch / Details).
+- Landscape resume stills vs portrait posters.
+- Split series pages with a right-hand episode rail, stacked banners with episodes below, and overlay series pages with Play on the artwork.
+- Top vs side chrome (phones keep the bottom bar).
 - Seekbar colour and thickness.
 
 ## What did not
 
-- **Arbitrary CSS / selectors.** Snippet catalogues that hide one DOM node, replace a logo, or restyle a hover tray have no equivalent. Izumi only hides surfaces that have slots (`hero.hidden`, `detail.bannerHidden`, `hideCardLabels`).
+- **Arbitrary CSS / selectors.** Snippet catalogues that hide one DOM node, replace a logo, or restyle a hover tray have no equivalent.
 - **Plugins and effects.** Snow overlays, custom CSS managers and executable UI plugins stay out of the format.
 - **Gradients as the accent.** A package has one `theme` token, not a three-stop custom gradient.
 - **Native liquid glass.** `glassBlur` plus an aurora/mesh backdrop is the closest chrome; it is not a platform tab bar.
