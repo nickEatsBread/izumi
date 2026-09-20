@@ -60,17 +60,18 @@ describe('theme presentation contract', () => {
     const layout = parsePresentation({
       density: 'compact', hideCardLabels: true, trueBlack: true,
       hero: { hidden: true },
-      detail: { layout: 'split', bannerHidden: true, posterWidth: 220, episodes: { placement: 'right', card: { type: 'text', field: 'episodeTitle' } } },
-      shell: { nav: 'top', compact: true },
+      detail: { layout: 'split', bannerHidden: true, posterWidth: 220, bannerScale: 'banner', episodes: { placement: 'right', arrangement: 'carousel', order: 'flip', search: false, card: { type: 'text', field: 'episodeTitle' } } },
+      shell: { nav: 'top', compact: true, overlay: 'fade', press: 'sink' },
       player: { seekbarHeight: 8, seekbarColor: 'theme' },
       cards: { poster: { type: 'artwork', artwork: 'poster' }, continue: { type: 'text', field: 'progress' }, search: { type: 'text', field: 'title' } },
     })
     expect(layout.density).toBe('compact')
     expect(layout.detail?.layout).toBe('split')
-    expect(layout.detail?.episodes?.placement).toBe('right')
-    expect(layout.shell?.nav).toBe('top')
+    expect(layout.detail?.bannerScale).toBe('banner')
+    expect(layout.detail?.episodes).toMatchObject({ placement: 'right', arrangement: 'carousel', order: 'flip', search: false })
+    expect(layout.shell).toMatchObject({ nav: 'top', compact: true, overlay: 'fade', press: 'sink' })
     expect(layout.player?.seekbarColor).toBe('theme')
-    expect(parsePresentation({ hero: { height: 40 } }).hero?.height).toBe(40)
+    expect(parsePresentation({ hero: { height: 40, scale: 'banner' } }).hero).toMatchObject({ height: 40, scale: 'banner' })
   })
   it('rejects unknown presentation keys, executable seekbar colors and nested episode actions', () => {
     expect(() => parsePresentation({ wallpaper: 'https://example.test' })).toThrow('unsupported')
