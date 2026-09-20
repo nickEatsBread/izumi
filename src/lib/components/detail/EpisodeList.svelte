@@ -303,7 +303,7 @@
       </button>
     {/if}
   {/if}
-  <div class="min-[960px]:max-h-[calc(100vh-5rem)] min-[960px]:overflow-y-auto">
+  <div class={episodeTheme?.placement === 'right' ? 'min-[960px]:max-h-[calc(100vh-5rem)] min-[960px]:overflow-y-auto' : ''}>
   {#if playState.status === 'error'}
     <p class="mb-3 text-sm text-destructive">{playState.message}</p>
   {/if}

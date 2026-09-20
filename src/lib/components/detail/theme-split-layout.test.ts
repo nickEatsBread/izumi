@@ -30,6 +30,7 @@ describe('themed series page composition', () => {
     expect(list).toContain('episodeGridLayout')
     expect(list).toContain('w-[min(100%,18rem)]')
     expect(list).toContain('gap-3 min-[500px]:grid-cols-2')
+    expect(list).toContain("episodeTheme?.placement === 'right' ? 'min-[960px]:max-h-[calc(100vh-5rem)] min-[960px]:overflow-y-auto'")
     expect(detail).toContain("gap-x-6 gap-y-8' : 'gap-4'")
     expect(detail).toContain("shrink-0' : 'w-[152px]'")
     expect(card).toContain('{#if themeCard}')
