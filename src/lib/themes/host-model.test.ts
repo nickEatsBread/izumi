@@ -37,6 +37,10 @@ describe('theme host display model', () => {
     expect(model.source).toBeUndefined()
     expect(model.country).toBeUndefined()
   })
+  it('strips complete markup and leftover angle brackets from descriptions', () => {
+    expect(mediaDisplayModel({ ...media, description: '<i>A story.</i>' }).description).toBe('A story.')
+    expect(mediaDisplayModel({ ...media, description: '<script alert' }).description).toBe('script alert')
+  })
   it('adds episode stills, titles and progress without stringifying numbers', () => {
     const model = episodeDisplayModel(media, 8, {
       title: 'From Zero',

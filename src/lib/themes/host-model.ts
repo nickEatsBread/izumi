@@ -6,7 +6,7 @@ import type { DisplayModel } from './presentation'
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
 
 function strip(value?: string): string {
-  return (value ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+  return (value ?? '').replace(/<[^>]*>/g, '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim()
 }
 
 /** Shared host bindings so every surface formats score, duration and artwork the same way. */
