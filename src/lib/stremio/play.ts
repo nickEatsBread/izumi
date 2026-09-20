@@ -1931,7 +1931,10 @@ export async function playEpisode(
       // failure would look exactly like nothing happening.
       hidden: remoteHidden,
     } : current)
-    onState({ status: 'error', message })
+    // The visible picker already owns this copy. Repeating it on the page (series header, episode
+    // rail) left a stranded error under the dialog.
+    if (remoteHidden) onState({ status: 'error', message })
+    else onState({ status: 'idle' })
   }
 
   // --- debrid cache state ----------------------------------------------------

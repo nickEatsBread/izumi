@@ -11,6 +11,14 @@ describe('mobile source picker layout', () => {
     expect(source).toContain("{$isMobile ? '' : 'place-items-center p-4'}")
   })
 
+  it('opens with a fade and a bottom-origin scale, matching the source dialog', () => {
+    expect(source).toContain("import { fade, scale } from 'svelte/transition'")
+    expect(source).toContain('transition:fade={{ duration: $gameMode ? 0 : 200 }}')
+    expect(source).toContain('in:scale={{ duration: $gameMode ? 0 : 200, start: 0.95, opacity: 1 }}')
+    expect(source).toContain('out:scale={{ duration: $gameMode ? 0 : 200, start: 0.95, opacity: 1 }}')
+    expect(source).toContain('transform-origin: bottom center')
+  })
+
   it('clears the Android system bars and a landscape display cutout', () => {
     expect(source).toContain('env(safe-area-inset-top)')
     expect(source).toContain('env(safe-area-inset-bottom)')
@@ -112,8 +120,18 @@ describe('empty source recovery', () => {
   it('links source-related playback failures directly to source management', () => {
     expect(source).toContain("classifyPlaybackFailure(playbackError) === 'no-results'")
     expect(source).toContain('onclick={openSourceSettings}')
-    expect(source).toContain('>Open Sources</button>')
+    expect(source).toContain('{emptyCopy.action}')
+    expect(source).toContain('No sources set up')
+    expect(source).not.toContain('No sources to show.')
+    expect(source).not.toContain('>Open Sources</button>')
     expect(source).toContain("goto('/app/settings/sources?tab=manage', { replaceState })")
+  })
+
+  it('uses one empty panel instead of an error banner plus a leftover list message', () => {
+    expect(source).toContain('const setupEmpty')
+    expect(source).toContain('{#if playbackError && !setupEmpty}')
+    expect(source).toContain('{#if setupEmpty}')
+    expect(source).toContain('<Blocks size={26} />')
   })
 
   it('replaces the mobile picker history entry when opening source management', () => {

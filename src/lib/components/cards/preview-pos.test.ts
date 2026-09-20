@@ -16,6 +16,12 @@ describe('previewPos', () => {
     expect(previewPos({ left: 0, top: 300, width: 152 }, VP, 1).left).toBe(SIDEBAR_W)
   })
 
+  it('does not reserve a sidebar rail under a top navigation bar', () => {
+    const p = previewPos({ left: 32, top: 300, width: 152 }, VP, 1, 0)
+    // Centre on the card (32 + 76 − 140 = −32) then clamp to the 8px viewport edge, not 64px.
+    expect(p.left).toBe(8)
+  })
+
   it('keeps the popup inside the right edge', () => {
     const p = previewPos({ left: VP.width - 152, top: 300, width: 152 }, VP, 1)
     expect(p.left).toBe(VP.width - PREVIEW_W - 8)

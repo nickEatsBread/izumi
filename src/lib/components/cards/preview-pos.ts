@@ -30,15 +30,15 @@ export type Viewport = { width: number; height: number }
  * @param zoom     effective CSS `zoom` on <html> (1 when unscaled)
  * @returns left/top in LOCAL px, ready to write to the fixed popup's style
  */
-export function previewPos(card: Rect, viewport: Viewport, zoom = 1): { left: number; top: number } {
+export function previewPos(card: Rect, viewport: Viewport, zoom = 1, railLocal = SIDEBAR_W): { left: number; top: number } {
   const z = Number.isFinite(zoom) && zoom > 0 ? zoom : 1
   // Everything below is screen px so it's comparable with `card` and `viewport`.
   const w = PREVIEW_W * z
   const h = PREVIEW_H * z
-  const rail = SIDEBAR_W * z
+  const rail = Math.max(0, railLocal) * z
   const edge = EDGE * z
   const centred = card.left + card.width / 2 - w / 2
-  const left = Math.max(rail, Math.min(centred, viewport.width - w - edge))
+  const left = Math.max(Math.max(rail, edge), Math.min(centred, viewport.width - w - edge))
   const top = Math.max(edge, Math.min(card.top - RISE * z, viewport.height - h - edge))
   return { left: left / z, top: top / z }
 }

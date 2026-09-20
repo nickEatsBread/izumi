@@ -1,6 +1,14 @@
-import { defineConfig } from "vite";
+import path from "node:path";
+import { defineConfig, searchForWorkspaceRoot } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
 import { paraglideVitePlugin } from "@inlang/paraglide-js";
+
+/** Git worktrees under `.codex-tmp` still resolve packages from the main checkout. */
+function fsAllow() {
+  const allow = [searchForWorkspaceRoot(process.cwd())];
+  if (process.cwd().includes(`${path.sep}.codex-tmp${path.sep}`)) allow.push(path.resolve(process.cwd(), "../.."));
+  return allow;
+}
 
 // @ts-ignore process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
@@ -37,6 +45,7 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: host || false,
+    fs: { allow: fsAllow() },
     hmr: host
       ? {
           protocol: "ws",

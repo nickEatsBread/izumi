@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { setContext, untrack } from 'svelte'
   import Search from '@lucide/svelte/icons/search'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import { mediaKey } from '$lib/catalog/identity'
@@ -12,6 +12,9 @@
   } from '$lib/settings/catalog'
   import { rankQuickSearchResults } from '$lib/search/global-search'
   import VirtualGrid from '$lib/components/VirtualGrid.svelte'
+  import { CARD_FAMILY } from '$lib/themes/presentation'
+
+  setContext(CARD_FAMILY, 'search')
 
   let { query = $bindable('') }: { query?: string } = $props()
   let settled = $state(query.trim())

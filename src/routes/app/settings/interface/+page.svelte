@@ -97,9 +97,9 @@
         </button>
       {/each}
     </div>
-    <a href="/app/settings/theme-studio" data-focusable class="mb-5 flex min-h-14 items-center justify-between gap-3 rounded-xl border border-theme/25 bg-theme/10 px-4 transition hover:border-theme/50">
-      <span><span class="block font-black">Open Theme Studio</span><span class="text-xs text-muted-foreground">Edit colours, type and backdrops directly in your client.</span></span>
-      <span class="text-lg text-theme">→</span>
+    <a href="/app/settings/themes" data-focusable class="mb-5 flex min-h-14 items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 transition hover:bg-accent">
+      <span><span class="block font-black">Browse & customize themes</span><span class="text-xs text-muted-foreground">Install a theme or open Theme Studio to create your own look.</span></span>
+      <span aria-hidden="true">→</span>
     </a>
 
     <div class="mb-5 space-y-3">

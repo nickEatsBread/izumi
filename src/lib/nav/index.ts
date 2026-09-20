@@ -148,10 +148,13 @@ function pickInNavRows(active: HTMLElement, dir: Dir): HTMLElement | null | unde
 
   const vertical = dir === 'up' || dir === 'down'
   const itemRoot = row.querySelector<HTMLElement>('[data-nav-row-items]') ?? row
+  const wrapping = row.hasAttribute('data-nav-row-wrap')
 
   // Carousel/hero LEFT and RIGHT follow DOM order. No layout reads are needed for the other 19
   // posters in the row, and an offscreen neighbour remains reachable without a global search.
-  if (!vertical) {
+  // A wrapping grid row instead keeps the generic search's geometric semantics (scoped below):
+  // DOM order would wrap a line-start press onto the previous line's far end.
+  if (!vertical && !wrapping) {
     const currentItems = focusables(itemRoot)
     const index = currentItems.indexOf(active)
     if (index >= 0) return currentItems[index + (dir === 'right' ? 1 : -1)] ?? null
@@ -163,6 +166,14 @@ function pickInNavRows(active: HTMLElement, dir: Dir): HTMLElement | null | unde
   if (!itemRoot.contains(active)) {
     const samePick = pickInDirection(cur, visibleRowCandidates(itemRoot), dir, /* cone */ false)
     if (samePick) return samePick.el
+  }
+  // Wrapping grid rows paint several lines inside one section. Section-stepping would jump straight
+  // past the lines below the focused card, so run the generic search's geometry over just this row's
+  // own cards — far cheaper than the page-wide pass — and fall through at the grid's edge, where the
+  // press should carry on to the adjacent row (vertical) or cross regions (horizontal).
+  if (wrapping && itemRoot.contains(active)) {
+    const within = pickInDirection(cur, visibleRowCandidates(itemRoot), dir)
+    if (within) return within.el
   }
   if (!vertical) return null
 

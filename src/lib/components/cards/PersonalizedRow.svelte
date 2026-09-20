@@ -2,8 +2,11 @@
   import { queryStore, getContextClient } from '@urql/svelte'
   import { LOCAL_RECOMMENDATIONS_QUERY, PERSONAL_RECOMMENDATIONS_QUERY } from '$lib/anilist/queries'
   import type { Media } from '$lib/anilist/types'
+  import { getContext } from 'svelte'
   import Carousel from './Carousel.svelte'
   import SmallCard from './SmallCard.svelte'
+  import { themePresentation } from '$lib/themes/runtime'
+  import { ROW_CONTEXT, densityScale, resolveRow, type RowScope } from '$lib/themes/presentation'
   import { nearViewport } from '$lib/util/near-viewport'
   import { gameMode } from '$lib/player/session'
   import { durableHistory } from '$lib/player/history'
@@ -24,6 +27,9 @@
 
   let { userName = '', preferLinkedRating = false }: { userName?: string; preferLinkedRating?: boolean } = $props()
   const client = getContextClient()
+  const rowScope = getContext<(() => RowScope) | undefined>(ROW_CONTEXT)
+  const themedWidth = $derived(rowScope ? resolveRow($themePresentation, rowScope().id).width : undefined)
+  const tileWidth = $derived(themedWidth ?? Math.round(152 * densityScale($themePresentation)))
   let visible = $state(false)
   const reveal = () => { visible = true }
   const localSeeds = $derived(historySeeds($durableHistory).filter((seed) => $showAdult || !seed.media.isAdult))
@@ -108,13 +114,13 @@
   {#if hasTasteData && (!visible || loading)}
     <Carousel title="Recommended for You">
       {#each Array.from({ length: 8 }) as _}
-        <div class="skeloader aspect-[2/3] w-36 shrink-0 rounded-md sm:w-[152px]"></div>
+        <div class="skeloader aspect-[2/3] shrink-0 rounded-md {themedWidth ? '' : 'w-36 sm:w-[152px]'}" style:width={themedWidth ? `${tileWidth}px` : undefined}></div>
       {/each}
     </Carousel>
   {:else if recommendations.length}
     <Carousel title="Recommended for You">
       {#each recommendations as recommendation (recommendation.media.id)}
-        <div class="group/recommendation load-in relative w-36 shrink-0 sm:w-[152px]">
+        <div class="group/recommendation load-in relative shrink-0 {themedWidth ? '' : 'w-36 sm:w-[152px]'}" style:width={themedWidth ? `${tileWidth}px` : undefined}>
           <SmallCard
             media={recommendation.media}
             subline={recommendation.reason}

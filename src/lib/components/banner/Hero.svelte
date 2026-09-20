@@ -1,4 +1,9 @@
 <script lang="ts">
+  import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
+  import { themePresentation } from '$lib/themes/runtime'
+  import { resolveDetail } from '$lib/themes/presentation'
+  import { mediaDisplayModel } from '$lib/themes/host-model'
+  import { motionPreference } from '$lib/settings/ui'
   import type { Media } from '$lib/anilist/types'
   import { banner, cover, title, format, status, season, totalEpisodes } from '$lib/anilist/media'
   import { rememberDetail } from '$lib/anilist/detail-hint'
@@ -53,7 +58,11 @@
   let countdownOrigin = $state(Date.now())
   let failedLogos = $state<string[]>([])
   const controllerUi = $derived($gameMode || $controllerMode)
-  const DURATION = 15000 // a 15s cadence
+  const heroTheme = $derived(showOverlay ? $themePresentation?.hero : undefined)
+  const seriesTheme = $derived(!showOverlay ? resolveDetail($themePresentation) : undefined)
+  const seriesBannerHeight = $derived(seriesTheme?.bannerHeight)
+  const bannerScale = $derived(showOverlay ? heroTheme?.scale === 'banner' : seriesTheme?.bannerScale === 'banner')
+  const DURATION = $derived((heroTheme?.interval ?? 15) * 1000)
 
   function go(n: number, direction?: 1 | -1) {
     if (n === i) return
@@ -173,7 +182,7 @@
   // Auto-advance + scroll fade, only when there's an overlay (Home).
   $effect(() => {
     const n = medias.length
-    if (!n || !showOverlay) return
+    if (!n || !showOverlay || heroTheme?.hidden) return
     // Track manual navigation too: changing `cycle` tears down/re-arms this one-shot timer and
     // restarts the compositor-only progress animation below.
     void cycle
@@ -185,7 +194,7 @@
     const arm = () => {
       if (timer) clearTimeout(timer)
       timer = undefined
-      if (!stalled()) timer = setTimeout(() => step(1), DURATION)
+      if (!stalled() && heroTheme?.rotate !== false && $motionPreference !== 'reduce' && ($motionPreference === 'full' || !matchMedia('(prefers-reduced-motion: reduce)').matches)) timer = setTimeout(() => step(1), DURATION)
     }
     arm()
     const onWake = () => arm()
@@ -256,10 +265,56 @@
   const scoreColor = (s?: number) =>
     s == null ? 'text-white/70' : s >= 75 ? 'text-green-400' : s >= 65 ? 'text-orange-400' : 'text-red-400'
   const cleanDesc = (d?: string) => (d ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+  const themeModel = $derived(current ? mediaDisplayModel(current, {
+    description: cleanDesc(current.description), rank: featuredRankLabel,
+    rankPosition: current.featuredRank?.position, poster: cover(current), backdrop: banner(current), logo: currentLogo || undefined,
+  }) : {})
+  function themeAction(action: () => void) {
+    if (swiped) { swiped = false; return }
+    action()
+  }
 </script>
 
-{#if current}
-  {#if $isMobile && showOverlay}
+{#if current && !heroTheme?.hidden}
+  {#if heroTheme?.template}
+    <section data-nav-row data-theme-hero aria-label="Featured" class="theme-custom-hero" class:theme-banner-scale={bannerScale} class:cursor-grab={$dragCarousels && medias.length > 1} class:cursor-grabbing={heroDragging} style:height={bannerScale ? undefined : `${($isMobile ? heroTheme.mobileHeight : heroTheme.height) ?? 46}vh`} style:--theme-hero-interval={`${DURATION}ms`} ontouchstart={onTouchStart} ontouchend={onTouchEnd} onpointerdown={onHeroPointerDown} onpointermove={onHeroPointerMove} onpointerup={(e) => endHeroPointer(e, true)} onpointercancel={(e) => endHeroPointer(e, false)} onwheel={onHeroWheel}>
+      <ThemeNode node={heroTheme.template} model={themeModel} eager titleHeading actions={{
+        details: oninfo ? () => themeAction(() => { rememberDetail(current); oninfo?.(current) }) : undefined,
+        play: onplay ? () => themeAction(() => { rememberDetail(current); onplay?.(current) }) : undefined,
+        favorite: onfav ? () => themeAction(() => onfav?.(current)) : undefined,
+        previous: medias.length > 1 ? () => themeAction(() => step(-1)) : undefined, next: medias.length > 1 ? () => themeAction(() => step(1)) : undefined,
+      }} />
+      {#if medias.length > 1}
+        <button type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
+                aria-label="Previous featured title" onclick={() => step(-1)}
+                class="hero-edge group absolute left-0 top-1/2 z-20 hidden h-28 w-16 -translate-y-1/2 place-items-center sm:grid">
+          <span class="grid size-10 -translate-x-2 place-items-center rounded-full border border-white/15 bg-black/65 text-white opacity-0 shadow-xl backdrop-blur transition-all duration-150 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100">
+            <ChevronLeft size={23} />
+          </span>
+        </button>
+        <button type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
+                aria-label="Next featured title" onclick={() => step(1)}
+                class="hero-edge group absolute right-0 top-1/2 z-20 hidden h-28 w-16 -translate-y-1/2 place-items-center sm:grid">
+          <span class="grid size-10 translate-x-2 place-items-center rounded-full border border-white/15 bg-black/65 text-white opacity-0 shadow-xl backdrop-blur transition-all duration-150 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100">
+            <ChevronRight size={23} />
+          </span>
+        </button>
+        <div class="hero-pips absolute bottom-3 left-8 z-20 flex items-center gap-2">
+          {#each medias as _, idx (idx)}
+            <button type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined} onclick={() => go(idx)} aria-label={`Featured title ${idx + 1}`}
+                    class="hero-pip overflow-hidden rounded-sm bg-white/20 transition-[width] duration-300"
+                    style="width:{idx === i ? '5rem' : '2.7rem'}">
+              {#if idx === i}
+                {#key cycle}
+                  <div class="hero-progress h-full bg-white"></div>
+                {/key}
+              {/if}
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </section>
+  {:else if $isMobile && showOverlay}
     <!-- Mobile Home: a CONTAINED poster block (not a full-bleed banner) — reads far better on a
          phone (Netflix-style). Portrait cover art, dark bottom scrim, title/meta/genres + Watch,
          swipeable with dot pips. -->
@@ -268,6 +323,7 @@
     <div
       class="relative mx-4 mb-6 h-[46vh] touch-pan-y overflow-hidden rounded-2xl shadow-xl {$isAndroid ? 'android-hero-press' : ''}"
       style="--accent:{accent}"
+      style:height={heroTheme?.mobileHeight ? `${heroTheme.mobileHeight}vh` : undefined}
       role="group"
       aria-label="Featured"
       ontouchstart={onTouchStart}
@@ -336,11 +392,13 @@
             <Info size={18} /> Details
           </button>
         </div>
-        {#if featuredRankLabel}
+        {#if featuredRankLabel && !heroTheme?.rankHidden}
           <div class="flex justify-end">
+            {#if heroTheme?.rank}<ThemeNode node={heroTheme.rank} model={themeModel} />{:else}
             <span class="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-black/70 px-2.5 py-1 text-[0.68rem] font-black text-white shadow-lg backdrop-blur">
               <TrendingUp size={12} class="text-orange-300" aria-hidden="true" />{featuredRankLabel}
             </span>
+            {/if}
           </div>
         {/if}
         {#if medias.length > 1}
@@ -356,11 +414,13 @@
   {:else}
   <div
     data-nav-row
-    class="relative mb-6 h-[40vh] touch-pan-y select-none transition-opacity duration-500 {showOverlay ? 'sm:h-[50vh]' : controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'} {scrolled ? 'opacity-40' : 'opacity-100'}"
+    class="relative mb-6 h-[40vh] touch-pan-y select-none transition-opacity duration-500 {bannerScale ? 'theme-banner-scale mb-0' : seriesBannerHeight ? '' : showOverlay ? 'sm:h-[50vh]' : controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'} {scrolled ? 'opacity-40' : 'opacity-100'}"
     class:cursor-grab={$dragCarousels && medias.length > 1}
     class:cursor-grabbing={heroDragging}
     class:game-home-hero={controllerUi && showOverlay}
     style="--accent:{accent}"
+    style:height={bannerScale ? undefined : seriesBannerHeight ? `${seriesBannerHeight}vh` : heroTheme?.height ? `${heroTheme.height}vh` : undefined}
+    style:--theme-hero-interval={`${DURATION}ms`}
     role="group"
     aria-label="Featured"
     ontouchstart={onTouchStart}
@@ -377,7 +437,7 @@
          otherwise leave a black band on the right. Keyed for a crossfade. -->
     <div class="pointer-events-none absolute left-0 top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-left-14 sm:-top-8">
       {#key current.id}
-        <div class="{initialArtworkVisible && !showOverlay ? 'detail-hero-reveal' : 'hero-slide-in'} absolute inset-0" style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:.7">
+        <div class="{initialArtworkVisible && !showOverlay ? 'detail-hero-reveal' : 'hero-slide-in'} absolute inset-0" style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:{bannerScale && !showOverlay ? .5 : .7}">
           {#if !artworkReady}<div class="absolute inset-0 skeloader"></div>{/if}
           {#if artworkMode === 'cover'}
             <img src={cover(current)} alt="" aria-hidden="true" draggable="false" loading="eager" decoding="async"
@@ -417,7 +477,10 @@
       </button>
     {/if}
 
-    {#if showOverlay && featuredRankLabel}
+    {#if showOverlay && featuredRankLabel && !heroTheme?.rankHidden}
+      {#if heroTheme?.rank}
+        <div class="pointer-events-none absolute bottom-16 right-8 z-20"><ThemeNode node={heroTheme.rank} model={themeModel} /></div>
+      {:else}
       <span
         class="pointer-events-none absolute right-8 z-20 hidden items-center gap-2 rounded-md border border-white/15 bg-black/65 px-3 py-1.5 text-sm font-black text-white shadow-lg backdrop-blur sm:inline-flex"
         class:bottom-16={medias.length > 1}
@@ -425,6 +488,7 @@
       >
         <TrendingUp size={15} class="text-orange-300" aria-hidden="true" />{featuredRankLabel}
       </span>
+      {/if}
     {/if}
 
     {#if showOverlay}
@@ -524,6 +588,46 @@
 {/if}
 
 <style>
+  .theme-custom-hero { position: relative; margin: 0 0 1.5rem; overflow: hidden; min-height: 24vh; }
+  .theme-custom-hero.theme-banner-scale {
+    height: auto !important;
+    aspect-ratio: 5 / 1;
+    min-height: 25rem;
+    max-height: 30rem;
+  }
+  .theme-banner-scale:not(.theme-custom-hero) {
+    height: auto !important;
+    aspect-ratio: 5 / 1;
+    min-height: 20rem;
+    max-height: none;
+  }
+  .theme-custom-hero :global(.theme-template),
+  .theme-custom-hero :global(.theme-overlay) { height: 100%; min-height: inherit; }
+  .theme-custom-hero :global(.theme-overlay > .theme-artwork),
+  .theme-custom-hero :global(.theme-overlay > img) { width: 100%; height: 100%; object-fit: cover; }
+  .theme-custom-hero :global(.theme-overlay)::after {
+    content: '';
+    grid-area: 1 / 1;
+    z-index: 1;
+    pointer-events: none;
+    background: linear-gradient(to top, hsl(var(--background)) 0%, hsl(var(--background) / 0.4) 28%, transparent 58%),
+      linear-gradient(to right, hsl(var(--background) / 0.94) 0%, hsl(var(--background) / 0.5) 18rem, transparent 36rem);
+  }
+  .theme-custom-hero :global(.theme-overlay > :not(img):not(.theme-artwork)) { position: relative; z-index: 2; padding-bottom: 1.75rem; }
+  .theme-custom-hero :global(h1.theme-text) {
+    max-width: 100%;
+    text-shadow: 2px 2px 4px hsl(0 0% 0%);
+  }
+  .theme-custom-hero :global(.theme-action) { min-height: 36px; padding: 6px 16px; }
+  .theme-custom-hero :global(.hero-pip) {
+    display: block;
+    height: 3px;
+    min-height: 0 !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    border: 0;
+    line-height: 0;
+  }
   @keyframes hero-progress-fill {
     from { transform: scaleX(0); }
     to { transform: scaleX(1); }
@@ -531,7 +635,7 @@
   .hero-progress {
     width: 100%;
     transform-origin: left;
-    animation: hero-progress-fill 15s linear forwards;
+    animation: hero-progress-fill var(--theme-hero-interval, 15s) linear forwards;
   }
   @keyframes hero-slide-in {
     from { opacity: 0; transform: translate3d(var(--hero-enter-x), 0, 0) scale(1.015); }

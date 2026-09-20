@@ -24,6 +24,11 @@
   import { catalogScreen, catalogSwitcherPlacement, enabledCatalogScreens, resolveCatalogSwitcherPlacement } from '$lib/settings/catalog'
   import * as h from '$lib/haptics'
   import { m } from '$lib/paraglide/messages.js'
+  import { themePresentation } from '$lib/themes/runtime'
+
+  let { placement = 'sidebar' }: { placement?: 'sidebar' | 'top' } = $props()
+  const compact = $derived($themePresentation?.shell?.compact === true)
+  const top = $derived(placement === 'top')
   // Nav items (top). Settings + profile are pinned to the BOTTOM.
   const items = [
     { href: '/app/home', icon: Home, label: m.nav_home(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
@@ -54,6 +59,11 @@
   // (focusable) in browse.
   const df = $derived($playing ? undefined : '')
   const tab = $derived($playing ? -1 : undefined)
+  // Top chrome is icon-only: leftover label width from the rail anatomy stretches hover
+  // highlights into huge pills and shoves destinations across the titlebar.
+  const destClass = (on: boolean) => top
+    ? `group relative grid size-10 shrink-0 place-items-center rounded-lg transition-colors hover:bg-accent hover:text-foreground ${on ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}`
+    : `group relative flex h-11 shrink-0 items-center gap-3 rounded-md pl-3 transition-colors hover:bg-accent hover:text-foreground ${on ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}`
   const onFocusIn = () => (focused = true)
   const onFocusOut = (e: FocusEvent & { currentTarget: HTMLElement }) => {
     if (!e.currentTarget.contains(e.relatedTarget as Node | null)) focused = false
@@ -75,21 +85,23 @@
 </script>
 
 <!-- Browse: soft scrim so the banner shows through and fades into the page. Hidden while playing. -->
-{#if !$playing}
-  <div class="pointer-events-none fixed inset-y-0 left-0 z-20 w-32 bg-gradient-to-r from-background/90 via-background/30 to-transparent"></div>
+{#if !$playing && !top}
+  <div class="theme-sidebar-scrim pointer-events-none fixed inset-y-0 left-0 z-20 w-32 bg-gradient-to-r from-background/90 via-background/30 to-transparent"></div>
 {/if}
 
 <!-- Rows are always icon + label; the rail's width (+ overflow-hidden) reveals the labels when
      expanded, so no per-state markup swap. `main` keeps its 56px margin — the expanded rail
      overlays the content (fixed) rather than reflowing it. Selection uses a quiet active-row fill;
      keyboard/gamepad FOCUS fills the row more strongly (see app.css) — no squared ring. -->
-<nav data-nav-sidebar onfocusin={onFocusIn} onfocusout={onFocusOut}
-     class="fixed inset-y-0 left-0 z-30 flex flex-col gap-1 py-3 pt-9 transition-[width] duration-200 ease-out
+<nav data-nav-sidebar data-theme-surface="shell" onfocusin={onFocusIn} onfocusout={onFocusOut}
+     class="fixed z-30 flex gap-1 transition-[width] duration-200 ease-out
+       {top ? 'inset-x-0 top-0 h-[4.75rem] w-full flex-row items-center border-b border-border/50 bg-background px-3 pt-8' : 'inset-y-0 left-0 flex-col py-3 pt-9'}
        {catalogPickerOpen ? 'overflow-visible' : 'overflow-hidden'}
-       {open ? 'w-[200px]' : 'w-14'} {$playing || open ? 'bg-background' : ''} {open ? 'shadow-2xl' : $playing ? '' : 'drop-shadow-md'}">
+       {top ? '' : open ? 'w-[200px]' : compact ? 'w-12' : 'w-14'}
+       {$playing || open ? 'bg-background' : ''} {open ? 'shadow-2xl' : $playing || top ? '' : 'drop-shadow-md'}">
   <!-- On Home, Integrated mode turns the brand into the catalog trigger. Everywhere else it stays
        predictable Home navigation; Below mode keeps the explicit provider row underneath. -->
-  <div class="group mb-2 flex h-10 shrink-0 items-center gap-2 text-left">
+  <div class="group flex h-10 shrink-0 items-center gap-2 text-left {top ? '' : 'mb-2'}">
     {#if switcherPlacement === 'integrated' && active('/app/home') && !$offlineMode && $enabledCatalogScreens.length > 1}
       <CatalogSwitcher display="brand" bind:open={catalogPickerOpen} className="ml-2 shrink-0" />
     {:else}
@@ -98,7 +110,9 @@
         <CatalogBrandLogo platform={$catalogScreen} />
       </a>
     {/if}
-    <span class="whitespace-nowrap text-lg font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">izumi</span>
+    {#if !top}
+      <span class="whitespace-nowrap text-lg font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">izumi</span>
+    {/if}
   </div>
 
   {#if !$offlineMode && switcherPlacement === 'below'}
@@ -108,44 +122,58 @@
   {#each items as it (it.href)}
     {@const on = active(it.href)}
     <a href={it.href} title={it.label} data-focusable={df} tabindex={tab} aria-current={on ? 'page' : undefined}
-       class="group relative flex h-11 shrink-0 items-center gap-3 rounded-md pl-3 transition-colors hover:bg-accent hover:text-foreground
-         {on ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}">
-      <span class="grid w-8 shrink-0 place-items-center"><it.icon size={20} class={it.anim} /></span>
-      <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{it.label}</span>
+       class={destClass(on)}>
+      <span class="grid {top ? 'size-5' : 'w-8'} shrink-0 place-items-center"><it.icon size={20} class={it.anim} /></span>
+      {#if top}
+        <span class="sr-only">{it.label}</span>
+      {:else}
+        <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{it.label}</span>
+      {/if}
     </a>
   {/each}
 
-  <!-- Spacer pushes Settings + profile to the bottom. -->
+  <!-- Spacer pushes Settings + profile to the bottom of the rail, or the trailing cluster to the
+       right of a top bar. -->
   <div class="flex-1"></div>
 
   <!-- Incognito toggle: same row anatomy as the links; violet accent + tinted icon while active
        (the top banner is the loud indicator — this stays quiet). -->
   <button onclick={toggleIncognito} title={m.nav_incognito()} data-focusable={df} tabindex={tab}
      aria-pressed={$incognito}
-     class="group relative flex h-11 shrink-0 items-center gap-3 rounded-md pl-3 text-left transition-colors hover:bg-accent hover:text-foreground
-       {$incognito ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}">
-    {#if $incognito}<span class="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-violet-500"></span>{/if}
-    <span class="grid w-8 shrink-0 place-items-center"><VenetianMask size={20} class="group-hover:animate-[wiggle_0.4s_ease] {$incognito ? 'text-violet-400' : ''}" /></span>
-    <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{m.nav_incognito()}</span>
+     class="{destClass($incognito)} {top ? '' : 'text-left'}">
+    {#if $incognito && !top}<span class="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-violet-500"></span>{/if}
+    <span class="grid {top ? 'size-5' : 'w-8'} shrink-0 place-items-center"><VenetianMask size={20} class="group-hover:animate-[wiggle_0.4s_ease] {$incognito ? 'text-violet-400' : ''}" /></span>
+    {#if top}
+      <span class="sr-only">{m.nav_incognito()}</span>
+    {:else}
+      <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{m.nav_incognito()}</span>
+    {/if}
   </button>
 
   <a href="/app/settings" title={m.nav_settings()} data-focusable={df} tabindex={tab}
      aria-current={active('/app/settings') ? 'page' : undefined}
-     class="group relative flex h-11 shrink-0 items-center gap-3 rounded-md pl-3 transition-colors hover:bg-accent hover:text-foreground
-       {active('/app/settings') ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}">
-    <span class="grid w-8 shrink-0 place-items-center"><Settings size={20} class="group-hover:animate-[spin_0.6s_ease]" /></span>
-    <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{m.nav_settings()}</span>
+     class={destClass(active('/app/settings'))}>
+    <span class="grid {top ? 'size-5' : 'w-8'} shrink-0 place-items-center"><Settings size={20} class="group-hover:animate-[spin_0.6s_ease]" /></span>
+    {#if top}
+      <span class="sr-only">{m.nav_settings()}</span>
+    {:else}
+      <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{m.nav_settings()}</span>
+    {/if}
   </a>
 
   <button type="button" onclick={() => $profilesEnabled ? ($profileSwitcherOpen = true) : goto('/app/settings/accounts')} title={$profilesEnabled ? `Switch profile · ${$activeProfile.name}` : accountLabel} data-focusable={df} tabindex={tab}
-     class="group mt-1 flex h-12 w-full shrink-0 items-center gap-3 rounded-md pl-3 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
-    <span class="grid w-8 shrink-0 place-items-center">
+     class="{top ? destClass(false) : 'group mt-1 flex h-12 w-full shrink-0 items-center gap-3 rounded-md pl-3 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground'}">
+    <span class="grid {top ? 'size-8' : 'w-8'} shrink-0 place-items-center">
       {#if $profilesEnabled}
         <img src={profileAvatarUrl($activeProfile.avatar, $activeProfile.color)} alt="" class="size-8 rounded-lg" />
       {:else if accountAvatar}
         <img src={accountAvatar} alt="" class="size-8 rounded-full object-cover" />
       {:else}<LogIn size={20} />{/if}
     </span>
-    <span class="max-w-[140px] truncate whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{accountLabel}</span>
+    {#if top}
+      <span class="sr-only">{accountLabel}</span>
+    {:else}
+      <span class="max-w-[140px] truncate whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{accountLabel}</span>
+    {/if}
   </button>
 </nav>

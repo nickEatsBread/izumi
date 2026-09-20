@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { setContext, untrack } from 'svelte'
   import { page } from '$app/state'
   import { replaceState } from '$app/navigation'
   import Search from '@lucide/svelte/icons/search'
@@ -23,6 +23,9 @@
   } from '$lib/extensions/manager'
   import type { Media } from '$lib/anilist/types'
   import VirtualGrid from '$lib/components/VirtualGrid.svelte'
+  import { CARD_FAMILY } from '$lib/themes/presentation'
+
+  setContext(CARD_FAMILY, 'search')
 
   let { selection, embedded = false, onQueryChange }: {
     selection?: CatalogSelection

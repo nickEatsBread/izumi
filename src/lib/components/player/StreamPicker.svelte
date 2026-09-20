@@ -7,7 +7,7 @@
   // list here is already free of wrong-season files.
   import { onDestroy } from 'svelte'
   import { flip } from 'svelte/animate'
-  import { fade } from 'svelte/transition'
+  import { fade, scale } from 'svelte/transition'
   import { goto, pushState } from '$app/navigation'
   import { streamPicker, gameMode, bingeSource, debridCaching, connecting, bumpPlayerOverlay, type StreamPickerState } from '$lib/player/session'
   import type { Writable } from 'svelte/store'
@@ -38,6 +38,7 @@
   import Play from '@lucide/svelte/icons/play'
   import Database from '@lucide/svelte/icons/database'
   import BadgeCheck from '@lucide/svelte/icons/badge-check'
+  import Blocks from '@lucide/svelte/icons/blocks'
   import { copyToClipboard } from '$lib/util/clipboard'
   import { classifyPlaybackFailure, sourceOutcomeSummary, type PlaybackFailureClass } from '$lib/player/source-outcomes'
   import { planRecoveryCandidates, planSources } from '$lib/stremio/source-planner'
@@ -325,6 +326,26 @@
       || /(?:sources?|stream add-ons?).*(?:disabled|configured)/i.test(playbackError)
     ),
   )
+  const setupEmpty = $derived(
+    !resolving && !shown.length && !filter.trim() && !(deadCount && !$showDeadSources),
+  )
+  const emptyCopy = $derived.by(() => {
+    if (/disabled/i.test(playbackError)) return {
+      title: 'Sources are turned off',
+      body: 'Enable at least one add-on in Settings to search for streams.',
+      action: 'Manage sources',
+    }
+    if (/configured/i.test(playbackError) || sourceSettingsHelpful) return {
+      title: 'No sources set up',
+      body: 'Add an addon or install an anime package in Settings to play this episode.',
+      action: 'Add sources',
+    }
+    return {
+      title: 'Nothing for this episode',
+      body: 'No playable streams came back. Add more sources, or try another episode.',
+      action: sourceSettingsHelpful ? 'Add sources' : '',
+    }
+  })
 
   // Autoplay countdown: once the resolve reports a trustworthy pick, fill the Auto button then
   // play it. Cancelled by hovering/focusing the Auto button or by interacting (picking a source,
@@ -863,11 +884,12 @@
   <div
     class="fixed inset-0 z-40 grid bg-black/70 {$isMobile ? '' : 'place-items-center p-4'}"
     class:backdrop-blur-sm={!$gameMode && !$isMobile}
+    transition:fade={{ duration: $gameMode ? 0 : 200 }}
     onclick={close}
     onkeydown={(e) => e.key === 'Escape' && close()}
     role="presentation"
   >
-    <div bind:this={pickerTrap} data-nav-trap class="flex flex-col overflow-hidden bg-card shadow-2xl {$isMobile ? 'sp-mobile h-full w-full' : 'max-h-[85vh] w-full max-w-3xl rounded-2xl border border-border'}" onclick={(e) => e.stopPropagation()} onfocusin={() => $gameMode && bumpPlayerOverlay()} role="presentation">
+    <div bind:this={pickerTrap} data-nav-trap class="sp-panel flex flex-col overflow-hidden bg-card shadow-2xl {$isMobile ? 'sp-mobile h-full w-full' : 'max-h-[85vh] w-full max-w-3xl rounded-2xl border border-border'}" in:scale={{ duration: $gameMode ? 0 : 200, start: 0.95, opacity: 1 }} out:scale={{ duration: $gameMode ? 0 : 200, start: 0.95, opacity: 1 }} onclick={(e) => e.stopPropagation()} onfocusin={() => $gameMode && bumpPlayerOverlay()} role="presentation">
       <!-- Banner-headed title (shrink-0 so a tall list never squeezes it) -->
       <div class="relative shrink-0 overflow-hidden border-b border-border">
         {#if banner(pick.media)}
@@ -891,7 +913,8 @@
       <!-- Controls — mobile: a full-width search + Auto row, then one scrolling strip of uniform
            pills. Deliberately NOT flex-wrap: every control being the same height is what stops the
            bar reading as debris, and a single horizontal strip costs one row instead of three. -->
-      {#if $isMobile}
+      {#if setupEmpty}
+      {:else if $isMobile}
         <div class="sp-controls shrink-0 border-b border-border">
           <div class="sp-inset flex items-center gap-2 pt-2.5">
             <label class="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl bg-secondary px-3">
@@ -1049,21 +1072,13 @@
         </div>
       {/if}
 
-      {#if playbackError}
+      {#if playbackError && !setupEmpty}
         <div role="alert" class="sp-inset shrink-0 border-b border-border bg-destructive/10 px-4 py-2 text-sm text-destructive">
           <p>{playbackError}</p>
-          {#if blockedRetry || sourceSettingsHelpful}
+          {#if blockedRetry}
             <div class="flex flex-wrap gap-2 {$isMobile ? 'mt-2' : 'mt-1.5'}">
-              {#if blockedRetry}
-                <!-- The one recovery from a debrid block. As an inline underline it was a ~14px-tall
-                     target inside a wrapping paragraph; on mobile it gets its own row. -->
                 <button data-focusable onclick={watchP2p}
                         class="{$isMobile ? 'flex h-10 flex-1 items-center justify-center rounded-lg bg-destructive/20 px-3 font-bold active:bg-destructive/30' : 'rounded-md bg-destructive/15 px-2.5 py-1.5 font-semibold transition-colors hover:bg-destructive/25'}">Watch this P2P?</button>
-              {/if}
-              {#if sourceSettingsHelpful}
-                <button data-focusable onclick={openSourceSettings}
-                        class="{$isMobile ? 'flex h-10 flex-1 items-center justify-center rounded-lg bg-theme px-3 font-bold text-white active:opacity-80' : 'rounded-md bg-theme px-2.5 py-1.5 font-semibold text-white transition-opacity hover:opacity-90'}">Open Sources</button>
-              {/if}
             </div>
           {/if}
         </div>
@@ -1072,7 +1087,7 @@
       <!-- Results — reveal sources the instant each addon/extension lands;
            skeletons only until the FIRST results arrive. -->
       <div class="sp-list min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain p-2.5">
-        {#if resolving && rendered.length === 0}
+        {#if resolving && rendered.length === 0 && !playbackError}
           {#each Array(6) as _}
             <div class="flex items-start gap-3 rounded-xl bg-secondary/40 px-3 {$isMobile ? 'py-3' : 'py-2.5'}">
               <!-- Matches the real row: mobile has no glyph column, so a skeleton with one would
@@ -1129,9 +1144,25 @@
             Show {hiddenCount} more source{hiddenCount === 1 ? '' : 's'}
           </button>
         {/if}
-        {#if !shown.length}
+        {#if setupEmpty}
+          <div class="flex min-h-[18rem] flex-1 flex-col items-center justify-center gap-5 px-6 py-12 text-center">
+            <div class="grid size-14 place-items-center rounded-2xl bg-secondary text-muted-foreground">
+              <Blocks size={26} />
+            </div>
+            <div class="max-w-sm space-y-1.5">
+              <h3 class="text-lg font-black tracking-tight text-foreground">{emptyCopy.title}</h3>
+              <p class="text-sm leading-relaxed text-muted-foreground">{emptyCopy.body}</p>
+            </div>
+            {#if emptyCopy.action}
+              <button data-focusable onclick={openSourceSettings}
+                      class="inline-flex h-10 items-center rounded-lg bg-primary px-4 text-sm font-bold text-primary-foreground transition-colors hover:brightness-110">
+                {emptyCopy.action}
+              </button>
+            {/if}
+          </div>
+        {:else if !shown.length}
           <p class="px-3 pb-3 pt-8 text-center text-sm text-muted-foreground">
-            {filter.trim() ? 'No sources match your filter.' : deadCount && !$showDeadSources ? 'No sources — enable “Dead” to see uncached/dead torrents.' : 'No sources to show.'}
+            {filter.trim() ? 'No sources match your filter.' : 'No sources — enable “Dead” to see uncached/dead torrents.'}
           </p>
         {/if}
         <!-- A provider that failed for a REASON says so, whether or not other providers found rows:
@@ -1215,6 +1246,7 @@
     touch-action: pan-y;
   }
   :global(.sp-mobile .sp-chips) { scrollbar-width: none; }
+  .sp-panel { transform-origin: bottom center; }
   @media (max-height: 560px) {
     :global(.sp-mobile .sp-cover) { display: none; }
     :global(.sp-mobile .sp-head) { padding-top: max(0.5rem, env(safe-area-inset-top)); padding-bottom: 0.5rem; }

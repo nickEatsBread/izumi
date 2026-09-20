@@ -8,7 +8,7 @@
   // the document zoom; IntersectionObserver geometry is unreliable under the app's CSS `zoom`.
   // Fetches `network-only` so the normalized (graphcache) cache — which can't key the
   // unkeyed `Page` type — can't hand back a stale/embedded page for page 2+.
-  import { onMount } from 'svelte'
+  import { onMount, setContext } from 'svelte'
   import { getContextClient } from '@urql/svelte'
   import { searchQuery, searchVariables, STUDIO_MEDIA_QUERY, STAFF_MEDIA_QUERY, type SearchFilters } from '$lib/anilist/detail-queries'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
@@ -20,6 +20,9 @@
   import { gameMode } from '$lib/player/session'
   import * as h from '$lib/haptics'
   import VirtualGrid from '$lib/components/VirtualGrid.svelte'
+  import { CARD_FAMILY } from '$lib/themes/presentation'
+
+  setContext(CARD_FAMILY, 'search')
 
   let { filters }: { filters: SearchFilters } = $props()
 

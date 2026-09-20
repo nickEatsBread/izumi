@@ -20,6 +20,11 @@
   import * as h from '$lib/haptics'
   import { rememberDetail } from '$lib/anilist/detail-hint'
   import { anilistIdOf } from '$lib/catalog/identity'
+  import { getContext } from 'svelte'
+  import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
+  import { themePresentation } from '$lib/themes/runtime'
+  import { episodeDisplayModel } from '$lib/themes/host-model'
+  import { ROW_CONTEXT, densityScale, resolveCard, resolveRow, type RowScope } from '$lib/themes/presentation'
 
   let { media, progress }: { media: Media; progress: number } = $props()
 
@@ -51,6 +56,13 @@
 
   let imgReady = $state(false)
   $effect(() => { void thumb; imgReady = false })
+  const rowScope = getContext<(() => RowScope) | undefined>(ROW_CONTEXT)
+  const themeRow = $derived(rowScope ? resolveRow($themePresentation, rowScope().id) : {})
+  const cardWidth = $derived(themeRow.width ?? ($isTv ? 320 : 264) * densityScale($themePresentation))
+  const continueTemplate = $derived(resolveCard($themePresentation, 'continue'))
+  const continueModel = $derived(episodeDisplayModel(media, ep, meta[ep], {
+    still: thumb, progress: pct, episodeTitle: epTitle || undefined, poster: cardCover(media),
+  }))
 
   let resolving = $state(false)
   // Prefer the last successful origin/release; if it is missing or fails, resumeEpisode opens the
@@ -80,8 +92,12 @@
   onpointerdown={() => void loadPlayback()}
   onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play() } }}
   title={`Resume — ${name} · Episode ${ep}`}
-  class="group flex shrink-0 cursor-pointer flex-col text-left {$isTv ? 'w-80' : 'w-[72vw] sm:w-[264px]'} {$isAndroid ? 'android-card-press' : ''}"
+  class="group flex shrink-0 cursor-pointer flex-col text-left {themeRow.width ? '' : $isTv ? 'w-80' : 'w-[72vw] sm:w-[264px]'} {$isAndroid ? 'android-card-press' : ''}"
+  style:width={themeRow.width ? `${cardWidth}px` : undefined}
 >
+  {#if continueTemplate}
+    <ThemeNode node={continueTemplate} model={continueModel} />
+  {:else}
   <div class="focus-cover relative aspect-video w-full overflow-hidden rounded-lg bg-muted">
     {#if !imgReady}<div class="absolute inset-0 skeloader"></div>{/if}
     {#if thumb}
@@ -104,9 +120,10 @@
     {/if}
   </div>
 
-  <div class="mt-1.5">
+  <div data-theme-card-label class="mt-1.5">
     <a href={mediaHref(media)} onpointerdown={() => rememberDetail(media, name)} onclick={(e) => { e.stopPropagation(); rememberDetail(media, name); h.tap() }}
        class="block truncate text-sm font-bold hover:text-theme">{name}</a>
     <span class="block truncate text-[0.7rem] text-muted-foreground">{episodeLabel}</span>
   </div>
+  {/if}
 </div>

@@ -186,13 +186,15 @@ describe('manual episode source chooser', () => {
   it('reports disabled add-ons instead of claiming that the episode has no streams', async () => {
     configuredAddonUrls.set(['https://disabled-addon.test'])
     hasConfiguredExtensions.mockResolvedValue(false)
+    const states: Array<{ status: string; message?: string }> = []
 
-    await playEpisode(media as never, 2, () => {})
+    await playEpisode(media as never, 2, (state) => { states.push(state) })
 
     expect(get(picker)).toMatchObject({
       resolving: false,
       playbackError: 'All configured stream add-ons are disabled — enable one in Settings → Sources.',
     })
+    expect(states.some((state) => state.status === 'error')).toBe(false)
   })
 
   it('stays visible while a single provider resolves its multiple server choices', async () => {

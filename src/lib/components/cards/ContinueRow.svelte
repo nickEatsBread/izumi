@@ -77,7 +77,7 @@
 {#if cold}
   <Carousel {title}>
     {#each Array.from({ length: 5 }) as _}
-      <div class="skeloader aspect-video w-[72vw] shrink-0 rounded-lg sm:w-[264px]"></div>
+      <div class="skeloader aspect-video w-[72vw] shrink-0 rounded-lg sm:w-[264px]" data-theme-continue-skeleton></div>
     {/each}
   </Carousel>
 {:else if items.length}

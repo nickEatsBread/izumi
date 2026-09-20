@@ -58,6 +58,10 @@
   import { activeProfile } from '$lib/profiles/store'
   import { profileAllowsMedia } from '$lib/profiles/content'
   import ParentalBlock from '$lib/components/profiles/ParentalBlock.svelte'
+  import { themePresentation } from '$lib/themes/runtime'
+  import { episodesBelow, episodesOnSide, resolveDetail } from '$lib/themes/presentation'
+  import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
+  import { mediaDisplayModel } from '$lib/themes/host-model'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -199,6 +203,22 @@
 
   let active = $state('Episodes')
   let heroPlay = $state<PlayState>({ status: 'idle' })
+  const detailTheme = $derived(resolveDetail($themePresentation))
+  const overlayDetail = $derived(detailTheme.layout === 'overlay')
+  const bannerOverlap = $derived(detailTheme.bannerHeight ? Math.round(detailTheme.bannerHeight * 0.58) : (controllerUi ? 16 : 18))
+  const sideEpisodes = $derived(episodesOnSide($themePresentation, !$isMobile))
+  const belowEpisodes = $derived(episodesBelow($themePresentation, !$isMobile))
+  const episodeTabbed = $derived(!sideEpisodes && !belowEpisodes)
+  const desktopTabs = $derived(episodeTabbed
+    ? ['Episodes', 'Relations', 'Cast & Crew', 'Recommended', 'Details']
+    : ['Relations', 'Cast & Crew', 'Recommended', 'Details'])
+  const mobileTabs = $derived(episodeTabbed
+    ? ['Episodes', 'Overview', 'Relations', 'Characters', 'Recommended']
+    : ['Overview', 'Relations', 'Characters', 'Recommended'])
+  $effect(() => {
+    const tabs = $isMobile ? mobileTabs : desktopTabs
+    if (!tabs.includes(active)) active = tabs[0]
+  })
 
   // A TV request already chose the title/episode. Once its detail data is ready, open the same
   // source picker as a local Play press; selecting (or auto-selecting) a source then consumes the
@@ -411,7 +431,90 @@
   <ParentalBlock />
 {:else if media}
   {@const m = media}
-  {#if $isMobile}
+  {#if $isMobile && overlayDetail}
+    <div class="relative pb-8">
+      <div bind:clientHeight={barHeight}
+           class="fixed inset-x-0 top-0 z-30 flex items-center gap-2 px-2 py-2 transition-colors duration-200
+                  {barState.solid ? 'border-b border-border bg-background/80 backdrop-blur' : 'text-white'}"
+           style="padding-top:max(0.5rem,env(safe-area-inset-top))">
+        {#if !barState.solid}
+          <div class="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-black/55 to-transparent"></div>
+        {/if}
+        <button data-focusable onclick={heroBack} aria-label="Back"
+                class="grid h-10 w-10 shrink-0 place-items-center rounded-full transition-colors active:bg-white/15">
+          <ChevronLeft size={22} />
+        </button>
+        {#if barState.showTitle}
+          <span class="min-w-0 flex-1 truncate text-base font-black">{title(m)}</span>
+        {/if}
+      </div>
+      <div bind:clientHeight={artHeight} class="relative min-h-[56vh] w-full overflow-hidden">
+        {#if m.bannerImage}
+          <img src={m.bannerImage} alt="" onload={() => (artLoaded = true)}
+               class="absolute inset-0 h-full w-full object-cover transition-opacity duration-500 {artLoaded ? 'opacity-100' : 'opacity-0'}"
+               style="object-position:center 20%" />
+        {:else}
+          <img src={cover(m)} alt="" class="absolute inset-0 h-full w-full scale-110 object-cover blur-xl transition-opacity duration-500 {artLoaded ? 'opacity-50' : 'opacity-0'}"
+               onload={() => (artLoaded = true)} style="object-position:center 30%" />
+        {/if}
+        <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+        <div class="relative z-10 flex min-h-[56vh] flex-col justify-end gap-3 px-4 pb-8 pt-24">
+          <h1 class="text-3xl font-black leading-tight text-white drop-shadow">{title(m)}</h1>
+          <button data-focusable use:focusOnMount
+                  onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
+                  onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
+                  onclick={() => playCta(m)}
+                  class="mt-1 inline-flex w-fit items-center gap-2 rounded-full bg-primary px-5 py-2.5 font-bold text-primary-foreground">
+            <Play size={18} />{ctaHasProgress(m) ? `Play · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
+          </button>
+          {#if m.description}
+            <p class="line-clamp-4 text-sm leading-relaxed text-white/85">{stripHtml(m.description)}</p>
+          {/if}
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-white/75">
+            {#if format(m)}<span>{format(m)}</span>{/if}
+            {#each (m.genres ?? []).slice(0, 3) as g (g)}<span class="opacity-40">·</span><span>{g}</span>{/each}
+            {#if m.seasonYear || m.startDate?.year}<span class="opacity-40">·</span><span>{m.seasonYear || m.startDate?.year}</span>{/if}
+            {#if m.averageScore}<span class="opacity-40">·</span><span>{m.averageScore}%</span>{/if}
+          </div>
+        </div>
+      </div>
+      <div class="px-4">
+        {#if heroPlay.status === 'error'}
+          <p class="mt-3 text-sm text-destructive">{heroPlay.message}</p>
+        {/if}
+        {#if belowEpisodes}
+          <div class="mt-6">
+            <EpisodeList media={m} offline={$offlineMode} />
+          </div>
+        {/if}
+        <div class="mt-6">
+          <Tabs tabs={mobileTabs} bind:active />
+          {#if active === 'Overview'}
+            <div class="mt-4 space-y-5">
+              {#if m.description}
+                <section>
+                  <h2 class="mb-2 text-base font-black">Synopsis</h2>
+                  <p class="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
+                </section>
+              {/if}
+            </div>
+          {:else if active === 'Relations'}
+            {#if m.relations?.edges?.length}
+              <div class="mt-3 grid grid-cols-2 gap-4">
+                {#each m.relations.edges as e (e.node.id)}
+                  <div class="min-w-0"><SmallCard media={e.node} fill /></div>
+                {/each}
+              </div>
+            {:else}<p class="mt-3 text-muted-foreground">No related titles.</p>{/if}
+          {:else if active === 'Characters'}
+            <div class="mt-3"><RichMetadata media={m} view="people" /></div>
+          {:else if active === 'Recommended'}
+            <div class="mt-3"><RichMetadata media={m} view="recommendations" /></div>
+          {/if}
+        </div>
+      </div>
+    </div>
+  {:else if $isMobile}
     <div class="relative pb-8">
       <!-- Floating bar. Transparent over the artwork (with a scrim so the chevron survives light
            art), blurred and titled once the artwork has scrolled under it. It carries the status-bar
@@ -434,6 +537,7 @@
 
       <!-- Artwork band: a bounded strip that ends in a hard cut. Nothing is written on top of it,
            so legibility no longer depends on how busy the banner is. -->
+      {#if !detailTheme.bannerHidden}
       <div bind:clientHeight={artHeight} class="hero-art relative h-[26vh] max-h-72 min-h-44 w-full overflow-hidden">
         {#if m.bannerImage}
           <img src={m.bannerImage} alt="" onload={() => (artLoaded = true)}
@@ -448,17 +552,19 @@
         {/if}
         <div class="absolute inset-x-0 bottom-0 h-1/6 bg-gradient-to-b from-transparent to-background"></div>
       </div>
+      {/if}
 
       <div class="px-4">
         <!-- `relative z-10`: the artwork band above is positioned, so it paints OVER static
              in-flow content — and this row is pulled up into it. Without a stacking context of its
              own the band covered the top of the poster the moment its image loaded, which read as
              the cover being cropped (and looked fine until then, because the band was transparent). -->
-        <div class="relative z-10 -mt-10 flex gap-4">
+        <div class="relative z-10 {detailTheme.bannerHidden ? 'mt-2' : '-mt-10'} flex gap-4">
           <!-- Covers vary in aspect; forcing them all into one ratio with object-cover crops real
                artwork the user came here to see. Follow the image's own height instead. -->
           <img use:reliableImage={cover(m)} alt=""
-               class="h-auto w-28 shrink-0 self-start rounded-xl object-contain shadow-xl min-[420px]:w-32" />
+               class="h-auto w-28 shrink-0 self-start rounded-xl object-contain shadow-xl min-[420px]:w-32"
+               style:width={detailTheme.posterWidth ? `${Math.min(detailTheme.posterWidth, 160)}px` : undefined} />
           <div class="min-w-0 flex-1 self-end">
             {#if m.title.native || m.title.romaji}
               <div class="truncate text-xs text-muted-foreground">{m.title.native || m.title.romaji}</div>
@@ -573,9 +679,15 @@
           <p class="mt-3 text-sm text-destructive">{heroPlay.message}</p>
         {/if}
 
+        {#if belowEpisodes}
+          <div class="mt-6">
+            <EpisodeList media={m} offline={$offlineMode} />
+          </div>
+        {/if}
+
         <div class="mt-6">
-          <Tabs tabs={['Episodes', 'Overview', 'Relations', 'Characters', 'Recommended']} bind:active />
-          {#if active === 'Episodes'}
+          <Tabs tabs={mobileTabs} bind:active />
+          {#if episodeTabbed && active === 'Episodes'}
             <EpisodeList media={m} offline={$offlineMode} />
           {:else if active === 'Overview'}
             <div class="mt-4 space-y-5">
@@ -635,28 +747,123 @@
         </div>
       </div>
     </div>
+  {:else if overlayDetail}
+    <section class="relative isolate min-h-[72vh] w-full overflow-hidden" data-theme-surface="detail-overlay">
+      {#if m.bannerImage}
+        <img src={m.bannerImage} alt="" class="absolute inset-0 h-full w-full object-cover" style="object-position:center 20%" />
+      {:else}
+        <img src={cover(m)} alt="" class="absolute inset-0 h-full w-full scale-110 object-cover blur-2xl opacity-60" />
+      {/if}
+      <div class="absolute inset-0 bg-gradient-to-t from-background via-background/25 to-transparent"></div>
+      <div class="absolute inset-y-0 left-0 w-[58%] bg-gradient-to-r from-background/95 via-background/55 to-transparent"></div>
+      <div class="relative z-10 flex min-h-[72vh] max-w-3xl flex-col justify-center gap-5 px-8 py-20 sm:px-12">
+        {#if m.title.native || m.title.romaji}
+          <div class="text-sm text-white/70">{m.title.native || m.title.romaji}</div>
+        {/if}
+        <h1 class="text-5xl font-black leading-[1.02] text-white drop-shadow-md sm:text-6xl">{title(m)}</h1>
+        <div class="flex flex-wrap items-center gap-3">
+          <button data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
+                  data-nav-down={controllerUi ? 'series-quick-episode' : undefined}
+                  onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
+                  onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
+                  use:focusOnMount onclick={() => playCta(m)}
+                  class="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 font-bold text-primary-foreground">
+            <Play size={18} />{ctaHasProgress(m) ? `Play · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
+          </button>
+          <button data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
+                  class="grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25">
+            {#if savedLocally}<BookmarkCheck size={20} />{:else}<BookmarkPlus size={20} />{/if}
+          </button>
+        </div>
+        {#if m.studios?.nodes?.[0]}
+          {@const studio = m.studios.nodes[0]}
+          <p class="text-sm text-white/80">Studio: <a class="underline-offset-2 hover:underline" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a></p>
+        {/if}
+        {#if m.description}
+          <p class="max-w-2xl text-base leading-relaxed text-white/90 line-clamp-6">{stripHtml(m.description)}</p>
+        {/if}
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold text-white/80">
+          {#if format(m)}<span>{format(m)}</span>{/if}
+          {#each (m.genres ?? []).slice(0, 4) as g (g)}<span class="opacity-40">·</span><span>{g}</span>{/each}
+          {#if m.seasonYear || m.startDate?.year}<span class="opacity-40">·</span><span>{m.seasonYear || m.startDate?.year}</span>{/if}
+          {#if m.averageScore}<span class="opacity-40">·</span><span>{m.averageScore}%</span>{/if}
+        </div>
+        <div class="flex flex-wrap items-center gap-2 text-xs font-bold text-white/75">
+          {#if status(m)}<span class="rounded-full border border-white/25 px-2.5 py-1">{status(m)}</span>{/if}
+          {#if m.duration}<span>{m.duration}m</span>{/if}
+        </div>
+        {#if heroPlay.status === 'error'}
+          <p class="text-sm text-destructive">{heroPlay.message}</p>
+        {/if}
+      </div>
+    </section>
+    <div class="relative px-4 pb-16 sm:px-8" data-theme-surface="detail">
+      {#if belowEpisodes}
+        <div class="mb-6">
+          <EpisodeList media={m} offline={$offlineMode} />
+        </div>
+      {/if}
+      <Tabs tabs={desktopTabs} bind:active />
+      {#if active === 'Relations'}
+        {#if m.relations?.edges?.length}
+          <div class="flex flex-wrap {$themePresentation ? 'gap-x-6 gap-y-8' : 'gap-4'}">
+            {#each m.relations.edges as e (e.node.id)}
+              <div class={$themePresentation ? 'shrink-0' : 'w-[152px]'}>
+                <div class="{$themePresentation ? 'mb-1.5' : 'mb-1'} text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
+                <SmallCard media={e.node} />
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <p class="text-muted-foreground">No related titles.</p>
+        {/if}
+      {:else if active === 'Cast & Crew'}
+        <RichMetadata media={m} view="people" />
+      {:else if active === 'Recommended'}
+        <RichMetadata media={m} view="recommendations" />
+      {:else}
+        <div class="max-w-3xl space-y-4">
+          {#if m.description}
+            <p class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
+          {/if}
+        </div>
+      {/if}
+    </div>
   {:else}
-  <!-- Title-less banner backdrop; the info panel below overlaps its lower fade. -->
+  <!-- Title-less banner backdrop; the info panel below overlaps its lower fade.
+       Width-scaled banners sit behind the cover from the top of the page (the artwork
+       follows the window width at 5:1) instead of a viewport-height strip with a gap above the cover. -->
+  <div class="relative">
+  {#if !detailTheme.bannerHidden}
+  <div class={detailTheme.bannerScale === 'banner' ? 'pointer-events-none absolute inset-x-0 top-0 z-0 w-full' : ''}>
   <Hero medias={[m]} showOverlay={false} initialArtworkVisible={loadedHintBanner === banner(m)} />
-  <div class="relative {controllerUi ? '-mt-[16vh]' : '-mt-[18vh]'} px-4 pb-16 sm:px-8">
+  </div>
+  {/if}
+  <div class="relative z-10 px-4 pb-16 sm:px-8 {detailTheme.bannerHidden ? 'pt-8' : detailTheme.bannerScale === 'banner' ? 'pt-[7.5rem]' : ''}" style:margin-top={detailTheme.bannerHidden || detailTheme.bannerScale === 'banner' ? undefined : `-${bannerOverlap}vh`} data-theme-surface="detail">
     {#if heroPlay.status === 'error'}
       <p class="mb-3 text-sm text-destructive">{heroPlay.message}</p>
     {/if}
 
+    {#snippet seriesInfo()}
     <!-- Hero info panel: cover + title/badges/description + action bar. -->
     <!-- The banner is the dominant artwork; the portrait is an identity anchor, not the ruler for
          the whole header. At 13rem it left a poster-height void beneath the much shorter info
          column, delaying Episodes by roughly a full D-pad viewport. An 11rem cover retains a clear
          visual identity while keeping both columns close enough in height for Episodes to follow. -->
-    <div class="mb-4 flex flex-col gap-5 md:flex-row">
-      <img use:reliableImage={cover(m)} alt="" class="h-auto w-44 shrink-0 self-start rounded-lg object-contain shadow-lg" />
+    <div class="mb-4 flex flex-col gap-5 md:flex-row {detailTheme.coverAlign === 'end' ? 'md:items-end' : detailTheme.coverAlign === 'start' ? 'md:items-start' : ''}">
+      <img use:reliableImage={cover(m)} alt="" class="h-auto w-44 shrink-0 rounded-lg object-contain shadow-lg {detailTheme.coverAlign === 'end' ? 'self-end' : 'self-start'}" style:width={detailTheme.posterWidth ? `${detailTheme.posterWidth}px` : undefined} />
 
-      <div class="min-w-0 flex-1">
+      <div class="min-w-0 flex-1 {detailTheme.bannerScale === 'banner' ? 'md:pt-12' : ''}">
         {#if m.title.native || m.title.romaji}
           <div class="text-sm text-muted-foreground">{m.title.native || m.title.romaji}</div>
         {/if}
         <h1 class="mb-2 text-3xl font-black">{title(m)}</h1>
 
+        {#if detailTheme.facts}
+          <div class="mb-3">
+            <ThemeNode node={detailTheme.facts} model={mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined })} />
+          </div>
+        {:else}
         <!-- One scannable facts line replaces two rows of competing pills. Genres remain useful
              discovery links for pointer users, but are deliberately not D-pad stops in Game mode:
              Down from the primary action is a content path, not a tour through metadata. -->
@@ -680,8 +887,15 @@
             <span class="font-medium opacity-60">+{(m.genres?.length ?? 0) - (controllerUi ? 3 : 4)}</span>
           {/if}
         </div>
+        {/if}
 
-        {#if m.description}
+        {#if detailTheme.episodes?.order === 'flip'}
+          <div class="mb-3 flex flex-wrap items-center gap-2 empty:mb-0">
+            <AiringStatus media={m} />
+          </div>
+        {/if}
+
+        {#if m.description && !detailTheme.actionsFirst}
           <p class="mb-3 {controllerUi ? 'line-clamp-2' : 'line-clamp-3'} max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
         {/if}
 
@@ -692,8 +906,8 @@
                   onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
                   onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
                   use:focusOnMount onclick={() => playCta(m)}
-                  class="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">
-            <Play size={16} />{ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
+                  class="inline-flex items-center gap-2 rounded-md bg-primary font-bold text-primary-foreground {detailTheme.cta === 'large' ? 'min-w-56 px-6 py-3 text-base' : 'px-4 py-2'}">
+            <Play size={detailTheme.cta === 'large' ? 18 : 16} />{detailTheme.cta === 'large' ? (effStatus === 'COMPLETED' ? 'Rewatch Now' : ctaHasProgress(m) ? 'Continue Now' : 'Watch Now') : (ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play')}
           </button>
 
           <button data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
@@ -732,16 +946,21 @@
         </div>
       </div>
     </div>
+    {#if m.description && detailTheme.actionsFirst}
+      <p class="mb-4 {controllerUi ? 'line-clamp-4' : 'line-clamp-6'} max-w-3xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
+    {/if}
+    {/snippet}
 
-    <Tabs tabs={['Episodes', 'Relations', 'Cast & Crew', 'Recommended', 'Details']} bind:active />
-    {#if active === 'Episodes'}
+    {#snippet desktopSecondary()}
+    <Tabs tabs={desktopTabs} bind:active />
+    {#if episodeTabbed && active === 'Episodes'}
       <EpisodeList media={m} offline={$offlineMode} />
     {:else if active === 'Relations'}
       {#if m.relations?.edges?.length}
-        <div class="flex flex-wrap gap-4">
+        <div class="flex flex-wrap {$themePresentation ? 'gap-x-6 gap-y-8' : 'gap-4'}">
           {#each m.relations.edges as e (e.node.id)}
-            <div class="w-[152px]">
-              <div class="mb-1 text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
+            <div class={$themePresentation ? 'shrink-0' : 'w-[152px]'}>
+              <div class="{$themePresentation ? 'mb-1.5' : 'mb-1'} text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
               <SmallCard media={e.node} />
             </div>
           {/each}
@@ -777,6 +996,28 @@
         {/if}
       </div>
     {/if}
+    {/snippet}
+
+    {#if sideEpisodes}
+      <div class="flex flex-col gap-6 min-[960px]:grid min-[960px]:grid-cols-[minmax(0,1fr)_minmax(22rem,40%)] min-[960px]:items-start min-[960px]:gap-8">
+        <div class="min-w-0">
+          {@render seriesInfo()}
+          {@render desktopSecondary()}
+        </div>
+        <aside class="relative min-w-0 min-[960px]:sticky min-[960px]:top-10">
+          <EpisodeList media={m} offline={$offlineMode} />
+        </aside>
+      </div>
+    {:else}
+      {@render seriesInfo()}
+      {#if belowEpisodes}
+        <div class="mb-6">
+          <EpisodeList media={m} offline={$offlineMode} />
+        </div>
+      {/if}
+      {@render desktopSecondary()}
+    {/if}
+  </div>
   </div>
   {/if}
 
