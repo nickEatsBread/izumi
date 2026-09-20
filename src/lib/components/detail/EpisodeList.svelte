@@ -35,7 +35,8 @@
   import Pause from '@lucide/svelte/icons/pause'
   import Check from '@lucide/svelte/icons/check'
   import Search from '@lucide/svelte/icons/search'
-  import Shuffle from '@lucide/svelte/icons/shuffle'
+  import ArrowDown01 from '@lucide/svelte/icons/arrow-down-0-1'
+  import ArrowUp10 from '@lucide/svelte/icons/arrow-up-1-0'
   import ListChecks from '@lucide/svelte/icons/list-checks'
   import LayoutGrid from '@lucide/svelte/icons/layout-grid'
   import Rows3 from '@lucide/svelte/icons/rows-3'
@@ -78,7 +79,11 @@
   const episodeTheme = $derived(resolveDetail($themePresentation).episodes)
   const episodeCard = $derived(episodeTheme?.card)
   const episodeListLayout = $derived(episodeTheme?.arrangement === 'list')
+  const episodeCarousel = $derived(episodeTheme?.arrangement === 'carousel')
+  const episodeGridLayout = $derived(episodeTheme?.arrangement === 'grid')
   const episodeHoverScale = $derived(episodeTheme?.hover === 'scale')
+  const flipOrder = $derived(episodeTheme?.order === 'flip')
+  const showEpisodeSearch = $derived(episodeTheme?.search !== false)
   const PER = 48
   // `page` stays null until the user manually pages; until then we show `autoPage` — the page that
   // holds the next episode to watch — so opening a long-running series (One Piece) lands on where
@@ -121,6 +126,10 @@
     return rows.includes(preferred) ? preferred : (rows.find((episode) => episode <= aired) ?? rows[0])
   })
   function toggleSort(dir: SortDir) { if (dir !== sortDir) { h.select(); sortDir = dir } }
+  function flipSort() {
+    h.select()
+    sortDir = sortDir === 'asc' ? 'desc' : 'asc'
+  }
 
   // The switch is binary but the preference is ternary: `compact` is only reachable from Settings.
   // Remember which non-grid layout the user actually has so toggling back restores THAT, instead of
@@ -188,11 +197,6 @@
   // this only decides which number the badge prints.
   const numberLabel = (episode: number) => episodeNumberLabel(episode, meta[episode]?.abs, $absoluteEpisodeNumbers)
 
-  function randomEpisode() {
-    const available = allEpisodes.filter((episode) => episode <= aired)
-    if (!available.length || resolving) return
-    play(available[Math.floor(Math.random() * available.length)])
-  }
   const nextQueueEpisode = $derived(allEpisodes.find((episode) => episode > watchedThrough && episode <= aired)
     ?? allEpisodes.find((episode) => episode <= aired) ?? 1)
   let queuedNotice = $state(false)
@@ -285,14 +289,40 @@
 </script>
 
 {#if total > 0}
+<div class="relative">
+  {#if flipOrder && !$isMobile && aired > 0}
+    <button type="button" data-focusable class="episode-order-flip" onclick={flipSort}
+            title={sortDir === 'asc' ? 'Show newest first' : 'Show oldest first'}
+            aria-label={sortDir === 'asc' ? 'Show newest first' : 'Show oldest first'}>
+      {#if sortDir === 'asc'}<ArrowDown01 size={20} />{:else}<ArrowUp10 size={20} />{/if}
+    </button>
+    {#if !selecting && !offline}
+      <button type="button" data-focusable class="episode-order-flip episode-download-flip" onclick={startSelect}
+              title="Download episodes" aria-label="Download episodes">
+        <Download size={18} />
+      </button>
+    {/if}
+  {/if}
+  <div class="min-[960px]:max-h-[calc(100vh-5rem)] min-[960px]:overflow-y-auto">
   {#if playState.status === 'error'}
     <p class="mb-3 text-sm text-destructive">{playState.message}</p>
   {/if}
 
   {#if aired > 0}
+    {#if flipOrder && !$isMobile && !selecting}
+      {#if $episodeQueueEnabled}
+        <div class="mb-3 flex justify-end">
+          <button data-focusable onclick={queueNextEpisode} disabled={aired < 1}
+                  title={`${m.lists_add_queue()} — Episode ${nextQueueEpisode}`}
+                  class="flex items-center justify-center gap-1.5 rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent disabled:opacity-40">
+            <ListPlus size={15} /> {queuedNotice ? m.lists_queued_episode({ episode: nextQueueEpisode }) : m.lists_add_queue()}
+          </button>
+        </div>
+      {/if}
+    {:else}
     <div class="mb-4 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
       {#if !$isMobile}
-      {#if !selecting}
+      {#if !selecting && !flipOrder}
         <div class="flex rounded-lg bg-secondary p-0.5 text-sm font-bold">
           <button data-focusable onclick={() => toggleSort('asc')}
                   class="rounded-md px-3 py-1.5 transition-colors {sortDir === 'asc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Oldest</button>
@@ -300,6 +330,7 @@
                   class="rounded-md px-3 py-1.5 transition-colors {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
         </div>
       {/if}
+      {#if showEpisodeSearch}
       <label class="relative col-span-2 min-w-0 sm:max-w-sm sm:flex-1">
         <Search size={15} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
@@ -310,6 +341,7 @@
         />
       </label>
       {/if}
+      {/if}
       {#if $isMobile}
         <div class="flex min-h-11 w-full items-stretch rounded-xl bg-secondary p-1 text-sm font-bold">
           <button data-focusable onclick={() => toggleSort('asc')}
@@ -318,18 +350,15 @@
                   class="flex min-h-9 flex-1 items-center justify-center rounded-lg px-3 leading-none transition-colors {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
         </div>
       {:else}
-        <button data-focusable onclick={randomEpisode}
-                class="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold hover:bg-accent sm:h-auto sm:rounded-md sm:py-2">
-          <Shuffle size={15} /> Random
-        </button>
         {#if $episodeQueueEnabled}<button data-focusable onclick={queueNextEpisode} disabled={aired < 1}
                 title={`${m.lists_add_queue()} — Episode ${nextQueueEpisode}`}
                 class="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold hover:bg-accent disabled:opacity-40 sm:h-auto sm:rounded-md sm:py-2">
           <ListPlus size={15} /> {queuedNotice ? m.lists_queued_episode({ episode: nextQueueEpisode }) : m.lists_add_queue()}
         </button>{/if}
-        {#if !selecting}
+        {#if !selecting && !flipOrder}
           {#if !offline}
             <button data-focusable onclick={startSelect}
+                    title="Download episodes"
                     class="flex items-center justify-center gap-1.5 rounded-md bg-secondary px-3 py-2 text-sm font-bold transition-colors hover:bg-accent">
               <Download size={15} /> Download…
             </button>
@@ -356,14 +385,16 @@
                   class="grid min-h-9 w-11 place-items-center rounded-lg transition-colors {$episodeLayout === 'grid' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">
             <LayoutGrid size={17} />
           </button>
+          {#if showEpisodeSearch}
           <button data-focusable onclick={() => { h.tap(); searchOpen = !searchOpen; if (!searchOpen) episodeQuery = '' }}
                   aria-label="Search episodes" aria-pressed={searchOpen}
                   class="grid min-h-9 w-11 place-items-center rounded-lg transition-colors {searchOpen ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">
             <Search size={17} />
           </button>
+          {/if}
         </div>
       {/if}
-      {#if !$isMobile && !selecting}
+      {#if !$isMobile && !selecting && !flipOrder}
         <!-- Release timing belongs to episode controls, not series navigation. `ml-auto` keeps it
              at the opposite edge from the actions; if the toolbar wraps, it remains right-aligned. -->
         <div class="col-span-2 ml-auto flex shrink-0 items-center gap-3">
@@ -371,7 +402,8 @@
         </div>
       {/if}
     </div>
-    {#if $isMobile && searchOpen}
+    {/if}
+    {#if $isMobile && searchOpen && showEpisodeSearch}
       <label class="relative mb-4 block min-w-0">
         <Search size={15} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input bind:value={episodeQuery} data-focusable placeholder="Find episode number or title…"
@@ -543,6 +575,66 @@
         {/each}
       </div>
     {/if}
+  {:else if episodeCarousel}
+    <div class="flex gap-5 overflow-x-auto pb-3">
+      {#each rows as ep (`${sortDir}-${ep}`)}
+        <div class="w-[min(100%,18rem)] shrink-0">
+        <EpisodeCard
+          {media}
+          {ep}
+          meta={meta[ep]}
+          showThumb={showThumbs && !!meta[ep]?.image}
+          released={ep <= aired}
+          isNext={next?.episode === ep}
+          {watchedThrough}
+          filler={fillerSet.has(ep)}
+          dl={$downloads[keyFor(media.id, ep)]}
+          {next}
+          {selecting}
+          selectedEp={selected.has(ep)}
+          numberLabel={numberLabel(ep)}
+          navId={ep === quickEpisode ? 'series-quick-episode' : undefined}
+          navUp={ep === quickEpisode ? 'series-primary-action' : undefined}
+          onplay={tap}
+          onintent={intent}
+          onqueue={$episodeQueueEnabled ? queueEpisode : undefined}
+          themeCard={episodeCard}
+          hoverScale={false}
+          listRow={false}
+        />
+        </div>
+      {/each}
+    </div>
+  {:else if episodeGridLayout || $episodeLayout === 'cards'}
+    <div class="grid select-none {episodeListLayout ? 'grid-cols-1 gap-2 px-2' : 'grid-cols-1 gap-4 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]'}">
+      {#each rows as ep (`${sortDir}-${ep}`)}
+        <div class="{episodeListLayout && episodeHoverScale ? 'episode-scale' : ''} {episodeListLayout ? 'episode-load-in' : ''}">
+        <EpisodeCard
+          {media}
+          {ep}
+          meta={meta[ep]}
+          showThumb={showThumbs && !!meta[ep]?.image}
+          released={ep <= aired}
+          isNext={next?.episode === ep}
+          {watchedThrough}
+          filler={fillerSet.has(ep)}
+          dl={$downloads[keyFor(media.id, ep)]}
+          {next}
+          {selecting}
+          selectedEp={selected.has(ep)}
+          numberLabel={numberLabel(ep)}
+          navId={ep === quickEpisode ? 'series-quick-episode' : undefined}
+          navUp={ep === quickEpisode ? 'series-primary-action' : undefined}
+          onplay={tap}
+          onintent={intent}
+          onqueue={$episodeQueueEnabled ? queueEpisode : undefined}
+          themeCard={episodeCard}
+          hoverScale={episodeHoverScale && !episodeListLayout}
+          listRow={episodeListLayout}
+        />
+        </div>
+      {/each}
+    </div>
   {:else if $episodeLayout === 'grid'}
     <!-- Dense number tiles: a compact shape for browsing long-runners at a glance. Tile states
          mirror what a card shows, so switching layouts never changes what the list is telling you. -->
@@ -569,34 +661,6 @@
             <span class="absolute inset-x-0 bottom-0 h-1 bg-theme" style="width:{tile.percent}%"></span>
           {/if}
         </button>
-      {/each}
-    </div>
-  {:else if $episodeLayout === 'cards'}
-    <div class="grid select-none {episodeListLayout ? 'grid-cols-1 gap-4 px-1' : 'grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]'}">
-      {#each rows as ep (ep)}
-        <EpisodeCard
-          {media}
-          {ep}
-          meta={meta[ep]}
-          showThumb={showThumbs && !!meta[ep]?.image}
-          released={ep <= aired}
-          isNext={next?.episode === ep}
-          {watchedThrough}
-          filler={fillerSet.has(ep)}
-          dl={$downloads[keyFor(media.id, ep)]}
-          {next}
-          {selecting}
-          selectedEp={selected.has(ep)}
-          numberLabel={numberLabel(ep)}
-          navId={ep === quickEpisode ? 'series-quick-episode' : undefined}
-          navUp={ep === quickEpisode ? 'series-primary-action' : undefined}
-          onplay={tap}
-          onintent={intent}
-          onqueue={$episodeQueueEnabled ? queueEpisode : undefined}
-          themeCard={episodeCard}
-          hoverScale={episodeHoverScale}
-          listRow={episodeListLayout}
-        />
       {/each}
     </div>
   {:else}
@@ -700,8 +764,47 @@
       </button>
     </div>
   {/if}
+  </div>
+</div>
 {:else if next?.episode}
   <p class="text-sm text-muted-foreground">Episode 1 airing in {countdown(next.timeUntilAiring)}</p>
 {:else}
   <p class="text-sm text-muted-foreground">Episodes TBA</p>
 {/if}
+
+<style>
+  .episode-scale {
+    padding: 0.4rem 0.75rem;
+    transform-origin: center;
+    transition: transform 0.2s ease-in-out;
+  }
+  .episode-scale:hover,
+  .episode-scale:focus-within {
+    position: relative;
+    z-index: 10;
+    transform: scale(1.035);
+  }
+  .episode-order-flip {
+    position: absolute;
+    left: -2.75rem;
+    top: 0.35rem;
+    z-index: 20;
+    display: grid;
+    width: 2.5rem;
+    height: 2.5rem;
+    place-items: center;
+    border-radius: 999px;
+    background: hsl(var(--secondary));
+    color: hsl(var(--foreground));
+  }
+  .episode-order-flip:hover { background: hsl(var(--accent)); }
+  .episode-download-flip { top: 3.35rem; }
+  .episode-load-in {
+    animation: episode-load-in 0.4s ease 1;
+  }
+  @keyframes episode-load-in {
+    0% { transform: translateY(1.5rem) scale(0.98); }
+    60% { transform: translateY(-0.25rem) scale(1.015); }
+    100% { transform: none; }
+  }
+</style>

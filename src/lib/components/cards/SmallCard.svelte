@@ -27,7 +27,7 @@
   import * as h from '$lib/haptics'
   import Play from '@lucide/svelte/icons/play'
   import PreviewCard from './PreviewCard.svelte'
-  import { previewPos, rootZoom } from './preview-pos'
+  import { previewPos, rootZoom, SIDEBAR_W } from './preview-pos'
   import { portal } from '$lib/util/portal'
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   import { compactRatingLabel, primaryRating } from '$lib/catalog/media-metadata'
@@ -87,7 +87,11 @@
   // preview-pos.ts for why the UI-scale setting otherwise throws the popup off by that factor.
   function place() {
     const r = el.getBoundingClientRect()
-    pos = previewPos(r, { width: window.innerWidth, height: window.innerHeight }, rootZoom())
+    const art = el.querySelector<HTMLElement>('.theme-artwork, img')
+    const box = art?.getBoundingClientRect() ?? r
+    const nav = document.documentElement.dataset.themeNav
+    const rail = nav === 'top' || nav === 'bottom' ? 0 : SIDEBAR_W
+    pos = previewPos(box, { width: window.innerWidth, height: window.innerHeight }, rootZoom(), rail)
   }
   // Hovercard bridge: opening cancels any pending close; leaving the card (or the
   // preview) schedules a short delayed close so the pointer can travel card→preview

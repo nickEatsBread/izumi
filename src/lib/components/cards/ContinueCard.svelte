@@ -20,10 +20,11 @@
   import * as h from '$lib/haptics'
   import { rememberDetail } from '$lib/anilist/detail-hint'
   import { anilistIdOf } from '$lib/catalog/identity'
+  import { getContext } from 'svelte'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { themePresentation } from '$lib/themes/runtime'
   import { episodeDisplayModel } from '$lib/themes/host-model'
-  import { resolveCard } from '$lib/themes/presentation'
+  import { ROW_CONTEXT, densityScale, resolveCard, resolveRow, type RowScope } from '$lib/themes/presentation'
 
   let { media, progress }: { media: Media; progress: number } = $props()
 
@@ -55,6 +56,9 @@
 
   let imgReady = $state(false)
   $effect(() => { void thumb; imgReady = false })
+  const rowScope = getContext<(() => RowScope) | undefined>(ROW_CONTEXT)
+  const themeRow = $derived(rowScope ? resolveRow($themePresentation, rowScope().id) : {})
+  const cardWidth = $derived(themeRow.width ?? ($isTv ? 320 : 264) * densityScale($themePresentation))
   const continueTemplate = $derived(resolveCard($themePresentation, 'continue'))
   const continueModel = $derived(episodeDisplayModel(media, ep, meta[ep], {
     still: thumb, progress: pct, episodeTitle: epTitle || undefined, poster: cardCover(media),
@@ -88,7 +92,8 @@
   onpointerdown={() => void loadPlayback()}
   onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play() } }}
   title={`Resume — ${name} · Episode ${ep}`}
-  class="group flex shrink-0 cursor-pointer flex-col text-left {$isTv ? 'w-80' : 'w-[72vw] sm:w-[264px]'} {$isAndroid ? 'android-card-press' : ''}"
+  class="group flex shrink-0 cursor-pointer flex-col text-left {$isAndroid ? 'android-card-press' : ''}"
+  style:width={`${cardWidth}px`}
 >
   {#if continueTemplate}
     <ThemeNode node={continueTemplate} model={continueModel} />

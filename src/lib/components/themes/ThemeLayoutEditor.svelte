@@ -123,9 +123,17 @@
       <option value="bottom">Bottom bar</option>
     </select></label>
     <label class="toggle"><span>Compact chrome</span><input type="checkbox" checked={!!presentation?.shell?.compact} onchange={event => setShell({ compact: event.currentTarget.checked })} data-focusable /></label>
+    <label>Rail overlay<select value={presentation?.shell?.overlay ?? 'none'} onchange={event => setShell({ overlay: value(event) as 'none' | 'fade' })} data-focusable>
+      <option value="none">Solid seam</option>
+      <option value="fade">Fade into the page</option>
+    </select></label>
     <p class="help">Placement is ignored on phones, which keep the bottom bar. Destination order stays in Settings → Navigation.</p>
   {:else if scope === 'hero'}
     <label class="toggle"><span>Show hero</span><input type="checkbox" checked={!hero.hidden} onchange={event => setHero({ hidden: !event.currentTarget.checked })} data-focusable /></label>
+    <label>Featured banner scale<select value={hero.scale ?? 'viewport'} onchange={event => setHero({ scale: value(event) as 'viewport' | 'banner' })} data-focusable>
+      <option value="viewport">Percent of window height</option>
+      <option value="banner">Follow window width</option>
+    </select></label>
     <label>Desktop height <output>{hero.height ?? 50}% of screen</output><input type="range" aria-label="Desktop hero height" min="24" max="75" value={hero.height ?? 50} oninput={event => setHero({ height: Number(value(event)) })} data-focusable /></label>
     <label>Mobile height <output>{hero.mobileHeight ?? 46}% of screen</output><input type="range" aria-label="Mobile hero height" min="24" max="75" value={hero.mobileHeight ?? 46} oninput={event => setHero({ mobileHeight: Number(value(event)) })} data-focusable /></label>
     <label class="toggle"><span>Rotate featured titles</span><input type="checkbox" checked={hero.rotate !== false} onchange={event => setHero({ rotate: event.currentTarget.checked })} data-focusable /></label>
@@ -143,14 +151,20 @@
       <option value="right">Right-hand rail</option>
       <option value="below">Below the series info</option>
     </select></label>
-    <label>Episode arrangement<select value={detail.episodes?.arrangement ?? 'grid'} onchange={event => setDetail({ episodes: { arrangement: value(event) as 'list' | 'grid' } })} data-focusable>
+    <label>Episode arrangement<select value={detail.episodes?.arrangement ?? 'grid'} onchange={event => setDetail({ episodes: { arrangement: value(event) as 'list' | 'grid' | 'carousel' } })} data-focusable>
       <option value="grid">Wrapping grid</option>
       <option value="list">One per row</option>
+      <option value="carousel">Horizontal shelf</option>
     </select></label>
     <label>Episode hover<select value={detail.episodes?.hover ?? 'none'} onchange={event => setDetail({ episodes: { hover: value(event) as 'scale' | 'none' } })} data-focusable>
       <option value="none">Subtle lift</option>
       <option value="scale">Grow on hover</option>
     </select></label>
+    <label>Episode order control<select value={detail.episodes?.order ?? 'tabs'} onchange={event => setDetail({ episodes: { order: value(event) as 'tabs' | 'flip' } })} data-focusable>
+      <option value="tabs">Oldest / Newest</option>
+      <option value="flip">Flip button beside the rail</option>
+    </select></label>
+    <label class="toggle"><span>Episode search field</span><input type="checkbox" checked={detail.episodes?.search !== false} onchange={event => setDetail({ episodes: { search: event.currentTarget.checked } })} data-focusable /></label>
     <label class="toggle"><span>Play and list actions before synopsis</span><input type="checkbox" checked={!!detail.actionsFirst} onchange={event => setDetail({ actionsFirst: event.currentTarget.checked })} data-focusable /></label>
     <label>Cover alignment<select value={detail.coverAlign ?? 'start'} onchange={event => setDetail({ coverAlign: value(event) as 'start' | 'end' })} data-focusable>
       <option value="start">Top</option>
@@ -162,8 +176,12 @@
     </select></label>
     <label class="toggle"><span>Show banner artwork</span><input type="checkbox" checked={!detail.bannerHidden} onchange={event => setDetail({ bannerHidden: !event.currentTarget.checked })} data-focusable /></label>
     <label>Poster width <output>{detail.posterWidth ?? 176}px</output><input type="range" aria-label="Poster width" min="96" max="360" value={detail.posterWidth ?? 176} oninput={event => setDetail({ posterWidth: Number(value(event)) })} data-focusable /></label>
+    <label>Series banner scale<select value={detail.bannerScale ?? 'viewport'} onchange={event => setDetail({ bannerScale: value(event) as 'viewport' | 'banner' })} data-focusable>
+      <option value="viewport">Percent of window height</option>
+      <option value="banner">Follow window width</option>
+    </select></label>
     <label>Series banner height <output>{detail.bannerHeight ?? 48}% of screen</output><input type="range" aria-label="Series banner height" min="18" max="60" value={detail.bannerHeight ?? 48} oninput={event => setDetail({ bannerHeight: Number(value(event)) })} data-focusable /></label>
-    <p class="help">A right-hand rail becomes a list below the info column on narrow windows. Overlay paints title and Play on the banner and keeps episodes below. One-per-row arrangement stacks full-width episode tiles. Facts and episode-card templates are editable below. The cards / compact / grid control still belongs to Appearance.</p>
+    <p class="help">A right-hand rail becomes a list below the info column on narrow windows. Overlay paints title and Play on the banner and keeps episodes below. One-per-row stacks full-width tiles. A horizontal shelf is a living-room row of wide stills. Facts and episode-card templates are editable below. The cards / compact / grid control still belongs to Appearance except when a theme picks list or shelf.</p>
   {:else if scope === 'player'}
     <label>Seekbar thickness <output>{presentation?.player?.seekbarHeight ?? 4}px</output><input type="range" aria-label="Seekbar thickness" min="2" max="16" value={presentation?.player?.seekbarHeight ?? 4} oninput={event => setPlayer({ seekbarHeight: Number(value(event)) })} data-focusable /></label>
     <label>Seekbar color<select value={presentation?.player?.seekbarColor ?? 'foreground'} onchange={event => setPlayer({ seekbarColor: value(event) })} data-focusable>

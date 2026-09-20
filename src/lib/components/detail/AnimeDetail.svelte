@@ -806,10 +806,10 @@
       <Tabs tabs={desktopTabs} bind:active />
       {#if active === 'Relations'}
         {#if m.relations?.edges?.length}
-          <div class="flex flex-wrap gap-4">
+          <div class="flex flex-wrap gap-x-6 gap-y-8">
             {#each m.relations.edges as e (e.node.id)}
-              <div class="w-[152px]">
-                <div class="mb-1 text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
+              <div class="shrink-0">
+                <div class="mb-1.5 text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
                 <SmallCard media={e.node} />
               </div>
             {/each}
@@ -830,11 +830,16 @@
       {/if}
     </div>
   {:else}
-  <!-- Title-less banner backdrop; the info panel below overlaps its lower fade. -->
+  <!-- Title-less banner backdrop; the info panel below overlaps its lower fade.
+       Width-scaled banners sit behind the cover from the top of the page (the artwork
+       follows the window width at 5:1) instead of a viewport-height strip with a gap above the cover. -->
+  <div class="relative">
   {#if !detailTheme.bannerHidden}
+  <div class={detailTheme.bannerScale === 'banner' ? 'pointer-events-none absolute inset-x-0 top-0 z-0 w-full' : ''}>
   <Hero medias={[m]} showOverlay={false} initialArtworkVisible={loadedHintBanner === banner(m)} />
+  </div>
   {/if}
-  <div class="relative px-4 pb-16 sm:px-8 {detailTheme.bannerHidden ? 'pt-8' : ''}" style:margin-top={detailTheme.bannerHidden ? undefined : `-${bannerOverlap}vh`} data-theme-surface="detail">
+  <div class="relative z-10 px-4 pb-16 sm:px-8 {detailTheme.bannerHidden ? 'pt-8' : detailTheme.bannerScale === 'banner' ? 'pt-[7.5rem]' : ''}" style:margin-top={detailTheme.bannerHidden || detailTheme.bannerScale === 'banner' ? undefined : `-${bannerOverlap}vh`} data-theme-surface="detail">
     {#if heroPlay.status === 'error'}
       <p class="mb-3 text-sm text-destructive">{heroPlay.message}</p>
     {/if}
@@ -848,7 +853,7 @@
     <div class="mb-4 flex flex-col gap-5 md:flex-row {detailTheme.coverAlign === 'end' ? 'md:items-end' : 'md:items-start'}">
       <img use:reliableImage={cover(m)} alt="" class="h-auto w-44 shrink-0 rounded-lg object-contain shadow-lg {detailTheme.coverAlign === 'end' ? 'self-end' : 'self-start'}" style:width={detailTheme.posterWidth ? `${detailTheme.posterWidth}px` : undefined} />
 
-      <div class="min-w-0 flex-1">
+      <div class="min-w-0 flex-1 {detailTheme.bannerScale === 'banner' ? 'md:pt-12' : ''}">
         {#if m.title.native || m.title.romaji}
           <div class="text-sm text-muted-foreground">{m.title.native || m.title.romaji}</div>
         {/if}
@@ -884,6 +889,12 @@
         </div>
         {/if}
 
+        {#if detailTheme.episodes?.order === 'flip'}
+          <div class="mb-3 flex flex-wrap items-center gap-2 empty:mb-0">
+            <AiringStatus media={m} />
+          </div>
+        {/if}
+
         {#if m.description && !detailTheme.actionsFirst}
           <p class="mb-3 {controllerUi ? 'line-clamp-2' : 'line-clamp-3'} max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
         {/if}
@@ -895,8 +906,8 @@
                   onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
                   onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
                   use:focusOnMount onclick={() => playCta(m)}
-                  class="inline-flex items-center gap-2 rounded-md bg-primary font-bold text-primary-foreground {detailTheme.cta === 'large' ? 'min-w-56 px-6 py-3 text-base' : 'px-4 py-2'}">
-            <Play size={detailTheme.cta === 'large' ? 18 : 16} />{detailTheme.cta === 'large' ? (effStatus === 'COMPLETED' ? 'Rewatch Now' : ctaHasProgress(m) ? 'Continue Now' : 'Watch Now') : (ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play')}
+                  class="inline-flex h-10 items-center gap-2 rounded-md bg-primary font-bold text-primary-foreground {detailTheme.cta === 'large' ? 'min-w-56 px-6 text-base' : 'px-4'}">
+            <Play size={16} />{detailTheme.cta === 'large' ? (effStatus === 'COMPLETED' ? 'Rewatch Now' : ctaHasProgress(m) ? 'Continue Now' : 'Watch Now') : (ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play')}
           </button>
 
           <button data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
@@ -946,10 +957,10 @@
       <EpisodeList media={m} offline={$offlineMode} />
     {:else if active === 'Relations'}
       {#if m.relations?.edges?.length}
-        <div class="flex flex-wrap gap-4">
+        <div class="flex flex-wrap gap-x-6 gap-y-8">
           {#each m.relations.edges as e (e.node.id)}
-            <div class="w-[152px]">
-              <div class="mb-1 text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
+            <div class="shrink-0">
+              <div class="mb-1.5 text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
               <SmallCard media={e.node} />
             </div>
           {/each}
@@ -993,7 +1004,7 @@
           {@render seriesInfo()}
           {@render desktopSecondary()}
         </div>
-        <aside class="min-w-0 min-[960px]:sticky min-[960px]:top-10 min-[960px]:max-h-[calc(100vh-5rem)] min-[960px]:overflow-y-auto">
+        <aside class="relative min-w-0 min-[960px]:sticky min-[960px]:top-10">
           <EpisodeList media={m} offline={$offlineMode} />
         </aside>
       </div>
@@ -1006,6 +1017,7 @@
       {/if}
       {@render desktopSecondary()}
     {/if}
+  </div>
   </div>
   {/if}
 

@@ -225,6 +225,19 @@ html.gamemode .skeloader::before { animation: none; }
 }
 .android-card-press:active .focus-cover { transform: scale(.955); filter: brightness(.82); }
 .android-row-press:active { transform: scale(.985); }
+
+/* Pressed-state click: slight sink + darken on any real control. Range/seek and the Android
+   press classes keep their own transform so this does not fight them. */
+html.theme-press-sink button:not(:disabled, .android-hero-press, .android-card-press, .android-row-press):active,
+html.theme-press-sink a[href]:active,
+html.theme-press-sink [role="button"]:not([aria-disabled="true"]):active,
+html.theme-press-sink [data-focusable]:not([tabindex="-1"], .seekbar):active {
+  transition: box-shadow 0.1s ease, filter 0.1s ease, transform 0.1s ease;
+  filter: brightness(0.95) contrast(1.05);
+  box-shadow: 0 0 2rem hsl(0 0% 0% / 0.1), 0 0.4rem 0.6rem hsl(0 0% 0% / 0.05);
+  transform: translateY(0.15rem);
+}
+html.theme-press-sink input[type='range']:active { filter: none; transform: none; box-shadow: none; }
 .settings-search-hit {
   border-color: hsl(346.6 79.12% 51.18%) !important;
   background: hsl(346.6 79.12% 51.18% / 0.12) !important;
@@ -233,6 +246,7 @@ html.gamemode .skeloader::before { animation: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .android-hero-press, .android-card-press .focus-cover, .android-row-press { transition-duration: 0.01ms; }
+  html.theme-press-sink button:active, html.theme-press-sink a[href]:active, html.theme-press-sink [role="button"]:active, html.theme-press-sink [data-focusable]:active { transform: none; }
 }
 @keyframes wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-12deg); } 75% { transform: rotate(12deg); } }
 @keyframes bounce-sm { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
@@ -533,3 +547,16 @@ html.theme-shell-compact [data-nav-sidebar] a,
 html.theme-shell-compact [data-nav-sidebar] button { min-height: 2.25rem; }
 html.theme-true-black { --background: 0 0% 0%; --card: 0 0% 0%; }
 .theme-shell-main { margin-left: var(--theme-shell-left); }
+html.theme-shell-fade [data-nav-sidebar] { background: hsl(var(--background)); box-shadow: none; filter: none; }
+html.theme-shell-fade .theme-sidebar-scrim {
+  width: var(--theme-shell-left);
+  background: hsl(var(--background));
+}
+.theme-series-cover {
+  width: 35%;
+  max-width: 22rem;
+  max-height: 50vh;
+  aspect-ratio: 7 / 10;
+  height: auto;
+  object-fit: cover;
+}

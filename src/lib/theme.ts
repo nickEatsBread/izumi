@@ -46,6 +46,8 @@ function apply() {
   root.classList.toggle('theme-true-black', !!presentation?.trueBlack && tokens.scheme === 'dark')
   root.classList.toggle('theme-hide-labels', !!presentation?.hideCardLabels)
   root.classList.toggle('theme-shell-compact', !!presentation?.shell?.compact)
+  root.classList.toggle('theme-shell-fade', presentation?.shell?.overlay === 'fade')
+  root.classList.toggle('theme-press-sink', presentation?.shell?.press === 'sink')
   if (presentation?.trueBlack && tokens.scheme === 'dark') {
     root.style.setProperty('--background', '0 0% 0%')
     root.style.setProperty('--card', '0 0% 0%')

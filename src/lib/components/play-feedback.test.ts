@@ -39,7 +39,7 @@ describe('player-flow feedback', () => {
   })
 
   it('stays silent for a binge continuation, which hides the picker deliberately', () => {
-    expect(layout).toContain('{#if !$streamPicker?.hidden}')
+    expect(layout).toContain('{#if !$streamPicker?.hidden && !$streamPicker?.playbackError}')
   })
 
   it('stays cheap enough to be worth eager-bundling', () => {

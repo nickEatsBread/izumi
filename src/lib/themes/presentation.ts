@@ -13,8 +13,9 @@ export type ThemeDensity = 'compact' | 'comfortable' | 'large'
 export type ThemeNavPlacement = 'sidebar' | 'top' | 'bottom'
 export type DetailLayout = 'stack' | 'split' | 'overlay'
 export type EpisodePlacement = 'tab' | 'right' | 'below'
-export type EpisodeArrangement = 'list' | 'grid'
+export type EpisodeArrangement = 'list' | 'grid' | 'carousel'
 export type EpisodeHover = 'scale' | 'none'
+export type EpisodeOrderControl = 'tabs' | 'flip'
 export type ThemeIcon =
   | 'score' | 'format' | 'episodes' | 'reviews' | 'studio' | 'season' | 'status' | 'source' | 'country' | 'duration'
 export type ThemeSurface = 'Home' | 'Shell' | 'Details' | 'Player' | 'Full'
@@ -48,11 +49,17 @@ export interface DetailPresentation {
   coverAlign?: 'start' | 'end'
   cta?: 'default' | 'large'
   bannerHeight?: number
-  episodes?: { placement?: EpisodePlacement; arrangement?: EpisodeArrangement; hover?: EpisodeHover; card?: ThemeNode }
+  /** `banner` sizes the series artwork to the window width (5:1, min 20rem), not viewport height. */
+  bannerScale?: 'viewport' | 'banner'
+  episodes?: { placement?: EpisodePlacement; arrangement?: EpisodeArrangement; hover?: EpisodeHover; order?: EpisodeOrderControl; search?: boolean; card?: ThemeNode }
 }
 export interface ShellPresentation {
   nav?: ThemeNavPlacement
   compact?: boolean
+  /** `fade` paints a scrim from the rail into the page so full-bleed banners meet the menu. */
+  overlay?: 'none' | 'fade'
+  /** `sink` darkens and nudges a control down while it is held. */
+  press?: 'none' | 'sink'
 }
 export interface PlayerPresentation {
   seekbarHeight?: number
@@ -62,7 +69,7 @@ export interface ThemePresentation {
   density?: ThemeDensity
   hideCardLabels?: boolean
   trueBlack?: boolean
-  hero?: { hidden?: boolean; height?: number; mobileHeight?: number; rotate?: boolean; interval?: number; rankHidden?: boolean; rank?: ThemeNode; template?: ThemeNode }
+  hero?: { hidden?: boolean; height?: number; mobileHeight?: number; rotate?: boolean; interval?: number; rankHidden?: boolean; rank?: ThemeNode; template?: ThemeNode; scale?: 'viewport' | 'banner' }
   rows?: { defaults?: RowPresentation; byId?: Record<string, RowPresentation> }
   detail?: DetailPresentation
   shell?: ShellPresentation
@@ -92,7 +99,7 @@ const choices: Record<string, string[]> = {
   align: ['start', 'center', 'end', 'stretch'], justify: ['start', 'center', 'end', 'space-between'],
   textAlign: ['start', 'center', 'end'], position: ['relative', 'absolute'],
   anchor: ['fill', 'bottom-start', 'bottom-end', 'top-start', 'top-end'],
-  fit: ['cover', 'contain'], aspect: ['2 / 3', '16 / 9', '1 / 1'], wrap: ['wrap', 'nowrap'],
+  fit: ['cover', 'contain'], aspect: ['2 / 3', '16 / 9', '2 / 1', '1 / 1'], wrap: ['wrap', 'nowrap'],
 }
 const icons = ['score', 'format', 'episodes', 'reviews', 'studio', 'season', 'status', 'source', 'country', 'duration'] as const
 const colors = ['foreground', 'background', 'muted', 'muted-foreground', 'theme', 'card', 'card-foreground', 'primary', 'primary-foreground', 'transparent']
@@ -173,7 +180,7 @@ function parseRow(value: unknown): RowPresentation {
   return result
 }
 function parseDetail(value: unknown): DetailPresentation {
-  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'episodes'])
+  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'bannerScale', 'episodes'])
   const result: DetailPresentation = {}
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['stack', 'split', 'overlay'])
   if (raw.bannerHidden !== undefined) result.bannerHidden = flag(raw.bannerHidden)
@@ -183,21 +190,26 @@ function parseDetail(value: unknown): DetailPresentation {
   if (raw.coverAlign !== undefined) result.coverAlign = choice(raw.coverAlign, ['start', 'end'])
   if (raw.cta !== undefined) result.cta = choice(raw.cta, ['default', 'large'])
   if (raw.bannerHeight !== undefined) result.bannerHeight = number(raw.bannerHeight, 18, 60)
+  if (raw.bannerScale !== undefined) result.bannerScale = choice(raw.bannerScale, ['viewport', 'banner'])
   if (raw.episodes !== undefined) {
-    const episodes = record(raw.episodes); only(episodes, ['placement', 'arrangement', 'hover', 'card'])
+    const episodes = record(raw.episodes); only(episodes, ['placement', 'arrangement', 'hover', 'order', 'search', 'card'])
     result.episodes = {}
     if (episodes.placement !== undefined) result.episodes.placement = choice(episodes.placement, ['tab', 'right', 'below'])
-    if (episodes.arrangement !== undefined) result.episodes.arrangement = choice(episodes.arrangement, ['list', 'grid'])
+    if (episodes.arrangement !== undefined) result.episodes.arrangement = choice(episodes.arrangement, ['list', 'grid', 'carousel'])
     if (episodes.hover !== undefined) result.episodes.hover = choice(episodes.hover, ['scale', 'none'])
+    if (episodes.order !== undefined) result.episodes.order = choice(episodes.order, ['tabs', 'flip'])
+    if (episodes.search !== undefined) result.episodes.search = flag(episodes.search)
     if (episodes.card !== undefined) result.episodes.card = parseNode(episodes.card, undefined, 0, false)
   }
   return result
 }
 function parseShell(value: unknown): ShellPresentation {
-  const raw = record(value); only(raw, ['nav', 'compact'])
+  const raw = record(value); only(raw, ['nav', 'compact', 'overlay', 'press'])
   const result: ShellPresentation = {}
   if (raw.nav !== undefined) result.nav = choice(raw.nav, ['sidebar', 'top', 'bottom'])
   if (raw.compact !== undefined) result.compact = flag(raw.compact)
+  if (raw.overlay !== undefined) result.overlay = choice(raw.overlay, ['none', 'fade'])
+  if (raw.press !== undefined) result.press = choice(raw.press, ['none', 'sink'])
   return result
 }
 function parsePlayer(value: unknown): PlayerPresentation {
@@ -223,10 +235,11 @@ export function parsePresentation(value: unknown): ThemePresentation {
   if (raw.hideCardLabels !== undefined) result.hideCardLabels = flag(raw.hideCardLabels)
   if (raw.trueBlack !== undefined) result.trueBlack = flag(raw.trueBlack)
   if (raw.hero !== undefined) {
-    const hero = record(raw.hero); only(hero, ['hidden', 'height', 'mobileHeight', 'rotate', 'interval', 'rankHidden', 'rank', 'template'])
+    const hero = record(raw.hero); only(hero, ['hidden', 'height', 'mobileHeight', 'rotate', 'interval', 'rankHidden', 'rank', 'template', 'scale'])
     result.hero = {}
     for (const key of ['hidden', 'rotate', 'rankHidden'] as const) if (hero[key] !== undefined) result.hero[key] = flag(hero[key])
     for (const key of ['height', 'mobileHeight'] as const) if (hero[key] !== undefined) result.hero[key] = number(hero[key], 24, 75)
+    if (hero.scale !== undefined) result.hero.scale = choice(hero.scale, ['viewport', 'banner'])
     if (hero.interval !== undefined) result.hero.interval = number(hero.interval, 5, 60)
     if (hero.rank !== undefined) result.hero.rank = parseNode(hero.rank, undefined, 0, false)
     if (hero.template !== undefined) result.hero.template = parseNode(hero.template)
@@ -260,17 +273,22 @@ export function displayText(field: DisplayField, model: DisplayModel): string {
   if (value === undefined || value === '') return ''
   if (field === 'score' || field === 'progress') return `${value}%`
   if (field === 'duration') return `${value}m`
+  if (field === 'episodeNumber') return `E${value}`
   return String(value)
 }
 export function nodeStyle(node: ThemeNode): string {
-  const styles: Record<string, string> = { 'min-width': '0', 'box-sizing': 'border-box' }
+  const styles: Record<string, string> = { 'box-sizing': 'border-box' }
   if (['stack', 'row', 'grid', 'overlay'].includes(node.type)) {
+    styles['min-width'] = '0'
     styles.display = node.type === 'grid' || node.type === 'overlay' ? 'grid' : 'flex'
     if (node.type === 'stack') styles['flex-direction'] = 'column'
     if (node.type === 'row') styles['flex-wrap'] = 'wrap'
     styles.position = 'relative'
   }
-  if (node.type === 'artwork') { styles.width = '100%'; styles['object-fit'] = 'cover' }
+  if (node.type === 'artwork') {
+    styles['object-fit'] = 'cover'
+    if (node.style?.maxWidth === undefined) styles.width = '100%'
+  }
   if (node.type === 'meter') { styles.width = '100%'; styles['min-height'] = '4px' }
   // `anchor` is applied after every other style entry so its absolute positioning cannot be
   // reordered away by JSON key order (an explicit `position` entry must never win over it).
@@ -278,15 +296,24 @@ export function nodeStyle(node: ThemeNode): string {
   for (const [key, value] of Object.entries(node.style ?? {})) {
     const property = ({ radius: 'border-radius', fontSize: 'font-size', fontWeight: 'font-weight', minHeight: 'min-height', maxWidth: 'max-width', textAlign: 'text-align', align: 'align-items', justify: 'justify-content', fit: 'object-fit', aspect: 'aspect-ratio', grow: 'flex-grow', shrink: 'flex-shrink', wrap: 'flex-wrap' } as Record<string, string>)[key] ?? key
     if (key === 'lines') {
+      const lines = Math.round(Number(value))
       styles.overflow = 'hidden'
-      styles.display = '-webkit-box'
-      styles['-webkit-box-orient'] = 'vertical'
-      styles['-webkit-line-clamp'] = String(Math.round(Number(value)))
+      styles['overflow-wrap'] = 'normal'
+      if (lines <= 1) {
+        styles['white-space'] = 'nowrap'
+        styles['text-overflow'] = 'ellipsis'
+      } else {
+        styles.display = '-webkit-box'
+        styles['-webkit-box-orient'] = 'vertical'
+        styles['-webkit-line-clamp'] = String(lines)
+      }
     } else if (key === 'columns') styles['grid-template-columns'] = `repeat(${Math.round(Number(value))},minmax(0,1fr))`
     else if (key === 'anchor') anchor = String(value)
     else if (key === 'color' || key === 'background') styles[property] = String(value).startsWith('#') || value === 'transparent' ? String(value) : `hsl(var(--${value}))`
     else styles[property] = `${value}${numericStyles[key]?.[2] ?? ''}`
   }
+  if (node.type === 'row' && node.style?.wrap === 'nowrap') styles['overflow-x'] = 'auto'
+  if (node.type === 'artwork' && node.style?.maxWidth !== undefined) styles.width = `${Number(node.style.maxWidth)}px`
   if (anchor !== undefined) {
     styles.position = 'absolute'
     if (anchor === 'fill') { styles.inset = '0'; styles.width = '100%'; styles.height = '100%' }
@@ -317,7 +344,8 @@ export function resolveDetail(layout?: ThemePresentation): Required<Pick<DetailP
     coverAlign: detail.coverAlign,
     cta: detail.cta,
     bannerHeight: detail.bannerHeight,
-    episodes: { placement, arrangement: detail.episodes?.arrangement, hover: detail.episodes?.hover, card: detail.episodes?.card },
+    bannerScale: detail.bannerScale,
+    episodes: { placement, arrangement: detail.episodes?.arrangement, hover: detail.episodes?.hover, order: detail.episodes?.order, search: detail.episodes?.search, card: detail.episodes?.card },
   }
 }
 /** Right-hand episode rail is desktop-only. Narrow viewports fall back to a rail below the info column. */

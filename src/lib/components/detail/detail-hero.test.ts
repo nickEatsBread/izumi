@@ -66,7 +66,9 @@ describe('mobile series hero', () => {
     expect(detail).toContain("controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'")
     expect(hero).toContain('h-[40vh]')
     expect(hero).toContain("controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'")
-    expect(detail.match(/controllerUi \? '-mt-\[16vh\]' : '-mt-\[18vh\]'/g)?.length).toBeGreaterThanOrEqual(2)
+    expect(detail).toContain("controllerUi ? '-mt-[16vh]' : '-mt-[18vh]'")
+    expect(detail).toContain('const bannerOverlap = $derived(detailTheme.bannerHeight ? Math.round(detailTheme.bannerHeight * 0.58) : (controllerUi ? 16 : 18))')
+    expect(detail).toContain('`-${bannerOverlap}vh`')
   })
 
   it('settles artwork already painted by the skeleton without replaying a directional slide', () => {
@@ -88,8 +90,10 @@ describe('mobile series hero', () => {
     // the adjacent title/description/actions ended much earlier. Loading and loaded layouts must
     // share the balanced 11rem identity-cover geometry.
     expect(detail).not.toContain('md:w-52')
-    expect(detail.match(/h-auto w-44 shrink-0 self-start rounded-lg/g)?.length).toBeGreaterThanOrEqual(2)
-    expect(detail).toContain('class="mb-4 flex flex-col gap-5 md:flex-row"')
+    expect(detail.match(/h-auto w-44 shrink-0/g)?.length).toBeGreaterThanOrEqual(2)
+    expect(detail).toContain('self-start rounded-lg')
+    expect(detail).toContain("detailTheme.coverAlign === 'end' ? 'self-end' : 'self-start'")
+    expect(detail).toContain('mb-4 flex flex-col gap-5 md:flex-row')
   })
 
   it('keeps desktop tracker actions compact and even', () => {

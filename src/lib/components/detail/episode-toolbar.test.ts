@@ -12,19 +12,20 @@ describe('mobile episode toolbar', () => {
 
   it('puts search beside the mobile layout controls and gates the field', () => {
     expect(src).toContain('aria-label="Search episodes"')
-    expect(src).toContain('{#if $isMobile && searchOpen}')
+    expect(src).toContain('{#if $isMobile && searchOpen && showEpisodeSearch}')
     expect(src).toContain('{#if !$isMobile}')
   })
 })
 
 describe('desktop episode toolbar', () => {
-  it('orders sort, search, Random, and Download on one desktop row', () => {
+  it('orders sort, search, and Download on one desktop row', () => {
     const toolbar = src.slice(src.indexOf('<div class="mb-4 grid'), src.indexOf('{#if $isMobile && searchOpen}'))
     expect(toolbar.indexOf('Oldest')).toBeGreaterThan(-1)
     expect(toolbar.indexOf('Newest')).toBeGreaterThan(toolbar.indexOf('Oldest'))
     expect(toolbar.indexOf('Find episode number or title')).toBeGreaterThan(toolbar.indexOf('Newest'))
-    expect(toolbar.indexOf('<Shuffle size={15} /> Random')).toBeGreaterThan(toolbar.indexOf('Find episode number or title'))
-    expect(toolbar.indexOf('Download…')).toBeGreaterThan(toolbar.indexOf('<Shuffle size={15} /> Random'))
+    expect(toolbar.indexOf('Download')).toBeGreaterThan(toolbar.indexOf('Find episode number or title'))
+    expect(src).not.toContain('Random')
+    expect(src).not.toContain('Shuffle')
     expect(src).toContain('{:else if selecting || ($isMobile && !offline)}')
   })
 

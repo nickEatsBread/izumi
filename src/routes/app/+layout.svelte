@@ -506,7 +506,7 @@
 {#if $streamPicker}
   <Lazy load={loadStreamPicker}>
     {#snippet pending()}
-      {#if !$streamPicker?.hidden}
+      {#if !$streamPicker?.hidden && !$streamPicker?.playbackError}
         <!-- Same title/artwork the picker's own loader uses, so the stand-in and the screen it
              precedes are the same screen. -->
         <PlayFeedback

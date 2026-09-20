@@ -57,8 +57,10 @@ describe('featured carousel UX', () => {
   })
 
   it('keeps pointer-only carousel controls out of Steam Deck spatial navigation', () => {
-    expect(hero.match(/data-focusable=\{controllerUi \? undefined : ''\}/g)?.length).toBe(3)
-    expect(hero.match(/tabindex=\{controllerUi \? -1 : undefined\}/g)?.length).toBe(3)
+    expect(hero.match(/data-focusable=\{controllerUi \? undefined : ''\}/g)?.length).toBeGreaterThanOrEqual(3)
+    expect(hero.match(/tabindex=\{controllerUi \? -1 : undefined\}/g)?.length).toBeGreaterThanOrEqual(3)
+    expect(hero).toContain('theme-banner-scale')
+    expect(hero).toContain('hero-pip')
   })
 
   it('makes Watch Now the row entry target and reveals the complete hero', () => {
@@ -88,7 +90,8 @@ describe('featured carousel UX', () => {
   })
 
   it('uses the compact Game-mode detail backdrop height', () => {
-    expect(hero).toContain("{showOverlay ? 'sm:h-[50vh]' : controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'}")
+    expect(hero).toContain("bannerScale ? 'theme-banner-scale mb-0' : seriesBannerHeight ? '' : showOverlay ? 'sm:h-[50vh]' : controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'")
+    expect(hero).toContain("controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'")
   })
 
   it('keeps genre labels near-white over variable artwork', () => {

@@ -6,7 +6,7 @@
   import type { EpMeta } from '$lib/anizip/types'
   import { episodeRatingPercent } from '$lib/anizip'
   import type { DownloadItem } from '$lib/downloads/state'
-  import { ratingBg } from '$lib/anilist/media'
+  import { cover, ratingBg } from '$lib/anilist/media'
   import { episodeLabels } from '$lib/anilist/episode-labels'
   import { episodeBarPercent, positions, progressKey } from '$lib/player/progress'
   import { hideSpoilers } from '$lib/settings/ui'
@@ -67,9 +67,9 @@
   const spoiler = $derived($hideSpoilers && !trackedDone)
   const labels = $derived(episodeLabels(ep, meta?.title, spoiler))
   const themeModel = $derived(episodeDisplayModel(media, ep, meta, {
-    episodeTitle: labels.primary && !labels.primary.includes(String(ep)) ? `${ep}. ${labels.primary}` : (labels.primary || `Episode ${ep}`),
+    episodeTitle: labels.primary || `Episode ${ep}`,
     ...(labels.concealSecondary ? { description: '' } : {}),
-    still: img,
+    still: img || cover(media),
     progress: pct,
     score: rating ?? undefined,
   }))
@@ -126,9 +126,10 @@
   onclick={play}
   onkeydown={(e) => { if (released && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); play() } }}
   title={selecting ? (released ? (selectedEp ? 'Selected — tap to unselect' : 'Tap to select') : 'Not yet aired') : released ? `Play — ${labels.primary}` : isNext ? `Airing in ${countdown(next?.timeUntilAiring)}` : 'Not yet aired'}
-  class="group isolate select-none text-left {listRow ? 'rounded-md ring-1' : 'rounded-xl sm:rounded-lg'} {hoverScale ? 'overflow-visible' : 'overflow-hidden'} {themeCard || listRow ? 'flex' : showThumb && img ? 'grid grid-cols-[42%_1fr] sm:flex sm:flex-col' : 'flex flex-col'}
-    {released ? (hoverScale ? 'cursor-pointer bg-secondary transition-transform duration-200 hover:z-10 hover:scale-[1.035]' : 'cursor-pointer bg-secondary transition-transform hover:scale-[1.02] hover:bg-accent') : 'cursor-not-allowed bg-background/40 opacity-60'}
-    {listRow ? (released && ep === watchedThrough + 1 ? 'ring-white' : 'ring-white/15') : ''}
+  class="theme-episode group isolate select-none overflow-hidden text-left {listRow ? 'rounded-sm' : 'rounded-xl sm:rounded-lg'} {themeCard ? (listRow ? 'flex w-full min-w-0' : 'flex w-full min-w-0 flex-col') : listRow ? 'flex' : showThumb && img ? 'grid grid-cols-[42%_1fr] sm:flex sm:flex-col' : 'flex flex-col'}
+    {released ? 'cursor-pointer' : 'cursor-not-allowed bg-background/40 opacity-60'}
+    {released && themeCard?.type === 'overlay' ? 'bg-transparent' : released ? 'bg-secondary' : ''}
+    {released && hoverScale && !listRow ? 'transition-transform duration-200 hover:z-10 hover:scale-[1.035]' : ''}
     {selecting && selectedEp ? 'ring-2 ring-theme' : ''}"
 >
   {#if themeCard}
