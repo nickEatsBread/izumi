@@ -544,7 +544,7 @@ html[data-theme-nav='top'], html[data-theme-nav='bottom'] { --theme-shell-left: 
 @media (max-width: 640px) { html { --theme-shell-left: 0px; } }
 html.theme-hide-labels [data-theme-card-label] { display: none !important; }
 html.theme-shell-compact [data-nav-sidebar] a,
-html.theme-shell-compact [data-nav-sidebar] button { min-height: 2.25rem; }
+html.theme-shell-compact [data-nav-sidebar] button.group { min-height: 2.25rem; }
 html.theme-true-black { --background: 0 0% 0%; --card: 0 0% 0%; }
 .theme-shell-main { margin-left: var(--theme-shell-left); }
 html.theme-shell-fade [data-nav-sidebar] { background: hsl(var(--background)); box-shadow: none; filter: none; }

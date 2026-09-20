@@ -18,6 +18,6 @@ describe('episode play-intent prefetch', () => {
   it('is wired to episode rows and both primary play buttons', () => {
     expect(list).toContain('onpointerenter={() => intent(ep)}')
     expect(list).toContain('onintent={intent}')
-    expect(detail.match(/onpointerenter=\{\(\) => prefetchEpisodeSources\(m, ctaEp\(m\)\)\}/g)).toHaveLength(2)
+    expect(detail.match(/onpointerenter=\{\(\) => prefetchEpisodeSources\(m, ctaEp\(m\)\)\}/g)).toHaveLength(4)
   })
 })
