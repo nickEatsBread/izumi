@@ -40,6 +40,7 @@ describe('theme host display model', () => {
   it('strips complete markup and leftover angle brackets from descriptions', () => {
     expect(mediaDisplayModel({ ...media, description: '<i>A story.</i>' }).description).toBe('A story.')
     expect(mediaDisplayModel({ ...media, description: '<script alert' }).description).toBe('script alert')
+    expect(mediaDisplayModel({ ...media, description: '<scr<script>ipt>' }).description).toBe('ipt')
   })
   it('adds episode stills, titles and progress without stringifying numbers', () => {
     const model = episodeDisplayModel(media, 8, {
