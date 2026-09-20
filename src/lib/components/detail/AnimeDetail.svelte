@@ -806,10 +806,10 @@
       <Tabs tabs={desktopTabs} bind:active />
       {#if active === 'Relations'}
         {#if m.relations?.edges?.length}
-          <div class="flex flex-wrap gap-x-6 gap-y-8">
+          <div class="flex flex-wrap {$themePresentation ? 'gap-x-6 gap-y-8' : 'gap-4'}">
             {#each m.relations.edges as e (e.node.id)}
-              <div class="shrink-0">
-                <div class="mb-1.5 text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
+              <div class={$themePresentation ? 'shrink-0' : 'w-[152px]'}>
+                <div class="{$themePresentation ? 'mb-1.5' : 'mb-1'} text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
                 <SmallCard media={e.node} />
               </div>
             {/each}
@@ -906,8 +906,8 @@
                   onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
                   onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
                   use:focusOnMount onclick={() => playCta(m)}
-                  class="inline-flex h-10 items-center gap-2 rounded-md bg-primary font-bold text-primary-foreground {detailTheme.cta === 'large' ? 'min-w-56 px-6 text-base' : 'px-4'}">
-            <Play size={16} />{detailTheme.cta === 'large' ? (effStatus === 'COMPLETED' ? 'Rewatch Now' : ctaHasProgress(m) ? 'Continue Now' : 'Watch Now') : (ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play')}
+                  class="inline-flex items-center gap-2 rounded-md bg-primary font-bold text-primary-foreground {detailTheme.cta === 'large' ? 'min-w-56 px-6 py-3 text-base' : 'px-4 py-2'}">
+            <Play size={detailTheme.cta === 'large' ? 18 : 16} />{detailTheme.cta === 'large' ? (effStatus === 'COMPLETED' ? 'Rewatch Now' : ctaHasProgress(m) ? 'Continue Now' : 'Watch Now') : (ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play')}
           </button>
 
           <button data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
@@ -957,10 +957,10 @@
       <EpisodeList media={m} offline={$offlineMode} />
     {:else if active === 'Relations'}
       {#if m.relations?.edges?.length}
-        <div class="flex flex-wrap gap-x-6 gap-y-8">
+        <div class="flex flex-wrap {$themePresentation ? 'gap-x-6 gap-y-8' : 'gap-4'}">
           {#each m.relations.edges as e (e.node.id)}
-            <div class="shrink-0">
-              <div class="mb-1.5 text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
+            <div class={$themePresentation ? 'shrink-0' : 'w-[152px]'}>
+              <div class="{$themePresentation ? 'mb-1.5' : 'mb-1'} text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
               <SmallCard media={e.node} />
             </div>
           {/each}

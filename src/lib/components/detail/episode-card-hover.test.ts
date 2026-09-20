@@ -14,4 +14,9 @@ describe('episode card thumbnail hover', () => {
     expect(card).toContain('sm:-mt-px')
     expect(card).toContain("released ? 'group-hover:scale-105' : 'grayscale'")
   })
+
+  it('keeps the shipped card lift and accent fill unless a theme opts into scale hover', () => {
+    expect(card).toContain("released && !themeCard && !listRow ? 'transition-transform hover:scale-[1.02] hover:bg-accent'")
+    expect(card).toContain("released && hoverScale && !listRow ? 'transition-transform duration-200 hover:z-10 hover:scale-[1.035]'")
+  })
 })

@@ -606,7 +606,7 @@
       {/each}
     </div>
   {:else if episodeGridLayout || $episodeLayout === 'cards'}
-    <div class="grid select-none {episodeListLayout ? 'grid-cols-1 gap-2 px-2' : 'grid-cols-1 gap-4 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]'}">
+    <div class="grid select-none {episodeListLayout ? 'grid-cols-1 gap-2 px-2' : episodeGridLayout ? 'grid-cols-1 gap-4 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]' : 'grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]'}">
       {#each rows as ep (`${sortDir}-${ep}`)}
         <div class="{episodeListLayout && episodeHoverScale ? 'episode-scale' : ''} {episodeListLayout ? 'episode-load-in' : ''}">
         <EpisodeCard

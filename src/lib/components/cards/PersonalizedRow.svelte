@@ -28,7 +28,8 @@
   let { userName = '', preferLinkedRating = false }: { userName?: string; preferLinkedRating?: boolean } = $props()
   const client = getContextClient()
   const rowScope = getContext<(() => RowScope) | undefined>(ROW_CONTEXT)
-  const tileWidth = $derived((rowScope ? resolveRow($themePresentation, rowScope().id).width : undefined) ?? Math.round(152 * densityScale($themePresentation)))
+  const themedWidth = $derived(rowScope ? resolveRow($themePresentation, rowScope().id).width : undefined)
+  const tileWidth = $derived(themedWidth ?? Math.round(152 * densityScale($themePresentation)))
   let visible = $state(false)
   const reveal = () => { visible = true }
   const localSeeds = $derived(historySeeds($durableHistory).filter((seed) => $showAdult || !seed.media.isAdult))
@@ -113,13 +114,13 @@
   {#if hasTasteData && (!visible || loading)}
     <Carousel title="Recommended for You">
       {#each Array.from({ length: 8 }) as _}
-        <div class="skeloader aspect-[2/3] shrink-0 rounded-md" style:width={`${tileWidth}px`}></div>
+        <div class="skeloader aspect-[2/3] shrink-0 rounded-md {themedWidth ? '' : 'w-36 sm:w-[152px]'}" style:width={themedWidth ? `${tileWidth}px` : undefined}></div>
       {/each}
     </Carousel>
   {:else if recommendations.length}
     <Carousel title="Recommended for You">
       {#each recommendations as recommendation (recommendation.media.id)}
-        <div class="group/recommendation load-in relative shrink-0" style:width={`${tileWidth}px`}>
+        <div class="group/recommendation load-in relative shrink-0 {themedWidth ? '' : 'w-36 sm:w-[152px]'}" style:width={themedWidth ? `${tileWidth}px` : undefined}>
           <SmallCard
             media={recommendation.media}
             subline={recommendation.reason}

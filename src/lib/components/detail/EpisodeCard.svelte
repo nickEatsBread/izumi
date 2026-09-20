@@ -129,7 +129,7 @@
   class="theme-episode group isolate select-none overflow-hidden text-left {listRow ? 'rounded-sm' : 'rounded-xl sm:rounded-lg'} {themeCard ? (listRow ? 'flex w-full min-w-0' : 'flex w-full min-w-0 flex-col') : listRow ? 'flex' : showThumb && img ? 'grid grid-cols-[42%_1fr] sm:flex sm:flex-col' : 'flex flex-col'}
     {released ? 'cursor-pointer' : 'cursor-not-allowed bg-background/40 opacity-60'}
     {released && themeCard?.type === 'overlay' ? 'bg-transparent' : released ? 'bg-secondary' : ''}
-    {released && hoverScale && !listRow ? 'transition-transform duration-200 hover:z-10 hover:scale-[1.035]' : ''}
+    {released && hoverScale && !listRow ? 'transition-transform duration-200 hover:z-10 hover:scale-[1.035]' : released && !themeCard && !listRow ? 'transition-transform hover:scale-[1.02] hover:bg-accent' : ''}
     {selecting && selectedEp ? 'ring-2 ring-theme' : ''}"
 >
   {#if themeCard}

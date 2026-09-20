@@ -92,8 +92,8 @@
   onpointerdown={() => void loadPlayback()}
   onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play() } }}
   title={`Resume — ${name} · Episode ${ep}`}
-  class="group flex shrink-0 cursor-pointer flex-col text-left {$isAndroid ? 'android-card-press' : ''}"
-  style:width={`${cardWidth}px`}
+  class="group flex shrink-0 cursor-pointer flex-col text-left {themeRow.width ? '' : $isTv ? 'w-80' : 'w-[72vw] sm:w-[264px]'} {$isAndroid ? 'android-card-press' : ''}"
+  style:width={themeRow.width ? `${cardWidth}px` : undefined}
 >
   {#if continueTemplate}
     <ThemeNode node={continueTemplate} model={continueModel} />
