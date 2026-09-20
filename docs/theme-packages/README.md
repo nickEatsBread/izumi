@@ -9,11 +9,11 @@ Kindling, Ledger and Tidal recreate default home and series compositions (featur
 | Package | Intent |
 | --- | --- |
 | [Kindling](izumi.kindling.json) | Cool gray canvas, rose accent. Rotating featured banner with Watch Now, horizontal poster rows, series page with icon facts and a right-hand rail of one short episode tile per row. |
-| [Ledger](izumi.ledger.json) | Near-black canvas, violet accent. Continue-watching banner, landscape resume stills, poster carousels, series page with a tall fluid banner, overlapping cover and episode stills below. |
-| [Tidal](izumi.tidal.json) | Living-room canvas, top navigation, full-bleed featured title, poster rows, series page with Play / title / synopsis on the artwork and episode stills below. |
-| [Ember](izumi.ember.json) | Warm crimson canvas and tinted cards, landscape resume art, split episode rail. |
-| [Halo](izumi.halo.json) | Frosted aurora glass, top navigation bar, large landscape tiles, split series page. |
-| [Orchid](izumi.orchid.json) | Violet living-room canvas, mesh backdrop, titles over posters, split episode rail. |
+| [Ledger](izumi.ledger.json) | Near-black canvas, violet accent. Continue-watching banner with a 180px cover, landscape resume stills, slim sidebar, series page with a tall banner and horizontal episode rows. |
+| [Tidal](izumi.tidal.json) | Living-room canvas, top navigation, full-bleed featured title, poster rows, series page with Play on the artwork and a shelf of episode stills. |
+| [Ember](izumi.ember.json) | Warm crimson canvas, overlay series page, 16:9 episode grid, landscape resume art. |
+| [Halo](izumi.halo.json) | Frosted aurora glass, compact top navigation, large landscape tiles, overlay series page and a wrapping 16:9 episode grid. |
+| [Orchid](izumi.orchid.json) | Violet mesh canvas, titles over posters, split series page with a right-hand episode rail. |
 
 ## How to install
 

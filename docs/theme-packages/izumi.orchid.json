@@ -5,7 +5,7 @@
   "themeApi": 1,
   "id": "izumi.orchid",
   "name": "Orchid",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "author": "Izumi",
   "description": "A violet living-room palette: cool-black canvas, purple accent, landscape resume cards and a split series page. Pair with true black on OLED.",
   "design": {
@@ -39,22 +39,54 @@
       "trueBlack": true,
       "shell": { "nav": "sidebar" },
       "player": { "seekbarHeight": 6, "seekbarColor": "theme" },
-      "hero": { "height": 54, "mobileHeight": 44, "rankHidden": false },
+      "hero": {
+        "height": 54,
+        "mobileHeight": 44,
+        "rankHidden": false,
+        "rotate": true,
+        "interval": 12,
+        "template": {
+          "type": "overlay",
+          "children": [
+            { "type": "artwork", "artwork": "backdrop", "style": { "anchor": "fill", "fit": "cover" } },
+            {
+              "type": "stack",
+              "style": { "anchor": "bottom-start", "padding": 32, "gap": 10, "maxWidth": 700 },
+              "children": [
+                { "type": "text", "field": "rank", "when": { "field": "rank" }, "style": { "color": "#C4B5FD", "fontSize": 14, "fontWeight": 800 } },
+                { "type": "text", "field": "title", "style": { "color": "#FFFFFF", "fontSize": 42, "fontWeight": 800 } },
+                { "type": "text", "field": "description", "when": { "field": "description" }, "style": { "color": "#DDD6FE", "fontSize": 14, "maxWidth": 560, "lines": 3 } },
+                {
+                  "type": "row",
+                  "style": { "gap": 10 },
+                  "children": [
+                    { "type": "action", "action": "play", "text": "Play", "style": { "background": "#7C3AED", "color": "#FFFFFF", "minHeight": 40, "radius": 12 } },
+                    { "type": "action", "action": "details", "text": "Details", "style": { "background": "#FFFFFF22", "color": "#FFFFFF", "minHeight": 40, "radius": 12 } }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
       "detail": {
         "layout": "split",
         "posterWidth": 204,
         "episodes": {
           "placement": "right",
+          "arrangement": "list",
+          "hover": "scale",
+          "search": true,
           "card": {
             "type": "row",
-            "style": { "gap": 12, "align": "center" },
+            "style": { "gap": 12, "align": "center", "wrap": "nowrap" },
             "children": [
-              { "type": "artwork", "artwork": "still", "style": { "width": 40, "aspect": "16 / 9", "radius": 10, "fit": "cover" } },
+              { "type": "artwork", "artwork": "still", "style": { "width": 40, "aspect": "16 / 9", "radius": 10, "fit": "cover", "shrink": 0 } },
               {
                 "type": "stack",
                 "style": { "grow": 1, "gap": 4 },
                 "children": [
-                  { "type": "text", "field": "episodeTitle", "style": { "fontWeight": 800, "fontSize": 14 } },
+                  { "type": "text", "field": "episodeTitle", "style": { "fontWeight": 800, "fontSize": 14, "lines": 1 } },
                   { "type": "text", "field": "airDate", "when": { "field": "airDate" }, "style": { "color": "muted-foreground", "fontSize": 11 } }
                 ]
               }
@@ -67,6 +99,14 @@
         "byId": { "continue": { "layout": "carousel", "width": 288, "aspect": "landscape" } }
       },
       "cards": {
+        "continue": {
+          "type": "overlay",
+          "children": [
+            { "type": "artwork", "artwork": "still", "style": { "aspect": "16 / 9", "radius": 12, "fit": "cover" } },
+            { "type": "text", "field": "title", "style": { "anchor": "bottom-start", "padding": 10, "color": "#FFFFFF", "fontWeight": 800, "fontSize": 13 } },
+            { "type": "meter", "field": "progress", "when": { "field": "progress" }, "style": { "anchor": "bottom-start", "minHeight": 4 } }
+          ]
+        },
         "poster": {
           "type": "overlay",
           "children": [

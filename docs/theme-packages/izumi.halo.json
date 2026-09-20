@@ -5,7 +5,7 @@
   "themeApi": 1,
   "id": "izumi.halo",
   "name": "Halo",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "author": "Izumi",
   "description": "Frosted chrome: a top navigation bar, aurora glass, large landscape tiles and quiet poster titles. The seekbar uses the brand accent.",
   "design": {
@@ -37,19 +37,82 @@
     "presentation": {
       "density": "large",
       "hideCardLabels": false,
-      "shell": { "nav": "top", "compact": false },
+      "shell": { "nav": "top", "compact": true },
       "player": { "seekbarHeight": 8, "seekbarColor": "theme" },
-      "hero": { "height": 58, "mobileHeight": 46, "rotate": true, "interval": 10 },
+      "hero": {
+        "height": 58,
+        "mobileHeight": 46,
+        "rotate": true,
+        "interval": 10,
+        "rankHidden": true,
+        "template": {
+          "type": "overlay",
+          "children": [
+            { "type": "artwork", "artwork": "backdrop", "style": { "anchor": "fill", "fit": "cover" } },
+            {
+              "type": "stack",
+              "style": { "anchor": "bottom-start", "padding": 36, "gap": 12, "maxWidth": 720 },
+              "children": [
+                { "type": "text", "field": "title", "style": { "color": "#FFFFFF", "fontSize": 44, "fontWeight": 800 } },
+                { "type": "text", "field": "description", "when": { "field": "description" }, "style": { "color": "#D5DCE8", "fontSize": 15, "maxWidth": 560, "lines": 3 } },
+                {
+                  "type": "row",
+                  "style": { "gap": 10 },
+                  "children": [
+                    { "type": "action", "action": "play", "text": "Play", "style": { "background": "#E8F4FF", "color": "#0C1220", "minHeight": 40, "radius": 24 } },
+                    { "type": "action", "action": "details", "text": "Details", "style": { "background": "#FFFFFF22", "color": "#FFFFFF", "minHeight": 40, "radius": 24 } }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
       "detail": {
-        "layout": "split",
-        "posterWidth": 220,
-        "episodes": { "placement": "right" }
+        "layout": "overlay",
+        "bannerHidden": false,
+        "episodes": {
+          "placement": "below",
+          "arrangement": "grid",
+          "hover": "scale",
+          "search": true,
+          "card": {
+            "type": "stack",
+            "style": { "gap": 8 },
+            "children": [
+              {
+                "type": "overlay",
+                "children": [
+                  { "type": "artwork", "artwork": "still", "style": { "aspect": "16 / 9", "radius": 16, "fit": "cover" } },
+                  { "type": "meter", "field": "progress", "when": { "field": "progress" }, "style": { "anchor": "bottom-start", "minHeight": 3 } }
+                ]
+              },
+              { "type": "text", "field": "episodeTitle", "style": { "fontWeight": 800, "fontSize": 14, "lines": 1 } },
+              {
+                "type": "row",
+                "style": { "gap": 8, "align": "center" },
+                "children": [
+                  { "type": "text", "field": "episodeNumber", "style": { "color": "muted-foreground", "fontSize": 12, "fontWeight": 700 } },
+                  { "type": "text", "field": "duration", "when": { "field": "duration" }, "style": { "color": "muted-foreground", "fontSize": 12 } }
+                ]
+              }
+            ]
+          }
+        }
       },
       "rows": {
         "defaults": { "width": 180, "gap": 20, "spacing": 44, "radius": 16, "aspect": "poster", "titleSize": 20 },
         "byId": { "continue": { "layout": "carousel", "width": 320, "aspect": "landscape", "radius": 16 } }
       },
       "cards": {
+        "continue": {
+          "type": "overlay",
+          "children": [
+            { "type": "artwork", "artwork": "still", "style": { "aspect": "16 / 9", "radius": 16, "fit": "cover" } },
+            { "type": "text", "field": "title", "style": { "anchor": "bottom-start", "padding": 12, "color": "#FFFFFF", "fontWeight": 800, "fontSize": 14 } },
+            { "type": "meter", "field": "progress", "when": { "field": "progress" }, "style": { "anchor": "bottom-start", "minHeight": 5 } }
+          ]
+        },
         "poster": {
           "type": "stack",
           "style": { "gap": 10 },

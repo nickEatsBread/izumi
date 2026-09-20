@@ -5,9 +5,9 @@
   "themeApi": 1,
   "id": "izumi.tidal",
   "name": "Tidal",
-  "version": "1.1.0",
+  "version": "1.5.2",
   "author": "Izumi",
-  "description": "Living-room layout: a full-bleed featured backdrop with a large title, top navigation pills, and poster rows with titles and years. The series page paints Play, title, synopsis and chips directly on the artwork. Episodes sit below as wide stills.",
+  "description": "Living-room layout: a full-bleed featured backdrop with a large title, compact top navigation, and poster rows with titles and years. The series page paints Play, title, synopsis and chips directly on the artwork. Episodes sit below as wide stills.",
   "design": {
     "tokens": {
       "scheme": "dark",
@@ -45,7 +45,7 @@
         "height": 62,
         "mobileHeight": 48,
         "rotate": true,
-        "interval": 10,
+        "interval": 8,
         "rankHidden": true,
         "template": {
           "type": "overlay",
@@ -65,6 +65,15 @@
                     { "type": "text", "field": "genres", "when": { "field": "genres" }, "style": { "color": "#E8EEF6", "fontSize": 14 } },
                     { "type": "text", "field": "year", "when": { "field": "year" }, "style": { "color": "#E8EEF6", "fontSize": 14 } }
                   ]
+                },
+                { "type": "text", "field": "description", "when": { "field": "description" }, "style": { "color": "#D5DDE8", "fontSize": 16, "maxWidth": 640, "lines": 3 } },
+                {
+                  "type": "row",
+                  "style": { "gap": 12, "align": "center" },
+                  "children": [
+                    { "type": "action", "action": "play", "text": "Play", "style": { "background": "#FFFFFF", "color": "#0B1018", "minHeight": 44, "radius": 6, "fontWeight": 800 } },
+                    { "type": "action", "action": "details", "text": "More Info", "style": { "background": "#FFFFFF33", "color": "#FFFFFF", "minHeight": 44, "radius": 6, "fontWeight": 800 } }
+                  ]
                 }
               ]
             }
@@ -76,20 +85,31 @@
         "bannerHidden": false,
         "episodes": {
           "placement": "below",
+          "arrangement": "carousel",
+          "hover": "scale",
+          "search": false,
           "card": {
             "type": "stack",
-            "style": { "gap": 8 },
+            "style": { "gap": 8, "padding": 10, "radius": 14 },
             "children": [
-              { "type": "artwork", "artwork": "still", "style": { "aspect": "16 / 9", "radius": 16, "fit": "cover" } },
-              { "type": "text", "field": "episodeTitle", "when": { "field": "episodeTitle" }, "style": { "fontWeight": 700, "fontSize": 15 } },
+              {
+                "type": "overlay",
+                "children": [
+                  { "type": "artwork", "artwork": "still", "style": { "aspect": "16 / 9", "radius": 12, "fit": "cover" } },
+                  { "type": "meter", "field": "progress", "when": { "field": "progress" }, "style": { "anchor": "bottom-start", "minHeight": 4 } }
+                ]
+              },
               {
                 "type": "row",
-                "style": { "gap": 8 },
+                "style": { "gap": 8, "align": "center" },
                 "children": [
-                  { "type": "text", "field": "episodeNumber", "style": { "color": "muted-foreground", "fontSize": 13 } },
-                  { "type": "text", "field": "duration", "when": { "field": "duration" }, "style": { "color": "muted-foreground", "fontSize": 12 } }
+                  { "type": "text", "field": "episodeNumber", "style": { "fontWeight": 800, "fontSize": 13 } },
+                  { "type": "text", "field": "duration", "when": { "field": "duration" }, "style": { "color": "muted-foreground", "fontSize": 12 } },
+                  { "type": "text", "field": "airDate", "when": { "field": "airDate" }, "style": { "color": "muted-foreground", "fontSize": 12 } }
                 ]
-              }
+              },
+              { "type": "text", "field": "episodeTitle", "style": { "fontWeight": 800, "fontSize": 15, "lines": 2 } },
+              { "type": "text", "field": "description", "when": { "field": "description" }, "style": { "color": "muted-foreground", "fontSize": 13, "lines": 2 } }
             ]
           }
         }
@@ -104,7 +124,7 @@
           "style": { "gap": 8 },
           "children": [
             { "type": "artwork", "artwork": "poster", "style": { "aspect": "2 / 3", "radius": 12, "fit": "cover" } },
-            { "type": "text", "field": "title", "style": { "fontWeight": 700, "fontSize": 13 } },
+            { "type": "text", "field": "title", "style": { "fontWeight": 700, "fontSize": 13, "lines": 2 } },
             { "type": "text", "field": "year", "when": { "field": "year" }, "style": { "color": "muted-foreground", "fontSize": 12 } }
           ]
         },
@@ -119,7 +139,8 @@
                 { "type": "text", "field": "title", "style": { "color": "#FFFFFF", "fontWeight": 800, "fontSize": 14 } },
                 { "type": "text", "field": "episodeTitle", "when": { "field": "episodeTitle" }, "style": { "color": "#E0E0E0", "fontSize": 12 } }
               ]
-            }
+            },
+            { "type": "meter", "field": "progress", "when": { "field": "progress" }, "style": { "anchor": "bottom-start", "minHeight": 5 } }
           ]
         }
       }
