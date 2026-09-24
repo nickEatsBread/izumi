@@ -224,8 +224,15 @@ pub async fn jvm_extension_call(
     parse_response(response)
 }
 
+/// Android cancellation is always cooperative (the runtime host lives in-process), so `force` is
+/// accepted for call-shape parity with the desktop command and otherwise ignored.
 #[tauri::command]
-pub async fn jvm_extension_cancel(app: AppHandle, request_id: String) -> Result<(), String> {
+pub async fn jvm_extension_cancel(
+    app: AppHandle,
+    request_id: String,
+    force: Option<bool>,
+) -> Result<(), String> {
+    let _ = force;
     let paths = runtime_request(&app).await?;
     let args_json = serde_json::to_string(&serde_json::json!({ "requestId": request_id }))
         .map_err(|error| error.to_string())?;

@@ -25,6 +25,7 @@
   import { autoCommitPhase, autoCommitProgress } from '$lib/components/player/auto-commit'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import { providerProblems } from '$lib/stremio/onlinestream'
+  import { jvmRuntimeState } from '$lib/extensions/jvm-runtime-state'
   import { rejectLabel } from '$lib/stremio/refine'
   import { title, banner, cover } from '$lib/anilist/media'
   import { isAndroid, isMobile } from '$lib/platform'
@@ -903,7 +904,7 @@
           <div class="min-w-0 flex-1">
             <h2 class="sp-title font-black leading-tight drop-shadow {$isMobile ? 'line-clamp-1 text-base' : 'line-clamp-2 text-xl'}">{title(pick.media)}</h2>
             <p class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-              {#if resolving}<span data-source-spinner class="size-3 shrink-0 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" class:animate-spin={!$gameMode} style:transform={$gameMode ? `rotate(${spinnerFrame * 45}deg)` : undefined}></span>Finding sources…{:else}{pick.cachedCount} cached{uncachedCount ? ` · ${uncachedCount} uncached` : ''}{unknownCount ? ` · ${unknownCount} unknown` : ''}{deadCount && $showDeadSources ? ` · ${deadCount} dead` : ''}{/if}
+              {#if resolving}<span data-source-spinner class="size-3 shrink-0 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" class:animate-spin={!$gameMode} style:transform={$gameMode ? `rotate(${spinnerFrame * 45}deg)` : undefined}></span>{$jvmRuntimeState === 'starting' ? 'Starting extension runtime…' : 'Finding sources…'}{:else}{pick.cachedCount} cached{uncachedCount ? ` · ${uncachedCount} uncached` : ''}{unknownCount ? ` · ${unknownCount} unknown` : ''}{deadCount && $showDeadSources ? ` · ${deadCount} dead` : ''}{/if}
             </p>
           </div>
           <button data-focusable onclick={close} class="grid shrink-0 place-items-center bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white {$isMobile ? 'size-11 rounded-full text-lg' : 'size-10 rounded-lg sm:size-8'}" aria-label="Close">✕</button>

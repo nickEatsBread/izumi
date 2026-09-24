@@ -348,6 +348,11 @@ export function startDolbySync(): () => void {
   }))
   first = false
   const timer = typeof window === 'undefined' ? undefined : window.setInterval(async () => {
+    // The probe rebuilds MediaCodecList and walks the audio routes on the Android UI thread. In
+    // the background (screen off, another app in front) nothing it could learn can be acted on,
+    // and a 10s wake-up for the whole app lifetime is battery for nothing; the route-change
+    // listener below still catches a device change the moment the app is visible again.
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
     const before = get(dolbyCapabilities)
     const after = await refreshDolbyCapabilities()
     if (before.audioConfidence !== after.audioConfidence

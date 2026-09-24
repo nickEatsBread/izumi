@@ -17,10 +17,12 @@ describe('media helpers', () => {
     // AniList's `large` is 230px wide. A 152px card on a 1x monitor is covered three times over.
     ;(globalThis as any).window = { devicePixelRatio: 1 }
     expect(cardCover(m, 152)).toBe('l.jpg')
-    // The same card on a 2.75x phone needs ~300 real pixels, so the big asset is the correct one -
-    // density decides this, not platform. DPR is budgeted at 2x, past which the bytes stop paying.
+    // The same card on a 2.75x phone budgets as 2x (262 device px): a hair over `large`'s 230,
+    // and stepping up would be FOUR times the pixels for a 0.88× under-sample nobody can see.
+    // Density still decides, not platform: a wider card on that phone does want the big asset.
     ;(globalThis as any).window = { devicePixelRatio: 2.75 }
-    expect(cardCover(m, 131)).toBe('xl.jpg')
+    expect(cardCover(m, 131)).toBe('l.jpg')
+    expect(cardCover(m, 152)).toBe('xl.jpg')
     // A caller that cannot state a width (fill-width cell, 16:9 fallback) must not be guessed small.
     expect(cardCover(m)).toBe('xl.jpg')
     delete (globalThis as any).window

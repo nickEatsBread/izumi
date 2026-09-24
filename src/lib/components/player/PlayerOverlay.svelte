@@ -17,6 +17,7 @@
   import { getMediaSkipSegments } from '$lib/stremio/skip-segments'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting } from '$lib/player/session'
+  import { seriesRatingPrompt } from '$lib/player/series-rating'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
   import { markAlive } from '$lib/stremio/dead-sources'
@@ -1197,6 +1198,8 @@
     if (!controllerInputMode || !$playing) return
     return listenSafe<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
       if (get(deckKeyboardWarning)) return
+      // The app-wide router owns every button while the end-of-series rating prompt is up.
+      if (get(seriesRatingPrompt)) return
       if (e.payload.name === 'l4') {
         if (!deckL4Press.update(e.payload.pressed, performance.now())) return
         if (get(commentsOpen)) return
@@ -1398,6 +1401,9 @@
       // episode and pops the source picker ("change source search") — plus f→fullscreen, space/k→pause.
       // Capture-phase runs before the input's own handler, so this guard (not stopPropagation) is the fix.
       if (isTypingTarget(e.target)) return
+      // The end-of-series rating prompt owns the keyboard while up: its arrows move the score,
+      // Enter saves, Escape dismisses — none of them may seek, pause or close the player under it.
+      if (get(seriesRatingPrompt)) return
       const action = findHotkey(e, get(hotkeyBindings), 'Player')
       if (!action) return
       if (get(deckKeyboardWarning)) return

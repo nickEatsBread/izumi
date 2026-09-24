@@ -9,6 +9,8 @@
   export type SelectOption = {
     value: string
     label: string
+    /** Muted secondary text after the label (a score's descriptor, a unit), also echoed in the trigger. */
+    description?: string
     disabled?: boolean
   }
 
@@ -19,6 +21,7 @@
     className = '',
     ariaLabel,
     searchable = false,
+    floating = false,
   }: {
     value: string
     options: SelectOption[]
@@ -26,6 +29,10 @@
     className?: string
     ariaLabel?: string
     searchable?: boolean
+    /** Render the desktop menu viewport-fixed instead of absolutely inside the trigger's parent.
+     *  For a select that lives inside a scrolling or overflow-clipped container (a dialog body, a
+     *  popover), where the absolute menu would be cut off at the container edge. */
+    floating?: boolean
   } = $props()
 
   let root: HTMLDivElement
@@ -48,6 +55,9 @@
   const GAP = 4
   let panelTop = $state(0)
   let panelBottom = $state(0)
+  // The floating desktop panel keeps the trigger's own horizontal footprint.
+  let panelLeft = $state(0)
+  let panelWidth = $state(0)
 
   /** @param content the menu's natural height in local px, once it has rendered. */
   function measure(content?: number) {
@@ -65,6 +75,8 @@
     maxHeight = fit.maxHeight
     panelTop = rect.bottom / zoom + GAP
     panelBottom = window.innerHeight / zoom - rect.top / zoom + GAP
+    panelLeft = rect.left / zoom
+    panelWidth = rect.width / zoom
   }
 
   async function setOpen(next: boolean) {
@@ -97,6 +109,9 @@
   function onMenuKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') {
       event.preventDefault()
+      // Escape closes the menu only. Without this it also bubbled to the enclosing dialog's own
+      // Escape handler and closed that as well, throwing the rest of the form away.
+      event.stopPropagation()
       open = false
       trigger.focus({ preventScroll: true })
       return
@@ -154,7 +169,10 @@
       class="flex w-full items-center justify-between gap-4 whitespace-nowrap rounded px-3 py-3 text-left text-base hover:bg-accent focus:bg-accent disabled:opacity-40 sm:py-2 sm:text-sm"
       onclick={() => choose(option)}
     >
-      <span class="truncate">{option.label}</span>
+      <span class="flex min-w-0 items-baseline gap-2">
+        <span class="truncate">{option.label}</span>
+        {#if option.description}<span class="truncate text-xs text-muted-foreground">{option.description}</span>{/if}
+      </span>
       {#if option.value === value}<Check size={15} class="shrink-0 text-primary" />{/if}
     </button>
   {/each}
@@ -174,7 +192,7 @@
     onclick={() => void setOpen(!open)}
     onkeydown={onTriggerKeydown}
   >
-    <span class="truncate">{selected?.label ?? value}</span>
+    <span class="truncate">{selected?.label ?? value}{#if selected?.description}<span class="text-muted-foreground"> · {selected.description}</span>{/if}</span>
     <ChevronDown size={15} class="shrink-0 transition-transform {open ? 'rotate-180' : ''}" />
   </button>
 
@@ -190,6 +208,20 @@
         aria-label={ariaLabel}
         class="fixed left-3 right-3 z-[80] overflow-y-auto overscroll-contain rounded-md border border-border bg-background p-1 text-foreground shadow-xl"
         style="{placement === 'down' ? `top:${panelTop}px` : `bottom:${panelBottom}px`};max-height:{maxHeight}px"
+        onkeydown={onMenuKeydown}
+      >
+        {@render optionList()}
+      </div>
+    {:else if floating}
+      <!-- Desktop, but escaping an overflow-clipped parent: same geometry as the absolute menu,
+           expressed in viewport coordinates so a dialog body's scroll box cannot cut it off. -->
+      <div
+        bind:this={menu}
+        role={searchable ? 'dialog' : 'listbox'}
+        tabindex="-1"
+        aria-label={ariaLabel}
+        class="fixed z-[80] overflow-y-auto overscroll-contain rounded-md border border-border bg-background p-1 text-foreground shadow-xl"
+        style="left:{panelLeft}px;min-width:{panelWidth}px;{placement === 'down' ? `top:${panelTop}px` : `bottom:${panelBottom}px`};max-height:{maxHeight}px"
         onkeydown={onMenuKeydown}
       >
         {@render optionList()}

@@ -253,6 +253,8 @@
   // List-editor state. `listOpt` is the optimistic patch applied after a save so the status pill +
   // progress badge reflect instantly (the tracker queue reconciles every connected service).
   let showEditor = $state(false)
+  // The desktop action-bar button; the editor anchors its popover to it (phones get a sheet).
+  let editorAnchor = $state<HTMLButtonElement>()
   let showLocalLists = $state(false)
   let listOpt = $state<{ status?: AniStatus; progress?: number; score?: number; removed?: boolean }>({})
   const localEntry = $derived(media ? localTrackingForMedia($localLibrary, media) : undefined)
@@ -915,7 +917,8 @@
             {#if savedLocally}<BookmarkCheck size={18} class="text-theme" /> Saved{:else}<BookmarkPlus size={18} /> Save{/if}
           </button>
 
-          <button data-focusable onclick={() => (showEditor = true)} title="Edit list status"
+          <button bind:this={editorAnchor} data-focusable onclick={() => (showEditor = true)} title="Edit list status"
+                  aria-haspopup="dialog" aria-expanded={showEditor}
                   class="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 font-bold transition-colors hover:bg-accent">
             {#if effStatus}
               <span class="size-2.5 rounded-full" style="background:{STATUS_COLOR[effStatus]}"></span>{STATUS_LABEL[effStatus]}
@@ -1030,6 +1033,7 @@
       total={epsTotal(m) || 0}
       {hasEntry}
       {canRemove}
+      anchor={editorAnchor}
       onclose={() => (showEditor = false)}
       onsaved={(patch) => (listOpt = { ...listOpt, ...patch })}
     />

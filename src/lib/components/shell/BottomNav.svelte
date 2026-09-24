@@ -11,6 +11,7 @@
   import { themePresentation } from '$lib/themes/runtime'
   import { themeColorCss } from '$lib/themes/presentation'
   import CompanionLinkIndicator from './CompanionLinkIndicator.svelte'
+  import { androidMiniPlayer } from '$lib/player/android-mpv'
 
   const labels = {
     schedule: m.nav_schedule, downloads: m.nav_downloads, watch: m.nav_watch_together,
@@ -41,6 +42,8 @@
 
   // Auto-hide on scroll: glide the bar down when scrolling down (more content on screen), slide it
   // back up on any upward scroll or near the top. Matches the native "immersive nav" pattern.
+  // Suspended while the Android mini-player is docked on top of it: the native video surface
+  // cannot follow a CSS transition, so the bar it rests on has to hold still.
   let hidden = $state(false)
   let lastY = 0
   onMount(() => {
@@ -68,7 +71,7 @@
     {border ? (style === 'bar' ? 'border-t border-border' : 'border border-border/70') : ''}
     {background ? '' : style === 'bar' ? 'bg-background/95' : 'bg-card/95'}
     {blur ? 'backdrop-blur' : ''}
-    {hidden ? (style === 'bar' ? 'translate-y-full' : style === 'pill' ? 'translate-y-[150%] -translate-x-1/2' : 'translate-y-[150%]') : (style === 'pill' ? 'translate-y-0 -translate-x-1/2' : 'translate-y-0')}"
+    {hidden && !$androidMiniPlayer ? (style === 'bar' ? 'translate-y-full' : style === 'pill' ? 'translate-y-[150%] -translate-x-1/2' : 'translate-y-[150%]') : (style === 'pill' ? 'translate-y-0 -translate-x-1/2' : 'translate-y-0')}"
   style:background={background}
   style:border-radius={style === 'bar' ? undefined : `${radius}px`}
   style:bottom={style === 'bar' ? undefined : `calc(${style === 'pill' ? 16 : 12}px + env(safe-area-inset-bottom))`}

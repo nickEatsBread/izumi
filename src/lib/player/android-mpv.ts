@@ -39,6 +39,10 @@ export function nativeAndroidAudioRoute(audio?: string, hdr?: string): 'ac4' | u
 export const androidMpvActive = writable(false)
 /** In-app portrait mini-player: playback remains active while the browse shell is visible. */
 export const androidMiniPlayer = writable(false)
+/** Live progress of the collapse/expand gesture (0 = full watch page, 1 = docked) plus how far
+ *  the video's bottom edge has moved, so the persistent watch page underneath can travel and fade
+ *  with the video as one sheet instead of vanishing on the first drag frame. */
+export const androidMiniPull = writable<{ progress: number; shiftY: number }>({ progress: 0, shiftY: 0 })
 
 /** Live playback state, fed by the single mpv event subscription. Read by AndroidPlayer + tracking. */
 export interface MpvState {
@@ -544,11 +548,20 @@ export async function setPlayerViewport(
   left = 0,
   width = 0,
   floating = false,
+  // Starting transform (physical px, centre pivot of the new rectangle) applied in the same native
+  // pass as the layout. The expanding mini-player uses it so the surface can be put back on its
+  // full portrait rectangle while still LOOKING docked; a plain settle omits it (identity).
+  transform?: { scale: number; translateX: number; translateY: number },
 ): Promise<PlayerViewportInsets> {
   return (await invoke('plugin:mpv|mpv_viewport', {
     payload: {
       top: Math.round(top), height: Math.round(height), immersive,
       left: Math.round(left), width: Math.round(width), floating,
+      ...(transform ? {
+        scale: transform.scale,
+        translateX: Math.round(transform.translateX),
+        translateY: Math.round(transform.translateY),
+      } : {}),
     },
   })) as PlayerViewportInsets
 }

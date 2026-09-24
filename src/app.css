@@ -39,6 +39,9 @@
   --theme-font-scale: 1;
   --theme-backdrop-strength: 0;
   --theme-glass-blur: 0px;
+  /* Readable from JS (getComputedStyle) so the Android mini-player's dock geometry and its docked
+     layout use the same bottom inset. */
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
 }
 * { border-color: hsl(var(--border)); }
 html { font-size: calc(16px * var(--theme-font-scale)); }

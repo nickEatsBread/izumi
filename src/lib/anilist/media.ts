@@ -31,6 +31,11 @@ const LARGE_COVER_W = 230
 /** Past 2x the extra sharpness is not perceptible enough to justify quadrupling the bytes, which is
  *  the whole point of choosing here. A 3x phone therefore budgets as if it were 2x. */
 const MAX_USEFUL_DPR = 2
+/** How far a card may be under-sampled before stepping up: `large` painted at 262 device px is
+ *  0.88× — not a visible loss on cover art — while the step up is the 460px asset with FOUR times
+ *  the pixels to download and decode. Every phone card sat just past the old exact cut-off (131
+ *  CSS px × 2 = 262 > 230), so every phone row was paying that. */
+const UNDERSAMPLE_TOLERANCE = 1.15
 
 /**
  * The smallest cover asset that still covers the pixels this card will actually paint.
@@ -45,7 +50,7 @@ export function cardCover(m: Media, cssWidth = 0): string {
   if (!c) return ''
   const dpr = Math.min(typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1, MAX_USEFUL_DPR)
   const needed = cssWidth * dpr
-  if (needed > 0 && needed <= LARGE_COVER_W) return c.large || c.extraLarge || c.medium || ''
+  if (needed > 0 && needed <= LARGE_COVER_W * UNDERSAMPLE_TOLERANCE) return c.large || c.extraLarge || c.medium || ''
   return c.extraLarge || c.large || c.medium || ''
 }
 

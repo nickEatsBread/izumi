@@ -1,7 +1,7 @@
 <script lang="ts">
   import {
     autoSkip, skipPreviews, skipFiller, preferredAudioLang, preferredSubLang,
-    autoplayNext, upNextOverlay, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
+    autoplayNext, upNextOverlay, seriesRatingPrompt, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
     scrubThumbnails, playerProgressAnimations, playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying,
     videoQualityPreset, rawMpvOptions, gifIncludeSubtitles, gifScale, gifMaxSeconds, androidAutoPip,
     audioProcessing, windowsVsr, systemMediaControls, discordRichPresence, subtitleLineNavigation,
@@ -188,11 +188,13 @@
     <div class="mt-3 max-w-2xl space-y-3">
       <Toggle label="Miniplayer when you leave the app" desc="Leaving izumi (home or recents) while a video is playing shrinks it into a floating miniplayer instead of leaving it on the watch page. Off leaves the app normally; playback keeps running with the notification controls either way." value={$androidAutoPip} onToggle={() => ($androidAutoPip = !$androidAutoPip)} />
       <Toggle label="Include subtitles in GIFs" desc="Burn the currently displayed subtitle track into GIF recordings. Recording is started from the player's settings sheet." value={$gifIncludeSubtitles} onToggle={() => ($gifIncludeSubtitles = !$gifIncludeSubtitles)} />
+      <Toggle label={m.player_series_rating_prompt()} desc={m.player_series_rating_prompt_hint()} value={$seriesRatingPrompt} onToggle={() => ($seriesRatingPrompt = !$seriesRatingPrompt)} />
     </div>
   {:else}
   <div class="max-w-2xl space-y-3">
     <Toggle label={m.player_autoplay_next()} desc={m.player_autoplay_next_hint()} value={$autoplayNext} onToggle={() => ($autoplayNext = !$autoplayNext)} />
     <Toggle label={m.player_up_next_overlay()} desc={m.player_up_next_overlay_hint()} value={$upNextOverlay} onToggle={() => ($upNextOverlay = !$upNextOverlay)} />
+    <Toggle label={m.player_series_rating_prompt()} desc={m.player_series_rating_prompt_hint()} value={$seriesRatingPrompt} onToggle={() => ($seriesRatingPrompt = !$seriesRatingPrompt)} />
     {#if !$isAndroid}
       <Toggle label="System media controls" desc="Show playback metadata and Play, Pause, Previous, Next, and seek actions in Windows SMTC or Linux MPRIS controls. Adult titles show no name, series, or artwork there — only the controls." value={$systemMediaControls} onToggle={() => ($systemMediaControls = !$systemMediaControls)} />
       <Toggle label="Discord Rich Presence" desc="Share the current series, episode, cover art, and progress with Discord. On by default; adult titles are never shared." value={$discordRichPresence} onToggle={() => ($discordRichPresence = !$discordRichPresence)} />

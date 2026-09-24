@@ -13,6 +13,7 @@ import { currentResolveTrace, traceResolve } from '$lib/debug/resolve-trace'
 import { afterExtensionReady, settleExtensionMethods } from './method-stream'
 import { loadCachedExtensionModule } from './module-cache'
 import { extensionSourceScheduler } from './source-scheduler'
+import { jvmRuntimeState, JVM_RUNTIME_STARTING_MESSAGE, registerJvmColdStartProbe } from './jvm-runtime-state'
 
 // Main-thread orchestrator for source extensions. Loads each manifest, spawns one
 // isolated Worker per extension, bridges the extensions' HTTP through the CORS-free
@@ -159,7 +160,19 @@ async function finishPackageInstall(installed: InstalledExtensionPackage): Promi
   }
   installedRevision += 1
   resetRunning()
+  // The reload above stopped the Java host and the revision bump dropped its enumeration cache, so
+  // without this the FIRST play after installing from the store was a guaranteed cold start: Java
+  // discovery + host spawn + loadExtensions all landed inside the resolver's wait, it reported "no
+  // sources", and the second play found everything warm. Debounced so a burst of installs starts
+  // the runtime once, after the last reload.
+  if (installed.backend === 'aniyomi-jvm') scheduleJvmWarm()
   return installed
+}
+
+let jvmWarmTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleJvmWarm(delayMs = 1_500): void {
+  clearTimeout(jvmWarmTimer)
+  jvmWarmTimer = setTimeout(() => { void warmJvmExtensions() }, delayMs)
 }
 
 export async function removeInstalledExtension(id: string): Promise<void> {
@@ -620,8 +633,11 @@ export interface StreamExtension {
   call: (method: string, ...args: unknown[]) => Promise<any>
 }
 
-export async function runningStreamExtensions(onlyId?: string): Promise<StreamExtension[]> {
-  const [exts, jvm] = await Promise.all([ensureRunning(), runningJvmExtensions(onlyId)])
+export async function runningStreamExtensions(
+  onlyId?: string,
+  options: { jvmDeadlineMs?: number } = {},
+): Promise<StreamExtension[]> {
+  const [exts, jvm] = await Promise.all([ensureRunning(), runningJvmExtensions(onlyId, options)])
   const candidates = exts.filter((e) =>
     (!onlyId || e.cfg.id === onlyId) && e.cfg.type === 'onlinestream-provider')
   return [
@@ -711,12 +727,17 @@ function invokeJvmNow<T>(method: string, args: Record<string, unknown>, signal?:
     // Keep the global bridge lane occupied until native cancellation finishes. Otherwise the next
     // queued call can reach the same JVM before a wedged request has been torn down, recreating the
     // apparent Home freeze as stale Java network work accumulates behind fresh requests.
-    const cancel = () => invoke<void>('jvm_extension_cancel', { requestId }).catch(() => undefined)
+    // `force` decides whether the desktop host survives the cancel. An abort is routine — a search
+    // superseded while typing, a detail page unmounting, a Home row past its own budget — and only
+    // needs the request abandoned; tearing the whole process down for it made the NEXT Play pay a
+    // full cold start inside its own 20s cap. A timeout is the one case where the request may be
+    // wedged inside an extension's HTTP stack, so that path still kills and restarts the host.
+    const cancel = (force: boolean) => invoke<void>('jvm_extension_cancel', { requestId, force }).catch(() => undefined)
     const abort = () => finish(() => {
-      void cancel().then(() => reject(new DOMException('Aborted', 'AbortError')))
+      void cancel(false).then(() => reject(new DOMException('Aborted', 'AbortError')))
     })
     timer = setTimeout(() => finish(() => {
-      void cancel().then(() => reject(new Error(`The extension did not answer in time (${method}).`)))
+      void cancel(true).then(() => reject(new Error(`The extension did not answer in time (${method}).`)))
     }), JVM_CALL_TIMEOUT_MS)
     if (signal?.aborted) {
       abort()
@@ -918,6 +939,23 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
 let jvmSourcesCache: { revision: number; sources: JvmSource[] } | null = null
 let jvmSourcesPending: { revision: number; value: Promise<JvmSource[]> } | null = null
 
+/** Browse callers (Home rows, Search, icons) stop waiting here; the enumeration keeps warming. The
+ *  play path passes JVM_SOURCES_PLAY_DEADLINE_MS (jvm-runtime-state.ts) instead. */
+const JVM_SOURCES_UI_DEADLINE_MS = 15_000
+
+/** True when the enumeration for the installed set has answered, i.e. the next resolve pays no
+ *  runtime start. */
+export const jvmRuntimeWarm = (): boolean => jvmSourcesCache?.revision === installedRevision
+
+/** Whether the next resolve would have to wait for a cold Aniyomi runtime: at least one enabled
+ *  JVM source is installed and its enumeration has not answered yet. */
+export async function jvmRuntimeColdStartPending(): Promise<boolean> {
+  if (jvmRuntimeWarm()) return false
+  const installed = await installedExtensionPackages()
+  return liveJvmSources(installed, get(disabledPlugins)).size > 0
+}
+registerJvmColdStartProbe(jvmRuntimeColdStartPending)
+
 /** Installed Aniyomi extension icons, keyed by ANDROID PACKAGE NAME — which is exactly the `id` a
  *  catalog entry carries for an aniyomi-jvm package, so the settings list can match them directly.
  *  Android reads the launcher icon through its bridge; desktop recovers it from the packaged APK.
@@ -1051,11 +1089,13 @@ export async function installedPackageIcons(
   return icons
 }
 
-/** The enumeration itself, memoized per install revision (see jvmSourcesCache). */
-async function jvmSources(): Promise<JvmSource[]> {
+/** The enumeration itself, memoized per install revision (see jvmSourcesCache). `deadlineMs` is
+ *  how long THIS caller waits; the shared initialization keeps going regardless. */
+async function jvmSources(deadlineMs = JVM_SOURCES_UI_DEADLINE_MS): Promise<JvmSource[]> {
   if (jvmSourcesCache?.revision === installedRevision) return jvmSourcesCache.sources
   const revision = installedRevision
   if (jvmSourcesPending?.revision !== revision) {
+    jvmRuntimeState.set('starting')
     const entry = {
       revision,
       value: invoke<JvmSource[]>('jvm_extension_sources'),
@@ -1064,12 +1104,18 @@ async function jvmSources(): Promise<JvmSource[]> {
     // the next resolve instead of being discarded and followed by another full JVM enumeration.
     entry.value = entry.value.then(
       (sources) => {
-        if (installedRevision === revision) jvmSourcesCache = { revision, sources }
+        if (installedRevision === revision) {
+          jvmSourcesCache = { revision, sources }
+          jvmRuntimeState.set('ready')
+        }
         if (jvmSourcesPending === entry) jvmSourcesPending = null
         return sources
       },
       (error) => {
-        if (jvmSourcesPending === entry) jvmSourcesPending = null
+        if (jvmSourcesPending === entry) {
+          jvmSourcesPending = null
+          if (installedRevision === revision) jvmRuntimeState.set('failed')
+        }
         throw error
       },
     )
@@ -1077,13 +1123,18 @@ async function jvmSources(): Promise<JvmSource[]> {
   }
   // The last uncapped jvm* await the UI sat behind: the Rust side legally takes ~190s worst case
   // (runtime download + bridge budget), and this call gates EVERY source resolve. Stop this caller
-  // waiting at 15s, while the shared initialization above keeps warming in the background.
-  const sources = await Promise.race([
-    jvmSourcesPending.value,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('The extension runtime did not answer in time.')), 15_000)),
-  ])
-  return sources
+  // waiting at its deadline, while the shared initialization above keeps warming in the background.
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      jvmSourcesPending.value,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(JVM_RUNTIME_STARTING_MESSAGE)), deadlineMs)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 /** Installed, enabled anime sources that may supply catalog rows. Package/source enablement is the
@@ -1169,7 +1220,10 @@ export async function saveJvmCatalogSourcePreference(
   })
 }
 
-async function runningJvmExtensions(onlyId?: string): Promise<
+async function runningJvmExtensions(
+  onlyId?: string,
+  options: { jvmDeadlineMs?: number } = {},
+): Promise<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   { id: string; name: string; lang?: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
 > {
@@ -1181,7 +1235,7 @@ async function runningJvmExtensions(onlyId?: string): Promise<
   const packageBySource = liveJvmSources(installed, get(disabledPlugins))
   if (!packageBySource.size) return []
   try {
-    const sources = await jvmSources()
+    const sources = await jvmSources(options.jvmDeadlineMs)
     return dedupeJvmSources(sources)
       .filter((source) =>
         source.type === 'anime'

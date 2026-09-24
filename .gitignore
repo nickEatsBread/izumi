@@ -15,6 +15,7 @@ src-tauri/gen/
 !/docs/THEMES.md
 !/docs/THEME_SYSTEM_AUDIT.md
 !/docs/DECK_HERO_FLICKER.md
+!/docs/android-mini-player.md
 !/docs/theme-packages/
 !/docs/theme-packages/**
 !/docs/recommendation-watch-habits-research.md

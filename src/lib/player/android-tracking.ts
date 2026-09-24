@@ -1,5 +1,6 @@
 import { get, writable } from 'svelte/store'
 import { markWatched } from '$lib/trackers'
+import { requestSeriesRating } from '$lib/player/series-rating'
 import { durableHistory, incognitoHistory, sessionProgress } from '$lib/player/history'
 import { incognito } from '$lib/stores/incognito'
 import { title } from '$lib/anilist/media'
@@ -38,6 +39,7 @@ export function initReturnTracking() {
     // markWatched bumps local history + pushes to the trackers (with the only-increase /
     // complete-on-finish guards) and returns the pre-bump count for the undo revert.
     const prev = markWatched(p.media, p.episode)
+    requestSeriesRating(p.media, p.episode)
     const undo = () => {
       // Revert the local-history bump (the tracker push is best-effort / left as-is). In incognito
       // markWatched wrote the in-memory overlay, so the revert targets that store too.

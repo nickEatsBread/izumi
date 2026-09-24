@@ -367,7 +367,8 @@ export function mapTmdb(raw: TmdbListItem, kind: TmdbKind): Media | null {
       large: image(raw.poster_path, 'w342'),
       medium: image(raw.poster_path, 'w185'),
     },
-    bannerImage: image(raw.backdrop_path, 'original'),
+    // `original` can be a 4K frame; w1280 is already wider than any phone and most banners.
+    bannerImage: image(raw.backdrop_path, 'w1280'),
     isAdult: !!raw.adult,
   }
 }

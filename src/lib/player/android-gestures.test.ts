@@ -5,14 +5,14 @@ import {
   accumulateSeek,
   fullscreenPullProgress,
   shouldEnterFullscreen,
-  miniPlayerPullProgress,
-  shouldMinimizePlayer,
+  miniPullRecognized,
   fullscreenPullTransform,
   shouldDismissSheet,
   sheetGestureIntent,
   needsExplicitPointerCapture,
   landscapeExitProgress,
   shouldExitFullscreen,
+  MOVE_PX,
 } from './android-gestures'
 
 describe('zoneOf', () => {
@@ -170,17 +170,12 @@ describe('landscape swipe-down exit', () => {
 })
 
 describe('portrait mini-player pull', () => {
-  it('tracks only a dominant downward drag', () => {
+  it('recognizes only a dominant downward drag past the slop', () => {
     const start = { x: 180, y: 100, t: 0 }
-    expect(miniPlayerPullProgress(start, { x: 184, y: 210, t: 100 }, 240)).toBeGreaterThan(0.5)
-    expect(miniPlayerPullProgress(start, { x: 180, y: 20, t: 100 }, 240)).toBe(0)
-    expect(miniPlayerPullProgress(start, { x: 290, y: 125, t: 100 }, 240)).toBe(0)
-  })
-
-  it('commits a substantial pull or quick downward fling', () => {
-    expect(shouldMinimizePlayer(0.5, 0.1)).toBe(true)
-    expect(shouldMinimizePlayer(0.1, 0.7)).toBe(true)
-    expect(shouldMinimizePlayer(0.1, 0.1)).toBe(false)
+    expect(miniPullRecognized(start, { x: 184, y: 210, t: 100 })).toBe(true)
+    expect(miniPullRecognized(start, { x: 180, y: 20, t: 100 })).toBe(false)
+    expect(miniPullRecognized(start, { x: 290, y: 125, t: 100 })).toBe(false)
+    expect(miniPullRecognized(start, { x: 180, y: 100 + MOVE_PX, t: 100 })).toBe(false)
   })
 })
 

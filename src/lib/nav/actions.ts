@@ -155,7 +155,18 @@ export function gameModeCarouselTouch(node: HTMLElement) {
 
   node.addEventListener('pointerdown', onDown)
   node.addEventListener('pointermove', onMove)
-  node.addEventListener('touchmove', onTouchMove, { passive: false })
+  // The non-passive touchmove exists only to cancel the document scroll once a Game-mode row
+  // drag has committed horizontally. Registered on every row on every platform, its mere presence
+  // made the WebView wait for the JS main thread before EVERY vertical fling that started on a row
+  // — most of Home on a phone — so it is attached only while Game mode is actually on.
+  let touchBlocking = false
+  const setTouchBlocking = (on: boolean) => {
+    if (on === touchBlocking) return
+    touchBlocking = on
+    if (on) node.addEventListener('touchmove', onTouchMove, { passive: false })
+    else node.removeEventListener('touchmove', onTouchMove)
+  }
+  const stopTouchMode = gameMode.subscribe(setTouchBlocking)
   node.addEventListener('pointerup', onEnd)
   node.addEventListener('pointercancel', onEnd)
   node.addEventListener('click', onClick, true)
@@ -164,10 +175,11 @@ export function gameModeCarouselTouch(node: HTMLElement) {
     destroy() {
       stopMomentum()
       stopMode()
+      stopTouchMode()
+      setTouchBlocking(false)
       node.style.touchAction = previousTouchAction
       node.removeEventListener('pointerdown', onDown)
       node.removeEventListener('pointermove', onMove)
-      node.removeEventListener('touchmove', onTouchMove)
       node.removeEventListener('pointerup', onEnd)
       node.removeEventListener('pointercancel', onEnd)
       node.removeEventListener('click', onClick, true)

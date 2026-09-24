@@ -31,10 +31,13 @@ describe('JVM catalog bridge', () => {
   })
 
   it('cancels the native runtime request when the UI aborts or times out', () => {
-    expect(manager).toContain("invoke<void>('jvm_extension_cancel', { requestId })")
-    expect(manager).toContain('void cancel().then(() => reject(')
+    expect(manager).toContain("invoke<void>('jvm_extension_cancel', { requestId, force })")
+    // A routine abort keeps the warm host; only the per-call timeout is allowed to kill it.
+    expect(manager).toContain("void cancel(false).then(() => reject(new DOMException('Aborted', 'AbortError')))")
+    expect(manager).toContain('void cancel(true).then(() => reject(new Error(`The extension did not answer in time')
     expect(android).toContain('invokeAniyomi("cancelRequest", it)')
-    expect(desktopBridge).toContain('runtime.cancel_request(&request_id).await')
+    expect(desktopBridge).toContain('runtime.cancel_request(&request_id, force.unwrap_or(true)).await')
+    expect(desktopBridge).toContain('if !force {')
     expect(desktopBridge).not.toContain('ensure_started(&app)\n        .await?\n        .cancel(&request_id)')
   })
 
