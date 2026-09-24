@@ -393,7 +393,7 @@
          skeleton started the poster near the window top, then the real page moved it beneath a
          55vh banner — a large avoidable layout jump on every series navigation. -->
     <div class="relative mb-6 h-[40vh] {controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'}">
-      <div class="absolute left-0 top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-left-14 sm:-top-8">
+      <div class="absolute left-[calc(-1*var(--theme-shell-left,0px))] top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-top-8">
         {#if detailHint && banner(detailHint)}
           <img src={banner(detailHint)} alt="" onload={() => (loadedHintBanner = banner(detailHint))} class="absolute inset-0 h-full w-full object-cover opacity-30" style="object-position:center 20%" />
         {:else}

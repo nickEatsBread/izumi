@@ -17,7 +17,9 @@
   import type { Stream } from '$lib/stremio/addon'
   import Play from '@lucide/svelte/icons/play'
 
-  let { orientation = 'right' }: { orientation?: 'right' | 'below' } = $props()
+  // `scroll`: the list scrolls on its own (side rail). Off when a shared scroller holds it together
+  // with the discussion under the stage.
+  let { orientation = 'right', scroll = true }: { orientation?: 'right' | 'below'; scroll?: boolean } = $props()
 
   const context = $derived($nowPlayingMedia)
   const media = $derived(context?.media ?? null)
@@ -73,7 +75,7 @@
   })
 </script>
 
-<div class="flex h-full min-h-0 flex-col" data-dock-episodes={orientation} aria-busy={busy}>
+<div class="flex flex-col {scroll ? 'h-full min-h-0' : ''}" data-dock-episodes={orientation} aria-busy={busy}>
   <header class="flex items-baseline justify-between gap-3 px-4 pb-2 pt-3">
     <h2 class="truncate text-sm font-black">{media ? title(media) : 'Episodes'}</h2>
     <span class="shrink-0 text-xs font-bold text-muted-foreground">{numbers.length} episodes</span>
@@ -89,7 +91,7 @@
       {/each}
     </div>
   {/if}
-  <div bind:this={list} class="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+  <div bind:this={list} class="px-3 pb-4 {scroll ? 'min-h-0 flex-1 overflow-y-auto' : ''}">
     {#if orientation === 'right'}
       <ol class="flex flex-col gap-1">
         {#each numbers as n (n)}

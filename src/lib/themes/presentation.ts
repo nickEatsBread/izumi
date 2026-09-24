@@ -93,9 +93,10 @@ export interface ShellPresentation {
  *  shell chrome; `docked` confines it to a 16:9 stage with the episode rail beside or below it. */
 export interface PlayerDock {
   episodes?: 'right' | 'below'
-  /** Stage width as a percentage of the page width (the rail takes the rest when it sits beside). */
   width?: number
   align?: 'start' | 'center'
+  /** The episode discussion under the stage (side rail) or after the episode grid (below). */
+  comments?: 'below' | 'hidden'
 }
 export interface PlayerPresentation {
   seekbarHeight?: number
@@ -310,11 +311,12 @@ function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
   if (raw.seekbarColor !== undefined) result.seekbarColor = themeColor(raw.seekbarColor)
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['full', 'docked'])
   if (raw.dock !== undefined) {
-    const dock = record(raw.dock); only(dock, ['episodes', 'width', 'align'])
+    const dock = record(raw.dock); only(dock, ['episodes', 'width', 'align', 'comments'])
     result.dock = {}
     if (dock.episodes !== undefined) result.dock.episodes = choice(dock.episodes, ['right', 'below'])
     if (dock.width !== undefined) result.dock.width = number(dock.width, 50, 100)
     if (dock.align !== undefined) result.dock.align = choice(dock.align, ['start', 'center'])
+    if (dock.comments !== undefined) result.dock.comments = choice(dock.comments, ['below', 'hidden'])
   }
   return result
 }
@@ -480,13 +482,14 @@ export function resolveDetail(layout?: ThemePresentation): Required<Pick<DetailP
   }
 }
 /** The windowed desktop player layout with its defaults filled in. */
-export function resolvePlayerDock(layout?: ThemePresentation): { docked: boolean; episodes: 'right' | 'below'; width: number; align: 'start' | 'center' } {
+export function resolvePlayerDock(layout?: ThemePresentation): { docked: boolean; episodes: 'right' | 'below'; width: number; align: 'start' | 'center'; comments: 'below' | 'hidden' } {
   const player = layout?.player
   return {
     docked: player?.layout === 'docked',
     episodes: player?.dock?.episodes ?? 'right',
     width: player?.dock?.width ?? (player?.dock?.episodes === 'below' ? 100 : 68),
     align: player?.dock?.align ?? 'start',
+    comments: player?.dock?.comments ?? 'below',
   }
 }
 /** `color` values from a template or chrome block as CSS, optionally at a reduced alpha. */
