@@ -22,6 +22,8 @@
     ariaLabel,
     searchable = false,
     floating = false,
+    separator = '·',
+    columns = false,
   }: {
     value: string
     options: SelectOption[]
@@ -33,6 +35,11 @@
      *  For a select that lives inside a scrolling or overflow-clipped container (a dialog body, a
      *  popover), where the absolute menu would be cut off at the container edge. */
     floating?: boolean
+    /** Glyph between the selected label and its description in the trigger; '' = just a gap. */
+    separator?: string
+    /** Short labels (e.g. numbers) in a fixed right-aligned column, with the description at full
+     *  size beside them — for menus where the description IS the meaning, not a footnote. */
+    columns?: boolean
   } = $props()
 
   let root: HTMLDivElement
@@ -170,8 +177,8 @@
       onclick={() => choose(option)}
     >
       <span class="flex min-w-0 items-baseline gap-2">
-        <span class="truncate">{option.label}</span>
-        {#if option.description}<span class="truncate text-xs text-muted-foreground">{option.description}</span>{/if}
+        <span class="truncate {columns ? 'w-6 shrink-0 text-right font-bold tabular-nums' : ''}">{option.label}</span>
+        {#if option.description}<span class="truncate text-muted-foreground {columns ? 'ml-1' : 'text-xs'}">{option.description}</span>{/if}
       </span>
       {#if option.value === value}<Check size={15} class="shrink-0 text-primary" />{/if}
     </button>
@@ -192,7 +199,7 @@
     onclick={() => void setOpen(!open)}
     onkeydown={onTriggerKeydown}
   >
-    <span class="truncate">{selected?.label ?? value}{#if selected?.description}<span class="text-muted-foreground"> · {selected.description}</span>{/if}</span>
+    <span class="truncate">{selected?.label ?? value}{#if selected?.description}<span class="ml-1.5 text-muted-foreground">{#if separator}<span class="mr-1.5">{separator}</span>{/if}{selected.description}</span>{/if}</span>
     <ChevronDown size={15} class="shrink-0 transition-transform {open ? 'rotate-180' : ''}" />
   </button>
 

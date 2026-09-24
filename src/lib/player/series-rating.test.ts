@@ -87,7 +87,7 @@ describe('isSeriesFinale', () => {
 })
 
 describe('shouldPromptSeriesRating', () => {
-  const open = { finale: true, trackerConnected: true, incognito: false, enabled: true, currentScore: 0, alreadyAsked: false }
+  const open = { finale: true, incognito: false, enabled: true, currentScore: 0, alreadyAsked: false }
 
   it('asks only when every condition holds', () => {
     expect(shouldPromptSeriesRating(open)).toBe(true)
@@ -95,7 +95,6 @@ describe('shouldPromptSeriesRating', () => {
 
   it.each([
     ['no finale', { finale: false }],
-    ['no tracker linked', { trackerConnected: false }],
     ['incognito', { incognito: true }],
     ['setting off', { enabled: false }],
     ['already rated', { currentScore: 70 }],
@@ -115,10 +114,9 @@ describe('requestSeriesRating', () => {
     expect(get(seriesRatingPrompt)).toBeNull()
   })
 
-  it('does nothing without a connected tracker — there is nowhere to save the answer', () => {
+  it('asks without a connected tracker — the local library keeps the answer', () => {
     mocks.anyTrackerConnected.mockReturnValue(false)
-    expect(requestSeriesRating(finished(), 12)).toBe(false)
-    expect(get(seriesRatingPrompt)).toBeNull()
+    expect(requestSeriesRating(finished(), 12)).toBe(true)
   })
 
   it('respects an existing score from the tracker snapshot or the local library', () => {

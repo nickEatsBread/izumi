@@ -1,6 +1,6 @@
 import { get, writable } from 'svelte/store'
 import type { Media } from '$lib/anilist/types'
-import { anyTrackerConnected, setScore } from '$lib/trackers'
+import { setScore } from '$lib/trackers'
 import { connectedTrackerProviders } from '$lib/trackers/config'
 import { traktToken } from '$lib/trakt/config'
 import { incognito } from '$lib/stores/incognito'
@@ -12,8 +12,8 @@ import { localLibrary, localTrackingForMedia } from '$lib/library/local-lists'
 // so, publishes ONE request per title per session for SeriesRatingPrompt.svelte to present.
 //
 // It is deliberately separate from the Up Next prompt: Up Next is opt-in and skipped entirely when
-// off, whereas a finale has no next episode and the question only makes sense when there is a
-// connected tracker to save the answer to.
+// off, whereas a finale has no next episode. The answer always has somewhere to go — the local
+// library keeps it and every connected tracker mirrors it — so no linked account is required.
 
 export interface SeriesRatingRequest {
   media: Media
@@ -43,7 +43,6 @@ export function isSeriesFinale(
 
 export interface SeriesRatingGate {
   finale: boolean
-  trackerConnected: boolean
   incognito: boolean
   enabled: boolean
   /** Canonical 0-100; anything above zero means the viewer already rated it. */
@@ -51,12 +50,10 @@ export interface SeriesRatingGate {
   alreadyAsked: boolean
 }
 
-/** Every reason NOT to ask, in one place: no tracker (nowhere to save), incognito (nothing may
- *  reach a tracker), the setting off, an existing score (they already answered), or this session
+/** Every reason NOT to ask, in one place: incognito (nothing is recorded), the setting off, an existing score (they already answered), or this session
  *  already asked about this title. */
 export function shouldPromptSeriesRating(gate: SeriesRatingGate): boolean {
   return gate.finale
-    && gate.trackerConnected
     && !gate.incognito
     && gate.enabled
     && gate.currentScore <= 0
@@ -79,7 +76,6 @@ export function requestSeriesRating(media: Media, episode: number | null | undef
   const currentScore = knownScore(media)
   const ok = shouldPromptSeriesRating({
     finale: isSeriesFinale(media, episode),
-    trackerConnected: anyTrackerConnected(),
     incognito: get(incognito),
     enabled: get(seriesRatingPromptEnabled),
     currentScore,

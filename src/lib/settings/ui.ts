@@ -14,6 +14,21 @@ export type EpisodeLayout = 'cards' | 'compact' | 'grid'
 /** Persisted episode-list layout preference (default: rich cards). */
 export const episodeLayout = persisted<EpisodeLayout>('episode-layout', 'cards')
 
+/** How the viewer's own 1-10 rating is picked and shown (series page + list editor).
+ *  `stars` = 5 half-stars (10 steps), `bar` = ten segments, `numbers` = 1-10 chips,
+ *  `dropdown` = a menu of 1-10 with the descriptor beside each number. */
+export type RatingStyle = 'stars' | 'bar' | 'numbers' | 'dropdown'
+export const ratingStyle = persisted<RatingStyle>('rating-style', 'bar')
+
+/** Whether the series page shows the "Your rating" row under the action bar: always once the
+ *  viewer has started the title, only after they have rated it, or never (list editor only). */
+export type RatingOnPage = 'always' | 'rated' | 'never'
+export const ratingOnPage = persisted<RatingOnPage>('rating-on-page', 'always')
+
+/** The list editor's inline rating-display panel is a one-time discovery aid: it disappears once
+ *  the viewer has customised (or dismissed) it, after pointing them at Settings for later. */
+export const ratingDisplayTipDone = persisted<boolean>('rating-display-tip-done', false)
+
 /** Watchlist presentation: cover grid, detailed rows, or dense one-line rows. */
 export type WatchlistLayout = 'cards' | 'list' | 'compact'
 export const watchlistLayout = persisted<WatchlistLayout>('watchlist-layout', 'cards')

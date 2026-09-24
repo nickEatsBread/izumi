@@ -34,6 +34,15 @@ describe('settings search', () => {
     expect(searchSettings('video quality', true)[0]?.title).toBe('Video quality')
   })
 
+  it('finds the rating settings by the words people use for scoring', () => {
+    expect(searchSettings('rating style')[0]).toMatchObject({ title: 'Rating style', href: '/app/settings/interface', anchored: true })
+    expect(searchSettings('stars')[0]?.title).toBe('Rating style')
+    expect(searchSettings('score').map((r) => r.title)).toContain('Show rating on the series page')
+    expect(settingKey('Rating style')).toBe('rating-style')
+    expect(settingKey('Show rating on the series page')).toBe('show-rating-on-the-series-page')
+    expect(searchSettings('rating', true).map((r) => r.title)).toContain('Ask for a rating when a series ends')
+  })
+
   it('finds the desktop Discord toggle by RPC terminology', () => {
     expect(searchSettings('discord rpc')[0]?.title).toBe('Discord Rich Presence')
   })

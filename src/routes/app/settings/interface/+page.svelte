@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, dragCarousels, episodeQueueEnabled, sceneBookmarksEnabled, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, androidTvMode, cwDismissAction, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, titleLanguage, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
+  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, dragCarousels, episodeQueueEnabled, sceneBookmarksEnabled, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, androidTvMode, cwDismissAction, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, titleLanguage, ratingStyle, ratingOnPage, type RatingStyle, type RatingOnPage, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid, isAndroidTv } from '$lib/platform'
   import { setAiringNotificationsEnabled } from '$lib/notifications/airing'
@@ -7,6 +7,15 @@
   import { m } from '$lib/paraglide/messages.js'
   import { getLocale, setLocale, type Locale } from '$lib/paraglide/runtime.js'
   import { restartOnboarding } from '$lib/settings/onboarding'
+  import ScoreScale from '$lib/components/detail/ScoreScale.svelte'
+
+  const ratingStyles: { value: RatingStyle; label: string; hint: string }[] = [
+    { value: 'bar', label: 'Bar', hint: 'A slim ten-segment bar that fills up to your score.' },
+    { value: 'stars', label: 'Stars', hint: 'Five stars with half steps — ten levels in a compact row.' },
+    { value: 'numbers', label: 'Numbers', hint: 'Tap a number from 1 to 10.' },
+    { value: 'dropdown', label: 'Dropdown', hint: 'A menu of 1–10 with a short descriptor beside each.' },
+  ]
+  let ratingDemo = $state(8)
 
   const locale = getLocale()
   const changeLocale = (value: string) => setLocale(value as Locale)
@@ -149,6 +158,43 @@
           <p class="mt-1 text-xs text-muted-foreground">{opt.hint}</p>
         </button>
       {/each}
+    </div>
+
+    <div data-setting-key="rating-style">
+    <p class="mb-1 text-sm font-bold">Rating style</p>
+    <p class="mb-2 text-xs text-muted-foreground">How you score a series — on its page and in the list editor.</p>
+    <div class="mb-3 grid gap-2 sm:grid-cols-2">
+      {#each ratingStyles as opt (opt.value)}
+        <button
+          data-focusable
+          onclick={() => ($ratingStyle = opt.value)}
+          aria-pressed={$ratingStyle === opt.value}
+          class="rounded-md border p-3 text-left transition-colors
+            {$ratingStyle === opt.value ? 'border-primary bg-primary/10' : 'border-border hover:bg-secondary'}"
+        >
+          <div class="flex items-center justify-between">
+            <span class="font-bold">{opt.label}</span>
+            {#if $ratingStyle === opt.value}<span class="text-xs font-bold text-primary">{m.settings_selected()}</span>{/if}
+          </div>
+          <p class="mt-1 text-xs text-muted-foreground">{opt.hint}</p>
+        </button>
+      {/each}
+    </div>
+    <div class="mb-3 rounded-md border border-border p-3">
+      <p class="mb-2 text-xs font-semibold text-muted-foreground">Preview — try it</p>
+      <ScoreScale value={ratingDemo} onpick={(n) => (ratingDemo = n)} />
+    </div>
+    </div>
+    <div data-setting-key="show-rating-on-the-series-page" class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <p class="text-sm font-bold">Show rating on the series page</p>
+        <p class="text-xs text-muted-foreground">Under Play and the list button. Hidden keeps rating inside the list editor.</p>
+      </div>
+      <SelectMenu value={$ratingOnPage} onChange={(v) => ($ratingOnPage = v as RatingOnPage)} className="sm:max-w-xs" ariaLabel="Show rating on the series page" options={[
+        { value: 'always', label: 'Always', description: 'Once you have started watching' },
+        { value: 'rated', label: 'Once rated', description: 'Only after you have given a score' },
+        { value: 'never', label: 'Hidden', description: 'Rate from the list editor only' },
+      ]} />
     </div>
 
     <p class="mb-1 text-sm font-bold">{m.settings_browse_layout()}</p>

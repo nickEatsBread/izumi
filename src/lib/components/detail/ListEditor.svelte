@@ -4,27 +4,29 @@
   //
   // Presentation: on desktop an anchored popover beside the button that opened it — the page stays
   // visible, a click outside or Escape closes it — and on phones a bottom sheet. Both animate in and
-  // out (the old dialog just appeared). The score is a dropdown: a −/+ stepper made a ten-point
-  // choice cost up to ten presses and gave no view of the scale being chosen from.
+  // out (the old dialog just appeared). The score is the same ten-segment scale as the series page's
+  // "Your rating" row: one click per choice with the whole scale in view. (It was a floating dropdown,
+  // which the popover's transform turned into a mispositioned, clipped menu.)
   import { onMount, tick, untrack } from 'svelte'
   import { fade, fly, scale } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
   import type { Media } from '$lib/anilist/types'
   import { updateProgress, setScore, removeFromList, type AniStatus, type ProgressExtras } from '$lib/trackers'
-  import { STATUS_ORDER, STATUS_LABEL, STATUS_COLOR, SCORE_LABELS } from '$lib/trackers/status'
+  import { STATUS_ORDER, STATUS_LABEL, STATUS_COLOR } from '$lib/trackers/status'
   import { listEditorOpen } from '$lib/player/session'
   import { WATCHLIST_ID, saveLocalTracking, setMediaInLocalList } from '$lib/library/local-lists'
   import { incognito } from '$lib/stores/incognito'
   import { isMobile } from '$lib/platform'
   import { rootZoom } from '$lib/components/cards/preview-pos'
+  import ScoreScale from '$lib/components/detail/ScoreScale.svelte'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
+  import { ratingStyle, ratingOnPage, ratingDisplayTipDone, type RatingStyle, type RatingOnPage } from '$lib/settings/ui'
   import * as h from '$lib/haptics'
   import X from '@lucide/svelte/icons/x'
   import Trash2 from '@lucide/svelte/icons/trash-2'
   import Check from '@lucide/svelte/icons/check'
   import Minus from '@lucide/svelte/icons/minus'
   import Plus from '@lucide/svelte/icons/plus'
-  import Star from '@lucide/svelte/icons/star'
 
   let {
     media, initStatus, initProgress, initScore0to100, total, hasEntry, canRemove = hasEntry, anchor, onclose, onsaved,
@@ -51,11 +53,6 @@
   let busy = $state(false)
   let dialog = $state<HTMLElement>()
   let panel = $state<HTMLElement>()
-
-  /** One dropdown row per point on the scale, plus "Not rated" to clear. */
-  const SCORE_OPTIONS = SCORE_LABELS.map((label, n) => n === 0
-    ? { value: '0', label: 'Not rated' }
-    : { value: String(n), label: `${n} / 10`, description: label })
 
   // Anchored popover only where there is something to anchor to and a pointer to click outside
   // with. Phones always get the sheet, whatever opened it.
@@ -125,9 +122,32 @@
     h.tap()
   }
 
-  function chooseScore(value: string) {
-    score10 = Math.max(0, Math.min(10, Number(value) || 0))
+  // The rating's look is the viewer's choice, adjustable right where they rate (and in Settings).
+  const STYLE_CHOICES: { value: RatingStyle; label: string }[] = [
+    { value: 'bar', label: 'Bar' },
+    { value: 'stars', label: 'Stars' },
+    { value: 'numbers', label: '1–10' },
+    { value: 'dropdown', label: 'Menu' },
+  ]
+  const ON_PAGE_CHOICES: { value: RatingOnPage; label: string }[] = [
+    { value: 'always', label: 'Always' },
+    { value: 'rated', label: 'Once rated' },
+    { value: 'never', label: 'Hidden' },
+  ]
+
+  // The display panel is a one-time discovery aid. Captured at open so it stays put while the viewer
+  // is mid-adjustment; their first change marks it done and swaps in a pointer to Settings.
+  let displayPanel = $state(untrack(() => !$ratingDisplayTipDone))
+  let customized = $state(false)
+  function customize(apply: () => void) {
+    apply()
     h.tap()
+    customized = true
+    $ratingDisplayTipDone = true
+  }
+  function dismissDisplayPanel() {
+    $ratingDisplayTipDone = true
+    displayPanel = false
   }
 
   // Date.now()/new Date() are allowed at app runtime (the ban is workflow-scripts only).
@@ -207,14 +227,40 @@
   </div>
 
   <div class="mb-5">
-    <span class="mb-1.5 flex items-center gap-1.5 text-sm font-bold"><Star size={14} class={score10 ? 'fill-current text-theme' : 'text-muted-foreground'} /> Score</span>
-    <SelectMenu
-      value={String(score10)}
-      options={SCORE_OPTIONS}
-      onChange={chooseScore}
-      ariaLabel="Score"
-      floating
-    />
+    <ScoreScale value={score10} onpick={(n) => (score10 = n)} label="Score" compact />
+    {#if displayPanel}
+    <div class="mt-3 space-y-2 rounded-lg bg-background/40 p-2.5">
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-xs font-bold">Customise how ratings look</span>
+        {#if !customized}
+          <button type="button" data-focusable aria-label="Dismiss" onclick={dismissDisplayPanel}
+                  class="grid size-6 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"><X size={14} /></button>
+        {/if}
+      </div>
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-xs font-semibold text-muted-foreground">Style</span>
+        <div class="flex gap-0.5 rounded-md bg-input p-0.5" role="radiogroup" aria-label="Rating style">
+          {#each STYLE_CHOICES as c (c.value)}
+            <button type="button" role="radio" data-focusable aria-checked={$ratingStyle === c.value}
+                    onclick={() => customize(() => ($ratingStyle = c.value))}
+                    class="h-7 rounded px-2 text-xs font-bold transition-colors {$ratingStyle === c.value ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}">{c.label}</button>
+          {/each}
+        </div>
+      </div>
+      <div class="flex items-center justify-between gap-3">
+        <span class="text-xs font-semibold text-muted-foreground">On series page</span>
+        <div class="w-36">
+          <SelectMenu value={$ratingOnPage} options={ON_PAGE_CHOICES} onChange={(v) => customize(() => ($ratingOnPage = v as RatingOnPage))} ariaLabel="Show rating on series page" floating />
+        </div>
+      </div>
+      {#if customized}
+        <p class="text-xs text-muted-foreground">
+          Saved. You can change this anytime in
+          <a href="/app/settings/interface?setting=rating-style" onclick={onclose} class="font-bold text-foreground underline underline-offset-2">Settings → Interface</a>.
+        </p>
+      {/if}
+    </div>
+    {/if}
   </div>
 {/snippet}
 
@@ -296,5 +342,6 @@
   .progress-input { appearance: textfield; -moz-appearance: textfield; }
   .progress-input::-webkit-inner-spin-button,
   .progress-input::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
-  .list-editor-popover { will-change: transform, opacity; }
+  /* No `will-change: transform` here: it makes the popover the containing block for every
+     position:fixed descendant, which is how the old score dropdown ended up clipped and offset. */
 </style>

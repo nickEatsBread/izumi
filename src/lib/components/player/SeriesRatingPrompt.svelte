@@ -5,8 +5,9 @@
   // watch threshold shows it over the series page instead.
   //
   // The score control is a ten-segment scale rather than a dropdown: at the end of a series the
-  // question is the whole screen, one tap should answer it, and the descriptor under the scale
-  // ("Very Good") tells the viewer what the number they are hovering means.
+  // question is the whole screen and ONE tap answers it — clicking a segment saves, no separate
+  // Save step. The descriptor under the scale ("Very Good") tells a mouse user what the number
+  // they are hovering means before they commit; the confirmation offers "Change" for a mis-tap.
   import { onMount, tick } from 'svelte'
   import { fade, fly } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
@@ -50,10 +51,21 @@
     if (!prompt || !value || saved) return
     saved = true
     h.success()
-    // Best-effort by contract (the tracker queue retries); the confirmation lingers just long
-    // enough to read before the card leaves.
+    // Best-effort by contract (the tracker queue retries); the confirmation lingers long enough to
+    // read — and to hit "Change" after a mis-tap — before the card leaves.
     void saveSeriesRating(prompt, value)
-    saveTimer = setTimeout(dismissSeriesRating, 1100)
+    clearTimeout(saveTimer)
+    saveTimer = setTimeout(dismissSeriesRating, 2200)
+    // The focused segment just unmounted; keep controller focus inside the card.
+    void tick().then(() => root?.querySelector<HTMLElement>('[data-rating-change]')?.focus({ preventScroll: true }))
+  }
+
+  /** Back to the scale from the confirmation; the next pick overwrites the saved score. */
+  function change() {
+    clearTimeout(saveTimer)
+    saved = false
+    hover = 0
+    void tick().then(() => focusSegment(value || 7))
   }
 
   function dontAsk() {
@@ -135,8 +147,11 @@
             <span class="grid size-9 shrink-0 place-items-center rounded-full bg-theme text-white"><Check size={18} strokeWidth={3} /></span>
             <span class="min-w-0">
               <span class="block text-sm font-black">{m.series_rating_saved({ score: value })} · {SCORE_LABELS[value]}</span>
-              {#if trackers.length}<span class="block truncate text-xs text-theme/80">{m.series_rating_saves_to({ trackers: trackers.join(' · ') })}</span>{/if}
+              <span class="block truncate text-xs text-theme/80">{trackers.length ? m.series_rating_saves_to({ trackers: trackers.join(' · ') }) : m.series_rating_saves_local()}</span>
             </span>
+            <button type="button" data-focusable data-rating-change onclick={change} class="ml-auto h-9 shrink-0 rounded-lg px-3 text-sm font-bold text-white/80 hover:bg-white/10">
+              {m.series_rating_change()}
+            </button>
           </div>
         {:else}
           <!-- The scale: ten segments fill up to the hovered/chosen point. Pure compositor work
@@ -155,7 +170,7 @@
                 class="score-seg h-11 min-w-0 flex-1 rounded-md transition-colors duration-150 {n <= shown ? 'bg-theme' : 'bg-white/10 hover:bg-white/20'} {n === value ? 'ring-2 ring-white/70 ring-offset-2 ring-offset-neutral-950' : ''}"
                 style="animation-delay:{(n - 1) * 26}ms"
                 onpointerenter={(e) => { if (e.pointerType === 'mouse') hover = n }}
-                onclick={() => pick(n)}
+                onclick={() => { pick(n); void save() }}
               ></button>
             {/each}
           </div>
@@ -165,23 +180,15 @@
               <span in:fade={{ duration: 120 }} class="truncate text-sm font-semibold text-white/65">{shown ? SCORE_LABELS[shown] : m.series_rating_pick()}</span>
             {/key}
           </div>
-          {#if trackers.length}
-            <p class="mt-1 truncate text-xs text-white/45">{m.series_rating_saves_to({ trackers: trackers.join(' · ') })}</p>
-          {/if}
+          <p class="mt-1 truncate text-xs text-white/45">{trackers.length ? m.series_rating_saves_to({ trackers: trackers.join(' · ') }) : m.series_rating_saves_local()}</p>
 
           <div class="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
             <button type="button" data-focusable onclick={dontAsk} class="h-9 rounded-lg px-2 text-xs font-semibold text-white/45 hover:text-white/80 sm:self-center">
               {m.series_rating_dont_ask()}
             </button>
-            <div class="flex flex-col-reverse gap-2 sm:flex-row">
-              <button type="button" data-focusable onclick={dismissSeriesRating} class="h-11 rounded-xl px-4 text-sm font-bold text-white/70 hover:bg-white/10">
-                {m.series_rating_not_now()}
-              </button>
-              <button type="button" data-focusable onclick={save} disabled={!value}
-                      class="h-11 rounded-xl bg-primary px-5 text-sm font-black text-primary-foreground transition-opacity disabled:opacity-40">
-                {m.series_rating_save()}
-              </button>
-            </div>
+            <button type="button" data-focusable onclick={dismissSeriesRating} class="h-11 rounded-xl px-4 text-sm font-bold text-white/70 hover:bg-white/10">
+              {m.series_rating_not_now()}
+            </button>
           </div>
         {/if}
       </div>

@@ -16,6 +16,8 @@ import { activeProfileId, DEFAULT_PROFILE_ID } from '$lib/profiles/store'
 // account tokens, downloads, and external-player configuration stay per-device.
 export const SYNCED_SETTING_KEYS = [
   "episode-layout",
+  "rating-style",
+  "rating-on-page",
   "title-language",
   "player-title-top",
   "player-auto-skip",

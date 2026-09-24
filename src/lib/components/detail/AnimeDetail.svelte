@@ -20,10 +20,14 @@
   import { copyToClipboard } from '$lib/util/clipboard'
   import { anilistToken } from '$lib/anilist/auth'
   import { kitsuToken, malToken, simklToken } from '$lib/trackers/config'
-  import { getExternalTrackerProgress } from '$lib/trackers'
+  import { getExternalTrackerProgress, setScore } from '$lib/trackers'
   import type { AniStatus } from '$lib/trackers'
   import { mergedProgress, STATUS_LABEL, STATUS_COLOR } from '$lib/trackers/status'
   import ListEditor from '$lib/components/detail/ListEditor.svelte'
+  import ScoreScale from '$lib/components/detail/ScoreScale.svelte'
+  import { connectedTrackerLabels } from '$lib/player/series-rating'
+  import { incognito } from '$lib/stores/incognito'
+  import { ratingOnPage } from '$lib/settings/ui'
   import LocalListPicker from '$lib/components/library/LocalListPicker.svelte'
   import { localLibrary, localTrackingForMedia, localTrackingKey, localTrackingRemoved, mediaIsSaved } from '$lib/library/local-lists'
   import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus'
@@ -278,6 +282,26 @@
   const canRemove = $derived(!entryRemoved && (hasEntry || (!!media && Object.values($localHistory)
     .some((entry) => localTrackingKey(entry.media) === localTrackingKey(media)))))
   const savedLocally = $derived(media ? mediaIsSaved($localLibrary, media) : false)
+  // "Your rating" sits on the page itself once the viewer has actually watched something — rating a
+  // title from the plan-to-watch pile is noise, and before this the score was only reachable three
+  // clicks deep inside the list editor and never shown anywhere.
+  const rateable = $derived((!!effStatus && effStatus !== 'PLANNING') || effProgress > 0)
+  const effScore10 = $derived(Math.round(effScore100 / 10))
+  // The viewer decides whether the row lives on the page: always (once started), only after they
+  // have rated, or never (rating then happens in the list editor alone).
+  const showRatingRow = $derived($ratingOnPage === 'always' ? rateable || effScore10 > 0
+    : $ratingOnPage === 'rated' ? effScore10 > 0
+    : false)
+  const ratingHint = $derived.by(() => {
+    if ($incognito) return 'Incognito — ratings are not saved'
+    const trackers = connectedTrackerLabels()
+    return trackers.length ? `Saved to ${trackers.join(' · ')}` : 'Saved on this device'
+  })
+  function rate(m: Media, score10: number) {
+    // Optimistic: the scale reflects the click at once; setScore queues + retries every tracker.
+    listOpt = { ...listOpt, score: score10 * 10, removed: false }
+    void setScore(m, score10 * 10)
+  }
 
   const fmtDate = (d?: { year?: number; month?: number; day?: number } | null) =>
     d?.year ? [d.year, d.month, d.day].filter(Boolean).join('-') : ''
@@ -484,6 +508,7 @@
         {#if heroPlay.status === 'error'}
           <p class="mt-3 text-sm text-destructive">{heroPlay.message}</p>
         {/if}
+        {#if showRatingRow}<div class="mt-4">{@render ratingRow(m)}</div>{/if}
         {#if belowEpisodes}
           <div class="mt-6">
             <EpisodeList media={m} offline={$offlineMode} />
@@ -680,6 +705,7 @@
         {#if heroPlay.status === 'error'}
           <p class="mt-3 text-sm text-destructive">{heroPlay.message}</p>
         {/if}
+        {#if showRatingRow}<div class="mt-4">{@render ratingRow(m)}</div>{/if}
 
         {#if belowEpisodes}
           <div class="mt-6">
@@ -797,6 +823,7 @@
         {#if heroPlay.status === 'error'}
           <p class="text-sm text-destructive">{heroPlay.message}</p>
         {/if}
+        {#if showRatingRow}<div class="mt-4">{@render ratingRow(m)}</div>{/if}
       </div>
     </section>
     <div class="relative px-4 pb-16 sm:px-8" data-theme-surface="detail">
@@ -947,6 +974,7 @@
             </button>
           {/each}
         </div>
+        {#if showRatingRow}<div class="mt-4">{@render ratingRow(m)}</div>{/if}
       </div>
     </div>
     {#if m.description && detailTheme.actionsFirst}
@@ -1049,3 +1077,7 @@
 {:else}
   <div class="p-8 pt-[max(2rem,env(safe-area-inset-top))] text-muted-foreground">Not found.</div>
 {/if}
+
+{#snippet ratingRow(m: Media)}
+  <ScoreScale value={effScore10} onpick={(n) => rate(m, n)} hint={ratingHint} />
+{/snippet}
