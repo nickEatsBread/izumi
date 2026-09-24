@@ -18,6 +18,7 @@
     mpvState,
     androidMpvActive,
     androidMiniPlayer,
+    androidMiniPull,
     mpvStop,
     mpvCommand,
     mpvGet,
@@ -46,14 +47,19 @@
     type MpvTrack,
   } from '$lib/player/android-mpv'
   import {
+    miniDockGeometry, miniPullTravel, miniPullProgress, miniPullTransform, miniDetailsShift,
+    miniPullOutcome, miniDismissOutcome, releaseVelocity, velocityToProgress, stepSpring, springSettled,
+    MINI_BAR_HEIGHT, type Rect as MiniRect,
+  } from '$lib/player/mini-player'
+  import {
     classifyDrag,
     fullscreenPullProgress,
     fullscreenPullTransform,
     shouldEnterFullscreen,
-    miniPlayerPullProgress,
-    shouldMinimizePlayer,
+    miniPullRecognized,
     shouldDismissSheet,
     sheetGestureIntent,
+    SHEET_SLOP_PX,
     needsExplicitPointerCapture,
     landscapeExitProgress,
     shouldExitFullscreen,
@@ -163,6 +169,15 @@
   let miniPull = $state(0)
   let miniPullDragging = $state(false)
   let miniCommitting = $state(false)
+  /** The docked rectangle, inline-styled onto the frame so the settled layout IS the spring's last
+   *  frame (computed by the same function, in the same units). */
+  let miniDock = $state<MiniRect | null>(null)
+  /** How far (px) the docked bar has been pulled down toward dismissal. */
+  let miniDismiss = $state(0)
+  const miniDismissOpacity = $derived(Math.max(0, 1 - miniDismiss / (MINI_BAR_HEIGHT * 1.5)))
+  let miniSource: MiniRect = { left: 0, top: 0, width: 1, height: 1 }
+  let miniTarget: MiniRect = { left: 0, top: 0, width: 1, height: 1 }
+  let miniTravel = 1
 
   const pos = $derived(scrubbing ? scrubPos : $mpvState.pos)
   const dur = $derived($mpvState.dur)
@@ -852,69 +867,86 @@
     animatePullTo(from, 0) // eases scale/lift/dim back to the resting 16:9 box
   }
 
-  function miniGeometry() {
-    const width = Math.min(160, window.innerWidth * 0.42)
-    const height = width * 9 / 16
-    const left = 8
-    const top = window.innerHeight - safeBottom - 64 - 8 - height
-    return { width, height, left, top }
+  // --- In-app mini-player: YouTube-style direct manipulation ---
+  // The video is a sheet the finger holds: its centre moves with the finger 1:1 for the whole trip
+  // from the resting portrait band to the dock, shrinking in proportion, and the watch page
+  // underneath travels and fades with it. Release hands the finger's velocity to a spring
+  // (mini-player.ts), so a fling lands fast and a gentle release settles gently. Geometry is CSS
+  // px, computed once per trip from the same numbers the docked layout is inline-styled with, so
+  // the transform's last frame and the settled layout are the same pixels.
+  function safeAreaBottomCss(): number {
+    const value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-area-inset-bottom'))
+    return Number.isFinite(value) ? value : 0
+  }
+  function dockRect(): MiniRect {
+    return miniDockGeometry({ width: window.innerWidth, height: window.innerHeight }, safeAreaBottomCss())
+  }
+  function restingRect(): MiniRect {
+    const height = portraitVideoHeight ?? Math.round(window.innerWidth * 9 / 16)
+    return { left: 0, top: safeTop, width: window.innerWidth, height }
+  }
+  function beginMiniTrip(source: MiniRect) {
+    miniSource = source
+    miniTarget = miniDock ?? dockRect()
+    miniTravel = miniPullTravel(miniSource, miniTarget)
   }
 
-  function applyMiniPull(progress: number) {
+  /** Put the DOM frame, the watch page underneath and (coalesced) the native surface at `progress`. */
+  function applyMiniPull(progress: number, native = true) {
     const p = Math.max(0, Math.min(1, progress))
-    const target = miniGeometry()
-    const sourceWidth = window.innerWidth
-    const sourceCenterX = sourceWidth / 2
-    const sourceCenterY = pullPlayerTop + pullPlayerHeight / 2
-    const targetCenterX = target.left + target.width / 2
-    const targetCenterY = target.top + target.height / 2
-    const targetScale = target.width / Math.max(1, sourceWidth)
-    pullScale = 1 + (targetScale - 1) * p
-    pullTranslateX = (targetCenterX - sourceCenterX) * p
-    pullTranslateY = (targetCenterY - sourceCenterY) * p
+    const t = miniPullTransform(p, miniSource, miniTarget)
+    miniPull = p
+    pullScale = t.scale
+    pullTranslateX = t.tx
+    pullTranslateY = t.ty
     pullDim = p
     pullDetailsOffset = 0
+    androidMiniPull.set({ progress: p, shiftY: miniDetailsShift(p, miniSource, miniTarget) })
     // Once browse is visible the native surface must move above the WebView or its cards cover the
     // video during the drag. The identity frame at p=0 lowers it again after a cancelled pull.
-    queuePullTransform(pullScale, pullTranslateY, pullTranslateX, p > 0)
+    if (native) queuePullTransform(t.scale, t.ty, t.tx, p > 0)
   }
 
-  function updateMiniPull(e: PointerEvent) {
-    cancelAnimationFrame(pullAnimFrame)
+  function trackVelocity(e: PointerEvent) {
     const dt = Math.max(1, e.timeStamp - pullLastTime)
     const velocity = (e.clientY - pullLastY) / dt
     pullVelocityY = pullVelocityY * 0.65 + velocity * 0.35
     pullLastY = e.clientY
     pullLastTime = e.timeStamp
-    miniPull = miniPlayerPullProgress(
-      startSample,
-      { x: e.clientX, y: e.clientY, t: e.timeStamp },
-      pullPlayerHeight,
-    )
-    applyMiniPull(miniPull)
   }
 
-  function animateMiniTo(from: number, to: number, done?: () => void) {
+  function updateMiniPull(e: PointerEvent) {
     cancelAnimationFrame(pullAnimFrame)
-    let startTs = 0
-    const duration = 240
+    trackVelocity(e)
+    applyMiniPull(miniPullProgress(e.clientY - startSample.y, miniTravel))
+  }
+
+  /** Spring the sheet to `to`, carrying the finger's velocity, then `done`. */
+  function springMiniTo(from: number, to: number, velocity: number, done?: () => void) {
+    cancelAnimationFrame(pullAnimFrame)
+    let state = { x: from, v: velocity }
+    let last = 0
     const step = (ts: number) => {
-      if (!startTs) startTs = ts
-      const k = Math.min(1, (ts - startTs) / duration)
-      const eased = 1 - Math.pow(1 - k, 3)
-      applyMiniPull(from + (to - from) * eased)
-      if (k < 1) pullAnimFrame = requestAnimationFrame(step)
-      else done?.()
+      const dt = last ? ts - last : 16
+      last = ts
+      state = stepSpring(state, to, dt)
+      if (springSettled(state, to)) { applyMiniPull(to); done?.(); return }
+      applyMiniPull(state.x)
+      pullAnimFrame = requestAnimationFrame(step)
     }
     pullAnimFrame = requestAnimationFrame(step)
   }
 
-  function resetMiniPull() {
+  /** The finger's velocity at lift-off, zero when it rested first (a pause is not a throw). */
+  const liftVelocity = () => releaseVelocity(pullVelocityY, performance.now() - pullLastTime)
+
+  function undockMiniPlayer(velocityPxPerMs = 0) {
     miniPullDragging = false
-    const from = miniPull
-    miniPull = 0
-    animateMiniTo(from, 0, () => {
+    miniCommitting = true
+    springMiniTo(miniPull, 0, velocityToProgress(velocityPxPerMs, miniTravel), () => {
+      miniCommitting = false
       androidMiniPlayer.set(false)
+      androidMiniPull.set({ progress: 0, shiftY: 0 })
       armHide()
     })
   }
@@ -924,34 +956,190 @@
     controlsShown = false
     sheet = null
     commentsOpen.set(false)
+    miniDock = miniTarget
+    miniDismiss = 0
     miniLayout = true
     await tick()
+    // The layout write resizes the native surface down to the docked rectangle (cheaper to keep
+    // rendering while browsing) — on the very pixels the transform already had it on.
     await syncViewport()
     miniCommitting = false
   }
 
-  function minimizeToHome() {
-    // Reveal browse at release, while the video is still physically travelling toward the corner.
-    // This is the direct-manipulation part of YouTube's transition: the destination is visible
-    // underneath rather than popping in only after the animation has finished.
+  /** Commit the collapse over whatever page the viewer came from — the series page, a search —
+   *  which has been visible under the sheet since the pull was recognized. That is YouTube's
+   *  rule; the old navigation to Home mounted a whole new page in the middle of the animation. */
+  function dockMiniPlayer(velocityPxPerMs = 0) {
+    miniPullDragging = false
     miniCommitting = true
     androidMiniPlayer.set(true)
-    void goto('/app/home')
-    animateMiniTo(miniPull, 1, () => { void settleMiniPlayer() })
+    springMiniTo(miniPull, 1, velocityToProgress(velocityPxPerMs, miniTravel), () => { void settleMiniPlayer() })
   }
 
-  async function restoreFromMini() {
-    if (!miniLayout) return
-    androidMiniPlayer.set(false)
-    miniLayout = false
+  /** The portrait top-bar chevron: like YouTube's, it minimizes rather than stops. */
+  function minimizeFromButton() {
+    if (landscape || miniLayout || miniCommitting) return
+    cancelScrub()
+    resetTapSequence()
+    const rect = rootEl?.getBoundingClientRect()
+    beginMiniTrip({
+      left: 0, top: rect?.top ?? safeTop, width: window.innerWidth,
+      height: rect?.height ?? Math.round(window.innerWidth * 9 / 16),
+    })
+    controlsShown = false
     miniPull = 0
-    pullDim = 0
-    pullScale = 1
-    pullTranslateX = 0
-    pullTranslateY = 0
+    dockMiniPlayer(0.9) // a nudge so the spring does not sit still for its first frames
+  }
+
+  /** Leave the docked layout for the transform that describes the same rectangle, then put the
+   *  native surface back on its full portrait layout ALREADY scaled and translated onto the dock in
+   *  one native write — so an expanding player never flashes full-size between the two. */
+  let expandPreparing = false
+  async function prepareExpand() {
+    if (!miniLayout || expandPreparing) return
+    miniCommitting = true
+    expandPreparing = true
+    beginMiniTrip(restingRect())
+    pullPlayerTop = miniSource.top
+    pullPlayerHeight = miniSource.height
+    const t = miniPullTransform(1, miniSource, miniTarget)
+    const dpr = window.devicePixelRatio || 1
+    miniLayout = false
+    miniDock = null
+    applyMiniPull(1, false)
     await tick()
-    await syncViewport()
-    showControls()
+    await drainPullTransforms()
+    viewportGeneration++ // an in-flight resize sync must not reset the pull state under us
+    try {
+      await setPlayerViewport(0, miniSource.height * dpr, false, 0, 0, true, {
+        scale: t.scale, translateX: t.tx * dpr, translateY: t.ty * dpr,
+      })
+    } finally {
+      expandPreparing = false
+    }
+  }
+
+  function finishExpand() {
+    miniCommitting = false
+    androidMiniPlayer.set(false)
+    androidMiniPull.set({ progress: 0, shiftY: 0 })
+    void syncViewport().then(() => showControls())
+  }
+
+  async function expandFromMini(velocityPxPerMs = 0) {
+    if (!miniLayout || miniCommitting) return
+    await prepareExpand()
+    springMiniTo(1, 0, velocityToProgress(velocityPxPerMs, miniTravel), finishExpand)
+  }
+
+  /** Someone else cleared the mini flag (play.ts starts every fresh play with it false — e.g. an
+   *  episode tapped on the page behind the bar). Drop the docked layout at once, no animation:
+   *  the new episode's watch page is already taking over. */
+  $effect(() => {
+    if ($androidMiniPlayer || !miniLayout || !$androidMpvActive || closing) return
+    cancelAnimationFrame(pullAnimFrame)
+    cancelAnimationFrame(dismissFrame)
+    miniLayout = false
+    miniDock = null
+    miniCommitting = false
+    miniDismiss = 0
+    miniPull = 0; pullDim = 0; pullScale = 1; pullTranslateX = 0; pullTranslateY = 0
+    androidMiniPull.set({ progress: 0, shiftY: 0 })
+    void syncViewport()
+  })
+
+  // --- Docked bar gestures: a swipe up expands (the same sheet in reverse), a swipe down
+  // dismisses, a tap on the video or the title expands. ---
+  let dockPointerId: number | null = null
+  let dockGesture: 'expand' | 'dismiss' | null = null
+  let dockStart = { x: 0, y: 0 }
+  let dockDragged = false
+  let dismissFrame = 0
+  function onDockDown(e: PointerEvent) {
+    if (!e.isPrimary || dockPointerId != null || miniCommitting) return
+    dockPointerId = e.pointerId
+    dockGesture = null
+    dockDragged = false
+    dockStart = { x: e.clientX, y: e.clientY }
+    pullLastY = e.clientY; pullLastTime = e.timeStamp; pullVelocityY = 0
+    if (needsExplicitPointerCapture(e.pointerType)) (e.currentTarget as HTMLElement | null)?.setPointerCapture?.(e.pointerId)
+  }
+  function onDockMove(e: PointerEvent) {
+    if (dockPointerId !== e.pointerId) return
+    const dy = e.clientY - dockStart.y
+    const dx = e.clientX - dockStart.x
+    if (dockGesture === null) {
+      if (Math.abs(dy) < SHEET_SLOP_PX || Math.abs(dy) <= Math.abs(dx)) return
+      dockDragged = true
+      if (dy < 0) { dockGesture = 'expand'; void prepareExpand() }
+      else dockGesture = 'dismiss'
+    }
+    trackVelocity(e)
+    if (dockGesture === 'expand') {
+      // Until the native surface is back on its full layout (prepareExpand's one write), a queued
+      // transform would land BEFORE that write and be overridden by it — a visible hop. The finger
+      // is measured from its start, so the sheet catches up on the first move after.
+      if (expandPreparing) return
+      applyMiniPull(1 - miniPullProgress(-dy, miniTravel, SHEET_SLOP_PX))
+    } else {
+      miniDismiss = Math.max(0, dy - SHEET_SLOP_PX)
+      queuePullTransform(1, miniDismiss, 0, true)
+    }
+  }
+  function onDockUp(e: PointerEvent) {
+    if (dockPointerId !== e.pointerId) return
+    dockPointerId = null
+    const velocity = liftVelocity()
+    if (dockGesture === 'expand') {
+      // The collapse rule mirrored: a downward fling re-docks, an upward one (or most of the trip) expands.
+      if (miniPullOutcome(miniPull, velocity) === 'dock') {
+        springMiniTo(miniPull, 1, velocityToProgress(velocity, miniTravel), () => { void settleMiniPlayer() })
+      } else {
+        springMiniTo(miniPull, 0, velocityToProgress(velocity, miniTravel), finishExpand)
+      }
+    } else if (dockGesture === 'dismiss') {
+      if (miniDismissOutcome(miniDismiss, velocity) === 'close') void dismissMiniPlayer()
+      else springDismissTo(0)
+    } else if (!dockDragged && !(e.target instanceof Element && e.target.closest('button'))) {
+      void expandFromMini()
+    }
+    dockGesture = null
+    try { (e.currentTarget as HTMLElement | null)?.releasePointerCapture?.(e.pointerId) } catch { /* ignore */ }
+  }
+  function onDockCancel(e: PointerEvent) {
+    if (dockPointerId !== e.pointerId) return
+    dockPointerId = null
+    if (dockGesture === 'expand') springMiniTo(miniPull, 1, 0, () => { void settleMiniPlayer() })
+    else if (dockGesture === 'dismiss') springDismissTo(0)
+    dockGesture = null
+  }
+  function onDockLostCapture(e: PointerEvent) {
+    if (isOwnCaptureLoss(e) && dockPointerId === e.pointerId) onDockCancel(e)
+  }
+  /** A drag must not also fire the click of whatever button the finger lifted on. */
+  function onDockClickCapture(e: MouseEvent) {
+    if (dockDragged) { e.stopPropagation(); e.preventDefault(); dockDragged = false }
+  }
+  function springDismissTo(to: number, done?: () => void) {
+    cancelAnimationFrame(dismissFrame)
+    let state = { x: miniDismiss, v: 0 }
+    let last = 0
+    const step = (ts: number) => {
+      const dt = last ? ts - last : 16
+      last = ts
+      state = stepSpring(state, to, dt)
+      const settled = springSettled(state, to, 0.5)
+      miniDismiss = settled ? to : Math.max(0, state.x)
+      queuePullTransform(1, miniDismiss, 0, true)
+      if (settled) { done?.(); return }
+      dismissFrame = requestAnimationFrame(step)
+    }
+    dismissFrame = requestAnimationFrame(step)
+  }
+  async function dismissMiniPlayer() {
+    // Slide the bar the rest of the way off before stopping: closing mid-air reads as a crash.
+    await new Promise<void>((resolve) => springDismissTo((miniDock?.height ?? MINI_BAR_HEIGHT) + 96, resolve))
+    await close()
   }
 
   // Landscape swipe-DOWN to exit fullscreen — mirror of the pull-up. Dims the video as the finger
@@ -1023,7 +1211,7 @@
     // onTap never ran, so onTap's `if (locked) showLockToggle()` branch was dead code — and in
     // landscape immersive there is no top bar, no chevron and no other way back, making the lock a
     // one-way trap that could only be escaped by force-quitting (losing the unfinalized position).
-    if (miniLayout) return
+    if (miniLayout) { onDockDown(e); return }
     if (!e.isPrimary || rootPointerId != null) return
     // Blank areas of visible chrome are still part of the video gesture surface. Actual controls
     // remain ordinary taps, so a pull-up can begin beside them without stealing a button press.
@@ -1050,6 +1238,7 @@
     }, HOLD_MS)
   }
   function onRootMove(e: PointerEvent) {
+    if (dockPointerId != null) { onDockMove(e); return }
     if (locked || gesture === 'hold' || rootPointerId !== e.pointerId) return
     const cur = { x: e.clientX, y: e.clientY, t: e.timeStamp }
     if (gesture === null) {
@@ -1065,19 +1254,17 @@
         updateFullscreenPull(e)
         return
       }
-      const mini = !landscape
-        ? miniPlayerPullProgress(startSample, cur, pullPlayerHeight)
-        : 0
-      if (mini > 0) {
+      if (!landscape && miniPullRecognized(startSample, cur)) {
         clearTimeout(holdTimer)
         gesture = 'minimize'
         miniPullDragging = true
-        // Unlock and reveal the route beneath the watch page for the duration of the pull. A
-        // cancelled gesture hides it again after the spring-back; a committed one navigates Home.
+        beginMiniTrip({ left: 0, top: pullPlayerTop, width: window.innerWidth, height: pullPlayerHeight })
+        // Reveal the route beneath the watch page for the duration of the pull — the page the
+        // viewer came from. A cancelled gesture hides it again after the spring-back; a committed
+        // one docks the bar over it.
         androidMiniPlayer.set(true)
         controlsShown = false
         resetTapSequence()
-        miniPull = mini
         updateMiniPull(e)
         return
       }
@@ -1112,6 +1299,7 @@
     }
   }
   function onRootUp(e: PointerEvent) {
+    if (dockPointerId != null) { onDockUp(e); return }
     if (rootPointerId !== e.pointerId) return
     rootPointerId = null
     clearTimeout(holdTimer)
@@ -1123,9 +1311,9 @@
       else { resetFullscreenPull(); armHide() }
     }
     else if (gesture === 'minimize') {
-      miniPullDragging = false
-      if (shouldMinimizePlayer(miniPull, pullVelocityY)) minimizeToHome()
-      else resetMiniPull()
+      const velocity = liftVelocity()
+      if (miniPullOutcome(miniPull, velocity) === 'dock') dockMiniPlayer(velocity)
+      else undockMiniPlayer(velocity)
     }
     else if (gesture === 'exit') {
       if (shouldExitFullscreen(exitDrag, pullVelocityY)) void exitAndroidFullscreen()
@@ -1136,19 +1324,21 @@
     try { rootEl?.releasePointerCapture?.(e.pointerId) } catch { /* ignore */ }
   }
   function onRootCancel(e: PointerEvent) {
+    if (dockPointerId != null) { onDockCancel(e); return }
     if (rootPointerId !== e.pointerId) return
     rootPointerId = null
     clearTimeout(holdTimer)
     if (heldSpeed) { heldSpeed = false; void mpvCommand(['set', 'speed', String(speed)]) }
     if (scrubOwner === 'surface' && scrubPointerId === e.pointerId) cancelScrub()
     if (gesture === 'fullscreen') resetFullscreenPull()
-    if (gesture === 'minimize') resetMiniPull()
+    if (gesture === 'minimize') undockMiniPlayer()
     if (gesture === 'exit') resetExitDrag()
     gesture = null
     armHide()
     try { rootEl?.releasePointerCapture?.(e.pointerId) } catch { /* ignore */ }
   }
   function onRootLostCapture(e: PointerEvent) {
+    if (dockPointerId != null) { onDockLostCapture(e); return }
     if (isOwnCaptureLoss(e) && rootPointerId === e.pointerId) onRootCancel(e)
   }
 
@@ -1906,7 +2096,11 @@
   style={`--player-safe-top:${safeTop}px;--player-safe-right:${safeRight}px;--player-safe-bottom:${safeBottom}px;--player-safe-left:${safeLeft}px;--portrait-player-height:${portraitVideoHeight == null ? 'calc(100vw * 9 / 16)' : `${portraitVideoHeight}px`}`}>
   <section bind:this={rootEl} class="video-frame relative touch-none bg-transparent"
     data-nav-trap={$isAndroidTv && controlsShown && !sheet ? '' : undefined}
-    style:transform={`translate3d(${pullTranslateX}px, ${pullTranslateY}px, 0) scale(${pullScale})`}
+    style:transform={miniLayout ? `translate3d(0, ${miniDismiss}px, 0)` : `translate3d(${pullTranslateX}px, ${pullTranslateY}px, 0) scale(${pullScale})`}
+    style:left={miniLayout && miniDock ? `${miniDock.left}px` : null}
+    style:top={miniLayout && miniDock ? `${miniDock.top}px` : null}
+    style:width={miniLayout && miniDock ? `${miniDock.width}px` : null}
+    style:height={miniLayout && miniDock ? `${miniDock.height}px` : null}
     onpointerdown={onRootDown} onpointermove={onRootMove} onpointerup={onRootUp} onpointercancel={onRootCancel} onlostpointercapture={onRootLostCapture}
     oncontextmenu={(e) => e.preventDefault()}
     onpointerdowncapture={noteDownTarget} onclickcapture={suppressGhostClick} role="presentation">
@@ -1983,7 +2177,9 @@
 
     <!-- Top bar -->
     <div in:fade={{ duration: 180 }} class="player-top-bar absolute inset-x-0 top-0 flex items-center gap-2 p-2 landscape:p-3" onclick={(e) => e.stopPropagation()} role="presentation">
-      <button onclick={close} class="grid h-10 w-10 shrink-0 place-items-center active:scale-90" aria-label="Close player">
+      <!-- Portrait: the chevron collapses to the mini-player, as YouTube's does; stopping is the
+           bar's ✕. Landscape keeps its back arrow as the way out of fullscreen playback. -->
+      <button onclick={() => { if (landscape) void close(); else minimizeFromButton() }} class="grid h-10 w-10 shrink-0 place-items-center active:scale-90" aria-label={landscape ? 'Close player' : 'Minimize player'}>
         {#if landscape}<ChevronLeft size={27} />{:else}<ChevronDown size={29} />{/if}
       </button>
       {#if landscape}
@@ -2039,11 +2235,13 @@
         <!-- YouTube-style edge timeline: the track is flush with the video bottom and the centred
              thumb crosses that boundary. Portrait video overflow stays visible so it is not cut. -->
         <div class="absolute inset-x-0 bottom-0 h-1 overflow-hidden bg-white/25">
-          <div class="absolute inset-y-0 left-0 bg-white/40" style="width:{cachePct}%"></div>
+          <!-- Fills scale on the compositor (transform), not via width: a width change is a layout
+               plus paint on every position tick while the controls are up. -->
+          <div class="absolute inset-y-0 left-0 w-full origin-left bg-white/40" style="transform:scaleX({cachePct / 100})"></div>
           {#each segments as s (s.type + s.start)}
             <div class="absolute inset-y-0 {s.type === 'op' ? 'bg-sky-400/60' : s.type === 'ed' ? 'bg-fuchsia-400/60' : 'bg-amber-400/60'}" style="left:{(s.start / dur) * 100}%;width:{((s.end - s.start) / dur) * 100}%"></div>
           {/each}
-          <div class="absolute inset-y-0 left-0 bg-theme" style="width:{playedPct}%"></div>
+          <div class="absolute inset-y-0 left-0 w-full origin-left bg-theme" style="transform:scaleX({playedPct / 100})"></div>
         </div>
         {#each chapterTimes as t (t)}<div class="absolute bottom-0 h-1 w-[3px] -translate-x-1/2 rounded-full bg-black/70" style="left:{(t / dur) * 100}%"></div>{/each}
         <div class="absolute -bottom-[5px] h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-theme shadow-md" style="left:clamp(7px, {playedPct}%, calc(100% - 7px))"></div>
@@ -2059,17 +2257,28 @@
 
   </section>
 
-  {#if miniLayout}
-    <div class="mini-meta pointer-events-auto fixed flex items-center gap-2 overflow-hidden rounded-r-xl bg-neutral-950 px-3 shadow-2xl"
-         role="group" aria-label="Mini player">
-      <button class="min-w-0 flex-1 text-left" onclick={() => void restoreFromMini()} aria-label="Return to player">
+  {#if miniLayout && miniDock}
+    <!-- YouTube-style docked bar: [video][title · episode][play/pause][close], full width, resting
+         on the bottom navigation, with the playhead as a hairline along its bottom edge. The native
+         surface sits over the empty slot on the left. The whole bar is a gesture surface: swipe up
+         to expand, swipe down to dismiss, tap to expand. -->
+    <div class="mini-bar pointer-events-auto fixed inset-x-0 flex items-stretch bg-neutral-950 text-white"
+         style="top:{miniDock.top}px;height:{miniDock.height}px;transform:translate3d(0,{miniDismiss}px,0);opacity:{miniDismissOpacity}"
+         role="group" aria-label="Mini player"
+         onpointerdown={onDockDown} onpointermove={onDockMove} onpointerup={onDockUp} onpointercancel={onDockCancel}
+         onlostpointercapture={onDockLostCapture} onclickcapture={onDockClickCapture}>
+      <div class="shrink-0" style="width:{miniDock.width}px" aria-hidden="true"></div>
+      <button class="min-w-0 flex-1 px-3 text-left" onclick={() => void expandFromMini()} aria-label="Return to player">
         <span class="block truncate text-sm font-extrabold">{np.animeTitle ?? np.title}</span>
-        <span class="block truncate text-xs text-white/55">Episode {np.episode}</span>
+        <span class="block truncate text-xs text-white/55">{np.episode != null ? `Episode ${np.episode}${np.total ? ` of ${np.total}` : ''}` : np.title}</span>
       </button>
-      <button onclick={pressPause} class="grid size-10 shrink-0 place-items-center rounded-full active:bg-white/10" aria-label={paused ? 'Play' : 'Pause'}>
-        {#if paused}<Play size={21} fill="currentColor" />{:else}<Pause size={21} fill="currentColor" />{/if}
+      <button onclick={pressPause} class="grid w-12 shrink-0 place-items-center active:bg-white/10" aria-label={paused ? 'Play' : 'Pause'}>
+        {#if paused}<Play size={22} fill="currentColor" />{:else}<Pause size={22} fill="currentColor" />{/if}
       </button>
-      <button onclick={() => void close()} class="grid size-10 shrink-0 place-items-center rounded-full active:bg-white/10" aria-label="Close mini player">✕</button>
+      <button onclick={() => void dismissMiniPlayer()} class="grid w-12 shrink-0 place-items-center active:bg-white/10" aria-label="Close mini player">✕</button>
+      <div class="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 bg-white/15" aria-hidden="true">
+        <div class="h-full w-full origin-left bg-theme" style="transform:scaleX({playedPct / 100})"></div>
+      </div>
     </div>
   {/if}
 
@@ -2274,17 +2483,18 @@
   .pulling-fullscreen .video-frame, .pulling-fullscreen .watch-details { transition: none; }
   .mini-shell { pointer-events: none; overflow: visible; }
   .mini-transitioning { pointer-events: none; }
+  /* Docked: the frame's rectangle comes from inline styles (the same numbers the spring aimed at),
+     so there is no CSS geometry here to disagree with. Only the dismiss translate moves it. */
   .mini-shell .video-frame {
-    position: fixed; left: 0.5rem; bottom: calc(4rem + env(safe-area-inset-bottom) + 0.5rem);
-    width: min(42vw, 160px); height: min(23.625vw, 90px); margin: 0; overflow: hidden;
-    border-radius: 0.75rem 0 0 0.75rem; pointer-events: auto; transform: none !important;
-    transition: none;
+    position: fixed; margin: 0; overflow: hidden; border-radius: 0; pointer-events: auto;
+    transition: none; will-change: transform;
   }
   .mini-shell .video-frame > * { display: none !important; }
-  .mini-meta {
-    left: calc(0.5rem + min(42vw, 160px)); right: 0.5rem;
-    bottom: calc(4rem + env(safe-area-inset-bottom) + 0.5rem);
-    height: min(23.625vw, 90px);
+  .mini-bar {
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.45);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    will-change: transform, opacity;
+    touch-action: none;
   }
   .settings-backdrop { transition: opacity 240ms ease-out; }
   .settings-sheet { left: 0; right: 0; bottom: 0; max-height: 86%; border-radius: 1.25rem 1.25rem 0 0; transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1); will-change: transform; }

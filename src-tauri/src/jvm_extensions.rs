@@ -1265,11 +1265,22 @@ impl Runtime {
         *self.sources.write().await = None;
     }
 
-    async fn cancel_request(&self, request_id: &str) -> Result<(), String> {
-        // Some converted Aniyomi extensions block inside their own HTTP stack and do not observe
-        // the runtime's cooperative cancel message. Remove and terminate the current process while
-        // holding the runtime lock so another request cannot reuse it during teardown. The next
-        // call starts a clean host and reloads the already-converted extensions.
+    /// Stop a request. A cooperative cancel (`force == false`) only tells the host to abandon it
+    /// and keeps the warm process, its extension class loaders and connection pools: that is all a
+    /// superseded search, an unmounting detail page or a Home row past its own budget need, and
+    /// killing the host for those made the NEXT play pay a full cold start inside its own 20s cap.
+    /// `force` is for the per-call timeout: some converted Aniyomi extensions block inside their
+    /// own HTTP stack and never observe the cancel message, so only a kill frees the host. Remove
+    /// and terminate it while holding the runtime lock so another request cannot reuse it during
+    /// teardown; the next call starts a clean host and reloads the already-converted extensions.
+    async fn cancel_request(&self, request_id: &str, force: bool) -> Result<(), String> {
+        if !force {
+            let current = self.process.lock().await;
+            return match current.as_ref() {
+                Some(process) => process.cancel(request_id).await,
+                None => Ok(()),
+            };
+        }
         self.generation.fetch_add(1, Ordering::AcqRel);
         let mut current = self.process.lock().await;
         let Some(process) = current.take() else {
@@ -1340,12 +1351,14 @@ pub async fn jvm_extension_call(
         .await
 }
 
+/// `force` defaults to the historical kill-and-restart so an older web bundle keeps its semantics.
 #[tauri::command]
 pub async fn jvm_extension_cancel(
     request_id: String,
+    force: Option<bool>,
     runtime: tauri::State<'_, Runtime>,
 ) -> Result<(), String> {
-    runtime.cancel_request(&request_id).await
+    runtime.cancel_request(&request_id, force.unwrap_or(true)).await
 }
 
 #[tauri::command]

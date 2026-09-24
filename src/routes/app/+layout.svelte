@@ -68,6 +68,7 @@
   import { onboardingComplete } from '$lib/settings/onboarding'
   const loadFirstRunSetup = () => import('$lib/components/onboarding/FirstRunSetup.svelte')
   import UpNextOverlay from '$lib/components/player/UpNextOverlay.svelte'
+  import SeriesRatingPrompt from '$lib/components/player/SeriesRatingPrompt.svelte'
   import ProfileSwitcher from '$lib/components/profiles/ProfileSwitcher.svelte'
   import { get } from 'svelte/store'
   import { initCrashReporting } from '$lib/diagnostics'
@@ -484,7 +485,9 @@
      (`-left-14 w-screen`) so it never reaches under the sidebar, leaving a black
      column. Horizontal overflow is clipped on <body> instead (app.css).
      Hidden while playing so its opaque content doesn't block the video. -->
-<main class="theme-shell-main relative min-h-screen {($isMobile || shellNav === 'bottom') ? 'mb-[calc(4rem+env(safe-area-inset-bottom))]' : ''} {shellNav === 'top' ? 'pt-[4.75rem]' : ''}" class:hidden={$playing || ($androidMpvActive && !$androidMiniPlayer)}>{@render children()}</main>
+<!-- The docked mini-player bar (4rem) rests on the bottom navigation (4rem): while it is up, pages
+     reserve both so their last rows are never buried under the video. -->
+<main class="theme-shell-main relative min-h-screen {($isMobile || shellNav === 'bottom') ? ($androidMiniPlayer ? 'mb-[calc(8rem+env(safe-area-inset-bottom))]' : 'mb-[calc(4rem+env(safe-area-inset-bottom))]') : ''} {shellNav === 'top' ? 'pt-[4.75rem]' : ''}" class:hidden={$playing || ($androidMpvActive && !$androidMiniPlayer)}>{@render children()}</main>
 {#if $playing}<Lazy load={loadPlayerOverlay} />{/if}
 <!-- One Android watch-details instance spans source preparation and native playback. In particular,
      its Disqus iframe is never destroyed merely because libmpv presented its first frame. -->
@@ -574,6 +577,9 @@
 <UpdateToast />
 {#if !$onboardingComplete && page.url.pathname !== '/app/companion-restore'}<Lazy load={loadFirstRunSetup} />{/if}
 <UpNextOverlay />
+<!-- End-of-series rating; app-level for the same reason as Up Next, and it outlives the player so
+     a finale finished by backing out after the watch threshold asks over the series page. -->
+<SeriesRatingPrompt />
 <ProfileSwitcher />
 {#if $themeStudioOpen}
   <!-- Keep the draft mounted through navigation and playback; only hide the editor over video. -->

@@ -113,6 +113,7 @@ pub struct HapticRequest {
 
 /// Position the native video surface and toggle immersive system bars.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ViewportRequest {
     /// Physical pixels from the top of the activity content.
     pub top: i32,
@@ -128,6 +129,18 @@ pub struct ViewportRequest {
     /// Raise the SurfaceView above the WebView for the in-app mini-player rectangle.
     #[serde(default)]
     pub floating: bool,
+    /// Optional starting transform applied together with the layout (identity by default), so an
+    /// expanding mini-player can return to its full rectangle without a full-size flash.
+    #[serde(default = "default_scale")]
+    pub scale: f64,
+    #[serde(default)]
+    pub translate_x: i32,
+    #[serde(default)]
+    pub translate_y: i32,
+}
+
+fn default_scale() -> f64 {
+    1.0
 }
 
 /// Lock playback to landscape, or return to the normal portrait watch page.
@@ -296,6 +309,21 @@ mod tests {
         assert_eq!(r.left, 0);
         assert_eq!(r.width, 0);
         assert!(!r.floating);
+        assert_eq!(r.scale, 1.0);
+        assert_eq!(r.translate_x, 0);
+        assert_eq!(r.translate_y, 0);
+    }
+
+    #[test]
+    fn viewport_request_carries_a_starting_transform() {
+        let r: ViewportRequest = serde_json::from_str(
+            r#"{"top":0,"height":609,"immersive":false,"floating":true,"scale":0.28,"translateX":-402,"translateY":1750}"#,
+        )
+        .unwrap();
+        assert!(r.floating);
+        assert_eq!(r.scale, 0.28);
+        assert_eq!(r.translate_x, -402);
+        assert_eq!(r.translate_y, 1750);
     }
 
     #[test]

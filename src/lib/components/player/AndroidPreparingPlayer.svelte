@@ -3,7 +3,7 @@
   import type { Media } from '$lib/anilist/types'
   import { airedCount, banner, cover, mediaHref, title, totalEpisodes } from '$lib/anilist/media'
   import { connecting, streamPicker } from '$lib/player/session'
-  import { mpvState } from '$lib/player/android-mpv'
+  import { androidMiniPull, mpvState } from '$lib/player/android-mpv'
   import { requestAndroidRelated } from '$lib/player/android-watch-navigation'
   import { cancelResolve, playEpisode } from '$lib/stremio/play'
   import AndroidWatchDetails from './AndroidWatchDetails.svelte'
@@ -28,6 +28,12 @@
   const hasPrev = $derived(episode != null && episode > 1)
   const hasNext = $derived(episode != null && episode < aired)
   const art = $derived(banner(media) || cover(media))
+  // The collapse gesture drives this page like YouTube's watch panel: it slides down with the
+  // video's bottom edge and is gone by ~40% of the trip, revealing the route underneath through
+  // it rather than vanishing on the first drag frame. Fully docked it is display:none (the Disqus
+  // iframe stays mounted); an expand fades it straight back in.
+  const pull = $derived($androidMiniPull)
+  const veil = $derived(Math.max(0, 1 - pull.progress * 2.5))
 
   function play(target: number) {
     if (target < 1 || target > aired) return
@@ -44,7 +50,10 @@
 
 <!-- The Android player page can be useful before a byte of video is ready. Artwork occupies the
      future native-video rectangle while comments, episode metadata and relations start below it. -->
-<div class="android-preparing fixed inset-0 z-40 overflow-hidden text-white" class:active class:hidden={mini}>
+<div class="android-preparing fixed inset-0 z-40 overflow-hidden text-white" class:active class:hidden={mini && pull.progress >= 1}
+     style:opacity={pull.progress > 0 ? veil : null}
+     style:transform={pull.shiftY ? `translate3d(0, ${pull.shiftY}px, 0)` : null}
+     style:pointer-events={pull.progress > 0 ? 'none' : null}>
   <section class="preparing-video relative overflow-hidden">
     {#if !active && art}
       <img src={art} alt="" class="absolute inset-0 h-full w-full scale-[1.03] object-cover opacity-60" />
@@ -82,7 +91,7 @@
     touch-action: pan-y;
     background: #0a0a0b;
   }
-  .android-preparing { background: #0a0a0b; }
+  .android-preparing { background: #0a0a0b; will-change: transform, opacity; }
   .android-preparing.active { background: transparent; }
   .android-preparing.active .preparing-video { background: transparent; pointer-events: none; }
   @media (orientation: landscape) {

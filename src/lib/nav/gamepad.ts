@@ -1,4 +1,5 @@
 import { get } from 'svelte/store'
+import { seriesRatingPrompt } from '$lib/player/series-rating'
 import { listen } from '@tauri-apps/api/event'
 import { RepeatTimer } from '$lib/player/repeat'
 import { playing, exitPrompt, trackMenuOpen, streamPicker, streamPickerDismissedAt, oskOpen, debridCaching, advancedFiltersOpen, listEditorOpen, commentsOpen, playerMenuOpen, onboardingNav } from '$lib/player/session'
@@ -56,6 +57,7 @@ export function startGamepadNav(): () => void {
   // moves the bar and the frame; up/down are unused. Everywhere else this drives focus nav.
   function fireDir(dir: Dir, repeat = false) {
     if (get(deckKeyboardWarning)) return // the keyboard shortcut warning owns the pad
+    if (get(seriesRatingPrompt)) { keydown(ARROW[dir], repeat); return } // rating prompt owns the pad
     if (get(trackMenuOpen)) return // the track menu owns the pad while open
     if (get(debridCaching)) return // the caching screen owns the pad
     // Change source can open the app-wide picker while `playing` remains true. Its data-nav-trap
@@ -103,6 +105,15 @@ export function startGamepadNav(): () => void {
     // The debrid caching screen captures the pad: B cancels, everything else is ignored.
     if (get(debridCaching)) {
       if (name === 'b') get(debridCaching)?.cancel()
+      return
+    }
+    // The end-of-series rating prompt owns the pad while up: directions move focus inside its
+    // data-nav-trap (never the player's seek), A activates the focused control, B dismisses it
+    // instead of closing the player it sits over.
+    if (get(seriesRatingPrompt)) {
+      if (DIRS.includes(name as Dir)) keydown(ARROW[name as Dir])
+      else if (name === 'a') (document.activeElement as HTMLElement | null)?.click()
+      else if (name === 'b') window.dispatchEvent(new Event('series-rating-close'))
       return
     }
     if (DIRS.includes(name as Dir)) {
