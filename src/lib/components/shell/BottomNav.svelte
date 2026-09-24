@@ -7,6 +7,7 @@
   import { effectiveNav, NAV_META, HOME_META } from '$lib/settings/nav'
   import { m } from '$lib/paraglide/messages.js'
   import CompanionLinkIndicator from './CompanionLinkIndicator.svelte'
+  import { androidMiniPlayer } from '$lib/player/android-mpv'
 
   const labels = {
     schedule: m.nav_schedule, downloads: m.nav_downloads, watch: m.nav_watch_together,
@@ -22,6 +23,8 @@
 
   // Auto-hide on scroll: glide the bar down when scrolling down (more content on screen), slide it
   // back up on any upward scroll or near the top. Matches the native "immersive nav" pattern.
+  // Suspended while the Android mini-player is docked on top of it: the native video surface
+  // cannot follow a CSS transition, so the bar it rests on has to hold still.
   let hidden = $state(false)
   let lastY = 0
   onMount(() => {
@@ -41,7 +44,7 @@
   data-nav-sidebar
   data-theme-surface="shell"
   class="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur transition-transform duration-300 ease-out
-    {hidden ? 'translate-y-full' : 'translate-y-0'}"
+    {hidden && !$androidMiniPlayer ? 'translate-y-full' : 'translate-y-0'}"
 >
   <div class="absolute -top-10 right-3"><CompanionLinkIndicator floating /></div>
   <a

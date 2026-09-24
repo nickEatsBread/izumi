@@ -485,7 +485,9 @@
      (`-left-14 w-screen`) so it never reaches under the sidebar, leaving a black
      column. Horizontal overflow is clipped on <body> instead (app.css).
      Hidden while playing so its opaque content doesn't block the video. -->
-<main class="theme-shell-main relative min-h-screen {($isMobile || shellNav === 'bottom') ? 'mb-[calc(4rem+env(safe-area-inset-bottom))]' : ''} {shellNav === 'top' ? 'pt-[4.75rem]' : ''}" class:hidden={$playing || ($androidMpvActive && !$androidMiniPlayer)}>{@render children()}</main>
+<!-- The docked mini-player bar (4rem) rests on the bottom navigation (4rem): while it is up, pages
+     reserve both so their last rows are never buried under the video. -->
+<main class="theme-shell-main relative min-h-screen {($isMobile || shellNav === 'bottom') ? ($androidMiniPlayer ? 'mb-[calc(8rem+env(safe-area-inset-bottom))]' : 'mb-[calc(4rem+env(safe-area-inset-bottom))]') : ''} {shellNav === 'top' ? 'pt-[4.75rem]' : ''}" class:hidden={$playing || ($androidMpvActive && !$androidMiniPlayer)}>{@render children()}</main>
 {#if $playing}<Lazy load={loadPlayerOverlay} />{/if}
 <!-- One Android watch-details instance spans source preparation and native playback. In particular,
      its Disqus iframe is never destroyed merely because libmpv presented its first frame. -->

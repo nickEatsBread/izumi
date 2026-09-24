@@ -224,6 +224,17 @@ class ViewportArgs {
     var width: Int = 0
     /** The in-app mini-player must sit above the now-visible browse WebView. */
     var floating: Boolean = false
+    /**
+     * Optional transform applied in the same UI-thread pass as the layout. The web shell uses it to
+     * put the surface back on its full portrait rectangle while it still LOOKS docked, so an
+     * expanding mini-player never flashes full-size for the frame between a layout write and the
+     * first gesture transform. Identity (the defaults) keeps the historical "settle resets to
+     * identity" contract.
+     */
+    var scale: Double = 1.0
+    /** Physical pixels; the pivot is the centre of the NEW rectangle. */
+    var translateX: Int = 0
+    var translateY: Int = 0
 }
 
 @InvokeArg
@@ -1931,12 +1942,20 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             // Once browse content is painted again it would cover a behind-WebView SurfaceView.
             // Raise only the bounded mini rectangle; the adjacent HTML transport remains clickable.
             setVideoZOrderOnTop(a.floating)
-            // A viewport settle returns the whole player rectangle to identity. The child
-            // SurfaceView is never transformed independently.
-            playerContainer.scaleX = 1f
-            playerContainer.scaleY = 1f
-            playerContainer.translationX = 0f
-            playerContainer.translationY = 0f
+            // A viewport settle returns the whole player rectangle to identity unless the caller
+            // asked for a starting transform (see ViewportArgs). The child SurfaceView is never
+            // transformed independently. The pivot is the centre of the rectangle being laid out,
+            // read from the params because the view's own size is still the OLD one here.
+            val parent = playerContainer.parent as? View
+            val pivotWidth = if (params.width > 0) params.width else (parent?.width ?: playerContainer.width)
+            val pivotHeight = if (params.height > 0) params.height else (parent?.height ?: playerContainer.height)
+            playerContainer.pivotX = pivotWidth / 2f
+            playerContainer.pivotY = pivotHeight / 2f
+            val s = a.scale.toFloat().coerceIn(0.2f, 4f)
+            playerContainer.scaleX = s
+            playerContainer.scaleY = s
+            playerContainer.translationX = a.translateX.toFloat()
+            playerContainer.translationY = a.translateY.toFloat()
             playerContainer.requestLayout()
         }
         val ret = JSObject()

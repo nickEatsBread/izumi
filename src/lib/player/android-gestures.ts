@@ -45,18 +45,14 @@ export function shouldEnterFullscreen(progress: number, velocityY: number): bool
   return progress >= 0.45 || velocityY <= -0.5
 }
 
-/** Portrait swipe-down progress for collapsing the watch page into its in-app mini-player. */
-export function miniPlayerPullProgress(start: Sample, cur: Sample, playerHeight: number): number {
+/** Whether a portrait drag has become the swipe-down that collapses the watch page into the
+ *  in-app mini-player: clear of the slop and more vertical than horizontal. Recognition only —
+ *  once locked, progress comes from mini-player.ts (`miniPullProgress`) so a finger that drifts
+ *  sideways mid-pull cannot zero the sheet back to the top. */
+export function miniPullRecognized(start: Sample, cur: Sample): boolean {
   const dx = cur.x - start.x
   const dy = cur.y - start.y
-  if (dy <= MOVE_PX || Math.abs(dy) <= Math.abs(dx)) return 0
-  const travel = Math.min(280, Math.max(140, playerHeight * 0.75))
-  return Math.min(1, dy / travel)
-}
-
-/** Commit a deliberate collapse or a quick downward fling. */
-export function shouldMinimizePlayer(progress: number, velocityY: number): boolean {
-  return progress >= 0.4 || velocityY >= 0.5
+  return dy > MOVE_PX && Math.abs(dy) > Math.abs(dx)
 }
 
 /**
