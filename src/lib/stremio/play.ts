@@ -143,6 +143,7 @@ import {
   type PlaybackOwner,
 } from '$lib/player/playback-owner'
 import { playViaIntent } from '$lib/player/android-playback'
+import { requestSeriesRating } from '$lib/player/series-rating'
 import {
   hasEmbeddedPlayer, prepareEmbeddedPlayer, mpvLoad, mpvCommand, androidMpvActive, androidMiniPlayer, mpvState, startMpvEvents,
   confirmedNativeAndroidAudioRoute, inspectAndroidMediaSource, nativeAndroidAudioRoute,
@@ -658,6 +659,7 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
         marked = true
         markWatched(media, episode)
       }
+      requestSeriesRating(media, episode)
       return
     }
     savePosition(media.id, episode, pos, dur)
@@ -665,6 +667,9 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
       marked = true
       markWatched(media, episode)
     }
+    // Backing out during the credits counts as finishing (the tracker just went COMPLETED above),
+    // so the finale question follows the viewer to the series page.
+    if (watched(pos, dur)) requestSeriesRating(media, episode)
   }
   window.addEventListener('player-finalize', onFinalize)
   stop.push(() => window.removeEventListener('player-finalize', onFinalize))
@@ -684,6 +689,9 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
     // warms the next episode near the end precisely so it continues automatically, so having it on
     // implies auto-advance. Advance continues the same release seamlessly, else opens the picker.
     clearPosition(media.id, episode)
+    // The end of a finished series is the moment to ask for a rating (series-rating.ts gates on a
+    // connected tracker and a genuinely finished title). A truncated file is not a finish.
+    if (lastDuration > 0 && !prematureEof(lastPosition, lastDuration, media.duration)) requestSeriesRating(media, episode)
     if (get(playerSleep).atEpisodeEnd) {
       playerSleep.set({ deadline: null, atEpisodeEnd: false })
       playerNotice.set('Sleep timer stopped autoplay')
@@ -749,6 +757,7 @@ function attachAndroid(
   const onEnded = async () => {
     markSourceObservation(observation, 'completed')
     clearPosition(media.id, episode)
+    requestSeriesRating(media, episode)
     if (!get(autoplayNext) && !get(bingePreload)) return
     // Same guard as the desktop handler: an open picker means the user is mid-choice (Change
     // source), and the outgoing file reaching EOF must not race their pick with an auto-advance.
@@ -892,6 +901,7 @@ export function finalizeAndroidWatch(pos: number, dur: number) {
       savePosition(np.id, np.episode, pos, dur)
       if (currentMedia && watched(pos, dur)) markWatched(currentMedia, np.episode)
     }
+    if (currentMedia && watched(pos, dur)) requestSeriesRating(currentMedia, np.episode)
   }
   detachAndroid()
 }

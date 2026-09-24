@@ -68,6 +68,7 @@
   import { onboardingComplete } from '$lib/settings/onboarding'
   const loadFirstRunSetup = () => import('$lib/components/onboarding/FirstRunSetup.svelte')
   import UpNextOverlay from '$lib/components/player/UpNextOverlay.svelte'
+  import SeriesRatingPrompt from '$lib/components/player/SeriesRatingPrompt.svelte'
   import ProfileSwitcher from '$lib/components/profiles/ProfileSwitcher.svelte'
   import { get } from 'svelte/store'
   import { initCrashReporting } from '$lib/diagnostics'
@@ -574,6 +575,9 @@
 <UpdateToast />
 {#if !$onboardingComplete && page.url.pathname !== '/app/companion-restore'}<Lazy load={loadFirstRunSetup} />{/if}
 <UpNextOverlay />
+<!-- End-of-series rating; app-level for the same reason as Up Next, and it outlives the player so
+     a finale finished by backing out after the watch threshold asks over the series page. -->
+<SeriesRatingPrompt />
 <ProfileSwitcher />
 {#if $themeStudioOpen}
   <!-- Keep the draft mounted through navigation and playback; only hide the editor over video. -->
