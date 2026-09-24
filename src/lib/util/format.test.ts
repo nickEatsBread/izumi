@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatBytes, formatSpeed } from './format'
+import { formatBitRate, formatBytes, formatSpeed } from './format'
 
 describe('formatBytes', () => {
   it('scales to KB/MB/GB', () => {
@@ -23,5 +23,21 @@ describe('formatSpeed', () => {
   })
   it('empty for undefined', () => {
     expect(formatSpeed(undefined)).toBe('')
+  })
+})
+
+describe('formatBitRate', () => {
+  it('scales Mb/s input across decimal bit units, trimming a trailing .0', () => {
+    expect(formatBitRate(3.6)).toBe('3.6 Mb/s')
+    expect(formatBitRate(12)).toBe('12 Mb/s')
+    expect(formatBitRate(0.8502)).toBe('850.2 kb/s')
+    expect(formatBitRate(0.000512)).toBe('512 b/s')
+    expect(formatBitRate(1500)).toBe('1.5 Gb/s')
+  })
+  it('reads idle, missing and invalid rates as zero', () => {
+    expect(formatBitRate(0)).toBe('0 b/s')
+    expect(formatBitRate(undefined)).toBe('0 b/s')
+    expect(formatBitRate(Number.NaN)).toBe('0 b/s')
+    expect(formatBitRate(-1)).toBe('0 b/s')
   })
 })

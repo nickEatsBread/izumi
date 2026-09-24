@@ -1648,7 +1648,8 @@
     <div
       transition:fade={{ duration: gmMode ? 0 : 150 }}
       class="izumi-hud pointer-events-none absolute left-1/2 z-30 -translate-x-1/2 border border-white/15 bg-black/80 font-medium text-white shadow-lg
-        {gmMode ? 'top-8 rounded-2xl px-6 py-3 text-lg' : 'top-6 rounded-lg px-4 py-2 text-sm'}"
+        {gmMode ? 'rounded-2xl px-6 py-3 text-lg' : 'rounded-lg px-4 py-2 text-sm'}
+        {p2pVisible ? (gmMode ? 'top-[4.5rem]' : 'top-14') : (gmMode ? 'top-8' : 'top-6')}"
     >{$playerNotice}</div>
   {/if}
 

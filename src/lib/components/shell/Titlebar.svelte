@@ -6,7 +6,7 @@
   import Copy from '@lucide/svelte/icons/copy'
   import X from '@lucide/svelte/icons/x'
   import Cast from '@lucide/svelte/icons/cast'
-  import { commentsOpen, gifRecordingStart, playerNotice } from '$lib/player/session'
+  import { commentsOpen, gifRecordingStart, playerNotice, playerStage, playerTopBarUnderTitlebar } from '$lib/player/session'
   import { playerGifStop } from '$lib/player/native'
   import { desktopCastSession, stopDesktopCast } from '$lib/player/desktop-cast'
   import { isMacOS } from '$lib/platform'
@@ -72,18 +72,30 @@
   trapped inside the player overlay's z-20 stacking context, so it can't paint over this z-50 bar. Since
   the window controls aren't wanted while the discussion is open anyway, we hide the whole bar — the
   panel then owns the top edge cleanly. `invisible` also drops it from hit-testing, so panel clicks land.
+
+  While the windowed player's top bar is up (`playerTopBarUnderTitlebar`), the bar turns
+  pointer-transparent over the video so the player's Back button beneath it takes clicks; that top
+  bar supplies its own drag strip there. Either side of the video (the sidebar, a docked episode
+  rail) keeps a drag region of its own, sized from the player's measured stage, and every control
+  opts back in with `pointer-events-auto`. The side regions come first so the slot, chips and
+  window buttons (all positioned) paint and hit-test above them.
 -->
 <div
   data-tauri-drag-region
   class="fixed inset-x-0 top-0 z-50 flex h-8 items-center justify-between"
   class:invisible={$commentsOpen}
+  class:pointer-events-none={$playerTopBarUnderTitlebar}
 >
+  {#if $playerTopBarUnderTitlebar && $playerStage}
+    {#if $playerStage.left > 0}<div data-tauri-drag-region class="pointer-events-auto absolute inset-y-0 left-0" style:width="{$playerStage.left * 100}%"></div>{/if}
+    {#if $playerStage.right > 0}<div data-tauri-drag-region class="pointer-events-auto absolute inset-y-0 right-0" style:width="{$playerStage.right * 100}%"></div>{/if}
+  {/if}
   <!-- macOS keeps its real native traffic lights at the leading edge. Reserve their hit area and
        place the GIF indicator after them; Windows/Linux retain the sidebar-width indicator slot. -->
-  <div class="flex h-8 shrink-0 items-center overflow-hidden [contain:paint] {$isMacOS ? 'w-28 justify-end pr-2' : 'w-14 justify-center'}">
+  <div data-tauri-drag-region class="pointer-events-auto relative flex h-8 shrink-0 items-center overflow-hidden [contain:paint] {$isMacOS ? 'w-28 justify-end pr-2' : 'w-14 justify-center'}">
     {#if $gifRecordingStart != null}
       <button
-        class="flex h-5 max-w-[48px] items-center gap-0.5 rounded-full bg-red-600 px-1.5 text-[9px] font-semibold leading-none text-white outline-none hover:bg-red-500 focus:outline-none focus-visible:outline-none"
+        class="pointer-events-auto flex h-5 max-w-[48px] items-center gap-0.5 rounded-full bg-red-600 px-1.5 text-[9px] font-semibold leading-none text-white outline-none hover:bg-red-500 focus:outline-none focus-visible:outline-none"
         onclick={stopGif}
       >
         <span class="size-1.5 shrink-0 animate-pulse rounded-full bg-white"></span>
@@ -95,7 +107,7 @@
     <!-- Keep a receiver control reachable after the user leaves the player overlay. Clicking the
          active Cast chip is the explicit disconnect action, matching the player popover. -->
     <button
-      class="absolute top-1 flex h-6 max-w-48 items-center gap-1.5 rounded-full bg-primary/20 px-2 text-[10px] font-semibold text-primary transition hover:bg-primary/30 {$isMacOS ? 'right-2' : 'right-[10.75rem]'}"
+      class="pointer-events-auto absolute top-1 flex h-6 max-w-48 items-center gap-1.5 rounded-full bg-primary/20 px-2 text-[10px] font-semibold text-primary transition hover:bg-primary/30 {$isMacOS ? 'right-2' : 'right-[10.75rem]'}"
       onclick={stopCasting}
       aria-label="Stop casting to {$desktopCastSession.deviceName}"
       title="Stop casting to {$desktopCastSession.deviceName}"
@@ -105,26 +117,26 @@
     </button>
   {/if}
   {#if !$isMacOS}
-  <div class="flex items-center">
+  <div class="relative flex items-center">
   <CompanionLinkIndicator />
   <button
     onclick={minimize}
     aria-label="Minimize"
-    class="grid h-8 w-11 place-items-center text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+    class="pointer-events-auto grid h-8 w-11 place-items-center text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
   >
     <Minus size={15} />
   </button>
   <button
     onclick={toggle}
     aria-label={maximized ? 'Restore' : 'Maximize'}
-    class="grid h-8 w-11 place-items-center text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+    class="pointer-events-auto grid h-8 w-11 place-items-center text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
   >
     {#if maximized}<Copy size={12} />{:else}<Square size={12} />{/if}
   </button>
   <button
     onclick={close}
     aria-label="Close"
-    class="grid h-8 w-11 place-items-center text-muted-foreground transition-colors hover:bg-red-600 hover:text-white"
+    class="pointer-events-auto grid h-8 w-11 place-items-center text-muted-foreground transition-colors hover:bg-red-600 hover:text-white"
   >
     <X size={16} />
   </button>

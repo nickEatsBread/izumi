@@ -28,6 +28,30 @@ describe('shared P2P status overlay', () => {
     expect(overlay).toContain('top-3')
   })
 
+  it('renders desktop status as a bare top-edge row, not a floating card', () => {
+    const overlay = read('./P2PStatusOverlay.svelte')
+    expect(overlay).not.toContain('P2P activity')
+    expect(overlay).not.toContain('calc(50% + 4.25rem)')
+    expect(overlay).toContain('absolute inset-x-0 top-0 z-20 flex items-center justify-center')
+    for (const icon of ['icons/users', 'icons/chevron-down', 'icons/chevron-up']) expect(overlay).toContain(icon)
+    expect(overlay).toContain('formatBitRate(downloadMbps)')
+    expect(overlay).toContain('formatBitRate(uploadMbps)')
+    // One colour throughout: white text and icons with a faint shadow, no per-direction tint.
+    expect(overlay).toContain('font-bold text-neutral-50')
+    expect(overlay).not.toMatch(/<Chevron(Down|Up)[^>]*text-(green|blue|emerald|sky)-/)
+  })
+
+  it('follows only the P2P status setting, never the controls', () => {
+    const overlay = read('./P2PStatusOverlay.svelte')
+    expect(overlay).not.toContain('controlsVisible')
+    expect(overlay).toContain('const visible = $derived(shouldShowP2PStatus(')
+  })
+
+  it('moves the top-centre toast below the status row instead of overlapping it', () => {
+    const player = read('./PlayerOverlay.svelte')
+    expect(player).toContain("p2pVisible ? (gmMode ? 'top-[4.5rem]' : 'top-14')")
+  })
+
   it('removes startup surfaces synchronously when native video makes WebKit hidden', () => {
     const player = read('./PlayerOverlay.svelte')
     const loadingSurface = player.slice(

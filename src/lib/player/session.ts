@@ -242,6 +242,12 @@ export const playerMenuOpen = writable(false)
 // animate that small bitmap horizontally while the 60 Hz controls remain native underneath.
 export const playerSideSheetOpen = writable(false)
 
+// Windowed desktop playback: true while the player's top bar is up under the transparent
+// titlebar. The titlebar then lets pointer events through (its own buttons excepted) and the
+// player's top bar carries the window-drag strip, so Back can sit on the top row beside the P2P
+// readout and still take clicks.
+export const playerTopBarUnderTitlebar = writable(false)
+
 /** Bump so Game-mode overlay-add re-snapshots after a d-pad move (no 60fps crawl). */
 export const playerOverlayRev = writable(0)
 export function bumpPlayerOverlay() {

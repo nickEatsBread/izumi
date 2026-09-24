@@ -32,7 +32,9 @@
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
   import DesktopCastButton from './DesktopCastButton.svelte'
   import { get } from 'svelte/store'
-  import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, playerSideSheetOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery, bumpPlayerOverlay } from '$lib/player/session'
+  import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, playerSideSheetOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery, bumpPlayerOverlay, playerTopBarUnderTitlebar } from '$lib/player/session'
+  import { isMacOS, isMobile, isTv } from '$lib/platform'
+  import { shellNav } from '$lib/themes/runtime'
   import { listenSafe } from '$lib/util/listen'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import { copyToClipboard } from '$lib/util/clipboard'
@@ -116,6 +118,25 @@
     : 'grid size-10 place-items-center rounded-full transition hover:bg-white/15')
   const icSize = $derived(gm ? 24 : 20)
   const titleTop = $derived(gm && $playerTitleTop)
+
+  // Windowed desktop playback starts the player at the window's top edge, under the transparent
+  // 32px titlebar (unless the navigation bar sits on top). Back shares the top row with the P2P
+  // readout, so while this bar is up the titlebar yields its pointer events and the bar carries
+  // the window-drag strip instead.
+  const underTitlebar = $derived(!gm && !$fullscreen && !$isMobile && !$isTv && $shellNav !== 'top')
+  // Keep Back clear of the titlebar's leading slot (macOS traffic lights, or the GIF indicator
+  // over the sidebar) when the player starts at the window's left edge.
+  const backInset = $derived.by(() => {
+    if (!underTitlebar) return undefined
+    const slot = $isMacOS ? 7 : 3.5
+    const playerLeft = $shellNav === 'sidebar' ? 3.5 : 0
+    return `${Math.max(1, slot + 0.5 - playerLeft)}rem`
+  })
+  $effect(() => {
+    if (!underTitlebar) return
+    playerTopBarUnderTitlebar.set(true)
+    return () => playerTopBarUnderTitlebar.set(false)
+  })
 
   const fmt = (s: number) => {
     if (!Number.isFinite(s) || s < 0) s = 0
@@ -792,18 +813,24 @@
        redundant on-screen Back) and, when the Game-mode "title at top" option is on, the
        title. Rendered only when it has something to show. -->
   {#if !gm || titleTop}
-    <!-- Windowed playback keeps the custom titlebar (a fixed top-0 z-50 `data-tauri-drag-region`
-         strip, 32px tall) ABOVE this z-20 overlay — its transparent drag region covered the top of
-         the Back button, so a click on the (vertically-centred) label hit the window-drag region,
-         not the button. Push the bar below the titlebar when windowed so the whole button clears it.
-         Fullscreen / Game mode hide the titlebar, so no offset there. -->
-    <!-- Same reasoning as the bottom bar: this strip spans the full width for the sake of one Back
+    <!-- Back sits on the player's top row, vertically centred with the P2P readout: `pt-2` + the
+         36px pill puts its centre 26px down, the same as the readout's `pt-3` + 28px line.
+         Windowed playback keeps the custom titlebar (a fixed top-0 z-50 drag strip, 32px tall)
+         ABOVE this z-20 overlay, which used to swallow clicks on the top of the pill. While this bar
+         is up (`underTitlebar`), the titlebar turns pointer-transparent except for its own buttons,
+         and the strip below takes over window dragging (and double-click maximise) over the video;
+         Back paints above the strip, and Tauri never drags from a button. -->
+    <!-- Same reasoning as the bottom bar: this bar spans the full width for the sake of one Back
          button, so leaving it pointer-events-auto made the entire top of the video a click-to-pause
-         dead zone. The button opts back in; the gradient and title fall through. -->
-    <div class="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-4 bg-gradient-to-b from-black/70 to-transparent {gm ? 'px-8 py-6' : $fullscreen ? 'px-4 py-3' : 'px-4 pb-3 pt-11'}">
+         dead zone. The button and the 32px drag strip opt back in; the rest falls through. -->
+    <div class="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-4 bg-gradient-to-b from-black/70 to-transparent {gm ? 'px-8 py-6' : 'px-4 pb-3 pt-2'}"
+         style:padding-left={backInset}>
+      {#if underTitlebar}
+        <div data-tauri-drag-region class="pointer-events-auto absolute inset-x-0 top-0 h-8"></div>
+      {/if}
       {#if !gm}
         <button data-focusable onclick={onclose} aria-label="Back"
-                class="pointer-events-auto flex shrink-0 select-none items-center gap-1.5 rounded-full bg-black/60 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white transition hover:bg-black/80">
+                class="pointer-events-auto relative flex shrink-0 select-none items-center gap-1.5 rounded-full bg-black/60 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white transition hover:bg-black/80">
           <ArrowLeft size={icSize} /><span>Back</span>
         </button>
       {/if}
