@@ -81,8 +81,12 @@ describe('Android UI contracts', () => {
 
   it('keeps the docked bar stable from screen to screen', () => {
     // Pages reserve the bar's height; the navigation it rests on stops auto-hiding.
-    expect(layout).toContain("$androidMiniPlayer ? 'mb-[calc(8rem+env(safe-area-inset-bottom))]'")
-    expect(read(new URL('../shell/BottomNav.svelte', import.meta.url))).toContain("hidden && !$androidMiniPlayer ? 'translate-y-full'")
+    // The bar's 4rem stacks on the bottom bar's themed height (4rem by default).
+    expect(layout).toContain("$androidMiniPlayer ? 'mb-[calc(var(--theme-bottom-nav,4rem)+4rem+env(safe-area-inset-bottom))]'")
+    // The dock rect reads the same themed height, so the native surface lands on the bar it rests on.
+    expect(player).toContain("miniDockGeometry({ width: window.innerWidth, height: window.innerHeight }, safeAreaBottomCss(), bottomNavCss())")
+    // The themed bar (flush, floating or pill) slides away on scroll unless the mini-player rests on it.
+    expect(read(new URL('../shell/BottomNav.svelte', import.meta.url))).toContain("hidden && !$androidMiniPlayer ? (style === 'bar' ? 'translate-y-full'")
     // Whoever clears the flag (a fresh play from the page behind the bar) also drops the layout.
     expect(player).toContain('if ($androidMiniPlayer || !miniLayout || !$androidMpvActive || closing) return')
     // Docked gestures: swipe up expands, swipe down dismisses, and the expand never flashes

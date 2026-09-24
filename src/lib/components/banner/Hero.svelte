@@ -1,7 +1,7 @@
 <script lang="ts">
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { themePresentation } from '$lib/themes/runtime'
-  import { resolveDetail } from '$lib/themes/presentation'
+  import { resolveDetail, themeColorCss, type HeroIndicator } from '$lib/themes/presentation'
   import { mediaDisplayModel } from '$lib/themes/host-model'
   import { motionPreference } from '$lib/settings/ui'
   import type { Media } from '$lib/anilist/types'
@@ -25,6 +25,7 @@
   import { dragCarousels, wheelScrollAcross } from '$lib/settings/ui'
   import { untrack } from 'svelte'
   import { animeAwardHref, findTopAnimeAward } from '$lib/catalog/anime-awards'
+  import { createSlideScheduler } from './hero-slides'
 
   // Bottom-left content column + clean linear scrims. Discovery facts stay deliberately compact:
   // format/runtime/production/score, then one context line for next-airing + genres. Detail pages
@@ -63,17 +64,73 @@
   const seriesBannerHeight = $derived(seriesTheme?.bannerHeight)
   const bannerScale = $derived(showOverlay ? heroTheme?.scale === 'banner' : seriesTheme?.bannerScale === 'banner')
   const DURATION = $derived((heroTheme?.interval ?? 15) * 1000)
+  // A theme's `hero.indicator` replaces the stock slide marker in every hero layout (progress bars,
+  // dots, pills, an "n / N" counter, or nothing) and picks its side and colour. Without one each
+  // layout keeps its own default: timed bars on desktop and custom templates, dots on a phone.
+  const indicator = $derived<HeroIndicator>(heroTheme?.indicator ?? {})
+  const indicatorColor = $derived(themeColorCss(indicator.color))
+
+  // The artwork a slide paints: the custom theme hero binds both artworks, the stock layouts one.
+  function slideArtwork(m: Media | undefined): string[] {
+    if (!m) return []
+    if (heroTheme?.template) return [banner(m), cover(m)]
+    return [artworkMode === 'cover' || ($isMobile && showOverlay) ? cover(m) : banner(m)]
+  }
+  // A slide is committed only once its artwork has decoded (see hero-slides.ts): swapping first and
+  // decoding second painted a skeleton, then popped to the image a few frames later — on the Deck's
+  // zoomed WebKitGTK page that pop was the "random" flicker on every L1/R1 press and auto-advance
+  // whose banner was not already hot in the cache. Decoded images are pinned in this small map so
+  // WebKit's memory cache keeps the bitmap the incoming <img> is about to reuse.
+  const heldArtwork = new Map<string, HTMLImageElement>()
+  const slides = createSlideScheduler({
+    decode(src) {
+      if (typeof Image === 'undefined') return Promise.resolve(false)
+      const img = new Image()
+      img.decoding = 'async'
+      img.src = src
+      const decoded = typeof img.decode === 'function'
+        ? img.decode()
+        : new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = () => reject(new Error('image failed')) })
+      return decoded.then(() => {
+        heldArtwork.set(src, img)
+        if (heldArtwork.size > 12) heldArtwork.delete(heldArtwork.keys().next().value as string)
+        return true
+      }, () => false)
+    },
+    commit(n, direction, ready) {
+      if (!medias[n]) return
+      navDirection = direction
+      // Ready artwork settles BEFORE the swap, so the first paint of the new slide is the image
+      // itself, never the skeleton. A slow or broken image keeps the old path: skeleton until the
+      // <img> reports load/error.
+      if (ready) loadedArtworkId = medias[n].id
+      i = n
+      cycle += 1
+      scheduleWarm()
+    },
+  })
+  // Decode the neighbouring slides a beat after each settle, so L1/R1 and the auto-advance land on
+  // artwork that is already hot instead of paying the decode on the step itself.
+  let warmTimer: ReturnType<typeof setTimeout> | undefined
+  function scheduleWarm() {
+    clearTimeout(warmTimer)
+    const n = medias.length
+    if (n < 2) return
+    warmTimer = setTimeout(() => {
+      slides.warm([...slideArtwork(medias[(i + 1) % n]), ...slideArtwork(medias[(i - 1 + n) % n])])
+    }, 400)
+  }
+  $effect(() => () => { slides.cancel(); clearTimeout(warmTimer) })
 
   function go(n: number, direction?: 1 | -1) {
-    if (n === i) return
-    navDirection = direction ?? (n > i ? 1 : -1)
-    i = n
-    cycle += 1
+    if (n === i) { slides.cancel(); return }
+    slides.request(n, direction ?? (n > i ? 1 : -1), slideArtwork(medias[n]))
   }
 
   function step(direction: 1 | -1) {
     const n = medias.length
-    if (n > 1) go((i + direction + n) % n, direction)
+    // Rapid presses chain from the slide already on its way, not the one still on screen.
+    if (n > 1) go(((slides.pending() ?? i) + direction + n) % n, direction)
   }
 
   // Swipe left/right to change the featured slide (only when there's more than one). `touch-pan-y`
@@ -232,7 +289,7 @@
     if (!failedLogos.includes(src)) failedLogos = [...failedLogos, src]
   }
   const artworkReady = $derived(loadedArtworkId === current?.id)
-  const artworkSettled = () => (loadedArtworkId = current.id)
+  const artworkSettled = () => { loadedArtworkId = current.id; scheduleWarm() }
   // Accent: tint everything off the cover's dominant color; theme fallback.
   const accent = $derived(current?.coverImage?.color || 'hsl(346.6 79.12% 51.18%)')
   const nextAiring = $derived(current?.nextAiringEpisode)
@@ -275,6 +332,40 @@
   }
 </script>
 
+<!-- Themed slide indicator shared by the three hero layouts. `fallback` is the stock colour of the
+     layout it replaces; `place` positions the row. Buttons keep a finger-sized hit area via ::before,
+     which is why the drawn shape lives on an inner span (overflow:hidden on the button would clip
+     the hit area too). -->
+{#snippet slideIndicator(kind: NonNullable<HeroIndicator['style']>, fallback: string, place: string, defaultPosition: NonNullable<HeroIndicator['position']>)}
+  {@const position = indicator.position ?? defaultPosition}
+  {#if kind !== 'none' && medias.length > 1}
+    <div data-hero-indicator={kind} class="hero-indicator pointer-events-none z-20 items-center gap-1.5 {position === 'start' ? 'justify-start' : position === 'center' ? 'justify-center' : 'justify-end'} {place}" style:--hero-ind={indicatorColor ?? fallback}>
+      {#if kind === 'counter'}
+        <span class="rounded-full border border-white/15 bg-black/55 px-2.5 py-1 text-[0.68rem] tabular-nums font-black text-white shadow-lg backdrop-blur"><span style="color:var(--hero-ind)">{i + 1}</span><span class="text-white/60"> / {medias.length}</span></span>
+      {:else}
+        {#each medias as _, idx (idx)}
+          <button type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined} onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`} aria-current={idx === i ? 'true' : undefined}
+                  class="pointer-events-auto relative block before:absolute before:-inset-x-1.5 before:-inset-y-3 before:content-['']">
+            <span class="block overflow-hidden rounded-full transition-all duration-300
+              {kind === 'bars' ? `h-1 bg-white/25 ${idx === i ? 'w-10' : 'w-5'}` : ''}
+              {kind === 'dots' ? `size-1.5 ${idx === i ? '' : 'bg-white/40'}` : ''}
+              {kind === 'pills' ? `h-1.5 ${idx === i ? 'w-5' : 'w-1.5 bg-white/40'}` : ''}"
+              style:background={kind !== 'bars' && idx === i ? 'var(--hero-ind)' : undefined}>
+              {#if kind === 'bars'}
+                {#if idx === i}
+                  {#key cycle}<span class="hero-progress block h-full" style="background:var(--hero-ind)"></span>{/key}
+                {:else}
+                  <span class="block h-full origin-left" style="transform:scaleX({idx < i ? 1 : 0});background:var(--hero-ind)"></span>
+                {/if}
+              {/if}
+            </span>
+          </button>
+        {/each}
+      {/if}
+    </div>
+  {/if}
+{/snippet}
+
 {#if current && !heroTheme?.hidden}
   {#if heroTheme?.template}
     <section data-nav-row data-theme-hero aria-label="Featured" class="theme-custom-hero" class:theme-banner-scale={bannerScale} class:cursor-grab={$dragCarousels && medias.length > 1} class:cursor-grabbing={heroDragging} style:height={bannerScale ? undefined : `${($isMobile ? heroTheme.mobileHeight : heroTheme.height) ?? 46}vh`} style:--theme-hero-interval={`${DURATION}ms`} ontouchstart={onTouchStart} ontouchend={onTouchEnd} onpointerdown={onHeroPointerDown} onpointermove={onHeroPointerMove} onpointerup={(e) => endHeroPointer(e, true)} onpointercancel={(e) => endHeroPointer(e, false)} onwheel={onHeroWheel}>
@@ -299,6 +390,9 @@
             <ChevronRight size={23} />
           </span>
         </button>
+        {#if indicator.style}
+          {@render slideIndicator(indicator.style, '#ffffff', 'absolute inset-x-8 bottom-3 flex', 'start')}
+        {:else}
         <div class="hero-pips absolute bottom-3 left-8 z-20 flex items-center gap-2">
           {#each medias as _, idx (idx)}
             <button type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined} onclick={() => go(idx)} aria-label={`Featured title ${idx + 1}`}
@@ -312,6 +406,7 @@
             </button>
           {/each}
         </div>
+        {/if}
       {/if}
     </section>
   {:else if $isMobile && showOverlay}
@@ -334,7 +429,7 @@
           {#if !artworkReady}<div class="absolute inset-0 skeloader"></div>{/if}
           <img src={cover(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
                onload={artworkSettled} onerror={artworkSettled}
-               class="relative h-full w-full object-cover transition-opacity duration-200 {artworkReady ? 'opacity-100' : 'opacity-0'}" />
+               class="hero-artwork relative h-full w-full object-cover transition-opacity duration-200 {artworkReady ? 'opacity-100' : 'opacity-0'}" />
         </div>
       {/key}
       <div class="absolute inset-0 bg-gradient-to-t from-black/95 via-black/25 to-transparent"></div>
@@ -401,11 +496,15 @@
             {/if}
           </div>
         {/if}
-        {#if medias.length > 1}
+        {#if indicator.style}
+          {@render slideIndicator(indicator.style, '#ffffff', 'mt-1.5 flex', 'center')}
+        {:else if medias.length > 1}
           <div class="mt-1.5 flex justify-center gap-1.5">
             {#each medias as _, idx (idx)}
+              <!-- The dots are 6px tall; a finger needs more than that. The pseudo-element grows each
+                   hit area to ~30px without changing what is drawn or spacing the row apart. -->
               <button type="button" onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`}
-                      class="pointer-events-auto h-1.5 rounded-full transition-all duration-300 {idx === i ? 'w-5 bg-white' : 'w-1.5 bg-white/40'}"></button>
+                      class="pointer-events-auto relative h-1.5 rounded-full transition-all duration-300 before:absolute before:-inset-x-1.5 before:-inset-y-3 before:content-[''] {idx === i ? 'w-5 bg-white' : 'w-1.5 bg-white/40'}"></button>
             {/each}
           </div>
         {/if}
@@ -414,7 +513,7 @@
   {:else}
   <div
     data-nav-row
-    class="relative mb-6 h-[40vh] touch-pan-y select-none transition-opacity duration-500 {bannerScale ? 'theme-banner-scale mb-0' : seriesBannerHeight ? '' : showOverlay ? 'sm:h-[50vh]' : controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'} {scrolled ? 'opacity-40' : 'opacity-100'}"
+    class="hero-root relative mb-6 h-[40vh] touch-pan-y select-none transition-opacity duration-500 {bannerScale ? 'theme-banner-scale mb-0' : seriesBannerHeight ? '' : showOverlay ? 'sm:h-[50vh]' : controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'} {scrolled ? 'opacity-40' : 'opacity-100'}"
     class:cursor-grab={$dragCarousels && medias.length > 1}
     class:cursor-grabbing={heroDragging}
     class:game-home-hero={controllerUi && showOverlay}
@@ -444,11 +543,11 @@
                  class="absolute inset-0 h-full w-full scale-110 object-cover opacity-30 blur-2xl" />
             <img src={cover(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
                  onload={artworkSettled} onerror={artworkSettled}
-                 class="relative ml-auto h-full w-[min(50vw,36rem)] object-contain object-right py-7 pr-[5vw] transition-opacity duration-200 {artworkReady ? 'opacity-100' : 'opacity-0'}" />
+                 class="hero-artwork relative ml-auto h-full w-[min(50vw,36rem)] object-contain object-right py-7 pr-[5vw] transition-opacity duration-200 {artworkReady ? 'opacity-100' : 'opacity-0'}" />
           {:else}
             <img src={banner(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
                  onload={artworkSettled} onerror={artworkSettled}
-                 class="relative h-full w-full object-cover transition-opacity duration-200 {artworkReady ? 'opacity-100' : 'opacity-0'}"
+                 class="hero-artwork relative h-full w-full object-cover transition-opacity duration-200 {artworkReady ? 'opacity-100' : 'opacity-0'}"
                  style="object-position:center 20%" />
           {/if}
         </div>
@@ -561,7 +660,9 @@
         </div>
         {/key}
 
-        {#if medias.length > 1}
+        {#if indicator.style}
+          {@render slideIndicator(indicator.style, 'var(--accent)', 'absolute inset-x-8 bottom-8 hidden sm:flex', 'end')}
+        {:else if medias.length > 1}
           <!-- Slide pips: hover/click targets are a desktop affordance; on mobile the row
                auto-advances (and would collide with the Watch/Details buttons), so hide them. -->
           <div class="absolute bottom-8 right-8 hidden gap-1.5 sm:flex">
@@ -618,6 +719,10 @@
     max-width: 100%;
     text-shadow: 2px 2px 4px hsl(0 0% 0%);
   }
+  /* A light theme sets ink-dark titles on a paper caption; a hard black drop shadow smears them. */
+  :global(html[data-scheme='light']) .theme-custom-hero :global(h1.theme-text) {
+    text-shadow: 0 1px 2px hsl(0 0% 100% / 0.45);
+  }
   .theme-custom-hero :global(.theme-action) { min-height: 36px; padding: 6px 16px; }
   .theme-custom-hero :global(.hero-pip) {
     display: block;
@@ -637,6 +742,18 @@
     transform-origin: left;
     animation: hero-progress-fill var(--theme-hero-interval, 15s) linear forwards;
   }
+  /* Game mode: an accelerated transform tween keeps WebKit compositing a full 1280×800 frame at the
+     panel rate for the whole interval while Home sits idle. Fill the bar in discrete width steps
+     instead — each step is one tiny main-thread repaint, and every frame in between is free. */
+  @keyframes hero-progress-steps {
+    from { width: 0; }
+    to { width: 100%; }
+  }
+  :global(html.gamemode) .hero-progress {
+    animation-name: hero-progress-steps;
+    animation-timing-function: steps(24, end);
+    transform: none;
+  }
   @keyframes hero-slide-in {
     from { opacity: 0; transform: translate3d(var(--hero-enter-x), 0, 0) scale(1.015); }
     to { opacity: var(--hero-final-opacity, 1); transform: translate3d(0, 0, 0) scale(1); }
@@ -645,13 +762,26 @@
     from { opacity: 0; transform: translate3d(var(--hero-enter-x), 8px, 0); }
     to { opacity: 1; transform: translate3d(0, 0, 0); }
   }
-  .hero-slide-in { animation: hero-slide-in 480ms cubic-bezier(.22, 1, .36, 1) both; }
+  /* The resting opacity is declared statically as well as in the keyframes, so a surface that
+     drops the entrance animation (Game mode below) still settles at the same level. */
+  .hero-slide-in { opacity: var(--hero-final-opacity, 1); animation: hero-slide-in 480ms cubic-bezier(.22, 1, .36, 1) both; }
   @keyframes detail-hero-reveal {
     from { opacity: .5; }
     to { opacity: var(--hero-final-opacity, .7); }
   }
-  .detail-hero-reveal { animation: detail-hero-reveal 220ms ease-out both; }
+  .detail-hero-reveal { opacity: var(--hero-final-opacity, .7); animation: detail-hero-reveal 220ms ease-out both; }
   .hero-copy { animation: hero-copy-in 360ms cubic-bezier(.22, 1, .36, 1) both; }
+  /* Game mode (Gamescope): every entrance tween promotes the artwork or the copy block to its own
+     compositor layer for its duration. The zoomed Deck page rasterises promoted layers soft (1x
+     contents scale, grayscale AA — see app.css) and then snaps them crisp the moment the layer is
+     dropped, which read as a blink on every slide. With the decode-before-commit scheduler above the
+     incoming slide is already paint-ready, so the swap is one clean frame — the same "calm and
+     instant" browse the Deck uses for row entrances. */
+  :global(html.gamemode) .hero-slide-in,
+  :global(html.gamemode) .detail-hero-reveal,
+  :global(html.gamemode) .hero-copy { animation: none; }
+  :global(html.gamemode) .hero-artwork,
+  :global(html.gamemode) .hero-root { transition: none; }
   @media (min-width: 640px) {
     .game-home-hero { height: 54vh; }
   }

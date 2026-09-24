@@ -1,19 +1,31 @@
 import { defaultStudioTheme, normalizeStudioTheme, validHslToken, type StudioTheme } from '$lib/settings/theme-studio'
-import { parsePresentation, record } from './presentation'
+import { parsePresentation, record, type ThemeApi } from './presentation'
 
-export const THEME_API = 1
+/** The newest theme API this client renders. Older APIs stay installable; newer ones are refused
+ *  with a clear message rather than a half-parsed package. */
+export const THEME_API: ThemeApi = 2
+export const SUPPORTED_THEME_APIS: readonly number[] = [1, 2]
 export const MAX_THEME_BYTES = 256_000
 export const THEME_CATALOG_URL = 'https://raw.githubusercontent.com/nickEatsBread/izumi-themes/main/index.json'
 export const THEME_CATALOG_PROJECT_URL = 'https://github.com/nickEatsBread/izumi-themes'
+export type ThemePlatform = 'desktop' | 'phone'
 export interface ThemePackage {
-  app: 'izumi'; kind: 'theme-package'; schemaVersion: 1; themeApi: 1
+  app: 'izumi'; kind: 'theme-package'; schemaVersion: 1; themeApi: ThemeApi
   id: string; name: string; version: string; author: string; description: string
   design: StudioTheme
 }
 export interface ThemeRelease {
   id: string; name: string; version: string; author: string; description: string
   themeApi: number; tags: string[]; preview?: string; project?: string
+  /** Which layouts the author designed, primary first. Absent means the shared layout serves both. */
+  platforms?: ThemePlatform[]
   download: string; sha256: string; bytes: number
+}
+/** A short label for where a listing was designed to live. */
+export function platformLabel(platforms?: ThemePlatform[]): string {
+  const list = platforms?.length ? platforms : ['desktop', 'phone']
+  if (list.length === 1) return list[0] === 'phone' ? 'Phone only' : 'Desktop only'
+  return list[0] === 'phone' ? 'Designed for phones · desktop layout included' : 'Desktop & phone'
 }
 export interface ThemeCatalog { app: 'izumi'; kind: 'theme-catalog'; schemaVersion: 1; themes: ThemeRelease[] }
 export interface PreparedTheme { package: ThemePackage; origin: string; release?: ThemeRelease; updateUrl?: string }
@@ -52,11 +64,14 @@ function identity(value: unknown, allowSharedId = false): string {
 /** Shared IDs are allowed only when minting personal exports or reading saved installations. */
 export function parseThemePackage(value: unknown, { allowSharedId = false }: { allowSharedId?: boolean } = {}): ThemePackage {
   const raw = record(value)
-  if (raw.app !== 'izumi' || raw.kind !== 'theme-package' || raw.schemaVersion !== 1 || raw.themeApi !== THEME_API) throw new Error('This theme requires a different theme API. Check for a client update.')
+  if (raw.app !== 'izumi' || raw.kind !== 'theme-package' || raw.schemaVersion !== 1 || !SUPPORTED_THEME_APIS.includes(raw.themeApi as number)) throw new Error('This theme requires a different theme API. Check for a client update.')
+  const themeApi = raw.themeApi as ThemeApi
   const id = identity(raw.id, allowSharedId), name = text(raw.name, 48), design = record(raw.design)
   const allowed = ['tokens', 'radius', 'font', 'fontScale', 'backdrop', 'backdropStrength', 'glassBlur', 'presentation']
   if (Object.keys(design).some(key => !allowed.includes(key))) throw new Error('This theme contains unsupported design settings.')
-  if (design.presentation !== undefined) parsePresentation(design.presentation)
+  // Validated against the API the package declares: an API 1 package is held to the API 1 key set
+  // so it renders the same on every client that accepts it.
+  if (design.presentation !== undefined) parsePresentation(design.presentation, themeApi)
   const base: StudioTheme = { ...defaultStudioTheme(0), radius: 0.5, backdrop: 'solid', backdropStrength: 0, glassBlur: 0 }
   if (design.tokens !== undefined) {
     for (const [key, value] of Object.entries(record(design.tokens))) {
@@ -67,7 +82,7 @@ export function parseThemePackage(value: unknown, { allowSharedId = false }: { a
   for (const key of allowed.filter(key => key !== 'presentation' && key !== 'tokens')) {
     if (design[key] !== undefined && design[key] !== (normalized as unknown as Record<string, unknown>)[key]) throw new Error('The theme contains an unsupported appearance value.')
   }
-  return { app: 'izumi', kind: 'theme-package', schemaVersion: 1, themeApi: 1, id, name,
+  return { app: 'izumi', kind: 'theme-package', schemaVersion: 1, themeApi, id, name,
     version: version(raw.version), author: text(raw.author, 80), description: text(raw.description, 600), design: normalized }
 }
 /** Existing Theme Studio exports remain shareable through files and direct links. */
@@ -78,8 +93,14 @@ export function parseSharedTheme(value: unknown): ThemePackage {
   if (theme.presentation !== undefined) parsePresentation(theme.presentation)
   const normalized = normalizeStudioTheme(theme)
   const { id, name, createdAt: _created, updatedAt: _updated, ...design } = normalized
-  return parseThemePackage({ app: 'izumi', kind: 'theme-package', schemaVersion: 1, themeApi: 1,
+  // A personal design may use everything this client renders, so it is shared at the newest API.
+  return parseThemePackage({ app: 'izumi', kind: 'theme-package', schemaVersion: 1, themeApi: THEME_API,
     id: `shared.${id.toLowerCase().slice(0, 48)}`, name, author: 'Shared theme', description: 'A personal Theme Studio design. Customize it after installing.', version: '1.0.0', design }, { allowSharedId: true })
+}
+function platforms(value: unknown): ThemePlatform[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || !value.length || value.length > 2 || value.some(item => item !== 'desktop' && item !== 'phone') || new Set(value).size !== value.length) throw new Error('Invalid theme platforms.')
+  return value as ThemePlatform[]
 }
 export function parseRelease(value: unknown): ThemeRelease {
   const raw = record(value)
@@ -88,8 +109,10 @@ export function parseRelease(value: unknown): ThemeRelease {
   if (typeof raw.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(raw.sha256)) throw new Error('The theme listing needs a valid package checksum.')
   if (!Number.isSafeInteger(raw.themeApi) || Number(raw.themeApi) < 1) throw new Error('Missing theme API version.')
   if (!Array.isArray(raw.tags) || raw.tags.length > 12) throw new Error('Invalid theme tags.')
+  const targets = platforms(raw.platforms)
   return { id: identity(raw.id), name: text(raw.name, 48), version: version(raw.version), author: text(raw.author, 80),
     description: text(raw.description, 600), themeApi: Number(raw.themeApi), tags: raw.tags.map(tag => text(tag, 32)),
+    ...(targets ? { platforms: targets } : {}),
     download: themeUrl(raw.download), sha256: raw.sha256.toLowerCase(), bytes,
     ...(raw.preview ? { preview: themeUrl(raw.preview) } : {}), ...(raw.project ? { project: themeUrl(raw.project) } : {}) }
 }

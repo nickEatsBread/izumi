@@ -37,7 +37,8 @@
   import DeckKeyboardWarning from '$lib/components/shell/DeckKeyboardWarning.svelte'
   const loadLofiPlayer = () => import('$lib/components/shell/LofiPlayer.svelte')
   import { streamPicker, connecting, exitPrompt, nowPlayingMedia } from '$lib/player/session'
-  import { playing, fullscreen, pictureInPicture, exitPictureInPicture, gameMode, gameModeResolved, initGameMode, debridCaching } from '$lib/player/session'
+  import { playing, fullscreen, pictureInPicture, exitPictureInPicture, gameMode, gameModeResolved, initGameMode, debridCaching, playerStage } from '$lib/player/session'
+  import { playerInsets, sameInsets, type PlayerInsets } from '$lib/player/insets'
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes, hotkeyBindings } from '$lib/settings/ui'
   import { catalogDefaultProvider, catalogLastProvider, catalogProvider, catalogProviders, catalogScreen, catalogScreens, enabledCatalogProviders, enabledCatalogScreens, nextCatalogScreen, previousCatalogScreen, resolveCatalogStartup, selectCatalogProvider, selectCatalogScreen } from '$lib/settings/catalog'
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation'
@@ -49,7 +50,7 @@
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { scheduleBootWork } from '$lib/util/boot-work'
   import { isAndroid, isMacOS, isMobile, isTv, initPlatform } from '$lib/platform'
-  import { themePresentation } from '$lib/themes/runtime'
+  import { shellNav } from '$lib/themes/runtime'
   import { initOffline } from '$lib/stores/offline'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
   import { getContextClient } from '@urql/svelte'
@@ -424,15 +425,25 @@
     document.documentElement.style.overflow = lock
     document.body.style.overflow = lock
   })
-  // Inset the video to the RIGHT of the 56px sidebar rail while playing windowed, so
-  // it never renders under the black sidebar. NOT inset at the top: the video fills
-  // full height and the transparent titlebar overlays it — a top inset
-  // exposed the opaque window background as a black band under the titlebar.
-  // Full-frame in fullscreen (chrome hidden) and 0 in browse. Physical px = CSS × DPR.
+  // Keep the native video inside the player root while playing windowed: right of the sidebar
+  // rail, below a top bar, above a bottom bar, or inside a theme's docked stage. The overlay
+  // measures its root (`playerStage`); until then the chrome's own extent stands in. Fullscreen,
+  // Game mode and picture-in-picture render edge to edge. Physical px = CSS × DPR. The
+  // transparent titlebar overlays the video on purpose (a top inset under it showed the opaque
+  // window background as a black band), so only a top NAV bar insets the top.
+  let sentInsets: PlayerInsets | null = null
   $effect(() => {
-    // Game mode = always fullscreen video (no sidebar rail), so no inset there either.
-    const left = $playing && !$fullscreen && !$gameMode && !$pictureInPicture ? Math.round(56 * $uiScale * window.devicePixelRatio) : 0
-    invoke('player_set_inset', { left, top: 0 }).catch(() => {})
+    const insets = playerInsets({
+      chrome: $playing && !$fullscreen && !$gameMode && !$pictureInPicture,
+      nav: $shellNav,
+      stage: $playerStage,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      dpr: window.devicePixelRatio,
+      uiScale: $uiScale,
+    })
+    if (sameInsets(sentInsets, insets)) return
+    sentInsets = insets
+    invoke('player_set_inset', { ...insets }).catch(() => {})
   })
   // Navigating away (e.g. a sidebar link) exits playback and restores the browse UI.
   beforeNavigate(({ from }) => {
@@ -454,7 +465,6 @@
       { path: to?.url.pathname ?? location.pathname },
     )))
   })
-  const shellNav = $derived($isMobile ? 'bottom' : $isTv ? 'sidebar' : ($themePresentation?.shell?.nav ?? 'sidebar'))
 </script>
 
 <svelte:window onkeydown={handleShellKeydown} />
@@ -466,7 +476,7 @@
      touch — no sidebar/titlebar while playing, just the content. -->
 {#if !($playing && ($fullscreen || $gameMode || $pictureInPicture)) && (!$androidMpvActive || $androidMiniPlayer)}
   <!-- Mobile: a bottom tab bar instead of the left rail. -->
-  {#if $isMobile || shellNav === 'bottom'}<BottomNav />{:else}<Sidebar placement={shellNav === 'top' ? 'top' : 'sidebar'} />{/if}
+  {#if $isMobile || $shellNav === 'bottom'}<BottomNav />{:else}<Sidebar placement={$shellNav === 'top' ? 'top' : 'sidebar'} />{/if}
   <!-- No window-control titlebar in Game mode (gamescope owns the fullscreen window; the
        minimize/maximize/close icons are meaningless + unreachable there) or on mobile. -->
   {#if !$gameMode && !$isMobile && !$isTv}<Titlebar />{/if}
@@ -485,9 +495,9 @@
      (`-left-14 w-screen`) so it never reaches under the sidebar, leaving a black
      column. Horizontal overflow is clipped on <body> instead (app.css).
      Hidden while playing so its opaque content doesn't block the video. -->
-<!-- The docked mini-player bar (4rem) rests on the bottom navigation (4rem): while it is up, pages
-     reserve both so their last rows are never buried under the video. -->
-<main class="theme-shell-main relative min-h-screen {($isMobile || shellNav === 'bottom') ? ($androidMiniPlayer ? 'mb-[calc(8rem+env(safe-area-inset-bottom))]' : 'mb-[calc(4rem+env(safe-area-inset-bottom))]') : ''} {shellNav === 'top' ? 'pt-[4.75rem]' : ''}" class:hidden={$playing || ($androidMpvActive && !$androidMiniPlayer)}>{@render children()}</main>
+<!-- The docked mini-player bar (4rem) rests on the bottom navigation (its themed height, 4rem by
+     default): while it is up, pages reserve both so their last rows are never buried under the video. -->
+<main class="theme-shell-main relative min-h-screen {($isMobile || $shellNav === 'bottom') ? ($androidMiniPlayer ? 'mb-[calc(var(--theme-bottom-nav,4rem)+4rem+env(safe-area-inset-bottom))]' : 'mb-[calc(var(--theme-bottom-nav,4rem)+env(safe-area-inset-bottom))]') : ''} {$shellNav === 'top' ? 'pt-[4.75rem]' : ''}" class:hidden={$playing || ($androidMpvActive && !$androidMiniPlayer)}>{@render children()}</main>
 {#if $playing}<Lazy load={loadPlayerOverlay} />{/if}
 <!-- One Android watch-details instance spans source preparation and native playback. In particular,
      its Disqus iframe is never destroyed merely because libmpv presented its first frame. -->

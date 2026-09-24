@@ -9,6 +9,7 @@ import type { SharedSourceState } from '$lib/watch-together/source'
 import type { DirectTorrentHealth } from '$lib/player/direct-torrent'
 import type { Chapter } from '$lib/player/chapter-skip'
 import type { PlayerCompositorPath } from '$lib/player/gm-overlay'
+import type { StageFractions } from '$lib/player/insets'
 import { getDrmEngine } from '$lib/player/drm'
 
 // Open source-picker: set after Play resolves the cached streams;
@@ -302,6 +303,9 @@ export const bingeSource = writable<{ mediaId: number; bingeGroup?: string; info
 // sidebar/titlebar chrome for edge-to-edge video. Kept in sync with the actual
 // window state via the Rust command's return value.
 export const fullscreen = writable(false)
+/** The desktop player root's measured edges (fractions of the viewport) while the browse chrome is
+ *  up, or null when it is hidden or not mounted. The app shell turns it into native video insets. */
+export const playerStage = writable<StageFractions | null>(null)
 export const pictureInPicture = writable(false)
 
 // Game mode (gamescope / Steam Deck): the app runs fullscreen with a TOUCH player

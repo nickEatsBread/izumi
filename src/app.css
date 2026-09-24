@@ -100,6 +100,21 @@ body { overflow-x: clip; }
    only — desktop and Steam Deck are unaffected (Deck scales via `zoom`, a different lever, and
    never matches this query). Fixed-px tiles are handled separately (they don't follow rem). */
 @media (max-width: 640px) { :root { font-size: calc(14.5px * var(--theme-font-scale)); } }
+/* Touch feel. Android's WebView paints its own grey flash on every tapped link or button and starts
+   a text selection when a card title is held; both read as a web page rather than an app. The app
+   supplies its own press feedback (android-*-press, theme-press-sink), so the WebView's stays off
+   on any coarse pointer. Text content stays selectable; only controls and cards opt out. */
+@media (pointer: coarse) {
+  html { -webkit-tap-highlight-color: transparent; }
+  a, button, [data-focusable], [data-theme-card] { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+}
+/* Phone rows settle on a card edge after a flick instead of stopping mid-poster, and a swipe that
+   runs off a row's end stays in the row instead of handing the rest of the gesture to the page.
+   Phones only: Game mode drives its rows from controller focus and keeps them overflow-hidden. */
+@media (max-width: 640px) and (pointer: coarse) {
+  [data-carousel-scroller] { scroll-snap-type: x proximity; scroll-padding-inline: 1rem; overscroll-behavior-x: contain; }
+  [data-carousel-scroller] > * { scroll-snap-align: start; }
+}
 /* Mobile settings sub-pages: the back-header shows the category title, so hide each child page's
    own redundant leading heading (its :first-child h2) — content starts right under the bar, native
    app feel. Deeper section headings are never their parent's :first-child, so they still show. */
@@ -172,6 +187,11 @@ html.gamemode .group:hover .group-hover\:scale-105 {
    shimmer is a main-thread repaint at the panel rate — dozens of them while Home rows wait behind
    the AniList limiter. Placeholders stay; only the sweep goes. */
 html.gamemode .skeloader::before { animation: none; }
+/* Game mode: a cover's fade-in (and the shared banner's fade) promotes that image to a compositor
+   layer for the tween. Under the Deck's page zoom a promoted layer rasterises soft and snaps crisp
+   the moment it is dropped — a pixel pop per card as each row loads, and a blink on every banner.
+   Browse images appear in place instead; controller focus keeps its own (transform) motion. */
+html.gamemode main img { transition: none !important; animation: none !important; }
 /* Indeterminate progress bar (update download with no Content-Length): a short segment sweeps
    the track. Transform-only so WebKitGTK/gamescope composite it without repainting the track. */
 @keyframes indeterminate { from { transform: translateX(-100%); } to { transform: translateX(400%); } }

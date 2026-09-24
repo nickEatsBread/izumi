@@ -490,7 +490,7 @@
           </div>
         {/if}
         <div class="mt-6">
-          <Tabs tabs={mobileTabs} bind:active />
+          <Tabs tabs={mobileTabs} bind:active variant={detailTheme.tabs} />
           {#if active === 'Overview'}
             <div class="mt-4 space-y-5">
               {#if m.description}
@@ -688,7 +688,7 @@
         {/if}
 
         <div class="mt-6">
-          <Tabs tabs={mobileTabs} bind:active />
+          <Tabs tabs={mobileTabs} bind:active variant={detailTheme.tabs} />
           {#if episodeTabbed && active === 'Episodes'}
             <EpisodeList media={m} offline={$offlineMode} />
           {:else if active === 'Overview'}
@@ -805,7 +805,7 @@
           <EpisodeList media={m} offline={$offlineMode} />
         </div>
       {/if}
-      <Tabs tabs={desktopTabs} bind:active />
+      <Tabs tabs={desktopTabs} bind:active variant={detailTheme.tabs} />
       {#if active === 'Relations'}
         {#if m.relations?.edges?.length}
           <div class="flex flex-wrap {$themePresentation ? 'gap-x-6 gap-y-8' : 'gap-4'}">
@@ -955,7 +955,7 @@
     {/snippet}
 
     {#snippet desktopSecondary()}
-    <Tabs tabs={desktopTabs} bind:active />
+    <Tabs tabs={desktopTabs} bind:active variant={detailTheme.tabs} />
     {#if episodeTabbed && active === 'Episodes'}
       <EpisodeList media={m} offline={$offlineMode} />
     {:else if active === 'Relations'}
