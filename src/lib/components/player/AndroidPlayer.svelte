@@ -49,7 +49,7 @@
   import {
     miniDockGeometry, miniPullTravel, miniPullProgress, miniPullTransform, miniDetailsShift,
     miniPullOutcome, miniDismissOutcome, releaseVelocity, velocityToProgress, stepSpring, springSettled,
-    MINI_BAR_HEIGHT, type Rect as MiniRect,
+    MINI_BAR_HEIGHT, BOTTOM_NAV_HEIGHT, type Rect as MiniRect,
   } from '$lib/player/mini-player'
   import {
     classifyDrag,
@@ -880,8 +880,14 @@
     const value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-area-inset-bottom'))
     return Number.isFinite(value) ? value : 0
   }
+  // The bar rests on the bottom navigation, whose reserved height a theme can change
+  // (`--theme-bottom-nav`, published by theme.ts); the stock bar keeps the 4rem default.
+  function bottomNavCss(): number {
+    const value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--theme-bottom-nav'))
+    return Number.isFinite(value) && value > 0 ? value : BOTTOM_NAV_HEIGHT
+  }
   function dockRect(): MiniRect {
-    return miniDockGeometry({ width: window.innerWidth, height: window.innerHeight }, safeAreaBottomCss())
+    return miniDockGeometry({ width: window.innerWidth, height: window.innerHeight }, safeAreaBottomCss(), bottomNavCss())
   }
   function restingRect(): MiniRect {
     const height = portraitVideoHeight ?? Math.round(window.innerWidth * 9 / 16)

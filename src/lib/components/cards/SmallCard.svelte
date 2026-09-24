@@ -34,7 +34,7 @@
   import RatingSourceMark from '$lib/components/catalog/RatingSourceMark.svelte'
   // `fill`: fill the parent's width (for a responsive grid cell) instead of the fixed carousel
   // width. Used by the 3-up browse grid so tiles reach the screen edges (no dead right margin).
-  let { media, fill = false, badge, subline, simpleHover = false, showCatalogSource = true, showRating, preferLinkedRating = false, reserveTitleLines = false }: {
+  let { media, fill = false, badge, subline, simpleHover = false, showCatalogSource = true, showRating, preferLinkedRating = false, reserveTitleLines = false, position }: {
     media: Media
     fill?: boolean
     /** Optional context owned by a specialized row (for example, the released episode number). */
@@ -51,6 +51,8 @@
     preferLinkedRating?: boolean
     /** Keep responsive virtual-grid rows a fixed height even when a title only needs one line. */
     reserveTitleLines?: boolean
+    /** 1-based place in its row, so a card template can number a ranking ("01", "02", …). */
+    position?: number
   } = $props()
 
   let hovered = $state(false)
@@ -158,7 +160,7 @@
      aria-label={title(media)} style:width={themeRow.width || cardTemplate ? '100%' : undefined}
      class="group block {fill ? 'w-full' : $isTv ? 'w-44' : 'w-36 sm:w-[152px]'} {$isAndroid ? 'android-card-press' : ''}">
     {#if cardTemplate}
-      <ThemeNode node={cardTemplate} model={mediaDisplayModel(media, { poster: coverSrc, backdrop: media.bannerImage ?? coverSrc }, coverWidth)} />
+      <ThemeNode node={cardTemplate} model={mediaDisplayModel(media, { poster: coverSrc, backdrop: media.bannerImage ?? coverSrc, ...(position ? { rankPosition: position, rank: String(position).padStart(2, '0') } : {}) }, coverWidth)} />
     {:else}
     <div class="focus-cover relative aspect-[2/3] w-full overflow-hidden rounded-md bg-muted" style:aspect-ratio={themeRow.aspect === 'landscape' ? '16 / 9' : themeRow.aspect === 'square' ? '1' : undefined} style:border-radius={themeRow.radius !== undefined ? `${themeRow.radius}px` : undefined}>
       <!-- No `transform-gpu`/`will-change`: those permanently promote EVERY cover to its own
@@ -186,7 +188,11 @@
         </span>
       {/if}
     </div>
-    <div data-theme-card-label class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight {reserveTitleLines ? 'min-h-[2rem]' : ''}">
+    <!-- Reserved height sits on the whole caption block, not the title alone: reserving it on the
+         title pushed the season/format line a blank line below every one-line title in the phone
+         grid, so captions no longer read as belonging to their poster. -->
+    <div data-theme-card-label class={reserveTitleLines ? 'min-h-[3.3rem]' : ''}>
+    <div data-theme-card-label class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight">
       {#if dot(media)}<span class="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={`background:${dot(media)}`}></span>{/if}{title(media)}
     </div>
     {#if subline}
@@ -204,6 +210,7 @@
         <span>{season(media) || media.startDate?.year || ''}</span><span>{format(media)}</span>
       </div>
     {/if}
+    </div>
     {/if}
   </a>
 </div>

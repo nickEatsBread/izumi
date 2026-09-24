@@ -6,9 +6,9 @@ The Theme Studio button inside Themes opens the live design editor. Themes is th
 
 The shipped appearance remains the default. Community packages live in the [izumi-themes](https://github.com/nickEatsBread/izumi-themes) catalog; the client does not ship them. Installing a theme is an explicit choice. No appearance update is applied automatically.
 
-## Theme API 1 coverage
+## Theme API coverage
 
-API 1 stays additive: existing packages remain valid. New keys are optional.
+The client renders theme API 1 and 2 (`SUPPORTED_THEME_APIS` in `src/lib/themes/packages.ts`). API 1 is the original key set and stays valid unchanged; a package declares `themeApi: 2` to use the additions below (bottom bar, slide indicator, section headings, series tabs, docked watch layout, phone overrides). The validator gates keys by the declared API, so an API 1 package cannot carry API 2 chrome past an older client. A package newer than the client is refused with a clear message and listed in the gallery as "Needs a newer izumi".
 
 Coverage chips in Theme Studio (`Home`, `Shell`, `Details`, `Player`, or `Full`) reflect the slots a draft actually uses.
 
@@ -23,11 +23,14 @@ Semantic colors, font family and scale, corner radius, backdrop and glass effect
 - True black canvas on dark palettes (`trueBlack`).
 - Navigation placement: side rail, top bar, or bottom bar. Phones keep the bottom bar. Destination order stays in Settings → Navigation.
 - Compact shell padding.
+- Bottom bar styling (API 2, `shell.bottomNav`): flush bar, floating card or centred pill; labels always, on the active tab or never; a tonal pill, top line or dot as the active marker; height, icon size, radius, colours, blur, border and whether the bar hides while scrolling. `BottomNav.svelte` renders it and `src/lib/theme.ts` publishes `--theme-bottom-nav` so the page reserves the right space.
 
 ### Home
 
 - Hero: visibility, desktop/mobile height, rotation interval, rank badge visibility, an optional badge template and an optional entire hero template.
+- Slide indicator (API 2, `hero.indicator`): filled bars, dots, pills, an "n / N" counter or none, at the start, centre or end, in a theme colour. One snippet in `Hero.svelte` serves the built-in desktop and phone layouts and custom templates; without it each layout keeps its own default (timed bars on desktop, dots on a phone).
 - Rows: carousel or wrapping grid, card width and spacing, row spacing, artwork shape and corners (these style the default cover; a custom card template owns its own shape), heading size, and optional media-card templates.
+- Section headings (API 2, `heading`): weight, uppercase, a bar/dot/underline accent and whether "View more" is text, an arrow or hidden. Home-row cards also receive `rankPosition` and a zero-padded `rank`, so a row template can number trending titles.
 - Per-row overrides follow stable row identities, so reordering a row does not move its visual settings to another row. Resolution is global defaults → semantic row role → exact scoped row ID. For example, `continue` can override every Continue Watching row and `anime:continue` can target one catalog.
 
 ### Cards
@@ -41,10 +44,23 @@ Optional templates for three families: `poster` (ordinary tiles), `continue` (re
 - Banner visibility and poster width. Overlay pages always show the banner and hide the overlapping poster.
 - Optional episode-card templates (non-interactive, like poster tiles). Arrangement can be a wrapping grid or one full-width tile per row; hover can grow the tile. The cards / compact / grid control in Appearance still chooses cards vs numbers.
 - Optional series-facts template (icons + text). Theme Studio can edit facts and episode cards per theme.
+- Tab style (API 2, `detail.tabs`): underline, pills, an iOS-style segmented control, or a bar of equal tabs with a tinted pill behind the active one (`Tabs.svelte`).
 
 ### Player
 
 Seekbar thickness and color. Skip rules, subtitle files and playback shortcuts stay in Settings.
+
+Watch layout (API 2, `player.layout` and `player.dock`): `docked` keeps the browse chrome while watching and mounts the video in a stage of `dock.width` percent, with the episode rail beside it (`episodes: "right"`, a scrolling list of episode cards) or below it (`episodes: "below"`, a server switcher and an episode number grid, `DockEpisodes.svelte`). `dock.comments` (default `below`) renders the episode discussion inline (`CommentsPanel` with `inline`) under the stage, or after the episode grid. The stage is the transparent hole over the native video, so neither the player root nor any of its ancestors may paint a background: everything around the stage is an opaque sibling (rail, discussion panel, gutters). Picking an episode takes the Next button's route (`playEpisodeInPlayer`), so a cached same-release source continues without the picker. Fullscreen, picture-in-picture, Game mode and phones keep the full container.
+
+How the video follows the layout: the webview is transparent over the native mpv surface, so the player root in `PlayerOverlay.svelte` is the video's frame. While the chrome is up the root measures its edges as fractions of a full-viewport probe (zoom-agnostic) into `playerStage`; the app shell turns them into physical-pixel insets (`src/lib/player/insets.ts`) and calls `player_set_inset` with all four edges. Windows moves the mpv container to that rect, macOS sets the GL view's frame and Linux (Wayland) positions and sizes the `wl_subsurface`; each keeps rendering at the surface's real pixel size, so a smaller stage changes the picture's size, never its scaling. Before the overlay has measured itself the shell uses the chrome's own extent (sidebar rail, top bar or bottom bar), which also fixes the old blank rail beside a top navigation bar: the root is inset from whichever edge `shellNav` (`src/lib/themes/runtime.ts`) says the chrome occupies.
+
+### Phone overrides
+
+`presentation.mobile` (API 2) carries a phone variant of the same layout: `density`, `hideCardLabels`, `trueBlack`, `hero`, `rows`, `detail`, `player` and `cards`, with the same shapes as their top-level counterparts. It applies when `isMobile` is true (the Android app and any window up to 640px) and is dropped everywhere else, so a package can lead with a poster-based featured card, narrower rows and a stacked series page on phones while keeping its desktop composition. `resolvePresentation` in `src/lib/themes/presentation.ts` merges the block one level deep per section (a phone hero keeps the shared interval; a `rows.byId` entry or card family replaces its shared counterpart whole); both the runtime store and the document chrome in `src/lib/theme.ts` read the resolved tree. `shell` is not accepted inside `mobile`: phones always use the bottom bar, and `shell.bottomNav` at the top level is what styles it.
+
+### Platforms
+
+A catalog listing can carry `platforms` (`desktop`, `phone`, primary first). The gallery shows "Phone only", "Desktop only", "Designed for phones · desktop layout included" or "Desktop & phone" (`platformLabel` in `packages.ts`) and offers an All / Desktop / Phone filter; a listing without the field serves both. The label replaces the old fixed "Desktop & mobile" text, which was wrong for packages an older client could not render.
 
 ### What themes do not own
 
@@ -58,13 +74,13 @@ Theme Studio's Layout tab exposes common controls, discovers rows on the current
 
 The catalog repository owns the [format reference](https://github.com/nickEatsBread/izumi-themes/blob/main/docs/FORMAT.md), JSON editor schemas, example packages, listing metadata and CI. Authors can publish a package anywhere with public HTTPS access; a catalog listing is optional. Browser builds need the host to allow cross-origin requests. Raw GitHub URLs work for both the browser and native client.
 
-Packages declare `app: "izumi"`, `kind: "theme-package"`, `schemaVersion: 1`, `themeApi: 1`, a stable ID, numeric `major.minor.patch` version, author metadata and `design`. The `design` contains appearance values and optional `presentation`. Packages omit local saved-theme IDs and timestamps. Existing personal exports are normalized into an installable shared theme. The `shared.*` ID namespace is reserved for these client-created imports; external packages and catalog listings cannot claim it. Saved installations and their rollback records retain valid shared IDs when loaded.
+Packages declare `app: "izumi"`, `kind: "theme-package"`, `schemaVersion: 1`, `themeApi: 1` or `2`, a stable ID, numeric `major.minor.patch` version, author metadata and `design`. The `design` contains appearance values and optional `presentation`. Packages omit local saved-theme IDs and timestamps. Existing personal exports are normalized into an installable shared theme. The `shared.*` ID namespace is reserved for these client-created imports; external packages and catalog listings cannot claim it. Saved installations and their rollback records retain valid shared IDs when loaded.
 
 Templates compose `stack`, `row`, `grid`, `overlay`, `text`, `artwork` and `action` nodes. Text and artwork bind to a host display model. Hero actions call the client's existing play, details, favorite, list, trailer, share and slide-navigation callbacks when the host provides them. Cards keep their host-owned detail or play links. Field types are fixed across hosts: `rankPosition`, `score` (0-100), `duration` (minutes), `episodeNumber` and `progress` (0-100) are numbers; every other field is a string. Artwork may be `poster`, `backdrop`, `logo` or `still`. Text nodes render `score` and `progress` as a percentage such as `78%`, and `duration` as `24m`. Optional conditions check presence for any field; `atMost` is accepted only for the numeric fields. Hosts bind different fields: a card condition on a missing field simply never matches.
 
 Style values are a bounded allowlist. There are no arbitrary selectors, URLs, HTML or executable expressions. Text is escaped, artwork comes from the host media record, and templates are confined to their component. A template is limited to 96 nodes and eight nesting levels. Card, rank and episode templates cannot nest interactive controls inside a host link. Theme Studio and installation-preview recovery controls keep independent styling.
 
-`src/lib/themes/presentation.ts` is the client contract. Its pure validator is mirrored in the catalog's `scripts/presentation.ts`; keep them aligned when extending the API. Changes that break existing packages need an API version change. Existing API 1 packages should remain renderable after compatible additions.
+`src/lib/themes/presentation.ts` is the client contract. Its pure validator is mirrored in the catalog's `scripts/presentation.ts`; keep them aligned when extending the API. New keys are added under the next API number (the `api2` gate in the parsers), so an older client refuses a package it cannot render instead of half-parsing it, while packages declaring the older API keep validating exactly as before.
 
 ## Installation, updates and recovery
 
@@ -87,14 +103,17 @@ The client retains the existing limit of 24 saved designs. Install writes attemp
 | Package, release and catalog parsing | `src/lib/themes/packages.ts` |
 | Bounded downloads, integrity and cache | `src/lib/themes/catalog.ts` |
 | Install, preview, merge and rollback | `src/lib/themes/installed.ts` |
-| Active presentation store | `src/lib/themes/runtime.ts` |
+| Active presentation store and navigation placement | `src/lib/themes/runtime.ts` |
+| Video insets and the docked stage | `src/lib/player/insets.ts`, `PlayerOverlay.svelte`, `DockEpisodes.svelte`, `player_set_inset` in `src-tauri/src/lib.rs` |
 | Document chrome (density, true black, seekbar vars) | `src/lib/theme.ts`, `src/app.css` |
 | Declarative renderer and layout editor | `src/lib/components/themes/` |
 | Gallery and installed library | `src/routes/app/settings/themes/+page.svelte` |
-| Host integration | `Hero.svelte`, `HomeRowFrame.svelte`, `Carousel.svelte`, `SmallCard.svelte`, `ContinueCard.svelte`, `SearchResults.svelte`, `AnimeDetail.svelte`, `EpisodeCard.svelte`, `Sidebar.svelte`, `Seekbar.svelte` |
+| Host integration | `Hero.svelte`, `HomeRowFrame.svelte`, `Carousel.svelte`, `SmallCard.svelte`, `ContinueCard.svelte`, `SearchResults.svelte`, `AnimeDetail.svelte`, `Tabs.svelte`, `EpisodeCard.svelte`, `Sidebar.svelte`, `BottomNav.svelte`, `Seekbar.svelte` |
 
 ## Validation
 
 Focused tests cover package validation, rejected styles and versions, bounded downloads, checksums, cached listings, stable row overrides, page composition helpers, card-family resolution, coverage labels, preview cancellation, personal edits through updates, rollback, origin conflicts, reinstalling a removed design and failed-install recovery. Existing Theme Studio, hero, carousel and series-page navigation checks are included in the verification run.
 
 Browser QA uses the real gallery and public package links. Responsive checks cover desktop and a 390px viewport, including a split series page collapsing the episode rail below the info column. Native player behavior and physical mobile/TV deployment require their normal platform test environments.
+
+The catalog's preview images are screenshots of this client: `scripts/preview/` in izumi-themes serves the dev build to headless Chromium behind a Tauri IPC shim, answers the AniList and episode-metadata requests from a fixture catalogue with generated artwork, seeds the theme and a few plays into local storage, and captures Home (desktop themes) or a two-phone composite (phone themes). Re-render after changing a renderer or a package.

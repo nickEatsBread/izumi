@@ -2,6 +2,8 @@ import { get } from 'svelte/store'
 import { highContrast, largeInteractionTargets, motionPreference, themePreset } from '$lib/settings/ui'
 import { activeStudioTheme, themeStudioPreview, type StudioTheme } from '$lib/settings/theme-studio'
 import { resolvedThemeTokens } from '$lib/theme-tokens'
+import { isMobile } from '$lib/platform'
+import { resolvePresentation } from '$lib/themes/presentation'
 
 export { resolvedThemeTokens, THEME_PRESETS, type ThemeTokens } from '$lib/theme-tokens'
 
@@ -40,7 +42,8 @@ function apply() {
   root.dataset.theme = preset
   root.dataset.scheme = tokens.scheme
   root.dataset.themeBackdrop = customActive ? studio.backdrop : 'solid'
-  const presentation = customActive ? studio.presentation : undefined
+  // Document chrome follows the same phone/shared resolution as the component renderers.
+  const presentation = customActive ? resolvePresentation(studio.presentation, get(isMobile)) : undefined
   root.dataset.themeDensity = presentation?.density ?? 'comfortable'
   root.dataset.themeNav = presentation?.shell?.nav ?? 'sidebar'
   root.classList.toggle('theme-true-black', !!presentation?.trueBlack && tokens.scheme === 'dark')
@@ -58,6 +61,13 @@ function apply() {
     const color = presentation.player.seekbarColor
     root.style.setProperty('--theme-seekbar-color', color.startsWith('#') || color === 'transparent' ? color : `hsl(var(--${color}))`)
   } else root.style.removeProperty('--theme-seekbar-color')
+  // The page keeps its bottom margin clear of the tab bar; a taller or floating bar needs more.
+  const bottomNav = presentation?.shell?.bottomNav
+  if (bottomNav) {
+    const height = bottomNav.height ?? 56
+    const clearance = bottomNav.style === 'pill' ? 32 : bottomNav.style === 'floating' ? 24 : 8
+    root.style.setProperty('--theme-bottom-nav', `${height + clearance}px`)
+  } else root.style.removeProperty('--theme-bottom-nav')
   root.classList.toggle('a11y-high-contrast', get(highContrast))
   root.classList.toggle('a11y-large-targets', get(largeInteractionTargets))
   root.classList.toggle('a11y-reduce-motion', get(motionPreference) === 'reduce')
@@ -71,7 +81,7 @@ export function startThemeSync(): () => void {
   const media = matchMedia('(prefers-color-scheme: dark)')
   const subscriptions = [
     themePreset, highContrast, largeInteractionTargets, motionPreference,
-    activeStudioTheme, themeStudioPreview,
+    activeStudioTheme, themeStudioPreview, isMobile,
   ].map((store) => store.subscribe(apply))
   media.addEventListener('change', apply)
   apply()

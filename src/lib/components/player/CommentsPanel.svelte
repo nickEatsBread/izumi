@@ -19,6 +19,9 @@
   import { warnBeforeThirdPartyLogin } from '$lib/deck/keyboard-warning'
   import { restoreGmTouchAfterTransition } from '$lib/player/gm-touch-watchdog'
 
+  // `inline`: the panel is part of the page (a theme's docked watch layout puts the discussion under
+  // the video) — always open, no sheet chrome, no close/expand controls, and it fills its container.
+  let { inline = false }: { inline?: boolean } = $props()
   let threads = $state<DiscussionThread[]>([])
   let loading = $state(false)
   let filter = $state('All')
@@ -57,7 +60,7 @@
   // just started and cleared `loadedKey`, so nine failed sources meant nine identical aggregations.
   // The panel stays mounted while closed, so a late result is simply kept for the next open.
   $effect(() => {
-    if (!$commentsOpen) return
+    if (!inline && !$commentsOpen) return
     const np = $nowPlayingMedia
     if (!np) return
     const key = `${np.media.id}:${np.episode ?? ''}`
@@ -464,12 +467,13 @@
     <h2 class="flex items-baseline gap-1.5 text-sm font-black"><span>Discussion</span>{#if ep}<span class="font-semibold text-muted-foreground">· Ep {ep}</span>{/if}</h2>
     <div class="ml-auto flex items-center gap-1">
       <button data-focusable onclick={() => discussionExpanded.set(!$discussionExpanded)}
-              class:hidden={$gameMode}
+              class:hidden={$gameMode || inline}
               aria-label={$discussionExpanded ? 'Dock to side' : 'Expand'}
               class="grid h-8 w-8 place-items-center rounded-md hover:bg-accent">
         {#if $discussionExpanded}<Minimize2 size={16} />{:else}<Maximize2 size={16} />{/if}
       </button>
       <button data-focusable onclick={() => commentsOpen.set(false)} aria-label="Close discussion"
+              class:hidden={inline}
               class="grid h-8 w-8 place-items-center rounded-md hover:bg-accent"><X size={18} /></button>
     </div>
   </header>
@@ -590,6 +594,11 @@
      While the embed tab is showing in expanded mode, the rounded clip is dropped too — a rounded
      overflow clip intersecting the iframe surface forces another render surface (kRoundedCorner);
      the iframe's square bottom corners on the near-identical dark panel are imperceptible. -->
+{#if inline}
+<div data-comments-panel data-comments-inline class="flex h-full min-h-0 flex-col bg-background text-foreground">
+  {@render panelBody()}
+</div>
+{:else}
 <div data-comments-panel data-gm-comments-surface data-capture-exclude-when-inert inert={!$commentsOpen}
      class="dq-panel absolute z-40 flex flex-col border-white/10 bg-background text-foreground {$gameMode ? 'inset-0 h-full w-full max-w-none border-0 shadow-none' : 'shadow-2xl'}
        {$gameMode
@@ -600,6 +609,7 @@
        {$commentsOpen ? '' : $gameMode ? 'dq-gm-hide' : $discussionExpanded ? 'dq-closed-pop' : 'dq-closed-slide'}">
   {@render panelBody()}
 </div>
+{/if}
 
 <style>
   /* The app hides scrollbars globally. The archive has to scroll in this parent because its

@@ -61,11 +61,11 @@
           <div class="skeloader aspect-[2/3] w-36 shrink-0 rounded-md sm:w-[152px]"></div>
         {/each}
       {:else if $store.data}
-        {#each $store.data.Page.media as media (media.id)}
+        {#each $store.data.Page.media as media, index (media.id)}
           <!-- load-in: one-shot slide-up+fade (gamemode-disabled in app.css). Cards animate in when
                this row's deferred query resolves — the per-row staggered reveal as you scroll. -->
           <div class="load-in shrink-0">
-            <SmallCard {media} {preferLinkedRating} />
+            <SmallCard {media} {preferLinkedRating} position={index + 1} />
           </div>
         {/each}
       {/if}

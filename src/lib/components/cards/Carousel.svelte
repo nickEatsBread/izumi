@@ -20,6 +20,7 @@
   const scope = getContext<(() => RowScope) | undefined>(ROW_CONTEXT)
   const appearance = $derived(scope ? resolveRow($themePresentation, scope().id) : {})
   const grid = $derived(appearance.layout === 'grid')
+  const heading = $derived(appearance.heading ?? {})
 
   let scroller = $state<HTMLDivElement>()
   let canLeft = $state(false)
@@ -91,15 +92,20 @@
      search this row's own cards instead of stepping whole sections (and skipping grid lines). -->
 <section data-nav-row data-nav-row-wrap={grid ? '' : undefined} data-theme-row={scope?.().id} data-theme-row-title={scope?.().title ?? title} class="browse-render-row group/carousel relative mb-8" style:margin-bottom={appearance.spacing !== undefined ? `${appearance.spacing}px` : undefined}>
   <div class="mb-2 flex items-baseline justify-between" class:px-8={!mob} class:px-4={mob}>
-    <div class="flex min-w-0 items-baseline gap-2">
-      <h2 class="truncate text-lg font-black" style:font-size={appearance.titleSize ? `${appearance.titleSize}px` : undefined}>{title}</h2>
+    <div class="flex min-w-0 items-center gap-2">
+      <!-- Heading accents: a coloured bar or dot before the title, or an underline beneath it. -->
+      {#if heading.accent === 'bar'}<span class="h-[1.1em] w-1 shrink-0 rounded-full bg-theme" aria-hidden="true"></span>{/if}
+      {#if heading.accent === 'dot'}<span class="size-2 shrink-0 rounded-full bg-theme" aria-hidden="true"></span>{/if}
+      <h2 class="truncate text-lg font-black {heading.transform === 'uppercase' ? 'uppercase tracking-wide' : ''} {heading.accent === 'underline' ? 'border-b-2 border-theme pb-0.5' : ''}" style:font-size={appearance.titleSize ? `${appearance.titleSize}px` : undefined} style:font-weight={heading.weight}>{title}</h2>
       {#if attribution}<span class="shrink-0 text-[0.65rem] font-semibold text-muted-foreground">{attribution}</span>{/if}
     </div>
-    {#if viewMoreHref}
-      <a href={viewMoreHref} data-focusable
-         class="flex items-center gap-0.5 text-xs font-bold text-muted-foreground transition hover:text-foreground group-hover/carousel:opacity-100"
+    {#if viewMoreHref && heading.viewMore !== 'hidden'}
+      <!-- On a phone the link is always visible and tapped, not hovered: pad its hit area to a
+           comfortable height while the negative margin keeps the heading row where it was. -->
+      <a href={viewMoreHref} data-focusable aria-label={heading.viewMore === 'arrow' ? `View more ${title}` : undefined}
+         class="flex items-center gap-0.5 text-xs font-bold text-muted-foreground transition hover:text-foreground group-hover/carousel:opacity-100 {mob ? '-my-2 py-2 pl-2' : ''}"
          class:opacity-0={!mob}>
-        View more <ChevronRight size={14} />
+        {#if heading.viewMore !== 'arrow'}View more{/if}<ChevronRight size={heading.viewMore === 'arrow' ? 18 : 14} />
       </a>
     {/if}
   </div>

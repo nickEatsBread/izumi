@@ -2464,6 +2464,14 @@ static MPV_INSET_LEFT: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI
 #[cfg(windows)]
 static MPV_INSET_TOP: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
 
+/// Right + bottom insets (physical px): 0 for the ordinary full-container player. A theme's
+/// docked watch layout parks the video in a smaller stage (episodes beside or below it), and the
+/// frontend reports that stage's edges here so mpv renders exactly inside it.
+#[cfg(windows)]
+static MPV_INSET_RIGHT: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+#[cfg(windows)]
+static MPV_INSET_BOTTOM: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
 /// Resize mpv's embedded child window (class "mpv") to the main window's client
 /// rect, offset by `MPV_INSET_LEFT` on the left. mpv does NOT reliably track the
 /// parent size under Tauri/tao, so we do it explicitly on every resize + after
@@ -2493,7 +2501,9 @@ fn player_area(parent: windows::Win32::Foundation::HWND) -> (i32, i32, i32, i32)
         let ch = r.bottom - r.top;
         let l = MPV_INSET_LEFT.load(Ordering::Relaxed).clamp(0, cw);
         let t = MPV_INSET_TOP.load(Ordering::Relaxed).clamp(0, ch);
-        (l, t, (cw - l).max(1), (ch - t).max(1))
+        let r = MPV_INSET_RIGHT.load(Ordering::Relaxed).clamp(0, cw - l);
+        let b = MPV_INSET_BOTTOM.load(Ordering::Relaxed).clamp(0, ch - t);
+        (l, t, (cw - l - r).max(1), (ch - t - b).max(1))
     }
 }
 
@@ -2690,28 +2700,51 @@ unsafe extern "system" fn move_mpv_child(
     windows::core::BOOL(1)
 }
 
-/// Set the video's left (sidebar) + top (titlebar) insets (PHYSICAL px — the frontend
-/// already applied devicePixelRatio, so no DPI math here) and refit mpv. Keeps the
-/// video inside the player area while windowed (both 0 in fullscreen).
+/// Set the video's insets (PHYSICAL px — the frontend already applied devicePixelRatio, so no
+/// DPI math here) and refit mpv. `left` is the sidebar rail and `top` a top navigation bar;
+/// `right`/`bottom` are non-zero only for a theme's docked watch layout, where the frontend
+/// measures its video stage and hands over every edge so the native surface matches the HTML
+/// container exactly. All 0 in fullscreen. mpv keeps rendering at the surface's real pixel size,
+/// so a smaller stage changes the picture's size, never its scaling quality.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-fn player_set_inset(app: AppHandle, left: i32, top: Option<i32>) -> Result<(), String> {
+fn player_set_inset(
+    app: AppHandle,
+    left: i32,
+    top: Option<i32>,
+    right: Option<i32>,
+    bottom: Option<i32>,
+) -> Result<(), String> {
+    let (left, top, right, bottom) = (
+        left.max(0),
+        top.unwrap_or(0).max(0),
+        right.unwrap_or(0).max(0),
+        bottom.unwrap_or(0).max(0),
+    );
     #[cfg(windows)]
     {
         use std::sync::atomic::Ordering;
-        MPV_INSET_LEFT.store(left.max(0), Ordering::Relaxed);
-        MPV_INSET_TOP.store(top.unwrap_or(0).max(0), Ordering::Relaxed);
+        MPV_INSET_LEFT.store(left, Ordering::Relaxed);
+        MPV_INSET_TOP.store(top, Ordering::Relaxed);
+        MPV_INSET_RIGHT.store(right, Ordering::Relaxed);
+        MPV_INSET_BOTTOM.store(bottom, Ordering::Relaxed);
         if let Some(w) = app.get_webview_window("main") {
             resize_mpv_child(w.hwnd().map_err(|e| e.to_string())?.0 as isize);
         }
     }
     #[cfg(target_os = "macos")]
     {
-        player::macos_embed::set_inset(left.max(0), top.unwrap_or(0).max(0));
+        player::macos_embed::set_inset(left, top, right, bottom);
         player::macos_embed::resize_from_app(&app);
     }
-    #[cfg(not(any(windows, target_os = "macos")))]
-    let _ = (app, left, top);
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(w) = app.get_webview_window("main") {
+            player::linux_embed::set_inset(&w, left, top, right, bottom);
+        }
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    let _ = (app, left, top, right, bottom);
     Ok(())
 }
 
@@ -2782,6 +2815,14 @@ fn player_diag(
                 m.insert(
                     "insetT".into(),
                     serde_json::json!(MPV_INSET_TOP.load(Ordering::Relaxed)),
+                );
+                m.insert(
+                    "insetR".into(),
+                    serde_json::json!(MPV_INSET_RIGHT.load(Ordering::Relaxed)),
+                );
+                m.insert(
+                    "insetB".into(),
+                    serde_json::json!(MPV_INSET_BOTTOM.load(Ordering::Relaxed)),
                 );
             }
         }

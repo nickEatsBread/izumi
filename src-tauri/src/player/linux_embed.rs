@@ -277,6 +277,64 @@ struct SessionState {
     pending_resize: Option<(i32, i32)>,
     current_size: (i32, i32),
     csd_offset: (i32, i32),
+    /// The toplevel's last allocation (logical px), so an inset change can re-place the video
+    /// without waiting for the next size-allocate.
+    window_size: (i32, i32),
+}
+
+/// Video insets in LOGICAL px (left, top, right, bottom): the sidebar rail / top bar while
+/// windowed, plus the right/bottom edges of a theme's docked watch stage. Applied to the
+/// wl_subsurface's position and size (Desktop); the gamescope layer surface ignores them.
+static INSETS: Mutex<(i32, i32, i32, i32)> = Mutex::new((0, 0, 0, 0));
+
+/// Subsurface placement for a toplevel of `window` logical px: position (relative to the
+/// toplevel surface, so past the CSD shadow) and size, after the current insets.
+fn video_layout(window: (i32, i32), csd: (i32, i32)) -> ((i32, i32), (i32, i32)) {
+    let (l, t, r, b) = INSETS.lock().map(|g| *g).unwrap_or((0, 0, 0, 0));
+    let l = l.clamp(0, window.0.max(0));
+    let t = t.clamp(0, window.1.max(0));
+    let w = (window.0 - l - r.max(0)).max(1);
+    let h = (window.1 - t - b.max(0)).max(1);
+    ((csd.0 + l, csd.1 + t), (w, h))
+}
+
+/// Store new insets (PHYSICAL px from the frontend) and re-place the live video, if any.
+/// `wl_subsurface` position/size are synchronised to the parent's commit, so the toplevel is
+/// asked to redraw as well; GTK commits it on that draw and the compositor applies both.
+pub fn set_inset(window: &tauri::WebviewWindow, left: i32, top: i32, right: i32, bottom: i32) {
+    let scale = window.scale_factor().unwrap_or(1.0).max(0.5);
+    let logical = |px: i32| ((px.max(0) as f64) / scale).round() as i32;
+    let next = (logical(left), logical(top), logical(right), logical(bottom));
+    if let Ok(mut g) = INSETS.lock() {
+        if *g == next {
+            return;
+        }
+        *g = next;
+    }
+    let Some(inner) = EMBED.lock().ok().and_then(|g| g.clone()) else {
+        return;
+    };
+    if inner.wayland.subsurface.is_none() {
+        return;
+    }
+    let win = window.clone();
+    run_on_glib_main(move || {
+        if let Ok(mut st) = inner.state.lock() {
+            let (pos, size) = video_layout(st.window_size, st.csd_offset);
+            st.pending_resize = Some(size);
+            if let Some(sub) = &inner.wayland.subsurface {
+                sub.set_position(pos.0, pos.1);
+            }
+            inner.wayland.child_surface.commit();
+            let _ = inner.wayland.conn.flush();
+        }
+        if inner.valid.load(Ordering::Acquire) {
+            render_frame(&inner);
+        }
+        if let Ok(gtk_win) = win.gtk_window() {
+            gtk_win.queue_draw();
+        }
+    });
 }
 
 impl Drop for SessionState {
@@ -398,6 +456,7 @@ pub fn attach(mpv: &Mpv, window: &tauri::WebviewWindow) -> Result<(), String> {
         let alloc = gtk_win.allocation();
         let w0 = alloc.width().max(1);
         let h0 = alloc.height().max(1);
+        let (pos0, size0) = video_layout((w0, h0), csd);
 
         // Desktop/KWin composites a subsurface below the webview. gamescope (Game mode) has
         // NO wl_subcompositor but HAS zwlr_layer_shell_v1 → put the video on a fullscreen
@@ -475,9 +534,10 @@ pub fn attach(mpv: &Mpv, window: &tauri::WebviewWindow) -> Result<(), String> {
                     // The bootstrap 1×1 surface; recreated at (w0,h0) on the first
                     // render_frame via `pending_resize`.
                     wl_egl_surface: Some(wl_egl),
-                    pending_resize: Some((w0, h0)),
+                    pending_resize: Some(if wayland.subsurface.is_some() { size0 } else { (w0, h0) }),
                     current_size: (1, 1),
                     csd_offset: csd,
+                    window_size: (w0, h0),
                 }),
                 egl: egl_res,
                 wayland,
@@ -487,7 +547,7 @@ pub fn attach(mpv: &Mpv, window: &tauri::WebviewWindow) -> Result<(), String> {
         // Position the subsurface at the content-area origin and show it (Desktop). The
         // layer surface is anchored fullscreen by the compositor, so it needs no position.
         if let Some(sub) = &inner.wayland.subsurface {
-            sub.set_position(csd.0, csd.1);
+            sub.set_position(pos0.0, pos0.1);
         }
         inner.wayland.child_surface.commit();
         let _ = inner.wayland.conn.flush();
@@ -507,10 +567,17 @@ pub fn attach(mpv: &Mpv, window: &tauri::WebviewWindow) -> Result<(), String> {
                 let nw = rect.width().max(1);
                 let nh = rect.height().max(1);
                 if let Ok(mut st) = inner.state.lock() {
-                    st.pending_resize = Some((nw, nh));
-                    let (cx, cy) = st.csd_offset;
+                    st.window_size = (nw, nh);
+                    // Desktop: the video keeps to its inset stage; the gamescope layer surface
+                    // is always the full output.
+                    let (pos, size) = if inner.wayland.subsurface.is_some() {
+                        video_layout((nw, nh), st.csd_offset)
+                    } else {
+                        (st.csd_offset, (nw, nh))
+                    };
+                    st.pending_resize = Some(size);
                     if let Some(sub) = &inner.wayland.subsurface {
-                        sub.set_position(cx, cy);
+                        sub.set_position(pos.0, pos.1);
                     }
                     inner.wayland.child_surface.commit();
                     let _ = inner.wayland.conn.flush();
