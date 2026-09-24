@@ -29,6 +29,7 @@ mod jvm_extensions;
 mod net_interfaces;
 #[cfg(not(target_os = "android"))]
 mod oauth;
+mod prefs_store;
 mod reset;
 #[cfg(not(target_os = "android"))]
 mod reset_data;
@@ -6332,6 +6333,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             reset::reset_local_data,
+            prefs_store::prefs_snapshot_load,
+            prefs_store::prefs_snapshot_save,
+            prefs_store::prefs_snapshot_clear,
             open_developer_tools,
             take_pending_magnet,
             player_play,
@@ -6497,6 +6501,9 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         greet,
         reset::reset_local_data,
+        prefs_store::prefs_snapshot_load,
+        prefs_store::prefs_snapshot_save,
+        prefs_store::prefs_snapshot_clear,
         // Always answers None on Android (no argv), but keeping it registered means the shared
         // deep-link bootstrap doesn't have to branch per platform.
         take_pending_magnet,

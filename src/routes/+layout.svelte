@@ -16,6 +16,7 @@
   import { scheduleBootWork } from '$lib/util/boot-work'
   import { initClientPerformance } from '$lib/performance/client'
   import { libraryStorageError } from '$lib/storage/library-db'
+  import { recoverPreferences, startPreferenceMirror } from '$lib/prefs-snapshot'
   import { getLocale, getTextDirection } from '$lib/paraglide/runtime.js'
   import {
     debridKey, torrentBindInterface, torrentPlaybackMode, torrentProxyEnabled, torrentProxyUrl,
@@ -65,7 +66,18 @@
       } catch { /* invalid proxy is shown in Settings and playback fails closed */ }
     }, 4500)
     const stopTheme = startThemeSync()
-    return () => { stopPerformance(); stopTheme(); stopDolbySync() }
+    // Preferences live only in the webview's localStorage, which the OS may evict without telling
+    // anyone. If the on-disk snapshot describes settings this storage no longer has, put them back
+    // and reload — the settings stores read localStorage at import time, so they are already
+    // holding defaults by now and only a reload makes the restored values take effect.
+    let stopMirror: (() => void) | undefined
+    void recoverPreferences().then((restored) => {
+      if (restored) { window.location.reload(); return }
+      // Mirroring starts only once recovery has decided, so a snapshot is never overwritten with
+      // the empty storage it was meant to repair.
+      stopMirror = startPreferenceMirror()
+    })
+    return () => { stopPerformance(); stopTheme(); stopDolbySync(); stopMirror?.() }
   })
 </script>
 {#if $libraryStorageError && !captureControlsWindow}
