@@ -2235,11 +2235,13 @@
         <!-- YouTube-style edge timeline: the track is flush with the video bottom and the centred
              thumb crosses that boundary. Portrait video overflow stays visible so it is not cut. -->
         <div class="absolute inset-x-0 bottom-0 h-1 overflow-hidden bg-white/25">
-          <div class="absolute inset-y-0 left-0 bg-white/40" style="width:{cachePct}%"></div>
+          <!-- Fills scale on the compositor (transform), not via width: a width change is a layout
+               plus paint on every position tick while the controls are up. -->
+          <div class="absolute inset-y-0 left-0 w-full origin-left bg-white/40" style="transform:scaleX({cachePct / 100})"></div>
           {#each segments as s (s.type + s.start)}
             <div class="absolute inset-y-0 {s.type === 'op' ? 'bg-sky-400/60' : s.type === 'ed' ? 'bg-fuchsia-400/60' : 'bg-amber-400/60'}" style="left:{(s.start / dur) * 100}%;width:{((s.end - s.start) / dur) * 100}%"></div>
           {/each}
-          <div class="absolute inset-y-0 left-0 bg-theme" style="width:{playedPct}%"></div>
+          <div class="absolute inset-y-0 left-0 w-full origin-left bg-theme" style="transform:scaleX({playedPct / 100})"></div>
         </div>
         {#each chapterTimes as t (t)}<div class="absolute bottom-0 h-1 w-[3px] -translate-x-1/2 rounded-full bg-black/70" style="left:{(t / dur) * 100}%"></div>{/each}
         <div class="absolute -bottom-[5px] h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-theme shadow-md" style="left:clamp(7px, {playedPct}%, calc(100% - 7px))"></div>

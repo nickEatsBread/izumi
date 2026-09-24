@@ -28,6 +28,7 @@ import android.media.MediaFormat
 import android.net.Uri
 import android.content.pm.ActivityInfo
 import android.os.Build
+import android.os.SystemClock
 import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
@@ -2838,12 +2839,33 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     override fun eventProperty(property: String, value: String) {
         trigger("progress", JSObject().put("property", property).put("value", value))
     }
+    /** Last time-pos / cache-time forwarded to the WebView, and when. */
+    private var lastForwardedPos = Double.NaN
+    private var lastForwardedPosAt = 0L
+    private var lastForwardedCacheAt = 0L
+
     override fun eventProperty(property: String, value: Double) {
         // MediaController hops to the main thread itself and throttles its own publishing, so the
         // per-frame time-pos stream costs a comparison here and nothing more.
         when (property) {
             "time-pos" -> MediaController.setPosition(value)
             "duration" -> MediaController.setDuration(value)
+        }
+        // The WebView side is the expensive consumer: every forwarded value crosses the bridge,
+        // wakes the JS main thread and republishes a store the whole player subscribes to. mpv
+        // reports time-pos on every decoded frame (24-60 Hz) and the demuxer cache several times a
+        // second, for a seekbar that cannot show a difference under a quarter second. Forward the
+        // clock at ~4 Hz while it advances smoothly; any jump — a seek, a loop, a restart — goes
+        // through at once so seeking and the watchdogs keep their exact timing.
+        val now = SystemClock.uptimeMillis()
+        if (property == "time-pos") {
+            val jumped = lastForwardedPos.isNaN() || value < lastForwardedPos || value - lastForwardedPos > 1.0
+            if (!jumped && now - lastForwardedPosAt < 250L) return
+            lastForwardedPos = value
+            lastForwardedPosAt = now
+        } else if (property == "demuxer-cache-time") {
+            if (now - lastForwardedCacheAt < 1000L) return
+            lastForwardedCacheAt = now
         }
         trigger("progress", JSObject().put("property", property).put("value", value))
     }
