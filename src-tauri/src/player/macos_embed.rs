@@ -67,6 +67,8 @@ fn main_queue() -> *mut c_void {
 
 static INSET_LEFT: AtomicI32 = AtomicI32::new(0);
 static INSET_TOP: AtomicI32 = AtomicI32::new(0);
+static INSET_RIGHT: AtomicI32 = AtomicI32::new(0);
+static INSET_BOTTOM: AtomicI32 = AtomicI32::new(0);
 static REDRAW_PENDING: AtomicBool = AtomicBool::new(false);
 /// Target native-fullscreen layout. `set_fullscreen` animates, so `is_fullscreen()`
 /// and the frontend inset `$effect` lag the GL view by hundreds of ms.
@@ -127,9 +129,11 @@ where
     rx.recv().map_err(|e| e.to_string())
 }
 
-pub fn set_inset(left: i32, top: i32) {
+pub fn set_inset(left: i32, top: i32, right: i32, bottom: i32) {
     INSET_LEFT.store(left.max(0), Ordering::Relaxed);
     INSET_TOP.store(top.max(0), Ordering::Relaxed);
+    INSET_RIGHT.store(right.max(0), Ordering::Relaxed);
+    INSET_BOTTOM.store(bottom.max(0), Ordering::Relaxed);
 }
 
 /// Call before `NSWindow.set_fullscreen` so in-flight Resized events drop the
@@ -633,15 +637,17 @@ fn retain_window(window: &WebviewWindow) -> Result<Retained<NSWindow>, String> {
 
 fn view_frame(window: &WebviewWindow, content_w: f64, content_h: f64) -> NSRect {
     let scale = window.scale_factor().unwrap_or(1.0);
-    let (left, top) = if FULLSCREEN_LAYOUT.load(Ordering::Relaxed) {
-        (0, 0)
+    let (left, top, right, bottom) = if FULLSCREEN_LAYOUT.load(Ordering::Relaxed) {
+        (0, 0, 0, 0)
     } else {
         (
             INSET_LEFT.load(Ordering::Relaxed),
             INSET_TOP.load(Ordering::Relaxed),
+            INSET_RIGHT.load(Ordering::Relaxed),
+            INSET_BOTTOM.load(Ordering::Relaxed),
         )
     };
-    let (x, y, w, h) = player_area_points(content_w, content_h, left, top, scale);
+    let (x, y, w, h) = player_area_points(content_w, content_h, left, top, right, bottom, scale);
     NSRect::new(NSPoint::new(x, y), NSSize::new(w, h))
 }
 

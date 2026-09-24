@@ -1,7 +1,7 @@
 <script lang="ts">
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { themePresentation } from '$lib/themes/runtime'
-  import { resolveDetail } from '$lib/themes/presentation'
+  import { resolveDetail, themeColorCss, type HeroIndicator } from '$lib/themes/presentation'
   import { mediaDisplayModel } from '$lib/themes/host-model'
   import { motionPreference } from '$lib/settings/ui'
   import type { Media } from '$lib/anilist/types'
@@ -64,6 +64,11 @@
   const seriesBannerHeight = $derived(seriesTheme?.bannerHeight)
   const bannerScale = $derived(showOverlay ? heroTheme?.scale === 'banner' : seriesTheme?.bannerScale === 'banner')
   const DURATION = $derived((heroTheme?.interval ?? 15) * 1000)
+  // A theme's `hero.indicator` replaces the stock slide marker in every hero layout (progress bars,
+  // dots, pills, an "n / N" counter, or nothing) and picks its side and colour. Without one each
+  // layout keeps its own default: timed bars on desktop and custom templates, dots on a phone.
+  const indicator = $derived<HeroIndicator>(heroTheme?.indicator ?? {})
+  const indicatorColor = $derived(themeColorCss(indicator.color))
 
   // The artwork a slide paints: the custom theme hero binds both artworks, the stock layouts one.
   function slideArtwork(m: Media | undefined): string[] {
@@ -327,6 +332,40 @@
   }
 </script>
 
+<!-- Themed slide indicator shared by the three hero layouts. `fallback` is the stock colour of the
+     layout it replaces; `place` positions the row. Buttons keep a finger-sized hit area via ::before,
+     which is why the drawn shape lives on an inner span (overflow:hidden on the button would clip
+     the hit area too). -->
+{#snippet slideIndicator(kind: NonNullable<HeroIndicator['style']>, fallback: string, place: string, defaultPosition: NonNullable<HeroIndicator['position']>)}
+  {@const position = indicator.position ?? defaultPosition}
+  {#if kind !== 'none' && medias.length > 1}
+    <div data-hero-indicator={kind} class="hero-indicator pointer-events-none z-20 items-center gap-1.5 {position === 'start' ? 'justify-start' : position === 'center' ? 'justify-center' : 'justify-end'} {place}" style:--hero-ind={indicatorColor ?? fallback}>
+      {#if kind === 'counter'}
+        <span class="rounded-full border border-white/15 bg-black/55 px-2.5 py-1 text-[0.68rem] tabular-nums font-black text-white shadow-lg backdrop-blur"><span style="color:var(--hero-ind)">{i + 1}</span><span class="text-white/60"> / {medias.length}</span></span>
+      {:else}
+        {#each medias as _, idx (idx)}
+          <button type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined} onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`} aria-current={idx === i ? 'true' : undefined}
+                  class="pointer-events-auto relative block before:absolute before:-inset-x-1.5 before:-inset-y-3 before:content-['']">
+            <span class="block overflow-hidden rounded-full transition-all duration-300
+              {kind === 'bars' ? `h-1 bg-white/25 ${idx === i ? 'w-10' : 'w-5'}` : ''}
+              {kind === 'dots' ? `size-1.5 ${idx === i ? '' : 'bg-white/40'}` : ''}
+              {kind === 'pills' ? `h-1.5 ${idx === i ? 'w-5' : 'w-1.5 bg-white/40'}` : ''}"
+              style:background={kind !== 'bars' && idx === i ? 'var(--hero-ind)' : undefined}>
+              {#if kind === 'bars'}
+                {#if idx === i}
+                  {#key cycle}<span class="hero-progress block h-full" style="background:var(--hero-ind)"></span>{/key}
+                {:else}
+                  <span class="block h-full origin-left" style="transform:scaleX({idx < i ? 1 : 0});background:var(--hero-ind)"></span>
+                {/if}
+              {/if}
+            </span>
+          </button>
+        {/each}
+      {/if}
+    </div>
+  {/if}
+{/snippet}
+
 {#if current && !heroTheme?.hidden}
   {#if heroTheme?.template}
     <section data-nav-row data-theme-hero aria-label="Featured" class="theme-custom-hero" class:theme-banner-scale={bannerScale} class:cursor-grab={$dragCarousels && medias.length > 1} class:cursor-grabbing={heroDragging} style:height={bannerScale ? undefined : `${($isMobile ? heroTheme.mobileHeight : heroTheme.height) ?? 46}vh`} style:--theme-hero-interval={`${DURATION}ms`} ontouchstart={onTouchStart} ontouchend={onTouchEnd} onpointerdown={onHeroPointerDown} onpointermove={onHeroPointerMove} onpointerup={(e) => endHeroPointer(e, true)} onpointercancel={(e) => endHeroPointer(e, false)} onwheel={onHeroWheel}>
@@ -351,6 +390,9 @@
             <ChevronRight size={23} />
           </span>
         </button>
+        {#if indicator.style}
+          {@render slideIndicator(indicator.style, '#ffffff', 'absolute inset-x-8 bottom-3 flex', 'start')}
+        {:else}
         <div class="hero-pips absolute bottom-3 left-8 z-20 flex items-center gap-2">
           {#each medias as _, idx (idx)}
             <button type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined} onclick={() => go(idx)} aria-label={`Featured title ${idx + 1}`}
@@ -364,6 +406,7 @@
             </button>
           {/each}
         </div>
+        {/if}
       {/if}
     </section>
   {:else if $isMobile && showOverlay}
@@ -453,7 +496,9 @@
             {/if}
           </div>
         {/if}
-        {#if medias.length > 1}
+        {#if indicator.style}
+          {@render slideIndicator(indicator.style, '#ffffff', 'mt-1.5 flex', 'center')}
+        {:else if medias.length > 1}
           <div class="mt-1.5 flex justify-center gap-1.5">
             {#each medias as _, idx (idx)}
               <!-- The dots are 6px tall; a finger needs more than that. The pseudo-element grows each
@@ -615,7 +660,9 @@
         </div>
         {/key}
 
-        {#if medias.length > 1}
+        {#if indicator.style}
+          {@render slideIndicator(indicator.style, 'var(--accent)', 'absolute inset-x-8 bottom-8 hidden sm:flex', 'end')}
+        {:else if medias.length > 1}
           <!-- Slide pips: hover/click targets are a desktop affordance; on mobile the row
                auto-advances (and would collide with the Watch/Details buttons), so hide them. -->
           <div class="absolute bottom-8 right-8 hidden gap-1.5 sm:flex">

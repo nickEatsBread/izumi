@@ -3999,6 +3999,12 @@ export async function playRawUrl(url: string, label: string, onState: (s: PlaySt
   catch (e) { onState({ status: 'error', message: String(e) }) }
 }
 
+/** Play any episode of the playing series from inside the player (a theme's docked episode rail).
+ *  Takes the Next button's route: the same release continues without the picker when a cached one
+ *  exists, otherwise the picker opens for that episode. */
+export function playEpisodeInPlayer(media: Media, episode: number, onState: (s: PlayState) => void = noticeState, autoplay = true) {
+  return resolveAndPlayBest(media, episode, onState, autoplay)
+}
 /** Play the previous episode (in-player button). No-op past episode 1. */
 export function playPrev(onState: (s: PlayState) => void = noticeState, autoplay = true) {
   const ep = get(nowPlaying).episode

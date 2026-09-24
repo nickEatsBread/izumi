@@ -38,8 +38,16 @@ export interface RowPresentation {
   radius?: number
   aspect?: 'poster' | 'landscape' | 'square'
   titleSize?: number
+  heading?: RowHeading
   card?: ThemeNode
 }
+/** Theme API 1 is the original contract; API 2 adds the phone block, bottom-bar and slide-marker
+ *  chrome, row headings, series tabs and the docked player. A package declares which it uses, so
+ *  a client that only knows API 1 refuses an API 2 package cleanly instead of failing mid-parse. */
+export type ThemeApi = 1 | 2
+/** Series-page tab strip: an underlined row, pills, an iOS-style segmented control, or a bar of
+ *  equal tabs with a tinted pill behind the active one (the two-tab Info/Watch bar of some apps). */
+export type DetailTabs = 'underline' | 'pills' | 'segmented' | 'bar'
 export interface DetailPresentation {
   layout?: DetailLayout
   bannerHidden?: boolean
@@ -51,7 +59,26 @@ export interface DetailPresentation {
   bannerHeight?: number
   /** `banner` sizes the series artwork to the window width (5:1, min 20rem), not viewport height. */
   bannerScale?: 'viewport' | 'banner'
+  tabs?: DetailTabs
   episodes?: { placement?: EpisodePlacement; arrangement?: EpisodeArrangement; hover?: EpisodeHover; order?: EpisodeOrderControl; search?: boolean; card?: ThemeNode }
+}
+/** The phone tab bar (and the desktop bottom bar when `nav` is `bottom`). */
+export interface BottomNavPresentation {
+  /** `bar` is flush and full width; `floating` is an inset rounded card; `pill` is a centred capsule. */
+  style?: 'bar' | 'floating' | 'pill'
+  labels?: 'always' | 'active' | 'none'
+  /** `pill` tints a capsule behind the active icon; `line` marks the top edge; `dot` sits under the label. */
+  indicator?: 'none' | 'pill' | 'line' | 'dot'
+  height?: number
+  iconSize?: number
+  radius?: number
+  background?: string
+  activeColor?: string
+  inactiveColor?: string
+  blur?: boolean
+  border?: boolean
+  /** `scroll` slides the bar away while scrolling down (the default); `never` keeps it put. */
+  hide?: 'scroll' | 'never'
 }
 export interface ShellPresentation {
   nav?: ThemeNavPlacement
@@ -60,16 +87,40 @@ export interface ShellPresentation {
   overlay?: 'none' | 'fade'
   /** `sink` darkens and nudges a control down while it is held. */
   press?: 'none' | 'sink'
+  bottomNav?: BottomNavPresentation
+}
+/** Where the video sits while playing windowed on desktop. `full` fills the window inside the
+ *  shell chrome; `docked` confines it to a 16:9 stage with the episode rail beside or below it. */
+export interface PlayerDock {
+  episodes?: 'right' | 'below'
+  /** Stage width as a percentage of the page width (the rail takes the rest when it sits beside). */
+  width?: number
+  align?: 'start' | 'center'
 }
 export interface PlayerPresentation {
   seekbarHeight?: number
   seekbarColor?: string
+  layout?: 'full' | 'docked'
+  dock?: PlayerDock
+}
+/** The featured banner's slide marker. */
+export interface HeroIndicator {
+  style?: 'bars' | 'dots' | 'pills' | 'counter' | 'none'
+  position?: 'start' | 'center' | 'end'
+  color?: string
+}
+/** Row heading chrome. `titleSize` on the row stays the size control. */
+export interface RowHeading {
+  weight?: number
+  transform?: 'none' | 'uppercase'
+  accent?: 'none' | 'bar' | 'dot' | 'underline'
+  viewMore?: 'text' | 'arrow' | 'hidden'
 }
 export interface ThemePresentation {
   density?: ThemeDensity
   hideCardLabels?: boolean
   trueBlack?: boolean
-  hero?: { hidden?: boolean; height?: number; mobileHeight?: number; rotate?: boolean; interval?: number; rankHidden?: boolean; rank?: ThemeNode; template?: ThemeNode; scale?: 'viewport' | 'banner' }
+  hero?: { hidden?: boolean; height?: number; mobileHeight?: number; rotate?: boolean; interval?: number; rankHidden?: boolean; rank?: ThemeNode; template?: ThemeNode; scale?: 'viewport' | 'banner'; indicator?: HeroIndicator }
   rows?: { defaults?: RowPresentation; byId?: Record<string, RowPresentation> }
   detail?: DetailPresentation
   shell?: ShellPresentation
@@ -172,19 +223,53 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
   }
   return node
 }
-function parseRow(value: unknown): RowPresentation {
-  const raw = record(value); only(raw, ['layout', 'width', 'gap', 'spacing', 'radius', 'aspect', 'titleSize', 'card'])
+/** Keys each API level accepts, so an API 1 package cannot smuggle API 2 chrome past an old client. */
+const api2 = (api: ThemeApi, keys: string[]) => (api >= 2 ? keys : [])
+function parseHeading(value: unknown): RowHeading {
+  const raw = record(value); only(raw, ['weight', 'transform', 'accent', 'viewMore'])
+  const result: RowHeading = {}
+  if (raw.weight !== undefined) result.weight = number(raw.weight, 400, 900)
+  if (raw.transform !== undefined) result.transform = choice(raw.transform, ['none', 'uppercase'])
+  if (raw.accent !== undefined) result.accent = choice(raw.accent, ['none', 'bar', 'dot', 'underline'])
+  if (raw.viewMore !== undefined) result.viewMore = choice(raw.viewMore, ['text', 'arrow', 'hidden'])
+  return result
+}
+function parseRow(value: unknown, api: ThemeApi): RowPresentation {
+  const raw = record(value); only(raw, ['layout', 'width', 'gap', 'spacing', 'radius', 'aspect', 'titleSize', 'card', ...api2(api, ['heading'])])
   const result: RowPresentation = {}
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['carousel', 'grid'])
   if (raw.aspect !== undefined) result.aspect = choice(raw.aspect, ['poster', 'landscape', 'square'])
   for (const [key, min, max] of [['width', 96, 400], ['gap', 0, 48], ['spacing', 0, 100], ['radius', 0, 48], ['titleSize', 12, 32]] as const) {
     if (raw[key] !== undefined) result[key] = number(raw[key], min, max)
   }
+  if (raw.heading !== undefined) result.heading = parseHeading(raw.heading)
   if (raw.card !== undefined) result.card = parseNode(raw.card, undefined, 0, false)
   return result
 }
-function parseDetail(value: unknown): DetailPresentation {
-  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'bannerScale', 'episodes'])
+function parseBottomNav(value: unknown): BottomNavPresentation {
+  const raw = record(value); only(raw, ['style', 'labels', 'indicator', 'height', 'iconSize', 'radius', 'background', 'activeColor', 'inactiveColor', 'blur', 'border', 'hide'])
+  const result: BottomNavPresentation = {}
+  if (raw.style !== undefined) result.style = choice(raw.style, ['bar', 'floating', 'pill'])
+  if (raw.labels !== undefined) result.labels = choice(raw.labels, ['always', 'active', 'none'])
+  if (raw.indicator !== undefined) result.indicator = choice(raw.indicator, ['none', 'pill', 'line', 'dot'])
+  if (raw.height !== undefined) result.height = number(raw.height, 44, 88)
+  if (raw.iconSize !== undefined) result.iconSize = number(raw.iconSize, 16, 30)
+  if (raw.radius !== undefined) result.radius = number(raw.radius, 0, 40)
+  for (const key of ['background', 'activeColor', 'inactiveColor'] as const) if (raw[key] !== undefined) result[key] = themeColor(raw[key])
+  for (const key of ['blur', 'border'] as const) if (raw[key] !== undefined) result[key] = flag(raw[key])
+  if (raw.hide !== undefined) result.hide = choice(raw.hide, ['scroll', 'never'])
+  return result
+}
+function parseIndicator(value: unknown): HeroIndicator {
+  const raw = record(value); only(raw, ['style', 'position', 'color'])
+  const result: HeroIndicator = {}
+  if (raw.style !== undefined) result.style = choice(raw.style, ['bars', 'dots', 'pills', 'counter', 'none'])
+  if (raw.position !== undefined) result.position = choice(raw.position, ['start', 'center', 'end'])
+  if (raw.color !== undefined) result.color = themeColor(raw.color)
+  return result
+}
+function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
+  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'bannerScale', 'episodes', ...api2(api, ['tabs'])])
   const result: DetailPresentation = {}
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['stack', 'split', 'overlay'])
   if (raw.bannerHidden !== undefined) result.bannerHidden = flag(raw.bannerHidden)
@@ -195,6 +280,7 @@ function parseDetail(value: unknown): DetailPresentation {
   if (raw.cta !== undefined) result.cta = choice(raw.cta, ['default', 'large'])
   if (raw.bannerHeight !== undefined) result.bannerHeight = number(raw.bannerHeight, 18, 60)
   if (raw.bannerScale !== undefined) result.bannerScale = choice(raw.bannerScale, ['viewport', 'banner'])
+  if (raw.tabs !== undefined) result.tabs = choice(raw.tabs, ['underline', 'pills', 'segmented', 'bar'])
   if (raw.episodes !== undefined) {
     const episodes = record(raw.episodes); only(episodes, ['placement', 'arrangement', 'hover', 'order', 'search', 'card'])
     result.episodes = {}
@@ -207,20 +293,29 @@ function parseDetail(value: unknown): DetailPresentation {
   }
   return result
 }
-function parseShell(value: unknown): ShellPresentation {
-  const raw = record(value); only(raw, ['nav', 'compact', 'overlay', 'press'])
+function parseShell(value: unknown, api: ThemeApi): ShellPresentation {
+  const raw = record(value); only(raw, ['nav', 'compact', 'overlay', 'press', ...api2(api, ['bottomNav'])])
   const result: ShellPresentation = {}
   if (raw.nav !== undefined) result.nav = choice(raw.nav, ['sidebar', 'top', 'bottom'])
   if (raw.compact !== undefined) result.compact = flag(raw.compact)
   if (raw.overlay !== undefined) result.overlay = choice(raw.overlay, ['none', 'fade'])
   if (raw.press !== undefined) result.press = choice(raw.press, ['none', 'sink'])
+  if (raw.bottomNav !== undefined) result.bottomNav = parseBottomNav(raw.bottomNav)
   return result
 }
-function parsePlayer(value: unknown): PlayerPresentation {
-  const raw = record(value); only(raw, ['seekbarHeight', 'seekbarColor'])
+function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
+  const raw = record(value); only(raw, ['seekbarHeight', 'seekbarColor', ...api2(api, ['layout', 'dock'])])
   const result: PlayerPresentation = {}
   if (raw.seekbarHeight !== undefined) result.seekbarHeight = number(raw.seekbarHeight, 2, 16)
   if (raw.seekbarColor !== undefined) result.seekbarColor = themeColor(raw.seekbarColor)
+  if (raw.layout !== undefined) result.layout = choice(raw.layout, ['full', 'docked'])
+  if (raw.dock !== undefined) {
+    const dock = record(raw.dock); only(dock, ['episodes', 'width', 'align'])
+    result.dock = {}
+    if (dock.episodes !== undefined) result.dock.episodes = choice(dock.episodes, ['right', 'below'])
+    if (dock.width !== undefined) result.dock.width = number(dock.width, 50, 100)
+    if (dock.align !== undefined) result.dock.align = choice(dock.align, ['start', 'center'])
+  }
   return result
 }
 function parseCards(value: unknown): NonNullable<ThemePresentation['cards']> {
@@ -232,20 +327,23 @@ function parseCards(value: unknown): NonNullable<ThemePresentation['cards']> {
   return result
 }
 const MOBILE_KEYS = ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'player', 'cards']
-function parseMobile(value: unknown): MobilePresentation {
+function parseMobile(value: unknown, api: ThemeApi): MobilePresentation {
   const raw = record(value); only(raw, MOBILE_KEYS)
-  return parsePresentation(raw)
+  return parsePresentation(raw, api)
 }
-export function parsePresentation(value: unknown): ThemePresentation {
+/** Validate a presentation. `api` is the package's declared theme API: API 1 packages get the
+ *  original key set (so they behave identically on every client), API 2 the additions. Personal
+ *  Theme Studio designs and previews use the newest API. */
+export function parsePresentation(value: unknown, api: ThemeApi = 2): ThemePresentation {
   const raw = record(value)
-  only(raw, ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'shell', 'player', 'cards', 'mobile'])
+  only(raw, ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'shell', 'player', 'cards', ...api2(api, ['mobile'])])
   const result: ThemePresentation = {}
-  if (raw.mobile !== undefined) result.mobile = parseMobile(raw.mobile)
+  if (raw.mobile !== undefined) result.mobile = parseMobile(raw.mobile, api)
   if (raw.density !== undefined) result.density = choice(raw.density, ['compact', 'comfortable', 'large'])
   if (raw.hideCardLabels !== undefined) result.hideCardLabels = flag(raw.hideCardLabels)
   if (raw.trueBlack !== undefined) result.trueBlack = flag(raw.trueBlack)
   if (raw.hero !== undefined) {
-    const hero = record(raw.hero); only(hero, ['hidden', 'height', 'mobileHeight', 'rotate', 'interval', 'rankHidden', 'rank', 'template', 'scale'])
+    const hero = record(raw.hero); only(hero, ['hidden', 'height', 'mobileHeight', 'rotate', 'interval', 'rankHidden', 'rank', 'template', 'scale', ...api2(api, ['indicator'])])
     result.hero = {}
     for (const key of ['hidden', 'rotate', 'rankHidden'] as const) if (hero[key] !== undefined) result.hero[key] = flag(hero[key])
     for (const key of ['height', 'mobileHeight'] as const) if (hero[key] !== undefined) result.hero[key] = number(hero[key], 24, 75)
@@ -253,22 +351,23 @@ export function parsePresentation(value: unknown): ThemePresentation {
     if (hero.interval !== undefined) result.hero.interval = number(hero.interval, 5, 60)
     if (hero.rank !== undefined) result.hero.rank = parseNode(hero.rank, undefined, 0, false)
     if (hero.template !== undefined) result.hero.template = parseNode(hero.template)
+    if (hero.indicator !== undefined) result.hero.indicator = parseIndicator(hero.indicator)
   }
   if (raw.rows !== undefined) {
     const rows = record(raw.rows); only(rows, ['defaults', 'byId']); result.rows = {}
-    if (rows.defaults !== undefined) result.rows.defaults = parseRow(rows.defaults)
+    if (rows.defaults !== undefined) result.rows.defaults = parseRow(rows.defaults, api)
     if (rows.byId !== undefined) {
       const byId = record(rows.byId)
       if (Object.keys(byId).length > 100) throw new Error('Too many row overrides.')
       result.rows.byId = Object.fromEntries(Object.entries(byId).map(([id, row]) => {
         if (!/^[a-z0-9][a-z0-9:._/-]{0,199}$/i.test(id) || ['__proto__', 'constructor', 'prototype'].includes(id)) throw new Error('Invalid theme row identity.')
-        return [id, parseRow(row)]
+        return [id, parseRow(row, api)]
       }))
     }
   }
-  if (raw.detail !== undefined) result.detail = parseDetail(raw.detail)
-  if (raw.shell !== undefined) result.shell = parseShell(raw.shell)
-  if (raw.player !== undefined) result.player = parsePlayer(raw.player)
+  if (raw.detail !== undefined) result.detail = parseDetail(raw.detail, api)
+  if (raw.shell !== undefined) result.shell = parseShell(raw.shell, api)
+  if (raw.player !== undefined) result.player = parsePlayer(raw.player, api)
   if (raw.cards !== undefined) result.cards = parseCards(raw.cards)
   return result
 }
@@ -376,8 +475,30 @@ export function resolveDetail(layout?: ThemePresentation): Required<Pick<DetailP
     cta: detail.cta,
     bannerHeight: detail.bannerHeight,
     bannerScale: detail.bannerScale,
+    tabs: detail.tabs,
     episodes: { placement, arrangement: detail.episodes?.arrangement, hover: detail.episodes?.hover, order: detail.episodes?.order, search: detail.episodes?.search, card: detail.episodes?.card },
   }
+}
+/** The windowed desktop player layout with its defaults filled in. */
+export function resolvePlayerDock(layout?: ThemePresentation): { docked: boolean; episodes: 'right' | 'below'; width: number; align: 'start' | 'center' } {
+  const player = layout?.player
+  return {
+    docked: player?.layout === 'docked',
+    episodes: player?.dock?.episodes ?? 'right',
+    width: player?.dock?.width ?? (player?.dock?.episodes === 'below' ? 100 : 68),
+    align: player?.dock?.align ?? 'start',
+  }
+}
+/** `color` values from a template or chrome block as CSS, optionally at a reduced alpha. */
+export function themeColorCss(value: string | undefined, alpha?: number): string | undefined {
+  if (!value) return undefined
+  if (value === 'transparent') return value
+  if (value.startsWith('#')) {
+    if (alpha === undefined) return value
+    const hex = Math.round(Math.max(0, Math.min(1, alpha)) * 255).toString(16).padStart(2, '0')
+    return `${value.slice(0, 7)}${hex}`
+  }
+  return alpha === undefined ? `hsl(var(--${value}))` : `hsl(var(--${value}) / ${alpha})`
 }
 /** Right-hand episode rail is desktop-only. Narrow viewports fall back to a rail below the info column. */
 export function episodesOnSide(layout?: ThemePresentation, desktop = true): boolean {

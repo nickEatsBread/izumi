@@ -61,6 +61,12 @@
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
   import X from '@lucide/svelte/icons/x'
   import PlayIcon from '@lucide/svelte/icons/play'
+  import { isMobile } from '$lib/platform'
+  import { themePresentation, shellNav } from '$lib/themes/runtime'
+  import { resolvePlayerDock } from '$lib/themes/presentation'
+  import { playerStage } from '$lib/player/session'
+  import { measureStage } from '$lib/player/insets'
+  import DockEpisodes from './DockEpisodes.svelte'
   import PauseIcon from '@lucide/svelte/icons/pause'
   import PartyPresence from '$lib/components/watch/PartyPresence.svelte'
   import { matchRememberedTrack, rememberedSeriesTrack } from '$lib/player/track-preferences'
@@ -126,6 +132,15 @@
   // composites this webview live over the layer-shell video; XWayland keeps the established
   // native-OSD/bitmap bridge. On touch, a tap reveals the auto-hiding controls.
   const gmMode = $derived($gameMode)
+  // Browse chrome is around the video (windowed playback): the root is inset from the edge the
+  // navigation occupies and reports its geometry to the native surface.
+  const windowedChrome = $derived(!$fullscreen && !gmMode && !$pictureInPicture)
+  // A theme's docked watch layout: the video keeps to a stage with the episode rail beside or below
+  // it while the browse chrome stays. Phones, fullscreen, picture-in-picture and Game mode keep the
+  // whole container — there is no room to give up there.
+  const dock = $derived(resolvePlayerDock($themePresentation))
+  const docked = $derived(dock.docked && windowedChrome && !$isMobile)
+  const bottomNavInset = 'calc(var(--theme-bottom-nav, 4rem) + env(safe-area-inset-bottom))'
   const controllerInputMode = $derived(gmMode || $controllerMode)
   const gmBitmapMode = $derived(usesGameModeBitmapCompositor(gmMode, $playerCompositorPath))
   function onOverlayTap(e: MouseEvent) {
@@ -262,6 +277,26 @@
   }
   const drmActive = $derived(!!$nowPlayingStream.drm)
   let overlayRoot = $state<HTMLDivElement | undefined>(undefined)
+  // The root's edges as fractions of a full-viewport probe (zoom-agnostic), handed to the app shell
+  // as `playerStage` for the native insets. Size changes arrive through ResizeObserver; a re-docked
+  // layout or a moved navigation bar re-runs the effect, and the frame after mount settles layout.
+  let viewportProbe = $state<HTMLDivElement | undefined>(undefined)
+  $effect(() => {
+    void docked
+    void $shellNav
+    const root = overlayRoot
+    const probe = viewportProbe
+    if (!windowedChrome || !root || !probe) { playerStage.set(null); return }
+    const measure = () => playerStage.set(measureStage(root.getBoundingClientRect(), probe.getBoundingClientRect()))
+    measure()
+    const frame = requestAnimationFrame(measure)
+    const observer = new ResizeObserver(measure)
+    observer.observe(root)
+    observer.observe(probe)
+    window.addEventListener('resize', measure)
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener('resize', measure) }
+  })
+  $effect(() => () => playerStage.set(null))
   let lastDrmError = ''
   function cmd(name: string, args: string[] = []): Promise<void> {
     if (name === 'seek' && remoteCastOwnsPlayback) {
@@ -1500,16 +1535,35 @@
      visible and clickable while playing. Cursor hides when the controls auto-hide over the
      video (and always in game mode). cursor-pointer/none are mutually exclusive so neither
      conflicting utility wins by stylesheet order. -->
+{#if windowedChrome}
+  <!-- Full-viewport probe: the root's edges are measured against it (see the `playerStage` effect). -->
+  <div bind:this={viewportProbe} aria-hidden="true" class="pointer-events-none invisible fixed inset-0"></div>
+{/if}
+<!-- Docked watch layout (theme `player.layout: "docked"`): the browse chrome stays, the video keeps
+     to a stage of `dock.width` percent and the episode rail sits beside or below it. Otherwise the
+     wrapper is `display: contents` and the root is the whole container: right of the sidebar rail,
+     below a top bar or above a bottom bar — never a blank rail beside a top bar. -->
+<div
+  class={docked ? `izumi-player-dock fixed z-20 flex bg-background ${dock.episodes === 'below' ? 'flex-col' : 'flex-row'} ${dock.align === 'center' ? 'items-center' : 'items-start'}` : 'contents'}
+  style:left={docked ? ($shellNav === 'sidebar' ? '3.5rem' : '0') : undefined}
+  style:top={docked ? ($shellNav === 'top' ? '4.75rem' : '0') : undefined}
+  style:right={docked ? '0' : undefined}
+  style:bottom={docked ? ($shellNav === 'bottom' ? bottomNavInset : '0') : undefined}
+>
 <div
   bind:this={overlayRoot}
   tabindex="-1"
-  class="izumi-player-root fixed inset-y-0 right-0 z-20 overscroll-none select-none outline-none focus:outline-none focus-visible:outline-none"
+  class="izumi-player-root {docked ? 'relative aspect-video shrink-0 overflow-hidden bg-black' : 'fixed inset-y-0 right-0'} z-20 overscroll-none select-none outline-none focus:outline-none focus-visible:outline-none"
   class:touch-none={!$commentsOpen}
   class:touch-auto={$commentsOpen}
   class:cursor-pointer={!gmMode && controlsVisible}
   class:cursor-none={gmMode || !controlsVisible}
-  class:left-14={!$fullscreen && !gmMode && !$pictureInPicture}
-  class:left-0={$fullscreen || gmMode || $pictureInPicture}
+  class:left-14={!docked && windowedChrome && $shellNav === 'sidebar'}
+  class:left-0={docked || !windowedChrome || $shellNav !== 'sidebar'}
+  style:width={docked ? `${dock.width}%` : undefined}
+  style:max-height={docked ? (dock.episodes === 'below' ? '70%' : '100%') : undefined}
+  style:top={!docked && windowedChrome && $shellNav === 'top' ? '4.75rem' : undefined}
+  style:bottom={!docked && windowedChrome && $shellNav === 'bottom' ? bottomNavInset : undefined}
   onclick={onOverlayTap}
   onclickcapture={captureOverlayClick}
   ontouchstart={onOverlayTouchStart}
@@ -1653,4 +1707,10 @@
       onclose={() => { subtitleEditorOpen = false; poke() }}
     />
   {/if}
+</div>
+{#if docked}
+  <aside data-theme-surface="player-rail" class="izumi-player-rail flex min-h-0 min-w-0 flex-1 flex-col border-border bg-background {dock.episodes === 'below' ? 'w-full border-t' : 'h-full border-l'}">
+    <DockEpisodes orientation={dock.episodes} />
+  </aside>
+{/if}
 </div>

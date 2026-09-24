@@ -61,6 +61,13 @@ function apply() {
     const color = presentation.player.seekbarColor
     root.style.setProperty('--theme-seekbar-color', color.startsWith('#') || color === 'transparent' ? color : `hsl(var(--${color}))`)
   } else root.style.removeProperty('--theme-seekbar-color')
+  // The page keeps its bottom margin clear of the tab bar; a taller or floating bar needs more.
+  const bottomNav = presentation?.shell?.bottomNav
+  if (bottomNav) {
+    const height = bottomNav.height ?? 56
+    const clearance = bottomNav.style === 'pill' ? 32 : bottomNav.style === 'floating' ? 24 : 8
+    root.style.setProperty('--theme-bottom-nav', `${height + clearance}px`)
+  } else root.style.removeProperty('--theme-bottom-nav')
   root.classList.toggle('a11y-high-contrast', get(highContrast))
   root.classList.toggle('a11y-large-targets', get(largeInteractionTargets))
   root.classList.toggle('a11y-reduce-motion', get(motionPreference) === 'reduce')

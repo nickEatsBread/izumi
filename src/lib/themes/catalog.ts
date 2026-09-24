@@ -1,5 +1,5 @@
 import { phttp } from '$lib/net/http'
-import { MAX_THEME_BYTES, THEME_API, THEME_CATALOG_URL, parseCatalog, parseRelease, parseThemePackage, parseSharedTheme, themeUrl, type PreparedTheme, type ThemeCatalog, type ThemeRelease } from './packages'
+import { MAX_THEME_BYTES, SUPPORTED_THEME_APIS, THEME_API, THEME_CATALOG_URL, parseCatalog, parseRelease, parseThemePackage, parseSharedTheme, themeUrl, type PreparedTheme, type ThemeCatalog, type ThemeRelease } from './packages'
 
 const CACHE_KEY = 'theme-catalog-cache-v1'
 const encoder = new TextEncoder()
@@ -73,7 +73,7 @@ export async function verifyRelease(body: string, release: ThemeRelease): Promis
   if (digest !== release.sha256) throw new Error('The downloaded theme does not match its listing checksum.')
 }
 export async function prepareRelease(release: ThemeRelease, origin = THEME_CATALOG_URL, updateUrl?: string, signal?: AbortSignal): Promise<PreparedTheme> {
-  if (release.themeApi !== THEME_API) throw new Error('This theme needs a different client theme API.')
+  if (!SUPPORTED_THEME_APIS.includes(release.themeApi)) throw new Error(release.themeApi > THEME_API ? 'This theme needs a newer izumi. Update the client to install it.' : 'This theme needs a different client theme API.')
   const body = await fetchThemeText(release.download, MAX_THEME_BYTES, signal)
   await verifyRelease(body, release)
   const pkg = parseThemePackage(JSON.parse(body))

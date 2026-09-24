@@ -6,7 +6,7 @@
   import Palette from '@lucide/svelte/icons/palette'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import { collectLocalThemes, loadThemeCatalog, prepareRelease, prepareThemeLink } from '$lib/themes/catalog'
-  import { THEME_API, THEME_CATALOG_PROJECT_URL, newerVersion, type PreparedTheme, type ThemeRelease } from '$lib/themes/packages'
+  import { THEME_API, SUPPORTED_THEME_APIS, THEME_CATALOG_PROJECT_URL, newerVersion, platformLabel, type PreparedTheme, type ThemePlatform, type ThemeRelease } from '$lib/themes/packages'
   import { installedThemes, installTheme, applyInstalledTheme, removeInstalledTheme, rollbackTheme, previewTheme, isCatalogTheme, type InstalledTheme } from '$lib/themes/installed'
   import { themeStudioOpen } from '$lib/settings/theme-studio-session'
   import { activeStudioThemeId, studioThemes } from '$lib/settings/theme-studio'
@@ -29,7 +29,15 @@
   let batch = $state<PreparedTheme[]>([])
   let batchErrors = $state<string[]>([])
   let abort: AbortController | undefined
-  const filtered = $derived(entries.filter(entry => `${entry.name} ${entry.author} ${entry.description} ${entry.tags.join(' ')}`.toLowerCase().includes(query.toLowerCase())))
+  // Platform filter: a listing without `platforms` serves both layouts, so it stays under every filter.
+  let platform = $state<'all' | ThemePlatform>('all')
+  const PLATFORMS: { id: 'all' | ThemePlatform; label: string }[] = [{ id: 'all', label: 'All' }, { id: 'desktop', label: 'Desktop' }, { id: 'phone', label: 'Phone' }]
+  const forPlatform = (entry: ThemeRelease) => platform === 'all' || !entry.platforms?.length || entry.platforms.includes(platform)
+  const filtered = $derived(entries.filter(entry => forPlatform(entry) && `${entry.name} ${entry.author} ${entry.description} ${entry.tags.join(' ')}`.toLowerCase().includes(query.toLowerCase())))
+  // A listing built for a newer theme API than this client renders is shown but not installable;
+  // one for an older API this client still reads installs as usual.
+  const supported = (entry: ThemeRelease) => SUPPORTED_THEME_APIS.includes(entry.themeApi)
+  const apiNote = (entry: ThemeRelease) => entry.themeApi > THEME_API ? 'Needs a newer izumi' : 'Requires a different theme API'
   const failure = (cause: unknown) => cause instanceof Error ? cause.message : 'The theme could not be loaded.'
   // Install state matches on id AND origin: a same-ID package from another location can never
   // replace this install, so it must not drive the version comparison or the Update button.
@@ -158,16 +166,16 @@
   {#if selected || prepared}
     <section class="theme-detail" aria-busy={busy}>
       <button class="back" data-focusable disabled={busy} onclick={() => { selected = null; prepared = null; error = '' }}><ArrowLeft size={16} /> Back to themes</button>
-      <div class="detail-grid"><div class="preview-image">{#if selected?.preview}<img src={selected.preview} alt={`${selected.name} layout preview`} referrerpolicy="no-referrer" />{:else}<Palette size={72} strokeWidth={1} />{/if}</div><div><p class="eyebrow">{prepared?.package.author ?? selected?.author}</p><h3>{prepared?.package.name ?? selected?.name}</h3><p class="description">{prepared?.package.description ?? selected?.description}</p><p class="version">Version {prepared?.package.version ?? selected?.version} · Desktop & mobile</p>
+      <div class="detail-grid"><div class="preview-image">{#if selected?.preview}<img src={selected.preview} alt={`${selected.name} layout preview`} referrerpolicy="no-referrer" />{:else}<Palette size={72} strokeWidth={1} />{/if}</div><div><p class="eyebrow">{prepared?.package.author ?? selected?.author}</p><h3>{prepared?.package.name ?? selected?.name}</h3><p class="description">{prepared?.package.description ?? selected?.description}</p><p class="version">Version {prepared?.package.version ?? selected?.version} · {platformLabel(selected?.platforms)}</p>
         {#if prepared}<div class="theme-actions"><button class="control" data-focusable disabled={$themeStudioOpen || !canInstall} onclick={preview}>Preview in client</button><button class="control primary" data-focusable disabled={$themeStudioOpen || !canInstall} onclick={install}>{currentInstall ? canInstall ? 'Update & apply' : 'Installed' : 'Install & apply'}</button></div>{#if originConflict}<p class="detail-hint">A theme with this ID is already installed from a different source. Remove it there before installing this one.</p>{:else}<p class="detail-hint">You can edit this theme in Theme Studio after installing it.</p>{/if}{:else if busy}<p role="status">Checking theme package…</p>{/if}
       </div></div>
     </section>
   {:else if tab === 'browse'}
-    <div class="browse-tools"><label class="search"><Search size={18} /><input bind:value={query} aria-label="Search themes" placeholder="Search themes, authors or styles" data-focusable /></label><button class="control" data-focusable disabled={loading} onclick={refresh}>Refresh</button></div>
+    <div class="browse-tools"><label class="search"><Search size={18} /><input bind:value={query} aria-label="Search themes" placeholder="Search themes, authors or styles" data-focusable /></label><div class="platform-filter" role="group" aria-label="Show themes for">{#each PLATFORMS as option (option.id)}<button type="button" data-focusable aria-pressed={platform === option.id} onclick={() => platform = option.id}>{option.label}</button>{/each}</div><button class="control" data-focusable disabled={loading} onclick={refresh}>Refresh</button></div>
     {#if cached}<p class="message">Showing the saved catalog. Refresh when you’re back online.</p>{/if}
     {#if loading && !entries.length}<div class="theme-grid" aria-label="Loading themes" aria-busy="true">{#each [1, 2, 3] as item}<div class="skeleton" aria-hidden="true"></div>{/each}</div>
     {:else if !filtered.length}<div class="empty"><Palette size={36} /><h3>{entries.length ? 'No matching themes' : 'Your next look starts here'}</h3><p>{entries.length ? 'Try another name or style.' : 'Refresh the catalog, or add a theme from a link, file or folder.'}</p></div>
-    {:else}<div class="theme-grid">{#each filtered as entry (entry.id)}<article><button class="theme-card" data-focusable disabled={busy || entry.themeApi !== THEME_API} onclick={() => inspect(entry)}><div class="thumbnail">{#if entry.preview}<img src={entry.preview} alt={`${entry.name} layout preview`} loading="lazy" referrerpolicy="no-referrer" />{:else}<Palette size={42} />{/if}</div><div class="card-title"><h3>{entry.name}</h3>{#if $installedThemes.some(item => item.id === entry.id)}<span>Installed</span>{/if}</div><p class="author">By {entry.author}</p><p class="summary">{entry.description}</p><p class="tags">{entry.themeApi !== THEME_API ? 'Requires a different theme API' : entry.tags.join(' · ')}</p></button></article>{/each}</div>{/if}
+    {:else}<div class="theme-grid">{#each filtered as entry (entry.id)}<article><button class="theme-card" data-focusable disabled={busy || !supported(entry)} onclick={() => inspect(entry)}><div class="thumbnail">{#if entry.preview}<img src={entry.preview} alt={`${entry.name} layout preview`} loading="lazy" referrerpolicy="no-referrer" />{:else}<Palette size={42} />{/if}</div><div class="card-title"><h3>{entry.name}</h3>{#if $installedThemes.some(item => item.id === entry.id)}<span>Installed</span>{/if}</div><p class="author">By {entry.author} · <span class="platform">{platformLabel(entry.platforms)}</span></p><p class="summary">{entry.description}</p><p class="tags">{supported(entry) ? entry.tags.join(' · ') : apiNote(entry)}</p></button></article>{/each}</div>{/if}
   {:else}
     <div class="default-theme"><div><strong>Izumi default</strong><p>The original appearance is always available.</p></div><button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => { $themePreset = 'izumi'; notice = 'Default appearance restored.' }}>Use default</button></div>
     {#each $installedThemes as item (item.id)}<article class="installed-theme"><div><h3>{item.package.name}</h3><p>By {item.package.author} · {item.package.version}{#if $themePreset === 'custom' && $activeStudioThemeId === item.designId} · Applied{/if}</p><p class="summary">{item.package.description}</p></div><div class="installed-actions"><button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => apply(item)}>Apply</button>{#if isCatalogTheme(item) || item.updateUrl}<button class="control" data-focusable disabled={busy || $themeStudioOpen} onclick={() => update(item)}>Check update</button>{/if}{#if item.previous}<button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => restore(item)}>Restore previous</button>{/if}<button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => remove(item)}>Remove</button></div></article>{/each}
@@ -194,6 +202,10 @@
   button:disabled { opacity: .45; cursor: not-allowed; }
   .browse-tools { margin: 24px 0; }
   .search { display: flex; align-items: center; gap: 10px; color: hsl(var(--muted-foreground)); flex: 1; min-width: 180px; max-width: 420px; border-bottom: 1px solid hsl(var(--border)); }
+  .platform-filter { display: flex; gap: 4px; padding: 3px; border-radius: 999px; background: hsl(var(--muted)); }
+  .platform-filter button { min-height: 32px; padding: 0 14px; border-radius: 999px; font-size: 12px; font-weight: 800; color: hsl(var(--muted-foreground)); }
+  .platform-filter button[aria-pressed="true"] { background: hsl(var(--background)); color: hsl(var(--foreground)); box-shadow: 0 1px 2px hsl(0 0% 0% / .2); }
+  .platform { color: hsl(var(--foreground) / .75); }
   input { background: transparent; color: hsl(var(--foreground)); min-height: 44px; min-width: 0; width: 100%; font-size: 14px; }
   input::placeholder { color: hsl(var(--muted-foreground)); }
   .theme-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 245px), 1fr)); gap: 28px 22px; }
