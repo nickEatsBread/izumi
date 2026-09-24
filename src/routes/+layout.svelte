@@ -29,6 +29,10 @@
     try { return getCurrentWindow().label === 'capture-controls' }
     catch { return false }
   })()
+  const skipSpeculativeNetwork = () => {
+    const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
+    return !navigator.onLine || connection?.saveData === true
+  }
   onMount(() => {
     // The controls mirror is a deliberately inert second WebView. Starting the normal client
     // services here would duplicate sync, update, DHT and notification work while recording.
@@ -43,6 +47,17 @@
     // user never waits for the speculative delay; ordinary launches get a quiet shell first.
     void scheduleBootWork('torrent', async () => {
       if (get(torrentPlaybackMode) !== 'direct' && get(debridKey)) return
+      // Once started, the engine (librqbit session + DHT) lives for the process. A fresh install
+      // that only streams through online-source extensions, or has no source at all, would pay
+      // that for nothing; the same goes for an offline or data-saver link. torrent_playback_url
+      // starts the engine lazily and Play promotes this task, so skipping here costs only the
+      // first torrent play's bootstrap.
+      if (skipSpeculativeNetwork()) return
+      const { enabledAddonUrls } = await import('$lib/stremio/sources')
+      if (!get(enabledAddonUrls).length) {
+        const { hasConfiguredExtensions } = await import('$lib/extensions/manager')
+        if (!await hasConfiguredExtensions()) return
+      }
       try {
         const socksProxyUrl = torrentProxyEndpoint(get(torrentProxyEnabled), get(torrentProxyUrl))
         const bindInterface = get(torrentBindInterface).trim() || null

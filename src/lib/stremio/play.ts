@@ -16,6 +16,7 @@ import { dedupeStreams } from './dedupe'
 import { normalizeStreamBehavior } from './stream-behavior'
 import { shouldShowCachingScreen } from './caching-screen'
 import type { RankOptions } from './addon'
+import { swarmSupplied } from './ranking'
 import { continuityChoice, scoreInfo } from './score'
 import { directMetadataPrefetchKey, directMetadataPrefetchRequest } from './direct-metadata-prefetch'
 import { developerConsoleEnabled } from '$lib/debug/log-gate'
@@ -229,10 +230,14 @@ export type PlayEpisodeOptions = {
   /** Isolated state used by background TV resolution so it cannot replace the local picker. */
   pickerStore?: Writable<StreamPickerState | null>
   resolveSession?: ResolveSession
+  /** An in-place episode advance from inside playback: a docked Android mini-player stays docked. */
+  keepMini?: boolean
 }
 
 export type PlayStreamOptions = {
   autoplay?: boolean
+  /** See PlayEpisodeOptions.keepMini. */
+  keepMini?: boolean
   /** Play this torrent through the local P2P engine even when a debrid key is configured — the
    * picker's "Watch this P2P?" retry after the debrid service blocked the release. */
   forceDirect?: boolean
@@ -1291,9 +1296,16 @@ export function pickDirectPreloadCandidate(
   if (!hint) return undefined
   const eligible = streams.filter((stream) =>
     !!stream.infoHash && !(want && isWrongSeason(stream, want)))
-  return eligible.find((stream) =>
+  const exact = eligible.find((stream) =>
     !!hint.infoHash && stream.infoHash?.toLowerCase() === hint.infoHash.toLowerCase())
-    ?? eligible.find((stream) => matchesRelease(stream, hint))
+  if (exact) return exact
+  // Several rows can carry the same release (a per-episode file on two indexers, a pack and the
+  // single). The preloader used to take the first in addon order, which is how a 0-seeder copy got
+  // warmed while an 800-seeder copy of the same release sat one row down. Known-dead rows are out;
+  // the best-seeded one leads and the addon's order breaks ties (unreported counts sort last).
+  const sameRelease = eligible.filter((stream) =>
+    matchesRelease(stream, hint) && describe(stream).seeders !== 0)
+  return sameRelease.sort((a, b) => (describe(b).seeders ?? -1) - (describe(a).seeders ?? -1))[0]
 }
 // The continuity hint for the NEXT episode of `media`: the release identity of what's
 // playing now. undefined when continuity is off, nothing is playing, or it's a different
@@ -1903,6 +1915,8 @@ export async function playEpisode(
     resolving: true,
     continuationPending: continuationPriorityMs > 0,
     hidden: hideForContinuation,
+    continuationOpen: !!cont && hideForContinuation,
+    keepMini: options.keepMini,
     manualOnly: options.forceManual,
     forceAuto: options.forceAuto,
     companion: options.companion,
@@ -1927,7 +1941,7 @@ export async function playEpisode(
     hideForContinuation = remoteHidden
     if (!options.remoteOnly) connecting.set(null)
     if (!stillCurrent()) return
-    pickerStore.update((c) => c ? { ...c, hidden: remoteHidden } : c)
+    pickerStore.update((c) => c ? { ...c, hidden: remoteHidden, continuationOpen: false } : c)
   }
   const showPickerError = (message: string) => {
     if (!stillCurrent()) return
@@ -2121,7 +2135,7 @@ export async function playEpisode(
           const result = applyContinuationState(state, () => pickerStore.set(null), onState)
           played ||= result.played
           continuationError ||= result.error
-        }, { autoplay, automatic: true, startSeconds: options.startSeconds })
+        }, { autoplay, automatic: true, startSeconds: options.startSeconds, keepMini: options.keepMini })
         return played
       })().finally(() => {
         continuationPending = false
@@ -2140,6 +2154,14 @@ export async function playEpisode(
     const READY_HELD_MS = 350
     const READY_INSTANT_MS = 1500
     const READY_COLD_MS = directP2pEnabled() ? READY_INSTANT_MS : 4000
+    // A held pick that the swarm has to feed, and whose health is weak or unreported, is not worth
+    // committing to after 350ms: the sources still in flight are exactly where the well-seeded copy
+    // tends to come from (the extension wave lands after the first addon), and the commit aborts
+    // discovery. Such a pick waits until this long after the first result, or until every source
+    // has settled, whichever is first. A healthy swarm, an instant row and a settled list all still
+    // go at the usual pace.
+    const READY_WEAK_SWARM_MS = 4000
+    const WEAK_SWARM_SEEDERS = 50
     let autoReady = false
     let resolveSettled = false
     let firstResultAt = 0
@@ -2183,6 +2205,10 @@ export async function playEpisode(
         const key = top.url ?? top.infoHash ?? ''
         if (key !== heldKey) { heldKey = key; heldSince = now }
         deadline = heldSince + READY_HELD_MS
+        const topInfo = describe(top)
+        if (swarmSupplied(topInfo, options) && (topInfo.seeders ?? 0) < WEAK_SWARM_SEEDERS) {
+          deadline = Math.max(deadline, firstResultAt + READY_WEAK_SWARM_MS)
+        }
       } else {
         heldKey = ''; heldSince = 0
         const instant = s.some((x) => !!x.url && !isUncached(x))
@@ -2198,6 +2224,7 @@ export async function playEpisode(
           waitFromFirstResultMs: firstResultAt ? Date.now() - firstResultAt : 0,
           seasonSettled,
           heldTopCandidate: !!heldKey,
+          heldForWeakSwarm: readyAt > heldSince + READY_HELD_MS,
         })
         if (stillCurrent()) paint(true)
       }, Math.max(0, deadline - now))
@@ -2237,6 +2264,10 @@ export async function playEpisode(
         autoReady,
         continuationPending,
         hidden: hideForContinuation,
+        // Settled with no same-release row means the continuation is off the table; the reveal
+        // below follows and the ordinary automatic choice takes over.
+        continuationOpen: !!cont && hideForContinuation && !continuationAttempted && resolving,
+        keepMini: options.keepMini,
         manualOnly: options.forceManual,
         forceAuto: options.forceAuto,
         companion: options.companion,
@@ -2692,7 +2723,7 @@ async function resolveAndPlayBest(
   // Instant path: use the stream prefetched near the end of the previous episode.
   if (episode != null) {
     const pre = takePrefetched(media.id, episode)
-    if (pre) return await playStream(media, episode, pre, onState, { autoplay, automatic: true })
+    if (pre) return await playStream(media, episode, pre, onState, { autoplay, automatic: true, keepMini: true })
   }
   // Seamless continuity: if the addons already have a CACHED source from the same release
   // we were watching, play it straight away — no picker between back-to-back episodes.
@@ -2703,7 +2734,7 @@ async function resolveAndPlayBest(
       const { streams, want } = await resolveStreams(media, episode)
       if (generation !== advanceGeneration) return onState({ status: 'idle' })
       const same = pickSameRelease(media, streams, want)
-      if (same) return await playStream(media, episode, same, onState, { autoplay, automatic: true })
+      if (same) return await playStream(media, episode, same, onState, { autoplay, automatic: true, keepMini: true })
     }
     catch { /* no addons / nothing yet — the full picker below still queries extensions */ }
   }
@@ -2720,7 +2751,20 @@ async function resolveAndPlayBest(
   return await playEpisode(media, episode, onState, {
     continuation: hint,
     autoplay,
+    keepMini: true,
   })
+}
+
+/** An episode chosen on the Android watch page (its Previous/Next buttons or an episode row) while
+ *  this title is already playing. It is an in-place advance like the player's own Next: the same
+ *  release is continued when it exists, the connecting rail covers the outgoing file at once and a
+ *  paused player stays paused. Before playback has started it is an ordinary play. */
+export function playEpisodeFromWatchPage(media: Media, episode: number, onState: (s: PlayState) => void = noticeState) {
+  const current = get(nowPlayingMedia)
+  if (get(androidMpvActive) && current?.media.id === media.id && currentMedia?.id === media.id) {
+    return resolveAndPlayBest(media, episode, onState, !get(mpvState).paused)
+  }
+  return playEpisode(media, episode, onState)
 }
 
 /** Resolve a selected row for a paired TV without touching the phone/desktop player's media,
@@ -3451,8 +3495,10 @@ export async function playStream(
         recordPlaybackIdentity({ media, episode, stream: recoveryOriginal })
         // Stash the resolved URL + headers so the scrubber's thumbnail grabber can decode frames.
         androidStreamInfo.set({ url: stream.url, headers })
-        // A fresh play always opens the full watch page; a prior in-app mini-player must not leak.
-        androidMiniPlayer.set(false)
+        // A fresh play opens the full watch page; a prior in-app mini-player must not leak into it.
+        // An in-place advance (next, previous, auto-advance) is the one exception: a docked
+        // mini-player stays docked and changes episode under the bar, as a music app's would.
+        if (!options.keepMini) androidMiniPlayer.set(false)
         androidMpvActive.set(true)
         rememberSuccess()
         frameTracePending = true

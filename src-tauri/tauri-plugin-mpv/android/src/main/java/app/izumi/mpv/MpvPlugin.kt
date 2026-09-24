@@ -322,6 +322,9 @@ private const val GIF_MAX_MS = 30_000L
     ],
 )
 class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.EventObserver {
+    /** Published from the `prepare` worker thread and read on the UI thread: volatile so a
+     *  null-safe read outside the lock sees the core as soon as it exists. */
+    @Volatile
     private var mpv: MPVLib? = null
     private var view: IzumiMpvView? = null
     /** Genuine Android Dolby Vision path: encoded DV samples go straight from Media3/MediaCodec to
@@ -382,6 +385,15 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     /** Encoded-audio transport and Dolby Vision output policy. Separate from quality because a
      * scaler preset is replaced wholesale and must never clear the receiver configuration. */
     private val storedDolbyOpts = LinkedHashMap<String, String>()
+    /** Serializes core creation and teardown across threads. `prepare` builds the core on a
+     *  worker thread while the app is idle; `ensureCore` on the UI thread and `teardownCore` take
+     *  the same lock, so a load either waits for the warm-up it can join or creates its own, and a
+     *  teardown can never race a creation that would then publish a core with an observer attached
+     *  to nothing. Both option maps are read and written under it as well. */
+    private val coreLock = Any()
+    /** Bumped on every render/Dolby option write, so a core built from a snapshot of the maps can
+     *  tell whether an option changed while it was initializing and apply the current set live. */
+    private var optsRevision = 0L
     private var audioDeviceCallback: AudioDeviceCallback? = null
     /** Inspection is serialized so a preflight and diagnostics cannot create a probe storm. */
     private val inspectionActive = AtomicBoolean(false)
@@ -521,9 +533,11 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         }
     }
 
-    /** Create and configure libmpv without touching the view hierarchy. UI thread only. */
-    private fun ensureCore(): MPVLib {
+    /** Create and configure libmpv without touching the view hierarchy. Any thread: the lock makes
+     *  a concurrent caller wait for the core being built rather than build a second one. */
+    private fun ensureCore(): MPVLib = synchronized(coreLock) {
         mpv?.let { return it }
+        val revision = optsRevision
         val m = MPVLib.create(activity) ?: error("libmpv: MPVLib.create returned null")
         // izumi controls all options — never read the user's ~/.config/mpv.
         m.setOptionString("config", "no")
@@ -553,6 +567,12 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         // succeeded, no properties ever updated, and the UI sat on `buffering: true` over a black
         // screen forever. `force-window=no` already keeps an idle core from showing a window.
         m.setOptionString("idle", "yes")
+        // Hold the last frame at the end of a file instead of dropping to a black idle window, the
+        // same as the desktop cores. The web side already reasserts the play/pause intent after
+        // every `loadfile` (mpvLoad), so the pause keep-open leaves behind never leaks into the
+        // next episode.
+        m.setOptionString("keep-open", "yes")
+        m.setOptionString("keep-open-pause", "yes")
         m.setOptionString("cache", "yes")
         // Local torrent playback is a seekable HTTP range stream. Match the desktop fast-start
         // limits: FFmpeg's uncapped/default probe can read several megabytes and analyze for
@@ -584,7 +604,13 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         m.observeProperty("seeking", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
         m.observeProperty("core-idle", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
         mpv = m
-        return m
+        // An option written while this core was initializing found no live core to apply to and
+        // only updated the maps, which this core was built from before the write.
+        if (optsRevision != revision) {
+            for ((k, v) in storedRenderOpts) runCatching { m.setPropertyString(k, v) }
+            for ((k, v) in storedDolbyOpts) runCatching { m.setPropertyString(k, v) }
+        }
+        m
     }
 
     /** Attach the prepared core to a SurfaceView on first playback. UI thread only. */
@@ -941,11 +967,18 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         }
     }
 
-    /** Pay libmpv and font initialization while the app is idle, without exposing a video view. */
+    /** Pay libmpv and font initialization while the app is idle, without exposing a video view.
+     *
+     *  Off the UI thread on purpose: Tauri delivers every command on the main looper, so the core
+     *  used to be created inline there — a font copy plus libmpv's initialization landing on the
+     *  thread that was drawing the browse page at boot, and again 1.5s after every stop, right as
+     *  the user scrolled back into the app. Nothing in the core's construction needs the UI thread
+     *  (the surface is attached later, from the SurfaceHolder callbacks); a load that arrives
+     *  meanwhile waits on the core lock for this warm-up instead of starting a second core. */
     @Command
     fun prepare(invoke: Invoke) {
-        activity.runOnUiThread {
-            val created = mpv == null
+        Thread({
+            val created = synchronized(coreLock) { mpv == null }
             val started = System.nanoTime()
             try {
                 ensureCore()
@@ -957,7 +990,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             } catch (error: Exception) {
                 invoke.reject(error.message ?: "mpv-prepare-failed")
             }
-        }
+        }, "mpv-prepare").start()
     }
 
     private fun inspectionTrackType(format: Format): String = when (
@@ -1877,18 +1910,21 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     fun setRenderOpts(invoke: Invoke) {
         val a = invoke.parseArgs(RenderOptsArgs::class.java)
         activity.runOnUiThread {
-            storedRenderOpts.clear()
             val failed = JSONArray()
-            val live = mpv
-            for (opt in a.opts) {
-                val key = opt.key.trim()
-                if (key.isEmpty()) continue
-                storedRenderOpts[key] = opt.value
-                if (live != null) {
-                    try {
-                        live.setPropertyString(key, opt.value)
-                    } catch (e: Exception) {
-                        failed.put(key)
+            synchronized(coreLock) {
+                storedRenderOpts.clear()
+                optsRevision++
+                val live = mpv
+                for (opt in a.opts) {
+                    val key = opt.key.trim()
+                    if (key.isEmpty()) continue
+                    storedRenderOpts[key] = opt.value
+                    if (live != null) {
+                        try {
+                            live.setPropertyString(key, opt.value)
+                        } catch (e: Exception) {
+                            failed.put(key)
+                        }
                     }
                 }
             }
@@ -2129,23 +2165,26 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     fun setDolbyOpts(invoke: Invoke) {
         val a = invoke.parseArgs(RenderOptsArgs::class.java)
         activity.runOnUiThread {
-            storedDolbyOpts.clear()
             val failed = JSONArray()
-            val live = mpv
-            for (opt in a.opts) {
-                val key = opt.key.trim()
-                if (key.isEmpty()) continue
-                storedDolbyOpts[key] = opt.value
-                if (live != null) {
-                    try {
-                        live.setPropertyString(key, opt.value)
-                    } catch (e: Exception) {
-                        failed.put(key)
+            synchronized(coreLock) {
+                storedDolbyOpts.clear()
+                optsRevision++
+                val live = mpv
+                for (opt in a.opts) {
+                    val key = opt.key.trim()
+                    if (key.isEmpty()) continue
+                    storedDolbyOpts[key] = opt.value
+                    if (live != null) {
+                        try {
+                            live.setPropertyString(key, opt.value)
+                        } catch (e: Exception) {
+                            failed.put(key)
+                        }
                     }
                 }
-            }
-            if (live != null && a.opts.any { it.key.startsWith("audio-") }) {
-                runCatching { live.command(arrayOf("ao-reload")) }
+                if (live != null && a.opts.any { it.key.startsWith("audio-") }) {
+                    runCatching { live.command(arrayOf("ao-reload")) }
+                }
             }
             invoke.resolve(JSObject().put("failed", failed))
         }
@@ -2796,12 +2835,16 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         container?.let { (it.parent as? ViewGroup)?.removeView(it) }
         releaseNativeMedia(removeContainer = false)
-        mpv?.let {
-            it.command(arrayOf("stop"))
-            it.removeObserver(this)
-            it.destroy()
+        // Under the core lock: a warm-up that is still initializing finishes and publishes first,
+        // and is then destroyed here, instead of publishing a live core after this teardown.
+        synchronized(coreLock) {
+            mpv?.let {
+                it.command(arrayOf("stop"))
+                it.removeObserver(this)
+                it.destroy()
+            }
+            mpv = null
         }
-        mpv = null
         view = null
         container = null
         webView?.let { web ->

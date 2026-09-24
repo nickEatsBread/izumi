@@ -37,6 +37,65 @@ let emptyBuildAt = 0
 let installedRevision = 0
 let buildGeneration = 0
 
+/** How long the JS worker set may sit without a query before it is torn down. Workers were built
+ *  lazily and then never terminated, so a marketplace's worth of module-worker heaps stayed
+ *  resident for the WebView's lifetime after a single Play. The next caller rebuilds transparently:
+ *  the configs come from the memo below and the modules from the IndexedDB module cache, so a
+ *  respawn costs worker creation rather than the original network round-trips. */
+export const EXTENSION_WORKER_IDLE_MS = 5 * 60_000
+let lastActivityAt = 0
+let idleTimer: ReturnType<typeof setTimeout> | undefined
+
+function noteActivity(): void {
+  lastActivityAt = Date.now()
+  // One timer, armed lazily. Re-creating it on every worker call would be churn for nothing: the
+  // reaper re-checks the quiet period when it fires and simply comes back later.
+  if (!idleTimer && running?.length) armIdleReaper(EXTENSION_WORKER_IDLE_MS)
+}
+
+function armIdleReaper(delayMs: number): void {
+  clearTimeout(idleTimer)
+  // Plain setTimeout — the WebView has no unref().
+  idleTimer = setTimeout(reapIdleWorkers, delayMs)
+}
+
+function reapIdleWorkers(): void {
+  idleTimer = undefined
+  if (!running?.length) return
+  const quietFor = Date.now() - lastActivityAt
+  // Never terminate underneath a caller: a pending wait is a call in flight, and recent activity
+  // means the quiet period restarted after this timer was armed. Either way, come back later.
+  if (quietFor < EXTENSION_WORKER_IDLE_MS || running.some((ext) => ext.waits.size > 0)) {
+    armIdleReaper(Math.max(EXTENSION_WORKER_IDLE_MS - quietFor, 1_000))
+    return
+  }
+  running.forEach(terminateExt)
+  // Deliberately not resetRunning(): the generation counter and the resolver's provider memo mark
+  // a CONFIGURATION change. An idle teardown must disturb neither the memoized search/episode
+  // answers nor a build already in flight for a new key.
+  running = null
+  builtFrom = ''
+}
+
+/** The one way a worker leaves the set. `terminate()` never answers anything, so a caller that was
+ *  mid-call used to sit on its full 20s timer for a worker that was already gone. Answering each
+ *  pending wait first makes `call` resolve [] and `callRaw` resolve [] at once (every wait clears
+ *  its own timer), and a worker still loading reports not-ready instead of ready. */
+function terminateExt(ext: RunningExt): void {
+  const waits = [...ext.waits.values()]
+  ext.waits.clear()
+  for (const wait of waits) wait({ type: 'terminated', results: [] })
+  ext.worker.terminate()
+}
+
+// Builds are no longer once per configuration: the idle reaper drops the worker set after a few
+// quiet minutes, and each build used to re-fetch every enabled manifest over the network. Remember
+// the expanded config list per rebuild key so a respawn is worker creation only. The TTL bounds
+// how stale a marketplace listing can get; a configuration change (install, remove, toggle) either
+// changes the key or clears this outright through resetRunning.
+const CONFIG_MEMO_TTL_MS = 15 * 60_000
+let configMemo: { key: string; at: number; value: Promise<ExtensionConfig[]> } | null = null
+
 export interface InstalledExtensionPackage {
   id: string
   name: string
@@ -94,12 +153,13 @@ interface JvmSource {
 }
 
 function resetRunning(): void {
-  running?.forEach((extension) => extension.worker.terminate())
+  running?.forEach(terminateExt)
   running = null
   builtFrom = ''
   emptyBuildAt = 0
   buildPromise = null
   buildGeneration += 1
+  configMemo = null
   clearProviderCache()
 }
 
@@ -328,6 +388,19 @@ async function loadConfigs(): Promise<ExtensionConfig[]> {
   })
 }
 
+function loadConfigsFor(key: string): Promise<ExtensionConfig[]> {
+  if (configMemo?.key === key && Date.now() - configMemo.at < CONFIG_MEMO_TTL_MS) return configMemo.value
+  const entry = { key, at: Date.now(), value: loadConfigs() }
+  // An all-failed expansion must stay retryable (see the empty-build grace in ensureRunning): a
+  // provider that comes up a moment later would otherwise stay invisible for the whole TTL.
+  entry.value.then(
+    (cfgs) => { if (!cfgs.length && configMemo === entry) configMemo = null },
+    () => { if (configMemo === entry) configMemo = null },
+  )
+  configMemo = entry
+  return entry.value
+}
+
 // Fetch an extension's module source. esm.sh often returns a tiny re-export STUB
 // pointing at the hashed build (`export * from "/gh/…"`); a blob import of that text
 // can't resolve the relative target, so follow it once to the real module.
@@ -398,7 +471,7 @@ function spawn(cfg: ExtensionConfig, code: string): RunningExt {
     // needs this 20s backstop before it can report that every provider has settled.
     const t = setTimeout(() => { ext.waits.delete(id); resolve(false) }, 20000)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ext.waits.set(id, (m: any) => { clearTimeout(t); ext.loadError = m.error; resolve(!m.error) })
+    ext.waits.set(id, (m: any) => { clearTimeout(t); ext.loadError = m.error; resolve(m.type === 'loaded' && !m.error) })
     worker.onerror = () => { clearTimeout(t); ext.waits.delete(id); resolve(false) }
     // `name` rides along so host-side helpers running inside the worker (the embed extractors) can
     // attribute what they resolve back to the extension that asked, instead of returning anonymous
@@ -433,18 +506,21 @@ async function ensureRunning(): Promise<RunningExt[]> {
   const key = JSON.stringify([get(enabledExtensionUrls), get(disabledPlugins), installedRevision])
   // Do not remember a transient all-failed build forever. A local or remote provider may become
   // ready just after warmExtensions(); caching [] for the whole app session would prevent retry.
-  if (running && builtFrom === key && (running.length > 0 || Date.now() - emptyBuildAt < 1_000)) return running
+  if (running && builtFrom === key && (running.length > 0 || Date.now() - emptyBuildAt < 1_000)) {
+    noteActivity()
+    return running
+  }
   if (buildPromise) return buildPromise
   const generation = buildGeneration
   const promise = (async () => {
-    running?.forEach((e) => e.worker.terminate())
+    running?.forEach(terminateExt)
     // The resolver memoizes each provider's search/episode/settings answers. Those belong to the
     // PREVIOUS set of workers, so a provider that was just enabled, disabled or updated must not
     // keep serving results from its old incarnation.
     clearProviderCache()
     // Fetch every module in parallel — sequentially this was N × (esm.sh latency), the bulk of the
     // first-resolve stall for multi-source repos.
-    const cfgs = await loadConfigs()
+    const cfgs = await loadConfigsFor(key)
     const codes = await Promise.all(cfgs.map(async (cfg) => {
       try {
         return {
@@ -460,14 +536,23 @@ async function ensureRunning(): Promise<RunningExt[]> {
       }
     }))
     const next: RunningExt[] = []
-    for (const { cfg, code } of codes) if (code) next.push(spawn(cfg, code))
+    for (const { cfg, code } of codes) {
+      if (!code) continue
+      // One macrotask between workers. Spawning the set in a single synchronous burst put N
+      // `new Worker` + module evaluations on the main thread at once, a visible hitch on a WebView
+      // that is painting the page the user is looking at.
+      if (next.length) await new Promise((resolve) => setTimeout(resolve, 0))
+      if (generation !== buildGeneration) break
+      next.push(spawn(cfg, code))
+    }
     if (generation !== buildGeneration) {
-      next.forEach((extension) => extension.worker.terminate())
+      next.forEach(terminateExt)
       return []
     }
     running = next
     builtFrom = key
     emptyBuildAt = next.length ? 0 : Date.now()
+    noteActivity()
     return next
   })()
   buildPromise = promise
@@ -498,6 +583,7 @@ export async function warmJvmExtensions(): Promise<void> {
 }
 
 function call(ext: RunningExt, method: string, query: TorrentQuery): Promise<TorrentResult[]> {
+  noteActivity()
   return new Promise((resolve) => {
     const id = ++ext.seq
     const t = setTimeout(() => { ext.waits.delete(id); resolve([]) }, 20000)
@@ -607,6 +693,7 @@ export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: Torren
 // raw result (object OR array). 20s cap → null on timeout. (Torrent uses `call()` which coerces.)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function callRaw(ext: RunningExt, method: string, args: unknown[]): Promise<any> {
+  noteActivity()
   return new Promise((resolve, reject) => {
     const id = ++ext.seq
     const t = setTimeout(() => { ext.waits.delete(id); resolve(null) }, 20000)

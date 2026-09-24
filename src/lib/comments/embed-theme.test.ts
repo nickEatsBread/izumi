@@ -25,7 +25,7 @@ describe('DiscussAnime embed theming', () => {
     expect(android).not.toContain('style:color-scheme="dark"')
   })
 
-  it('relays Android drags out of the cross-origin child into the watch-page scroller', () => {
+  it('lets the browser chain an Android drag out of the cross-origin child, and only watches it', () => {
     const loader = read('../../../static/disqus-embed.html')
     const android = read('../components/player/AndroidWatchDetails.svelte')
     const plugin = read('../../../src-tauri/tauri-plugin-extplayer/android/src/main/java/app/izumi/extplayer/ExtPlayerPlugin.kt')
@@ -36,18 +36,37 @@ describe('DiscussAnime embed theming', () => {
     expect(android).not.toContain('min(70dvh')
     expect(android).toContain("closest<HTMLElement>('.preparing-details, .watch-details')")
     expect(android).toContain('embedTouchScroll(event.origin, event.data, window.location.origin)')
+    expect(android).toContain('decideEmbedGestureOwner(')
     expect(loader).toContain("type: 'izumi-disqus-page-scroll'")
-    expect(plugin).toContain('window.__izumiDisqusTouchBridge')
-    expect(plugin).toContain("type: 'izumi-disqus-touch-scroll'")
-    expect(plugin).toContain("document.addEventListener('touchmove'")
+    expect(loader).toContain('cancelable: message.cancelable !== false')
+    // The bridge inside disqus.com must never cancel or swallow a touch: a cancelled touchmove
+    // raced the native scroll (double distance on a slow drag, a main-thread fling on a quick one)
+    // and made every touch on the comments wait on JavaScript.
+    const bridge = plugin.slice(plugin.indexOf('window.__izumiDisqusTouchBridge'), plugin.indexOf('""".trimIndent()'))
+    expect(bridge).toContain("type: 'izumi-disqus-touch-scroll'")
+    expect(bridge).toContain("document.addEventListener('touchmove'")
+    expect(bridge).not.toContain('preventDefault')
+    expect(bridge).not.toContain('stopPropagation')
+    expect(bridge).not.toContain('passive: false')
+    expect(bridge).toContain('event.cancelable')
   })
 
   it('loads and sizes the current Disqus application on Android', () => {
     const loader = read('../../../static/disqus-embed.html')
+    const android = read('../components/player/AndroidWatchDetails.svelte')
     expect(loader).toContain("https://c.disquscdn.com")
     expect(loader).toMatch(/html\.izumi-expand #disqus_thread > iframe\s*\{[^}]*min-height: 480px !important;/s)
     expect(loader).toContain('var heightTimer = 0')
     expect(loader).toContain('heightTimer = window.setTimeout')
+    // Content height, never the viewport's: `documentElement.scrollHeight` is at least the frame's
+    // own height, so a frame the app had grown could never report a smaller number again.
+    expect(loader).not.toContain('document.documentElement.scrollHeight')
+    expect(loader).toContain("event.data.type === 'izumi-disqus-request-height'")
+    // The reset is keyed on the embed URL string: the discussion object is rebuilt on every
+    // threads update, and the second (full) update used to reset a frame that had already grown.
+    expect(android).toContain("const disqusSrc = $derived(discussion?.kind === 'disqus' ? discussion.embedSrc : null)")
+    expect(android).toContain("postToFrame({ type: 'izumi-disqus-request-height' })")
+    expect(android).not.toMatch(/\$effect\(\(\) => \{\s*discussion\?\.kind === 'disqus' \? discussion\.embedSrc : null/)
   })
 
   it('removes native dark-frame mutation and forced WebView theming', () => {

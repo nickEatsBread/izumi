@@ -67,6 +67,28 @@ export function seederPoints(seeders: number, _directP2p = false): number {
   return Math.min(10 + Math.floor(Math.log2(seeders / 100)), 20)
 }
 
+/** Ranking points for a swarm that has to SUPPLY the bytes: direct P2P playback, or a debrid row
+ *  the service still has to fetch from peers. There the seeder count is not community evidence
+ *  but the single best predictor of whether the episode starts at all, so it is weighted like one.
+ *
+ *  The old curve gave anything under ten seeders zero and 800 seeders thirteen, so a five-seeder
+ *  release with a nicer encode (BluRay, dual audio, HDR, a known group: +9) routinely out-scored an
+ *  800-seeder plain release, and a three-seeder 1080p tied a 900-seeder 720p. This curve is steep
+ *  where it matters: a near-dead swarm scores below an unknown one, ~30 seeders is where a 1080p
+ *  release pulls level with a huge 720p swarm, and it still flattens above a few hundred so a
+ *  noisy tracker estimate cannot bury every other signal.
+ *
+ *    1 → -3   3 → 0   5 → 2   10 → 4   20 → 7   50 → 11   100 → 14   200 → 16   800 → 20   3200+ → 24 */
+export function swarmSeederPoints(seeders: number): number {
+  if (!Number.isFinite(seeders) || seeders <= 0) return 0 // exactly zero is the dead-swarm penalty below
+  if (seeders < 100) return Math.round(10 * Math.log10(1 + seeders)) - 6
+  return Math.min(24, 14 + Math.round(2 * Math.log2(seeders / 100)))
+}
+
+/** Whether the bytes for this row would come from the swarm rather than a debrid cache. */
+export const swarmSupplies = (info: StreamInfo, opts: ScoreOptions): boolean =>
+  !!opts.directP2p || info.cached !== 'instant'
+
 export type SubtitleCompatibility = 'match' | 'unknown' | 'mismatch'
 
 const subLang = (lang?: string) => {
@@ -178,10 +200,13 @@ export function scoreInfo(info: StreamInfo, opts: ScoreOptions = {}): { score: n
   const res = RESOLUTION_POINTS.find(([q]) => info.quality >= q)
   if (res) add(`${info.quality}p`, res[1])
 
-  // A swarm of 5000 is not fifty times better than one of 100. Keep a bounded logarithmic
-  // distinction above 100 in every mode: even when debrid supplies the bytes, the larger swarm is
-  // useful community evidence that this is the normal, well-vetted release rather than an odd mux.
-  if (info.seeders != null) add('seeders', seederPoints(info.seeders, !!opts.directP2p))
+  // Two curves. When debrid already holds the file, the swarm is community evidence only — a
+  // bounded logarithmic distinction that stays under the resolution spread. When the swarm has to
+  // supply the bytes (direct P2P, or a row the service still has to fetch), it is the health
+  // signal, weighted to beat every encode nicety and a one-tier resolution step.
+  if (info.seeders != null) {
+    add('seeders', swarmSupplies(info, opts) ? swarmSeederPoints(info.seeders) : seederPoints(info.seeders, !!opts.directP2p))
+  }
 
   const subtitles = subtitleCompatibility(info, opts.subtitleLang)
   if (subtitles === 'match') add('requested subtitles', 6)

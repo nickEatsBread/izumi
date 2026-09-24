@@ -121,6 +121,26 @@ describe('matchesRelease — torrent identities still work', () => {
       season: 1, episode: 6, abs: 6,
     })).toBe(toonsHub)
   })
+
+  it('warms the best-seeded copy of the release, never a dead one', () => {
+    const asw = (hash: string, seeders: number | undefined, extra = '') => ({
+      name: 'Torrentio\n1080p',
+      infoHash: hash,
+      title: `[ASW] Oni no Hanayome - 02 [1080p HEVC][E24C66BA].mkv${seeders == null ? '' : `\n👤 ${seeders}`}${extra}`,
+      behaviorHints: { filename: '[ASW] Oni no Hanayome - 02 [1080p HEVC][E24C66BA].mkv' },
+    }) as Stream
+    const dead = asw('dead-copy', 0)
+    const thin = asw('thin-copy', 3)
+    const busy = asw('busy-copy', 640)
+    const unreported = asw('unreported-copy', undefined)
+    const hint: ContinueHint = { infoHash: 'episode-1-hash', group: 'ASW' }
+    const want = { season: 1, episode: 2, abs: 2 }
+    expect(pickDirectPreloadCandidate([dead, thin, busy, unreported], hint, want)).toBe(busy)
+    expect(pickDirectPreloadCandidate([dead, unreported, thin], hint, want)).toBe(thin)
+    expect(pickDirectPreloadCandidate([dead], hint, want)).toBeUndefined()
+    // The pack that is actually streaming right now is the exact hash: it has peers by definition.
+    expect(pickDirectPreloadCandidate([busy, dead], { ...hint, infoHash: 'dead-copy' }, want)).toBe(dead)
+  })
 })
 
 describe('safe direct-P2P continuation', () => {

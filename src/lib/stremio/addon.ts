@@ -13,7 +13,8 @@ export {
 } from './parse'
 export type { Stream, StreamInfo, CacheState, StreamSort } from './parse'
 export {
-  languageMismatch, pickBest, pickCandidates, preferDirectStartupCandidates, rankInfos, rankStreams,
+  isStarvedSwarm, isSwarmRoute, languageMismatch, pickBest, pickCandidates, preferDirectStartupCandidates,
+  rankInfos, rankStreams, swarmSupplied, STARVED_SWARM_SEEDERS,
 } from './ranking'
 export type { RankOptions } from './ranking'
 

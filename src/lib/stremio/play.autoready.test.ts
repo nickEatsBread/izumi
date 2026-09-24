@@ -67,7 +67,13 @@ vi.mock('$lib/settings/ui', () => ({
   sourcePriorityMode: readable('prefer'),
   adaptiveSourceMode: readable('shadow'),
   promoteToWatching: readable(false),
+  torrentProxyEnabled: readable(false),
+  torrentProxyUrl: readable(''),
+  torrentBindInterface: readable(''),
 }))
+// The held torrent pick warms its metadata natively; there is no engine here, and the resolve
+// must not care whether that speculative call succeeds.
+vi.mock('@tauri-apps/api/core', () => ({ invoke: async () => false }))
 vi.mock('$lib/player/session', () => ({
   streamPicker: picker,
   connecting: writable(null),
@@ -160,6 +166,58 @@ describe('autoplay readiness', () => {
     // The hold has not elapsed yet, and the online provider never settles.
     expect(get(picker)?.autoReady).toBeFalsy()
 
+    await sleep(600)
+
+    expect(get(picker)).toMatchObject({ resolving: true, autoReady: true })
+
+    cancelResolve()
+    await resolving
+  })
+
+  it('holds a barely-seeded swarm pick for the sources still in flight', async () => {
+    // Direct P2P (no debrid key): the first addon answers with a 3-seeder torrent while the
+    // extension wave — where the well-seeded copy usually comes from — has not landed. Committing
+    // at the 350ms hold would abort discovery on a swarm that is about to stall.
+    phttp.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        streams: [{
+          infoHash: 'a'.repeat(40),
+          name: 'Torrentio\n1080p',
+          title: '[Group] Test Anime - 02 (1080p) 👤 3',
+          behaviorHints: { filename: '[Group] Test Anime - 02 (1080p).mkv' },
+        }],
+      }),
+    })
+
+    const resolving = playEpisode(media as never, 2, () => {})
+
+    await vi.waitFor(() => expect((get(picker)?.streams as unknown[]).length).toBe(1))
+    await sleep(600)
+
+    expect(get(picker)).toMatchObject({ resolving: true })
+    expect(get(picker)?.autoReady).toBeFalsy()
+
+    cancelResolve()
+    await resolving
+  })
+
+  it('commits a well-seeded swarm pick at the usual pace', async () => {
+    phttp.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        streams: [{
+          infoHash: 'b'.repeat(40),
+          name: 'Torrentio\n1080p',
+          title: '[Group] Test Anime - 02 (1080p) 👤 400',
+          behaviorHints: { filename: '[Group] Test Anime - 02 (1080p).mkv' },
+        }],
+      }),
+    })
+
+    const resolving = playEpisode(media as never, 2, () => {})
+
+    await vi.waitFor(() => expect((get(picker)?.streams as unknown[]).length).toBe(1))
     await sleep(600)
 
     expect(get(picker)).toMatchObject({ resolving: true, autoReady: true })

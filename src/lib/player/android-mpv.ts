@@ -199,6 +199,11 @@ let mediaSub: PluginListener | undefined
 let awaitingLoadStart = false
 let awaitingLoadStartAt = 0
 const LOAD_START_LATCH_MAX_MS = 8_000
+// The play/pause intent of the load in flight. Both optimistic resets below seed `paused` from it:
+// a Next pressed while paused loads with autoplay off, and since the core is already paused mpv
+// emits no pause change for the new file — the reset's `paused: false` then stood forever, the
+// pause glyph showed over a frozen frame, and the first tap seemed to do nothing.
+let pendingPauseIntent = false
 // The outgoing file's END_FILE arrives almost immediately after `loadfile`; one arriving well
 // after that belongs to OUR load dying before START_FILE (bad URL, failed open) and must surface
 // as eof so the premature-EOF recovery reacts now instead of the 60s never-started clock.
@@ -245,7 +250,7 @@ export async function startMpvEvents(): Promise<void> {
         traceResolve(currentResolveTrace(), 'Android mpv START_FILE')
         // START_FILE is the ownership boundary between the outgoing file and this load. Clear any
         // values delivered by the old file after mpvLoad's optimistic reset.
-        mpvState.set({ ...IDLE_STATE, buffering: true })
+        mpvState.set({ ...IDLE_STATE, paused: pendingPauseIntent, buffering: true })
       } else if (id === 20) {
         mpvState.update((s) => (s.frameReady ? { ...s, frameReady: false } : s))
       } else if (id === 7) {
@@ -305,9 +310,10 @@ export async function mpvLoad(p: MpvLoad): Promise<void> {
   clearPendingSeekTimers()
   awaitingLoadStart = true
   awaitingLoadStartAt = Date.now()
+  pendingPauseIntent = p.autoplay === false
   // Reset UI state for the new file (fresh time-pos/duration events will repopulate it).
   // buffering starts true — the spinner shows until the first frame's duration/time-pos lands.
-  mpvState.set({ ...IDLE_STATE, buffering: true })
+  mpvState.set({ ...IDLE_STATE, paused: pendingPauseIntent, buffering: true })
   await invoke('plugin:mpv|mpv_load', {
     payload: {
       url: p.url,

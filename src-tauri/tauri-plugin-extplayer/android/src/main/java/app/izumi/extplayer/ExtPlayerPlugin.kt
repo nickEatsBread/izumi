@@ -788,8 +788,12 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
         }
         // Disqus renders inside a cross-origin child frame. Install narrowly scoped document-start
         // hooks there for browser login and touch-scroll handoff. The Android watch page expands
-        // that frame to its content height, so a drag starting inside it otherwise has no scroll
-        // owner and never reaches the surrounding episode-details page.
+        // that frame to its content height, so the frame itself never scrolls; a drag that starts
+        // inside it is meant to chain to the surrounding episode-details page. The bridge below
+        // only OBSERVES that drag (passive listeners, nothing cancelled): the browser keeps
+        // scrolling the page natively, and the app steps in only when nothing else moved. Cancelling
+        // touchmoves here used to race the native scroll — twice the distance on a slow drag, a
+        // laggy main-thread fling on a quick one — and made every touch on the comments wait on JS.
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
             WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
         ) {
@@ -840,51 +844,43 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
                   if (window.__izumiDisqusTouchBridge) return;
                   window.__izumiDisqusTouchBridge = true;
                   let active = false;
-                  let moved = false;
-                  let startY = 0;
                   let lastY = 0;
                   let lastAt = 0;
                   const yOf = (touch) => Number.isFinite(touch.screenY) ? touch.screenY : touch.clientY;
-                  const relay = (phase, dy, dt) => {
+                  const relay = (phase, dy, dt, cancelable) => {
                     try {
                       window.parent.postMessage({
                         type: 'izumi-disqus-touch-scroll',
                         phase,
                         dy: dy || 0,
                         dt: dt || 0,
+                        cancelable: cancelable !== false,
                       }, '*');
                     } catch (_) {}
                   };
                   document.addEventListener('touchstart', (event) => {
-                    if (event.touches.length !== 1) return;
-                    const now = performance.now();
-                    const y = yOf(event.touches[0]);
+                    if (event.touches.length !== 1) { active = false; return; }
                     active = true;
-                    moved = false;
-                    startY = lastY = y;
-                    lastAt = now;
-                    relay('start', 0, 0);
+                    lastY = yOf(event.touches[0]);
+                    lastAt = performance.now();
+                    relay('start', 0, 0, true);
                   }, { capture: true, passive: true });
                   document.addEventListener('touchmove', (event) => {
                     if (!active || event.touches.length !== 1) return;
                     const now = performance.now();
                     const y = yOf(event.touches[0]);
-                    const total = startY - y;
                     const dy = lastY - y;
                     const dt = Math.max(1, now - lastAt);
                     lastY = y;
                     lastAt = now;
-                    if (!moved && Math.abs(total) < 10) return;
-                    moved = true;
-                    if (event.cancelable) event.preventDefault();
-                    event.stopPropagation();
-                    relay('move', dy, dt);
-                  }, { capture: true, passive: false });
+                    // Once the browser is scrolling somewhere in the frame chain it marks the moves
+                    // uncancelable; the app reads that flag as "native owns this gesture".
+                    relay('move', dy, dt, event.cancelable);
+                  }, { capture: true, passive: true });
                   const finish = () => {
                     if (!active) return;
                     active = false;
-                    if (moved) relay('end', 0, 0);
-                    moved = false;
+                    relay('end', 0, 0, true);
                   };
                   document.addEventListener('touchend', finish, { capture: true, passive: true });
                   document.addEventListener('touchcancel', finish, { capture: true, passive: true });

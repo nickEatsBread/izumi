@@ -288,6 +288,48 @@ export function pickEpisode(eps: SnEpisode[], episode: number): SnEpisode | unde
   return eps.find((e) => e.number === episode)
 }
 
+/** The episode a JVM catalog title already carries for `episode`, in the shape the JVM bridge's
+ *  findEpisodeServer expects — or null when this is not that case.
+ *
+ *  A title opened from an Aniyomi catalog holds the exact episode objects its source's own detail
+ *  page produced (videosOf in catalog/providers/jvm.ts). Running search → getDetail for it anyway
+ *  cost two hops on the single serialized bridge lane, each 20s-capped, plus a title re-validation
+ *  of a match that was never in doubt. The catalog id and video ids are decoded here rather than
+ *  through the provider module because the resolver has to stay importable with only the runtime
+ *  mocked. Null falls through to the ordinary search path, which is also how an episode that aired
+ *  after the detail page was cached still resolves. */
+function jvmCatalogEpisode(
+  media: Media, extId: string, episode: number,
+): { episode: SnEpisode; matchedTitle: string } | null {
+  if (media.catalog?.provider !== 'jvm') return null
+  let identity: unknown
+  try { identity = JSON.parse(decodeURIComponent(media.catalog.id)) } catch { return null }
+  if (!Array.isArray(identity) || identity.length !== 4 || identity.some((part) => typeof part !== 'string')) return null
+  const [sourceId, , title] = identity as string[]
+  if (sourceId !== extId || !title) return null
+  const video = media.videos?.find((candidate) => candidate.number === episode)
+  if (!video?.id) return null
+  let ref: { url?: unknown; name?: unknown } | null
+  try { ref = JSON.parse(video.id) } catch { return null }
+  if (typeof ref?.url !== 'string' || !ref.url) return null
+  const uploaded = video.released ? Date.parse(video.released) : Number.NaN
+  // JSON.stringify drops undefined members, so an annotation the catalog never had stays absent.
+  const id = JSON.stringify({
+    url: ref.url,
+    name: typeof ref.name === 'string' ? ref.name : video.title ?? '',
+    episode_number: video.number,
+    scanlator: video.group,
+    date_upload: Number.isFinite(uploaded) ? uploaded : undefined,
+    fillermark: video.filler,
+    summary: video.overview,
+    preview_url: video.thumbnail,
+  })
+  return {
+    episode: { id, number: episode, url: ref.url, title: video.title, sourceTitle: title },
+    matchedTitle: title,
+  }
+}
+
 /** Map one VideoSource (+ its server headers) to a direct streaming Stream. */
 export function videoSourceToStream(
   vs: SnVideoSource, server: string, headers: Record<string, string>, provider: string,
@@ -471,6 +513,11 @@ export async function resolveOnlineStreams(
     ext: (typeof exts)[number],
     dub: boolean,
   ): Promise<{ episode: SnEpisode; matchedTitle: string } | null> => {
+    const catalogEpisode = jvmCatalogEpisode(media, ext.id, episode)
+    if (catalogEpisode) {
+      traceResolve(trace, 'online provider episode from catalog', { provider: ext.name, episode })
+      return catalogEpisode
+    }
     // Failure cooldown: memo deliberately does NOT cache a null (timed-out/errored) search, so a
     // dead provider used to re-pay its full serial alias sweep — each query up to the 20s cap — on
     // EVERY episode transition. A provider whose searches all failed for this title sits out for a

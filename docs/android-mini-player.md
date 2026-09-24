@@ -51,3 +51,28 @@ The video is a sheet the finger holds, as in YouTube:
 resets to identity" contract holds). `mpv_transform` is unchanged. Per-frame `time-pos` forwarding
 to the WebView is throttled to ~4 Hz while the clock advances smoothly (any jump is forwarded at
 once) and `demuxer-cache-time` to ~1 Hz; `MediaController` keeps its own unthrottled feed.
+
+## Episode handover
+
+Going from one episode to the next used to hide the whole player shell (`display:none`) the moment
+the next episode started resolving. That never hid the native surface behind the transparent page:
+the outgoing episode kept playing with no controls for the whole resolve, and the shell then popped
+back over a black surface, because the resolve flow reports "playing" when `loadfile` is queued,
+seconds before a frame exists.
+
+- The shell now stays up for a handover (the connecting rail, or an automatic picker that draws
+  only its rail) and hides only under a real choice screen, the debrid caching screen, comments
+  and PiP. `AndroidPlayer` derives `handover` from that and covers the video rectangle with an
+  opaque veil (artwork, gradient, spinner); the rails keep the words and the cancel button.
+- The outgoing file is paused at once; a cancelled resolve resumes it. The settings sheet, the
+  subtitle editor and a GIF recording are closed, since they describe the file going away.
+- The veil holds until the replacement's first frame (`firstFrameSeen` after the load id changed),
+  with a 20s cap, and the controls are shown when it lifts.
+- Next pressed while paused stays paused: `mpvLoad` seeds both optimistic resets from the load's
+  autoplay intent, since a core that is already paused emits no pause change for the new file.
+- In-place advances (next, previous, auto-advance, and the watch page's own Previous/Next and
+  episode rows while the title is playing) pass `keepMini`, so a docked mini-player stays docked
+  and changes episode under the bar. A play from browse still opens the full page.
+- A hidden binge picker no longer auto-commits the top row while the remembered release may still
+  arrive (`continuationOpen`); it waits for that row or for every source to settle.
+- The core sets `keep-open`, so a file that ends holds its last frame instead of going black.

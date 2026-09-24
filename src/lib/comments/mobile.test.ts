@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { discussionBrowserUrl, embedResizeHeight, embedTouchScroll, mobileEmbedSrc, preferredMobileDiscussion } from './mobile'
+import { decideEmbedGestureOwner, discussionBrowserUrl, embedResizeHeight, embedTouchScroll, EMBED_GESTURE_SLOP_PX, mobileEmbedSrc, preferredMobileDiscussion } from './mobile'
 import type { DiscussionThread } from './types'
 
 const thread = (source: string, extra: Partial<DiscussionThread> = {}): DiscussionThread => ({
@@ -88,11 +88,11 @@ describe('embedTouchScroll', () => {
 
   it('accepts bounded drag phases from the same-origin loader', () => {
     expect(embedTouchScroll(APP, { type: 'izumi-disqus-page-scroll', phase: 'start' }, APP))
-      .toEqual({ phase: 'start', dy: 0, dt: 0 })
+      .toEqual({ phase: 'start', dy: 0, dt: 0, cancelable: true })
     expect(embedTouchScroll(APP, { type: 'izumi-disqus-page-scroll', phase: 'move', dy: 24, dt: 12 }, APP))
-      .toEqual({ phase: 'move', dy: 24, dt: 12 })
+      .toEqual({ phase: 'move', dy: 24, dt: 12, cancelable: true })
     expect(embedTouchScroll(APP, { type: 'izumi-disqus-page-scroll', phase: 'end' }, APP))
-      .toEqual({ phase: 'end', dy: 0, dt: 0 })
+      .toEqual({ phase: 'end', dy: 0, dt: 0, cancelable: true })
   })
 
   it('rejects foreign, malformed, and unbounded drag messages', () => {
@@ -117,5 +117,55 @@ describe('mobileEmbedSrc', () => {
   it('leaves a DiscussAnime archive URL for the official theme bridge', () => {
     expect(mobileEmbedSrc('https://discussanime.moe/embed/discussion/episode-1'))
       .toBe('https://discussanime.moe/embed/discussion/episode-1')
+  })
+})
+
+describe('decideEmbedGestureOwner', () => {
+  type Gesture = ReturnType<typeof decideEmbedGestureOwner>
+  const idle: Gesture = { owner: 'undecided', pending: 0, armed: false }
+  const middle = { scrollTop: 400, startTop: 400, scrollHeight: 4000, clientHeight: 800 }
+  const run = (moves: { dy: number; cancelable: boolean }[], scroller = middle) =>
+    moves.reduce<Gesture>((state, move) => decideEmbedGestureOwner(state, move, scroller), idle)
+
+  it('leaves a gesture the browser is scrolling alone', () => {
+    expect(run([{ dy: 6, cancelable: true }, { dy: 20, cancelable: false }]).owner).toBe('native')
+    // The scroller moving under the finger says the same thing.
+    expect(run([{ dy: 6, cancelable: true }, { dy: 20, cancelable: true }], { ...middle, scrollTop: 412 }).owner).toBe('native')
+  })
+
+  it('takes over only once a second cancelable move has cleared the slop with nothing moving', () => {
+    const first = decideEmbedGestureOwner(idle, { dy: 40, cancelable: true }, middle)
+    // One fast move past the slop is the move that starts a native scroll; not proof of anything.
+    expect(first).toMatchObject({ owner: 'undecided', armed: true })
+    const second = decideEmbedGestureOwner(first, { dy: 8, cancelable: true }, middle)
+    expect(second).toMatchObject({ owner: 'page', pending: 48 })
+  })
+
+  it('does not decide on travel short of the slop', () => {
+    const state = run([{ dy: 4, cancelable: true }, { dy: 4, cancelable: true }, { dy: 3, cancelable: true }])
+    expect(state.owner).toBe('undecided')
+    expect(state.pending).toBeLessThan(EMBED_GESTURE_SLOP_PX)
+  })
+
+  it('learns nothing at an edge and hands the gesture back to the browser', () => {
+    const top = { scrollTop: 0, startTop: 0, scrollHeight: 4000, clientHeight: 800 }
+    expect(run([{ dy: -20, cancelable: true }, { dy: -10, cancelable: true }], top).owner).toBe('native')
+    expect(run([{ dy: 20, cancelable: true }, { dy: 10, cancelable: true }], top).owner).toBe('page')
+    const bottom = { scrollTop: 3200, startTop: 3200, scrollHeight: 4000, clientHeight: 800 }
+    expect(run([{ dy: 20, cancelable: true }, { dy: 10, cancelable: true }], bottom).owner).toBe('native')
+  })
+
+  it('never reopens a decided gesture', () => {
+    const page: Gesture = { owner: 'page', pending: 30, armed: true }
+    expect(decideEmbedGestureOwner(page, { dy: 5, cancelable: false }, middle)).toBe(page)
+  })
+})
+
+describe('embedTouchScroll cancelable flag', () => {
+  const APP = 'https://izumi.invalid'
+  it('reads an uncancelable move as the browser owning the scroll', () => {
+    expect(embedTouchScroll(APP, { type: 'izumi-disqus-page-scroll', phase: 'move', dy: 3, dt: 8, cancelable: false }, APP))
+      .toEqual({ phase: 'move', dy: 3, dt: 8, cancelable: false })
+    expect(embedTouchScroll(APP, { type: 'izumi-disqus-page-scroll', phase: 'move', dy: 3, dt: 8 }, APP)?.cancelable).toBe(true)
   })
 })

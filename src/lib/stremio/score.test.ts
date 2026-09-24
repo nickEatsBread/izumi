@@ -1,6 +1,6 @@
 import { describe as suite, it, expect } from 'vitest'
-import { scoreInfo, RESOLUTION_POINTS, TRUSTED_GROUPS, seederPoints, subtitleCompatibility } from './score'
-import { describe } from './parse'
+import { scoreInfo, RESOLUTION_POINTS, TRUSTED_GROUPS, seederPoints, swarmSeederPoints, subtitleCompatibility } from './score'
+import { describe, type Stream } from './parse'
 
 const info = (filename: string, extra: Record<string, unknown> = {}) =>
   describe({ url: `https://host/${encodeURIComponent(filename)}`, behaviorHints: { filename }, ...extra })
@@ -249,5 +249,51 @@ suite('bitrate awareness', () => {
     expect(scoreInfo(info('Example.2026.1080p.mp4', extra)).reasons.some((reason) => reason.signal.includes('bitrate'))).toBe(false)
     expect(scoreInfo(info('Example.2026.1080p.mp4'), runtime).reasons.some((reason) => reason.signal.includes('bitrate'))).toBe(false)
     expect(scoreInfo(info('Example.2026.1080p.mp4', { ...extra, infoHash: 'a'.repeat(40), url: undefined }), { ...runtime, directP2p: true }).reasons.some((reason) => reason.signal.includes('bitrate'))).toBe(false)
+  })
+})
+
+suite('seeders when the swarm supplies the bytes', () => {
+  const torrent = (title: string, extra: Partial<Stream> = {}) =>
+    describe({ infoHash: title, title, ...extra } as Stream)
+  const p2p = (title: string, extra: Partial<Stream> = {}) => scoreInfo(torrent(title, extra), { directP2p: true }).score
+
+  it('is steep where it decides playability and flat above a few hundred', () => {
+    expect([1, 3, 5, 10, 20, 50, 100, 200, 800, 3200, 100_000].map(swarmSeederPoints))
+      .toEqual([-3, 0, 2, 4, 7, 11, 14, 16, 20, 24, 24])
+    // A near-dead swarm reads as worse than an unreported one.
+    expect(swarmSeederPoints(1)).toBeLessThan(0)
+    expect(swarmSeederPoints(0)).toBe(0)
+  })
+
+  it('lets a huge 720p swarm beat a three-seeder 1080p, but not a healthy one', () => {
+    expect(p2p('Show - 01 (720p) 👤 900')).toBeGreaterThan(p2p('Show - 01 (1080p) 👤 3'))
+    expect(p2p('Show - 01 (1080p) 👤 40')).toBeGreaterThan(p2p('Show - 01 (720p) 👤 900'))
+  })
+
+  it('outweighs every encode nicety stacked together', () => {
+    // BluRay + dual audio + HDR + a known group (+9) used to carry a five-seeder past 800 seeders.
+    const fancy = p2p('[Erai-raws] Show - 01 [1080p BluRay HDR Dual Audio] 👤 5')
+    const plain = p2p('Show - 01 (1080p) 👤 800')
+    expect(plain).toBeGreaterThan(fancy)
+  })
+
+  it('applies to an uncached debrid row too, since the service has to fetch it from peers', () => {
+    const uncached = (seeders: number) => describe({
+      infoHash: `h${seeders}`, name: '[RD⬇️] Addon', title: `Show - 01 (1080p) 👤 ${seeders}`, url: 'x',
+    } as Stream)
+    expect(scoreInfo(uncached(600)).reasons.find((r) => r.signal === 'seeders')?.delta).toBe(swarmSeederPoints(600))
+  })
+
+  it('keeps the mild community curve for a row debrid already holds', () => {
+    const cached = (seeders: number) => describe({
+      infoHash: `h${seeders}`, name: '[RD⚡] Addon', title: `Show - 01 (1080p) 👤 ${seeders}`, url: 'x',
+    } as Stream)
+    expect(cached(5).cached).toBe('instant')
+    expect(scoreInfo(cached(800)).reasons.find((r) => r.signal === 'seeders')?.delta).toBe(seederPoints(800))
+    // Bytes come from the cache, so a nicer encode may still win among cached rows.
+    const fancyCached = scoreInfo(describe({
+      infoHash: 'f', name: '[RD⚡] Addon', title: '[Erai-raws] Show - 01 [1080p BluRay Dual Audio] 👤 5', url: 'x',
+    } as Stream)).score
+    expect(fancyCached).toBeGreaterThan(scoreInfo(cached(30)).score)
   })
 })

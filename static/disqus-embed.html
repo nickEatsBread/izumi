@@ -188,13 +188,17 @@
         var inner = document.querySelector('iframe[src*="disqus.com/embed/comments"]');
         if (!inner || event.source !== inner.contentWindow) return;
         // Expanded Android comments deliberately have no nested scrollbar. Pass the validated drag
-        // to the app frame, whose watch-page scroller owns the full episode details surface.
+        // to the app frame, whose watch-page scroller owns the full episode details surface. The
+        // child's listener is passive, so the browser is free to scroll that page natively; the
+        // `cancelable` flag tells the app whether it did (a move during a native scroll is not
+        // cancelable), so the app only drives the scroller itself when nothing else does.
         if (expand) {
           window.parent.postMessage({
             type: 'izumi-disqus-page-scroll',
             phase: message.phase,
             dy: message.dy || 0,
-            dt: message.dt || 0
+            dt: message.dt || 0,
+            cancelable: message.cancelable !== false
           }, location.origin);
           return;
         }
@@ -221,22 +225,34 @@
           // Android throttles requestAnimationFrame in a nested frame before it has been expanded
           // into view. A zero-delay task still runs and lets the parent size the frame correctly.
           heightTimer = window.setTimeout(function () {
+            // Measure the CONTENT, never the viewport: `documentElement.scrollHeight` is at least
+            // the frame's own height, so once the parent had grown the frame this number could
+            // never come back down, and a frame that the parent reset to its bootstrap height
+            // re-measured as exactly that height. The thread's bottom edge is what has to fit.
             var thread = document.getElementById('disqus_thread');
-            var height = Math.max(
-              document.documentElement.scrollHeight,
-              document.body ? document.body.scrollHeight : 0,
-              thread ? thread.scrollHeight : 0
-            );
+            var body = document.body;
+            var height = Math.ceil(Math.max(
+              body ? body.getBoundingClientRect().bottom : 0,
+              thread ? thread.getBoundingClientRect().bottom : 0
+            ));
             if (height > 0 && Math.abs(height - lastReportedHeight) > 1) {
               lastReportedHeight = height;
               window.parent.postMessage({ type: 'izumi-disqus-height', height: height }, location.origin);
             }
           });
         };
+        var remeasure = function () { lastReportedHeight = 0; reportHeight(); };
         new ResizeObserver(reportHeight).observe(document.documentElement);
         if (document.body) new ResizeObserver(reportHeight).observe(document.body);
         new MutationObserver(reportHeight).observe(document.documentElement, { childList: true, subtree: true, attributes: true });
         window.addEventListener('load', reportHeight);
+        // The parent sizes this frame from these reports, so its own resize is usually our doing;
+        // a width change reflows the comments though, and a parent that reset the frame asks
+        // explicitly. Both must be answered even when the content height happens to be unchanged.
+        window.addEventListener('resize', remeasure);
+        window.addEventListener('message', function (event) {
+          if (event.origin === location.origin && event.data && event.data.type === 'izumi-disqus-request-height') remeasure();
+        });
         reportHeight();
       }
 
