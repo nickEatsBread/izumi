@@ -87,6 +87,7 @@ import { fetchExternalSubtitles } from './subtitles'
 import type { SubtitleCandidate } from './subtitles/types'
 import { normalizeLang } from './sublang'
 import { hasConfiguredExtensions, queryExtensions } from '$lib/extensions/manager'
+import { jvmRuntimeColdStartPending, jvmRuntimeState, JVM_RUNTIME_FAILED_MESSAGE, JVM_RUNTIME_STARTING_MESSAGE, JVM_SOURCES_PLAY_DEADLINE_MS } from '$lib/extensions/jvm-runtime-state'
 import { promoteBootWork } from '$lib/util/boot-work'
 import { markClientPerformance } from '$lib/performance/client'
 import { cancelExtensionFetches } from '$lib/extensions/fetch-registry'
@@ -2329,6 +2330,18 @@ export async function playEpisode(
       torrentExtensions: hasExt,
       onlineExtensions: hasExt,
     })
+    // A cold Aniyomi runtime is not a slow provider. Java discovery, host spawn and loadExtensions
+    // for every installed package (plus a runtime download on a fresh install) all precede the
+    // first search, and the three serialized hops behind it each carry their own 20s cap. The fixed
+    // 30s umbrella therefore expired on the FIRST play after installing a package and settled the
+    // picker on "No streams found"; the second play, with the runtime and the memoized search warm,
+    // then worked in seconds. Widen only the online wave, only while the runtime is cold; the
+    // picker labels the wait, and torrent extensions keep the ordinary budget.
+    // Decided without awaiting here: the waves below must start on this same tick, so the budget
+    // helper resolves the figure itself once its work is already running.
+    const onlineWaveBudgetMs: Promise<number> = hasExt
+      ? jvmRuntimeColdStartPending().then((cold) => cold ? JVM_SOURCES_PLAY_DEADLINE_MS + 30_000 : 30_000)
+      : Promise.resolve(30_000)
     await new Promise<void>((resolve) => {
       // Stop waiting the moment we're superseded/closed — the in-flight fetches keep going and
       // fold in harmlessly (refresh() no-ops once the picker is no longer ours), but we settle now.
@@ -2428,15 +2441,16 @@ export async function playEpisode(
       // the three) was the only resolve without one. Late results still fold in via the callbacks;
       // the budget only stops the WAIT.
       const EXT_WAVE_BUDGET_MS = 30_000
-      const budget = async (label: string, work: Promise<unknown>) => {
+      const budget = async (label: string, work: Promise<unknown>, budgetMsP: number | Promise<number> = EXT_WAVE_BUDGET_MS) => {
         const startedAt = performance.now()
         let timedOut = false
         let timeout: ReturnType<typeof setTimeout> | undefined
-        traceResolve(trace, `${label} wave start`, { budgetMs: EXT_WAVE_BUDGET_MS })
+        const budgetMs = await budgetMsP
+        traceResolve(trace, `${label} wave start`, { budgetMs })
         await Promise.race([
           work.catch((error) => traceResolveError(trace, `${label} wave failed`, error)),
           new Promise<void>((resolve) => {
-            timeout = setTimeout(() => { timedOut = true; resolve() }, EXT_WAVE_BUDGET_MS)
+            timeout = setTimeout(() => { timedOut = true; resolve() }, Math.max(0, budgetMs - (performance.now() - startedAt)))
           }),
         ])
         if (timeout) clearTimeout(timeout)
@@ -2461,7 +2475,7 @@ export async function playEpisode(
             traceResolve(trace, 'online extension batch', batchTraceDetails(s))
             acc = [...acc, ...s]; refresh(true)
           }
-        }, signal))
+        }, signal), onlineWaveBudgetMs)
           .finally(done)
       }
     })
@@ -2532,8 +2546,13 @@ export async function playEpisode(
     // current; settle this resolve neutrally instead of firing a spurious "no streams" error.
     if (!stillCurrent()) return onState({ status: 'idle' })
 
-    // Nothing playable → honest error.
+    // Nothing playable → honest error. A runtime that is still starting (or failed to) is the
+    // reason, not "no sources": naming it stops the picker steering the user to Settings to add a
+    // package they already installed.
     if (!get(pickerStore)?.streams.length) {
+      const runtime = hasExt ? get(jvmRuntimeState) : 'idle'
+      if (runtime === 'starting') return showPickerError(JVM_RUNTIME_STARTING_MESSAGE)
+      if (runtime === 'failed') return showPickerError(JVM_RUNTIME_FAILED_MESSAGE)
       return showPickerError(emptyStreamsError(totalRaw, bases, get(pickerStore)?.rejected?.length))
     }
     traceResolve(trace, 'picker ready for source selection', {

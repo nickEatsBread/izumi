@@ -3,6 +3,7 @@ import { get, writable } from 'svelte/store'
 import type { Media } from '$lib/anilist/types'
 import { preferredAudioLang, preferredSubLang, providerLanguages, providerAudio } from '$lib/settings/ui'
 import { runningStreamExtensions } from '$lib/extensions/manager'
+import { JVM_SOURCES_PLAY_DEADLINE_MS } from '$lib/extensions/jvm-runtime-state'
 import { isBcp47Locale, normalizeLang, subtitleTitle, trackLang } from './sublang'
 import { parseStreamDrm } from '$lib/player/drm'
 import { memo, cacheableList } from './online-cache'
@@ -403,7 +404,10 @@ export async function resolveOnlineStreams(
   // hop tier, so an abort mid-wave stops the chain at the next boundary.
   if (signal?.aborted) return []
   providerProblems.set([])
-  const unordered = await runningStreamExtensions(onlyId)
+  // Playback waits for a cold Aniyomi runtime rather than reporting "no sources" at the browse
+  // deadline: the picker's own wave budget widens to match (play.ts), and the runtime's state is
+  // shown there while it starts.
+  const unordered = await runningStreamExtensions(onlyId, { jvmDeadlineMs: JVM_SOURCES_PLAY_DEADLINE_MS })
   if (!unordered.length) return []
   // A typical catalog is HALF non-English (Italian, German, French, Indonesian, …). Results are
   // emitted in extension order, and the picker's auto-select countdown takes the first row — so
