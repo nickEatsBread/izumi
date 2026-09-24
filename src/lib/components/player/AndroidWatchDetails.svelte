@@ -10,7 +10,7 @@
   import { episodeLabels } from '$lib/anilist/episode-labels'
   import { fetchMediaById } from '$lib/anilist/fetch-media'
   import { fetchDiscussion } from '$lib/comments'
-  import { embedResizeHeight, embedTouchScroll, preferredMobileDiscussion, type EmbedTouchScroll } from '$lib/comments/mobile'
+  import { decideEmbedGestureOwner, embedResizeHeight, embedTouchScroll, preferredMobileDiscussion, type EmbedGestureOwner, type EmbedTouchScroll } from '$lib/comments/mobile'
   import { isDiscussAnimeEmbed, loadDiscussAnimeEmbedTheme } from '$lib/comments/embed-theme'
   import { hideSpoilers } from '$lib/settings/ui'
   import { localHistory, sessionProgress } from '$lib/player/history'
@@ -109,20 +109,35 @@
     const ep = episode
     const key = `${media.id}:${ep ?? ''}`
     if (key === discussionKey) return
+    // Another episode of the same title is the same page with new content, not a new page: the
+    // tab the user chose stays chosen, and the previous discussion stays on screen (dimmed, with
+    // the loading bar) until the new one arrives and the frame swaps its source in place. Tearing
+    // it down at once used to collapse a page that was several screens tall, which is the scroll
+    // jump at every episode change. A different title resets everything.
+    const sameTitle = discussionKey.startsWith(`${media.id}:`)
     discussionKey = key
-    tabTouched = false
-    threads = []
+    if (!sameTitle) {
+      tabTouched = false
+      threads = []
+      active = 'comments'
+    } else {
+      disqusScroller()?.scrollTo({ top: 0 })
+    }
     commentsLoading = true
-    active = 'comments'
     const applyThreads = (value: DiscussionThread[]) => {
       if (key !== discussionKey) return
       threads = value
       commentsLoading = false
-      if (!preferredMobileDiscussion(value) && !tabTouched) active = 'episodes'
+      if (!tabTouched) active = preferredMobileDiscussion(value) ? 'comments' : 'episodes'
     }
     fetchDiscussion(media, ep, applyThreads).then(applyThreads)
   })
   const discussion = $derived(preferredMobileDiscussion(threads))
+  // The string, not the object: `preferredMobileDiscussion` builds a fresh object from every
+  // threads update, and the discussion is applied twice per episode (fast result, then the full
+  // one). Keyed on the object, the height reset below fired on the second pass — after the loader
+  // had already reported its real height — and the frame stayed clipped at the bootstrap height.
+  const disqusSrc = $derived(discussion?.kind === 'disqus' ? discussion.embedSrc : null)
   $effect(() => {
     if (discussion?.kind === 'disqus' && isDiscussAnimeEmbed(discussion.embedSrc)) {
       void loadDiscussAnimeEmbedTheme()
@@ -139,6 +154,12 @@
   let disqusTouchVelocity = 0
   let disqusTouchFrame = 0
   let disqusMomentumFrame = 0
+  // A drag that starts on the comments is the browser's to scroll: the frame chain is set up so
+  // it chains straight to the watch-page scroller, which gives native speed, fling and edge glow.
+  // The relayed touches are only watched to find out whether that actually happened; the page
+  // drives the scroller itself solely for a gesture the browser demonstrably left alone.
+  let disqusGesture: { owner: EmbedGestureOwner; pending: number; armed: boolean } = { owner: 'native', pending: 0, armed: false }
+  let disqusGestureStartTop = 0
 
   const disqusScroller = () => watchPage?.closest<HTMLElement>('.preparing-details, .watch-details') ?? null
   function stopDisqusMomentum() {
@@ -158,20 +179,22 @@
     disqusTouchFrame = 0
     disqusTouchDelta = 0
     disqusTouchVelocity = 0
+    disqusGesture = { owner: 'native', pending: 0, armed: false }
   }
+  // Only for a page-driven gesture. Decays like a native fling rather than being cut off after
+  // 420ms, so a flick carries the reader through a long thread instead of stopping short.
   function startDisqusMomentum() {
     stopDisqusMomentum()
-    if (Math.abs(disqusTouchVelocity) < 0.15) return
-    const started = performance.now()
-    let last = started
+    if (Math.abs(disqusTouchVelocity) < 0.1) return
+    let last = performance.now()
     const step = (now: number) => {
       const scroller = disqusScroller()
       if (!scroller) { disqusMomentumFrame = 0; return }
       const dt = Math.min(32, Math.max(1, now - last))
       const before = scroller.scrollTop
       last = now
-      disqusTouchVelocity *= Math.pow(0.92, dt / 16.67)
-      if (now - started > 420 || Math.abs(disqusTouchVelocity) < 0.15) { disqusMomentumFrame = 0; return }
+      disqusTouchVelocity *= Math.pow(0.955, dt / 16.67)
+      if (Math.abs(disqusTouchVelocity) < 0.04) { disqusMomentumFrame = 0; return }
       scroller.scrollTop += disqusTouchVelocity * dt
       if (scroller.scrollTop === before) { disqusMomentumFrame = 0; return }
       disqusMomentumFrame = requestAnimationFrame(step)
@@ -179,11 +202,33 @@
     disqusMomentumFrame = requestAnimationFrame(step)
   }
   function applyDisqusTouchScroll(message: EmbedTouchScroll) {
-    if (message.phase === 'start') { resetDisqusTouchScroll(); return }
-    if (message.phase === 'end') { flushDisqusTouchScroll(); startDisqusMomentum(); return }
-    stopDisqusMomentum()
-    disqusTouchDelta += message.dy
-    const nextVelocity = Math.max(-3, Math.min(3, message.dy / message.dt))
+    const scroller = disqusScroller()
+    if (message.phase === 'start') {
+      resetDisqusTouchScroll()
+      disqusGesture = { owner: 'undecided', pending: 0, armed: false }
+      disqusGestureStartTop = scroller?.scrollTop ?? 0
+      return
+    }
+    if (message.phase === 'end') {
+      if (disqusGesture.owner === 'page') { flushDisqusTouchScroll(); startDisqusMomentum() }
+      disqusGesture = { owner: 'native', pending: 0, armed: false }
+      return
+    }
+    if (!scroller || disqusGesture.owner === 'native') return
+    if (disqusGesture.owner === 'undecided') {
+      disqusGesture = decideEmbedGestureOwner(disqusGesture, message, {
+        scrollTop: scroller.scrollTop,
+        startTop: disqusGestureStartTop,
+        scrollHeight: scroller.scrollHeight,
+        clientHeight: scroller.clientHeight,
+      })
+      if (disqusGesture.owner !== 'page') return
+      // The travel spent deciding belongs to the drag too.
+      disqusTouchDelta += disqusGesture.pending
+    } else {
+      disqusTouchDelta += message.dy
+    }
+    const nextVelocity = Math.max(-4, Math.min(4, message.dy / message.dt))
     disqusTouchVelocity = disqusTouchVelocity && nextVelocity && Math.sign(disqusTouchVelocity) !== Math.sign(nextVelocity)
       ? nextVelocity
       : disqusTouchVelocity * 0.6 + nextVelocity * 0.4
@@ -272,9 +317,12 @@
   })
 
   $effect(() => {
-    discussion?.kind === 'disqus' ? discussion.embedSrc : null
+    void disqusSrc
     resetDisqusTouchScroll()
     disqusHeight = 480
+    // A frame that is being reused for a new source has to be asked: the loader only reports a
+    // height that differs from its last one, and this reset is invisible to it.
+    postToFrame({ type: 'izumi-disqus-request-height' })
   })
 
   function chooseTab(tab: Tab, scroll = false) {
@@ -384,7 +432,9 @@
   </div>
 
   <div bind:this={tabsEl} class="scroll-mt-3 pt-2">
-    <div class="sticky top-0 z-20 -mx-4 bg-[#0a0a0b]/95 px-4 py-3 backdrop-blur">
+    <!-- Opaque on purpose: a backdrop blur over a screen-tall iframe re-composites on every
+         scrolled frame, which is the one place this page must stay cheap. -->
+    <div class="sticky top-0 z-20 -mx-4 bg-[#0a0a0b] px-4 py-3">
       <div class="flex gap-2 overflow-x-auto">
         {#each tabs as tab (tab)}
           <button onclick={() => chooseTab(tab)} class="inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-bold transition-colors
@@ -397,16 +447,22 @@
     </div>
 
     <div class="pt-1">
-      {#if active === 'comments'}
-        {#if commentsLoading}
+      <!-- The comments block stays mounted while another tab is showing: rebooting the Disqus
+           frame on every tab switch cost a full reload and a page that grew back from its
+           bootstrap height each time. -->
+      <div class:hidden={active !== 'comments'}>
+        {#if commentsLoading && !discussion}
           <div class="space-y-2">{#each Array.from({ length: 4 }) as _}<div class="h-20 animate-pulse rounded-xl bg-white/[0.06]"></div>{/each}</div>
         {:else if discussion?.kind === 'disqus'}
+          {#if commentsLoading}
+            <div class="mb-2 h-1 overflow-hidden rounded-full bg-white/[0.08]"><div class="bar-loader h-full w-full"></div></div>
+          {/if}
           <!-- Grow the embed to its reported content height so Android has one continuous page
                scroller. A viewport-capped, independently scrolling frame makes the gesture change
                owners at the comments boundary and feels like the page is fighting the finger. -->
-          <iframe bind:this={disqusFrame} title="Episode comments" src={discussion.embedSrc} scrolling="no"
+          <iframe bind:this={disqusFrame} title="Episode comments" src={disqusSrc} scrolling="no"
             style:height={`${disqusHeight}px`}
-            class="min-h-[30rem] w-full rounded-xl border-0 bg-[#0e0e0e]"
+            class="min-h-[30rem] w-full border-0 bg-[#0e0e0e] transition-opacity duration-200 {commentsLoading ? 'opacity-40' : ''}"
             sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
         {:else if discussion?.kind === 'reddit'}
           <article class="rounded-xl bg-white/[0.05] px-3 py-2">
@@ -423,7 +479,8 @@
             <p class="mt-1 text-sm text-white/45">No Disqus or Reddit discussion was found.</p>
           </div>
         {/if}
-      {:else if active === 'episodes'}
+      </div>
+      {#if active === 'episodes'}
         {#if playState.status === 'error'}<p class="mb-3 text-sm text-red-400">{playState.message}</p>{/if}
         {#if episodePages > 1}
           <div class="mb-3 flex items-center justify-between text-sm">
