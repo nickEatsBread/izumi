@@ -5,12 +5,15 @@ import {
   connectedTrackerProviders, forgetTrackerConnection, recordTrackerConnection,
 } from './config'
 import { anilistUser } from '$lib/anilist/account'
-import { captureLogin, redirectUri } from './oauth'
+import { captureLogin } from './oauth'
 
 export async function connectAniList() {
   const connectedBefore = connectedTrackerProviders()
   if (!anilistClientId) throw new Error('Missing AniList Client ID (set PUBLIC_ANILIST_CLIENT_ID in .env.local).')
-  const authUrl = `https://anilist.co/api/v2/oauth/authorize?client_id=${anilistClientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token`
+  // Implicit grant takes only client_id + response_type; AniList redirects to the URL registered in
+  // the client settings (which must equal PUBLIC_OAUTH_REDIRECT_URI). Sending redirect_uri here is rejected with
+  // unsupported_grant_type.
+  const authUrl = `https://anilist.co/api/v2/oauth/authorize?client_id=${anilistClientId}&response_type=token`
   const u = await captureLogin(authUrl, 'AniList')
   const frag = new URLSearchParams(u.hash.replace(/^#/, ''))
   const token = frag.get('access_token') ?? u.searchParams.get('access_token')
