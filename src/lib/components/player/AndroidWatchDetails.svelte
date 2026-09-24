@@ -15,7 +15,7 @@
   import { hideSpoilers } from '$lib/settings/ui'
   import { localHistory, sessionProgress } from '$lib/player/history'
   import { getExternalTrackerProgress } from '$lib/trackers'
-  import { playEpisode, type PlayState } from '$lib/stremio/play'
+  import { playEpisodeFromWatchPage, type PlayState } from '$lib/stremio/play'
   import MessageSquare from '@lucide/svelte/icons/message-square'
   import ListVideo from '@lucide/svelte/icons/list-video'
   import PanelsTopLeft from '@lucide/svelte/icons/panels-top-left'
@@ -376,7 +376,7 @@
   ))
   let playState = $state<PlayState>({ status: 'idle' })
   function play(ep: number) {
-    if (ep <= aired && playState.status !== 'resolving') playEpisode(media, ep, (state) => (playState = state))
+    if (ep <= aired && playState.status !== 'resolving') void playEpisodeFromWatchPage(media, ep, (state) => (playState = state))
   }
 
   let relatedMedia = $state<Media | null>(null)

@@ -60,6 +60,24 @@ describe('Android mpv idle preparation', () => {
     expect(prepare).toContain('ensureCore()')
     expect(prepare).not.toMatch(/\bensure\(\)/)
   })
+
+  it('builds the idle core off the UI thread, under the lock a load and a teardown share', () => {
+    // Tauri delivers commands on the main looper, so `runOnUiThread` in `prepare` ran the whole
+    // libmpv initialization inline on the thread painting the browse page.
+    const prepare = nativePlugin.slice(
+      nativePlugin.indexOf('fun prepare(invoke: Invoke)'),
+      nativePlugin.indexOf('private fun inspectionTrackType'),
+    )
+    expect(prepare).not.toContain('runOnUiThread')
+    expect(prepare).toContain('Thread(')
+    expect(nativePlugin).toContain('private fun ensureCore(): MPVLib = synchronized(coreLock)')
+    const teardown = nativePlugin.slice(
+      nativePlugin.indexOf('private fun teardownCore(invoke: Invoke)'),
+      nativePlugin.indexOf('// --- MPVLib.EventObserver'),
+    )
+    expect(teardown).toContain('synchronized(coreLock)')
+    expect(nativePlugin).toContain('setOptionString("keep-open", "yes")')
+  })
 })
 
 describe('Android mpv seek coordination', () => {
@@ -114,6 +132,33 @@ describe('Android mpv seek coordination', () => {
     expect(get(mpvState).pos).toBe(100)
     expect(get(mpvState).seekBusy).toBe(false)
     expect(get(mpvState).frameReady).toBe(true)
+  })
+})
+
+describe('Android mpv pause intent across a load', () => {
+  beforeAll(async () => {
+    await startMpvEvents()
+  })
+
+  beforeEach(() => {
+    mocks.invoke.mockReset()
+    mocks.invoke.mockResolvedValue(undefined)
+  })
+
+  it('carries a paused Next through both optimistic resets', async () => {
+    // Next pressed while paused: the core is already paused, so mpv emits no pause change for the
+    // new file, and a reset to `paused: false` would stand forever.
+    await mpvLoad({ url: 'https://host/next.mkv', autoplay: false })
+    expect(get(mpvState).paused).toBe(true)
+    mocks.event?.({ id: 6 })
+    expect(get(mpvState).paused).toBe(true)
+  })
+
+  it('starts an autoplaying load as playing', async () => {
+    await mpvLoad({ url: 'https://host/next.mkv', autoplay: true })
+    expect(get(mpvState).paused).toBe(false)
+    mocks.event?.({ id: 6 })
+    expect(get(mpvState).paused).toBe(false)
   })
 })
 

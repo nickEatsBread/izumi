@@ -50,6 +50,14 @@ export type StreamPickerState = {
   // this while it searches for the previous episode's release; clearing the store would make the
   // resolve flow treat that search as superseded and abandon it.
   hidden?: boolean
+  // A remembered release may still arrive from a source that has not answered. Until it does, or
+  // every source has settled, the picker's independent auto-selector must not commit the current
+  // best row: doing so a few hundred milliseconds after the first addon answered used to switch
+  // release, quality or subtitle style between two episodes of one binge.
+  continuationOpen?: boolean
+  // An in-place episode advance (next, previous, auto-advance): a docked mini-player stays docked
+  // and simply changes episode, the way any music app's mini-player does.
+  keepMini?: boolean
 }
 
 export const streamPicker = writable<StreamPickerState | null>(null)

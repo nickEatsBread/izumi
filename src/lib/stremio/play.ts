@@ -230,10 +230,14 @@ export type PlayEpisodeOptions = {
   /** Isolated state used by background TV resolution so it cannot replace the local picker. */
   pickerStore?: Writable<StreamPickerState | null>
   resolveSession?: ResolveSession
+  /** An in-place episode advance from inside playback: a docked Android mini-player stays docked. */
+  keepMini?: boolean
 }
 
 export type PlayStreamOptions = {
   autoplay?: boolean
+  /** See PlayEpisodeOptions.keepMini. */
+  keepMini?: boolean
   /** Play this torrent through the local P2P engine even when a debrid key is configured — the
    * picker's "Watch this P2P?" retry after the debrid service blocked the release. */
   forceDirect?: boolean
@@ -1911,6 +1915,8 @@ export async function playEpisode(
     resolving: true,
     continuationPending: continuationPriorityMs > 0,
     hidden: hideForContinuation,
+    continuationOpen: !!cont && hideForContinuation,
+    keepMini: options.keepMini,
     manualOnly: options.forceManual,
     forceAuto: options.forceAuto,
     companion: options.companion,
@@ -1935,7 +1941,7 @@ export async function playEpisode(
     hideForContinuation = remoteHidden
     if (!options.remoteOnly) connecting.set(null)
     if (!stillCurrent()) return
-    pickerStore.update((c) => c ? { ...c, hidden: remoteHidden } : c)
+    pickerStore.update((c) => c ? { ...c, hidden: remoteHidden, continuationOpen: false } : c)
   }
   const showPickerError = (message: string) => {
     if (!stillCurrent()) return
@@ -2129,7 +2135,7 @@ export async function playEpisode(
           const result = applyContinuationState(state, () => pickerStore.set(null), onState)
           played ||= result.played
           continuationError ||= result.error
-        }, { autoplay, automatic: true, startSeconds: options.startSeconds })
+        }, { autoplay, automatic: true, startSeconds: options.startSeconds, keepMini: options.keepMini })
         return played
       })().finally(() => {
         continuationPending = false
@@ -2258,6 +2264,10 @@ export async function playEpisode(
         autoReady,
         continuationPending,
         hidden: hideForContinuation,
+        // Settled with no same-release row means the continuation is off the table; the reveal
+        // below follows and the ordinary automatic choice takes over.
+        continuationOpen: !!cont && hideForContinuation && !continuationAttempted && resolving,
+        keepMini: options.keepMini,
         manualOnly: options.forceManual,
         forceAuto: options.forceAuto,
         companion: options.companion,
@@ -2713,7 +2723,7 @@ async function resolveAndPlayBest(
   // Instant path: use the stream prefetched near the end of the previous episode.
   if (episode != null) {
     const pre = takePrefetched(media.id, episode)
-    if (pre) return await playStream(media, episode, pre, onState, { autoplay, automatic: true })
+    if (pre) return await playStream(media, episode, pre, onState, { autoplay, automatic: true, keepMini: true })
   }
   // Seamless continuity: if the addons already have a CACHED source from the same release
   // we were watching, play it straight away — no picker between back-to-back episodes.
@@ -2724,7 +2734,7 @@ async function resolveAndPlayBest(
       const { streams, want } = await resolveStreams(media, episode)
       if (generation !== advanceGeneration) return onState({ status: 'idle' })
       const same = pickSameRelease(media, streams, want)
-      if (same) return await playStream(media, episode, same, onState, { autoplay, automatic: true })
+      if (same) return await playStream(media, episode, same, onState, { autoplay, automatic: true, keepMini: true })
     }
     catch { /* no addons / nothing yet — the full picker below still queries extensions */ }
   }
@@ -2741,7 +2751,20 @@ async function resolveAndPlayBest(
   return await playEpisode(media, episode, onState, {
     continuation: hint,
     autoplay,
+    keepMini: true,
   })
+}
+
+/** An episode chosen on the Android watch page (its Previous/Next buttons or an episode row) while
+ *  this title is already playing. It is an in-place advance like the player's own Next: the same
+ *  release is continued when it exists, the connecting rail covers the outgoing file at once and a
+ *  paused player stays paused. Before playback has started it is an ordinary play. */
+export function playEpisodeFromWatchPage(media: Media, episode: number, onState: (s: PlayState) => void = noticeState) {
+  const current = get(nowPlayingMedia)
+  if (get(androidMpvActive) && current?.media.id === media.id && currentMedia?.id === media.id) {
+    return resolveAndPlayBest(media, episode, onState, !get(mpvState).paused)
+  }
+  return playEpisode(media, episode, onState)
 }
 
 /** Resolve a selected row for a paired TV without touching the phone/desktop player's media,
@@ -3472,8 +3495,10 @@ export async function playStream(
         recordPlaybackIdentity({ media, episode, stream: recoveryOriginal })
         // Stash the resolved URL + headers so the scrubber's thumbnail grabber can decode frames.
         androidStreamInfo.set({ url: stream.url, headers })
-        // A fresh play always opens the full watch page; a prior in-app mini-player must not leak.
-        androidMiniPlayer.set(false)
+        // A fresh play opens the full watch page; a prior in-app mini-player must not leak into it.
+        // An in-place advance (next, previous, auto-advance) is the one exception: a docked
+        // mini-player stays docked and changes episode under the bar, as a music app's would.
+        if (!options.keepMini) androidMiniPlayer.set(false)
         androidMpvActive.set(true)
         rememberSuccess()
         frameTracePending = true

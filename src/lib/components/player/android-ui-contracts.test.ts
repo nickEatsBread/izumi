@@ -48,6 +48,24 @@ describe('Android UI contracts', () => {
     expect(player).toContain('$debridCaching != null')
   })
 
+  it('keeps the shell up through an episode handover and covers the surface instead', () => {
+    // `display:none` on the shell never hid the native surface behind the transparent page: the
+    // outgoing episode kept playing with no controls for the whole resolve, and the shell then
+    // popped back over a black surface because "playing" is reported when `loadfile` is queued.
+    expect(player).toContain('const resolvingNext = $derived($androidMpvActive && ($connecting != null ||')
+    expect(player).toContain('const overlayHidden = $derived(pickerDialog || $debridCaching != null || $commentsOpen || $androidPipActive)')
+    expect(player).not.toMatch(/const overlayHidden = \$derived\([^\n]*\$connecting != null/)
+    expect(player).toContain('{#if handover}')
+    expect(player).toContain('class="handover-veil')
+    expect(player).toContain('{:else if controlsShown && !handover}')
+    // Ends on the replacement's first frame, or at once when the resolve is cancelled.
+    expect(player).toContain('const frameSeen = firstFrameSeen')
+    expect(player).toContain('if (loadId === handoverLoadId) {')
+    // Watch-page Previous/Next and episode rows take the in-place advance path while playing.
+    expect(preparing).toContain('playEpisodeFromWatchPage(media, target')
+    expect(watchDetails).toContain('playEpisodeFromWatchPage(media, ep')
+  })
+
   it('keeps the Android discussion iframe mounted across the first video frame', () => {
     expect(layout).toContain('if ($androidMpvActive && $nowPlayingMedia) return $nowPlayingMedia')
     expect(preparing).toContain('class:active class:hidden={mini && pull.progress >= 1}')

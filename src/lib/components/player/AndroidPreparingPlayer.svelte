@@ -3,9 +3,9 @@
   import type { Media } from '$lib/anilist/types'
   import { airedCount, banner, cover, mediaHref, title, totalEpisodes } from '$lib/anilist/media'
   import { connecting, streamPicker } from '$lib/player/session'
-  import { androidMiniPull, mpvState } from '$lib/player/android-mpv'
+  import { androidMiniPull } from '$lib/player/android-mpv'
   import { requestAndroidRelated } from '$lib/player/android-watch-navigation'
-  import { cancelResolve, playEpisode } from '$lib/stremio/play'
+  import { cancelResolve, playEpisodeFromWatchPage } from '$lib/stremio/play'
   import AndroidWatchDetails from './AndroidWatchDetails.svelte'
 
   let {
@@ -35,9 +35,11 @@
   const pull = $derived($androidMiniPull)
   const veil = $derived(Math.max(0, 1 - pull.progress * 2.5))
 
+  // While this title plays, Previous/Next are the player's own Next: same release continued, the
+  // outgoing file covered at once, a paused player kept paused. Before playback it is a plain play.
   function play(target: number) {
     if (target < 1 || target > aired) return
-    void playEpisode(media, target, () => {}, { autoplay: active ? !$mpvState.paused : true })
+    void playEpisodeFromWatchPage(media, target, () => {})
   }
   async function openRelated(target: Media) {
     if (active && requestAndroidRelated(mediaHref(target))) return

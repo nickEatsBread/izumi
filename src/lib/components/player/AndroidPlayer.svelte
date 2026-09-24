@@ -79,7 +79,9 @@
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
     gifIncludeSubtitles, androidAutoPip, keepAwakeWhilePlaying,
     preferredAudioLang, preferredSubLang, audioProcessing, sceneBookmarksEnabled,
+    autoSelectSource, autoSelectCountdown,
   } from '$lib/settings/ui'
+  import { banner, cover } from '$lib/anilist/media'
   import { subtitleStyleProps } from '$lib/player/subtitle-style'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
   import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, effectiveSubtitleStyle, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
@@ -1684,9 +1686,74 @@
   // In picture-in-picture the WebView is scaled down to the miniplayer window with it. Every pixel it
   // paints — the watch page's opaque background above all — lands on top of the video surface, so the
   // whole shell goes away and the transparent WebView leaves nothing but the video.
-  // During an episode/source handover the preparation page owns the visible surface. Hiding the
-  // outgoing native frame avoids a black/old-episode flash while the next watch details pre-load.
-  const overlayHidden = $derived(($streamPicker != null && !$streamPicker.hidden) || $connecting != null || $debridCaching != null || $commentsOpen || $androidPipActive)
+  //
+  // A picker that shows a real choice screen (manual selection, or an automatic chain that ran out)
+  // and the debrid caching screen are opaque pages of their own, so the shell goes away under them.
+  // An automatic picker on Android draws nothing but its status rail; that, and the connecting
+  // rail, are an episode HANDOVER, which the shell stays up for: hiding it only removed the
+  // controls (`display:none` on HTML cannot hide the native surface behind the transparent
+  // page), so the outgoing episode kept playing, uncontrollable, for the whole resolve and then
+  // the shell popped back over a black surface. The veil below covers the surface instead.
+  // Mirrors StreamPicker's own `autoImmediate` gate on its Android choice screen.
+  const pickerAutoImmediate = $derived(!!$streamPicker?.forceAuto
+    || ($autoSelectSource && !$autoSelectCountdown && !$streamPicker?.manualOnly && !$streamPicker?.continuationPending))
+  const pickerDialog = $derived($streamPicker != null && !$streamPicker.hidden
+    && (!pickerAutoImmediate || !!$streamPicker.playbackError))
+  const resolvingNext = $derived($androidMpvActive && ($connecting != null || ($streamPicker != null && !pickerDialog)))
+  const overlayHidden = $derived(pickerDialog || $debridCaching != null || $commentsOpen || $androidPipActive)
+  // The handover runs from the moment the next episode starts resolving until the first frame of
+  // the file that replaces this one — never merely until `loadfile` is queued, which is when the
+  // resolve flow reports "playing" and is seconds before anything is on the surface. A resolve
+  // that is cancelled ends it at once, resuming the file that was paused for it.
+  let handover = $state(false)
+  let handoverLoadId = 0
+  let handoverPausedOutgoing = false
+  const HANDOVER_FRAME_MAX_MS = 20_000
+  $effect(() => {
+    const resolving = resolvingNext
+    const loadId = $playerLoadId
+    const frameSeen = firstFrameSeen
+    if (!handover) {
+      if (!resolving || overlayHidden) return
+      handover = true
+      handoverLoadId = loadId
+      // The outgoing file stops at once, as it would in YouTube; nothing it plays from here on is
+      // the thing the user asked for.
+      if (!paused && !atEof && $mpvState.frameReady) {
+        handoverPausedOutgoing = true
+        void setPaused(true)
+      }
+      return
+    }
+    if (overlayHidden) { handover = false; handoverPausedOutgoing = false; return }
+    if (resolving) return
+    if (loadId === handoverLoadId) {
+      // Nothing replaced the file: the resolve was cancelled or failed. Give the episode back.
+      handover = false
+      if (handoverPausedOutgoing) { handoverPausedOutgoing = false; void setPaused(false) }
+      return
+    }
+    if (frameSeen) {
+      handover = false
+      handoverPausedOutgoing = false
+      showControls()
+      return
+    }
+    const cap = setTimeout(() => { handover = false; handoverPausedOutgoing = false }, HANDOVER_FRAME_MAX_MS)
+    return () => clearTimeout(cap)
+  })
+  // The sheet, subtitle editor and a GIF recording describe the file that is going away; they
+  // used to survive the handover and reappear over the next episode with the old track list.
+  $effect(() => {
+    if (!handover) return
+    if (sheet) finishSheetClose()
+    subtitleEditorOpen = false
+    if (gifRecording) { gifRecording = false; void androidGifAbort().catch(() => {}) }
+  })
+  const handoverArt = $derived.by(() => {
+    const target = $connecting?.media ?? $streamPicker?.media ?? $nowPlayingMedia?.media
+    return target ? banner(target) || cover(target) : ''
+  })
 
   async function bookmarkScene() {
     if (!$sceneBookmarksEnabled) {
@@ -2107,9 +2174,21 @@
   <!-- Loading with the controls hidden (or locked): the spinner is the only thing on screen, so it
        still reads as "working on it" without a tap. With controls up it moves into the transport
        button below instead, so the play/pause target is never taken away. -->
-  {#if (loading || recovering) && (!controlsShown || locked)}
+  {#if (loading || recovering) && (!controlsShown || locked) && !handover}
     <div transition:fade={{ duration: 150 }} class="pointer-events-none absolute inset-0 grid place-items-center">
       <BufferSpinner size={48} />
+    </div>
+  {/if}
+  <!-- Episode handover: an opaque cover over the native surface from the moment the next episode
+       starts resolving until its first frame. The connecting rail (SourceConnecting / the picker's
+       rail) sits on this rectangle's lower edge with the words and the cancel button; this carries
+       the artwork and the motion, so the transition reads as one thing loading rather than the old
+       episode freezing, going black, then the new one popping in. -->
+  {#if handover}
+    <div transition:fade={{ duration: 180 }} class="handover-veil pointer-events-none absolute inset-0 z-20 overflow-hidden bg-[#0a0a0b]">
+      {#if handoverArt}<img src={handoverArt} alt="" class="absolute inset-0 h-full w-full scale-[1.03] object-cover opacity-50" />{/if}
+      <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-black/40"></div>
+      <div class="absolute inset-0 grid place-items-center"><BufferSpinner size={48} /></div>
     </div>
   {/if}
   <P2PStatusOverlay buffering={loading || recovering} {firstFrameSeen} variant="android" />
@@ -2172,7 +2251,7 @@
     {#if lockToggleShown}
       <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); toggleLock() }} class="absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 grid h-14 w-14 place-items-center rounded-full bg-black/50 backdrop-blur" aria-label="Unlock"><Lock size={24} /></button>
     {/if}
-  {:else if controlsShown}
+  {:else if controlsShown && !handover}
     <div in:fade={{ duration: 180 }} class="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/65 via-transparent to-black/75"></div>
 
     <!-- Top bar -->

@@ -512,7 +512,7 @@
       autoState = 'off'
       return
     }
-    if (autoState === 'idle' && autoReady && !!best && !busy && autoEnabled && !pick?.manualOnly && !pick?.continuationPending) {
+    if (autoState === 'idle' && autoReady && !!best && !busy && autoEnabled && !pick?.manualOnly && !pick?.continuationPending && !pick?.continuationOpen) {
       if (pick?.forceAuto || !$autoSelectCountdown) { autoState = 'off'; autoBest(); return }
       autoState = 'counting'
       autoStart = performance.now()
@@ -562,6 +562,7 @@
       automatic,
       directStartupTimeoutMs: automatic && directP2p ? AUTO_DIRECT_STARTUP_TIMEOUT_MS : undefined,
       companion: pick.companion,
+      keepMini: pick.keepMini,
     })
   }
   /** Retry the debrid-blocked stream over the local P2P engine — one-off, mode setting untouched. */

@@ -121,10 +121,11 @@ describe('mobileEmbedSrc', () => {
 })
 
 describe('decideEmbedGestureOwner', () => {
-  const idle = { owner: 'undecided' as const, pending: 0, armed: false }
+  type Gesture = ReturnType<typeof decideEmbedGestureOwner>
+  const idle: Gesture = { owner: 'undecided', pending: 0, armed: false }
   const middle = { scrollTop: 400, startTop: 400, scrollHeight: 4000, clientHeight: 800 }
   const run = (moves: { dy: number; cancelable: boolean }[], scroller = middle) =>
-    moves.reduce((state, move) => decideEmbedGestureOwner(state, move, scroller), idle)
+    moves.reduce<Gesture>((state, move) => decideEmbedGestureOwner(state, move, scroller), idle)
 
   it('leaves a gesture the browser is scrolling alone', () => {
     expect(run([{ dy: 6, cancelable: true }, { dy: 20, cancelable: false }]).owner).toBe('native')
@@ -155,7 +156,7 @@ describe('decideEmbedGestureOwner', () => {
   })
 
   it('never reopens a decided gesture', () => {
-    const page = { owner: 'page' as const, pending: 30, armed: true }
+    const page: Gesture = { owner: 'page', pending: 30, armed: true }
     expect(decideEmbedGestureOwner(page, { dy: 5, cancelable: false }, middle)).toBe(page)
   })
 })
