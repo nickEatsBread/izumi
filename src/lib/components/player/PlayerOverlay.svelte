@@ -1546,28 +1546,40 @@
   <div bind:this={viewportProbe} aria-hidden="true" class="pointer-events-none invisible fixed inset-0"></div>
 {/if}
 <!-- Docked watch layout (theme `player.layout: "docked"`): the browse chrome stays, the video keeps
-     to a stage of `dock.width` percent and the episode rail sits beside or below it. Otherwise the
-     wrapper is `display: contents` and the root is the whole container: right of the sidebar rail,
-     below a top bar or above a bottom bar — never a blank rail beside a top bar. -->
+     to a stage of `dock.width` percent and the episode rail sits beside or below it, with the
+     discussion under the stage. Otherwise the wrappers are `display: contents` and the root is the
+     whole container: right of the sidebar rail, below a top bar or above a bottom bar.
+     The webview is TRANSPARENT over the native video and the root is that hole, so no ancestor of
+     the root (and not the root itself) may paint a background — an opaque parent showed a black
+     stage with sound. Every other region is an opaque SIBLING: the rail, the panel under the
+     stage and the gutters beside a narrower stage. -->
 <div
-  class={docked ? `izumi-player-dock fixed z-20 flex bg-background ${dock.episodes === 'below' ? 'flex-col' : 'flex-row'} ${dock.align === 'center' ? 'items-center' : 'items-start'}` : 'contents'}
+  class={docked ? `izumi-player-dock fixed z-20 flex ${dock.episodes === 'below' ? 'flex-col' : 'flex-row'}` : 'contents'}
   style:left={docked ? ($shellNav === 'sidebar' ? '3.5rem' : '0') : undefined}
   style:top={docked ? ($shellNav === 'top' ? '4.75rem' : '0') : undefined}
   style:right={docked ? '0' : undefined}
   style:bottom={docked ? ($shellNav === 'bottom' ? bottomNavInset : '0') : undefined}
 >
 <div
+  class={docked ? `izumi-player-stage flex min-h-0 ${dock.episodes === 'below' ? 'w-full shrink-0 flex-row' : 'h-full shrink-0 flex-col'}` : 'contents'}
+  style:width={docked && dock.episodes !== 'below' ? `${dock.width}%` : undefined}
+  style:max-height={docked && dock.episodes === 'below' ? '70%' : undefined}
+>
+{#if docked && dock.episodes === 'below' && dock.width < 100 && dock.align === 'center'}
+  <div class="min-w-0 flex-1 bg-background" aria-hidden="true"></div>
+{/if}
+<div
   bind:this={overlayRoot}
   tabindex="-1"
-  class="izumi-player-root {docked ? 'relative aspect-video shrink-0 overflow-hidden bg-black' : 'fixed inset-y-0 right-0'} z-20 overscroll-none select-none outline-none focus:outline-none focus-visible:outline-none"
+  class="izumi-player-root {docked ? 'relative aspect-video shrink-0 overflow-hidden' : 'fixed inset-y-0 right-0'} z-20 overscroll-none select-none outline-none focus:outline-none focus-visible:outline-none"
   class:touch-none={!$commentsOpen}
   class:touch-auto={$commentsOpen}
   class:cursor-pointer={!gmMode && controlsVisible}
   class:cursor-none={gmMode || !controlsVisible}
   class:left-14={!docked && windowedChrome && $shellNav === 'sidebar'}
   class:left-0={docked || !windowedChrome || $shellNav !== 'sidebar'}
-  style:width={docked ? `${dock.width}%` : undefined}
-  style:max-height={docked ? (dock.episodes === 'below' ? '70%' : '100%') : undefined}
+  style:width={docked ? (dock.episodes === 'below' ? `${dock.width}%` : '100%') : undefined}
+  style:max-height={docked ? '100%' : undefined}
   style:top={!docked && windowedChrome && $shellNav === 'top' ? '4.75rem' : undefined}
   style:bottom={!docked && windowedChrome && $shellNav === 'bottom' ? bottomNavInset : undefined}
   onclick={onOverlayTap}
@@ -1714,9 +1726,26 @@
     />
   {/if}
 </div>
+{#if docked && dock.episodes === 'below' && dock.width < 100}
+  <div class="min-w-0 flex-1 bg-background" aria-hidden="true"></div>
+{/if}
+{#if docked && dock.episodes !== 'below'}
+  <!-- Under the stage: the episode discussion (or a plain fill when the theme hides it). -->
+  <div data-theme-surface="player-rail" class="izumi-player-under min-h-0 flex-1 border-t border-border bg-background">
+    {#if dock.comments === 'below'}<CommentsPanel inline />{/if}
+  </div>
+{/if}
+</div>
 {#if docked}
   <aside data-theme-surface="player-rail" class="izumi-player-rail flex min-h-0 min-w-0 flex-1 flex-col border-border bg-background {dock.episodes === 'below' ? 'w-full border-t' : 'h-full border-l'}">
-    <DockEpisodes orientation={dock.episodes} />
+    {#if dock.episodes === 'below'}
+      <div class="min-h-0 flex-1 overflow-y-auto">
+        <DockEpisodes orientation="below" scroll={false} />
+        {#if dock.comments === 'below'}<div class="h-[36rem] border-t border-border"><CommentsPanel inline /></div>{/if}
+      </div>
+    {:else}
+      <DockEpisodes orientation="right" />
+    {/if}
   </aside>
 {/if}
 </div>

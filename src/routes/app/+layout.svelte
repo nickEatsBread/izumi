@@ -492,7 +492,7 @@
      (the loading screen). Sits above the caching overlay (z-[60]). Desktop only. -->
 {#if $debridCaching && !$gameMode && !$isMobile}<Lazy load={loadLofiPlayer} />{/if}
 <!-- No `overflow-x-clip` here: it would clip the Hero banner's full-bleed
-     (`-left-14 w-screen`) so it never reaches under the sidebar, leaving a black
+     (`left: -var(--theme-shell-left)`, `w-screen`) so it never reaches under the sidebar, leaving a black
      column. Horizontal overflow is clipped on <body> instead (app.css).
      Hidden while playing so its opaque content doesn't block the video. -->
 <!-- The docked mini-player bar (4rem) rests on the bottom navigation (its themed height, 4rem by

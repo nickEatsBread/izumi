@@ -530,11 +530,12 @@
     onpointercancel={(e) => endHeroPointer(e, false)}
     onwheel={onHeroWheel}
   >
-    <!-- Full-bleed banner: on desktop it breaks out of main's left margin (behind the
-         sidebar) and up under the frameless titlebar. On mobile there's no sidebar/titlebar,
-         so anchor it flush to the viewport edge (left-0/top-0) — the desktop -left-14 would
-         otherwise leave a black band on the right. Keyed for a crossfade. -->
-    <div class="pointer-events-none absolute left-0 top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-left-14 sm:-top-8">
+    <!-- Full-bleed banner: on desktop it breaks out of main's left margin (behind the sidebar
+         rail, `--theme-shell-left`) and up under the frameless titlebar. With a top or bottom
+         navigation bar that margin is 0, so the offset follows the variable: a fixed -left-14
+         left a 56px band of page background at the right. On mobile there's no sidebar/titlebar,
+         so it sits flush with the viewport edge. Keyed for a crossfade. -->
+    <div class="pointer-events-none absolute left-[calc(-1*var(--theme-shell-left,0px))] top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-top-8">
       {#key current.id}
         <div class="{initialArtworkVisible && !showOverlay ? 'detail-hero-reveal' : 'hero-slide-in'} absolute inset-0" style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:{bannerScale && !showOverlay ? .5 : .7}">
           {#if !artworkReady}<div class="absolute inset-0 skeloader"></div>{/if}
