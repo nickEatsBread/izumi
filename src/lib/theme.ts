@@ -2,6 +2,8 @@ import { get } from 'svelte/store'
 import { highContrast, largeInteractionTargets, motionPreference, themePreset } from '$lib/settings/ui'
 import { activeStudioTheme, themeStudioPreview, type StudioTheme } from '$lib/settings/theme-studio'
 import { resolvedThemeTokens } from '$lib/theme-tokens'
+import { isMobile } from '$lib/platform'
+import { resolvePresentation } from '$lib/themes/presentation'
 
 export { resolvedThemeTokens, THEME_PRESETS, type ThemeTokens } from '$lib/theme-tokens'
 
@@ -40,7 +42,8 @@ function apply() {
   root.dataset.theme = preset
   root.dataset.scheme = tokens.scheme
   root.dataset.themeBackdrop = customActive ? studio.backdrop : 'solid'
-  const presentation = customActive ? studio.presentation : undefined
+  // Document chrome follows the same phone/shared resolution as the component renderers.
+  const presentation = customActive ? resolvePresentation(studio.presentation, get(isMobile)) : undefined
   root.dataset.themeDensity = presentation?.density ?? 'comfortable'
   root.dataset.themeNav = presentation?.shell?.nav ?? 'sidebar'
   root.classList.toggle('theme-true-black', !!presentation?.trueBlack && tokens.scheme === 'dark')
@@ -71,7 +74,7 @@ export function startThemeSync(): () => void {
   const media = matchMedia('(prefers-color-scheme: dark)')
   const subscriptions = [
     themePreset, highContrast, largeInteractionTargets, motionPreference,
-    activeStudioTheme, themeStudioPreview,
+    activeStudioTheme, themeStudioPreview, isMobile,
   ].map((store) => store.subscribe(apply))
   media.addEventListener('change', apply)
   apply()

@@ -186,7 +186,11 @@
         </span>
       {/if}
     </div>
-    <div data-theme-card-label class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight {reserveTitleLines ? 'min-h-[2rem]' : ''}">
+    <!-- Reserved height sits on the whole caption block, not the title alone: reserving it on the
+         title pushed the season/format line a blank line below every one-line title in the phone
+         grid, so captions no longer read as belonging to their poster. -->
+    <div data-theme-card-label class={reserveTitleLines ? 'min-h-[3.3rem]' : ''}>
+    <div data-theme-card-label class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight">
       {#if dot(media)}<span class="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={`background:${dot(media)}`}></span>{/if}{title(media)}
     </div>
     {#if subline}
@@ -204,6 +208,7 @@
         <span>{season(media) || media.startDate?.year || ''}</span><span>{format(media)}</span>
       </div>
     {/if}
+    </div>
     {/if}
   </a>
 </div>

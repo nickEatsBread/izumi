@@ -25,6 +25,12 @@ describe('Game mode backdrop cost', () => {
     expect(artwork).toMatch(/:global\(html\.gamemode\) \.poster-column \{\s*animation:\s*none;?\s*\}/)
   })
 
+  it('lets browse images appear in place under Game mode instead of tweening in', () => {
+    // Each opacity fade promotes the image to a compositor layer that rasterises soft under the
+    // Deck's page zoom and snaps crisp when dropped: a pixel pop per card, a blink per banner.
+    expect(css).toMatch(/html\.gamemode main img \{\s*transition:\s*none\s*!important;\s*animation:\s*none\s*!important;\s*\}/)
+  })
+
   it('ticks the Hero countdown clock slowly unless the label shows seconds', () => {
     expect(hero).not.toContain('setInterval(() => (clock = Date.now()), 1_000)')
     expect(hero).toMatch(/heroClockTickMs/)

@@ -46,6 +46,10 @@ Optional templates for three families: `poster` (ordinary tiles), `continue` (re
 
 Seekbar thickness and color. Skip rules, subtitle files and playback shortcuts stay in Settings.
 
+### Phone overrides
+
+`presentation.mobile` carries a phone variant of the same layout: `density`, `hideCardLabels`, `trueBlack`, `hero`, `rows`, `detail`, `player` and `cards`, with the same shapes as their top-level counterparts. It applies when `isMobile` is true (the Android app and any window up to 640px) and is dropped everywhere else, so a package can lead with a poster-based featured card, narrower rows and a stacked series page on phones while keeping its desktop composition. `resolvePresentation` in `src/lib/themes/presentation.ts` merges the block one level deep per section (a phone hero keeps the shared interval; a `rows.byId` entry or card family replaces its shared counterpart whole); both the runtime store and the document chrome in `src/lib/theme.ts` read the resolved tree. `shell` is not accepted inside `mobile`, since phones always use the bottom bar. Packages that include the block need this client version or newer; the validator on older clients rejects the key.
+
 ### What themes do not own
 
 Home row order and visibility, navigation destinations, episode list density, skip rules, subtitle file style, recovery chrome (Theme Studio and the installation preview bar keep independent palettes), and native/TV shells beyond the tokens already applied.
@@ -98,3 +102,5 @@ The client retains the existing limit of 24 saved designs. Install writes attemp
 Focused tests cover package validation, rejected styles and versions, bounded downloads, checksums, cached listings, stable row overrides, page composition helpers, card-family resolution, coverage labels, preview cancellation, personal edits through updates, rollback, origin conflicts, reinstalling a removed design and failed-install recovery. Existing Theme Studio, hero, carousel and series-page navigation checks are included in the verification run.
 
 Browser QA uses the real gallery and public package links. Responsive checks cover desktop and a 390px viewport, including a split series page collapsing the episode rail below the info column. Native player behavior and physical mobile/TV deployment require their normal platform test environments.
+
+The catalog's preview images are screenshots of this client: `scripts/preview/` in izumi-themes serves the dev build to headless Chromium behind a Tauri IPC shim, answers the AniList and episode-metadata requests from a fixture catalogue with generated artwork, seeds the theme and a few plays into local storage, and captures Home (desktop themes) or a two-phone composite (phone themes). Re-render after changing a renderer or a package.

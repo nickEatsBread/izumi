@@ -75,7 +75,11 @@ export interface ThemePresentation {
   shell?: ShellPresentation
   player?: PlayerPresentation
   cards?: Partial<Record<CardFamily, ThemeNode>>
+  /** Phone overrides (the Android app and any viewport up to 640px), resolved on top of the rest. */
+  mobile?: MobilePresentation
 }
+/** What a phone variant can change. Navigation is always the bottom bar there, so `shell` stays shared. */
+export type MobilePresentation = Pick<ThemePresentation, 'density' | 'hideCardLabels' | 'trueBlack' | 'hero' | 'rows' | 'detail' | 'player' | 'cards'>
 /** Every host binds the same shapes: numeric fields are numbers, the rest strings. */
 export type DisplayModel = Partial<Record<Exclude<DisplayField, NumericDisplayField> | ArtworkKind, string> & Record<NumericDisplayField, number>>
 export const ROW_CONTEXT = Symbol('theme-row')
@@ -227,10 +231,16 @@ function parseCards(value: unknown): NonNullable<ThemePresentation['cards']> {
   }
   return result
 }
+const MOBILE_KEYS = ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'player', 'cards']
+function parseMobile(value: unknown): MobilePresentation {
+  const raw = record(value); only(raw, MOBILE_KEYS)
+  return parsePresentation(raw)
+}
 export function parsePresentation(value: unknown): ThemePresentation {
   const raw = record(value)
-  only(raw, ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'shell', 'player', 'cards'])
+  only(raw, ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'shell', 'player', 'cards', 'mobile'])
   const result: ThemePresentation = {}
+  if (raw.mobile !== undefined) result.mobile = parseMobile(raw.mobile)
   if (raw.density !== undefined) result.density = choice(raw.density, ['compact', 'comfortable', 'large'])
   if (raw.hideCardLabels !== undefined) result.hideCardLabels = flag(raw.hideCardLabels)
   if (raw.trueBlack !== undefined) result.trueBlack = flag(raw.trueBlack)
@@ -261,6 +271,27 @@ export function parsePresentation(value: unknown): ThemePresentation {
   if (raw.player !== undefined) result.player = parsePlayer(raw.player)
   if (raw.cards !== undefined) result.cards = parseCards(raw.cards)
   return result
+}
+/** The presentation for one surface: on a phone the `mobile` block is layered over the shared one.
+ *  Objects merge one level deep per section (a phone hero keeps the shared interval unless it says
+ *  otherwise); a row override in `rows.byId` and a card family replace their shared entry whole. */
+export function resolvePresentation(layout: ThemePresentation | undefined, mobile: boolean): ThemePresentation | undefined {
+  if (!layout?.mobile) return layout
+  const { mobile: phone, ...shared } = layout
+  if (!mobile) return shared
+  const resolved: ThemePresentation = { ...shared, ...phone }
+  if (phone.hero) resolved.hero = { ...shared.hero, ...phone.hero }
+  if (phone.rows) resolved.rows = {
+    ...(shared.rows?.defaults || phone.rows.defaults ? { defaults: { ...shared.rows?.defaults, ...phone.rows.defaults } } : {}),
+    ...(shared.rows?.byId || phone.rows.byId ? { byId: { ...shared.rows?.byId, ...phone.rows.byId } } : {}),
+  }
+  if (phone.detail) {
+    resolved.detail = { ...shared.detail, ...phone.detail }
+    if (phone.detail.episodes) resolved.detail.episodes = { ...shared.detail?.episodes, ...phone.detail.episodes }
+  }
+  if (phone.player) resolved.player = { ...shared.player, ...phone.player }
+  if (phone.cards) resolved.cards = { ...shared.cards, ...phone.cards }
+  return resolved
 }
 export function visibleNode(node: ThemeNode, model: DisplayModel): boolean {
   if (!node.when) return true
@@ -365,10 +396,11 @@ export function densityScale(layout?: ThemePresentation): number {
 export function themeCoverage(layout?: ThemePresentation): ThemeSurface[] {
   if (!layout) return []
   const surfaces: ThemeSurface[] = []
-  if (layout.hero || layout.rows || layout.cards) surfaces.push('Home')
-  if (layout.shell || layout.density || layout.hideCardLabels || layout.trueBlack) surfaces.push('Shell')
-  if (layout.detail) surfaces.push('Details')
-  if (layout.player) surfaces.push('Player')
+  const phone = layout.mobile ?? {}
+  if (layout.hero || layout.rows || layout.cards || phone.hero || phone.rows || phone.cards) surfaces.push('Home')
+  if (layout.shell || layout.density || layout.hideCardLabels || layout.trueBlack || phone.density || phone.hideCardLabels || phone.trueBlack) surfaces.push('Shell')
+  if (layout.detail || phone.detail) surfaces.push('Details')
+  if (layout.player || phone.player) surfaces.push('Player')
   return surfaces.length === 4 ? ['Full'] : surfaces
 }
 export interface TemplateOutline { type: ThemeNode['type']; label?: string; children?: TemplateOutline[] }

@@ -96,8 +96,10 @@
       {#if attribution}<span class="shrink-0 text-[0.65rem] font-semibold text-muted-foreground">{attribution}</span>{/if}
     </div>
     {#if viewMoreHref}
+      <!-- On a phone the link is always visible and tapped, not hovered: pad its hit area to a
+           comfortable height while the negative margin keeps the heading row where it was. -->
       <a href={viewMoreHref} data-focusable
-         class="flex items-center gap-0.5 text-xs font-bold text-muted-foreground transition hover:text-foreground group-hover/carousel:opacity-100"
+         class="flex items-center gap-0.5 text-xs font-bold text-muted-foreground transition hover:text-foreground group-hover/carousel:opacity-100 {mob ? '-my-2 py-2 pl-2' : ''}"
          class:opacity-0={!mob}>
         View more <ChevronRight size={14} />
       </a>
