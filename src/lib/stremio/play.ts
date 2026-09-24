@@ -16,6 +16,7 @@ import { dedupeStreams } from './dedupe'
 import { normalizeStreamBehavior } from './stream-behavior'
 import { shouldShowCachingScreen } from './caching-screen'
 import type { RankOptions } from './addon'
+import { swarmSupplied } from './ranking'
 import { continuityChoice, scoreInfo } from './score'
 import { directMetadataPrefetchKey, directMetadataPrefetchRequest } from './direct-metadata-prefetch'
 import { developerConsoleEnabled } from '$lib/debug/log-gate'
@@ -1291,9 +1292,16 @@ export function pickDirectPreloadCandidate(
   if (!hint) return undefined
   const eligible = streams.filter((stream) =>
     !!stream.infoHash && !(want && isWrongSeason(stream, want)))
-  return eligible.find((stream) =>
+  const exact = eligible.find((stream) =>
     !!hint.infoHash && stream.infoHash?.toLowerCase() === hint.infoHash.toLowerCase())
-    ?? eligible.find((stream) => matchesRelease(stream, hint))
+  if (exact) return exact
+  // Several rows can carry the same release (a per-episode file on two indexers, a pack and the
+  // single). The preloader used to take the first in addon order, which is how a 0-seeder copy got
+  // warmed while an 800-seeder copy of the same release sat one row down. Known-dead rows are out;
+  // the best-seeded one leads and the addon's order breaks ties (unreported counts sort last).
+  const sameRelease = eligible.filter((stream) =>
+    matchesRelease(stream, hint) && describe(stream).seeders !== 0)
+  return sameRelease.sort((a, b) => (describe(b).seeders ?? -1) - (describe(a).seeders ?? -1))[0]
 }
 // The continuity hint for the NEXT episode of `media`: the release identity of what's
 // playing now. undefined when continuity is off, nothing is playing, or it's a different
@@ -2140,6 +2148,14 @@ export async function playEpisode(
     const READY_HELD_MS = 350
     const READY_INSTANT_MS = 1500
     const READY_COLD_MS = directP2pEnabled() ? READY_INSTANT_MS : 4000
+    // A held pick that the swarm has to feed, and whose health is weak or unreported, is not worth
+    // committing to after 350ms: the sources still in flight are exactly where the well-seeded copy
+    // tends to come from (the extension wave lands after the first addon), and the commit aborts
+    // discovery. Such a pick waits until this long after the first result, or until every source
+    // has settled, whichever is first. A healthy swarm, an instant row and a settled list all still
+    // go at the usual pace.
+    const READY_WEAK_SWARM_MS = 4000
+    const WEAK_SWARM_SEEDERS = 50
     let autoReady = false
     let resolveSettled = false
     let firstResultAt = 0
@@ -2183,6 +2199,10 @@ export async function playEpisode(
         const key = top.url ?? top.infoHash ?? ''
         if (key !== heldKey) { heldKey = key; heldSince = now }
         deadline = heldSince + READY_HELD_MS
+        const topInfo = describe(top)
+        if (swarmSupplied(topInfo, options) && (topInfo.seeders ?? 0) < WEAK_SWARM_SEEDERS) {
+          deadline = Math.max(deadline, firstResultAt + READY_WEAK_SWARM_MS)
+        }
       } else {
         heldKey = ''; heldSince = 0
         const instant = s.some((x) => !!x.url && !isUncached(x))
@@ -2198,6 +2218,7 @@ export async function playEpisode(
           waitFromFirstResultMs: firstResultAt ? Date.now() - firstResultAt : 0,
           seasonSettled,
           heldTopCandidate: !!heldKey,
+          heldForWeakSwarm: readyAt > heldSince + READY_HELD_MS,
         })
         if (stillCurrent()) paint(true)
       }, Math.max(0, deadline - now))

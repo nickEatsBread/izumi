@@ -1,5 +1,6 @@
 import { effectiveOutcomeTrials, MANUAL_OUTCOME_WEIGHT, type PlaybackFailureClass, type PlaybackTransport, type SourceOutcomeCounts, type SourceOutcomeSummary } from '$lib/player/source-outcomes'
 import { describe, languageMismatch, type Stream } from './addon'
+import { isSwarmRoute } from './ranking'
 import { candidateIds } from './candidate-model'
 import { priorityIndexOf } from './source-priority'
 import { torrentioResolverInfoHash } from './resolver-url'
@@ -70,8 +71,11 @@ function hardConstraintKey(stream: Stream, options: SourcePlannerOptions): strin
     : -1
   // Exact cache state, resolution, audio/subtitle compatibility and an explicitly stated source
   // order are walls, not weights. Learning may only exchange rows whose complete key is identical.
+  // Under direct P2P a debrid glyph says nothing about how a torrent will play (the swarm feeds
+  // every one of them), so there the wall is live-vs-dead, the same collapse the ranking applies.
+  const cached = options.directP2p && info.cached !== 'down' && isSwarmRoute(stream) ? 'unknown' : info.cached
   return [
-    info.cached,
+    cached,
     info.quality,
     languageMismatch(info, options.audioLang),
     subtitleCompatibility(info, options.subtitleLang),

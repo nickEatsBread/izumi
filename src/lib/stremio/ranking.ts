@@ -1,5 +1,6 @@
 import { describe, isWrongSeason, type CacheState, type Stream, type StreamInfo, type StreamSort } from './parse'
-import { scoreInfo, subtitleCompatibility, type ScoreOptions } from './score'
+import { torrentioResolverInfoHash } from './resolver-url'
+import { scoreInfo, subtitleCompatibility, swarmSupplies, type ScoreOptions } from './score'
 
 // Runtime-neutral source ordering shared by the app and the self-hosted Cloudflare resolver.
 // Keep network access and persisted stores out of this module so Workers can bundle the exact
@@ -13,6 +14,43 @@ export interface RankOptions extends ScoreOptions {
   audioLang?: string
   seadexHashes?: ReadonlySet<string>
   cacheCheck?: 'native' | 'library' | 'none'
+}
+
+/** A row whose bytes come out of a BitTorrent swarm rather than a plain HTTP host: a bare
+ *  infoHash, or a Torrentio-style resolver URL that the direct player turns back into one. */
+export const isSwarmRoute = (s: Stream): boolean =>
+  (!!s.infoHash && !s.url) || !!torrentioResolverInfoHash(s.url, s.__addonName ?? s.name)
+
+/** Whether the swarm — not a debrid cache — is what will actually deliver this row: every torrent
+ *  under direct P2P, and any torrent the debrid has not already cached. Seeders are the health
+ *  signal of exactly these rows and noise on the rest. */
+export const swarmSupplied = (i: StreamInfo, opts: ScoreOptions): boolean =>
+  isSwarmRoute(i.stream) && swarmSupplies(i, opts)
+
+/** Below this many known seeders a swarm is starved: startup stalls on the one or two peers that
+ *  exist, whatever the resolution promises. A row that reports no count is NOT starved — an addon
+ *  that does not measure tracker health is not evidence of a dead swarm. */
+export const STARVED_SWARM_SEEDERS = 5
+export const isStarvedSwarm = (i: StreamInfo, opts: ScoreOptions): boolean =>
+  swarmSupplied(i, opts) && i.seeders != null && i.seeders < STARVED_SWARM_SEEDERS
+
+// Under direct P2P the debrid's cache is not on the path at all — every torrent is fetched from
+// the swarm — so a cache glyph must not sort one torrent above another: an extension's `[⬇]` row
+// with 800 seeders used to lose to a Torrentio row with 3 because the glyph read "uncached". Only a
+// dead swarm keeps its rank; a plain HTTP stream stays instant, since it really is.
+const effectiveCacheState = (i: StreamInfo, opts: RankOptions): CacheState =>
+  opts.directP2p && i.cached !== 'down' && isSwarmRoute(i.stream) ? 'unknown' : i.cached
+const cacheRankOf = (i: StreamInfo, opts: RankOptions) => cacheRank(effectiveCacheState(i, opts))
+const starvedRank = (i: StreamInfo, opts: RankOptions) => (isStarvedSwarm(i, opts) ? 1 : 0)
+
+/** Automatic eligibility by cache state. Under direct P2P the debrid cache check is irrelevant to a
+ *  torrent, so every live swarm is eligible; elsewhere unknown rows wait for a native check and
+ *  uncached rows need the caller to have opted into a debrid download. */
+const cacheEligible = (i: StreamInfo, opts: RankOptions): boolean => {
+  if (opts.directP2p && isSwarmRoute(i.stream)) return i.cached !== 'down'
+  return i.cached === 'instant'
+    || (i.cached === 'unknown' && opts.cacheCheck !== 'native')
+    || (!!opts.allowUncached && (i.cached === 'unknown' || i.cached === 'uncached'))
 }
 
 const isCurated = (i: StreamInfo, opts: RankOptions) =>
@@ -60,8 +98,10 @@ export function rankInfos(streams: Stream[], sort: StreamSort = 'quality', opts:
     return score
   }
   const mismatch = (i: StreamInfo) => (languageMismatch(i, opts.audioLang) ? 1 : 0)
+  // The starved wall is part of the quality order only; explicit seeder/size sorts say otherwise.
+  const starved = (i: StreamInfo) => (sort === 'quality' ? starvedRank(i, opts) : 0)
   const rankOf = sort === 'quality'
-    ? curatedScoreOf(infos, scoreOf, (i) => `${cacheRank(i.cached)}:${mismatch(i)}`, opts)
+    ? curatedScoreOf(infos, scoreOf, (i) => `${cacheRankOf(i, opts)}:${mismatch(i)}:${starved(i)}`, opts)
     : scoreOf
   const within = (a: StreamInfo, b: StreamInfo) => {
     if (sort === 'seeders') return (b.seeders ?? -1) - (a.seeders ?? -1) || b.quality - a.quality
@@ -70,8 +110,9 @@ export function rankInfos(streams: Stream[], sort: StreamSort = 'quality', opts:
       || curatedFirst(a, opts) - curatedFirst(b, opts)
       || scoreOf(b) - scoreOf(a) || (b.seeders ?? -1) - (a.seeders ?? -1)
   }
-  return infos.sort((a, b) => cacheRank(a.cached) - cacheRank(b.cached)
+  return infos.sort((a, b) => cacheRankOf(a, opts) - cacheRankOf(b, opts)
     || mismatch(a) - mismatch(b)
+    || starved(a) - starved(b)
     || within(a, b)
     || (b.sizeBytes ?? 0) - (a.sizeBytes ?? 0))
 }
@@ -88,14 +129,14 @@ export function pickCandidates(
   opts: RankOptions = {},
 ): Stream[] {
   const pool = want ? streams.filter((s) => !isWrongSeason(s, want)) : streams
-  const all = pool.map(describe).filter((i) =>
-    i.cached === 'instant'
-    || (i.cached === 'unknown' && opts.cacheCheck !== 'native')
-    || (opts.allowUncached && (i.cached === 'unknown' || i.cached === 'uncached')))
+  const all = pool.map(describe).filter((i) => cacheEligible(i, opts))
   if (!all.length) return []
   const preferred = all.filter((i) => !languageMismatch(i, opts.audioLang))
   const target = quality === 'any' ? NaN : Number(quality)
-  const cacheFirst = (i: StreamInfo) => cacheRank(i.cached)
+  const cacheFirst = (i: StreamInfo) => cacheRankOf(i, opts)
+  // A starved swarm is a wall between the cache key and the tier key: under the tier key alone a
+  // 2-seeder 1080p outranked a 900-seeder 720p, and no score could reach across that.
+  const starved = (i: StreamInfo) => starvedRank(i, opts)
   const tierRank = (i: StreamInfo) =>
     !Number.isFinite(target) ? 0 : i.quality === target ? 0 : i.quality < target ? 1 : 2
   const audioEligible = preferred.length ? preferred : all
@@ -113,9 +154,10 @@ export function pickCandidates(
     }
     return score
   }
-  const rankOf = curatedScoreOf(eligible, scoreOf, (i) => `${cacheFirst(i)}:${tierRank(i)}`, opts)
+  const rankOf = curatedScoreOf(eligible, scoreOf, (i) => `${cacheFirst(i)}:${starved(i)}:${tierRank(i)}`, opts)
   const ordered = eligible.sort((a, b) =>
     cacheFirst(a) - cacheFirst(b)
+    || starved(a) - starved(b)
     || tierRank(a) - tierRank(b)
     || rankOf(b) - rankOf(a)
     || b.quality - a.quality
@@ -142,9 +184,17 @@ export function preferDirectStartupCandidates(candidates: Stream[]): Stream[] {
   const metadataReady = firstInfo.seeders == null && !first.__torrentUrl
     ? sameQuality.filter((stream) => !!stream.__torrentUrl && (describe(stream).seeders ?? 0) > 0)
     : []
+  // A smaller file only starts faster when its swarm can actually feed it. Against a leader with a
+  // known count the challenger has to keep a real share of that health; against a leader that
+  // reports none, only a count that is known to be starved rules it out — size is then the only
+  // evidence there is.
+  const lead = firstInfo.seeders
+  const healthyEnough = (seeders: number | undefined) => lead == null
+    ? seeders == null || seeders >= STARVED_SWARM_SEEDERS
+    : seeders != null && seeders >= Math.max(STARVED_SWARM_SEEDERS, lead / 4)
   const compact = sameQuality.filter((stream) => {
     const info = describe(stream)
-    return info.seeders !== 0
+    return healthyEnough(info.seeders)
       && info.sizeBytes != null
       && info.sizeBytes <= DIRECT_AUTO_STARTUP_MAX_BYTES
   })

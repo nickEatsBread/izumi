@@ -161,6 +161,108 @@ describe('direct P2P automatic startup order', () => {
     expect(preferDirectStartupCandidates([healthy, metadataPack]))
       .toEqual([healthy, metadataPack])
   })
+
+  it('does not trade a healthy swarm for a small file with almost no peers', () => {
+    // Smaller only starts faster when someone is seeding it: a 1-seeder 700MB copy used to be
+    // promoted over the 40-seeder 2.5GB leader on size alone, and then stalled.
+    const leader = torrent('leader', '1080p', 2_500, 40)
+    const starved = torrent('starved', '1080p', 700, 1)
+    const thin = torrent('thin', '1080p', 700, 8)
+    const fine = torrent('fine', '1080p', 700, 12)
+    expect(preferDirectStartupCandidates([leader, starved])).toEqual([leader, starved])
+    expect(preferDirectStartupCandidates([leader, thin])).toEqual([leader, thin])
+    expect(preferDirectStartupCandidates([leader, fine])).toEqual([fine, leader])
+  })
+
+  it('does not promote a known-starved file over a leader that reports no count', () => {
+    const unknownLead = torrent('unknown', '1080p', 2_500)
+    const starved = torrent('starved', '1080p', 700, 2)
+    const unknownSmall = torrent('small', '1080p', 700)
+    expect(preferDirectStartupCandidates([unknownLead, starved])).toEqual([unknownLead, starved])
+    expect(preferDirectStartupCandidates([unknownLead, unknownSmall])).toEqual([unknownSmall, unknownLead])
+  })
+})
+
+describe('seed count is the health signal of a swarm-fed row', () => {
+  // A Torrentio row without a debrid glyph reads "unknown"; an extension row is minted as
+  // uncached (`[⬇]`); a debrid-cached row is instant. Under direct P2P every one of them is
+  // fetched from the swarm, so none of those glyphs may decide between them — the seeders do.
+  const torrentio = (hash: string, quality: string, seeders?: number) => ({
+    infoHash: hash,
+    name: 'Torrentio\n' + quality,
+    title: `[Group] Show - 01 (${quality})${seeders == null ? '' : ` 👤 ${seeders}`}`,
+    behaviorHints: { filename: `[Group] Show - 01 (${quality}).mkv` },
+  }) as never
+  const extension = (hash: string, quality: string, seeders: number) => ({
+    infoHash: hash,
+    name: '[Nyaa⬇] Nyaa',
+    title: `[Group] Show - 01 (${quality})`,
+    __seeders: seeders,
+    behaviorHints: { filename: `[Group] Show - 01 (${quality}).mkv` },
+  }) as never
+  const debridCached = (hash: string, quality: string, seeders: number) => ({
+    infoHash: hash,
+    url: `https://torrentio.strem.fun/resolve/realdebrid/${hash}/file.mkv`,
+    name: '[RD+] Torrentio\n' + quality,
+    title: `[Group] Show - 01 (${quality}) 👤 ${seeders}`,
+    behaviorHints: { filename: `[Group] Show - 01 (${quality}).mkv` },
+  }) as never
+  const direct = { directP2p: true }
+
+  it('lets an extension torrent with a real swarm lead a barely-seeded addon row under direct P2P', () => {
+    const weak = torrentio('a'.repeat(40), '1080p', 3)
+    const strong = extension('b'.repeat(40), '1080p', 800)
+    expect(pickCandidates([weak, strong], '1080', undefined, undefined, direct)).toEqual([strong, weak])
+    expect(rankStreams([weak, strong], 'quality', direct)).toEqual([strong, weak])
+  })
+
+  it('does not let a debrid cache glyph outrank the swarm under direct P2P', () => {
+    // The cache belongs to a service that is not on the path; the swarm behind the glyph is what
+    // plays, and this one has almost nobody on it.
+    const cachedWeak = debridCached('c'.repeat(40), '1080p', 2)
+    const plainStrong = torrentio('d'.repeat(40), '1080p', 600)
+    expect(pickBest([cachedWeak, plainStrong], '1080', undefined, direct)).toBe(plainStrong)
+  })
+
+  it('keeps the cache wall when a debrid really is on the path', () => {
+    const cached = debridCached('c'.repeat(40), '1080p', 2)
+    const uncachedStrong = extension('b'.repeat(40), '1080p', 800)
+    expect(pickBest([uncachedStrong, cached], '1080', undefined, { allowUncached: true })).toBe(cached)
+  })
+
+  it('still excludes a dead swarm under direct P2P', () => {
+    const dead = { ...(extension('e'.repeat(40), '1080p', 1) as object), __seeders: 0, title: '[Group] Show - 01 (1080p) 👤 0' } as never
+    const live = torrentio('f'.repeat(40), '720p', 40)
+    expect(pickCandidates([dead, live], '1080', undefined, undefined, direct)).toEqual([live])
+  })
+
+  it('treats a starved swarm as a wall the requested tier cannot climb over', () => {
+    // The tier key sits above the score, so no amount of seeders could move a 900-seeder 720p above
+    // a 2-seeder 1080p when 1080p was asked for — and the 1080p stalls on its two peers.
+    const starved = torrentio('a'.repeat(40), '1080p', 2)
+    const healthy = torrentio('b'.repeat(40), '720p', 900)
+    expect(pickBest([starved, healthy], '1080', undefined, direct)).toBe(healthy)
+    expect(rankStreams([starved, healthy], 'quality', direct)[0]).toBe(healthy)
+  })
+
+  it('does not call a swarm starved when nobody reported a count', () => {
+    const unreported = torrentio('a'.repeat(40), '1080p')
+    const healthy = torrentio('b'.repeat(40), '720p', 900)
+    expect(pickBest([unreported, healthy], '1080', undefined, direct)).toBe(unreported)
+  })
+
+  it('applies the starved wall to an uncached debrid row too, since the service fetches from that swarm', () => {
+    const starved = { ...(extension('a'.repeat(40), '1080p', 2) as object) } as never
+    const healthy = extension('b'.repeat(40), '720p', 900)
+    expect(pickBest([starved, healthy], '1080', undefined, { allowUncached: true })).toBe(healthy)
+  })
+
+  it('leaves the explicit seeder and size sorts alone', () => {
+    const starved = torrentio('a'.repeat(40), '1080p', 2)
+    const healthy = torrentio('b'.repeat(40), '720p', 900)
+    expect(rankStreams([healthy, starved], 'size', direct)).toHaveLength(2)
+    expect(rankStreams([starved, healthy], 'seeders', direct)[0]).toBe(healthy)
+  })
 })
 
 describe('curated best release', () => {

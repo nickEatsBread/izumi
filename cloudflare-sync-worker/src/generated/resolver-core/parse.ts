@@ -359,6 +359,21 @@ const parsed = new WeakMap<Stream, StreamInfo>()
 
 export const SEEDER_PLACEHOLDERS: ReadonlySet<number> = new Set([32_767, 65_535])
 
+// A count as indexers actually write it: `1234`, `1,234`, `1.2k`. Anything else is not a count.
+const SEEDER_COUNT = String.raw`(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?\s*[kK](?![a-z])|\d+)`
+const SEEDER_GLYPH = new RegExp(String.raw`[👤👥🌱]\s*${SEEDER_COUNT}`, 'u')
+const SEEDER_WORD = new RegExp(String.raw`\b(?:seeders?|seeds?)\s*[:=]\s*${SEEDER_COUNT}`, 'i')
+const SEEDER_LETTER = new RegExp(String.raw`(?:^|[\s|([])S\s*[:=]\s*${SEEDER_COUNT}`, 'i')
+
+function parseSeederCount(text: string | undefined): number | undefined {
+  if (text == null) return undefined
+  const compact = text.replace(/,/g, '').replace(/\s+/g, '')
+  const thousands = /[kK]$/.test(compact)
+  const value = Number(thousands ? compact.slice(0, -1) : compact)
+  if (!Number.isFinite(value)) return undefined
+  return Math.round(thousands ? value * 1000 : value)
+}
+
 export function describe(s: Stream): StreamInfo {
   const hit = parsed.get(s)
   if (hit) return hit
@@ -373,13 +388,13 @@ function parseStream(s: Stream): StreamInfo {
   const low = hay.toLowerCase()
   const quality = resolutionOf(s)
 
-  // Seeders. The person glyph is the common spelling; some indexers use the two-person glyph or
-  // write it out. The `S:` form is anchored to a boundary and requires the colon so it can't
-  // swallow the neighbouring `L:` leecher count — reading leechers as seeders would paint a dead
-  // torrent as healthy, which is worse than reading nothing.
-  const seedersTxt = hay.match(/[👤👥]\s*(\d+)/u)?.[1]
-    ?? hay.match(/\bseeders?\s*[:=]\s*(\d+)/i)?.[1]
-    ?? hay.match(/(?:^|[\s|([])S\s*[:=]\s*(\d+)/i)?.[1]
+  // Seeders. The person glyph is the common spelling; some indexers use the two-person glyph, the
+  // seedling, or write it out (`Seeders:` / `Seeds:`). The `S:` form is anchored to a boundary and
+  // requires the colon so it can't swallow the neighbouring `L:` leecher count — reading leechers
+  // as seeders would paint a dead torrent as healthy, which is worse than reading nothing.
+  const seedersTxt = hay.match(SEEDER_GLYPH)?.[1]
+    ?? hay.match(SEEDER_WORD)?.[1]
+    ?? hay.match(SEEDER_LETTER)?.[1]
   // Prefer a positive structural count supplied by an extension. Zero remains unknown here: some
   // indexers use it as a placeholder when they do not measure tracker health, so treating every
   // structural zero as a dead swarm hides otherwise playable torrents.
@@ -388,7 +403,7 @@ function parseStream(s: Stream): StreamInfo {
     : undefined
   // The signed and unsigned 16-bit ceilings are placeholders some indexers emit for "many" or
   // "unknown". Treating them as counts let a placeholder outrank every genuine swarm.
-  const reportedSeeders = structuralSeeders ?? (seedersTxt != null ? Number(seedersTxt) : undefined)
+  const reportedSeeders = structuralSeeders ?? parseSeederCount(seedersTxt)
   const seeders = reportedSeeders != null && SEEDER_PLACEHOLDERS.has(reportedSeeders) ? undefined : reportedSeeders
   const sizeTxt = hay.match(/💾\s*([\d.]+\s*[KMGT]i?B)/i)?.[1]?.replace(/\s+/g, ' ').trim()
   // Structured first (authoritative), then the text the addon wrote. The LABEL keeps the addon's

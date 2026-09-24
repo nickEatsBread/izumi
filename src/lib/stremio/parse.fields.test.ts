@@ -63,6 +63,17 @@ suite('seeders', () => {
   it('does not mistake the leechers count for seeders', () => {
     expect(describe({ url: 'u', description: 'L:99' }).seeders).toBeUndefined()
   })
+  it('reads the spellings other indexers use', () => {
+    expect(describe({ url: 'u', title: '👤 1,234' }).seeders).toBe(1234)
+    expect(describe({ url: 'u', title: '👤 1.2k' }).seeders).toBe(1200)
+    expect(describe({ url: 'u', title: '👤 2 K' }).seeders).toBe(2000)
+    expect(describe({ url: 'u', title: '🌱 33' }).seeders).toBe(33)
+    expect(describe({ url: 'u', description: 'Seeds: 12' }).seeders).toBe(12)
+    expect(describe({ url: 'u', description: 'Seeders=12' }).seeders).toBe(12)
+  })
+  it('does not read a bitrate unit as a thousands suffix', () => {
+    expect(describe({ url: 'u', title: '👤 12 kbps' }).seeders).toBe(12)
+  })
 })
 
 suite('hdr', () => {
