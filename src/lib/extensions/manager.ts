@@ -130,11 +130,9 @@ export interface JvmSourcePreference {
 
 export type { ExtensionCatalogPackage, ExtensionCatalog } from './catalog'
 
-/** The maintained anime/HTTP package catalog used by the built-in Source Store. It can also appear
- *  in the user's source list like any other package catalog. Kept here as the canonical address of
- *  the repository the packages are published to. */
-export const OFFICIAL_ANIME_CATALOG =
-  'https://raw.githubusercontent.com/nickEatsBread/izumi-extension-repo/refs/heads/main/index.json'
+// The official catalog address lives in the pure catalog module so the store registry can name it
+// without importing this orchestrator; re-exported for existing callers.
+export { OFFICIAL_ANIME_CATALOG } from './catalog'
 
 interface JvmSource {
   id: string

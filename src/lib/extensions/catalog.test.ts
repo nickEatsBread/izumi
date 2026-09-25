@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pointerUrl, normalizeManifest, isRunnableType, isLegacyTorrentType, extensionBackendLabel, resolveManifestUrl, manifestProblem, sourceLabel, catalogPackages, aniyomiRepositoryPackages } from './catalog'
+import { pointerUrl, normalizeManifest, isRunnableType, isLegacyTorrentType, extensionBackendLabel, resolveManifestUrl, manifestProblem, sourceLabel, catalogPackages, aniyomiRepositoryPackages, OFFICIAL_ANIME_CATALOG } from './catalog'
 
 // Shapes below are the real ones served by the catalogs we support, trimmed to the fields we read.
 
@@ -340,5 +340,11 @@ describe('aniyomiRepositoryPackages', () => {
       [{ id: 'x', name: 'X', code: 'https://example.test/x.js' }],
       'https://example.test/index.json',
     )).toBeNull()
+  })
+})
+
+describe('OFFICIAL_ANIME_CATALOG', () => {
+  it('is owned by the pure catalog module', () => {
+    expect(OFFICIAL_ANIME_CATALOG).toBe('https://raw.githubusercontent.com/nickEatsBread/izumi-extension-repo/refs/heads/main/index.json')
   })
 })
