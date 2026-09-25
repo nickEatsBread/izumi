@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   currentLegacyStores: vi.fn(),
   extensionUrls: null as unknown as Writable<string[]>,
   enabledExtensionUrls: null as unknown as Writable<string[]>,
+  disabledExtensions: null as unknown as Writable<string[]>,
   allStores: null as unknown as Writable<unknown[]>,
   enabledStores: null as unknown as Writable<unknown[]>,
   packageOrigins: null as unknown as Writable<Record<string, string>>,
@@ -27,7 +28,8 @@ vi.mock('./manager', () => ({
 vi.mock('$lib/settings/ui', () => {
   mocks.extensionUrls = writable<string[]>([])
   mocks.enabledExtensionUrls = writable<string[]>([])
-  return { extensionUrls: mocks.extensionUrls, enabledExtensionUrls: mocks.enabledExtensionUrls }
+  mocks.disabledExtensions = writable<string[]>([])
+  return { extensionUrls: mocks.extensionUrls, enabledExtensionUrls: mocks.enabledExtensionUrls, disabledExtensions: mocks.disabledExtensions }
 })
 vi.mock('$lib/store/feeds', () => {
   mocks.allStores = writable<unknown[]>([])
@@ -80,6 +82,7 @@ beforeEach(() => {
   mocks.currentLegacyStores.mockReset().mockImplementation(() => [OFFICIAL, ...get(mocks.extensionUrls)])
   mocks.extensionUrls.set(['https://x/index.json'])
   mocks.enabledExtensionUrls.set(['https://x/index.json'])
+  mocks.disabledExtensions.set([])
   mocks.allStores.set([])
   mocks.enabledStores.set([])
   mocks.packageOrigins.set({})
@@ -222,6 +225,27 @@ describe('checkExtensionUpdates', () => {
     mocks.loadStoreAndPin.mockResolvedValue(loaded('https://x.test/index.json', [pkg('bound-package', '2')]))
     expect((await checkExtensionUpdates()).updated.map((item) => item.id)).toEqual(['bound-package'])
     expect(mocks.installCatalogPackage).toHaveBeenCalledWith(expect.objectContaining({ id: 'bound-package' }), 'https://x.test/index.json', { updateOnly: true })
+  })
+
+  it('never polls a catalog switched off on the Sources page, even where it is also a store', async () => {
+    mocks.extensionUrls.set(['https://x.test/index.json'])
+    mocks.enabledExtensionUrls.set([])
+    mocks.disabledExtensions.set(['https://x.test/index.json'])
+    mocks.enabledStores.set([store('u-x', 'https://x.test/index.json')])
+    mocks.allStores.set([store('u-x', 'https://x.test/index.json')])
+    mocks.installedExtensionPackages.mockResolvedValue([inst('p', '1')])
+    expect((await checkExtensionUpdates()).reason).toBe('no-catalogs')
+    expect(mocks.loadStoreAndPin).not.toHaveBeenCalled()
+  })
+
+  it('never polls a hidden store through its Sources entry', async () => {
+    mocks.extensionUrls.set(['https://x.test/index.json'])
+    mocks.enabledExtensionUrls.set(['https://x.test/index.json'])
+    mocks.allStores.set([{ ...store('u-x', 'https://x.test/index.json'), enabled: false }])
+    mocks.enabledStores.set([])
+    mocks.installedExtensionPackages.mockResolvedValue([inst('p', '1')])
+    expect((await checkExtensionUpdates()).reason).toBe('no-catalogs')
+    expect(mocks.fetchExtensionInfo).not.toHaveBeenCalled()
   })
 
   it('lets an explicit check inspect disabled configured catalogs without enabling them', async () => {

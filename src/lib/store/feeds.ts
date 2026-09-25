@@ -200,13 +200,15 @@ export function pruneStorePins(): void {
 }
 
 /** Register a package catalog the user pasted into Sources as a store too, so it appears in the
- *  Store. Returns false when it was already known, is built in, isn't a public HTTPS link, or is a
- *  GitHub page (HTML, never the catalog itself — such a source stays a source). */
-export function registerCatalogStore(url: string): boolean {
+ *  Store — switched off when its Sources entry is. Returns false when it was already known, is built
+ *  in, isn't a public HTTPS link, or is a GitHub page (HTML, never the catalog itself — such a source
+ *  stays a source). */
+export function registerCatalogStore(url: string, enabled = true): boolean {
   const canonical = canonicalStoreUrl(url)
   if (!canonical || /^https:\/\/(?:www\.)?github\.com\//i.test(canonical)) return false
   try {
-    addStore(canonical, sourceLabel(canonical))
+    const feed = addStore(canonical, sourceLabel(canonical))
+    if (!enabled) setStoreEnabled(feed.id, false)
     return true
   } catch {
     return false

@@ -1,6 +1,6 @@
 import { persisted } from 'svelte-persisted-store'
 import { get } from 'svelte/store'
-import { extensionUrls } from '$lib/settings/ui'
+import { disabledExtensions, extensionUrls } from '$lib/settings/ui'
 import { registerCatalogStore } from './feeds'
 
 /** Source-list entries already checked for being a package catalog (each is fetched once). */
@@ -14,6 +14,12 @@ let running: Promise<number> | null = null
  *  fetch failed is retried next time; everything else is examined once. Overlapping calls (the Store
  *  page and the background check) share one run. Returns how many stores it added. */
 export function migrateCatalogStores(fetchInfo?: FetchInfo): Promise<number> {
+  // Theme listings moved to the Store's IndexedDB cache; the old localStorage copy (up to 1 MB) goes.
+  try {
+    localStorage.removeItem('theme-catalog-cache-v1')
+  } catch {
+    // No storage here: nothing to clean.
+  }
   running ??= migrate(fetchInfo).finally(() => {
     running = null
   })
@@ -32,8 +38,10 @@ async function migrate(fetchInfo?: FetchInfo): Promise<number> {
     } catch {
       continue
     }
-    if (!result.packages && /could not be fetched|returned HTTP/.test(result.problem ?? '')) continue
-    if (result.packages && registerCatalogStore(spec)) registered += 1
+    // Unreachable (network, server error, rate limit): try again next time. A 4xx answer is final.
+    if (!result.packages && /could not be fetched|returned HTTP (?:5\d\d|429)/.test(result.problem ?? '')) continue
+    // A catalog switched off on the Sources page stays switched off as a store.
+    if (result.packages && registerCatalogStore(spec, !get(disabledExtensions).includes(spec))) registered += 1
     examinedCatalogSpecs.update((specs) => (specs.includes(spec) ? specs : [...specs, spec]))
   }
   return registered

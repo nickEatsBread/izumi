@@ -1,5 +1,5 @@
 import { get, writable } from 'svelte/store'
-import { enabledExtensionUrls, extensionUrls } from '$lib/settings/ui'
+import { disabledExtensions, enabledExtensionUrls, extensionUrls } from '$lib/settings/ui'
 import { playing } from '$lib/player/session'
 import type { ExtensionCatalogPackage } from './catalog'
 import type { InstalledExtensionPackage } from './manager'
@@ -100,11 +100,15 @@ export async function checkExtensionUpdates(
   const { currentLegacyStores, originKey, packageOrigins } = await import('$lib/store/origins')
   const installed = await installedExtensionPackages()
   if (!installed.length) return { updated: [], failed: 0, reason: 'no-installed' }
-  // The theme store can never list packages; skipping it saves a fetch every six hours.
+  // The theme store can never list packages; skipping it saves a fetch every six hours. A catalog
+  // switched off on the Sources page is not polled even where it is also a store, and a store is never
+  // polled a second time through its Sources entry: whichever switch is off wins.
+  const switchedOff = new Set(get(disabledExtensions).map(originKey))
   const stores = get(options.includeDisabledCatalogs ? allStores : enabledStores)
-    .filter((store) => store.id !== 'izumi-themes')
+    .filter((store) => store.id !== 'izumi-themes' && (options.includeDisabledCatalogs || !switchedOff.has(store.url)))
+  const known = get(allStores)
   const legacy = get(options.includeDisabledCatalogs ? extensionUrls : enabledExtensionUrls)
-    .filter((spec) => !stores.some((store) => store.url === originKey(spec)))
+    .filter((spec) => !known.some((store) => store.url === originKey(spec)))
   if (!stores.length && !legacy.length) return { updated: [], failed: 0, reason: 'no-catalogs' }
   const [loaded, infos] = await Promise.all([
     Promise.all(stores.map((store) => loadStoreAndPin(store, { force: true }).catch(() => null))),

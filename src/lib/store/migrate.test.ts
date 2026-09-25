@@ -2,10 +2,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { get, writable, type Writable } from 'svelte/store'
 
-const mocks = vi.hoisted(() => ({ extensionUrls: null as unknown as Writable<string[]> }))
+const mocks = vi.hoisted(() => ({
+  extensionUrls: null as unknown as Writable<string[]>,
+  disabledExtensions: null as unknown as Writable<string[]>,
+}))
 vi.mock('$lib/settings/ui', () => {
   mocks.extensionUrls = writable<string[]>([])
-  return { extensionUrls: mocks.extensionUrls }
+  mocks.disabledExtensions = writable<string[]>([])
+  return { extensionUrls: mocks.extensionUrls, disabledExtensions: mocks.disabledExtensions }
 })
 
 import { examinedCatalogSpecs, migrateCatalogStores } from './migrate'
@@ -14,6 +18,7 @@ import { userStores } from './feeds'
 beforeEach(() => {
   userStores.set([])
   examinedCatalogSpecs.set([])
+  mocks.disabledExtensions.set([])
 })
 
 describe('migrateCatalogStores', () => {
@@ -30,6 +35,29 @@ describe('migrateCatalogStores', () => {
     fetchInfo.mockClear()
     await migrateCatalogStores(fetchInfo)
     expect(fetchInfo.mock.calls.map(([spec]) => spec)).toEqual(['https://down.test/index.json'])
+  })
+
+  it('keeps a catalog switched off on the Sources page switched off as a store', async () => {
+    mocks.extensionUrls.set(['https://off.test/index.json'])
+    mocks.disabledExtensions.set(['https://off.test/index.json'])
+    await migrateCatalogStores(vi.fn(async () => ({ packages: [] })))
+    expect(get(userStores).map((store) => [store.url, store.enabled])).toEqual([['https://off.test/index.json', false]])
+  })
+
+  it('gives up on a catalog that answers 4xx, and retries server errors', async () => {
+    mocks.extensionUrls.set(['https://gone.test/index.json', 'https://busy.test/index.json'])
+    const fetchInfo = vi.fn(async (spec: string) => ({ problem: spec.includes('gone') ? 'That URL returned HTTP 404.' : 'That URL returned HTTP 503.' }))
+    await migrateCatalogStores(fetchInfo)
+    expect(get(examinedCatalogSpecs)).toEqual(['https://gone.test/index.json'])
+  })
+
+  it('drops the old theme catalog copy from localStorage', async () => {
+    // Isolated from whatever a previous test left `extensionUrls` as: this test verifies the
+    // localStorage cleanup only, so `info` (here, a bare vi.fn()) must never actually be invoked.
+    mocks.extensionUrls.set([])
+    localStorage.setItem('theme-catalog-cache-v1', '{}')
+    await migrateCatalogStores(vi.fn())
+    expect(localStorage.getItem('theme-catalog-cache-v1')).toBeNull()
   })
 
   it('shares one run between overlapping calls, so nothing is examined twice', async () => {
