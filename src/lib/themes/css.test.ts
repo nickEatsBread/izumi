@@ -43,6 +43,7 @@ describe('theme stylesheet sanitiser', () => {
   it('rejects oversize input, too many rules and engines without CSSOM', () => {
     expect(sanitizeThemeCss('a'.repeat(128_001)).error).toMatch(/128 KB/)
     expect(sanitizeThemeCss('.a{}'.repeat(4001)).error).toMatch(/too many rules/)
+    expect(sanitizeThemeCss(`@keyframes k{${'0%{opacity:0}'.repeat(4001)}}`).error).toMatch(/too many rules/)
     expect(sanitizeThemeCss('.a{}', null).error).toMatch(/cannot check/)
   })
   it('leaves the text unwrapped for engines without @scope', () => {

@@ -9,6 +9,7 @@ const KEPT = new Set([
   'CSSLayerStatementRule', 'CSSScopeRule', 'CSSStartingStyleRule', 'CSSKeyframesRule', 'CSSNestedDeclarations',
 ])
 const GLOBAL = new Set(['CSSKeyframesRule', 'CSSLayerStatementRule'])
+// Rule identity comes from the engine's own CSSOM objects; the threat model is untrusted CSS text, not script.
 const kind = (rule: CSSRule) => rule.constructor.name
 
 function cleanDeclarations(style: CSSStyleDeclaration): void {
@@ -31,7 +32,10 @@ export function sanitizeRules(owner: RuleOwner, depth: number, budget: { rules: 
     if (++budget.rules > THEME_CSS_MAX_RULES) throw new Error('This theme stylesheet has too many rules.')
     if (!KEPT.has(kind(rule))) { owner.deleteRule(index); continue }
     if (kind(rule) === 'CSSKeyframesRule') {
-      for (const frame of Array.from((rule as CSSKeyframesRule).cssRules) as CSSKeyframeRule[]) cleanDeclarations(frame.style)
+      for (const frame of Array.from((rule as CSSKeyframesRule).cssRules) as CSSKeyframeRule[]) {
+        if (++budget.rules > THEME_CSS_MAX_RULES) throw new Error('This theme stylesheet has too many rules.')
+        cleanDeclarations(frame.style)
+      }
       if (forbiddenCss(rule.cssText)) owner.deleteRule(index)
       continue
     }
