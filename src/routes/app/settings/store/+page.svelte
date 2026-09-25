@@ -121,6 +121,15 @@
   })
   const refOf = (entry: StoreEntry) => installedRef(entry, installedState, storeUrlById.get(entry.storeId) ?? '')
   const isInstalled = (entry: StoreEntry) => refOf(entry) !== null
+  /** Whether two URLs share a host. Reconfigure only ever runs through the installed addon's own host:
+   *  a listing's configure page anywhere else must never be able to replace the configured copy. */
+  function sameHost(a: string, b: string): boolean {
+    try {
+      return new URL(a).hostname === new URL(b).hostname
+    } catch {
+      return false
+    }
+  }
   function iconOf(entry: StoreEntry): string | undefined {
     if (entry.icon || entry.install.type !== 'package') return entry.icon
     const id = entry.install.pkg.id
@@ -302,7 +311,9 @@
         adapter: loaded[entry.storeId]?.listing?.adapter,
       }, installCatalogPackage)
       if (outcome.kind === 'configure') {
-        configuring = { name: outcome.name, id: outcome.id, configureUrl: outcome.configureUrl, currentBase: refOf(entry) ?? undefined }
+        // Replace an installed copy only through its own host's configure page; otherwise add a copy.
+        const current = refOf(entry)
+        configuring = { name: outcome.name, id: outcome.id, configureUrl: outcome.configureUrl, currentBase: current && sameHost(outcome.configureUrl, current) ? current : undefined }
         // One dialog at a time: the controller's focus trap would stay in the sheet underneath.
         selected = null
       } else if (outcome.kind === 'open-theme') {
@@ -473,7 +484,7 @@
     onremove={target.type === 'theme' || (target.type === 'extension' && ref !== target.spec) ? undefined : () => void remove(entry)}
     ontoggle={target.type === 'theme' ? undefined : () => toggle(entry)}
     settingsLabel={target.type === 'addon' ? 'Reconfigure' : 'Settings'}
-    onsettings={target.type === 'addon' && target.configureUrl && ref
+    onsettings={target.type === 'addon' && target.configureUrl && ref && sameHost(target.configureUrl, ref)
       ? () => { configuring = { name: entry.name, id: target.manifestId ?? entry.id, configureUrl: target.configureUrl ?? '', currentBase: ref }; selected = null }
       : target.type === 'package' && installedPackages.find((item) => item.id === ref)?.backend === 'izumi-service'
         ? () => { serviceSettings = { id: target.pkg.id, name: entry.name }; selected = null }

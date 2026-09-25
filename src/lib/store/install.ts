@@ -53,10 +53,12 @@ export function installedRef(entry: StoreEntry, state: InstalledState, storeUrl:
   if (install.type === 'addon') {
     const base = normalizeBase(install.manifestUrl)
     // A listing names its own manifest id, so the id alone never proves which installed addon it is:
-    // the installed copy must also live on the listing's host (a configured copy keeps its host).
+    // the installed copy must also live on every host the listing names — its manifest and, when it
+    // has one, its configure page — or Reconfigure could hand the installed copy to a stranger's page.
     const byId = own(state.addonBaseById, install.manifestId)
     const host = hostOf(byId)
-    if (byId && host && (host === hostOf(install.manifestUrl) || host === hostOf(install.configureUrl))) return byId
+    const named = install.configureUrl ? [install.manifestUrl, install.configureUrl] : [install.manifestUrl]
+    if (byId && host && named.every((url) => hostOf(url) === host)) return byId
     return state.addonBases.includes(base) ? base : null
   }
   if (install.type === 'extension') {

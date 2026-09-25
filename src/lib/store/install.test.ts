@@ -131,17 +131,23 @@ describe('installedRef', () => {
     expect(installedRef(themeEntry, state, 'https://other.test/themes.json')).toBeNull()
   })
 
-  it('matches an installed addon by manifest id only on the host the listing names', () => {
+  it('matches an installed addon by manifest id only when every host the listing names is its host', () => {
     const configured = { ...state, addonBases: [], addonBaseById: { 'org.example.addon': 'https://addon.example.test/key' } }
     const impostor: StoreEntry = {
       ...addon(), install: { type: 'addon', manifestUrl: 'https://impostor.test/manifest.json', manifestId: 'org.example.addon' },
     }
     expect(installedRef(impostor, configured, '')).toBeNull()
-    const viaConfigurePage: StoreEntry = {
+    // A foreign configure page must not inherit the installed copy either (Reconfigure would replace it).
+    const foreignConfigure: StoreEntry = {
       ...addon(),
-      install: { type: 'addon', manifestUrl: 'https://cdn.example.test/manifest.json', manifestId: 'org.example.addon', configureUrl: 'https://addon.example.test/configure' },
+      install: { type: 'addon', manifestUrl: 'https://addon.example.test/manifest.json', manifestId: 'org.example.addon', configureUrl: 'https://impostor.test/configure' },
     }
-    expect(installedRef(viaConfigurePage, configured, '')).toBe('https://addon.example.test/key')
+    expect(installedRef(foreignConfigure, configured, '')).toBeNull()
+    const sameHost: StoreEntry = {
+      ...addon(),
+      install: { type: 'addon', manifestUrl: 'https://addon.example.test/manifest.json', manifestId: 'org.example.addon', configureUrl: 'https://addon.example.test/configure' },
+    }
+    expect(installedRef(sameHost, configured, '')).toBe('https://addon.example.test/key')
   })
 
   it('binds installed packages to the store they came from', () => {

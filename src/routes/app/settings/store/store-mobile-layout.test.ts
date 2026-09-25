@@ -47,6 +47,11 @@ describe('Store behaviour', () => {
     expect(page).toContain('role="alert"')
   })
 
+  it('reconfigures an installed addon only through its own host', () => {
+    expect(page).toContain('sameHost(target.configureUrl, ref)')
+    expect(page).toContain('currentBase: current && sameHost(outcome.configureUrl, current) ? current : undefined')
+  })
+
   it('opens the add-store preview from a deep link', () => {
     expect(page).toContain("page.url.searchParams.get('add')")
   })
