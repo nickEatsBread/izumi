@@ -342,7 +342,12 @@ export async function fetchExtensionInfo(spec: string): Promise<ExtensionSourceI
   } catch (error) {
     return { configs: [], problem: error instanceof Error ? error.message : 'That URL could not be fetched.' }
   }
-  const packages = catalogPackages(raw) ?? aniyomiRepositoryPackages(raw, url)
+  const izumi = catalogPackages(raw)
+  const aniyomi = izumi ? null : aniyomiRepositoryPackages(raw, url)
+  // A repository without anime packages (a manga-only one) is not a catalog izumi can use — and must
+  // not become an empty store.
+  if (aniyomi && !aniyomi.length) return { configs: [], problem: 'This repository has no anime extensions izumi can run.' }
+  const packages = izumi ?? aniyomi
   if (packages) return { configs: [], packages }
   const configs = await expandRaw(raw, url).catch(() => [] as ExtensionConfig[])
   // Say so out loud when a source can never work (a compiled Android plugin repo, say), rather

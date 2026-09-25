@@ -102,6 +102,16 @@ describe('fetchExtensionInfo', () => {
     }))
   })
 
+  it('explains a repository without anime extensions instead of calling it an empty catalog', async () => {
+    mocks.phttp.mockResolvedValue(ok([{
+      name: 'Tachiyomi: Example', pkg: 'eu.kanade.tachiyomi.extension.en.example', apk: 'apk/example.apk',
+      version: '1', sources: [{ id: '1', name: 'Example' }],
+    }]))
+    const info = await fetchExtensionInfo('https://repo.example.test/index.min.json')
+    expect(info.packages).toBeUndefined()
+    expect(info.problem).toBe('This repository has no anime extensions izumi can run.')
+  })
+
   it('classifies and expands in a SINGLE fetch', async () => {
     // The old shape fetched once to expand and a second time to explain a failure, doubling the
     // request count for every source in the list.
