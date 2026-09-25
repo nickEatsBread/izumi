@@ -5,8 +5,10 @@
   import { entryTypeLabel } from '$lib/store/filters'
   import type { StoreEntry } from '$lib/store/types'
 
-  let { entry, storeName, thirdParty, installed, update, busy, locked, onopen, oninstall }: {
+  let { entry, icon, storeName, thirdParty, installed, update, busy, locked, onopen, oninstall }: {
     entry: StoreEntry
+    /** Artwork found for this entry when its listing has none (e.g. an installed package's own icon). */
+    icon?: string
     storeName: string
     thirdParty: boolean
     installed: boolean
@@ -26,7 +28,7 @@
 
 <article class="flex w-full min-w-0 max-w-full gap-3 overflow-hidden rounded-xl border border-border bg-secondary/25 p-4 lg:items-center lg:p-3">
   <button type="button" data-focusable onclick={onopen} class="flex min-w-0 flex-1 items-start gap-3 text-left lg:items-center">
-    <AddonLogo logo={entry.icon} name={entry.name} id={entry.id} size={44} />
+    <AddonLogo logo={icon ?? entry.icon} name={entry.name} id={entry.id} size={44} />
     <span class="min-w-0 flex-1">
       <span class="flex items-start gap-2">
         <span class="min-w-0 flex-1 truncate font-black">{entry.name}</span>

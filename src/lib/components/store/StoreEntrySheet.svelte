@@ -6,10 +6,12 @@
   import type { StoreEntry } from '$lib/store/types'
 
   let {
-    entry, storeName, thirdParty, trustLabel, installed, update, enabled, busy, locked,
+    entry, icon, storeName, thirdParty, trustLabel, installed, update, enabled, busy, locked,
     onclose, oninstall, onremove, ontoggle, onsettings, settingsLabel = 'Settings', onmanage,
   }: {
     entry: StoreEntry
+    /** Artwork found for this entry when its listing has none (e.g. an installed package's own icon). */
+    icon?: string
     storeName: string
     thirdParty: boolean
     /** Plain-language signing status: the store listing and, once installed, the package itself. */
@@ -59,7 +61,7 @@
   <div role="dialog" aria-modal="true" aria-labelledby="store-entry-title" data-nav-trap
        class="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-border bg-background p-5 shadow-2xl sm:rounded-2xl sm:p-6">
     <div class="flex items-start gap-3">
-      <AddonLogo logo={entry.icon} name={entry.name} id={entry.id} size={56} />
+      <AddonLogo logo={icon ?? entry.icon} name={entry.name} id={entry.id} size={56} />
       <div class="min-w-0 flex-1">
         <h2 id="store-entry-title" class="truncate text-lg font-black">{entry.name}</h2>
         <p class="text-xs text-muted-foreground">

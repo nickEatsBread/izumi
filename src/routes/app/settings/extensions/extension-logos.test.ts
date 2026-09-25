@@ -11,6 +11,8 @@ import { iconSrc } from '$lib/stremio/addon-logo'
 
 const page = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.url)), 'utf8')
 const store = readFileSync(fileURLToPath(new URL('../store/+page.svelte', import.meta.url)), 'utf8')
+const storeCard = readFileSync(fileURLToPath(new URL('../../../../lib/components/store/StoreEntryCard.svelte', import.meta.url)), 'utf8')
+const storeSheet = readFileSync(fileURLToPath(new URL('../../../../lib/components/store/StoreEntrySheet.svelte', import.meta.url)), 'utf8')
 
 describe('extension list logos', () => {
   it('renders every store row and plugin row through AddonLogo', () => {
@@ -60,11 +62,12 @@ describe('extension list logos', () => {
 
 describe('store icons', () => {
   it('shows a package its real icon instead of a fixed glyph', () => {
-    // Both store lists — the catalog tab and the installed section — go through AddonLogo, so a
-    // package with artwork shows it and one without gets the same placeholder as everywhere else.
-    expect(store).toContain("import AddonLogo from '$lib/components/player/AddonLogo.svelte'")
-    expect(store).toContain('<AddonLogo logo={packageIcon(item.id)} name={item.name} id={item.id} size={40} />')
-    expect(store).toContain('<AddonLogo logo={packageIcon(item.id)} name={item.name} id={item.id} size={36} />')
+    // Store cards and the entry sheet render AddonLogo; the page hands them a package's own artwork
+    // when the listing itself has none, and AddonLogo falls back to the shared placeholder.
+    expect(storeCard).toContain("import AddonLogo from '$lib/components/player/AddonLogo.svelte'")
+    expect(storeCard).toContain('<AddonLogo logo={icon ?? entry.icon} name={entry.name} id={entry.id} size={44} />')
+    expect(storeSheet).toContain('<AddonLogo logo={icon ?? entry.icon} name={entry.name} id={entry.id} size={56} />')
+    expect(store).toContain('icon={iconOf(entry)}')
   })
 
   it('resolves those icons off the render path', () => {

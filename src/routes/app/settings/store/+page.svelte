@@ -16,12 +16,14 @@
   import { addonUrls, disabledSources, normalizeBase, replaceAddonBase } from '$lib/stremio/sources'
   import { fetchManifest } from '$lib/stremio/manifest'
   import {
+    fetchExtensionMeta,
     installCatalogPackage,
     installedExtensionPackages,
+    installedPackageIcons,
     removeInstalledExtension,
     type InstalledExtensionPackage,
   } from '$lib/extensions/manager'
-  import { disabledExtensions, disabledPlugins, extensionUrls, showAdult } from '$lib/settings/ui'
+  import { disabledExtensions, disabledPlugins, enabledExtensionUrls, extensionUrls, showAdult } from '$lib/settings/ui'
   import { installedThemes } from '$lib/themes/installed'
   import { newerVersion } from '$lib/themes/packages'
   import { BUILTIN_STORES, allStores, directoryEnabled, enabledStores } from '$lib/store/feeds'
@@ -79,6 +81,11 @@
   let directoryError = $state('')
   let installedPackages = $state.raw<InstalledExtensionPackage[]>([])
   let addonBaseById = $state.raw<Record<string, string>>({})
+  // Real package artwork, filled in after the list paints (icon loading can start the JVM runtime):
+  // installed Aniyomi launcher icons by package id, and manifest icons of the providers the user's
+  // own sources expand to.
+  let jvmIcons = $state.raw(new Map<string, string>())
+  let configIcons = $state.raw<Record<string, string>>({})
   let selected = $state.raw<StoreEntry | null>(null)
   let busyKey = $state('')
   let notice = $state('')
@@ -115,6 +122,11 @@
   })
   const refOf = (entry: StoreEntry) => installedRef(entry, installedState, storeUrlById.get(entry.storeId) ?? '')
   const isInstalled = (entry: StoreEntry) => refOf(entry) !== null
+  function iconOf(entry: StoreEntry): string | undefined {
+    if (entry.icon || entry.install.type !== 'package') return entry.icon
+    const id = entry.install.pkg.id
+    return Object.hasOwn(configIcons, id) ? configIcons[id] : jvmIcons.get(id)
+  }
   /** Installed, and this store lists another version. A package only updates from its own store
    *  (a same-id package elsewhere is a takeover); a theme only when the listed version is newer. */
   function updateAvailable(entry: StoreEntry): boolean {
@@ -175,11 +187,22 @@
 
   async function refreshInstalled() {
     installedPackages = await installedExtensionPackages()
+    void installedPackageIcons(installedPackages).then((icons) => { jvmIcons = icons })
   }
 
   $effect(() => {
     void storeSignature
     untrack(() => { void loadStores() })
+  })
+
+  $effect(() => {
+    const specs = $enabledExtensionUrls
+    let stale = false
+    void Promise.all(specs.map((spec) => fetchExtensionMeta(spec))).then((results) => {
+      if (stale) return
+      configIcons = Object.fromEntries(results.flat().flatMap((config) => config.icon ? [[config.id, config.icon]] : []))
+    })
+    return () => { stale = true }
   })
 
   // The directory is searched on its server; debounce typing like the old addon tab did.
@@ -403,6 +426,7 @@
           {entry}
           storeName={storeNameById.get(entry.storeId) ?? 'Store'}
           thirdParty={!builtinIds.has(entry.storeId)}
+          icon={iconOf(entry)}
           installed={isInstalled(entry)}
           update={updateAvailable(entry)}
           busy={busyKey === entry.key}
@@ -432,6 +456,7 @@
     {entry}
     storeName={storeNameById.get(entry.storeId) ?? 'Store'}
     thirdParty={!builtinIds.has(entry.storeId)}
+    icon={iconOf(entry)}
     trustLabel={trustLabel(entry)}
     installed={ref !== null}
     update={updateAvailable(entry)}
