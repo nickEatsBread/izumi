@@ -46,7 +46,7 @@ export function mediaDisplayModel(media: Media, extras: Partial<DisplayModel> = 
     nextEpisode: next?.episode || undefined,
     airingIn: airing && secondsLeft != null ? compactCountdown(secondsLeft) : undefined,
     airingCountdown: airing && secondsLeft != null ? longCountdown(secondsLeft) : undefined,
-    episodesAired: aired || undefined,
+    episodesAired: aired,
     ...extras,
   }
 }

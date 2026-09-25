@@ -76,5 +76,12 @@ describe('theme host display model', () => {
     expect(mediaDisplayModel({ ...media, status: 'FINISHED', episodes: 12 } as Media).episodesAired).toBe(12)
     expect(mediaDisplayModel(media).airingIn).toBeUndefined()
     expect(mediaDisplayModel(media).episodesAired).toBeUndefined()
+    expect(mediaDisplayModel({ ...media, airedEpisodes: 0 } as Media).episodesAired).toBe(0)
+    expect(mediaDisplayModel({ ...media, nextAiringEpisode: { episode: 1, timeUntilAiring: 3600 } } as Media).episodesAired).toBe(0)
+  })
+  it('uses the relative countdown when the absolute airing time is missing', () => {
+    const model = mediaDisplayModel({ ...media, nextAiringEpisode: { episode: 3, timeUntilAiring: 90 * 60 } } as Media)
+    expect(model.airingIn).toBe('1h 30m')
+    expect(model.airingCountdown).toBe('1 hr 30 mins')
   })
 })
