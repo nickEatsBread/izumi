@@ -5,6 +5,7 @@
   import { allStores, directoryEnabled, pinStoreKey, removeStore, setStoreEnabled, type StoreFeed } from '$lib/store/feeds'
   import { confirmStore, previewStore, type StorePreview } from '$lib/store/service'
   import { storeTrustText } from '$lib/store/trust'
+  import { forgetStoreListing } from '$lib/store/listing-cache'
   import type { LoadedStore } from '$lib/store/load'
   import { ADDON_DIRECTORY_ID } from '$lib/store/types'
 
@@ -63,6 +64,8 @@
     if (result?.trust.state !== 'locked') return
     try {
       pinStoreKey(store.id, result.trust.fingerprint)
+      // The saved copy was judged under the old decision; fetch afresh under the new one.
+      forgetStoreListing(store.id)
     } catch (cause) {
       // A key izumi compiled in for a built-in store can't be replaced from here.
       error = cause instanceof Error ? cause.message : 'That key could not be trusted.'

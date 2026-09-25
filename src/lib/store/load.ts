@@ -80,9 +80,14 @@ async function writeSaved(deps: StoreLoadDeps, store: StoreFeed, value: Omit<Sav
   }
 }
 
-/** A saved listing was verified when fetched; judge it again against the store's current pin. */
+/** A saved listing was verified when fetched; judge it again against the store's current pin. A saved
+ *  copy never pins a key — trust on first use comes from a live fetch only — so clearing a pin
+ *  ("Trust without a key") can't be undone by an old signed copy. */
 function savedTrust(saved: SavedStore, store: StoreFeed): StoreTrust {
-  if (saved.trust.state === 'signed') return decideStoreTrust(store.pinnedKey, true, saved.trust.fingerprint)
+  if (saved.trust.state === 'signed') {
+    const trust = decideStoreTrust(store.pinnedKey, true, saved.trust.fingerprint)
+    return trust.state === 'signed' ? { state: 'signed', fingerprint: trust.fingerprint } : trust
+  }
   if (saved.trust.state === 'unsigned') return decideStoreTrust(store.pinnedKey, false, null)
   return saved.trust
 }

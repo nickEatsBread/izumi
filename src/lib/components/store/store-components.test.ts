@@ -25,6 +25,7 @@ describe('Store components', () => {
     expect(dialog).toContain('result.trust.fingerprint?.slice(0, 16)')
     expect(dialog).toContain('preview.fingerprint?.slice(0, 16)')
     expect(dialog).toContain('Remove?')
+    expect(dialog).toContain('forgetStoreListing(store.id)')
     expect(dialog).toContain('role="alert"')
   })
 

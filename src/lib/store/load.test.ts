@@ -44,6 +44,14 @@ function deps(
 }
 
 describe('loadStore', () => {
+  it('never pins a key from a saved copy, so clearing a pin sticks', async () => {
+    const d = deps({})
+    d.cacheData.set('u-test', savedCopy(1_000_000 - 1_000, { state: 'signed', fingerprint: FP }))
+    const result = await loadStore(feed(), {}, d)
+    expect(result.cached).toBe(true)
+    expect(result.trust).toEqual({ state: 'signed', fingerprint: FP })
+  })
+
   it('fetches, adapts and saves an unsigned store', async () => {
     const d = deps({ [INDEX]: doc() })
     const result = await loadStore(feed(), {}, d)
