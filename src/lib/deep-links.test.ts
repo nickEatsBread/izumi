@@ -36,6 +36,14 @@ describe('deep links', () => {
     expect(parseDeepLink('https://example.com')).toBeNull()
     expect(parseDeepLink('not a url')).toBeNull()
   })
+  it('opens store links in the add-store preview, never adding silently', () => {
+    expect(parseDeepLink('izumi://store/add?url=https%3A%2F%2Fstores.example.test%2Findex.json')?.path)
+      .toBe('/app/settings/store?add=https%3A%2F%2Fstores.example.test%2Findex.json')
+    expect(parseDeepLink('izumi://store/add?url=someone%2Fstores')?.path)
+      .toBe('/app/settings/store?add=https%3A%2F%2Fraw.githubusercontent.com%2Fsomeone%2Fstores%2FHEAD%2Findex.json')
+    expect(parseDeepLink('izumi://store/add?url=http%3A%2F%2Fplain.example.test%2Findex.json')).toBeNull()
+    expect(parseDeepLink('izumi://store/add')).toBeNull()
+  })
 })
 
 describe('deep link dispatch', () => {
