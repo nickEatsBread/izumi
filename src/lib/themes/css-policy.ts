@@ -9,19 +9,27 @@ export const RESERVED_PROPERTY_PREFIX = '--izumi-safe-'
 export const BLOCKED_PROPERTIES: readonly string[] = ['-webkit-app-region', 'app-region', 'behavior', '-moz-binding']
 export const BLOCKED_AT_RULES: readonly string[] = ['import', 'font-face', 'namespace', 'page', 'property', 'counter-style', 'font-feature-values', 'charset']
 
-const FUNCTIONS = ['url', 'image-set', '-webkit-image-set', 'image', 'src', 'element', 'cross-fade', 'expression']
+const FUNCTIONS = ['url', 'image-set', 'image', 'src', 'element', 'cross-fade', 'expression']
 const DATA_URL = /url\(\s*(["']?)data:image\/(?:png|jpeg|gif|webp|avif|svg\+xml)[;,][^"'()\\\s]*\1\s*\)/gi
-const FUNCTION_CALL = new RegExp(`(^|[^a-z0-9_-])(${FUNCTIONS.map(name => name.replace(/-/g, '\\-')).join('|')})\\s*\\(`, 'i')
-/** A backslash shortly before "(" means an escaped function name such as `u\72 l(`. */
-const ESCAPED_FUNCTION = /\\[^"'\n]{0,12}\(/
+const FUNCTION_CALL = new RegExp(`(^|[^a-z0-9_-])(?:-[a-z]+-)?(${FUNCTIONS.map(name => name.replace(/-/g, '\\-')).join('|')})\\s*\\(`, 'i')
 const AT_RULE = /@(?:-[a-z]+-)?([a-z-]+)/gi
 const RESERVED_DECLARATION = /(^|[{;\s])--izumi-safe-[a-z0-9_-]*\s*:/i
 
-/** Why a piece of CSS may not load, or undefined when it is clean. Small data: images are allowed. */
+/** Resolves CSS escapes (`\75 rl`, `\000069mage`) so function names can't hide behind them. */
+export function decodeCssEscapes(text: string): string {
+  return text.replace(/\\(?:([0-9a-f]{1,6})[ \t\n\r\f]?|([^\n\r\f0-9a-f]))/gi, (_match, hex: string | undefined, char: string | undefined) => {
+    if (char !== undefined) return char
+    const code = parseInt(hex ?? '0', 16)
+    return code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : '\ufffd'
+  })
+}
+
+/** Why a piece of CSS may not load, or undefined when it is clean. Small data: images are allowed.
+ *  Escapes are decoded before the second scan so an escaped function name can't hide from it. */
 export function forbiddenCss(text: string): string | undefined {
-  const scrubbed = text.replace(DATA_URL, (match) => (match.length <= THEME_CSS_MAX_DATA_URL ? 'data-url' : match))
-  if (FUNCTION_CALL.test(scrubbed)) return 'Stylesheets cannot load URLs or remote images.'
-  if (ESCAPED_FUNCTION.test(scrubbed)) return 'Stylesheets cannot use escaped function names.'
+  const scrub = (value: string) => value.replace(DATA_URL, (match) => (match.length <= THEME_CSS_MAX_DATA_URL ? 'data-url' : match))
+  if (FUNCTION_CALL.test(scrub(text))) return 'Stylesheets cannot load URLs or remote images.'
+  if (FUNCTION_CALL.test(scrub(decodeCssEscapes(text)))) return 'Stylesheets cannot use escaped function names.'
   return undefined
 }
 

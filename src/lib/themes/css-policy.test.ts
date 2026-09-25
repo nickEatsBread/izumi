@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { THEME_CSS_MAX_BYTES, forbiddenCss, precheckThemeCss } from './css-policy'
+import { THEME_CSS_MAX_BYTES, decodeCssEscapes, forbiddenCss, precheckThemeCss } from './css-policy'
 
 describe('theme stylesheet policy', () => {
   it('accepts ordinary rules, small data images and escaped content strings', () => {
@@ -14,6 +14,14 @@ describe('theme stylesheet policy', () => {
   })
   it('rejects escaped function names', () => {
     expect(forbiddenCss('.a{background:u\\72 l(https://x.test)}')).toMatch(/escaped/)
+  })
+  it('catches escaped and vendor-prefixed loads', () => {
+    expect(forbiddenCss('.a{background-image:\\000069mage-set("https://e.test/a.png" 1x)}')).toMatch(/escaped/)
+    expect(forbiddenCss('.a{--x:\\00002dwebkit-image-set("https://e.test/a.png" 1x)}')).toMatch(/escaped/)
+    expect(forbiddenCss('.a{background:-x-image-set("https://e.test/a.png" 1x)}')).toBeTruthy()
+    expect(forbiddenCss('.a{background:-webkit-cross-fade(linear-gradient(red,red), linear-gradient(blue,blue), 50%)}')).toBeTruthy()
+    expect(forbiddenCss('.a{background:U\\52 L(https://e.test/a.png)}')).toBeTruthy()
+    expect(decodeCssEscapes('\\2022 \\000069mage')).toBe('•image')
   })
   it('rejects blocked at-rules, properties and the reserved palette', () => {
     expect(() => precheckThemeCss('@import "x.css";')).toThrow('@import')
