@@ -17,6 +17,7 @@ import {
 } from "./manual";
 import { anilistToken } from "$lib/anilist/auth";
 import { kitsuToken, malToken, simklToken } from "$lib/trackers/config";
+import { addStore, hiddenBuiltinStores, setStoreEnabled, storePins, userStores } from "$lib/store/feeds";
 
 describe("manual device sync snapshots", () => {
   beforeEach(() => {
@@ -86,6 +87,31 @@ describe("manual device sync snapshots", () => {
   it("rejects unrelated or malformed JSON", () => {
     expect(parseManualSnapshot("{")).toBeNull();
     expect(parseManualSnapshot(JSON.stringify({ app: "other" }))).toBeNull();
+  });
+
+  it("syncs the store list but never key pins, and cleans what it receives", () => {
+    userStores.set([]);
+    hiddenBuiltinStores.set([]);
+    storePins.set({});
+    addStore("https://stores.example.test/index.json", "Example", "c".repeat(64));
+    setStoreEnabled("izumi-themes", false);
+    const snapshot = createManualSnapshot("device", "Desk");
+    expect(snapshot.stores).toEqual({
+      feeds: [expect.objectContaining({ url: "https://stores.example.test/index.json", name: "Example" })],
+      hiddenBuiltins: ["izumi-themes"],
+    });
+    expect(JSON.stringify(snapshot)).not.toContain("c".repeat(64));
+    userStores.set([]);
+    hiddenBuiltinStores.set([]);
+    applyManualSnapshot({
+      ...snapshot,
+      stores: {
+        feeds: [...(snapshot.stores?.feeds as unknown[]), { url: "http://plain.test/index.json", name: "Plain" }],
+        hiddenBuiltins: ["izumi-themes", "nope"],
+      },
+    });
+    expect(get(userStores).map((store) => store.url)).toEqual(["https://stores.example.test/index.json"]);
+    expect(get(hiddenBuiltinStores)).toEqual(["izumi-themes"]);
   });
 
   describe("signed-in accounts", () => {

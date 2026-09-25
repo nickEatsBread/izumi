@@ -10,6 +10,12 @@ import {
   extensionUrls,
 } from "$lib/settings/ui";
 import type { ManualSnapshot } from "./types";
+import {
+  hiddenBuiltinStores,
+  normalizeHiddenBuiltins,
+  normalizeStoreFeeds,
+  userStores,
+} from "$lib/store/feeds";
 import { activeProfileId, DEFAULT_PROFILE_ID } from '$lib/profiles/store'
 
 // Preferences that have the same meaning on Android, Deck, and desktop. Paths,
@@ -58,9 +64,6 @@ export const SYNCED_SETTING_KEYS = [
   "doh-enabled",
   "doh-url",
   "comments-default-source",
-  // Stores the user added, and the built-in ones they hid, travel like the source lists do.
-  "store-feeds-v1",
-  "store-hidden-builtins-v1",
 ] as const;
 
 function readSettings(): Record<string, unknown> {
@@ -118,6 +121,10 @@ export function createManualSnapshot(
       debridKey: get(debridKey),
     },
     settings: readSettings(),
+    stores: {
+      feeds: get(userStores),
+      hiddenBuiltins: get(hiddenBuiltinStores),
+    },
   };
 }
 
@@ -196,6 +203,11 @@ export function applyManualSnapshot(
     debridProvider.set(snapshot.extensions.debridProvider);
   if (typeof snapshot.extensions.debridKey === "string")
     debridKey.set(snapshot.extensions.debridKey);
+  // Received store lists reach the stores through set(), which skips their beforeRead cleaning.
+  if (snapshot.stores) {
+    userStores.set(normalizeStoreFeeds(snapshot.stores.feeds));
+    hiddenBuiltinStores.set(normalizeHiddenBuiltins(snapshot.stores.hiddenBuiltins));
+  }
   for (const key of SYNCED_SETTING_KEYS) {
     if (Object.hasOwn(snapshot.settings, key)) {
       const value = snapshot.settings[key];

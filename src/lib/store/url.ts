@@ -1,8 +1,35 @@
+/** Hosts a store may never live on: loopback, private and link-local ranges, mDNS names, IPv6
+ *  literals. A store link can arrive from a web page (izumi://store/add), so previewing one must not
+ *  become a way to probe the user's own network. */
+const PRIVATE_HOST = /^(?:localhost|.+\.localhost|.+\.local|0\.0\.0\.0|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|169\.254\.\d{1,3}\.\d{1,3}|\[.*\])$/i
+
+/** The one form a store URL is stored and compared in: public HTTPS, no credentials, no fragment,
+ *  dot segments resolved. Null for anything else. */
+export function canonicalStoreUrl(candidate: string): string | null {
+  let url: URL
+  try {
+    url = new URL(candidate)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'https:' || url.username || url.password || PRIVATE_HOST.test(url.hostname)) return null
+  url.hash = ''
+  return url.href
+}
+
+function githubRaw(owner: string, repo: string, ref: string, path: string): string | null {
+  const folder = path.replace(/\/+$/, '')
+  const file = /\.json$/i.test(folder) ? folder : [folder, 'index.json'].filter(Boolean).join('/')
+  const url = canonicalStoreUrl(`https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${file}`)
+  // Dot segments must not climb out of the repository the link names.
+  return url && url.startsWith(`https://raw.githubusercontent.com/${owner}/${repo}/`) ? url : null
+}
+
 /**
  * Turn a pasted store address, or one carried by a deep link, into the URL its index is fetched
- * from. Accepts public HTTPS links (GitHub `blob` pages become raw file links) and GitHub shorthand
- * `owner/repo[@ref][/path]` or `gh:owner/repo…`, which defaults to `index.json` at the repository
- * root. Returns null for anything else — stores are never fetched over plain HTTP.
+ * from. Accepts public HTTPS links (GitHub repository, folder and file pages become raw links) and
+ * GitHub shorthand `owner/repo[@ref][/path]` or `gh:owner/repo…`, which defaults to `index.json` at
+ * the repository root. Returns null for anything else — stores are never fetched over plain HTTP.
  */
 export function resolveStoreUrl(input: string): string | null {
   const value = input.trim().replace(/^(['"])(.*)\1$/, '$2').trim()
@@ -12,23 +39,17 @@ export function resolveStoreUrl(input: string): string | null {
     const match = shorthand.match(/^([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+?)(?:@([A-Za-z0-9._-]+))?(?:\/([^\s?#]*))?$/)
     if (!match) return null
     const [, owner, repo, ref = 'HEAD', path = ''] = match
-    const folder = path.replace(/\/+$/, '')
-    const file = /\.json$/i.test(folder) ? folder : [folder, 'index.json'].filter(Boolean).join('/')
-    return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${file}`
+    return githubRaw(owner, repo, ref, path)
   }
-  let url: URL
-  try {
-    url = new URL(value)
-  } catch {
-    return null
+  const url = canonicalStoreUrl(value)
+  if (!url) return null
+  const parsed = new URL(url)
+  if (parsed.hostname === 'github.com' || parsed.hostname === 'www.github.com') {
+    const [owner, repo, kind, ref, ...rest] = parsed.pathname.split('/').filter(Boolean)
+    if (owner && repo && !kind) return githubRaw(owner, repo, 'HEAD', '')
+    if (owner && repo && (kind === 'blob' || kind === 'tree') && ref) return githubRaw(owner, repo, ref, rest.join('/'))
   }
-  if (url.protocol !== 'https:' || url.username || url.password) return null
-  url.hash = ''
-  const parts = url.pathname.split('/').filter(Boolean)
-  if (url.hostname === 'github.com' && parts[2] === 'blob' && parts.length >= 5) {
-    return `https://raw.githubusercontent.com/${parts[0]}/${parts[1]}/${parts.slice(3).join('/')}`
-  }
-  return url.href
+  return url
 }
 
 /** Where a store's detached signature lives: the index path plus `.sig`. */
