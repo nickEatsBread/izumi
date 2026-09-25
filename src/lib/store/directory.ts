@@ -21,7 +21,9 @@ export function directoryEntry(addon: CommunityAddon): StoreEntry | null {
   const types: unknown[] = Array.isArray(manifest.types) ? manifest.types : []
   const content = [...new Set(types.flatMap((type) =>
     typeof type === 'string' && Object.hasOwn(CONTENT, type) ? [CONTENT[type]] : []))]
-  const configureUrl = clip(addon.configureUrl, 2048)
+  // Opened in the configurator or the browser, so only ever an HTTPS page.
+  const configure = clip(addon.configureUrl, 2048)
+  const configureUrl = configure && /^https:\/\//i.test(configure) ? configure : undefined
   return {
     key: `${ADDON_DIRECTORY_ID}:source:${id}`,
     storeId: ADDON_DIRECTORY_ID,

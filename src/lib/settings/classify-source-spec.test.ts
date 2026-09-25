@@ -92,6 +92,13 @@ describe('classifySourceDocument', () => {
     })
   })
 
+  it('never marks a repository without anime packages as a catalog', () => {
+    expect(classifySourceDocument([{
+      name: 'Tachiyomi: Example', pkg: 'eu.kanade.tachiyomi.extension.en.example', apk: 'apk/example.apk',
+      version: '1', sources: [{ id: '1', name: 'Example' }],
+    }], 'https://repo.example.test/index.min.json')).toEqual({ kind: 'extension', spec: 'https://repo.example.test/index.min.json' })
+  })
+
   it('classifies extension configs as a community source', () => {
     expect(classifySourceDocument([extensionConfig], 'https://example.test/index.json')).toEqual({
       kind: 'extension', spec: 'https://example.test/index.json',

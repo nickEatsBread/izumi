@@ -71,7 +71,9 @@ export function classifySourceDocument(raw: unknown, fetchedUrl: string): Classi
   if (isCollectionDocument(raw)) return { error: 'This is a collection. Import it in Settings → Catalog → Collections.' }
   if (isNuvioManifest(raw)) return { kind: 'extension', spec: fetchedUrl }
   if (catalogPackages(raw) !== null) return { kind: 'extension', spec: fetchedUrl, catalog: true }
-  if (aniyomiRepositoryPackages(raw, fetchedUrl)) return { kind: 'extension', spec: fetchedUrl, catalog: true }
+  const aniyomi = aniyomiRepositoryPackages(raw, fetchedUrl)
+  // A repository with no anime packages (a manga-only one) is still a source, but never a store.
+  if (aniyomi) return { kind: 'extension', spec: fetchedUrl, ...(aniyomi.length ? { catalog: true } : {}) }
   if (isCompiledAndroid(raw)) return { kind: 'extension', spec: fetchedUrl }
   if (Array.isArray(raw)) return { kind: 'extension', spec: fetchedUrl }
   if (normalizeManifest(raw, fetchedUrl).length) return { kind: 'extension', spec: fetchedUrl }

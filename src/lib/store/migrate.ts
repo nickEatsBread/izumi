@@ -8,9 +8,19 @@ export const examinedCatalogSpecs = persisted<string[]>('store-catalog-migration
 
 type FetchInfo = (spec: string) => Promise<{ packages?: unknown[]; problem?: string }>
 
+let running: Promise<number> | null = null
+
 /** Catalogs added before stores existed become stores, so they show up in the Store. A spec whose
- *  fetch failed is retried next time; everything else is examined once. Returns how many it added. */
-export async function migrateCatalogStores(fetchInfo?: FetchInfo): Promise<number> {
+ *  fetch failed is retried next time; everything else is examined once. Overlapping calls (the Store
+ *  page and the background check) share one run. Returns how many stores it added. */
+export function migrateCatalogStores(fetchInfo?: FetchInfo): Promise<number> {
+  running ??= migrate(fetchInfo).finally(() => {
+    running = null
+  })
+  return running
+}
+
+async function migrate(fetchInfo?: FetchInfo): Promise<number> {
   const pending = get(extensionUrls).filter((spec) => !get(examinedCatalogSpecs).includes(spec))
   if (!pending.length) return 0
   const info: FetchInfo = fetchInfo ?? (await import('$lib/extensions/manager')).fetchExtensionInfo
@@ -24,7 +34,7 @@ export async function migrateCatalogStores(fetchInfo?: FetchInfo): Promise<numbe
     }
     if (!result.packages && /could not be fetched|returned HTTP/.test(result.problem ?? '')) continue
     if (result.packages && registerCatalogStore(spec)) registered += 1
-    examinedCatalogSpecs.update((specs) => [...specs, spec])
+    examinedCatalogSpecs.update((specs) => (specs.includes(spec) ? specs : [...specs, spec]))
   }
   return registered
 }

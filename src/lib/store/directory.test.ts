@@ -23,6 +23,11 @@ describe('directoryEntry', () => {
     expect(directoryEntry(listing({ manifestUrl: 'ftp://x.test/manifest.json' }))).toBeNull()
     expect(directoryEntry(listing({ manifest: { id: 'x', name: 'X', version: '1', types: ['constructor', 'anime'] } }))?.content).toEqual(['anime'])
   })
+
+  it('drops a configure link that is not HTTPS', () => {
+    expect(directoryEntry(listing({ configureUrl: 'http://addon.example.test/configure' }))?.install)
+      .toEqual({ type: 'addon', manifestUrl: 'https://addon.example.test/manifest.json', manifestId: 'org.example.addon' })
+  })
 })
 
 describe('directoryEntries', () => {

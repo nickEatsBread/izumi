@@ -31,4 +31,12 @@ describe('migrateCatalogStores', () => {
     await migrateCatalogStores(fetchInfo)
     expect(fetchInfo.mock.calls.map(([spec]) => spec)).toEqual(['https://down.test/index.json'])
   })
+
+  it('shares one run between overlapping calls, so nothing is examined twice', async () => {
+    mocks.extensionUrls.set(['https://catalog.test/index.json'])
+    const fetchInfo = vi.fn(async () => ({ packages: [] }))
+    expect(await Promise.all([migrateCatalogStores(fetchInfo), migrateCatalogStores(fetchInfo)])).toEqual([1, 1])
+    expect(fetchInfo).toHaveBeenCalledTimes(1)
+    expect(get(examinedCatalogSpecs)).toEqual(['https://catalog.test/index.json'])
+  })
 })
