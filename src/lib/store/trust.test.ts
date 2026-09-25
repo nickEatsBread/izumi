@@ -26,7 +26,7 @@ describe('labels', () => {
   it('describes store trust in plain words', () => {
     expect(storeTrustText(undefined)).toBe('Not loaded yet')
     expect(storeTrustText({ state: 'unsigned' })).toBe('Unsigned')
-    expect(storeTrustText({ state: 'signed', fingerprint: A })).toBe('Signed · key aaaaaaaa')
+    expect(storeTrustText({ state: 'signed', fingerprint: A })).toBe('Signed · key aaaaaaaaaaaaaaaa')
     expect(storeTrustText({ state: 'locked', reason: 'key-changed', fingerprint: B })).toBe('Signing key changed')
     expect(storeTrustText({ state: 'locked', reason: 'key-removed' })).toBe('Stopped signing')
     expect(storeTrustText({ state: 'locked', reason: 'bad-signature' })).toBe('Signature does not match')

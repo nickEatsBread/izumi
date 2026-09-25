@@ -90,4 +90,16 @@ describe('adaptStoreDocument', () => {
     expect(() => adaptStoreDocument({ id: 'org.example', name: 'Addon', resources: ['stream'], types: ['anime'] }, 'https://x.test/manifest.json', 's'))
       .toThrow('source, not a store')
   })
+
+  it('only lists packages whose download is HTTPS', () => {
+    const listing = adaptStoreDocument({
+      formatVersion: 1, generatedAt: '', scope: { content: 'anime', transport: 'http', manga: false },
+      packages: [
+        { id: 'plain', name: 'Plain', version: '1', nsfw: false, sources: [], backend: 'izumi-js', package: 'http://x.test/a.izumi-ext', packageSha256: HASH, packageBytes: 1 },
+        { id: 'safe', name: 'Safe', version: '1', nsfw: false, sources: [], backend: 'izumi-js', package: 'https://x.test/b.izumi-ext', packageSha256: HASH, packageBytes: 1 },
+      ],
+    }, 'https://x.test/index.json', 'pk')
+    expect(listing.entries.map((entry) => entry.id)).toEqual(['safe'])
+    expect(listing.skipped).toBe(1)
+  })
 })

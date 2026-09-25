@@ -19,8 +19,16 @@ function clip(value: unknown, max: number): string | undefined {
 }
 
 // Catalog parsers only check a package's id and payload, so everything shown or installed is checked
-// again here: one malformed package must not break the whole store.
-function packageEntry(pkg: ExtensionCatalogPackage, storeId: string): StoreEntry {
+// again here: one malformed package must not break the whole store, and a package is only listed
+// when its download is HTTPS.
+function packageEntry(pkg: ExtensionCatalogPackage, storeId: string): StoreEntry | null {
+  const download: unknown = pkg.packageFormat === 'aniyomi-repo' ? pkg.apk : pkg.package
+  try {
+    if (new URL(String(download)).protocol !== 'https:') return null
+  } catch {
+    return null
+  }
+  if (typeof pkg.id !== 'string' || !pkg.id || pkg.id.length > 200) return null
   const sources = Array.isArray(pkg.sources) ? pkg.sources : []
   const version: unknown = pkg.version
   const language: unknown = pkg.language
@@ -39,6 +47,14 @@ function packageEntry(pkg: ExtensionCatalogPackage, storeId: string): StoreEntry
     requiresDebrid: false,
     install: { type: 'package', pkg: { ...pkg, sources } },
   }
+}
+
+function packageListing(adapter: 'izumi-ext-catalog' | 'aniyomi-index', packages: ExtensionCatalogPackage[], storeId: string): StoreListing {
+  const entries = packages.flatMap((pkg) => {
+    const entry = packageEntry(pkg, storeId)
+    return entry ? [entry] : []
+  })
+  return finish({ storeId, adapter, entries, skipped: packages.length - entries.length })
 }
 
 // A provider marketplace is an array of rich entries whose `manifestURI` names each provider's own
@@ -157,13 +173,9 @@ export function adaptStoreDocument(raw: unknown, url: string, storeId: string): 
     })
   }
   const izumiPackages = catalogPackages(raw)
-  if (izumiPackages) {
-    return finish({ storeId, adapter: 'izumi-ext-catalog', entries: izumiPackages.map((pkg) => packageEntry(pkg, storeId)), skipped: 0 })
-  }
+  if (izumiPackages) return packageListing('izumi-ext-catalog', izumiPackages, storeId)
   const aniyomi = aniyomiRepositoryPackages(raw, url)
-  if (aniyomi) {
-    return finish({ storeId, adapter: 'aniyomi-index', entries: aniyomi.map((pkg) => packageEntry(pkg, storeId)), skipped: 0 })
-  }
+  if (aniyomi) return packageListing('aniyomi-index', aniyomi, storeId)
   if (Array.isArray(raw)) {
     const marketplace = marketplaceEntries(raw, storeId)
     if (marketplace) return finish({ storeId, adapter: 'marketplace', ...marketplace })

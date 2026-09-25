@@ -25,7 +25,7 @@ describe('native store index', () => {
   it('normalises addons, streaming sources, packages and themes', () => {
     const { meta, entries, skipped } = parseNativeStore(store([
       { kind: 'source', sourceType: 'stremio-addon', id: 'example-addon', name: 'Example Addon',
-        manifestUrl: 'https://addon.example.test/manifest.json', configureUrl: 'https://addon.example.test/configure',
+        manifestUrl: 'https://addon.example.test/manifest.json', configureUrl: 'https://addon.example.test/configure', manifestId: 'org.example.addon',
         content: ['anime', 'cartoons'], languages: ['EN'], requiresDebrid: true },
       { kind: 'source', sourceType: 'stream-provider', id: 'example-stream', name: 'Example Stream', manifestUrl: 'providers/stream.json' },
       { kind: 'source', sourceType: 'package', id: 'example-package', name: 'Example Package', version: '1.2.0',
@@ -41,7 +41,7 @@ describe('native store index', () => {
     ])
     expect(entries[0]).toMatchObject({
       sourceType: 'stremio-addon', content: ['anime'], languages: ['en'], requiresDebrid: true,
-      install: { type: 'addon', manifestUrl: 'https://addon.example.test/manifest.json', configureUrl: 'https://addon.example.test/configure' },
+      install: { type: 'addon', manifestUrl: 'https://addon.example.test/manifest.json', configureUrl: 'https://addon.example.test/configure', manifestId: 'org.example.addon' },
     })
     expect(entries[1].install).toEqual({ type: 'extension', spec: 'https://stores.example.test/izumi/providers/stream.json' })
     expect(entries[2].install).toMatchObject({
@@ -86,5 +86,16 @@ describe('native store index', () => {
 
   it('explains a missing schemaVersion', () => {
     expect(() => parseNativeStore(store([], { schemaVersion: undefined }), STORE_URL, 's')).toThrow('no valid schemaVersion')
+  })
+
+  it('refuses reserved ids and configurable addons that do not name their manifest id', () => {
+    const { entries, skipped } = parseNativeStore(store([
+      { kind: 'source', sourceType: 'stream-provider', id: 'constructor', name: 'Reserved', manifestUrl: 'https://x.test/a.json' },
+      { kind: 'source', sourceType: 'stremio-addon', id: 'configurable', name: 'Configurable', manifestUrl: 'https://x.test/m.json', configureUrl: 'https://x.test/c' },
+      { kind: 'source', sourceType: 'stremio-addon', id: 'plain-addon', name: 'Plain', manifestUrl: 'https://x.test/p.json' },
+    ]), STORE_URL, 's')
+    expect(entries.map((entry) => entry.id)).toEqual(['plain-addon'])
+    expect(skipped).toBe(2)
+    expect(() => parseNativeStore(store([], { id: 'prototype' }), STORE_URL, 's')).toThrow('id or name')
   })
 })

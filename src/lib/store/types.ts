@@ -17,7 +17,8 @@ export const SUPPORTED_STORE_KINDS: readonly StoreKind[] = ['theme', 'source']
 export const ADDON_DIRECTORY_ID = 'addon-directory'
 
 export type InstallRef =
-  | { type: 'addon'; manifestUrl: string; configureUrl?: string }
+  /** `manifestId` is the addon's own manifest id: configured copies are matched and checked by it. */
+  | { type: 'addon'; manifestUrl: string; configureUrl?: string; manifestId?: string }
   | { type: 'extension'; spec: string }
   | { type: 'package'; pkg: ExtensionCatalogPackage }
   | { type: 'theme'; release: ThemeRelease }

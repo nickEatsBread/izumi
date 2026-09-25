@@ -49,17 +49,17 @@ export function filterStoreEntries(
     && (filter.showAdult || !entry.nsfw)
     && (!filter.installedOnly || isInstalled(entry))
     && (!query || [entry.name, entry.id, entry.author, entry.description]
-      .some((part) => part?.toLocaleLowerCase().includes(query))))
+      .some((part) => typeof part === 'string' && part.toLocaleLowerCase().includes(query))))
   return matches.sort((left, right) => {
     if (filter.sort === 'popular') {
       const difference = (right.popularity ?? -1) - (left.popularity ?? -1)
       if (difference) return difference
     }
     if (filter.sort === 'updated') {
-      const difference = (right.updatedAt ?? '').localeCompare(left.updatedAt ?? '')
+      const difference = String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? ''))
       if (difference) return difference
     }
-    return left.name.localeCompare(right.name)
+    return String(left.name).localeCompare(String(right.name))
   })
 }
 

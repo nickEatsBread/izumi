@@ -26,7 +26,7 @@ export function decideStoreTrust(pinned: string | undefined, declared: boolean, 
 export function storeTrustText(trust: StoreTrust | undefined): string {
   if (!trust) return 'Not loaded yet'
   if (trust.state === 'unsigned') return 'Unsigned'
-  if (trust.state === 'signed') return `Signed · key ${trust.fingerprint.slice(0, 8)}`
+  if (trust.state === 'signed') return `Signed · key ${trust.fingerprint.slice(0, 16)}`
   if (trust.reason === 'key-changed') return 'Signing key changed'
   if (trust.reason === 'key-removed') return 'Stopped signing'
   return 'Signature does not match'

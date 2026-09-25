@@ -58,6 +58,11 @@ function positive(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined
 }
 
+/** Store and entry ids: the theme id rule, including its reserved words. */
+function validId(value: unknown): value is string {
+  return typeof value === 'string' && ID.test(value) && value !== 'constructor' && value !== 'prototype'
+}
+
 /** Parse a native store index. Throws for a document that is not a valid store; malformed entries
  *  are skipped and counted, entries of kinds this build cannot install are ignored. */
 export function parseNativeStore(
@@ -70,7 +75,7 @@ export function parseNativeStore(
     throw new Error('This store index has no valid schemaVersion.')
   }
   if (raw.schemaVersion > 1) throw new Error('This store uses a newer format. Update izumi to open it.')
-  const id = typeof raw.id === 'string' && ID.test(raw.id) ? raw.id : undefined
+  const id = validId(raw.id) ? raw.id : undefined
   const name = text(raw.name, 64)
   if (!id || !name) throw new Error('This store index is missing a valid id or name.')
   if (!Array.isArray(raw.entries)) throw new Error('This store index has no entries list.')
@@ -109,7 +114,7 @@ function parseEntry(item: unknown, storeUrl: string, storeId: string): StoreEntr
   const kind = e.kind as StoreKind
   // Kinds later phases install (plugins, packs) are part of the format but not listed yet.
   if (!SUPPORTED_STORE_KINDS.includes(kind)) return 'ignored'
-  const id = typeof e.id === 'string' && ID.test(e.id) ? e.id : undefined
+  const id = validId(e.id) ? e.id : undefined
   const name = text(e.name, 64)
   if (!id || !name) return null
   const common = {
@@ -193,7 +198,14 @@ function parseEntry(item: unknown, storeUrl: string, storeId: string): StoreEntr
   if (!manifestUrl) return null
   if (sourceType === 'stremio-addon') {
     const configureUrl = httpsUrl(e.configureUrl, storeUrl)
-    return { ...common, key, kind, sourceType, install: { type: 'addon', manifestUrl, ...(configureUrl ? { configureUrl } : {}) } }
+    const manifestId = text(e.manifestId, 200)
+    // Configuring checks the configured link against the addon's own manifest id, so a configurable
+    // entry must say what that id is.
+    if (configureUrl && !manifestId) return null
+    return {
+      ...common, key, kind, sourceType,
+      install: { type: 'addon', manifestUrl, ...(configureUrl ? { configureUrl } : {}), ...(manifestId ? { manifestId } : {}) },
+    }
   }
   return { ...common, key, kind, sourceType, install: { type: 'extension', spec: manifestUrl } }
 }
