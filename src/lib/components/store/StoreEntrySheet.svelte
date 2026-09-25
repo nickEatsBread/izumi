@@ -6,7 +6,7 @@
   import type { StoreEntry } from '$lib/store/types'
 
   let {
-    entry, icon, storeName, thirdParty, trustLabel, installed, update, enabled, busy, locked,
+    entry, icon, storeName, thirdParty, trustLabel, installed, update, enabled, busy, locked, error = '',
     onclose, oninstall, onremove, ontoggle, onsettings, settingsLabel = 'Settings', onmanage,
   }: {
     entry: StoreEntry
@@ -23,6 +23,8 @@
     enabled: boolean
     busy: boolean
     locked: boolean
+    /** The last install or remove failure, shown here because the page's own message sits under the sheet. */
+    error?: string
     onclose: () => void
     oninstall: () => void
     onremove?: () => void
@@ -85,6 +87,7 @@
     {#if locked}
       <p class="mt-4 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">This store failed its signing-key check. Review it under Manage stores before installing.</p>
     {/if}
+    {#if error}<p role="alert" class="mt-4 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>{/if}
     <div class="mt-5 flex flex-wrap gap-2">
       {#if installed}
         {#if update}

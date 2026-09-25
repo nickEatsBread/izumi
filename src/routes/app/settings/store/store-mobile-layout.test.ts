@@ -39,6 +39,14 @@ describe('Store behaviour', () => {
     expect(page).not.toContain('installedElsewhere')
   })
 
+  it('drops late listing loads, keeps one dialog open at a time, and shows failures in the sheet', () => {
+    expect(page).toContain('if (generation === loadGeneration) loaded = { ...loaded, [store.id]: result }')
+    expect(page).toContain('currentBase: ref }; selected = null }')
+    expect(page).toContain('serviceSettings = { id: target.pkg.id, name: entry.name }; selected = null }')
+    expect(page).toContain('{error}')
+    expect(page).toContain('role="alert"')
+  })
+
   it('opens the add-store preview from a deep link', () => {
     expect(page).toContain("page.url.searchParams.get('add')")
   })

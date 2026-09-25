@@ -172,15 +172,19 @@
   // Adding, hiding or re-trusting a store changes this signature, which reloads the listings.
   const storeSignature = $derived($enabledStores.map((store) => `${store.id}:${store.pinnedKey ?? ''}`).join('|'))
 
+  // Each load supersedes the ones before it: an older load that answers late (after a refresh or a
+  // re-trusted key) must not put its stale verdict back.
+  let loadGeneration = 0
   async function loadStores(force = false) {
+    const generation = ++loadGeneration
     loading = true
     try {
       await Promise.all($enabledStores.map(async (store) => {
         const result = await loadStoreAndPin(store, { force })
-        loaded = { ...loaded, [store.id]: result }
+        if (generation === loadGeneration) loaded = { ...loaded, [store.id]: result }
       }))
     } finally {
-      loading = false
+      if (generation === loadGeneration) loading = false
     }
   }
 
@@ -299,6 +303,8 @@
       }, installCatalogPackage)
       if (outcome.kind === 'configure') {
         configuring = { name: outcome.name, id: outcome.id, configureUrl: outcome.configureUrl, currentBase: refOf(entry) ?? undefined }
+        // One dialog at a time: the controller's focus trap would stay in the sheet underneath.
+        selected = null
       } else if (outcome.kind === 'open-theme') {
         await goto(outcome.path)
       } else {
@@ -396,8 +402,8 @@
             class="rounded-lg bg-secondary px-3 py-2.5 sm:py-2"><RefreshCw size={16} class={loading ? 'animate-spin' : ''} /></button>
   </div>
 
-  {#if notice}<p class="mb-4 max-w-5xl rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">{notice}</p>{/if}
-  {#if error}<p class="mb-4 max-w-5xl rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>{/if}
+  {#if notice}<p role="status" class="mb-4 max-w-5xl rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">{notice}</p>{/if}
+  {#if error}<p role="alert" class="mb-4 max-w-5xl rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>{/if}
   {#each lockedStores as store (store.id)}
     <p class="mb-4 max-w-5xl rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
       {store.name} failed its signing-key check, so installs and updates from it are paused.
@@ -429,7 +435,7 @@
           update={updateAvailable(entry)}
           busy={busyKey === entry.key}
           locked={loaded[entry.storeId]?.trust.state === 'locked'}
-          onopen={() => (selected = entry)}
+          onopen={() => { error = ''; selected = entry }}
           oninstall={() => void install(entry)}
         />
       {/each}
@@ -461,15 +467,16 @@
     enabled={enabledState(entry)}
     busy={busyKey === entry.key}
     locked={loaded[entry.storeId]?.trust.state === 'locked'}
+    {error}
     onclose={() => (selected = null)}
     oninstall={() => void install(entry)}
     onremove={target.type === 'theme' || (target.type === 'extension' && ref !== target.spec) ? undefined : () => void remove(entry)}
     ontoggle={target.type === 'theme' ? undefined : () => toggle(entry)}
     settingsLabel={target.type === 'addon' ? 'Reconfigure' : 'Settings'}
     onsettings={target.type === 'addon' && target.configureUrl && ref
-      ? () => { configuring = { name: entry.name, id: target.manifestId ?? entry.id, configureUrl: target.configureUrl ?? '', currentBase: ref } }
+      ? () => { configuring = { name: entry.name, id: target.manifestId ?? entry.id, configureUrl: target.configureUrl ?? '', currentBase: ref }; selected = null }
       : target.type === 'package' && installedPackages.find((item) => item.id === ref)?.backend === 'izumi-service'
-        ? () => { serviceSettings = { id: target.pkg.id, name: entry.name } }
+        ? () => { serviceSettings = { id: target.pkg.id, name: entry.name }; selected = null }
         : undefined}
     onmanage={target.type === 'theme' ? () => void goto('/app/settings/themes') : undefined}
   />

@@ -17,6 +17,7 @@ describe('Store components', () => {
     expect(sheet).toContain('Downloads from')
     expect(sheet).toContain('{trustLabel}')
     expect(sheet).toContain('role="dialog"')
+    expect(sheet).toContain('{#if error}<p role="alert"')
   })
 
   it('shows the new key before re-trusting a store, asks before removing one, and announces errors', () => {
