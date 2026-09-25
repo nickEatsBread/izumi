@@ -236,7 +236,10 @@
   h3 { font-size: 17px; font-weight: 900; letter-spacing: -.02em; }
   .card-title span, .author, .tags, .version { color: hsl(var(--muted-foreground)); font-size: 11px; }
   .author { margin-top: 3px; }
-  .summary { font-size: 12px; line-height: 1.6; margin-top: 8px; color: hsl(var(--muted-foreground)); }
+  /* Listings can carry a long description; the gallery and Installed show a two-line / one-line
+     teaser and the detail view keeps the full text. */
+  .summary { font-size: 12px; line-height: 1.6; margin-top: 8px; color: hsl(var(--muted-foreground)); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+  .installed-theme .summary { -webkit-line-clamp: 1; line-clamp: 1; }
   .tags { margin-top: 12px; }
   .message { padding: 14px 16px; margin: 16px 0; border-radius: 8px; background: hsl(var(--muted)); font-size: 13px; }
   .error { border-inline-start: 3px solid hsl(var(--theme)); }
