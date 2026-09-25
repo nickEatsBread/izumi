@@ -104,7 +104,11 @@ describe('store registry', () => {
   it("never lets a user store take a built-in store's name", () => {
     addStore('https://fake.example.test/index.json', ' Izumi Packages ')
     addStore('https://fake2.example.test/index.json', 'addon directory')
-    expect(get(userStores).map((store) => store.name)).toEqual(['fake.example.test', 'fake2.example.test'])
+    addStore('https://fake3.example.test/index.json', 'izumi')
+    addStore('https://fake4.example.test/index.json', 'izumi\u200B  packages')
+    addStore('https://real.example.test/index.json', '  Anime   Picks ')
+    expect(get(userStores).map((store) => store.name))
+      .toEqual(['fake.example.test', 'fake2.example.test', 'fake3.example.test', 'fake4.example.test', 'Anime Picks'])
   })
 
   it('normalises saved lists, hidden ids and pins', () => {

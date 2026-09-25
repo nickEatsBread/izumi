@@ -55,6 +55,14 @@ describe('previewStore', () => {
     mocks.loadStore.mockResolvedValueOnce({ trust: { state: 'locked', reason: 'bad-signature' }, fetchedAt: 0, cached: false })
     await expect(previewStore('https://y.test/index.json')).rejects.toThrow("doesn't match")
   })
+
+  it("never previews a store under one of izumi's own names", async () => {
+    mocks.loadStore.mockResolvedValue({
+      store: {}, trust: { state: 'unsigned' }, fetchedAt: 1, cached: false,
+      listing: { storeId: 'x', adapter: 'izumi-store', name: 'izumi', skipped: 0, entries: [] },
+    })
+    expect((await previewStore('https://name.example.test/index.json')).name).toBe('name.example.test')
+  })
 })
 
 describe('confirmStore and loadStoreAndPin', () => {

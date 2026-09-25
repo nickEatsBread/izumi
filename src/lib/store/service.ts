@@ -1,6 +1,6 @@
 import { get } from 'svelte/store'
 import { sourceLabel } from '$lib/extensions/catalog'
-import { BUILTIN_STORES, addStore, allStores, claimStorePin, storeIdForUrl, type StoreFeed } from './feeds'
+import { BUILTIN_STORES, addStore, allStores, claimStorePin, storeIdForUrl, storeName, type StoreFeed } from './feeds'
 import { entryTypeLabel } from './filters'
 import { loadStore, type LoadedStore } from './load'
 import { decideStoreTrust } from './trust'
@@ -51,7 +51,7 @@ export async function previewStore(input: string): Promise<StorePreview> {
   }
   return {
     url,
-    name: result.listing.name ?? sourceLabel(url),
+    name: storeName(result.listing.name, url),
     domain: new URL(url).hostname,
     counts: [...counts],
     signed: result.trust.state === 'signed',
