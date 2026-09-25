@@ -31,6 +31,13 @@ export const MAX_USER_STORES = 50
 
 const FINGERPRINT = /^[a-f0-9]{64}$/
 const BUILTIN_IDS: readonly string[] = [...BUILTIN_STORES.map((store) => store.id), ADDON_DIRECTORY_ID]
+/** Names only izumi's own stores use, so a user store can't pass itself off as one of them. */
+const RESERVED_NAMES = new Set([...BUILTIN_STORES.map((store) => store.name), 'Addon directory'].map((name) => name.toLowerCase()))
+
+function storeName(value: unknown, url: string): string {
+  const name = typeof value === 'string' ? value.trim().slice(0, 64) : ''
+  return name && !RESERVED_NAMES.has(name.toLowerCase()) ? name : sourceLabel(url)
+}
 
 /** Stable id for a user store: two independent 32-bit FNV-style hashes of its canonical URL. */
 export function storeIdForUrl(url: string): string {
@@ -62,7 +69,7 @@ export function normalizeStoreFeeds(value: unknown): StoreFeed[] {
     out.push({
       id,
       url,
-      name: typeof item.name === 'string' && item.name.trim() ? item.name.trim().slice(0, 64) : sourceLabel(url),
+      name: storeName(item.name, url),
       enabled: item.enabled !== false,
       addedAt: typeof item.addedAt === 'number' && Number.isFinite(item.addedAt) ? item.addedAt : 0,
     })
@@ -188,10 +195,11 @@ export function pruneStorePins(): void {
 }
 
 /** Register a package catalog the user pasted into Sources as a store too, so it appears in the
- *  Store. Returns false when it was already known, is built in, or isn't a public HTTPS link. */
+ *  Store. Returns false when it was already known, is built in, isn't a public HTTPS link, or is a
+ *  GitHub page (HTML, never the catalog itself — such a source stays a source). */
 export function registerCatalogStore(url: string): boolean {
   const canonical = canonicalStoreUrl(url)
-  if (!canonical) return false
+  if (!canonical || /^https:\/\/(?:www\.)?github\.com\//i.test(canonical)) return false
   try {
     addStore(canonical, sourceLabel(canonical))
     return true

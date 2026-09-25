@@ -97,7 +97,14 @@ describe('store registry', () => {
     expect(registerCatalogStore(BUILTIN_STORES[0].url)).toBe(false)
     expect(registerCatalogStore('gh:someone/catalog')).toBe(false)
     expect(registerCatalogStore('https://user:pass@catalog2.example.test/index.json')).toBe(false)
+    expect(registerCatalogStore('https://github.com/someone/catalog')).toBe(false)
     expect(get(userStores).map((store) => store.name)).toEqual(['catalog.example.test'])
+  })
+
+  it("never lets a user store take a built-in store's name", () => {
+    addStore('https://fake.example.test/index.json', ' Izumi Packages ')
+    addStore('https://fake2.example.test/index.json', 'addon directory')
+    expect(get(userStores).map((store) => store.name)).toEqual(['fake.example.test', 'fake2.example.test'])
   })
 
   it('normalises saved lists, hidden ids and pins', () => {

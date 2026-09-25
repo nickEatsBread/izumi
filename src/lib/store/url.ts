@@ -1,10 +1,11 @@
-/** Hosts a store may never live on: loopback, private and link-local ranges, mDNS names, IPv6
- *  literals. A store link can arrive from a web page (izumi://store/add), so previewing one must not
- *  become a way to probe the user's own network. */
-const PRIVATE_HOST = /^(?:localhost|.+\.localhost|.+\.local|0\.0\.0\.0|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|169\.254\.\d{1,3}\.\d{1,3}|\[.*\])$/i
+/** Hosts a store may never live on: loopback, private, carrier-grade NAT and link-local ranges, the
+ *  "this network" block, mDNS and private-use names, IPv6 literals. A store link can arrive from a web
+ *  page (izumi://store/add), so previewing one must not become a way to probe the user's own network.
+ *  Single-label names are refused separately. */
+const PRIVATE_HOST = /^(?:localhost|.+\.(?:localhost|local|internal|lan|intranet|home\.arpa)|0\.\d{1,3}\.\d{1,3}\.\d{1,3}|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|169\.254\.\d{1,3}\.\d{1,3}|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}|\[.*\])$/i
 
-/** The one form a store URL is stored and compared in: public HTTPS, no credentials, no fragment,
- *  dot segments resolved. Null for anything else. */
+/** The one form a store URL is stored and compared in: public HTTPS, no credentials, no fragment, no
+ *  trailing dot on the host, dot segments resolved. Null for anything else. */
 export function canonicalStoreUrl(candidate: string): string | null {
   let url: URL
   try {
@@ -12,7 +13,11 @@ export function canonicalStoreUrl(candidate: string): string | null {
   } catch {
     return null
   }
-  if (url.protocol !== 'https:' || url.username || url.password || PRIVATE_HOST.test(url.hostname)) return null
+  // "host." names the same host as "host"; drop the dot so it can't slip past the checks below.
+  const host = url.hostname.replace(/\.+$/, '')
+  // Single-label names ("router", "nas") only resolve on the local network.
+  if (url.protocol !== 'https:' || url.username || url.password || !host.includes('.') || PRIVATE_HOST.test(host)) return null
+  url.hostname = host
   url.hash = ''
   return url.href
 }

@@ -39,6 +39,14 @@ describe('resolveStoreUrl', () => {
       expect(resolveStoreUrl(`https://${host}/index.json`)).toBeNull()
     }
   })
+
+  it('refuses trailing-dot, single-label, private-use and carrier-grade NAT hosts too', () => {
+    for (const host of ['localhost.', 'nas.local.', 'router', 'router.', 'db.internal', 'printer.home.arpa', 'box.lan', 'wiki.intranet', '100.64.0.1', '100.127.255.254', '0.0.0.5']) {
+      expect(canonicalStoreUrl(`https://${host}/index.json`)).toBeNull()
+    }
+    expect(canonicalStoreUrl('https://100.63.0.1/index.json')).toBe('https://100.63.0.1/index.json')
+    expect(canonicalStoreUrl('https://stores.example.test./index.json')).toBe('https://stores.example.test/index.json')
+  })
 })
 
 describe('canonicalStoreUrl', () => {
