@@ -1,18 +1,27 @@
 import { invoke } from '@tauri-apps/api/core'
 import { phttp } from '$lib/net/http'
 import { adaptStoreDocument } from './adapters'
+import { listingCache } from './listing-cache'
 import { MAX_STORE_BYTES } from './native-format'
 import { decideStoreTrust, type StoreTrust } from './trust'
 import { signatureUrl } from './url'
 import type { StoreFeed } from './feeds'
 import type { StoreListing } from './types'
 
-// Fetch → adapt → verify → cache for one store (spec §6.1, §6.7). Never throws: a failure falls
-// back to the last good copy, and a store with nothing saved reports its error instead.
+// Fetch → adapt → verify → save for one store (spec §6.1, §6.7). Never throws. A listing that fails
+// its key check is never shown or saved; the last copy that passed stays in use instead.
 
-const CACHE_PREFIX = 'store-listing-cache-v1:'
 /** Listings younger than this are served from the saved copy unless a refresh is forced. */
 export const STORE_REFRESH_MS = 60 * 60_000
+const MAX_SIGNATURE_BYTES = 4_096
+
+/** A non-2xx answer, told apart from transport failures: a missing signature file fails the key
+ *  check, while a network error only means the store couldn't be reached this time. */
+export class StoreHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`The store returned HTTP ${status}.`)
+  }
+}
 
 export interface LoadedStore {
   store: StoreFeed
@@ -25,29 +34,25 @@ export interface LoadedStore {
 }
 
 export interface StoreLoadDeps {
-  fetchText: (url: string) => Promise<string>
+  fetchText: (url: string, maxBytes: number) => Promise<string>
   /** Resolves to the key fingerprint when the signature verifies; rejects otherwise. */
   verify: (body: string, signature: string, publicKey: string) => Promise<string>
   now: () => number
-  cache: Pick<Storage, 'getItem' | 'setItem'>
+  cache: {
+    get: (storeId: string) => Promise<string | undefined>
+    set: (storeId: string, value: string) => Promise<void>
+  }
 }
 
-const memoryCache = new Map<string, string>()
 const defaultDeps: StoreLoadDeps = {
-  async fetchText(url) {
-    const response = await phttp(url, { maxBytes: MAX_STORE_BYTES, timeoutMs: 20_000, background: true })
-    if (!response.ok) throw new Error(`The store returned HTTP ${response.status}.`)
+  async fetchText(url, maxBytes) {
+    const response = await phttp(url, { maxBytes, timeoutMs: 20_000, background: true })
+    if (!response.ok) throw new StoreHttpError(response.status)
     return response.text()
   },
   verify: (body, signature, publicKey) => invoke<string>('store_verify_index', { body, signature, publicKey }),
   now: () => Date.now(),
-  cache: {
-    getItem: (key) => (typeof localStorage === 'undefined' ? memoryCache.get(key) ?? null : localStorage.getItem(key)),
-    setItem: (key, value) => {
-      if (typeof localStorage === 'undefined') memoryCache.set(key, value)
-      else localStorage.setItem(key, value)
-    },
-  },
+  cache: listingCache,
 }
 
 interface SavedStore {
@@ -57,24 +62,25 @@ interface SavedStore {
   fetchedAt: number
 }
 
-function readSaved(deps: StoreLoadDeps, store: StoreFeed): SavedStore | null {
+async function readSaved(deps: StoreLoadDeps, store: StoreFeed): Promise<SavedStore | null> {
   try {
-    const saved = JSON.parse(deps.cache.getItem(CACHE_PREFIX + store.id) ?? 'null') as SavedStore | null
-    return saved && saved.url === store.url && Array.isArray(saved.listing?.entries) ? saved : null
+    const saved = JSON.parse((await deps.cache.get(store.id)) ?? 'null') as SavedStore | null
+    return saved && saved.url === store.url && Array.isArray(saved.listing?.entries)
+      && typeof saved.fetchedAt === 'number' && typeof saved.trust?.state === 'string' ? saved : null
   } catch {
     return null
   }
 }
 
-function writeSaved(deps: StoreLoadDeps, store: StoreFeed, value: Omit<SavedStore, 'url'>): void {
+async function writeSaved(deps: StoreLoadDeps, store: StoreFeed, value: Omit<SavedStore, 'url'>): Promise<void> {
   try {
-    deps.cache.setItem(CACHE_PREFIX + store.id, JSON.stringify({ url: store.url, ...value }))
+    await deps.cache.set(store.id, JSON.stringify({ url: store.url, ...value }))
   } catch {
-    // Storage full: browsing still works; the store is simply refetched next time.
+    // Storage unavailable: browsing still works; the store is simply refetched next time.
   }
 }
 
-/** A saved listing was verified when fetched; re-judge it against the store's current pin. */
+/** A saved listing was verified when fetched; judge it again against the store's current pin. */
 function savedTrust(saved: SavedStore, store: StoreFeed): StoreTrust {
   if (saved.trust.state === 'signed') return decideStoreTrust(store.pinnedKey, true, saved.trust.fingerprint)
   if (saved.trust.state === 'unsigned') return decideStoreTrust(store.pinnedKey, false, null)
@@ -83,15 +89,18 @@ function savedTrust(saved: SavedStore, store: StoreFeed): StoreTrust {
 
 export async function loadStore(
   store: StoreFeed,
-  options: { force?: boolean } = {},
+  options: { force?: boolean; save?: boolean } = {},
   deps: StoreLoadDeps = defaultDeps,
 ): Promise<LoadedStore> {
-  const saved = readSaved(deps, store)
-  if (saved && !options.force && deps.now() - saved.fetchedAt < STORE_REFRESH_MS) {
-    return { store, listing: saved.listing, trust: savedTrust(saved, store), fetchedAt: saved.fetchedAt, cached: true }
+  const saved = await readSaved(deps, store)
+  // Only a copy that still passes against today's pin is ever used.
+  const passing = saved && savedTrust(saved, store).state !== 'locked' ? saved : null
+  const now = deps.now()
+  if (passing && !options.force && passing.fetchedAt <= now && now - passing.fetchedAt < STORE_REFRESH_MS) {
+    return { store, listing: passing.listing, trust: savedTrust(passing, store), fetchedAt: passing.fetchedAt, cached: true }
   }
   try {
-    const body = await deps.fetchText(store.url)
+    const body = await deps.fetchText(store.url, MAX_STORE_BYTES)
     let raw: unknown
     try {
       raw = JSON.parse(body)
@@ -101,22 +110,27 @@ export async function loadStore(
     const listing = adaptStoreDocument(raw, store.url, store.id)
     let verified: string | null = null
     if (listing.publicKey) {
+      let signature: string | null = null
       try {
-        const signature = await deps.fetchText(signatureUrl(store.url))
-        verified = await deps.verify(body, signature.trim(), listing.publicKey)
-      } catch {
-        verified = null
+        signature = await deps.fetchText(signatureUrl(store.url), MAX_SIGNATURE_BYTES)
+      } catch (error) {
+        // A store that declares a key but has no signature file fails the check; any other failure
+        // only means the signature couldn't be fetched this time.
+        if (!(error instanceof StoreHttpError && (error.status === 404 || error.status === 410))) throw error
       }
+      if (signature !== null) verified = await deps.verify(body, signature.trim(), listing.publicKey).catch(() => null)
     }
     const trust = decideStoreTrust(store.pinnedKey, !!listing.publicKey, verified)
     const fetchedAt = deps.now()
-    // A locked listing is never saved, so the next load re-verifies instead of trusting a copy.
-    if (trust.state !== 'locked') writeSaved(deps, store, { listing, trust, fetchedAt })
+    if (trust.state === 'locked') {
+      return { store, listing: passing?.listing, trust, fetchedAt: passing?.fetchedAt ?? fetchedAt, cached: !!passing }
+    }
+    if (options.save !== false) await writeSaved(deps, store, { listing, trust, fetchedAt })
     return { store, listing, trust, fetchedAt, cached: false }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'The store could not be loaded.'
-    if (saved) {
-      return { store, listing: saved.listing, trust: savedTrust(saved, store), fetchedAt: saved.fetchedAt, cached: true, error: message }
+    if (passing) {
+      return { store, listing: passing.listing, trust: savedTrust(passing, store), fetchedAt: passing.fetchedAt, cached: true, error: message }
     }
     return { store, trust: { state: 'unsigned' }, fetchedAt: 0, cached: false, error: message }
   }

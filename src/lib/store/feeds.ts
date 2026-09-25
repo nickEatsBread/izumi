@@ -4,6 +4,7 @@ import { OFFICIAL_ANIME_CATALOG, sourceLabel } from '$lib/extensions/catalog'
 import { THEME_CATALOG_URL } from '$lib/themes/packages'
 import { ADDON_DIRECTORY_ID } from './types'
 import { canonicalStoreUrl } from './url'
+import { forgetStoreListing } from './listing-cache'
 
 // The stores the Store browses (spec §6.1). Built-in stores are defined here and can be hidden but
 // not deleted. The user's store list syncs between devices through the device snapshot; key pins
@@ -121,7 +122,13 @@ export function addStore(url: string, name: string, pinnedKey?: string): StoreFe
   if (current.length >= MAX_USER_STORES) throw new Error(`You can add up to ${MAX_USER_STORES} stores.`)
   const [feed] = normalizeStoreFeeds([{ url: canonical, name, enabled: true, addedAt: Date.now() }])
   userStores.set([...current, feed])
-  if (pinnedKey) storePins.update((pins) => ({ ...normalizeStorePins(pins), [feed.id]: pinnedKey }))
+  storePins.update((pins) => {
+    const next = normalizeStorePins(pins)
+    // Trust starts over for a newly added store: a pin left by an earlier copy never carries over.
+    if (pinnedKey) next[feed.id] = pinnedKey
+    else delete next[feed.id]
+    return next
+  })
   return pinnedKey ? { ...feed, pinnedKey } : feed
 }
 
@@ -132,6 +139,7 @@ export function removeStore(id: string): void {
     delete next[id]
     return next
   })
+  forgetStoreListing(id)
 }
 
 export function setStoreEnabled(id: string, enabled: boolean): void {
@@ -158,6 +166,25 @@ export function pinStoreKey(id: string, fingerprint: string | undefined): void {
     else delete next[id]
     return next
   })
+}
+
+/** Trust on first use, safely: pins the fingerprint only when the store has no pin yet. Returns
+ *  whether the store is now pinned to exactly this fingerprint, so an overlapping load can never
+ *  replace a pin another load just made. */
+export function claimStorePin(id: string, fingerprint: string): boolean {
+  if (!FINGERPRINT.test(fingerprint)) return false
+  const compiled = BUILTIN_STORES.find((store) => store.id === id)?.pinnedKey
+  if (compiled) return compiled === fingerprint
+  const pins = normalizeStorePins(get(storePins))
+  if (pins[id]) return pins[id] === fingerprint
+  storePins.set({ ...pins, [id]: fingerprint })
+  return true
+}
+
+/** Drop pins of stores that are no longer listed (for example after a synced list removed them). */
+export function pruneStorePins(): void {
+  const keep = new Set([...BUILTIN_STORES.map((store) => store.id), ...normalizeStoreFeeds(get(userStores)).map((store) => store.id)])
+  storePins.update((pins) => Object.fromEntries(Object.entries(normalizeStorePins(pins)).filter(([id]) => keep.has(id))))
 }
 
 /** Register a package catalog the user pasted into Sources as a store too, so it appears in the

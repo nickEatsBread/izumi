@@ -2,8 +2,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
 import {
-  BUILTIN_STORES, MAX_USER_STORES, addStore, allStores, directoryEnabled, enabledStores, hiddenBuiltinStores,
-  normalizeHiddenBuiltins, normalizeStoreFeeds, normalizeStorePins, pinStoreKey, registerCatalogStore, removeStore,
+  BUILTIN_STORES, MAX_USER_STORES, addStore, allStores, claimStorePin, directoryEnabled, enabledStores, hiddenBuiltinStores,
+  normalizeHiddenBuiltins, normalizeStoreFeeds, normalizeStorePins, pinStoreKey, pruneStorePins, registerCatalogStore, removeStore,
   setStoreEnabled, storeIdForUrl, storePins, userStores,
 } from './feeds'
 import { ADDON_DIRECTORY_ID } from './types'
@@ -106,5 +106,24 @@ describe('store registry', () => {
     expect(normalizeHiddenBuiltins(['izumi-themes', 'unknown', 3, 'izumi-themes'])).toEqual(['izumi-themes'])
     expect(normalizeStorePins({ 'izumi-packages': KEY, junk: KEY, [storeIdForUrl('https://ok.test/i.json')]: 'x' }))
       .toEqual({ 'izumi-packages': KEY })
+  })
+
+  it('pins on first use only, never replacing an existing pin', () => {
+    const feed = addStore('https://stores.example.test/index.json', 'Example')
+    expect(claimStorePin(feed.id, KEY)).toBe(true)
+    expect(claimStorePin(feed.id, OTHER)).toBe(false)
+    expect(claimStorePin(feed.id, KEY)).toBe(true)
+    expect(claimStorePin(feed.id, 'not-hex')).toBe(false)
+    expect(get(storePins)[feed.id]).toBe(KEY)
+  })
+
+  it('starts trust over when a store is added again after removal, and prunes pins of unlisted stores', () => {
+    const feed = addStore('https://stores.example.test/index.json', 'Example', KEY)
+    userStores.set([])
+    pruneStorePins()
+    expect(get(storePins)[feed.id]).toBeUndefined()
+    storePins.set({ [feed.id]: KEY })
+    addStore('https://stores.example.test/index.json', 'Example')
+    expect(get(allStores).find((store) => store.id === feed.id)?.pinnedKey).toBeUndefined()
   })
 })
