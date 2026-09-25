@@ -42,7 +42,7 @@ mod package {
     use super::{AniyomiInstallMetadata, InstalledExtension};
     use base64::Engine;
     use ed25519_dalek::pkcs8::DecodePublicKey;
-    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+    use ed25519_dalek::{Signature, VerifyingKey};
     use futures_util::StreamExt;
     use serde_json::Value;
     use sha2::{Digest, Sha256};
@@ -227,7 +227,12 @@ mod package {
             .map_err(|_| "Extension signature is not valid base64")?;
         let signature = Signature::from_slice(&signature_bytes)
             .map_err(|_| "Extension signature has the wrong length")?;
-        key.verify(canonical_json(integrity).as_bytes(), &signature)
+        // Same rules as store indexes: a small-order ("weak") key can sign anything, and strict
+        // verification also refuses malleable signatures.
+        if key.is_weak() {
+            return Err("Extension public key is a weak key".into());
+        }
+        key.verify_strict(canonical_json(integrity).as_bytes(), &signature)
             .map_err(|_| "Extension signature verification failed")?;
         Ok(Some(crate::store_trust::key_fingerprint(&key)))
     }
@@ -1342,6 +1347,32 @@ mod package {
             assert!(!parsed.signed);
             assert!(parsed.signer_key.is_none());
             assert!(jar.is_none());
+        }
+
+        #[test]
+        fn refuses_a_weak_key_whose_forged_signature_matches_any_package() {
+            // The identity point is a small-order key. With R = identity and s = 0 the non-strict
+            // check accepts this signature for every message.
+            let mut identity = [0u8; 32];
+            identity[0] = 1;
+            let public_key_der = VerifyingKey::from_bytes(&identity)
+                .unwrap()
+                .to_public_key_der()
+                .unwrap();
+            let public_key = format!(
+                "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----\n",
+                base64::engine::general_purpose::STANDARD.encode(public_key_der.as_bytes())
+            );
+            let mut forged = [0u8; 64];
+            forged[0] = 1;
+            let signature = serde_json::json!({
+                "algorithm": "Ed25519",
+                "signed": true,
+                "publicKey": public_key,
+                "signature": base64::engine::general_purpose::STANDARD.encode(forged),
+            });
+            let integrity = serde_json::json!({ "algorithm": "SHA-256", "files": {} });
+            assert!(verify_signature(&signature, &integrity).is_err());
         }
 
         #[test]

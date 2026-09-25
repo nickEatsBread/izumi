@@ -81,6 +81,19 @@ mod tests {
     }
 
     #[test]
+    fn rejects_a_weak_key_whose_forged_signature_matches_any_index() {
+        // The identity point is a small-order key: (R = identity, s = 0) "verifies" everything
+        // unless weak keys are refused.
+        let mut identity = [0u8; 32];
+        identity[0] = 1;
+        let key = format!("ed25519:{}", base64::engine::general_purpose::STANDARD.encode(identity));
+        let mut forged = [0u8; 64];
+        forged[0] = 1;
+        let signature = base64::engine::general_purpose::STANDARD.encode(forged);
+        assert!(verify_store_index("{}", &signature, &key).unwrap_err().contains("weak"));
+    }
+
+    #[test]
     fn rejects_a_tampered_index_a_foreign_key_an_untagged_signature_or_a_bad_prefix() {
         let key = SigningKey::from_bytes(&[9; 32]);
         let body = r#"{"app":"izumi","kind":"store"}"#;
