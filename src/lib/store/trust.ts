@@ -1,3 +1,5 @@
+import type { ExtensionCatalogPackage } from '$lib/extensions/catalog'
+
 // Trust decisions for stores and the packages they publish (spec §5.1 rule 3, §6.7). Pure.
 
 export type StoreTrust =
@@ -30,9 +32,21 @@ export function storeTrustText(trust: StoreTrust | undefined): string {
   return 'Signature does not match'
 }
 
+/** Whether a store listing pins this package's download by hash. Aniyomi indexes often don't. */
+export function packageHashPinned(pkg: ExtensionCatalogPackage): boolean {
+  const hash = pkg.packageFormat === 'aniyomi-repo' ? pkg.apkSha256 : pkg.packageSha256
+  return typeof hash === 'string' && /^[a-f0-9]{64}$/i.test(hash)
+}
+
 /** What a package's own signature says about who published it, relative to its store. */
-export function packageSignatureLabel(signerKey: string | null | undefined, storePin: string | undefined): string {
-  if (!signerKey) return 'Package unsigned (hash-pinned by the store listing)'
+export function packageSignatureLabel(
+  signerKey: string | null | undefined,
+  storePin: string | undefined,
+  hashPinned: boolean,
+): string {
+  if (!signerKey) {
+    return hashPinned ? 'Package unsigned (hash-pinned by the store listing)' : 'Package unsigned and not hash-pinned by its store'
+  }
   if (storePin && signerKey === storePin) return 'Package signed by this store'
   return 'Package signed by a key this store has not published'
 }
