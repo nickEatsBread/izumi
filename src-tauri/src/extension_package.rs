@@ -33,6 +33,8 @@ pub struct InstalledExtension {
     pub source_id: String,
     pub source_ids: Vec<String>,
     pub signed: bool,
+    /// Fingerprint of the key that signed the package, in the same form as store key fingerprints.
+    pub signer_key: Option<String>,
     pub service_entry: Option<String>,
 }
 
@@ -185,7 +187,9 @@ mod package {
         }
     }
 
-    fn verify_signature(signature: &Value, integrity: &Value) -> Result<bool, String> {
+    /// `Ok(Some(fingerprint))` for a signed package; the fingerprint identifies the signing key the
+    /// same way store keys are identified, so the Store can tell who published a package.
+    fn verify_signature(signature: &Value, integrity: &Value) -> Result<Option<String>, String> {
         let signed = signature
             .get("signed")
             .and_then(Value::as_bool)
@@ -194,7 +198,7 @@ mod package {
             if signature.get("algorithm").and_then(Value::as_str) != Some("none") {
                 return Err("Unsigned package has an invalid signature marker".into());
             }
-            return Ok(false);
+            return Ok(None);
         }
         if signature.get("algorithm").and_then(Value::as_str) != Some("Ed25519") {
             return Err("Unsupported extension signature algorithm".into());
@@ -224,7 +228,7 @@ mod package {
             .map_err(|_| "Extension signature has the wrong length")?;
         key.verify(canonical_json(integrity).as_bytes(), &signature)
             .map_err(|_| "Extension signature verification failed")?;
-        Ok(true)
+        Ok(Some(crate::store_trust::key_fingerprint(&key)))
     }
 
     fn is_android_apk(bytes: &[u8]) -> bool {
@@ -459,7 +463,8 @@ mod package {
                 return Err(format!("Extension integrity check failed for {name}"));
             }
         }
-        let signed = verify_signature(&signature, &integrity)?;
+        let signer_key = verify_signature(&signature, &integrity)?;
+        let signed = signer_key.is_some();
         if backend == "izumi-service" && !signed {
             return Err("Native extension services must be signed".into());
         }
@@ -534,6 +539,7 @@ mod package {
                 .to_string(),
             source_ids,
             signed,
+            signer_key,
             service_entry: (backend == "izumi-service").then(|| entry.to_string()),
         };
         let runtime_entry = if backend == "aniyomi-jvm" {
@@ -1304,12 +1310,16 @@ mod package {
             assert_eq!(parsed.name, "AllAnime");
             assert_eq!(parsed.source_ids, ["1", "2"]);
             assert!(!parsed.signed);
+            assert!(parsed.signer_key.is_none());
             assert!(jar.is_none());
         }
 
         #[test]
         fn accepts_a_valid_signed_package() {
-            assert!(parse_package(&fixture(false, true, None)).unwrap().0.signed);
+            let parsed = parse_package(&fixture(false, true, None)).unwrap().0;
+            assert!(parsed.signed);
+            let expected = crate::store_trust::key_fingerprint(&SigningKey::from_bytes(&[7; 32]).verifying_key());
+            assert_eq!(parsed.signer_key.as_deref(), Some(expected.as_str()));
         }
 
         #[test]

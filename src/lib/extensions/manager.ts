@@ -107,6 +107,8 @@ export interface InstalledExtensionPackage {
   sourceId: string
   sourceIds: string[]
   signed: boolean
+  /** Fingerprint of the key that signed the package; null when unsigned. */
+  signerKey?: string | null
   serviceEntry?: string
 }
 
