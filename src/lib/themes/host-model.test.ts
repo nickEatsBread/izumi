@@ -62,4 +62,19 @@ describe('theme host display model', () => {
     expect(model.source).toBe('manga')
     expect(model.country).toBe('Japan')
   })
+  it('binds the next episode, both countdowns and the aired count', () => {
+    const now = Date.UTC(2026, 0, 1)
+    const airing = { ...media, nextAiringEpisode: { episode: 5, airingAt: now / 1000 + 2 * 86400 + 3 * 3600 + 60, timeUntilAiring: 0 } } as Media
+    const model = mediaDisplayModel(airing, {}, 0, now)
+    expect(model.nextEpisode).toBe(5)
+    expect(model.airingIn).toBe('2d 3h')
+    expect(model.airingCountdown).toBe('2 days 3 hrs 1 min')
+    expect(model.episodesAired).toBe(4)
+  })
+  it('falls back to the provider aired count and finished totals', () => {
+    expect(mediaDisplayModel({ ...media, airedEpisodes: 7 } as Media).episodesAired).toBe(7)
+    expect(mediaDisplayModel({ ...media, status: 'FINISHED', episodes: 12 } as Media).episodesAired).toBe(12)
+    expect(mediaDisplayModel(media).airingIn).toBeUndefined()
+    expect(mediaDisplayModel(media).episodesAired).toBeUndefined()
+  })
 })
