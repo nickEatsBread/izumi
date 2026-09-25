@@ -95,6 +95,18 @@ describe('theme presentation contract', () => {
     expect(parseNode({ type: 'action', action: 'list' }).action).toBe('list')
     expect(parseNode({ type: 'action', action: 'share' }).action).toBe('share')
   })
+  it('gates template parts and API 3 fields behind the declared API', () => {
+    const card = { type: 'text', field: 'airingIn', part: 'hero.countdown' }
+    expect(parsePresentation({ rows: { defaults: { card } } }).rows?.defaults?.card).toEqual(card)
+    expect(() => parsePresentation({ rows: { defaults: { card } } }, 2)).toThrow('unsupported')
+    expect(() => parsePresentation({ rows: { defaults: { card: { type: 'text', field: 'slide' } } } }, 2)).toThrow('unsupported')
+    expect(() => parsePresentation({ rows: { defaults: { card: { type: 'text', part: 'Hero Meta' } } } })).toThrow('part name')
+  })
+  it('treats the new counters as numeric fields in conditions', () => {
+    const template = parsePresentation({ hero: { template: { type: 'text', field: 'slides', when: { field: 'slides', atMost: 20 } } } }).hero?.template
+    expect(template?.when).toEqual({ field: 'slides', atMost: 20 })
+    expect(() => parsePresentation({ hero: { template: { type: 'text', when: { field: 'airingIn', atMost: 2 } } } })).toThrow('atMost')
+  })
 })
 
 describe('theme surface resolution', () => {

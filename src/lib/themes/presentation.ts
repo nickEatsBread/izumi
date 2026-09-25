@@ -4,8 +4,9 @@ export type DisplayField =
   | 'studio' | 'season' | 'status' | 'genres' | 'members' | 'reviews'
   | 'episodeCount' | 'episodeTitle' | 'airDate' | 'duration' | 'episodeNumber' | 'progress'
   | 'source' | 'country'
+  | 'nextEpisode' | 'airingIn' | 'airingCountdown' | 'slide' | 'slides' | 'episodesAired'
 /** Host numbers. `when.atMost` compares these; text nodes render them through `displayText`. */
-export type NumericDisplayField = 'rankPosition' | 'score' | 'duration' | 'episodeNumber' | 'progress'
+export type NumericDisplayField = 'rankPosition' | 'score' | 'duration' | 'episodeNumber' | 'progress' | 'nextEpisode' | 'slide' | 'slides' | 'episodesAired'
 export type ArtworkKind = 'poster' | 'backdrop' | 'logo' | 'still'
 export type ThemeAction = 'play' | 'details' | 'favorite' | 'previous' | 'next' | 'list' | 'trailer' | 'share'
 export type CardFamily = 'poster' | 'continue' | 'search'
@@ -29,6 +30,8 @@ export interface ThemeNode {
   when?: { field: DisplayField; atMost?: number }
   style?: Record<string, string | number>
   children?: ThemeNode[]
+  /** API 3: rendered as `data-part` so a theme stylesheet can style this node. */
+  part?: string
 }
 export interface RowPresentation {
   layout?: 'carousel' | 'grid'
@@ -145,8 +148,12 @@ const fields = [
   'studio', 'season', 'status', 'genres', 'members', 'reviews',
   'episodeCount', 'episodeTitle', 'airDate', 'duration', 'episodeNumber', 'progress',
   'source', 'country',
+  'nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired',
 ] as const satisfies readonly DisplayField[]
-const numericFields: string[] = ['rankPosition', 'score', 'duration', 'episodeNumber', 'progress'] satisfies NumericDisplayField[]
+const API3_FIELDS: readonly string[] = ['nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired']
+/** An API 1/2 package is held to the fields its clients know, so it renders identically everywhere. */
+const fieldsFor = (api: ThemeApi) => (api >= 3 ? fields : fields.filter(field => !API3_FIELDS.includes(field)))
+const numericFields: string[] = ['rankPosition', 'score', 'duration', 'episodeNumber', 'progress', 'nextEpisode', 'slide', 'slides', 'episodesAired'] satisfies NumericDisplayField[]
 const actions = ['play', 'details', 'favorite', 'previous', 'next', 'list', 'trailer', 'share']
 const artworkKinds = ['poster', 'backdrop', 'logo', 'still'] as const
 const numericStyles: Record<string, [number, number, string]> = {
@@ -185,17 +192,17 @@ function themeColor(value: unknown): string {
   if (typeof value !== 'string' || !(colors.includes(value) || /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value))) throw new Error('Use a theme color or a hex color.')
   return value
 }
-export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, interactive = true): ThemeNode {
+export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, interactive = true, api: ThemeApi = LATEST_THEME_API): ThemeNode {
   if (++budget.count > 96 || depth > 8) throw new Error('This theme template is too complex.')
   const raw = record(value)
-  only(raw, ['type', 'text', 'field', 'artwork', 'action', 'icon', 'when', 'style', 'children'])
+  only(raw, ['type', 'text', 'field', 'artwork', 'action', 'icon', 'when', 'style', 'children', ...api3(api, ['part'])])
   const node: ThemeNode = { type: choice(raw.type, ['stack', 'row', 'grid', 'overlay', 'text', 'artwork', 'action', 'icon', 'meter']) }
   if (node.type === 'action' && !interactive) throw new Error('Card and badge templates cannot contain nested actions.')
   if (raw.text !== undefined) {
     if (typeof raw.text !== 'string' || raw.text.length > 300) throw new Error('Theme text is too long.')
     node.text = raw.text
   }
-  if (raw.field !== undefined) node.field = choice(raw.field, fields)
+  if (raw.field !== undefined) node.field = choice(raw.field, fieldsFor(api))
   if (raw.artwork !== undefined) node.artwork = choice(raw.artwork, artworkKinds)
   if (node.type === 'artwork' && !node.artwork) throw new Error('Choose artwork for this template.')
   if (node.type === 'action') node.action = choice(raw.action, actions) as ThemeAction
@@ -206,11 +213,15 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
   }
   if (raw.when !== undefined) {
     const condition = record(raw.when); only(condition, ['field', 'atMost'])
-    node.when = { field: choice(condition.field, fields) }
+    node.when = { field: choice(condition.field, fieldsFor(api)) }
     if (condition.atMost !== undefined) {
-      if (!numericFields.includes(node.when.field)) throw new Error('atMost only applies to the numeric fields rankPosition, score, duration, episodeNumber and progress.')
+      if (!numericFields.includes(node.when.field)) throw new Error('atMost only applies to numeric fields such as rankPosition, score, duration, episodeNumber, progress, slide and slides.')
       node.when.atMost = number(condition.atMost, 0, 10000)
     }
+  }
+  if (raw.part !== undefined) {
+    if (typeof raw.part !== 'string' || !/^[a-z][a-z0-9.-]{0,39}$/.test(raw.part)) throw new Error('Use a lowercase part name such as hero.meta.')
+    node.part = raw.part
   }
   if (raw.style !== undefined) {
     const style = record(raw.style); node.style = {}
@@ -223,7 +234,7 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
   }
   if (raw.children !== undefined) {
     if (!['stack', 'row', 'grid', 'overlay'].includes(node.type) || !Array.isArray(raw.children)) throw new Error('Only layout nodes can contain children.')
-    node.children = raw.children.map(child => parseNode(child, budget, depth + 1, interactive))
+    node.children = raw.children.map(child => parseNode(child, budget, depth + 1, interactive, api))
   }
   return node
 }
@@ -248,7 +259,7 @@ function parseRow(value: unknown, api: ThemeApi): RowPresentation {
     if (raw[key] !== undefined) result[key] = number(raw[key], min, max)
   }
   if (raw.heading !== undefined) result.heading = parseHeading(raw.heading)
-  if (raw.card !== undefined) result.card = parseNode(raw.card, undefined, 0, false)
+  if (raw.card !== undefined) result.card = parseNode(raw.card, undefined, 0, false, api)
   return result
 }
 function parseBottomNav(value: unknown): BottomNavPresentation {
@@ -279,7 +290,7 @@ function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['stack', 'split', 'overlay'])
   if (raw.bannerHidden !== undefined) result.bannerHidden = flag(raw.bannerHidden)
   if (raw.posterWidth !== undefined) result.posterWidth = number(raw.posterWidth, 96, 360)
-  if (raw.facts !== undefined) result.facts = parseNode(raw.facts)
+  if (raw.facts !== undefined) result.facts = parseNode(raw.facts, undefined, 0, true, api)
   if (raw.actionsFirst !== undefined) result.actionsFirst = flag(raw.actionsFirst)
   if (raw.coverAlign !== undefined) result.coverAlign = choice(raw.coverAlign, ['start', 'end'])
   if (raw.cta !== undefined) result.cta = choice(raw.cta, ['default', 'large'])
@@ -294,7 +305,7 @@ function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
     if (episodes.hover !== undefined) result.episodes.hover = choice(episodes.hover, ['scale', 'none'])
     if (episodes.order !== undefined) result.episodes.order = choice(episodes.order, ['tabs', 'flip'])
     if (episodes.search !== undefined) result.episodes.search = flag(episodes.search)
-    if (episodes.card !== undefined) result.episodes.card = parseNode(episodes.card, undefined, 0, false)
+    if (episodes.card !== undefined) result.episodes.card = parseNode(episodes.card, undefined, 0, false, api)
   }
   return result
 }
@@ -324,11 +335,11 @@ function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
   }
   return result
 }
-function parseCards(value: unknown): NonNullable<ThemePresentation['cards']> {
+function parseCards(value: unknown, api: ThemeApi): NonNullable<ThemePresentation['cards']> {
   const raw = record(value); only(raw, ['poster', 'continue', 'search'])
   const result: NonNullable<ThemePresentation['cards']> = {}
   for (const family of ['poster', 'continue', 'search'] as const) {
-    if (raw[family] !== undefined) result[family] = parseNode(raw[family], undefined, 0, false)
+    if (raw[family] !== undefined) result[family] = parseNode(raw[family], undefined, 0, false, api)
   }
   return result
 }
@@ -355,8 +366,8 @@ export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_A
     for (const key of ['height', 'mobileHeight'] as const) if (hero[key] !== undefined) result.hero[key] = number(hero[key], 24, 75)
     if (hero.scale !== undefined) result.hero.scale = choice(hero.scale, ['viewport', 'banner'])
     if (hero.interval !== undefined) result.hero.interval = number(hero.interval, 5, 60)
-    if (hero.rank !== undefined) result.hero.rank = parseNode(hero.rank, undefined, 0, false)
-    if (hero.template !== undefined) result.hero.template = parseNode(hero.template)
+    if (hero.rank !== undefined) result.hero.rank = parseNode(hero.rank, undefined, 0, false, api)
+    if (hero.template !== undefined) result.hero.template = parseNode(hero.template, undefined, 0, true, api)
     if (hero.indicator !== undefined) result.hero.indicator = parseIndicator(hero.indicator)
   }
   if (raw.rows !== undefined) {
@@ -374,7 +385,7 @@ export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_A
   if (raw.detail !== undefined) result.detail = parseDetail(raw.detail, api)
   if (raw.shell !== undefined) result.shell = parseShell(raw.shell, api)
   if (raw.player !== undefined) result.player = parsePlayer(raw.player, api)
-  if (raw.cards !== undefined) result.cards = parseCards(raw.cards)
+  if (raw.cards !== undefined) result.cards = parseCards(raw.cards, api)
   return result
 }
 /** The presentation for one surface: on a phone the `mobile` block is layered over the shared one.
