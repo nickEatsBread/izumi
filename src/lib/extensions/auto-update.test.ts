@@ -45,7 +45,7 @@ vi.mock('$lib/player/session', () => {
 })
 
 import { collectPackageUpdates, checkExtensionUpdates, extensionUpdateNotice, freshPackageListings } from './auto-update'
-import type { ExtensionCatalogPackage } from './catalog'
+import type { ExtensionCatalogPackage, IzumiCatalogPackage } from './catalog'
 import type { InstalledExtensionPackage } from './manager'
 
 const OFFICIAL = 'https://store.test/index.json'
@@ -123,6 +123,13 @@ describe('collectPackageUpdates', () => {
       .toEqual([['2', 'https://s1.test/i.json']])
     expect(collectPackageUpdates([inst('a', '1')], listings, {}, [])).toEqual([])
   })
+
+  it('never lets a legacy store update a package into another kind of package', () => {
+    const service = { ...(pkg('a', '2') as IzumiCatalogPackage), backend: 'izumi-service' as const }
+    expect(collectPackageUpdates([inst('a', '1')], [listing('https://s1.test/i.json', [service])], {}, ['https://s1.test/i.json'])).toEqual([])
+    expect(collectPackageUpdates([inst('a', '1')], [listing('https://s1.test/i.json', [service])], { a: 'https://s1.test/i.json' }, [])
+      .map(({ entry }) => entry.backend)).toEqual(['izumi-service'])
+  })
 })
 
 describe('freshPackageListings', () => {
@@ -143,7 +150,7 @@ describe('checkExtensionUpdates', () => {
     mocks.fetchExtensionInfo.mockResolvedValue({ configs: [], packages: [pkg('a', '2', 'Alpha'), pkg('b', '2')] })
     const result = await checkExtensionUpdates()
     expect(mocks.installCatalogPackage).toHaveBeenCalledTimes(1)
-    expect(mocks.installCatalogPackage).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }), 'https://x/index.json')
+    expect(mocks.installCatalogPackage).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }), 'https://x/index.json', { updateOnly: true })
     expect(result.updated.map((item) => item.id)).toEqual(['a'])
     expect(result.failed).toBe(0)
     expect(get(extensionUpdateNotice)).toContain('Alpha')
@@ -182,7 +189,7 @@ describe('checkExtensionUpdates', () => {
     expect(mocks.loadStoreAndPin).toHaveBeenCalledTimes(1)
     expect(mocks.loadStoreAndPin).toHaveBeenCalledWith(expect.objectContaining({ id: 'izumi-packages' }), { force: true })
     expect(result.updated.map((item) => item.id)).toEqual(['store-package'])
-    expect(mocks.installCatalogPackage).toHaveBeenCalledWith(expect.objectContaining({ id: 'store-package' }), OFFICIAL)
+    expect(mocks.installCatalogPackage).toHaveBeenCalledWith(expect.objectContaining({ id: 'store-package' }), OFFICIAL, { updateOnly: true })
   })
 
   it('never updates from a store whose signing-key check failed', async () => {
@@ -214,7 +221,7 @@ describe('checkExtensionUpdates', () => {
     mocks.installedExtensionPackages.mockResolvedValue([inst('bound-package', '1')])
     mocks.loadStoreAndPin.mockResolvedValue(loaded('https://x.test/index.json', [pkg('bound-package', '2')]))
     expect((await checkExtensionUpdates()).updated.map((item) => item.id)).toEqual(['bound-package'])
-    expect(mocks.installCatalogPackage).toHaveBeenCalledWith(expect.objectContaining({ id: 'bound-package' }), 'https://x.test/index.json')
+    expect(mocks.installCatalogPackage).toHaveBeenCalledWith(expect.objectContaining({ id: 'bound-package' }), 'https://x.test/index.json', { updateOnly: true })
   })
 
   it('lets an explicit check inspect disabled configured catalogs without enabling them', async () => {

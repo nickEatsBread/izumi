@@ -86,6 +86,19 @@ describe('installCatalogPackage', () => {
     expect(get(packageOrigins)).toEqual({ 'example.pkg': STORE })
   })
 
+  it('never lets a legacy claim turn a package into another kind', async () => {
+    answer([{ ...onDisk, backend: 'aniyomi-jvm' }])
+    mocks.extensionUrls.set([STORE])
+    await expect(installCatalogPackage(pkg, STORE)).rejects.toThrow('installed from another store')
+    expect(installs()).toBe(0)
+  })
+
+  it('never brings back a package removed while an update was pending', async () => {
+    answer([])
+    await expect(installCatalogPackage(pkg, STORE, { updateOnly: true })).rejects.toThrow('no longer installed')
+    expect(installs()).toBe(0)
+  })
+
   it('refuses to install when the installed list cannot be read', async () => {
     answer(new Error('The package list could not be read.'))
     await expect(installCatalogPackage(pkg, STORE)).rejects.toThrow('could not be read')

@@ -56,10 +56,13 @@ describe('legacy stores', () => {
     mocks.extensionUrls.set([CATALOG])
     expect(mayReplacePackage('old.pkg', CATALOG)).toBe(true)
     expect(mayReplacePackage('old.pkg', OFFICIAL_ANIME_CATALOG)).toBe(true)
+    // A legacy claim never changes what kind of package it is.
+    expect(mayReplacePackage('old.pkg', CATALOG, false)).toBe(false)
     mocks.extensionUrls.set([CATALOG, LATER])
     expect(mayReplacePackage('old.pkg', LATER)).toBe(false)
     recordPackageOrigin('bound.pkg', LATER)
     expect(mayReplacePackage('bound.pkg', LATER)).toBe(true)
+    expect(mayReplacePackage('bound.pkg', LATER, false)).toBe(true)
     expect(mayReplacePackage('bound.pkg', CATALOG)).toBe(false)
     expect(mayReplacePackage('constructor', LATER)).toBe(false)
   })

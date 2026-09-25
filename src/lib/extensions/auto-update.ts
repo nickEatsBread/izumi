@@ -33,7 +33,8 @@ export interface PackageUpdate {
  *  canonical in BOTH directions — a rollback must propagate too, so this is `!==`, not a semver
  *  ordering. Installed packages absent from every listing (local sideloads) are left alone. A package
  *  with a recorded origin only updates from that store. One installed before origins were recorded
- *  only updates from a legacy store (see $lib/store/origins) — no other store can claim it. */
+ *  only updates from a legacy store (see $lib/store/origins), and only as the same kind of package —
+ *  no other store can claim it. */
 export function collectPackageUpdates(
   installed: InstalledExtensionPackage[],
   listings: PackageListing[],
@@ -42,10 +43,13 @@ export function collectPackageUpdates(
 ): PackageUpdate[] {
   return installed.flatMap((extension) => {
     const origin = Object.hasOwn(origins, extension.id) ? origins[extension.id] : undefined
+    // A legacy claim must also keep the package's kind (the installer refuses anything else).
+    const matches = (entry: ExtensionCatalogPackage) => entry.id === extension.id
+      && (origin !== undefined || entry.backend === extension.backend)
     const listing = listings.find((candidate) =>
       (origin ? candidate.storeUrl === origin : legacyStores.includes(candidate.storeUrl))
-      && candidate.packages.some((entry) => entry.id === extension.id))
-    const entry = listing?.packages.find((candidate) => candidate.id === extension.id)
+      && candidate.packages.some(matches))
+    const entry = listing?.packages.find(matches)
     return listing && entry && entry.version !== extension.version ? [{ entry, storeUrl: listing.storeUrl }] : []
   })
 }
@@ -124,8 +128,9 @@ export async function checkExtensionUpdates(
     if (get(playing)) break // playback started mid-check; the unmarked rest retry next tick
     attempted.add(`${entry.id}@${entry.version}`)
     try {
-      // The installer records the store the package came from, and refuses any other store.
-      await installCatalogPackage(entry, storeUrl)
+      // The installer records the store the package came from, refuses any other store, and never
+      // reinstalls a package removed while this check ran.
+      await installCatalogPackage(entry, storeUrl, { updateOnly: true })
       updated.push(entry)
     } catch {
       failed += 1

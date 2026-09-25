@@ -38,11 +38,13 @@ export function currentLegacyStores(): string[] {
 }
 
 /** Whether an installed package may be replaced from this store: only from the store it came from,
- *  or — installed before origins were recorded — from one of the legacy stores. */
-export function mayReplacePackage(id: string, storeUrl: string): boolean {
+ *  or — installed before origins were recorded — from one of the legacy stores, and then only by the
+ *  same kind of package, so a legacy claim can never turn a package into native code. */
+export function mayReplacePackage(id: string, storeUrl: string, sameBackend = true): boolean {
   const origins = get(packageOrigins)
   const key = originKey(storeUrl)
-  return Object.hasOwn(origins, id) ? origins[id] === key : currentLegacyStores().includes(key)
+  if (Object.hasOwn(origins, id)) return origins[id] === key
+  return sameBackend && currentLegacyStores().includes(key)
 }
 
 export function recordPackageOrigin(id: string, storeUrl: string): void {

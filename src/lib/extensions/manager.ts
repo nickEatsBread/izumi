@@ -196,12 +196,17 @@ export async function installedExtensionPackages(): Promise<InstalledExtensionPa
 export async function installCatalogPackage(
   extension: ExtensionCatalogPackage,
   origin: string,
+  options: { updateOnly?: boolean } = {},
 ): Promise<InstalledExtensionPackage> {
   // Read afresh, uncached, and let a failed read throw: a stale or failed list must never pass for
   // "not installed" and wave a takeover through.
   const current = await invoke<InstalledExtensionPackage[]>('extension_list')
-  if (current.some((item) => item.id === extension.id) && !mayReplacePackage(extension.id, origin)) {
-    throw new Error('This package is installed from another store. Remove it there first.')
+  const onDisk = current.find((item) => item.id === extension.id)
+  // An update for a package removed meanwhile (say, while a background check loaded) must not bring
+  // it back.
+  if (!onDisk && options.updateOnly) throw new Error('That package is no longer installed.')
+  if (onDisk && !mayReplacePackage(extension.id, origin, onDisk.backend === extension.backend)) {
+    throw new Error('This package is installed from another store or source. Remove it first to install this one.')
   }
   const installed = extension.packageFormat === 'aniyomi-repo'
     ? await invoke<InstalledExtensionPackage>('extension_install_aniyomi_url', {
