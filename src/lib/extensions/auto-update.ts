@@ -31,17 +31,20 @@ export interface PackageUpdate {
 /** The listed packages worth installing: version differs from what's on disk. The listing is
  *  canonical in BOTH directions — a rollback must propagate too, so this is `!==`, not a semver
  *  ordering. Installed packages absent from every listing (local sideloads) are left alone. A package
- *  with a recorded origin only updates from that store; one installed before origins were recorded
- *  takes the first store that lists it, matching the old catalog precedence. */
+ *  with a recorded origin only updates from that store. One installed before origins were recorded
+ *  can only have come from the official catalog or a catalog in the source list (`legacyStores`), so
+ *  only those may update it — no other store can claim it. */
 export function collectPackageUpdates(
   installed: InstalledExtensionPackage[],
   listings: PackageListing[],
-  origins: Readonly<Record<string, string>> = {},
+  origins: Readonly<Record<string, string>>,
+  legacyStores: readonly string[],
 ): PackageUpdate[] {
   return installed.flatMap((extension) => {
-    const origin = origins[extension.id]
+    const origin = Object.hasOwn(origins, extension.id) ? origins[extension.id] : undefined
     const listing = listings.find((candidate) =>
-      (!origin || candidate.storeUrl === origin) && candidate.packages.some((entry) => entry.id === extension.id))
+      (origin ? candidate.storeUrl === origin : legacyStores.includes(candidate.storeUrl))
+      && candidate.packages.some((entry) => entry.id === extension.id))
     const entry = listing?.packages.find((candidate) => candidate.id === extension.id)
     return listing && entry && entry.version !== extension.version ? [{ entry, storeUrl: listing.storeUrl }] : []
   })
@@ -76,7 +79,7 @@ export async function checkExtensionUpdates(
   // The first check is delayed by 15 seconds; keep the extension manager, worker graph and store
   // layer out of the app-layout startup chunk until the check actually runs.
   const { fetchExtensionInfo, installCatalogPackage, installedExtensionPackages } = await import('./manager')
-  const { allStores, enabledStores } = await import('$lib/store/feeds')
+  const { BUILTIN_STORES, allStores, enabledStores } = await import('$lib/store/feeds')
   const { loadStoreAndPin } = await import('$lib/store/service')
   const { packageOrigins, recordPackageOrigin } = await import('$lib/store/origins')
   const installed = await installedExtensionPackages()
@@ -105,7 +108,11 @@ export async function checkExtensionUpdates(
     }),
   ]
   if (!listings.length) return { updated: [], failed: 0, reason: 'catalog-unavailable' }
-  const updates = collectPackageUpdates(installed, listings, get(packageOrigins))
+  const legacyStores = [
+    ...BUILTIN_STORES.filter((store) => store.id === 'izumi-packages').map((store) => store.url),
+    ...get(extensionUrls),
+  ]
+  const updates = collectPackageUpdates(installed, listings, get(packageOrigins), legacyStores)
     .filter(({ entry }) => options.retryAttempted || !attempted.has(`${entry.id}@${entry.version}`))
   const updated: ExtensionCatalogPackage[] = []
   let failed = 0

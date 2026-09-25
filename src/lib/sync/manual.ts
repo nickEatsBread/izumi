@@ -14,6 +14,7 @@ import {
   hiddenBuiltinStores,
   normalizeHiddenBuiltins,
   normalizeStoreFeeds,
+  pruneStorePins,
   userStores,
 } from "$lib/store/feeds";
 import { activeProfileId, DEFAULT_PROFILE_ID } from '$lib/profiles/store'
@@ -122,8 +123,8 @@ export function createManualSnapshot(
     },
     settings: readSettings(),
     stores: {
-      feeds: get(userStores),
-      hiddenBuiltins: get(hiddenBuiltinStores),
+      feeds: normalizeStoreFeeds(get(userStores)),
+      hiddenBuiltins: normalizeHiddenBuiltins(get(hiddenBuiltinStores)),
     },
   };
 }
@@ -203,10 +204,12 @@ export function applyManualSnapshot(
     debridProvider.set(snapshot.extensions.debridProvider);
   if (typeof snapshot.extensions.debridKey === "string")
     debridKey.set(snapshot.extensions.debridKey);
-  // Received store lists reach the stores through set(), which skips their beforeRead cleaning.
+  // Received store lists reach the stores through set(), which skips their beforeRead cleaning. Each
+  // field applies only when present, so a partial or future block never wipes a list.
   if (snapshot.stores) {
-    userStores.set(normalizeStoreFeeds(snapshot.stores.feeds));
-    hiddenBuiltinStores.set(normalizeHiddenBuiltins(snapshot.stores.hiddenBuiltins));
+    if (Array.isArray(snapshot.stores.feeds)) userStores.set(normalizeStoreFeeds(snapshot.stores.feeds));
+    if (Array.isArray(snapshot.stores.hiddenBuiltins)) hiddenBuiltinStores.set(normalizeHiddenBuiltins(snapshot.stores.hiddenBuiltins));
+    pruneStorePins();
   }
   for (const key of SYNCED_SETTING_KEYS) {
     if (Object.hasOwn(snapshot.settings, key)) {

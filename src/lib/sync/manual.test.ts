@@ -114,6 +114,16 @@ describe("manual device sync snapshots", () => {
     expect(get(hiddenBuiltinStores)).toEqual(["izumi-themes"]);
   });
 
+  it("leaves local stores alone when a snapshot's store block is missing or unusable", () => {
+    userStores.set([]);
+    hiddenBuiltinStores.set([]);
+    addStore("https://stores.example.test/index.json", "Example");
+    const snapshot = createManualSnapshot("device", "Desk");
+    applyManualSnapshot({ ...snapshot, stores: {} as never });
+    applyManualSnapshot({ ...snapshot, stores: undefined });
+    expect(get(userStores).map((store) => store.url)).toEqual(["https://stores.example.test/index.json"]);
+  });
+
   describe("signed-in accounts", () => {
     beforeEach(() => {
       anilistToken.set("anilist-secret");

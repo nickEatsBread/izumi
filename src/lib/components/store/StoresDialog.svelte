@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack } from 'svelte'
+  import { untrack } from 'svelte'
   import Trash2 from '@lucide/svelte/icons/trash-2'
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
   import { allStores, directoryEnabled, pinStoreKey, removeStore, setStoreEnabled, type StoreFeed } from '$lib/store/feeds'
@@ -67,9 +67,6 @@
     }
   }
 
-  onMount(() => {
-    if (initialUrl) void check()
-  })
 </script>
 
 <svelte:window onkeydown={(event) => { if (event.key === 'Escape' && !busy) onclose() }} />

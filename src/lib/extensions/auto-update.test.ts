@@ -32,7 +32,11 @@ vi.mock('$lib/settings/ui', () => {
 vi.mock('$lib/store/feeds', () => {
   mocks.allStores = writable<unknown[]>([])
   mocks.enabledStores = writable<unknown[]>([])
-  return { allStores: mocks.allStores, enabledStores: mocks.enabledStores }
+  return {
+    BUILTIN_STORES: [{ id: 'izumi-packages', url: 'https://store.test/index.json' }],
+    allStores: mocks.allStores,
+    enabledStores: mocks.enabledStores,
+  }
 })
 vi.mock('$lib/store/service', () => ({ loadStoreAndPin: mocks.loadStoreAndPin }))
 vi.mock('$lib/store/origins', () => {
@@ -92,25 +96,34 @@ describe('collectPackageUpdates', () => {
     const updates = collectPackageUpdates(
       [inst('a', '1'), inst('b', '2')],
       [listing('https://s1.test/i.json', [pkg('a', '1'), pkg('b', '3'), pkg('c', '9')])],
+      {}, ['https://s1.test/i.json', 'https://s2.test/i.json'],
     )
     expect(updates.map(({ entry, storeUrl }) => [entry.id, storeUrl])).toEqual([['b', 'https://s1.test/i.json']])
   })
 
   it('ignores installed packages no store lists', () => {
-    expect(collectPackageUpdates([inst('side', '1')], [listing('https://s1.test/i.json', [pkg('a', '2')])])).toEqual([])
+    expect(collectPackageUpdates([inst('side', '1')], [listing('https://s1.test/i.json', [pkg('a', '2')])], {}, ['https://s1.test/i.json', 'https://s2.test/i.json'])).toEqual([])
   })
 
   it('lets the first store listing an id win when the package has no recorded origin', () => {
     expect(collectPackageUpdates(
       [inst('a', '1')],
       [listing('https://s1.test/i.json', [pkg('a', '1')]), listing('https://s2.test/i.json', [pkg('a', '5')])],
+      {}, ['https://s1.test/i.json', 'https://s2.test/i.json'],
     )).toEqual([])
   })
 
   it('only updates a package from the store it was installed from', () => {
     const listings = [listing('https://s1.test/i.json', [pkg('a', '9')]), listing('https://s2.test/i.json', [pkg('a', '2')])]
-    expect(collectPackageUpdates([inst('a', '1')], listings, { a: 'https://s2.test/i.json' }).map(({ entry }) => entry.version)).toEqual(['2'])
-    expect(collectPackageUpdates([inst('a', '1')], listings, { a: 'https://gone.test/i.json' })).toEqual([])
+    expect(collectPackageUpdates([inst('a', '1')], listings, { a: 'https://s2.test/i.json' }, []).map(({ entry }) => entry.version)).toEqual(['2'])
+    expect(collectPackageUpdates([inst('a', '1')], listings, { a: 'https://gone.test/i.json' }, [])).toEqual([])
+  })
+
+  it("never lets a store the package couldn't have come from claim a legacy install", () => {
+    const listings = [listing('https://stranger.test/i.json', [pkg('a', '9')]), listing('https://s1.test/i.json', [pkg('a', '2')])]
+    expect(collectPackageUpdates([inst('a', '1')], listings, {}, ['https://s1.test/i.json']).map(({ entry, storeUrl }) => [entry.version, storeUrl]))
+      .toEqual([['2', 'https://s1.test/i.json']])
+    expect(collectPackageUpdates([inst('a', '1')], listings, {}, [])).toEqual([])
   })
 })
 
@@ -210,5 +223,15 @@ describe('checkExtensionUpdates', () => {
     await checkExtensionUpdates()
     expect(mocks.installCatalogPackage).toHaveBeenCalledTimes(2)
     expect(get(extensionUpdateNotice)).toBeTruthy()
+  })
+
+  it('never updates a package installed before origins existed from a user store', async () => {
+    mocks.extensionUrls.set([])
+    mocks.enabledExtensionUrls.set([])
+    mocks.enabledStores.set([store('u-x', 'https://x.test/index.json')])
+    mocks.installedExtensionPackages.mockResolvedValue([inst('legacy-package', '1')])
+    mocks.loadStoreAndPin.mockResolvedValue(loaded('https://x.test/index.json', [pkg('legacy-package', '2')]))
+    expect((await checkExtensionUpdates()).updated).toEqual([])
+    expect(mocks.installCatalogPackage).not.toHaveBeenCalled()
   })
 })
