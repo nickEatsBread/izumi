@@ -38,4 +38,8 @@ describe('theme chrome application', () => {
     expect(read('./components/themes/ThemeNode.svelte')).toContain('theme-artwork')
     expect(read('./components/banner/Hero.svelte')).toContain('.theme-overlay > .theme-artwork')
   })
+  it('renders template part names as data-part on every node kind', () => {
+    const node = read('./components/themes/ThemeNode.svelte')
+    expect(node.match(/data-part=\{item\.part\}/g)?.length).toBe(6)
+  })
 })
