@@ -9,6 +9,7 @@
     disabledExtensions,
   } from '$lib/settings/ui'
   import { classifySourceSpec } from '$lib/settings/classify-source-spec'
+  import { registerCatalogStore } from '$lib/store/feeds'
   import {
     matchesSourceFilters,
     matchesSourceQuery,
@@ -130,6 +131,8 @@
       } else {
         $extensionUrls = [...$extensionUrls, result.spec]
       }
+      // A package catalog is also a store, so it shows up in the Store with its packages.
+      if (result.catalog) registerCatalogStore(result.spec)
       input = ''
     } finally {
       adding = false

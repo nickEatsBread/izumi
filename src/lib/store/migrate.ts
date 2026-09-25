@@ -1,0 +1,30 @@
+import { persisted } from 'svelte-persisted-store'
+import { get } from 'svelte/store'
+import { extensionUrls } from '$lib/settings/ui'
+import { registerCatalogStore } from './feeds'
+
+/** Source-list entries already checked for being a package catalog (each is fetched once). */
+export const examinedCatalogSpecs = persisted<string[]>('store-catalog-migration-v1', [])
+
+type FetchInfo = (spec: string) => Promise<{ packages?: unknown[]; problem?: string }>
+
+/** Catalogs added before stores existed become stores, so they show up in the Store. A spec whose
+ *  fetch failed is retried next time; everything else is examined once. Returns how many it added. */
+export async function migrateCatalogStores(fetchInfo?: FetchInfo): Promise<number> {
+  const pending = get(extensionUrls).filter((spec) => !get(examinedCatalogSpecs).includes(spec))
+  if (!pending.length) return 0
+  const info: FetchInfo = fetchInfo ?? (await import('$lib/extensions/manager')).fetchExtensionInfo
+  let registered = 0
+  for (const spec of pending) {
+    let result: Awaited<ReturnType<FetchInfo>>
+    try {
+      result = await info(spec)
+    } catch {
+      continue
+    }
+    if (!result.packages && /could not be fetched|returned HTTP/.test(result.problem ?? '')) continue
+    if (result.packages && registerCatalogStore(spec)) registered += 1
+    examinedCatalogSpecs.update((specs) => [...specs, spec])
+  }
+  return registered
+}
