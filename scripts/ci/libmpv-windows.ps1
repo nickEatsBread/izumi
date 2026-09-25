@@ -19,11 +19,25 @@ $hdr = @{
   'Authorization' = "Bearer $env:GH_TOKEN"
   'Accept' = 'application/vnd.github+json'
 }
-$rel = Invoke-RestMethod "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/tags/$PinnedTag" -Headers $hdr
+# GitHub occasionally drops a connection mid-transfer on shared runners ("An existing connection was
+# forcibly closed by the remote host"), which failed a whole release's Windows build. The built-in
+# -MaximumRetryCount only retries HTTP error statuses, not a broken transport, so retry by hand.
+# A retried download overwrites the partial file, and the SHA-256 check below still gates it.
+function Invoke-WithRetry([scriptblock] $Action, [int] $Attempts = 5) {
+  for ($i = 1; ; $i++) {
+    try { return & $Action }
+    catch {
+      if ($i -ge $Attempts) { throw }
+      Write-Host "attempt $i/$Attempts failed: $($_.Exception.Message) - retrying in $($i * 10)s"
+      Start-Sleep -Seconds ($i * 10)
+    }
+  }
+}
+$rel = Invoke-WithRetry { Invoke-RestMethod "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/tags/$PinnedTag" -Headers $hdr }
 $asset = $rel.assets | Where-Object { $_.name -eq $PinnedAsset } | Select-Object -First 1
 if (-not $asset) { throw "pinned libmpv asset missing: $PinnedAsset" }
 Write-Host "libmpv dev build: $($asset.name)"
-Invoke-WebRequest $asset.browser_download_url -OutFile "$dir\libmpv.7z" -Headers $hdr
+Invoke-WithRetry { Invoke-WebRequest $asset.browser_download_url -OutFile "$dir\libmpv.7z" -Headers $hdr } | Out-Null
 $actualSha256 = (Get-FileHash "$dir\libmpv.7z" -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actualSha256 -ne $PinnedSha256) { throw "libmpv SHA-256 mismatch: $actualSha256" }
 7z x "$dir\libmpv.7z" -o"$dir" -y
