@@ -104,7 +104,7 @@
         }
         const entry = packages.find((value) => value.id === id)
         if (!entry) continue
-        const installed = await installCatalogPackage(entry)
+        const installed = await installCatalogPackage(entry, OFFICIAL_ANIME_CATALOG)
         disabledPlugins.update((ids) => ids.filter((value) => value !== installed.id))
         // The package came from the maintained catalog, so keep that catalog in the source list
         // the same way the store screen does when it installs from it.

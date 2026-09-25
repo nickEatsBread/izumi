@@ -32,7 +32,7 @@
   import { directoryEntries } from '$lib/store/directory'
   import { DEFAULT_STORE_FILTER, filterStoreEntries, storeLanguages, type StoreFilter } from '$lib/store/filters'
   import { installStoreEntry, installedRef, type InstalledState } from '$lib/store/install'
-  import { forgetPackageOrigin, packageOrigins } from '$lib/store/origins'
+  import { currentLegacyStores, legacyPackageStores, legacyStoresFrom, packageOrigins } from '$lib/store/origins'
   import { packageHashPinned, packageSignatureLabel } from '$lib/store/trust'
   import { migrateCatalogStores } from '$lib/store/migrate'
   import { ADDON_DIRECTORY_ID, type SourceType, type StoreEntry } from '$lib/store/types'
@@ -115,9 +115,8 @@
     extensionSpecs: $extensionUrls,
     packages: installedPackages,
     packageOrigins: $packageOrigins,
-    // Packages installed before origins existed came from the official catalog or a catalog in the
-    // source list, so only those stores may claim them.
-    legacyStores: [...BUILTIN_STORES.filter((store) => store.id === 'izumi-packages').map((store) => store.url), ...$extensionUrls],
+    // Packages installed before origins existed may only be claimed by the stores frozen for them.
+    legacyStores: legacyStoresFrom($legacyPackageStores, $extensionUrls),
     themes: $installedThemes.map((theme) => ({ id: theme.id, origin: theme.origin })),
   })
   const refOf = (entry: StoreEntry) => installedRef(entry, installedState, storeUrlById.get(entry.storeId) ?? '')
@@ -248,6 +247,9 @@
   })
 
   onMount(() => {
+    // Freeze which stores may claim packages installed before origins were recorded, before any
+    // install from this page can add a catalog to the source list.
+    currentLegacyStores()
     void refreshInstalled()
     // Catalogs added before stores existed become stores the first time the Store opens.
     void migrateCatalogStores().catch(() => 0)
@@ -290,13 +292,10 @@
     notice = ''
     error = ''
     try {
-      const target = entry.install
+      // The package installer itself refuses to replace a package installed from another store.
       const outcome = await installStoreEntry(entry, {
         storeUrl: storeUrlById.get(entry.storeId) ?? '',
         adapter: loaded[entry.storeId]?.listing?.adapter,
-        // Installed already, but not from anywhere this store can claim: refuse instead of replacing.
-        installedElsewhere: target.type === 'package'
-          && installedPackages.some((item) => item.id === target.pkg.id) && refOf(entry) === null,
       }, installCatalogPackage)
       if (outcome.kind === 'configure') {
         configuring = { name: outcome.name, id: outcome.id, configureUrl: outcome.configureUrl, currentBase: refOf(entry) ?? undefined }
@@ -327,7 +326,6 @@
         $disabledExtensions = $disabledExtensions.filter((item) => item !== ref)
       } else if (entry.install.type === 'package') {
         await removeInstalledExtension(ref)
-        forgetPackageOrigin(ref)
         await refreshInstalled()
       }
       notice = `${entry.name} removed.`

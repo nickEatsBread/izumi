@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { get } from 'svelte/store'
 import { invokeNativeHttp, isNativeTransportFailure, phttp } from '$lib/net/http'
 import { enabledExtensionUrls, disabledPlugins } from '$lib/settings/ui'
+import { forgetPackageOrigin, mayReplacePackage, recordPackageOrigin } from '$lib/store/origins'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
 import { manifestFetchUrls, normalizeManifest, pointerUrl, isRunnableType, isLegacyTorrentType, manifestProblem, catalogPackages, aniyomiRepositoryPackages } from './catalog'
 import type { ExtensionCatalogPackage } from './catalog'
@@ -188,9 +189,20 @@ export async function installedExtensionPackages(): Promise<InstalledExtensionPa
   return entry.value
 }
 
+/** Install or update a catalog package from `origin` — the store or source-list catalog listing it —
+ *  and remember that store. Every package install goes through here: an installed package only
+ *  changes through the store it came from, so a same-id package from anywhere else is refused as a
+ *  takeover. */
 export async function installCatalogPackage(
   extension: ExtensionCatalogPackage,
+  origin: string,
 ): Promise<InstalledExtensionPackage> {
+  // Read afresh, uncached, and let a failed read throw: a stale or failed list must never pass for
+  // "not installed" and wave a takeover through.
+  const current = await invoke<InstalledExtensionPackage[]>('extension_list')
+  if (current.some((item) => item.id === extension.id) && !mayReplacePackage(extension.id, origin)) {
+    throw new Error('This package is installed from another store. Remove it there first.')
+  }
   const installed = extension.packageFormat === 'aniyomi-repo'
     ? await invoke<InstalledExtensionPackage>('extension_install_aniyomi_url', {
         url: extension.apk,
@@ -210,6 +222,7 @@ export async function installCatalogPackage(
         // The listing's id: a package declaring another id would replace whatever is installed there.
         expectedId: extension.id,
       })
+  recordPackageOrigin(installed.id, origin)
   return finishPackageInstall(installed)
 }
 
@@ -240,6 +253,8 @@ function scheduleJvmWarm(delayMs = 1_500): void {
 export async function removeInstalledExtension(id: string): Promise<void> {
   await invoke('extension_service_stop', { id }).catch(() => {})
   await invoke('extension_remove', { id })
+  // Gone, so no store is its origin any more.
+  forgetPackageOrigin(id)
   await invoke('jvm_extension_reload').catch(() => {})
   installedRevision += 1
   resetRunning()

@@ -34,7 +34,9 @@ describe('Store behaviour', () => {
   it('shows update status on installed entries, bound to each package origin', () => {
     expect(page).toContain('update={updateAvailable(entry)}')
     expect(page).toContain('refOf(entry) !== null && installed.version !== install.pkg.version')
-    expect(page).toContain('installedElsewhere:')
+    expect(page).toContain('legacyStores: legacyStoresFrom($legacyPackageStores, $extensionUrls)')
+    // The package installer, not the page, decides takeovers.
+    expect(page).not.toContain('installedElsewhere')
   })
 
   it('opens the add-store preview from a deep link', () => {

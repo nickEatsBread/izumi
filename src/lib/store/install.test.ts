@@ -2,9 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { get, writable, type Writable } from 'svelte/store'
 
 const mocks = vi.hoisted(() => ({
-  recordPackageOrigin: vi.fn(),
+  currentLegacyStores: vi.fn(),
   stores: {} as Record<string, Writable<string[]>>,
-  packageOrigins: null as unknown as Writable<Record<string, string>>,
 }))
 vi.mock('$lib/stremio/sources', () => {
   mocks.stores.addonUrls = writable<string[]>([])
@@ -21,10 +20,7 @@ vi.mock('$lib/settings/ui', () => {
     disabledPlugins: mocks.stores.disabledPlugins,
   }
 })
-vi.mock('./origins', () => {
-  mocks.packageOrigins = writable<Record<string, string>>({})
-  return { recordPackageOrigin: mocks.recordPackageOrigin, packageOrigins: mocks.packageOrigins }
-})
+vi.mock('./origins', () => ({ currentLegacyStores: mocks.currentLegacyStores }))
 
 import { installStoreEntry, installedRef, type InstalledState } from './install'
 import type { StoreEntry } from './types'
@@ -44,8 +40,7 @@ const themeEntry: StoreEntry = {
 
 beforeEach(() => {
   for (const store of Object.values(mocks.stores)) store.set([])
-  mocks.packageOrigins.set({})
-  mocks.recordPackageOrigin.mockReset()
+  mocks.currentLegacyStores.mockReset().mockReturnValue([])
 })
 
 describe('installStoreEntry', () => {
@@ -70,13 +65,19 @@ describe('installStoreEntry', () => {
     expect(get(mocks.stores.disabledExtensions)).toEqual([])
   })
 
-  it('installs a package, records its store, and lists classic catalogs as sources without re-enabling them', async () => {
+  it('installs a package bound to its store, and lists classic catalogs as sources without re-enabling them', async () => {
     mocks.stores.disabledPlugins.set(['example.pkg'])
     mocks.stores.disabledExtensions.set(['https://x.test/index.json'])
+    let sourcesWhenFrozen: string[] | undefined
+    mocks.currentLegacyStores.mockImplementation(() => {
+      sourcesWhenFrozen = get(mocks.stores.extensionUrls)
+      return []
+    })
     const installPackage = vi.fn().mockResolvedValue({ id: 'example.pkg', name: 'Example Package' })
     await installStoreEntry(packageEntry, { storeUrl: 'https://x.test/index.json', adapter: 'izumi-ext-catalog' }, installPackage)
-    expect(installPackage).toHaveBeenCalledWith(pkg)
-    expect(mocks.recordPackageOrigin).toHaveBeenCalledWith('example.pkg', 'https://x.test/index.json')
+    expect(installPackage).toHaveBeenCalledWith(pkg, 'https://x.test/index.json')
+    // The legacy stores were frozen before this catalog joined the source list.
+    expect(sourcesWhenFrozen).toEqual([])
     expect(get(mocks.stores.extensionUrls)).toEqual(['https://x.test/index.json'])
     expect(get(mocks.stores.disabledExtensions)).toEqual(['https://x.test/index.json'])
     expect(get(mocks.stores.disabledPlugins)).toEqual([])
@@ -88,12 +89,18 @@ describe('installStoreEntry', () => {
     expect(get(mocks.stores.extensionUrls)).toEqual([])
   })
 
-  it('refuses to replace a package installed from another store', async () => {
+  it('changes nothing when the installer refuses a takeover', async () => {
+    mocks.stores.disabledPlugins.set(['example.pkg'])
+    const installPackage = vi.fn().mockRejectedValue(new Error('This package is installed from another store. Remove it there first.'))
+    await expect(installStoreEntry(packageEntry, { storeUrl: 'https://x.test/index.json', adapter: 'izumi-ext-catalog' }, installPackage))
+      .rejects.toThrow('another store')
+    expect(get(mocks.stores.extensionUrls)).toEqual([])
+    expect(get(mocks.stores.disabledPlugins)).toEqual(['example.pkg'])
+  })
+
+  it('refuses a package with no store to bind it to', async () => {
     const installPackage = vi.fn()
-    mocks.packageOrigins.set({ 'example.pkg': 'https://other.test/index.json' })
-    await expect(installStoreEntry(packageEntry, { storeUrl: 'https://x.test/index.json' }, installPackage)).rejects.toThrow('another store')
-    mocks.packageOrigins.set({})
-    await expect(installStoreEntry(packageEntry, { storeUrl: 'https://x.test/index.json', installedElsewhere: true }, installPackage)).rejects.toThrow('another store')
+    await expect(installStoreEntry(packageEntry, { storeUrl: '' }, installPackage)).rejects.toThrow('no store')
     expect(installPackage).not.toHaveBeenCalled()
   })
 

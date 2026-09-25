@@ -3,6 +3,7 @@ import { enabledExtensionUrls, extensionUrls } from '$lib/settings/ui'
 import { playing } from '$lib/player/session'
 import type { ExtensionCatalogPackage } from './catalog'
 import type { InstalledExtensionPackage } from './manager'
+import type { LoadedStore } from '$lib/store/load'
 
 // Background auto-update for installed .izumi-ext packages. The manual path (the Update button in
 // settings → sources) already trusts the listings' sha-pinned payloads; this runs the same install
@@ -32,8 +33,7 @@ export interface PackageUpdate {
  *  canonical in BOTH directions — a rollback must propagate too, so this is `!==`, not a semver
  *  ordering. Installed packages absent from every listing (local sideloads) are left alone. A package
  *  with a recorded origin only updates from that store. One installed before origins were recorded
- *  can only have come from the official catalog or a catalog in the source list (`legacyStores`), so
- *  only those may update it — no other store can claim it. */
+ *  only updates from a legacy store (see $lib/store/origins) — no other store can claim it. */
 export function collectPackageUpdates(
   installed: InstalledExtensionPackage[],
   listings: PackageListing[],
@@ -48,6 +48,18 @@ export function collectPackageUpdates(
     const entry = listing?.packages.find((candidate) => candidate.id === extension.id)
     return listing && entry && entry.version !== extension.version ? [{ entry, storeUrl: listing.storeUrl }] : []
   })
+}
+
+/** The store listings a background update may act on: stores that answered this time and passed
+ *  their key check. A saved copy served because the refresh failed is skipped — it can be older than
+ *  what is installed, and since listings are canonical in both directions it would roll packages back. */
+export function freshPackageListings(results: ReadonlyArray<LoadedStore | null>): PackageListing[] {
+  return results.flatMap((result) => result?.listing && !result.cached && !result.error && result.trust.state !== 'locked'
+    ? [{
+        storeUrl: result.store.url,
+        packages: result.listing.entries.flatMap((entry) => entry.install.type === 'package' ? [entry.install.pkg] : []),
+      }]
+    : [])
 }
 
 // If a listing's `version` field disagrees with the version its package actually installs, the
@@ -79,40 +91,30 @@ export async function checkExtensionUpdates(
   // The first check is delayed by 15 seconds; keep the extension manager, worker graph and store
   // layer out of the app-layout startup chunk until the check actually runs.
   const { fetchExtensionInfo, installCatalogPackage, installedExtensionPackages } = await import('./manager')
-  const { BUILTIN_STORES, allStores, enabledStores } = await import('$lib/store/feeds')
+  const { allStores, enabledStores } = await import('$lib/store/feeds')
   const { loadStoreAndPin } = await import('$lib/store/service')
-  const { packageOrigins, recordPackageOrigin } = await import('$lib/store/origins')
+  const { currentLegacyStores, originKey, packageOrigins } = await import('$lib/store/origins')
   const installed = await installedExtensionPackages()
   if (!installed.length) return { updated: [], failed: 0, reason: 'no-installed' }
   // The theme store can never list packages; skipping it saves a fetch every six hours.
   const stores = get(options.includeDisabledCatalogs ? allStores : enabledStores)
     .filter((store) => store.id !== 'izumi-themes')
   const legacy = get(options.includeDisabledCatalogs ? extensionUrls : enabledExtensionUrls)
-    .filter((spec) => !stores.some((store) => store.url === spec))
+    .filter((spec) => !stores.some((store) => store.url === originKey(spec)))
   if (!stores.length && !legacy.length) return { updated: [], failed: 0, reason: 'no-catalogs' }
   const [loaded, infos] = await Promise.all([
     Promise.all(stores.map((store) => loadStoreAndPin(store, { force: true }).catch(() => null))),
     Promise.all(legacy.map((spec) => fetchExtensionInfo(spec).catch(() => null))),
   ])
   const listings: PackageListing[] = [
-    // A store whose signing-key check failed is never an update source.
-    ...loaded.flatMap((result) => result?.listing && result.trust.state !== 'locked'
-      ? [{
-          storeUrl: result.store.url,
-          packages: result.listing.entries.flatMap((entry) => entry.install.type === 'package' ? [entry.install.pkg] : []),
-        }]
-      : []),
+    ...freshPackageListings(loaded),
     ...legacy.flatMap((spec, index) => {
       const packages = infos[index]?.packages
-      return packages ? [{ storeUrl: spec, packages }] : []
+      return packages ? [{ storeUrl: originKey(spec), packages }] : []
     }),
   ]
   if (!listings.length) return { updated: [], failed: 0, reason: 'catalog-unavailable' }
-  const legacyStores = [
-    ...BUILTIN_STORES.filter((store) => store.id === 'izumi-packages').map((store) => store.url),
-    ...get(extensionUrls),
-  ]
-  const updates = collectPackageUpdates(installed, listings, get(packageOrigins), legacyStores)
+  const updates = collectPackageUpdates(installed, listings, get(packageOrigins), currentLegacyStores())
     .filter(({ entry }) => options.retryAttempted || !attempted.has(`${entry.id}@${entry.version}`))
   const updated: ExtensionCatalogPackage[] = []
   let failed = 0
@@ -122,8 +124,8 @@ export async function checkExtensionUpdates(
     if (get(playing)) break // playback started mid-check; the unmarked rest retry next tick
     attempted.add(`${entry.id}@${entry.version}`)
     try {
-      await installCatalogPackage(entry)
-      recordPackageOrigin(entry.id, storeUrl)
+      // The installer records the store the package came from, and refuses any other store.
+      await installCatalogPackage(entry, storeUrl)
       updated.push(entry)
     } catch {
       failed += 1
@@ -140,6 +142,9 @@ const INTERVAL = 6 * 60 * 60_000 // same cadence as the app updater
 
 /** Delayed launch check + 6h interval, like the app updater. Returns a stop fn. */
 export function startExtensionUpdateChecks(): () => void {
+  // Freeze which stores may claim packages installed before origins were recorded now, before
+  // anything this session can add a catalog to the source list.
+  void import('$lib/store/origins').then(({ currentLegacyStores }) => currentLegacyStores()).catch(() => {})
   let interval: ReturnType<typeof setInterval> | null = null
   const first = setTimeout(() => {
     // Catalogs added before stores existed become stores first, so they are checked as stores.

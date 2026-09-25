@@ -110,7 +110,7 @@
     packageBusy = true
     packageStatus = null
     try {
-      const installed = await installCatalogPackage(extension)
+      const installed = await installCatalogPackage(extension, url)
       await refreshPackages()
       packageStatus = { url, text: `${installed.name} ${installed.version} installed.`, ok: true }
     } catch (error) {
