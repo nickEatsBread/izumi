@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
 import {
@@ -70,7 +69,7 @@ describe('store registry', () => {
   })
 
   it('syncs the store list with the other device settings', () => {
-    const manual = readFileSync(fileURLToPath(new URL('../sync/manual.ts', import.meta.url)), 'utf8')
+    const manual = readFileSync('src/lib/sync/manual.ts', 'utf8')
     expect(manual).toContain('"store-feeds-v1",')
     expect(manual).toContain('"store-hidden-builtins-v1",')
   })
