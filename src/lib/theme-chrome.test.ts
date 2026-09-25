@@ -42,4 +42,9 @@ describe('theme chrome application', () => {
     const node = read('./components/themes/ThemeNode.svelte')
     expect(node.match(/data-part=\{item\.part\}/g)?.length).toBe(6)
   })
+  it('gives hero templates the slide counter and a ticking countdown', () => {
+    const hero = read('./components/banner/Hero.svelte')
+    expect(hero).toContain('slide: i + 1, slides: medias.length')
+    expect(hero).toMatch(/\}, 0, clock\) : \{\}\)/)
+  })
 })

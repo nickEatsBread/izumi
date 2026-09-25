@@ -325,7 +325,8 @@
   const themeModel = $derived(current ? mediaDisplayModel(current, {
     description: cleanDesc(current.description), rank: featuredRankLabel,
     rankPosition: current.featuredRank?.position, poster: cover(current), backdrop: banner(current), logo: currentLogo || undefined,
-  }) : {})
+    slide: i + 1, slides: medias.length,
+  }, 0, clock) : {})
   function themeAction(action: () => void) {
     if (swiped) { swiped = false; return }
     action()
