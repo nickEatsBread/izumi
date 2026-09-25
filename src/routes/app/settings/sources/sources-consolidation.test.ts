@@ -115,9 +115,9 @@ describe('unified Sources settings', () => {
     expect(page).toMatch(/class="[^"]*sm:translate-y-3[^"]*sm:flex-row"/)
   })
 
-  it('keeps the built-in update catalog available after installing from the Store', () => {
-    expect(store).toContain('disabledExtensions, disabledPlugins, enabledExtensionUrls, extensionUrls')
-    expect(store).toContain('$disabledExtensions = $disabledExtensions.filter((spec) => spec !== OFFICIAL_ANIME_CATALOG)')
+  it('installs Store entries through the shared dispatcher, which keeps catalogs on the source list', () => {
+    expect(store).toContain('installStoreEntry(entry, {')
+    expect(store).toContain('adapter: loaded[entry.storeId]?.listing?.adapter')
   })
 
   it('keeps the add controls and source cards inside phone-width viewports', () => {
