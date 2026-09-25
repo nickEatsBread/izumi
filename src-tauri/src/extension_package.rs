@@ -60,7 +60,8 @@ mod package {
     const MAX_ANIYOMI_APK_BYTES: usize = 32 * 1024 * 1024;
     // v2 rebuilds desktop Aniyomi runtime JARs with resources preserved from their signed APK.
     // 3: entries now carry `signer_key`; older caches would report signed packages without it.
-    const PACKAGE_CACHE_VERSION: u8 = 3;
+    // 4: signatures are verified strictly (weak keys refused); re-check every cached verdict once.
+    const PACKAGE_CACHE_VERSION: u8 = 4;
 
     #[derive(serde::Deserialize, serde::Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -1372,7 +1373,7 @@ mod package {
                 "signature": base64::engine::general_purpose::STANDARD.encode(forged),
             });
             let integrity = serde_json::json!({ "algorithm": "SHA-256", "files": {} });
-            assert!(verify_signature(&signature, &integrity).is_err());
+            assert!(verify_signature(&signature, &integrity).unwrap_err().contains("weak"));
         }
 
         #[test]
