@@ -99,6 +99,16 @@ describe('installCatalogPackage', () => {
     expect(installs()).toBe(0)
   })
 
+  it('tells the installer what kind of package to expect, and allows a change of kind only for a user install from its own store', async () => {
+    answer([onDisk])
+    packageOrigins.set({ 'example.pkg': STORE })
+    await installCatalogPackage(pkg, STORE)
+    expect(mocks.invoke).toHaveBeenCalledWith('extension_install_url', expect.objectContaining({ expectedBackend: 'izumi-js', allowBackendChange: true }))
+    mocks.invoke.mockClear()
+    await installCatalogPackage(pkg, STORE, { updateOnly: true })
+    expect(mocks.invoke).toHaveBeenCalledWith('extension_install_url', expect.objectContaining({ expectedBackend: 'izumi-js', allowBackendChange: false }))
+  })
+
   it('refuses to install when the installed list cannot be read', async () => {
     answer(new Error('The package list could not be read.'))
     await expect(installCatalogPackage(pkg, STORE)).rejects.toThrow('could not be read')

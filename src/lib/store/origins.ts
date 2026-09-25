@@ -47,6 +47,12 @@ export function mayReplacePackage(id: string, storeUrl: string, sameBackend = tr
   return sameBackend && currentLegacyStores().includes(key)
 }
 
+/** Whether this store is the package's recorded origin (not merely a legacy store). */
+export function isPackageOrigin(id: string, storeUrl: string): boolean {
+  const origins = get(packageOrigins)
+  return Object.hasOwn(origins, id) && origins[id] === originKey(storeUrl)
+}
+
 export function recordPackageOrigin(id: string, storeUrl: string): void {
   packageOrigins.update((origins) => ({ ...origins, [id]: originKey(storeUrl) }))
 }

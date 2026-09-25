@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { get } from 'svelte/store'
 import { invokeNativeHttp, isNativeTransportFailure, phttp } from '$lib/net/http'
 import { enabledExtensionUrls, disabledPlugins } from '$lib/settings/ui'
-import { forgetPackageOrigin, mayReplacePackage, recordPackageOrigin } from '$lib/store/origins'
+import { forgetPackageOrigin, isPackageOrigin, mayReplacePackage, recordPackageOrigin } from '$lib/store/origins'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
 import { manifestFetchUrls, normalizeManifest, pointerUrl, isRunnableType, isLegacyTorrentType, manifestProblem, catalogPackages, aniyomiRepositoryPackages } from './catalog'
 import type { ExtensionCatalogPackage } from './catalog'
@@ -208,6 +208,10 @@ export async function installCatalogPackage(
   if (onDisk && !mayReplacePackage(extension.id, origin, onDisk.backend === extension.backend)) {
     throw new Error('This package is installed from another store or source. Remove it first to install this one.')
   }
+  // Rust checks the downloaded package itself, whatever the listing claims: it must be the kind of
+  // package listed, and only the user's own install from the package's recorded store may change what
+  // kind of package is installed (never a background update, never a legacy claim).
+  const allowBackendChange = !options.updateOnly && isPackageOrigin(extension.id, origin)
   const installed = extension.packageFormat === 'aniyomi-repo'
     ? await invoke<InstalledExtensionPackage>('extension_install_aniyomi_url', {
         url: extension.apk,
@@ -220,12 +224,15 @@ export async function installCatalogPackage(
           nsfw: extension.nsfw,
           sources: extension.sources,
         },
+        allowBackendChange,
       })
     : await invoke<InstalledExtensionPackage>('extension_install_url', {
         url: extension.package,
         expectedSha256: extension.packageSha256,
         // The listing's id: a package declaring another id would replace whatever is installed there.
         expectedId: extension.id,
+        expectedBackend: extension.backend,
+        allowBackendChange,
       })
   recordPackageOrigin(installed.id, origin)
   return finishPackageInstall(installed)

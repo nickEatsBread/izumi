@@ -838,10 +838,32 @@ mod package {
         Ok(())
     }
 
+    /// Refuses a download that isn't the kind of package its listing says it is, and, unless the user
+    /// installs from the package's own store, an update that changes what kind of package is
+    /// installed: a sandboxed JS or JVM package must never silently become a native service.
+    fn check_kind(
+        expected_backend: Option<&str>,
+        allow_backend_change: bool,
+        incoming: &InstalledExtension,
+        current: Option<&InstalledExtension>,
+    ) -> Result<(), String> {
+        if expected_backend.is_some_and(|expected| expected != incoming.backend) {
+            return Err("This package isn't the kind of package its store listing says it is".into());
+        }
+        if !allow_backend_change
+            && current.is_some_and(|current| current.backend != incoming.backend)
+        {
+            return Err("This update would change what kind of package is installed".into());
+        }
+        Ok(())
+    }
+
     fn install_bytes(
         app: &AppHandle,
         bytes: Vec<u8>,
         expected_id: Option<&str>,
+        expected_backend: Option<&str>,
+        allow_backend_change: bool,
     ) -> Result<InstalledExtension, String> {
         let (extension, jar) = parse_package(&bytes)?;
         let dir = extension_dir(app)?;
@@ -852,6 +874,7 @@ mod package {
             .and_then(|existing| parse_package(&existing).ok())
             .map(|(current, _)| current);
         check_replacement(expected_id, &extension, current.as_ref())?;
+        check_kind(expected_backend, allow_backend_change, &extension, current.as_ref())?;
         let temporary = destination.with_extension("izumi-ext.part");
         std::fs::write(&temporary, bytes).map_err(|e| e.to_string())?;
         if destination.exists() {
@@ -867,7 +890,8 @@ mod package {
         if path.extension().and_then(|value| value.to_str()) != Some("izumi-ext") {
             return Err("Choose an .izumi-ext package".into());
         }
-        install_bytes(app, std::fs::read(path).map_err(|e| e.to_string())?, None)
+        // A file the user picked themselves may be any kind of package.
+        install_bytes(app, std::fs::read(path).map_err(|e| e.to_string())?, None, None, true)
     }
 
     async fn download_https(
@@ -916,6 +940,8 @@ mod package {
         url: &str,
         expected_sha256: &str,
         expected_id: Option<&str>,
+        expected_backend: Option<&str>,
+        allow_backend_change: bool,
     ) -> Result<InstalledExtension, String> {
         let bytes = download_https(
             url,
@@ -924,7 +950,7 @@ mod package {
             "extension package",
         )
         .await?;
-        install_bytes(app, bytes, expected_id)
+        install_bytes(app, bytes, expected_id, expected_backend, allow_backend_change)
     }
 
     pub async fn download_aniyomi_apk(
@@ -1014,8 +1040,15 @@ mod package {
         metadata: &AniyomiInstallMetadata,
         apk: &[u8],
         converted_jar: &[u8],
+        allow_backend_change: bool,
     ) -> Result<InstalledExtension, String> {
-        install_bytes(app, build_aniyomi_package(metadata, apk, converted_jar)?, Some(&metadata.id))
+        install_bytes(
+            app,
+            build_aniyomi_package(metadata, apk, converted_jar)?,
+            Some(&metadata.id),
+            Some("aniyomi-jvm"),
+            allow_backend_change,
+        )
     }
 
     pub fn list(app: &AppHandle) -> Result<Vec<InstalledExtension>, String> {
@@ -1395,6 +1428,18 @@ mod package {
         }
 
         #[test]
+        fn refuses_a_download_of_another_kind_than_listed_or_installed() {
+            let (js, _) = parse_package(&fixture(false, false, None)).unwrap();
+            assert!(check_kind(Some("aniyomi-jvm"), false, &js, None).unwrap_err().contains("kind"));
+            assert!(check_kind(Some("izumi-js"), false, &js, None).is_ok());
+            let mut service = js.clone();
+            service.backend = "izumi-service".into();
+            assert!(check_kind(None, false, &service, Some(&js)).unwrap_err().contains("kind"));
+            assert!(check_kind(None, true, &service, Some(&js)).is_ok());
+            assert!(check_kind(None, false, &js, Some(&js)).is_ok());
+        }
+
+        #[test]
         fn refuses_an_update_signed_by_a_different_key() {
             let (signed, _) = parse_package(&fixture(false, true, None)).unwrap();
             let (unsigned, _) = parse_package(&fixture(false, false, None)).unwrap();
@@ -1470,8 +1515,18 @@ pub async fn extension_install_url(
     url: String,
     expected_sha256: String,
     expected_id: Option<String>,
+    expected_backend: Option<String>,
+    allow_backend_change: Option<bool>,
 ) -> Result<InstalledExtension, String> {
-    package::install_url(&app, &url, &expected_sha256, expected_id.as_deref()).await
+    package::install_url(
+        &app,
+        &url,
+        &expected_sha256,
+        expected_id.as_deref(),
+        expected_backend.as_deref(),
+        allow_backend_change.unwrap_or(false),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1480,6 +1535,7 @@ pub async fn extension_install_aniyomi_url(
     url: String,
     expected_sha256: Option<String>,
     metadata: AniyomiInstallMetadata,
+    allow_backend_change: Option<bool>,
 ) -> Result<InstalledExtension, String> {
     package::validate_aniyomi_metadata(&metadata)?;
     let apk = package::download_aniyomi_apk(&url, expected_sha256.as_deref()).await?;
@@ -1491,7 +1547,7 @@ pub async fn extension_install_aniyomi_url(
     #[cfg(target_os = "android")]
     let converted_jar = apk.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        package::install_aniyomi(&app, &metadata, &apk, &converted_jar)
+        package::install_aniyomi(&app, &metadata, &apk, &converted_jar, allow_backend_change.unwrap_or(false))
     })
     .await
     .map_err(|error| error.to_string())?

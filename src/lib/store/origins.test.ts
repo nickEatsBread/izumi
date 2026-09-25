@@ -10,7 +10,7 @@ vi.mock('$lib/settings/ui', () => {
 
 import { OFFICIAL_ANIME_CATALOG } from '$lib/extensions/catalog'
 import {
-  currentLegacyStores, forgetPackageOrigin, legacyPackageStores, legacyStoresFrom, mayReplacePackage, originKey,
+  currentLegacyStores, forgetPackageOrigin, isPackageOrigin, legacyPackageStores, legacyStoresFrom, mayReplacePackage, originKey,
   packageOrigins, recordPackageOrigin,
 } from './origins'
 
@@ -29,6 +29,14 @@ describe('package origins', () => {
     expect(get(packageOrigins)).toEqual({ 'example.pkg': CATALOG })
     forgetPackageOrigin('example.pkg')
     expect(get(packageOrigins)).toEqual({})
+  })
+
+  it('tells a recorded origin from a legacy claim', () => {
+    mocks.extensionUrls.set([CATALOG])
+    recordPackageOrigin('bound.pkg', LATER)
+    expect(isPackageOrigin('bound.pkg', LATER)).toBe(true)
+    expect(isPackageOrigin('bound.pkg', CATALOG)).toBe(false)
+    expect(isPackageOrigin('old.pkg', CATALOG)).toBe(false)
   })
 
   it('compares specs by their canonical URL, and anything else as written', () => {
