@@ -58,6 +58,9 @@ export const SYNCED_SETTING_KEYS = [
   "doh-enabled",
   "doh-url",
   "comments-default-source",
+  // Stores the user added, and the built-in ones they hid, travel like the source lists do.
+  "store-feeds-v1",
+  "store-hidden-builtins-v1",
 ] as const;
 
 function readSettings(): Record<string, unknown> {
