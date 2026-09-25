@@ -18,6 +18,10 @@ export interface InstallContext {
   /** URL of the store the entry came from ('' for the addon directory). */
   storeUrl: string
   adapter?: StoreAdapterId
+  /** The store failed its signing-key check: nothing installs from it until the user reviews it. */
+  locked?: boolean
+  /** The entry is installed already, so this is an update: the user's on/off choice is kept. */
+  update?: boolean
 }
 
 export interface InstalledState {
@@ -25,7 +29,7 @@ export interface InstalledState {
   /** Installed addon base by manifest id (a configured copy has a different URL). */
   addonBaseById: Readonly<Record<string, string>>
   extensionSpecs: readonly string[]
-  packages: readonly { id: string }[]
+  packages: readonly { id: string; backend?: string }[]
   /** Which store each installed package came from. */
   packageOrigins: Readonly<Record<string, string>>
   /** Stores that may claim packages installed before origins were recorded (see origins.ts). */
@@ -53,12 +57,11 @@ export function installedRef(entry: StoreEntry, state: InstalledState, storeUrl:
   if (install.type === 'addon') {
     const base = normalizeBase(install.manifestUrl)
     // A listing names its own manifest id, so the id alone never proves which installed addon it is:
-    // the installed copy must also live on every host the listing names — its manifest and, when it
-    // has one, its configure page — or Reconfigure could hand the installed copy to a stranger's page.
+    // the installed copy must also live on the listing's manifest host. (Its configure page may live
+    // elsewhere; the Store only ever reconfigures an installed copy through that copy's own host.)
     const byId = own(state.addonBaseById, install.manifestId)
     const host = hostOf(byId)
-    const named = install.configureUrl ? [install.manifestUrl, install.configureUrl] : [install.manifestUrl]
-    if (byId && host && named.every((url) => hostOf(url) === host)) return byId
+    if (byId && host && host === hostOf(install.manifestUrl)) return byId
     return state.addonBases.includes(base) ? base : null
   }
   if (install.type === 'extension') {
@@ -67,9 +70,14 @@ export function installedRef(entry: StoreEntry, state: InstalledState, storeUrl:
     return storeUrl && state.extensionSpecs.includes(storeUrl) ? storeUrl : null
   }
   if (install.type === 'package') {
-    if (!state.packages.some((item) => item.id === install.pkg.id)) return null
+    const onDisk = state.packages.find((item) => item.id === install.pkg.id)
+    if (!onDisk) return null
     const origin = own(state.packageOrigins, install.pkg.id)
-    return (origin ? origin === storeUrl : state.legacyStores.includes(storeUrl)) ? install.pkg.id : null
+    // Mirrors the installer: a legacy claim must also be the same kind of package.
+    const claimed = origin
+      ? origin === storeUrl
+      : state.legacyStores.includes(storeUrl) && (onDisk.backend === undefined || onDisk.backend === install.pkg.backend)
+    return claimed ? install.pkg.id : null
   }
   return state.themes.some((theme) => theme.id === install.release.id && theme.origin === storeUrl) ? install.release.id : null
 }
@@ -82,6 +90,7 @@ export async function installStoreEntry(
   context: InstallContext,
   installPackage: (pkg: ExtensionCatalogPackage, origin: string) => Promise<{ id: string; name: string }>,
 ): Promise<InstallOutcome> {
+  if (context.locked) throw new Error('This store failed its signing-key check. Review it under Manage stores first.')
   const install = entry.install
   if (install.type === 'addon') {
     if (install.configureUrl) {
@@ -110,6 +119,7 @@ export async function installStoreEntry(
       currentLegacyStores()
       extensionUrls.set(including(get(extensionUrls), context.storeUrl))
     }
+    if (context.update) return { kind: 'installed', message: `${installed.name} updated.` }
     disabledPlugins.set(without(get(disabledPlugins), installed.id))
     return { kind: 'installed', message: `${installed.name} installed and enabled.` }
   }

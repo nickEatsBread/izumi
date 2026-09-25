@@ -309,6 +309,8 @@
       const outcome = await installStoreEntry(entry, {
         storeUrl: storeUrlById.get(entry.storeId) ?? '',
         adapter: loaded[entry.storeId]?.listing?.adapter,
+        locked: loaded[entry.storeId]?.trust.state === 'locked',
+        update: isInstalled(entry),
       }, installCatalogPackage)
       if (outcome.kind === 'configure') {
         // Replace an installed copy only through its own host's configure page; otherwise add a copy.

@@ -104,6 +104,22 @@ describe('installStoreEntry', () => {
     expect(installPackage).not.toHaveBeenCalled()
   })
 
+  it('installs nothing from a store that failed its signing-key check', async () => {
+    const installPackage = vi.fn()
+    await expect(installStoreEntry(packageEntry, { storeUrl: 'https://x.test/index.json', locked: true }, installPackage)).rejects.toThrow('signing-key check')
+    await expect(installStoreEntry(addon(), { storeUrl: '', locked: true }, installPackage)).rejects.toThrow('signing-key check')
+    expect(installPackage).not.toHaveBeenCalled()
+    expect(get(mocks.stores.addonUrls)).toEqual([])
+  })
+
+  it('keeps a switched-off package switched off when updating it', async () => {
+    mocks.stores.disabledPlugins.set(['example.pkg'])
+    const outcome = await installStoreEntry(packageEntry, { storeUrl: 'https://x.test/index.json', update: true },
+      vi.fn().mockResolvedValue({ id: 'example.pkg', name: 'Example Package' }))
+    expect(outcome).toEqual({ kind: 'installed', message: 'Example Package updated.' })
+    expect(get(mocks.stores.disabledPlugins)).toEqual(['example.pkg'])
+  })
+
   it('sends themes to the Themes page for preview', async () => {
     expect(await installStoreEntry(themeEntry, { storeUrl: 'https://x.test/themes.json' }, vi.fn()))
       .toEqual({ kind: 'open-theme', path: '/app/settings/themes?store=s&theme=test.cinema' })
@@ -131,18 +147,19 @@ describe('installedRef', () => {
     expect(installedRef(themeEntry, state, 'https://other.test/themes.json')).toBeNull()
   })
 
-  it('matches an installed addon by manifest id only when every host the listing names is its host', () => {
+  it('matches an installed addon by manifest id only on its manifest host', () => {
     const configured = { ...state, addonBases: [], addonBaseById: { 'org.example.addon': 'https://addon.example.test/key' } }
     const impostor: StoreEntry = {
       ...addon(), install: { type: 'addon', manifestUrl: 'https://impostor.test/manifest.json', manifestId: 'org.example.addon' },
     }
     expect(installedRef(impostor, configured, '')).toBeNull()
-    // A foreign configure page must not inherit the installed copy either (Reconfigure would replace it).
+    // A configure page elsewhere still names the same installed addon; the Store page never
+    // reconfigures it through that page (its sameHost gate).
     const foreignConfigure: StoreEntry = {
       ...addon(),
       install: { type: 'addon', manifestUrl: 'https://addon.example.test/manifest.json', manifestId: 'org.example.addon', configureUrl: 'https://impostor.test/configure' },
     }
-    expect(installedRef(foreignConfigure, configured, '')).toBeNull()
+    expect(installedRef(foreignConfigure, configured, '')).toBe('https://addon.example.test/key')
     const sameHost: StoreEntry = {
       ...addon(),
       install: { type: 'addon', manifestUrl: 'https://addon.example.test/manifest.json', manifestId: 'org.example.addon', configureUrl: 'https://addon.example.test/configure' },
@@ -156,6 +173,9 @@ describe('installedRef', () => {
     const withOrigin = { ...state, packageOrigins: { 'example.pkg': 'https://stranger.test/index.json' } }
     expect(installedRef(packageEntry, withOrigin, 'https://stranger.test/index.json')).toBe('example.pkg')
     expect(installedRef(packageEntry, withOrigin, 'https://x.test/index.json')).toBeNull()
+    // A legacy claim by another kind of package isn't this package.
+    const otherKind = { ...state, packages: [{ id: 'example.pkg', backend: 'aniyomi-jvm' }] }
+    expect(installedRef(packageEntry, otherKind, 'https://x.test/index.json')).toBeNull()
   })
 
   it('never resolves ids through the object prototype', () => {
