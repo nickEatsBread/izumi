@@ -100,6 +100,7 @@ describe('theme presentation contract', () => {
     expect(parsePresentation({ rows: { defaults: { card } } }).rows?.defaults?.card).toEqual(card)
     expect(() => parsePresentation({ rows: { defaults: { card } } }, 2)).toThrow('unsupported')
     expect(() => parsePresentation({ rows: { defaults: { card: { type: 'text', field: 'slide' } } } }, 2)).toThrow('unsupported')
+    expect(() => parsePresentation({ rows: { defaults: { card: { type: 'text', part: 'hero.meta' } } } }, 2)).toThrow('unsupported')
     expect(() => parsePresentation({ rows: { defaults: { card: { type: 'text', part: 'Hero Meta' } } } })).toThrow('part name')
   })
   it('treats the new counters as numeric fields in conditions', () => {

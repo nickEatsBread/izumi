@@ -150,7 +150,7 @@ const fields = [
   'source', 'country',
   'nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired',
 ] as const satisfies readonly DisplayField[]
-const API3_FIELDS: readonly string[] = ['nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired']
+const API3_FIELDS: readonly DisplayField[] = ['nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired']
 /** An API 1/2 package is held to the fields its clients know, so it renders identically everywhere. */
 const fieldsFor = (api: ThemeApi) => (api >= 3 ? fields : fields.filter(field => !API3_FIELDS.includes(field)))
 const numericFields: string[] = ['rankPosition', 'score', 'duration', 'episodeNumber', 'progress', 'nextEpisode', 'slide', 'slides', 'episodesAired'] satisfies NumericDisplayField[]
@@ -215,7 +215,7 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
     const condition = record(raw.when); only(condition, ['field', 'atMost'])
     node.when = { field: choice(condition.field, fieldsFor(api)) }
     if (condition.atMost !== undefined) {
-      if (!numericFields.includes(node.when.field)) throw new Error('atMost only applies to numeric fields such as rankPosition, score, duration, episodeNumber, progress, slide and slides.')
+      if (!numericFields.includes(node.when.field)) throw new Error('atMost only applies to numeric fields: rankPosition, score, duration, episodeNumber, progress, nextEpisode, slide, slides and episodesAired.')
       node.when.atMost = number(condition.atMost, 0, 10000)
     }
   }
