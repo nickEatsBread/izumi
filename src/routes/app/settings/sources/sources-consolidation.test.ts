@@ -139,6 +139,12 @@ describe('unified Sources settings', () => {
     expect(communitySources).toContain('use:masonryItem style:order={sortRanks.get(`package:${p.id}`) ?? 0}')
   })
 
+  it('offers package updates only where the installer allows them, and freezes legacy stores before adding a source', () => {
+    expect(communitySources).toContain("!mayUpdateFrom(url, p, inst) ? 'Installed elsewhere'")
+    expect(communitySources).toContain('disabled={packageBusy || (!!inst && !mayUpdateFrom(url, p, inst))}')
+    expect(page).toContain('currentLegacyStores()')
+  })
+
   it('keeps old Extensions bookmarks working without retaining a second destination', () => {
     expect(legacy).toContain("redirect(307, '/app/settings/sources?tab=manage')")
   })

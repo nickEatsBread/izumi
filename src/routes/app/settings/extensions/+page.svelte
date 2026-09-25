@@ -38,6 +38,7 @@
     type InstalledExtensionPackage,
   } from '$lib/extensions/manager'
   import { sourceLabel, extensionBackendLabel } from '$lib/extensions/catalog'
+  import { currentLegacyStores, legacyPackageStores, legacyStoresFrom, originKey, packageOrigins } from '$lib/store/origins'
   import {
     matchesSourceFilters,
     matchesSourceQuery,
@@ -92,6 +93,13 @@
   let serviceSettings = $state<{ id: string; name: string } | null>(null)
   let jvmSourceSettings = $state<{ id: string; name: string } | null>(null)
   const installedById = $derived(new Map(localPackages.map((extension) => [extension.id, extension])))
+  // Mirrors the installer's rule, so a row never offers an update the installer would refuse: a
+  // package changes only through the store it came from (or, installed before origins were recorded,
+  // a legacy store offering the same kind of package).
+  function mayUpdateFrom(spec: string, listed: ExtensionCatalogPackage, installed: InstalledExtensionPackage): boolean {
+    if (Object.hasOwn($packageOrigins, listed.id)) return $packageOrigins[listed.id] === originKey(spec)
+    return installed.backend === listed.backend && legacyStoresFrom($legacyPackageStores, $extensionUrls).includes(originKey(spec))
+  }
   // Real launcher icons for INSTALLED Aniyomi extensions, keyed by Android package name — which is
   // the same string a catalog entry uses as its id. The catalog itself ships no icons, so anything
   // not installed (and every JS extension without one) falls through to the shared placeholder.
@@ -101,6 +109,8 @@
     installedIn(packages).filter((extension) => !pluginOff(extension.id))
 
   async function refreshPackages() {
+    // Freeze the legacy stores, if nothing has yet, so rows can tell which packages a catalog may update.
+    currentLegacyStores()
     localPackages = await installedExtensionPackages()
     // After the list, never blocking it: enumerating sources can spin the JVM runtime, and an icon
     // arriving a moment late just swaps the placeholder for the real logo.
@@ -663,10 +673,10 @@
                           {/if}
                           <button
                             data-focusable
-                            disabled={packageBusy}
+                            disabled={packageBusy || (!!inst && !mayUpdateFrom(url, p, inst))}
                             onclick={() => installFromCatalog(url, p)}
                             class="shrink-0 rounded-md px-3 py-2 text-xs font-bold sm:px-2 sm:py-1 {inst ? 'bg-secondary text-muted-foreground hover:bg-accent sm:bg-transparent' : 'bg-primary text-primary-foreground'} disabled:opacity-50"
-                          >{!inst ? 'Install' : inst.version === p.version ? 'Reinstall' : 'Update'}</button>
+                          >{!inst ? 'Install' : !mayUpdateFrom(url, p, inst) ? 'Installed elsewhere' : inst.version === p.version ? 'Reinstall' : 'Update'}</button>
                           {#if inst}
                             <button data-focusable disabled={packageBusy} onclick={() => removePackage(url, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
                               class="grid size-9 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent disabled:opacity-50 sm:size-7"><Trash2 size={16} /></button>
