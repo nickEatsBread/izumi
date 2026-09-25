@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 const source = readFileSync(fileURLToPath(new URL('./ListEditor.svelte', import.meta.url)), 'utf8')
 const detail = readFileSync(fileURLToPath(new URL('./AnimeDetail.svelte', import.meta.url)), 'utf8')
 const select = readFileSync(fileURLToPath(new URL('../settings/SelectMenu.svelte', import.meta.url)), 'utf8')
+const scale = readFileSync(fileURLToPath(new URL('./ScoreScale.svelte', import.meta.url)), 'utf8')
 
 describe('mobile list editor layout', () => {
   it('uses the dynamic viewport and keeps fields in a separate scrolling region', () => {
@@ -45,11 +46,11 @@ describe('desktop list editor popover', () => {
 })
 
 describe('score control', () => {
-  it('is a dropdown over the labelled 0-10 scale, not a −/+ stepper', () => {
-    expect(source).toContain('<SelectMenu')
-    expect(source).toContain('options={SCORE_OPTIONS}')
-    expect(source).toContain("value: '0', label: 'Not rated'")
-    expect(source).toContain('label: `${n} / 10`, description: label')
+  it('picks from the shared labelled 0-10 rating scale, not a −/+ stepper', () => {
+    expect(source).toContain('<ScoreScale value={score10} onpick={(n) => (score10 = n)} label="Score" compact />')
+    // The scale follows the viewer's rating style; its dropdown style keeps every descriptor.
+    expect(scale).toContain("{ value: '0', label: '–', description: 'Not rated' }")
+    expect(scale).toContain('{ value: String(n), label: String(n), description: descriptor }')
     expect(source).not.toContain('changeScore(')
     expect(source).not.toContain('aria-label="Increase score"')
   })
