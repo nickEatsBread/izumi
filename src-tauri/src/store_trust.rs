@@ -81,6 +81,16 @@ mod tests {
     }
 
     #[test]
+    fn verifies_an_index_signed_by_the_publisher_tool() {
+        // Produced by scripts/store/sign-store-index.mjs (Node's Ed25519), so the signing tool and this
+        // verifier can never drift apart unnoticed.
+        let body = r#"{"app":"izumi","kind":"store","schemaVersion":1,"id":"com.example.store","name":"Example","publicKey":"ed25519:fhEor1du9Tc2gIzB12EUC3/HB3ibOtuLyChj1VOr8GI=","entries":[]}"#;
+        let signature = "/09TqHashipEbxslpwzIzQYQRI9m9xk8jhht3W2e/XO6IrcXSSgeuRbNHCwhasQ1Alk4iIVKGVffCVWlaMV4DA==";
+        let public_key = "ed25519:fhEor1du9Tc2gIzB12EUC3/HB3ibOtuLyChj1VOr8GI=";
+        assert!(verify_store_index(body, signature, public_key).is_ok());
+    }
+
+    #[test]
     fn rejects_a_weak_key_whose_forged_signature_matches_any_index() {
         // The identity point is a small-order key: (R = identity, s = 0) "verifies" everything
         // unless weak keys are refused.
