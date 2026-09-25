@@ -47,6 +47,11 @@ describe('previewStore', () => {
     await expect(previewStore('https://x.test/index.json')).rejects.toThrow('already added')
     mocks.loadStore.mockResolvedValueOnce({ trust: { state: 'unsigned' }, error: 'offline', fetchedAt: 0, cached: false })
     await expect(previewStore('https://y.test/index.json')).rejects.toThrow('offline')
+    mocks.loadStore.mockResolvedValueOnce({
+      trust: { state: 'unsigned' }, error: 'offline', fetchedAt: 1, cached: true,
+      listing: { storeId: 'y', adapter: 'izumi-store', skipped: 0, entries: [] },
+    })
+    await expect(previewStore('https://y.test/index.json')).rejects.toThrow('offline')
     mocks.loadStore.mockResolvedValueOnce({ trust: { state: 'locked', reason: 'bad-signature' }, fetchedAt: 0, cached: false })
     await expect(previewStore('https://y.test/index.json')).rejects.toThrow("doesn't match")
   })

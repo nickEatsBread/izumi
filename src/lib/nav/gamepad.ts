@@ -220,6 +220,12 @@ export function startGamepadNav(): () => void {
       case 'b':
         // Swallow B briefly after the player closed (the close-vs-exit race, above).
         if (performance.now() - playerClosedAt < 500) break
+        // A dialog that closes on Escape and opts in (data-nav-escape) closes on B too, instead of B
+        // walking history out of the page underneath it.
+        if (document.querySelector('[data-nav-trap][data-nav-escape]')) {
+          keydown('Escape')
+          break
+        }
         if (location.pathname.replace(/\/$/, '') === '/app/home') exitPrompt.set(true)
         else history.back()
         break

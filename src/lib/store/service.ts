@@ -42,7 +42,8 @@ export async function previewStore(input: string): Promise<StorePreview> {
   const draft: StoreFeed = { id: storeIdForUrl(url), url, name: sourceLabel(url), enabled: true, addedAt: Date.now() }
   const result = await loadStore(draft, { force: true, save: false })
   if (result.trust.state === 'locked') throw new Error("This store's signature doesn't match its key.")
-  if (!result.listing) throw new Error(result.error ?? 'The store could not be loaded.')
+  // Only a live answer counts: a preview must never show an old saved copy as the store's contents.
+  if (result.error || !result.listing) throw new Error(result.error ?? 'The store could not be loaded.')
   const counts = new Map<string, number>()
   for (const entry of result.listing.entries) {
     const label = entryTypeLabel(entry)
