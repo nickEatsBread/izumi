@@ -44,7 +44,10 @@ export interface RowPresentation {
 /** Theme API 1 is the original contract; API 2 adds the phone block, bottom-bar and slide-marker
  *  chrome, row headings, series tabs and the docked player. A package declares which it uses, so
  *  a client that only knows API 1 refuses an API 2 package cleanly instead of failing mid-parse. */
-export type ThemeApi = 1 | 2
+export type ThemeApi = 1 | 2 | 3
+/** The newest theme API this client renders. API 3 adds stylesheets, fonts, template parts,
+ *  airing and slide fields, and the text wordmark. */
+export const LATEST_THEME_API: ThemeApi = 3
 /** Series-page tab strip: an underlined row, pills, an iOS-style segmented control, or a bar of
  *  equal tabs with a tinted pill behind the active one (the two-tab Info/Watch bar of some apps). */
 export type DetailTabs = 'underline' | 'pills' | 'segmented' | 'bar'
@@ -226,6 +229,7 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
 }
 /** Keys each API level accepts, so an API 1 package cannot smuggle API 2 chrome past an old client. */
 const api2 = (api: ThemeApi, keys: string[]) => (api >= 2 ? keys : [])
+const api3 = (api: ThemeApi, keys: string[]) => (api >= 3 ? keys : [])
 function parseHeading(value: unknown): RowHeading {
   const raw = record(value); only(raw, ['weight', 'transform', 'accent', 'viewMore'])
   const result: RowHeading = {}
@@ -336,7 +340,7 @@ function parseMobile(value: unknown, api: ThemeApi): MobilePresentation {
 /** Validate a presentation. `api` is the package's declared theme API: API 1 packages get the
  *  original key set (so they behave identically on every client), API 2 the additions. Personal
  *  Theme Studio designs and previews use the newest API. */
-export function parsePresentation(value: unknown, api: ThemeApi = 2): ThemePresentation {
+export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_API): ThemePresentation {
   const raw = record(value)
   only(raw, ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'shell', 'player', 'cards', ...api2(api, ['mobile'])])
   const result: ThemePresentation = {}

@@ -62,4 +62,12 @@ describe('installable theme packages', () => {
     expect(newerVersion('1.10.0', '1.9.0')).toBe(true)
     expect(newerVersion('1.0.0', '1.0.0')).toBe(false)
   })
+  it('accepts theme API 3 packages and advertises API 3 as the newest', async () => {
+    const { THEME_API, SUPPORTED_THEME_APIS, MAX_THEME_BYTES } = await import('./packages')
+    expect(THEME_API).toBe(3)
+    expect(SUPPORTED_THEME_APIS).toEqual([1, 2, 3])
+    expect(MAX_THEME_BYTES).toBe(512_000)
+    expect(parseThemePackage({ ...samplePackage, themeApi: 3 }).themeApi).toBe(3)
+    expect(() => parseThemePackage({ ...samplePackage, themeApi: 4 })).toThrow('theme API')
+  })
 })

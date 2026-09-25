@@ -1,11 +1,12 @@
 import { defaultStudioTheme, normalizeStudioTheme, validHslToken, type StudioTheme } from '$lib/settings/theme-studio'
-import { parsePresentation, record, type ThemeApi } from './presentation'
+import { LATEST_THEME_API, parsePresentation, record, type ThemeApi } from './presentation'
 
 /** The newest theme API this client renders. Older APIs stay installable; newer ones are refused
  *  with a clear message rather than a half-parsed package. */
-export const THEME_API: ThemeApi = 2
-export const SUPPORTED_THEME_APIS: readonly number[] = [1, 2]
-export const MAX_THEME_BYTES = 256_000
+export const THEME_API: ThemeApi = LATEST_THEME_API
+export const SUPPORTED_THEME_APIS: readonly number[] = [1, 2, 3]
+/** Stylesheets and templates together; the stylesheet alone is capped at 128 KB (css-policy.ts). */
+export const MAX_THEME_BYTES = 512_000
 export const THEME_CATALOG_URL = 'https://raw.githubusercontent.com/nickEatsBread/izumi-themes/main/index.json'
 export const THEME_CATALOG_PROJECT_URL = 'https://github.com/nickEatsBread/izumi-themes'
 export type ThemePlatform = 'desktop' | 'phone'
