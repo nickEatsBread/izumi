@@ -17,6 +17,7 @@ export function longCountdown(seconds: number): string {
   const parts: string[] = []
   if (d) parts.push(`${d} ${d === 1 ? 'day' : 'days'}`)
   if (d || h) parts.push(`${h} ${h === 1 ? 'hr' : 'hrs'}`)
-  parts.push(`${m} ${m === 1 ? 'min' : 'mins'}`)
+  const minutes = d || h ? m : Math.max(1, m)
+  parts.push(`${minutes} ${minutes === 1 ? 'min' : 'mins'}`)
   return parts.join(' ')
 }
