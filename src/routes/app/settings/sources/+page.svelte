@@ -199,7 +199,6 @@
       const result = await checkExtensionUpdates({
         retryAttempted: true,
         includeDisabledCatalogs: true,
-        includeOfficialCatalog: true,
       })
       if (result.reason === 'playback') updateCheckFeedback = 'Stop playback first'
       else if (result.reason === 'no-installed') updateCheckFeedback = 'Nothing installed'

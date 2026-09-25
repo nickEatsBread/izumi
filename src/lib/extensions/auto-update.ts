@@ -5,8 +5,9 @@ import type { ExtensionCatalogPackage } from './catalog'
 import type { InstalledExtensionPackage } from './manager'
 
 // Background auto-update for installed .izumi-ext packages. The manual path (the Update button in
-// settings → sources) already trusts the catalog's sha-pinned payloads; this runs the same install
-// unprompted so a repo release actually reaches people who never revisit that page.
+// settings → sources) already trusts the listings' sha-pinned payloads; this runs the same install
+// unprompted so a release actually reaches people who never revisit that page. Listings come from
+// every enabled store plus any package catalog still configured only as a source.
 
 /** One-line "Updated …" notice for the shell pill. Cleared automatically. */
 export const extensionUpdateNotice = writable('')
@@ -17,30 +18,38 @@ function showNotice(text: string): void {
   noticeTimer = setTimeout(() => extensionUpdateNotice.set(''), 8000)
 }
 
-/** The catalog entries worth installing: version differs from what's on disk. The catalog is
- *  canonical in BOTH directions — a repo rollback must propagate too, so this is `!==`, not a
- *  semver ordering. Installed packages absent from every catalog (local sideloads) are left alone.
- *  When several catalogs list the same id, the first wins, matching the settings list's install
- *  precedence. */
+export interface PackageListing {
+  storeUrl: string
+  packages: ExtensionCatalogPackage[]
+}
+
+export interface PackageUpdate {
+  entry: ExtensionCatalogPackage
+  storeUrl: string
+}
+
+/** The listed packages worth installing: version differs from what's on disk. The listing is
+ *  canonical in BOTH directions — a rollback must propagate too, so this is `!==`, not a semver
+ *  ordering. Installed packages absent from every listing (local sideloads) are left alone. A package
+ *  with a recorded origin only updates from that store; one installed before origins were recorded
+ *  takes the first store that lists it, matching the old catalog precedence. */
 export function collectPackageUpdates(
   installed: InstalledExtensionPackage[],
-  catalogs: ExtensionCatalogPackage[][],
-): ExtensionCatalogPackage[] {
-  const canonical = new Map<string, ExtensionCatalogPackage>()
-  for (const list of catalogs) {
-    for (const entry of list) {
-      if (!canonical.has(entry.id)) canonical.set(entry.id, entry)
-    }
-  }
+  listings: PackageListing[],
+  origins: Readonly<Record<string, string>> = {},
+): PackageUpdate[] {
   return installed.flatMap((extension) => {
-    const entry = canonical.get(extension.id)
-    return entry && entry.version !== extension.version ? [entry] : []
+    const origin = origins[extension.id]
+    const listing = listings.find((candidate) =>
+      (!origin || candidate.storeUrl === origin) && candidate.packages.some((entry) => entry.id === extension.id))
+    const entry = listing?.packages.find((candidate) => candidate.id === extension.id)
+    return listing && entry && entry.version !== extension.version ? [{ entry, storeUrl: listing.storeUrl }] : []
   })
 }
 
-// If a catalog's `version` field disagrees with the version its package actually installs, the
+// If a listing's `version` field disagrees with the version its package actually installs, the
 // mismatch survives the install and every later check would reinstall it forever. Remember what was
-// tried this session (id@catalog-version) and never try it twice; a failed install is latched for
+// tried this session (id@listed-version) and never try it twice; a failed install is latched for
 // the same reason — hammering a broken download every 6h helps nobody. Cleared by restart.
 const attempted = new Set<string>()
 
@@ -52,50 +61,62 @@ export interface ExtensionUpdateCheckResult {
 
 export interface ExtensionUpdateCheckOptions {
   retryAttempted?: boolean
-  /** A manual check is an explicit request, so it may inspect catalogs the user has disabled for
-   *  background polling without changing their enabled state. */
+  /** A manual check is an explicit request, so it may inspect stores and catalogs the user has
+   *  disabled for background polling without changing their enabled state. */
   includeDisabledCatalogs?: boolean
-  /** Packages installed from the built-in Store predate catalog provenance in some profiles.
-   *  Include the Store catalog directly so those installs can still be checked. */
-  includeOfficialCatalog?: boolean
 }
 
-/** Compare every installed package against the enabled catalogs and reinstall what changed.
- *  Never throws. Skipped entirely during playback: each install tears down the running worker set
- *  and the JVM runtime, which would kill an in-flight resolve. */
+/** Compare every installed package against the store listings and reinstall what changed. Never
+ *  throws. Skipped entirely during playback: each install tears down the running worker set and the
+ *  JVM runtime, which would kill an in-flight resolve. */
 export async function checkExtensionUpdates(
   options: ExtensionUpdateCheckOptions = {},
 ): Promise<ExtensionUpdateCheckResult> {
   if (get(playing)) return { updated: [], failed: 0, reason: 'playback' }
-  // The first check is delayed by 15 seconds; keep the extension manager and worker graph out of
-  // the app-layout startup chunk until the check actually runs.
-  const {
-    fetchExtensionInfo,
-    installCatalogPackage,
-    installedExtensionPackages,
-    OFFICIAL_ANIME_CATALOG,
-  } = await import('./manager')
+  // The first check is delayed by 15 seconds; keep the extension manager, worker graph and store
+  // layer out of the app-layout startup chunk until the check actually runs.
+  const { fetchExtensionInfo, installCatalogPackage, installedExtensionPackages } = await import('./manager')
+  const { allStores, enabledStores } = await import('$lib/store/feeds')
+  const { loadStoreAndPin } = await import('$lib/store/service')
+  const { packageOrigins, recordPackageOrigin } = await import('$lib/store/origins')
   const installed = await installedExtensionPackages()
   if (!installed.length) return { updated: [], failed: 0, reason: 'no-installed' }
-  const configured = get(options.includeDisabledCatalogs ? extensionUrls : enabledExtensionUrls)
-  const specs = [...new Set([
-    ...configured,
-    ...(options.includeOfficialCatalog ? [OFFICIAL_ANIME_CATALOG] : []),
-  ])]
-  if (!specs.length) return { updated: [], failed: 0, reason: 'no-catalogs' }
-  const infos = await Promise.all(specs.map((spec) => fetchExtensionInfo(spec).catch(() => null)))
-  if (infos.every((info) => !info)) return { updated: [], failed: 0, reason: 'catalog-unavailable' }
-  const updates = collectPackageUpdates(installed, infos.map((info) => info?.packages ?? []))
-    .filter((entry) => options.retryAttempted || !attempted.has(`${entry.id}@${entry.version}`))
+  // The theme store can never list packages; skipping it saves a fetch every six hours.
+  const stores = get(options.includeDisabledCatalogs ? allStores : enabledStores)
+    .filter((store) => store.id !== 'izumi-themes')
+  const legacy = get(options.includeDisabledCatalogs ? extensionUrls : enabledExtensionUrls)
+    .filter((spec) => !stores.some((store) => store.url === spec))
+  if (!stores.length && !legacy.length) return { updated: [], failed: 0, reason: 'no-catalogs' }
+  const [loaded, infos] = await Promise.all([
+    Promise.all(stores.map((store) => loadStoreAndPin(store, { force: true }).catch(() => null))),
+    Promise.all(legacy.map((spec) => fetchExtensionInfo(spec).catch(() => null))),
+  ])
+  const listings: PackageListing[] = [
+    // A store whose signing-key check failed is never an update source.
+    ...loaded.flatMap((result) => result?.listing && result.trust.state !== 'locked'
+      ? [{
+          storeUrl: result.store.url,
+          packages: result.listing.entries.flatMap((entry) => entry.install.type === 'package' ? [entry.install.pkg] : []),
+        }]
+      : []),
+    ...legacy.flatMap((spec, index) => {
+      const packages = infos[index]?.packages
+      return packages ? [{ storeUrl: spec, packages }] : []
+    }),
+  ]
+  if (!listings.length) return { updated: [], failed: 0, reason: 'catalog-unavailable' }
+  const updates = collectPackageUpdates(installed, listings, get(packageOrigins))
+    .filter(({ entry }) => options.retryAttempted || !attempted.has(`${entry.id}@${entry.version}`))
   const updated: ExtensionCatalogPackage[] = []
   let failed = 0
   // Sequential on purpose: every install rebuilds the worker set; racing several rebuilds is the
   // exact contention resetRunning exists to avoid.
-  for (const entry of updates) {
+  for (const { entry, storeUrl } of updates) {
     if (get(playing)) break // playback started mid-check; the unmarked rest retry next tick
     attempted.add(`${entry.id}@${entry.version}`)
     try {
       await installCatalogPackage(entry)
+      recordPackageOrigin(entry.id, storeUrl)
       updated.push(entry)
     } catch {
       failed += 1
@@ -114,7 +135,11 @@ const INTERVAL = 6 * 60 * 60_000 // same cadence as the app updater
 export function startExtensionUpdateChecks(): () => void {
   let interval: ReturnType<typeof setInterval> | null = null
   const first = setTimeout(() => {
-    void checkExtensionUpdates()
+    // Catalogs added before stores existed become stores first, so they are checked as stores.
+    void import('$lib/store/migrate')
+      .then(({ migrateCatalogStores }) => migrateCatalogStores())
+      .catch(() => 0)
+      .finally(() => { void checkExtensionUpdates() })
     interval = setInterval(() => { void checkExtensionUpdates() }, INTERVAL)
   }, FIRST_DELAY)
   return () => { clearTimeout(first); if (interval) clearInterval(interval) }

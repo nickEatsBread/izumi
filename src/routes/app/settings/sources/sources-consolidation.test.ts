@@ -111,7 +111,7 @@ describe('unified Sources settings', () => {
     expect(store).toBeGreaterThan(check)
     expect(tabs).toBeGreaterThan(store)
     expect(page).toContain("import { checkExtensionUpdates } from '$lib/extensions/auto-update'")
-    expect(page).toMatch(/checkExtensionUpdates\(\{[\s\S]{0,180}retryAttempted: true,[\s\S]{0,180}includeDisabledCatalogs: true,[\s\S]{0,180}includeOfficialCatalog: true,[\s\S]{0,80}\}\)/)
+    expect(page).toMatch(/checkExtensionUpdates\(\{[\s\S]{0,180}retryAttempted: true,[\s\S]{0,180}includeDisabledCatalogs: true,[\s\S]{0,80}\}\)/)
     expect(page).toMatch(/class="[^"]*sm:translate-y-3[^"]*sm:flex-row"/)
   })
 
