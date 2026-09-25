@@ -31,7 +31,7 @@ describe('native store index', () => {
       { kind: 'source', sourceType: 'package', id: 'example-package', name: 'Example Package', version: '1.2.0',
         url: 'packages/example.izumi-ext', sha256: HASH, bytes: 123, backend: 'aniyomi-jvm' },
       { kind: 'theme', id: 'example-theme', name: 'Example Theme', version: '1.0.0', themeApi: 2,
-        url: 'themes/example.json', sha256: HASH.toUpperCase(), bytes: 2048, author: 'Someone' },
+        url: 'themes/example.json', sha256: HASH.toUpperCase(), bytes: 2048, author: 'Someone', description: 'An example look.' },
     ], { publicKey: KEY }), STORE_URL, 's1')
 
     expect(meta).toMatchObject({ id: 'com.example.store', name: 'Example Store', publicKey: KEY })
@@ -69,5 +69,22 @@ describe('native store index', () => {
     ]), STORE_URL, 's')
     expect(entries.map((entry) => entry.name)).toEqual(['Dup'])
     expect(skipped).toBe(5)
+  })
+
+  it('holds native themes to the theme catalog rules', () => {
+    const theme = { kind: 'theme', name: 'T', version: '1.0.0', themeApi: 2, url: 'https://x.test/t.json', sha256: HASH, bytes: 10, author: 'A', description: 'D.' }
+    const { entries, skipped } = parseNativeStore(store([
+      { ...theme, id: 'phone-look', platforms: ['phone'] },
+      { ...theme, id: 'shared.copy' },
+      { ...theme, id: 'too-big', bytes: 1_000_000_000 },
+      { ...theme, id: 'no-description', description: undefined },
+    ]), STORE_URL, 's')
+    expect(entries.map((entry) => entry.id)).toEqual(['phone-look'])
+    expect(entries[0].install).toMatchObject({ type: 'theme', release: { platforms: ['phone'] } })
+    expect(skipped).toBe(3)
+  })
+
+  it('explains a missing schemaVersion', () => {
+    expect(() => parseNativeStore(store([], { schemaVersion: undefined }), STORE_URL, 's')).toThrow('no valid schemaVersion')
   })
 })

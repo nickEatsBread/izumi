@@ -1,6 +1,6 @@
 import type { IzumiCatalogPackage } from '$lib/extensions/catalog'
-import type { ThemeRelease } from '$lib/themes/packages'
-import type { ContentType, SourceType, StoreEntry, StoreKind } from './types'
+import { parseRelease, type ThemeRelease } from '$lib/themes/packages'
+import { SUPPORTED_STORE_KINDS, type ContentType, type SourceType, type StoreEntry, type StoreKind } from './types'
 
 // Parser for the native store index (spec §6.3). Pure: the caller fetches.
 
@@ -66,7 +66,10 @@ export function parseNativeStore(
   storeId: string,
 ): { meta: NativeStoreMeta; entries: StoreEntry[]; skipped: number } {
   if (!isNativeStore(raw)) throw new Error('That is not an izumi store index.')
-  if (raw.schemaVersion !== 1) throw new Error('This store uses a newer format. Update izumi to open it.')
+  if (typeof raw.schemaVersion !== 'number' || !Number.isInteger(raw.schemaVersion) || raw.schemaVersion < 1) {
+    throw new Error('This store index has no valid schemaVersion.')
+  }
+  if (raw.schemaVersion > 1) throw new Error('This store uses a newer format. Update izumi to open it.')
   const id = typeof raw.id === 'string' && ID.test(raw.id) ? raw.id : undefined
   const name = text(raw.name, 64)
   if (!id || !name) throw new Error('This store index is missing a valid id or name.')
@@ -104,8 +107,8 @@ function parseEntry(item: unknown, storeUrl: string, storeId: string): StoreEntr
   const e = item as Record<string, unknown>
   if (typeof e.kind !== 'string' || !KINDS.includes(e.kind as StoreKind)) return 'ignored'
   const kind = e.kind as StoreKind
-  // Plugins and packs become installable in later phases; until then they are not listed.
-  if (kind === 'plugin' || kind === 'pack') return 'ignored'
+  // Kinds later phases install (plugins, packs) are part of the format but not listed yet.
+  if (!SUPPORTED_STORE_KINDS.includes(kind)) return 'ignored'
   const id = typeof e.id === 'string' && ID.test(e.id) ? e.id : undefined
   const name = text(e.name, 64)
   if (!id || !name) return null
@@ -126,27 +129,37 @@ function parseEntry(item: unknown, storeUrl: string, storeId: string): StoreEntr
     updatedAt: text(e.updatedAt, 40),
   }
   if (kind === 'theme') {
-    const url = httpsUrl(e.url, storeUrl)
-    const sha256 = sha(e.sha256)
-    const bytes = positive(e.bytes)
-    const themeApi = positive(e.themeApi)
-    // Theme versions follow the theme package rule (N.N.N), so update checks can compare them.
-    if (!url || !sha256 || !bytes || !themeApi || !common.version || !/^\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(common.version)) return null
-    const release: ThemeRelease = {
-      id,
-      name,
-      version: common.version,
-      author: common.author ?? 'Unknown author',
-      description: common.description ?? '',
-      themeApi,
-      tags: words(e.tags),
-      download: url,
-      sha256,
-      bytes,
-      ...(common.preview ? { preview: common.preview } : {}),
-      ...(common.homepage ? { project: common.homepage } : {}),
+    // Themes follow the theme catalog's own rules exactly (ids, sizes, versions, hashes, platforms),
+    // so nothing is listed that the theme installer would later refuse.
+    let release: ThemeRelease
+    try {
+      release = parseRelease({
+        id,
+        name,
+        version: e.version,
+        author: e.author,
+        description: e.description,
+        themeApi: e.themeApi,
+        tags: Array.isArray(e.tags) ? e.tags : [],
+        platforms: e.platforms,
+        download: httpsUrl(e.url, storeUrl),
+        sha256: e.sha256,
+        bytes: e.bytes,
+        ...(common.preview ? { preview: common.preview } : {}),
+        ...(common.homepage ? { project: common.homepage } : {}),
+      })
+    } catch {
+      return null
     }
-    return { ...common, key: `${storeId}:theme:${id}`, kind, install: { type: 'theme', release } }
+    return {
+      ...common,
+      key: `${storeId}:theme:${id}`,
+      kind,
+      version: release.version,
+      author: release.author,
+      description: release.description,
+      install: { type: 'theme', release },
+    }
   }
   const sourceType = typeof e.sourceType === 'string' && SOURCE_TYPES.includes(e.sourceType as SourceType)
     ? e.sourceType as SourceType

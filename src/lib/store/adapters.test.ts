@@ -62,4 +62,32 @@ describe('adaptStoreDocument', () => {
       .toThrow('source, not a store')
     expect(() => adaptStoreDocument({ hello: 'world' }, 'https://x.test/x.json', 's')).toThrow('not a store izumi can open')
   })
+
+  it('drops duplicate and malformed packages instead of breaking the store', () => {
+    const listing = adaptStoreDocument({
+      formatVersion: 1, generatedAt: '', scope: { content: 'anime', transport: 'http', manga: false },
+      packages: [
+        { id: 'dup', name: 'Dup', version: '1', nsfw: false, sources: [], backend: 'izumi-js', package: 'https://x.test/a.izumi-ext', packageSha256: HASH, packageBytes: 1 },
+        { id: 'dup', name: 'Dup again', version: '1', nsfw: false, sources: [], backend: 'izumi-js', package: 'https://x.test/b.izumi-ext', packageSha256: HASH, packageBytes: 1 },
+        { id: 'odd', name: 'Odd', version: 2, language: 5, package: 'https://x.test/c.izumi-ext' },
+      ],
+    }, 'https://x.test/index.json', 'pk')
+    expect(listing.entries.map((entry) => entry.key)).toEqual(['pk:source:dup', 'pk:source:odd'])
+    expect(listing.entries[1]).toMatchObject({ version: '2', languages: [], description: undefined })
+    expect(listing.skipped).toBe(1)
+  })
+
+  it('never takes a marketplace type from the object prototype', () => {
+    const listing = adaptStoreDocument([
+      { id: 'proto', name: 'Proto', type: 'constructor', manifestURI: 'https://x.test/p.json' },
+      { id: 'ok', name: 'OK', type: 'onlinestream-provider', manifestURI: 'https://x.test/ok.json' },
+    ], 'https://x.test/m.json', 'mk')
+    expect(listing.entries.map((entry) => entry.id)).toEqual(['ok'])
+  })
+
+  it('explains newer package catalogs and Stremio manifests', () => {
+    expect(() => adaptStoreDocument({ formatVersion: 2, packages: [] }, 'https://x.test/i.json', 's')).toThrow("can't read")
+    expect(() => adaptStoreDocument({ id: 'org.example', name: 'Addon', resources: ['stream'], types: ['anime'] }, 'https://x.test/manifest.json', 's'))
+      .toThrow('source, not a store')
+  })
 })
