@@ -51,4 +51,8 @@ describe('labels', () => {
   it('lists the languages present, sorted', () => {
     expect(storeLanguages(entries)).toEqual(['en', 'ja'])
   })
+
+  it("never lists the filter's own 'all' value as a language", () => {
+    expect(storeLanguages([entry({ id: 'multi', languages: ['all', 'en'] })])).toEqual(['en'])
+  })
 })

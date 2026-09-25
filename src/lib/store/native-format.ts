@@ -1,6 +1,7 @@
 import type { IzumiCatalogPackage } from '$lib/extensions/catalog'
 import { parseRelease, type ThemeRelease } from '$lib/themes/packages'
 import { SUPPORTED_STORE_KINDS, type ContentType, type SourceType, type StoreEntry, type StoreKind } from './types'
+import { canonicalStoreUrl } from './url'
 
 // Parser for the native store index (spec §6.3). Pure: the caller fetches.
 
@@ -35,8 +36,9 @@ function text(value: unknown, max: number): string | undefined {
 function httpsUrl(value: unknown, base: string): string | undefined {
   if (typeof value !== 'string' || !value.trim() || value.length > 2048) return undefined
   try {
-    const url = new URL(value, base)
-    return url.protocol === 'https:' && !url.username && !url.password ? url.href : undefined
+    // Public HTTPS only, like the store itself: icons and previews load on sight, so a listing must
+    // not be able to point the app at the user's own network.
+    return canonicalStoreUrl(new URL(value, base).href) ?? undefined
   } catch {
     return undefined
   }

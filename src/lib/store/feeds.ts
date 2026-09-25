@@ -31,17 +31,18 @@ export const MAX_USER_STORES = 50
 
 const FINGERPRINT = /^[a-f0-9]{64}$/
 const BUILTIN_IDS: readonly string[] = [...BUILTIN_STORES.map((store) => store.id), ADDON_DIRECTORY_ID]
-/** Names only izumi's own stores use (the built-in chip reads "izumi"), so a user store can't pass
- *  itself off as one of them. */
-const RESERVED_NAMES = new Set(['izumi', ...BUILTIN_STORES.map((store) => store.name), 'Addon directory'].map((name) => name.toLowerCase()))
+/** Names only izumi's own stores use, so a user store can't pass itself off as one of them: the
+ *  built-in names, and anything that starts with the word "izumi". */
+const RESERVED_NAMES = new Set([...BUILTIN_STORES.map((store) => store.name), 'Addon directory'].map((name) => name.toLowerCase()))
+const reservedName = (name: string) => RESERVED_NAMES.has(name.toLowerCase()) || /^izumi\b/i.test(name)
 
-/** A store's display name: invisible characters dropped, whitespace collapsed, at most 64 characters,
- *  and never one of izumi's own names — those fall back to the store's host. */
+/** A store's display name: invisible and text-direction characters dropped, whitespace collapsed, at
+ *  most 64 characters, and never one of izumi's own names — those fall back to the store's host. */
 export function storeName(value: unknown, url: string): string {
   const name = typeof value === 'string'
-    ? value.replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').replace(/\s+/g, ' ').trim().slice(0, 64)
+    ? value.replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, '').replace(/\s+/g, ' ').trim().slice(0, 64)
     : ''
-  return name && !RESERVED_NAMES.has(name.toLowerCase()) ? name : sourceLabel(url)
+  return name && !reservedName(name) ? name : sourceLabel(url)
 }
 
 /** Stable id for a user store: two independent 32-bit FNV-style hashes of its canonical URL. */

@@ -43,6 +43,15 @@ describe('adaptStoreDocument', () => {
     })
   })
 
+  it('drops language codes that are not one language, and text-direction overrides', () => {
+    const listing = adaptStoreDocument([
+      { name: 'Aniyomi: Multi\u202Etxet', pkg: 'eu.kanade.tachiyomi.animeextension.all.multi', apk: 'apk/multi.apk', lang: 'all', code: 1, version: '1.0', nsfw: 0,
+        sources: [{ id: '1', name: 'Multi', lang: 'all', baseUrl: 'https://example.test' }] },
+    ], 'https://repo.example.test/index.min.json', 'an')
+    expect(listing.entries[0].languages).toEqual([])
+    expect(listing.entries[0].name).not.toContain('\u202E')
+  })
+
   it('lists marketplace providers one by one and skips kinds izumi cannot run', () => {
     const listing = adaptStoreDocument([
       { id: 'streamy', name: 'Streamy', type: 'onlinestream-provider', manifestURI: 'https://x.test/streamy.json', lang: 'fr' },

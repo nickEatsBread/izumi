@@ -64,5 +64,6 @@ export function filterStoreEntries(
 }
 
 export function storeLanguages(entries: readonly StoreEntry[]): string[] {
-  return [...new Set(entries.flatMap((entry) => entry.languages))].sort()
+  // 'all' is the filter's own "any language" value, so it can never be an option of its own.
+  return [...new Set(entries.flatMap((entry) => entry.languages))].filter((language) => language !== 'all').sort()
 }

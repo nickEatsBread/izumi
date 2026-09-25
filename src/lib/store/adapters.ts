@@ -2,6 +2,7 @@ import { aniyomiRepositoryPackages, catalogPackages, manifestProblem, normalizeM
 import { parseCatalog } from '$lib/themes/packages'
 import { isNativeStore, parseNativeStore } from './native-format'
 import type { SourceType, StoreEntry, StoreListing } from './types'
+import { canonicalStoreUrl } from './url'
 
 // Store formats the Store can browse, each normalised into one StoreListing (spec §6.2). Pure: the
 // caller fetches. The most specific shape is tried first, and every result goes through one cleaning
@@ -18,16 +19,21 @@ function clip(value: unknown, max: number): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : undefined
 }
 
+/** Text without direction overrides, which could make a listing read as something it isn't. */
+function plain(value: string | undefined): string | undefined {
+  return typeof value === 'string' ? value.replace(/[\u202A-\u202E\u2066-\u2069]/g, '') : value
+}
+
+/** Language codes that mean "several" or "unknown" rather than one language to filter by. */
+const NOT_A_LANGUAGE: ReadonlySet<string> = new Set(['all', 'multi', 'mul', 'und', 'zxx', 'xx'])
+
 // Catalog parsers only check a package's id and payload, so everything shown or installed is checked
 // again here: one malformed package must not break the whole store, and a package is only listed
 // when its download is HTTPS.
 function packageEntry(pkg: ExtensionCatalogPackage, storeId: string): StoreEntry | null {
   const download: unknown = pkg.packageFormat === 'aniyomi-repo' ? pkg.apk : pkg.package
-  try {
-    if (new URL(String(download)).protocol !== 'https:') return null
-  } catch {
-    return null
-  }
+  // Public HTTPS only, like the store itself.
+  if (!canonicalStoreUrl(String(download))) return null
   if (typeof pkg.id !== 'string' || !pkg.id || pkg.id.length > 200) return null
   const sources = Array.isArray(pkg.sources) ? pkg.sources : []
   const version: unknown = pkg.version
@@ -91,7 +97,7 @@ function marketplaceEntries(raw: any[], storeId: string): { entries: StoreEntry[
       version: item.version == null ? undefined : String(item.version),
       author: typeof item.author === 'string' ? item.author : undefined,
       description: typeof item.description === 'string' ? item.description : undefined,
-      icon: typeof item.icon === 'string' && item.icon.startsWith('https://') ? item.icon : undefined,
+      icon: typeof item.icon === 'string' ? canonicalStoreUrl(item.icon) ?? undefined : undefined,
       languages: typeof item.lang === 'string' && item.lang !== 'multi' ? [item.lang] : [],
       content: ['anime'],
       nsfw: item.isNsfw === true || item.nsfw === true,
@@ -109,7 +115,7 @@ function finish(listing: StoreListing): StoreListing {
   const entries: StoreEntry[] = []
   let skipped = listing.skipped
   for (const entry of listing.entries) {
-    const name = clip(entry.name, 64)
+    const name = clip(plain(entry.name), 64)
     const knownSource = entry.kind !== 'source' || (!!entry.sourceType && SOURCE_TYPES.has(entry.sourceType))
     if (!name || !knownSource || seen.has(entry.key)) {
       skipped += 1
@@ -119,12 +125,13 @@ function finish(listing: StoreListing): StoreListing {
     entries.push({
       ...entry,
       name,
-      version: clip(entry.version, 32),
-      author: clip(entry.author, 80),
-      description: clip(entry.description, 600),
+      version: clip(plain(entry.version), 32),
+      author: clip(plain(entry.author), 80),
+      description: clip(plain(entry.description), 600),
       languages: [...new Set(entry.languages
         .filter((language) => typeof language === 'string' && language.length > 0 && language.length <= 32)
-        .map((language) => language.toLowerCase()))].slice(0, 24),
+        .map((language) => language.toLowerCase())
+        .filter((language) => !NOT_A_LANGUAGE.has(language)))].slice(0, 24),
     })
   }
   return { ...listing, entries, skipped }

@@ -84,6 +84,15 @@ describe('native store index', () => {
     expect(skipped).toBe(3)
   })
 
+  it('drops links that point into a private network', () => {
+    const { entries } = parseNativeStore(store([
+      { kind: 'source', sourceType: 'stream-provider', id: 'lan', name: 'LAN', manifestUrl: 'providers/stream.json', icon: 'https://192.168.1.2/icon.png' },
+      { kind: 'source', sourceType: 'stream-provider', id: 'router', name: 'Router', manifestUrl: 'https://router/stream.json' },
+    ]), STORE_URL, 's1')
+    expect(entries.map((entry) => entry.id)).toEqual(['lan'])
+    expect(entries[0].icon).toBeUndefined()
+  })
+
   it('explains a missing schemaVersion', () => {
     expect(() => parseNativeStore(store([], { schemaVersion: undefined }), STORE_URL, 's')).toThrow('no valid schemaVersion')
   })
