@@ -59,7 +59,8 @@ mod package {
     const MAX_ENTRY_BYTES: usize = 152 * 1024 * 1024;
     const MAX_ANIYOMI_APK_BYTES: usize = 32 * 1024 * 1024;
     // v2 rebuilds desktop Aniyomi runtime JARs with resources preserved from their signed APK.
-    const PACKAGE_CACHE_VERSION: u8 = 2;
+    // 3: entries now carry `signer_key`; older caches would report signed packages without it.
+    const PACKAGE_CACHE_VERSION: u8 = 3;
 
     #[derive(serde::Deserialize, serde::Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -812,11 +813,39 @@ mod package {
         std::fs::rename(temporary, destination).map_err(|error| error.to_string())
     }
 
-    fn install_bytes(app: &AppHandle, bytes: Vec<u8>) -> Result<InstalledExtension, String> {
+    /// Refuses installs that would silently take over another package: a download whose id differs
+    /// from the listing it was installed from, or an update signed by a different key than the
+    /// package it replaces.
+    fn check_replacement(
+        expected_id: Option<&str>,
+        incoming: &InstalledExtension,
+        current: Option<&InstalledExtension>,
+    ) -> Result<(), String> {
+        if expected_id.is_some_and(|expected| expected != incoming.id) {
+            return Err("This package's id doesn't match its store listing".into());
+        }
+        if let Some(current) = current {
+            if current.signer_key.is_some() && current.signer_key != incoming.signer_key {
+                return Err("This update is signed by a different key than the installed package".into());
+            }
+        }
+        Ok(())
+    }
+
+    fn install_bytes(
+        app: &AppHandle,
+        bytes: Vec<u8>,
+        expected_id: Option<&str>,
+    ) -> Result<InstalledExtension, String> {
         let (extension, jar) = parse_package(&bytes)?;
         let dir = extension_dir(app)?;
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let destination = package_path(app, &extension.id)?;
+        let current = std::fs::read(&destination)
+            .ok()
+            .and_then(|existing| parse_package(&existing).ok())
+            .map(|(current, _)| current);
+        check_replacement(expected_id, &extension, current.as_ref())?;
         let temporary = destination.with_extension("izumi-ext.part");
         std::fs::write(&temporary, bytes).map_err(|e| e.to_string())?;
         if destination.exists() {
@@ -832,7 +861,7 @@ mod package {
         if path.extension().and_then(|value| value.to_str()) != Some("izumi-ext") {
             return Err("Choose an .izumi-ext package".into());
         }
-        install_bytes(app, std::fs::read(path).map_err(|e| e.to_string())?)
+        install_bytes(app, std::fs::read(path).map_err(|e| e.to_string())?, None)
     }
 
     async fn download_https(
@@ -880,6 +909,7 @@ mod package {
         app: &AppHandle,
         url: &str,
         expected_sha256: &str,
+        expected_id: Option<&str>,
     ) -> Result<InstalledExtension, String> {
         let bytes = download_https(
             url,
@@ -888,7 +918,7 @@ mod package {
             "extension package",
         )
         .await?;
-        install_bytes(app, bytes)
+        install_bytes(app, bytes, expected_id)
     }
 
     pub async fn download_aniyomi_apk(
@@ -979,7 +1009,7 @@ mod package {
         apk: &[u8],
         converted_jar: &[u8],
     ) -> Result<InstalledExtension, String> {
-        install_bytes(app, build_aniyomi_package(metadata, apk, converted_jar)?)
+        install_bytes(app, build_aniyomi_package(metadata, apk, converted_jar)?, Some(&metadata.id))
     }
 
     pub fn list(app: &AppHandle) -> Result<Vec<InstalledExtension>, String> {
@@ -1323,6 +1353,27 @@ mod package {
         }
 
         #[test]
+        fn refuses_a_package_whose_id_differs_from_its_listing() {
+            let (incoming, _) = parse_package(&fixture(false, false, None)).unwrap();
+            assert!(check_replacement(Some("someone.else"), &incoming, None)
+                .unwrap_err()
+                .contains("doesn't match"));
+            assert!(check_replacement(Some("example.allanime"), &incoming, None).is_ok());
+            assert!(check_replacement(None, &incoming, None).is_ok());
+        }
+
+        #[test]
+        fn refuses_an_update_signed_by_a_different_key() {
+            let (signed, _) = parse_package(&fixture(false, true, None)).unwrap();
+            let (unsigned, _) = parse_package(&fixture(false, false, None)).unwrap();
+            assert!(check_replacement(None, &unsigned, Some(&signed))
+                .unwrap_err()
+                .contains("different key"));
+            assert!(check_replacement(None, &signed, Some(&signed)).is_ok());
+            assert!(check_replacement(None, &signed, Some(&unsigned)).is_ok());
+        }
+
+        #[test]
         fn accepts_a_signed_service_for_the_current_platform() {
             let (parsed, executable) =
                 parse_package(&service_fixture(true, service_platform())).unwrap();
@@ -1386,8 +1437,9 @@ pub async fn extension_install_url(
     app: AppHandle,
     url: String,
     expected_sha256: String,
+    expected_id: Option<String>,
 ) -> Result<InstalledExtension, String> {
-    package::install_url(&app, &url, &expected_sha256).await
+    package::install_url(&app, &url, &expected_sha256, expected_id.as_deref()).await
 }
 
 #[tauri::command]

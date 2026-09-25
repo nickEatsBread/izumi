@@ -207,6 +207,8 @@ export async function installCatalogPackage(
     : await invoke<InstalledExtensionPackage>('extension_install_url', {
         url: extension.package,
         expectedSha256: extension.packageSha256,
+        // The listing's id: a package declaring another id would replace whatever is installed there.
+        expectedId: extension.id,
       })
   return finishPackageInstall(installed)
 }
