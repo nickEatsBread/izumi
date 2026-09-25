@@ -41,13 +41,26 @@ function own(record: Readonly<Record<string, string>>, key: string | undefined):
   return key !== undefined && Object.hasOwn(record, key) ? record[key] : undefined
 }
 
+function hostOf(url: string | undefined): string {
+  try {
+    return url ? new URL(url).hostname : ''
+  } catch {
+    return ''
+  }
+}
+
 /** Where an installed entry lives (addon base, extension spec, package id, theme id), or null. A
  *  package counts as installed from this store only when this store is where it came from. */
 export function installedRef(entry: StoreEntry, state: InstalledState, storeUrl: string): string | null {
   const install = entry.install
   if (install.type === 'addon') {
     const base = normalizeBase(install.manifestUrl)
-    return own(state.addonBaseById, install.manifestId) ?? (state.addonBases.includes(base) ? base : null)
+    // A listing names its own manifest id, so the id alone never proves which installed addon it is:
+    // the installed copy must also live on the listing's host (a configured copy keeps its host).
+    const byId = own(state.addonBaseById, install.manifestId)
+    const host = hostOf(byId)
+    if (byId && host && (host === hostOf(install.manifestUrl) || host === hostOf(install.configureUrl))) return byId
+    return state.addonBases.includes(base) ? base : null
   }
   if (install.type === 'extension') {
     if (state.extensionSpecs.includes(install.spec)) return install.spec

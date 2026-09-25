@@ -124,6 +124,19 @@ describe('installedRef', () => {
     expect(installedRef(themeEntry, state, 'https://other.test/themes.json')).toBeNull()
   })
 
+  it('matches an installed addon by manifest id only on the host the listing names', () => {
+    const configured = { ...state, addonBases: [], addonBaseById: { 'org.example.addon': 'https://addon.example.test/key' } }
+    const impostor: StoreEntry = {
+      ...addon(), install: { type: 'addon', manifestUrl: 'https://impostor.test/manifest.json', manifestId: 'org.example.addon' },
+    }
+    expect(installedRef(impostor, configured, '')).toBeNull()
+    const viaConfigurePage: StoreEntry = {
+      ...addon(),
+      install: { type: 'addon', manifestUrl: 'https://cdn.example.test/manifest.json', manifestId: 'org.example.addon', configureUrl: 'https://addon.example.test/configure' },
+    }
+    expect(installedRef(viaConfigurePage, configured, '')).toBe('https://addon.example.test/key')
+  })
+
   it('binds installed packages to the store they came from', () => {
     expect(installedRef(packageEntry, state, 'https://x.test/index.json')).toBe('example.pkg')
     expect(installedRef(packageEntry, state, 'https://stranger.test/index.json')).toBeNull()
