@@ -42,6 +42,15 @@ describe('store themes', () => {
     expect(result.errors[0]).toContain('offline')
   })
 
+  it('says so when a store is locked, and never reads it as "latest version"', async () => {
+    const other = addStore('https://other.test/index.json', 'Other')
+    mocks.loadStoreAndPin.mockImplementation(async (store: StoreFeed) => store.id === other.id
+      ? { store, trust: { state: 'locked', reason: 'key-changed' }, listing: { entries: [themeEntry('evil')] }, cached: false, fetchedAt: 1 }
+      : { store, trust: { state: 'unsigned' }, listing: { entries: [] }, cached: false, fetchedAt: 1 })
+    expect((await loadThemeListings()).errors.some((message) => message.startsWith('Other:'))).toBe(true)
+    await expect(findStoreThemeRelease('https://other.test/index.json', 'evil')).rejects.toThrow('signing-key check')
+  })
+
   it('finds a theme release in the store it was installed from', async () => {
     mocks.loadStoreAndPin.mockResolvedValue({ store: themesStore, trust: { state: 'unsigned' }, listing: { entries: [themeEntry('one')] }, cached: false, fetchedAt: 1 })
     expect((await findStoreThemeRelease(themesStore.url, 'one'))?.id).toBe('one')

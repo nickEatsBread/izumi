@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte'
-  import { goto } from '$app/navigation'
+  import { goto, replaceState } from '$app/navigation'
   import { page } from '$app/state'
   import Search from '@lucide/svelte/icons/search'
   import Plus from '@lucide/svelte/icons/plus'
@@ -121,6 +121,11 @@
   })
   const refOf = (entry: StoreEntry) => installedRef(entry, installedState, storeUrlById.get(entry.storeId) ?? '')
   const isInstalled = (entry: StoreEntry) => refOf(entry) !== null
+  /** A package installed from another store: this store can neither install nor update it. */
+  function fromAnotherStore(entry: StoreEntry): boolean {
+    const install = entry.install
+    return install.type === 'package' && installedPackages.some((item) => item.id === install.pkg.id) && refOf(entry) === null
+  }
   /** Whether two URLs share a host. Reconfigure only ever runs through the installed addon's own host:
    *  a listing's configure page anywhere else must never be able to replace the configured copy. */
   function sameHost(a: string, b: string): boolean {
@@ -140,6 +145,8 @@
   function updateAvailable(entry: StoreEntry): boolean {
     const install = entry.install
     const storeUrl = storeUrlById.get(entry.storeId) ?? ''
+    // A saved copy shown because the refresh failed can be older than what is installed.
+    if (loaded[entry.storeId]?.error) return false
     if (install.type === 'package') {
       const installed = installedPackages.find((item) => item.id === install.pkg.id)
       // refOf is origin-aware: it only matches when this store is where the package came from.
@@ -178,6 +185,8 @@
   ])
   const lockedStores = $derived($enabledStores.filter((store) => loaded[store.id]?.trust.state === 'locked'))
   const failedStores = $derived($enabledStores.filter((store) => loaded[store.id]?.error && !loaded[store.id]?.listing))
+  // Shown from the copy saved last time, because this refresh failed.
+  const staleStores = $derived($enabledStores.filter((store) => loaded[store.id]?.error && loaded[store.id]?.listing))
   // Adding, hiding or re-trusting a store changes this signature, which reloads the listings.
   const storeSignature = $derived($enabledStores.map((store) => `${store.id}:${store.pinnedKey ?? ''}`).join('|'))
 
@@ -253,10 +262,17 @@
     untrack(() => { limit = PAGE })
   })
 
-  // izumi://store/add?url=… arrives here as ?add=…: open the preview; adding still needs a click.
+  // izumi://store/add?url=… arrives here as ?add=…: open the preview; adding still needs a click. The
+  // parameter is consumed, so Back never reopens the preview.
   $effect(() => {
     const add = page.url.searchParams.get('add')
-    if (add) untrack(() => { storesDialog = { mode: 'add', url: add } })
+    if (!add) return
+    untrack(() => {
+      storesDialog = { mode: 'add', url: add }
+      const url = new URL(page.url)
+      url.searchParams.delete('add')
+      try { replaceState(url, page.state) } catch { /* router not ready: the link just stays in the address */ }
+    })
   })
 
   onMount(() => {
@@ -426,6 +442,9 @@
   {#each failedStores as store (store.id)}
     <p class="mb-2 max-w-5xl text-xs text-muted-foreground">{store.name} couldn't be loaded: {loaded[store.id]?.error}</p>
   {/each}
+  {#each staleStores as store (store.id)}
+    <p class="mb-2 max-w-5xl text-xs text-muted-foreground">{store.name} couldn't be refreshed ({loaded[store.id]?.error}), so it shows the copy saved {new Date(loaded[store.id]?.fetchedAt ?? 0).toLocaleString()}. Updates from it wait for a fresh copy.</p>
+  {/each}
   {#if directoryWanted && directoryError}<p class="mb-2 max-w-5xl text-xs text-muted-foreground">Addon directory: {directoryError}</p>{/if}
 
   <p class="mb-3 text-xs text-muted-foreground">
@@ -445,6 +464,7 @@
           thirdParty={!builtinIds.has(entry.storeId)}
           icon={iconOf(entry)}
           installed={isInstalled(entry)}
+          elsewhere={fromAnotherStore(entry)}
           update={updateAvailable(entry)}
           busy={busyKey === entry.key}
           locked={loaded[entry.storeId]?.trust.state === 'locked'}
@@ -476,6 +496,7 @@
     icon={iconOf(entry)}
     trustLabel={trustLabel(entry)}
     installed={ref !== null}
+    elsewhere={fromAnotherStore(entry)}
     update={updateAvailable(entry)}
     enabled={enabledState(entry)}
     busy={busyKey === entry.key}
@@ -496,13 +517,16 @@
 {/if}
 
 {#if storesDialog}
-  <StoresDialog
-    mode={storesDialog.mode}
-    initialUrl={storesDialog.url}
-    {loaded}
-    onclose={() => (storesDialog = null)}
-    onadded={(id) => { storeChip = id; notice = 'Store added. Nothing was installed.' }}
-  />
+  <!-- Keyed by the link, so a second store link replaces the one being previewed. -->
+  {#key storesDialog.url}
+    <StoresDialog
+      mode={storesDialog.mode}
+      initialUrl={storesDialog.url}
+      {loaded}
+      onclose={() => (storesDialog = null)}
+      onadded={(id) => { storeChip = id; notice = 'Store added. Nothing was installed.' }}
+    />
+  {/key}
 {/if}
 
 {#if configuring}

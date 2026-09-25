@@ -52,6 +52,19 @@ describe('Store behaviour', () => {
     expect(page).toContain('currentBase: current && sameHost(outcome.configureUrl, current) ? current : undefined')
   })
 
+  it('tells the truth about packages from other stores and stale copies', () => {
+    expect(page).toContain('elsewhere={fromAnotherStore(entry)}')
+    expect(page).toContain('if (loaded[entry.storeId]?.error) return false')
+    expect(page).toContain('Updates from it wait for a fresh copy.')
+    expect(card).toContain('Installed elsewhere')
+  })
+
+  it('consumes the deep-link parameter and lets a second link replace the first', () => {
+    expect(page).toContain("url.searchParams.delete('add')")
+    expect(page).toContain('replaceState(url, page.state)')
+    expect(page).toContain('{#key storesDialog.url}')
+  })
+
   it('opens the add-store preview from a deep link', () => {
     expect(page).toContain("page.url.searchParams.get('add')")
   })

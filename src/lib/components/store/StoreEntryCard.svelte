@@ -5,13 +5,15 @@
   import { entryTypeLabel } from '$lib/store/filters'
   import type { StoreEntry } from '$lib/store/types'
 
-  let { entry, icon, storeName, thirdParty, installed, update, busy, locked, onopen, oninstall }: {
+  let { entry, icon, storeName, thirdParty, installed, elsewhere = false, update, busy, locked, onopen, oninstall }: {
     entry: StoreEntry
     /** Artwork found for this entry when its listing has none (e.g. an installed package's own icon). */
     icon?: string
     storeName: string
     thirdParty: boolean
     installed: boolean
+    /** Installed, but from another store: this one can't install or update it. */
+    elsewhere?: boolean
     /** Installed, and this store lists a newer version the entry may update to. */
     update: boolean
     busy: boolean
@@ -49,6 +51,8 @@
   <div class="flex shrink-0 items-center">
     {#if installed && !update}
       <span class="rounded-md bg-emerald-500/15 px-3 py-2 text-sm font-black text-emerald-400 sm:py-1.5 sm:text-xs">Installed</span>
+    {:else if elsewhere}
+      <span class="rounded-md bg-secondary px-3 py-2 text-sm font-black text-muted-foreground sm:py-1.5 sm:text-xs">Installed elsewhere</span>
     {:else}
       <button type="button" data-focusable disabled={busy || locked} onclick={oninstall}
               class="flex items-center gap-1 rounded-md bg-primary px-3 py-2 text-sm font-black text-primary-foreground disabled:opacity-40 sm:py-1.5 sm:text-xs">

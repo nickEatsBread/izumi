@@ -23,7 +23,11 @@ export async function loadThemeListings(
       errors.push(`${result.store.name}: ${result.error}`)
       if (result.listing) cached = true
     }
-    if (!result.listing || result.trust.state === 'locked') continue
+    if (result.trust.state === 'locked') {
+      errors.push(`${result.store.name}: its signing-key check failed, so its themes are hidden until you review it under Manage stores.`)
+      continue
+    }
+    if (!result.listing) continue
     for (const entry of result.listing.entries) {
       if (entry.install.type === 'theme') {
         listings.push({ release: entry.install.release, origin: result.store.url, storeName: result.store.name })
@@ -41,7 +45,8 @@ export async function findStoreThemeRelease(origin: string, id: string): Promise
   const store = themeStoreFor(origin)
   if (!store) return undefined
   const result = await loadStoreAndPin(store, { force: true })
-  if (!result.listing || result.trust.state === 'locked') return undefined
+  if (result.trust.state === 'locked') throw new Error(`${store.name} failed its signing-key check. Review it under Manage stores before updating its themes.`)
+  if (!result.listing) return undefined
   for (const entry of result.listing.entries) {
     if (entry.install.type === 'theme' && entry.install.release.id === id) return entry.install.release
   }

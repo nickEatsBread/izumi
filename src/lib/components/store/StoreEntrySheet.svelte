@@ -6,7 +6,7 @@
   import type { StoreEntry } from '$lib/store/types'
 
   let {
-    entry, icon, storeName, thirdParty, trustLabel, installed, update, enabled, busy, locked, error = '',
+    entry, icon, storeName, thirdParty, trustLabel, installed, elsewhere = false, update, enabled, busy, locked, error = '',
     onclose, oninstall, onremove, ontoggle, onsettings, settingsLabel = 'Settings', onmanage,
   }: {
     entry: StoreEntry
@@ -19,6 +19,8 @@
     installed: boolean
     /** Installed, and this store lists a newer version the entry may update to. */
     update: boolean
+    /** Installed, but from another store: this one can't install or update it. */
+    elsewhere?: boolean
     /** Installed and switched on. Ignored when not installed. */
     enabled: boolean
     busy: boolean
@@ -101,6 +103,8 @@
         {#if onsettings}<button type="button" data-focusable onclick={onsettings} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold">{settingsLabel}</button>{/if}
         {#if onmanage}<button type="button" data-focusable onclick={onmanage} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold">Manage in Themes</button>{/if}
         {#if onremove}<button type="button" data-focusable disabled={busy} onclick={onremove} class="rounded-md px-3 py-2 text-sm font-bold text-destructive active:bg-destructive/10">Remove</button>{/if}
+      {:else if elsewhere}
+        <p class="self-center text-sm text-muted-foreground">Installed from another store. Remove it there to install this one.</p>
       {:else}
         <button type="button" data-focusable disabled={busy || locked} onclick={oninstall}
                 class="rounded-md bg-primary px-4 py-2 text-sm font-black text-primary-foreground disabled:opacity-40">{installLabel}</button>
