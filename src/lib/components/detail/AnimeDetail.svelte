@@ -68,6 +68,7 @@
   import { episodesBelow, episodesOnSide, resolveDetail } from '$lib/themes/presentation'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { mediaDisplayModel } from '$lib/themes/host-model'
+  import { countryName, formatDate as fmtDate, prettyEnum } from '$lib/detail/facts'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -306,14 +307,7 @@
     void setScore(m, score10 * 10)
   }
 
-  const fmtDate = (d?: { year?: number; month?: number; day?: number } | null) =>
-    d?.year ? [d.year, d.month, d.day].filter(Boolean).join('-') : ''
-
   const stripHtml = (s?: string) => (s ? s.replace(/<[^>]+>/g, '') : '')
-  const prettyEnum = (value?: string) => value
-    ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase())
-    : ''
-  const countryName = (code?: string) => ({ JP: 'Japan', CN: 'China', KR: 'South Korea', TW: 'Taiwan' }[code ?? ''] ?? code ?? '')
   const compactNumber = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 })
 
   // Total episodes for the badge — schedule-aware so OVAs/ONAs with a null AniList count
