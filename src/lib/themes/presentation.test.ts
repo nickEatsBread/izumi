@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseNode, parsePresentation, nodeStyle, resolveRow, resolveCard, resolveDetail, episodesOnSide, episodesBelow, themeCoverage, densityScale, visibleNode, displayText, type DisplayModel } from './presentation'
+import { parseNode, parsePresentation, resolvePresentation, nodeStyle, resolveRow, resolveCard, resolveDetail, episodesOnSide, episodesBelow, themeCoverage, densityScale, visibleNode, displayText, type DisplayModel } from './presentation'
 
 describe('theme presentation contract', () => {
   it('composes new layouts from primitives with bounded styles', () => {
@@ -128,6 +128,36 @@ describe('theme presentation contract', () => {
     expect(() => parsePresentation({ detail: { tabs: 'bottom' } }, 2)).toThrow('unsupported')
     expect(parsePresentation({ detail: { tabs: 'pills' } }, 2).detail?.tabs).toBe('pills')
     expect(() => parsePresentation({ detail: { countdown: 'soon' } })).toThrow('unsupported')
+  })
+  it('parses an API 3 theme layout', () => {
+    const layout = {
+      home: [{ block: 'genre-chips', genres: 'top' }, { role: 'hero' }, { role: 'continue' }, { block: 'ranked-list', area: 'aside', tabs: [{ label: 'TOP', role: 'trending' }] }],
+      asideWidth: 320,
+      nav: { home: 1, bottom: ['schedule', 'library'], top: ['search'] },
+    }
+    const parsed = parsePresentation({ layout }).layout
+    expect(parsed?.home?.[0]).toEqual({ block: 'genre-chips', area: 'main', phone: false, genres: 'top', all: true })
+    expect(parsed?.home?.[1]).toEqual({ role: 'hero' })
+    expect(parsed?.nav).toEqual({ home: 1, bottom: ['schedule', 'library'], top: ['search'] })
+    expect(parsePresentation({ layout: parsed })).toEqual({ layout: parsed })
+    expect(() => parsePresentation({ layout }, 2)).toThrow('unsupported')
+  })
+  it('rejects invalid theme layouts', () => {
+    expect(() => parsePresentation({ layout: { home: [{ role: 'hero' }, { role: 'hero' }] } })).toThrow('hero once')
+    expect(() => parsePresentation({ layout: { home: [{ block: 'carousel' }] } })).toThrow('home block')
+    expect(() => parsePresentation({ layout: { home: [{ role: 'x', title: 'y' }] } })).toThrow('unsupported')
+    expect(() => parsePresentation({ layout: { nav: { bottom: ['search'], top: ['search'] } } })).toThrow('not both')
+    expect(() => parsePresentation({ layout: { nav: { bottom: ['nowhere'] } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ layout: { asideWidth: 999 } })).toThrow('range')
+    expect(() => parsePresentation({ layout: { home: Array.from({ length: 31 }, () => ({ role: 'x' })) } })).toThrow('1–30')
+  })
+  it('lets phones replace the home list but not the navigation', () => {
+    const phoneHome = [{ role: 'continue' }]
+    const parsed = parsePresentation({ layout: { home: [{ role: 'hero' }], nav: { home: 0 } }, mobile: { layout: { home: phoneHome } } })
+    expect(parsed.mobile?.layout?.home).toEqual(phoneHome)
+    expect(() => parsePresentation({ mobile: { layout: { nav: { home: 1 } } } })).toThrow('unsupported')
+    expect(resolvePresentation(parsed, true)?.layout).toEqual({ home: phoneHome, nav: { home: 0 } })
+    expect(resolvePresentation(parsed, false)?.layout?.home).toEqual([{ role: 'hero' }])
   })
 })
 

@@ -1,3 +1,4 @@
+import { NAV_DESTINATIONS, parseThemeBlock, type HomeBlock, type HomeBlockType, type NavDestination } from './block-schema'
 /** Data-only presentation API. No HTML, executable expressions, selectors, or remote assets. */
 export type DisplayField =
   | 'title' | 'description' | 'rank' | 'rankPosition' | 'score' | 'format' | 'year'
@@ -144,6 +145,16 @@ export interface RowHeading {
   accent?: 'none' | 'bar' | 'dot' | 'underline'
   viewMore?: 'text' | 'arrow' | 'hidden'
 }
+/** API 3: one entry of a theme's Home — a catalog row by role (`hero` is the featured banner), or a block. */
+export type ThemeLayoutEntry = { role: string } | ({ block: HomeBlockType } & Omit<HomeBlock, 'type'>)
+export interface ThemeNav {
+  /** Home's position on the bottom bar (0 = first). */
+  home?: number
+  bottom?: NavDestination[]
+  top?: NavDestination[]
+}
+/** API 3: the theme's Home and navigation, applied while the theme is active and its layout switch is on. */
+export interface ThemeLayout { home?: ThemeLayoutEntry[]; asideWidth?: number; nav?: ThemeNav }
 export interface ThemePresentation {
   density?: ThemeDensity
   hideCardLabels?: boolean
@@ -156,11 +167,13 @@ export interface ThemePresentation {
   cards?: Partial<Record<CardFamily, ThemeNode>>
   /** API 3: `text` swaps the SVG wordmark for letter spans a stylesheet can style. */
   brand?: 'mark' | 'text'
+  /** API 3: the theme's Home and navigation layout. */
+  layout?: ThemeLayout
   /** Phone overrides (the Android app and any viewport up to 640px), resolved on top of the rest. */
   mobile?: MobilePresentation
 }
 /** What a phone variant can change. Navigation is always the bottom bar there, so `shell` stays shared. */
-export type MobilePresentation = Pick<ThemePresentation, 'density' | 'hideCardLabels' | 'trueBlack' | 'hero' | 'rows' | 'detail' | 'player' | 'cards'>
+export type MobilePresentation = Pick<ThemePresentation, 'density' | 'hideCardLabels' | 'trueBlack' | 'hero' | 'rows' | 'detail' | 'player' | 'cards' | 'layout'>
 /** Every host binds the same shapes: numeric fields are numbers, the rest strings. */
 export type DisplayModel = Partial<Record<Exclude<DisplayField, NumericDisplayField> | ArtworkKind, string> & Record<NumericDisplayField, number>>
 export const ROW_CONTEXT = Symbol('theme-row')
@@ -379,17 +392,64 @@ function parseCards(value: unknown, api: ThemeApi): NonNullable<ThemePresentatio
   }
   return result
 }
-const MOBILE_KEYS = ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'player', 'cards']
+function destinationList(value: unknown, max: number): NavDestination[] {
+  if (!Array.isArray(value) || value.length > max) throw new Error(`A theme can place up to ${max} destinations there.`)
+  const seen = new Set<string>()
+  return value.map((id) => {
+    const destination = choice(id, NAV_DESTINATIONS)
+    if (seen.has(destination)) throw new Error('A theme lists a destination twice.')
+    seen.add(destination)
+    return destination
+  })
+}
+function parseLayout(value: unknown, phone: boolean): ThemeLayout {
+  const raw = record(value); only(raw, ['home', 'asideWidth', ...(phone ? [] : ['nav'])])
+  const result: ThemeLayout = {}
+  if (raw.home !== undefined) {
+    if (!Array.isArray(raw.home) || raw.home.length < 1 || raw.home.length > 30) throw new Error('A theme home layout needs 1–30 entries.')
+    let hero = false
+    result.home = raw.home.map((entry): ThemeLayoutEntry => {
+      const item = record(entry)
+      if (item.role !== undefined) {
+        only(item, ['role'])
+        if (typeof item.role !== 'string' || !/^\S{1,300}$/.test(item.role)) throw new Error('Invalid theme row role.')
+        if (item.role === 'hero') {
+          if (hero) throw new Error('A theme home layout can place the hero once.')
+          hero = true
+        }
+        return { role: item.role }
+      }
+      const { type, ...settings } = parseThemeBlock(item)
+      return { block: type, ...settings } as ThemeLayoutEntry
+    })
+  }
+  if (raw.asideWidth !== undefined) result.asideWidth = number(raw.asideWidth, 240, 420)
+  if (raw.nav !== undefined) {
+    const nav = record(raw.nav); only(nav, ['home', 'bottom', 'top'])
+    result.nav = {}
+    if (nav.home !== undefined) {
+      const home = number(nav.home, 0, 5)
+      if (!Number.isInteger(home)) throw new Error('A theme dimension is outside the supported range.')
+      result.nav.home = home
+    }
+    if (nav.bottom !== undefined) result.nav.bottom = destinationList(nav.bottom, 5)
+    if (nav.top !== undefined) result.nav.top = destinationList(nav.top, 4)
+    if (result.nav.bottom?.some((id) => result.nav?.top?.includes(id))) throw new Error('A destination can sit on the bottom bar or the top, not both.')
+  }
+  return result
+}
+const MOBILE_KEYS = ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'player', 'cards', 'layout']
 function parseMobile(value: unknown, api: ThemeApi): MobilePresentation {
   const raw = record(value); only(raw, MOBILE_KEYS)
-  return parsePresentation(raw, api)
+  return parsePresentation(raw, api, true)
 }
 /** Validate a presentation. `api` is the package's declared theme API: API 1 packages get the
  *  original key set (so they behave identically on every client), API 2 the additions. Personal
- *  Theme Studio designs and previews use the newest API. */
-export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_API): ThemePresentation {
+ *  Theme Studio designs and previews use the newest API. `phone` marks a `mobile` block being
+ *  parsed, so its layout cannot carry navigation (phones always use the bottom bar). */
+export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_API, phone = false): ThemePresentation {
   const raw = record(value)
-  only(raw, ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'shell', 'player', 'cards', ...api2(api, ['mobile']), ...api3(api, ['brand'])])
+  only(raw, ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'shell', 'player', 'cards', ...api2(api, ['mobile']), ...api3(api, ['brand', 'layout'])])
   const result: ThemePresentation = {}
   if (raw.mobile !== undefined) result.mobile = parseMobile(raw.mobile, api)
   if (raw.density !== undefined) result.density = choice(raw.density, ['compact', 'comfortable', 'large'])
@@ -423,6 +483,7 @@ export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_A
   if (raw.player !== undefined) result.player = parsePlayer(raw.player, api)
   if (raw.cards !== undefined) result.cards = parseCards(raw.cards, api)
   if (raw.brand !== undefined) result.brand = choice(raw.brand, ['mark', 'text'])
+  if (raw.layout !== undefined) result.layout = parseLayout(raw.layout, phone)
   return result
 }
 /** The presentation for one surface: on a phone the `mobile` block is layered over the shared one.
@@ -444,6 +505,9 @@ export function resolvePresentation(layout: ThemePresentation | undefined, mobil
   }
   if (phone.player) resolved.player = { ...shared.player, ...phone.player }
   if (phone.cards) resolved.cards = { ...shared.cards, ...phone.cards }
+  // The phone block can only carry `home` and `asideWidth` (`parseLayout` rejects `nav` there), so
+  // navigation always comes from the shared layout.
+  if (phone.layout) resolved.layout = { ...shared.layout, ...phone.layout }
   return resolved
 }
 export function visibleNode(node: ThemeNode, model: DisplayModel): boolean {
@@ -576,8 +640,8 @@ export function themeCoverage(layout?: ThemePresentation): ThemeSurface[] {
   if (!layout) return []
   const surfaces: ThemeSurface[] = []
   const phone = layout.mobile ?? {}
-  if (layout.hero || layout.rows || layout.cards || phone.hero || phone.rows || phone.cards) surfaces.push('Home')
-  if (layout.shell || layout.brand || layout.density || layout.hideCardLabels || layout.trueBlack || phone.density || phone.hideCardLabels || phone.trueBlack) surfaces.push('Shell')
+  if (layout.hero || layout.rows || layout.cards || layout.layout?.home || phone.hero || phone.rows || phone.cards || phone.layout?.home) surfaces.push('Home')
+  if (layout.shell || layout.brand || layout.density || layout.hideCardLabels || layout.trueBlack || layout.layout?.nav || phone.density || phone.hideCardLabels || phone.trueBlack) surfaces.push('Shell')
   if (layout.detail || phone.detail) surfaces.push('Details')
   if (layout.player || phone.player) surfaces.push('Player')
   return surfaces.length === 4 ? ['Full'] : surfaces
