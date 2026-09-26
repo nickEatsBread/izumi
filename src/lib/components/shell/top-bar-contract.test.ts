@@ -21,4 +21,14 @@ describe('theme top bar', () => {
     expect(field).toContain('data-part="search.field"')
     expect(field).toContain('/app/search?search=')
   })
+
+  it('opens every destination in a drawer from a menu button', () => {
+    const bar = read('./Sidebar.svelte')
+    expect(bar).toContain("topBar.menu === 'drawer'")
+    expect(bar).toContain('data-part="nav.menu"')
+    expect(bar).toContain('<NavDrawer')
+    const drawer = read('./NavDrawer.svelte')
+    expect(drawer).toContain('data-slot="nav.drawer"')
+    expect(drawer).toContain("event.key === 'Escape'")
+  })
 })

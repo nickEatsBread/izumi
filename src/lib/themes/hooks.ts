@@ -29,6 +29,8 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'nav.item.icon', kind: 'part', description: 'The icon of a navigation destination.' },
     { name: 'nav.item.label', kind: 'part', description: 'The label of a navigation destination.' },
     { name: 'search.field', kind: 'part', description: "A search input: the global search overlay, or the theme top bar's search field." },
+    { name: 'nav.menu', kind: 'part', description: 'The top bar menu button that opens the drawer.' },
+    { name: 'nav.drawer', kind: 'slot', description: 'The side drawer of destinations (top bar `menu: "drawer"`); items are `nav.item`.' },
   ],
   home: [
     { name: 'home', kind: 'slot', description: 'The Home page.', states: ['data-variant'] },

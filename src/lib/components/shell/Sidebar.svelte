@@ -3,6 +3,7 @@
   import BrandText from '../BrandText.svelte'
   import CatalogSwitcher from '../catalog/CatalogSwitcher.svelte'
   import TopSearchField from './TopSearchField.svelte'
+  import NavDrawer from './NavDrawer.svelte'
   import Home from '@lucide/svelte/icons/house'
   import Calendar from '@lucide/svelte/icons/calendar'
   import Search from '@lucide/svelte/icons/search'
@@ -12,6 +13,7 @@
   import VenetianMask from '@lucide/svelte/icons/venetian-mask'
   import LibraryBig from '@lucide/svelte/icons/library-big'
   import LogIn from '@lucide/svelte/icons/log-in'
+  import Menu from '@lucide/svelte/icons/menu'
   import { goto } from '$app/navigation'
   import { anilistUserName, malUserName, anilistUserAvatar, malUserAvatar, malUser } from '$lib/trackers/config'
   import { anilistUser } from '$lib/anilist/account'
@@ -57,6 +59,7 @@
   // + casts a shadow, which is enough to read the labels).
   let focused = $state(false)
   let catalogPickerOpen = $state(false)
+  let drawerOpen = $state(false)
   // Expand only when focus arrived via the d-pad / arrow keys (inputType 'dpad') — never a touch
   // tap or a mouse (which would flash the rail open then closed as it navigates; a tap should
   // just switch pages). `inputType` is the app-wide modality store (set to 'dpad' on arrow keys
@@ -88,6 +91,7 @@
     void page.url.pathname
     focused = false
     catalogPickerOpen = false
+    drawerOpen = false
   })
   // No active-item highlight while a video plays — the rail is inert then (you're in the player,
   // not browsing), so highlighting the page you launched from (e.g. Home) reads as "selected".
@@ -112,6 +116,10 @@
        {catalogPickerOpen ? 'overflow-visible' : 'overflow-hidden'}
        {top ? '' : open ? 'w-[200px]' : compact ? 'w-12' : 'w-14'}
        {$playing || open ? 'bg-background' : ''} {open ? 'shadow-2xl' : $playing || top ? '' : 'drop-shadow-md'}">
+  {#if top && topBar.menu === 'drawer'}
+    <button type="button" data-part="nav.menu" data-focusable={df} tabindex={tab} aria-label="Menu" aria-expanded={drawerOpen} onclick={() => (drawerOpen = true)}
+      class="grid size-10 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"><Menu size={20} /></button>
+  {/if}
   <!-- On Home, Integrated mode turns the brand into the catalog trigger. Everywhere else it stays
        predictable Home navigation; Below mode keeps the explicit provider row underneath. -->
   <div class="group flex h-10 shrink-0 items-center gap-2 text-left {top ? '' : 'mb-2'} {brandCentered ? 'absolute left-1/2 top-8 -translate-x-1/2' : ''}">
@@ -196,3 +204,4 @@
     {/if}
   </button>
 </nav>
+{#if top && topBar.menu === 'drawer'}<NavDrawer bind:open={drawerOpen} items={[...items, { href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }]} {active} />{/if}

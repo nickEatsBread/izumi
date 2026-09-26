@@ -136,6 +136,8 @@ State values:
 | `nav.item.icon` | part | The icon of a navigation destination. |  |
 | `nav.item.label` | part | The label of a navigation destination. |  |
 | `search.field` | part | A search input: the global search overlay, or the theme top bar's search field. |  |
+| `nav.menu` | part | The top bar menu button that opens the drawer. |  |
+| `nav.drawer` | slot | The side drawer of destinations (top bar `menu: "drawer"`); items are `nav.item`. |  |
 
 #### Home
 
