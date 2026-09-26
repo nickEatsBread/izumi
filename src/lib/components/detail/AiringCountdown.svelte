@@ -16,7 +16,7 @@
 </script>
 
 {#if next && seconds > 0}
-  <p data-part="detail.countdown" data-variant={variant} class="mt-3 text-sm {variant === 'long' ? 'rounded-lg bg-secondary/60 px-3 py-2 font-semibold' : 'font-bold text-muted-foreground'}">
+  <p data-part="detail.countdown" data-variant={variant} class="mt-3 text-sm {variant === 'long' ? 'w-fit max-w-full rounded-lg bg-secondary/60 px-3 py-2 font-semibold' : 'font-bold text-muted-foreground'}">
     {#if variant === 'long'}
       Episode {next.episode} will be released in <span class="text-theme">{longCountdown(seconds)}</span>
     {:else}
