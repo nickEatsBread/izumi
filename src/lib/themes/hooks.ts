@@ -109,4 +109,12 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'library.tabs', kind: 'part', description: 'The library section tabs.' },
     { name: 'library.grid', kind: 'slot', description: 'The library card grid.' },
   ],
+  primitives: [
+    { name: 'button', kind: 'part', description: 'A button.', states: ['data-variant'] },
+    { name: 'chip', kind: 'part', description: 'A chip or pill (genre, filter, scope).', states: ['data-active'] },
+    { name: 'input', kind: 'part', description: 'A text input.' },
+    { name: 'badge', kind: 'part', description: 'A small label on an item (for example an episode rating).' },
+    { name: 'tabs', kind: 'part', description: 'A tab strip.', states: ['data-variant'] },
+    { name: 'tab', kind: 'part', description: 'One tab.', states: ['data-active'] },
+  ],
 }

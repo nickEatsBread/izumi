@@ -19,13 +19,15 @@
   }
 </script>
 
-<div data-theme-tabs={variant} class="-mx-4 mb-4 flex overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0
+<div data-part="tabs" data-variant={variant} data-theme-tabs={variant} class="-mx-4 mb-4 flex overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0
   {variant === 'underline' ? 'gap-1 border-b border-border' : ''}
   {variant === 'pills' ? 'gap-2' : ''}
   {variant === 'segmented' ? 'gap-1 rounded-xl bg-secondary p-1 sm:w-fit' : ''}
   {variant === 'bar' ? 'gap-1 rounded-2xl bg-secondary/60 p-1' : ''}">
   {#each tabs as tab (tab)}
     <button
+      data-part="tab"
+      data-active={active === tab || undefined}
       data-focusable
       onclick={(event) => pick(tab, event)}
       class="relative shrink-0 whitespace-nowrap text-sm font-bold transition-all duration-100 active:scale-95

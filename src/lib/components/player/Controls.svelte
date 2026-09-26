@@ -829,7 +829,7 @@
         <div data-tauri-drag-region class="pointer-events-auto absolute inset-x-0 top-0 h-8"></div>
       {/if}
       {#if !gm}
-        <button data-focusable onclick={onclose} aria-label="Back"
+        <button data-part="button" data-variant="ghost" data-focusable onclick={onclose} aria-label="Back"
                 class="pointer-events-auto relative flex shrink-0 select-none items-center gap-1.5 rounded-full bg-black/60 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white transition hover:bg-black/80">
           <ArrowLeft size={icSize} /><span>Back</span>
         </button>
@@ -875,7 +875,7 @@
       {/if}
       <!-- Play/pause: Game mode gets a filled white circle (no outline) — the primary,
            thumb-sized touch target; Desktop keeps the subtle hover-only button. -->
-      <button data-focusable onclick={togglePlay} aria-label={paused ? 'Play' : 'Pause'}
+      <button data-part="button" data-variant="icon" data-focusable onclick={togglePlay} aria-label={paused ? 'Play' : 'Pause'}
               class="grid place-items-center rounded-full focus-ring-inset {gm ? 'gm-play size-16 bg-white text-black shadow-lg' : 'size-10 transition hover:bg-white/15'}">
         {#if paused}<Play size={gm ? 30 : 22} fill="currentColor" />{:else}<Pause size={gm ? 30 : 22} fill="currentColor" />{/if}
       </button>

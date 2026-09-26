@@ -157,6 +157,8 @@
     <p class="mt-1 text-sm text-muted-foreground">Search everything together, or choose one catalog to unlock its filters.</p>
     <div class="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0" role="tablist" aria-label="Search catalog">
       <button
+        data-part="chip"
+        data-active={mergedScope === 'all' || undefined}
         type="button"
         data-focusable
         role="tab"
@@ -168,6 +170,8 @@
       </button>
       {#each mergedSelections as provider (provider)}
         <button
+          data-part="chip"
+          data-active={mergedScope === provider || undefined}
           type="button"
           data-focusable
           role="tab"

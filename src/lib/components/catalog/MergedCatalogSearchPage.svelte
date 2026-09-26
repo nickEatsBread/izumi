@@ -99,6 +99,7 @@
   <label class="relative block">
     <Search size={20} class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-theme" />
     <input
+      data-part="input"
       bind:value={query}
       data-focusable
       type="search"

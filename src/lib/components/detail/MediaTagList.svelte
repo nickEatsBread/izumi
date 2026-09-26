@@ -36,6 +36,8 @@
   {#each displayed as tag (tag.name)}
     {#if isSpoilerTag(tag)}
       <button
+        data-part="chip"
+        data-active={revealed.has(tag.name) || undefined}
         type="button"
         data-focusable
         aria-label={revealed.has(tag.name) ? `Hide spoiler tag ${tag.name}` : 'Reveal spoiler tag'}

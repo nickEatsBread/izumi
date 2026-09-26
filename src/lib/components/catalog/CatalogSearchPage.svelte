@@ -392,7 +392,7 @@
   <div class="mb-6 flex flex-col gap-3" data-part="search.filters">
     <label class="relative min-w-0 flex-1">
       <Search size={19} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-      <input bind:value={query} data-focusable placeholder="Search {animeOnly ? 'anime' : 'movies and series'}…"
+      <input data-part="input" bind:value={query} data-focusable placeholder="Search {animeOnly ? 'anime' : 'movies and series'}…"
         class="h-11 w-full rounded-lg bg-input pl-10 pr-3 text-base" />
     </label>
     <div class="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">

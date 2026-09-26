@@ -152,7 +152,7 @@
            leaves NO gap (the rating used to be offset to clear a fixed download-icon slot). -->
       <div class="absolute right-2 top-2 flex items-center gap-1.5">
         {#if rating != null}
-          <span class="rounded px-1.5 py-0.5 text-[0.65rem] font-black text-white {ratingBg(rating)}">{rating}%</span>
+          <span data-part="badge" class="rounded px-1.5 py-0.5 text-[0.65rem] font-black text-white {ratingBg(rating)}">{rating}%</span>
         {/if}
         {@render statusBadge('')}
         {#if released && !selecting && onqueue}
@@ -214,7 +214,7 @@
       </div>
 
       {#if rating != null}
-        <span class="shrink-0 rounded px-1.5 py-0.5 text-[0.65rem] font-black text-white {ratingBg(rating)}">{rating}%</span>
+        <span data-part="badge" class="shrink-0 rounded px-1.5 py-0.5 text-[0.65rem] font-black text-white {ratingBg(rating)}">{rating}%</span>
       {/if}
 
       {@render statusBadge('shrink-0')}

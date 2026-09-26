@@ -334,6 +334,7 @@
       <label class="relative col-span-2 min-w-0 sm:max-w-sm sm:flex-1">
         <Search size={15} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
+          data-part="input"
           bind:value={episodeQuery}
           data-focusable
           placeholder="Find episode number or title…"
@@ -406,7 +407,7 @@
     {#if $isMobile && searchOpen && showEpisodeSearch}
       <label class="relative mb-4 block min-w-0">
         <Search size={15} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <input bind:value={episodeQuery} data-focusable placeholder="Find episode number or title…"
+        <input data-part="input" bind:value={episodeQuery} data-focusable placeholder="Find episode number or title…"
                class="h-12 w-full rounded-xl bg-input pl-10 pr-3 text-base" />
       </label>
     {/if}

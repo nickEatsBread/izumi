@@ -663,17 +663,17 @@
           {/if}
 
           <div data-part="hero.actions" data-nav-row-items class="mt-4 flex items-center gap-2">
-            <button data-focusable data-nav-row-default data-nav-scroll-top onclick={() => { rememberDetail(current); onplay?.(current) }}
+            <button data-part="button" data-variant="primary" data-focusable data-nav-row-default data-nav-scroll-top onclick={() => { rememberDetail(current); onplay?.(current) }}
                     class="flex items-center gap-2 rounded-md px-5 py-2 font-bold text-black shadow-lg transition-transform hover:scale-105"
                     style="background:var(--accent)">
               <Play size={18} fill="currentColor" /> Watch Now
             </button>
-            <button data-focusable onclick={() => { rememberDetail(current); oninfo?.(current) }}
+            <button data-part="button" data-variant="secondary" data-focusable onclick={() => { rememberDetail(current); oninfo?.(current) }}
                     class="flex items-center gap-2 rounded-md bg-white/10 px-4 py-2 font-bold text-white backdrop-blur transition-colors hover:bg-white/20">
               <Info size={18} /> Details
             </button>
             {#if onfav}
-              <button data-focusable onclick={() => onfav?.(current)} aria-label="Favorite"
+              <button data-part="button" data-variant="icon" data-focusable onclick={() => onfav?.(current)} aria-label="Favorite"
                       class="rounded-md bg-white/10 p-2.5 text-white backdrop-blur transition-colors hover:bg-white/20">
                 <Heart size={18} fill={current.isFavourite ? 'currentColor' : 'transparent'}
                        style={current.isFavourite ? 'color:var(--accent)' : ''} />

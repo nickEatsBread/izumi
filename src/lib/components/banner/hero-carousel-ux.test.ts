@@ -66,7 +66,7 @@ describe('featured carousel UX', () => {
   it('makes Watch Now the row entry target and reveals the complete hero', () => {
     expect(hero).toMatch(/<div\s+data-slot=\{showOverlay \? 'home\.hero' : 'detail\.banner'\}\s+data-variant="desktop"\s+data-nav-row/)
     expect(hero).toContain('<div data-part="hero.actions" data-nav-row-items class="mt-4 flex items-center gap-2">')
-    expect(hero).toContain('<button data-focusable data-nav-row-default data-nav-scroll-top')
+    expect(hero).toContain('<button data-part="button" data-variant="primary" data-focusable data-nav-row-default data-nav-scroll-top')
   })
 
   it('steps directionally after an enabled mouse drag', () => {

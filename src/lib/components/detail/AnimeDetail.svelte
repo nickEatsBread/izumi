@@ -489,7 +489,7 @@
         <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
         <div class="relative z-10 flex min-h-[56vh] flex-col justify-end gap-3 px-4 pb-8 pt-24">
           <h1 data-part="detail.title" class="text-3xl font-black leading-tight text-white drop-shadow">{title(m)}</h1>
-          <button data-focusable use:focusOnMount
+          <button data-part="button" data-variant="primary" data-focusable use:focusOnMount
                   onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
                   onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
                   onclick={() => playCta(m)}
@@ -635,7 +635,7 @@
                glance. It deliberately scrolls instead of wrapping into a tall block above Play. -->
           <div data-part="detail.genres" class="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1" aria-label="Genres">
             {#each m.genres as genre (genre)}
-              <a href={`/app/search?genre=${encodeURIComponent(genre)}`}
+              <a data-part="chip" href={`/app/search?genre=${encodeURIComponent(genre)}`}
                  class="shrink-0 rounded-full border border-border/80 bg-secondary/55 px-3 py-1.5 text-xs font-bold text-foreground/85 active:bg-accent">{genre}</a>
             {/each}
           </div>
@@ -655,7 +655,7 @@
         {/if}
 
         <!-- Primary CTA -->
-        <button data-focusable use:focusOnMount
+        <button data-part="button" data-variant="primary" data-focusable use:focusOnMount
                 onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
                 onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
                 onclick={() => playCta(m)}
@@ -665,11 +665,11 @@
 
         <!-- Compact action row: 4 icons + overflow. Handlers are the SAME functions the desktop bar uses. -->
         <div data-part="detail.actions" class="relative mt-2 flex items-center gap-2">
-          <button data-focusable onclick={() => { h.tap(); showLocalLists = true }} aria-label="Save to lists"
+          <button data-part="button" data-variant="secondary" data-focusable onclick={() => { h.tap(); showLocalLists = true }} aria-label="Save to lists"
                   class="flex h-11 flex-[2] items-center justify-center gap-1.5 rounded-lg bg-secondary px-2 text-sm font-bold">
             {#if savedLocally}<BookmarkCheck size={17} class="text-theme" /> Saved{:else}<BookmarkPlus size={17} /> Save{/if}
           </button>
-          <button data-focusable onclick={() => { h.tap(); void onShare(m) }} aria-label="Share series"
+          <button data-part="button" data-variant="icon" data-focusable onclick={() => { h.tap(); void onShare(m) }} aria-label="Share series"
                   class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
             {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
           </button>
@@ -793,7 +793,7 @@
         {/if}
         <h1 data-part="detail.title" class="text-5xl font-black leading-[1.02] text-white drop-shadow-md sm:text-6xl">{title(m)}</h1>
         <div data-part="detail.actions" class="flex flex-wrap items-center gap-3">
-          <button data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
+          <button data-part="button" data-variant="primary" data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
                   data-nav-down={controllerUi ? 'series-quick-episode' : undefined}
                   onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
                   onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
@@ -801,7 +801,7 @@
                   class="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 font-bold text-primary-foreground">
             <Play size={18} />{ctaHasProgress(m) ? `Play · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
           </button>
-          <button data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
+          <button data-part="button" data-variant="secondary" data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
                   class="grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25">
             {#if savedLocally}<BookmarkCheck size={20} />{:else}<BookmarkPlus size={20} />{/if}
           </button>
@@ -911,7 +911,7 @@
           {#if m.averageScore}<span class="opacity-40">·</span><span class="rounded px-1.5 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>{/if}
           {#each (m.genres ?? []).slice(0, controllerUi ? 3 : 4) as g (g)}
             <span class="opacity-40">·</span>
-            <a data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
+            <a data-part="chip" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
                href={`/app/search?genre=${encodeURIComponent(g)}`}
                class="transition-colors hover:text-foreground hover:underline">{g}</a>
           {/each}
@@ -933,7 +933,7 @@
 
         <!-- Action bar -->
         <div data-part="detail.actions" class="flex flex-wrap items-center gap-2">
-          <button data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
+          <button data-part="button" data-variant="primary" data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
                   data-nav-down={controllerUi ? 'series-quick-episode' : undefined}
                   onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
                   onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
@@ -942,7 +942,7 @@
             <Play size={detailTheme.cta === 'large' ? 18 : 16} />{detailTheme.cta === 'large' ? (effStatus === 'COMPLETED' ? 'Rewatch Now' : ctaHasProgress(m) ? 'Continue Now' : 'Watch Now') : (ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play')}
           </button>
 
-          <button data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
+          <button data-part="button" data-variant="secondary" data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
                   class="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 font-bold transition-colors hover:bg-accent">
             {#if savedLocally}<BookmarkCheck size={18} class="text-theme" /> Saved{:else}<BookmarkPlus size={18} /> Save{/if}
           </button>
@@ -958,7 +958,7 @@
             <ChevronDown size={16} class="opacity-60" />
           </button>
 
-          <button data-focusable onclick={() => void onShare(m)} title="Copy AniList link"
+          <button data-part="button" data-variant="icon" data-focusable onclick={() => void onShare(m)} title="Copy AniList link"
                   class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
             {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
           </button>
