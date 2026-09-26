@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { CatalogHomeTarget } from '$lib/catalog/home-layout'
-  import { homeBlocks } from '$lib/home/blocks'
+  import { homeBlocks, type HomeBlock } from '$lib/home/blocks'
   import GenreChips from './blocks/GenreChips.svelte'
   import LatestEpisodes from './blocks/LatestEpisodes.svelte'
   import ProfileHeader from './blocks/ProfileHeader.svelte'
@@ -8,8 +8,9 @@
   import TabbedGrid from './blocks/TabbedGrid.svelte'
 
   // One Home block, by id. `optionIds` are the current Home's row ids; Merged Home resolves tab roles against them.
-  let { id, target, optionIds = [] }: { id: string; target: CatalogHomeTarget; optionIds?: string[] } = $props()
-  const block = $derived($homeBlocks[id])
+  // `block` overrides the stored lookup with an already-resolved block (a theme's ephemeral row).
+  let { id, target, optionIds = [], block: override }: { id: string; target: CatalogHomeTarget; optionIds?: string[]; block?: HomeBlock } = $props()
+  const block = $derived(override ?? $homeBlocks[id])
 </script>
 
 {#if block?.type === 'latest-episodes'}

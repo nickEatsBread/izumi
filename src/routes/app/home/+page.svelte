@@ -21,6 +21,8 @@
   import { catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
   import { homeEditorOpen } from '$lib/catalog/home-editor'
   import { ANILIST_HOME_ROWS } from '$lib/catalog/home-options'
+  import { activeThemeLayout } from '$lib/themes/layout-state'
+  import { isThemeBlockId, resolveThemeHome } from '$lib/home/theme-layout'
   import { markClientPerformance } from '$lib/performance/client'
   import {
     catalogProvider,
@@ -41,7 +43,7 @@
   import HomeRowFrame from '$lib/components/catalog/HomeRowFrame.svelte'
   import HomeBlockView from '$lib/components/home/HomeBlockView.svelte'
   import HomeColumns from '$lib/components/home/HomeColumns.svelte'
-  import { blockRowOptions, splitHomeColumns } from '$lib/home/block-rows'
+  import { blockRowOptions, blockTitle, splitHomeColumns } from '$lib/home/block-rows'
   import { homeAsideWidth, homeBlocks, isBlockId } from '$lib/home/blocks'
   import { mediaHref } from '$lib/anilist/media'
   import { rankFeaturedMedia } from '$lib/catalog/featured-context'
@@ -60,7 +62,13 @@
   const listUser = $derived($anilistUserName || $anilistUser)
   const anilistRows = $derived(resolveCatalogHomeRows('anilist', [...ANILIST_HOME_ROWS, ...blockRowOptions('anilist', $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts)
     .filter((row) => row.enabled))
-  const orderedRows = $derived(anilistRows.map((row) => row.id))
+  const rowOptionIds = ANILIST_HOME_ROWS.map((row) => row.id)
+  // While a theme layout is active, it replaces the row order below (the user's own layout, in
+  // `catalogHomeLayouts`, is never written to); its ephemeral `theme:<n>` blocks join `$homeBlocks`
+  // for lookups so a theme block renders exactly like a real one.
+  const themeHome = $derived($activeThemeLayout?.home ? resolveThemeHome($activeThemeLayout.home, $catalogProvider, rowOptionIds) : null)
+  const allBlocks = $derived(themeHome ? { ...$homeBlocks, ...themeHome.blocks } : $homeBlocks)
+  const orderedRows = $derived(themeHome?.rows ?? anilistRows.map((row) => row.id))
   // The hero renders full-bleed above HomeColumns only while it truly leads the row order; while
   // Edit Home is open it always flows through HomeColumns instead, so it can be dragged/hidden like
   // any other row (it would otherwise have no frame to grab while sitting in the unwrapped top slot).
@@ -68,8 +76,7 @@
   const homeRowIds = $derived(heroFirst ? orderedRows.slice(1) : orderedRows)
   // While Edit Home is open, phones must still show every block (including a side-column one that
   // opted out of `phone`), or there would be no way to reach its settings/remove button on a phone.
-  const columns = $derived(splitHomeColumns(homeRowIds, $homeBlocks, $isMobile && !$homeEditorOpen))
-  const rowOptionIds = ANILIST_HOME_ROWS.map((row) => row.id)
+  const columns = $derived(splitHomeColumns(homeRowIds, allBlocks, $isMobile && !$homeEditorOpen))
   const sectionMap = $derived(new Map(sections.map((section) => [section.key, section])))
   const catalogUnavailable = $derived(!!$anilistDegraded?.fallbackError)
 
@@ -229,13 +236,13 @@
     {#if heroFirst}{@render heroBlock()}{/if}
     <CollectionsHome />
     {#snippet homeRow(row: string)}
-      {@const rowOption = anilistRows.find((option) => option.id === row)}
+      {@const rowOption = anilistRows.find((option) => option.id === row) ?? (isThemeBlockId(row) ? { id: row, title: blockTitle(allBlocks[row]) } : ANILIST_HOME_ROWS.find((option) => option.id === row))}
       {@const visibleIds = columns.main.includes(row) ? columns.main : columns.aside}
-      <HomeRowFrame rowId={row} title={rowOption?.title ?? row} target={$catalogProvider} {visibleIds}>
+      <HomeRowFrame rowId={row} title={rowOption?.title ?? row} target={$catalogProvider} {visibleIds} locked={!!themeHome}>
         {#if row === 'hero'}
           {@render heroBlock()}
-        {:else if isBlockId(row)}
-          <HomeBlockView id={row} target={$catalogProvider} optionIds={rowOptionIds} />
+        {:else if isBlockId(row) || isThemeBlockId(row)}
+          <HomeBlockView id={row} target={$catalogProvider} optionIds={rowOptionIds} block={allBlocks[row]} />
         {:else if row === 'continue'}
           {#key listUser}
             <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
@@ -255,6 +262,6 @@
         {/if}
       </HomeRowFrame>
     {/snippet}
-    <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$homeAsideWidth} row={homeRow} />
+    <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$activeThemeLayout?.asideWidth ?? $homeAsideWidth} row={homeRow} />
   </div>
 {/if}

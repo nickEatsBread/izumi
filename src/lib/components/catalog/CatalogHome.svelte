@@ -21,6 +21,8 @@
   import { catalogHomeLayoutKey, catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
   import { CONTINUE_HOME_ROW, HERO_HOME_ROW } from '$lib/catalog/home-options'
   import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
+  import { activeThemeLayout } from '$lib/themes/layout-state'
+  import { isThemeBlockId, resolveThemeHome } from '$lib/home/theme-layout'
   import { blockRowOptions, blockTitle, splitHomeColumns } from '$lib/home/block-rows'
   import { homeAsideWidth, homeBlocks, isBlockId } from '$lib/home/blocks'
   import { mediaHref } from '$lib/anilist/media'
@@ -40,26 +42,40 @@
   const listUser = $derived($anilistUserName || $anilistUser)
   type ContentRow = { id: string; kind: 'hero' } | { id: string; kind: 'continue' } | { id: string; kind: 'block' } | { id: string; kind: 'section'; section: CatalogHomeSection }
   const continueEnabled = $derived(resolveCatalogHomeRows($catalogProvider, [CONTINUE_HOME_ROW], $catalogHomeLayouts)[0]?.enabled ?? true)
+  const sectionMap = $derived(new Map((home?.sections ?? []).map((section) => [section.id, section])))
+  // Shared by the user's own resolved rows and a theme row naming an id the user has hidden (a
+  // theme layout can show a row regardless of the user's own Edit Home choices).
+  function toContentRow(id: string): ContentRow | null {
+    if (id === 'hero') return { id, kind: 'hero' }
+    if (id === 'continue') return { id, kind: 'continue' }
+    if (isBlockId(id) || isThemeBlockId(id)) return { id, kind: 'block' }
+    const section = sectionMap.get(id)
+    return section ? { id, kind: 'section', section } : null
+  }
   const contentRows = $derived.by((): ContentRow[] => {
     if (!home) return []
-    const sections = new Map(home.sections.map((section) => [section.id, section]))
     const options = [
       HERO_HOME_ROW,
       CONTINUE_HOME_ROW,
       ...home.sections.map((section) => ({ id: section.id, title: section.title })),
       ...blockRowOptions($catalogProvider, $catalogHomeLayouts, $homeBlocks),
     ]
-    const result: ContentRow[] = []
-    for (const row of resolveCatalogHomeRows($catalogProvider, options, $catalogHomeLayouts)) {
-      if (!row.enabled) continue
-      if (row.id === 'hero') result.push({ id: row.id, kind: 'hero' })
-      else if (row.id === 'continue') result.push({ id: row.id, kind: 'continue' })
-      else if (isBlockId(row.id)) result.push({ id: row.id, kind: 'block' })
-      else if (sections.has(row.id)) result.push({ id: row.id, kind: 'section', section: sections.get(row.id)! })
-    }
-    return result
+    return resolveCatalogHomeRows($catalogProvider, options, $catalogHomeLayouts)
+      .filter((row) => row.enabled)
+      .flatMap((row) => {
+        const item = toContentRow(row.id)
+        return item ? [item] : []
+      })
   })
-  const visibleRowIds = $derived(contentRows.map((row) => row.id))
+  // While a theme layout is active, it replaces the row order below (the user's own layout, in
+  // `catalogHomeLayouts`, is never written to); it only resolves once the provider Home has loaded,
+  // since role rows need `home.sections` to resolve against. Its ephemeral `theme:<n>` blocks join
+  // `$homeBlocks` for lookups so a theme block renders exactly like a real one.
+  const themeHome = $derived($activeThemeLayout?.home && home
+    ? resolveThemeHome($activeThemeLayout.home, $catalogProvider, [HERO_HOME_ROW, CONTINUE_HOME_ROW, ...home.sections].map((option) => option.id))
+    : null)
+  const allBlocks = $derived(themeHome ? { ...$homeBlocks, ...themeHome.blocks } : $homeBlocks)
+  const visibleRowIds = $derived(themeHome?.rows ?? contentRows.map((row) => row.id))
   // The hero renders full-bleed above HomeColumns only while it truly leads the row order; while
   // Edit Home is open it always flows through HomeColumns instead, so it can be dragged/hidden like
   // any other row (it would otherwise have no frame to grab while sitting in the unwrapped top slot).
@@ -67,7 +83,7 @@
   const homeRowIds = $derived(heroFirst ? visibleRowIds.slice(1) : visibleRowIds)
   // While Edit Home is open, phones must still show every block (including a side-column one that
   // opted out of `phone`), or there would be no way to reach its settings/remove button on a phone.
-  const columns = $derived(splitHomeColumns(homeRowIds, $homeBlocks, $isMobile && !$homeEditorOpen))
+  const columns = $derived(splitHomeColumns(homeRowIds, allBlocks, $isMobile && !$homeEditorOpen))
 
   $effect(() => {
     const selection = $catalogProvider
@@ -178,16 +194,16 @@
       {/each}
     {:else if home}
       {#snippet contentRow(id: string)}
-        {@const row = contentRows.find((item) => item.id === id)}
+        {@const row = toContentRow(id)}
         {@const visibleIds = columns.main.includes(id) ? columns.main : columns.aside}
         {#if row}
-          <HomeRowFrame rowId={row.id} title={row.kind === 'hero' ? HERO_HOME_ROW.title : row.kind === 'continue' ? 'Continue Watching' : row.kind === 'block' ? ($homeBlocks[row.id] ? blockTitle($homeBlocks[row.id]) : row.id) : row.section.title} target={$catalogProvider} {visibleIds}>
+          <HomeRowFrame rowId={row.id} title={row.kind === 'hero' ? HERO_HOME_ROW.title : row.kind === 'continue' ? 'Continue Watching' : row.kind === 'block' ? (allBlocks[row.id] ? blockTitle(allBlocks[row.id]) : row.id) : row.section.title} target={$catalogProvider} {visibleIds} locked={!!themeHome}>
             {#if row.kind === 'hero'}
               {@render heroBlock()}
             {:else if row.kind === 'continue'}
               {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />{/key}
             {:else if row.kind === 'block'}
-              <HomeBlockView id={row.id} target={$catalogProvider} optionIds={visibleRowIds} />
+              <HomeBlockView id={row.id} target={$catalogProvider} optionIds={visibleRowIds} block={allBlocks[row.id]} />
             {:else}
               {@const section = row.section}
               <CatalogSectionRow {section} viewMoreHref={section.more ? moreHref(section.more) : undefined}
@@ -196,7 +212,7 @@
           </HomeRowFrame>
         {/if}
       {/snippet}
-      <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$homeAsideWidth} stack="space-y-5" row={contentRow} />
+      <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$activeThemeLayout?.asideWidth ?? $homeAsideWidth} stack="space-y-5" row={contentRow} />
       {#if !contentRows.length && !error}
         <div class="mx-4 rounded-xl bg-secondary/50 p-6 text-center text-sm text-muted-foreground sm:mx-8">This provider returned no browseable catalogs.</div>
       {/if}

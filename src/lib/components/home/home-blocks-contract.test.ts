@@ -84,4 +84,14 @@ describe('Home blocks wiring', () => {
     expect(settings).toContain('event.currentTarget.value = tab.label')
     expect(settings).toContain('event.currentTarget.checked = exists')
   })
+
+  it('follows the active theme layout without touching the user layout', () => {
+    for (const file of RENDERERS) {
+      const source = read(file)
+      expect(source, file).toContain('$activeThemeLayout?.home')
+      expect(source, file).toContain('resolveThemeHome(')
+      expect(source, file).toContain('locked={!!themeHome}')
+    }
+    expect(read('./HomeBlockView.svelte')).toContain('block: override')
+  })
 })

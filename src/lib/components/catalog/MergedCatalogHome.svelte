@@ -26,7 +26,9 @@
   } from '$lib/catalog/registry'
   import { CatalogConfigurationError, type CatalogHome, type CatalogHomeRowOption } from '$lib/catalog/types'
   import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
-  import { blockRowOptions, splitHomeColumns } from '$lib/home/block-rows'
+  import { activeThemeLayout } from '$lib/themes/layout-state'
+  import { isThemeBlockId, resolveThemeHome } from '$lib/home/theme-layout'
+  import { blockRowOptions, blockTitle, splitHomeColumns } from '$lib/home/block-rows'
   import { homeAsideWidth, homeBlocks, isBlockId } from '$lib/home/blocks'
   import { isMobile } from '$lib/platform'
   import {
@@ -55,7 +57,13 @@
   const selections = $derived(mergedCatalogProviders($catalogProviders))
   const hasAniList = $derived(selections.includes('auto') || selections.includes('anilist'))
   const rows = $derived(resolveCatalogHomeRows('merged', [...options, ...blockRowOptions('merged', $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts).filter((row) => row.enabled))
-  const visibleRowIds = $derived(rows.map((row) => row.id))
+  const optionIds = $derived(options.map((option) => option.id))
+  // While a theme layout is active, it replaces the row order below (the user's own layout, in
+  // `catalogHomeLayouts`, is never written to); its ephemeral `theme:<n>` blocks join `$homeBlocks`
+  // for lookups so a theme block renders exactly like a real one.
+  const themeHome = $derived($activeThemeLayout?.home ? resolveThemeHome($activeThemeLayout.home, 'merged', optionIds) : null)
+  const allBlocks = $derived(themeHome ? { ...$homeBlocks, ...themeHome.blocks } : $homeBlocks)
+  const visibleRowIds = $derived(themeHome?.rows ?? rows.map((row) => row.id))
   // The hero renders full-bleed above HomeColumns only while it truly leads the row order; while
   // Edit Home is open it always flows through HomeColumns instead, so it can be dragged/hidden like
   // any other row (it would otherwise have no frame to grab while sitting in the unwrapped top slot).
@@ -63,8 +71,7 @@
   const homeRowIds = $derived(heroFirst ? visibleRowIds.slice(1) : visibleRowIds)
   // While Edit Home is open, phones must still show every block (including a side-column one that
   // opted out of `phone`), or there would be no way to reach its settings/remove button on a phone.
-  const columns = $derived(splitHomeColumns(homeRowIds, $homeBlocks, $isMobile && !$homeEditorOpen))
-  const optionIds = $derived(options.map((option) => option.id))
+  const columns = $derived(splitHomeColumns(homeRowIds, allBlocks, $isMobile && !$homeEditorOpen))
   const optionsKey = $derived(JSON.stringify([selections, $tmdbCustomHomeRows]))
   const externalRequestKey = $derived(JSON.stringify(rows.flatMap((row) => {
     const decoded = decodeMergedCatalogHomeRowId(row.id)
@@ -172,16 +179,16 @@
   <div class="space-y-5">
     <CollectionsHome />
     {#snippet mergedRow(id: string)}
-      {@const row = rows.find((item) => item.id === id)}
+      {@const row = rows.find((item) => item.id === id) ?? (isThemeBlockId(id) ? { id, title: blockTitle(allBlocks[id]) } : options.find((item) => item.id === id))}
       {@const visibleIds = columns.main.includes(id) ? columns.main : columns.aside}
       {#if row}
-        <HomeRowFrame rowId={row.id} title={editorTitle(row)} target="merged" {visibleIds}>
+        <HomeRowFrame rowId={row.id} title={editorTitle(row)} target="merged" {visibleIds} locked={!!themeHome}>
           {#if row.id === 'hero'}
             {@render heroBlock()}
           {:else if row.id === 'continue'}
             {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} catalogScope="all" />{/key}
-          {:else if isBlockId(row.id)}
-            <HomeBlockView id={row.id} target="merged" {optionIds} />
+          {:else if isBlockId(row.id) || isThemeBlockId(row.id)}
+            <HomeBlockView id={row.id} target="merged" {optionIds} block={allBlocks[row.id]} />
           {:else}
             {@const decoded = decodeMergedCatalogHomeRowId(row.id)}
             {#if decoded?.selection === 'auto' || decoded?.selection === 'anilist'}
@@ -207,7 +214,7 @@
         </HomeRowFrame>
       {/if}
     {/snippet}
-    <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$homeAsideWidth} stack="space-y-5" row={mergedRow} />
+    <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$activeThemeLayout?.asideWidth ?? $homeAsideWidth} stack="space-y-5" row={mergedRow} />
 
     {#if optionsLoading || (homeLoading && !rows.length)}
       {#each Array.from({ length: 3 }) as _}
