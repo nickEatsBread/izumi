@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte'
-  import { goto, replaceState } from '$app/navigation'
+  import { goto } from '$app/navigation'
   import { page } from '$app/state'
   import Search from '@lucide/svelte/icons/search'
   import Plus from '@lucide/svelte/icons/plus'
@@ -271,7 +271,9 @@
       storesDialog = { mode: 'add', url: add }
       const url = new URL(page.url)
       url.searchParams.delete('add')
-      try { replaceState(url, page.state) } catch { /* router not ready: the link just stays in the address */ }
+      // A real replace navigation: shallow replaceState would keep the old URL in this history entry,
+      // and Back would open the preview again.
+      void goto(url, { replaceState: true, noScroll: true, keepFocus: true }).catch(() => {})
     })
   })
 
