@@ -38,6 +38,10 @@
   import CatalogBrandLogo from '$lib/components/catalog/CatalogBrandLogo.svelte'
   import HomeEditor from '$lib/components/catalog/HomeEditor.svelte'
   import HomeRowFrame from '$lib/components/catalog/HomeRowFrame.svelte'
+  import HomeBlockView from '$lib/components/home/HomeBlockView.svelte'
+  import HomeColumns from '$lib/components/home/HomeColumns.svelte'
+  import { blockRowOptions, splitHomeColumns } from '$lib/home/block-rows'
+  import { homeAsideWidth, homeBlocks, isBlockId } from '$lib/home/blocks'
   import { mediaHref } from '$lib/anilist/media'
   import { rankFeaturedMedia } from '$lib/catalog/featured-context'
 
@@ -53,9 +57,11 @@
   // Personalized rows use the connected AniList account name (from OAuth) if present,
   // otherwise the manually-entered username.
   const listUser = $derived($anilistUserName || $anilistUser)
-  const anilistRows = $derived(resolveCatalogHomeRows('anilist', ANILIST_HOME_ROWS, $catalogHomeLayouts)
+  const anilistRows = $derived(resolveCatalogHomeRows('anilist', [...ANILIST_HOME_ROWS, ...blockRowOptions('anilist', $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts)
     .filter((row) => row.enabled))
   const orderedRows = $derived(anilistRows.map((row) => row.id))
+  const columns = $derived(splitHomeColumns(orderedRows, $homeBlocks, $isMobile))
+  const rowOptionIds = ANILIST_HOME_ROWS.map((row) => row.id)
   const sectionMap = $derived(new Map(sections.map((section) => [section.key, section])))
   const catalogUnavailable = $derived(!!$anilistDegraded?.fallbackError)
 
@@ -212,10 +218,12 @@
 
 
     <CollectionsHome />
-    {#each orderedRows as row (row)}
+    {#snippet homeRow(row: string)}
       {@const rowOption = anilistRows.find((option) => option.id === row)}
       <HomeRowFrame rowId={row} title={rowOption?.title ?? row} target={$catalogProvider} visibleIds={orderedRows}>
-        {#if row === 'continue'}
+        {#if isBlockId(row)}
+          <HomeBlockView id={row} target={$catalogProvider} optionIds={rowOptionIds} />
+        {:else if row === 'continue'}
           {#key listUser}
             <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
           {/key}
@@ -233,6 +241,7 @@
           {#if section && !catalogUnavailable}<HomeRow title={section.title} vars={section.vars} preferLinkedRating={$catalogProvider === 'auto'} />{/if}
         {/if}
       </HomeRowFrame>
-    {/each}
+    {/snippet}
+    <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$homeAsideWidth} row={homeRow} />
   </div>
 {/if}

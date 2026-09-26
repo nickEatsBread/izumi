@@ -10,6 +10,8 @@
   import RecentReleaseRow from '$lib/components/cards/RecentReleaseRow.svelte'
   import CatalogSectionRow from './CatalogSectionRow.svelte'
   import HomeRowFrame from './HomeRowFrame.svelte'
+  import HomeBlockView from '$lib/components/home/HomeBlockView.svelte'
+  import HomeColumns from '$lib/components/home/HomeColumns.svelte'
   import { anilistUser } from '$lib/anilist/account'
   import { mediaHref } from '$lib/anilist/media'
   import { homeSections } from '$lib/anilist/queries'
@@ -22,6 +24,9 @@
   } from '$lib/catalog/registry'
   import { CatalogConfigurationError, type CatalogHome, type CatalogHomeRowOption } from '$lib/catalog/types'
   import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
+  import { blockRowOptions, splitHomeColumns } from '$lib/home/block-rows'
+  import { homeAsideWidth, homeBlocks, isBlockId } from '$lib/home/blocks'
+  import { isMobile } from '$lib/platform'
   import {
     catalogLabel,
     catalogProviders,
@@ -47,8 +52,10 @@
   const anilistSectionMap = new Map(anilistSections.map((section) => [section.key, section]))
   const selections = $derived(mergedCatalogProviders($catalogProviders))
   const hasAniList = $derived(selections.includes('auto') || selections.includes('anilist'))
-  const rows = $derived(resolveCatalogHomeRows('merged', options, $catalogHomeLayouts).filter((row) => row.enabled))
+  const rows = $derived(resolveCatalogHomeRows('merged', [...options, ...blockRowOptions('merged', $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts).filter((row) => row.enabled))
   const visibleRowIds = $derived(rows.map((row) => row.id))
+  const columns = $derived(splitHomeColumns(visibleRowIds, $homeBlocks, $isMobile))
+  const optionIds = $derived(options.map((option) => option.id))
   const optionsKey = $derived(JSON.stringify([selections, $tmdbCustomHomeRows]))
   const externalRequestKey = $derived(JSON.stringify(rows.flatMap((row) => {
     const decoded = decodeMergedCatalogHomeRowId(row.id)
@@ -146,34 +153,40 @@
 
   <div class="space-y-5">
     <CollectionsHome />
-    {#each rows as row (row.id)}
-      <HomeRowFrame rowId={row.id} title={editorTitle(row)} target="merged" visibleIds={visibleRowIds}>
-        {#if row.id === 'continue'}
-          {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} catalogScope="all" />{/key}
-        {:else}
-          {@const decoded = decodeMergedCatalogHomeRowId(row.id)}
-          {#if decoded?.selection === 'auto' || decoded?.selection === 'anilist'}
-            {#if decoded.rowId === 'recent'}
-              <RecentReleaseRow />
-            {:else if decoded.rowId === 'list'}
-              {#if listUser}{#key listUser}<ListRow title="Your List · AniList" userName={listUser} status="PLANNING" preferLinkedRating={decoded.selection === 'auto'} />{/key}{/if}
-              {#if $malToken || $malUser}<MalListRow title="Your List · MyAnimeList" status="plan_to_watch" preferLinkedRating={decoded.selection === 'auto'} />{/if}
-            {:else if decoded.rowId === 'recommendations'}
-              {#if listUser}{#key listUser}<PersonalizedRow userName={listUser} preferLinkedRating={decoded.selection === 'auto'} />{/key}{/if}
-            {:else}
-              {@const section = anilistSectionMap.get(decoded.rowId)}
-              {#if section}<HomeRow title={`${section.title} · AniList`} vars={section.vars} preferLinkedRating={decoded.selection === 'auto'} />{/if}
-            {/if}
-          {:else if decoded}
-            {@const section = homes[decoded.selection]?.sections.find((item) => item.id === decoded.rowId)}
-            {#if section}
-              <CatalogSectionRow {section} title={`${row.title} · ${catalogLabel(decoded.selection)}`}
-                viewMoreHref={moreHref(decoded.selection, section.more)} />
+    {#snippet mergedRow(id: string)}
+      {@const row = rows.find((item) => item.id === id)}
+      {#if row}
+        <HomeRowFrame rowId={row.id} title={editorTitle(row)} target="merged" visibleIds={visibleRowIds}>
+          {#if row.id === 'continue'}
+            {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} catalogScope="all" />{/key}
+          {:else if isBlockId(row.id)}
+            <HomeBlockView id={row.id} target="merged" {optionIds} />
+          {:else}
+            {@const decoded = decodeMergedCatalogHomeRowId(row.id)}
+            {#if decoded?.selection === 'auto' || decoded?.selection === 'anilist'}
+              {#if decoded.rowId === 'recent'}
+                <RecentReleaseRow />
+              {:else if decoded.rowId === 'list'}
+                {#if listUser}{#key listUser}<ListRow title="Your List · AniList" userName={listUser} status="PLANNING" preferLinkedRating={decoded.selection === 'auto'} />{/key}{/if}
+                {#if $malToken || $malUser}<MalListRow title="Your List · MyAnimeList" status="plan_to_watch" preferLinkedRating={decoded.selection === 'auto'} />{/if}
+              {:else if decoded.rowId === 'recommendations'}
+                {#if listUser}{#key listUser}<PersonalizedRow userName={listUser} preferLinkedRating={decoded.selection === 'auto'} />{/key}{/if}
+              {:else}
+                {@const section = anilistSectionMap.get(decoded.rowId)}
+                {#if section}<HomeRow title={`${section.title} · AniList`} vars={section.vars} preferLinkedRating={decoded.selection === 'auto'} />{/if}
+              {/if}
+            {:else if decoded}
+              {@const section = homes[decoded.selection]?.sections.find((item) => item.id === decoded.rowId)}
+              {#if section}
+                <CatalogSectionRow {section} title={`${row.title} · ${catalogLabel(decoded.selection)}`}
+                  viewMoreHref={moreHref(decoded.selection, section.more)} />
+              {/if}
             {/if}
           {/if}
-        {/if}
-      </HomeRowFrame>
-    {/each}
+        </HomeRowFrame>
+      {/if}
+    {/snippet}
+    <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$homeAsideWidth} stack="space-y-5" row={mergedRow} />
 
     {#if optionsLoading || (homeLoading && !rows.length)}
       {#each Array.from({ length: 3 }) as _}

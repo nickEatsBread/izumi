@@ -12,14 +12,19 @@
   import CatalogSectionRow from './CatalogSectionRow.svelte'
   import CollectionsHome from './CollectionsHome.svelte'
   import HomeRowFrame from './HomeRowFrame.svelte'
+  import HomeBlockView from '$lib/components/home/HomeBlockView.svelte'
+  import HomeColumns from '$lib/components/home/HomeColumns.svelte'
   import { CatalogConfigurationError, type CatalogHome, type CatalogHomeSection } from '$lib/catalog/types'
   import { loadCatalogProvider } from '$lib/catalog/registry'
   import { catalogProvider, jvmCatalogSourceOverrides, stremioHeroArtwork } from '$lib/settings/catalog'
   import { catalogHomeLayoutKey, catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
   import { CONTINUE_HOME_ROW } from '$lib/catalog/home-options'
   import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
+  import { blockRowOptions, blockTitle, splitHomeColumns } from '$lib/home/block-rows'
+  import { homeAsideWidth, homeBlocks, isBlockId } from '$lib/home/blocks'
   import { mediaHref } from '$lib/anilist/media'
   import { anilistUser } from '$lib/anilist/account'
+  import { isMobile } from '$lib/platform'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
 
   // Provider payloads are immutable snapshots. Deep-proxying every Media object gives Svelte's
@@ -32,21 +37,27 @@
   let tmdbNeedsConfiguration = $state(false)
   let retry = $state(0)
   const listUser = $derived($anilistUserName || $anilistUser)
-  type ContentRow = { id: string; kind: 'continue' } | { id: string; kind: 'section'; section: CatalogHomeSection }
+  type ContentRow = { id: string; kind: 'continue' } | { id: string; kind: 'block' } | { id: string; kind: 'section'; section: CatalogHomeSection }
   const continueEnabled = $derived(resolveCatalogHomeRows($catalogProvider, [CONTINUE_HOME_ROW], $catalogHomeLayouts)[0]?.enabled ?? true)
   const contentRows = $derived.by((): ContentRow[] => {
     if (!home) return []
     const sections = new Map(home.sections.map((section) => [section.id, section]))
-    const options = [CONTINUE_HOME_ROW, ...home.sections.map((section) => ({ id: section.id, title: section.title }))]
+    const options = [
+      CONTINUE_HOME_ROW,
+      ...home.sections.map((section) => ({ id: section.id, title: section.title })),
+      ...blockRowOptions($catalogProvider, $catalogHomeLayouts, $homeBlocks),
+    ]
     const result: ContentRow[] = []
     for (const row of resolveCatalogHomeRows($catalogProvider, options, $catalogHomeLayouts)) {
       if (!row.enabled) continue
       if (row.id === 'continue') result.push({ id: row.id, kind: 'continue' })
+      else if (isBlockId(row.id)) result.push({ id: row.id, kind: 'block' })
       else if (sections.has(row.id)) result.push({ id: row.id, kind: 'section', section: sections.get(row.id)! })
     }
     return result
   })
   const visibleRowIds = $derived(contentRows.map((row) => row.id))
+  const columns = $derived(splitHomeColumns(visibleRowIds, $homeBlocks, $isMobile))
 
   $effect(() => {
     const selection = $catalogProvider
@@ -145,17 +156,23 @@
         </div>
       {/each}
     {:else if home}
-      {#each contentRows as row (row.id)}
-        <HomeRowFrame rowId={row.id} title={row.kind === 'continue' ? 'Continue Watching' : row.section.title} target={$catalogProvider} visibleIds={visibleRowIds}>
-          {#if row.kind === 'continue'}
-            {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />{/key}
-          {:else}
-            {@const section = row.section}
-            <CatalogSectionRow {section} viewMoreHref={section.more ? moreHref(section.more) : undefined}
-              showCatalogSource={$catalogProvider !== 'jvm'} />
-          {/if}
-        </HomeRowFrame>
-      {/each}
+      {#snippet contentRow(id: string)}
+        {@const row = contentRows.find((item) => item.id === id)}
+        {#if row}
+          <HomeRowFrame rowId={row.id} title={row.kind === 'continue' ? 'Continue Watching' : row.kind === 'block' ? ($homeBlocks[row.id] ? blockTitle($homeBlocks[row.id]) : row.id) : row.section.title} target={$catalogProvider} visibleIds={visibleRowIds}>
+            {#if row.kind === 'continue'}
+              {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />{/key}
+            {:else if row.kind === 'block'}
+              <HomeBlockView id={row.id} target={$catalogProvider} optionIds={visibleRowIds} />
+            {:else}
+              {@const section = row.section}
+              <CatalogSectionRow {section} viewMoreHref={section.more ? moreHref(section.more) : undefined}
+                showCatalogSource={$catalogProvider !== 'jvm'} />
+            {/if}
+          </HomeRowFrame>
+        {/if}
+      {/snippet}
+      <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$homeAsideWidth} stack="space-y-5" row={contentRow} />
       {#if !contentRows.length && !error}
         <div class="mx-4 rounded-xl bg-secondary/50 p-6 text-center text-sm text-muted-foreground sm:mx-8">This provider returned no browseable catalogs.</div>
       {/if}
