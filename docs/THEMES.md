@@ -76,6 +76,170 @@ A package declares `themeApi: 3` to use these keys. The validator refuses them o
 - **Video.** During playback `html` and `body` are forced transparent with inline `!important` and the page content is hidden the same way, so ordinary theme backgrounds never cover the video. Don't paint over the player area yourself (fixed overlays, pseudo-elements on `body`).
 - **Protected surfaces and safe mode.** The Themes page, Theme Studio's panel, the install preview bar, the safe-mode banner and the Store's trust and install dialogs carry `data-theme-protected`: theme rules can't match inside them, they read a client-owned palette (`--izumi-safe-*`, written by `src/lib/theme.ts`) and they reset inherited `visibility` and `pointer-events`. Ancestor opacity, transforms and overlays can't be undone from inside; engines without `@scope` remove the stylesheet while the Themes page is open. Safe mode (Ctrl/Cmd + Alt + Shift + T, or `izumi://safe-mode`, which works even while Themes is open) shows izumi's default appearance — colours, fonts, layout and no stylesheet — for the session without changing the saved theme.
 
+### Styling hooks
+
+Theme stylesheets target these attributes, never Tailwind classes: `[data-slot="…"]` for page regions and `[data-part="…"]` for components, with state attributes such as `[data-active]`, `[data-variant="…"]` and `[data-layout="…"]`. The list lives in `src/lib/themes/hooks.ts`; `hooks.test.ts` fails if the markup and the list drift apart, so a documented hook is only removed or renamed deliberately. Template nodes add their own `data-part` names (`part` in a template).
+
+Never give `watch.stage` or its ancestors a background: the video is drawn behind the page, and the app pins that path transparent with inline `!important`.
+
+```css
+[data-slot="nav.side"] { background: #101014; }
+[data-part="nav.item"][data-active] [data-part="nav.item.label"] { font-weight: 700; }
+[data-part="card"][data-family="poster"] [data-part="card.title"] { font-family: var(--font-heading); }
+[data-slot="detail"][data-variant="desktop"] [data-part="fact.label"] { text-transform: uppercase; }
+```
+
+State values:
+
+| Attribute | On | Values |
+|---|---|---|
+| `data-active` | `nav.item`, `hero.dot`, `tab`, `chip` | present when selected, absent otherwise |
+| `data-variant` | `home` | `offline`, `anilist`, `merged`, `catalog` |
+| `data-variant` | `home.hero` | `template`, `phone`, `desktop` (the desktop banner is `detail.banner` on a series page) |
+| `data-variant` | `hero.indicator` | `default`, `bars`, `dots`, `pills`, `counter` |
+| `data-layout` | `row` | `carousel`, `grid` |
+| `data-row`, `data-role` | `row` | the row's stable id; the role is the part after its `:` (the whole id when it has none) |
+| `data-family` | `card` | `poster`, `search`, `continue`, `preview` |
+| `data-layout` | `detail` | `stack`, `split`, `overlay` |
+| `data-variant` | `detail` | `phone`, `desktop` |
+| `data-variant` | `episode` | `template`, `thumb`, `compact`, `number`, `row` |
+| `data-layout` | `watch` | `full`, `docked` |
+| `data-variant` | `watch.episodes` | `right`, `below` |
+| `data-variant` | `watch.comments` | `inline`, `sheet` |
+| `data-variant` | `search` | `anilist-scope`, `anilist`, `merged`, `catalog` |
+| `data-variant` | `button` | `primary`, `secondary`, `ghost`, `icon` |
+| `data-variant` | `tabs` | `underline`, `pills`, `segmented`, `bar` |
+
+#### Brand
+
+| Hook | Kind | What | States |
+|---|---|---|---|
+| `brand` | slot | The izumi wordmark: the rail's home link, the catalog switcher's brand trigger, and the onboarding and profile wordmark. |  |
+| `brand.mark` | part | The logo mark. |  |
+| `brand.text` | part | The text wordmark (`presentation.brand: "text"`, and the expanded side rail). |  |
+| `brand.char` | part | One letter of "izumi"; style runs of letters with `:nth-child()`. |  |
+
+#### Shell
+
+| Hook | Kind | What | States |
+|---|---|---|---|
+| `page` | slot | The routed page content (the app's `<main>`). |  |
+| `nav.side` | slot | The side navigation rail. |  |
+| `nav.top` | slot | The top navigation bar (`shell.nav: "top"`). |  |
+| `nav.bottom` | slot | The bottom tab bar (phones, or `shell.nav: "bottom"`). |  |
+| `nav.item` | part | A navigation destination link. | `data-active` |
+| `nav.item.icon` | part | The icon of a navigation destination. |  |
+| `nav.item.label` | part | The label of a navigation destination. |  |
+| `search.field` | part | The global search input. |  |
+
+#### Home
+
+| Hook | Kind | What | States |
+|---|---|---|---|
+| `home` | slot | The Home page. | `data-variant` |
+| `home.hero` | slot | The featured banner on Home. | `data-variant` |
+| `hero.slide` | part | The current slide (the artwork layer). |  |
+| `hero.art` | part | The slide artwork image. |  |
+| `hero.scrim` | part | A gradient over the artwork. |  |
+| `hero.logo` | part | The title logo, when the show has one. |  |
+| `hero.title` | part | The text title, when there is no logo. |  |
+| `hero.meta` | part | The facts line (format, episodes, score, status). |  |
+| `hero.synopsis` | part | The description (desktop). |  |
+| `hero.actions` | part | The Watch, Details and Favorite buttons. |  |
+| `hero.indicator` | part | The slide marker row. | `data-variant` |
+| `hero.dot` | part | One slide marker. | `data-active` |
+| `hero.counter` | part | The `n / N` counter (indicator style `counter`). |  |
+| `row` | slot | A titled row or grid of cards, on Home and elsewhere. Home rows carry their stable id and role. | `data-row`, `data-role`, `data-layout` |
+| `row.header` | part | The row heading bar. |  |
+| `row.title` | part | The row title. |  |
+| `row.more` | part | The row's view-more link. |  |
+| `row.track` | part | The scrolling track or grid holding the cards. |  |
+
+#### Cards
+
+| Hook | Kind | What | States |
+|---|---|---|---|
+| `card` | part | A media card: poster, search, continue or preview. | `data-family` |
+| `card.art` | part | The card artwork frame. |  |
+| `card.title` | part | The card title. |  |
+| `card.meta` | part | The line under the title (season, format, source, episode). |  |
+| `card.badge` | part | The label on the artwork (for example "Episode 5"). |  |
+| `card.score` | part | The score badge. |  |
+| `card.progress` | part | The watch-progress track; the fill is its child. |  |
+| `card.episode` | part | The episode number on resume cards. |  |
+| `card.overlay` | part | The hover or play overlay on the artwork. |  |
+
+#### Series page
+
+| Hook | Kind | What | States |
+|---|---|---|---|
+| `detail` | slot | The series page. | `data-layout`, `data-variant` |
+| `detail.banner` | slot | The artwork area at the top of the series page. |  |
+| `detail.poster` | part | The cover image. |  |
+| `detail.title` | part | The title. |  |
+| `detail.alt-title` | part | The native or romaji title. |  |
+| `detail.meta` | part | The facts line. |  |
+| `detail.facts` | part | The theme facts template (desktop stack and split). |  |
+| `fact` | part | One entry of the details grid. |  |
+| `fact.label` | part | A details entry label. |  |
+| `fact.value` | part | A details entry value. |  |
+| `detail.genres` | part | The genre chips (phone). |  |
+| `detail.synopsis` | part | The description. |  |
+| `detail.actions` | part | The action buttons row. |  |
+| `detail.list-button` | part | The tracker list-status button. |  |
+| `detail.countdown` | part | The next-episode airing status. |  |
+| `detail.episodes` | slot | The episode list. |  |
+| `detail.relations` | slot | Related titles. |  |
+| `detail.characters` | slot | Characters and voice actors. |  |
+
+#### Episodes
+
+| Hook | Kind | What | States |
+|---|---|---|---|
+| `episode` | part | One episode: a card, a thumbnail row, a compact row or a number tile. | `data-variant` |
+| `episode.still` | part | The episode thumbnail. |  |
+| `episode.number` | part | The episode number. |  |
+| `episode.title` | part | The episode title. |  |
+
+#### Player
+
+| Hook | Kind | What | States |
+|---|---|---|---|
+| `watch` | slot | The player area. | `data-layout` |
+| `watch.stage` | slot | The video frame. It and its ancestors never paint a background: the video is drawn behind the page. |  |
+| `watch.rail` | slot | The rail beside or below a docked player. |  |
+| `watch.episodes` | slot | The docked episode list or grid. | `data-variant` |
+| `watch.servers` | part | The server switcher. |  |
+| `watch.comments` | slot | The episode discussion (inline under a docked player, or the sheet). | `data-variant` |
+| `player.controls` | slot | The player controls layer. |  |
+| `player.seekbar` | part | The seek bar. |  |
+| `player.title` | part | The playing title. |  |
+
+#### Search, schedule and library
+
+| Hook | Kind | What | States |
+|---|---|---|---|
+| `search` | slot | The search page. | `data-variant` |
+| `search.filters` | part | The search filter bar. |  |
+| `search.results` | slot | The search results. |  |
+| `schedule` | slot | The airing schedule page. |  |
+| `schedule.day` | part | The day being shown. |  |
+| `schedule.item` | part | One airing entry. |  |
+| `library` | slot | The library page. |  |
+| `library.tabs` | part | The library section tabs. |  |
+| `library.grid` | slot | The library card grid. |  |
+
+#### Primitives
+
+| Hook | Kind | What | States |
+|---|---|---|---|
+| `button` | part | A button. | `data-variant` |
+| `chip` | part | A chip or pill (genre, filter, scope). | `data-active` |
+| `input` | part | A text input. |  |
+| `badge` | part | A small label on an item (for example an episode rating). |  |
+| `tabs` | part | A tab strip. | `data-variant` |
+| `tab` | part | One tab. | `data-active` |
+
 ### Platforms
 
 A catalog listing can carry `platforms` (`desktop`, `phone`, primary first). The gallery shows "Phone only", "Desktop only", "Designed for phones · desktop layout included" or "Desktop & phone" (`platformLabel` in `packages.ts`) and offers an All / Desktop / Phone filter; a listing without the field serves both. The label replaces the old fixed "Desktop & mobile" text, which was wrong for packages an older client could not render.

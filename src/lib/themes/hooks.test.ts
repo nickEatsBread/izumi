@@ -43,4 +43,8 @@ describe('theme styling hook contract', () => {
     expect(new Set(names).size).toBe(names.length)
     for (const name of names) expect(name).toMatch(/^[a-z][a-z0-9.-]*$/)
   })
+  it('lists every hook in docs/THEMES.md', () => {
+    const docs = readFileSync(fileURLToPath(new URL('../../../docs/THEMES.md', import.meta.url)), 'utf8')
+    for (const hook of Object.values(THEME_HOOKS).flatMap((hooks) => hooks ?? [])) expect(docs, hook.name).toContain(`\`${hook.name}\``)
+  })
 })
