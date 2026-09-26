@@ -629,7 +629,7 @@
           {#if m.popularity}<span class="opacity-35">·</span><span>{compactNumber.format(m.popularity)} members</span>{/if}
         </div>
         {:else}
-          <FactList media={m} variant={factsStyle} />
+          <FactList media={m} variant={factsStyle} progress={effProgress > 0 ? `${effProgress}/${epsTotal(m) || '?'}` : undefined} {controllerUi} />
         {/if}
         {#if countdown !== 'none'}<AiringCountdown media={m} variant={countdown} />{/if}
 
@@ -902,7 +902,7 @@
         <h1 data-part="detail.title" class="mb-2 text-3xl font-black">{title(m)}</h1>
 
         {#if factsStyle !== 'template'}
-          <FactList media={m} variant={factsStyle} />
+          <FactList media={m} variant={factsStyle} className="mb-3" progress={effProgress > 0 ? `${effProgress}/${epsTotal(m) || '?'}` : undefined} {controllerUi} />
         {:else if detailTheme.facts}
           <div data-part="detail.facts" class="mb-3">
             <ThemeNode node={detailTheme.facts} model={mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined })} />
@@ -932,7 +932,7 @@
           {/if}
         </div>
         {/if}
-        {#if countdown !== 'none'}<AiringCountdown media={m} variant={countdown} />{/if}
+        {#if countdown !== 'none'}<AiringCountdown media={m} variant={countdown} className="mb-3" />{/if}
 
         {#if detailTheme.episodes?.order === 'flip'}
           <div class="mb-3 flex flex-wrap items-center gap-2 empty:mb-0">

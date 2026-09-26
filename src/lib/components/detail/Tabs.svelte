@@ -54,4 +54,3 @@
     </button>
   {/each}
 </div>
-{#if bottom}<div class="h-16" aria-hidden="true"></div>{/if}
