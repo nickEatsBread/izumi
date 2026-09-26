@@ -90,8 +90,8 @@ export function anilistRequestPriority(body: BodyInit | null | undefined): numbe
     if (!operation) return 3
     if (/^(MediaById|SourceMediaById|ReadingMediaById|Schedule|ScheduleWeek|Search|SearchAll)$/.test(operation)) return 1
     if (/^Hero/.test(operation)) return 2
-    if (/^(Lists|ListPreview|ListStatuses|ReadingLists|ListIds|MediaByIds|MediaByMal|ReadingMediaByMal)$/.test(operation)) return 4
-    if (/^(Page|PageAll|PersonalRecommendations|RecentReleases)$/.test(operation)) return 7
+    if (/^(Lists|ListPreview|ListStatuses|ReadingLists|ListIds|MediaByIds|MediaByMal|ReadingMediaByMal|ProfileHeader)$/.test(operation)) return 4
+    if (/^(Page|PageAll|PersonalRecommendations|RecentReleases|RowPage|RowPageAll|LatestEpisodes)$/.test(operation)) return 7
     return 3
   } catch {
     return 3

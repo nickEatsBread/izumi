@@ -6,7 +6,7 @@ import type { FuzzyDate, Media } from './types'
 const API = 'https://api.jikan.moe/v4'
 const CATALOG_OPERATIONS = new Set([
   'Page', 'PageAll', 'Hero', 'HeroAll', 'Search', 'SearchAll',
-  'GenreCollection',
+  'GenreCollection', 'RowPage', 'RowPageAll',
 ])
 
 export interface JikanCatalogRequest {

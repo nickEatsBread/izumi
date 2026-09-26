@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import { mediaHref, title as mediaTitle } from '$lib/anilist/media'
   import { releasedAgo } from '$lib/anime/airing-labels'
-  import { getEpisodeMeta } from '$lib/anizip'
+  import { fetchAniZip } from '$lib/anizip'
   import * as h from '$lib/haptics'
   import type { LatestEpisodesBlock } from '$lib/home/blocks'
   import { appendReleases, loadLatestEpisodes, releaseKey, releaseStill, type EpisodeRelease } from '$lib/home/latest-episodes'
@@ -14,8 +14,10 @@
   // Newly aired episodes as 16:9 stills, newest first. The still plays the episode; the title opens the series.
   let { block }: { block: LatestEpisodesBlock } = $props()
 
-  // Page backwards from the moment the block mounted, so a page stays put while new episodes air.
-  const before = Math.floor(Date.now() / 1000)
+  // Page backwards from a fixed moment so a page stays put while new episodes air. Rounded to a
+  // 10-minute bucket so remounting the block (switching tabs, reopening Home) within that window
+  // reuses the same AniList cache entry instead of a fresh `before` missing it on every visit.
+  const before = Math.floor(Date.now() / 600_000) * 600
   let section = $state<HTMLElement>()
   let visible = $state(false)
   let page = $state(1)
@@ -27,11 +29,13 @@
   let stills = $state<Record<string, string>>({})
   let playing = $state<string | null>(null)
   let now = $state(Date.now())
+  let retry = $state(0)
 
   const columns = $derived($isMobile ? Math.min(2, block.columns) : block.columns)
 
   $effect(() => {
     if (!visible) return
+    void retry
     const pageNumber = page
     const size = block.pageSize
     const append = block.pagination === 'more' && pageNumber > 1
@@ -49,12 +53,15 @@
     return () => { cancelled = true }
   })
 
-  // Episode stills come from per-series episode metadata (cached on the device); the banner shows until then.
+  // Episode stills: `getEpisodeMeta` served a cached AniZip record with no way to ask for a
+  // specific episode, so a just-aired episode's still stayed missing until an unrelated refresh
+  // happened to land. `fetchAniZip` refreshes whenever the cache does not yet have the requested
+  // episode, so a freshly aired one is fetched instead of silently falling back to the banner.
   $effect(() => {
     for (const release of items) {
       const key = releaseKey(release)
-      void getEpisodeMeta(release.media.id).then((meta) => {
-        const image = meta[release.episode]?.image
+      void fetchAniZip(release.media.id, release.episode).then((res) => {
+        const image = res?.episodes?.[String(release.episode)]?.image
         if (image && stills[key] !== image) stills = { ...stills, [key]: image }
       }).catch(() => {})
     }
@@ -91,7 +98,11 @@
 <section bind:this={section} data-block data-slot="block.latest-episodes" data-nav-row data-nav-row-wrap="" use:nearViewport={{ onEnter: () => (visible = true) }}
   class="mb-8 scroll-mt-20 px-4 sm:px-8">
   <h2 data-part="block.title" class="mb-3 text-lg font-black">{block.title || 'Latest episodes'}</h2>
-  {#if error}<p role="alert" class="mb-3 text-sm text-muted-foreground">{error}</p>{/if}
+  {#if error}
+    <p role="alert" class="mb-2 text-sm text-muted-foreground">{error}</p>
+    <button type="button" data-part="button" data-variant="secondary" data-focusable onclick={() => retry++}
+      class="mb-3 min-h-9 rounded-md bg-secondary px-4 text-sm font-bold transition hover:bg-accent">Retry</button>
+  {/if}
   <div data-nav-row-items class="grid gap-x-3 gap-y-4" style:grid-template-columns={`repeat(${columns}, minmax(0, 1fr))`}>
     {#if !visible || (loading && !items.length)}
       {#each Array.from({ length: block.pageSize }) as _, index (index)}

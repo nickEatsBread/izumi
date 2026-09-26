@@ -21,6 +21,7 @@
   let lastPage = $state<number | undefined>()
   let loading = $state(false)
   let error = $state('')
+  let retry = $state(0)
 
   const labels = $derived(block.tabs.map((tab) => tab.label))
   const current = $derived(labels.includes(selected) ? selected : labels[0] ?? '')
@@ -36,6 +37,7 @@
 
   $effect(() => {
     if (!visible) return
+    void retry
     const id = rowId
     const pageNumber = page
     const size = block.pageSize
@@ -72,7 +74,11 @@
   {#if !block.tabs.length}
     <p class="text-sm text-muted-foreground">Choose rows for this block in Edit Home.</p>
   {:else}
-    {#if error}<p role="alert" class="mb-3 text-sm text-muted-foreground">{error}</p>{/if}
+    {#if error}
+      <p role="alert" class="mb-2 text-sm text-muted-foreground">{error}</p>
+      <button type="button" data-part="button" data-variant="secondary" data-focusable onclick={() => retry++}
+        class="mb-3 min-h-9 rounded-md bg-secondary px-4 text-sm font-bold transition hover:bg-accent">Retry</button>
+    {/if}
     <div data-nav-row-items class="grid gap-x-3 gap-y-5" style:grid-template-columns={`repeat(${columns}, minmax(0, 1fr))`}>
       {#if !visible || (loading && !media.length)}
         {#each Array.from({ length: Math.min(block.pageSize, columns * 2) }) as _, index (index)}

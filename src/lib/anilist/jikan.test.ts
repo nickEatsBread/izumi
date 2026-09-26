@@ -6,6 +6,10 @@ describe('Jikan catalog fallback', () => {
     const body = (operation: string) => JSON.stringify({ query: `query ${operation} { Page { media { id } } }` })
     expect(parseJikanCatalogRequest(body('Hero'))?.operation).toBe('Hero')
     expect(parseJikanCatalogRequest(body('Search'))?.operation).toBe('Search')
+    // Home block row pages (a tabbed grid/ranked list's own page) are public catalog reads too, so
+    // they must fail over the same way the carousels do.
+    expect(parseJikanCatalogRequest(body('RowPage'))?.operation).toBe('RowPage')
+    expect(parseJikanCatalogRequest(body('RowPageAll'))?.operation).toBe('RowPageAll')
     expect(parseJikanCatalogRequest(body('MediaById'))).toBeNull()
     expect(parseJikanCatalogRequest(body('Lists'))).toBeNull()
   })
