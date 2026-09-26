@@ -52,7 +52,7 @@ describe('multi-platform catalog entry points', () => {
   })
 
   it('keeps the selected catalog colour on the Izumi mark throughout the client', () => {
-    expect(home).toContain('<CatalogBrandLogo platform={$catalogScreen} />')
+    expect(home).toContain('<CatalogBrandLogo brand platform={$catalogScreen} />')
     expect(sidebar).toContain('<CatalogBrandLogo brand platform={$catalogScreen} />')
     expect(catalogStore).toContain("export const catalogLastScreen = persisted<CatalogScreen>(")
     expect(catalogStore).toContain('catalogLastScreen.set(screen)')

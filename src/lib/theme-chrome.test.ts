@@ -105,6 +105,14 @@ describe('theme chrome application', () => {
     for (const file of ['StoresDialog', 'StoreEntrySheet', 'ReplacePackageDialog']) expect(read(`./components/store/${file}.svelte`), file).toContain('data-theme-protected')
     expect(read('../app.css')).toContain('pointer-events: auto;')
   })
+  it('shows the theme text wordmark in the phone Home header and the catalog switcher', () => {
+    for (const file of ['../routes/app/home/+page.svelte', './components/catalog/CatalogSwitcher.svelte']) {
+      const source = read(file)
+      expect(source, file).toContain("$themePresentation?.brand === 'text'")
+      expect(source, file).toContain('<BrandText')
+    }
+    expect(read('../routes/app/home/+page.svelte')).toContain('<CatalogBrandLogo brand platform={$catalogScreen} />')
+  })
   it('pins the video stage path transparent against theme stylesheets', () => {
     // The video is drawn behind the page, so the root and both wrappers stay see-through whatever a theme's stylesheet says.
     const overlay = read('./components/player/PlayerOverlay.svelte')

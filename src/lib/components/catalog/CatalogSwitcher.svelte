@@ -6,6 +6,8 @@
   import Pencil from '@lucide/svelte/icons/pencil'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import CatalogBrandLogo from './CatalogBrandLogo.svelte'
+  import BrandText from '../BrandText.svelte'
+  import { themePresentation } from '$lib/themes/runtime'
   import CatalogPlatformLogo from './CatalogPlatformLogo.svelte'
   import {
     catalogLabel,
@@ -189,7 +191,11 @@
           />
         </span>
         {#if showWordmark}
-          <img src="/brand/izumi-wordmark-white.svg" alt="" class="catalog-brand-wordmark h-5" draggable="false" />
+          {#if $themePresentation?.brand === 'text'}
+            <BrandText className="text-2xl font-black leading-none" />
+          {:else}
+            <img src="/brand/izumi-wordmark-white.svg" alt="" class="catalog-brand-wordmark h-5" draggable="false" />
+          {/if}
         {/if}
       {:else if display === 'icon'}
         <!-- The provider tile is the button face, rather than a smaller tile floating inside a
