@@ -62,6 +62,11 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'block.tabbed-grid', kind: 'slot', description: 'A tab strip (`tabs`) over a poster grid; each poster is a `block.item` holding a `card`.' },
     { name: 'block.ranked-list', kind: 'slot', description: 'A numbered top list; each entry is a `block.item` with `card.art`, `card.title` and `card.meta`.' },
     { name: 'block.rank', kind: 'part', description: 'The rank number of a ranked-list entry.' },
+    { name: 'block.profile-header', kind: 'slot', description: 'The profile banner with the viewer\'s name, watch stats and shortcut buttons (`button`).' },
+    { name: 'block.banner', kind: 'part', description: 'The profile banner image.' },
+    { name: 'block.avatar', kind: 'part', description: 'The profile avatar (an image, or the first letter of the name).' },
+    { name: 'block.name', kind: 'part', description: 'The profile name.' },
+    { name: 'block.stat', kind: 'part', description: 'The watch statistics line.' },
   ],
   cards: [
     { name: 'card', kind: 'part', description: 'A media card: poster, search, continue or preview.', states: ['data-family'] },

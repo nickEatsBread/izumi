@@ -170,6 +170,11 @@ State values:
 | `block.tabbed-grid` | slot | A tab strip (`tabs`) over a poster grid; each poster is a `block.item` holding a `card`. |  |
 | `block.ranked-list` | slot | A numbered top list; each entry is a `block.item` with `card.art`, `card.title` and `card.meta`. |  |
 | `block.rank` | part | The rank number of a ranked-list entry. |  |
+| `block.profile-header` | slot | The profile banner with the viewer's name, watch stats and shortcut buttons (`button`). |  |
+| `block.banner` | part | The profile banner image. |  |
+| `block.avatar` | part | The profile avatar (an image, or the first letter of the name). |  |
+| `block.name` | part | The profile name. |  |
+| `block.stat` | part | The watch statistics line. |  |
 
 #### Cards
 
