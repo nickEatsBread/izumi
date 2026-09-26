@@ -11,4 +11,14 @@ describe('theme top bar', () => {
     expect(bar).toContain("topBar.brand === 'center'")
     expect(bar).toContain("$themePresentation?.brand === 'text'")
   })
+
+  it('puts a search field in the bar instead of the Search link', () => {
+    const bar = read('./Sidebar.svelte')
+    expect(bar).toContain('<TopSearchField')
+    expect(bar).toContain("topBar.search === 'field-center'")
+    expect(bar).toContain("topBar.search === 'field-end'")
+    const field = read('./TopSearchField.svelte')
+    expect(field).toContain('data-part="search.field"')
+    expect(field).toContain('/app/search?search=')
+  })
 })

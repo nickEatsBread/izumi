@@ -135,7 +135,7 @@ State values:
 | `nav.item` | part | A navigation destination link. | `data-active` |
 | `nav.item.icon` | part | The icon of a navigation destination. |  |
 | `nav.item.label` | part | The label of a navigation destination. |  |
-| `search.field` | part | The global search input. |  |
+| `search.field` | part | A search input: the global search overlay, or the theme top bar's search field. |  |
 
 #### Home
 

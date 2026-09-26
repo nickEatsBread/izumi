@@ -2,6 +2,7 @@
   import CatalogBrandLogo from '../catalog/CatalogBrandLogo.svelte'
   import BrandText from '../BrandText.svelte'
   import CatalogSwitcher from '../catalog/CatalogSwitcher.svelte'
+  import TopSearchField from './TopSearchField.svelte'
   import Home from '@lucide/svelte/icons/house'
   import Calendar from '@lucide/svelte/icons/calendar'
   import Search from '@lucide/svelte/icons/search'
@@ -34,6 +35,8 @@
   const labelMode = $derived(top ? topBar.labels ?? 'icons' : 'icons')
   const brandCentered = $derived(top && topBar.brand === 'center')
   const brandText = $derived(top && $themePresentation?.brand === 'text')
+  // A theme top bar search field (`shell.top.search`) replaces the Search destination link.
+  const searchField = $derived(top && (topBar.search === 'field-center' || topBar.search === 'field-end'))
   // Nav items (top). Settings + profile are pinned to the BOTTOM.
   const items = [
     { href: '/app/home', icon: Home, label: m.nav_home(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
@@ -43,6 +46,7 @@
     { href: '/app/watch', icon: Users, label: m.nav_watch_together(), anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
     { href: '/app/library', icon: LibraryBig, label: 'Library', anim: '' },
   ]
+  const shown = $derived(searchField ? items.filter((it) => it.href !== '/app/search') : items)
   const accountName = $derived($anilistUserName || $malUserName || $traktUserName || $anilistUser || $malUser)
   const accountAvatar = $derived($anilistUserAvatar || $malUserAvatar || $traktUserAvatar)
   const accountLabel = $derived($profilesEnabled ? $activeProfile.name : accountName || 'Sign in')
@@ -129,7 +133,7 @@
     <CatalogSwitcher display="rail" bind:open={catalogPickerOpen} expanded={open} className="shrink-0" />
   {/if}
 
-  {#each items as it (it.href)}
+  {#each shown as it (it.href)}
     {@const on = active(it.href)}
     <a data-part="nav.item" data-active={on || undefined} href={it.href} title={it.label} data-focusable={df} tabindex={tab} aria-current={on ? 'page' : undefined}
        class={destClass(on, true)}>
@@ -147,8 +151,9 @@
   {/each}
 
   <!-- Spacer pushes Settings + profile to the bottom of the rail, or the trailing cluster to the
-       right of a top bar. -->
-  <div class="flex-1"></div>
+       right of a top bar. A theme top bar search field (`field-center`) takes its place instead. -->
+  <div class="flex flex-1 justify-center px-4">{#if top && topBar.search === 'field-center'}<TopSearchField className="w-full max-w-md" />{/if}</div>
+  {#if top && topBar.search === 'field-end'}<TopSearchField className="mr-2 w-64" />{/if}
 
   <!-- Incognito toggle: same row anatomy as the links; violet accent + tinted icon while active
        (the top banner is the loud indicator — this stays quiet). -->
