@@ -109,7 +109,9 @@
   function addBlock(type: HomeBlockType) {
     const id = addHomeBlock(target, rows, type, request?.beforeId ?? null, tabRows.map((row) => row.id))
     homeEditorInsertRequest.set(null)
-    homeBlockSettingsId.set(id)
+    // null only when the row library was not actually loaded yet — the Blocks group below is
+    // hidden in that state, so this is a defensive no-op rather than an expected path.
+    if (id) homeBlockSettingsId.set(id)
   }
 
   function onKeydown(event: KeyboardEvent) {
@@ -163,7 +165,7 @@
         {/if}
 
         <div class="overflow-y-auto overscroll-contain p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:p-4">
-          {#if blockTypes.length}
+          {#if !loading && !error && blockTypes.length}
             <section class="mb-5">
               <h3 class="mb-1.5 px-2 text-xs font-black uppercase tracking-wide text-muted-foreground">Blocks</h3>
               <div class="space-y-1">

@@ -21,16 +21,23 @@ export function blockRowOptions(target: CatalogHomeTarget, layouts: CatalogHomeL
   })
 }
 
-/** Create a block with default settings and place it before `beforeId` (null = the end). */
+/** Create a block with default settings and place it before `beforeId` (null = the end). Returns
+ * null and does nothing if `rows` holds no non-block row — the row library is still loading or
+ * failed to load, and saving now would write a layout containing only blocks. */
 export function addHomeBlock(
   target: CatalogHomeTarget,
   rows: Array<CatalogHomeRowOption & { enabled: boolean }>,
   type: HomeBlockType,
   beforeId: string | null,
   roles: string[],
-): string {
+): string | null {
+  if (!rows.some((row) => !isBlockId(row.id))) return null
   const blocks = get(homeBlocks)
-  const id = nextBlockId(type, Object.keys(blocks))
+  // Number past every id any SAVED layout still references, not just blocks with live settings —
+  // a layout synced from another device without its block settings must not collide with a fresh id.
+  const layouts = get(catalogHomeLayouts)
+  const layoutIds = Object.values(layouts).flatMap((layout) => [...(layout?.order ?? []), ...(layout?.disabled ?? [])])
+  const id = nextBlockId(type, [...Object.keys(blocks), ...layoutIds])
   homeBlocks.set({ ...blocks, [id]: defaultBlock(type, roles) })
   insertHomeRow(target, [...rows, { id, title: BLOCK_META[type].title, enabled: false }], id, beforeId)
   return id

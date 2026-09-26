@@ -36,8 +36,30 @@ describe('blocks in the Home layout', () => {
     const rows = [{ id: 'continue', title: 'Continue', enabled: true }, { id: 'season', title: 'Season', enabled: true }]
     const id = addHomeBlock('anilist', rows, 'latest-episodes', 'season', [])
     expect(id).toBe('block:latest-episodes:1')
-    expect(get(homeBlocks)[id]).toMatchObject({ type: 'latest-episodes', pageSize: 12 })
+    expect(get(homeBlocks)[id!]).toMatchObject({ type: 'latest-episodes', pageSize: 12 })
     expect(get(catalogHomeLayouts).anilist?.order).toEqual(['continue', 'block:latest-episodes:1', 'season'])
+  })
+
+  it('does nothing and returns null when rows holds no non-block row (the row library has not loaded)', () => {
+    const beforeLayouts = get(catalogHomeLayouts)
+    const beforeBlocks = get(homeBlocks)
+    const onlyBlockRows = [{ id: 'block:genre-chips:1', title: 'Genre chips', enabled: true }]
+    expect(addHomeBlock('anilist', onlyBlockRows, 'latest-episodes', null, [])).toBeNull()
+    expect(addHomeBlock('anilist', [], 'latest-episodes', null, [])).toBeNull()
+    expect(get(catalogHomeLayouts)).toEqual(beforeLayouts)
+    expect(get(homeBlocks)).toEqual(beforeBlocks)
+  })
+
+  it('numbers a new block past every id any saved layout references, even without settings for them', () => {
+    catalogHomeLayouts.set({
+      anilist: { order: ['continue', 'block:latest-episodes:3'], disabled: [] },
+      tmdb: { order: [], disabled: ['block:latest-episodes:5'] },
+    })
+    // Settings were never synced for those references — a device that only received the layout.
+    homeBlocks.set({})
+    const rows = [{ id: 'continue', title: 'Continue', enabled: true }]
+    const id = addHomeBlock('anilist', rows, 'latest-episodes', null, [])
+    expect(id).toBe('block:latest-episodes:6')
   })
 
   it('removes a block from the layout and forgets its settings', () => {
