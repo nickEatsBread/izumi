@@ -19,6 +19,12 @@ const FONT_STACKS: Record<StudioTheme['font'], string> = {
 }
 
 const THEME_STYLE_ID = 'izumi-theme-css'
+/** Code-split routes and dev tooling append their own styles to <head> later; keep the theme's
+ *  stylesheet last so an equally specific theme rule still wins. */
+function keepThemeStyleLast(): void {
+  const style = document.getElementById(THEME_STYLE_ID)
+  if (style && style !== document.head.lastElementChild) document.head.append(style)
+}
 /** Whether the active theme's stylesheet is in effect; the Themes page shows rejections. */
 export const themeCssStatus = writable<{ state: 'off' | 'applied' | 'rejected'; reason?: string }>({ state: 'off' })
 const TOKEN_NAMES = ['background', 'foreground', 'muted', 'muted-foreground', 'primary', 'primary-foreground', 'secondary', 'secondary-foreground', 'accent', 'accent-foreground', 'border', 'input', 'ring', 'card', 'card-foreground', 'theme'] as const
@@ -126,9 +132,12 @@ export function startThemeSync(): () => void {
   ].map((store) => store.subscribe(apply))
   media.addEventListener('change', apply)
   apply()
+  const headObserver = new MutationObserver(keepThemeStyleLast)
+  headObserver.observe(document.head, { childList: true })
   return () => {
     started = false
     subscriptions.forEach((unsubscribe) => unsubscribe())
     media.removeEventListener('change', apply)
+    headObserver.disconnect()
   }
 }

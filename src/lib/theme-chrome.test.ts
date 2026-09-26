@@ -86,4 +86,9 @@ describe('theme chrome application', () => {
     expect(mark).toContain('data-part="brand.mark"')
     expect(read('./components/shell/Sidebar.svelte')).toContain('<BrandText className=')
   })
+  it('keeps the theme stylesheet last in <head> as routes add their own styles', () => {
+    const theme = read('./theme.ts')
+    expect(theme).toContain('new MutationObserver(keepThemeStyleLast)')
+    expect(theme).toContain('headObserver.disconnect()')
+  })
 })
