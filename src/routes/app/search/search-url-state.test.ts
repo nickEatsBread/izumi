@@ -10,7 +10,7 @@ const page = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.ur
 
 describe('search URL state', () => {
   it('mirrors the settled filters into the URL', () => {
-    expect(page).toContain("import { replaceState } from '$app/navigation'")
+    expect(page).toContain("import { afterNavigate, replaceState } from '$app/navigation'")
     for (const param of ['search', 'sort', 'genre', 'season', 'year']) {
       expect(page).toContain(`params.set('${param}'`)
     }
@@ -35,5 +35,14 @@ describe('search URL state', () => {
 
   it('keeps browse controls below the fixed degraded alert', () => {
     expect(page).toContain("$anilistDegradedBannerVisible ? 'pt-[2.75rem] sm:pt-[3.75rem]' : ''")
+  })
+
+  it('re-reads `search` on a same-route navigation instead of only seeding it once', () => {
+    // TopSearchField's goto('/app/search?search=x') from this same page never remounts the
+    // component, so afterNavigate — not the one-time `seed` read — is what has to pick it up.
+    expect(page).toContain('afterNavigate(() => {')
+    expect(page).toContain("params.get('search') ?? params.get('q') ?? undefined")
+    expect(page).toContain('if (urlSearch === filters.search) return')
+    expect(page).toContain('debounced = { ...debounced, search: urlSearch }')
   })
 })

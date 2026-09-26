@@ -8,7 +8,7 @@
   import { anilistDegradedBannerVisible } from '$lib/anilist/degraded'
   import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
   import { page } from '$app/state'
-  import { replaceState } from '$app/navigation'
+  import { afterNavigate, replaceState } from '$app/navigation'
   import type { Snapshot } from './$types'
   import {
     CATALOG_SELECTIONS,
@@ -67,6 +67,25 @@
     } else {
       mergedQuery = filters.search ?? ''
     }
+  })
+
+  // TopSearchField can submit `?search=` while already on this route — a same-route navigation
+  // that does not recreate this component, so the one-time `seed` read above never sees it, and
+  // typing a new query in the top bar appeared to do nothing. afterNavigate fires on every
+  // completed navigation, including this one, giving the query state a chance to catch up; it
+  // updates `debounced` directly (not just `filters`) so results refresh immediately instead of
+  // waiting out the typing debounce below. Updating `mergedQuery` too keeps the merged-catalog
+  // 'all' scope in step, so its own filters-sync effect above finds them already equal and never
+  // fights this. Comparing against the CURRENT `filters.search` (not the stale `seed`) is what
+  // stops the URL-sync effect further down from seeing its own stale copy and writing it straight
+  // back over the new query.
+  afterNavigate(() => {
+    const params = page.url.searchParams
+    const urlSearch = params.get('search') ?? params.get('q') ?? undefined
+    if (urlSearch === filters.search) return
+    filters = { ...filters, search: urlSearch }
+    debounced = { ...debounced, search: urlSearch }
+    mergedQuery = urlSearch ?? ''
   })
 
   function selectMergedScope(scope: MergedScope) {
