@@ -12,6 +12,7 @@
   import StoreEntryCard from '$lib/components/store/StoreEntryCard.svelte'
   import StoreEntrySheet from '$lib/components/store/StoreEntrySheet.svelte'
   import StoresDialog from '$lib/components/store/StoresDialog.svelte'
+  import ReplacePackageDialog from '$lib/components/store/ReplacePackageDialog.svelte'
   import { listCommunityAddons } from '$lib/stremio/community-store'
   import { addonUrls, disabledSources, normalizeBase, replaceAddonBase } from '$lib/stremio/sources'
   import { fetchManifest } from '$lib/stremio/manifest'
@@ -20,6 +21,7 @@
     installCatalogPackage,
     installedExtensionPackages,
     installedPackageIcons,
+    PackageInstalledElsewhereError,
     removeInstalledExtension,
     type InstalledExtensionPackage,
   } from '$lib/extensions/manager'
@@ -32,7 +34,7 @@
   import { directoryEntries } from '$lib/store/directory'
   import { DEFAULT_STORE_FILTER, filterStoreEntries, storeLanguages, type StoreFilter } from '$lib/store/filters'
   import { installStoreEntry, installedRef, type InstalledState } from '$lib/store/install'
-  import { currentLegacyStores, legacyPackageStores, legacyStoresFrom, packageOrigins } from '$lib/store/origins'
+  import { currentLegacyStores, legacyPackageStores, legacyStoresFrom, originLabel, packageOrigins } from '$lib/store/origins'
   import { packageHashPinned, packageSignatureLabel } from '$lib/store/trust'
   import { migrateCatalogStores } from '$lib/store/migrate'
   import { ADDON_DIRECTORY_ID, type SourceType, type StoreEntry } from '$lib/store/types'
@@ -92,6 +94,8 @@
   let error = $state('')
   let storesDialog = $state<{ mode: 'manage' | 'add'; url: string } | null>(null)
   let configuring = $state<{ name: string; id: string; configureUrl: string; currentBase?: string } | null>(null)
+  /** A package the user asked to install that is already installed from another store: confirm first. */
+  let replacing = $state.raw<{ entry: StoreEntry; installedFrom: string } | null>(null)
   let serviceSettings = $state<{ id: string; name: string } | null>(null)
 
   const storeUrlById = $derived(new Map($allStores.map((store) => [store.id, store.url])))
@@ -317,18 +321,20 @@
     else if (entry.install.type === 'package') $disabledPlugins = flip($disabledPlugins)
   }
 
-  async function install(entry: StoreEntry) {
+  async function install(entry: StoreEntry, replaceInstalled = false) {
     if (busyKey) return
     busyKey = entry.key
     notice = ''
     error = ''
     try {
-      // The package installer itself refuses to replace a package installed from another store.
+      // The package installer refuses to replace a package installed from another store unless the
+      // user confirmed it in the replace prompt.
       const outcome = await installStoreEntry(entry, {
         storeUrl: storeUrlById.get(entry.storeId) ?? '',
         adapter: loaded[entry.storeId]?.listing?.adapter,
         locked: loaded[entry.storeId]?.trust.state === 'locked',
         update: isInstalled(entry),
+        replaceInstalled,
       }, installCatalogPackage)
       if (outcome.kind === 'configure') {
         // Replace an installed copy only through its own host's configure page; otherwise add a copy.
@@ -343,7 +349,13 @@
         await refreshInstalled()
       }
     } catch (cause) {
-      error = cause instanceof Error ? cause.message : String(cause)
+      if (cause instanceof PackageInstalledElsewhereError) {
+        // Ask before replacing it. One dialog at a time: the sheet closes under the prompt.
+        replacing = { entry, installedFrom: originLabel(cause.installedFrom, $allStores) }
+        selected = null
+      } else {
+        error = cause instanceof Error ? cause.message : String(cause)
+      }
     } finally {
       busyKey = ''
     }
@@ -529,6 +541,17 @@
       onadded={(id) => { storeChip = id; notice = 'Store added. Nothing was installed.' }}
     />
   {/key}
+{/if}
+
+{#if replacing}
+  {@const target = replacing.entry}
+  <ReplacePackageDialog
+    name={target.name}
+    installedFrom={replacing.installedFrom}
+    storeName={storeNameById.get(target.storeId) ?? 'this store'}
+    oncancel={() => (replacing = null)}
+    onconfirm={() => { const entry = target; replacing = null; void install(entry, true) }}
+  />
 {/if}
 
 {#if configuring}

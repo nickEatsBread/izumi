@@ -120,6 +120,12 @@ describe('installStoreEntry', () => {
     expect(get(mocks.stores.disabledPlugins)).toEqual(['example.pkg'])
   })
 
+  it('passes a confirmed replacement on to the installer', async () => {
+    const installPackage = vi.fn().mockResolvedValue({ id: 'example.pkg', name: 'Example Package' })
+    await installStoreEntry(packageEntry, { storeUrl: 'https://x.test/index.json', replaceInstalled: true }, installPackage)
+    expect(installPackage).toHaveBeenCalledWith(pkg, 'https://x.test/index.json', { replaceInstalled: true })
+  })
+
   it('sends themes to the Themes page for preview', async () => {
     expect(await installStoreEntry(themeEntry, { storeUrl: 'https://x.test/themes.json' }, vi.fn()))
       .toEqual({ kind: 'open-theme', path: '/app/settings/themes?store=s&theme=test.cinema' })

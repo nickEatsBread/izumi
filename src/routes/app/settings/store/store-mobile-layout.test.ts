@@ -56,7 +56,13 @@ describe('Store behaviour', () => {
     expect(page).toContain('elsewhere={fromAnotherStore(entry)}')
     expect(page).toContain('if (loaded[entry.storeId]?.error) return false')
     expect(page).toContain('Updates from it wait for a fresh copy.')
-    expect(card).toContain('Installed elsewhere')
+    expect(card).toContain("elsewhere ? 'Replace' : action")
+  })
+
+  it('asks before replacing a package installed from another store', () => {
+    expect(page).toContain('cause instanceof PackageInstalledElsewhereError')
+    expect(page).toContain('<ReplacePackageDialog')
+    expect(page).toContain('onconfirm={() => { const entry = target; replacing = null; void install(entry, true) }}')
   })
 
   it('consumes the deep-link parameter and lets a second link replace the first', () => {

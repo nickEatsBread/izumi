@@ -22,6 +22,8 @@ export interface InstallContext {
   locked?: boolean
   /** The entry is installed already, so this is an update: the user's on/off choice is kept. */
   update?: boolean
+  /** The user confirmed replacing a same-id package installed from another store. */
+  replaceInstalled?: boolean
 }
 
 export interface InstalledState {
@@ -88,7 +90,7 @@ const including = (list: string[], item: string) => (list.includes(item) ? list 
 export async function installStoreEntry(
   entry: StoreEntry,
   context: InstallContext,
-  installPackage: (pkg: ExtensionCatalogPackage, origin: string) => Promise<{ id: string; name: string }>,
+  installPackage: (pkg: ExtensionCatalogPackage, origin: string, options?: { replaceInstalled?: boolean }) => Promise<{ id: string; name: string }>,
 ): Promise<InstallOutcome> {
   if (context.locked) throw new Error('This store failed its signing-key check. Review it under Manage stores first.')
   const install = entry.install
@@ -110,8 +112,10 @@ export async function installStoreEntry(
   if (install.type === 'package') {
     if (!context.storeUrl) throw new Error('This package has no store to install it from.')
     // The installer binds the package to this store, and refuses a same-id package installed from
-    // anywhere else: that is a takeover, not an update.
-    const installed = await installPackage(install.pkg, context.storeUrl)
+    // anywhere else unless the user confirmed replacing it.
+    const installed = context.replaceInstalled
+      ? await installPackage(install.pkg, context.storeUrl, { replaceInstalled: true })
+      : await installPackage(install.pkg, context.storeUrl)
     // Classic catalogs also join the source list, as Store installs always did, so their packages keep
     // their catalog row on the Sources page. A catalog the user switched off stays off. The legacy
     // stores are frozen first, so joining the list never lets this store claim older installs.
