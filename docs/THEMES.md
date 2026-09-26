@@ -24,6 +24,7 @@ Semantic colors, font family and scale, corner radius, backdrop and glass effect
 - Navigation placement: side rail, top bar, or bottom bar. Phones keep the bottom bar. Destination order stays in Settings → Navigation.
 - Compact shell padding.
 - Bottom bar styling (API 2, `shell.bottomNav`): flush bar, floating card or centred pill; labels always, on the active tab or never; a tonal pill, top line or dot as the active marker; height, icon size, radius, colours, blur, border and whether the bar hides while scrolling. `BottomNav.svelte` renders it and `src/lib/theme.ts` publishes `--theme-bottom-nav` so the page reserves the right space.
+- Top bar (API 3, `shell.top`): destination names as text links or with icons (`labels`), an inline search field in the centre or at the end (`search`), a menu drawer (`menu`) and a centred brand (`brand`). With `presentation.brand: "text"` the bar shows the text wordmark.
 
 ### Home
 
@@ -47,6 +48,7 @@ Optional templates for three families: `poster` (ordinary tiles), `continue` (re
 - Optional episode-card templates (non-interactive, like poster tiles). Arrangement can be a wrapping grid or one full-width tile per row; hover can grow the tile. The cards / compact / grid control in Appearance still chooses cards vs numbers.
 - Optional series-facts template (icons + text). Theme Studio can edit facts and episode cards per theme.
 - Tab style (API 2, `detail.tabs`): underline, pills, an iOS-style segmented control, or a bar of equal tabs with a tinted pill behind the active one (`Tabs.svelte`).
+- API 3: `factsStyle` (`table`, `cards`, `chips` or the `facts` template), `countdown` (`compact` or `long` airing countdown), `listButton` (`inline`, `full` or `hidden`), and `tabs: "bottom"` (a phone tab bar that takes the bottom navigation's place).
 
 ### Player
 
