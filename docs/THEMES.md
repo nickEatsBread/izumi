@@ -165,6 +165,8 @@ State values:
 | `page-number` | part | One numbered page button. | `data-active` |
 | `block.title` | part | A block heading. |  |
 | `block.genre-chips` | slot | Genre shortcuts: an All chip and one chip per genre (each a `chip`). |  |
+| `block.latest-episodes` | slot | Newly aired episodes as a grid of stills. Items reuse `episode.still`, `episode.number`, `card.title` and `card.meta`. |  |
+| `block.item` | part | One entry in a block (an episode, a poster or a ranked title). |  |
 
 #### Cards
 

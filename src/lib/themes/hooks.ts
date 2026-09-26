@@ -57,6 +57,8 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'page-number', kind: 'part', description: 'One numbered page button.', states: ['data-active'] },
     { name: 'block.title', kind: 'part', description: 'A block heading.' },
     { name: 'block.genre-chips', kind: 'slot', description: 'Genre shortcuts: an All chip and one chip per genre (each a `chip`).' },
+    { name: 'block.latest-episodes', kind: 'slot', description: 'Newly aired episodes as a grid of stills. Items reuse `episode.still`, `episode.number`, `card.title` and `card.meta`.' },
+    { name: 'block.item', kind: 'part', description: 'One entry in a block (an episode, a poster or a ranked title).' },
   ],
   cards: [
     { name: 'card', kind: 'part', description: 'A media card: poster, search, continue or preview.', states: ['data-family'] },
