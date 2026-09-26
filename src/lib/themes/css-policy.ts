@@ -9,9 +9,12 @@ export const RESERVED_PROPERTY_PREFIX = '--izumi-safe-'
 export const BLOCKED_PROPERTIES: readonly string[] = ['-webkit-app-region', 'app-region', 'behavior', '-moz-binding']
 export const BLOCKED_AT_RULES: readonly string[] = ['import', 'font-face', 'namespace', 'page', 'property', 'counter-style', 'font-feature-values', 'charset']
 
+/** Every RegExp metacharacter escaped (backslash included), so a listed name always matches literally. */
+const escapeRegExp = (value: string) => value.replace(/[\\^$.*+?()[\]{}|-]/g, '\\$&')
+
 const FUNCTIONS = ['url', 'image-set', 'image', 'src', 'element', 'cross-fade', 'expression']
 const DATA_URL = /url\(\s*(["']?)data:image\/(?:png|jpeg|gif|webp|avif|svg\+xml)[;,][^"'()\\\s]*\1\s*\)/gi
-const FUNCTION_CALL = new RegExp(`(^|[^a-z0-9_-])(?:-[a-z]+-)?(${FUNCTIONS.map(name => name.replace(/-/g, '\\-')).join('|')})\\(`, 'i')
+const FUNCTION_CALL = new RegExp(`(^|[^a-z0-9_-])(?:-[a-z]+-)?(${FUNCTIONS.map(escapeRegExp).join('|')})\\(`, 'i')
 const AT_RULE = /@(?:-[a-z]+-)?([a-z-]+)/gi
 const RESERVED_DECLARATION = /(^|[{;\s])--izumi-safe-[a-z0-9_-]*\s*:/i
 
@@ -44,7 +47,7 @@ export function precheckThemeCss(value: unknown): string {
     if (BLOCKED_AT_RULES.includes(name)) throw new Error(`Theme stylesheets cannot use @${name}.`)
   }
   for (const property of BLOCKED_PROPERTIES) {
-    if (new RegExp(`(^|[{;\\s])${property.replace(/-/g, '\\-')}\\s*:`, 'i').test(value)) throw new Error(`Theme stylesheets cannot set ${property}.`)
+    if (new RegExp(`(^|[{;\\s])${escapeRegExp(property)}\\s*:`, 'i').test(value)) throw new Error(`Theme stylesheets cannot set ${property}.`)
   }
   if (RESERVED_DECLARATION.test(value)) throw new Error('Theme stylesheets cannot set reserved --izumi-safe- properties.')
   const problem = forbiddenCss(value)
