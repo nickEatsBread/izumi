@@ -1,11 +1,12 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import { themeSafeMode } from '$lib/themes/safe-mode'
+  import { playing } from '$lib/player/session'
 </script>
 
-{#if $themeSafeMode}
+{#if $themeSafeMode && !$playing}
   <aside class="safe-mode" role="status" data-theme-protected>
-    <p>Safe mode: theme styles are off for this session.</p>
+    <p>Safe mode: izumi's default appearance is on for this session.</p>
     <div>
       <button type="button" data-focusable onclick={() => themeSafeMode.set(false)}>Turn back on</button>
       <button type="button" data-focusable onclick={() => void goto('/app/settings/themes')}>Open Themes</button>

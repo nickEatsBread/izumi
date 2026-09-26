@@ -1,7 +1,8 @@
 import { writable } from 'svelte/store'
 
-/** Session-only: safe mode turns theme stylesheets off until toggled back or the app restarts.
- *  It never changes the saved theme. */
+/** Session-only: safe mode shows izumi's default appearance (colours, fonts, layout and
+ *  stylesheet) for the session, until toggled back or the app restarts. It never changes the
+ *  saved theme. */
 export const themeSafeMode = writable(false)
 
 /** Mounted surfaces a theme stylesheet must not reach (Themes page, pack review…). Only engines

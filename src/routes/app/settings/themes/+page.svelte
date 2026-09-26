@@ -72,9 +72,10 @@
     if (entry) void inspect(entry)
   }
   onMount(() => {
-    if (page.url.searchParams.get('safe') === '1') themeSafeMode.set(true)
     void refresh().then(openRequested)
   })
+  // Reactive, so `izumi://safe-mode` also works while this page is already open.
+  $effect(() => { if (page.url.searchParams.get('safe') === '1') themeSafeMode.set(true) })
   async function inspect(entry: ThemeRelease) {
     if (busy) return
     selected = entry; prepared = null; busy = true; error = ''; notice = ''
@@ -153,7 +154,7 @@
 <div class="themes-page" data-theme-protected use:protectedSurface>
   <header class="page-heading"><div><p class="eyebrow">Make it yours</p><h2>Themes</h2><p class="intro">A different look. Still your client.</p></div><a class="control gap-2" href="/app/settings/theme-studio" data-focusable><Palette size={16} aria-hidden="true" /> Theme Studio</a></header>
   {#if $themeStudioOpen}<p class="message">Finish or discard your Theme Studio draft before applying another theme.</p>{/if}
-  {#if $themeSafeMode}<p class="message">Safe mode is on: theme styles stay off until you turn them back on or restart. <button type="button" class="text-close inline" data-focusable onclick={() => themeSafeMode.set(false)}>Turn theme styles back on</button></p>{/if}
+  {#if $themeSafeMode}<p class="message">Safe mode is on: izumi's default appearance is showing until you turn themes back on or restart. <button type="button" class="text-close inline" data-focusable onclick={() => themeSafeMode.set(false)}>Turn themes back on</button></p>{/if}
   {#if $themeCssStatus.state === 'rejected'}<p role="alert" class="message error">The active theme's stylesheet was not applied: {$themeCssStatus.reason}</p>{/if}
   <div class="toolbar"><nav aria-label="Theme library"><button type="button" data-focusable aria-pressed={tab === 'browse'} onclick={() => { tab = 'browse'; selected = null; prepared = null }}>Browse</button><button type="button" data-focusable aria-pressed={tab === 'installed'} onclick={() => { tab = 'installed'; selected = null; prepared = null }}>Installed <span>{$installedThemes.length}</span></button></nav><div class="toolbar-actions"><button class="control" data-focusable onclick={() => { showAdd = true; error = '' }}>Add theme</button></div></div>
   <input bind:this={fileInput} type="file" accept=".json,application/json" multiple class="hidden" onchange={(event) => { const input = event.currentTarget; void fromFiles(input.files); input.value = '' }} aria-label="Import theme package files" />

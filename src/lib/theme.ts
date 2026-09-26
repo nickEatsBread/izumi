@@ -54,12 +54,16 @@ function applyThemeCss(text: string | undefined): void {
 
 function apply() {
   if (typeof document === 'undefined') return
+  const safe = get(themeSafeMode)
   const media = matchMedia('(prefers-color-scheme: dark)')
   const preset = get(themePreset)
   const preview = get(themeStudioPreview)
   const studio = preview ?? get(activeStudioTheme)
-  // The open Theme Studio applies drafts live without persisting them until Save.
-  const tokens = preview?.tokens ?? resolvedThemeTokens(preset, media.matches, preset === 'custom' ? studio.tokens : null)
+  // The open Theme Studio applies drafts live without persisting them until Save. Safe mode
+  // overrides both: it always resolves the default izumi palette for the session.
+  const tokens = safe
+    ? resolvedThemeTokens('izumi', media.matches, null)
+    : preview?.tokens ?? resolvedThemeTokens(preset, media.matches, preset === 'custom' ? studio.tokens : null)
   const root = document.documentElement
   const values: Record<string, string> = {
     background: tokens.background, foreground: tokens.foreground, muted: tokens.muted,
@@ -70,7 +74,7 @@ function apply() {
     ring: tokens.ring, card: tokens.card, 'card-foreground': tokens.cardForeground, theme: tokens.theme,
   }
   for (const [name, value] of Object.entries(values)) root.style.setProperty(`--${name}`, value)
-  const customActive = preset === 'custom' || preview != null
+  const customActive = !safe && (preset === 'custom' || preview != null)
   root.style.setProperty('--radius', customActive ? `${studio.radius}rem` : '0.5rem')
   const fonts = customActive ? studio.fonts : undefined
   root.style.setProperty('--ui-font', fontStack(fonts?.ui) ?? (customActive ? FONT_STACKS[studio.font] : FONT_STACKS.nunito))
@@ -118,7 +122,7 @@ function apply() {
   root.classList.toggle('a11y-large-targets', get(largeInteractionTargets))
   root.classList.toggle('a11y-reduce-motion', get(motionPreference) === 'reduce')
   root.classList.toggle('a11y-full-motion', get(motionPreference) === 'full')
-  applyThemeCss(customActive && !get(themeSafeMode) ? studio.css : undefined)
+  applyThemeCss(customActive ? studio.css : undefined)
 }
 
 let started = false
