@@ -87,4 +87,15 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'episode.number', kind: 'part', description: 'The episode number.' },
     { name: 'episode.title', kind: 'part', description: 'The episode title.' },
   ],
+  watch: [
+    { name: 'watch', kind: 'slot', description: 'The player area.', states: ['data-layout'] },
+    { name: 'watch.stage', kind: 'slot', description: 'The video frame. It and its ancestors never paint a background: the video is drawn behind the page.' },
+    { name: 'watch.rail', kind: 'slot', description: 'The rail beside or below a docked player.' },
+    { name: 'watch.episodes', kind: 'slot', description: 'The docked episode list or grid.', states: ['data-variant'] },
+    { name: 'watch.servers', kind: 'part', description: 'The server switcher.' },
+    { name: 'watch.comments', kind: 'slot', description: 'The episode discussion (inline under a docked player, or the sheet).', states: ['data-variant'] },
+    { name: 'player.controls', kind: 'slot', description: 'The player controls layer.' },
+    { name: 'player.seekbar', kind: 'part', description: 'The seek bar.' },
+    { name: 'player.title', kind: 'part', description: 'The playing title.' },
+  ],
 }

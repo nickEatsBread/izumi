@@ -75,13 +75,13 @@
   })
 </script>
 
-<div class="flex flex-col {scroll ? 'h-full min-h-0' : ''}" data-dock-episodes={orientation} aria-busy={busy}>
+<div data-slot="watch.episodes" data-variant={orientation} class="flex flex-col {scroll ? 'h-full min-h-0' : ''}" data-dock-episodes={orientation} aria-busy={busy}>
   <header class="flex items-baseline justify-between gap-3 px-4 pb-2 pt-3">
     <h2 class="truncate text-sm font-black">{media ? title(media) : 'Episodes'}</h2>
     <span class="shrink-0 text-xs font-bold text-muted-foreground">{numbers.length} episodes</span>
   </header>
   {#if servers.length > 1}
-    <div class="flex flex-wrap items-center gap-1.5 px-4 pb-2" role="group" aria-label="Server">
+    <div data-part="watch.servers" class="flex flex-wrap items-center gap-1.5 px-4 pb-2" role="group" aria-label="Server">
       <span class="text-[0.65rem] font-black uppercase tracking-wide text-muted-foreground">Server</span>
       {#each servers as server, index (index)}
         <button type="button" data-focusable disabled={busy} onclick={() => swap(server)} aria-pressed={server === currentStream}

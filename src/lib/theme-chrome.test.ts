@@ -105,4 +105,9 @@ describe('theme chrome application', () => {
     for (const file of ['StoresDialog', 'StoreEntrySheet', 'ReplacePackageDialog']) expect(read(`./components/store/${file}.svelte`), file).toContain('data-theme-protected')
     expect(read('../app.css')).toContain('pointer-events: auto;')
   })
+  it('pins the video stage path transparent against theme stylesheets', () => {
+    const overlay = read('./components/player/PlayerOverlay.svelte')
+    expect(overlay).toContain('data-slot="watch.stage"')
+    expect(overlay.match(/style:background\|important="transparent"/g)?.length).toBe(3)
+  })
 })

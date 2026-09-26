@@ -74,7 +74,7 @@ describe('docked watch layout', () => {
     const comments = read('./CommentsPanel.svelte')
     expect(comments).toContain('let { inline = false }: { inline?: boolean } = $props()')
     expect(comments).toContain('if (!inline && !$commentsOpen) return')
-    expect(comments).toContain('<div data-comments-panel data-comments-inline class="flex h-full min-h-0 flex-col bg-background text-foreground">')
+    expect(comments).toContain('<div data-slot="watch.comments" data-variant="inline" data-comments-panel data-comments-inline class="flex h-full min-h-0 flex-col bg-background text-foreground">')
   })
 
   it('gives every native embed right and bottom insets', () => {

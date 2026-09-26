@@ -595,11 +595,11 @@
      overflow clip intersecting the iframe surface forces another render surface (kRoundedCorner);
      the iframe's square bottom corners on the near-identical dark panel are imperceptible. -->
 {#if inline}
-<div data-comments-panel data-comments-inline class="flex h-full min-h-0 flex-col bg-background text-foreground">
+<div data-slot="watch.comments" data-variant="inline" data-comments-panel data-comments-inline class="flex h-full min-h-0 flex-col bg-background text-foreground">
   {@render panelBody()}
 </div>
 {:else}
-<div data-comments-panel data-gm-comments-surface data-capture-exclude-when-inert inert={!$commentsOpen}
+<div data-slot="watch.comments" data-variant="sheet" data-comments-panel data-gm-comments-surface data-capture-exclude-when-inert inert={!$commentsOpen}
      class="dq-panel absolute z-40 flex flex-col border-white/10 bg-background text-foreground {$gameMode ? 'inset-0 h-full w-full max-w-none border-0 shadow-none' : 'shadow-2xl'}
        {$gameMode
          ? ''
