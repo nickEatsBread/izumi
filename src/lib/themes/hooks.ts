@@ -55,6 +55,8 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'home.aside', kind: 'slot', description: 'The side column of Home, holding blocks placed in the aside.' },
     { name: 'pagination', kind: 'part', description: 'Page controls under a block: numbered pages or a Load more button.' },
     { name: 'page-number', kind: 'part', description: 'One numbered page button.', states: ['data-active'] },
+    { name: 'block.title', kind: 'part', description: 'A block heading.' },
+    { name: 'block.genre-chips', kind: 'slot', description: 'Genre shortcuts: an All chip and one chip per genre (each a `chip`).' },
   ],
   cards: [
     { name: 'card', kind: 'part', description: 'A media card: poster, search, continue or preview.', states: ['data-family'] },

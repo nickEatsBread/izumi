@@ -163,6 +163,8 @@ State values:
 | `home.aside` | slot | The side column of Home, holding blocks placed in the aside. |  |
 | `pagination` | part | Page controls under a block: numbered pages or a Load more button. |  |
 | `page-number` | part | One numbered page button. | `data-active` |
+| `block.title` | part | A block heading. |  |
+| `block.genre-chips` | slot | Genre shortcuts: an All chip and one chip per genre (each a `chip`). |  |
 
 #### Cards
 
