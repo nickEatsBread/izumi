@@ -4,6 +4,7 @@
   import { resolveDetail, themeColorCss, type HeroIndicator } from '$lib/themes/presentation'
   import { mediaDisplayModel } from '$lib/themes/host-model'
   import { sampleAmbient } from '$lib/themes/ambient'
+  import { themeCssStatus } from '$lib/theme'
   import { motionPreference } from '$lib/settings/ui'
   import type { Media } from '$lib/anilist/types'
   import { banner, cover, title, format, status, season, totalEpisodes } from '$lib/anilist/media'
@@ -328,9 +329,9 @@
     rankPosition: current.featuredRank?.position, poster: cover(current), backdrop: banner(current), logo: currentLogo || undefined,
     slide: i + 1, slides: medias.length,
   }, 0, clock) : {})
-  // Home hero only: publish the current artwork's colour so a theme can tint the page behind it.
+  // Home hero only, and only while a theme stylesheet is applied: publish the current artwork's colour so the theme can tint the page behind it.
   $effect(() => {
-    if (!showOverlay || !current) return
+    if (!showOverlay || !current || $themeCssStatus.state !== 'applied') return
     const src = banner(current) || cover(current)
     let cancelled = false
     void sampleAmbient(src).then((rgb) => {
