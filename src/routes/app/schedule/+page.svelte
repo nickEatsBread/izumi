@@ -89,7 +89,7 @@
 <!-- Extra desktop top padding: `p-8` put the title flush against the bottom edge of the 32px window
      titlebar, so the page's top-left content read as a continuation of the window-control row. -->
 <div class="px-4 pb-8 pt-5 sm:px-8 sm:pb-8 sm:pt-10
-            {$anilistDegradedBannerVisible ? 'pt-[3rem] sm:pt-[4.25rem]' : ''}">
+            {$anilistDegradedBannerVisible ? 'pt-[3rem] sm:pt-[4.25rem]' : ''}" data-slot="schedule">
   <!-- The global desktop titlebar is transparent so hero artwork can extend to the window edge.
        Schedule has no hero, though, and its rows would remain visible through that strip once this
        page's toolbar became sticky. Paint only that reserved 32px titlebar area while pinned; the

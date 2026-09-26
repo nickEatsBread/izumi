@@ -103,6 +103,7 @@
   onMount(() => { void loadMore() })
 </script>
 
+<div data-slot="search.results">
 {#if $browseLayout === 'list'}
   <!-- List: a vertical run of compact rows (small cover + title + meta) — denser, text-forward. -->
   <VirtualGrid
@@ -158,6 +159,7 @@
     </div>
   {/if}
 {/if}
+</div>
 
 {#if error}
   <div class="mt-4 flex flex-wrap items-center gap-3">

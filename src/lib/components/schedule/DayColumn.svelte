@@ -16,7 +16,7 @@
   const delayOf = (m: Media) => delayLines(infoOf?.(m) ?? null)[0] ?? ''
 </script>
 
-<div class="flex min-w-0 flex-col">
+<div class="flex min-w-0 flex-col" data-part="schedule.day">
   {#if !big}
     <h3 class="mb-2 text-sm font-black {today ? 'text-sky-400' : ''}">{label}{#if today} · Today{/if}</h3>
   {/if}
@@ -27,7 +27,7 @@
         {@const delay = delayOf(a.media)}
         {@const nav = scheduleCardNav(big ? navFirst : undefined, i, airings.length)}
         {@const source = scheduleSourceLabel(a)}
-        <div class="relative" data-schedule-item>
+        <div class="relative" data-schedule-item data-part="schedule.item">
           <a
             data-focusable
             data-nav-id={nav.id}

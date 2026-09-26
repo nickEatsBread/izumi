@@ -382,14 +382,14 @@
   const loadAtEnd = () => { void loadMore() }
 </script>
 
-<div class="pb-20 {embedded ? 'px-4 pt-4 sm:px-8' : 'p-4 sm:p-8'}">
+<div class="pb-20 {embedded ? 'px-4 pt-4 sm:px-8' : 'p-4 sm:p-8'}" data-slot="search" data-variant="catalog">
   {#if isTmdb && watchProvider}
     <div class="mb-4 flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
       <div><p class="text-xs font-semibold text-muted-foreground">Streaming service</p><p class="font-black">{watchProviderName || 'Selected provider'}</p></div>
       <button type="button" data-focusable onclick={() => { watchProvider = undefined; watchProviderName = '' }} aria-label="Clear streaming service" class="grid size-9 place-items-center rounded-full text-muted-foreground transition hover:bg-secondary hover:text-foreground"><X size={17} /></button>
     </div>
   {/if}
-  <div class="mb-6 flex flex-col gap-3">
+  <div class="mb-6 flex flex-col gap-3" data-part="search.filters">
     <label class="relative min-w-0 flex-1">
       <Search size={19} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
       <input bind:value={query} data-focusable placeholder="Search {animeOnly ? 'anime' : 'movies and series'}…"
@@ -442,16 +442,18 @@
   {/if}
 
   {#if media.length}
-    <VirtualGrid
-      items={media}
-      getKey={mediaKey}
-      className="grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:gap-5"
-      onEndReached={loadAtEnd}
-    >
-      {#snippet children(item)}
-        <SmallCard media={item} fill reserveTitleLines subline={isTmdb ? tmdbMetadata(item) : isStremio ? stremioMetadata(item) : isJvm ? jvmMetadata(item) : undefined} />
-      {/snippet}
-    </VirtualGrid>
+    <div data-slot="search.results">
+      <VirtualGrid
+        items={media}
+        getKey={mediaKey}
+        className="grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:gap-5"
+        onEndReached={loadAtEnd}
+      >
+        {#snippet children(item)}
+          <SmallCard media={item} fill reserveTitleLines subline={isTmdb ? tmdbMetadata(item) : isStremio ? stremioMetadata(item) : isJvm ? jvmMetadata(item) : undefined} />
+        {/snippet}
+      </VirtualGrid>
+    </div>
   {:else if !loading && !error}
     <div class="rounded-xl bg-secondary/40 p-8 text-center text-muted-foreground">No results.</div>
   {/if}

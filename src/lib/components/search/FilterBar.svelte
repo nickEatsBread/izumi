@@ -53,7 +53,7 @@
 <!-- Mobile: search on its own full-width row, then the filters in a single horizontally-scrollable
      row (bleeds to the screen edges) so nothing wraps or gets orphaned. Desktop: the inner wrapper
      becomes `display:contents` so everything flows into one wrapping flex row as before. -->
-<div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+<div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center" data-part="search.filters">
   <input
     data-focusable
     type="text"

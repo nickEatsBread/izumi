@@ -98,4 +98,15 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'player.seekbar', kind: 'part', description: 'The seek bar.' },
     { name: 'player.title', kind: 'part', description: 'The playing title.' },
   ],
+  pages: [
+    { name: 'search', kind: 'slot', description: 'The search page.', states: ['data-variant'] },
+    { name: 'search.filters', kind: 'part', description: 'The search filter bar.' },
+    { name: 'search.results', kind: 'slot', description: 'The search results.' },
+    { name: 'schedule', kind: 'slot', description: 'The airing schedule page.' },
+    { name: 'schedule.day', kind: 'part', description: 'The day being shown.' },
+    { name: 'schedule.item', kind: 'part', description: 'One airing entry.' },
+    { name: 'library', kind: 'slot', description: 'The library page.' },
+    { name: 'library.tabs', kind: 'part', description: 'The library section tabs.' },
+    { name: 'library.grid', kind: 'slot', description: 'The library card grid.' },
+  ],
 }

@@ -187,7 +187,7 @@
   {:else if !isLegacyAniListCatalog(mergedScope)}
     <CatalogSearchPage selection={mergedScope} embedded onQueryChange={(value) => (mergedQuery = value)} />
   {:else}
-    <div class="p-4 pt-5 sm:px-8">
+    <div class="p-4 pt-5 sm:px-8" data-slot="search" data-variant="anilist-scope">
       <FilterBar bind:filters />
       <div class="mt-6">
         {#key key}<SearchResults filters={debounced} />{/key}
@@ -199,7 +199,7 @@
 {:else}
   <!-- Normal padding clears the mobile edge/titlebar. While the fixed degraded strip exists, add
        its 1.75rem height as well so it cannot cover the browse controls. -->
-  <div class="p-4 sm:p-8 {$anilistDegradedBannerVisible ? 'pt-[2.75rem] sm:pt-[3.75rem]' : ''}">
+  <div class="p-4 sm:p-8 {$anilistDegradedBannerVisible ? 'pt-[2.75rem] sm:pt-[3.75rem]' : ''}" data-slot="search" data-variant="anilist">
     {#if filters.studioId || filters.staffId || filters.genres?.[0]}
       <h1 class="mb-4 text-2xl font-black">
         {filters.staffId ? (filters.exploreName || 'Voice actor') : filters.studioId ? (filters.exploreName || 'Studio') : filters.genres?.[0]}
