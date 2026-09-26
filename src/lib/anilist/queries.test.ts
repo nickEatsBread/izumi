@@ -7,7 +7,7 @@ import {
 } from './detail-queries'
 import {
   LOCAL_RECOMMENDATIONS_QUERY, PAGE_QUERY, PERSONAL_RECOMMENDATIONS_QUERY, RECENT_RELEASES_QUERY,
-  currentSeason, heroQuery, pageQuery,
+  currentSeason, heroQuery, homeSections, pageQuery,
 } from './queries'
 describe('currentSeason', () => {
   it('maps month to AniList season', () => {
@@ -62,5 +62,52 @@ describe('catalogue projection', () => {
     expect(query).toMatch(/airingSchedule\(perPage:\s*26\)/)
     expect(query).not.toContain('synonyms')
     expect(query).not.toContain('popularity')
+  })
+
+  it('declares $format/$status as optional filters with no default, so an omitted preset value stays omitted', () => {
+    const previous = get(showAdult)
+    showAdult.set(true)
+    const allQuery = pageQuery().loc?.source.body ?? ''
+    showAdult.set(previous)
+    const query = PAGE_QUERY.loc?.source.body ?? ''
+    for (const body of [query, allQuery]) {
+      expect(body).toMatch(/\$format:\s*MediaFormat[,)]/)
+      expect(body).toMatch(/\$status:\s*MediaStatus[,)]/)
+      expect(body).toContain('format: $format')
+      expect(body).toContain('status: $status')
+    }
+  })
+})
+
+describe('homeSections presets', () => {
+  it('adds Newest, Popular Movies and Top Rated after All Time Popular', () => {
+    const keys = homeSections(new Date('2026-01-15')).map((section) => section.key)
+    expect(keys.slice(keys.indexOf('popular'), keys.indexOf('popular') + 4)).toEqual([
+      'popular', 'newest', 'movies', 'rated',
+    ])
+  })
+
+  it('filters Newest to currently-airing titles, newest start date first', () => {
+    const section = homeSections(new Date('2026-01-15')).find((item) => item.key === 'newest')
+    expect(section).toMatchObject({ title: 'Newest', vars: { sort: ['START_DATE_DESC'], status: 'RELEASING' } })
+  })
+
+  it('filters Popular Movies to the MOVIE format', () => {
+    const section = homeSections(new Date('2026-01-15')).find((item) => item.key === 'movies')
+    expect(section).toMatchObject({ title: 'Popular Movies', vars: { sort: ['POPULARITY_DESC'], format: 'MOVIE' } })
+  })
+
+  it('sorts Top Rated by score without a format/status filter', () => {
+    const section = homeSections(new Date('2026-01-15')).find((item) => item.key === 'rated')
+    expect(section).toMatchObject({ title: 'Top Rated', vars: { sort: ['SCORE_DESC'] } })
+    expect(section?.vars).not.toHaveProperty('format')
+    expect(section?.vars).not.toHaveProperty('status')
+  })
+
+  it('only sets format/status on the presets that actually filter by them', () => {
+    for (const section of homeSections(new Date('2026-01-15'))) {
+      expect('format' in section.vars).toBe(section.key === 'movies')
+      expect('status' in section.vars).toBe(section.key === 'newest')
+    }
   })
 })

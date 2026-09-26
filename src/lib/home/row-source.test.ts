@@ -63,6 +63,14 @@ describe('row source', () => {
     await expect(loadRowPage('anilist', 'recommendations', 1, 18)).resolves.toEqual({ media: [], hasNextPage: false })
   })
 
+  it('pages the Popular Movies row with a format filter and no status variable', async () => {
+    query.mockResolvedValue({ data: { Page: { pageInfo: { hasNextPage: false, lastPage: 1 }, media: [media(4)] } } })
+    const page = await loadRowPage('anilist', 'movies', 1, 18)
+    expect(page).toEqual({ media: [media(4)], hasNextPage: false, lastPage: 1 })
+    expect(query.mock.calls[0][1]).toMatchObject({ page: 1, perPage: 18, format: 'MOVIE', sort: ['POPULARITY_DESC'] })
+    expect(query.mock.calls[0][1]).not.toHaveProperty('status')
+  })
+
   it('surfaces AniList errors', async () => {
     query.mockResolvedValue({ error: new Error('rate limited') })
     await expect(loadRowPage('anilist', 'trending', 1, 18)).rejects.toThrow('rate limited')

@@ -59,20 +59,22 @@ export function rowSource(target: CatalogHomeTarget, rowId: string): RowSource |
   return target === 'auto' || target === 'anilist' ? { kind: 'anilist', role: rowId } : { kind: 'provider', selection: target, rowId }
 }
 
-// Same two-variant adult split as the carousel query (AniList needs the argument omitted to include adult titles).
+// Same two-variant adult split as the carousel query (AniList needs the argument omitted to include
+// adult titles). `$format`/`$status` are likewise optional with no default, so an omitted preset
+// value stays omitted rather than becoming a `null` filter — see the fuller note in queries.ts.
 const ROW_PAGE_QUERY = gql`
-  query RowPage($page: Int = 1, $perPage: Int = 18, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $genre: String, $withPreview: Boolean = true) {
+  query RowPage($page: Int = 1, $perPage: Int = 18, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $genre: String, $format: MediaFormat, $status: MediaStatus, $withPreview: Boolean = true) {
     Page(page: $page, perPage: $perPage) {
       pageInfo { hasNextPage lastPage }
-      media(type: ANIME, isAdult: false, sort: $sort, season: $season, seasonYear: $seasonYear, genre: $genre) { ...CardMediaFields }
+      media(type: ANIME, isAdult: false, sort: $sort, season: $season, seasonYear: $seasonYear, genre: $genre, format: $format, status: $status) { ...CardMediaFields }
     }
   }
   ${CARD_MEDIA_FIELDS}`
 const ROW_PAGE_QUERY_ALL = gql`
-  query RowPageAll($page: Int = 1, $perPage: Int = 18, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $genre: String, $withPreview: Boolean = true) {
+  query RowPageAll($page: Int = 1, $perPage: Int = 18, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $genre: String, $format: MediaFormat, $status: MediaStatus, $withPreview: Boolean = true) {
     Page(page: $page, perPage: $perPage) {
       pageInfo { hasNextPage lastPage }
-      media(type: ANIME, sort: $sort, season: $season, seasonYear: $seasonYear, genre: $genre) { ...CardMediaFields }
+      media(type: ANIME, sort: $sort, season: $season, seasonYear: $seasonYear, genre: $genre, format: $format, status: $status) { ...CardMediaFields }
     }
   }
   ${CARD_MEDIA_FIELDS}`

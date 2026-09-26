@@ -230,10 +230,12 @@ async function catalogUrl(request: JikanCatalogRequest): Promise<string> {
     url.searchParams.set('start_date', range.start)
     url.searchParams.set('end_date', range.end)
   }
-  const formats = Array.isArray(v.format_in) ? v.format_in : []
+  // A singular `format`/`status` (the Home-row presets) is treated exactly like a one-element
+  // `format_in`/`status_in` (the search filters) — same "if there's exactly one value" narrowing.
+  const formats = Array.isArray(v.format_in) ? v.format_in : typeof v.format === 'string' ? [v.format] : []
   const type = formats.length === 1 ? String(formats[0]).toLowerCase() : ''
   if (type && ['tv', 'movie', 'ova', 'ona', 'special', 'music'].includes(type)) url.searchParams.set('type', type)
-  const statuses = Array.isArray(v.status_in) ? v.status_in : []
+  const statuses = Array.isArray(v.status_in) ? v.status_in : typeof v.status === 'string' ? [v.status] : []
   const status = statuses.length === 1
     ? ({ FINISHED: 'complete', RELEASING: 'airing', NOT_YET_RELEASED: 'upcoming' } as Record<string, string>)[String(statuses[0])]
     : undefined
