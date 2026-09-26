@@ -69,6 +69,7 @@
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { mediaDisplayModel } from '$lib/themes/host-model'
   import { countryName, formatDate as fmtDate, prettyEnum } from '$lib/detail/facts'
+  import FactList from './FactList.svelte'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -211,6 +212,7 @@
   let active = $state('Episodes')
   let heroPlay = $state<PlayState>({ status: 'idle' })
   const detailTheme = $derived(resolveDetail($themePresentation))
+  const factsStyle = $derived(detailTheme.factsStyle ?? 'template')
   const overlayDetail = $derived(detailTheme.layout === 'overlay')
   const bannerOverlap = $derived(detailTheme.bannerHeight ? Math.round(detailTheme.bannerHeight * 0.58) : (controllerUi ? 16 : 18))
   const sideEpisodes = $derived(episodesOnSide($themePresentation, !$isMobile))
@@ -597,6 +599,7 @@
           </div>
         </div>
 
+        {#if factsStyle === 'template'}
         <!-- One line of facts instead of seven chips: on a phone the chips wrapped into three
              rows and read as a wall of pills rather than a summary. Facts sit directly under the
              title — identity first, schedule after. -->
@@ -623,6 +626,9 @@
           {#if m.source}<span class="opacity-35">·</span><span>From {prettyEnum(m.source)}</span>{/if}
           {#if m.popularity}<span class="opacity-35">·</span><span>{compactNumber.format(m.popularity)} members</span>{/if}
         </div>
+        {:else}
+          <FactList media={m} variant={factsStyle} />
+        {/if}
 
         {#if m.genres?.length}
           <!-- One horizontal rail preserves vertical space while making genre identity visible at a
@@ -885,7 +891,9 @@
         {/if}
         <h1 data-part="detail.title" class="mb-2 text-3xl font-black">{title(m)}</h1>
 
-        {#if detailTheme.facts}
+        {#if factsStyle !== 'template'}
+          <FactList media={m} variant={factsStyle} />
+        {:else if detailTheme.facts}
           <div data-part="detail.facts" class="mb-3">
             <ThemeNode node={detailTheme.facts} model={mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined })} />
           </div>

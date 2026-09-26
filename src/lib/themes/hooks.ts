@@ -86,7 +86,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'detail.title', kind: 'part', description: 'The title.' },
     { name: 'detail.alt-title', kind: 'part', description: 'The native or romaji title.' },
     { name: 'detail.meta', kind: 'part', description: 'The facts line.' },
-    { name: 'detail.facts', kind: 'part', description: 'The theme facts template (desktop stack and split).' },
+    { name: 'detail.facts', kind: 'part', description: 'The facts: a theme template (desktop stack and split) or, with `detail.factsStyle`, a table, cards or chips.', states: ['data-variant'] },
     { name: 'fact', kind: 'part', description: 'One entry of the details grid.' },
     { name: 'fact.label', kind: 'part', description: 'A details entry label.' },
     { name: 'fact.value', kind: 'part', description: 'A details entry value.' },

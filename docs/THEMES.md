@@ -104,6 +104,7 @@ State values:
 | `data-family` | `card` | `poster`, `search`, `continue`, `preview` |
 | `data-layout` | `detail` | `stack`, `split`, `overlay` |
 | `data-variant` | `detail` | `phone`, `desktop` |
+| `data-variant` | `detail.facts` | `table`, `cards`, `chips` (none for a template) |
 | `data-variant` | `episode` | `template`, `thumb`, `compact`, `number`, `row` |
 | `data-layout` | `watch` | `full`, `docked` |
 | `data-variant` | `watch.episodes` | `right`, `below` |
@@ -202,7 +203,7 @@ State values:
 | `detail.title` | part | The title. |  |
 | `detail.alt-title` | part | The native or romaji title. |  |
 | `detail.meta` | part | The facts line. |  |
-| `detail.facts` | part | The theme facts template (desktop stack and split). |  |
+| `detail.facts` | part | The facts: a theme template (desktop stack and split) or, with `detail.factsStyle`, a table, cards or chips. | `data-variant` |
 | `fact` | part | One entry of the details grid. |  |
 | `fact.label` | part | A details entry label. |  |
 | `fact.value` | part | A details entry value. |  |
