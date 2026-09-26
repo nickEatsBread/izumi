@@ -77,4 +77,13 @@ describe('theme chrome application', () => {
     expect(hero).toContain("setProperty('--hero-ambient-rgb'")
     expect(hero).toContain("removeProperty('--hero-ambient-rgb')")
   })
+  it('renders the wordmark with brand hooks and a text mode', () => {
+    const text = read('./components/BrandText.svelte')
+    expect(text).toContain('data-slot="brand"')
+    expect(text).toContain('data-part="brand.char"')
+    const mark = read('./components/Wordmark.svelte')
+    expect(mark).toContain("$themePresentation?.brand === 'text'")
+    expect(mark).toContain('data-part="brand.mark"')
+    expect(read('./components/shell/Sidebar.svelte')).toContain('<BrandText className=')
+  })
 })

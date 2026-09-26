@@ -1,5 +1,6 @@
 <script lang="ts">
   import CatalogBrandLogo from '../catalog/CatalogBrandLogo.svelte'
+  import BrandText from '../BrandText.svelte'
   import CatalogSwitcher from '../catalog/CatalogSwitcher.svelte'
   import Home from '@lucide/svelte/icons/house'
   import Calendar from '@lucide/svelte/icons/calendar'
@@ -111,7 +112,7 @@
       </a>
     {/if}
     {#if !top}
-      <span class="whitespace-nowrap text-lg font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">izumi</span>
+      <BrandText className="whitespace-nowrap text-lg font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}" />
     {/if}
   </div>
 
