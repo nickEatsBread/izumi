@@ -33,6 +33,8 @@ Semantic colors, font family and scale, corner radius, backdrop and glass effect
 - Section headings (API 2, `heading`): weight, uppercase, a bar/dot/underline accent and whether "View more" is text, an arrow or hidden. Home-row cards also receive `rankPosition` and a zero-padded `rank`, so a row template can number trending titles.
 - Per-row overrides follow stable row identities, so reordering a row does not move its visual settings to another row. Resolution is global defaults → semantic row role → exact scoped row ID. For example, `continue` can override every Continue Watching row and `anime:continue` can target one catalog.
 
+Home blocks — latest episodes, tabbed grid, genre chips, ranked list and profile header — and the side column are izumi features: anyone adds, configures and removes them from Edit Home (`src/lib/home/blocks.ts`, `src/lib/components/home/`). Themes style them through the block hooks listed under "Styling hooks"; a later theme API will let a theme place them.
+
 ### Cards
 
 Optional templates for three families: `poster` (ordinary tiles), `continue` (resume cards), and `search` (search grids). A home-row `card` template still wins on that row. Search falls back to the poster family when it has no template of its own.
