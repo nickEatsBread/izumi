@@ -106,8 +106,11 @@ describe('theme chrome application', () => {
     expect(read('../app.css')).toContain('pointer-events: auto;')
   })
   it('pins the video stage path transparent against theme stylesheets', () => {
+    // The video is drawn behind the page, so the root and both wrappers stay see-through whatever a theme's stylesheet says.
     const overlay = read('./components/player/PlayerOverlay.svelte')
-    expect(overlay).toContain('data-slot="watch.stage"')
-    expect(overlay.match(/style:background\|important="transparent"/g)?.length).toBe(3)
+    expect(overlay).toMatch(/data-slot="watch" [^>]*style:background\|important="transparent"\s+class=\{docked \? `izumi-player-dock /)
+    expect(overlay).toMatch(/style:background\|important="transparent"\s+class=\{docked \? `izumi-player-stage /)
+    expect(overlay).toMatch(/data-slot="watch\.stage" style:background\|important="transparent"\s+bind:this=\{overlayRoot\}/)
+    expect(overlay.match(/style:background\|important="transparent"/g)).toHaveLength(3)
   })
 })
