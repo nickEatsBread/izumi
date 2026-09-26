@@ -45,7 +45,7 @@ describe('multi-platform catalog entry points', () => {
 
   it('keeps the brand as Home navigation away from Home', () => {
     expect(sidebar).toContain('href="/app/home"')
-    expect(sidebar).toContain('<CatalogBrandLogo platform={$catalogScreen} />')
+    expect(sidebar).toContain('<CatalogBrandLogo brand platform={$catalogScreen} />')
     expect(sidebar).not.toContain('cycleCatalog')
     expect(sidebar).not.toContain('event.preventDefault()')
     expect(home).not.toContain('onclick={cycleCatalog}')
@@ -53,7 +53,7 @@ describe('multi-platform catalog entry points', () => {
 
   it('keeps the selected catalog colour on the Izumi mark throughout the client', () => {
     expect(home).toContain('<CatalogBrandLogo platform={$catalogScreen} />')
-    expect(sidebar).toContain('<CatalogBrandLogo platform={$catalogScreen} />')
+    expect(sidebar).toContain('<CatalogBrandLogo brand platform={$catalogScreen} />')
     expect(catalogStore).toContain("export const catalogLastScreen = persisted<CatalogScreen>(")
     expect(catalogStore).toContain('catalogLastScreen.set(screen)')
   })

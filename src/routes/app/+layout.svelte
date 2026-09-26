@@ -503,7 +503,7 @@
      Hidden while playing so its opaque content doesn't block the video. -->
 <!-- The docked mini-player bar (4rem) rests on the bottom navigation (its themed height, 4rem by
      default): while it is up, pages reserve both so their last rows are never buried under the video. -->
-<main class="theme-shell-main relative min-h-screen {($isMobile || $shellNav === 'bottom') ? ($androidMiniPlayer ? 'mb-[calc(var(--theme-bottom-nav,4rem)+4rem+env(safe-area-inset-bottom))]' : 'mb-[calc(var(--theme-bottom-nav,4rem)+env(safe-area-inset-bottom))]') : ''} {$shellNav === 'top' ? 'pt-[4.75rem]' : ''}" class:hidden={$playing || ($androidMpvActive && !$androidMiniPlayer)} style:display|important={$playing || ($androidMpvActive && !$androidMiniPlayer) ? 'none' : undefined}>{@render children()}</main>
+<main data-slot="page" class="theme-shell-main relative min-h-screen {($isMobile || $shellNav === 'bottom') ? ($androidMiniPlayer ? 'mb-[calc(var(--theme-bottom-nav,4rem)+4rem+env(safe-area-inset-bottom))]' : 'mb-[calc(var(--theme-bottom-nav,4rem)+env(safe-area-inset-bottom))]') : ''} {$shellNav === 'top' ? 'pt-[4.75rem]' : ''}" class:hidden={$playing || ($androidMpvActive && !$androidMiniPlayer)} style:display|important={$playing || ($androidMpvActive && !$androidMiniPlayer) ? 'none' : undefined}>{@render children()}</main>
 {#if $playing}<Lazy load={loadPlayerOverlay} />{/if}
 <!-- One Android watch-details instance spans source preparation and native playback. In particular,
      its Disqus iframe is never destroyed merely because libmpv presented its first frame. -->

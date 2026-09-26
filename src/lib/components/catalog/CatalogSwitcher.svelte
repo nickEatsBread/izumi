@@ -54,6 +54,7 @@
   const choices = $derived($enabledCatalogScreens)
   const activeLabel = $derived(catalogLabel($catalogScreen))
   const canSwitch = $derived(choices.length > 1)
+  const brandTrigger = $derived(display === 'brand')
 
   async function setOpen(next: boolean, refocus = false) {
     open = next
@@ -141,6 +142,7 @@
   <div bind:this={root} class={className} data-nav-trap={open ? '' : undefined}>
     <div class="relative {display === 'rail' ? 'w-full' : 'w-fit'}">
     <button
+      data-slot={brandTrigger ? 'brand' : undefined}
       bind:this={trigger}
       type="button"
       data-focusable
@@ -178,7 +180,7 @@
         <!-- Integrated mode keeps the identity visually intact: the full Izumi mark is the
              trigger, and a quiet chevron communicates that it opens instead of navigating. -->
         <span class="relative grid size-8 shrink-0 place-items-center">
-          <CatalogBrandLogo platform={$catalogScreen} />
+          <CatalogBrandLogo brand={brandTrigger} platform={$catalogScreen} />
           <ChevronDown
             aria-hidden="true"
             size={11}

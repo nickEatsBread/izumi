@@ -61,6 +61,7 @@
 </script>
 
 <nav
+  data-slot="nav.bottom"
   data-nav-sidebar
   data-theme-surface="shell"
   data-theme-bottom-nav={style}
@@ -81,6 +82,8 @@
     {@const on = active(item.href)}
     {@const Icon = item.icon}
     <a
+      data-part="nav.item"
+      data-active={on || undefined}
       href={item.href}
       data-focusable
       aria-current={on ? 'page' : undefined}
@@ -94,14 +97,14 @@
       {#if indicator === 'line' && on}
         <span class="absolute inset-x-3 top-0 h-0.5 rounded-full" style:background={activeColor ?? 'hsl(var(--theme))'}></span>
       {/if}
-      <span class="relative grid place-items-center rounded-full px-4 py-1">
+      <span data-part="nav.item.icon" class="relative grid place-items-center rounded-full px-4 py-1">
         {#if indicator === 'pill' && on}
           <span class="absolute inset-0 rounded-full" style:background={indicatorTint}></span>
         {/if}
         <Icon size={iconSize} class="relative" />
       </span>
       {#if labelMode === 'always' || (labelMode === 'active' && on)}
-        <span>{item.label()}</span>
+        <span data-part="nav.item.label">{item.label()}</span>
       {/if}
       {#if indicator === 'dot' && on}
         <span class="size-1 rounded-full" style:background={activeColor ?? 'hsl(var(--theme))'}></span>

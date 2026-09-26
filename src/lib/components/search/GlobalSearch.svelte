@@ -217,7 +217,7 @@
       class="relative z-10 flex max-h-[min(86vh,52rem)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-card shadow-2xl">
       <div class="flex items-center gap-3 border-b border-border px-4 transition-colors focus-within:border-theme/70 sm:px-5">
         <Search size={23} class="shrink-0 text-theme" />
-        <input bind:this={input} bind:value={query} data-focusable type="search"
+        <input data-part="search.field" bind:this={input} bind:value={query} data-focusable type="search"
           placeholder="Search {providerLabel}…" aria-label="Search catalog" autocomplete="off" onkeydown={onInputKeydown}
           class="global-search-input min-w-0 flex-1 bg-transparent py-4 text-lg font-semibold outline-none placeholder:font-normal placeholder:text-muted-foreground sm:py-5 sm:text-xl" />
         {#if searchState === 'loading'}<LoaderCircle size={20} class="shrink-0 animate-spin text-muted-foreground" />{/if}

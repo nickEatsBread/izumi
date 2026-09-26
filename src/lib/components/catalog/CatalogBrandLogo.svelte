@@ -4,9 +4,11 @@
   let {
     platform,
     className = 'h-7 w-7',
+    brand = false,
   }: {
     platform: CatalogScreen
     className?: string
+    brand?: boolean
   } = $props()
 
   // Keep the Izumi silhouette while borrowing the selected catalog's brand colours. The active
@@ -25,6 +27,7 @@
 </script>
 
 <span
+  data-part={brand ? 'brand.mark' : undefined}
   aria-hidden="true"
   class="catalog-provider-mark {className}"
   style={`--catalog-start:${colors[0]};--catalog-mid:${colors[1]};--catalog-end:${colors[2]}`}

@@ -20,4 +20,14 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'brand.text', kind: 'part', description: 'The text wordmark (presentation.brand "text", and the expanded side rail).' },
     { name: 'brand.char', kind: 'part', description: 'One letter of "izumi"; style runs of letters with :nth-child().' },
   ],
+  shell: [
+    { name: 'page', kind: 'slot', description: 'The routed page content (the app <main>).' },
+    { name: 'nav.side', kind: 'slot', description: 'The side navigation rail.' },
+    { name: 'nav.top', kind: 'slot', description: 'The top navigation bar (shell.nav "top").' },
+    { name: 'nav.bottom', kind: 'slot', description: 'The bottom tab bar (phones, or shell.nav "bottom").' },
+    { name: 'nav.item', kind: 'part', description: 'A navigation destination link.', states: ['data-active'] },
+    { name: 'nav.item.icon', kind: 'part', description: 'The icon of a navigation destination.' },
+    { name: 'nav.item.label', kind: 'part', description: 'The label of a navigation destination.' },
+    { name: 'search.field', kind: 'part', description: 'The global search input.' },
+  ],
 }

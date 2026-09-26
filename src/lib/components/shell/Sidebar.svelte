@@ -94,7 +94,7 @@
      expanded, so no per-state markup swap. `main` keeps its 56px margin — the expanded rail
      overlays the content (fixed) rather than reflowing it. Selection uses a quiet active-row fill;
      keyboard/gamepad FOCUS fills the row more strongly (see app.css) — no squared ring. -->
-<nav data-nav-sidebar data-theme-surface="shell" onfocusin={onFocusIn} onfocusout={onFocusOut}
+<nav data-slot={top ? 'nav.top' : 'nav.side'} data-nav-sidebar data-theme-surface="shell" onfocusin={onFocusIn} onfocusout={onFocusOut}
      class="fixed z-30 flex gap-1 transition-[width] duration-200 ease-out
        {top ? 'inset-x-0 top-0 h-[4.75rem] w-full flex-row items-center border-b border-border/50 bg-background px-3 pt-8' : 'inset-y-0 left-0 flex-col py-3 pt-9'}
        {catalogPickerOpen ? 'overflow-visible' : 'overflow-hidden'}
@@ -106,9 +106,9 @@
     {#if switcherPlacement === 'integrated' && active('/app/home') && !$offlineMode && $enabledCatalogScreens.length > 1}
       <CatalogSwitcher display="brand" bind:open={catalogPickerOpen} className="ml-2 shrink-0" />
     {:else}
-      <a href="/app/home" onclick={() => h.tap()} aria-label={m.nav_home()} title={m.nav_home()} tabindex={-1}
+      <a data-slot="brand" href="/app/home" onclick={() => h.tap()} aria-label={m.nav_home()} title={m.nav_home()} tabindex={-1}
          class="ml-2 grid size-10 shrink-0 place-items-center transition-transform duration-200 group-hover:scale-110">
-        <CatalogBrandLogo platform={$catalogScreen} />
+        <CatalogBrandLogo brand platform={$catalogScreen} />
       </a>
     {/if}
     {#if !top}
@@ -122,13 +122,13 @@
 
   {#each items as it (it.href)}
     {@const on = active(it.href)}
-    <a href={it.href} title={it.label} data-focusable={df} tabindex={tab} aria-current={on ? 'page' : undefined}
+    <a data-part="nav.item" data-active={on || undefined} href={it.href} title={it.label} data-focusable={df} tabindex={tab} aria-current={on ? 'page' : undefined}
        class={destClass(on)}>
-      <span class="grid {top ? 'size-5' : 'w-8'} shrink-0 place-items-center"><it.icon size={20} class={it.anim} /></span>
+      <span data-part="nav.item.icon" class="grid {top ? 'size-5' : 'w-8'} shrink-0 place-items-center"><it.icon size={20} class={it.anim} /></span>
       {#if top}
-        <span class="sr-only">{it.label}</span>
+        <span data-part="nav.item.label" class="sr-only">{it.label}</span>
       {:else}
-        <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{it.label}</span>
+        <span data-part="nav.item.label" class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{it.label}</span>
       {/if}
     </a>
   {/each}

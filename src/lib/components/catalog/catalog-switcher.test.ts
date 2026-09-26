@@ -20,7 +20,7 @@ describe('catalog switcher', () => {
     expect(source).toContain('Catalog: {activeLabel}</span>')
     expect(source).toContain("expanded ? 'opacity-100' : 'opacity-0'")
     expect(source).toContain("display === 'brand'")
-    expect(source).toContain('<CatalogBrandLogo platform={$catalogScreen} />')
+    expect(source).toContain('<CatalogBrandLogo brand={brandTrigger} platform={$catalogScreen} />')
     expect(source).toContain('showWordmark')
     // Integrated mode must keep the mark clean instead of layering another provider badge on it.
     expect(source).not.toContain('CatalogProviderBadge')
