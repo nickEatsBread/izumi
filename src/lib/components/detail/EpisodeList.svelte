@@ -646,7 +646,7 @@
           aired,
           percent: episodeBarPercent($positions[progressKey(media.id, ep)], false, ep <= aired),
         })}
-        <button data-focusable data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
+        <button data-part="episode" data-variant="number" data-focusable data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
                 data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
                 disabled={!tile.playable} onpointerenter={() => intent(ep)} onfocus={() => intent(ep)}
                 onclick={(event) => { h.tap(); tap(ep, event) }}
@@ -678,6 +678,7 @@
         {@const done = watchedThrough >= ep}
         {@const pct = episodeBarPercent($positions[progressKey(media.id, ep)], done, released)}
         <div
+          data-part="episode" data-variant="row"
           data-focusable
           data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
           data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
@@ -700,11 +701,11 @@
             <!-- The number chip carries the watched state: it stays a NUMBER (identity is what you
                  scan for in this layout) but takes the theme tint, so a finished season reads as
                  finished at a glance without hiding which episode is which. -->
-            <span class="grid h-7 min-w-7 shrink-0 place-items-center rounded px-1 text-sm font-black sm:h-8 sm:min-w-8 {done ? 'bg-theme/25 text-theme' : 'bg-background/40'}">{numberLabel(ep)}</span>
+            <span data-part="episode.number" class="grid h-7 min-w-7 shrink-0 place-items-center rounded px-1 text-sm font-black sm:h-8 sm:min-w-8 {done ? 'bg-theme/25 text-theme' : 'bg-background/40'}">{numberLabel(ep)}</span>
           {/if}
           <span class="min-w-0 flex-1">
             <span class="flex items-center gap-1.5">
-              <span class="truncate text-sm font-bold">{labels.primary}</span>
+              <span data-part="episode.title" class="truncate text-sm font-bold">{labels.primary}</span>
               {#if filler}<span class="shrink-0 rounded bg-yellow-400 px-1 text-[0.6rem] font-bold text-black">FILLER</span>{/if}
               {#if dl?.status === 'done'}<span class="shrink-0 rounded bg-green-500/20 px-1 text-[0.55rem] font-bold text-green-400">SAVED</span>{/if}
             </span>

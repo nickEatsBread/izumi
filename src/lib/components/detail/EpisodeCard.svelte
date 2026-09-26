@@ -51,6 +51,7 @@
   const shownNumber = $derived(numberLabel ?? String(ep))
 
   const img = $derived(meta?.image)
+  const episodeVariant = $derived(themeCard ? 'template' : showThumb && img ? 'thumb' : 'compact')
   // Progressive image: fade each thumbnail in when it decodes, with
   // a shimmer skeleton behind meanwhile — so thumbnails "come in over time" as they
   // download instead of the whole grid popping at once. Reset when the src changes.
@@ -115,6 +116,7 @@
 {/snippet}
 
 <div
+  data-part="episode" data-variant={episodeVariant}
   data-focusable
   data-nav-id={navId}
   data-nav-up={navUp}
@@ -135,7 +137,7 @@
   {#if themeCard}
     <ThemeNode node={themeCard} model={themeModel} />
   {:else if showThumb && img}
-    <div class="relative z-0 aspect-video h-full min-h-24 w-full overflow-hidden bg-muted sm:h-auto sm:min-h-0">
+    <div data-part="episode.still" class="relative z-0 aspect-video h-full min-h-24 w-full overflow-hidden bg-muted sm:h-auto sm:min-h-0">
       {#if !imgReady}<div class="absolute inset-0 skeloader"></div>{/if}
       <!-- No `transform-gpu`/`will-change-transform` — same reason as SmallCard: they permanently
            promote every one of the (up to 48) thumbnails to its own retained GPU layer. The
@@ -144,7 +146,7 @@
            class="block h-full w-full object-cover transition-[opacity,transform] duration-500 {imgReady ? 'opacity-100' : 'opacity-0'} {released ? 'group-hover:scale-105' : 'grayscale'}" />
       <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
 
-      <span class="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-xs font-black">{shownNumber}</span>
+      <span data-part="episode.number" class="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-xs font-black">{shownNumber}</span>
 
       <!-- Top-right corner: rating + download status packed together so a missing badge
            leaves NO gap (the rating used to be offset to clear a fixed download-icon slot). -->
@@ -187,7 +189,7 @@
          cannot expose a subpixel seam at their boundary during hover. -->
     <div class="relative z-10 flex min-w-0 items-center gap-2 bg-inherit p-3 sm:-mt-px sm:p-2">
       <div class="min-w-0 flex-1">
-        <span class="line-clamp-2 text-sm font-bold sm:block sm:truncate">{labels.primary}</span>
+        <span data-part="episode.title" class="line-clamp-2 text-sm font-bold sm:block sm:truncate">{labels.primary}</span>
         <!-- Spoiler mode hides the real title (shows only "Episode N") — no blur. -->
         {#if !labels.concealSecondary}
           <span class="block truncate text-[0.7rem] text-muted-foreground">{labels.secondary}{dl?.status === 'done' ? ' · Downloaded' : ''}</span>
@@ -196,10 +198,10 @@
     </div>
   {:else}
     <div class="relative flex items-center gap-3 p-3">
-      <span class="grid h-9 min-w-9 shrink-0 place-items-center rounded bg-background/50 px-1.5 text-xs font-black tabular-nums">{shownNumber}</span>
+      <span data-part="episode.number" class="grid h-9 min-w-9 shrink-0 place-items-center rounded bg-background/50 px-1.5 text-xs font-black tabular-nums">{shownNumber}</span>
       <div class="min-w-0 flex-1">
         <span class="flex items-center gap-1.5">
-          <span class="truncate text-sm font-bold">{labels.primary}</span>
+          <span data-part="episode.title" class="truncate text-sm font-bold">{labels.primary}</span>
           {#if filler}<span class="shrink-0 rounded bg-yellow-400 px-1 text-[0.6rem] font-bold text-black">FILLER</span>{/if}
         </span>
         {#if isNext}

@@ -81,4 +81,10 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'detail.relations', kind: 'slot', description: 'Related titles.' },
     { name: 'detail.characters', kind: 'slot', description: 'Characters and voice actors.' },
   ],
+  episodes: [
+    { name: 'episode', kind: 'part', description: 'One episode: a card, a thumbnail row, a compact row or a number tile.', states: ['data-variant'] },
+    { name: 'episode.still', kind: 'part', description: 'The episode thumbnail.' },
+    { name: 'episode.number', kind: 'part', description: 'The episode number.' },
+    { name: 'episode.title', kind: 'part', description: 'The episode title.' },
+  ],
 }
