@@ -139,9 +139,11 @@ describe('unified Sources settings', () => {
     expect(communitySources).toContain('use:masonryItem style:order={sortRanks.get(`package:${p.id}`) ?? 0}')
   })
 
-  it('offers package updates only where the installer allows them, and freezes legacy stores before adding a source', () => {
-    expect(communitySources).toContain("!mayUpdateFrom(url, p, inst) ? 'Installed elsewhere'")
-    expect(communitySources).toContain('disabled={packageBusy || (!!inst && !mayUpdateFrom(url, p, inst))}')
+  it('asks before replacing a package installed elsewhere, and freezes legacy stores before adding a source', () => {
+    expect(communitySources).toContain("!mayUpdateFrom(url, p, inst) ? 'Replace'")
+    expect(communitySources).toContain('error instanceof PackageInstalledElsewhereError')
+    expect(communitySources).toContain('<ReplacePackageDialog')
+    expect(communitySources).toContain('void installFromCatalog(chosen.url, chosen.extension, true)')
     expect(page).toContain('currentLegacyStores()')
   })
 
