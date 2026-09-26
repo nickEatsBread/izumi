@@ -3,6 +3,7 @@
   import { themePresentation } from '$lib/themes/runtime'
   import { resolveDetail, themeColorCss, type HeroIndicator } from '$lib/themes/presentation'
   import { mediaDisplayModel } from '$lib/themes/host-model'
+  import { sampleAmbient } from '$lib/themes/ambient'
   import { motionPreference } from '$lib/settings/ui'
   import type { Media } from '$lib/anilist/types'
   import { banner, cover, title, format, status, season, totalEpisodes } from '$lib/anilist/media'
@@ -327,6 +328,17 @@
     rankPosition: current.featuredRank?.position, poster: cover(current), backdrop: banner(current), logo: currentLogo || undefined,
     slide: i + 1, slides: medias.length,
   }, 0, clock) : {})
+  // Home hero only: publish the current artwork's colour so a theme can tint the page behind it.
+  $effect(() => {
+    if (!showOverlay || !current) return
+    const src = banner(current) || cover(current)
+    let cancelled = false
+    void sampleAmbient(src).then((rgb) => {
+      if (!cancelled && rgb) document.documentElement.style.setProperty('--hero-ambient-rgb', rgb)
+    })
+    return () => { cancelled = true }
+  })
+  $effect(() => () => { if (showOverlay) document.documentElement.style.removeProperty('--hero-ambient-rgb') })
   function themeAction(action: () => void) {
     if (swiped) { swiped = false; return }
     action()

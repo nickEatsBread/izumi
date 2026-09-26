@@ -72,4 +72,9 @@ describe('theme chrome application', () => {
     expect(page).toContain("page.url.searchParams.get('safe') === '1'")
     expect(page).toContain("$themeCssStatus.state === 'rejected'")
   })
+  it('publishes the hero artwork ambient colour for theme stylesheets', () => {
+    const hero = read('./components/banner/Hero.svelte')
+    expect(hero).toContain("setProperty('--hero-ambient-rgb'")
+    expect(hero).toContain("removeProperty('--hero-ambient-rgb')")
+  })
 })
