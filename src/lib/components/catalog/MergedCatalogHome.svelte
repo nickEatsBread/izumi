@@ -56,9 +56,14 @@
   const hasAniList = $derived(selections.includes('auto') || selections.includes('anilist'))
   const rows = $derived(resolveCatalogHomeRows('merged', [...options, ...blockRowOptions('merged', $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts).filter((row) => row.enabled))
   const visibleRowIds = $derived(rows.map((row) => row.id))
+  // The hero renders full-bleed above HomeColumns only while it truly leads the row order; while
+  // Edit Home is open it always flows through HomeColumns instead, so it can be dragged/hidden like
+  // any other row (it would otherwise have no frame to grab while sitting in the unwrapped top slot).
+  const heroFirst = $derived(!$homeEditorOpen && visibleRowIds[0] === 'hero')
+  const homeRowIds = $derived(heroFirst ? visibleRowIds.slice(1) : visibleRowIds)
   // While Edit Home is open, phones must still show every block (including a side-column one that
   // opted out of `phone`), or there would be no way to reach its settings/remove button on a phone.
-  const columns = $derived(splitHomeColumns(visibleRowIds, $homeBlocks, $isMobile && !$homeEditorOpen))
+  const columns = $derived(splitHomeColumns(homeRowIds, $homeBlocks, $isMobile && !$homeEditorOpen))
   const optionIds = $derived(options.map((option) => option.id))
   const optionsKey = $derived(JSON.stringify([selections, $tmdbCustomHomeRows]))
   const externalRequestKey = $derived(JSON.stringify(rows.flatMap((row) => {
@@ -149,14 +154,20 @@
 </script>
 
 <div data-slot="home" data-variant="merged" class="pb-16">
-  {#if hero.length}
-    <Hero medias={hero} onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} />
-  {:else if optionsLoading || homeLoading}
-    <div class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
-      <div class="absolute inset-0 skeloader"></div>
-      <div class="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent"></div>
-    </div>
-  {/if}
+  {#snippet heroBlock()}
+    {#if hero.length}
+      <Hero medias={hero} onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} />
+    {:else if optionsLoading || homeLoading}
+      <div class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
+        <div class="absolute inset-0 skeloader"></div>
+        <div class="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent"></div>
+      </div>
+    {/if}
+  {/snippet}
+
+  <!-- Row order is unknown before the row library loads (`rows` is empty pre-load), so the pre-load
+       skeleton renders unconditionally here rather than waiting on heroFirst. -->
+  {#if optionsLoading || heroFirst}{@render heroBlock()}{/if}
 
   <div class="space-y-5">
     <CollectionsHome />
@@ -165,7 +176,9 @@
       {@const visibleIds = columns.main.includes(id) ? columns.main : columns.aside}
       {#if row}
         <HomeRowFrame rowId={row.id} title={editorTitle(row)} target="merged" {visibleIds}>
-          {#if row.id === 'continue'}
+          {#if row.id === 'hero'}
+            {@render heroBlock()}
+          {:else if row.id === 'continue'}
             {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} catalogScope="all" />{/key}
           {:else if isBlockId(row.id)}
             <HomeBlockView id={row.id} target="merged" {optionIds} />

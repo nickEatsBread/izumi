@@ -1,5 +1,5 @@
 import { catalogLabel, mergedCatalogProviders, type CatalogSelection } from '$lib/settings/catalog'
-import { ANILIST_HOME_ROWS, CONTINUE_HOME_ROW } from './home-options'
+import { ANILIST_HOME_ROWS, CONTINUE_HOME_ROW, HERO_HOME_ROW } from './home-options'
 import type { CatalogHomeRowOption, CatalogProvider } from './types'
 
 export const providerChain = (selection: CatalogSelection): CatalogSelection[] => {
@@ -17,7 +17,8 @@ export async function loadCatalogProvider(selection: Exclude<CatalogSelection, '
 export async function catalogHomeRowOptions(selection: CatalogSelection, signal?: AbortSignal): Promise<CatalogHomeRowOption[]> {
   if (selection === 'auto' || selection === 'anilist') return ANILIST_HOME_ROWS
   const provider = await loadCatalogProvider(selection)
-  return provider.homeRows?.(signal) ?? [CONTINUE_HOME_ROW]
+  const rows = provider.homeRows ? await provider.homeRows(signal) : [CONTINUE_HOME_ROW]
+  return rows.some((row) => row.id === 'hero') ? rows : [HERO_HOME_ROW, ...rows]
 }
 
 export const mergedCatalogHomeRowId = (selection: CatalogSelection, rowId: string): string =>
@@ -42,12 +43,12 @@ export async function mergedCatalogHomeRowOptions(
     selection,
     rows: await catalogHomeRowOptions(selection, signal),
   })))
-  const rows: CatalogHomeRowOption[] = [CONTINUE_HOME_ROW]
+  const rows: CatalogHomeRowOption[] = [HERO_HOME_ROW, CONTINUE_HOME_ROW]
   for (const batch of batches) {
     if (batch.status !== 'fulfilled') continue
     let enabledDefaults = 0
     for (const row of batch.value.rows) {
-      if (row.id === CONTINUE_HOME_ROW.id) continue
+      if (row.id === CONTINUE_HOME_ROW.id || row.id === HERO_HOME_ROW.id) continue
       const normallyEnabled = row.defaultEnabled !== false
       const defaultEnabled = normallyEnabled && enabledDefaults < 3
       if (normallyEnabled) enabledDefaults++

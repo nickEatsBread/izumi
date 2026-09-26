@@ -61,9 +61,14 @@
   const anilistRows = $derived(resolveCatalogHomeRows('anilist', [...ANILIST_HOME_ROWS, ...blockRowOptions('anilist', $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts)
     .filter((row) => row.enabled))
   const orderedRows = $derived(anilistRows.map((row) => row.id))
+  // The hero renders full-bleed above HomeColumns only while it truly leads the row order; while
+  // Edit Home is open it always flows through HomeColumns instead, so it can be dragged/hidden like
+  // any other row (it would otherwise have no frame to grab while sitting in the unwrapped top slot).
+  const heroFirst = $derived(!$homeEditorOpen && orderedRows[0] === 'hero')
+  const homeRowIds = $derived(heroFirst ? orderedRows.slice(1) : orderedRows)
   // While Edit Home is open, phones must still show every block (including a side-column one that
   // opted out of `phone`), or there would be no way to reach its settings/remove button on a phone.
-  const columns = $derived(splitHomeColumns(orderedRows, $homeBlocks, $isMobile && !$homeEditorOpen))
+  const columns = $derived(splitHomeColumns(homeRowIds, $homeBlocks, $isMobile && !$homeEditorOpen))
   const rowOptionIds = ANILIST_HOME_ROWS.map((row) => row.id)
   const sectionMap = $derived(new Map(sections.map((section) => [section.key, section])))
   const catalogUnavailable = $derived(!!$anilistDegraded?.fallbackError)
@@ -197,35 +202,39 @@
   <!-- With no hero, the first row must clear the fixed desktop titlebar + degraded strip. Mobile's
        toolbar above already reserves the alert height, so this extra inset is desktop-only. -->
   <div data-slot="home" data-variant="anilist" class="pb-16 {homeNeedsAlertInset ? 'sm:pt-[3.75rem]' : ''}">
-    {#if !catalogUnavailable && heroMedias.length}
-      <Hero medias={heroMedias} onplay={(m) => goto(mediaHref(m))} oninfo={(m) => goto(mediaHref(m))} />
-    {:else if !catalogUnavailable && hero.fetching}
-      {#if $isMobile}
-        <div class="relative mx-4 mb-6 h-[46vh] overflow-hidden rounded-2xl bg-muted shadow-xl">
-          <div class="absolute inset-0 skeloader"></div>
-          <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent"></div>
-          <div class="absolute inset-x-0 bottom-0 space-y-3 p-4">
-            <div class="h-7 w-3/4 rounded skeloader"></div>
-            <div class="h-3 w-1/2 rounded skeloader"></div>
-            <div class="grid grid-cols-[1fr_auto] gap-2"><div class="h-11 rounded-lg skeloader"></div><div class="h-11 w-24 rounded-lg skeloader"></div></div>
+    {#snippet heroBlock()}
+      {#if !catalogUnavailable && heroMedias.length}
+        <Hero medias={heroMedias} onplay={(m) => goto(mediaHref(m))} oninfo={(m) => goto(mediaHref(m))} />
+      {:else if !catalogUnavailable && hero.fetching}
+        {#if $isMobile}
+          <div class="relative mx-4 mb-6 h-[46vh] overflow-hidden rounded-2xl bg-muted shadow-xl">
+            <div class="absolute inset-0 skeloader"></div>
+            <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent"></div>
+            <div class="absolute inset-x-0 bottom-0 space-y-3 p-4">
+              <div class="h-7 w-3/4 rounded skeloader"></div>
+              <div class="h-3 w-1/2 rounded skeloader"></div>
+              <div class="grid grid-cols-[1fr_auto] gap-2"><div class="h-11 rounded-lg skeloader"></div><div class="h-11 w-24 rounded-lg skeloader"></div></div>
+            </div>
           </div>
-        </div>
-      {:else}
-        <div class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
-          <div class="absolute inset-0 skeloader"></div>
-          <div class="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent"></div>
-          <div class="absolute bottom-8 left-8 w-[34rem] space-y-4"><div class="h-10 w-4/5 rounded skeloader"></div><div class="h-4 w-2/3 rounded skeloader"></div><div class="h-4 w-full rounded skeloader"></div><div class="h-10 w-48 rounded-lg skeloader"></div></div>
-        </div>
+        {:else}
+          <div class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
+            <div class="absolute inset-0 skeloader"></div>
+            <div class="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent"></div>
+            <div class="absolute bottom-8 left-8 w-[34rem] space-y-4"><div class="h-10 w-4/5 rounded skeloader"></div><div class="h-4 w-2/3 rounded skeloader"></div><div class="h-4 w-full rounded skeloader"></div><div class="h-10 w-48 rounded-lg skeloader"></div></div>
+          </div>
+        {/if}
       {/if}
-    {/if}
+    {/snippet}
 
-
+    {#if heroFirst}{@render heroBlock()}{/if}
     <CollectionsHome />
     {#snippet homeRow(row: string)}
       {@const rowOption = anilistRows.find((option) => option.id === row)}
       {@const visibleIds = columns.main.includes(row) ? columns.main : columns.aside}
       <HomeRowFrame rowId={row} title={rowOption?.title ?? row} target={$catalogProvider} {visibleIds}>
-        {#if isBlockId(row)}
+        {#if row === 'hero'}
+          {@render heroBlock()}
+        {:else if isBlockId(row)}
           <HomeBlockView id={row} target={$catalogProvider} optionIds={rowOptionIds} />
         {:else if row === 'continue'}
           {#key listUser}

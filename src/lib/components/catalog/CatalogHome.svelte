@@ -19,7 +19,7 @@
   import { homeEditorOpen } from '$lib/catalog/home-editor'
   import { catalogProvider, jvmCatalogSourceOverrides, stremioHeroArtwork } from '$lib/settings/catalog'
   import { catalogHomeLayoutKey, catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
-  import { CONTINUE_HOME_ROW } from '$lib/catalog/home-options'
+  import { CONTINUE_HOME_ROW, HERO_HOME_ROW } from '$lib/catalog/home-options'
   import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
   import { blockRowOptions, blockTitle, splitHomeColumns } from '$lib/home/block-rows'
   import { homeAsideWidth, homeBlocks, isBlockId } from '$lib/home/blocks'
@@ -38,12 +38,13 @@
   let tmdbNeedsConfiguration = $state(false)
   let retry = $state(0)
   const listUser = $derived($anilistUserName || $anilistUser)
-  type ContentRow = { id: string; kind: 'continue' } | { id: string; kind: 'block' } | { id: string; kind: 'section'; section: CatalogHomeSection }
+  type ContentRow = { id: string; kind: 'hero' } | { id: string; kind: 'continue' } | { id: string; kind: 'block' } | { id: string; kind: 'section'; section: CatalogHomeSection }
   const continueEnabled = $derived(resolveCatalogHomeRows($catalogProvider, [CONTINUE_HOME_ROW], $catalogHomeLayouts)[0]?.enabled ?? true)
   const contentRows = $derived.by((): ContentRow[] => {
     if (!home) return []
     const sections = new Map(home.sections.map((section) => [section.id, section]))
     const options = [
+      HERO_HOME_ROW,
       CONTINUE_HOME_ROW,
       ...home.sections.map((section) => ({ id: section.id, title: section.title })),
       ...blockRowOptions($catalogProvider, $catalogHomeLayouts, $homeBlocks),
@@ -51,16 +52,22 @@
     const result: ContentRow[] = []
     for (const row of resolveCatalogHomeRows($catalogProvider, options, $catalogHomeLayouts)) {
       if (!row.enabled) continue
-      if (row.id === 'continue') result.push({ id: row.id, kind: 'continue' })
+      if (row.id === 'hero') result.push({ id: row.id, kind: 'hero' })
+      else if (row.id === 'continue') result.push({ id: row.id, kind: 'continue' })
       else if (isBlockId(row.id)) result.push({ id: row.id, kind: 'block' })
       else if (sections.has(row.id)) result.push({ id: row.id, kind: 'section', section: sections.get(row.id)! })
     }
     return result
   })
   const visibleRowIds = $derived(contentRows.map((row) => row.id))
+  // The hero renders full-bleed above HomeColumns only while it truly leads the row order; while
+  // Edit Home is open it always flows through HomeColumns instead, so it can be dragged/hidden like
+  // any other row (it would otherwise have no frame to grab while sitting in the unwrapped top slot).
+  const heroFirst = $derived(!$homeEditorOpen && visibleRowIds[0] === 'hero')
+  const homeRowIds = $derived(heroFirst ? visibleRowIds.slice(1) : visibleRowIds)
   // While Edit Home is open, phones must still show every block (including a side-column one that
   // opted out of `phone`), or there would be no way to reach its settings/remove button on a phone.
-  const columns = $derived(splitHomeColumns(visibleRowIds, $homeBlocks, $isMobile && !$homeEditorOpen))
+  const columns = $derived(splitHomeColumns(homeRowIds, $homeBlocks, $isMobile && !$homeEditorOpen))
 
   $effect(() => {
     const selection = $catalogProvider
@@ -128,15 +135,21 @@
 <!-- The bounded Aniyomi loader now reconciles rows in two batches, so its placeholders can use the
      same loading shimmer as every other catalog without repeatedly remounting the card tree. -->
 <div data-slot="home" data-variant="catalog" class="pb-16">
-  {#if home?.hero.length}
-    <Hero medias={home.hero} artworkMode={$catalogProvider === 'stremio' ? $stremioHeroArtwork : 'backdrop'}
-      onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} />
-  {:else if loading}
-    <div class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
-      <div class="absolute inset-0 skeloader"></div>
-      <div class="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent"></div>
-    </div>
-  {/if}
+  {#snippet heroBlock()}
+    {#if home?.hero.length}
+      <Hero medias={home.hero} artworkMode={$catalogProvider === 'stremio' ? $stremioHeroArtwork : 'backdrop'}
+        onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} />
+    {:else if loading}
+      <div class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
+        <div class="absolute inset-0 skeloader"></div>
+        <div class="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent"></div>
+      </div>
+    {/if}
+  {/snippet}
+
+  <!-- Row order is unknown before `home` resolves (contentRows is empty pre-load), so the pre-load
+       skeleton renders unconditionally here rather than waiting on heroFirst. -->
+  {#if !home || heroFirst}{@render heroBlock()}{/if}
 
   <div class="space-y-5">
     <CollectionsHome />
@@ -168,8 +181,10 @@
         {@const row = contentRows.find((item) => item.id === id)}
         {@const visibleIds = columns.main.includes(id) ? columns.main : columns.aside}
         {#if row}
-          <HomeRowFrame rowId={row.id} title={row.kind === 'continue' ? 'Continue Watching' : row.kind === 'block' ? ($homeBlocks[row.id] ? blockTitle($homeBlocks[row.id]) : row.id) : row.section.title} target={$catalogProvider} {visibleIds}>
-            {#if row.kind === 'continue'}
+          <HomeRowFrame rowId={row.id} title={row.kind === 'hero' ? HERO_HOME_ROW.title : row.kind === 'continue' ? 'Continue Watching' : row.kind === 'block' ? ($homeBlocks[row.id] ? blockTitle($homeBlocks[row.id]) : row.id) : row.section.title} target={$catalogProvider} {visibleIds}>
+            {#if row.kind === 'hero'}
+              {@render heroBlock()}
+            {:else if row.kind === 'continue'}
               {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />{/key}
             {:else if row.kind === 'block'}
               <HomeBlockView id={row.id} target={$catalogProvider} optionIds={visibleRowIds} />
