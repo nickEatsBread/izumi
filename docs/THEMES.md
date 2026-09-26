@@ -167,6 +167,7 @@ State values:
 | `block.genre-chips` | slot | Genre shortcuts: an All chip and one chip per genre (each a `chip`). |  |
 | `block.latest-episodes` | slot | Newly aired episodes as a grid of stills. Items reuse `episode.still`, `episode.number`, `card.title` and `card.meta`. |  |
 | `block.item` | part | One entry in a block (an episode, a poster or a ranked title). |  |
+| `block.tabbed-grid` | slot | A tab strip (`tabs`) over a poster grid; each poster is a `block.item` holding a `card`. |  |
 
 #### Cards
 
