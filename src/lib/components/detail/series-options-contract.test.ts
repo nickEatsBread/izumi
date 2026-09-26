@@ -17,4 +17,13 @@ describe('series page theme options', () => {
     expect(countdown).toContain('longCountdown(')
     expect(read('./AiringStatus.svelte')).toContain('data-part="detail.airing"')
   })
+  it('offers a full-width list button, a hidden one and phone bottom tabs', () => {
+    const detail = read('./AnimeDetail.svelte')
+    expect(detail).toContain("detailTheme.listButton === 'full'")
+    expect(detail).toContain("detailTheme.listButton !== 'hidden'")
+    expect(detail).toContain("variant={detailTheme.tabs === 'bottom' ? 'underline' : detailTheme.tabs}")
+    const tabs = read('./Tabs.svelte')
+    expect(tabs).toContain('suppressBottomNav()')
+    expect(read('../../../routes/app/+layout.svelte')).toContain('!$bottomNavSuppressed')
+  })
 })

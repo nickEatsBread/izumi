@@ -53,6 +53,7 @@
   import { scheduleBootWork } from '$lib/util/boot-work'
   import { isAndroid, isMacOS, isMobile, isTv, initPlatform } from '$lib/platform'
   import { shellNav } from '$lib/themes/runtime'
+  import { bottomNavSuppressed } from '$lib/shell/chrome'
   import { initOffline } from '$lib/stores/offline'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
   import { getContextClient } from '@urql/svelte'
@@ -482,7 +483,7 @@
      touch — no sidebar/titlebar while playing, just the content. -->
 {#if !($playing && ($fullscreen || $gameMode || $pictureInPicture)) && (!$androidMpvActive || $androidMiniPlayer)}
   <!-- Mobile: a bottom tab bar instead of the left rail. -->
-  {#if $isMobile || $shellNav === 'bottom'}<BottomNav />{:else}<Sidebar placement={$shellNav === 'top' ? 'top' : 'sidebar'} />{/if}
+  {#if $isMobile || $shellNav === 'bottom'}{#if !$bottomNavSuppressed}<BottomNav />{/if}{:else}<Sidebar placement={$shellNav === 'top' ? 'top' : 'sidebar'} />{/if}
   <!-- No window-control titlebar in Game mode (gamescope owns the fullscreen window; the
        minimize/maximize/close icons are meaningless + unreachable there) or on mobile. -->
   {#if !$gameMode && !$isMobile && !$isTv}<Titlebar />{/if}

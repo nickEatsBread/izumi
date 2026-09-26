@@ -666,6 +666,13 @@
           <Play size={18} />{ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
         </button>
 
+        {#if detailTheme.listButton === 'full'}
+          <button data-part="detail.list-button" data-variant="full" data-focusable onclick={() => { h.tap(); showEditor = true }}
+                  class="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border-2 border-theme py-2.5 text-sm font-black uppercase tracking-wide text-theme">
+            {effStatus ? STATUS_LABEL[effStatus] : 'Add to list'}
+          </button>
+        {/if}
+
         <!-- Compact action row: 4 icons + overflow. Handlers are the SAME functions the desktop bar uses. -->
         <div data-part="detail.actions" class="relative mt-2 flex items-center gap-2">
           <button data-part="button" data-variant="secondary" data-focusable onclick={() => { h.tap(); showLocalLists = true }} aria-label="Save to lists"
@@ -838,7 +845,7 @@
           <EpisodeList media={m} offline={$offlineMode} />
         </div>
       {/if}
-      <Tabs tabs={desktopTabs} bind:active variant={detailTheme.tabs} />
+      <Tabs tabs={desktopTabs} bind:active variant={detailTheme.tabs === 'bottom' ? 'underline' : detailTheme.tabs} />
       {#if active === 'Relations'}
         {#if m.relations?.edges?.length}
           <div data-slot="detail.relations" class="flex flex-wrap {$themePresentation ? 'gap-x-6 gap-y-8' : 'gap-4'}">
@@ -953,6 +960,7 @@
             {#if savedLocally}<BookmarkCheck size={18} class="text-theme" /> Saved{:else}<BookmarkPlus size={18} /> Save{/if}
           </button>
 
+          {#if detailTheme.listButton !== 'hidden'}
           <button data-part="detail.list-button" bind:this={editorAnchor} data-focusable onclick={() => (showEditor = true)} title="Edit list status"
                   aria-haspopup="dialog" aria-expanded={showEditor}
                   class="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 font-bold transition-colors hover:bg-accent">
@@ -963,6 +971,7 @@
             {/if}
             <ChevronDown size={16} class="opacity-60" />
           </button>
+          {/if}
 
           <button data-part="button" data-variant="icon" data-focusable onclick={() => void onShare(m)} title="Copy AniList link"
                   class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
@@ -992,7 +1001,7 @@
     {/snippet}
 
     {#snippet desktopSecondary()}
-    <Tabs tabs={desktopTabs} bind:active variant={detailTheme.tabs} />
+    <Tabs tabs={desktopTabs} bind:active variant={detailTheme.tabs === 'bottom' ? 'underline' : detailTheme.tabs} />
     {#if episodeTabbed && active === 'Episodes'}
       <EpisodeList media={m} offline={$offlineMode} />
     {:else if active === 'Relations'}

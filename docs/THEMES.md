@@ -106,6 +106,7 @@ State values:
 | `data-variant` | `detail` | `phone`, `desktop` |
 | `data-variant` | `detail.facts` | `table`, `cards`, `chips` (none for a template) |
 | `data-variant` | `detail.countdown` | `compact`, `long` |
+| `data-variant` | `detail.list-button` | `full` (the full-width button) |
 | `data-variant` | `episode` | `template`, `thumb`, `compact`, `number`, `row` |
 | `data-layout` | `watch` | `full`, `docked` |
 | `data-variant` | `watch.episodes` | `right`, `below` |
@@ -211,7 +212,7 @@ State values:
 | `detail.genres` | part | The genre chips (phone). |  |
 | `detail.synopsis` | part | The description. |  |
 | `detail.actions` | part | The action buttons row. |  |
-| `detail.list-button` | part | The tracker list-status button. |  |
+| `detail.list-button` | part | The tracker list-status button. | `data-variant` |
 | `detail.airing` | part | The release status of upcoming episodes (sub and dub timing, delays). |  |
 | `detail.countdown` | part | The next-episode countdown (`detail.countdown` compact or long). | `data-variant` |
 | `detail.episodes` | slot | The episode list. |  |

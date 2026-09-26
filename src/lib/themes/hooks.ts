@@ -93,7 +93,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'detail.genres', kind: 'part', description: 'The genre chips (phone).' },
     { name: 'detail.synopsis', kind: 'part', description: 'The description.' },
     { name: 'detail.actions', kind: 'part', description: 'The action buttons row.' },
-    { name: 'detail.list-button', kind: 'part', description: 'The tracker list-status button.' },
+    { name: 'detail.list-button', kind: 'part', description: 'The tracker list-status button.', states: ['data-variant'] },
     { name: 'detail.airing', kind: 'part', description: 'The release status of upcoming episodes (sub and dub timing, delays).' },
     { name: 'detail.countdown', kind: 'part', description: 'The next-episode countdown (`detail.countdown` compact or long).', states: ['data-variant'] },
     { name: 'detail.episodes', kind: 'slot', description: 'The episode list.' },
