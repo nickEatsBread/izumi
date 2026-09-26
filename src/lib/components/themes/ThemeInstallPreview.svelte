@@ -11,7 +11,7 @@
   function cancel() { cancelThemePreview(); void goto('/app/settings/themes') }
 </script>
 {#if $themeInstallPreview}
-  <aside class="theme-preview-bar" aria-label="Theme installation preview">
+  <aside class="theme-preview-bar" aria-label="Theme installation preview" data-theme-protected>
     <div><strong>Previewing {$themeInstallPreview.package.name}</strong><p>Your saved appearance is unchanged.</p>{#if error}<p role="alert">{error}</p>{/if}</div>
     <div class="actions"><button type="button" data-focusable onclick={cancel}>Cancel preview</button><button type="button" data-focusable class="apply" onclick={apply}>Install & apply</button></div>
   </aside>

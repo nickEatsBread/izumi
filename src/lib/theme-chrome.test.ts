@@ -57,4 +57,11 @@ describe('theme chrome application', () => {
     expect(theme).toContain('loadThemeFont(')
     expect(theme).toContain('themeSafeMode, protectedSurfaceCount')
   })
+  it('marks every recovery surface as protected and re-maps its palette', () => {
+    expect(read('../app.css')).toContain('[data-theme-protected] {')
+    expect(read('./components/settings/ThemeStudio.svelte')).toContain('data-theme-studio data-theme-protected')
+    expect(read('./components/themes/ThemeInstallPreview.svelte')).toContain('aria-label="Theme installation preview" data-theme-protected')
+    const page = read('../routes/app/settings/themes/+page.svelte')
+    expect(page).toContain('<div class="themes-page" data-theme-protected use:protectedSurface>')
+  })
 })
