@@ -96,10 +96,10 @@
   const openDetail = () => { rememberDetail(media); goto(mediaHref(media)) }
 </script>
 
-<div class="preview-in w-[17.5rem] cursor-pointer overflow-hidden rounded-lg bg-card shadow-2xl ring-1 ring-border"
+<div data-part="card" data-family="preview" class="preview-in w-[17.5rem] cursor-pointer overflow-hidden rounded-lg bg-card shadow-2xl ring-1 ring-border"
      onclick={openDetail} role="link" tabindex="0"
      onkeydown={(e) => { if (e.key === 'Enter') openDetail() }}>
-  <div class="relative h-40 overflow-hidden bg-muted">
+  <div data-part="card.art" class="relative h-40 overflow-hidden bg-muted">
     <img src={banner(media)} alt="" class="absolute inset-0 h-full w-full object-cover" />
     {#if trailerId}
       <YoutubeTrailer id={trailerId} title={title(media)} />
@@ -107,7 +107,7 @@
     <div class="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-card to-transparent"></div>
   </div>
   <div class="p-3">
-    <div class="truncate font-black">{title(media)}</div>
+    <div data-part="card.title" class="truncate font-black">{title(media)}</div>
     <div class="mt-2 flex gap-2">
       <button onclick={openDetail}
               class="flex flex-1 items-center justify-center gap-1 rounded-md bg-primary py-1 text-sm font-bold text-primary-foreground">
@@ -131,8 +131,8 @@
         <CatalogSourceAttribution {media} />
       </div>
     {/if}
-    <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
-      {#if previewRating}<span class="flex items-center gap-1 font-bold text-foreground/80" title={`${previewRating.source} rating`}><RatingSourceMark source={previewRating.source} />{compactRatingLabel(previewRating)}</span>{/if}
+    <div data-part="card.meta" class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+      {#if previewRating}<span data-part="card.score" class="flex items-center gap-1 font-bold text-foreground/80" title={`${previewRating.source} rating`}><RatingSourceMark source={previewRating.source} />{compactRatingLabel(previewRating)}</span>{/if}
       {#if metadata}<span>{metadata}</span>{/if}
     </div>
     {#if media.creators?.length}<div class="mt-1 truncate text-[0.7rem] text-muted-foreground">By {media.creators.join(', ')}</div>{/if}

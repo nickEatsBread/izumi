@@ -85,6 +85,8 @@
      NOT overflow-hidden so the ring isn't clipped. The title is a plain (non-focusable) link so
      the rail doesn't stop on it a second time; mouse users can still click it through to detail. -->
 <div
+  data-part="card"
+  data-family="continue"
   data-focusable
   role="button"
   tabindex="0"
@@ -98,7 +100,7 @@
   {#if continueTemplate}
     <ThemeNode node={continueTemplate} model={continueModel} />
   {:else}
-  <div class="focus-cover relative aspect-video w-full overflow-hidden rounded-lg bg-muted">
+  <div data-part="card.art" class="focus-cover relative aspect-video w-full overflow-hidden rounded-lg bg-muted">
     {#if !imgReady}<div class="absolute inset-0 skeloader"></div>{/if}
     {#if thumb}
       <img src={thumb} alt="" loading="lazy" decoding="async" onload={() => (imgReady = true)}
@@ -106,24 +108,24 @@
     {/if}
     <div class="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent"></div>
 
-    <span class="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-xs font-black">Ep {ep}</span>
+    <span data-part="card.episode" class="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-xs font-black">Ep {ep}</span>
 
     <!-- Center play affordance (hover), swapped for a spinner while a source resolves. -->
-    <span class="absolute inset-0 grid place-items-center transition-opacity {resolving ? 'opacity-100' : 'opacity-90 sm:opacity-0 sm:group-hover:opacity-100'}">
+    <span data-part="card.overlay" class="absolute inset-0 grid place-items-center transition-opacity {resolving ? 'opacity-100' : 'opacity-90 sm:opacity-0 sm:group-hover:opacity-100'}">
       <span class="grid size-12 place-items-center rounded-full bg-white/90 text-black">
         {#if resolving}<Loader size={22} class="animate-spin" />{:else}<Play size={22} class="translate-x-0.5 fill-current" />{/if}
       </span>
     </span>
 
     {#if pct > 0}
-      <span class="absolute inset-x-0 bottom-0 h-1 bg-white/20"><span class="block h-full bg-theme" style={`width:${pct}%`}></span></span>
+      <span data-part="card.progress" class="absolute inset-x-0 bottom-0 h-1 bg-white/20"><span class="block h-full bg-theme" style={`width:${pct}%`}></span></span>
     {/if}
   </div>
 
   <div data-theme-card-label class="mt-1.5">
-    <a href={mediaHref(media)} onpointerdown={() => rememberDetail(media, name)} onclick={(e) => { e.stopPropagation(); rememberDetail(media, name); h.tap() }}
+    <a data-part="card.title" href={mediaHref(media)} onpointerdown={() => rememberDetail(media, name)} onclick={(e) => { e.stopPropagation(); rememberDetail(media, name); h.tap() }}
        class="block truncate text-sm font-bold hover:text-theme">{name}</a>
-    <span class="block truncate text-[0.7rem] text-muted-foreground">{episodeLabel}</span>
+    <span data-part="card.meta" class="block truncate text-[0.7rem] text-muted-foreground">{episodeLabel}</span>
   </div>
   {/if}
 </div>

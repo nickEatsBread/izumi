@@ -50,4 +50,15 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'row.more', kind: 'part', description: "The row's view-more link." },
     { name: 'row.track', kind: 'part', description: 'The scrolling track or grid holding the cards.' },
   ],
+  cards: [
+    { name: 'card', kind: 'part', description: 'A media card: poster, search, continue or preview.', states: ['data-family'] },
+    { name: 'card.art', kind: 'part', description: 'The card artwork frame.' },
+    { name: 'card.title', kind: 'part', description: 'The card title.' },
+    { name: 'card.meta', kind: 'part', description: 'The line under the title (season, format, source, episode).' },
+    { name: 'card.badge', kind: 'part', description: 'The label on the artwork (for example "Episode 5").' },
+    { name: 'card.score', kind: 'part', description: 'The score badge.' },
+    { name: 'card.progress', kind: 'part', description: 'The watch-progress track; the fill is its child.' },
+    { name: 'card.episode', kind: 'part', description: 'The episode number on resume cards.' },
+    { name: 'card.overlay', kind: 'part', description: 'The hover or play overlay on the artwork.' },
+  ],
 }
