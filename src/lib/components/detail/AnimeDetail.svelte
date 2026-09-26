@@ -487,6 +487,7 @@
         <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
         <div class="relative z-10 flex min-h-[56vh] flex-col justify-end gap-3 px-4 pb-8 pt-24">
           <h1 data-part="detail.title" class="text-3xl font-black leading-tight text-white drop-shadow">{title(m)}</h1>
+          {@render seriesHeader(m, '')}
           <button data-part="button" data-variant="primary" data-focusable use:focusOnMount
                   onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
                   onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
@@ -598,6 +599,7 @@
               <div data-part="detail.alt-title" class="truncate text-xs text-muted-foreground">{m.title.native || m.title.romaji}</div>
             {/if}
             <h1 data-part="detail.title" class="line-clamp-2 text-xl font-black leading-tight">{title(m)}</h1>
+            {@render seriesHeader(m, 'mt-2')}
           </div>
         </div>
 
@@ -802,6 +804,7 @@
           <div data-part="detail.alt-title" class="text-sm text-white/70">{m.title.native || m.title.romaji}</div>
         {/if}
         <h1 data-part="detail.title" class="text-5xl font-black leading-[1.02] text-white drop-shadow-md sm:text-6xl">{title(m)}</h1>
+        {@render seriesHeader(m, '')}
         <div data-part="detail.actions" class="flex flex-wrap items-center gap-3">
           <button data-part="button" data-variant="primary" data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
                   data-nav-down={controllerUi ? 'series-quick-episode' : undefined}
@@ -900,6 +903,7 @@
           <div data-part="detail.alt-title" class="text-sm text-muted-foreground">{m.title.native || m.title.romaji}</div>
         {/if}
         <h1 data-part="detail.title" class="mb-2 text-3xl font-black">{title(m)}</h1>
+        {@render seriesHeader(m, 'mb-3')}
 
         {#if factsStyle !== 'template'}
           <FactList media={m} variant={factsStyle} className="mb-3" progress={effProgress > 0 ? `${effProgress}/${epsTotal(m) || '?'}` : undefined} {controllerUi} />
@@ -1098,4 +1102,13 @@
 
 {#snippet ratingRow(m: Media)}
   <ScoreScale value={effScore10} onpick={(n) => rate(m, n)} hint={ratingHint} />
+{/snippet}
+
+<!-- A theme's template under the title (API 3 `detail.header`), the same on every layout. -->
+{#snippet seriesHeader(m: Media, className: string)}
+  {#if detailTheme.header}
+    <div data-part="detail.header" class={className}>
+      <ThemeNode node={detailTheme.header} model={mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined })} />
+    </div>
+  {/if}
 {/snippet}

@@ -6,7 +6,7 @@
   let rows = $state<Array<{ id: string; title: string }>>([])
   let templateText = $state('')
   let templateError = $state('')
-  let templateTarget = $state<'template' | 'rank' | 'card' | 'facts' | 'poster' | 'continue' | 'search'>('template')
+  let templateTarget = $state<'template' | 'rank' | 'card' | 'facts' | 'header' | 'poster' | 'continue' | 'search'>('template')
   const hero = $derived(presentation?.hero ?? {})
   const row = $derived(resolveRow(presentation, scope === 'rows' ? '' : scope))
   const detail = $derived(resolveDetail(presentation))
@@ -47,7 +47,7 @@
   }
   function currentTemplate(): ThemeNode | undefined {
     if (scope === 'hero') return hero[templateTarget === 'rank' ? 'rank' : 'template']
-    if (scope === 'detail') return templateTarget === 'facts' ? presentation?.detail?.facts : detail.episodes?.card
+    if (scope === 'detail') return templateTarget === 'facts' ? presentation?.detail?.facts : templateTarget === 'header' ? presentation?.detail?.header : detail.episodes?.card
     if (scope === 'cards') return presentation?.cards?.[templateTarget === 'continue' ? 'continue' : templateTarget === 'search' ? 'search' : 'poster']
     return row.card
   }
@@ -61,6 +61,7 @@
       const node = templateText.trim() ? parseNode(JSON.parse(templateText), undefined, 0, interactive) : undefined
       if (scope === 'hero') setHero({ [templateTarget === 'rank' ? 'rank' : 'template']: node })
       else if (scope === 'detail' && templateTarget === 'facts') setDetail({ facts: node })
+      else if (scope === 'detail' && templateTarget === 'header') setDetail({ header: node })
       else if (scope === 'detail') setDetail({ episodes: { card: node } })
       else if (scope === 'cards') presentation = { ...presentation, cards: { ...presentation?.cards, [templateTarget === 'continue' ? 'continue' : templateTarget === 'search' ? 'search' : 'poster']: node } }
       else setRow({ card: node })
@@ -206,7 +207,7 @@
   {#if showTemplate}
   <details><summary data-focusable>Advanced component template</summary><p class="help">Edit the theme’s data-only layout. Leave empty to use the default component.</p>
     {#if scope === 'hero'}<label>Component<select bind:value={templateTarget} onchange={loadTemplate} data-focusable><option value="template">Entire hero</option><option value="rank">Rank badge</option></select></label>{/if}
-    {#if scope === 'detail'}<label>Component<select bind:value={templateTarget} onchange={loadTemplate} data-focusable><option value="card">Episode card</option><option value="facts">Series facts</option></select></label>{/if}
+    {#if scope === 'detail'}<label>Component<select bind:value={templateTarget} onchange={loadTemplate} data-focusable><option value="card">Episode card</option><option value="facts">Series facts</option><option value="header">Series header</option></select></label>{/if}
     {#if scope === 'cards'}<label>Family<select bind:value={templateTarget} onchange={loadTemplate} data-focusable><option value="poster">Poster tiles</option><option value="continue">Continue watching</option><option value="search">Search results</option></select></label>{/if}
     {#if outline}
       <div class="inspector">

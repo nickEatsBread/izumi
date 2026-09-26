@@ -50,7 +50,7 @@ Optional templates for three families: `poster` (ordinary tiles), `continue` (re
 - Optional episode-card templates (non-interactive, like poster tiles). Arrangement can be a wrapping grid or one full-width tile per row; hover can grow the tile. The cards / compact / grid control in Appearance still chooses cards vs numbers.
 - Optional series-facts template (icons + text). Theme Studio can edit facts and episode cards per theme.
 - Tab style (API 2, `detail.tabs`): underline, pills, an iOS-style segmented control, or a bar of equal tabs with a tinted pill behind the active one (`Tabs.svelte`).
-- API 3: `factsStyle` (`table`, `cards`, `chips` or the `facts` template), `countdown` (`compact` or `long` airing countdown), `listButton` (`inline`, `full` or `hidden`), and `tabs: "bottom"` (a phone tab bar that takes the bottom navigation's place).
+- API 3: `factsStyle` (`table`, `cards`, `chips` or the `facts` template), `countdown` (`compact` or `long` airing countdown), `listButton` (`inline`, `full` or `hidden`), `tabs: "bottom"` (a phone tab bar that takes the bottom navigation's place), and `header`, a non-interactive template rendered under the series title on every layout (a studio chip, a score, a meta line) whatever `factsStyle` shows.
 
 ### Player
 
@@ -211,6 +211,7 @@ State values:
 | `detail.poster` | part | The cover image. |  |
 | `detail.title` | part | The title. |  |
 | `detail.alt-title` | part | The native or romaji title. |  |
+| `detail.header` | part | The theme template under the title (`detail.header`). |  |
 | `detail.meta` | part | The facts line. |  |
 | `detail.facts` | part | The facts: a theme template (desktop stack and split) or, with `detail.factsStyle`, a table, cards or chips. | `data-variant` |
 | `fact` | part | One entry of the details grid. |  |

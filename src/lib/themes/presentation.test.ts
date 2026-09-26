@@ -129,6 +129,18 @@ describe('theme presentation contract', () => {
     expect(parsePresentation({ detail: { tabs: 'pills' } }, 2).detail?.tabs).toBe('pills')
     expect(() => parsePresentation({ detail: { countdown: 'soon' } })).toThrow('unsupported')
   })
+  it('parses the API 3 series header template beside any facts style', () => {
+    const header = { type: 'stack', part: 'series.studio', children: [{ type: 'text', field: 'studio' }, { type: 'text', field: 'score', style: { color: 'theme' } }] }
+    const layout = parsePresentation({ detail: { header, factsStyle: 'cards' } })
+    expect(resolveDetail(layout).header).toEqual(header)
+    expect(resolveDetail(layout).factsStyle).toBe('cards')
+    expect(() => parsePresentation({ detail: { header } }, 2)).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { header: { type: 'action', action: 'play' } } })).toThrow('nested actions')
+    const phone = parsePresentation({ detail: { posterWidth: 180 }, mobile: { detail: { header } } })
+    expect(resolveDetail(resolvePresentation(phone, true)).header).toEqual(header)
+    expect(resolveDetail(resolvePresentation(phone, true)).posterWidth).toBe(180)
+    expect(resolveDetail(resolvePresentation(phone, false)).header).toBeUndefined()
+  })
   it('parses an API 3 theme layout', () => {
     const layout = {
       home: [{ block: 'genre-chips', genres: 'top' }, { role: 'hero' }, { role: 'continue' }, { block: 'ranked-list', area: 'aside', tabs: [{ label: 'TOP', role: 'trending' }] }],

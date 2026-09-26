@@ -77,6 +77,9 @@ export interface DetailPresentation {
   countdown?: 'none' | 'compact' | 'long'
   /** API 3: the tracker list button — inline (default), a full-width outlined button, or hidden. */
   listButton?: 'inline' | 'full' | 'hidden'
+  /** API 3: a template under the series title on phones and desktop (a studio chip, a score, a meta
+   *  line), whatever `factsStyle` shows. Non-interactive, like card templates. */
+  header?: ThemeNode
 }
 /** The phone tab bar (and the desktop bottom bar when `nav` is `bottom`). */
 export interface BottomNavPresentation {
@@ -330,7 +333,7 @@ function parseIndicator(value: unknown): HeroIndicator {
   return result
 }
 function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
-  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'bannerScale', 'episodes', ...api2(api, ['tabs']), ...api3(api, ['factsStyle', 'countdown', 'listButton'])])
+  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'bannerScale', 'episodes', ...api2(api, ['tabs']), ...api3(api, ['factsStyle', 'countdown', 'listButton', 'header'])])
   const result: DetailPresentation = {}
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['stack', 'split', 'overlay'])
   if (raw.bannerHidden !== undefined) result.bannerHidden = flag(raw.bannerHidden)
@@ -345,6 +348,7 @@ function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
   if (raw.factsStyle !== undefined) result.factsStyle = choice(raw.factsStyle, ['template', 'table', 'cards', 'chips'])
   if (raw.countdown !== undefined) result.countdown = choice(raw.countdown, ['none', 'compact', 'long'])
   if (raw.listButton !== undefined) result.listButton = choice(raw.listButton, ['inline', 'full', 'hidden'])
+  if (raw.header !== undefined) result.header = parseNode(raw.header, undefined, 0, false, api)
   if (raw.episodes !== undefined) {
     const episodes = record(raw.episodes); only(episodes, ['placement', 'arrangement', 'hover', 'order', 'search', 'card'])
     result.episodes = {}
@@ -597,6 +601,7 @@ export function resolveDetail(layout?: ThemePresentation): Required<Pick<DetailP
     factsStyle: detail.factsStyle,
     countdown: detail.countdown,
     listButton: detail.listButton,
+    header: detail.header,
     episodes: { placement, arrangement: detail.episodes?.arrangement, hover: detail.episodes?.hover, order: detail.episodes?.order, search: detail.episodes?.search, card: detail.episodes?.card },
   }
 }
