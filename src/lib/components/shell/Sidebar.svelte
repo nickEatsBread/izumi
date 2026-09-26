@@ -39,6 +39,9 @@
   const brandText = $derived(top && $themePresentation?.brand === 'text')
   // A theme top bar search field (`shell.top.search`) replaces the Search destination link.
   const searchField = $derived(top && (topBar.search === 'field-center' || topBar.search === 'field-end'))
+  // A centred brand owns the middle of the bar, so a centre field moves to the end instead of under it.
+  const fieldCenter = $derived(searchField && topBar.search === 'field-center' && !brandCentered)
+  const fieldEnd = $derived(searchField && !fieldCenter)
   // Nav items (top). Settings + profile are pinned to the BOTTOM.
   const items = [
     { href: '/app/home', icon: Home, label: m.nav_home(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
@@ -160,8 +163,8 @@
 
   <!-- Spacer pushes Settings + profile to the bottom of the rail, or the trailing cluster to the
        right of a top bar. A theme top bar search field (`field-center`) takes its place instead. -->
-  <div class="flex flex-1 justify-center px-4">{#if top && topBar.search === 'field-center'}<TopSearchField className="w-full max-w-md" />{/if}</div>
-  {#if top && topBar.search === 'field-end'}<TopSearchField className="mr-2 w-64" />{/if}
+  <div class="flex flex-1 justify-center px-4">{#if fieldCenter}<TopSearchField className="w-full max-w-md" />{/if}</div>
+  {#if fieldEnd}<TopSearchField className="mr-2 w-64" />{/if}
 
   <!-- Incognito toggle: same row anatomy as the links; violet accent + tinted icon while active
        (the top banner is the loud indicator — this stays quiet). -->
