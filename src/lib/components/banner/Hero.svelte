@@ -334,7 +334,7 @@
     if (!showOverlay || !current || $themeCssStatus.state !== 'applied') return
     const src = banner(current) || cover(current)
     let cancelled = false
-    void sampleAmbient(src).then((rgb) => {
+    void sampleAmbient(src, current.coverImage?.color).then((rgb) => {
       if (cancelled) return
       // An unreadable image clears the value, so the stylesheet's var() fallback applies instead of
       // the previous slide's colour.
