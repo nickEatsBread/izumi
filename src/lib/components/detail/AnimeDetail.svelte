@@ -738,16 +738,16 @@
                       <dd data-part="fact.value" class="mt-1 font-bold">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ' · ' : ''}<a class="underline-offset-2 active:opacity-70" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd>
                     </div>
                   {/if}
-                  {#if format(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Format</dt><dd data-part="fact.value" class="mt-1 font-bold">{format(m)}</dd></div>{/if}
-                  {#if status(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Status</dt><dd data-part="fact.value" class="mt-1 font-bold">{status(m)}</dd></div>{/if}
+                  {#if format(m)}<div data-part="fact" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Format</dt><dd data-part="fact.value" class="mt-1 font-bold">{format(m)}</dd></div>{/if}
+                  {#if status(m)}<div data-part="fact" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Status</dt><dd data-part="fact.value" class="mt-1 font-bold">{status(m)}</dd></div>{/if}
                   <div data-part="fact" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Episodes</dt><dd data-part="fact.value" class="mt-1 font-bold">{epsTotal(m) || 'Unknown'}</dd></div>
-                  {#if m.duration}<div class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Runtime</dt><dd data-part="fact.value" class="mt-1 font-bold">{m.duration} minutes</dd></div>{/if}
-                  {#if season(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Season</dt><dd data-part="fact.value" class="mt-1 font-bold"><a href={seasonBrowseHref(m)} class="underline-offset-2 active:opacity-70">{season(m)}</a></dd></div>{/if}
-                  {#if fmtDate(m.startDate)}<div class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Premiered</dt><dd data-part="fact.value" class="mt-1 font-bold">{fmtDate(m.startDate)}</dd></div>{/if}
-                  {#if m.source}<div class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Source</dt><dd data-part="fact.value" class="mt-1 font-bold">{prettyEnum(m.source)}</dd></div>{/if}
-                  {#if m.countryOfOrigin}<div class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Country</dt><dd data-part="fact.value" class="mt-1 font-bold">{countryName(m.countryOfOrigin)}</dd></div>{/if}
-                  {#if m.averageScore}<div class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Score</dt><dd data-part="fact.value" class="mt-1 font-bold">{m.averageScore}%</dd></div>{/if}
-                  {#if m.popularity}<div class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Popularity</dt><dd data-part="fact.value" class="mt-1 font-bold">{m.popularity.toLocaleString()} members</dd></div>{/if}
+                  {#if m.duration}<div data-part="fact" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Runtime</dt><dd data-part="fact.value" class="mt-1 font-bold">{m.duration} minutes</dd></div>{/if}
+                  {#if season(m)}<div data-part="fact" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Season</dt><dd data-part="fact.value" class="mt-1 font-bold"><a href={seasonBrowseHref(m)} class="underline-offset-2 active:opacity-70">{season(m)}</a></dd></div>{/if}
+                  {#if fmtDate(m.startDate)}<div data-part="fact" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Premiered</dt><dd data-part="fact.value" class="mt-1 font-bold">{fmtDate(m.startDate)}</dd></div>{/if}
+                  {#if m.source}<div data-part="fact" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Source</dt><dd data-part="fact.value" class="mt-1 font-bold">{prettyEnum(m.source)}</dd></div>{/if}
+                  {#if m.countryOfOrigin}<div data-part="fact" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Country</dt><dd data-part="fact.value" class="mt-1 font-bold">{countryName(m.countryOfOrigin)}</dd></div>{/if}
+                  {#if m.averageScore}<div data-part="fact" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Score</dt><dd data-part="fact.value" class="mt-1 font-bold">{m.averageScore}%</dd></div>{/if}
+                  {#if m.popularity}<div data-part="fact" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Popularity</dt><dd data-part="fact.value" class="mt-1 font-bold">{m.popularity.toLocaleString()} members</dd></div>{/if}
                 </dl>
               </section>
 
@@ -1009,7 +1009,7 @@
     {:else}
       <div class="max-w-3xl space-y-4">
         {#if m.description}
-          <p class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
+          <p data-part="detail.synopsis" class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
         {/if}
         <dl class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
           {#if m.studios?.nodes?.length}
