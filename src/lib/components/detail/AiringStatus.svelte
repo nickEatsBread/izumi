@@ -39,7 +39,7 @@
 <!-- Delays are warnings and keep a soft chip so they stand out; the recurring slots are ambient
      metadata, so they render as one quiet line of text that sits comfortably inside a metadata
      row (phones) or a toolbar (desktop/Deck) without a box around it. -->
-<div data-part="detail.countdown" class="contents">
+<div data-part="detail.airing" class="contents">
 {#each delays as line (line)}
   <span class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-amber-500/10 px-2.5 text-[0.7rem] font-bold text-amber-200 {toolbar ? 'h-9' : 'h-8'}" title={line}>
     <CalendarClock size={12} />{line}

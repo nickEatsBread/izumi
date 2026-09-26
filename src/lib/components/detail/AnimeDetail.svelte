@@ -70,6 +70,7 @@
   import { mediaDisplayModel } from '$lib/themes/host-model'
   import { countryName, formatDate as fmtDate, prettyEnum } from '$lib/detail/facts'
   import FactList from './FactList.svelte'
+  import AiringCountdown from './AiringCountdown.svelte'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -213,6 +214,7 @@
   let heroPlay = $state<PlayState>({ status: 'idle' })
   const detailTheme = $derived(resolveDetail($themePresentation))
   const factsStyle = $derived(detailTheme.factsStyle ?? 'template')
+  const countdown = $derived(detailTheme.countdown ?? 'none')
   const overlayDetail = $derived(detailTheme.layout === 'overlay')
   const bannerOverlap = $derived(detailTheme.bannerHeight ? Math.round(detailTheme.bannerHeight * 0.58) : (controllerUi ? 16 : 18))
   const sideEpisodes = $derived(episodesOnSide($themePresentation, !$isMobile))
@@ -629,6 +631,7 @@
         {:else}
           <FactList media={m} variant={factsStyle} />
         {/if}
+        {#if countdown !== 'none'}<AiringCountdown media={m} variant={countdown} />{/if}
 
         {#if m.genres?.length}
           <!-- One horizontal rail preserves vertical space while making genre identity visible at a
@@ -922,6 +925,7 @@
           {/if}
         </div>
         {/if}
+        {#if countdown !== 'none'}<AiringCountdown media={m} variant={countdown} />{/if}
 
         {#if detailTheme.episodes?.order === 'flip'}
           <div class="mb-3 flex flex-wrap items-center gap-2 empty:mb-0">
