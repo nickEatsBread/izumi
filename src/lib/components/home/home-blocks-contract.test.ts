@@ -94,4 +94,13 @@ describe('Home blocks wiring', () => {
     }
     expect(read('./HomeBlockView.svelte')).toContain('block: override')
   })
+
+  it('offers the theme layout switch and a copy in Edit Home', () => {
+    const editor = read('../catalog/HomeEditor.svelte')
+    expect(editor).toContain('<ThemeLayoutNotice')
+    expect(editor).toContain('forkThemeHome(')
+    const notice = read('./ThemeLayoutNotice.svelte')
+    expect(notice).toContain('role="switch"')
+    expect(notice).toContain('Customize a copy')
+  })
 })
