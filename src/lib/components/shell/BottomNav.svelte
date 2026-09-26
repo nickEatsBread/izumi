@@ -6,7 +6,7 @@
   import { onMount } from 'svelte'
   import { page } from '$app/state'
   import * as h from '$lib/haptics'
-  import { effectiveNav, NAV_META, HOME_META } from '$lib/settings/nav'
+  import { effectiveNav, NAV_META, HOME_META, navHomeIndex } from '$lib/settings/nav'
   import { m } from '$lib/paraglide/messages.js'
   import { themePresentation } from '$lib/themes/runtime'
   import { themeColorCss } from '$lib/themes/presentation'
@@ -38,7 +38,13 @@
   const blur = $derived(nav.blur ?? true)
   const border = $derived(nav.border ?? style === 'bar')
   const radius = $derived(nav.radius ?? (style === 'pill' ? 999 : 24))
-  const items = $derived([{ id: 'home', href: HOME_META.href, icon: HomeIcon, label: m.nav_home }, ...bottom.map((c) => ({ id: c.id, href: NAV_META[c.id].href, icon: NAV_META[c.id].icon, label: labels[c.id] }))])
+  // Home is a fixed anchor, but a theme layout can place it anywhere on the bar (0 = first).
+  const items = $derived.by(() => {
+    const rest = bottom.map((c) => ({ id: c.id, href: NAV_META[c.id].href, icon: NAV_META[c.id].icon, label: labels[c.id] }))
+    const home = { id: 'home', href: HOME_META.href, icon: HomeIcon, label: m.nav_home }
+    const index = Math.min($navHomeIndex, rest.length)
+    return [...rest.slice(0, index), home, ...rest.slice(index)]
+  })
 
   // Auto-hide on scroll: glide the bar down when scrolling down (more content on screen), slide it
   // back up on any upward scroll or near the top. Matches the native "immersive nav" pattern.
