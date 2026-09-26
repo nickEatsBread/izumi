@@ -60,6 +60,8 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'block.latest-episodes', kind: 'slot', description: 'Newly aired episodes as a grid of stills. Items reuse `episode.still`, `episode.number`, `card.title` and `card.meta`.' },
     { name: 'block.item', kind: 'part', description: 'One entry in a block (an episode, a poster or a ranked title).' },
     { name: 'block.tabbed-grid', kind: 'slot', description: 'A tab strip (`tabs`) over a poster grid; each poster is a `block.item` holding a `card`.' },
+    { name: 'block.ranked-list', kind: 'slot', description: 'A numbered top list; each entry is a `block.item` with `card.art`, `card.title` and `card.meta`.' },
+    { name: 'block.rank', kind: 'part', description: 'The rank number of a ranked-list entry.' },
   ],
   cards: [
     { name: 'card', kind: 'part', description: 'A media card: poster, search, continue or preview.', states: ['data-family'] },

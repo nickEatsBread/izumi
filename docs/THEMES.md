@@ -168,6 +168,8 @@ State values:
 | `block.latest-episodes` | slot | Newly aired episodes as a grid of stills. Items reuse `episode.still`, `episode.number`, `card.title` and `card.meta`. |  |
 | `block.item` | part | One entry in a block (an episode, a poster or a ranked title). |  |
 | `block.tabbed-grid` | slot | A tab strip (`tabs`) over a poster grid; each poster is a `block.item` holding a `card`. |  |
+| `block.ranked-list` | slot | A numbered top list; each entry is a `block.item` with `card.art`, `card.title` and `card.meta`. |  |
+| `block.rank` | part | The rank number of a ranked-list entry. |  |
 
 #### Cards
 
