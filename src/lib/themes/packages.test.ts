@@ -70,4 +70,13 @@ describe('installable theme packages', () => {
     expect(parseThemePackage({ ...samplePackage, themeApi: 3 }).themeApi).toBe(3)
     expect(() => parseThemePackage({ ...samplePackage, themeApi: 4 })).toThrow('theme API')
   })
+  it('accepts API 3 stylesheets and fonts and keeps them off older APIs', () => {
+    const pkg = { ...samplePackage, themeApi: 3, design: { ...samplePackage.design, css: '[data-part="card"]{border-radius:4px}', fonts: { ui: 'poppins' } } }
+    const parsed = parseThemePackage(pkg)
+    expect(parsed.design.css).toBe('[data-part="card"]{border-radius:4px}')
+    expect(parsed.design.fonts).toEqual({ ui: 'poppins' })
+    expect(() => parseThemePackage({ ...pkg, themeApi: 2 })).toThrow('unsupported design')
+    expect(() => parseThemePackage({ ...pkg, design: { css: '.a{background:url(https://e.test/a.png)}' } })).toThrow('URLs')
+    expect(() => parseThemePackage({ ...pkg, design: { fonts: { ui: 'comic-sans' } } })).toThrow('font')
+  })
 })

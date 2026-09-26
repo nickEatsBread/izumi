@@ -2,6 +2,8 @@ import { persisted } from 'svelte-persisted-store'
 import { derived, get, writable, type Writable } from 'svelte/store'
 import { THEME_PRESETS, type ThemeTokens } from '$lib/theme-tokens'
 import { parsePresentation, type ThemePresentation } from '$lib/themes/presentation'
+import { precheckThemeCss } from '$lib/themes/css-policy'
+import { parseThemeFonts, type ThemeFonts } from '$lib/themes/font-ids'
 
 export type ThemeFont = 'nunito' | 'system' | 'serif' | 'mono'
 export type ThemeBackdrop = 'solid' | 'aurora' | 'spotlight' | 'mesh'
@@ -19,6 +21,10 @@ export interface StudioTheme {
   backdropStrength: number
   glassBlur: number
   presentation?: ThemePresentation
+  /** Theme API 3 stylesheet (sanitised again at apply time by src/lib/themes/css.ts). */
+  css?: string
+  /** Theme API 3 font roles from the bundled library. */
+  fonts?: ThemeFonts
 }
 
 export interface StudioThemeExport {
@@ -78,6 +84,10 @@ export function normalizeStudioTheme(value: unknown, fallback = defaultStudioThe
   const backdrops: ThemeBackdrop[] = ['solid', 'aurora', 'spotlight', 'mesh']
   let presentation: ThemePresentation | undefined
   try { if (raw.presentation) presentation = parsePresentation(raw.presentation) } catch { /* Recover old or damaged local preferences to the built-in layout. */ }
+  let css: string | undefined
+  try { if (typeof raw.css === 'string' && raw.css.trim()) css = precheckThemeCss(raw.css) } catch { /* Drop a stylesheet this client refuses. */ }
+  let themeFonts: ThemeFonts | undefined
+  try { if (raw.fonts !== undefined) themeFonts = parseThemeFonts(raw.fonts) } catch { /* Drop fonts this client does not bundle. */ }
   return {
     id: typeof raw.id === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/i.test(raw.id) ? raw.id : fallback.id,
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim().slice(0, 48) : fallback.name,
@@ -91,6 +101,8 @@ export function normalizeStudioTheme(value: unknown, fallback = defaultStudioThe
     backdropStrength: bounded(raw.backdropStrength, fallback.backdropStrength, 0, 0.65),
     glassBlur: bounded(raw.glassBlur, fallback.glassBlur, 0, 40),
     ...(presentation ? { presentation } : {}),
+    ...(css ? { css } : {}),
+    ...(themeFonts && Object.keys(themeFonts).length ? { fonts: themeFonts } : {}),
   }
 }
 
