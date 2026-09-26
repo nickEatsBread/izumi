@@ -15,6 +15,7 @@ mod doh;
 mod doh_socks;
 mod download;
 mod extension_package;
+mod store_trust;
 #[cfg(not(target_os = "android"))]
 mod extension_service;
 mod gm_perf;
@@ -6376,6 +6377,7 @@ pub fn run() {
             extension_package::extension_install_url,
             extension_package::extension_install_aniyomi_url,
             extension_package::extension_list,
+            store_trust::store_verify_index,
             extension_package::extension_remove,
             extension_service::extension_service_ensure,
             extension_service::extension_service_settings,
@@ -6513,6 +6515,7 @@ pub fn run() {
         extension_package::extension_install_url,
         extension_package::extension_install_aniyomi_url,
         extension_package::extension_list,
+        store_trust::store_verify_index,
         extension_package::extension_remove,
         jvm_extensions::jvm_extension_sources,
         jvm_extensions::jvm_extension_call,

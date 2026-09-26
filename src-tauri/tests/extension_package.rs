@@ -16,5 +16,10 @@ mod jvm_extensions {
     }
 }
 
+// Package signers are reported as key fingerprints in the same form as store keys, so the validator
+// needs the store-trust module too.
+#[path = "../src/store_trust.rs"]
+mod store_trust;
+
 #[path = "../src/extension_package.rs"]
 mod extension_package;

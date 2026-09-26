@@ -22,24 +22,24 @@
 {#snippet renderNode(item: ThemeNode)}
   {#if visibleNode(item, model)}
     {#if item.type === 'text'}
-      <svelte:element this={titleHeading && item.field === 'title' ? 'h1' : 'span'} style={nodeStyle(item)} class="theme-text">{item.field ? displayText(item.field, model) : item.text ?? ''}</svelte:element>
+      <svelte:element this={titleHeading && item.field === 'title' ? 'h1' : 'span'} style={nodeStyle(item)} class="theme-text" data-part={item.part}>{item.field ? displayText(item.field, model) : item.text ?? ''}</svelte:element>
     {:else if item.type === 'artwork'}
       {@const src = model[item.artwork ?? 'poster']}
-      <div class="theme-artwork" class:theme-artwork-fallback={!src} style={nodeStyle(item)}>
+      <div class="theme-artwork" class:theme-artwork-fallback={!src} style={nodeStyle(item)} data-part={item.part}>
         {#if src}<img src={String(src)} alt="" draggable="false" loading={eager ? 'eager' : 'lazy'} decoding="async" class="duration-150 ease-out transition-transform group-hover:scale-105" />{/if}
       </div>
     {:else if item.type === 'action'}
-      {#if item.action && actions[item.action]}<button type="button" data-focusable class="theme-action" style={nodeStyle(item)} onclick={actions[item.action]}>{#if item.action === 'play'}<Play size={16} fill="currentColor" />{/if}{item.text || labels[item.action]}</button>{/if}
+      {#if item.action && actions[item.action]}<button type="button" data-focusable class="theme-action" style={nodeStyle(item)} data-part={item.part} onclick={actions[item.action]}>{#if item.action === 'play'}<Play size={16} fill="currentColor" />{/if}{item.text || labels[item.action]}</button>{/if}
     {:else if item.type === 'icon' && item.icon}
       {@const Icon = icons[item.icon]}
-      <span class="theme-icon" style={nodeStyle(item)} aria-hidden="true"><Icon size={Number(item.style?.fontSize) || 18} /></span>
+      <span class="theme-icon" style={nodeStyle(item)} data-part={item.part} aria-hidden="true"><Icon size={Number(item.style?.fontSize) || 18} /></span>
     {:else if item.type === 'meter' && item.field}
       {@const amount = model[item.field]}
-      <div class="theme-meter" style={nodeStyle(item)} role="presentation">
+      <div class="theme-meter" style={nodeStyle(item)} data-part={item.part} role="presentation">
         <span style:width={`${typeof amount === 'number' ? Math.max(0, Math.min(100, amount)) : 0}%`}></span>
       </div>
     {:else}
-      <div style={nodeStyle(item)} class:theme-overlay={item.type === 'overlay'} class:theme-nowrap={item.type === 'row' && item.style?.wrap === 'nowrap'}>
+      <div style={nodeStyle(item)} data-part={item.part} class:theme-overlay={item.type === 'overlay'} class:theme-nowrap={item.type === 'row' && item.style?.wrap === 'nowrap'}>
         {#each item.children ?? [] as child}{@render renderNode(child)}{/each}
       </div>
     {/if}

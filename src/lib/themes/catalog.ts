@@ -94,7 +94,7 @@ export function collectLocalThemes(files: LocalThemeFile[]): { prepared: Prepare
   const errors: string[] = []
   for (const file of json.slice(0, 24)) {
     try {
-      if (file.bytes > MAX_THEME_BYTES) throw new Error('Use a theme package under 256 KB.')
+      if (file.bytes > MAX_THEME_BYTES) throw new Error('Use a theme package under 512 KB.')
       const pkg = parseSharedTheme(JSON.parse(file.text))
       prepared.push({ package: pkg, origin: `file:${pkg.id}` })
     } catch (cause) {

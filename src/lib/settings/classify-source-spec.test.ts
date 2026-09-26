@@ -74,13 +74,29 @@ describe('sourceSpecFetchUrl', () => {
 })
 
 describe('classifySourceDocument', () => {
-  it('classifies a package catalog as a community source', () => {
+  it('classifies a package catalog as a community source and marks it as a catalog', () => {
     expect(classifySourceDocument(catalog, 'https://example.test/index.json')).toEqual({
-      kind: 'extension', spec: 'https://example.test/index.json',
+      kind: 'extension', spec: 'https://example.test/index.json', catalog: true,
     })
     expect(classifySourceDocument({ ...catalog, packages: [] }, 'https://example.test/index.json')).toEqual({
-      kind: 'extension', spec: 'https://example.test/index.json',
+      kind: 'extension', spec: 'https://example.test/index.json', catalog: true,
     })
+  })
+
+  it('marks an Aniyomi repository index as a catalog', () => {
+    expect(classifySourceDocument([{
+      name: 'Aniyomi: Example', pkg: 'eu.kanade.tachiyomi.animeextension.en.example', apk: 'apk/example.apk',
+      version: '1', sources: [{ id: '1', name: 'Example' }],
+    }], 'https://repo.example.test/index.min.json')).toEqual({
+      kind: 'extension', spec: 'https://repo.example.test/index.min.json', catalog: true,
+    })
+  })
+
+  it('never marks a repository without anime packages as a catalog', () => {
+    expect(classifySourceDocument([{
+      name: 'Tachiyomi: Example', pkg: 'eu.kanade.tachiyomi.extension.en.example', apk: 'apk/example.apk',
+      version: '1', sources: [{ id: '1', name: 'Example' }],
+    }], 'https://repo.example.test/index.min.json')).toEqual({ kind: 'extension', spec: 'https://repo.example.test/index.min.json' })
   })
 
   it('classifies extension configs as a community source', () => {
@@ -122,7 +138,7 @@ describe('classifySourceSpec', () => {
   it('uses the fetched document to pick a kind, and stores the original spec for community sources', async () => {
     const pasted = 'https://raw.githubusercontent.com/org/repo/index.json'
     const result = await classifySourceSpec(pasted, async () => catalog)
-    expect(result).toEqual({ kind: 'extension', spec: pasted })
+    expect(result).toEqual({ kind: 'extension', spec: pasted, catalog: true })
   })
 
   it('stores the normalized add-on base, not the /manifest.json fetch URL', async () => {

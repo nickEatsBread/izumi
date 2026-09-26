@@ -1,6 +1,7 @@
 import { parseTraktCallback } from '$lib/trakt/oauth'
 import { parseCompanionRestoreLink } from '$lib/companion/restore'
 import { parseDeviceTransferLink } from '$lib/onboarding/device-transfer'
+import { resolveStoreUrl } from '$lib/store/url'
 export type DeepLinkTarget = { path: string; notice?: string }
 
 /** What a batch of incoming links resolves to: somewhere to navigate, something to tell the user,
@@ -48,11 +49,17 @@ export function parseDeepLink(raw: string): DeepLinkTarget | null {
       const query = new URLSearchParams({ worker, pairing, request })
       return { path: `/app/companion-request?${query}`, notice: 'TV playback request opened' }
     }
+    if (kind === 'store' && parts[0] === 'add') {
+      // Opens the add-store preview; adding still needs the user's confirmation there.
+      const target = resolveStoreUrl(url.searchParams.get('url') ?? '')
+      return target ? { path: `/app/settings/store?add=${encodeURIComponent(target)}`, notice: 'Store link opened' } : null
+    }
     if ((kind === 'anime' || kind === 'watch') && /^\d+$/.test(parts[0] ?? '')) {
       const id = parts[0]
       const episode = kind === 'watch' && /^\d+(?:\.\d+)?$/.test(parts[1] ?? '') ? `?episode=${parts[1]}` : ''
       return { path: `/app/anime/${id}${episode}` }
     }
+    if (kind === 'safe-mode') return { path: '/app/settings/themes?safe=1', notice: 'Safe mode: theme styles are off' }
     if (kind === 'search') {
       const query = url.searchParams.get('q') ?? parts.join(' ')
       return { path: `/app/search${query ? `?q=${encodeURIComponent(query)}` : ''}` }

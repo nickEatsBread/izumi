@@ -1,4 +1,4 @@
-import { catalogPackages, normalizeManifest, resolveManifestUrl } from '$lib/extensions/catalog'
+import { aniyomiRepositoryPackages, catalogPackages, normalizeManifest, resolveManifestUrl } from '$lib/extensions/catalog'
 import { isNuvioManifest } from '$lib/extensions/nuvio-manifest'
 import { phttp } from '$lib/net/http'
 import { normalizeBase } from '$lib/stremio/sources'
@@ -6,7 +6,8 @@ import { isCollectionDocument } from '$lib/catalog/collections/model'
 
 export type ClassifiedSource =
   | { kind: 'addon'; spec: string }
-  | { kind: 'extension'; spec: string }
+  /** `catalog` marks a package catalog, which is also registered as a store. */
+  | { kind: 'extension'; spec: string; catalog?: boolean }
 
 const EMPTY_ERROR = 'Enter a URL, GitHub repo, or catalog.'
 const UNKNOWN_ERROR = "Couldn't tell if that's a Stremio add-on or a community source."
@@ -69,7 +70,10 @@ function isStremioManifest(raw: unknown): boolean {
 export function classifySourceDocument(raw: unknown, fetchedUrl: string): ClassifiedSource | { error: string } {
   if (isCollectionDocument(raw)) return { error: 'This is a collection. Import it in Settings → Catalog → Collections.' }
   if (isNuvioManifest(raw)) return { kind: 'extension', spec: fetchedUrl }
-  if (catalogPackages(raw) !== null) return { kind: 'extension', spec: fetchedUrl }
+  if (catalogPackages(raw) !== null) return { kind: 'extension', spec: fetchedUrl, catalog: true }
+  const aniyomi = aniyomiRepositoryPackages(raw, fetchedUrl)
+  // A repository with no anime packages (a manga-only one) is still a source, but never a store.
+  if (aniyomi) return { kind: 'extension', spec: fetchedUrl, ...(aniyomi.length ? { catalog: true } : {}) }
   if (isCompiledAndroid(raw)) return { kind: 'extension', spec: fetchedUrl }
   if (Array.isArray(raw)) return { kind: 'extension', spec: fetchedUrl }
   if (normalizeManifest(raw, fetchedUrl).length) return { kind: 'extension', spec: fetchedUrl }
@@ -109,7 +113,7 @@ export async function classifySourceSpec(
       const base = normalizeBase(spec) || classified.spec
       return { kind: 'addon', spec: base }
     }
-    return { kind: 'extension', spec: fetchedUrl }
+    return { kind: 'extension', spec: fetchedUrl, ...(classified.catalog ? { catalog: true } : {}) }
   } catch (error) {
     if (error instanceof Error && error.message === NOT_JSON) return { error: NOT_JSON }
     return { error: FETCH_ERROR }

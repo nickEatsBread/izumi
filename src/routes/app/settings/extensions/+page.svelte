@@ -32,12 +32,16 @@
     installCatalogPackage,
     installedExtensionPackages,
     installedPackageIcons,
+    PackageInstalledElsewhereError,
     removeInstalledExtension,
     type ExtensionCatalogPackage,
     type ExtensionSourceInfo,
     type InstalledExtensionPackage,
   } from '$lib/extensions/manager'
   import { sourceLabel, extensionBackendLabel } from '$lib/extensions/catalog'
+  import { currentLegacyStores, legacyPackageStores, legacyStoresFrom, originKey, originLabel, packageOrigins } from '$lib/store/origins'
+  import { allStores } from '$lib/store/feeds'
+  import ReplacePackageDialog from '$lib/components/store/ReplacePackageDialog.svelte'
   import {
     matchesSourceFilters,
     matchesSourceQuery,
@@ -91,7 +95,16 @@
   let packageBusy = $state(false)
   let serviceSettings = $state<{ id: string; name: string } | null>(null)
   let jvmSourceSettings = $state<{ id: string; name: string } | null>(null)
+  /** A package already installed from another store or source: the user confirms before it's replaced. */
+  let replacingPackage = $state.raw<{ url: string; extension: ExtensionCatalogPackage; installedFrom: string } | null>(null)
   const installedById = $derived(new Map(localPackages.map((extension) => [extension.id, extension])))
+  // Mirrors the installer's rule: a package updates only through the store it came from (or, installed
+  // before origins were recorded, a legacy store offering the same kind of package). Anywhere else the
+  // row offers Replace, which asks first.
+  function mayUpdateFrom(spec: string, listed: ExtensionCatalogPackage, installed: InstalledExtensionPackage): boolean {
+    if (Object.hasOwn($packageOrigins, listed.id)) return $packageOrigins[listed.id] === originKey(spec)
+    return installed.backend === listed.backend && legacyStoresFrom($legacyPackageStores, $extensionUrls).includes(originKey(spec))
+  }
   // Real launcher icons for INSTALLED Aniyomi extensions, keyed by Android package name — which is
   // the same string a catalog entry uses as its id. The catalog itself ships no icons, so anything
   // not installed (and every JS extension without one) falls through to the shared placeholder.
@@ -101,20 +114,27 @@
     installedIn(packages).filter((extension) => !pluginOff(extension.id))
 
   async function refreshPackages() {
+    // Freeze the legacy stores, if nothing has yet, so rows can tell which packages a catalog may update.
+    currentLegacyStores()
     localPackages = await installedExtensionPackages()
     // After the list, never blocking it: enumerating sources can spin the JVM runtime, and an icon
     // arriving a moment late just swaps the placeholder for the real logo.
     void installedPackageIcons(localPackages).then((icons) => { jvmIcons = icons })
   }
-  async function installFromCatalog(url: string, extension: ExtensionCatalogPackage) {
+  async function installFromCatalog(url: string, extension: ExtensionCatalogPackage, replaceInstalled = false) {
     packageBusy = true
     packageStatus = null
     try {
-      const installed = await installCatalogPackage(extension)
+      const installed = await installCatalogPackage(extension, url, { replaceInstalled })
       await refreshPackages()
       packageStatus = { url, text: `${installed.name} ${installed.version} installed.`, ok: true }
     } catch (error) {
-      packageStatus = { url, text: String(error), ok: false }
+      // Installed from another store or source: ask before replacing it.
+      if (error instanceof PackageInstalledElsewhereError) {
+        replacingPackage = { url, extension, installedFrom: originLabel(error.installedFrom, $allStores) }
+      } else {
+        packageStatus = { url, text: String(error), ok: false }
+      }
     } finally {
       packageBusy = false
     }
@@ -666,7 +686,7 @@
                             disabled={packageBusy}
                             onclick={() => installFromCatalog(url, p)}
                             class="shrink-0 rounded-md px-3 py-2 text-xs font-bold sm:px-2 sm:py-1 {inst ? 'bg-secondary text-muted-foreground hover:bg-accent sm:bg-transparent' : 'bg-primary text-primary-foreground'} disabled:opacity-50"
-                          >{!inst ? 'Install' : inst.version === p.version ? 'Reinstall' : 'Update'}</button>
+                          >{!inst ? 'Install' : !mayUpdateFrom(url, p, inst) ? 'Replace' : inst.version === p.version ? 'Reinstall' : 'Update'}</button>
                           {#if inst}
                             <button data-focusable disabled={packageBusy} onclick={() => removePackage(url, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
                               class="grid size-9 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent disabled:opacity-50 sm:size-7"><Trash2 size={16} /></button>
@@ -774,5 +794,16 @@
     sourceId={jvmSourceSettings.id}
     sourceName={jvmSourceSettings.name}
     onClose={() => (jvmSourceSettings = null)}
+  />
+{/if}
+
+{#if replacingPackage}
+  {@const target = replacingPackage}
+  <ReplacePackageDialog
+    name={target.extension.name}
+    installedFrom={target.installedFrom}
+    storeName={sourceLabel(target.url)}
+    oncancel={() => (replacingPackage = null)}
+    onconfirm={() => { const chosen = target; replacingPackage = null; void installFromCatalog(chosen.url, chosen.extension, true) }}
   />
 {/if}

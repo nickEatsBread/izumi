@@ -10,6 +10,13 @@ import {
   extensionUrls,
 } from "$lib/settings/ui";
 import type { ManualSnapshot } from "./types";
+import {
+  hiddenBuiltinStores,
+  normalizeHiddenBuiltins,
+  normalizeStoreFeeds,
+  pruneStorePins,
+  userStores,
+} from "$lib/store/feeds";
 import { activeProfileId, DEFAULT_PROFILE_ID } from '$lib/profiles/store'
 
 // Preferences that have the same meaning on Android, Deck, and desktop. Paths,
@@ -115,6 +122,10 @@ export function createManualSnapshot(
       debridKey: get(debridKey),
     },
     settings: readSettings(),
+    stores: {
+      feeds: normalizeStoreFeeds(get(userStores)),
+      hiddenBuiltins: normalizeHiddenBuiltins(get(hiddenBuiltinStores)),
+    },
   };
 }
 
@@ -193,6 +204,13 @@ export function applyManualSnapshot(
     debridProvider.set(snapshot.extensions.debridProvider);
   if (typeof snapshot.extensions.debridKey === "string")
     debridKey.set(snapshot.extensions.debridKey);
+  // Received store lists reach the stores through set(), which skips their beforeRead cleaning. Each
+  // field applies only when present, so a partial or future block never wipes a list.
+  if (snapshot.stores) {
+    if (Array.isArray(snapshot.stores.feeds)) userStores.set(normalizeStoreFeeds(snapshot.stores.feeds));
+    if (Array.isArray(snapshot.stores.hiddenBuiltins)) hiddenBuiltinStores.set(normalizeHiddenBuiltins(snapshot.stores.hiddenBuiltins));
+    pruneStorePins();
+  }
   for (const key of SYNCED_SETTING_KEYS) {
     if (Object.hasOwn(snapshot.settings, key)) {
       const value = snapshot.settings[key];

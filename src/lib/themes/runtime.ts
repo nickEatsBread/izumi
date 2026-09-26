@@ -3,10 +3,12 @@ import { activeStudioTheme, themeStudioPreview } from '$lib/settings/theme-studi
 import { themePreset } from '$lib/settings/ui'
 import { isMobile, isTv } from '$lib/platform'
 import { resolvePresentation, type ThemeNavPlacement } from './presentation'
+import { themeSafeMode } from './safe-mode'
 // The active presentation for THIS surface: a package's `mobile` block is layered over its shared
 // layout on phones and dropped everywhere else, so every consumer reads one already-resolved tree.
-export const themePresentation = derived([activeStudioTheme, themeStudioPreview, themePreset, isMobile], ([theme, preview, preset, mobile]) =>
-  resolvePresentation(preview?.presentation ?? (preview ? undefined : preset === 'custom' ? theme.presentation : undefined), mobile))
+// Safe mode drops it entirely so every consumer falls back to izumi's default presentation.
+export const themePresentation = derived([activeStudioTheme, themeStudioPreview, themePreset, isMobile, themeSafeMode], ([theme, preview, preset, mobile, safe]) =>
+  safe ? undefined : resolvePresentation(preview?.presentation ?? (preview ? undefined : preset === 'custom' ? theme.presentation : undefined), mobile))
 
 // Where the navigation chrome sits on THIS surface: phones always use the bottom bar, TVs the side
 // rail, and desktops follow the theme's `shell.nav`. The app shell and the player both read it, so

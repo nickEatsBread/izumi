@@ -33,6 +33,8 @@ pub struct InstalledExtension {
     pub source_id: String,
     pub source_ids: Vec<String>,
     pub signed: bool,
+    /// Fingerprint of the key that signed the package, in the same form as store key fingerprints.
+    pub signer_key: Option<String>,
     pub service_entry: Option<String>,
 }
 
@@ -40,7 +42,7 @@ mod package {
     use super::{AniyomiInstallMetadata, InstalledExtension};
     use base64::Engine;
     use ed25519_dalek::pkcs8::DecodePublicKey;
-    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+    use ed25519_dalek::{Signature, VerifyingKey};
     use futures_util::StreamExt;
     use serde_json::Value;
     use sha2::{Digest, Sha256};
@@ -57,7 +59,9 @@ mod package {
     const MAX_ENTRY_BYTES: usize = 152 * 1024 * 1024;
     const MAX_ANIYOMI_APK_BYTES: usize = 32 * 1024 * 1024;
     // v2 rebuilds desktop Aniyomi runtime JARs with resources preserved from their signed APK.
-    const PACKAGE_CACHE_VERSION: u8 = 2;
+    // 3: entries now carry `signer_key`; older caches would report signed packages without it.
+    // 4: signatures are verified strictly (weak keys refused); re-check every cached verdict once.
+    const PACKAGE_CACHE_VERSION: u8 = 4;
 
     #[derive(serde::Deserialize, serde::Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -185,7 +189,9 @@ mod package {
         }
     }
 
-    fn verify_signature(signature: &Value, integrity: &Value) -> Result<bool, String> {
+    /// `Ok(Some(fingerprint))` for a signed package; the fingerprint identifies the signing key the
+    /// same way store keys are identified, so the Store can tell who published a package.
+    fn verify_signature(signature: &Value, integrity: &Value) -> Result<Option<String>, String> {
         let signed = signature
             .get("signed")
             .and_then(Value::as_bool)
@@ -194,7 +200,7 @@ mod package {
             if signature.get("algorithm").and_then(Value::as_str) != Some("none") {
                 return Err("Unsigned package has an invalid signature marker".into());
             }
-            return Ok(false);
+            return Ok(None);
         }
         if signature.get("algorithm").and_then(Value::as_str) != Some("Ed25519") {
             return Err("Unsupported extension signature algorithm".into());
@@ -222,9 +228,14 @@ mod package {
             .map_err(|_| "Extension signature is not valid base64")?;
         let signature = Signature::from_slice(&signature_bytes)
             .map_err(|_| "Extension signature has the wrong length")?;
-        key.verify(canonical_json(integrity).as_bytes(), &signature)
+        // Same rules as store indexes: a small-order ("weak") key can sign anything, and strict
+        // verification also refuses malleable signatures.
+        if key.is_weak() {
+            return Err("Extension public key is a weak key".into());
+        }
+        key.verify_strict(canonical_json(integrity).as_bytes(), &signature)
             .map_err(|_| "Extension signature verification failed")?;
-        Ok(true)
+        Ok(Some(crate::store_trust::key_fingerprint(&key)))
     }
 
     fn is_android_apk(bytes: &[u8]) -> bool {
@@ -459,7 +470,8 @@ mod package {
                 return Err(format!("Extension integrity check failed for {name}"));
             }
         }
-        let signed = verify_signature(&signature, &integrity)?;
+        let signer_key = verify_signature(&signature, &integrity)?;
+        let signed = signer_key.is_some();
         if backend == "izumi-service" && !signed {
             return Err("Native extension services must be signed".into());
         }
@@ -534,6 +546,7 @@ mod package {
                 .to_string(),
             source_ids,
             signed,
+            signer_key,
             service_entry: (backend == "izumi-service").then(|| entry.to_string()),
         };
         let runtime_entry = if backend == "aniyomi-jvm" {
@@ -806,11 +819,67 @@ mod package {
         std::fs::rename(temporary, destination).map_err(|error| error.to_string())
     }
 
-    fn install_bytes(app: &AppHandle, bytes: Vec<u8>) -> Result<InstalledExtension, String> {
+    /// Refuses installs that would silently take over another package: a download whose id differs
+    /// from the listing it was installed from, or an update signed by a different key than the
+    /// package it replaces.
+    fn check_replacement(
+        expected_id: Option<&str>,
+        incoming: &InstalledExtension,
+        current: Option<&InstalledExtension>,
+    ) -> Result<(), String> {
+        if expected_id.is_some_and(|expected| expected != incoming.id) {
+            return Err("This package's id doesn't match its store listing".into());
+        }
+        if let Some(current) = current {
+            if current.signer_key.is_some() && current.signer_key != incoming.signer_key {
+                return Err("This update is signed by a different key than the installed package".into());
+            }
+        }
+        Ok(())
+    }
+
+    /// Refuses a download that isn't the kind of package its listing says it is, and, unless the user
+    /// installs from the package's own store, an update that changes what kind of package is
+    /// installed: a sandboxed JS or JVM package must never silently become a native service.
+    fn check_kind(
+        expected_backend: Option<&str>,
+        allow_backend_change: bool,
+        incoming: &InstalledExtension,
+        current: Option<&InstalledExtension>,
+    ) -> Result<(), String> {
+        if expected_backend.is_some_and(|expected| expected != incoming.backend) {
+            return Err("This package isn't the kind of package its store listing says it is".into());
+        }
+        if !allow_backend_change
+            && current.is_some_and(|current| current.backend != incoming.backend)
+        {
+            return Err("This update would change what kind of package is installed".into());
+        }
+        Ok(())
+    }
+
+    fn install_bytes(
+        app: &AppHandle,
+        bytes: Vec<u8>,
+        expected_id: Option<&str>,
+        expected_backend: Option<&str>,
+        allow_backend_change: bool,
+        replace_installed: bool,
+    ) -> Result<InstalledExtension, String> {
         let (extension, jar) = parse_package(&bytes)?;
         let dir = extension_dir(app)?;
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let destination = package_path(app, &extension.id)?;
+        let current = std::fs::read(&destination)
+            .ok()
+            .and_then(|existing| parse_package(&existing).ok())
+            .map(|(current, _)| current);
+        // A replacement the user confirmed (a same-id package from another store) isn't compared with
+        // the installed copy: that copy is what they chose to replace. The download itself is still
+        // checked against its listing.
+        let compared = if replace_installed { None } else { current.as_ref() };
+        check_replacement(expected_id, &extension, compared)?;
+        check_kind(expected_backend, allow_backend_change, &extension, compared)?;
         let temporary = destination.with_extension("izumi-ext.part");
         std::fs::write(&temporary, bytes).map_err(|e| e.to_string())?;
         if destination.exists() {
@@ -826,7 +895,8 @@ mod package {
         if path.extension().and_then(|value| value.to_str()) != Some("izumi-ext") {
             return Err("Choose an .izumi-ext package".into());
         }
-        install_bytes(app, std::fs::read(path).map_err(|e| e.to_string())?)
+        // A file the user picked themselves may be any kind of package.
+        install_bytes(app, std::fs::read(path).map_err(|e| e.to_string())?, None, None, true, false)
     }
 
     async fn download_https(
@@ -874,6 +944,10 @@ mod package {
         app: &AppHandle,
         url: &str,
         expected_sha256: &str,
+        expected_id: Option<&str>,
+        expected_backend: Option<&str>,
+        allow_backend_change: bool,
+        replace_installed: bool,
     ) -> Result<InstalledExtension, String> {
         let bytes = download_https(
             url,
@@ -882,7 +956,7 @@ mod package {
             "extension package",
         )
         .await?;
-        install_bytes(app, bytes)
+        install_bytes(app, bytes, expected_id, expected_backend, allow_backend_change, replace_installed)
     }
 
     pub async fn download_aniyomi_apk(
@@ -972,8 +1046,17 @@ mod package {
         metadata: &AniyomiInstallMetadata,
         apk: &[u8],
         converted_jar: &[u8],
+        allow_backend_change: bool,
+        replace_installed: bool,
     ) -> Result<InstalledExtension, String> {
-        install_bytes(app, build_aniyomi_package(metadata, apk, converted_jar)?)
+        install_bytes(
+            app,
+            build_aniyomi_package(metadata, apk, converted_jar)?,
+            Some(&metadata.id),
+            Some("aniyomi-jvm"),
+            allow_backend_change,
+            replace_installed,
+        )
     }
 
     pub fn list(app: &AppHandle) -> Result<Vec<InstalledExtension>, String> {
@@ -1304,12 +1387,75 @@ mod package {
             assert_eq!(parsed.name, "AllAnime");
             assert_eq!(parsed.source_ids, ["1", "2"]);
             assert!(!parsed.signed);
+            assert!(parsed.signer_key.is_none());
             assert!(jar.is_none());
         }
 
         #[test]
+        fn refuses_a_weak_key_whose_forged_signature_matches_any_package() {
+            // The identity point is a small-order key. With R = identity and s = 0 the non-strict
+            // check accepts this signature for every message.
+            let mut identity = [0u8; 32];
+            identity[0] = 1;
+            let public_key_der = VerifyingKey::from_bytes(&identity)
+                .unwrap()
+                .to_public_key_der()
+                .unwrap();
+            let public_key = format!(
+                "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----\n",
+                base64::engine::general_purpose::STANDARD.encode(public_key_der.as_bytes())
+            );
+            let mut forged = [0u8; 64];
+            forged[0] = 1;
+            let signature = serde_json::json!({
+                "algorithm": "Ed25519",
+                "signed": true,
+                "publicKey": public_key,
+                "signature": base64::engine::general_purpose::STANDARD.encode(forged),
+            });
+            let integrity = serde_json::json!({ "algorithm": "SHA-256", "files": {} });
+            assert!(verify_signature(&signature, &integrity).unwrap_err().contains("weak"));
+        }
+
+        #[test]
         fn accepts_a_valid_signed_package() {
-            assert!(parse_package(&fixture(false, true, None)).unwrap().0.signed);
+            let parsed = parse_package(&fixture(false, true, None)).unwrap().0;
+            assert!(parsed.signed);
+            let expected = crate::store_trust::key_fingerprint(&SigningKey::from_bytes(&[7; 32]).verifying_key());
+            assert_eq!(parsed.signer_key.as_deref(), Some(expected.as_str()));
+        }
+
+        #[test]
+        fn refuses_a_package_whose_id_differs_from_its_listing() {
+            let (incoming, _) = parse_package(&fixture(false, false, None)).unwrap();
+            assert!(check_replacement(Some("someone.else"), &incoming, None)
+                .unwrap_err()
+                .contains("doesn't match"));
+            assert!(check_replacement(Some("example.allanime"), &incoming, None).is_ok());
+            assert!(check_replacement(None, &incoming, None).is_ok());
+        }
+
+        #[test]
+        fn refuses_a_download_of_another_kind_than_listed_or_installed() {
+            let (js, _) = parse_package(&fixture(false, false, None)).unwrap();
+            assert!(check_kind(Some("aniyomi-jvm"), false, &js, None).unwrap_err().contains("kind"));
+            assert!(check_kind(Some("izumi-js"), false, &js, None).is_ok());
+            let mut service = js.clone();
+            service.backend = "izumi-service".into();
+            assert!(check_kind(None, false, &service, Some(&js)).unwrap_err().contains("kind"));
+            assert!(check_kind(None, true, &service, Some(&js)).is_ok());
+            assert!(check_kind(None, false, &js, Some(&js)).is_ok());
+        }
+
+        #[test]
+        fn refuses_an_update_signed_by_a_different_key() {
+            let (signed, _) = parse_package(&fixture(false, true, None)).unwrap();
+            let (unsigned, _) = parse_package(&fixture(false, false, None)).unwrap();
+            assert!(check_replacement(None, &unsigned, Some(&signed))
+                .unwrap_err()
+                .contains("different key"));
+            assert!(check_replacement(None, &signed, Some(&signed)).is_ok());
+            assert!(check_replacement(None, &signed, Some(&unsigned)).is_ok());
         }
 
         #[test]
@@ -1376,8 +1522,21 @@ pub async fn extension_install_url(
     app: AppHandle,
     url: String,
     expected_sha256: String,
+    expected_id: Option<String>,
+    expected_backend: Option<String>,
+    allow_backend_change: Option<bool>,
+    replace_installed: Option<bool>,
 ) -> Result<InstalledExtension, String> {
-    package::install_url(&app, &url, &expected_sha256).await
+    package::install_url(
+        &app,
+        &url,
+        &expected_sha256,
+        expected_id.as_deref(),
+        expected_backend.as_deref(),
+        allow_backend_change.unwrap_or(false),
+        replace_installed.unwrap_or(false),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1386,6 +1545,8 @@ pub async fn extension_install_aniyomi_url(
     url: String,
     expected_sha256: Option<String>,
     metadata: AniyomiInstallMetadata,
+    allow_backend_change: Option<bool>,
+    replace_installed: Option<bool>,
 ) -> Result<InstalledExtension, String> {
     package::validate_aniyomi_metadata(&metadata)?;
     let apk = package::download_aniyomi_apk(&url, expected_sha256.as_deref()).await?;
@@ -1397,7 +1558,14 @@ pub async fn extension_install_aniyomi_url(
     #[cfg(target_os = "android")]
     let converted_jar = apk.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        package::install_aniyomi(&app, &metadata, &apk, &converted_jar)
+        package::install_aniyomi(
+            &app,
+            &metadata,
+            &apk,
+            &converted_jar,
+            allow_backend_change.unwrap_or(false),
+            replace_installed.unwrap_or(false),
+        )
     })
     .await
     .map_err(|error| error.to_string())?

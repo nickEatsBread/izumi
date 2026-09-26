@@ -5,15 +5,23 @@
   import ArrowLeft from '@lucide/svelte/icons/arrow-left'
   import Palette from '@lucide/svelte/icons/palette'
   import { openUrl } from '@tauri-apps/plugin-opener'
-  import { collectLocalThemes, loadThemeCatalog, prepareRelease, prepareThemeLink } from '$lib/themes/catalog'
-  import { THEME_API, SUPPORTED_THEME_APIS, THEME_CATALOG_PROJECT_URL, newerVersion, platformLabel, type PreparedTheme, type ThemePlatform, type ThemeRelease } from '$lib/themes/packages'
-  import { installedThemes, installTheme, applyInstalledTheme, removeInstalledTheme, rollbackTheme, previewTheme, isCatalogTheme, type InstalledTheme } from '$lib/themes/installed'
+  import { page } from '$app/state'
+  import { collectLocalThemes, prepareRelease, prepareThemeLink } from '$lib/themes/catalog'
+  import { THEME_API, SUPPORTED_THEME_APIS, THEME_CATALOG_PROJECT_URL, THEME_CATALOG_URL, newerVersion, platformLabel, type PreparedTheme, type ThemePlatform, type ThemeRelease } from '$lib/themes/packages'
+  import { installedThemes, installTheme, applyInstalledTheme, removeInstalledTheme, rollbackTheme, previewTheme, type InstalledTheme } from '$lib/themes/installed'
+  import { allStores } from '$lib/store/feeds'
+  import { findStoreThemeRelease, loadThemeListings, type ThemeListing } from '$lib/store/themes'
   import { themeStudioOpen } from '$lib/settings/theme-studio-session'
   import { activeStudioThemeId, studioThemes } from '$lib/settings/theme-studio'
   import { themePreset } from '$lib/settings/ui'
+  import { protectedSurface, themeSafeMode } from '$lib/themes/safe-mode'
+  import { themeCssStatus } from '$lib/theme'
 
   let tab = $state<'browse' | 'installed'>('browse')
-  let entries = $state<ThemeRelease[]>([])
+  // Raw, never proxied: listingFor is keyed by these exact objects.
+  let entries = $state.raw<ThemeRelease[]>([])
+  let listingFor = $state.raw(new Map<ThemeRelease, ThemeListing>())
+  const originOf = (entry: ThemeRelease) => listingFor.get(entry)?.origin ?? ''
   let query = $state('')
   let loading = $state(true)
   let busy = $state(false)
@@ -28,7 +36,6 @@
   let folderInput: HTMLInputElement
   let batch = $state<PreparedTheme[]>([])
   let batchErrors = $state<string[]>([])
-  let abort: AbortController | undefined
   // Platform filter: a listing without `platforms` serves both layouts, so it stays under every filter.
   let platform = $state<'all' | ThemePlatform>('all')
   const PLATFORMS: { id: 'all' | ThemePlatform; label: string }[] = [{ id: 'all', label: 'All' }, { id: 'desktop', label: 'Desktop' }, { id: 'phone', label: 'Phone' }]
@@ -45,17 +52,34 @@
   const originConflict = $derived(!!prepared && $installedThemes.some(item => item.id === prepared?.package.id && item.origin !== prepared.origin))
   const canInstall = $derived(!originConflict && (!currentInstall || !!prepared && (newerVersion(prepared.package.version, currentInstall.package.version) || prepared.package.version === currentInstall.package.version && !$studioThemes.some(theme => theme.id === currentInstall.designId))))
 
-  async function refresh() {
-    abort?.abort(); const request = new AbortController(); abort = request; loading = true; error = ''
-    try { const result = await loadThemeCatalog(request.signal); if (!request.signal.aborted) { entries = result.catalog.themes; cached = result.cached } }
-    catch (cause) { if (!request.signal.aborted) error = failure(cause) }
-    finally { if (abort === request) loading = false }
+  async function refresh(force = false) {
+    loading = true; error = ''
+    try {
+      const result = await loadThemeListings({ force })
+      listingFor = new Map(result.listings.map((listing) => [listing.release, listing]))
+      entries = result.listings.map((listing) => listing.release)
+      cached = result.cached
+      if (!result.listings.length && result.errors.length) error = result.errors[0]
+    } catch (cause) { error = failure(cause) }
+    finally { loading = false }
   }
-  onMount(() => { void refresh(); return () => abort?.abort() })
+  // The Store's "Preview & install" arrives as ?store=<id>&theme=<id>.
+  function openRequested() {
+    const storeId = page.url.searchParams.get('store'), themeId = page.url.searchParams.get('theme')
+    if (!storeId || !themeId) return
+    const origin = $allStores.find((store) => store.id === storeId)?.url
+    const entry = entries.find((item) => item.id === themeId && originOf(item) === origin)
+    if (entry) void inspect(entry)
+  }
+  onMount(() => {
+    void refresh().then(openRequested)
+  })
+  // Reactive, so `izumi://safe-mode` also works while this page is already open.
+  $effect(() => { if (page.url.searchParams.get('safe') === '1') themeSafeMode.set(true) })
   async function inspect(entry: ThemeRelease) {
     if (busy) return
     selected = entry; prepared = null; busy = true; error = ''; notice = ''
-    try { prepared = await prepareRelease(entry) } catch (cause) { error = failure(cause) } finally { busy = false }
+    try { prepared = await prepareRelease(entry, originOf(entry)) } catch (cause) { error = failure(cause) } finally { busy = false }
   }
   function closeAdd() { showAdd = false; batch = []; batchErrors = [] }
   async function fromLink(event: SubmitEvent) {
@@ -107,11 +131,11 @@
   async function update(item: InstalledTheme) {
     busy = true; error = ''; notice = ''
     try {
-      if (isCatalogTheme(item)) {
-        const { catalog } = await loadThemeCatalog()
-        const entry = catalog.themes.find(entry => entry.id === item.id)
+      if ($allStores.some((store) => store.url === item.origin)) {
+        // Themes only update from the store they were installed from.
+        const entry = await findStoreThemeRelease(item.origin, item.id)
         if (!entry || !newerVersion(entry.version, item.package.version)) { notice = 'You have the latest listed version.'; return }
-        selected = entry; prepared = await prepareRelease(entry)
+        selected = entry; prepared = await prepareRelease(entry, item.origin)
       } else if (item.updateUrl) {
         const candidate = await prepareThemeLink(item.updateUrl)
         if (candidate.package.id !== item.id) throw new Error('The update link changed its theme identity.')
@@ -127,9 +151,11 @@
 
 <svelte:head><title>Themes · izumi</title></svelte:head>
 <svelte:window onkeydown={(event) => { if (event.key === 'Escape' && showAdd) closeAdd() }} />
-<div class="themes-page">
+<div class="themes-page" data-theme-protected use:protectedSurface>
   <header class="page-heading"><div><p class="eyebrow">Make it yours</p><h2>Themes</h2><p class="intro">A different look. Still your client.</p></div><a class="control gap-2" href="/app/settings/theme-studio" data-focusable><Palette size={16} aria-hidden="true" /> Theme Studio</a></header>
   {#if $themeStudioOpen}<p class="message">Finish or discard your Theme Studio draft before applying another theme.</p>{/if}
+  {#if $themeSafeMode}<p class="message">Safe mode is on: izumi's default appearance is showing until you turn themes back on or restart. <button type="button" class="text-close inline" data-focusable onclick={() => themeSafeMode.set(false)}>Turn themes back on</button></p>{/if}
+  {#if $themeCssStatus.state === 'rejected'}<p role="alert" class="message error">The active theme's stylesheet was not applied: {$themeCssStatus.reason}</p>{/if}
   <div class="toolbar"><nav aria-label="Theme library"><button type="button" data-focusable aria-pressed={tab === 'browse'} onclick={() => { tab = 'browse'; selected = null; prepared = null }}>Browse</button><button type="button" data-focusable aria-pressed={tab === 'installed'} onclick={() => { tab = 'installed'; selected = null; prepared = null }}>Installed <span>{$installedThemes.length}</span></button></nav><div class="toolbar-actions"><button class="control" data-focusable onclick={() => { showAdd = true; error = '' }}>Add theme</button></div></div>
   <input bind:this={fileInput} type="file" accept=".json,application/json" multiple class="hidden" onchange={(event) => { const input = event.currentTarget; void fromFiles(input.files); input.value = '' }} aria-label="Import theme package files" />
   <input bind:this={folderInput} type="file" accept=".json,application/json" multiple webkitdirectory class="hidden" onchange={(event) => { const input = event.currentTarget; void fromFiles(input.files); input.value = '' }} aria-label="Import theme package folder" />
@@ -171,14 +197,14 @@
       </div></div>
     </section>
   {:else if tab === 'browse'}
-    <div class="browse-tools"><label class="search"><Search size={18} /><input bind:value={query} aria-label="Search themes" placeholder="Search themes, authors or styles" data-focusable /></label><div class="platform-filter" role="group" aria-label="Show themes for">{#each PLATFORMS as option (option.id)}<button type="button" data-focusable aria-pressed={platform === option.id} onclick={() => platform = option.id}>{option.label}</button>{/each}</div><button class="control" data-focusable disabled={loading} onclick={refresh}>Refresh</button></div>
+    <div class="browse-tools"><label class="search"><Search size={18} /><input bind:value={query} aria-label="Search themes" placeholder="Search themes, authors or styles" data-focusable /></label><div class="platform-filter" role="group" aria-label="Show themes for">{#each PLATFORMS as option (option.id)}<button type="button" data-focusable aria-pressed={platform === option.id} onclick={() => platform = option.id}>{option.label}</button>{/each}</div><button class="control" data-focusable disabled={loading} onclick={() => refresh(true)}>Refresh</button></div>
     {#if cached}<p class="message">Showing the saved catalog. Refresh when you’re back online.</p>{/if}
     {#if loading && !entries.length}<div class="theme-grid" aria-label="Loading themes" aria-busy="true">{#each [1, 2, 3] as item}<div class="skeleton" aria-hidden="true"></div>{/each}</div>
     {:else if !filtered.length}<div class="empty"><Palette size={36} /><h3>{entries.length ? 'No matching themes' : 'Your next look starts here'}</h3><p>{entries.length ? 'Try another name or style.' : 'Refresh the catalog, or add a theme from a link, file or folder.'}</p></div>
-    {:else}<div class="theme-grid">{#each filtered as entry (entry.id)}<article><button class="theme-card" data-focusable disabled={busy || !supported(entry)} onclick={() => inspect(entry)}><div class="thumbnail">{#if entry.preview}<img src={entry.preview} alt={`${entry.name} layout preview`} loading="lazy" referrerpolicy="no-referrer" />{:else}<Palette size={42} />{/if}</div><div class="card-title"><h3>{entry.name}</h3>{#if $installedThemes.some(item => item.id === entry.id)}<span>Installed</span>{/if}</div><p class="author">By {entry.author} · <span class="platform">{platformLabel(entry.platforms)}</span></p><p class="summary">{entry.description}</p><p class="tags">{supported(entry) ? entry.tags.join(' · ') : apiNote(entry)}</p></button></article>{/each}</div>{/if}
+    {:else}<div class="theme-grid">{#each filtered as entry (`${originOf(entry)}|${entry.id}`)}<article><button class="theme-card" data-focusable disabled={busy || !supported(entry)} onclick={() => inspect(entry)}><div class="thumbnail">{#if entry.preview}<img src={entry.preview} alt={`${entry.name} layout preview`} loading="lazy" referrerpolicy="no-referrer" />{:else}<Palette size={42} />{/if}</div><div class="card-title"><h3>{entry.name}</h3>{#if $installedThemes.some(item => item.id === entry.id && item.origin === originOf(entry))}<span>Installed</span>{/if}</div><p class="author">By {entry.author} · <span class="platform">{platformLabel(entry.platforms)}</span>{#if originOf(entry) !== THEME_CATALOG_URL} · {listingFor.get(entry)?.storeName}{/if}</p><p class="summary">{entry.description}</p><p class="tags">{supported(entry) ? entry.tags.join(' · ') : apiNote(entry)}</p></button></article>{/each}</div>{/if}
   {:else}
     <div class="default-theme"><div><strong>Izumi default</strong><p>The original appearance is always available.</p></div><button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => { $themePreset = 'izumi'; notice = 'Default appearance restored.' }}>Use default</button></div>
-    {#each $installedThemes as item (item.id)}<article class="installed-theme"><div><h3>{item.package.name}</h3><p>By {item.package.author} · {item.package.version}{#if $themePreset === 'custom' && $activeStudioThemeId === item.designId} · Applied{/if}</p><p class="summary">{item.package.description}</p></div><div class="installed-actions"><button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => apply(item)}>Apply</button>{#if isCatalogTheme(item) || item.updateUrl}<button class="control" data-focusable disabled={busy || $themeStudioOpen} onclick={() => update(item)}>Check update</button>{/if}{#if item.previous}<button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => restore(item)}>Restore previous</button>{/if}<button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => remove(item)}>Remove</button></div></article>{/each}
+    {#each $installedThemes as item (item.id)}<article class="installed-theme"><div><h3>{item.package.name}</h3><p>By {item.package.author} · {item.package.version}{#if $themePreset === 'custom' && $activeStudioThemeId === item.designId} · Applied{/if}</p><p class="summary">{item.package.description}</p></div><div class="installed-actions"><button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => apply(item)}>Apply</button>{#if $allStores.some((store) => store.url === item.origin) || item.updateUrl}<button class="control" data-focusable disabled={busy || $themeStudioOpen} onclick={() => update(item)}>Check update</button>{/if}{#if item.previous}<button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => restore(item)}>Restore previous</button>{/if}<button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => remove(item)}>Remove</button></div></article>{/each}
     {#if !$installedThemes.length}<div class="empty"><Palette size={36} /><h3>A home for your themes</h3><p>Installed themes stay here, ready to use offline.</p><button class="control" data-focusable onclick={() => tab = 'browse'}>Browse themes</button></div>{/if}
   {/if}
 </div>
@@ -218,7 +244,10 @@
   h3 { font-size: 17px; font-weight: 900; letter-spacing: -.02em; }
   .card-title span, .author, .tags, .version { color: hsl(var(--muted-foreground)); font-size: 11px; }
   .author { margin-top: 3px; }
-  .summary { font-size: 12px; line-height: 1.6; margin-top: 8px; color: hsl(var(--muted-foreground)); }
+  /* Listings can carry a long description; the gallery and Installed show a two-line / one-line
+     teaser and the detail view keeps the full text. */
+  .summary { font-size: 12px; line-height: 1.6; margin-top: 8px; color: hsl(var(--muted-foreground)); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+  .installed-theme .summary { -webkit-line-clamp: 1; line-clamp: 1; }
   .tags { margin-top: 12px; }
   .message { padding: 14px 16px; margin: 16px 0; border-radius: 8px; background: hsl(var(--muted)); font-size: 13px; }
   .error { border-inline-start: 3px solid hsl(var(--theme)); }
@@ -239,6 +268,7 @@
   .batch span { color: hsl(var(--muted-foreground)); font-size: 11px; }
   .batch-errors { color: hsl(var(--muted-foreground)); font-size: 12px; margin-bottom: 12px; }
   .text-close { display: block; margin-top: 16px; min-height: 40px; font-size: 12px; font-weight: 800; text-decoration: underline; text-underline-offset: 4px; }
+  .text-close.inline { display: inline; margin: 0 0 0 6px; min-height: 0; }
   .empty { min-height: 240px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; color: hsl(var(--muted-foreground)); }
   .empty p { font-size: 13px; }
   .skeleton { aspect-ratio: 16 / 10; background: hsl(var(--muted)); border-radius: 10px; }

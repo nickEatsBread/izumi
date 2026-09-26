@@ -20,4 +20,11 @@ describe('themes settings add dialog', () => {
     expect(page).toContain('collectLocalThemes')
     expect(page).toContain('Install all')
   })
+  it('browses themes from every store and keeps each theme tied to its store', () => {
+    expect(page).toContain('loadThemeListings')
+    expect(page).not.toContain('loadThemeCatalog')
+    expect(page).toContain('prepareRelease(entry, originOf(entry))')
+    expect(page).toContain("page.url.searchParams.get('theme')")
+    expect(page).toContain('item.id === entry.id && item.origin === originOf(entry)')
+  })
 })

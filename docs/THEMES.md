@@ -8,7 +8,7 @@ The shipped appearance remains the default. Community packages live in the [izum
 
 ## Theme API coverage
 
-The client renders theme API 1 and 2 (`SUPPORTED_THEME_APIS` in `src/lib/themes/packages.ts`). API 1 is the original key set and stays valid unchanged; a package declares `themeApi: 2` to use the additions below (bottom bar, slide indicator, section headings, series tabs, docked watch layout, phone overrides). The validator gates keys by the declared API, so an API 1 package cannot carry API 2 chrome past an older client. A package newer than the client is refused with a clear message and listed in the gallery as "Needs a newer izumi".
+The client renders theme API 1, 2 and 3 (`SUPPORTED_THEME_APIS` in `src/lib/themes/packages.ts`). API 1 is the original key set and stays valid unchanged; a package declares `themeApi: 2` to use the additions below (bottom bar, slide indicator, section headings, series tabs, docked watch layout, phone overrides), and `themeApi: 3` for stylesheets, fonts, template parts, airing and slide fields and the text wordmark (see "Theme API 3"). The validator gates keys by the declared API, so an API 1 package cannot carry API 2 chrome past an older client. A package newer than the client is refused with a clear message and listed in the gallery as "Needs a newer izumi".
 
 Coverage chips in Theme Studio (`Home`, `Shell`, `Details`, `Player`, or `Full`) reflect the slots a draft actually uses.
 
@@ -58,6 +58,24 @@ How the video follows the layout: the webview is transparent over the native mpv
 
 `presentation.mobile` (API 2) carries a phone variant of the same layout: `density`, `hideCardLabels`, `trueBlack`, `hero`, `rows`, `detail`, `player` and `cards`, with the same shapes as their top-level counterparts. It applies when `isMobile` is true (the Android app and any window up to 640px) and is dropped everywhere else, so a package can lead with a poster-based featured card, narrower rows and a stacked series page on phones while keeping its desktop composition. `resolvePresentation` in `src/lib/themes/presentation.ts` merges the block one level deep per section (a phone hero keeps the shared interval; a `rows.byId` entry or card family replaces its shared counterpart whole); both the runtime store and the document chrome in `src/lib/theme.ts` read the resolved tree. `shell` is not accepted inside `mobile`: phones always use the bottom bar, and `shell.bottomNav` at the top level is what styles it.
 
+### Theme API 3
+
+A package declares `themeApi: 3` to use these keys. The validator refuses them on API 1/2 packages, and packages may be up to 512 KB.
+
+- **Stylesheet (`design.css`, ≤ 128 KB).** Ordinary CSS aimed at the styling hooks (`data-slot`, `data-part`, state attributes such as `data-active`) and the theme variables. The webview parses it (CSSOM) and izumi rebuilds it from the parsed rules (`src/lib/themes/css.ts`), then scans the result and rejects it whole if anything forbidden remains. The shared policy lives in `src/lib/themes/css-policy.ts` (the catalog CI uses a copy).
+  - Removed: `@import`, `@font-face`, `@page`, `@property`, `@counter-style`, `@font-feature-values`; `-webkit-app-region`, `app-region`, `behavior`, `-moz-binding`; every `url()` except `data:image/(png|jpeg|gif|webp|avif|svg+xml)` URIs up to 32 KB (base64 or percent-encoded, without quotes or parentheses inside); `image-set()`, `image()`, `src()`, `element()`, `cross-fade()` and `expression()` with or without a vendor prefix; custom properties containing a backslash; any `--izumi-safe-*` declaration. CSS escapes are decoded before the check, so escaped function names are caught too.
+  - Rejected outright: a stylesheet containing `@namespace`, and one whose rebuilt text still loads anything. The install check refuses remote loads and blocked at-rules up front; the Themes page shows why an applied stylesheet was rejected.
+  - Limits: 4,000 rules (keyframe frames count), nesting depth 8.
+  - The stylesheet is injected last in `<head>` inside `@scope (:root) to ([data-theme-protected])`. Top-level `@keyframes` and `@layer` statements stay outside the scope; declare `@keyframes` at the top level, not inside `@media` or `@supports`.
+  - Tailwind class names are not a supported target and change between releases.
+- **Fonts (`design.fonts`).** `{ ui, heading, display }`, each a bundled id: `system`, `serif`, `nunito`, `geist-mono`, `inter`, `roboto`, `poppins`, `lato`, `montserrat`, `open-sans`, `rubik`, `dm-sans`, `plus-jakarta-sans`, `outfit`, `manrope`, `figtree`, `source-sans-3`, `noto-sans`, `fira-sans`, `oswald`, `bebas-neue`, `cinzel`, `playfair-display` (`src/lib/themes/font-ids.ts`). Stylesheets use `var(--ui-font)`, `var(--font-heading)` and `var(--font-display)`. Only Latin and Latin Extended files ship; other scripts fall back to the system font. Files load on first use (`src/lib/themes/fonts.ts`).
+- **Template parts.** Any template node may carry `part` (`^[a-z][a-z0-9.-]{0,39}$`), rendered as `data-part`.
+- **Fields.** `nextEpisode`, `slide`, `slides`, `episodesAired` (numbers) and `airingIn` (`2d 21h`), `airingCountdown` (`4 days 19 hrs 43 mins`) (strings). The hero binds `slide`/`slides` and re-derives the countdowns on its clock.
+- **Wordmark (`presentation.brand`).** `text` renders "izumi" as `[data-slot="brand"]` → `[data-part="brand.text"]` → one `[data-part="brand.char"]` per letter (`BrandText.svelte`). The expanded side rail always uses the text version. The text is always "izumi".
+- **Ambient colour.** While a theme stylesheet is applied, the home hero publishes `--hero-ambient-rgb` (`r g b`) on `<html>` from the current artwork. When the image can't be read the variable is cleared, so always give `var(--hero-ambient-rgb, …)` a fallback.
+- **Video.** During playback `html` and `body` are forced transparent with inline `!important` and the page content is hidden the same way, so ordinary theme backgrounds never cover the video. Don't paint over the player area yourself (fixed overlays, pseudo-elements on `body`).
+- **Protected surfaces and safe mode.** The Themes page, Theme Studio's panel, the install preview bar, the safe-mode banner and the Store's trust and install dialogs carry `data-theme-protected`: theme rules can't match inside them, they read a client-owned palette (`--izumi-safe-*`, written by `src/lib/theme.ts`) and they reset inherited `visibility` and `pointer-events`. Ancestor opacity, transforms and overlays can't be undone from inside; engines without `@scope` remove the stylesheet while the Themes page is open. Safe mode (Ctrl/Cmd + Alt + Shift + T, or `izumi://safe-mode`, which works even while Themes is open) shows izumi's default appearance — colours, fonts, layout and no stylesheet — for the session without changing the saved theme.
+
 ### Platforms
 
 A catalog listing can carry `platforms` (`desktop`, `phone`, primary first). The gallery shows "Phone only", "Desktop only", "Designed for phones · desktop layout included" or "Desktop & phone" (`platformLabel` in `packages.ts`) and offers an All / Desktop / Phone filter; a listing without the field serves both. The label replaces the old fixed "Desktop & mobile" text, which was wrong for packages an older client could not render.
@@ -66,7 +84,7 @@ A catalog listing can carry `platforms` (`desktop`, `phone`, primary first). The
 
 Home row order and visibility, navigation destinations, episode list density, skip rules, subtitle file style, recovery chrome (Theme Studio and the installation preview bar keep independent palettes), and native/TV shells beyond the tokens already applied.
 
-ZIP archives, remote font/image packs, arbitrary CSS, JavaScript and native plugins are not supported. Wallpaper file upload is reserved for a later additive key.
+ZIP archives, remote fonts and images, JavaScript and native plugins are not supported. Stylesheets are API 3 only and sanitised as described above. Pack-provided fonts and images are planned with packs.
 
 Theme Studio's Layout tab exposes common controls, discovers rows on the current page, shows a template outline, and provides a validated JSON editor for component templates. The existing home editor still owns row content, visibility and order.
 

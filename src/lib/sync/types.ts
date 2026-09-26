@@ -81,6 +81,9 @@ export interface ManualSnapshot {
     debridKey: string;
   };
   settings: Record<string, unknown>;
+  /** The user's store list and hidden built-in stores. Key pins never travel: trusting a store's
+   *  key is each device's own decision. Optional because older senders omit it. */
+  stores?: { feeds: unknown; hiddenBuiltins: unknown };
   /**
    * Signed-in trackers, and the one field here that is a live credential rather than a preference.
    *

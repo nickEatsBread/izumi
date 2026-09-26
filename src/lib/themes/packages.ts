@@ -1,11 +1,14 @@
 import { defaultStudioTheme, normalizeStudioTheme, validHslToken, type StudioTheme } from '$lib/settings/theme-studio'
-import { parsePresentation, record, type ThemeApi } from './presentation'
+import { LATEST_THEME_API, parsePresentation, record, type ThemeApi } from './presentation'
+import { precheckThemeCss } from './css-policy'
+import { parseThemeFonts } from './font-ids'
 
 /** The newest theme API this client renders. Older APIs stay installable; newer ones are refused
  *  with a clear message rather than a half-parsed package. */
-export const THEME_API: ThemeApi = 2
-export const SUPPORTED_THEME_APIS: readonly number[] = [1, 2]
-export const MAX_THEME_BYTES = 256_000
+export const THEME_API: ThemeApi = LATEST_THEME_API
+export const SUPPORTED_THEME_APIS: readonly number[] = [1, 2, 3]
+/** Stylesheets and templates together; the stylesheet alone is capped at 128 KB (css-policy.ts). */
+export const MAX_THEME_BYTES = 512_000
 export const THEME_CATALOG_URL = 'https://raw.githubusercontent.com/nickEatsBread/izumi-themes/main/index.json'
 export const THEME_CATALOG_PROJECT_URL = 'https://github.com/nickEatsBread/izumi-themes'
 export type ThemePlatform = 'desktop' | 'phone'
@@ -67,8 +70,10 @@ export function parseThemePackage(value: unknown, { allowSharedId = false }: { a
   if (raw.app !== 'izumi' || raw.kind !== 'theme-package' || raw.schemaVersion !== 1 || !SUPPORTED_THEME_APIS.includes(raw.themeApi as number)) throw new Error('This theme requires a different theme API. Check for a client update.')
   const themeApi = raw.themeApi as ThemeApi
   const id = identity(raw.id, allowSharedId), name = text(raw.name, 48), design = record(raw.design)
-  const allowed = ['tokens', 'radius', 'font', 'fontScale', 'backdrop', 'backdropStrength', 'glassBlur', 'presentation']
+  const allowed = ['tokens', 'radius', 'font', 'fontScale', 'backdrop', 'backdropStrength', 'glassBlur', 'presentation', ...(themeApi >= 3 ? ['css', 'fonts'] : [])]
   if (Object.keys(design).some(key => !allowed.includes(key))) throw new Error('This theme contains unsupported design settings.')
+  if (design.css !== undefined) precheckThemeCss(design.css)
+  if (design.fonts !== undefined) parseThemeFonts(design.fonts)
   // Validated against the API the package declares: an API 1 package is held to the API 1 key set
   // so it renders the same on every client that accepts it.
   if (design.presentation !== undefined) parsePresentation(design.presentation, themeApi)
@@ -79,7 +84,7 @@ export function parseThemePackage(value: unknown, { allowSharedId = false }: { a
     }
   }
   const normalized = normalizeStudioTheme({ ...base, ...design, id: 'package-design', name })
-  for (const key of allowed.filter(key => key !== 'presentation' && key !== 'tokens')) {
+  for (const key of allowed.filter(key => !['presentation', 'tokens', 'css', 'fonts'].includes(key))) {
     if (design[key] !== undefined && design[key] !== (normalized as unknown as Record<string, unknown>)[key]) throw new Error('The theme contains an unsupported appearance value.')
   }
   return { app: 'izumi', kind: 'theme-package', schemaVersion: 1, themeApi, id, name,

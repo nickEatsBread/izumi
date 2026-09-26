@@ -3,6 +3,8 @@
   import { themePresentation } from '$lib/themes/runtime'
   import { resolveDetail, themeColorCss, type HeroIndicator } from '$lib/themes/presentation'
   import { mediaDisplayModel } from '$lib/themes/host-model'
+  import { sampleAmbient } from '$lib/themes/ambient'
+  import { themeCssStatus } from '$lib/theme'
   import { motionPreference } from '$lib/settings/ui'
   import type { Media } from '$lib/anilist/types'
   import { banner, cover, title, format, status, season, totalEpisodes } from '$lib/anilist/media'
@@ -325,7 +327,23 @@
   const themeModel = $derived(current ? mediaDisplayModel(current, {
     description: cleanDesc(current.description), rank: featuredRankLabel,
     rankPosition: current.featuredRank?.position, poster: cover(current), backdrop: banner(current), logo: currentLogo || undefined,
-  }) : {})
+    slide: i + 1, slides: medias.length,
+  }, 0, clock) : {})
+  // Home hero only, and only while a theme stylesheet is applied: publish the current artwork's colour so the theme can tint the page behind it.
+  $effect(() => {
+    if (!showOverlay || !current || $themeCssStatus.state !== 'applied') return
+    const src = banner(current) || cover(current)
+    let cancelled = false
+    void sampleAmbient(src).then((rgb) => {
+      if (cancelled) return
+      // An unreadable image clears the value, so the stylesheet's var() fallback applies instead of
+      // the previous slide's colour.
+      if (rgb) document.documentElement.style.setProperty('--hero-ambient-rgb', rgb)
+      else document.documentElement.style.removeProperty('--hero-ambient-rgb')
+    })
+    return () => { cancelled = true }
+  })
+  $effect(() => () => { if (showOverlay) document.documentElement.style.removeProperty('--hero-ambient-rgb') })
   function themeAction(action: () => void) {
     if (swiped) { swiped = false; return }
     action()

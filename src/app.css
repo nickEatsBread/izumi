@@ -583,3 +583,31 @@ html.theme-shell-fade .theme-sidebar-scrim {
   height: auto;
   object-fit: cover;
 }
+
+/* Protected surfaces (Themes page, Theme Studio's panel, the install preview bar, safe-mode banner,
+   later pack review) read the client-owned palette mirror written by src/lib/theme.ts. Theme
+   stylesheets cannot declare --izumi-safe-* and, with @scope, cannot match inside these subtrees. */
+[data-theme-protected] {
+  --background: var(--izumi-safe-background);
+  --foreground: var(--izumi-safe-foreground);
+  --muted: var(--izumi-safe-muted);
+  --muted-foreground: var(--izumi-safe-muted-foreground);
+  --primary: var(--izumi-safe-primary);
+  --primary-foreground: var(--izumi-safe-primary-foreground);
+  --secondary: var(--izumi-safe-secondary);
+  --secondary-foreground: var(--izumi-safe-secondary-foreground);
+  --accent: var(--izumi-safe-accent);
+  --accent-foreground: var(--izumi-safe-accent-foreground);
+  --border: var(--izumi-safe-border);
+  --input: var(--izumi-safe-input);
+  --ring: var(--izumi-safe-ring);
+  --card: var(--izumi-safe-card);
+  --card-foreground: var(--izumi-safe-card-foreground);
+  --theme: var(--izumi-safe-theme);
+  font-family: var(--izumi-safe-font);
+  color: hsl(var(--foreground));
+  /* Inherited properties an ancestor could otherwise use to hide or disable this surface. Ancestor
+     opacity, transforms and overlays can't be undone from here; safe mode is the escape hatch. */
+  visibility: visible;
+  pointer-events: auto;
+}

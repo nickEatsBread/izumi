@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({ phttp: vi.fn(), invoke: vi.fn() }))
 
 vi.mock('$lib/net/http', () => ({ phttp: mocks.phttp }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }))
-vi.mock('$lib/settings/ui', () => ({ enabledExtensionUrls: readable([]), disabledPlugins: readable([]) }))
+vi.mock('$lib/settings/ui', () => ({ enabledExtensionUrls: readable([]), extensionUrls: readable([]), disabledPlugins: readable([]) }))
 vi.mock('$lib/stremio/online-cache', () => ({ clearProviderCache: () => {} }))
 
 import { fetchExtensionInfo, installCatalogPackage } from './manager'
@@ -84,7 +84,7 @@ describe('fetchExtensionInfo', () => {
       backend: 'aniyomi-jvm', sourceId: '123', sourceIds: ['123'], signed: false,
     }
     mocks.invoke.mockImplementation((command: string) =>
-      Promise.resolve(command === 'extension_install_aniyomi_url' ? installed : undefined))
+      Promise.resolve(command === 'extension_install_aniyomi_url' ? installed : command === 'extension_list' ? [] : undefined))
     await installCatalogPackage({
       packageFormat: 'aniyomi-repo',
       id: installed.id,
@@ -95,11 +95,21 @@ describe('fetchExtensionInfo', () => {
       sources: [{ id: '123', name: 'Example', language: 'en', baseUrl: 'https://example.test' }],
       backend: 'aniyomi-jvm',
       apk: 'https://example.test/example.apk',
-    })
-    expect(mocks.invoke).toHaveBeenNthCalledWith(1, 'extension_install_aniyomi_url', expect.objectContaining({
+    }, 'https://example.test/index.min.json')
+    expect(mocks.invoke).toHaveBeenCalledWith('extension_install_aniyomi_url', expect.objectContaining({
       url: 'https://example.test/example.apk',
       metadata: expect.objectContaining({ id: installed.id, version: '14.2' }),
     }))
+  })
+
+  it('explains a repository without anime extensions instead of calling it an empty catalog', async () => {
+    mocks.phttp.mockResolvedValue(ok([{
+      name: 'Tachiyomi: Example', pkg: 'eu.kanade.tachiyomi.extension.en.example', apk: 'apk/example.apk',
+      version: '1', sources: [{ id: '1', name: 'Example' }],
+    }]))
+    const info = await fetchExtensionInfo('https://repo.example.test/index.min.json')
+    expect(info.packages).toBeUndefined()
+    expect(info.problem).toBe('This repository has no anime extensions izumi can run.')
   })
 
   it('classifies and expands in a SINGLE fetch', async () => {

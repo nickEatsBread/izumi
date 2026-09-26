@@ -9,6 +9,8 @@
     disabledExtensions,
   } from '$lib/settings/ui'
   import { classifySourceSpec } from '$lib/settings/classify-source-spec'
+  import { registerCatalogStore } from '$lib/store/feeds'
+  import { currentLegacyStores } from '$lib/store/origins'
   import {
     matchesSourceFilters,
     matchesSourceQuery,
@@ -128,8 +130,13 @@
       if ($extensionUrls.includes(result.spec)) {
         $disabledExtensions = $disabledExtensions.filter((url) => url !== result.spec)
       } else {
+        // Freeze the legacy stores first: a source added now never claims packages installed before
+        // origins were recorded.
+        currentLegacyStores()
         $extensionUrls = [...$extensionUrls, result.spec]
       }
+      // A package catalog is also a store, so it shows up in the Store with its packages.
+      if (result.catalog) registerCatalogStore(result.spec)
       input = ''
     } finally {
       adding = false
@@ -199,7 +206,6 @@
       const result = await checkExtensionUpdates({
         retryAttempted: true,
         includeDisabledCatalogs: true,
-        includeOfficialCatalog: true,
       })
       if (result.reason === 'playback') updateCheckFeedback = 'Stop playback first'
       else if (result.reason === 'no-installed') updateCheckFeedback = 'Nothing installed'

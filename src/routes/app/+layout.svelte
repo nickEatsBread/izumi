@@ -15,6 +15,8 @@
   import { themeStudioOpen } from '$lib/settings/theme-studio-session'
   const loadThemeStudio = () => import('$lib/components/settings/ThemeStudio.svelte')
   import { themeInstallPreview } from '$lib/themes/installed'
+  import ThemeSafeModeBanner from '$lib/components/themes/ThemeSafeModeBanner.svelte'
+  import { isSafeModeChord, themeSafeMode } from '$lib/themes/safe-mode'
   const loadThemeInstallPreview = () => import('$lib/components/themes/ThemeInstallPreview.svelte')
   import PlayFeedback from '$lib/components/PlayFeedback.svelte'
   import { title as mediaTitle, banner as mediaBanner, cover as mediaCover } from '$lib/anilist/media'
@@ -125,6 +127,8 @@
   })
 
   function handleShellKeydown(event: KeyboardEvent) {
+    // Safe mode works even when a theme stylesheet has hidden the way back to Settings.
+    if (isSafeModeChord(event)) { event.preventDefault(); themeSafeMode.update((on) => !on); return }
     if (event.defaultPrevented) return
     const catalogAction = findHotkey(event, $hotkeyBindings, 'Home', $isMacOS)
     if ((catalogAction === 'homeNextCatalog' || catalogAction === 'homePreviousCatalog')
@@ -415,9 +419,11 @@
     const fullPlayerActive = $playing || ($androidMpvActive && !$androidMiniPlayer)
     // Keep the WebView root transparent during the collapse too: the native video is raised above
     // browse as soon as it starts shrinking, while route content paints normally everywhere else.
-    const bg = videoSurfaceActive ? 'transparent' : ''
-    document.documentElement.style.background = bg
-    document.body.style.background = bg
+    // `!important` inline beats any theme stylesheet rule, so a theme can never paint over the video.
+    for (const element of [document.documentElement, document.body]) {
+      if (videoSurfaceActive) element.style.setProperty('background', 'transparent', 'important')
+      else element.style.removeProperty('background')
+    }
     // Lock page scroll while the player is open. On the Deck a drag in the video area was
     // being taken as a native pan/rubber-band that shoved the (fixed) overlay + video out of
     // place; with the document non-scrollable there's nothing to pan.
@@ -497,7 +503,7 @@
      Hidden while playing so its opaque content doesn't block the video. -->
 <!-- The docked mini-player bar (4rem) rests on the bottom navigation (its themed height, 4rem by
      default): while it is up, pages reserve both so their last rows are never buried under the video. -->
-<main class="theme-shell-main relative min-h-screen {($isMobile || $shellNav === 'bottom') ? ($androidMiniPlayer ? 'mb-[calc(var(--theme-bottom-nav,4rem)+4rem+env(safe-area-inset-bottom))]' : 'mb-[calc(var(--theme-bottom-nav,4rem)+env(safe-area-inset-bottom))]') : ''} {$shellNav === 'top' ? 'pt-[4.75rem]' : ''}" class:hidden={$playing || ($androidMpvActive && !$androidMiniPlayer)}>{@render children()}</main>
+<main class="theme-shell-main relative min-h-screen {($isMobile || $shellNav === 'bottom') ? ($androidMiniPlayer ? 'mb-[calc(var(--theme-bottom-nav,4rem)+4rem+env(safe-area-inset-bottom))]' : 'mb-[calc(var(--theme-bottom-nav,4rem)+env(safe-area-inset-bottom))]') : ''} {$shellNav === 'top' ? 'pt-[4.75rem]' : ''}" class:hidden={$playing || ($androidMpvActive && !$androidMiniPlayer)} style:display|important={$playing || ($androidMpvActive && !$androidMiniPlayer) ? 'none' : undefined}>{@render children()}</main>
 {#if $playing}<Lazy load={loadPlayerOverlay} />{/if}
 <!-- One Android watch-details instance spans source preparation and native playback. In particular,
      its Disqus iframe is never destroyed merely because libmpv presented its first frame. -->
@@ -601,3 +607,4 @@
 {/if}
 
 {#if $themeInstallPreview && !$playing && !$androidMpvActive}<Lazy load={loadThemeInstallPreview} />{/if}
+<ThemeSafeModeBanner />

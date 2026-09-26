@@ -6,6 +6,11 @@
 import type { ExtensionConfig } from './types'
 import { isNuvioManifest, normalizeNuvioManifest } from './nuvio-manifest'
 
+/** The maintained anime/HTTP package catalog: a built-in store, and the address the official
+ *  packages are published to. */
+export const OFFICIAL_ANIME_CATALOG =
+  'https://raw.githubusercontent.com/nickEatsBread/izumi-extension-repo/refs/heads/main/index.json'
+
 // Turn a stored spec into a fetchable manifest URL. Accepts these forms:
 //   gh:owner/repo[/sub]      → https://esm.sh/gh/owner/repo[/sub]/index.json
 //   owner/repo[/sub]         → same (GitHub shorthand, matches the settings display)

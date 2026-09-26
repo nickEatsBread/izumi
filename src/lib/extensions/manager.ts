@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { get } from 'svelte/store'
 import { invokeNativeHttp, isNativeTransportFailure, phttp } from '$lib/net/http'
 import { enabledExtensionUrls, disabledPlugins } from '$lib/settings/ui'
+import { forgetPackageOrigin, isPackageOrigin, mayReplacePackage, packageOriginOf, recordPackageOrigin } from '$lib/store/origins'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
 import { manifestFetchUrls, normalizeManifest, pointerUrl, isRunnableType, isLegacyTorrentType, manifestProblem, catalogPackages, aniyomiRepositoryPackages } from './catalog'
 import type { ExtensionCatalogPackage } from './catalog'
@@ -107,6 +108,8 @@ export interface InstalledExtensionPackage {
   sourceId: string
   sourceIds: string[]
   signed: boolean
+  /** Fingerprint of the key that signed the package; null when unsigned. */
+  signerKey?: string | null
   serviceEntry?: string
 }
 
@@ -130,11 +133,9 @@ export interface JvmSourcePreference {
 
 export type { ExtensionCatalogPackage, ExtensionCatalog } from './catalog'
 
-/** The maintained anime/HTTP package catalog used by the built-in Source Store. It can also appear
- *  in the user's source list like any other package catalog. Kept here as the canonical address of
- *  the repository the packages are published to. */
-export const OFFICIAL_ANIME_CATALOG =
-  'https://raw.githubusercontent.com/nickEatsBread/izumi-extension-repo/refs/heads/main/index.json'
+// The official catalog address lives in the pure catalog module so the store registry can name it
+// without importing this orchestrator; re-exported for existing callers.
+export { OFFICIAL_ANIME_CATALOG } from './catalog'
 
 interface JvmSource {
   id: string
@@ -188,9 +189,42 @@ export async function installedExtensionPackages(): Promise<InstalledExtensionPa
   return entry.value
 }
 
+/** A same-id package is already installed from another store or source (or from an install that
+ *  predates origins). Pages catch this to ask whether to replace it; nothing replaces without asking. */
+export class PackageInstalledElsewhereError extends Error {
+  constructor(readonly packageId: string, readonly installedFrom: string | undefined) {
+    super('This package is already installed from another store or source.')
+    this.name = 'PackageInstalledElsewhereError'
+  }
+}
+
+/** Install or update a catalog package from `origin` — the store or source-list catalog listing it —
+ *  and remember that store. Every package install goes through here: an installed package only
+ *  changes through the store it came from. A same-id package from anywhere else is refused with
+ *  PackageInstalledElsewhereError unless the user confirmed replacing it (`replaceInstalled`). */
 export async function installCatalogPackage(
   extension: ExtensionCatalogPackage,
+  origin: string,
+  options: { updateOnly?: boolean; replaceInstalled?: boolean } = {},
 ): Promise<InstalledExtensionPackage> {
+  // Read afresh, uncached, and let a failed read throw: a stale or failed list must never pass for
+  // "not installed" and wave a takeover through.
+  const current = await invoke<InstalledExtensionPackage[]>('extension_list')
+  const onDisk = current.find((item) => item.id === extension.id)
+  // An update for a package removed meanwhile (say, while a background check loaded) must not bring
+  // it back.
+  if (!onDisk && options.updateOnly) throw new Error('That package is no longer installed.')
+  const takesOver = !!onDisk && !mayReplacePackage(extension.id, origin, onDisk.backend === extension.backend)
+  // Replacing a copy from somewhere else is only ever the user's explicit choice (they were asked
+  // first); a background update never does it.
+  if (takesOver && (!options.replaceInstalled || options.updateOnly)) {
+    throw new PackageInstalledElsewhereError(extension.id, packageOriginOf(extension.id))
+  }
+  // Rust checks the downloaded package itself, whatever the listing claims: it must be the kind of
+  // package listed. Only the user's own install — from the package's recorded store, or a confirmed
+  // replacement — may change what kind of package is installed (never a background update or a
+  // legacy claim), and a confirmed replacement isn't compared with the copy it replaces.
+  const allowBackendChange = takesOver || (!options.updateOnly && isPackageOrigin(extension.id, origin))
   const installed = extension.packageFormat === 'aniyomi-repo'
     ? await invoke<InstalledExtensionPackage>('extension_install_aniyomi_url', {
         url: extension.apk,
@@ -203,11 +237,19 @@ export async function installCatalogPackage(
           nsfw: extension.nsfw,
           sources: extension.sources,
         },
+        allowBackendChange,
+        replaceInstalled: takesOver,
       })
     : await invoke<InstalledExtensionPackage>('extension_install_url', {
         url: extension.package,
         expectedSha256: extension.packageSha256,
+        // The listing's id: a package declaring another id would replace whatever is installed there.
+        expectedId: extension.id,
+        expectedBackend: extension.backend,
+        allowBackendChange,
+        replaceInstalled: takesOver,
       })
+  recordPackageOrigin(installed.id, origin)
   return finishPackageInstall(installed)
 }
 
@@ -238,6 +280,8 @@ function scheduleJvmWarm(delayMs = 1_500): void {
 export async function removeInstalledExtension(id: string): Promise<void> {
   await invoke('extension_service_stop', { id }).catch(() => {})
   await invoke('extension_remove', { id })
+  // Gone, so no store is its origin any more.
+  forgetPackageOrigin(id)
   await invoke('jvm_extension_reload').catch(() => {})
   installedRevision += 1
   resetRunning()
@@ -325,7 +369,12 @@ export async function fetchExtensionInfo(spec: string): Promise<ExtensionSourceI
   } catch (error) {
     return { configs: [], problem: error instanceof Error ? error.message : 'That URL could not be fetched.' }
   }
-  const packages = catalogPackages(raw) ?? aniyomiRepositoryPackages(raw, url)
+  const izumi = catalogPackages(raw)
+  const aniyomi = izumi ? null : aniyomiRepositoryPackages(raw, url)
+  // A repository without anime packages (a manga-only one) is not a catalog izumi can use — and must
+  // not become an empty store.
+  if (aniyomi && !aniyomi.length) return { configs: [], problem: 'This repository has no anime extensions izumi can run.' }
+  const packages = izumi ?? aniyomi
   if (packages) return { configs: [], packages }
   const configs = await expandRaw(raw, url).catch(() => [] as ExtensionConfig[])
   // Say so out loud when a source can never work (a compiled Android plugin repo, say), rather

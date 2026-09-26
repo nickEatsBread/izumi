@@ -1,0 +1,149 @@
+// @vitest-environment jsdom
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { get, writable, type Writable } from 'svelte/store'
+
+// Every package install goes through installCatalogPackage, so this is where a package is bound to
+// the store it came from — and where a same-id package from anywhere else is refused as a takeover.
+
+const mocks = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  extensionUrls: null as unknown as Writable<string[]>,
+}))
+vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }))
+vi.mock('$lib/net/http', () => ({ phttp: vi.fn(), invokeNativeHttp: vi.fn(), isNativeTransportFailure: () => false }))
+vi.mock('$lib/stremio/online-cache', () => ({ clearProviderCache: vi.fn() }))
+vi.mock('$lib/settings/ui', () => {
+  mocks.extensionUrls = writable<string[]>([])
+  return { extensionUrls: mocks.extensionUrls, enabledExtensionUrls: writable<string[]>([]), disabledPlugins: writable<string[]>([]) }
+})
+
+import { installCatalogPackage, PackageInstalledElsewhereError, removeInstalledExtension } from './manager'
+import { OFFICIAL_ANIME_CATALOG, type ExtensionCatalogPackage } from './catalog'
+import { legacyPackageStores, packageOrigins } from '$lib/store/origins'
+
+const STORE = 'https://store.example.test/index.json'
+const LATER = 'https://later.example.test/index.json'
+const pkg: ExtensionCatalogPackage = {
+  packageFormat: 'izumi-ext', id: 'example.pkg', name: 'Example', version: '2', nsfw: false, sources: [], backend: 'izumi-js',
+  package: 'https://store.example.test/example.izumi-ext', packageSha256: 'a'.repeat(64), packageBytes: 1,
+}
+const onDisk = { id: 'example.pkg', name: 'Example', version: '1', backend: 'izumi-js', sourceId: 'example.pkg', sourceIds: ['example.pkg'], signed: false }
+
+/** Answer the Rust commands: the installed list (or a failure reading it) and the install itself. */
+function answer(installed: unknown[] | Error): void {
+  mocks.invoke.mockImplementation(async (command: string) => {
+    if (command === 'extension_list') {
+      if (installed instanceof Error) throw installed
+      return installed
+    }
+    if (command === 'extension_install_url') return { ...onDisk, version: '2' }
+    return undefined
+  })
+}
+const installs = () => mocks.invoke.mock.calls.filter(([command]) => command === 'extension_install_url').length
+
+beforeEach(() => {
+  mocks.invoke.mockReset()
+  mocks.extensionUrls.set([])
+  packageOrigins.set({})
+  legacyPackageStores.set(null)
+})
+
+describe('installCatalogPackage', () => {
+  it('installs with the listing id and records the store the package came from', async () => {
+    answer([])
+    await installCatalogPackage(pkg, `${STORE}#top`)
+    expect(mocks.invoke).toHaveBeenCalledWith('extension_install_url', expect.objectContaining({ expectedId: 'example.pkg' }))
+    expect(get(packageOrigins)).toEqual({ 'example.pkg': STORE })
+  })
+
+  it('updates an installed package only from the store it came from', async () => {
+    answer([onDisk])
+    packageOrigins.set({ 'example.pkg': STORE })
+    await expect(installCatalogPackage(pkg, LATER)).rejects.toThrow('installed from another store')
+    expect(installs()).toBe(0)
+    await installCatalogPackage(pkg, STORE)
+    expect(installs()).toBe(1)
+  })
+
+  it('lets only the frozen legacy stores claim a package installed before origins existed', async () => {
+    answer([onDisk])
+    mocks.extensionUrls.set([STORE])
+    await expect(installCatalogPackage(pkg, LATER)).rejects.toThrow('installed from another store')
+    expect(get(legacyPackageStores)).toEqual([OFFICIAL_ANIME_CATALOG, STORE])
+    // A catalog that joins the source list afterwards (as a Store install does) gains no claim.
+    mocks.extensionUrls.set([STORE, LATER])
+    await expect(installCatalogPackage(pkg, LATER)).rejects.toThrow('installed from another store')
+    expect(installs()).toBe(0)
+    await installCatalogPackage(pkg, STORE)
+    expect(get(packageOrigins)).toEqual({ 'example.pkg': STORE })
+  })
+
+  it('ignores a leftover origin once the package is gone', async () => {
+    answer([])
+    packageOrigins.set({ 'example.pkg': LATER })
+    await installCatalogPackage(pkg, STORE)
+    expect(get(packageOrigins)).toEqual({ 'example.pkg': STORE })
+  })
+
+  it('never lets a legacy claim turn a package into another kind', async () => {
+    answer([{ ...onDisk, backend: 'aniyomi-jvm' }])
+    mocks.extensionUrls.set([STORE])
+    await expect(installCatalogPackage(pkg, STORE)).rejects.toThrow('installed from another store')
+    expect(installs()).toBe(0)
+  })
+
+  it('never brings back a package removed while an update was pending', async () => {
+    answer([])
+    await expect(installCatalogPackage(pkg, STORE, { updateOnly: true })).rejects.toThrow('no longer installed')
+    expect(installs()).toBe(0)
+  })
+
+  it('tells the installer what kind of package to expect, and allows a change of kind only for a user install from its own store', async () => {
+    answer([onDisk])
+    packageOrigins.set({ 'example.pkg': STORE })
+    await installCatalogPackage(pkg, STORE)
+    expect(mocks.invoke).toHaveBeenCalledWith('extension_install_url', expect.objectContaining({ expectedBackend: 'izumi-js', allowBackendChange: true }))
+    mocks.invoke.mockClear()
+    await installCatalogPackage(pkg, STORE, { updateOnly: true })
+    expect(mocks.invoke).toHaveBeenCalledWith('extension_install_url', expect.objectContaining({ expectedBackend: 'izumi-js', allowBackendChange: false }))
+  })
+
+  it('replaces a package installed from another store only when the user confirmed it', async () => {
+    answer([onDisk])
+    packageOrigins.set({ 'example.pkg': LATER })
+    const refused = await installCatalogPackage(pkg, STORE).catch((error: unknown) => error)
+    expect(refused).toBeInstanceOf(PackageInstalledElsewhereError)
+    expect((refused as PackageInstalledElsewhereError).installedFrom).toBe(LATER)
+    expect(installs()).toBe(0)
+    await installCatalogPackage(pkg, STORE, { replaceInstalled: true })
+    expect(mocks.invoke).toHaveBeenCalledWith('extension_install_url', expect.objectContaining({ replaceInstalled: true, allowBackendChange: true }))
+    expect(get(packageOrigins)).toEqual({ 'example.pkg': STORE })
+    // A background update never replaces, even when asked to.
+    packageOrigins.set({ 'example.pkg': LATER })
+    await expect(installCatalogPackage(pkg, STORE, { updateOnly: true, replaceInstalled: true })).rejects.toBeInstanceOf(PackageInstalledElsewhereError)
+    expect(installs()).toBe(1)
+  })
+
+  it('never marks an update from its own store as a replacement', async () => {
+    answer([onDisk])
+    packageOrigins.set({ 'example.pkg': STORE })
+    await installCatalogPackage(pkg, STORE, { replaceInstalled: true })
+    expect(mocks.invoke).toHaveBeenCalledWith('extension_install_url', expect.objectContaining({ replaceInstalled: false }))
+  })
+
+  it('refuses to install when the installed list cannot be read', async () => {
+    answer(new Error('The package list could not be read.'))
+    await expect(installCatalogPackage(pkg, STORE)).rejects.toThrow('could not be read')
+    expect(installs()).toBe(0)
+  })
+})
+
+describe('removeInstalledExtension', () => {
+  it("forgets the removed package's store", async () => {
+    answer([])
+    packageOrigins.set({ 'example.pkg': STORE, 'other.pkg': LATER })
+    await removeInstalledExtension('example.pkg')
+    expect(get(packageOrigins)).toEqual({ 'other.pkg': LATER })
+  })
+})

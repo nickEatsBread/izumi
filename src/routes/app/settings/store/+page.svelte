@@ -1,432 +1,558 @@
 <script lang="ts">
-  import {
-    listCommunityAddons,
-    type CommunityAddon,
-  } from '$lib/stremio/community-store'
-  import { addonUrls, disabledSources, normalizeBase, replaceAddonBase } from '$lib/stremio/sources'
-  import { fetchManifest } from '$lib/stremio/manifest'
-  import { findAddonConfigureUrl } from '$lib/stremio/configure'
-  import { resolveStoreAddonLogo } from '$lib/stremio/addon-logo'
-  import AddonLogo from '$lib/components/player/AddonLogo.svelte'
+  import { onMount, untrack } from 'svelte'
+  import { goto } from '$app/navigation'
+  import { page } from '$app/state'
+  import Search from '@lucide/svelte/icons/search'
+  import Plus from '@lucide/svelte/icons/plus'
+  import Settings2 from '@lucide/svelte/icons/settings-2'
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw'
   import AddonConfigurator from '$lib/components/settings/AddonConfigurator.svelte'
   import ExtensionServiceSettings from '$lib/components/settings/ExtensionServiceSettings.svelte'
+  import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
+  import StoreEntryCard from '$lib/components/store/StoreEntryCard.svelte'
+  import StoreEntrySheet from '$lib/components/store/StoreEntrySheet.svelte'
+  import StoresDialog from '$lib/components/store/StoresDialog.svelte'
+  import ReplacePackageDialog from '$lib/components/store/ReplacePackageDialog.svelte'
+  import { listCommunityAddons } from '$lib/stremio/community-store'
+  import { addonUrls, disabledSources, normalizeBase, replaceAddonBase } from '$lib/stremio/sources'
+  import { fetchManifest } from '$lib/stremio/manifest'
   import {
-    OFFICIAL_ANIME_CATALOG,
-    fetchExtensionInfo,
     fetchExtensionMeta,
     installCatalogPackage,
     installedExtensionPackages,
     installedPackageIcons,
+    PackageInstalledElsewhereError,
     removeInstalledExtension,
-    type ExtensionCatalogPackage,
     type InstalledExtensionPackage,
   } from '$lib/extensions/manager'
-  import { disabledExtensions, disabledPlugins, enabledExtensionUrls, extensionUrls } from '$lib/settings/ui'
-  import { extensionBackendLabel } from '$lib/extensions/catalog'
-  import Search from '@lucide/svelte/icons/search'
-  import Star from '@lucide/svelte/icons/star'
-  import RefreshCw from '@lucide/svelte/icons/refresh-cw'
-  import Check from '@lucide/svelte/icons/check'
+  import { disabledExtensions, disabledPlugins, enabledExtensionUrls, extensionUrls, showAdult } from '$lib/settings/ui'
+  import { installedThemes } from '$lib/themes/installed'
+  import { newerVersion } from '$lib/themes/packages'
+  import { BUILTIN_STORES, allStores, directoryEnabled, enabledStores } from '$lib/store/feeds'
+  import { loadStoreAndPin } from '$lib/store/service'
+  import type { LoadedStore } from '$lib/store/load'
+  import { directoryEntries } from '$lib/store/directory'
+  import { DEFAULT_STORE_FILTER, filterStoreEntries, storeLanguages, type StoreFilter } from '$lib/store/filters'
+  import { installStoreEntry, installedRef, type InstalledState } from '$lib/store/install'
+  import { currentLegacyStores, legacyPackageStores, legacyStoresFrom, originLabel, packageOrigins } from '$lib/store/origins'
+  import { packageHashPinned, packageSignatureLabel } from '$lib/store/trust'
+  import { migrateCatalogStores } from '$lib/store/migrate'
+  import { ADDON_DIRECTORY_ID, type SourceType, type StoreEntry } from '$lib/store/types'
 
-  let tab = $state<'addons' | 'extensions' | 'installed'>('addons')
+  type KindChip = 'all' | 'source' | 'theme'
+  const KIND_CHIPS: { id: KindChip; label: string }[] = [
+    { id: 'all', label: 'Everything' },
+    { id: 'source', label: 'Sources' },
+    { id: 'theme', label: 'Themes' },
+  ]
+  const SOURCE_CHIPS: { id: 'all' | SourceType; label: string }[] = [
+    { id: 'all', label: 'All sources' },
+    { id: 'stremio-addon', label: 'Addons' },
+    { id: 'torrent-provider', label: 'Torrent' },
+    { id: 'stream-provider', label: 'Streaming' },
+    { id: 'package', label: 'Packages' },
+  ]
+  const CONTENT_OPTIONS = [
+    { value: 'all', label: 'Any content' },
+    { value: 'anime', label: 'Anime' },
+    { value: 'movie', label: 'Films' },
+    { value: 'series', label: 'Series' },
+  ]
+  const SORT_OPTIONS = [
+    { value: 'popular', label: 'Popular' },
+    { value: 'updated', label: 'Recently updated' },
+    { value: 'name', label: 'Name' },
+  ]
+  const PAGE = 60
+  const builtinIds = new Set([...BUILTIN_STORES.map((store) => store.id), ADDON_DIRECTORY_ID])
+
+  let storeChip = $state('all')
+  let kind = $state<KindChip>('all')
+  let sourceType = $state<'all' | SourceType>('all')
+  let language = $state('all')
+  let content = $state('all')
+  let sort = $state('popular')
+  let withoutDebrid = $state(false)
+  let installedOnly = $state(false)
   let query = $state('')
-  let sort = $state<'stars' | 'new'>('stars')
-  let addons = $state<CommunityAddon[]>([])
-  let addonTotal = $state(0)
-  let extensionPackages = $state<ExtensionCatalogPackage[]>([])
-  let installedPackages = $state<InstalledExtensionPackage[]>([])
+  let limit = $state(PAGE)
+  let loaded = $state.raw<Record<string, LoadedStore>>({})
   let loading = $state(false)
-  let error = $state('')
-  let busyId = $state('')
+  let directory = $state.raw<StoreEntry[]>([])
+  let directoryTotal = $state(0)
+  let directoryError = $state('')
+  let installedPackages = $state.raw<InstalledExtensionPackage[]>([])
+  let addonBaseById = $state.raw<Record<string, string>>({})
+  // Real package artwork, filled in after the list paints (icon loading can start the JVM runtime):
+  // installed Aniyomi launcher icons by package id, and manifest icons of the providers the user's
+  // own sources expand to.
+  let jvmIcons = $state.raw(new Map<string, string>())
+  let configIcons = $state.raw<Record<string, string>>({})
+  let selected = $state.raw<StoreEntry | null>(null)
+  let busyKey = $state('')
   let notice = $state('')
-  let installedAddonBases = $state<Record<string, string>>({})
-  // Real provider artwork for the two extension lists, resolved exactly the way the Source priority
-  // section on the sources screen resolves its names: best-effort, off the render path, and never
-  // blocking a paint. Two disjoint origins, because a package's icon lives in a different place
-  // depending on what kind of package it is —
-  //   · aniyomi-jvm: the installed APK's launcher icon, keyed by Android package name, which IS the
-  //     catalog id. Only exists once the package is installed; the catalog itself ships no artwork.
-  //   · izumi-js/seanime: ExtensionConfig.icon off the manifest the plugin came from.
-  // Anything neither answers for falls through to the shared placeholder inside AddonLogo.
-  let jvmIcons = $state(new Map<string, string>())
-  let configIcons = $state<Record<string, string>>({})
-  const packageIcon = (id: string) => configIcons[id] ?? jvmIcons.get(id)
-  let configuring = $state<{
-    name: string
-    id: string
-    configureUrl: string
-    currentBase?: string
-  } | null>(null)
+  let error = $state('')
+  let storesDialog = $state<{ mode: 'manage' | 'add'; url: string } | null>(null)
+  let configuring = $state<{ name: string; id: string; configureUrl: string; currentBase?: string } | null>(null)
+  /** A package the user asked to install that is already installed from another store: confirm first. */
+  let replacing = $state.raw<{ entry: StoreEntry; installedFrom: string } | null>(null)
   let serviceSettings = $state<{ id: string; name: string } | null>(null)
 
-  const configuredBases = $derived(new Set($addonUrls.map(normalizeBase)))
-  const packageById = $derived(new Map(installedPackages.map((item) => [item.id, item])))
-  const extensionResults = $derived.by(() => {
-    const value = query.trim().toLocaleLowerCase()
-    const items = !value ? extensionPackages : extensionPackages.filter((item) => [
-      item.name,
-      item.id,
-      item.language,
-      ...(item.sources ?? []).map((source) => source.name),
-    ].some((part) => part?.toLocaleLowerCase().includes(value)))
-    return [...items].sort((left, right) => {
-      const installed = Number(!packageById.has(left.id)) - Number(!packageById.has(right.id))
-      return installed || left.name.localeCompare(right.name)
-    })
+  const storeUrlById = $derived(new Map($allStores.map((store) => [store.id, store.url])))
+  const storeNameById = $derived(new Map<string, string>([
+    ...$allStores.map((store): [string, string] => [store.id, store.name]),
+    [ADDON_DIRECTORY_ID, 'Addon directory'],
+  ]))
+  const storeChips = $derived([
+    { id: 'all', label: 'All stores' },
+    { id: 'izumi', label: 'izumi' },
+    ...($directoryEnabled ? [{ id: ADDON_DIRECTORY_ID, label: 'Addon directory' }] : []),
+    ...$enabledStores.filter((store) => !store.builtin).map((store) => ({ id: store.id, label: store.name })),
+  ])
+  const directoryWanted = $derived($directoryEnabled
+    && (storeChip === 'all' || storeChip === ADDON_DIRECTORY_ID)
+    && (kind === 'all' || kind === 'source')
+    && (sourceType === 'all' || sourceType === 'stremio-addon'))
+  const installedState: InstalledState = $derived({
+    addonBases: $addonUrls.map(normalizeBase),
+    addonBaseById,
+    extensionSpecs: $extensionUrls,
+    packages: installedPackages,
+    packageOrigins: $packageOrigins,
+    // Packages installed before origins existed may only be claimed by the stores frozen for them.
+    legacyStores: legacyStoresFrom($legacyPackageStores, $extensionUrls),
+    themes: $installedThemes.map((theme) => ({ id: theme.id, origin: theme.origin })),
   })
-
-  async function loadAddons() {
-    loading = true
-    error = ''
+  const refOf = (entry: StoreEntry) => installedRef(entry, installedState, storeUrlById.get(entry.storeId) ?? '')
+  const isInstalled = (entry: StoreEntry) => refOf(entry) !== null
+  /** A package installed from another store: this store can neither install nor update it. */
+  function fromAnotherStore(entry: StoreEntry): boolean {
+    const install = entry.install
+    return install.type === 'package' && installedPackages.some((item) => item.id === install.pkg.id) && refOf(entry) === null
+  }
+  /** Whether two URLs share a host. Reconfigure only ever runs through the installed addon's own host:
+   *  a listing's configure page anywhere else must never be able to replace the configured copy. */
+  function sameHost(a: string, b: string): boolean {
     try {
-      const page = await listCommunityAddons({
-        search: query,
-        category: query.trim() ? undefined : 'anime',
-        sort,
-        limit: 40,
-      })
-      addons = page.addons
-      addonTotal = page.pagination.total
-    } catch (cause) {
-      error = cause instanceof Error ? cause.message : String(cause)
-    } finally {
-      loading = false
+      return new URL(a).hostname === new URL(b).hostname
+    } catch {
+      return false
     }
   }
+  function iconOf(entry: StoreEntry): string | undefined {
+    if (entry.icon || entry.install.type !== 'package') return entry.icon
+    const id = entry.install.pkg.id
+    return Object.hasOwn(configIcons, id) ? configIcons[id] : jvmIcons.get(id)
+  }
+  /** Installed, and this store lists another version. A package only updates from its own store
+   *  (a same-id package elsewhere is a takeover); a theme only when the listed version is newer. */
+  function updateAvailable(entry: StoreEntry): boolean {
+    const install = entry.install
+    const storeUrl = storeUrlById.get(entry.storeId) ?? ''
+    // A saved copy shown because the refresh failed can be older than what is installed.
+    if (loaded[entry.storeId]?.error) return false
+    if (install.type === 'package') {
+      const installed = installedPackages.find((item) => item.id === install.pkg.id)
+      // refOf is origin-aware: it only matches when this store is where the package came from.
+      return !!installed && refOf(entry) !== null && installed.version !== install.pkg.version
+    }
+    if (install.type === 'theme') {
+      const installed = $installedThemes.find((theme) => theme.id === install.release.id && theme.origin === storeUrl)
+      try {
+        return !!installed && newerVersion(install.release.version, installed.package.version)
+      } catch {
+        return false
+      }
+    }
+    return false
+  }
+  const staticEntries = $derived($enabledStores.flatMap((store) => loaded[store.id]?.listing?.entries ?? []))
+  const allEntries = $derived([...staticEntries, ...(directoryWanted ? directory : [])])
+  const filter: StoreFilter = $derived({
+    ...DEFAULT_STORE_FILTER,
+    storeIds: storeChip === 'all' ? 'all' : storeChip === 'izumi' ? BUILTIN_STORES.map((store) => store.id) : [storeChip],
+    kind,
+    sourceType: kind === 'source' ? sourceType : 'all',
+    language,
+    content: content as StoreFilter['content'],
+    withoutDebrid,
+    installedOnly,
+    showAdult: $showAdult,
+    query,
+    sort: sort as StoreFilter['sort'],
+  })
+  const results = $derived(filterStoreEntries(allEntries, filter, isInstalled))
+  const visible = $derived(results.slice(0, limit))
+  const languageOptions = $derived([
+    { value: 'all', label: 'Any language' },
+    ...storeLanguages(allEntries).map((code) => ({ value: code, label: code.toUpperCase() })),
+  ])
+  const lockedStores = $derived($enabledStores.filter((store) => loaded[store.id]?.trust.state === 'locked'))
+  const failedStores = $derived($enabledStores.filter((store) => loaded[store.id]?.error && !loaded[store.id]?.listing))
+  // Shown from the copy saved last time, because this refresh failed.
+  const staleStores = $derived($enabledStores.filter((store) => loaded[store.id]?.error && loaded[store.id]?.listing))
+  // Adding, hiding or re-trusting a store changes this signature, which reloads the listings.
+  const storeSignature = $derived($enabledStores.map((store) => `${store.id}:${store.pinnedKey ?? ''}`).join('|'))
 
-  async function loadExtensions() {
+  // Each load supersedes the ones before it: an older load that answers late (after a refresh or a
+  // re-trusted key) must not put its stale verdict back.
+  let loadGeneration = 0
+  async function loadStores(force = false) {
+    const generation = ++loadGeneration
+    loading = true
     try {
-      const info = await fetchExtensionInfo(OFFICIAL_ANIME_CATALOG)
-      extensionPackages = info.packages ?? []
-      if (!info.packages && info.problem) error = info.problem
-    } catch (cause) {
-      error = cause instanceof Error ? cause.message : String(cause)
+      await Promise.all($enabledStores.map(async (store) => {
+        const result = await loadStoreAndPin(store, { force })
+        if (generation === loadGeneration) loaded = { ...loaded, [store.id]: result }
+      }))
+    } finally {
+      if (generation === loadGeneration) loading = false
     }
   }
 
   async function refreshInstalled() {
     installedPackages = await installedExtensionPackages()
-    // After the list, never awaited by it: enumerating installed Aniyomi sources can spin the JVM
-    // runtime, and an icon arriving a moment late just swaps a placeholder for the real logo.
     void installedPackageIcons(installedPackages).then((icons) => { jvmIcons = icons })
   }
 
-  // Manifest icons for the plugins the user's own extension sources expand to. Same shape as the
-  // sources screen: fire per spec, keep whatever comes back, drop the lot if the specs change
-  // underneath us.
+  $effect(() => {
+    void storeSignature
+    untrack(() => { void loadStores() })
+  })
+
   $effect(() => {
     const specs = $enabledExtensionUrls
     let stale = false
     void Promise.all(specs.map((spec) => fetchExtensionMeta(spec))).then((results) => {
       if (stale) return
-      configIcons = Object.fromEntries(
-        results.flat().flatMap((config) => config.icon ? [[config.id, config.icon]] : []),
-      )
+      configIcons = Object.fromEntries(results.flat().flatMap((config) => config.icon ? [[config.id, config.icon]] : []))
     })
     return () => { stale = true }
   })
 
-  let searchTimer: ReturnType<typeof setTimeout>
+  // The directory is searched on its server; debounce typing like the old addon tab did.
+  let searchTimer: ReturnType<typeof setTimeout> | undefined
   $effect(() => {
-    const value = query
+    if (!directoryWanted) return
+    const search = query
     const order = sort
-    if (tab !== 'addons') return
     clearTimeout(searchTimer)
-    searchTimer = setTimeout(() => { void value; void order; void loadAddons() }, 250)
+    searchTimer = setTimeout(() => {
+      directoryError = ''
+      listCommunityAddons({ search, category: search.trim() ? undefined : 'anime', sort: order === 'updated' ? 'new' : 'stars', limit: 40 })
+        .then((result) => {
+          directory = directoryEntries(result.addons)
+          directoryTotal = result.pagination.total
+        })
+        .catch((cause) => { directoryError = cause instanceof Error ? cause.message : String(cause) })
+    }, 250)
     return () => clearTimeout(searchTimer)
   })
-  $effect(() => {
-    void loadExtensions()
-    void refreshInstalled()
-  })
-  // A configured add-on has a credential-bearing URL that differs from the public directory URL.
-  // Match installed entries by manifest id so configuring one does not make its store card look
-  // uninstalled (or cause a second, unconfigured copy to be added).
+
+  // A configured addon has a credential-bearing URL that differs from its listing, so installed
+  // addons are matched by manifest id as well as by URL.
   $effect(() => {
     const bases = [...$addonUrls]
     let stale = false
     void Promise.all(bases.map(async (base) => [base, await fetchManifest(base)] as const)).then((entries) => {
       if (stale) return
-      installedAddonBases = Object.fromEntries(
-        entries.flatMap(([base, manifest]) => manifest?.id ? [[manifest.id, base]] : []),
-      )
+      addonBaseById = Object.fromEntries(entries.flatMap(([base, manifest]) => manifest?.id ? [[manifest.id, base]] : []))
     })
     return () => { stale = true }
   })
 
-  function addonBase(addon: CommunityAddon) {
-    return normalizeBase(addon.manifestUrl)
+  $effect(() => {
+    void filter
+    untrack(() => { limit = PAGE })
+  })
+
+  // izumi://store/add?url=… arrives here as ?add=…: open the preview; adding still needs a click. The
+  // parameter is consumed, so Back never reopens the preview.
+  $effect(() => {
+    const add = page.url.searchParams.get('add')
+    if (!add) return
+    untrack(() => {
+      storesDialog = { mode: 'add', url: add }
+      const url = new URL(page.url)
+      url.searchParams.delete('add')
+      // A real replace navigation: shallow replaceState would keep the old URL in this history entry,
+      // and Back would open the preview again.
+      void goto(url, { replaceState: true, noScroll: true, keepFocus: true }).catch(() => {})
+    })
+  })
+
+  onMount(() => {
+    // Freeze which stores may claim packages installed before origins were recorded, before any
+    // install from this page can add a catalog to the source list.
+    currentLegacyStores()
+    void refreshInstalled()
+    // Catalogs added before stores existed become stores the first time the Store opens.
+    void migrateCatalogStores().catch(() => 0)
+  })
+
+  function trustLabel(entry: StoreEntry): string {
+    if (entry.storeId === ADDON_DIRECTORY_ID) return 'Directory listing · addons are remote services'
+    const state = loaded[entry.storeId]?.trust.state
+    const listing = state === 'signed' ? 'Store listing signed' : state === 'locked' ? 'Store key check failed' : 'Store listing unsigned'
+    const install = entry.install
+    if (install.type !== 'package') return listing
+    const hashPinned = packageHashPinned(install.pkg)
+    const installed = installedPackages.find((item) => item.id === install.pkg.id)
+    if (!installed) return `${listing} · ${hashPinned ? "package pinned by the listing's hash" : 'package not hash-pinned by its store'}`
+    const pin = $allStores.find((store) => store.id === entry.storeId)?.pinnedKey
+    return `${listing} · ${packageSignatureLabel(installed.signerKey, pin, hashPinned)}`
   }
-  function addonLocation(base: string) {
-    try {
-      return new URL(base).host
-    } catch {
-      return 'Custom addon'
-    }
+
+  function enabledState(entry: StoreEntry): boolean {
+    const ref = refOf(entry)
+    if (!ref) return false
+    if (entry.install.type === 'addon') return !$disabledSources.includes(ref)
+    if (entry.install.type === 'extension') return !$disabledExtensions.includes(ref)
+    if (entry.install.type === 'package') return !$disabledPlugins.includes(ref)
+    return true
   }
-  function addAddon(addon: CommunityAddon) {
-    const base = addonBase(addon)
-    if (!$addonUrls.includes(base)) $addonUrls = [...$addonUrls, base]
-    $disabledSources = $disabledSources.filter((item) => item !== base)
-    notice = `${addon.manifest.name} installed and enabled.`
+
+  function toggle(entry: StoreEntry) {
+    const ref = refOf(entry)
+    if (!ref) return
+    const flip = (list: string[]) => list.includes(ref) ? list.filter((item) => item !== ref) : [...list, ref]
+    if (entry.install.type === 'addon') $disabledSources = flip($disabledSources)
+    else if (entry.install.type === 'extension') $disabledExtensions = flip($disabledExtensions)
+    else if (entry.install.type === 'package') $disabledPlugins = flip($disabledPlugins)
   }
-  function configureAddon(addon: CommunityAddon, currentBase?: string) {
-    if (!addon.configureUrl) return
-    beginAddonConfiguration(addon.manifest.name, addon.manifest.id, addon.configureUrl, currentBase)
-  }
-  function beginAddonConfiguration(name: string, id: string, configureUrl: string, currentBase?: string) {
-    error = ''
+
+  async function install(entry: StoreEntry, replaceInstalled = false) {
+    if (busyKey) return
+    busyKey = entry.key
     notice = ''
-    configuring = {
-      name,
-      id,
-      configureUrl,
-      currentBase,
+    error = ''
+    try {
+      // The package installer refuses to replace a package installed from another store unless the
+      // user confirmed it in the replace prompt.
+      const outcome = await installStoreEntry(entry, {
+        storeUrl: storeUrlById.get(entry.storeId) ?? '',
+        adapter: loaded[entry.storeId]?.listing?.adapter,
+        locked: loaded[entry.storeId]?.trust.state === 'locked',
+        update: isInstalled(entry),
+        replaceInstalled,
+      }, installCatalogPackage)
+      if (outcome.kind === 'configure') {
+        // Replace an installed copy only through its own host's configure page; otherwise add a copy.
+        const current = refOf(entry)
+        configuring = { name: outcome.name, id: outcome.id, configureUrl: outcome.configureUrl, currentBase: current && sameHost(outcome.configureUrl, current) ? current : undefined }
+        // One dialog at a time: the controller's focus trap would stay in the sheet underneath.
+        selected = null
+      } else if (outcome.kind === 'open-theme') {
+        await goto(outcome.path)
+      } else {
+        notice = outcome.message
+        await refreshInstalled()
+      }
+    } catch (cause) {
+      if (cause instanceof PackageInstalledElsewhereError) {
+        // Ask before replacing it. One dialog at a time: the sheet closes under the prompt.
+        replacing = { entry, installedFrom: originLabel(cause.installedFrom, $allStores) }
+        selected = null
+      } else {
+        error = cause instanceof Error ? cause.message : String(cause)
+      }
+    } finally {
+      busyKey = ''
     }
   }
+
+  async function remove(entry: StoreEntry) {
+    const ref = refOf(entry)
+    if (!ref || busyKey) return
+    busyKey = entry.key
+    error = ''
+    try {
+      if (entry.install.type === 'addon') {
+        $addonUrls = $addonUrls.filter((item) => item !== ref)
+        $disabledSources = $disabledSources.filter((item) => item !== ref)
+      } else if (entry.install.type === 'extension') {
+        $extensionUrls = $extensionUrls.filter((item) => item !== ref)
+        $disabledExtensions = $disabledExtensions.filter((item) => item !== ref)
+      } else if (entry.install.type === 'package') {
+        await removeInstalledExtension(ref)
+        await refreshInstalled()
+      }
+      notice = `${entry.name} removed.`
+    } catch (cause) {
+      error = cause instanceof Error ? cause.message : String(cause)
+    } finally {
+      busyKey = ''
+    }
+  }
+
   function saveConfiguredAddon(base: string) {
     if (!configuring) return
     const previous = configuring.currentBase
     $addonUrls = replaceAddonBase($addonUrls, previous, base)
-    $disabledSources = $disabledSources.filter((item) =>
-      item !== previous && normalizeBase(item) !== normalizeBase(base))
+    $disabledSources = $disabledSources.filter((item) => item !== previous && normalizeBase(item) !== normalizeBase(base))
     notice = `${configuring.name} configured, installed, and enabled.`
     configuring = null
-  }
-  function toggleAddon(base: string) {
-    $disabledSources = $disabledSources.includes(base)
-      ? $disabledSources.filter((item) => item !== base)
-      : [...$disabledSources, base]
-  }
-  function removeAddon(base: string) {
-    $addonUrls = $addonUrls.filter((item) => item !== base)
-    $disabledSources = $disabledSources.filter((item) => item !== base)
-  }
-  async function installExtension(item: ExtensionCatalogPackage) {
-    busyId = item.id
-    notice = ''
-    try {
-      const installed = await installCatalogPackage(item)
-      await refreshInstalled()
-      if (!$extensionUrls.includes(OFFICIAL_ANIME_CATALOG)) {
-        $extensionUrls = [...$extensionUrls, OFFICIAL_ANIME_CATALOG]
-      }
-      $disabledExtensions = $disabledExtensions.filter((spec) => spec !== OFFICIAL_ANIME_CATALOG)
-      $disabledPlugins = $disabledPlugins.filter((id) => id !== installed.id)
-      notice = `${installed.name} installed and enabled.`
-    } catch (cause) {
-      error = cause instanceof Error ? cause.message : String(cause)
-    } finally {
-      busyId = ''
-    }
-  }
-  async function removeExtension(id: string) {
-    busyId = id
-    await removeInstalledExtension(id).catch((cause) => { error = String(cause) })
-    await refreshInstalled()
-    busyId = ''
-  }
-  function toggleExtension(id: string) {
-    $disabledPlugins = $disabledPlugins.includes(id)
-      ? $disabledPlugins.filter((item) => item !== id)
-      : [...new Set([...$disabledPlugins, id])]
   }
 </script>
 
 <div class="min-w-0 overflow-x-hidden p-4 sm:p-8">
   <div class="mb-5 max-w-5xl">
-    <h2 class="text-xl font-black">Source Store</h2>
+    <h2 class="text-xl font-black">Store</h2>
     <p class="mt-1 text-sm text-muted-foreground">
-      Discover Stremio addons and Izumi anime packages.
-      Community sources are third-party services; review their configuration and privacy terms before use.
+      Sources and themes from izumi and from the stores you add. Third-party stores and community sources
+      aren't reviewed by izumi; check their terms and privacy before use.
     </p>
   </div>
 
-  <div class="mb-5 flex flex-wrap gap-2">
-    <button data-focusable onclick={() => (tab = 'addons')}
-            class="rounded-lg px-4 py-2.5 text-sm font-black sm:py-2 {tab === 'addons' ? 'bg-primary text-primary-foreground' : 'bg-secondary'}">Stremio addons</button>
-    <button data-focusable onclick={() => (tab = 'extensions')}
-            class="rounded-lg px-4 py-2.5 text-sm font-black sm:py-2 {tab === 'extensions' ? 'bg-primary text-primary-foreground' : 'bg-secondary'}">Anime packages</button>
-    <button data-focusable onclick={() => (tab = 'installed')}
-            class="rounded-lg px-4 py-2.5 text-sm font-black sm:py-2 {tab === 'installed' ? 'bg-primary text-primary-foreground' : 'bg-secondary'}">
-      Installed · {$addonUrls.length + installedPackages.length}
-    </button>
+  <div class="mb-3 flex max-w-5xl flex-wrap gap-2" role="group" aria-label="Stores">
+    {#each storeChips as chip (chip.id)}
+      <button type="button" data-focusable aria-pressed={storeChip === chip.id} onclick={() => (storeChip = chip.id)}
+              class="rounded-lg px-3 py-2 text-sm font-black sm:py-1.5 {storeChip === chip.id ? 'bg-primary text-primary-foreground' : 'bg-secondary'}">{chip.label}</button>
+    {/each}
+    <button type="button" data-focusable onclick={() => (storesDialog = { mode: 'add', url: '' })}
+            class="flex items-center gap-1 rounded-lg bg-secondary px-3 py-2 text-sm font-bold sm:py-1.5"><Plus size={14} /> Add store</button>
+    <button type="button" data-focusable onclick={() => (storesDialog = { mode: 'manage', url: '' })}
+            class="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-bold text-muted-foreground sm:py-1.5"><Settings2 size={14} /> Manage stores</button>
   </div>
 
-  {#if notice}<p class="mb-4 max-w-5xl rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">{notice}</p>{/if}
-  {#if error}<p class="mb-4 max-w-5xl rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>{/if}
-
-  {#if tab !== 'installed'}
-    <div class="mb-4 flex min-w-0 max-w-5xl flex-wrap gap-2">
-      <label class="relative min-w-0 basis-full sm:min-w-60 sm:basis-auto sm:flex-1">
-        <Search size={16} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <input bind:value={query} data-focusable placeholder={tab === 'addons' ? 'Search community addons…' : 'Search anime packages…'}
-               class="w-full rounded-lg bg-input py-2.5 pl-9 pr-3 text-base sm:text-sm" />
-      </label>
-      {#if tab === 'addons'}
-        <button data-focusable onclick={() => (sort = sort === 'stars' ? 'new' : 'stars')}
-                class="rounded-lg bg-secondary px-4 py-2.5 text-sm font-bold sm:py-2">
-          {sort === 'stars' ? 'Top rated' : 'Recently added'}
-        </button>
-      {/if}
-    </div>
-  {/if}
-
-  {#if tab === 'addons'}
-    <p class="mb-3 text-xs text-muted-foreground">
-      {query.trim() ? `${addonTotal} matching community addons` : `${addonTotal} anime addons`} · directory data from stremio-addons.net
-    </p>
-    {#if loading && !addons.length}
-      <div class="grid max-w-5xl gap-3 sm:grid-cols-2">{#each Array(6) as _}<div class="skeloader h-32 rounded-xl"></div>{/each}</div>
-    {:else}
-      <div class="grid min-w-0 max-w-5xl gap-3 sm:grid-cols-2">
-        {#each addons as addon (addon.uuid)}
-          {@const base = addonBase(addon)}
-          {@const installedBase = installedAddonBases[addon.manifest.id] ?? (configuredBases.has(base) ? base : '')}
-          {@const installed = !!installedBase}
-          {@const off = installed && $disabledSources.includes(installedBase)}
-          <article class="flex w-full min-w-0 max-w-full gap-3 overflow-hidden rounded-xl border border-border bg-secondary/25 p-4 lg:items-center lg:p-3" class:opacity-60={installed && off}>
-            <AddonLogo
-              logo={resolveStoreAddonLogo(addon.manifest.logo, base)}
-              name={addon.manifest.name}
-              id={addon.manifest.id}
-              size={48}
-            />
-            <div class="min-w-0 flex-1 lg:flex lg:items-center lg:gap-3">
-              <div class="min-w-0 flex-1">
-                <div class="flex items-start gap-2">
-                  <h3 class="min-w-0 flex-1 truncate font-black">{addon.manifest.name}</h3>
-                  <span class="flex shrink-0 items-center gap-1 text-xs font-bold text-amber-400"><Star size={12} fill="currentColor" />{addon.stars}</span>
-                </div>
-                <p class="mt-1 line-clamp-2 text-xs text-muted-foreground lg:line-clamp-1">{addon.manifest.description || 'Community Stremio addon'}</p>
-              </div>
-              <div class="mt-3 flex flex-wrap gap-2 lg:mt-0 lg:shrink-0 lg:flex-nowrap">
-                {#if installed}
-                  <button data-focusable onclick={() => toggleAddon(installedBase)}
-                          class="rounded-md px-3 py-2 text-sm font-black sm:py-1.5 sm:text-xs {off ? 'bg-secondary' : 'bg-emerald-500/15 text-emerald-400'}">{off ? 'Enable' : 'Enabled'}</button>
-                  <button data-focusable onclick={() => removeAddon(installedBase)} class="rounded-md px-3 py-2 text-sm font-bold text-destructive active:bg-destructive/10 sm:py-1.5 sm:text-xs">Remove</button>
-                {:else if !addon.configureUrl}
-                  <button data-focusable onclick={() => addAddon(addon)} class="rounded-md bg-primary px-3 py-2 text-sm font-black text-primary-foreground sm:py-1.5 sm:text-xs">Install</button>
-                {/if}
-                {#if addon.configureUrl}
-                  <button data-focusable onclick={() => configureAddon(addon, installedBase || undefined)}
-                          class="flex items-center gap-1 rounded-md {installed ? 'bg-secondary' : 'bg-primary text-primary-foreground'} px-3 py-2 text-sm font-bold sm:py-1.5 sm:text-xs">
-                    {installed ? 'Reconfigure' : 'Configure & install'}
-                  </button>
-                {/if}
-              </div>
-            </div>
-          </article>
-        {/each}
-      </div>
-      {#if !addons.length}<p class="text-sm text-muted-foreground">No matching addons were found.</p>{/if}
-    {/if}
-  {:else if tab === 'extensions'}
-    <p class="mb-3 text-xs text-muted-foreground">
-      {extensionResults.length} packages · signed/hash-pinned catalog from nickEatsBread/izumi-extension-repo
-    </p>
-    <div class="grid min-w-0 max-w-5xl gap-3 sm:grid-cols-2">
-      {#each extensionResults as item (item.id)}
-        {@const installed = packageById.get(item.id)}
-        {@const off = $disabledPlugins.includes(item.id)}
-        <article class="w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-border bg-secondary/25 p-4 lg:flex lg:items-center lg:gap-3 lg:p-3" class:opacity-60={!!installed && off}>
-          <div class="flex items-start gap-3 lg:min-w-0 lg:flex-1">
-            <!-- The package's own artwork once we have it (installed launcher icon, or a manifest
-                 icon when the same provider is served by one of the user's sources), else the
-                 shared placeholder AddonLogo falls back to. -->
-            <AddonLogo logo={packageIcon(item.id)} name={item.name} id={item.id} size={40} />
-            <div class="min-w-0 flex-1">
-              <h3 class="truncate font-black">{item.name}</h3>
-              <p class="text-xs text-muted-foreground">{item.language || 'Language unspecified'} · {item.sources.length} providers · v{item.version}</p>
-              <p class="mt-1 line-clamp-1 text-[0.68rem] text-muted-foreground">{item.sources.map((source) => source.name).join(' · ')}</p>
-            </div>
-          </div>
-          <div class="mt-3 flex flex-wrap gap-2 lg:mt-0 lg:shrink-0 lg:flex-nowrap">
-            {#if installed}
-              <button data-focusable onclick={() => toggleExtension(item.id)}
-                      class="rounded-md px-3 py-2 text-sm font-black sm:py-1.5 sm:text-xs {off ? 'bg-secondary' : 'bg-emerald-500/15 text-emerald-400'}">{off ? 'Enable' : 'Enabled'}</button>
-              {#if installed.backend === 'izumi-service'}
-                <button data-focusable onclick={() => (serviceSettings = { id: installed.id, name: installed.name })}
-                        class="rounded-md bg-secondary px-3 py-2 text-sm font-bold sm:py-1.5 sm:text-xs">Settings</button>
-              {/if}
-              <button data-focusable disabled={busyId === item.id} onclick={() => removeExtension(item.id)}
-                      class="rounded-md px-3 py-2 text-sm font-bold text-destructive active:bg-destructive/10 sm:py-1.5 sm:text-xs">Remove</button>
-            {:else}
-              <button data-focusable disabled={!!busyId} onclick={() => installExtension(item)}
-                      class="flex items-center gap-1 rounded-md bg-primary px-3 py-2 text-sm font-black text-primary-foreground sm:py-1.5 sm:text-xs disabled:opacity-40">
-                {#if busyId === item.id}<RefreshCw size={12} class="animate-spin" />{/if} Install
-              </button>
-            {/if}
-          </div>
-        </article>
+  <div class="mb-3 flex max-w-5xl flex-wrap gap-2" role="group" aria-label="Type">
+    {#each KIND_CHIPS as chip (chip.id)}
+      <button type="button" data-focusable aria-pressed={kind === chip.id} onclick={() => { kind = chip.id; sourceType = 'all' }}
+              class="rounded-lg px-3 py-2 text-sm font-black sm:py-1.5 {kind === chip.id ? 'bg-primary text-primary-foreground' : 'bg-secondary'}">{chip.label}</button>
+    {/each}
+    {#if kind === 'source'}
+      {#each SOURCE_CHIPS as chip (chip.id)}
+        <button type="button" data-focusable aria-pressed={sourceType === chip.id} onclick={() => (sourceType = chip.id)}
+                class="rounded-lg px-3 py-2 text-sm font-bold sm:py-1.5 {sourceType === chip.id ? 'bg-foreground text-background' : 'bg-secondary/60'}">{chip.label}</button>
       {/each}
+    {/if}
+  </div>
+
+  <div class="mb-4 flex min-w-0 max-w-5xl flex-wrap gap-2">
+    <label class="relative min-w-0 basis-full sm:min-w-60 sm:basis-auto sm:flex-1">
+      <Search size={16} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+      <input bind:value={query} data-focusable placeholder="Search the Store…" aria-label="Search the Store"
+             class="w-full rounded-lg bg-input py-2.5 pl-9 pr-3 text-base sm:text-sm" />
+    </label>
+    <SelectMenu bind:value={language} ariaLabel="Language" options={languageOptions} />
+    <SelectMenu bind:value={content} ariaLabel="Content" options={CONTENT_OPTIONS} />
+    <SelectMenu bind:value={sort} ariaLabel="Sort" options={SORT_OPTIONS} />
+    <button type="button" data-focusable aria-pressed={withoutDebrid} onclick={() => (withoutDebrid = !withoutDebrid)}
+            class="rounded-lg px-3 py-2.5 text-sm font-bold sm:py-2 {withoutDebrid ? 'bg-primary text-primary-foreground' : 'bg-secondary'}">No debrid needed</button>
+    <button type="button" data-focusable aria-pressed={installedOnly} onclick={() => (installedOnly = !installedOnly)}
+            class="rounded-lg px-3 py-2.5 text-sm font-bold sm:py-2 {installedOnly ? 'bg-primary text-primary-foreground' : 'bg-secondary'}">Installed</button>
+    <button type="button" data-focusable disabled={loading} aria-label="Refresh stores" onclick={() => void loadStores(true)}
+            class="rounded-lg bg-secondary px-3 py-2.5 sm:py-2"><RefreshCw size={16} class={loading ? 'animate-spin' : ''} /></button>
+  </div>
+
+  {#if notice}<p role="status" class="mb-4 max-w-5xl rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">{notice}</p>{/if}
+  {#if error}<p role="alert" class="mb-4 max-w-5xl rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>{/if}
+  {#each lockedStores as store (store.id)}
+    <p class="mb-4 max-w-5xl rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+      {store.name} failed its signing-key check, so installs and updates from it are paused.
+      <button type="button" data-focusable class="ml-1 font-black underline" onclick={() => (storesDialog = { mode: 'manage', url: '' })}>Review</button>
+    </p>
+  {/each}
+  {#each failedStores as store (store.id)}
+    <p class="mb-2 max-w-5xl text-xs text-muted-foreground">{store.name} couldn't be loaded: {loaded[store.id]?.error}</p>
+  {/each}
+  {#each staleStores as store (store.id)}
+    <p class="mb-2 max-w-5xl text-xs text-muted-foreground">{store.name} couldn't be refreshed ({loaded[store.id]?.error}), so it shows the copy saved {new Date(loaded[store.id]?.fetchedAt ?? 0).toLocaleString()}. Updates from it wait for a fresh copy.</p>
+  {/each}
+  {#if directoryWanted && directoryError}<p class="mb-2 max-w-5xl text-xs text-muted-foreground">Addon directory: {directoryError}</p>{/if}
+
+  <p class="mb-3 text-xs text-muted-foreground">
+    {results.length} {results.length === 1 ? 'result' : 'results'}{#if directoryWanted} · addon directory: top {directory.length} of {directoryTotal}{/if}
+  </p>
+
+  {#if loading && !allEntries.length}
+    <div class="grid max-w-5xl gap-3 sm:grid-cols-2">
+      {#each [0, 1, 2, 3, 4, 5] as index (index)}<div class="skeloader h-24 rounded-xl"></div>{/each}
     </div>
   {:else}
-    <div class="max-w-5xl space-y-6">
-      <section>
-        <div class="mb-2 flex items-center justify-between">
-          <h3 class="font-black">Stremio addons</h3>
-          <a href="/app/settings/sources" class="rounded-md px-2 py-1.5 text-xs font-bold text-theme active:bg-secondary sm:py-1">Advanced settings →</a>
-        </div>
-        <div class="space-y-2">
-          {#each $addonUrls as base (base)}
-            {@const off = $disabledSources.includes(base)}
-            <div class="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3" class:opacity-60={off}>
-              {#await fetchManifest(base)}
-                <span class="skeloader size-9 rounded"></span><span class="flex-1 text-sm text-muted-foreground">Loading manifest…</span>
-              {:then manifest}
-                <AddonLogo
-                  logo={resolveStoreAddonLogo(manifest?.logo, base)}
-                  name={manifest?.name ?? addonLocation(base)}
-                  id={manifest?.id ?? base}
-                  size={36}
-                />
-                <span class="min-w-0 flex-1 basis-40"><span class="block truncate text-sm font-black">{manifest?.name ?? addonLocation(base)}</span><span class="block truncate text-xs text-muted-foreground">{addonLocation(base)}</span></span>
-                {#if manifest}
-                  {#await findAddonConfigureUrl(base, manifest, addons) then configureUrl}
-                    {#if configureUrl}
-                      <button data-focusable onclick={() => beginAddonConfiguration(manifest.name, manifest.id, configureUrl, base)}
-                              class="rounded-md bg-secondary px-3 py-2 text-sm font-bold sm:py-1.5 sm:text-xs">Configure</button>
-                    {/if}
-                  {/await}
-                {/if}
-              {/await}
-              <button data-focusable onclick={() => toggleAddon(base)}
-                      class="rounded-md px-3 py-2 text-sm font-black sm:py-1.5 sm:text-xs {off ? 'bg-secondary' : 'bg-emerald-500/15 text-emerald-400'}">{off ? 'Disabled' : 'Enabled'}</button>
-              <button data-focusable onclick={() => removeAddon(base)} class="rounded-md px-3 py-2 text-sm font-bold text-destructive active:bg-destructive/10 sm:px-1 sm:py-1 sm:text-xs">Remove</button>
-            </div>
-          {/each}
-          {#if !$addonUrls.length}<p class="text-sm text-muted-foreground">No Stremio addons installed.</p>{/if}
-        </div>
-      </section>
-      <section>
-        <div class="mb-2 flex items-center justify-between">
-          <h3 class="font-black">Anime packages</h3>
-          <a href="/app/settings/sources?tab=manage" class="rounded-md px-2 py-1.5 text-xs font-bold text-theme active:bg-secondary sm:py-1">Manage sources →</a>
-        </div>
-        <div class="space-y-2">
-          {#each installedPackages as item (item.id)}
-            {@const off = $disabledPlugins.includes(item.id)}
-            <div class="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3" class:opacity-60={off}>
-              <AddonLogo logo={packageIcon(item.id)} name={item.name} id={item.id} size={36} />
-              <span class="min-w-0 flex-1 basis-40"><span class="block truncate text-sm font-black">{item.name}</span><span class="block text-xs text-muted-foreground">{extensionBackendLabel(item.backend)} · v{item.version}</span></span>
-              {#if item.backend === 'izumi-service'}
-                <button data-focusable onclick={() => (serviceSettings = { id: item.id, name: item.name })}
-                        class="rounded-md bg-secondary px-3 py-2 text-sm font-bold sm:py-1.5 sm:text-xs">Settings</button>
-              {/if}
-              <button data-focusable onclick={() => toggleExtension(item.id)}
-                      class="flex items-center gap-1 rounded-md px-3 py-2 text-sm font-black sm:py-1.5 sm:text-xs {off ? 'bg-secondary' : 'bg-emerald-500/15 text-emerald-400'}">
-                {#if !off}<Check size={12} />{/if}{off ? 'Disabled' : 'Enabled'}
-              </button>
-              <button data-focusable disabled={busyId === item.id} onclick={() => removeExtension(item.id)} class="rounded-md px-3 py-2 text-sm font-bold text-destructive active:bg-destructive/10 sm:px-1 sm:py-1 sm:text-xs">Remove</button>
-            </div>
-          {/each}
-          {#if !installedPackages.length}<p class="text-sm text-muted-foreground">No anime packages installed.</p>{/if}
-        </div>
-      </section>
+    <div class="grid min-w-0 max-w-5xl gap-3 sm:grid-cols-2">
+      {#each visible as entry (entry.key)}
+        <StoreEntryCard
+          {entry}
+          storeName={storeNameById.get(entry.storeId) ?? 'Store'}
+          thirdParty={!builtinIds.has(entry.storeId)}
+          icon={iconOf(entry)}
+          installed={isInstalled(entry)}
+          elsewhere={fromAnotherStore(entry)}
+          update={updateAvailable(entry)}
+          busy={busyKey === entry.key}
+          locked={loaded[entry.storeId]?.trust.state === 'locked'}
+          onopen={() => { error = ''; selected = entry }}
+          oninstall={() => void install(entry)}
+        />
+      {/each}
     </div>
+    {#if !results.length}<p class="text-sm text-muted-foreground">Nothing matches these filters.</p>{/if}
+    {#if results.length > visible.length}
+      <button type="button" data-focusable onclick={() => (limit += PAGE)} class="mt-4 rounded-lg bg-secondary px-4 py-2.5 text-sm font-bold">Show more</button>
+    {/if}
   {/if}
+
+  <p class="mt-6 max-w-5xl text-xs text-muted-foreground">
+    Sources you added by hand are on <a href="/app/settings/sources?tab=manage" class="font-bold text-theme">Sources</a>;
+    installed themes are on <a href="/app/settings/themes" class="font-bold text-theme">Themes</a>.
+  </p>
 </div>
+
+{#if selected}
+  {@const entry = selected}
+  {@const ref = refOf(entry)}
+  {@const target = entry.install}
+  <StoreEntrySheet
+    {entry}
+    storeName={storeNameById.get(entry.storeId) ?? 'Store'}
+    thirdParty={!builtinIds.has(entry.storeId)}
+    icon={iconOf(entry)}
+    trustLabel={trustLabel(entry)}
+    installed={ref !== null}
+    elsewhere={fromAnotherStore(entry)}
+    update={updateAvailable(entry)}
+    enabled={enabledState(entry)}
+    busy={busyKey === entry.key}
+    locked={loaded[entry.storeId]?.trust.state === 'locked'}
+    {error}
+    onclose={() => (selected = null)}
+    oninstall={() => void install(entry)}
+    onremove={target.type === 'theme' || (target.type === 'extension' && ref !== target.spec) ? undefined : () => void remove(entry)}
+    ontoggle={target.type === 'theme' ? undefined : () => toggle(entry)}
+    settingsLabel={target.type === 'addon' ? 'Reconfigure' : 'Settings'}
+    onsettings={target.type === 'addon' && target.configureUrl && ref && sameHost(target.configureUrl, ref)
+      ? () => { configuring = { name: entry.name, id: target.manifestId ?? entry.id, configureUrl: target.configureUrl ?? '', currentBase: ref }; selected = null }
+      : target.type === 'package' && installedPackages.find((item) => item.id === ref)?.backend === 'izumi-service'
+        ? () => { serviceSettings = { id: target.pkg.id, name: entry.name }; selected = null }
+        : undefined}
+    onmanage={target.type === 'theme' ? () => void goto('/app/settings/themes') : undefined}
+  />
+{/if}
+
+{#if storesDialog}
+  <!-- Keyed by the link, so a second store link replaces the one being previewed. -->
+  {#key storesDialog.url}
+    <StoresDialog
+      mode={storesDialog.mode}
+      initialUrl={storesDialog.url}
+      {loaded}
+      onclose={() => (storesDialog = null)}
+      onadded={(id) => { storeChip = id; notice = 'Store added. Nothing was installed.' }}
+    />
+  {/key}
+{/if}
+
+{#if replacing}
+  {@const target = replacing.entry}
+  <ReplacePackageDialog
+    name={target.name}
+    installedFrom={replacing.installedFrom}
+    storeName={storeNameById.get(target.storeId) ?? 'this store'}
+    oncancel={() => (replacing = null)}
+    onconfirm={() => { const entry = target; replacing = null; void install(entry, true) }}
+  />
+{/if}
 
 {#if configuring}
   <AddonConfigurator

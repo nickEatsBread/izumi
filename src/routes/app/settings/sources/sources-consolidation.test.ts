@@ -111,13 +111,13 @@ describe('unified Sources settings', () => {
     expect(store).toBeGreaterThan(check)
     expect(tabs).toBeGreaterThan(store)
     expect(page).toContain("import { checkExtensionUpdates } from '$lib/extensions/auto-update'")
-    expect(page).toMatch(/checkExtensionUpdates\(\{[\s\S]{0,180}retryAttempted: true,[\s\S]{0,180}includeDisabledCatalogs: true,[\s\S]{0,180}includeOfficialCatalog: true,[\s\S]{0,80}\}\)/)
+    expect(page).toMatch(/checkExtensionUpdates\(\{[\s\S]{0,180}retryAttempted: true,[\s\S]{0,180}includeDisabledCatalogs: true,[\s\S]{0,80}\}\)/)
     expect(page).toMatch(/class="[^"]*sm:translate-y-3[^"]*sm:flex-row"/)
   })
 
-  it('keeps the built-in update catalog available after installing from the Store', () => {
-    expect(store).toContain('disabledExtensions, disabledPlugins, enabledExtensionUrls, extensionUrls')
-    expect(store).toContain('$disabledExtensions = $disabledExtensions.filter((spec) => spec !== OFFICIAL_ANIME_CATALOG)')
+  it('installs Store entries through the shared dispatcher, which keeps catalogs on the source list', () => {
+    expect(store).toContain('installStoreEntry(entry, {')
+    expect(store).toContain('adapter: loaded[entry.storeId]?.listing?.adapter')
   })
 
   it('keeps the add controls and source cards inside phone-width viewports', () => {
@@ -137,6 +137,14 @@ describe('unified Sources settings', () => {
     expect(page).toContain('use:masonryItem style:order={manageSortRanks.get(`addon:${url}`) ?? 0}')
     expect(communitySources).toContain('use:masonryItem style:order={sortRanks.get(`extension:${url}`) ?? 0}')
     expect(communitySources).toContain('use:masonryItem style:order={sortRanks.get(`package:${p.id}`) ?? 0}')
+  })
+
+  it('asks before replacing a package installed elsewhere, and freezes legacy stores before adding a source', () => {
+    expect(communitySources).toContain("!mayUpdateFrom(url, p, inst) ? 'Replace'")
+    expect(communitySources).toContain('error instanceof PackageInstalledElsewhereError')
+    expect(communitySources).toContain('<ReplacePackageDialog')
+    expect(communitySources).toContain('void installFromCatalog(chosen.url, chosen.extension, true)')
+    expect(page).toContain('currentLegacyStores()')
   })
 
   it('keeps old Extensions bookmarks working without retaining a second destination', () => {

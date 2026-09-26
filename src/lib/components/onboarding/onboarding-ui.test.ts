@@ -133,6 +133,10 @@ describe('onboarding presentation contracts', () => {
     expect(sources).not.toMatch(/picked\s*=\s*\[[^\]]/)
   })
 
+  it('keeps a package already installed from another store instead of stopping setup', () => {
+    expect(sources).toContain('if (cause instanceof PackageInstalledElsewhereError) return null')
+  })
+
   it('lets every step be skipped, and leaves the home screen alone afterwards', () => {
     expect(shell).toContain('m.onboarding_skip_step()')
     // The home screen used to carry a "Finish setting up izumi" card fed by a remainder store.

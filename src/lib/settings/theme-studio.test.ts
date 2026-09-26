@@ -62,4 +62,13 @@ describe('Theme Studio model', () => {
     expect(tokenContrast(theme.tokens.foreground, theme.tokens.background)).toBeGreaterThanOrEqual(4.5)
     expect(tokenContrast('0 0% 50%', '0 0% 55%')).toBeLessThan(4.5)
   })
+
+  it('keeps valid stylesheets and fonts on saved designs and drops invalid ones', () => {
+    const kept = normalizeStudioTheme({ ...defaultStudioTheme(0), css: '.a{color:red}', fonts: { ui: 'inter' } })
+    expect(kept.css).toBe('.a{color:red}')
+    expect(kept.fonts).toEqual({ ui: 'inter' })
+    const dropped = normalizeStudioTheme({ ...defaultStudioTheme(0), css: '@import "x.css";', fonts: { ui: 'nope' } })
+    expect(dropped.css).toBeUndefined()
+    expect(dropped.fonts).toBeUndefined()
+  })
 })

@@ -9,7 +9,7 @@
   import { listCommunityAddons } from '$lib/stremio/community-store'
   import { fetchManifest } from '$lib/stremio/manifest'
   import { addonUrls, disabledSources, normalizeBase } from '$lib/stremio/sources'
-  import { OFFICIAL_ANIME_CATALOG, fetchExtensionInfo, installCatalogPackage } from '$lib/extensions/manager'
+  import { OFFICIAL_ANIME_CATALOG, PackageInstalledElsewhereError, fetchExtensionInfo, installCatalogPackage } from '$lib/extensions/manager'
   import type { ExtensionCatalogPackage } from '$lib/extensions/catalog'
   import { disabledExtensions, disabledPlugins, extensionUrls } from '$lib/settings/ui'
   import type { OnboardingIntent } from '$lib/settings/onboarding'
@@ -104,7 +104,12 @@
         }
         const entry = packages.find((value) => value.id === id)
         if (!entry) continue
-        const installed = await installCatalogPackage(entry)
+        const installed = await installCatalogPackage(entry, OFFICIAL_ANIME_CATALOG).catch((cause: unknown) => {
+          // Already installed from another store: setup keeps that copy rather than replacing it.
+          if (cause instanceof PackageInstalledElsewhereError) return null
+          throw cause
+        })
+        if (!installed) continue
         disabledPlugins.update((ids) => ids.filter((value) => value !== installed.id))
         // The package came from the maintained catalog, so keep that catalog in the source list
         // the same way the store screen does when it installs from it.
