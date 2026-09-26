@@ -93,6 +93,14 @@ describe('native store index', () => {
     expect(entries[0].icon).toBeUndefined()
   })
 
+  it('keeps link fragments, which hash-routed configure pages need', () => {
+    const { entries } = parseNativeStore(store([
+      { kind: 'source', sourceType: 'stremio-addon', id: 'hash-addon', name: 'Hash Addon', manifestUrl: 'https://addon.example.test/manifest.json',
+        configureUrl: 'https://addon.example.test/#/configure', manifestId: 'org.example.hash' },
+    ]), STORE_URL, 's1')
+    expect(entries[0].install).toMatchObject({ configureUrl: 'https://addon.example.test/#/configure' })
+  })
+
   it('explains a missing schemaVersion', () => {
     expect(() => parseNativeStore(store([], { schemaVersion: undefined }), STORE_URL, 's')).toThrow('no valid schemaVersion')
   })

@@ -27,6 +27,11 @@ function plain(value: string | undefined): string | undefined {
 /** Language codes that mean "several" or "unknown" rather than one language to filter by. */
 const NOT_A_LANGUAGE: ReadonlySet<string> = new Set(['all', 'multi', 'mul', 'und', 'zxx', 'xx'])
 
+/** A link kept as written when its host is public HTTPS (the same rule as store links), else dropped. */
+function publicLink(value: string | undefined): string | undefined {
+  return value && canonicalStoreUrl(value) ? value : undefined
+}
+
 // Catalog parsers only check a package's id and payload, so everything shown or installed is checked
 // again here: one malformed package must not break the whole store, and a package is only listed
 // when its download is HTTPS.
@@ -128,6 +133,10 @@ function finish(listing: StoreListing): StoreListing {
       version: clip(plain(entry.version), 32),
       author: clip(plain(entry.author), 80),
       description: clip(plain(entry.description), 600),
+      // Public HTTPS only, whatever the format: these load on sight or open in the browser.
+      icon: publicLink(entry.icon),
+      preview: publicLink(entry.preview),
+      homepage: publicLink(entry.homepage),
       languages: [...new Set(entry.languages
         .filter((language) => typeof language === 'string' && language.length > 0 && language.length <= 32)
         .map((language) => language.toLowerCase())

@@ -22,6 +22,16 @@ describe('adaptStoreDocument', () => {
     expect(listing.entries[0]).toMatchObject({ key: 'themes:theme:test.cinema', kind: 'theme', install: { type: 'theme', release: { id: 'test.cinema', sha256: HASH } } })
   })
 
+  it('keeps listing links off private networks, whatever the format', () => {
+    const listing = adaptStoreDocument({
+      app: 'izumi', kind: 'theme-catalog', schemaVersion: 1,
+      themes: [{ id: 'test.cinema', name: 'Cinema', version: '1.0.0', author: 'Test', description: 'Cinema look.', themeApi: 2, tags: ['dark'], download: 'https://x.test/cinema.json', sha256: HASH, bytes: 100,
+        preview: 'https://192.168.1.5/preview.png', project: 'https://nas/project' }],
+    }, 'https://x.test/themes.json', 'themes')
+    expect(listing.entries[0].preview).toBeUndefined()
+    expect(listing.entries[0].homepage).toBeUndefined()
+  })
+
   it('reads an izumi package catalog', () => {
     const listing = adaptStoreDocument({
       formatVersion: 1, generatedAt: '2026-09-25T00:00:00Z', scope: { content: 'anime', transport: 'http', manga: false },

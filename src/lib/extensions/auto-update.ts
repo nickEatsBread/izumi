@@ -43,9 +43,9 @@ export function collectPackageUpdates(
 ): PackageUpdate[] {
   return installed.flatMap((extension) => {
     const origin = Object.hasOwn(origins, extension.id) ? origins[extension.id] : undefined
-    // A legacy claim must also keep the package's kind (the installer refuses anything else).
-    const matches = (entry: ExtensionCatalogPackage) => entry.id === extension.id
-      && (origin !== undefined || entry.backend === extension.backend)
+    // A background update never changes a package's kind (the installer would refuse it, after the
+    // whole download): a new kind from the package's own store waits for the user to update it.
+    const matches = (entry: ExtensionCatalogPackage) => entry.id === extension.id && entry.backend === extension.backend
     const listing = listings.find((candidate) =>
       (origin ? candidate.storeUrl === origin : legacyStores.includes(candidate.storeUrl))
       && candidate.packages.some(matches))

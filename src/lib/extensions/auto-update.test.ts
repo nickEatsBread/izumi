@@ -127,11 +127,11 @@ describe('collectPackageUpdates', () => {
     expect(collectPackageUpdates([inst('a', '1')], listings, {}, [])).toEqual([])
   })
 
-  it('never lets a legacy store update a package into another kind of package', () => {
+  it('never updates a package into another kind of package in the background', () => {
     const service = { ...(pkg('a', '2') as IzumiCatalogPackage), backend: 'izumi-service' as const }
     expect(collectPackageUpdates([inst('a', '1')], [listing('https://s1.test/i.json', [service])], {}, ['https://s1.test/i.json'])).toEqual([])
-    expect(collectPackageUpdates([inst('a', '1')], [listing('https://s1.test/i.json', [service])], { a: 'https://s1.test/i.json' }, [])
-      .map(({ entry }) => entry.backend)).toEqual(['izumi-service'])
+    // Not even from the package's own store: that change waits for the user to update from the Store.
+    expect(collectPackageUpdates([inst('a', '1')], [listing('https://s1.test/i.json', [service])], { a: 'https://s1.test/i.json' }, [])).toEqual([])
   })
 })
 

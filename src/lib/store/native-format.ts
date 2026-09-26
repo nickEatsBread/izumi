@@ -38,7 +38,9 @@ function httpsUrl(value: unknown, base: string): string | undefined {
   try {
     // Public HTTPS only, like the store itself: icons and previews load on sight, so a listing must
     // not be able to point the app at the user's own network.
-    return canonicalStoreUrl(new URL(value, base).href) ?? undefined
+    const url = new URL(value, base)
+    // The canonical form is only the gate: the link itself keeps its fragment (hash-routed pages).
+    return canonicalStoreUrl(url.href) ? url.href : undefined
   } catch {
     return undefined
   }
