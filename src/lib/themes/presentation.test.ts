@@ -114,6 +114,21 @@ describe('theme presentation contract', () => {
     expect(() => parsePresentation({ brand: 'logo' })).toThrow('unsupported')
     expect(themeCoverage(parsePresentation({ brand: 'text' }))).toEqual(['Shell'])
   })
+  it('parses the API 3 top bar and gates it behind the declared API', () => {
+    const shell = { nav: 'top', top: { labels: 'text', search: 'field-center', menu: 'drawer', brand: 'center' } }
+    expect(parsePresentation({ shell }).shell?.top).toEqual({ labels: 'text', search: 'field-center', menu: 'drawer', brand: 'center' })
+    expect(() => parsePresentation({ shell }, 2)).toThrow('unsupported')
+    expect(() => parsePresentation({ shell: { top: { labels: 'huge' } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ shell: { top: { color: 'red' } } })).toThrow('unsupported')
+  })
+  it('parses the API 3 series-page options and the bottom tab bar', () => {
+    const detail = { factsStyle: 'table', countdown: 'long', listButton: 'full', tabs: 'bottom' }
+    expect(parsePresentation({ detail }).detail).toEqual(detail)
+    expect(() => parsePresentation({ detail: { factsStyle: 'table' } }, 2)).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { tabs: 'bottom' } }, 2)).toThrow('unsupported')
+    expect(parsePresentation({ detail: { tabs: 'pills' } }, 2).detail?.tabs).toBe('pills')
+    expect(() => parsePresentation({ detail: { countdown: 'soon' } })).toThrow('unsupported')
+  })
 })
 
 describe('theme surface resolution', () => {

@@ -52,8 +52,10 @@ export type ThemeApi = 1 | 2 | 3
  *  airing and slide fields, and the text wordmark. */
 export const LATEST_THEME_API: ThemeApi = 3
 /** Series-page tab strip: an underlined row, pills, an iOS-style segmented control, or a bar of
- *  equal tabs with a tinted pill behind the active one (the two-tab Info/Watch bar of some apps). */
-export type DetailTabs = 'underline' | 'pills' | 'segmented' | 'bar'
+ *  equal tabs with a tinted pill behind the active one (the two-tab Info/Watch bar of some apps).
+ *  API 3 `bottom`: on phones the tabs become a bar fixed to the bottom of the screen in place of the
+ *  app's bottom navigation; wider windows show them underlined. */
+export type DetailTabs = 'underline' | 'pills' | 'segmented' | 'bar' | 'bottom'
 export interface DetailPresentation {
   layout?: DetailLayout
   bannerHidden?: boolean
@@ -67,6 +69,13 @@ export interface DetailPresentation {
   bannerScale?: 'viewport' | 'banner'
   tabs?: DetailTabs
   episodes?: { placement?: EpisodePlacement; arrangement?: EpisodeArrangement; hover?: EpisodeHover; order?: EpisodeOrderControl; search?: boolean; card?: ThemeNode }
+  /** API 3: how the standard facts render — the `facts` template (default), a label/value table,
+   *  a scrolling row of value-over-label cards, or chips. */
+  factsStyle?: 'template' | 'table' | 'cards' | 'chips'
+  /** API 3: an airing countdown under the facts, compact ("2d 21h") or long ("4 days 19 hrs"). */
+  countdown?: 'none' | 'compact' | 'long'
+  /** API 3: the tracker list button — inline (default), a full-width outlined button, or hidden. */
+  listButton?: 'inline' | 'full' | 'hidden'
 }
 /** The phone tab bar (and the desktop bottom bar when `nav` is `bottom`). */
 export interface BottomNavPresentation {
@@ -86,6 +95,17 @@ export interface BottomNavPresentation {
   /** `scroll` slides the bar away while scrolling down (the default); `never` keeps it put. */
   hide?: 'scroll' | 'never'
 }
+/** API 3: the desktop top bar (`shell.nav: "top"`). */
+export interface TopBarPresentation {
+  /** `icons` (default) shows icons only, `text` destination names as links, `both` icon and name. */
+  labels?: 'icons' | 'text' | 'both'
+  /** `field-center` / `field-end` put a search field in the bar in place of the Search destination. */
+  search?: 'icon' | 'field-center' | 'field-end'
+  /** `drawer` adds a menu button that opens every destination in a side drawer. */
+  menu?: 'none' | 'drawer'
+  /** Where the brand sits in the bar. */
+  brand?: 'start' | 'center'
+}
 export interface ShellPresentation {
   nav?: ThemeNavPlacement
   compact?: boolean
@@ -94,6 +114,7 @@ export interface ShellPresentation {
   /** `sink` darkens and nudges a control down while it is held. */
   press?: 'none' | 'sink'
   bottomNav?: BottomNavPresentation
+  top?: TopBarPresentation
 }
 /** Where the video sits while playing windowed on desktop. `full` fills the window inside the
  *  shell chrome; `docked` confines it to a 16:9 stage with the episode rail beside or below it. */
@@ -278,6 +299,15 @@ function parseBottomNav(value: unknown): BottomNavPresentation {
   if (raw.hide !== undefined) result.hide = choice(raw.hide, ['scroll', 'never'])
   return result
 }
+function parseTopBar(value: unknown): TopBarPresentation {
+  const raw = record(value); only(raw, ['labels', 'search', 'menu', 'brand'])
+  const result: TopBarPresentation = {}
+  if (raw.labels !== undefined) result.labels = choice(raw.labels, ['icons', 'text', 'both'])
+  if (raw.search !== undefined) result.search = choice(raw.search, ['icon', 'field-center', 'field-end'])
+  if (raw.menu !== undefined) result.menu = choice(raw.menu, ['none', 'drawer'])
+  if (raw.brand !== undefined) result.brand = choice(raw.brand, ['start', 'center'])
+  return result
+}
 function parseIndicator(value: unknown): HeroIndicator {
   const raw = record(value); only(raw, ['style', 'position', 'color'])
   const result: HeroIndicator = {}
@@ -287,7 +317,7 @@ function parseIndicator(value: unknown): HeroIndicator {
   return result
 }
 function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
-  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'bannerScale', 'episodes', ...api2(api, ['tabs'])])
+  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'bannerScale', 'episodes', ...api2(api, ['tabs']), ...api3(api, ['factsStyle', 'countdown', 'listButton'])])
   const result: DetailPresentation = {}
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['stack', 'split', 'overlay'])
   if (raw.bannerHidden !== undefined) result.bannerHidden = flag(raw.bannerHidden)
@@ -298,7 +328,10 @@ function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
   if (raw.cta !== undefined) result.cta = choice(raw.cta, ['default', 'large'])
   if (raw.bannerHeight !== undefined) result.bannerHeight = number(raw.bannerHeight, 18, 60)
   if (raw.bannerScale !== undefined) result.bannerScale = choice(raw.bannerScale, ['viewport', 'banner'])
-  if (raw.tabs !== undefined) result.tabs = choice(raw.tabs, ['underline', 'pills', 'segmented', 'bar'])
+  if (raw.tabs !== undefined) result.tabs = choice(raw.tabs, api >= 3 ? ['underline', 'pills', 'segmented', 'bar', 'bottom'] : ['underline', 'pills', 'segmented', 'bar'])
+  if (raw.factsStyle !== undefined) result.factsStyle = choice(raw.factsStyle, ['template', 'table', 'cards', 'chips'])
+  if (raw.countdown !== undefined) result.countdown = choice(raw.countdown, ['none', 'compact', 'long'])
+  if (raw.listButton !== undefined) result.listButton = choice(raw.listButton, ['inline', 'full', 'hidden'])
   if (raw.episodes !== undefined) {
     const episodes = record(raw.episodes); only(episodes, ['placement', 'arrangement', 'hover', 'order', 'search', 'card'])
     result.episodes = {}
@@ -312,13 +345,14 @@ function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
   return result
 }
 function parseShell(value: unknown, api: ThemeApi): ShellPresentation {
-  const raw = record(value); only(raw, ['nav', 'compact', 'overlay', 'press', ...api2(api, ['bottomNav'])])
+  const raw = record(value); only(raw, ['nav', 'compact', 'overlay', 'press', ...api2(api, ['bottomNav']), ...api3(api, ['top'])])
   const result: ShellPresentation = {}
   if (raw.nav !== undefined) result.nav = choice(raw.nav, ['sidebar', 'top', 'bottom'])
   if (raw.compact !== undefined) result.compact = flag(raw.compact)
   if (raw.overlay !== undefined) result.overlay = choice(raw.overlay, ['none', 'fade'])
   if (raw.press !== undefined) result.press = choice(raw.press, ['none', 'sink'])
   if (raw.bottomNav !== undefined) result.bottomNav = parseBottomNav(raw.bottomNav)
+  if (raw.top !== undefined) result.top = parseTopBar(raw.top)
   return result
 }
 function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
@@ -496,6 +530,9 @@ export function resolveDetail(layout?: ThemePresentation): Required<Pick<DetailP
     bannerHeight: detail.bannerHeight,
     bannerScale: detail.bannerScale,
     tabs: detail.tabs,
+    factsStyle: detail.factsStyle,
+    countdown: detail.countdown,
+    listButton: detail.listButton,
     episodes: { placement, arrangement: detail.episodes?.arrangement, hover: detail.episodes?.hover, order: detail.episodes?.order, search: detail.episodes?.search, card: detail.episodes?.card },
   }
 }
