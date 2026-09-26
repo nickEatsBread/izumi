@@ -34,7 +34,8 @@ function applyThemeCss(text: string | undefined): void {
   const result = sanitizeThemeCssCached(text)
   if (result.error !== undefined) {
     existing?.remove()
-    themeCssStatus.set({ state: 'rejected', reason: result.error })
+    const previous = get(themeCssStatus)
+    if (previous.state !== 'rejected' || previous.reason !== result.error) themeCssStatus.set({ state: 'rejected', reason: result.error })
     return
   }
   const content = themeStyleText(result, scoped)
