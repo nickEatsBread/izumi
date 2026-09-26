@@ -108,7 +108,7 @@
 
 <!-- The bounded Aniyomi loader now reconciles rows in two batches, so its placeholders can use the
      same loading shimmer as every other catalog without repeatedly remounting the card tree. -->
-<div class="pb-16">
+<div data-slot="home" data-variant="catalog" class="pb-16">
   {#if home?.hero.length}
     <Hero medias={home.hero} artworkMode={$catalogProvider === 'stremio' ? $stremioHeroArtwork : 'backdrop'}
       onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} />

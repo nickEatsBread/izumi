@@ -134,7 +134,7 @@
   }
 </script>
 
-<div class="pb-16">
+<div data-slot="home" data-variant="merged" class="pb-16">
   {#if hero.length}
     <Hero medias={hero} onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} />
   {:else if optionsLoading || homeLoading}

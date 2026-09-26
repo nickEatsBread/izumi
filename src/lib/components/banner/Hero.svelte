@@ -357,12 +357,12 @@
 {#snippet slideIndicator(kind: NonNullable<HeroIndicator['style']>, fallback: string, place: string, defaultPosition: NonNullable<HeroIndicator['position']>)}
   {@const position = indicator.position ?? defaultPosition}
   {#if kind !== 'none' && medias.length > 1}
-    <div data-hero-indicator={kind} class="hero-indicator pointer-events-none z-20 items-center gap-1.5 {position === 'start' ? 'justify-start' : position === 'center' ? 'justify-center' : 'justify-end'} {place}" style:--hero-ind={indicatorColor ?? fallback}>
+    <div data-part="hero.indicator" data-variant={kind} data-hero-indicator={kind} class="hero-indicator pointer-events-none z-20 items-center gap-1.5 {position === 'start' ? 'justify-start' : position === 'center' ? 'justify-center' : 'justify-end'} {place}" style:--hero-ind={indicatorColor ?? fallback}>
       {#if kind === 'counter'}
-        <span class="rounded-full border border-white/15 bg-black/55 px-2.5 py-1 text-[0.68rem] tabular-nums font-black text-white shadow-lg backdrop-blur"><span style="color:var(--hero-ind)">{i + 1}</span><span class="text-white/60"> / {medias.length}</span></span>
+        <span data-part="hero.counter" class="rounded-full border border-white/15 bg-black/55 px-2.5 py-1 text-[0.68rem] tabular-nums font-black text-white shadow-lg backdrop-blur"><span style="color:var(--hero-ind)">{i + 1}</span><span class="text-white/60"> / {medias.length}</span></span>
       {:else}
         {#each medias as _, idx (idx)}
-          <button type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined} onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`} aria-current={idx === i ? 'true' : undefined}
+          <button data-part="hero.dot" data-active={idx === i || undefined} type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined} onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`} aria-current={idx === i ? 'true' : undefined}
                   class="pointer-events-auto relative block before:absolute before:-inset-x-1.5 before:-inset-y-3 before:content-['']">
             <span class="block overflow-hidden rounded-full transition-all duration-300
               {kind === 'bars' ? `h-1 bg-white/25 ${idx === i ? 'w-10' : 'w-5'}` : ''}
@@ -386,7 +386,7 @@
 
 {#if current && !heroTheme?.hidden}
   {#if heroTheme?.template}
-    <section data-nav-row data-theme-hero aria-label="Featured" class="theme-custom-hero" class:theme-banner-scale={bannerScale} class:cursor-grab={$dragCarousels && medias.length > 1} class:cursor-grabbing={heroDragging} style:height={bannerScale ? undefined : `${($isMobile ? heroTheme.mobileHeight : heroTheme.height) ?? 46}vh`} style:--theme-hero-interval={`${DURATION}ms`} ontouchstart={onTouchStart} ontouchend={onTouchEnd} onpointerdown={onHeroPointerDown} onpointermove={onHeroPointerMove} onpointerup={(e) => endHeroPointer(e, true)} onpointercancel={(e) => endHeroPointer(e, false)} onwheel={onHeroWheel}>
+    <section data-slot="home.hero" data-variant="template" data-nav-row data-theme-hero aria-label="Featured" class="theme-custom-hero" class:theme-banner-scale={bannerScale} class:cursor-grab={$dragCarousels && medias.length > 1} class:cursor-grabbing={heroDragging} style:height={bannerScale ? undefined : `${($isMobile ? heroTheme.mobileHeight : heroTheme.height) ?? 46}vh`} style:--theme-hero-interval={`${DURATION}ms`} ontouchstart={onTouchStart} ontouchend={onTouchEnd} onpointerdown={onHeroPointerDown} onpointermove={onHeroPointerMove} onpointerup={(e) => endHeroPointer(e, true)} onpointercancel={(e) => endHeroPointer(e, false)} onwheel={onHeroWheel}>
       <ThemeNode node={heroTheme.template} model={themeModel} eager titleHeading actions={{
         details: oninfo ? () => themeAction(() => { rememberDetail(current); oninfo?.(current) }) : undefined,
         play: onplay ? () => themeAction(() => { rememberDetail(current); onplay?.(current) }) : undefined,
@@ -411,9 +411,9 @@
         {#if indicator.style}
           {@render slideIndicator(indicator.style, '#ffffff', 'absolute inset-x-8 bottom-3 flex', 'start')}
         {:else}
-        <div class="hero-pips absolute bottom-3 left-8 z-20 flex items-center gap-2">
+        <div data-part="hero.indicator" data-variant="default" class="hero-pips absolute bottom-3 left-8 z-20 flex items-center gap-2">
           {#each medias as _, idx (idx)}
-            <button type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined} onclick={() => go(idx)} aria-label={`Featured title ${idx + 1}`}
+            <button data-part="hero.dot" data-active={idx === i || undefined} type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined} onclick={() => go(idx)} aria-label={`Featured title ${idx + 1}`}
                     class="hero-pip overflow-hidden rounded-sm bg-white/20 transition-[width] duration-300"
                     style="width:{idx === i ? '5rem' : '2.7rem'}">
               {#if idx === i}
@@ -434,6 +434,8 @@
     <!-- Height in vh (not a portrait aspect ratio): stays bounded + usable in landscape, where a
          3/4 aspect on a wide viewport overflowed the screen. A touch smaller than before. -->
     <div
+      data-slot="home.hero"
+      data-variant="phone"
       class="relative mx-4 mb-6 h-[46vh] touch-pan-y overflow-hidden rounded-2xl shadow-xl {$isAndroid ? 'android-hero-press' : ''}"
       style="--accent:{accent}"
       style:height={heroTheme?.mobileHeight ? `${heroTheme.mobileHeight}vh` : undefined}
@@ -443,14 +445,14 @@
       ontouchend={onTouchEnd}
     >
       {#key current.id}
-        <div class="hero-slide-in hero-carousel-slide absolute inset-0" style="--hero-enter-x:{navDirection * 3}%">
+        <div data-part="hero.slide" class="hero-slide-in hero-carousel-slide absolute inset-0" style="--hero-enter-x:{navDirection * 3}%">
           {#if !artworkReady}<div class="absolute inset-0 skeloader"></div>{/if}
-          <img src={cover(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
+          <img data-part="hero.art" src={cover(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
                onload={artworkSettled} onerror={artworkSettled}
                class="hero-artwork relative h-full w-full object-cover transition-opacity duration-200 {artworkReady ? 'opacity-100' : 'opacity-0'}" />
         </div>
       {/key}
-      <div class="absolute inset-0 bg-gradient-to-t from-black/95 via-black/25 to-transparent"></div>
+      <div data-part="hero.scrim" class="absolute inset-0 bg-gradient-to-t from-black/95 via-black/25 to-transparent"></div>
       {#if $isAndroid && oninfo}
         <!-- Whole-card Android hit target. It sits above the artwork but below the explicit
              actions, so Watch/Details/pips retain their own behaviour. -->
@@ -466,15 +468,15 @@
           </div>
         {/if}
         {#if currentLogo}
-          <h1 aria-label={title(current)} class="h-16 w-[82%]">
+          <h1 data-part="hero.logo" aria-label={title(current)} class="h-16 w-[82%]">
             <img src={currentLogo} alt="" loading="eager" decoding="async"
                  onerror={logoFailed}
                  class="h-full w-full object-contain object-left drop-shadow-[2px_2px_5px_rgba(0,0,0,.9)]" />
           </h1>
         {:else}
-          <h1 class="line-clamp-2 text-2xl font-black leading-tight text-white drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)]">{title(current)}</h1>
+          <h1 data-part="hero.title" class="line-clamp-2 text-2xl font-black leading-tight text-white drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)]">{title(current)}</h1>
         {/if}
-        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-white/90
+        <div data-part="hero.meta" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-white/90
                     [&>span:not(:first-child)]:before:mr-2 [&>span:not(:first-child)]:before:text-white/40 [&>span:not(:first-child)]:before:content-['•']">
           {#if format(current)}<span>{format(current)}</span>{/if}
           {#if totalEpisodes(current) > 1}<span>{totalEpisodes(current)} eps</span>{/if}
@@ -494,7 +496,7 @@
             {/each}
           </div>
         {/if}
-        <div class="mt-1 flex items-center gap-2">
+        <div data-part="hero.actions" class="mt-1 flex items-center gap-2">
           <button data-focusable onclick={() => { rememberDetail(current); onplay?.(current) }}
                   class="pointer-events-auto flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 font-bold text-black shadow-lg"
                   style="background:var(--accent)">
@@ -517,11 +519,11 @@
         {#if indicator.style}
           {@render slideIndicator(indicator.style, '#ffffff', 'mt-1.5 flex', 'center')}
         {:else if medias.length > 1}
-          <div class="mt-1.5 flex justify-center gap-1.5">
+          <div data-part="hero.indicator" data-variant="default" class="mt-1.5 flex justify-center gap-1.5">
             {#each medias as _, idx (idx)}
               <!-- The dots are 6px tall; a finger needs more than that. The pseudo-element grows each
                    hit area to ~30px without changing what is drawn or spacing the row apart. -->
-              <button type="button" onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`}
+              <button data-part="hero.dot" data-active={idx === i || undefined} type="button" onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`}
                       class="pointer-events-auto relative h-1.5 rounded-full transition-all duration-300 before:absolute before:-inset-x-1.5 before:-inset-y-3 before:content-[''] {idx === i ? 'w-5 bg-white' : 'w-1.5 bg-white/40'}"></button>
             {/each}
           </div>
@@ -530,6 +532,8 @@
     </div>
   {:else}
   <div
+    data-slot={showOverlay ? 'home.hero' : undefined}
+    data-variant="desktop"
     data-nav-row
     class="hero-root relative mb-6 h-[40vh] touch-pan-y select-none transition-opacity duration-500 {bannerScale ? 'theme-banner-scale mb-0' : seriesBannerHeight ? '' : showOverlay ? 'sm:h-[50vh]' : controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'} {scrolled ? 'opacity-40' : 'opacity-100'}"
     class:cursor-grab={$dragCarousels && medias.length > 1}
@@ -555,16 +559,16 @@
          so it sits flush with the viewport edge. Keyed for a crossfade. -->
     <div class="pointer-events-none absolute left-[calc(-1*var(--theme-shell-left,0px))] top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-top-8">
       {#key current.id}
-        <div class="{initialArtworkVisible && !showOverlay ? 'detail-hero-reveal' : 'hero-slide-in'} absolute inset-0" class:hero-carousel-slide={showOverlay} style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:{bannerScale && !showOverlay ? .5 : .7}">
+        <div data-part="hero.slide" class="{initialArtworkVisible && !showOverlay ? 'detail-hero-reveal' : 'hero-slide-in'} absolute inset-0" class:hero-carousel-slide={showOverlay} style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:{bannerScale && !showOverlay ? .5 : .7}">
           {#if !artworkReady}<div class="absolute inset-0 skeloader"></div>{/if}
           {#if artworkMode === 'cover'}
             <img src={cover(current)} alt="" aria-hidden="true" draggable="false" loading="eager" decoding="async"
                  class="absolute inset-0 h-full w-full scale-110 object-cover opacity-30 blur-2xl" />
-            <img src={cover(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
+            <img data-part="hero.art" src={cover(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
                  onload={artworkSettled} onerror={artworkSettled}
                  class="hero-artwork relative ml-auto h-full w-[min(50vw,36rem)] object-contain object-right py-7 pr-[5vw] transition-opacity duration-200 {artworkReady ? 'opacity-100' : 'opacity-0'}" />
           {:else}
-            <img src={banner(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
+            <img data-part="hero.art" src={banner(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
                  onload={artworkSettled} onerror={artworkSettled}
                  class="hero-artwork relative h-full w-full object-cover transition-opacity duration-200 {artworkReady ? 'opacity-100' : 'opacity-0'}"
                  style="object-position:center 20%" />
@@ -572,8 +576,8 @@
         </div>
       {/key}
       <!-- Dual linear scrims: bright top-right, dark bottom-left. -->
-      <div class="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent"></div>
-      <div class="absolute inset-y-0 left-0 w-[45%] bg-gradient-to-r from-background/85 via-background/40 to-transparent"></div>
+      <div data-part="hero.scrim" class="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent"></div>
+      <div data-part="hero.scrim" class="absolute inset-y-0 left-0 w-[45%] bg-gradient-to-r from-background/85 via-background/40 to-transparent"></div>
     </div>
 
     {#if showOverlay && medias.length > 1}
@@ -612,7 +616,7 @@
     {#if showOverlay}
       <div class="absolute inset-x-0 bottom-0 flex flex-col gap-3 px-4 pb-6 sm:px-8 sm:pb-8">
         {#key current.id}
-        <div class="hero-copy max-w-2xl" style="--hero-enter-x:{navDirection * 1.5}%">
+        <div data-part="hero.slide" class="hero-copy max-w-2xl" style="--hero-enter-x:{navDirection * 1.5}%">
           {#if featuredAward}
             <div class="mb-4 flex flex-wrap gap-2">
               <a href={animeAwardHref(featuredAward)} data-focusable class="pointer-events-auto inline-flex items-center gap-2 rounded-lg border border-orange-300/20 bg-black/55 px-3 py-1.5 text-sm font-black text-white shadow-lg backdrop-blur transition-colors hover:border-orange-300/50 hover:bg-black/75">
@@ -621,17 +625,17 @@
             </div>
           {/if}
           {#if currentLogo}
-            <h1 aria-label={title(current)} class="h-24 w-[min(34rem,70vw)]">
+            <h1 data-part="hero.logo" aria-label={title(current)} class="h-24 w-[min(34rem,70vw)]">
               <img src={currentLogo} alt="" loading="eager" decoding="async"
                    onerror={logoFailed}
                    class="h-full w-full object-contain object-left drop-shadow-[2px_2px_6px_rgba(0,0,0,.9)]" />
             </h1>
           {:else}
-            <h1 class="truncate text-2xl font-black text-white drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)] sm:text-4xl">{title(current)}</h1>
+            <h1 data-part="hero.title" class="truncate text-2xl font-black text-white drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)] sm:text-4xl">{title(current)}</h1>
           {/if}
 
           <!-- High-signal discovery facts only. Airing context and genres share the next line. -->
-          <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-white/90
+          <div data-part="hero.meta" class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-white/90
                       [&>span:not(:first-child)]:before:mr-2 [&>span:not(:first-child)]:before:text-white/40 [&>span:not(:first-child)]:before:content-['•']">
             {#if format(current)}<span>{format(current)}</span>{/if}
             {#if totalEpisodes(current) > 1}<span>{totalEpisodes(current)} episodes</span>{/if}
@@ -655,10 +659,10 @@
           {/if}
 
           {#if current.description}
-            <p class="mt-3 line-clamp-2 max-w-xl text-sm text-white/70 drop-shadow sm:line-clamp-3">{cleanDesc(current.description)}</p>
+            <p data-part="hero.synopsis" class="mt-3 line-clamp-2 max-w-xl text-sm text-white/70 drop-shadow sm:line-clamp-3">{cleanDesc(current.description)}</p>
           {/if}
 
-          <div data-nav-row-items class="mt-4 flex items-center gap-2">
+          <div data-part="hero.actions" data-nav-row-items class="mt-4 flex items-center gap-2">
             <button data-focusable data-nav-row-default data-nav-scroll-top onclick={() => { rememberDetail(current); onplay?.(current) }}
                     class="flex items-center gap-2 rounded-md px-5 py-2 font-bold text-black shadow-lg transition-transform hover:scale-105"
                     style="background:var(--accent)">
@@ -684,9 +688,9 @@
         {:else if medias.length > 1}
           <!-- Slide pips: hover/click targets are a desktop affordance; on mobile the row
                auto-advances (and would collide with the Watch/Details buttons), so hide them. -->
-          <div class="absolute bottom-8 right-8 hidden gap-1.5 sm:flex">
+          <div data-part="hero.indicator" data-variant="default" class="absolute bottom-8 right-8 hidden gap-1.5 sm:flex">
             {#each medias as _, idx}
-              <button data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
+              <button data-part="hero.dot" data-active={idx === i || undefined} data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
                       onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`}
                       class="h-1 overflow-hidden rounded-full bg-white/25 transition-all duration-700"
                       style="width:{idx === i ? '3rem' : '1.5rem'}">

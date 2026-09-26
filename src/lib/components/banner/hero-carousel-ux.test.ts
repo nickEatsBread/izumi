@@ -39,7 +39,7 @@ describe('featured carousel UX', () => {
     expect(hero.match(/\{:else\}\s*<h1/g)?.length).toBeGreaterThanOrEqual(2)
     expect(hero).toContain('onerror={logoFailed}')
     expect(hero).toContain('(event.currentTarget as HTMLImageElement).src')
-    expect(hero.match(/<h1 aria-label=\{title\(current\)\}/g)?.length).toBe(2)
+    expect(hero.match(/<h1 data-part="hero\.logo" aria-label=\{title\(current\)\}/g)?.length).toBe(2)
   })
 
   it('reveals explicit edge navigation and animates in the requested direction', () => {
@@ -64,8 +64,8 @@ describe('featured carousel UX', () => {
   })
 
   it('makes Watch Now the row entry target and reveals the complete hero', () => {
-    expect(hero).toMatch(/<div\s+data-nav-row/)
-    expect(hero).toContain('<div data-nav-row-items class="mt-4 flex items-center gap-2">')
+    expect(hero).toMatch(/<div\s+data-slot=\{showOverlay \? 'home\.hero' : undefined\}\s+data-variant="desktop"\s+data-nav-row/)
+    expect(hero).toContain('<div data-part="hero.actions" data-nav-row-items class="mt-4 flex items-center gap-2">')
     expect(hero).toContain('<button data-focusable data-nav-row-default data-nav-scroll-top')
   })
 

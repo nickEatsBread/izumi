@@ -172,7 +172,7 @@
 
 {#if $offlineMode}
   <!-- Offline: local-first Continue Watching + the downloaded-series library. No network fired. -->
-  <div class="space-y-4 pb-16 pt-2">
+  <div data-slot="home" data-variant="offline" class="space-y-4 pb-16 pt-2">
     {#if orderedRows.includes('continue')}
       {#key listUser}
         <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
@@ -187,7 +187,7 @@
 {:else}
   <!-- With no hero, the first row must clear the fixed desktop titlebar + degraded strip. Mobile's
        toolbar above already reserves the alert height, so this extra inset is desktop-only. -->
-  <div class="pb-16 {homeNeedsAlertInset ? 'sm:pt-[3.75rem]' : ''}">
+  <div data-slot="home" data-variant="anilist" class="pb-16 {homeNeedsAlertInset ? 'sm:pt-[3.75rem]' : ''}">
     {#if !catalogUnavailable && heroMedias.length}
       <Hero medias={heroMedias} onplay={(m) => goto(mediaHref(m))} oninfo={(m) => goto(mediaHref(m))} />
     {:else if !catalogUnavailable && hero.fetching}
