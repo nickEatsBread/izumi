@@ -461,7 +461,7 @@
 {:else if media}
   {@const m = media}
   {#if $isMobile && overlayDetail}
-    <div class="relative pb-8">
+    <div data-slot="detail" data-layout="overlay" data-variant="phone" class="relative pb-8">
       <div bind:clientHeight={barHeight}
            class="fixed inset-x-0 top-0 z-30 flex items-center gap-2 px-2 py-2 transition-colors duration-200
                   {barState.solid ? 'border-b border-border bg-background/80 backdrop-blur' : 'text-white'}"
@@ -477,7 +477,7 @@
           <span class="min-w-0 flex-1 truncate text-base font-black">{title(m)}</span>
         {/if}
       </div>
-      <div bind:clientHeight={artHeight} class="relative min-h-[56vh] w-full overflow-hidden">
+      <div data-slot="detail.banner" bind:clientHeight={artHeight} class="relative min-h-[56vh] w-full overflow-hidden">
         {#if m.bannerImage}
           <img src={m.bannerImage} alt="" onload={() => (artLoaded = true)}
                class="absolute inset-0 h-full w-full object-cover transition-opacity duration-500 {artLoaded ? 'opacity-100' : 'opacity-0'}"
@@ -488,7 +488,7 @@
         {/if}
         <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
         <div class="relative z-10 flex min-h-[56vh] flex-col justify-end gap-3 px-4 pb-8 pt-24">
-          <h1 class="text-3xl font-black leading-tight text-white drop-shadow">{title(m)}</h1>
+          <h1 data-part="detail.title" class="text-3xl font-black leading-tight text-white drop-shadow">{title(m)}</h1>
           <button data-focusable use:focusOnMount
                   onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
                   onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
@@ -497,9 +497,9 @@
             <Play size={18} />{ctaHasProgress(m) ? `Play · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
           </button>
           {#if m.description}
-            <p class="line-clamp-4 text-sm leading-relaxed text-white/85">{stripHtml(m.description)}</p>
+            <p data-part="detail.synopsis" class="line-clamp-4 text-sm leading-relaxed text-white/85">{stripHtml(m.description)}</p>
           {/if}
-          <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-white/75">
+          <div data-part="detail.meta" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-white/75">
             {#if format(m)}<span>{format(m)}</span>{/if}
             {#each (m.genres ?? []).slice(0, 3) as g (g)}<span class="opacity-40">·</span><span>{g}</span>{/each}
             {#if m.seasonYear || m.startDate?.year}<span class="opacity-40">·</span><span>{m.seasonYear || m.startDate?.year}</span>{/if}
@@ -524,13 +524,13 @@
               {#if m.description}
                 <section>
                   <h2 class="mb-2 text-base font-black">Synopsis</h2>
-                  <p class="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
+                  <p data-part="detail.synopsis" class="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
                 </section>
               {/if}
             </div>
           {:else if active === 'Relations'}
             {#if m.relations?.edges?.length}
-              <div class="mt-3 grid grid-cols-2 gap-4">
+              <div data-slot="detail.relations" class="mt-3 grid grid-cols-2 gap-4">
                 {#each m.relations.edges as e (e.node.id)}
                   <div class="min-w-0"><SmallCard media={e.node} fill /></div>
                 {/each}
@@ -545,7 +545,7 @@
       </div>
     </div>
   {:else if $isMobile}
-    <div class="relative pb-8">
+    <div data-slot="detail" data-layout={detailTheme.layout} data-variant="phone" class="relative pb-8">
       <!-- Floating bar. Transparent over the artwork (with a scrim so the chevron survives light
            art), blurred and titled once the artwork has scrolled under it. It carries the status-bar
            inset itself: a fixed element does not inherit main's padding once it locks. -->
@@ -568,7 +568,7 @@
       <!-- Artwork band: a bounded strip that ends in a hard cut. Nothing is written on top of it,
            so legibility no longer depends on how busy the banner is. -->
       {#if !detailTheme.bannerHidden}
-      <div bind:clientHeight={artHeight} class="hero-art relative h-[26vh] max-h-72 min-h-44 w-full overflow-hidden">
+      <div data-slot="detail.banner" bind:clientHeight={artHeight} class="hero-art relative h-[26vh] max-h-72 min-h-44 w-full overflow-hidden">
         {#if m.bannerImage}
           <img src={m.bannerImage} alt="" onload={() => (artLoaded = true)}
                class="h-full w-full object-cover transition-opacity duration-500 {artLoaded ? 'opacity-100' : 'opacity-0'}"
@@ -592,21 +592,21 @@
         <div class="relative z-10 {detailTheme.bannerHidden ? 'mt-2' : '-mt-10'} flex gap-4">
           <!-- Covers vary in aspect; forcing them all into one ratio with object-cover crops real
                artwork the user came here to see. Follow the image's own height instead. -->
-          <img use:reliableImage={cover(m)} alt=""
+          <img data-part="detail.poster" use:reliableImage={cover(m)} alt=""
                class="h-auto w-28 shrink-0 self-start rounded-xl object-contain shadow-xl min-[420px]:w-32"
                style:width={detailTheme.posterWidth ? `${Math.min(detailTheme.posterWidth, 160)}px` : undefined} />
           <div class="min-w-0 flex-1 self-end">
             {#if m.title.native || m.title.romaji}
-              <div class="truncate text-xs text-muted-foreground">{m.title.native || m.title.romaji}</div>
+              <div data-part="detail.alt-title" class="truncate text-xs text-muted-foreground">{m.title.native || m.title.romaji}</div>
             {/if}
-            <h1 class="line-clamp-2 text-xl font-black leading-tight">{title(m)}</h1>
+            <h1 data-part="detail.title" class="line-clamp-2 text-xl font-black leading-tight">{title(m)}</h1>
           </div>
         </div>
 
         <!-- One line of facts instead of seven chips: on a phone the chips wrapped into three
              rows and read as a wall of pills rather than a summary. Facts sit directly under the
              title — identity first, schedule after. -->
-        <div class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-muted-foreground">
+        <div data-part="detail.meta" class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-muted-foreground">
           {#if m.averageScore}
             <span class="rounded-full px-1.5 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>
           {/if}
@@ -633,7 +633,7 @@
         {#if m.genres?.length}
           <!-- One horizontal rail preserves vertical space while making genre identity visible at a
                glance. It deliberately scrolls instead of wrapping into a tall block above Play. -->
-          <div class="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1" aria-label="Genres">
+          <div data-part="detail.genres" class="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1" aria-label="Genres">
             {#each m.genres as genre (genre)}
               <a href={`/app/search?genre=${encodeURIComponent(genre)}`}
                  class="shrink-0 rounded-full border border-border/80 bg-secondary/55 px-3 py-1.5 text-xs font-bold text-foreground/85 active:bg-accent">{genre}</a>
@@ -648,7 +648,7 @@
         </div>
 
         {#if m.description}
-          <button type="button" onclick={() => (descExpanded = !descExpanded)}
+          <button data-part="detail.synopsis" type="button" onclick={() => (descExpanded = !descExpanded)}
                   class="mt-3 w-full text-left text-sm text-muted-foreground {descExpanded ? 'block' : 'line-clamp-3'}">
             {stripHtml(m.description)}
           </button>
@@ -664,7 +664,7 @@
         </button>
 
         <!-- Compact action row: 4 icons + overflow. Handlers are the SAME functions the desktop bar uses. -->
-        <div class="relative mt-2 flex items-center gap-2">
+        <div data-part="detail.actions" class="relative mt-2 flex items-center gap-2">
           <button data-focusable onclick={() => { h.tap(); showLocalLists = true }} aria-label="Save to lists"
                   class="flex h-11 flex-[2] items-center justify-center gap-1.5 rounded-lg bg-secondary px-2 text-sm font-bold">
             {#if savedLocally}<BookmarkCheck size={17} class="text-theme" /> Saved{:else}<BookmarkPlus size={17} /> Save{/if}
@@ -691,7 +691,7 @@
             <button type="button" aria-label="Close menu" onclick={() => (showMore = false)}
                     class="fixed inset-0 z-40 cursor-default"></button>
             <div class="absolute bottom-full right-0 z-50 mb-2 w-56 rounded-lg border border-border bg-card p-2 shadow-2xl">
-              <button data-focusable onclick={() => { h.tap(); showMore = false; showEditor = true }}
+              <button data-part="detail.list-button" data-focusable onclick={() => { h.tap(); showMore = false; showEditor = true }}
                       class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
                 <ChevronDown size={15} /> {effStatus ? `Edit ${STATUS_LABEL[effStatus]}` : 'Add to list'}
               </button>
@@ -725,7 +725,7 @@
               {#if m.description}
                 <section>
                   <h2 class="mb-2 text-base font-black">Synopsis</h2>
-                  <p class="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
+                  <p data-part="detail.synopsis" class="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
                 </section>
               {/if}
 
@@ -733,21 +733,21 @@
                 <h2 class="mb-2 text-base font-black">Information</h2>
                 <dl class="grid grid-cols-2 gap-2 text-sm">
                   {#if m.studios?.nodes?.length}
-                    <div class="col-span-2 rounded-xl bg-secondary/40 p-3">
-                      <dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Studio</dt>
-                      <dd class="mt-1 font-bold">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ' · ' : ''}<a class="underline-offset-2 active:opacity-70" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd>
+                    <div data-part="fact" class="col-span-2 rounded-xl bg-secondary/40 p-3">
+                      <dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Studio</dt>
+                      <dd data-part="fact.value" class="mt-1 font-bold">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ' · ' : ''}<a class="underline-offset-2 active:opacity-70" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd>
                     </div>
                   {/if}
-                  {#if format(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Format</dt><dd class="mt-1 font-bold">{format(m)}</dd></div>{/if}
-                  {#if status(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Status</dt><dd class="mt-1 font-bold">{status(m)}</dd></div>{/if}
-                  <div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Episodes</dt><dd class="mt-1 font-bold">{epsTotal(m) || 'Unknown'}</dd></div>
-                  {#if m.duration}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Runtime</dt><dd class="mt-1 font-bold">{m.duration} minutes</dd></div>{/if}
-                  {#if season(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Season</dt><dd class="mt-1 font-bold"><a href={seasonBrowseHref(m)} class="underline-offset-2 active:opacity-70">{season(m)}</a></dd></div>{/if}
-                  {#if fmtDate(m.startDate)}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Premiered</dt><dd class="mt-1 font-bold">{fmtDate(m.startDate)}</dd></div>{/if}
-                  {#if m.source}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Source</dt><dd class="mt-1 font-bold">{prettyEnum(m.source)}</dd></div>{/if}
-                  {#if m.countryOfOrigin}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Country</dt><dd class="mt-1 font-bold">{countryName(m.countryOfOrigin)}</dd></div>{/if}
-                  {#if m.averageScore}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Score</dt><dd class="mt-1 font-bold">{m.averageScore}%</dd></div>{/if}
-                  {#if m.popularity}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Popularity</dt><dd class="mt-1 font-bold">{m.popularity.toLocaleString()} members</dd></div>{/if}
+                  {#if format(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Format</dt><dd data-part="fact.value" class="mt-1 font-bold">{format(m)}</dd></div>{/if}
+                  {#if status(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Status</dt><dd data-part="fact.value" class="mt-1 font-bold">{status(m)}</dd></div>{/if}
+                  <div data-part="fact" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Episodes</dt><dd data-part="fact.value" class="mt-1 font-bold">{epsTotal(m) || 'Unknown'}</dd></div>
+                  {#if m.duration}<div class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Runtime</dt><dd data-part="fact.value" class="mt-1 font-bold">{m.duration} minutes</dd></div>{/if}
+                  {#if season(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Season</dt><dd data-part="fact.value" class="mt-1 font-bold"><a href={seasonBrowseHref(m)} class="underline-offset-2 active:opacity-70">{season(m)}</a></dd></div>{/if}
+                  {#if fmtDate(m.startDate)}<div class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Premiered</dt><dd data-part="fact.value" class="mt-1 font-bold">{fmtDate(m.startDate)}</dd></div>{/if}
+                  {#if m.source}<div class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Source</dt><dd data-part="fact.value" class="mt-1 font-bold">{prettyEnum(m.source)}</dd></div>{/if}
+                  {#if m.countryOfOrigin}<div class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Country</dt><dd data-part="fact.value" class="mt-1 font-bold">{countryName(m.countryOfOrigin)}</dd></div>{/if}
+                  {#if m.averageScore}<div class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Score</dt><dd data-part="fact.value" class="mt-1 font-bold">{m.averageScore}%</dd></div>{/if}
+                  {#if m.popularity}<div class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Popularity</dt><dd data-part="fact.value" class="mt-1 font-bold">{m.popularity.toLocaleString()} members</dd></div>{/if}
                 </dl>
               </section>
 
@@ -764,7 +764,7 @@
             </div>
           {:else if active === 'Relations'}
             {#if m.relations?.edges?.length}
-              <div class="mt-3 grid grid-cols-2 gap-4">
+              <div data-slot="detail.relations" class="mt-3 grid grid-cols-2 gap-4">
                 {#each m.relations.edges as e (e.node.id)}
                   <div class="min-w-0"><SmallCard media={e.node} fill /></div>
                 {/each}
@@ -779,7 +779,7 @@
       </div>
     </div>
   {:else if overlayDetail}
-    <section class="relative isolate min-h-[72vh] w-full overflow-hidden" data-theme-surface="detail-overlay">
+    <section data-slot="detail" data-layout="overlay" data-variant="desktop" class="relative isolate min-h-[72vh] w-full overflow-hidden" data-theme-surface="detail-overlay">
       {#if m.bannerImage}
         <img src={m.bannerImage} alt="" class="absolute inset-0 h-full w-full object-cover" style="object-position:center 20%" />
       {:else}
@@ -789,10 +789,10 @@
       <div class="absolute inset-y-0 left-0 w-[58%] bg-gradient-to-r from-background/95 via-background/55 to-transparent"></div>
       <div class="relative z-10 flex min-h-[72vh] max-w-3xl flex-col justify-center gap-5 px-8 py-20 sm:px-12">
         {#if m.title.native || m.title.romaji}
-          <div class="text-sm text-white/70">{m.title.native || m.title.romaji}</div>
+          <div data-part="detail.alt-title" class="text-sm text-white/70">{m.title.native || m.title.romaji}</div>
         {/if}
-        <h1 class="text-5xl font-black leading-[1.02] text-white drop-shadow-md sm:text-6xl">{title(m)}</h1>
-        <div class="flex flex-wrap items-center gap-3">
+        <h1 data-part="detail.title" class="text-5xl font-black leading-[1.02] text-white drop-shadow-md sm:text-6xl">{title(m)}</h1>
+        <div data-part="detail.actions" class="flex flex-wrap items-center gap-3">
           <button data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
                   data-nav-down={controllerUi ? 'series-quick-episode' : undefined}
                   onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
@@ -811,15 +811,15 @@
           <p class="text-sm text-white/80">Studio: <a class="underline-offset-2 hover:underline" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a></p>
         {/if}
         {#if m.description}
-          <p class="max-w-2xl text-base leading-relaxed text-white/90 line-clamp-6">{stripHtml(m.description)}</p>
+          <p data-part="detail.synopsis" class="max-w-2xl text-base leading-relaxed text-white/90 line-clamp-6">{stripHtml(m.description)}</p>
         {/if}
-        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold text-white/80">
+        <div data-part="detail.meta" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold text-white/80">
           {#if format(m)}<span>{format(m)}</span>{/if}
           {#each (m.genres ?? []).slice(0, 4) as g (g)}<span class="opacity-40">·</span><span>{g}</span>{/each}
           {#if m.seasonYear || m.startDate?.year}<span class="opacity-40">·</span><span>{m.seasonYear || m.startDate?.year}</span>{/if}
           {#if m.averageScore}<span class="opacity-40">·</span><span>{m.averageScore}%</span>{/if}
         </div>
-        <div class="flex flex-wrap items-center gap-2 text-xs font-bold text-white/75">
+        <div data-part="detail.meta" class="flex flex-wrap items-center gap-2 text-xs font-bold text-white/75">
           {#if status(m)}<span class="rounded-full border border-white/25 px-2.5 py-1">{status(m)}</span>{/if}
           {#if m.duration}<span>{m.duration}m</span>{/if}
         </div>
@@ -838,7 +838,7 @@
       <Tabs tabs={desktopTabs} bind:active variant={detailTheme.tabs} />
       {#if active === 'Relations'}
         {#if m.relations?.edges?.length}
-          <div class="flex flex-wrap {$themePresentation ? 'gap-x-6 gap-y-8' : 'gap-4'}">
+          <div data-slot="detail.relations" class="flex flex-wrap {$themePresentation ? 'gap-x-6 gap-y-8' : 'gap-4'}">
             {#each m.relations.edges as e (e.node.id)}
               <div class={$themePresentation ? 'shrink-0' : 'w-[152px]'}>
                 <div class="{$themePresentation ? 'mb-1.5' : 'mb-1'} text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
@@ -856,7 +856,7 @@
       {:else}
         <div class="max-w-3xl space-y-4">
           {#if m.description}
-            <p class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
+            <p data-part="detail.synopsis" class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
           {/if}
         </div>
       {/if}
@@ -865,7 +865,7 @@
   <!-- Title-less banner backdrop; the info panel below overlaps its lower fade.
        Width-scaled banners sit behind the cover from the top of the page (the artwork
        follows the window width at 5:1) instead of a viewport-height strip with a gap above the cover. -->
-  <div class="relative">
+  <div data-slot="detail" data-layout={detailTheme.layout} data-variant="desktop" class="relative">
   {#if !detailTheme.bannerHidden}
   <div class={detailTheme.bannerScale === 'banner' ? 'pointer-events-none absolute inset-x-0 top-0 z-0 w-full' : ''}>
   <Hero medias={[m]} showOverlay={false} initialArtworkVisible={loadedHintBanner === banner(m)} />
@@ -883,23 +883,23 @@
          column, delaying Episodes by roughly a full D-pad viewport. An 11rem cover retains a clear
          visual identity while keeping both columns close enough in height for Episodes to follow. -->
     <div class="mb-4 flex flex-col gap-5 md:flex-row {detailTheme.coverAlign === 'end' ? 'md:items-end' : detailTheme.coverAlign === 'start' ? 'md:items-start' : ''}">
-      <img use:reliableImage={cover(m)} alt="" class="h-auto w-44 shrink-0 rounded-lg object-contain shadow-lg {detailTheme.coverAlign === 'end' ? 'self-end' : 'self-start'}" style:width={detailTheme.posterWidth ? `${detailTheme.posterWidth}px` : undefined} />
+      <img data-part="detail.poster" use:reliableImage={cover(m)} alt="" class="h-auto w-44 shrink-0 rounded-lg object-contain shadow-lg {detailTheme.coverAlign === 'end' ? 'self-end' : 'self-start'}" style:width={detailTheme.posterWidth ? `${detailTheme.posterWidth}px` : undefined} />
 
       <div class="min-w-0 flex-1 {detailTheme.bannerScale === 'banner' ? 'md:pt-12' : ''}">
         {#if m.title.native || m.title.romaji}
-          <div class="text-sm text-muted-foreground">{m.title.native || m.title.romaji}</div>
+          <div data-part="detail.alt-title" class="text-sm text-muted-foreground">{m.title.native || m.title.romaji}</div>
         {/if}
-        <h1 class="mb-2 text-3xl font-black">{title(m)}</h1>
+        <h1 data-part="detail.title" class="mb-2 text-3xl font-black">{title(m)}</h1>
 
         {#if detailTheme.facts}
-          <div class="mb-3">
+          <div data-part="detail.facts" class="mb-3">
             <ThemeNode node={detailTheme.facts} model={mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined })} />
           </div>
         {:else}
         <!-- One scannable facts line replaces two rows of competing pills. Genres remain useful
              discovery links for pointer users, but are deliberately not D-pad stops in Game mode:
              Down from the primary action is a content path, not a tour through metadata. -->
-        <div class="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-muted-foreground">
+        <div data-part="detail.meta" class="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-muted-foreground">
           <span class="text-foreground">{effProgress}/{epsTotal(m) || '?'} episodes</span>
           {#if format(m)}<span class="opacity-40">·</span><span>{format(m)}</span>{/if}
           {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
@@ -928,11 +928,11 @@
         {/if}
 
         {#if m.description && !detailTheme.actionsFirst}
-          <p class="mb-3 {controllerUi ? 'line-clamp-2' : 'line-clamp-3'} max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
+          <p data-part="detail.synopsis" class="mb-3 {controllerUi ? 'line-clamp-2' : 'line-clamp-3'} max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
         {/if}
 
         <!-- Action bar -->
-        <div class="flex flex-wrap items-center gap-2">
+        <div data-part="detail.actions" class="flex flex-wrap items-center gap-2">
           <button data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
                   data-nav-down={controllerUi ? 'series-quick-episode' : undefined}
                   onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
@@ -947,7 +947,7 @@
             {#if savedLocally}<BookmarkCheck size={18} class="text-theme" /> Saved{:else}<BookmarkPlus size={18} /> Save{/if}
           </button>
 
-          <button bind:this={editorAnchor} data-focusable onclick={() => (showEditor = true)} title="Edit list status"
+          <button data-part="detail.list-button" bind:this={editorAnchor} data-focusable onclick={() => (showEditor = true)} title="Edit list status"
                   aria-haspopup="dialog" aria-expanded={showEditor}
                   class="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 font-bold transition-colors hover:bg-accent">
             {#if effStatus}
@@ -981,7 +981,7 @@
       </div>
     </div>
     {#if m.description && detailTheme.actionsFirst}
-      <p class="mb-4 {controllerUi ? 'line-clamp-4' : 'line-clamp-6'} max-w-3xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
+      <p data-part="detail.synopsis" class="mb-4 {controllerUi ? 'line-clamp-4' : 'line-clamp-6'} max-w-3xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
     {/if}
     {/snippet}
 
@@ -991,7 +991,7 @@
       <EpisodeList media={m} offline={$offlineMode} />
     {:else if active === 'Relations'}
       {#if m.relations?.edges?.length}
-        <div class="flex flex-wrap {$themePresentation ? 'gap-x-6 gap-y-8' : 'gap-4'}">
+        <div data-slot="detail.relations" class="flex flex-wrap {$themePresentation ? 'gap-x-6 gap-y-8' : 'gap-4'}">
           {#each m.relations.edges as e (e.node.id)}
             <div class={$themePresentation ? 'shrink-0' : 'w-[152px]'}>
               <div class="{$themePresentation ? 'mb-1.5' : 'mb-1'} text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
@@ -1013,13 +1013,13 @@
         {/if}
         <dl class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
           {#if m.studios?.nodes?.length}
-            <div><dt class="font-bold">Studios</dt><dd class="text-muted-foreground">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ', ' : ''}<a data-focusable class="underline-offset-2 hover:underline" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd></div>
+            <div data-part="fact"><dt data-part="fact.label" class="font-bold">Studios</dt><dd data-part="fact.value" class="text-muted-foreground">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ', ' : ''}<a data-focusable class="underline-offset-2 hover:underline" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd></div>
           {/if}
           {#if fmtDate(m.startDate)}
-            <div><dt class="font-bold">Start Date</dt><dd class="text-muted-foreground">{fmtDate(m.startDate)}</dd></div>
+            <div data-part="fact"><dt data-part="fact.label" class="font-bold">Start Date</dt><dd data-part="fact.value" class="text-muted-foreground">{fmtDate(m.startDate)}</dd></div>
           {/if}
           {#if m.synonyms?.length}
-            <div class="sm:col-span-2"><dt class="font-bold">Synonyms</dt><dd class="text-muted-foreground">{m.synonyms.join(' · ')}</dd></div>
+            <div data-part="fact" class="sm:col-span-2"><dt data-part="fact.label" class="font-bold">Synonyms</dt><dd data-part="fact.value" class="text-muted-foreground">{m.synonyms.join(' · ')}</dd></div>
           {/if}
         </dl>
         {#if m.tags?.length}

@@ -289,7 +289,7 @@
 </script>
 
 {#if total > 0}
-<div class="relative">
+<div data-slot="detail.episodes" class="relative">
   {#if flipOrder && !$isMobile && aired > 0}
     <button type="button" data-focusable class="episode-order-flip" onclick={flipSort}
             title={sortDir === 'asc' ? 'Show newest first' : 'Show oldest first'}

@@ -532,7 +532,7 @@
     </div>
   {:else}
   <div
-    data-slot={showOverlay ? 'home.hero' : undefined}
+    data-slot={showOverlay ? 'home.hero' : 'detail.banner'}
     data-variant="desktop"
     data-nav-row
     class="hero-root relative mb-6 h-[40vh] touch-pan-y select-none transition-opacity duration-500 {bannerScale ? 'theme-banner-scale mb-0' : seriesBannerHeight ? '' : showOverlay ? 'sm:h-[50vh]' : controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'} {scrolled ? 'opacity-40' : 'opacity-100'}"

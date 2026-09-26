@@ -15,7 +15,7 @@
 
 {#if view === 'people'}
   <div class="space-y-7">
-    <section>
+    <section data-slot="detail.characters">
       <h3 class="mb-3 text-lg font-black">{media.type === 'MANGA' ? 'Characters' : 'Characters & Japanese voices'}</h3>
       {#if media.characters?.edges?.length}
         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
