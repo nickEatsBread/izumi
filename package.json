@@ -52,6 +52,7 @@
     "@fontsource/geist-mono": "^5.3.0",
     "@fontsource/lato": "^5.3.0",
     "@fontsource/poppins": "^5.3.0",
+    "@fontsource/sansita": "^5.3.0",
     "@lucide/svelte": "^1.41.0",
     "@nicholasyoannou/hayami-sdk": "github:nicholasyoannou/hayami-sdk",
     "@tauri-apps/api": "^2",

@@ -46,6 +46,10 @@ const FACES: Record<string, Face[]> = {
   'bebas-neue': [
     { weight: '400', latin: () => import('@fontsource/bebas-neue/files/bebas-neue-latin-400-normal.woff2?url'), latinExt: () => import('@fontsource/bebas-neue/files/bebas-neue-latin-ext-400-normal.woff2?url') },
   ],
+  'sansita': [
+    { weight: '400', latin: () => import('@fontsource/sansita/files/sansita-latin-400-normal.woff2?url'), latinExt: () => import('@fontsource/sansita/files/sansita-latin-ext-400-normal.woff2?url') },
+    { weight: '700', latin: () => import('@fontsource/sansita/files/sansita-latin-700-normal.woff2?url'), latinExt: () => import('@fontsource/sansita/files/sansita-latin-ext-700-normal.woff2?url') },
+  ],
 }
 
 async function register(family: string, weight: string, source: Url, unicodeRange: string): Promise<void> {
