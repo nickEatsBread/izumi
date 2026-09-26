@@ -21,9 +21,9 @@
   const href = (genre: string) => `/app/search?genre=${encodeURIComponent(genre)}`
 </script>
 
-<section data-block data-slot="block.genre-chips" data-nav-row class="mb-6 px-4 sm:px-8">
+<section data-block data-slot="block.genre-chips" class="mb-6 px-4 sm:px-8">
   {#if block.title}<h2 data-part="block.title" class="mb-3 text-lg font-black">{block.title}</h2>{/if}
-  <div data-nav-row-items class="flex flex-wrap gap-2">
+  <div data-nav-row data-nav-row-wrap data-nav-row-items class="flex flex-wrap gap-2">
     {#if block.all}
       <a data-part="chip" data-active="true" data-focusable href="/app/search" class="rounded-full bg-primary px-3.5 py-1.5 text-sm font-bold text-primary-foreground">All</a>
     {/if}

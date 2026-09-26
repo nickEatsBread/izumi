@@ -46,4 +46,42 @@ describe('Home blocks wiring', () => {
       expect(source, file).toContain('$isMobile && !$homeEditorOpen')
     }
   })
+
+  it('gives each block control strip its own nav row instead of one row for the whole section', () => {
+    const genreChips = read('./blocks/GenreChips.svelte')
+    expect(genreChips).not.toMatch(/data-slot="block\.genre-chips"[^>]*data-nav-row/)
+    expect(genreChips).toContain('data-nav-row data-nav-row-wrap data-nav-row-items')
+
+    const latestEpisodes = read('./blocks/LatestEpisodes.svelte')
+    expect(latestEpisodes).not.toMatch(/data-slot="block\.latest-episodes"[^>]*data-nav-row/)
+    expect(latestEpisodes).toContain('data-nav-row data-nav-row-wrap data-nav-row-items')
+
+    const tabbedGrid = read('./blocks/TabbedGrid.svelte')
+    expect(tabbedGrid).not.toMatch(/data-slot="block\.tabbed-grid"[^>]*data-nav-row/)
+    expect(tabbedGrid).toContain('<div data-nav-row><Tabs')
+    expect(tabbedGrid).toContain('data-nav-row data-nav-row-wrap data-nav-row-items')
+
+    const rankedList = read('./blocks/RankedList.svelte')
+    expect(rankedList).not.toMatch(/data-slot="block\.ranked-list"[^>]*data-nav-row/)
+    expect(rankedList).toContain('<div data-nav-row><Tabs')
+    expect(rankedList).toContain('<ol data-nav-row data-nav-row-wrap data-nav-row-items')
+
+    const pager = read('./Pager.svelte')
+    expect(pager).toContain('<nav data-part="pagination" data-nav-row')
+    expect(pager).toContain('<div data-part="pagination" data-nav-row')
+  })
+
+  it("only gives an AniList row's numbered-page cards an absolute rank", () => {
+    const tabbedGrid = read('./blocks/TabbedGrid.svelte')
+    expect(tabbedGrid).toContain("if (block.pagination === 'more') return index + 1")
+    expect(tabbedGrid).toContain("rowSource(target, rowId)?.kind === 'anilist'")
+    expect(tabbedGrid).toContain('return undefined')
+  })
+
+  it('keeps tab labels unique when adding or renaming, and never leaves a rejected checkbox toggle checked in the DOM', () => {
+    const settings = read('./BlockSettings.svelte')
+    expect(settings).toContain('function uniqueTabLabel(')
+    expect(settings).toContain('event.currentTarget.value = tab.label')
+    expect(settings).toContain('event.currentTarget.checked = exists')
+  })
 })

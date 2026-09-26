@@ -45,9 +45,9 @@
   const facts = (item: Media) => [format(item), item.episodes ? `${item.episodes} eps` : '', item.averageScore ? `${item.averageScore}%` : ''].filter(Boolean).join(' · ')
 </script>
 
-<section data-block data-slot="block.ranked-list" data-nav-row use:nearViewport={{ onEnter: () => (visible = true) }} class="mb-8 px-4 sm:px-8">
+<section data-block data-slot="block.ranked-list" use:nearViewport={{ onEnter: () => (visible = true) }} class="mb-8 px-4 sm:px-8">
   <h2 data-part="block.title" class="mb-3 text-lg font-black">{block.title || current || 'Top titles'}</h2>
-  {#if labels.length > 1}<Tabs tabs={labels} bind:active={() => current, (label) => (selected = label)} variant="segmented" />{/if}
+  {#if labels.length > 1}<div data-nav-row><Tabs tabs={labels} bind:active={() => current, (label) => (selected = label)} variant="segmented" /></div>{/if}
   {#if !block.tabs.length}
     <p class="text-sm text-muted-foreground">Choose rows for this block in Edit Home.</p>
   {:else}
@@ -56,7 +56,7 @@
       <button type="button" data-part="button" data-variant="secondary" data-focusable onclick={() => retry++}
         class="mb-3 min-h-9 rounded-md bg-secondary px-4 text-sm font-bold transition hover:bg-accent">Retry</button>
     {/if}
-    <ol data-nav-row-items class="space-y-1.5">
+    <ol data-nav-row data-nav-row-wrap data-nav-row-items class="space-y-1.5">
       {#if !visible || (loading && !media.length)}
         {#each Array.from({ length: Math.min(block.limit, 5) }) as _, index (index)}<li class="h-[4.75rem] rounded-lg skeloader"></li>{/each}
       {:else}
@@ -64,7 +64,9 @@
           <li>
             <a data-part="block.item" data-focusable href={mediaHref(item)} class="flex items-center gap-3 rounded-lg p-1.5 transition hover:bg-secondary/60">
               <span data-part="block.rank" class="w-8 shrink-0 text-center text-xl font-black tabular-nums {index < 3 ? 'text-theme' : 'text-muted-foreground'}">{index + 1}</span>
-              <img data-part="card.art" src={cardCover(item, 48)} alt="" loading="lazy" decoding="async" draggable="false" class="aspect-[2/3] w-12 shrink-0 rounded bg-muted object-cover" />
+              <div data-part="card.art" class="aspect-[2/3] w-12 shrink-0 overflow-hidden rounded bg-muted">
+                <img src={cardCover(item, 48)} alt="" loading="lazy" decoding="async" draggable="false" class="size-full object-cover" />
+              </div>
               <span class="min-w-0 flex-1">
                 <span data-part="card.title" class="line-clamp-2 text-sm font-bold">{mediaTitle(item)}</span>
                 {#if facts(item)}<span data-part="card.meta" class="mt-0.5 block text-xs text-muted-foreground">{facts(item)}</span>{/if}

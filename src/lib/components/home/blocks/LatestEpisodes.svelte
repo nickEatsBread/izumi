@@ -95,7 +95,7 @@
   })
 </script>
 
-<section bind:this={section} data-block data-slot="block.latest-episodes" data-nav-row data-nav-row-wrap="" use:nearViewport={{ onEnter: () => (visible = true) }}
+<section bind:this={section} data-block data-slot="block.latest-episodes" use:nearViewport={{ onEnter: () => (visible = true) }}
   class="mb-8 scroll-mt-20 px-4 sm:px-8">
   <h2 data-part="block.title" class="mb-3 text-lg font-black">{block.title || 'Latest episodes'}</h2>
   {#if error}
@@ -103,7 +103,7 @@
     <button type="button" data-part="button" data-variant="secondary" data-focusable onclick={() => retry++}
       class="mb-3 min-h-9 rounded-md bg-secondary px-4 text-sm font-bold transition hover:bg-accent">Retry</button>
   {/if}
-  <div data-nav-row-items class="grid gap-x-3 gap-y-4" style:grid-template-columns={`repeat(${columns}, minmax(0, 1fr))`}>
+  <div data-nav-row data-nav-row-wrap data-nav-row-items class="grid gap-x-3 gap-y-4" style:grid-template-columns={`repeat(${columns}, minmax(0, 1fr))`}>
     {#if !visible || (loading && !items.length)}
       {#each Array.from({ length: block.pageSize }) as _, index (index)}
         <div><div class="aspect-video rounded-lg skeloader"></div><div class="mt-2 h-4 w-3/4 rounded skeloader"></div></div>
@@ -114,8 +114,10 @@
         <article data-part="block.item" class="min-w-0">
           <button type="button" data-focusable onclick={() => play(release)} aria-label={`Play ${mediaTitle(release.media)} episode ${release.episode}`}
             class="group relative block aspect-video w-full overflow-hidden rounded-lg bg-muted">
-            <img data-part="episode.still" src={releaseStill(release, stills[key])} alt="" loading="lazy" decoding="async" draggable="false"
-              class="size-full object-cover transition duration-300 group-hover:scale-105" />
+            <div data-part="episode.still" class="absolute inset-0">
+              <img src={releaseStill(release, stills[key])} alt="" loading="lazy" decoding="async" draggable="false"
+                class="size-full object-cover transition duration-300 group-hover:scale-105" />
+            </div>
             <span data-part="episode.number" class="absolute left-2 top-2 rounded bg-black/75 px-1.5 py-0.5 text-xs font-black text-white">EP {release.episode}</span>
             {#if playing === key}
               <span class="absolute inset-0 grid place-items-center bg-black/50"><span class="size-7 animate-spin rounded-full border-2 border-white/30 border-t-white"></span></span>

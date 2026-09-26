@@ -1,12 +1,15 @@
 <script lang="ts">
+  import { get } from 'svelte/store'
   import { fade, fly } from 'svelte/transition'
   import X from '@lucide/svelte/icons/x'
+  import { decodeMergedCatalogHomeRowId } from '$lib/catalog/registry'
   import type { CatalogHomeTarget } from '$lib/catalog/home-layout'
   import type { CatalogHomeRowOption } from '$lib/catalog/types'
   import { blockTitle, updateHomeBlock } from '$lib/home/block-rows'
-  import { BLOCK_LIMITS, BLOCK_META, TOP_GENRES, homeAsideWidth, homeBlocks, type BlockButton, type HomeBlock } from '$lib/home/blocks'
+  import { BLOCK_LIMITS, BLOCK_META, TOP_GENRES, homeAsideWidth, homeBlocks, type BlockButton, type BlockTab, type HomeBlock } from '$lib/home/blocks'
   import { loadGenres } from '$lib/home/genres'
   import { NAV_META, type NavItemId } from '$lib/settings/nav'
+  import { catalogLabel } from '$lib/settings/catalog'
 
   // Settings for one Home block, opened from its frame in Edit Home. Every change is repaired and saved at once.
   let { id, target, rows, onclose }: { id: string; target: CatalogHomeTarget; rows: CatalogHomeRowOption[]; onclose: () => void } = $props()
@@ -28,17 +31,55 @@
     return () => abort.abort()
   })
 
+  // Tabs is keyed on its label and parseHomeBlock's parseTabs silently drops a later duplicate, so
+  // a new tab must never start out sharing another tab's label. Prefer appending the source catalog
+  // (Merged Home tabs are often the same default title from two different catalogs); fall back to a
+  // numbered suffix for anything still colliding after that (including a same-catalog duplicate).
+  function uniqueTabLabel(base: string, role: string, existing: string[]): string {
+    if (!existing.includes(base)) return base
+    const decoded = decodeMergedCatalogHomeRowId(role)
+    if (decoded) {
+      const withCatalog = `${base} · ${catalogLabel(decoded.selection)}`.slice(0, BLOCK_LIMITS.label)
+      if (withCatalog !== base && !existing.includes(withCatalog)) return withCatalog
+    }
+    for (let n = 2; n < 100; n++) {
+      const numbered = `${base} ${n}`.slice(0, BLOCK_LIMITS.label)
+      if (!existing.includes(numbered)) return numbered
+    }
+    return base
+  }
+
   function toggleTab(row: CatalogHomeRowOption, on: boolean, max: number) {
     if (block?.type !== 'tabbed-grid' && block?.type !== 'ranked-list') return
     const tabs = on
-      ? [...block.tabs, { label: row.title.slice(0, BLOCK_LIMITS.label), role: row.id }].slice(0, max)
+      ? [...block.tabs, { label: uniqueTabLabel(row.title.slice(0, BLOCK_LIMITS.label), row.id, block.tabs.map((tab) => tab.label)), role: row.id }].slice(0, max)
       : block.tabs.filter((tab) => tab.role !== row.id)
     set({ tabs })
   }
 
-  function renameTab(role: string, label: string) {
+  // `set` truncates to `max` and may otherwise leave `tabs` unchanged (e.g. a race with another
+  // toggle already at the limit); the native checkbox has already flipped itself by the time this
+  // handler runs, so resync it to what the store actually ended up with.
+  function onToggleTab(event: Event & { currentTarget: HTMLInputElement }, row: CatalogHomeRowOption, max: number) {
+    toggleTab(row, event.currentTarget.checked, max)
+    const current = get(homeBlocks)[id]
+    const exists = !!(current && (current.type === 'tabbed-grid' || current.type === 'ranked-list') && current.tabs.some((tab) => tab.role === row.id))
+    event.currentTarget.checked = exists
+  }
+
+  // A blank or duplicate rename would otherwise reach parseHomeBlock and have the tab silently
+  // dropped (parseTabs treats a repeated label as invalid), not just left renamed. Reject it here
+  // instead, and reset the input back to the tab's current label so the field does not keep showing
+  // text that was never actually saved.
+  function renameTab(event: Event & { currentTarget: HTMLInputElement }, tab: BlockTab) {
     if (block?.type !== 'tabbed-grid' && block?.type !== 'ranked-list') return
-    set({ tabs: block.tabs.map((tab) => (tab.role === role ? { ...tab, label: label.trim() || tab.label } : tab)) })
+    const label = event.currentTarget.value.trim().slice(0, BLOCK_LIMITS.label)
+    const duplicate = block.tabs.some((item) => item.role !== tab.role && item.label === label)
+    if (!label || duplicate) {
+      event.currentTarget.value = tab.label
+      return
+    }
+    set({ tabs: block.tabs.map((item) => (item.role === tab.role ? { ...item, label } : item)) })
   }
 
   const pressed = (on: boolean) => on ? 'border-theme bg-theme/15 text-foreground' : 'border-border text-muted-foreground hover:text-foreground'
@@ -47,7 +88,7 @@
 {#if block}
   <button type="button" tabindex="-1" aria-label="Close block settings" onclick={onclose} class="fixed inset-0 z-[74] bg-black/70 backdrop-blur-sm" transition:fade={{ duration: 120 }}></button>
   <div class="pointer-events-none fixed inset-x-0 bottom-0 z-[75] flex max-h-[min(84vh,46rem)] justify-center sm:inset-0 sm:items-center sm:p-5">
-    <div role="dialog" aria-modal="true" aria-labelledby="block-settings-title" data-nav-trap class="pointer-events-auto flex max-h-full w-full flex-col overflow-hidden rounded-t-3xl border border-border bg-background shadow-2xl sm:max-w-lg sm:rounded-3xl" transition:fly={{ y: 22, duration: 170 }}>
+    <div role="dialog" aria-modal="true" aria-labelledby="block-settings-title" data-nav-trap data-nav-escape class="pointer-events-auto flex max-h-full w-full flex-col overflow-hidden rounded-t-3xl border border-border bg-background shadow-2xl sm:max-w-lg sm:rounded-3xl" transition:fly={{ y: 22, duration: 170 }}>
       <div class="flex items-start gap-3 border-b border-border px-5 pb-4 pt-5">
         <div class="min-w-0 flex-1">
           <h2 id="block-settings-title" class="text-lg font-black">{blockTitle(block)}</h2>
@@ -93,11 +134,11 @@
                 {@const tab = block.tabs.find((item) => item.role === row.id)}
                 <div class="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-secondary/50">
                   <input data-focusable type="checkbox" id={`block-tab-${row.id}`} checked={!!tab} disabled={!tab && block.tabs.length >= max}
-                    onchange={(event) => toggleTab(row, event.currentTarget.checked, max)} class="size-4 shrink-0" />
+                    onchange={(event) => onToggleTab(event, row, max)} class="size-4 shrink-0" />
                   <label for={`block-tab-${row.id}`} class="min-w-0 flex-1 truncate text-sm">{row.title}</label>
                   {#if tab}
                     <input data-focusable type="text" aria-label={`Tab label for ${row.title}`} maxlength={BLOCK_LIMITS.label} value={tab.label}
-                      onchange={(event) => renameTab(row.id, event.currentTarget.value)} class="h-8 w-36 rounded-md border border-border bg-card px-2 text-xs" />
+                      onchange={(event) => renameTab(event, tab)} class="h-8 w-36 rounded-md border border-border bg-card px-2 text-xs" />
                   {/if}
                 </div>
               {:else}

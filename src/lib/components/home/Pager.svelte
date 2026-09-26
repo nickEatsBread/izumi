@@ -18,7 +18,7 @@
 </script>
 
 {#if mode === 'numbers' && (page > 1 || hasNext)}
-  <nav data-part="pagination" aria-label="Pages" class="mt-5 flex flex-wrap items-center justify-center gap-1.5">
+  <nav data-part="pagination" data-nav-row aria-label="Pages" class="mt-5 flex flex-wrap items-center justify-center gap-1.5">
     <button type="button" data-focusable disabled={page <= 1 || loading} onclick={() => onpage(page - 1)} aria-label="Previous page"
       class="grid size-9 place-items-center rounded-md bg-secondary transition hover:bg-accent disabled:opacity-40"><ChevronLeft size={16} /></button>
     {#each items as item, index (index)}
@@ -34,7 +34,7 @@
       class="grid size-9 place-items-center rounded-md bg-secondary transition hover:bg-accent disabled:opacity-40"><ChevronRight size={16} /></button>
   </nav>
 {:else if mode === 'more' && hasNext}
-  <div data-part="pagination" class="mt-5 flex justify-center">
+  <div data-part="pagination" data-nav-row class="mt-5 flex justify-center">
     <button type="button" data-part="button" data-variant="secondary" data-focusable disabled={loading} onclick={() => onpage(page + 1)}
       class="min-h-10 rounded-md bg-secondary px-5 text-sm font-bold transition hover:bg-accent disabled:opacity-50">{loading ? 'Loading…' : 'Load more'}</button>
   </div>

@@ -4,7 +4,7 @@
   import Tabs from '$lib/components/detail/Tabs.svelte'
   import type { CatalogHomeTarget } from '$lib/catalog/home-layout'
   import type { TabbedGridBlock } from '$lib/home/blocks'
-  import { appendUnique, loadRowPage, resolveRowId } from '$lib/home/row-source'
+  import { appendUnique, loadRowPage, resolveRowId, rowSource } from '$lib/home/row-source'
   import { isMobile } from '$lib/platform'
   import { nearViewport } from '$lib/util/near-viewport'
   import Pager from '../Pager.svelte'
@@ -65,12 +65,22 @@
     page = next
     if (block.pagination === 'numbers') section?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   }
+
+  // "Load more" accumulates every page into one list, so a card's rank is just its place in it.
+  // Page numbers instead reload each page in isolation — reconstructing an absolute rank from
+  // `page`/`pageSize` only holds for AniList rows, since only their pages actually honour our
+  // configured pageSize; another provider's own page size can differ, so its cards get no rank.
+  function cardPosition(index: number): number | undefined {
+    if (block.pagination === 'more') return index + 1
+    if (rowId && rowSource(target, rowId)?.kind === 'anilist') return (page - 1) * block.pageSize + index + 1
+    return undefined
+  }
 </script>
 
-<section bind:this={section} data-block data-slot="block.tabbed-grid" data-nav-row data-nav-row-wrap="" use:nearViewport={{ onEnter: () => (visible = true) }}
+<section bind:this={section} data-block data-slot="block.tabbed-grid" use:nearViewport={{ onEnter: () => (visible = true) }}
   class="mb-8 scroll-mt-20 px-4 sm:px-8">
   {#if block.title}<h2 data-part="block.title" class="mb-3 text-lg font-black">{block.title}</h2>{/if}
-  {#if labels.length > 1}<Tabs tabs={labels} bind:active={() => current, choose} />{/if}
+  {#if labels.length > 1}<div data-nav-row><Tabs tabs={labels} bind:active={() => current, choose} /></div>{/if}
   {#if !block.tabs.length}
     <p class="text-sm text-muted-foreground">Choose rows for this block in Edit Home.</p>
   {:else}
@@ -79,14 +89,14 @@
       <button type="button" data-part="button" data-variant="secondary" data-focusable onclick={() => retry++}
         class="mb-3 min-h-9 rounded-md bg-secondary px-4 text-sm font-bold transition hover:bg-accent">Retry</button>
     {/if}
-    <div data-nav-row-items class="grid gap-x-3 gap-y-5" style:grid-template-columns={`repeat(${columns}, minmax(0, 1fr))`}>
+    <div data-nav-row data-nav-row-wrap data-nav-row-items class="grid gap-x-3 gap-y-5" style:grid-template-columns={`repeat(${columns}, minmax(0, 1fr))`}>
       {#if !visible || (loading && !media.length)}
         {#each Array.from({ length: Math.min(block.pageSize, columns * 2) }) as _, index (index)}
           <div class="aspect-[2/3] rounded-md skeloader"></div>
         {/each}
       {:else}
         {#each media as item, index (item.id)}
-          <div data-part="block.item" class="min-w-0"><SmallCard media={item} fill reserveTitleLines position={(page - 1) * block.pageSize + index + 1} /></div>
+          <div data-part="block.item" class="min-w-0"><SmallCard media={item} fill reserveTitleLines position={cardPosition(index)} /></div>
         {/each}
       {/if}
     </div>
