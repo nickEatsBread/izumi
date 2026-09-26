@@ -20,7 +20,7 @@
 
 {#if open}
   <button type="button" tabindex="-1" aria-label="Close menu" onclick={() => (open = false)} class="fixed inset-0 z-[70] bg-black/60" transition:fade={{ duration: 120 }}></button>
-  <aside bind:this={panel} data-slot="nav.drawer" role="dialog" aria-modal="true" aria-label="Menu" data-nav-trap data-nav-escape class="fixed inset-y-0 left-0 z-[71] flex w-72 flex-col gap-1 border-r border-border bg-background p-3 pt-10 shadow-2xl" transition:fly={{ x: -24, duration: 160 }}>
+  <div bind:this={panel} data-slot="nav.drawer" role="dialog" aria-modal="true" aria-label="Menu" data-nav-trap data-nav-escape class="fixed inset-y-0 left-0 z-[71] flex w-72 flex-col gap-1 border-r border-border bg-background p-3 pt-10 shadow-2xl" transition:fly={{ x: -24, duration: 160 }}>
     <button type="button" data-focusable aria-label="Close menu" onclick={() => (open = false)} class="mb-2 grid size-10 place-items-center self-end rounded-lg hover:bg-accent"><X size={20} /></button>
     {#each items as item (item.href)}
       {@const on = active(item.href)}
@@ -30,5 +30,5 @@
         <span data-part="nav.item.label">{item.label}</span>
       </a>
     {/each}
-  </aside>
+  </div>
 {/if}

@@ -629,7 +629,7 @@
           {#if m.popularity}<span class="opacity-35">·</span><span>{compactNumber.format(m.popularity)} members</span>{/if}
         </div>
         {:else}
-          <FactList media={m} variant={factsStyle} progress={effProgress > 0 ? `${effProgress}/${epsTotal(m) || '?'}` : undefined} {controllerUi} />
+          <FactList media={m} variant={factsStyle} progress={effProgress > 0 ? `${effProgress}/${epsTotal(m) || '?'}` : undefined} {controllerUi} genres={false} />
         {/if}
         {#if countdown !== 'none'}<AiringCountdown media={m} variant={countdown} />{/if}
 

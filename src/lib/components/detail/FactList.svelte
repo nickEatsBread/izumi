@@ -10,6 +10,7 @@
     className = 'mt-3',
     progress,
     controllerUi = false,
+    genres = true,
   }: {
     media: Media
     variant: 'table' | 'cards' | 'chips'
@@ -21,10 +22,12 @@
      * place a non-template facts style could otherwise lose it entirely. */
     progress?: string
     controllerUi?: boolean
+    /** Phones already show genres as their own chip rail under the facts, so they leave them out here. */
+    genres?: boolean
   } = $props()
   const facts = $derived.by((): MediaFact[] => [
     ...(progress ? [{ key: 'progress', label: 'Watched', value: progress }] : []),
-    ...mediaFacts(media),
+    ...mediaFacts(media).filter((fact) => genres || fact.key !== 'genres'),
   ])
 </script>
 
