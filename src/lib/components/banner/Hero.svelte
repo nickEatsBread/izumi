@@ -335,7 +335,11 @@
     const src = banner(current) || cover(current)
     let cancelled = false
     void sampleAmbient(src).then((rgb) => {
-      if (!cancelled && rgb) document.documentElement.style.setProperty('--hero-ambient-rgb', rgb)
+      if (cancelled) return
+      // An unreadable image clears the value, so the stylesheet's var() fallback applies instead of
+      // the previous slide's colour.
+      if (rgb) document.documentElement.style.setProperty('--hero-ambient-rgb', rgb)
+      else document.documentElement.style.removeProperty('--hero-ambient-rgb')
     })
     return () => { cancelled = true }
   })
