@@ -6,9 +6,14 @@
   import { homeEditorInsertRequest, homeEditorOpen, insertHomeRow } from '$lib/catalog/home-editor'
   import type { CatalogHomeRowOption } from '$lib/catalog/types'
   import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
-  import { catalogLabel, catalogProviders } from '$lib/settings/catalog'
+  import BlockSettings from '$lib/components/home/BlockSettings.svelte'
+  import { addHomeBlock, blockRowOptions, homeBlockSettingsId, pruneHomeBlocks } from '$lib/home/block-rows'
+  import { BLOCK_META, HOME_BLOCK_TYPES, blockAvailable, homeBlocks, type HomeBlockType } from '$lib/home/blocks'
+  import { tabbableRows } from '$lib/home/row-source'
+  import { catalogLabel, catalogProviders, isLegacyAniListCatalog, mergedCatalogProviders } from '$lib/settings/catalog'
   import Check from '@lucide/svelte/icons/check'
   import Layers3 from '@lucide/svelte/icons/layers-3'
+  import LayoutGrid from '@lucide/svelte/icons/layout-grid'
   import Plus from '@lucide/svelte/icons/plus'
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw'
   import Search from '@lucide/svelte/icons/search'
@@ -22,7 +27,14 @@
   let sectionSearch = $state('')
   let dialog = $state<HTMLDivElement>()
   const label = $derived(target === 'merged' ? 'Merged' : catalogLabel(target))
-  const rows = $derived(resolveCatalogHomeRows(target, options, $catalogHomeLayouts))
+  const rows = $derived(resolveCatalogHomeRows(target, [...options, ...blockRowOptions(target, $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts))
+  const usesAniList = $derived(target === 'merged' ? mergedCatalogProviders($catalogProviders).some((provider) => isLegacyAniListCatalog(provider)) : isLegacyAniListCatalog(target))
+  const tabRows = $derived(tabbableRows(options))
+  const blockTypes = $derived.by(() => {
+    const query = sectionSearch.trim().toLowerCase()
+    return HOME_BLOCK_TYPES.filter((type) => blockAvailable(type, usesAniList)
+      && (!query || `${BLOCK_META[type].title} ${BLOCK_META[type].description}`.toLowerCase().includes(query)))
+  })
   const available = $derived(rows.filter((row) => !row.enabled))
   const matchingAvailable = $derived.by(() => {
     const query = sectionSearch.trim().toLowerCase()
@@ -83,6 +95,7 @@
   })
 
   function closeEditor() {
+    homeBlockSettingsId.set(null)
     sectionSearch = ''
     homeEditorInsertRequest.set(null)
     homeEditorOpen.set(false)
@@ -93,8 +106,15 @@
     homeEditorInsertRequest.set(null)
   }
 
+  function addBlock(type: HomeBlockType) {
+    const id = addHomeBlock(target, rows, type, request?.beforeId ?? null, tabRows.map((row) => row.id))
+    homeEditorInsertRequest.set(null)
+    homeBlockSettingsId.set(id)
+  }
+
   function onKeydown(event: KeyboardEvent) {
     if (event.key !== 'Escape') return
+    if ($homeBlockSettingsId) { homeBlockSettingsId.set(null); return }
     if (request) homeEditorInsertRequest.set(null)
     else closeEditor()
   }
@@ -113,7 +133,7 @@
     <button type="button" data-focusable onclick={() => homeEditorInsertRequest.set({ target, beforeId: null })} class="inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-sm font-bold transition hover:bg-white/10">
       <Plus size={17} /> <span class="hidden sm:inline">Add section</span><span class="sm:hidden">Add</span>
     </button>
-    <button type="button" data-focusable aria-label={`Reset ${label} Home layout`} title="Reset layout" onclick={() => resetCatalogHomeLayout(target)} class="grid size-10 place-items-center rounded-xl text-white/65 transition hover:bg-white/10 hover:text-white">
+    <button type="button" data-focusable aria-label={`Reset ${label} Home layout`} title="Reset layout" onclick={() => { resetCatalogHomeLayout(target); pruneHomeBlocks() }} class="grid size-10 place-items-center rounded-xl text-white/65 transition hover:bg-white/10 hover:text-white">
       <RotateCcw size={17} />
     </button>
     <button type="button" data-focusable onclick={closeEditor} class="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-white px-3 text-sm font-black text-black transition hover:bg-white/85">
@@ -143,6 +163,19 @@
         {/if}
 
         <div class="overflow-y-auto overscroll-contain p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:p-4">
+          {#if blockTypes.length}
+            <section class="mb-5">
+              <h3 class="mb-1.5 px-2 text-xs font-black uppercase tracking-wide text-muted-foreground">Blocks</h3>
+              <div class="space-y-1">
+                {#each blockTypes as type (type)}
+                  <button type="button" data-focusable onclick={() => addBlock(type)} class="flex min-h-16 w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition hover:bg-secondary focus:bg-secondary">
+                    <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-theme/15 text-theme"><LayoutGrid size={18} /></span>
+                    <span class="min-w-0 flex-1"><span class="block font-black">{BLOCK_META[type].title}</span><span class="mt-0.5 block text-xs text-muted-foreground">{BLOCK_META[type].description}</span></span>
+                  </button>
+                {/each}
+              </div>
+            </section>
+          {/if}
           {#if loading}
             <div class="space-y-2" aria-label="Loading available Home sections">{#each Array.from({ length: 5 }) as _}<div class="h-16 rounded-xl skeloader"></div>{/each}</div>
           {:else if error}
@@ -171,5 +204,9 @@
         </div>
       </div>
     </div>
+  {/if}
+
+  {#if $homeBlockSettingsId && $homeBlocks[$homeBlockSettingsId]}
+    <BlockSettings id={$homeBlockSettingsId} {target} rows={tabRows} onclose={() => homeBlockSettingsId.set(null)} />
   {/if}
 {/if}

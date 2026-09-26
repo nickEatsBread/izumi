@@ -19,4 +19,15 @@ describe('Home blocks wiring', () => {
     const view = read('./HomeBlockView.svelte')
     for (const type of ['latest-episodes', 'tabbed-grid', 'genre-chips', 'ranked-list', 'profile-header']) expect(view).toContain(`block?.type === '${type}'`)
   })
+
+  it('lets Edit Home add, configure and remove blocks', () => {
+    const editor = read('../catalog/HomeEditor.svelte')
+    expect(editor).toContain('addHomeBlock(target, rows, type')
+    expect(editor).toContain('blockRowOptions(target, $catalogHomeLayouts, $homeBlocks)')
+    expect(editor).toContain('<BlockSettings')
+    expect(editor).toContain('pruneHomeBlocks()')
+    const frame = read('../catalog/HomeRowFrame.svelte')
+    expect(frame).toContain('removeHomeBlock(target, rowId)')
+    expect(frame).toContain('homeBlockSettingsId.set(rowId)')
+  })
 })

@@ -9,11 +9,15 @@
     moveHomeRowBefore,
     moveHomeRowBy,
   } from '$lib/catalog/home-editor'
+  import { homeBlockSettingsId, removeHomeBlock } from '$lib/home/block-rows'
+  import { isBlockId } from '$lib/home/blocks'
   import ArrowDown from '@lucide/svelte/icons/arrow-down'
   import ArrowUp from '@lucide/svelte/icons/arrow-up'
   import EyeOff from '@lucide/svelte/icons/eye-off'
   import GripVertical from '@lucide/svelte/icons/grip-vertical'
   import Plus from '@lucide/svelte/icons/plus'
+  import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
+  import Trash2 from '@lucide/svelte/icons/trash-2'
 
   let {
     rowId,
@@ -35,6 +39,7 @@
   let pointerId = $state<number | null>(null)
   let startY = 0
   const index = $derived(visibleIds.indexOf(rowId))
+  const block = $derived(isBlockId(rowId))
 
   function startDrag(event: PointerEvent) {
     if (event.button !== 0 || !$homeEditorOpen) return
@@ -108,7 +113,12 @@
         <div class="flex shrink-0 items-center">
           <button type="button" data-focusable disabled={index <= 0} onclick={() => moveHomeRowBy(target, visibleIds, rowId, -1)} aria-label={`Move ${title} up`} class="grid size-10 place-items-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-20"><ArrowUp size={17} /></button>
           <button type="button" data-focusable disabled={index < 0 || index >= visibleIds.length - 1} onclick={() => moveHomeRowBy(target, visibleIds, rowId, 1)} aria-label={`Move ${title} down`} class="grid size-10 place-items-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-20"><ArrowDown size={17} /></button>
-          <button type="button" data-focusable onclick={() => hideHomeRow(target, visibleIds, rowId)} aria-label={`Hide ${title}`} title="Hide section" class="grid size-10 place-items-center rounded-lg text-muted-foreground hover:bg-destructive/15 hover:text-destructive"><EyeOff size={17} /></button>
+          {#if block}
+            <button type="button" data-focusable onclick={() => homeBlockSettingsId.set(rowId)} aria-label={`Settings for ${title}`} title="Block settings" class="grid size-10 place-items-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground"><SlidersHorizontal size={17} /></button>
+            <button type="button" data-focusable onclick={() => removeHomeBlock(target, rowId)} aria-label={`Remove ${title}`} title="Remove block" class="grid size-10 place-items-center rounded-lg text-muted-foreground hover:bg-destructive/15 hover:text-destructive"><Trash2 size={17} /></button>
+          {:else}
+            <button type="button" data-focusable onclick={() => hideHomeRow(target, visibleIds, rowId)} aria-label={`Hide ${title}`} title="Hide section" class="grid size-10 place-items-center rounded-lg text-muted-foreground hover:bg-destructive/15 hover:text-destructive"><EyeOff size={17} /></button>
+          {/if}
         </div>
       </div>
       <div class="pointer-events-none select-none py-3 opacity-90" inert>
