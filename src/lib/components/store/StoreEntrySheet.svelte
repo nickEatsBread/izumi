@@ -104,7 +104,7 @@
         {#if onmanage}<button type="button" data-focusable onclick={onmanage} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold">Manage in Themes</button>{/if}
         {#if onremove}<button type="button" data-focusable disabled={busy} onclick={onremove} class="rounded-md px-3 py-2 text-sm font-bold text-destructive active:bg-destructive/10">Remove</button>{/if}
       {:else if elsewhere}
-        <p class="self-center text-sm text-muted-foreground">Installed from another store. Remove it there to install this one.</p>
+        <p class="self-center text-sm text-muted-foreground">Installed from another store or source. Remove it first to install this one.</p>
       {:else}
         <button type="button" data-focusable disabled={busy || locked} onclick={oninstall}
                 class="rounded-md bg-primary px-4 py-2 text-sm font-black text-primary-foreground disabled:opacity-40">{installLabel}</button>

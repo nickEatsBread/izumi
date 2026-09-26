@@ -38,8 +38,9 @@ async function migrate(fetchInfo?: FetchInfo): Promise<number> {
     } catch {
       continue
     }
-    // Unreachable (network, server error, rate limit): try again next time. A 4xx answer is final.
-    if (!result.packages && /could not be fetched|returned HTTP (?:5\d\d|429)/.test(result.problem ?? '')) continue
+    // Unreachable (network, server error, rate limit, timeout): try again next time. Other 4xx answers
+    // are final.
+    if (!result.packages && /could not be fetched|returned HTTP (?:5\d\d|429|408)/.test(result.problem ?? '')) continue
     // A catalog switched off on the Sources page stays switched off as a store.
     if (result.packages && registerCatalogStore(spec, !get(disabledExtensions).includes(spec))) registered += 1
     examinedCatalogSpecs.update((specs) => (specs.includes(spec) ? specs : [...specs, spec]))

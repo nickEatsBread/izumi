@@ -5,6 +5,7 @@ import { THEME_CATALOG_URL } from '$lib/themes/packages'
 import { ADDON_DIRECTORY_ID } from './types'
 import { canonicalStoreUrl } from './url'
 import { forgetStoreListing } from './listing-cache'
+import { disabledExtensions } from '$lib/settings/ui'
 
 // The stores the Store browses (spec §6.1). Built-in stores are defined here and can be hidden but
 // not deleted. The user's store list syncs between devices through the device snapshot; key pins
@@ -32,15 +33,15 @@ export const MAX_USER_STORES = 50
 const FINGERPRINT = /^[a-f0-9]{64}$/
 const BUILTIN_IDS: readonly string[] = [...BUILTIN_STORES.map((store) => store.id), ADDON_DIRECTORY_ID]
 /** Names only izumi's own stores use, so a user store can't pass itself off as one of them: the
- *  built-in names, and anything that starts with the word "izumi". */
+ *  built-in names, and anything that starts with "izumi". */
 const RESERVED_NAMES = new Set([...BUILTIN_STORES.map((store) => store.name), 'Addon directory'].map((name) => name.toLowerCase()))
-const reservedName = (name: string) => RESERVED_NAMES.has(name.toLowerCase()) || /^izumi\b/i.test(name)
+const reservedName = (name: string) => RESERVED_NAMES.has(name.toLowerCase()) || /^izumi/i.test(name)
 
 /** A store's display name: invisible and text-direction characters dropped, whitespace collapsed, at
  *  most 64 characters, and never one of izumi's own names — those fall back to the store's host. */
 export function storeName(value: unknown, url: string): string {
   const name = typeof value === 'string'
-    ? value.replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, '').replace(/\s+/g, ' ').trim().slice(0, 64)
+    ? value.replace(/[\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, '').replace(/\s+/g, ' ').trim().slice(0, 64)
     : ''
   return name && !reservedName(name) ? name : sourceLabel(url)
 }
@@ -156,6 +157,12 @@ export function removeStore(id: string): void {
 }
 
 export function setStoreEnabled(id: string, enabled: boolean): void {
+  if (enabled) {
+    // Switching a store on also switches its catalog back on in Sources: background updates skip a
+    // catalog while either switch is off, and Sources shows no switch for catalogs.
+    const url = get(allStores).find((store) => store.id === id)?.url
+    if (url) disabledExtensions.update((specs) => specs.filter((spec) => (canonicalStoreUrl(spec) ?? spec) !== url))
+  }
   if (BUILTIN_IDS.includes(id)) {
     hiddenBuiltinStores.update((hidden) => {
       const current = normalizeHiddenBuiltins(hidden)

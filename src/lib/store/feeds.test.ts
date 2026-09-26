@@ -7,6 +7,7 @@ import {
   setStoreEnabled, storeIdForUrl, storePins, userStores,
 } from './feeds'
 import { ADDON_DIRECTORY_ID } from './types'
+import { disabledExtensions } from '$lib/settings/ui'
 
 const KEY = 'c'.repeat(64)
 const OTHER = 'd'.repeat(64)
@@ -109,9 +110,21 @@ describe('store registry', () => {
     addStore('https://real.example.test/index.json', '  Anime   Picks ')
     addStore('https://fake5.example.test/index.json', 'Izumi Official')
     addStore('https://real2.example.test/index.json', 'Picks\u202E gnirts')
+    addStore('https://fake6.example.test/index.json', 'izumi_packages')
+    addStore('https://fake7.example.test/index.json', '\u00ADizumi packages')
     expect(get(userStores).map((store) => store.name)).toEqual([
       'fake.example.test', 'fake2.example.test', 'fake3.example.test', 'fake4.example.test', 'Anime Picks', 'fake5.example.test', 'Picks gnirts',
+      'fake6.example.test', 'fake7.example.test',
     ])
+  })
+
+  it('switches a catalog back on in Sources when its store is switched on', () => {
+    const feed = addStore('https://cat.example.test/index.json', 'Cat')
+    disabledExtensions.set(['https://cat.example.test/index.json', 'https://other.example.test/x.json'])
+    setStoreEnabled(feed.id, false)
+    expect(get(disabledExtensions)).toHaveLength(2)
+    setStoreEnabled(feed.id, true)
+    expect(get(disabledExtensions)).toEqual(['https://other.example.test/x.json'])
   })
 
   it('normalises saved lists, hidden ids and pins', () => {
