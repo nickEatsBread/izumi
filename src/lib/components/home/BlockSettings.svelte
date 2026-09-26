@@ -125,6 +125,15 @@
           </div>
         {/if}
 
+        {#if block.type === 'latest-episodes'}
+          <label class="block"><span class="text-sm font-bold">Captions</span>
+            <select data-focusable value={block.caption} onchange={(event) => set({ caption: event.currentTarget.value as 'below' | 'overlay' })} class="mt-1.5 h-10 w-full rounded-lg border border-border bg-card px-2 text-sm">
+              <option value="below">Below the still</option>
+              <option value="overlay">On the still</option>
+            </select>
+          </label>
+        {/if}
+
         {#if block.type === 'tabbed-grid' || block.type === 'ranked-list'}
           {@const max = block.type === 'tabbed-grid' ? BLOCK_LIMITS.tabs : BLOCK_LIMITS.rankedTabs}
           <fieldset>

@@ -21,4 +21,12 @@ describe('theme block schema', () => {
     expect(parseHomeBlock({ type: 'latest-episodes', columns: 40 })).toMatchObject({ columns: 8 })
     expect(NAV_DESTINATIONS).toContain('library')
   })
+
+  it('adds a caption setting to latest-episodes blocks', () => {
+    expect(parseHomeBlock({ type: 'latest-episodes', caption: 'overlay' })).toMatchObject({ caption: 'overlay' })
+    expect(parseHomeBlock({ type: 'latest-episodes' })).toMatchObject({ caption: 'below' })
+    expect(parseHomeBlock({ type: 'latest-episodes', caption: 'side' })).toMatchObject({ caption: 'below' })
+    expect(parseThemeBlock({ block: 'latest-episodes', caption: 'overlay' })).toMatchObject({ caption: 'overlay' })
+    expect(() => parseThemeBlock({ block: 'latest-episodes', caption: 'side' })).toThrow('outside the supported range')
+  })
 })

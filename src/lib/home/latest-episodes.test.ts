@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const query = vi.fn()
 vi.mock('$lib/anilist/client', () => ({ anilist: { query: (...args: unknown[]) => ({ toPromise: () => query(...args) }) } }))
-const { loadLatestEpisodes, releaseStill, appendReleases, releaseKey } = await import('./latest-episodes')
+const { loadLatestEpisodes, releaseStill, appendReleases, releaseKey, isFinale } = await import('./latest-episodes')
 const { showAdult } = await import('$lib/settings/ui')
 
 const release = (id: number, episode: number, isAdult = false) => ({ episode, airingAt: 1_000 + id, media: { id, isAdult, title: { romaji: `T${id}` }, coverImage: { extraLarge: `c${id}` }, bannerImage: id === 1 ? 'b1' : null } })
@@ -41,5 +41,11 @@ describe('latest episodes', () => {
   it('keys releases by title, episode and air time, and appends without repeats', () => {
     expect(releaseKey(release(1, 3) as never)).toBe('1-3-1001')
     expect(appendReleases([release(1, 3)] as never, [release(1, 3), release(2, 4)] as never).map(releaseKey)).toEqual(['1-3-1001', '2-4-1002'])
+  })
+
+  it('flags an episode as the finale only when it reaches the known episode count', () => {
+    expect(isFinale({ episode: 12, media: { episodes: 12 } } as never)).toBe(true)
+    expect(isFinale({ episode: 11, media: { episodes: 12 } } as never)).toBe(false)
+    expect(isFinale({ episode: 3, media: { episodes: null } } as never)).toBe(false)
   })
 })

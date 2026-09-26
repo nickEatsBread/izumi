@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import Check from '@lucide/svelte/icons/check'
   import { mediaHref, title as mediaTitle } from '$lib/anilist/media'
   import { releasedAgo } from '$lib/anime/airing-labels'
   import { fetchAniZip } from '$lib/anizip'
   import * as h from '$lib/haptics'
   import type { LatestEpisodesBlock } from '$lib/home/blocks'
-  import { appendReleases, loadLatestEpisodes, releaseKey, releaseStill, type EpisodeRelease } from '$lib/home/latest-episodes'
+  import { appendReleases, isFinale, loadLatestEpisodes, releaseKey, releaseStill, type EpisodeRelease } from '$lib/home/latest-episodes'
   import { isMobile } from '$lib/platform'
   import type { PlayState } from '$lib/stremio/play'
   import { nearViewport } from '$lib/util/near-viewport'
@@ -95,7 +96,7 @@
   })
 </script>
 
-<section bind:this={section} data-block data-slot="block.latest-episodes" use:nearViewport={{ onEnter: () => (visible = true) }}
+<section bind:this={section} data-block data-slot="block.latest-episodes" data-caption={block.caption} use:nearViewport={{ onEnter: () => (visible = true) }}
   class="mb-8 scroll-mt-20 px-4 sm:px-8">
   <h2 data-part="block.title" class="mb-3 text-lg font-black">{block.title || 'Latest episodes'}</h2>
   {#if error}
@@ -111,20 +112,31 @@
     {:else}
       {#each items as release (releaseKey(release))}
         {@const key = releaseKey(release)}
-        <article data-part="block.item" class="min-w-0">
+        <article data-part="block.item" class="min-w-0 {block.caption === 'overlay' ? 'relative' : ''}">
           <button type="button" data-focusable onclick={() => play(release)} aria-label={`Play ${mediaTitle(release.media)} episode ${release.episode}`}
             class="group relative block aspect-video w-full overflow-hidden rounded-lg bg-muted">
             <div data-part="episode.still" class="absolute inset-0">
               <img src={releaseStill(release, stills[key])} alt="" loading="lazy" decoding="async" draggable="false"
                 class="size-full object-cover transition duration-300 group-hover:scale-105" />
             </div>
-            <span data-part="episode.number" class="absolute left-2 top-2 rounded bg-black/75 px-1.5 py-0.5 text-xs font-black text-white">EP {release.episode}</span>
+            {#if block.caption === 'overlay'}
+              <span class="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent"></span>
+              <span data-part="episode.number" class="absolute bottom-3 right-3.5 text-[1.2rem] font-semibold leading-none text-white [text-shadow:0_1px_2px_#000]">
+                {#if isFinale(release)}<Check size={20} class="text-emerald-500" aria-label="Final episode" />{:else}{release.episode}{/if}
+              </span>
+            {:else}
+              <span data-part="episode.number" class="absolute left-2 top-2 rounded bg-black/75 px-1.5 py-0.5 text-xs font-black text-white">EP {release.episode}</span>
+            {/if}
             {#if playing === key}
               <span class="absolute inset-0 grid place-items-center bg-black/50"><span class="size-7 animate-spin rounded-full border-2 border-white/30 border-t-white"></span></span>
             {/if}
           </button>
-          <a data-part="card.title" data-focusable href={mediaHref(release.media)} class="mt-2 line-clamp-1 text-sm font-bold hover:underline">{mediaTitle(release.media)}</a>
-          <p data-part="card.meta" class="text-xs text-muted-foreground">Episode {release.episode} · {releasedAgo(release.airingAt, now)}</p>
+          {#if block.caption === 'overlay'}
+            <a data-part="card.title" data-focusable href={mediaHref(release.media)} class="absolute bottom-3 left-3.5 right-12 z-10 line-clamp-1 text-[0.8rem] font-medium text-white [text-shadow:0_1px_2px_#000] hover:underline">{mediaTitle(release.media)}</a>
+          {:else}
+            <a data-part="card.title" data-focusable href={mediaHref(release.media)} class="mt-2 line-clamp-1 text-sm font-bold hover:underline">{mediaTitle(release.media)}</a>
+            <p data-part="card.meta" class="text-xs text-muted-foreground">Episode {release.episode} · {releasedAgo(release.airingAt, now)}</p>
+          {/if}
         </article>
       {/each}
     {/if}

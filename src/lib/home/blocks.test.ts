@@ -39,7 +39,7 @@ describe('home block model', () => {
 
   it('clamps numbers, drops bad entries and falls back to defaults', () => {
     expect(parseHomeBlock({ type: 'latest-episodes', columns: 40, pageSize: 1, pagination: 'sideways', title: '  Latest  ', area: 'aside', phone: 'yes' })).toEqual({
-      type: 'latest-episodes', title: 'Latest', area: 'aside', phone: false, columns: 8, pageSize: 4, pagination: 'numbers',
+      type: 'latest-episodes', title: 'Latest', area: 'aside', phone: false, columns: 8, pageSize: 4, pagination: 'numbers', caption: 'below',
     })
     expect(parseHomeBlock({
       type: 'tabbed-grid',

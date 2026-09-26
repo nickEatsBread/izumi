@@ -106,6 +106,7 @@ State values:
 | `data-layout` | `row` | `carousel`, `grid` |
 | `data-row`, `data-role` | `row` | the row's stable id; the role is the part after its `:` (the whole id when it has none) |
 | `data-family` | `card` | `poster`, `search`, `continue`, `preview` |
+| `data-caption` | `block.latest-episodes` | `below`, `overlay` |
 | `data-layout` | `detail` | `stack`, `split`, `overlay` |
 | `data-variant` | `detail` | `phone`, `desktop` |
 | `data-variant` | `detail.facts` | `table`, `cards`, `chips` (none for a template) |
@@ -176,7 +177,7 @@ State values:
 | `page-number` | part | One numbered page button. | `data-active` |
 | `block.title` | part | A block heading. |  |
 | `block.genre-chips` | slot | Genre shortcuts: an All chip and one chip per genre (each a `chip`). |  |
-| `block.latest-episodes` | slot | Newly aired episodes as a grid of stills. Items reuse `episode.still`, `episode.number`, `card.title` and `card.meta`. |  |
+| `block.latest-episodes` | slot | Newly aired episodes as a grid of stills. Items reuse `episode.still`, `episode.number`, `card.title` and `card.meta`. `data-caption` is `below` or `overlay`. | `data-caption` |
 | `block.item` | part | One entry in a block (an episode, a poster or a ranked title). |  |
 | `block.tabbed-grid` | slot | A tab strip (`tabs`) over a poster grid; each poster is a `block.item` holding a `card`. |  |
 | `block.ranked-list` | slot | A numbered top list; each entry is a `block.item` with `card.art`, `card.title` and `card.meta`. |  |

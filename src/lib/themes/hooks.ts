@@ -59,7 +59,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'page-number', kind: 'part', description: 'One numbered page button.', states: ['data-active'] },
     { name: 'block.title', kind: 'part', description: 'A block heading.' },
     { name: 'block.genre-chips', kind: 'slot', description: 'Genre shortcuts: an All chip and one chip per genre (each a `chip`).' },
-    { name: 'block.latest-episodes', kind: 'slot', description: 'Newly aired episodes as a grid of stills. Items reuse `episode.still`, `episode.number`, `card.title` and `card.meta`.' },
+    { name: 'block.latest-episodes', kind: 'slot', description: 'Newly aired episodes as a grid of stills. Items reuse `episode.still`, `episode.number`, `card.title` and `card.meta`. `data-caption` is `below` or `overlay`.', states: ['data-caption'] },
     { name: 'block.item', kind: 'part', description: 'One entry in a block (an episode, a poster or a ranked title).' },
     { name: 'block.tabbed-grid', kind: 'slot', description: 'A tab strip (`tabs`) over a poster grid; each poster is a `block.item` holding a `card`.' },
     { name: 'block.ranked-list', kind: 'slot', description: 'A numbered top list; each entry is a `block.item` with `card.art`, `card.title` and `card.meta`.' },

@@ -41,6 +41,9 @@ export function releaseStill(release: EpisodeRelease, still?: string): string {
 
 export const releaseKey = (release: EpisodeRelease): string => `${release.media.id}-${release.episode}-${release.airingAt}`
 
+/** True when this release is the last episode of its series (only known once AniList reports a total). */
+export const isFinale = (release: EpisodeRelease): boolean => !!release.media.episodes && release.episode >= release.media.episodes
+
 /** "Load more" appends pages; keep the first copy of any release seen twice (a keyed list would throw). */
 export function appendReleases(current: EpisodeRelease[], next: EpisodeRelease[]): EpisodeRelease[] {
   const seen = new Set(current.map(releaseKey))

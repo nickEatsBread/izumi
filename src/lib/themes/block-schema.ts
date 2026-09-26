@@ -22,7 +22,8 @@ interface BlockCommon {
   /** Aside blocks are dropped on phones unless this is set. */
   phone: boolean
 }
-export interface LatestEpisodesBlock extends BlockCommon { type: 'latest-episodes'; columns: number; pageSize: number; pagination: BlockPagination }
+export type LatestEpisodesCaption = 'below' | 'overlay'
+export interface LatestEpisodesBlock extends BlockCommon { type: 'latest-episodes'; columns: number; pageSize: number; pagination: BlockPagination; caption: LatestEpisodesCaption }
 export interface TabbedGridBlock extends BlockCommon { type: 'tabbed-grid'; tabs: BlockTab[]; columns: number; pageSize: number; pagination: BlockPagination }
 export interface GenreChipsBlock extends BlockCommon { type: 'genre-chips'; genres: 'top' | string[]; all: boolean }
 export interface RankedListBlock extends BlockCommon { type: 'ranked-list'; tabs: BlockTab[]; limit: number }
@@ -94,6 +95,7 @@ function parseButtons(value: unknown): BlockButton[] {
 }
 
 const pagination = (value: unknown): BlockPagination => (value === 'more' || value === 'none' ? value : 'numbers')
+const caption = (value: unknown): LatestEpisodesCaption => (value === 'overlay' ? 'overlay' : 'below')
 
 /** Repair a stored or imported block. Returns null only for values that are not blocks at all. */
 export function parseHomeBlock(value: unknown): HomeBlock | null {
@@ -104,7 +106,7 @@ export function parseHomeBlock(value: unknown): HomeBlock | null {
   const title = text(raw.title, BLOCK_LIMITS.title)
   const common = { ...(title ? { title } : {}), area: raw.area === 'aside' ? 'aside' as const : 'main' as const, phone: raw.phone === true }
   switch (type) {
-    case 'latest-episodes': return { type, ...common, columns: clampInt(raw.columns, BLOCK_LIMITS.columns, 4), pageSize: clampInt(raw.pageSize, BLOCK_LIMITS.pageSize, 12), pagination: pagination(raw.pagination) }
+    case 'latest-episodes': return { type, ...common, columns: clampInt(raw.columns, BLOCK_LIMITS.columns, 4), pageSize: clampInt(raw.pageSize, BLOCK_LIMITS.pageSize, 12), pagination: pagination(raw.pagination), caption: caption(raw.caption) }
     case 'tabbed-grid': return { type, ...common, tabs: parseTabs(raw.tabs, BLOCK_LIMITS.tabs), columns: clampInt(raw.columns, BLOCK_LIMITS.columns, 6), pageSize: clampInt(raw.pageSize, BLOCK_LIMITS.pageSize, 18), pagination: pagination(raw.pagination) }
     case 'genre-chips': return { type, ...common, genres: raw.genres === 'top' ? 'top' : parseGenres(raw.genres), all: raw.all !== false }
     case 'ranked-list': return { type, ...common, tabs: parseTabs(raw.tabs, BLOCK_LIMITS.rankedTabs), limit: clampInt(raw.limit, BLOCK_LIMITS.limit, 10) }
@@ -113,7 +115,7 @@ export function parseHomeBlock(value: unknown): HomeBlock | null {
 }
 
 const BLOCK_KEYS: Record<HomeBlockType, readonly string[]> = {
-  'latest-episodes': ['columns', 'pageSize', 'pagination'],
+  'latest-episodes': ['columns', 'pageSize', 'pagination', 'caption'],
   'tabbed-grid': ['tabs', 'columns', 'pageSize', 'pagination'],
   'genre-chips': ['genres', 'all'],
   'ranked-list': ['tabs', 'limit'],

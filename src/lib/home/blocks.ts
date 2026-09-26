@@ -68,7 +68,7 @@ export function defaultBlock(type: HomeBlockType, roles: string[] = []): HomeBlo
   const common = { area: 'main' as const, phone: false }
   const tabs = (count: number) => roles.slice(0, count).map((role) => ({ label: roleTitle(role), role }))
   switch (type) {
-    case 'latest-episodes': return { type, ...common, columns: 4, pageSize: 12, pagination: 'numbers' }
+    case 'latest-episodes': return { type, ...common, columns: 4, pageSize: 12, pagination: 'numbers', caption: 'below' }
     case 'tabbed-grid': return { type, ...common, tabs: tabs(3), columns: 6, pageSize: 18, pagination: 'numbers' }
     case 'genre-chips': return { type, ...common, genres: 'top', all: true }
     case 'ranked-list': return { type, ...common, tabs: tabs(1), limit: 10 }
