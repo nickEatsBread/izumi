@@ -31,4 +31,37 @@ describe('theme top bar', () => {
     expect(drawer).toContain('data-slot="nav.drawer"')
     expect(drawer).toContain("event.key === 'Escape'")
   })
+
+  it('closes the drawer like the app\'s other modals and returns focus to the menu button', () => {
+    const drawer = read('./NavDrawer.svelte')
+    expect(drawer).toContain('role="dialog"')
+    expect(drawer).toContain('aria-modal="true"')
+    expect(drawer).toContain('data-nav-trap data-nav-escape')
+    const bar = read('./Sidebar.svelte')
+    expect(bar).toContain('bind:this={menuBtn}')
+    expect(bar).toContain('menuBtn?.focus({ preventScroll: true })')
+  })
+
+  it('lays the centred-brand top bar out as three grid columns so the links cannot run under it', () => {
+    const bar = read('./Sidebar.svelte')
+    expect(bar).toContain("{brandCentered ? '!grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]' : ''}")
+    expect(bar).toContain('class="flex min-w-0 items-center gap-1 overflow-hidden"')
+    expect(bar).toContain('class="flex items-center justify-end gap-1"')
+    // The side rail and the non-centred top bar must keep their exact existing layout classes —
+    // the grid override is appended, not substituted, so this string must stay byte-for-byte.
+    expect(bar).toContain("top ? 'inset-x-0 top-0 h-[4.75rem] w-full flex-row items-center border-b border-border/50 bg-background px-3 pt-8' : 'inset-y-0 left-0 flex-col py-3 pt-9'")
+  })
+
+  it('gives TopSearchField a focusable/tabindex passthrough so it is not a Tab stop during playback', () => {
+    const field = read('./TopSearchField.svelte')
+    expect(field).toContain('focusable = true')
+    expect(field).toContain('data-focusable={focusable ? \'\' : undefined} {tabindex}')
+    const bar = read('./Sidebar.svelte')
+    const fieldCalls = bar.match(/<TopSearchField [^/]*\/>/g) ?? []
+    expect(fieldCalls.length).toBe(3)
+    for (const call of fieldCalls) {
+      expect(call).toContain('focusable={!$playing}')
+      expect(call).toContain('tabindex={tab}')
+    }
+  })
 })

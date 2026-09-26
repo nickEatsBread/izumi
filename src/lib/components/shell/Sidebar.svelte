@@ -63,6 +63,7 @@
   let focused = $state(false)
   let catalogPickerOpen = $state(false)
   let drawerOpen = $state(false)
+  let menuBtn = $state<HTMLButtonElement>()
   // Expand only when focus arrived via the d-pad / arrow keys (inputType 'dpad') — never a touch
   // tap or a mouse (which would flash the rail open then closed as it navigates; a tap should
   // just switch pages). `inputType` is the app-wide modality store (set to 'dpad' on arrow keys
@@ -96,6 +97,14 @@
     catalogPickerOpen = false
     drawerOpen = false
   })
+  // Same modal convention as the rest of the app: closing a dialog returns focus to whatever
+  // opened it (see GlobalSearch's returnFocus). `drawerWasOpen` is a plain latch, NOT $state — an
+  // effect that both reads and writes its own reactive dependency never settles.
+  let drawerWasOpen = false
+  $effect(() => {
+    if (drawerWasOpen && !drawerOpen) menuBtn?.focus({ preventScroll: true })
+    drawerWasOpen = drawerOpen
+  })
   // No active-item highlight while a video plays — the rail is inert then (you're in the player,
   // not browsing), so highlighting the page you launched from (e.g. Home) reads as "selected".
   const active = (href: string) => !$playing && (page.url.pathname.startsWith(href) || href === '/app/library' && ['/app/trakt', '/app/letterboxd'].includes(page.url.pathname))
@@ -118,14 +127,53 @@
        {top ? 'inset-x-0 top-0 h-[4.75rem] w-full flex-row items-center border-b border-border/50 bg-background px-3 pt-8' : 'inset-y-0 left-0 flex-col py-3 pt-9'}
        {catalogPickerOpen ? 'overflow-visible' : 'overflow-hidden'}
        {top ? '' : open ? 'w-[200px]' : compact ? 'w-12' : 'w-14'}
-       {$playing || open ? 'bg-background' : ''} {open ? 'shadow-2xl' : $playing || top ? '' : 'drop-shadow-md'}">
+       {$playing || open ? 'bg-background' : ''} {open ? 'shadow-2xl' : $playing || top ? '' : 'drop-shadow-md'}
+       {brandCentered ? '!grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]' : ''}">
+  {#if brandCentered}
+    <!-- A centred brand gets its own grid column instead of sharing the flex row: the links (or the
+         trailing cluster) otherwise run under the absolutely-centred brand and steal its clicks once
+         the row gets crowded (labels: both around 1280px, text below ~1150px). The left cell clips/
+         scrolls instead of pushing into the brand's column. -->
+    <div class="flex min-w-0 items-center gap-1 overflow-hidden">
+      {@render menuButton()}
+      {@render belowSwitcher()}
+      {@render navLinks()}
+    </div>
+    {@render brandBlock()}
+    <div class="flex items-center justify-end gap-1">
+      {#if fieldEnd}<TopSearchField className="mr-2 w-64" focusable={!$playing} tabindex={tab} />{/if}
+      {@render incognitoToggle()}
+      {@render settingsLink()}
+      {@render accountButton()}
+    </div>
+  {:else}
+    {@render menuButton()}
+    {@render brandBlock()}
+    {@render belowSwitcher()}
+    {@render navLinks()}
+
+    <!-- Spacer pushes Settings + profile to the bottom of the rail, or the trailing cluster to the
+         right of a top bar. A theme top bar search field (`field-center`) takes its place instead. -->
+    <div class="flex flex-1 justify-center px-4">{#if fieldCenter}<TopSearchField className="w-full max-w-md" focusable={!$playing} tabindex={tab} />{/if}</div>
+    {#if fieldEnd}<TopSearchField className="mr-2 w-64" focusable={!$playing} tabindex={tab} />{/if}
+    {@render incognitoToggle()}
+    {@render settingsLink()}
+    {@render accountButton()}
+  {/if}
+</nav>
+{#if top && topBar.menu === 'drawer'}<NavDrawer bind:open={drawerOpen} items={[...items, { href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }]} {active} />{/if}
+
+{#snippet menuButton()}
   {#if top && topBar.menu === 'drawer'}
-    <button type="button" data-part="nav.menu" data-focusable={df} tabindex={tab} aria-label="Menu" aria-expanded={drawerOpen} onclick={() => (drawerOpen = true)}
+    <button type="button" data-part="nav.menu" bind:this={menuBtn} data-focusable={df} tabindex={tab} aria-label="Menu" aria-expanded={drawerOpen} onclick={() => (drawerOpen = true)}
       class="grid size-10 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"><Menu size={20} /></button>
   {/if}
+{/snippet}
+
+{#snippet brandBlock()}
   <!-- On Home, Integrated mode turns the brand into the catalog trigger. Everywhere else it stays
        predictable Home navigation; Below mode keeps the explicit provider row underneath. -->
-  <div class="group flex h-10 shrink-0 items-center gap-2 text-left {top ? '' : 'mb-2'} {brandCentered ? 'absolute left-1/2 top-8 -translate-x-1/2' : ''}">
+  <div class="group flex h-10 shrink-0 items-center gap-2 text-left {top ? '' : 'mb-2'}">
     {#if switcherPlacement === 'integrated' && active('/app/home') && !$offlineMode && $enabledCatalogScreens.length > 1}
       <CatalogSwitcher display="brand" bind:open={catalogPickerOpen} className="ml-2 shrink-0" />
     {:else}
@@ -139,11 +187,15 @@
       <BrandText className="whitespace-nowrap text-lg font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}" />
     {/if}
   </div>
+{/snippet}
 
+{#snippet belowSwitcher()}
   {#if !$offlineMode && switcherPlacement === 'below'}
     <CatalogSwitcher display="rail" bind:open={catalogPickerOpen} expanded={open} className="shrink-0" />
   {/if}
+{/snippet}
 
+{#snippet navLinks()}
   {#each shown as it (it.href)}
     {@const on = active(it.href)}
     <a data-part="nav.item" data-active={on || undefined} href={it.href} title={it.label} data-focusable={df} tabindex={tab} aria-current={on ? 'page' : undefined}
@@ -160,12 +212,9 @@
       {/if}
     </a>
   {/each}
+{/snippet}
 
-  <!-- Spacer pushes Settings + profile to the bottom of the rail, or the trailing cluster to the
-       right of a top bar. A theme top bar search field (`field-center`) takes its place instead. -->
-  <div class="flex flex-1 justify-center px-4">{#if fieldCenter}<TopSearchField className="w-full max-w-md" />{/if}</div>
-  {#if fieldEnd}<TopSearchField className="mr-2 w-64" />{/if}
-
+{#snippet incognitoToggle()}
   <!-- Incognito toggle: same row anatomy as the links; violet accent + tinted icon while active
        (the top banner is the loud indicator — this stays quiet). -->
   <button onclick={toggleIncognito} title={m.nav_incognito()} data-focusable={df} tabindex={tab}
@@ -179,7 +228,9 @@
       <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{m.nav_incognito()}</span>
     {/if}
   </button>
+{/snippet}
 
+{#snippet settingsLink()}
   <a href="/app/settings" title={m.nav_settings()} data-focusable={df} tabindex={tab}
      aria-current={active('/app/settings') ? 'page' : undefined}
      class={destClass(active('/app/settings'))}>
@@ -190,7 +241,9 @@
       <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{m.nav_settings()}</span>
     {/if}
   </a>
+{/snippet}
 
+{#snippet accountButton()}
   <button type="button" onclick={() => $profilesEnabled ? ($profileSwitcherOpen = true) : goto('/app/settings/accounts')} title={$profilesEnabled ? `Switch profile · ${$activeProfile.name}` : accountLabel} data-focusable={df} tabindex={tab}
      class="{top ? destClass(false) : 'group mt-1 flex h-12 w-full shrink-0 items-center gap-3 rounded-md pl-3 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground'}">
     <span class="grid {top ? 'size-8' : 'w-8'} shrink-0 place-items-center">
@@ -206,5 +259,4 @@
       <span class="max-w-[140px] truncate whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{accountLabel}</span>
     {/if}
   </button>
-</nav>
-{#if top && topBar.menu === 'drawer'}<NavDrawer bind:open={drawerOpen} items={[...items, { href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }]} {active} />{/if}
+{/snippet}
