@@ -65,7 +65,7 @@
 {:else}
   <div class="flex flex-col gap-8">
     {#each filled as { d, i } (i)}
-      <section bind:this={sections[i]} data-schedule-day={i}>
+      <section data-part="schedule.day" bind:this={sections[i]} data-schedule-day={i}>
         <h3 class="mb-3 text-base font-black {i === todayIdx ? 'text-sky-400' : ''}">
           {FULL[i]} · {dayDate(i)}{#if i === todayIdx} · Today{/if}
         </h3>
@@ -74,7 +74,7 @@
             {@const mine = badgeOf?.(a)}
             {@const delay = delayOf(a.media)}
             {@const source = scheduleSourceLabel(a)}
-            <div class="relative" data-schedule-item>
+            <div data-part="schedule.item" class="relative" data-schedule-item>
             <a
               data-focusable
               href={mediaHref(a.media)}

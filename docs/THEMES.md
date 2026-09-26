@@ -223,7 +223,7 @@ State values:
 | `search.filters` | part | The search filter bar. |  |
 | `search.results` | slot | The search results. |  |
 | `schedule` | slot | The airing schedule page. |  |
-| `schedule.day` | part | The day being shown. |  |
+| `schedule.day` | part | One day of airings: a day of the week agenda, or the selected day. |  |
 | `schedule.item` | part | One airing entry. |  |
 | `library` | slot | The library page. |  |
 | `library.tabs` | part | The library section tabs. |  |
