@@ -93,7 +93,7 @@ State values:
 
 | Attribute | On | Values |
 |---|---|---|
-| `data-active` | `nav.item`, `hero.dot`, `tab`, `chip` | present when selected, absent otherwise |
+| `data-active` | `nav.item`, `hero.dot`, `tab`, `chip`, `page-number` | present when selected, absent otherwise |
 | `data-variant` | `home` | `offline`, `anilist`, `merged`, `catalog` |
 | `data-variant` | `home.hero` | `template`, `phone`, `desktop` (the desktop banner is `detail.banner` on a series page) |
 | `data-variant` | `hero.indicator` | `default`, `bars`, `dots`, `pills`, `counter` |
@@ -154,6 +154,15 @@ State values:
 | `row.title` | part | The row title. |  |
 | `row.more` | part | The row's view-more link. |  |
 | `row.track` | part | The scrolling track or grid holding the cards. |  |
+
+#### Home blocks
+
+| Hook | Kind | What | States |
+|---|---|---|---|
+| `home.main` | slot | The main column of Home. |  |
+| `home.aside` | slot | The side column of Home, holding blocks placed in the aside. |  |
+| `pagination` | part | Page controls under a block: numbered pages or a Load more button. |  |
+| `page-number` | part | One numbered page button. | `data-active` |
 
 #### Cards
 

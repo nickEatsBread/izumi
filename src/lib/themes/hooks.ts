@@ -11,7 +11,7 @@ export interface ThemeHook {
   /** State attributes rendered alongside, e.g. `data-active`. */
   states?: string[]
 }
-export type ThemeHookGroup = 'brand' | 'shell' | 'home' | 'cards' | 'detail' | 'episodes' | 'watch' | 'pages' | 'primitives'
+export type ThemeHookGroup = 'brand' | 'shell' | 'home' | 'blocks' | 'cards' | 'detail' | 'episodes' | 'watch' | 'pages' | 'primitives'
 
 export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
   brand: [
@@ -49,6 +49,12 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'row.title', kind: 'part', description: 'The row title.' },
     { name: 'row.more', kind: 'part', description: "The row's view-more link." },
     { name: 'row.track', kind: 'part', description: 'The scrolling track or grid holding the cards.' },
+  ],
+  blocks: [
+    { name: 'home.main', kind: 'slot', description: 'The main column of Home.' },
+    { name: 'home.aside', kind: 'slot', description: 'The side column of Home, holding blocks placed in the aside.' },
+    { name: 'pagination', kind: 'part', description: 'Page controls under a block: numbered pages or a Load more button.' },
+    { name: 'page-number', kind: 'part', description: 'One numbered page button.', states: ['data-active'] },
   ],
   cards: [
     { name: 'card', kind: 'part', description: 'A media card: poster, search, continue or preview.', states: ['data-family'] },
