@@ -16,6 +16,7 @@
   import HomeColumns from '$lib/components/home/HomeColumns.svelte'
   import { CatalogConfigurationError, type CatalogHome, type CatalogHomeSection } from '$lib/catalog/types'
   import { loadCatalogProvider } from '$lib/catalog/registry'
+  import { homeEditorOpen } from '$lib/catalog/home-editor'
   import { catalogProvider, jvmCatalogSourceOverrides, stremioHeroArtwork } from '$lib/settings/catalog'
   import { catalogHomeLayoutKey, catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
   import { CONTINUE_HOME_ROW } from '$lib/catalog/home-options'
@@ -57,7 +58,9 @@
     return result
   })
   const visibleRowIds = $derived(contentRows.map((row) => row.id))
-  const columns = $derived(splitHomeColumns(visibleRowIds, $homeBlocks, $isMobile))
+  // While Edit Home is open, phones must still show every block (including a side-column one that
+  // opted out of `phone`), or there would be no way to reach its settings/remove button on a phone.
+  const columns = $derived(splitHomeColumns(visibleRowIds, $homeBlocks, $isMobile && !$homeEditorOpen))
 
   $effect(() => {
     const selection = $catalogProvider
@@ -66,10 +69,15 @@
     const abort = new AbortController()
     // A provider's visible rows are part of the request, not merely presentation. Include them in
     // the cache identity so enabling an Aniyomi source or restoring a hidden Home row cannot reuse
-    // an older one-source snapshot that was previously considered complete.
+    // an older one-source snapshot that was previously considered complete. Block ids are stripped
+    // out of that identity: a block's own settings live in `homeBlocks`, not in the provider's
+    // response, so adding, moving or removing one must not look like a request to reload the
+    // provider's Home all over again.
+    const layout = $catalogHomeLayouts[catalogHomeLayoutKey(selection)] ?? null
+    const layoutForCache = layout && { order: layout.order.filter((id) => !isBlockId(id)), disabled: layout.disabled.filter((id) => !isBlockId(id)) }
     const cacheKey = JSON.stringify([
       selection,
-      $catalogHomeLayouts[catalogHomeLayoutKey(selection)] ?? null,
+      layoutForCache,
       selection === 'jvm' ? $jvmCatalogSourceOverrides : null,
       selection === 'tmdb' ? $tmdbCustomHomeRows : null,
     ])
@@ -158,8 +166,9 @@
     {:else if home}
       {#snippet contentRow(id: string)}
         {@const row = contentRows.find((item) => item.id === id)}
+        {@const visibleIds = columns.main.includes(id) ? columns.main : columns.aside}
         {#if row}
-          <HomeRowFrame rowId={row.id} title={row.kind === 'continue' ? 'Continue Watching' : row.kind === 'block' ? ($homeBlocks[row.id] ? blockTitle($homeBlocks[row.id]) : row.id) : row.section.title} target={$catalogProvider} visibleIds={visibleRowIds}>
+          <HomeRowFrame rowId={row.id} title={row.kind === 'continue' ? 'Continue Watching' : row.kind === 'block' ? ($homeBlocks[row.id] ? blockTitle($homeBlocks[row.id]) : row.id) : row.section.title} target={$catalogProvider} {visibleIds}>
             {#if row.kind === 'continue'}
               {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />{/key}
             {:else if row.kind === 'block'}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { goto } from '$app/navigation'
   import Hero from '$lib/components/banner/Hero.svelte'
   import CollectionsHome from './CollectionsHome.svelte'
@@ -16,6 +17,7 @@
   import { mediaHref } from '$lib/anilist/media'
   import { homeSections } from '$lib/anilist/queries'
   import type { Media } from '$lib/anilist/types'
+  import { homeEditorOpen } from '$lib/catalog/home-editor'
   import { catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
   import {
     decodeMergedCatalogHomeRowId,
@@ -54,7 +56,9 @@
   const hasAniList = $derived(selections.includes('auto') || selections.includes('anilist'))
   const rows = $derived(resolveCatalogHomeRows('merged', [...options, ...blockRowOptions('merged', $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts).filter((row) => row.enabled))
   const visibleRowIds = $derived(rows.map((row) => row.id))
-  const columns = $derived(splitHomeColumns(visibleRowIds, $homeBlocks, $isMobile))
+  // While Edit Home is open, phones must still show every block (including a side-column one that
+  // opted out of `phone`), or there would be no way to reach its settings/remove button on a phone.
+  const columns = $derived(splitHomeColumns(visibleRowIds, $homeBlocks, $isMobile && !$homeEditorOpen))
   const optionIds = $derived(options.map((option) => option.id))
   const optionsKey = $derived(JSON.stringify([selections, $tmdbCustomHomeRows]))
   const externalRequestKey = $derived(JSON.stringify(rows.flatMap((row) => {
@@ -77,7 +81,10 @@
   $effect(() => {
     void externalRequestKey
     const requested = new Map<ExternalCatalogSelection, string[]>()
-    for (const row of rows) {
+    // `rows` also changes on a purely local block edit ($homeBlocks), which would otherwise clear
+    // `homes` and refetch every provider. The effect already keys on `externalRequestKey`'s VALUE
+    // (a string derived from `rows`), so reading `rows` itself must stay untracked here.
+    for (const row of untrack(() => rows)) {
       const decoded = decodeMergedCatalogHomeRowId(row.id)
       if (!decoded || decoded.selection === 'auto' || decoded.selection === 'anilist') continue
       const selection: ExternalCatalogSelection = decoded.selection
@@ -155,8 +162,9 @@
     <CollectionsHome />
     {#snippet mergedRow(id: string)}
       {@const row = rows.find((item) => item.id === id)}
+      {@const visibleIds = columns.main.includes(id) ? columns.main : columns.aside}
       {#if row}
-        <HomeRowFrame rowId={row.id} title={editorTitle(row)} target="merged" visibleIds={visibleRowIds}>
+        <HomeRowFrame rowId={row.id} title={editorTitle(row)} target="merged" {visibleIds}>
           {#if row.id === 'continue'}
             {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} catalogScope="all" />{/key}
           {:else if isBlockId(row.id)}

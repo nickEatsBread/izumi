@@ -30,4 +30,20 @@ describe('Home blocks wiring', () => {
     expect(frame).toContain('removeHomeBlock(target, rowId)')
     expect(frame).toContain('homeBlockSettingsId.set(rowId)')
   })
+
+  it('does not let a block-only edit refetch a provider or external Home', () => {
+    const catalogHome = read('../catalog/CatalogHome.svelte')
+    expect(catalogHome, 'CatalogHome.svelte').toContain('layout.order.filter((id) => !isBlockId(id))')
+    const mergedHome = read('../catalog/MergedCatalogHome.svelte')
+    expect(mergedHome, 'MergedCatalogHome.svelte').toContain("import { untrack } from 'svelte'")
+    expect(mergedHome, 'MergedCatalogHome.svelte').toContain('untrack(() => rows)')
+  })
+
+  it('gives every HomeRowFrame renderer just its own column to move within, and shows every block while editing on a phone', () => {
+    for (const file of RENDERERS) {
+      const source = read(file)
+      expect(source, file).toContain('columns.main.includes(')
+      expect(source, file).toContain('$isMobile && !$homeEditorOpen')
+    }
+  })
 })

@@ -19,6 +19,7 @@
   import type { Media } from '$lib/anilist/types'
   import { anilistDegraded, anilistDegradedBannerVisible } from '$lib/anilist/degraded'
   import { catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
+  import { homeEditorOpen } from '$lib/catalog/home-editor'
   import { ANILIST_HOME_ROWS } from '$lib/catalog/home-options'
   import { markClientPerformance } from '$lib/performance/client'
   import {
@@ -60,7 +61,9 @@
   const anilistRows = $derived(resolveCatalogHomeRows('anilist', [...ANILIST_HOME_ROWS, ...blockRowOptions('anilist', $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts)
     .filter((row) => row.enabled))
   const orderedRows = $derived(anilistRows.map((row) => row.id))
-  const columns = $derived(splitHomeColumns(orderedRows, $homeBlocks, $isMobile))
+  // While Edit Home is open, phones must still show every block (including a side-column one that
+  // opted out of `phone`), or there would be no way to reach its settings/remove button on a phone.
+  const columns = $derived(splitHomeColumns(orderedRows, $homeBlocks, $isMobile && !$homeEditorOpen))
   const rowOptionIds = ANILIST_HOME_ROWS.map((row) => row.id)
   const sectionMap = $derived(new Map(sections.map((section) => [section.key, section])))
   const catalogUnavailable = $derived(!!$anilistDegraded?.fallbackError)
@@ -220,7 +223,8 @@
     <CollectionsHome />
     {#snippet homeRow(row: string)}
       {@const rowOption = anilistRows.find((option) => option.id === row)}
-      <HomeRowFrame rowId={row} title={rowOption?.title ?? row} target={$catalogProvider} visibleIds={orderedRows}>
+      {@const visibleIds = columns.main.includes(row) ? columns.main : columns.aside}
+      <HomeRowFrame rowId={row} title={rowOption?.title ?? row} target={$catalogProvider} {visibleIds}>
         {#if isBlockId(row)}
           <HomeBlockView id={row} target={$catalogProvider} optionIds={rowOptionIds} />
         {:else if row === 'continue'}
