@@ -140,8 +140,11 @@ function parseGenres(value: unknown): 'top' | string[] {
 
 // Mirrors the keys of `NAV_META` in `$lib/settings/nav`. Kept as a plain id list (not imported)
 // so parsing a block never has to load nav.ts's Lucide icon components — those are Svelte files,
-// and this module is pulled into unit tests that run without the Svelte plugin.
-const NAV_ITEM_IDS: readonly NavItemId[] = ['schedule', 'downloads', 'watch', 'settings', 'search', 'trakt', 'letterboxd', 'library']
+// and this module is pulled into unit tests that run without the Svelte plugin. The type check
+// below fails if a destination is added to `NavItemId` but not here.
+const NAV_ITEM_IDS = ['schedule', 'downloads', 'watch', 'settings', 'search', 'trakt', 'letterboxd', 'library'] as const satisfies readonly NavItemId[]
+const everyNavItemListed: [Exclude<NavItemId, (typeof NAV_ITEM_IDS)[number]>] extends [never] ? true : never = true
+void everyNavItemListed
 
 function parseButtons(value: unknown): BlockButton[] {
   if (!Array.isArray(value)) return []
@@ -150,7 +153,7 @@ function parseButtons(value: unknown): BlockButton[] {
     if (!item || typeof item !== 'object') continue
     const label = text((item as BlockButton).label, 20)
     const to = (item as BlockButton).to
-    if (!label || !(to === 'home' || NAV_ITEM_IDS.includes(to as NavItemId))) continue
+    if (!label || !(to === 'home' || (NAV_ITEM_IDS as readonly string[]).includes(to))) continue
     buttons.push({ label, to })
     if (buttons.length >= BLOCK_LIMITS.buttons) break
   }
