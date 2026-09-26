@@ -52,6 +52,15 @@ describe('home block model', () => {
       .toMatchObject({ buttons: [{ label: 'Lists', to: 'library' }, { label: 'Home', to: 'home' }] })
   })
 
+  it('accepts a tab role of any non-whitespace shape, not just a restricted identifier', () => {
+    // Stremio row ids embed a whole addon origin and can contain `%` and `/`; they must survive a
+    // round trip through the block's stored settings just like a plain AniList role would.
+    const role = 'https://example.test/addon:top%20rated'
+    expect(parseHomeBlock({ type: 'tabbed-grid', tabs: [{ label: 'Top rated', role }] })).toMatchObject({
+      tabs: [{ label: 'Top rated', role }],
+    })
+  })
+
   it('rejects values that are not blocks', () => {
     expect(parseHomeBlock(null)).toBeNull()
     expect(parseHomeBlock('block')).toBeNull()

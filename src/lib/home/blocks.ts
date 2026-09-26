@@ -57,7 +57,10 @@ export const homeBlocks = persisted<Record<string, HomeBlock>>('home-blocks-v1',
 export const homeAsideWidth = persisted<number>('home-aside-width-v1', 320)
 
 const BLOCK_ID = /^block:([a-z-]+):(\d{1,4})$/
-const ROLE = /^[A-Za-z0-9_.:-]{1,80}$/
+// A tab's role is a Home row id, not a restricted identifier: the Stremio catalog's ids embed a
+// whole addon origin (`https://host/path:catalog`) and can contain `%` (percent-encoded segments)
+// and `/`. Only whitespace and length are actually invalid — real row ids never contain either.
+const ROLE = /^\S{1,300}$/
 
 export function blockType(id: string): HomeBlockType | null {
   const match = BLOCK_ID.exec(id)

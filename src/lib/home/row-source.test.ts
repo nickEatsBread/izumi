@@ -39,6 +39,14 @@ describe('row source', () => {
     expect(resolveRowId('merged', 'rated', ['anilist:trending'])).toBeNull()
   })
 
+  it('keeps a single-catalog row id with its own colons intact instead of stripping a false "prefix"', () => {
+    // Stremio row ids are `<addon origin>:<catalog>`; JVM row ids are `popular:<source>`. Neither
+    // is a merged-style `provider:row` id, so resolveRowId must return them unchanged.
+    const stremioId = 'https://example.test/addon:top%20rated'
+    expect(resolveRowId('stremio', stremioId, [])).toBe(stremioId)
+    expect(resolveRowId('jvm', 'popular:my-source', [])).toBe('popular:my-source')
+  })
+
   it('maps rows to their source', () => {
     expect(rowSource('auto', 'trending')).toEqual({ kind: 'anilist', role: 'trending' })
     expect(rowSource('tmdb', 'movies')).toEqual({ kind: 'provider', selection: 'tmdb', rowId: 'movies' })
@@ -78,5 +86,27 @@ describe('row source', () => {
     expect(await loadRowPage('tmdb', 'pick', 1, 2)).toEqual({ media: [media(1), media(2)], hasNextPage: false })
     expect(await loadRowPage('tmdb', 'pick', 2, 2)).toEqual({ media: [], hasNextPage: false })
     expect(await loadRowPage('tmdb', 'services', 1, 18)).toEqual({ media: [], hasNextPage: false })
+  })
+
+  it("does not let one caller's abort reject another caller sharing the same section load", async () => {
+    let resolveHome!: (value: { hero: never[]; sections: { id: string; title: string; media: unknown[] }[] }) => void
+    provider.home.mockImplementation(() => new Promise((resolve) => { resolveHome = resolve }))
+    const controllerA = new AbortController()
+    const pageA = loadRowPage('tmdb', 'movies', 1, 18, controllerA.signal)
+    const pageB = loadRowPage('tmdb', 'movies', 1, 18)
+    controllerA.abort()
+    await expect(pageA).rejects.toMatchObject({ name: 'AbortError' })
+    resolveHome({ hero: [], sections: [{ id: 'movies', title: 'Movies', media: [media(1)] }] })
+    await expect(pageB).resolves.toEqual({ media: [media(1)], hasNextPage: false })
+    expect(provider.home).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not cache a section that resolves to nothing, so a later call retries instead of staying empty', async () => {
+    provider.home.mockResolvedValueOnce({ hero: [], sections: [] })
+    expect(await loadRowPage('tmdb', 'missing-row', 1, 18)).toEqual({ media: [], hasNextPage: false })
+    expect(provider.home).toHaveBeenCalledTimes(1)
+    provider.home.mockResolvedValueOnce({ hero: [], sections: [{ id: 'missing-row', title: 'Now here', media: [media(1)] }] })
+    expect(await loadRowPage('tmdb', 'missing-row', 1, 18)).toEqual({ media: [media(1)], hasNextPage: false })
+    expect(provider.home).toHaveBeenCalledTimes(2)
   })
 })
