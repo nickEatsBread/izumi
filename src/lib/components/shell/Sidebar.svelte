@@ -30,6 +30,10 @@
   let { placement = 'sidebar' }: { placement?: 'sidebar' | 'top' } = $props()
   const compact = $derived($themePresentation?.shell?.compact === true)
   const top = $derived(placement === 'top')
+  const topBar = $derived($themePresentation?.shell?.top ?? {})
+  const labelMode = $derived(top ? topBar.labels ?? 'icons' : 'icons')
+  const brandCentered = $derived(top && topBar.brand === 'center')
+  const brandText = $derived(top && $themePresentation?.brand === 'text')
   // Nav items (top). Settings + profile are pinned to the BOTTOM.
   const items = [
     { href: '/app/home', icon: Home, label: m.nav_home(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
@@ -60,10 +64,14 @@
   // (focusable) in browse.
   const df = $derived($playing ? undefined : '')
   const tab = $derived($playing ? -1 : undefined)
-  // Top chrome is icon-only: leftover label width from the rail anatomy stretches hover
-  // highlights into huge pills and shoves destinations across the titlebar.
-  const destClass = (on: boolean) => top
-    ? `group relative grid size-10 shrink-0 place-items-center rounded-lg transition-colors hover:bg-accent hover:text-foreground ${on ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}`
+  // Top chrome is icon-only by default: leftover label width from the rail anatomy stretches
+  // hover highlights into huge pills and shoves destinations across the titlebar. A theme can ask
+  // for text/both labels (`shell.top.labels`) on the six destinations only — Incognito, Settings
+  // and the account button always stay icon-only.
+  const destClass = (on: boolean, labelled = false) => top
+    ? labelled && labelMode !== 'icons'
+      ? `group relative inline-flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition-colors hover:bg-accent hover:text-foreground ${on ? 'text-foreground' : 'text-muted-foreground'}`
+      : `group relative grid size-10 shrink-0 place-items-center rounded-lg transition-colors hover:bg-accent hover:text-foreground ${on ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}`
     : `group relative flex h-11 shrink-0 items-center gap-3 rounded-md pl-3 transition-colors hover:bg-accent hover:text-foreground ${on ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}`
   const onFocusIn = () => (focused = true)
   const onFocusOut = (e: FocusEvent & { currentTarget: HTMLElement }) => {
@@ -102,7 +110,7 @@
        {$playing || open ? 'bg-background' : ''} {open ? 'shadow-2xl' : $playing || top ? '' : 'drop-shadow-md'}">
   <!-- On Home, Integrated mode turns the brand into the catalog trigger. Everywhere else it stays
        predictable Home navigation; Below mode keeps the explicit provider row underneath. -->
-  <div class="group flex h-10 shrink-0 items-center gap-2 text-left {top ? '' : 'mb-2'}">
+  <div class="group flex h-10 shrink-0 items-center gap-2 text-left {top ? '' : 'mb-2'} {brandCentered ? 'absolute left-1/2 top-8 -translate-x-1/2' : ''}">
     {#if switcherPlacement === 'integrated' && active('/app/home') && !$offlineMode && $enabledCatalogScreens.length > 1}
       <CatalogSwitcher display="brand" bind:open={catalogPickerOpen} className="ml-2 shrink-0" />
     {:else}
@@ -111,6 +119,7 @@
         <CatalogBrandLogo brand platform={$catalogScreen} />
       </a>
     {/if}
+    {#if brandText}<BrandText className="whitespace-nowrap text-lg font-black" />{/if}
     {#if !top}
       <BrandText className="whitespace-nowrap text-lg font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}" />
     {/if}
@@ -123,12 +132,16 @@
   {#each items as it (it.href)}
     {@const on = active(it.href)}
     <a data-part="nav.item" data-active={on || undefined} href={it.href} title={it.label} data-focusable={df} tabindex={tab} aria-current={on ? 'page' : undefined}
-       class={destClass(on)}>
-      <span data-part="nav.item.icon" class="grid {top ? 'size-5' : 'w-8'} shrink-0 place-items-center"><it.icon size={20} class={it.anim} /></span>
-      {#if top}
+       class={destClass(on, true)}>
+      {#if labelMode !== 'text'}
+        <span data-part="nav.item.icon" class="grid {top ? 'size-5' : 'w-8'} shrink-0 place-items-center"><it.icon size={20} class={it.anim} /></span>
+      {/if}
+      {#if !top}
+        <span data-part="nav.item.label" class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{it.label}</span>
+      {:else if labelMode === 'icons'}
         <span data-part="nav.item.label" class="sr-only">{it.label}</span>
       {:else}
-        <span data-part="nav.item.label" class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{it.label}</span>
+        <span data-part="nav.item.label">{it.label}</span>
       {/if}
     </a>
   {/each}
