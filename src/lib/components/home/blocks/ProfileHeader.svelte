@@ -25,6 +25,7 @@
   const summary = $derived(remote ?? localProfile($localHistory))
   const initial = $derived(summary.name.trim().charAt(0).toUpperCase() || '?')
   const href = (to: BlockDestination) => (to === 'home' ? HOME_META.href : NAV_META[to].href)
+  const count = (n: number, noun: string) => `${n.toLocaleString()} ${noun}${n === 1 ? '' : 's'}`
 </script>
 
 <section data-block data-slot="block.profile-header" class="mb-8 px-4 sm:px-8">
@@ -41,7 +42,7 @@
       {/if}
       <div class="min-w-0 flex-1 text-white">
         <p data-part="block.name" class="truncate text-xl font-black">{summary.name}</p>
-        <p data-part="block.stat" class="text-sm text-white/80">{summary.episodes.toLocaleString()} episodes · {summary.titles.toLocaleString()} titles</p>
+        <p data-part="block.stat" class="text-sm text-white/80">{count(summary.episodes, 'episode')} · {count(summary.titles, 'title')}</p>
       </div>
     </div>
     {#if block.buttons.length}
