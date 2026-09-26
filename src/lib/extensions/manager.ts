@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { get } from 'svelte/store'
 import { invokeNativeHttp, isNativeTransportFailure, phttp } from '$lib/net/http'
 import { enabledExtensionUrls, disabledPlugins } from '$lib/settings/ui'
-import { forgetPackageOrigin, isPackageOrigin, mayReplacePackage, recordPackageOrigin } from '$lib/store/origins'
+import { forgetPackageOrigin, isPackageOrigin, mayReplacePackage, packageOriginOf, recordPackageOrigin } from '$lib/store/origins'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
 import { manifestFetchUrls, normalizeManifest, pointerUrl, isRunnableType, isLegacyTorrentType, manifestProblem, catalogPackages, aniyomiRepositoryPackages } from './catalog'
 import type { ExtensionCatalogPackage } from './catalog'
@@ -189,14 +189,23 @@ export async function installedExtensionPackages(): Promise<InstalledExtensionPa
   return entry.value
 }
 
+/** A same-id package is already installed from another store or source (or from an install that
+ *  predates origins). Pages catch this to ask whether to replace it; nothing replaces without asking. */
+export class PackageInstalledElsewhereError extends Error {
+  constructor(readonly packageId: string, readonly installedFrom: string | undefined) {
+    super('This package is already installed from another store or source.')
+    this.name = 'PackageInstalledElsewhereError'
+  }
+}
+
 /** Install or update a catalog package from `origin` — the store or source-list catalog listing it —
  *  and remember that store. Every package install goes through here: an installed package only
- *  changes through the store it came from, so a same-id package from anywhere else is refused as a
- *  takeover. */
+ *  changes through the store it came from. A same-id package from anywhere else is refused with
+ *  PackageInstalledElsewhereError unless the user confirmed replacing it (`replaceInstalled`). */
 export async function installCatalogPackage(
   extension: ExtensionCatalogPackage,
   origin: string,
-  options: { updateOnly?: boolean } = {},
+  options: { updateOnly?: boolean; replaceInstalled?: boolean } = {},
 ): Promise<InstalledExtensionPackage> {
   // Read afresh, uncached, and let a failed read throw: a stale or failed list must never pass for
   // "not installed" and wave a takeover through.
@@ -205,13 +214,17 @@ export async function installCatalogPackage(
   // An update for a package removed meanwhile (say, while a background check loaded) must not bring
   // it back.
   if (!onDisk && options.updateOnly) throw new Error('That package is no longer installed.')
-  if (onDisk && !mayReplacePackage(extension.id, origin, onDisk.backend === extension.backend)) {
-    throw new Error('This package is installed from another store or source. Remove it first to install this one.')
+  const takesOver = !!onDisk && !mayReplacePackage(extension.id, origin, onDisk.backend === extension.backend)
+  // Replacing a copy from somewhere else is only ever the user's explicit choice (they were asked
+  // first); a background update never does it.
+  if (takesOver && (!options.replaceInstalled || options.updateOnly)) {
+    throw new PackageInstalledElsewhereError(extension.id, packageOriginOf(extension.id))
   }
   // Rust checks the downloaded package itself, whatever the listing claims: it must be the kind of
-  // package listed, and only the user's own install from the package's recorded store may change what
-  // kind of package is installed (never a background update, never a legacy claim).
-  const allowBackendChange = !options.updateOnly && isPackageOrigin(extension.id, origin)
+  // package listed. Only the user's own install — from the package's recorded store, or a confirmed
+  // replacement — may change what kind of package is installed (never a background update or a
+  // legacy claim), and a confirmed replacement isn't compared with the copy it replaces.
+  const allowBackendChange = takesOver || (!options.updateOnly && isPackageOrigin(extension.id, origin))
   const installed = extension.packageFormat === 'aniyomi-repo'
     ? await invoke<InstalledExtensionPackage>('extension_install_aniyomi_url', {
         url: extension.apk,
@@ -225,6 +238,7 @@ export async function installCatalogPackage(
           sources: extension.sources,
         },
         allowBackendChange,
+        replaceInstalled: takesOver,
       })
     : await invoke<InstalledExtensionPackage>('extension_install_url', {
         url: extension.package,
@@ -233,6 +247,7 @@ export async function installCatalogPackage(
         expectedId: extension.id,
         expectedBackend: extension.backend,
         allowBackendChange,
+        replaceInstalled: takesOver,
       })
   recordPackageOrigin(installed.id, origin)
   return finishPackageInstall(installed)

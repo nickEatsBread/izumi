@@ -1,6 +1,6 @@
 import { persisted } from 'svelte-persisted-store'
 import { get } from 'svelte/store'
-import { OFFICIAL_ANIME_CATALOG } from '$lib/extensions/catalog'
+import { OFFICIAL_ANIME_CATALOG, sourceLabel } from '$lib/extensions/catalog'
 import { extensionUrls } from '$lib/settings/ui'
 import { canonicalStoreUrl } from './url'
 
@@ -51,6 +51,18 @@ export function mayReplacePackage(id: string, storeUrl: string, sameBackend = tr
 export function isPackageOrigin(id: string, storeUrl: string): boolean {
   const origins = get(packageOrigins)
   return Object.hasOwn(origins, id) && origins[id] === originKey(storeUrl)
+}
+
+/** The store an installed package was recorded as coming from, if any. */
+export function packageOriginOf(id: string): string | undefined {
+  const origins = get(packageOrigins)
+  return Object.hasOwn(origins, id) ? origins[id] : undefined
+}
+
+/** Plain words for where an installed package came from, for the replace prompt. */
+export function originLabel(url: string | undefined, stores: readonly { url: string; name: string }[]): string {
+  if (!url) return 'an earlier install'
+  return stores.find((store) => store.url === url)?.name ?? sourceLabel(url)
 }
 
 export function recordPackageOrigin(id: string, storeUrl: string): void {

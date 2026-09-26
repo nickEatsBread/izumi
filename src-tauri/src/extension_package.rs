@@ -864,6 +864,7 @@ mod package {
         expected_id: Option<&str>,
         expected_backend: Option<&str>,
         allow_backend_change: bool,
+        replace_installed: bool,
     ) -> Result<InstalledExtension, String> {
         let (extension, jar) = parse_package(&bytes)?;
         let dir = extension_dir(app)?;
@@ -873,8 +874,12 @@ mod package {
             .ok()
             .and_then(|existing| parse_package(&existing).ok())
             .map(|(current, _)| current);
-        check_replacement(expected_id, &extension, current.as_ref())?;
-        check_kind(expected_backend, allow_backend_change, &extension, current.as_ref())?;
+        // A replacement the user confirmed (a same-id package from another store) isn't compared with
+        // the installed copy: that copy is what they chose to replace. The download itself is still
+        // checked against its listing.
+        let compared = if replace_installed { None } else { current.as_ref() };
+        check_replacement(expected_id, &extension, compared)?;
+        check_kind(expected_backend, allow_backend_change, &extension, compared)?;
         let temporary = destination.with_extension("izumi-ext.part");
         std::fs::write(&temporary, bytes).map_err(|e| e.to_string())?;
         if destination.exists() {
@@ -891,7 +896,7 @@ mod package {
             return Err("Choose an .izumi-ext package".into());
         }
         // A file the user picked themselves may be any kind of package.
-        install_bytes(app, std::fs::read(path).map_err(|e| e.to_string())?, None, None, true)
+        install_bytes(app, std::fs::read(path).map_err(|e| e.to_string())?, None, None, true, false)
     }
 
     async fn download_https(
@@ -942,6 +947,7 @@ mod package {
         expected_id: Option<&str>,
         expected_backend: Option<&str>,
         allow_backend_change: bool,
+        replace_installed: bool,
     ) -> Result<InstalledExtension, String> {
         let bytes = download_https(
             url,
@@ -950,7 +956,7 @@ mod package {
             "extension package",
         )
         .await?;
-        install_bytes(app, bytes, expected_id, expected_backend, allow_backend_change)
+        install_bytes(app, bytes, expected_id, expected_backend, allow_backend_change, replace_installed)
     }
 
     pub async fn download_aniyomi_apk(
@@ -1041,6 +1047,7 @@ mod package {
         apk: &[u8],
         converted_jar: &[u8],
         allow_backend_change: bool,
+        replace_installed: bool,
     ) -> Result<InstalledExtension, String> {
         install_bytes(
             app,
@@ -1048,6 +1055,7 @@ mod package {
             Some(&metadata.id),
             Some("aniyomi-jvm"),
             allow_backend_change,
+            replace_installed,
         )
     }
 
@@ -1517,6 +1525,7 @@ pub async fn extension_install_url(
     expected_id: Option<String>,
     expected_backend: Option<String>,
     allow_backend_change: Option<bool>,
+    replace_installed: Option<bool>,
 ) -> Result<InstalledExtension, String> {
     package::install_url(
         &app,
@@ -1525,6 +1534,7 @@ pub async fn extension_install_url(
         expected_id.as_deref(),
         expected_backend.as_deref(),
         allow_backend_change.unwrap_or(false),
+        replace_installed.unwrap_or(false),
     )
     .await
 }
@@ -1536,6 +1546,7 @@ pub async fn extension_install_aniyomi_url(
     expected_sha256: Option<String>,
     metadata: AniyomiInstallMetadata,
     allow_backend_change: Option<bool>,
+    replace_installed: Option<bool>,
 ) -> Result<InstalledExtension, String> {
     package::validate_aniyomi_metadata(&metadata)?;
     let apk = package::download_aniyomi_apk(&url, expected_sha256.as_deref()).await?;
@@ -1547,7 +1558,14 @@ pub async fn extension_install_aniyomi_url(
     #[cfg(target_os = "android")]
     let converted_jar = apk.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        package::install_aniyomi(&app, &metadata, &apk, &converted_jar, allow_backend_change.unwrap_or(false))
+        package::install_aniyomi(
+            &app,
+            &metadata,
+            &apk,
+            &converted_jar,
+            allow_backend_change.unwrap_or(false),
+            replace_installed.unwrap_or(false),
+        )
     })
     .await
     .map_err(|error| error.to_string())?

@@ -17,7 +17,7 @@ vi.mock('$lib/settings/ui', () => {
   return { extensionUrls: mocks.extensionUrls, enabledExtensionUrls: writable<string[]>([]), disabledPlugins: writable<string[]>([]) }
 })
 
-import { installCatalogPackage, removeInstalledExtension } from './manager'
+import { installCatalogPackage, PackageInstalledElsewhereError, removeInstalledExtension } from './manager'
 import { OFFICIAL_ANIME_CATALOG, type ExtensionCatalogPackage } from './catalog'
 import { legacyPackageStores, packageOrigins } from '$lib/store/origins'
 
@@ -107,6 +107,29 @@ describe('installCatalogPackage', () => {
     mocks.invoke.mockClear()
     await installCatalogPackage(pkg, STORE, { updateOnly: true })
     expect(mocks.invoke).toHaveBeenCalledWith('extension_install_url', expect.objectContaining({ expectedBackend: 'izumi-js', allowBackendChange: false }))
+  })
+
+  it('replaces a package installed from another store only when the user confirmed it', async () => {
+    answer([onDisk])
+    packageOrigins.set({ 'example.pkg': LATER })
+    const refused = await installCatalogPackage(pkg, STORE).catch((error: unknown) => error)
+    expect(refused).toBeInstanceOf(PackageInstalledElsewhereError)
+    expect((refused as PackageInstalledElsewhereError).installedFrom).toBe(LATER)
+    expect(installs()).toBe(0)
+    await installCatalogPackage(pkg, STORE, { replaceInstalled: true })
+    expect(mocks.invoke).toHaveBeenCalledWith('extension_install_url', expect.objectContaining({ replaceInstalled: true, allowBackendChange: true }))
+    expect(get(packageOrigins)).toEqual({ 'example.pkg': STORE })
+    // A background update never replaces, even when asked to.
+    packageOrigins.set({ 'example.pkg': LATER })
+    await expect(installCatalogPackage(pkg, STORE, { updateOnly: true, replaceInstalled: true })).rejects.toBeInstanceOf(PackageInstalledElsewhereError)
+    expect(installs()).toBe(1)
+  })
+
+  it('never marks an update from its own store as a replacement', async () => {
+    answer([onDisk])
+    packageOrigins.set({ 'example.pkg': STORE })
+    await installCatalogPackage(pkg, STORE, { replaceInstalled: true })
+    expect(mocks.invoke).toHaveBeenCalledWith('extension_install_url', expect.objectContaining({ replaceInstalled: false }))
   })
 
   it('refuses to install when the installed list cannot be read', async () => {

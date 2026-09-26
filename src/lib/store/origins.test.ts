@@ -11,7 +11,7 @@ vi.mock('$lib/settings/ui', () => {
 import { OFFICIAL_ANIME_CATALOG } from '$lib/extensions/catalog'
 import {
   currentLegacyStores, forgetPackageOrigin, isPackageOrigin, legacyPackageStores, legacyStoresFrom, mayReplacePackage, originKey,
-  packageOrigins, recordPackageOrigin,
+  originLabel, packageOriginOf, packageOrigins, recordPackageOrigin,
 } from './origins'
 
 const CATALOG = 'https://catalog.example.test/index.json'
@@ -29,6 +29,15 @@ describe('package origins', () => {
     expect(get(packageOrigins)).toEqual({ 'example.pkg': CATALOG })
     forgetPackageOrigin('example.pkg')
     expect(get(packageOrigins)).toEqual({})
+  })
+
+  it('names where a package came from, for the replace prompt', () => {
+    recordPackageOrigin('bound.pkg', LATER)
+    expect(packageOriginOf('bound.pkg')).toBe(LATER)
+    expect(packageOriginOf('constructor')).toBeUndefined()
+    expect(originLabel(LATER, [{ url: LATER, name: 'Later Store' }])).toBe('Later Store')
+    expect(originLabel(CATALOG, [])).toBe('catalog.example.test')
+    expect(originLabel(undefined, [])).toBe('an earlier install')
   })
 
   it('tells a recorded origin from a legacy claim', () => {
