@@ -606,4 +606,8 @@ html.theme-shell-fade .theme-sidebar-scrim {
   --theme: var(--izumi-safe-theme);
   font-family: var(--izumi-safe-font);
   color: hsl(var(--foreground));
+  /* Inherited properties an ancestor could otherwise use to hide or disable this surface. Ancestor
+     opacity, transforms and overlays can't be undone from here; safe mode is the escape hatch. */
+  visibility: visible;
+  pointer-events: auto;
 }

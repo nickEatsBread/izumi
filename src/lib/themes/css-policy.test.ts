@@ -36,4 +36,9 @@ describe('theme stylesheet policy', () => {
   it('does not flag gradients or property names that contain "image"', () => {
     expect(forbiddenCss('.a{background-image:linear-gradient(red,blue);mask-image:radial-gradient(black,transparent)}')).toBeUndefined()
   })
+  it('ignores at-rules in comments and names followed by a space', () => {
+    expect(precheckThemeCss('/* @import and @page are fine here */ .a{color:red}')).toContain('.a{color:red}')
+    expect(forbiddenCss('@container image (min-width: 10px) { .a{color:red} }')).toBeUndefined()
+    expect(forbiddenCss('.a{background:url(https://e.test/a.png)}')).toBeTruthy()
+  })
 })

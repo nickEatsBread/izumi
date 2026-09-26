@@ -56,6 +56,7 @@ export function sanitizeThemeCss(text: string, Sheet: typeof CSSStyleSheet | nul
     if (new TextEncoder().encode(text).length > THEME_CSS_MAX_BYTES) return { error: 'This theme stylesheet is over 128 KB.' }
     const sheet = new Sheet()
     sheet.replaceSync(text)
+    if (Array.from(sheet.cssRules).some(rule => kind(rule) === 'CSSNamespaceRule')) return { error: 'Theme stylesheets cannot use @namespace.' }
     sanitizeRules(sheet as unknown as RuleOwner, 0, { rules: 0 })
     const rules = Array.from(sheet.cssRules)
     const css = rules.filter(rule => !GLOBAL.has(kind(rule))).map(rule => rule.cssText).join('\n')

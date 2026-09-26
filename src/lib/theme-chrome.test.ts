@@ -101,4 +101,8 @@ describe('theme chrome application', () => {
     expect(page).toContain("$effect(() => { if (page.url.searchParams.get('safe') === '1') themeSafeMode.set(true) })")
     expect(read('./components/themes/ThemeSafeModeBanner.svelte')).toContain('$themeSafeMode && !$playing')
   })
+  it('protects the Store trust and install dialogs from theme stylesheets', () => {
+    for (const file of ['StoresDialog', 'StoreEntrySheet', 'ReplacePackageDialog']) expect(read(`./components/store/${file}.svelte`), file).toContain('data-theme-protected')
+    expect(read('../app.css')).toContain('pointer-events: auto;')
+  })
 })

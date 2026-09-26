@@ -102,7 +102,7 @@ function apply() {
     root.style.setProperty('--card', '0 0% 0%')
   }
   // Client-owned copy of the final palette. Protected surfaces read it (app.css) and theme
-  // stylesheets cannot declare it (css-policy.ts), so a stylesheet can never blank them out.
+  // stylesheets cannot declare it (css-policy.ts), so a stylesheet cannot recolour them.
   for (const name of TOKEN_NAMES) root.style.setProperty(`--izumi-safe-${name}`, root.style.getPropertyValue(`--${name}`))
   root.style.setProperty('--izumi-safe-font', FONT_STACKS.nunito)
   if (presentation?.player?.seekbarHeight) root.style.setProperty('--theme-seekbar-height', `${presentation.player.seekbarHeight}px`)

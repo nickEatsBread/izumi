@@ -11,7 +11,7 @@ export const BLOCKED_AT_RULES: readonly string[] = ['import', 'font-face', 'name
 
 const FUNCTIONS = ['url', 'image-set', 'image', 'src', 'element', 'cross-fade', 'expression']
 const DATA_URL = /url\(\s*(["']?)data:image\/(?:png|jpeg|gif|webp|avif|svg\+xml)[;,][^"'()\\\s]*\1\s*\)/gi
-const FUNCTION_CALL = new RegExp(`(^|[^a-z0-9_-])(?:-[a-z]+-)?(${FUNCTIONS.map(name => name.replace(/-/g, '\\-')).join('|')})\\s*\\(`, 'i')
+const FUNCTION_CALL = new RegExp(`(^|[^a-z0-9_-])(?:-[a-z]+-)?(${FUNCTIONS.map(name => name.replace(/-/g, '\\-')).join('|')})\\(`, 'i')
 const AT_RULE = /@(?:-[a-z]+-)?([a-z-]+)/gi
 const RESERVED_DECLARATION = /(^|[{;\s])--izumi-safe-[a-z0-9_-]*\s*:/i
 
@@ -38,7 +38,8 @@ export function forbiddenCss(text: string): string | undefined {
 export function precheckThemeCss(value: unknown): string {
   if (typeof value !== 'string') throw new Error('A theme stylesheet must be text.')
   if (new TextEncoder().encode(value).length > THEME_CSS_MAX_BYTES) throw new Error('A theme stylesheet must be under 128 KB.')
-  for (const match of value.matchAll(AT_RULE)) {
+  const code = value.replace(/\/\*[\s\S]*?\*\//g, '')
+  for (const match of code.matchAll(AT_RULE)) {
     const name = match[1].toLowerCase()
     if (BLOCKED_AT_RULES.includes(name)) throw new Error(`Theme stylesheets cannot use @${name}.`)
   }

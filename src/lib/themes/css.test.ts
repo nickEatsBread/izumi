@@ -22,6 +22,9 @@ describe('theme stylesheet sanitiser', () => {
     expect(out).not.toMatch(/import|font-face|https:|app-region|image-set/)
     expect(out).toContain('.a { color: red; }')
   })
+  it('rejects @namespace rules instead of throwing while deleting them', () => {
+    expect(sanitizeThemeCss('@namespace svg url(http://www.w3.org/2000/svg); .a{color:red}').error).toMatch(/@namespace/)
+  })
   it('removes url smuggling through custom properties and the reserved palette', () => {
     expect(flat(String.raw`:root{--x: u\72 l(https://e.test); --y: url(https://e.test); --izumi-safe-background: 0 0% 0%; --ok: 1px}`)).toBe(':root { --ok: 1px; }')
   })

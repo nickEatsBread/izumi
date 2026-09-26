@@ -62,7 +62,7 @@
 
 <div class="fixed inset-0 z-[100] grid place-items-end bg-black/75 sm:place-items-center sm:p-4" role="presentation"
      onclick={(event) => { if (event.target === event.currentTarget && !busy) onclose() }}>
-  <div role="dialog" aria-modal="true" aria-labelledby="store-entry-title" data-nav-trap data-nav-escape
+  <div role="dialog" data-theme-protected aria-modal="true" aria-labelledby="store-entry-title" data-nav-trap data-nav-escape
        class="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-border bg-background p-5 shadow-2xl sm:rounded-2xl sm:p-6">
     <div class="flex items-start gap-3">
       <AddonLogo logo={icon ?? entry.icon} name={entry.name} id={entry.id} size={56} />
