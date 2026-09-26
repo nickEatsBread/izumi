@@ -64,4 +64,12 @@ describe('theme chrome application', () => {
     const page = read('../routes/app/settings/themes/+page.svelte')
     expect(page).toContain('<div class="themes-page" data-theme-protected use:protectedSurface>')
   })
+  it('wires the safe-mode chord, banner and Themes page feedback', () => {
+    const layout = read('../routes/app/+layout.svelte')
+    expect(layout).toContain('isSafeModeChord(event)')
+    expect(layout).toContain('<ThemeSafeModeBanner />')
+    const page = read('../routes/app/settings/themes/+page.svelte')
+    expect(page).toContain("page.url.searchParams.get('safe') === '1'")
+    expect(page).toContain("$themeCssStatus.state === 'rejected'")
+  })
 })

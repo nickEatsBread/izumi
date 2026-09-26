@@ -14,7 +14,8 @@
   import { themeStudioOpen } from '$lib/settings/theme-studio-session'
   import { activeStudioThemeId, studioThemes } from '$lib/settings/theme-studio'
   import { themePreset } from '$lib/settings/ui'
-  import { protectedSurface } from '$lib/themes/safe-mode'
+  import { protectedSurface, themeSafeMode } from '$lib/themes/safe-mode'
+  import { themeCssStatus } from '$lib/theme'
 
   let tab = $state<'browse' | 'installed'>('browse')
   // Raw, never proxied: listingFor is keyed by these exact objects.
@@ -70,7 +71,10 @@
     const entry = entries.find((item) => item.id === themeId && originOf(item) === origin)
     if (entry) void inspect(entry)
   }
-  onMount(() => { void refresh().then(openRequested) })
+  onMount(() => {
+    if (page.url.searchParams.get('safe') === '1') themeSafeMode.set(true)
+    void refresh().then(openRequested)
+  })
   async function inspect(entry: ThemeRelease) {
     if (busy) return
     selected = entry; prepared = null; busy = true; error = ''; notice = ''
@@ -149,6 +153,8 @@
 <div class="themes-page" data-theme-protected use:protectedSurface>
   <header class="page-heading"><div><p class="eyebrow">Make it yours</p><h2>Themes</h2><p class="intro">A different look. Still your client.</p></div><a class="control gap-2" href="/app/settings/theme-studio" data-focusable><Palette size={16} aria-hidden="true" /> Theme Studio</a></header>
   {#if $themeStudioOpen}<p class="message">Finish or discard your Theme Studio draft before applying another theme.</p>{/if}
+  {#if $themeSafeMode}<p class="message">Safe mode is on: theme styles stay off until you turn them back on or restart. <button type="button" class="text-close inline" data-focusable onclick={() => themeSafeMode.set(false)}>Turn theme styles back on</button></p>{/if}
+  {#if $themeCssStatus.state === 'rejected'}<p role="alert" class="message error">The active theme's stylesheet was not applied: {$themeCssStatus.reason}</p>{/if}
   <div class="toolbar"><nav aria-label="Theme library"><button type="button" data-focusable aria-pressed={tab === 'browse'} onclick={() => { tab = 'browse'; selected = null; prepared = null }}>Browse</button><button type="button" data-focusable aria-pressed={tab === 'installed'} onclick={() => { tab = 'installed'; selected = null; prepared = null }}>Installed <span>{$installedThemes.length}</span></button></nav><div class="toolbar-actions"><button class="control" data-focusable onclick={() => { showAdd = true; error = '' }}>Add theme</button></div></div>
   <input bind:this={fileInput} type="file" accept=".json,application/json" multiple class="hidden" onchange={(event) => { const input = event.currentTarget; void fromFiles(input.files); input.value = '' }} aria-label="Import theme package files" />
   <input bind:this={folderInput} type="file" accept=".json,application/json" multiple webkitdirectory class="hidden" onchange={(event) => { const input = event.currentTarget; void fromFiles(input.files); input.value = '' }} aria-label="Import theme package folder" />
@@ -261,6 +267,7 @@
   .batch span { color: hsl(var(--muted-foreground)); font-size: 11px; }
   .batch-errors { color: hsl(var(--muted-foreground)); font-size: 12px; margin-bottom: 12px; }
   .text-close { display: block; margin-top: 16px; min-height: 40px; font-size: 12px; font-weight: 800; text-decoration: underline; text-underline-offset: 4px; }
+  .text-close.inline { display: inline; margin: 0 0 0 6px; min-height: 0; }
   .empty { min-height: 240px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; color: hsl(var(--muted-foreground)); }
   .empty p { font-size: 13px; }
   .skeleton { aspect-ratio: 16 / 10; background: hsl(var(--muted)); border-radius: 10px; }

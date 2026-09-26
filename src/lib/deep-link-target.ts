@@ -59,6 +59,7 @@ export function parseDeepLink(raw: string): DeepLinkTarget | null {
       const episode = kind === 'watch' && /^\d+(?:\.\d+)?$/.test(parts[1] ?? '') ? `?episode=${parts[1]}` : ''
       return { path: `/app/anime/${id}${episode}` }
     }
+    if (kind === 'safe-mode') return { path: '/app/settings/themes?safe=1', notice: 'Safe mode: theme styles are off' }
     if (kind === 'search') {
       const query = url.searchParams.get('q') ?? parts.join(' ')
       return { path: `/app/search${query ? `?q=${encodeURIComponent(query)}` : ''}` }

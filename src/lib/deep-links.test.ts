@@ -44,6 +44,9 @@ describe('deep links', () => {
     expect(parseDeepLink('izumi://store/add?url=http%3A%2F%2Fplain.example.test%2Findex.json')).toBeNull()
     expect(parseDeepLink('izumi://store/add')).toBeNull()
   })
+  it('routes the safe-mode link to Themes with safe mode requested', () => {
+    expect(parseDeepLink('izumi://safe-mode')).toEqual({ path: '/app/settings/themes?safe=1', notice: 'Safe mode: theme styles are off' })
+  })
 })
 
 describe('deep link dispatch', () => {

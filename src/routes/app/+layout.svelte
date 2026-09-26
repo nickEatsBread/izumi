@@ -15,6 +15,8 @@
   import { themeStudioOpen } from '$lib/settings/theme-studio-session'
   const loadThemeStudio = () => import('$lib/components/settings/ThemeStudio.svelte')
   import { themeInstallPreview } from '$lib/themes/installed'
+  import ThemeSafeModeBanner from '$lib/components/themes/ThemeSafeModeBanner.svelte'
+  import { isSafeModeChord, themeSafeMode } from '$lib/themes/safe-mode'
   const loadThemeInstallPreview = () => import('$lib/components/themes/ThemeInstallPreview.svelte')
   import PlayFeedback from '$lib/components/PlayFeedback.svelte'
   import { title as mediaTitle, banner as mediaBanner, cover as mediaCover } from '$lib/anilist/media'
@@ -125,6 +127,8 @@
   })
 
   function handleShellKeydown(event: KeyboardEvent) {
+    // Safe mode works even when a theme stylesheet has hidden the way back to Settings.
+    if (isSafeModeChord(event)) { event.preventDefault(); themeSafeMode.update((on) => !on); return }
     if (event.defaultPrevented) return
     const catalogAction = findHotkey(event, $hotkeyBindings, 'Home', $isMacOS)
     if ((catalogAction === 'homeNextCatalog' || catalogAction === 'homePreviousCatalog')
@@ -601,3 +605,4 @@
 {/if}
 
 {#if $themeInstallPreview && !$playing && !$androidMpvActive}<Lazy load={loadThemeInstallPreview} />{/if}
+<ThemeSafeModeBanner />
