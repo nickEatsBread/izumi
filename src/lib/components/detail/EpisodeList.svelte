@@ -32,7 +32,7 @@
   import EpisodeToolbar from './EpisodeToolbar.svelte'
   import { planEpisodeToolbar } from './toolbar-plan'
   import SeasonPicker from './SeasonPicker.svelte'
-  import { fetchSeasonChain, seasonEntries, type SeasonEntry } from '$lib/anilist/seasons'
+  import { fetchSeasonChain, mayListSeasons, seasonEntries, type SeasonEntry } from '$lib/anilist/seasons'
   import AiringStatus from './AiringStatus.svelte'
   import { episodeTileState, offlineResumeEpisode, playableThrough } from './episode-tile'
   import { episodeRanges, pageSizeFor, searchEpisodes, shownPage } from './episode-ranges'
@@ -293,10 +293,11 @@
   }))
   // API 3 `detail.episodes.seasons`: this title's seasons above the list, from the AniList
   // prequel/sequel chain (cached per title, so moving between seasons does not walk it again).
-  // Provider titles use their AniList mapping; offline pages show none.
+  // Provider titles use their AniList mapping; offline pages show none. Only a title that can be a
+  // season (TV, TV short, ONA) walks the chain: a film, OVA or special never shows the picker.
   const seasonStyle = $derived(episodeTheme?.seasons ?? 'none')
   const seasonVariant = $derived<'chips' | 'posters' | 'dropdown'>(seasonStyle === 'none' ? 'chips' : seasonStyle)
-  const seasonRoot = $derived(seasonStyle === 'none' || offline ? undefined : anilistIdOf(media))
+  const seasonRoot = $derived(seasonStyle === 'none' || offline || !mayListSeasons(media.format) ? undefined : anilistIdOf(media))
   let seasonList = $state<SeasonEntry[]>([])
   $effect(() => {
     const root = seasonRoot

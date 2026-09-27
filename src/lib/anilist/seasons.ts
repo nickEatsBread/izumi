@@ -7,6 +7,14 @@ import type { Media } from './types'
 
 /** Formats that count as a season. Films, OVAs and specials stay in Relations. */
 export const SEASON_FORMATS: ReadonlySet<string> = new Set(['TV', 'TV_SHORT', 'ONA'])
+
+/** Whether a title may be one of the seasons a picker lists, by its own format: a film, OVA or
+ *  special never shows the picker, so it never walks the chain. A title without a format (some
+ *  providers leave it out) still walks; its AniList record decides. */
+export function mayListSeasons(format: string | null | undefined): boolean {
+  return !format || SEASON_FORMATS.has(format)
+}
+
 const CHAIN_RELATIONS = new Set(['PREQUEL', 'SEQUEL'])
 const MAX_WAVES = 12
 const MAX_TITLES = 60

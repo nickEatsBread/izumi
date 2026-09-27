@@ -7,10 +7,14 @@ const list = readFileSync(path('./EpisodeList.svelte'), 'utf8')
 
 describe('season picker', () => {
   it('loads the prequel/sequel chain once per title', () => {
-    expect(list).toContain("import { fetchSeasonChain, seasonEntries, type SeasonEntry } from '$lib/anilist/seasons'")
+    // The import also brings the format gate below.
+    expect(list).toContain("import { fetchSeasonChain, mayListSeasons, seasonEntries, type SeasonEntry } from '$lib/anilist/seasons'")
     expect(list).toContain('const seed = untrack(() => (media.catalog ? undefined : media))')
     expect(list).toContain('fetchSeasonChain(root, seed)')
     expect(list).toContain('seasonList = seasonEntries(chain, root)')
+  })
+  it('walks the chain only for a title that can be a season (not a film, OVA or special)', () => {
+    expect(list).toContain("const seasonRoot = $derived(seasonStyle === 'none' || offline || !mayListSeasons(media.format) ? undefined : anilistIdOf(media))")
   })
   it('renders chips, posters or a dropdown with hooks', () => {
     expect(existsSync(path('./SeasonPicker.svelte'))).toBe(true)
