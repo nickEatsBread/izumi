@@ -314,3 +314,65 @@ describe('streaming-site presentation keys (API 3)', () => {
     expect(parseNode({ type: 'icon', icon: 'score' }, undefined, 0, true, 2).icon).toBe('score')
   })
 })
+
+describe('series page composition keys (API 3)', () => {
+  it('parses the episode toolbar, paging, seasons and order keys', () => {
+    const episodes = { order: 'none', toolbar: 'header', controls: ['search', 'layout'], search: 'field', paging: 'ranges', pageSize: 50, toolbarMin: 13, seasons: 'chips' }
+    expect(parsePresentation({ detail: { episodes } }).detail?.episodes).toEqual(episodes)
+    expect(parsePresentation({ detail: { episodes: { pageSize: 'auto', paging: 'dropdown', controls: [] } } }).detail?.episodes).toEqual({ pageSize: 'auto', paging: 'dropdown', controls: [] })
+    expect(resolveDetail(parsePresentation({ detail: { episodes } })).episodes).toMatchObject({ placement: 'tab', ...episodes })
+    expect(resolveDetail(undefined).episodes?.toolbar).toBeUndefined()
+  })
+  it('refuses the new episode keys and values on API 2 packages', () => {
+    for (const episodes of [{ order: 'none' }, { search: 'field' }, { toolbar: 'bar' }, { controls: ['sort'] }, { paging: 'ranges' }, { pageSize: 48 }, { toolbarMin: 12 }, { seasons: 'chips' }]) {
+      expect(() => parsePresentation({ detail: { episodes } }, 2), JSON.stringify(episodes)).toThrow()
+    }
+    expect(parsePresentation({ detail: { episodes: { order: 'flip', search: false } } }, 2).detail?.episodes).toEqual({ order: 'flip', search: false })
+  })
+  it('bounds page sizes, the toolbar threshold and the control list', () => {
+    for (const pageSize of [11, 201, 12.5, '48', 'all']) expect(() => parsePresentation({ detail: { episodes: { pageSize } } }), String(pageSize)).toThrow()
+    expect(parsePresentation({ detail: { episodes: { pageSize: 12 } } }).detail?.episodes?.pageSize).toBe(12)
+    expect(parsePresentation({ detail: { episodes: { pageSize: 200 } } }).detail?.episodes?.pageSize).toBe(200)
+    for (const toolbarMin of [-1, 101, 2.5]) expect(() => parsePresentation({ detail: { episodes: { toolbarMin } } }), String(toolbarMin)).toThrow()
+    expect(parsePresentation({ detail: { episodes: { toolbarMin: 0 } } }).detail?.episodes?.toolbarMin).toBe(0)
+    expect(() => parsePresentation({ detail: { episodes: { controls: ['sort', 'sort'] } } })).toThrow('twice')
+    expect(() => parsePresentation({ detail: { episodes: { controls: ['filter'] } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { episodes: { controls: 'sort' } } })).toThrow()
+    expect(() => parsePresentation({ detail: { episodes: { seasons: 'tabs' } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { episodes: { search: 'toggle' } } })).toThrow()
+  })
+  it('parses the section model, bottom navigation and continue card', () => {
+    const sections = { mode: 'tabs', tabs: ['overview', 'episodes'], labels: { overview: 'info', episodes: 'watch' }, default: 'overview', info: 'overview' }
+    const layout = parsePresentation({ detail: { sections, nav: 'hidden', continue: 'card' } })
+    expect(layout.detail).toEqual({ sections, nav: 'hidden', continue: 'card' })
+    expect(resolveDetail(layout)).toMatchObject({ sections, nav: 'hidden', continue: 'card' })
+    expect(parsePresentation({ detail: { sections: { mode: 'stack' } } }).detail?.sections).toEqual({ mode: 'stack' })
+    for (const detail of [{ sections: { mode: 'tabs' } }, { nav: 'hidden' }, { continue: 'card' }]) expect(() => parsePresentation({ detail }, 2)).toThrow('unsupported')
+  })
+  it('validates section ids, the fixed tab names and the default tab', () => {
+    expect(() => parsePresentation({ detail: { sections: { tabs: ['episodes', 'episodes'] } } })).toThrow('twice')
+    expect(() => parsePresentation({ detail: { sections: { tabs: ['comments'] } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { sections: { tabs: [] } } })).toThrow('1–5')
+    expect(() => parsePresentation({ detail: { sections: { labels: { overview: 'Home page' } } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { sections: { labels: { episodes: 'cast' } } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { sections: { labels: { comments: 'watch' } } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { sections: { tabs: ['episodes', 'relations'], default: 'characters' } } })).toThrow('default')
+    expect(parsePresentation({ detail: { sections: { tabs: ['episodes'], default: 'overview' } } }).detail?.sections?.default).toBe('overview')
+    expect(() => parsePresentation({ detail: { nav: 'floating' } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { continue: 'banner' } })).toThrow('unsupported')
+  })
+  it('binds the episode template fields on API 3 only', () => {
+    for (const field of ['episodeNo', 'episodeCode', 'watched', 'filler', 'rating']) {
+      expect(parsePresentation({ detail: { episodes: { card: { type: 'text', field, when: { field } } } } }).detail?.episodes?.card?.field).toBe(field)
+      expect(() => parsePresentation({ detail: { episodes: { card: { type: 'text', field } } } }, 2), field).toThrow('unsupported')
+    }
+    expect(displayText('episodeNo', { episodeNo: '12' })).toBe('12')
+    expect(displayText('episodeNumber', { episodeNumber: 12 })).toBe('E12')
+    expect(displayText('rating', { rating: '8.5' })).toBe('8.5')
+  })
+  it('merges a phone section model over the shared one', () => {
+    const layout = parsePresentation({ detail: { sections: { labels: { overview: 'about' }, mode: 'stack' } }, mobile: { detail: { sections: { tabs: ['overview', 'episodes'] } } } })
+    expect(resolveDetail(resolvePresentation(layout, true)).sections).toEqual({ labels: { overview: 'about' }, mode: 'stack', tabs: ['overview', 'episodes'] })
+    expect(resolveDetail(resolvePresentation(layout, false)).sections).toEqual({ labels: { overview: 'about' }, mode: 'stack' })
+  })
+})
