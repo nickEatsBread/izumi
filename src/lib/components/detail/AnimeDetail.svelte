@@ -78,7 +78,7 @@
   import { countryName, formatDate as fmtDate, prettyEnum } from '$lib/detail/facts'
   import FactList from './FactList.svelte'
   import AiringCountdown from './AiringCountdown.svelte'
-  import { playableThrough } from './episode-tile'
+  import { offlineResumeEpisode, playableThrough } from './episode-tile'
   import { flipInGutter } from './toolbar-plan'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
@@ -196,16 +196,13 @@
     ? animeWatchedProgress(media, $localHistory, $sessionProgress, $manualProgressOverrides)
     : 0)
 
-  // Resume target for the hero CTA. Offline = first not-yet-watched DOWNLOADED episode (else the
-  // first downloaded) — never resumeEp(), which reads tracker progress and could point at an
-  // episode that isn't on disk. `playCta` also routes offline through playEpisode (the local swap)
-  // instead of resumeEpisode (which would fire a live fetchMediaById + online resolve).
+  // Resume target for the hero CTA. Offline = the first DOWNLOADED episode past the progress the
+  // episode list shows (else the first downloaded), by the rule the Continue card uses too
+  // (episode-tile.ts) — never resumeEp(), which could point at an episode that isn't on disk.
+  // `playCta` also routes offline through playEpisode (the local swap) instead of resumeEpisode
+  // (which would fire a live fetchMediaById + online resolve).
   function offlineResumeEp(m: Media): number {
-    const doneEps = Object.values($downloads)
-      .filter((d) => d.mediaId === m.id && d.status === 'done').map((d) => d.episode).sort((a, b) => a - b)
-    if (!doneEps.length) return 1
-    const prog = $localHistory[m.id]?.progress ?? 0
-    return doneEps.find((e) => e > prog) ?? doneEps[0]
+    return offlineResumeEpisode(downloadedEpisodes(m), watchedThrough)
   }
   const ctaEp = (m: Media) => {
     if ($offlineMode) return offlineResumeEp(m)

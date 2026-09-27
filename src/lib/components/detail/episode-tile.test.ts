@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { episodeTileState, playableThrough } from './episode-tile'
+import { episodeTileState, offlineResumeEpisode, playableThrough } from './episode-tile'
 
 describe('episodeTileState', () => {
   it('marks everything up to the watched-through point as watched', () => {
@@ -37,5 +37,19 @@ describe('playableThrough', () => {
   it('counts downloaded episodes offline', () => {
     expect(playableThrough([2, 5], 0, true)).toBe(5)
     expect(playableThrough([], 0, true)).toBe(0)
+  })
+})
+
+// Offline, the series Play button and the Continue card open the same downloaded episode.
+describe('offlineResumeEpisode', () => {
+  it('opens the first downloaded episode past the progress', () => {
+    expect(offlineResumeEpisode([1, 2, 5, 7], 2)).toBe(5)
+    expect(offlineResumeEpisode([3, 4], 0)).toBe(3)
+  })
+  it('starts over from the first download once every download is watched', () => {
+    expect(offlineResumeEpisode([1, 2, 3], 3)).toBe(1)
+  })
+  it('falls back to episode 1 with nothing downloaded', () => {
+    expect(offlineResumeEpisode([], 4)).toBe(1)
   })
 })

@@ -34,3 +34,10 @@ export function playableThrough(episodes: number[], airedTotal: number, offline:
   if (offline) return episodes.at(-1) ?? 0
   return Math.min(episodes.at(-1) ?? 0, Number.isFinite(airedTotal) ? airedTotal : 0)
 }
+
+/** Offline, the episode the series Play button opens: the first downloaded episode past `watched`
+ *  (the progress the episode list shows), else the first download; 1 with nothing on disk. The
+ *  Continue card and the list's `data-next` use it too, so all three name the same episode. */
+export function offlineResumeEpisode(downloaded: number[], watched: number): number {
+  return downloaded.find((episode) => episode > watched) ?? downloaded[0] ?? 1
+}

@@ -20,7 +20,8 @@ describe('episode number grid', () => {
   })
 
   it('renders tiles from the tested state helper', () => {
-    expect(list).toContain("import { episodeTileState, playableThrough } from './episode-tile'")
+    // The same import brings the offline resume rule shared with the Play button (continue-card.test.ts).
+    expect(list).toContain("import { episodeTileState, offlineResumeEpisode, playableThrough } from './episode-tile'")
     expect(list).toContain("$episodeLayout === 'grid'")
     expect(list).toContain('minmax(3.25rem,1fr)')
   })

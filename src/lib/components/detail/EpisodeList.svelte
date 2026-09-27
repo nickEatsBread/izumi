@@ -34,7 +34,7 @@
   import SeasonPicker from './SeasonPicker.svelte'
   import { fetchSeasonChain, seasonEntries, type SeasonEntry } from '$lib/anilist/seasons'
   import AiringStatus from './AiringStatus.svelte'
-  import { episodeTileState, playableThrough } from './episode-tile'
+  import { episodeTileState, offlineResumeEpisode, playableThrough } from './episode-tile'
   import { episodeRanges, pageSizeFor, searchEpisodes } from './episode-ranges'
   import { episodeNoText } from '$lib/themes/episode-fields'
   import Download from '@lucide/svelte/icons/download'
@@ -144,9 +144,10 @@
     return rows.includes(preferred) ? preferred : (rows.find((episode) => episode <= aired) ?? rows[0])
   })
   // The episode the series Play button opens (the page CTA's own rule): `data-next` marks it for
-  // theme stylesheets and the Continue card plays it. Offline: the next downloaded episode.
+  // theme stylesheets and the Continue card plays it. Offline: the next downloaded episode, by the
+  // rule the Play button uses too (episode-tile.ts).
   const ctaEpisode = $derived(offline
-    ? (offlineEps.find((episode) => episode > watchedThrough) ?? offlineEps[0] ?? 1)
+    ? offlineResumeEpisode(offlineEps, watchedThrough)
     : animeResumeEpisode(media, watchedThrough))
   function toggleSort(dir: SortDir) { if (dir !== sortDir) { h.select(); sortDir = dir } }
   function flipSort() {

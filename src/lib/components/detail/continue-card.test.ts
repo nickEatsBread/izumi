@@ -23,6 +23,11 @@ describe('continue card', () => {
     expect(detail.match(/\{#if !headerCtaHidden\}/g)?.length).toBe(2)
     expect(detail.match(/onpointerenter=\{\(\) => prefetchEpisodeSources\(m, ctaEp\(m\)\)\}/g)).toHaveLength(4)
   })
+  it('resumes offline from the episode the header Play button opens', () => {
+    expect(list).toContain('? offlineResumeEpisode(offlineEps, watchedThrough)')
+    expect(detail).toContain('return offlineResumeEpisode(downloadedEpisodes(m), watchedThrough)')
+    expect(detail).not.toContain('$localHistory[m.id]?.progress ?? 0')
+  })
   it('keeps the phone Play button while the episodes, and so the card, are off the page', () => {
     expect(detail).toContain("import { episodesOnPage, resolveSections, type ResolvedSections } from '$lib/detail/sections'")
     expect(detail).toContain('&& episodesOnPage(mobileTabs, shownTab(mobileTabs), !episodeTabbed)')
