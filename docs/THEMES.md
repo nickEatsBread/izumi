@@ -213,6 +213,11 @@ State values:
 | `detail.banner` | slot | The artwork area at the top of the series page. |  |
 | `detail.poster` | part | The cover image. |  |
 | `detail.title` | part | The title. |  |
+| `detail.logo` | part | The title logo inside `detail.title` (`detail.title: "logo"`). |  |
+| `detail.backdrop` | part | The artwork behind an overlay series page: the banner, key art (`detail.art: "keyart"`) or a blurred cover. |  |
+| `detail.body` | part | The text column over the artwork of an overlay series page. |  |
+| `detail.studio` | part | The studio line of the desktop overlay page. |  |
+| `detail.rating` | part | The rating row (your score) of the desktop overlay page. |  |
 | `detail.alt-title` | part | The native or romaji title. |  |
 | `detail.header` | part | The theme template under the title (`detail.header`). |  |
 | `detail.meta` | part | The facts line. |  |

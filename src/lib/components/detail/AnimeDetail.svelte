@@ -13,7 +13,10 @@
   import { offlineMode } from '$lib/stores/offline'
   import { downloads, downloadedMedia } from '$lib/downloads/state'
   import { localHistory, sessionProgress, manualProgressOverrides } from '$lib/player/history'
-  import { seriesTitle } from '$lib/downloads/library'
+  // Aliased: this file also defines a `seriesTitle` snippet (the rendered <h1>/logo), which would
+  // otherwise shadow this helper everywhere in the component — Svelte hoists a markup-level snippet
+  // into the same component scope as the script.
+  import { seriesTitle as seriesTitleFromItem } from '$lib/downloads/library'
   import { untrack } from 'svelte'
   import { readable, type Readable } from 'svelte/store'
   import { animeResumeEpisode, animeWatchedProgress, recordedWatched, type AnimeDetailState } from '$lib/catalog/anime-detail'
@@ -69,6 +72,7 @@
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { mediaDisplayModel } from '$lib/themes/host-model'
   import { ambientFromHex } from '$lib/themes/ambient'
+  import { loadTitleExtras, templateNeeds, type TitleExtras } from '$lib/themes/title-extras'
   import { countryName, formatDate as fmtDate, prettyEnum } from '$lib/detail/facts'
   import FactList from './FactList.svelte'
   import AiringCountdown from './AiringCountdown.svelte'
@@ -138,7 +142,7 @@
     const snap = $downloadedMedia[id] ?? $localHistory[id]?.media
     if (!snap && !doneItems.length) return null
     const base: Media = snap ?? ({
-      id, title: { userPreferred: seriesTitle(doneItems[0]?.title ?? '') },
+      id, title: { userPreferred: seriesTitleFromItem(doneItems[0]?.title ?? '') },
       coverImage: { extraLarge: doneItems[0]?.poster },
     } as Media)
     const progress = Math.max($localHistory[id]?.progress ?? 0, base.mediaListEntry?.progress ?? 0)
@@ -216,6 +220,44 @@
   const detailTheme = $derived(resolveDetail($themePresentation))
   // The series' cover colour for theme stylesheets (`--cover-rgb`).
   const coverRgb = $derived(ambientFromHex(media?.coverImage?.color))
+  // API 3 extras the series page binds: key art (`detail.art`), the title logo (`detail.title`) and
+  // whatever the header template shows (an age rating, audio). Keyed by id so a refetch of the same
+  // series does not reload them.
+  const detailNeeds = $derived.by(() => {
+    const needs = templateNeeds(detailTheme.header)
+    if (detailTheme.art === 'keyart') needs.add('keyart')
+    if (detailTheme.title === 'logo') needs.add('logo')
+    return needs
+  })
+  const extrasId = $derived(media?.id)
+  let detailExtras = $state<TitleExtras>({})
+  let detailExtrasSettled = $state(true)
+  let failedDetailLogo = $state('')
+  $effect(() => {
+    const id = extrasId
+    const needs = detailNeeds
+    const offline = $offlineMode
+    const target = untrack(() => media)
+    detailExtras = {}
+    if (id == null || !target || !needs.size || offline) { detailExtrasSettled = true; return }
+    detailExtrasSettled = false
+    let cancelled = false
+    // Key art and logos wait up to 1.2 s so the page does not swap banner → key art, text → logo.
+    const timer = setTimeout(() => { if (!cancelled) detailExtrasSettled = true }, 1200)
+    void loadTitleExtras(target, needs).then((value) => {
+      if (cancelled) return
+      detailExtras = value
+      detailExtrasSettled = true
+    })
+    return () => { cancelled = true; clearTimeout(timer) }
+  })
+  const overlayBackdrop = $derived(media
+    ? detailTheme.art === 'keyart'
+      ? (detailExtrasSettled ? detailExtras.keyart || media.bannerImage || '' : '')
+      : media.bannerImage || ''
+    : '')
+  const overlayArtWaiting = $derived(detailTheme.art === 'keyart' && !detailExtrasSettled)
+  const detailLogo = $derived(detailTheme.title === 'logo' && detailExtras.logo && detailExtras.logo !== failedDetailLogo ? detailExtras.logo : '')
   const factsStyle = $derived(detailTheme.factsStyle ?? 'template')
   const countdown = $derived(detailTheme.countdown ?? 'none')
   const overlayDetail = $derived(detailTheme.layout === 'overlay')
@@ -479,17 +521,17 @@
         {/if}
       </div>
       <div data-slot="detail.banner" bind:clientHeight={artHeight} class="relative min-h-[56vh] w-full overflow-hidden">
-        {#if m.bannerImage}
-          <img src={m.bannerImage} alt="" onload={() => (artLoaded = true)}
+        {#if overlayBackdrop}
+          <img data-part="detail.backdrop" src={overlayBackdrop} alt="" onload={() => (artLoaded = true)}
                class="absolute inset-0 h-full w-full object-cover transition-opacity duration-500 {artLoaded ? 'opacity-100' : 'opacity-0'}"
                style="object-position:center 20%" />
-        {:else}
-          <img src={cover(m)} alt="" class="absolute inset-0 h-full w-full scale-110 object-cover blur-xl transition-opacity duration-500 {artLoaded ? 'opacity-50' : 'opacity-0'}"
+        {:else if !overlayArtWaiting}
+          <img data-part="detail.backdrop" src={cover(m)} alt="" class="absolute inset-0 h-full w-full scale-110 object-cover blur-xl transition-opacity duration-500 {artLoaded ? 'opacity-50' : 'opacity-0'}"
                onload={() => (artLoaded = true)} style="object-position:center 30%" />
         {/if}
         <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
-        <div class="relative z-10 flex min-h-[56vh] flex-col justify-end gap-3 px-4 pb-8 pt-24">
-          <h1 data-part="detail.title" class="text-3xl font-black leading-tight text-white drop-shadow">{title(m)}</h1>
+        <div data-part="detail.body" class="relative z-10 flex min-h-[56vh] flex-col justify-end gap-3 px-4 pb-8 pt-24">
+          {@render seriesTitle(m, 'text-3xl font-black leading-tight text-white drop-shadow')}
           {@render seriesHeader(m, '')}
           <button data-part="button" data-variant="primary" data-focusable use:focusOnMount
                   onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
@@ -601,7 +643,7 @@
             {#if m.title.native || m.title.romaji}
               <div data-part="detail.alt-title" class="truncate text-xs text-muted-foreground">{m.title.native || m.title.romaji}</div>
             {/if}
-            <h1 data-part="detail.title" class="line-clamp-2 text-xl font-black leading-tight">{title(m)}</h1>
+            {@render seriesTitle(m, 'line-clamp-2 text-xl font-black leading-tight')}
             {@render seriesHeader(m, 'mt-2')}
           </div>
         </div>
@@ -795,18 +837,18 @@
     </div>
   {:else if overlayDetail}
     <section data-slot="detail" data-layout="overlay" data-variant="desktop" style:--cover-rgb={coverRgb} class="relative isolate min-h-[72vh] w-full overflow-hidden" data-theme-surface="detail-overlay">
-      {#if m.bannerImage}
-        <img src={m.bannerImage} alt="" class="absolute inset-0 h-full w-full object-cover" style="object-position:center 20%" />
-      {:else}
-        <img src={cover(m)} alt="" class="absolute inset-0 h-full w-full scale-110 object-cover blur-2xl opacity-60" />
+      {#if overlayBackdrop}
+        <img data-part="detail.backdrop" src={overlayBackdrop} alt="" class="absolute inset-0 h-full w-full object-cover" style="object-position:center 20%" />
+      {:else if !overlayArtWaiting}
+        <img data-part="detail.backdrop" src={cover(m)} alt="" class="absolute inset-0 h-full w-full scale-110 object-cover blur-2xl opacity-60" />
       {/if}
       <div class="absolute inset-0 bg-gradient-to-t from-background via-background/25 to-transparent"></div>
       <div class="absolute inset-y-0 left-0 w-[58%] bg-gradient-to-r from-background/95 via-background/55 to-transparent"></div>
-      <div class="relative z-10 flex min-h-[72vh] max-w-3xl flex-col justify-center gap-5 px-8 py-20 sm:px-12">
+      <div data-part="detail.body" class="relative z-10 flex min-h-[72vh] max-w-3xl flex-col justify-center gap-5 px-8 py-20 sm:px-12">
         {#if m.title.native || m.title.romaji}
           <div data-part="detail.alt-title" class="text-sm text-white/70">{m.title.native || m.title.romaji}</div>
         {/if}
-        <h1 data-part="detail.title" class="text-5xl font-black leading-[1.02] text-white drop-shadow-md sm:text-6xl">{title(m)}</h1>
+        {@render seriesTitle(m, 'text-5xl font-black leading-[1.02] text-white drop-shadow-md sm:text-6xl')}
         {@render seriesHeader(m, '')}
         <div data-part="detail.actions" class="flex flex-wrap items-center gap-3">
           <button data-part="button" data-variant="primary" data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
@@ -824,7 +866,7 @@
         </div>
         {#if m.studios?.nodes?.[0]}
           {@const studio = m.studios.nodes[0]}
-          <p class="text-sm text-white/80">Studio: <a class="underline-offset-2 hover:underline" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a></p>
+          <p data-part="detail.studio" class="text-sm text-white/80">Studio: <a class="underline-offset-2 hover:underline" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a></p>
         {/if}
         {#if m.description}
           <p data-part="detail.synopsis" class="max-w-2xl text-base leading-relaxed text-white/90 line-clamp-6">{stripHtml(m.description)}</p>
@@ -842,7 +884,7 @@
         {#if heroPlay.status === 'error'}
           <p class="text-sm text-destructive">{heroPlay.message}</p>
         {/if}
-        {#if showRatingRow}<div class="mt-4">{@render ratingRow(m)}</div>{/if}
+        {#if showRatingRow}<div data-part="detail.rating" class="mt-4">{@render ratingRow(m)}</div>{/if}
       </div>
     </section>
     <div class="relative px-4 pb-16 sm:px-8" data-theme-surface="detail">
@@ -905,7 +947,7 @@
         {#if m.title.native || m.title.romaji}
           <div data-part="detail.alt-title" class="text-sm text-muted-foreground">{m.title.native || m.title.romaji}</div>
         {/if}
-        <h1 data-part="detail.title" class="mb-2 text-3xl font-black">{title(m)}</h1>
+        {@render seriesTitle(m, 'mb-2 text-3xl font-black')}
         {@render seriesHeader(m, 'mb-3')}
 
         {#if factsStyle !== 'template'}
@@ -1111,7 +1153,20 @@
 {#snippet seriesHeader(m: Media, className: string)}
   {#if detailTheme.header}
     <div data-part="detail.header" class={className}>
-      <ThemeNode node={detailTheme.header} model={mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined })} />
+      <ThemeNode node={detailTheme.header} model={mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined, ...detailExtras })} />
     </div>
+  {/if}
+{/snippet}
+
+<!-- The series title: the title logo when the theme asks for it (API 3 `detail.title: "logo"`) and
+     the title has one, else the text. While the logo may still arrive the text stays invisible. -->
+{#snippet seriesTitle(m: Media, className: string)}
+  {#if detailLogo}
+    <h1 data-part="detail.title" aria-label={title(m)} class={className}>
+      <img data-part="detail.logo" src={detailLogo} alt="" onerror={() => (failedDetailLogo = detailLogo)}
+           class="block max-h-44 w-auto max-w-[min(26rem,85%)] object-contain object-left-bottom" />
+    </h1>
+  {:else}
+    <h1 data-part="detail.title" class="{className} {detailTheme.title === 'logo' && !detailExtrasSettled ? 'invisible' : ''}">{title(m)}</h1>
   {/if}
 {/snippet}
