@@ -69,7 +69,8 @@
   import { profileAllowsMedia } from '$lib/profiles/content'
   import ParentalBlock from '$lib/components/profiles/ParentalBlock.svelte'
   import { themePresentation } from '$lib/themes/runtime'
-  import { episodesBelow, episodesOnSide, resolveDetail } from '$lib/themes/presentation'
+  import { episodesBelow, episodesOnSide, resolveDetail, type DetailSection } from '$lib/themes/presentation'
+  import { resolveSections, type ResolvedSections } from '$lib/detail/sections'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { mediaDisplayModel } from '$lib/themes/host-model'
   import { ambientFromHex } from '$lib/themes/ambient'
@@ -217,7 +218,8 @@
     else resumeEpisode(m, ctaEp(m), (s) => (heroPlay = s))
   }
 
-  let active = $state('Episodes')
+  // The tab the viewer picked; until then, or when that tab is gone, the theme's default (`shownTab`).
+  let pickedTab = $state('')
   let heroPlay = $state<PlayState>({ status: 'idle' })
   const detailTheme = $derived(resolveDetail($themePresentation))
   // The series' cover colour for theme stylesheets (`--cover-rgb`).
@@ -291,16 +293,11 @@
   const sideEpisodes = $derived(episodesOnSide($themePresentation, !$isMobile))
   const belowEpisodes = $derived(episodesBelow($themePresentation, !$isMobile))
   const episodeTabbed = $derived(!sideEpisodes && !belowEpisodes)
-  const desktopTabs = $derived(episodeTabbed
-    ? ['Episodes', 'Relations', 'Cast & Crew', 'Recommended', 'Details']
-    : ['Relations', 'Cast & Crew', 'Recommended', 'Details'])
-  const mobileTabs = $derived(episodeTabbed
-    ? ['Episodes', 'Overview', 'Relations', 'Characters', 'Recommended']
-    : ['Overview', 'Relations', 'Characters', 'Recommended'])
-  $effect(() => {
-    const tabs = $isMobile ? mobileTabs : desktopTabs
-    if (!tabs.includes(active)) active = tabs[0]
-  })
+  // Which sections get a tab, their names and order, the tab open on arrival, and whether phones
+  // move the facts into Overview (API 3 `detail.sections`); without it, izumi's own tabs.
+  const desktopTabs = $derived(resolveSections(detailTheme.sections, { phone: false, episodesTabbed: episodeTabbed }))
+  const mobileTabs = $derived(resolveSections(detailTheme.sections, { phone: true, episodesTabbed: episodeTabbed }))
+  const shownTab = (view: ResolvedSections): DetailSection => view.tabs.find((tab) => tab === pickedTab) ?? view.initial
 
   // A TV request already chose the title/episode. Once its detail data is ready, open the same
   // source picker as a local Play press; selecting (or auto-selecting) a source then consumes the
@@ -597,29 +594,7 @@
           </div>
         {/if}
         <div class="mt-6">
-          <Tabs tabs={mobileTabs} bind:active variant={detailTheme.tabs} />
-          {#if active === 'Overview'}
-            <div class="mt-4 space-y-5">
-              {#if m.description}
-                <section>
-                  <h2 class="mb-2 text-base font-black">Synopsis</h2>
-                  <p data-part="detail.synopsis" class="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
-                </section>
-              {/if}
-            </div>
-          {:else if active === 'Relations'}
-            {#if m.relations?.edges?.length}
-              <div data-slot="detail.relations" class="mt-3 grid grid-cols-2 gap-4">
-                {#each m.relations.edges as e (e.node.id)}
-                  <div class="min-w-0"><SmallCard media={e.node} fill /></div>
-                {/each}
-              </div>
-            {:else}<p class="mt-3 text-muted-foreground">No related titles.</p>{/if}
-          {:else if active === 'Characters'}
-            <div class="mt-3"><RichMetadata media={m} view="people" /></div>
-          {:else if active === 'Recommended'}
-            <div class="mt-3"><RichMetadata media={m} view="recommendations" /></div>
-          {/if}
+          {@render detailSections(m, true, true)}
         </div>
       </div>
     </div>
@@ -683,61 +658,7 @@
           </div>
         </div>
 
-        {#if factsStyle === 'template'}
-        <!-- One line of facts instead of seven chips: on a phone the chips wrapped into three
-             rows and read as a wall of pills rather than a summary. Facts sit directly under the
-             title — identity first, schedule after. -->
-        <div data-part="detail.meta" class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-muted-foreground">
-          {#if m.averageScore}
-            <span class="rounded-full px-1.5 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>
-          {/if}
-          {#if format(m)}<span>{format(m)}</span><span class="opacity-40">·</span>{/if}
-          <span>{effProgress}/{epsTotal(m) || '?'} eps</span>
-          {#if m.duration}<span class="opacity-40">·</span><span>{m.duration} min</span>{/if}
-          {#if season(m)}<span class="opacity-40">·</span><a href={seasonBrowseHref(m)} class="underline-offset-2 active:opacity-70">{season(m)}</a>{/if}
-          {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
-        </div>
-
-        <!-- Give the title useful provenance without turning the summary into another pill wall.
-             Mature mobile anime clients surface studio/source/popularity before asking the user to
-             hunt through a final tab; this stays a single quiet wrapping line. -->
-        <div data-part="detail.byline" class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/65">
-          {#if m.studios?.nodes?.[0]}
-            {@const studio = m.studios.nodes[0]}
-            <a href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}
-               class="font-bold text-foreground/85 underline-offset-2 active:opacity-70">{studio.name}</a>
-          {/if}
-          {#if m.source}<span class="opacity-35">·</span><span>From {prettyEnum(m.source)}</span>{/if}
-          {#if m.popularity}<span class="opacity-35">·</span><span>{compactNumber.format(m.popularity)} members</span>{/if}
-        </div>
-        {:else}
-          <FactList media={m} variant={factsStyle} progress={effProgress > 0 ? `${effProgress}/${epsTotal(m) || '?'}` : undefined} {controllerUi} genres={false} />
-        {/if}
-        {#if countdown !== 'none'}<AiringCountdown media={m} variant={countdown} />{/if}
-
-        {#if m.genres?.length}
-          <!-- One horizontal rail preserves vertical space while making genre identity visible at a
-               glance. It deliberately scrolls instead of wrapping into a tall block above Play. -->
-          <div data-part="detail.genres" class="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1" aria-label="Genres">
-            {#each m.genres as genre (genre)}
-              <a data-part="chip" href={`/app/search?genre=${encodeURIComponent(genre)}`}
-                 class="shrink-0 rounded-full border border-border/80 bg-secondary/55 px-3 py-1.5 text-xs font-bold text-foreground/85 active:bg-accent">{genre}</a>
-            {/each}
-          </div>
-        {/if}
-
-        <!-- Phones have no room for release timing in their episode controls. Keep one quiet
-             grouped summary under the facts; desktop anchors it to the episode toolbar instead. -->
-        <div class="mt-3 flex flex-wrap items-center gap-2 empty:mt-0">
-          <AiringStatus media={m} />
-        </div>
-
-        {#if m.description}
-          <button data-part="detail.synopsis" type="button" onclick={() => (descExpanded = !descExpanded)}
-                  class="mt-3 w-full text-left text-sm text-muted-foreground {descExpanded ? 'block' : 'line-clamp-3'}">
-            {stripHtml(m.description)}
-          </button>
-        {/if}
+        {#if !mobileTabs.infoInOverview}{@render phoneInfo(m)}{/if}
 
         <!-- Primary CTA -->
         {#if !headerCtaHidden}
@@ -811,64 +732,7 @@
         {/if}
 
         <div class="mt-6">
-          <Tabs tabs={mobileTabs} bind:active variant={detailTheme.tabs} />
-          {#if episodeTabbed && active === 'Episodes'}
-            <EpisodeList media={m} offline={$offlineMode} />
-          {:else if active === 'Overview'}
-            <div class="mt-4 space-y-5">
-              {#if m.description}
-                <section>
-                  <h2 class="mb-2 text-base font-black">Synopsis</h2>
-                  <p data-part="detail.synopsis" class="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
-                </section>
-              {/if}
-
-              <section>
-                <h2 class="mb-2 text-base font-black">Information</h2>
-                <dl class="grid grid-cols-2 gap-2 text-sm">
-                  {#if m.studios?.nodes?.length}
-                    <div data-part="fact" data-key="studio" class="col-span-2 rounded-xl bg-secondary/40 p-3">
-                      <dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Studio</dt>
-                      <dd data-part="fact.value" class="mt-1 font-bold">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ' · ' : ''}<a class="underline-offset-2 active:opacity-70" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd>
-                    </div>
-                  {/if}
-                  {#if format(m)}<div data-part="fact" data-key="format" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Format</dt><dd data-part="fact.value" class="mt-1 font-bold">{format(m)}</dd></div>{/if}
-                  {#if status(m)}<div data-part="fact" data-key="status" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Status</dt><dd data-part="fact.value" class="mt-1 font-bold">{status(m)}</dd></div>{/if}
-                  <div data-part="fact" data-key="episodes" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Episodes</dt><dd data-part="fact.value" class="mt-1 font-bold">{epsTotal(m) || 'Unknown'}</dd></div>
-                  {#if m.duration}<div data-part="fact" data-key="duration" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Runtime</dt><dd data-part="fact.value" class="mt-1 font-bold">{m.duration} minutes</dd></div>{/if}
-                  {#if season(m)}<div data-part="fact" data-key="season" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Season</dt><dd data-part="fact.value" class="mt-1 font-bold"><a href={seasonBrowseHref(m)} class="underline-offset-2 active:opacity-70">{season(m)}</a></dd></div>{/if}
-                  {#if fmtDate(m.startDate)}<div data-part="fact" data-key="aired" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Premiered</dt><dd data-part="fact.value" class="mt-1 font-bold">{fmtDate(m.startDate)}</dd></div>{/if}
-                  {#if m.source}<div data-part="fact" data-key="source" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Source</dt><dd data-part="fact.value" class="mt-1 font-bold">{prettyEnum(m.source)}</dd></div>{/if}
-                  {#if m.countryOfOrigin}<div data-part="fact" data-key="country" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Country</dt><dd data-part="fact.value" class="mt-1 font-bold">{countryName(m.countryOfOrigin)}</dd></div>{/if}
-                  {#if m.averageScore}<div data-part="fact" data-key="score" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Score</dt><dd data-part="fact.value" class="mt-1 font-bold">{m.averageScore}%</dd></div>{/if}
-                  {#if m.popularity}<div data-part="fact" data-key="members" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Popularity</dt><dd data-part="fact.value" class="mt-1 font-bold">{m.popularity.toLocaleString()} members</dd></div>{/if}
-                </dl>
-              </section>
-
-              {#if m.tags?.length}
-                <section>
-                  <h2 class="mb-2 text-base font-black">Themes</h2>
-                  <MediaTagList tags={m.tags} limit={10} sortByRank />
-                </section>
-              {/if}
-
-              {#if m.synonyms?.length}
-                <section><h2 class="mb-1 text-base font-black">Alternative titles</h2><p class="text-sm leading-relaxed text-muted-foreground">{m.synonyms.join(' · ')}</p></section>
-              {/if}
-            </div>
-          {:else if active === 'Relations'}
-            {#if m.relations?.edges?.length}
-              <div data-slot="detail.relations" class="mt-3 grid grid-cols-2 gap-4">
-                {#each m.relations.edges as e (e.node.id)}
-                  <div class="min-w-0"><SmallCard media={e.node} fill /></div>
-                {/each}
-              </div>
-            {:else}<p class="mt-3 text-muted-foreground">No related titles.</p>{/if}
-          {:else if active === 'Characters'}
-            <div class="mt-3"><RichMetadata media={m} view="people" /></div>
-          {:else if active === 'Recommended'}
-            <div class="mt-3"><RichMetadata media={m} view="recommendations" /></div>
-          {/if}
+          {@render detailSections(m, true, false)}
         </div>
       </div>
     </div>
@@ -931,31 +795,7 @@
           <EpisodeList media={m} offline={$offlineMode} />
         </div>
       {/if}
-      <Tabs tabs={desktopTabs} bind:active variant={detailTheme.tabs === 'bottom' ? 'underline' : detailTheme.tabs} />
-      {#if active === 'Relations'}
-        {#if m.relations?.edges?.length}
-          <div data-slot="detail.relations" class="flex flex-wrap {$themePresentation ? 'gap-x-6 gap-y-8' : 'gap-4'}">
-            {#each m.relations.edges as e (e.node.id)}
-              <div class={$themePresentation ? 'shrink-0' : 'w-[152px]'}>
-                <div class="{$themePresentation ? 'mb-1.5' : 'mb-1'} text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
-                <SmallCard media={e.node} />
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <p class="text-muted-foreground">No related titles.</p>
-        {/if}
-      {:else if active === 'Cast & Crew'}
-        <RichMetadata media={m} view="people" />
-      {:else if active === 'Recommended'}
-        <RichMetadata media={m} view="recommendations" />
-      {:else}
-        <div class="max-w-3xl space-y-4">
-          {#if m.description}
-            <p data-part="detail.synopsis" class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
-          {/if}
-        </div>
-      {/if}
+      {@render detailSections(m, false, true)}
     </div>
   {:else}
   <!-- Title-less banner backdrop; the info panel below overlaps its lower fade.
@@ -1090,50 +930,7 @@
     {/snippet}
 
     {#snippet desktopSecondary()}
-    <Tabs tabs={desktopTabs} bind:active variant={detailTheme.tabs === 'bottom' ? 'underline' : detailTheme.tabs} />
-    {#if episodeTabbed && active === 'Episodes'}
-      <EpisodeList media={m} offline={$offlineMode} />
-    {:else if active === 'Relations'}
-      {#if m.relations?.edges?.length}
-        <div data-slot="detail.relations" class="flex flex-wrap {$themePresentation ? 'gap-x-6 gap-y-8' : 'gap-4'}">
-          {#each m.relations.edges as e (e.node.id)}
-            <div class={$themePresentation ? 'shrink-0' : 'w-[152px]'}>
-              <div class="{$themePresentation ? 'mb-1.5' : 'mb-1'} text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
-              <SmallCard media={e.node} />
-            </div>
-          {/each}
-        </div>
-      {:else}
-        <p class="text-muted-foreground">No related titles.</p>
-      {/if}
-    {:else if active === 'Cast & Crew'}
-      <RichMetadata media={m} view="people" />
-    {:else if active === 'Recommended'}
-      <RichMetadata media={m} view="recommendations" />
-    {:else}
-      <div class="max-w-3xl space-y-4">
-        {#if m.description}
-          <p data-part="detail.synopsis" class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
-        {/if}
-        <dl class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-          {#if m.studios?.nodes?.length}
-            <div data-part="fact" data-key="studio"><dt data-part="fact.label" class="font-bold">Studios</dt><dd data-part="fact.value" class="text-muted-foreground">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ', ' : ''}<a data-focusable class="underline-offset-2 hover:underline" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd></div>
-          {/if}
-          {#if fmtDate(m.startDate)}
-            <div data-part="fact" data-key="aired"><dt data-part="fact.label" class="font-bold">Start Date</dt><dd data-part="fact.value" class="text-muted-foreground">{fmtDate(m.startDate)}</dd></div>
-          {/if}
-          {#if m.synonyms?.length}
-            <div data-part="fact" data-key="synonyms" class="sm:col-span-2"><dt data-part="fact.label" class="font-bold">Synonyms</dt><dd data-part="fact.value" class="text-muted-foreground">{m.synonyms.join(' · ')}</dd></div>
-          {/if}
-        </dl>
-        {#if m.tags?.length}
-          <section>
-            <h2 class="mb-2 font-black">Themes</h2>
-            <MediaTagList tags={m.tags} limit={10} sortByRank />
-          </section>
-        {/if}
-      </div>
-    {/if}
+    {@render detailSections(m, false, false)}
     {/snippet}
 
     {#if sideEpisodes}
@@ -1209,5 +1006,210 @@
     </h1>
   {:else}
     <h1 data-part="detail.title" class="{className} {detailTheme.title === 'logo' && !detailExtrasSettled ? 'opacity-0' : ''}">{title(m)}</h1>
+  {/if}
+{/snippet}
+
+<!-- The phone facts: the facts line (or FactList), the countdown, the genre rail, release timing and
+     the synopsis. Above the tabs by default; inside Overview with `detail.sections.info: "overview"`. -->
+{#snippet phoneInfo(m: Media)}
+  {#if factsStyle === 'template'}
+  <!-- One line of facts instead of seven chips: on a phone the chips wrapped into three
+       rows and read as a wall of pills rather than a summary. Facts sit directly under the
+       title — identity first, schedule after. -->
+  <div data-part="detail.meta" class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-muted-foreground">
+    {#if m.averageScore}
+      <span class="rounded-full px-1.5 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>
+    {/if}
+    {#if format(m)}<span>{format(m)}</span><span class="opacity-40">·</span>{/if}
+    <span>{effProgress}/{epsTotal(m) || '?'} eps</span>
+    {#if m.duration}<span class="opacity-40">·</span><span>{m.duration} min</span>{/if}
+    {#if season(m)}<span class="opacity-40">·</span><a href={seasonBrowseHref(m)} class="underline-offset-2 active:opacity-70">{season(m)}</a>{/if}
+    {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
+  </div>
+
+  <!-- Give the title useful provenance without turning the summary into another pill wall.
+       Mature mobile anime clients surface studio/source/popularity before asking the user to
+       hunt through a final tab; this stays a single quiet wrapping line. -->
+  <div data-part="detail.byline" class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/65">
+    {#if m.studios?.nodes?.[0]}
+      {@const studio = m.studios.nodes[0]}
+      <a href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}
+         class="font-bold text-foreground/85 underline-offset-2 active:opacity-70">{studio.name}</a>
+    {/if}
+    {#if m.source}<span class="opacity-35">·</span><span>From {prettyEnum(m.source)}</span>{/if}
+    {#if m.popularity}<span class="opacity-35">·</span><span>{compactNumber.format(m.popularity)} members</span>{/if}
+  </div>
+  {:else}
+    <FactList media={m} variant={factsStyle} progress={effProgress > 0 ? `${effProgress}/${epsTotal(m) || '?'}` : undefined} {controllerUi} genres={false} />
+  {/if}
+  {#if countdown !== 'none'}<AiringCountdown media={m} variant={countdown} />{/if}
+
+  {#if m.genres?.length}
+    <!-- One horizontal rail preserves vertical space while making genre identity visible at a
+         glance. It deliberately scrolls instead of wrapping into a tall block above Play. -->
+    <div data-part="detail.genres" class="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1" aria-label="Genres">
+      {#each m.genres as genre (genre)}
+        <a data-part="chip" href={`/app/search?genre=${encodeURIComponent(genre)}`}
+           class="shrink-0 rounded-full border border-border/80 bg-secondary/55 px-3 py-1.5 text-xs font-bold text-foreground/85 active:bg-accent">{genre}</a>
+      {/each}
+    </div>
+  {/if}
+
+  <!-- Phones have no room for release timing in their episode controls. Keep one quiet
+       grouped summary under the facts; desktop anchors it to the episode toolbar instead. -->
+  <div class="mt-3 flex flex-wrap items-center gap-2 empty:mt-0">
+    <AiringStatus media={m} />
+  </div>
+
+  {#if m.description}
+    <button data-part="detail.synopsis" type="button" onclick={() => (descExpanded = !descExpanded)}
+            class="mt-3 w-full text-left text-sm text-muted-foreground {descExpanded ? 'block' : 'line-clamp-3'}">
+      {stripHtml(m.description)}
+    </button>
+  {/if}
+{/snippet}
+
+<!-- The page's sections (API 3 `detail.sections`): a tab strip over the active section, or every
+     section stacked under its own title. Sections without a tab follow Overview's own content.
+     Overlay pages keep their shorter Overview (the synopsis). -->
+{#snippet detailSections(m: Media, phone: boolean, overlay: boolean)}
+  {@const view = phone ? mobileTabs : desktopTabs}
+  {@const current = shownTab(view)}
+  {#if view.mode === 'stack'}
+    {#each [...view.tabs, ...view.folded] as id (id)}
+      <section data-slot="detail.section" data-section={id} class="mt-8 first:mt-0">
+        <h2 data-part="detail.section-title" class="mb-3 text-lg font-black">{view.labels[id]}</h2>
+        {@render sectionBody(m, id, phone, overlay)}
+      </section>
+    {/each}
+  {:else}
+    {#if phone}
+      <Tabs tabs={view.tabs} labels={view.labels} bind:active={() => current, (tab) => (pickedTab = tab)} variant={detailTheme.tabs} />
+    {:else}
+      <Tabs tabs={view.tabs} labels={view.labels} bind:active={() => current, (tab) => (pickedTab = tab)} variant={detailTheme.tabs === 'bottom' ? 'underline' : detailTheme.tabs} />
+    {/if}
+    {@render sectionBody(m, current, phone, overlay)}
+    {#if current === 'overview'}
+      {#each view.folded as id (id)}
+        <section data-slot="detail.section" data-section={id} class="mt-8">
+          <h2 data-part="detail.section-title" class="mb-3 text-lg font-black">{view.labels[id]}</h2>
+          {@render sectionBody(m, id, phone, overlay)}
+        </section>
+      {/each}
+    {/if}
+  {/if}
+{/snippet}
+
+{#snippet sectionBody(m: Media, id: DetailSection, phone: boolean, overlay: boolean)}
+  {#if id === 'episodes'}
+    <EpisodeList media={m} offline={$offlineMode} />
+  {:else if id === 'overview'}
+    {#if phone && overlay}
+      <div class="mt-4 space-y-5">
+        {#if m.description}
+          <section>
+            <h2 class="mb-2 text-base font-black">Synopsis</h2>
+            <p data-part="detail.synopsis" class="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
+          </section>
+        {/if}
+      </div>
+    {:else if phone}
+      <div class="mt-4 space-y-5">
+        {#if mobileTabs.infoInOverview}<div>{@render phoneInfo(m)}</div>{/if}
+        {#if m.description && !mobileTabs.infoInOverview}
+          <section>
+            <h2 class="mb-2 text-base font-black">Synopsis</h2>
+            <p data-part="detail.synopsis" class="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
+          </section>
+        {/if}
+
+        <section>
+          <h2 class="mb-2 text-base font-black">Information</h2>
+          <dl class="grid grid-cols-2 gap-2 text-sm">
+            {#if m.studios?.nodes?.length}
+              <div data-part="fact" data-key="studio" class="col-span-2 rounded-xl bg-secondary/40 p-3">
+                <dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Studio</dt>
+                <dd data-part="fact.value" class="mt-1 font-bold">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ' · ' : ''}<a class="underline-offset-2 active:opacity-70" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd>
+              </div>
+            {/if}
+            {#if format(m)}<div data-part="fact" data-key="format" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Format</dt><dd data-part="fact.value" class="mt-1 font-bold">{format(m)}</dd></div>{/if}
+            {#if status(m)}<div data-part="fact" data-key="status" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Status</dt><dd data-part="fact.value" class="mt-1 font-bold">{status(m)}</dd></div>{/if}
+            <div data-part="fact" data-key="episodes" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Episodes</dt><dd data-part="fact.value" class="mt-1 font-bold">{epsTotal(m) || 'Unknown'}</dd></div>
+            {#if m.duration}<div data-part="fact" data-key="duration" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Runtime</dt><dd data-part="fact.value" class="mt-1 font-bold">{m.duration} minutes</dd></div>{/if}
+            {#if season(m)}<div data-part="fact" data-key="season" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Season</dt><dd data-part="fact.value" class="mt-1 font-bold"><a href={seasonBrowseHref(m)} class="underline-offset-2 active:opacity-70">{season(m)}</a></dd></div>{/if}
+            {#if fmtDate(m.startDate)}<div data-part="fact" data-key="aired" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Premiered</dt><dd data-part="fact.value" class="mt-1 font-bold">{fmtDate(m.startDate)}</dd></div>{/if}
+            {#if m.source}<div data-part="fact" data-key="source" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Source</dt><dd data-part="fact.value" class="mt-1 font-bold">{prettyEnum(m.source)}</dd></div>{/if}
+            {#if m.countryOfOrigin}<div data-part="fact" data-key="country" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Country</dt><dd data-part="fact.value" class="mt-1 font-bold">{countryName(m.countryOfOrigin)}</dd></div>{/if}
+            {#if m.averageScore}<div data-part="fact" data-key="score" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Score</dt><dd data-part="fact.value" class="mt-1 font-bold">{m.averageScore}%</dd></div>{/if}
+            {#if m.popularity}<div data-part="fact" data-key="members" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Popularity</dt><dd data-part="fact.value" class="mt-1 font-bold">{m.popularity.toLocaleString()} members</dd></div>{/if}
+          </dl>
+        </section>
+
+        {#if m.tags?.length}
+          <section>
+            <h2 class="mb-2 text-base font-black">Themes</h2>
+            <MediaTagList tags={m.tags} limit={10} sortByRank />
+          </section>
+        {/if}
+
+        {#if m.synonyms?.length}
+          <section><h2 class="mb-1 text-base font-black">Alternative titles</h2><p class="text-sm leading-relaxed text-muted-foreground">{m.synonyms.join(' · ')}</p></section>
+        {/if}
+      </div>
+    {:else if overlay}
+      <div class="max-w-3xl space-y-4">
+        {#if m.description}
+          <p data-part="detail.synopsis" class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
+        {/if}
+      </div>
+    {:else}
+      <div class="max-w-3xl space-y-4">
+        {#if m.description}
+          <p data-part="detail.synopsis" class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
+        {/if}
+        <dl class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+          {#if m.studios?.nodes?.length}
+            <div data-part="fact" data-key="studio"><dt data-part="fact.label" class="font-bold">Studios</dt><dd data-part="fact.value" class="text-muted-foreground">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ', ' : ''}<a data-focusable class="underline-offset-2 hover:underline" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd></div>
+          {/if}
+          {#if fmtDate(m.startDate)}
+            <div data-part="fact" data-key="aired"><dt data-part="fact.label" class="font-bold">Start Date</dt><dd data-part="fact.value" class="text-muted-foreground">{fmtDate(m.startDate)}</dd></div>
+          {/if}
+          {#if m.synonyms?.length}
+            <div data-part="fact" data-key="synonyms" class="sm:col-span-2"><dt data-part="fact.label" class="font-bold">Synonyms</dt><dd data-part="fact.value" class="text-muted-foreground">{m.synonyms.join(' · ')}</dd></div>
+          {/if}
+        </dl>
+        {#if m.tags?.length}
+          <section>
+            <h2 class="mb-2 font-black">Themes</h2>
+            <MediaTagList tags={m.tags} limit={10} sortByRank />
+          </section>
+        {/if}
+      </div>
+    {/if}
+  {:else if id === 'relations'}
+    {#if phone}
+      {#if m.relations?.edges?.length}
+        <div data-slot="detail.relations" class="mt-3 grid grid-cols-2 gap-4">
+          {#each m.relations.edges as e (e.node.id)}
+            <div class="min-w-0"><SmallCard media={e.node} fill /></div>
+          {/each}
+        </div>
+      {:else}<p class="mt-3 text-muted-foreground">No related titles.</p>{/if}
+    {:else if m.relations?.edges?.length}
+      <div data-slot="detail.relations" class="flex flex-wrap {$themePresentation ? 'gap-x-6 gap-y-8' : 'gap-4'}">
+        {#each m.relations.edges as e (e.node.id)}
+          <div class={$themePresentation ? 'shrink-0' : 'w-[152px]'}>
+            <div class="{$themePresentation ? 'mb-1.5' : 'mb-1'} text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
+            <SmallCard media={e.node} />
+          </div>
+        {/each}
+      </div>
+    {:else}
+      <p class="text-muted-foreground">No related titles.</p>
+    {/if}
+  {:else if id === 'characters'}
+    {#if phone}<div class="mt-3"><RichMetadata media={m} view="people" /></div>{:else}<RichMetadata media={m} view="people" />{/if}
+  {:else}
+    {#if phone}<div class="mt-3"><RichMetadata media={m} view="recommendations" /></div>{:else}<RichMetadata media={m} view="recommendations" />{/if}
   {/if}
 {/snippet}

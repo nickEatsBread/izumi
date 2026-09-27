@@ -147,6 +147,8 @@ State values:
 | `data-variant` | `search` | `anilist-scope`, `anilist`, `merged`, `catalog` |
 | `data-variant` | `button` | `primary`, `secondary`, `ghost`, `icon` |
 | `data-variant` | `tabs` | `underline`, `pills`, `segmented`, `bar` |
+| `data-tab` | `tab` (series page) | `overview`, `episodes`, `relations`, `characters`, `recommended` |
+| `data-section` | `detail.section` | `overview`, `episodes`, `relations`, `characters`, `recommended` |
 
 #### Shell
 
@@ -262,6 +264,8 @@ State values:
 | `person.photo` | part | The credit's picture. |  |
 | `person.name` | part | The character or staff name. |  |
 | `person.role` | part | The character's role or the staff job. |  |
+| `detail.section` | slot | A titled section outside the tab strip: every section with `sections.mode: "stack"`, or a section without a tab inside Overview. | `data-section` |
+| `detail.section-title` | part | The heading of a `detail.section`. |  |
 
 #### Episodes
 
@@ -332,7 +336,7 @@ State values:
 | `input` | part | A text input. |  |
 | `badge` | part | A small label on an item (for example an episode rating). |  |
 | `tabs` | part | A tab strip. | `data-variant` |
-| `tab` | part | One tab. | `data-active` |
+| `tab` | part | One tab. Series page tabs carry their section id. | `data-active`, `data-tab` |
 
 ### Platforms
 

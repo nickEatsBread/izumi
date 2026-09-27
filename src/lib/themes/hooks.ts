@@ -113,6 +113,8 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'person.photo', kind: 'part', description: "The credit's picture." },
     { name: 'person.name', kind: 'part', description: 'The character or staff name.' },
     { name: 'person.role', kind: 'part', description: "The character's role or the staff job." },
+    { name: 'detail.section', kind: 'slot', description: 'A titled section outside the tab strip: every section with `sections.mode: "stack"`, or a section without a tab inside Overview.', states: ['data-section'] },
+    { name: 'detail.section-title', kind: 'part', description: 'The heading of a `detail.section`.' },
   ],
   episodes: [
     { name: 'episode', kind: 'part', description: 'One episode: a card, a thumbnail row, a compact row or a number tile.', states: ['data-variant', 'data-state', 'data-next', 'data-filler'] },
@@ -171,6 +173,6 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'input', kind: 'part', description: 'A text input.' },
     { name: 'badge', kind: 'part', description: 'A small label on an item (for example an episode rating).' },
     { name: 'tabs', kind: 'part', description: 'A tab strip.', states: ['data-variant'] },
-    { name: 'tab', kind: 'part', description: 'One tab.', states: ['data-active'] },
+    { name: 'tab', kind: 'part', description: 'One tab. Series page tabs carry their section id.', states: ['data-active', 'data-tab'] },
   ],
 }

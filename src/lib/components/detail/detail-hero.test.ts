@@ -120,11 +120,12 @@ describe('mobile series hero', () => {
   })
 
   it('surfaces a complete, discoverable mobile anime overview without crowding the hero', () => {
-    expect(detail).toContain("['Episodes', 'Overview', 'Relations', 'Characters', 'Recommended']")
+    expect(readFileSync(fileURLToPath(new URL('../../detail/sections.ts', import.meta.url)), 'utf8'))
+      .toContain("const PHONE_ORDER: readonly DetailSection[] = ['episodes', 'overview', 'relations', 'characters', 'recommended']")
     expect(detail).toContain('aria-label="Genres"')
     expect(detail).toContain('From {prettyEnum(m.source)}')
     expect(detail).toContain('{m.duration} min')
-    expect(detail).toContain("{:else if active === 'Overview'}")
+    expect(detail).toContain("{:else if id === 'overview'}")
     for (const heading of ['Synopsis', 'Information', 'Studio', 'Runtime', 'Source', 'Country', 'Popularity', 'Themes', 'Alternative titles']) {
       expect(detail).toContain(`>${heading}<`)
     }

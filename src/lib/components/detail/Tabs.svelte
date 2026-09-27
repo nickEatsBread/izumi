@@ -6,7 +6,9 @@
   import { suppressBottomNav } from '$lib/shell/chrome'
   // `variant` comes from the theme's series page: an underlined row (stock), pills, an iOS-style
   // segmented control, or a bar of equal tabs with a tinted pill behind the active one.
-  let { tabs, active = $bindable(), variant = 'underline' }: { tabs: string[]; active: string; variant?: DetailTabs } = $props()
+  // `labels` (the series page) maps each tab id to its shown name; with it every tab carries its id
+  // as `data-tab`, so a stylesheet can target a section without counting tabs.
+  let { tabs, active = $bindable(), variant = 'underline', labels }: { tabs: string[]; active: string; variant?: DetailTabs; labels?: Record<string, string> } = $props()
   // `bottom` (API 3) is a phone bar fixed to the bottom of the screen in place of the app's bottom
   // navigation; anywhere wider it falls back to the underlined strip.
   const bottom = $derived(variant === 'bottom' && $isMobile)
@@ -38,6 +40,7 @@
   {#each tabs as tab (tab)}
     <button
       data-part="tab"
+      data-tab={labels ? tab : undefined}
       data-active={active === tab || undefined}
       data-focusable
       onclick={(event) => pick(tab, event)}
@@ -47,7 +50,7 @@
         ${look === 'segmented' ? `rounded-lg px-4 py-1.5 ${active === tab ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground'}` : ''}
         ${look === 'bar' ? `flex-1 rounded-xl px-3 py-2.5 text-center ${active === tab ? 'bg-theme/15 text-theme' : 'text-muted-foreground hover:text-foreground'}` : ''}`}
     >
-      {tab}
+      {labels?.[tab] ?? tab}
       {#if active === tab && look === 'underline'}
         <span class="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-accent"></span>
       {/if}
