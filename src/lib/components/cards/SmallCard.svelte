@@ -104,7 +104,9 @@
   // Controller mode (including Deck) and mobile: no hover-trailer previews — touch has no real hover (a tap
   // fires pointerenter and would strand the popup), and the autoplaying trailer is a PC-only
   // affordance.
-  function open() { if (simpleHover || get(gameMode) || get(controllerMode) || get(isMobile) || get(isTv) || needsPointerMove) return; clearTimeout(closeT); place(); hovered = true }
+  // A theme that draws its own hover panel in the card template switches the popup off (API 3 `cardPreview`).
+  const previewOff = $derived(simpleHover || $themePresentation?.cardPreview === 'none')
+  function open() { if (previewOff || get(gameMode) || get(controllerMode) || get(isMobile) || get(isTv) || needsPointerMove) return; clearTimeout(closeT); place(); hovered = true }
   function openAfterPointerMove() {
     if (!needsPointerMove) return
     needsPointerMove = false
@@ -216,7 +218,7 @@
   </a>
 </div>
 
-{#if hovered && !simpleHover}
+{#if hovered && !previewOff}
   <!-- use:portal — re-parent to <body>. In place, the row's `.load-in` transform animation makes
        the card wrapper the containing block for this `fixed` popup (offset by the card's origin,
        clipped by the carousel, painted under sibling posters). From <body>, fixed = viewport. -->
