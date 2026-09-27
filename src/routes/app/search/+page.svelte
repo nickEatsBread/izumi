@@ -79,9 +79,23 @@
   // fights this. Comparing against the CURRENT `filters.search` (not the stale `seed`) is what
   // stops the URL-sync effect further down from seeing its own stale copy and writing it straight
   // back over the new query.
-  afterNavigate(() => {
+  afterNavigate((navigation) => {
     const params = page.url.searchParams
     const urlSearch = params.get('search') ?? params.get('q') ?? undefined
+    // A link into search that names a genre or a sort (the top bar's Categories menu) starts that
+    // search afresh, even while search is already open with other filters. The URL mirror below
+    // uses replaceState, which does not come through here.
+    const urlGenre = params.get('genre') ?? undefined
+    const urlSort = params.get('sort') ?? undefined
+    const currentGenre = filters.genres?.length === 1 ? filters.genres[0] : undefined
+    if ((navigation.type === 'link' || navigation.type === 'goto') && (urlGenre || urlSort)
+        && (urlGenre !== currentGenre || urlSort !== filters.sort)) {
+      const next: SearchFilters = { search: urlSearch, sort: urlSort, genres: urlGenre ? [urlGenre] : undefined }
+      filters = next
+      debounced = { ...next }
+      mergedQuery = urlSearch ?? ''
+      return
+    }
     if (urlSearch === filters.search) return
     filters = { ...filters, search: urlSearch }
     debounced = { ...debounced, search: urlSearch }

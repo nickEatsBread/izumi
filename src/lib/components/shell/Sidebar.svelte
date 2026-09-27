@@ -4,6 +4,7 @@
   import CatalogSwitcher from '../catalog/CatalogSwitcher.svelte'
   import TopSearchField from './TopSearchField.svelte'
   import NavDrawer from './NavDrawer.svelte'
+  import CategoriesMenu from './CategoriesMenu.svelte'
   import Home from '@lucide/svelte/icons/house'
   import Calendar from '@lucide/svelte/icons/calendar'
   import Search from '@lucide/svelte/icons/search'
@@ -211,6 +212,7 @@
       {/if}
     </a>
   {/each}
+  {#if top && topBar.categories}<CategoriesMenu focusable={!$playing} tabindex={tab} />{/if}
 {/snippet}
 
 {#snippet incognitoToggle()}

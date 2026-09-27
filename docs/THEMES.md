@@ -104,6 +104,8 @@ State values:
 |---|---|---|
 | `data-active` | `nav.item`, `hero.dot`, `tab`, `chip`, `page-number` | present when selected, absent otherwise |
 | `data-past` | `hero.dot` | present on the markers of slides before the current one |
+| `data-variant` | `nav.item` | `menu` (the Categories menu button; `data-active` while it is open) |
+| `data-variant` | `nav.categories.link` | `genre` |
 | `data-variant` | `home` | `offline`, `anilist`, `merged`, `catalog` |
 | `data-variant` | `home.hero` | `template`, `phone`, `desktop` (the desktop banner is `detail.banner` on a series page) |
 | `data-variant` | `hero.indicator` | `default`, `bars`, `dots`, `pills`, `counter` |
@@ -132,12 +134,15 @@ State values:
 | `nav.side` | slot | The side navigation rail. |  |
 | `nav.top` | slot | The top navigation bar (`shell.nav: "top"`). |  |
 | `nav.bottom` | slot | The bottom tab bar (phones, or `shell.nav: "bottom"`). |  |
-| `nav.item` | part | A navigation destination link. | `data-active` |
+| `nav.item` | part | A navigation destination link, or the Categories menu button (`data-variant="menu"`). | `data-active`, `data-variant` |
 | `nav.item.icon` | part | The icon of a navigation destination. |  |
 | `nav.item.label` | part | The label of a navigation destination. |  |
 | `search.field` | part | A search input: the global search overlay, or the theme top bar's search field. |  |
 | `nav.menu` | part | The top bar menu button that opens the drawer. |  |
 | `nav.drawer` | slot | The side drawer of destinations (top bar `menu: "drawer"`); items are `nav.item`. |  |
+| `nav.categories` | slot | The Categories menu panel (top bar `categories`). |  |
+| `nav.categories.heading` | part | The Genres heading in the Categories menu. |  |
+| `nav.categories.link` | part | A Categories menu link; genre links carry `data-variant="genre"`. | `data-variant` |
 
 #### Home
 

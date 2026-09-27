@@ -40,7 +40,7 @@ describe('search URL state', () => {
   it('re-reads `search` on a same-route navigation instead of only seeding it once', () => {
     // TopSearchField's goto('/app/search?search=x') from this same page never remounts the
     // component, so afterNavigate — not the one-time `seed` read — is what has to pick it up.
-    expect(page).toContain('afterNavigate(() => {')
+    expect(page).toContain('afterNavigate((navigation) => {')
     expect(page).toContain("params.get('search') ?? params.get('q') ?? undefined")
     expect(page).toContain('if (urlSearch === filters.search) return')
     expect(page).toContain('debounced = { ...debounced, search: urlSearch }')

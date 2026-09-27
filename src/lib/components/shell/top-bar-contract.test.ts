@@ -65,3 +65,29 @@ describe('theme top bar', () => {
     }
   })
 })
+
+describe('top bar categories menu', () => {
+  it('adds a Categories menu of browse links and genres when the theme asks', () => {
+    const bar = read('./Sidebar.svelte')
+    expect(bar).toContain('{#if top && topBar.categories}<CategoriesMenu focusable={!$playing} tabindex={tab} />{/if}')
+    const menu = read('./CategoriesMenu.svelte')
+    expect(menu).toContain('data-part="nav.item" data-variant="menu"')
+    expect(menu).toContain('data-slot="nav.categories"')
+    expect(menu).toContain('data-part="nav.categories.heading"')
+    expect(menu.match(/data-part="nav\.categories\.link"/g)?.length).toBe(3)
+    expect(menu).toContain('href={`/app/search?genre=${encodeURIComponent(genre)}`}')
+    expect(menu).toContain('href="/app/search?sort=POPULARITY_DESC"')
+    expect(menu).toContain('href="/app/schedule"')
+    expect(menu).toContain('loadGenres(target)')
+    expect(menu).toContain("event.key === 'Escape'")
+    expect(menu).toContain('use:portal')
+    expect(menu).toContain('rootZoom()')
+  })
+
+  it('lets a genre or sort link start a fresh search while search is open', () => {
+    const search = read('../../../routes/app/search/+page.svelte')
+    expect(search).toContain('afterNavigate((navigation) => {')
+    expect(search).toContain("(navigation.type === 'link' || navigation.type === 'goto') && (urlGenre || urlSort)")
+    expect(search).toContain('genres: urlGenre ? [urlGenre] : undefined')
+  })
+})
