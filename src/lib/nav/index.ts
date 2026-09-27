@@ -244,6 +244,28 @@ function runControllerScroll(
   else controllerScrollUntil.delete(target)
 }
 
+/** The position:fixed layer holding `el` (a dialog, the on-screen keyboard), or null when `el`
+ * moves with the page. */
+function fixedLayerOf(el: HTMLElement): HTMLElement | null {
+  for (let node: HTMLElement | null = el; node && node !== document.documentElement; node = node.parentElement) {
+    if (getComputedStyle(node).position === 'fixed') return node
+  }
+  return null
+}
+
+/** The nearest ancestor of `el`, up to and including its fixed `layer`, that scrolls along the axis
+ * of travel: a dialog's own list or body. */
+function scrollPortWithin(el: HTMLElement, layer: HTMLElement, vertical: boolean): HTMLElement | null {
+  if (el === layer) return null
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    const overflow = vertical ? getComputedStyle(node).overflowY : getComputedStyle(node).overflowX
+    const overflowing = vertical ? node.scrollHeight > node.clientHeight : node.scrollWidth > node.clientWidth
+    if ((overflow === 'auto' || overflow === 'scroll' || overflow === 'overlay') && overflowing) return node
+    if (node === layer) return null
+  }
+  return null
+}
+
 /** Reveal controller focus without asking scrollIntoView to move every scrollable ancestor. The
  * settings category rail owns its own viewport; moving it must never scroll the category content. */
 function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void {
@@ -263,9 +285,20 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
   }
   // Horizontal carousel navigation owns only that row. Vertical navigation still reveals the
   // destination on the page, rather than trying to scroll the destination row inside itself.
-  const pane = vertical
+  let pane = vertical
     ? el.closest<HTMLElement>('[data-nav-scroll-container]')
     : el.closest<HTMLElement>('[data-carousel-scroller], [data-nav-scroll-container]')
+  // A dialog or the on-screen keyboard is fixed to the viewport, so scrolling the window cannot
+  // reveal its controls. It only moved the page underneath (and a popover that follows its anchor
+  // on scroll). Reveal within the dialog's own scrolling body, or leave everything where it is. A
+  // menu that sits in the page is not fixed and still reveals through the window.
+  if (!pane && el.closest('[data-nav-trap]')) {
+    const layer = fixedLayerOf(el)
+    if (layer) {
+      pane = scrollPortWithin(el, layer, vertical)
+      if (!pane) return
+    }
+  }
   const item = el.getBoundingClientRect()
   const port = pane?.getBoundingClientRect() ?? {
     top: 0,
