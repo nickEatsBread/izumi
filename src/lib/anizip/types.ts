@@ -13,9 +13,16 @@ export interface AniZipEpisode {
   episodeNumber?: number // per-season episode number
   absoluteEpisodeNumber?: number // TVDB absolute number across the whole series
 }
+/** Series artwork ani.zip copies from TVDB. `Clearlogo` also labels square icons; real title
+ *  logos live under `/clearlogo/`. */
+export interface AniZipImage {
+  coverType?: 'Banner' | 'Poster' | 'Fanart' | 'Clearlogo' | string
+  url?: string
+}
 export interface AniZipResponse {
   episodes?: Record<string, AniZipEpisode>
   episodeCount?: number
+  images?: AniZipImage[]
   // Cross-reference ids. Production-SPECIFIC — a 2026 series and a 1995 film that share a
   // title have DIFFERENT anidb_id/thetvdb_id — so id-based source resolution can't mix them.
   mappings?: {

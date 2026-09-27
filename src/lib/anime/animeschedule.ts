@@ -48,6 +48,7 @@ export interface RawAnime {
   jpnTime?: string
   subTime?: string
   dubTime?: string
+  dubPremier?: string
 }
 
 export type DelayKind = 'break' | 'delayed'
@@ -68,6 +69,8 @@ export interface ScheduleInfo {
   subAt: number | null
   dubAt: number | null
   finished: boolean
+  /** A dub has premiered. False also when AnimeSchedule simply does not track the dub. */
+  dubbed: boolean
 }
 
 // Every timestamp field is present even when it holds nothing, carrying Go's zero time. The API
@@ -153,6 +156,7 @@ export function normalize(raw: RawAnime | undefined, now: number = Date.now()): 
     subAt: parseTime(raw.subTime),
     dubAt: parseTime(raw.dubTime),
     finished,
+    dubbed: parseTime(raw.dubPremier) != null,
   }
 }
 

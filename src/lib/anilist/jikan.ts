@@ -1,4 +1,5 @@
 import Bottleneck from 'bottleneck/light'
+import { get, set } from 'idb-keyval'
 import { phttp } from '$lib/net/http'
 import { getIndex, lookupAnilistByMal } from '$lib/stremio/idmap'
 import type { FuzzyDate, Media } from './types'
@@ -78,6 +79,21 @@ async function jikanJson<T>(url: string, attempt = 0): Promise<T> {
   }
   if (!response.ok) throw new Error(`Jikan returned HTTP ${response.status}`)
   return response.json() as Promise<T>
+}
+
+const RATING_TTL_MS = 30 * 864e5
+const ratingKey = (malId: number) => `mal-rating-${malId}`
+
+/** MyAnimeList's content rating for a MAL id ("PG-13 - Teens 13 or older"), or null when MAL has
+ *  none. Cached in IndexedDB for a month: ratings practically never change, and the public API is
+ *  rate limited. Throws when Jikan cannot be reached. */
+export async function fetchMalRating(malId: number): Promise<string | null> {
+  const cached = await get<{ at: number; rating: string | null }>(ratingKey(malId)).catch(() => undefined)
+  if (cached && Date.now() - cached.at < RATING_TTL_MS) return cached.rating
+  const body = await jikanJson<{ data?: { rating?: string | null } }>(`${API}/anime/${malId}`)
+  const rating = body.data?.rating?.trim() || null
+  await set(ratingKey(malId), { at: Date.now(), rating }).catch(() => {})
+  return rating
 }
 
 export function parseJikanCatalogRequest(body: BodyInit | null | undefined): JikanCatalogRequest | null {
