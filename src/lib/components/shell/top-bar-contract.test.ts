@@ -82,6 +82,7 @@ describe('top bar categories menu', () => {
     expect(menu).toContain("event.key === 'Escape'")
     expect(menu).toContain('use:portal')
     expect(menu).toContain('rootZoom()')
+    expect(menu).toContain("$showAdult || genre.toLowerCase() !== 'hentai'")
   })
 
   it('lets a genre or sort link start a fresh search while search is open', () => {

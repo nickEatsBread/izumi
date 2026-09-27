@@ -8,7 +8,7 @@
   import { rootZoom } from '$lib/components/cards/preview-pos'
   import { loadGenres } from '$lib/home/genres'
   import { catalogScreen } from '$lib/settings/catalog'
-  import { activeProfileAllowsAdult } from '$lib/profiles/content'
+  import { showAdult } from '$lib/settings/ui'
 
   let { focusable = true, tabindex }: { focusable?: boolean; tabindex?: number } = $props()
   let open = $state(false)
@@ -28,7 +28,8 @@
       .then((list) => { if (requested === target) genres = list })
       .catch(() => { if (requested === target) genres = [] })
   }
-  const shown = $derived((genres ?? []).filter((genre) => $activeProfileAllowsAdult || genre.toLowerCase() !== 'hentai'))
+  // The adult genre only shows where 18+ titles are switched on (and the profile allows them).
+  const shown = $derived((genres ?? []).filter((genre) => $showAdult || genre.toLowerCase() !== 'hentai'))
 
   // The panel is fixed and portalled to <body>; positions are divided by the UI-scale zoom the same
   // way the card popup's are (preview-pos.ts).
