@@ -443,7 +443,7 @@
       ontouchend={onTouchEnd}
     >
       {#key current.id}
-        <div class="hero-slide-in absolute inset-0" style="--hero-enter-x:{navDirection * 3}%">
+        <div class="hero-slide-in hero-carousel-slide absolute inset-0" style="--hero-enter-x:{navDirection * 3}%">
           {#if !artworkReady}<div class="absolute inset-0 skeloader"></div>{/if}
           <img src={cover(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
                onload={artworkSettled} onerror={artworkSettled}
@@ -555,7 +555,7 @@
          so it sits flush with the viewport edge. Keyed for a crossfade. -->
     <div class="pointer-events-none absolute left-[calc(-1*var(--theme-shell-left,0px))] top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-top-8">
       {#key current.id}
-        <div class="{initialArtworkVisible && !showOverlay ? 'detail-hero-reveal' : 'hero-slide-in'} absolute inset-0" style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:{bannerScale && !showOverlay ? .5 : .7}">
+        <div class="{initialArtworkVisible && !showOverlay ? 'detail-hero-reveal' : 'hero-slide-in'} absolute inset-0" class:hero-carousel-slide={showOverlay} style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:{bannerScale && !showOverlay ? .5 : .7}">
           {#if !artworkReady}<div class="absolute inset-0 skeloader"></div>{/if}
           {#if artworkMode === 'cover'}
             <img src={cover(current)} alt="" aria-hidden="true" draggable="false" loading="eager" decoding="async"
@@ -761,18 +761,6 @@
     transform-origin: left;
     animation: hero-progress-fill var(--theme-hero-interval, 15s) linear forwards;
   }
-  /* Game mode: an accelerated transform tween keeps WebKit compositing a full 1280×800 frame at the
-     panel rate for the whole interval while Home sits idle. Fill the bar in discrete width steps
-     instead — each step is one tiny main-thread repaint, and every frame in between is free. */
-  @keyframes hero-progress-steps {
-    from { width: 0; }
-    to { width: 100%; }
-  }
-  :global(html.gamemode) .hero-progress {
-    animation-name: hero-progress-steps;
-    animation-timing-function: steps(24, end);
-    transform: none;
-  }
   @keyframes hero-slide-in {
     from { opacity: 0; transform: translate3d(var(--hero-enter-x), 0, 0) scale(1.015); }
     to { opacity: var(--hero-final-opacity, 1); transform: translate3d(0, 0, 0) scale(1); }
@@ -782,7 +770,7 @@
     to { opacity: 1; transform: translate3d(0, 0, 0); }
   }
   /* The resting opacity is declared statically as well as in the keyframes, so a surface that
-     drops the entrance animation (Game mode below) still settles at the same level. */
+     drops the entrance animation (a Game-mode detail banner, below) still settles at the same level. */
   .hero-slide-in { opacity: var(--hero-final-opacity, 1); animation: hero-slide-in 480ms cubic-bezier(.22, 1, .36, 1) both; }
   @keyframes detail-hero-reveal {
     from { opacity: .5; }
@@ -790,15 +778,40 @@
   }
   .detail-hero-reveal { opacity: var(--hero-final-opacity, .7); animation: detail-hero-reveal 220ms ease-out both; }
   .hero-copy { animation: hero-copy-in 360ms cubic-bezier(.22, 1, .36, 1) both; }
-  /* Game mode (Gamescope): every entrance tween promotes the artwork or the copy block to its own
-     compositor layer for its duration. The zoomed Deck page rasterises promoted layers soft (1x
-     contents scale, grayscale AA — see app.css) and then snaps them crisp the moment the layer is
-     dropped, which read as a blink on every slide. With the decode-before-commit scheduler above the
-     incoming slide is already paint-ready, so the swap is one clean frame — the same "calm and
-     instant" browse the Deck uses for row entrances. */
-  :global(html.gamemode) .hero-slide-in,
-  :global(html.gamemode) .detail-hero-reveal,
-  :global(html.gamemode) .hero-copy { animation: none; }
+  /* Game mode (the Deck's WebKitGTK 2.52). A transform or opacity tween lifts its element onto a
+     compositor layer for the tween only. When the tween ends the layer is dropped and its pixels are
+     repainted into the page's tiles, and since 2.52 WebKit composites without waiting for that
+     repaint: the frame in between can go out without them. That was the random blink of the banner,
+     its title or the bar on L1/R1 presses and auto-advances. Home slides, their copy and the progress
+     bar keep their tweens, but on a layer for their whole life: a static translateZ(0) the keyframes
+     never touch. They animate `translate`, `scale` and `opacity` instead. A `transform` tween would
+     override the anchor, and translate3d(x, 0, 0) → translate3d(0, 0, 0) blends down to a 2D
+     translate that drops the layer anyway. A layer created with its element and removed with it
+     never hands pixels back to the page. The incoming slide still waits for its decoded artwork
+     (hero-slides.ts), so its first frame is the image. */
+  :global(html.gamemode) .hero-carousel-slide,
+  :global(html.gamemode) .hero-copy,
+  :global(html.gamemode) .hero-progress { transform: translateZ(0); }
+  :global(html.gamemode) .hero-carousel-slide { animation-name: hero-slide-in-layer; }
+  :global(html.gamemode) .hero-copy { animation-name: hero-copy-in-layer; }
+  :global(html.gamemode) .hero-progress { animation-name: hero-progress-fill-layer; }
+  @keyframes hero-slide-in-layer {
+    from { opacity: 0; translate: var(--hero-enter-x) 0; scale: 1.015; }
+    to { opacity: var(--hero-final-opacity, 1); translate: 0 0; scale: 1; }
+  }
+  @keyframes hero-copy-in-layer {
+    from { opacity: 0; translate: var(--hero-enter-x) 8px; }
+    to { opacity: 1; translate: 0 0; }
+  }
+  @keyframes hero-progress-fill-layer {
+    from { scale: 0 1; }
+    to { scale: 1 1; }
+  }
+  /* A one-off tween or transition would hand its layer back when it ends, so these stay static in
+     Game mode: a detail banner (a single slide, nothing to animate between), artwork that arrives
+     after the decode deadline, and the dim when Home scrolls. */
+  :global(html.gamemode) .hero-slide-in:not(.hero-carousel-slide),
+  :global(html.gamemode) .detail-hero-reveal { animation: none; }
   :global(html.gamemode) .hero-artwork,
   :global(html.gamemode) .hero-root { transition: none; }
   @media (min-width: 640px) {

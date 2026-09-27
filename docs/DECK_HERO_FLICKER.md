@@ -1,60 +1,87 @@
 # Steam Deck featured-banner flicker
 
-Diagnosis and fix notes for the random blink when stepping through the Home featured banner in
-Game mode (L1/R1, auto-advance, or a touch swipe). Code audit against v0.1.68; the fix lands in
-`Hero.svelte`, `hero-slides.ts` and `app.css`. Hardware confirmation on a Deck is still the
-authority for this class of bug, so the section at the end lists what to look at.
+Notes on the random blink when stepping through the Home featured banner in Game mode (L1/R1,
+auto-advance or a touch swipe), and why the banner animates again. The fix lives in `Hero.svelte`
+and `hero-slides.ts`. The diagnosis below comes from the WebKitGTK 2.52 sources and release notes;
+hardware confirmation on a Deck is still the authority for this class of bug, so the last section
+lists what to look at.
+
+## When it started
+
+The slide, title and progress-bar animations were unchanged from late August on. The blink arrived
+with v0.1.61, when the Flatpak moved to the GNOME 50 runtime and so from WebKitGTK 2.50 to 2.52.
 
 ## What was happening
 
-Two independent things fired on every slide change, and each one could paint a wrong frame.
+Two independent things fired on a slide change, and each could paint a wrong frame.
 
 1. **Undecoded artwork.** The slide is keyed on the media id, so a step tore down the old `<img>`
    and mounted a new one. Until that image reported `load`, the slide showed the muted skeleton,
-   then popped to the image. Whether that pop was visible depended on what WebKit's memory cache
-   still held: a banner that was hot painted in the same frame, one that had been evicted spent a
-   few frames as a grey block first. On the Deck (a zoomed 1280×800 page, iGPU decode, no
-   compositor promotion) it was several frames, and the cache is small, so the pop looked random.
+   then popped to the image, and the late image faded in on its own opacity transition. Whether
+   that happened depended on what WebKit's memory cache still held, so it looked random.
 
-2. **Entrance tweens on promoted layers.** `hero-slide-in` (translate + scale + opacity) and
-   `hero-copy-in` promoted the artwork and the copy block to compositor layers for 480/360 ms.
-   Game mode zooms the page natively, and as `app.css` already records for `will-change`,
-   promoted layers there rasterise at 1x contents scale with grayscale anti-aliasing and snap
-   crisp the moment the layer is dropped. The title and synopsis therefore rendered soft for
-   a third of a second and then blinked sharp on every step. The same mechanism made each
-   cover's 150 ms fade-in pop as rows loaded, and the `scrolled` opacity transition on the
-   hero root promoted the whole banner on every scroll edge.
+2. **Layers dropped under 2.52's composition scheduling.** A transform or opacity tween lifts its
+   element onto a compositor layer for the tween only. When the tween ends WebKit drops the layer
+   and repaints its pixels into the page's tiles. 2.52 "improved composition scheduling to avoid
+   blocking waiting for tile painting", so a frame can be composited after the layer is gone but
+   before that repaint lands: the banner, its title or the bar is missing for a frame. Whether the
+   repaint wins depends on timing, so the blink was random. The overlap rules made it worse. The
+   scrims, copy, rank badge and slide markers sit over the artwork, so they were composited only
+   while the artwork layer existed and were handed back with it.
 
-## What changed
+   Ending the keyframes on `translate3d(0, 0, 0)` did not keep the layer. WebKit blends transform
+   functions with their shared primitive type, and `translate3d` with `z = 0` has a 2D primitive,
+   so the filled end value is a plain 2D translate that no longer requires compositing
+   (`TranslateTransformFunction::blend`, `Blending<TransformList>::blend`).
 
-- **Decode before commit.** `createSlideScheduler` (`hero-slides.ts`) decodes a slide's artwork
-  off-DOM with `Image.decode()` and commits the index only once its pixels are ready, with a
-  900 ms deadline so a slow network still steps (with the skeleton, as before). Ready artwork
-  settles `loadedArtworkId` before the swap, so the first paint of a new slide is the image.
-  Decoded images are pinned in a small map so the cache keeps the bitmap the `<img>` reuses.
-  Rapid presses chain from the pending slide. Neighbouring slides are warmed 400 ms after each
-  settle, so the next L1/R1 is instant.
-- **No entrance tweens in Game mode.** `html.gamemode` drops `hero-slide-in`, `hero-copy-in`,
-  `detail-hero-reveal`, the artwork opacity transition and the hero root's scroll fade. The
-  resting opacity is declared statically so the artwork still rests at 0.7. This matches the
-  existing "calm and instant" rule for row entrances (`.gamemode .load-in`).
-- **Rotation progress bar.** The 15 s `scaleX` tween kept an accelerated animation running for
-  the whole interval, which keeps WebKit compositing a full frame at the panel rate while Home
-  sits idle. Game mode now fills the bar in 24 width steps: one small main-thread repaint every
-  ~0.6 s, and every frame in between is free.
-- **Browse images appear in place.** `html.gamemode main img { transition: none; animation:
-  none }` removes the per-card fade-in and the shared banner fade, which were the same
-  soft-then-snap pop at card scale.
+Not the cause: the `OnDemand` hardware-acceleration policy. On GTK, entering accelerated compositing
+sets `forceCompositingMode`, so the page never leaves it once the first layer appears
+(`DrawingAreaCoordinatedGraphics::enterAcceleratedCompositingMode`). The page is not switching modes.
+
+## The first fix (v0.1.69) and its cost
+
+v0.1.69 added the decode-before-commit scheduler and removed every hero tween in Game mode. It also
+filled the rotation bar in 24 width steps and let browse images appear without a fade. The blink
+stopped, but the banner lost its slide motion on L1/R1 and auto-advance, and the bar visibly
+ticked across.
+
+## What changed now
+
+- **Decode before commit (kept).** `createSlideScheduler` decodes a slide's artwork off-DOM with
+  `Image.decode()` and commits the index only once its pixels are ready, with a 900 ms deadline so a
+  slow network still steps. Ready artwork settles `loadedArtworkId` before the swap, so the first
+  paint of a new slide is the image. Decoded images are pinned so the cache keeps them, rapid presses
+  chain from the pending slide, and the neighbouring slides are warmed 400 ms after each settle.
+- **Home slides animate again, on element-lifetime layers.** The Home slide
+  (`.hero-carousel-slide`), its copy and the rotation bar keep their tweens in Game mode, each on a
+  layer that lives exactly as long as its element. A static `transform: translateZ(0)` is 3D by
+  function type, so WebKit composites the element from creation until removal. The keyframes
+  animate `translate`, `scale` and `opacity` and never `transform`, which would override the anchor.
+  A layer created with its element and destroyed with it never hands pixels back to the page, so
+  there is no repaint to race. The incoming slide starts at opacity 0, so even a late first raster
+  is invisible.
+- **The rotation bar fills continuously again.** It is the compositor animation from before
+  v0.1.69, so the compositor produces frames while the bar runs, as it did through v0.1.68. 2.52
+  skips composition for animated layers that are not visible, so scrolling the banner away stops
+  that work.
+- **Still static in Game mode:**
+  - a detail banner's entrance (a single slide, with nothing to animate between);
+  - artwork that arrives after the decode deadline;
+  - the dim when Home scrolls;
+  - browse image fades (`html.gamemode main img`).
+
+  Each of these would hand its layer back when it ends. A card grid cannot afford a permanent layer
+  per cover.
 
 ## What to check on a Deck
 
-- Step through the banner with L1/R1 quickly and slowly: the artwork and title should swap in
-  one frame with no grey block and no soft-to-sharp blink. Auto-advance should behave the same.
+- Step through the banner with L1/R1, quickly and slowly, in both directions, then let it
+  auto-advance. The new slide should slide and fade in from the side you moved towards, with no
+  blink at the start or end of the motion and no grey skeleton frame.
+- The active marker's bar should fill smoothly for the whole interval.
 - Scroll Home down and back: the banner dims without a blink.
-- Idle on Home with `mangohud`/`gamescope --stats`: GPU activity while nothing moves should be
-  near zero between the progress bar's steps.
-- Desktop and phone keep their entrance animations; only `html.gamemode` changes.
+- Open a series: its banner appears in place.
+- Desktop and phone keep their original animations; only `html.gamemode` changes.
 
-WebKitGTK 2.54 deprecates the `ON_DEMAND` hardware-acceleration policy (it now behaves like
-`ALWAYS`). The Flatpak still requests `ON_DEMAND` on the GNOME 50 runtime; when the runtime
-moves to 2.54 the request is a no-op, and the changes above do not depend on it either way.
+Re-check the banner on the Deck after any runtime bump. Composition scheduling is exactly what
+changed between 2.50 and 2.52, and it can change again.
