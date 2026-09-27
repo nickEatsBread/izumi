@@ -68,6 +68,7 @@
   import { episodesBelow, episodesOnSide, resolveDetail } from '$lib/themes/presentation'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { mediaDisplayModel } from '$lib/themes/host-model'
+  import { ambientFromHex } from '$lib/themes/ambient'
   import { countryName, formatDate as fmtDate, prettyEnum } from '$lib/detail/facts'
   import FactList from './FactList.svelte'
   import AiringCountdown from './AiringCountdown.svelte'
@@ -213,6 +214,8 @@
   let active = $state('Episodes')
   let heroPlay = $state<PlayState>({ status: 'idle' })
   const detailTheme = $derived(resolveDetail($themePresentation))
+  // The series' cover colour for theme stylesheets (`--cover-rgb`).
+  const coverRgb = $derived(ambientFromHex(media?.coverImage?.color))
   const factsStyle = $derived(detailTheme.factsStyle ?? 'template')
   const countdown = $derived(detailTheme.countdown ?? 'none')
   const overlayDetail = $derived(detailTheme.layout === 'overlay')
@@ -459,7 +462,7 @@
 {:else if media}
   {@const m = media}
   {#if $isMobile && overlayDetail}
-    <div data-slot="detail" data-layout="overlay" data-variant="phone" class="relative pb-8">
+    <div data-slot="detail" data-layout="overlay" data-variant="phone" style:--cover-rgb={coverRgb} class="relative pb-8">
       <div bind:clientHeight={barHeight}
            class="fixed inset-x-0 top-0 z-30 flex items-center gap-2 px-2 py-2 transition-colors duration-200
                   {barState.solid ? 'border-b border-border bg-background/80 backdrop-blur' : 'text-white'}"
@@ -544,7 +547,7 @@
       </div>
     </div>
   {:else if $isMobile}
-    <div data-slot="detail" data-layout={detailTheme.layout} data-variant="phone" class="relative pb-8">
+    <div data-slot="detail" data-layout={detailTheme.layout} data-variant="phone" style:--cover-rgb={coverRgb} class="relative pb-8">
       <!-- Floating bar. Transparent over the artwork (with a scrim so the chevron survives light
            art), blurred and titled once the artwork has scrolled under it. It carries the status-bar
            inset itself: a fixed element does not inherit main's padding once it locks. -->
@@ -791,7 +794,7 @@
       </div>
     </div>
   {:else if overlayDetail}
-    <section data-slot="detail" data-layout="overlay" data-variant="desktop" class="relative isolate min-h-[72vh] w-full overflow-hidden" data-theme-surface="detail-overlay">
+    <section data-slot="detail" data-layout="overlay" data-variant="desktop" style:--cover-rgb={coverRgb} class="relative isolate min-h-[72vh] w-full overflow-hidden" data-theme-surface="detail-overlay">
       {#if m.bannerImage}
         <img src={m.bannerImage} alt="" class="absolute inset-0 h-full w-full object-cover" style="object-position:center 20%" />
       {:else}
@@ -878,7 +881,7 @@
   <!-- Title-less banner backdrop; the info panel below overlaps its lower fade.
        Width-scaled banners sit behind the cover from the top of the page (the artwork
        follows the window width at 5:1) instead of a viewport-height strip with a gap above the cover. -->
-  <div data-slot="detail" data-layout={detailTheme.layout} data-variant="desktop" class="relative">
+  <div data-slot="detail" data-layout={detailTheme.layout} data-variant="desktop" style:--cover-rgb={coverRgb} class="relative">
   {#if !detailTheme.bannerHidden}
   <div class={detailTheme.bannerScale === 'banner' ? 'pointer-events-none absolute inset-x-0 top-0 z-0 w-full' : ''}>
   <Hero medias={[m]} showOverlay={false} initialArtworkVisible={loadedHintBanner === banner(m)} />

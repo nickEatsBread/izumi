@@ -6,6 +6,7 @@
   import type { RankedListBlock } from '$lib/home/blocks'
   import { appendUnique, loadRowPage, resolveRowId } from '$lib/home/row-source'
   import { nearViewport } from '$lib/util/near-viewport'
+  import { ambientFromHex } from '$lib/themes/ambient'
 
   // A numbered top list (thumbnail, title, facts), optionally switching between rows with tabs.
   let { block, target, optionIds = [] }: { block: RankedListBlock; target: CatalogHomeTarget; optionIds?: string[] } = $props()
@@ -62,7 +63,7 @@
       {:else}
         {#each media as item, index (item.id)}
           <li>
-            <a data-part="block.item" data-focusable href={mediaHref(item)} class="flex items-center gap-3 rounded-lg p-1.5 transition hover:bg-secondary/60">
+            <a data-part="block.item" data-focusable href={mediaHref(item)} style:--cover-rgb={ambientFromHex(item.coverImage?.color)} class="flex items-center gap-3 rounded-lg p-1.5 transition hover:bg-secondary/60">
               <span data-part="block.rank" class="w-8 shrink-0 text-center text-xl font-black tabular-nums {index < 3 ? 'text-theme' : 'text-muted-foreground'}">{index + 1}</span>
               <div data-part="card.art" class="aspect-[2/3] w-12 shrink-0 overflow-hidden rounded bg-muted">
                 <img src={cardCover(item, 48)} alt="" loading="lazy" decoding="async" draggable="false" class="size-full object-cover" />

@@ -113,6 +113,15 @@ describe('theme chrome application', () => {
     }
     expect(read('../routes/app/home/+page.svelte')).toContain('<CatalogBrandLogo brand platform={$catalogScreen} />')
   })
+  it('publishes each series cover colour on cards, ranked rows and the series page', () => {
+    // `--cover-rgb` ("r g b" from the catalog's cover colour) lets a stylesheet tint per title.
+    for (const file of ['./components/cards/SmallCard.svelte', './components/home/blocks/RankedList.svelte']) {
+      expect(read(file), file).toContain('style:--cover-rgb={ambientFromHex(')
+    }
+    const detail = read('./components/detail/AnimeDetail.svelte')
+    expect(detail.match(/data-slot="detail" [^>]*style:--cover-rgb=\{coverRgb\}/g)).toHaveLength(4)
+    expect(read('../../docs/THEMES.md')).toContain('`--cover-rgb`')
+  })
   it('pins the video stage path transparent against theme stylesheets', () => {
     // The video is drawn behind the page, so the root and both wrappers stay see-through whatever a theme's stylesheet says.
     const overlay = read('./components/player/PlayerOverlay.svelte')

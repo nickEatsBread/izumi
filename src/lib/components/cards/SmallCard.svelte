@@ -12,6 +12,7 @@
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { themePresentation } from '$lib/themes/runtime'
   import { mediaDisplayModel } from '$lib/themes/host-model'
+  import { ambientFromHex } from '$lib/themes/ambient'
   import { CARD_FAMILY, ROW_CONTEXT, densityScale, resolveCard, resolveRow, type CardFamily, type RowScope } from '$lib/themes/presentation'
   import type { Media } from '$lib/anilist/types'
   import { reliableImage } from '$lib/util/reliable-image'
@@ -155,7 +156,7 @@
   $effect(() => () => clearTimeout(closeT))
 </script>
 
-<div data-part="card" data-family={cardFamily} bind:this={el} data-theme-card class={fill ? 'w-full' : $isTv ? 'w-44 shrink-0' : 'w-36 shrink-0 sm:w-[152px]'} style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
+<div data-part="card" data-family={cardFamily} bind:this={el} data-theme-card style:--cover-rgb={ambientFromHex(media.coverImage?.color)} class={fill ? 'w-full' : $isTv ? 'w-44 shrink-0' : 'w-36 shrink-0 sm:w-[152px]'} style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
   <a href={mediaHref(media)} data-focusable draggable="false" onclick={() => { rememberDetail(media); h.tap() }}
      aria-label={title(media)} style:width={themeRow.width || cardTemplate ? '100%' : undefined}
      class="group block {fill ? 'w-full' : $isTv ? 'w-44' : 'w-36 sm:w-[152px]'} {$isAndroid ? 'android-card-press' : ''}">
