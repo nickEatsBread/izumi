@@ -21,6 +21,12 @@ describe('episode paging', () => {
     expect(list).toContain('<div data-part="episodes.pager" class="mt-4 flex items-center gap-3 text-sm">')
     expect(list.match(/<button data-part="page-number" data-focusable disabled=/g)?.length).toBe(2)
   })
+  // Search results ignore Oldest/Newest, so flipping the sort mid-search must not rebuild every card.
+  it('keys the cards on the sort only while it orders them', () => {
+    expect(list).toContain("const rowOrder = $derived(searchedEpisodes ? 'search' : dir)")
+    expect(list.match(/\{#each rows as ep \(`\$\{rowOrder\}-\$\{ep\}`\)\}/g)?.length).toBe(2)
+    expect(list).not.toContain('`${sortDir}-${ep}`')
+  })
   it('ranks number matches first and says when nothing matches', () => {
     expect(list).toContain('const searchedEpisodes = $derived.by(() => searchEpisodes(allEpisodes, episodeQuery, meta))')
     expect(list).toContain('const rows = $derived(searchedEpisodes ? eps : orderEpisodes(eps, dir))')

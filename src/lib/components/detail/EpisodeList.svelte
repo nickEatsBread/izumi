@@ -134,6 +134,9 @@
   const dir = $derived<SortDir>(episodeTheme?.order === 'none' ? 'asc' : sortDir)
   // Search results keep their ranking; the sort orders pages.
   const rows = $derived(searchedEpisodes ? eps : orderEpisodes(eps, dir))
+  // Cards are keyed by the order that draws them, so a new sort draws them afresh; search results
+  // ignore the sort, so flipping it mid-search leaves the cards alone.
+  const rowOrder = $derived(searchedEpisodes ? 'search' : dir)
   // The controller fast lane targets the episode the hero CTA would use. `autoPage` already keeps
   // that episode on-screen for long-runners; the fallback covers unusual offline/schedule data.
   // This target is semantic rather than geometric, so a single Down never detours through search,
@@ -717,7 +720,7 @@
     {/if}
   {:else if episodeCarousel}
     <div class="flex gap-5 overflow-x-auto pb-3">
-      {#each rows as ep (`${sortDir}-${ep}`)}
+      {#each rows as ep (`${rowOrder}-${ep}`)}
         <div class="w-[min(100%,18rem)] shrink-0">
         <EpisodeCard
           {media}
@@ -749,7 +752,7 @@
     </div>
   {:else if episodeGridLayout || $episodeLayout === 'cards'}
     <div class="grid select-none {episodeListLayout ? 'grid-cols-1 gap-2 px-2' : episodeGridLayout ? 'grid-cols-1 gap-4 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]' : 'grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]'}">
-      {#each rows as ep (`${sortDir}-${ep}`)}
+      {#each rows as ep (`${rowOrder}-${ep}`)}
         <div class="{episodeListLayout && episodeHoverScale ? 'episode-scale' : ''} {episodeListLayout ? 'episode-load-in' : ''}">
         <EpisodeCard
           {media}
