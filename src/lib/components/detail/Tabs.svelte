@@ -10,12 +10,13 @@
   // as `data-tab`, so a stylesheet can target a section without counting tabs.
   let { tabs, active = $bindable(), variant = 'underline', labels }: { tabs: string[]; active: string; variant?: DetailTabs; labels?: Record<string, string> } = $props()
   // `bottom` (API 3) is a phone bar fixed to the bottom of the screen in place of the app's bottom
-  // navigation; anywhere wider it falls back to the underlined strip.
+  // navigation, which keeps the page's room at the bottom for it; anywhere wider it falls back to
+  // the underlined strip.
   const bottom = $derived(variant === 'bottom' && $isMobile)
   const look = $derived(variant === 'bottom' && !$isMobile ? 'underline' : variant)
   $effect(() => {
     if (!bottom) return
-    return suppressBottomNav()
+    return suppressBottomNav({ bar: true })
   })
   // A press gives a haptic tick + a quick scale-down (the "button" feel of native Material tabs).
   function pick(tab: string, event: MouseEvent) {

@@ -23,7 +23,11 @@ describe('series page theme options', () => {
     expect(detail).toContain("detailTheme.listButton !== 'hidden'")
     expect(detail).toContain("variant={detailTheme.tabs === 'bottom' ? 'underline' : detailTheme.tabs}")
     const tabs = read('./Tabs.svelte')
-    expect(tabs).toContain('suppressBottomNav()')
-    expect(read('../../../routes/app/+layout.svelte')).toContain('!$bottomNavSuppressed')
+    // The bottom tabs are a bar in the navigation's place, so the page keeps the room for them.
+    expect(tabs).toContain('return suppressBottomNav({ bar: true })')
+    const layout = read('../../../routes/app/+layout.svelte')
+    expect(layout).toContain('!$bottomNavSuppressed')
+    // A page that only covers the navigation (`detail.nav: "hidden"`) gives its room up.
+    expect(layout).toContain("$bottomBarRoom ? 'mb-[calc(var(--theme-bottom-nav,4rem)+env(safe-area-inset-bottom))]' : 'mb-[env(safe-area-inset-bottom)]'")
   })
 })

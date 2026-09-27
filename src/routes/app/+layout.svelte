@@ -53,7 +53,7 @@
   import { scheduleBootWork } from '$lib/util/boot-work'
   import { isAndroid, isMacOS, isMobile, isTv, initPlatform } from '$lib/platform'
   import { shellNav } from '$lib/themes/runtime'
-  import { bottomNavSuppressed } from '$lib/shell/chrome'
+  import { bottomBarRoom, bottomNavSuppressed } from '$lib/shell/chrome'
   import { initOffline } from '$lib/stores/offline'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
   import { getContextClient } from '@urql/svelte'
@@ -503,8 +503,10 @@
      column. Horizontal overflow is clipped on <body> instead (app.css).
      Hidden while playing so its opaque content doesn't block the video. -->
 <!-- The docked mini-player bar (4rem) rests on the bottom navigation (its themed height, 4rem by
-     default): while it is up, pages reserve both so their last rows are never buried under the video. -->
-<main data-slot="page" class="theme-shell-main relative min-h-screen {($isMobile || $shellNav === 'bottom') ? ($androidMiniPlayer ? 'mb-[calc(var(--theme-bottom-nav,4rem)+4rem+env(safe-area-inset-bottom))]' : 'mb-[calc(var(--theme-bottom-nav,4rem)+env(safe-area-inset-bottom))]') : ''} {$shellNav === 'top' ? 'pt-[4.75rem]' : ''}" class:hidden={$playing || ($androidMpvActive && !$androidMiniPlayer)} style:display|important={$playing || ($androidMpvActive && !$androidMiniPlayer) ? 'none' : undefined}>{@render children()}</main>
+     default): while it is up, pages reserve both so their last rows are never buried under the video.
+     A page that covers the navigation without a bar of its own (`detail.nav: "hidden"`) keeps only
+     the safe-area inset; a bar drawn in the navigation's place (series bottom tabs) keeps its room. -->
+<main data-slot="page" class="theme-shell-main relative min-h-screen {($isMobile || $shellNav === 'bottom') ? ($androidMiniPlayer ? 'mb-[calc(var(--theme-bottom-nav,4rem)+4rem+env(safe-area-inset-bottom))]' : $bottomBarRoom ? 'mb-[calc(var(--theme-bottom-nav,4rem)+env(safe-area-inset-bottom))]' : 'mb-[env(safe-area-inset-bottom)]') : ''} {$shellNav === 'top' ? 'pt-[4.75rem]' : ''}" class:hidden={$playing || ($androidMpvActive && !$androidMiniPlayer)} style:display|important={$playing || ($androidMpvActive && !$androidMiniPlayer) ? 'none' : undefined}>{@render children()}</main>
 {#if $playing}<Lazy load={loadPlayerOverlay} />{/if}
 <!-- One Android watch-details instance spans source preparation and native playback. In particular,
      its Disqus iframe is never destroyed merely because libmpv presented its first frame. -->
