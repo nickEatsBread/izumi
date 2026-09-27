@@ -45,3 +45,12 @@ export function resolveSections(sections: DetailSections | undefined, options: {
   const initial = sections?.default && tabs.includes(sections.default) ? sections.default : tabs[0]
   return { mode: sections?.mode ?? 'tabs', tabs, folded, labels, initial, infoInOverview: options.phone && sections?.info === 'overview' }
 }
+
+/** Whether the episode list is on the page, and with it what sits at its top (the Continue card):
+ *  always when the episodes sit `outside` the sections (a right-hand rail, below the header) or the
+ *  sections are stacked; otherwise while `open` is the Episodes tab, or Overview with the episodes
+ *  folded into it. */
+export function episodesOnPage(view: ResolvedSections, open: DetailSection, outside: boolean): boolean {
+  if (outside || view.mode === 'stack') return true
+  return open === 'episodes' || (open === 'overview' && view.folded.includes('episodes'))
+}

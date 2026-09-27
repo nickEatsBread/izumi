@@ -7,7 +7,8 @@ const detail = read('./AnimeDetail.svelte')
 
 describe('series page sections', () => {
   it('resolves tabs, names and the default tab from the theme', () => {
-    expect(detail).toContain("import { resolveSections, type ResolvedSections } from '$lib/detail/sections'")
+    // The same import also brings `episodesOnPage` (the phone Play button's rule, continue-card.test.ts).
+    expect(detail).toContain("resolveSections, type ResolvedSections } from '$lib/detail/sections'")
     expect(detail).toContain('const mobileTabs = $derived(resolveSections(detailTheme.sections, { phone: true, episodesTabbed: episodeTabbed }))')
     expect(detail).toContain('const desktopTabs = $derived(resolveSections(detailTheme.sections, { phone: false, episodesTabbed: episodeTabbed }))')
     expect(detail).toContain("let pickedTab = $state('')")

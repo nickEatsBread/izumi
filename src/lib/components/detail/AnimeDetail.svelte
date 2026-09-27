@@ -70,7 +70,7 @@
   import ParentalBlock from '$lib/components/profiles/ParentalBlock.svelte'
   import { themePresentation } from '$lib/themes/runtime'
   import { episodesBelow, episodesOnSide, resolveDetail, type DetailSection } from '$lib/themes/presentation'
-  import { resolveSections, type ResolvedSections } from '$lib/detail/sections'
+  import { episodesOnPage, resolveSections, type ResolvedSections } from '$lib/detail/sections'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { mediaDisplayModel } from '$lib/themes/host-model'
   import { ambientFromHex } from '$lib/themes/ambient'
@@ -282,12 +282,8 @@
   const detailLogo = $derived(detailTheme.title === 'logo' && detailExtras.logo && detailExtras.logo !== failedDetailLogo ? detailExtras.logo : '')
   const factsStyle = $derived(detailTheme.factsStyle ?? 'template')
   const countdown = $derived(detailTheme.countdown ?? 'none')
-  // API 3 `detail.continue: "card"`: on phones the Continue card at the top of the episodes takes
-  // the header Play button's place, once an episode can play (the card needs one to show).
   const downloadedEpisodes = (m: Media) => Object.values($downloads)
     .filter((d) => d.mediaId === m.id && d.status === 'done').map((d) => d.episode).sort((a, b) => a - b)
-  const headerCtaHidden = $derived(media != null && $isMobile && detailTheme.continue === 'card'
-    && playableThrough($offlineMode ? downloadedEpisodes(media) : animeEpisodeNumbers(media), airedCount(media), $offlineMode) > 0)
   const overlayDetail = $derived(detailTheme.layout === 'overlay')
   const bannerOverlap = $derived(detailTheme.bannerHeight ? Math.round(detailTheme.bannerHeight * 0.58) : (controllerUi ? 16 : 18))
   const sideEpisodes = $derived(episodesOnSide($themePresentation, !$isMobile))
@@ -298,6 +294,12 @@
   const desktopTabs = $derived(resolveSections(detailTheme.sections, { phone: false, episodesTabbed: episodeTabbed }))
   const mobileTabs = $derived(resolveSections(detailTheme.sections, { phone: true, episodesTabbed: episodeTabbed }))
   const shownTab = (view: ResolvedSections): DetailSection => view.tabs.find((tab) => tab === pickedTab) ?? view.initial
+  // API 3 `detail.continue: "card"`: on phones the Continue card at the top of the episodes takes
+  // the header Play button's place, once an episode can play (the card needs one to show) and only
+  // while the episodes are on the page: with another tab open, the header keeps its Play button.
+  const headerCtaHidden = $derived(media != null && $isMobile && detailTheme.continue === 'card'
+    && episodesOnPage(mobileTabs, shownTab(mobileTabs), !episodeTabbed)
+    && playableThrough($offlineMode ? downloadedEpisodes(media) : animeEpisodeNumbers(media), airedCount(media), $offlineMode) > 0)
 
   // A TV request already chose the title/episode. Once its detail data is ready, open the same
   // source picker as a local Play press; selecting (or auto-selecting) a source then consumes the

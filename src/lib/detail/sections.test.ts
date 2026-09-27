@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveSections, TAB_LABEL_TEXT } from './sections'
+import { episodesOnPage, resolveSections, TAB_LABEL_TEXT } from './sections'
 
 describe('series page sections', () => {
   it("keeps izumi's phone tabs without a theme", () => {
@@ -32,5 +32,30 @@ describe('series page sections', () => {
   it('names tabs from the fixed set only', () => {
     expect(Object.keys(TAB_LABEL_TEXT)).toHaveLength(13)
     expect(TAB_LABEL_TEXT['more-like-this']).toBe('More like this')
+  })
+})
+
+// The Continue card sits at the top of the episode list, so it is on the page exactly when the list is.
+describe('episodes on the page', () => {
+  const phone = (sections?: Parameters<typeof resolveSections>[0], tabbed = true) => resolveSections(sections, { phone: true, episodesTabbed: tabbed })
+  it('follows the open tab', () => {
+    const view = phone({ tabs: ['overview', 'episodes'], default: 'overview' })
+    expect(episodesOnPage(view, view.initial, false)).toBe(false)
+    expect(episodesOnPage(view, 'episodes', false)).toBe(true)
+    expect(episodesOnPage(phone(), 'episodes', false)).toBe(true)
+    expect(episodesOnPage(phone(), 'relations', false)).toBe(false)
+  })
+  it('counts episodes folded into an open Overview', () => {
+    const view = phone({ tabs: ['overview', 'relations'] })
+    expect(view.folded).toContain('episodes')
+    expect(episodesOnPage(view, 'overview', false)).toBe(true)
+    expect(episodesOnPage(view, 'relations', false)).toBe(false)
+  })
+  it('is always true for stacked sections and for episodes outside the sections', () => {
+    for (const open of ['overview', 'relations'] as const) {
+      expect(episodesOnPage(phone({ mode: 'stack', tabs: ['overview', 'episodes'] }), open, false)).toBe(true)
+      expect(episodesOnPage(phone({ mode: 'stack', tabs: ['overview'] }), open, false)).toBe(true)
+      expect(episodesOnPage(phone({ tabs: ['overview', 'relations'] }, false), open, true)).toBe(true)
+    }
   })
 })
