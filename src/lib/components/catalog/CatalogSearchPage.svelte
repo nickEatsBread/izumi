@@ -21,6 +21,7 @@
     type JvmCatalogSource,
     type JvmSourceFilter,
   } from '$lib/extensions/manager'
+  import { changedJvmFilters } from '$lib/extensions/jvm-filters'
   import type { Media } from '$lib/anilist/types'
   import VirtualGrid from '$lib/components/VirtualGrid.svelte'
   import { CARD_FAMILY } from '$lib/themes/presentation'
@@ -309,7 +310,8 @@
         sourceAddonId: sourceAddonId || undefined,
         watchProvider,
         sourceId: isJvm ? jvmSourceId || undefined : undefined,
-        jvmFilters: isJvm && jvmSourceId ? jvmFilters : undefined,
+        // Only what the user changed: untouched filters keep the source's Popular/Latest browse.
+        jvmFilters: isJvm && jvmSourceId ? changedJvmFilters(jvmFilters, jvmFilterDefaults) : undefined,
         page: pageNumber,
         signal: abort?.signal,
       })

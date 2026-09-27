@@ -107,11 +107,21 @@ class SubtitleArgs {
 }
 
 @InvokeArg
+class AudioTrackArgs {
+    var url: String = ""
+    var title: String? = null
+    var lang: String? = null
+}
+
+@InvokeArg
 class LoadArgs {
     var url: String = ""
     var title: String? = null
     var startPos: Double = 0.0
     var subtitles: Array<SubtitleArgs> = arrayOf()
+    /** Audio the source serves separately from the video, e.g. an extension's other-language
+     * tracks. Added with `audio-add` once the file has loaded, like the subtitles. */
+    var audioTracks: Array<AudioTrackArgs> = arrayOf()
     var alang: String? = null
     var slang: String? = null
     var headers: Map<String, String> = emptyMap()
@@ -152,6 +162,7 @@ private class InspectionBudgetDataSource(
 private data class PendingSubtitles(
     val url: String,
     val tracks: Array<SubtitleArgs>,
+    val audioTracks: Array<AudioTrackArgs> = arrayOf(),
 )
 
 private data class NativeTrack(
@@ -1696,7 +1707,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             "http-header-fields",
             args.headers.entries.joinToString(",") { "${it.key}: ${it.value}" },
         )
-        pendingSubtitles = PendingSubtitles(args.url, args.subtitles)
+        pendingSubtitles = PendingSubtitles(args.url, args.subtitles, args.audioTracks)
         // Resume position via mpv's `start` option, set BEFORE loadfile — the same rule the
         // desktop backends follow. The old post-loadfile `seek` was silently rejected: mpv
         // refuses seeks until the file's playback is initialized (hundreds of ms away for a
@@ -2932,6 +2943,18 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
                 val pending = pendingSubtitles
                 if (pending != null && loadedCore.getPropertyString("path") == pending.url) {
                     pendingSubtitles = null
+                    // mpv's arg order is `audio-add <url> <flags> <title> <lang>`; `auto` lets
+                    // alang pick between these and the file's own audio.
+                    for (audio in pending.audioTracks) {
+                        if (audio.url.isBlank()) continue
+                        loadedCore.command(arrayOf(
+                            "audio-add",
+                            audio.url,
+                            "auto",
+                            audio.title?.takeIf { it.isNotBlank() } ?: "Audio",
+                            audio.lang?.takeIf { it.isNotBlank() } ?: "und",
+                        ))
+                    }
                     for (subtitle in pending.tracks) {
                         if (subtitle.url.isBlank()) continue
                         loadedCore.command(arrayOf(

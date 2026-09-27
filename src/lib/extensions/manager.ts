@@ -15,6 +15,7 @@ import { afterExtensionReady, settleExtensionMethods } from './method-stream'
 import { loadCachedExtensionModule } from './module-cache'
 import { extensionSourceScheduler } from './source-scheduler'
 import { jvmRuntimeState, JVM_RUNTIME_STARTING_MESSAGE, registerJvmColdStartProbe } from './jvm-runtime-state'
+import { playing } from '$lib/player/session'
 
 // Main-thread orchestrator for source extensions. Loads each manifest, spawns one
 // isolated Worker per extension, bridges the extensions' HTTP through the CORS-free
@@ -116,7 +117,8 @@ export interface InstalledExtensionPackage {
 export interface JvmSourceFilter {
   name: string
   type: 'Header' | 'Separator' | 'CheckBox' | 'TriState' | 'Select' | 'Group' | 'Sort' | 'Text' | 'Unknown'
-  state: unknown
+  /** Absent in a search request when the user left this filter at the source's default. */
+  state?: unknown
   values?: string[] | null
 }
 
@@ -125,8 +127,11 @@ export interface JvmSourcePreference {
   title?: string | null
   summary?: string | null
   enabled?: boolean
-  type: 'list' | 'multi_select' | 'switch' | 'checkbox' | 'text' | 'other'
-  value: unknown
+  /** The desktop runtime spells a CheckBoxPreference `checkBox`; Android spells it `checkbox`. */
+  type: 'list' | 'multi_select' | 'switch' | 'checkbox' | 'checkBox' | 'text' | 'other'
+  /** Absent when the runtime does not report the current choice — the desktop runtime omits a
+   *  setting the user has never saved, even though the source then applies its own default. */
+  value?: unknown
   entries?: string[] | null
   entryValues?: string[] | null
 }
@@ -1031,7 +1036,10 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
           // thing later for Izumi's own loopback-only media proxies.
           localServer: isJvmHostedVideoUrl(url),
           type: mediaType(url, `${String(video.quality ?? '')} ${String(video.title ?? '')}`),
-          quality: String(video.quality ?? identity.quality ?? video.title ?? 'auto'),
+          // The runtime reports `Video.resolution` here: a bare height, absent for most sources.
+          quality: typeof video.quality === 'number' && video.quality > 0
+            ? `${video.quality}p`
+            : String(video.quality ?? identity.quality ?? video.title ?? 'auto'),
           server: identity.server,
           audio: identity.audio,
           subtitleMode: identity.subtitleMode === 'hard'
@@ -1354,6 +1362,41 @@ export async function saveJvmCatalogSourcePreference(
     action: 'change',
     value,
   })
+}
+
+async function restartJvmRuntime(): Promise<void> {
+  await invoke('jvm_extension_reload').catch(() => {})
+  // Start the fresh runtime now instead of inside the next resolve's time budget.
+  void invoke('jvm_extension_sources').catch(() => {})
+}
+
+let restartAfterPlayback: (() => void) | undefined
+
+/**
+ * Settle a saved source-settings change. The resolver caches search and episode answers produced
+ * under the old settings, and a source may bake its chosen server into episode URLs, so those go.
+ * Some settings are only read when the source is constructed — Aniyomi labels them "Requires App
+ * Restart" (a mirror domain, for example) — so the runtime restarts too. A stream that the runtime
+ * is serving would die with it, so during playback the restart waits for playback to end.
+ */
+export async function applyJvmSourcePreferenceChanges(): Promise<'applied' | 'after-playback'> {
+  clearProviderCache()
+  if (!get(playing)) {
+    await restartJvmRuntime()
+    return 'applied'
+  }
+  if (!restartAfterPlayback) {
+    let armed = false
+    const stop = playing.subscribe((isPlaying) => {
+      if (!armed || isPlaying) return
+      restartAfterPlayback?.()
+      restartAfterPlayback = undefined
+      void restartJvmRuntime()
+    })
+    armed = true
+    restartAfterPlayback = stop
+  }
+  return 'after-playback'
 }
 
 async function runningJvmExtensions(
