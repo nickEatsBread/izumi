@@ -3,6 +3,7 @@ import type { Media } from '$lib/anilist/types'
 import type { EpMeta } from '$lib/anizip/types'
 import type { Pos } from '$lib/player/progress'
 import { compactCountdown, longCountdown } from './countdown'
+import { episodeCodeText } from './episode-fields'
 import type { DisplayModel } from './presentation'
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
@@ -62,6 +63,8 @@ export function episodeDisplayModel(
   return mediaDisplayModel(media, {
     episodeTitle: extras.episodeTitle ?? meta?.title,
     episodeNumber: ep,
+    episodeNo: extras.episodeNo ?? String(ep),
+    episodeCode: extras.episodeCode ?? episodeCodeText(ep, meta?.season, meta?.seasonEpisode),
     description: extras.description ?? (strip(meta?.overview) || undefined),
     duration: extras.duration ?? meta?.runtime ?? media.duration ?? undefined,
     airDate: extras.airDate ?? meta?.airDate,

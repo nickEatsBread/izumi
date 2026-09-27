@@ -21,6 +21,7 @@ export function parseEpisodes(res: AniZipResponse | undefined): Record<number, E
       airDate: e.airDate,
       runtime: e.runtime ?? e.length,
       season: e.seasonNumber,
+      seasonEpisode: e.episodeNumber,
       abs: e.absoluteEpisodeNumber,
     }
   }

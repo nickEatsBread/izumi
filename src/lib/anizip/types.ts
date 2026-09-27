@@ -42,5 +42,7 @@ export interface EpMeta {
   airDate?: string
   runtime?: number
   season?: number
+  /** The number within `season` (TVDB): a split cour continues its season's count. */
+  seasonEpisode?: number
   abs?: number
 }

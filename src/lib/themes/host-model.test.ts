@@ -101,3 +101,17 @@ describe('timeLeftLabel', () => {
     expect(timeLeftLabel(undefined)).toBeUndefined()
   })
 })
+
+describe('episode template fields in the host model', () => {
+  it('binds the plain number and the season code from episode metadata', () => {
+    const model = episodeDisplayModel(media, 5, { season: 2 })
+    expect(model.episodeNo).toBe('5')
+    expect(model.episodeCode).toBe('S2 E5')
+    expect(model.episodeNumber).toBe(5)
+    expect(displayText('episodeNumber', model)).toBe('E5')
+    expect(episodeDisplayModel(media, 1, { season: 4, seasonEpisode: 17 }).episodeCode).toBe('S4 E17')
+    expect(episodeDisplayModel(media, 5).episodeCode).toBe('E5')
+    expect(episodeDisplayModel(media, 5, undefined, { episodeNo: '1071', watched: 'Watched', filler: 'Filler', rating: '8.5' }))
+      .toMatchObject({ episodeNo: '1071', watched: 'Watched', filler: 'Filler', rating: '8.5' })
+  })
+})
