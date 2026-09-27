@@ -22,6 +22,7 @@ export type EpisodeHover = 'scale' | 'none'
 export type EpisodeOrderControl = 'tabs' | 'flip'
 export type ThemeIcon =
   | 'score' | 'format' | 'episodes' | 'reviews' | 'studio' | 'season' | 'status' | 'source' | 'country' | 'duration'
+  | 'bookmark' | 'plus' | 'info' | 'share'
 export type ThemeSurface = 'Home' | 'Shell' | 'Details' | 'Player' | 'Full'
 export interface ThemeNode {
   type: 'stack' | 'row' | 'grid' | 'overlay' | 'text' | 'artwork' | 'action' | 'icon' | 'meter'
@@ -220,7 +221,10 @@ const choices: Record<string, string[]> = {
   anchor: ['fill', 'bottom-start', 'bottom-end', 'top-start', 'top-end'],
   fit: ['cover', 'contain'], aspect: ['2 / 3', '16 / 9', '2 / 1', '1 / 1'], wrap: ['wrap', 'nowrap'],
 }
-const icons = ['score', 'format', 'episodes', 'reviews', 'studio', 'season', 'status', 'source', 'country', 'duration'] as const
+const icons = ['score', 'format', 'episodes', 'reviews', 'studio', 'season', 'status', 'source', 'country', 'duration', 'bookmark', 'plus', 'info', 'share'] as const
+const API3_ICONS: readonly ThemeIcon[] = ['bookmark', 'plus', 'info', 'share']
+/** Bookmark/plus/info/share are API 3; older packages keep the icons their clients know. */
+const iconsFor = (api: ThemeApi): readonly ThemeIcon[] => (api >= 3 ? icons : icons.filter((icon) => !API3_ICONS.includes(icon)))
 const colors = ['foreground', 'background', 'muted', 'muted-foreground', 'theme', 'card', 'card-foreground', 'primary', 'primary-foreground', 'transparent']
 export function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected a theme object.')
@@ -259,7 +263,7 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
   if (raw.artwork !== undefined) node.artwork = choice(raw.artwork, artworkFor(api))
   if (node.type === 'artwork' && !node.artwork) throw new Error('Choose artwork for this template.')
   if (node.type === 'action') node.action = choice(raw.action, actions) as ThemeAction
-  if (raw.icon !== undefined || node.type === 'icon') node.icon = choice(raw.icon, icons)
+  if (raw.icon !== undefined || node.type === 'icon') node.icon = choice(raw.icon, iconsFor(api))
   if (node.type === 'icon' && !node.icon) throw new Error('Choose an icon for this template.')
   if (node.type === 'meter') {
     if (!node.field || !numericFields.includes(node.field)) throw new Error('A meter needs a numeric field.')

@@ -305,4 +305,12 @@ describe('streaming-site presentation keys (API 3)', () => {
     expect(() => parsePresentation({ mobile: { cardPreview: 'none' } }, 3)).toThrow('unsupported')
     expect(themeCoverage(parsePresentation({ cardPreview: 'none' }, 3))).toContain('Home')
   })
+
+  it('adds bookmark, plus, info and share icons on API 3, also on actions', () => {
+    const node = parseNode({ type: 'action', action: 'details', icon: 'info' }, undefined, 0, true, 3)
+    expect(node).toMatchObject({ action: 'details', icon: 'info' })
+    for (const icon of ['bookmark', 'plus', 'share']) expect(parseNode({ type: 'icon', icon }, undefined, 0, true, 3).icon).toBe(icon)
+    expect(() => parseNode({ type: 'icon', icon: 'bookmark' }, undefined, 0, true, 2)).toThrow('unsupported')
+    expect(parseNode({ type: 'icon', icon: 'score' }, undefined, 0, true, 2).icon).toBe('score')
+  })
 })
