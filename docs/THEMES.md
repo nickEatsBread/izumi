@@ -79,7 +79,7 @@ A package declares `themeApi: 3` to use these keys. The validator refuses them o
 - **Template parts.** Any template node may carry `part` (`^[a-z][a-z0-9.-]{0,39}$`), rendered as `data-part`.
 - **Fields.** `nextEpisode`, `slide`, `slides`, `episodesAired` (numbers) and `airingIn` (`2d 21h`), `airingCountdown` (`4 days 19 hrs 43 mins`), `genre` (the first genre alone) (strings). The hero binds `slide`/`slides` and re-derives the countdowns on its clock.
 - **Conditions.** `when.field` may also name artwork (`poster`, `backdrop`, `logo`, `still`): the node renders when that artwork exists. `when.absent: true` inverts any condition (not combinable with `atMost`), so `{ "type": "artwork", "artwork": "logo", "when": { "field": "logo" } }` beside `{ "type": "text", "field": "title", "when": { "field": "logo", "absent": true } }` shows a title logo, else the title.
-- **Wordmark (`presentation.brand`).** `text` renders "izumi" as `[data-slot="brand"]` → `[data-part="brand.text"]` → one `[data-part="brand.char"]` per letter (`BrandText.svelte`). The expanded side rail always uses the text version. The text is always "izumi".
+- **Logo.** The izumi mark and wordmark are not themeable. They render in the app's own font and palette and sit outside the stylesheet's scope (`data-theme-protected`), so a theme can place the brand in the top bar (`shell.top.brand`) but never recolour, restyle or replace it.
 - **Cover colour.** `--cover-rgb` (`r g b`) carries a series' catalog cover colour on each poster and search card (`card`), each ranked-list row (`block.item`) and the series page (`detail`), for per-title tints such as `-webkit-text-stroke-color: rgb(var(--cover-rgb, 255 255 255))`. Titles without one leave it unset, so always give a fallback.
 - **Ambient colour.** While a theme stylesheet is applied, the home hero publishes `--hero-ambient-rgb` (`r g b`) on `<html>` from the current artwork (for AniList titles, the cover's dominant colour, since their images can't be read back). When the image can't be read the variable is cleared, so always give `var(--hero-ambient-rgb, …)` a fallback.
 - **Video.** During playback `html` and `body` are forced transparent with inline `!important` and the page content is hidden the same way, so ordinary theme backgrounds never cover the video. Don't paint over the player area yourself (fixed overlays, pseudo-elements on `body`).
@@ -122,15 +122,6 @@ State values:
 | `data-variant` | `search` | `anilist-scope`, `anilist`, `merged`, `catalog` |
 | `data-variant` | `button` | `primary`, `secondary`, `ghost`, `icon` |
 | `data-variant` | `tabs` | `underline`, `pills`, `segmented`, `bar` |
-
-#### Brand
-
-| Hook | Kind | What | States |
-|---|---|---|---|
-| `brand` | slot | The izumi wordmark: the rail's home link, the catalog switcher's brand trigger, and the onboarding and profile wordmark. |  |
-| `brand.mark` | part | The logo mark. |  |
-| `brand.text` | part | The text wordmark (`presentation.brand: "text"`, and the expanded side rail). |  |
-| `brand.char` | part | One letter of "izumi"; style runs of letters with `:nth-child()`. |  |
 
 #### Shell
 

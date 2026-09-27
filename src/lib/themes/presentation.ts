@@ -169,8 +169,6 @@ export interface ThemePresentation {
   shell?: ShellPresentation
   player?: PlayerPresentation
   cards?: Partial<Record<CardFamily, ThemeNode>>
-  /** API 3: `text` swaps the SVG wordmark for letter spans a stylesheet can style. */
-  brand?: 'mark' | 'text'
   /** API 3: the theme's Home and navigation layout. */
   layout?: ThemeLayout
   /** Phone overrides (the Android app and any viewport up to 640px), resolved on top of the rest. */
@@ -458,7 +456,7 @@ function parseMobile(value: unknown, api: ThemeApi): MobilePresentation {
  *  parsed, so its layout cannot carry navigation (phones always use the bottom bar). */
 export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_API, phone = false): ThemePresentation {
   const raw = record(value)
-  only(raw, ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'shell', 'player', 'cards', ...api2(api, ['mobile']), ...api3(api, ['brand', 'layout'])])
+  only(raw, ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'shell', 'player', 'cards', ...api2(api, ['mobile']), ...api3(api, ['layout'])])
   const result: ThemePresentation = {}
   if (raw.mobile !== undefined) result.mobile = parseMobile(raw.mobile, api)
   if (raw.density !== undefined) result.density = choice(raw.density, ['compact', 'comfortable', 'large'])
@@ -491,7 +489,6 @@ export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_A
   if (raw.shell !== undefined) result.shell = parseShell(raw.shell, api)
   if (raw.player !== undefined) result.player = parsePlayer(raw.player, api)
   if (raw.cards !== undefined) result.cards = parseCards(raw.cards, api)
-  if (raw.brand !== undefined) result.brand = choice(raw.brand, ['mark', 'text'])
   if (raw.layout !== undefined) result.layout = parseLayout(raw.layout, phone)
   return result
 }
@@ -652,7 +649,7 @@ export function themeCoverage(layout?: ThemePresentation): ThemeSurface[] {
   const surfaces: ThemeSurface[] = []
   const phone = layout.mobile ?? {}
   if (layout.hero || layout.rows || layout.cards || layout.layout?.home || phone.hero || phone.rows || phone.cards || phone.layout?.home) surfaces.push('Home')
-  if (layout.shell || layout.brand || layout.density || layout.hideCardLabels || layout.trueBlack || layout.layout?.nav || phone.density || phone.hideCardLabels || phone.trueBlack) surfaces.push('Shell')
+  if (layout.shell || layout.density || layout.hideCardLabels || layout.trueBlack || layout.layout?.nav || phone.density || phone.hideCardLabels || phone.trueBlack) surfaces.push('Shell')
   if (layout.detail || phone.detail) surfaces.push('Details')
   if (layout.player || phone.player) surfaces.push('Player')
   return surfaces.length === 4 ? ['Full'] : surfaces

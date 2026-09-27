@@ -6,8 +6,6 @@
   import Pencil from '@lucide/svelte/icons/pencil'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import CatalogBrandLogo from './CatalogBrandLogo.svelte'
-  import BrandText from '../BrandText.svelte'
-  import { themePresentation } from '$lib/themes/runtime'
   import CatalogPlatformLogo from './CatalogPlatformLogo.svelte'
   import {
     catalogLabel,
@@ -56,7 +54,6 @@
   const choices = $derived($enabledCatalogScreens)
   const activeLabel = $derived(catalogLabel($catalogScreen))
   const canSwitch = $derived(choices.length > 1)
-  const brandTrigger = $derived(display === 'brand')
 
   async function setOpen(next: boolean, refocus = false) {
     open = next
@@ -144,7 +141,6 @@
   <div bind:this={root} class={className} data-nav-trap={open ? '' : undefined}>
     <div class="relative {display === 'rail' ? 'w-full' : 'w-fit'}">
     <button
-      data-slot={brandTrigger ? 'brand' : undefined}
       bind:this={trigger}
       type="button"
       data-focusable
@@ -182,7 +178,7 @@
         <!-- Integrated mode keeps the identity visually intact: the full Izumi mark is the
              trigger, and a quiet chevron communicates that it opens instead of navigating. -->
         <span class="relative grid size-8 shrink-0 place-items-center">
-          <CatalogBrandLogo brand={brandTrigger} platform={$catalogScreen} />
+          <CatalogBrandLogo platform={$catalogScreen} />
           <ChevronDown
             aria-hidden="true"
             size={11}
@@ -191,11 +187,7 @@
           />
         </span>
         {#if showWordmark}
-          {#if $themePresentation?.brand === 'text'}
-            <BrandText className="text-2xl font-black leading-none" />
-          {:else}
-            <img src="/brand/izumi-wordmark-white.svg" alt="" class="catalog-brand-wordmark h-5" draggable="false" />
-          {/if}
+          <img src="/brand/izumi-wordmark-white.svg" alt="" data-theme-protected class="catalog-brand-wordmark h-5" draggable="false" />
         {/if}
       {:else if display === 'icon'}
         <!-- The provider tile is the button face, rather than a smaller tile floating inside a

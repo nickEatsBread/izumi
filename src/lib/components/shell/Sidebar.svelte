@@ -36,7 +36,6 @@
   const topBar = $derived($themePresentation?.shell?.top ?? {})
   const labelMode = $derived(top ? topBar.labels ?? 'icons' : 'icons')
   const brandCentered = $derived(top && topBar.brand === 'center')
-  const brandText = $derived(top && $themePresentation?.brand === 'text')
   // A theme top bar search field (`shell.top.search`) replaces the Search destination link.
   const searchField = $derived(top && (topBar.search === 'field-center' || topBar.search === 'field-end'))
   // A centred brand owns the middle of the bar, so a centre field moves to the end instead of under it.
@@ -177,12 +176,12 @@
     {#if switcherPlacement === 'integrated' && active('/app/home') && !$offlineMode && $enabledCatalogScreens.length > 1}
       <CatalogSwitcher display="brand" bind:open={catalogPickerOpen} className="ml-2 shrink-0" />
     {:else}
-      <a data-slot="brand" href="/app/home" onclick={() => h.tap()} aria-label={m.nav_home()} title={m.nav_home()} tabindex={-1}
+      <a href="/app/home" onclick={() => h.tap()} aria-label={m.nav_home()} title={m.nav_home()} tabindex={-1}
          class="ml-2 grid size-10 shrink-0 place-items-center transition-transform duration-200 group-hover:scale-110">
-        <CatalogBrandLogo brand platform={$catalogScreen} />
+        <CatalogBrandLogo platform={$catalogScreen} />
       </a>
     {/if}
-    {#if brandText}<BrandText className="whitespace-nowrap text-lg font-black" />{/if}
+    {#if top}<BrandText className="whitespace-nowrap text-lg font-black" />{/if}
     {#if !top}
       <BrandText className="whitespace-nowrap text-lg font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}" />
     {/if}

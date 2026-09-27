@@ -11,15 +11,9 @@ export interface ThemeHook {
   /** State attributes rendered alongside, e.g. `data-active`. */
   states?: string[]
 }
-export type ThemeHookGroup = 'brand' | 'shell' | 'home' | 'blocks' | 'cards' | 'detail' | 'episodes' | 'watch' | 'pages' | 'primitives'
+export type ThemeHookGroup = 'shell' | 'home' | 'blocks' | 'cards' | 'detail' | 'episodes' | 'watch' | 'pages' | 'primitives'
 
 export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
-  brand: [
-    { name: 'brand', kind: 'slot', description: "The izumi wordmark: the rail's home link, the catalog switcher's brand trigger, and the onboarding and profile wordmark." },
-    { name: 'brand.mark', kind: 'part', description: 'The logo mark.' },
-    { name: 'brand.text', kind: 'part', description: 'The text wordmark (presentation.brand "text", and the expanded side rail).' },
-    { name: 'brand.char', kind: 'part', description: 'One letter of "izumi"; style runs of letters with :nth-child().' },
-  ],
   shell: [
     { name: 'page', kind: 'slot', description: 'The routed page content (the app <main>).' },
     { name: 'nav.side', kind: 'slot', description: 'The side navigation rail.' },

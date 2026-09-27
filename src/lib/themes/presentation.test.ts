@@ -108,11 +108,8 @@ describe('theme presentation contract', () => {
     expect(template?.when).toEqual({ field: 'slides', atMost: 20 })
     expect(() => parsePresentation({ hero: { template: { type: 'text', when: { field: 'airingIn', atMost: 2 } } } })).toThrow('atMost')
   })
-  it('parses the API 3 wordmark mode and counts it as shell coverage', () => {
-    expect(parsePresentation({ brand: 'text' }).brand).toBe('text')
-    expect(() => parsePresentation({ brand: 'text' }, 2)).toThrow('unsupported')
-    expect(() => parsePresentation({ brand: 'logo' })).toThrow('unsupported')
-    expect(themeCoverage(parsePresentation({ brand: 'text' }))).toEqual(['Shell'])
+  it('rejects a theme wordmark: the izumi logo is not themeable', () => {
+    expect(() => parsePresentation({ brand: 'text' })).toThrow('unsupported')
   })
   it('parses the API 3 top bar and gates it behind the declared API', () => {
     const shell = { nav: 'top', top: { labels: 'text', search: 'field-center', menu: 'drawer', brand: 'center' } }

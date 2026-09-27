@@ -39,8 +39,6 @@
   import MergedCatalogHome from '$lib/components/catalog/MergedCatalogHome.svelte'
   import CatalogSwitcher from '$lib/components/catalog/CatalogSwitcher.svelte'
   import CatalogBrandLogo from '$lib/components/catalog/CatalogBrandLogo.svelte'
-  import BrandText from '$lib/components/BrandText.svelte'
-  import { themePresentation } from '$lib/themes/runtime'
   import HomeEditor from '$lib/components/catalog/HomeEditor.svelte'
   import HomeRowFrame from '$lib/components/catalog/HomeRowFrame.svelte'
   import HomeBlockView from '$lib/components/home/HomeBlockView.svelte'
@@ -162,13 +160,8 @@
         <CatalogSwitcher display="brand" showWordmark />
       {:else}
         <div class="flex items-center gap-2" aria-label="izumi">
-          <CatalogBrandLogo brand platform={$catalogScreen} />
-          <!-- A theme's text wordmark (presentation.brand "text") replaces the artwork here too. -->
-          {#if $themePresentation?.brand === 'text'}
-            <BrandText className="text-2xl font-black leading-none" />
-          {:else}
-            <img src="/brand/izumi-wordmark-white.svg" alt="izumi" class="home-wordmark h-5" draggable="false" />
-          {/if}
+          <CatalogBrandLogo platform={$catalogScreen} />
+          <img src="/brand/izumi-wordmark-white.svg" alt="izumi" data-theme-protected class="home-wordmark h-5" draggable="false" />
         </div>
       {/if}
       {#if topNav.length}
