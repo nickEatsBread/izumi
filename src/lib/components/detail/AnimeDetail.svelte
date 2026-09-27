@@ -1003,7 +1003,9 @@
         {/if}
         {#if countdown !== 'none'}<AiringCountdown media={m} variant={countdown} className="mb-3" />{/if}
 
-        {#if detailTheme.episodes?.order === 'flip'}
+        <!-- Only a right-hand rail keeps the round flip button, and with it no toolbar line for release
+             timing; everywhere else the episode controls show it. -->
+        {#if detailTheme.episodes?.order === 'flip' && sideEpisodes}
           <div class="mb-3 flex flex-wrap items-center gap-2 empty:mb-0">
             <AiringStatus media={m} />
           </div>

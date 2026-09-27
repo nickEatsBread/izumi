@@ -30,8 +30,7 @@ describe('themed episode toolbar', () => {
     expect(bar).toContain('{#each plan.inline as item (item)}')
     expect(bar).toContain('{#each plan.menu as item (item)}')
   })
-  // Enabled with the AnimeDetail.svelte half of this change, which lands in a separate commit.
-  it.skip('keeps the release timing beside a right-hand rail flip only', () => {
+  it('keeps the release timing beside a right-hand rail flip only', () => {
     expect(detail).toContain("{#if detailTheme.episodes?.order === 'flip' && sideEpisodes}")
   })
 })
