@@ -10,6 +10,15 @@ pub struct SubtitleRequest {
     pub selected: bool,
 }
 
+/// An external audio track the source serves separately from the video (mpv `audio-add`).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioTrackRequest {
+    pub url: String,
+    pub title: Option<String>,
+    pub lang: Option<String>,
+}
+
 /// Load a stream (or local file) into the embedded player.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,6 +33,9 @@ pub struct LoadRequest {
     /// Optional external subtitle tracks to add after load.
     #[serde(default)]
     pub subtitles: Vec<SubtitleRequest>,
+    /// Optional external audio tracks to add after load.
+    #[serde(default)]
+    pub audio_tracks: Vec<AudioTrackRequest>,
     /// Preferred mpv audio/subtitle language codes.
     pub alang: Option<String>,
     pub slang: Option<String>,
@@ -256,12 +268,24 @@ mod tests {
     }
 
     #[test]
+    fn load_request_carries_external_audio_tracks() {
+        let j = r#"{"url":"http://x/v.m3u8","audioTracks":[{"url":"http://x/en.m4a","title":"English","lang":"eng"}]}"#;
+        let r: LoadRequest = serde_json::from_str(j).unwrap();
+        assert_eq!(r.audio_tracks.len(), 1);
+        assert_eq!(r.audio_tracks[0].url, "http://x/en.m4a");
+        assert_eq!(r.audio_tracks[0].lang.as_deref(), Some("eng"));
+        let out = serde_json::to_value(&r).unwrap();
+        assert_eq!(out["audioTracks"][0]["title"], "English");
+    }
+
+    #[test]
     fn load_request_defaults() {
         let r: LoadRequest = serde_json::from_str(r#"{"url":"u"}"#).unwrap();
         assert_eq!(r.url, "u");
         assert_eq!(r.title, None);
         assert_eq!(r.start_pos, 0.0);
         assert!(r.subtitles.is_empty());
+        assert!(r.audio_tracks.is_empty());
         assert!(r.headers.is_empty());
         assert!(r.prefer_native_hdr.is_none());
         assert!(r.prefer_native_audio.is_none());

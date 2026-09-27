@@ -3418,9 +3418,14 @@ export async function playStream(
           if (selected) selectedPreferred = true
           return { ...subtitle, lang, selected }
         })
+        // Separately served audio (an extension's other-language tracks) — the desktop embed
+        // already `audio-add`s these; Android dropped them, so the choice never reached mpv.
+        const sourceAudio = (stream.__stream ? stream.__audioTracks ?? [] : [])
+          .filter((track): track is typeof track & { url: string } => !!track.url)
         const sidecarHeaders = Object.assign(
           {},
           ...sourceSubs.map((s) => s.headers ?? {}),
+          ...sourceAudio.map((track) => track.headers ?? {}),
         )
         const headers = {
           ...sidecarHeaders,
@@ -3476,6 +3481,7 @@ export async function playStream(
           title: label,
           startPos: startSeconds || 0,
           subtitles: subs,
+          audioTracks: sourceAudio.map((track) => ({ url: track.url, title: track.title, lang: track.lang })),
           alang: get(preferredAudioLang),
           slang: preferred,
           headers,

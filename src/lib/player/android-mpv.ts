@@ -18,6 +18,12 @@ export interface MpvLoad {
     lang?: string
     selected?: boolean
   }[]
+  /** Audio a source serves apart from the video; added with mpv `audio-add` after load. */
+  audioTracks?: {
+    url: string
+    title?: string
+    lang?: string
+  }[]
   alang?: string
   slang?: string
   headers?: Record<string, string>
@@ -320,6 +326,7 @@ export async function mpvLoad(p: MpvLoad): Promise<void> {
       title: p.title ?? null,
       startPos: p.startPos ?? 0,
       subtitles: p.subtitles ?? [],
+      audioTracks: p.audioTracks ?? [],
       alang: p.alang ?? null,
       slang: p.slang ?? null,
       headers: p.headers ?? {},
