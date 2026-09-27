@@ -35,7 +35,7 @@
   import { fetchSeasonChain, seasonEntries, type SeasonEntry } from '$lib/anilist/seasons'
   import AiringStatus from './AiringStatus.svelte'
   import { episodeTileState, offlineResumeEpisode, playableThrough } from './episode-tile'
-  import { episodeRanges, pageSizeFor, searchEpisodes } from './episode-ranges'
+  import { episodeRanges, pageSizeFor, searchEpisodes, shownPage } from './episode-ranges'
   import { episodeNoText } from '$lib/themes/episode-fields'
   import Download from '@lucide/svelte/icons/download'
   import Loader from '@lucide/svelte/icons/loader-circle'
@@ -102,7 +102,8 @@
     const next = allEpisodes.findIndex((episode) => episode > watchedThrough)
     return Math.max(0, Math.floor((next < 0 ? total - 1 : next) / PER))
   })
-  const curPage = $derived(page ?? autoPage)
+  // A picked page stays inside the list when the page size changes (`pageSize: "auto"` grows with it).
+  const curPage = $derived(shownPage(page, autoPage, pages))
   const startIdx = $derived(curPage * PER)
   // Range chips (and Task 9's range picker) label pages by their printed first and last numbers.
   const rangeLabel = (episode: number) => episodeNoText(episode, meta[episode]?.abs, $absoluteEpisodeNumbers)

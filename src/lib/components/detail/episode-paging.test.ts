@@ -9,6 +9,9 @@ describe('episode paging', () => {
     expect(list).toContain('const PER = $derived(pageSizeFor(total, episodeTheme?.pageSize))')
     expect(list).not.toContain('const PER = 48')
   })
+  it('keeps a picked page inside the list when the page size changes', () => {
+    expect(list).toContain('const curPage = $derived(shownPage(page, autoPage, pages))')
+  })
   it('offers range chips above the list in place of the pager', () => {
     expect(list).toContain("{#if episodeTheme?.paging === 'ranges' && pages > 1 && !searchedEpisodes}")
     expect(list).toContain('data-part="episodes.ranges" bind:this={rangesRow}')

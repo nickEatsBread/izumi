@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_PAGE_SIZE, episodeRanges, pageSizeFor, searchEpisodes } from './episode-ranges'
+import { DEFAULT_PAGE_SIZE, episodeRanges, pageSizeFor, searchEpisodes, shownPage } from './episode-ranges'
 
 const numbers = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i)
 
@@ -30,6 +30,24 @@ describe('episode ranges', () => {
     expect(episodeRanges([1, 2, 3, 4], 2, (episode) => String(episode + 12))).toEqual(['13–14', '15–16'])
   })
 })
+
+describe('shown page', () => {
+  it('follows the next episode until the viewer picks a page', () => {
+    expect(shownPage(null, 3, 10)).toBe(3)
+    expect(shownPage(1, 3, 10)).toBe(1)
+  })
+  it('keeps a picked page inside the list when the page count shrinks', () => {
+    // Page 10 of 25-episode pages; the list passes 250 episodes and `auto` makes pages of 50.
+    expect(shownPage(9, 0, pageCount(260, pageSizeFor(260, 'auto')))).toBe(5)
+    expect(shownPage(null, 7, 6)).toBe(5)
+  })
+  it('never goes below the first page', () => {
+    expect(shownPage(-2, 0, 3)).toBe(0)
+    expect(shownPage(null, 0, 0)).toBe(0)
+  })
+})
+
+function pageCount(total: number, per: number) { return Math.max(1, Math.ceil(total / per)) }
 
 describe('episode search', () => {
   const meta = { 1: { title: 'Romance Dawn' }, 10: { title: 'The Strongest Crew' }, 21: { title: 'Episode of 10 bounties' } }

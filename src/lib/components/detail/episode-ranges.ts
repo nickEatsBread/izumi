@@ -10,6 +10,12 @@ export function pageSizeFor(total: number, size?: number | 'auto'): number {
   return size ?? DEFAULT_PAGE_SIZE
 }
 
+/** The page on screen: the one the viewer picked, else the one holding the next episode, kept inside
+ *  the list when the page count changes (an `auto` size grows with the list; a theme sets another). */
+export function shownPage(picked: number | null, auto: number, pages: number): number {
+  return Math.max(0, Math.min(picked ?? auto, pages - 1))
+}
+
 /** One label per page from its printed first and last episode ("1–50", "1051–1072"), or the bare
  *  number for a one-episode page. A picker passes the spaced separator (" – "). */
 export function episodeRanges(episodes: number[], per: number, label: (episode: number) => string = String, separator = '–'): string[] {
