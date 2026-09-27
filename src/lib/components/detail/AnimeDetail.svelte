@@ -14,15 +14,17 @@
   import { downloads, downloadedMedia } from '$lib/downloads/state'
   import { localHistory, sessionProgress, manualProgressOverrides } from '$lib/player/history'
   import { seriesTitle } from '$lib/downloads/library'
+  import { untrack } from 'svelte'
   import { readable, type Readable } from 'svelte/store'
-  import { animeResumeEpisode, animeWatchedProgress, type AnimeDetailState } from '$lib/catalog/anime-detail'
+  import { animeResumeEpisode, animeWatchedProgress, recordedWatched, type AnimeDetailState } from '$lib/catalog/anime-detail'
   import { focusOnMount } from '$lib/nav'
   import { copyToClipboard } from '$lib/util/clipboard'
   import { anilistToken } from '$lib/anilist/auth'
   import { kitsuToken, malToken, simklToken } from '$lib/trackers/config'
   import { getExternalTrackerProgress, setScore } from '$lib/trackers'
   import type { AniStatus } from '$lib/trackers'
-  import { mergedProgress, STATUS_LABEL, STATUS_COLOR } from '$lib/trackers/status'
+  import { STATUS_LABEL, STATUS_COLOR } from '$lib/trackers/status'
+  import { seriesListEntry, type ListEdit } from '$lib/detail/list-entry'
   import ListEditor from '$lib/components/detail/ListEditor.svelte'
   import ScoreScale from '$lib/components/detail/ScoreScale.svelte'
   import { connectedTrackerLabels } from '$lib/player/series-rating'
@@ -260,24 +262,25 @@
   // The desktop action-bar button; the editor anchors its popover to it (phones get a sheet).
   let editorAnchor = $state<HTMLButtonElement>()
   let showLocalLists = $state(false)
-  let listOpt = $state<{ status?: AniStatus; progress?: number; score?: number; removed?: boolean }>({})
+  let listOpt = $state<ListEdit>({})
   const localEntry = $derived(media ? localTrackingForMedia($localLibrary, media) : undefined)
-  const entryRemoved = $derived(listOpt.removed || (!!media && localTrackingRemoved($localLibrary, media)))
-  const effStatus = $derived.by((): AniStatus | undefined => {
-    if (entryRemoved) return undefined
-    if (listOpt.status) return listOpt.status
-    return (localEntry?.status as AniStatus | undefined)
-      ?? (rawEntry?.status as AniStatus | undefined)
-      ?? externalEntry?.status
-  })
-  // Explicit user actions (optimistic edit, manual override) win outright; between the trackers
-  // take the max — an AniList entry at 0 must not `??`-shadow real external progress.
-  const effProgress = $derived(entryRemoved ? 0 : (
-    listOpt.progress
-    ?? $manualProgressOverrides[id]
-    ?? mergedProgress(localEntry?.progress, rawEntry?.progress, externalEntry?.progress)
-  ))
-  const effScore100 = $derived(entryRemoved ? 0 : (listOpt.score ?? localEntry?.score ?? rawEntry?.score ?? externalEntry?.score ?? 0))
+  // This page is only hidden while the player is up, so the edit above and the tracker reads predate
+  // any episode watched there. Episodes this device records after the page read them (or saved an
+  // edit) are newer than both; `seriesListEntry` moves the count up to them.
+  const watched = $derived(media ? recordedWatched(media, $localHistory, $sessionProgress) : 0)
+  let watchedBefore = $state<number | null>(null)
+  $effect(() => { if (media && untrack(() => watchedBefore) == null) watchedBefore = watched })
+  // The optimistic edit wins outright until an episode is watched after it, and a manual override
+  // wins outright; between the trackers take the max.
+  const listEntry = $derived(seriesListEntry({
+    edit: listOpt, local: localEntry, anilist: rawEntry, external: externalEntry,
+    locallyRemoved: !!media && localTrackingRemoved($localLibrary, media),
+    override: $manualProgressOverrides[id], watched, watchedBefore,
+  }))
+  const entryRemoved = $derived(listEntry.removed)
+  const effStatus = $derived(listEntry.status)
+  const effProgress = $derived(listEntry.progress)
+  const effScore100 = $derived(listEntry.score100)
   const hasEntry = $derived(!!effStatus)
   const canRemove = $derived(!entryRemoved && (hasEntry || (!!media && Object.values($localHistory)
     .some((entry) => localTrackingKey(entry.media) === localTrackingKey(media)))))
@@ -1063,7 +1066,7 @@
       {canRemove}
       anchor={editorAnchor}
       onclose={() => (showEditor = false)}
-      onsaved={(patch) => (listOpt = { ...listOpt, ...patch })}
+      onsaved={(patch) => { listOpt = { ...listEntry.edit, ...patch }; watchedBefore = watched }}
     />
   {/if}
   {#if showLocalLists}<LocalListPicker media={m} onclose={() => (showLocalLists = false)} />{/if}
