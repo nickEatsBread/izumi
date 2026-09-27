@@ -123,6 +123,8 @@ State values:
 | `data-variant` | `detail.facts` | `table`, `cards`, `chips` (none for a template) |
 | `data-variant` | `detail.countdown` | `compact`, `long` |
 | `data-variant` | `detail.list-button` | `full` (the full-width button) |
+| `data-solid` | `detail.bar` | present once the artwork has scrolled under the bar |
+| `data-key` | `fact` | `format`, `episodes`, `status`, `aired`, `season`, `duration`, `studio`, `source`, `country`, `score`, `members`, `genres`, `progress`, `synonyms` |
 | `data-variant` | `episode` | `template`, `thumb`, `compact`, `number`, `row` |
 | `data-filler` | `episode.continue` | present when that episode is a known filler |
 | `data-variant` | `episodes.seasons` | `chips`, `posters`, `dropdown` |
@@ -242,7 +244,7 @@ State values:
 | `detail.header` | part | The theme template under the title (`detail.header`). |  |
 | `detail.meta` | part | The facts line. |  |
 | `detail.facts` | part | The facts: a theme template (desktop stack and split) or, with `detail.factsStyle`, a table, cards or chips. | `data-variant` |
-| `fact` | part | One entry of the details grid. |  |
+| `fact` | part | One fact: an entry of the details grid, or a table row, card or chip of `detail.facts`. | `data-key` |
 | `fact.label` | part | A details entry label. |  |
 | `fact.value` | part | A details entry value. |  |
 | `detail.genres` | part | The genre chips (phone). |  |
@@ -254,6 +256,12 @@ State values:
 | `detail.episodes` | slot | The episode list. |  |
 | `detail.relations` | slot | Related titles. |  |
 | `detail.characters` | slot | Characters and voice actors. |  |
+| `detail.bar` | slot | The floating top bar of the phone series page (back and, once scrolled, the title). | `data-solid` |
+| `detail.byline` | part | The phone studio · source · members line. |  |
+| `person` | part | One character or staff credit. |  |
+| `person.photo` | part | The credit's picture. |  |
+| `person.name` | part | The character or staff name. |  |
+| `person.role` | part | The character's role or the staff job. |  |
 
 #### Episodes
 
