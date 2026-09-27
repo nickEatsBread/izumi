@@ -80,6 +80,9 @@
   const episodeHoverScale = $derived(episodeTheme?.hover === 'scale')
   const flipOrder = $derived(episodeTheme?.order === 'flip')
   const showEpisodeSearch = $derived(episodeTheme?.search !== false)
+  // A theme's grid or carousel arrangement draws cards whatever the layout setting says, so the
+  // cards/numbers switch would do nothing there.
+  const layoutSwitch = $derived(episodeTheme?.arrangement !== 'grid' && episodeTheme?.arrangement !== 'carousel')
   const PER = 48
   // `page` stays null until the user manually pages; until then we show `autoPage` — the page that
   // holds the next episode to watch — so opening a long-running series (One Piece) lands on where
@@ -299,13 +302,13 @@
 {#if total > 0}
 <div data-slot="detail.episodes" class="relative">
   {#if flipOrder && !$isMobile && aired > 0}
-    <button type="button" data-focusable class="episode-order-flip" onclick={flipSort}
+    <button type="button" data-focusable class="episode-order-flip" data-part="episodes.sort" data-variant="flip" data-dir={sortDir} onclick={flipSort}
             title={sortDir === 'asc' ? 'Show newest first' : 'Show oldest first'}
             aria-label={sortDir === 'asc' ? 'Show newest first' : 'Show oldest first'}>
       {#if sortDir === 'asc'}<ArrowDown01 size={20} />{:else}<ArrowUp10 size={20} />{/if}
     </button>
     {#if !selecting && !offline}
-      <button type="button" data-focusable class="episode-order-flip episode-download-flip" onclick={startSelect}
+      <button type="button" data-focusable class="episode-order-flip episode-download-flip" data-part="episodes.download" onclick={startSelect}
               title="Download episodes" aria-label="Download episodes">
         <Download size={18} />
       </button>
@@ -319,8 +322,8 @@
   {#if aired > 0}
     {#if flipOrder && !$isMobile && !selecting}
       {#if $episodeQueueEnabled}
-        <div class="mb-3 flex justify-end">
-          <button data-focusable onclick={queueNextEpisode} disabled={aired < 1}
+        <div class="mb-3 flex justify-end" data-slot="episodes.toolbar" data-variant="bar">
+          <button data-focusable onclick={queueNextEpisode} data-part="episodes.queue" disabled={aired < 1}
                   title={`${m.lists_add_queue()} — Episode ${nextQueueEpisode}`}
                   class="flex items-center justify-center gap-1.5 rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent disabled:opacity-40">
             <ListPlus size={15} /> {queuedNotice ? m.lists_queued_episode({ episode: nextQueueEpisode }) : m.lists_add_queue()}
@@ -328,18 +331,18 @@
         </div>
       {/if}
     {:else}
-    <div class="mb-4 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
+    <div class="mb-4 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap" data-slot="episodes.toolbar" data-variant="bar">
       {#if !$isMobile}
       {#if !selecting && !flipOrder}
-        <div class="flex rounded-lg bg-secondary p-0.5 text-sm font-bold">
-          <button data-focusable onclick={() => toggleSort('asc')}
+        <div class="flex rounded-lg bg-secondary p-0.5 text-sm font-bold" data-part="episodes.sort" data-variant="tabs" data-dir={sortDir}>
+          <button data-focusable onclick={() => toggleSort('asc')} data-active={sortDir === 'asc' || undefined}
                   class="rounded-md px-3 py-1.5 transition-colors {sortDir === 'asc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Oldest</button>
-          <button data-focusable onclick={() => toggleSort('desc')}
+          <button data-focusable onclick={() => toggleSort('desc')} data-active={sortDir === 'desc' || undefined}
                   class="rounded-md px-3 py-1.5 transition-colors {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
         </div>
       {/if}
       {#if showEpisodeSearch}
-      <label class="relative col-span-2 min-w-0 sm:max-w-sm sm:flex-1">
+      <label class="relative col-span-2 min-w-0 sm:max-w-sm sm:flex-1" data-part="episodes.search">
         <Search size={15} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
           data-part="input"
@@ -352,21 +355,21 @@
       {/if}
       {/if}
       {#if $isMobile}
-        <div class="flex min-h-11 w-full items-stretch rounded-xl bg-secondary p-1 text-sm font-bold">
-          <button data-focusable onclick={() => toggleSort('asc')}
+        <div class="flex min-h-11 w-full items-stretch rounded-xl bg-secondary p-1 text-sm font-bold" data-part="episodes.sort" data-variant="tabs" data-dir={sortDir}>
+          <button data-focusable onclick={() => toggleSort('asc')} data-active={sortDir === 'asc' || undefined}
                   class="flex min-h-9 flex-1 items-center justify-center rounded-lg px-3 leading-none transition-colors {sortDir === 'asc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Oldest</button>
-          <button data-focusable onclick={() => toggleSort('desc')}
+          <button data-focusable onclick={() => toggleSort('desc')} data-active={sortDir === 'desc' || undefined}
                   class="flex min-h-9 flex-1 items-center justify-center rounded-lg px-3 leading-none transition-colors {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
         </div>
       {:else}
-        {#if $episodeQueueEnabled}<button data-focusable onclick={queueNextEpisode} disabled={aired < 1}
+        {#if $episodeQueueEnabled}<button data-focusable onclick={queueNextEpisode} data-part="episodes.queue" disabled={aired < 1}
                 title={`${m.lists_add_queue()} — Episode ${nextQueueEpisode}`}
                 class="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold hover:bg-accent disabled:opacity-40 sm:h-auto sm:rounded-md sm:py-2">
           <ListPlus size={15} /> {queuedNotice ? m.lists_queued_episode({ episode: nextQueueEpisode }) : m.lists_add_queue()}
         </button>{/if}
         {#if !selecting && !flipOrder}
           {#if !offline}
-            <button data-focusable onclick={startSelect}
+            <button data-focusable onclick={startSelect} data-part="episodes.download"
                     title="Download episodes"
                     class="flex items-center justify-center gap-1.5 rounded-md bg-secondary px-3 py-2 text-sm font-bold transition-colors hover:bg-accent">
               <Download size={15} /> Download…
@@ -375,33 +378,38 @@
         {/if}
       {/if}
       {#if $isMobile}
-        {#if $episodeQueueEnabled}<button data-focusable onclick={queueNextEpisode} disabled={aired < 1}
+        {#if $episodeQueueEnabled}<button data-focusable onclick={queueNextEpisode} data-part="episodes.queue" disabled={aired < 1}
                 class="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold disabled:opacity-40">
           <ListPlus size={16} /> {m.lists_add_queue()}
         </button>{/if}
         <!-- Layout switch: mobile-only. Rendering it unconditionally added two data-focusable
              stops to the desktop toolbar and the Deck's controller focus order for a layout that
-             doesn't apply there. -->
-        <div role="group" aria-label="Episode layout"
+             doesn't apply there. A theme's grid or carousel arrangement ignores the numbers layout,
+             so the switch only shows where it does something. -->
+        {#if layoutSwitch || showEpisodeSearch}
+        <div role="group" aria-label="Episode layout" data-part={layoutSwitch ? 'episodes.layout' : undefined} data-layout={$episodeLayout}
              class="flex min-h-11 items-stretch rounded-xl bg-secondary p-1">
+          {#if layoutSwitch}
           <button data-focusable onclick={() => setLayout('list')} aria-label="Episode cards"
-                  aria-pressed={$episodeLayout !== 'grid'}
+                  aria-pressed={$episodeLayout !== 'grid'} data-active={$episodeLayout !== 'grid' || undefined}
                   class="grid min-h-9 w-11 place-items-center rounded-lg transition-colors {$episodeLayout !== 'grid' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">
             <Rows3 size={17} />
           </button>
           <button data-focusable onclick={() => setLayout('grid')} aria-label="Episode numbers"
-                  aria-pressed={$episodeLayout === 'grid'}
+                  aria-pressed={$episodeLayout === 'grid'} data-active={$episodeLayout === 'grid' || undefined}
                   class="grid min-h-9 w-11 place-items-center rounded-lg transition-colors {$episodeLayout === 'grid' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">
             <LayoutGrid size={17} />
           </button>
+          {/if}
           {#if showEpisodeSearch}
-          <button data-focusable onclick={() => { h.tap(); searchOpen = !searchOpen; if (!searchOpen) episodeQuery = '' }}
+          <button data-focusable data-part="episodes.search" data-active={searchOpen || undefined} onclick={() => { h.tap(); searchOpen = !searchOpen; if (!searchOpen) episodeQuery = '' }}
                   aria-label="Search episodes" aria-pressed={searchOpen}
                   class="grid min-h-9 w-11 place-items-center rounded-lg transition-colors {searchOpen ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">
             <Search size={17} />
           </button>
           {/if}
         </div>
+        {/if}
       {/if}
       {#if !$isMobile && !selecting && !flipOrder}
         <!-- Release timing belongs to episode controls, not series navigation. `ml-auto` keeps it
@@ -413,7 +421,7 @@
     </div>
     {/if}
     {#if $isMobile && searchOpen && showEpisodeSearch}
-      <label class="relative mb-4 block min-w-0">
+      <label class="relative mb-4 block min-w-0" data-part="episodes.search">
         <Search size={15} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input data-part="input" bind:value={episodeQuery} data-focusable placeholder="Find episode number or title…"
                class="h-12 w-full rounded-xl bg-input pl-10 pr-3 text-base" />
@@ -479,7 +487,7 @@
     {:else if selecting || ($isMobile && !offline)}
     <div class="mb-4 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
       {#if !selecting}
-        <button data-focusable onclick={startSelect}
+        <button data-focusable onclick={startSelect} data-part="episodes.download"
                 class="col-span-2 flex h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold transition-colors hover:bg-accent">
           <Download size={15} /> Download…
         </button>

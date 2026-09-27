@@ -124,6 +124,11 @@ State values:
 | `data-variant` | `detail.countdown` | `compact`, `long` |
 | `data-variant` | `detail.list-button` | `full` (the full-width button) |
 | `data-variant` | `episode` | `template`, `thumb`, `compact`, `number`, `row` |
+| `data-variant` | `episodes.toolbar` | `bar`, `header` |
+| `data-variant` | `episodes.sort` | `tabs`, `flip` |
+| `data-dir` | `episodes.sort` | `asc` (oldest first), `desc` (newest first) |
+| `data-layout` | `episodes.layout` | `cards`, `compact`, `grid` (the Appearance setting) |
+| `data-active` | `episodes.search`, the options inside `episodes.sort` and `episodes.layout` | present while the search is open or the option is chosen |
 | `data-state` | `episode` | `watched`, `partial` (started, not finished), `resume` (the next episode, not started), `unwatched`, `unaired` |
 | `data-next` | `episode` | present on the episode the series Play button opens |
 | `data-filler` | `episode` | present on a known filler episode |
@@ -251,6 +256,12 @@ State values:
 | `episode.still` | part | The episode thumbnail. |  |
 | `episode.number` | part | The episode number. |  |
 | `episode.title` | part | The episode title. |  |
+| `episodes.toolbar` | slot | The episode controls: izumi's own bar, or the theme's bar or heading row (`detail.episodes.toolbar`). | `data-variant` |
+| `episodes.sort` | part | The order control: Oldest and Newest options (`tabs`, the chosen one `data-active`) or one toggle naming the current order (`flip`). | `data-variant`, `data-dir` |
+| `episodes.search` | part | The episode search: the field (holding `input`) or the button that opens it. | `data-active` |
+| `episodes.layout` | part | The phone cards/numbers switch; its options are `data-active` when chosen. | `data-layout` |
+| `episodes.download` | part | The button that starts picking episodes to download. |  |
+| `episodes.queue` | part | The button that adds the next episode to the episode queue. |  |
 
 #### Player
 
