@@ -141,6 +141,27 @@ describe('theme presentation contract', () => {
     expect(resolveDetail(resolvePresentation(phone, true)).posterWidth).toBe(180)
     expect(resolveDetail(resolvePresentation(phone, false)).header).toBeUndefined()
   })
+  it('lets API 3 conditions test for artwork and for absence (a logo, else the title)', () => {
+    const node = parseNode({ type: 'stack', children: [
+      { type: 'artwork', artwork: 'logo', when: { field: 'logo' } },
+      { type: 'text', field: 'title', when: { field: 'logo', absent: true } },
+    ] })
+    const [logo, title] = node.children!
+    const withLogo: DisplayModel = { title: 'Sakura', logo: 'https://example.test/logo.png' }
+    const withoutLogo: DisplayModel = { title: 'Sakura' }
+    expect([visibleNode(logo, withLogo), visibleNode(title, withLogo)]).toEqual([true, false])
+    expect([visibleNode(logo, withoutLogo), visibleNode(title, withoutLogo)]).toEqual([false, true])
+    expect(visibleNode(parseNode({ type: 'text', field: 'title', when: { field: 'studio', absent: true } }), { studio: '' })).toBe(true)
+    expect(() => parseNode({ type: 'text', when: { field: 'logo' } }, undefined, 0, true, 2)).toThrow('unsupported')
+    expect(() => parseNode({ type: 'text', when: { field: 'title', absent: true } }, undefined, 0, true, 2)).toThrow('unsupported')
+    expect(() => parseNode({ type: 'text', when: { field: 'logo', atMost: 3 } })).toThrow('atMost')
+    expect(() => parseNode({ type: 'text', when: { field: 'score', atMost: 3, absent: true } })).toThrow('absent')
+    expect(() => parseNode({ type: 'text', when: { field: 'title', absent: 'yes' } })).toThrow('toggle')
+  })
+  it('binds the first genre as an API 3 field', () => {
+    expect(parseNode({ type: 'text', field: 'genre' }).field).toBe('genre')
+    expect(() => parseNode({ type: 'text', field: 'genre' }, undefined, 0, true, 2)).toThrow('unsupported')
+  })
   it('parses an API 3 theme layout', () => {
     const layout = {
       home: [{ block: 'genre-chips', genres: 'top' }, { role: 'hero' }, { role: 'continue' }, { block: 'ranked-list', area: 'aside', tabs: [{ label: 'TOP', role: 'trending' }] }],

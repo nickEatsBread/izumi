@@ -38,6 +38,7 @@ export function mediaDisplayModel(media: Media, extras: Partial<DisplayModel> = 
     season: season(media) || undefined,
     status: status(media) || undefined,
     genres: media.genres?.length ? media.genres.slice(0, 8).join(' · ') : undefined,
+    genre: media.genres?.[0] || undefined,
     members: media.popularity ? compact.format(media.popularity) : undefined,
     episodeCount: media.episodes != null ? String(media.episodes) : undefined,
     duration: media.duration || undefined,

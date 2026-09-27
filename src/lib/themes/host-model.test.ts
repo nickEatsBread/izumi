@@ -23,6 +23,11 @@ const media = {
 } as Media
 
 describe('theme host display model', () => {
+  it('binds the first genre on its own beside the joined list', () => {
+    expect(mediaDisplayModel(media).genre).toBe('Drama')
+    expect(mediaDisplayModel(media).genres).toBe('Drama · Fantasy')
+    expect(mediaDisplayModel({ ...media, genres: [] }).genre).toBeUndefined()
+  })
   it('exposes series fields as the shared contract types', () => {
     const model = mediaDisplayModel(media)
     expect(model.title).toBe('Sakura')

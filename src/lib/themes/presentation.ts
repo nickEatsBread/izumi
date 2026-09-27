@@ -5,7 +5,7 @@ export type DisplayField =
   | 'studio' | 'season' | 'status' | 'genres' | 'members' | 'reviews'
   | 'episodeCount' | 'episodeTitle' | 'airDate' | 'duration' | 'episodeNumber' | 'progress'
   | 'source' | 'country'
-  | 'nextEpisode' | 'airingIn' | 'airingCountdown' | 'slide' | 'slides' | 'episodesAired'
+  | 'nextEpisode' | 'airingIn' | 'airingCountdown' | 'slide' | 'slides' | 'episodesAired' | 'genre'
 /** Host numbers. `when.atMost` compares these; text nodes render them through `displayText`. */
 export type NumericDisplayField = 'rankPosition' | 'score' | 'duration' | 'episodeNumber' | 'progress' | 'nextEpisode' | 'slide' | 'slides' | 'episodesAired'
 export type ArtworkKind = 'poster' | 'backdrop' | 'logo' | 'still'
@@ -28,7 +28,8 @@ export interface ThemeNode {
   artwork?: ArtworkKind
   action?: ThemeAction
   icon?: ThemeIcon
-  when?: { field: DisplayField; atMost?: number }
+  /** API 3: `field` may also name artwork (render when it exists); `absent` inverts the test. */
+  when?: { field: DisplayField | ArtworkKind; atMost?: number; absent?: boolean }
   style?: Record<string, string | number>
   children?: ThemeNode[]
   /** API 3: rendered as `data-part` so a theme stylesheet can style this node. */
@@ -187,9 +188,9 @@ const fields = [
   'studio', 'season', 'status', 'genres', 'members', 'reviews',
   'episodeCount', 'episodeTitle', 'airDate', 'duration', 'episodeNumber', 'progress',
   'source', 'country',
-  'nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired',
+  'nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired', 'genre',
 ] as const satisfies readonly DisplayField[]
-const API3_FIELDS: readonly DisplayField[] = ['nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired']
+const API3_FIELDS: readonly DisplayField[] = ['nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired', 'genre']
 /** An API 1/2 package is held to the fields its clients know, so it renders identically everywhere. */
 const fieldsFor = (api: ThemeApi) => (api >= 3 ? fields : fields.filter(field => !API3_FIELDS.includes(field)))
 const numericFields: string[] = ['rankPosition', 'score', 'duration', 'episodeNumber', 'progress', 'nextEpisode', 'slide', 'slides', 'episodesAired'] satisfies NumericDisplayField[]
@@ -251,11 +252,15 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
     if (!node.field || !numericFields.includes(node.field)) throw new Error('A meter needs a numeric field.')
   }
   if (raw.when !== undefined) {
-    const condition = record(raw.when); only(condition, ['field', 'atMost'])
-    node.when = { field: choice(condition.field, fieldsFor(api)) }
+    const condition = record(raw.when); only(condition, ['field', 'atMost', ...api3(api, ['absent'])])
+    node.when = { field: choice<DisplayField | ArtworkKind>(condition.field, api >= 3 ? [...fieldsFor(api), ...artworkKinds] : fieldsFor(api)) }
     if (condition.atMost !== undefined) {
       if (!numericFields.includes(node.when.field)) throw new Error('atMost only applies to numeric fields: rankPosition, score, duration, episodeNumber, progress, nextEpisode, slide, slides and episodesAired.')
       node.when.atMost = number(condition.atMost, 0, 10000)
+    }
+    if (condition.absent !== undefined) {
+      node.when.absent = flag(condition.absent)
+      if (node.when.absent && node.when.atMost !== undefined) throw new Error('A condition cannot combine absent with atMost.')
     }
   }
   if (raw.part !== undefined) {
@@ -517,7 +522,8 @@ export function resolvePresentation(layout: ThemePresentation | undefined, mobil
 export function visibleNode(node: ThemeNode, model: DisplayModel): boolean {
   if (!node.when) return true
   const value = model[node.when.field]
-  return value !== undefined && value !== '' && (node.when.atMost === undefined || (typeof value === 'number' && value > 0 && value <= node.when.atMost))
+  const present = value !== undefined && value !== '' && (node.when.atMost === undefined || (typeof value === 'number' && value > 0 && value <= node.when.atMost))
+  return node.when.absent ? !present : present
 }
 /** Text for a bound field. The host owns number formatting so `score` reads the same in every template. */
 export function displayText(field: DisplayField, model: DisplayModel): string {

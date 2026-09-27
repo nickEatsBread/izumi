@@ -53,6 +53,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'row.track', kind: 'part', description: 'The scrolling track or grid holding the cards.' },
   ],
   blocks: [
+    { name: 'home.header', kind: 'slot', description: 'The phone Home app bar: the wordmark and the top icons.' },
     { name: 'home.main', kind: 'slot', description: 'The main column of Home.' },
     { name: 'home.aside', kind: 'slot', description: 'The side column of Home, holding blocks placed in the aside.' },
     { name: 'pagination', kind: 'part', description: 'Page controls under a block: numbered pages or a Load more button.' },

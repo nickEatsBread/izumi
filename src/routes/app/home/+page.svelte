@@ -156,7 +156,7 @@
        double-counted the status-bar inset and left a big black gap above the logo. -->
   <!-- The degraded strip is fixed at the same safe-area edge as this in-flow toolbar. Reserve its
        height while visible so the logo and top actions remain fully tappable on Android. -->
-  <div class="px-4 pb-3 pt-3 {usesAniListHome && $anilistDegradedBannerVisible ? 'mt-7' : ''}">
+  <div data-slot="home.header" class="px-4 pb-3 pt-3 {usesAniListHome && $anilistDegradedBannerVisible ? 'mt-7' : ''}">
     <div class="flex items-center justify-between">
       {#if !$offlineMode && switcherPlacement === 'integrated' && canCycleCatalog}
         <CatalogSwitcher display="brand" showWordmark />
