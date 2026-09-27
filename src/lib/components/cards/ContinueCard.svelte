@@ -23,7 +23,7 @@
   import { getContext } from 'svelte'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { themePresentation } from '$lib/themes/runtime'
-  import { episodeDisplayModel } from '$lib/themes/host-model'
+  import { episodeDisplayModel, timeLeftLabel } from '$lib/themes/host-model'
   import { ROW_CONTEXT, densityScale, resolveCard, resolveRow, type RowScope } from '$lib/themes/presentation'
 
   let { media, progress }: { media: Media; progress: number } = $props()
@@ -62,6 +62,7 @@
   const continueTemplate = $derived(resolveCard($themePresentation, 'continue'))
   const continueModel = $derived(episodeDisplayModel(media, ep, meta[ep], {
     still: thumb, progress: pct, episodeTitle: epTitle || undefined, poster: cardCover(media),
+    timeLeft: timeLeftLabel(savedPosition),
   }))
 
   let resolving = $state(false)

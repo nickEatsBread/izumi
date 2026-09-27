@@ -1,6 +1,7 @@
 import { banner, cardCover, cover, format, season, status, title } from '$lib/anilist/media'
 import type { Media } from '$lib/anilist/types'
 import type { EpMeta } from '$lib/anizip/types'
+import type { Pos } from '$lib/player/progress'
 import { compactCountdown, longCountdown } from './countdown'
 import type { DisplayModel } from './presentation'
 
@@ -67,4 +68,11 @@ export function episodeDisplayModel(
     still: extras.still ?? meta?.image,
     ...extras,
   })
+}
+
+/** "21m left" for an episode that has been started; nothing before it starts, without a duration,
+ *  or once its position was cleared. */
+export function timeLeftLabel(position?: Pos): string | undefined {
+  if (!position || position.cleared || !(position.dur > 0) || !(position.pos > 0)) return undefined
+  return `${Math.max(1, Math.round((position.dur - position.pos) / 60))}m left`
 }

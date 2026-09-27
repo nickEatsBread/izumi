@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Media } from '$lib/anilist/types'
-import { episodeDisplayModel, mediaDisplayModel } from './host-model'
+import { episodeDisplayModel, mediaDisplayModel, timeLeftLabel } from './host-model'
 import { displayText } from './presentation'
 
 const media = {
@@ -88,5 +88,16 @@ describe('theme host display model', () => {
     const model = mediaDisplayModel({ ...media, nextAiringEpisode: { episode: 3, timeUntilAiring: 90 * 60 } } as Media)
     expect(model.airingIn).toBe('1h 30m')
     expect(model.airingCountdown).toBe('1 hr 30 mins')
+  })
+})
+
+describe('timeLeftLabel', () => {
+  it('formats the time left in a started episode', () => {
+    expect(timeLeftLabel({ pos: 180, dur: 1440 })).toBe('21m left')
+    expect(timeLeftLabel({ pos: 1430, dur: 1440 })).toBe('1m left')
+    expect(timeLeftLabel({ pos: 0, dur: 1440 })).toBeUndefined()
+    expect(timeLeftLabel({ pos: 100, dur: 0 })).toBeUndefined()
+    expect(timeLeftLabel({ pos: 100, dur: 1440, cleared: true })).toBeUndefined()
+    expect(timeLeftLabel(undefined)).toBeUndefined()
   })
 })
