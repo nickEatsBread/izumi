@@ -22,6 +22,12 @@ distribute izumi, comply with the license of the specific libmpv binary you ship
 
 Nunito and Geist Mono are licensed under the [OFL-1.1](https://openfontlicense.org/).
 
+Themes can also use these families, bundled as Latin and Latin Extended webfonts from the
+Fontsource packages and loaded on demand (`src/lib/themes/fonts.ts`), each under the OFL-1.1:
+Inter, Roboto, Poppins, Lato, Montserrat, Open Sans, Rubik, DM Sans, Plus Jakarta Sans, Outfit,
+Manrope, Figtree, Source Sans 3, Noto Sans, Fira Sans, Oswald, Bebas Neue, Cinzel, Playfair
+Display, Sansita and Geist.
+
 The Android build additionally ships Nunito as a **font file** (not just a webfont) so the
 embedded player's subtitle renderer can use it — Android has no Nunito of its own. It is fetched
 from the upstream Google Fonts repository at build time by `scripts/fetch-subtitle-font.mjs`, which
