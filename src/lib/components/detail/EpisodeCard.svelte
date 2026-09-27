@@ -9,7 +9,7 @@
   import { cover, ratingBg } from '$lib/anilist/media'
   import { episodeLabels } from '$lib/anilist/episode-labels'
   import { episodeBarPercent, positions, progressKey } from '$lib/player/progress'
-  import { hideSpoilers } from '$lib/settings/ui'
+  import { absoluteEpisodeNumbers, hideSpoilers } from '$lib/settings/ui'
   import Download from '@lucide/svelte/icons/download'
   import Loader from '@lucide/svelte/icons/loader-circle'
   import Pause from '@lucide/svelte/icons/pause'
@@ -18,11 +18,14 @@
   import { m } from '$lib/paraglide/messages.js'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { episodeDisplayModel } from '$lib/themes/host-model'
+  import { episodeNoText, episodeRatingText } from '$lib/themes/episode-fields'
+  import type { EpisodeTileKind } from './episode-tile'
   import type { ThemeNode as EpisodeThemeNode } from '$lib/themes/presentation'
 
   let {
     media, ep, meta, showThumb, released, isNext, watchedThrough, filler = false, dl, next, onplay, onintent, onqueue,
     selecting = false, selectedEp = false, numberLabel, navId, navUp, themeCard, hoverScale = false, listRow = false,
+    state: tileState, cta = false,
   }: {
     media: Media
     ep: number
@@ -47,6 +50,10 @@
     themeCard?: EpisodeThemeNode
     hoverScale?: boolean
     listRow?: boolean
+    /** `data-state` for theme stylesheets; EpisodeList derives it with episodeTileState. */
+    state?: EpisodeTileKind
+    /** This is the episode the series Play button opens (`data-next`). */
+    cta?: boolean
   } = $props()
   const shownNumber = $derived(numberLabel ?? String(ep))
 
@@ -73,6 +80,10 @@
     still: img || cover(media),
     progress: pct,
     score: rating ?? undefined,
+    episodeNo: episodeNoText(ep, meta?.abs, $absoluteEpisodeNumbers),
+    watched: trackedDone ? 'Watched' : undefined,
+    filler: filler ? 'Filler' : undefined,
+    rating: episodeRatingText(meta?.rating, released),
   }))
 
   const dlPct = $derived(dl && dl.bytes ? Math.round((dl.downloaded / dl.bytes) * 100) : 0)
@@ -117,6 +128,9 @@
 
 <div
   data-part="episode" data-variant={episodeVariant}
+  data-state={tileState}
+  data-next={cta || undefined}
+  data-filler={filler || undefined}
   data-focusable
   data-nav-id={navId}
   data-nav-up={navUp}

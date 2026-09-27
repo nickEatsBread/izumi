@@ -6,7 +6,7 @@
   // per-episode thumbnails/titles/ratings come from AniZip.
   import { playEpisode, prefetchEpisodeSources, type PlayState } from '$lib/stremio/play'
   import { airedCount } from '$lib/anilist/media'
-  import { animeEpisodeNumbers, animeEpisodeMetadata, animeWatchedProgress } from '$lib/catalog/anime-detail'
+  import { animeEpisodeNumbers, animeEpisodeMetadata, animeResumeEpisode, animeWatchedProgress } from '$lib/catalog/anime-detail'
   import { anilistIdOf } from '$lib/catalog/identity'
   import type { Media } from '$lib/anilist/types'
   import { getEpisodeMeta } from '$lib/anizip'
@@ -29,7 +29,7 @@
   } from '$lib/downloads/rules'
   import EpisodeCard from './EpisodeCard.svelte'
   import AiringStatus from './AiringStatus.svelte'
-  import { episodeTileState } from './episode-tile'
+  import { episodeTileState, playableThrough } from './episode-tile'
   import Download from '@lucide/svelte/icons/download'
   import Loader from '@lucide/svelte/icons/loader-circle'
   import Pause from '@lucide/svelte/icons/pause'
@@ -70,11 +70,7 @@
   // be Infinity when the count is genuinely unknown — that is not permission to expose a
   // provider's planned total, so keep every episode gated until release metadata arrives.
   // Offline: every downloaded episode is playable, so aired = the highest downloaded number.
-  const aired = $derived.by(() => {
-    if (offline) return offlineEps.at(-1) ?? 0
-    const a = airedCount(media)
-    return Math.min(allEpisodes.at(-1) ?? 0, Number.isFinite(a) ? a : 0)
-  })
+  const aired = $derived(playableThrough(allEpisodes, airedCount(media), offline))
   const watchedThrough = $derived(animeWatchedProgress(media, $localHistory, $sessionProgress, $manualProgressOverrides))
   const episodeTheme = $derived(resolveDetail($themePresentation).episodes)
   const episodeCard = $derived(episodeTheme?.card)
@@ -125,6 +121,11 @@
       : Math.max(1, Math.min(watchedThrough + 1, aired || 1))
     return rows.includes(preferred) ? preferred : (rows.find((episode) => episode <= aired) ?? rows[0])
   })
+  // The episode the series Play button opens (the page CTA's own rule): `data-next` marks it for
+  // theme stylesheets and the Continue card plays it. Offline: the next downloaded episode.
+  const ctaEpisode = $derived(offline
+    ? (offlineEps.find((episode) => episode > watchedThrough) ?? offlineEps[0] ?? 1)
+    : animeResumeEpisode(media, watchedThrough))
   function toggleSort(dir: SortDir) { if (dir !== sortDir) { h.select(); sortDir = dir } }
   function flipSort() {
     h.select()
@@ -196,6 +197,13 @@
   // per-episode `abs` mapping is still loaded and still available to everything that needs it —
   // this only decides which number the badge prints.
   const numberLabel = (episode: number) => episodeNumberLabel(episode, meta[episode]?.abs, $absoluteEpisodeNumbers)
+  // The state every episode element carries (`data-state`): cards, rows and tiles share one rule.
+  const stateOf = (ep: number) => episodeTileState({
+    ep,
+    watchedThrough,
+    aired,
+    percent: episodeBarPercent($positions[progressKey(media.id, ep)], false, ep <= aired),
+  }).kind
 
   const nextQueueEpisode = $derived(allEpisodes.find((episode) => episode > watchedThrough && episode <= aired)
     ?? allEpisodes.find((episode) => episode <= aired) ?? 1)
@@ -602,6 +610,8 @@
           themeCard={episodeCard}
           hoverScale={false}
           listRow={false}
+          state={stateOf(ep)}
+          cta={ep === ctaEpisode && ep <= aired}
         />
         </div>
       {/each}
@@ -632,6 +642,8 @@
           themeCard={episodeCard}
           hoverScale={episodeHoverScale && !episodeListLayout}
           listRow={episodeListLayout}
+          state={stateOf(ep)}
+          cta={ep === ctaEpisode && ep <= aired}
         />
         </div>
       {/each}
@@ -647,7 +659,7 @@
           aired,
           percent: episodeBarPercent($positions[progressKey(media.id, ep)], false, ep <= aired),
         })}
-        <button data-part="episode" data-variant="number" data-focusable data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
+        <button data-part="episode" data-variant="number" data-state={tile.kind} data-next={ep === ctaEpisode && ep <= aired || undefined} data-filler={fillerSet.has(ep) || undefined} data-focusable data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
                 data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
                 disabled={!tile.playable} onpointerenter={() => intent(ep)} onfocus={() => intent(ep)}
                 onclick={(event) => { h.tap(); tap(ep, event) }}
@@ -679,7 +691,7 @@
         {@const done = watchedThrough >= ep}
         {@const pct = episodeBarPercent($positions[progressKey(media.id, ep)], done, released)}
         <div
-          data-part="episode" data-variant="row"
+          data-part="episode" data-variant="row" data-state={stateOf(ep)} data-next={ep === ctaEpisode && ep <= aired || undefined} data-filler={filler || undefined}
           data-focusable
           data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
           data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}

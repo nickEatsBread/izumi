@@ -20,7 +20,7 @@ describe('episode number grid', () => {
   })
 
   it('renders tiles from the tested state helper', () => {
-    expect(list).toContain("import { episodeTileState } from './episode-tile'")
+    expect(list).toContain("import { episodeTileState, playableThrough } from './episode-tile'")
     expect(list).toContain("$episodeLayout === 'grid'")
     expect(list).toContain('minmax(3.25rem,1fr)')
   })

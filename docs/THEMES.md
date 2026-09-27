@@ -124,6 +124,9 @@ State values:
 | `data-variant` | `detail.countdown` | `compact`, `long` |
 | `data-variant` | `detail.list-button` | `full` (the full-width button) |
 | `data-variant` | `episode` | `template`, `thumb`, `compact`, `number`, `row` |
+| `data-state` | `episode` | `watched`, `partial` (started, not finished), `resume` (the next episode, not started), `unwatched`, `unaired` |
+| `data-next` | `episode` | present on the episode the series Play button opens |
+| `data-filler` | `episode` | present on a known filler episode |
 | `data-layout` | `watch` | `full`, `docked` |
 | `data-variant` | `watch.episodes` | `right`, `below` |
 | `data-variant` | `watch.comments` | `inline`, `sheet` |
@@ -244,7 +247,7 @@ State values:
 
 | Hook | Kind | What | States |
 |---|---|---|---|
-| `episode` | part | One episode: a card, a thumbnail row, a compact row or a number tile. | `data-variant` |
+| `episode` | part | One episode: a card, a thumbnail row, a compact row or a number tile. | `data-variant`, `data-state`, `data-next`, `data-filler` |
 | `episode.still` | part | The episode thumbnail. |  |
 | `episode.number` | part | The episode number. |  |
 | `episode.title` | part | The episode title. |  |
