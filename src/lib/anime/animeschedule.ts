@@ -145,6 +145,7 @@ export function activeDelay(
 export function normalize(raw: RawAnime | undefined, now: number = Date.now()): ScheduleInfo | null {
   if (!raw?.route) return null
   const finished = /finished/i.test(raw.status ?? '')
+  const dubPremier = parseTime(raw.dubPremier)
   return {
     route: raw.route,
     delay: activeDelay(raw.delayedTimetable, raw.delayedFrom, raw.delayedUntil, now, finished),
@@ -156,7 +157,8 @@ export function normalize(raw: RawAnime | undefined, now: number = Date.now()): 
     subAt: parseTime(raw.subTime),
     dubAt: parseTime(raw.dubTime),
     finished,
-    dubbed: parseTime(raw.dubPremier) != null,
+    // An announced dub is not a dub yet: the premiere has to have passed.
+    dubbed: dubPremier != null && dubPremier <= now,
   }
 }
 

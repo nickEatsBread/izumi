@@ -21,6 +21,16 @@ export interface TitleExtras {
 export type TitleExtra = keyof TitleExtras
 const EXTRAS: readonly string[] = ['keyart', 'logo', 'ageRating', 'audio'] satisfies TitleExtra[]
 
+/** The extras drawn as artwork. They decide how a slide or a series page first paints, so callers
+ *  load them on their own instead of waiting for the rate-limited rating and schedule lookups. */
+export const ART_EXTRAS: readonly TitleExtra[] = ['keyart', 'logo']
+/** The artwork among `needs`. */
+export const artNeeds = (needs: ReadonlySet<TitleExtra>): Set<TitleExtra> =>
+  new Set([...needs].filter((need) => ART_EXTRAS.includes(need)))
+/** Everything among `needs` that is not artwork: the age rating and audio. */
+export const metaNeeds = (needs: ReadonlySet<TitleExtra>): Set<TitleExtra> =>
+  new Set([...needs].filter((need) => !ART_EXTRAS.includes(need)))
+
 /** The extras the given templates bind — as artwork, as a text field or in a `when` test. */
 export function templateNeeds(...nodes: (ThemeNode | undefined)[]): Set<TitleExtra> {
   const needs = new Set<TitleExtra>()
@@ -65,8 +75,11 @@ function aniZipArt(anilistId: number): Promise<Pick<TitleExtras, 'keyart' | 'log
   const hit = artCache.get(anilistId)
   if (hit) return hit
   const promise = fetchAniZip(anilistId)
-    .then((record) => pickTitleArt(record?.images), () => ({}))
-    .then((art: Pick<TitleExtras, 'keyart' | 'logo'>) => {
+    .then((record) => pickTitleArt(record?.images))
+    // A failed fetch and a record that cannot be read are both simply no art: the cache must never
+    // hold a rejected lookup, which would fail every later load of the title.
+    .catch((): Pick<TitleExtras, 'keyart' | 'logo'> => ({}))
+    .then((art) => {
       if (!art.keyart && !art.logo) artCache.delete(anilistId)
       return art
     })
@@ -74,12 +87,20 @@ function aniZipArt(anilistId: number): Promise<Pick<TitleExtras, 'keyart' | 'log
   return promise
 }
 
+// The batch schedule lookup `primeTitleExtras` started, per title. A title's own lookup waits for it
+// and then reads the schedule module's memo, instead of racing the batch with a request of its own
+// (AnimeSchedule answers such bursts with 429s).
+const primedSchedule = new Map<number, Promise<unknown>>()
+
 /** Test hook: forget the session cache. */
 export function clearTitleExtrasCache(): void {
   artCache.clear()
+  primedSchedule.clear()
 }
 
-/** Load the requested extras for one title. Never rejects; an extra whose source fails is absent. */
+/** Load the requested extras for one title. Never rejects; an extra whose source fails is absent.
+ *  Everything asked for is awaited together, so ask for the artwork (`artNeeds`) and the rest
+ *  (`metaNeeds`) in separate calls when the artwork must not wait for the slower lookups. */
 export async function loadTitleExtras(media: Media, needs: ReadonlySet<TitleExtra>): Promise<TitleExtras> {
   const out: TitleExtras = {}
   const anilistId = anilistIdOf(media)
@@ -99,19 +120,28 @@ export async function loadTitleExtras(media: Media, needs: ReadonlySet<TitleExtr
     else if (media.idMal) tasks.push(fetchMalRating(media.idMal).then((rating) => { out.ageRating = malAgeRating(rating) }, () => {}))
   }
   if (needs.has('audio') && anilistId) {
-    tasks.push(getScheduleInfo(anilistId, scheduleTitles(media.title)).then((info) => { out.audio = audioLabel(info) }, () => {}))
+    const primed = primedSchedule.get(anilistId) ?? Promise.resolve()
+    tasks.push(primed.catch(() => {})
+      .then(() => getScheduleInfo(anilistId, scheduleTitles(media.title)))
+      .then((info) => { out.audio = audioLabel(info) }, () => {}))
   }
   await Promise.all(tasks)
   return Object.fromEntries(Object.entries(out).filter(([, value]) => value)) as TitleExtras
 }
 
 /** Warm the batchable lookups for a list (the hero's slides): AnimeSchedule answers up to 18 titles
- *  per request, and `getScheduleInfo` then reads them from its memo. */
+ *  per request, and `getScheduleInfo` then reads them from its memo. Call it before loading the
+ *  titles' extras: their schedule lookups wait for this batch. */
 export function primeTitleExtras(medias: Media[], needs: ReadonlySet<TitleExtra>): void {
   if (!needs.has('audio')) return
   const items = medias.flatMap((media) => {
     const id = anilistIdOf(media)
     return id ? [{ id, titles: scheduleTitles(media.title) }] : []
   })
-  if (items.length) void getScheduleInfoMany(items).catch(() => {})
+  if (!items.length) return
+  const batch: Promise<unknown> = getScheduleInfoMany(items).catch(() => {})
+  for (const item of items) primedSchedule.set(item.id, batch)
+  void batch.then(() => {
+    for (const item of items) if (primedSchedule.get(item.id) === batch) primedSchedule.delete(item.id)
+  })
 }

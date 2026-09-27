@@ -15,8 +15,10 @@ vi.mock('$lib/anime/animeschedule', () => ({
   scheduleTitles: (t: { romaji?: string; english?: string }) => [t.romaji, t.english],
 }))
 
-import { audioLabel, clearTitleExtrasCache, loadTitleExtras, malAgeRating, pickTitleArt, primeTitleExtras, templateNeeds } from './title-extras'
+import { ART_EXTRAS, artNeeds, audioLabel, clearTitleExtrasCache, loadTitleExtras, malAgeRating, metaNeeds, pickTitleArt, primeTitleExtras, templateNeeds } from './title-extras'
 import type { ThemeNode } from './presentation'
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 const FANART = 'https://artworks.thetvdb.com/banners/v4/series/424536/backgrounds/64e6cbe29d9c0.jpg'
 const LOGO = 'https://artworks.thetvdb.com/banners/v4/series/424536/clearlogo/696a802a5aa22.png'
@@ -105,6 +107,31 @@ describe('loadTitleExtras', () => {
     await loadTitleExtras(media(), new Set(['logo']))
     expect(mocks.fetchAniZip).toHaveBeenCalledTimes(1)
   })
+  it('treats an ani.zip record it cannot read as no art, and asks again next time', async () => {
+    mocks.fetchAniZip.mockResolvedValue({ images: 'not a list' })
+    await expect(loadTitleExtras(media(), new Set(['keyart', 'logo']))).resolves.toEqual({})
+    await loadTitleExtras(media(), new Set(['keyart']))
+    expect(mocks.fetchAniZip).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('art and metadata needs', () => {
+  it('splits the artwork a template binds from the slower lookups', () => {
+    expect([...ART_EXTRAS].sort()).toEqual(['keyart', 'logo'])
+    expect([...artNeeds(all)].sort()).toEqual(['keyart', 'logo'])
+    expect([...metaNeeds(all)].sort()).toEqual(['ageRating', 'audio'])
+    expect(artNeeds(new Set(['audio'])).size).toBe(0)
+    expect(metaNeeds(new Set(['logo'])).size).toBe(0)
+  })
+  it('resolves the art while the rating and the schedule are still pending', async () => {
+    mocks.fetchMalRating.mockReturnValue(new Promise(() => {}))
+    mocks.getScheduleInfo.mockReturnValue(new Promise(() => {}))
+    let metaSettled = false
+    void loadTitleExtras(media(), metaNeeds(all)).then(() => { metaSettled = true })
+    await expect(loadTitleExtras(media(), artNeeds(all))).resolves.toEqual({ keyart: FANART, logo: LOGO })
+    expect(metaSettled).toBe(false)
+    expect(mocks.fetchAniZip).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('primeTitleExtras', () => {
@@ -117,5 +144,21 @@ describe('primeTitleExtras', () => {
     mocks.getScheduleInfoMany.mockClear()
     primeTitleExtras([media()], new Set(['keyart']))
     expect(mocks.getScheduleInfoMany).not.toHaveBeenCalled()
+  })
+  it('holds a primed title\'s own schedule lookup until the batch has answered', async () => {
+    let answer: (value: Map<number, unknown>) => void = () => {}
+    mocks.getScheduleInfoMany.mockReturnValue(new Promise((resolve) => { answer = resolve }))
+    primeTitleExtras([media(), media({ id: 21 })], all)
+    const extras = loadTitleExtras(media(), new Set(['audio']))
+    await settle()
+    expect(mocks.getScheduleInfo).not.toHaveBeenCalled()
+    answer(new Map())
+    await expect(extras).resolves.toEqual({ audio: 'Sub | Dub' })
+    expect(mocks.getScheduleInfo).toHaveBeenCalledTimes(1)
+  })
+  it('still looks a title up when the batch fails', async () => {
+    mocks.getScheduleInfoMany.mockRejectedValue(new Error('429'))
+    primeTitleExtras([media()], all)
+    await expect(loadTitleExtras(media(), new Set(['audio']))).resolves.toEqual({ audio: 'Sub | Dub' })
   })
 })

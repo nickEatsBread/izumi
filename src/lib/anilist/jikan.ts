@@ -68,14 +68,19 @@ const limiter = new Bottleneck({
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-async function jikanJson<T>(url: string, attempt = 0): Promise<T> {
+/** Bottleneck priority (0 = first, 9 = last) of the catalog fallback: the library default. */
+const CATALOG_PRIORITY = 5
+/** Theme age-rating lookups queue behind catalog requests, which fill whole screens. */
+const RATING_PRIORITY = 7
+
+async function jikanJson<T>(url: string, priority = CATALOG_PRIORITY, attempt = 0): Promise<T> {
   // Only the HTTP attempt occupies the one-at-a-time limiter. Waiting/requeueing from inside the
   // scheduled callback would deadlock because the retry cannot start until that callback exits.
-  const response = await limiter.schedule(() =>
+  const response = await limiter.schedule({ priority }, () =>
     phttp(url, { timeoutMs: 15_000, maxBytes: 2 * 1024 * 1024 }))
   if ((response.status === 429 || response.status >= 500) && attempt < 2) {
     await sleep(1000 * 2 ** attempt)
-    return jikanJson<T>(url, attempt + 1)
+    return jikanJson<T>(url, priority, attempt + 1)
   }
   if (!response.ok) throw new Error(`Jikan returned HTTP ${response.status}`)
   return response.json() as Promise<T>
@@ -83,14 +88,25 @@ async function jikanJson<T>(url: string, attempt = 0): Promise<T> {
 
 const RATING_TTL_MS = 30 * 864e5
 const ratingKey = (malId: number) => `mal-rating-${malId}`
+// One lookup per title at a time: a hero asks for every slide, and each extra request would take
+// another turn on the serial limiter.
+const ratingInflight = new Map<number, Promise<string | null>>()
 
 /** MyAnimeList's content rating for a MAL id ("PG-13 - Teens 13 or older"), or null when MAL has
  *  none. Cached in IndexedDB for a month: ratings practically never change, and the public API is
  *  rate limited. Throws when Jikan cannot be reached. */
-export async function fetchMalRating(malId: number): Promise<string | null> {
+export function fetchMalRating(malId: number): Promise<string | null> {
+  const running = ratingInflight.get(malId)
+  if (running) return running
+  const pending = readMalRating(malId).finally(() => ratingInflight.delete(malId))
+  ratingInflight.set(malId, pending)
+  return pending
+}
+
+async function readMalRating(malId: number): Promise<string | null> {
   const cached = await get<{ at: number; rating: string | null }>(ratingKey(malId)).catch(() => undefined)
   if (cached && Date.now() - cached.at < RATING_TTL_MS) return cached.rating
-  const body = await jikanJson<{ data?: { rating?: string | null } }>(`${API}/anime/${malId}`)
+  const body = await jikanJson<{ data?: { rating?: string | null } }>(`${API}/anime/${malId}`, RATING_PRIORITY)
   const rating = body.data?.rating?.trim() || null
   await set(ratingKey(malId), { at: Date.now(), rating }).catch(() => {})
   return rating

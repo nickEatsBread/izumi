@@ -708,4 +708,9 @@ describe('dub premiere', () => {
     expect(normalize({ route: 'dungeon-meshi', dubPremier: '0001-01-01T00:00:00Z' }, at)?.dubbed).toBe(false)
     expect(normalize({ route: 'bare' }, at)?.dubbed).toBe(false)
   })
+  it('waits for a dub premiere that is still ahead', () => {
+    const premiere = '2026-03-01T00:00:00Z'
+    expect(normalize({ route: 'dub-announced', dubPremier: premiere }, Date.parse('2026-01-01T00:00:00Z'))?.dubbed).toBe(false)
+    expect(normalize({ route: 'dub-announced', dubPremier: premiere }, Date.parse(premiere))?.dubbed).toBe(true)
+  })
 })
