@@ -124,6 +124,9 @@ State values:
 | `data-variant` | `detail.countdown` | `compact`, `long` |
 | `data-variant` | `detail.list-button` | `full` (the full-width button) |
 | `data-variant` | `episode` | `template`, `thumb`, `compact`, `number`, `row` |
+| `data-open` | `episodes.range` | present while its list is open |
+| `data-variant` | `episodes.menu` | `more`, `range` |
+| `data-control` | buttons in `episodes.menu` | `sort`, `layout`, `search`, `download`, `queue`; the chosen option is `data-active` |
 | `data-variant` | `episodes.toolbar` | `bar`, `header` |
 | `data-variant` | `episodes.sort` | `tabs`, `flip` |
 | `data-dir` | `episodes.sort` | `asc` (oldest first), `desc` (newest first) |
@@ -265,6 +268,11 @@ State values:
 | `episodes.ranges` | part | The row of range chips above the list (`paging: "ranges"`); each range is a `chip`, the current one `data-active`. |  |
 | `episodes.pager` | part | The Prev/Next row under the list; its buttons are `page-number`. |  |
 | `episodes.empty` | part | The line shown when a search matches no episode. |  |
+| `episodes.heading` | part | The "Episodes" heading of a heading-row toolbar (`toolbar: "header"`). |  |
+| `episodes.count` | part | The episode count beside the heading. |  |
+| `episodes.range` | part | The range picker button in the toolbar (`paging: "dropdown"`). | `data-open` |
+| `episodes.more` | part | The overflow button holding the controls the toolbar does not show. |  |
+| `episodes.menu` | part | A menu opened from the episode controls: the overflow menu (a popover; a sheet on phones) or the range list. | `data-variant` |
 
 #### Player
 

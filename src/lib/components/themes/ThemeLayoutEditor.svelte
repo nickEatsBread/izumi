@@ -161,9 +161,10 @@
       <option value="none">Subtle lift</option>
       <option value="scale">Grow on hover</option>
     </select></label>
-    <label>Episode order control<select value={detail.episodes?.order ?? 'tabs'} onchange={event => setDetail({ episodes: { order: value(event) as 'tabs' | 'flip' } })} data-focusable>
+    <label>Episode order control<select value={detail.episodes?.order ?? 'tabs'} onchange={event => setDetail({ episodes: { order: value(event) as 'tabs' | 'flip' | 'none' } })} data-focusable>
       <option value="tabs">Oldest / Newest</option>
-      <option value="flip">Flip button beside the rail</option>
+      <option value="flip">One toggle button</option>
+      <option value="none">No sort (oldest first)</option>
     </select></label>
     <label class="toggle"><span>Episode search field</span><input type="checkbox" checked={detail.episodes?.search !== false} onchange={event => setDetail({ episodes: { search: event.currentTarget.checked } })} data-focusable /></label>
     <label class="toggle"><span>Play and list actions before synopsis</span><input type="checkbox" checked={!!detail.actionsFirst} onchange={event => setDetail({ actionsFirst: event.currentTarget.checked })} data-focusable /></label>

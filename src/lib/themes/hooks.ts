@@ -122,6 +122,11 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'episodes.ranges', kind: 'part', description: 'The row of range chips above the list (`paging: "ranges"`); each range is a `chip`, the current one `data-active`.' },
     { name: 'episodes.pager', kind: 'part', description: 'The Prev/Next row under the list; its buttons are `page-number`.' },
     { name: 'episodes.empty', kind: 'part', description: 'The line shown when a search matches no episode.' },
+    { name: 'episodes.heading', kind: 'part', description: 'The "Episodes" heading of a heading-row toolbar (`toolbar: "header"`).' },
+    { name: 'episodes.count', kind: 'part', description: 'The episode count beside the heading.' },
+    { name: 'episodes.range', kind: 'part', description: 'The range picker button in the toolbar (`paging: "dropdown"`).', states: ['data-open'] },
+    { name: 'episodes.more', kind: 'part', description: 'The overflow button holding the controls the toolbar does not show.' },
+    { name: 'episodes.menu', kind: 'part', description: 'A menu opened from the episode controls: the overflow menu (a popover; a sheet on phones) or the range list.', states: ['data-variant'] },
   ],
   watch: [
     { name: 'watch', kind: 'slot', description: 'The player area.', states: ['data-layout'] },

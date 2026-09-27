@@ -28,6 +28,8 @@
     autoDownloadRules, removeAutoDownloadForMedia, subscribeAutoDownloads,
   } from '$lib/downloads/rules'
   import EpisodeCard from './EpisodeCard.svelte'
+  import EpisodeToolbar from './EpisodeToolbar.svelte'
+  import { planEpisodeToolbar } from './toolbar-plan'
   import AiringStatus from './AiringStatus.svelte'
   import { episodeTileState, playableThrough } from './episode-tile'
   import { episodeRanges, pageSizeFor, searchEpisodes } from './episode-ranges'
@@ -46,7 +48,7 @@
   import { enqueueEpisode } from '$lib/library/local-lists'
   import { m } from '$lib/paraglide/messages.js'
   import { themePresentation } from '$lib/themes/runtime'
-  import { resolveDetail } from '$lib/themes/presentation'
+  import { episodesOnSide, resolveDetail } from '$lib/themes/presentation'
   let { media, offline = false }: { media: Media; offline?: boolean } = $props()
 
   // Offline: the playable set is exactly the DOWNLOADED episodes (the download keys carry the
@@ -85,6 +87,9 @@
   // A theme's grid or carousel arrangement draws cards whatever the layout setting says, so the
   // cards/numbers switch would do nothing there.
   const layoutSwitch = $derived(episodeTheme?.arrangement !== 'grid' && episodeTheme?.arrangement !== 'carousel')
+  // Beside a desktop right-hand rail the flip button keeps its round gutter; everywhere else a flip
+  // sort sits inside the toolbar.
+  const railGutter = $derived(flipOrder && episodesOnSide($themePresentation, !$isMobile))
   const PER = $derived(pageSizeFor(total, episodeTheme?.pageSize))
   // `page` stays null until the user manually pages; until then we show `autoPage` — the page that
   // holds the next episode to watch — so opening a long-running series (One Piece) lands on where
@@ -101,8 +106,9 @@
   // Range chips (and Task 9's range picker) label pages by their printed first and last numbers.
   const rangeLabel = (episode: number) => episodeNoText(episode, meta[episode]?.abs, $absoluteEpisodeNumbers)
   const rangeChips = $derived(episodeTheme?.paging === 'ranges' ? episodeRanges(allEpisodes, PER, rangeLabel) : [])
-  // `ranges` replaces the Prev/Next pager.
-  const pagerShown = $derived(episodeTheme?.paging !== 'ranges')
+  const rangeMenu = $derived(episodeTheme?.paging === 'dropdown' ? episodeRanges(allEpisodes, PER, rangeLabel, ' – ') : [])
+  // `ranges` replaces the Prev/Next pager, and so does the toolbar's range picker once it shows.
+  const pagerShown = $derived(episodeTheme?.paging !== 'ranges' && !(episodeTheme?.paging === 'dropdown' && aired > 0))
   let rangesRow = $state<HTMLElement>()
   // Keep the current range chip in view. Only the row scrolls: scrollIntoView would also move the
   // page down to the episodes as the tab opens.
@@ -122,8 +128,10 @@
   // Oldest/Newest toggle: reorders the current page's episodes for display. Pagination itself
   // still pages ascending (startIdx/PER above are unchanged) — see the note near the toggle.
   let sortDir = $state<SortDir>('asc')
+  // `order: "none"` has no sort control, so the list is always oldest first.
+  const dir = $derived<SortDir>(episodeTheme?.order === 'none' ? 'asc' : sortDir)
   // Search results keep their ranking; the sort orders pages.
-  const rows = $derived(searchedEpisodes ? eps : orderEpisodes(eps, sortDir))
+  const rows = $derived(searchedEpisodes ? eps : orderEpisodes(eps, dir))
   // The controller fast lane targets the episode the hero CTA would use. `autoPage` already keeps
   // that episode on-screen for long-runners; the fallback covers unusual offline/schedule data.
   // This target is semantic rather than geometric, so a single Down never detours through search,
@@ -246,6 +254,22 @@
   let batchCodec = $state<'any' | 'h264' | 'h265' | 'av1'>('any')
   const airedList = $derived(Array.from({ length: aired }, (_, i) => i + 1))
   const subscription = $derived($autoDownloadRules.find((rule) => rule.mediaId === media.id))
+  // Any toolbar key composes the theme's toolbar (EpisodeToolbar.svelte); without one izumi's own stays.
+  const plan = $derived(planEpisodeToolbar({
+    order: episodeTheme?.order,
+    search: episodeTheme?.search,
+    arrangement: episodeTheme?.arrangement,
+    controls: episodeTheme?.controls,
+    toolbar: episodeTheme?.toolbar,
+    toolbarMin: episodeTheme?.toolbarMin,
+    paging: episodeTheme?.paging,
+    phone: $isMobile,
+    offline,
+    queueEnabled: $episodeQueueEnabled,
+    selecting,
+    total,
+    railGutter,
+  }))
   // A tap on a released episode plays it — or, in select mode, toggles its selection. On desktop,
   // Shift+click marks the series watched through that episode without opening the player.
   // Upcoming (unaired) episodes are neither playable nor selectable.
@@ -311,13 +335,13 @@
 
 {#if total > 0}
 <div data-slot="detail.episodes" class="relative">
-  {#if flipOrder && !$isMobile && aired > 0}
+  {#if railGutter && aired > 0}
     <button type="button" data-focusable class="episode-order-flip" data-part="episodes.sort" data-variant="flip" data-dir={sortDir} onclick={flipSort}
             title={sortDir === 'asc' ? 'Show newest first' : 'Show oldest first'}
             aria-label={sortDir === 'asc' ? 'Show newest first' : 'Show oldest first'}>
       {#if sortDir === 'asc'}<ArrowDown01 size={20} />{:else}<ArrowUp10 size={20} />{/if}
     </button>
-    {#if !selecting && !offline}
+    {#if !selecting && !offline && !plan.composed}
       <button type="button" data-focusable class="episode-order-flip episode-download-flip" data-part="episodes.download" onclick={startSelect}
               title="Download episodes" aria-label="Download episodes">
         <Download size={18} />
@@ -330,7 +354,18 @@
   {/if}
 
   {#if aired > 0}
-    {#if flipOrder && !$isMobile && !selecting}
+    {#if plan.composed}
+      <EpisodeToolbar {plan} order={episodeTheme?.order === 'flip' ? 'flip' : 'tabs'} {total}
+                      bind:sortDir bind:query={episodeQuery}
+                      ranges={rangeMenu} page={curPage} onpage={(index) => (page = index)}
+                      onlayout={setLayout} ondownload={startSelect} onqueue={queueNextEpisode}
+                      queueLabel={queuedNotice ? m.lists_queued_episode({ episode: nextQueueEpisode }) : m.lists_add_queue()}
+                      queueTitle={`${m.lists_add_queue()} — Episode ${nextQueueEpisode}`} />
+      {#if !$isMobile && !selecting && !railGutter}
+        <!-- Release timing stays with the desktop episode controls, as in izumi's own bar. -->
+        <div class="-mt-2 mb-3 flex flex-wrap items-center gap-3"><AiringStatus {media} toolbar /></div>
+      {/if}
+    {:else if flipOrder && !$isMobile && !selecting}
       {#if $episodeQueueEnabled}
         <div class="mb-3 flex justify-end" data-slot="episodes.toolbar" data-variant="bar">
           <button data-focusable onclick={queueNextEpisode} data-part="episodes.queue" disabled={aired < 1}
@@ -495,6 +530,7 @@
         </div>
       </div>
     {:else if selecting || ($isMobile && !offline)}
+    {#if selecting || !plan.composed}
     <div class="mb-4 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
       {#if !selecting}
         <button data-focusable onclick={startSelect} data-part="episodes.download"
@@ -550,6 +586,7 @@
         </button>
       {/if}
     </div>
+    {/if}
     {/if}
     {#if !selecting && subscription}
       <p class="mb-3 text-xs font-bold text-theme">Auto-download is watching for episode {subscription.nextEpisode}.</p>

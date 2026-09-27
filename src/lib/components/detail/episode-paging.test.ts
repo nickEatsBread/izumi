@@ -20,7 +20,7 @@ describe('episode paging', () => {
   })
   it('ranks number matches first and says when nothing matches', () => {
     expect(list).toContain('const searchedEpisodes = $derived.by(() => searchEpisodes(allEpisodes, episodeQuery, meta))')
-    expect(list).toContain('const rows = $derived(searchedEpisodes ? eps : orderEpisodes(eps, sortDir))')
+    expect(list).toContain('const rows = $derived(searchedEpisodes ? eps : orderEpisodes(eps, dir))')
     expect(list).toContain('data-part="episodes.empty"')
   })
 })
