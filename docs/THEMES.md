@@ -124,8 +124,11 @@ State values:
 | `data-variant` | `detail.countdown` | `compact`, `long` |
 | `data-variant` | `detail.list-button` | `full` (the full-width button) |
 | `data-variant` | `episode` | `template`, `thumb`, `compact`, `number`, `row` |
+| `data-variant` | `episodes.seasons` | `chips`, `posters`, `dropdown` |
+| `data-active` | `season` | present on the title being viewed |
+| `data-open` | `season.toggle` | present while the season list is open |
 | `data-open` | `episodes.range` | present while its list is open |
-| `data-variant` | `episodes.menu` | `more`, `range` |
+| `data-variant` | `episodes.menu` | `more`, `range`, `seasons` |
 | `data-control` | buttons in `episodes.menu` | `sort`, `layout`, `search`, `download`, `queue`; the chosen option is `data-active` |
 | `data-variant` | `episodes.toolbar` | `bar`, `header` |
 | `data-variant` | `episodes.sort` | `tabs`, `flip` |
@@ -272,7 +275,13 @@ State values:
 | `episodes.count` | part | The episode count beside the heading. |  |
 | `episodes.range` | part | The range picker button in the toolbar (`paging: "dropdown"`). | `data-open` |
 | `episodes.more` | part | The overflow button holding the controls the toolbar does not show. |  |
-| `episodes.menu` | part | A menu opened from the episode controls: the overflow menu (a popover; a sheet on phones) or the range list. | `data-variant` |
+| `episodes.menu` | part | A menu opened from the episode controls: the overflow menu (a popover; a sheet on phones), the range list or the season list. It renders outside `detail.episodes`, at the end of the page, so select it directly rather than inside that slot. | `data-variant` |
+| `episodes.seasons` | slot | The season picker above the episodes (`detail.episodes.seasons`); a `dropdown` in a heading-row toolbar takes the place of its heading. Its dropdown list is `episodes.menu` with `data-variant="seasons"`, which renders outside `detail.episodes`. | `data-variant` |
+| `season` | part | One season: a chip, a poster or a list entry that opens that title. | `data-active` |
+| `season.art` | part | The season cover (`posters`). |  |
+| `season.label` | part | The "Season N" label. |  |
+| `season.year` | part | The season's year (`chips` and the dropdown list). |  |
+| `season.toggle` | part | The dropdown button showing the current season (`dropdown`). | `data-open` |
 
 #### Player
 

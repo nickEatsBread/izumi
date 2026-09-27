@@ -6,8 +6,8 @@
   //
   // The overflow menu (a popover; a sheet on phones) and the range list are portalled to <body>, so
   // a transformed ancestor or the right-hand rail's scroll box can neither offset nor clip them. A
-  // popover is fixed at its button in local px: rects are divided by the UI-scale zoom, as in
-  // preview-pos.ts. An open menu keeps the d-pad inside it and closes on Escape or B (NavDrawer.svelte).
+  // popover is fixed at its button in local px (menu-anchor.ts, shared with the season list). An
+  // open menu keeps the d-pad inside it and closes on Escape or B (NavDrawer.svelte).
   import { tick, type Snippet } from 'svelte'
   import type { SortDir } from '$lib/anime/episode-order'
   import type { EpisodeControl } from '$lib/themes/presentation'
@@ -15,8 +15,7 @@
   import { episodeLayout } from '$lib/settings/ui'
   import { isMobile } from '$lib/platform'
   import { portal } from '$lib/util/portal'
-  import { rootZoom } from '$lib/components/cards/preview-pos'
-  import { menuPlacement } from '$lib/components/menu-placement'
+  import { anchoredMenuStyle } from '$lib/components/menu-anchor'
   import * as h from '$lib/haptics'
   import Search from '@lucide/svelte/icons/search'
   import ArrowDown01 from '@lucide/svelte/icons/arrow-down-0-1'
@@ -80,33 +79,9 @@
     else query = ''
   }
 
-  const GAP = 4
-  const EDGE = 8
-  /** A popover's fixed position: under its button, or over it when below has less room
-   *  (menu-placement.ts). `end` lines up the right edges, `start` the left ones; `cap` limits the
-   *  height in local px. */
-  function anchored(button: HTMLElement | undefined, panel: HTMLElement | undefined, align: 'start' | 'end', cap = Infinity): string {
-    if (!button) return ''
-    const zoom = rootZoom()
-    const box = button.getBoundingClientRect()
-    const width = window.innerWidth / zoom
-    const fit = menuPlacement({
-      top: box.top,
-      bottom: box.bottom,
-      viewport: window.innerHeight,
-      zoom,
-      content: panel ? Math.min(panel.scrollHeight, cap) : undefined,
-      desired: Math.min(260, cap),
-    })
-    const x = align === 'end'
-      ? `right:${Math.max(EDGE, width - box.right / zoom)}px`
-      : `left:${Math.max(EDGE, Math.min(box.left / zoom, width - (panel?.offsetWidth ?? 0) - EDGE))}px`
-    const y = fit.side === 'down' ? `top:${box.bottom / zoom + GAP}px` : `bottom:${window.innerHeight / zoom - box.top / zoom + GAP}px`
-    return `${x};${y};max-height:${Math.min(fit.maxHeight, cap)}px`
-  }
   function place() {
-    if (menuOpen && !$isMobile) menuPlace = anchored(moreButton, menuPanel, 'end')
-    if (rangeOpen) rangePlace = anchored(rangeButton, rangePanel, 'start', 320)
+    if (menuOpen && !$isMobile) menuPlace = anchoredMenuStyle(moreButton, menuPanel, 'end')
+    if (rangeOpen) rangePlace = anchoredMenuStyle(rangeButton, rangePanel, 'start', 320)
   }
   /** Place a menu that just opened, again once it has its real size, then focus an entry so a
    *  controller or keyboard starts inside it. */

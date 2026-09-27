@@ -4,6 +4,7 @@
   // for the next one. Long-runners (One Piece) are paginated. The layout (rich
   // `cards` vs simple `compact` rows) follows the persisted Appearance setting;
   // per-episode thumbnails/titles/ratings come from AniZip.
+  import { untrack } from 'svelte'
   import { playEpisode, prefetchEpisodeSources, type PlayState } from '$lib/stremio/play'
   import { airedCount } from '$lib/anilist/media'
   import { animeEpisodeNumbers, animeEpisodeMetadata, animeResumeEpisode, animeWatchedProgress } from '$lib/catalog/anime-detail'
@@ -30,6 +31,8 @@
   import EpisodeCard from './EpisodeCard.svelte'
   import EpisodeToolbar from './EpisodeToolbar.svelte'
   import { planEpisodeToolbar } from './toolbar-plan'
+  import SeasonPicker from './SeasonPicker.svelte'
+  import { fetchSeasonChain, seasonEntries, type SeasonEntry } from '$lib/anilist/seasons'
   import AiringStatus from './AiringStatus.svelte'
   import { episodeTileState, playableThrough } from './episode-tile'
   import { episodeRanges, pageSizeFor, searchEpisodes } from './episode-ranges'
@@ -270,6 +273,25 @@
     total,
     railGutter,
   }))
+  // API 3 `detail.episodes.seasons`: this title's seasons above the list, from the AniList
+  // prequel/sequel chain (cached per title, so moving between seasons does not walk it again).
+  // Provider titles use their AniList mapping; offline pages show none.
+  const seasonStyle = $derived(episodeTheme?.seasons ?? 'none')
+  const seasonVariant = $derived<'chips' | 'posters' | 'dropdown'>(seasonStyle === 'none' ? 'chips' : seasonStyle)
+  const seasonRoot = $derived(seasonStyle === 'none' || offline ? undefined : anilistIdOf(media))
+  let seasonList = $state<SeasonEntry[]>([])
+  $effect(() => {
+    const root = seasonRoot
+    if (root == null) { seasonList = []; return }
+    const seed = untrack(() => (media.catalog ? undefined : media))
+    let cancelled = false
+    fetchSeasonChain(root, seed)
+      .then((chain) => { if (!cancelled) seasonList = seasonEntries(chain, root) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  })
+  // A heading-row toolbar takes the dropdown in place of its "Episodes" heading.
+  const seasonsInHeader = $derived(seasonStyle === 'dropdown' && plan.composed && plan.variant === 'header' && aired > 0 && seasonList.length > 1)
   // A tap on a released episode plays it — or, in select mode, toggles its selection. On desktop,
   // Shift+click marks the series watched through that episode without opening the player.
   // Upcoming (unaired) episodes are neither playable nor selectable.
@@ -333,6 +355,8 @@
   }
 </script>
 
+{#snippet seasonLead()}<SeasonPicker entries={seasonList} variant="dropdown" inline />{/snippet}
+
 {#if total > 0}
 <div data-slot="detail.episodes" class="relative">
   {#if railGutter && aired > 0}
@@ -352,6 +376,9 @@
   {#if playState.status === 'error'}
     <p class="mb-3 text-sm text-destructive">{playState.message}</p>
   {/if}
+  {#if seasonList.length > 1 && !seasonsInHeader}
+    <SeasonPicker entries={seasonList} variant={seasonVariant} />
+  {/if}
 
   {#if aired > 0}
     {#if plan.composed}
@@ -360,7 +387,8 @@
                       ranges={rangeMenu} page={curPage} onpage={(index) => (page = index)}
                       onlayout={setLayout} ondownload={startSelect} onqueue={queueNextEpisode}
                       queueLabel={queuedNotice ? m.lists_queued_episode({ episode: nextQueueEpisode }) : m.lists_add_queue()}
-                      queueTitle={`${m.lists_add_queue()} — Episode ${nextQueueEpisode}`} />
+                      queueTitle={`${m.lists_add_queue()} — Episode ${nextQueueEpisode}`}
+                      lead={seasonsInHeader ? seasonLead : undefined} />
       {#if !$isMobile && !selecting && !railGutter}
         <!-- Release timing stays with the desktop episode controls, as in izumi's own bar. -->
         <div class="-mt-2 mb-3 flex flex-wrap items-center gap-3"><AiringStatus {media} toolbar /></div>
