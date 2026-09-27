@@ -6,14 +6,14 @@
   // The dropdown's list works like the episode toolbar's range list (EpisodeToolbar.svelte): it is
   // portalled to <body>, so a transformed ancestor or the right-hand rail's scroll box can neither
   // offset nor clip it, and fixed at its button in local px (menu-anchor.ts). While open it follows
-  // its button, a press anywhere else closes it, the d-pad stays inside it, and Escape or B closes
-  // it and hands focus back to the button.
+  // its button, a press anywhere else closes it, the d-pad stays inside it and scrolls only the list
+  // (`data-nav-scroll-container`), and Escape or B closes it and hands focus back to the button.
   import { tick } from 'svelte'
   import { cover, mediaHref } from '$lib/anilist/media'
   import type { SeasonEntry } from '$lib/anilist/seasons'
   import { reliableImage } from '$lib/util/reliable-image'
   import { portal } from '$lib/util/portal'
-  import { anchoredMenuStyle } from '$lib/components/menu-anchor'
+  import { anchoredMenuStyle, centreInList } from '$lib/components/menu-anchor'
   import * as h from '$lib/haptics'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Check from '@lucide/svelte/icons/check'
@@ -42,7 +42,8 @@
     if (open) place = anchoredMenuStyle(trigger, panel, 'start', 320)
   }
   /** Place the list that just opened, again once it has its real size, then focus the current
-   *  season (else the first) so a controller or keyboard starts inside it. */
+   *  season (else the first) so a controller or keyboard starts inside it. The focus moves nothing
+   *  (the page behind stays put), so the list scrolls that season into view once its height cap is in. */
   async function toggleList() {
     h.tap()
     open = !open
@@ -50,7 +51,10 @@
     follow()
     await tick()
     follow()
-    ;(panel?.querySelector<HTMLElement>('[data-active]') ?? panel?.querySelector<HTMLElement>('[data-focusable]'))?.focus({ preventScroll: true })
+    await tick()
+    const entry = panel?.querySelector<HTMLElement>('[data-active]') ?? panel?.querySelector<HTMLElement>('[data-focusable]')
+    centreInList(panel, entry)
+    entry?.focus({ preventScroll: true })
   }
   /** `refocus` (Escape, B, a pick) puts focus back on the button rather than the page behind. */
   function close(refocus = false) {
@@ -87,7 +91,7 @@
       <span data-part="season.label">{current?.label ?? 'Seasons'}</span>
     </button>
     {#if open}
-      <div use:portal bind:this={panel} data-part="episodes.menu" data-variant="seasons" data-nav-trap data-nav-escape style={place}
+      <div use:portal bind:this={panel} data-part="episodes.menu" data-variant="seasons" data-nav-trap data-nav-escape style={place} data-nav-scroll-container
            class="fixed z-[60] w-56 overflow-y-auto overscroll-contain rounded-lg border border-border bg-card p-1.5 shadow-2xl">
         {#each entries as entry (entry.media.id)}
           <a data-part="season" data-active={entry.active || undefined} data-focusable href={mediaHref(entry.media)}

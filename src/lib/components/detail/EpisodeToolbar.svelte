@@ -7,7 +7,8 @@
   // The overflow menu (a popover; a sheet on phones) and the range list are portalled to <body>, so
   // a transformed ancestor or the right-hand rail's scroll box can neither offset nor clip them. A
   // popover is fixed at its button in local px (menu-anchor.ts, shared with the season list). An
-  // open menu keeps the d-pad inside it and closes on Escape or B (NavDrawer.svelte).
+  // open menu keeps the d-pad inside it, scrolls only its own list to the focused entry
+  // (`data-nav-scroll-container`), and closes on Escape or B (NavDrawer.svelte).
   import { tick, type Snippet } from 'svelte'
   import type { SortDir } from '$lib/anime/episode-order'
   import type { EpisodeControl } from '$lib/themes/presentation'
@@ -15,7 +16,7 @@
   import { episodeLayout } from '$lib/settings/ui'
   import { isMobile } from '$lib/platform'
   import { portal } from '$lib/util/portal'
-  import { anchoredMenuStyle } from '$lib/components/menu-anchor'
+  import { anchoredMenuStyle, centreInList } from '$lib/components/menu-anchor'
   import * as h from '$lib/haptics'
   import Search from '@lucide/svelte/icons/search'
   import ArrowDown01 from '@lucide/svelte/icons/arrow-down-0-1'
@@ -84,13 +85,17 @@
     if (rangeOpen) rangePlace = anchoredMenuStyle(rangeButton, rangePanel, 'start', 320)
   }
   /** Place a menu that just opened, again once it has its real size, then focus an entry so a
-   *  controller or keyboard starts inside it. */
+   *  controller or keyboard starts inside it. The focus moves nothing (the page behind stays put), so
+   *  the menu's own list scrolls the entry into view once its height cap is in. */
   async function settle(panel: () => HTMLElement | undefined, entry: string) {
     place()
     await tick()
     place()
+    await tick()
     const root = panel()
-    ;(root?.querySelector<HTMLElement>(entry) ?? root?.querySelector<HTMLElement>('[data-focusable]'))?.focus({ preventScroll: true })
+    const target = root?.querySelector<HTMLElement>(entry) ?? root?.querySelector<HTMLElement>('[data-focusable]')
+    centreInList(root, target)
+    target?.focus({ preventScroll: true })
   }
   function toggleMenu() {
     h.tap()
@@ -253,7 +258,7 @@
       {ranges[page] ?? ranges[0]}<ChevronDown size={16} class="opacity-70" />
     </button>
     {#if rangeOpen}
-      <div use:portal bind:this={rangePanel} data-part="episodes.menu" data-variant="range" data-nav-trap data-nav-escape style={rangePlace}
+      <div use:portal bind:this={rangePanel} data-part="episodes.menu" data-variant="range" data-nav-trap data-nav-escape style={rangePlace} data-nav-scroll-container
            class="fixed z-[60] w-48 overflow-y-auto overscroll-contain rounded-lg border border-border bg-card p-1.5 shadow-2xl">
         {#each ranges as range, index (index)}
           <button type="button" data-part="page-number" data-active={index === page || undefined} data-focusable
@@ -289,7 +294,7 @@
           <EllipsisVertical size={17} />
         </button>
         {#if menuOpen && !$isMobile}
-          <div use:portal bind:this={menuPanel} data-part="episodes.menu" data-variant="more" data-nav-trap data-nav-escape style={menuPlace}
+          <div use:portal bind:this={menuPanel} data-part="episodes.menu" data-variant="more" data-nav-trap data-nav-escape style={menuPlace} data-nav-scroll-container
                class="fixed z-[60] w-60 overflow-y-auto overscroll-contain rounded-lg border border-border bg-card p-2 shadow-2xl">
             {@render menuItems()}
           </div>
@@ -303,7 +308,7 @@
        class="fixed inset-0 z-[70] grid h-[100dvh] place-items-end bg-black/70"
        onclick={(event) => { if (event.target === event.currentTarget) closeMenus() }}
        onkeydown={(event) => { if (event.key === 'Escape') closeMenus(true) }}>
-    <div bind:this={menuPanel} data-part="episodes.menu" data-variant="more"
+    <div bind:this={menuPanel} data-part="episodes.menu" data-variant="more" data-nav-scroll-container
          class="max-h-[85dvh] w-full overflow-y-auto overscroll-contain rounded-t-2xl border border-border bg-card p-3 shadow-2xl"
          style="padding-bottom: max(0.75rem, env(safe-area-inset-bottom));">
       <p class="px-3 pb-2 pt-1 text-base font-black">Episode options</p>

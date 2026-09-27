@@ -29,10 +29,17 @@ describe('season picker', () => {
     expect(existsSync(path('./SeasonPicker.svelte'))).toBe(true)
     const picker = readFileSync(path('./SeasonPicker.svelte'), 'utf8')
     const bar = readFileSync(path('./EpisodeToolbar.svelte'), 'utf8')
-    // One placement helper for every episode menu, so their zoom handling cannot drift apart.
-    for (const source of [picker, bar]) expect(source).toContain("import { anchoredMenuStyle } from '$lib/components/menu-anchor'")
+    // One placement helper for every episode menu, so their zoom handling cannot drift apart. They
+    // share the helper that scrolls a list to its chosen entry too.
+    for (const source of [picker, bar]) expect(source).toContain("import { anchoredMenuStyle, centreInList } from '$lib/components/menu-anchor'")
     expect(picker).toContain('<div use:portal bind:this={panel} data-part="episodes.menu" data-variant="seasons" data-nav-trap data-nav-escape style={place}')
     expect(picker).toContain("window.addEventListener('pointerdown', outside, true)")
     expect(picker).toContain("if (event.key === 'Escape' && open) { event.preventDefault(); close(true) }")
+  })
+  it('opens the list on the current season, scrolled into view inside the list only', () => {
+    const picker = readFileSync(path('./SeasonPicker.svelte'), 'utf8')
+    expect(picker).toContain('data-variant="seasons" data-nav-trap data-nav-escape style={place} data-nav-scroll-container')
+    expect(picker).toContain('centreInList(panel, entry)')
+    expect(picker).toContain('entry?.focus({ preventScroll: true })')
   })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { menuPlacement } from './menu-placement'
+import { centredScrollTop, menuPlacement } from './menu-placement'
 
 // A 40px-tall trigger at `y`, in a 800px-tall viewport.
 const trigger = (y: number) => ({ top: y, bottom: y + 40, viewport: 800 })
@@ -49,5 +49,25 @@ describe('menuPlacement', () => {
     // No `content`: 260px is assumed, so a trigger with 200px below still flips up.
     expect(menuPlacement({ top: 560, bottom: 600, viewport: 800 }).side).toBe('up')
     expect(menuPlacement({ top: 100, bottom: 140, viewport: 800 }).side).toBe('down')
+  })
+})
+
+// A menu that opens on its chosen entry (the current range or season) scrolls its own list so the
+// entry shows, since focusing it with preventScroll moves nothing.
+describe('centredScrollTop', () => {
+  // A 300px-tall list holding 1200px of entries (local px).
+  const list = { viewHeight: 300, contentHeight: 1200 }
+
+  it('centres an entry in the middle of a long list', () => {
+    expect(centredScrollTop({ ...list, itemTop: 500, itemHeight: 40 })).toBe(370)
+  })
+
+  it('stays at the top near the start and at the bottom near the end', () => {
+    expect(centredScrollTop({ ...list, itemTop: 40, itemHeight: 40 })).toBe(0)
+    expect(centredScrollTop({ ...list, itemTop: 1160, itemHeight: 40 })).toBe(900)
+  })
+
+  it('never scrolls a list that fits', () => {
+    expect(centredScrollTop({ itemTop: 120, itemHeight: 40, viewHeight: 300, contentHeight: 200 })).toBe(0)
   })
 })

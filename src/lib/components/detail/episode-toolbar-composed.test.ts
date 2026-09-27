@@ -41,6 +41,17 @@ describe('themed episode toolbar', () => {
     expect(detail).not.toContain("{#if detailTheme.episodes?.order === 'flip' && sideEpisodes}")
     expect(list).toContain('{#if !$isMobile && !selecting && !plan.gutter}')
   })
+  // Entries are focused with preventScroll (the page behind a menu must not move), so the lists scroll
+  // themselves: to the chosen entry on open, and with the d-pad as the scroll container nav reveals in.
+  it('reveals the chosen entry inside its scrolling menu without moving the page', () => {
+    const bar = read('./EpisodeToolbar.svelte')
+    expect(bar.match(/ data-nav-scroll-container(?!`)/g)?.length).toBe(3)
+    expect(bar).toContain('data-variant="range" data-nav-trap data-nav-escape style={rangePlace} data-nav-scroll-container')
+    expect(bar).toContain('data-variant="more" data-nav-trap data-nav-escape style={menuPlace} data-nav-scroll-container')
+    expect(bar).toContain('<div bind:this={menuPanel} data-part="episodes.menu" data-variant="more" data-nav-scroll-container')
+    expect(bar).toContain('centreInList(root, target)')
+    expect(bar).toContain('target?.focus({ preventScroll: true })')
+  })
   it('keeps the legacy flip path for a theme that sets only the order', () => {
     expect(list).toContain('rail: episodesOnSide($themePresentation, !$isMobile),')
     expect(list).toContain('{:else if flipOrder && !$isMobile && !selecting}')
