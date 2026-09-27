@@ -23,6 +23,12 @@ describe('continue card', () => {
     expect(detail.match(/\{#if !headerCtaHidden\}/g)?.length).toBe(2)
     expect(detail.match(/onpointerenter=\{\(\) => prefetchEpisodeSources\(m, ctaEp\(m\)\)\}/g)).toHaveLength(4)
   })
+  // "Continue: Episode 1071", not the number badges' "A1071" form, like the other new pieces.
+  it('prints the plain episode number on the card', () => {
+    expect(list).toContain("const printedNumber = (episode: number) => episodeNoText(episode, meta[episode]?.abs, $absoluteEpisodeNumbers)")
+    expect(list).toContain("{watchedThrough > 0 || started > 0 ? 'Continue' : 'Play'}: Episode {printedNumber(target)}</span>")
+    expect(list).not.toContain('Episode {numberLabel(target)}')
+  })
   it('resumes offline from the episode the header Play button opens', () => {
     expect(list).toContain('? offlineResumeEpisode(offlineEps, watchedThrough)')
     expect(detail).toContain('return offlineResumeEpisode(downloadedEpisodes(m), watchedThrough)')

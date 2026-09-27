@@ -105,10 +105,12 @@
   // A picked page stays inside the list when the page size changes (`pageSize: "auto"` grows with it).
   const curPage = $derived(shownPage(page, autoPage, pages))
   const startIdx = $derived(curPage * PER)
-  // Range chips (and Task 9's range picker) label pages by their printed first and last numbers.
-  const rangeLabel = (episode: number) => episodeNoText(episode, meta[episode]?.abs, $absoluteEpisodeNumbers)
-  const rangeChips = $derived(episodeTheme?.paging === 'ranges' ? episodeRanges(allEpisodes, PER, rangeLabel) : [])
-  const rangeMenu = $derived(episodeTheme?.paging === 'dropdown' ? episodeRanges(allEpisodes, PER, rangeLabel, ' – ') : [])
+  // The number an episode prints without a prefix ("12", or its series-wide number with that setting
+  // on; never the badges' "A1071"): range chips and the range picker label pages by their first and
+  // last, and the Continue card names its episode with it.
+  const printedNumber = (episode: number) => episodeNoText(episode, meta[episode]?.abs, $absoluteEpisodeNumbers)
+  const rangeChips = $derived(episodeTheme?.paging === 'ranges' ? episodeRanges(allEpisodes, PER, printedNumber) : [])
+  const rangeMenu = $derived(episodeTheme?.paging === 'dropdown' ? episodeRanges(allEpisodes, PER, printedNumber, ' – ') : [])
   // `ranges` replaces the Prev/Next pager, and so does the toolbar's range picker once it shows.
   const pagerShown = $derived(episodeTheme?.paging !== 'ranges' && !(episodeTheme?.paging === 'dropdown' && aired > 0))
   let rangesRow = $state<HTMLElement>()
@@ -650,7 +652,7 @@
       <span class="absolute inset-0 bg-black/60"></span>
       <span class="relative flex h-full items-center gap-3 px-4">
         <span class="min-w-0 flex-1">
-          <span data-part="episode.continue.label" class="block truncate text-sm font-black text-white">{watchedThrough > 0 || started > 0 ? 'Continue' : 'Play'}: Episode {numberLabel(target)}</span>
+          <span data-part="episode.continue.label" class="block truncate text-sm font-black text-white">{watchedThrough > 0 || started > 0 ? 'Continue' : 'Play'}: Episode {printedNumber(target)}</span>
           {#if shownTitle}<span data-part="episode.continue.title" class="block truncate text-xs font-bold text-white/80">{shownTitle}</span>{/if}
         </span>
         <Play size={20} class="shrink-0 text-white" />
