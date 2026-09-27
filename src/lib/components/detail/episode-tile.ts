@@ -26,3 +26,11 @@ export function episodeTileState({ ep, watchedThrough, aired, percent }: Episode
   if (ep === watchedThrough + 1) return { kind: 'resume', percent: 0, playable: true }
   return { kind: 'unwatched', percent: 0, playable: true }
 }
+
+/** The highest episode that can play: the aired count capped at the last listed episode (an unknown
+ *  count, `Infinity`, allows none); offline, the highest downloaded episode. The episode list and
+ *  the series page both use it, so a Continue card and the Play button it replaces always agree. */
+export function playableThrough(episodes: number[], airedTotal: number, offline: boolean): number {
+  if (offline) return episodes.at(-1) ?? 0
+  return Math.min(episodes.at(-1) ?? 0, Number.isFinite(airedTotal) ? airedTotal : 0)
+}
