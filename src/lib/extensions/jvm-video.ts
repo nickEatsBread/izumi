@@ -39,6 +39,35 @@ export function normalizeJvmSidecarUrl(value: unknown): string | undefined {
   }
 }
 
+// Aniyomi's own player shows `Video.title` verbatim, so extensions mark the audio flavour however
+// they like. These are the whole-word markers seen across the catalog: plain Sub/Dub anywhere in
+// the title ("Mirror - 0p Dub HLS"), the soft/hard subtitle variants, and the Spanish and
+// Portuguese words for dubbed and subtitled releases.
+const word = (pattern: string) => new RegExp(`(?<![\\p{L}\\p{N}])(?:${pattern})(?![\\p{L}\\p{N}])`, 'iu')
+const DUB_MARKER = word('a-dub|dub(?:s|bed)?|dublado|doblad[oa]|doblaje|latino|castellano')
+const SUB_MARKER = word('s-sub|h-sub|ssub|hsub|soft[- ]?subs?|hard[- ]?subs?|sub(?:s|bed)?|subtitulado|legendado|vostfr|vose')
+const HARD_SUB_MARKER = word('h-sub|hsub|hard[- ]?subs?')
+const SOFT_SUB_MARKER = word('s-sub|ssub|soft[- ]?subs?')
+// Some sites badge each mirror with its audio language instead; the extension copies the badge
+// into the title as a bare "eng" or "jpn".
+const ENGLISH_AUDIO_BADGE = word('eng')
+const JAPANESE_AUDIO_BADGE = word('jpn')
+
+function audioFlavor(title: string): Pick<JvmVideoIdentity, 'audio' | 'subtitleMode'> {
+  const dub = DUB_MARKER.test(title)
+  const sub = SUB_MARKER.test(title)
+  // "Sub & Dub" names both flavours; guessing one would mislabel the other.
+  if (dub && sub) return {}
+  if (dub) return { audio: 'dub' }
+  if (sub) {
+    const subtitleMode = HARD_SUB_MARKER.test(title) ? 'hard' : SOFT_SUB_MARKER.test(title) ? 'soft' : undefined
+    return subtitleMode ? { audio: 'sub', subtitleMode } : { audio: 'sub' }
+  }
+  if (ENGLISH_AUDIO_BADGE.test(title)) return { audio: 'dub' }
+  if (JAPANESE_AUDIO_BADGE.test(title)) return { audio: 'sub' }
+  return {}
+}
+
 /**
  * Aniyomi extractors commonly put the information we need in `Video.title`, for example
  * "HD-1 - Sub - 1080p". Others use a leading variant label rather than an explicit server, such
@@ -61,12 +90,13 @@ export function parseJvmVideoTitle(value: unknown): JvmVideoIdentity {
     }
   }
 
-  const quality = title.match(/\b\d{3,4}p\b/i)?.[0]
+  // A 3-4 digit height only: some extensions print an unknown resolution as "0p".
+  const quality = title.match(/\b\d{3,4}p\b/i)?.[0] ?? (/\b4k\b/i.test(title) ? '2160p' : undefined)
   const leadingLabel = title.split(/\s+-\s+/, 1)[0]?.trim()
   const server = title.includes(' - ')
     && leadingLabel
     && !/^(?:auto|original|source|video|\d{3,4}p)$/i.test(leadingLabel)
     ? leadingLabel
     : undefined
-  return { server, quality: quality ?? title }
+  return { server, quality: quality ?? title, ...audioFlavor(title) }
 }

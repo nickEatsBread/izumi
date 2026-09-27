@@ -1031,7 +1031,10 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
           // thing later for Izumi's own loopback-only media proxies.
           localServer: isJvmHostedVideoUrl(url),
           type: mediaType(url, `${String(video.quality ?? '')} ${String(video.title ?? '')}`),
-          quality: String(video.quality ?? identity.quality ?? video.title ?? 'auto'),
+          // The runtime reports `Video.resolution` here: a bare height, absent for most sources.
+          quality: typeof video.quality === 'number' && video.quality > 0
+            ? `${video.quality}p`
+            : String(video.quality ?? identity.quality ?? video.title ?? 'auto'),
           server: identity.server,
           audio: identity.audio,
           subtitleMode: identity.subtitleMode === 'hard'
