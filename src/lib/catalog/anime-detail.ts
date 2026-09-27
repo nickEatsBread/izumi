@@ -73,6 +73,21 @@ export function animeResumeEpisode(media: Media, watched: number): number {
   return available.find((episode) => episode > watched) ?? available.at(-1) ?? numbers[0] ?? 1
 }
 
+const progressIds = (media: Media): number[] => {
+  const canonical = anilistIdOf(media)
+  return canonical == null ? [media.id] : [...new Set([media.id, canonical])]
+}
+
+/** Episodes this device has recorded as watched: this session's plays and local history
+ * (incognito plays included), across a provider card and its mapped AniList id. */
+export function recordedWatched(
+  media: Media,
+  history: Record<number, { progress: number }>,
+  session: Record<number, number>,
+): number {
+  return Math.max(0, ...progressIds(media).flatMap((id) => [history[id]?.progress ?? 0, session[id] ?? 0]))
+}
+
 /** Read progress across a provider card and its mapped AniList history, without changing the ids
  * passed to playback or moving existing saved records. Explicit manual progress still wins. */
 export function animeWatchedProgress(
@@ -81,8 +96,6 @@ export function animeWatchedProgress(
   session: Record<number, number>,
   overrides: Record<number, number>,
 ): number {
-  const canonical = anilistIdOf(media)
-  const ids = canonical == null ? [media.id] : [...new Set([media.id, canonical])]
-  for (const id of ids) if (overrides[id] != null) return overrides[id]
-  return Math.max(media.mediaListEntry?.progress ?? 0, ...ids.flatMap((id) => [history[id]?.progress ?? 0, session[id] ?? 0]))
+  for (const id of progressIds(media)) if (overrides[id] != null) return overrides[id]
+  return Math.max(media.mediaListEntry?.progress ?? 0, recordedWatched(media, history, session))
 }

@@ -198,6 +198,24 @@ function pickInNavRows(active: HTMLElement, dir: Dir): HTMLElement | null | unde
   return active
 }
 
+/**
+ * Fast path for Up/Down inside the side rail. The rail is a single column, so DOM order is its
+ * visual order: walking it needs no geometry, and moving through the menu never makes WebKitGTK
+ * style and lay out every card on the page behind it. A top bar is a row and keeps the spatial
+ * search, as does an open picker's `data-nav-trap` (the caller skips this path under a trap).
+ *
+ * `undefined` means this is not a move within the rail; `null` means the rail ends there.
+ */
+function pickInSidebar(active: HTMLElement, dir: Dir): HTMLElement | null | undefined {
+  if (dir !== 'up' && dir !== 'down') return undefined
+  const rail = active.closest<HTMLElement>('[data-nav-sidebar][data-slot="nav.side"]')
+  if (!rail) return undefined
+  const items = focusables(rail)
+  const index = items.indexOf(active)
+  if (index < 0) return undefined
+  return items[index + (dir === 'down' ? 1 : -1)] ?? null
+}
+
 type RevealScrollTarget = Window | HTMLElement
 const controllerScrollUntil = new WeakMap<object, number>()
 const CONTROLLER_SMOOTH_WINDOW_MS = 600
@@ -229,6 +247,9 @@ function runControllerScroll(
 /** Reveal controller focus without asking scrollIntoView to move every scrollable ancestor. The
  * settings category rail owns its own viewport; moving it must never scroll the category content. */
 function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void {
+  // The navigation shell is fixed to the viewport, so every row of it is always on screen. Scrolling
+  // the page cannot bring one into view; it only dragged the page underneath the menu on each press.
+  if (el.closest('[data-nav-sidebar]')) return
   // A single D-pad press should visibly carry the selected card with it. Held-key repeats switch
   // to instant movement so WebKitGTK never queues several smooth animations behind the thumb.
   const reduced = document.documentElement.dataset.motion === 'reduced'
@@ -362,6 +383,16 @@ export function initDpadNav() {
       rowPick.focus({ preventScroll: true })
       revealFocused(rowPick, vertical, e.repeat)
       e.preventDefault()
+      return
+    }
+    // Up/Down within the side rail. At either end nothing moves, as with the spatial search, which
+    // never crosses regions vertically.
+    const railPick = trap ? undefined : pickInSidebar(active, dir)
+    if (railPick !== undefined) {
+      if (railPick) {
+        railPick.focus({ preventScroll: true })
+        e.preventDefault()
+      }
       return
     }
     const els = focusables(root)
