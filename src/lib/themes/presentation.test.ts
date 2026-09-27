@@ -259,3 +259,50 @@ describe('theme surface resolution', () => {
     expect(densityScale(parsePresentation({ density: 'large' }))).toBe(1.16)
   })
 })
+
+describe('streaming-site presentation keys (API 3)', () => {
+  it('binds key art, the age rating, audio and the time left on API 3 only', () => {
+    const template = { type: 'stack', children: [
+      { type: 'artwork', artwork: 'keyart', when: { field: 'keyart' } },
+      { type: 'text', field: 'ageRating', when: { field: 'ageRating' } },
+      { type: 'text', field: 'audio' },
+      { type: 'text', field: 'timeLeft', when: { field: 'timeLeft', absent: true } },
+    ] }
+    const hero = parsePresentation({ hero: { template } }, 3).hero?.template
+    expect(hero?.children?.[0]).toMatchObject({ artwork: 'keyart', when: { field: 'keyart' } })
+    expect(hero?.children?.map((child) => child.field)).toEqual([undefined, 'ageRating', 'audio', 'timeLeft'])
+    expect(() => parsePresentation({ hero: { template: { type: 'artwork', artwork: 'keyart' } } }, 2)).toThrow('unsupported')
+    for (const field of ['ageRating', 'audio', 'timeLeft']) {
+      expect(() => parsePresentation({ hero: { template: { type: 'text', field } } }, 2)).toThrow('unsupported')
+    }
+    expect(displayText('timeLeft', { timeLeft: '21m left' })).toBe('21m left')
+  })
+
+  it('parses the wide hero, its bleed and unfilled past markers', () => {
+    const layout = parsePresentation({ hero: { scale: 'wide', bleed: 300, indicator: { style: 'bars', past: 'empty' } } }, 3)
+    expect(layout.hero).toMatchObject({ scale: 'wide', bleed: 300, indicator: { style: 'bars', past: 'empty' } })
+    expect(parsePresentation({ hero: { bleed: 0 } }, 3).hero?.bleed).toBe(0)
+    expect(() => parsePresentation({ hero: { bleed: 481 } }, 3)).toThrow('range')
+    expect(() => parsePresentation({ hero: { scale: 'wide' } }, 2)).toThrow('unsupported')
+    expect(() => parsePresentation({ hero: { bleed: 100 } }, 2)).toThrow('unsupported')
+    expect(() => parsePresentation({ hero: { indicator: { past: 'empty' } } }, 2)).toThrow('unsupported')
+    expect(() => parsePresentation({ hero: { indicator: { past: 'half' } } }, 3)).toThrow('unsupported')
+  })
+
+  it('parses the Categories menu, the card preview switch and series title art', () => {
+    const layout = parsePresentation({
+      shell: { nav: 'top', top: { labels: 'text', categories: true } },
+      cardPreview: 'none',
+      detail: { layout: 'overlay', art: 'keyart', title: 'logo' },
+    }, 3)
+    expect(layout.shell?.top?.categories).toBe(true)
+    expect(layout.cardPreview).toBe('none')
+    expect(resolveDetail(layout)).toMatchObject({ art: 'keyart', title: 'logo' })
+    expect(() => parsePresentation({ cardPreview: 'none' }, 2)).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { art: 'keyart' } }, 2)).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { title: 'logo' } }, 2)).toThrow('unsupported')
+    expect(() => parsePresentation({ shell: { top: { categories: 'yes' } } }, 3)).toThrow('toggle')
+    expect(() => parsePresentation({ mobile: { cardPreview: 'none' } }, 3)).toThrow('unsupported')
+    expect(themeCoverage(parsePresentation({ cardPreview: 'none' }, 3))).toContain('Home')
+  })
+})

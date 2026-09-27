@@ -6,9 +6,11 @@ export type DisplayField =
   | 'episodeCount' | 'episodeTitle' | 'airDate' | 'duration' | 'episodeNumber' | 'progress'
   | 'source' | 'country'
   | 'nextEpisode' | 'airingIn' | 'airingCountdown' | 'slide' | 'slides' | 'episodesAired' | 'genre'
+  | 'ageRating' | 'audio' | 'timeLeft'
 /** Host numbers. `when.atMost` compares these; text nodes render them through `displayText`. */
 export type NumericDisplayField = 'rankPosition' | 'score' | 'duration' | 'episodeNumber' | 'progress' | 'nextEpisode' | 'slide' | 'slides' | 'episodesAired'
-export type ArtworkKind = 'poster' | 'backdrop' | 'logo' | 'still'
+/** `keyart` (API 3) is 16:9 title artwork: a TVDB background for AniList titles, a TMDB or add-on backdrop otherwise. */
+export type ArtworkKind = 'poster' | 'backdrop' | 'logo' | 'still' | 'keyart'
 export type ThemeAction = 'play' | 'details' | 'favorite' | 'previous' | 'next' | 'list' | 'trailer' | 'share'
 export type CardFamily = 'poster' | 'continue' | 'search'
 export type ThemeDensity = 'compact' | 'comfortable' | 'large'
@@ -81,6 +83,10 @@ export interface DetailPresentation {
   /** API 3: a template under the series title on phones and desktop (a studio chip, a score, a meta
    *  line), whatever `factsStyle` shows. Non-interactive, like card templates. */
   header?: ThemeNode
+  /** API 3: the overlay artwork — the catalog banner (default) or 16:9 key art when the title has it. */
+  art?: 'banner' | 'keyart'
+  /** API 3: the series title as text (default) or the title logo when there is one, on every layout. */
+  title?: 'text' | 'logo'
 }
 /** The phone tab bar (and the desktop bottom bar when `nav` is `bottom`). */
 export interface BottomNavPresentation {
@@ -110,6 +116,8 @@ export interface TopBarPresentation {
   menu?: 'none' | 'drawer'
   /** Where the brand sits in the bar. */
   brand?: 'start' | 'center'
+  /** A "Categories" menu after the destinations: browse links and the catalog's genres. */
+  categories?: boolean
 }
 export interface ShellPresentation {
   nav?: ThemeNavPlacement
@@ -141,6 +149,8 @@ export interface HeroIndicator {
   style?: 'bars' | 'dots' | 'pills' | 'counter' | 'none'
   position?: 'start' | 'center' | 'end'
   color?: string
+  /** API 3: `empty` leaves the bars of slides already shown unfilled (only the current one fills). */
+  past?: 'filled' | 'empty'
 }
 /** Row heading chrome. `titleSize` on the row stays the size control. */
 export interface RowHeading {
@@ -163,7 +173,7 @@ export interface ThemePresentation {
   density?: ThemeDensity
   hideCardLabels?: boolean
   trueBlack?: boolean
-  hero?: { hidden?: boolean; height?: number; mobileHeight?: number; rotate?: boolean; interval?: number; rankHidden?: boolean; rank?: ThemeNode; template?: ThemeNode; scale?: 'viewport' | 'banner'; indicator?: HeroIndicator }
+  hero?: { hidden?: boolean; height?: number; mobileHeight?: number; rotate?: boolean; interval?: number; rankHidden?: boolean; rank?: ThemeNode; template?: ThemeNode; scale?: 'viewport' | 'banner' | 'wide'; indicator?: HeroIndicator; bleed?: number }
   rows?: { defaults?: RowPresentation; byId?: Record<string, RowPresentation> }
   detail?: DetailPresentation
   shell?: ShellPresentation
@@ -171,6 +181,8 @@ export interface ThemePresentation {
   cards?: Partial<Record<CardFamily, ThemeNode>>
   /** API 3: the theme's Home and navigation layout. */
   layout?: ThemeLayout
+  /** API 3: `none` switches off izumi's hover popup on poster cards, for themes that draw their own hover panel in the card template. */
+  cardPreview?: 'popup' | 'none'
   /** Phone overrides (the Android app and any viewport up to 640px), resolved on top of the rest. */
   mobile?: MobilePresentation
 }
@@ -187,13 +199,16 @@ const fields = [
   'episodeCount', 'episodeTitle', 'airDate', 'duration', 'episodeNumber', 'progress',
   'source', 'country',
   'nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired', 'genre',
+  'ageRating', 'audio', 'timeLeft',
 ] as const satisfies readonly DisplayField[]
-const API3_FIELDS: readonly DisplayField[] = ['nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired', 'genre']
+const API3_FIELDS: readonly DisplayField[] = ['nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired', 'genre', 'ageRating', 'audio', 'timeLeft']
 /** An API 1/2 package is held to the fields its clients know, so it renders identically everywhere. */
 const fieldsFor = (api: ThemeApi) => (api >= 3 ? fields : fields.filter(field => !API3_FIELDS.includes(field)))
 const numericFields: string[] = ['rankPosition', 'score', 'duration', 'episodeNumber', 'progress', 'nextEpisode', 'slide', 'slides', 'episodesAired'] satisfies NumericDisplayField[]
 const actions = ['play', 'details', 'favorite', 'previous', 'next', 'list', 'trailer', 'share']
-const artworkKinds = ['poster', 'backdrop', 'logo', 'still'] as const
+const artworkKinds = ['poster', 'backdrop', 'logo', 'still', 'keyart'] as const
+/** Key art is API 3; older packages keep the artwork their clients know. */
+const artworkFor = (api: ThemeApi): readonly ArtworkKind[] => (api >= 3 ? artworkKinds : artworkKinds.filter((kind) => kind !== 'keyart'))
 const numericStyles: Record<string, [number, number, string]> = {
   gap: [0, 96, 'px'], padding: [0, 96, 'px'], fontSize: [10, 96, 'px'], fontWeight: [400, 900, ''],
   radius: [0, 80, 'px'], opacity: [0, 1, ''], width: [5, 100, '%'], minHeight: [0, 600, 'px'],
@@ -241,7 +256,7 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
     node.text = raw.text
   }
   if (raw.field !== undefined) node.field = choice(raw.field, fieldsFor(api))
-  if (raw.artwork !== undefined) node.artwork = choice(raw.artwork, artworkKinds)
+  if (raw.artwork !== undefined) node.artwork = choice(raw.artwork, artworkFor(api))
   if (node.type === 'artwork' && !node.artwork) throw new Error('Choose artwork for this template.')
   if (node.type === 'action') node.action = choice(raw.action, actions) as ThemeAction
   if (raw.icon !== undefined || node.type === 'icon') node.icon = choice(raw.icon, icons)
@@ -251,7 +266,7 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
   }
   if (raw.when !== undefined) {
     const condition = record(raw.when); only(condition, ['field', 'atMost', ...api3(api, ['absent'])])
-    node.when = { field: choice<DisplayField | ArtworkKind>(condition.field, api >= 3 ? [...fieldsFor(api), ...artworkKinds] : fieldsFor(api)) }
+    node.when = { field: choice<DisplayField | ArtworkKind>(condition.field, api >= 3 ? [...fieldsFor(api), ...artworkFor(api)] : fieldsFor(api)) }
     if (condition.atMost !== undefined) {
       if (!numericFields.includes(node.when.field)) throw new Error('atMost only applies to numeric fields: rankPosition, score, duration, episodeNumber, progress, nextEpisode, slide, slides and episodesAired.')
       node.when.atMost = number(condition.atMost, 0, 10000)
@@ -319,24 +334,26 @@ function parseBottomNav(value: unknown): BottomNavPresentation {
   return result
 }
 function parseTopBar(value: unknown): TopBarPresentation {
-  const raw = record(value); only(raw, ['labels', 'search', 'menu', 'brand'])
+  const raw = record(value); only(raw, ['labels', 'search', 'menu', 'brand', 'categories'])
   const result: TopBarPresentation = {}
   if (raw.labels !== undefined) result.labels = choice(raw.labels, ['icons', 'text', 'both'])
   if (raw.search !== undefined) result.search = choice(raw.search, ['icon', 'field-center', 'field-end'])
   if (raw.menu !== undefined) result.menu = choice(raw.menu, ['none', 'drawer'])
   if (raw.brand !== undefined) result.brand = choice(raw.brand, ['start', 'center'])
+  if (raw.categories !== undefined) result.categories = flag(raw.categories)
   return result
 }
-function parseIndicator(value: unknown): HeroIndicator {
-  const raw = record(value); only(raw, ['style', 'position', 'color'])
+function parseIndicator(value: unknown, api: ThemeApi): HeroIndicator {
+  const raw = record(value); only(raw, ['style', 'position', 'color', ...api3(api, ['past'])])
   const result: HeroIndicator = {}
   if (raw.style !== undefined) result.style = choice(raw.style, ['bars', 'dots', 'pills', 'counter', 'none'])
   if (raw.position !== undefined) result.position = choice(raw.position, ['start', 'center', 'end'])
   if (raw.color !== undefined) result.color = themeColor(raw.color)
+  if (raw.past !== undefined) result.past = choice(raw.past, ['filled', 'empty'])
   return result
 }
 function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
-  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'bannerScale', 'episodes', ...api2(api, ['tabs']), ...api3(api, ['factsStyle', 'countdown', 'listButton', 'header'])])
+  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'bannerScale', 'episodes', ...api2(api, ['tabs']), ...api3(api, ['factsStyle', 'countdown', 'listButton', 'header', 'art', 'title'])])
   const result: DetailPresentation = {}
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['stack', 'split', 'overlay'])
   if (raw.bannerHidden !== undefined) result.bannerHidden = flag(raw.bannerHidden)
@@ -352,6 +369,8 @@ function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
   if (raw.countdown !== undefined) result.countdown = choice(raw.countdown, ['none', 'compact', 'long'])
   if (raw.listButton !== undefined) result.listButton = choice(raw.listButton, ['inline', 'full', 'hidden'])
   if (raw.header !== undefined) result.header = parseNode(raw.header, undefined, 0, false, api)
+  if (raw.art !== undefined) result.art = choice(raw.art, ['banner', 'keyart'])
+  if (raw.title !== undefined) result.title = choice(raw.title, ['text', 'logo'])
   if (raw.episodes !== undefined) {
     const episodes = record(raw.episodes); only(episodes, ['placement', 'arrangement', 'hover', 'order', 'search', 'card'])
     result.episodes = {}
@@ -456,22 +475,23 @@ function parseMobile(value: unknown, api: ThemeApi): MobilePresentation {
  *  parsed, so its layout cannot carry navigation (phones always use the bottom bar). */
 export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_API, phone = false): ThemePresentation {
   const raw = record(value)
-  only(raw, ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'shell', 'player', 'cards', ...api2(api, ['mobile']), ...api3(api, ['layout'])])
+  only(raw, ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'shell', 'player', 'cards', ...api2(api, ['mobile']), ...api3(api, ['layout', 'cardPreview'])])
   const result: ThemePresentation = {}
   if (raw.mobile !== undefined) result.mobile = parseMobile(raw.mobile, api)
   if (raw.density !== undefined) result.density = choice(raw.density, ['compact', 'comfortable', 'large'])
   if (raw.hideCardLabels !== undefined) result.hideCardLabels = flag(raw.hideCardLabels)
   if (raw.trueBlack !== undefined) result.trueBlack = flag(raw.trueBlack)
   if (raw.hero !== undefined) {
-    const hero = record(raw.hero); only(hero, ['hidden', 'height', 'mobileHeight', 'rotate', 'interval', 'rankHidden', 'rank', 'template', 'scale', ...api2(api, ['indicator'])])
+    const hero = record(raw.hero); only(hero, ['hidden', 'height', 'mobileHeight', 'rotate', 'interval', 'rankHidden', 'rank', 'template', 'scale', ...api2(api, ['indicator']), ...api3(api, ['bleed'])])
     result.hero = {}
     for (const key of ['hidden', 'rotate', 'rankHidden'] as const) if (hero[key] !== undefined) result.hero[key] = flag(hero[key])
     for (const key of ['height', 'mobileHeight'] as const) if (hero[key] !== undefined) result.hero[key] = number(hero[key], 24, 75)
-    if (hero.scale !== undefined) result.hero.scale = choice(hero.scale, ['viewport', 'banner'])
+    if (hero.scale !== undefined) result.hero.scale = choice(hero.scale, api >= 3 ? ['viewport', 'banner', 'wide'] : ['viewport', 'banner'])
+    if (hero.bleed !== undefined) result.hero.bleed = number(hero.bleed, 0, 480)
     if (hero.interval !== undefined) result.hero.interval = number(hero.interval, 5, 60)
     if (hero.rank !== undefined) result.hero.rank = parseNode(hero.rank, undefined, 0, false, api)
     if (hero.template !== undefined) result.hero.template = parseNode(hero.template, undefined, 0, true, api)
-    if (hero.indicator !== undefined) result.hero.indicator = parseIndicator(hero.indicator)
+    if (hero.indicator !== undefined) result.hero.indicator = parseIndicator(hero.indicator, api)
   }
   if (raw.rows !== undefined) {
     const rows = record(raw.rows); only(rows, ['defaults', 'byId']); result.rows = {}
@@ -490,6 +510,7 @@ export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_A
   if (raw.player !== undefined) result.player = parsePlayer(raw.player, api)
   if (raw.cards !== undefined) result.cards = parseCards(raw.cards, api)
   if (raw.layout !== undefined) result.layout = parseLayout(raw.layout, phone)
+  if (raw.cardPreview !== undefined) result.cardPreview = choice(raw.cardPreview, ['popup', 'none'])
   return result
 }
 /** The presentation for one surface: on a phone the `mobile` block is layered over the shared one.
@@ -605,6 +626,8 @@ export function resolveDetail(layout?: ThemePresentation): Required<Pick<DetailP
     countdown: detail.countdown,
     listButton: detail.listButton,
     header: detail.header,
+    art: detail.art,
+    title: detail.title,
     episodes: { placement, arrangement: detail.episodes?.arrangement, hover: detail.episodes?.hover, order: detail.episodes?.order, search: detail.episodes?.search, card: detail.episodes?.card },
   }
 }
@@ -648,7 +671,7 @@ export function themeCoverage(layout?: ThemePresentation): ThemeSurface[] {
   if (!layout) return []
   const surfaces: ThemeSurface[] = []
   const phone = layout.mobile ?? {}
-  if (layout.hero || layout.rows || layout.cards || layout.layout?.home || phone.hero || phone.rows || phone.cards || phone.layout?.home) surfaces.push('Home')
+  if (layout.hero || layout.rows || layout.cards || layout.cardPreview || layout.layout?.home || phone.hero || phone.rows || phone.cards || phone.layout?.home) surfaces.push('Home')
   if (layout.shell || layout.density || layout.hideCardLabels || layout.trueBlack || layout.layout?.nav || phone.density || phone.hideCardLabels || phone.trueBlack) surfaces.push('Shell')
   if (layout.detail || phone.detail) surfaces.push('Details')
   if (layout.player || phone.player) surfaces.push('Player')
