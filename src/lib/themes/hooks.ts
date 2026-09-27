@@ -56,7 +56,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'home.main', kind: 'slot', description: 'The main column of Home.' },
     { name: 'home.aside', kind: 'slot', description: 'The side column of Home, holding blocks placed in the aside.' },
     { name: 'pagination', kind: 'part', description: 'Page controls under a block: numbered pages or a Load more button.' },
-    { name: 'page-number', kind: 'part', description: 'One numbered page button.', states: ['data-active'] },
+    { name: 'page-number', kind: 'part', description: 'A page button: a numbered page under a block, Prev/Next under the episode list, or an entry of the episode range picker.', states: ['data-active'] },
     { name: 'block.title', kind: 'part', description: 'A block heading.' },
     { name: 'block.genre-chips', kind: 'slot', description: 'Genre shortcuts: an All chip and one chip per genre (each a `chip`).' },
     { name: 'block.latest-episodes', kind: 'slot', description: 'Newly aired episodes as a grid of stills. Items reuse `episode.still`, `episode.number`, `card.title` and `card.meta`. `data-caption` is `below` or `overlay`.', states: ['data-caption'] },
@@ -119,6 +119,9 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'episodes.layout', kind: 'part', description: 'The phone cards/numbers switch; its options are `data-active` when chosen.', states: ['data-layout'] },
     { name: 'episodes.download', kind: 'part', description: 'The button that starts picking episodes to download.' },
     { name: 'episodes.queue', kind: 'part', description: 'The button that adds the next episode to the episode queue.' },
+    { name: 'episodes.ranges', kind: 'part', description: 'The row of range chips above the list (`paging: "ranges"`); each range is a `chip`, the current one `data-active`.' },
+    { name: 'episodes.pager', kind: 'part', description: 'The Prev/Next row under the list; its buttons are `page-number`.' },
+    { name: 'episodes.empty', kind: 'part', description: 'The line shown when a search matches no episode.' },
   ],
   watch: [
     { name: 'watch', kind: 'slot', description: 'The player area.', states: ['data-layout'] },
@@ -144,7 +147,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
   ],
   primitives: [
     { name: 'button', kind: 'part', description: 'A button.', states: ['data-variant'] },
-    { name: 'chip', kind: 'part', description: 'A chip or pill (genre, filter, scope).', states: ['data-active'] },
+    { name: 'chip', kind: 'part', description: 'A chip or pill (genre, filter, scope, episode range).', states: ['data-active'] },
     { name: 'input', kind: 'part', description: 'A text input.' },
     { name: 'badge', kind: 'part', description: 'A small label on an item (for example an episode rating).' },
     { name: 'tabs', kind: 'part', description: 'A tab strip.', states: ['data-variant'] },

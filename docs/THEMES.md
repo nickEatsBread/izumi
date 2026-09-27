@@ -190,7 +190,7 @@ State values:
 | `home.main` | slot | The main column of Home. |  |
 | `home.aside` | slot | The side column of Home, holding blocks placed in the aside. |  |
 | `pagination` | part | Page controls under a block: numbered pages or a Load more button. |  |
-| `page-number` | part | One numbered page button. | `data-active` |
+| `page-number` | part | A page button: a numbered page under a block, Prev/Next under the episode list, or an entry of the episode range picker. | `data-active` |
 | `block.title` | part | A block heading. |  |
 | `block.genre-chips` | slot | Genre shortcuts: an All chip and one chip per genre (each a `chip`). |  |
 | `block.latest-episodes` | slot | Newly aired episodes as a grid of stills. Items reuse `episode.still`, `episode.number`, `card.title` and `card.meta`. `data-caption` is `below` or `overlay`. | `data-caption` |
@@ -262,6 +262,9 @@ State values:
 | `episodes.layout` | part | The phone cards/numbers switch; its options are `data-active` when chosen. | `data-layout` |
 | `episodes.download` | part | The button that starts picking episodes to download. |  |
 | `episodes.queue` | part | The button that adds the next episode to the episode queue. |  |
+| `episodes.ranges` | part | The row of range chips above the list (`paging: "ranges"`); each range is a `chip`, the current one `data-active`. |  |
+| `episodes.pager` | part | The Prev/Next row under the list; its buttons are `page-number`. |  |
+| `episodes.empty` | part | The line shown when a search matches no episode. |  |
 
 #### Player
 
@@ -296,7 +299,7 @@ State values:
 | Hook | Kind | What | States |
 |---|---|---|---|
 | `button` | part | A button. | `data-variant` |
-| `chip` | part | A chip or pill (genre, filter, scope). | `data-active` |
+| `chip` | part | A chip or pill (genre, filter, scope, episode range). | `data-active` |
 | `input` | part | A text input. |  |
 | `badge` | part | A small label on an item (for example an episode rating). |  |
 | `tabs` | part | A tab strip. | `data-variant` |

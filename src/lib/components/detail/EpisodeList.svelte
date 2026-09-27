@@ -30,6 +30,8 @@
   import EpisodeCard from './EpisodeCard.svelte'
   import AiringStatus from './AiringStatus.svelte'
   import { episodeTileState, playableThrough } from './episode-tile'
+  import { episodeRanges, pageSizeFor, searchEpisodes } from './episode-ranges'
+  import { episodeNoText } from '$lib/themes/episode-fields'
   import Download from '@lucide/svelte/icons/download'
   import Loader from '@lucide/svelte/icons/loader-circle'
   import Pause from '@lucide/svelte/icons/pause'
@@ -83,7 +85,7 @@
   // A theme's grid or carousel arrangement draws cards whatever the layout setting says, so the
   // cards/numbers switch would do nothing there.
   const layoutSwitch = $derived(episodeTheme?.arrangement !== 'grid' && episodeTheme?.arrangement !== 'carousel')
-  const PER = 48
+  const PER = $derived(pageSizeFor(total, episodeTheme?.pageSize))
   // `page` stays null until the user manually pages; until then we show `autoPage` — the page that
   // holds the next episode to watch — so opening a long-running series (One Piece) lands on where
   // you're up to, not episode 1. Deriving it (vs a one-shot init) keeps it right if progress
@@ -96,16 +98,23 @@
   })
   const curPage = $derived(page ?? autoPage)
   const startIdx = $derived(curPage * PER)
+  // Range chips (and Task 9's range picker) label pages by their printed first and last numbers.
+  const rangeLabel = (episode: number) => episodeNoText(episode, meta[episode]?.abs, $absoluteEpisodeNumbers)
+  const rangeChips = $derived(episodeTheme?.paging === 'ranges' ? episodeRanges(allEpisodes, PER, rangeLabel) : [])
+  // `ranges` replaces the Prev/Next pager.
+  const pagerShown = $derived(episodeTheme?.paging !== 'ranges')
+  let rangesRow = $state<HTMLElement>()
+  // Keep the current range chip in view. Only the row scrolls: scrollIntoView would also move the
+  // page down to the episodes as the tab opens.
+  $effect(() => {
+    const row = rangesRow
+    const chip = row?.children[curPage] as HTMLElement | undefined
+    if (row && chip) row.scrollLeft = Math.max(0, chip.offsetLeft - (row.clientWidth - chip.offsetWidth) / 2)
+  })
   let episodeQuery = $state('')
   let searchOpen = $state(false)
-  const searchedEpisodes = $derived.by(() => {
-    const query = episodeQuery.trim().toLocaleLowerCase().replace(/^ep(?:isode)?\s*/i, '')
-    if (!query) return null
-    return allEpisodes.filter((episode) =>
-      String(episode).includes(query)
-      || meta[episode]?.title?.toLocaleLowerCase().includes(query)
-      || String(meta[episode]?.abs ?? '').includes(query))
-  })
+  // The whole list, not the current page: number matches first, then the rest (episode-ranges.ts).
+  const searchedEpisodes = $derived.by(() => searchEpisodes(allEpisodes, episodeQuery, meta))
   const eps = $derived(
     searchedEpisodes ?? allEpisodes.slice(startIdx, startIdx + PER),
   )
@@ -113,7 +122,8 @@
   // Oldest/Newest toggle: reorders the current page's episodes for display. Pagination itself
   // still pages ascending (startIdx/PER above are unchanged) — see the note near the toggle.
   let sortDir = $state<SortDir>('asc')
-  const rows = $derived(orderEpisodes(eps, sortDir))
+  // Search results keep their ranking; the sort orders pages.
+  const rows = $derived(searchedEpisodes ? eps : orderEpisodes(eps, sortDir))
   // The controller fast lane targets the episode the hero CTA would use. `autoPage` already keeps
   // that episode on-screen for long-runners; the fallback covers unusual offline/schedule data.
   // This target is semantic rather than geometric, so a single Down never detours through search,
@@ -546,6 +556,17 @@
     {/if}
   {/if}
 
+  {#if episodeTheme?.paging === 'ranges' && pages > 1 && !searchedEpisodes}
+    <div data-part="episodes.ranges" bind:this={rangesRow}
+         class="relative -mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0">
+      {#each rangeChips as range, index (index)}
+        <button type="button" data-part="chip" data-active={index === curPage || undefined} data-focusable
+                onclick={() => { h.select(); page = index }}
+                class="shrink-0 rounded-lg px-3.5 py-1.5 text-sm font-bold transition-colors {index === curPage ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:text-foreground'}">{range}</button>
+      {/each}
+    </div>
+  {/if}
+
   {#if metaLoading}
     <!-- Immediate skeleton grid (shape matches the setting) so the list appears at
          once and doesn't flip layouts; real cards then fade their thumbnails in. -->
@@ -763,12 +784,16 @@
     </div>
   {/if}
 
-  {#if pages > 1 && !searchedEpisodes}
-    <div class="mt-4 flex items-center gap-3 text-sm">
-      <button data-focusable disabled={curPage === 0} onclick={() => (page = curPage - 1)}
+  {#if searchedEpisodes && !searchedEpisodes.length}
+    <p data-part="episodes.empty" class="py-8 text-center text-sm text-muted-foreground">No episode matches “{episodeQuery.trim()}”.</p>
+  {/if}
+
+  {#if pages > 1 && !searchedEpisodes && pagerShown}
+    <div data-part="episodes.pager" class="mt-4 flex items-center gap-3 text-sm">
+      <button data-part="page-number" data-focusable disabled={curPage === 0} onclick={() => (page = curPage - 1)}
               class="rounded bg-secondary px-4 py-2.5 disabled:opacity-40 sm:py-1">Prev</button>
       <span class="text-muted-foreground">Episodes {startIdx + 1}–{startIdx + eps.length} of {total} · page {curPage + 1}/{pages}</span>
-      <button data-focusable disabled={curPage >= pages - 1} onclick={() => (page = curPage + 1)}
+      <button data-part="page-number" data-focusable disabled={curPage >= pages - 1} onclick={() => (page = curPage + 1)}
               class="rounded bg-secondary px-4 py-2.5 disabled:opacity-40 sm:py-1">Next</button>
     </div>
   {/if}
