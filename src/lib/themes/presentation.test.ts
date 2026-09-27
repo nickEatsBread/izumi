@@ -313,6 +313,15 @@ describe('streaming-site presentation keys (API 3)', () => {
     expect(() => parseNode({ type: 'icon', icon: 'bookmark' }, undefined, 0, true, 2)).toThrow('unsupported')
     expect(parseNode({ type: 'icon', icon: 'score' }, undefined, 0, true, 2).icon).toBe('score')
   })
+
+  it('ignores an icon on an action from an API 1 or 2 package, which never drew it', () => {
+    for (const api of [1, 2] as const) {
+      const node = parseNode({ type: 'action', action: 'details', icon: 'score' }, undefined, 0, true, api)
+      expect(node).toEqual({ type: 'action', action: 'details' })
+    }
+    // The value is still checked the way those packages always were.
+    expect(() => parseNode({ type: 'action', action: 'details', icon: 'info' }, undefined, 0, true, 2)).toThrow('unsupported')
+  })
 })
 
 describe('series page composition keys (API 3)', () => {

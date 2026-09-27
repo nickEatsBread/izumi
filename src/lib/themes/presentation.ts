@@ -329,7 +329,12 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
   if (raw.artwork !== undefined) node.artwork = choice(raw.artwork, artworkFor(api))
   if (node.type === 'artwork' && !node.artwork) throw new Error('Choose artwork for this template.')
   if (node.type === 'action') node.action = choice(raw.action, actions) as ThemeAction
-  if (raw.icon !== undefined || node.type === 'icon') node.icon = choice(raw.icon, iconsFor(api))
+  if (raw.icon !== undefined || node.type === 'icon') {
+    const icon = choice(raw.icon, iconsFor(api))
+    // Actions draw their icon from API 3. Older packages could always carry one harmlessly, since it
+    // was never drawn, so it stays checked but unrendered for them.
+    if (node.type !== 'action' || api >= 3) node.icon = icon
+  }
   if (node.type === 'icon' && !node.icon) throw new Error('Choose an icon for this template.')
   if (node.type === 'meter') {
     if (!node.field || !numericFields.includes(node.field)) throw new Error('A meter needs a numeric field.')
