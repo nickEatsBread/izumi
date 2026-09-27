@@ -17,6 +17,7 @@ describe('theme fonts', () => {
     expect(fontStack('system')).toBe("system-ui, -apple-system, 'Segoe UI', sans-serif")
     expect(fontStack('nunito')).toBe("'Nunito Variable', sans-serif")
     expect(fontStack('sansita')).toBe("'izumi Sansita', sans-serif")
+    expect(fontStack('geist')).toBe("'izumi Geist', sans-serif")
     expect(fontStack(undefined)).toBeUndefined()
   })
   it('has a loader entry for every bundled font', () => {
@@ -35,5 +36,13 @@ describe('theme fonts', () => {
     expect(block).toContain('sansita-latin-ext-400-normal.woff2')
     expect(block).toContain('sansita-latin-700-normal.woff2')
     expect(block).toContain('sansita-latin-ext-700-normal.woff2')
+  })
+  it('loads Geist Sans as a variable face, latin and latin-ext', () => {
+    const loader = readFileSync(fileURLToPath(new URL('./fonts.ts', import.meta.url)), 'utf8')
+    const line = loader.split('\n').find((text) => text.trimStart().startsWith("'geist': "))
+    expect(line, 'geist entry in fonts.ts').toBeDefined()
+    expect(line).toContain('variable(')
+    expect(line).toContain('@fontsource-variable/geist/files/geist-latin-wght-normal.woff2')
+    expect(line).toContain('@fontsource-variable/geist/files/geist-latin-ext-wght-normal.woff2')
   })
 })

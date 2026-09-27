@@ -25,6 +25,7 @@ const FACES: Record<string, Face[]> = {
   'noto-sans': variable(() => import('@fontsource-variable/noto-sans/files/noto-sans-latin-wght-normal.woff2?url'), () => import('@fontsource-variable/noto-sans/files/noto-sans-latin-ext-wght-normal.woff2?url')),
   'oswald': variable(() => import('@fontsource-variable/oswald/files/oswald-latin-wght-normal.woff2?url'), () => import('@fontsource-variable/oswald/files/oswald-latin-ext-wght-normal.woff2?url')),
   'cinzel': variable(() => import('@fontsource-variable/cinzel/files/cinzel-latin-wght-normal.woff2?url'), () => import('@fontsource-variable/cinzel/files/cinzel-latin-ext-wght-normal.woff2?url')),
+  'geist': variable(() => import('@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?url'), () => import('@fontsource-variable/geist/files/geist-latin-ext-wght-normal.woff2?url')),
   'playfair-display': variable(() => import('@fontsource-variable/playfair-display/files/playfair-display-latin-wght-normal.woff2?url'), () => import('@fontsource-variable/playfair-display/files/playfair-display-latin-ext-wght-normal.woff2?url')),
   'poppins': [
     { weight: '400', latin: () => import('@fontsource/poppins/files/poppins-latin-400-normal.woff2?url'), latinExt: () => import('@fontsource/poppins/files/poppins-latin-ext-400-normal.woff2?url') },

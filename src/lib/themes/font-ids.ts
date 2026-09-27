@@ -28,6 +28,7 @@ export const THEME_FONTS: Record<string, ThemeFontSpec> = {
   cinzel: { family: 'izumi Cinzel', fallback: 'Georgia, serif' },
   'playfair-display': { family: 'izumi Playfair Display', fallback: 'Georgia, serif' },
   sansita: { family: 'izumi Sansita', fallback: 'sans-serif' },
+  geist: { family: 'izumi Geist', fallback: 'sans-serif' },
 }
 /** Fonts fonts.ts loads on demand (everything except the system stacks and the always-loaded app fonts). */
 export const BUNDLED_FONT_IDS: readonly string[] = Object.keys(THEME_FONTS).filter(id => !['system', 'serif', 'nunito', 'geist-mono'].includes(id))
