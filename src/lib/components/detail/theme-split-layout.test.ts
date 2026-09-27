@@ -53,7 +53,8 @@ describe('themed series page composition', () => {
     expect(list).toContain('episode-scale')
     expect(list).toContain('episode-order-flip')
     expect(list).toContain('episode-load-in')
-    expect(detail).toContain("detailTheme.episodes?.order === 'flip'")
+    // A flip theme's release timing follows the tested gutter rule (toolbar-plan.ts `flipInGutter`).
+    expect(detail).toContain('flipInGutter({ ...detailTheme.episodes')
     expect(detail).toContain('pt-[7.5rem]')
     expect(detail).toContain("detailTheme.bannerScale === 'banner' ? 'md:pt-12'")
     expect(list).not.toContain('episode-rail-flip')

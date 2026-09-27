@@ -79,6 +79,7 @@
   import FactList from './FactList.svelte'
   import AiringCountdown from './AiringCountdown.svelte'
   import { playableThrough } from './episode-tile'
+  import { flipInGutter } from './toolbar-plan'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -284,6 +285,8 @@
   const countdown = $derived(detailTheme.countdown ?? 'none')
   const downloadedEpisodes = (m: Media) => Object.values($downloads)
     .filter((d) => d.mediaId === m.id && d.status === 'done').map((d) => d.episode).sort((a, b) => a - b)
+  // The episodes the list shows (EpisodeList's own rule): the downloaded ones offline.
+  const listEpisodes = (m: Media) => ($offlineMode ? downloadedEpisodes(m) : animeEpisodeNumbers(m))
   const overlayDetail = $derived(detailTheme.layout === 'overlay')
   const bannerOverlap = $derived(detailTheme.bannerHeight ? Math.round(detailTheme.bannerHeight * 0.58) : (controllerUi ? 16 : 18))
   const sideEpisodes = $derived(episodesOnSide($themePresentation, !$isMobile))
@@ -299,7 +302,10 @@
   // while the episodes are on the page: with another tab open, the header keeps its Play button.
   const headerCtaHidden = $derived(media != null && $isMobile && detailTheme.continue === 'card'
     && episodesOnPage(mobileTabs, shownTab(mobileTabs), !episodeTabbed)
-    && playableThrough($offlineMode ? downloadedEpisodes(media) : animeEpisodeNumbers(media), airedCount(media), $offlineMode) > 0)
+    && playableThrough(listEpisodes(media), airedCount(media), $offlineMode) > 0)
+  // A flip order drawn as the round button in the list's gutter (beside a right-hand rail, or with
+  // izumi's own toolbar) leaves no toolbar line for release timing, so the info column shows it.
+  const flipGutter = $derived(media != null && flipInGutter({ ...detailTheme.episodes, total: listEpisodes(media).length, phone: $isMobile, rail: sideEpisodes }))
 
   // A TV request already chose the title/episode. Once its detail data is ready, open the same
   // source picker as a local Play press; selecting (or auto-selecting) a source then consumes the
@@ -863,9 +869,9 @@
         {/if}
         {#if countdown !== 'none'}<AiringCountdown media={m} variant={countdown} className="mb-3" />{/if}
 
-        <!-- Only a right-hand rail keeps the round flip button, and with it no toolbar line for release
-             timing; everywhere else the episode controls show it. -->
-        {#if detailTheme.episodes?.order === 'flip' && sideEpisodes}
+        <!-- Where a flip order is the round gutter button there is no toolbar line for release timing
+             (toolbar-plan.ts); everywhere else the episode controls show it. -->
+        {#if flipGutter}
           <div class="mb-3 flex flex-wrap items-center gap-2 empty:mb-0">
             <AiringStatus media={m} />
           </div>

@@ -17,7 +17,9 @@ describe('continue card', () => {
   })
   it('lets the card take the phone Play button once an episode can play', () => {
     expect(detail).toContain("detailTheme.continue === 'card'")
-    expect(detail).toContain('playableThrough($offlineMode ? downloadedEpisodes(media) : animeEpisodeNumbers(media), airedCount(media), $offlineMode) > 0')
+    // `listEpisodes` is the list's own numbers (downloaded ones offline), shared with the flip rule.
+    expect(detail).toContain('const listEpisodes = (m: Media) => ($offlineMode ? downloadedEpisodes(m) : animeEpisodeNumbers(m))')
+    expect(detail).toContain('playableThrough(listEpisodes(media), airedCount(media), $offlineMode) > 0')
     expect(detail.match(/\{#if !headerCtaHidden\}/g)?.length).toBe(2)
     expect(detail.match(/onpointerenter=\{\(\) => prefetchEpisodeSources\(m, ctaEp\(m\)\)\}/g)).toHaveLength(4)
   })

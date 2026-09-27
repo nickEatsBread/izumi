@@ -91,9 +91,6 @@
   // A theme's grid or carousel arrangement draws cards whatever the layout setting says, so the
   // cards/numbers switch would do nothing there.
   const layoutSwitch = $derived(episodeTheme?.arrangement !== 'grid' && episodeTheme?.arrangement !== 'carousel')
-  // Beside a desktop right-hand rail the flip button keeps its round gutter; everywhere else a flip
-  // sort sits inside the toolbar.
-  const railGutter = $derived(flipOrder && episodesOnSide($themePresentation, !$isMobile))
   const PER = $derived(pageSizeFor(total, episodeTheme?.pageSize))
   // `page` stays null until the user manually pages; until then we show `autoPage` — the page that
   // holds the next episode to watch — so opening a long-running series (One Piece) lands on where
@@ -270,6 +267,8 @@
   const airedList = $derived(Array.from({ length: aired }, (_, i) => i + 1))
   const subscription = $derived($autoDownloadRules.find((rule) => rule.mediaId === media.id))
   // Any toolbar key composes the theme's toolbar (EpisodeToolbar.svelte); without one izumi's own stays.
+  // A flip order is the round button in the list's gutter on desktop beside a right-hand rail, and with
+  // izumi's own toolbar (`plan.gutter`); inside the theme's toolbar elsewhere it is one toggle.
   const plan = $derived(planEpisodeToolbar({
     order: episodeTheme?.order,
     search: episodeTheme?.search,
@@ -283,7 +282,7 @@
     queueEnabled: $episodeQueueEnabled,
     selecting,
     total,
-    railGutter,
+    rail: episodesOnSide($themePresentation, !$isMobile),
   }))
   // API 3 `detail.episodes.seasons`: this title's seasons above the list, from the AniList
   // prequel/sequel chain (cached per title, so moving between seasons does not walk it again).
@@ -371,7 +370,7 @@
 
 {#if total > 0}
 <div data-slot="detail.episodes" class="relative">
-  {#if railGutter && aired > 0}
+  {#if plan.gutter && aired > 0}
     <button type="button" data-focusable class="episode-order-flip" data-part="episodes.sort" data-variant="flip" data-dir={sortDir} onclick={flipSort}
             title={sortDir === 'asc' ? 'Show newest first' : 'Show oldest first'}
             aria-label={sortDir === 'asc' ? 'Show newest first' : 'Show oldest first'}>
@@ -401,7 +400,7 @@
                       queueLabel={queuedNotice ? m.lists_queued_episode({ episode: nextQueueEpisode }) : m.lists_add_queue()}
                       queueTitle={`${m.lists_add_queue()} — Episode ${nextQueueEpisode}`}
                       lead={seasonsInHeader ? seasonLead : undefined} />
-      {#if !$isMobile && !selecting && !railGutter}
+      {#if !$isMobile && !selecting && !plan.gutter}
         <!-- Release timing stays with the desktop episode controls, as in izumi's own bar. -->
         <div class="-mt-2 mb-3 flex flex-wrap items-center gap-3"><AiringStatus {media} toolbar /></div>
       {/if}

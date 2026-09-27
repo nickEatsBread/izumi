@@ -14,7 +14,8 @@ describe('themed episode toolbar', () => {
     expect(list).toContain('<EpisodeToolbar {plan}')
     expect(list).toContain("const dir = $derived<SortDir>(episodeTheme?.order === 'none' ? 'asc' : sortDir)")
     expect(list).toContain('const rows = $derived(searchedEpisodes ? eps : orderEpisodes(eps, dir))')
-    expect(list).toContain('{#if railGutter && aired > 0}')
+    // The gutter decision moved into the tested plan (`plan.gutter`, toolbar-plan.ts).
+    expect(list).toContain('{#if plan.gutter && aired > 0}')
     expect(list).toContain('{#if !selecting && !offline && !plan.composed}')
     expect(list).toContain('{#if selecting || !plan.composed}')
     expect(list).toContain("const pagerShown = $derived(episodeTheme?.paging !== 'ranges' && !(episodeTheme?.paging === 'dropdown' && aired > 0))")
@@ -30,7 +31,19 @@ describe('themed episode toolbar', () => {
     expect(bar).toContain('{#each plan.inline as item (item)}')
     expect(bar).toContain('{#each plan.menu as item (item)}')
   })
-  it('keeps the release timing beside a right-hand rail flip only', () => {
-    expect(detail).toContain("{#if detailTheme.episodes?.order === 'flip' && sideEpisodes}")
+  // Wherever the flip is the round gutter button (beside a right-hand rail, or with izumi's own
+  // toolbar, as before API 3), izumi's toolbar line for release timing is gone, so the info column
+  // shows it. The rule is the plan's (toolbar-plan.test.ts); a themed toolbar elsewhere shows it.
+  it('keeps the release timing in the info column wherever the flip sits in the gutter', () => {
+    expect(detail).toContain("import { flipInGutter } from './toolbar-plan'")
+    expect(detail).toContain('const flipGutter = $derived(media != null && flipInGutter({ ...detailTheme.episodes, total: listEpisodes(media).length, phone: $isMobile, rail: sideEpisodes }))')
+    expect(detail).toContain('{#if flipGutter}')
+    expect(detail).not.toContain("{#if detailTheme.episodes?.order === 'flip' && sideEpisodes}")
+    expect(list).toContain('{#if !$isMobile && !selecting && !plan.gutter}')
+  })
+  it('keeps the legacy flip path for a theme that sets only the order', () => {
+    expect(list).toContain('rail: episodesOnSide($themePresentation, !$isMobile),')
+    expect(list).toContain('{:else if flipOrder && !$isMobile && !selecting}')
+    expect(list).not.toContain('railGutter')
   })
 })
