@@ -116,7 +116,8 @@ export interface InstalledExtensionPackage {
 export interface JvmSourceFilter {
   name: string
   type: 'Header' | 'Separator' | 'CheckBox' | 'TriState' | 'Select' | 'Group' | 'Sort' | 'Text' | 'Unknown'
-  state: unknown
+  /** Absent in a search request when the user left this filter at the source's default. */
+  state?: unknown
   values?: string[] | null
 }
 
