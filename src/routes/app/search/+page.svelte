@@ -8,7 +8,7 @@
   import { anilistDegradedBannerVisible } from '$lib/anilist/degraded'
   import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
   import { page } from '$app/state'
-  import { afterNavigate, replaceState } from '$app/navigation'
+  import { afterNavigate, beforeNavigate, replaceState } from '$app/navigation'
   import type { Snapshot } from './$types'
   import {
     CATALOG_SELECTIONS,
@@ -69,6 +69,20 @@
     }
   })
 
+  // The provider catalog search page (CatalogSearchPage) reads the URL once, when it mounts, so a
+  // link that names another genre or sort while it is open re-mounts it on the new URL (in
+  // afterNavigate below). "Another" is judged against the address bar just before the navigation:
+  // that page mirrors its filters there with replaceState, which neither `page.url` nor
+  // `navigation.from` follows.
+  let catalogSearchKey = $state(0)
+  let shownGenre = sp.get('genre') ?? undefined
+  let shownSort = sp.get('sort') ?? undefined
+  beforeNavigate(() => {
+    const live = new URLSearchParams(location.search)
+    shownGenre = live.get('genre') ?? undefined
+    shownSort = live.get('sort') ?? undefined
+  })
+
   // TopSearchField can submit `?search=` while already on this route — a same-route navigation
   // that does not recreate this component, so the one-time `seed` read above never sees it, and
   // typing a new query in the top bar appeared to do nothing. afterNavigate fires on every
@@ -87,9 +101,13 @@
     // uses replaceState, which does not come through here.
     const urlGenre = params.get('genre') ?? undefined
     const urlSort = params.get('sort') ?? undefined
+    const linked = navigation.type === 'link' || navigation.type === 'goto'
+    // On the merged catalog such a link also names the catalog it filters in.
+    const urlScope = params.get('provider') as CatalogSelection | null
+    if (linked && $catalogScreen === 'merged' && urlScope && urlScope !== mergedScope && mergedSelections.includes(urlScope)) mergedScope = urlScope
+    if (linked && (urlGenre || urlSort) && (urlGenre !== shownGenre || urlSort !== shownSort)) catalogSearchKey += 1
     const currentGenre = filters.genres?.length === 1 ? filters.genres[0] : undefined
-    if ((navigation.type === 'link' || navigation.type === 'goto') && (urlGenre || urlSort)
-        && (urlGenre !== currentGenre || urlSort !== filters.sort)) {
+    if (linked && (urlGenre || urlSort) && (urlGenre !== currentGenre || urlSort !== filters.sort)) {
       const next: SearchFilters = { search: urlSearch, sort: urlSort, genres: urlGenre ? [urlGenre] : undefined }
       filters = next
       debounced = { ...next }
@@ -222,7 +240,7 @@
   {#if mergedScope === 'all'}
     <MergedCatalogSearchPage bind:query={mergedQuery} />
   {:else if !isLegacyAniListCatalog(mergedScope)}
-    <CatalogSearchPage selection={mergedScope} embedded onQueryChange={(value) => (mergedQuery = value)} />
+    {#key catalogSearchKey}<CatalogSearchPage selection={mergedScope} embedded onQueryChange={(value) => (mergedQuery = value)} />{/key}
   {:else}
     <div class="p-4 pt-5 sm:px-8" data-slot="search" data-variant="anilist-scope">
       <FilterBar bind:filters />
@@ -232,7 +250,7 @@
     </div>
   {/if}
 {:else if !legacyCatalog}
-  <CatalogSearchPage />
+  {#key catalogSearchKey}<CatalogSearchPage />{/key}
 {:else}
   <!-- Normal padding clears the mobile edge/titlebar. While the fixed degraded strip exists, add
        its 1.75rem height as well so it cannot cover the browse controls. -->

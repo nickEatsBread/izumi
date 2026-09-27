@@ -75,20 +75,63 @@ describe('top bar categories menu', () => {
     expect(menu).toContain('data-slot="nav.categories"')
     expect(menu).toContain('data-part="nav.categories.heading"')
     expect(menu.match(/data-part="nav\.categories\.link"/g)?.length).toBe(3)
-    expect(menu).toContain('href={`/app/search?genre=${encodeURIComponent(genre)}`}')
-    expect(menu).toContain('href="/app/search?sort=POPULARITY_DESC"')
+    // The links follow the catalog on screen (categories.ts: a merged scope, AniList-only sorts).
+    expect(menu).toContain('const target = $derived(categoriesCatalog($catalogScreen, $catalogProviders))')
+    expect(menu).toContain('href={genreHref(target, genre)}')
+    expect(menu).toContain('href={browseAllHref(target)}')
     expect(menu).toContain('href="/app/schedule"')
-    expect(menu).toContain('loadGenres(target)')
-    expect(menu).toContain("event.key === 'Escape'")
+    expect(menu).toContain('loadGenres(catalog)')
     expect(menu).toContain('use:portal')
-    expect(menu).toContain('rootZoom()')
     expect(menu).toContain("$showAdult || genre.toLowerCase() !== 'hentai'")
+  })
+
+  it('is a labelled panel of links that a controller enters, and leaves with B', () => {
+    const menu = read('./CategoriesMenu.svelte')
+    // Not an ARIA menu: its keyboard model (arrow keys, typeahead) is not implemented.
+    expect(menu).not.toContain('role="menu')
+    expect(menu).not.toContain('aria-haspopup')
+    expect(menu).toContain('<nav use:portal bind:this={panel} data-slot="nav.categories" aria-label="Categories" data-nav-trap data-nav-escape')
+    // Like the menu drawer: opening moves focus in; Escape (B on a controller) closes and returns it.
+    expect(menu).toContain("if (open) panel?.querySelector<HTMLElement>('a, button')?.focus({ preventScroll: true })")
+    expect(menu).toContain("event.key === 'Escape'")
+    expect(menu).toContain('trigger?.focus({ preventScroll: true })')
+  })
+
+  it('asks for the genres again after a failed or empty load', () => {
+    const menu = read('./CategoriesMenu.svelte')
+    expect(menu).toContain("if (!list.length) requested = ''")
+    expect(menu).toContain(".catch(() => {\n        if (requested !== catalog) return\n        genres = []\n        requested = ''")
+  })
+
+  it('keeps the panel inside the window at its measured width', () => {
+    const menu = read('./CategoriesMenu.svelte')
+    expect(menu).toContain('categoriesPanelPlace(box, node.getBoundingClientRect().width, window.innerWidth, rootZoom())')
+    expect(menu).toContain('new ResizeObserver(measure)')
+    expect(menu).not.toContain('- 840')
   })
 
   it('lets a genre or sort link start a fresh search while search is open', () => {
     const search = read('../../../routes/app/search/+page.svelte')
     expect(search).toContain('afterNavigate((navigation) => {')
-    expect(search).toContain("(navigation.type === 'link' || navigation.type === 'goto') && (urlGenre || urlSort)")
+    expect(search).toContain("const linked = navigation.type === 'link' || navigation.type === 'goto'")
+    expect(search).toContain('if (linked && (urlGenre || urlSort) && (urlGenre !== currentGenre || urlSort !== filters.sort)) {')
     expect(search).toContain('genres: urlGenre ? [urlGenre] : undefined')
+  })
+
+  it('re-mounts a provider catalog search on a link with another genre or sort', () => {
+    // Those pages read the URL once. They mirror their filters into the address bar with
+    // replaceState, which `page.url` does not follow, so the comparison uses the live address as it
+    // stood just before the navigation.
+    const search = read('../../../routes/app/search/+page.svelte')
+    expect(search).toContain('beforeNavigate(() => {')
+    expect(search).toContain('const live = new URLSearchParams(location.search)')
+    expect(search).toContain('if (linked && (urlGenre || urlSort) && (urlGenre !== shownGenre || urlSort !== shownSort)) catalogSearchKey += 1')
+    expect(search.match(/\{#key catalogSearchKey\}<CatalogSearchPage /g)?.length).toBe(2)
+  })
+
+  it('opens the merged catalog scope a link names', () => {
+    const search = read('../../../routes/app/search/+page.svelte')
+    expect(search).toContain("const urlScope = params.get('provider') as CatalogSelection | null")
+    expect(search).toContain("if (linked && $catalogScreen === 'merged' && urlScope && urlScope !== mergedScope && mergedSelections.includes(urlScope)) mergedScope = urlScope")
   })
 })

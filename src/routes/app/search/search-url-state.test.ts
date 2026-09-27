@@ -10,7 +10,7 @@ const page = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.ur
 
 describe('search URL state', () => {
   it('mirrors the settled filters into the URL', () => {
-    expect(page).toContain("import { afterNavigate, replaceState } from '$app/navigation'")
+    expect(page).toContain("import { afterNavigate, beforeNavigate, replaceState } from '$app/navigation'")
     for (const param of ['search', 'sort', 'genre', 'season', 'year']) {
       expect(page).toContain(`params.set('${param}'`)
     }
