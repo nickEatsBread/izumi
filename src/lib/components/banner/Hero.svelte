@@ -3,7 +3,7 @@
   import { themePresentation } from '$lib/themes/runtime'
   import { resolveDetail, themeColorCss, type HeroIndicator } from '$lib/themes/presentation'
   import { mediaDisplayModel } from '$lib/themes/host-model'
-  import { loadTitleExtras, primeTitleExtras, templateNeeds, type TitleExtras } from '$lib/themes/title-extras'
+  import { artNeeds, loadTitleExtras, metaNeeds, primeTitleExtras, templateNeeds, type TitleExtras } from '$lib/themes/title-extras'
   import { sampleAmbient } from '$lib/themes/ambient'
   import { themeCssStatus } from '$lib/theme'
   import { motionPreference } from '$lib/settings/ui'
@@ -74,9 +74,13 @@
   const indicatorColor = $derived(themeColorCss(indicator.color))
 
   // The artwork a slide paints: the custom theme hero binds both artworks, the stock layouts one.
+  // A template also paints the key art and logo it binds, once they have loaded for that slide.
   function slideArtwork(m: Media | undefined): string[] {
     if (!m) return []
-    if (heroTheme?.template) return [banner(m), cover(m)]
+    if (heroTheme?.template) {
+      const art = heroArt[extrasKey(m.id)]
+      return [banner(m), cover(m), ...[art?.keyart, art?.logo].filter((src): src is string => !!src)]
+    }
     return [artworkMode === 'cover' || ($isMobile && showOverlay) ? cover(m) : banner(m)]
   }
   // A slide is committed only once its artwork has decoded (see hero-slides.ts): swapping first and
@@ -292,25 +296,54 @@
     if (!failedLogos.includes(src)) failedLogos = [...failedLogos, src]
   }
   // API 3 extras the hero template binds (key art, a logo, the age rating, audio): loaded for every
-  // slide, the current one first, and nothing at all for a template that binds none.
+  // slide, the current one first, and nothing at all for a template that binds none. The artwork
+  // and the rate-limited rating and audio lookups load separately, so a slide never waits on those.
   const heroNeeds = $derived(templateNeeds(heroTheme?.template))
-  let extras = $state<Record<number, TitleExtras>>({})
+  // The loader keys on primitives. Home builds a new slide array on every catalog emission and
+  // `heroNeeds` is a new Set whenever the theme recomputes; re-running on those identities asked
+  // for every slide again.
+  const heroNeedsKey = $derived([...heroNeeds].sort().join(','))
+  const heroIds = $derived(medias.map((media) => media.id).join(','))
+  // Results per extras set and title, so a theme that binds more extras loads them again.
+  const extrasKey = (id: number) => `${heroNeedsKey}|${id}`
+  let heroArt = $state<Record<string, TitleExtras>>({})
+  let heroMeta = $state<Record<string, TitleExtras>>({})
+  // What has been asked for. A plain Set, not $state: the effect below both reads and writes it.
+  // Nothing drops a result on teardown: one for a slide no longer shown is simply unused.
+  const requestedExtras = new Set<string>()
   $effect(() => {
-    const needs = heroNeeds
-    const list = medias
-    if (!needs.size || !list.length) return
-    let cancelled = false
-    primeTitleExtras(list, needs)
-    const first = Math.min(untrack(() => i), list.length - 1)
+    const needsKey = heroNeedsKey
+    void heroIds
+    if (!needsKey) return
+    const needs = untrack(() => heroNeeds)
+    const list = untrack(() => medias)
+    const first = Math.min(untrack(() => i), Math.max(0, list.length - 1))
+    const fresh: Media[] = []
     for (const media of [...list.slice(first), ...list.slice(0, first)]) {
-      if (untrack(() => extras[media.id])) continue
-      void loadTitleExtras(media, needs).then((value) => {
-        if (!cancelled) extras = { ...extras, [media.id]: value }
-      })
+      const key = `${needsKey}|${media.id}`
+      if (requestedExtras.has(key)) continue
+      requestedExtras.add(key)
+      fresh.push(media)
     }
-    return () => { cancelled = true }
+    if (!fresh.length) return
+    // Before the per-slide loads: their audio lookups wait for this batch.
+    primeTitleExtras(fresh, needs)
+    const art = artNeeds(needs)
+    const meta = metaNeeds(needs)
+    for (const media of fresh) {
+      const key = `${needsKey}|${media.id}`
+      if (art.size) {
+        void loadTitleExtras(media, art).then((value) => {
+          heroArt = { ...heroArt, [key]: value }
+          // The neighbours' warm-up picks up artwork that arrived after it ran.
+          scheduleWarm()
+        })
+      }
+      if (meta.size) void loadTitleExtras(media, meta).then((value) => { heroMeta = { ...heroMeta, [key]: value } })
+    }
   })
-  const currentExtras = $derived(current ? extras[current.id] : undefined)
+  const currentArt = $derived(current ? heroArt[extrasKey(current.id)] : undefined)
+  const currentExtras = $derived(current ? { ...heroMeta[extrasKey(current.id)], ...currentArt } : undefined)
   // A template that shows key art or a logo waits up to 1.5 s for them, so the slide does not
   // flash the catalog banner and the text title before swapping.
   const heroArtNeeded = $derived(heroNeeds.has('keyart') || heroNeeds.has('logo'))
@@ -321,10 +354,12 @@
     const timer = setTimeout(() => (extrasWaitOver = true), 1500)
     return () => clearTimeout(timer)
   })
-  const extrasPending = $derived(heroArtNeeded && !!current && !currentExtras && !extrasWaitOver)
+  const extrasPending = $derived(heroArtNeeded && !!current && !currentArt && !extrasWaitOver)
   // API 3 `scale: "wide"` and `bleed` shape a template hero on wider windows; phones keep `mobileHeight`.
   const wideScale = $derived(!$isMobile && heroTheme?.scale === 'wide')
-  const heroBleed = $derived(!$isMobile && heroTheme?.template ? heroTheme.bleed ?? 0 : 0)
+  // Bleed belongs to the wide scale: the other scales do not add it to their height, so lifting the
+  // content above it would clip them.
+  const heroBleed = $derived(wideScale && heroTheme?.template ? heroTheme.bleed ?? 0 : 0)
   const artworkReady = $derived(loadedArtworkId === current?.id)
   const artworkSettled = () => { loadedArtworkId = current.id; scheduleWarm() }
   // Accent: tint everything off the cover's dominant color; theme fallback.
@@ -806,8 +841,10 @@
      its content, arrows and markers sit above that strip. Positioning the following siblings
      makes them paint over the artwork, which z-index 0 keeps in a stacking context of its own. */
   .theme-hero-bleed { z-index: 0; margin-bottom: calc(1.5rem - var(--hero-bleed)); }
-  .theme-hero-bleed ~ :global(*) { position: relative; }
-  .theme-hero-bleed :global(.theme-overlay > :not(img):not(.theme-artwork)) { padding-bottom: calc(1.75rem + var(--hero-bleed)); }
+  /* Zero specificity: a following sibling that positions itself (sticky, absolute) keeps its own. */
+  :global(:where(.theme-hero-bleed ~ *)) { position: relative; }
+  /* Only the template's top overlay is lifted, not overlays nested inside it. */
+  .theme-hero-bleed :global(.theme-template > .theme-overlay > :not(img):not(.theme-artwork)) { padding-bottom: calc(1.75rem + var(--hero-bleed)); }
   .theme-hero-bleed .hero-edge { top: calc((100% - var(--hero-bleed)) / 2); }
   .theme-hero-bleed .hero-indicator, .theme-hero-bleed .hero-pips { bottom: calc(0.75rem + var(--hero-bleed)); }
   .theme-custom-hero[data-pending] :global(.theme-template) { visibility: hidden; }

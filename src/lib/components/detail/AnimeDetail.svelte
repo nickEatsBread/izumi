@@ -72,7 +72,7 @@
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { mediaDisplayModel } from '$lib/themes/host-model'
   import { ambientFromHex } from '$lib/themes/ambient'
-  import { loadTitleExtras, templateNeeds, type TitleExtras } from '$lib/themes/title-extras'
+  import { artNeeds, loadTitleExtras, metaNeeds, templateNeeds, type TitleExtras } from '$lib/themes/title-extras'
   import { countryName, formatDate as fmtDate, prettyEnum } from '$lib/detail/facts'
   import FactList from './FactList.svelte'
   import AiringCountdown from './AiringCountdown.svelte'
@@ -220,17 +220,19 @@
   const detailTheme = $derived(resolveDetail($themePresentation))
   // The series' cover colour for theme stylesheets (`--cover-rgb`).
   const coverRgb = $derived(ambientFromHex(media?.coverImage?.color))
-  // API 3 extras the series page binds: key art (`detail.art`), the title logo (`detail.title`) and
-  // whatever the header template shows (an age rating, audio). Keyed by id so a refetch of the same
-  // series does not reload them.
+  // API 3 extras the series page binds: key art (`detail.art`, drawn by the overlay layouts only),
+  // the title logo (`detail.title`) and whatever the header template shows (an age rating, audio).
+  // Keyed by id so a refetch of the same series does not reload them.
   const detailNeeds = $derived.by(() => {
     const needs = templateNeeds(detailTheme.header)
-    if (detailTheme.art === 'keyart') needs.add('keyart')
+    if (detailTheme.art === 'keyart' && detailTheme.layout === 'overlay') needs.add('keyart')
     if (detailTheme.title === 'logo') needs.add('logo')
     return needs
   })
   const extrasId = $derived(media?.id)
   let detailExtras = $state<TitleExtras>({})
+  // Whether the artwork (key art, the logo) has arrived or is no longer waited for. The age rating
+  // and audio come from slower, rate-limited lookups and fill in whenever they land.
   let detailExtrasSettled = $state(true)
   let failedDetailLogo = $state('')
   $effect(() => {
@@ -240,22 +242,38 @@
     const target = untrack(() => media)
     detailExtras = {}
     if (id == null || !target || !needs.size || offline) { detailExtrasSettled = true; return }
-    detailExtrasSettled = false
+    const art = artNeeds(needs)
+    const meta = metaNeeds(needs)
+    detailExtrasSettled = !art.size
     let cancelled = false
     // Key art and logos wait up to 1.2 s so the page does not swap banner → key art, text → logo.
-    const timer = setTimeout(() => { if (!cancelled) detailExtrasSettled = true }, 1200)
-    void loadTitleExtras(target, needs).then((value) => {
-      if (cancelled) return
-      detailExtras = value
-      detailExtrasSettled = true
-    })
+    const timer = art.size ? setTimeout(() => { if (!cancelled) detailExtrasSettled = true }, 1200) : undefined
+    if (art.size) {
+      void loadTitleExtras(target, art).then((value) => {
+        if (cancelled) return
+        detailExtras = { ...detailExtras, ...value }
+        detailExtrasSettled = true
+      })
+    }
+    if (meta.size) {
+      void loadTitleExtras(target, meta).then((value) => {
+        if (!cancelled) detailExtras = { ...detailExtras, ...value }
+      })
+    }
     return () => { cancelled = true; clearTimeout(timer) }
   })
-  const overlayBackdrop = $derived(media
-    ? detailTheme.art === 'keyart'
-      ? (detailExtrasSettled ? detailExtras.keyart || media.bannerImage || '' : '')
-      : media.bannerImage || ''
-    : '')
+  // Overlay artwork that failed to load. The next candidate takes its place: key art, then the
+  // banner, then the blurred cover.
+  let failedBackdrops = $state<string[]>([])
+  const backdropFailed = (src: string | null) => {
+    if (src && !failedBackdrops.includes(src)) failedBackdrops = [...failedBackdrops, src]
+  }
+  const overlayBackdrop = $derived.by(() => {
+    if (!media) return ''
+    if (detailTheme.art === 'keyart' && !detailExtrasSettled) return ''
+    const candidates = detailTheme.art === 'keyart' ? [detailExtras.keyart, media.bannerImage] : [media.bannerImage]
+    return candidates.find((src): src is string => !!src && !failedBackdrops.includes(src)) ?? ''
+  })
   const overlayArtWaiting = $derived(detailTheme.art === 'keyart' && !detailExtrasSettled)
   const detailLogo = $derived(detailTheme.title === 'logo' && detailExtras.logo && detailExtras.logo !== failedDetailLogo ? detailExtras.logo : '')
   const factsStyle = $derived(detailTheme.factsStyle ?? 'template')
@@ -523,6 +541,7 @@
       <div data-slot="detail.banner" bind:clientHeight={artHeight} class="relative min-h-[56vh] w-full overflow-hidden">
         {#if overlayBackdrop}
           <img data-part="detail.backdrop" src={overlayBackdrop} alt="" onload={() => (artLoaded = true)}
+               onerror={(event) => backdropFailed(event.currentTarget.getAttribute('src'))}
                class="absolute inset-0 h-full w-full object-cover transition-opacity duration-500 {artLoaded ? 'opacity-100' : 'opacity-0'}"
                style="object-position:center 20%" />
         {:else if !overlayArtWaiting}
@@ -838,7 +857,8 @@
   {:else if overlayDetail}
     <section data-slot="detail" data-layout="overlay" data-variant="desktop" style:--cover-rgb={coverRgb} class="relative isolate min-h-[72vh] w-full overflow-hidden" data-theme-surface="detail-overlay">
       {#if overlayBackdrop}
-        <img data-part="detail.backdrop" src={overlayBackdrop} alt="" class="absolute inset-0 h-full w-full object-cover" style="object-position:center 20%" />
+        <img data-part="detail.backdrop" src={overlayBackdrop} alt="" onerror={(event) => backdropFailed(event.currentTarget.getAttribute('src'))}
+             class="absolute inset-0 h-full w-full object-cover" style="object-position:center 20%" />
       {:else if !overlayArtWaiting}
         <img data-part="detail.backdrop" src={cover(m)} alt="" class="absolute inset-0 h-full w-full scale-110 object-cover blur-2xl opacity-60" />
       {/if}
@@ -1159,7 +1179,8 @@
 {/snippet}
 
 <!-- The series title: the title logo when the theme asks for it (API 3 `detail.title: "logo"`) and
-     the title has one, else the text. While the logo may still arrive the text stays invisible. -->
+     the title has one, else the text. While the logo may still arrive the text is transparent, not
+     hidden, so screen readers still read the title. -->
 {#snippet seriesTitle(m: Media, className: string)}
   {#if detailLogo}
     <h1 data-part="detail.title" aria-label={title(m)} class={className}>
@@ -1167,6 +1188,6 @@
            class="block max-h-44 w-auto max-w-[min(26rem,85%)] object-contain object-left-bottom" />
     </h1>
   {:else}
-    <h1 data-part="detail.title" class="{className} {detailTheme.title === 'logo' && !detailExtrasSettled ? 'invisible' : ''}">{title(m)}</h1>
+    <h1 data-part="detail.title" class="{className} {detailTheme.title === 'logo' && !detailExtrasSettled ? 'opacity-0' : ''}">{title(m)}</h1>
   {/if}
 {/snippet}
