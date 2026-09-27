@@ -3,6 +3,7 @@
   import { themePresentation } from '$lib/themes/runtime'
   import { resolveDetail, themeColorCss, type HeroIndicator } from '$lib/themes/presentation'
   import { mediaDisplayModel } from '$lib/themes/host-model'
+  import { loadTitleExtras, primeTitleExtras, templateNeeds, type TitleExtras } from '$lib/themes/title-extras'
   import { sampleAmbient } from '$lib/themes/ambient'
   import { themeCssStatus } from '$lib/theme'
   import { motionPreference } from '$lib/settings/ui'
@@ -290,6 +291,40 @@
     const src = (event.currentTarget as HTMLImageElement).src
     if (!failedLogos.includes(src)) failedLogos = [...failedLogos, src]
   }
+  // API 3 extras the hero template binds (key art, a logo, the age rating, audio): loaded for every
+  // slide, the current one first, and nothing at all for a template that binds none.
+  const heroNeeds = $derived(templateNeeds(heroTheme?.template))
+  let extras = $state<Record<number, TitleExtras>>({})
+  $effect(() => {
+    const needs = heroNeeds
+    const list = medias
+    if (!needs.size || !list.length) return
+    let cancelled = false
+    primeTitleExtras(list, needs)
+    const first = Math.min(untrack(() => i), list.length - 1)
+    for (const media of [...list.slice(first), ...list.slice(0, first)]) {
+      if (untrack(() => extras[media.id])) continue
+      void loadTitleExtras(media, needs).then((value) => {
+        if (!cancelled) extras = { ...extras, [media.id]: value }
+      })
+    }
+    return () => { cancelled = true }
+  })
+  const currentExtras = $derived(current ? extras[current.id] : undefined)
+  // A template that shows key art or a logo waits up to 1.5 s for them, so the slide does not
+  // flash the catalog banner and the text title before swapping.
+  const heroArtNeeded = $derived(heroNeeds.has('keyart') || heroNeeds.has('logo'))
+  let extrasWaitOver = $state(false)
+  $effect(() => {
+    void current?.id
+    extrasWaitOver = false
+    const timer = setTimeout(() => (extrasWaitOver = true), 1500)
+    return () => clearTimeout(timer)
+  })
+  const extrasPending = $derived(heroArtNeeded && !!current && !currentExtras && !extrasWaitOver)
+  // API 3 `scale: "wide"` and `bleed` shape a template hero on wider windows; phones keep `mobileHeight`.
+  const wideScale = $derived(!$isMobile && heroTheme?.scale === 'wide')
+  const heroBleed = $derived(!$isMobile && heroTheme?.template ? heroTheme.bleed ?? 0 : 0)
   const artworkReady = $derived(loadedArtworkId === current?.id)
   const artworkSettled = () => { loadedArtworkId = current.id; scheduleWarm() }
   // Accent: tint everything off the cover's dominant color; theme fallback.
@@ -326,7 +361,9 @@
   const cleanDesc = (d?: string) => (d ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
   const themeModel = $derived(current ? mediaDisplayModel(current, {
     description: cleanDesc(current.description), rank: featuredRankLabel,
-    rankPosition: current.featuredRank?.position, poster: cover(current), backdrop: banner(current), logo: currentLogo || undefined,
+    rankPosition: current.featuredRank?.position, poster: cover(current), backdrop: banner(current),
+    logo: currentLogo || currentExtras?.logo || undefined,
+    keyart: currentExtras?.keyart, ageRating: currentExtras?.ageRating, audio: currentExtras?.audio,
     slide: i + 1, slides: medias.length,
   }, 0, clock) : {})
   // Home hero only, and only while a theme stylesheet is applied: publish the current artwork's colour so the theme can tint the page behind it.
@@ -362,18 +399,18 @@
         <span data-part="hero.counter" class="rounded-full border border-white/15 bg-black/55 px-2.5 py-1 text-[0.68rem] tabular-nums font-black text-white shadow-lg backdrop-blur"><span style="color:var(--hero-ind)">{i + 1}</span><span class="text-white/60"> / {medias.length}</span></span>
       {:else}
         {#each medias as _, idx (idx)}
-          <button data-part="hero.dot" data-active={idx === i || undefined} type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined} onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`} aria-current={idx === i ? 'true' : undefined}
+          <button data-part="hero.dot" data-active={idx === i || undefined} data-past={idx < i || undefined} type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined} onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`} aria-current={idx === i ? 'true' : undefined}
                   class="pointer-events-auto relative block before:absolute before:-inset-x-1.5 before:-inset-y-3 before:content-['']">
-            <span class="block overflow-hidden rounded-full transition-all duration-300
+            <span data-part="hero.dot.track" class="block overflow-hidden rounded-full transition-all duration-300
               {kind === 'bars' ? `h-1 bg-white/25 ${idx === i ? 'w-10' : 'w-5'}` : ''}
               {kind === 'dots' ? `size-1.5 ${idx === i ? '' : 'bg-white/40'}` : ''}
               {kind === 'pills' ? `h-1.5 ${idx === i ? 'w-5' : 'w-1.5 bg-white/40'}` : ''}"
               style:background={kind !== 'bars' && idx === i ? 'var(--hero-ind)' : undefined}>
               {#if kind === 'bars'}
                 {#if idx === i}
-                  {#key cycle}<span class="hero-progress block h-full" style="background:var(--hero-ind)"></span>{/key}
+                  {#key cycle}<span data-part="hero.dot.fill" class="hero-progress block h-full" style="background:var(--hero-ind)"></span>{/key}
                 {:else}
-                  <span class="block h-full origin-left" style="transform:scaleX({idx < i ? 1 : 0});background:var(--hero-ind)"></span>
+                  <span data-part="hero.dot.fill" class="block h-full origin-left" style="transform:scaleX({idx < i && indicator.past !== 'empty' ? 1 : 0});background:var(--hero-ind)"></span>
                 {/if}
               {/if}
             </span>
@@ -386,7 +423,7 @@
 
 {#if current && !heroTheme?.hidden}
   {#if heroTheme?.template}
-    <section data-slot="home.hero" data-variant="template" data-nav-row data-theme-hero aria-label="Featured" class="theme-custom-hero" class:theme-banner-scale={bannerScale} class:cursor-grab={$dragCarousels && medias.length > 1} class:cursor-grabbing={heroDragging} style:height={bannerScale ? undefined : `${($isMobile ? heroTheme.mobileHeight : heroTheme.height) ?? 46}vh`} style:--theme-hero-interval={`${DURATION}ms`} ontouchstart={onTouchStart} ontouchend={onTouchEnd} onpointerdown={onHeroPointerDown} onpointermove={onHeroPointerMove} onpointerup={(e) => endHeroPointer(e, true)} onpointercancel={(e) => endHeroPointer(e, false)} onwheel={onHeroWheel}>
+    <section data-slot="home.hero" data-variant="template" data-nav-row data-theme-hero aria-label="Featured" class="theme-custom-hero" class:theme-banner-scale={bannerScale} class:theme-wide-scale={wideScale} class:theme-hero-bleed={heroBleed > 0} data-pending={extrasPending || undefined} class:cursor-grab={$dragCarousels && medias.length > 1} class:cursor-grabbing={heroDragging} style:height={bannerScale || wideScale ? undefined : `${($isMobile ? heroTheme.mobileHeight : heroTheme.height) ?? 46}vh`} style:--hero-bleed={heroBleed > 0 ? `${heroBleed}px` : undefined} style:--theme-hero-interval={`${DURATION}ms`} ontouchstart={onTouchStart} ontouchend={onTouchEnd} onpointerdown={onHeroPointerDown} onpointermove={onHeroPointerMove} onpointerup={(e) => endHeroPointer(e, true)} onpointercancel={(e) => endHeroPointer(e, false)} onwheel={onHeroWheel}>
       <ThemeNode node={heroTheme.template} model={themeModel} eager titleHeading actions={{
         details: oninfo ? () => themeAction(() => { rememberDetail(current); oninfo?.(current) }) : undefined,
         play: onplay ? () => themeAction(() => { rememberDetail(current); onplay?.(current) }) : undefined,
@@ -756,6 +793,24 @@
     border: 0;
     line-height: 0;
   }
+  /* API 3 `scale: "wide"`: the banner is the 16:9 artwork box, as streaming sites size their
+     carousels; short or very wide windows are capped. */
+  .theme-custom-hero.theme-wide-scale {
+    height: auto !important;
+    aspect-ratio: 16 / 9;
+    min-height: calc(24rem + var(--hero-bleed, 0px));
+    max-height: calc(85vh + var(--hero-bleed, 0px));
+  }
+  /* API 3 `bleed`: the bottom of the artwork runs under the rows that follow. The section keeps
+     its full height for the artwork and pulls the next rows up over its bottom `--hero-bleed`;
+     its content, arrows and markers sit above that strip. Positioning the following siblings
+     makes them paint over the artwork, which z-index 0 keeps in a stacking context of its own. */
+  .theme-hero-bleed { z-index: 0; margin-bottom: calc(1.5rem - var(--hero-bleed)); }
+  .theme-hero-bleed ~ :global(*) { position: relative; }
+  .theme-hero-bleed :global(.theme-overlay > :not(img):not(.theme-artwork)) { padding-bottom: calc(1.75rem + var(--hero-bleed)); }
+  .theme-hero-bleed .hero-edge { top: calc((100% - var(--hero-bleed)) / 2); }
+  .theme-hero-bleed .hero-indicator, .theme-hero-bleed .hero-pips { bottom: calc(0.75rem + var(--hero-bleed)); }
+  .theme-custom-hero[data-pending] :global(.theme-template) { visibility: hidden; }
   @keyframes hero-progress-fill {
     from { transform: scaleX(0); }
     to { transform: scaleX(1); }

@@ -103,6 +103,7 @@ State values:
 | Attribute | On | Values |
 |---|---|---|
 | `data-active` | `nav.item`, `hero.dot`, `tab`, `chip`, `page-number` | present when selected, absent otherwise |
+| `data-past` | `hero.dot` | present on the markers of slides before the current one |
 | `data-variant` | `home` | `offline`, `anilist`, `merged`, `catalog` |
 | `data-variant` | `home.hero` | `template`, `phone`, `desktop` (the desktop banner is `detail.banner` on a series page) |
 | `data-variant` | `hero.indicator` | `default`, `bars`, `dots`, `pills`, `counter` |
@@ -153,7 +154,9 @@ State values:
 | `hero.synopsis` | part | The description (desktop). |  |
 | `hero.actions` | part | The Watch, Details and Favorite buttons. |  |
 | `hero.indicator` | part | The slide marker row. | `data-variant` |
-| `hero.dot` | part | One slide marker. | `data-active` |
+| `hero.dot` | part | One slide marker. | `data-active`, `data-past` |
+| `hero.dot.track` | part | The drawn shape of a slide marker (its bar, dot or pill). |  |
+| `hero.dot.fill` | part | The timed fill inside a bar marker (indicator style `bars`). |  |
 | `hero.counter` | part | The `n / N` counter (indicator style `counter`). |  |
 | `row` | slot | A titled row or grid of cards, on Home and elsewhere. Home rows carry their stable id and role. | `data-row`, `data-role`, `data-layout` |
 | `row.header` | part | The row heading bar. |  |
