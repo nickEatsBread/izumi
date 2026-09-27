@@ -5,8 +5,8 @@
   // `cards` vs simple `compact` rows) follows the persisted Appearance setting;
   // per-episode thumbnails/titles/ratings come from AniZip.
   import { untrack } from 'svelte'
-  import { playEpisode, prefetchEpisodeSources, type PlayState } from '$lib/stremio/play'
-  import { airedCount } from '$lib/anilist/media'
+  import { playEpisode, prefetchEpisodeSources, resumeEpisode, type PlayState } from '$lib/stremio/play'
+  import { airedCount, cover } from '$lib/anilist/media'
   import { animeEpisodeNumbers, animeEpisodeMetadata, animeResumeEpisode, animeWatchedProgress } from '$lib/catalog/anime-detail'
   import { anilistIdOf } from '$lib/catalog/identity'
   import type { Media } from '$lib/anilist/types'
@@ -48,6 +48,7 @@
   import LayoutGrid from '@lucide/svelte/icons/layout-grid'
   import Rows3 from '@lucide/svelte/icons/rows-3'
   import ListPlus from '@lucide/svelte/icons/list-plus'
+  import Play from '@lucide/svelte/icons/play'
   import { enqueueEpisode } from '$lib/library/local-lists'
   import { m } from '$lib/paraglide/messages.js'
   import { themePresentation } from '$lib/themes/runtime'
@@ -216,6 +217,17 @@
     if (resolving) return
     intent(ep, 0)
     playEpisode(media, ep, (s) => (playState = s))
+  }
+  // API 3 `detail.continue: "card"`: the Continue card plays what the series Play button would,
+  // through the same resume path (the remembered source first).
+  const continueCard = $derived(resolveDetail($themePresentation).continue === 'card')
+  function continueWatching() {
+    if (resolving || aired < 1) return
+    h.impact('medium')
+    const target = ctaEpisode
+    intent(target, 0)
+    if (offline) playEpisode(media, target, (s) => (playState = s))
+    else resumeEpisode(media, target, (s) => (playState = s))
   }
   // Series-wide numbering is a Settings → Interface preference, not a control on this page. The
   // per-episode `abs` mapping is still loaded and still available to everything that needs it —
@@ -619,6 +631,30 @@
     {#if !selecting && subscription}
       <p class="mb-3 text-xs font-bold text-theme">Auto-download is watching for episode {subscription.nextEpisode}.</p>
     {/if}
+  {/if}
+
+  {#if continueCard && aired > 0 && !selecting}
+    {@const target = ctaEpisode}
+    {@const started = episodeBarPercent($positions[progressKey(media.id, target)], false, target <= aired)}
+    {@const percent = episodeBarPercent($positions[progressKey(media.id, target)], watchedThrough >= target, target <= aired)}
+    {@const shownTitle = $hideSpoilers && watchedThrough < target ? '' : meta[target]?.title ?? ''}
+    {@const art = meta[target]?.image || media.bannerImage || cover(media)}
+    <button type="button" data-part="episode.continue" data-filler={fillerSet.has(target) || undefined} data-focusable
+            onclick={continueWatching} onpointerenter={() => intent(target)} onfocus={() => intent(target)}
+            class="relative mb-4 block h-20 w-full overflow-hidden rounded-xl bg-secondary text-left">
+      {#if art}<img src={art} alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />{/if}
+      <span class="absolute inset-0 bg-black/60"></span>
+      <span class="relative flex h-full items-center gap-3 px-4">
+        <span class="min-w-0 flex-1">
+          <span data-part="episode.continue.label" class="block truncate text-sm font-black text-white">{watchedThrough > 0 || started > 0 ? 'Continue' : 'Play'}: Episode {numberLabel(target)}</span>
+          {#if shownTitle}<span data-part="episode.continue.title" class="block truncate text-xs font-bold text-white/80">{shownTitle}</span>{/if}
+        </span>
+        <Play size={20} class="shrink-0 text-white" />
+      </span>
+      {#if percent > 0}
+        <span class="absolute inset-x-0 bottom-0 h-0.5 bg-white/20"><span class="block h-full bg-theme" style={`width:${percent}%`}></span></span>
+      {/if}
+    </button>
   {/if}
 
   {#if episodeTheme?.paging === 'ranges' && pages > 1 && !searchedEpisodes}

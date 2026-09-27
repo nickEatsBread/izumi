@@ -124,6 +124,7 @@ State values:
 | `data-variant` | `detail.countdown` | `compact`, `long` |
 | `data-variant` | `detail.list-button` | `full` (the full-width button) |
 | `data-variant` | `episode` | `template`, `thumb`, `compact`, `number`, `row` |
+| `data-filler` | `episode.continue` | present when that episode is a known filler |
 | `data-variant` | `episodes.seasons` | `chips`, `posters`, `dropdown` |
 | `data-active` | `season` | present on the title being viewed |
 | `data-open` | `season.toggle` | present while the season list is open |
@@ -282,6 +283,9 @@ State values:
 | `season.label` | part | The "Season N" label. |  |
 | `season.year` | part | The season's year (`chips` and the dropdown list). |  |
 | `season.toggle` | part | The dropdown button showing the current season (`dropdown`). | `data-open` |
+| `episode.continue` | part | The Continue card at the top of the episodes (`detail.continue: "card"`). | `data-filler` |
+| `episode.continue.label` | part | The card's "Continue: Episode N" line ("Play: Episode N" before the series is started). |  |
+| `episode.continue.title` | part | The card's episode title. |  |
 
 #### Player
 

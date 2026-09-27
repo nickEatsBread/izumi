@@ -133,6 +133,9 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'season.label', kind: 'part', description: 'The "Season N" label.' },
     { name: 'season.year', kind: 'part', description: "The season's year (`chips` and the dropdown list)." },
     { name: 'season.toggle', kind: 'part', description: 'The dropdown button showing the current season (`dropdown`).', states: ['data-open'] },
+    { name: 'episode.continue', kind: 'part', description: 'The Continue card at the top of the episodes (`detail.continue: "card"`).', states: ['data-filler'] },
+    { name: 'episode.continue.label', kind: 'part', description: 'The card\'s "Continue: Episode N" line ("Play: Episode N" before the series is started).' },
+    { name: 'episode.continue.title', kind: 'part', description: "The card's episode title." },
   ],
   watch: [
     { name: 'watch', kind: 'slot', description: 'The player area.', states: ['data-layout'] },

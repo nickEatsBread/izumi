@@ -7,7 +7,7 @@
   import Tabs from '$lib/components/detail/Tabs.svelte'
   import EpisodeList from '$lib/components/detail/EpisodeList.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
-  import { banner, title, cover, format, status, season, seasonBrowseHref, ratingBg, totalEpisodes } from '$lib/anilist/media'
+  import { banner, title, cover, format, status, season, seasonBrowseHref, ratingBg, totalEpisodes, airedCount } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
   import { resumeEpisode, playEpisode, prefetchEpisodeSources, type PlayState } from '$lib/stremio/play'
   import { offlineMode } from '$lib/stores/offline'
@@ -19,7 +19,7 @@
   import { seriesTitle as seriesTitleFromItem } from '$lib/downloads/library'
   import { untrack } from 'svelte'
   import { readable, type Readable } from 'svelte/store'
-  import { animeResumeEpisode, animeWatchedProgress, recordedWatched, type AnimeDetailState } from '$lib/catalog/anime-detail'
+  import { animeEpisodeNumbers, animeResumeEpisode, animeWatchedProgress, recordedWatched, type AnimeDetailState } from '$lib/catalog/anime-detail'
   import { focusOnMount } from '$lib/nav'
   import { copyToClipboard } from '$lib/util/clipboard'
   import { anilistToken } from '$lib/anilist/auth'
@@ -76,6 +76,7 @@
   import { countryName, formatDate as fmtDate, prettyEnum } from '$lib/detail/facts'
   import FactList from './FactList.svelte'
   import AiringCountdown from './AiringCountdown.svelte'
+  import { playableThrough } from './episode-tile'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -278,6 +279,12 @@
   const detailLogo = $derived(detailTheme.title === 'logo' && detailExtras.logo && detailExtras.logo !== failedDetailLogo ? detailExtras.logo : '')
   const factsStyle = $derived(detailTheme.factsStyle ?? 'template')
   const countdown = $derived(detailTheme.countdown ?? 'none')
+  // API 3 `detail.continue: "card"`: on phones the Continue card at the top of the episodes takes
+  // the header Play button's place, once an episode can play (the card needs one to show).
+  const downloadedEpisodes = (m: Media) => Object.values($downloads)
+    .filter((d) => d.mediaId === m.id && d.status === 'done').map((d) => d.episode).sort((a, b) => a - b)
+  const headerCtaHidden = $derived(media != null && $isMobile && detailTheme.continue === 'card'
+    && playableThrough($offlineMode ? downloadedEpisodes(media) : animeEpisodeNumbers(media), airedCount(media), $offlineMode) > 0)
   const overlayDetail = $derived(detailTheme.layout === 'overlay')
   const bannerOverlap = $derived(detailTheme.bannerHeight ? Math.round(detailTheme.bannerHeight * 0.58) : (controllerUi ? 16 : 18))
   const sideEpisodes = $derived(episodesOnSide($themePresentation, !$isMobile))
@@ -552,6 +559,7 @@
         <div data-part="detail.body" class="relative z-10 flex min-h-[56vh] flex-col justify-end gap-3 px-4 pb-8 pt-24">
           {@render seriesTitle(m, 'text-3xl font-black leading-tight text-white drop-shadow')}
           {@render seriesHeader(m, '')}
+          {#if !headerCtaHidden}
           <button data-part="button" data-variant="primary" data-focusable use:focusOnMount
                   onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
                   onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
@@ -559,6 +567,7 @@
                   class="mt-1 inline-flex w-fit items-center gap-2 rounded-full bg-primary px-5 py-2.5 font-bold text-primary-foreground">
             <Play size={18} />{ctaHasProgress(m) ? `Play · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
           </button>
+          {/if}
           {#if m.description}
             <p data-part="detail.synopsis" class="line-clamp-4 text-sm leading-relaxed text-white/85">{stripHtml(m.description)}</p>
           {/if}
@@ -724,6 +733,7 @@
         {/if}
 
         <!-- Primary CTA -->
+        {#if !headerCtaHidden}
         <button data-part="button" data-variant="primary" data-focusable use:focusOnMount
                 onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
                 onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
@@ -731,6 +741,7 @@
                 class="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3 font-bold text-primary-foreground">
           <Play size={18} />{ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
         </button>
+        {/if}
 
         {#if detailTheme.listButton === 'full'}
           <button data-part="detail.list-button" data-variant="full" data-focusable onclick={() => { h.tap(); showEditor = true }}
