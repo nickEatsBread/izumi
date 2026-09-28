@@ -112,3 +112,12 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
+
+## librqbit-dht and librqbit-utp — Apache-2.0
+
+`src-tauri/vendor/` holds modified copies of the [`librqbit-dht`](https://crates.io/crates/librqbit-dht)
+and [`librqbit-utp`](https://crates.io/crates/librqbit-utp) crates. Each modified file says so at the
+top, and `src-tauri/vendor/README.md` describes the change.
+
+Copyright 2021 Igor Katson. Licensed under the Apache License, Version 2.0:
+https://www.apache.org/licenses/LICENSE-2.0
