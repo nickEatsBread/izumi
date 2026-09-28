@@ -2159,6 +2159,8 @@ async fn player_attach_subtitle_url(
     title: String,
     player: tauri::State<'_, player::PlayerHandle>,
 ) -> Result<(), String> {
+    // Direct-P2P online subtitles can land while the video is still opening; see sidecars_ready.
+    player.sidecars_ready().await?;
     player.add_subtitle_auto(&url, &lang, &title)
 }
 

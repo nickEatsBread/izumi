@@ -39,7 +39,8 @@ describe('Android native media route', () => {
     expect(load).toContain('val canReuse = existingPlayer != null && existingView != null && container != null')
     expect(load).toContain('player = existingPlayer!!')
     expect(load).toContain('.setDefaultRequestProperties(args.headers)')
-    expect(load).toContain('DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(item)')
+    expect(load).toContain('val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)')
+    expect(load).toContain('mediaSourceFactory.createMediaSource(item)')
     expect(load).toContain('player.setMediaSource(mediaSource,')
   })
 
