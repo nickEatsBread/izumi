@@ -1,4 +1,5 @@
-//! Direct P2P VPN binding: adapter enumeration plus a session-level kill switch.
+//! Direct P2P networking guards: adapter enumeration, a session-level VPN kill switch, and
+//! recovery after the machine changes networks.
 //!
 //! macOS and Linux additionally pass the selected interface to librqbit, which applies the native
 //! per-socket binding to DHT, BT TCP/uTP, trackers, listeners and local discovery. All desktop
@@ -8,14 +9,19 @@
 //!     resumes them when it returns, so a crashed VPN cannot quietly continue on the ISP route;
 //!   * Windows, where librqbit cannot bind by device name, remains outbound-only while configured
 //!     and relies on the guard plus the VPN's route.
+//!
+//! Every engine, bound or not, also restarts peer discovery once the route to the internet changes
+//! (Wi-Fi to another Wi-Fi, Ethernet, mobile data, waking from sleep). librqbit has no notion of a
+//! network change, so without this a torrent keeps waiting out reconnect delays for its peers that
+//! were scheduled while there was no route at all.
 
 use std::{
-    net::IpAddr,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex, OnceLock, Weak,
     },
-    time::Duration,
+    time::{Duration, Instant, SystemTime},
 };
 
 use iroh::Watcher as _;
@@ -241,11 +247,16 @@ struct GuardInner {
     sessions: Mutex<Vec<Weak<Session>>>,
     down: AtomicBool,
     monitor_started: AtomicBool,
+    route_watch_started: AtomicBool,
+    /// Serializes kill-switch sweeps with network-change restarts, so a restart's brief
+    /// pause-and-resume can never resume a torrent that the kill switch is pausing.
+    transition: tokio::sync::Mutex<()>,
 }
 
-/// Process-wide kill switch shared by the playback and download engines. The binding is locked by
-/// the first engine to start (both read the same persisted setting, so a mismatch means the user
-/// changed it in between — the same restart semantics as the SOCKS proxy).
+/// Process-wide network guard shared by the playback and download engines: it restarts peer
+/// discovery after a network change and, with a binding, is the VPN kill switch. The binding is
+/// locked by the first engine to start (both read the same persisted setting, so a mismatch means
+/// the user changed it in between — the same restart semantics as the SOCKS proxy).
 #[derive(Default)]
 pub struct VpnGuard {
     config: OnceLock<Option<String>>,
@@ -263,14 +274,20 @@ impl VpnGuard {
         if *locked != bind_interface {
             return Err(BINDING_CHANGED_ERROR.into());
         }
-        let Some(name) = locked.clone() else {
-            return Ok(());
-        };
         self.inner
             .sessions
             .lock()
             .expect("VPN guard session list lock poisoned")
             .push(Arc::downgrade(session));
+        if !self.inner.route_watch_started.swap(true, Ordering::SeqCst) {
+            let inner = self.inner.clone();
+            tauri::async_runtime::spawn(async move {
+                watch_route(inner).await;
+            });
+        }
+        let Some(name) = locked.clone() else {
+            return Ok(());
+        };
         if !self.inner.monitor_started.swap(true, Ordering::SeqCst) {
             let inner = self.inner.clone();
             let app = app.clone();
@@ -346,16 +363,18 @@ async fn monitor(app: AppHandle, name: String, inner: Arc<GuardInner>) {
     }
 }
 
+fn attached_sessions(inner: &GuardInner) -> Vec<Arc<Session>> {
+    let mut guard = inner
+        .sessions
+        .lock()
+        .expect("VPN guard session list lock poisoned");
+    guard.retain(|weak| weak.strong_count() > 0);
+    guard.iter().filter_map(Weak::upgrade).collect()
+}
+
 async fn set_all(inner: &GuardInner, resume: bool) {
-    let sessions: Vec<Arc<Session>> = {
-        let mut guard = inner
-            .sessions
-            .lock()
-            .expect("VPN guard session list lock poisoned");
-        guard.retain(|weak| weak.strong_count() > 0);
-        guard.iter().filter_map(Weak::upgrade).collect()
-    };
-    for session in sessions {
+    let _transition = inner.transition.lock().await;
+    for session in attached_sessions(inner) {
         let handles: Vec<_> =
             session.with_torrents(|torrents| torrents.map(|(_, handle)| handle.clone()).collect());
         for handle in handles {
@@ -374,10 +393,231 @@ async fn set_all(inner: &GuardInner, resume: bool) {
     }
 }
 
+/// How often the route is sampled while a torrent is live. Changing networks passes through a
+/// window with no route that normally lasts seconds, so one-second samples see it even when the
+/// new network hands out the same address as the old one.
+const ROUTE_SAMPLE: Duration = Duration::from_secs(1);
+/// With no live torrent there is nothing to restart; only look for one becoming live.
+const ROUTE_IDLE_SAMPLE: Duration = Duration::from_secs(10);
+/// How long a new route must hold before torrents restart on it. Joining a network settles IPv4
+/// and IPv6 separately, and every restart drops whichever peers did reconnect.
+const ROUTE_SETTLE: Duration = Duration::from_secs(2);
+/// A sample this much later than scheduled means the machine was asleep. Every peer connection
+/// timed out meanwhile, even when it wakes on the same network with the same address.
+const SLEEP_GAP: Duration = Duration::from_secs(10);
+
+/// The local address the OS currently picks for traffic to the internet, which is the address
+/// peer connections leave from. IPv4 wins whenever there is any: IPv6 privacy addresses rotate on
+/// a network that never changed, and a real switch changes the IPv4 address or drops it for a
+/// moment. Connecting a UDP socket only resolves the route; nothing is sent. The destinations are
+/// documentation prefixes, which no network routes anywhere but its default route.
+fn outbound_address() -> Option<IpAddr> {
+    fn source(unspecified: IpAddr, destination: IpAddr) -> Option<IpAddr> {
+        let socket = std::net::UdpSocket::bind((unspecified, 0)).ok()?;
+        socket.connect((destination, 9)).ok()?;
+        Some(socket.local_addr().ok()?.ip()).filter(routable)
+    }
+    source(
+        Ipv4Addr::UNSPECIFIED.into(),
+        Ipv4Addr::new(192, 0, 2, 1).into(),
+    )
+    .or_else(|| {
+        source(
+            Ipv6Addr::UNSPECIFIED.into(),
+            Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1).into(),
+        )
+    })
+}
+
+/// Decides when a route change warrants restarting torrents: once a route has held for
+/// `ROUTE_SETTLE` since the last change. Every further change restarts that wait, and there is
+/// nothing to restart onto while there is no route at all.
+struct RouteWatch {
+    address: Option<IpAddr>,
+    changed_at: Option<Instant>,
+}
+
+impl RouteWatch {
+    fn new(address: Option<IpAddr>) -> Self {
+        Self {
+            address,
+            changed_at: None,
+        }
+    }
+
+    /// Record one sample. Returns true when torrents should restart now.
+    fn sample(&mut self, address: Option<IpAddr>, now: Instant) -> bool {
+        if address != self.address {
+            self.address = address;
+            self.changed_at = Some(now);
+        }
+        match self.changed_at {
+            Some(changed) if address.is_some() && now.duration_since(changed) >= ROUTE_SETTLE => {
+                self.changed_at = None;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// The machine slept: count it as a change even if it woke up on the same route.
+    fn interrupt(&mut self, now: Instant) {
+        self.changed_at = Some(now);
+    }
+}
+
+async fn watch_route(inner: Arc<GuardInner>) {
+    // Sampled only while a torrent is live; the first sample after idling is the baseline.
+    let mut watch: Option<RouteWatch> = None;
+    loop {
+        let interval = if watch.is_some() {
+            ROUTE_SAMPLE
+        } else {
+            ROUTE_IDLE_SAMPLE
+        };
+        let scheduled = SystemTime::now();
+        tokio::time::sleep(interval).await;
+        // Monotonic clocks stand still during sleep on some platforms; the wall clock does not.
+        let slept = SystemTime::now()
+            .duration_since(scheduled)
+            .is_ok_and(|elapsed| elapsed > interval + SLEEP_GAP);
+        if !has_live_torrent(&inner) {
+            watch = None;
+            continue;
+        }
+        let address = outbound_address();
+        let now = Instant::now();
+        let Some(current) = watch.as_mut() else {
+            watch = Some(RouteWatch::new(address));
+            continue;
+        };
+        if slept {
+            current.interrupt(now);
+        }
+        if current.sample(address, now) {
+            restart_after_network_change(&inner).await;
+        }
+    }
+}
+
+fn has_live_torrent(inner: &GuardInner) -> bool {
+    attached_sessions(inner).iter().any(|session| {
+        session.with_torrents(|torrents| {
+            for (_, handle) in torrents {
+                if handle.live().is_some() {
+                    return true;
+                }
+            }
+            false
+        })
+    })
+}
+
+async fn restart_after_network_change(inner: &GuardInner) {
+    let _transition = inner.transition.lock().await;
+    // A disconnected VPN belongs to the kill switch, which resumes torrents once it returns.
+    if inner.down.load(Ordering::SeqCst) {
+        return;
+    }
+    eprintln!("[direct-p2p] network route changed; reconnecting torrent peers");
+    for session in attached_sessions(inner) {
+        restart_peer_discovery(&session).await;
+    }
+}
+
+/// Reconnect every live torrent in `session` from a clean slate. librqbit retries a failed peer
+/// only after a delay that grows sixfold per failure (10-20 s, 60-120 s, 6-12 min, ...), and it
+/// ignores addresses it already knows when DHT or trackers report them again. After an outage a
+/// torrent therefore waits out delays scheduled while there was no route at all. Pausing drops
+/// the peers together with those delays; resuming keeps every verified piece and open stream, and
+/// asks DHT and the trackers for peers again from the new network, announcing the new address.
+async fn restart_peer_discovery(session: &Arc<Session>) {
+    let handles: Vec<_> =
+        session.with_torrents(|torrents| torrents.map(|(_, handle)| handle.clone()).collect());
+    for handle in handles {
+        // Initializing torrents have no peers yet, and paused ones belong to the kill switch.
+        if handle.live().is_none() {
+            continue;
+        }
+        if session.pause(&handle).await.is_ok() {
+            if let Err(error) = session.unpause(&handle).await {
+                eprintln!("could not reconnect torrent peers after a network change: {error:#}");
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{find, is_vpn_like, ready, IfaceView};
-    use std::net::IpAddr;
+    use super::{find, is_vpn_like, ready, IfaceView, RouteWatch};
+    use std::{
+        net::IpAddr,
+        time::{Duration, Instant},
+    };
+
+    fn address(ip: &str) -> Option<IpAddr> {
+        Some(ip.parse().unwrap())
+    }
+
+    fn clock() -> impl Fn(f64) -> Instant {
+        let start = Instant::now();
+        move |seconds| start + Duration::from_secs_f64(seconds)
+    }
+
+    #[test]
+    fn a_steady_route_never_restarts_torrents() {
+        let at = clock();
+        let home = address("192.168.1.20");
+        let mut watch = RouteWatch::new(home);
+        assert!((1..60).all(|second| !watch.sample(home, at(second as f64))));
+    }
+
+    #[test]
+    fn restarts_once_after_a_new_route_settles() {
+        let at = clock();
+        let cafe = address("10.0.0.7");
+        let mut watch = RouteWatch::new(address("192.168.1.20"));
+        assert!(!watch.sample(cafe, at(1.0)));
+        assert!(!watch.sample(cafe, at(2.0)));
+        assert!(watch.sample(cafe, at(3.0)));
+        assert!(!watch.sample(cafe, at(4.0)));
+    }
+
+    #[test]
+    fn an_outage_that_ends_on_the_same_address_still_restarts() {
+        // Two networks can hand out the same address; the gap without a route is what matters.
+        let at = clock();
+        let home = address("192.168.1.20");
+        let mut watch = RouteWatch::new(home);
+        assert!(!watch.sample(None, at(1.0)));
+        assert!(!watch.sample(None, at(30.0)));
+        assert!(!watch.sample(home, at(31.0)));
+        assert!(!watch.sample(home, at(32.0)));
+        assert!(watch.sample(home, at(33.0)));
+    }
+
+    #[test]
+    fn an_address_that_changes_again_restarts_the_wait() {
+        let at = clock();
+        let settled = address("10.0.0.7");
+        let mut watch = RouteWatch::new(address("192.168.1.20"));
+        assert!(!watch.sample(None, at(1.0)));
+        assert!(!watch.sample(address("100.64.0.9"), at(2.0)));
+        assert!(!watch.sample(address("100.64.0.9"), at(3.5)));
+        assert!(!watch.sample(settled, at(3.9)));
+        assert!(!watch.sample(settled, at(5.0)));
+        assert!(watch.sample(settled, at(5.9)));
+    }
+
+    #[test]
+    fn waking_from_sleep_restarts_even_on_the_same_route() {
+        let at = clock();
+        let home = address("192.168.1.20");
+        let mut watch = RouteWatch::new(home);
+        watch.interrupt(at(100.0));
+        assert!(!watch.sample(home, at(101.0)));
+        assert!(watch.sample(home, at(102.0)));
+    }
 
     fn iface(name: &str, friendly: Option<&str>, up: bool, ips: &[&str]) -> IfaceView {
         IfaceView {
@@ -462,5 +702,212 @@ mod tests {
             true,
             &["fe80::1", "2a03:1b20::4"]
         )));
+    }
+}
+
+#[cfg(test)]
+mod network_switch_tests {
+    use super::restart_peer_discovery;
+    use librqbit::{
+        create_torrent, limits::LimitsConfig, spawn_utils::BlockingSpawner, AddTorrent,
+        AddTorrentOptions, CreateTorrentOptions, ListenerMode, ListenerOptions, Session,
+        SessionOptions,
+    };
+    use std::{
+        io::SeekFrom,
+        net::{Ipv4Addr, SocketAddr},
+        num::NonZeroU32,
+        path::PathBuf,
+        time::Duration,
+    };
+    use tokio::{
+        io::{AsyncReadExt, AsyncSeekExt},
+        net::{TcpListener, TcpStream},
+        sync::watch,
+        time::{sleep, timeout, Instant},
+    };
+
+    const PIECE: u32 = 256 * 1024;
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "izumi-network-switch-{name}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// The only network path to the seeder. Taking it down drops every relayed connection and
+    /// turns new ones away, which is what the swarm looks like while the machine changes networks.
+    async fn relay(seeder: SocketAddr) -> (SocketAddr, watch::Sender<bool>) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (link, state) = watch::channel(true);
+        tokio::spawn(async move {
+            while let Ok((mut inbound, _)) = listener.accept().await {
+                if !*state.borrow() {
+                    continue;
+                }
+                let mut state = state.clone();
+                tokio::spawn(async move {
+                    let Ok(mut outbound) = TcpStream::connect(seeder).await else {
+                        return;
+                    };
+                    tokio::select! {
+                        _ = tokio::io::copy_bidirectional(&mut inbound, &mut outbound) => {}
+                        _ = state.wait_for(|up| !*up) => {}
+                    }
+                });
+            }
+        });
+        (addr, link)
+    }
+
+    async fn wait_until(limit: Duration, mut ready: impl FnMut() -> bool) -> bool {
+        let deadline = Instant::now() + limit;
+        while Instant::now() < deadline {
+            if ready() {
+                return true;
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+        ready()
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "takes about 40 s: it waits out librqbit's reconnect backoff"]
+    async fn a_torrent_stalled_by_a_network_outage_resumes_once_discovery_restarts() {
+        let seed_dir = scratch("seed");
+        let payload = seed_dir.join("episode.bin");
+        let mut noise = 0x9e37_79b9_7f4a_7c15_u64;
+        let content = (0..16 * 1024 * 1024)
+            .map(|_| {
+                noise ^= noise << 13;
+                noise ^= noise >> 7;
+                noise ^= noise << 17;
+                noise as u8
+            })
+            .collect::<Vec<_>>();
+        std::fs::write(&payload, &content).unwrap();
+        let torrent = create_torrent(
+            &payload,
+            CreateTorrentOptions {
+                piece_length: Some(PIECE),
+                ..Default::default()
+            },
+            &BlockingSpawner::new(2),
+        )
+        .await
+        .unwrap()
+        .as_bytes()
+        .unwrap();
+
+        // No DHT, trackers or LSD: the relay is the only way the leecher can reach the seeder.
+        let isolated = |listen| SessionOptions {
+            dht: None,
+            disable_trackers: true,
+            disable_local_service_discovery: true,
+            persistence: None,
+            listen,
+            ..Default::default()
+        };
+        let seeder = Session::new_with_opts(
+            seed_dir.clone(),
+            isolated(Some(ListenerOptions {
+                mode: ListenerMode::TcpOnly,
+                listen_addr: (Ipv4Addr::LOCALHOST, 0).into(),
+                ..Default::default()
+            })),
+        )
+        .await
+        .unwrap();
+        let seeding = seeder
+            .add_torrent(
+                AddTorrent::from_bytes(torrent.clone()),
+                Some(AddTorrentOptions {
+                    output_folder: Some(seed_dir.to_string_lossy().into_owned()),
+                    overwrite: true,
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap()
+            .into_handle()
+            .unwrap();
+        timeout(Duration::from_secs(30), seeding.wait_until_completed())
+            .await
+            .unwrap()
+            .unwrap();
+        let (path, link) = relay(seeder.listen_addr().unwrap()).await;
+
+        let leech_dir = scratch("leech");
+        let leecher = Session::new_with_opts(leech_dir.clone(), isolated(None))
+            .await
+            .unwrap();
+        let downloading = leecher
+            .add_torrent(
+                AddTorrent::from_bytes(torrent),
+                Some(AddTorrentOptions {
+                    initial_peers: Some(vec![path]),
+                    overwrite: true,
+                    // Slow enough that the outage lands in the middle of the download.
+                    ratelimits: LimitsConfig {
+                        download_bps: NonZeroU32::new(1024 * 1024),
+                        upload_bps: None,
+                    },
+                    ..Default::default()
+                }),
+            )
+            .await
+            .unwrap()
+            .into_handle()
+            .unwrap();
+        let progress = || downloading.stats().progress_bytes;
+        assert!(
+            wait_until(Duration::from_secs(30), || progress() >= 2 * PIECE as u64).await,
+            "the download never started"
+        );
+
+        // Longer than the first reconnect delay (10-20 s), so that retry fails as well and the
+        // peer's next attempt is pushed 60-120 s further out.
+        link.send_replace(false);
+        // A player read left waiting by the outage, like mpv's request to the playback server.
+        const READ_AT: usize = 12 * 1024 * 1024;
+        let mut stream = downloading.clone().stream(0).await.unwrap();
+        stream.seek(SeekFrom::Start(READ_AT as u64)).await.unwrap();
+        let pending_read = tokio::spawn(async move {
+            let mut buffer = vec![0; 64 * 1024];
+            stream.read_exact(&mut buffer).await.map(|_| buffer)
+        });
+        sleep(Duration::from_secs(22)).await;
+        link.send_replace(true);
+
+        let stalled = progress();
+        sleep(Duration::from_secs(15)).await;
+        assert_eq!(
+            progress(),
+            stalled,
+            "the peer came back on its own; librqbit's reconnect backoff has changed"
+        );
+        assert!(!pending_read.is_finished());
+
+        restart_peer_discovery(&leecher).await;
+        assert!(
+            wait_until(Duration::from_secs(10), || progress() > stalled).await,
+            "the download did not resume after peer discovery restarted"
+        );
+        let read = timeout(Duration::from_secs(10), pending_read)
+            .await
+            .expect("the waiting read was not served after peer discovery restarted")
+            .unwrap()
+            .unwrap();
+        assert!(read == content[READ_AT..READ_AT + read.len()]);
+
+        leecher.stop().await;
+        seeder.stop().await;
+        let _ = std::fs::remove_dir_all(seed_dir);
+        let _ = std::fs::remove_dir_all(leech_dir);
     }
 }
