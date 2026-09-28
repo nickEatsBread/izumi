@@ -186,9 +186,6 @@
   }, externalKitsuId) : [])
   const detailHint = $derived($detailHints[id])
   $effect(() => { if (media) rememberDetail(media) })
-  // Reset the fade latch when the media changes, so navigating between series does not show the
-  // previous title's fade-in state (or a stale full-opacity frame) before the new art decodes.
-  $effect(() => { void media?.id; artLoaded = false })
 
   // Match the episode list's progress ownership. Tracker queries can still be stale when Android
   // returns from the player, while session/local history has already recorded the completed episode.
@@ -411,8 +408,15 @@
   let artHeight = $state(0)
   let barHeight = $state(0)
   // The banner is a large image over a network the phone may be struggling with; popping it in at
-  // full opacity reads as a glitch. Fade on decode instead.
-  let artLoaded = $state(false)
+  // full opacity reads as a glitch. Fade on decode instead, keyed to the URL whose image loaded — not a
+  // flag reset when `media` changes: `media` is a new object whenever the detail query delivers the
+  // same series again (a cached page's revalidation, the season picker's chain walk), and an unchanged
+  // image never fires `load` again, so that reset hid the banner for good. New artwork is a new URL.
+  let loadedArt = $state('')
+  const artReady = (src: string | null | undefined) => !!src && src === loadedArt
+  const markArtLoaded = (event: Event & { currentTarget: EventTarget & Element }) => {
+    loadedArt = event.currentTarget.getAttribute('src') ?? ''
+  }
   // The loading branch records only artwork that actually painted. If the detail response wins
   // first, the loaded Hero keeps its ordinary entrance rather than assuming the hint was visible.
   let loadedHintBanner = $state('')
@@ -556,13 +560,13 @@
       </div>
       <div data-slot="detail.banner" bind:clientHeight={artHeight} class="relative min-h-[56vh] w-full overflow-hidden">
         {#if overlayBackdrop}
-          <img data-part="detail.backdrop" src={overlayBackdrop} alt="" onload={() => (artLoaded = true)}
+          <img data-part="detail.backdrop" src={overlayBackdrop} alt="" onload={markArtLoaded}
                onerror={(event) => backdropFailed(event.currentTarget.getAttribute('src'))}
-               class="absolute inset-0 h-full w-full object-cover transition-opacity duration-500 {artLoaded ? 'opacity-100' : 'opacity-0'}"
+               class="absolute inset-0 h-full w-full object-cover transition-opacity duration-500 {artReady(overlayBackdrop) ? 'opacity-100' : 'opacity-0'}"
                style="object-position:center 20%" />
         {:else if !overlayArtWaiting}
-          <img data-part="detail.backdrop" src={cover(m)} alt="" class="absolute inset-0 h-full w-full scale-110 object-cover blur-xl transition-opacity duration-500 {artLoaded ? 'opacity-50' : 'opacity-0'}"
-               onload={() => (artLoaded = true)} style="object-position:center 30%" />
+          <img data-part="detail.backdrop" src={cover(m)} alt="" class="absolute inset-0 h-full w-full scale-110 object-cover blur-xl transition-opacity duration-500 {artReady(cover(m)) ? 'opacity-50' : 'opacity-0'}"
+               onload={markArtLoaded} style="object-position:center 30%" />
         {/if}
         <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
         <div data-part="detail.body" class="relative z-10 flex min-h-[56vh] flex-col justify-end gap-3 px-4 pb-8 pt-24">
@@ -629,15 +633,15 @@
       {#if !detailTheme.bannerHidden}
       <div data-slot="detail.banner" bind:clientHeight={artHeight} class="hero-art relative h-[26vh] max-h-72 min-h-44 w-full overflow-hidden">
         {#if m.bannerImage}
-          <img src={m.bannerImage} alt="" onload={() => (artLoaded = true)}
-               class="h-full w-full object-cover transition-opacity duration-500 {artLoaded ? 'opacity-100' : 'opacity-0'}"
+          <img src={m.bannerImage} alt="" onload={markArtLoaded}
+               class="h-full w-full object-cover transition-opacity duration-500 {artReady(m.bannerImage) ? 'opacity-100' : 'opacity-0'}"
                style="object-position:center 20%" />
         {:else}
           <!-- No banner: a YouTube trailer still has blurred pillarbox bars baked into the JPEG, and a
                portrait cover cropped to a wide band loses its subject. Blur the cover into a wash
                instead — it reads as ambient colour rather than a broken photograph. -->
-          <img src={cover(m)} alt="" class="h-full w-full scale-110 object-cover blur-xl transition-opacity duration-500 {artLoaded ? 'opacity-50' : 'opacity-0'}"
-               onload={() => (artLoaded = true)} style="object-position:center 30%" />
+          <img src={cover(m)} alt="" class="h-full w-full scale-110 object-cover blur-xl transition-opacity duration-500 {artReady(cover(m)) ? 'opacity-50' : 'opacity-0'}"
+               onload={markArtLoaded} style="object-position:center 30%" />
         {/if}
         <div class="absolute inset-x-0 bottom-0 h-1/6 bg-gradient-to-b from-transparent to-background"></div>
       </div>
