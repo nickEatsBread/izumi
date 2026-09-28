@@ -1483,9 +1483,10 @@ pub async fn torrent_playback_url(
         .iter()
         .map(|file| DirectTorrentSubtitle {
             file_index: file.index,
-            url: format!(
-                "http://127.0.0.1:{}/torrents/{}/stream/{}",
-                engine.port, torrent_id, file.index
+            url: crate::direct_torrent_stream::player_stream_url(
+                engine.port,
+                torrent_id,
+                file.index,
             ),
             lang: subtitle_language(&file.name).to_string(),
             title: subtitle_title(&selected, file),
@@ -1511,9 +1512,10 @@ pub async fn torrent_playback_url(
     drop(active);
 
     Ok(DirectTorrentPlayback {
-        url: format!(
-            "http://127.0.0.1:{}/torrents/{}/stream/{}",
-            engine.port, torrent_id, selected.index
+        url: crate::direct_torrent_stream::player_stream_url(
+            engine.port,
+            torrent_id,
+            selected.index,
         ),
         filename: selected.name,
         file_index: selected.index,
@@ -1834,6 +1836,9 @@ pub async fn torrent_playback_add_subtitle(
     lang: String,
     title: String,
 ) -> Result<(), String> {
+    // The frontend asks right after handing mpv the video, which is still opening without a read
+    // timeout. Wait for it first, so the playback check below sees who owns the player now.
+    player.sidecars_ready().await?;
     let Some(engine) = state.engine.get() else {
         return Err("The direct torrent player is not running.".into());
     };
@@ -1848,10 +1853,7 @@ pub async fn torrent_playback_add_subtitle(
         }
         current.torrent_id
     };
-    let url = format!(
-        "http://127.0.0.1:{}/torrents/{}/stream/{}",
-        engine.port, torrent_id, file_index
-    );
+    let url = crate::direct_torrent_stream::player_stream_url(engine.port, torrent_id, file_index);
     player.add_subtitle_auto(&url, &lang, &title)
 }
 

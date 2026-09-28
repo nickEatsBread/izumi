@@ -26,6 +26,7 @@
 mod color_management;
 mod embed_contract;
 mod headless;
+mod sidecar_gate;
 mod subtitle_select;
 use color_management::COLOR_OPTS;
 pub use embed_contract::require_live_core;
@@ -85,6 +86,7 @@ use tauri::Manager;
 use tauri::{AppHandle, Emitter};
 
 use headless::HeadlessMpv;
+use sidecar_gate::SidecarGate;
 use subtitle_select::{preferred_full_subtitle_id, SemanticTrack};
 
 /// The mpv/libmpv version string, for the About page.
@@ -204,6 +206,8 @@ pub struct PlayerHandle {
     current_url: Mutex<Option<String>>,
     /// Sidecar audio/subtitle tracks queued until mpv has actually loaded their stream.
     pending_external_tracks: Arc<Mutex<Option<PendingExternalTracks>>>,
+    /// Holds runtime `sub-add`s while a direct-P2P video opens without a read timeout.
+    sidecar_gate: SidecarGate,
     /// Scrub-preview thumbnail jobs, keyed by stream cache key (infoHash or
     /// media-episode). Holds the url + geometry so tiles can be produced on demand.
     sprite_jobs: Arc<Mutex<HashMap<String, TileJob>>>,
@@ -226,6 +230,7 @@ impl PlayerHandle {
             gif_session: Mutex::new(None),
             current_url: Mutex::new(None),
             pending_external_tracks: Arc::new(Mutex::new(None)),
+            sidecar_gate: SidecarGate::new(),
             sprite_jobs: Arc::new(Mutex::new(HashMap::new())),
             thumb_inflight: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             headless: Arc::new(HeadlessMpv::new()),
@@ -281,6 +286,7 @@ impl PlayerHandle {
                 &[],
                 &[],
                 &self.pending_external_tracks,
+                &self.sidecar_gate,
             )?;
             return Ok(());
         }
@@ -289,8 +295,13 @@ impl PlayerHandle {
         let mpv = create_mpv(None).map_err(|e| e.to_string())?;
 
         // Spawn the event loop ONCE, on first mpv creation, before loading.
-        spawn_event_loop(&mpv, app, self.pending_external_tracks.clone())
-            .map_err(|e| e.to_string())?;
+        spawn_event_loop(
+            &mpv,
+            app,
+            self.pending_external_tracks.clone(),
+            self.sidecar_gate.clone(),
+        )
+        .map_err(|e| e.to_string())?;
         #[cfg(target_os = "linux")]
         self.start_mpv_dispatch(&mpv)?;
 
@@ -304,6 +315,7 @@ impl PlayerHandle {
             &[],
             &[],
             &self.pending_external_tracks,
+            &self.sidecar_gate,
         )?;
 
         *guard = Some(mpv);
@@ -358,6 +370,7 @@ impl PlayerHandle {
                     &subs,
                     &audio,
                     &self.pending_external_tracks,
+                    &self.sidecar_gate,
                 )?;
                 return Ok(());
             }
@@ -382,8 +395,13 @@ impl PlayerHandle {
         let mpv = create_mpv_for_embed(if wid != 0 { Some(wid) } else { None }, &app)?;
 
         // Spawn the event loop ONCE, on first mpv creation, before loading.
-        spawn_event_loop(&mpv, app, self.pending_external_tracks.clone())
-            .map_err(|e| e.to_string())?;
+        spawn_event_loop(
+            &mpv,
+            app,
+            self.pending_external_tracks.clone(),
+            self.sidecar_gate.clone(),
+        )
+        .map_err(|e| e.to_string())?;
         #[cfg(target_os = "linux")]
         self.start_mpv_dispatch(&mpv)?;
 
@@ -398,6 +416,7 @@ impl PlayerHandle {
             &subs,
             &audio,
             &self.pending_external_tracks,
+            &self.sidecar_gate,
         )?;
 
         *self.mpv.lock().map_err(|e| e.to_string())? = Some(mpv);
@@ -457,6 +476,7 @@ impl PlayerHandle {
                     &subs,
                     &audio,
                     &self.pending_external_tracks,
+                    &self.sidecar_gate,
                 )?;
                 return Ok(());
             }
@@ -468,8 +488,13 @@ impl PlayerHandle {
         #[cfg(target_os = "macos")]
         let game_mode_wayland = false;
         let mpv = new_mpv_libmpv(game_mode_wayland).map_err(|e| e.to_string())?;
-        spawn_event_loop(&mpv, app, self.pending_external_tracks.clone())
-            .map_err(|e| e.to_string())?;
+        spawn_event_loop(
+            &mpv,
+            app,
+            self.pending_external_tracks.clone(),
+            self.sidecar_gate.clone(),
+        )
+        .map_err(|e| e.to_string())?;
         #[cfg(target_os = "linux")]
         self.start_mpv_dispatch(&mpv)?;
         set_langs(&mpv, &alang, &slang);
@@ -489,6 +514,7 @@ impl PlayerHandle {
             &subs,
             &audio,
             &self.pending_external_tracks,
+            &self.sidecar_gate,
         )?;
 
         *self.mpv.lock().map_err(|e| e.to_string())? = Some(mpv);
@@ -538,6 +564,8 @@ impl PlayerHandle {
             .pending_external_tracks
             .lock()
             .map_err(|e| e.to_string())? = None;
+        // Subtitles still waiting for the closed video have nothing left to attach to.
+        self.sidecar_gate.begin_file(false);
         self.headless.stop();
         // Scrub tiles are worth exactly as long as the stream they describe is open. Leaving them
         // meant every episode ever hovered accumulated ~9KB per tile, up to 144 tiles, forever.
@@ -558,6 +586,8 @@ impl PlayerHandle {
             .pending_external_tracks
             .lock()
             .map_err(|e| e.to_string())? = None;
+        // Subtitles still waiting for the closed video have nothing left to attach to.
+        self.sidecar_gate.begin_file(false);
         // The render core is reusable; stream-specific scrub work is not. Retire the secondary
         // decoder and its tiles just as a full teardown would, so warming cannot accumulate files.
         self.headless.stop();
@@ -575,8 +605,13 @@ impl PlayerHandle {
             return Ok(false);
         }
         let mpv = create_mpv_for_embed(Some(wid), &app)?;
-        spawn_event_loop(&mpv, app, self.pending_external_tracks.clone())
-            .map_err(|e| e.to_string())?;
+        spawn_event_loop(
+            &mpv,
+            app,
+            self.pending_external_tracks.clone(),
+            self.sidecar_gate.clone(),
+        )
+        .map_err(|e| e.to_string())?;
         *guard = Some(mpv);
         Ok(true)
     }
@@ -1209,6 +1244,16 @@ impl PlayerHandle {
         self.add_subtitle_with_flag(path, lang, title, "auto")
     }
 
+    /// Resolves once a subtitle URL may be added to the current video, or errors if that video is
+    /// replaced first. Await it before `add_subtitle*` with a URL: a direct-P2P video opens with
+    /// mpv's read timeout disabled until FileLoaded (see `load_file`), and a `sub-add` opened in
+    /// that window would inherit it while holding the player lock.
+    pub fn sidecars_ready(
+        &self,
+    ) -> impl std::future::Future<Output = Result<(), String>> + Send + 'static {
+        self.sidecar_gate.ready()
+    }
+
     fn add_subtitle_with_flag(
         &self,
         path: &str,
@@ -1483,6 +1528,24 @@ fn apply_enhancement_opts(mpv: &Mpv) {
     }
 }
 
+/// mpv's read timeout for network streams. Fails a dead CDN socket sooner than mpv's 60 s default.
+const NETWORK_TIMEOUT_SECONDS: &str = "30";
+
+/// The read timeout `url` opens with. A direct-P2P video is served by the in-process torrent
+/// server, whose reads wait until the swarm delivers the next piece. That wait is buffering, not a
+/// dead socket: under the normal timeout FFmpeg gives up after four ~30 s reads (about two
+/// minutes) and mpv ends the file early, which the frontend treats as a truncated source. `0`
+/// disables the timeout. Stop, `loadfile` and quit still interrupt the read at once. mpv never
+/// cancels a read for a seek, so a seek outside the demuxer cache waits for the stalled piece
+/// instead of for the reconnects to give up.
+fn network_timeout_for(url: &str) -> &'static str {
+    if crate::direct_torrent_stream::is_player_stream_url(url) {
+        "0"
+    } else {
+        NETWORK_TIMEOUT_SECONDS
+    }
+}
+
 fn load_file(
     mpv: &Mpv,
     url: &str,
@@ -1493,6 +1556,7 @@ fn load_file(
     subtitles: &[Subtitle],
     audio_tracks: &[AudioTrack],
     pending_external_tracks: &Arc<Mutex<Option<PendingExternalTracks>>>,
+    sidecar_gate: &SidecarGate,
 ) -> Result<(), String> {
     // Apply the user's cache-size setting to this file's demuxer (overrides the init default).
     let cache = PLAYER_CACHE_BYTES.load(std::sync::atomic::Ordering::Relaxed);
@@ -1523,6 +1587,12 @@ fn load_file(
         })
         .unwrap_or_default();
     let _ = mpv.set_property("http-header-fields", hdr.as_str());
+    // mpv reads this when it opens a stream, so the video keeps it for its whole life, reconnects
+    // and seeks included. The event loop restores the normal value at FileLoaded; until then the
+    // gate holds runtime subtitles, which would otherwise open with it too.
+    let network_timeout = network_timeout_for(url);
+    let _ = mpv.set_property("network-timeout", network_timeout);
+    sidecar_gate.begin_file(network_timeout != NETWORK_TIMEOUT_SECONDS);
 
     *pending_external_tracks.lock().map_err(|e| e.to_string())? = Some(PendingExternalTracks {
         url: url.to_string(),
@@ -1686,6 +1756,7 @@ pub(crate) fn spawn_event_loop(
     mpv: &Mpv,
     app: AppHandle,
     pending_external_tracks: Arc<Mutex<Option<PendingExternalTracks>>>,
+    sidecar_gate: SidecarGate,
 ) -> Result<(), libmpv2::Error> {
     // Pass `None`, NOT `Some("event-loop")`. libmpv2 6.0.0's `create_client`
     // has a use-after-free: `CString::new(name)?.as_ptr()` drops the CString
@@ -1724,6 +1795,14 @@ pub(crate) fn spawn_event_loop(
             // Block up to 1s waiting for the next event on this client's queue.
             match client.wait_event(1.0) {
                 Some(Ok(Event::FileLoaded)) => {
+                    // The video keeps the read timeout it opened with (see load_file). Every stream
+                    // opened from here on, sidecars included, gets the normal one again.
+                    if let Err(error) =
+                        client.set_property("network-timeout", NETWORK_TIMEOUT_SECONDS)
+                    {
+                        eprintln!("mpv could not restore the network timeout: {error}");
+                    }
+                    sidecar_gate.file_loaded();
                     // A replacement file (Change source) can have the same duration as the one it
                     // replaces, so the duration-change reset below never fires — leaving both
                     // throttle buckets pointing at the old file's last values. The first
@@ -2017,7 +2096,7 @@ fn new_mpv_libmpv(game_mode_wayland: bool) -> Result<Mpv, libmpv2::Error> {
         let _ = init.set_option("demuxer-lavf-probesize", "2097152");
         let _ = init.set_option("demuxer-lavf-analyzeduration", "1");
         let _ = init.set_option("stream-buffer-size", "262144");
-        let _ = init.set_option("network-timeout", "30");
+        let _ = init.set_option("network-timeout", NETWORK_TIMEOUT_SECONDS);
         let _ = init.set_option(
             "stream-lavf-o",
             "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=5",
@@ -2263,7 +2342,7 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
 
         // Fail a dead CDN socket sooner than the 60s default, and auto-reconnect on
         // mid-stream drops (protocol AVOptions go through stream-lavf-o, not demuxer).
-        let _ = init.set_option("network-timeout", "30");
+        let _ = init.set_option("network-timeout", NETWORK_TIMEOUT_SECONDS);
         let _ = init.set_option(
             "stream-lavf-o",
             "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=5",
@@ -2279,6 +2358,22 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_direct_p2p_video_opens_without_a_read_timeout() {
+        assert_eq!(
+            network_timeout_for("http://127.0.0.1:51234/torrents/7/stream/3"),
+            "0"
+        );
+        assert_eq!(
+            network_timeout_for("https://cdn.example.com/episode.mkv"),
+            NETWORK_TIMEOUT_SECONDS
+        );
+        assert_eq!(
+            network_timeout_for("/home/user/Videos/episode.mkv"),
+            NETWORK_TIMEOUT_SECONDS
+        );
+    }
 
     #[test]
     fn add_subtitle_without_core_errors() {

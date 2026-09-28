@@ -80,6 +80,7 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.inspector.MetadataRetriever
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -164,6 +165,14 @@ private data class PendingSubtitles(
     val tracks: Array<SubtitleArgs>,
     val audioTracks: Array<AudioTrackArgs> = arrayOf(),
 )
+
+/** mpv's read timeout for network streams, in seconds. */
+private const val NETWORK_TIMEOUT_SECONDS = "30"
+
+/** Sidecar commands that arrived while the direct-P2P video at [url] was still opening. */
+private class HeldSidecars(val url: String) {
+    val commands = mutableListOf<Array<String>>()
+}
 
 private data class NativeTrack(
     val id: Int,
@@ -349,6 +358,10 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     private var nativeRouteType: String? = null
     private var preferredSubLanguage: String? = null
     private var pendingSubtitles: PendingSubtitles? = null
+    /** Runtime `sub-add`/`audio-add` held while a direct-P2P video opens without a read timeout
+     * (see [loadIntoCore] and [holdSidecar]). Guarded by [heldSidecarsLock]. */
+    private var heldSidecars: HeldSidecars? = null
+    private val heldSidecarsLock = Any()
     /** The first load must wait for SurfaceView.surfaceCreated or mpv can initialize its VO with
      * no Android surface and remain black at 0:00 even though demuxed metadata is available. */
     private var pendingSurfaceLoad: LoadArgs? = null
@@ -598,7 +611,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         m.setOptionString("demuxer-lavf-analyzeduration", "1")
         // Avoid a run of tiny loopback reads while libavformat probes MKV headers and Cues.
         m.setOptionString("stream-buffer-size", "262144")
-        m.setOptionString("network-timeout", "30")
+        m.setOptionString("network-timeout", NETWORK_TIMEOUT_SECONDS)
         m.setOptionString("sub-auto", "fuzzy")
         m.init()
         m.addObserver(this)
@@ -871,6 +884,8 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
      * transition work that the persistent libmpv path already avoids. */
     private fun loadNativeMedia(args: LoadArgs, kind: String) {
         mpv?.command(arrayOf("stop"))
+        // mpv holds nothing for Media3; its next FILE_LOADED must not replay the stopped file's loads.
+        synchronized(heldSidecarsLock) { heldSidecars = null }
         val existingPlayer = nativeDvPlayer
         val existingView = nativeDvView
         val canReuse = existingPlayer != null && existingView != null && container != null
@@ -951,7 +966,15 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             .setConnectTimeoutMs(30_000)
             .setReadTimeoutMs(30_000)
         val dataSourceFactory = DefaultDataSource.Factory(activity, httpFactory)
-        val mediaSource = DefaultMediaSourceFactory(dataSourceFactory).createMediaSource(item)
+        val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+        if (isLocalTorrentStream(args.url)) {
+            // A starving torrent is buffering, not a failed source. Media3's default gives up after
+            // a few timed-out reads, and that error falls back to mpv at this load's original start
+            // position. Keep retrying instead; each read still times out after 30 s, so a seek
+            // never waits longer than that for the stalled one.
+            mediaSourceFactory.setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(Int.MAX_VALUE))
+        }
+        val mediaSource = mediaSourceFactory.createMediaSource(item)
         trigger("event", JSObject().put("id", 6)) // MPV_EVENT_START_FILE contract
         player.setMediaSource(mediaSource, (args.startPos * 1000.0).toLong().coerceAtLeast(0L))
         player.prepare()
@@ -1718,6 +1741,16 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         // Always set it ("none" clears): `start` is sticky, and a resumed file must not leak
         // its offset into the next episode loaded on the reused core.
         m.setPropertyString("start", if (args.startPos > 0) args.startPos.toString() else "none")
+        // A direct-P2P video is served by the in-process torrent server, whose reads wait until the
+        // swarm delivers the next piece. Under the normal timeout FFmpeg gives up after a few ~30 s
+        // reads and the premature EOF replaces the source, so this video opens with no timeout.
+        // mpv reads the option when it opens a stream: FILE_LOADED restores the normal value for
+        // everything opened later, and sidecar loads are held until then (see holdSidecar).
+        val localTorrent = isLocalTorrentStream(args.url)
+        m.setPropertyString("network-timeout", if (localTorrent) "0" else NETWORK_TIMEOUT_SECONDS)
+        synchronized(heldSidecarsLock) {
+            heldSidecars = if (localTorrent) HeldSidecars(args.url) else null
+        }
         m.command(arrayOf("loadfile", args.url))
         if (slang.equals("none", ignoreCase = true)) {
             m.setPropertyString("sid", "no")
@@ -1895,8 +1928,33 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     @Command
     fun command(invoke: Invoke) {
         val a = invoke.parseArgs(CommandArgs::class.java)
-        if (!handleNativeCommand(a.args)) mpv?.command(a.args) // libmpv command queue is thread-safe
+        if (!handleNativeCommand(a.args) && !holdSidecar(a.args)) {
+            mpv?.command(a.args) // libmpv command queue is thread-safe
+        }
         invoke.resolve()
+    }
+
+    /** Hold a sidecar load that arrives while a direct-P2P video is still opening without a read
+     * timeout. Run now, it would inherit that unbounded read and block this thread for as long as
+     * the swarm or the subtitle server stays silent. FILE_LOADED runs it (see [takeHeldSidecars]). */
+    private fun holdSidecar(args: Array<String>): Boolean {
+        val name = args.firstOrNull()
+        if (name != "sub-add" && name != "audio-add") return false
+        synchronized(heldSidecarsLock) {
+            val held = heldSidecars ?: return false
+            held.commands += args
+            return true
+        }
+    }
+
+    /** The sidecar loads held for the file at [path], now that its FILE_LOADED has restored the
+     * read timeout. A late FILE_LOADED from a replaced file leaves the current file's loads held. */
+    private fun takeHeldSidecars(path: String?): List<Array<String>> {
+        synchronized(heldSidecarsLock) {
+            val held = heldSidecars?.takeIf { it.url == path } ?: return emptyList()
+            heldSidecars = null
+            return held.commands
+        }
     }
 
     @Command
@@ -2864,6 +2922,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         webViewHapticsWereEnabled = null
         webView = null
         pendingSurfaceLoad = null
+        synchronized(heldSidecarsLock) { heldSidecars = null }
         // The system is still holding the last params, which armed auto-enter. Publish once more
         // with no core so it is disarmed, or pressing home would shrink the whole app into a
         // miniplayer long after playback ended.
@@ -2939,6 +2998,10 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             activity.window.decorView.post {
                 if (loadedCore == null || mpv !== loadedCore) return@post
                 mediaLoaded = true
+                // The video keeps the read timeout it opened with (see loadIntoCore). Every stream
+                // opened from here on, sidecars included, gets the normal one again.
+                loadedCore.setPropertyString("network-timeout", NETWORK_TIMEOUT_SECONDS)
+                val held = takeHeldSidecars(loadedCore.getPropertyString("path"))
                 publishPipParams()
                 val pending = pendingSubtitles
                 if (pending != null && loadedCore.getPropertyString("path") == pending.url) {
@@ -2966,6 +3029,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
                         ))
                     }
                 }
+                held.forEach { loadedCore.command(it) }
                 enforcePreferredSubtitle(loadedCore)
             }
         }

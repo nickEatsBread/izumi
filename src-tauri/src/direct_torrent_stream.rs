@@ -184,6 +184,30 @@ fn notify_request_started(
     }
 }
 
+/// The URL a player opens for one file of a torrent on this process's stream server.
+pub(crate) fn player_stream_url(port: u16, torrent_id: usize, file_index: usize) -> String {
+    format!("http://127.0.0.1:{port}/torrents/{torrent_id}/stream/{file_index}")
+}
+
+/// Whether `url` is a [`player_stream_url`]. Reads from it wait for the swarm to deliver pieces,
+/// so a long wait there means buffering, not a dead connection.
+#[cfg_attr(target_os = "android", allow(dead_code))]
+pub(crate) fn is_player_stream_url(url: &str) -> bool {
+    let Some(route) = url.strip_prefix("http://127.0.0.1:") else {
+        return false;
+    };
+    let number = |part: Option<&str>| {
+        part.is_some_and(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+    };
+    let mut parts = route.split('/');
+    number(parts.next())
+        && parts.next() == Some("torrents")
+        && number(parts.next())
+        && parts.next() == Some("stream")
+        && number(parts.next())
+        && parts.next().is_none()
+}
+
 fn text_error(status: StatusCode, message: impl Into<String>) -> Response {
     (status, message.into()).into_response()
 }
@@ -317,11 +341,39 @@ pub async fn serve(
 
 #[cfg(test)]
 mod tests {
-    use super::{notify_request_started, DiagnosticReader, StreamDiagnostics};
+    use super::{
+        is_player_stream_url, notify_request_started, player_stream_url, DiagnosticReader,
+        StreamDiagnostics,
+    };
     use axum::http::StatusCode;
     use librqbit::{api::TorrentIdOrHash, dht::Id20};
     use tokio::io::AsyncReadExt;
     use tokio::sync::mpsc::unbounded_channel;
+
+    #[test]
+    fn player_stream_urls_address_the_local_stream_route() {
+        let url = player_stream_url(51_234, 7, 3);
+        assert_eq!(url, "http://127.0.0.1:51234/torrents/7/stream/3");
+        assert!(is_player_stream_url(&url));
+    }
+
+    #[test]
+    fn only_the_local_stream_route_is_a_player_stream() {
+        for url in [
+            "https://cdn.example.com/torrents/7/stream/3",
+            "http://localhost:51234/torrents/7/stream/3",
+            "http://127.0.0.1/torrents/7/stream/3",
+            "http://127.0.0.1:port/torrents/7/stream/3",
+            "http://127.0.0.1:51234/torrents/7/stream/",
+            "http://127.0.0.1:51234/torrents/7/stream/3/extra",
+            "http://127.0.0.1:51234/torrents/7/stream/3?download=1",
+            "http://127.0.0.1:51234/playlist.m3u8",
+            "/home/user/Videos/episode.mkv",
+            "",
+        ] {
+            assert!(!is_player_stream_url(url), "{url}");
+        }
+    }
 
     #[test]
     fn numeric_player_request_notifies_the_active_torrent_owner() {
