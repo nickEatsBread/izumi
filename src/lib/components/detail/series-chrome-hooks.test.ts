@@ -26,5 +26,24 @@ describe('series page chrome for themes', () => {
     for (const hook of ['person', 'person.photo', 'person.name', 'person.role']) {
       expect(people.match(new RegExp(`data-part="${hook.replace('.', '\\.')}"`, 'g'))?.length, hook).toBe(3)
     }
+    // The staff grid is a region of its own, like the characters.
+    expect(people).toContain('<section data-slot="detail.characters">')
+    expect(people).toContain('<section data-slot="detail.staff">')
+  })
+  it('names each series action', () => {
+    // Save and Share keep their `button` part (Save also on the desktop overlay page); Trailer and
+    // More have no part of their own, so they are `detail.action`. The list buttons say `list`.
+    expect(detail.match(/data-part="button" data-variant="secondary" data-action="save"/g)?.length).toBe(3)
+    expect(detail.match(/data-part="button" data-variant="icon" data-action="share"/g)?.length).toBe(2)
+    expect(detail.match(/data-part="detail\.action" data-action="trailer"/g)?.length).toBe(2)
+    expect(detail.match(/data-part="detail\.action" data-action="more"/g)?.length).toBe(1)
+    expect(detail.match(/data-part="detail\.list-button"[^>]*? data-action="list"/g)?.length).toBe(3)
+    expect(detail.match(/data-part="detail\.list-button"/g)?.length).toBe(3)
+  })
+  it('labels related titles with their relation on phones as on desktop', () => {
+    expect(detail.match(/<div data-part="relation\.type" class="[^"]*">\{e\.relationType\.replaceAll\('_', ' '\)\.toLowerCase\(\)\}<\/div>/g)?.length).toBe(2)
+  })
+  it('names the scrolling row of a carousel episode list', () => {
+    expect(read('./EpisodeList.svelte')).toContain('<div data-part="episodes.track" class="flex gap-5 overflow-x-auto pb-3">')
   })
 })

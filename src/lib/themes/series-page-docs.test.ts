@@ -24,6 +24,14 @@ describe('series page composition docs', () => {
   it('says where the desktop synopsis shows once a theme sets the sections', () => {
     expect(docs).toContain('a theme that sets `sections` shows the synopsis once')
   })
+  it('documents the series action names as a state of the action hooks', () => {
+    const hooks = Object.values(THEME_HOOKS).flatMap((entries) => entries ?? [])
+    for (const name of ['button', 'detail.action', 'detail.list-button']) {
+      expect(hooks.find((hook) => hook.name === name)?.states, name).toContain('data-action')
+    }
+    const row = docs.split('\n').find((line) => line.startsWith('| `data-action` |'))
+    for (const value of ['`save`', '`share`', '`trailer`', '`more`', '`list`']) expect(row, value).toContain(value)
+  })
   it('lists the episode template fields', () => {
     for (const field of ['`episodeNo`', '`episodeCode`', '`watched`', '`filler`', '`rating`']) expect(docs, field).toContain(field)
   })

@@ -136,6 +136,7 @@ State values:
 | `data-variant` | `detail.facts` | `table`, `cards`, `chips` (none for a template) |
 | `data-variant` | `detail.countdown` | `compact`, `long` |
 | `data-variant` | `detail.list-button` | `full` (the full-width button) |
+| `data-action` | series page actions: `button`, `detail.action`, `detail.list-button` | `save`, `share` (`button`); `trailer`, `more` (`detail.action`); `list` (`detail.list-button`, also inside the phone's More menu) |
 | `data-solid` | `detail.bar` | present once the artwork has scrolled under the bar |
 | `data-key` | `fact` | `format`, `episodes`, `status`, `aired`, `season`, `duration`, `studio`, `source`, `country`, `score`, `members`, `genres`, `progress`, `synonyms` |
 | `data-variant` | `episode` | `template`, `thumb`, `compact`, `number`, `row` |
@@ -265,12 +266,15 @@ State values:
 | `detail.genres` | part | The genre chips (phone). |  |
 | `detail.synopsis` | part | The description. |  |
 | `detail.actions` | part | The action buttons row. |  |
-| `detail.list-button` | part | The tracker list-status button. | `data-variant` |
+| `detail.list-button` | part | The tracker list-status button. | `data-variant`, `data-action` |
+| `detail.action` | part | A series action that is not a `button`: Trailer, and on phones More (whose menu holds the list button and tracker links). | `data-action` |
 | `detail.airing` | part | The release status of upcoming episodes (sub and dub timing, delays). |  |
 | `detail.countdown` | part | The next-episode countdown (`detail.countdown` compact or long). | `data-variant` |
 | `detail.episodes` | slot | The episode list. |  |
 | `detail.relations` | slot | Related titles. |  |
+| `relation.type` | part | The relation above a related title ("sequel", "side story"). |  |
 | `detail.characters` | slot | Characters and voice actors. |  |
+| `detail.staff` | slot | Staff credits. |  |
 | `detail.bar` | slot | The floating top bar of the phone series page (back and, once scrolled, the title). | `data-solid` |
 | `detail.byline` | part | The phone studio · source · members line. |  |
 | `person` | part | One character or staff credit. |  |
@@ -288,6 +292,7 @@ State values:
 | `episode.still` | part | The episode thumbnail. |  |
 | `episode.number` | part | The episode number. |  |
 | `episode.title` | part | The episode title. |  |
+| `episodes.track` | part | The scrolling row holding the episode cards of a `carousel` arrangement. |  |
 | `episodes.toolbar` | slot | The episode controls: izumi's own bar, or the theme's bar or heading row (`detail.episodes.toolbar`). | `data-variant` |
 | `episodes.sort` | part | The order control: Oldest and Newest options (`tabs`, the chosen one `data-active`) or one toggle naming the current order (`flip`). | `data-variant`, `data-dir` |
 | `episodes.search` | part | The episode search: the field (holding `input`) or the button that opens it. | `data-active` |
@@ -344,7 +349,7 @@ State values:
 
 | Hook | Kind | What | States |
 |---|---|---|---|
-| `button` | part | A button. | `data-variant` |
+| `button` | part | A button. Series page actions carry `data-action`. | `data-variant`, `data-action` |
 | `chip` | part | A chip or pill (genre, filter, scope, episode range). | `data-active` |
 | `input` | part | A text input. |  |
 | `badge` | part | A small label on an item (for example an episode rating). |  |

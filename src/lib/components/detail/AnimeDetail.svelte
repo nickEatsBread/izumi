@@ -686,7 +686,7 @@
         {/if}
 
         {#if detailTheme.listButton === 'full'}
-          <button data-part="detail.list-button" data-variant="full" data-focusable onclick={() => { h.tap(); showEditor = true }}
+          <button data-part="detail.list-button" data-variant="full" data-action="list" data-focusable onclick={() => { h.tap(); showEditor = true }}
                   class="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border-2 border-theme py-2.5 text-sm font-black uppercase tracking-wide text-theme">
             {effStatus ? STATUS_LABEL[effStatus] : 'Add to list'}
           </button>
@@ -694,21 +694,21 @@
 
         <!-- Compact action row: 4 icons + overflow. Handlers are the SAME functions the desktop bar uses. -->
         <div data-part="detail.actions" class="relative mt-2 flex items-center gap-2">
-          <button data-part="button" data-variant="secondary" data-focusable onclick={() => { h.tap(); showLocalLists = true }} aria-label="Save to lists"
+          <button data-part="button" data-variant="secondary" data-action="save" data-focusable onclick={() => { h.tap(); showLocalLists = true }} aria-label="Save to lists"
                   class="flex h-11 flex-[2] items-center justify-center gap-1.5 rounded-lg bg-secondary px-2 text-sm font-bold">
             {#if savedLocally}<BookmarkCheck size={17} class="text-theme" /> Saved{:else}<BookmarkPlus size={17} /> Save{/if}
           </button>
-          <button data-part="button" data-variant="icon" data-focusable onclick={() => { h.tap(); void onShare(m) }} aria-label="Share series"
+          <button data-part="button" data-variant="icon" data-action="share" data-focusable onclick={() => { h.tap(); void onShare(m) }} aria-label="Share series"
                   class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
             {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
           </button>
           {#if m.trailer?.id}
-            <button data-focusable onclick={() => { h.tap(); openTrailerPopup(m.trailer!.id!, title(m)) }} aria-label="Trailer"
+            <button data-part="detail.action" data-action="trailer" data-focusable onclick={() => { h.tap(); openTrailerPopup(m.trailer!.id!, title(m)) }} aria-label="Trailer"
                     class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
               <Clapperboard size={18} />
             </button>
           {/if}
-          <button data-focusable onclick={() => { h.tap(); showMore = !showMore }} aria-label="More"
+          <button data-part="detail.action" data-action="more" data-focusable onclick={() => { h.tap(); showMore = !showMore }} aria-label="More"
                   aria-haspopup="true" aria-expanded={showMore}
                   class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
             <MoreHorizontal size={18} />
@@ -720,7 +720,7 @@
             <button type="button" aria-label="Close menu" onclick={() => (showMore = false)}
                     class="fixed inset-0 z-40 cursor-default"></button>
             <div class="absolute bottom-full right-0 z-50 mb-2 w-56 rounded-lg border border-border bg-card p-2 shadow-2xl">
-              <button data-part="detail.list-button" data-focusable onclick={() => { h.tap(); showMore = false; showEditor = true }}
+              <button data-part="detail.list-button" data-action="list" data-focusable onclick={() => { h.tap(); showMore = false; showEditor = true }}
                       class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
                 <ChevronDown size={15} /> {effStatus ? `Edit ${STATUS_LABEL[effStatus]}` : 'Add to list'}
               </button>
@@ -775,7 +775,7 @@
                   class="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 font-bold text-primary-foreground">
             <Play size={18} />{ctaHasProgress(m) ? `Play · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
           </button>
-          <button data-part="button" data-variant="secondary" data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
+          <button data-part="button" data-variant="secondary" data-action="save" data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
                   class="grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25">
             {#if savedLocally}<BookmarkCheck size={20} />{:else}<BookmarkPlus size={20} />{/if}
           </button>
@@ -898,13 +898,13 @@
             <Play size={detailTheme.cta === 'large' ? 18 : 16} />{detailTheme.cta === 'large' ? (effStatus === 'COMPLETED' ? 'Rewatch Now' : ctaHasProgress(m) ? 'Continue Now' : 'Watch Now') : (ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play')}
           </button>
 
-          <button data-part="button" data-variant="secondary" data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
+          <button data-part="button" data-variant="secondary" data-action="save" data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
                   class="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 font-bold transition-colors hover:bg-accent">
             {#if savedLocally}<BookmarkCheck size={18} class="text-theme" /> Saved{:else}<BookmarkPlus size={18} /> Save{/if}
           </button>
 
           {#if detailTheme.listButton !== 'hidden'}
-          <button data-part="detail.list-button" bind:this={editorAnchor} data-focusable onclick={() => (showEditor = true)} title="Edit list status"
+          <button data-part="detail.list-button" data-action="list" bind:this={editorAnchor} data-focusable onclick={() => (showEditor = true)} title="Edit list status"
                   aria-haspopup="dialog" aria-expanded={showEditor}
                   class="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 font-bold transition-colors hover:bg-accent">
             {#if effStatus}
@@ -916,13 +916,13 @@
           </button>
           {/if}
 
-          <button data-part="button" data-variant="icon" data-focusable onclick={() => void onShare(m)} title="Copy AniList link"
+          <button data-part="button" data-variant="icon" data-action="share" data-focusable onclick={() => void onShare(m)} title="Copy AniList link"
                   class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
             {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
           </button>
 
           {#if m.trailer?.id}
-            <button data-focusable onclick={() => openTrailerPopup(m.trailer!.id!, title(m))} title="Watch trailer"
+            <button data-part="detail.action" data-action="trailer" data-focusable onclick={() => openTrailerPopup(m.trailer!.id!, title(m))} title="Watch trailer"
                     class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
               <Clapperboard size={18} />
             </button>
@@ -1211,7 +1211,10 @@
       {#if m.relations?.edges?.length}
         <div data-slot="detail.relations" class="mt-3 grid grid-cols-2 gap-4">
           {#each m.relations.edges as e (e.node.id)}
-            <div class="min-w-0"><SmallCard media={e.node} fill /></div>
+            <div class="min-w-0">
+              <div data-part="relation.type" class="mb-1 truncate text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
+              <SmallCard media={e.node} fill />
+            </div>
           {/each}
         </div>
       {:else}<p class="mt-3 text-muted-foreground">No related titles.</p>{/if}
@@ -1219,7 +1222,7 @@
       <div data-slot="detail.relations" class="flex flex-wrap {$themePresentation ? 'gap-x-6 gap-y-8' : 'gap-4'}">
         {#each m.relations.edges as e (e.node.id)}
           <div class={$themePresentation ? 'shrink-0' : 'w-[152px]'}>
-            <div class="{$themePresentation ? 'mb-1.5' : 'mb-1'} text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
+            <div data-part="relation.type" class="{$themePresentation ? 'mb-1.5' : 'mb-1'} text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
             <SmallCard media={e.node} />
           </div>
         {/each}

@@ -722,7 +722,7 @@
       </div>
     {/if}
   {:else if episodeCarousel}
-    <div class="flex gap-5 overflow-x-auto pb-3">
+    <div data-part="episodes.track" class="flex gap-5 overflow-x-auto pb-3">
       {#each rows as ep (`${rowOrder}-${ep}`)}
         <div class="w-[min(100%,18rem)] shrink-0">
         <EpisodeCard

@@ -52,7 +52,7 @@
       {:else}<p class="text-sm text-muted-foreground">No character credits are available.</p>{/if}
     </section>
 
-    <section>
+    <section data-slot="detail.staff">
       <h3 class="mb-3 text-lg font-black">Staff</h3>
       {#if media.staff?.edges?.length}
         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
