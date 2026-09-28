@@ -291,7 +291,7 @@ State values:
 | `episodes.toolbar` | slot | The episode controls: izumi's own bar, or the theme's bar or heading row (`detail.episodes.toolbar`). | `data-variant` |
 | `episodes.sort` | part | The order control: Oldest and Newest options (`tabs`, the chosen one `data-active`) or one toggle naming the current order (`flip`). | `data-variant`, `data-dir` |
 | `episodes.search` | part | The episode search: the field (holding `input`) or the button that opens it. | `data-active` |
-| `episodes.layout` | part | The phone cards/numbers switch; its options are `data-active` when chosen. | `data-layout` |
+| `episodes.layout` | part | The phone cards/numbers switch: izumi's own bar shows both options (the chosen one `data-active`); a theme's toolbar shows one toggle to the other layout. | `data-layout` |
 | `episodes.download` | part | The button that starts picking episodes to download. |  |
 | `episodes.queue` | part | The button that adds the next episode to the episode queue. |  |
 | `episodes.ranges` | part | The row of range chips above the list (`paging: "ranges"`); each range is a `chip`, the current one `data-active`. |  |

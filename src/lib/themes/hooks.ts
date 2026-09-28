@@ -124,7 +124,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'episodes.toolbar', kind: 'slot', description: "The episode controls: izumi's own bar, or the theme's bar or heading row (`detail.episodes.toolbar`).", states: ['data-variant'] },
     { name: 'episodes.sort', kind: 'part', description: 'The order control: Oldest and Newest options (`tabs`, the chosen one `data-active`) or one toggle naming the current order (`flip`).', states: ['data-variant', 'data-dir'] },
     { name: 'episodes.search', kind: 'part', description: 'The episode search: the field (holding `input`) or the button that opens it.', states: ['data-active'] },
-    { name: 'episodes.layout', kind: 'part', description: 'The phone cards/numbers switch; its options are `data-active` when chosen.', states: ['data-layout'] },
+    { name: 'episodes.layout', kind: 'part', description: "The phone cards/numbers switch: izumi's own bar shows both options (the chosen one `data-active`); a theme's toolbar shows one toggle to the other layout.", states: ['data-layout'] },
     { name: 'episodes.download', kind: 'part', description: 'The button that starts picking episodes to download.' },
     { name: 'episodes.queue', kind: 'part', description: 'The button that adds the next episode to the episode queue.' },
     { name: 'episodes.ranges', kind: 'part', description: 'The row of range chips above the list (`paging: "ranges"`); each range is a `chip`, the current one `data-active`.' },
