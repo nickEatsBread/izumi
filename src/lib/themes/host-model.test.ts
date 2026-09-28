@@ -102,6 +102,23 @@ describe('timeLeftLabel', () => {
   })
 })
 
+describe('the episode name in the host model', () => {
+  it('binds a real title and leaves the field out otherwise', () => {
+    expect(episodeDisplayModel(media, 8, { title: 'From Zero' }).episodeName).toBe('From Zero')
+    expect(episodeDisplayModel(media, 8).episodeName).toBeUndefined()
+    expect(episodeDisplayModel(media, 8, { title: 'Episode 8' }).episodeName).toBeUndefined()
+  })
+  it("follows the host's own title: a provider title counts, an Episode N stand-in does not", () => {
+    expect(episodeDisplayModel(media, 8, undefined, { episodeTitle: 'From Zero' }).episodeName).toBe('From Zero')
+    expect(episodeDisplayModel(media, 8, { title: 'From Zero' }, { episodeTitle: 'Episode 8' }).episodeName).toBeUndefined()
+  })
+  it('leaves it out when the host hides the title, while episodeTitle keeps the host label', () => {
+    const model = episodeDisplayModel(media, 8, { title: 'From Zero' }, { episodeTitle: 'Episode 8', episodeName: undefined })
+    expect(model.episodeName).toBeUndefined()
+    expect(model.episodeTitle).toBe('Episode 8')
+  })
+})
+
 describe('episode template fields in the host model', () => {
   it('binds the plain number and the season code from episode metadata', () => {
     const model = episodeDisplayModel(media, 5, { season: 2 })

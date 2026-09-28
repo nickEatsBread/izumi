@@ -3,7 +3,7 @@ import type { Media } from '$lib/anilist/types'
 import type { EpMeta } from '$lib/anizip/types'
 import type { Pos } from '$lib/player/progress'
 import { compactCountdown, longCountdown } from './countdown'
-import { episodeCodeText } from './episode-fields'
+import { episodeCodeText, episodeNameText } from './episode-fields'
 import type { DisplayModel } from './presentation'
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
@@ -62,6 +62,9 @@ export function episodeDisplayModel(
 ): DisplayModel {
   return mediaDisplayModel(media, {
     episodeTitle: extras.episodeTitle ?? meta?.title,
+    // The title the host shows, when it is the episode's own (not an "Episode N" stand-in). A host
+    // that hides the title (spoiler protection) passes `episodeName` itself, undefined included.
+    episodeName: extras.episodeName ?? episodeNameText(ep, extras.episodeTitle ?? meta?.title),
     episodeNumber: ep,
     episodeNo: extras.episodeNo ?? String(ep),
     episodeCode: extras.episodeCode ?? episodeCodeText(ep, meta?.season, meta?.seasonEpisode),

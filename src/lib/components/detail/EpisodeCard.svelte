@@ -18,7 +18,7 @@
   import { m } from '$lib/paraglide/messages.js'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { episodeDisplayModel } from '$lib/themes/host-model'
-  import { episodeNoText, episodeRatingText } from '$lib/themes/episode-fields'
+  import { episodeNameText, episodeNoText, episodeRatingText } from '$lib/themes/episode-fields'
   import type { EpisodeTileKind } from './episode-tile'
   import type { ThemeNode as EpisodeThemeNode } from '$lib/themes/presentation'
 
@@ -76,6 +76,8 @@
   const labels = $derived(episodeLabels(ep, meta?.title, spoiler))
   const themeModel = $derived(episodeDisplayModel(media, ep, meta, {
     episodeTitle: labels.primary || `Episode ${ep}`,
+    // The real title alone (no "Episode N" stand-in), so a template can tell the two apart.
+    episodeName: episodeNameText(ep, meta?.title, spoiler),
     ...(labels.concealSecondary ? { description: '' } : {}),
     still: img || cover(media),
     progress: pct,

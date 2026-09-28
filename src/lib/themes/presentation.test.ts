@@ -379,6 +379,14 @@ describe('series page composition keys (API 3)', () => {
     expect(displayText('episodeNumber', { episodeNumber: 12 })).toBe('E12')
     expect(displayText('rating', { rating: '8.5' })).toBe('8.5')
   })
+  it("binds episodeName, the episode's own title, on API 3 only", () => {
+    const card = { type: 'text', field: 'episodeName', when: { field: 'episodeName' } }
+    expect(parsePresentation({ detail: { episodes: { card } } }).detail?.episodes?.card).toEqual(card)
+    expect(() => parsePresentation({ detail: { episodes: { card: { type: 'text', field: 'episodeName' } } } }, 2)).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { episodes: { card: { type: 'text', text: 'x', when: { field: 'episodeName' } } } } }, 2)).toThrow('unsupported')
+    expect(displayText('episodeName', { episodeName: 'From Zero' })).toBe('From Zero')
+    expect(displayText('episodeName', {})).toBe('')
+  })
   it('merges a phone section model over the shared one', () => {
     const layout = parsePresentation({ detail: { sections: { labels: { overview: 'about' }, mode: 'stack' } }, mobile: { detail: { sections: { tabs: ['overview', 'episodes'] } } } })
     expect(resolveDetail(resolvePresentation(layout, true)).sections).toEqual({ labels: { overview: 'about' }, mode: 'stack', tabs: ['overview', 'episodes'] })

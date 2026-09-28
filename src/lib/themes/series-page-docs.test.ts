@@ -33,6 +33,6 @@ describe('series page composition docs', () => {
     for (const value of ['`save`', '`share`', '`trailer`', '`more`', '`list`']) expect(row, value).toContain(value)
   })
   it('lists the episode template fields', () => {
-    for (const field of ['`episodeNo`', '`episodeCode`', '`watched`', '`filler`', '`rating`']) expect(docs, field).toContain(field)
+    for (const field of ['`episodeNo`', '`episodeCode`', '`watched`', '`filler`', '`rating`', '`episodeName`']) expect(docs, field).toContain(field)
   })
 })

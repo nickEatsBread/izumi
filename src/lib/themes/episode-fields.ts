@@ -8,6 +8,13 @@ export function episodeNoText(episode: number, absolute: number | undefined, sho
   return String(showAbsolute && absolute != null ? absolute : episode)
 }
 
+/** The episode's own title (`episodeName`): nothing when it has none — the "Episode 12" a list
+ *  prints in its place is not a title — or while spoiler protection hides it (`concealed`). */
+export function episodeNameText(episode: number, title: string | undefined, concealed = false): string | undefined {
+  const name = title?.trim()
+  return !concealed && name && name !== `Episode ${episode}` ? name : undefined
+}
+
 /** "S2 E5" when the episode metadata knows its season, else "E5". `seasonEpisode` is the number
  *  within that season when it differs from the list's own (a split cour continues its season). */
 export function episodeCodeText(episode: number, season?: number, seasonEpisode?: number): string {

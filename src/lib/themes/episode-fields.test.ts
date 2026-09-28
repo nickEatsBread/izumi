@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { episodeCodeText, episodeNoText, episodeRatingText } from './episode-fields'
+import { episodeCodeText, episodeNameText, episodeNoText, episodeRatingText } from './episode-fields'
 
 describe('episode template fields', () => {
   it('prints the plain episode number, series-wide when the viewer shows those', () => {
@@ -14,6 +14,17 @@ describe('episode template fields', () => {
     expect(episodeCodeText(1, 4, 17)).toBe('S4 E17')
     expect(episodeCodeText(5)).toBe('E5')
     expect(episodeCodeText(5, 0)).toBe('E5')
+  })
+  it('names an episode only by a title of its own', () => {
+    expect(episodeNameText(5, 'From Zero')).toBe('From Zero')
+    expect(episodeNameText(5, '  From Zero ')).toBe('From Zero')
+    expect(episodeNameText(5, undefined)).toBeUndefined()
+    expect(episodeNameText(5, '')).toBeUndefined()
+    expect(episodeNameText(5, '   ')).toBeUndefined()
+    // The label a list prints in place of a missing title is not a title.
+    expect(episodeNameText(5, 'Episode 5')).toBeUndefined()
+    // Spoiler protection hides it.
+    expect(episodeNameText(5, 'From Zero', true)).toBeUndefined()
   })
   it('rates released episodes out of ten with one decimal', () => {
     expect(episodeRatingText(8.5, true)).toBe('8.5')

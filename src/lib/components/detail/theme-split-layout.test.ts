@@ -43,6 +43,12 @@ describe('themed series page composition', () => {
     expect(card).not.toContain('description: labels.concealSecondary ? undefined : labels.secondary')
     expect(card).not.toContain('actions={{ play:')
   })
+  it("binds the episode's own title apart from its Episode N stand-in", () => {
+    expect(card).toContain("import { episodeNameText, episodeNoText, episodeRatingText } from '$lib/themes/episode-fields'")
+    // Spoiler protection hides it as it hides the title in `episodeTitle`.
+    expect(card).toContain('episodeName: episodeNameText(ep, meta?.title, spoiler),')
+    expect(card).toContain('episodeTitle: labels.primary || `Episode ${ep}`')
+  })
   it('lets a series-facts template replace the default dotted metadata line', () => {
     expect(detail).toContain('detailTheme.facts')
     expect(detail).toContain('<ThemeNode node={detailTheme.facts}')

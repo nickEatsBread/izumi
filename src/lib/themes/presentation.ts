@@ -7,7 +7,7 @@ export type DisplayField =
   | 'source' | 'country'
   | 'nextEpisode' | 'airingIn' | 'airingCountdown' | 'slide' | 'slides' | 'episodesAired' | 'genre'
   | 'ageRating' | 'audio' | 'timeLeft'
-  | 'episodeNo' | 'episodeCode' | 'watched' | 'filler' | 'rating'
+  | 'episodeNo' | 'episodeCode' | 'watched' | 'filler' | 'rating' | 'episodeName'
 /** Host numbers. `when.atMost` compares these; text nodes render them through `displayText`. */
 export type NumericDisplayField = 'rankPosition' | 'score' | 'duration' | 'episodeNumber' | 'progress' | 'nextEpisode' | 'slide' | 'slides' | 'episodesAired'
 /** `keyart` (API 3) is 16:9 title artwork: a TVDB background for AniList titles, a TMDB or add-on backdrop otherwise. */
@@ -256,9 +256,9 @@ const fields = [
   'source', 'country',
   'nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired', 'genre',
   'ageRating', 'audio', 'timeLeft',
-  'episodeNo', 'episodeCode', 'watched', 'filler', 'rating',
+  'episodeNo', 'episodeCode', 'watched', 'filler', 'rating', 'episodeName',
 ] as const satisfies readonly DisplayField[]
-const API3_FIELDS: readonly DisplayField[] = ['nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired', 'genre', 'ageRating', 'audio', 'timeLeft', 'episodeNo', 'episodeCode', 'watched', 'filler', 'rating']
+const API3_FIELDS: readonly DisplayField[] = ['nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired', 'genre', 'ageRating', 'audio', 'timeLeft', 'episodeNo', 'episodeCode', 'watched', 'filler', 'rating', 'episodeName']
 /** An API 1/2 package is held to the fields its clients know, so it renders identically everywhere. */
 const fieldsFor = (api: ThemeApi) => (api >= 3 ? fields : fields.filter(field => !API3_FIELDS.includes(field)))
 const numericFields: string[] = ['rankPosition', 'score', 'duration', 'episodeNumber', 'progress', 'nextEpisode', 'slide', 'slides', 'episodesAired'] satisfies NumericDisplayField[]
