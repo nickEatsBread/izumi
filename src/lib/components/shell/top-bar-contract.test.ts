@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
-const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
+// Line endings are normalised so multi-line expectations hold on a CRLF checkout too.
+const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n/g, '\n')
 
 describe('theme top bar', () => {
   it('shows text links and a centred brand with the plain izumi text when the theme asks', () => {
