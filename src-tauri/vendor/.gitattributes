@@ -1,0 +1,3 @@
+# Keep the vendored crates byte-for-byte as published (LF, no conversion on Windows checkouts), so
+# `diff -ru` against the unpacked .crate archive shows only the patch.
+* -text

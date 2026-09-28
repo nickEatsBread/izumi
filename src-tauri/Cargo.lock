@@ -4182,8 +4182,6 @@ dependencies = [
 [[package]]
 name = "librqbit-dht"
 version = "9.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f968073bcbc6543bd7510af1c7b84d5d2a876cb284a2a4008b315e17028af96"
 dependencies = [
  "anyhow",
  "backon",
@@ -4332,8 +4330,6 @@ dependencies = [
 [[package]]
 name = "librqbit-utp"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f3bfdc73944bc76cab24d5690a98816770040a654c449edf5ff2b9ba22626aa"
 dependencies = [
  "bitvec",
  "dontfrag",

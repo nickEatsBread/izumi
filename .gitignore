@@ -3,6 +3,7 @@ build/
 .svelte-kit/
 dist/
 src-tauri/target/
+src-tauri/vendor/*/target/
 src-tauri/gen/
 .DS_Store
 *.log
