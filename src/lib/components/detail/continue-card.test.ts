@@ -35,7 +35,7 @@ describe('continue card', () => {
     expect(detail).not.toContain('$localHistory[m.id]?.progress ?? 0')
   })
   it('keeps the phone Play button while the episodes, and so the card, are off the page', () => {
-    expect(detail).toContain("import { episodesOnPage, resolveSections, type ResolvedSections } from '$lib/detail/sections'")
+    expect(detail).toMatch(/import \{[^}]*\bepisodesOnPage\b[^}]*\} from '\$lib\/detail\/sections'/)
     expect(detail).toContain('&& episodesOnPage(mobileTabs, shownTab(mobileTabs), !episodeTabbed)')
   })
 })

@@ -30,6 +30,14 @@ describe('series page sections', () => {
     expect(detail).toContain('{#if !mobileTabs.infoInOverview}{@render phoneInfo(m)}{/if}')
     expect(detail).toContain('{#if mobileTabs.infoInOverview}<div>{@render phoneInfo(m)}</div>{/if}')
   })
+  it('shows the desktop synopsis once when a theme composes the sections', () => {
+    expect(detail).toContain('const synopsisAt = $derived(desktopSynopsis(detailTheme.sections))')
+    // With `info: "overview"` the info column leaves the synopsis to Overview, in both its places...
+    expect(detail).toContain("{#if m.description && !detailTheme.actionsFirst && synopsisAt !== 'overview'}")
+    expect(detail).toContain("{#if m.description && detailTheme.actionsFirst && synopsisAt !== 'overview'}")
+    // ...and otherwise the desktop Overview leaves it to the info column.
+    expect(detail.match(/\{#if m\.description && synopsisAt !== 'info'\}/g)?.length).toBe(1)
+  })
   it('names each tab by its section', () => {
     const tabs = read('./Tabs.svelte')
     expect(tabs).toContain('data-tab={labels ? tab : undefined}')

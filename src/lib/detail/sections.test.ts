@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { episodesOnPage, resolveSections, TAB_LABEL_TEXT } from './sections'
+import { desktopSynopsis, episodesOnPage, resolveSections, TAB_LABEL_TEXT } from './sections'
 
 describe('series page sections', () => {
   it("keeps izumi's phone tabs without a theme", () => {
@@ -57,5 +57,22 @@ describe('episodes on the page', () => {
       expect(episodesOnPage(phone({ mode: 'stack', tabs: ['overview'] }), open, false)).toBe(true)
       expect(episodesOnPage(phone({ tabs: ['overview', 'relations'] }, false), open, true)).toBe(true)
     }
+  })
+})
+
+// The desktop info column (stacked and split pages) shows a synopsis; once a theme composes the
+// sections, Overview must not repeat it.
+describe('the desktop synopsis', () => {
+  it("keeps izumi's short synopsis in the info column and the whole text in Overview without a theme's sections", () => {
+    expect(desktopSynopsis(undefined)).toBe('both')
+  })
+  it('shows it once, in the info column, when a theme composes the sections', () => {
+    expect(desktopSynopsis({ mode: 'stack' })).toBe('info')
+    expect(desktopSynopsis({ tabs: ['overview', 'episodes'], default: 'overview' })).toBe('info')
+    expect(desktopSynopsis({ info: 'above' })).toBe('info')
+  })
+  it('moves it into Overview with info: "overview"', () => {
+    expect(desktopSynopsis({ mode: 'stack', tabs: ['overview', 'episodes'], info: 'overview' })).toBe('overview')
+    expect(desktopSynopsis({ info: 'overview' })).toBe('overview')
   })
 })

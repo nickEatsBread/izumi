@@ -70,7 +70,7 @@
   import ParentalBlock from '$lib/components/profiles/ParentalBlock.svelte'
   import { themePresentation } from '$lib/themes/runtime'
   import { episodesBelow, episodesOnSide, resolveDetail, type DetailSection } from '$lib/themes/presentation'
-  import { episodesOnPage, resolveSections, type ResolvedSections } from '$lib/detail/sections'
+  import { desktopSynopsis, episodesOnPage, resolveSections, type ResolvedSections } from '$lib/detail/sections'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { mediaDisplayModel } from '$lib/themes/host-model'
   import { ambientFromHex } from '$lib/themes/ambient'
@@ -290,6 +290,9 @@
   // move the facts into Overview (API 3 `detail.sections`); without it, izumi's own tabs.
   const desktopTabs = $derived(resolveSections(detailTheme.sections, { phone: false, episodesTabbed: episodeTabbed }))
   const mobileTabs = $derived(resolveSections(detailTheme.sections, { phone: true, episodesTabbed: episodeTabbed }))
+  // Desktop: once a theme composes the sections, the synopsis shows in the info column or in Overview
+  // (`info: "overview"`), never both; izumi's own page keeps a short one above and the whole text in Details.
+  const synopsisAt = $derived(desktopSynopsis(detailTheme.sections))
   const shownTab = (view: ResolvedSections): DetailSection => view.tabs.find((tab) => tab === pickedTab) ?? view.initial
   // API 3 `detail.continue: "card"`: on phones the Continue card at the top of the episodes takes
   // the header Play button's place, once an episode can play (the card needs one to show) and only
@@ -878,7 +881,7 @@
           </div>
         {/if}
 
-        {#if m.description && !detailTheme.actionsFirst}
+        {#if m.description && !detailTheme.actionsFirst && synopsisAt !== 'overview'}
           <p data-part="detail.synopsis" class="mb-3 {controllerUi ? 'line-clamp-2' : 'line-clamp-3'} max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
         {/if}
 
@@ -933,7 +936,7 @@
         {#if showRatingRow}<div class="mt-4">{@render ratingRow(m)}</div>{/if}
       </div>
     </div>
-    {#if m.description && detailTheme.actionsFirst}
+    {#if m.description && detailTheme.actionsFirst && synopsisAt !== 'overview'}
       <p data-part="detail.synopsis" class="mb-4 {controllerUi ? 'line-clamp-4' : 'line-clamp-6'} max-w-3xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
     {/if}
     {/snippet}
@@ -1173,7 +1176,7 @@
       </div>
     {:else}
       <div class="max-w-3xl space-y-4">
-        {#if m.description}
+        {#if m.description && synopsisAt !== 'info'}
           <p data-part="detail.synopsis" class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
         {/if}
         <dl class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">

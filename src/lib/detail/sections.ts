@@ -46,6 +46,15 @@ export function resolveSections(sections: DetailSections | undefined, options: {
   return { mode: sections?.mode ?? 'tabs', tabs, folded, labels, initial, infoInOverview: options.phone && sections?.info === 'overview' }
 }
 
+/** Where the desktop stacked and split pages show the synopsis. izumi's own page keeps a short one
+ *  in the info column and the whole text in Overview (`both`). A theme that composes the sections
+ *  shows it once: in the info column (`info`), or in Overview with `info: "overview"` (`overview`),
+ *  so Overview never repeats the info column. */
+export function desktopSynopsis(sections: DetailSections | undefined): 'both' | 'info' | 'overview' {
+  if (!sections) return 'both'
+  return sections.info === 'overview' ? 'overview' : 'info'
+}
+
 /** Whether the episode list is on the page, and with it what sits at its top (the Continue card):
  *  always when the episodes sit `outside` the sections (a right-hand rail, below the header) or the
  *  sections are stacked; otherwise while `open` is the Episodes tab, or Overview with the episodes

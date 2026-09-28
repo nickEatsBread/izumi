@@ -21,6 +21,9 @@ describe('series page composition docs', () => {
   it("says a flip order alone keeps izumi's toolbar", () => {
     expect(docs).toContain('`order: "flip"` on its own does not')
   })
+  it('says where the desktop synopsis shows once a theme sets the sections', () => {
+    expect(docs).toContain('a theme that sets `sections` shows the synopsis once')
+  })
   it('lists the episode template fields', () => {
     for (const field of ['`episodeNo`', '`episodeCode`', '`watched`', '`filler`', '`rating`']) expect(docs, field).toContain(field)
   })
