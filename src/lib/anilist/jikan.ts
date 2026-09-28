@@ -1,4 +1,5 @@
 import Bottleneck from 'bottleneck/light'
+import { get, set } from 'idb-keyval'
 import { phttp } from '$lib/net/http'
 import { getIndex, lookupAnilistByMal } from '$lib/stremio/idmap'
 import type { FuzzyDate, Media } from './types'
@@ -6,7 +7,7 @@ import type { FuzzyDate, Media } from './types'
 const API = 'https://api.jikan.moe/v4'
 const CATALOG_OPERATIONS = new Set([
   'Page', 'PageAll', 'Hero', 'HeroAll', 'Search', 'SearchAll',
-  'GenreCollection',
+  'GenreCollection', 'RowPage', 'RowPageAll',
 ])
 
 export interface JikanCatalogRequest {
@@ -67,17 +68,48 @@ const limiter = new Bottleneck({
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-async function jikanJson<T>(url: string, attempt = 0): Promise<T> {
+/** Bottleneck priority (0 = first, 9 = last) of the catalog fallback: the library default. */
+const CATALOG_PRIORITY = 5
+/** Theme age-rating lookups queue behind catalog requests, which fill whole screens. */
+const RATING_PRIORITY = 7
+
+async function jikanJson<T>(url: string, priority = CATALOG_PRIORITY, attempt = 0): Promise<T> {
   // Only the HTTP attempt occupies the one-at-a-time limiter. Waiting/requeueing from inside the
   // scheduled callback would deadlock because the retry cannot start until that callback exits.
-  const response = await limiter.schedule(() =>
+  const response = await limiter.schedule({ priority }, () =>
     phttp(url, { timeoutMs: 15_000, maxBytes: 2 * 1024 * 1024 }))
   if ((response.status === 429 || response.status >= 500) && attempt < 2) {
     await sleep(1000 * 2 ** attempt)
-    return jikanJson<T>(url, attempt + 1)
+    return jikanJson<T>(url, priority, attempt + 1)
   }
   if (!response.ok) throw new Error(`Jikan returned HTTP ${response.status}`)
   return response.json() as Promise<T>
+}
+
+const RATING_TTL_MS = 30 * 864e5
+const ratingKey = (malId: number) => `mal-rating-${malId}`
+// One lookup per title at a time: a hero asks for every slide, and each extra request would take
+// another turn on the serial limiter.
+const ratingInflight = new Map<number, Promise<string | null>>()
+
+/** MyAnimeList's content rating for a MAL id ("PG-13 - Teens 13 or older"), or null when MAL has
+ *  none. Cached in IndexedDB for a month: ratings practically never change, and the public API is
+ *  rate limited. Throws when Jikan cannot be reached. */
+export function fetchMalRating(malId: number): Promise<string | null> {
+  const running = ratingInflight.get(malId)
+  if (running) return running
+  const pending = readMalRating(malId).finally(() => ratingInflight.delete(malId))
+  ratingInflight.set(malId, pending)
+  return pending
+}
+
+async function readMalRating(malId: number): Promise<string | null> {
+  const cached = await get<{ at: number; rating: string | null }>(ratingKey(malId)).catch(() => undefined)
+  if (cached && Date.now() - cached.at < RATING_TTL_MS) return cached.rating
+  const body = await jikanJson<{ data?: { rating?: string | null } }>(`${API}/anime/${malId}`, RATING_PRIORITY)
+  const rating = body.data?.rating?.trim() || null
+  await set(ratingKey(malId), { at: Date.now(), rating }).catch(() => {})
+  return rating
 }
 
 export function parseJikanCatalogRequest(body: BodyInit | null | undefined): JikanCatalogRequest | null {
@@ -230,10 +262,12 @@ async function catalogUrl(request: JikanCatalogRequest): Promise<string> {
     url.searchParams.set('start_date', range.start)
     url.searchParams.set('end_date', range.end)
   }
-  const formats = Array.isArray(v.format_in) ? v.format_in : []
+  // A singular `format`/`status` (the Home-row presets) is treated exactly like a one-element
+  // `format_in`/`status_in` (the search filters) — same "if there's exactly one value" narrowing.
+  const formats = Array.isArray(v.format_in) ? v.format_in : typeof v.format === 'string' ? [v.format] : []
   const type = formats.length === 1 ? String(formats[0]).toLowerCase() : ''
   if (type && ['tv', 'movie', 'ova', 'ona', 'special', 'music'].includes(type)) url.searchParams.set('type', type)
-  const statuses = Array.isArray(v.status_in) ? v.status_in : []
+  const statuses = Array.isArray(v.status_in) ? v.status_in : typeof v.status === 'string' ? [v.status] : []
   const status = statuses.length === 1
     ? ({ FINISHED: 'complete', RELEASING: 'airing', NOT_YET_RELEASED: 'upcoming' } as Record<string, string>)[String(statuses[0])]
     : undefined

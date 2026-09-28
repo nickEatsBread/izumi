@@ -12,14 +12,22 @@
   import CatalogSectionRow from './CatalogSectionRow.svelte'
   import CollectionsHome from './CollectionsHome.svelte'
   import HomeRowFrame from './HomeRowFrame.svelte'
+  import HomeBlockView from '$lib/components/home/HomeBlockView.svelte'
+  import HomeColumns from '$lib/components/home/HomeColumns.svelte'
   import { CatalogConfigurationError, type CatalogHome, type CatalogHomeSection } from '$lib/catalog/types'
   import { loadCatalogProvider } from '$lib/catalog/registry'
+  import { homeEditorOpen } from '$lib/catalog/home-editor'
   import { catalogProvider, jvmCatalogSourceOverrides, stremioHeroArtwork } from '$lib/settings/catalog'
   import { catalogHomeLayoutKey, catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
-  import { CONTINUE_HOME_ROW } from '$lib/catalog/home-options'
+  import { CONTINUE_HOME_ROW, HERO_HOME_ROW } from '$lib/catalog/home-options'
   import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
+  import { activeThemeLayout } from '$lib/themes/layout-state'
+  import { isThemeBlockId, resolveThemeHome } from '$lib/home/theme-layout'
+  import { blockRowOptions, blockTitle, splitHomeColumns } from '$lib/home/block-rows'
+  import { homeAsideWidth, homeBlocks, isBlockId } from '$lib/home/blocks'
   import { mediaHref } from '$lib/anilist/media'
   import { anilistUser } from '$lib/anilist/account'
+  import { isMobile } from '$lib/platform'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
 
   // Provider payloads are immutable snapshots. Deep-proxying every Media object gives Svelte's
@@ -32,21 +40,50 @@
   let tmdbNeedsConfiguration = $state(false)
   let retry = $state(0)
   const listUser = $derived($anilistUserName || $anilistUser)
-  type ContentRow = { id: string; kind: 'continue' } | { id: string; kind: 'section'; section: CatalogHomeSection }
+  type ContentRow = { id: string; kind: 'hero' } | { id: string; kind: 'continue' } | { id: string; kind: 'block' } | { id: string; kind: 'section'; section: CatalogHomeSection }
   const continueEnabled = $derived(resolveCatalogHomeRows($catalogProvider, [CONTINUE_HOME_ROW], $catalogHomeLayouts)[0]?.enabled ?? true)
+  const sectionMap = $derived(new Map((home?.sections ?? []).map((section) => [section.id, section])))
+  // Shared by the user's own resolved rows and a theme row naming an id the user has hidden (a
+  // theme layout can show a row regardless of the user's own Edit Home choices).
+  function toContentRow(id: string): ContentRow | null {
+    if (id === 'hero') return { id, kind: 'hero' }
+    if (id === 'continue') return { id, kind: 'continue' }
+    if (isBlockId(id) || isThemeBlockId(id)) return { id, kind: 'block' }
+    const section = sectionMap.get(id)
+    return section ? { id, kind: 'section', section } : null
+  }
   const contentRows = $derived.by((): ContentRow[] => {
     if (!home) return []
-    const sections = new Map(home.sections.map((section) => [section.id, section]))
-    const options = [CONTINUE_HOME_ROW, ...home.sections.map((section) => ({ id: section.id, title: section.title }))]
-    const result: ContentRow[] = []
-    for (const row of resolveCatalogHomeRows($catalogProvider, options, $catalogHomeLayouts)) {
-      if (!row.enabled) continue
-      if (row.id === 'continue') result.push({ id: row.id, kind: 'continue' })
-      else if (sections.has(row.id)) result.push({ id: row.id, kind: 'section', section: sections.get(row.id)! })
-    }
-    return result
+    const options = [
+      HERO_HOME_ROW,
+      CONTINUE_HOME_ROW,
+      ...home.sections.map((section) => ({ id: section.id, title: section.title })),
+      ...blockRowOptions($catalogProvider, $catalogHomeLayouts, $homeBlocks),
+    ]
+    return resolveCatalogHomeRows($catalogProvider, options, $catalogHomeLayouts)
+      .filter((row) => row.enabled)
+      .flatMap((row) => {
+        const item = toContentRow(row.id)
+        return item ? [item] : []
+      })
   })
-  const visibleRowIds = $derived(contentRows.map((row) => row.id))
+  // While a theme layout is active, it replaces the row order below (the user's own layout, in
+  // `catalogHomeLayouts`, is never written to); it only resolves once the provider Home has loaded,
+  // since role rows need `home.sections` to resolve against. Its ephemeral `theme:<n>` blocks join
+  // `$homeBlocks` for lookups so a theme block renders exactly like a real one.
+  const themeHome = $derived($activeThemeLayout?.home && home
+    ? resolveThemeHome($activeThemeLayout.home, $catalogProvider, [HERO_HOME_ROW, CONTINUE_HOME_ROW, ...home.sections].map((option) => option.id))
+    : null)
+  const allBlocks = $derived(themeHome ? { ...$homeBlocks, ...themeHome.blocks } : $homeBlocks)
+  const visibleRowIds = $derived(themeHome?.rows ?? contentRows.map((row) => row.id))
+  // The hero renders full-bleed above HomeColumns only while it truly leads the row order; while
+  // Edit Home is open it always flows through HomeColumns instead, so it can be dragged/hidden like
+  // any other row (it would otherwise have no frame to grab while sitting in the unwrapped top slot).
+  const heroFirst = $derived(!$homeEditorOpen && visibleRowIds[0] === 'hero')
+  const homeRowIds = $derived(heroFirst ? visibleRowIds.slice(1) : visibleRowIds)
+  // While Edit Home is open, phones must still show every block (including a side-column one that
+  // opted out of `phone`), or there would be no way to reach its settings/remove button on a phone.
+  const columns = $derived(splitHomeColumns(homeRowIds, allBlocks, $isMobile && !$homeEditorOpen))
 
   $effect(() => {
     const selection = $catalogProvider
@@ -55,10 +92,15 @@
     const abort = new AbortController()
     // A provider's visible rows are part of the request, not merely presentation. Include them in
     // the cache identity so enabling an Aniyomi source or restoring a hidden Home row cannot reuse
-    // an older one-source snapshot that was previously considered complete.
+    // an older one-source snapshot that was previously considered complete. Block ids are stripped
+    // out of that identity: a block's own settings live in `homeBlocks`, not in the provider's
+    // response, so adding, moving or removing one must not look like a request to reload the
+    // provider's Home all over again.
+    const layout = $catalogHomeLayouts[catalogHomeLayoutKey(selection)] ?? null
+    const layoutForCache = layout && { order: layout.order.filter((id) => !isBlockId(id)), disabled: layout.disabled.filter((id) => !isBlockId(id)) }
     const cacheKey = JSON.stringify([
       selection,
-      $catalogHomeLayouts[catalogHomeLayoutKey(selection)] ?? null,
+      layoutForCache,
       selection === 'jvm' ? $jvmCatalogSourceOverrides : null,
       selection === 'tmdb' ? $tmdbCustomHomeRows : null,
     ])
@@ -108,16 +150,22 @@
 
 <!-- The bounded Aniyomi loader now reconciles rows in two batches, so its placeholders can use the
      same loading shimmer as every other catalog without repeatedly remounting the card tree. -->
-<div class="pb-16">
-  {#if home?.hero.length}
-    <Hero medias={home.hero} artworkMode={$catalogProvider === 'stremio' ? $stremioHeroArtwork : 'backdrop'}
-      onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} />
-  {:else if loading}
-    <div class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
-      <div class="absolute inset-0 skeloader"></div>
-      <div class="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent"></div>
-    </div>
-  {/if}
+<div data-slot="home" data-variant="catalog" class="pb-16">
+  {#snippet heroBlock()}
+    {#if home?.hero.length}
+      <Hero medias={home.hero} artworkMode={$catalogProvider === 'stremio' ? $stremioHeroArtwork : 'backdrop'}
+        onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} />
+    {:else if loading}
+      <div class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
+        <div class="absolute inset-0 skeloader"></div>
+        <div class="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent"></div>
+      </div>
+    {/if}
+  {/snippet}
+
+  <!-- Row order is unknown before `home` resolves (contentRows is empty pre-load), so the pre-load
+       skeleton renders unconditionally here rather than waiting on heroFirst. -->
+  {#if !home || heroFirst}{@render heroBlock()}{/if}
 
   <div class="space-y-5">
     <CollectionsHome />
@@ -145,17 +193,26 @@
         </div>
       {/each}
     {:else if home}
-      {#each contentRows as row (row.id)}
-        <HomeRowFrame rowId={row.id} title={row.kind === 'continue' ? 'Continue Watching' : row.section.title} target={$catalogProvider} visibleIds={visibleRowIds}>
-          {#if row.kind === 'continue'}
-            {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />{/key}
-          {:else}
-            {@const section = row.section}
-            <CatalogSectionRow {section} viewMoreHref={section.more ? moreHref(section.more) : undefined}
-              showCatalogSource={$catalogProvider !== 'jvm'} />
-          {/if}
-        </HomeRowFrame>
-      {/each}
+      {#snippet contentRow(id: string)}
+        {@const row = toContentRow(id)}
+        {@const visibleIds = columns.main.includes(id) ? columns.main : columns.aside}
+        {#if row}
+          <HomeRowFrame rowId={row.id} title={row.kind === 'hero' ? HERO_HOME_ROW.title : row.kind === 'continue' ? 'Continue Watching' : row.kind === 'block' ? (allBlocks[row.id] ? blockTitle(allBlocks[row.id]) : row.id) : row.section.title} target={$catalogProvider} {visibleIds} locked={!!themeHome}>
+            {#if row.kind === 'hero'}
+              {@render heroBlock()}
+            {:else if row.kind === 'continue'}
+              {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />{/key}
+            {:else if row.kind === 'block'}
+              <HomeBlockView id={row.id} target={$catalogProvider} optionIds={visibleRowIds} block={allBlocks[row.id]} />
+            {:else}
+              {@const section = row.section}
+              <CatalogSectionRow {section} viewMoreHref={section.more ? moreHref(section.more) : undefined}
+                showCatalogSource={$catalogProvider !== 'jvm'} />
+            {/if}
+          </HomeRowFrame>
+        {/if}
+      {/snippet}
+      <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$activeThemeLayout?.asideWidth ?? $homeAsideWidth} stack="space-y-5" row={contentRow} />
       {#if !contentRows.length && !error}
         <div class="mx-4 rounded-xl bg-secondary/50 p-6 text-center text-sm text-muted-foreground sm:mx-8">This provider returned no browseable catalogs.</div>
       {/if}

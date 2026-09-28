@@ -19,6 +19,8 @@
   } from '$lib/settings/catalog'
   import type { CatalogHomeTarget } from '$lib/catalog/home-layout'
   import type { CatalogHomeRowOption } from '$lib/catalog/types'
+  import { blockRowOptions, pruneHomeBlocks } from '$lib/home/block-rows'
+  import { homeBlocks } from '$lib/home/blocks'
   import {
     TMDB_CUSTOM_GENRES,
     TMDB_CUSTOM_ROW_LIMIT,
@@ -102,7 +104,9 @@
     return () => abort.abort()
   })
 
-  const rows = $derived(resolveCatalogHomeRows(selected, options, $catalogHomeLayouts))
+  // Blocks live in the same saved layout as ordinary rows, so they must be offered here too — else
+  // any move, hide or add on this screen would `save()` a layout with every block dropped.
+  const rows = $derived(resolveCatalogHomeRows(selected, [...options, ...blockRowOptions(selected, $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts))
   const visibleRows = $derived(rows.filter((row) => row.enabled))
   const availableGroups = $derived.by(() => {
     const grouped = new Map<string, typeof rows>()
@@ -145,6 +149,7 @@
 
   function resetSelected() {
     resetCatalogHomeLayout(selected)
+    pruneHomeBlocks()
     if (selected === 'stremio') $stremioHeroArtwork = 'backdrop'
   }
 

@@ -5,7 +5,7 @@ import { TMDB_HOME_ROWS } from './home-options'
 describe('catalog Home layouts', () => {
   it('keeps a focused TMDB Home with the featured discovery rows enabled', () => {
     expect(resolveCatalogHomeRows('tmdb', TMDB_HOME_ROWS, {}).filter((row) => row.enabled).map((row) => row.id)).toEqual([
-      'continue', 'trending', 'top10-movies', 'streaming-providers',
+      'hero', 'continue', 'trending', 'top10-movies', 'streaming-providers',
       'critics-pick', 'mood-now', 'world-cinema', 'network-spotlight',
       'anime-series', 'anime-movies', 'movies', 'series',
       'rated-movies', 'rated-series', 'upcoming',
@@ -30,7 +30,7 @@ describe('catalog Home layouts', () => {
         disabled: ['trending'],
       },
     })
-    expect(rows.slice(0, 2).map((row) => row.id)).toEqual(['now-playing', 'trending'])
+    expect(rows.slice(0, 3).map((row) => row.id)).toEqual(['hero', 'now-playing', 'trending'])
     expect(rows.find((row) => row.id === 'now-playing')?.enabled).toBe(true)
     expect(rows.find((row) => row.id === 'trending')?.enabled).toBe(false)
     expect(rows.some((row) => row.id === 'removed-row')).toBe(false)
@@ -69,5 +69,14 @@ describe('catalog Home layouts', () => {
       { id: 'a', title: 'A', enabled: true },
       { id: 'b', title: 'B', enabled: false },
     ])).toEqual({ order: ['a', 'b'], disabled: ['b'] })
+  })
+
+  it('puts the hero first in layouts saved before it was a row', () => {
+    const options = [{ id: 'hero', title: 'Featured banner' }, { id: 'continue', title: 'Continue' }, { id: 'season', title: 'Season' }]
+    const saved = { anilist: { order: ['season', 'continue'], disabled: [] } }
+    expect(resolveCatalogHomeRows('anilist', options, saved).map((row) => row.id)).toEqual(['hero', 'season', 'continue'])
+    const moved = { anilist: { order: ['season', 'hero', 'continue'], disabled: ['hero'] } }
+    expect(resolveCatalogHomeRows('anilist', options, moved).map((row) => [row.id, row.enabled])).toEqual([['season', true], ['hero', false], ['continue', true]])
+    expect(resolveCatalogHomeRows('anilist', options, {}).map((row) => row.id)[0]).toBe('hero')
   })
 })

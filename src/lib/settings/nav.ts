@@ -3,6 +3,8 @@
 // header, or be hidden — and can be reordered. Persisted so it survives restarts.
 import { persisted } from 'svelte-persisted-store'
 import { derived } from 'svelte/store'
+import { activeThemeLayout } from '$lib/themes/layout-state'
+import { themeNavConfig } from './theme-nav'
 import Home from '@lucide/svelte/icons/house'
 import Calendar from '@lucide/svelte/icons/calendar'
 import Download from '@lucide/svelte/icons/download'
@@ -56,10 +58,14 @@ export const DEFAULT_NAV: NavItemConfig[] = [
 /** Raw persisted config — the Settings → Navigation page reads and writes this directly. */
 export const navConfig = persisted<NavItemConfig[]>('nav-config-v1', DEFAULT_NAV)
 
-/** Effective config: guarantees every known item appears exactly once (drops unknown ids, appends
- *  any missing at their default placement) so the UI is robust to items added/removed across
- *  versions and to a partially-written stored value. */
-export const effectiveNav = derived(navConfig, ($c) => {
+/** Effective config: while a theme layout sets `nav.bottom`/`nav.top`, its destinations replace the
+ *  user's placement entirely (the user's own config, in `navConfig`, is never written to). Otherwise
+ *  guarantees every known item appears exactly once (drops unknown ids, appends any missing at their
+ *  default placement) so the UI is robust to items added/removed across versions and to a
+ *  partially-written stored value. */
+export const effectiveNav = derived([navConfig, activeThemeLayout], ([$c, layout]) => {
+  const themed = layout?.nav ? themeNavConfig(layout.nav, Object.keys(NAV_META)) : null
+  if (themed) return themed as NavItemConfig[]
   const known = Object.keys(NAV_META) as NavItemId[]
   const seen = new Set<NavItemId>()
   const out: NavItemConfig[] = []
@@ -67,6 +73,9 @@ export const effectiveNav = derived(navConfig, ($c) => {
   for (const d of DEFAULT_NAV) if (!seen.has(d.id)) out.push(d)
   return out
 })
+
+/** Home's position on the bottom bar: 0 (first) unless the active theme layout places it elsewhere. */
+export const navHomeIndex = derived(activeThemeLayout, (layout) => layout?.nav?.home ?? 0)
 
 /** Restore the default navigation layout. */
 export function resetNav() { navConfig.set(DEFAULT_NAV.map((d) => ({ ...d }))) }

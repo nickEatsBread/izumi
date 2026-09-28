@@ -349,7 +349,13 @@ describe('AniList rate-limit headers', () => {
     expect(anilistRequestPriority(body('query ScheduleWeek { d0: Page { pageInfo { hasNextPage } } }'))).toBe(1)
     expect(anilistRequestPriority(body('query Hero { Page { media { id } } }'))).toBe(2)
     expect(anilistRequestPriority(body('query Lists { MediaListCollection { lists { name } } }'))).toBe(4)
+    expect(anilistRequestPriority(body('query ProfileHeader($name: String!) { User(name: $name) { id } }'))).toBe(4)
     expect(anilistRequestPriority(body('query Page { Page { media { id } } }'))).toBe(7)
+    // Home block requests (a row's own page, and the latest-episodes grid) must not outrun the
+    // carousels they sit beside on the same screen.
+    expect(anilistRequestPriority(body('query RowPage { Page { media { id } } }'))).toBe(7)
+    expect(anilistRequestPriority(body('query RowPageAll { Page { media { id } } }'))).toBe(7)
+    expect(anilistRequestPriority(body('query LatestEpisodes { Page { airingSchedules { episode } } }'))).toBe(7)
     expect(anilistRequestPriority('not-json')).toBe(3)
   })
 })

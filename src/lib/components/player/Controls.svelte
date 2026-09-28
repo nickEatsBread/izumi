@@ -799,7 +799,7 @@
 {#snippet titleBlock(big: boolean)}
   {#if np.animeTitle}
     <div class="min-w-0 pt-0.5 [text-shadow:0_1px_4px_rgba(0,0,0,.7)]">
-      <div data-gm-title class="line-clamp-1 text-white {big ? 'text-3xl font-black leading-tight drop-shadow' : 'text-lg font-semibold'}">{np.animeTitle}</div>
+      <div data-part="player.title" data-gm-title class="line-clamp-1 text-white {big ? 'text-3xl font-black leading-tight drop-shadow' : 'text-lg font-semibold'}">{np.animeTitle}</div>
       {#if np.episode != null}
         <div data-gm-episode class="line-clamp-1 {big ? 'text-lg font-semibold leading-snug text-white/75' : 'text-sm font-normal text-white/60'}">Episode {np.episode}{np.total ? ` / ${np.total}` : ''}</div>
       {/if}
@@ -808,7 +808,7 @@
 {/snippet}
 
 <!-- stopPropagation: control clicks must not bubble to the video click-to-pause. -->
-<div data-gm-control-root class="pointer-events-none absolute inset-0" onclick={(e) => e.stopPropagation()} role="presentation">
+<div data-slot="player.controls" data-gm-control-root class="pointer-events-none absolute inset-0" onclick={(e) => e.stopPropagation()} role="presentation">
   <!-- Top bar: Back button (Desktop only — Game mode uses the B button to leave, so no
        redundant on-screen Back) and, when the Game-mode "title at top" option is on, the
        title. Rendered only when it has something to show. -->
@@ -829,7 +829,7 @@
         <div data-tauri-drag-region class="pointer-events-auto absolute inset-x-0 top-0 h-8"></div>
       {/if}
       {#if !gm}
-        <button data-focusable onclick={onclose} aria-label="Back"
+        <button data-part="button" data-variant="ghost" data-focusable onclick={onclose} aria-label="Back"
                 class="pointer-events-auto relative flex shrink-0 select-none items-center gap-1.5 rounded-full bg-black/60 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white transition hover:bg-black/80">
           <ArrowLeft size={icSize} /><span>Back</span>
         </button>
@@ -875,7 +875,7 @@
       {/if}
       <!-- Play/pause: Game mode gets a filled white circle (no outline) — the primary,
            thumb-sized touch target; Desktop keeps the subtle hover-only button. -->
-      <button data-focusable onclick={togglePlay} aria-label={paused ? 'Play' : 'Pause'}
+      <button data-part="button" data-variant="icon" data-focusable onclick={togglePlay} aria-label={paused ? 'Play' : 'Pause'}
               class="grid place-items-center rounded-full focus-ring-inset {gm ? 'gm-play size-16 bg-white text-black shadow-lg' : 'size-10 transition hover:bg-white/15'}">
         {#if paused}<Play size={gm ? 30 : 22} fill="currentColor" />{:else}<Pause size={gm ? 30 : 22} fill="currentColor" />{/if}
       </button>

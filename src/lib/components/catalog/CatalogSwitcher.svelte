@@ -187,7 +187,7 @@
           />
         </span>
         {#if showWordmark}
-          <img src="/brand/izumi-wordmark-white.svg" alt="" class="catalog-brand-wordmark h-5" draggable="false" />
+          <img src="/brand/izumi-wordmark-white.svg" alt="" data-theme-protected class="catalog-brand-wordmark h-5" draggable="false" />
         {/if}
       {:else if display === 'icon'}
         <!-- The provider tile is the button face, rather than a smaller tile floating inside a

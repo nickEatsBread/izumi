@@ -344,7 +344,7 @@ describe('normalize', () => {
   it('tolerates a payload with nothing but a route', () => {
     expect(normalize({ route: 'bare' }, DURING_DELAY)).toEqual({
       route: 'bare', delay: null, subDelay: null, dubDelay: null,
-      jpnAt: null, subAt: null, dubAt: null, finished: false,
+      jpnAt: null, subAt: null, dubAt: null, finished: false, dubbed: false,
     })
   })
   it('is null for a body with no route at all', () => {
@@ -698,5 +698,19 @@ describe('lookup', () => {
     mocks.phttp.mockResolvedValueOnce(page(items.map(({ id }) => linked(id, `op-${id}`))))
     expect((await getScheduleInfoMany(items)).size).toBe(2)
     expect(mocks.phttp).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('dub premiere', () => {
+  it('marks a title whose dub has premiered as dubbed', () => {
+    const at = Date.parse('2026-01-01T00:00:00Z')
+    expect(normalize({ route: 'sousou-no-frieren', dubPremier: '2023-10-13T00:00:00Z' }, at)?.dubbed).toBe(true)
+    expect(normalize({ route: 'dungeon-meshi', dubPremier: '0001-01-01T00:00:00Z' }, at)?.dubbed).toBe(false)
+    expect(normalize({ route: 'bare' }, at)?.dubbed).toBe(false)
+  })
+  it('waits for a dub premiere that is still ahead', () => {
+    const premiere = '2026-03-01T00:00:00Z'
+    expect(normalize({ route: 'dub-announced', dubPremier: premiere }, Date.parse('2026-01-01T00:00:00Z'))?.dubbed).toBe(false)
+    expect(normalize({ route: 'dub-announced', dubPremier: premiere }, Date.parse(premiere))?.dubbed).toBe(true)
   })
 })

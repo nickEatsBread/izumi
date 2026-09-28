@@ -8,7 +8,7 @@
   import { anilistDegradedBannerVisible } from '$lib/anilist/degraded'
   import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
   import { page } from '$app/state'
-  import { replaceState } from '$app/navigation'
+  import { afterNavigate, beforeNavigate, replaceState } from '$app/navigation'
   import type { Snapshot } from './$types'
   import {
     CATALOG_SELECTIONS,
@@ -67,6 +67,57 @@
     } else {
       mergedQuery = filters.search ?? ''
     }
+  })
+
+  // The provider catalog search page (CatalogSearchPage) reads the URL once, when it mounts, so a
+  // link that names another genre or sort while it is open re-mounts it on the new URL (in
+  // afterNavigate below). "Another" is judged against the address bar just before the navigation:
+  // that page mirrors its filters there with replaceState, which neither `page.url` nor
+  // `navigation.from` follows.
+  let catalogSearchKey = $state(0)
+  let shownGenre = sp.get('genre') ?? undefined
+  let shownSort = sp.get('sort') ?? undefined
+  beforeNavigate(() => {
+    const live = new URLSearchParams(location.search)
+    shownGenre = live.get('genre') ?? undefined
+    shownSort = live.get('sort') ?? undefined
+  })
+
+  // TopSearchField can submit `?search=` while already on this route — a same-route navigation
+  // that does not recreate this component, so the one-time `seed` read above never sees it, and
+  // typing a new query in the top bar appeared to do nothing. afterNavigate fires on every
+  // completed navigation, including this one, giving the query state a chance to catch up; it
+  // updates `debounced` directly (not just `filters`) so results refresh immediately instead of
+  // waiting out the typing debounce below. Updating `mergedQuery` too keeps the merged-catalog
+  // 'all' scope in step, so its own filters-sync effect above finds them already equal and never
+  // fights this. Comparing against the CURRENT `filters.search` (not the stale `seed`) is what
+  // stops the URL-sync effect further down from seeing its own stale copy and writing it straight
+  // back over the new query.
+  afterNavigate((navigation) => {
+    const params = page.url.searchParams
+    const urlSearch = params.get('search') ?? params.get('q') ?? undefined
+    // A link into search that names a genre or a sort (the top bar's Categories menu) starts that
+    // search afresh, even while search is already open with other filters. The URL mirror below
+    // uses replaceState, which does not come through here.
+    const urlGenre = params.get('genre') ?? undefined
+    const urlSort = params.get('sort') ?? undefined
+    const linked = navigation.type === 'link' || navigation.type === 'goto'
+    // On the merged catalog such a link also names the catalog it filters in.
+    const urlScope = params.get('provider') as CatalogSelection | null
+    if (linked && $catalogScreen === 'merged' && urlScope && urlScope !== mergedScope && mergedSelections.includes(urlScope)) mergedScope = urlScope
+    if (linked && (urlGenre || urlSort) && (urlGenre !== shownGenre || urlSort !== shownSort)) catalogSearchKey += 1
+    const currentGenre = filters.genres?.length === 1 ? filters.genres[0] : undefined
+    if (linked && (urlGenre || urlSort) && (urlGenre !== currentGenre || urlSort !== filters.sort)) {
+      const next: SearchFilters = { search: urlSearch, sort: urlSort, genres: urlGenre ? [urlGenre] : undefined }
+      filters = next
+      debounced = { ...next }
+      mergedQuery = urlSearch ?? ''
+      return
+    }
+    if (urlSearch === filters.search) return
+    filters = { ...filters, search: urlSearch }
+    debounced = { ...debounced, search: urlSearch }
+    mergedQuery = urlSearch ?? ''
   })
 
   function selectMergedScope(scope: MergedScope) {
@@ -157,6 +208,8 @@
     <p class="mt-1 text-sm text-muted-foreground">Search everything together, or choose one catalog to unlock its filters.</p>
     <div class="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0" role="tablist" aria-label="Search catalog">
       <button
+        data-part="chip"
+        data-active={mergedScope === 'all' || undefined}
         type="button"
         data-focusable
         role="tab"
@@ -168,6 +221,8 @@
       </button>
       {#each mergedSelections as provider (provider)}
         <button
+          data-part="chip"
+          data-active={mergedScope === provider || undefined}
           type="button"
           data-focusable
           role="tab"
@@ -185,9 +240,9 @@
   {#if mergedScope === 'all'}
     <MergedCatalogSearchPage bind:query={mergedQuery} />
   {:else if !isLegacyAniListCatalog(mergedScope)}
-    <CatalogSearchPage selection={mergedScope} embedded onQueryChange={(value) => (mergedQuery = value)} />
+    {#key catalogSearchKey}<CatalogSearchPage selection={mergedScope} embedded onQueryChange={(value) => (mergedQuery = value)} />{/key}
   {:else}
-    <div class="p-4 pt-5 sm:px-8">
+    <div class="p-4 pt-5 sm:px-8" data-slot="search" data-variant="anilist-scope">
       <FilterBar bind:filters />
       <div class="mt-6">
         {#key key}<SearchResults filters={debounced} />{/key}
@@ -195,11 +250,11 @@
     </div>
   {/if}
 {:else if !legacyCatalog}
-  <CatalogSearchPage />
+  {#key catalogSearchKey}<CatalogSearchPage />{/key}
 {:else}
   <!-- Normal padding clears the mobile edge/titlebar. While the fixed degraded strip exists, add
        its 1.75rem height as well so it cannot cover the browse controls. -->
-  <div class="p-4 sm:p-8 {$anilistDegradedBannerVisible ? 'pt-[2.75rem] sm:pt-[3.75rem]' : ''}">
+  <div class="p-4 sm:p-8 {$anilistDegradedBannerVisible ? 'pt-[2.75rem] sm:pt-[3.75rem]' : ''}" data-slot="search" data-variant="anilist">
     {#if filters.studioId || filters.staffId || filters.genres?.[0]}
       <h1 class="mb-4 text-2xl font-black">
         {filters.staffId ? (filters.exploreName || 'Voice actor') : filters.studioId ? (filters.exploreName || 'Studio') : filters.genres?.[0]}

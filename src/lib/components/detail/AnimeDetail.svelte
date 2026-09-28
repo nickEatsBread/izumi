@@ -7,16 +7,19 @@
   import Tabs from '$lib/components/detail/Tabs.svelte'
   import EpisodeList from '$lib/components/detail/EpisodeList.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
-  import { banner, title, cover, format, status, season, seasonBrowseHref, ratingBg, totalEpisodes } from '$lib/anilist/media'
+  import { banner, title, cover, format, status, season, seasonBrowseHref, ratingBg, totalEpisodes, airedCount } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
   import { resumeEpisode, playEpisode, prefetchEpisodeSources, type PlayState } from '$lib/stremio/play'
   import { offlineMode } from '$lib/stores/offline'
   import { downloads, downloadedMedia } from '$lib/downloads/state'
   import { localHistory, sessionProgress, manualProgressOverrides } from '$lib/player/history'
-  import { seriesTitle } from '$lib/downloads/library'
+  // Aliased: this file also defines a `seriesTitle` snippet (the rendered <h1>/logo), which would
+  // otherwise shadow this helper everywhere in the component — Svelte hoists a markup-level snippet
+  // into the same component scope as the script.
+  import { seriesTitle as seriesTitleFromItem } from '$lib/downloads/library'
   import { untrack } from 'svelte'
   import { readable, type Readable } from 'svelte/store'
-  import { animeResumeEpisode, animeWatchedProgress, recordedWatched, type AnimeDetailState } from '$lib/catalog/anime-detail'
+  import { animeEpisodeNumbers, animeResumeEpisode, animeWatchedProgress, recordedWatched, type AnimeDetailState } from '$lib/catalog/anime-detail'
   import { focusOnMount } from '$lib/nav'
   import { copyToClipboard } from '$lib/util/clipboard'
   import { anilistToken } from '$lib/anilist/auth'
@@ -52,6 +55,7 @@
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import { goto } from '$app/navigation'
   import { acquireEdgeToEdge } from '$lib/actions/edge-to-edge'
+  import { suppressBottomNav } from '$lib/shell/chrome'
   import { openTrailerPopup } from '$lib/stores/trailer'
   import { gameMode } from '$lib/player/session'
   import { controllerMode } from '$lib/nav/input'
@@ -65,9 +69,17 @@
   import { profileAllowsMedia } from '$lib/profiles/content'
   import ParentalBlock from '$lib/components/profiles/ParentalBlock.svelte'
   import { themePresentation } from '$lib/themes/runtime'
-  import { episodesBelow, episodesOnSide, resolveDetail } from '$lib/themes/presentation'
+  import { episodesBelow, episodesOnSide, resolveDetail, type DetailSection } from '$lib/themes/presentation'
+  import { desktopSynopsis, episodesOnPage, resolveSections, type ResolvedSections } from '$lib/detail/sections'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { mediaDisplayModel } from '$lib/themes/host-model'
+  import { ambientFromHex } from '$lib/themes/ambient'
+  import { artNeeds, loadTitleExtras, metaNeeds, templateNeeds, type TitleExtras } from '$lib/themes/title-extras'
+  import { countryName, formatDate as fmtDate, prettyEnum } from '$lib/detail/facts'
+  import FactList from './FactList.svelte'
+  import AiringCountdown from './AiringCountdown.svelte'
+  import { offlineResumeEpisode, playableThrough } from './episode-tile'
+  import { flipInGutter } from './toolbar-plan'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -134,7 +146,7 @@
     const snap = $downloadedMedia[id] ?? $localHistory[id]?.media
     if (!snap && !doneItems.length) return null
     const base: Media = snap ?? ({
-      id, title: { userPreferred: seriesTitle(doneItems[0]?.title ?? '') },
+      id, title: { userPreferred: seriesTitleFromItem(doneItems[0]?.title ?? '') },
       coverImage: { extraLarge: doneItems[0]?.poster },
     } as Media)
     const progress = Math.max($localHistory[id]?.progress ?? 0, base.mediaListEntry?.progress ?? 0)
@@ -174,9 +186,6 @@
   }, externalKitsuId) : [])
   const detailHint = $derived($detailHints[id])
   $effect(() => { if (media) rememberDetail(media) })
-  // Reset the fade latch when the media changes, so navigating between series does not show the
-  // previous title's fade-in state (or a stale full-opacity frame) before the new art decodes.
-  $effect(() => { void media?.id; artLoaded = false })
 
   // Match the episode list's progress ownership. Tracker queries can still be stale when Android
   // returns from the player, while session/local history has already recorded the completed episode.
@@ -184,16 +193,13 @@
     ? animeWatchedProgress(media, $localHistory, $sessionProgress, $manualProgressOverrides)
     : 0)
 
-  // Resume target for the hero CTA. Offline = first not-yet-watched DOWNLOADED episode (else the
-  // first downloaded) — never resumeEp(), which reads tracker progress and could point at an
-  // episode that isn't on disk. `playCta` also routes offline through playEpisode (the local swap)
-  // instead of resumeEpisode (which would fire a live fetchMediaById + online resolve).
+  // Resume target for the hero CTA. Offline = the first DOWNLOADED episode past the progress the
+  // episode list shows (else the first downloaded), by the rule the Continue card uses too
+  // (episode-tile.ts) — never resumeEp(), which could point at an episode that isn't on disk.
+  // `playCta` also routes offline through playEpisode (the local swap) instead of resumeEpisode
+  // (which would fire a live fetchMediaById + online resolve).
   function offlineResumeEp(m: Media): number {
-    const doneEps = Object.values($downloads)
-      .filter((d) => d.mediaId === m.id && d.status === 'done').map((d) => d.episode).sort((a, b) => a - b)
-    if (!doneEps.length) return 1
-    const prog = $localHistory[m.id]?.progress ?? 0
-    return doneEps.find((e) => e > prog) ?? doneEps[0]
+    return offlineResumeEpisode(downloadedEpisodes(m), watchedThrough)
   }
   const ctaEp = (m: Media) => {
     if ($offlineMode) return offlineResumeEp(m)
@@ -207,24 +213,98 @@
     else resumeEpisode(m, ctaEp(m), (s) => (heroPlay = s))
   }
 
-  let active = $state('Episodes')
+  // The tab the viewer picked; until then, or when that tab is gone, the theme's default (`shownTab`).
+  let pickedTab = $state('')
   let heroPlay = $state<PlayState>({ status: 'idle' })
   const detailTheme = $derived(resolveDetail($themePresentation))
+  // The series' cover colour for theme stylesheets (`--cover-rgb`).
+  const coverRgb = $derived(ambientFromHex(media?.coverImage?.color))
+  // API 3 extras the series page binds: key art (`detail.art`, drawn by the overlay layouts only),
+  // the title logo (`detail.title`) and whatever the header template shows (an age rating, audio).
+  // Keyed by id so a refetch of the same series does not reload them.
+  const detailNeeds = $derived.by(() => {
+    const needs = templateNeeds(detailTheme.header)
+    if (detailTheme.art === 'keyart' && detailTheme.layout === 'overlay') needs.add('keyart')
+    if (detailTheme.title === 'logo') needs.add('logo')
+    return needs
+  })
+  const extrasId = $derived(media?.id)
+  let detailExtras = $state<TitleExtras>({})
+  // Whether the artwork (key art, the logo) has arrived or is no longer waited for. The age rating
+  // and audio come from slower, rate-limited lookups and fill in whenever they land.
+  let detailExtrasSettled = $state(true)
+  let failedDetailLogo = $state('')
+  $effect(() => {
+    const id = extrasId
+    const needs = detailNeeds
+    const offline = $offlineMode
+    const target = untrack(() => media)
+    detailExtras = {}
+    if (id == null || !target || !needs.size || offline) { detailExtrasSettled = true; return }
+    const art = artNeeds(needs)
+    const meta = metaNeeds(needs)
+    detailExtrasSettled = !art.size
+    let cancelled = false
+    // Key art and logos wait up to 1.2 s so the page does not swap banner → key art, text → logo.
+    const timer = art.size ? setTimeout(() => { if (!cancelled) detailExtrasSettled = true }, 1200) : undefined
+    if (art.size) {
+      void loadTitleExtras(target, art).then((value) => {
+        if (cancelled) return
+        detailExtras = { ...detailExtras, ...value }
+        detailExtrasSettled = true
+      })
+    }
+    if (meta.size) {
+      void loadTitleExtras(target, meta).then((value) => {
+        if (!cancelled) detailExtras = { ...detailExtras, ...value }
+      })
+    }
+    return () => { cancelled = true; clearTimeout(timer) }
+  })
+  // Overlay artwork that failed to load. The next candidate takes its place: key art, then the
+  // banner, then the blurred cover.
+  let failedBackdrops = $state<string[]>([])
+  const backdropFailed = (src: string | null) => {
+    if (src && !failedBackdrops.includes(src)) failedBackdrops = [...failedBackdrops, src]
+  }
+  const overlayBackdrop = $derived.by(() => {
+    if (!media) return ''
+    if (detailTheme.art === 'keyart' && !detailExtrasSettled) return ''
+    const candidates = detailTheme.art === 'keyart' ? [detailExtras.keyart, media.bannerImage] : [media.bannerImage]
+    return candidates.find((src): src is string => !!src && !failedBackdrops.includes(src)) ?? ''
+  })
+  const overlayArtWaiting = $derived(detailTheme.art === 'keyart' && !detailExtrasSettled)
+  const detailLogo = $derived(detailTheme.title === 'logo' && detailExtras.logo && detailExtras.logo !== failedDetailLogo ? detailExtras.logo : '')
+  const factsStyle = $derived(detailTheme.factsStyle ?? 'template')
+  // What a facts template (`detail.facts`) binds, on phones and desktop alike.
+  const factsModel = (m: Media) => mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined })
+  const countdown = $derived(detailTheme.countdown ?? 'none')
+  const downloadedEpisodes = (m: Media) => Object.values($downloads)
+    .filter((d) => d.mediaId === m.id && d.status === 'done').map((d) => d.episode).sort((a, b) => a - b)
+  // The episodes the list shows (EpisodeList's own rule): the downloaded ones offline.
+  const listEpisodes = (m: Media) => ($offlineMode ? downloadedEpisodes(m) : animeEpisodeNumbers(m))
   const overlayDetail = $derived(detailTheme.layout === 'overlay')
   const bannerOverlap = $derived(detailTheme.bannerHeight ? Math.round(detailTheme.bannerHeight * 0.58) : (controllerUi ? 16 : 18))
   const sideEpisodes = $derived(episodesOnSide($themePresentation, !$isMobile))
   const belowEpisodes = $derived(episodesBelow($themePresentation, !$isMobile))
   const episodeTabbed = $derived(!sideEpisodes && !belowEpisodes)
-  const desktopTabs = $derived(episodeTabbed
-    ? ['Episodes', 'Relations', 'Cast & Crew', 'Recommended', 'Details']
-    : ['Relations', 'Cast & Crew', 'Recommended', 'Details'])
-  const mobileTabs = $derived(episodeTabbed
-    ? ['Episodes', 'Overview', 'Relations', 'Characters', 'Recommended']
-    : ['Overview', 'Relations', 'Characters', 'Recommended'])
-  $effect(() => {
-    const tabs = $isMobile ? mobileTabs : desktopTabs
-    if (!tabs.includes(active)) active = tabs[0]
-  })
+  // Which sections get a tab, their names and order, the tab open on arrival, and whether phones
+  // move the facts into Overview (API 3 `detail.sections`); without it, izumi's own tabs.
+  const desktopTabs = $derived(resolveSections(detailTheme.sections, { phone: false, episodesTabbed: episodeTabbed }))
+  const mobileTabs = $derived(resolveSections(detailTheme.sections, { phone: true, episodesTabbed: episodeTabbed }))
+  // Desktop: once a theme composes the sections, the synopsis shows in the info column or in Overview
+  // (`info: "overview"`), never both; izumi's own page keeps a short one above and the whole text in Details.
+  const synopsisAt = $derived(desktopSynopsis(detailTheme.sections))
+  const shownTab = (view: ResolvedSections): DetailSection => view.tabs.find((tab) => tab === pickedTab) ?? view.initial
+  // API 3 `detail.continue: "card"`: on phones the Continue card at the top of the episodes takes
+  // the header Play button's place, once an episode can play (the card needs one to show) and only
+  // while the episodes are on the page: with another tab open, the header keeps its Play button.
+  const headerCtaHidden = $derived(media != null && $isMobile && detailTheme.continue === 'card'
+    && episodesOnPage(mobileTabs, shownTab(mobileTabs), !episodeTabbed)
+    && playableThrough(listEpisodes(media), airedCount(media), $offlineMode) > 0)
+  // A flip order drawn as the round button in the list's gutter (beside a right-hand rail, or with
+  // izumi's own toolbar) leaves no toolbar line for release timing, so the info column shows it.
+  const flipGutter = $derived(media != null && flipInGutter({ ...detailTheme.episodes, total: listEpisodes(media).length, phone: $isMobile, rail: sideEpisodes }))
 
   // A TV request already chose the title/episode. Once its detail data is ready, open the same
   // source picker as a local Play press; selecting (or auto-selecting) a source then consumes the
@@ -306,14 +386,7 @@
     void setScore(m, score10 * 10)
   }
 
-  const fmtDate = (d?: { year?: number; month?: number; day?: number } | null) =>
-    d?.year ? [d.year, d.month, d.day].filter(Boolean).join('-') : ''
-
   const stripHtml = (s?: string) => (s ? s.replace(/<[^>]+>/g, '') : '')
-  const prettyEnum = (value?: string) => value
-    ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase())
-    : ''
-  const countryName = (code?: string) => ({ JP: 'Japan', CN: 'China', KR: 'South Korea', TW: 'Taiwan' }[code ?? ''] ?? code ?? '')
   const compactNumber = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 })
 
   // Total episodes for the badge — schedule-aware so OVAs/ONAs with a null AniList count
@@ -340,8 +413,15 @@
   let artHeight = $state(0)
   let barHeight = $state(0)
   // The banner is a large image over a network the phone may be struggling with; popping it in at
-  // full opacity reads as a glitch. Fade on decode instead.
-  let artLoaded = $state(false)
+  // full opacity reads as a glitch. Fade on decode instead, keyed to the URL whose image loaded — not a
+  // flag reset when `media` changes: `media` is a new object whenever the detail query delivers the
+  // same series again (a cached page's revalidation, the season picker's chain walk), and an unchanged
+  // image never fires `load` again, so that reset hid the banner for good. New artwork is a new URL.
+  let loadedArt = $state('')
+  const artReady = (src: string | null | undefined) => !!src && src === loadedArt
+  const markArtLoaded = (event: Event & { currentTarget: EventTarget & Element }) => {
+    loadedArt = event.currentTarget.getAttribute('src') ?? ''
+  }
   // The loading branch records only artwork that actually painted. If the detail response wins
   // first, the loaded Hero keeps its ordinary entrance rather than assuming the hint was visible.
   let loadedHintBanner = $state('')
@@ -365,6 +445,12 @@
   $effect(() => {
     if (!$isMobile) return
     return acquireEdgeToEdge()
+  })
+  // API 3 `detail.nav: "hidden"`: the series page covers the phone's bottom navigation, like a page
+  // pushed over an app's tab bar. The claim is released on leave or when the theme changes.
+  $effect(() => {
+    if (!$isMobile || detailTheme.nav !== 'hidden') return
+    return suppressBottomNav()
   })
   // artHeight/barHeight land a frame after mount; recompute once they do so the bar is in the right
   // state for the scroll position the page was restored to.
@@ -461,8 +547,8 @@
 {:else if media}
   {@const m = media}
   {#if $isMobile && overlayDetail}
-    <div class="relative pb-8">
-      <div bind:clientHeight={barHeight}
+    <div data-slot="detail" data-layout="overlay" data-variant="phone" style:--cover-rgb={coverRgb} class="relative pb-8">
+      <div data-slot="detail.bar" data-solid={barState.solid || undefined} bind:clientHeight={barHeight}
            class="fixed inset-x-0 top-0 z-30 flex items-center gap-2 px-2 py-2 transition-colors duration-200
                   {barState.solid ? 'border-b border-border bg-background/80 backdrop-blur' : 'text-white'}"
            style="padding-top:max(0.5rem,env(safe-area-inset-top))">
@@ -477,29 +563,33 @@
           <span class="min-w-0 flex-1 truncate text-base font-black">{title(m)}</span>
         {/if}
       </div>
-      <div bind:clientHeight={artHeight} class="relative min-h-[56vh] w-full overflow-hidden">
-        {#if m.bannerImage}
-          <img src={m.bannerImage} alt="" onload={() => (artLoaded = true)}
-               class="absolute inset-0 h-full w-full object-cover transition-opacity duration-500 {artLoaded ? 'opacity-100' : 'opacity-0'}"
+      <div data-slot="detail.banner" bind:clientHeight={artHeight} class="relative min-h-[56vh] w-full overflow-hidden">
+        {#if overlayBackdrop}
+          <img data-part="detail.backdrop" src={overlayBackdrop} alt="" onload={markArtLoaded}
+               onerror={(event) => backdropFailed(event.currentTarget.getAttribute('src'))}
+               class="absolute inset-0 h-full w-full object-cover transition-opacity duration-500 {artReady(overlayBackdrop) ? 'opacity-100' : 'opacity-0'}"
                style="object-position:center 20%" />
-        {:else}
-          <img src={cover(m)} alt="" class="absolute inset-0 h-full w-full scale-110 object-cover blur-xl transition-opacity duration-500 {artLoaded ? 'opacity-50' : 'opacity-0'}"
-               onload={() => (artLoaded = true)} style="object-position:center 30%" />
+        {:else if !overlayArtWaiting}
+          <img data-part="detail.backdrop" src={cover(m)} alt="" class="absolute inset-0 h-full w-full scale-110 object-cover blur-xl transition-opacity duration-500 {artReady(cover(m)) ? 'opacity-50' : 'opacity-0'}"
+               onload={markArtLoaded} style="object-position:center 30%" />
         {/if}
         <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
-        <div class="relative z-10 flex min-h-[56vh] flex-col justify-end gap-3 px-4 pb-8 pt-24">
-          <h1 class="text-3xl font-black leading-tight text-white drop-shadow">{title(m)}</h1>
-          <button data-focusable use:focusOnMount
+        <div data-part="detail.body" class="relative z-10 flex min-h-[56vh] flex-col justify-end gap-3 px-4 pb-8 pt-24">
+          {@render seriesTitle(m, 'text-3xl font-black leading-tight text-white drop-shadow')}
+          {@render seriesHeader(m, '')}
+          {#if !headerCtaHidden}
+          <button data-part="button" data-variant="primary" data-focusable use:focusOnMount
                   onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
                   onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
                   onclick={() => playCta(m)}
                   class="mt-1 inline-flex w-fit items-center gap-2 rounded-full bg-primary px-5 py-2.5 font-bold text-primary-foreground">
             <Play size={18} />{ctaHasProgress(m) ? `Play · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
           </button>
-          {#if m.description}
-            <p class="line-clamp-4 text-sm leading-relaxed text-white/85">{stripHtml(m.description)}</p>
           {/if}
-          <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-white/75">
+          {#if m.description}
+            <p data-part="detail.synopsis" class="line-clamp-4 text-sm leading-relaxed text-white/85">{stripHtml(m.description)}</p>
+          {/if}
+          <div data-part="detail.meta" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-white/75">
             {#if format(m)}<span>{format(m)}</span>{/if}
             {#each (m.genres ?? []).slice(0, 3) as g (g)}<span class="opacity-40">·</span><span>{g}</span>{/each}
             {#if m.seasonYear || m.startDate?.year}<span class="opacity-40">·</span><span>{m.seasonYear || m.startDate?.year}</span>{/if}
@@ -518,38 +608,16 @@
           </div>
         {/if}
         <div class="mt-6">
-          <Tabs tabs={mobileTabs} bind:active variant={detailTheme.tabs} />
-          {#if active === 'Overview'}
-            <div class="mt-4 space-y-5">
-              {#if m.description}
-                <section>
-                  <h2 class="mb-2 text-base font-black">Synopsis</h2>
-                  <p class="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
-                </section>
-              {/if}
-            </div>
-          {:else if active === 'Relations'}
-            {#if m.relations?.edges?.length}
-              <div class="mt-3 grid grid-cols-2 gap-4">
-                {#each m.relations.edges as e (e.node.id)}
-                  <div class="min-w-0"><SmallCard media={e.node} fill /></div>
-                {/each}
-              </div>
-            {:else}<p class="mt-3 text-muted-foreground">No related titles.</p>{/if}
-          {:else if active === 'Characters'}
-            <div class="mt-3"><RichMetadata media={m} view="people" /></div>
-          {:else if active === 'Recommended'}
-            <div class="mt-3"><RichMetadata media={m} view="recommendations" /></div>
-          {/if}
+          {@render detailSections(m, true, true)}
         </div>
       </div>
     </div>
   {:else if $isMobile}
-    <div class="relative pb-8">
+    <div data-slot="detail" data-layout={detailTheme.layout} data-variant="phone" style:--cover-rgb={coverRgb} class="relative pb-8">
       <!-- Floating bar. Transparent over the artwork (with a scrim so the chevron survives light
            art), blurred and titled once the artwork has scrolled under it. It carries the status-bar
            inset itself: a fixed element does not inherit main's padding once it locks. -->
-      <div bind:clientHeight={barHeight}
+      <div data-slot="detail.bar" data-solid={barState.solid || undefined} bind:clientHeight={barHeight}
            class="fixed inset-x-0 top-0 z-30 flex items-center gap-2 px-2 py-2 transition-colors duration-200
                   {barState.solid ? 'border-b border-border bg-background/80 backdrop-blur' : 'text-white'}"
            style="padding-top:max(0.5rem,env(safe-area-inset-top))">
@@ -568,17 +636,17 @@
       <!-- Artwork band: a bounded strip that ends in a hard cut. Nothing is written on top of it,
            so legibility no longer depends on how busy the banner is. -->
       {#if !detailTheme.bannerHidden}
-      <div bind:clientHeight={artHeight} class="hero-art relative h-[26vh] max-h-72 min-h-44 w-full overflow-hidden">
+      <div data-slot="detail.banner" bind:clientHeight={artHeight} class="hero-art relative h-[26vh] max-h-72 min-h-44 w-full overflow-hidden">
         {#if m.bannerImage}
-          <img src={m.bannerImage} alt="" onload={() => (artLoaded = true)}
-               class="h-full w-full object-cover transition-opacity duration-500 {artLoaded ? 'opacity-100' : 'opacity-0'}"
+          <img src={m.bannerImage} alt="" onload={markArtLoaded}
+               class="h-full w-full object-cover transition-opacity duration-500 {artReady(m.bannerImage) ? 'opacity-100' : 'opacity-0'}"
                style="object-position:center 20%" />
         {:else}
           <!-- No banner: a YouTube trailer still has blurred pillarbox bars baked into the JPEG, and a
                portrait cover cropped to a wide band loses its subject. Blur the cover into a wash
                instead — it reads as ambient colour rather than a broken photograph. -->
-          <img src={cover(m)} alt="" class="h-full w-full scale-110 object-cover blur-xl transition-opacity duration-500 {artLoaded ? 'opacity-50' : 'opacity-0'}"
-               onload={() => (artLoaded = true)} style="object-position:center 30%" />
+          <img src={cover(m)} alt="" class="h-full w-full scale-110 object-cover blur-xl transition-opacity duration-500 {artReady(cover(m)) ? 'opacity-50' : 'opacity-0'}"
+               onload={markArtLoaded} style="object-position:center 30%" />
         {/if}
         <div class="absolute inset-x-0 bottom-0 h-1/6 bg-gradient-to-b from-transparent to-background"></div>
       </div>
@@ -592,94 +660,55 @@
         <div class="relative z-10 {detailTheme.bannerHidden ? 'mt-2' : '-mt-10'} flex gap-4">
           <!-- Covers vary in aspect; forcing them all into one ratio with object-cover crops real
                artwork the user came here to see. Follow the image's own height instead. -->
-          <img use:reliableImage={cover(m)} alt=""
+          <img data-part="detail.poster" use:reliableImage={cover(m)} alt=""
                class="h-auto w-28 shrink-0 self-start rounded-xl object-contain shadow-xl min-[420px]:w-32"
                style:width={detailTheme.posterWidth ? `${Math.min(detailTheme.posterWidth, 160)}px` : undefined} />
           <div class="min-w-0 flex-1 self-end">
             {#if m.title.native || m.title.romaji}
-              <div class="truncate text-xs text-muted-foreground">{m.title.native || m.title.romaji}</div>
+              <div data-part="detail.alt-title" class="truncate text-xs text-muted-foreground">{m.title.native || m.title.romaji}</div>
             {/if}
-            <h1 class="line-clamp-2 text-xl font-black leading-tight">{title(m)}</h1>
+            {@render seriesTitle(m, 'line-clamp-2 text-xl font-black leading-tight')}
+            {@render seriesHeader(m, 'mt-2')}
           </div>
         </div>
 
-        <!-- One line of facts instead of seven chips: on a phone the chips wrapped into three
-             rows and read as a wall of pills rather than a summary. Facts sit directly under the
-             title — identity first, schedule after. -->
-        <div class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-muted-foreground">
-          {#if m.averageScore}
-            <span class="rounded-full px-1.5 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>
-          {/if}
-          {#if format(m)}<span>{format(m)}</span><span class="opacity-40">·</span>{/if}
-          <span>{effProgress}/{epsTotal(m) || '?'} eps</span>
-          {#if m.duration}<span class="opacity-40">·</span><span>{m.duration} min</span>{/if}
-          {#if season(m)}<span class="opacity-40">·</span><a href={seasonBrowseHref(m)} class="underline-offset-2 active:opacity-70">{season(m)}</a>{/if}
-          {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
-        </div>
-
-        <!-- Give the title useful provenance without turning the summary into another pill wall.
-             Mature mobile anime clients surface studio/source/popularity before asking the user to
-             hunt through a final tab; this stays a single quiet wrapping line. -->
-        <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/65">
-          {#if m.studios?.nodes?.[0]}
-            {@const studio = m.studios.nodes[0]}
-            <a href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}
-               class="font-bold text-foreground/85 underline-offset-2 active:opacity-70">{studio.name}</a>
-          {/if}
-          {#if m.source}<span class="opacity-35">·</span><span>From {prettyEnum(m.source)}</span>{/if}
-          {#if m.popularity}<span class="opacity-35">·</span><span>{compactNumber.format(m.popularity)} members</span>{/if}
-        </div>
-
-        {#if m.genres?.length}
-          <!-- One horizontal rail preserves vertical space while making genre identity visible at a
-               glance. It deliberately scrolls instead of wrapping into a tall block above Play. -->
-          <div class="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1" aria-label="Genres">
-            {#each m.genres as genre (genre)}
-              <a href={`/app/search?genre=${encodeURIComponent(genre)}`}
-                 class="shrink-0 rounded-full border border-border/80 bg-secondary/55 px-3 py-1.5 text-xs font-bold text-foreground/85 active:bg-accent">{genre}</a>
-            {/each}
-          </div>
-        {/if}
-
-        <!-- Phones have no room for release timing in their episode controls. Keep one quiet
-             grouped summary under the facts; desktop anchors it to the episode toolbar instead. -->
-        <div class="mt-3 flex flex-wrap items-center gap-2 empty:mt-0">
-          <AiringStatus media={m} />
-        </div>
-
-        {#if m.description}
-          <button type="button" onclick={() => (descExpanded = !descExpanded)}
-                  class="mt-3 w-full text-left text-sm text-muted-foreground {descExpanded ? 'block' : 'line-clamp-3'}">
-            {stripHtml(m.description)}
-          </button>
-        {/if}
+        {#if !mobileTabs.infoInOverview}{@render phoneInfo(m)}{/if}
 
         <!-- Primary CTA -->
-        <button data-focusable use:focusOnMount
+        {#if !headerCtaHidden}
+        <button data-part="button" data-variant="primary" data-focusable use:focusOnMount
                 onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
                 onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
                 onclick={() => playCta(m)}
                 class="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3 font-bold text-primary-foreground">
           <Play size={18} />{ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
         </button>
+        {/if}
+
+        {#if detailTheme.listButton === 'full'}
+          <button data-part="detail.list-button" data-variant="full" data-action="list" data-focusable onclick={() => { h.tap(); showEditor = true }}
+                  class="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border-2 border-theme py-2.5 text-sm font-black uppercase tracking-wide text-theme">
+            {effStatus ? STATUS_LABEL[effStatus] : 'Add to list'}
+          </button>
+        {/if}
 
         <!-- Compact action row: 4 icons + overflow. Handlers are the SAME functions the desktop bar uses. -->
-        <div class="relative mt-2 flex items-center gap-2">
-          <button data-focusable onclick={() => { h.tap(); showLocalLists = true }} aria-label="Save to lists"
+        <div data-part="detail.actions" class="relative mt-2 flex items-center gap-2">
+          <button data-part="button" data-variant="secondary" data-action="save" data-focusable onclick={() => { h.tap(); showLocalLists = true }} aria-label="Save to lists"
                   class="flex h-11 flex-[2] items-center justify-center gap-1.5 rounded-lg bg-secondary px-2 text-sm font-bold">
             {#if savedLocally}<BookmarkCheck size={17} class="text-theme" /> Saved{:else}<BookmarkPlus size={17} /> Save{/if}
           </button>
-          <button data-focusable onclick={() => { h.tap(); void onShare(m) }} aria-label="Share series"
+          <button data-part="button" data-variant="icon" data-action="share" data-focusable onclick={() => { h.tap(); void onShare(m) }} aria-label="Share series"
                   class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
             {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
           </button>
           {#if m.trailer?.id}
-            <button data-focusable onclick={() => { h.tap(); openTrailerPopup(m.trailer!.id!, title(m)) }} aria-label="Trailer"
+            <button data-part="detail.action" data-action="trailer" data-focusable onclick={() => { h.tap(); openTrailerPopup(m.trailer!.id!, title(m)) }} aria-label="Trailer"
                     class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
               <Clapperboard size={18} />
             </button>
           {/if}
-          <button data-focusable onclick={() => { h.tap(); showMore = !showMore }} aria-label="More"
+          <button data-part="detail.action" data-action="more" data-focusable onclick={() => { h.tap(); showMore = !showMore }} aria-label="More"
                   aria-haspopup="true" aria-expanded={showMore}
                   class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
             <MoreHorizontal size={18} />
@@ -691,7 +720,7 @@
             <button type="button" aria-label="Close menu" onclick={() => (showMore = false)}
                     class="fixed inset-0 z-40 cursor-default"></button>
             <div class="absolute bottom-full right-0 z-50 mb-2 w-56 rounded-lg border border-border bg-card p-2 shadow-2xl">
-              <button data-focusable onclick={() => { h.tap(); showMore = false; showEditor = true }}
+              <button data-part="detail.list-button" data-action="list" data-focusable onclick={() => { h.tap(); showMore = false; showEditor = true }}
                       class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
                 <ChevronDown size={15} /> {effStatus ? `Edit ${STATUS_LABEL[effStatus]}` : 'Add to list'}
               </button>
@@ -717,83 +746,28 @@
         {/if}
 
         <div class="mt-6">
-          <Tabs tabs={mobileTabs} bind:active variant={detailTheme.tabs} />
-          {#if episodeTabbed && active === 'Episodes'}
-            <EpisodeList media={m} offline={$offlineMode} />
-          {:else if active === 'Overview'}
-            <div class="mt-4 space-y-5">
-              {#if m.description}
-                <section>
-                  <h2 class="mb-2 text-base font-black">Synopsis</h2>
-                  <p class="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
-                </section>
-              {/if}
-
-              <section>
-                <h2 class="mb-2 text-base font-black">Information</h2>
-                <dl class="grid grid-cols-2 gap-2 text-sm">
-                  {#if m.studios?.nodes?.length}
-                    <div class="col-span-2 rounded-xl bg-secondary/40 p-3">
-                      <dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Studio</dt>
-                      <dd class="mt-1 font-bold">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ' · ' : ''}<a class="underline-offset-2 active:opacity-70" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd>
-                    </div>
-                  {/if}
-                  {#if format(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Format</dt><dd class="mt-1 font-bold">{format(m)}</dd></div>{/if}
-                  {#if status(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Status</dt><dd class="mt-1 font-bold">{status(m)}</dd></div>{/if}
-                  <div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Episodes</dt><dd class="mt-1 font-bold">{epsTotal(m) || 'Unknown'}</dd></div>
-                  {#if m.duration}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Runtime</dt><dd class="mt-1 font-bold">{m.duration} minutes</dd></div>{/if}
-                  {#if season(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Season</dt><dd class="mt-1 font-bold"><a href={seasonBrowseHref(m)} class="underline-offset-2 active:opacity-70">{season(m)}</a></dd></div>{/if}
-                  {#if fmtDate(m.startDate)}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Premiered</dt><dd class="mt-1 font-bold">{fmtDate(m.startDate)}</dd></div>{/if}
-                  {#if m.source}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Source</dt><dd class="mt-1 font-bold">{prettyEnum(m.source)}</dd></div>{/if}
-                  {#if m.countryOfOrigin}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Country</dt><dd class="mt-1 font-bold">{countryName(m.countryOfOrigin)}</dd></div>{/if}
-                  {#if m.averageScore}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Score</dt><dd class="mt-1 font-bold">{m.averageScore}%</dd></div>{/if}
-                  {#if m.popularity}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Popularity</dt><dd class="mt-1 font-bold">{m.popularity.toLocaleString()} members</dd></div>{/if}
-                </dl>
-              </section>
-
-              {#if m.tags?.length}
-                <section>
-                  <h2 class="mb-2 text-base font-black">Themes</h2>
-                  <MediaTagList tags={m.tags} limit={10} sortByRank />
-                </section>
-              {/if}
-
-              {#if m.synonyms?.length}
-                <section><h2 class="mb-1 text-base font-black">Alternative titles</h2><p class="text-sm leading-relaxed text-muted-foreground">{m.synonyms.join(' · ')}</p></section>
-              {/if}
-            </div>
-          {:else if active === 'Relations'}
-            {#if m.relations?.edges?.length}
-              <div class="mt-3 grid grid-cols-2 gap-4">
-                {#each m.relations.edges as e (e.node.id)}
-                  <div class="min-w-0"><SmallCard media={e.node} fill /></div>
-                {/each}
-              </div>
-            {:else}<p class="mt-3 text-muted-foreground">No related titles.</p>{/if}
-          {:else if active === 'Characters'}
-            <div class="mt-3"><RichMetadata media={m} view="people" /></div>
-          {:else if active === 'Recommended'}
-            <div class="mt-3"><RichMetadata media={m} view="recommendations" /></div>
-          {/if}
+          {@render detailSections(m, true, false)}
         </div>
       </div>
     </div>
   {:else if overlayDetail}
-    <section class="relative isolate min-h-[72vh] w-full overflow-hidden" data-theme-surface="detail-overlay">
-      {#if m.bannerImage}
-        <img src={m.bannerImage} alt="" class="absolute inset-0 h-full w-full object-cover" style="object-position:center 20%" />
-      {:else}
-        <img src={cover(m)} alt="" class="absolute inset-0 h-full w-full scale-110 object-cover blur-2xl opacity-60" />
+    <section data-slot="detail" data-layout="overlay" data-variant="desktop" style:--cover-rgb={coverRgb} class="relative isolate min-h-[72vh] w-full overflow-hidden" data-theme-surface="detail-overlay">
+      {#if overlayBackdrop}
+        <img data-part="detail.backdrop" src={overlayBackdrop} alt="" onerror={(event) => backdropFailed(event.currentTarget.getAttribute('src'))}
+             class="absolute inset-0 h-full w-full object-cover" style="object-position:center 20%" />
+      {:else if !overlayArtWaiting}
+        <img data-part="detail.backdrop" src={cover(m)} alt="" class="absolute inset-0 h-full w-full scale-110 object-cover blur-2xl opacity-60" />
       {/if}
       <div class="absolute inset-0 bg-gradient-to-t from-background via-background/25 to-transparent"></div>
       <div class="absolute inset-y-0 left-0 w-[58%] bg-gradient-to-r from-background/95 via-background/55 to-transparent"></div>
-      <div class="relative z-10 flex min-h-[72vh] max-w-3xl flex-col justify-center gap-5 px-8 py-20 sm:px-12">
+      <div data-part="detail.body" class="relative z-10 flex min-h-[72vh] max-w-3xl flex-col justify-center gap-5 px-8 py-20 sm:px-12">
         {#if m.title.native || m.title.romaji}
-          <div class="text-sm text-white/70">{m.title.native || m.title.romaji}</div>
+          <div data-part="detail.alt-title" class="text-sm text-white/70">{m.title.native || m.title.romaji}</div>
         {/if}
-        <h1 class="text-5xl font-black leading-[1.02] text-white drop-shadow-md sm:text-6xl">{title(m)}</h1>
-        <div class="flex flex-wrap items-center gap-3">
-          <button data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
+        {@render seriesTitle(m, 'text-5xl font-black leading-[1.02] text-white drop-shadow-md sm:text-6xl')}
+        {@render seriesHeader(m, '')}
+        <div data-part="detail.actions" class="flex flex-wrap items-center gap-3">
+          <button data-part="button" data-variant="primary" data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
                   data-nav-down={controllerUi ? 'series-quick-episode' : undefined}
                   onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
                   onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
@@ -801,32 +775,32 @@
                   class="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 font-bold text-primary-foreground">
             <Play size={18} />{ctaHasProgress(m) ? `Play · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
           </button>
-          <button data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
+          <button data-part="button" data-variant="secondary" data-action="save" data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
                   class="grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25">
             {#if savedLocally}<BookmarkCheck size={20} />{:else}<BookmarkPlus size={20} />{/if}
           </button>
         </div>
         {#if m.studios?.nodes?.[0]}
           {@const studio = m.studios.nodes[0]}
-          <p class="text-sm text-white/80">Studio: <a class="underline-offset-2 hover:underline" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a></p>
+          <p data-part="detail.studio" class="text-sm text-white/80">Studio: <a class="underline-offset-2 hover:underline" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a></p>
         {/if}
         {#if m.description}
-          <p class="max-w-2xl text-base leading-relaxed text-white/90 line-clamp-6">{stripHtml(m.description)}</p>
+          <p data-part="detail.synopsis" class="max-w-2xl text-base leading-relaxed text-white/90 line-clamp-6">{stripHtml(m.description)}</p>
         {/if}
-        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold text-white/80">
+        <div data-part="detail.meta" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold text-white/80">
           {#if format(m)}<span>{format(m)}</span>{/if}
           {#each (m.genres ?? []).slice(0, 4) as g (g)}<span class="opacity-40">·</span><span>{g}</span>{/each}
           {#if m.seasonYear || m.startDate?.year}<span class="opacity-40">·</span><span>{m.seasonYear || m.startDate?.year}</span>{/if}
           {#if m.averageScore}<span class="opacity-40">·</span><span>{m.averageScore}%</span>{/if}
         </div>
-        <div class="flex flex-wrap items-center gap-2 text-xs font-bold text-white/75">
+        <div data-part="detail.meta" class="flex flex-wrap items-center gap-2 text-xs font-bold text-white/75">
           {#if status(m)}<span class="rounded-full border border-white/25 px-2.5 py-1">{status(m)}</span>{/if}
           {#if m.duration}<span>{m.duration}m</span>{/if}
         </div>
         {#if heroPlay.status === 'error'}
           <p class="text-sm text-destructive">{heroPlay.message}</p>
         {/if}
-        {#if showRatingRow}<div class="mt-4">{@render ratingRow(m)}</div>{/if}
+        {#if showRatingRow}<div data-part="detail.rating" class="mt-4">{@render ratingRow(m)}</div>{/if}
       </div>
     </section>
     <div class="relative px-4 pb-16 sm:px-8" data-theme-surface="detail">
@@ -835,37 +809,13 @@
           <EpisodeList media={m} offline={$offlineMode} />
         </div>
       {/if}
-      <Tabs tabs={desktopTabs} bind:active variant={detailTheme.tabs} />
-      {#if active === 'Relations'}
-        {#if m.relations?.edges?.length}
-          <div class="flex flex-wrap {$themePresentation ? 'gap-x-6 gap-y-8' : 'gap-4'}">
-            {#each m.relations.edges as e (e.node.id)}
-              <div class={$themePresentation ? 'shrink-0' : 'w-[152px]'}>
-                <div class="{$themePresentation ? 'mb-1.5' : 'mb-1'} text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
-                <SmallCard media={e.node} />
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <p class="text-muted-foreground">No related titles.</p>
-        {/if}
-      {:else if active === 'Cast & Crew'}
-        <RichMetadata media={m} view="people" />
-      {:else if active === 'Recommended'}
-        <RichMetadata media={m} view="recommendations" />
-      {:else}
-        <div class="max-w-3xl space-y-4">
-          {#if m.description}
-            <p class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
-          {/if}
-        </div>
-      {/if}
+      {@render detailSections(m, false, true)}
     </div>
   {:else}
   <!-- Title-less banner backdrop; the info panel below overlaps its lower fade.
        Width-scaled banners sit behind the cover from the top of the page (the artwork
        follows the window width at 5:1) instead of a viewport-height strip with a gap above the cover. -->
-  <div class="relative">
+  <div data-slot="detail" data-layout={detailTheme.layout} data-variant="desktop" style:--cover-rgb={coverRgb} class="relative">
   {#if !detailTheme.bannerHidden}
   <div class={detailTheme.bannerScale === 'banner' ? 'pointer-events-none absolute inset-x-0 top-0 z-0 w-full' : ''}>
   <Hero medias={[m]} showOverlay={false} initialArtworkVisible={loadedHintBanner === banner(m)} />
@@ -883,23 +833,26 @@
          column, delaying Episodes by roughly a full D-pad viewport. An 11rem cover retains a clear
          visual identity while keeping both columns close enough in height for Episodes to follow. -->
     <div class="mb-4 flex flex-col gap-5 md:flex-row {detailTheme.coverAlign === 'end' ? 'md:items-end' : detailTheme.coverAlign === 'start' ? 'md:items-start' : ''}">
-      <img use:reliableImage={cover(m)} alt="" class="h-auto w-44 shrink-0 rounded-lg object-contain shadow-lg {detailTheme.coverAlign === 'end' ? 'self-end' : 'self-start'}" style:width={detailTheme.posterWidth ? `${detailTheme.posterWidth}px` : undefined} />
+      <img data-part="detail.poster" use:reliableImage={cover(m)} alt="" class="h-auto w-44 shrink-0 rounded-lg object-contain shadow-lg {detailTheme.coverAlign === 'end' ? 'self-end' : 'self-start'}" style:width={detailTheme.posterWidth ? `${detailTheme.posterWidth}px` : undefined} />
 
       <div class="min-w-0 flex-1 {detailTheme.bannerScale === 'banner' ? 'md:pt-12' : ''}">
         {#if m.title.native || m.title.romaji}
-          <div class="text-sm text-muted-foreground">{m.title.native || m.title.romaji}</div>
+          <div data-part="detail.alt-title" class="text-sm text-muted-foreground">{m.title.native || m.title.romaji}</div>
         {/if}
-        <h1 class="mb-2 text-3xl font-black">{title(m)}</h1>
+        {@render seriesTitle(m, 'mb-2 text-3xl font-black')}
+        {@render seriesHeader(m, 'mb-3')}
 
-        {#if detailTheme.facts}
-          <div class="mb-3">
-            <ThemeNode node={detailTheme.facts} model={mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined })} />
+        {#if factsStyle !== 'template'}
+          <FactList media={m} variant={factsStyle} className="mb-3" progress={effProgress > 0 ? `${effProgress}/${epsTotal(m) || '?'}` : undefined} {controllerUi} />
+        {:else if detailTheme.facts}
+          <div data-part="detail.facts" class="mb-3">
+            <ThemeNode node={detailTheme.facts} model={factsModel(m)} />
           </div>
         {:else}
         <!-- One scannable facts line replaces two rows of competing pills. Genres remain useful
              discovery links for pointer users, but are deliberately not D-pad stops in Game mode:
              Down from the primary action is a content path, not a tour through metadata. -->
-        <div class="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-muted-foreground">
+        <div data-part="detail.meta" class="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-muted-foreground">
           <span class="text-foreground">{effProgress}/{epsTotal(m) || '?'} episodes</span>
           {#if format(m)}<span class="opacity-40">·</span><span>{format(m)}</span>{/if}
           {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
@@ -911,7 +864,7 @@
           {#if m.averageScore}<span class="opacity-40">·</span><span class="rounded px-1.5 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>{/if}
           {#each (m.genres ?? []).slice(0, controllerUi ? 3 : 4) as g (g)}
             <span class="opacity-40">·</span>
-            <a data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
+            <a data-part="chip" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
                href={`/app/search?genre=${encodeURIComponent(g)}`}
                class="transition-colors hover:text-foreground hover:underline">{g}</a>
           {/each}
@@ -920,20 +873,23 @@
           {/if}
         </div>
         {/if}
+        {#if countdown !== 'none'}<AiringCountdown media={m} variant={countdown} className="mb-3" />{/if}
 
-        {#if detailTheme.episodes?.order === 'flip'}
+        <!-- Where a flip order is the round gutter button there is no toolbar line for release timing
+             (toolbar-plan.ts); everywhere else the episode controls show it. -->
+        {#if flipGutter}
           <div class="mb-3 flex flex-wrap items-center gap-2 empty:mb-0">
             <AiringStatus media={m} />
           </div>
         {/if}
 
-        {#if m.description && !detailTheme.actionsFirst}
-          <p class="mb-3 {controllerUi ? 'line-clamp-2' : 'line-clamp-3'} max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
+        {#if m.description && !detailTheme.actionsFirst && synopsisAt !== 'overview'}
+          <p data-part="detail.synopsis" class="mb-3 {controllerUi ? 'line-clamp-2' : 'line-clamp-3'} max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
         {/if}
 
         <!-- Action bar -->
-        <div class="flex flex-wrap items-center gap-2">
-          <button data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
+        <div data-part="detail.actions" class="flex flex-wrap items-center gap-2">
+          <button data-part="button" data-variant="primary" data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
                   data-nav-down={controllerUi ? 'series-quick-episode' : undefined}
                   onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
                   onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
@@ -942,12 +898,13 @@
             <Play size={detailTheme.cta === 'large' ? 18 : 16} />{detailTheme.cta === 'large' ? (effStatus === 'COMPLETED' ? 'Rewatch Now' : ctaHasProgress(m) ? 'Continue Now' : 'Watch Now') : (ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play')}
           </button>
 
-          <button data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
+          <button data-part="button" data-variant="secondary" data-action="save" data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
                   class="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 font-bold transition-colors hover:bg-accent">
             {#if savedLocally}<BookmarkCheck size={18} class="text-theme" /> Saved{:else}<BookmarkPlus size={18} /> Save{/if}
           </button>
 
-          <button bind:this={editorAnchor} data-focusable onclick={() => (showEditor = true)} title="Edit list status"
+          {#if detailTheme.listButton !== 'hidden'}
+          <button data-part="detail.list-button" data-action="list" bind:this={editorAnchor} data-focusable onclick={() => (showEditor = true)} title="Edit list status"
                   aria-haspopup="dialog" aria-expanded={showEditor}
                   class="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 font-bold transition-colors hover:bg-accent">
             {#if effStatus}
@@ -957,14 +914,15 @@
             {/if}
             <ChevronDown size={16} class="opacity-60" />
           </button>
+          {/if}
 
-          <button data-focusable onclick={() => void onShare(m)} title="Copy AniList link"
+          <button data-part="button" data-variant="icon" data-action="share" data-focusable onclick={() => void onShare(m)} title="Copy AniList link"
                   class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
             {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
           </button>
 
           {#if m.trailer?.id}
-            <button data-focusable onclick={() => openTrailerPopup(m.trailer!.id!, title(m))} title="Watch trailer"
+            <button data-part="detail.action" data-action="trailer" data-focusable onclick={() => openTrailerPopup(m.trailer!.id!, title(m))} title="Watch trailer"
                     class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
               <Clapperboard size={18} />
             </button>
@@ -980,56 +938,13 @@
         {#if showRatingRow}<div class="mt-4">{@render ratingRow(m)}</div>{/if}
       </div>
     </div>
-    {#if m.description && detailTheme.actionsFirst}
-      <p class="mb-4 {controllerUi ? 'line-clamp-4' : 'line-clamp-6'} max-w-3xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
+    {#if m.description && detailTheme.actionsFirst && synopsisAt !== 'overview'}
+      <p data-part="detail.synopsis" class="mb-4 {controllerUi ? 'line-clamp-4' : 'line-clamp-6'} max-w-3xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
     {/if}
     {/snippet}
 
     {#snippet desktopSecondary()}
-    <Tabs tabs={desktopTabs} bind:active variant={detailTheme.tabs} />
-    {#if episodeTabbed && active === 'Episodes'}
-      <EpisodeList media={m} offline={$offlineMode} />
-    {:else if active === 'Relations'}
-      {#if m.relations?.edges?.length}
-        <div class="flex flex-wrap {$themePresentation ? 'gap-x-6 gap-y-8' : 'gap-4'}">
-          {#each m.relations.edges as e (e.node.id)}
-            <div class={$themePresentation ? 'shrink-0' : 'w-[152px]'}>
-              <div class="{$themePresentation ? 'mb-1.5' : 'mb-1'} text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
-              <SmallCard media={e.node} />
-            </div>
-          {/each}
-        </div>
-      {:else}
-        <p class="text-muted-foreground">No related titles.</p>
-      {/if}
-    {:else if active === 'Cast & Crew'}
-      <RichMetadata media={m} view="people" />
-    {:else if active === 'Recommended'}
-      <RichMetadata media={m} view="recommendations" />
-    {:else}
-      <div class="max-w-3xl space-y-4">
-        {#if m.description}
-          <p class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
-        {/if}
-        <dl class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-          {#if m.studios?.nodes?.length}
-            <div><dt class="font-bold">Studios</dt><dd class="text-muted-foreground">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ', ' : ''}<a data-focusable class="underline-offset-2 hover:underline" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd></div>
-          {/if}
-          {#if fmtDate(m.startDate)}
-            <div><dt class="font-bold">Start Date</dt><dd class="text-muted-foreground">{fmtDate(m.startDate)}</dd></div>
-          {/if}
-          {#if m.synonyms?.length}
-            <div class="sm:col-span-2"><dt class="font-bold">Synonyms</dt><dd class="text-muted-foreground">{m.synonyms.join(' · ')}</dd></div>
-          {/if}
-        </dl>
-        {#if m.tags?.length}
-          <section>
-            <h2 class="mb-2 font-black">Themes</h2>
-            <MediaTagList tags={m.tags} limit={10} sortByRank />
-          </section>
-        {/if}
-      </div>
-    {/if}
+    {@render detailSections(m, false, false)}
     {/snippet}
 
     {#if sideEpisodes}
@@ -1083,4 +998,241 @@
 
 {#snippet ratingRow(m: Media)}
   <ScoreScale value={effScore10} onpick={(n) => rate(m, n)} hint={ratingHint} />
+{/snippet}
+
+<!-- A theme's template under the title (API 3 `detail.header`), the same on every layout. -->
+{#snippet seriesHeader(m: Media, className: string)}
+  {#if detailTheme.header}
+    <div data-part="detail.header" class={className}>
+      <ThemeNode node={detailTheme.header} model={mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined, ...detailExtras })} />
+    </div>
+  {/if}
+{/snippet}
+
+<!-- The series title: the title logo when the theme asks for it (API 3 `detail.title: "logo"`) and
+     the title has one, else the text. While the logo may still arrive the text is transparent, not
+     hidden, so screen readers still read the title. -->
+{#snippet seriesTitle(m: Media, className: string)}
+  {#if detailLogo}
+    <h1 data-part="detail.title" aria-label={title(m)} class={className}>
+      <img data-part="detail.logo" src={detailLogo} alt="" onerror={() => (failedDetailLogo = detailLogo)}
+           class="block max-h-44 w-auto max-w-[min(26rem,85%)] object-contain object-left-bottom" />
+    </h1>
+  {:else}
+    <h1 data-part="detail.title" class="{className} {detailTheme.title === 'logo' && !detailExtrasSettled ? 'opacity-0' : ''}">{title(m)}</h1>
+  {/if}
+{/snippet}
+
+<!-- The phone facts: the facts line (or FactList, or the theme's facts template), the countdown, the
+     genre rail, release timing and the synopsis. Above the tabs by default; inside Overview with
+     `detail.sections.info: "overview"`. -->
+{#snippet phoneInfo(m: Media)}
+  {#if factsStyle === 'template' && detailTheme.facts}
+    <!-- A theme's facts template stands in for the facts line and byline, as a table, cards or chips do. -->
+    <div data-part="detail.facts" class="mt-3">
+      <ThemeNode node={detailTheme.facts} model={factsModel(m)} />
+    </div>
+  {:else if factsStyle === 'template'}
+  <!-- One line of facts instead of seven chips: on a phone the chips wrapped into three
+       rows and read as a wall of pills rather than a summary. Facts sit directly under the
+       title — identity first, schedule after. -->
+  <div data-part="detail.meta" class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-muted-foreground">
+    {#if m.averageScore}
+      <span class="rounded-full px-1.5 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>
+    {/if}
+    {#if format(m)}<span>{format(m)}</span><span class="opacity-40">·</span>{/if}
+    <span>{effProgress}/{epsTotal(m) || '?'} eps</span>
+    {#if m.duration}<span class="opacity-40">·</span><span>{m.duration} min</span>{/if}
+    {#if season(m)}<span class="opacity-40">·</span><a href={seasonBrowseHref(m)} class="underline-offset-2 active:opacity-70">{season(m)}</a>{/if}
+    {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
+  </div>
+
+  <!-- Give the title useful provenance without turning the summary into another pill wall.
+       Mature mobile anime clients surface studio/source/popularity before asking the user to
+       hunt through a final tab; this stays a single quiet wrapping line. -->
+  <div data-part="detail.byline" class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/65">
+    {#if m.studios?.nodes?.[0]}
+      {@const studio = m.studios.nodes[0]}
+      <a href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}
+         class="font-bold text-foreground/85 underline-offset-2 active:opacity-70">{studio.name}</a>
+    {/if}
+    {#if m.source}<span class="opacity-35">·</span><span>From {prettyEnum(m.source)}</span>{/if}
+    {#if m.popularity}<span class="opacity-35">·</span><span>{compactNumber.format(m.popularity)} members</span>{/if}
+  </div>
+  {:else}
+    <FactList media={m} variant={factsStyle} progress={effProgress > 0 ? `${effProgress}/${epsTotal(m) || '?'}` : undefined} {controllerUi} genres={false} />
+  {/if}
+  {#if countdown !== 'none'}<AiringCountdown media={m} variant={countdown} />{/if}
+
+  {#if m.genres?.length}
+    <!-- One horizontal rail preserves vertical space while making genre identity visible at a
+         glance. It deliberately scrolls instead of wrapping into a tall block above Play. -->
+    <div data-part="detail.genres" class="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1" aria-label="Genres">
+      {#each m.genres as genre (genre)}
+        <a data-part="chip" href={`/app/search?genre=${encodeURIComponent(genre)}`}
+           class="shrink-0 rounded-full border border-border/80 bg-secondary/55 px-3 py-1.5 text-xs font-bold text-foreground/85 active:bg-accent">{genre}</a>
+      {/each}
+    </div>
+  {/if}
+
+  <!-- Phones have no room for release timing in their episode controls. Keep one quiet
+       grouped summary under the facts; desktop anchors it to the episode toolbar instead. -->
+  <div class="mt-3 flex flex-wrap items-center gap-2 empty:mt-0">
+    <AiringStatus media={m} />
+  </div>
+
+  {#if m.description}
+    <button data-part="detail.synopsis" type="button" onclick={() => (descExpanded = !descExpanded)}
+            class="mt-3 w-full text-left text-sm text-muted-foreground {descExpanded ? 'block' : 'line-clamp-3'}">
+      {stripHtml(m.description)}
+    </button>
+  {/if}
+{/snippet}
+
+<!-- The page's sections (API 3 `detail.sections`): a tab strip over the active section, or every
+     section stacked under its own title. Sections without a tab follow Overview's own content.
+     Overlay pages keep their shorter Overview (the synopsis). -->
+{#snippet detailSections(m: Media, phone: boolean, overlay: boolean)}
+  {@const view = phone ? mobileTabs : desktopTabs}
+  {@const current = shownTab(view)}
+  {#if view.mode === 'stack'}
+    {#each [...view.tabs, ...view.folded] as id (id)}
+      <section data-slot="detail.section" data-section={id} class="mt-8 first:mt-0">
+        <h2 data-part="detail.section-title" class="mb-3 text-lg font-black">{view.labels[id]}</h2>
+        {@render sectionBody(m, id, phone, overlay)}
+      </section>
+    {/each}
+  {:else}
+    {#if phone}
+      <Tabs tabs={view.tabs} labels={view.labels} bind:active={() => current, (tab) => (pickedTab = tab)} variant={detailTheme.tabs} />
+    {:else}
+      <Tabs tabs={view.tabs} labels={view.labels} bind:active={() => current, (tab) => (pickedTab = tab)} variant={detailTheme.tabs === 'bottom' ? 'underline' : detailTheme.tabs} />
+    {/if}
+    {@render sectionBody(m, current, phone, overlay)}
+    {#if current === 'overview'}
+      {#each view.folded as id (id)}
+        <section data-slot="detail.section" data-section={id} class="mt-8">
+          <h2 data-part="detail.section-title" class="mb-3 text-lg font-black">{view.labels[id]}</h2>
+          {@render sectionBody(m, id, phone, overlay)}
+        </section>
+      {/each}
+    {/if}
+  {/if}
+{/snippet}
+
+{#snippet sectionBody(m: Media, id: DetailSection, phone: boolean, overlay: boolean)}
+  {#if id === 'episodes'}
+    <EpisodeList media={m} offline={$offlineMode} />
+  {:else if id === 'overview'}
+    {#if phone && overlay}
+      <div class="mt-4 space-y-5">
+        {#if m.description}
+          <section>
+            <h2 class="mb-2 text-base font-black">Synopsis</h2>
+            <p data-part="detail.synopsis" class="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
+          </section>
+        {/if}
+      </div>
+    {:else if phone}
+      <div class="mt-4 space-y-5">
+        {#if mobileTabs.infoInOverview}<div>{@render phoneInfo(m)}</div>{/if}
+        {#if m.description && !mobileTabs.infoInOverview}
+          <section>
+            <h2 class="mb-2 text-base font-black">Synopsis</h2>
+            <p data-part="detail.synopsis" class="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
+          </section>
+        {/if}
+
+        <section>
+          <h2 class="mb-2 text-base font-black">Information</h2>
+          <dl class="grid grid-cols-2 gap-2 text-sm">
+            {#if m.studios?.nodes?.length}
+              <div data-part="fact" data-key="studio" class="col-span-2 rounded-xl bg-secondary/40 p-3">
+                <dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Studio</dt>
+                <dd data-part="fact.value" class="mt-1 font-bold">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ' · ' : ''}<a class="underline-offset-2 active:opacity-70" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd>
+              </div>
+            {/if}
+            {#if format(m)}<div data-part="fact" data-key="format" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Format</dt><dd data-part="fact.value" class="mt-1 font-bold">{format(m)}</dd></div>{/if}
+            {#if status(m)}<div data-part="fact" data-key="status" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Status</dt><dd data-part="fact.value" class="mt-1 font-bold">{status(m)}</dd></div>{/if}
+            <div data-part="fact" data-key="episodes" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Episodes</dt><dd data-part="fact.value" class="mt-1 font-bold">{epsTotal(m) || 'Unknown'}</dd></div>
+            {#if m.duration}<div data-part="fact" data-key="duration" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Runtime</dt><dd data-part="fact.value" class="mt-1 font-bold">{m.duration} minutes</dd></div>{/if}
+            {#if season(m)}<div data-part="fact" data-key="season" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Season</dt><dd data-part="fact.value" class="mt-1 font-bold"><a href={seasonBrowseHref(m)} class="underline-offset-2 active:opacity-70">{season(m)}</a></dd></div>{/if}
+            {#if fmtDate(m.startDate)}<div data-part="fact" data-key="aired" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Premiered</dt><dd data-part="fact.value" class="mt-1 font-bold">{fmtDate(m.startDate)}</dd></div>{/if}
+            {#if m.source}<div data-part="fact" data-key="source" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Source</dt><dd data-part="fact.value" class="mt-1 font-bold">{prettyEnum(m.source)}</dd></div>{/if}
+            {#if m.countryOfOrigin}<div data-part="fact" data-key="country" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Country</dt><dd data-part="fact.value" class="mt-1 font-bold">{countryName(m.countryOfOrigin)}</dd></div>{/if}
+            {#if m.averageScore}<div data-part="fact" data-key="score" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Score</dt><dd data-part="fact.value" class="mt-1 font-bold">{m.averageScore}%</dd></div>{/if}
+            {#if m.popularity}<div data-part="fact" data-key="members" class="rounded-xl bg-secondary/40 p-3"><dt data-part="fact.label" class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Popularity</dt><dd data-part="fact.value" class="mt-1 font-bold">{m.popularity.toLocaleString()} members</dd></div>{/if}
+          </dl>
+        </section>
+
+        {#if m.tags?.length}
+          <section>
+            <h2 class="mb-2 text-base font-black">Themes</h2>
+            <MediaTagList tags={m.tags} limit={10} sortByRank />
+          </section>
+        {/if}
+
+        {#if m.synonyms?.length}
+          <section><h2 class="mb-1 text-base font-black">Alternative titles</h2><p class="text-sm leading-relaxed text-muted-foreground">{m.synonyms.join(' · ')}</p></section>
+        {/if}
+      </div>
+    {:else if overlay}
+      <div class="max-w-3xl space-y-4">
+        {#if m.description}
+          <p data-part="detail.synopsis" class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
+        {/if}
+      </div>
+    {:else}
+      <div class="max-w-3xl space-y-4">
+        {#if m.description && synopsisAt !== 'info'}
+          <p data-part="detail.synopsis" class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
+        {/if}
+        <dl class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+          {#if m.studios?.nodes?.length}
+            <div data-part="fact" data-key="studio"><dt data-part="fact.label" class="font-bold">Studios</dt><dd data-part="fact.value" class="text-muted-foreground">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ', ' : ''}<a data-focusable class="underline-offset-2 hover:underline" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd></div>
+          {/if}
+          {#if fmtDate(m.startDate)}
+            <div data-part="fact" data-key="aired"><dt data-part="fact.label" class="font-bold">Start Date</dt><dd data-part="fact.value" class="text-muted-foreground">{fmtDate(m.startDate)}</dd></div>
+          {/if}
+          {#if m.synonyms?.length}
+            <div data-part="fact" data-key="synonyms" class="sm:col-span-2"><dt data-part="fact.label" class="font-bold">Synonyms</dt><dd data-part="fact.value" class="text-muted-foreground">{m.synonyms.join(' · ')}</dd></div>
+          {/if}
+        </dl>
+        {#if m.tags?.length}
+          <section>
+            <h2 class="mb-2 font-black">Themes</h2>
+            <MediaTagList tags={m.tags} limit={10} sortByRank />
+          </section>
+        {/if}
+      </div>
+    {/if}
+  {:else if id === 'relations'}
+    {#if phone}
+      {#if m.relations?.edges?.length}
+        <div data-slot="detail.relations" class="mt-3 grid grid-cols-2 gap-4">
+          {#each m.relations.edges as e (e.node.id)}
+            <div class="min-w-0">
+              <div data-part="relation.type" class="mb-1 truncate text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
+              <SmallCard media={e.node} fill />
+            </div>
+          {/each}
+        </div>
+      {:else}<p class="mt-3 text-muted-foreground">No related titles.</p>{/if}
+    {:else if m.relations?.edges?.length}
+      <div data-slot="detail.relations" class="flex flex-wrap {$themePresentation ? 'gap-x-6 gap-y-8' : 'gap-4'}">
+        {#each m.relations.edges as e (e.node.id)}
+          <div class={$themePresentation ? 'shrink-0' : 'w-[152px]'}>
+            <div data-part="relation.type" class="{$themePresentation ? 'mb-1.5' : 'mb-1'} text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
+            <SmallCard media={e.node} />
+          </div>
+        {/each}
+      </div>
+    {:else}
+      <p class="text-muted-foreground">No related titles.</p>
+    {/if}
+  {:else if id === 'characters'}
+    {#if phone}<div class="mt-3"><RichMetadata media={m} view="people" /></div>{:else}<RichMetadata media={m} view="people" />{/if}
+  {:else}
+    {#if phone}<div class="mt-3"><RichMetadata media={m} view="recommendations" /></div>{:else}<RichMetadata media={m} view="recommendations" />{/if}
+  {/if}
 {/snippet}

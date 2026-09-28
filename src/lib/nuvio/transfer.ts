@@ -140,7 +140,7 @@ export async function importCloudAddons(values: CloudAddon[], signal?: AbortSign
   addonUrls.update((existing) => [...new Set([...existing, ...urls])])
   return urls.length
 }
-const homeKeys = ['catalog-home-layouts-v1', 'catalog-collections-v1']
+const homeKeys = ['catalog-home-layouts-v1', 'catalog-collections-v1', 'home-blocks-v1', 'home-aside-width-v1']
 export function transferSettingKeys(kind: 'settings' | 'home'): readonly string[] {
   return kind === 'home' ? homeKeys : SYNCED_SETTING_KEYS.filter((key) => !homeKeys.includes(key))
 }

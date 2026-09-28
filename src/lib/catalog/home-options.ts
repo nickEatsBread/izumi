@@ -1,5 +1,14 @@
 import type { CatalogHomeRowOption } from './types'
 
+/** The featured banner. A Home row like any other, so a layout can move or hide it. */
+export const HERO_HOME_ROW: CatalogHomeRowOption = {
+  id: 'hero',
+  title: 'Featured banner',
+  description: 'The large rotating banner.',
+  group: 'Featured',
+  defaultEnabled: true,
+}
+
 /** Local rows can appear on every catalog home without asking its metadata provider. */
 export const CONTINUE_HOME_ROW: CatalogHomeRowOption = {
   id: 'continue',
@@ -10,6 +19,7 @@ export const CONTINUE_HOME_ROW: CatalogHomeRowOption = {
 }
 
 export const ANILIST_HOME_ROWS: CatalogHomeRowOption[] = [
+  HERO_HOME_ROW,
   CONTINUE_HOME_ROW,
   { id: 'recent', title: 'Recently Released', description: 'Episodes released in the last few days.', group: 'Your anime', defaultEnabled: false },
   { id: 'list', title: 'Your List', description: 'Planned titles from your connected tracker.', group: 'Your anime', defaultEnabled: true },
@@ -17,12 +27,16 @@ export const ANILIST_HOME_ROWS: CatalogHomeRowOption[] = [
   { id: 'season', title: 'Popular This Season', description: 'The most popular anime in the current season.', group: 'Discover', defaultEnabled: true },
   { id: 'trending', title: 'Trending Now', description: 'Anime receiving the most attention right now.', group: 'Discover', defaultEnabled: true },
   { id: 'popular', title: 'All Time Popular', description: 'The most popular anime across AniList.', group: 'Discover', defaultEnabled: true },
+  { id: 'newest', title: 'Newest', description: 'Currently airing anime, newest premieres first.', group: 'Discover', defaultEnabled: false },
+  { id: 'movies', title: 'Popular Movies', description: 'The most popular anime movies on AniList.', group: 'Discover', defaultEnabled: false },
+  { id: 'rated', title: 'Top Rated', description: 'The highest-scored anime on AniList.', group: 'Discover', defaultEnabled: false },
   { id: 'romance', title: 'Romance', description: 'Trending romance anime.', group: 'Genres', defaultEnabled: true },
   { id: 'action', title: 'Action', description: 'Trending action anime.', group: 'Genres', defaultEnabled: true },
   { id: 'fantasy', title: 'Fantasy', description: 'Trending fantasy anime.', group: 'Genres', defaultEnabled: true },
 ]
 
 export const KITSU_HOME_ROWS: CatalogHomeRowOption[] = [
+  HERO_HOME_ROW,
   CONTINUE_HOME_ROW,
   { id: 'season', title: 'Popular This Season', description: 'Popular anime from the current season.', group: 'Discover', defaultEnabled: true },
   { id: 'trending', title: 'Airing Now', description: 'Popular anime that are currently airing.', group: 'Discover', defaultEnabled: true },
@@ -35,6 +49,7 @@ export const KITSU_HOME_ROWS: CatalogHomeRowOption[] = [
 /** TMDB exposes many list endpoints and a broad discover API. The shipped home stays focused;
  * the remaining presets are opt-in so enabling TMDB does not immediately fire 30 requests. */
 export const TMDB_HOME_ROWS: CatalogHomeRowOption[] = [
+  HERO_HOME_ROW,
   CONTINUE_HOME_ROW,
   { id: 'trending', title: 'Trending This Week', description: 'Movies and TV gaining attention across TMDB this week.', group: 'Trending', defaultEnabled: true },
   { id: 'top10-movies', title: 'Top 10 Movies Streaming in Your Region', description: 'The most popular movies available to stream where you are.', group: 'Featured', defaultEnabled: true },

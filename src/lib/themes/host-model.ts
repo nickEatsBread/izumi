@@ -1,7 +1,9 @@
 import { banner, cardCover, cover, format, season, status, title } from '$lib/anilist/media'
 import type { Media } from '$lib/anilist/types'
 import type { EpMeta } from '$lib/anizip/types'
+import type { Pos } from '$lib/player/progress'
 import { compactCountdown, longCountdown } from './countdown'
+import { episodeCodeText, episodeNameText } from './episode-fields'
 import type { DisplayModel } from './presentation'
 
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
@@ -38,6 +40,7 @@ export function mediaDisplayModel(media: Media, extras: Partial<DisplayModel> = 
     season: season(media) || undefined,
     status: status(media) || undefined,
     genres: media.genres?.length ? media.genres.slice(0, 8).join(' · ') : undefined,
+    genre: media.genres?.[0] || undefined,
     members: media.popularity ? compact.format(media.popularity) : undefined,
     episodeCount: media.episodes != null ? String(media.episodes) : undefined,
     duration: media.duration || undefined,
@@ -59,11 +62,23 @@ export function episodeDisplayModel(
 ): DisplayModel {
   return mediaDisplayModel(media, {
     episodeTitle: extras.episodeTitle ?? meta?.title,
+    // The title the host shows, when it is the episode's own (not an "Episode N" stand-in). A host
+    // that hides the title (spoiler protection) passes `episodeName` itself, undefined included.
+    episodeName: extras.episodeName ?? episodeNameText(ep, extras.episodeTitle ?? meta?.title),
     episodeNumber: ep,
+    episodeNo: extras.episodeNo ?? String(ep),
+    episodeCode: extras.episodeCode ?? episodeCodeText(ep, meta?.season, meta?.seasonEpisode),
     description: extras.description ?? (strip(meta?.overview) || undefined),
     duration: extras.duration ?? meta?.runtime ?? media.duration ?? undefined,
     airDate: extras.airDate ?? meta?.airDate,
     still: extras.still ?? meta?.image,
     ...extras,
   })
+}
+
+/** "21m left" for an episode that has been started; nothing before it starts, without a duration,
+ *  or once its position was cleared. */
+export function timeLeftLabel(position?: Pos): string | undefined {
+  if (!position || position.cleared || !(position.dur > 0) || !(position.pos > 0)) return undefined
+  return `${Math.max(1, Math.round((position.dur - position.pos) / 60))}m left`
 }

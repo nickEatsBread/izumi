@@ -12,6 +12,7 @@
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { themePresentation } from '$lib/themes/runtime'
   import { mediaDisplayModel } from '$lib/themes/host-model'
+  import { ambientFromHex } from '$lib/themes/ambient'
   import { CARD_FAMILY, ROW_CONTEXT, densityScale, resolveCard, resolveRow, type CardFamily, type RowScope } from '$lib/themes/presentation'
   import type { Media } from '$lib/anilist/types'
   import { reliableImage } from '$lib/util/reliable-image'
@@ -103,7 +104,9 @@
   // Controller mode (including Deck) and mobile: no hover-trailer previews — touch has no real hover (a tap
   // fires pointerenter and would strand the popup), and the autoplaying trailer is a PC-only
   // affordance.
-  function open() { if (simpleHover || get(gameMode) || get(controllerMode) || get(isMobile) || get(isTv) || needsPointerMove) return; clearTimeout(closeT); place(); hovered = true }
+  // A theme that draws its own hover panel in the card template switches the popup off (API 3 `cardPreview`).
+  const previewOff = $derived(simpleHover || $themePresentation?.cardPreview === 'none')
+  function open() { if (previewOff || get(gameMode) || get(controllerMode) || get(isMobile) || get(isTv) || needsPointerMove) return; clearTimeout(closeT); place(); hovered = true }
   function openAfterPointerMove() {
     if (!needsPointerMove) return
     needsPointerMove = false
@@ -155,14 +158,14 @@
   $effect(() => () => clearTimeout(closeT))
 </script>
 
-<div bind:this={el} data-theme-card class={fill ? 'w-full' : $isTv ? 'w-44 shrink-0' : 'w-36 shrink-0 sm:w-[152px]'} style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
+<div data-part="card" data-family={cardFamily} bind:this={el} data-theme-card style:--cover-rgb={ambientFromHex(media.coverImage?.color)} class={fill ? 'w-full' : $isTv ? 'w-44 shrink-0' : 'w-36 shrink-0 sm:w-[152px]'} style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
   <a href={mediaHref(media)} data-focusable draggable="false" onclick={() => { rememberDetail(media); h.tap() }}
      aria-label={title(media)} style:width={themeRow.width || cardTemplate ? '100%' : undefined}
      class="group block {fill ? 'w-full' : $isTv ? 'w-44' : 'w-36 sm:w-[152px]'} {$isAndroid ? 'android-card-press' : ''}">
     {#if cardTemplate}
       <ThemeNode node={cardTemplate} model={mediaDisplayModel(media, { poster: coverSrc, backdrop: media.bannerImage ?? coverSrc, ...(position ? { rankPosition: position, rank: String(position).padStart(2, '0') } : {}) }, coverWidth)} />
     {:else}
-    <div class="focus-cover relative aspect-[2/3] w-full overflow-hidden rounded-md bg-muted" style:aspect-ratio={themeRow.aspect === 'landscape' ? '16 / 9' : themeRow.aspect === 'square' ? '1' : undefined} style:border-radius={themeRow.radius !== undefined ? `${themeRow.radius}px` : undefined}>
+    <div data-part="card.art" class="focus-cover relative aspect-[2/3] w-full overflow-hidden rounded-md bg-muted" style:aspect-ratio={themeRow.aspect === 'landscape' ? '16 / 9' : themeRow.aspect === 'square' ? '1' : undefined} style:border-radius={themeRow.radius !== undefined ? `${themeRow.radius}px` : undefined}>
       <!-- No `transform-gpu`/`will-change`: those permanently promote EVERY cover to its own
            GPU layer (hundreds on a grid → the Deck iGPU thrashes + lag accumulates). The
            browser promotes the one card being hovered on demand; that's all this needs. -->
@@ -172,17 +175,17 @@
       <img use:reliableImage={coverSrc} alt={title(media)} draggable="false" loading="lazy" decoding="async" onload={() => (coverReady = true)}
            class="relative h-full w-full object-cover transition-[opacity,transform] duration-150 ease-out {coverReady ? 'opacity-100' : 'opacity-0'} group-hover:scale-105" />
       {#if simpleHover}
-        <span class="pointer-events-none absolute inset-0 grid place-items-center bg-black/0 transition-colors duration-150 group-hover:bg-black/40 group-focus-visible:bg-black/40">
+        <span data-part="card.overlay" class="pointer-events-none absolute inset-0 grid place-items-center bg-black/0 transition-colors duration-150 group-hover:bg-black/40 group-focus-visible:bg-black/40">
           <span class="grid size-12 scale-90 place-items-center rounded-full bg-black/55 text-white opacity-0 shadow-[0_8px_28px_rgba(0,0,0,.65)] backdrop-blur-sm transition-[opacity,transform] duration-150 group-hover:scale-100 group-hover:opacity-100 group-focus-visible:scale-100 group-focus-visible:opacity-100">
             <Play size={23} class="translate-x-0.5 fill-current drop-shadow-lg" />
           </span>
         </span>
       {/if}
       {#if badge}
-        <span class="absolute bottom-2 left-2 rounded-md bg-black/85 px-2 py-1 text-[0.65rem] font-black uppercase tracking-wide text-white shadow-lg backdrop-blur">{badge}</span>
+        <span data-part="card.badge" class="absolute bottom-2 left-2 rounded-md bg-black/85 px-2 py-1 text-[0.65rem] font-black uppercase tracking-wide text-white shadow-lg backdrop-blur">{badge}</span>
       {/if}
       {#if cardRating}
-        <span class="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-md bg-black/80 px-1.5 py-1 text-[0.65rem] font-black text-white shadow-lg backdrop-blur"
+        <span data-part="card.score" class="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-md bg-black/80 px-1.5 py-1 text-[0.65rem] font-black text-white shadow-lg backdrop-blur"
           title={`${cardRating.source} rating`} aria-label={`${cardRating.source} rating ${compactRatingLabel(cardRating)} out of 10`}>
           <RatingSourceMark source={cardRating.source} />{compactRatingLabel(cardRating)}
         </span>
@@ -192,13 +195,13 @@
          title pushed the season/format line a blank line below every one-line title in the phone
          grid, so captions no longer read as belonging to their poster. -->
     <div data-theme-card-label class={reserveTitleLines ? 'min-h-[3.3rem]' : ''}>
-    <div data-theme-card-label class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight">
+    <div data-part="card.title" data-theme-card-label class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight">
       {#if dot(media)}<span class="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={`background:${dot(media)}`}></span>{/if}{title(media)}
     </div>
     {#if subline}
-      <div data-theme-card-label class="mt-0.5 truncate text-[0.7rem] font-semibold text-foreground/70">{subline}</div>
+      <div data-part="card.meta" data-theme-card-label class="mt-0.5 truncate text-[0.7rem] font-semibold text-foreground/70">{subline}</div>
     {:else if jvmSource}
-      <div data-theme-card-label class="mt-0.5 flex min-w-0 items-center justify-between gap-1.5 text-[0.7rem] text-muted-foreground">
+      <div data-part="card.meta" data-theme-card-label class="mt-0.5 flex min-w-0 items-center justify-between gap-1.5 text-[0.7rem] text-muted-foreground">
         <span class="flex min-w-0 items-center gap-1">
           <AddonLogo logo={jvmSource.sourceIcon} name={jvmSource.sourceName} id={jvmSource.id} size={13} />
           <span class="truncate">{jvmSource.sourceName}</span>
@@ -206,7 +209,7 @@
         {#if jvmMeta}<span class="shrink-0 font-semibold">{jvmMeta}</span>{/if}
       </div>
     {:else}
-      <div data-theme-card-label class="mt-0.5 flex justify-between text-[0.7rem] text-muted-foreground">
+      <div data-part="card.meta" data-theme-card-label class="mt-0.5 flex justify-between text-[0.7rem] text-muted-foreground">
         <span>{season(media) || media.startDate?.year || ''}</span><span>{format(media)}</span>
       </div>
     {/if}
@@ -215,7 +218,7 @@
   </a>
 </div>
 
-{#if hovered && !simpleHover}
+{#if hovered && !previewOff}
   <!-- use:portal — re-parent to <body>. In place, the row's `.load-in` transform animation makes
        the card wrapper the containing block for this `fixed` popup (offset by the card's origin,
        clipped by the carousel, painted under sibling posters). From <body>, fixed = viewport. -->

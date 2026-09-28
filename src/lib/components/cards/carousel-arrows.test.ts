@@ -34,7 +34,7 @@ describe('Carousel edge arrows', () => {
     // Grid rows stay inside the game/TV nav fast path. The section keeps `data-nav-row` and marks
     // itself wrapping, so pickInNavRows scopes its geometric search to the row's own cards instead
     // of stepping whole sections (which would skip grid lines) or passing over the whole page.
-    expect(src).toContain('<section data-nav-row data-nav-row-wrap={grid')
+    expect(src).toContain(`<section data-slot="row" data-row={rowId} data-role={rowRole} data-layout={grid ? 'grid' : 'carousel'} data-nav-row data-nav-row-wrap={grid`)
     expect(src).toContain('data-nav-row-items use:scrollBehavior={!grid}')
     expect(nav).toContain("const wrapping = row.hasAttribute('data-nav-row-wrap')")
     expect(nav).toContain('if (wrapping && itemRoot.contains(active))')

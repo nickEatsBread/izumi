@@ -19,7 +19,10 @@
   import type { Media } from '$lib/anilist/types'
   import { anilistDegraded, anilistDegradedBannerVisible } from '$lib/anilist/degraded'
   import { catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
+  import { homeEditorOpen } from '$lib/catalog/home-editor'
   import { ANILIST_HOME_ROWS } from '$lib/catalog/home-options'
+  import { activeThemeLayout } from '$lib/themes/layout-state'
+  import { isThemeBlockId, resolveThemeHome } from '$lib/home/theme-layout'
   import { markClientPerformance } from '$lib/performance/client'
   import {
     catalogProvider,
@@ -38,6 +41,10 @@
   import CatalogBrandLogo from '$lib/components/catalog/CatalogBrandLogo.svelte'
   import HomeEditor from '$lib/components/catalog/HomeEditor.svelte'
   import HomeRowFrame from '$lib/components/catalog/HomeRowFrame.svelte'
+  import HomeBlockView from '$lib/components/home/HomeBlockView.svelte'
+  import HomeColumns from '$lib/components/home/HomeColumns.svelte'
+  import { blockRowOptions, blockTitle, splitHomeColumns } from '$lib/home/block-rows'
+  import { homeAsideWidth, homeBlocks, isBlockId } from '$lib/home/blocks'
   import { mediaHref } from '$lib/anilist/media'
   import { rankFeaturedMedia } from '$lib/catalog/featured-context'
 
@@ -53,9 +60,23 @@
   // Personalized rows use the connected AniList account name (from OAuth) if present,
   // otherwise the manually-entered username.
   const listUser = $derived($anilistUserName || $anilistUser)
-  const anilistRows = $derived(resolveCatalogHomeRows('anilist', ANILIST_HOME_ROWS, $catalogHomeLayouts)
+  const anilistRows = $derived(resolveCatalogHomeRows('anilist', [...ANILIST_HOME_ROWS, ...blockRowOptions('anilist', $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts)
     .filter((row) => row.enabled))
-  const orderedRows = $derived(anilistRows.map((row) => row.id))
+  const rowOptionIds = ANILIST_HOME_ROWS.map((row) => row.id)
+  // While a theme layout is active, it replaces the row order below (the user's own layout, in
+  // `catalogHomeLayouts`, is never written to); its ephemeral `theme:<n>` blocks join `$homeBlocks`
+  // for lookups so a theme block renders exactly like a real one.
+  const themeHome = $derived($activeThemeLayout?.home ? resolveThemeHome($activeThemeLayout.home, $catalogProvider, rowOptionIds) : null)
+  const allBlocks = $derived(themeHome ? { ...$homeBlocks, ...themeHome.blocks } : $homeBlocks)
+  const orderedRows = $derived(themeHome?.rows ?? anilistRows.map((row) => row.id))
+  // The hero renders full-bleed above HomeColumns only while it truly leads the row order; while
+  // Edit Home is open it always flows through HomeColumns instead, so it can be dragged/hidden like
+  // any other row (it would otherwise have no frame to grab while sitting in the unwrapped top slot).
+  const heroFirst = $derived(!$homeEditorOpen && orderedRows[0] === 'hero')
+  const homeRowIds = $derived(heroFirst ? orderedRows.slice(1) : orderedRows)
+  // While Edit Home is open, phones must still show every block (including a side-column one that
+  // opted out of `phone`), or there would be no way to reach its settings/remove button on a phone.
+  const columns = $derived(splitHomeColumns(homeRowIds, allBlocks, $isMobile && !$homeEditorOpen))
   const sectionMap = $derived(new Map(sections.map((section) => [section.key, section])))
   const catalogUnavailable = $derived(!!$anilistDegraded?.fallbackError)
 
@@ -133,14 +154,14 @@
        double-counted the status-bar inset and left a big black gap above the logo. -->
   <!-- The degraded strip is fixed at the same safe-area edge as this in-flow toolbar. Reserve its
        height while visible so the logo and top actions remain fully tappable on Android. -->
-  <div class="px-4 pb-3 pt-3 {usesAniListHome && $anilistDegradedBannerVisible ? 'mt-7' : ''}">
+  <div data-slot="home.header" class="px-4 pb-3 pt-3 {usesAniListHome && $anilistDegradedBannerVisible ? 'mt-7' : ''}">
     <div class="flex items-center justify-between">
       {#if !$offlineMode && switcherPlacement === 'integrated' && canCycleCatalog}
         <CatalogSwitcher display="brand" showWordmark />
       {:else}
         <div class="flex items-center gap-2" aria-label="izumi">
           <CatalogBrandLogo platform={$catalogScreen} />
-          <img src="/brand/izumi-wordmark-white.svg" alt="izumi" class="home-wordmark h-5" draggable="false" />
+          <img src="/brand/izumi-wordmark-white.svg" alt="izumi" data-theme-protected class="home-wordmark h-5" draggable="false" />
         </div>
       {/if}
       {#if topNav.length}
@@ -172,7 +193,7 @@
 
 {#if $offlineMode}
   <!-- Offline: local-first Continue Watching + the downloaded-series library. No network fired. -->
-  <div class="space-y-4 pb-16 pt-2">
+  <div data-slot="home" data-variant="offline" class="space-y-4 pb-16 pt-2">
     {#if orderedRows.includes('continue')}
       {#key listUser}
         <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
@@ -187,35 +208,42 @@
 {:else}
   <!-- With no hero, the first row must clear the fixed desktop titlebar + degraded strip. Mobile's
        toolbar above already reserves the alert height, so this extra inset is desktop-only. -->
-  <div class="pb-16 {homeNeedsAlertInset ? 'sm:pt-[3.75rem]' : ''}">
-    {#if !catalogUnavailable && heroMedias.length}
-      <Hero medias={heroMedias} onplay={(m) => goto(mediaHref(m))} oninfo={(m) => goto(mediaHref(m))} />
-    {:else if !catalogUnavailable && hero.fetching}
-      {#if $isMobile}
-        <div class="relative mx-4 mb-6 h-[46vh] overflow-hidden rounded-2xl bg-muted shadow-xl">
-          <div class="absolute inset-0 skeloader"></div>
-          <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent"></div>
-          <div class="absolute inset-x-0 bottom-0 space-y-3 p-4">
-            <div class="h-7 w-3/4 rounded skeloader"></div>
-            <div class="h-3 w-1/2 rounded skeloader"></div>
-            <div class="grid grid-cols-[1fr_auto] gap-2"><div class="h-11 rounded-lg skeloader"></div><div class="h-11 w-24 rounded-lg skeloader"></div></div>
+  <div data-slot="home" data-variant="anilist" class="pb-16 {homeNeedsAlertInset ? 'sm:pt-[3.75rem]' : ''}">
+    {#snippet heroBlock()}
+      {#if !catalogUnavailable && heroMedias.length}
+        <Hero medias={heroMedias} onplay={(m) => goto(mediaHref(m))} oninfo={(m) => goto(mediaHref(m))} />
+      {:else if !catalogUnavailable && hero.fetching}
+        {#if $isMobile}
+          <div class="relative mx-4 mb-6 h-[46vh] overflow-hidden rounded-2xl bg-muted shadow-xl">
+            <div class="absolute inset-0 skeloader"></div>
+            <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent"></div>
+            <div class="absolute inset-x-0 bottom-0 space-y-3 p-4">
+              <div class="h-7 w-3/4 rounded skeloader"></div>
+              <div class="h-3 w-1/2 rounded skeloader"></div>
+              <div class="grid grid-cols-[1fr_auto] gap-2"><div class="h-11 rounded-lg skeloader"></div><div class="h-11 w-24 rounded-lg skeloader"></div></div>
+            </div>
           </div>
-        </div>
-      {:else}
-        <div class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
-          <div class="absolute inset-0 skeloader"></div>
-          <div class="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent"></div>
-          <div class="absolute bottom-8 left-8 w-[34rem] space-y-4"><div class="h-10 w-4/5 rounded skeloader"></div><div class="h-4 w-2/3 rounded skeloader"></div><div class="h-4 w-full rounded skeloader"></div><div class="h-10 w-48 rounded-lg skeloader"></div></div>
-        </div>
+        {:else}
+          <div class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
+            <div class="absolute inset-0 skeloader"></div>
+            <div class="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent"></div>
+            <div class="absolute bottom-8 left-8 w-[34rem] space-y-4"><div class="h-10 w-4/5 rounded skeloader"></div><div class="h-4 w-2/3 rounded skeloader"></div><div class="h-4 w-full rounded skeloader"></div><div class="h-10 w-48 rounded-lg skeloader"></div></div>
+          </div>
+        {/if}
       {/if}
-    {/if}
+    {/snippet}
 
-
+    {#if heroFirst}{@render heroBlock()}{/if}
     <CollectionsHome />
-    {#each orderedRows as row (row)}
-      {@const rowOption = anilistRows.find((option) => option.id === row)}
-      <HomeRowFrame rowId={row} title={rowOption?.title ?? row} target={$catalogProvider} visibleIds={orderedRows}>
-        {#if row === 'continue'}
+    {#snippet homeRow(row: string)}
+      {@const rowOption = anilistRows.find((option) => option.id === row) ?? (isThemeBlockId(row) ? { id: row, title: blockTitle(allBlocks[row]) } : ANILIST_HOME_ROWS.find((option) => option.id === row))}
+      {@const visibleIds = columns.main.includes(row) ? columns.main : columns.aside}
+      <HomeRowFrame rowId={row} title={rowOption?.title ?? row} target={$catalogProvider} {visibleIds} locked={!!themeHome}>
+        {#if row === 'hero'}
+          {@render heroBlock()}
+        {:else if isBlockId(row) || isThemeBlockId(row)}
+          <HomeBlockView id={row} target={$catalogProvider} optionIds={rowOptionIds} block={allBlocks[row]} />
+        {:else if row === 'continue'}
           {#key listUser}
             <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
           {/key}
@@ -233,6 +261,7 @@
           {#if section && !catalogUnavailable}<HomeRow title={section.title} vars={section.vars} preferLinkedRating={$catalogProvider === 'auto'} />{/if}
         {/if}
       </HomeRowFrame>
-    {/each}
+    {/snippet}
+    <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$activeThemeLayout?.asideWidth ?? $homeAsideWidth} row={homeRow} />
   </div>
 {/if}

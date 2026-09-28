@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Media } from '$lib/anilist/types'
-import { episodeDisplayModel, mediaDisplayModel } from './host-model'
+import { episodeDisplayModel, mediaDisplayModel, timeLeftLabel } from './host-model'
 import { displayText } from './presentation'
 
 const media = {
@@ -23,6 +23,11 @@ const media = {
 } as Media
 
 describe('theme host display model', () => {
+  it('binds the first genre on its own beside the joined list', () => {
+    expect(mediaDisplayModel(media).genre).toBe('Drama')
+    expect(mediaDisplayModel(media).genres).toBe('Drama · Fantasy')
+    expect(mediaDisplayModel({ ...media, genres: [] }).genre).toBeUndefined()
+  })
   it('exposes series fields as the shared contract types', () => {
     const model = mediaDisplayModel(media)
     expect(model.title).toBe('Sakura')
@@ -83,5 +88,47 @@ describe('theme host display model', () => {
     const model = mediaDisplayModel({ ...media, nextAiringEpisode: { episode: 3, timeUntilAiring: 90 * 60 } } as Media)
     expect(model.airingIn).toBe('1h 30m')
     expect(model.airingCountdown).toBe('1 hr 30 mins')
+  })
+})
+
+describe('timeLeftLabel', () => {
+  it('formats the time left in a started episode', () => {
+    expect(timeLeftLabel({ pos: 180, dur: 1440 })).toBe('21m left')
+    expect(timeLeftLabel({ pos: 1430, dur: 1440 })).toBe('1m left')
+    expect(timeLeftLabel({ pos: 0, dur: 1440 })).toBeUndefined()
+    expect(timeLeftLabel({ pos: 100, dur: 0 })).toBeUndefined()
+    expect(timeLeftLabel({ pos: 100, dur: 1440, cleared: true })).toBeUndefined()
+    expect(timeLeftLabel(undefined)).toBeUndefined()
+  })
+})
+
+describe('the episode name in the host model', () => {
+  it('binds a real title and leaves the field out otherwise', () => {
+    expect(episodeDisplayModel(media, 8, { title: 'From Zero' }).episodeName).toBe('From Zero')
+    expect(episodeDisplayModel(media, 8).episodeName).toBeUndefined()
+    expect(episodeDisplayModel(media, 8, { title: 'Episode 8' }).episodeName).toBeUndefined()
+  })
+  it("follows the host's own title: a provider title counts, an Episode N stand-in does not", () => {
+    expect(episodeDisplayModel(media, 8, undefined, { episodeTitle: 'From Zero' }).episodeName).toBe('From Zero')
+    expect(episodeDisplayModel(media, 8, { title: 'From Zero' }, { episodeTitle: 'Episode 8' }).episodeName).toBeUndefined()
+  })
+  it('leaves it out when the host hides the title, while episodeTitle keeps the host label', () => {
+    const model = episodeDisplayModel(media, 8, { title: 'From Zero' }, { episodeTitle: 'Episode 8', episodeName: undefined })
+    expect(model.episodeName).toBeUndefined()
+    expect(model.episodeTitle).toBe('Episode 8')
+  })
+})
+
+describe('episode template fields in the host model', () => {
+  it('binds the plain number and the season code from episode metadata', () => {
+    const model = episodeDisplayModel(media, 5, { season: 2 })
+    expect(model.episodeNo).toBe('5')
+    expect(model.episodeCode).toBe('S2 E5')
+    expect(model.episodeNumber).toBe(5)
+    expect(displayText('episodeNumber', model)).toBe('E5')
+    expect(episodeDisplayModel(media, 1, { season: 4, seasonEpisode: 17 }).episodeCode).toBe('S4 E17')
+    expect(episodeDisplayModel(media, 5).episodeCode).toBe('E5')
+    expect(episodeDisplayModel(media, 5, undefined, { episodeNo: '1071', watched: 'Watched', filler: 'Filler', rating: '8.5' }))
+      .toMatchObject({ episodeNo: '1071', watched: 'Watched', filler: 'Filler', rating: '8.5' })
   })
 })

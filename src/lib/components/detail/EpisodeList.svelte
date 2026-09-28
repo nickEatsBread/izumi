@@ -4,9 +4,10 @@
   // for the next one. Long-runners (One Piece) are paginated. The layout (rich
   // `cards` vs simple `compact` rows) follows the persisted Appearance setting;
   // per-episode thumbnails/titles/ratings come from AniZip.
-  import { playEpisode, prefetchEpisodeSources, type PlayState } from '$lib/stremio/play'
-  import { airedCount } from '$lib/anilist/media'
-  import { animeEpisodeNumbers, animeEpisodeMetadata, animeWatchedProgress } from '$lib/catalog/anime-detail'
+  import { untrack } from 'svelte'
+  import { playEpisode, prefetchEpisodeSources, resumeEpisode, type PlayState } from '$lib/stremio/play'
+  import { airedCount, cover } from '$lib/anilist/media'
+  import { animeEpisodeNumbers, animeEpisodeMetadata, animeResumeEpisode, animeWatchedProgress } from '$lib/catalog/anime-detail'
   import { anilistIdOf } from '$lib/catalog/identity'
   import type { Media } from '$lib/anilist/types'
   import { getEpisodeMeta } from '$lib/anizip'
@@ -28,8 +29,14 @@
     autoDownloadRules, removeAutoDownloadForMedia, subscribeAutoDownloads,
   } from '$lib/downloads/rules'
   import EpisodeCard from './EpisodeCard.svelte'
+  import EpisodeToolbar from './EpisodeToolbar.svelte'
+  import { planEpisodeToolbar } from './toolbar-plan'
+  import SeasonPicker from './SeasonPicker.svelte'
+  import { fetchSeasonChain, mayListSeasons, seasonEntries, type SeasonEntry } from '$lib/anilist/seasons'
   import AiringStatus from './AiringStatus.svelte'
-  import { episodeTileState } from './episode-tile'
+  import { episodeTileState, offlineResumeEpisode, playableThrough } from './episode-tile'
+  import { episodeRanges, pageSizeFor, searchEpisodes, shownPage } from './episode-ranges'
+  import { episodeNoText } from '$lib/themes/episode-fields'
   import Download from '@lucide/svelte/icons/download'
   import Loader from '@lucide/svelte/icons/loader-circle'
   import Pause from '@lucide/svelte/icons/pause'
@@ -41,10 +48,11 @@
   import LayoutGrid from '@lucide/svelte/icons/layout-grid'
   import Rows3 from '@lucide/svelte/icons/rows-3'
   import ListPlus from '@lucide/svelte/icons/list-plus'
+  import Play from '@lucide/svelte/icons/play'
   import { enqueueEpisode } from '$lib/library/local-lists'
   import { m } from '$lib/paraglide/messages.js'
   import { themePresentation } from '$lib/themes/runtime'
-  import { resolveDetail } from '$lib/themes/presentation'
+  import { episodesOnSide, resolveDetail } from '$lib/themes/presentation'
   let { media, offline = false }: { media: Media; offline?: boolean } = $props()
 
   // Offline: the playable set is exactly the DOWNLOADED episodes (the download keys carry the
@@ -70,11 +78,7 @@
   // be Infinity when the count is genuinely unknown — that is not permission to expose a
   // provider's planned total, so keep every episode gated until release metadata arrives.
   // Offline: every downloaded episode is playable, so aired = the highest downloaded number.
-  const aired = $derived.by(() => {
-    if (offline) return offlineEps.at(-1) ?? 0
-    const a = airedCount(media)
-    return Math.min(allEpisodes.at(-1) ?? 0, Number.isFinite(a) ? a : 0)
-  })
+  const aired = $derived(playableThrough(allEpisodes, airedCount(media), offline))
   const watchedThrough = $derived(animeWatchedProgress(media, $localHistory, $sessionProgress, $manualProgressOverrides))
   const episodeTheme = $derived(resolveDetail($themePresentation).episodes)
   const episodeCard = $derived(episodeTheme?.card)
@@ -84,7 +88,10 @@
   const episodeHoverScale = $derived(episodeTheme?.hover === 'scale')
   const flipOrder = $derived(episodeTheme?.order === 'flip')
   const showEpisodeSearch = $derived(episodeTheme?.search !== false)
-  const PER = 48
+  // A theme's grid or carousel arrangement draws cards whatever the layout setting says, so the
+  // cards/numbers switch would do nothing there.
+  const layoutSwitch = $derived(episodeTheme?.arrangement !== 'grid' && episodeTheme?.arrangement !== 'carousel')
+  const PER = $derived(pageSizeFor(total, episodeTheme?.pageSize))
   // `page` stays null until the user manually pages; until then we show `autoPage` — the page that
   // holds the next episode to watch — so opening a long-running series (One Piece) lands on where
   // you're up to, not episode 1. Deriving it (vs a one-shot init) keeps it right if progress
@@ -95,18 +102,29 @@
     const next = allEpisodes.findIndex((episode) => episode > watchedThrough)
     return Math.max(0, Math.floor((next < 0 ? total - 1 : next) / PER))
   })
-  const curPage = $derived(page ?? autoPage)
+  // A picked page stays inside the list when the page size changes (`pageSize: "auto"` grows with it).
+  const curPage = $derived(shownPage(page, autoPage, pages))
   const startIdx = $derived(curPage * PER)
+  // The number an episode prints without a prefix ("12", or its series-wide number with that setting
+  // on; never the badges' "A1071"): range chips and the range picker label pages by their first and
+  // last, and the Continue card names its episode with it.
+  const printedNumber = (episode: number) => episodeNoText(episode, meta[episode]?.abs, $absoluteEpisodeNumbers)
+  const rangeChips = $derived(episodeTheme?.paging === 'ranges' ? episodeRanges(allEpisodes, PER, printedNumber) : [])
+  const rangeMenu = $derived(episodeTheme?.paging === 'dropdown' ? episodeRanges(allEpisodes, PER, printedNumber, ' – ') : [])
+  // `ranges` replaces the Prev/Next pager, and so does the toolbar's range picker once it shows.
+  const pagerShown = $derived(episodeTheme?.paging !== 'ranges' && !(episodeTheme?.paging === 'dropdown' && aired > 0))
+  let rangesRow = $state<HTMLElement>()
+  // Keep the current range chip in view. Only the row scrolls: scrollIntoView would also move the
+  // page down to the episodes as the tab opens.
+  $effect(() => {
+    const row = rangesRow
+    const chip = row?.children[curPage] as HTMLElement | undefined
+    if (row && chip) row.scrollLeft = Math.max(0, chip.offsetLeft - (row.clientWidth - chip.offsetWidth) / 2)
+  })
   let episodeQuery = $state('')
   let searchOpen = $state(false)
-  const searchedEpisodes = $derived.by(() => {
-    const query = episodeQuery.trim().toLocaleLowerCase().replace(/^ep(?:isode)?\s*/i, '')
-    if (!query) return null
-    return allEpisodes.filter((episode) =>
-      String(episode).includes(query)
-      || meta[episode]?.title?.toLocaleLowerCase().includes(query)
-      || String(meta[episode]?.abs ?? '').includes(query))
-  })
+  // The whole list, not the current page: number matches first, then the rest (episode-ranges.ts).
+  const searchedEpisodes = $derived.by(() => searchEpisodes(allEpisodes, episodeQuery, meta))
   const eps = $derived(
     searchedEpisodes ?? allEpisodes.slice(startIdx, startIdx + PER),
   )
@@ -114,7 +132,13 @@
   // Oldest/Newest toggle: reorders the current page's episodes for display. Pagination itself
   // still pages ascending (startIdx/PER above are unchanged) — see the note near the toggle.
   let sortDir = $state<SortDir>('asc')
-  const rows = $derived(orderEpisodes(eps, sortDir))
+  // `order: "none"` has no sort control, so the list is always oldest first.
+  const dir = $derived<SortDir>(episodeTheme?.order === 'none' ? 'asc' : sortDir)
+  // Search results keep their ranking; the sort orders pages.
+  const rows = $derived(searchedEpisodes ? eps : orderEpisodes(eps, dir))
+  // Cards are keyed by the order that draws them, so a new sort draws them afresh; search results
+  // ignore the sort, so flipping it mid-search leaves the cards alone.
+  const rowOrder = $derived(searchedEpisodes ? 'search' : dir)
   // The controller fast lane targets the episode the hero CTA would use. `autoPage` already keeps
   // that episode on-screen for long-runners; the fallback covers unusual offline/schedule data.
   // This target is semantic rather than geometric, so a single Down never detours through search,
@@ -125,6 +149,12 @@
       : Math.max(1, Math.min(watchedThrough + 1, aired || 1))
     return rows.includes(preferred) ? preferred : (rows.find((episode) => episode <= aired) ?? rows[0])
   })
+  // The episode the series Play button opens (the page CTA's own rule): `data-next` marks it for
+  // theme stylesheets and the Continue card plays it. Offline: the next downloaded episode, by the
+  // rule the Play button uses too (episode-tile.ts).
+  const ctaEpisode = $derived(offline
+    ? offlineResumeEpisode(offlineEps, watchedThrough)
+    : animeResumeEpisode(media, watchedThrough))
   function toggleSort(dir: SortDir) { if (dir !== sortDir) { h.select(); sortDir = dir } }
   function flipSort() {
     h.select()
@@ -192,10 +222,28 @@
     intent(ep, 0)
     playEpisode(media, ep, (s) => (playState = s))
   }
+  // API 3 `detail.continue: "card"`: the Continue card plays what the series Play button would,
+  // through the same resume path (the remembered source first).
+  const continueCard = $derived(resolveDetail($themePresentation).continue === 'card')
+  function continueWatching() {
+    if (resolving || aired < 1) return
+    h.impact('medium')
+    const target = ctaEpisode
+    intent(target, 0)
+    if (offline) playEpisode(media, target, (s) => (playState = s))
+    else resumeEpisode(media, target, (s) => (playState = s))
+  }
   // Series-wide numbering is a Settings → Interface preference, not a control on this page. The
   // per-episode `abs` mapping is still loaded and still available to everything that needs it —
   // this only decides which number the badge prints.
   const numberLabel = (episode: number) => episodeNumberLabel(episode, meta[episode]?.abs, $absoluteEpisodeNumbers)
+  // The state every episode element carries (`data-state`): cards, rows and tiles share one rule.
+  const stateOf = (ep: number) => episodeTileState({
+    ep,
+    watchedThrough,
+    aired,
+    percent: episodeBarPercent($positions[progressKey(media.id, ep)], false, ep <= aired),
+  }).kind
 
   const nextQueueEpisode = $derived(allEpisodes.find((episode) => episode > watchedThrough && episode <= aired)
     ?? allEpisodes.find((episode) => episode <= aired) ?? 1)
@@ -225,6 +273,44 @@
   let batchCodec = $state<'any' | 'h264' | 'h265' | 'av1'>('any')
   const airedList = $derived(Array.from({ length: aired }, (_, i) => i + 1))
   const subscription = $derived($autoDownloadRules.find((rule) => rule.mediaId === media.id))
+  // Any toolbar key composes the theme's toolbar (EpisodeToolbar.svelte); without one izumi's own stays.
+  // A flip order is the round button in the list's gutter on desktop beside a right-hand rail, and with
+  // izumi's own toolbar (`plan.gutter`); inside the theme's toolbar elsewhere it is one toggle.
+  const plan = $derived(planEpisodeToolbar({
+    order: episodeTheme?.order,
+    search: episodeTheme?.search,
+    arrangement: episodeTheme?.arrangement,
+    controls: episodeTheme?.controls,
+    toolbar: episodeTheme?.toolbar,
+    toolbarMin: episodeTheme?.toolbarMin,
+    paging: episodeTheme?.paging,
+    phone: $isMobile,
+    offline,
+    queueEnabled: $episodeQueueEnabled,
+    selecting,
+    total,
+    rail: episodesOnSide($themePresentation, !$isMobile),
+  }))
+  // API 3 `detail.episodes.seasons`: this title's seasons above the list, from the AniList
+  // prequel/sequel chain (cached per title, so moving between seasons does not walk it again).
+  // Provider titles use their AniList mapping; offline pages show none. Only a title that can be a
+  // season (TV, TV short, ONA) walks the chain: a film, OVA or special never shows the picker.
+  const seasonStyle = $derived(episodeTheme?.seasons ?? 'none')
+  const seasonVariant = $derived<'chips' | 'posters' | 'dropdown'>(seasonStyle === 'none' ? 'chips' : seasonStyle)
+  const seasonRoot = $derived(seasonStyle === 'none' || offline || !mayListSeasons(media.format) ? undefined : anilistIdOf(media))
+  let seasonList = $state<SeasonEntry[]>([])
+  $effect(() => {
+    const root = seasonRoot
+    if (root == null) { seasonList = []; return }
+    const seed = untrack(() => (media.catalog ? undefined : media))
+    let cancelled = false
+    fetchSeasonChain(root, seed)
+      .then((chain) => { if (!cancelled) seasonList = seasonEntries(chain, root) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  })
+  // A heading-row toolbar takes the dropdown in place of its "Episodes" heading.
+  const seasonsInHeader = $derived(seasonStyle === 'dropdown' && plan.composed && plan.variant === 'header' && aired > 0 && seasonList.length > 1)
   // A tap on a released episode plays it — or, in select mode, toggles its selection. On desktop,
   // Shift+click marks the series watched through that episode without opening the player.
   // Upcoming (unaired) episodes are neither playable nor selectable.
@@ -288,16 +374,18 @@
   }
 </script>
 
+{#snippet seasonLead()}<SeasonPicker entries={seasonList} variant="dropdown" inline />{/snippet}
+
 {#if total > 0}
-<div class="relative">
-  {#if flipOrder && !$isMobile && aired > 0}
-    <button type="button" data-focusable class="episode-order-flip" onclick={flipSort}
+<div data-slot="detail.episodes" class="relative">
+  {#if plan.gutter && aired > 0}
+    <button type="button" data-focusable class="episode-order-flip" data-part="episodes.sort" data-variant="flip" data-dir={sortDir} onclick={flipSort}
             title={sortDir === 'asc' ? 'Show newest first' : 'Show oldest first'}
             aria-label={sortDir === 'asc' ? 'Show newest first' : 'Show oldest first'}>
       {#if sortDir === 'asc'}<ArrowDown01 size={20} />{:else}<ArrowUp10 size={20} />{/if}
     </button>
-    {#if !selecting && !offline}
-      <button type="button" data-focusable class="episode-order-flip episode-download-flip" onclick={startSelect}
+    {#if !selecting && !offline && !plan.composed}
+      <button type="button" data-focusable class="episode-order-flip episode-download-flip" data-part="episodes.download" onclick={startSelect}
               title="Download episodes" aria-label="Download episodes">
         <Download size={18} />
       </button>
@@ -307,12 +395,27 @@
   {#if playState.status === 'error'}
     <p class="mb-3 text-sm text-destructive">{playState.message}</p>
   {/if}
+  {#if seasonList.length > 1 && !seasonsInHeader}
+    <SeasonPicker entries={seasonList} variant={seasonVariant} />
+  {/if}
 
   {#if aired > 0}
-    {#if flipOrder && !$isMobile && !selecting}
+    {#if plan.composed}
+      <EpisodeToolbar {plan} order={episodeTheme?.order === 'flip' ? 'flip' : 'tabs'} {total}
+                      bind:sortDir bind:query={episodeQuery}
+                      ranges={rangeMenu} page={curPage} onpage={(index) => (page = index)}
+                      onlayout={setLayout} ondownload={startSelect} onqueue={queueNextEpisode}
+                      queueLabel={queuedNotice ? m.lists_queued_episode({ episode: nextQueueEpisode }) : m.lists_add_queue()}
+                      queueTitle={`${m.lists_add_queue()} — Episode ${nextQueueEpisode}`}
+                      lead={seasonsInHeader ? seasonLead : undefined} />
+      {#if !$isMobile && !selecting && !plan.gutter}
+        <!-- Release timing stays with the desktop episode controls, as in izumi's own bar. -->
+        <div class="-mt-2 mb-3 flex flex-wrap items-center gap-3"><AiringStatus {media} toolbar /></div>
+      {/if}
+    {:else if flipOrder && !$isMobile && !selecting}
       {#if $episodeQueueEnabled}
-        <div class="mb-3 flex justify-end">
-          <button data-focusable onclick={queueNextEpisode} disabled={aired < 1}
+        <div class="mb-3 flex justify-end" data-slot="episodes.toolbar" data-variant="bar">
+          <button data-focusable onclick={queueNextEpisode} data-part="episodes.queue" disabled={aired < 1}
                   title={`${m.lists_add_queue()} — Episode ${nextQueueEpisode}`}
                   class="flex items-center justify-center gap-1.5 rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent disabled:opacity-40">
             <ListPlus size={15} /> {queuedNotice ? m.lists_queued_episode({ episode: nextQueueEpisode }) : m.lists_add_queue()}
@@ -320,20 +423,21 @@
         </div>
       {/if}
     {:else}
-    <div class="mb-4 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
+    <div class="mb-4 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap" data-slot="episodes.toolbar" data-variant="bar">
       {#if !$isMobile}
       {#if !selecting && !flipOrder}
-        <div class="flex rounded-lg bg-secondary p-0.5 text-sm font-bold">
-          <button data-focusable onclick={() => toggleSort('asc')}
+        <div class="flex rounded-lg bg-secondary p-0.5 text-sm font-bold" data-part="episodes.sort" data-variant="tabs" data-dir={sortDir}>
+          <button data-focusable onclick={() => toggleSort('asc')} data-active={sortDir === 'asc' || undefined}
                   class="rounded-md px-3 py-1.5 transition-colors {sortDir === 'asc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Oldest</button>
-          <button data-focusable onclick={() => toggleSort('desc')}
+          <button data-focusable onclick={() => toggleSort('desc')} data-active={sortDir === 'desc' || undefined}
                   class="rounded-md px-3 py-1.5 transition-colors {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
         </div>
       {/if}
       {#if showEpisodeSearch}
-      <label class="relative col-span-2 min-w-0 sm:max-w-sm sm:flex-1">
+      <label class="relative col-span-2 min-w-0 sm:max-w-sm sm:flex-1" data-part="episodes.search">
         <Search size={15} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
+          data-part="input"
           bind:value={episodeQuery}
           data-focusable
           placeholder="Find episode number or title…"
@@ -343,21 +447,21 @@
       {/if}
       {/if}
       {#if $isMobile}
-        <div class="flex min-h-11 w-full items-stretch rounded-xl bg-secondary p-1 text-sm font-bold">
-          <button data-focusable onclick={() => toggleSort('asc')}
+        <div class="flex min-h-11 w-full items-stretch rounded-xl bg-secondary p-1 text-sm font-bold" data-part="episodes.sort" data-variant="tabs" data-dir={sortDir}>
+          <button data-focusable onclick={() => toggleSort('asc')} data-active={sortDir === 'asc' || undefined}
                   class="flex min-h-9 flex-1 items-center justify-center rounded-lg px-3 leading-none transition-colors {sortDir === 'asc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Oldest</button>
-          <button data-focusable onclick={() => toggleSort('desc')}
+          <button data-focusable onclick={() => toggleSort('desc')} data-active={sortDir === 'desc' || undefined}
                   class="flex min-h-9 flex-1 items-center justify-center rounded-lg px-3 leading-none transition-colors {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
         </div>
       {:else}
-        {#if $episodeQueueEnabled}<button data-focusable onclick={queueNextEpisode} disabled={aired < 1}
+        {#if $episodeQueueEnabled}<button data-focusable onclick={queueNextEpisode} data-part="episodes.queue" disabled={aired < 1}
                 title={`${m.lists_add_queue()} — Episode ${nextQueueEpisode}`}
                 class="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold hover:bg-accent disabled:opacity-40 sm:h-auto sm:rounded-md sm:py-2">
           <ListPlus size={15} /> {queuedNotice ? m.lists_queued_episode({ episode: nextQueueEpisode }) : m.lists_add_queue()}
         </button>{/if}
         {#if !selecting && !flipOrder}
           {#if !offline}
-            <button data-focusable onclick={startSelect}
+            <button data-focusable onclick={startSelect} data-part="episodes.download"
                     title="Download episodes"
                     class="flex items-center justify-center gap-1.5 rounded-md bg-secondary px-3 py-2 text-sm font-bold transition-colors hover:bg-accent">
               <Download size={15} /> Download…
@@ -366,33 +470,38 @@
         {/if}
       {/if}
       {#if $isMobile}
-        {#if $episodeQueueEnabled}<button data-focusable onclick={queueNextEpisode} disabled={aired < 1}
+        {#if $episodeQueueEnabled}<button data-focusable onclick={queueNextEpisode} data-part="episodes.queue" disabled={aired < 1}
                 class="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold disabled:opacity-40">
           <ListPlus size={16} /> {m.lists_add_queue()}
         </button>{/if}
         <!-- Layout switch: mobile-only. Rendering it unconditionally added two data-focusable
              stops to the desktop toolbar and the Deck's controller focus order for a layout that
-             doesn't apply there. -->
-        <div role="group" aria-label="Episode layout"
+             doesn't apply there. A theme's grid or carousel arrangement ignores the numbers layout,
+             so the switch only shows where it does something. -->
+        {#if layoutSwitch || showEpisodeSearch}
+        <div role="group" aria-label="Episode layout" data-part={layoutSwitch ? 'episodes.layout' : undefined} data-layout={$episodeLayout}
              class="flex min-h-11 items-stretch rounded-xl bg-secondary p-1">
+          {#if layoutSwitch}
           <button data-focusable onclick={() => setLayout('list')} aria-label="Episode cards"
-                  aria-pressed={$episodeLayout !== 'grid'}
+                  aria-pressed={$episodeLayout !== 'grid'} data-active={$episodeLayout !== 'grid' || undefined}
                   class="grid min-h-9 w-11 place-items-center rounded-lg transition-colors {$episodeLayout !== 'grid' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">
             <Rows3 size={17} />
           </button>
           <button data-focusable onclick={() => setLayout('grid')} aria-label="Episode numbers"
-                  aria-pressed={$episodeLayout === 'grid'}
+                  aria-pressed={$episodeLayout === 'grid'} data-active={$episodeLayout === 'grid' || undefined}
                   class="grid min-h-9 w-11 place-items-center rounded-lg transition-colors {$episodeLayout === 'grid' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">
             <LayoutGrid size={17} />
           </button>
+          {/if}
           {#if showEpisodeSearch}
-          <button data-focusable onclick={() => { h.tap(); searchOpen = !searchOpen; if (!searchOpen) episodeQuery = '' }}
+          <button data-focusable data-part="episodes.search" data-active={searchOpen || undefined} onclick={() => { h.tap(); searchOpen = !searchOpen; if (!searchOpen) episodeQuery = '' }}
                   aria-label="Search episodes" aria-pressed={searchOpen}
                   class="grid min-h-9 w-11 place-items-center rounded-lg transition-colors {searchOpen ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">
             <Search size={17} />
           </button>
           {/if}
         </div>
+        {/if}
       {/if}
       {#if !$isMobile && !selecting && !flipOrder}
         <!-- Release timing belongs to episode controls, not series navigation. `ml-auto` keeps it
@@ -404,9 +513,9 @@
     </div>
     {/if}
     {#if $isMobile && searchOpen && showEpisodeSearch}
-      <label class="relative mb-4 block min-w-0">
+      <label class="relative mb-4 block min-w-0" data-part="episodes.search">
         <Search size={15} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <input bind:value={episodeQuery} data-focusable placeholder="Find episode number or title…"
+        <input data-part="input" bind:value={episodeQuery} data-focusable placeholder="Find episode number or title…"
                class="h-12 w-full rounded-xl bg-input pl-10 pr-3 text-base" />
       </label>
     {/if}
@@ -468,9 +577,10 @@
         </div>
       </div>
     {:else if selecting || ($isMobile && !offline)}
+    {#if selecting || !plan.composed}
     <div class="mb-4 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
       {#if !selecting}
-        <button data-focusable onclick={startSelect}
+        <button data-focusable onclick={startSelect} data-part="episodes.download"
                 class="col-span-2 flex h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold transition-colors hover:bg-accent">
           <Download size={15} /> Download…
         </button>
@@ -524,9 +634,45 @@
       {/if}
     </div>
     {/if}
+    {/if}
     {#if !selecting && subscription}
       <p class="mb-3 text-xs font-bold text-theme">Auto-download is watching for episode {subscription.nextEpisode}.</p>
     {/if}
+  {/if}
+
+  {#if continueCard && aired > 0 && !selecting}
+    {@const target = ctaEpisode}
+    {@const started = episodeBarPercent($positions[progressKey(media.id, target)], false, target <= aired)}
+    {@const percent = episodeBarPercent($positions[progressKey(media.id, target)], watchedThrough >= target, target <= aired)}
+    {@const shownTitle = $hideSpoilers && watchedThrough < target ? '' : meta[target]?.title ?? ''}
+    {@const art = meta[target]?.image || media.bannerImage || cover(media)}
+    <button type="button" data-part="episode.continue" data-filler={fillerSet.has(target) || undefined} data-focusable
+            onclick={continueWatching} onpointerenter={() => intent(target)} onfocus={() => intent(target)}
+            class="relative mb-4 block h-20 w-full overflow-hidden rounded-xl bg-secondary text-left">
+      {#if art}<img src={art} alt="" loading="lazy" decoding="async" class="absolute inset-0 h-full w-full object-cover" />{/if}
+      <span class="absolute inset-0 bg-black/60"></span>
+      <span class="relative flex h-full items-center gap-3 px-4">
+        <span class="min-w-0 flex-1">
+          <span data-part="episode.continue.label" class="block truncate text-sm font-black text-white">{watchedThrough > 0 || started > 0 ? 'Continue' : 'Play'}: Episode {printedNumber(target)}</span>
+          {#if shownTitle}<span data-part="episode.continue.title" class="block truncate text-xs font-bold text-white/80">{shownTitle}</span>{/if}
+        </span>
+        <Play size={20} class="shrink-0 text-white" />
+      </span>
+      {#if percent > 0}
+        <span class="absolute inset-x-0 bottom-0 h-0.5 bg-white/20"><span class="block h-full bg-theme" style={`width:${percent}%`}></span></span>
+      {/if}
+    </button>
+  {/if}
+
+  {#if episodeTheme?.paging === 'ranges' && pages > 1 && !searchedEpisodes}
+    <div data-part="episodes.ranges" bind:this={rangesRow}
+         class="relative -mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0">
+      {#each rangeChips as range, index (index)}
+        <button type="button" data-part="chip" data-active={index === curPage || undefined} data-focusable
+                onclick={() => { h.select(); page = index }}
+                class="shrink-0 rounded-lg px-3.5 py-1.5 text-sm font-bold transition-colors {index === curPage ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:text-foreground'}">{range}</button>
+      {/each}
+    </div>
   {/if}
 
   {#if metaLoading}
@@ -576,8 +722,8 @@
       </div>
     {/if}
   {:else if episodeCarousel}
-    <div class="flex gap-5 overflow-x-auto pb-3">
-      {#each rows as ep (`${sortDir}-${ep}`)}
+    <div data-part="episodes.track" class="flex gap-5 overflow-x-auto pb-3">
+      {#each rows as ep (`${rowOrder}-${ep}`)}
         <div class="w-[min(100%,18rem)] shrink-0">
         <EpisodeCard
           {media}
@@ -601,13 +747,15 @@
           themeCard={episodeCard}
           hoverScale={false}
           listRow={false}
+          state={stateOf(ep)}
+          cta={ep === ctaEpisode && ep <= aired}
         />
         </div>
       {/each}
     </div>
   {:else if episodeGridLayout || $episodeLayout === 'cards'}
     <div class="grid select-none {episodeListLayout ? 'grid-cols-1 gap-2 px-2' : episodeGridLayout ? 'grid-cols-1 gap-4 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]' : 'grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]'}">
-      {#each rows as ep (`${sortDir}-${ep}`)}
+      {#each rows as ep (`${rowOrder}-${ep}`)}
         <div class="{episodeListLayout && episodeHoverScale ? 'episode-scale' : ''} {episodeListLayout ? 'episode-load-in' : ''}">
         <EpisodeCard
           {media}
@@ -631,6 +779,8 @@
           themeCard={episodeCard}
           hoverScale={episodeHoverScale && !episodeListLayout}
           listRow={episodeListLayout}
+          state={stateOf(ep)}
+          cta={ep === ctaEpisode && ep <= aired}
         />
         </div>
       {/each}
@@ -646,7 +796,7 @@
           aired,
           percent: episodeBarPercent($positions[progressKey(media.id, ep)], false, ep <= aired),
         })}
-        <button data-focusable data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
+        <button data-part="episode" data-variant="number" data-state={tile.kind} data-next={ep === ctaEpisode && ep <= aired || undefined} data-filler={fillerSet.has(ep) || undefined} data-focusable data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
                 data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
                 disabled={!tile.playable} onpointerenter={() => intent(ep)} onfocus={() => intent(ep)}
                 onclick={(event) => { h.tap(); tap(ep, event) }}
@@ -678,6 +828,7 @@
         {@const done = watchedThrough >= ep}
         {@const pct = episodeBarPercent($positions[progressKey(media.id, ep)], done, released)}
         <div
+          data-part="episode" data-variant="row" data-state={stateOf(ep)} data-next={ep === ctaEpisode && ep <= aired || undefined} data-filler={filler || undefined}
           data-focusable
           data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
           data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
@@ -700,11 +851,11 @@
             <!-- The number chip carries the watched state: it stays a NUMBER (identity is what you
                  scan for in this layout) but takes the theme tint, so a finished season reads as
                  finished at a glance without hiding which episode is which. -->
-            <span class="grid h-7 min-w-7 shrink-0 place-items-center rounded px-1 text-sm font-black sm:h-8 sm:min-w-8 {done ? 'bg-theme/25 text-theme' : 'bg-background/40'}">{numberLabel(ep)}</span>
+            <span data-part="episode.number" class="grid h-7 min-w-7 shrink-0 place-items-center rounded px-1 text-sm font-black sm:h-8 sm:min-w-8 {done ? 'bg-theme/25 text-theme' : 'bg-background/40'}">{numberLabel(ep)}</span>
           {/if}
           <span class="min-w-0 flex-1">
             <span class="flex items-center gap-1.5">
-              <span class="truncate text-sm font-bold">{labels.primary}</span>
+              <span data-part="episode.title" class="truncate text-sm font-bold">{labels.primary}</span>
               {#if filler}<span class="shrink-0 rounded bg-yellow-400 px-1 text-[0.6rem] font-bold text-black">FILLER</span>{/if}
               {#if dl?.status === 'done'}<span class="shrink-0 rounded bg-green-500/20 px-1 text-[0.55rem] font-bold text-green-400">SAVED</span>{/if}
             </span>
@@ -741,12 +892,16 @@
     </div>
   {/if}
 
-  {#if pages > 1 && !searchedEpisodes}
-    <div class="mt-4 flex items-center gap-3 text-sm">
-      <button data-focusable disabled={curPage === 0} onclick={() => (page = curPage - 1)}
+  {#if searchedEpisodes && !searchedEpisodes.length}
+    <p data-part="episodes.empty" class="py-8 text-center text-sm text-muted-foreground">No episode matches “{episodeQuery.trim()}”.</p>
+  {/if}
+
+  {#if pages > 1 && !searchedEpisodes && pagerShown}
+    <div data-part="episodes.pager" class="mt-4 flex items-center gap-3 text-sm">
+      <button data-part="page-number" data-focusable disabled={curPage === 0} onclick={() => (page = curPage - 1)}
               class="rounded bg-secondary px-4 py-2.5 disabled:opacity-40 sm:py-1">Prev</button>
       <span class="text-muted-foreground">Episodes {startIdx + 1}–{startIdx + eps.length} of {total} · page {curPage + 1}/{pages}</span>
-      <button data-focusable disabled={curPage >= pages - 1} onclick={() => (page = curPage + 1)}
+      <button data-part="page-number" data-focusable disabled={curPage >= pages - 1} onclick={() => (page = curPage + 1)}
               class="rounded bg-secondary px-4 py-2.5 disabled:opacity-40 sm:py-1">Next</button>
     </div>
   {/if}

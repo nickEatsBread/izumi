@@ -40,3 +40,24 @@ describe('desktop episode toolbar', () => {
     expect(toolbar).toContain('col-span-2 ml-auto flex shrink-0 items-center gap-3')
   })
 })
+
+describe('episode toolbar hooks', () => {
+  it("names izumi's own toolbar and its controls", () => {
+    expect(src).toContain('<div class="mb-4 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap" data-slot="episodes.toolbar" data-variant="bar">')
+    expect(src).toContain('<div class="mb-3 flex justify-end" data-slot="episodes.toolbar" data-variant="bar">')
+    expect(src).toContain('<div class="flex rounded-lg bg-secondary p-0.5 text-sm font-bold" data-part="episodes.sort" data-variant="tabs" data-dir={sortDir}>')
+    expect(src).toContain('<div class="flex min-h-11 w-full items-stretch rounded-xl bg-secondary p-1 text-sm font-bold" data-part="episodes.sort" data-variant="tabs" data-dir={sortDir}>')
+    expect(src).toContain('class="episode-order-flip" data-part="episodes.sort" data-variant="flip" data-dir={sortDir}')
+    expect(src).toContain('<label class="relative col-span-2 min-w-0 sm:max-w-sm sm:flex-1" data-part="episodes.search">')
+    expect(src).toContain('<label class="relative mb-4 block min-w-0" data-part="episodes.search">')
+    expect(src).toContain("data-part={layoutSwitch ? 'episodes.layout' : undefined} data-layout={$episodeLayout}")
+    expect(src.match(/onclick=\{startSelect\} data-part="episodes\.download"/g)?.length).toBe(2)
+    expect(src).toContain('class="episode-order-flip episode-download-flip" data-part="episodes.download"')
+    expect(src.match(/onclick=\{queueNextEpisode\} data-part="episodes\.queue"/g)?.length).toBe(3)
+  })
+  it('only offers the cards/numbers switch where the arrangement honours it', () => {
+    expect(src).toContain("const layoutSwitch = $derived(episodeTheme?.arrangement !== 'grid' && episodeTheme?.arrangement !== 'carousel')")
+    expect(src).toContain('{#if layoutSwitch || showEpisodeSearch}')
+    expect(src).toContain('{#if layoutSwitch}')
+  })
+})

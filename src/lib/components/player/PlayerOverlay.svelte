@@ -1554,6 +1554,7 @@
      stage with sound. Every other region is an opaque SIBLING: the rail, the panel under the
      stage and the gutters beside a narrower stage. -->
 <div
+  data-slot="watch" data-layout={docked ? 'docked' : 'full'} style:background|important="transparent"
   class={docked ? `izumi-player-dock fixed z-20 flex ${dock.episodes === 'below' ? 'flex-col' : 'flex-row'}` : 'contents'}
   style:left={docked ? ($shellNav === 'sidebar' ? '3.5rem' : '0') : undefined}
   style:top={docked ? ($shellNav === 'top' ? '4.75rem' : '0') : undefined}
@@ -1561,6 +1562,7 @@
   style:bottom={docked ? ($shellNav === 'bottom' ? bottomNavInset : '0') : undefined}
 >
 <div
+  style:background|important="transparent"
   class={docked ? `izumi-player-stage flex min-h-0 ${dock.episodes === 'below' ? 'w-full shrink-0 flex-row' : 'h-full shrink-0 flex-col'}` : 'contents'}
   style:width={docked && dock.episodes !== 'below' ? `${dock.width}%` : undefined}
   style:max-height={docked && dock.episodes === 'below' ? '70%' : undefined}
@@ -1569,6 +1571,7 @@
   <div class="min-w-0 flex-1 bg-background" aria-hidden="true"></div>
 {/if}
 <div
+  data-slot="watch.stage" style:background|important="transparent"
   bind:this={overlayRoot}
   tabindex="-1"
   class="izumi-player-root {docked ? 'relative aspect-video shrink-0 overflow-hidden' : 'fixed inset-y-0 right-0'} z-20 overscroll-none select-none outline-none focus:outline-none focus-visible:outline-none"
@@ -1738,7 +1741,7 @@
 {/if}
 </div>
 {#if docked}
-  <aside data-theme-surface="player-rail" class="izumi-player-rail flex min-h-0 min-w-0 flex-1 flex-col border-border bg-background {dock.episodes === 'below' ? 'w-full border-t' : 'h-full border-l'}">
+  <aside data-slot="watch.rail" data-theme-surface="player-rail" class="izumi-player-rail flex min-h-0 min-w-0 flex-1 flex-col border-border bg-background {dock.episodes === 'below' ? 'w-full border-t' : 'h-full border-l'}">
     {#if dock.episodes === 'below'}
       <div class="min-h-0 flex-1 overflow-y-auto">
         <DockEpisodes orientation="below" scroll={false} />

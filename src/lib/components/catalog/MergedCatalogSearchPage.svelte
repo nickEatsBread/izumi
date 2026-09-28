@@ -95,10 +95,11 @@
   const loadAtEnd = () => { void loadMore() }
 </script>
 
-<div class="px-4 pb-20 pt-4 sm:px-8">
+<div class="px-4 pb-20 pt-4 sm:px-8" data-slot="search" data-variant="merged">
   <label class="relative block">
     <Search size={20} class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-theme" />
     <input
+      data-part="input"
       bind:value={query}
       data-focusable
       type="search"
@@ -116,16 +117,18 @@
   {/if}
 
   {#if media.length}
-    <VirtualGrid
-      items={media}
-      getKey={mediaKey}
-      className="mt-6 grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:gap-5"
-      onEndReached={loadAtEnd}
-    >
-      {#snippet children(item)}
-        <SmallCard media={item} fill reserveTitleLines subline={providerLabel(item)} />
-      {/snippet}
-    </VirtualGrid>
+    <div data-slot="search.results">
+      <VirtualGrid
+        items={media}
+        getKey={mediaKey}
+        className="mt-6 grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:gap-5"
+        onEndReached={loadAtEnd}
+      >
+        {#snippet children(item)}
+          <SmallCard media={item} fill reserveTitleLines subline={providerLabel(item)} />
+        {/snippet}
+      </VirtualGrid>
+    </div>
   {:else if settled && !loading && !error}
     <div class="mt-6 rounded-xl bg-secondary/40 p-8 text-center text-muted-foreground">No results for “{settled}”.</div>
   {:else if !settled}

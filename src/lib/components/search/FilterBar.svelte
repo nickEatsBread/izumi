@@ -53,8 +53,9 @@
 <!-- Mobile: search on its own full-width row, then the filters in a single horizontally-scrollable
      row (bleeds to the screen edges) so nothing wraps or gets orphaned. Desktop: the inner wrapper
      becomes `display:contents` so everything flows into one wrapping flex row as before. -->
-<div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+<div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center" data-part="search.filters">
   <input
+    data-part="input"
     data-focusable
     type="text"
     placeholder="Search anime…"
@@ -106,7 +107,7 @@
                   onChange={(value) => (filters = { ...filters, sort: value || undefined })} />
     {/if}
 
-    <button data-focusable onclick={() => (showAdvanced = true)}
+    <button data-part="button" data-variant="secondary" data-focusable onclick={() => (showAdvanced = true)}
             class="flex shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-sm font-bold transition-colors {advCount ? 'bg-theme/20 text-theme hover:bg-theme/30' : 'bg-secondary hover:bg-accent'}">
       <SlidersHorizontal size={15} /> Advanced{advCount ? ` · ${advCount}` : ''}
     </button>

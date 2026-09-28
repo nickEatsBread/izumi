@@ -332,6 +332,7 @@
 </script>
 
 <div
+  data-part="player.seekbar"
   bind:this={el}
   data-theme-surface="player"
   class="group/seekbar relative flex w-full cursor-pointer select-none touch-none focus:outline-none focus-visible:shadow-none"

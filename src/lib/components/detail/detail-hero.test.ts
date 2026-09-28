@@ -54,8 +54,20 @@ describe('mobile series hero', () => {
   })
 
   it('fades the artwork in rather than popping it', () => {
-    expect(detail).toContain('let artLoaded = $state(false)')
+    expect(detail).toContain("let loadedArt = $state('')")
     expect(detail).toContain('transition-opacity duration-500')
+  })
+
+  it('keeps a loaded banner shown when the detail query delivers the same series again', () => {
+    // The detail query delivers the series again whenever the cache refreshes records it shares (the
+    // first revalidation of a cached page, the season picker's chain walk), and `media` is a new
+    // object each time. A fade flag an effect reset on that object hid a banner whose image had
+    // already loaded: an unchanged image never fires `load` again. The fade follows the image itself.
+    expect(detail).not.toContain('artLoaded')
+    expect(detail.match(/onload=\{markArtLoaded\}/g)?.length).toBe(4)
+    expect(detail).toContain("artReady(overlayBackdrop) ? 'opacity-100' : 'opacity-0'")
+    expect(detail).toContain("artReady(m.bannerImage) ? 'opacity-100' : 'opacity-0'")
+    expect(detail.match(/artReady\(cover\(m\)\) \? 'opacity-50' : 'opacity-0'/g)?.length).toBe(2)
   })
 
   it('shapes the loading skeleton like the hero it is standing in for', () => {
@@ -120,11 +132,12 @@ describe('mobile series hero', () => {
   })
 
   it('surfaces a complete, discoverable mobile anime overview without crowding the hero', () => {
-    expect(detail).toContain("['Episodes', 'Overview', 'Relations', 'Characters', 'Recommended']")
+    expect(readFileSync(fileURLToPath(new URL('../../detail/sections.ts', import.meta.url)), 'utf8'))
+      .toContain("const PHONE_ORDER: readonly DetailSection[] = ['episodes', 'overview', 'relations', 'characters', 'recommended']")
     expect(detail).toContain('aria-label="Genres"')
     expect(detail).toContain('From {prettyEnum(m.source)}')
     expect(detail).toContain('{m.duration} min')
-    expect(detail).toContain("{:else if active === 'Overview'}")
+    expect(detail).toContain("{:else if id === 'overview'}")
     for (const heading of ['Synopsis', 'Information', 'Studio', 'Runtime', 'Source', 'Country', 'Popularity', 'Themes', 'Alternative titles']) {
       expect(detail).toContain(`>${heading}<`)
     }

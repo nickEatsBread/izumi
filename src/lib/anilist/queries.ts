@@ -13,10 +13,15 @@ export function currentSeason(now: Date) {
 // INCLUDE it (passing `isAdult: null` matches media whose isAdult IS null — none —
 // so returns EMPTY). A GraphQL variable can't omit an argument, so we keep two
 // query variants and pick per the setting.
+//
+// `$format`/`$status` follow the same OMIT-vs-null rule: they are declared with no default, so a
+// preset whose `vars` don't set them sends the variable as omitted (AniList applies no filter).
+// Never default either one to `null` — AniList treats an explicit `null` as a real filter value
+// (matching only media whose field IS null), which would empty out every preset that doesn't care.
 export const PAGE_QUERY = gql`
-  query Page($page: Int = 1, $perPage: Int = 20, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $genre: String, $withPreview: Boolean = true) {
+  query Page($page: Int = 1, $perPage: Int = 20, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $genre: String, $format: MediaFormat, $status: MediaStatus, $withPreview: Boolean = true) {
     Page(page: $page, perPage: $perPage) {
-      media(type: ANIME, isAdult: false, sort: $sort, season: $season, seasonYear: $seasonYear, genre: $genre) {
+      media(type: ANIME, isAdult: false, sort: $sort, season: $season, seasonYear: $seasonYear, genre: $genre, format: $format, status: $status) {
         ...CardMediaFields
       }
     }
@@ -24,9 +29,9 @@ export const PAGE_QUERY = gql`
   ${CARD_MEDIA_FIELDS}`
 
 const PAGE_QUERY_ALL = gql`
-  query PageAll($page: Int = 1, $perPage: Int = 20, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $genre: String, $withPreview: Boolean = true) {
+  query PageAll($page: Int = 1, $perPage: Int = 20, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $genre: String, $format: MediaFormat, $status: MediaStatus, $withPreview: Boolean = true) {
     Page(page: $page, perPage: $perPage) {
-      media(type: ANIME, sort: $sort, season: $season, seasonYear: $seasonYear, genre: $genre) {
+      media(type: ANIME, sort: $sort, season: $season, seasonYear: $seasonYear, genre: $genre, format: $format, status: $status) {
         ...CardMediaFields
       }
     }
@@ -92,6 +97,9 @@ export function homeSections(now: Date) {
     { key: 'season', title: 'Popular This Season', vars: { sort: ['POPULARITY_DESC'], season, seasonYear } },
     { key: 'trending', title: 'Trending Now', vars: { sort: ['TRENDING_DESC'] } },
     { key: 'popular', title: 'All Time Popular', vars: { sort: ['POPULARITY_DESC'] } },
+    { key: 'newest', title: 'Newest', vars: { sort: ['START_DATE_DESC'], status: 'RELEASING' } },
+    { key: 'movies', title: 'Popular Movies', vars: { sort: ['POPULARITY_DESC'], format: 'MOVIE' } },
+    { key: 'rated', title: 'Top Rated', vars: { sort: ['SCORE_DESC'] } },
     { key: 'romance', title: 'Romance', vars: { sort: ['TRENDING_DESC'], genre: 'Romance' } },
     { key: 'action', title: 'Action', vars: { sort: ['TRENDING_DESC'], genre: 'Action' } },
     { key: 'fantasy', title: 'Fantasy', vars: { sort: ['TRENDING_DESC'], genre: 'Fantasy' } },

@@ -25,6 +25,7 @@
 </script>
 
 <span
+  data-theme-protected
   aria-hidden="true"
   class="catalog-provider-mark {className}"
   style={`--catalog-start:${colors[0]};--catalog-mid:${colors[1]};--catalog-end:${colors[2]}`}

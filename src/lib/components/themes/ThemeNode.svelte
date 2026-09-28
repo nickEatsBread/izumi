@@ -11,11 +11,23 @@
   import Globe from '@lucide/svelte/icons/globe'
   import Timer from '@lucide/svelte/icons/timer'
   import Play from '@lucide/svelte/icons/play'
-  let { node, model, actions = {}, eager = false, titleHeading = false }: { node: ThemeNode; model: DisplayModel; actions?: Partial<Record<ThemeAction, () => void>>; eager?: boolean; titleHeading?: boolean } = $props()
+  import Bookmark from '@lucide/svelte/icons/bookmark'
+  import Plus from '@lucide/svelte/icons/plus'
+  import Info from '@lucide/svelte/icons/info'
+  import Share2 from '@lucide/svelte/icons/share-2'
+  let { node, model: boundModel, actions = {}, eager = false, titleHeading = false }: { node: ThemeNode; model: DisplayModel; actions?: Partial<Record<ThemeAction, () => void>>; eager?: boolean; titleHeading?: boolean } = $props()
+  // Artwork that fails to load counts as absent, so `when: { field: "logo", absent: true }` shows the
+  // title instead of a broken image. Keyed by URL: the next slide's artwork starts fresh.
+  let failedArtwork = $state<string[]>([])
+  const markFailed = (src: string) => { if (!failedArtwork.includes(src)) failedArtwork = [...failedArtwork, src] }
+  const model = $derived<DisplayModel>(failedArtwork.length
+    ? Object.fromEntries(Object.entries(boundModel).filter(([, value]) => !(typeof value === 'string' && failedArtwork.includes(value)))) as DisplayModel
+    : boundModel)
   const labels: Record<ThemeAction, string> = { play: 'Watch', details: 'Details', favorite: 'Favorite', previous: 'Previous slide', next: 'Next slide', list: 'Add to list', trailer: 'Trailer', share: 'Share' }
   const icons: Record<ThemeIcon, typeof TrendingUp> = {
     score: TrendingUp, format: Tv, episodes: Clapperboard, reviews: Users, studio: Building2,
     season: CalendarDays, status: MonitorPlay, source: Library, country: Globe, duration: Timer,
+    bookmark: Bookmark, plus: Plus, info: Info, share: Share2,
   }
 </script>
 
@@ -26,10 +38,14 @@
     {:else if item.type === 'artwork'}
       {@const src = model[item.artwork ?? 'poster']}
       <div class="theme-artwork" class:theme-artwork-fallback={!src} style={nodeStyle(item)} data-part={item.part}>
-        {#if src}<img src={String(src)} alt="" draggable="false" loading={eager ? 'eager' : 'lazy'} decoding="async" class="duration-150 ease-out transition-transform group-hover:scale-105" />{/if}
+        {#if src}<img src={String(src)} alt="" draggable="false" loading={eager ? 'eager' : 'lazy'} decoding="async" onerror={() => markFailed(String(src))} class="duration-150 ease-out transition-transform group-hover:scale-105" />{/if}
       </div>
     {:else if item.type === 'action'}
-      {#if item.action && actions[item.action]}<button type="button" data-focusable class="theme-action" style={nodeStyle(item)} data-part={item.part} onclick={actions[item.action]}>{#if item.action === 'play'}<Play size={16} fill="currentColor" />{/if}{item.text || labels[item.action]}</button>{/if}
+      {#if item.action && actions[item.action]}
+        {@const ActionIcon = item.icon ? icons[item.icon] : item.action === 'play' ? Play : undefined}
+        {@const label = item.text || (item.icon ? '' : labels[item.action])}
+        <button type="button" data-focusable class="theme-action" style={nodeStyle(item)} data-part={item.part} onclick={actions[item.action]} aria-label={label ? undefined : labels[item.action]}>{#if ActionIcon}<ActionIcon size={item.icon ? Number(item.style?.fontSize) || 20 : 16} fill={item.icon ? 'none' : 'currentColor'} />{/if}{label}</button>
+      {/if}
     {:else if item.type === 'icon' && item.icon}
       {@const Icon = icons[item.icon]}
       <span class="theme-icon" style={nodeStyle(item)} data-part={item.part} aria-hidden="true"><Icon size={Number(item.style?.fontSize) || 18} /></span>

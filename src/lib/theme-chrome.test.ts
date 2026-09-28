@@ -77,14 +77,22 @@ describe('theme chrome application', () => {
     expect(hero).toContain("setProperty('--hero-ambient-rgb'")
     expect(hero).toContain("removeProperty('--hero-ambient-rgb')")
   })
-  it('renders the wordmark with brand hooks and a text mode', () => {
-    const text = read('./components/BrandText.svelte')
-    expect(text).toContain('data-slot="brand"')
-    expect(text).toContain('data-part="brand.char"')
-    const mark = read('./components/Wordmark.svelte')
-    expect(mark).toContain("$themePresentation?.brand === 'text'")
-    expect(mark).toContain('data-part="brand.mark"')
-    expect(read('./components/shell/Sidebar.svelte')).toContain('<BrandText className=')
+  it('keeps the izumi logo out of reach of theme stylesheets', () => {
+    // The mark and the wordmark always render as izumi's own: the app font and palette, no theme styling.
+    for (const file of ['./components/Wordmark.svelte', './components/BrandText.svelte', './components/catalog/CatalogBrandLogo.svelte']) {
+      const source = read(file)
+      expect(source, file).toContain('data-theme-protected')
+      expect(source, file).not.toMatch(/data-(slot|part)="?\{?'?brand/)
+    }
+    for (const file of ['./components/Wordmark.svelte', './components/shell/Sidebar.svelte', '../routes/app/home/+page.svelte', './components/catalog/CatalogSwitcher.svelte']) {
+      expect(read(file), file).not.toContain('themePresentation?.brand')
+    }
+    expect(read('../routes/app/home/+page.svelte')).toMatch(/<img src="\/brand\/izumi-wordmark-white\.svg"[^>]*data-theme-protected/)
+  })
+  it('shows the plain izumi text beside the mark in the top bar, as the open rail does', () => {
+    const sidebar = read('./components/shell/Sidebar.svelte')
+    expect(sidebar).toContain('{#if top}<BrandText className=')
+    expect(sidebar).not.toContain('data-slot="brand"')
   })
   it('keeps the theme stylesheet last in <head> as routes add their own styles', () => {
     const theme = read('./theme.ts')
@@ -104,5 +112,22 @@ describe('theme chrome application', () => {
   it('protects the Store trust and install dialogs from theme stylesheets', () => {
     for (const file of ['StoresDialog', 'StoreEntrySheet', 'ReplacePackageDialog']) expect(read(`./components/store/${file}.svelte`), file).toContain('data-theme-protected')
     expect(read('../app.css')).toContain('pointer-events: auto;')
+  })
+  it('publishes each series cover colour on cards, ranked rows and the series page', () => {
+    // `--cover-rgb` ("r g b" from the catalog's cover colour) lets a stylesheet tint per title.
+    for (const file of ['./components/cards/SmallCard.svelte', './components/home/blocks/RankedList.svelte']) {
+      expect(read(file), file).toContain('style:--cover-rgb={ambientFromHex(')
+    }
+    const detail = read('./components/detail/AnimeDetail.svelte')
+    expect(detail.match(/data-slot="detail" [^>]*style:--cover-rgb=\{coverRgb\}/g)).toHaveLength(4)
+    expect(read('../../docs/THEMES.md')).toContain('`--cover-rgb`')
+  })
+  it('pins the video stage path transparent against theme stylesheets', () => {
+    // The video is drawn behind the page, so the root and both wrappers stay see-through whatever a theme's stylesheet says.
+    const overlay = read('./components/player/PlayerOverlay.svelte')
+    expect(overlay).toMatch(/data-slot="watch" [^>]*style:background\|important="transparent"\s+class=\{docked \? `izumi-player-dock /)
+    expect(overlay).toMatch(/style:background\|important="transparent"\s+class=\{docked \? `izumi-player-stage /)
+    expect(overlay).toMatch(/data-slot="watch\.stage" style:background\|important="transparent"\s+bind:this=\{overlayRoot\}/)
+    expect(overlay.match(/style:background\|important="transparent"/g)).toHaveLength(3)
   })
 })

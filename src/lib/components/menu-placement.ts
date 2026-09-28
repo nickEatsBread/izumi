@@ -49,3 +49,18 @@ export function menuPlacement({
   const side = below >= want || below >= above ? 'down' : 'up'
   return { side, maxHeight: Math.max(minHeight, side === 'down' ? below : above) }
 }
+
+export type CentreInput = {
+  /** The entry's top edge from the top of the list's scrolled content, in local px. */
+  itemTop: number
+  itemHeight: number
+  /** The list's visible height (clientHeight) and the height of everything in it (scrollHeight). */
+  viewHeight: number
+  contentHeight: number
+}
+
+/** The scroll offset that puts an entry in the middle of a scrolling list, as far as the list scrolls. */
+export function centredScrollTop({ itemTop, itemHeight, viewHeight, contentHeight }: CentreInput): number {
+  const max = Math.max(0, contentHeight - viewHeight)
+  return Math.min(max, Math.max(0, itemTop - (viewHeight - itemHeight) / 2))
+}

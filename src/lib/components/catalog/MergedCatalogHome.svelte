@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { goto } from '$app/navigation'
   import Hero from '$lib/components/banner/Hero.svelte'
   import CollectionsHome from './CollectionsHome.svelte'
@@ -10,10 +11,13 @@
   import RecentReleaseRow from '$lib/components/cards/RecentReleaseRow.svelte'
   import CatalogSectionRow from './CatalogSectionRow.svelte'
   import HomeRowFrame from './HomeRowFrame.svelte'
+  import HomeBlockView from '$lib/components/home/HomeBlockView.svelte'
+  import HomeColumns from '$lib/components/home/HomeColumns.svelte'
   import { anilistUser } from '$lib/anilist/account'
   import { mediaHref } from '$lib/anilist/media'
   import { homeSections } from '$lib/anilist/queries'
   import type { Media } from '$lib/anilist/types'
+  import { homeEditorOpen } from '$lib/catalog/home-editor'
   import { catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
   import {
     decodeMergedCatalogHomeRowId,
@@ -22,6 +26,11 @@
   } from '$lib/catalog/registry'
   import { CatalogConfigurationError, type CatalogHome, type CatalogHomeRowOption } from '$lib/catalog/types'
   import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
+  import { activeThemeLayout } from '$lib/themes/layout-state'
+  import { isThemeBlockId, resolveThemeHome } from '$lib/home/theme-layout'
+  import { blockRowOptions, blockTitle, splitHomeColumns } from '$lib/home/block-rows'
+  import { homeAsideWidth, homeBlocks, isBlockId } from '$lib/home/blocks'
+  import { isMobile } from '$lib/platform'
   import {
     catalogLabel,
     catalogProviders,
@@ -47,8 +56,22 @@
   const anilistSectionMap = new Map(anilistSections.map((section) => [section.key, section]))
   const selections = $derived(mergedCatalogProviders($catalogProviders))
   const hasAniList = $derived(selections.includes('auto') || selections.includes('anilist'))
-  const rows = $derived(resolveCatalogHomeRows('merged', options, $catalogHomeLayouts).filter((row) => row.enabled))
-  const visibleRowIds = $derived(rows.map((row) => row.id))
+  const rows = $derived(resolveCatalogHomeRows('merged', [...options, ...blockRowOptions('merged', $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts).filter((row) => row.enabled))
+  const optionIds = $derived(options.map((option) => option.id))
+  // While a theme layout is active, it replaces the row order below (the user's own layout, in
+  // `catalogHomeLayouts`, is never written to); its ephemeral `theme:<n>` blocks join `$homeBlocks`
+  // for lookups so a theme block renders exactly like a real one.
+  const themeHome = $derived($activeThemeLayout?.home ? resolveThemeHome($activeThemeLayout.home, 'merged', optionIds) : null)
+  const allBlocks = $derived(themeHome ? { ...$homeBlocks, ...themeHome.blocks } : $homeBlocks)
+  const visibleRowIds = $derived(themeHome?.rows ?? rows.map((row) => row.id))
+  // The hero renders full-bleed above HomeColumns only while it truly leads the row order; while
+  // Edit Home is open it always flows through HomeColumns instead, so it can be dragged/hidden like
+  // any other row (it would otherwise have no frame to grab while sitting in the unwrapped top slot).
+  const heroFirst = $derived(!$homeEditorOpen && visibleRowIds[0] === 'hero')
+  const homeRowIds = $derived(heroFirst ? visibleRowIds.slice(1) : visibleRowIds)
+  // While Edit Home is open, phones must still show every block (including a side-column one that
+  // opted out of `phone`), or there would be no way to reach its settings/remove button on a phone.
+  const columns = $derived(splitHomeColumns(homeRowIds, allBlocks, $isMobile && !$homeEditorOpen))
   const optionsKey = $derived(JSON.stringify([selections, $tmdbCustomHomeRows]))
   const externalRequestKey = $derived(JSON.stringify(rows.flatMap((row) => {
     const decoded = decodeMergedCatalogHomeRowId(row.id)
@@ -70,7 +93,10 @@
   $effect(() => {
     void externalRequestKey
     const requested = new Map<ExternalCatalogSelection, string[]>()
-    for (const row of rows) {
+    // `rows` also changes on a purely local block edit ($homeBlocks), which would otherwise clear
+    // `homes` and refetch every provider. The effect already keys on `externalRequestKey`'s VALUE
+    // (a string derived from `rows`), so reading `rows` itself must stay untracked here.
+    for (const row of untrack(() => rows)) {
       const decoded = decodeMergedCatalogHomeRowId(row.id)
       if (!decoded || decoded.selection === 'auto' || decoded.selection === 'anilist') continue
       const selection: ExternalCatalogSelection = decoded.selection
@@ -134,46 +160,61 @@
   }
 </script>
 
-<div class="pb-16">
-  {#if hero.length}
-    <Hero medias={hero} onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} />
-  {:else if optionsLoading || homeLoading}
-    <div class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
-      <div class="absolute inset-0 skeloader"></div>
-      <div class="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent"></div>
-    </div>
-  {/if}
+<div data-slot="home" data-variant="merged" class="pb-16">
+  {#snippet heroBlock()}
+    {#if hero.length}
+      <Hero medias={hero} onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} />
+    {:else if optionsLoading || homeLoading}
+      <div class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
+        <div class="absolute inset-0 skeloader"></div>
+        <div class="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent"></div>
+      </div>
+    {/if}
+  {/snippet}
+
+  <!-- Row order is unknown before the row library loads (`rows` is empty pre-load), so the pre-load
+       skeleton renders unconditionally here rather than waiting on heroFirst. -->
+  {#if optionsLoading || heroFirst}{@render heroBlock()}{/if}
 
   <div class="space-y-5">
     <CollectionsHome />
-    {#each rows as row (row.id)}
-      <HomeRowFrame rowId={row.id} title={editorTitle(row)} target="merged" visibleIds={visibleRowIds}>
-        {#if row.id === 'continue'}
-          {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} catalogScope="all" />{/key}
-        {:else}
-          {@const decoded = decodeMergedCatalogHomeRowId(row.id)}
-          {#if decoded?.selection === 'auto' || decoded?.selection === 'anilist'}
-            {#if decoded.rowId === 'recent'}
-              <RecentReleaseRow />
-            {:else if decoded.rowId === 'list'}
-              {#if listUser}{#key listUser}<ListRow title="Your List · AniList" userName={listUser} status="PLANNING" preferLinkedRating={decoded.selection === 'auto'} />{/key}{/if}
-              {#if $malToken || $malUser}<MalListRow title="Your List · MyAnimeList" status="plan_to_watch" preferLinkedRating={decoded.selection === 'auto'} />{/if}
-            {:else if decoded.rowId === 'recommendations'}
-              {#if listUser}{#key listUser}<PersonalizedRow userName={listUser} preferLinkedRating={decoded.selection === 'auto'} />{/key}{/if}
-            {:else}
-              {@const section = anilistSectionMap.get(decoded.rowId)}
-              {#if section}<HomeRow title={`${section.title} · AniList`} vars={section.vars} preferLinkedRating={decoded.selection === 'auto'} />{/if}
-            {/if}
-          {:else if decoded}
-            {@const section = homes[decoded.selection]?.sections.find((item) => item.id === decoded.rowId)}
-            {#if section}
-              <CatalogSectionRow {section} title={`${row.title} · ${catalogLabel(decoded.selection)}`}
-                viewMoreHref={moreHref(decoded.selection, section.more)} />
+    {#snippet mergedRow(id: string)}
+      {@const row = rows.find((item) => item.id === id) ?? (isThemeBlockId(id) ? { id, title: blockTitle(allBlocks[id]) } : options.find((item) => item.id === id))}
+      {@const visibleIds = columns.main.includes(id) ? columns.main : columns.aside}
+      {#if row}
+        <HomeRowFrame rowId={row.id} title={editorTitle(row)} target="merged" {visibleIds} locked={!!themeHome}>
+          {#if row.id === 'hero'}
+            {@render heroBlock()}
+          {:else if row.id === 'continue'}
+            {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} catalogScope="all" />{/key}
+          {:else if isBlockId(row.id) || isThemeBlockId(row.id)}
+            <HomeBlockView id={row.id} target="merged" {optionIds} block={allBlocks[row.id]} />
+          {:else}
+            {@const decoded = decodeMergedCatalogHomeRowId(row.id)}
+            {#if decoded?.selection === 'auto' || decoded?.selection === 'anilist'}
+              {#if decoded.rowId === 'recent'}
+                <RecentReleaseRow />
+              {:else if decoded.rowId === 'list'}
+                {#if listUser}{#key listUser}<ListRow title="Your List · AniList" userName={listUser} status="PLANNING" preferLinkedRating={decoded.selection === 'auto'} />{/key}{/if}
+                {#if $malToken || $malUser}<MalListRow title="Your List · MyAnimeList" status="plan_to_watch" preferLinkedRating={decoded.selection === 'auto'} />{/if}
+              {:else if decoded.rowId === 'recommendations'}
+                {#if listUser}{#key listUser}<PersonalizedRow userName={listUser} preferLinkedRating={decoded.selection === 'auto'} />{/key}{/if}
+              {:else}
+                {@const section = anilistSectionMap.get(decoded.rowId)}
+                {#if section}<HomeRow title={`${section.title} · AniList`} vars={section.vars} preferLinkedRating={decoded.selection === 'auto'} />{/if}
+              {/if}
+            {:else if decoded}
+              {@const section = homes[decoded.selection]?.sections.find((item) => item.id === decoded.rowId)}
+              {#if section}
+                <CatalogSectionRow {section} title={`${row.title} · ${catalogLabel(decoded.selection)}`}
+                  viewMoreHref={moreHref(decoded.selection, section.more)} />
+              {/if}
             {/if}
           {/if}
-        {/if}
-      </HomeRowFrame>
-    {/each}
+        </HomeRowFrame>
+      {/if}
+    {/snippet}
+    <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$activeThemeLayout?.asideWidth ?? $homeAsideWidth} stack="space-y-5" row={mergedRow} />
 
     {#if optionsLoading || (homeLoading && !rows.length)}
       {#each Array.from({ length: 3 }) as _}

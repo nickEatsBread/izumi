@@ -33,5 +33,11 @@ describe('Home row customization screen', () => {
 
   it('offers a per-provider reset', () => {
     expect(source).toContain('resetCatalogHomeLayout(selected)')
+    expect(source).toContain('pruneHomeBlocks()')
+  })
+
+  it('keeps Home blocks in its row list so a move, hide or add here cannot drop them', () => {
+    expect(source).toContain("blockRowOptions(selected, $catalogHomeLayouts, $homeBlocks)")
+    expect(source).toContain("import { blockRowOptions, pruneHomeBlocks } from '$lib/home/block-rows'")
   })
 })

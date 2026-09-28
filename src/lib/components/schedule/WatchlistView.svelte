@@ -335,7 +335,7 @@
   {#if !visible.length}
     <p class="py-6 text-center text-sm text-muted-foreground">No shows match “{query.trim()}”.</p>
   {:else if $watchlistLayout === 'cards'}
-    <div class="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-3 sm:grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))]">
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-3 sm:grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))]" data-slot="library.grid">
       {#each visible as it (it.media.id)}
         <div class="group relative">
           <a href={mediaHref(it.media)} data-focusable onclick={() => h.tap()} class="block">

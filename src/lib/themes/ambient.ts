@@ -13,9 +13,21 @@ export function ambientFromPixels(data: ArrayLike<number>): string | undefined {
   return [r, g, b].map((value) => Math.round(value / total)).join(' ')
 }
 
+/** A catalog's precomputed cover colour ("#rrggbb") as "r g b". */
+export function ambientFromHex(hex: string | null | undefined): string | undefined {
+  const match = /^#([0-9a-f]{6})$/i.exec(hex ?? '')
+  if (!match) return undefined
+  const value = parseInt(match[1], 16)
+  return [value >> 16, (value >> 8) & 255, value & 255].join(' ')
+}
+
 const cache = new Map<string, Promise<string | undefined>>()
-/** Resolves undefined when the image cannot be read (CORS-tainted canvas, network error). */
-export function sampleAmbient(src: string): Promise<string | undefined> {
+/** Resolves undefined when the image cannot be read (CORS-tainted canvas, network error). A `hint`
+ *  colour wins without touching the network: AniList's image CDN sends no CORS headers, so its art
+ *  can never be read back from a canvas, but its API ships each cover's dominant colour. */
+export function sampleAmbient(src: string, hint?: string | null): Promise<string | undefined> {
+  const hinted = ambientFromHex(hint)
+  if (hinted) return Promise.resolve(hinted)
   if (typeof document === 'undefined' || !src) return Promise.resolve(undefined)
   let pending = cache.get(src)
   if (!pending) {

@@ -28,6 +28,10 @@ describe('parseEpisodes', () => {
   })
   it('ignores non-numeric (special) keys', () => expect((parseEpisodes(RES as any) as any).S1).toBeUndefined())
   it('empty on missing', () => expect(Object.keys(parseEpisodes(undefined as any)).length).toBe(0))
+  it('keeps the season and the number within it', () => {
+    const m = parseEpisodes({ episodes: { '1': { seasonNumber: 4, episodeNumber: 17, absoluteEpisodeNumber: 76 } } } as any)
+    expect(m[1]).toMatchObject({ season: 4, seasonEpisode: 17, abs: 76 })
+  })
 })
 
 describe('episodeRatingPercent', () => {

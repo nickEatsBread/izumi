@@ -36,7 +36,11 @@ export function resolveCatalogHomeRows(
   const rawOrder = Array.isArray(layout?.order) ? layout.order.filter((id): id is string => typeof id === 'string') : []
   const rawDisabled = Array.isArray(layout?.disabled) ? layout.disabled.filter((id): id is string => typeof id === 'string') : []
   const savedOrder = rawOrder.filter((id, index, ids) => optionById.has(id) && ids.indexOf(id) === index)
-  const order = [...savedOrder, ...options.map((option) => option.id).filter((id) => !savedOrder.includes(id))]
+  const newIds = options.map((option) => option.id).filter((id) => !savedOrder.includes(id))
+  // A layout saved before the hero was a row gets it FIRST, not appended at the end, so an
+  // existing Home looks the same after this row is introduced.
+  const heroIsNew = optionById.has('hero') && !rawOrder.includes('hero')
+  const order = heroIsNew ? ['hero', ...savedOrder, ...newIds.filter((id) => id !== 'hero')] : [...savedOrder, ...newIds]
   const disabled = new Set(layout ? rawDisabled : options.filter((option) => option.defaultEnabled === false).map((option) => option.id))
 
   // A preset introduced after a user saved this provider follows its shipped default. Existing

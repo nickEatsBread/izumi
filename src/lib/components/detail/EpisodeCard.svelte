@@ -9,7 +9,7 @@
   import { cover, ratingBg } from '$lib/anilist/media'
   import { episodeLabels } from '$lib/anilist/episode-labels'
   import { episodeBarPercent, positions, progressKey } from '$lib/player/progress'
-  import { hideSpoilers } from '$lib/settings/ui'
+  import { absoluteEpisodeNumbers, hideSpoilers } from '$lib/settings/ui'
   import Download from '@lucide/svelte/icons/download'
   import Loader from '@lucide/svelte/icons/loader-circle'
   import Pause from '@lucide/svelte/icons/pause'
@@ -18,11 +18,14 @@
   import { m } from '$lib/paraglide/messages.js'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { episodeDisplayModel } from '$lib/themes/host-model'
+  import { episodeNameText, episodeNoText, episodeRatingText } from '$lib/themes/episode-fields'
+  import type { EpisodeTileKind } from './episode-tile'
   import type { ThemeNode as EpisodeThemeNode } from '$lib/themes/presentation'
 
   let {
     media, ep, meta, showThumb, released, isNext, watchedThrough, filler = false, dl, next, onplay, onintent, onqueue,
     selecting = false, selectedEp = false, numberLabel, navId, navUp, themeCard, hoverScale = false, listRow = false,
+    state: tileState, cta = false,
   }: {
     media: Media
     ep: number
@@ -47,10 +50,15 @@
     themeCard?: EpisodeThemeNode
     hoverScale?: boolean
     listRow?: boolean
+    /** `data-state` for theme stylesheets; EpisodeList derives it with episodeTileState. */
+    state?: EpisodeTileKind
+    /** This is the episode the series Play button opens (`data-next`). */
+    cta?: boolean
   } = $props()
   const shownNumber = $derived(numberLabel ?? String(ep))
 
   const img = $derived(meta?.image)
+  const episodeVariant = $derived(themeCard ? 'template' : showThumb && img ? 'thumb' : 'compact')
   // Progressive image: fade each thumbnail in when it decodes, with
   // a shimmer skeleton behind meanwhile — so thumbnails "come in over time" as they
   // download instead of the whole grid popping at once. Reset when the src changes.
@@ -68,10 +76,16 @@
   const labels = $derived(episodeLabels(ep, meta?.title, spoiler))
   const themeModel = $derived(episodeDisplayModel(media, ep, meta, {
     episodeTitle: labels.primary || `Episode ${ep}`,
+    // The real title alone (no "Episode N" stand-in), so a template can tell the two apart.
+    episodeName: episodeNameText(ep, meta?.title, spoiler),
     ...(labels.concealSecondary ? { description: '' } : {}),
     still: img || cover(media),
     progress: pct,
     score: rating ?? undefined,
+    episodeNo: episodeNoText(ep, meta?.abs, $absoluteEpisodeNumbers),
+    watched: trackedDone ? 'Watched' : undefined,
+    filler: filler ? 'Filler' : undefined,
+    rating: episodeRatingText(meta?.rating, released),
   }))
 
   const dlPct = $derived(dl && dl.bytes ? Math.round((dl.downloaded / dl.bytes) * 100) : 0)
@@ -115,6 +129,10 @@
 {/snippet}
 
 <div
+  data-part="episode" data-variant={episodeVariant}
+  data-state={tileState}
+  data-next={cta || undefined}
+  data-filler={filler || undefined}
   data-focusable
   data-nav-id={navId}
   data-nav-up={navUp}
@@ -135,7 +153,7 @@
   {#if themeCard}
     <ThemeNode node={themeCard} model={themeModel} />
   {:else if showThumb && img}
-    <div class="relative z-0 aspect-video h-full min-h-24 w-full overflow-hidden bg-muted sm:h-auto sm:min-h-0">
+    <div data-part="episode.still" class="relative z-0 aspect-video h-full min-h-24 w-full overflow-hidden bg-muted sm:h-auto sm:min-h-0">
       {#if !imgReady}<div class="absolute inset-0 skeloader"></div>{/if}
       <!-- No `transform-gpu`/`will-change-transform` — same reason as SmallCard: they permanently
            promote every one of the (up to 48) thumbnails to its own retained GPU layer. The
@@ -144,13 +162,13 @@
            class="block h-full w-full object-cover transition-[opacity,transform] duration-500 {imgReady ? 'opacity-100' : 'opacity-0'} {released ? 'group-hover:scale-105' : 'grayscale'}" />
       <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
 
-      <span class="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-xs font-black">{shownNumber}</span>
+      <span data-part="episode.number" class="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-xs font-black">{shownNumber}</span>
 
       <!-- Top-right corner: rating + download status packed together so a missing badge
            leaves NO gap (the rating used to be offset to clear a fixed download-icon slot). -->
       <div class="absolute right-2 top-2 flex items-center gap-1.5">
         {#if rating != null}
-          <span class="rounded px-1.5 py-0.5 text-[0.65rem] font-black text-white {ratingBg(rating)}">{rating}%</span>
+          <span data-part="badge" class="rounded px-1.5 py-0.5 text-[0.65rem] font-black text-white {ratingBg(rating)}">{rating}%</span>
         {/if}
         {@render statusBadge('')}
         {#if released && !selecting && onqueue}
@@ -187,7 +205,7 @@
          cannot expose a subpixel seam at their boundary during hover. -->
     <div class="relative z-10 flex min-w-0 items-center gap-2 bg-inherit p-3 sm:-mt-px sm:p-2">
       <div class="min-w-0 flex-1">
-        <span class="line-clamp-2 text-sm font-bold sm:block sm:truncate">{labels.primary}</span>
+        <span data-part="episode.title" class="line-clamp-2 text-sm font-bold sm:block sm:truncate">{labels.primary}</span>
         <!-- Spoiler mode hides the real title (shows only "Episode N") — no blur. -->
         {#if !labels.concealSecondary}
           <span class="block truncate text-[0.7rem] text-muted-foreground">{labels.secondary}{dl?.status === 'done' ? ' · Downloaded' : ''}</span>
@@ -196,10 +214,10 @@
     </div>
   {:else}
     <div class="relative flex items-center gap-3 p-3">
-      <span class="grid h-9 min-w-9 shrink-0 place-items-center rounded bg-background/50 px-1.5 text-xs font-black tabular-nums">{shownNumber}</span>
+      <span data-part="episode.number" class="grid h-9 min-w-9 shrink-0 place-items-center rounded bg-background/50 px-1.5 text-xs font-black tabular-nums">{shownNumber}</span>
       <div class="min-w-0 flex-1">
         <span class="flex items-center gap-1.5">
-          <span class="truncate text-sm font-bold">{labels.primary}</span>
+          <span data-part="episode.title" class="truncate text-sm font-bold">{labels.primary}</span>
           {#if filler}<span class="shrink-0 rounded bg-yellow-400 px-1 text-[0.6rem] font-bold text-black">FILLER</span>{/if}
         </span>
         {#if isNext}
@@ -212,7 +230,7 @@
       </div>
 
       {#if rating != null}
-        <span class="shrink-0 rounded px-1.5 py-0.5 text-[0.65rem] font-black text-white {ratingBg(rating)}">{rating}%</span>
+        <span data-part="badge" class="shrink-0 rounded px-1.5 py-0.5 text-[0.65rem] font-black text-white {ratingBg(rating)}">{rating}%</span>
       {/if}
 
       {@render statusBadge('shrink-0')}
