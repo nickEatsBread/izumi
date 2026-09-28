@@ -276,6 +276,8 @@
   const overlayArtWaiting = $derived(detailTheme.art === 'keyart' && !detailExtrasSettled)
   const detailLogo = $derived(detailTheme.title === 'logo' && detailExtras.logo && detailExtras.logo !== failedDetailLogo ? detailExtras.logo : '')
   const factsStyle = $derived(detailTheme.factsStyle ?? 'template')
+  // What a facts template (`detail.facts`) binds, on phones and desktop alike.
+  const factsModel = (m: Media) => mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined })
   const countdown = $derived(detailTheme.countdown ?? 'none')
   const downloadedEpisodes = (m: Media) => Object.values($downloads)
     .filter((d) => d.mediaId === m.id && d.status === 'done').map((d) => d.episode).sort((a, b) => a - b)
@@ -844,7 +846,7 @@
           <FactList media={m} variant={factsStyle} className="mb-3" progress={effProgress > 0 ? `${effProgress}/${epsTotal(m) || '?'}` : undefined} {controllerUi} />
         {:else if detailTheme.facts}
           <div data-part="detail.facts" class="mb-3">
-            <ThemeNode node={detailTheme.facts} model={mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined })} />
+            <ThemeNode node={detailTheme.facts} model={factsModel(m)} />
           </div>
         {:else}
         <!-- One scannable facts line replaces two rows of competing pills. Genres remain useful
@@ -1021,10 +1023,16 @@
   {/if}
 {/snippet}
 
-<!-- The phone facts: the facts line (or FactList), the countdown, the genre rail, release timing and
-     the synopsis. Above the tabs by default; inside Overview with `detail.sections.info: "overview"`. -->
+<!-- The phone facts: the facts line (or FactList, or the theme's facts template), the countdown, the
+     genre rail, release timing and the synopsis. Above the tabs by default; inside Overview with
+     `detail.sections.info: "overview"`. -->
 {#snippet phoneInfo(m: Media)}
-  {#if factsStyle === 'template'}
+  {#if factsStyle === 'template' && detailTheme.facts}
+    <!-- A theme's facts template stands in for the facts line and byline, as a table, cards or chips do. -->
+    <div data-part="detail.facts" class="mt-3">
+      <ThemeNode node={detailTheme.facts} model={factsModel(m)} />
+    </div>
+  {:else if factsStyle === 'template'}
   <!-- One line of facts instead of seven chips: on a phone the chips wrapped into three
        rows and read as a wall of pills rather than a summary. Facts sit directly under the
        title — identity first, schedule after. -->

@@ -9,6 +9,20 @@ describe('series page theme options', () => {
     expect(detail.match(/<FactList /g)?.length).toBe(2)
     expect(read('./FactList.svelte')).toContain('data-part="detail.facts" data-variant={variant}')
   })
+  it('renders a facts template on phones with the model desktop uses', () => {
+    const detail = read('./AnimeDetail.svelte')
+    expect(detail).toContain('const factsModel = (m: Media) => mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined })')
+    expect(detail.match(/<ThemeNode node=\{detailTheme\.facts\} model=\{factsModel\(m\)\} \/>/g)?.length).toBe(2)
+    const start = detail.indexOf('{#snippet phoneInfo(m: Media)}')
+    const phone = detail.slice(start, detail.indexOf('{/snippet}', start))
+    // The template takes the facts line and byline's place, as the table, cards and chips do...
+    expect(phone).toContain("{#if factsStyle === 'template' && detailTheme.facts}")
+    expect(phone).toContain('<div data-part="detail.facts" class="mt-3">')
+    expect(phone.indexOf('<ThemeNode node={detailTheme.facts}')).toBeLessThan(phone.indexOf('data-part="detail.byline"'))
+    // ...and without one the phone keeps its own facts line and byline.
+    expect(phone).toContain("{:else if factsStyle === 'template'}")
+    expect(phone).toContain('<div data-part="detail.meta" class="mt-3 flex flex-wrap')
+  })
   it('shows the airing countdown where the theme asks for it', () => {
     const detail = read('./AnimeDetail.svelte')
     expect(detail.match(/<AiringCountdown /g)?.length).toBe(2)

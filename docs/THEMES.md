@@ -258,7 +258,7 @@ State values:
 | `detail.alt-title` | part | The native or romaji title. |  |
 | `detail.header` | part | The theme template under the title (`detail.header`). |  |
 | `detail.meta` | part | The facts line. |  |
-| `detail.facts` | part | The facts: a theme template (desktop stack and split) or, with `detail.factsStyle`, a table, cards or chips. | `data-variant` |
+| `detail.facts` | part | The facts: a theme template (stacked and split layouts, on phones and desktop) or, with `detail.factsStyle`, a table, cards or chips. | `data-variant` |
 | `fact` | part | One fact: an entry of the details grid, or a table row, card or chip of `detail.facts`. | `data-key` |
 | `fact.label` | part | A details entry label. |  |
 | `fact.value` | part | A details entry value. |  |
