@@ -29,10 +29,14 @@ unreachable DHT node or uTP peer is enough to cause it, and any host can send an
 
 The patch adds `is_datagram_error`, which matches these three codes on Windows only. Both loops now
 skip such an error and keep reading. It also adds two tests to each crate that fail on Windows
-without the patch. The same change is proposed upstream in
-[ikatson/rqbit#690](https://github.com/ikatson/rqbit/pull/690) (issue
+without the patch.
+
+Upstream merged the same commits on 2026-09-28:
+[ikatson/rqbit#690](https://github.com/ikatson/rqbit/pull/690) (commit `2b123074`, closes
 [ikatson/rqbit#664](https://github.com/ikatson/rqbit/issues/664)) and
-[ikatson/librqbit-utp#4](https://github.com/ikatson/librqbit-utp/pull/4).
+[ikatson/librqbit-utp#4](https://github.com/ikatson/librqbit-utp/pull/4) (commit `1776dba`). No
+crates.io release had them yet at that point; the latest were librqbit-dht 9.0.1 and
+librqbit-utp 0.7.0.
 
 To see the exact diff, unpack the published archive and compare:
 
@@ -58,12 +62,12 @@ cargo test --locked --target-dir "$TEMP/vendor-target" --manifest-path src-tauri
 Other platforms never report these errors on an unconnected UDP socket, so there the tests pass with
 or without the patch.
 
-## When librqbit is bumped
+## Dropping it
 
-If a librqbit release needs newer DHT or uTP versions than the ones here, Cargo stops using these
-copies and only prints a warning. `scripts/ci/librqbit-vendored-crates.test.ts` turns that into a
-test failure. Then:
+Once librqbit-dht and librqbit-utp releases include the two upstream commits, delete this
+directory, the `[patch.crates-io]` section and `scripts/ci/librqbit-vendored-crates.test.ts`. Then
+update librqbit, or its DHT and uTP crates, to those releases.
 
-- If the new upstream releases include the fix, delete this directory, the `[patch.crates-io]`
-  section and that test.
-- If not, unpack the new archives here and apply the upstream PRs' diffs to them.
+Until then, if a librqbit bump needs newer DHT or uTP versions than the ones here, Cargo stops
+using these copies and only prints a warning. The test above turns that into a failure. Unpack the
+new archives here and apply the two upstream commits to them.
