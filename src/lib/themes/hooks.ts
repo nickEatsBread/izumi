@@ -149,6 +149,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'episode.still', kind: 'part', description: 'The episode thumbnail.' },
     { name: 'episode.number', kind: 'part', description: 'The episode number.' },
     { name: 'episode.title', kind: 'part', description: 'The episode title.' },
+    { name: 'episode.meta', kind: 'part', description: 'The line under an episode card title: the episode label, the airing countdown or Not aired.' },
     { name: 'episodes.track', kind: 'part', description: 'The scrolling row holding the episode cards of a `carousel` arrangement.' },
     { name: 'episodes.grid', kind: 'part', description: "The grid holding the episode cards (the cards layout, or a theme's `grid` arrangement); a stylesheet sets its columns." },
     { name: 'episodes.toolbar', kind: 'slot', description: "The episode controls: izumi's own bar, or the theme's bar or heading row (`detail.episodes.toolbar`).", states: ['data-variant'] },

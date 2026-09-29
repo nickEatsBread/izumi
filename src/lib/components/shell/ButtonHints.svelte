@@ -14,9 +14,11 @@
   let padActive = $state(false)
   let focused = $state<Element | null>(null)
   let pageTabs = $state(false)
+  let dialog = $state(false)
   const refresh = () => {
     focused = document.activeElement
     pageTabs = findPageTabs() !== null
+    dialog = [...document.querySelectorAll<HTMLElement>('[data-nav-trap]')].some((trap) => trap.checkVisibility?.() ?? true)
   }
 
   $effect(() => onPadButton(({ pressed }) => {
@@ -24,6 +26,9 @@
     rememberPad()
     padActive = true
     refresh()
+    // A press can open or close a dialog without moving focus; look again once it has rendered.
+    setTimeout(refresh, 300)
+    setTimeout(refresh, 900)
   }))
   $effect(() => {
     const hide = () => (padActive = false)
@@ -47,7 +52,7 @@
 
   const shown = $derived(padActive && ($gameMode || $controllerMode) && !$playing)
   const home = $derived(page.url.pathname.replace(/\/$/, '') === '/app/home')
-  const hints = $derived(hintsFor(focused, { home, pageTabs }))
+  const hints = $derived(hintsFor(focused, { home, pageTabs, dialog }))
   const family = $derived(glyphFamily($lastPadId, $gameMode))
   const glyphOf = (button: HintButton): GlyphButton => (button === 'l2r2' ? 'l2' : button)
 

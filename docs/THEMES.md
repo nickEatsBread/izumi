@@ -328,6 +328,7 @@ State values:
 | `episode.still` | part | The episode thumbnail. |  |
 | `episode.number` | part | The episode number. |  |
 | `episode.title` | part | The episode title. |  |
+| `episode.meta` | part | The line under an episode card title: the episode label, the airing countdown or Not aired. |  |
 | `episodes.track` | part | The scrolling row holding the episode cards of a `carousel` arrangement. |  |
 | `episodes.grid` | part | The grid holding the episode cards (the cards layout, or a theme's `grid` arrangement); a stylesheet sets its columns. |  |
 | `episodes.toolbar` | slot | The episode controls: izumi's own bar, or the theme's bar or heading row (`detail.episodes.toolbar`). | `data-variant` |

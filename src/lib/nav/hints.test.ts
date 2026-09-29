@@ -20,8 +20,20 @@ describe('hintsFor', () => {
     expect(hintsFor(episode, { home: false, pageTabs: false })[0]).toEqual({ button: 'a', label: 'Play' })
   })
   it('closes inside a dialog and drops the menu prompt', () => {
-    const button = el('<div data-nav-trap><button data-focusable>Ok</button></div>', 'button')
+    const button = el('<div data-nav-trap><button data-focusable><svg></svg></button></div>', 'button')
     expect(labels(hintsFor(button, { home: true, pageTabs: false }))).toEqual(['a:Select', 'b:Close'])
+  })
+  it('treats an open dialog as the context even when focus stayed on the page behind it', () => {
+    const episode = el('<div data-part="episode" data-focusable></div><div data-nav-trap></div>', '[data-part="episode"]')
+    expect(labels(hintsFor(episode, { home: false, pageTabs: false, dialog: true }))).toEqual(['a:Select', 'b:Close'])
+  })
+  it('names a plain control by its own short label', () => {
+    const watch = el('<button data-focusable> <svg></svg> Watch   Now </button>', 'button')
+    expect(hintsFor(watch, { home: false, pageTabs: false })[0]).toEqual({ button: 'a', label: 'Watch Now' })
+    const share = el('<button data-focusable aria-label="Share"><svg></svg></button>', 'button')
+    expect(hintsFor(share, { home: false, pageTabs: false })[0]).toEqual({ button: 'a', label: 'Share' })
+    const long = el('<button data-focusable>Continue from where you left off last night</button>', 'button')
+    expect(hintsFor(long, { home: false, pageTabs: false })[0]).toEqual({ button: 'a', label: 'Select' })
   })
   it('lets an element name its own actions', () => {
     const button = el('<button data-focusable data-hint-a="Install" data-hint-x="Details">x</button>', 'button')
