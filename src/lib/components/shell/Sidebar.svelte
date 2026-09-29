@@ -217,7 +217,8 @@
        {catalogPickerOpen ? 'overflow-visible' : 'overflow-hidden'}
        {top ? '' : open ? 'w-[200px]' : compact ? 'w-12' : 'w-14'}
        {$playing || open ? 'bg-background' : ''} {open ? 'shadow-2xl' : $playing || top ? '' : 'drop-shadow-md'}
-       {brandCentered ? '!grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]' : ''}">
+       {brandCentered ? '!grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]' : ''}
+       {top && $gameMode ? '!h-[2.75rem] !pt-0' : ''}">
   {#if brandCentered}
     <!-- A centred brand gets its own grid column instead of sharing the flex row: the links (or the
          trailing cluster) otherwise run under the absolutely-centred brand and steal its clicks once

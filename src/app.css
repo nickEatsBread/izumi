@@ -567,6 +567,10 @@ html[data-theme-nav='top'], html[data-theme-nav='bottom'] { --theme-shell-left: 
 /* How far a full-bleed banner reaches up from the top of the page: under the frameless titlebar,
    or under the whole top bar, which a theme may leave transparent over the artwork. */
 html[data-theme-nav='top'] { --theme-shell-top: 4.75rem; }
+/* Game mode has no window titlebar, so a top bar drops the titlebar's 2rem and the page follows it
+   up (the Deck's 640 px of browse height is too short to spend on an empty strip). */
+html.gamemode[data-theme-nav='top'] { --theme-shell-top: 2.75rem; }
+html.gamemode[data-theme-nav='top'] [data-slot='page'] { padding-top: 2.75rem; }
 /* A top bar's pinned side menu (`shell.top.menu: "side"`): the page and every full-bleed surface
    start right of the panel, which the shell sizes through --theme-side-width. */
 html[data-theme-side-panel] { --theme-shell-left: var(--theme-side-width, 260px); }
