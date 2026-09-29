@@ -99,6 +99,9 @@ export interface RowPresentation {
   titleSize?: number
   heading?: RowHeading
   card?: ThemeNode
+  /** API 3: `focus` keeps one line under the row's cards for the focused card's full title and detail
+   *  line while a pad is in use (Game or controller mode). */
+  caption?: 'none' | 'focus'
 }
 /** Theme API 1 is the original contract; API 2 adds the phone block, bottom-bar and slide-marker
  *  chrome, row headings, series tabs and the docked player. A package declares which it uses, so
@@ -185,6 +188,10 @@ export interface TopBarPresentation {
   brand?: 'start' | 'center'
   /** A "Categories" menu after the destinations: browse links and the catalog's genres. */
   categories?: boolean
+  /** API 3: the destinations become tabs that L1/R1 switch, with the bumper glyphs at either end;
+   *  L2/R2 step the page's own tabs, Start opens the menu drawer and View opens search. With a pad in
+   *  use the bar's controls leave the d-pad order (the drawer reaches every destination). */
+  bumpers?: boolean
 }
 export interface ShellPresentation {
   nav?: ThemeNavPlacement
@@ -195,6 +202,8 @@ export interface ShellPresentation {
   press?: 'none' | 'sink'
   bottomNav?: BottomNavPresentation
   top?: TopBarPresentation
+  /** API 3: the controller button-hint bar along the bottom (Game or controller mode, after pad input). */
+  hints?: boolean
 }
 /** Where the video sits while playing windowed on desktop. `full` fills the window inside the
  *  shell chrome; `docked` confines it to a 16:9 stage with the episode rail beside or below it. */
@@ -416,7 +425,7 @@ function parseHeading(value: unknown): RowHeading {
   return result
 }
 function parseRow(value: unknown, api: ThemeApi): RowPresentation {
-  const raw = record(value); only(raw, ['layout', 'width', 'gap', 'spacing', 'radius', 'aspect', 'titleSize', 'card', ...api2(api, ['heading'])])
+  const raw = record(value); only(raw, ['layout', 'width', 'gap', 'spacing', 'radius', 'aspect', 'titleSize', 'card', ...api2(api, ['heading']), ...api3(api, ['caption'])])
   const result: RowPresentation = {}
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['carousel', 'grid'])
   if (raw.aspect !== undefined) result.aspect = choice(raw.aspect, ['poster', 'landscape', 'square'])
@@ -425,6 +434,7 @@ function parseRow(value: unknown, api: ThemeApi): RowPresentation {
   }
   if (raw.heading !== undefined) result.heading = parseHeading(raw.heading)
   if (raw.card !== undefined) result.card = parseNode(raw.card, undefined, 0, false, api)
+  if (raw.caption !== undefined) result.caption = choice(raw.caption, ['none', 'focus'])
   return result
 }
 function parseBottomNav(value: unknown): BottomNavPresentation {
@@ -442,7 +452,7 @@ function parseBottomNav(value: unknown): BottomNavPresentation {
   return result
 }
 function parseTopBar(value: unknown): TopBarPresentation {
-  const raw = record(value); only(raw, ['labels', 'search', 'menu', 'brand', 'categories', 'sideWidth'])
+  const raw = record(value); only(raw, ['labels', 'search', 'menu', 'brand', 'categories', 'sideWidth', 'bumpers'])
   const result: TopBarPresentation = {}
   if (raw.labels !== undefined) result.labels = choice(raw.labels, ['icons', 'text', 'both'])
   if (raw.search !== undefined) result.search = choice(raw.search, ['icon', 'field-center', 'field-end'])
@@ -450,6 +460,7 @@ function parseTopBar(value: unknown): TopBarPresentation {
   if (raw.sideWidth !== undefined) result.sideWidth = number(raw.sideWidth, 200, 320)
   if (raw.brand !== undefined) result.brand = choice(raw.brand, ['start', 'center'])
   if (raw.categories !== undefined) result.categories = flag(raw.categories)
+  if (raw.bumpers !== undefined) result.bumpers = flag(raw.bumpers)
   return result
 }
 function parseIndicator(value: unknown, api: ThemeApi): HeroIndicator {
@@ -554,7 +565,7 @@ function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
   return result
 }
 function parseShell(value: unknown, api: ThemeApi): ShellPresentation {
-  const raw = record(value); only(raw, ['nav', 'compact', 'overlay', 'press', ...api2(api, ['bottomNav']), ...api3(api, ['top'])])
+  const raw = record(value); only(raw, ['nav', 'compact', 'overlay', 'press', ...api2(api, ['bottomNav']), ...api3(api, ['top', 'hints'])])
   const result: ShellPresentation = {}
   if (raw.nav !== undefined) result.nav = choice(raw.nav, ['sidebar', 'top', 'bottom'])
   if (raw.compact !== undefined) result.compact = flag(raw.compact)
@@ -562,6 +573,7 @@ function parseShell(value: unknown, api: ThemeApi): ShellPresentation {
   if (raw.press !== undefined) result.press = choice(raw.press, ['none', 'sink'])
   if (raw.bottomNav !== undefined) result.bottomNav = parseBottomNav(raw.bottomNav)
   if (raw.top !== undefined) result.top = parseTopBar(raw.top)
+  if (raw.hints !== undefined) result.hints = flag(raw.hints)
   return result
 }
 function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {

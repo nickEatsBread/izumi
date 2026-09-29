@@ -123,6 +123,20 @@ describe('theme presentation contract', () => {
     expect(() => parsePresentation({ shell: { top: { sideWidth: 600 } } })).toThrow('range')
     expect(() => parsePresentation({ shell: { top: { menu: 'rail' } } })).toThrow('unsupported')
   })
+  it('parses the handheld shell keys and the row focus caption', () => {
+    const parsed = parsePresentation({
+      shell: { nav: 'top', top: { bumpers: true }, hints: true },
+      rows: { defaults: { caption: 'focus' }, byId: { continue: { caption: 'none' } } },
+    })
+    expect(parsed.shell).toEqual({ nav: 'top', top: { bumpers: true }, hints: true })
+    expect(parsed.rows?.defaults?.caption).toBe('focus')
+    expect(parsed.rows?.byId?.continue?.caption).toBe('none')
+    expect(() => parsePresentation({ shell: { hints: 'yes' } })).toThrow('toggle')
+    expect(() => parsePresentation({ shell: { top: { bumpers: 1 } } })).toThrow('toggle')
+    expect(() => parsePresentation({ rows: { defaults: { caption: 'hover' } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ shell: { hints: true } }, 2)).toThrow('unsupported')
+    expect(() => parsePresentation({ rows: { defaults: { caption: 'focus' } } }, 2)).toThrow('unsupported')
+  })
   it('parses the API 3 series-page options and the bottom tab bar', () => {
     const detail = { factsStyle: 'table', countdown: 'long', listButton: 'full', tabs: 'bottom' }
     expect(parsePresentation({ detail }).detail).toEqual(detail)
