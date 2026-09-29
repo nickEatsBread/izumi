@@ -7,7 +7,7 @@
   import { untrack } from 'svelte'
   import { playEpisode, prefetchEpisodeSources, resumeEpisode, type PlayState } from '$lib/stremio/play'
   import { airedCount, cover } from '$lib/anilist/media'
-  import { animeEpisodeNumbers, animeEpisodeMetadata, animeResumeEpisode, animeWatchedProgress } from '$lib/catalog/anime-detail'
+  import { animeEpisodeNumbers, animeEpisodeMetadata, animeEpisodeMetadataKey, animeResumeEpisode, animeWatchedProgress } from '$lib/catalog/anime-detail'
   import { anilistIdOf } from '$lib/catalog/identity'
   import type { Media } from '$lib/anilist/types'
   import { getEpisodeMeta } from '$lib/anizip'
@@ -177,23 +177,34 @@
   // cards fall back to the show art when a given episode has no entry.
   let meta = $state<Record<number, EpMeta>>({})
   let metaLoading = $state(true)
+  // Loaded per series and per set of provider-supplied episodes, never per `media` object: the page
+  // passes a new one each time its query delivers the same series again (a cached page's
+  // revalidation, each wave of the season picker's chain walk, a tracker read-back). Re-running on
+  // those put the list back to skeletons and re-mounted every card, so every thumbnail faded in again.
+  const metaSource = $derived(animeEpisodeMetadataKey(media))
   $effect(() => {
-    const supplied = animeEpisodeMetadata(media)
+    void metaSource
+    const current = untrack(() => media)
+    const supplied = animeEpisodeMetadata(current)
     meta = supplied
-    const canonical = anilistIdOf(media)
+    const canonical = anilistIdOf(current)
     if (offline || canonical == null) { metaLoading = false; return }
-    let cancelled = false
-    metaLoading = !media.videos?.length
-    const applyMeta = (m: Record<number, EpMeta>) => {
-      if (cancelled) return
-      const combined = { ...supplied }
-      for (const [episode, details] of Object.entries(m)) {
-        combined[Number(episode)] = { ...supplied[Number(episode)], ...Object.fromEntries(Object.entries(details).filter(([, value]) => value != null)) }
+    metaLoading = !current.videos?.length
+    // Progress is read by this nested load alone: a finished episode or a tracker read-back asks
+    // AniZip again for titles the watched episodes lack and merges them into the list as it stands.
+    $effect(() => {
+      let cancelled = false
+      const applyMeta = (m: Record<number, EpMeta>) => {
+        if (cancelled) return
+        const combined = { ...supplied }
+        for (const [episode, details] of Object.entries(m)) {
+          combined[Number(episode)] = { ...supplied[Number(episode)], ...Object.fromEntries(Object.entries(details).filter(([, value]) => value != null)) }
+        }
+        meta = combined; metaLoading = false
       }
-      meta = combined; metaLoading = false
-    }
-    getEpisodeMeta(canonical, watchedThrough, applyMeta).then(applyMeta)
-    return () => { cancelled = true }
+      getEpisodeMeta(canonical, watchedThrough, applyMeta).then(applyMeta)
+      return () => { cancelled = true }
+    })
   })
 
   // Only show per-episode thumbnails when AniZip actually has *distinct* per-ep
