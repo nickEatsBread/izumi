@@ -429,6 +429,37 @@ async fn positioned_stream(
     Some(stream)
 }
 
+/// Bytes before a preview position that its keyframe can sit at, and after it for the frame.
+const PREVIEW_BYTES_BEFORE: u64 = 4 * 1024 * 1024;
+const PREVIEW_BYTES_AFTER: u64 = 2 * 1024 * 1024;
+
+/// Whether a scrub preview at `fraction` of the playing file can be read without asking the
+/// swarm for pieces. Always true for anything but a direct torrent. The byte offset is estimated
+/// from the fraction, so the check covers a few megabytes around it. The engine's lock is only
+/// tried, so a busy engine answers false instead of holding up the caller.
+#[cfg(not(target_os = "android"))]
+pub(crate) fn preview_readable(app: &AppHandle, url: &str, fraction: f64) -> bool {
+    let Some((torrent_id, file_index)) = crate::direct_torrent_stream::player_stream_ids(url)
+    else {
+        return true;
+    };
+    let state = app.state::<DirectTorrentState>();
+    let Ok(active) = state.active.try_lock() else {
+        return false;
+    };
+    let Some(current) = active.as_ref().filter(|current| {
+        current.torrent_id == torrent_id && current.selected_file_index == file_index
+    }) else {
+        return false;
+    };
+    let offset = (current.selected_size as f64 * fraction.clamp(0.0, 1.0)) as u64;
+    current.handle.file_range_downloaded(
+        file_index,
+        offset.saturating_sub(PREVIEW_BYTES_BEFORE),
+        offset.saturating_add(PREVIEW_BYTES_AFTER),
+    )
+}
+
 fn managed_torrent_files(handle: &ManagedTorrent) -> Result<Vec<TorrentFile>, String> {
     handle
         .with_metadata(|metadata| {

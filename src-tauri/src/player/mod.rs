@@ -28,6 +28,7 @@ mod embed_contract;
 mod headless;
 mod sidecar_gate;
 mod subtitle_select;
+mod thumbs;
 use color_management::COLOR_OPTS;
 pub use embed_contract::require_live_core;
 // On-demand anime-upscaler shader fetch (Anime video-quality preset). Pinned upstream release,
@@ -149,8 +150,11 @@ struct TileJob {
     dir: PathBuf,
     interval: u32,
     frames: u32,
+    duration: f64,
     url: String, // debrid stream url or local path (SECRET — never logged)
 }
+
+pub(crate) use thumbs::ReadableAt;
 
 struct GifSession {
     dir: PathBuf,
@@ -211,12 +215,11 @@ pub struct PlayerHandle {
     /// Scrub-preview thumbnail jobs, keyed by stream cache key (infoHash or
     /// media-episode). Holds the url + geometry so tiles can be produced on demand.
     sprite_jobs: Arc<Mutex<HashMap<String, TileJob>>>,
-    /// On-demand thumbnail grabs in flight — capped at 1 so a scrub can't spawn a
-    /// storm of renders / range requests that starve mpv playback. `Arc` so the
-    /// detached grab thread can reset it when it finishes.
-    thumb_inflight: Arc<std::sync::atomic::AtomicUsize>,
+    /// Renders scrub tiles one at a time on the headless decoder: a hovered position first, the
+    /// rest of the grid in the background.
+    thumbs: Arc<thumbs::ThumbScheduler>,
     /// Warm scrub-thumbnail decoder — a second, headless libmpv core (software render).
-    /// The sole thumbnail engine (no ffmpeg). Lazily started on the first hover.
+    /// The sole thumbnail engine (no ffmpeg). Lazily started on the first tile.
     headless: Arc<HeadlessMpv>,
 }
 
@@ -232,7 +235,7 @@ impl PlayerHandle {
             pending_external_tracks: Arc::new(Mutex::new(None)),
             sidecar_gate: SidecarGate::new(),
             sprite_jobs: Arc::new(Mutex::new(HashMap::new())),
-            thumb_inflight: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            thumbs: Arc::new(thumbs::ThumbScheduler::new()),
             headless: Arc::new(HeadlessMpv::new()),
         }
     }
@@ -349,6 +352,7 @@ impl PlayerHandle {
     ) -> Result<(), String> {
         // Remember the URL — the next hover renders fresh frames against the new file.
         *self.current_url.lock().map_err(|e| e.to_string())? = Some(url.to_string());
+        self.thumbs.retire_unless(url);
         crate::gm_perf::PLAYER_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
 
         let subs = subtitles.unwrap_or_default();
@@ -458,6 +462,7 @@ impl PlayerHandle {
         audio_tracks: Option<Vec<AudioTrack>>,
     ) -> Result<(), String> {
         *self.current_url.lock().map_err(|e| e.to_string())? = Some(url.to_string());
+        self.thumbs.retire_unless(url);
         crate::gm_perf::PLAYER_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
 
         let subs = subtitles.unwrap_or_default();
@@ -566,6 +571,8 @@ impl PlayerHandle {
             .map_err(|e| e.to_string())? = None;
         // Subtitles still waiting for the closed video have nothing left to attach to.
         self.sidecar_gate.begin_file(false);
+        self.thumbs.clear();
+        thumbs::MAIN_PLAYER_LOADING.store(true, std::sync::atomic::Ordering::Relaxed);
         self.headless.stop();
         // Scrub tiles are worth exactly as long as the stream they describe is open. Leaving them
         // meant every episode ever hovered accumulated ~9KB per tile, up to 144 tiles, forever.
@@ -590,6 +597,8 @@ impl PlayerHandle {
         self.sidecar_gate.begin_file(false);
         // The render core is reusable; stream-specific scrub work is not. Retire the secondary
         // decoder and its tiles just as a full teardown would, so warming cannot accumulate files.
+        self.thumbs.clear();
+        thumbs::MAIN_PLAYER_LOADING.store(true, std::sync::atomic::Ordering::Relaxed);
         self.headless.stop();
         self.discard_sprite_tiles(None);
         Ok(())
@@ -647,21 +656,51 @@ impl PlayerHandle {
             .ok();
     }
 
-    /// Register a scrub-preview thumbnail job for the current stream, keyed by `key`
-    /// (infoHash or media-episode). `duration` (seconds) comes from mpv so we don't
-    /// re-probe. Tiles are produced ON DEMAND in [`thumb_tile`] by the headless decoder;
-    /// this just records the url + the time↔index grid. `cache_root` is `<app-cache>/thumbs`.
-    pub fn start_sprite(&self, key: String, duration: f64, cache_root: PathBuf) {
-        if key.is_empty() || duration <= 1.0 {
-            return;
+    /// Register the scrub-preview grid of the loaded file `url`, keyed by `key` (infoHash or
+    /// media-episode). False while `url` is not the file loaded or its duration is not known yet;
+    /// the frontend asks again. `width` is the tile width in device pixels. The headless decoder
+    /// renders the hovered tile first ([`thumb_tile`]) and fills the rest of the grid in the
+    /// background. `cache_root` is `<app-cache>/thumbs`.
+    pub fn start_sprite(
+        &self,
+        key: String,
+        url: String,
+        width: i32,
+        cache_root: PathBuf,
+        app: AppHandle,
+        readable: Arc<ReadableAt>,
+    ) -> bool {
+        // The frontend names the stream before the new file replaces the old one. Only the file
+        // that is actually loaded gets a grid, so no tile is ever a frame of the previous file.
+        let live = self.current_url.lock().ok().and_then(|g| g.clone());
+        if key.is_empty() || live.as_deref() != Some(url.as_str()) {
+            return false;
         }
-        let url = match self.current_url.lock().ok().and_then(|g| g.clone()) {
-            Some(u) => u,
-            None => return,
+        // The grid of this file is fixed once registered, even if mpv revises the duration.
+        let registered = self.sprite_jobs.lock().ok().and_then(|jobs| {
+            jobs.get(&key)
+                .filter(|job| job.url == url)
+                .map(|job| (job.interval, job.frames, job.duration))
+        });
+        let (interval, frames, duration) = match registered {
+            Some(grid) => grid,
+            None => {
+                // Read from mpv rather than taken from the frontend, whose value may still be the
+                // previous file's.
+                let duration = match self
+                    .get_property("duration")
+                    .ok()
+                    .and_then(|value| value.parse::<f64>().ok())
+                {
+                    Some(duration) if duration > 1.0 => duration,
+                    _ => return false,
+                };
+                // One tile every `interval`s, bounded to <=144 grid positions (>=10s spacing).
+                let interval = ((duration / 144.0).ceil() as u32).max(10);
+                let frames = (((duration / interval as f64).ceil()) as u32).clamp(1, 144);
+                (interval, frames, duration)
+            }
         };
-        // One tile every `interval`s, bounded to <=144 grid positions (>=10s spacing).
-        let interval = ((duration / 144.0).ceil() as u32).max(10);
-        let frames = (((duration / interval as f64).ceil()) as u32).clamp(1, 144);
         let dir = cache_root.join(sanitize_key(&key));
         let _ = std::fs::create_dir_all(&dir);
         if let Ok(mut jobs) = self.sprite_jobs.lock() {
@@ -671,10 +710,29 @@ impl PlayerHandle {
                     dir: dir.clone(),
                     interval,
                     frames,
-                    url,
+                    duration,
+                    url: url.clone(),
                 },
             );
         }
+        // A direct torrent is read passively: a preview never asks the swarm for pieces.
+        let preview_url =
+            crate::direct_torrent_stream::passive_stream_url(&url).unwrap_or_else(|| url.clone());
+        self.thumbs.start(
+            thumbs::TileGrid {
+                key: key.clone(),
+                url,
+                preview_url,
+                dir: dir.clone(),
+                interval,
+                frames,
+                duration,
+                width: width.clamp(160, 640),
+            },
+            app,
+            self.headless.clone(),
+            readable,
+        );
         // Registering a new stream means the previous one is done with — an episode advance, a
         // binge continuation, or a source change. Its tiles go with it, which is what keeps this
         // cache proportional to what is playing instead of to everything ever played.
@@ -685,15 +743,13 @@ impl PlayerHandle {
             .name("izumi-thumb-cap".into())
             .spawn(move || crate::cache_gc::enforce_thumb_cap(&cache_root, Some(&dir)))
             .ok();
+        true
     }
 
     /// The tile for hover time `time` (seconds). Returns INSTANTLY — never blocks the
-    /// command/IPC thread. Disk-cache hit → `ready`; otherwise it kicks off ONE detached
-    /// grab via the warm headless libmpv decoder (software render — no ffmpeg, no window)
-    /// and returns `pending`; the seekbar keeps its shimmer + re-polls until the tile
-    /// lands on disk. Concurrency 1 so a scrub can't storm the decoder.
+    /// command/IPC thread. Disk-cache hit → `ready`; otherwise the tile is rendered next and
+    /// arrives as a `player-thumb-tile` event, so the reply is `pending`.
     pub fn thumb_tile(&self, key: &str, time: f64) -> Result<ThumbTile, String> {
-        use std::sync::atomic::Ordering;
         let (dir, interval, frames, url) = {
             let jobs = self.sprite_jobs.lock().map_err(|e| e.to_string())?;
             match jobs.get(key) {
@@ -707,11 +763,9 @@ impl PlayerHandle {
                 }
             }
         };
-        // `start_sprite` snapshots `current_url` at registration time, but the frontend sets
-        // `spriteKey` BEFORE `player_embed` swaps the url in. On a same-episode source change the
-        // job therefore points at the PREVIOUS release, and every tile we grab (and write to disk
-        // under the new key) is a frame from the wrong file — poisoning the cache permanently.
-        // Serve nothing until the job's url matches what's actually loaded.
+        // A job describes one file. After the player moves to another under the same key (a
+        // same-episode source change, the next episode of a batch), its tiles are frames of the
+        // wrong file. Serve nothing until the frontend registers the file that is loaded.
         {
             let live = self.current_url.lock().ok().and_then(|g| g.clone());
             if live.as_deref() != Some(url.as_str()) {
@@ -737,27 +791,9 @@ impl PlayerHandle {
             }
         }
 
-        // Miss → spawn ONE detached grab if none is running (concurrency 1). The warm
-        // headless decoder seeks + software-renders THIS position; we write the tile
-        // atomically and the seekbar re-polls until it lands. Returns immediately so
-        // hover/skim never stalls the UI or other Tauri commands.
-        if self
-            .thumb_inflight
-            .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
-        {
-            let inflight = self.thumb_inflight.clone();
-            let headless = self.headless.clone();
-            let time_at = i as f64 * interval as f64;
-            std::thread::spawn(move || {
-                if let Ok(bytes) = headless.screenshot(&url, time_at) {
-                    if !bytes.is_empty() {
-                        write_tile_atomic(&path, &bytes);
-                    }
-                }
-                inflight.store(0, Ordering::SeqCst);
-            });
-        }
+        // Miss → the scheduler renders this position next and announces it. Returns immediately
+        // so hover/skim never stalls the UI or other Tauri commands.
+        self.thumbs.hover(key, i);
         Ok(ThumbTile {
             status: "pending".into(),
             data_url: None,
@@ -1558,6 +1594,8 @@ fn load_file(
     pending_external_tracks: &Arc<Mutex<Option<PendingExternalTracks>>>,
     sidecar_gate: &SidecarGate,
 ) -> Result<(), String> {
+    // Scrub tiles wait in the background until this file shows its first frame.
+    thumbs::MAIN_PLAYER_LOADING.store(true, std::sync::atomic::Ordering::Relaxed);
     // Apply the user's cache-size setting to this file's demuxer (overrides the init default).
     let cache = PLAYER_CACHE_BYTES.load(std::sync::atomic::Ordering::Relaxed);
     let _ = mpv.set_property("demuxer-max-bytes", cache.to_string().as_str());
@@ -1899,9 +1937,15 @@ pub(crate) fn spawn_event_loop(
                         let _ = app.emit("player-muted", muted);
                     }
                     ("paused-for-cache", PropertyData::Flag(buffering)) => {
+                        thumbs::MAIN_PLAYER_WAITING
+                            .store(buffering, std::sync::atomic::Ordering::Relaxed);
                         let _ = app.emit("player-buffering", buffering);
                     }
                     ("core-idle", PropertyData::Flag(v)) => {
+                        if !v {
+                            thumbs::MAIN_PLAYER_LOADING
+                                .store(false, std::sync::atomic::Ordering::Relaxed);
+                        }
                         let _ = app.emit("player-core-idle", v);
                     }
                     ("seeking", PropertyData::Flag(v)) => {

@@ -22,7 +22,8 @@ position has arrived and been verified. librqbit gives each piece to a single pe
 holding that piece stalls playback while the rest of the swarm keeps delivering other pieces. In
 one test the swarm delivered 91 MB in 9 seconds while the first piece of the file stayed missing.
 The patch changes three things, in `src/piece_tracker.rs`, `src/torrent_state/live/mod.rs`,
-`src/torrent_state/streaming.rs` and `src/chunk_tracker.rs`:
+`src/torrent_state/streaming.rs` and `src/chunk_tracker.rs`, and adds a passive read for scrub
+previews:
 
 - **Taking over a waited-for piece sooner.** The first eight pieces ahead of every open stream are
   "critical": mpv reads a release's embedded fonts, often several megabytes, before it shows
@@ -36,6 +37,13 @@ The patch changes three things, in `src/piece_tracker.rs`, `src/torrent_state/li
   in flight per peer, several seconds at a typical peer's rate. The patch measures each peer's
   delivery rate while requests are outstanding and keeps about one second of it in flight: at
   least 16 chunks, 32 before the first measurement, and never more than the peer allows.
+
+- **Passive reads for previews.** `ManagedTorrent::stream_passive` opens a stream that is not
+  registered with the torrent, so it never changes which pieces are requested, and that fails at
+  once on a piece that has not been downloaded instead of waiting for it. `FileStream::is_available`
+  and `ManagedTorrent::file_range_downloaded` say whether a position or a byte range is already
+  there. The seek bar's thumbnails read a direct torrent this way, so they never compete with the
+  video the player is waiting for.
 
 Unit tests cover the takeover rule, the chunk bookkeeping and the queue sizing
 (`try_steal_critical`, `chunks_received_before_a_piece_completes_stay_downloaded` and

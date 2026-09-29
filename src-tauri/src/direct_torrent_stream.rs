@@ -9,7 +9,7 @@ use std::{
 use anyhow::Context;
 use axum::{
     body::Body,
-    extract::{Path, State},
+    extract::{Path, RawQuery, State},
     http::{header, HeaderMap, HeaderValue, Method, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
@@ -193,23 +193,42 @@ pub(crate) fn player_stream_url(port: u16, torrent_id: usize, file_index: usize)
     format!("http://127.0.0.1:{port}/torrents/{torrent_id}/stream/{file_index}")
 }
 
+/// The query that makes a stream request passive: it reads only pieces already downloaded, fails at
+/// once on a missing one, and never changes which pieces the torrent asks peers for.
+const PASSIVE_QUERY: &str = "passive=1";
+
+/// A passive twin of a [`player_stream_url`] for scrub-preview thumbnails, or None for any other
+/// URL. Previews read through it so they cannot compete with the video the player is waiting for.
+pub(crate) fn passive_stream_url(url: &str) -> Option<String> {
+    is_player_stream_url(url).then(|| format!("{url}?{PASSIVE_QUERY}"))
+}
+
 /// Whether `url` is a [`player_stream_url`]. Reads from it wait for the swarm to deliver pieces,
 /// so a long wait there means buffering, not a dead connection.
 #[cfg_attr(target_os = "android", allow(dead_code))]
 pub(crate) fn is_player_stream_url(url: &str) -> bool {
-    let Some(route) = url.strip_prefix("http://127.0.0.1:") else {
-        return false;
-    };
+    player_stream_ids(url).is_some()
+}
+
+/// The torrent id and file index a [`player_stream_url`] names.
+#[cfg_attr(target_os = "android", allow(dead_code))]
+pub(crate) fn player_stream_ids(url: &str) -> Option<(usize, usize)> {
+    let route = url.strip_prefix("http://127.0.0.1:")?;
     let number = |part: Option<&str>| {
-        part.is_some_and(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+        part.filter(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+            .and_then(|part| part.parse::<usize>().ok())
     };
     let mut parts = route.split('/');
-    number(parts.next())
-        && parts.next() == Some("torrents")
-        && number(parts.next())
-        && parts.next() == Some("stream")
-        && number(parts.next())
-        && parts.next().is_none()
+    number(parts.next())?;
+    if parts.next() != Some("torrents") {
+        return None;
+    }
+    let torrent_id = number(parts.next())?;
+    if parts.next() != Some("stream") {
+        return None;
+    }
+    let file_index = number(parts.next())?;
+    parts.next().is_none().then_some((torrent_id, file_index))
 }
 
 fn text_error(status: StatusCode, message: impl Into<String>) -> Response {
@@ -219,13 +238,28 @@ fn text_error(status: StatusCode, message: impl Into<String>) -> Response {
 async fn stream_file(
     State(state): State<StreamServerState>,
     Path((torrent_id, file_id)): Path<(TorrentIdOrHash, usize)>,
+    RawQuery(query): RawQuery,
     method: Method,
     request_headers: HeaderMap,
 ) -> Response {
     let api = &state.api;
-    let mut stream = match api.api_stream(torrent_id, file_id).await {
+    let passive = query.as_deref() == Some(PASSIVE_QUERY);
+    let opened = if passive {
+        match api.mgr_handle(torrent_id) {
+            Ok(handle) => handle
+                .stream_passive(file_id)
+                .await
+                .map_err(|error| error.to_string()),
+            Err(error) => Err(error.to_string()),
+        }
+    } else {
+        api.api_stream(torrent_id, file_id)
+            .await
+            .map_err(|error| error.to_string())
+    };
+    let mut stream = match opened {
         Ok(stream) => stream,
-        Err(error) => return text_error(StatusCode::NOT_FOUND, error.to_string()),
+        Err(error) => return text_error(StatusCode::NOT_FOUND, error),
     };
     let total_length = stream.len();
     let request_range = request_headers.get(header::RANGE);
@@ -239,13 +273,15 @@ async fn stream_file(
     {
         Ok(range) => range,
         Err(()) => {
-            state.diagnostics.record_request(
-                file_id,
-                request_range.and_then(|value| value.to_str().ok()),
-                StatusCode::RANGE_NOT_SATISFIABLE,
-                None,
-                None,
-            );
+            if !passive {
+                state.diagnostics.record_request(
+                    file_id,
+                    request_range.and_then(|value| value.to_str().ok()),
+                    StatusCode::RANGE_NOT_SATISFIABLE,
+                    None,
+                    None,
+                );
+            }
             let mut response = text_error(
                 StatusCode::RANGE_NOT_SATISFIABLE,
                 "The requested byte range is not satisfiable.",
@@ -273,6 +309,11 @@ async fn stream_file(
         }
     }
     let response_length = end.saturating_sub(start);
+    // A preview must never wait for the swarm. Refuse at once when its first piece is missing; a
+    // later missing piece ends the body with a read error.
+    if passive && response_length > 0 && !stream.is_available() {
+        return text_error(StatusCode::SERVICE_UNAVAILABLE, "Not downloaded yet.");
+    }
     let stream: Box<dyn AsyncRead + Send + Unpin> = if range.is_some() {
         Box::new(stream.take(response_length))
     } else {
@@ -282,13 +323,16 @@ async fn stream_file(
     // The player's real FileStream is registered now. Tell the torrent owner to drop its
     // synthetic byte-zero cursor before this response begins reading pieces, so a tail/Cues or
     // resume-position request cannot compete with the startup cursor for peer request slots.
-    notify_request_started(
-        &state.request_started,
-        torrent_id,
-        file_id,
-        request_range.and_then(|value| value.to_str().ok()),
-        start,
-    );
+    // A passive preview read is not the player.
+    if !passive {
+        notify_request_started(
+            &state.request_started,
+            torrent_id,
+            file_id,
+            request_range.and_then(|value| value.to_str().ok()),
+            start,
+        );
+    }
 
     let mut headers = HeaderMap::new();
     headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
@@ -307,6 +351,14 @@ async fn stream_file(
         }
     }
 
+    // Diagnostics describe the player's own reads. Request id 0 is never recorded.
+    if passive {
+        let body = Body::from_stream(tokio_util::io::ReaderStream::with_capacity(
+            stream,
+            64 * 1024,
+        ));
+        return (status, headers, body).into_response();
+    }
     let request_id = state.diagnostics.record_request(
         file_id,
         request_range.and_then(|value| value.to_str().ok()),
@@ -347,8 +399,8 @@ pub async fn serve(
 #[cfg(test)]
 mod tests {
     use super::{
-        is_player_stream_url, notify_request_started, player_stream_url, DiagnosticReader,
-        StreamDiagnostics,
+        is_player_stream_url, notify_request_started, passive_stream_url, player_stream_ids,
+        player_stream_url, DiagnosticReader, StreamDiagnostics,
     };
     use axum::http::StatusCode;
     use librqbit::{api::TorrentIdOrHash, dht::Id20};
@@ -378,6 +430,23 @@ mod tests {
         ] {
             assert!(!is_player_stream_url(url), "{url}");
         }
+    }
+
+    #[test]
+    fn previews_read_a_passive_twin_of_the_player_stream() {
+        let url = player_stream_url(51_234, 7, 3);
+        assert_eq!(player_stream_ids(&url), Some((7, 3)));
+        let passive = passive_stream_url(&url).unwrap();
+        assert_eq!(
+            passive,
+            "http://127.0.0.1:51234/torrents/7/stream/3?passive=1"
+        );
+        // The player's own read-timeout and priority handling never apply to it.
+        assert!(!is_player_stream_url(&passive));
+        assert_eq!(
+            passive_stream_url("https://cdn.example.com/episode.mkv"),
+            None
+        );
     }
 
     #[test]
