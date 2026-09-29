@@ -24,7 +24,7 @@ Semantic colors, font family and scale, corner radius, backdrop and glass effect
 - Navigation placement: side rail, top bar, or bottom bar. Phones keep the bottom bar. Destination order stays in Settings → Navigation.
 - Compact shell padding.
 - Bottom bar styling (API 2, `shell.bottomNav`): flush bar, floating card or centred pill; labels always, on the active tab or never; a tonal pill, top line or dot as the active marker; height, icon size, radius, colours, blur, border and whether the bar hides while scrolling. `BottomNav.svelte` renders it and `src/lib/theme.ts` publishes `--theme-bottom-nav` so the page reserves the right space.
-- Top bar (API 3, `shell.top`): destination names as text links or with icons (`labels`), an inline search field in the centre or at the end (`search`), a menu drawer (`menu`), a centred brand (`brand`) and a Categories menu after the destinations (`categories: true`) with Browse all, Release calendar and the catalog's genres, each opening search.
+- Top bar (API 3, `shell.top`): destination names as text links or with icons (`labels`), an inline search field in the centre or at the end (`search`), a menu drawer (`menu: "drawer"`) or a menu pinned as a labelled panel down the left under the bar (`menu: "side"`, `sideWidth` 200–320 px, default 260: the page moves over for it on windows from 1100 px, the menu button folds it away, narrower windows get the drawer, and it hides while a video plays), a centred brand (`brand`) and a Categories menu after the destinations (`categories: true`) with Browse all, Release calendar and the catalog's genres, each opening search.
 
 ### Home
 
@@ -37,7 +37,7 @@ Semantic colors, font family and scale, corner radius, backdrop and glass effect
 
 Home blocks — latest episodes, tabbed grid, genre chips, ranked list and profile header — and the side column are izumi features: anyone adds, configures and removes them from Edit Home (`src/lib/home/blocks.ts`, `src/lib/components/home/`). Themes style them through the block hooks listed under "Styling hooks".
 
-Theme layout (API 3, `layout`): `home` lists the Home in order — catalog rows by role (`continue`, `recent`, `trending`, …; `hero` is the featured banner, and leaving it out hides it) and blocks with their settings (`{ "block": "ranked-list", "area": "aside", "tabs": [{ "label": "Top airing", "role": "trending" }] }`); `asideWidth` sets the side column (240–420 px) and `asideGap` the gutter between it and the main column (0–96 px, default 32; the main rows scroll inside themselves, so their own padding never separates them from the side column); `asideStart` the main row the side column starts beside, counted after the featured banner (0–29, default 0; the rows before it span the whole width, as when a site runs its first rows edge to edge and puts its sidebar beside a later section); `nav` sets the phone bottom bar (`bottom`), the Home header icons (`top`) and Home's position on the bar (`home`). `mobile.layout.home` replaces the Home list on phones. A role the active catalog lacks is skipped. The layout applies while the theme is active; people turn it off, or customize a copy that becomes their own layout, in Edit Home and Settings → Navigation — their own layout is never overwritten. The featured banner is itself a Home row, so anyone can move or hide it.
+Theme layout (API 3, `layout`): `home` lists the Home in order — catalog rows by role (`continue`, `recent`, `trending`, …; `hero` is the featured banner, and leaving it out hides it) and blocks with their settings (`{ "block": "ranked-list", "area": "aside", "tabs": [{ "label": "Top airing", "role": "trending" }] }`; `airing-today` lists today's episodes in airing order, with `limit` 3–20, `clock` for the date and a live clock under the heading and `more` for a link to the schedule); `asideWidth` sets the side column (240–420 px) and `asideGap` the gutter between it and the main column (0–96 px, default 32; the main rows scroll inside themselves, so their own padding never separates them from the side column); `asideStart` the main row the side column starts beside, counted after the featured banner (0–29, default 0; the rows before it span the whole width, as when a site runs its first rows edge to edge and puts its sidebar beside a later section); `nav` sets the phone bottom bar (`bottom`), the Home header icons (`top`) and Home's position on the bar (`home`). `mobile.layout.home` replaces the Home list on phones. A role the active catalog lacks is skipped. The layout applies while the theme is active; people turn it off, or customize a copy that becomes their own layout, in Edit Home and Settings → Navigation — their own layout is never overwritten. The featured banner is itself a Home row, so anyone can move or hide it.
 
 ### Cards
 
@@ -131,6 +131,7 @@ State values:
 | `data-row`, `data-role` | `row` | the row's stable id; the role is the part after its `:` (the whole id when it has none) |
 | `data-family` | `card` | `poster`, `search`, `continue`, `preview` |
 | `data-caption` | `block.latest-episodes` | `below`, `overlay` |
+| `data-aired` | `block.item` (airing-today) | present once the episode has aired |
 | `data-layout` | `detail` | `stack`, `split`, `overlay` |
 | `data-variant` | `detail` | `phone`, `desktop` |
 | `data-variant` | `detail.facts` | `table`, `cards`, `chips` (none for a template) |
@@ -190,6 +191,7 @@ State values:
 | `search.suggestion.all` | part | The "View all results" link at the end of the panel. |  |
 | `nav.menu` | part | The top bar menu button that opens the drawer. |  |
 | `nav.drawer` | slot | The side drawer of destinations (top bar `menu: "drawer"`); items are `nav.item`. |  |
+| `nav.panel` | slot | The pinned menu panel down the left (top bar `menu: "side"`); items are `nav.item`. |  |
 | `nav.categories` | slot | The Categories menu panel (top bar `categories`). |  |
 | `nav.categories.heading` | part | The Genres heading in the Categories menu. |  |
 | `nav.categories.link` | part | A Categories menu link; genre links carry `data-variant="genre"`. | `data-variant` |
@@ -231,7 +233,7 @@ State values:
 | `block.title` | part | A block heading. |  |
 | `block.genre-chips` | slot | Genre shortcuts: an All chip and one chip per genre (each a `chip`). |  |
 | `block.latest-episodes` | slot | Newly aired episodes as a grid of stills. Items reuse `episode.still`, `episode.number`, `card.title` and `card.meta`. `data-caption` is `below` or `overlay`. | `data-caption` |
-| `block.item` | part | One entry in a block (an episode, a poster or a ranked title). |  |
+| `block.item` | part | One entry in a block (an episode, a poster, a ranked title or an airing). | `data-aired` |
 | `block.tabbed-grid` | slot | A tab strip (`tabs`) over a poster grid; each poster is a `block.item` holding a `card`. |  |
 | `block.ranked-list` | slot | A numbered top list; each entry is a `block.item` with `card.art`, `card.title` and `card.meta`. |  |
 | `block.rank` | part | The rank number of a ranked-list entry. |  |
@@ -240,6 +242,14 @@ State values:
 | `block.avatar` | part | The profile avatar (an image, or the first letter of the name). |  |
 | `block.name` | part | The profile name. |  |
 | `block.stat` | part | The watch statistics line. |  |
+| `block.airing-today` | slot | Today's airings in time order; each entry is a `block.item` with `airing.poster`, `airing.title` and `airing.time`, and `data-aired` once it has aired. |  |
+| `block.more` | part | A block's link to its full page (the schedule, on airing-today). |  |
+| `block.clock` | part | The date (`block.clock.date`) and live clock (`block.clock.time`) under an airing-today heading. |  |
+| `block.clock.date` | part | Today's date in an airing-today clock. |  |
+| `block.clock.time` | part | The live time in an airing-today clock. |  |
+| `airing.poster` | part | The poster of an airing-today entry. |  |
+| `airing.title` | part | The series title of an airing-today entry. |  |
+| `airing.time` | part | The local airing time of an airing-today entry: a tick once aired, a clock before. |  |
 
 #### Cards
 

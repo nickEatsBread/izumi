@@ -4,6 +4,7 @@
   import CatalogSwitcher from '../catalog/CatalogSwitcher.svelte'
   import TopSearchField from './TopSearchField.svelte'
   import NavDrawer from './NavDrawer.svelte'
+  import NavPanel from './NavPanel.svelte'
   import CategoriesMenu from './CategoriesMenu.svelte'
   import Home from '@lucide/svelte/icons/house'
   import Calendar from '@lucide/svelte/icons/calendar'
@@ -52,6 +53,41 @@
     { href: '/app/library', icon: LibraryBig, label: 'Library', anim: '' },
   ]
   const shown = $derived(searchField ? items.filter((it) => it.href !== '/app/search') : items)
+  // `menu: "side"`: the menu is a pinned panel down the left on windows from 1100 px (the bar keeps
+  // only its brand, search and trailing buttons); the menu button folds it away, and narrower
+  // windows fall back to the drawer. Hidden while a video plays, like the rail goes inert.
+  const sideMenu = $derived(top && topBar.menu === 'side')
+  const sideWidth = $derived(topBar.sideWidth ?? 260)
+  let wide = $state(true)
+  $effect(() => {
+    const query = window.matchMedia('(min-width: 1100px)')
+    const update = () => (wide = query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  })
+  const PANEL_FOLDED_KEY = 'izumi-side-panel-folded'
+  let panelFolded = $state(typeof localStorage !== 'undefined' && localStorage.getItem(PANEL_FOLDED_KEY) === '1')
+  const panelShown = $derived(sideMenu && wide && !panelFolded && !$playing)
+  function togglePanel() {
+    panelFolded = !panelFolded
+    try { localStorage.setItem(PANEL_FOLDED_KEY, panelFolded ? '1' : '0') } catch { /* storage may be unavailable */ }
+  }
+  // The page makes room for the panel through the shell margin every full-bleed surface follows.
+  $effect(() => {
+    const root = document.documentElement
+    if (panelShown) {
+      root.setAttribute('data-theme-side-panel', '')
+      root.style.setProperty('--theme-side-width', `${sideWidth}px`)
+    } else {
+      root.removeAttribute('data-theme-side-panel')
+      root.style.removeProperty('--theme-side-width')
+    }
+  })
+  $effect(() => () => {
+    document.documentElement.removeAttribute('data-theme-side-panel')
+    document.documentElement.style.removeProperty('--theme-side-width')
+  })
   const accountName = $derived($anilistUserName || $malUserName || $traktUserName || $anilistUser || $malUser)
   const accountAvatar = $derived($anilistUserAvatar || $malUserAvatar || $traktUserAvatar)
   const accountLabel = $derived($profilesEnabled ? $activeProfile.name : accountName || 'Sign in')
@@ -161,11 +197,12 @@
     {@render accountButton()}
   {/if}
 </nav>
-{#if top && topBar.menu === 'drawer'}<NavDrawer bind:open={drawerOpen} items={[...items, { href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }]} {active} />{/if}
+{#if top && (topBar.menu === 'drawer' || (sideMenu && !wide))}<NavDrawer bind:open={drawerOpen} items={[...items, { href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }]} {active} />{/if}
+{#if panelShown}<NavPanel width={sideWidth} items={[...shown, { href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }]} {active} />{/if}
 
 {#snippet menuButton()}
-  {#if top && topBar.menu === 'drawer'}
-    <button type="button" data-part="nav.menu" bind:this={menuBtn} data-focusable={df} tabindex={tab} aria-label="Menu" aria-expanded={drawerOpen} onclick={() => (drawerOpen = true)}
+  {#if top && (topBar.menu === 'drawer' || sideMenu)}
+    <button type="button" data-part="nav.menu" bind:this={menuBtn} data-focusable={df} tabindex={tab} aria-label="Menu" aria-expanded={sideMenu && wide ? panelShown : drawerOpen} onclick={() => (sideMenu && wide ? togglePanel() : (drawerOpen = true))}
       class="grid size-10 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"><Menu size={20} /></button>
   {/if}
 {/snippet}
@@ -196,7 +233,8 @@
 {/snippet}
 
 {#snippet navLinks()}
-  {#each shown as it (it.href)}
+  <!-- With a side menu the destinations live in the panel (or the drawer), not in the bar. -->
+  {#each sideMenu ? [] : shown as it (it.href)}
     {@const on = active(it.href)}
     <a data-part="nav.item" data-active={on || undefined} href={it.href} title={it.label} data-focusable={df} tabindex={tab} aria-current={on ? 'page' : undefined}
        class={destClass(on, true)}>

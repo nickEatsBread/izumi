@@ -175,8 +175,12 @@ export interface TopBarPresentation {
   labels?: 'icons' | 'text' | 'both'
   /** `field-center` / `field-end` put a search field in the bar in place of the Search destination. */
   search?: 'icon' | 'field-center' | 'field-end'
-  /** `drawer` adds a menu button that opens every destination in a side drawer. */
-  menu?: 'none' | 'drawer'
+  /** `drawer` adds a menu button that opens every destination in a side drawer. `side` pins that
+   *  menu as a labelled panel down the left under the bar (the page moves over for it) on windows
+   *  from 1100 px; the menu button folds it away, and narrower windows get the drawer. */
+  menu?: 'none' | 'drawer' | 'side'
+  /** The pinned panel's width in px (`menu: "side"`, 200–320, default 260). */
+  sideWidth?: number
   /** Where the brand sits in the bar. */
   brand?: 'start' | 'center'
   /** A "Categories" menu after the destinations: browse links and the catalog's genres. */
@@ -438,11 +442,12 @@ function parseBottomNav(value: unknown): BottomNavPresentation {
   return result
 }
 function parseTopBar(value: unknown): TopBarPresentation {
-  const raw = record(value); only(raw, ['labels', 'search', 'menu', 'brand', 'categories'])
+  const raw = record(value); only(raw, ['labels', 'search', 'menu', 'brand', 'categories', 'sideWidth'])
   const result: TopBarPresentation = {}
   if (raw.labels !== undefined) result.labels = choice(raw.labels, ['icons', 'text', 'both'])
   if (raw.search !== undefined) result.search = choice(raw.search, ['icon', 'field-center', 'field-end'])
-  if (raw.menu !== undefined) result.menu = choice(raw.menu, ['none', 'drawer'])
+  if (raw.menu !== undefined) result.menu = choice(raw.menu, ['none', 'drawer', 'side'])
+  if (raw.sideWidth !== undefined) result.sideWidth = number(raw.sideWidth, 200, 320)
   if (raw.brand !== undefined) result.brand = choice(raw.brand, ['start', 'center'])
   if (raw.categories !== undefined) result.categories = flag(raw.categories)
   return result

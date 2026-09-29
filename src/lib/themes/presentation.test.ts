@@ -118,6 +118,11 @@ describe('theme presentation contract', () => {
     expect(() => parsePresentation({ shell: { top: { labels: 'huge' } } })).toThrow('unsupported')
     expect(() => parsePresentation({ shell: { top: { color: 'red' } } })).toThrow('unsupported')
   })
+  it('parses a menu pinned down the left of the top bar', () => {
+    expect(parsePresentation({ shell: { nav: 'top', top: { menu: 'side', sideWidth: 260 } } }).shell?.top).toEqual({ menu: 'side', sideWidth: 260 })
+    expect(() => parsePresentation({ shell: { top: { sideWidth: 600 } } })).toThrow('range')
+    expect(() => parsePresentation({ shell: { top: { menu: 'rail' } } })).toThrow('unsupported')
+  })
   it('parses the API 3 series-page options and the bottom tab bar', () => {
     const detail = { factsStyle: 'table', countdown: 'long', listButton: 'full', tabs: 'bottom' }
     expect(parsePresentation({ detail }).detail).toEqual(detail)

@@ -1,5 +1,5 @@
 // Home blocks: special Home sections (latest episodes, tabbed grid, genre chips, ranked list,
-// profile header). A block is a Home row whose id is `block:<type>:<n>`; the row's position lives in
+// profile header, airing today). A block is a Home row whose id is `block:<type>:<n>`; the row's position lives in
 // the catalog's Home layout like any other row, and its settings live here. Settings are repaired
 // through `parseHomeBlock` on every write, so a stale or hand-edited value can never break Home.
 import { persisted } from 'svelte-persisted-store'
@@ -8,7 +8,7 @@ import { HOME_BLOCK_TYPES, NAV_DESTINATIONS, type HomeBlock, type HomeBlockType 
 
 export {
   BLOCK_LIMITS, HOME_BLOCK_TYPES, NAV_DESTINATIONS, parseHomeBlock, parseThemeBlock,
-  type BlockArea, type BlockButton, type BlockDestination, type BlockPagination, type BlockTab,
+  type AiringTodayBlock, type BlockArea, type BlockButton, type BlockDestination, type BlockPagination, type BlockTab,
   type GenreChipsBlock, type HomeBlock, type HomeBlockType, type LatestEpisodesBlock, type NavDestination,
   type ProfileHeaderBlock, type RankedListBlock, type TabbedGridBlock,
 } from '$lib/themes/block-schema'
@@ -19,6 +19,7 @@ export const BLOCK_META: Record<HomeBlockType, { title: string; description: str
   'genre-chips': { title: 'Genre chips', description: 'Genre shortcuts that open search.' },
   'ranked-list': { title: 'Ranked list', description: 'A numbered top list, with optional tabs.' },
   'profile-header': { title: 'Profile header', description: 'Your profile banner with watch stats and shortcuts.' },
+  'airing-today': { title: 'Airing today', description: "Today's episodes in airing order, ticked once they air." },
 }
 
 /** "Popular genres" for a genre-chips block; filtered to the genres the catalog actually has. */
@@ -53,9 +54,9 @@ export function nextBlockId(type: HomeBlockType, taken: Iterable<string>): strin
   return `block:${type}:${highest + 1}`
 }
 
-/** Latest episodes come from the AniList airing schedule, so they only make sense on an AniList Home. */
+/** Latest episodes and today's airings come from the AniList airing schedule, so they only make sense on an AniList Home. */
 export function blockAvailable(type: HomeBlockType, usesAniList: boolean): boolean {
-  return type !== 'latest-episodes' || usesAniList
+  return (type !== 'latest-episodes' && type !== 'airing-today') || usesAniList
 }
 
 const roleTitle = (role: string) => {
@@ -73,6 +74,7 @@ export function defaultBlock(type: HomeBlockType, roles: string[] = []): HomeBlo
     case 'genre-chips': return { type, ...common, genres: 'top', all: true }
     case 'ranked-list': return { type, ...common, tabs: tabs(1), limit: 10 }
     case 'profile-header': return { type, ...common, buttons: [{ label: 'Library', to: 'library' }, { label: 'Schedule', to: 'schedule' }] }
+    case 'airing-today': return { type, ...common, area: 'aside', limit: 10, clock: false, more: true }
   }
 }
 
