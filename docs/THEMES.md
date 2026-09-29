@@ -72,7 +72,7 @@ Optional templates for three families: `poster` (ordinary tiles), `continue` (re
 
 Seekbar thickness and color. Skip rules, subtitle files and playback shortcuts stay in Settings.
 
-Watch layout (API 2, `player.layout` and `player.dock`): `docked` keeps the browse chrome while watching and mounts the video in a stage of `dock.width` percent, with the episode rail beside it (`episodes: "right"`, a scrolling list of episode cards) or below it (`episodes: "below"`, a server switcher and an episode number grid, `DockEpisodes.svelte`). `dock.comments` (default `below`) renders the episode discussion inline (`CommentsPanel` with `inline`) under the stage, or after the episode grid. The stage is the transparent hole over the native video, so neither the player root nor any of its ancestors may paint a background: everything around the stage is an opaque sibling (rail, discussion panel, gutters). Picking an episode takes the Next button's route (`playEpisodeInPlayer`), so a cached same-release source continues without the picker. Fullscreen, picture-in-picture, Game mode and phones keep the full container.
+Watch layout (API 2, `player.layout` and `player.dock`): `docked` keeps the browse chrome while watching and mounts the video in a stage of `dock.width` percent, with the episode rail beside it (`episodes: "right"`, a scrolling list of episode cards) or below it (`episodes: "below"`, a server switcher and an episode number grid, `DockEpisodes.svelte`). `dock.comments` (default `below`) renders the episode discussion inline (`CommentsPanel` with `inline`) under the stage, or after the episode grid. The stage is the transparent hole over the native video, so neither the player root nor any of its ancestors may paint a background: everything around the stage is an opaque sibling (rail, discussion panel, gutters). Picking an episode takes the Next button's route (`playEpisodeInPlayer`), so a cached same-release source continues without the picker. Fullscreen, picture-in-picture, Game mode and phones keep the full container. API 3 adds five `dock` keys. `flow: "page"` (with `episodes: "below"`) turns the watch view into a scrolling page: the video frame moves up with it, the native video follows, and every block under it keeps its natural height, so the discussion grows with its comments instead of scrolling inside a box (Windows; other desktops keep the fixed layout). `maxWidth` (480–2400 px) caps the column, centred when `align` is `center`. `below` orders the blocks under the video: `toolbar` (a row of dropdowns opening upward: `server`, `episode`, `release` and `download`, chosen and ordered by `toolbar`), `info` (the poster, "Title - 12", the format and airing line and the season), `episodes` (the server switcher and number grid) and `comments`; without it the grid comes first, then the discussion unless `comments` hides it. `hide` drops player chrome the page already shows: `back` (the Back button) and `title` (the title and episode line over the video); they only apply while docked, so fullscreen keeps them. The torrent readout follows the viewer's own setting, never the theme.
 
 How the video follows the layout: the webview is transparent over the native mpv surface, so the player root in `PlayerOverlay.svelte` is the video's frame. While the chrome is up the root measures its edges as fractions of a full-viewport probe (zoom-agnostic) into `playerStage`; the app shell turns them into physical-pixel insets (`src/lib/player/insets.ts`) and calls `player_set_inset` with all four edges. Windows moves the mpv container to that rect, macOS sets the GL view's frame and Linux (Wayland) positions and sizes the `wl_subsurface`; each keeps rendering at the surface's real pixel size, so a smaller stage changes the picture's size, never its scaling. Before the overlay has measured itself the shell uses the chrome's own extent (sidebar rail, top bar or bottom bar), which also fixes the old blank rail beside a top navigation bar: the root is inset from whichever edge `shellNav` (`src/lib/themes/runtime.ts`) says the chrome occupies.
 
@@ -156,6 +156,11 @@ State values:
 | `data-next` | `episode` | present on the episode the series Play button opens |
 | `data-filler` | `episode` | present on a known filler episode |
 | `data-layout` | `watch` | `full`, `docked` |
+| `data-flow` | `watch` | `page` on a page-flow watch view (absent otherwise) |
+| `data-block` | `watch.block` | `toolbar`, `info`, `episodes`, `comments` |
+| `data-item` | `watch.toolbar.item`, `watch.toolbar.menu` | `server`, `episode`, `release`, `download` |
+| `data-state` | `watch.toolbar.item` | `open`, `closed` |
+| `data-state` | `watch.toolbar.option` | `active` on the current server, episode or release, or a finished download |
 | `data-variant` | `watch.episodes` | `right`, `below` |
 | `data-variant` | `watch.comments` | `inline`, `sheet` |
 | `data-variant` | `search` | `anilist-scope`, `anilist`, `merged`, `catalog` |
@@ -321,12 +326,26 @@ State values:
 
 | Hook | Kind | What | States |
 |---|---|---|---|
-| `watch` | slot | The player area. | `data-layout` |
+| `watch` | slot | The player area; the scroller of a page-flow watch view. | `data-layout`, `data-flow` |
 | `watch.stage` | slot | The video frame. It and its ancestors never paint a background: the video is drawn behind the page. |  |
+| `watch.page` | slot | The column of a page-flow watch view: the video frame, then the blocks under it. An ancestor of the frame, so it never paints a background. |  |
+| `watch.block` | part | One block under a page-flow video, in `dock.below` order. | `data-block` |
+| `watch.toolbar` | slot | The row of dropdowns under a docked video (`dock.below` `toolbar`). |  |
+| `watch.toolbar.item` | part | One dropdown button: the server, the episode, the release or the download. | `data-item`, `data-state` |
+| `watch.toolbar.menu` | part | An open dropdown menu. | `data-item` |
+| `watch.toolbar.option` | part | A menu entry; the current one is `data-state="active"`. | `data-state` |
+| `watch.info` | slot | The info block under a docked video (`dock.below` `info`). |  |
+| `watch.info.poster` | part | The poster, linking to the series page. |  |
+| `watch.info.title` | part | "Title - 12", the title linking to the series page. |  |
+| `watch.info.meta` | part | The format, episode count and airing state line. |  |
+| `watch.info.season` | part | The season line. |  |
 | `watch.rail` | slot | The rail beside or below a docked player. |  |
 | `watch.episodes` | slot | The docked episode list or grid. | `data-variant` |
 | `watch.servers` | part | The server switcher. |  |
 | `watch.comments` | slot | The episode discussion (inline under a docked player, or the sheet). | `data-variant` |
+| `comments.header` | part | The discussion heading row ("Discussion · Ep 12"). |  |
+| `comments.tabs` | part | The row of discussion sources (All, then each source found). |  |
+| `comments.tab` | part | One discussion source. | `data-active` |
 | `player.controls` | slot | The player controls layer. |  |
 | `player.seekbar` | part | The seek bar. |  |
 | `player.title` | part | The playing title. |  |

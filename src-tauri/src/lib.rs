@@ -2514,10 +2514,15 @@ fn player_area(parent: windows::Win32::Foundation::HWND) -> (i32, i32, i32, i32)
         }
         let cw = r.right - r.left;
         let ch = r.bottom - r.top;
+        // A theme's page-flow watch view scrolls the stage with the page: its top edge can sit
+        // above the client area (negative) and its bottom edge below it (negative bottom inset).
+        // The container then keeps the stage's full size and extends past the window, which
+        // clips it — squeezing it into the visible part would shrink the picture instead.
+        let offscreen = ch.saturating_mul(64);
         let l = MPV_INSET_LEFT.load(Ordering::Relaxed).clamp(0, cw);
-        let t = MPV_INSET_TOP.load(Ordering::Relaxed).clamp(0, ch);
+        let t = MPV_INSET_TOP.load(Ordering::Relaxed).clamp(-offscreen, ch);
         let r = MPV_INSET_RIGHT.load(Ordering::Relaxed).clamp(0, cw - l);
-        let b = MPV_INSET_BOTTOM.load(Ordering::Relaxed).clamp(0, ch - t);
+        let b = MPV_INSET_BOTTOM.load(Ordering::Relaxed).clamp(-offscreen, ch - t);
         (l, t, (cw - l - r).max(1), (ch - t - b).max(1))
     }
 }
@@ -2730,11 +2735,13 @@ fn player_set_inset(
     right: Option<i32>,
     bottom: Option<i32>,
 ) -> Result<(), String> {
+    // `top`/`bottom` may be negative on Windows: a page-flow stage scrolled past the window (see
+    // `player_area`). The other platforms clamp them in their own `set_inset`.
     let (left, top, right, bottom) = (
         left.max(0),
-        top.unwrap_or(0).max(0),
+        top.unwrap_or(0),
         right.unwrap_or(0).max(0),
-        bottom.unwrap_or(0).max(0),
+        bottom.unwrap_or(0),
     );
     #[cfg(windows)]
     {

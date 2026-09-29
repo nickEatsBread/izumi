@@ -37,6 +37,19 @@ describe('playerInsets', () => {
     expect(measureStage(rect(0, 0, 10, 10), rect(0, 0, 0, 0))).toBeNull()
   })
 
+  it('keeps the full stage when a page-flow view scrolls it past the window', () => {
+    // A 1066×600 stage scrolled 200px above the window top: the native surface keeps its size and
+    // extends past the edge instead of squeezing the picture into the visible 400px.
+    const scrolled = measureStage(rect(107, -200, 1066, 600), rect(0, 0, 1280, 800), true)!
+    expect(playerInsets({ chrome: true, nav: 'top', stage: scrolled, viewport, dpr: 1, uiScale: 1 }))
+      .toEqual({ left: 107, top: -200, right: 107, bottom: 400 })
+    // Taller than what is left under it: the bottom edge sits below the window.
+    const low = measureStage(rect(107, 500, 1066, 600), rect(0, 0, 1280, 800), true)!
+    expect(playerInsets({ chrome: true, nav: 'top', stage: low, viewport, dpr: 1, uiScale: 1 }).bottom).toBe(-300)
+    // Without `scrolls` the fixed layouts keep every edge inside the window.
+    expect(measureStage(rect(107, -200, 1066, 600), rect(0, 0, 1280, 800))!.top).toBe(0)
+  })
+
   it('compares insets by value so unchanged geometry is not re-sent', () => {
     expect(sameInsets({ left: 1, top: 2, right: 3, bottom: 4 }, { left: 1, top: 2, right: 3, bottom: 4 })).toBe(true)
     expect(sameInsets(null, { left: 0, top: 0, right: 0, bottom: 0 })).toBe(false)

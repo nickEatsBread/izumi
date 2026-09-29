@@ -81,6 +81,8 @@
     ontoggleplay,
     oneditsubtitles,
     onscrubinput,
+    hideBack = false,
+    hideTitle = false,
   }: {
     pos: number
     dur: number
@@ -99,6 +101,10 @@
     ontoggleplay?: () => void
     oneditsubtitles?: () => void
     onscrubinput?: () => void
+    // A theme's docked watch page that shows the title and its own navigation beside the video
+    // (`player.dock.hide`) drops the player's copies.
+    hideBack?: boolean
+    hideTitle?: boolean
   } = $props()
   const togglePlay = () => (ontoggleplay ? ontoggleplay() : cmd('cycle', ['pause']))
   function toggleComments() {
@@ -797,7 +803,7 @@
 
 <!-- Now-playing title, reused above the seek bar (default) or at the top (Game-mode option). -->
 {#snippet titleBlock(big: boolean)}
-  {#if np.animeTitle}
+  {#if np.animeTitle && !hideTitle}
     <div class="min-w-0 pt-0.5 [text-shadow:0_1px_4px_rgba(0,0,0,.7)]">
       <div data-part="player.title" data-gm-title class="line-clamp-1 text-white {big ? 'text-3xl font-black leading-tight drop-shadow' : 'text-lg font-semibold'}">{np.animeTitle}</div>
       {#if np.episode != null}
@@ -812,7 +818,7 @@
   <!-- Top bar: Back button (Desktop only — Game mode uses the B button to leave, so no
        redundant on-screen Back) and, when the Game-mode "title at top" option is on, the
        title. Rendered only when it has something to show. -->
-  {#if !gm || titleTop}
+  {#if (!gm && !hideBack) || titleTop}
     <!-- Back sits on the player's top row, vertically centred with the P2P readout: `pt-2` + the
          36px pill puts its centre 26px down, the same as the readout's `pt-3` + 28px line.
          Windowed playback keeps the custom titlebar (a fixed top-0 z-50 drag strip, 32px tall)
@@ -828,7 +834,7 @@
       {#if underTitlebar}
         <div data-tauri-drag-region class="pointer-events-auto absolute inset-x-0 top-0 h-8"></div>
       {/if}
-      {#if !gm}
+      {#if !gm && !hideBack}
         <button data-part="button" data-variant="ghost" data-focusable onclick={onclose} aria-label="Back"
                 class="pointer-events-auto relative flex shrink-0 select-none items-center gap-1.5 rounded-full bg-black/60 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white transition hover:bg-black/80">
           <ArrowLeft size={icSize} /><span>Back</span>

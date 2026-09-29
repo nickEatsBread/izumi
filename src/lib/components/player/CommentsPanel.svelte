@@ -16,12 +16,16 @@
   import { isAndroid } from '$lib/platform'
   import { fetchDiscussion, defaultDiscussionPlatform, discussionExpanded, type DiscussionThread, type DiscussionComment, type ScriptEmbed } from '$lib/comments'
   import { loadDiscussAnimeEmbedTheme } from '$lib/comments/embed-theme'
+  import { embedResizeHeight, mobileEmbedSrc } from '$lib/comments/mobile'
   import { warnBeforeThirdPartyLogin } from '$lib/deck/keyboard-warning'
   import { restoreGmTouchAfterTransition } from '$lib/player/gm-touch-watchdog'
 
   // `inline`: the panel is part of the page (a theme's docked watch layout puts the discussion under
   // the video) — always open, no sheet chrome, no close/expand controls, and it fills its container.
-  let { inline = false }: { inline?: boolean } = $props()
+  // `expand` (inline only): the page scrolls instead of the panel (`flow: "page"`), so the panel takes
+  // its content's height — no scroller of its own, and the Disqus loader reports its height to size
+  // its frame, the way the phone watch page does.
+  let { inline = false, expand = false }: { inline?: boolean; expand?: boolean } = $props()
   let threads = $state<DiscussionThread[]>([])
   let loading = $state(false)
   let filter = $state('All')
@@ -140,7 +144,7 @@
   const embedSrc = $derived(
     embedThread?.scriptEmbed ? (directTacEmbed ? tacWidgetSrc : scriptEmbedSrc(embedThread.scriptEmbed))
       : !embedUrl ? undefined
-        : isDisqusInner(embedUrl) ? disqusEmbedSrc(embedUrl)
+        : isDisqusInner(embedUrl) ? (expand ? mobileEmbedSrc(disqusEmbedSrc(embedUrl)) : disqusEmbedSrc(embedUrl))
           : embedUrl,
   )
   const archiveEmbed = $derived(isDiscussAnimeEmbed(embedUrl))
@@ -160,6 +164,8 @@
   let archiveScroller = $state<HTMLElement>()
   let listScroller = $state<HTMLElement>()
   let archiveHeight = $state<number | null>(null)
+  // The Disqus loader's reported content height while `expand` sizes its frame (null until known).
+  let disqusHeight = $state<number | null>(null)
   let archiveTouchDelta = 0
   let archiveTouchVelocity = 0
   let archiveTouchFrame = 0
@@ -275,7 +281,7 @@
     } }))
   }
   // A new archive starts at the viewport height until it reports its actual content height.
-  $effect(() => { void embedSrc; archiveHeight = null })
+  $effect(() => { void embedSrc; archiveHeight = null; disqusHeight = null })
   $effect(() => {
     function onMsg(e: MessageEvent) {
       const m = e.data as { type?: string; base?: string; identifier?: string; key?: string | null; height?: number; url?: string; phase?: string; dy?: number; dt?: number; mode?: number; rect?: { left?: number; top?: number; width?: number; height?: number } } | null
@@ -343,6 +349,10 @@
           && m?.type === 'izumi-comments-touch-scroll') {
         archiveTouchScroll(m.phase, m.dy, m.dt)
         return
+      }
+      if (expand && e.source === embedIframe?.contentWindow) {
+        const height = embedResizeHeight(e.origin, m, location.origin)
+        if (height != null) { disqusHeight = height; return }
       }
       if (e.origin !== location.origin) return
       if (!m || !m.base || !m.identifier) return
@@ -427,7 +437,7 @@
   // chips (side) and the big Hayami-style tiles (expanded). Posted on mode change + on iframe load.
   const postMode = () => embedIframe?.contentWindow?.postMessage({
     type: 'izumi-mode',
-    expanded: $discussionExpanded || $gameMode || ($fullscreen && !$isAndroid),
+    expanded: expand || $discussionExpanded || $gameMode || ($fullscreen && !$isAndroid),
     gameMode: $gameMode,
   }, location.origin)
   const postIframeState = () => { postMode(); postTacConfig() }
@@ -462,7 +472,7 @@
 {/snippet}
 
 {#snippet panelBody()}
-  <header class="flex items-center gap-2 border-b border-white/10 px-4 py-3">
+  <header data-part="comments.header" class="flex items-center gap-2 border-b border-white/10 px-4 py-3">
     <MessageSquare size={18} class="text-theme" />
     <h2 class="flex items-baseline gap-1.5 text-sm font-black"><span>Discussion</span>{#if ep}<span class="font-semibold text-muted-foreground">· Ep {ep}</span>{/if}</h2>
     <div class="ml-auto flex items-center gap-1">
@@ -479,9 +489,9 @@
   </header>
 
   {#if !loading && sources.length > 1}
-    <div class="flex flex-wrap gap-1.5 border-b border-white/10 px-3 py-2">
+    <div data-part="comments.tabs" class="flex flex-wrap gap-1.5 border-b border-white/10 px-3 py-2">
       {#each sourceTabs as s (s)}
-        <button data-focusable onclick={() => selectSource(s)}
+        <button data-part="comments.tab" data-active={filter === s || undefined} data-focusable onclick={() => selectSource(s)}
                 class="rounded-full px-2.5 py-0.5 text-xs font-bold transition-colors
                   {filter === s ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:text-foreground'}">{s}</button>
       {/each}
@@ -495,9 +505,9 @@
          while other tabs are selected or the panel is closed — detaching an iframe reboots the embed
          from scratch, so it boots once per episode instead of on every tab switch/expand/reopen. -->
     {#if archiveEmbed}
-      <div bind:this={archiveScroller} class={embedActive ? 'discussion-scrollbar min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-2.5' : 'hidden'}>
+      <div bind:this={archiveScroller} class={!embedActive ? 'hidden' : expand ? 'p-2.5' : 'discussion-scrollbar min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-2.5'}>
         <iframe title="Discussion" src={embedSrc} bind:this={embedIframe} scrolling="no"
-                style:height={archiveHeight ? `${archiveHeight}px` : '100%'}
+                style:height={archiveHeight ? `${archiveHeight}px` : expand ? '480px' : '100%'}
                 class="block min-h-full w-full border-0"
                 sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
       </div>
@@ -520,19 +530,22 @@
           {/if}
         </div>
       {:else}
+        <!-- Expanded, the frame takes the loader's reported height; a script embed never reports
+             one, so it keeps a tall default and scrolls inside. -->
         <iframe title="Discussion" src={embedSrc} bind:this={embedIframe} onload={postIframeState}
-                class="{embedActive ? 'block' : 'hidden'} min-h-0 w-full flex-1 border-0"
+                style:height={expand ? `${disqusHeight ?? 720}px` : undefined}
+                class="{embedActive ? 'block' : 'hidden'} w-full border-0 {expand ? '' : 'min-h-0 flex-1'}"
                 sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
       {/if}
     {/if}
   {/if}
   {#if !embedActive}
-    <div bind:this={listScroller} class="flex-1 touch-pan-y overflow-y-auto overscroll-contain px-3 py-3">
+    <div bind:this={listScroller} class={expand ? 'px-3 py-3' : 'flex-1 touch-pan-y overflow-y-auto overscroll-contain px-3 py-3'}>
       {#if loading}
         <!-- Keep the Deck placeholder static so initial network work gets the compositor budget. -->
         {#each Array.from({ length: 5 }) as _}<div class="mb-2 h-20 rounded-lg bg-muted" class:animate-pulse={!$gameMode}></div>{/each}
       {:else if !shown.length}
-        <div class="grid h-full place-items-center px-6 text-center">
+        <div class="grid place-items-center px-6 text-center {expand ? 'min-h-40' : 'h-full'}">
           <div>
             <p class="text-sm font-bold">No discussions found</p>
             <p class="mt-1 text-xs text-muted-foreground">No threads for this episode yet.</p>
@@ -595,7 +608,7 @@
      overflow clip intersecting the iframe surface forces another render surface (kRoundedCorner);
      the iframe's square bottom corners on the near-identical dark panel are imperceptible. -->
 {#if inline}
-<div data-slot="watch.comments" data-variant="inline" data-comments-panel data-comments-inline class="flex h-full min-h-0 flex-col bg-background text-foreground">
+<div data-slot="watch.comments" data-variant="inline" data-comments-panel data-comments-inline class="flex flex-col bg-background text-foreground {expand ? '' : 'h-full min-h-0'}">
   {@render panelBody()}
 </div>
 {:else}

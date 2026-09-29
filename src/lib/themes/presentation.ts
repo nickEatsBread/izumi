@@ -193,7 +193,21 @@ export interface PlayerDock {
   align?: 'start' | 'center'
   /** The episode discussion under the stage (side rail) or after the episode grid (below). */
   comments?: 'below' | 'hidden'
+  /** API 3, with `episodes: "below"`: `page` scrolls the watch view like a web page — the video
+   *  moves up with it and every block under it keeps its natural height (no inner scrollers). */
+  flow?: 'fixed' | 'page'
+  /** API 3: the widest the stage column gets, in CSS px, centred when `align` is `center`. */
+  maxWidth?: number
+  /** API 3, with `episodes: "below"`: the blocks under the stage, in order. */
+  below?: PlayerDockBlock[]
+  /** API 3: the dropdowns of the `toolbar` block, in order. */
+  toolbar?: PlayerToolbarItem[]
+  /** API 3: player chrome a docked page shows elsewhere (its own title line, its own navigation). */
+  hide?: PlayerChrome[]
 }
+export type PlayerDockBlock = 'toolbar' | 'info' | 'episodes' | 'comments'
+export type PlayerToolbarItem = 'server' | 'episode' | 'release' | 'download'
+export type PlayerChrome = 'back' | 'title'
 export interface PlayerPresentation {
   seekbarHeight?: number
   seekbarColor?: string
@@ -536,14 +550,30 @@ function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
   if (raw.seekbarColor !== undefined) result.seekbarColor = themeColor(raw.seekbarColor)
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['full', 'docked'])
   if (raw.dock !== undefined) {
-    const dock = record(raw.dock); only(dock, ['episodes', 'width', 'align', 'comments'])
+    const dock = record(raw.dock); only(dock, ['episodes', 'width', 'align', 'comments', ...api3(api, ['flow', 'maxWidth', 'below', 'toolbar', 'hide'])])
     result.dock = {}
     if (dock.episodes !== undefined) result.dock.episodes = choice(dock.episodes, ['right', 'below'])
     if (dock.width !== undefined) result.dock.width = number(dock.width, 50, 100)
     if (dock.align !== undefined) result.dock.align = choice(dock.align, ['start', 'center'])
     if (dock.comments !== undefined) result.dock.comments = choice(dock.comments, ['below', 'hidden'])
+    if (dock.flow !== undefined) result.dock.flow = choice(dock.flow, ['fixed', 'page'])
+    if (dock.maxWidth !== undefined) result.dock.maxWidth = number(dock.maxWidth, 480, 2400)
+    if (dock.below !== undefined) result.dock.below = uniqueChoices(dock.below, ['toolbar', 'info', 'episodes', 'comments'], 'dock.below')
+    if (dock.toolbar !== undefined) result.dock.toolbar = uniqueChoices(dock.toolbar, ['server', 'episode', 'release', 'download'], 'dock.toolbar')
+    if (dock.hide !== undefined) result.dock.hide = uniqueChoices(dock.hide, ['back', 'title'], 'dock.hide')
   }
   return result
+}
+/** A list of distinct values from a fixed set, in the theme's order (1 to every value). */
+function uniqueChoices<const T extends string>(value: unknown, values: readonly T[], name: string): T[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > values.length) throw new Error(`Invalid theme ${name} list.`)
+  const seen = new Set<T>()
+  return value.map((entry) => {
+    const item = choice(entry, values)
+    if (seen.has(item)) throw new Error(`A theme ${name} list names ${item} twice.`)
+    seen.add(item)
+    return item
+  })
 }
 function parseCards(value: unknown, api: ThemeApi): NonNullable<ThemePresentation['cards']> {
   const raw = record(value); only(raw, ['poster', 'continue', 'search'])
@@ -784,15 +814,37 @@ export function resolveDetail(layout?: ThemePresentation): Required<Pick<DetailP
     },
   }
 }
+export interface ResolvedPlayerDock {
+  docked: boolean
+  episodes: 'right' | 'below'
+  width: number
+  align: 'start' | 'center'
+  comments: 'below' | 'hidden'
+  /** `page` only below the stage; beside it the rail keeps its own scroller. */
+  flow: 'fixed' | 'page'
+  maxWidth?: number
+  /** The blocks under the stage (below only): the theme's list, or the episode grid then the
+   *  discussion unless `comments` hides it. */
+  below: PlayerDockBlock[]
+  toolbar: PlayerToolbarItem[]
+  hide: PlayerChrome[]
+}
 /** The windowed desktop player layout with its defaults filled in. */
-export function resolvePlayerDock(layout?: ThemePresentation): { docked: boolean; episodes: 'right' | 'below'; width: number; align: 'start' | 'center'; comments: 'below' | 'hidden' } {
+export function resolvePlayerDock(layout?: ThemePresentation): ResolvedPlayerDock {
   const player = layout?.player
+  const episodes = player?.dock?.episodes ?? 'right'
+  const comments = player?.dock?.comments ?? 'below'
   return {
     docked: player?.layout === 'docked',
-    episodes: player?.dock?.episodes ?? 'right',
-    width: player?.dock?.width ?? (player?.dock?.episodes === 'below' ? 100 : 68),
+    episodes,
+    width: player?.dock?.width ?? (episodes === 'below' ? 100 : 68),
     align: player?.dock?.align ?? 'start',
-    comments: player?.dock?.comments ?? 'below',
+    comments,
+    flow: episodes === 'below' ? player?.dock?.flow ?? 'fixed' : 'fixed',
+    maxWidth: player?.dock?.maxWidth,
+    below: player?.dock?.below ?? (comments === 'below' ? ['episodes', 'comments'] : ['episodes']),
+    toolbar: player?.dock?.toolbar ?? ['server', 'episode', 'release', 'download'],
+    hide: player?.dock?.hide ?? [],
   }
 }
 /** `color` values from a template or chrome block as CSS, optionally at a reduced alpha. */

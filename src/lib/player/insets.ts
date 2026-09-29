@@ -31,15 +31,22 @@ export const TOP_BAR_HEIGHT = 76
 export const BOTTOM_NAV_HEIGHT = 64
 
 const clamp01 = (value: number) => Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0
+const clampVertical = (value: number) => Number.isFinite(value) ? Math.min(1, Math.max(-OFFSCREEN_FRACTION, value)) : 0
+/** How far past the window a scrolled stage may be reported, in viewport heights. */
+const OFFSCREEN_FRACTION = 64
 
-/** The stage's edges relative to a probe that spans the whole viewport. */
-export function measureStage(stage: DOMRectReadOnly, viewport: DOMRectReadOnly): StageFractions | null {
+/** The stage's edges relative to a probe that spans the whole viewport. `scrolls`: the stage moves
+ *  with a scrolling page (a theme's `flow: "page"` watch view), so its top can sit above the window
+ *  and its bottom below it — those edges keep their sign, and the native surface extends past the
+ *  window by the same amount instead of squeezing the picture into the visible part. */
+export function measureStage(stage: DOMRectReadOnly, viewport: DOMRectReadOnly, scrolls = false): StageFractions | null {
   if (viewport.width <= 0 || viewport.height <= 0) return null
+  const vertical = scrolls ? clampVertical : clamp01
   return {
     left: clamp01((stage.left - viewport.left) / viewport.width),
-    top: clamp01((stage.top - viewport.top) / viewport.height),
+    top: vertical((stage.top - viewport.top) / viewport.height),
     right: clamp01((viewport.right - stage.right) / viewport.width),
-    bottom: clamp01((viewport.bottom - stage.bottom) / viewport.height),
+    bottom: vertical((viewport.bottom - stage.bottom) / viewport.height),
   }
 }
 
@@ -47,13 +54,15 @@ export function playerInsets(context: InsetContext): PlayerInsets {
   if (!context.chrome) return { left: 0, top: 0, right: 0, bottom: 0 }
   const dpr = context.dpr > 0 ? context.dpr : 1
   const px = (value: number) => Math.max(0, Math.round(value * dpr))
+  // Only a measured stage can be negative (scrolled past the window, see `measureStage`).
+  const edge = (value: number) => Math.round(value * dpr)
   const { stage, viewport } = context
   if (stage) {
     return {
       left: px(stage.left * viewport.width),
-      top: px(stage.top * viewport.height),
+      top: edge(stage.top * viewport.height),
       right: px(stage.right * viewport.width),
-      bottom: px(stage.bottom * viewport.height),
+      bottom: edge(stage.bottom * viewport.height),
     }
   }
   // Not measured yet: the chrome's own extent, scaled like the page (CSS zoom on the root).
