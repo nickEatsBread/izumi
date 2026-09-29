@@ -28,7 +28,6 @@
     seekRelative,
     haptic,
     grabThumb,
-    grabCurrentFrame,
     androidPipActive,
     androidGifStart,
     androidGifStop,
@@ -82,9 +81,9 @@
     autoSelectSource, autoSelectCountdown,
   } from '$lib/settings/ui'
   import { banner, cover } from '$lib/anilist/media'
-  import { subtitleStyleProps } from '$lib/player/subtitle-style'
+  import { MPV_SUBTITLE_DEFAULTS, TEXT_TRACK, dialogueBottom, readSubtitleDefaults, subtitleStyleProps, subtitleTrackFrom, type SubtitleTrack } from '$lib/player/subtitle-style'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
-  import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, effectiveSubtitleStyle, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
+  import { savedSubtitleStyles, sessionSubtitleAdjustments, sessionSubtitleStyle, saveSubtitlePreset, effectiveSubtitleStyle, resetSubtitleSession, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
   import { bingeSource } from '$lib/player/session'
   import { SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { getMediaSkipSegments } from '$lib/stremio/skip-segments'
@@ -235,21 +234,51 @@
   // as on the settings themselves: the core is reused across episodes, but a fresh core (player
   // closed and reopened) starts from mpv's defaults.
   // A session style preset picked in the sheet wins over the settings until the player closes.
+  // Styles are written in the selected track's own units (an ASS script's PlayResY), so the track is
+  // re-read whenever mpv switches it and for every file.
+  let subtitleTrack = $state<SubtitleTrack>(TEXT_TRACK)
+  let subtitleDefaults = $state<Record<string, string>>({ ...MPV_SUBTITLE_DEFAULTS })
+  let subtitleTrackRead = 0
   $effect(() => {
-    void np.id, np.episode
-    for (const [property, value] of subtitleStyleProps(effectiveSubtitleStyle($sessionSubtitleStyle, {
-      enabled: $subtitleStyleEnabled,
-      scope: $subtitleOverrideScope,
-      font: $subtitleFont,
-      bold: $subtitleBold,
-      fontSize: $subtitleFontSize,
-      textColor: $subtitleTextColor,
-      borderColor: $subtitleBorderColor,
-      borderSize: $subtitleBorderSize,
-      shadow: $subtitleShadow,
-      position: $subtitlePosition,
-      assSnapshot: $subtitleAssSnapshot ?? undefined,
-    }))) void mpvCommand(['set', property, value]).catch(() => {})
+    void np.id, np.episode, $mpvState.sid
+    const read = ++subtitleTrackRead
+    void Promise.all([
+      mpvGet('track-list').catch(() => '[]'),
+      mpvGet('sub-ass-extradata').catch(() => ''),
+    ]).then(([trackList, extradata]) => {
+      if (read === subtitleTrackRead) subtitleTrack = subtitleTrackFrom(trackList, extradata)
+    })
+  })
+  onMount(() => {
+    void readSubtitleDefaults(async (name) => (await mpvGet(name)) ?? '').then((defaults) => { subtitleDefaults = defaults })
+  })
+  const effectiveSubtitle = $derived(effectiveSubtitleStyle($sessionSubtitleStyle, {
+    enabled: $subtitleStyleEnabled,
+    scope: $subtitleOverrideScope,
+    font: $subtitleFont,
+    bold: $subtitleBold,
+    fontSize: $subtitleFontSize,
+    textColor: $subtitleTextColor,
+    borderColor: $subtitleBorderColor,
+    borderSize: $subtitleBorderSize,
+    shadow: $subtitleShadow,
+    position: $subtitlePosition,
+    assSnapshot: $subtitleAssSnapshot ?? undefined,
+  }))
+  // Only send what changed (an unchanged override list would rebuild the subtitle renderer), and
+  // everything again for each new file.
+  const appliedSubtitleProps = new Map<string, string>()
+  let appliedSubtitleLoad = -1
+  $effect(() => {
+    if ($playerLoadId !== appliedSubtitleLoad) {
+      appliedSubtitleLoad = $playerLoadId
+      appliedSubtitleProps.clear()
+    }
+    for (const [property, value] of subtitleStyleProps(effectiveSubtitle, subtitleTrack, $sessionSubtitleAdjustments, subtitleDefaults)) {
+      if (appliedSubtitleProps.get(property) === value) continue
+      appliedSubtitleProps.set(property, value)
+      void mpvCommand(['set', property, value]).catch(() => {})
+    }
   })
   const playedPct = $derived(dur > 0 ? Math.min(100, (pos / dur) * 100) : 0)
   const cachePct = $derived(dur > 0 ? Math.min(100, ($mpvState.cacheEnd / dur) * 100) : 0)
@@ -2040,8 +2069,9 @@
       closing = false
       androidMiniPlayer.set(false)
       androidMpvActive.set(false)
-      // Session-scoped by contract: the user's settings style returns on the next play.
-      sessionSubtitleStyle.set(null)
+      // Session-scoped by contract: the user's settings style, and the player's own position and
+      // size, return on the next play.
+      resetSubtitleSession()
     }
   }
   let viewportGeneration = 0
@@ -2549,8 +2579,10 @@
     <SubtitleEditor
       {paused}
       command={(name, args = []) => mpvCommand([name, ...args])}
-      getPosition={() => mpvGet('sub-pos')}
-      capture={grabCurrentFrame}
+      getProperty={(name) => mpvGet(name)}
+      position={dialogueBottom(effectiveSubtitle, subtitleTrack, $sessionSubtitleAdjustments, subtitleDefaults)}
+      authoredPosition={dialogueBottom(effectiveSubtitle, subtitleTrack, { ...$sessionSubtitleAdjustments, position: null }, subtitleDefaults)}
+      ass={subtitleTrack.ass}
       frameTop={subtitleEditorFrame.top}
       frameHeight={subtitleEditorFrame.height}
       onclose={() => { subtitleEditorOpen = false; showControls() }}

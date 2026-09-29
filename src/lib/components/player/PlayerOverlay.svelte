@@ -10,7 +10,7 @@
   import TrackMenu from './TrackMenu.svelte'
   import CommentsPanel from './CommentsPanel.svelte'
   import DrmSurface from './DrmSurface.svelte'
-  import { playerCommand, playerEditorSnapshot, playerGetProperty, playerGifAbort, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
+  import { playerCommand, playerGetProperty, playerGifAbort, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
   import type { DrmSnapshot } from '$lib/player/drm'
   import { overlayIsLoading } from '$lib/player/overlay-loading'
   import { SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
@@ -49,8 +49,8 @@
   import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
   import { pickSubtitleTrackId } from '$lib/player/track-policy'
   import type { Track } from '$lib/player/track-label'
-  import { subtitleStyleProps } from '$lib/player/subtitle-style'
-  import { sessionSubtitleStyle, effectiveSubtitleStyle } from '$lib/settings/subtitle-presets'
+  import { MPV_SUBTITLE_DEFAULTS, TEXT_TRACK, dialogueBottom, readSubtitleDefaults, subtitleStyleProps, subtitleTrackFrom, type SubtitleTrack } from '$lib/player/subtitle-style'
+  import { sessionSubtitleStyle, sessionSubtitleAdjustments, effectiveSubtitleStyle, resetSubtitleSession } from '$lib/settings/subtitle-presets'
   import { incognito } from '$lib/stores/incognito'
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
   import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeSideSheetCrop, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay, usesGameModeBitmapCompositor } from '$lib/player/gm-overlay'
@@ -463,26 +463,60 @@
     return () => clearInterval(timer)
   })
 
-  // Keep subtitle appearance live: settings changes apply to the current track immediately and
-  // the same values are re-applied after every new player session. A session style preset picked
-  // in the track menu takes precedence over the settings until the player closes.
+  // The selected subtitle track decides how a style is written: ASS styles are measured in the
+  // script's own resolution and restyled per dialogue style, converted text uses mpv's sub-* options.
+  let subtitleTrack = $state<SubtitleTrack>(TEXT_TRACK)
+  let subtitleDefaults = $state<Record<string, string>>({ ...MPV_SUBTITLE_DEFAULTS })
+  let subtitleTrackRead = 0
+  async function readSubtitleTrack() {
+    const read = ++subtitleTrackRead
+    const [trackList, extradata] = await Promise.all([
+      playerGetProperty('track-list').catch(() => '[]'),
+      playerGetProperty('sub-ass-extradata').catch(() => ''),
+    ])
+    if (read === subtitleTrackRead) subtitleTrack = subtitleTrackFrom(trackList, extradata)
+  }
+  onMount(() => {
+    void readSubtitleDefaults(playerGetProperty).then((defaults) => { subtitleDefaults = defaults })
+    const off = [
+      listen<string>('player-sub-track', () => { void readSubtitleTrack() }),
+      listen<string>('player-file-loaded', () => { void readSubtitleTrack() }),
+    ]
+    return () => off.forEach((u) => u.then((f) => f()))
+  })
+
+  // Keep subtitle appearance live: settings changes apply to the current track immediately, and the
+  // complete property set is re-sent to every new file. The session preset and the player's own
+  // position/size adjustments take precedence over the settings until the player closes.
+  const effectiveSubtitle = $derived(effectiveSubtitleStyle($sessionSubtitleStyle, {
+    enabled: $subtitleStyleEnabled,
+    scope: $subtitleOverrideScope,
+    font: $subtitleFont,
+    bold: $subtitleBold,
+    fontSize: $subtitleFontSize,
+    textColor: $subtitleTextColor,
+    borderColor: $subtitleBorderColor,
+    borderSize: $subtitleBorderSize,
+    shadow: $subtitleShadow,
+    position: $subtitlePosition,
+    assSnapshot: $subtitleAssSnapshot ?? undefined,
+  }))
+  const appliedSubtitleProps = new Map<string, string>()
+  let appliedSubtitleLoad = -1
   $effect(() => {
     if (!$playing) return
-    // Reapply/reset the session-local position when the live core loads another video.
-    void $playerLoadId
-    for (const [property, value] of subtitleStyleProps(effectiveSubtitleStyle($sessionSubtitleStyle, {
-      enabled: $subtitleStyleEnabled,
-      scope: $subtitleOverrideScope,
-      font: $subtitleFont,
-      bold: $subtitleBold,
-      fontSize: $subtitleFontSize,
-      textColor: $subtitleTextColor,
-      borderColor: $subtitleBorderColor,
-      borderSize: $subtitleBorderSize,
-      shadow: $subtitleShadow,
-      position: $subtitlePosition,
-      assSnapshot: $subtitleAssSnapshot ?? undefined,
-    }))) cmd('set', [property, value])
+    if ($playerLoadId !== appliedSubtitleLoad) {
+      appliedSubtitleLoad = $playerLoadId
+      appliedSubtitleProps.clear()
+    }
+    const props = subtitleStyleProps(effectiveSubtitle, subtitleTrack, $sessionSubtitleAdjustments, subtitleDefaults)
+    // Only send what changed: re-setting an unchanged override list makes mpv rebuild the subtitle
+    // renderer, and the position editor updates `sub-pos` on every drag frame.
+    for (const [property, value] of props) {
+      if (appliedSubtitleProps.get(property) === value) continue
+      appliedSubtitleProps.set(property, value)
+      void cmd('set', [property, value])
+    }
   })
   // Exact absolute seek so auto-skip/skip land past the segment (a keyframe seek could
   // snap back into it and re-skip forever).
@@ -1155,8 +1189,9 @@
     // Retract the OS media panel / Discord entry on EVERY teardown path, not just the ← button —
     // navigating away unmounts the overlay without ever running close().
     invoke('desktop_presence_clear').catch(() => {})
-    // A style preset picked in the track menu is session-scoped by contract.
-    sessionSubtitleStyle.set(null)
+    // A style preset picked in the track menu, and the position and size set in the player, are
+    // session-scoped by contract.
+    resetSubtitleSession()
     // The chapter list belongs to the file that just closed — leaving it set would let a menu opened
     // after teardown (or before the next file's chapters land) offer timestamps for a file that is
     // no longer loaded.
@@ -1723,8 +1758,10 @@
     <SubtitleEditor
       {paused}
       command={cmd}
-      getPosition={() => playerGetProperty('sub-pos')}
-      capture={() => playerEditorSnapshot(pos)}
+      getProperty={(name) => playerGetProperty(name)}
+      position={dialogueBottom(effectiveSubtitle, subtitleTrack, $sessionSubtitleAdjustments, subtitleDefaults)}
+      authoredPosition={dialogueBottom(effectiveSubtitle, subtitleTrack, { ...$sessionSubtitleAdjustments, position: null }, subtitleDefaults)}
+      ass={subtitleTrack.ass}
       onpaint={gmBitmapMode ? bumpPlayerOverlay : undefined}
       onclose={() => { subtitleEditorOpen = false; poke() }}
     />
