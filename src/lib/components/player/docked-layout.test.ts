@@ -36,9 +36,20 @@ describe('full-bleed banners follow the shell margin', () => {
     // A fixed -left-14 with a top or bottom navigation bar (margin 0) left a 56px band at the right.
     for (const file of ['../banner/Hero.svelte', '../detail/AnimeDetail.svelte']) {
       const source = read(file)
-      expect(source).toContain('left-[calc(-1*var(--theme-shell-left,0px))] top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-top-8')
+      expect(source).toContain('left-[calc(-1*var(--theme-shell-left,0px))] top-0 h-[calc(100%+2rem)] w-screen overflow-hidden')
       expect(source).not.toContain('sm:-left-14')
     }
+  })
+
+  it('reaches up under the whole top bar, not just the titlebar', () => {
+    // A 2rem reach under a transparent top bar left a band of page background above the artwork.
+    for (const file of ['../banner/Hero.svelte', '../detail/AnimeDetail.svelte']) {
+      const source = read(file)
+      expect(source).toContain('sm:top-[calc(-1*var(--theme-shell-top,2rem))] sm:h-[calc(100%+var(--theme-shell-top,2rem))]')
+      expect(source).not.toContain('sm:-top-8')
+    }
+    const css = read('../../../app.css')
+    expect(css).toContain("html[data-theme-nav='top'] { --theme-shell-top: 4.75rem; }")
   })
 })
 

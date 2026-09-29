@@ -559,11 +559,14 @@ html.theme-press-sink input[type='range']:active { filter: none; transform: none
 @media (prefers-reduced-motion: reduce) { .setup-choice, .setup-inline-button { transition: none; } }
 
 /* Theme chrome. Density/nav/true-black are data-only presentation flags applied on <html>. */
-html { --theme-density: 1; --theme-shell-left: 3.5rem; --theme-seekbar-color: #fff; }
+html { --theme-density: 1; --theme-shell-left: 3.5rem; --theme-shell-top: 2rem; --theme-seekbar-color: #fff; }
 html[data-theme-density='compact'] { --theme-density: 0.86; }
 html[data-theme-density='large'] { --theme-density: 1.16; }
 html[data-theme-shell-compact] { --theme-shell-left: 3rem; }
 html[data-theme-nav='top'], html[data-theme-nav='bottom'] { --theme-shell-left: 0px; }
+/* How far a full-bleed banner reaches up from the top of the page: under the frameless titlebar,
+   or under the whole top bar, which a theme may leave transparent over the artwork. */
+html[data-theme-nav='top'] { --theme-shell-top: 4.75rem; }
 @media (max-width: 640px) { html { --theme-shell-left: 0px; } }
 html.theme-hide-labels [data-theme-card-label] { display: none !important; }
 html.theme-shell-compact [data-nav-sidebar] a,
