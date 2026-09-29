@@ -65,6 +65,12 @@ export function animeEpisodeMetadata(media: Media): Record<number, EpMeta> {
   }]))
 }
 
+/** Everything an episode list's metadata is loaded from: the title's id, the AniList id AniZip is read
+ * by, and the episode data its provider supplied. It stays the same across repeated deliveries of one
+ * series, which hand the list a new `media` object each time (see EpisodeList.svelte). */
+export const animeEpisodeMetadataKey = (media: Media): string =>
+  JSON.stringify([media.id, anilistIdOf(media) ?? null, animeEpisodeMetadata(media)])
+
 export function animeResumeEpisode(media: Media, watched: number): number {
   if (!media.catalog || media.catalog.provider === 'anilist' || !media.videos?.length) return resumeEp(media, watched)
   const numbers = animeEpisodeNumbers(media)
