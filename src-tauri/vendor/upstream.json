@@ -1,0 +1,34 @@
+{
+  "root": "librqbit",
+  "rootRepo": "rqbit",
+  "repos": {
+    "rqbit": {
+      "url": "https://github.com/ikatson/rqbit.git",
+      "branch": "main",
+      "rev": "2b123074052418f3679c5df01edd2c265aa71821"
+    },
+    "librqbit-utp": {
+      "url": "https://github.com/ikatson/librqbit-utp.git",
+      "branch": "main",
+      "rev": "06e1c53c8df6edb2830d6aab64a6d4bed8479908"
+    },
+    "librqbit-dualstack-sockets": {
+      "url": "https://github.com/ikatson/librqbit-dualstack-sockets.git",
+      "branch": "main",
+      "rev": "e2f221ca745c25c7790abb593ed260ce5a499fa1"
+    }
+  },
+  "omit": {
+    "librqbit": [
+      "webui/"
+    ]
+  },
+  "vendored": [
+    "librqbit",
+    "librqbit-bencode",
+    "librqbit-dht",
+    "librqbit-peer-protocol",
+    "librqbit-utp"
+  ],
+  "cargo": "1.96.1"
+}

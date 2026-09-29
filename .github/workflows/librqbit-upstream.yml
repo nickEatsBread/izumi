@@ -1,0 +1,98 @@
+name: librqbit upstream
+
+# Checks the vendored librqbit (src-tauri/vendor, see its README.md). izumi builds librqbit from the
+# head of upstream's main branch plus its own patches, so neither Dependabot nor Renovate can tell
+# when it falls behind. `librqbit-vendor.mjs check` changes nothing: it reports new upstream
+# commits (and whether izumi's patches still rebase onto them, or are now upstream), newer
+# crates.io releases, and any drift between src-tauri/vendor and what its pins and patches build.
+#
+# Weekly, the report goes to one open issue labelled `librqbit-upstream`, created or updated here
+# and closed once nothing needs doing. Updating stays a manual step: it needs a build, tests and a
+# playback check that this job can't do. On a pull request that touches the vendored crates, the
+# job only fails when src-tauri/vendor is not what its pins and patches build.
+#
+# The check runs `cargo metadata` and `cargo package` inside upstream checkouts, which read those
+# checkouts' Cargo configuration. So that step gets no GitHub token: the token is only in the step
+# that edits the issue, and checkout does not leave it in .git/config.
+
+on:
+  schedule:
+    - cron: '41 6 * * 1'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src-tauri/vendor/**'
+      - 'src-tauri/Cargo.toml'
+      - 'src-tauri/Cargo.lock'
+      - 'scripts/ci/librqbit-vendor.mjs'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: librqbit-upstream-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # `cargo package` and `cargo metadata` only; nothing is compiled. The Cargo that packaged the
+      # vendored tree (recorded by `sync`), so its generated Cargo.toml files compare equal.
+      - name: Cargo version the vendored tree was packaged with
+        id: pins
+        run: echo "cargo=$(jq -r '.cargo // "stable"' src-tauri/vendor/upstream.json)" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.pins.outputs.cargo }}
+
+      - name: Check the vendored crates against upstream
+        env:
+          # Ignore any rust-toolchain file or rustc wrapper an upstream checkout brings.
+          RUSTUP_TOOLCHAIN: ${{ steps.pins.outputs.cargo }}
+          CARGO_BUILD_RUSTC_WRAPPER: ''
+        run: |
+          flags=()
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then flags+=(--fail-on-drift); fi
+          node scripts/ci/librqbit-vendor.mjs check "${flags[@]}" \
+            --report "$RUNNER_TEMP/librqbit.md" --json "$RUNNER_TEMP/librqbit.json"
+          cat "$RUNNER_TEMP/librqbit.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open, update or close the tracking issue
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LABEL: librqbit-upstream
+        run: |
+          set -euo pipefail
+          needs=$(jq -r '.needsAttention' "$RUNNER_TEMP/librqbit.json")
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label "$LABEL" \
+            --json number --jq '.[0].number // empty' 2>/dev/null || true)
+          if [ "$needs" = "true" ]; then
+            gh label create "$LABEL" --repo "$GITHUB_REPOSITORY" --color 0e8a16 \
+              --description 'The vendored librqbit is behind upstream' --force >/dev/null
+            if [ -n "$open" ]; then
+              gh issue edit "$open" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/librqbit.md"
+              echo "Updated #$open"
+            else
+              gh issue create --repo "$GITHUB_REPOSITORY" --label "$LABEL" \
+                --title 'Vendored librqbit needs an update' --body-file "$RUNNER_TEMP/librqbit.md"
+            fi
+          elif [ -n "$open" ]; then
+            gh issue close "$open" --repo "$GITHUB_REPOSITORY" \
+              --comment 'src-tauri/vendor matches upstream again.'
+            echo "Closed #$open"
+          fi

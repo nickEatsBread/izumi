@@ -77,7 +77,7 @@ version = "0.12.3"
 version = "0.9"
 
 [dependencies.ringbuf]
-version = "0.4.7"
+version = "0.5.2"
 
 [dependencies.rustc-hash]
 version = "2.1.1"

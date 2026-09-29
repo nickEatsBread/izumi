@@ -113,11 +113,15 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-## librqbit, librqbit-dht and librqbit-utp — Apache-2.0
+## librqbit and its crates — Apache-2.0
 
-`src-tauri/vendor/` holds modified copies of the [`librqbit`](https://crates.io/crates/librqbit),
-[`librqbit-dht`](https://crates.io/crates/librqbit-dht) and
-[`librqbit-utp`](https://crates.io/crates/librqbit-utp) crates. Each modified file says so at the
+`src-tauri/vendor/` holds copies of [`librqbit`](https://crates.io/crates/librqbit) and of some of
+the crates it depends on from the same upstream repositories
+([ikatson/rqbit](https://github.com/ikatson/rqbit),
+[ikatson/librqbit-utp](https://github.com/ikatson/librqbit-utp) and
+[ikatson/librqbit-dualstack-sockets](https://github.com/ikatson/librqbit-dualstack-sockets)),
+packaged from pinned upstream commits. `src-tauri/vendor/upstream.json` lists which crates are
+copied and from which commits. The `librqbit` copy is modified: each modified file says so at the
 top, and `src-tauri/vendor/README.md` describes the changes.
 
 Copyright 2021 Igor Katson. Licensed under the Apache License, Version 2.0:

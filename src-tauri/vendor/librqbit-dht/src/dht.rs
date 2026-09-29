@@ -1,6 +1,3 @@
-// Modified for izumi: UDP receive errors that concern a single datagram no longer end the DHT
-// worker on Windows. See src-tauri/vendor/README.md.
-
 use std::{
     cmp::Reverse,
     net::{Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
@@ -440,7 +437,7 @@ impl<C: RecursiveRequestCallbacks> RecursiveRequest<C> {
             self.callbacks.on_request_end(self, id, addr, &response);
         }
 
-        let response = match self.dht.request(self.request.clone(), addr).await {
+        let response = match response {
             Ok(ResponseOrError::Response(r)) => r,
             Ok(ResponseOrError::Error(e)) => {
                 debug!("error response: {e:?}");

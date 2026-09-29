@@ -1,5 +1,3 @@
-// Modified for izumi: adds tests for UDP receive errors on Windows. See src-tauri/vendor/README.md.
-
 mod lossy_socket;
 
 use std::{

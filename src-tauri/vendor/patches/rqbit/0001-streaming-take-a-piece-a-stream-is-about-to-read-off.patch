@@ -1,0 +1,415 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: nickEatsBread <nickEatsBread@users.noreply.github.com>
+Date: Tue, 29 Sep 2026 21:49:31 +0100
+Subject: [PATCH 1/3] streaming: take a piece a stream is about to read off a
+ slow peer sooner
+
+librqbit gives each piece to a single peer and lets another peer take it over only after ten
+times the thief's average piece time. A player blocked on that piece stalls for the whole wait
+while the rest of the swarm keeps delivering other pieces.
+
+The first eight pieces ahead of every open stream are now critical. Before a peer starts
+anything else, it takes over a critical piece that another peer has held for 1.5 times this
+peer's average piece time, never sooner than 500 ms. A peer that has not completed a piece has
+no average and takes nothing.
+
+A peer that takes a piece over requests only the chunks still missing. Re-requesting every chunk
+in order put the missing ones last.
+---
+ crates/librqbit/src/chunk_tracker.rs          |  45 +++++
+ crates/librqbit/src/piece_tracker.rs          | 174 ++++++++++++++++++
+ crates/librqbit/src/torrent_state/live/mod.rs |  65 +++++--
+ .../librqbit/src/torrent_state/streaming.rs   |  16 ++
+ 4 files changed, 286 insertions(+), 14 deletions(-)
+
+diff --git a/crates/librqbit/src/chunk_tracker.rs b/crates/librqbit/src/chunk_tracker.rs
+index de06369d8077f36b37943136a6a61cd80944d053..8414d065b498a17718731657594169084593a8f9 100644
+--- a/crates/librqbit/src/chunk_tracker.rs
++++ b/crates/librqbit/src/chunk_tracker.rs
+@@ -1,3 +1,6 @@
++// Modified for izumi: the pieces a video player is waiting for arrive sooner. See
++// src-tauri/vendor/README.md.
++
+ use std::collections::HashSet;
+ 
+ use anyhow::Context;
+@@ -294,6 +297,15 @@ impl ChunkTracker {
+             .unwrap_or(false)
+     }
+ 
++    // Modified for izumi: whether this chunk has been received. A piece taken over from a slow
++    // peer keeps what that peer already delivered.
++    pub fn is_chunk_downloaded(&self, chunk: &ChunkInfo) -> bool {
++        self.chunk_status
++            .get(chunk.absolute_index as usize)
++            .map(|b| *b)
++            .unwrap_or(false)
++    }
++
+     pub fn get_remaining_bytes(&self) -> u64 {
+         self.hns.needed_bytes
+     }
+@@ -713,4 +725,37 @@ mod tests {
+             "a piece we have is still queued, so a second peer will download it again"
+         );
+     }
++
++    // Added for izumi: chunks delivered before a piece completes stay marked, so a peer that
++    // takes the piece over only asks for the rest. A broken piece starts again from nothing.
++    #[test]
++    fn chunks_received_before_a_piece_completes_stay_downloaded() {
++        let piece_length = CHUNK_SIZE * 2;
++        let lengths = Lengths::new(piece_length as u64 * 2, piece_length).unwrap();
++        let bitfield = || BF::from_boxed_slice(vec![0u8; lengths.piece_bitfield_bytes()].into());
++        let mut selected = bitfield();
++        selected.set(0, true);
++        selected.set(1, true);
++        let file_infos = vec![FileInfo {
++            relative_filename: "test.dat".into(),
++            offset_in_torrent: 0,
++            len: piece_length as u64 * 2,
++            piece_range: 0..2,
++            attrs: Default::default(),
++        }];
++        let mut tracker =
++            ChunkTracker::new(bitfield().into_dyn(), selected, lengths, &file_infos).unwrap();
++        let piece = lengths.validate_piece_index(1).unwrap();
++        let chunks = lengths.iter_chunk_infos(piece).collect::<Vec<_>>();
++        let data = vec![0u8; CHUNK_SIZE as usize];
++
++        tracker.mark_chunk_downloaded(&peer_binary_protocol::Piece::from_data(
++            1, CHUNK_SIZE, &data,
++        ));
++        assert!(!tracker.is_chunk_downloaded(&chunks[0]));
++        assert!(tracker.is_chunk_downloaded(&chunks[1]));
++
++        tracker.mark_piece_broken_if_not_have(piece);
++        assert!(!tracker.is_chunk_downloaded(&chunks[1]));
++    }
+ }
+diff --git a/crates/librqbit/src/piece_tracker.rs b/crates/librqbit/src/piece_tracker.rs
+index 7d872877d5cc40dfc7f88b32475009bf1933815e..cc9ac4960f8bbf0e556804c6a8c2ba5e4744cb05 100644
+--- a/crates/librqbit/src/piece_tracker.rs
++++ b/crates/librqbit/src/piece_tracker.rs
+@@ -1,3 +1,6 @@
++// Modified for izumi: the pieces a video player is waiting for arrive sooner. See
++// src-tauri/vendor/README.md.
++
+ //! Coordinates piece download state by wrapping ChunkTracker with inflight piece tracking.
+ //!
+ //! This module provides the [`PieceTracker`] type which encapsulates the relationship between
+@@ -24,6 +27,10 @@ use crate::{
+     type_aliases::{FileInfos, FilePriorities, PeerHandle},
+ };
+ 
++// Modified for izumi: see `try_steal_critical`.
++const CRITICAL_STEAL_FACTOR: f64 = 1.5;
++const CRITICAL_STEAL_MIN: Duration = Duration::from_millis(500);
++
+ /// Tracks a piece currently being downloaded.
+ #[derive(Debug, Clone)]
+ pub struct InflightPiece {
+@@ -217,6 +224,46 @@ impl PieceTracker {
+         })
+     }
+ 
++    // Modified for izumi: take over a piece that an open stream is about to read.
++    //
++    // The ordinary steal waits until a piece has been in flight for ten times the thief's average
++    // piece time, and a player blocked on that piece stalls for the whole wait. A piece in
++    // `critical` moves once it has been in flight for 1.5 times the thief's average, and never
++    // sooner than CRITICAL_STEAL_MIN. A peer that has not completed a piece has no average and takes
++    // nothing.
++    pub fn try_steal_critical<P, S>(
++        &mut self,
++        peer: PeerHandle,
++        peer_avg_time: Option<Duration>,
++        critical: &[ValidPieceIndex],
++        peer_has_piece: P,
++        can_steal: S,
++    ) -> Option<AcquireResult>
++    where
++        P: Fn(ValidPieceIndex) -> bool,
++        S: Fn(ValidPieceIndex) -> bool,
++    {
++        let min_elapsed = peer_avg_time?
++            .mul_f64(CRITICAL_STEAL_FACTOR)
++            .max(CRITICAL_STEAL_MIN);
++        let (piece, old_peer) = critical
++            .iter()
++            .filter_map(|piece| self.inflight.get(piece).map(|info| (*piece, info)))
++            .filter(|(_, info)| info.peer != peer && info.started.elapsed() >= min_elapsed)
++            .find(|(piece, _)| peer_has_piece(*piece))
++            .map(|(piece, info)| (piece, info.peer))?;
++        if !can_steal(piece) {
++            return None;
++        }
++        let info = self.inflight.get_mut(&piece)?;
++        info.peer = peer;
++        info.started = Instant::now();
++        Some(AcquireResult::Stolen {
++            piece,
++            from_peer: old_peer,
++        })
++    }
++
+     // === PIECE COMPLETION ===
+ 
+     /// Remove piece from inflight tracking (e.g., after all chunks received).
+@@ -801,4 +848,131 @@ mod tests {
+             _ => panic!("Expected Stolen, got {:?}", result),
+         }
+     }
++
++    // Added for izumi: `try_steal_critical`.
++    fn reserve(
++        tracker: &mut PieceTracker,
++        owner: PeerHandle,
++        file_infos: &FileInfos,
++        file_priorities: &FilePriorities,
++    ) -> ValidPieceIndex {
++        match tracker.acquire_piece(AcquireRequest {
++            peer: owner,
++            peer_avg_time: None,
++            priority_pieces: std::iter::empty(),
++            file_priorities,
++            file_infos,
++            peer_has_piece: |_| true,
++            can_steal: |_| true,
++        }) {
++            AcquireResult::Reserved(piece) => piece,
++            other => panic!("Expected Reserved, got {other:?}"),
++        }
++    }
++
++    fn in_flight_for(tracker: &mut PieceTracker, piece: ValidPieceIndex, elapsed: Duration) {
++        tracker.inflight.get_mut(&piece).unwrap().started =
++            Instant::now().checked_sub(elapsed).unwrap();
++    }
++
++    #[test]
++    fn a_critical_piece_moves_after_one_and_a_half_times_the_thiefs_average() {
++        let file_infos = make_test_file_infos(5);
++        let file_priorities = make_default_file_priorities(&file_infos);
++        let mut tracker = PieceTracker::new(make_test_chunk_tracker(5));
++        let piece = reserve(&mut tracker, peer(1), &file_infos, &file_priorities);
++        in_flight_for(&mut tracker, piece, Duration::from_millis(900));
++
++        match tracker.try_steal_critical(
++            peer(2),
++            Some(Duration::from_millis(400)),
++            &[piece],
++            |_| true,
++            |_| true,
++        ) {
++            Some(AcquireResult::Stolen {
++                piece: stolen,
++                from_peer,
++            }) => {
++                assert_eq!(stolen, piece);
++                assert_eq!(from_peer, peer(1));
++            }
++            other => panic!("Expected Stolen, got {other:?}"),
++        }
++        let info = tracker.get_inflight(piece).unwrap();
++        assert_eq!(info.peer, peer(2));
++        assert!(info.started.elapsed() < Duration::from_millis(900));
++    }
++
++    #[test]
++    fn a_critical_piece_stays_until_the_wait_is_over() {
++        let file_infos = make_test_file_infos(5);
++        let file_priorities = make_default_file_priorities(&file_infos);
++        let mut tracker = PieceTracker::new(make_test_chunk_tracker(5));
++        let piece = reserve(&mut tracker, peer(1), &file_infos, &file_priorities);
++
++        // 1.5 times a 100 ms average is under the 500 ms minimum.
++        in_flight_for(&mut tracker, piece, Duration::from_millis(300));
++        let fast = Some(Duration::from_millis(100));
++        assert!(
++            tracker
++                .try_steal_critical(peer(2), fast, &[piece], |_| true, |_| true)
++                .is_none()
++        );
++
++        // 1.5 times a 400 ms average is 600 ms.
++        in_flight_for(&mut tracker, piece, Duration::from_millis(500));
++        let slower = Some(Duration::from_millis(400));
++        assert!(
++            tracker
++                .try_steal_critical(peer(2), slower, &[piece], |_| true, |_| true)
++                .is_none()
++        );
++        assert_eq!(tracker.get_inflight(piece).unwrap().peer, peer(1));
++    }
++
++    #[test]
++    fn only_a_proven_peer_takes_a_critical_piece_it_can_download() {
++        let file_infos = make_test_file_infos(5);
++        let file_priorities = make_default_file_priorities(&file_infos);
++        let mut tracker = PieceTracker::new(make_test_chunk_tracker(5));
++        let critical = reserve(&mut tracker, peer(1), &file_infos, &file_priorities);
++        let other = reserve(&mut tracker, peer(1), &file_infos, &file_priorities);
++        in_flight_for(&mut tracker, critical, Duration::from_secs(5));
++        in_flight_for(&mut tracker, other, Duration::from_secs(5));
++        let average = Some(Duration::from_millis(100));
++
++        // No completed piece yet, so no average.
++        assert!(
++            tracker
++                .try_steal_critical(peer(2), None, &[critical], |_| true, |_| true)
++                .is_none()
++        );
++        // The thief does not have the piece.
++        assert!(
++            tracker
++                .try_steal_critical(peer(2), average, &[critical], |_| false, |_| true)
++                .is_none()
++        );
++        // Another peer is writing it.
++        assert!(
++            tracker
++                .try_steal_critical(peer(2), average, &[critical], |_| true, |_| false)
++                .is_none()
++        );
++        // The owner itself.
++        assert!(
++            tracker
++                .try_steal_critical(peer(1), average, &[critical], |_| true, |_| true)
++                .is_none()
++        );
++        // Not a piece a stream is waiting for: `other` keeps the ordinary 10x rule.
++        assert!(
++            tracker
++                .try_steal_critical(peer(2), average, &[], |_| true, |_| true)
++                .is_none()
++        );
++        assert_eq!(tracker.get_inflight(critical).unwrap().peer, peer(1));
++        assert_eq!(tracker.get_inflight(other).unwrap().peer, peer(1));
++    }
+ }
+diff --git a/crates/librqbit/src/torrent_state/live/mod.rs b/crates/librqbit/src/torrent_state/live/mod.rs
+index 10d8f00bedfc1cd8f79266b4c236546788cb3a5e..443b51afebe40f6f38c131f3ef624566618b4315 100644
+--- a/crates/librqbit/src/torrent_state/live/mod.rs
++++ b/crates/librqbit/src/torrent_state/live/mod.rs
+@@ -1,3 +1,6 @@
++// Modified for izumi: the pieces a video player is waiting for arrive sooner. See
++// src-tauri/vendor/README.md.
++
+ // The main logic of rqbit is here - connecting to peers, reading and writing messages
+ // to them, tracking peer state etc.
+ //
+@@ -172,6 +175,10 @@ impl TorrentStateLocked {
+ 
+ const FLUSH_BITV_EVERY_BYTES: u64 = 16 * 1024 * 1024;
+ 
++// Modified for izumi: how many of each stream's next pieces may be taken off a slow peer early.
++// mpv reads a release's embedded fonts, often several megabytes, before it shows anything.
++const CRITICAL_PIECES_PER_STREAM: usize = 8;
++
+ pub enum AddIncomingPeerResult {
+     Added,
+     AlreadyActive,
+@@ -1446,19 +1453,37 @@ impl PeerHandler {
+                     ..
+                 } = &mut **g;
+                 let pieces = pieces.as_mut().ok_or(Error::ChunkTrackerEmpty)?;
+-                let result = pieces.acquire_piece(AcquireRequest {
+-                    peer: self.addr,
+-                    peer_avg_time: self.counters.average_piece_download_time(),
+-                    priority_pieces: self.state.streams.iter_next_pieces(&self.state.lengths),
+-                    file_priorities,
+-                    file_infos: &self.state.metadata.file_infos,
+-                    peer_has_piece: |p| bf.get(p.get() as usize).map(|v| *v) == Some(true),
+-                    can_steal: |p| {
+-                        self.state.per_piece_locks[p.get_usize()]
+-                            .try_write()
+-                            .is_some()
+-                    },
+-                });
++                let peer_has_piece =
++                    |p: ValidPieceIndex| bf.get(p.get() as usize).map(|v| *v) == Some(true);
++                let can_steal = |p: ValidPieceIndex| {
++                    self.state.per_piece_locks[p.get_usize()]
++                        .try_write()
++                        .is_some()
++                };
++                // Modified for izumi: a piece that a stream is about to read leaves a slow peer
++                // before this peer starts anything else.
++                let critical = self
++                    .state
++                    .streams
++                    .critical_pieces(&self.state.lengths, CRITICAL_PIECES_PER_STREAM);
++                let result = match pieces.try_steal_critical(
++                    self.addr,
++                    self.counters.average_piece_download_time(),
++                    &critical,
++                    peer_has_piece,
++                    can_steal,
++                ) {
++                    Some(result) => result,
++                    None => pieces.acquire_piece(AcquireRequest {
++                        peer: self.addr,
++                        peer_avg_time: self.counters.average_piece_download_time(),
++                        priority_pieces: self.state.streams.iter_next_pieces(&self.state.lengths),
++                        file_priorities,
++                        file_infos: &self.state.metadata.file_infos,
++                        peer_has_piece,
++                        can_steal,
++                    }),
++                };
+ 
+                 match result {
+                     AcquireResult::Reserved(piece) => {
+@@ -1697,7 +1722,19 @@ impl PeerHandler {
+                 }
+             };
+ 
+-            for chunk in self.state.lengths.iter_chunk_infos(next) {
++            // Modified for izumi: a piece taken over from another peer keeps the chunks that peer
++            // already delivered, so only ask for the rest. Re-requesting them in order would put the
++            // missing chunks last.
++            let missing = {
++                let g = self.state.lock_read("missing_chunks");
++                let chunks = g.get_pieces()?.chunks();
++                self.state
++                    .lengths
++                    .iter_chunk_infos(next)
++                    .filter(|chunk| !chunks.is_chunk_downloaded(chunk))
++                    .collect::<Vec<_>>()
++            };
++            for chunk in missing {
+                 let request = Request {
+                     index: next.get(),
+                     begin: chunk.offset,
+diff --git a/crates/librqbit/src/torrent_state/streaming.rs b/crates/librqbit/src/torrent_state/streaming.rs
+index 5326170de09d0e8d140de09ed1d635a2e82c4a1f..5af34d5df796e1cf3f9783f8472689a3498d2989 100644
+--- a/crates/librqbit/src/torrent_state/streaming.rs
++++ b/crates/librqbit/src/torrent_state/streaming.rs
+@@ -1,3 +1,6 @@
++// Modified for izumi: the pieces a video player is waiting for arrive sooner. See
++// src-tauri/vendor/README.md.
++
+ use std::{
+     collections::VecDeque,
+     io::SeekFrom,
+@@ -101,6 +104,19 @@ impl TorrentStreams {
+         Interleave { all: all.into() }
+     }
+ 
++    // Modified for izumi: the first `per_stream` pieces every open stream is about to read. A
++    // reader blocks on these, so a slow peer holding one stalls playback.
++    pub(crate) fn critical_pieces(
++        &self,
++        lengths: &Lengths,
++        per_stream: usize,
++    ) -> Vec<ValidPieceIndex> {
++        self.streams
++            .iter()
++            .flat_map(|s| s.queue(lengths).take(per_stream).collect::<Vec<_>>())
++            .collect()
++    }
++
+     pub(crate) fn wake_streams_on_piece_completed(
+         &self,
+         piece_id: ValidPieceIndex,
