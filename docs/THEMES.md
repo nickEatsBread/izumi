@@ -195,6 +195,7 @@ State values:
 | `nav.categories` | slot | The Categories menu panel (top bar `categories`). |  |
 | `nav.categories.heading` | part | The Genres heading in the Categories menu. |  |
 | `nav.categories.link` | part | A Categories menu link; genre links carry `data-variant="genre"`. | `data-variant` |
+| `hints.glyph` | part | A controller button's printed label: round for face buttons, a pill for bumpers, triggers and the menu buttons. | `data-button`, `data-family` |
 
 #### Home
 
