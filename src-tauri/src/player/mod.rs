@@ -1819,6 +1819,10 @@ pub(crate) fn spawn_event_loop(
     client.observe_property("core-idle", Format::Flag, 0)?;
     client.observe_property("seeking", Format::Flag, 0)?;
     client.observe_property("eof-reached", Format::Flag, 0)?;
+    // Subtitle styles are written in the selected track's own units (an ASS script's PlayResY), so
+    // the overlay re-reads the track whenever mpv switches it — by the user, by `sid=auto` at load,
+    // or by the full-dialogue preference below.
+    client.observe_property("sid", Format::String, 0)?;
 
     std::thread::spawn(move || {
         let mut duration = 0f64;
@@ -1950,6 +1954,9 @@ pub(crate) fn spawn_event_loop(
                     }
                     ("seeking", PropertyData::Flag(v)) => {
                         let _ = app.emit("player-seeking", v);
+                    }
+                    ("sid", PropertyData::Str(sid)) => {
+                        let _ = app.emit("player-sub-track", sid.to_string());
                     }
                     ("eof-reached", PropertyData::Flag(v)) => {
                         let _ = app.emit("player-eof", v);

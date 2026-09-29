@@ -1,6 +1,6 @@
 import { persisted } from 'svelte-persisted-store'
 import { writable, get } from 'svelte/store'
-import type { SubtitleStyle } from '$lib/player/subtitle-style'
+import { NO_SUBTITLE_ADJUSTMENTS, type SubtitleAdjustments, type SubtitleStyle } from '$lib/player/subtitle-style'
 import {
   subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
   subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
@@ -24,6 +24,16 @@ export const savedSubtitleStyles = persisted<SubtitleStylePreset[]>('saved-subti
 /** The session-only override picked in the player. Never persisted — closing the player (or the
  *  app) returns styling to the user's normal settings. */
 export const sessionSubtitleStyle = writable<SubtitleStylePreset | null>(null)
+
+/** Position and size set in the player (the position editor and "Subtitle size"). Session-only like
+ *  the preset above: they last across episodes until the player closes, and never reach Settings. */
+export const sessionSubtitleAdjustments = writable<SubtitleAdjustments>(NO_SUBTITLE_ADJUSTMENTS)
+
+/** End of a player session: drop everything the player changed for it. */
+export function resetSubtitleSession(): void {
+  sessionSubtitleStyle.set(null)
+  sessionSubtitleAdjustments.set(NO_SUBTITLE_ADJUSTMENTS)
+}
 
 const newId = () =>
   (globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`)

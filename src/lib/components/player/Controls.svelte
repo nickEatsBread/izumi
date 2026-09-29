@@ -49,7 +49,7 @@
   import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
   import { autoSyncSelectedSubtitle } from '$lib/player/subtitle-sync'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
-  import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
+  import { savedSubtitleStyles, sessionSubtitleAdjustments, sessionSubtitleStyle, saveSubtitlePreset, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
   import { bingeSource } from '$lib/player/session'
   import Brush from '@lucide/svelte/icons/brush'
   import { chapters as chapterStore } from '$lib/player/session'
@@ -307,13 +307,26 @@
       if (!Number.isNaN(v)) delays[prop] = v
     } catch { /* no player / not loaded — keep the last value */ }
   }
-  const readDelays = () => { for (const p of ['sub-delay', 'audio-delay', 'sub-scale']) readProp(p) }
+  const readDelays = () => {
+    for (const p of ['sub-delay', 'audio-delay']) readProp(p)
+    delays['sub-scale'] = get(sessionSubtitleAdjustments).scale
+  }
+  // Subtitle size is a session adjustment rather than a raw mpv value: the player applies it with the
+  // override mode that lets it reach ASS subtitles too, and it ends with the player session instead
+  // of carrying into the next one on the reused mpv core.
+  function setSubtitleScale(scale: number) {
+    const next = Math.round(Math.min(3, Math.max(0.5, scale)) * 100) / 100
+    sessionSubtitleAdjustments.update((current) => ({ ...current, scale: next }))
+    delays['sub-scale'] = next
+  }
   async function adjust(prop: string, delta: number) {
+    if (prop === 'sub-scale') return setSubtitleScale(get(sessionSubtitleAdjustments).scale + delta)
     await playerCommand('add', [prop, String(delta)]).catch(() => {})
     await readProp(prop)
   }
   async function resetProp(prop: string) {
-    await playerCommand('set', [prop, prop === 'sub-scale' ? '1' : '0']).catch(() => {})
+    if (prop === 'sub-scale') return setSubtitleScale(1)
+    await playerCommand('set', [prop, '0']).catch(() => {})
     await readProp(prop)
   }
   // sub-delay/audio-delay show as signed seconds (+0.3s / 0.0s); sub-scale as a multiplier (1.20×).

@@ -78,7 +78,9 @@ function forceStyleValue(field: string, raw: string): string {
     const alignment = Math.trunc(num(raw))
     if (alignment < 1 || alignment > 9) return String(alignment)
     const horizontal = ((alignment - 1) % 3) + 1
-    const vertical = Math.floor((alignment - 1) / 3) * 4
+    // libass flags: bottom row (numpad 1-3) = 0, top row (7-9) = VALIGN_TOP 4, middle row (4-6) =
+    // VALIGN_CENTER 8. Counting rows upwards in steps of 4 swapped the top and middle rows.
+    const vertical = alignment <= 3 ? 0 : alignment <= 6 ? 8 : 4
     return String(horizontal | vertical)
   }
   return raw
@@ -153,10 +155,52 @@ export function parseAssStyles(extradata: string): {
   return styles.length ? { playResY, isAss, scriptInfo, styles } : null
 }
 
-/** The style dialogue actually renders in: `Default` by fansub convention, else the first
- *  declared style. Sign/OP styles are usually declared after it. */
+export type ParsedAssHeader = NonNullable<ReturnType<typeof parseAssStyles>>
+
+const isDefaultStyle = (style: AssStyle) => style.name.trim().toLowerCase() === 'default'
+const isBottomAligned = (style: AssStyle) => style.alignment >= 1 && style.alignment <= 3
+
+/** The styles a release writes its dialogue in. Dialogue is usually spread over several styles
+ *  (italics, thoughts, flashbacks, lines raised to the top of the screen) that share one typeface
+ *  at nearly the same size, while each sign, song or title style has its own. The largest such
+ *  family is the dialogue; a tie goes to the family holding `Default`, then to the one declared
+ *  first. Neither the style names nor `Default` itself are required to be the dialogue. */
+export function dialogueStyles(styles: AssStyle[]): AssStyle[] {
+  const families: AssStyle[][] = []
+  for (const style of styles) {
+    const font = style.fontname.trim().toLowerCase()
+    const family = families.find((group) => group[0].fontname.trim().toLowerCase() === font
+      && Math.abs(group[0].fontsize - style.fontsize) <= Math.max(1, group[0].fontsize * 0.1))
+    if (family) family.push(style)
+    else families.push([style])
+  }
+  let best: AssStyle[] = []
+  for (const family of families) {
+    if (family.length > best.length
+      || (family.length === best.length && family.some(isDefaultStyle) && !best.some(isDefaultStyle))) {
+      best = family
+    }
+  }
+  return best
+}
+
+/** The style ordinary bottom-of-screen dialogue renders in: `Default` when it belongs to the dialogue
+ *  family, else that family's first bottom-aligned style. */
 export function pickPrimaryStyle(styles: AssStyle[]): AssStyle | null {
-  return styles.find((s) => s.name.toLowerCase() === 'default') ?? styles[0] ?? null
+  const family = dialogueStyles(styles)
+  return family.find(isDefaultStyle)
+    ?? family.find(isBottomAligned)
+    ?? family[0]
+    ?? null
+}
+
+/** Where the script's bottom-aligned dialogue ends, as % of the frame height from the top. */
+export function authoredDialogueBottom(header: ParsedAssHeader): number | null {
+  const family = dialogueStyles(header.styles)
+  const bottom = family.find((style) => isDefaultStyle(style) && isBottomAligned(style))
+    ?? family.find(isBottomAligned)
+  if (!bottom) return null
+  return 100 - (bottom.marginV * 100) / header.playResY
 }
 
 /** `&HAABBGGRR` / `&HBBGGRR` → `#rrggbb` (ASS stores blue-first; alpha is dropped). */

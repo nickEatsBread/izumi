@@ -627,6 +627,9 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         // unbuffered data froze on the last frame with no indication anything was happening.
         m.observeProperty("seeking", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
         m.observeProperty("core-idle", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
+        // Subtitle styles are converted into the selected track's own units, so the WebView re-reads
+        // the track whenever mpv switches it.
+        m.observeProperty("sid", MPVLib.MpvFormat.MPV_FORMAT_STRING)
         mpv = m
         // An option written while this core was initializing found no live core to apply to and
         // only updated the maps, which this core was built from before the write.
