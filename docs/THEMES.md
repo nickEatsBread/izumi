@@ -181,6 +181,12 @@ State values:
 | `nav.item.icon` | part | The icon of a navigation destination. |  |
 | `nav.item.label` | part | The label of a navigation destination. |  |
 | `search.field` | part | A search input: the global search overlay, or the theme top bar's search field. |  |
+| `search.suggestions` | part | The live results panel under the top bar's search field while typing. |  |
+| `search.suggestion` | part | One live result; the keyboard-highlighted one has `data-active`. | `data-active` |
+| `search.suggestion.poster` | part | A live result's poster. |  |
+| `search.suggestion.title` | part | A live result's title. |  |
+| `search.suggestion.meta` | part | The format, episode count, year and status line of a live result. |  |
+| `search.suggestion.all` | part | The "View all results" link at the end of the panel. |  |
 | `nav.menu` | part | The top bar menu button that opens the drawer. |  |
 | `nav.drawer` | slot | The side drawer of destinations (top bar `menu: "drawer"`); items are `nav.item`. |  |
 | `nav.categories` | slot | The Categories menu panel (top bar `categories`). |  |

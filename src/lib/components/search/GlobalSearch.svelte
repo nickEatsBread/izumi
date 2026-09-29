@@ -7,8 +7,6 @@
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import ArrowRight from '@lucide/svelte/icons/arrow-right'
   import LoaderCircle from '@lucide/svelte/icons/loader-circle'
-  import { anilist } from '$lib/anilist/client'
-  import { searchQuery, searchVariables } from '$lib/anilist/detail-queries'
   import { cover, format, mediaHref, season, status, title } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
   import * as h from '$lib/haptics'
@@ -22,20 +20,16 @@
     globalSearchOpen,
     normalizeSearchQuery,
     plainTextSynopsis,
-    rankQuickSearchResults,
   } from '$lib/search/global-search'
   import { incognito } from '$lib/stores/incognito'
   import { get } from 'svelte/store'
   import { catalogLabel, enabledCatalogProviders } from '$lib/settings/catalog'
-  import { loadCatalogProvider } from '$lib/catalog/registry'
+  import { cachedQuickSearch, quickSearch } from '$lib/search/quick-search'
   import { mediaKey } from '$lib/catalog/identity'
 
   type SearchState = 'idle' | 'typing' | 'loading' | 'done' | 'error'
-  type SearchResponse = { Page?: { media?: Media[] } }
 
   const guard = createSearchRequestGuard()
-  const cache = new Map<string, { expires: number; media: Media[] }>()
-  const CACHE_MS = 2 * 60 * 1000
   const selections = $derived($enabledCatalogProviders)
   const providerLabel = $derived(selections.length > 1
     ? `${selections.length} catalogs`
@@ -117,8 +111,6 @@
     }
     const clean = normalizeSearchQuery(query)
     const activeSelections = selections
-    const searchSelections = activeSelections.filter((selection) =>
-      selection !== 'anilist' || !activeSelections.includes('auto'))
     const request = guard.begin()
     error = ''
 
@@ -128,10 +120,9 @@
       return
     }
 
-    const cacheKey = `${searchSelections.join(',')}:${clean.toLocaleLowerCase()}`
-    const cached = cache.get(cacheKey)
-    if (cached && cached.expires > Date.now()) {
-      results = cached.media
+    const cached = cachedQuickSearch(clean, activeSelections)
+    if (cached) {
+      results = cached
       searchState = 'done'
       return
     }
@@ -142,31 +133,8 @@
       if (!guard.isCurrent(request)) return
       searchState = 'loading'
       try {
-        const batches = await Promise.allSettled(searchSelections.map(async (selection): Promise<Media[]> => {
-          if (selection === 'auto' || selection === 'anilist') {
-            const response = await anilist
-              .query<SearchResponse>(searchQuery(), { ...searchVariables({ search: clean }), perPage: 10 }, { requestPolicy: 'network-only' })
-              .toPromise()
-            if (response.error) throw response.error
-            return response.data?.Page?.media ?? []
-          }
-          const provider = await loadCatalogProvider(selection)
-          return (await provider.search({
-            query: clean, page: 1, type: selection === 'kitsu' || selection === 'jvm' ? 'anime' : 'all', sort: 'popular',
-          })).media.slice(0, 10)
-        }))
-        const unique = new Map<string, Media>()
-        for (const batch of batches) {
-          if (batch.status !== 'fulfilled') continue
-          for (const item of batch.value) unique.set(mediaKey(item), item)
-        }
-        if (!batches.some((batch) => batch.status === 'fulfilled')) {
-          const failed = batches.find((batch): batch is PromiseRejectedResult => batch.status === 'rejected')
-          if (failed) throw failed.reason
-        }
+        const media = await quickSearch(clean, activeSelections)
         if (!guard.isCurrent(request)) return
-        const media = rankQuickSearchResults([...unique.values()], clean).slice(0, 12)
-        cache.set(cacheKey, { expires: Date.now() + CACHE_MS, media })
         results = media
         searchState = 'done'
       } catch (reason) {
