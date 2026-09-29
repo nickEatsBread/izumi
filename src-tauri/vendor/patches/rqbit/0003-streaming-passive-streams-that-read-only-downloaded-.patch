@@ -1,0 +1,146 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: nickEatsBread <nickEatsBread@users.noreply.github.com>
+Date: Tue, 29 Sep 2026 21:49:31 +0100
+Subject: [PATCH 3/3] streaming: passive streams that read only downloaded
+ pieces
+
+ManagedTorrent::stream_passive opens a stream that is not registered with the torrent, so it
+never changes which pieces are requested, and that fails at once on a piece that has not been
+downloaded instead of waiting for it. FileStream::is_available and
+ManagedTorrent::file_range_downloaded say whether a position or a byte range is already there.
+
+Scrub-preview thumbnails read through these so they never compete with the video the player is
+waiting for.
+---
+ .../librqbit/src/torrent_state/streaming.rs   | 80 ++++++++++++++++---
+ 1 file changed, 71 insertions(+), 9 deletions(-)
+
+diff --git a/crates/librqbit/src/torrent_state/streaming.rs b/crates/librqbit/src/torrent_state/streaming.rs
+index 5af34d5df796e1cf3f9783f8472689a3498d2989..ace17f85b05de403c3029063e1a6b2d6e52fe792 100644
+--- a/crates/librqbit/src/torrent_state/streaming.rs
++++ b/crates/librqbit/src/torrent_state/streaming.rs
+@@ -1,5 +1,5 @@
+-// Modified for izumi: the pieces a video player is waiting for arrive sooner. See
+-// src-tauri/vendor/README.md.
++// Modified for izumi: the pieces a video player is waiting for arrive sooner, and previews can
++// read without changing which pieces are requested. See src-tauri/vendor/README.md.
+ 
+ use std::{
+     collections::VecDeque,
+@@ -159,6 +159,10 @@ pub struct FileStream {
+     file_torrent_abs_offset: u64,
+ 
+     _blocking_permit: OwnedSemaphorePermit,
++
++    // Modified for izumi: a passive stream is not prioritized and fails on a missing piece
++    // instead of waiting for it. See `ManagedTorrent::stream_passive`.
++    passive: bool,
+ }
+ 
+ macro_rules! map_io_err {
+@@ -207,12 +211,15 @@ impl AsyncRead for FileStream {
+         // check if we have the piece for real
+         let have = poll_try_io!(self.torrent.with_chunk_tracker(|ct| {
+             let have = ct.get_have_pieces().as_slice()[current.id.get() as usize];
+-            if !have {
++            if !have && !self.passive {
+                 self.streams
+                     .register_waker(self.stream_id, cx.waker().clone());
+             }
+             have
+         }));
++        if !have && self.passive {
++            return Poll::Ready(Err(std::io::Error::other("piece not downloaded yet")));
++        }
+         if !have {
+             debug!(stream_id = self.stream_id, file_id = self.file_id, piece_id = %current.id, "poll pending, not have");
+             return Poll::Pending;
+@@ -354,6 +361,45 @@ impl ManagedTorrent {
+         // Streams need live or paused state, so wait out the initial check
+         // of existing data instead of failing while it runs.
+         self.wait_until_initialized().await?;
++        self.open_stream(file_id, false).await
++    }
++
++    // Modified for izumi: whether every piece holding bytes `start..end` of file `file_id` has
++    // been downloaded and verified.
++    pub fn file_range_downloaded(&self, file_id: usize, start: u64, end: u64) -> bool {
++        let Some(metadata) = self.metadata.load_full() else {
++            return false;
++        };
++        let Some(file) = metadata.file_infos.get(file_id) else {
++            return false;
++        };
++        let end = end.min(file.len);
++        if start >= end {
++            return true;
++        }
++        let piece_length = u64::from(metadata.lengths().default_piece_length());
++        let first = (file.offset_in_torrent + start) / piece_length;
++        let last = (file.offset_in_torrent + end - 1) / piece_length;
++        self.with_chunk_tracker(|ct| {
++            let have = ct.get_have_pieces().as_slice();
++            (first..=last).all(|piece| have.get(piece as usize).is_some_and(|bit| *bit))
++        })
++        .unwrap_or(false)
++    }
++
++    // Modified for izumi: a stream that reads only what has already been downloaded. It is not
++    // registered with the torrent's streams, so it never changes which pieces are requested, and a
++    // read of a missing piece fails at once. Scrub-preview thumbnails read through one of these so
++    // they cannot compete with the video the player is waiting for.
++    pub async fn stream_passive(self: Arc<Self>, file_id: usize) -> anyhow::Result<FileStream> {
++        self.open_stream(file_id, true).await
++    }
++
++    async fn open_stream(
++        self: Arc<Self>,
++        file_id: usize,
++        passive: bool,
++    ) -> anyhow::Result<FileStream> {
+         let metadata = self
+             .metadata
+             .load_full()
+@@ -376,7 +422,11 @@ impl ManagedTorrent {
+             _blocking_permit: blocking_permit,
+             torrent: self,
+             metadata,
++            passive,
+         };
++        if passive {
++            return Ok(s);
++        }
+         s.torrent.maybe_reconnect_needed_peers_for_file(file_id);
+         streams.streams.insert(
+             s.stream_id,
+@@ -406,12 +456,24 @@ impl FileStream {
+ 
+     fn set_position(&mut self, new_pos: u64) {
+         self.position = new_pos;
+-        self.streams
+-            .streams
+-            .get_mut(&self.stream_id)
+-            .unwrap()
+-            .value_mut()
+-            .position = new_pos;
++        // Modified for izumi: passive streams are not registered.
++        if let Some(mut state) = self.streams.streams.get_mut(&self.stream_id) {
++            state.value_mut().position = new_pos;
++        }
++    }
++
++    // Modified for izumi: whether the piece at the current position has been downloaded.
++    pub fn is_available(&self) -> bool {
++        let Some(current) = self
++            .metadata
++            .lengths()
++            .compute_current_piece(self.position, self.file_torrent_abs_offset)
++        else {
++            return false;
++        };
++        self.torrent
++            .with_chunk_tracker(|ct| ct.get_have_pieces().as_slice()[current.id.get() as usize])
++            .unwrap_or(false)
+     }
+ 
+     pub fn len(&self) -> u64 {

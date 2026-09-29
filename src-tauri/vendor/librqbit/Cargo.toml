@@ -12,7 +12,7 @@
 [package]
 edition = "2024"
 name = "librqbit"
-version = "9.0.0"
+version = "9.0.1"
 authors = ["Igor Katson <igor.katson@gmail.com>"]
 build = "build.rs"
 autolib = false
@@ -129,7 +129,7 @@ version = "1.5"
 version = "0.23"
 
 [dependencies.bencode]
-version = "9.0.0"
+version = "9.0.1"
 default-features = false
 package = "librqbit-bencode"
 
@@ -137,7 +137,7 @@ package = "librqbit-bencode"
 version = "1"
 
 [dependencies.buffers]
-version = "9.0.0"
+version = "9.0.1"
 package = "librqbit-buffers"
 
 [dependencies.byteorder]
@@ -147,7 +147,7 @@ version = "1"
 version = "1"
 
 [dependencies.clone_to_owned]
-version = "9.0.0"
+version = "9.0.1"
 package = "librqbit-clone-to-owned"
 
 [dependencies.console-subscriber]
@@ -158,7 +158,7 @@ optional = true
 version = "6"
 
 [dependencies.dht]
-version = "9.0.0"
+version = "9.0.1"
 default-features = false
 package = "librqbit-dht"
 
@@ -185,7 +185,7 @@ version = "0.2"
 version = "0.15"
 
 [dependencies.librqbit-core]
-version = "9.0.0"
+version = "9.0.1"
 default-features = false
 
 [dependencies.librqbit-dualstack-sockets]
@@ -193,11 +193,11 @@ version = "0.7"
 features = ["axum"]
 
 [dependencies.librqbit-lsd]
-version = "9.0.0"
+version = "9.0.1"
 default-features = false
 
 [dependencies.librqbit-upnp]
-version = "9.0.0"
+version = "9.0.1"
 
 [dependencies.librqbit-utp]
 version = "0.7"
@@ -231,7 +231,7 @@ optional = true
 version = "0.12"
 
 [dependencies.peer_binary_protocol]
-version = "9.0.0"
+version = "9.0.1"
 default-features = false
 package = "librqbit-peer-protocol"
 
@@ -270,7 +270,7 @@ version = "0.7"
 version = "3"
 
 [dependencies.sha1w]
-version = "9.0.0"
+version = "9.0.1"
 default-features = false
 package = "librqbit-sha1-wrapper"
 
@@ -334,12 +334,12 @@ optional = true
 default-features = false
 
 [dependencies.tracker_comms]
-version = "9.0.0"
+version = "9.0.1"
 default-features = false
 package = "librqbit-tracker-comms"
 
 [dependencies.upnp-serve]
-version = "9.0.0"
+version = "9.0.1"
 optional = true
 default-features = false
 package = "librqbit-upnp-serve"

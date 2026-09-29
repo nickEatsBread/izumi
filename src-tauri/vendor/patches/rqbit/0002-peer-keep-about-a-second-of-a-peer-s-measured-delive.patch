@@ -1,0 +1,213 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: nickEatsBread <nickEatsBread@users.noreply.github.com>
+Date: Tue, 29 Sep 2026 21:49:31 +0100
+Subject: [PATCH 2/3] peer: keep about a second of a peer's measured delivery
+ in flight
+
+A peer serves requests in order, so a piece that a stream suddenly needs (a seek, a resume, the
+next piece of a stalled read) waits behind everything already asked of that peer. 128 chunks is
+2 MiB, several seconds at a typical peer's rate.
+
+Measure each peer's delivery rate while requests to it are outstanding and keep about one second
+of it in flight: at least 16 chunks, 32 before the first measurement, and never more than the
+peer allows.
+---
+ crates/librqbit/src/torrent_state/live/mod.rs | 142 +++++++++++++++++-
+ 1 file changed, 136 insertions(+), 6 deletions(-)
+
+diff --git a/crates/librqbit/src/torrent_state/live/mod.rs b/crates/librqbit/src/torrent_state/live/mod.rs
+index 443b51afebe40f6f38c131f3ef624566618b4315..ae993d236783db789eb8da1fee648d1717414f6d 100644
+--- a/crates/librqbit/src/torrent_state/live/mod.rs
++++ b/crates/librqbit/src/torrent_state/live/mod.rs
+@@ -1013,9 +1013,19 @@ impl TorrentStateLive {
+ 
+ const DEFAULT_PEER_REQUEST_WINDOW: usize = 128;
+ 
++// Modified for izumi: a peer serves our requests in order, so a piece that a stream suddenly needs
++// (a seek, a resume, the next piece of a stalled read) waits behind everything already asked of
++// that peer. 128 chunks is 2 MiB, several seconds at a typical peer's rate. Keep about a second of
++// the peer's measured delivery in flight instead, within the window the peer allows.
++const REQUEST_QUEUE_SECS: f64 = 1.0;
++const INITIAL_REQUEST_WINDOW: usize = 32;
++const MIN_REQUEST_WINDOW: usize = 16;
++const DELIVERY_SAMPLE: Duration = Duration::from_millis(500);
++
+ struct PeerFlowControl {
+     i_am_choked: bool,
+     request_window: usize,
++    delivery: DeliveryRate,
+ }
+ 
+ impl PeerFlowControl {
+@@ -1023,8 +1033,55 @@ impl PeerFlowControl {
+         Self {
+             i_am_choked: true,
+             request_window: max_request_window,
++            delivery: DeliveryRate::default(),
++        }
++    }
++}
++
++// Modified for izumi: how fast a peer has been delivering chunks, measured only while requests to
++// it are outstanding.
++#[derive(Default)]
++struct DeliveryRate {
++    bytes_per_sec: Option<f64>,
++    sample_started: Option<Instant>,
++    sample_bytes: u64,
++}
++
++impl DeliveryRate {
++    fn record(&mut self, bytes: u64, more_requested: bool, now: Instant) {
++        match self.sample_started {
++            // The first chunk after an idle spell only starts a sample. The time before it holds
++            // the request round trip or a choke, not delivery.
++            None => {
++                self.sample_started = Some(now);
++                self.sample_bytes = 0;
++            }
++            Some(started) => {
++                self.sample_bytes += bytes;
++                let elapsed = now.saturating_duration_since(started);
++                if elapsed >= DELIVERY_SAMPLE {
++                    let rate = self.sample_bytes as f64 / elapsed.as_secs_f64();
++                    self.bytes_per_sec = Some(match self.bytes_per_sec {
++                        Some(previous) => (previous + rate) / 2.0,
++                        None => rate,
++                    });
++                    self.sample_started = Some(now);
++                    self.sample_bytes = 0;
++                }
++            }
++        }
++        if !more_requested {
++            self.sample_started = None;
+         }
+     }
++
++    fn request_window(&self, peer_window: usize) -> usize {
++        let window = match self.bytes_per_sec {
++            Some(rate) => (rate * REQUEST_QUEUE_SECS / f64::from(CHUNK_SIZE)).ceil() as usize,
++            None => INITIAL_REQUEST_WINDOW,
++        };
++        window.max(MIN_REQUEST_WINDOW).min(peer_window)
++    }
+ }
+ 
+ // All peer state that would never be used by other actors should pe put here.
+@@ -1834,24 +1891,31 @@ impl PeerHandler {
+             .fetch_add(piece.len() as u64, Ordering::Relaxed);
+         self.counters.fetched_chunks.fetch_add(1, Ordering::Relaxed);
+ 
+-        let should_process = self
++        let (should_process, more_requested) = self
+             .state
+             .peers
+             .with_live_mut(self.addr, "inflight_requests.remove", |h| {
+-                match h.remove_inflight_request(&chunk_info) {
+-                    RemoveInflightRequestResult::Expected => Ok(true),
++                let should_process = match h.remove_inflight_request(&chunk_info) {
++                    RemoveInflightRequestResult::Expected => true,
+                     RemoveInflightRequestResult::LateCanceled => {
+                         trace!(?piece, "peer sent us a chunk we did not ask for");
+-                        Ok(false)
++                        false
+                     }
+                     RemoveInflightRequestResult::Unexpected => anyhow::bail!(
+                         "peer sent us a piece we did not ask. Inflight requests: {:?}. Got: {:?}",
+                         h.inflight_requests_debug(),
+                         piece,
+                     ),
+-                }
++                };
++                Ok((should_process, h.requested_inflight_count() > 0))
+             })
+             .context("peer not found")??;
++        // Modified for izumi: sizes this peer's request window.
++        self.lock_flow_control("record delivery").delivery.record(
++            piece.len() as u64,
++            more_requested,
++            Instant::now(),
++        );
+ 
+         if !should_process {
+             return Ok(());
+@@ -2103,7 +2167,11 @@ impl PeerHandler {
+     fn can_send_request(&self) -> bool {
+         let (i_am_choked, request_window) = {
+             let flow = self.lock_flow_control("can_send_request");
+-            (flow.i_am_choked, flow.request_window)
++            // Modified for izumi: see REQUEST_QUEUE_SECS.
++            (
++                flow.i_am_choked,
++                flow.delivery.request_window(flow.request_window),
++            )
+         };
+ 
+         if i_am_choked {
+@@ -2142,3 +2210,65 @@ fn format_peer_client_name(value: &ByteBuf<'_>) -> Option<String> {
+ 
+     Some(client_name)
+ }
++
++// Added for izumi: `DeliveryRate`.
++#[cfg(test)]
++mod delivery_rate_tests {
++    use super::*;
++
++    const MIB: u64 = 1024 * 1024;
++
++    fn measured(bytes: u64, over: Duration) -> DeliveryRate {
++        let mut rate = DeliveryRate::default();
++        let start = Instant::now();
++        rate.record(u64::from(CHUNK_SIZE), true, start);
++        rate.record(bytes, true, start + over);
++        rate
++    }
++
++    #[test]
++    fn an_unmeasured_peer_starts_with_a_modest_window() {
++        let rate = DeliveryRate::default();
++        assert_eq!(
++            rate.request_window(DEFAULT_PEER_REQUEST_WINDOW),
++            INITIAL_REQUEST_WINDOW
++        );
++        // A peer that allows fewer requests keeps its own limit.
++        assert_eq!(rate.request_window(8), 8);
++    }
++
++    #[test]
++    fn the_window_holds_about_a_second_of_delivery() {
++        let one_mib_a_second = measured(MIB, Duration::from_secs(1));
++        assert_eq!(
++            one_mib_a_second.request_window(DEFAULT_PEER_REQUEST_WINDOW),
++            64
++        );
++
++        let fast = measured(10 * MIB, Duration::from_secs(1));
++        assert_eq!(
++            fast.request_window(DEFAULT_PEER_REQUEST_WINDOW),
++            DEFAULT_PEER_REQUEST_WINDOW
++        );
++
++        let slow = measured(100 * 1024, Duration::from_secs(1));
++        assert_eq!(
++            slow.request_window(DEFAULT_PEER_REQUEST_WINDOW),
++            MIN_REQUEST_WINDOW
++        );
++    }
++
++    #[test]
++    fn time_with_nothing_requested_is_not_counted() {
++        let mut rate = DeliveryRate::default();
++        let start = Instant::now();
++        rate.record(u64::from(CHUNK_SIZE), true, start);
++        // The last outstanding chunk arrives, then the peer sits idle for ten seconds.
++        rate.record(MIB / 2, false, start + Duration::from_millis(500));
++        let before_idle = rate.bytes_per_sec.unwrap();
++        rate.record(u64::from(CHUNK_SIZE), true, start + Duration::from_secs(10));
++        assert_eq!(rate.bytes_per_sec, Some(before_idle));
++        rate.record(MIB / 2, true, start + Duration::from_millis(10_500));
++        assert_eq!(rate.request_window(DEFAULT_PEER_REQUEST_WINDOW), 64);
++    }
++}

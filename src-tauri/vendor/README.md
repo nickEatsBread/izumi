@@ -1,127 +1,158 @@
 # Vendored crates
 
-Patched copies of librqbit 9.0.0 and two crates it depends on. The `[patch.crates-io]` section at
-the end of `src-tauri/Cargo.toml` swaps them in.
+izumi builds librqbit from the head of its upstream `main` branch, not from the last crates.io
+release, and carries its own changes on top until upstream has an equivalent. This directory holds
+what that takes. `scripts/ci/librqbit-vendor.mjs` writes it; don't edit the crate directories by
+hand.
 
-| Crate | Version | Upstream |
-| --- | --- | --- |
-| `librqbit` | 9.0.0 | [ikatson/rqbit](https://github.com/ikatson/rqbit) `crates/librqbit` |
-| `librqbit-dht` | 9.0.0 | [ikatson/rqbit](https://github.com/ikatson/rqbit) `crates/dht` |
-| `librqbit-utp` | 0.7.0 | [ikatson/librqbit-utp](https://github.com/ikatson/librqbit-utp) |
+- `upstream.json` pins one commit in each upstream repository:
+  [ikatson/rqbit](https://github.com/ikatson/rqbit),
+  [ikatson/librqbit-utp](https://github.com/ikatson/librqbit-utp) and
+  [ikatson/librqbit-dualstack-sockets](https://github.com/ikatson/librqbit-dualstack-sockets). Its
+  `vendored` list says which crates are copied here.
+- `patches/<repository>/` holds izumi's changes as `git format-patch` files, applied in order to the
+  pinned commit.
+- Each crate directory is what `cargo package` makes of the pinned commit with the patches applied,
+  which is what crates.io would publish from it. It leaves out the package's `.cargo_vcs_info.json`
+  and `Cargo.lock`, which Cargo never reads for a dependency, and librqbit's `webui/`, since izumi
+  builds librqbit without its `webui` feature. It adds the repository's `LICENSE` notice when the
+  package has none.
 
-Each directory is the published `.crate` archive unpacked unchanged, plus a patch described below
-and a note at the top of each file it changes. The archives' sha256 matched the checksums Cargo.lock
-had recorded for them. The one omission is librqbit's `webui/` directory: izumi builds librqbit
-without its `webui` feature, and nothing else reads those sources. All three crates are Apache-2.0
-(see `THIRD-PARTY-NOTICES.md`).
+Only crates that differ from the crates.io release of the same version are copied. The rest of
+librqbit's crates come from crates.io. The block between `# BEGIN librqbit-vendor` and
+`# END librqbit-vendor` at the end of `src-tauri/Cargo.toml` is generated to match, and
+`scripts/ci/librqbit-vendored-crates.test.ts` fails if Cargo stops using any of the copies. Cargo
+drops an unusable patch with only a warning.
 
-## librqbit: pieces a video player is waiting for
+## izumi's patches
+
+They change librqbit only (`patches/rqbit/`). Each file they touch says so at the top.
 
 The player reads a torrent through librqbit's HTTP stream, which blocks until the piece at the read
 position has arrived and been verified. librqbit gives each piece to a single peer, so one slow peer
 holding that piece stalls playback while the rest of the swarm keeps delivering other pieces. In
 one test the swarm delivered 91 MB in 9 seconds while the first piece of the file stayed missing.
-The patch changes three things, in `src/piece_tracker.rs`, `src/torrent_state/live/mod.rs`,
-`src/torrent_state/streaming.rs` and `src/chunk_tracker.rs`, and adds a passive read for scrub
-previews:
 
-- **Taking over a waited-for piece sooner.** The first eight pieces ahead of every open stream are
-  "critical": mpv reads a release's embedded fonts, often several megabytes, before it shows
-  anything. Before a peer starts anything else, it takes over a critical piece that another peer
-  has held for 1.5 times this peer's average piece time, and never sooner than 500 ms. Upstream
-  waits for ten times that average. A peer that has not completed a piece yet takes nothing.
-- **Keeping what already arrived.** A peer that takes a piece over only requests the chunks that are
-  still missing. Upstream requests every chunk again, in order, which put the missing ones last.
-- **A request queue sized by delivery.** A peer serves requests in order, so a newly waited-for
-  piece sits behind everything already asked of that peer. Upstream keeps up to 128 chunks (2 MiB)
-  in flight per peer, several seconds at a typical peer's rate. The patch measures each peer's
-  delivery rate while requests are outstanding and keeps about one second of it in flight: at
-  least 16 chunks, 32 before the first measurement, and never more than the peer allows.
-
-- **Passive reads for previews.** `ManagedTorrent::stream_passive` opens a stream that is not
-  registered with the torrent, so it never changes which pieces are requested, and that fails at
-  once on a piece that has not been downloaded instead of waiting for it. `FileStream::is_available`
-  and `ManagedTorrent::file_range_downloaded` say whether a position or a byte range is already
-  there. The seek bar's thumbnails read a direct torrent this way, so they never compete with the
-  video the player is waiting for.
+1. **Taking over a waited-for piece sooner** (`0001`). The first eight pieces ahead of every open
+   stream are "critical": mpv reads a release's embedded fonts, often several megabytes, before it
+   shows anything. Before a peer starts anything else, it takes over a critical piece that another
+   peer has held for 1.5 times this peer's average piece time, and never sooner than 500 ms.
+   Upstream waits for ten times that average. A peer that has not completed a piece yet takes
+   nothing. A peer that takes a piece over only requests the chunks that are still missing.
+   Upstream requests every chunk again, in order, which put the missing ones last.
+2. **A request queue sized by delivery** (`0002`). A peer serves requests in order, so a newly
+   waited-for piece sits behind everything already asked of that peer. Upstream keeps up to 128
+   chunks (2 MiB) in flight per peer, several seconds at a typical peer's rate. The patch measures
+   each peer's delivery rate while requests are outstanding and keeps about one second of it in
+   flight: at least 16 chunks, 32 before the first measurement, and never more than the peer allows
+   or upstream's `max_request_window` option.
+3. **Passive reads for previews** (`0003`). `ManagedTorrent::stream_passive` opens a stream that is
+   not registered with the torrent, so it never changes which pieces are requested, and that fails
+   at once on a piece that has not been downloaded instead of waiting for it.
+   `FileStream::is_available` and `ManagedTorrent::file_range_downloaded` say whether a position or a
+   byte range is already there. The seek bar's thumbnails read a direct torrent this way, so they
+   never compete with the video the player is waiting for.
 
 Unit tests cover the takeover rule, the chunk bookkeeping and the queue sizing
 (`try_steal_critical`, `chunks_received_before_a_piece_completes_stay_downloaded` and
 `delivery_rate_tests`).
 
-To see the exact diff, unpack the published archive and compare:
+## Updating
 
 ```bash
-curl -sL https://static.crates.io/crates/librqbit/librqbit-9.0.0.crate | tar -xz -C /tmp
-diff -ru --exclude=webui /tmp/librqbit-9.0.0 src-tauri/vendor/librqbit
+node scripts/ci/librqbit-vendor.mjs update
 ```
 
-The tests run on the Windows dev box (keep the target directory outside the repo):
+This moves each pin to the head of its branch and rebases the patches onto it, then rewrites this
+directory, the `Cargo.toml` block and the librqbit entries in `Cargo.lock`. The scratch clones live
+in `tmp/librqbit-vendor/src/`. If upstream's version moves past what the `librqbit` requirement in
+`src-tauri/Cargo.toml` accepts (a new major version, say), Cargo stops using the copies and the
+command says so: raise the requirement and run `sync`.
+
+If a patch conflicts, the command stops and says where. Resolve the conflict in that clone, `git
+add` the files and run `git rebase --continue` there, then:
 
 ```bash
-cargo test --locked --target-dir "$TEMP/vendor-target" --manifest-path src-tauri/vendor/librqbit/Cargo.toml --lib
+node scripts/ci/librqbit-vendor.mjs export
 ```
 
-This change is not upstream. Before moving to a newer librqbit, unpack its archive here and apply
-the same change, or drop it if upstream has an equivalent.
+To give up on that update instead, `node scripts/ci/librqbit-vendor.mjs sync --discard` goes back
+to the pins. `sync`, `update` and `check` reset the clones, so they refuse to run while an update is
+waiting like this, or while a clone has commits that `export` hasn't written yet. `--discard` throws
+that work away.
 
-## librqbit-dht and librqbit-utp: UDP receive errors on Windows
+Before committing an update, check it:
 
-On Windows, `recv_from` on a UDP socket fails for three conditions that concern a single datagram.
-The socket keeps working afterwards:
+- `cargo check` in `src-tauri`.
+- librqbit's tests, in the scratch clone that now holds the pinned commit plus the patches. Keep
+  the target directory outside the repository. On the Windows dev box the two
+  `tests::e2e::test_e2e_download_*` tests can time out while other builds are running; they pass
+  on Linux (WSL).
 
-- WSAECONNRESET (10054): an earlier `send_to` got an ICMP port unreachable back.
-- WSAENETRESET (10052): an earlier `send_to` got an ICMP time exceeded back.
-- WSAEMSGSIZE (10040): the datagram was longer than the 16 KiB receive buffer.
+  ```bash
+  cargo test --manifest-path tmp/librqbit-vendor/src/rqbit/Cargo.toml --target-dir "${TMPDIR:-${TEMP:-/tmp}}/rqbit-target" -p librqbit --lib
+  ```
 
-Upstream returns on any receive error, in the DHT framer (`librqbit-dht/src/dht.rs`) and in the
-uTP dispatcher (`librqbit-utp/src/socket.rs`). That ends the DHT worker or the uTP socket for the
-rest of the session. After that, every DHT lookup fails with `DhtDead` and every uTP connect or
-accept fails with `DispatcherDead`. Pausing and resuming torrents can't bring them back. One
-unreachable DHT node or uTP peer is enough to cause it, and any host can send an oversized datagram.
+- `npx vitest run scripts/ci/librqbit-vendor.test.ts scripts/ci/librqbit-vendored-crates.test.ts`
+- A direct P2P playback start and a few seeks on a real release.
 
-The patch adds `is_datagram_error`, which matches these three codes on Windows only. Both loops now
-skip such an error and keep reading. It also adds two tests to each crate that fail on Windows
-without the patch.
+Commit `src-tauri/vendor`, `src-tauri/Cargo.toml` and `src-tauri/Cargo.lock` together. `sync` moves
+only the librqbit crates in `Cargo.lock`. If the diff shows other packages moving (a build running
+at the same time can re-resolve the whole lockfile), restore `Cargo.lock` from git and run `sync`
+again.
 
-Upstream merged the same commits on 2026-09-28:
-[ikatson/rqbit#690](https://github.com/ikatson/rqbit/pull/690) (commit `2b123074`, closes
-[ikatson/rqbit#664](https://github.com/ikatson/rqbit/issues/664)) and
-[ikatson/librqbit-utp#4](https://github.com/ikatson/librqbit-utp/pull/4) (commit `1776dba`). No
-crates.io release had them yet at that point; the latest were librqbit-dht 9.0.1 and
-librqbit-utp 0.7.0.
+## When upstream has one of these changes
 
-To see the exact diff, unpack the published archive and compare:
+Git drops a patch during `update` only when upstream made exactly the same change, which rarely
+happens: each patch also adds the "Modified for izumi" notices. So once upstream has the code, the
+rebased patch usually shrinks to those notices, and `update` and `check` say so. Or it conflicts
+where upstream solved the problem another way. Either way, drop it in the clone and export:
 
 ```bash
-curl -sL https://static.crates.io/crates/librqbit-dht/librqbit-dht-9.0.0.crate | tar -xz -C /tmp
-diff -ru /tmp/librqbit-dht-9.0.0 src-tauri/vendor/librqbit-dht
+node scripts/ci/librqbit-vendor.mjs sync
+git -C tmp/librqbit-vendor/src/rqbit log --oneline izumi
+git -C tmp/librqbit-vendor/src/rqbit rebase --onto <commit>^ <commit> izumi
+node scripts/ci/librqbit-vendor.mjs export
 ```
 
-## Checking it on Windows
+A later patch may touch lines the dropped one added (0003 edits the notice 0001 adds at the top of
+`streaming.rs`). Resolve that in the rebase like any other conflict before running `export`.
 
-izumi's own test binary doesn't start on the Windows dev box, but these crates' tests do. Keep the
-target directory outside the repo. librqbit-utp's tests also build a C++ uTP implementation, which
-needs MSVC.
+## Changing a patch
+
+`sync` leaves each clone on an `izumi` branch: the pinned commit plus one commit per patch. Edit and
+commit there (a new commit adds a patch, `git commit --amend` or a fixup changes one), then run
+`export`. It writes the branch back to `patches/` and syncs.
 
 ```bash
-cargo test --locked --target-dir "$TEMP/vendor-target" --manifest-path src-tauri/vendor/librqbit-dht/Cargo.toml --lib test_dht_answers_after
+node scripts/ci/librqbit-vendor.mjs sync
+node scripts/ci/librqbit-vendor.mjs export
 ```
 
-```bash
-cargo test --locked --target-dir "$TEMP/vendor-target" --manifest-path src-tauri/vendor/librqbit-utp/Cargo.toml --lib e2e_test_connect_after
-```
+## The checks
 
-Other platforms never report these errors on an unconnected UDP socket, so there the tests pass with
-or without the patch.
+`.github/workflows/librqbit-upstream.yml` runs `node scripts/ci/librqbit-vendor.mjs check` every
+Monday. It changes nothing. It opens an issue labelled `librqbit-upstream`, or updates the open
+one, when any of these is true:
 
-## Dropping it
+- an upstream branch has commits after its pin. The issue says whether the patches still rebase,
+  and which of them upstream now has;
+- crates.io has a newer release of a vendored crate;
+- this directory is not what `sync` builds from the pins and patches.
 
-Once librqbit-dht and librqbit-utp releases include the two upstream commits, delete their
-directories and their lines in the `[patch.crates-io]` section, remove them from
-`scripts/ci/librqbit-vendored-crates.test.ts`, and update those crates to the releases.
+It closes the issue once none of them holds. The same job runs on a pull request that touches this
+directory, `src-tauri/Cargo.toml` or `src-tauri/Cargo.lock`, and fails only on the last point, so a
+hand edit to a vendored crate can't slip in. It uses the Cargo version `sync` recorded in
+`upstream.json` (`"cargo"`), so the `Cargo.toml` files Cargo generates compare equal.
 
-Until then, if a librqbit bump needs other DHT or uTP versions than the ones here, Cargo stops using
-these copies and only prints a warning. `scripts/ci/librqbit-vendored-crates.test.ts` turns that
-into a failure. The same test covers the librqbit copy. Unpack the new archives here and apply the
-patches to them.
+## When this goes away
+
+`sync` stops copying a crate as soon as the crates.io release of the version upstream is at has the
+same contents. So after upstream publishes a release, `update` moves the pins onto it, and every
+crate that release matches comes from crates.io again. When no patches are left either, `sync`
+copies nothing and removes the `Cargo.toml` block.
+
+## Licence
+
+All these crates are Apache-2.0. Each copy carries its repository's `LICENSE` notice, and
+`THIRD-PARTY-NOTICES.md` has the notice too.

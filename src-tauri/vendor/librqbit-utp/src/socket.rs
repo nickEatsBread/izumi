@@ -1,6 +1,3 @@
-// Modified for izumi: UDP receive errors that concern a single datagram no longer end the
-// dispatcher on Windows. See src-tauri/vendor/README.md.
-
 use std::{
     collections::{VecDeque, hash_map::Entry},
     io::IoSlice,
