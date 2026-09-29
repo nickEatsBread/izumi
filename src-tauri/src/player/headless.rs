@@ -1,6 +1,6 @@
 //! Warm scrub-thumbnail decoder — a SECOND libmpv core using mpv's **software render
 //! API** (`MPV_RENDER_API_TYPE_SW`). This is the proper, ffmpeg-free, window-less way to
-//! get frames out of mpv: the core runs with `vo=libmpv`, and each hover we seek then
+//! get frames out of mpv: the core runs with `vo=libmpv`, and for each tile we seek then
 //! `mpv_render_context_render()` the current frame straight into a CPU buffer AT
 //! THUMBNAIL SIZE (mpv does the colour-convert + downscale), which we encode to JPEG.
 //! One warm decoder on one connection — thumbfast's model, but fully in-process.
@@ -25,15 +25,20 @@ const SW_FORMAT: sys::mpv_render_param_type = sys::mpv_render_param_type_MPV_REN
 const SW_STRIDE: sys::mpv_render_param_type = sys::mpv_render_param_type_MPV_RENDER_PARAM_SW_STRIDE;
 const SW_POINTER: sys::mpv_render_param_type =
     sys::mpv_render_param_type_MPV_RENDER_PARAM_SW_POINTER;
-const UPDATE_FRAME: u64 = sys::mpv_render_update_flag_MPV_RENDER_UPDATE_FRAME as u64;
-const TILE_W: i32 = 240;
+/// A keyframe seek lands on the keyframe at or before the target. Long-GOP encodes space them
+/// several seconds apart; a position further off than this means the seek never happened.
+const KEYFRAME_SLACK_S: f64 = 30.0;
 
 enum Msg {
     Shot {
         url: String,
         time: f64,
+        width: i32,
         resp: Sender<Result<Vec<u8>, String>>,
     },
+    /// Close the stream but keep the core warm. An open direct-torrent stream keeps its pieces
+    /// prioritized over whatever the player needs next.
+    Release,
     Stop,
 }
 
@@ -97,14 +102,15 @@ impl HeadlessMpv {
         Ok(tx)
     }
 
-    /// Produce a JPEG thumbnail for `url` at `time` seconds. Loads the stream into the
-    /// warm core on first use (or when it changes), then seeks + renders. Bounded.
-    pub fn screenshot(&self, url: &str, time: f64) -> Result<Vec<u8>, String> {
+    /// Produce a JPEG thumbnail `width` pixels wide for `url` at `time` seconds. Loads the stream
+    /// into the warm core on first use (or when it changes), then seeks + renders. Bounded.
+    pub fn screenshot(&self, url: &str, time: f64, width: i32) -> Result<Vec<u8>, String> {
         let tx = self.ensure()?;
         let (rtx, rrx) = channel();
         tx.send(Msg::Shot {
             url: url.to_string(),
             time,
+            width,
             resp: rtx,
         })
         .map_err(|_| "headless thread gone".to_string())?;
@@ -113,6 +119,15 @@ impl HeadlessMpv {
         // guard while the worker is still busy (which would queue a second grab behind it).
         rrx.recv_timeout(Duration::from_secs(25))
             .map_err(|_| "headless timeout".to_string())?
+    }
+
+    /// Close the open stream, if any. The next screenshot reopens it.
+    pub fn release(&self) {
+        if let Ok(g) = self.tx.lock() {
+            if let Some(tx) = g.as_ref() {
+                let _ = tx.send(Msg::Release);
+            }
+        }
     }
 
     pub fn stop(&self) {
@@ -154,6 +169,7 @@ fn worker(rx: Receiver<Msg>) {
                     Msg::Shot { resp, .. } => {
                         let _ = resp.send(Err("headless init failed".into()));
                     }
+                    Msg::Release => {}
                     Msg::Stop => break,
                 }
             }
@@ -162,9 +178,21 @@ fn worker(rx: Receiver<Msg>) {
     };
     for msg in rx.iter() {
         match msg {
-            Msg::Shot { url, time, resp } => {
-                let _ = resp.send(grab(&mut core, &url, time));
+            Msg::Shot {
+                url,
+                time,
+                width,
+                resp,
+            } => {
+                let result = grab(&mut core, &url, time, width);
+                // A read that fails ends the file (mpv treats it as the end of the stream), so
+                // the next request must open it again.
+                if result.is_err() {
+                    release_stream(&mut core);
+                }
+                let _ = resp.send(result);
             }
+            Msg::Release => release_stream(&mut core),
             Msg::Stop => break,
         }
     }
@@ -199,7 +227,7 @@ fn create_core() -> Result<Core, String> {
         set_opt(mpv, b"video-timing-offset\0", b"0\0"); // don't pace to display rate
         set_opt(mpv, b"cache\0", b"yes\0");
         set_opt(mpv, b"force-seekable\0", b"yes\0");
-        // `grab()` seeks to one keyframe and renders a single 240px-wide frame; it never plays
+        // `grab()` seeks to one keyframe and renders a single small frame; it never plays
         // forward, so every byte of read-ahead is fetched and thrown away. mpv bounds read-ahead by
         // `cache-secs` (default 10), NOT by `demuxer-max-bytes` — so the byte cap alone was doing
         // almost nothing and each tile pulled seconds of stream. That bandwidth is contended with
@@ -245,10 +273,62 @@ fn create_core() -> Result<Core, String> {
     }
 }
 
-fn grab(core: &mut Core, url: &str, time: f64) -> Result<Vec<u8>, String> {
+fn release_stream(core: &mut Core) {
+    if core.cur_url.is_empty() {
+        return;
+    }
     unsafe {
-        // (Re)load the stream if it changed, then wait for it to become seekable.
+        let mut cmd = [b"stop\0".as_ptr() as *const c_char, std::ptr::null()];
+        sys::mpv_command(core.mpv, cmd.as_mut_ptr());
+    }
+    core.cur_url.clear();
+}
+
+const EVENT_NONE: sys::mpv_event_id = sys::mpv_event_id_MPV_EVENT_NONE;
+const EVENT_END_FILE: sys::mpv_event_id = sys::mpv_event_id_MPV_EVENT_END_FILE;
+const EVENT_FILE_LOADED: sys::mpv_event_id = sys::mpv_event_id_MPV_EVENT_FILE_LOADED;
+const EVENT_PLAYBACK_RESTART: sys::mpv_event_id = sys::mpv_event_id_MPV_EVENT_PLAYBACK_RESTART;
+
+/// Discard events left over from earlier work, so a wait below only sees what follows.
+unsafe fn drain_events(mpv: *mut sys::mpv_handle) {
+    while (*sys::mpv_wait_event(mpv, 0.0)).event_id != EVENT_NONE {}
+}
+
+/// Wait for `wanted`. A file that ends for any reason other than being replaced could not be read:
+/// a direct-torrent preview that reaches a piece not downloaded yet ends that way at once.
+unsafe fn wait_for(
+    mpv: *mut sys::mpv_handle,
+    wanted: sys::mpv_event_id,
+    timeout: Duration,
+) -> Result<(), String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err("timed out".into());
+        }
+        let event = &*sys::mpv_wait_event(mpv, left.as_secs_f64());
+        if event.event_id == wanted {
+            return Ok(());
+        }
+        if event.event_id == EVENT_END_FILE {
+            let reason = (event.data as *const sys::mpv_event_end_file)
+                .as_ref()
+                .map(|end| end.reason);
+            if reason != Some(sys::mpv_end_file_reason_MPV_END_FILE_REASON_STOP) {
+                return Err("the stream ended".into());
+            }
+        }
+    }
+}
+
+fn grab(core: &mut Core, url: &str, time: f64, width: i32) -> Result<Vec<u8>, String> {
+    unsafe {
+        // (Re)load the stream if it changed. Waiting for mpv's own events rather than polling
+        // properties matters here: right after a `stop`, the previous file's duration can still
+        // be read, and a seek sent then lands between two files.
         if core.cur_url != url {
+            drain_events(core.mpv);
             let curl = CString::new(url).map_err(|_| "bad url")?;
             let mut cmd = [
                 b"loadfile\0".as_ptr() as *const c_char,
@@ -258,21 +338,13 @@ fn grab(core: &mut Core, url: &str, time: f64) -> Result<Vec<u8>, String> {
             if sys::mpv_command(core.mpv, cmd.as_mut_ptr()) < 0 {
                 return Err("loadfile failed".into());
             }
-            let start = Instant::now();
-            while get_double(core.mpv, b"duration\0").map(|d| d > 0.0) != Some(true) {
-                if start.elapsed() > Duration::from_secs(12) {
-                    // Stream never opened. Leave cur_url UNCHANGED so the next request for the same
-                    // url re-issues loadfile and retries — if we'd already recorded it, that request
-                    // would skip the load and render a stale/blank frame of the PREVIOUS stream,
-                    // which then gets JPEG-encoded and disk-cached as a valid "ready" tile forever.
-                    return Err("stream did not open".into());
-                }
-                std::thread::sleep(Duration::from_millis(30));
-            }
-            // Only record the url once duration > 0 confirms the file actually opened.
+            // Headers and index read, then the first frame decoded.
+            wait_for(core.mpv, EVENT_FILE_LOADED, Duration::from_secs(12))?;
+            wait_for(core.mpv, EVENT_PLAYBACK_RESTART, Duration::from_secs(6))?;
             core.cur_url = url.to_string();
         }
         // Seek to the target keyframe (one range fetch).
+        drain_events(core.mpv);
         let ts = CString::new(format!("{time}")).map_err(|_| "bad time")?;
         let mut seek = [
             b"seek\0".as_ptr() as *const c_char,
@@ -280,34 +352,32 @@ fn grab(core: &mut Core, url: &str, time: f64) -> Result<Vec<u8>, String> {
             b"absolute+keyframes\0".as_ptr() as *const c_char,
             std::ptr::null(),
         ];
-        sys::mpv_command(core.mpv, seek.as_mut_ptr());
-        // Wait for the seek to settle, then for a fresh frame to be ready to render.
-        let start = Instant::now();
-        while get_flag(core.mpv, b"seeking\0") {
-            if start.elapsed() > Duration::from_secs(6) {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(15));
+        if sys::mpv_command(core.mpv, seek.as_mut_ptr()) < 0 {
+            return Err("seek failed".into());
         }
-        let start = Instant::now();
-        while sys::mpv_render_context_update(core.rctx) & UPDATE_FRAME == 0 {
-            if start.elapsed() > Duration::from_secs(3) {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(15));
+        // mpv announces the end of a seek once the frame at the new position has been shown.
+        // Rendering any earlier would store whatever frame the core still holds, often black, as
+        // this position's tile for as long as the stream plays. The render API's new-frame flag
+        // is no signal here: mpv only holds a frame for it briefly before showing it anyway, so on
+        // a slow stream the flag is already gone. The frame shown is the one rendered below.
+        wait_for(core.mpv, EVENT_PLAYBACK_RESTART, Duration::from_secs(6))?;
+        match get_double(core.mpv, b"time-pos\0") {
+            Some(landed) if landed <= time + 2.0 && landed >= time - KEYFRAME_SLACK_S => {}
+            _ => return Err("the seek landed elsewhere".into()),
         }
-        // Target size: 240px wide, height from the video's display aspect (fallback 16:9).
+        sys::mpv_render_context_update(core.rctx);
+        // Height from the video's display aspect (fallback 16:9).
         let (dw, dh) = (
             get_double(core.mpv, b"dwidth\0"),
             get_double(core.mpv, b"dheight\0"),
         );
         let h = match (dw, dh) {
             (Some(w), Some(h)) if w > 0.0 && h > 0.0 => {
-                ((TILE_W as f64 * h / w).round() as i32).clamp(60, 400)
+                ((width as f64 * h / w).round() as i32).clamp(60, 800)
             }
-            _ => 135,
+            _ => width * 9 / 16,
         };
-        render_sw(core.rctx, TILE_W, h)
+        render_sw(core.rctx, width, h)
     }
 }
 
@@ -353,17 +423,6 @@ unsafe fn get_double(mpv: *mut sys::mpv_handle, name: &[u8]) -> Option<f64> {
     let s = CStr::from_ptr(p).to_str().ok().map(str::to_owned);
     sys::mpv_free(p as *mut c_void);
     s.and_then(|s| s.parse::<f64>().ok())
-}
-
-/// Read a yes/no mpv flag property.
-unsafe fn get_flag(mpv: *mut sys::mpv_handle, name: &[u8]) -> bool {
-    let p = sys::mpv_get_property_string(mpv, name.as_ptr() as *const c_char);
-    if p.is_null() {
-        return false;
-    }
-    let yes = CStr::from_ptr(p).to_bytes() == b"yes";
-    sys::mpv_free(p as *mut c_void);
-    yes
 }
 
 /// Pack the `rgb0` (4 bytes/px, honoring `stride`) buffer to RGB and encode a JPEG.

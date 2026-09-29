@@ -691,25 +691,37 @@ async fn player_editor_snapshot(
     Err("subtitle editor screenshot timed out".into())
 }
 
-/// Register a scrub-preview thumbnail job for the current stream. `key` is the infoHash
-/// (or media-episode) cache key; `duration` comes from mpv so we don't re-probe. Tiles
-/// are then rendered on demand by the headless libmpv decoder. Cached under
-/// `<app-cache>/thumbs`.
+/// Register the scrub-preview grid of the loaded file `url`. `key` is the infoHash (or
+/// media-episode) cache key; the duration is read from mpv. `width` is the tile width in device
+/// pixels. The headless libmpv decoder renders hovered tiles at once and the rest of the grid in
+/// the background. Cached under `<app-cache>/thumbs`. False while `url` is not loaded yet.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_sprite_start(
     app: AppHandle,
     key: String,
-    duration: f64,
+    url: String,
+    width: Option<i32>,
     player: tauri::State<'_, player::PlayerHandle>,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let cache_root = app
         .path()
         .app_cache_dir()
         .map_err(|e| e.to_string())?
         .join("thumbs");
-    player.start_sprite(key, duration, cache_root);
-    Ok(())
+    let readable_app = app.clone();
+    let readable: std::sync::Arc<player::ReadableAt> =
+        std::sync::Arc::new(move |url: &str, fraction: f64| {
+            direct_torrent::preview_readable(&readable_app, url, fraction)
+        });
+    Ok(player.start_sprite(
+        key,
+        url,
+        width.unwrap_or(240),
+        cache_root,
+        app,
+        readable,
+    ))
 }
 
 /// Clear the on-disk scrub-thumbnail cache (`<app-cache>/thumbs`) — the sprite JPEGs generated

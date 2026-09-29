@@ -36,8 +36,9 @@
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
     subtitleAutoSync, gifIncludeSubtitles,
     hotkeyBindings, systemMediaControls, discordRichPresence, p2pStatusVisibility, playerProgressAnimations,
-    preferredAudioLang, preferredSubLang,
+    preferredAudioLang, preferredSubLang, scrubThumbnails,
   } from '$lib/settings/ui'
+  import { registerThumbTiles } from '$lib/player/thumb-tiles'
   import { get } from 'svelte/store'
   import { initScrub, beginScrub, moveScrub, endScrub, scrub, scrubActive } from '$lib/player/scrub'
   import { ButtonPressLatch, startGamepadEventSeek } from '$lib/player/gamepad'
@@ -1330,6 +1331,12 @@
         }
         reportDirectTorrentBuffer(pos, buffer)
         reportWatchPlayback(pos, dur, paused, buffering)
+        // Scrub previews start rendering once the file is loaded, whether or not the controls have
+        // appeared yet, so the first scrub already finds most of the bar ready. The seek bar in
+        // Game mode shows no previews, and a DRM stream renders its own.
+        if (loadedUrl && dur > 1 && $spriteKey && $scrubThumbnails && !gmMode && !$nowPlayingStream.drm) {
+          registerThumbTiles($spriteKey, loadedUrl)
+        }
         // First real frame shown → stop treating core-idle as "still loading".
         // `core-idle` can miss a false edge (FileLoaded vs overlay reset). On Deck
         // that left the P2P panel up after mpv was already painting. A moving

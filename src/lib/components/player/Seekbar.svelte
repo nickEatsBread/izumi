@@ -6,16 +6,17 @@
   import { scrub, beginScrub, moveScrub, endScrub } from '$lib/player/scrub'
   import { scrubThumbnails } from '$lib/settings/ui'
   import { getDrmEngine } from '$lib/player/drm'
+  import { onThumbReset, onThumbTile, thumbEpoch, thumbTiles } from '$lib/player/thumb-tiles'
   import type { Segment } from '$lib/stremio/aniskip'
   import { themePresentation } from '$lib/themes/runtime'
   import { cssThemeColor } from '$lib/themes/presentation'
 
   // Seekbar for the libmpv player. Renders stacked layers (buffered,
   // OP/ED segment tints, hover-scrub, played) plus chapter ticks and a hover
-  // tooltip. The scrub preview is ON-DEMAND trickplay: Rust grabs the tile UNDER THE
-  // CURSOR with a single input-seek ffmpeg (cached by infoHash+index), so any bar
-  // position is equally fast; the seekbar shows a loading shimmer for the brief grab.
-  // Dragging previews the position and commits ONE seek on release.
+  // tooltip. The scrub preview is trickplay rendered by a headless mpv in Rust: the tile under
+  // the cursor goes first, the rest of the grid fills in the background, and every finished tile
+  // arrives as a `player-thumb-tile` event. Dragging previews the position and commits ONE seek
+  // on release.
   let {
     pos,
     dur,
@@ -45,12 +46,10 @@
   let barW = $state(0) // seekbar pixel width, for transform-based tooltip positioning
   let barLeft = 0
 
-  // --- Scrub-preview thumbnails (on-demand) -----------------------------------
-  // Rust produces the tile UNDER THE CURSOR on demand (one input-seek ffmpeg per
-  // position, cached by index), so any point on the bar is equally fast — hovering
-  // the end loads as quickly as the start (a linear pass left later positions blank
-  // for ages). A position whose frame isn't ready yet shows a loading shimmer (never
-  // blank), flipping to the frame the instant the grab returns.
+  // --- Scrub-preview thumbnails ------------------------------------------------
+  // Rust renders the tile under the cursor first and the rest of the grid in the background,
+  // coarse to fine, pushing each one as it lands. A position whose frame isn't ready yet shows
+  // the nearest frame we hold (dimmed) or a loading shimmer, never blank.
   let interval = $state(0) // seconds between tile grid positions (from player_thumb_info)
   let thumbSrc = $state('') // current hovered tile dataUrl ('' → shimmer)
   // The shown frame belongs to a DIFFERENT spot than the cursor — a neighbour standing in while
@@ -59,9 +58,14 @@
   // How far a stand-in may be borrowed from. Past this the frame is telling you about a different
   // scene entirely, which is worse than admitting we don't know yet.
   const NEAREST_WINDOW_S = 60
-  const tileCache = new Map<number, string>() // tile index → dataUrl
+  // Tile index under the cursor; a pushed tile for it is shown the moment it arrives.
+  let wantedIndex = -1
+  // Counts the grids Rust dropped or replaced, so the effect below learns the new grid's interval.
+  let gridResets = $state(0)
 
   let activeKey: string | null = null
+  // Tile index → dataUrl for this stream, shared with every other mount of the seek bar.
+  const tileCache = () => thumbTiles(activeKey)
   let infoPoll: ReturnType<typeof setInterval> | undefined
   let reqTimer: ReturnType<typeof setTimeout> | undefined
   let started = false
@@ -78,9 +82,10 @@
     const key = $spriteKey
     const d = dur
     const drmThumbs = !!$nowPlayingStream.drm
+    void gridResets
     if (!thumbsEnabled) {
       stopThumbs()
-      tileCache.clear()
+      thumbTiles(null)
       thumbSrc = ''
       interval = 0
       started = false
@@ -88,9 +93,8 @@
       return
     }
     if (key !== activeKey) {
-      // New stream → reset.
+      // New stream → reset. The shared cache empties itself when the key changes.
       stopThumbs()
-      tileCache.clear()
       thumbSrc = ''
       interval = 0
       started = false
@@ -104,9 +108,8 @@
     if (!key || d <= 1 || started) return
     started = true
 
-    // Register the job (instant — no background pass; tiles are produced on hover),
-    // then learn the time↔index `interval` once.
-    invoke('player_sprite_start', { key, duration: d }).catch(() => {})
+    // The player overlay registers this stream's grid as soon as its file is loaded. Learn the
+    // time↔index `interval` once that has happened.
     const poll = async () => {
       try {
         const r = await invoke<{ status: string; interval: number }>('player_thumb_info', { key })
@@ -119,6 +122,32 @@
     poll()
   })
   onDestroy(stopThumbs)
+  // Tiles rendered in the background land in the shared cache too, so most hovers find their frame
+  // there. One arriving for the position under the cursor replaces the shimmer or stand-in.
+  const offTile = onThumbTile((index, dataUrl) => {
+    if (!thumbsEnabled) return
+    if (index === wantedIndex) {
+      thumbSrc = dataUrl
+      thumbApprox = false
+    } else if (wantedIndex >= 0 && (thumbApprox || !thumbSrc)) {
+      // A closer stand-in than the one on screen.
+      const near = nearestTile(wantedIndex)
+      if (near) { thumbSrc = near; thumbApprox = true }
+    }
+  })
+  onDestroy(offTile)
+  // Rust dropped or replaced the grid (another file under this key, the player closed): the frame
+  // on screen may belong to the old file, and the new grid may space its tiles differently.
+  const offReset = onThumbReset(() => {
+    stopThumbs()
+    thumbSrc = ''
+    thumbApprox = false
+    wantedIndex = -1
+    interval = 0
+    started = false
+    gridResets += 1
+  })
+  onDestroy(offReset)
 
   // Fetch the tile under the cursor (debounced + superseded on cursor move). The grab
   // itself runs in Rust (~a keyframe seek), so the tooltip shows a shimmer for that
@@ -128,10 +157,11 @@
   function nearestTile(i: number): string | undefined {
     if (interval <= 0) return undefined
     const span = Math.max(1, Math.round(NEAREST_WINDOW_S / interval))
+    const cache = tileCache()
     for (let d = 1; d <= span; d++) {
-      const before = tileCache.get(i - d)
+      const before = cache.get(i - d)
       if (before) return before
-      const after = tileCache.get(i + d)
+      const after = cache.get(i + d)
       if (after) return after
     }
     return undefined
@@ -143,7 +173,9 @@
     if (!thumbsEnabled) { thumbSrc = ''; thumbApprox = false; return }
     const my = ++reqSeq
     const i = interval > 0 ? Math.round(t / interval) : -1
-    if (i >= 0 && tileCache.has(i)) { thumbSrc = tileCache.get(i)!; thumbApprox = false; return }
+    wantedIndex = i
+    const cached = i >= 0 ? tileCache().get(i) : undefined
+    if (cached) { thumbSrc = cached; thumbApprox = false; return }
     // Cache miss: stand in with the nearest frame we DO hold, rather than whatever was last shown.
     // Keeping the last frame regardless of distance meant skimming from five minutes to forty-five
     // left the five-minute frame on screen at full strength, indistinguishable from a real one.
@@ -163,7 +195,7 @@
           if (my !== reqSeq) return
           if (url) {
             const idx = interval > 0 ? Math.round(t / interval) : 0
-            tileCache.set(idx, url)
+            tileCache().set(idx, url)
             thumbSrc = url
             thumbApprox = false
           }
@@ -172,17 +204,23 @@
       }
       const key = get(spriteKey)
       if (!key) return
+      const epoch = thumbEpoch()
       try {
         const r = await invoke<{ status: string; dataUrl?: string; index: number }>('player_thumb_tile', { key, time: t })
         if (my !== reqSeq) return
-        if (r.status === 'ready' && r.dataUrl) { tileCache.set(r.index, r.dataUrl); thumbSrc = r.dataUrl; thumbApprox = false }
-        else if (r.status === 'pending') { reqTimer = setTimeout(run, 400) } // grab capped/in-flight — retry this spot
-        // failed / none → leave the shimmer
+        // A reply that crossed a grid change may be a frame of the file that was replaced.
+        if (epoch !== thumbEpoch()) { reqTimer = setTimeout(run, 60); return }
+        if (r.status === 'ready' && r.dataUrl) { tileCache().set(r.index, r.dataUrl); thumbSrc = r.dataUrl; thumbApprox = false }
+        // `pending`: the tile is rendered next and pushed as an event; ask again later in case it
+        // could not be rendered yet (a torrent region still downloading). `none`: the grid of the
+        // file just loaded is not registered yet.
+        else if (r.status === 'pending' || r.status === 'none') { reqTimer = setTimeout(run, 1500) }
+        // failed → leave the shimmer
       }
       catch { if (my === reqSeq) reqTimer = setTimeout(run, 800) }
     }
     if (reqTimer) clearTimeout(reqTimer)
-    reqTimer = setTimeout(run, 180) // only grab once the cursor SETTLES — an active skim fires nothing
+    reqTimer = setTimeout(run, 60) // once the cursor settles; a fast skim fires nothing
   }
 
   const pct = (t: number) => (dur > 0 ? Math.min(100, Math.max(0, (t / dur) * 100)) : 0)
@@ -344,7 +382,11 @@
   onpointermove={onmove}
   onpointerdown={ondown}
   onpointerup={onup}
-  onpointerleave={() => (hovering = false)}
+  onpointerleave={() => {
+    hovering = false
+    // Stop asking again for a tile nobody is hovering any more.
+    if (reqTimer) { clearTimeout(reqTimer); reqTimer = undefined }
+  }}
   onpointercancel={onup}
   onlostpointercapture={onup}
   class:opacity-0={native}
