@@ -54,8 +54,10 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell Vite to ignore watching `src-tauri`, and the scratch checkouts other tools keep
+      //    inside the repo (git worktrees, drafts): a change there reloaded the running app, and a
+      //    worktree's own .svelte-kit/tsconfig.json forced a full reload with a cleared cache.
+      ignored: ["**/src-tauri/**", "**/.claude/**", "**/.codex-tmp/**", "**/.worktrees/**", "**/tmp/**"],
     },
   },
 }));
