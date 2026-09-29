@@ -1153,9 +1153,9 @@
     {/each}
   {:else}
     {#if phone}
-      <Tabs tabs={view.tabs} labels={view.labels} bind:active={() => current, (tab) => (pickedTab = tab)} variant={detailTheme.tabs} />
+      <Tabs tabs={view.tabs} labels={view.labels} bind:active={() => current, (tab) => (pickedTab = tab)} variant={detailTheme.tabs} page />
     {:else}
-      <Tabs tabs={view.tabs} labels={view.labels} bind:active={() => current, (tab) => (pickedTab = tab)} variant={detailTheme.tabs === 'bottom' ? 'underline' : detailTheme.tabs} />
+      <Tabs tabs={view.tabs} labels={view.labels} bind:active={() => current, (tab) => (pickedTab = tab)} variant={detailTheme.tabs === 'bottom' ? 'underline' : detailTheme.tabs} page />
     {/if}
     {@render sectionBody(m, current, phone, overlay)}
     {#if current === 'overview'}
