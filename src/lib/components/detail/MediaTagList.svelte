@@ -63,7 +63,7 @@
           </span>
           <span
             aria-hidden="true"
-            class="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 flex -translate-x-1/2 items-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-[0.65rem] font-bold text-popover-foreground opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+            class="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1.5 flex -translate-x-1/2 items-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-card px-2 py-1 text-[0.65rem] font-bold text-card-foreground opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
           >
             <EyeOff size={13} /> Spoiler tag · reveal
           </span>

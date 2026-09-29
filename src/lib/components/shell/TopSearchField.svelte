@@ -102,7 +102,7 @@
     <!-- Pointer-down keeps the focus in the field, so a click reaches the row before blur closes the panel. -->
     <div use:portal id="top-search-suggestions" data-part="search.suggestions" role="listbox" tabindex="-1" onpointerdown={(event) => event.preventDefault()}
          style={`left:${place.left}px;top:${place.top}px;width:${place.width}px`}
-         class="fixed z-50 mt-2 overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-xl">
+         class="fixed z-50 mt-2 overflow-hidden rounded-lg border border-border bg-card p-1 text-card-foreground shadow-xl">
       {#each results as media, index (mediaKey(media))}
         <a data-part="search.suggestion" data-active={index === active || undefined} href={mediaHref(media)} role="option" aria-selected={index === active}
            onclick={(event) => { event.preventDefault(); choose(media) }}

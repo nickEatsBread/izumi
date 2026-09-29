@@ -131,7 +131,7 @@
       </button>
       {#if open === item}
         <div data-part="watch.toolbar.menu" data-item={item} role="menu"
-             class="absolute left-1/2 z-10 {menus === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'} max-h-[min(60vh,24rem)] min-w-[12rem] max-w-[min(90vw,24rem)] -translate-x-1/2 overflow-y-auto rounded-md border border-border bg-popover py-1 text-sm text-popover-foreground shadow-lg"
+             class="absolute left-1/2 z-10 {menus === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'} max-h-[min(60vh,24rem)] min-w-[12rem] max-w-[min(90vw,24rem)] -translate-x-1/2 overflow-y-auto rounded-md border border-border bg-card py-1 text-sm text-card-foreground shadow-lg"
              bind:this={menu}>
           {#if item === 'server'}
             {#if servers.length}
