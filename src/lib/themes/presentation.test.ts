@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseNode, parsePresentation, resolvePresentation, nodeStyle, resolveRow, resolveCard, resolveDetail, episodesOnSide, episodesBelow, themeCoverage, densityScale, visibleNode, displayText, type DisplayModel } from './presentation'
+import { parseNode, parsePresentation, resolvePresentation, resolvePlayerDock, nodeStyle, resolveRow, resolveCard, resolveDetail, episodesOnSide, episodesBelow, themeCoverage, densityScale, visibleNode, displayText, type DisplayModel } from './presentation'
 
 describe('theme presentation contract', () => {
   it('composes new layouts from primitives with bounded styles', () => {
@@ -180,6 +180,26 @@ describe('theme presentation contract', () => {
     expect(() => parsePresentation({ layout: { nav: { bottom: ['nowhere'] } } })).toThrow('unsupported')
     expect(() => parsePresentation({ layout: { asideWidth: 999 } })).toThrow('range')
     expect(() => parsePresentation({ layout: { home: Array.from({ length: 31 }, () => ({ role: 'x' })) } })).toThrow('1–30')
+  })
+  it('places the side column with a gutter and a starting row', () => {
+    expect(parsePresentation({ layout: { asideGap: 32, asideStart: 2 } }).layout).toEqual({ asideGap: 32, asideStart: 2 })
+    expect(() => parsePresentation({ layout: { asideGap: 120 } })).toThrow('range')
+    expect(() => parsePresentation({ layout: { asideStart: 30 } })).toThrow('range')
+    // A phone layout may move them too.
+    expect(parsePresentation({ mobile: { layout: { asideStart: 0 } } }).mobile?.layout).toEqual({ asideStart: 0 })
+  })
+  it('parses the API 3 docked watch page keys', () => {
+    const dock = { episodes: 'below', flow: 'page', maxWidth: 1100, below: ['toolbar', 'info', 'comments'], toolbar: ['episode', 'release'], hide: ['back', 'title'] }
+    expect(parsePresentation({ player: { layout: 'docked', dock } }).player?.dock).toEqual(dock)
+    expect(resolvePlayerDock(parsePresentation({ player: { layout: 'docked', dock } }))).toMatchObject({ flow: 'page', maxWidth: 1100, below: ['toolbar', 'info', 'comments'], toolbar: ['episode', 'release'], hide: ['back', 'title'] })
+    // Beside the stage the rail keeps its own scroller, whatever the theme asked for.
+    expect(resolvePlayerDock(parsePresentation({ player: { layout: 'docked', dock: { flow: 'page' } } })).flow).toBe('fixed')
+    // Without a list the grid comes first, then the discussion unless it is hidden.
+    expect(resolvePlayerDock(parsePresentation({ player: { layout: 'docked', dock: { episodes: 'below', comments: 'hidden' } } })).below).toEqual(['episodes'])
+    expect(() => parsePresentation({ player: { dock: { below: ['info', 'info'] } } })).toThrow('twice')
+    expect(() => parsePresentation({ player: { dock: { hide: ['stats'] } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ player: { dock: { maxWidth: 200 } } })).toThrow('range')
+    expect(() => parsePresentation({ player: { dock: { flow: 'page' } } }, 2)).toThrow('unsupported')
   })
   it('lets phones replace the home list but not the navigation', () => {
     const phoneHome = [{ role: 'continue' }]

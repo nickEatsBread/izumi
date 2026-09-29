@@ -37,7 +37,7 @@ Semantic colors, font family and scale, corner radius, backdrop and glass effect
 
 Home blocks — latest episodes, tabbed grid, genre chips, ranked list and profile header — and the side column are izumi features: anyone adds, configures and removes them from Edit Home (`src/lib/home/blocks.ts`, `src/lib/components/home/`). Themes style them through the block hooks listed under "Styling hooks".
 
-Theme layout (API 3, `layout`): `home` lists the Home in order — catalog rows by role (`continue`, `recent`, `trending`, …; `hero` is the featured banner, and leaving it out hides it) and blocks with their settings (`{ "block": "ranked-list", "area": "aside", "tabs": [{ "label": "Top airing", "role": "trending" }] }`); `asideWidth` sets the side column (240–420 px) and `asideGap` the gutter between it and the main column (0–96 px, default 32; the main rows scroll inside themselves, so their own padding never separates them from the side column); `nav` sets the phone bottom bar (`bottom`), the Home header icons (`top`) and Home's position on the bar (`home`). `mobile.layout.home` replaces the Home list on phones. A role the active catalog lacks is skipped. The layout applies while the theme is active; people turn it off, or customize a copy that becomes their own layout, in Edit Home and Settings → Navigation — their own layout is never overwritten. The featured banner is itself a Home row, so anyone can move or hide it.
+Theme layout (API 3, `layout`): `home` lists the Home in order — catalog rows by role (`continue`, `recent`, `trending`, …; `hero` is the featured banner, and leaving it out hides it) and blocks with their settings (`{ "block": "ranked-list", "area": "aside", "tabs": [{ "label": "Top airing", "role": "trending" }] }`); `asideWidth` sets the side column (240–420 px) and `asideGap` the gutter between it and the main column (0–96 px, default 32; the main rows scroll inside themselves, so their own padding never separates them from the side column); `asideStart` the main row the side column starts beside (0–29, default 0; the rows before it span the whole width, as when a site runs its first rows edge to edge and puts its sidebar beside a later section); `nav` sets the phone bottom bar (`bottom`), the Home header icons (`top`) and Home's position on the bar (`home`). `mobile.layout.home` replaces the Home list on phones. A role the active catalog lacks is skipped. The layout applies while the theme is active; people turn it off, or customize a copy that becomes their own layout, in Edit Home and Settings → Navigation — their own layout is never overwritten. The featured banner is itself a Home row, so anyone can move or hide it.
 
 ### Cards
 
@@ -163,6 +163,7 @@ State values:
 | `data-state` | `watch.toolbar.option` | `active` on the current server, episode or release, or a finished download |
 | `data-variant` | `watch.episodes` | `right`, `below` |
 | `data-variant` | `watch.comments` | `inline`, `sheet` |
+| `data-variant` | `home.main` | `lead` on the full-width rows above the side column (`layout.asideStart`) |
 | `data-variant` | `search` | `anilist-scope`, `anilist`, `merged`, `catalog` |
 | `data-variant` | `button` | `primary`, `secondary`, `ghost`, `icon` |
 | `data-variant` | `tabs` | `underline`, `pills`, `segmented`, `bar` |
@@ -223,7 +224,7 @@ State values:
 | Hook | Kind | What | States |
 |---|---|---|---|
 | `home.header` | slot | The phone Home app bar: the wordmark and the top icons. |  |
-| `home.main` | slot | The main column of Home. |  |
+| `home.main` | slot | The main column of Home; the rows above the side column (`layout.asideStart`) are a second one with `data-variant="lead"`. | `data-variant` |
 | `home.aside` | slot | The side column of Home, holding blocks placed in the aside. |  |
 | `pagination` | part | Page controls under a block: numbered pages or a Load more button. |  |
 | `page-number` | part | A page button: a numbered page under a block, Prev/Next under the episode list, or an entry of the episode range picker. | `data-active` |

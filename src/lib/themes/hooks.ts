@@ -59,7 +59,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
   ],
   blocks: [
     { name: 'home.header', kind: 'slot', description: 'The phone Home app bar: the wordmark and the top icons.' },
-    { name: 'home.main', kind: 'slot', description: 'The main column of Home.' },
+    { name: 'home.main', kind: 'slot', description: 'The main column of Home; the rows above the side column (`layout.asideStart`) are a second one with `data-variant="lead"`.', states: ['data-variant'] },
     { name: 'home.aside', kind: 'slot', description: 'The side column of Home, holding blocks placed in the aside.' },
     { name: 'pagination', kind: 'part', description: 'Page controls under a block: numbered pages or a Load more button.' },
     { name: 'page-number', kind: 'part', description: 'A page button: a numbered page under a block, Prev/Next under the episode list, or an entry of the episode range picker.', states: ['data-active'] },

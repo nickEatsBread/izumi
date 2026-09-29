@@ -243,6 +243,8 @@ export interface ThemeLayout {
   asideWidth?: number
   /** The gutter between Home's main column and its side column, in px (default 32). */
   asideGap?: number
+  /** The main-column row the side column starts beside; the rows before it span the whole width. */
+  asideStart?: number
   nav?: ThemeNav
 }
 export interface ThemePresentation {
@@ -594,7 +596,7 @@ function destinationList(value: unknown, max: number): NavDestination[] {
   })
 }
 function parseLayout(value: unknown, phone: boolean): ThemeLayout {
-  const raw = record(value); only(raw, ['home', 'asideWidth', 'asideGap', ...(phone ? [] : ['nav'])])
+  const raw = record(value); only(raw, ['home', 'asideWidth', 'asideGap', 'asideStart', ...(phone ? [] : ['nav'])])
   const result: ThemeLayout = {}
   if (raw.home !== undefined) {
     if (!Array.isArray(raw.home) || raw.home.length < 1 || raw.home.length > 30) throw new Error('A theme home layout needs 1–30 entries.')
@@ -616,6 +618,7 @@ function parseLayout(value: unknown, phone: boolean): ThemeLayout {
   }
   if (raw.asideWidth !== undefined) result.asideWidth = number(raw.asideWidth, 240, 420)
   if (raw.asideGap !== undefined) result.asideGap = number(raw.asideGap, 0, 96)
+  if (raw.asideStart !== undefined) result.asideStart = number(raw.asideStart, 0, 29)
   if (raw.nav !== undefined) {
     const nav = record(raw.nav); only(nav, ['home', 'bottom', 'top'])
     result.nav = {}
@@ -699,7 +702,7 @@ export function resolvePresentation(layout: ThemePresentation | undefined, mobil
   }
   if (phone.player) resolved.player = { ...shared.player, ...phone.player }
   if (phone.cards) resolved.cards = { ...shared.cards, ...phone.cards }
-  // The phone block can only carry `home`, `asideWidth` and `asideGap` (`parseLayout` rejects `nav` there), so
+  // The phone block can only carry `home` and the side-column keys (`parseLayout` rejects `nav` there), so
   // navigation always comes from the shared layout.
   if (phone.layout) resolved.layout = { ...shared.layout, ...phone.layout }
   return resolved

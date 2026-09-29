@@ -262,6 +262,6 @@
         {/if}
       </HomeRowFrame>
     {/snippet}
-    <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$activeThemeLayout?.asideWidth ?? $homeAsideWidth} asideGap={$activeThemeLayout?.asideGap} row={homeRow} />
+    <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$activeThemeLayout?.asideWidth ?? $homeAsideWidth} asideGap={$activeThemeLayout?.asideGap} asideStart={$activeThemeLayout?.asideStart} row={homeRow} />
   </div>
 {/if}
