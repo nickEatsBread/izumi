@@ -16,13 +16,20 @@
   import LibraryBig from '@lucide/svelte/icons/library-big'
   import LogIn from '@lucide/svelte/icons/log-in'
   import Menu from '@lucide/svelte/icons/menu'
+  import { get } from 'svelte/store'
+  import Glyph from './Glyph.svelte'
   import { goto } from '$app/navigation'
   import { anilistUserName, malUserName, anilistUserAvatar, malUserAvatar, malUser } from '$lib/trackers/config'
   import { anilistUser } from '$lib/anilist/account'
   import { traktUserName, traktUserAvatar } from '$lib/trakt/config'
   import { page } from '$app/state'
-  import { playing } from '$lib/player/session'
+  import { gameMode, playing } from '$lib/player/session'
   import { inputType } from '$lib/nav'
+  import { controllerMode } from '$lib/nav/input'
+  import { onPadButton } from '$lib/nav/pad-events'
+  import { bumperTabs, stepSection } from '$lib/nav/bumpers'
+  import { stepPageTabs } from '$lib/nav/page-tabs'
+  import { glyphFamily, lastPadId, rememberPad } from '$lib/nav/glyphs'
   import { activeProfile, profileSwitcherOpen, profilesEnabled } from '$lib/profiles/store'
   import { profileAvatarUrl } from '$lib/profiles/avatars'
   import { incognito, toggleIncognito } from '$lib/stores/incognito'
@@ -88,6 +95,18 @@
     document.documentElement.removeAttribute('data-theme-side-panel')
     document.documentElement.style.removeProperty('--theme-side-width')
   })
+  // `bumpers` (API 3): the destinations become tabs that L1/R1 switch, with the bumper glyphs at
+  // either end; L2/R2 step the page's own tabs, Start opens the menu drawer and View opens search.
+  // With a pad in use the bar's controls leave the d-pad order, so Up can never strand focus in the
+  // bar; the drawer is the pad's way to every destination and Settings.
+  const bumpers = $derived(top && topBar.bumpers === true)
+  const padUi = $derived($gameMode || $controllerMode)
+  const barOffPad = $derived(bumpers && padUi)
+  const family = $derived(glyphFamily($lastPadId, $gameMode))
+  $effect(() => {
+    bumperTabs.set(bumpers)
+    return () => bumperTabs.set(false)
+  })
   const accountName = $derived($anilistUserName || $malUserName || $traktUserName || $anilistUser || $malUser)
   const accountAvatar = $derived($anilistUserAvatar || $malUserAvatar || $traktUserAvatar)
   const accountLabel = $derived($profilesEnabled ? $activeProfile.name : accountName || 'Sign in')
@@ -109,7 +128,7 @@
   // owns input: the menu icons must not be focusable/selectable by the d-pad or keyboard. Left
   // mouse-clickable so a windowed desktop user can still click away. `df`/`tab` fall to normal
   // (focusable) in browse.
-  const df = $derived($playing ? undefined : '')
+  const df = $derived($playing || barOffPad ? undefined : '')
   const tab = $derived($playing ? -1 : undefined)
   // Top chrome is icon-only by default: leftover label width from the rail anatomy stretches
   // hover highlights into huge pills and shoves destinations across the titlebar. A theme can ask
@@ -138,12 +157,45 @@
   // effect that both reads and writes its own reactive dependency never settles.
   let drawerWasOpen = false
   $effect(() => {
-    if (drawerWasOpen && !drawerOpen) menuBtn?.focus({ preventScroll: true })
+    if (drawerWasOpen && !drawerOpen) {
+      if (!bumpers) menuBtn?.focus({ preventScroll: true })
+      else if (drawerReturn?.isConnected) drawerReturn.focus({ preventScroll: true })
+      drawerReturn = null
+    }
     drawerWasOpen = drawerOpen
   })
   // No active-item highlight while a video plays — the rail is inert then (you're in the player,
   // not browsing), so highlighting the page you launched from (e.g. Home) reads as "selected".
   const active = (href: string) => !$playing && (page.url.pathname.startsWith(href) || href === '/app/library' && ['/app/trakt', '/app/letterboxd'].includes(page.url.pathname))
+  // The tab L1/R1 steps from: the current page's, else the last one visited (a series page opened
+  // from Home still steps from Home).
+  let lastSection = $state<string | undefined>()
+  $effect(() => {
+    const current = shown.find((item) => active(item.href))?.href
+    if (current) lastSection = current
+  })
+  // Start opens the drawer from wherever focus is and closing it returns there (not to the menu
+  // button, which is off the d-pad order under bumper tabs). A page change drops the return target.
+  let drawerReturn: HTMLElement | null = null
+  function toggleDrawer() {
+    if (!drawerOpen) drawerReturn = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null
+    drawerOpen = !drawerOpen
+  }
+  $effect(() => {
+    if (!bumpers) return
+    return onPadButton(({ name, pressed }) => {
+      if (!pressed || get(playing)) return
+      rememberPad()
+      const dialog = [...document.querySelectorAll<HTMLElement>('[data-nav-trap]')].some((trap) => trap.checkVisibility?.() ?? true)
+      if (name === 'start') { if (!dialog || drawerOpen) toggleDrawer(); return }
+      if (name === 'l2' || name === 'r2') { stepPageTabs(name === 'l2' ? -1 : 1); return }
+      if (dialog) return
+      if (name === 'l1' || name === 'r1') {
+        const href = stepSection(shown.map((item) => item.href), lastSection, name === 'l1' ? -1 : 1)
+        if (href) void goto(href)
+      } else if (name === 'select') void goto('/app/search')
+    })
+  })
   // This component only mounts in the desktop shell. Automatic therefore makes the brand itself
   // the catalog trigger, while an explicit Below choice still gets its own rail row.
   const switcherPlacement = $derived(resolveCatalogSwitcherPlacement($catalogSwitcherPlacement, false))
@@ -177,7 +229,7 @@
     </div>
     {@render brandBlock()}
     <div class="flex items-center justify-end gap-1">
-      {#if fieldEnd}<TopSearchField className="mr-2 w-64" focusable={!$playing} tabindex={tab} />{/if}
+      {#if fieldEnd}<TopSearchField className="mr-2 w-64" focusable={!$playing && !barOffPad} tabindex={tab} />{/if}
       {@render incognitoToggle()}
       {@render settingsLink()}
       {@render accountButton()}
@@ -190,14 +242,14 @@
 
     <!-- Spacer pushes Settings + profile to the bottom of the rail, or the trailing cluster to the
          right of a top bar. A theme top bar search field (`field-center`) takes its place instead. -->
-    <div class="flex flex-1 justify-center px-4">{#if fieldCenter}<TopSearchField className="w-full max-w-md" focusable={!$playing} tabindex={tab} />{/if}</div>
-    {#if fieldEnd}<TopSearchField className="mr-2 w-64" focusable={!$playing} tabindex={tab} />{/if}
+    <div class="flex flex-1 justify-center px-4">{#if fieldCenter}<TopSearchField className="w-full max-w-md" focusable={!$playing && !barOffPad} tabindex={tab} />{/if}</div>
+    {#if fieldEnd}<TopSearchField className="mr-2 w-64" focusable={!$playing && !barOffPad} tabindex={tab} />{/if}
     {@render incognitoToggle()}
     {@render settingsLink()}
     {@render accountButton()}
   {/if}
 </nav>
-{#if top && (topBar.menu === 'drawer' || (sideMenu && !wide))}<NavDrawer bind:open={drawerOpen} items={[...items, { href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }]} {active} />{/if}
+{#if top && (topBar.menu === 'drawer' || bumpers || (sideMenu && !wide))}<NavDrawer bind:open={drawerOpen} items={[...items, { href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }]} {active} />{/if}
 {#if panelShown}<NavPanel width={sideWidth} items={[...shown, { href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }]} {active} />{/if}
 
 {#snippet menuButton()}
@@ -234,6 +286,7 @@
 
 {#snippet navLinks()}
   <!-- With a side menu the destinations live in the panel (or the drawer), not in the bar. -->
+  {#if bumpers && padUi}<span data-part="nav.bumper" data-button="l1" class="grid shrink-0 place-items-center px-1"><Glyph {family} button="l1" /></span>{/if}
   {#each sideMenu ? [] : shown as it (it.href)}
     {@const on = active(it.href)}
     <a data-part="nav.item" data-active={on || undefined} href={it.href} title={it.label} data-focusable={df} tabindex={tab} aria-current={on ? 'page' : undefined}
@@ -250,7 +303,8 @@
       {/if}
     </a>
   {/each}
-  {#if top && topBar.categories}<CategoriesMenu focusable={!$playing} tabindex={tab} />{/if}
+  {#if bumpers && padUi}<span data-part="nav.bumper" data-button="r1" class="grid shrink-0 place-items-center px-1"><Glyph {family} button="r1" /></span>{/if}
+  {#if top && topBar.categories}<CategoriesMenu focusable={!$playing && !barOffPad} tabindex={tab} />{/if}
 {/snippet}
 
 {#snippet incognitoToggle()}

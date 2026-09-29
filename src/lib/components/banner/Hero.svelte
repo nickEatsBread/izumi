@@ -23,6 +23,7 @@
   import { get } from 'svelte/store'
   import { gameMode, playing } from '$lib/player/session'
   import { controllerMode } from '$lib/nav/input'
+  import { bumperTabs } from '$lib/nav/bumpers'
   import { androidMpvActive } from '$lib/player/android-mpv'
   import { airingCountdown, airingCountdownAccessible } from '$lib/anime/airing-labels'
   import { dragCarousels, wheelScrollAcross } from '$lib/settings/ui'
@@ -268,8 +269,8 @@
     const onScroll = () => (scrolled = (window.scrollY ?? 0) > 100)
     window.addEventListener('scroll', onScroll)
     // Steam Deck: L1/R1 step through the featured banners (dispatched by the gamepad translator
-    // while on the home screen). detail = -1 (prev) / +1 (next); wraps.
-    const onHeroNav = (e: Event) => step((e as CustomEvent<number>).detail < 0 ? -1 : 1)
+    // while on the home screen), unless a theme's bumper tabs own L1/R1. detail = -1 / +1; wraps.
+    const onHeroNav = (e: Event) => { if (!get(bumperTabs)) step((e as CustomEvent<number>).detail < 0 ? -1 : 1) }
     window.addEventListener('hero-nav', onHeroNav)
     return () => {
       if (timer) clearTimeout(timer)

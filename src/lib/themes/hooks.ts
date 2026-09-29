@@ -30,6 +30,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'search.suggestion.meta', kind: 'part', description: 'The format, episode count, year and status line of a live result.' },
     { name: 'search.suggestion.all', kind: 'part', description: 'The "View all results" link at the end of the panel.' },
     { name: 'nav.menu', kind: 'part', description: 'The top bar menu button that opens the drawer.' },
+    { name: 'nav.bumper', kind: 'part', description: "The L1 or R1 glyph at either end of the top bar's tabs (`shell.top.bumpers`, pad in use).", states: ['data-button'] },
     { name: 'nav.drawer', kind: 'slot', description: 'The side drawer of destinations (top bar `menu: "drawer"`); items are `nav.item`.' },
     { name: 'nav.panel', kind: 'slot', description: 'The pinned menu panel down the left (top bar `menu: "side"`); items are `nav.item`.' },
     { name: 'nav.categories', kind: 'slot', description: 'The Categories menu panel (top bar `categories`).' },

@@ -25,6 +25,7 @@ Semantic colors, font family and scale, corner radius, backdrop and glass effect
 - Compact shell padding.
 - Bottom bar styling (API 2, `shell.bottomNav`): flush bar, floating card or centred pill; labels always, on the active tab or never; a tonal pill, top line or dot as the active marker; height, icon size, radius, colours, blur, border and whether the bar hides while scrolling. `BottomNav.svelte` renders it and `src/lib/theme.ts` publishes `--theme-bottom-nav` so the page reserves the right space.
 - Top bar (API 3, `shell.top`): destination names as text links or with icons (`labels`), an inline search field in the centre or at the end (`search`), a menu drawer (`menu: "drawer"`) or a menu pinned as a labelled panel down the left under the bar (`menu: "side"`, `sideWidth` 200–320 px, default 260: the page moves over for it on windows from 1100 px, the menu button folds it away, narrower windows get the drawer, and it hides while a video plays), a centred brand (`brand`) and a Categories menu after the destinations (`categories: true`) with Browse all, Release calendar and the catalog's genres, each opening search.
+- Handheld controls (API 3): `shell.top.bumpers: true` turns the top bar's destinations into tabs that L1/R1 switch (no wrap), with the bumper glyphs at either end; L2/R2 step the page's own tabs (series sections, Library sections, Schedule days, and any strip marked `data-page-tabs`), Start opens the menu drawer and View opens search. With a pad in use the bar's controls leave the d-pad order, and the drawer reaches every destination and Settings. `shell.hints: true` adds the controller button-hint bar along the bottom: what A, X, B, the page-tab triggers and the menu button do for the focused element, in the connected pad's printed labels (Steam Deck, Xbox, PlayStation or Nintendo). It shows after pad input in Game or controller mode, hides on the next touch or mouse move, and the page keeps its height free while it shows.
 
 ### Home
 
@@ -190,6 +191,7 @@ State values:
 | `search.suggestion.meta` | part | The format, episode count, year and status line of a live result. |  |
 | `search.suggestion.all` | part | The "View all results" link at the end of the panel. |  |
 | `nav.menu` | part | The top bar menu button that opens the drawer. |  |
+| `nav.bumper` | part | The L1 or R1 glyph at either end of the top bar's tabs (`shell.top.bumpers`, pad in use). | `data-button` |
 | `nav.drawer` | slot | The side drawer of destinations (top bar `menu: "drawer"`); items are `nav.item`. |  |
 | `nav.panel` | slot | The pinned menu panel down the left (top bar `menu: "side"`); items are `nav.item`. |  |
 | `nav.categories` | slot | The Categories menu panel (top bar `categories`). |  |

@@ -8,7 +8,8 @@
   // up" countdown strip, and a Watching/Planning badge on your shows even in the All view.
   import { getContextClient } from '@urql/svelte'
   import { untrack } from 'svelte'
-  import { listenSafe } from '$lib/util/listen'
+  import { bumperTabs } from '$lib/nav/bumpers'
+  import { onPadButton } from '$lib/nav/pad-events'
   import { groupByDay, weekRange, type Airing } from '$lib/anilist/schedule'
   import { cachedScheduleWeek, loadScheduleWeek } from '$lib/anilist/schedule-cache'
   import {
@@ -218,14 +219,15 @@
     el?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
   })
 
-  // Game mode only: L1/R1 (bumpers) step the selected day (wrapping). Bumpers are clean
-  // digital buttons — one press = one step — unlike the analog triggers.
+  // Game mode only: the bumpers step the selected day (wrapping): L1/R1, or L2/R2 when a theme's
+  // bumper tabs own L1/R1. Bumpers are clean digital buttons: one press = one step.
   $effect(() => {
     if (!gm) return
-    return listenSafe<{ name: string; pressed: boolean }>('gamepad-input', (ev) => {
-      if (!ev.payload.pressed) return
-      if (ev.payload.name === 'l1') selected = (selected + 6) % 7
-      else if (ev.payload.name === 'r1') selected = (selected + 1) % 7
+    const [prev, next] = $bumperTabs ? ['l2', 'r2'] : ['l1', 'r1']
+    return onPadButton(({ name, pressed }) => {
+      if (!pressed) return
+      if (name === prev) selected = (selected + 6) % 7
+      else if (name === next) selected = (selected + 1) % 7
     })
   })
 </script>
@@ -248,7 +250,7 @@
     {/each}
   </div>
   {#if showHint}
-    <p class="mb-3 text-xs text-muted-foreground">L1 / R1 to switch days · <span class="text-sky-400">●</span> today · <span class="text-emerald-400">●</span> still to air</p>
+    <p class="mb-3 text-xs text-muted-foreground">{$bumperTabs ? 'L2 / R2' : 'L1 / R1'} to switch days · <span class="text-sky-400">●</span> today · <span class="text-emerald-400">●</span> still to air</p>
   {/if}
 {/snippet}
 

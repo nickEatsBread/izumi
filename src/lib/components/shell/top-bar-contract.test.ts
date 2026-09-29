@@ -60,8 +60,9 @@ describe('theme top bar', () => {
     const bar = read('./Sidebar.svelte')
     const fieldCalls = bar.match(/<TopSearchField [^/]*\/>/g) ?? []
     expect(fieldCalls.length).toBe(3)
+    // Also off the d-pad order while a bumper-tab bar has a pad in use (`barOffPad`).
     for (const call of fieldCalls) {
-      expect(call).toContain('focusable={!$playing}')
+      expect(call).toContain('focusable={!$playing && !barOffPad}')
       expect(call).toContain('tabindex={tab}')
     }
   })
@@ -70,7 +71,7 @@ describe('theme top bar', () => {
 describe('top bar categories menu', () => {
   it('adds a Categories menu of browse links and genres when the theme asks', () => {
     const bar = read('./Sidebar.svelte')
-    expect(bar).toContain('{#if top && topBar.categories}<CategoriesMenu focusable={!$playing} tabindex={tab} />{/if}')
+    expect(bar).toContain('{#if top && topBar.categories}<CategoriesMenu focusable={!$playing && !barOffPad} tabindex={tab} />{/if}')
     const menu = read('./CategoriesMenu.svelte')
     expect(menu).toContain('data-part="nav.item" data-variant="menu"')
     expect(menu).toContain('data-slot="nav.categories"')

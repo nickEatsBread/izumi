@@ -13,7 +13,8 @@
   import { controllerMode } from '$lib/nav/input'
   import { scheduleLayout } from '$lib/settings/ui'
   import { isMobile } from '$lib/platform'
-  import { listenSafe } from '$lib/util/listen'
+  import { bumperTabs } from '$lib/nav/bumpers'
+  import { onPadButton } from '$lib/nav/pad-events'
   import * as h from '$lib/haptics'
   import DayColumn from './DayColumn.svelte'
   import AgendaWeek from './AgendaWeek.svelte'
@@ -124,12 +125,15 @@
     const element = dayRow?.children[selected] as HTMLElement | undefined
     element?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
   })
+  // Game mode only: the bumpers step the selected day (wrapping): L1/R1, or L2/R2 when a theme's
+  // bumper tabs own L1/R1.
   $effect(() => {
     if (!gm) return
-    return listenSafe<{ name: string; pressed: boolean }>('gamepad-input', (event) => {
-      if (!event.payload.pressed) return
-      if (event.payload.name === 'l1') selected = (selected + 6) % 7
-      else if (event.payload.name === 'r1') selected = (selected + 1) % 7
+    const [prev, next] = $bumperTabs ? ['l2', 'r2'] : ['l1', 'r1']
+    return onPadButton(({ name, pressed }) => {
+      if (!pressed) return
+      if (name === prev) selected = (selected + 6) % 7
+      else if (name === next) selected = (selected + 1) % 7
     })
   })
 </script>
@@ -150,7 +154,7 @@
       </button>
     {/each}
   </div>
-  {#if showHint}<p class="mb-3 text-xs text-muted-foreground">L1 / R1 to switch days</p>{/if}
+  {#if showHint}<p class="mb-3 text-xs text-muted-foreground">{$bumperTabs ? 'L2 / R2' : 'L1 / R1'} to switch days</p>{/if}
 {/snippet}
 
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
