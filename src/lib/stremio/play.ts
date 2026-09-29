@@ -332,7 +332,6 @@ type DirectTorrentPlayback = {
   metadataCache: string
   trackerCount: number
   incomingPeerPort: number | null
-  fastresumePrimed: boolean
 }
 
 type DirectTorrentSubtitle = {
@@ -3093,7 +3092,6 @@ export async function playStream(
           metadataCache: playback.metadataCache,
           trackerCount: playback.trackerCount,
           incomingPeerPort: playback.incomingPeerPort,
-          fastresumePrimed: playback.fastresumePrimed,
         })
       } catch (e) {
         if (!stillOwnsPlayback()) return

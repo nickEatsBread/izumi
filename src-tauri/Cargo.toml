@@ -259,6 +259,11 @@ ashpd = { version = "0.13", default-features = false, features = ["tokio", "flat
 # receive error that concerns a single datagram (an ICMP port unreachable for an earlier send, an
 # expired TTL, an oversized datagram). The exact crates.io versions librqbit 9.0.0 resolves are
 # vendored with that fixed; vendor/README.md has the diff and when to drop this.
+#
+# librqbit itself is vendored so the pieces the player is waiting for arrive sooner: they leave a
+# slow peer earlier, and each peer's request queue holds about a second of its delivery instead of
+# 2 MiB. vendor/README.md describes both patches.
 [patch.crates-io]
+librqbit = { path = "vendor/librqbit" }
 librqbit-dht = { path = "vendor/librqbit-dht" }
 librqbit-utp = { path = "vendor/librqbit-utp" }

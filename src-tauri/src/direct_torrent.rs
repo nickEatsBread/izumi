@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    io::SeekFrom,
     net::{Ipv4Addr, SocketAddr, TcpListener as StdTcpListener},
     num::NonZeroU32,
     path::{Path, PathBuf},
@@ -13,11 +14,12 @@ use std::{
 use librqbit::{
     api::TorrentIdOrHash, AddTorrent, AddTorrentOptions, AddTorrentResponse, Api,
     ConnectionOptions, DhtSessionConfig, ListenerMode, ListenerOptions, Magnet, ManagedTorrent,
-    Session, SessionOptions, SessionPersistenceConfig,
+    Session, SessionOptions,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::{
+    io::AsyncSeekExt,
     net::TcpListener,
     sync::{mpsc, oneshot, watch, Mutex, OnceCell},
     task::JoinHandle,
@@ -33,6 +35,11 @@ const MIN_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
 const STARTUP_CANCEL_POLL: Duration = Duration::from_millis(50);
 const STARTUP_CANCELED: &str = "Torrent startup canceled.";
 const STARTUP_STREAM_PRIORITY_TIMEOUT: Duration = Duration::from_secs(15);
+/// librqbit prioritizes this many bytes ahead of every open stream's position.
+const STREAM_WINDOW_BYTES: u64 = 32 * 1024 * 1024;
+/// Covers a Matroska file's Cues and Tags, which mkvmerge writes after the last cluster. They took
+/// the last 65 KB of 24-minute episodes. A wider range would start at a piece mpv reads later.
+const TAIL_PREFETCH_BYTES: u64 = 128 * 1024;
 const METADATA_CACHE_ENTRIES: usize = 16;
 const MAX_CACHED_TORRENT_BYTES: u64 = 16 * 1024 * 1024;
 const METADATA_CACHE_DIR: &str = "torrent-metadata";
@@ -176,7 +183,6 @@ struct DirectTorrentEngine {
     session: Arc<Session>,
     port: u16,
     stream_diagnostics: crate::direct_torrent_stream::StreamDiagnostics,
-    fastresume_folder: PathBuf,
     socks_proxy_url: Option<String>,
     bind_interface: Option<String>,
 }
@@ -198,8 +204,15 @@ struct ActivePlayback {
     /// accepted the URL. librqbit schedules active stream ranges before ordinary selected-file
     /// pieces, so the first peer requests warm the media header instead of arbitrary payload.
     startup_stream_release: Option<oneshot::Sender<()>>,
+    /// Holds a FileStream at the end of the file until mpv reads the end itself.
+    tail_prefetch: Option<TailPrefetch>,
     next_episode_preload: Option<NextEpisodePreload>,
     cleanup_task: Option<JoinHandle<()>>,
+}
+
+struct TailPrefetch {
+    offset: u64,
+    release: oneshot::Sender<()>,
 }
 
 struct NextEpisodePreload {
@@ -245,7 +258,6 @@ pub struct DirectTorrentPlayback {
     metadata_cache: String,
     tracker_count: usize,
     incoming_peer_port: Option<u16>,
-    fastresume_primed: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -394,6 +406,27 @@ fn selected_file_downloaded_bytes(
         .copied()
         .unwrap_or(0)
         .min(selected_size)
+}
+
+/// Where to hold a synthetic stream at the end of a file, or None when the byte-zero window
+/// already reaches it. mpv reads a Matroska file's Cues and Tags from the end as soon as the first
+/// piece arrives, and MP4 and AVI files can keep their index there too. Without this range the
+/// tail is only requested after the head has arrived, which adds one full piece wait to every
+/// start.
+fn tail_prefetch_offset(file_len: u64) -> Option<u64> {
+    (file_len > STREAM_WINDOW_BYTES).then(|| file_len - TAIL_PREFETCH_BYTES)
+}
+
+/// A FileStream positioned at `offset`. librqbit fetches the pieces ahead of every open stream
+/// before any others, whether or not anything reads from it.
+async fn positioned_stream(
+    handle: &Arc<ManagedTorrent>,
+    file_index: usize,
+    offset: u64,
+) -> Option<impl Send + 'static> {
+    let mut stream = handle.clone().stream(file_index).await.ok()?;
+    stream.seek(SeekFrom::Start(offset)).await.ok()?;
+    Some(stream)
 }
 
 fn managed_torrent_files(handle: &ManagedTorrent) -> Result<Vec<TorrentFile>, String> {
@@ -560,36 +593,6 @@ async fn write_disk_metadata(path: PathBuf, bytes: Vec<u8>, startup_id: u64) {
     }
 }
 
-fn empty_fastresume_bitfield_len(piece_hash_bytes: usize) -> Result<usize, String> {
-    const SHA1_BYTES: usize = 20;
-    if piece_hash_bytes == 0 || piece_hash_bytes % SHA1_BYTES != 0 {
-        return Err("The torrent contains an invalid v1 piece-hash table.".into());
-    }
-    Ok((piece_hash_bytes / SHA1_BYTES).div_ceil(8))
-}
-
-/// A direct-playback subfolder is ephemeral and starts with no trusted pieces. rqbit otherwise
-/// walks every piece in the ENTIRE torrent during initialization—even after the first missing-file
-/// read proves there is nothing to checksum. A zero fast-resume bitfield expresses the same fact
-/// directly: no existing byte is trusted, and the stream still blocks until requested pieces have
-/// been downloaded and hash-verified.
-async fn prime_empty_fastresume(
-    folder: &Path,
-    info_hash: &str,
-    piece_hash_bytes: usize,
-) -> Result<(), String> {
-    let bitfield_len = empty_fastresume_bitfield_len(piece_hash_bytes)?;
-    tokio::fs::create_dir_all(folder)
-        .await
-        .map_err(|error| format!("Could not create the torrent fast-resume cache: {error}"))?;
-    tokio::fs::write(
-        folder.join(format!("{}.bitv", info_hash.to_ascii_lowercase())),
-        vec![0; bitfield_len],
-    )
-    .await
-    .map_err(|error| format!("Could not prime torrent fast-resume state: {error}"))
-}
-
 impl DirectTorrentState {
     async fn get(
         &self,
@@ -618,7 +621,6 @@ impl DirectTorrentState {
                 // after launch is not a completely cold peer-discovery bootstrap. rqbit's default
                 // project directory is unavailable on Android, so give it an explicit app-private
                 // filename there instead of disabling persistence for the whole platform.
-                let fastresume_folder = folder.join(".fastresume");
                 let android_dht_path = if cfg!(target_os = "android") {
                     Some(
                         app.path()
@@ -681,12 +683,14 @@ impl DirectTorrentState {
                         bind_device_name: native_bind_device_name(configured_bind.as_deref()),
                         // Proxy mode disables UDP DHT completely to prevent bypassing SOCKS5.
                         dht,
-                        // Persistence supplies rqbit's bitfield store. Payload retention remains
-                        // ephemeral: this database lives inside the disposable playback folder.
-                        persistence: Some(SessionPersistenceConfig::Json {
-                            folder: Some(fastresume_folder.clone()),
-                        }),
-                        fastresume: true,
+                        // Each playback starts in a fresh subfolder, so there is nothing to resume
+                        // and rqbit's piece bitfield stays in memory. A bitfield file written just
+                        // before rqbit reads it back held the first torrent of every launch for
+                        // 11-16 s on Windows while the new file was being scanned. Without one,
+                        // rqbit walks the torrent's pieces, which takes milliseconds when none of
+                        // their files exist yet.
+                        persistence: None,
+                        fastresume: false,
                         connect: Some(ConnectionOptions {
                             proxy_url: configured_proxy.clone(),
                             ..Default::default()
@@ -733,6 +737,17 @@ impl DirectTorrentState {
                         {
                             continue;
                         }
+                        // Once mpv reads the end of the file itself, its own range keeps those
+                        // pieces first and the synthetic one only holds a blocking permit.
+                        if current
+                            .tail_prefetch
+                            .as_ref()
+                            .is_some_and(|tail| request.range_start >= tail.offset)
+                        {
+                            if let Some(tail) = current.tail_prefetch.take() {
+                                let _ = tail.release.send(());
+                            }
+                        }
                         if let Some(release) = current.startup_stream_release.take() {
                             let _ = release.send(());
                             let _ = app_for_requests.emit(
@@ -767,7 +782,6 @@ impl DirectTorrentState {
                     session,
                     port,
                     stream_diagnostics,
-                    fastresume_folder,
                     socks_proxy_url: configured_proxy,
                     bind_interface: configured_bind,
                 }))
@@ -1341,10 +1355,6 @@ pub async fn torrent_playback_url(
     } else if let Some(prepared) = prepared_torrent {
         (prepared.handle, true)
     } else {
-        // This must happen after the previous torrent is deleted: rqbit persistence removes its
-        // mapped bitfield during deletion. Priming earlier could have our new file removed with it
-        // when two releases happen to share an info hash.
-        prime_empty_fastresume(&engine.fastresume_folder, &info_hash_key, piece_hash_bytes).await?;
         let added = engine
             .session
             .add_torrent(
@@ -1451,6 +1461,14 @@ pub async fn torrent_playback_url(
             ));
         }
     };
+    // The end of the file is requested at the same time, so it arrives alongside the head rather
+    // than one piece wait after it. Playback works without it, so a failure only loses the head
+    // start.
+    let tail_offset = tail_prefetch_offset(selected.length);
+    let tail_stream = match tail_offset {
+        Some(offset) => positioned_stream(&handle, selected.index, offset).await,
+        None => None,
+    };
     if !reused_torrent {
         if let Err(error) = engine.session.unpause(&handle).await {
             let _ = engine
@@ -1471,6 +1489,17 @@ pub async fn torrent_playback_url(
             _ = released => {}
             _ = sleep(STARTUP_STREAM_PRIORITY_TIMEOUT) => {}
         }
+    });
+    let tail_prefetch = tail_offset.zip(tail_stream).map(|(offset, stream)| {
+        let (release, released) = oneshot::channel();
+        tauri::async_runtime::spawn(async move {
+            let _tail_stream = stream;
+            tokio::select! {
+                _ = released => {}
+                _ = sleep(STARTUP_STREAM_PRIORITY_TIMEOUT) => {}
+            }
+        });
+        TailPrefetch { offset, release }
     });
 
     let playback_id = state.next_playback_id.fetch_add(1, Ordering::Relaxed) + 1;
@@ -1506,6 +1535,7 @@ pub async fn torrent_playback_url(
         download_reduced: false,
         first_frame: false,
         startup_stream_release: Some(startup_stream_release),
+        tail_prefetch,
         next_episode_preload: None,
         cleanup_task: None,
     });
@@ -1535,7 +1565,6 @@ pub async fn torrent_playback_url(
         metadata_cache: metadata_cache.to_string(),
         tracker_count,
         incoming_peer_port: engine.session.listen_addr().map(|address| address.port()),
-        fastresume_primed: !reused_torrent || claimed_prepared,
     })
 }
 
@@ -1555,6 +1584,9 @@ pub async fn torrent_playback_player_attached(
     }
     if let Some(release) = current.startup_stream_release.take() {
         let _ = release.send(());
+    }
+    if let Some(tail) = current.tail_prefetch.take() {
+        let _ = tail.release.send(());
     }
     Ok(())
 }
@@ -1612,6 +1644,10 @@ pub async fn torrent_playback_prepare_next(
             .stream(selected.index)
             .await
             .map_err(|error| format!("Could not prioritize the next episode: {error:#}"))?;
+        let preload_tail = match tail_prefetch_offset(selected.length) {
+            Some(offset) => positioned_stream(&current.handle, selected.index, offset).await,
+            None => None,
+        };
         let next_subtitle_indices = subtitle_files
             .iter()
             .map(|file| file.index)
@@ -1631,6 +1667,7 @@ pub async fn torrent_playback_prepare_next(
         let (stream_release, released) = oneshot::channel();
         tauri::async_runtime::spawn(async move {
             let _preload_stream = preload_stream;
+            let _preload_tail = preload_tail;
             tokio::select! {
                 _ = released => {}
                 _ = sleep(STARTUP_STREAM_PRIORITY_TIMEOUT) => {}
@@ -1732,12 +1769,6 @@ pub async fn torrent_playback_prepare_next(
             .delete(TorrentIdOrHash::Id(previous.handle.id()), true)
             .await;
     }
-    prime_empty_fastresume(
-        &engine.fastresume_folder,
-        &info_hash,
-        listing.info.info().pieces.as_ref().len(),
-    )
-    .await?;
     let preload_id = state.next_playback_id.fetch_add(1, Ordering::Relaxed) + 1;
     let added = engine
         .session
@@ -1768,6 +1799,10 @@ pub async fn torrent_playback_prepare_next(
             .stream(selected.index)
             .await
             .map_err(|error| format!("Could not prioritize the prepared episode: {error:#}"))?;
+        let preload_tail = match tail_prefetch_offset(selected.length) {
+            Some(offset) => positioned_stream(&handle, selected.index, offset).await,
+            None => None,
+        };
         engine
             .session
             .unpause(&handle)
@@ -1775,6 +1810,7 @@ pub async fn torrent_playback_prepare_next(
             .map_err(|error| format!("Could not start next-episode peers: {error:#}"))?;
         tauri::async_runtime::spawn(async move {
             let _preload_stream = preload_stream;
+            let _preload_tail = preload_tail;
             sleep(STARTUP_STREAM_PRIORITY_TIMEOUT).await;
         });
         Ok::<(), String>(())
@@ -2139,12 +2175,11 @@ pub async fn torrent_playback_stop(
 mod tests {
     use super::{
         add_public_trackers, begin_metadata_flight, configured_startup_timeout, dht_port_override,
-        empty_fastresume_bitfield_len, mbps_to_bps, metadata_prefetch_source,
-        native_bind_device_name, normalized_socks_proxy, peer_listener_enabled, peer_listener_mode,
-        proxy_safe_magnet, ratio_target_bytes, remaining_startup_time,
-        selected_file_downloaded_bytes, selection_needs_restoring, startup_is_current,
-        upload_limit, upnp_enabled, DirectTorrentState, METADATA_TIMEOUT, MIN_STARTUP_TIMEOUT,
-        PUBLIC_TRACKERS,
+        mbps_to_bps, metadata_prefetch_source, native_bind_device_name, normalized_socks_proxy,
+        peer_listener_enabled, peer_listener_mode, proxy_safe_magnet, ratio_target_bytes,
+        remaining_startup_time, selected_file_downloaded_bytes, selection_needs_restoring,
+        startup_is_current, tail_prefetch_offset, upload_limit, upnp_enabled, DirectTorrentState,
+        METADATA_TIMEOUT, MIN_STARTUP_TIMEOUT, PUBLIC_TRACKERS,
     };
     use std::sync::atomic::Ordering;
 
@@ -2193,6 +2228,22 @@ mod tests {
     #[test]
     fn ratio_target_rounds_up_to_a_quarter() {
         assert_eq!(ratio_target_bytes(10), 3);
+    }
+
+    #[test]
+    fn the_tail_is_prefetched_only_beyond_the_byte_zero_window() {
+        let mib = 1024 * 1024;
+        assert_eq!(tail_prefetch_offset(0), None);
+        assert_eq!(tail_prefetch_offset(32 * mib), None);
+        assert_eq!(
+            tail_prefetch_offset(32 * mib + 1),
+            Some(32 * mib + 1 - 128 * 1024)
+        );
+        // A 1 GiB episode: mpv read its Cues and Tags from the last 65 KB.
+        assert_eq!(
+            tail_prefetch_offset(1_074_134_749),
+            Some(1_074_134_749 - 128 * 1024)
+        );
     }
 
     #[test]
@@ -2320,14 +2371,5 @@ mod tests {
         let magnet = format!("magnet:?xt=urn:btih:abc&tr={encoded}");
         let enriched = add_public_trackers(&magnet).unwrap();
         assert_eq!(enriched.matches(&encoded).count(), 1);
-    }
-
-    #[test]
-    fn empty_fastresume_matches_rqbits_one_bit_per_piece_layout() {
-        assert_eq!(empty_fastresume_bitfield_len(20).unwrap(), 1);
-        assert_eq!(empty_fastresume_bitfield_len(8 * 20).unwrap(), 1);
-        assert_eq!(empty_fastresume_bitfield_len(9 * 20).unwrap(), 2);
-        assert!(empty_fastresume_bitfield_len(0).is_err());
-        assert!(empty_fastresume_bitfield_len(21).is_err());
     }
 }
