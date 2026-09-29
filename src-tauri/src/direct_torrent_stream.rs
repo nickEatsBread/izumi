@@ -165,6 +165,8 @@ pub(crate) struct StreamRequestStarted {
     pub(crate) torrent_id: usize,
     pub(crate) file_id: usize,
     pub(crate) request_range: Option<String>,
+    /// First byte of the response, 0 when the request had no Range header.
+    pub(crate) range_start: u64,
 }
 
 pub(crate) type StreamRequestSender = UnboundedSender<StreamRequestStarted>;
@@ -174,12 +176,14 @@ fn notify_request_started(
     torrent_id: TorrentIdOrHash,
     file_id: usize,
     request_range: Option<&str>,
+    range_start: u64,
 ) {
     if let TorrentIdOrHash::Id(torrent_id) = torrent_id {
         let _ = sender.send(StreamRequestStarted {
             torrent_id,
             file_id,
             request_range: request_range.map(str::to_owned),
+            range_start,
         });
     }
 }
@@ -283,6 +287,7 @@ async fn stream_file(
         torrent_id,
         file_id,
         request_range.and_then(|value| value.to_str().ok()),
+        start,
     );
 
     let mut headers = HeaderMap::new();
@@ -378,17 +383,30 @@ mod tests {
     #[test]
     fn numeric_player_request_notifies_the_active_torrent_owner() {
         let (sender, mut receiver) = unbounded_channel();
-        notify_request_started(&sender, TorrentIdOrHash::Id(42), 7, Some("bytes=0-65535"));
+        notify_request_started(
+            &sender,
+            TorrentIdOrHash::Id(42),
+            7,
+            Some("bytes=4096-65535"),
+            4096,
+        );
         let request = receiver.try_recv().unwrap();
         assert_eq!(request.torrent_id, 42);
         assert_eq!(request.file_id, 7);
-        assert_eq!(request.request_range.as_deref(), Some("bytes=0-65535"));
+        assert_eq!(request.request_range.as_deref(), Some("bytes=4096-65535"));
+        assert_eq!(request.range_start, 4096);
     }
 
     #[test]
     fn hash_routes_do_not_claim_an_unrelated_numeric_playback() {
         let (sender, mut receiver) = unbounded_channel();
-        notify_request_started(&sender, TorrentIdOrHash::Hash(Id20::new([1; 20])), 7, None);
+        notify_request_started(
+            &sender,
+            TorrentIdOrHash::Hash(Id20::new([1; 20])),
+            7,
+            None,
+            0,
+        );
         assert!(receiver.try_recv().is_err());
     }
 
