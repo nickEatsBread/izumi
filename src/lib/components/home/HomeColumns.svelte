@@ -20,7 +20,17 @@
 
   const width = $derived(Math.min(420, Math.max(240, Math.round(asideWidth))))
   const gap = $derived(Math.min(96, Math.max(0, Math.round(asideGap))))
-  const start = $derived(aside.length ? Math.min(main.length, Math.max(0, Math.round(asideStart))) : 0)
+  // Counted in rows after the featured banner, which leaves the list while it leads Home (it renders
+  // full-bleed above the columns) but flows through it while Edit Home is open.
+  const start = $derived.by(() => {
+    const wanted = aside.length ? Math.max(0, Math.round(asideStart)) : 0
+    let seen = 0
+    for (let index = 0; index < main.length; index++) {
+      if (seen >= wanted) return index
+      if (main[index] !== 'hero') seen++
+    }
+    return main.length
+  })
   const lead = $derived(main.slice(0, start))
   const beside = $derived(main.slice(start))
   // The space the stack class puts between rows, kept between the full-width rows and the columns.
