@@ -35,7 +35,7 @@ describe('series title art', () => {
   it('renders the title through one snippet that can show the logo', () => {
     expect(detail).toContain('{#snippet seriesTitle(m: Media, className: string)}')
     expect(detail).toContain('data-part="detail.logo"')
-    expect(detail.match(/\{@render seriesTitle\(m, /g)?.length).toBe(4)
+    expect(detail.match(/\{@render seriesTitle\(m, /g)?.length).toBe(5)
   })
   it('keeps the waiting title readable to screen readers', () => {
     // `invisible` (visibility: hidden) also hides it from assistive technology; opacity does not.

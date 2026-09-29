@@ -15,7 +15,7 @@ export const TAB_LABEL_TEXT: Record<TabLabel, string> = {
   episodes: 'Episodes', watch: 'Watch',
   relations: 'Relations', related: 'Related',
   characters: 'Characters', cast: 'Cast',
-  recommended: 'Recommended', 'more-like-this': 'More like this',
+  recommended: 'Recommended', 'more-like-this': 'More like this', recommendations: 'Recommendations',
 }
 
 export interface ResolvedSections {
@@ -36,8 +36,10 @@ export interface ResolvedSections {
 export function resolveSections(sections: DetailSections | undefined, options: { phone: boolean; episodesTabbed: boolean }): ResolvedSections {
   const available = (options.phone ? PHONE_ORDER : DESKTOP_ORDER).filter((id) => id !== 'episodes' || options.episodesTabbed)
   const listed = sections?.tabs?.filter((id) => available.includes(id))
-  const tabs: DetailSection[] = !listed ? [...available] : listed.includes('overview') ? listed : [...listed, 'overview']
-  const folded = listed ? available.filter((id) => !tabs.includes(id)) : []
+  // `unlisted: "hidden"` keeps only the listed tabs: no Overview of its own, nothing folded into it.
+  const hidden = sections?.unlisted === 'hidden' && !!listed?.length
+  const tabs: DetailSection[] = !listed ? [...available] : listed.includes('overview') || hidden ? listed : [...listed, 'overview']
+  const folded = listed && !hidden ? available.filter((id) => !tabs.includes(id)) : []
   const labels = { ...(options.phone ? PHONE_LABELS : DESKTOP_LABELS) }
   for (const [id, label] of Object.entries(sections?.labels ?? {}) as [DetailSection, TabLabel | undefined][]) {
     if (label) labels[id] = TAB_LABEL_TEXT[label]

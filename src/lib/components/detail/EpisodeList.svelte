@@ -690,7 +690,7 @@
     <!-- Immediate skeleton grid (shape matches the setting) so the list appears at
          once and doesn't flip layouts; real cards then fade their thumbnails in. -->
     {#if $episodeLayout === 'cards'}
-      <div class="grid select-none {episodeListLayout ? 'grid-cols-1 gap-4' : 'grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]'}">
+      <div data-part="episodes.grid" class="grid select-none {episodeListLayout ? 'grid-cols-1 gap-4' : 'grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]'}">
         {#each eps as ep (ep)}
           <button data-focusable={ep === quickEpisode ? '' : undefined}
                   data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
@@ -765,7 +765,7 @@
       {/each}
     </div>
   {:else if episodeGridLayout || $episodeLayout === 'cards'}
-    <div class="grid select-none {episodeListLayout ? 'grid-cols-1 gap-2 px-2' : episodeGridLayout ? 'grid-cols-1 gap-4 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]' : 'grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]'}">
+    <div data-part="episodes.grid" class="grid select-none {episodeListLayout ? 'grid-cols-1 gap-2 px-2' : episodeGridLayout ? 'grid-cols-1 gap-4 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]' : 'grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]'}">
       {#each rows as ep (`${rowOrder}-${ep}`)}
         <div class="{episodeListLayout && episodeHoverScale ? 'episode-scale' : ''} {episodeListLayout ? 'episode-load-in' : ''}">
         <EpisodeCard

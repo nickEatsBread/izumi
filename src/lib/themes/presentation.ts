@@ -30,14 +30,17 @@ export type DetailSection = 'overview' | 'episodes' | 'relations' | 'characters'
 /** API 3: the fixed tab names a theme picks from — never free text. */
 export type TabLabel =
   | 'overview' | 'info' | 'details' | 'about' | 'home' | 'episodes' | 'watch' | 'relations' | 'related'
-  | 'characters' | 'cast' | 'recommended' | 'more-like-this'
+  | 'characters' | 'cast' | 'recommended' | 'more-like-this' | 'recommendations'
 /** API 3: which sections get a tab, their names, the tab open on arrival, and where the phone facts sit. */
 export interface DetailSections {
   /** `tabs` (default) draws a tab strip; `stack` renders every section in turn under its own title. */
   mode?: 'tabs' | 'stack'
   /** Sections with a tab, in order (1–5, each once). The rest render inside Overview after its own
-   *  content; Overview always keeps a tab. */
+   *  content; Overview always keeps a tab, unless `unlisted` hides what `tabs` leaves out. */
   tabs?: DetailSection[]
+  /** `hidden`: the sections `tabs` leaves out (Overview included) are not on the page at all, for
+   *  a site whose info column already carries the facts and synopsis. */
+  unlisted?: 'overview' | 'hidden'
   /** A fixed replacement name per section. */
   labels?: Partial<Record<DetailSection, TabLabel>>
   /** The tab open on arrival. */
@@ -143,6 +146,10 @@ export interface DetailPresentation {
   /** API 3: `card` puts a Continue card at the top of the episodes; on phones it replaces the
    *  header's Play button once an episode has aired. */
   continue?: 'button' | 'card'
+  /** API 3, desktop stacked and split pages: `poster` makes the poster the head of a left column
+   *  that runs down the page — the trailer button, the countdown and the facts under it — with the
+   *  title, actions, synopsis and sections beside it. */
+  column?: 'none' | 'poster'
 }
 /** The phone tab bar (and the desktop bottom bar when `nav` is `bottom`). */
 export interface BottomNavPresentation {
@@ -295,7 +302,7 @@ const SECTION_LABELS: Record<DetailSection, readonly TabLabel[]> = {
   episodes: ['episodes', 'watch'],
   relations: ['relations', 'related'],
   characters: ['characters', 'cast'],
-  recommended: ['recommended', 'more-like-this'],
+  recommended: ['recommended', 'more-like-this', 'recommendations'],
 }
 const EPISODE_CONTROLS = ['sort', 'layout', 'search', 'download', 'queue'] as const satisfies readonly EpisodeControl[]
 const numericStyles: Record<string, [number, number, string]> = {
@@ -466,7 +473,7 @@ function controlList(value: unknown): EpisodeControl[] {
   })
 }
 function parseSections(value: unknown): DetailSections {
-  const raw = record(value); only(raw, ['mode', 'tabs', 'labels', 'default', 'info'])
+  const raw = record(value); only(raw, ['mode', 'tabs', 'labels', 'default', 'info', 'unlisted'])
   const result: DetailSections = {}
   if (raw.mode !== undefined) result.mode = choice(raw.mode, ['tabs', 'stack'])
   if (raw.tabs !== undefined) {
@@ -486,16 +493,22 @@ function parseSections(value: unknown): DetailSections {
       if (labels[section] !== undefined) result.labels[section] = choice(labels[section], SECTION_LABELS[section])
     }
   }
+  if (raw.unlisted !== undefined) {
+    result.unlisted = choice(raw.unlisted, ['overview', 'hidden'])
+    if (result.unlisted === 'hidden' && !result.tabs) throw new Error('A theme that hides the unlisted series sections must list its tabs.')
+  }
+  const hidesOverview = result.unlisted === 'hidden' && !result.tabs?.includes('overview')
   if (raw.default !== undefined) {
     result.default = choice(raw.default, DETAIL_SECTIONS)
-    // Overview always has a tab, so it is a valid default whatever `tabs` lists.
-    if (result.tabs && result.default !== 'overview' && !result.tabs.includes(result.default)) throw new Error('The default series tab must be one of its tabs.')
+    // Overview has a tab whatever `tabs` lists, unless the unlisted sections are hidden.
+    if (result.tabs && (result.default !== 'overview' || hidesOverview) && !result.tabs.includes(result.default)) throw new Error('The default series tab must be one of its tabs.')
   }
   if (raw.info !== undefined) result.info = choice(raw.info, ['above', 'overview'])
+  if (hidesOverview && result.info === 'overview') throw new Error('A series page cannot move its info into a hidden Overview.')
   return result
 }
 function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
-  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'bannerScale', 'episodes', ...api2(api, ['tabs']), ...api3(api, ['factsStyle', 'countdown', 'listButton', 'header', 'art', 'title', 'sections', 'nav', 'continue'])])
+  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'bannerScale', 'episodes', ...api2(api, ['tabs']), ...api3(api, ['factsStyle', 'countdown', 'listButton', 'header', 'art', 'title', 'sections', 'nav', 'continue', 'column'])])
   const result: DetailPresentation = {}
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['stack', 'split', 'overlay'])
   if (raw.bannerHidden !== undefined) result.bannerHidden = flag(raw.bannerHidden)
@@ -516,6 +529,7 @@ function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
   if (raw.sections !== undefined) result.sections = parseSections(raw.sections)
   if (raw.nav !== undefined) result.nav = choice(raw.nav, ['shown', 'hidden'])
   if (raw.continue !== undefined) result.continue = choice(raw.continue, ['button', 'card'])
+  if (raw.column !== undefined) result.column = choice(raw.column, ['none', 'poster'])
   if (raw.episodes !== undefined) {
     const episodes = record(raw.episodes); only(episodes, ['placement', 'arrangement', 'hover', 'order', 'search', 'card', ...api3(api, ['toolbar', 'controls', 'paging', 'pageSize', 'toolbarMin', 'seasons'])])
     result.episodes = {}
@@ -801,6 +815,7 @@ export function resolveDetail(layout?: ThemePresentation): Required<Pick<DetailP
     sections: detail.sections,
     nav: detail.nav,
     continue: detail.continue,
+    column: detail.column,
     episodes: {
       placement,
       arrangement: detail.episodes?.arrangement,

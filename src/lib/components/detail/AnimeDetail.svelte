@@ -283,6 +283,9 @@
   // What a facts template (`detail.facts`) binds, on phones and desktop alike.
   const factsModel = (m: Media) => mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined })
   const countdown = $derived(detailTheme.countdown ?? 'none')
+  // API 3 `detail.column: "poster"`: the poster heads a left column (trailer, countdown, facts) that
+  // runs down beside the title, actions, synopsis and sections — desktop stacked and split pages.
+  const posterColumn = $derived(detailTheme.column === 'poster')
   const downloadedEpisodes = (m: Media) => Object.values($downloads)
     .filter((d) => d.mediaId === m.id && d.status === 'done').map((d) => d.episode).sort((a, b) => a - b)
   // The episodes the list shows (EpisodeList's own rule): the downloaded ones offline.
@@ -830,22 +833,8 @@
       <p class="mb-3 text-sm text-destructive">{heroPlay.message}</p>
     {/if}
 
-    {#snippet seriesInfo()}
-    <!-- Hero info panel: cover + title/badges/description + action bar. -->
-    <!-- The banner is the dominant artwork; the portrait is an identity anchor, not the ruler for
-         the whole header. At 13rem it left a poster-height void beneath the much shorter info
-         column, delaying Episodes by roughly a full D-pad viewport. An 11rem cover retains a clear
-         visual identity while keeping both columns close enough in height for Episodes to follow. -->
-    <div class="mb-4 flex flex-col gap-5 md:flex-row {detailTheme.coverAlign === 'end' ? 'md:items-end' : detailTheme.coverAlign === 'start' ? 'md:items-start' : ''}">
-      <img data-part="detail.poster" use:reliableImage={cover(m)} alt="" class="h-auto w-44 shrink-0 rounded-lg object-contain shadow-lg {detailTheme.coverAlign === 'end' ? 'self-end' : 'self-start'}" style:width={detailTheme.posterWidth ? `${detailTheme.posterWidth}px` : undefined} />
-
-      <div class="min-w-0 flex-1 {detailTheme.bannerScale === 'banner' ? 'md:pt-12' : ''}">
-        {#if m.title.native || m.title.romaji}
-          <div data-part="detail.alt-title" class="text-sm text-muted-foreground">{m.title.native || m.title.romaji}</div>
-        {/if}
-        {@render seriesTitle(m, 'mb-2 text-3xl font-black')}
-        {@render seriesHeader(m, 'mb-3')}
-
+    <!-- The facts and the action bar, shared by the header panel and the poster column. -->
+    {#snippet factsBlock()}
         {#if factsStyle !== 'template'}
           <FactList media={m} variant={factsStyle} className="mb-3" progress={effProgress > 0 ? `${effProgress}/${epsTotal(m) || '?'}` : undefined} {controllerUi} />
         {:else if detailTheme.facts}
@@ -877,20 +866,8 @@
           {/if}
         </div>
         {/if}
-        {#if countdown !== 'none'}<AiringCountdown media={m} variant={countdown} className="mb-3" />{/if}
-
-        <!-- Where a flip order is the round gutter button there is no toolbar line for release timing
-             (toolbar-plan.ts); everywhere else the episode controls show it. -->
-        {#if flipGutter}
-          <div class="mb-3 flex flex-wrap items-center gap-2 empty:mb-0">
-            <AiringStatus media={m} />
-          </div>
-        {/if}
-
-        {#if m.description && !detailTheme.actionsFirst && synopsisAt !== 'overview'}
-          <p data-part="detail.synopsis" class="mb-3 {controllerUi ? 'line-clamp-2' : 'line-clamp-3'} max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
-        {/if}
-
+    {/snippet}
+    {#snippet actionsBlock()}
         <!-- Action bar -->
         <div data-part="detail.actions" class="flex flex-wrap items-center gap-2">
           <button data-part="button" data-variant="primary" data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
@@ -925,7 +902,7 @@
             {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
           </button>
 
-          {#if m.trailer?.id}
+          {#if m.trailer?.id && !posterColumn}
             <button data-part="detail.action" data-action="trailer" data-focusable onclick={() => openTrailerPopup(m.trailer!.id!, title(m))} title="Watch trailer"
                     class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
               <Clapperboard size={18} />
@@ -939,6 +916,40 @@
             </button>
           {/each}
         </div>
+    {/snippet}
+
+    {#snippet seriesInfo()}
+    <!-- Hero info panel: cover + title/badges/description + action bar. -->
+    <!-- The banner is the dominant artwork; the portrait is an identity anchor, not the ruler for
+         the whole header. At 13rem it left a poster-height void beneath the much shorter info
+         column, delaying Episodes by roughly a full D-pad viewport. An 11rem cover retains a clear
+         visual identity while keeping both columns close enough in height for Episodes to follow. -->
+    <div class="mb-4 flex flex-col gap-5 md:flex-row {detailTheme.coverAlign === 'end' ? 'md:items-end' : detailTheme.coverAlign === 'start' ? 'md:items-start' : ''}">
+      <img data-part="detail.poster" use:reliableImage={cover(m)} alt="" class="h-auto w-44 shrink-0 rounded-lg object-contain shadow-lg {detailTheme.coverAlign === 'end' ? 'self-end' : 'self-start'}" style:width={detailTheme.posterWidth ? `${detailTheme.posterWidth}px` : undefined} />
+
+      <div class="min-w-0 flex-1 {detailTheme.bannerScale === 'banner' ? 'md:pt-12' : ''}">
+        {#if m.title.native || m.title.romaji}
+          <div data-part="detail.alt-title" class="text-sm text-muted-foreground">{m.title.native || m.title.romaji}</div>
+        {/if}
+        {@render seriesTitle(m, 'mb-2 text-3xl font-black')}
+        {@render seriesHeader(m, 'mb-3')}
+
+        {@render factsBlock()}
+        {#if countdown !== 'none'}<AiringCountdown media={m} variant={countdown} className="mb-3" />{/if}
+
+        <!-- Where a flip order is the round gutter button there is no toolbar line for release timing
+             (toolbar-plan.ts); everywhere else the episode controls show it. -->
+        {#if flipGutter}
+          <div class="mb-3 flex flex-wrap items-center gap-2 empty:mb-0">
+            <AiringStatus media={m} />
+          </div>
+        {/if}
+
+        {#if m.description && !detailTheme.actionsFirst && synopsisAt !== 'overview'}
+          <p data-part="detail.synopsis" class="mb-3 {controllerUi ? 'line-clamp-2' : 'line-clamp-3'} max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
+        {/if}
+
+        {@render actionsBlock()}
         {#if showRatingRow}<div class="mt-4">{@render ratingRow(m)}</div>{/if}
       </div>
     </div>
@@ -951,7 +962,41 @@
     {@render detailSections(m, false, false)}
     {/snippet}
 
-    {#if sideEpisodes}
+    {#if posterColumn && !sideEpisodes}
+      <!-- detail.column "poster": the poster heads a left column with a labelled trailer button, the
+           countdown and the facts under it; the title, actions, synopsis and sections run beside it. -->
+      <div class="flex flex-col gap-5 md:grid md:items-start md:gap-4" style:grid-template-columns={`${detailTheme.posterWidth ?? 248}px minmax(0, 1fr)`}>
+        <aside data-slot="detail.column" class="flex min-w-0 flex-col gap-3">
+          <img data-part="detail.poster" use:reliableImage={cover(m)} alt="" class="h-auto w-full rounded-lg object-cover shadow-lg" />
+          {#if m.trailer?.id}
+            <button data-part="detail.trailer" data-action="trailer" data-focusable onclick={() => openTrailerPopup(m.trailer!.id!, title(m))}
+                    class="inline-flex w-full items-center justify-center gap-2 rounded-md bg-secondary px-3 py-2 text-sm font-bold transition-colors hover:bg-accent">
+              <Play size={16} />Watch Trailer
+            </button>
+          {/if}
+          {#if countdown !== 'none'}<AiringCountdown media={m} variant={countdown} />{/if}
+          {@render factsBlock()}
+        </aside>
+        <div class="min-w-0">
+          {#if m.title.native || m.title.romaji}
+            <div data-part="detail.alt-title" class="text-sm text-muted-foreground">{m.title.native || m.title.romaji}</div>
+          {/if}
+          {@render seriesTitle(m, 'mb-2 text-3xl font-black')}
+          {@render seriesHeader(m, 'mb-3')}
+          {#if flipGutter}<div class="mb-3 flex flex-wrap items-center gap-2 empty:mb-0"><AiringStatus media={m} /></div>{/if}
+          {#if m.description && !detailTheme.actionsFirst && synopsisAt !== 'overview'}
+            <p data-part="detail.synopsis" class="mb-3 line-clamp-3 max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
+          {/if}
+          {@render actionsBlock()}
+          {#if showRatingRow}<div class="mt-4">{@render ratingRow(m)}</div>{/if}
+          {#if m.description && detailTheme.actionsFirst && synopsisAt !== 'overview'}
+            <p data-part="detail.synopsis" class="mt-4 line-clamp-4 max-w-3xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
+          {/if}
+          {#if belowEpisodes}<div class="mt-6"><EpisodeList media={m} offline={$offlineMode} /></div>{/if}
+          <div class="mt-6">{@render desktopSecondary()}</div>
+        </div>
+      </div>
+    {:else if sideEpisodes}
       <div class="flex flex-col gap-6 min-[960px]:grid min-[960px]:grid-cols-[minmax(0,1fr)_minmax(22rem,40%)] min-[960px]:items-start min-[960px]:gap-8">
         <div class="min-w-0">
           {@render seriesInfo()}
