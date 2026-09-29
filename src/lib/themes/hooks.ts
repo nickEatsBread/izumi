@@ -62,6 +62,9 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'row.title', kind: 'part', description: 'The row title.' },
     { name: 'row.more', kind: 'part', description: "The row's view-more link." },
     { name: 'row.track', kind: 'part', description: 'The scrolling track or grid holding the cards.' },
+    { name: 'row.caption', kind: 'part', description: 'The focus caption line under a row (`caption: "focus"`, pad in use).' },
+    { name: 'row.caption.title', kind: 'part', description: "The focused card's full title in the caption." },
+    { name: 'row.caption.meta', kind: 'part', description: "The focused card's detail line: episode, episode title and time left on Continue Watching; format, season and episodes on posters." },
   ],
   blocks: [
     { name: 'home.header', kind: 'slot', description: 'The phone Home app bar: the wordmark and the top icons.' },

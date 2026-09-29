@@ -33,6 +33,7 @@ Semantic colors, font family and scale, corner radius, backdrop and glass effect
 - Slide indicator (API 2, `hero.indicator`): filled bars, dots, pills, an "n / N" counter or none, at the start, centre or end, in a theme colour. One snippet in `Hero.svelte` serves the built-in desktop and phone layouts and custom templates; without it each layout keeps its own default (timed bars on desktop, dots on a phone).
 - Wide hero (API 3): `hero.scale: "wide"` sizes a hero template as the 16:9 artwork box instead of a viewport height. `hero.bleed` (0–480 px) applies only together with `scale: "wide"` (the client ignores it under `viewport` or `banner`) and runs that many pixels of the artwork's bottom under the rows that follow, with the content, arrows and markers lifted above it. Both apply on windows wider than a phone; phones keep `mobileHeight`. `hero.indicator.past: "empty"` leaves the bars of earlier slides unfilled.
 - Rows: carousel or wrapping grid, card width and spacing, row spacing, artwork shape and corners (these style the default cover; a custom card template owns its own shape), heading size, and optional media-card templates.
+- Focus caption (API 3, `caption: "focus"` on `rows.defaults` or a row): with a pad in use each row keeps one line under its cards for the focused card's full title and detail line (episode, episode title and time left on Continue Watching; format, season and episode count on posters), so a theme can shorten card labels without losing the full title.
 - Section headings (API 2, `heading`): weight, uppercase, a bar/dot/underline accent and whether "View more" is text, an arrow or hidden. Home-row cards also receive `rankPosition` and a zero-padded `rank`, so a row template can number trending titles.
 - Per-row overrides follow stable row identities, so reordering a row does not move its visual settings to another row. Resolution is global defaults → semantic row role → exact scoped row ID. For example, `continue` can override every Continue Watching row and `anime:continue` can target one catalog.
 
@@ -228,6 +229,9 @@ State values:
 | `row.title` | part | The row title. |  |
 | `row.more` | part | The row's view-more link. |  |
 | `row.track` | part | The scrolling track or grid holding the cards. |  |
+| `row.caption` | part | The focus caption line under a row (`caption: "focus"`, pad in use). |  |
+| `row.caption.title` | part | The focused card's full title in the caption. |  |
+| `row.caption.meta` | part | The focused card's detail line: episode, episode title and time left on Continue Watching; format, season and episodes on posters. |  |
 
 #### Home blocks
 

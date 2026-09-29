@@ -4,7 +4,10 @@
   // (watching) reconcile in the BACKGROUND — no skeleton wait on the network. De-duped by media id,
   // resume-aware, most-recent first. All merge/sync logic lives in $lib/player/continue-watching.
   import { tick } from 'svelte'
+  import { get } from 'svelte/store'
   import { getContextClient } from '@urql/svelte'
+  import { focusWhenIdle } from '$lib/nav/initial-focus'
+  import { gameMode } from '$lib/player/session'
   import { continueWatching, reconciling, reconciledOnce, reconcileContinueWatching, dismissContinueWatching, filterContinueWatching } from '$lib/player/continue-watching'
   import { catalogProvider, continueWatchingCatalogScope } from '$lib/settings/catalog'
   import { longPressDismiss } from './continue-dismiss'
@@ -61,6 +64,9 @@
   // Provisional cue: gray the cached cards while the FIRST reconcile of the session runs, then swap
   // to crisp. Later home visits reconcile silently (data is already live).
   const provisional = $derived($reconciling && !$reconciledOnce && items.length > 0)
+  // Home without a featured banner starts on the first Continue card in Game mode, so the first A
+  // resumes. A focus restore (Back to the card you left) runs first and wins.
+  const firstFocus = () => get(gameMode) && location.pathname.replace(/\/$/, '') === '/app/home' && !document.querySelector('[data-slot="home.hero"]')
 
   // Re-run whenever the tracker identity changes, not only on mount. With no tracker the reconcile
   // returns at once; when a device transfer (or a sign-in on the Sync/Accounts screens) then lands
@@ -82,9 +88,10 @@
   </Carousel>
 {:else if items.length}
   <Carousel {title}>
-    {#each items as item (item.media.id)}
+    {#each items as item, index (item.media.id)}
       <div class="shrink-0 transition-[opacity,filter] duration-300 {provisional ? 'opacity-40 grayscale' : ''}"
            data-cw-id={item.media.id}
+           use:focusWhenIdle={index === 0 ? firstFocus : false}
            role="group"
            use:longPressDismiss={{ onLongPress: () => dismiss(item) }}
            onmouseenter={() => (activeId = item.media.id)}
