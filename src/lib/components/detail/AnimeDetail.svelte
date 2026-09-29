@@ -163,18 +163,22 @@
   })
   // AniList does not expose Kitsu IDs. AniZip is already the detail page's episode-metadata
   // mapping source, so reuse its cached per-title mapping to make the Kitsu destination exact.
+  // Looked up per title id, never per `media` object: the page builds a new one each time its query
+  // delivers the same series again (a cached page's revalidation, each wave of the season picker's
+  // chain walk, a tracker read-back). Re-running on those cleared the id until IndexedDB answered,
+  // which took the Kitsu button out of the page and put it back, dropping a d-pad focus resting on it.
+  const mediaKitsuId = $derived(media ? kitsuIdOf(media) : undefined)
+  const mediaAnilistId = $derived(media ? anilistIdOf(media) : undefined)
   let externalKitsuId = $state<number | undefined>()
   $effect(() => {
-    const current = media
-    if (!current) { externalKitsuId = undefined; return }
-    const direct = kitsuIdOf(current)
+    const direct = mediaKitsuId
     if (direct) { externalKitsuId = direct; return }
-    const requestedId = anilistIdOf(current)
+    const requestedId = mediaAnilistId
     externalKitsuId = undefined
     if (requestedId == null || requestedId <= 0) return
     let cancelled = false
     void getKitsuId(requestedId).then((value) => {
-      if (!cancelled && media && anilistIdOf(media) === requestedId) externalKitsuId = value
+      if (!cancelled && mediaAnilistId === requestedId) externalKitsuId = value
     })
     return () => { cancelled = true }
   })
