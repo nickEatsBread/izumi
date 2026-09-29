@@ -224,7 +224,13 @@ export interface ThemeNav {
   top?: NavDestination[]
 }
 /** API 3: the theme's Home and navigation, applied while the theme is active and its layout switch is on. */
-export interface ThemeLayout { home?: ThemeLayoutEntry[]; asideWidth?: number; nav?: ThemeNav }
+export interface ThemeLayout {
+  home?: ThemeLayoutEntry[]
+  asideWidth?: number
+  /** The gutter between Home's main column and its side column, in px (default 32). */
+  asideGap?: number
+  nav?: ThemeNav
+}
 export interface ThemePresentation {
   density?: ThemeDensity
   hideCardLabels?: boolean
@@ -558,7 +564,7 @@ function destinationList(value: unknown, max: number): NavDestination[] {
   })
 }
 function parseLayout(value: unknown, phone: boolean): ThemeLayout {
-  const raw = record(value); only(raw, ['home', 'asideWidth', ...(phone ? [] : ['nav'])])
+  const raw = record(value); only(raw, ['home', 'asideWidth', 'asideGap', ...(phone ? [] : ['nav'])])
   const result: ThemeLayout = {}
   if (raw.home !== undefined) {
     if (!Array.isArray(raw.home) || raw.home.length < 1 || raw.home.length > 30) throw new Error('A theme home layout needs 1–30 entries.')
@@ -579,6 +585,7 @@ function parseLayout(value: unknown, phone: boolean): ThemeLayout {
     })
   }
   if (raw.asideWidth !== undefined) result.asideWidth = number(raw.asideWidth, 240, 420)
+  if (raw.asideGap !== undefined) result.asideGap = number(raw.asideGap, 0, 96)
   if (raw.nav !== undefined) {
     const nav = record(raw.nav); only(nav, ['home', 'bottom', 'top'])
     result.nav = {}
@@ -662,7 +669,7 @@ export function resolvePresentation(layout: ThemePresentation | undefined, mobil
   }
   if (phone.player) resolved.player = { ...shared.player, ...phone.player }
   if (phone.cards) resolved.cards = { ...shared.cards, ...phone.cards }
-  // The phone block can only carry `home` and `asideWidth` (`parseLayout` rejects `nav` there), so
+  // The phone block can only carry `home`, `asideWidth` and `asideGap` (`parseLayout` rejects `nav` there), so
   // navigation always comes from the shared layout.
   if (phone.layout) resolved.layout = { ...shared.layout, ...phone.layout }
   return resolved
