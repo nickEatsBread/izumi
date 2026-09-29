@@ -133,6 +133,8 @@ State values:
 | `data-family` | `card` | `poster`, `search`, `continue`, `preview` |
 | `data-caption` | `block.latest-episodes` | `below`, `overlay` |
 | `data-aired` | `block.item` (airing-today) | present once the episode has aired |
+| `data-button` | `nav.bumper`, `hints.item`, `hints.glyph` | `a`, `b`, `x`, `y`, `l1`, `r1`, `l2`, `r2`, `start`, `select`; `l2r2` on `hints.item` |
+| `data-family` | `hints.glyph` | `deck`, `xbox`, `playstation`, `nintendo` |
 | `data-layout` | `detail` | `stack`, `split`, `overlay` |
 | `data-variant` | `detail` | `phone`, `desktop` |
 | `data-variant` | `detail.facts` | `table`, `cards`, `chips` (none for a template) |
@@ -198,6 +200,9 @@ State values:
 | `nav.categories.heading` | part | The Genres heading in the Categories menu. |  |
 | `nav.categories.link` | part | A Categories menu link; genre links carry `data-variant="genre"`. | `data-variant` |
 | `hints.glyph` | part | A controller button's printed label: round for face buttons, a pill for bumpers, triggers and the menu buttons. | `data-button`, `data-family` |
+| `hints` | slot | The controller button-hint bar along the bottom (`shell.hints`). |  |
+| `hints.item` | part | One prompt: its glyph (two for the page-tab triggers, `data-button="l2r2"`) and label. | `data-button` |
+| `hints.label` | part | What the button does for the focused element. |  |
 
 #### Home
 

@@ -37,6 +37,9 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'nav.categories.heading', kind: 'part', description: 'The Genres heading in the Categories menu.' },
     { name: 'nav.categories.link', kind: 'part', description: 'A Categories menu link; genre links carry `data-variant="genre"`.', states: ['data-variant'] },
     { name: 'hints.glyph', kind: 'part', description: "A controller button's printed label: round for face buttons, a pill for bumpers, triggers and the menu buttons.", states: ['data-button', 'data-family'] },
+    { name: 'hints', kind: 'slot', description: 'The controller button-hint bar along the bottom (`shell.hints`).' },
+    { name: 'hints.item', kind: 'part', description: 'One prompt: its glyph (two for the page-tab triggers, `data-button="l2r2"`) and label.', states: ['data-button'] },
+    { name: 'hints.label', kind: 'part', description: 'What the button does for the focused element.' },
   ],
   home: [
     { name: 'home', kind: 'slot', description: 'The Home page.', states: ['data-variant'] },

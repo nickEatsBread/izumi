@@ -18,6 +18,7 @@
   import Menu from '@lucide/svelte/icons/menu'
   import { get } from 'svelte/store'
   import Glyph from './Glyph.svelte'
+  import ButtonHints from './ButtonHints.svelte'
   import { goto } from '$app/navigation'
   import { anilistUserName, malUserName, anilistUserAvatar, malUserAvatar, malUser } from '$lib/trackers/config'
   import { anilistUser } from '$lib/anilist/account'
@@ -251,6 +252,7 @@
 </nav>
 {#if top && (topBar.menu === 'drawer' || bumpers || (sideMenu && !wide))}<NavDrawer bind:open={drawerOpen} items={[...items, { href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }]} {active} />{/if}
 {#if panelShown}<NavPanel width={sideWidth} items={[...shown, { href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }]} {active} />{/if}
+{#if $themePresentation?.shell?.hints}<ButtonHints />{/if}
 
 {#snippet menuButton()}
   {#if top && (topBar.menu === 'drawer' || sideMenu)}
