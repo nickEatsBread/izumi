@@ -231,6 +231,31 @@ export async function kitsuJson<T>(url: string, signal?: AbortSignal): Promise<T
   return response.json() as Promise<T>
 }
 
+/** Kitsu's text search forgives typos, respacing and a half-typed last word ("freiren", "onepiece",
+ *  "frier"), none of which AniList's whole-word search finds. Hits come back as AniList titles, in
+ *  Kitsu's order, so they open, dedupe and track exactly like AniList's own results; a hit Kitsu has
+ *  not linked to AniList is left out unless the id map is already in memory. */
+export async function searchKitsuTitles(query: string, signal?: AbortSignal): Promise<Media[]> {
+  const url = new URL(`${API}/anime`)
+  url.searchParams.set('filter[text]', query)
+  url.searchParams.set('page[limit]', '20')
+  url.searchParams.set('include', 'mappings')
+  const page = await kitsuJson<KitsuPage>(url.toString(), signal)
+  const direct = directAniListIds(page)
+  const malIds = directAniListIds(page, 'myanimelist/anime')
+  const index = cachedIndex()
+  return (page.data ?? []).flatMap((raw) => {
+    const kitsuId = n(raw.id)
+    const anilistId = kitsuId == null ? undefined
+      : direct.get(kitsuId) ?? (index ? lookupAnilistByKitsu(index, kitsuId) : undefined)
+    if (anilistId == null) return []
+    const media = mapKitsuMedia(raw, anilistId)
+    delete media.catalog
+    media.idMal = kitsuId == null ? undefined : malIds.get(kitsuId)
+    return [media]
+  })
+}
+
 const titleKey = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]+/g, '')
 
 /** Metadata index for AnimeSchedule's weekly HTML. The timetable deliberately carries no external

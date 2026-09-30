@@ -129,22 +129,29 @@
 
     results = []
     searchState = 'typing'
+    // Each keystroke abandons the previous search: its lookups stop instead of running on ahead of
+    // the query on screen.
+    const abort = new AbortController()
     const timer = setTimeout(async () => {
       if (!guard.isCurrent(request)) return
       searchState = 'loading'
       try {
-        const media = await quickSearch(clean, activeSelections)
+        // Results appear as each catalog answers instead of after the slowest one.
+        const media = await quickSearch(clean, activeSelections, {
+          signal: abort.signal,
+          onUpdate: (partial) => { if (guard.isCurrent(request) && partial.length) results = partial },
+        })
         if (!guard.isCurrent(request)) return
         results = media
         searchState = 'done'
       } catch (reason) {
-        if (!guard.isCurrent(request)) return
+        if (!guard.isCurrent(request) || abort.signal.aborted) return
         searchState = 'error'
         error = reason instanceof Error ? reason.message : String(reason)
       }
     }, 180)
 
-    return () => clearTimeout(timer)
+    return () => { clearTimeout(timer); abort.abort() }
   })
 
   // Store-driven lifecycle so launchers elsewhere in the shell get the same focus/recent-search
@@ -230,15 +237,6 @@
               <SlidersHorizontal size={19} class="text-theme" />
             </button>
           </div>
-        {:else if searchState === 'typing' || searchState === 'loading'}
-          <div class="space-y-3" aria-label="Searching">
-            {#each Array(5) as _}
-              <div class="flex animate-pulse gap-3 rounded-xl bg-secondary/35 p-3">
-                <div class="h-20 w-14 rounded-md bg-muted"></div>
-                <div class="flex-1 space-y-3 py-2"><div class="h-4 w-1/2 rounded bg-muted"></div><div class="h-3 w-1/3 rounded bg-muted"></div></div>
-              </div>
-            {/each}
-          </div>
         {:else if searchState === 'error'}
           <div class="rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-8 text-center">
             <p class="font-black">Search failed</p>
@@ -291,6 +289,16 @@
                 </button>
               {/each}
             </div>
+          </div>
+        {:else if searchState === 'typing' || searchState === 'loading'}
+          <!-- Only until the first catalog answers: its results replace this while slower ones finish. -->
+          <div class="space-y-3" aria-label="Searching">
+            {#each Array(5) as _}
+              <div class="flex animate-pulse gap-3 rounded-xl bg-secondary/35 p-3">
+                <div class="h-20 w-14 rounded-md bg-muted"></div>
+                <div class="flex-1 space-y-3 py-2"><div class="h-4 w-1/2 rounded bg-muted"></div><div class="h-3 w-1/3 rounded bg-muted"></div></div>
+              </div>
+            {/each}
           </div>
         {:else}
           <div class="rounded-xl border border-dashed border-border px-4 py-10 text-center">

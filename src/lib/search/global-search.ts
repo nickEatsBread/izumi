@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store'
 import type { Media } from '$lib/anilist/types'
+import { canonicalTitles, mediaMatch, normalizeTitle, popularityBoost, RELEVANT_MATCH, STRONG_MATCH } from './title-match'
 
 export const globalSearchOpen = writable(false)
 
@@ -46,80 +47,71 @@ export function plainTextSynopsis(value?: string) {
     .trim()
 }
 
-function normalizeTitle(value: string) {
-  return value
-    .normalize('NFKD')
-    .replace(/\p{M}/gu, '')
-    .toLocaleLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim()
-    .replace(/\s+/g, ' ')
-}
-
-function canonicalTitles(media: Media) {
-  return [
-    media.title.english,
-    media.title.romaji,
-    media.title.native,
-    media.title.userPreferred,
-  ].filter((value): value is string => !!value)
-}
-
-function titleRelevance(title: string, query: string) {
-  const value = normalizeTitle(title)
-  if (!value || !query) return 0
-
-  // Prefer the shortest title that expresses the requested phrase. This makes a main series such
-  // as "Demon Slayer: Kimetsu no Yaiba" beat a movie whose longer title has the same prefix.
-  const closeness = Math.round((query.length / Math.max(query.length, value.length)) * 100)
-  if (value === query) return 4_000
-  if (value.startsWith(`${query} `)) return 3_000 + closeness
-  if (` ${value} `.includes(` ${query} `)) return 2_500 + closeness
-
-  const queryTokens = [...new Set(query.split(' ').filter(Boolean))]
-  const valueTokens = new Set(value.split(' '))
-  const matched = queryTokens.filter((token) => valueTokens.has(token)).length
-  if (matched === queryTokens.length) return 2_000 + closeness
-  if (matched > 0) return 1_000 + Math.round((matched / queryTokens.length) * 100)
-  return 0
-}
+const compactTitle = (title: string) => normalizeTitle(title).replace(/ /g, '')
 
 /**
- * AniList's SEARCH_MATCH order is fuzzy and can occasionally put an unrelated title first.
- * Re-rank the small Quick Search result set by every known title/synonym. When at least one
- * textual match exists, omit zero-match strays; when none exists (usually a typo), retain the
- * API order so AniList's fuzzy matching still works.
+ * Rank a live result set against what was typed, with typo and spacing tolerance (title-match.ts).
+ * Once anything resembles the query, what does not is dropped: some catalogs answer a query they
+ * cannot match with their front page, which used to fill the results with unrelated shows.
+ *
+ * A record's own titles outrank its alternate names. AniList lists "Demon Slayer" among the obscure
+ * OVA Onigiri's synonyms, so a record matched only through a synonym is dropped beside an own-title
+ * match that is ten times as popular; a series known by an abbreviation ("TenSura") still stands
+ * beside a less popular spin-off whose own title starts with it.
  */
 export function rankQuickSearchResults(media: Media[], rawQuery: string): Media[] {
-  const query = normalizeTitle(normalizeSearchQuery(rawQuery))
-  if (!query) return media
+  const query = normalizeSearchQuery(rawQuery)
+  // One or two letters match too much of every title to rank on: keep the catalogs' own order.
+  if (normalizeTitle(query).replace(/ /g, '').length < 3) return media
 
-  const ranked = media.map((item, index) => {
-    const canonical = canonicalTitles(item).reduce(
-      (best, candidate) => Math.max(best, titleRelevance(candidate, query)),
-      0,
-    )
-    const synonym = (item.synonyms ?? []).reduce(
-      (best, candidate) => Math.max(best, titleRelevance(candidate, query)),
-      0,
-    )
-    return { item, index, canonical, relevance: canonical > 0 ? 10_000 + canonical : synonym }
-  })
-  // Prefer canonical results as a class, not just by sort order. AniList calls Onigiri
-  // "Demon Slayer" in its synonyms; leaving synonym-only rows in this result set made an
-  // unrelated show look like a valid Demon Slayer result. Synonyms remain useful when the API
-  // supplies no canonical match for an alternate/localized title.
-  const hasCanonicalMatch = ranked.some(({ canonical }) => canonical > 0)
-  const hasTextualMatch = ranked.some(({ relevance }) => relevance > 0)
-  return ranked
-    .filter(({ canonical, relevance }) =>
-      hasCanonicalMatch ? canonical > 0 : (!hasTextualMatch || relevance > 0))
-    .sort((a, b) =>
-      b.relevance - a.relevance
-      || (b.item.popularity ?? 0) - (a.item.popularity ?? 0)
-      || a.index - b.index)
+  const scored = media.map((item, index) => ({ item, index, ...mediaMatch(item, query) }))
+  const relevant = (entry: { canonical: number; alternate: number }) => Math.max(entry.canonical, entry.alternate) >= RELEVANT_MATCH
+
+  // A catalog row titled only in another language ("Shingeki no Kyojin" while searching "attack on
+  // titan") is the same title as a record that matches, so it sits just below that record.
+  const matched = new Map<string, number>()
+  for (const entry of scored) {
+    if (!relevant(entry)) continue
+    const score = Math.max(entry.canonical, entry.alternate)
+    for (const title of [...canonicalTitles(entry.item), ...(entry.item.synonyms ?? [])]) {
+      const key = title && compactTitle(title)
+      if (key && (matched.get(key) ?? 0) < score) matched.set(key, score)
+    }
+  }
+  for (const entry of scored) {
+    if (relevant(entry)) continue
+    for (const title of canonicalTitles(entry.item)) {
+      const score = title ? matched.get(compactTitle(title)) : undefined
+      if (score != null) entry.canonical = Math.max(entry.canonical, score - 0.01)
+    }
+  }
+
+  const own = scored.filter(({ canonical }) => canonical >= RELEVANT_MATCH)
+  const floor = 0.1 * Math.max(0, ...own.map(({ item }) => item.popularity ?? 0))
+  const kept = scored.filter((entry) => entry.canonical >= RELEVANT_MATCH
+    || (entry.alternate >= RELEVANT_MATCH && (entry.item.popularity ?? 0) >= floor))
+  // Nothing resembles the query, so nothing tells a match on a title these records do not carry (a
+  // translation, a source that only lists romaji) from a source's front page: every answer stays,
+  // in its catalog's order. With AniList searched, close matches rarely leave this case open.
+  if (!kept.length) return media
+
+  return kept
+    .map((entry) => ({
+      ...entry,
+      rank: (entry.canonical >= RELEVANT_MATCH ? entry.canonical : entry.alternate * 0.95) + popularityBoost(entry.item),
+    }))
+    .sort((a, b) => b.rank - a.rank || a.index - b.index)
     .map(({ item }) => item)
+}
+
+/** Whether a result set holds a record that is plainly the title typed: when it does not, search
+ *  also looks for close matches (close-matches.ts). */
+export function hasStrongMatch(media: Media[], rawQuery: string): boolean {
+  const query = normalizeSearchQuery(rawQuery)
+  return media.some((item) => {
+    const { canonical, alternate } = mediaMatch(item, query)
+    return Math.max(canonical, alternate) >= STRONG_MATCH
+  })
 }
 
 /** Guards asynchronous results when a newer query supersedes the request. */

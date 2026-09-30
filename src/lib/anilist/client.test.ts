@@ -347,6 +347,11 @@ describe('AniList rate-limit headers', () => {
     expect(anilistRequestPriority(body('query MediaById { Media { id } }'))).toBe(1)
     expect(anilistRequestPriority(body('query Schedule { Page { pageInfo { lastPage } } }'))).toBe(1)
     expect(anilistRequestPriority(body('query ScheduleWeek { d0: Page { pageInfo { hasNextPage } } }'))).toBe(1)
+    // A search's close-match lookups answer the query on screen, like the search itself.
+    expect(anilistRequestPriority(body('query SearchIds { Page { media { id } } }'))).toBe(1)
+    expect(anilistRequestPriority(body('query SearchIdsAll { Page { media { id } } }'))).toBe(1)
+    expect(anilistRequestPriority(body('query SearchProbe($p0: String) { p0: Page { media { id } } }'))).toBe(1)
+    expect(anilistRequestPriority(body('query SearchProbeAll($p0: String) { p0: Page { media { id } } }'))).toBe(1)
     expect(anilistRequestPriority(body('query Hero { Page { media { id } } }'))).toBe(2)
     expect(anilistRequestPriority(body('query Lists { MediaListCollection { lists { name } } }'))).toBe(4)
     expect(anilistRequestPriority(body('query ProfileHeader($name: String!) { User(name: $name) { id } }'))).toBe(4)
