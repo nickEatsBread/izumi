@@ -3,7 +3,7 @@ import { gameMode, playing } from '$lib/player/session'
 import { isTv } from '$lib/platform'
 import { controllerMode } from './input'
 import { pickInDirection, type Dir } from './spatial'
-import { activeNavTrap } from './traps'
+import { activeNavTrap, visibleNavTraps } from './traps'
 import { takeFocusHint } from './focus-hint'
 import { isNavigable, isRovingTab } from './focusable'
 import { isPadEvent, padAdjust } from './pad-controls'
@@ -359,6 +359,86 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
   runControllerScroll(target, behavior, () => {
     target.scrollBy({ top: vertical ? top : 0, left: vertical ? 0 : left, behavior })
   })
+}
+
+/** The pane that can lift `field` above a docked keyboard: a `[data-nav-scroll-container]`; else,
+ *  inside a fixed layer (a dialog, a sheet), its nearest ancestor styled to scroll, whether or not it
+ *  overflows yet (the caller pads it to make room). null = page content: the window scrolls.
+ *  undefined = a fixed layer with nothing that scrolls, where no scroll can move the field. */
+function keyboardRevealPane(field: HTMLElement): HTMLElement | null | undefined {
+  const container = field.closest<HTMLElement>('[data-nav-scroll-container]')
+  if (container) return container
+  const layer = fixedLayerOf(field)
+  if (!layer) return null
+  for (let node = field.parentElement; node; node = node.parentElement) {
+    const overflow = getComputedStyle(node).overflowY
+    if (overflow === 'auto' || overflow === 'scroll' || overflow === 'overlay') return node
+    if (node === layer) break
+  }
+  return undefined
+}
+
+const KEYBOARD_GAP = 16
+
+/** Scroll `field` so its bottom edge sits KEYBOARD_GAP px above a panel docked at `keyboardTop`
+ *  (viewport px; the on-screen keyboard's top edge). Moves the field's own pane, or the window for
+ *  page content, and never pushes the field's top out of that pane. When the pane cannot scroll far
+ *  enough, a temporary bottom padding makes the room. Returns the undo for that padding (a no-op
+ *  when none was added); the keyboard view calls it when it closes. */
+export function revealAboveKeyboard(field: HTMLElement, keyboardTop: number): () => void {
+  const item = field.getBoundingClientRect()
+  const overlap = item.bottom + KEYBOARD_GAP - keyboardTop
+  if (overlap <= 0) return () => {}
+  const pane = keyboardRevealPane(field)
+  if (pane === undefined) return () => {}
+  const paneTop = pane ? pane.getBoundingClientRect().top : 0
+  const delta = Math.min(overlap, item.top - paneTop - KEYBOARD_GAP)
+  if (delta <= 0) return () => {}
+  const room = pane
+    ? pane.scrollHeight - pane.clientHeight - pane.scrollTop
+    : document.documentElement.scrollHeight - window.innerHeight - window.scrollY
+  const padded = pane ?? document.body
+  const previousPadding = padded.style.paddingBottom
+  if (room < delta) {
+    const current = Number.parseFloat(getComputedStyle(padded).paddingBottom) || 0
+    padded.style.paddingBottom = `${current + delta - room}px`
+  }
+  const scroller: RevealScrollTarget = pane ?? window
+  scroller.scrollBy({ top: delta, left: 0, behavior: 'auto' })
+  return room < delta ? () => { padded.style.paddingBottom = previousPadding } : () => {}
+}
+
+/** Where a focus fallback may land: the active trap, unless that is the closing on-screen keyboard
+ *  (its root is still in the DOM for one flush), then the first other visible trap, else the page. */
+function fallbackScope(): ParentNode {
+  const trap = activeNavTrap()
+  if (trap && !trap.closest('[data-osk]')) return trap
+  return visibleNavTraps().find((candidate) => !candidate.closest('[data-osk]')) ?? document
+}
+
+/** Focus the navigable control whose centre is nearest `rect`'s centre, inside `root` (default:
+ *  fallbackScope()). For when the element that held focus is gone: the on-screen keyboard's field
+ *  removed, hidden or made inert under it. Never picks a keyboard key. Returns the focused element,
+ *  or null when nothing is navigable. */
+export function focusNearestFocusable(
+  rect: { left: number; top: number; width: number; height: number },
+  root?: ParentNode,
+): HTMLElement | null {
+  const x = rect.left + rect.width / 2
+  const y = rect.top + rect.height / 2
+  let best: HTMLElement | null = null
+  let bestDistance = Infinity
+  for (const el of focusables(root ?? fallbackScope())) {
+    if (el.closest('[data-osk]')) continue
+    const box = el.getBoundingClientRect()
+    const distance = Math.hypot(box.left + box.width / 2 - x, box.top + box.height / 2 - y)
+    if (distance < bestDistance) {
+      best = el
+      bestDistance = distance
+    }
+  }
+  best?.focus({ preventScroll: true })
+  return best
 }
 
 // The live keydown handler is kept on a registered symbol on globalThis. A second initDpadNav()

@@ -13,6 +13,7 @@
   import type { SeasonEntry } from '$lib/anilist/seasons'
   import { reliableImage } from '$lib/util/reliable-image'
   import { portal } from '$lib/util/portal'
+  import { isOskTarget } from '$lib/nav/osk'
   import { anchoredMenuStyle, centreInList } from '$lib/components/menu-anchor'
   import * as h from '$lib/haptics'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
@@ -66,6 +67,8 @@
   $effect(() => {
     if (!open) return
     const outside = (event: PointerEvent) => {
+      // A tap on the on-screen keyboard is typing, not a press outside.
+      if (isOskTarget(event.target)) return
       const target = event.target as Node
       if (!panel?.contains(target) && !trigger?.contains(target)) open = false
     }

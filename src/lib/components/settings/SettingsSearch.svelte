@@ -7,6 +7,7 @@
   import { isAndroid } from '$lib/platform'
   import * as h from '$lib/haptics'
   import { searchSettings, settingKey, type SettingSearchItem } from '$lib/settings/search'
+  import { openOskForField } from '$lib/nav/osk'
   import { navLayer } from '$lib/nav/overlay'
 
   let { compact = false }: { compact?: boolean } = $props()
@@ -30,6 +31,9 @@
     open = true
     await tick()
     input?.focus()
+    // Decision 7: settings search is a typing-only launcher, so a controller gets the built-in
+    // keyboard at once. A no-op for mouse, touch and keyboard users.
+    if (input) openOskForField(input)
   }
 
   async function close() {

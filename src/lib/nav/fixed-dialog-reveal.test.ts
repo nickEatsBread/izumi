@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { initDpadNav } from './index'
+import { oskOpen } from '$lib/player/session'
 
 // Dialogs and the on-screen keyboard are fixed to the viewport. Revealing a control near a screen
 // edge used to scroll the window, which cannot move a fixed control at all: it scrolled the page
@@ -51,13 +52,15 @@ beforeEach(() => {
   window.scrollTo = windowScrollTo as unknown as typeof window.scrollTo
 })
 
-afterEach(() => { document.body.replaceChildren() })
+afterEach(() => { document.body.replaceChildren(); oskOpen.set(false) })
 
 describe('d-pad reveal inside fixed dialogs', () => {
   it('leaves the page alone while walking the on-screen keyboard docked at the bottom', () => {
     const keys = ['q', 'w', 'e', 'r']
+    // The keyboard's keys are nav targets only while it is open (focusable.ts).
+    oskOpen.set(true)
     document.body.innerHTML = page + `
-      <div data-nav-trap aria-label="On-screen keyboard" style="position: fixed; left: 0; right: 0; bottom: 0">
+      <div data-osk data-nav-trap aria-label="On-screen keyboard" style="position: fixed; left: 0; right: 0; bottom: 0">
         ${[560, 612, 664, 716].map((top, row) => `<div>${keys.map((key, column) =>
           `<button data-focusable data-rect="${40 + column * 60},${top},52,44">${key}${row}</button>`).join('')}</div>`).join('')}
       </div>`

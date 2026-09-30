@@ -26,10 +26,11 @@ describe('Steam Deck series interactions', () => {
 
   it('copies Share text without treating the temporary textarea as keyboard input', () => {
     const clipboard = read('../../util/clipboard.ts')
-    const keyboard = read('../shell/OnScreenKeyboard.svelte')
+    const keyboard = read('../../nav/osk.ts')
+    const textField = read('../../nav/text-field.ts')
     expect(clipboard).toContain("ta.dataset.clipboardProxy = 'true'")
     expect(clipboard).toContain('focused.focus({ preventScroll: true })')
-    expect(keyboard).toContain('!el.readOnly && !el.disabled && !el.dataset.clipboardProxy')
-    expect(keyboard).toContain('el.readOnly || el.disabled || el.dataset.clipboardProxy')
+    expect(keyboard).toContain("import { isTextEntryField, type TextEntryField } from './text-field'")
+    expect(textField).toContain('clipboardProxy')
   })
 })

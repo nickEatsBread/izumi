@@ -2,45 +2,24 @@
   import { onMount } from 'svelte'
   import { get } from 'svelte/store'
   import { fade } from 'svelte/transition'
-  import { invoke } from '@tauri-apps/api/core'
-  import { gameMode, oskOpen } from '$lib/player/session'
-  import { uiScale } from '$lib/settings/ui'
-  import { isTv } from '$lib/platform'
-  import { controllerMode } from '$lib/nav/input'
+  import { beforeNavigate } from '$app/navigation'
+  import { bumpPlayerOverlay, gameMode, playing } from '$lib/player/session'
+  import { portal } from '$lib/util/portal'
+  import { revealAboveKeyboard } from '$lib/nav'
+  import { closeOsk, oskBackspace, oskDone, oskEcho, oskInsert, oskSession, startOsk } from '$lib/nav/osk'
 
-  // Game-mode on-screen keyboard (Steam-Deck failover). The Steam OSK can't be reliably summoned
-  // from a non-Steam Flatpak under gamescope (SteamAPI init fails in the sandbox, AppID detection
-  // is broken, injected keys often don't land) — so we ship our own controller-navigable keyboard,
-  // exactly like the crunchy-deck reference. It appears when a text field is focused in Game mode,
-  // traps the d-pad (data-nav-trap), and writes straight into the field via the DOM (no perms).
-  const controllerUi = $derived($gameMode || $isTv || $controllerMode)
+  // The built-in on-screen keyboard: Steam Deck Game mode (the Steam keyboard cannot be summoned
+  // reliably from the sandboxed Flatpak under gamescope), a phone or desktop driven by a pad, and
+  // Android TV. Every rule lives in $lib/nav/osk.ts: when it opens (A on a field, never d-pad focus,
+  // except on TV), typing, Done, closing and where focus goes. This component only draws the keys for
+  // the open session. It is portalled to <body> at z-190: above every dialog, the select chooser (175)
+  // and the exit prompt (170); below only the intro ident and the fatal alert (200).
 
-  type Field = HTMLInputElement | HTMLTextAreaElement
-  type RemoteKeyboard = {
-    insert: (text: string) => void
-    backspace: () => void
-    submit: () => void
-    close?: () => void
-  }
-  let target: Field | null = $state(null)
-  let remote: RemoteKeyboard | null = null
-  let open = $state(false)
   let shift = $state(false)
   let symbols = $state(false)
+  let root = $state<HTMLElement>()
 
-  const isTextField = (el: EventTarget | null): el is Field => {
-    // Clipboard fallbacks focus a hidden, readonly textarea because WebKitGTK's custom-protocol
-    // origin has no async Clipboard API. It is not user input and must not summon Steam's OSK.
-    if (el instanceof HTMLTextAreaElement) return !el.readOnly && !el.disabled && !el.dataset.clipboardProxy
-    if (el instanceof HTMLInputElement) {
-      if (el.readOnly || el.disabled || el.dataset.clipboardProxy) return false
-      // Only real text-entry inputs; skip checkbox/range/etc.
-      return !['checkbox', 'radio', 'range', 'button', 'submit', 'color'].includes(el.type)
-    }
-    return false
-  }
-
-  // Rows. Symbols layer swaps the letters for punctuation. The bottom row is shared.
+  // Rows. The symbols layer swaps the letters for punctuation; a numeric field gets a keypad.
   const LETTERS = [
     ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
     ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
@@ -53,166 +32,103 @@
     ['/', '\\', '|', '<', '>', ',', '.', '?'],
     ['~', '`', "'", '"', '£', '€', '¥'],
   ]
-  const rows = $derived(symbols ? SYMS : LETTERS)
-  const cap = (c: string) => (shift && !symbols ? c.toUpperCase() : c)
+  const DIGITS = [
+    ['1', '2', '3'],
+    ['4', '5', '6'],
+    ['7', '8', '9'],
+    ['.', '0', '-'],
+  ]
+  const numeric = $derived($oskSession?.layout === 'numeric')
+  const rows = $derived(numeric ? DIGITS : symbols ? SYMS : LETTERS)
+  const cap = (c: string) => (shift && !symbols && !numeric ? c.toUpperCase() : c)
+  // What the keys type into. A number draft replaces the session object on every key, so the
+  // open/reveal effect keys on this, not on the session.
+  const target = $derived($oskSession ? ($oskSession.kind === 'field' ? $oskSession.field : $oskSession.remote) : null)
 
   function type(ch: string) {
-    if (remote) {
-      remote.insert(ch)
-      if (shift && !symbols) shift = false
-      return
-    }
-    if (!target) return
-    const el = target
-    const s = el.selectionStart ?? el.value.length
-    const e = el.selectionEnd ?? el.value.length
-    el.value = el.value.slice(0, s) + ch + el.value.slice(e)
-    const pos = s + ch.length
-    try { el.setSelectionRange(pos, pos) } catch { /* some input types disallow selection */ }
-    el.dispatchEvent(new Event('input', { bubbles: true }))
+    oskInsert(cap(ch))
     if (shift && !symbols) shift = false // one-shot shift, like a phone keyboard
   }
-  function backspace() {
-    if (remote) { remote.backspace(); return }
-    if (!target) return
-    const el = target
-    const s = el.selectionStart ?? el.value.length
-    const e = el.selectionEnd ?? el.value.length
-    if (s === e && s > 0) {
-      el.value = el.value.slice(0, s - 1) + el.value.slice(e)
-      try { el.setSelectionRange(s - 1, s - 1) } catch { /* ignore */ }
-    } else {
-      el.value = el.value.slice(0, s) + el.value.slice(e)
-      try { el.setSelectionRange(s, s) } catch { /* ignore */ }
-    }
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-  }
-  function submit() {
-    // Enter: fire a keydown so search boxes that listen for Enter act, then close.
-    if (remote) remote.submit()
-    else target?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-    close()
-  }
-  let closedAt = 0
-  function close() {
-    open = false
-    closedAt = performance.now()
-    const t = target
-    const r = remote
-    target = null
-    remote = null
-    shift = false; symbols = false
-    // DESELECT the field (blur) — do NOT refocus, or focusin would immediately re-open the
-    // keyboard (the "Done doesn't close it" bug).
-    requestAnimationFrame(() => t?.blur())
-    r?.close?.()
-  }
 
-  // Steam OSK mode from the field: email → 2, numeric/tel/number → 3, textarea → 1, else 0.
-  function oskMode(el: Field): number {
-    if (el instanceof HTMLTextAreaElement) return 1
-    if (el.type === 'email') return 2
-    if (el.type === 'number' || el.inputMode === 'numeric' || el.inputMode === 'tel') return 3
-    return 0
-  }
+  onMount(() => startOsk())
+  beforeNavigate(() => closeOsk({ restore: false }))
 
-  // Mirror open-state to the store (drives the controller translator) + move controller focus onto
-  // the keys when it opens so the d-pad works immediately.
-  $effect(() => { oskOpen.set(open) })
+  // A new session: reset the layers, move controller focus onto the keys and lift the field above
+  // the docked panel. The reveal's padding is undone when the session ends.
   $effect(() => {
-    if (open) requestAnimationFrame(() => document.querySelector<HTMLElement>('[aria-label="On-screen keyboard"] [data-focusable]')?.focus({ preventScroll: true }))
-  })
-
-  onMount(() => {
-    const onFocusIn = async (e: FocusEvent) => {
-      if (!controllerUi) return
-      // Ignore focus moving onto the keyboard's own keys, and a re-focus right after Done/close.
-      if ((e.target as HTMLElement)?.closest?.('[aria-label="On-screen keyboard"]')) return
-      if (performance.now() - closedAt < 400) return
-      if (!isTextField(e.target)) return
-      const el = e.target as Field
-      remote = null
-      // TV mode always uses Izumi's focusable keyboard; Android's touch IME is not reliably
-      // navigable with a five-button remote.
-      if ($isTv) {
-        el.setAttribute('inputmode', 'none')
-        target = el
-        open = true
-        return
-      }
-      // Try the Steam Deck OSK first. Its floating keyboard injects OS keystrokes straight into the
-      // focused field. Rect is window pixels = CSS px × page-zoom (uiScale × the 1.25 game-mode
-      // browse boost) × devicePixelRatio. Only fall back to the built-in keyboard if it declines.
-      const r = el.getBoundingClientRect()
-      const z = get(uiScale) * 1.25 * (window.devicePixelRatio || 1)
-      let shown = false
-      try {
-        shown = await invoke<boolean>('steam_show_osk', {
-          x: Math.round(r.left * z), y: Math.round(r.top * z),
-          w: Math.round(r.width * z), h: Math.round(r.height * z),
-          mode: oskMode(el),
-        })
-      } catch { shown = false }
-      if (!shown) { target = el; open = true }
-    }
-    // B (via the controller translator) and Escape close it; fields blur to the keys, so we do NOT
-    // close on focusout.
-    const onClose = () => close()
-    const onRemoteOpen = (event: Event) => {
-      if (!controllerUi) return
-      const detail = (event as CustomEvent<RemoteKeyboard>).detail
-      if (!detail?.insert || !detail.backspace || !detail.submit) return
-      target = null
-      remote = detail
-      open = true
-      shift = false
-      symbols = false
-    }
-    window.addEventListener('focusin', onFocusIn, true)
-    window.addEventListener('osk-remote-open', onRemoteOpen)
-    window.addEventListener('osk-close', onClose)
+    const current = target
+    if (!current) return
+    shift = false
+    symbols = false
+    let undo = () => {}
+    const frame = requestAnimationFrame(() => {
+      root?.querySelector<HTMLElement>('[data-focusable]')?.focus({ preventScroll: true })
+      if (current instanceof HTMLElement && root) undo = revealAboveKeyboard(current, root.getBoundingClientRect().top)
+    })
+    // Game mode during playback: the keys reach the screen only through the player's snapshot.
+    // Take one more once the fade-in has painted.
+    const settle = setTimeout(() => { if (get(gameMode) && get(playing)) bumpPlayerOverlay() }, 140)
     return () => {
-      window.removeEventListener('focusin', onFocusIn, true)
-      window.removeEventListener('osk-remote-open', onRemoteOpen)
-      window.removeEventListener('osk-close', onClose)
+      cancelAnimationFrame(frame)
+      clearTimeout(settle)
+      undo()
     }
+  })
+  // A layer switch repaints every key.
+  $effect(() => {
+    void shift
+    void symbols
+    if (get(gameMode) && get(playing)) bumpPlayerOverlay()
   })
 </script>
 
-{#if open && controllerUi}
-  <!-- data-nav-trap: the d-pad stays on the keys; B closes (handled by the app-wide translator via
-       a focusable Close, and Escape/Done here). -->
+{#if $oskSession}
+  <!-- data-osk marks the keyboard for the nav engine and the outside-press closers; data-nav-trap
+       keeps the d-pad on the keys. B, Escape and remote Back close it (osk.ts). -->
   <div
+    use:portal
+    bind:this={root}
+    data-osk
     data-nav-trap
-    transition:fade={{ duration: 120 }}
-    class="fixed inset-x-0 bottom-0 z-[80] select-none border-t border-white/10 bg-neutral-950/95 px-4 pb-6 pt-4 shadow-2xl"
+    in:fade={{ duration: 120 }}
+    out:fade={{ duration: 120 }}
+    class="fixed inset-x-0 bottom-0 z-[190] select-none border-t border-white/10 bg-neutral-950/95 px-4 pb-6 pt-4 shadow-2xl"
     role="group"
     aria-label="On-screen keyboard"
   >
+    {#if $oskEcho}
+      <!-- What the field holds now, since the keyboard may cover it (masked for passwords). -->
+      <div aria-hidden="true" class="mx-auto mb-3 flex max-w-4xl items-baseline gap-2 rounded-lg bg-white/5 px-4 py-2 text-white">
+        {#if $oskEcho.label}<span class="shrink-0 text-sm font-semibold text-white/60">{$oskEcho.label}:</span>{/if}
+        <span class="min-w-0 truncate font-mono text-lg">{$oskEcho.value}</span>
+      </div>
+    {/if}
     <div class="mx-auto flex max-w-4xl flex-col items-center gap-2">
       {#each rows as row, r (r)}
         <div class="flex justify-center gap-2">
-          {#if r === rows.length - 1}
-            <button data-focusable onclick={() => (shift = !shift)}
+          {#if r === rows.length - 1 && !numeric}
+            <button type="button" data-focusable aria-label="Shift" onclick={() => (shift = !shift)}
                     class="grid h-14 min-w-16 place-items-center rounded-lg bg-white/10 px-3 text-lg font-bold outline-none {shift ? 'bg-white text-black' : ''}">⇧</button>
           {/if}
           {#each row as ch (ch)}
-            <button data-focusable onclick={() => type(cap(ch))}
+            <button type="button" data-focusable onclick={() => type(ch)}
                     class="grid h-14 w-14 place-items-center rounded-lg bg-white/10 text-xl font-bold outline-none">{cap(ch)}</button>
           {/each}
           {#if r === rows.length - 1}
-            <button data-focusable onclick={backspace}
+            <button type="button" data-focusable aria-label="Backspace" onclick={oskBackspace}
                     class="grid h-14 min-w-16 place-items-center rounded-lg bg-white/10 px-3 text-xl font-bold outline-none">⌫</button>
           {/if}
         </div>
       {/each}
-      <!-- Bottom row: symbols toggle · space · done -->
+      <!-- Bottom row: symbols toggle · space · done (a keypad has only Done). -->
       <div class="flex w-full max-w-2xl justify-center gap-2">
-        <button data-focusable onclick={() => (symbols = !symbols)}
-                class="grid h-14 min-w-24 place-items-center rounded-lg bg-white/10 px-4 text-base font-bold outline-none">{symbols ? 'ABC' : '?123'}</button>
-        <button data-focusable onclick={() => type(' ')}
-                class="h-14 flex-1 rounded-lg bg-white/10 text-sm font-semibold text-white/60 outline-none">space</button>
-        <button data-focusable onclick={submit}
+        {#if !numeric}
+          <button type="button" data-focusable onclick={() => (symbols = !symbols)}
+                  class="grid h-14 min-w-24 place-items-center rounded-lg bg-white/10 px-4 text-base font-bold outline-none">{symbols ? 'ABC' : '?123'}</button>
+          <button type="button" data-focusable onclick={() => type(' ')}
+                  class="h-14 flex-1 rounded-lg bg-white/10 text-sm font-semibold text-white/60 outline-none">space</button>
+        {/if}
+        <button type="button" data-focusable onclick={oskDone}
                 class="grid h-14 min-w-24 place-items-center rounded-lg bg-theme px-4 text-base font-black text-white outline-none">Done</button>
       </div>
     </div>

@@ -11,7 +11,7 @@ describe('Android TV mode contract', () => {
   const layout = read('../../routes/app/+layout.svelte')
   const nav = read('../nav/index.ts')
   const player = read('../components/player/AndroidPlayer.svelte')
-  const keyboard = read('../components/shell/OnScreenKeyboard.svelte')
+  const keyboard = read('../nav/osk.ts')
   const css = read('../../app.css')
 
   it('publishes a remote-only-compatible Leanback launcher', () => {
@@ -43,7 +43,7 @@ describe('Android TV mode contract', () => {
     expect(layout).toContain("classList.toggle('tv-mode', $isTv)")
     expect(layout).toContain('getCurrentWindow().close()')
     expect(css).toContain('.tv-mode .player-shell button:focus')
-    expect(keyboard).toContain('const controllerUi = $derived($gameMode || $isTv || $controllerMode)')
+    expect(keyboard).toContain("if (input.isTv) return 'focus-legacy'")
   })
 
   it('keeps playback and modal controls inside a TV focus trap', () => {

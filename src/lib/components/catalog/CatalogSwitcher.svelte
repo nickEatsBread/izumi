@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte'
   import { fade, fly } from 'svelte/transition'
   import Check from '@lucide/svelte/icons/check'
+  import { isOskTarget } from '$lib/nav/osk'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Pencil from '@lucide/svelte/icons/pencil'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
@@ -112,6 +113,8 @@
 
   onMount(() => {
     const closeOutside = (event: PointerEvent) => {
+      // A tap on the on-screen keyboard is typing, not a press outside.
+      if (isOskTarget(event.target)) return
       if (open && !root?.contains(event.target as Node)) void setOpen(false)
     }
     const closeOnBlur = () => { if (open) void setOpen(false) }

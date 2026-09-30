@@ -11,6 +11,7 @@
   import type { Media } from '$lib/anilist/types'
   import * as h from '$lib/haptics'
   import { portal } from '$lib/util/portal'
+  import { openOskForField } from '$lib/nav/osk'
   import {
     RECENT_SEARCHES_KEY,
     addRecentSearch,
@@ -161,7 +162,13 @@
       wasOpen = true
       returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
       loadRecent()
-      tick().then(() => input?.focus({ preventScroll: true }))
+      tick().then(() => {
+        if (!input) return
+        input.focus({ preventScroll: true })
+        // Decision 7: search is a typing-only launcher, so a controller gets the built-in keyboard
+        // at once. A no-op for mouse, touch and keyboard users.
+        openOskForField(input)
+      })
     } else if (!$globalSearchOpen && wasOpen) {
       wasOpen = false
       const target = returnFocus

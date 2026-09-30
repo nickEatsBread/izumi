@@ -6,9 +6,8 @@ import { topNavLayer } from './layers'
 // the PIN keypad, instead of each guessing with its own querySelector. Precedence: the open
 // on-screen keyboard, the top nav layer, an open modal <dialog>, then today's first visible trap.
 
-/** The on-screen keyboard's root. Commit 6 narrows it to `[data-osk][data-nav-trap]` once the
- *  keyboard carries `data-osk`. */
-export const OSK_ROOT_SELECTOR = '[data-osk][data-nav-trap], [aria-label="On-screen keyboard"][data-nav-trap]'
+/** The on-screen keyboard's root (OnScreenKeyboard.svelte marks it data-osk). */
+export const OSK_ROOT_SELECTOR = '[data-osk][data-nav-trap]'
 
 const shown = (el: Element) => el.checkVisibility?.() ?? true
 

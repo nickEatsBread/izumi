@@ -4,6 +4,7 @@
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import { page } from '$app/state'
   import { portal } from '$lib/util/portal'
+  import { isOskTarget } from '$lib/nav/osk'
   import { rootZoom } from '$lib/components/cards/preview-pos'
   import { loadGenres } from '$lib/home/genres'
   import { catalogProviders, catalogScreen } from '$lib/settings/catalog'
@@ -75,6 +76,8 @@
     open = false
   })
   function onPointerDown(event: PointerEvent) {
+    // A tap on the on-screen keyboard is typing, not a press outside.
+    if (isOskTarget(event.target)) return
     if (!open) return
     const hit = event.target as Node
     if (panel?.contains(hit) || trigger?.contains(hit)) return

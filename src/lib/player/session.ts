@@ -194,9 +194,12 @@ export const playerSleep = writable<{ deadline: number | null; atEpisodeEnd: boo
 export const playerAbLoop = writable<{ a: number | null; b: number | null }>({ a: null, b: null })
 export const gifRecordingStart = writable<number | null>(null)
 
-// True while the Game-mode on-screen keyboard is up. The controller translator routes A (type the
-// focused key) / B (close) to it, and directional nav stays trapped on its keys.
+// True while the on-screen keyboard is open. $lib/nav/osk.ts owns it; this mirror lets the
+// controller translator, the nav engine and the player read it without importing the keyboard.
 export const oskOpen = writable(false)
+// performance.now() of the last controller B that closed the on-screen keyboard. PlayerOverlay hears
+// the same raw B edge and ignores it for 500 ms after this, so one press never also closes the player.
+export const oskDismissedAt = writable(-1e9)
 
 // Exit-confirm prompt (Game mode): pressing Back (B) on the home screen opens this instead
 // of doing nothing — there's nowhere further back to go, so we ask before quitting the app.

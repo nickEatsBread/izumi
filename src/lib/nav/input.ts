@@ -16,6 +16,10 @@ function leaveControllerMode() {
 
 export function initInput() {
   const usePointer = (event: PointerEvent) => {
+    // A touch on the built-in keyboard is still the controller session that opened it (Game-mode
+    // touch, a phone with a pad): keep controller mode so the rings and prompts stay. A mouse on the
+    // keys does leave it, so the cursor app.css hides in controller mode comes back.
+    if (event.pointerType === 'touch' && event.target instanceof Element && event.target.closest('[data-osk]')) return
     leaveControllerMode()
     inputType.set(event.pointerType === 'touch' ? 'touch' : 'mouse')
   }

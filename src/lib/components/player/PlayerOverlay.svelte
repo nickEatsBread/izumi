@@ -68,7 +68,7 @@
   import { isMobile, isWindows } from '$lib/platform'
   import { themePresentation, shellNav } from '$lib/themes/runtime'
   import { resolvePlayerDock, type PlayerChrome } from '$lib/themes/presentation'
-  import { playerStage } from '$lib/player/session'
+  import { oskDismissedAt, playerStage } from '$lib/player/session'
   import { measureStage } from '$lib/player/insets'
   import DockEpisodes from './DockEpisodes.svelte'
   import WatchToolbar from './WatchToolbar.svelte'
@@ -1305,6 +1305,9 @@
       // The app-wide router may already have cleared the picker while handling this very same B
       // edge. Its timestamp makes the ownership transfer deterministic in either listener order.
       if (e.payload.name === 'b' && e.payload.pressed && performance.now() - get(streamPickerDismissedAt) < 500) return
+      // The same for the B that just closed the on-screen keyboard (the router stamps
+      // oskDismissedAt before closing it), whichever listener ran first.
+      if (e.payload.name === 'b' && e.payload.pressed && performance.now() - get(oskDismissedAt) < 500) return
       if (subtitleEditorOpen) {
         if (!e.payload.pressed) return
         if (e.payload.name === 'b') {

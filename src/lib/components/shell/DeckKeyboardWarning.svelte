@@ -14,8 +14,15 @@
 
   $effect(() => {
     if (!$deckKeyboardWarning) return
+    // The warning takes the pad from whatever held focus (an open on-screen keyboard has already
+    // closed itself and put focus back on its field, osk.ts). Hand it back when the warning goes.
+    const held = document.activeElement
+    const previous = held instanceof HTMLElement && held !== document.body ? held : null
     const frame = requestAnimationFrame(() => continueButton?.focus({ preventScroll: true }))
-    return () => cancelAnimationFrame(frame)
+    return () => {
+      cancelAnimationFrame(frame)
+      if (previous?.isConnected && !previous.closest('[inert]')) previous.focus({ preventScroll: true })
+    }
   })
 
   onMount(() => {

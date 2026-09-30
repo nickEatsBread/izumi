@@ -14,6 +14,7 @@
   import { updateProgress, setScore, removeFromList, type AniStatus, type ProgressExtras } from '$lib/trackers'
   import { STATUS_ORDER, STATUS_LABEL, STATUS_COLOR } from '$lib/trackers/status'
   import { listEditorOpen } from '$lib/player/session'
+  import { isOskTarget } from '$lib/nav/osk'
   import { WATCHLIST_ID, saveLocalTracking, setMediaInLocalList } from '$lib/library/local-lists'
   import { incognito } from '$lib/stores/incognito'
   import { isMobile } from '$lib/platform'
@@ -98,6 +99,8 @@
     // Popover: the page underneath stays live, so a click anywhere else is the dismissal — except
     // on the anchor itself, whose own handler re-opens (and would otherwise flash the editor).
     const outside = (event: PointerEvent) => {
+      // A tap on the on-screen keyboard is typing into this editor, not a press outside it.
+      if (isOskTarget(event.target)) return
       if (!popover) return
       const target = event.target as Node | null
       if (!target || panel?.contains(target) || anchor?.contains(target)) return

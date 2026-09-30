@@ -16,6 +16,7 @@
   import { episodeLayout } from '$lib/settings/ui'
   import { isMobile } from '$lib/platform'
   import { portal } from '$lib/util/portal'
+  import { isOskTarget } from '$lib/nav/osk'
   import { anchoredMenuStyle, centreInList } from '$lib/components/menu-anchor'
   import * as h from '$lib/haptics'
   import Search from '@lucide/svelte/icons/search'
@@ -137,6 +138,8 @@
     if (!menuOpen && !rangeOpen) return
     const follow = () => place()
     const outside = (event: PointerEvent) => {
+      // A tap on the on-screen keyboard is typing, not a press outside.
+      if (isOskTarget(event.target)) return
       const target = event.target as Node
       if (menuOpen && !$isMobile && !menuPanel?.contains(target) && !moreButton?.contains(target)) menuOpen = false
       if (rangeOpen && !rangePanel?.contains(target) && !rangeButton?.contains(target)) rangeOpen = false

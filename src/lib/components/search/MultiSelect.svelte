@@ -6,6 +6,7 @@
   import { tick } from 'svelte'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Check from '@lucide/svelte/icons/check'
+  import { isOskTarget } from '$lib/nav/osk'
   import { isMobile } from '$lib/platform'
   import { navLayer } from '$lib/nav/overlay'
   import { focusRestoreAllowed } from '$lib/nav/focus-memory'
@@ -85,7 +86,11 @@
 
   $effect(() => {
     if (!open) return
-    const onDoc = (e: MouseEvent) => { if (root && !root.contains(e.target as Node)) open = false }
+    const onDoc = (e: MouseEvent) => {
+      // A tap on the on-screen keyboard is typing, not a press outside.
+      if (isOskTarget(e.target)) return
+      if (root && !root.contains(e.target as Node)) open = false
+    }
     document.addEventListener('mousedown', onDoc)
     // The trigger moves under an open panel when the page scrolls or the window resizes, and the
     // mobile panel is viewport-anchored, so a stale offset leaves it detached from its button.

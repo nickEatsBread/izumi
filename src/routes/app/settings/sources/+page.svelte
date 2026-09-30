@@ -34,6 +34,7 @@
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import ListOrdered from '@lucide/svelte/icons/list-ordered'
   import Search from '@lucide/svelte/icons/search'
+  import { isOskTarget } from '$lib/nav/osk'
   import ArrowUpDown from '@lucide/svelte/icons/arrow-up-down'
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
   import Settings from '@lucide/svelte/icons/settings'
@@ -233,6 +234,8 @@
   $effect(() => {
     if (!filterOpen && !sortOpen) return
     const closeOutside = (event: PointerEvent) => {
+      // A tap on the on-screen keyboard is typing, not a press outside.
+      if (isOskTarget(event.target)) return
       if (event.target instanceof Node && !filterRoot?.contains(event.target)) filterOpen = false
       if (event.target instanceof Node && !sortRoot?.contains(event.target)) sortOpen = false
     }

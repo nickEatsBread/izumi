@@ -18,7 +18,7 @@ import { BROWSER_GAMEPAD_EVENT } from './browser-gamepad'
 import { isPadEvent } from './pad-controls'
 import { pushNavLayer, resetNavLayersForTests, type NavLayer } from './layers'
 import {
-  advancedFiltersOpen, exitPrompt, listEditorOpen, onboardingNav, oskOpen, playing, streamPicker, trackMenuOpen,
+  advancedFiltersOpen, exitPrompt, listEditorOpen, onboardingNav, oskDismissedAt, oskOpen, playing, streamPicker, trackMenuOpen,
   type StreamPickerState,
 } from '$lib/player/session'
 
@@ -157,8 +157,11 @@ describe('the keyboard and the pad owners above the layer', () => {
   it('the keyboard comes first: B closes it and leaves the layer open', () => {
     const layer = openLayer()
     oskOpen.set(true)
+    const pressedAt = performance.now()
     press('b')
-    expect(events).toContain('osk-close')
+    // B closes the keyboard directly now (commit 6): the open flag clears and the time is stamped.
+    expect(get(oskOpen)).toBe(false)
+    expect(get(oskDismissedAt)).toBeGreaterThanOrEqual(pressedAt)
     expect(layer.close).not.toHaveBeenCalled()
   })
 

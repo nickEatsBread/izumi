@@ -1,3 +1,6 @@
+import { get } from 'svelte/store'
+import { oskOpen } from '$lib/player/session'
+
 // Whether the d-pad may land on an element. A leaf module (no nav imports) so the nav engine, the
 // trap resolver, focus memory and the select chooser share one rule without importing each other
 // (contract §2 import graph). Commit 4 lets roving tabs in; commit 6 excludes the closed keyboard.
@@ -11,7 +14,7 @@ export function isNavigable(el: HTMLElement): boolean {
     && (el.tabIndex >= 0 || isRovingTab(el))
     && el.getAttribute('aria-hidden') !== 'true'
     && !el.matches(':disabled')
-    && !el.closest('[inert]')
+    && !el.closest('[inert]') && !(el.closest('[data-osk]') && !get(oskOpen))
 }
 
 /** A tab in a roving-tabindex tablist (WAI-ARIA tabs: the selected tab is the one tab stop and the

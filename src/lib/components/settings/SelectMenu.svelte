@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Check from '@lucide/svelte/icons/check'
+  import { isOskTarget, openOskForField } from '$lib/nav/osk'
   import { isMobile, isTv } from '$lib/platform'
   import { gameMode } from '$lib/player/session'
   import { controllerMode } from '$lib/nav/input'
@@ -103,6 +104,9 @@
     const current = root.querySelector<HTMLElement>(`[data-select-value="${CSS.escape(value)}"]`)
     const first = root.querySelector<HTMLElement>('[data-select-value]:not(:disabled)')
     ;(searchable && !controllerUi ? searchInput : current ?? first)?.focus({ preventScroll: true })
+    // Decision 7: the searchable language menu is a typing-only launcher, so a controller gets the
+    // built-in keyboard for its search at once. A no-op for mouse, touch and keyboard users.
+    if (searchable && searchInput) openOskForField(searchInput)
   }
 
   function choose(option: SelectOption) {
@@ -144,6 +148,8 @@
 
   onMount(() => {
     const closeOutside = (event: PointerEvent) => {
+      // A tap on the on-screen keyboard types into this menu's search; it is not a press outside.
+      if (isOskTarget(event.target)) return
       if (open && !root.contains(event.target as Node)) open = false
     }
     const closeOnBlur = () => { open = false }

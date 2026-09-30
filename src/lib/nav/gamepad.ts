@@ -8,6 +8,8 @@ import { acknowledgeDeckKeyboardWarning, deckKeyboardWarning, dismissDeckKeyboar
 import { closeGlobalSearch, globalSearchOpen } from '$lib/search/global-search'
 import { ActiveFrameLoop } from '$lib/util/active-frame-loop'
 import { BROWSER_GAMEPAD_EVENT, type GamepadInputName } from './browser-gamepad'
+import { closeOsk, oskBackspace, oskInsert } from './osk'
+import { oskDismissedAt } from '$lib/player/session'
 import { closeAllNavLayers, closeTopNavLayer, topNavLayer } from './layers'
 import { padActivate } from './pad-controls'
 import { dispatchPadKey } from './pad-controls'
@@ -131,7 +133,12 @@ export function startGamepadNav(): () => void {
     if (get(oskOpen)) {
       if (DIRS.includes(name as Dir)) pressDir(name as Dir)
       else if (name === 'a') padActivate()
-      else if (name === 'b') window.dispatchEvent(new Event('osk-close'))
+      else if (name === 'b') {
+        // PlayerOverlay hears this same raw B edge: stamp first, so it cannot also close the player.
+        oskDismissedAt.set(performance.now())
+        closeOsk()
+      } else if (name === 'x') oskBackspace() // X deletes and Y types a space, as on the Steam keyboard
+      else if (name === 'y') oskInsert(' ')
       return
     }
     // Track menu open (Game mode ☰): it captures ALL buttons — d-pad, A, B, ☰ — so nothing
