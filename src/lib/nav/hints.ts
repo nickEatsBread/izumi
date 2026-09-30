@@ -1,8 +1,11 @@
 /** A prompt in the button-hint bar; `l2r2` is the page-tab trigger pair. */
 export type HintButton = 'a' | 'x' | 'b' | 'l2r2' | 'start'
 export interface Hint { button: HintButton; label: string }
-/** `dialog`: a dialog (`[data-nav-trap]`) is open, whether or not focus made it inside. */
-export interface HintContext { home: boolean; pageTabs: boolean; dialog?: boolean }
+/** `dialog`: a dialog (`[data-nav-trap]`) is open, whether or not focus made it inside. `back`: what
+ *  the layered Back model says B does next (`data-nav-back-hint` on `<html>`), when it says. */
+export interface HintContext { home: boolean; pageTabs: boolean; dialog?: boolean; back?: string }
+
+const BACK_LABELS: Record<string, string> = { close: 'Close', parent: 'Back', rail: 'Categories', leave: 'Back', exit: 'Exit' }
 
 const ORDER: HintButton[] = ['a', 'x', 'b', 'l2r2', 'start']
 const isContinue = (element: Element) => element.matches('[data-part="card"][data-family="continue"]')
@@ -35,7 +38,7 @@ export function hintsFor(focused: Element | null, context: HintContext): Hint[] 
     const x = element.dataset.hintX ?? (isContinue(element) ? 'Remove' : undefined)
     if (x) labels.x = x
   }
-  labels.b = dialog ? 'Close' : context.home ? 'Exit' : 'Back'
+  labels.b = context.back ? BACK_LABELS[context.back] ?? 'Back' : dialog ? 'Close' : context.home ? 'Exit' : 'Back'
   if (context.pageTabs) labels.l2r2 = 'Tabs'
   if (!dialog) labels.start = 'Menu'
   return ORDER.flatMap((button) => {

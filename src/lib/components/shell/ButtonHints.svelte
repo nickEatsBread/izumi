@@ -15,10 +15,14 @@
   let focused = $state<Element | null>(null)
   let pageTabs = $state(false)
   let dialog = $state(false)
+  // The layered Back model publishes what B does next on <html> (`data-nav-back-hint`); without it
+  // the bar falls back to its own reading of the page.
+  let back = $state<string | undefined>()
   const refresh = () => {
     focused = document.activeElement
     pageTabs = findPageTabs() !== null
     dialog = [...document.querySelectorAll<HTMLElement>('[data-nav-trap]')].some((trap) => trap.checkVisibility?.() ?? true)
+    back = document.documentElement.dataset.navBackHint || undefined
   }
 
   $effect(() => onPadButton(({ pressed }) => {
@@ -36,11 +40,14 @@
     const onFocusOut = () => setTimeout(refresh)
     window.addEventListener('pointerdown', hide, { passive: true })
     window.addEventListener('pointermove', onMove, { passive: true })
+    // The Back model announces each change of what B does, including layers opened by touch.
+    window.addEventListener('izumi-nav-back-hint', refresh)
     document.addEventListener('focusin', refresh)
     document.addEventListener('focusout', onFocusOut)
     return () => {
       window.removeEventListener('pointerdown', hide)
       window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('izumi-nav-back-hint', refresh)
       document.removeEventListener('focusin', refresh)
       document.removeEventListener('focusout', onFocusOut)
     }
@@ -52,7 +59,7 @@
 
   const shown = $derived(padActive && ($gameMode || $controllerMode) && !$playing)
   const home = $derived(page.url.pathname.replace(/\/$/, '') === '/app/home')
-  const hints = $derived(hintsFor(focused, { home, pageTabs, dialog }))
+  const hints = $derived(hintsFor(focused, { home, pageTabs, dialog, back }))
   const family = $derived(glyphFamily($lastPadId, $gameMode))
   const glyphOf = (button: HintButton): GlyphButton => (button === 'l2r2' ? 'l2' : button)
 

@@ -27,6 +27,16 @@ describe('hintsFor', () => {
     const episode = el('<div data-part="episode" data-focusable></div><div data-nav-trap></div>', '[data-part="episode"]')
     expect(labels(hintsFor(episode, { home: false, pageTabs: false, dialog: true }))).toEqual(['a:Select', 'b:Close'])
   })
+  it('follows the Back model’s own hint when it publishes one', () => {
+    const button = el('<button data-focusable><svg></svg></button>', 'button')
+    const b = (back: string) => hintsFor(button, { home: false, pageTabs: false, back }).find((hint) => hint.button === 'b')?.label
+    expect(b('close')).toBe('Close')
+    expect(b('parent')).toBe('Back')
+    expect(b('rail')).toBe('Categories')
+    expect(b('leave')).toBe('Back')
+    expect(b('exit')).toBe('Exit')
+    expect(b('sideways')).toBe('Back')
+  })
   it('names a plain control by its own short label', () => {
     const watch = el('<button data-focusable> <svg></svg> Watch   Now </button>', 'button')
     expect(hintsFor(watch, { home: false, pageTabs: false })[0]).toEqual({ button: 'a', label: 'Watch Now' })
