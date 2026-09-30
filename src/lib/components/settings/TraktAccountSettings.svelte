@@ -145,7 +145,7 @@
           <p class="mt-1 text-xs leading-5 text-muted-foreground">Trakt returns to izumi.watch/link/trakt. Keep this Izumi profile selected until the connection finishes.</p>
           {#if $traktBrowserAuth.phase === 'waiting'}
             <details class="mt-3 text-sm text-muted-foreground">
-              <summary class="cursor-pointer py-1" data-focusable>App didn’t reopen?</summary>
+              <summary class="cursor-pointer py-1" data-focusable tabindex="0">App didn’t reopen?</summary>
               <label class="mt-2 grid gap-1 text-xs">Paste the return link copied from izumi.watch
                 <input type="password" bind:value={returnLink} autocomplete="off" spellcheck="false" data-focusable placeholder="izumi://auth/trakt#…" class="h-10 min-w-0 rounded-md bg-input px-3 text-base text-foreground sm:text-sm" />
               </label>

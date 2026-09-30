@@ -494,8 +494,8 @@
   {/if}
 
   <p class="mt-6 max-w-5xl text-xs text-muted-foreground">
-    Sources you added by hand are on <a href="/app/settings/sources?tab=manage" class="font-bold text-theme">Sources</a>;
-    installed themes are on <a href="/app/settings/themes" class="font-bold text-theme">Themes</a>.
+    Sources you added by hand are on <a href="/app/settings/sources?tab=manage" data-focusable class="font-bold text-theme">Sources</a>;
+    installed themes are on <a href="/app/settings/themes" data-focusable class="font-bold text-theme">Themes</a>.
   </p>
 </div>
 

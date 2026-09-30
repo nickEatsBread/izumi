@@ -327,7 +327,7 @@
         <div class="recommendation-reason">
           <Sparkles size={18} aria-hidden="true" />
           <div><h3>Why this pick</h3><p>{current.reason}</p>
-            {#if $developerLogging && current.evidence.length}<details><summary>What connects it to you</summary><ul>{#each current.evidence as fact}<li>{fact}</li>{/each}</ul></details>{/if}
+            {#if $developerLogging && current.evidence.length}<details><summary data-focusable tabindex="0">What connects it to you</summary><ul>{#each current.evidence as fact}<li>{fact}</li>{/each}</ul></details>{/if}
           </div>
         </div>
         <div class="feedback-actions">
@@ -367,7 +367,7 @@
 
   <footer class="discovery-footer">
     <p id="queue-shortcuts">Focus the feature: ← → to explore · S to save · N to skip · U to undo. Swipe artwork right to save or left to skip.</p>
-    <details><summary>How your picks work</summary><p>From your enabled catalogs · {providerNames}</p><p>Recommendations use this profile’s library, watch history and discovery choices. Private playback history is never used. Shared genres, tags and creators help find connections; a little variety brings something unexpected. Watched and saved titles are left out. “Not for me” adjusts future picks. “Skip for now” hides a title for seven days.</p></details>
+    <details><summary data-focusable tabindex="0">How your picks work</summary><p>From your enabled catalogs · {providerNames}</p><p>Recommendations use this profile’s library, watch history and discovery choices. Private playback history is never used. Shared genres, tags and creators help find connections; a little variety brings something unexpected. Watched and saved titles are left out. “Not for me” adjusts future picks. “Skip for now” hides a title for seven days.</p></details>
   </footer>
 </main>
 

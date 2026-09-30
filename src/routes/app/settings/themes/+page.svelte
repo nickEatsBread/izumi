@@ -164,7 +164,7 @@
       <button type="button" class="add-scrim" tabindex="-1" aria-label="Close add theme" onclick={closeAdd}></button>
       <!-- A nav layer: Escape (the shared capture), B and remote Back close only this dialog, and the
            d-pad stays inside it. -->
-      <div class="add-dialog" role="dialog" aria-modal="true" aria-labelledby="add-theme-title" data-nav-trap data-nav-escape use:navLayer={{ kind: 'themes-add', onClose: closeAdd }}>
+      <div data-nav-scroll-container class="add-dialog" role="dialog" aria-modal="true" aria-labelledby="add-theme-title" data-nav-trap data-nav-escape use:navLayer={{ kind: 'themes-add', onClose: closeAdd }}>
         <h3 id="add-theme-title">Add a theme</h3>
         <p>Install from the community catalog, a public HTTPS link, a JSON file, or a folder of packages.</p>
         <button type="button" class="control catalog-link" data-focusable onclick={() => void openUrl(THEME_CATALOG_PROJECT_URL)}>Open izumi-themes catalog</button>

@@ -125,6 +125,45 @@ export function revealAxisDelta(input: RevealAxisInput): number {
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
+/** The nav region holding `el`: the app's side or top bar (`[data-nav-sidebar]`) or a
+ *  `[data-nav-region]` (the Settings category rail, Theme Studio). null means page content.
+ *  Vertical moves never leave a region; horizontal moves cross into another one without the
+ *  alignment cone and land on its `[data-nav-region-default]` when it has one. */
+export function regionOf(el: Element | null): HTMLElement | null {
+  return el?.closest<HTMLElement>('[data-nav-sidebar], [data-nav-region]') ?? null
+}
+
+// The [data-nav-region] that focus, or a tap, was last in. A tap on a Settings rail link leaves
+// focus on <body> once the route changes; the first d-pad press then returns to the rail's current
+// category instead of the rail's first control (Search). The app sidebar is not tracked, so
+// leaving it keeps the content-first landing.
+let lastRegion: HTMLElement | null = null
+const REGION_TRACKER = Symbol.for('izumi.navRegionTracker')
+
+/** One focusin + pointerdown listener pair per window; a re-init (HMR) replaces the previous pair. */
+function trackRegionFocus(): void {
+  const scope = globalThis as unknown as Record<symbol, ((event: Event) => void) | undefined>
+  const previous = scope[REGION_TRACKER]
+  if (previous) {
+    document.removeEventListener('focusin', previous, true)
+    window.removeEventListener('pointerdown', previous, true)
+  }
+  const track = (event: Event) => {
+    lastRegion = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-nav-region]') : null
+  }
+  scope[REGION_TRACKER] = track
+  document.addEventListener('focusin', track, true)
+  window.addEventListener('pointerdown', track, true)
+}
+
+/** Body fallback step 3: the default item of the region focus came from, while it is still there. */
+function regionReturnTarget(root: ParentNode): HTMLElement | null {
+  const region = lastRegion
+  if (!region?.isConnected || !(root as Node).contains(region)) return null
+  const target = region.querySelector<HTMLElement>('[data-nav-region-default]')
+  return target && isNavigable(target) ? target : null
+}
+
 const focusables = (root: ParentNode) => {
   // Phone/desktop surfaces opt in deliberately. A television has no pointer fallback, so every
   // ordinary native control must be reachable even in touch-first components such as the Android
@@ -294,6 +333,57 @@ function scrollPortWithin(el: HTMLElement, layer: HTMLElement, vertical: boolean
   return null
 }
 
+/** Pure. One dead-end scroll step along `direction` (1 = down): 40% of the port, clamped so the
+ *  focused item never leaves it (down: its top stays at or below the port's top; up: its bottom
+ *  stays at or above the port's bottom). 0 means there is nothing to do. */
+export function deadEndScrollDelta(input: {
+  itemStart: number
+  itemEnd: number
+  portStart: number
+  portEnd: number
+  direction: 1 | -1
+}): number {
+  const step = Math.round(Math.max(0, input.portEnd - input.portStart) * 0.4)
+  if (input.direction > 0) return Math.max(0, Math.min(step, input.itemStart - input.portStart))
+  const room = Math.max(0, Math.min(step, input.portEnd - input.itemEnd))
+  return room ? -room : 0
+}
+
+/** Controller Up/Down found nothing further. Inside a settings-style page (`[data-nav-surface]`)
+ *  or an open <dialog>, scroll its text along instead of doing nothing (a changelog, a licence, the
+ *  end of a page), never so far that the focused control leaves the view. A modal layer (a native
+ *  <dialog>, or a position:fixed overlay such as the add-on configurator, which a settings page
+ *  renders inline) is fixed to the viewport: a window scroll would only move the page underneath
+ *  it, as revealFocused already knows. There only a scroller inside the layer moves, or nothing. */
+function deadEndScroll(active: HTMLElement, dir: Dir): boolean {
+  const dialog = active.closest<HTMLElement>('dialog[open]')
+  if (!dialog && !active.closest('[data-nav-surface]')) return false
+  const layer = dialog ?? fixedLayerOf(active)
+  let pane = active.closest<HTMLElement>('[data-nav-scroll-container]')
+  // A marked scroller outside the modal layer belongs to the page behind the modal.
+  if (pane && layer && !layer.contains(pane)) pane = null
+  if (!pane && layer) {
+    pane = scrollPortWithin(active, layer, true) ?? dialog
+    if (!pane) return false
+  }
+  const item = active.getBoundingClientRect()
+  const port = pane?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight }
+  const delta = deadEndScrollDelta({
+    itemStart: item.top,
+    itemEnd: item.bottom,
+    portStart: port.top,
+    portEnd: port.bottom,
+    direction: dir === 'down' ? 1 : -1,
+  })
+  if (!delta) return false
+  const reduced = document.documentElement.dataset.motion === 'reduced'
+    || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  const behavior: ScrollBehavior = reduced ? 'auto' : 'smooth'
+  const target: RevealScrollTarget = pane ?? window
+  runControllerScroll(target, behavior, () => target.scrollBy({ top: delta, behavior }))
+  return true
+}
+
 /** Reveal controller focus without asking scrollIntoView to move every scrollable ancestor. The
  * settings category rail owns its own viewport; moving it must never scroll the category content. */
 function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void {
@@ -315,7 +405,7 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
   // destination on the page, rather than trying to scroll the destination row inside itself.
   let pane = vertical
     ? el.closest<HTMLElement>('[data-nav-scroll-container]')
-    : el.closest<HTMLElement>('[data-carousel-scroller], [data-nav-scroll-container]')
+    : el.closest<HTMLElement>('[data-carousel-scroller], [data-nav-scroll-x], [data-nav-scroll-container]')
   // A dialog or the on-screen keyboard is fixed to the viewport, so scrolling the window cannot
   // reveal its controls. It only moved the page underneath (and a popover that follows its anchor
   // on scroll). Reveal within the dialog's own scrolling body, or leave everything where it is. A
@@ -354,6 +444,21 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
     startMargin: clamp(portWidth * 0.08, 24, 96),
     endMargin: clamp(portWidth * 0.18, 48, 176),
   })
+  // A capped list inside the page (data-nav-scroll-container="nested": the extensions package
+  // list) moves only its own content. When the list itself runs below the fold, or is not capped
+  // at all on a phone, the window also brings the item's post-scroll position into view.
+  if (vertical && pane?.dataset.navScrollContainer === 'nested') {
+    const paneShift = clamp(top, -pane.scrollTop, Math.max(0, pane.scrollHeight - pane.clientHeight - pane.scrollTop))
+    const windowTop = revealAxisDelta({
+      itemStart: item.top - paneShift,
+      itemEnd: item.bottom - paneShift,
+      portStart: 0,
+      portEnd: window.innerHeight,
+      startMargin: clamp(window.innerHeight * 0.12, 40, 96),
+      endMargin: clamp(window.innerHeight * 0.2, 64, 144),
+    })
+    if (windowTop) runControllerScroll(window, behavior, () => window.scrollBy({ top: windowTop, behavior }))
+  }
   if (!top && !left) return
   const target: RevealScrollTarget = pane ?? window
   runControllerScroll(target, behavior, () => {
@@ -448,6 +553,7 @@ const NAV_KEYDOWN = Symbol.for('izumi.navKeydown')
 type NavKeydownHost = Record<symbol, ((e: KeyboardEvent) => void) | undefined>
 
 export function initDpadNav() {
+  trackRegionFocus()
   const host = globalThis as unknown as NavKeydownHost
   const previous = host[NAV_KEYDOWN]
   if (previous) window.removeEventListener('keydown', previous)
@@ -510,8 +616,20 @@ export function initDpadNav() {
         e.preventDefault()
         return
       }
+      // Step 3: focus left a region (a tap on a Settings rail link, whose route change blurs it):
+      // go back to that region's current item rather than to whatever comes first.
+      const regionDefault = regionReturnTarget(root)
+      if (regionDefault) {
+        regionDefault.focus({ preventScroll: true })
+        revealFocused(regionDefault, vertical, e.repeat)
+        e.preventDefault()
+        return
+      }
       const els = focusables(root)
-      const content = els.filter(el => !el.closest('[data-nav-sidebar]'))
+      // Content first: a region (the app sidebar, the Settings rail with its Search button, Theme
+      // Studio) is only entered deliberately. Inside a trap, "content" is the trap's own region.
+      const rootRegion = root instanceof Element ? regionOf(root) : null
+      const content = els.filter(el => regionOf(el) === rootRegion)
       // Prefer the first content focusable that ISN'T a text box (so entering Downloads/Search
       // doesn't auto-focus the filter/search field and trap the arrows in the on-screen keyboard).
       const first = content.find(el => !isTextInput(el)) ?? content[0] ?? els[0]
@@ -569,15 +687,16 @@ export function initDpadNav() {
     const els = focusables(root)
     const cur = active.getBoundingClientRect()
     if (!cur) return
-    // The sidebar is a separate nav region (a fixed left rail). Movement stays INSIDE the
-    // current region first; only when there's nothing that way in-region do we cross to the
-    // other region. Up/down never crosses (rows never jump to the sidebar, and vice-versa);
-    // left/right crosses at a row's edge — WITHOUT the alignment cone, so a low row can still
-    // reach a sidebar link that sits well above it (the "fantasy row can't reach the menu" bug).
-    const inSidebar = (el: Element | null) => !!el?.closest('[data-nav-sidebar]')
-    const activeInSidebar = inSidebar(active)
+    // Regions (regionOf): the app sidebar or top bar and every [data-nav-region] (the Settings
+    // category rail, Theme Studio) are separate from the page content and from each other.
+    // Movement stays INSIDE the current region first. Up/down never crosses (the end of a settings
+    // page never drops into the rail, rows never jump to the sidebar); left/right crosses at an
+    // edge WITHOUT the alignment cone, so a low row can still reach a sidebar link that sits well
+    // above it (the "fantasy row can't reach the menu" bug), and lands on the entered region's
+    // default item when it has one.
+    const activeRegion = regionOf(active)
     const all: ElCand[] = els.filter(el => el !== active).map(el => ({ id: '', rect: el.getBoundingClientRect(), el }))
-    const sameRegion = all.filter(c => inSidebar(c.el) === activeInSidebar)
+    const sameRegion = all.filter(c => regionOf(c.el) === activeRegion)
     let pick = pickInDirection(cur, sameRegion, dir)
     if (!pick) {
       if (vertical) {
@@ -586,9 +705,22 @@ export function initDpadNav() {
         // below it — the ×4 off-axis weighting still prefers the nearest one — instead of the press
         // doing nothing and forcing a LEFT/RIGHT detour.
         pick = pickInDirection(cur, sameRegion, dir, /* cone */ false)
+        // A true dead end. A controller has no other way to scroll a text-only stretch (a
+        // changelog, a licence, the end of a settings page), so scroll it along instead.
+        if (!pick && isPadEvent(e) && !get(isTv) && deadEndScroll(active, dir)) {
+          e.preventDefault()
+          return
+        }
       } else {
-        const otherRegion = all.filter(c => inSidebar(c.el) !== activeInSidebar)
+        const otherRegion = all.filter(c => regionOf(c.el) !== activeRegion)
         pick = pickInDirection(cur, otherRegion, dir, /* cone */ false)
+        // Entering a region lands on its default (the Settings rail's current category), not on
+        // whichever of its items happens to be nearest.
+        const entered = pick ? regionOf(pick.el) : null
+        const preferred = entered?.querySelector<HTMLElement>('[data-nav-region-default]')
+        if (preferred && preferred !== active && els.includes(preferred)) {
+          pick = { id: '', rect: preferred.getBoundingClientRect(), el: preferred }
+        }
       }
     }
     if (pick?.el) {

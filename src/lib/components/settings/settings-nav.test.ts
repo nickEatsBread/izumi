@@ -53,4 +53,14 @@ describe('SettingsNav', () => {
     expect(dpad).toContain('const target: RevealScrollTarget = pane ?? window')
     expect(dpad).toContain('target.scrollBy({ top: vertical ? top : 0, left: vertical ? 0 : left, behavior })')
   })
+
+  it('makes the desktop rail its own nav region, entered on the current category (off TV)', () => {
+    expect(layout).toContain("import { isMobile, isTv } from '$lib/platform'")
+    expect(layout).toContain(`<aside data-nav-region={$isTv ? undefined : 'settings'} class="sticky top-0`)
+    expect(layout.match(/data-nav-surface="settings"/g)).toHaveLength(2)
+    expect(src).toContain(`data-nav-region-default={active(it.href) ? '' : undefined}`)
+    expect(src).toContain(`aria-current={active(it.href) ? 'page' : undefined}`)
+    expect(dpad).toContain("closest<HTMLElement>('[data-nav-sidebar], [data-nav-region]')")
+    expect(dpad).toContain("'[data-carousel-scroller], [data-nav-scroll-x], [data-nav-scroll-container]'")
+  })
 })

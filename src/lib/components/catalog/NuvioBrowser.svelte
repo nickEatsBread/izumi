@@ -144,7 +144,7 @@
   }
 </script>
 
-<div class="mx-auto w-full max-w-[1440px] px-4 pb-16 pt-5 sm:px-8 sm:pt-8">
+<div data-nav-surface="nuvio" class="mx-auto w-full max-w-[1440px] px-4 pb-16 pt-5 sm:px-8 sm:pt-8">
   <div class="flex items-center justify-between gap-3">
     <a href="/app/settings/catalog/collections" data-focusable class="inline-flex min-h-10 items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft class="size-4" />Manage collections</a>
     <a href="/app/home" data-focusable class="inline-flex min-h-10 items-center gap-2 rounded-lg px-2 text-sm font-bold hover:bg-secondary sm:px-4">Open Home <ArrowRight class="size-4" /></a>
@@ -168,20 +168,20 @@
       </form>
       <div class="flex flex-wrap items-center gap-2">
         {#if tab === 'mine'}
-          <label class="flex items-center gap-2 text-sm text-muted-foreground">Nuvio profile<select aria-label="Nuvio profile" bind:value={profileId} class="control">{#each profiles as profile}<option value={profile.id}>{profile.name}</option>{/each}</select></label>
+          <label class="flex items-center gap-2 text-sm text-muted-foreground">Nuvio profile<select data-focusable aria-label="Nuvio profile" bind:value={profileId} class="control">{#each profiles as profile}<option value={profile.id}>{profile.name}</option>{/each}</select></label>
           <button data-focusable disabled={loading} onclick={() => load()} class="control disabled:opacity-50">Refresh</button>
         {:else}
           {#if tab === 'covers'}
-            <select aria-label="Cover orientation" bind:value={orientation} class="control"><option value="all">All shapes</option><option value="landscape">Landscape</option><option value="portrait">Portrait</option></select>
-            <select aria-label="Cover format" bind:value={format} class="control"><option value="all">All formats</option><option value="gif">GIF</option><option value="jpg">JPG</option><option value="png">PNG</option></select>
+            <select data-focusable aria-label="Cover orientation" bind:value={orientation} class="control"><option value="all">All shapes</option><option value="landscape">Landscape</option><option value="portrait">Portrait</option></select>
+            <select data-focusable aria-label="Cover format" bind:value={format} class="control"><option value="all">All formats</option><option value="gif">GIF</option><option value="jpg">JPG</option><option value="png">PNG</option></select>
           {:else}
-            <select aria-label="Collection type" bind:value={type} class="control"><option value="all">Collections & packs</option><option value="collection">Collections</option><option value="collection_pack">Packs</option></select>
+            <select data-focusable aria-label="Collection type" bind:value={type} class="control"><option value="all">Collections & packs</option><option value="collection">Collections</option><option value="collection_pack">Packs</option></select>
           {/if}
-          <select aria-label="Sort results" bind:value={sort} class="control"><option value="popular">Most popular</option><option value="recent">Recently added</option></select>
+          <select data-focusable aria-label="Sort results" bind:value={sort} class="control"><option value="popular">Most popular</option><option value="recent">Recently added</option></select>
         {/if}
       </div>
     </div>
-    {#if notice}<div role="status" class="mb-5 flex items-center justify-between gap-3 rounded-lg bg-secondary p-4 text-sm"><span class="flex items-center gap-2"><Check class="size-4 shrink-0" />{notice}</span><a href={noticeHref} class="shrink-0 font-bold underline underline-offset-4">View collection</a></div>{/if}
+    {#if notice}<div role="status" class="mb-5 flex items-center justify-between gap-3 rounded-lg bg-secondary p-4 text-sm"><span class="flex items-center gap-2"><Check class="size-4 shrink-0" />{notice}</span><a href={noticeHref} data-focusable class="shrink-0 font-bold underline underline-offset-4">View collection</a></div>{/if}
     {#if tab === 'mine'}<p class="mb-5 text-sm text-muted-foreground">Choose a collection from your Nuvio profile to add a copy to izumi. Refresh to see your latest changes.</p>{/if}
     {#if error}
       <div role="alert" class="my-6 rounded-lg border border-destructive/40 p-5"><p class="text-sm text-destructive">{error}</p><button data-focusable onclick={() => load()} class="mt-3 min-h-10 rounded-md bg-secondary px-4 text-sm font-bold">Try again</button></div>
@@ -228,16 +228,16 @@
   {#if selected}
     <div class="flex max-h-[90dvh] flex-col">
       <header class="flex shrink-0 items-start justify-between gap-4 border-b border-border px-5 py-4 sm:px-7"><div><p class="text-xs text-muted-foreground">{selected.kind === 'cover' ? 'Choose artwork' : 'Collection preview'}</p><h2 id="nuvio-detail-title" class="mt-1 text-xl font-black">{selected.title}</h2></div><button data-focusable aria-label="Close preview" onclick={() => dialog.close()} class="-mr-2 flex size-11 shrink-0 items-center justify-center rounded-lg hover:bg-secondary"><X class="size-5" /></button></header>
-      <div class="min-h-0 overflow-y-auto overscroll-contain p-5 sm:p-7">
+      <div data-nav-scroll-container class="min-h-0 overflow-y-auto overscroll-contain p-5 sm:p-7">
         {#if selected.kind === 'cover'}
           <div class="grid items-start gap-6 sm:grid-cols-2">
             <div class="mx-auto max-h-[45dvh] w-full overflow-hidden rounded-xl bg-secondary {selected.portrait ? 'aspect-[2/3] max-w-60' : 'aspect-video'}"><NuvioArtwork url={selected.imageUrl} title={selected.title} contain /></div>
             <div class="space-y-4">
               <h3 class="font-extrabold">Use on a folder</h3>
               {#if $homeCollections.length}
-                <label class="block text-sm font-bold">Collection<select bind:value={coverCollection} onchange={() => coverFolder = $homeCollections.find((row) => row.id === coverCollection)?.folders[0]?.id || ''} class="control mt-1 w-full">{#each $homeCollections as collection}<option value={collection.id}>{collection.title}</option>{/each}</select></label>
-                <label class="block text-sm font-bold">Folder<select bind:value={coverFolder} class="control mt-1 w-full">{#each coverFolders as folder}<option value={folder.id}>{folder.title}</option>{/each}</select></label>
-                <label class="block text-sm font-bold">Apply as<select bind:value={coverUse} class="control mt-1 w-full"><option value="cover">Folder cover</option><option value="focus">Artwork on hover or focus</option></select></label>
+                <label class="block text-sm font-bold">Collection<select data-focusable bind:value={coverCollection} onchange={() => coverFolder = $homeCollections.find((row) => row.id === coverCollection)?.folders[0]?.id || ''} class="control mt-1 w-full">{#each $homeCollections as collection}<option value={collection.id}>{collection.title}</option>{/each}</select></label>
+                <label class="block text-sm font-bold">Folder<select data-focusable bind:value={coverFolder} class="control mt-1 w-full">{#each coverFolders as folder}<option value={folder.id}>{folder.title}</option>{/each}</select></label>
+                <label class="block text-sm font-bold">Apply as<select data-focusable bind:value={coverUse} class="control mt-1 w-full"><option value="cover">Folder cover</option><option value="focus">Artwork on hover or focus</option></select></label>
                 <p class="text-xs leading-relaxed text-muted-foreground">{coverUse === 'cover' ? `Sets the folder to ${selected.portrait ? 'portrait' : 'landscape'} to fit this artwork.` : 'Shows this artwork when the folder is focused. Your usual cover stays in place.'}</p>
               {:else}<p class="text-sm text-muted-foreground">Add a collection first, then choose a cover for one of its folders.</p><button data-focusable onclick={() => { dialog.close(); tab = 'community' }} class="control">Explore collections</button>{/if}
             </div>
@@ -256,14 +256,14 @@
           <section class="space-y-3 border-t border-border pt-5">
             <h3 class="font-extrabold">Sources for these folders</h3>
             {#if !sourceProviders.length}<p class="text-sm text-muted-foreground">These folders have no catalog sources yet.</p>{/if}
-            {#if sourceProviders.includes('tmdb')}<p class="text-sm text-muted-foreground">TMDB feeds use your token in <a href="/app/settings/catalog" class="font-bold text-foreground underline underline-offset-4">Catalog settings</a>.</p>{/if}
-            {#if sourceProviders.includes('trakt')}<p class="text-sm text-muted-foreground">Trakt lists use your connected <a href="/app/settings/accounts" class="font-bold text-foreground underline underline-offset-4">Trakt account</a>.</p>{/if}
-            {#if missingManifests.length}<p class="text-sm text-muted-foreground">Uses {missingManifests.join(', ')} from your enabled <a href="/app/settings/sources" class="font-bold text-foreground underline underline-offset-4">Sources</a>. Add your configured manifests there if needed.</p>{/if}
+            {#if sourceProviders.includes('tmdb')}<p class="text-sm text-muted-foreground">TMDB feeds use your token in <a href="/app/settings/catalog" data-focusable class="font-bold text-foreground underline underline-offset-4">Catalog settings</a>.</p>{/if}
+            {#if sourceProviders.includes('trakt')}<p class="text-sm text-muted-foreground">Trakt lists use your connected <a href="/app/settings/accounts" data-focusable class="font-bold text-foreground underline underline-offset-4">Trakt account</a>.</p>{/if}
+            {#if missingManifests.length}<p class="text-sm text-muted-foreground">Uses {missingManifests.join(', ')} from your enabled <a href="/app/settings/sources" data-focusable class="font-bold text-foreground underline underline-offset-4">Sources</a>. Add your configured manifests there if needed.</p>{/if}
             {#if tab === 'mine' && missingManifests.length}<button data-focusable disabled={findingSources || saving} onclick={findSources} class="control disabled:opacity-50">{findingSources ? 'Finding profile sources…' : 'Find sources in this Nuvio profile'}</button>{/if}
             {#if sourceNotice}<p role="status" class="text-xs text-muted-foreground">{sourceNotice}</p>{/if}
             {#each preview.requirements as requirement, index}
               {@const enabled = requirement.manifestUrl && $enabledAddonUrls.includes(normalizeBase(requirement.manifestUrl))}
-              <label class="flex items-start gap-3 rounded-lg bg-secondary/50 p-3 text-sm"><input type="checkbox" bind:group={selectedAddons} value={index} disabled={!requirement.manifestUrl || !!enabled || saving} class="mt-1" /><span><strong>{requirement.addonName}</strong><span class="mt-1 block text-xs leading-relaxed text-muted-foreground">{enabled ? 'Already enabled in izumi.' : requirement.manifestUrl ? 'Also add this included source to izumi. Its catalogs will be checked before saving.' : 'Add your configured manifest in Sources.'}</span></span></label>
+              <label class="flex items-start gap-3 rounded-lg bg-secondary/50 p-3 text-sm"><input data-focusable type="checkbox" bind:group={selectedAddons} value={index} disabled={!requirement.manifestUrl || !!enabled || saving} class="mt-1" /><span><strong>{requirement.addonName}</strong><span class="mt-1 block text-xs leading-relaxed text-muted-foreground">{enabled ? 'Already enabled in izumi.' : requirement.manifestUrl ? 'Also add this included source to izumi. Its catalogs will be checked before saving.' : 'Add your configured manifest in Sources.'}</span></span></label>
             {/each}
             {#if sourceProviders.some((provider) => !['addon', 'tmdb', 'trakt'].includes(provider))}<p class="text-sm text-destructive">Unsupported source types: {sourceProviders.filter((provider) => !['addon', 'tmdb', 'trakt'].includes(provider)).join(', ')}. Those feeds cannot load in izumi.</p>{/if}
             {#if alreadyAdded}<p class="text-xs text-muted-foreground">Re-adding replaces these saved collections, including any cover edits.</p>{/if}

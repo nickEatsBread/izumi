@@ -40,13 +40,13 @@
         </p>
         <div class="mt-4 flex flex-wrap gap-2">
           <a
-            href="https://github.com/nickEatsBread/izumi/blob/main/LICENSE"
+            href="https://github.com/nickEatsBread/izumi/blob/main/LICENSE" data-focusable
             target="_blank"
             rel="noreferrer"
             class="rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent"
           >Read the full license</a>
           <a
-            href="https://github.com/nickEatsBread/izumi"
+            href="https://github.com/nickEatsBread/izumi" data-focusable
             target="_blank"
             rel="noreferrer"
             class="rounded-md border border-border px-3 py-2 text-sm font-bold hover:bg-secondary"
@@ -59,7 +59,7 @@
       <h3 class="mb-2 text-sm font-black">Metadata and service APIs</h3>
       <div class="divide-y divide-border rounded-lg border border-border">
         <div class="p-4">
-          <a href="https://www.themoviedb.org" target="_blank" rel="noreferrer" class="block w-fit" aria-label="The Movie Database">
+          <a href="https://www.themoviedb.org" target="_blank" rel="noreferrer" data-focusable class="block w-fit" aria-label="The Movie Database">
             <img src="/brand/tmdb.svg" alt="TMDB" class="h-6 w-auto" />
           </a>
           <p class="mt-2 text-xs text-muted-foreground">Movie and television listings, artwork and metadata.</p>
@@ -68,7 +68,7 @@
 
         {#each services as service (service.name)}
           <div class="p-4">
-            <a href={service.href} target="_blank" rel="noreferrer" class="font-bold text-primary hover:underline">{service.name}</a>
+            <a href={service.href} target="_blank" rel="noreferrer" data-focusable class="font-bold text-primary hover:underline">{service.name}</a>
             <p class="mt-1 text-xs text-muted-foreground">{service.description}</p>
           </div>
         {/each}

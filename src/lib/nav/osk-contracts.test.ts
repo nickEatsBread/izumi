@@ -89,6 +89,7 @@ describe('outside-press closers', () => {
   const NOT_CLOSERS = [
     'lib/components/onboarding/IntroSequence.svelte', // any press skips the ident, drawn above the keyboard
     'lib/components/shell/ButtonHints.svelte', // hides the controller prompts on pointer use
+    'lib/nav/index.ts', // the nav region tracker: records the region a tap landed in, closes nothing
     'lib/nav/input.ts', // pointer modality; exempts a touch on the keys itself
     'lib/nav/osk.ts', // the keyboard's own outside-press close
     'lib/player/gm-touch-watchdog.ts', // Game-mode touch survival

@@ -107,6 +107,8 @@
     {#each flat as it (it.href)}
       {@const Icon = it.icon}
       <a href={it.href} data-focusable
+         data-nav-region-default={active(it.href) ? '' : undefined}
+         aria-current={active(it.href) ? 'page' : undefined}
          class="flex shrink-0 items-center gap-3 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-bold transition-colors
            {active(it.href) ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'}">
         <Icon size={18} /> {it.title}

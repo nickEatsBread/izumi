@@ -130,7 +130,7 @@
     data-focusable
     class="mt-3 inline-block text-sm font-medium underline underline-offset-2 hover:no-underline"
   >License Information</a>
-  <p class="mt-3 max-w-md text-sm text-muted-foreground">Need help with a TV setup or sources? <a href="/docs" class="font-bold text-foreground underline underline-offset-2">Read the izumi documentation</a>, including the <a href="/docs/companion/setup" class="font-bold text-foreground underline underline-offset-2">Samsung Tizen guide</a>.</p>
+  <p class="mt-3 max-w-md text-sm text-muted-foreground">Need help with a TV setup or sources? <a href="/docs" data-focusable class="font-bold text-foreground underline underline-offset-2">Read the izumi documentation</a>, including the <a href="/docs/companion/setup" data-focusable class="font-bold text-foreground underline underline-offset-2">Samsung Tizen guide</a>.</p>
 
   <!-- Updates -->
   <div class="mt-6 max-w-md">

@@ -608,7 +608,7 @@
                     </label>
                     <div class="flex items-center justify-between gap-2">
                       <label class="flex items-center gap-2 py-1 text-sm text-muted-foreground sm:px-1 sm:text-xs">
-                        <input type="checkbox" bind:checked={showNsfw} class="size-4" />
+                        <input type="checkbox" data-focusable bind:checked={showNsfw} class="size-4" />
                         Adult sources
                       </label>
                       {#if ids.length}
@@ -633,7 +633,7 @@
                     </p>
                   {/if}
                   <!-- Nested scroll box on desktop only; on touch it fights the page scroll. -->
-                  <ul class="space-y-1 sm:max-h-72 sm:overflow-y-auto sm:pr-1">
+                  <ul data-nav-scroll-container="nested" class="space-y-1 sm:max-h-72 sm:overflow-y-auto sm:pr-1">
                     {#each shown.slice(0, shownLimit(url)) as p (p.id)}
                       {@const inst = installedById.get(p.id)}
                       {@const pOff = !!inst && pluginOff(p.id)}

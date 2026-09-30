@@ -237,7 +237,7 @@
   </button>
 {/if}
 
-<aside class="studio-panel" class:minimized={$themeStudioMinimized} aria-labelledby="studio-heading" data-theme-studio data-theme-protected>
+<aside class="studio-panel" class:minimized={$themeStudioMinimized} aria-labelledby="studio-heading" data-theme-studio data-theme-protected data-nav-region="theme-studio">
   <header class="studio-header">
     <div class="studio-title-row">
       <h2 id="studio-heading" bind:this={panelHeading} tabindex="-1"><Palette size={18} /> Theme Studio</h2>
@@ -250,13 +250,13 @@
     <p class="studio-hint">Browse any page. Every change appears as you edit.</p>
   </header>
 
-  <nav aria-label="Theme controls" class="studio-tabs">
+  <nav aria-label="Theme controls" class="studio-tabs" data-nav-scroll-x>
     {#each [{ id: 'palette', label: 'Colours' }, { id: 'type', label: 'Type & shape' }, { id: 'backdrop', label: 'Backdrop' }, { id: 'layout', label: 'Layout' }, { id: 'saved', label: 'Saved' }] as item}
-      <button type="button" data-focusable aria-pressed={category === item.id} onclick={() => { category = item.id as typeof category; confirmDelete = false; notice = '' }}>{item.label}</button>
+      <button type="button" data-focusable data-nav-region-default={category === item.id ? '' : undefined} aria-pressed={category === item.id} onclick={() => { category = item.id as typeof category; confirmDelete = false; notice = '' }}>{item.label}</button>
     {/each}
   </nav>
 
-  <div class="studio-content" aria-busy={fileBusy}>
+  <div class="studio-content" data-nav-scroll-container aria-busy={fileBusy}>
     {#if notice}<p role="status" class="studio-notice">{notice}</p>{/if}
     {#if category === 'palette'}
       <section class="control-section">
@@ -280,7 +280,7 @@
         {/each}
       </section>
       <details class="control-section advanced-colours">
-        <summary>More colours <span>Buttons, borders & surfaces</span></summary>
+        <summary data-focusable tabindex="0">More colours <span>Buttons, borders & surfaces</span></summary>
         {#each colorGroups as group}
           <div class="colour-group">
             <h4>{group.label}</h4>
@@ -292,7 +292,7 @@
         <label class="setting-row"><span>Colour scheme</span><select bind:value={draft.tokens.scheme} data-focusable><option value="dark">Dark</option><option value="light">Light</option></select></label>
       </details>
       <details class="control-section contrast-check">
-        <summary>Text contrast <span>{contrastPasses ? 'Looks readable' : 'Needs attention'}</span></summary>
+        <summary data-focusable tabindex="0">Text contrast <span>{contrastPasses ? 'Looks readable' : 'Needs attention'}</span></summary>
         <div class="contrast-values">
           {#each contrasts as contrast}<p><span>{contrast.label}</span><span>{contrast.value.toFixed(2)}:1 · {contrast.value >= 4.5 ? 'Pass' : 'Low'}</span></p>{/each}
         </div>

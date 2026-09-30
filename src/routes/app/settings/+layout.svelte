@@ -3,7 +3,7 @@
   import { page } from '$app/stores'
   import SettingsNav from '$lib/components/settings/SettingsNav.svelte'
   import SettingsSearch from '$lib/components/settings/SettingsSearch.svelte'
-  import { isMobile } from '$lib/platform'
+  import { isMobile, isTv } from '$lib/platform'
   import { heroMedia } from '$lib/stores/hero'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import * as h from '$lib/haptics'
@@ -144,14 +144,16 @@
       {#key $page.url.pathname}
         <!-- Vertical, short, and fading: a push that reads as a platform screen change rather than
              a carousel. app.css shortens every transition under the reduced-motion gate. -->
-        <div class="settings-child" in:fly={{ y: 12, duration: 160, opacity: 0 }}>{@render children()}</div>
+        <div class="settings-child" data-nav-surface="settings" in:fly={{ y: 12, duration: 160, opacity: 0 }}>{@render children()}</div>
       {/key}
     </div>
   {/if}
 {:else}
   <!-- Desktop: nav rail + content side-by-side (unchanged). -->
   <div class="flex min-h-screen flex-row">
-    <aside class="sticky top-0 flex h-screen w-56 shrink-0 flex-col border-r border-border bg-background p-4">
+    <!-- The rail is its own d-pad region: Down at the end of a page never drops into it, and Left
+         lands on the current category. Android TV keeps the shared region until the TV pass. -->
+    <aside data-nav-region={$isTv ? undefined : 'settings'} class="sticky top-0 flex h-screen w-56 shrink-0 flex-col border-r border-border bg-background p-4">
       <h1 class="mb-3 px-3 text-2xl font-black">{m.nav_settings()}</h1>
       <div class="mb-4 px-1"><SettingsSearch /></div>
       <div class="min-h-0 flex-1"><SettingsNav /></div>
@@ -160,6 +162,6 @@
         {#if osLine}<div>{osLine}</div>{/if}
       </div>
     </aside>
-    <div class="min-w-0 flex-1">{@render children()}</div>
+    <div class="min-w-0 flex-1" data-nav-surface="settings">{@render children()}</div>
   </div>
 {/if}

@@ -122,7 +122,7 @@
     </header>
     {#if notice && screen === 'overview'}<p role="status" class="notice">{notice}</p>{/if}
     {#if error}<p role="alert" class="error">{error}</p>{/if}
-    {#if $profileSyncError}<p role="status" class="error">{$profileSyncError} <a href="/app/settings/sync" class="underline">Sync settings</a></p>{/if}
+    {#if $profileSyncError}<p role="status" class="error">{$profileSyncError} <a href="/app/settings/sync" data-focusable class="underline">Sync settings</a></p>{/if}
 
     {#if screen === 'overview'}
       {#if $profilesEnabled}

@@ -213,7 +213,7 @@
   </div>
 
   {#if targets.length > 1}
-    <div class="mb-5 flex max-w-3xl gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Catalog platform">
+    <div class="mb-5 flex max-w-3xl gap-2 overflow-x-auto pb-1" data-nav-scroll-x role="tablist" aria-label="Catalog platform">
       {#each targets as target (target.selection)}
         <button data-focusable role="tab" aria-selected={selected === target.selection} onclick={() => (selected = target.selection)}
           class="min-h-10 shrink-0 rounded-full border px-4 text-sm font-bold transition-colors {selected === target.selection ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card hover:bg-secondary'}">
@@ -242,19 +242,19 @@
           </label>
           <label>
             <span class="mb-1 block text-xs font-bold">Titles</span>
-            <select bind:value={customMediaType} onchange={() => (customGenreId = 0)} class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm">
+            <select data-focusable bind:value={customMediaType} onchange={() => (customGenreId = 0)} class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm">
               <option value="movie">Movies</option><option value="series">Series</option>
             </select>
           </label>
           <label>
             <span class="mb-1 block text-xs font-bold">Order by</span>
-            <select bind:value={customSort} class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm">
+            <select data-focusable bind:value={customSort} class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm">
               <option value="popular">Most popular</option><option value="rating">Highest rated</option><option value="recent">Newest first</option>
             </select>
           </label>
           <label>
             <span class="mb-1 block text-xs font-bold">Genre <span class="font-normal text-muted-foreground">optional</span></span>
-            <select bind:value={customGenreId} class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm">
+            <select data-focusable bind:value={customGenreId} class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm">
               <option value={0}>Any genre</option>
               {#each customGenres as genre (genre.id)}<option value={genre.id}>{genre.label}</option>{/each}
             </select>
@@ -275,7 +275,7 @@
               class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-theme/70" />
           </label>
           <label class="flex min-h-11 items-center gap-3 rounded-lg border border-border bg-background px-3 sm:col-span-2">
-            <input bind:checked={customStreamingOnly} type="checkbox" class="size-4 accent-[hsl(var(--theme))]" />
+            <input data-focusable bind:checked={customStreamingOnly} type="checkbox" class="size-4 accent-[hsl(var(--theme))]" />
             <span><strong class="block text-sm">Available to stream in my region</strong><small class="text-muted-foreground">Uses TMDB watch-provider availability for the current locale.</small></span>
           </label>
           <div class="flex items-center justify-between gap-3 sm:col-span-2">

@@ -24,8 +24,25 @@
   import { PLAYBACK_LANGUAGES } from '$lib/shared/languages'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import { m } from '$lib/paraglide/messages.js'
+  import { tick } from 'svelte'
+  import { focusRestoreAllowed } from '$lib/nav/focus-memory'
+  import { setFocusHint } from '$lib/nav/focus-hint'
 
   let pendingAnime = $state(false) // shows the one-time shader consent
+  let qualityField = $state<HTMLLabelElement>()
+
+  // Answering the Anime shader prompt removes the button that held focus. Focus goes back to the
+  // Video quality trigger, so the next d-pad press continues from the setting that asked (spec
+  // §3.9); after a mouse or touch answer only a focus hint is left for the first d-pad press.
+  async function answerAnimeConsent(download: boolean) {
+    pendingAnime = false
+    if (download) $videoQualityPreset = 'anime'
+    await tick()
+    const trigger = qualityField?.querySelector<HTMLElement>('button[data-focusable]') ?? null
+    if (!trigger) return
+    if (focusRestoreAllowed()) trigger.focus({ preventScroll: true })
+    else setFocusHint(trigger)
+  }
 
   // Neural upscale shaders are desktop-only. A persisted Anime value from another
   // device would otherwise sit on a SelectMenu option that Android does not list.
@@ -77,7 +94,7 @@
     <!-- Video-quality presets drive desktop mpv and the embedded Android libmpv plugin.
          Anime shaders need the desktop-only `ensure_upscale_shader` download, so that
          option stays off Android. Windows VSR is d3d11-only. -->
-    <label class="flex flex-col gap-1">
+    <label bind:this={qualityField} class="flex flex-col gap-1">
       <span class="text-sm font-bold">Video quality</span>
       <SelectMenu
         value={$videoQualityPreset}
@@ -103,8 +120,8 @@
         <!-- Size is the real asset size measured against the pinned release (~208 KB today); the
              download is one-time and cached under the app config dir. -->
         <p class="mb-2">Anime mode needs a shader file (~200 KB) that isn't bundled with the app. Turning it on downloads that file from the internet once, then keeps using the local copy. Download it now?</p>
-        <button class="mr-2 rounded bg-primary px-3 py-2 font-bold sm:py-1" onclick={() => { pendingAnime = false; $videoQualityPreset = 'anime' }}>Download</button>
-        <button class="rounded bg-muted px-3 py-2 sm:py-1" onclick={() => { pendingAnime = false }}>Cancel</button>
+        <button type="button" data-focusable class="mr-2 rounded bg-primary px-3 py-2 font-bold sm:py-1" onclick={() => answerAnimeConsent(true)}>Download</button>
+        <button type="button" data-focusable class="rounded bg-muted px-3 py-2 sm:py-1" onclick={() => answerAnimeConsent(false)}>Cancel</button>
       </div>
     {/if}
 
