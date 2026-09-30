@@ -8,6 +8,7 @@
   import AniListDegradedBanner from '$lib/components/shell/AniListDegradedBanner.svelte'
   import { androidMiniPlayer, androidMpvActive } from '$lib/player/android-mpv'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
+  import NativePickerSheet from '$lib/components/shell/NativePickerSheet.svelte'
   // Lazy-mounted: the player stack + its source-resolve overlays are substantial but never render
   // until playback/resolve starts. Loading them on demand
   // keeps first home paint off that code entirely. See Lazy.svelte.
@@ -586,6 +587,7 @@
 {#if globalSearchMounted}<Lazy load={loadGlobalSearch} />{/if}
 {#if trailerDialogMounted}<Lazy load={loadTrailerDialog} />{/if}
 <OnScreenKeyboard />
+<NativePickerSheet />
 <DeckKeyboardWarning />
 <!-- Android external-play "marked watched" toast (the in-player overlay isn't mounted on mobile). -->
 {#if $watchToast}

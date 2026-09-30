@@ -331,6 +331,14 @@ describe('navLayer action', () => {
     action.destroy?.()
   })
 
+  it('passes over a textarea but lands on a date field, which nobody types into', () => {
+    html('<div id="menu"><textarea data-focusable id="notes"></textarea><input data-focusable type="date" id="from"><button data-focusable id="first">One</button></div>')
+    const action = mount(byId('menu'), { onClose: () => {} })
+    flushFrames()
+    expect(document.activeElement).toBe(byId('from'))
+    action.destroy?.()
+  })
+
   it('leaves focus alone under the mouse unless the layer always focuses', () => {
     inputType.set('mouse')
     html('<div id="menu"><button data-focusable id="first">One</button></div>')

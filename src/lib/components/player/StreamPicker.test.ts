@@ -84,10 +84,18 @@ describe('mobile source picker layout', () => {
     expect(source).toContain("window.addEventListener('stream-picker-nav', onNav)")
     expect(source).toContain("item.hasAttribute('data-source-row')")
     expect(source).toContain('if (firstSource < 0) return')
-    expect(source).toContain("!['checkbox', 'radio', 'range', 'button', 'submit'].includes(item.type)")
+    expect(source).toContain('return !isTextEntryField(item)')
     expect(source).toContain("target.scrollIntoView({ block: 'nearest'")
     expect(source).toContain('spinnerFrame = (spinnerFrame + 1) % 8')
     expect(source).toContain('class:animate-spin={!$gameMode}')
+  })
+
+  it('shares the nav text-field test and stops the auto countdown when a select takes focus', () => {
+    expect(source).toContain("import { isTextEntryField } from '$lib/nav/text-field'")
+    // Pad A on Sort/Quality opens the chooser sheet over the picker. Focus reaches the select before
+    // A does, so the countdown can never commit a source under the sheet.
+    expect(source.match(/<select\b/g)).toHaveLength(4)
+    expect(source.match(/<select data-focusable onfocus=\{cancelAuto\} bind:value=\{\$(preferredStreamSort|preferredQuality)\}/g)).toHaveLength(4)
   })
 
   it('keeps instant automatic selection out of the source-list dialog', () => {

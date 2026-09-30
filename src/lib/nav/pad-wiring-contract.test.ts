@@ -99,3 +99,43 @@ describe('pad sliders and roving tabs wiring (commit 4)', () => {
     expect(branch).not.toContain('new KeyboardEvent(')
   })
 })
+
+describe('native select chooser wiring', () => {
+  const source = (relative: string) =>
+    readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
+
+  it('pad A hands a native select to the chooser before any other activation', () => {
+    const controls = source('./pad-controls.ts')
+    expect(controls).toContain("import { padOpenPicker } from './native-picker'")
+    const activate = controls.slice(controls.indexOf('export function padActivate('))
+    expect(activate.indexOf('padOpenPicker(')).toBeGreaterThan(-1)
+    expect(activate.indexOf('padOpenPicker(')).toBeLessThan(activate.indexOf('.click()'))
+  })
+
+  it.each([
+    ['PersonalSchedule', '../components/schedule/PersonalSchedule.svelte'],
+    ['ScheduleGrid', '../components/schedule/ScheduleGrid.svelte'],
+  ])('%s leaves its day bumpers alone while a nav layer or dialog is open', (_name, file) => {
+    const schedule = source(file)
+    const start = schedule.indexOf('return onPadButton(')
+    expect(start).toBeGreaterThan(-1)
+    // Slice from the arrow body: the parameter list `({ name, pressed })` itself contains `})`.
+    const body = schedule.indexOf('=> {', start)
+    expect(body).toBeGreaterThan(start)
+    const handler = schedule.slice(body, schedule.indexOf('})', body))
+    const dayChange = handler.indexOf('selected =')
+    expect(dayChange).toBeGreaterThan(-1)
+    const layerGuard = handler.search(/if \((topNavLayer\(\)|get\(navLayerOpen\))\) return/)
+    if (layerGuard > -1) {
+      expect(schedule).toMatch(/import \{[^}]*\b(topNavLayer|navLayerOpen)\b[^}]*\} from '\$lib\/nav\/layers'/)
+      expect(layerGuard).toBeLessThan(dayChange)
+      return
+    }
+    // The Themes session's own form (Sidebar.svelte's bumper handler): a visible [data-nav-trap]
+    // check, then an early return, before the day changes. The chooser panel is a [data-nav-trap].
+    const trapCheck = handler.indexOf('[data-nav-trap]')
+    expect(trapCheck, 'the day-bumper handler has no layer or dialog guard').toBeGreaterThan(-1)
+    expect(trapCheck).toBeLessThan(dayChange)
+    expect(handler.slice(trapCheck, dayChange)).toMatch(/\breturn\b/)
+  })
+})

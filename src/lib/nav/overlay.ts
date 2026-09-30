@@ -7,6 +7,7 @@ import { setFocusHint } from './focus-hint'
 import { describeFocus, resolveFocus, type FocusDescriptor } from './focus-memory'
 import { navEpoch, navInFlight } from './nav-state'
 import { navLayerSerial, pushNavLayer, topNavLayer, type NavLayerCloseReason, type NavLayerRestore } from './layers'
+import { isTextEntryField } from './text-field'
 
 // `use:navLayer={{ onClose }}` turns a dropdown, sheet or dialog into a nav layer (spec §3.3): a
 // d-pad trap that B and Escape close one at a time. Closing it hands focus back to whatever opened
@@ -65,12 +66,7 @@ export function resetOverlayForTests(): void {
   recentlyClosed = null
 }
 
-// Commit 5's isTextEntryField (text-field.ts) supersedes this local rule.
-const NON_TEXT_INPUT_TYPES = ['checkbox', 'radio', 'range', 'color', 'button', 'submit', 'reset', 'file', 'image', 'hidden']
-const isTextEntry = (el: HTMLElement) =>
-  el.isContentEditable
-  || el instanceof HTMLTextAreaElement
-  || (el instanceof HTMLInputElement && !NON_TEXT_INPUT_TYPES.includes(el.type))
+const isTextEntry = (el: HTMLElement) => el.isContentEditable || isTextEntryField(el)
 
 function matchesFocusVisible(el: Element): boolean {
   try { return el.matches(':focus-visible') } catch { return false }

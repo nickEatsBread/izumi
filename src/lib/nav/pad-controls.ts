@@ -11,6 +11,7 @@
 // add padActivate, the slider adapter and the select chooser branch here.
 
 import type { Dir } from './spatial'
+import { padOpenPicker } from './native-picker'
 
 /** Registered symbol marking a synthetic pad key on the event object itself. */
 export const PAD_KEY: symbol = Symbol.for('izumi.padKey')
@@ -39,6 +40,10 @@ export function isPadEvent(event: Event | null | undefined): boolean {
  *  (Left/Right step it, commit 4); a <summary> toggles its <details> even in an engine where a
  *  synthetic click does not; everything else is clicked, exactly as the A button always did. */
 export function padActivate(el?: Element | null): boolean {
+  // Off TV, an enabled single <select> opens the app-drawn chooser, because a synthetic click cannot
+  // open WebKitGTK's popup under gamescope. TV, disabled selects, list boxes and selects under a
+  // modal <dialog> fall through to the rules below (TV keeps the click).
+  if (padOpenPicker(el === undefined ? (typeof document === 'undefined' ? null : document.activeElement) : el)) return true
   // An omitted argument means "the focused element"; an explicit null means "nothing".
   const target = el === undefined ? (typeof document === 'undefined' ? null : document.activeElement) : el
   if (!target || !(target instanceof HTMLElement) || target === target.ownerDocument.body) return false

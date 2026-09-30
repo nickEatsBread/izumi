@@ -30,6 +30,7 @@
   import { title, banner, cover } from '$lib/anilist/media'
   import { isAndroid, isMobile } from '$lib/platform'
   import { controllerMode, inputType } from '$lib/nav/input'
+  import { isTextEntryField } from '$lib/nav/text-field'
   import Search from '@lucide/svelte/icons/search'
   import Zap from '@lucide/svelte/icons/zap'
   import ArrowDownWideNarrow from '@lucide/svelte/icons/arrow-down-wide-narrow'
@@ -416,11 +417,8 @@
       const items = [...trap.querySelectorAll<HTMLElement>('[data-focusable]')].filter((item) => {
         // Entering the filter field would summon the Deck keyboard simply because Down was held
         // while providers were loading. Text entry stays touch/explicit-focus only; toggles and
-        // selects remain in the controller order.
-        const textEntry = item instanceof HTMLTextAreaElement
-          || (item instanceof HTMLInputElement
-            && !['checkbox', 'radio', 'range', 'button', 'submit'].includes(item.type))
-        return !textEntry
+        // selects remain in the controller order (A on a select opens the pad chooser).
+        return !isTextEntryField(item)
           && (item.checkVisibility?.() ?? true)
           && !(item instanceof HTMLButtonElement && item.disabled)
           && item.getAttribute('aria-disabled') !== 'true'
@@ -940,7 +938,7 @@
           <div class="sp-inset sp-chips flex items-center gap-2 overflow-x-auto overscroll-x-contain py-2.5">
             <label class="{CHIP} {CHIP_OFF}">
               <ArrowDownWideNarrow size={13} class="shrink-0" />
-              <select data-focusable bind:value={$preferredStreamSort} aria-label="Sort within cache tier" class="bg-transparent font-bold text-foreground outline-none">
+              <select data-focusable onfocus={cancelAuto} bind:value={$preferredStreamSort} aria-label="Sort within cache tier" class="bg-transparent font-bold text-foreground outline-none">
                 <option value="quality">Quality</option>
                 <option value="seeders">Seeders</option>
                 <option value="size">Size</option>
@@ -948,7 +946,7 @@
             </label>
             <label class="{CHIP} {CHIP_OFF}">
               <MonitorCog size={13} class="shrink-0" />
-              <select data-focusable bind:value={$preferredQuality} aria-label="Quality the Auto pick targets" class="bg-transparent font-bold text-foreground outline-none">
+              <select data-focusable onfocus={cancelAuto} bind:value={$preferredQuality} aria-label="Quality the Auto pick targets" class="bg-transparent font-bold text-foreground outline-none">
                 <option value="2160">4K</option>
                 <option value="1080">1080p</option>
                 <option value="720">720p</option>
@@ -985,7 +983,7 @@
         </button>
         <label class="flex items-center gap-1 rounded-lg bg-secondary px-2 py-1.5 text-xs" title="Sort within cache tier">
           <ArrowDownWideNarrow size={14} class="text-muted-foreground" />
-          <select data-focusable bind:value={$preferredStreamSort} class="bg-transparent outline-none">
+          <select data-focusable onfocus={cancelAuto} bind:value={$preferredStreamSort} class="bg-transparent outline-none">
             <option value="quality">Quality</option>
             <option value="seeders">Seeders</option>
             <option value="size">Size</option>
@@ -993,7 +991,7 @@
         </label>
         <label class="flex items-center gap-1 rounded-lg bg-secondary px-2 py-1.5 text-xs" title="Quality Auto targets">
           <MonitorCog size={14} class="text-muted-foreground" />
-          <select data-focusable bind:value={$preferredQuality} class="bg-transparent outline-none">
+          <select data-focusable onfocus={cancelAuto} bind:value={$preferredQuality} class="bg-transparent outline-none">
             <option value="2160">4K</option>
             <option value="1080">1080p</option>
             <option value="720">720p</option>
