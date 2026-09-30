@@ -134,9 +134,9 @@ export function regionOf(el: Element | null): HTMLElement | null {
 }
 
 // The [data-nav-region] that focus, or a tap, was last in. A tap on a Settings rail link leaves
-// focus on <body> once the route changes; the first d-pad press then returns to the rail's current
-// category instead of the rail's first control (Search). The app sidebar is not tracked, so
-// leaving it keeps the content-first landing.
+// focus on <body> once the route changes (SvelteKit's navigation focus reset, or a blur); the
+// first d-pad press then returns to the rail's current category instead of the rail's first
+// control (Search). The app sidebar is not tracked, so leaving it keeps the content-first landing.
 let lastRegion: HTMLElement | null = null
 const REGION_TRACKER = Symbol.for('izumi.navRegionTracker')
 
@@ -149,6 +149,10 @@ function trackRegionFocus(): void {
     window.removeEventListener('pointerdown', previous, true)
   }
   const track = (event: Event) => {
+    // <body> taking focus is "nothing focused", not a new place. SvelteKit focuses it through a
+    // temporary tabindex after every navigation without keepFocus (a rail tap included), and that
+    // focusin must not forget the region the tap came from. A tap on the page still clears it.
+    if (event.type === 'focusin' && (event.target === document.body || event.target === document.documentElement)) return
     lastRegion = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-nav-region]') : null
   }
   scope[REGION_TRACKER] = track
@@ -335,18 +339,34 @@ function scrollPortWithin(el: HTMLElement, layer: HTMLElement, vertical: boolean
 
 /** Pure. One dead-end scroll step along `direction` (1 = down): 40% of the port, clamped so the
  *  focused item never leaves it (down: its top stays at or below the port's top; up: its bottom
- *  stays at or above the port's bottom). 0 means there is nothing to do. */
+ *  stays at or above the port's bottom) and to the `room` the scroller has left that way
+ *  (unlimited when omitted). 0 means there is nothing to do. */
 export function deadEndScrollDelta(input: {
   itemStart: number
   itemEnd: number
   portStart: number
   portEnd: number
   direction: 1 | -1
+  room?: number
 }): number {
   const step = Math.round(Math.max(0, input.portEnd - input.portStart) * 0.4)
-  if (input.direction > 0) return Math.max(0, Math.min(step, input.itemStart - input.portStart))
-  const room = Math.max(0, Math.min(step, input.portEnd - input.itemEnd))
-  return room ? -room : 0
+  const clearance = input.direction > 0 ? input.itemStart - input.portStart : input.portEnd - input.itemEnd
+  const distance = Math.max(0, Math.min(step, clearance, input.room ?? Infinity))
+  return distance && input.direction < 0 ? -distance : distance
+}
+
+/** How far `pane`, or the window when null, can still scroll along `direction`. Under a pixel is
+ *  none (a fractional scrollTop at the end). The window's room comes from the document's own box,
+ *  in the same viewport px as the rects it is compared with. */
+function scrollRoom(pane: HTMLElement | null, direction: 1 | -1): number {
+  let room: number
+  if (pane) {
+    room = direction > 0 ? pane.scrollHeight - pane.clientHeight - pane.scrollTop : pane.scrollTop
+  } else {
+    const doc = document.documentElement.getBoundingClientRect()
+    room = direction > 0 ? doc.bottom - window.innerHeight : -doc.top
+  }
+  return room >= 1 ? room : 0
 }
 
 /** Controller Up/Down found nothing further. Inside a settings-style page (`[data-nav-surface]`)
@@ -354,11 +374,13 @@ export function deadEndScrollDelta(input: {
  *  end of a page), never so far that the focused control leaves the view. A modal layer (a native
  *  <dialog>, or a position:fixed overlay such as the add-on configurator, which a settings page
  *  renders inline) is fixed to the viewport: a window scroll would only move the page underneath
- *  it, as revealFocused already knows. There only a scroller inside the layer moves, or nothing. */
+ *  it, as revealFocused already knows. There only a scroller inside the layer moves, or nothing.
+ *  Returns false, so the press is not consumed, when nothing can move that way. */
 function deadEndScroll(active: HTMLElement, dir: Dir): boolean {
   const dialog = active.closest<HTMLElement>('dialog[open]')
   if (!dialog && !active.closest('[data-nav-surface]')) return false
   const layer = dialog ?? fixedLayerOf(active)
+  const direction = dir === 'down' ? 1 : -1
   let pane = active.closest<HTMLElement>('[data-nav-scroll-container]')
   // A marked scroller outside the modal layer belongs to the page behind the modal.
   if (pane && layer && !layer.contains(pane)) pane = null
@@ -366,14 +388,27 @@ function deadEndScroll(active: HTMLElement, dir: Dir): boolean {
     pane = scrollPortWithin(active, layer, true) ?? dialog
     if (!pane) return false
   }
+  // A page scroller with nothing left to give that way (at its end, or not overflowing at all,
+  // like the capped extensions list uncapped on a phone) hands the step to the window, so the text
+  // below it stays reachable. Inside a modal layer the window would move only the page behind it.
+  let room = scrollRoom(pane, direction)
+  if (!room && pane && !layer) {
+    pane = null
+    room = scrollRoom(null, direction)
+  }
+  if (!room) return false
   const item = active.getBoundingClientRect()
-  const port = pane?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight }
+  // The window's port leaves out the fixed chrome over the page: the desktop titlebar on top and
+  // a theme's button-hint bar at the bottom (the same band revealFocused keeps at its start).
+  const inset = clamp(window.innerHeight * 0.12, 40, 96)
+  const port = pane?.getBoundingClientRect() ?? { top: inset, bottom: window.innerHeight - inset }
   const delta = deadEndScrollDelta({
     itemStart: item.top,
     itemEnd: item.bottom,
     portStart: port.top,
     portEnd: port.bottom,
-    direction: dir === 'down' ? 1 : -1,
+    direction,
+    room,
   })
   if (!delta) return false
   const reduced = document.documentElement.dataset.motion === 'reduced'

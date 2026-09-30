@@ -10,7 +10,8 @@ import { dispatchPadKey } from './pad-controls'
 // inside the page and text-only dead ends scroll the right thing.
 
 // jsdom has no layout: rects come from `data-rect` (left,top,width,height) and a scroller's
-// vertical extent from `data-scroll` (clientHeight,scrollHeight).
+// vertical extent from `data-scroll` (clientHeight,scrollHeight). The window's scroll room comes
+// from the document's own box (`documentBox`).
 function rectOf(this: Element): DOMRect {
   const [left, top, width, height] = (this.getAttribute('data-rect') ?? '0,0,0,0').split(',').map(Number)
   return { left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) } as DOMRect
@@ -26,8 +27,17 @@ const press = (key: string) => {
   window.dispatchEvent(event)
   return event
 }
+// The document's box in the viewport: `top` is minus the window's scroll offset.
+const documentBox = (top: number, height: number) => document.documentElement.setAttribute('data-rect', `0,${top},1280,${height}`)
+const scrolledTo = (node: HTMLElement, top: number) => Object.defineProperty(node, 'scrollTop', { configurable: true, value: top })
 const tap = (node: Element) => node.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
-const blur = () => (document.activeElement as HTMLElement | null)?.blur()
+// What SvelteKit's reset_focus does after a navigation without keepFocus: <body> takes focus
+// through a temporary tabindex. Unlike blur(), that fires focusin on <body>.
+const resetFocusAfterNavigation = () => {
+  document.body.tabIndex = -1
+  document.body.focus()
+  document.body.removeAttribute('tabindex')
+}
 
 const appSidebar = `
   <nav data-nav-sidebar data-slot="nav.side">
@@ -76,6 +86,8 @@ beforeEach(() => {
   window.scrollBy = windowScrollBy as unknown as typeof window.scrollBy
   window.scrollTo = vi.fn() as unknown as typeof window.scrollTo
   isTv.set(false)
+  // The top of a long page: 3200 px left below, nothing above.
+  documentBox(0, 4000)
   // Forget the region of the previous test's last focus or tap.
   tap(document.body)
 })
@@ -147,8 +159,18 @@ describe('first press with nothing focused (body fallback step 3)', () => {
     document.body.innerHTML = appSidebar + settingsRail + shortPage
     el('Add source').focus()
     tap(el('Subtitles'))
-    blur()
+    el('Subtitles').focus()
+    resetFocusAfterNavigation()
     expect(document.activeElement).toBe(document.body)
+    press('ArrowDown')
+    expect(document.activeElement).toBe(el('Sources'))
+  })
+
+  it('still returns to the rail when <body> already held focus before the navigation', () => {
+    document.body.innerHTML = appSidebar + settingsRail + shortPage
+    tap(el('Subtitles'))
+    resetFocusAfterNavigation()
+    resetFocusAfterNavigation()
     press('ArrowDown')
     expect(document.activeElement).toBe(el('Sources'))
   })
@@ -157,16 +179,17 @@ describe('first press with nothing focused (body fallback step 3)', () => {
     document.body.innerHTML = appSidebar + settingsRail + shortPage
     el('Sources').focus()
     tap(el('Refresh sources'))
-    blur()
+    resetFocusAfterNavigation()
     press('ArrowDown')
     expect(document.activeElement).toBe(el('Add source'))
   })
 
   it('keeps the page-first landing after the app sidebar', () => {
     document.body.innerHTML = appSidebar + settingsRail + shortPage
-    el('Home').focus()
+    el('Sources').focus()
     tap(el('Home'))
-    blur()
+    el('Home').focus()
+    resetFocusAfterNavigation()
     press('ArrowDown')
     expect(document.activeElement).toBe(el('Add source'))
   })
@@ -226,11 +249,21 @@ describe('dead-end scroll', () => {
     expect(deadEndScrollDelta({ itemStart: 750, itemEnd: 800, portStart: 0, portEnd: 800, direction: -1 })).toBe(0)
   })
 
+  it('never steps further than the scroller has room left', () => {
+    expect(deadEndScrollDelta({ itemStart: 600, itemEnd: 648, portStart: 0, portEnd: 800, direction: 1, room: 100 })).toBe(100)
+    expect(deadEndScrollDelta({ itemStart: 600, itemEnd: 648, portStart: 0, portEnd: 800, direction: 1, room: 0 })).toBe(0)
+    expect(deadEndScrollDelta({ itemStart: 100, itemEnd: 148, portStart: 0, portEnd: 800, direction: -1, room: 50 })).toBe(-50)
+    expect(deadEndScrollDelta({ itemStart: 100, itemEnd: 148, portStart: 0, portEnd: 800, direction: -1, room: 0 })).toBe(0)
+  })
+
   const page = (top: number) => `
     <div data-nav-surface="settings">
       <button data-focusable data-rect="320,${Math.max(0, top - 300)},400,48">Earlier</button>
       <button data-focusable data-rect="320,${top},400,48">Last</button>
     </div>`
+
+  // The window's port is the viewport less a 96 px band at each end (the titlebar on top, a
+  // theme's hint bar at the bottom): 96..704, so one step is 40% of 608 = 243.
 
   it('scrolls the page along on a pad Down past the last control', () => {
     document.body.innerHTML = page(600)
@@ -239,16 +272,16 @@ describe('dead-end scroll', () => {
     expect(document.activeElement).toBe(el('Last'))
     expect(event.defaultPrevented).toBe(true)
     expect(windowScrollBy).toHaveBeenCalledTimes(1)
-    expect(windowScrollBy.mock.calls[0][0]).toMatchObject({ top: 320 })
+    expect(windowScrollBy.mock.calls[0][0]).toMatchObject({ top: 243 })
   })
 
-  it('never scrolls the focused control out of view', () => {
+  it('never scrolls the focused control out of view or under the titlebar', () => {
     document.body.innerHTML = page(120)
     el('Last').focus()
     dispatchPadKey('ArrowDown')
-    expect(windowScrollBy.mock.calls[0][0]).toMatchObject({ top: 120 })
+    expect(windowScrollBy.mock.calls[0][0]).toMatchObject({ top: 24 })
     windowScrollBy.mockClear()
-    document.body.innerHTML = page(0)
+    document.body.innerHTML = page(80)
     el('Last').focus()
     const event = dispatchPadKey('ArrowDown')
     expect(windowScrollBy).not.toHaveBeenCalled()
@@ -257,9 +290,66 @@ describe('dead-end scroll', () => {
 
   it('scrolls back up on a pad Up past the first control', () => {
     document.body.innerHTML = page(600)
+    documentBox(-1000, 4000)
     el('Earlier').focus()
     dispatchPadKey('ArrowUp')
-    expect(windowScrollBy.mock.calls[0][0]).toMatchObject({ top: -320 })
+    expect(windowScrollBy.mock.calls[0][0]).toMatchObject({ top: -243 })
+  })
+
+  it('stops at the end of the page instead of swallowing the press', () => {
+    document.body.innerHTML = page(600)
+    documentBox(-3100, 4000)
+    el('Last').focus()
+    dispatchPadKey('ArrowDown')
+    expect(windowScrollBy.mock.calls[0][0]).toMatchObject({ top: 100 })
+    windowScrollBy.mockClear()
+    documentBox(-3200, 4000)
+    const atEnd = dispatchPadKey('ArrowDown')
+    expect(windowScrollBy).not.toHaveBeenCalled()
+    expect(atEnd.defaultPrevented).toBe(false)
+    // Nor past the top.
+    documentBox(0, 4000)
+    el('Earlier').focus()
+    const atTop = dispatchPadKey('ArrowUp')
+    expect(windowScrollBy).not.toHaveBeenCalled()
+    expect(atTop.defaultPrevented).toBe(false)
+  })
+
+  it('scrolls a page scroller first, then the window once it has nothing left', () => {
+    document.body.innerHTML = `
+      <div data-nav-surface="settings">
+        <ul data-nav-scroll-container="nested" data-rect="320,300,400,400" data-scroll="400,900">
+          <li><button data-focusable data-rect="360,320,320,40">Package 1</button></li>
+          <li><button data-focusable data-rect="360,600,320,40">Package 2</button></li>
+        </ul>
+      </div>`
+    const list = document.querySelector<HTMLElement>('ul')!
+    el('Package 2').focus()
+    dispatchPadKey('ArrowDown')
+    expect(paneScrolls.map((scroll) => scroll.el)).toEqual([list])
+    expect(paneScrolls[0].options).toMatchObject({ top: 160 })
+    expect(windowScrollBy).not.toHaveBeenCalled()
+    // At its end, the text below the list is still reachable through the window.
+    paneScrolls.length = 0
+    scrolledTo(list, 500)
+    const event = dispatchPadKey('ArrowDown')
+    expect(paneScrolls).toEqual([])
+    expect(windowScrollBy).toHaveBeenCalledTimes(1)
+    expect(windowScrollBy.mock.calls[0][0]).toMatchObject({ top: 243 })
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  it('passes a list that does not overflow (uncapped on a phone) straight to the window', () => {
+    document.body.innerHTML = `
+      <div data-nav-surface="settings">
+        <ul data-nav-scroll-container="nested" data-rect="320,300,400,400" data-scroll="400,400">
+          <li><button data-focusable data-rect="360,600,320,40">Package 1</button></li>
+        </ul>
+      </div>`
+    el('Package 1').focus()
+    dispatchPadKey('ArrowDown')
+    expect(paneScrolls).toEqual([])
+    expect(windowScrollBy.mock.calls[0][0]).toMatchObject({ top: 243 })
   })
 
   it('is controller-only, off TV, and only inside a settings surface', () => {
@@ -292,6 +382,33 @@ describe('dead-end scroll', () => {
     expect(paneScrolls[0].el).toBe(document.querySelector('dialog > div'))
     expect(paneScrolls[0].options).toMatchObject({ top: 200 })
     expect(windowScrollBy).not.toHaveBeenCalled()
+  })
+
+  it('leaves the press alone when the dialog body is at its end or does not scroll', () => {
+    document.body.innerHTML = `
+      <dialog open data-rect="200,100,600,600">
+        <div style="overflow-y: auto" data-scroll="500,900" data-rect="200,150,600,500">
+          <button data-focusable data-rect="220,200,200,40">First in dialog</button>
+          <button data-focusable data-rect="220,560,200,40">Last in dialog</button>
+        </div>
+      </dialog>`
+    scrolledTo(document.querySelector<HTMLElement>('dialog > div')!, 400)
+    el('Last in dialog').focus()
+    const atEnd = dispatchPadKey('ArrowDown')
+    expect(paneScrolls).toEqual([])
+    expect(windowScrollBy).not.toHaveBeenCalled()
+    expect(atEnd.defaultPrevented).toBe(false)
+    document.body.innerHTML = `
+      <dialog open data-rect="200,100,600,600">
+        <div style="overflow-y: auto" data-scroll="500,500" data-rect="200,150,600,500">
+          <button data-focusable data-rect="220,560,200,40">Only in dialog</button>
+        </div>
+      </dialog>`
+    el('Only in dialog').focus()
+    const still = dispatchPadKey('ArrowDown')
+    expect(paneScrolls).toEqual([])
+    expect(windowScrollBy).not.toHaveBeenCalled()
+    expect(still.defaultPrevented).toBe(false)
   })
 
   it('never scrolls the page behind a fixed modal that is not a native <dialog>', () => {
