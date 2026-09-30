@@ -207,6 +207,125 @@ describe('relevant (romanized titles that break words differently)', () => {
   })
 })
 
+describe('relevant (a pack file named only by its episode)', () => {
+  // Some season packs name every file by nothing but its episode: "Episode 01 - <episode title>.mkv".
+  // The add-on's file name then carries no title at all while the release line above it, and the
+  // folder the file sits in, do. Judged by the file name alone, the requested episode was filtered
+  // out as a different title.
+  const club = ['Kagerou Tanteidan wa Machigatteiru.', 'The Heat Haze Detective Club', 'Kagetan']
+  const pack = '[Group] The Heat Haze Detective Club | S1 S2 OVAs | (BD 1080p x265) [Dual-Audio] | Kagerou Tanteidan wa Machigatteiru. | Zoku'
+  const packFile = (path: string, release = pack): Stream => ({
+    title: `${release}\n${path}\n👤 97 💾 574.56 MB`,
+    behaviorHints: { filename: path.split('/').pop() },
+  })
+  const releaseFile = (release: string, filename: string): Stream => ({
+    title: `${release}\n👤 12 💾 6.10 GB`,
+    behaviorHints: { filename },
+  })
+
+  it('judges the file by the folder that places it in the requested season', () => {
+    expect(relevant(packFile('S1 - The Heat Haze Detective Club/Episode 01 - And So, the Case Begins..mkv'), club)).toBe(true)
+    expect(relevant(packFile(
+      'Season 01/Episode 01 - And So, the Case Begins..mkv',
+      '[Group] Kagerou Tanteidan wa Machigatteiru (Seasons 1-2 + OVAs) [BD 1080p] (Batch)',
+    ), club)).toBe(true)
+  })
+
+  it('judges a file at the release root, or with no path shown, by the release line', () => {
+    expect(relevant(packFile(
+      'S01E01-And So, the Case Begins [0A1B2C3D].mkv',
+      '[Group] The Heat Haze Detective Club (2013) (Season 1) [BDRip] [1080p Dual Audio HEVC]',
+    ), club)).toBe(true)
+    expect(relevant(releaseFile(
+      '[Group] The Heat Haze Detective Club [BD 1080p] (Batch)',
+      'Episode 01 - And So, the Case Begins..mkv',
+    ), club)).toBe(true)
+  })
+
+  it('keeps rejecting the OVA, sequel-season and spin-off files of the same pack', () => {
+    expect(relevant(packFile('OVAs/[Group] Kagetan - OVA - 01.mkv'), club)).toBe(false)
+    expect(relevant(packFile('OVAs/Episode 01 - The Summer Festival Case.mkv'), club)).toBe(false)
+    expect(relevant(packFile('S2 - The Heat Haze Detective Club TOO!/Episode 01 - Once Again, the Case Begins..mkv'), club)).toBe(false)
+    expect(relevant(packFile('Season 2/Episode 01 - Once Again, the Case Begins..mkv'), club)).toBe(false)
+    expect(relevant(packFile('S02E01 - Once Again, the Case Begins.mkv', '[Group] The Heat Haze Detective Club (Seasons 1-2) [BD]'), club)).toBe(false)
+    expect(relevant(packFile('The Heat Haze Detective Club Gaiden/Episode 01 - A Side Case.mkv'), club)).toBe(false)
+    // A sequel numbered after its title: the file carries the episode, so that number is the title's.
+    expect(relevant(packFile('The Heat Haze Detective Club 2/Episode 01 - Once Again, the Case Begins..mkv'), club)).toBe(false)
+    expect(relevant(releaseFile('[Group] The Heat Haze Detective Club 2 [BD 1080p]', 'Episode 01 - Once Again..mkv'), club)).toBe(false)
+  })
+
+  it('does not lend a release its title when the file could be any part of it', () => {
+    // No path is shown, so an "Episode 01" of two seasons and their OVAs could be any of them.
+    expect(relevant(releaseFile(
+      '[Group] The Heat Haze Detective Club S1+S2+OVA [BD 1080p]',
+      'Episode 01 - And So, the Case Begins..mkv',
+    ), club)).toBe(false)
+  })
+
+  it('rejects a release line that names a sequel season or another title', () => {
+    expect(relevant(releaseFile(
+      '[Group] The Heat Haze Detective Club (2015) (Season 2) [BD 1080p]',
+      'S02E01-Once Again, the Case Begins [0A1B2C3D].mkv',
+    ), club)).toBe(false)
+    expect(relevant(releaseFile('[Group] The Heat Haze Detective Club TOO! [BD 1080p]', 'Episode 01 - Once Again..mkv'), club)).toBe(false)
+    expect(relevant(releaseFile('[Group] Some Other Show [BD 1080p]', 'Episode 01 - And So, the Case Begins..mkv'), club)).toBe(false)
+  })
+
+  it('serves a sequel request from the folder or release line that names the sequel', () => {
+    const sequel = ['Kagerou Tanteidan wa Machigatteiru. Zoku', 'The Heat Haze Detective Club TOO!']
+    expect(relevant(packFile('The Heat Haze Detective Club TOO!/Episode 01 - Once Again, the Case Begins..mkv'), sequel)).toBe(true)
+    const numbered = ['Kagerou Tanteidan 2', 'The Heat Haze Detective Club 2']
+    expect(relevant(packFile('The Heat Haze Detective Club 2/Episode 01 - Once Again, the Case Begins..mkv'), numbered)).toBe(true)
+    // A range after the title counts episodes, it does not name a sequel.
+    expect(relevant(releaseFile('[Group] The Heat Haze Detective Club 1-13 [BD 1080p]', 'Episode 01 - And So, the Case Begins..mkv'), club)).toBe(true)
+    const second = ['Kagerou Tanteidan 2nd Season', 'The Heat Haze Detective Club Season 2']
+    expect(relevant(packFile(
+      'Season 2/Episode 01 - Once Again, the Case Begins..mkv',
+      '[Group] The Heat Haze Detective Club (Seasons 1-2) [BD 1080p]',
+    ), second)).toBe(true)
+  })
+
+  it('does not serve a season request from a part that never names that season', () => {
+    // Nothing names the season of a root "Episode 01" in a two-season release, or of a folder that
+    // only carries the base title: for a season-2 request that is most likely season 1's episode.
+    const second = ['Kagerou Tanteidan 2nd Season', 'The Heat Haze Detective Club Season 2']
+    expect(relevant(packFile(
+      'Episode 01 - And So, the Case Begins..mkv',
+      '[Group] The Heat Haze Detective Club (Seasons 1-2) [BD 1080p]',
+    ), second)).toBe(false)
+    expect(relevant(packFile('The Heat Haze Detective Club/Episode 01 - And So, the Case Begins..mkv'), second)).toBe(false)
+  })
+
+  it('reads a sequel\'s season from the number its own titles end with', () => {
+    // A sequel is often titled without a season ("… Zoku", "… TOO!") and numbered only in a synonym.
+    const sequel = ['Kagerou Tanteidan wa Machigatteiru. Zoku', 'The Heat Haze Detective Club TOO!', 'Kagetan 2']
+    expect(relevant(packFile('S2 - The Heat Haze Detective Club TOO!/Episode 01 - Once Again, the Case Begins..mkv'), sequel)).toBe(true)
+    expect(relevant(packFile('S1 - The Heat Haze Detective Club/Episode 01 - And So, the Case Begins..mkv'), sequel)).toBe(false)
+    expect(relevant(packFile('Kagetan/Episode 01 - And So, the Case Begins..mkv'), sequel)).toBe(false)
+    const roman = ['Kagerou Tanteidan II: Futatabi', 'The Heat Haze Detective Club II']
+    expect(relevant(packFile('Season 2/Episode 01 - Once Again, the Case Begins..mkv', '[Group] The Heat Haze Detective Club (Seasons 1-2) [BD]'), roman)).toBe(true)
+    expect(relevant(packFile('Season 1/Episode 01 - And So, the Case Begins..mkv', '[Group] The Heat Haze Detective Club (Seasons 1-2) [BD]'), roman)).toBe(false)
+    // A title that ends in a number of its own is not a sequel.
+    const numbered = ['Kaiju Tanteidan No. 8', 'Detective Club No. 8', 'Tanteidan #8', 'Detective Club N°8']
+    expect(relevant(packFile('S01E01-The Case Begins [0A1B2C3D].mkv', '[Group] Detective Club No. 8 (2024) (Season 1) [BDRip]'), numbered)).toBe(true)
+  })
+
+  it('does not take the entry a sequel continues for the sequel', () => {
+    const zero = ['The Heat Haze Detective Club 0', 'Kagerou Tanteidan 0']
+    expect(relevant(packFile('S01E01 - And So, the Case Begins.mkv', '[Group] The Heat Haze Detective Club S01 (2013) [BluRay 1080p]'), zero)).toBe(false)
+    expect(relevant(packFile('S01E01 - A New Case Begins.mkv', '[Group] The Heat Haze Detective Club 0 (2018) [BluRay 1080p]'), zero)).toBe(true)
+  })
+
+  it('needs an episode label the season verifier can read, not a bare leading number', () => {
+    // "36 - 1.28.mkv" is episode 36 while "86 - 01.mkv" is episode 1 of a show called "86": a bare
+    // leading number cannot say which, so such a file never borrows the release's title.
+    expect(relevant(packFile(
+      '01 - And So, the Case Begins.mkv',
+      '[Group] The Heat Haze Detective Club (BD 720p)',
+    ), club)).toBe(false)
+  })
+})
+
 describe('relevant (a spin-off whose release name EXTENDS the requested title)', () => {
   // Long-running series have siblings whose names begin with the whole base title and then add a
   // subtitle. Rule (a) only measured how much of the REQUESTED title the release carries, so any
