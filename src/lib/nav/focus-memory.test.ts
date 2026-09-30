@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { isTv } from '$lib/platform'
 import { inputType } from './input'
-import { describeFocus, focusRestoreAllowed, resolveFocus, restoreFocus } from './focus-memory'
+import { describeFocus, focusRestoreAllowed, handFocusBack, resolveFocus, restoreFocus } from './focus-memory'
 import { peekFocusHint, setFocusHint, takeFocusHint } from './focus-hint'
 
 const byId = (id: string) => document.getElementById(id) as HTMLElement
@@ -145,6 +145,45 @@ describe('focusRestoreAllowed', () => {
     inputType.set('mouse')
     isTv.set(true)
     expect(focusRestoreAllowed()).toBe(true)
+  })
+})
+
+describe('handFocusBack', () => {
+  const setup = () => {
+    document.body.innerHTML = '<button data-focusable id="quality">High</button><button data-focusable id="other">Other</button>'
+    byId('other').focus()
+  }
+
+  it('focuses the target on the d-pad and on TV', () => {
+    setup()
+    inputType.set('dpad')
+    handFocusBack(byId('quality'))
+    expect(document.activeElement).toBe(byId('quality'))
+    expect(peekFocusHint()).toBeNull()
+    setup()
+    inputType.set('mouse')
+    isTv.set(true)
+    handFocusBack(byId('quality'))
+    expect(document.activeElement).toBe(byId('quality'))
+  })
+
+  it('leaves a hint for the first d-pad press after a mouse or touch answer', () => {
+    for (const input of ['mouse', 'touch'] as const) {
+      setup()
+      inputType.set(input)
+      handFocusBack(byId('quality'))
+      expect(document.activeElement, input).toBe(byId('other'))
+      expect(takeFocusHint(), input).toBe(byId('quality'))
+    }
+  })
+
+  it('does nothing without a target', () => {
+    setup()
+    inputType.set('dpad')
+    handFocusBack(null)
+    handFocusBack(undefined)
+    expect(document.activeElement).toBe(byId('other'))
+    expect(peekFocusHint()).toBeNull()
   })
 })
 

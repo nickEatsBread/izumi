@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { setContext, tick, type Snippet } from 'svelte'
+  import { setContext, type Snippet } from 'svelte'
   import { ROW_CONTEXT, type RowScope } from '$lib/themes/presentation'
   import type { CatalogHomeTarget } from '$lib/catalog/home-layout'
   import {
@@ -10,6 +10,7 @@
     moveHomeRowBy,
   } from '$lib/catalog/home-editor'
   import { homeBlockSettingsId, removeHomeBlock } from '$lib/home/block-rows'
+  import { moveRowKeepingFocus } from './home-row-move'
   import { isBlockId } from '$lib/home/blocks'
   import ArrowDown from '@lucide/svelte/icons/arrow-down'
   import ArrowUp from '@lucide/svelte/icons/arrow-up'
@@ -68,19 +69,10 @@
     moveHomeRowBefore(target, visibleIds, rowId, beforeId)
   }
 
-  // Move up/down stay focusable at either end (aria-disabled, not disabled): a button that
-  // disables itself under the d-pad drops focus to <body>. The keyed row move can also re-insert
-  // the row, which blurs the button, so focus goes back to the same button of the moved row.
-  async function moveKeepingFocus(event: MouseEvent, move: () => void) {
-    const button = event.currentTarget as HTMLElement
-    if (button.getAttribute('aria-disabled') === 'true') return
-    const hadFocus = document.activeElement === button
-    move()
-    if (!hadFocus) return
-    await tick()
-    const again = document.querySelector<HTMLElement>(`[data-home-row="${CSS.escape(rowId)}"] [data-row-move="${button.dataset.rowMove}"]`)
-    again?.focus({ preventScroll: true })
-    again?.scrollIntoView?.({ block: 'nearest' })
+  // Move up/down stay focusable at either end and keep focus across the keyed row move
+  // (moveRowKeepingFocus).
+  function moveKeepingFocus(event: MouseEvent, move: () => void) {
+    void moveRowKeepingFocus(event.currentTarget as HTMLElement, rowId, move)
   }
 
   function endDrag(event: PointerEvent) {

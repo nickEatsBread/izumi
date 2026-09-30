@@ -25,8 +25,7 @@
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import { m } from '$lib/paraglide/messages.js'
   import { tick } from 'svelte'
-  import { focusRestoreAllowed } from '$lib/nav/focus-memory'
-  import { setFocusHint } from '$lib/nav/focus-hint'
+  import { handFocusBack } from '$lib/nav/focus-memory'
 
   let pendingAnime = $state(false) // shows the one-time shader consent
   let qualityField = $state<HTMLLabelElement>()
@@ -38,10 +37,7 @@
     pendingAnime = false
     if (download) $videoQualityPreset = 'anime'
     await tick()
-    const trigger = qualityField?.querySelector<HTMLElement>('button[data-focusable]') ?? null
-    if (!trigger) return
-    if (focusRestoreAllowed()) trigger.focus({ preventScroll: true })
-    else setFocusHint(trigger)
+    handFocusBack(qualityField?.querySelector<HTMLElement>('button[data-focusable]'))
   }
 
   // Neural upscale shaders are desktop-only. A persisted Anime value from another

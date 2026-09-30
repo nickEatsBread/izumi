@@ -18,6 +18,8 @@ import { NON_TEXT_INPUT_TYPES } from './text-field'
 //       no element inside a legacy trap handles Escape itself (a double close)
 //   R3b every role dialog/alertdialog/menu/listbox or aria-modal is trapped (or a native <dialog>)
 //   R4  an overflow box holding controls carries the scroll marker for its axis
+//   R4b a capped list of controls inside the page is data-nav-scroll-container="nested"; one
+//       inside a modal layer is a plain container
 //   R5  a non-native data-focusable has a tabindex
 //   R6  every <summary> in src carries data-focusable tabindex="0"
 
@@ -285,6 +287,35 @@ function ruleR4(scan: Scan): string[] {
   return problems
 }
 
+const MAX_HEIGHT_UTILITY = /(?:^|[\s"'`{:])max-h-/
+const FIXED_UTILITY = /(?:^|[\s"'`{])fixed(?=$|[\s"'`}])/
+
+/** Inside a modal layer in its own file: a native <dialog>, a trap or nav layer, a modal role or
+ *  aria-modal, or a `fixed` box (a sheet, the Theme Studio panel). */
+function inModalLayer(el: MarkupElement): boolean {
+  return [el, ...el.ancestors].some((node) => node.name === 'dialog' || isTrapOrLayer(node)
+    || MODAL_ROLES.includes(staticAttr(node, 'role') ?? '') || hasAttr(node, 'aria-modal')
+    || FIXED_UTILITY.test(attr(node, 'class')?.raw ?? ''))
+}
+
+/** A capped list inside the page moves only itself, so when it runs below the fold the window must
+ *  also reveal the item (the "nested" window pass in revealFocused). Inside a modal layer, fixed to
+ *  the viewport, a window scroll would only move the page behind the modal. */
+function ruleR4b(scan: Scan, modalOnly = false): string[] {
+  const problems: string[] = []
+  for (const el of scan.elements) {
+    if (!hasAttr(el, 'data-nav-scroll-container')) continue
+    const nested = staticAttr(el, 'data-nav-scroll-container') === 'nested'
+    const modal = modalOnly || inModalLayer(el)
+    if (nested && modal) {
+      problems.push(`${where(scan, el)} is a nested scroller inside a modal layer (the window scroll would move the page behind it)`)
+    } else if (!nested && !modal && MAX_HEIGHT_UTILITY.test(attr(el, 'class')?.raw ?? '') && holdsControls(el, scan)) {
+      problems.push(`${where(scan, el)} is a capped list in the page without data-nav-scroll-container="nested"`)
+    }
+  }
+  return problems
+}
+
 const NATIVELY_FOCUSABLE = ['button', 'select', 'textarea', 'input', 'summary', 'iframe']
 
 function ruleR5(scan: Scan): string[] {
@@ -367,6 +398,17 @@ describe('Settings reachability contract (spec §4, §7)', () => {
     expect(SCANS.flatMap(ruleR4)).toEqual([])
   })
 
+  it('R4b: a capped list in the page is nested, one in a modal layer is plain', () => {
+    expect(SCANS.flatMap((scan) => ruleR4b(scan, scan.rel in MODAL_ONLY_COMPONENTS))).toEqual([])
+    // Every nested scroller in src sits where R4b checks it.
+    const rels = SCANS.map((scan) => scan.rel)
+    const nestedAnywhere = svelteFilesUnder(fromRepo('src'))
+      .filter((file) => readSvelteSource(file).includes('data-nav-scroll-container="nested"'))
+      .map(repoRelative)
+    expect(nestedAnywhere.length).toBeGreaterThan(0)
+    for (const rel of nestedAnywhere) expect(rels).toContain(rel)
+  })
+
   it('R5: every non-native data-focusable is focusable', () => {
     expect(SCANS.flatMap(ruleR5)).toEqual([])
   })
@@ -400,14 +442,15 @@ describe('Settings reachability: markers the generic rules cannot infer (spec §
     expect(defaults[0].ancestors.some((el) => staticAttr(el, 'aria-label') === 'Theme controls')).toBe(true)
   })
 
-  it('caps the extensions package list as the one nested scroller in src', () => {
-    const nested = elementsOf('src/routes/app/settings/extensions/+page.svelte')
-      .filter((el) => staticAttr(el, 'data-nav-scroll-container') === 'nested')
-    expect(nested.map((el) => el.name)).toEqual(['ul'])
-    const everywhere = svelteFilesUnder(fromRepo('src'))
-      .filter((file) => readSvelteSource(file).includes('data-nav-scroll-container="nested"'))
-      .map(repoRelative)
-    expect(everywhere).toEqual(['src/routes/app/settings/extensions/+page.svelte'])
+  it('marks the in-page capped lists nested: extension packages, the import preview, izumi collections', () => {
+    for (const [rel, name] of [
+      ['src/routes/app/settings/extensions/+page.svelte', 'ul'],
+      ['src/routes/app/settings/catalog/collections/+page.svelte', 'ul'],
+      ['src/lib/components/catalog/NuvioCloudCollections.svelte', 'div'],
+    ]) {
+      const nested = elementsOf(rel).filter((el) => staticAttr(el, 'data-nav-scroll-container') === 'nested')
+      expect(nested.map((el) => el.name), rel).toEqual([name])
+    }
   })
 
   it('marks the Nuvio browser as a nav surface', () => {
@@ -426,15 +469,19 @@ describe('Settings reachability: markers the generic rules cannot infer (spec §
   })
 
   it('makes read-only lists walkable with controller-only stops', () => {
+    // A stop is a conditional data-focusable plus a tabindex under the same condition: off for
+    // mouse and touch (out of their tab order), on for a controller.
+    const condition = (el: MarkupElement, name: string, on: string) =>
+      attr(el, name)?.raw.match(new RegExp(`^${name}=\\{\\s*(.+?)\\s*\\?\\s*${on}\\s*:\\s*undefined\\s*\\}$`))?.[1]
     for (const rel of [
       'src/routes/app/settings/changelog/+page.svelte',
       'src/routes/app/settings/catalog/collections/+page.svelte',
       'src/lib/components/catalog/NuvioCloudSettings.svelte',
     ]) {
-      const scan = scanOf(rel)
-      expect(scan.source, rel).toContain('const stops = $derived($gameMode || $controllerMode)')
-      const stops = scan.elements.filter((el) => attr(el, 'data-focusable')?.raw === "data-focusable={stops ? '' : undefined}"
-        && attr(el, 'tabindex')?.raw === 'tabindex={stops ? 0 : undefined}')
+      const stops = scanOf(rel).elements.filter((el) => {
+        const gate = condition(el, 'data-focusable', "''")
+        return !!gate && condition(el, 'tabindex', '0') === gate
+      })
       expect(stops.length, rel).toBe(1)
     }
   })
@@ -454,10 +501,9 @@ describe('Settings reachability: markers the generic rules cannot infer (spec §
       expect(onclick, direction).toMatch(/moveKeepingFocus\(/)
       expect(onclick, direction).toMatch(new RegExp(`moveHomeRowBy\\([^)]*,\\s*${step}\\s*\\)`))
     }
-    // No component mount in vitest: the wrapper's refocus of the moved row's button is pinned by
-    // its two load-bearing pieces, waiting for the DOM and looking the button up by its marker.
-    expect(scan.source).toContain('await tick()')
-    expect(scan.source).toContain('[data-row-move="${button.dataset.rowMove}"]')
+    // No component mount in vitest: the wrapper hands the press to moveRowKeepingFocus, whose
+    // refocus of the moved row's button is tested in jsdom (catalog/home-row-move.test.ts).
+    expect(functionSource(scan.source, 'moveKeepingFocus')).toMatch(/\bmoveRowKeepingFocus\(/)
   })
 
   it('answers the Anime shader prompt from the pad and hands focus back to Video quality', () => {
@@ -470,10 +516,9 @@ describe('Settings reachability: markers the generic rules cannot infer (spec §
     }
     const field = scan.elements.find((el) => attr(el, 'bind:this')?.raw === 'bind:this={qualityField}')
     expect(field?.name).toBe('label')
-    // No component mount in vitest: the hand-back is pinned by its rule, focus when a restore is
-    // allowed, otherwise leave a hint for the first pad press.
-    expect(scan.source).toMatch(/if \(focusRestoreAllowed\(\)\) \w+\.focus\(/)
-    expect(scan.source).toMatch(/else setFocusHint\(\w+\)/)
+    // No component mount in vitest: the answer hands focus back through handFocusBack (focus when
+    // a restore is allowed, otherwise a hint for the first pad press; focus-memory.test.ts).
+    expect(functionSource(scan.source, 'answerAnimeConsent')).toMatch(/\bhandFocusBack\(/)
   })
 })
 
@@ -554,6 +599,24 @@ describe('reachability scanner self-tests', () => {
     ])
   })
 
+  it('R4b wants nested on a capped list in the page and plain inside a modal layer', () => {
+    const scan = fixture(`<ul data-nav-scroll-container class="max-h-48 overflow-y-auto"><li><button>a</button></li></ul>
+<ul data-nav-scroll-container="nested" class="sm:max-h-72 sm:overflow-y-auto"><Row /></ul>
+<ul data-nav-scroll-container class="max-h-48 overflow-y-auto"><li>text only</li></ul>
+<nav data-nav-scroll-container class="h-full overflow-y-auto"><a href="/x">rail</a></nav>
+<dialog><ul data-nav-scroll-container class="max-h-60 overflow-y-auto"><button>b</button></ul></dialog>
+<div class="fixed inset-0"><div data-nav-scroll-container="nested" class="max-h-60"><button>c</button></div></div>`)
+    expect(ruleR4b(scan)).toEqual([
+      'fixture.svelte:1 <ul> is a capped list in the page without data-nav-scroll-container="nested"',
+      'fixture.svelte:6 <div> is a nested scroller inside a modal layer (the window scroll would move the page behind it)',
+    ])
+    // A component that renders only inside its host's <dialog> is a modal layer throughout.
+    const modalOnly = fixture('<div data-nav-scroll-container="nested" class="max-h-80"><button>d</button></div>')
+    expect(ruleR4b(modalOnly, true)).toEqual([
+      'fixture.svelte:1 <div> is a nested scroller inside a modal layer (the window scroll would move the page behind it)',
+    ])
+  })
+
   it('R5 wants a tabindex on a non-native data-focusable', () => {
     const scan = fixture(`<div data-focusable>a</div>
 <li data-focusable={stops ? '' : undefined} tabindex={stops ? 0 : undefined}>b</li>
@@ -584,9 +647,14 @@ describe('reachability scanner self-tests', () => {
   })
 
   it('reports the line of each element and its nearest-first ancestors', () => {
-    const elements = markupElements(fromRepo('src/lib/components/settings/SettingsNav.svelte'))
-    const railLink = elements.find((el) => el.name === 'a' && el.ancestors[0]?.name === 'nav')
+    const file = fromRepo('src/lib/components/settings/SettingsNav.svelte')
+    const lines = readSvelteSource(file).split('\n')
+    const railLink = markupElements(file).find((el) => el.name === 'a' && el.ancestors[0]?.name === 'nav')
     expect(railLink?.ancestors.map((el) => el.name)).toEqual(['nav'])
-    expect(railLink && railLink.line).toBeGreaterThan(100)
+    // Each reported line is where that element's tag opens, whatever the file's length.
+    const [nav] = railLink!.ancestors
+    expect(lines[nav.line - 1]).toMatch(/^\s*<nav\b/)
+    expect(lines[railLink!.line - 1]).toMatch(/^\s*<a\b/)
+    expect(railLink!.line).toBeGreaterThan(nav.line)
   })
 })

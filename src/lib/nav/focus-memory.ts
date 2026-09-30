@@ -2,6 +2,7 @@ import { get } from 'svelte/store'
 import { isTv } from '$lib/platform'
 import { inputType } from './input'
 import { isNavigable } from './focusable'
+import { setFocusHint } from './focus-hint'
 
 // Where focus was, in a form that survives the element being re-rendered (spec §3.9). A nav layer
 // describes its opener when it opens and resolves it again when it closes; the chooser, the
@@ -146,4 +147,13 @@ export function restoreFocus(descriptor: FocusDescriptor | null | undefined, roo
 /** Focus may be moved for the user only on the d-pad or TV; touch and mouse keep their own. */
 export function focusRestoreAllowed(): boolean {
   return get(inputType) === 'dpad' || get(isTv)
+}
+
+/** Hand focus back to `target` after the control that held it went away (spec §3.9, the Anime
+ *  shader prompt's answer buttons): focus it when focus may move for the user, otherwise leave it
+ *  as the focus hint, so the first d-pad press lands there rather than on the page's first control. */
+export function handFocusBack(target: HTMLElement | null | undefined): void {
+  if (!target) return
+  if (focusRestoreAllowed()) target.focus({ preventScroll: true })
+  else setFocusHint(target)
 }

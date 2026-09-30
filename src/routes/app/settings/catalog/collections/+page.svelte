@@ -139,7 +139,7 @@
     {#if preview}
       <div class="space-y-3 border-t border-border pt-4">
         <p class="font-bold">{countLabel(preview.collections.length, 'collection')} · {countLabel(folders.length, 'folder')} · {countLabel(folders.reduce((count, folder) => count + folder.sources.length, 0), 'catalog')}</p>
-        <ul data-nav-scroll-container class="max-h-48 list-disc overflow-y-auto pl-5 text-sm text-muted-foreground">
+        <ul data-nav-scroll-container="nested" class="max-h-48 list-disc overflow-y-auto pl-5 text-sm text-muted-foreground">
           {#each preview.collections as collection (collection.id)}<!-- svelte-ignore a11y_no_noninteractive_tabindex --><li data-focusable={stops ? '' : undefined} tabindex={stops ? 0 : undefined}>{collection.title} — {collection.folders.length} folders</li>{/each}
         </ul>
         {#if replacements}<p class="text-sm">{replacements} existing collections with matching IDs will be updated, including their covers. Other collections stay in place.</p>{/if}
