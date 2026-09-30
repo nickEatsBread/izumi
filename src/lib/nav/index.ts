@@ -375,8 +375,10 @@ function scrollRoom(pane: HTMLElement | null, direction: 1 | -1): number {
  *  <dialog>, or a position:fixed overlay such as the add-on configurator, which a settings page
  *  renders inline) is fixed to the viewport: a window scroll would only move the page underneath
  *  it, as revealFocused already knows. There only a scroller inside the layer moves, or nothing.
- *  Returns false, so the press is not consumed, when nothing can move that way. */
-function deadEndScroll(active: HTMLElement, dir: Dir): boolean {
+ *  Returns false, so the press is not consumed, when nothing can move that way. `rapid` (a held
+ *  button's repeats) steps instantly, as revealFocused does: each repeat would otherwise abort the
+ *  previous smooth step at its interpolated position, a stuttering crawl on WebKitGTK. */
+function deadEndScroll(active: HTMLElement, dir: Dir, rapid = false): boolean {
   const dialog = active.closest<HTMLElement>('dialog[open]')
   if (!dialog && !active.closest('[data-nav-surface]')) return false
   const layer = dialog ?? fixedLayerOf(active)
@@ -413,7 +415,7 @@ function deadEndScroll(active: HTMLElement, dir: Dir): boolean {
   if (!delta) return false
   const reduced = document.documentElement.dataset.motion === 'reduced'
     || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  const behavior: ScrollBehavior = reduced ? 'auto' : 'smooth'
+  const behavior: ScrollBehavior = rapid || reduced ? 'auto' : 'smooth'
   const target: RevealScrollTarget = pane ?? window
   runControllerScroll(target, behavior, () => target.scrollBy({ top: delta, behavior }))
   return true
@@ -499,6 +501,21 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
   runControllerScroll(target, behavior, () => {
     target.scrollBy({ top: vertical ? top : 0, left: vertical ? 0 : left, behavior })
   })
+}
+
+/** Reveal a region's default item (the Settings rail's current category) when a press lands on it.
+ *  A sideways press reveals only the horizontal axis, but the default can sit below its region's
+ *  fold: on the Deck the rail holds about 20 links in a ~600 px port, and nothing scrolls it to the
+ *  current category on a route load. So a sideways entry also reveals the item vertically, inside
+ *  the region's own [data-nav-scroll-container] only. Never the window: that would scroll the
+ *  category content, or the page under a floating panel. The vertical pass runs second, so its
+ *  smooth scroll is the one that survives when both passes move the same pane. */
+function revealRegionEntry(el: HTMLElement, vertical: boolean, rapid: boolean): void {
+  revealFocused(el, vertical, rapid)
+  if (vertical) return
+  const region = regionOf(el)
+  const pane = el.closest<HTMLElement>('[data-nav-scroll-container]')
+  if (region && pane && region.contains(pane)) revealFocused(el, true, rapid)
 }
 
 /** The pane that can lift `field` above a docked keyboard: a `[data-nav-scroll-container]`; else,
@@ -656,7 +673,7 @@ export function initDpadNav() {
       const regionDefault = regionReturnTarget(root)
       if (regionDefault) {
         regionDefault.focus({ preventScroll: true })
-        revealFocused(regionDefault, vertical, e.repeat)
+        revealRegionEntry(regionDefault, vertical, e.repeat)
         e.preventDefault()
         return
       }
@@ -733,6 +750,7 @@ export function initDpadNav() {
     const all: ElCand[] = els.filter(el => el !== active).map(el => ({ id: '', rect: el.getBoundingClientRect(), el }))
     const sameRegion = all.filter(c => regionOf(c.el) === activeRegion)
     let pick = pickInDirection(cur, sameRegion, dir)
+    let entersRegionDefault = false
     if (!pick) {
       if (vertical) {
         // Nothing straight down/up in-region: drop the alignment cone (still same-region) so a
@@ -742,7 +760,7 @@ export function initDpadNav() {
         pick = pickInDirection(cur, sameRegion, dir, /* cone */ false)
         // A true dead end. A controller has no other way to scroll a text-only stretch (a
         // changelog, a licence, the end of a settings page), so scroll it along instead.
-        if (!pick && isPadEvent(e) && !get(isTv) && deadEndScroll(active, dir)) {
+        if (!pick && isPadEvent(e) && !get(isTv) && deadEndScroll(active, dir, e.repeat)) {
           e.preventDefault()
           return
         }
@@ -755,16 +773,19 @@ export function initDpadNav() {
         const preferred = entered?.querySelector<HTMLElement>('[data-nav-region-default]')
         if (preferred && preferred !== active && els.includes(preferred)) {
           pick = { id: '', rect: preferred.getBoundingClientRect(), el: preferred }
+          entersRegionDefault = true
         }
       }
     }
     if (pick?.el) {
       // Focus WITHOUT the browser's instant jump-scroll, then smooth-scroll ONLY along the axis
       // we moved: horizontal moves scroll the row horizontally (block:nearest avoids a vertical
-      // re-center jitter on every left/right); vertical moves scroll the page vertically.
+      // re-center jitter on every left/right); vertical moves scroll the page vertically. A
+      // region's default is the one exception: it is also revealed inside its own region's pane.
       const target = rovingEntry(pick.el, active)
       target.focus({ preventScroll: true })
-      revealFocused(target, vertical, e.repeat)
+      if (entersRegionDefault) revealRegionEntry(target, vertical, e.repeat)
+      else revealFocused(target, vertical, e.repeat)
       e.preventDefault()
     }
   }

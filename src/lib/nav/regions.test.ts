@@ -31,6 +31,9 @@ const press = (key: string) => {
 const documentBox = (top: number, height: number) => document.documentElement.setAttribute('data-rect', `0,${top},1280,${height}`)
 const scrolledTo = (node: HTMLElement, top: number) => Object.defineProperty(node, 'scrollTop', { configurable: true, value: top })
 const tap = (node: Element) => node.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+// A tap on a spot that takes no focus, or a control that hides itself: focus drops to <body>
+// with no focusin.
+const blurActive = () => (document.activeElement as HTMLElement | null)?.blur()
 // What SvelteKit's reset_focus does after a navigation without keepFocus: <body> takes focus
 // through a temporary tabindex. Unlike blur(), that fires focusin on <body>.
 const resetFocusAfterNavigation = () => {
@@ -57,6 +60,40 @@ const settingsRail = `
       <a href="/app/settings/about" data-focusable data-rect="72,290,200,36">About</a>
     </nav>
   </aside>`
+
+// The rail on the Deck: about 20 links in a ~600 px port, so the lower categories start below its
+// fold (the nav's port is 120..520 and it scrolls to 760). About is the current category.
+const longRail = `
+  <aside data-nav-region="settings">
+    <button data-focusable data-rect="72,70,200,40">Search settings</button>
+    <nav data-nav-scroll-container data-rect="72,120,200,400" data-scroll="400,760">
+      <a href="/app/settings/player" data-focusable data-rect="72,130,200,36">Player</a>
+      <a href="/app/settings/sources" data-focusable data-rect="72,170,200,36">Sources</a>
+      <a href="/app/settings/changelog" data-focusable data-rect="72,640,200,36">Changelog</a>
+      <a href="/app/settings/about" data-focusable data-nav-region-default aria-current="page" data-rect="72,680,200,36">About</a>
+    </nav>
+  </aside>`
+
+// Theme Studio: a floating panel mounted after the page. Its current tab is the region default,
+// in a tab strip above the panel's own scrolling body.
+const themeStudio = `
+  <aside data-nav-region="theme-studio" data-theme-studio data-rect="880,80,360,640">
+    <button data-focusable data-rect="1190,86,40,40">Minimize</button>
+    <nav data-nav-scroll-x data-rect="880,130,360,42">
+      <button data-focusable data-rect="880,130,90,42">Colours</button>
+      <button data-focusable data-nav-region-default aria-pressed="true" data-rect="970,130,90,42">Type</button>
+      <button data-focusable data-rect="1060,130,90,42">Layout</button>
+    </nav>
+    <div data-nav-scroll-container data-rect="880,172,360,540">
+      <button data-focusable data-rect="900,190,320,40">Brand accent</button>
+      <p data-rect="900,240,320,200">Preview</p>
+    </div>
+  </aside>`
+const themesPage = `
+  <div data-nav-surface="settings">
+    <button data-focusable data-rect="320,140,400,48">Install theme</button>
+    <button data-focusable data-rect="320,420,400,48">Theme options</button>
+  </div>`
 
 // A short page: its last control sits above the lower rail links, where a cone-less Down used to
 // fall into the rail.
@@ -132,6 +169,21 @@ describe('nav regions', () => {
     expect(document.activeElement).toBe(el('Refresh sources'))
   })
 
+  it('scrolls the rail, and only the rail, to a current category below its fold on Left', () => {
+    document.body.innerHTML = appSidebar + longRail + shortPage
+    const rail = document.querySelector<HTMLElement>('[data-nav-region] nav')!
+    el('Refresh sources').focus()
+    press('ArrowLeft')
+    expect(document.activeElement).toBe(el('About'))
+    // The sideways pass leaves the rail where it is; the vertical pass brings About (680..716)
+    // above the port's end band (520 - 80).
+    expect(paneScrolls.every((scroll) => scroll.el === rail)).toBe(true)
+    expect(paneScrolls.filter((scroll) => scroll.options.top)).toEqual([
+      { el: rail, options: expect.objectContaining({ top: 276, left: 0 }) },
+    ])
+    expect(windowScrollBy).not.toHaveBeenCalled()
+  })
+
   it('still crosses from the rail into the app sidebar', () => {
     document.body.innerHTML = appSidebar + settingsRail + shortPage
     el('Player').focus()
@@ -151,6 +203,15 @@ describe('nav regions', () => {
     expect(document.activeElement).toBe(el('Brand accent'))
     press('ArrowUp')
     expect(document.activeElement).toBe(el('Colours'))
+  })
+
+  it('enters Theme Studio from the page on its current tab, without scrolling the page', () => {
+    document.body.innerHTML = themesPage + themeStudio
+    el('Theme options').focus()
+    press('ArrowRight')
+    expect(document.activeElement).toBe(el('Type'))
+    expect(paneScrolls).toEqual([])
+    expect(windowScrollBy).not.toHaveBeenCalled()
   })
 })
 
@@ -192,6 +253,43 @@ describe('first press with nothing focused (body fallback step 3)', () => {
     resetFocusAfterNavigation()
     press('ArrowDown')
     expect(document.activeElement).toBe(el('Add source'))
+  })
+
+  it('also scrolls the rail to the current category on a sideways first press', () => {
+    document.body.innerHTML = appSidebar + longRail + shortPage
+    const rail = document.querySelector<HTMLElement>('[data-nav-region] nav')!
+    tap(el('About'))
+    el('About').focus()
+    resetFocusAfterNavigation()
+    // The rail was then dragged by touch: About now sits below the rail's port (the fixture).
+    press('ArrowRight')
+    expect(document.activeElement).toBe(el('About'))
+    expect(paneScrolls.filter((scroll) => scroll.options.top)).toEqual([
+      { el: rail, options: expect.objectContaining({ top: 276, left: 0 }) },
+    ])
+    expect(windowScrollBy).not.toHaveBeenCalled()
+  })
+
+  it('returns to Theme Studio on its current tab after a tap inside the panel', () => {
+    document.body.innerHTML = themesPage + themeStudio
+    el('Theme options').focus()
+    // A tap on a spot that takes no focus blurs the page control.
+    tap(document.querySelector('[data-theme-studio] p')!)
+    blurActive()
+    expect(document.activeElement).toBe(document.body)
+    press('ArrowDown')
+    expect(document.activeElement).toBe(el('Type'))
+  })
+
+  it('lands on the page when the panel the tap came from is minimized', () => {
+    document.body.innerHTML = themesPage + themeStudio
+    tap(el('Minimize'))
+    el('Minimize').focus()
+    // Minimized is display:none, which jsdom cannot compute: nothing in the panel is visible.
+    for (const node of document.querySelectorAll<HTMLElement>('[data-theme-studio] *')) node.checkVisibility = () => false
+    blurActive()
+    press('ArrowDown')
+    expect(document.activeElement).toBe(el('Install theme'))
   })
 })
 
@@ -273,6 +371,17 @@ describe('dead-end scroll', () => {
     expect(event.defaultPrevented).toBe(true)
     expect(windowScrollBy).toHaveBeenCalledTimes(1)
     expect(windowScrollBy.mock.calls[0][0]).toMatchObject({ top: 243 })
+  })
+
+  it('steps smoothly on a press and instantly on the repeats of a held button', () => {
+    document.body.innerHTML = page(600)
+    el('Last').focus()
+    dispatchPadKey('ArrowDown')
+    expect(windowScrollBy.mock.calls[0][0]).toMatchObject({ top: 243, behavior: 'smooth' })
+    // A repeat inside the previous step's smooth window would abort it mid-flight on WebKitGTK.
+    dispatchPadKey('ArrowDown', { repeat: true })
+    expect(windowScrollBy).toHaveBeenCalledTimes(2)
+    expect(windowScrollBy.mock.calls[1][0]).toMatchObject({ top: 243, behavior: 'auto' })
   })
 
   it('never scrolls the focused control out of view or under the titlebar', () => {
