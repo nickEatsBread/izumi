@@ -146,7 +146,192 @@ function alignWordBreaks(name: string, wanted: string[]): string {
 // Does a release filename plausibly belong to THIS anime? Guards against cross-title
 // matches on a shared id. Keeps unknowns (never drop on uncertainty).
 export function relevant(stream: Stream, wanted: string[]): boolean {
-  const name = alignWordBreaks(nameOf(stream), wanted)
+  return relevantName(nameOf(stream), wanted) || relevantPackFile(stream, wanted)
+}
+
+// A label the season verifier can read, opening a file name after an optional [Group] tag:
+// "Episode 01", "EP 01", "S01E01", "1x01". A bare leading number is not one: "86 - 01.mkv" is how the
+// show "86" names its first episode, while a pack's "36 - 1.28.mkv" is its episode 36.
+const EPISODE_LABEL_FIRST = /^\s*(?:\[[^\]]*\]\s*)?(?:s\d{1,2}\s?e\d{1,4}|\d{1,2}x\d{1,3}|episode\s*\d{1,4}|ep\.?\s*\d{1,3})(?!\d)/i
+// The season of a file name that opens with "S01E01" or "1x01".
+const SEASON_OF_EPISODE_LABEL = /^\s*(?:\[[^\]]*\]\s*)?(?:s(\d{1,2})\s?e|(\d{1,2})x)\d/i
+
+// A season a folder or release name states: "S1", "S02", "S01-S03", "S01P01", "Season 1+2",
+// "Seasons 1-3", "2nd Season", "The Final Season". "S01E01" is an episode, not a season.
+const SEASON_MARK = /\b(?:the\s+)?final\s+season\b|\b(\d{1,2})(?:st|nd|rd|th)\s+season\b|\bseasons?\s*0*(\d{1,2})((?:\s*(?:[-~+&,]|and|to)\s*0*\d{1,2}(?!\d))*)|\bs0*(\d{1,2})(?:p\d{1,2})?((?:\s*[-~+&]\s*s?0*\d{1,2}(?!\d))*)(?![a-z\d])/gi
+const FINAL_SEASON = -1
+// A number closing a title, or its main part before a subtitle: "Oregairu 2", "Overlord II",
+// "Mushoku Tensei II: …", "Steins;Gate 0". Not one the title counts with ("Kaiju No. 8",
+// "Monster #8") or a part of one season ("Part 2").
+const CLOSING_NUMBER = /(?<!(?:\b(?:no|nr|part|vol|volume|chapter|act|stage)\.?|#|n[°º])\s*)\b(\d|ii|iii|iv|v|vi|vii|viii|ix)(?=\s*(?:$|[:–-]\s))/i
+const ROMAN: Record<string, number> = { ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9 }
+// Words naming a part of a pack other than its numbered episodes.
+const OTHER_PART = /\b(?:ovas?|oads?|onas?|specials?|sps?|movies?|films?|extras?|bonus(?:es)?|omake|tokuten|recaps?|menus?|nc(?:op|ed)?\d*|creditless|textless|pvs?|cms?|trailers?|teasers?|previews?|promos?|featurettes?|scans?)\b/gi
+// A division inside one season: "Part 01", "Cour 2", "Disc 3", "Vol. 1".
+const PACK_DIVISION = /\b(?:part|cour|vol(?:ume)?|dis[ck]|box)\.?\s*0*\d{1,3}\b/gi
+// Parts listed together: "Season 1+2+OVA", "Show + Show Zoku". Not an audio codec's plus ("DD+").
+const JOINED_PARTS = /(?<!\b(?:dd|ddp|e?ac-?3|aac|dts|atmos|truehd)\s?)\+/i
+
+interface PackPart { seasons: number[]; other: string[]; rest: string }
+
+/** What a folder or release name says about WHICH part of a pack it is: the seasons it states, the
+ *  non-episode parts it names, and the rest of the name without its season and division markers. */
+function packPart(text: string): PackPart {
+  const seasons: number[] = []
+  const list = (first: number, more = '') => {
+    let last = first
+    seasons.push(first)
+    for (const [, join, n] of more.matchAll(/([-~+&,]|and|to)\s*s?0*(\d{1,2})/gi)) {
+      const next = Number(n)
+      const range = /^(?:[-~]|to)$/i.test(join)
+      for (let k = range ? Math.min(last, next) : next; k <= Math.max(last, next) && k - last <= 40; k++) seasons.push(k)
+      last = next
+    }
+  }
+  const rest = text.replace(SEASON_MARK, (_mark, ordinal, word, wordMore, short, shortMore) => {
+    if (ordinal) seasons.push(Number(ordinal))
+    else if (word) list(Number(word), wordMore)
+    else if (short) list(Number(short), shortMore)
+    else seasons.push(FINAL_SEASON)
+    return ' '
+  })
+  const other = [...rest.matchAll(OTHER_PART)].map((m) => m[0].toLowerCase())
+  return { seasons, other, rest: rest.replace(PACK_DIVISION, ' ') }
+}
+
+/** A number right after a folder's or release's title ("Log Horizon 2", "Steins;Gate 0"). Title runs
+ *  stop at a number because in a file name it is the episode; in a name that holds whole episodes it
+ *  names a sequel instead. A range ("1-13"), a padded "01" or a decimal is not one. */
+function sequelNumber(name: string): string | undefined {
+  const run = releaseTitleTokens(name)
+  if (!run.length) return undefined
+  const text = name.replace(/^\s*\[[^\]]*\]\s*/, '').replace(SOURCE_HOST_PREFIX, '').toLowerCase()
+  const after = new RegExp(`^[^a-z0-9]*${run.join('[^a-z0-9]+')}[\\s._]+(0|[1-9]\\d?)\\b(?!\\.\\d|\\s*[-~]\\s*\\d)`)
+  return text.match(after)?.[1]
+}
+
+/** The folders a pack file sits in, innermost first, when the add-on shows its path: the file name is
+ *  itself a path, or a later line of the stream text ends with "/<file name>". A line that is the bare
+ *  file name puts it at the release root (no folders). Null when no path is shown. */
+function packFolders(path: string[], lines: string[], base: string): string[] | null {
+  if (path.length) return [...path].reverse()
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (line === base) return []
+    if (line.endsWith(`/${base}`)) return line.slice(0, -base.length - 1).split('/').reverse()
+  }
+  return null
+}
+
+/** Some season packs name each file by its episode alone ("Episode 01 - <episode title>.mkv"), so the
+ *  file name has no title for relevantName to judge and the requested episode was filtered out as a
+ *  different title. Such a file takes its identity from what contains it: the nearest folder with a
+ *  title of its own ("S1 - <title>/"), else the release line.
+ *
+ *  The same pack also holds OVAs, other seasons and spin-offs, and add-ons do return those for the
+ *  wrong request, while the season verifier only ever sees "Episode 01". So nothing on the way may
+ *  name another season or a non-episode part, and two questions need an answer before the title is
+ *  lent. Is the file a regular episode rather than an extra? Its SxxEyy label, a season folder or its
+ *  place at the release root says so. Which season is it? Its SxxEyy label (the verifier compares
+ *  that one), a season folder, or a release of that season alone. */
+function relevantPackFile(stream: Stream, wanted: string[]): boolean {
+  const path = (stream.behaviorHints?.filename ?? '').split('/')
+  const base = path.pop() ?? ''
+  if (!EPISODE_LABEL_FIRST.test(base) || releaseTitleTokens(base).length) return false
+  const [release = '', ...lines] = (stream.title || stream.description || '').split('\n')
+  if (!release.trim() || release.trim() === base) return false
+  const known = new Set(wanted.flatMap((w) => lexicalTitleTokens(w)))
+  // The seasons the request names: "… 2nd Season", or a sequel number closing one of its titles. A
+  // request that names none is the first season. A requested title short of that number
+  // ("Steins;Gate" for "Steins;Gate 0") is the entry the requested one continues.
+  const named = new Set<number>()
+  const prior = new Set<string>()
+  for (const alias of wanted) {
+    for (const n of packPart(alias).seasons) named.add(n)
+    const closing = alias.match(CLOSING_NUMBER)
+    if (!closing) continue
+    const n = ROMAN[closing[1].toLowerCase()] ?? Number(closing[1])
+    if (n === 1) continue
+    if (n > 1) named.add(n)
+    const before = lexicalTitleTokens(alias.slice(0, closing.index))
+    if (before.length) prior.add(before.join(' '))
+  }
+  const requested = named.size ? named : new Set([1])
+  const contradicts = ({ seasons }: PackPart) => seasons.length > 0 && !seasons.some((n) => requested.has(n))
+  const namesRequested = ({ seasons }: PackPart) => seasons.length > 0 && seasons.every((n) => requested.has(n))
+  const otherPart = ({ other }: PackPart) => other.some((w) => !known.has(w) && !known.has(w.replace(/e?s$/, '')))
+
+  const label = base.match(SEASON_OF_EPISODE_LABEL)
+  const labelSeason = Number(label?.[1] ?? label?.[2] ?? 0)
+  // The verifier compares a label's season with the episode mapping; one the request itself rules
+  // out is a contradiction already.
+  if (labelSeason >= 1 && named.size && !named.has(labelSeason)) return false
+  let regular = labelSeason >= 1
+  let seasonKnown = regular
+  const titled = (name: string) => {
+    const sequel = sequelNumber(name)
+    if (sequel != null && !known.has(sequel)) return false
+    // Unless a season the request names placed the file, a bare prior title is the prior entry.
+    if (sequel == null && !(named.size && seasonKnown) && prior.has(releaseTitleTokens(alignWordBreaks(name, wanted)).join(' '))) return false
+    return relevantName(name, wanted)
+  }
+
+  const folders = packFolders(path, lines, base)
+  // Extras sit in folders of their own or say what they are, so a file at the release root is one of
+  // the pack's episodes. Which season's, the root does not say.
+  if (folders?.length === 0) regular = true
+  for (const folder of folders ?? []) {
+    const part = packPart(folder)
+    if (contradicts(part) || (!regular && otherPart(part))) return false
+    if (part.seasons.length) regular = true
+    if (namesRequested(part)) seasonKnown = true
+    const rest = part.rest.replace(OTHER_PART, ' ')
+    if (!releaseTitleTokens(rest).length) continue
+    // The nearest folder with a title of its own names the entry the file belongs to. A request for
+    // a later season still needs that season named, by the folder's number or its exact title: a
+    // folder with the bare first title is the first season.
+    const sequel = sequelNumber(rest)
+    if (sequel && requested.has(Number(sequel))) seasonKnown = true
+    if (!seasonKnown && !requested.has(1) && !exactTitle(rest, wanted)) return false
+    return titled(rest)
+  }
+  const part = packPart(release)
+  if (contradicts(part)) return false
+  // A label numbered like one of the release's other listed seasons puts the file in that season.
+  if (labelSeason >= 1 && !requested.has(labelSeason) && part.seasons.includes(labelSeason)) return false
+  // Nothing placed the file apart from the release's other parts (OVAs, a second title joined with
+  // "+"), so it could be one of them.
+  if (!regular && (otherPart(part) || JOINED_PARTS.test(release))) return false
+  if (namesRequested(part)) seasonKnown = true
+  // A release of several seasons, or one that never names the requested later season.
+  if (!seasonKnown && (part.seasons.length > 0 || (!requested.has(1) && !exactTitle(part.rest, wanted)))) return false
+  return titled(part.rest)
+}
+
+/** A title run that IS one of the requested titles. This is intentionally alias-by-alias rather than
+ *  a union comparison, so a partial franchise title does not become exact by mixing aliases. */
+function headIsAlias(head: string[], wanted: string[]): boolean {
+  return head.length > 0 && wanted.some((alias) => {
+    const identity = lexicalTitleTokens(alias)
+    if (!identity.length) return false
+    if (identity.length === head.length && identity.every((token, index) => token === head[index])) return true
+    // Romanization word boundaries are inconsistent across catalogues and release groups:
+    // Kitsu/AniList may say "Dogul Wang" or "Toukutsuou", while a release says "Dogulwang" or
+    // "Toukutsu Ou". Only collapse separators for an exact WHOLE-title identity; an extended
+    // franchise title still has extra characters and remains rejected by the anchor.
+    return identity.join('') === head.join('')
+  })
+}
+
+/** A name whose own title is exactly one of the requested titles. */
+function exactTitle(raw: string, wanted: string[]): boolean {
+  const name = alignWordBreaks(raw, wanted)
+  return hasExactReleaseIdentity(name, wanted) || headIsAlias(releaseTitleTokens(name), wanted)
+}
+
+/** relevant() for one release or file name on its own. */
+function relevantName(raw: string, wanted: string[]): boolean {
+  const name = alignWordBreaks(raw, wanted)
   const toks = new Set(titleTokens(name))
   const known = new Set(wanted.flatMap((w) => lexicalTitleTokens(w)))
   const head = releaseTitleTokens(name)
@@ -173,18 +358,8 @@ export function relevant(stream: Stream, wanted: string[]): boolean {
   const titleStart = head.findIndex((t) => known.has(t))
   if (titleStart > 0 || (titleStart === 0 && !head.every((t) => known.has(t)))) return false
   // Exact normalized identity is decisive even when every token is short and therefore absent
-  // from the fuzzy token set (for example M*A*S*H). This is intentionally alias-by-alias rather
-  // than a union comparison, so a partial franchise title does not become exact by mixing aliases.
-  if (wanted.some((alias) => {
-    const identity = lexicalTitleTokens(alias)
-    if (!identity.length || !head.length) return false
-    if (identity.length === head.length && identity.every((token, index) => token === head[index])) return true
-    // Romanization word boundaries are inconsistent across catalogues and release groups:
-    // Kitsu/AniList may say "Dogul Wang" or "Toukutsuou", while a release says "Dogulwang" or
-    // "Toukutsu Ou". Only collapse separators for an exact WHOLE-title identity; an extended
-    // franchise title still has extra characters and remains rejected by the anchor above/below.
-    return identity.join('') === head.join('')
-  })) return true
+  // from the fuzzy token set (for example M*A*S*H).
+  if (headIsAlias(head, wanted)) return true
   // The release's OWN title words: its tokens minus quality/codec/hash junk, bare
   // numbers, the leading [Group] tag, and scene episode codes. A short-title release
   // ("[SubsPlease] Dr STONE S04E25 NF WEB-DL") must reduce to just {stone} — NOT

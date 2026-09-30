@@ -193,6 +193,33 @@ describe('refineStreams', () => {
     expect(r.rejected).toEqual([expect.objectContaining({ reason: 'title-mismatch' })])
   })
 
+  it('keeps a pack file named only by its episode, and none of the pack\'s other parts', () => {
+    const club = {
+      title: { romaji: 'Kagerou Tanteidan wa Machigatteiru.', english: 'The Heat Haze Detective Club' },
+      synonyms: ['Kagetan'],
+      format: 'TV',
+      episodes: 13,
+      duration: 24,
+      startDate: { year: 2013 },
+    } as never
+    const release = '[Group] The Heat Haze Detective Club | S1 S2 S3 OVAs | (BD 1080p x265) [Dual-Audio] | Zoku Kan TOO!'
+    const packFile = (fileIdx: number, path: string) => ({
+      infoHash: 'c0ffee00c0ffee00c0ffee00c0ffee00c0ffee00',
+      fileIdx,
+      title: `${release}\n${path}\n👤 97 💾 574.56 MB`,
+      behaviorHints: { filename: path.split('/').pop() },
+    })
+    const r = refineStreams(club, [
+      packFile(1, 'S1 - The Heat Haze Detective Club/Episode 01 - And So, the Case Begins..mkv'),
+      packFile(0, 'OVAs/[Group] Kagetan - OVA - 01.mkv'),
+      packFile(14, 'S2 - The Heat Haze Detective Club TOO!/Episode 01 - Once Again, the Case Begins..mkv'),
+      packFile(27, 'S3 - The Heat Haze Detective Club Climax!/Episode 01 - The Last Case Begins..mkv'),
+    ] as never)
+
+    expect(r.kept.map((s) => s.behaviorHints?.filename)).toEqual(['Episode 01 - And So, the Case Begins..mkv'])
+    expect(r.rejected.map((x) => x.reason)).toEqual(['title-mismatch', 'title-mismatch', 'title-mismatch'])
+  })
+
   it('does not let synonym or compact matching admit a sequel or lookalike title', () => {
     const dogulWang = {
       title: { romaji: 'Dogul Wang', english: undefined },
