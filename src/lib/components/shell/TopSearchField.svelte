@@ -50,16 +50,27 @@
     if (!text) { results = []; return }
     const cached = cachedQuickSearch(text, selections)
     if (cached) { results = cached.slice(0, LIMIT); return }
+    // Each keystroke abandons the previous search: its lookups stop instead of running on ahead of
+    // the query on screen.
+    const abort = new AbortController()
+    // Later catalogs re-rank the rows; the keyboard highlight stays on the title it was on.
+    const show = (media: Media[]) => {
+      if (!guard.isCurrent(request)) return
+      const highlighted = active >= 0 && results[active] ? mediaKey(results[active]) : null
+      results = media.slice(0, LIMIT)
+      active = highlighted ? results.findIndex((item) => mediaKey(item) === highlighted) : -1
+    }
     const timer = setTimeout(async () => {
       if (!guard.isCurrent(request)) return
       try {
-        const media = await quickSearch(text, selections)
-        if (guard.isCurrent(request)) results = media.slice(0, LIMIT)
+        // Results appear as each catalog answers; an early empty answer keeps the previous rows
+        // up rather than flashing the panel shut.
+        show(await quickSearch(text, selections, { signal: abort.signal, onUpdate: (media) => { if (media.length) show(media) } }))
       } catch {
-        if (guard.isCurrent(request)) results = []
+        if (!abort.signal.aborted) show([])
       }
     }, 180)
-    return () => clearTimeout(timer)
+    return () => { clearTimeout(timer); abort.abort() }
   })
 
   const meta = (media: Media) => [

@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import { showAdult } from '$lib/settings/ui'
 import { LIST_PREVIEW_QUERY } from './lists'
 import {
-  MEDIA_BY_ID, SEARCH_QUERY, STAFF_MEDIA_QUERY, STUDIO_MEDIA_QUERY, searchQuery,
+  MEDIA_BY_ID, SEARCH_QUERY, STAFF_MEDIA_QUERY, STUDIO_MEDIA_QUERY, searchIdsQuery, searchProbeQuery, searchQuery,
 } from './detail-queries'
 import {
   LOCAL_RECOMMENDATIONS_QUERY, PAGE_QUERY, PERSONAL_RECOMMENDATIONS_QUERY, RECENT_RELEASES_QUERY,
@@ -26,7 +26,7 @@ describe('catalogue projection', () => {
     const documents = [
       PAGE_QUERY, pageQuery(), RECENT_RELEASES_QUERY, PERSONAL_RECOMMENDATIONS_QUERY, LOCAL_RECOMMENDATIONS_QUERY,
       MEDIA_BY_ID, SEARCH_QUERY, searchQuery(), STUDIO_MEDIA_QUERY, STAFF_MEDIA_QUERY,
-      LIST_PREVIEW_QUERY,
+      LIST_PREVIEW_QUERY, searchIdsQuery(), searchProbeQuery(1), searchProbeQuery(3),
     ]
     showAdult.set(previous)
 
@@ -109,5 +109,40 @@ describe('homeSections presets', () => {
       expect('format' in section.vars).toBe(section.key === 'movies')
       expect('status' in section.vars).toBe(section.key === 'newest')
     }
+  })
+})
+
+describe('search documents', () => {
+  const body = (document: { loc?: { source: { body: string } } }) => document.loc?.source.body ?? ''
+
+  it('reads every alternate title and the audience size with search results', () => {
+    for (const document of [SEARCH_QUERY, searchQuery(), searchIdsQuery()]) {
+      expect(body(document)).toMatch(/\.\.\.CardMediaFields\s+synonyms\s+popularity/)
+    }
+  })
+
+  it('re-reads close matches by id under the same filters, outside the catalogue backup', () => {
+    const query = body(searchIdsQuery())
+    expect(query).toMatch(/query SearchIds(All)?\(/)
+    expect(query).toContain('id_in: $ids')
+    expect(query).toContain('genre_in: $genre_in')
+  })
+
+  it('asks for exactly the respellings it was given, most popular first', () => {
+    const query = body(searchProbeQuery(2))
+    expect(query).toMatch(/query SearchProbe(All)?\(\$p0: String, \$p1: String,/)
+    expect(query.match(/: Page\(/g)).toHaveLength(2)
+    expect(query).not.toContain('$p2')
+    expect(query).toContain('sort: [POPULARITY_DESC]')
+    expect(searchProbeQuery(2)).toBe(searchProbeQuery(2))
+  })
+
+  it('keeps adult titles out of respelling probes unless 18+ is shown', () => {
+    const previous = get(showAdult)
+    showAdult.set(false)
+    expect(body(searchProbeQuery(1))).toContain('isAdult: false')
+    showAdult.set(true)
+    expect(body(searchProbeQuery(1))).not.toContain('isAdult: false')
+    showAdult.set(previous)
   })
 })

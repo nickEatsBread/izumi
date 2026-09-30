@@ -76,13 +76,17 @@ export const READING_MEDIA_BY_ID = gql`
 const SEARCH_ARGS = '$page: Int = 1, $perPage: Int = 30, $search: String, $genre_in: [String], $tag_in: [String], $tag_not_in: [String], $minimumTagRank: Int, $season: MediaSeason, $seasonYear: Int, $format_in: [MediaFormat], $status_in: [MediaStatus], $source_in: [MediaSource], $countryOfOrigin: CountryCode, $averageScore_greater: Int, $episodes_greater: Int, $episodes_lesser: Int, $sort: [MediaSort], $withPreview: Boolean = true'
 const MEDIA_ARGS = 'search: $search, genre_in: $genre_in, tag_in: $tag_in, tag_not_in: $tag_not_in, minimumTagRank: $minimumTagRank, season: $season, seasonYear: $seasonYear, format_in: $format_in, status_in: $status_in, source_in: $source_in, countryOfOrigin: $countryOfOrigin, averageScore_greater: $averageScore_greater, episodes_greater: $episodes_greater, episodes_lesser: $episodes_lesser, sort: $sort'
 
+// Search results also carry every alternate title and the audience size: search ranks what it shows
+// by how well any title matches the query (search/title-match.ts), popularity breaking near-ties.
+const SEARCH_FIELDS = '...CardMediaFields synonyms popularity'
+
 // SFW variant (excludes adult). See queries.ts for why we need two variants
 // instead of an `isAdult` variable.
 export const SEARCH_QUERY = gql`
   query Search(${SEARCH_ARGS}) {
     Page(page: $page, perPage: $perPage) {
       pageInfo { hasNextPage currentPage }
-      media(type: ANIME, isAdult: false, ${MEDIA_ARGS}) { ...CardMediaFields }
+      media(type: ANIME, isAdult: false, ${MEDIA_ARGS}) { ${SEARCH_FIELDS} }
     }
   }
   ${CARD_MEDIA_FIELDS}`
@@ -92,13 +96,56 @@ const SEARCH_QUERY_ALL = gql`
   query SearchAll(${SEARCH_ARGS}) {
     Page(page: $page, perPage: $perPage) {
       pageInfo { hasNextPage currentPage }
-      media(type: ANIME, ${MEDIA_ARGS}) { ...CardMediaFields }
+      media(type: ANIME, ${MEDIA_ARGS}) { ${SEARCH_FIELDS} }
     }
   }
   ${CARD_MEDIA_FIELDS}`
 
 /** Search query for the current adult setting. Evaluated at store-creation time. */
 export const searchQuery = () => (get(showAdult) ? SEARCH_QUERY_ALL : SEARCH_QUERY)
+
+// Close matches found outside AniList's own search (search/close-matches.ts) are re-read by id with
+// the search page's filters, so a genre or year filter still applies to them. Deliberately not a
+// catalogue operation name: during an AniList outage the Kitsu backup would answer it with an
+// unrelated listing, since Kitsu cannot look titles up by AniList id.
+const SEARCH_IDS_ARGS = `${SEARCH_ARGS}, $ids: [Int]`
+const SEARCH_IDS_QUERY = gql`
+  query SearchIds(${SEARCH_IDS_ARGS}) {
+    Page(page: $page, perPage: $perPage) {
+      media(type: ANIME, isAdult: false, id_in: $ids, ${MEDIA_ARGS}) { ${SEARCH_FIELDS} }
+    }
+  }
+  ${CARD_MEDIA_FIELDS}`
+const SEARCH_IDS_QUERY_ALL = gql`
+  query SearchIdsAll(${SEARCH_IDS_ARGS}) {
+    Page(page: $page, perPage: $perPage) {
+      media(type: ANIME, id_in: $ids, ${MEDIA_ARGS}) { ${SEARCH_FIELDS} }
+    }
+  }
+  ${CARD_MEDIA_FIELDS}`
+
+export const searchIdsQuery = () => (get(showAdult) ? SEARCH_IDS_QUERY_ALL : SEARCH_IDS_QUERY)
+
+// AniList only matches whole words, so a title typed with its words glued ("oshinoko") or split
+// ("tora dora") finds nothing. One request tries up to three respellings side by side (`p0`..`p2`),
+// most popular first, and title matching picks out the one that was meant.
+const probeDocuments = new Map<string, ReturnType<typeof gql>>()
+export function searchProbeQuery(count: number): ReturnType<typeof gql> {
+  const adult = get(showAdult)
+  const key = `${count}:${adult}`
+  const cached = probeDocuments.get(key)
+  if (cached) return cached
+  const slots = Array.from({ length: count }, (_, index) => index)
+  const document = gql`
+    query ${adult ? 'SearchProbeAll' : 'SearchProbe'}(${slots.map((index) => `$p${index}: String`).join(', ')}, $withPreview: Boolean = true) {
+      ${slots.map((index) => `p${index}: Page(page: 1, perPage: 10) {
+        media(type: ANIME, ${adult ? '' : 'isAdult: false, '}search: $p${index}, sort: [POPULARITY_DESC]) { ${SEARCH_FIELDS} }
+      }`).join('\n')}
+    }
+    ${CARD_MEDIA_FIELDS}`
+  probeDocuments.set(key, document)
+  return document
+}
 
 export const STUDIO_MEDIA_QUERY = gql`
   query StudioMedia($id: Int!, $page: Int = 1, $withPreview: Boolean = true) {

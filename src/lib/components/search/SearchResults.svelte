@@ -21,6 +21,8 @@
   import * as h from '$lib/haptics'
   import VirtualGrid from '$lib/components/VirtualGrid.svelte'
   import { CARD_FAMILY } from '$lib/themes/presentation'
+  import { filteredCloseMatches } from '$lib/search/close-matches'
+  import { hasStrongMatch } from '$lib/search/global-search'
 
   setContext(CARD_FAMILY, 'search')
 
@@ -33,10 +35,15 @@
   let loading = $state(false)
   let error = $state('')
   const seen = new Set<number>()
+  // The query close matches were added for, and whether that lookup is still running.
+  let closeFor = $state('')
+  let lookingClose = $state(false)
+  const lifetime = new AbortController()
 
   async function loadMore() {
     if (loading || !hasNext) return
     loading = true
+    let firstTextPage = false
     try {
       let batch: Media[] = []
       let nextPage = false
@@ -62,6 +69,7 @@
         batch = [...credited, ...voiced]
         nextPage = !!staff?.staffMedia?.pageInfo?.hasNextPage || !!staff?.characterMedia?.pageInfo?.hasNextPage
       } else {
+        firstTextPage = page === 1 && !!filters.search?.trim()
         const res = await client
           .query(searchQuery(), { ...searchVariables(filters), page, withPreview: !$gameMode }, { requestPolicy: 'network-only' })
           .toPromise()
@@ -75,6 +83,7 @@
       for (const m of batch) if (!seen.has(m.id)) { seen.add(m.id); media.push(m); added++ }
       hasNext = nextPage
       page += 1
+      if (firstTextPage && !hasStrongMatch(batch, filters.search ?? '')) void addCloseMatches()
       // A whole page can consist of adult titles or duplicates shared by production and voice
       // credits. Keep paging rather than mistaking that filtered page for the end of the profile.
       if (hasNext && added === 0) queueMicrotask(() => void loadMore())
@@ -97,13 +106,38 @@
     loadMore()
   }
 
+  // AniList's search matches whole words spelled exactly, so a typo ("freiren") or a respaced title
+  // ("onepiece") finds nothing, or only something else. When the first page holds nothing that is
+  // plainly the title typed, the close matches it missed go first, still under these filters.
+  async function addCloseMatches() {
+    lookingClose = true
+    try {
+      const found = (await filteredCloseMatches(filters, { exclude: seen, signal: lifetime.signal, withPreview: !$gameMode }))
+        .filter((item) => ($showAdult || !item.isAdult) && !seen.has(item.id))
+      if (!found.length) return
+      for (const item of found) seen.add(item.id)
+      media.unshift(...found)
+      closeFor = filters.search?.trim() ?? ''
+    } catch {
+      // Abandoned with this page, or unreachable: AniList's own results stand.
+    } finally {
+      lookingClose = false
+    }
+  }
+
   function maybeLoad() {
     if (hasNext && !loading) loadMore()
   }
-  onMount(() => { void loadMore() })
+  onMount(() => {
+    void loadMore()
+    return () => lifetime.abort()
+  })
 </script>
 
 <div data-slot="search.results">
+{#if closeFor}
+  <p class="mb-3 text-sm text-muted-foreground">Showing close matches for “{closeFor}”.</p>
+{/if}
 {#if $browseLayout === 'list'}
   <!-- List: a vertical run of compact rows (small cover + title + meta) — denser, text-forward. -->
   <VirtualGrid
@@ -130,7 +164,7 @@
       </a>
     {/snippet}
   </VirtualGrid>
-  {#if loading}
+  {#if loading || (lookingClose && !media.length)}
     <div class="mt-1.5 flex flex-col gap-1.5">
       {#each Array.from({ length: media.length ? 4 : 8 }) as _}
         <div class="flex items-center gap-3 p-2"><div class="aspect-[2/3] w-12 shrink-0 animate-pulse rounded-md bg-muted"></div><div class="h-4 flex-1 animate-pulse rounded bg-muted"></div></div>
@@ -151,7 +185,7 @@
       <div class="browse-render-grid-item"><SmallCard media={m} fill reserveTitleLines /></div>
     {/snippet}
   </VirtualGrid>
-  {#if loading}
+  {#if loading || (lookingClose && !media.length)}
     <div class="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-3">
       {#each Array.from({ length: media.length ? 6 : 12 }) as _}
         <div class="aspect-[2/3] w-full animate-pulse rounded-md bg-muted"></div>
@@ -167,6 +201,6 @@
     <button onclick={retry} data-focusable
             class="rounded-md bg-muted px-3 py-1.5 text-sm font-black hover:bg-muted/70">Try again</button>
   </div>
-{:else if !loading && !media.length}
+{:else if !loading && !lookingClose && !media.length}
   <p class="mt-4 text-muted-foreground">No results.</p>
 {/if}

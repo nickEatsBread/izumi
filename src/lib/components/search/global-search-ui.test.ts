@@ -22,11 +22,22 @@ describe('global search focus styling', () => {
   })
 
   it('queries all enabled catalogs and merges namespaced results', () => {
-    expect(quick).toContain('Promise.allSettled(searched(selections).map')
-    expect(quick).toContain('const unique = new Map<string, Media>()')
-    expect(quick).toContain('unique.set(mediaKey(item), item)')
+    expect(quick).toContain('const catalogs = searched(selections)')
+    expect(quick).toContain('Promise.allSettled(catalogs.map(')
+    expect(quick).toContain('const key = mediaKey(item)')
     expect(quick).toContain("selection !== 'anilist' || !selections.includes('auto')")
-    expect(source).toContain('await quickSearch(clean, activeSelections)')
-    expect(topField).toContain('await quickSearch(text, selections)')
+    expect(source).toContain('await quickSearch(clean, activeSelections, {')
+    expect(topField).toContain('await quickSearch(text, selections, {')
+  })
+
+  it('shows each catalog as it answers and abandons the search the next keystroke replaces', () => {
+    expect(quick).toContain('onUpdate?.(ranked())')
+    expect(source).toContain('onUpdate: (partial) =>')
+    expect(topField).toContain('onUpdate: (media) =>')
+    for (const surface of [source, topField]) {
+      expect(surface).toContain('const abort = new AbortController()')
+      expect(surface).toContain('signal: abort.signal')
+      expect(surface).toContain('abort.abort()')
+    }
   })
 })
