@@ -148,6 +148,9 @@
   // native surface follows through insets past the window edge, which only the Windows embed
   // places; other desktops keep the fixed layout.
   const pageFlow = $derived(docked && dock.flow === 'page' && $isWindows)
+  // Beside a side rail only the stage's column scrolls (video, then the discussion at its full
+  // height); the rail keeps its own list scroller. Below the stage the whole dock is the page.
+  const columnFlow = $derived(pageFlow && dock.episodes !== 'below')
   // Player chrome a docked page already shows elsewhere (its title line, its navigation).
   const hides = (chrome: PlayerChrome) => docked && dock.hide.includes(chrome)
   const bottomNavInset = 'calc(var(--theme-bottom-nav, 4rem) + env(safe-area-inset-bottom))'
@@ -291,16 +294,18 @@
   // as `playerStage` for the native insets. Size changes arrive through ResizeObserver; a re-docked
   // layout or a moved navigation bar re-runs the effect, and the frame after mount settles layout.
   let viewportProbe = $state<HTMLDivElement | undefined>(undefined)
-  // The page-flow watch view's scroller: the stage moves as it scrolls, so each scroll event
-  // re-measures and the native video follows in the same frame.
+  // The page-flow watch view's scroller (the dock, or the stage's column beside a side rail): the
+  // stage moves as it scrolls, so each scroll event re-measures and the native video follows in
+  // the same frame.
   let dockScroller = $state<HTMLDivElement | undefined>(undefined)
+  let dockColumn = $state<HTMLDivElement | undefined>(undefined)
   $effect(() => {
     void docked
     void $shellNav
     const flow = pageFlow
     const root = overlayRoot
     const probe = viewportProbe
-    const scroller = flow ? dockScroller : undefined
+    const scroller = !flow ? undefined : columnFlow ? dockColumn : dockScroller
     if (!windowedChrome || !root || !probe) { playerStage.set(null); return }
     const measure = () => playerStage.set(measureStage(root.getBoundingClientRect(), probe.getBoundingClientRect(), flow))
     measure()
@@ -318,6 +323,17 @@
     }
   })
   $effect(() => () => playerStage.set(null))
+  // A newly picked episode starts at the top of a page-flow view, the way opening its page would:
+  // picked from far down (the rail beside a scrolled column, the grid under the video) it would
+  // otherwise play out of sight. A server swap keeps the place.
+  let pageEpisode = ''
+  $effect(() => {
+    const key = `${np.id ?? ''}|${np.episode ?? ''}`
+    const scroller = !pageFlow ? undefined : columnFlow ? dockColumn : dockScroller
+    if (key === pageEpisode) return
+    pageEpisode = key
+    scroller?.scrollTo({ top: 0 })
+  })
   let lastDrmError = ''
   function cmd(name: string, args: string[] = []): Promise<void> {
     if (name === 'seek' && remoteCastOwnsPlayback) {
@@ -1580,13 +1596,20 @@
      stage with sound. Every other region is an opaque SIBLING: the rail, the panel under the
      stage and the gutters beside a narrower stage.
      Page flow (`flow: "page"`) makes the dock itself the scroller: the stage and the blocks under it
-     form one column that scrolls like a web page. The scroller and the column are ancestors of the
-     stage, so they stay transparent too; instead the stage paints the page background AROUND itself
-     with a spread shadow, and the blocks sit a layer above that shadow. -->
+     form one column that scrolls like a web page. Beside a side rail the stage's column is the
+     scroller instead, the rail keeping its own list. The scroller and the column are ancestors of
+     the stage, so they stay transparent too; instead the stage paints the page background AROUND
+     itself with a spread shadow (clipped to the scroller), and the blocks sit a layer above it. -->
+{#if pageFlow && $shellNav === 'top'}
+  <!-- A scrolled page carries the native video up past the dock's top edge, under the top bar, and
+       a theme may paint that bar translucent (it sits over its banners). Back it with the page
+       colour so the video stops at the dock's edge like the rest of the page. -->
+  <div aria-hidden="true" class="pointer-events-none fixed inset-x-0 top-0 z-20 h-[4.75rem] bg-background"></div>
+{/if}
 <div
   data-slot="watch" data-layout={docked ? 'docked' : 'full'} data-flow={pageFlow ? 'page' : undefined} style:background|important="transparent"
   bind:this={dockScroller}
-  class={pageFlow ? 'izumi-player-dock fixed z-20 overflow-y-auto overscroll-contain' : docked ? `izumi-player-dock fixed z-20 flex ${dock.episodes === 'below' ? 'flex-col' : 'flex-row'}` : 'contents'}
+  class={pageFlow && !columnFlow ? 'izumi-player-dock fixed z-20 overflow-y-auto overscroll-contain' : docked ? `izumi-player-dock fixed z-20 flex ${dock.episodes === 'below' ? 'flex-col' : 'flex-row'}` : 'contents'}
   style:left={docked ? ($shellNav === 'sidebar' ? '3.5rem' : '0') : undefined}
   style:top={docked ? ($shellNav === 'top' ? '4.75rem' : '0') : undefined}
   style:right={docked ? '0' : undefined}
@@ -1594,11 +1617,12 @@
 >
 <div
   data-slot={pageFlow ? 'watch.page' : undefined}
+  bind:this={dockColumn}
   style:background|important="transparent"
-  class={pageFlow ? 'izumi-player-page flex flex-col pb-8' : docked ? `izumi-player-stage flex min-h-0 ${dock.episodes === 'below' ? 'w-full shrink-0 flex-row' : 'h-full shrink-0 flex-col'}` : 'contents'}
+  class={columnFlow ? 'izumi-player-page flex h-full shrink-0 flex-col overflow-y-auto overscroll-contain' : pageFlow ? 'izumi-player-page flex flex-col pb-8' : docked ? `izumi-player-stage flex min-h-0 ${dock.episodes === 'below' ? 'w-full shrink-0 flex-row' : 'h-full shrink-0 flex-col'}` : 'contents'}
   style:width={pageFlow ? `${dock.width}%` : docked && dock.episodes !== 'below' ? `${dock.width}%` : undefined}
-  style:max-width={pageFlow && dock.maxWidth ? `${dock.maxWidth}px` : undefined}
-  style:margin-inline={pageFlow && dock.align === 'center' ? 'auto' : undefined}
+  style:max-width={pageFlow && !columnFlow && dock.maxWidth ? `${dock.maxWidth}px` : undefined}
+  style:margin-inline={pageFlow && !columnFlow && dock.align === 'center' ? 'auto' : undefined}
   style:max-height={docked && !pageFlow && dock.episodes === 'below' ? '70%' : undefined}
 >
 {#if docked && !pageFlow && dock.episodes === 'below' && dock.width < 100 && dock.align === 'center'}
@@ -1608,15 +1632,17 @@
   data-slot="watch.stage" style:background|important="transparent"
   bind:this={overlayRoot}
   tabindex="-1"
-  class="izumi-player-root {docked ? 'relative aspect-video shrink-0 overflow-hidden' : 'fixed inset-y-0 right-0'} z-20 overscroll-none select-none outline-none focus:outline-none focus-visible:outline-none"
-  class:touch-none={!$commentsOpen}
+  class="izumi-player-root {docked ? 'relative aspect-video shrink-0 overflow-hidden' : 'fixed inset-y-0 right-0'} z-20 select-none outline-none focus:outline-none focus-visible:outline-none"
+  class:overscroll-none={!pageFlow}
+  class:touch-none={!pageFlow && !$commentsOpen}
+  class:touch-pan-y={pageFlow && !$commentsOpen}
   class:touch-auto={$commentsOpen}
   class:cursor-pointer={!gmMode && controlsVisible}
   class:cursor-none={gmMode || !controlsVisible}
   class:left-14={!docked && windowedChrome && $shellNav === 'sidebar'}
   class:left-0={docked || !windowedChrome || $shellNav !== 'sidebar'}
   style:width={docked ? (!pageFlow && dock.episodes === 'below' ? `${dock.width}%` : '100%') : undefined}
-  style:max-height={docked && !pageFlow ? '100%' : undefined}
+  style:max-height={docked && (!pageFlow || columnFlow) ? '100%' : undefined}
   style:box-shadow={pageFlow ? '0 0 0 200vmax hsl(var(--background))' : undefined}
   style:top={!docked && windowedChrome && $shellNav === 'top' ? '4.75rem' : undefined}
   style:bottom={!docked && windowedChrome && $shellNav === 'bottom' ? bottomNavInset : undefined}
@@ -1774,7 +1800,13 @@
     {#if dock.comments === 'below'}<CommentsPanel inline />{/if}
   </div>
 {/if}
-{#if pageFlow}
+{#if columnFlow}
+  <!-- Beside the rail: the discussion under the video at its full height, scrolling with it. It
+       grows to the column's foot while short, like the fixed layout's panel. -->
+  <div data-part="watch.block" data-block="comments" data-theme-surface="player-rail" class="izumi-player-under relative z-[21] grow border-t border-border bg-background">
+    <CommentsPanel inline expand tiles={false} />
+  </div>
+{:else if pageFlow}
   <!-- The blocks under the video, in the theme's order, each above the stage's background shadow.
        Their menus open upward over the video, the way a site's player settings bar does. -->
   {#each dock.below as block (block)}
@@ -1787,7 +1819,7 @@
   {/each}
 {/if}
 </div>
-{#if docked && !pageFlow}
+{#if docked && (!pageFlow || columnFlow)}
   <aside data-slot="watch.rail" data-theme-surface="player-rail" class="izumi-player-rail flex min-h-0 min-w-0 flex-1 flex-col border-border bg-background {dock.episodes === 'below' ? 'w-full border-t' : 'h-full border-l'}">
     {#if dock.episodes === 'below'}
       <div class="min-h-0 flex-1 overflow-y-auto">

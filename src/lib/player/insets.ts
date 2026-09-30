@@ -31,14 +31,17 @@ export const TOP_BAR_HEIGHT = 76
 export const BOTTOM_NAV_HEIGHT = 64
 
 const clamp01 = (value: number) => Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0
-const clampVertical = (value: number) => Number.isFinite(value) ? Math.min(1, Math.max(-OFFSCREEN_FRACTION, value)) : 0
+// Measured from the opposite edge, so a stage scrolled wholly above the window has a bottom past 1.
+const clampVertical = (value: number) => Number.isFinite(value) ? Math.min(1 + OFFSCREEN_FRACTION, Math.max(-OFFSCREEN_FRACTION, value)) : 0
 /** How far past the window a scrolled stage may be reported, in viewport heights. */
 const OFFSCREEN_FRACTION = 64
 
 /** The stage's edges relative to a probe that spans the whole viewport. `scrolls`: the stage moves
  *  with a scrolling page (a theme's `flow: "page"` watch view), so its top can sit above the window
  *  and its bottom below it — those edges keep their sign, and the native surface extends past the
- *  window by the same amount instead of squeezing the picture into the visible part. */
+ *  window by the same amount instead of squeezing the picture into the visible part. Once the page
+ *  has carried the whole stage past the window both edges still keep their true distance, so the
+ *  surface keeps the stage's size rather than stretching to the window edge. */
 export function measureStage(stage: DOMRectReadOnly, viewport: DOMRectReadOnly, scrolls = false): StageFractions | null {
   if (viewport.width <= 0 || viewport.height <= 0) return null
   const vertical = scrolls ? clampVertical : clamp01

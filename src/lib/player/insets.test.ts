@@ -50,6 +50,16 @@ describe('playerInsets', () => {
     expect(measureStage(rect(107, -200, 1066, 600), rect(0, 0, 1280, 800))!.top).toBe(0)
   })
 
+  it('keeps the stage its own size once the page has scrolled it wholly out of the window', () => {
+    // Reading far down a discussion: a 922×518 stage 8636px above the window. Capping its bottom
+    // edge at the window's top asked the native surface for 17272px at 2x, past the 16384px a
+    // Direct3D texture can be.
+    const gone = measureStage(rect(0, -8636, 922, 518), rect(0, 0, 1280, 800), true)!
+    const insets = playerInsets({ chrome: true, nav: 'top', stage: gone, viewport, dpr: 2, uiScale: 1 })
+    expect(insets).toEqual({ left: 0, top: -17272, right: 716, bottom: 17836 })
+    expect(viewport.height * 2 - insets.top - insets.bottom).toBe(518 * 2)
+  })
+
   it('compares insets by value so unchanged geometry is not re-sent', () => {
     expect(sameInsets({ left: 1, top: 2, right: 3, bottom: 4 }, { left: 1, top: 2, right: 3, bottom: 4 })).toBe(true)
     expect(sameInsets(null, { left: 0, top: 0, right: 0, bottom: 0 })).toBe(false)

@@ -213,8 +213,10 @@ export interface PlayerDock {
   align?: 'start' | 'center'
   /** The episode discussion under the stage (side rail) or after the episode grid (below). */
   comments?: 'below' | 'hidden'
-  /** API 3, with `episodes: "below"`: `page` scrolls the watch view like a web page — the video
-   *  moves up with it and every block under it keeps its natural height (no inner scrollers). */
+  /** API 3: `page` scrolls the watch view like a web page — the video moves up with it and every
+   *  block under it keeps its natural height (no inner scrollers). Beside a side rail only the
+   *  stage's column scrolls (the rail keeps its own list) and `page` is the default there while
+   *  the discussion sits under the stage; below the stage the default is `fixed`. */
   flow?: 'fixed' | 'page'
   /** API 3: the widest the stage column gets, in CSS px, centred when `align` is `center`. */
   maxWidth?: number
@@ -855,7 +857,9 @@ export interface ResolvedPlayerDock {
   width: number
   align: 'start' | 'center'
   comments: 'below' | 'hidden'
-  /** `page` only below the stage; beside it the rail keeps its own scroller. */
+  /** Beside a side rail `page` scrolls the stage's column with the discussion under it (the
+   *  rail keeps its own scroller), so it is the default there; with nothing under the stage
+   *  there is nothing to scroll to, and the layout stays `fixed`. */
   flow: 'fixed' | 'page'
   maxWidth?: number
   /** The blocks under the stage (below only): the theme's list, or the episode grid then the
@@ -875,7 +879,7 @@ export function resolvePlayerDock(layout?: ThemePresentation): ResolvedPlayerDoc
     width: player?.dock?.width ?? (episodes === 'below' ? 100 : 68),
     align: player?.dock?.align ?? 'start',
     comments,
-    flow: episodes === 'below' ? player?.dock?.flow ?? 'fixed' : 'fixed',
+    flow: episodes === 'below' ? player?.dock?.flow ?? 'fixed' : comments === 'below' ? player?.dock?.flow ?? 'page' : 'fixed',
     maxWidth: player?.dock?.maxWidth,
     below: player?.dock?.below ?? (comments === 'below' ? ['episodes', 'comments'] : ['episodes']),
     toolbar: player?.dock?.toolbar ?? ['server', 'episode', 'release', 'download'],

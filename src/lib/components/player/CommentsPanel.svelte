@@ -25,7 +25,9 @@
   // `expand` (inline only): the page scrolls instead of the panel (`flow: "page"`), so the panel takes
   // its content's height — no scroller of its own, and the Disqus loader reports its height to size
   // its frame, the way the phone watch page does.
-  let { inline = false, expand = false }: { inline?: boolean; expand?: boolean } = $props()
+  // `tiles`: the reactions strip as big tiles (default: with `expand`). The column beside a side
+  // rail keeps the compact chips of the fixed panel it replaces: same width, same place.
+  let { inline = false, expand = false, tiles }: { inline?: boolean; expand?: boolean; tiles?: boolean } = $props()
   let threads = $state<DiscussionThread[]>([])
   let loading = $state(false)
   let filter = $state('All')
@@ -437,7 +439,7 @@
   // chips (side) and the big Hayami-style tiles (expanded). Posted on mode change + on iframe load.
   const postMode = () => embedIframe?.contentWindow?.postMessage({
     type: 'izumi-mode',
-    expanded: expand || $discussionExpanded || $gameMode || ($fullscreen && !$isAndroid),
+    expanded: (tiles ?? expand) || $discussionExpanded || $gameMode || ($fullscreen && !$isAndroid),
     gameMode: $gameMode,
   }, location.origin)
   const postIframeState = () => { postMode(); postTacConfig() }

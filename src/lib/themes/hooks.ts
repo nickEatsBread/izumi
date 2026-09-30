@@ -177,10 +177,10 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'episode.continue.title', kind: 'part', description: "The card's episode title." },
   ],
   watch: [
-    { name: 'watch', kind: 'slot', description: 'The player area; the scroller of a page-flow watch view.', states: ['data-layout', 'data-flow'] },
+    { name: 'watch', kind: 'slot', description: 'The player area; the scroller of a page-flow watch view with the episodes below the video.', states: ['data-layout', 'data-flow'] },
     { name: 'watch.stage', kind: 'slot', description: 'The video frame. It and its ancestors never paint a background: the video is drawn behind the page.' },
-    { name: 'watch.page', kind: 'slot', description: 'The column of a page-flow watch view: the video frame, then the blocks under it. An ancestor of the frame, so it never paints a background.' },
-    { name: 'watch.block', kind: 'part', description: 'One block under a page-flow video, in `dock.below` order.', states: ['data-block'] },
+    { name: 'watch.page', kind: 'slot', description: 'The column of a page-flow watch view: the video frame, then the blocks under it (the scroller beside a side rail). An ancestor of the frame, so it never paints a background.' },
+    { name: 'watch.block', kind: 'part', description: 'One block under a page-flow video, in `dock.below` order (beside a side rail, the discussion).', states: ['data-block'] },
     { name: 'watch.toolbar', kind: 'slot', description: 'The row of dropdowns under a docked video (`dock.below` `toolbar`).' },
     { name: 'watch.toolbar.item', kind: 'part', description: 'One dropdown button: the server, the episode, the release or the download.', states: ['data-item', 'data-state'] },
     { name: 'watch.toolbar.menu', kind: 'part', description: 'An open dropdown menu.', states: ['data-item'] },

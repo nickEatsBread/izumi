@@ -211,8 +211,15 @@ describe('theme presentation contract', () => {
     const dock = { episodes: 'below', flow: 'page', maxWidth: 1100, below: ['toolbar', 'info', 'comments'], toolbar: ['episode', 'release'], hide: ['back', 'title'] }
     expect(parsePresentation({ player: { layout: 'docked', dock } }).player?.dock).toEqual(dock)
     expect(resolvePlayerDock(parsePresentation({ player: { layout: 'docked', dock } }))).toMatchObject({ flow: 'page', maxWidth: 1100, below: ['toolbar', 'info', 'comments'], toolbar: ['episode', 'release'], hide: ['back', 'title'] })
-    // Beside the stage the rail keeps its own scroller, whatever the theme asked for.
-    expect(resolvePlayerDock(parsePresentation({ player: { layout: 'docked', dock: { flow: 'page' } } })).flow).toBe('fixed')
+    // Beside a side rail the video's column scrolls with the discussion under it by default (API 2
+    // packages included); `fixed` keeps the discussion in its own scroller, and with nothing under
+    // the video there is nothing to scroll to. Below the video the page stays opt-in.
+    expect(resolvePlayerDock(parsePresentation({ player: { layout: 'docked' } }, 2)).flow).toBe('page')
+    expect(resolvePlayerDock(parsePresentation({ player: { layout: 'docked', dock: { episodes: 'right', width: 72 } } }, 2)).flow).toBe('page')
+    expect(resolvePlayerDock(parsePresentation({ player: { layout: 'docked', dock: { flow: 'fixed' } } })).flow).toBe('fixed')
+    expect(resolvePlayerDock(parsePresentation({ player: { layout: 'docked', dock: { comments: 'hidden' } } })).flow).toBe('fixed')
+    expect(resolvePlayerDock(parsePresentation({ player: { layout: 'docked', dock: { comments: 'hidden', flow: 'page' } } })).flow).toBe('fixed')
+    expect(resolvePlayerDock(parsePresentation({ player: { layout: 'docked', dock: { episodes: 'below' } } })).flow).toBe('fixed')
     // Without a list the grid comes first, then the discussion unless it is hidden.
     expect(resolvePlayerDock(parsePresentation({ player: { layout: 'docked', dock: { episodes: 'below', comments: 'hidden' } } })).below).toEqual(['episodes'])
     expect(() => parsePresentation({ player: { dock: { below: ['info', 'info'] } } })).toThrow('twice')

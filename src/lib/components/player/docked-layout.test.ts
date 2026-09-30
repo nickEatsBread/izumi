@@ -70,7 +70,7 @@ describe('docked watch layout', () => {
 
   it('never paints over the transparent video hole: no background on the root or its ancestors', () => {
     // The webview is transparent over mpv; an opaque wrapper or root showed a black stage with sound.
-    expect(overlay).toContain("class={pageFlow ? 'izumi-player-dock fixed z-20 overflow-y-auto overscroll-contain' : docked ? `izumi-player-dock fixed z-20 flex ${dock.episodes === 'below' ? 'flex-col' : 'flex-row'}` : 'contents'}")
+    expect(overlay).toContain("class={pageFlow && !columnFlow ? 'izumi-player-dock fixed z-20 overflow-y-auto overscroll-contain' : docked ? `izumi-player-dock fixed z-20 flex ${dock.episodes === 'below' ? 'flex-col' : 'flex-row'}` : 'contents'}")
     expect(overlay).not.toContain('izumi-player-dock fixed z-20 flex bg-background')
     expect(overlay).toContain("class=\"izumi-player-root {docked ? 'relative aspect-video shrink-0 overflow-hidden' : 'fixed inset-y-0 right-0'}")
     expect(overlay).not.toContain("'relative aspect-video shrink-0 overflow-hidden bg-black'")
@@ -83,7 +83,7 @@ describe('docked watch layout', () => {
     expect(read('../../themes/presentation.ts')).toContain("const comments = player?.dock?.comments ?? 'below'")
     expect(overlay).toContain("{#if dock.comments === 'below'}<CommentsPanel inline />{/if}")
     const comments = read('./CommentsPanel.svelte')
-    expect(comments).toContain('let { inline = false, expand = false }: { inline?: boolean; expand?: boolean } = $props()')
+    expect(comments).toContain('let { inline = false, expand = false, tiles }: { inline?: boolean; expand?: boolean; tiles?: boolean } = $props()')
     expect(comments).toContain('if (!inline && !$commentsOpen) return')
     expect(comments).toContain(`<div data-slot="watch.comments" data-variant="inline" data-comments-panel data-comments-inline class="flex flex-col bg-background text-foreground {expand ? '' : 'h-full min-h-0'}">`)
   })
@@ -110,7 +110,7 @@ describe('docked watch layout', () => {
 
 describe('page-flow watch view', () => {
   it('scrolls the view with the video in it, and the native video follows on Windows', () => {
-    expect(read('../../themes/presentation.ts')).toContain("flow: episodes === 'below' ? player?.dock?.flow ?? 'fixed' : 'fixed',")
+    expect(read('../../themes/presentation.ts')).toContain("flow: episodes === 'below' ? player?.dock?.flow ?? 'fixed' : comments === 'below' ? player?.dock?.flow ?? 'page' : 'fixed',")
     expect(overlay).toContain("const pageFlow = $derived(docked && dock.flow === 'page' && $isWindows)")
     expect(overlay).toContain("scroller?.addEventListener('scroll', measure, { passive: true })")
     expect(read('../../player/insets.ts')).toContain('export function measureStage(stage: DOMRectReadOnly, viewport: DOMRectReadOnly, scrolls = false)')
@@ -123,7 +123,7 @@ describe('page-flow watch view', () => {
     // Both are ancestors of the video hole: the stage's spread shadow is the page background instead.
     expect(overlay).toContain("style:box-shadow={pageFlow ? '0 0 0 200vmax hsl(var(--background))' : undefined}")
     expect(overlay).toContain('<div data-part="watch.block" data-block={block} class="relative z-[21]">')
-    expect(overlay).toContain("class={pageFlow ? 'izumi-player-page flex flex-col pb-8'")
+    expect(overlay).toContain(": pageFlow ? 'izumi-player-page flex flex-col pb-8' :")
   })
 
   it('lays the blocks out under the video with a discussion as tall as its comments', () => {
@@ -132,6 +132,47 @@ describe('page-flow watch view', () => {
     expect(comments).toContain('expand ? mobileEmbedSrc(disqusEmbedSrc(embedUrl)) : disqusEmbedSrc(embedUrl)')
     expect(comments).toContain("style:height={expand ? `${disqusHeight ?? 720}px` : undefined}")
     expect(comments).toContain("class={expand ? 'px-3 py-3' : 'flex-1 touch-pan-y overflow-y-auto overscroll-contain px-3 py-3'}")
+  })
+
+  it('beside a side rail scrolls the video column with the discussion under it, not the discussion alone', () => {
+    expect(overlay).toContain("const columnFlow = $derived(pageFlow && dock.episodes !== 'below')")
+    // The column is the scroller (the dock stays a plain row) and the native video follows it.
+    expect(overlay).toContain("class={columnFlow ? 'izumi-player-page flex h-full shrink-0 flex-col overflow-y-auto overscroll-contain'")
+    expect(overlay).toContain('bind:this={dockColumn}')
+    expect(overlay).toContain('const scroller = !flow ? undefined : columnFlow ? dockColumn : dockScroller')
+    // The discussion takes its comments' height inside that column; the rail keeps its own list.
+    const column = overlay.slice(overlay.indexOf('{#if columnFlow}'), overlay.indexOf('{:else if pageFlow}'))
+    expect(column).toContain('<div data-part="watch.block" data-block="comments" data-theme-surface="player-rail" class="izumi-player-under relative z-[21] grow border-t border-border bg-background">')
+    // Same width as the fixed panel, so the reactions keep their compact chips (a full-width page
+    // discussion shows tiles).
+    expect(column).toContain('<CommentsPanel inline expand tiles={false} />')
+    expect(read('./CommentsPanel.svelte')).toContain('expanded: (tiles ?? expand) || $discussionExpanded || $gameMode')
+    expect(overlay).toMatch(/\{#if docked && \(!pageFlow \|\| columnFlow\)\}\r?\n {2}<aside data-slot="watch\.rail"/)
+    // The video still fits the visible column, so its controls are on screen before any scroll.
+    expect(overlay).toContain("style:max-height={docked && (!pageFlow || columnFlow) ? '100%' : undefined}")
+    // A theme's width, not the page column's cap, sizes it beside the rail.
+    expect(overlay).toContain("style:max-width={pageFlow && !columnFlow && dock.maxWidth ? `${dock.maxWidth}px` : undefined}")
+  })
+
+  it('starts a newly picked episode at the top of the page, but keeps the place on a server swap', () => {
+    const effect = overlay.slice(overlay.indexOf("let pageEpisode = ''"), overlay.indexOf('let lastDrmError'))
+    expect(effect).toContain('const key = `${np.id ?? \'\'}|${np.episode ?? \'\'}`')
+    expect(effect).toContain('const scroller = !pageFlow ? undefined : columnFlow ? dockColumn : dockScroller')
+    expect(effect).toContain('scroller?.scrollTo({ top: 0 })')
+  })
+
+  it('lets a wheel or a vertical drag over the video scroll the page', () => {
+    // The full-window player cuts scroll chaining at the video; on a page-flow view the video is
+    // part of the page, so the wheel over it has to reach the scroller.
+    expect(overlay).toContain('class:overscroll-none={!pageFlow}')
+    expect(overlay).toContain('class:touch-none={!pageFlow && !$commentsOpen}')
+    expect(overlay).toContain('class:touch-pan-y={pageFlow && !$commentsOpen}')
+    expect(overlay).not.toContain("z-20 overscroll-none select-none")
+  })
+
+  it('backs a translucent top bar so the scrolled video never shows through it', () => {
+    expect(overlay).toContain("{#if pageFlow && $shellNav === 'top'}")
+    expect(overlay).toContain('<div aria-hidden="true" class="pointer-events-none fixed inset-x-0 top-0 z-20 h-[4.75rem] bg-background"></div>')
   })
 
   it('lets a docked theme drop the player chrome it shows elsewhere', () => {
