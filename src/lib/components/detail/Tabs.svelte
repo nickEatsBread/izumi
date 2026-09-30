@@ -33,8 +33,10 @@
   }
 </script>
 
+<!-- The strip scrolls sideways only: `overflow-x-auto` alone makes y `auto` too, and the underline's
+     1px overhang then left the strip scrollable by a pixel, so a wheel over the tabs nudged them. -->
 <div data-part="tabs" data-variant={variant} data-theme-tabs={variant} data-page-tabs={page || undefined}
-  class={bottom ? 'fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur' : `-mx-4 mb-4 flex overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0
+  class={bottom ? 'fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur' : `-mx-4 mb-4 flex overflow-x-auto overflow-y-hidden px-4 [scrollbar-width:none] sm:mx-0 sm:px-0
   ${look === 'underline' ? 'gap-1 border-b border-border' : ''}
   ${look === 'pills' ? 'gap-2' : ''}
   ${look === 'segmented' ? 'gap-1 rounded-xl bg-secondary p-1 sm:w-fit' : ''}
