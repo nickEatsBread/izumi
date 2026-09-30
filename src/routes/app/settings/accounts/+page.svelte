@@ -379,7 +379,7 @@
     <div><h2 class="text-3xl font-bold tracking-tight">Accounts</h2><p class="mt-2 text-sm text-muted-foreground">{$profilesEnabled ? `Connections for ${$activeProfile.name}` : 'Your connected services, in one place.'}</p></div>
     <a href="/app/settings/profiles" data-focusable class="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground">{#if $profilesEnabled}<img src={profileAvatarUrl($activeProfile.avatar, $activeProfile.color)} alt="" class="size-8 rounded-lg" />Manage profiles{:else}Set up profiles{/if}</a>
   </header>
-  <nav aria-label="Account settings sections" class="mb-7 flex max-w-2xl gap-5 overflow-x-auto border-b border-border">
+  <nav aria-label="Account settings sections" data-page-tabs class="mb-7 flex max-w-2xl gap-5 overflow-x-auto border-b border-border">
     {#each [{ id: 'connections', label: 'Connections' }, { id: 'libraries', label: 'Lists & imports' }, { id: 'behaviour', label: 'Sync behaviour' }] as item}
       <button type="button" data-focusable aria-current={section === item.id ? 'page' : undefined} onclick={() => section = item.id as AccountSection} class="min-h-12 shrink-0 border-b-2 px-1 text-sm font-bold transition-colors {section === item.id ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}">{item.label}</button>
     {/each}

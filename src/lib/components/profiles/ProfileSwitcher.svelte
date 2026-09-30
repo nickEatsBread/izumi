@@ -61,7 +61,7 @@
 
 <svelte:window onkeydown={keydown} />
 {#if visible}
-  <div bind:this={panel} role="dialog" aria-modal="true" aria-labelledby="profile-heading" tabindex="-1" data-nav-trap class="fixed inset-0 z-[90] flex flex-col overflow-y-auto bg-background px-6 py-12">
+  <div bind:this={panel} role="dialog" aria-modal="true" aria-labelledby="profile-heading" tabindex="-1" data-nav-trap data-nav-escape data-nav-scroll-container data-nav-back-exit={$activeProfileLocked && !pending ? '' : undefined} class="fixed inset-0 z-[90] flex flex-col overflow-y-auto bg-background px-6 py-12">
     {#if !$activeProfileLocked}<button type="button" data-focusable onclick={back} aria-label="Close profiles" class="absolute right-6 top-10 grid size-12 place-items-center rounded-full text-muted-foreground hover:bg-secondary focus-visible:ring-2 focus-visible:ring-theme"><X size={22} /></button>{/if}
     <div class="m-auto w-full max-w-5xl py-12 text-center">
       <div class="mb-8"><Wordmark /></div>

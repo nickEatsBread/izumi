@@ -16,6 +16,7 @@
   import { themePreset } from '$lib/settings/ui'
   import { protectedSurface, themeSafeMode } from '$lib/themes/safe-mode'
   import { themeCssStatus } from '$lib/theme'
+  import { navLayer } from '$lib/nav/overlay'
 
   let tab = $state<'browse' | 'installed'>('browse')
   // Raw, never proxied: listingFor is keyed by these exact objects.
@@ -150,7 +151,6 @@
 </script>
 
 <svelte:head><title>Themes · izumi</title></svelte:head>
-<svelte:window onkeydown={(event) => { if (event.key === 'Escape' && showAdd) closeAdd() }} />
 <div class="themes-page" data-theme-protected use:protectedSurface>
   <header class="page-heading"><div><p class="eyebrow">Make it yours</p><h2>Themes</h2><p class="intro">A different look. Still your client.</p></div><a class="control gap-2" href="/app/settings/theme-studio" data-focusable><Palette size={16} aria-hidden="true" /> Theme Studio</a></header>
   {#if $themeStudioOpen}<p class="message">Finish or discard your Theme Studio draft before applying another theme.</p>{/if}
@@ -161,8 +161,10 @@
   <input bind:this={folderInput} type="file" accept=".json,application/json" multiple webkitdirectory class="hidden" onchange={(event) => { const input = event.currentTarget; void fromFiles(input.files); input.value = '' }} aria-label="Import theme package folder" />
   {#if showAdd}
     <div class="add-layer">
-      <button type="button" class="add-scrim" aria-label="Close add theme" onclick={closeAdd}></button>
-      <section class="add-dialog" role="dialog" aria-modal="true" aria-labelledby="add-theme-title">
+      <button type="button" class="add-scrim" tabindex="-1" aria-label="Close add theme" onclick={closeAdd}></button>
+      <!-- A nav layer: Escape (the shared capture), B and remote Back close only this dialog, and the
+           d-pad stays inside it. -->
+      <div class="add-dialog" role="dialog" aria-modal="true" aria-labelledby="add-theme-title" data-nav-trap data-nav-escape use:navLayer={{ kind: 'themes-add', onClose: closeAdd }}>
         <h3 id="add-theme-title">Add a theme</h3>
         <p>Install from the community catalog, a public HTTPS link, a JSON file, or a folder of packages.</p>
         <button type="button" class="control catalog-link" data-focusable onclick={() => void openUrl(THEME_CATALOG_PROJECT_URL)}>Open izumi-themes catalog</button>
@@ -184,7 +186,7 @@
           </div>
         {/if}
         <button class="text-close" data-focusable onclick={closeAdd}>Cancel</button>
-      </section>
+      </div>
     </div>
   {/if}
   {#if error}<p role="alert" class="message error">{error}</p>{/if}

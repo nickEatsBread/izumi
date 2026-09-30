@@ -163,7 +163,7 @@
   {#if request}
     <button type="button" tabindex="-1" aria-label="Close section picker" onclick={() => homeEditorInsertRequest.set(null)} class="fixed inset-0 z-[74] bg-black/70 backdrop-blur-sm" transition:fade={{ duration: 120 }}></button>
     <div class="pointer-events-none fixed inset-x-0 bottom-0 z-[75] flex max-h-[min(78vh,42rem)] justify-center sm:inset-0 sm:items-center sm:p-5">
-      <div bind:this={dialog} role="dialog" aria-modal="true" aria-labelledby="add-home-section-title" data-nav-trap class="pointer-events-auto flex max-h-full w-full flex-col overflow-hidden rounded-t-3xl border border-border bg-background shadow-2xl sm:max-w-xl sm:rounded-3xl" transition:fly={{ y: 22, duration: 170 }}>
+      <div bind:this={dialog} role="dialog" aria-modal="true" aria-labelledby="add-home-section-title" data-nav-trap class="pointer-events-auto flex max-h-full w-full flex-col overflow-hidden rounded-t-3xl border border-border bg-background shadow-2xl sm:max-w-xl sm:rounded-3xl" data-nav-escape transition:fly={{ y: 22, duration: 170 }}>
         <div class="flex items-start gap-3 border-b border-border px-5 pb-4 pt-5">
           <div class="min-w-0 flex-1">
             <h2 id="add-home-section-title" class="text-lg font-black">Add a section</h2>

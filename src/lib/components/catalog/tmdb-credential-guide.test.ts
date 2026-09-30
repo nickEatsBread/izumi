@@ -21,7 +21,8 @@ describe('TMDB credential guide', () => {
   it('opens the official API settings and provides accessible dismissal', () => {
     expect(source).toContain("const apiSettingsUrl = 'https://www.themoviedb.org/settings/api'")
     expect(source).toContain('aria-modal="true"')
-    expect(source).toContain("event.key === 'Escape'")
+    // Escape, B and remote Back reach it through its nav layer (one shared Escape capture).
+    expect(source).toContain("use:navLayer={{ kind: 'tmdb-guide', onClose: () => onClose()")
     expect(source).toContain('onClose()')
   })
 

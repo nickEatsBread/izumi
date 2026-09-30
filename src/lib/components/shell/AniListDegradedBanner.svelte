@@ -47,7 +47,7 @@
 
 {#if detailsOpen && $anilistDegraded}
   <div class="fixed inset-0 z-[80] grid place-items-center bg-black/70 p-4 backdrop-blur-sm">
-    <div role="dialog" aria-modal="true" aria-labelledby="anilist-error-title" data-nav-trap
+    <div role="dialog" aria-modal="true" aria-labelledby="anilist-error-title" data-nav-trap data-nav-escape
          class="w-full max-w-lg rounded-2xl border border-white/10 bg-neutral-950 p-5 text-white shadow-2xl">
       <div class="flex items-start justify-between gap-4">
         <div>

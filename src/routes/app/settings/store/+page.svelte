@@ -272,12 +272,12 @@
     const add = page.url.searchParams.get('add')
     if (!add) return
     untrack(() => {
-      storesDialog = { mode: 'add', url: add }
       const url = new URL(page.url)
       url.searchParams.delete('add')
-      // A real replace navigation: shallow replaceState would keep the old URL in this history entry,
-      // and Back would open the preview again.
+      // A real replace navigation (a shallow replaceState would let Back reopen the preview). The
+      // preview (a nav layer) opens after it lands: a navigation closes every nav layer as it starts.
       void goto(url, { replaceState: true, noScroll: true, keepFocus: true }).catch(() => {})
+        .then(() => { storesDialog = { mode: 'add', url: add } })
     })
   })
 

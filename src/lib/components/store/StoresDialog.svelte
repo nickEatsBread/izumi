@@ -8,6 +8,7 @@
   import { forgetStoreListing } from '$lib/store/listing-cache'
   import type { LoadedStore } from '$lib/store/load'
   import { ADDON_DIRECTORY_ID } from '$lib/store/types'
+  import { navLayer } from '$lib/nav/overlay'
 
   let { mode = 'manage', initialUrl = '', loaded, onclose, onadded }: {
     mode?: 'manage' | 'add'
@@ -74,11 +75,12 @@
 
 </script>
 
-<svelte:window onkeydown={(event) => { if (event.key === 'Escape' && !busy) onclose() }} />
-
 <div class="fixed inset-0 z-[100] grid place-items-end bg-black/75 sm:place-items-center sm:p-4" role="presentation"
      onclick={(event) => { if (event.target === event.currentTarget && !busy) onclose() }}>
+  <!-- A nav layer: Escape (the shared capture), B and remote Back close only this dialog, never while
+       a store is being checked. -->
   <div role="dialog" data-theme-protected aria-modal="true" aria-labelledby="stores-dialog-title" data-nav-trap data-nav-escape
+       use:navLayer={{ kind: 'stores-dialog', onClose: () => { if (busy) return false; onclose() } }} data-nav-scroll-container
        class="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-border bg-background p-5 shadow-2xl sm:rounded-2xl sm:p-6">
     <h2 id="stores-dialog-title" class="text-lg font-black">Stores</h2>
     <div class="mb-4 mt-3 flex gap-2">

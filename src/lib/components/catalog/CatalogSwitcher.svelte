@@ -17,6 +17,8 @@
   import { homeEditorOpen } from '$lib/catalog/home-editor'
   import { isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
+  import { navLayer } from '$lib/nav/overlay'
+  import type { NavLayerCloseReason } from '$lib/nav/layers'
 
   let {
     appearance = 'overlay',
@@ -89,12 +91,14 @@
     }
   }
 
+  /** The open panel is a nav layer: Escape (the shared capture), B and remote Back close it alone
+   *  and put focus back on the trigger, as Escape always did. A navigation or a preempting prompt
+   *  just closes it. */
+  function closeSwitcher(reason: NavLayerCloseReason) {
+    void setOpen(false, reason === 'back')
+  }
+
   function onListKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      void setOpen(false, true)
-      return
-    }
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
     event.preventDefault()
     const options = [...(listbox?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])]
@@ -138,7 +142,7 @@
   <!-- Keep caller positioning on the outer wrapper. Combining `relative` with Home's supplied
        `absolute` class let Tailwind's generated order choose `relative`, putting this control in
        document flow and exposing a black strip above the full-bleed hero. -->
-  <div bind:this={root} class={className} data-nav-trap={open ? '' : undefined}>
+  <div bind:this={root} class={className}>
     <div class="relative {display === 'rail' ? 'w-full' : 'w-fit'}">
     <button
       bind:this={trigger}
@@ -226,6 +230,9 @@
         role={$isMobile ? 'dialog' : undefined}
         aria-modal={$isMobile ? 'true' : undefined}
         aria-label={$isMobile ? 'Choose catalog' : undefined}
+        data-nav-trap
+        data-nav-escape
+        use:navLayer={{ kind: 'catalog-switcher', onClose: closeSwitcher, initialFocus: 'none', returnFocus: 'none' }}
         class="z-[70] overflow-hidden border border-border bg-background text-foreground shadow-2xl
           {$isMobile
             ? 'fixed inset-x-0 bottom-0 max-h-[min(80vh,38rem)] rounded-t-3xl pb-[env(safe-area-inset-bottom)]'
@@ -247,6 +254,7 @@
           role="listbox"
           tabindex="-1"
           aria-label="Catalog"
+          data-nav-scroll-container
           class="max-h-[min(56vh,25rem)] space-y-1 overflow-y-auto overscroll-contain px-2 pb-2"
           onkeydown={onListKeydown}
         >

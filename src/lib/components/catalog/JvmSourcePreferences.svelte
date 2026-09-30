@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import X from '@lucide/svelte/icons/x'
   import Check from '@lucide/svelte/icons/check'
+  import { navLayer } from '$lib/nav/overlay'
   import {
     applyJvmSourcePreferenceChanges,
     jvmCatalogSourcePreferences,
@@ -83,9 +84,11 @@
   onMount(() => void load())
 </script>
 
-<svelte:window onkeydown={(event) => { if (event.key === 'Escape') onClose() }} />
-
-<div role="dialog" aria-modal="true" aria-label="{sourceName} settings" tabindex="-1" class="fixed inset-0 z-[150] grid place-items-end bg-black/70 sm:place-items-center sm:p-4" onclick={(event) => { if (event.target === event.currentTarget) onClose() }} onkeydown={(event) => { if (event.key === 'Escape') onClose() }}>
+<!-- A nav layer: Escape (the shared capture), B and remote Back close it, except while a save is in
+     flight, and the d-pad stays inside it. The backdrop click is a pointer shortcut; keys close it
+     through the layer. -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<div role="dialog" aria-modal="true" aria-label="{sourceName} settings" tabindex="-1" data-nav-trap data-nav-escape use:navLayer={{ kind: 'jvm-source-preferences', onClose: () => { if (saving) return false; onClose() } }} class="fixed inset-0 z-[150] grid place-items-end bg-black/70 sm:place-items-center sm:p-4" onclick={(event) => { if (event.target === event.currentTarget) onClose() }}>
   <section class="flex max-h-[100dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-card shadow-2xl sm:max-h-[calc(100dvh-2rem)] sm:rounded-2xl">
     <header class="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
       <div>
@@ -95,7 +98,7 @@
       <button type="button" data-focusable onclick={onClose} aria-label="Close settings" class="grid size-9 place-items-center rounded-full hover:bg-accent"><X size={18} /></button>
     </header>
 
-    <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+    <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4" data-nav-scroll-container>
       {#if loading}
         <div class="space-y-3"><div class="skeloader h-12 rounded-lg"></div><div class="skeloader h-12 rounded-lg"></div></div>
       {:else if !preferences.length && !error}

@@ -42,6 +42,7 @@
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { masonryItem } from '$lib/actions/masonry'
+  import { navLayer } from '$lib/nav/overlay'
 
   // One control over two stores: whether to auto-pick at all, and whether to wait first. They were
   // separate toggles, which read as unrelated settings even though the second only means anything
@@ -289,14 +290,6 @@
   const configuredCount = $derived($addonUrls.length + $extensionUrls.length + orphanCount)
 </script>
 
-<svelte:window onkeydown={(event) => {
-  if ((filterOpen || sortOpen) && event.key === 'Escape') {
-    event.preventDefault()
-    filterOpen = false
-    sortOpen = false
-  }
-}} />
-
 <div class="min-w-0 overflow-x-hidden p-4 sm:p-8">
   <div class="mb-5 max-w-7xl">
     <div class="mb-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -321,7 +314,7 @@
     </p>
   </div>
 
-  <div role="tablist" aria-label="Source settings" class="mb-3 grid max-w-7xl grid-cols-3 gap-1 rounded-xl bg-secondary/60 p-1">
+  <div role="tablist" aria-label="Source settings" data-page-tabs class="mb-3 grid max-w-7xl grid-cols-3 gap-1 rounded-xl bg-secondary/60 p-1">
     {#each tabs as tab (tab.id)}
       {@const Icon = tab.icon}
       <button type="button" role="tab" id="sources-tab-{tab.id}" aria-controls="sources-panel-{tab.id}"
@@ -443,7 +436,10 @@
         </button>
 
         {#if sortOpen}
-          <div role="menu" aria-label="Source sort order"
+          <!-- Sort and Filter are nav layers: Escape, B and remote Back close only the open one, the
+               d-pad stays inside it, and closing hands focus back to its trigger (the opener). -->
+          <div role="menu" aria-label="Source sort order" data-nav-trap data-nav-escape
+            use:navLayer={{ kind: 'sources-sort', onClose: () => { sortOpen = false } }}
             class="absolute left-0 top-[calc(100%+0.35rem)] z-50 w-44 rounded-xl border border-border bg-card p-1.5 shadow-xl sm:left-auto sm:right-0">
             {#each manageSortOptions as option (option.value)}
               <button type="button" role="menuitemradio" aria-checked={manageSortMode === option.value} data-focusable
@@ -467,7 +463,8 @@
         </button>
 
         {#if filterOpen}
-          <div role="dialog" aria-label="Source filters"
+          <div role="dialog" aria-label="Source filters" data-nav-trap data-nav-escape
+            use:navLayer={{ kind: 'sources-filter', onClose: () => { filterOpen = false } }}
             class="absolute right-0 top-[calc(100%+0.35rem)] z-50 w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-border bg-card p-3 shadow-xl">
             <div>
               <p class="mb-1.5 text-[0.68rem] font-black uppercase tracking-wide text-muted-foreground">Status</p>

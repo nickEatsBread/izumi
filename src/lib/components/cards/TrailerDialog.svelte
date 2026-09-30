@@ -1,6 +1,7 @@
 <script lang="ts">
   import { trailerPopup, closeTrailerPopup } from '$lib/stores/trailer'
   import { youtubeEmbedSource, type YoutubeEmbedSource } from './youtube-embed'
+  import { navLayer } from '$lib/nav/overlay'
 
   let dialog = $state<HTMLDialogElement>()
   let embed = $state<YoutubeEmbedSource>()
@@ -29,7 +30,11 @@
 </script>
 
 {#if $trailerPopup}
-  <dialog bind:this={dialog} data-nav-trap aria-modal="true"
+  <!-- Also a nav layer, so B and the TV remote's Back close it: their Escape is dispatched on window
+       and never reaches the native cancel. Keyboard Escape meets the layer capture first; oncancel
+       stays as the fallback. The effect above restores focus, so the layer does not. -->
+  <dialog bind:this={dialog} data-nav-trap data-nav-escape aria-modal="true"
+       use:navLayer={{ kind: 'trailer', onClose: () => closeTrailerPopup(), returnFocus: 'none' }}
        aria-label={`${$trailerPopup.title} trailer`} tabindex="-1"
        class="fixed inset-0 z-[80] m-0 grid h-full max-h-none w-full max-w-none place-items-center bg-black/80 p-0 sm:p-4"
        onclick={(e) => { if (e.target === e.currentTarget) closeTrailerPopup() }}

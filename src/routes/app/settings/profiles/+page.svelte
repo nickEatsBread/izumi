@@ -110,7 +110,7 @@
 </script>
 
 <svelte:window onkeydown={(event) => { if (event.key === 'Escape') { event.preventDefault(); back() } }} />
-<section bind:this={panel} class="profile-manager fixed inset-0 z-[85] overflow-y-auto bg-background px-6 pb-16 pt-12 sm:px-12" data-nav-trap aria-labelledby="manage-heading">
+<section bind:this={panel} class="profile-manager fixed inset-0 z-[85] overflow-y-auto bg-background px-6 pb-16 pt-12 sm:px-12" data-nav-trap data-nav-escape data-nav-scroll-container aria-labelledby="manage-heading">
   <button type="button" data-focusable onclick={back} aria-label="Back" class="back-button"><ArrowLeft size={24} /></button>
   <div class:overview={screen === 'overview'} class="profile-content">
     <header>

@@ -7,6 +7,7 @@
   import { isAndroid } from '$lib/platform'
   import * as h from '$lib/haptics'
   import { searchSettings, settingKey, type SettingSearchItem } from '$lib/settings/search'
+  import { navLayer } from '$lib/nav/overlay'
 
   let { compact = false }: { compact?: boolean } = $props()
   let open = $state(false)
@@ -48,10 +49,6 @@
   }
 </script>
 
-<svelte:window onkeydown={(e) => {
-  if (open && e.key === 'Escape') { e.preventDefault(); close() }
-}} />
-
 <button bind:this={trigger} type="button" data-focusable onclick={show} aria-label="Search settings"
   aria-haspopup="dialog" aria-expanded={open}
   class={compact
@@ -64,8 +61,10 @@
 </button>
 
 {#if open}
-  <div use:portal data-nav-trap class="fixed inset-0 z-[100] isolate flex items-start justify-center px-3 pt-[max(4rem,env(safe-area-inset-top))] sm:pt-[12vh]">
-    <button type="button" class="absolute inset-0 bg-black/70 backdrop-blur-sm" aria-label="Close settings search" onclick={close}></button>
+  <!-- A nav layer: Escape (the shared capture), B and remote Back close only this overlay. It
+       focuses its own search box on open (show) and restores the launcher itself (close). -->
+  <div use:portal data-nav-trap data-nav-escape use:navLayer={{ kind: 'settings-search', onClose: () => { void close() }, initialFocus: 'none', returnFocus: 'none' }} class="fixed inset-0 z-[100] isolate flex items-start justify-center px-3 pt-[max(4rem,env(safe-area-inset-top))] sm:pt-[12vh]">
+    <button type="button" tabindex="-1" class="absolute inset-0 bg-black/70 backdrop-blur-sm" aria-label="Close settings search" onclick={close}></button>
     <div role="dialog" aria-modal="true" aria-label="Search settings"
       class="relative z-10 flex max-h-[min(75vh,42rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
       <div class="flex items-center gap-2 border-b border-border px-3">
@@ -80,7 +79,7 @@
         </button>
       </div>
 
-      <div class="min-h-0 overflow-y-auto bg-card p-2">
+      <div class="min-h-0 overflow-y-auto bg-card p-2" data-nav-scroll-container>
         {#if !query.trim()}
           <p class="px-3 py-8 text-center text-sm text-muted-foreground">Type a setting, feature, or keyword.</p>
         {:else if results.length}

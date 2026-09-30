@@ -13,6 +13,7 @@
     visibleServiceSettingFields,
   } from '$lib/extensions/service-settings-form'
   import { copyToClipboard } from '$lib/util/clipboard'
+  import { navLayer } from '$lib/nav/overlay'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import X from '@lucide/svelte/icons/x'
   import Check from '@lucide/svelte/icons/check'
@@ -152,8 +153,10 @@
   })
 </script>
 
-<svelte:window onkeydown={(event) => event.key === 'Escape' && onclose()} />
-
+<!-- A nav layer: Escape (the shared capture), B and remote Back close it, except while a save is in
+     flight. It moves focus in once the settings load and restores it on close itself (onMount).
+     The backdrop click is a pointer shortcut; keys close it through the layer. -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
   bind:this={dialog}
   role="dialog"
@@ -161,9 +164,10 @@
   aria-label="{name} settings"
   tabindex="-1"
   data-nav-trap
+  data-nav-escape
+  use:navLayer={{ kind: 'extension-service-settings', onClose: () => { if (saving) return false; onclose() }, initialFocus: 'none', returnFocus: 'none' }}
   class="fixed inset-0 z-[70] grid h-[100dvh] place-items-end overflow-hidden bg-black/70 sm:place-items-center sm:p-4"
   onclick={(event) => { if (event.target === event.currentTarget) onclose() }}
-  onkeydown={(event) => { if (event.key === 'Escape') onclose() }}
 >
   <div class="flex max-h-[100dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-border bg-card shadow-2xl sm:max-h-[calc(100dvh-2rem)] sm:rounded-2xl">
     <header class="flex shrink-0 items-start justify-between gap-3 border-b border-border px-5 py-4">
@@ -174,7 +178,7 @@
       <button data-focusable aria-label="Close" onclick={onclose} class="grid size-8 shrink-0 place-items-center rounded-md hover:bg-accent"><X size={18} /></button>
     </header>
 
-    <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+    <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4" data-nav-scroll-container>
       {#if loading}
         <div class="space-y-3" aria-label="Loading settings">
           <div class="skeloader h-4 w-2/3 rounded"></div>

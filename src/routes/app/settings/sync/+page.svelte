@@ -741,7 +741,7 @@
     <div role="alert" class="mb-4 max-w-2xl rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
   {/if}
 
-  <nav aria-label="Device sync sections" class="mb-7 flex max-w-2xl gap-6 border-b border-border">
+  <nav aria-label="Device sync sections" data-page-tabs class="mb-7 flex max-w-2xl gap-6 border-b border-border">
     {#each [{ id: 'sync', label: 'Sync & devices' }, { id: 'tv', label: 'TV connections' }] as item}
       <button type="button" data-focusable aria-current={syncSection === item.id ? 'page' : undefined} onclick={() => syncSection = item.id as 'sync' | 'tv'} class="min-h-12 border-b-2 px-1 text-sm font-semibold {syncSection === item.id ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}">{item.label}</button>
     {/each}

@@ -4,6 +4,7 @@
   import { openUrl } from '@tauri-apps/plugin-opener'
   import { entryTypeLabel } from '$lib/store/filters'
   import type { StoreEntry } from '$lib/store/types'
+  import { navLayer } from '$lib/nav/overlay'
 
   let {
     entry, icon, storeName, thirdParty, trustLabel, installed, elsewhere = false, update, enabled, busy, locked, error = '',
@@ -58,11 +59,12 @@
     : entry.install.type === 'addon' && entry.install.configureUrl ? 'Configure & install' : 'Install')
 </script>
 
-<svelte:window onkeydown={(event) => { if (event.key === 'Escape' && !busy) onclose() }} />
-
 <div class="fixed inset-0 z-[100] grid place-items-end bg-black/75 sm:place-items-center sm:p-4" role="presentation"
      onclick={(event) => { if (event.target === event.currentTarget && !busy) onclose() }}>
+  <!-- A nav layer: Escape (the shared capture), B and remote Back close only this sheet, never while
+       an install or removal is running. -->
   <div role="dialog" data-theme-protected aria-modal="true" aria-labelledby="store-entry-title" data-nav-trap data-nav-escape
+       use:navLayer={{ kind: 'store-entry', onClose: () => { if (busy) return false; onclose() } }} data-nav-scroll-container
        class="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-border bg-background p-5 shadow-2xl sm:rounded-2xl sm:p-6">
     <div class="flex items-start gap-3">
       <AddonLogo logo={icon ?? entry.icon} name={entry.name} id={entry.id} size={56} />

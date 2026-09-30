@@ -22,7 +22,14 @@
 
   onMount(() => {
     advancedFiltersOpen.set(true)
-    return () => advancedFiltersOpen.set(false)
+    // The pad's B reaches an advanced-filters sheet as `advanced-close` (nav/gamepad.ts), the event
+    // every other filter sheet already listens for; without it B did nothing here.
+    const close = () => onClose()
+    window.addEventListener('advanced-close', close)
+    return () => {
+      advancedFiltersOpen.set(false)
+      window.removeEventListener('advanced-close', close)
+    }
   })
 
   function update(index: number, state: unknown) {
@@ -38,14 +45,18 @@
 
 <svelte:window onkeydown={(event) => { if (event.key === 'Escape') onClose() }} />
 
+<!-- A legacy trap: the window Escape above closes it, and B arrives as `advanced-close`. The
+     backdrop click is a pointer shortcut. -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
   class="fixed inset-0 z-[150] flex items-end justify-center bg-black/65 sm:items-center"
   role="dialog"
   aria-modal="true"
   aria-label="{sourceName} source filters"
   tabindex="-1"
+  data-nav-trap
+  data-nav-escape
   onclick={(event) => { if (event.target === event.currentTarget) onClose() }}
-  onkeydown={(event) => { if (event.key === 'Escape') onClose() }}
 >
   <section
     class="max-h-[88vh] w-full overflow-y-auto rounded-t-2xl bg-background p-5 shadow-2xl sm:max-w-xl sm:rounded-2xl"

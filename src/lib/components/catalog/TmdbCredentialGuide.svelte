@@ -4,6 +4,7 @@
   import ExternalLink from '@lucide/svelte/icons/external-link'
   import KeyRound from '@lucide/svelte/icons/key-round'
   import X from '@lucide/svelte/icons/x'
+  import { navLayer } from '$lib/nav/overlay'
 
   let { onClose, onUseKeyless }: { onClose: () => void; onUseKeyless: () => void } = $props()
   let dialog = $state<HTMLElement>()
@@ -38,8 +39,10 @@
   })
 </script>
 
-<svelte:window onkeydown={(event) => { if (event.key === 'Escape') onClose() }} />
-
+<!-- A nav layer: Escape (the shared capture), B and remote Back close only this guide. It focuses
+     its first control and restores focus on close itself (onMount). The backdrop click is a
+     pointer shortcut; keys close it through the layer. -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
   bind:this={dialog}
   role="dialog"
@@ -48,9 +51,10 @@
   aria-describedby="tmdb-guide-description"
   tabindex="-1"
   data-nav-trap
+  data-nav-escape
+  use:navLayer={{ kind: 'tmdb-guide', onClose: () => onClose(), initialFocus: 'none', returnFocus: 'none' }}
   class="fixed inset-0 z-[150] grid h-[100dvh] place-items-end overflow-hidden bg-black/75 sm:place-items-center sm:p-4"
   onclick={(event) => { if (event.target === event.currentTarget) onClose() }}
-  onkeydown={(event) => { if (event.key === 'Escape') onClose() }}
 >
   <section class="flex max-h-[100dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border border-border bg-card shadow-2xl sm:max-h-[calc(100dvh-2rem)] sm:rounded-2xl">
     <header class="flex shrink-0 items-start gap-4 border-b border-border px-5 py-5 sm:px-6">
@@ -70,7 +74,7 @@
       ><X size={20} /></button>
     </header>
 
-    <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6 sm:py-6">
+    <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6 sm:py-6" data-nav-scroll-container>
       <p class="text-sm leading-6 text-muted-foreground">A free TMDB account is all you need. The guide below walks through creating the account and copying the long API Read Access Token — the one starting <code class="rounded bg-background/60 px-1 font-mono text-xs">eyJ</code>, not the short v3 API key. Paste it into the field behind this dialog; it is stored only on this device.</p>
 
       <button type="button" data-focusable onclick={() => void openGuide()} class="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-secondary px-4 text-sm font-black transition-colors hover:bg-accent">
