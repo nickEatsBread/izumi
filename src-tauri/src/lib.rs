@@ -110,6 +110,14 @@ struct PipSnapshot {
 #[derive(Default)]
 struct PipWindowState(std::sync::Mutex<Option<PipSnapshot>>);
 
+/// The main window's smallest size (logical px). The OS applies a window's minimum to the user's
+/// edge drags, not to `set_size`, so the miniplayer swaps in its own while it lasts.
+#[cfg(not(target_os = "android"))]
+const MAIN_MIN_SIZE: (f64, f64) = (900.0, 560.0);
+/// The miniplayer's smallest size: 16:9, with room for its title, buttons and scrubber.
+#[cfg(not(target_os = "android"))]
+const PIP_MIN_SIZE: (f64, f64) = (320.0, 180.0);
+
 #[cfg(not(target_os = "android"))]
 struct DrmGifSession {
     dir: std::path::PathBuf,
@@ -4466,6 +4474,10 @@ fn player_toggle_pip(
         window
             .set_always_on_top(false)
             .map_err(|error| error.to_string())?;
+        // Back to the browse window's minimum while the window is still miniplayer-sized: tao
+        // re-applies the current size when the minimum changes, which would disturb a maximized
+        // window if this ran after `maximize`.
+        let _ = window.set_min_size(Some(tauri::LogicalSize::new(MAIN_MIN_SIZE.0, MAIN_MIN_SIZE.1)));
         if snapshot.maximized {
             window.maximize().map_err(|error| error.to_string())?;
         } else {
@@ -4492,6 +4504,10 @@ fn player_toggle_pip(
     if snapshot.maximized {
         window.unmaximize().map_err(|error| error.to_string())?;
     }
+    // The browse window's 900×560 minimum would otherwise stay the OS minimum for the user's resize
+    // drags: `set_size` below goes under it, but the first drag on a miniplayer edge snapped the
+    // window straight back up to 900×560.
+    let _ = window.set_min_size(Some(tauri::LogicalSize::new(PIP_MIN_SIZE.0, PIP_MIN_SIZE.1)));
     window
         .set_size(tauri::LogicalSize::new(480.0, 300.0))
         .map_err(|error| error.to_string())?;
@@ -5815,7 +5831,7 @@ pub fn run() {
                     // wry's default --disable-features must be restated when we set args.
                     .additional_browser_args(DESKTOP_WEBVIEW_ARGS)
                     .inner_size(1280.0, 800.0)
-                    .min_inner_size(900.0, 560.0)
+                    .min_inner_size(MAIN_MIN_SIZE.0, MAIN_MIN_SIZE.1)
                     // Under gamescope the window IS the screen, so nothing may ever resize it. tao
                     // gives every undecorated resizable window a 5 px borderless resize band and
                     // begins an X11 resize drag for any button press OR touch inside it; on the

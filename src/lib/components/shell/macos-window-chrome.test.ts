@@ -15,6 +15,7 @@ describe('macOS window chrome', () => {
 
   it('does not restore corrupted frameless macOS sizes', () => {
     expect(native).toContain('let window_state_flags = tauri_plugin_window_state::StateFlags::POSITION;')
-    expect(native).toContain('.min_inner_size(900.0, 560.0)')
+    expect(native).toContain('const MAIN_MIN_SIZE: (f64, f64) = (900.0, 560.0);')
+    expect(native).toContain('.min_inner_size(MAIN_MIN_SIZE.0, MAIN_MIN_SIZE.1)')
   })
 })
