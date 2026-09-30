@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { directoryEntries, directoryEntry } from './directory'
+import { communityStoreUrl } from '$lib/stremio/community-store'
+import { directoryEntries, directoryEntry, directoryQuery } from './directory'
 
 const listing = (patch: Record<string, unknown> = {}) => ({
   uuid: 'u', slug: 's', stars: 42, categories: [], createdAt: '2026-01-02T00:00:00Z',
@@ -27,6 +28,19 @@ describe('directoryEntry', () => {
   it('drops a configure link that is not HTTPS', () => {
     expect(directoryEntry(listing({ configureUrl: 'http://addon.example.test/configure' }))?.install)
       .toEqual({ type: 'addon', manifestUrl: 'https://addon.example.test/manifest.json', manifestId: 'org.example.addon' })
+  })
+})
+
+describe('directoryQuery', () => {
+  it('browses every listing, so an addon without category tags can still top Popular', () => {
+    const url = new URL(communityStoreUrl(directoryQuery('', 'popular')))
+    expect(url.searchParams.has('category')).toBe(false)
+    expect(url.searchParams.get('sort_by')).toBe('stars')
+  })
+
+  it('passes the search on and orders by listing date only for Recently updated', () => {
+    expect(directoryQuery('subs', 'name')).toMatchObject({ search: 'subs', sort: 'stars' })
+    expect(directoryQuery('', 'updated').sort).toBe('new')
   })
 })
 

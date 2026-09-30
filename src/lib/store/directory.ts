@@ -1,6 +1,7 @@
-import type { CommunityAddon } from '$lib/stremio/community-store'
+import type { CommunityAddon, CommunityQuery } from '$lib/stremio/community-store'
 import { resolveStoreAddonLogo } from '$lib/stremio/addon-logo'
 import { normalizeBase } from '$lib/stremio/origin-id'
+import type { StoreFilter } from './filters'
 import { ADDON_DIRECTORY_ID, type ContentType, type StoreEntry } from './types'
 
 const CONTENT: Readonly<Record<string, ContentType>> = { anime: 'anime', movie: 'movie', series: 'series' }
@@ -42,6 +43,14 @@ export function directoryEntry(addon: CommunityAddon): StoreEntry | null {
     updatedAt: clip(addon.createdAt, 40),
     install: { type: 'addon', manifestUrl: addon.manifestUrl, manifestId: id, ...(configureUrl ? { configureUrl } : {}) },
   }
+}
+
+/** What the Store asks the directory for: its search and its order, and no category. The directory's
+ *  category tags are optional and some of its most-starred listings have none, so a category would
+ *  hide them however popular they are. Content is matched on each addon's own manifest types
+ *  instead, as it is for every store. */
+export function directoryQuery(search: string, sort: StoreFilter['sort']): CommunityQuery {
+  return { search, sort: sort === 'updated' ? 'new' : 'stars', limit: 40 }
 }
 
 /** A page of directory results as entries, keeping the most-starred listing of each addon: the

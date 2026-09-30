@@ -31,7 +31,7 @@
   import { BUILTIN_STORES, allStores, directoryEnabled, enabledStores } from '$lib/store/feeds'
   import { loadStoreAndPin } from '$lib/store/service'
   import type { LoadedStore } from '$lib/store/load'
-  import { directoryEntries } from '$lib/store/directory'
+  import { directoryEntries, directoryQuery } from '$lib/store/directory'
   import { DEFAULT_STORE_FILTER, filterStoreEntries, storeLanguages, type StoreFilter } from '$lib/store/filters'
   import { installStoreEntry, installedRef, type InstalledState } from '$lib/store/install'
   import { currentLegacyStores, legacyPackageStores, legacyStoresFrom, originLabel, packageOrigins } from '$lib/store/origins'
@@ -239,7 +239,7 @@
     clearTimeout(searchTimer)
     searchTimer = setTimeout(() => {
       directoryError = ''
-      listCommunityAddons({ search, category: search.trim() ? undefined : 'anime', sort: order === 'updated' ? 'new' : 'stars', limit: 40 })
+      listCommunityAddons(directoryQuery(search, order as StoreFilter['sort']))
         .then((result) => {
           directory = directoryEntries(result.addons)
           directoryTotal = result.pagination.total
