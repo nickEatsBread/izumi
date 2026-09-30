@@ -7,8 +7,9 @@
   // `variant` comes from the theme's series page: an underlined row (stock), pills, an iOS-style
   // segmented control, or a bar of equal tabs with a tinted pill behind the active one.
   // `labels` (the series page) maps each tab id to its shown name; with it every tab carries its id
-  // as `data-tab`, so a stylesheet can target a section without counting tabs.
-  let { tabs, active = $bindable(), variant = 'underline', labels }: { tabs: string[]; active: string; variant?: DetailTabs; labels?: Record<string, string> } = $props()
+  // as `data-tab`, so a stylesheet can target a section without counting tabs. `page` marks the
+  // page's main strip for L2/R2 under a bumper-tab theme (`src/lib/nav/page-tabs.ts`).
+  let { tabs, active = $bindable(), variant = 'underline', labels, page = false }: { tabs: string[]; active: string; variant?: DetailTabs; labels?: Record<string, string>; page?: boolean } = $props()
   // `bottom` (API 3) is a phone bar fixed to the bottom of the screen in place of the app's bottom
   // navigation, which keeps the page's room at the bottom for it; anywhere wider it falls back to
   // the underlined strip.
@@ -32,7 +33,7 @@
   }
 </script>
 
-<div data-part="tabs" data-variant={variant} data-theme-tabs={variant}
+<div data-part="tabs" data-variant={variant} data-theme-tabs={variant} data-page-tabs={page || undefined}
   class={bottom ? 'fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur' : `-mx-4 mb-4 flex overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0
   ${look === 'underline' ? 'gap-1 border-b border-border' : ''}
   ${look === 'pills' ? 'gap-2' : ''}

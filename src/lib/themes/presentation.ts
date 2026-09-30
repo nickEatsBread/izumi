@@ -30,14 +30,17 @@ export type DetailSection = 'overview' | 'episodes' | 'relations' | 'characters'
 /** API 3: the fixed tab names a theme picks from — never free text. */
 export type TabLabel =
   | 'overview' | 'info' | 'details' | 'about' | 'home' | 'episodes' | 'watch' | 'relations' | 'related'
-  | 'characters' | 'cast' | 'recommended' | 'more-like-this'
+  | 'characters' | 'cast' | 'recommended' | 'more-like-this' | 'recommendations'
 /** API 3: which sections get a tab, their names, the tab open on arrival, and where the phone facts sit. */
 export interface DetailSections {
   /** `tabs` (default) draws a tab strip; `stack` renders every section in turn under its own title. */
   mode?: 'tabs' | 'stack'
   /** Sections with a tab, in order (1–5, each once). The rest render inside Overview after its own
-   *  content; Overview always keeps a tab. */
+   *  content; Overview always keeps a tab, unless `unlisted` hides what `tabs` leaves out. */
   tabs?: DetailSection[]
+  /** `hidden`: the sections `tabs` leaves out (Overview included) are not on the page at all, for
+   *  a site whose info column already carries the facts and synopsis. */
+  unlisted?: 'overview' | 'hidden'
   /** A fixed replacement name per section. */
   labels?: Partial<Record<DetailSection, TabLabel>>
   /** The tab open on arrival. */
@@ -96,6 +99,9 @@ export interface RowPresentation {
   titleSize?: number
   heading?: RowHeading
   card?: ThemeNode
+  /** API 3: `focus` keeps one line under the row's cards for the focused card's full title and detail
+   *  line while a pad is in use (Game or controller mode). */
+  caption?: 'none' | 'focus'
 }
 /** Theme API 1 is the original contract; API 2 adds the phone block, bottom-bar and slide-marker
  *  chrome, row headings, series tabs and the docked player. A package declares which it uses, so
@@ -143,6 +149,10 @@ export interface DetailPresentation {
   /** API 3: `card` puts a Continue card at the top of the episodes; on phones it replaces the
    *  header's Play button once an episode has aired. */
   continue?: 'button' | 'card'
+  /** API 3, desktop stacked and split pages: `poster` makes the poster the head of a left column
+   *  that runs down the page — the trailer button, the countdown and the facts under it — with the
+   *  title, actions, synopsis and sections beside it. */
+  column?: 'none' | 'poster'
 }
 /** The phone tab bar (and the desktop bottom bar when `nav` is `bottom`). */
 export interface BottomNavPresentation {
@@ -168,12 +178,20 @@ export interface TopBarPresentation {
   labels?: 'icons' | 'text' | 'both'
   /** `field-center` / `field-end` put a search field in the bar in place of the Search destination. */
   search?: 'icon' | 'field-center' | 'field-end'
-  /** `drawer` adds a menu button that opens every destination in a side drawer. */
-  menu?: 'none' | 'drawer'
+  /** `drawer` adds a menu button that opens every destination in a side drawer. `side` pins that
+   *  menu as a labelled panel down the left under the bar (the page moves over for it) on windows
+   *  from 1100 px; the menu button folds it away, and narrower windows get the drawer. */
+  menu?: 'none' | 'drawer' | 'side'
+  /** The pinned panel's width in px (`menu: "side"`, 200–320, default 260). */
+  sideWidth?: number
   /** Where the brand sits in the bar. */
   brand?: 'start' | 'center'
   /** A "Categories" menu after the destinations: browse links and the catalog's genres. */
   categories?: boolean
+  /** API 3: the destinations become tabs that L1/R1 switch, with the bumper glyphs at either end;
+   *  L2/R2 step the page's own tabs, Start opens the menu drawer and View opens search. With a pad in
+   *  use the bar's controls leave the d-pad order (the drawer reaches every destination). */
+  bumpers?: boolean
 }
 export interface ShellPresentation {
   nav?: ThemeNavPlacement
@@ -184,6 +202,8 @@ export interface ShellPresentation {
   press?: 'none' | 'sink'
   bottomNav?: BottomNavPresentation
   top?: TopBarPresentation
+  /** API 3: the controller button-hint bar along the bottom (Game or controller mode, after pad input). */
+  hints?: boolean
 }
 /** Where the video sits while playing windowed on desktop. `full` fills the window inside the
  *  shell chrome; `docked` confines it to a 16:9 stage with the episode rail beside or below it. */
@@ -193,7 +213,21 @@ export interface PlayerDock {
   align?: 'start' | 'center'
   /** The episode discussion under the stage (side rail) or after the episode grid (below). */
   comments?: 'below' | 'hidden'
+  /** API 3, with `episodes: "below"`: `page` scrolls the watch view like a web page — the video
+   *  moves up with it and every block under it keeps its natural height (no inner scrollers). */
+  flow?: 'fixed' | 'page'
+  /** API 3: the widest the stage column gets, in CSS px, centred when `align` is `center`. */
+  maxWidth?: number
+  /** API 3, with `episodes: "below"`: the blocks under the stage, in order. */
+  below?: PlayerDockBlock[]
+  /** API 3: the dropdowns of the `toolbar` block, in order. */
+  toolbar?: PlayerToolbarItem[]
+  /** API 3: player chrome a docked page shows elsewhere (its own title line, its own navigation). */
+  hide?: PlayerChrome[]
 }
+export type PlayerDockBlock = 'toolbar' | 'info' | 'episodes' | 'comments'
+export type PlayerToolbarItem = 'server' | 'episode' | 'release' | 'download'
+export type PlayerChrome = 'back' | 'title'
 export interface PlayerPresentation {
   seekbarHeight?: number
   seekbarColor?: string
@@ -224,7 +258,15 @@ export interface ThemeNav {
   top?: NavDestination[]
 }
 /** API 3: the theme's Home and navigation, applied while the theme is active and its layout switch is on. */
-export interface ThemeLayout { home?: ThemeLayoutEntry[]; asideWidth?: number; nav?: ThemeNav }
+export interface ThemeLayout {
+  home?: ThemeLayoutEntry[]
+  asideWidth?: number
+  /** The gutter between Home's main column and its side column, in px (default 32). */
+  asideGap?: number
+  /** The main-column row the side column starts beside; the rows before it span the whole width. */
+  asideStart?: number
+  nav?: ThemeNav
+}
 export interface ThemePresentation {
   density?: ThemeDensity
   hideCardLabels?: boolean
@@ -273,7 +315,7 @@ const SECTION_LABELS: Record<DetailSection, readonly TabLabel[]> = {
   episodes: ['episodes', 'watch'],
   relations: ['relations', 'related'],
   characters: ['characters', 'cast'],
-  recommended: ['recommended', 'more-like-this'],
+  recommended: ['recommended', 'more-like-this', 'recommendations'],
 }
 const EPISODE_CONTROLS = ['sort', 'layout', 'search', 'download', 'queue'] as const satisfies readonly EpisodeControl[]
 const numericStyles: Record<string, [number, number, string]> = {
@@ -383,7 +425,7 @@ function parseHeading(value: unknown): RowHeading {
   return result
 }
 function parseRow(value: unknown, api: ThemeApi): RowPresentation {
-  const raw = record(value); only(raw, ['layout', 'width', 'gap', 'spacing', 'radius', 'aspect', 'titleSize', 'card', ...api2(api, ['heading'])])
+  const raw = record(value); only(raw, ['layout', 'width', 'gap', 'spacing', 'radius', 'aspect', 'titleSize', 'card', ...api2(api, ['heading']), ...api3(api, ['caption'])])
   const result: RowPresentation = {}
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['carousel', 'grid'])
   if (raw.aspect !== undefined) result.aspect = choice(raw.aspect, ['poster', 'landscape', 'square'])
@@ -392,6 +434,7 @@ function parseRow(value: unknown, api: ThemeApi): RowPresentation {
   }
   if (raw.heading !== undefined) result.heading = parseHeading(raw.heading)
   if (raw.card !== undefined) result.card = parseNode(raw.card, undefined, 0, false, api)
+  if (raw.caption !== undefined) result.caption = choice(raw.caption, ['none', 'focus'])
   return result
 }
 function parseBottomNav(value: unknown): BottomNavPresentation {
@@ -409,13 +452,15 @@ function parseBottomNav(value: unknown): BottomNavPresentation {
   return result
 }
 function parseTopBar(value: unknown): TopBarPresentation {
-  const raw = record(value); only(raw, ['labels', 'search', 'menu', 'brand', 'categories'])
+  const raw = record(value); only(raw, ['labels', 'search', 'menu', 'brand', 'categories', 'sideWidth', 'bumpers'])
   const result: TopBarPresentation = {}
   if (raw.labels !== undefined) result.labels = choice(raw.labels, ['icons', 'text', 'both'])
   if (raw.search !== undefined) result.search = choice(raw.search, ['icon', 'field-center', 'field-end'])
-  if (raw.menu !== undefined) result.menu = choice(raw.menu, ['none', 'drawer'])
+  if (raw.menu !== undefined) result.menu = choice(raw.menu, ['none', 'drawer', 'side'])
+  if (raw.sideWidth !== undefined) result.sideWidth = number(raw.sideWidth, 200, 320)
   if (raw.brand !== undefined) result.brand = choice(raw.brand, ['start', 'center'])
   if (raw.categories !== undefined) result.categories = flag(raw.categories)
+  if (raw.bumpers !== undefined) result.bumpers = flag(raw.bumpers)
   return result
 }
 function parseIndicator(value: unknown, api: ThemeApi): HeroIndicator {
@@ -444,7 +489,7 @@ function controlList(value: unknown): EpisodeControl[] {
   })
 }
 function parseSections(value: unknown): DetailSections {
-  const raw = record(value); only(raw, ['mode', 'tabs', 'labels', 'default', 'info'])
+  const raw = record(value); only(raw, ['mode', 'tabs', 'labels', 'default', 'info', 'unlisted'])
   const result: DetailSections = {}
   if (raw.mode !== undefined) result.mode = choice(raw.mode, ['tabs', 'stack'])
   if (raw.tabs !== undefined) {
@@ -464,16 +509,22 @@ function parseSections(value: unknown): DetailSections {
       if (labels[section] !== undefined) result.labels[section] = choice(labels[section], SECTION_LABELS[section])
     }
   }
+  if (raw.unlisted !== undefined) {
+    result.unlisted = choice(raw.unlisted, ['overview', 'hidden'])
+    if (result.unlisted === 'hidden' && !result.tabs) throw new Error('A theme that hides the unlisted series sections must list its tabs.')
+  }
+  const hidesOverview = result.unlisted === 'hidden' && !result.tabs?.includes('overview')
   if (raw.default !== undefined) {
     result.default = choice(raw.default, DETAIL_SECTIONS)
-    // Overview always has a tab, so it is a valid default whatever `tabs` lists.
-    if (result.tabs && result.default !== 'overview' && !result.tabs.includes(result.default)) throw new Error('The default series tab must be one of its tabs.')
+    // Overview has a tab whatever `tabs` lists, unless the unlisted sections are hidden.
+    if (result.tabs && (result.default !== 'overview' || hidesOverview) && !result.tabs.includes(result.default)) throw new Error('The default series tab must be one of its tabs.')
   }
   if (raw.info !== undefined) result.info = choice(raw.info, ['above', 'overview'])
+  if (hidesOverview && result.info === 'overview') throw new Error('A series page cannot move its info into a hidden Overview.')
   return result
 }
 function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
-  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'bannerScale', 'episodes', ...api2(api, ['tabs']), ...api3(api, ['factsStyle', 'countdown', 'listButton', 'header', 'art', 'title', 'sections', 'nav', 'continue'])])
+  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'bannerScale', 'episodes', ...api2(api, ['tabs']), ...api3(api, ['factsStyle', 'countdown', 'listButton', 'header', 'art', 'title', 'sections', 'nav', 'continue', 'column'])])
   const result: DetailPresentation = {}
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['stack', 'split', 'overlay'])
   if (raw.bannerHidden !== undefined) result.bannerHidden = flag(raw.bannerHidden)
@@ -494,6 +545,7 @@ function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
   if (raw.sections !== undefined) result.sections = parseSections(raw.sections)
   if (raw.nav !== undefined) result.nav = choice(raw.nav, ['shown', 'hidden'])
   if (raw.continue !== undefined) result.continue = choice(raw.continue, ['button', 'card'])
+  if (raw.column !== undefined) result.column = choice(raw.column, ['none', 'poster'])
   if (raw.episodes !== undefined) {
     const episodes = record(raw.episodes); only(episodes, ['placement', 'arrangement', 'hover', 'order', 'search', 'card', ...api3(api, ['toolbar', 'controls', 'paging', 'pageSize', 'toolbarMin', 'seasons'])])
     result.episodes = {}
@@ -513,7 +565,7 @@ function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
   return result
 }
 function parseShell(value: unknown, api: ThemeApi): ShellPresentation {
-  const raw = record(value); only(raw, ['nav', 'compact', 'overlay', 'press', ...api2(api, ['bottomNav']), ...api3(api, ['top'])])
+  const raw = record(value); only(raw, ['nav', 'compact', 'overlay', 'press', ...api2(api, ['bottomNav']), ...api3(api, ['top', 'hints'])])
   const result: ShellPresentation = {}
   if (raw.nav !== undefined) result.nav = choice(raw.nav, ['sidebar', 'top', 'bottom'])
   if (raw.compact !== undefined) result.compact = flag(raw.compact)
@@ -521,6 +573,7 @@ function parseShell(value: unknown, api: ThemeApi): ShellPresentation {
   if (raw.press !== undefined) result.press = choice(raw.press, ['none', 'sink'])
   if (raw.bottomNav !== undefined) result.bottomNav = parseBottomNav(raw.bottomNav)
   if (raw.top !== undefined) result.top = parseTopBar(raw.top)
+  if (raw.hints !== undefined) result.hints = flag(raw.hints)
   return result
 }
 function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
@@ -530,14 +583,30 @@ function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
   if (raw.seekbarColor !== undefined) result.seekbarColor = themeColor(raw.seekbarColor)
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['full', 'docked'])
   if (raw.dock !== undefined) {
-    const dock = record(raw.dock); only(dock, ['episodes', 'width', 'align', 'comments'])
+    const dock = record(raw.dock); only(dock, ['episodes', 'width', 'align', 'comments', ...api3(api, ['flow', 'maxWidth', 'below', 'toolbar', 'hide'])])
     result.dock = {}
     if (dock.episodes !== undefined) result.dock.episodes = choice(dock.episodes, ['right', 'below'])
     if (dock.width !== undefined) result.dock.width = number(dock.width, 50, 100)
     if (dock.align !== undefined) result.dock.align = choice(dock.align, ['start', 'center'])
     if (dock.comments !== undefined) result.dock.comments = choice(dock.comments, ['below', 'hidden'])
+    if (dock.flow !== undefined) result.dock.flow = choice(dock.flow, ['fixed', 'page'])
+    if (dock.maxWidth !== undefined) result.dock.maxWidth = number(dock.maxWidth, 480, 2400)
+    if (dock.below !== undefined) result.dock.below = uniqueChoices(dock.below, ['toolbar', 'info', 'episodes', 'comments'], 'dock.below')
+    if (dock.toolbar !== undefined) result.dock.toolbar = uniqueChoices(dock.toolbar, ['server', 'episode', 'release', 'download'], 'dock.toolbar')
+    if (dock.hide !== undefined) result.dock.hide = uniqueChoices(dock.hide, ['back', 'title'], 'dock.hide')
   }
   return result
+}
+/** A list of distinct values from a fixed set, in the theme's order (1 to every value). */
+function uniqueChoices<const T extends string>(value: unknown, values: readonly T[], name: string): T[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > values.length) throw new Error(`Invalid theme ${name} list.`)
+  const seen = new Set<T>()
+  return value.map((entry) => {
+    const item = choice(entry, values)
+    if (seen.has(item)) throw new Error(`A theme ${name} list names ${item} twice.`)
+    seen.add(item)
+    return item
+  })
 }
 function parseCards(value: unknown, api: ThemeApi): NonNullable<ThemePresentation['cards']> {
   const raw = record(value); only(raw, ['poster', 'continue', 'search'])
@@ -558,7 +627,7 @@ function destinationList(value: unknown, max: number): NavDestination[] {
   })
 }
 function parseLayout(value: unknown, phone: boolean): ThemeLayout {
-  const raw = record(value); only(raw, ['home', 'asideWidth', ...(phone ? [] : ['nav'])])
+  const raw = record(value); only(raw, ['home', 'asideWidth', 'asideGap', 'asideStart', ...(phone ? [] : ['nav'])])
   const result: ThemeLayout = {}
   if (raw.home !== undefined) {
     if (!Array.isArray(raw.home) || raw.home.length < 1 || raw.home.length > 30) throw new Error('A theme home layout needs 1–30 entries.')
@@ -579,6 +648,8 @@ function parseLayout(value: unknown, phone: boolean): ThemeLayout {
     })
   }
   if (raw.asideWidth !== undefined) result.asideWidth = number(raw.asideWidth, 240, 420)
+  if (raw.asideGap !== undefined) result.asideGap = number(raw.asideGap, 0, 96)
+  if (raw.asideStart !== undefined) result.asideStart = number(raw.asideStart, 0, 29)
   if (raw.nav !== undefined) {
     const nav = record(raw.nav); only(nav, ['home', 'bottom', 'top'])
     result.nav = {}
@@ -662,7 +733,7 @@ export function resolvePresentation(layout: ThemePresentation | undefined, mobil
   }
   if (phone.player) resolved.player = { ...shared.player, ...phone.player }
   if (phone.cards) resolved.cards = { ...shared.cards, ...phone.cards }
-  // The phone block can only carry `home` and `asideWidth` (`parseLayout` rejects `nav` there), so
+  // The phone block can only carry `home` and the side-column keys (`parseLayout` rejects `nav` there), so
   // navigation always comes from the shared layout.
   if (phone.layout) resolved.layout = { ...shared.layout, ...phone.layout }
   return resolved
@@ -761,6 +832,7 @@ export function resolveDetail(layout?: ThemePresentation): Required<Pick<DetailP
     sections: detail.sections,
     nav: detail.nav,
     continue: detail.continue,
+    column: detail.column,
     episodes: {
       placement,
       arrangement: detail.episodes?.arrangement,
@@ -777,15 +849,37 @@ export function resolveDetail(layout?: ThemePresentation): Required<Pick<DetailP
     },
   }
 }
+export interface ResolvedPlayerDock {
+  docked: boolean
+  episodes: 'right' | 'below'
+  width: number
+  align: 'start' | 'center'
+  comments: 'below' | 'hidden'
+  /** `page` only below the stage; beside it the rail keeps its own scroller. */
+  flow: 'fixed' | 'page'
+  maxWidth?: number
+  /** The blocks under the stage (below only): the theme's list, or the episode grid then the
+   *  discussion unless `comments` hides it. */
+  below: PlayerDockBlock[]
+  toolbar: PlayerToolbarItem[]
+  hide: PlayerChrome[]
+}
 /** The windowed desktop player layout with its defaults filled in. */
-export function resolvePlayerDock(layout?: ThemePresentation): { docked: boolean; episodes: 'right' | 'below'; width: number; align: 'start' | 'center'; comments: 'below' | 'hidden' } {
+export function resolvePlayerDock(layout?: ThemePresentation): ResolvedPlayerDock {
   const player = layout?.player
+  const episodes = player?.dock?.episodes ?? 'right'
+  const comments = player?.dock?.comments ?? 'below'
   return {
     docked: player?.layout === 'docked',
-    episodes: player?.dock?.episodes ?? 'right',
-    width: player?.dock?.width ?? (player?.dock?.episodes === 'below' ? 100 : 68),
+    episodes,
+    width: player?.dock?.width ?? (episodes === 'below' ? 100 : 68),
     align: player?.dock?.align ?? 'start',
-    comments: player?.dock?.comments ?? 'below',
+    comments,
+    flow: episodes === 'below' ? player?.dock?.flow ?? 'fixed' : 'fixed',
+    maxWidth: player?.dock?.maxWidth,
+    below: player?.dock?.below ?? (comments === 'below' ? ['episodes', 'comments'] : ['episodes']),
+    toolbar: player?.dock?.toolbar ?? ['server', 'episode', 'release', 'download'],
+    hide: player?.dock?.hide ?? [],
   }
 }
 /** `color` values from a template or chrome block as CSS, optionally at a reduced alpha. */

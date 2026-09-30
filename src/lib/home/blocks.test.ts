@@ -70,6 +70,8 @@ describe('home block model', () => {
   it('offers latest episodes only where Home uses AniList', () => {
     expect(blockAvailable('latest-episodes', true)).toBe(true)
     expect(blockAvailable('latest-episodes', false)).toBe(false)
+    expect(blockAvailable('airing-today', true)).toBe(true)
+    expect(blockAvailable('airing-today', false)).toBe(false)
     expect(blockAvailable('genre-chips', false)).toBe(true)
   })
 })

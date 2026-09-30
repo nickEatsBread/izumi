@@ -214,7 +214,7 @@
         </HomeRowFrame>
       {/if}
     {/snippet}
-    <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$activeThemeLayout?.asideWidth ?? $homeAsideWidth} stack="space-y-5" row={mergedRow} />
+    <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$activeThemeLayout?.asideWidth ?? $homeAsideWidth} asideGap={$activeThemeLayout?.asideGap} asideStart={$activeThemeLayout?.asideStart} stack="space-y-5" row={mergedRow} />
 
     {#if optionsLoading || (homeLoading && !rows.length)}
       {#each Array.from({ length: 3 }) as _}

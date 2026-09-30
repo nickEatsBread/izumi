@@ -17,7 +17,7 @@ describe('Home blocks wiring', () => {
 
   it('dispatches every block type', () => {
     const view = read('./HomeBlockView.svelte')
-    for (const type of ['latest-episodes', 'tabbed-grid', 'genre-chips', 'ranked-list', 'profile-header']) expect(view).toContain(`block?.type === '${type}'`)
+    for (const type of ['latest-episodes', 'tabbed-grid', 'genre-chips', 'ranked-list', 'profile-header', 'airing-today']) expect(view).toContain(`block?.type === '${type}'`)
   })
 
   it('lets Edit Home add, configure and remove blocks', () => {

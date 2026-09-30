@@ -9,6 +9,7 @@
   import { isMobile } from '$lib/platform'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
+  import { captionOf } from './caption'
   // Game mode (Deck): controller/touch scrolls the row directly, so the mouse-only
   // page arrows are hidden.
   const gm = $derived($gameMode || $controllerMode)
@@ -24,6 +25,15 @@
   // Home rows expose their stable id and role (the part after "catalog:") to theme stylesheets.
   const rowId = $derived(scope?.().id)
   const rowRole = $derived(rowId?.includes(':') ? rowId.slice(rowId.indexOf(':') + 1) : rowId)
+  // `caption: "focus"` (API 3): with a pad in use, one line under the track names the focused card in
+  // full with its detail line. Every such row keeps the line, so moving between rows never shifts
+  // the page.
+  const captioned = $derived(appearance.caption === 'focus' && gm)
+  let caption = $state({ title: '', meta: '' })
+  const onTrackFocusIn = (event: FocusEvent) => { if (captioned) caption = captionOf(event.target as Element) }
+  const onTrackFocusOut = (event: FocusEvent & { currentTarget: HTMLElement }) => {
+    if (captioned && !event.currentTarget.contains(event.relatedTarget as Node | null)) caption = { title: '', meta: '' }
+  }
 
   let scroller = $state<HTMLDivElement>()
   let canLeft = $state(false)
@@ -113,7 +123,7 @@
     {/if}
   </div>
   <div class="relative">
-    <div data-part="row.track" bind:this={scroller} data-carousel-scroller={!grid ? '' : undefined} data-nav-row-items use:scrollBehavior={!grid} onwheel={onWheel} onscroll={update}
+    <div data-part="row.track" bind:this={scroller} data-carousel-scroller={!grid ? '' : undefined} data-nav-row-items use:scrollBehavior={!grid} onwheel={onWheel} onscroll={update} onfocusin={onTrackFocusIn} onfocusout={onTrackFocusOut}
          class="flex gap-3 overflow-x-scroll pb-2" class:px-8={!mob} class:px-4={mob} class:pt-3={gm}
          class:theme-grid={grid} style:gap={`${appearance.gap ?? Math.round(12 * densityScale($themePresentation))}px`} style:--theme-grid-width={`${appearance.width ?? Math.round(152 * densityScale($themePresentation))}px`}>
       {@render children()}
@@ -140,6 +150,12 @@
       </button>
     {/if}
   </div>
+  {#if captioned}
+    <p data-part="row.caption" aria-hidden="true" class="flex h-7 min-w-0 items-baseline gap-2 pt-1" class:px-8={!mob} class:px-4={mob}>
+      <span data-part="row.caption.title" class="min-w-0 truncate text-base font-bold">{caption.title}</span>
+      <span data-part="row.caption.meta" class="shrink-0 whitespace-nowrap text-sm text-muted-foreground">{caption.meta}</span>
+    </p>
+  {/if}
 </section>
 
 <style>

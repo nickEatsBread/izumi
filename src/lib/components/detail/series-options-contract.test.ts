@@ -25,7 +25,8 @@ describe('series page theme options', () => {
   })
   it('shows the airing countdown where the theme asks for it', () => {
     const detail = read('./AnimeDetail.svelte')
-    expect(detail.match(/<AiringCountdown /g)?.length).toBe(2)
+    // The phone facts, the desktop header panel and the desktop poster column.
+    expect(detail.match(/<AiringCountdown /g)?.length).toBe(3)
     const countdown = read('./AiringCountdown.svelte')
     expect(countdown).toContain('data-part="detail.countdown" data-variant={variant}')
     expect(countdown).toContain('longCountdown(')

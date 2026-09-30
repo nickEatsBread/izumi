@@ -84,6 +84,9 @@
   })
   const animeCard = $derived(media.type === 'ANIME' || media.catalog?.type === 'anime')
   const cardRating = $derived((showRating ?? !animeCard) ? primaryRating(media) : undefined)
+  // The row focus caption's detail line. `data-nav-key` below is the focus-memory key (a focus
+  // restore composes it with the row's `data-row`).
+  const captionMeta = $derived(subline ?? [format(media), season(media) || media.startDate?.year, media.episodes ? `${media.episodes} episodes` : ''].filter(Boolean).join(' · '))
 
   // Preview is rendered `fixed` (escapes the carousel's overflow clipping) and clamped to the
   // viewport so it never gets cut off by the sidebar or edges. The math is zoom-aware — see
@@ -160,6 +163,7 @@
 
 <div data-part="card" data-family={cardFamily} bind:this={el} data-theme-card style:--cover-rgb={ambientFromHex(media.coverImage?.color)} class={fill ? 'w-full' : $isTv ? 'w-44 shrink-0' : 'w-36 shrink-0 sm:w-[152px]'} style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
   <a href={mediaHref(media)} data-focusable draggable="false" onclick={() => { rememberDetail(media); h.tap() }}
+     data-nav-key={`media:${media.catalog?.id ?? media.id}`} data-caption-title={title(media)} data-caption-meta={captionMeta}
      aria-label={title(media)} style:width={themeRow.width || cardTemplate ? '100%' : undefined}
      class="group block {fill ? 'w-full' : $isTv ? 'w-44' : 'w-36 sm:w-[152px]'} {$isAndroid ? 'android-card-press' : ''}">
     {#if cardTemplate}

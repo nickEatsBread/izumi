@@ -48,6 +48,8 @@
   const thumb = $derived(meta[ep]?.image || providerVideo?.thumbnail || media.bannerImage || cardCover(media))
   const epTitle = $derived(meta[ep]?.title || providerVideo?.title)
   const episodeLabel = $derived(episodeSummary(ep, epTitle, $hideSpoilers))
+  // The row focus caption's detail line: the episode, its title and the time left.
+  const captionMeta = $derived([episodeLabel, timeLeftLabel($positions[progressKey(media.id, ep)])].filter(Boolean).join(' · '))
 
   // Subscribe to the persisted position map so this bar updates on the existing throttled player
   // saves. This adds no polling and no extra storage writes.
@@ -89,6 +91,9 @@
   data-part="card"
   data-family="continue"
   data-focusable
+  data-nav-key={`continue:${media.id}`}
+  data-caption-title={name}
+  data-caption-meta={captionMeta}
   role="button"
   tabindex="0"
   onclick={play}

@@ -29,4 +29,12 @@ describe('theme block schema', () => {
     expect(parseThemeBlock({ block: 'latest-episodes', caption: 'overlay' })).toMatchObject({ caption: 'overlay' })
     expect(() => parseThemeBlock({ block: 'latest-episodes', caption: 'side' })).toThrow('outside the supported range')
   })
+
+  it('parses airing-today blocks with a clock and a schedule link', () => {
+    expect(parseThemeBlock({ block: 'airing-today', area: 'aside', title: 'Today', limit: 15, clock: true }))
+      .toEqual({ type: 'airing-today', title: 'Today', area: 'aside', phone: false, limit: 15, clock: true, more: true })
+    expect(parseHomeBlock({ type: 'airing-today', limit: 99, clock: 'yes', more: false })).toMatchObject({ limit: 20, clock: false, more: false })
+    expect(() => parseThemeBlock({ block: 'airing-today', clock: 'yes' })).toThrow('outside the supported range')
+    expect(() => parseThemeBlock({ block: 'airing-today', columns: 2 })).toThrow('unsupported presentation property')
+  })
 })

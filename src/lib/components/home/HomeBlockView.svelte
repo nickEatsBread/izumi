@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { CatalogHomeTarget } from '$lib/catalog/home-layout'
   import { homeBlocks, type HomeBlock } from '$lib/home/blocks'
+  import AiringToday from './blocks/AiringToday.svelte'
   import GenreChips from './blocks/GenreChips.svelte'
   import LatestEpisodes from './blocks/LatestEpisodes.svelte'
   import ProfileHeader from './blocks/ProfileHeader.svelte'
@@ -23,4 +24,6 @@
   <RankedList {block} {target} {optionIds} />
 {:else if block?.type === 'profile-header'}
   <ProfileHeader {block} />
+{:else if block?.type === 'airing-today'}
+  <AiringToday {block} />
 {/if}

@@ -8,8 +8,9 @@
   let { open = $bindable(false), items, active }: { open: boolean; items: Destination[]; active: (href: string) => boolean } = $props()
 
   let panel = $state<HTMLElement>()
+  // Opens on the page you are on, so a pad press lands next to it, not on the close button.
   $effect(() => {
-    if (open) panel?.querySelector<HTMLElement>('a, button')?.focus({ preventScroll: true })
+    if (open) (panel?.querySelector<HTMLElement>('[aria-current="page"]') ?? panel?.querySelector<HTMLElement>('a, button'))?.focus({ preventScroll: true })
   })
   function onKeydown(event: KeyboardEvent) {
     if (open && event.key === 'Escape') open = false

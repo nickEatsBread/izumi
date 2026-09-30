@@ -63,12 +63,14 @@
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
   import X from '@lucide/svelte/icons/x'
   import PlayIcon from '@lucide/svelte/icons/play'
-  import { isMobile } from '$lib/platform'
+  import { isMobile, isWindows } from '$lib/platform'
   import { themePresentation, shellNav } from '$lib/themes/runtime'
-  import { resolvePlayerDock } from '$lib/themes/presentation'
+  import { resolvePlayerDock, type PlayerChrome } from '$lib/themes/presentation'
   import { playerStage } from '$lib/player/session'
   import { measureStage } from '$lib/player/insets'
   import DockEpisodes from './DockEpisodes.svelte'
+  import WatchToolbar from './WatchToolbar.svelte'
+  import WatchInfo from './WatchInfo.svelte'
   import PauseIcon from '@lucide/svelte/icons/pause'
   import PartyPresence from '$lib/components/watch/PartyPresence.svelte'
   import { matchRememberedTrack, rememberedSeriesTrack } from '$lib/player/track-preferences'
@@ -142,6 +144,12 @@
   // whole container — there is no room to give up there.
   const dock = $derived(resolvePlayerDock($themePresentation))
   const docked = $derived(dock.docked && windowedChrome && !$isMobile)
+  // `flow: "page"`: the watch view scrolls like a web page and the video moves up with it. The
+  // native surface follows through insets past the window edge, which only the Windows embed
+  // places; other desktops keep the fixed layout.
+  const pageFlow = $derived(docked && dock.flow === 'page' && $isWindows)
+  // Player chrome a docked page already shows elsewhere (its title line, its navigation).
+  const hides = (chrome: PlayerChrome) => docked && dock.hide.includes(chrome)
   const bottomNavInset = 'calc(var(--theme-bottom-nav, 4rem) + env(safe-area-inset-bottom))'
   const controllerInputMode = $derived(gmMode || $controllerMode)
   const gmBitmapMode = $derived(usesGameModeBitmapCompositor(gmMode, $playerCompositorPath))
@@ -283,20 +291,31 @@
   // as `playerStage` for the native insets. Size changes arrive through ResizeObserver; a re-docked
   // layout or a moved navigation bar re-runs the effect, and the frame after mount settles layout.
   let viewportProbe = $state<HTMLDivElement | undefined>(undefined)
+  // The page-flow watch view's scroller: the stage moves as it scrolls, so each scroll event
+  // re-measures and the native video follows in the same frame.
+  let dockScroller = $state<HTMLDivElement | undefined>(undefined)
   $effect(() => {
     void docked
     void $shellNav
+    const flow = pageFlow
     const root = overlayRoot
     const probe = viewportProbe
+    const scroller = flow ? dockScroller : undefined
     if (!windowedChrome || !root || !probe) { playerStage.set(null); return }
-    const measure = () => playerStage.set(measureStage(root.getBoundingClientRect(), probe.getBoundingClientRect()))
+    const measure = () => playerStage.set(measureStage(root.getBoundingClientRect(), probe.getBoundingClientRect(), flow))
     measure()
     const frame = requestAnimationFrame(measure)
     const observer = new ResizeObserver(measure)
     observer.observe(root)
     observer.observe(probe)
     window.addEventListener('resize', measure)
-    return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener('resize', measure) }
+    scroller?.addEventListener('scroll', measure, { passive: true })
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+      window.removeEventListener('resize', measure)
+      scroller?.removeEventListener('scroll', measure)
+    }
   })
   $effect(() => () => playerStage.set(null))
   let lastDrmError = ''
@@ -1559,22 +1578,30 @@
      The webview is TRANSPARENT over the native video and the root is that hole, so no ancestor of
      the root (and not the root itself) may paint a background — an opaque parent showed a black
      stage with sound. Every other region is an opaque SIBLING: the rail, the panel under the
-     stage and the gutters beside a narrower stage. -->
+     stage and the gutters beside a narrower stage.
+     Page flow (`flow: "page"`) makes the dock itself the scroller: the stage and the blocks under it
+     form one column that scrolls like a web page. The scroller and the column are ancestors of the
+     stage, so they stay transparent too; instead the stage paints the page background AROUND itself
+     with a spread shadow, and the blocks sit a layer above that shadow. -->
 <div
-  data-slot="watch" data-layout={docked ? 'docked' : 'full'} style:background|important="transparent"
-  class={docked ? `izumi-player-dock fixed z-20 flex ${dock.episodes === 'below' ? 'flex-col' : 'flex-row'}` : 'contents'}
+  data-slot="watch" data-layout={docked ? 'docked' : 'full'} data-flow={pageFlow ? 'page' : undefined} style:background|important="transparent"
+  bind:this={dockScroller}
+  class={pageFlow ? 'izumi-player-dock fixed z-20 overflow-y-auto overscroll-contain' : docked ? `izumi-player-dock fixed z-20 flex ${dock.episodes === 'below' ? 'flex-col' : 'flex-row'}` : 'contents'}
   style:left={docked ? ($shellNav === 'sidebar' ? '3.5rem' : '0') : undefined}
   style:top={docked ? ($shellNav === 'top' ? '4.75rem' : '0') : undefined}
   style:right={docked ? '0' : undefined}
   style:bottom={docked ? ($shellNav === 'bottom' ? bottomNavInset : '0') : undefined}
 >
 <div
+  data-slot={pageFlow ? 'watch.page' : undefined}
   style:background|important="transparent"
-  class={docked ? `izumi-player-stage flex min-h-0 ${dock.episodes === 'below' ? 'w-full shrink-0 flex-row' : 'h-full shrink-0 flex-col'}` : 'contents'}
-  style:width={docked && dock.episodes !== 'below' ? `${dock.width}%` : undefined}
-  style:max-height={docked && dock.episodes === 'below' ? '70%' : undefined}
+  class={pageFlow ? 'izumi-player-page flex flex-col pb-8' : docked ? `izumi-player-stage flex min-h-0 ${dock.episodes === 'below' ? 'w-full shrink-0 flex-row' : 'h-full shrink-0 flex-col'}` : 'contents'}
+  style:width={pageFlow ? `${dock.width}%` : docked && dock.episodes !== 'below' ? `${dock.width}%` : undefined}
+  style:max-width={pageFlow && dock.maxWidth ? `${dock.maxWidth}px` : undefined}
+  style:margin-inline={pageFlow && dock.align === 'center' ? 'auto' : undefined}
+  style:max-height={docked && !pageFlow && dock.episodes === 'below' ? '70%' : undefined}
 >
-{#if docked && dock.episodes === 'below' && dock.width < 100 && dock.align === 'center'}
+{#if docked && !pageFlow && dock.episodes === 'below' && dock.width < 100 && dock.align === 'center'}
   <div class="min-w-0 flex-1 bg-background" aria-hidden="true"></div>
 {/if}
 <div
@@ -1588,8 +1615,9 @@
   class:cursor-none={gmMode || !controlsVisible}
   class:left-14={!docked && windowedChrome && $shellNav === 'sidebar'}
   class:left-0={docked || !windowedChrome || $shellNav !== 'sidebar'}
-  style:width={docked ? (dock.episodes === 'below' ? `${dock.width}%` : '100%') : undefined}
-  style:max-height={docked ? '100%' : undefined}
+  style:width={docked ? (!pageFlow && dock.episodes === 'below' ? `${dock.width}%` : '100%') : undefined}
+  style:max-height={docked && !pageFlow ? '100%' : undefined}
+  style:box-shadow={pageFlow ? '0 0 0 200vmax hsl(var(--background))' : undefined}
   style:top={!docked && windowedChrome && $shellNav === 'top' ? '4.75rem' : undefined}
   style:bottom={!docked && windowedChrome && $shellNav === 'bottom' ? bottomNavInset : undefined}
   onclick={onOverlayTap}
@@ -1713,7 +1741,7 @@
   {:else if controlsMounted}
     <!-- XWayland measures this bar for Rust's native 60Hz OSD. Native Wayland paints it live. -->
     <div class="izumi-hud" class:opacity-0={(gmBitmapMode && gmDynamicOwnsChrome || quietDpadScrub) && !$playerSideSheetOpen}>
-      <Controls pos={controlsPos} dur={transportDur} buffer={controlsBuffer} paused={transportPaused} {segments} {cmd} onclose={close} gm={gmMode} native={gmBitmapMode} ontoggleplay={togglePlayback} oneditsubtitles={() => (subtitleEditorOpen = true)} onscrubinput={scheduleGmDynamicOverlay} />
+      <Controls pos={controlsPos} dur={transportDur} buffer={controlsBuffer} paused={transportPaused} {segments} {cmd} onclose={close} gm={gmMode} native={gmBitmapMode} ontoggleplay={togglePlayback} oneditsubtitles={() => (subtitleEditorOpen = true)} onscrubinput={scheduleGmDynamicOverlay} hideBack={hides('back')} hideTitle={hides('title')} />
     </div>
   {/if}
 
@@ -1737,22 +1765,38 @@
     />
   {/if}
 </div>
-{#if docked && dock.episodes === 'below' && dock.width < 100}
+{#if docked && !pageFlow && dock.episodes === 'below' && dock.width < 100}
   <div class="min-w-0 flex-1 bg-background" aria-hidden="true"></div>
 {/if}
-{#if docked && dock.episodes !== 'below'}
+{#if docked && !pageFlow && dock.episodes !== 'below'}
   <!-- Under the stage: the episode discussion (or a plain fill when the theme hides it). -->
   <div data-theme-surface="player-rail" class="izumi-player-under min-h-0 flex-1 border-t border-border bg-background">
     {#if dock.comments === 'below'}<CommentsPanel inline />{/if}
   </div>
 {/if}
+{#if pageFlow}
+  <!-- The blocks under the video, in the theme's order, each above the stage's background shadow.
+       Their menus open upward over the video, the way a site's player settings bar does. -->
+  {#each dock.below as block (block)}
+    <div data-part="watch.block" data-block={block} class="relative z-[21]">
+      {#if block === 'toolbar'}<WatchToolbar items={dock.toolbar} />
+      {:else if block === 'info'}<WatchInfo />
+      {:else if block === 'episodes'}<DockEpisodes orientation="below" scroll={false} />
+      {:else}<CommentsPanel inline expand />{/if}
+    </div>
+  {/each}
+{/if}
 </div>
-{#if docked}
+{#if docked && !pageFlow}
   <aside data-slot="watch.rail" data-theme-surface="player-rail" class="izumi-player-rail flex min-h-0 min-w-0 flex-1 flex-col border-border bg-background {dock.episodes === 'below' ? 'w-full border-t' : 'h-full border-l'}">
     {#if dock.episodes === 'below'}
       <div class="min-h-0 flex-1 overflow-y-auto">
-        <DockEpisodes orientation="below" scroll={false} />
-        {#if dock.comments === 'below'}<div class="h-[36rem] border-t border-border"><CommentsPanel inline /></div>{/if}
+        {#each dock.below as block (block)}
+          {#if block === 'toolbar'}<WatchToolbar items={dock.toolbar} menus="down" />
+          {:else if block === 'info'}<div class="px-4"><WatchInfo /></div>
+          {:else if block === 'episodes'}<DockEpisodes orientation="below" scroll={false} />
+          {:else}<div class="h-[36rem] border-t border-border"><CommentsPanel inline /></div>{/if}
+        {/each}
       </div>
     {:else}
       <DockEpisodes orientation="right" />

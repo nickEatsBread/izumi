@@ -23,6 +23,7 @@
   import { get } from 'svelte/store'
   import { gameMode, playing } from '$lib/player/session'
   import { controllerMode } from '$lib/nav/input'
+  import { bumperTabs } from '$lib/nav/bumpers'
   import { androidMpvActive } from '$lib/player/android-mpv'
   import { airingCountdown, airingCountdownAccessible } from '$lib/anime/airing-labels'
   import { dragCarousels, wheelScrollAcross } from '$lib/settings/ui'
@@ -268,8 +269,8 @@
     const onScroll = () => (scrolled = (window.scrollY ?? 0) > 100)
     window.addEventListener('scroll', onScroll)
     // Steam Deck: L1/R1 step through the featured banners (dispatched by the gamepad translator
-    // while on the home screen). detail = -1 (prev) / +1 (next); wraps.
-    const onHeroNav = (e: Event) => step((e as CustomEvent<number>).detail < 0 ? -1 : 1)
+    // while on the home screen), unless a theme's bumper tabs own L1/R1. detail = -1 / +1; wraps.
+    const onHeroNav = (e: Event) => { if (!get(bumperTabs)) step((e as CustomEvent<number>).detail < 0 ? -1 : 1) }
     window.addEventListener('hero-nav', onHeroNav)
     return () => {
       if (timer) clearTimeout(timer)
@@ -625,11 +626,13 @@
     onwheel={onHeroWheel}
   >
     <!-- Full-bleed banner: on desktop it breaks out of main's left margin (behind the sidebar
-         rail, `--theme-shell-left`) and up under the frameless titlebar. With a top or bottom
-         navigation bar that margin is 0, so the offset follows the variable: a fixed -left-14
-         left a 56px band of page background at the right. On mobile there's no sidebar/titlebar,
-         so it sits flush with the viewport edge. Keyed for a crossfade. -->
-    <div class="pointer-events-none absolute left-[calc(-1*var(--theme-shell-left,0px))] top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-top-8">
+         rail, `--theme-shell-left`) and up under the frameless titlebar, or under the whole top
+         bar (`--theme-shell-top`): a theme can leave that bar transparent, and a 2rem reach left
+         a band of page background above the artwork. With a top or bottom navigation bar the
+         left margin is 0, so the offset follows the variable: a fixed -left-14 left a 56px band
+         of page background at the right. On mobile there's no sidebar/titlebar, so it sits flush
+         with the viewport edge. Keyed for a crossfade. -->
+    <div class="pointer-events-none absolute left-[calc(-1*var(--theme-shell-left,0px))] top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:top-[calc(-1*var(--theme-shell-top,2rem))] sm:h-[calc(100%+var(--theme-shell-top,2rem))]">
       {#key current.id}
         <div data-part="hero.slide" class="{initialArtworkVisible && !showOverlay ? 'detail-hero-reveal' : 'hero-slide-in'} absolute inset-0" class:hero-carousel-slide={showOverlay} style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:{bannerScale && !showOverlay ? .5 : .7}">
           {#if !artworkReady}<div class="absolute inset-0 skeloader"></div>{/if}

@@ -29,8 +29,16 @@ describe('series page sections', () => {
   it('stacks every section in order when asked', () => {
     expect(resolveSections({ mode: 'stack', tabs: ['overview', 'characters', 'episodes'] }, { phone: true, episodesTabbed: true })).toMatchObject({ mode: 'stack', tabs: ['overview', 'characters', 'episodes'], folded: ['relations', 'recommended'] })
   })
+  it('keeps only the listed tabs when the unlisted sections are hidden', () => {
+    // A site with Episodes, Relations and Recommendations and nothing else: no Overview, no Cast.
+    const view = resolveSections({ tabs: ['episodes', 'relations', 'recommended'], unlisted: 'hidden' }, { phone: false, episodesTabbed: true })
+    expect(view).toMatchObject({ tabs: ['episodes', 'relations', 'recommended'], folded: [], initial: 'episodes' })
+    // An episode rail takes Episodes out of the tabs; the rest still stand alone.
+    expect(resolveSections({ tabs: ['episodes', 'relations'], unlisted: 'hidden' }, { phone: false, episodesTabbed: false }).tabs).toEqual(['relations'])
+  })
   it('names tabs from the fixed set only', () => {
-    expect(Object.keys(TAB_LABEL_TEXT)).toHaveLength(13)
+    expect(Object.keys(TAB_LABEL_TEXT)).toHaveLength(14)
+    expect(TAB_LABEL_TEXT.recommendations).toBe('Recommendations')
     expect(TAB_LABEL_TEXT['more-like-this']).toBe('More like this')
   })
 })

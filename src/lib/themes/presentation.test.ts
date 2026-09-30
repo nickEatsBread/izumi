@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseNode, parsePresentation, resolvePresentation, nodeStyle, resolveRow, resolveCard, resolveDetail, episodesOnSide, episodesBelow, themeCoverage, densityScale, visibleNode, displayText, type DisplayModel } from './presentation'
+import { parseNode, parsePresentation, resolvePresentation, resolvePlayerDock, nodeStyle, resolveRow, resolveCard, resolveDetail, episodesOnSide, episodesBelow, themeCoverage, densityScale, visibleNode, displayText, type DisplayModel } from './presentation'
 
 describe('theme presentation contract', () => {
   it('composes new layouts from primitives with bounded styles', () => {
@@ -118,6 +118,25 @@ describe('theme presentation contract', () => {
     expect(() => parsePresentation({ shell: { top: { labels: 'huge' } } })).toThrow('unsupported')
     expect(() => parsePresentation({ shell: { top: { color: 'red' } } })).toThrow('unsupported')
   })
+  it('parses a menu pinned down the left of the top bar', () => {
+    expect(parsePresentation({ shell: { nav: 'top', top: { menu: 'side', sideWidth: 260 } } }).shell?.top).toEqual({ menu: 'side', sideWidth: 260 })
+    expect(() => parsePresentation({ shell: { top: { sideWidth: 600 } } })).toThrow('range')
+    expect(() => parsePresentation({ shell: { top: { menu: 'rail' } } })).toThrow('unsupported')
+  })
+  it('parses the handheld shell keys and the row focus caption', () => {
+    const parsed = parsePresentation({
+      shell: { nav: 'top', top: { bumpers: true }, hints: true },
+      rows: { defaults: { caption: 'focus' }, byId: { continue: { caption: 'none' } } },
+    })
+    expect(parsed.shell).toEqual({ nav: 'top', top: { bumpers: true }, hints: true })
+    expect(parsed.rows?.defaults?.caption).toBe('focus')
+    expect(parsed.rows?.byId?.continue?.caption).toBe('none')
+    expect(() => parsePresentation({ shell: { hints: 'yes' } })).toThrow('toggle')
+    expect(() => parsePresentation({ shell: { top: { bumpers: 1 } } })).toThrow('toggle')
+    expect(() => parsePresentation({ rows: { defaults: { caption: 'hover' } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ shell: { hints: true } }, 2)).toThrow('unsupported')
+    expect(() => parsePresentation({ rows: { defaults: { caption: 'focus' } } }, 2)).toThrow('unsupported')
+  })
   it('parses the API 3 series-page options and the bottom tab bar', () => {
     const detail = { factsStyle: 'table', countdown: 'long', listButton: 'full', tabs: 'bottom' }
     expect(parsePresentation({ detail }).detail).toEqual(detail)
@@ -180,6 +199,26 @@ describe('theme presentation contract', () => {
     expect(() => parsePresentation({ layout: { nav: { bottom: ['nowhere'] } } })).toThrow('unsupported')
     expect(() => parsePresentation({ layout: { asideWidth: 999 } })).toThrow('range')
     expect(() => parsePresentation({ layout: { home: Array.from({ length: 31 }, () => ({ role: 'x' })) } })).toThrow('1–30')
+  })
+  it('places the side column with a gutter and a starting row', () => {
+    expect(parsePresentation({ layout: { asideGap: 32, asideStart: 2 } }).layout).toEqual({ asideGap: 32, asideStart: 2 })
+    expect(() => parsePresentation({ layout: { asideGap: 120 } })).toThrow('range')
+    expect(() => parsePresentation({ layout: { asideStart: 30 } })).toThrow('range')
+    // A phone layout may move them too.
+    expect(parsePresentation({ mobile: { layout: { asideStart: 0 } } }).mobile?.layout).toEqual({ asideStart: 0 })
+  })
+  it('parses the API 3 docked watch page keys', () => {
+    const dock = { episodes: 'below', flow: 'page', maxWidth: 1100, below: ['toolbar', 'info', 'comments'], toolbar: ['episode', 'release'], hide: ['back', 'title'] }
+    expect(parsePresentation({ player: { layout: 'docked', dock } }).player?.dock).toEqual(dock)
+    expect(resolvePlayerDock(parsePresentation({ player: { layout: 'docked', dock } }))).toMatchObject({ flow: 'page', maxWidth: 1100, below: ['toolbar', 'info', 'comments'], toolbar: ['episode', 'release'], hide: ['back', 'title'] })
+    // Beside the stage the rail keeps its own scroller, whatever the theme asked for.
+    expect(resolvePlayerDock(parsePresentation({ player: { layout: 'docked', dock: { flow: 'page' } } })).flow).toBe('fixed')
+    // Without a list the grid comes first, then the discussion unless it is hidden.
+    expect(resolvePlayerDock(parsePresentation({ player: { layout: 'docked', dock: { episodes: 'below', comments: 'hidden' } } })).below).toEqual(['episodes'])
+    expect(() => parsePresentation({ player: { dock: { below: ['info', 'info'] } } })).toThrow('twice')
+    expect(() => parsePresentation({ player: { dock: { hide: ['stats'] } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ player: { dock: { maxWidth: 200 } } })).toThrow('range')
+    expect(() => parsePresentation({ player: { dock: { flow: 'page' } } }, 2)).toThrow('unsupported')
   })
   it('lets phones replace the home list but not the navigation', () => {
     const phoneHome = [{ role: 'continue' }]

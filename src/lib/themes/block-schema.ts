@@ -1,6 +1,6 @@
 // Home block settings: types, limits and validation. Import-free — theme packages declare blocks
 // too, and the theme catalog mirrors this file.
-export const HOME_BLOCK_TYPES = ['latest-episodes', 'tabbed-grid', 'genre-chips', 'ranked-list', 'profile-header'] as const
+export const HOME_BLOCK_TYPES = ['latest-episodes', 'tabbed-grid', 'genre-chips', 'ranked-list', 'profile-header', 'airing-today'] as const
 export type HomeBlockType = (typeof HOME_BLOCK_TYPES)[number]
 export type BlockPagination = 'numbers' | 'more' | 'none'
 export type BlockArea = 'main' | 'aside'
@@ -28,7 +28,10 @@ export interface TabbedGridBlock extends BlockCommon { type: 'tabbed-grid'; tabs
 export interface GenreChipsBlock extends BlockCommon { type: 'genre-chips'; genres: 'top' | string[]; all: boolean }
 export interface RankedListBlock extends BlockCommon { type: 'ranked-list'; tabs: BlockTab[]; limit: number }
 export interface ProfileHeaderBlock extends BlockCommon { type: 'profile-header'; buttons: BlockButton[] }
-export type HomeBlock = LatestEpisodesBlock | TabbedGridBlock | GenreChipsBlock | RankedListBlock | ProfileHeaderBlock
+/** Today's airings in time order, released or still to come; `clock` adds the date and a live clock
+ *  under the heading, `more` a link to the schedule. */
+export interface AiringTodayBlock extends BlockCommon { type: 'airing-today'; limit: number; clock: boolean; more: boolean }
+export type HomeBlock = LatestEpisodesBlock | TabbedGridBlock | GenreChipsBlock | RankedListBlock | ProfileHeaderBlock | AiringTodayBlock
 
 export const BLOCK_LIMITS = {
   columns: [1, 8], pageSize: [4, 48], limit: [3, 20],
@@ -111,6 +114,7 @@ export function parseHomeBlock(value: unknown): HomeBlock | null {
     case 'genre-chips': return { type, ...common, genres: raw.genres === 'top' ? 'top' : parseGenres(raw.genres), all: raw.all !== false }
     case 'ranked-list': return { type, ...common, tabs: parseTabs(raw.tabs, BLOCK_LIMITS.rankedTabs), limit: clampInt(raw.limit, BLOCK_LIMITS.limit, 10) }
     case 'profile-header': return { type, ...common, buttons: parseButtons(raw.buttons) }
+    case 'airing-today': return { type, ...common, limit: clampInt(raw.limit, BLOCK_LIMITS.limit, 10), clock: raw.clock === true, more: raw.more !== false }
   }
 }
 
@@ -120,6 +124,7 @@ const BLOCK_KEYS: Record<HomeBlockType, readonly string[]> = {
   'genre-chips': ['genres', 'all'],
   'ranked-list': ['tabs', 'limit'],
   'profile-header': ['buttons'],
+  'airing-today': ['limit', 'clock', 'more'],
 }
 
 /** A block declared by a theme package (`{ "block": "genre-chips", … }`). Unlike stored settings,

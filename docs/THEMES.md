@@ -24,7 +24,8 @@ Semantic colors, font family and scale, corner radius, backdrop and glass effect
 - Navigation placement: side rail, top bar, or bottom bar. Phones keep the bottom bar. Destination order stays in Settings → Navigation.
 - Compact shell padding.
 - Bottom bar styling (API 2, `shell.bottomNav`): flush bar, floating card or centred pill; labels always, on the active tab or never; a tonal pill, top line or dot as the active marker; height, icon size, radius, colours, blur, border and whether the bar hides while scrolling. `BottomNav.svelte` renders it and `src/lib/theme.ts` publishes `--theme-bottom-nav` so the page reserves the right space.
-- Top bar (API 3, `shell.top`): destination names as text links or with icons (`labels`), an inline search field in the centre or at the end (`search`), a menu drawer (`menu`), a centred brand (`brand`) and a Categories menu after the destinations (`categories: true`) with Browse all, Release calendar and the catalog's genres, each opening search.
+- Top bar (API 3, `shell.top`): destination names as text links or with icons (`labels`), an inline search field in the centre or at the end (`search`), a menu drawer (`menu: "drawer"`) or a menu pinned as a labelled panel down the left under the bar (`menu: "side"`, `sideWidth` 200–320 px, default 260: the page moves over for it on windows from 1100 px, the menu button folds it away, narrower windows get the drawer, and it hides while a video plays), a centred brand (`brand`) and a Categories menu after the destinations (`categories: true`) with Browse all, Release calendar and the catalog's genres, each opening search.
+- Handheld controls (API 3): `shell.top.bumpers: true` turns the top bar's destinations into tabs that L1/R1 switch (no wrap), with the bumper glyphs at either end; L2/R2 step the page's own tabs (series sections, Library sections, Schedule days, and any strip marked `data-page-tabs`), Start opens the menu drawer and View opens search. With a pad in use the bar's controls leave the d-pad order, and the drawer reaches every destination and Settings. `shell.hints: true` adds the controller button-hint bar along the bottom: what A, X, B, the page-tab triggers and the menu button do for the focused element, in the connected pad's printed labels (Steam Deck, Xbox, PlayStation or Nintendo). It shows after pad input in Game or controller mode, hides on the next touch or mouse move, and the page keeps its height free while it shows.
 
 ### Home
 
@@ -32,12 +33,13 @@ Semantic colors, font family and scale, corner radius, backdrop and glass effect
 - Slide indicator (API 2, `hero.indicator`): filled bars, dots, pills, an "n / N" counter or none, at the start, centre or end, in a theme colour. One snippet in `Hero.svelte` serves the built-in desktop and phone layouts and custom templates; without it each layout keeps its own default (timed bars on desktop, dots on a phone).
 - Wide hero (API 3): `hero.scale: "wide"` sizes a hero template as the 16:9 artwork box instead of a viewport height. `hero.bleed` (0–480 px) applies only together with `scale: "wide"` (the client ignores it under `viewport` or `banner`) and runs that many pixels of the artwork's bottom under the rows that follow, with the content, arrows and markers lifted above it. Both apply on windows wider than a phone; phones keep `mobileHeight`. `hero.indicator.past: "empty"` leaves the bars of earlier slides unfilled.
 - Rows: carousel or wrapping grid, card width and spacing, row spacing, artwork shape and corners (these style the default cover; a custom card template owns its own shape), heading size, and optional media-card templates.
+- Focus caption (API 3, `caption: "focus"` on `rows.defaults` or a row): with a pad in use each row keeps one line under its cards for the focused card's full title and detail line (episode, episode title and time left on Continue Watching; format, season and episode count on posters), so a theme can shorten card labels without losing the full title.
 - Section headings (API 2, `heading`): weight, uppercase, a bar/dot/underline accent and whether "View more" is text, an arrow or hidden. Home-row cards also receive `rankPosition` and a zero-padded `rank`, so a row template can number trending titles.
 - Per-row overrides follow stable row identities, so reordering a row does not move its visual settings to another row. Resolution is global defaults → semantic row role → exact scoped row ID. For example, `continue` can override every Continue Watching row and `anime:continue` can target one catalog.
 
 Home blocks — latest episodes, tabbed grid, genre chips, ranked list and profile header — and the side column are izumi features: anyone adds, configures and removes them from Edit Home (`src/lib/home/blocks.ts`, `src/lib/components/home/`). Themes style them through the block hooks listed under "Styling hooks".
 
-Theme layout (API 3, `layout`): `home` lists the Home in order — catalog rows by role (`continue`, `recent`, `trending`, …; `hero` is the featured banner, and leaving it out hides it) and blocks with their settings (`{ "block": "ranked-list", "area": "aside", "tabs": [{ "label": "Top airing", "role": "trending" }] }`); `asideWidth` sets the side column (240–420 px); `nav` sets the phone bottom bar (`bottom`), the Home header icons (`top`) and Home's position on the bar (`home`). `mobile.layout.home` replaces the Home list on phones. A role the active catalog lacks is skipped. The layout applies while the theme is active; people turn it off, or customize a copy that becomes their own layout, in Edit Home and Settings → Navigation — their own layout is never overwritten. The featured banner is itself a Home row, so anyone can move or hide it.
+Theme layout (API 3, `layout`): `home` lists the Home in order — catalog rows by role (`continue`, `recent`, `trending`, …; `hero` is the featured banner, and leaving it out hides it) and blocks with their settings (`{ "block": "ranked-list", "area": "aside", "tabs": [{ "label": "Top airing", "role": "trending" }] }`; `airing-today` lists today's episodes in airing order, with `limit` 3–20, `clock` for the date and a live clock under the heading and `more` for a link to the schedule); `asideWidth` sets the side column (240–420 px) and `asideGap` the gutter between it and the main column (0–96 px, default 32; the main rows scroll inside themselves, so their own padding never separates them from the side column); `asideStart` the main row the side column starts beside, counted after the featured banner (0–29, default 0; the rows before it span the whole width, as when a site runs its first rows edge to edge and puts its sidebar beside a later section); `nav` sets the phone bottom bar (`bottom`), the Home header icons (`top`) and Home's position on the bar (`home`). `mobile.layout.home` replaces the Home list on phones. A role the active catalog lacks is skipped. The layout applies while the theme is active; people turn it off, or customize a copy that becomes their own layout, in Edit Home and Settings → Navigation — their own layout is never overwritten. The featured banner is itself a Home row, so anyone can move or hide it.
 
 ### Cards
 
@@ -54,7 +56,7 @@ Optional templates for three families: `poster` (ordinary tiles), `continue` (re
 - Optional series-facts template (icons + text). Theme Studio can edit facts and episode cards per theme.
 - Tab style (API 2, `detail.tabs`): underline, pills, an iOS-style segmented control, or a bar of equal tabs with a tinted pill behind the active one (`Tabs.svelte`).
 - API 3: `factsStyle` (`table`, `cards`, `chips` or the `facts` template), `countdown` (`compact` or `long` airing countdown), `listButton` (`inline`, `full` or `hidden`), `tabs: "bottom"` (a phone tab bar that takes the bottom navigation's place), and `header`, a non-interactive template rendered under the series title on every layout (a studio chip, a score, a meta line) whatever `factsStyle` shows. `art: "keyart"` paints 16:9 key art behind the overlay layouts (falling back to the banner), and `title: "logo"` shows the title logo instead of the text title on every layout when the title has one.
-- API 3 composition (`detail.sections`): `tabs` lists the sections that get a tab, in order (1–5 of `overview`, `episodes`, `relations`, `characters`, `recommended`, each once). Sections left out render inside Overview after its own content, each as a titled `detail.section`; Overview always keeps a tab. `labels` renames a tab from a fixed set — Overview: `overview`, `info`, `details`, `about`, `home`; Episodes: `episodes`, `watch`; Relations: `relations`, `related`; Characters: `characters`, `cast`; Recommended: `recommended`, `more-like-this` ("More like this"). `default` is the tab open on arrival. `info: "overview"` (phones, stacked and split layouts) moves the facts, countdown, release timing, genres and synopsis from above the tabs into Overview. On desktop stacked and split pages a theme that sets `sections` shows the synopsis once: the info column's short synopsis, which Overview then leaves out, or with `info: "overview"` the whole text in Overview and none in the info column (the facts stay in the info column). Without `sections` the info column keeps its short synopsis and Details holds the whole text. `mode: "stack"` drops the tab strip and renders every section in `tabs` order, then the rest, each as a titled `detail.section`. Episodes placed on a right-hand rail or below the info stay there and never take a tab. Series tabs carry `data-tab` with their section id. Without the key the tabs are izumi's own: Episodes, Overview, Relations, Characters, Recommended on phones; Episodes, Relations, Cast & Crew, Recommended, Details on desktop.
+- API 3 composition (`detail.sections`): `tabs` lists the sections that get a tab, in order (1–5 of `overview`, `episodes`, `relations`, `characters`, `recommended`, each once). Sections left out render inside Overview after its own content, each as a titled `detail.section`; Overview always keeps a tab, unless `unlisted: "hidden"` drops everything `tabs` leaves out (Overview included) for a page whose info column already carries the facts and synopsis. `labels` renames a tab from a fixed set — Overview: `overview`, `info`, `details`, `about`, `home`; Episodes: `episodes`, `watch`; Relations: `relations`, `related`; Characters: `characters`, `cast`; Recommended: `recommended`, `more-like-this` ("More like this"), `recommendations`. `default` is the tab open on arrival. `info: "overview"` (phones, stacked and split layouts) moves the facts, countdown, release timing, genres and synopsis from above the tabs into Overview. On desktop stacked and split pages a theme that sets `sections` shows the synopsis once: the info column's short synopsis, which Overview then leaves out, or with `info: "overview"` the whole text in Overview and none in the info column (the facts stay in the info column). Without `sections` the info column keeps its short synopsis and Details holds the whole text. `mode: "stack"` drops the tab strip and renders every section in `tabs` order, then the rest, each as a titled `detail.section`. Episodes placed on a right-hand rail or below the info stay there and never take a tab. Series tabs carry `data-tab` with their section id. `detail.column: "poster"` (API 3, desktop stacked and split pages without an episode rail) turns the poster into the head of a left column (`detail.column`, `posterWidth` wide, default 248 px) holding a labelled Watch Trailer button (`detail.trailer`, which then leaves the action bar), the countdown and the facts, with the titles, actions, synopsis and sections beside it. Without the key the tabs are izumi's own: Episodes, Overview, Relations, Characters, Recommended on phones; Episodes, Relations, Cast & Crew, Recommended, Details on desktop.
 - API 3 `nav: "hidden"`: the series page covers the phone's bottom navigation, like a page pushed over an app's tab bar, and the room the bar took at the bottom goes with it (bottom tabs, `tabs: "bottom"`, keep theirs).
 - API 3 `continue: "card"`: a Continue card (`episode.continue`) above the episode list — the next episode's still, "Continue: Episode N" (or "Play: Episode N" before the series is started), its title and a progress line — plays what the Play button would. On phones it takes the header Play button's place once an episode has aired, while the episodes are on the page (below the header, stacked, or the Episodes tab open, or Overview when the episodes fold into it); with another tab open the header keeps its Play button. Desktop keeps both.
 - API 3 episode list (`detail.episodes`):
@@ -72,7 +74,7 @@ Optional templates for three families: `poster` (ordinary tiles), `continue` (re
 
 Seekbar thickness and color. Skip rules, subtitle files and playback shortcuts stay in Settings.
 
-Watch layout (API 2, `player.layout` and `player.dock`): `docked` keeps the browse chrome while watching and mounts the video in a stage of `dock.width` percent, with the episode rail beside it (`episodes: "right"`, a scrolling list of episode cards) or below it (`episodes: "below"`, a server switcher and an episode number grid, `DockEpisodes.svelte`). `dock.comments` (default `below`) renders the episode discussion inline (`CommentsPanel` with `inline`) under the stage, or after the episode grid. The stage is the transparent hole over the native video, so neither the player root nor any of its ancestors may paint a background: everything around the stage is an opaque sibling (rail, discussion panel, gutters). Picking an episode takes the Next button's route (`playEpisodeInPlayer`), so a cached same-release source continues without the picker. Fullscreen, picture-in-picture, Game mode and phones keep the full container.
+Watch layout (API 2, `player.layout` and `player.dock`): `docked` keeps the browse chrome while watching and mounts the video in a stage of `dock.width` percent, with the episode rail beside it (`episodes: "right"`, a scrolling list of episode cards) or below it (`episodes: "below"`, a server switcher and an episode number grid, `DockEpisodes.svelte`). `dock.comments` (default `below`) renders the episode discussion inline (`CommentsPanel` with `inline`) under the stage, or after the episode grid. The stage is the transparent hole over the native video, so neither the player root nor any of its ancestors may paint a background: everything around the stage is an opaque sibling (rail, discussion panel, gutters). Picking an episode takes the Next button's route (`playEpisodeInPlayer`), so a cached same-release source continues without the picker. Fullscreen, picture-in-picture, Game mode and phones keep the full container. API 3 adds five `dock` keys. `flow: "page"` (with `episodes: "below"`) turns the watch view into a scrolling page: the video frame moves up with it, the native video follows, and every block under it keeps its natural height, so the discussion grows with its comments instead of scrolling inside a box (Windows; other desktops keep the fixed layout). `maxWidth` (480–2400 px) caps the column, centred when `align` is `center`. `below` orders the blocks under the video: `toolbar` (a row of dropdowns opening upward: `server`, `episode`, `release` and `download`, chosen and ordered by `toolbar`), `info` (the poster, "Title - 12", the format and airing line and the season), `episodes` (the server switcher and number grid) and `comments`; without it the grid comes first, then the discussion unless `comments` hides it. `hide` drops player chrome the page already shows: `back` (the Back button) and `title` (the title and episode line over the video); they only apply while docked, so fullscreen keeps them. The torrent readout follows the viewer's own setting, never the theme.
 
 How the video follows the layout: the webview is transparent over the native mpv surface, so the player root in `PlayerOverlay.svelte` is the video's frame. While the chrome is up the root measures its edges as fractions of a full-viewport probe (zoom-agnostic) into `playerStage`; the app shell turns them into physical-pixel insets (`src/lib/player/insets.ts`) and calls `player_set_inset` with all four edges. Windows moves the mpv container to that rect, macOS sets the GL view's frame and Linux (Wayland) positions and sizes the `wl_subsurface`; each keeps rendering at the surface's real pixel size, so a smaller stage changes the picture's size, never its scaling. Before the overlay has measured itself the shell uses the chrome's own extent (sidebar rail, top bar or bottom bar), which also fixes the old blank rail beside a top navigation bar: the root is inset from whichever edge `shellNav` (`src/lib/themes/runtime.ts`) says the chrome occupies.
 
@@ -131,6 +133,9 @@ State values:
 | `data-row`, `data-role` | `row` | the row's stable id; the role is the part after its `:` (the whole id when it has none) |
 | `data-family` | `card` | `poster`, `search`, `continue`, `preview` |
 | `data-caption` | `block.latest-episodes` | `below`, `overlay` |
+| `data-aired` | `block.item` (airing-today) | present once the episode has aired |
+| `data-button` | `nav.bumper`, `hints.item`, `hints.glyph` | `a`, `b`, `x`, `y`, `l1`, `r1`, `l2`, `r2`, `start`, `select`; `l2r2` on `hints.item` |
+| `data-family` | `hints.glyph` | `deck`, `xbox`, `playstation`, `nintendo` |
 | `data-layout` | `detail` | `stack`, `split`, `overlay` |
 | `data-variant` | `detail` | `phone`, `desktop` |
 | `data-variant` | `detail.facts` | `table`, `cards`, `chips` (none for a template) |
@@ -156,8 +161,14 @@ State values:
 | `data-next` | `episode` | present on the episode the series Play button opens |
 | `data-filler` | `episode` | present on a known filler episode |
 | `data-layout` | `watch` | `full`, `docked` |
+| `data-flow` | `watch` | `page` on a page-flow watch view (absent otherwise) |
+| `data-block` | `watch.block` | `toolbar`, `info`, `episodes`, `comments` |
+| `data-item` | `watch.toolbar.item`, `watch.toolbar.menu` | `server`, `episode`, `release`, `download` |
+| `data-state` | `watch.toolbar.item` | `open`, `closed` |
+| `data-state` | `watch.toolbar.option` | `active` on the current server, episode or release, or a finished download |
 | `data-variant` | `watch.episodes` | `right`, `below` |
 | `data-variant` | `watch.comments` | `inline`, `sheet` |
+| `data-variant` | `home.main` | `lead` on the full-width rows above the side column (`layout.asideStart`) |
 | `data-variant` | `search` | `anilist-scope`, `anilist`, `merged`, `catalog` |
 | `data-variant` | `button` | `primary`, `secondary`, `ghost`, `icon` |
 | `data-variant` | `tabs` | `underline`, `pills`, `segmented`, `bar` |
@@ -176,11 +187,23 @@ State values:
 | `nav.item.icon` | part | The icon of a navigation destination. |  |
 | `nav.item.label` | part | The label of a navigation destination. |  |
 | `search.field` | part | A search input: the global search overlay, or the theme top bar's search field. |  |
+| `search.suggestions` | part | The live results panel under the top bar's search field while typing. |  |
+| `search.suggestion` | part | One live result; the keyboard-highlighted one has `data-active`. | `data-active` |
+| `search.suggestion.poster` | part | A live result's poster. |  |
+| `search.suggestion.title` | part | A live result's title. |  |
+| `search.suggestion.meta` | part | The format, episode count, year and status line of a live result. |  |
+| `search.suggestion.all` | part | The "View all results" link at the end of the panel. |  |
 | `nav.menu` | part | The top bar menu button that opens the drawer. |  |
+| `nav.bumper` | part | The L1 or R1 glyph at either end of the top bar's tabs (`shell.top.bumpers`, pad in use). | `data-button` |
 | `nav.drawer` | slot | The side drawer of destinations (top bar `menu: "drawer"`); items are `nav.item`. |  |
+| `nav.panel` | slot | The pinned menu panel down the left (top bar `menu: "side"`); items are `nav.item`. |  |
 | `nav.categories` | slot | The Categories menu panel (top bar `categories`). |  |
 | `nav.categories.heading` | part | The Genres heading in the Categories menu. |  |
 | `nav.categories.link` | part | A Categories menu link; genre links carry `data-variant="genre"`. | `data-variant` |
+| `hints.glyph` | part | A controller button's printed label: round for face buttons, a pill for bumpers, triggers and the menu buttons. | `data-button`, `data-family` |
+| `hints` | slot | The controller button-hint bar along the bottom (`shell.hints`). |  |
+| `hints.item` | part | One prompt: its glyph (two for the page-tab triggers, `data-button="l2r2"`) and label. | `data-button` |
+| `hints.label` | part | What the button does for the focused element. |  |
 
 #### Home
 
@@ -206,20 +229,23 @@ State values:
 | `row.title` | part | The row title. |  |
 | `row.more` | part | The row's view-more link. |  |
 | `row.track` | part | The scrolling track or grid holding the cards. |  |
+| `row.caption` | part | The focus caption line under a row (`caption: "focus"`, pad in use). |  |
+| `row.caption.title` | part | The focused card's full title in the caption. |  |
+| `row.caption.meta` | part | The focused card's detail line: episode, episode title and time left on Continue Watching; format, season and episodes on posters. |  |
 
 #### Home blocks
 
 | Hook | Kind | What | States |
 |---|---|---|---|
 | `home.header` | slot | The phone Home app bar: the wordmark and the top icons. |  |
-| `home.main` | slot | The main column of Home. |  |
+| `home.main` | slot | The main column of Home; the rows above the side column (`layout.asideStart`) are a second one with `data-variant="lead"`. | `data-variant` |
 | `home.aside` | slot | The side column of Home, holding blocks placed in the aside. |  |
 | `pagination` | part | Page controls under a block: numbered pages or a Load more button. |  |
 | `page-number` | part | A page button: a numbered page under a block, Prev/Next under the episode list, or an entry of the episode range picker. | `data-active` |
 | `block.title` | part | A block heading. |  |
 | `block.genre-chips` | slot | Genre shortcuts: an All chip and one chip per genre (each a `chip`). |  |
 | `block.latest-episodes` | slot | Newly aired episodes as a grid of stills. Items reuse `episode.still`, `episode.number`, `card.title` and `card.meta`. `data-caption` is `below` or `overlay`. | `data-caption` |
-| `block.item` | part | One entry in a block (an episode, a poster or a ranked title). |  |
+| `block.item` | part | One entry in a block (an episode, a poster, a ranked title or an airing). | `data-aired` |
 | `block.tabbed-grid` | slot | A tab strip (`tabs`) over a poster grid; each poster is a `block.item` holding a `card`. |  |
 | `block.ranked-list` | slot | A numbered top list; each entry is a `block.item` with `card.art`, `card.title` and `card.meta`. |  |
 | `block.rank` | part | The rank number of a ranked-list entry. |  |
@@ -228,6 +254,14 @@ State values:
 | `block.avatar` | part | The profile avatar (an image, or the first letter of the name). |  |
 | `block.name` | part | The profile name. |  |
 | `block.stat` | part | The watch statistics line. |  |
+| `block.airing-today` | slot | Today's airings in time order; each entry is a `block.item` with `airing.poster`, `airing.title` and `airing.time`, and `data-aired` once it has aired. |  |
+| `block.more` | part | A block's link to its full page (the schedule, on airing-today). |  |
+| `block.clock` | part | The date (`block.clock.date`) and live clock (`block.clock.time`) under an airing-today heading. |  |
+| `block.clock.date` | part | Today's date in an airing-today clock. |  |
+| `block.clock.time` | part | The live time in an airing-today clock. |  |
+| `airing.poster` | part | The poster of an airing-today entry. |  |
+| `airing.title` | part | The series title of an airing-today entry. |  |
+| `airing.time` | part | The local airing time of an airing-today entry: a tick once aired, a clock before. |  |
 
 #### Cards
 
@@ -250,6 +284,8 @@ State values:
 | `detail` | slot | The series page. | `data-layout`, `data-variant` |
 | `detail.banner` | slot | The artwork area at the top of the series page. |  |
 | `detail.poster` | part | The cover image. |  |
+| `detail.column` | slot | The left column headed by the poster (`detail.column: "poster"`): the trailer button, the countdown and the facts. |  |
+| `detail.trailer` | part | The labelled Watch Trailer button in the poster column. |  |
 | `detail.title` | part | The title. |  |
 | `detail.logo` | part | The title logo inside `detail.title` (`detail.title: "logo"`). |  |
 | `detail.backdrop` | part | The artwork behind an overlay series page: the banner, key art (`detail.art: "keyart"`) or a blurred cover. |  |
@@ -292,7 +328,9 @@ State values:
 | `episode.still` | part | The episode thumbnail. |  |
 | `episode.number` | part | The episode number. |  |
 | `episode.title` | part | The episode title. |  |
+| `episode.meta` | part | The line under an episode card title: the episode label, the airing countdown or Not aired. |  |
 | `episodes.track` | part | The scrolling row holding the episode cards of a `carousel` arrangement. |  |
+| `episodes.grid` | part | The grid holding the episode cards (the cards layout, or a theme's `grid` arrangement); a stylesheet sets its columns. |  |
 | `episodes.toolbar` | slot | The episode controls: izumi's own bar, or the theme's bar or heading row (`detail.episodes.toolbar`). | `data-variant` |
 | `episodes.sort` | part | The order control: Oldest and Newest options (`tabs`, the chosen one `data-active`) or one toggle naming the current order (`flip`). | `data-variant`, `data-dir` |
 | `episodes.search` | part | The episode search: the field (holding `input`) or the button that opens it. | `data-active` |
@@ -321,12 +359,26 @@ State values:
 
 | Hook | Kind | What | States |
 |---|---|---|---|
-| `watch` | slot | The player area. | `data-layout` |
+| `watch` | slot | The player area; the scroller of a page-flow watch view. | `data-layout`, `data-flow` |
 | `watch.stage` | slot | The video frame. It and its ancestors never paint a background: the video is drawn behind the page. |  |
+| `watch.page` | slot | The column of a page-flow watch view: the video frame, then the blocks under it. An ancestor of the frame, so it never paints a background. |  |
+| `watch.block` | part | One block under a page-flow video, in `dock.below` order. | `data-block` |
+| `watch.toolbar` | slot | The row of dropdowns under a docked video (`dock.below` `toolbar`). |  |
+| `watch.toolbar.item` | part | One dropdown button: the server, the episode, the release or the download. | `data-item`, `data-state` |
+| `watch.toolbar.menu` | part | An open dropdown menu. | `data-item` |
+| `watch.toolbar.option` | part | A menu entry; the current one is `data-state="active"`. | `data-state` |
+| `watch.info` | slot | The info block under a docked video (`dock.below` `info`). |  |
+| `watch.info.poster` | part | The poster, linking to the series page. |  |
+| `watch.info.title` | part | "Title - 12", the title linking to the series page. |  |
+| `watch.info.meta` | part | The format, episode count and airing state line. |  |
+| `watch.info.season` | part | The season line. |  |
 | `watch.rail` | slot | The rail beside or below a docked player. |  |
 | `watch.episodes` | slot | The docked episode list or grid. | `data-variant` |
 | `watch.servers` | part | The server switcher. |  |
 | `watch.comments` | slot | The episode discussion (inline under a docked player, or the sheet). | `data-variant` |
+| `comments.header` | part | The discussion heading row ("Discussion · Ep 12"). |  |
+| `comments.tabs` | part | The row of discussion sources (All, then each source found). |  |
+| `comments.tab` | part | One discussion source. | `data-active` |
 | `player.controls` | slot | The player controls layer. |  |
 | `player.seekbar` | part | The seek bar. |  |
 | `player.title` | part | The playing title. |  |

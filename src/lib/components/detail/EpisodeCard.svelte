@@ -208,7 +208,7 @@
         <span data-part="episode.title" class="line-clamp-2 text-sm font-bold sm:block sm:truncate">{labels.primary}</span>
         <!-- Spoiler mode hides the real title (shows only "Episode N") — no blur. -->
         {#if !labels.concealSecondary}
-          <span class="block truncate text-[0.7rem] text-muted-foreground">{labels.secondary}{dl?.status === 'done' ? ' · Downloaded' : ''}</span>
+          <span data-part="episode.meta" class="block truncate text-[0.7rem] text-muted-foreground">{labels.secondary}{dl?.status === 'done' ? ' · Downloaded' : ''}</span>
         {/if}
       </div>
     </div>
@@ -221,11 +221,11 @@
           {#if filler}<span class="shrink-0 rounded bg-yellow-400 px-1 text-[0.6rem] font-bold text-black">FILLER</span>{/if}
         </span>
         {#if isNext}
-          <span class="block text-[0.7rem] font-bold text-theme">airing in {countdown(next?.timeUntilAiring)}</span>
+          <span data-part="episode.meta" class="block text-[0.7rem] font-bold text-theme">airing in {countdown(next?.timeUntilAiring)}</span>
         {:else if !released}
-          <span class="block text-[0.7rem] text-muted-foreground">Not aired</span>
+          <span data-part="episode.meta" class="block text-[0.7rem] text-muted-foreground">Not aired</span>
         {:else if !labels.concealSecondary}
-          <span class="block truncate text-[0.7rem] text-muted-foreground">{labels.secondary}{dl?.status === 'done' ? ' · Downloaded' : ''}</span>
+          <span data-part="episode.meta" class="block truncate text-[0.7rem] text-muted-foreground">{labels.secondary}{dl?.status === 'done' ? ' · Downloaded' : ''}</span>
         {/if}
       </div>
 

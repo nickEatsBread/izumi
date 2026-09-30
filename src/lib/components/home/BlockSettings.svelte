@@ -157,12 +157,19 @@
           </fieldset>
         {/if}
 
-        {#if block.type === 'ranked-list'}
+        {#if block.type === 'ranked-list' || block.type === 'airing-today'}
           <label class="block"><span class="text-sm font-bold">Titles</span>
             <select data-focusable value={block.limit} onchange={(event) => set({ limit: Number(event.currentTarget.value) })} class="mt-1.5 h-10 w-full rounded-lg border border-border bg-card px-2 text-sm">
               {#each LIMIT_CHOICES as choice (choice)}<option value={choice}>{choice}</option>{/each}
             </select>
           </label>
+        {/if}
+
+        {#if block.type === 'airing-today'}
+          <div class="space-y-2">
+            <label class="flex items-center gap-2 text-sm"><input data-focusable type="checkbox" checked={block.clock} onchange={(event) => set({ clock: event.currentTarget.checked })} class="size-4" /> Show the date and a clock</label>
+            <label class="flex items-center gap-2 text-sm"><input data-focusable type="checkbox" checked={block.more} onchange={(event) => set({ more: event.currentTarget.checked })} class="size-4" /> Link to the schedule</label>
+          </div>
         {/if}
 
         {#if block.type === 'genre-chips'}
