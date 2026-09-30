@@ -174,6 +174,39 @@ describe('relevant', () => {
   })
 })
 
+describe('relevant (romanized titles that break words differently)', () => {
+  // The catalogue writes "... de wa Arimasen ga" while release groups write "... dewa Arimasen ga".
+  // The glued word was one the request had never used, so the anchor filtered every romaji-titled
+  // release out as a different title and only English-titled releases were left.
+  const moonlit = [
+    'Not Quite a Moonlit Villainess',
+    'Tsukiyo no Akuyaku de wa Arimasen ga: Kouya Torikae Den',
+  ]
+
+  it('keeps releases that glue together words the catalogue keeps apart', () => {
+    expect(relevant(s('[Group] Tsukiyo no Akuyaku dewa Arimasen ga - 01 (1080p) [0A1B2C3D].mkv'), moonlit)).toBe(true)
+    expect(relevant(s('[Group] Tsukiyo no Akuyaku dewa Arimasen ga - S01E05 [1080p][HEVC x265 10bit][Multi-Subs].mkv'), moonlit)).toBe(true)
+    expect(relevant(s('[Group] Tsukiyo no Akuyaku dewa Arimasen ga S01E05 (TVA 1080p HEVC AAC).mkv'), moonlit)).toBe(true)
+    expect(relevant(s('[Group] Tsukiyo no Akuyaku dewa Arimasen ga- Kouya Torikae Den - 11 [1080p HEVC AAC].mkv'), moonlit)).toBe(true)
+    expect(relevant(s('[Group] Tsukiyo no Akuyaku dewa Arimasen ga Kouya Torikae Den - 01v2 VOSTFR [WEB 1080p AAC].mkv'), moonlit)).toBe(true)
+  })
+
+  it('keeps releases that split a word the catalogue writes as one', () => {
+    expect(relevant(s('[Group] Kaizoku Ou no Musume - 03 [1080p].mkv'), ['Kaizokuou no Musume'])).toBe(true)
+    expect(relevant(s('Kaizoku.Ou.no.Musume.S01E03.1080p.WEB.mkv'), ['Kaizokuou no Musume'])).toBe(true)
+  })
+
+  it('still rejects a spin-off that only adds words to the re-spelled title', () => {
+    expect(relevant(s('[Group] Tsukiyo no Akuyaku dewa Arimasen ga Gaiden - 01 (1080p).mkv'), moonlit)).toBe(false)
+    expect(relevant(s('[Group] Kaizoku Ou no Musume Returns - 03 [1080p].mkv'), ['Kaizokuou no Musume'])).toBe(false)
+  })
+
+  it('only re-spells consecutive words of one requested title', () => {
+    // "tsukiyoakuyaku" skips the "no" between the two words, so it is not a spelling of them.
+    expect(relevant(s('[Group] Tsukiyoakuyaku Arimasen - 01 (1080p).mkv'), moonlit)).toBe(false)
+  })
+})
+
 describe('relevant (a spin-off whose release name EXTENDS the requested title)', () => {
   // Long-running series have siblings whose names begin with the whole base title and then add a
   // subtitle. Rule (a) only measured how much of the REQUESTED title the release carries, so any

@@ -173,6 +173,26 @@ describe('refineStreams', () => {
     expect(r.rejected).toHaveLength(0)
   })
 
+  it('keeps romaji releases that glue together words the catalogue keeps apart', () => {
+    const moonlit = {
+      title: { romaji: 'Tsukiyo no Akuyaku de wa Arimasen ga: Kouya Torikae Den', english: 'Not Quite a Moonlit Villainess' },
+      synonyms: ['Tsukiyo'],
+      format: 'TV',
+      episodes: 11,
+      duration: 24,
+      startDate: { year: 2026 },
+    } as never
+    const r = refineStreams(moonlit, [
+      named('[Group] Tsukiyo no Akuyaku dewa Arimasen ga - 05 (1080p) [0A1B2C3D].mkv'),
+      named('[Group] Tsukiyo no Akuyaku dewa Arimasen ga - 05 (480p) [4E5F6A7B].mkv'),
+      named('Not.Quite.a.Moonlit.Villainess.S01E05.1080p.WEB-DL.mkv'),
+      named('[Group] Tsukiyo no Akuyaku dewa Arimasen ga Gaiden - 05 (1080p).mkv'),
+    ] as never)
+
+    expect(r.kept).toHaveLength(3)
+    expect(r.rejected).toEqual([expect.objectContaining({ reason: 'title-mismatch' })])
+  })
+
   it('does not let synonym or compact matching admit a sequel or lookalike title', () => {
     const dogulWang = {
       title: { romaji: 'Dogul Wang', english: undefined },
