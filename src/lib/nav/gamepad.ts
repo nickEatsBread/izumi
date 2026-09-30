@@ -8,6 +8,7 @@ import { acknowledgeDeckKeyboardWarning, deckKeyboardWarning, dismissDeckKeyboar
 import { closeGlobalSearch, globalSearchOpen } from '$lib/search/global-search'
 import { ActiveFrameLoop } from '$lib/util/active-frame-loop'
 import { BROWSER_GAMEPAD_EVENT, type GamepadInputName } from './browser-gamepad'
+import { dispatchPadKey } from './pad-controls'
 
 // App-wide controller translator (Steam Deck Game mode). The Rust backend reads the pad and
 // emits `gamepad-input` = { name, pressed }; here we route each button to izumi's existing
@@ -19,8 +20,11 @@ type Dir = 'up' | 'down' | 'left' | 'right'
 const DIRS: Dir[] = ['up', 'down', 'left', 'right']
 const ARROW: Record<Dir, string> = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }
 
+// Every synthetic controller key goes through dispatchPadKey: a window-targeted, cancelable keydown
+// marked as a pad key, so the player and shell hotkeys and a focused field's claim on the arrows can
+// tell it from a real keyboard. The name stays: continue-dismiss.test.ts pins `keydown('d')`.
 function keydown(key: string, repeat = false) {
-  window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, repeat }))
+  dispatchPadKey(key, { repeat })
 }
 
 /// Start the translator. Returns a stop function. Runs for the whole app while in Game mode.
@@ -120,7 +124,11 @@ export function startGamepadNav(): () => void {
       const dir = name as Dir
       // Player overlay owns left/right skim (paused-frame + native bar). Do not also
       // relative-seek here — that left the HTML snapshot and time-pos stuck while paused.
-      if (inPlayer() && !get(commentsOpen) && !get(playerMenuOpen) && (dir === 'left' || dir === 'right')) return
+      // A visible Change source picker owns every direction instead: fireDir hands Left/Right to its
+      // trap, and PlayerOverlay's seek scrubber is blocked() while it shows, so nothing seeks behind it.
+      const picker = get(streamPicker)
+      const pickerUp = !!picker && !picker.hidden
+      if (inPlayer() && !get(commentsOpen) && !get(playerMenuOpen) && !pickerUp && (dir === 'left' || dir === 'right')) return
       held[dir] = true
       timers[dir].press(performance.now())
       fireDir(dir)

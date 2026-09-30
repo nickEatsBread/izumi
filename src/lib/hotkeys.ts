@@ -125,3 +125,18 @@ export function isTypingTarget(target: EventTarget | null) {
     || ['textbox', 'searchbox', 'combobox'].includes(element.getAttribute('role') ?? '')
   )
 }
+
+export interface PlayerHotkeyContext { oskOpen: boolean; layerOpen: boolean }
+
+/** Whether the desktop player may treat this keydown as one of its hotkeys. False for synthetic keys
+ *  (`!isTrusted`: the controller translator's keys, the subtitle editor's re-dispatched arrows, the
+ *  Android TV Back bridge; the player takes pad input only through `gamepad-input`), while the
+ *  on-screen keyboard or a nav layer is open, and for a key typed into a text field. Unlike
+ *  isTypingTarget it never throws on a window target. */
+export function playerHotkeyEligible(event: KeyboardEvent, context: PlayerHotkeyContext): boolean {
+  if (!event.isTrusted) return false
+  if (context.oskOpen || context.layerOpen) return false
+  const target = event.target
+  if (typeof Element !== 'undefined' && target instanceof Element && isTypingTarget(target)) return false
+  return true
+}

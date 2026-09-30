@@ -16,7 +16,7 @@
   import { SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { getMediaSkipSegments } from '$lib/stremio/skip-segments'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting, oskOpen } from '$lib/player/session'
   import { seriesRatingPrompt } from '$lib/player/series-rating'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
@@ -56,7 +56,7 @@
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
   import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeSideSheetCrop, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay, usesGameModeBitmapCompositor } from '$lib/player/gm-overlay'
   import { deckWebviewZoom } from '$lib/deck/webview-zoom'
-  import { findHotkey, isTypingTarget } from '$lib/hotkeys'
+  import { findHotkey, playerHotkeyEligible } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
   import P2PStatusOverlay from './P2PStatusOverlay.svelte'
   import { isDirectP2PStream, shouldShowP2PStatus, shouldUseGameModeDynamicOverlay } from '$lib/player/p2p-status'
@@ -614,7 +614,9 @@
       moveScrub: (t) => { moveScrub(t, true); scheduleGmDynamicOverlay() },
       endScrub: () => { endScrub(); scheduleGmDynamicOverlay() },
       onActivity: () => poke(),
-      blocked: () => subtitleEditorOpen || get(commentsOpen) || get(trackMenuOpen) || get(playerMenuOpen),
+      // Change source (visible) and the on-screen keyboard own the d-pad and triggers while up, so
+      // L2/R2 and d-pad Left/Right must not seek the video behind them.
+      blocked: () => subtitleEditorOpen || get(commentsOpen) || get(trackMenuOpen) || get(playerMenuOpen) || sourcePickerVisible || get(oskOpen),
     }, gmMode)
     return stop
   })
@@ -1477,7 +1479,12 @@
       // language like "spa[n]ish" / "ja[p]anese" fires n→next / p→prev — which re-resolves the
       // episode and pops the source picker ("change source search") — plus f→fullscreen, space/k→pause.
       // Capture-phase runs before the input's own handler, so this guard (not stopPropagation) is the fix.
-      if (isTypingTarget(e.target)) return
+      // Synthetic keys never reach the hotkeys either: the controller's d-pad arrows, the subtitle
+      // editor's re-dispatched arrows and the Android TV Back bridge are untrusted, and the player
+      // takes pad input only through `gamepad-input`. Until now only a TypeError from the typing
+      // check on a window target kept them from seeking. The on-screen keyboard owns every key
+      // while up.
+      if (!playerHotkeyEligible(e, { oskOpen: get(oskOpen), layerOpen: false })) return
       // The end-of-series rating prompt owns the keyboard while up: its arrows move the score,
       // Enter saves, Escape dismisses — none of them may seek, pause or close the player under it.
       if (get(seriesRatingPrompt)) return

@@ -49,6 +49,7 @@
   import { getCurrentWindow } from '@tauri-apps/api/window'
   import { controllerMode, initInput, initDpadNav, startBrowserGamepadInput, suppressNativeContextMenus, suppressNativeTooltips, suppressPinchZoom } from '$lib/nav'
   import { startGamepadNav } from '$lib/nav/gamepad'
+  import { isPadEvent } from '$lib/nav/pad-controls'
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { scheduleBootWork } from '$lib/util/boot-work'
   import { isAndroid, isMacOS, isMobile, isTv, initPlatform } from '$lib/platform'
@@ -128,6 +129,12 @@
   })
 
   function handleShellKeydown(event: KeyboardEvent) {
+    if (isPadEvent(event)) return
+    // Controller keys belong to the nav engine and the gamepad router, never to these shortcuts. They
+    // are window-targeted, so isTypingTarget(event.target) below threw on every pad press made
+    // outside the player with no dialog open.
+    // Android TV's remote Back arrives as an unmarked Escape and keeps today's behaviour below
+    // (isTypingTarget(window) still throws on it; see hotkeys.ts).
     // Safe mode works even when a theme stylesheet has hidden the way back to Settings.
     if (isSafeModeChord(event)) { event.preventDefault(); themeSafeMode.update((on) => !on); return }
     if (event.defaultPrevented) return

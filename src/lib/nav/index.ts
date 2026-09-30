@@ -3,6 +3,8 @@ import { gameMode, playing } from '$lib/player/session'
 import { isTv } from '$lib/platform'
 import { controllerMode } from './input'
 import { pickInDirection, type Dir } from './spatial'
+import { isNavigable } from './focusable'
+import { isPadEvent } from './pad-controls'
 export * from './input'
 export * from './actions'
 export * from './spatial'
@@ -104,12 +106,6 @@ export function revealAxisDelta(input: RevealAxisInput): number {
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
-const isNavigable = (el: HTMLElement) =>
-  (el.checkVisibility?.() ?? true)
-  && el.tabIndex >= 0
-  && el.getAttribute('aria-hidden') !== 'true'
-  && !(el instanceof HTMLButtonElement && el.disabled)
-
 const focusables = (root: ParentNode) => {
   // Phone/desktop surfaces opt in deliberately. A television has no pointer fallback, so every
   // ordinary native control must be reachable even in touch-first components such as the Android
@@ -177,8 +173,10 @@ function pickInNavRows(active: HTMLElement, dir: Dir): HTMLElement | null | unde
   }
   if (!vertical) return null
 
+  // An inert row (the Edit Home previews) has no reachable card, so stepping onto it would strand
+  // focus on the `return active` below. Skip it like a hidden row.
   const rows = [...document.querySelectorAll<HTMLElement>('[data-nav-row]')]
-    .filter((candidate) => candidate.checkVisibility?.() ?? true)
+    .filter((candidate) => (candidate.checkVisibility?.() ?? true) && !candidate.closest('[inert]'))
   const rowIndex = rows.indexOf(row)
   if (rowIndex < 0) return null
   const step = dir === 'down' ? 1 : -1
@@ -333,13 +331,24 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
   })
 }
 
+// The live keydown handler is kept on a registered symbol on globalThis. A second initDpadNav()
+// (Vite HMR re-running the app layout, or a duplicate copy of this module) then replaces the first
+// handler instead of stacking another one that moves focus twice per press.
+const NAV_KEYDOWN = Symbol.for('izumi.navKeydown')
+type NavKeydownHost = Record<symbol, ((e: KeyboardEvent) => void) | undefined>
+
 export function initDpadNav() {
-  window.addEventListener('keydown', (e) => {
+  const host = globalThis as unknown as NavKeydownHost
+  const previous = host[NAV_KEYDOWN]
+  if (previous) window.removeEventListener('keydown', previous)
+  const onKeydown = (e: KeyboardEvent) => {
     // Only the four arrows are bound — Home/End/PageUp are never mapped, so a focused field keeps
     // its native line-start/line-end behaviour without needing to be excused from anything.
     const map: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }
     const dir = map[e.key]
-    const field = dir ? fieldShape(e.target) : null
+    // Pad arrows always navigate (owner decision 3): a field the d-pad lands on never keeps them.
+    // Only a real keyboard's arrows are the field's own to walk its caret or cycle its value.
+    const field = dir && !isPadEvent(e) ? fieldShape(e.target) : null
     if (field && fieldOwnsArrow(field, e.key as ArrowKey)) return
     // Resolve the active modal before the blanket player gate. Change source is deliberately
     // opened while playback continues, and its focus trap must still own the arrows.
@@ -461,5 +470,7 @@ export function initDpadNav() {
       revealFocused(pick.el, vertical, e.repeat)
       e.preventDefault()
     }
-  })
+  }
+  host[NAV_KEYDOWN] = onKeydown
+  window.addEventListener('keydown', onKeydown)
 }
