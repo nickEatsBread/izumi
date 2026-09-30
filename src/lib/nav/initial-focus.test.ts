@@ -25,6 +25,16 @@ describe('focusWhenIdle', () => {
     flush()
     expect(document.activeElement?.id).toBe('restored')
   })
+  it('brings a focused card that sits off screen into view', () => {
+    document.body.innerHTML = '<div id="wrap"><div id="card" data-focusable tabindex="0"></div></div>'
+    const card = document.getElementById('card')!
+    card.getBoundingClientRect = () => ({ top: -120, bottom: 40, left: 0, right: 100, width: 100, height: 160, x: 0, y: -120, toJSON: () => ({}) })
+    const reveal = vi.fn()
+    card.scrollIntoView = reveal
+    focusWhenIdle(document.getElementById('wrap')!, () => true)
+    flush()
+    expect(reveal).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' })
+  })
   it('does nothing when disabled', () => {
     document.body.innerHTML = '<div id="wrap"><div data-focusable tabindex="0"></div></div>'
     focusWhenIdle(document.getElementById('wrap')!, false)
