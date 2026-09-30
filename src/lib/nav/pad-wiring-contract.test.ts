@@ -143,3 +143,84 @@ describe('native select chooser wiring', () => {
     expect(handler.slice(trapCheck, dayChange)).toMatch(/\breturn\b/)
   })
 })
+
+describe('keyboard arrow landing (commit 8)', () => {
+  const source = (relative: string) =>
+    readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
+  /** Source without comments, so a comment that names a function is not counted as a call. */
+  const code = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+  /** The function declared at `declaration`, up to its closing brace at column 0. */
+  const fn = (text: string, declaration: string) => {
+    const at = text.indexOf(declaration)
+    return at < 0 ? '' : text.slice(at, text.indexOf('\n}\n', at))
+  }
+  const nav = source('./index.ts')
+  const body = fn(nav, 'export function focusByNav(')
+  // revealRegionEntry is the reveal for a region's default item (it reveals through revealFocused
+  // itself); focusByNav picks it for a move that enters a region on its default.
+  const regionEntry = fn(nav, 'function revealRegionEntry(')
+  const rest = code(nav.replace(body, ''))
+  const outside = code(nav.replace(body, '').replace(regionEntry, ''))
+
+  it('reveals only inside focusByNav, so every arrow move lands through one place', () => {
+    expect(body).not.toBe('')
+    expect(regionEntry).not.toBe('')
+    expect(body).toContain('el.focus({ preventScroll: true })')
+    expect(body).toContain('markNavArrived(el)')
+    expect(body).toContain('recordLastNav(el)')
+    expect(body).toContain('revealFocused(el, vertical, rapid)')
+    expect(body).toContain('revealRegionEntry(el, vertical, rapid)')
+    // Outside the two, the one match left is revealFocused's own declaration, and nothing else
+    // calls revealRegionEntry.
+    expect(outside.match(/\brevealFocused\(/g)).toHaveLength(1)
+    expect(outside).toContain('function revealFocused(')
+    expect(outside).not.toMatch(/\brevealRegionEntry\(/)
+  })
+
+  it('lands through focusByNav at every landing site, the side rail included', () => {
+    for (const call of [
+      'focusByNav(first, vertical, e.repeat)',
+      'focusByNav(hinted, vertical, e.repeat)',
+      'focusByNav(regionDefault, vertical, e.repeat, true)',
+      'focusByNav(railPick, vertical, e.repeat)',
+    ]) expect(rest, call).toContain(call)
+    // Commit 4's explicit and row picks; the generic pick also reveals a region's default entry.
+    expect(rest.split('focusByNav(target, vertical, e.repeat)').length - 1).toBe(2)
+    expect(rest).toContain('focusByNav(target, vertical, e.repeat, entersRegionDefault)')
+    expect(nav).not.toContain('railPick.focus(')
+  })
+
+  it('hands the landing to fieldOwnsArrow next to the slider option', () => {
+    expect(nav).toMatch(/fieldOwnsArrow\(field, e\.key as ArrowKey, \{ rangeOwnsHorizontal: !get\(isTv\), navArrived: isNavArrived\(e\.target\) \}\)/)
+  })
+
+  it('lets a landed keyboard arrow walk past a dropdown trigger instead of opening it', () => {
+    expect(nav).toContain("|| (el instanceof HTMLButtonElement && el.getAttribute('aria-haspopup') === 'listbox')")
+    for (const file of ['../components/settings/SelectMenu.svelte', '../components/catalog/CatalogSwitcher.svelte']) {
+      const markup = source(file)
+      expect(markup, file).toContain("import { isNavArrived } from '$lib/nav'")
+      const handler = markup.slice(markup.indexOf('function onTriggerKeydown('))
+      const guard = handler.indexOf("if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && isNavArrived(event.currentTarget)) return")
+      expect(guard, file).toBeGreaterThan(-1)
+      expect(guard, file).toBeLessThan(handler.indexOf("if (['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) {"))
+    }
+  })
+
+  it('records an arrow move without reading the control’s identity (it runs on every d-pad step)', () => {
+    const at = nav.indexOf('function recordLastNav(')
+    expect(at).toBeGreaterThan(-1)
+    const record = nav.slice(at, nav.indexOf('\n}\n', at))
+    expect(record).toContain("el.closest<HTMLElement>('[data-nav-surface]')")
+    expect(record).not.toMatch(/describeFocus|controlLabel|querySelectorAll|textContent|focusables\(/)
+  })
+
+  it('tries focus-loss recovery after the focus hint and before the region default', () => {
+    const hint = nav.indexOf('const hinted = takeFocusHint(root)')
+    const recovered = nav.indexOf('const recovered = recoverLostFocus(root, active)')
+    const region = nav.indexOf('const regionDefault = regionReturnTarget(root)')
+    expect(hint).toBeGreaterThan(-1)
+    expect(recovered).toBeGreaterThan(hint)
+    expect(region).toBeGreaterThan(recovered)
+    expect(rest).toContain('focusByNav(recovered, vertical, e.repeat)')
+  })
+})

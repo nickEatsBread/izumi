@@ -17,6 +17,7 @@
   } from '$lib/settings/catalog'
   import { homeEditorOpen } from '$lib/catalog/home-editor'
   import { isMobile } from '$lib/platform'
+  import { isNavArrived } from '$lib/nav'
   import * as h from '$lib/haptics'
   import { navLayer } from '$lib/nav/overlay'
   import type { NavLayerCloseReason } from '$lib/nav/layers'
@@ -86,6 +87,10 @@
   }
 
   function onTriggerKeydown(event: KeyboardEvent) {
+    // Owner decision 2: keyboard arrows that just landed on this trigger walk on past it (the nav
+    // engine moves focus). Enter, Space or a click opens it; a trigger focused any other way opens
+    // on its arrows as before. Pad arrows never reach this handler (they are dispatched on window).
+    if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && isNavArrived(event.currentTarget)) return
     if (['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) {
       event.preventDefault()
       void setOpen(true)

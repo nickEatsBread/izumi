@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { initDpadNav } from './index'
+import { focusByNav, initDpadNav, isNavArrived, resetNavLandingForTests } from './index'
 import { PAD_KEY, dispatchPadKey, isPadEvent, padAdjust, resetPadControlsForTests } from './pad-controls'
 import { isNavigable, isRovingTab } from './focusable'
 import { controllerMode, inputType } from './input'
 import { gameMode, playing } from '$lib/player/session'
 import { isTv } from '$lib/platform'
+import { navEpoch } from './nav-state'
+import { setFocusHint } from './focus-hint'
 
 // How controller keys reach the nav engine. The gamepad router dispatches marked keydowns on window
 // (dispatchPadKey), and the nav engine walks only controls a pad can actually use.
@@ -512,5 +514,316 @@ describe('pad sliders and roving tabs (commit 4)', () => {
     byLabel('Add source').focus()
     dispatchPadKey('ArrowUp')
     expect(document.activeElement, 'explicit data-nav-up').toBe(byLabel('Manage'))
+  })
+})
+
+describe('keyboard arrows and lost focus (commit 8)', () => {
+  // Owner decision 2: arrow navigation passes over a dropdown or a number field it lands on until
+  // Enter, Space, typing or a click engages it, and a textarea lets Up go at its first character and
+  // Down after its last. These arrows come from a real keyboard (a desktop, the Steam desktop layout,
+  // a TV remote): aimed at the focused element and not pad-marked (pad arrows skip field ownership).
+  // Every helper lives inside this block so it cannot collide with the earlier commits' helpers.
+  const byLabel = (label: string) => [...document.querySelectorAll<HTMLElement>('[data-focusable]')]
+    .find((node) => (node.getAttribute('aria-label') ?? node.textContent ?? '').trim() === label)!
+  /** An unmarked keydown at the focused element (or <body>), as a real keyboard delivers it. */
+  const realKey = (key: string) => {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    ;(document.activeElement ?? document.body).dispatchEvent(event)
+    return event
+  }
+  const form = `
+    <main>
+      <button data-focusable data-rect="100,40,300,40">Top</button>
+      <select aria-label="Quality" data-focusable data-rect="100,100,300,40"><option>Low</option><option selected>High</option></select>
+      <input type="number" aria-label="Year" data-focusable data-rect="100,160,300,40">
+      <input type="text" aria-label="Title" data-focusable data-rect="100,220,300,40">
+      <textarea aria-label="Notes" data-focusable data-rect="100,280,300,80">line one
+line two</textarea>
+      <button data-focusable data-rect="100,380,300,40">Save</button>
+    </main>`
+  const notes = () => byLabel('Notes') as HTMLTextAreaElement
+
+  // The landing and the last arrow move are index.ts module state shared by every test in this file.
+  beforeEach(() => { resetNavLandingForTests() })
+
+  describe('pass over value fields', () => {
+    beforeEach(() => { document.body.innerHTML = form })
+
+    it('walks down past a select and a number field it lands on, leaving their values alone', () => {
+      byLabel('Top').focus()
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(byLabel('Quality'))
+      expect(realKey('ArrowDown').defaultPrevented).toBe(true)
+      expect(document.activeElement).toBe(byLabel('Year'))
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(byLabel('Title'))
+      expect((byLabel('Quality') as HTMLSelectElement).selectedIndex).toBe(1)
+    })
+
+    it('walks back up past them the same way', () => {
+      byLabel('Title').focus()
+      realKey('ArrowUp')
+      expect(document.activeElement).toBe(byLabel('Year'))
+      realKey('ArrowUp')
+      expect(document.activeElement).toBe(byLabel('Quality'))
+      realKey('ArrowUp')
+      expect(document.activeElement).toBe(byLabel('Top'))
+    })
+
+    it('Enter engages a select it landed on: Up/Down are the select’s own again', () => {
+      byLabel('Top').focus()
+      realKey('ArrowDown')
+      realKey('Enter')
+      expect(realKey('ArrowDown').defaultPrevented).toBe(false)
+      expect(document.activeElement).toBe(byLabel('Quality'))
+    })
+
+    it('typing engages a number field it landed on', () => {
+      byLabel('Top').focus()
+      realKey('ArrowDown')
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(byLabel('Year'))
+      realKey('5')
+      expect(realKey('ArrowDown').defaultPrevented).toBe(false)
+      expect(document.activeElement).toBe(byLabel('Year'))
+    })
+
+    it('a bare modifier, CapsLock, an unidentified key or Escape does not engage it', () => {
+      byLabel('Top').focus()
+      realKey('ArrowDown')
+      realKey('Shift')
+      realKey('CapsLock')
+      realKey('Unidentified')
+      realKey('Escape')
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(byLabel('Year'))
+    })
+
+    it('a pointerdown or a change engages it too', () => {
+      byLabel('Top').focus()
+      realKey('ArrowDown')
+      byLabel('Quality').dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      expect(realKey('ArrowDown').defaultPrevented).toBe(false)
+      byLabel('Top').focus()
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(byLabel('Quality'))
+      byLabel('Quality').dispatchEvent(new Event('change', { bubbles: true }))
+      expect(realKey('ArrowDown').defaultPrevented).toBe(false)
+      expect(document.activeElement).toBe(byLabel('Quality'))
+    })
+
+    it('a select focused any other way (Tab, a click) keeps its Up/Down', () => {
+      byLabel('Quality').focus()
+      expect(realKey('ArrowDown').defaultPrevented).toBe(false)
+      expect(document.activeElement).toBe(byLabel('Quality'))
+    })
+
+    it('leaving the field forgets the landing', () => {
+      byLabel('Top').focus()
+      realKey('ArrowDown')
+      byLabel('Title').focus()
+      byLabel('Quality').focus()
+      expect(realKey('ArrowDown').defaultPrevented).toBe(false)
+      expect(document.activeElement).toBe(byLabel('Quality'))
+    })
+
+    it('focusByNav is a landing too', () => {
+      focusByNav(byLabel('Quality'), true)
+      expect(document.activeElement).toBe(byLabel('Quality'))
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(byLabel('Year'))
+    })
+
+    it('never passes over on TV, where the remote keeps today’s keys', () => {
+      isTv.set(true)
+      byLabel('Top').focus()
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(byLabel('Quality'))
+      expect(realKey('ArrowDown').defaultPrevented).toBe(false)
+      expect(document.activeElement).toBe(byLabel('Quality'))
+    })
+  })
+
+  describe('pass over a dropdown trigger', () => {
+    // SelectMenu and CatalogSwitcher open on ArrowDown/ArrowUp. Their trigger keydown asks
+    // isNavArrived first (pinned in pad-wiring-contract.test.ts); this listener is that same code.
+    let opened: string[] = []
+    beforeEach(() => {
+      opened = []
+      document.body.innerHTML = `
+        <main>
+          <button data-focusable data-rect="100,40,300,40">Top</button>
+          <button type="button" data-focusable aria-haspopup="listbox" aria-label="Language" data-rect="100,100,300,40">English</button>
+          <select aria-label="Quality" data-focusable data-rect="100,160,300,40"><option>Low</option><option selected>High</option></select>
+        </main>`
+      byLabel('Language').addEventListener('keydown', (event) => {
+        if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && isNavArrived(event.currentTarget)) return
+        if (['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) {
+          event.preventDefault()
+          opened.push(event.key)
+        }
+      })
+    })
+
+    it('walks past a dropdown trigger it lands on without opening it', () => {
+      byLabel('Top').focus()
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(byLabel('Language'))
+      expect(isNavArrived(byLabel('Language'))).toBe(true)
+      realKey('ArrowDown')
+      expect(opened).toEqual([])
+      expect(document.activeElement).toBe(byLabel('Quality'))
+    })
+
+    it('Enter opens it and engages it: its arrows open it again', () => {
+      byLabel('Top').focus()
+      realKey('ArrowDown')
+      realKey('Enter')
+      expect(opened).toEqual(['Enter'])
+      expect(isNavArrived(byLabel('Language'))).toBe(false)
+      realKey('ArrowDown')
+      expect(opened).toEqual(['Enter', 'ArrowDown'])
+    })
+
+    it('a trigger focused any other way opens on Down as before', () => {
+      byLabel('Language').focus()
+      realKey('ArrowDown')
+      expect(opened).toEqual(['ArrowDown'])
+    })
+
+    it('never passes over on TV, where the remote opens it as before', () => {
+      isTv.set(true)
+      byLabel('Top').focus()
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(byLabel('Language'))
+      expect(isNavArrived(byLabel('Language'))).toBe(false)
+      realKey('ArrowDown')
+      expect(opened).toEqual(['ArrowDown'])
+    })
+  })
+
+  describe('textarea edges', () => {
+    beforeEach(() => { document.body.innerHTML = form })
+
+    it('keeps Up and Down while the caret is inside the text', () => {
+      notes().focus()
+      notes().setSelectionRange(4, 4)
+      expect(realKey('ArrowUp').defaultPrevented).toBe(false)
+      expect(realKey('ArrowDown').defaultPrevented).toBe(false)
+      expect(document.activeElement).toBe(notes())
+    })
+
+    it('lets Up go with the caret at the first character', () => {
+      notes().focus()
+      notes().setSelectionRange(0, 0)
+      realKey('ArrowUp')
+      expect(document.activeElement).toBe(byLabel('Title'))
+    })
+
+    it('lets Down go with the caret after the last character', () => {
+      notes().focus()
+      notes().setSelectionRange(notes().value.length, notes().value.length)
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(byLabel('Save'))
+    })
+
+    it('a selection is not an edge', () => {
+      notes().focus()
+      notes().setSelectionRange(0, notes().value.length)
+      expect(realKey('ArrowUp').defaultPrevented).toBe(false)
+      expect(realKey('ArrowDown').defaultPrevented).toBe(false)
+    })
+  })
+
+  describe('focus-loss recovery inside a surface', () => {
+    const rows = (surface: boolean) => `
+      <main${surface ? ' data-nav-surface="settings"' : ''}>
+        <button data-focusable data-rect="300,40,400,40">Row 1</button>
+        <button data-focusable data-rect="300,100,400,40">Row 2</button>
+        <button data-focusable data-rect="300,160,400,40">Row 3</button>
+        <button data-focusable data-rect="300,220,400,40">Row 4</button>
+      </main>`
+    /** Reach Row 2 with a keyboard arrow, so the move goes through focusByNav. */
+    const reachRow2 = () => {
+      byLabel('Row 1').focus()
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(byLabel('Row 2'))
+    }
+    /** Row 2 goes away and the rows below close the gap, as a removed settings row does. */
+    const removeRow2 = () => {
+      byLabel('Row 2').remove()
+      byLabel('Row 3').setAttribute('data-rect', '300,100,400,40')
+      byLabel('Row 4').setAttribute('data-rect', '300,160,400,40')
+      expect(document.activeElement).toBe(document.body)
+    }
+
+    it('lands on the control that took the lost one’s place, not the top of the page', () => {
+      document.body.innerHTML = rows(true)
+      reachRow2()
+      removeRow2()
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(byLabel('Row 3'))
+    })
+
+    it('finds the same control again when it was re-rendered somewhere else', () => {
+      document.body.innerHTML = rows(true)
+      reachRow2()
+      byLabel('Row 2').remove()
+      document.querySelector('main')!.insertAdjacentHTML('beforeend', '<button data-focusable data-rect="300,280,400,40">Row 2</button>')
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(byLabel('Row 2'))
+      expect(byLabel('Row 2').getAttribute('data-rect')).toBe('300,280,400,40')
+    })
+
+    it('a label several controls share is no identity: lands on the one that took the lost one’s place', () => {
+      document.body.innerHTML = `
+        <main data-nav-surface="settings">
+          <button data-focusable aria-label="Remove" data-rect="300,40,100,40">×</button>
+          <button data-focusable aria-label="Remove" data-rect="300,100,100,40">×</button>
+          <button data-focusable aria-label="Remove" data-rect="300,160,100,40">×</button>
+        </main>`
+      const [first, second, third] = [...document.querySelectorAll<HTMLElement>('main button')]
+      first.focus()
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(second)
+      second.remove()
+      third.setAttribute('data-rect', '300,100,100,40')
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(third)
+    })
+
+    it('lands back on the same control when focus only fell off it', () => {
+      document.body.innerHTML = rows(true)
+      reachRow2()
+      byLabel('Row 2').blur()
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(byLabel('Row 2'))
+    })
+
+    it('a focus hint (a dialog closed by touch) still wins', () => {
+      document.body.innerHTML = rows(true)
+      reachRow2()
+      removeRow2()
+      setFocusHint(byLabel('Row 4'))
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(byLabel('Row 4'))
+    })
+
+    it('forgets the spot after a navigation', () => {
+      document.body.innerHTML = rows(true)
+      reachRow2()
+      removeRow2()
+      navEpoch.update((epoch) => epoch + 1)
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(byLabel('Row 1'))
+    })
+
+    it('leaves a page without a surface to the ordinary first-press rule', () => {
+      document.body.innerHTML = rows(false)
+      reachRow2()
+      removeRow2()
+      realKey('ArrowDown')
+      expect(document.activeElement).toBe(byLabel('Row 1'))
+    })
   })
 })

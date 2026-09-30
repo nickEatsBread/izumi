@@ -7,6 +7,7 @@ import { activeNavTrap, visibleNavTraps } from './traps'
 import { takeFocusHint } from './focus-hint'
 import { isNavigable, isRovingTab } from './focusable'
 import { isPadEvent, padAdjust } from './pad-controls'
+import { navEpoch } from './nav-state'
 export * from './input'
 export * from './actions'
 export * from './spatial'
@@ -24,7 +25,17 @@ export type ArrowKey = 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight'
 // Only the bits of the focused element the ownership rules below depend on, so those rules stay a
 // pure function (the test env has no DOM) and the DOM reading happens in exactly one place.
 // `rovingTab`: a role="tab" in a roving-tabindex tablist (focusable.ts `isRovingTab`).
-export interface FieldShape { tag: string; type?: string; contentEditable?: boolean; role?: string; rovingTab?: boolean }
+export interface FieldShape {
+  tag: string
+  type?: string
+  contentEditable?: boolean
+  role?: string
+  rovingTab?: boolean
+  /** A textarea whose collapsed caret sits at 0: Up leaves it. */
+  caretAtStart?: boolean
+  /** A textarea whose collapsed caret sits after its last character: Down leaves it. */
+  caretAtEnd?: boolean
+}
 
 // Caret-less <input> types that Enter does NOT reach natively: a checkbox/radio only toggles on
 // Space, and range/color ignore Enter entirely. These are the only focusables in the app left
@@ -47,6 +58,10 @@ export interface FieldArrowOptions {
   /** A keyboard-focused slider steps with Left/Right (web standard, owner decision 2). The nav
    *  handler passes `!get(isTv)`: a TV remote keeps Left/Right as focus moves (spec §3.11). */
   rangeOwnsHorizontal?: boolean
+  /** Arrow navigation (`focusByNav`) just landed on this select or number/date stepper and nothing
+   *  has engaged it yet: Up/Down pass over it (owner decision 2). The nav handler reads it from
+   *  `isNavArrived`, which is never armed on TV; pad arrows never reach field ownership at all. */
+  navArrived?: boolean
 }
 
 /// Does the focused field claim this arrow for itself? Ownership is PER-KEY, not per-element: a
@@ -55,12 +70,23 @@ export interface FieldArrowOptions {
 /// result, and the same shape in the episode and downloads filters.
 export function fieldOwnsArrow(field: FieldShape, key: ArrowKey, options: FieldArrowOptions = {}): boolean {
   const vertical = key === 'ArrowUp' || key === 'ArrowDown'
+  // Owner decision 2: arrow navigation that just landed on a select or a number/date stepper walks
+  // on past it vertically, until Enter, Space, typing, a click or a change engages the field. Only
+  // focusByNav arms this (isNavArrived), never on TV, and pad arrows never get here.
+  if (options.navArrived && vertical) return false
   // A roving tab (the tablist keeps one tab stop and parks the rest at tabindex -1, like Sources)
   // runs its own Left/Right: the page's handler steps once and nav stands down instead of stepping
   // a second time. Up/Down are not the strip's, so they still leave it.
   if (field.rovingTab) return !vertical
-  // A multi-line caret moves in both axes — Up/Down walk lines, so nav gets nothing.
-  if (field.contentEditable || field.tag === 'TEXTAREA') return true
+  // A multi-line caret moves in both axes: Up/Down walk lines, so nav gets nothing, except at the
+  // edges. A textarea lets Up go with the caret at 0 and Down with the caret after its last
+  // character, or a keyboard or Steam desktop-layout user could never leave it.
+  if (field.contentEditable) return true
+  if (field.tag === 'TEXTAREA') {
+    if (key === 'ArrowUp' && field.caretAtStart) return false
+    if (key === 'ArrowDown' && field.caretAtEnd) return false
+    return true
+  }
   // <select> cycles its value on all four arrows (Up/Down and Left/Right do the same thing), so the
   // horizontal pair is pure redundancy: handing it to nav leaves an escape route while keeping the
   // value adjustable by keyboard/d-pad — which matters because the native popup does not reliably
@@ -88,6 +114,15 @@ export function fieldOwnsArrow(field: FieldShape, key: ArrowKey, options: FieldA
 export const isEnterInertInput = (field: FieldShape) =>
   field.tag === 'INPUT' && ENTER_INERT_INPUT_TYPES.includes(field.type ?? 'text')
 
+// Where a textarea's caret sits, for the edge release in fieldOwnsArrow. A selection that is not
+// collapsed counts as neither edge.
+const caretEdges = (target: HTMLElement): Pick<FieldShape, 'caretAtStart' | 'caretAtEnd'> => {
+  if (!(target instanceof HTMLTextAreaElement)) return {}
+  const { selectionStart, selectionEnd, value } = target
+  if (selectionStart !== selectionEnd) return {}
+  return { caretAtStart: selectionStart === 0, caretAtEnd: selectionEnd === value.length }
+}
+
 // The controller translator dispatches its arrows straight at `window`, so the target is often not
 // an element at all — that case has no field and nav always wins.
 const fieldShape = (target: EventTarget | null): FieldShape | null => {
@@ -98,6 +133,7 @@ const fieldShape = (target: EventTarget | null): FieldShape | null => {
     contentEditable: target.isContentEditable,
     role: target.getAttribute('role') ?? undefined,
     rovingTab: isRovingTab(target),
+    ...caretEdges(target),
   }
 }
 
@@ -598,6 +634,160 @@ export function focusNearestFocusable(
   return best
 }
 
+// ---- Arrow landing ---------------------------------------------------------------------------------
+// Owner decision 2: arrow navigation passes over a dropdown or a number/date stepper it lands on until
+// the user engages it. Without this, real-keyboard arrows (a desktop keyboard, the Steam desktop
+// layout) that reach one would change its value (a select), never leave it (a number field) or open
+// it (a SelectMenu or CatalogSwitcher trigger). Pad arrows skip field ownership and are dispatched on
+// window, never at a trigger, so this only matters for real keys; it is never armed on TV.
+
+// What engages a landed field (decision 2: Enter, Space, typing, a click): a printable character
+// (Space is ' ') or an editing key. Everything else leaves it passed over: the arrows, Tab (focusout
+// clears the landing anyway), Escape, bare modifiers, CapsLock, function and media keys, and the
+// 'Unidentified' some Steam Input layouts send.
+const ENGAGING_KEYS = ['Enter', 'Backspace', 'Delete', 'Home', 'End', 'PageUp', 'PageDown']
+const engagesField = (key: string) => key.length === 1 || ENGAGING_KEYS.includes(key)
+
+/** A field the arrows pass over once landed: a select, a number/date stepper, or a dropdown trigger
+ *  that opens on ArrowDown/ArrowUp (aria-haspopup="listbox": SelectMenu, CatalogSwitcher). */
+const isValueField = (el: HTMLElement) =>
+  el instanceof HTMLSelectElement
+  || (el instanceof HTMLInputElement && STEPPER_INPUT_TYPES.includes(el.type))
+  || (el instanceof HTMLButtonElement && el.getAttribute('aria-haspopup') === 'listbox')
+
+let arrived: { el: HTMLElement; stop: AbortController } | null = null
+
+function clearNavArrived(): void {
+  arrived?.stop.abort()
+  arrived = null
+}
+
+/** Arrow navigation, not the user, put focus on `el`. An engaging key, a pointerdown or a change on
+ *  it clears this; so does focus leaving it. */
+function markNavArrived(el: HTMLElement): void {
+  clearNavArrived()
+  if (get(isTv) || !isValueField(el)) return
+  const stop = new AbortController()
+  const options: AddEventListenerOptions = { capture: true, signal: stop.signal }
+  el.addEventListener('keydown', (event) => { if (engagesField(event.key)) clearNavArrived() }, options)
+  el.addEventListener('pointerdown', clearNavArrived, options)
+  el.addEventListener('change', clearNavArrived, options)
+  el.addEventListener('focusout', clearNavArrived, options)
+  arrived = { el, stop }
+}
+
+/** true while arrow navigation put focus on `target` and nothing has engaged it since. The nav
+ *  handler hands it to fieldOwnsArrow; a dropdown trigger's own keydown asks it before opening on
+ *  ArrowDown/ArrowUp (SelectMenu, CatalogSwitcher). */
+export function isNavArrived(target: EventTarget | null): boolean {
+  return arrived !== null && arrived.el === target
+}
+
+// ---- Focus-loss recovery (body fallback step 2) ----------------------------------------------------
+// When the control under the ring disappears (a row removed, a section re-rendered after a change),
+// focus falls to <body> and the next press used to start again at the top of the page. Inside a
+// [data-nav-surface] (the Settings content roots, the Nuvio browser) that press lands on the same
+// control, re-rendered, or on the control nearest to where it was. A navigation in between
+// (navEpoch) forgets the spot. focusByNav records every move, so on the Deck this runs on each d-pad
+// step: it keeps only the element, its surface and its box, and the lost control's identity is read
+// later, once, from the detached element (which keeps its attributes and text).
+
+interface NavBox { left: number; top: number; width: number; height: number }
+interface LastNav { el: HTMLElement; surface: HTMLElement; box: NavBox; epoch: number }
+let lastNav: LastNav | null = null
+
+/** `el`'s box in its surface's content coordinates, so a later scroll of the page or of the surface
+ *  does not move it. */
+function boxInSurface(el: HTMLElement, surface: HTMLElement): NavBox {
+  const item = el.getBoundingClientRect()
+  const port = surface.getBoundingClientRect()
+  return {
+    left: item.left - port.left + surface.scrollLeft,
+    top: item.top - port.top + surface.scrollTop,
+    width: item.width,
+    height: item.height,
+  }
+}
+
+/** Outside a surface this is one closest() lookup. Inside one it reads two boxes from the layout that
+ *  revealFocused measures right after anyway, so it adds no layout pass. */
+function recordLastNav(el: HTMLElement): void {
+  const surface = el.closest<HTMLElement>('[data-nav-surface]')
+  lastNav = surface ? { el, surface, box: boxInSurface(el, surface), epoch: get(navEpoch) } : null
+}
+
+/** A control's label the way focus memory reads it: aria-label, else its text, whitespace-collapsed. */
+const controlLabel = (el: Element) =>
+  (el.getAttribute('aria-label') ?? el.textContent ?? '').replace(/\s+/g, ' ').trim()
+
+/** The lost control, re-rendered: the candidate with its data-nav-id, id or href, else the only
+ *  candidate with its tag and label. A label several controls share ("Remove" on every row) says
+ *  nothing about which one was lost, so the nearest pass decides. */
+function sameControlAgain(lost: HTMLElement, candidates: HTMLElement[]): HTMLElement | null {
+  const navId = lost.getAttribute('data-nav-id')
+  if (navId) return candidates.find((el) => el.getAttribute('data-nav-id') === navId) ?? null
+  if (lost.id) return candidates.find((el) => el.id === lost.id) ?? null
+  const href = lost instanceof HTMLAnchorElement ? lost.getAttribute('href') : null
+  if (href) return candidates.find((el) => el instanceof HTMLAnchorElement && el.getAttribute('href') === href) ?? null
+  const label = controlLabel(lost)
+  if (!label) return null
+  const twins = candidates.filter((el) => el.tagName === lost.tagName && controlLabel(el) === label)
+  return twins.length === 1 ? twins[0] : null
+}
+
+/** The candidate whose centre is nearest the centre of `box`, both in `surface` coordinates. */
+function nearestInSurface(box: NavBox, surface: HTMLElement, candidates: HTMLElement[]): HTMLElement | null {
+  const x = box.left + box.width / 2
+  const y = box.top + box.height / 2
+  let best: HTMLElement | null = null
+  let bestDistance = Infinity
+  for (const candidate of candidates) {
+    const other = boxInSurface(candidate, surface)
+    const distance = Math.hypot(other.left + other.width / 2 - x, other.top + other.height / 2 - y)
+    if (distance < bestDistance) {
+      best = candidate
+      bestDistance = distance
+    }
+  }
+  return best
+}
+
+/** Body fallback step 2. Only when focus really fell to <body>, the surface is still there and inside
+ *  the active trap's root (`root`), and no navigation happened since the last arrow move. */
+function recoverLostFocus(root: ParentNode, active: Element | null): HTMLElement | null {
+  const last = lastNav
+  if (!last) return null
+  if (active && active !== document.body && active !== document.documentElement) return null
+  if (last.epoch !== get(navEpoch) || !last.surface.isConnected) return null
+  if (!(root as Node).contains(last.surface)) return null
+  const candidates = focusables(last.surface)
+  if (candidates.includes(last.el)) return last.el
+  // The same field, re-rendered, is a fine landing; a text field is never the automatic nearest one
+  // (isTextInput), as on every first press.
+  return sameControlAgain(last.el, candidates)
+    ?? nearestInSurface(last.box, last.surface, candidates.filter((el) => !isTextInput(el)))
+}
+
+/** Every arrow move lands here: focus without the browser's jump-scroll, note a landing on a value
+ *  field, remember the move for focus-loss recovery (measured before the reveal scrolls), then
+ *  reveal along the axis of travel (`rapid`, a held repeat, reveals without smooth scrolling).
+ *  `regionEntry`: the move entered a region on its default item (the Settings rail's current
+ *  category), which is also revealed inside that region's own pane (revealRegionEntry). */
+export function focusByNav(el: HTMLElement, vertical: boolean, rapid = false, regionEntry = false): void {
+  el.focus({ preventScroll: true })
+  markNavArrived(el)
+  recordLastNav(el)
+  if (regionEntry) revealRegionEntry(el, vertical, rapid)
+  else revealFocused(el, vertical, rapid)
+}
+
+/** Test hook: forget the landing and the last arrow move, module state that every test in a file
+ *  shares (contract §1.1). */
+export function resetNavLandingForTests(): void {
+  clearNavArrived()
+  lastNav = null
+}
+
 // The live keydown handler is kept on a registered symbol on globalThis. A second initDpadNav()
 // (Vite HMR re-running the app layout, or a duplicate copy of this module) then replaces the first
 // handler instead of stacking another one that moves focus twice per press.
@@ -617,7 +807,7 @@ export function initDpadNav() {
     // Pad arrows always navigate (owner decision 3): a field the d-pad lands on never keeps them.
     // Only a real keyboard's arrows are the field's own to walk its caret or cycle its value.
     const field = dir && !isPadEvent(e) ? fieldShape(e.target) : null
-    if (field && fieldOwnsArrow(field, e.key as ArrowKey, { rangeOwnsHorizontal: !get(isTv) })) return
+    if (field && fieldOwnsArrow(field, e.key as ArrowKey, { rangeOwnsHorizontal: !get(isTv), navArrived: isNavArrived(e.target) })) return
     // Resolve the active modal before the blanket player gate. Change source is deliberately
     // opened while playback continues, and its focus trap must still own the arrows. One resolver
     // decides which trap owns the pad: the open keyboard, the top nav layer, a modal <dialog>, then
@@ -663,8 +853,17 @@ export function initDpadNav() {
       // (nav/overlay.ts): the first d-pad press lands back on it, not on the page's first control.
       const hinted = takeFocusHint(root)
       if (hinted?.closest('[data-focusable]') && isNavigable(hinted)) {
-        hinted.focus({ preventScroll: true })
-        revealFocused(hinted, vertical, e.repeat)
+        focusByNav(hinted, vertical, e.repeat)
+        e.preventDefault()
+        return
+      }
+      // Step 2: focus fell off a control inside a surface (a removed row, a re-rendered section).
+      // Land on the same control, re-rendered, or the one nearest to where it was, never back at the
+      // top of the page. A tap on a Settings rail link navigates (navEpoch), so step 3 still takes
+      // the first press after it.
+      const recovered = recoverLostFocus(root, active)
+      if (recovered) {
+        focusByNav(recovered, vertical, e.repeat)
         e.preventDefault()
         return
       }
@@ -672,8 +871,7 @@ export function initDpadNav() {
       // go back to that region's current item rather than to whatever comes first.
       const regionDefault = regionReturnTarget(root)
       if (regionDefault) {
-        regionDefault.focus({ preventScroll: true })
-        revealRegionEntry(regionDefault, vertical, e.repeat)
+        focusByNav(regionDefault, vertical, e.repeat, true)
         e.preventDefault()
         return
       }
@@ -686,8 +884,7 @@ export function initDpadNav() {
       // doesn't auto-focus the filter/search field and trap the arrows in the on-screen keyboard).
       const first = content.find(el => !isTextInput(el)) ?? content[0] ?? els[0]
       if (first) {
-        first.focus({ preventScroll: true })
-        revealFocused(first, vertical, e.repeat)
+        focusByNav(first, vertical, e.repeat)
         e.preventDefault()
       }
       return
@@ -710,8 +907,7 @@ export function initDpadNav() {
       : undefined
     if (explicit) {
       const target = rovingEntry(explicit, active)
-      target.focus({ preventScroll: true })
-      revealFocused(target, vertical, e.repeat)
+      focusByNav(target, vertical, e.repeat)
       e.preventDefault()
       return
     }
@@ -721,8 +917,7 @@ export function initDpadNav() {
     const rowPick = pickInNavRows(active, dir)
     if (rowPick) {
       const target = rovingEntry(rowPick, active)
-      target.focus({ preventScroll: true })
-      revealFocused(target, vertical, e.repeat)
+      focusByNav(target, vertical, e.repeat)
       e.preventDefault()
       return
     }
@@ -731,7 +926,8 @@ export function initDpadNav() {
     const railPick = trap ? undefined : pickInSidebar(active, dir)
     if (railPick !== undefined) {
       if (railPick) {
-        railPick.focus({ preventScroll: true })
+        // Through focusByNav like every move, so the landing is noted; the fixed rail never scrolls.
+        focusByNav(railPick, vertical, e.repeat)
         e.preventDefault()
       }
       return
@@ -783,9 +979,7 @@ export function initDpadNav() {
       // re-center jitter on every left/right); vertical moves scroll the page vertically. A
       // region's default is the one exception: it is also revealed inside its own region's pane.
       const target = rovingEntry(pick.el, active)
-      target.focus({ preventScroll: true })
-      if (entersRegionDefault) revealRegionEntry(target, vertical, e.repeat)
-      else revealFocused(target, vertical, e.repeat)
+      focusByNav(target, vertical, e.repeat, entersRegionDefault)
       e.preventDefault()
     }
   }

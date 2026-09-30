@@ -10,6 +10,7 @@
   import type { NavLayerCloseReason } from '$lib/nav/layers'
   import { rootZoom } from '$lib/components/cards/preview-pos'
   import { menuPlacement } from '$lib/components/menu-placement'
+  import { isNavArrived } from '$lib/nav'
 
   export type SelectOption = {
     value: string
@@ -126,6 +127,10 @@
   }
 
   function onTriggerKeydown(event: KeyboardEvent) {
+    // Owner decision 2: keyboard arrows that just landed on this trigger walk on past it (the nav
+    // engine moves focus). Enter, Space or a click opens it; a trigger focused any other way opens
+    // on its arrows as before. Pad arrows never reach this handler (they are dispatched on window).
+    if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && isNavArrived(event.currentTarget)) return
     if (['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) {
       event.preventDefault()
       void setOpen(true)

@@ -22,7 +22,7 @@ describe('nav engine trap resolution', () => {
     expect(index).toContain('const trap = activeNavTrap()')
     expect(index).not.toContain('[aria-label="On-screen keyboard"][data-nav-trap]')
     const fallback = between(index, 'const hinted = takeFocusHint(root)', 'const els = focusables(root)')
-    expect(fallback).toContain('hinted.focus({ preventScroll: true })')
+    expect(fallback).toContain('focusByNav(hinted, vertical, e.repeat)')
     expect(count(index, 'const els = focusables(root)')).toBe(2)
   })
 })

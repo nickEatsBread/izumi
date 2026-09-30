@@ -130,3 +130,36 @@ describe('containedInAxis', () => {
     expect(containedInAxis(800, 900, 0, 800)).toBe(false)
   })
 })
+
+describe('fieldOwnsArrow: arrow landing and textarea edges (commit 8)', () => {
+  const ownedWith = (field: FieldShape, options: FieldArrowOptions) =>
+    KEYS.filter((key) => fieldOwnsArrow(field, key, options))
+
+  // Owner decision 2: arrow navigation that just landed on a value field walks on past it
+  // vertically; its own keys come back once Enter, Space, typing, a click or a change engages it.
+  it('a select the arrows just landed on keeps no arrow', () =>
+    expect(ownedWith({ tag: 'SELECT' }, { navArrived: true })).toEqual([]))
+  for (const type of ['number', 'date', 'time', 'datetime-local', 'month', 'week']) {
+    it(`a ${type} stepper the arrows just landed on keeps only its horizontal pair`, () =>
+      expect(ownedWith(input(type), { navArrived: true })).toEqual(['ArrowLeft', 'ArrowRight']))
+  }
+  it('an engaged select or stepper keeps its native keys', () => {
+    expect(ownedWith({ tag: 'SELECT' }, { navArrived: false })).toEqual(['ArrowUp', 'ArrowDown'])
+    expect(ownedWith(input('number'), {})).toEqual(KEYS)
+  })
+  it('a landing never gives a text field its vertical pair or takes its caret axis', () =>
+    expect(ownedWith(input('text'), { navArrived: true })).toEqual(['ArrowLeft', 'ArrowRight']))
+
+  // A textarea lets Up go with the caret at 0 and Down with the caret after its last character, so
+  // a keyboard or Steam desktop-layout user can always leave it.
+  it('a textarea with the caret at 0 lets Up go', () =>
+    expect(owned({ tag: 'TEXTAREA', caretAtStart: true, caretAtEnd: false })).toEqual(['ArrowDown', 'ArrowLeft', 'ArrowRight']))
+  it('a textarea with the caret at the end lets Down go', () =>
+    expect(owned({ tag: 'TEXTAREA', caretAtStart: false, caretAtEnd: true })).toEqual(['ArrowUp', 'ArrowLeft', 'ArrowRight']))
+  it('an empty textarea lets both go', () =>
+    expect(owned({ tag: 'TEXTAREA', caretAtStart: true, caretAtEnd: true })).toEqual(['ArrowLeft', 'ArrowRight']))
+  it('a textarea with the caret inside its text keeps all four', () =>
+    expect(owned({ tag: 'TEXTAREA', caretAtStart: false, caretAtEnd: false })).toEqual(KEYS))
+  it('contenteditable has no edges', () =>
+    expect(owned({ tag: 'DIV', contentEditable: true, caretAtStart: true, caretAtEnd: true })).toEqual(KEYS))
+})
