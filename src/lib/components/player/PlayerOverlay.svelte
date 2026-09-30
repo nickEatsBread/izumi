@@ -43,6 +43,8 @@
   import { initScrub, beginScrub, moveScrub, endScrub, scrub, scrubActive } from '$lib/player/scrub'
   import { ButtonPressLatch, startGamepadEventSeek } from '$lib/player/gamepad'
   import { controllerMode } from '$lib/nav/input'
+  import { navLayerDismissedAt, navLayerOpen, topNavLayer } from '$lib/nav/layers'
+  import { padActivate } from '$lib/nav/pad-controls'
   import { discussionExpanded } from '$lib/comments'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import { reportWatchPlayback } from '$lib/watch-together/client'
@@ -616,7 +618,7 @@
       onActivity: () => poke(),
       // Change source (visible) and the on-screen keyboard own the d-pad and triggers while up, so
       // L2/R2 and d-pad Left/Right must not seek the video behind them.
-      blocked: () => subtitleEditorOpen || get(commentsOpen) || get(trackMenuOpen) || get(playerMenuOpen) || sourcePickerVisible || get(oskOpen),
+      blocked: () => subtitleEditorOpen || get(commentsOpen) || get(trackMenuOpen) || get(playerMenuOpen) || sourcePickerVisible || get(oskOpen) || !!topNavLayer(),
     }, gmMode)
     return stop
   })
@@ -847,7 +849,7 @@
   const noticeVisible = $derived(!!$playerNotice)
   const sourcePickerVisible = $derived(!!$streamPicker && !$streamPicker.hidden)
   const sourceConnectingVisible = $derived(!!$connecting)
-  const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || subtitleEditorOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible || sourcePickerVisible || sourceConnectingVisible)
+  const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || subtitleEditorOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible || sourcePickerVisible || sourceConnectingVisible || $navLayerOpen || $oskOpen)
   // Ordinary controls are drawn by the 60Hz native OSD. Complex/persistent HTML surfaces still
   // take the bitmap path; that bitmap sits above ASS and includes the controls underneath it.
   const gmNativeControls = $derived(gmBitmapMode && firstFrame && controlsVisible && (!overlayFull || $playerSideSheetOpen))
@@ -867,6 +869,8 @@
     sourcePickerOpen: sourcePickerVisible,
     connectingOpen: sourceConnectingVisible,
     subtitleEditorOpen,
+    navLayerOpen: $navLayerOpen,
+    oskOpen: $oskOpen,
   }))
   $effect(() => {
     if (!gmBitmapMode) return
@@ -1273,6 +1277,12 @@
       if (get(deckKeyboardWarning)) return
       // The app-wide router owns every button while the end-of-series rating prompt is up.
       if (get(seriesRatingPrompt)) return
+      // An open nav layer (a dropdown, sheet or chooser) and the on-screen keyboard own the pad; the
+      // router closes them. Select/View still toggles the discussion under the keyboard.
+      if (topNavLayer() || (get(oskOpen) && e.payload.name !== 'select')) return
+      // The router may already have closed a layer on this very A/B edge; its stamp keeps the same
+      // press from also pausing, skipping or leaving the player, in either listener order.
+      if ((e.payload.name === 'a' || e.payload.name === 'b') && e.payload.pressed && performance.now() - get(navLayerDismissedAt) < 500) return
       if (e.payload.name === 'l4') {
         if (!deckL4Press.update(e.payload.pressed, performance.now())) return
         if (get(commentsOpen)) return
@@ -1301,7 +1311,7 @@
           subtitleEditorOpen = false
           poke()
         } else if (e.payload.name === 'a') {
-          ;(document.activeElement as HTMLElement | null)?.click()
+          padActivate()
         } else {
           const active = document.activeElement
           if ((e.payload.name === 'left' || e.payload.name === 'right') && active instanceof HTMLInputElement && active.type === 'range') {
@@ -1484,7 +1494,7 @@
       // takes pad input only through `gamepad-input`. Until now only a TypeError from the typing
       // check on a window target kept them from seeking. The on-screen keyboard owns every key
       // while up.
-      if (!playerHotkeyEligible(e, { oskOpen: get(oskOpen), layerOpen: false })) return
+      if (!playerHotkeyEligible(e, { oskOpen: get(oskOpen), layerOpen: !!topNavLayer() })) return
       // The end-of-series rating prompt owns the keyboard while up: its arrows move the score,
       // Enter saves, Escape dismisses — none of them may seek, pause or close the player under it.
       if (get(seriesRatingPrompt)) return

@@ -30,3 +30,25 @@ export function dispatchPadKey(key: string, options: PadKeyOptions = {}): Keyboa
 export function isPadEvent(event: Event | null | undefined): boolean {
   return !!event && (event as unknown as Record<symbol, unknown>)[PAD_KEY] === true
 }
+
+/** A-button activation of `el` (omitted: the focused element), shared by every controller owner.
+ *  False only when there is nothing to act on (null, no focused element, or <body>). A disabled control
+ *  (`:disabled` or aria-disabled="true") consumes the press and does nothing; a range does nothing
+ *  (Left/Right step it, commit 4); a <summary> toggles its <details> even in an engine where a
+ *  synthetic click does not; everything else is clicked, exactly as the A button always did. */
+export function padActivate(el?: Element | null): boolean {
+  // An omitted argument means "the focused element"; an explicit null means "nothing".
+  const target = el === undefined ? (typeof document === 'undefined' ? null : document.activeElement) : el
+  if (!target || !(target instanceof HTMLElement) || target === target.ownerDocument.body) return false
+  if (target.matches(':disabled') || target.getAttribute('aria-disabled') === 'true') return true
+  if (target instanceof HTMLInputElement && target.type === 'range') return true
+  if (target.tagName === 'SUMMARY') {
+    const details = target.parentElement instanceof HTMLDetailsElement ? target.parentElement : null
+    const wasOpen = details?.open
+    target.click()
+    if (details && details.open === wasOpen) details.open = !wasOpen
+    return true
+  }
+  target.click()
+  return true
+}

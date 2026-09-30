@@ -49,6 +49,9 @@
   import { getCurrentWindow } from '@tauri-apps/api/window'
   import { controllerMode, initInput, initDpadNav, startBrowserGamepadInput, suppressNativeContextMenus, suppressNativeTooltips, suppressPinchZoom } from '$lib/nav'
   import { startGamepadNav } from '$lib/nav/gamepad'
+  import { closeAllNavLayers, closeTopNavLayer, topNavLayer } from '$lib/nav/layers'
+  import { navEpoch, navInFlight } from '$lib/nav/nav-state'
+  import { setFocusHint } from '$lib/nav/focus-hint'
   import { isPadEvent } from '$lib/nav/pad-controls'
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { scheduleBootWork } from '$lib/util/boot-work'
@@ -459,8 +462,19 @@
     sentInsets = insets
     invoke('player_set_inset', { ...insets }).catch(() => {})
   })
-  // Navigating away (e.g. a sidebar link) exits playback and restores the browse UI.
-  beforeNavigate(({ from }) => {
+  // Navigating away (e.g. a sidebar link) exits playback and restores the browse UI. A history Back
+  // (the mouse Back button, a phone popstate) with a dropdown, sheet or chooser open closes that
+  // layer instead and stays on the page; returning early also skips close_player.
+  beforeNavigate((navigation) => {
+    if (navigation.type === 'popstate' && topNavLayer()) { navigation.cancel(); closeTopNavLayer('back'); return }
+    // Anything else really leaves: close every layer, drop a pending focus hint, and mark the
+    // navigation so a closing layer does not pull focus back onto the page being left.
+    closeAllNavLayers('navigate')
+    setFocusHint(null)
+    navEpoch.update((epoch) => epoch + 1)
+    navInFlight.set(true)
+    void navigation.complete.catch(() => {}).finally(() => navInFlight.set(false))
+    const { from } = navigation
     if (from?.url) rememberScroll(from.url)
     if ($playing) {
       void exitPictureInPicture()
@@ -472,6 +486,7 @@
   // gamepad-side restore runs shortly after the button press; this second restore runs after Svelte
   // has completed the navigation, so touch scrolling remains available on the destination screen.
   afterNavigate(({ to }) => {
+    navInFlight.set(false)
     if (to?.url && !$playing) restoreScroll(to.url)
     if (get(gameMode)) invoke('restore_native_touch').catch(() => {})
     requestAnimationFrame(() => requestAnimationFrame(() => markClientPerformance(

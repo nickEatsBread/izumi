@@ -3,6 +3,8 @@ import { gameMode, playing } from '$lib/player/session'
 import { isTv } from '$lib/platform'
 import { controllerMode } from './input'
 import { pickInDirection, type Dir } from './spatial'
+import { activeNavTrap } from './traps'
+import { takeFocusHint } from './focus-hint'
 import { isNavigable } from './focusable'
 import { isPadEvent } from './pad-controls'
 export * from './input'
@@ -351,9 +353,10 @@ export function initDpadNav() {
     const field = dir && !isPadEvent(e) ? fieldShape(e.target) : null
     if (field && fieldOwnsArrow(field, e.key as ArrowKey)) return
     // Resolve the active modal before the blanket player gate. Change source is deliberately
-    // opened while playback continues, and its focus trap must still own the arrows.
-    const trap = document.querySelector('[aria-label="On-screen keyboard"][data-nav-trap]')
-      ?? document.querySelector('[data-nav-trap]')
+    // opened while playback continues, and its focus trap must still own the arrows. One resolver
+    // decides which trap owns the pad: the open keyboard, the top nav layer, a modal <dialog>, then
+    // the first visible legacy trap (nav/traps.ts).
+    const trap = activeNavTrap()
     // During playback the player owns the arrow/Enter keys (seek/skip/pause). Spatial focus nav
     // must stay OUT of the way — otherwise a desktop arrow both seeks AND moves focus onto the
     // player controls / across to the sidebar (which then expands over the video).
@@ -390,6 +393,15 @@ export function initDpadNav() {
     // "down" from the whole viewport and flings focus deep into the grid (the "jumps to romance,
     // 3rd card" bug). Prefer the first non-sidebar focusable (the hero button) so the row is next.
     if (!active?.closest?.('[data-focusable]') || (trap && !trap.contains(active))) {
+      // A layer closed by touch or the mouse left its opener as a hint instead of moving focus
+      // (nav/overlay.ts): the first d-pad press lands back on it, not on the page's first control.
+      const hinted = takeFocusHint(root)
+      if (hinted?.closest('[data-focusable]') && isNavigable(hinted)) {
+        hinted.focus({ preventScroll: true })
+        revealFocused(hinted, vertical, e.repeat)
+        e.preventDefault()
+        return
+      }
       const els = focusables(root)
       const content = els.filter(el => !el.closest('[data-nav-sidebar]'))
       // Prefer the first content focusable that ISN'T a text box (so entering Downloads/Search
