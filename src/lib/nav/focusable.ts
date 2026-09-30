@@ -8,8 +8,16 @@
  *  attribute walk instead of `el.inert`. */
 export function isNavigable(el: HTMLElement): boolean {
   return (el.checkVisibility?.() ?? true)
-    && el.tabIndex >= 0
+    && (el.tabIndex >= 0 || isRovingTab(el))
     && el.getAttribute('aria-hidden') !== 'true'
     && !el.matches(':disabled')
     && !el.closest('[inert]')
+}
+
+/** A tab in a roving-tabindex tablist (WAI-ARIA tabs: the selected tab is the one tab stop and the
+ *  others sit at tabindex -1, like Sources). Its inactive tabs stay d-pad candidates, entering the
+ *  strip lands on the selected one (nav/index.ts `rovingEntry`), and it owns keyboard Left/Right. */
+export function isRovingTab(el: Element): boolean {
+  if (el.getAttribute('role') !== 'tab') return false
+  return !!el.closest('[role="tablist"]')?.querySelector('[role="tab"][tabindex="-1"]')
 }

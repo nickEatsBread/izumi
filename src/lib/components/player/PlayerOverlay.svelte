@@ -44,7 +44,7 @@
   import { ButtonPressLatch, startGamepadEventSeek } from '$lib/player/gamepad'
   import { controllerMode } from '$lib/nav/input'
   import { navLayerDismissedAt, navLayerOpen, topNavLayer } from '$lib/nav/layers'
-  import { padActivate } from '$lib/nav/pad-controls'
+  import { dispatchPadKey, padActivate } from '$lib/nav/pad-controls'
   import { discussionExpanded } from '$lib/comments'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import { reportWatchPlayback } from '$lib/watch-together/client'
@@ -1313,17 +1313,11 @@
         } else if (e.payload.name === 'a') {
           padActivate()
         } else {
-          const active = document.activeElement
-          if ((e.payload.name === 'left' || e.payload.name === 'right') && active instanceof HTMLInputElement && active.type === 'range') {
-            // Synthetic KeyboardEvents do not perform a range input's native default action in
-            // WebKitGTK. Apply one real slider step and emit input so Svelte's binding/repaint runs.
-            if (e.payload.name === 'left') active.stepDown()
-            else active.stepUp()
-            active.dispatchEvent(new Event('input', { bubbles: true }))
-            return
-          }
+          // One pad-marked arrow. Nav moves focus inside the editor's data-nav-trap, and on the
+          // slider its pad adapter (padAdjust) steps the value, snapped and clamped, firing `input`
+          // then `change`: synthetic keys never run a range input's native default action.
           const key = ({ up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' } as Record<string, string>)[e.payload.name]
-          if (key) window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+          if (key) dispatchPadKey(key)
         }
         return
       }

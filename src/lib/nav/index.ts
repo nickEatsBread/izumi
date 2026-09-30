@@ -5,8 +5,8 @@ import { controllerMode } from './input'
 import { pickInDirection, type Dir } from './spatial'
 import { activeNavTrap } from './traps'
 import { takeFocusHint } from './focus-hint'
-import { isNavigable } from './focusable'
-import { isPadEvent } from './pad-controls'
+import { isNavigable, isRovingTab } from './focusable'
+import { isPadEvent, padAdjust } from './pad-controls'
 export * from './input'
 export * from './actions'
 export * from './spatial'
@@ -23,28 +23,42 @@ export type ArrowKey = 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight'
 
 // Only the bits of the focused element the ownership rules below depend on, so those rules stay a
 // pure function (the test env has no DOM) and the DOM reading happens in exactly one place.
-export interface FieldShape { tag: string; type?: string; contentEditable?: boolean; role?: string }
+// `rovingTab`: a role="tab" in a roving-tabindex tablist (focusable.ts `isRovingTab`).
+export interface FieldShape { tag: string; type?: string; contentEditable?: boolean; role?: string; rovingTab?: boolean }
 
 // Caret-less <input> types that Enter does NOT reach natively: a checkbox/radio only toggles on
 // Space, and range/color ignore Enter entirely. These are the only focusables in the app left
 // without any activation path, so they get the synthetic click below.
 const ENTER_INERT_INPUT_TYPES = ['checkbox', 'radio', 'range', 'color']
 
-// Controls with no caret at all, where an arrow is never "move the cursor". They are reachable ONLY
-// by the d-pad in Game mode, so swallowing their arrows would strand controller focus on a checkbox
-// or a slider with no way back out — nav keeps all four. The tail already activates on Enter by
-// itself (they behave like buttons), which is why it is excluded from the list above.
+// Controls with no caret at all, where an arrow is never "move the cursor". Swallowing their arrows
+// would strand keyboard focus on a checkbox with no way back out, so nav keeps all four. A slider is
+// the one exception: under a keyboard off TV it keeps the horizontal pair for its native step
+// (`rangeOwnsHorizontal`) while Up/Down still leave; pad arrows skip field ownership altogether and
+// reach sliders through `padAdjust` instead. The tail already activates on Enter by itself (they
+// behave like buttons), which is why it is excluded from the list above.
 const CARETLESS_INPUT_TYPES = [...ENTER_INERT_INPUT_TYPES, 'button', 'submit', 'reset', 'file', 'image']
 
 // Steppers: Up/Down change the value and Left/Right walk between segments, so all four are theirs.
 const STEPPER_INPUT_TYPES = ['number', 'date', 'datetime-local', 'month', 'time', 'week']
 
+/** Caller context for `fieldOwnsArrow`, kept out of the shape so the rules stay a pure function. */
+export interface FieldArrowOptions {
+  /** A keyboard-focused slider steps with Left/Right (web standard, owner decision 2). The nav
+   *  handler passes `!get(isTv)`: a TV remote keeps Left/Right as focus moves (spec §3.11). */
+  rangeOwnsHorizontal?: boolean
+}
+
 /// Does the focused field claim this arrow for itself? Ownership is PER-KEY, not per-element: a
 /// blanket "any input wins" guard also eats Up/Down, and Up/Down are the only keyboard way OUT of a
 /// focused text box — that killed ArrowDown-from-the-search-field onto the first quick-search
 /// result, and the same shape in the episode and downloads filters.
-export function fieldOwnsArrow(field: FieldShape, key: ArrowKey): boolean {
+export function fieldOwnsArrow(field: FieldShape, key: ArrowKey, options: FieldArrowOptions = {}): boolean {
   const vertical = key === 'ArrowUp' || key === 'ArrowDown'
+  // A roving tab (the tablist keeps one tab stop and parks the rest at tabindex -1, like Sources)
+  // runs its own Left/Right: the page's handler steps once and nav stands down instead of stepping
+  // a second time. Up/Down are not the strip's, so they still leave it.
+  if (field.rovingTab) return !vertical
   // A multi-line caret moves in both axes — Up/Down walk lines, so nav gets nothing.
   if (field.contentEditable || field.tag === 'TEXTAREA') return true
   // <select> cycles its value on all four arrows (Up/Down and Left/Right do the same thing), so the
@@ -56,6 +70,8 @@ export function fieldOwnsArrow(field: FieldShape, key: ArrowKey): boolean {
   if (field.tag === 'INPUT') {
     // `.type` is normalised and lower-cased by the DOM, and an omitted/unknown type reads 'text'.
     const type = field.type ?? 'text'
+    // A keyboard slider steps natively with Left/Right; Up/Down stay nav's, so it never traps.
+    if (type === 'range' && options.rangeOwnsHorizontal) return !vertical
     if (CARETLESS_INPUT_TYPES.includes(type)) return false
     if (STEPPER_INPUT_TYPES.includes(type)) return true
     // Single-line text-ish (text/search/password/url/email/tel): only the horizontal pair walks the
@@ -81,6 +97,7 @@ const fieldShape = (target: EventTarget | null): FieldShape | null => {
     type: target instanceof HTMLInputElement ? target.type : undefined,
     contentEditable: target.isContentEditable,
     role: target.getAttribute('role') ?? undefined,
+    rovingTab: isRovingTab(target),
   }
 }
 
@@ -116,6 +133,17 @@ const focusables = (root: ParentNode) => {
     ? '[data-focusable], button, a[href], input, textarea, select, [tabindex]'
     : '[data-focusable]'
   return [...root.querySelectorAll<HTMLElement>(selector)].filter(isNavigable)
+}
+
+/** Entering a roving tablist from outside it lands on the selected tab (the WAI-ARIA tabs pattern),
+ *  not on whichever inactive tab happens to sit nearest; moves within the strip keep the geometric
+ *  pick. `from` is the element focus is leaving. */
+function rovingEntry(pick: HTMLElement, from: Element | null): HTMLElement {
+  if (pick.getAttribute('aria-selected') === 'true' || !isRovingTab(pick)) return pick
+  const list = pick.closest('[role="tablist"]')
+  if (!list || (from && list.contains(from))) return pick
+  const selected = list.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+  return selected && isNavigable(selected) ? selected : pick
 }
 
 export const containedInAxis = (itemStart: number, itemEnd: number, portStart: number, portEnd: number) =>
@@ -351,7 +379,7 @@ export function initDpadNav() {
     // Pad arrows always navigate (owner decision 3): a field the d-pad lands on never keeps them.
     // Only a real keyboard's arrows are the field's own to walk its caret or cycle its value.
     const field = dir && !isPadEvent(e) ? fieldShape(e.target) : null
-    if (field && fieldOwnsArrow(field, e.key as ArrowKey)) return
+    if (field && fieldOwnsArrow(field, e.key as ArrowKey, { rangeOwnsHorizontal: !get(isTv) })) return
     // Resolve the active modal before the blanket player gate. Change source is deliberately
     // opened while playback continues, and its focus trap must still own the arrows. One resolver
     // decides which trap owns the pad: the open keyboard, the top nav layer, a modal <dialog>, then
@@ -414,6 +442,13 @@ export function initDpadNav() {
       }
       return
     }
+    // A focused slider takes the pad's Left/Right as steps; TV keeps them as focus moves (spec
+    // §3.11). This sits after the landing block, so it only acts on a slider that already holds
+    // focus, and before the named overrides, so a data-nav-left/right can never pre-empt stepping.
+    if (isPadEvent(e) && !get(isTv) && padAdjust(active, dir, e.repeat)) {
+      e.preventDefault()
+      return
+    }
     // Some transitions have semantic row order that geometry cannot infer. The schedule weekday
     // strip spans the whole screen; from a weekday near the right edge, a 45-degree cone rejects
     // the first airing row and finds a farther card below it. A named override keeps ordinary
@@ -424,8 +459,9 @@ export function initDpadNav() {
         .find((el) => el !== active && el.getAttribute('data-nav-id') === explicitName && isNavigable(el))
       : undefined
     if (explicit) {
-      explicit.focus({ preventScroll: true })
-      revealFocused(explicit, vertical, e.repeat)
+      const target = rovingEntry(explicit, active)
+      target.focus({ preventScroll: true })
+      revealFocused(target, vertical, e.repeat)
       e.preventDefault()
       return
     }
@@ -434,8 +470,9 @@ export function initDpadNav() {
     // fallback used by irregular grids, settings, and sidebar crossings.
     const rowPick = pickInNavRows(active, dir)
     if (rowPick) {
-      rowPick.focus({ preventScroll: true })
-      revealFocused(rowPick, vertical, e.repeat)
+      const target = rovingEntry(rowPick, active)
+      target.focus({ preventScroll: true })
+      revealFocused(target, vertical, e.repeat)
       e.preventDefault()
       return
     }
@@ -478,8 +515,9 @@ export function initDpadNav() {
       // Focus WITHOUT the browser's instant jump-scroll, then smooth-scroll ONLY along the axis
       // we moved: horizontal moves scroll the row horizontally (block:nearest avoids a vertical
       // re-center jitter on every left/right); vertical moves scroll the page vertically.
-      pick.el.focus({ preventScroll: true })
-      revealFocused(pick.el, vertical, e.repeat)
+      const target = rovingEntry(pick.el, active)
+      target.focus({ preventScroll: true })
+      revealFocused(target, vertical, e.repeat)
       e.preventDefault()
     }
   }

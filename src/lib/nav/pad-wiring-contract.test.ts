@@ -65,3 +65,37 @@ describe('shell hotkeys', () => {
     expect(firstLine).toMatch(/^if \(isPadEvent\(event\)\) return\b/)
   })
 })
+
+describe('pad sliders and roving tabs wiring (commit 4)', () => {
+  const source = (relative: string) =>
+    readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
+  const nav = source('./index.ts')
+  const overlay = source('../components/player/PlayerOverlay.svelte')
+
+  it('steps a focused slider after the landing block and before the named overrides, off TV only', () => {
+    const landing = nav.indexOf('const active = document.activeElement as HTMLElement')
+    const hook = nav.indexOf('if (isPadEvent(e) && !get(isTv) && padAdjust(active, dir, e.repeat)) {')
+    expect(landing).toBeGreaterThan(-1)
+    expect(hook).toBeGreaterThan(landing)
+    expect(hook).toBeLessThan(nav.indexOf('const explicitName = active.getAttribute('))
+    expect(nav.split('padAdjust(').length - 1).toBe(1)
+  })
+
+  it('hands a keyboard-focused slider its Left/Right off TV, and a roving tab its own Left/Right', () => {
+    // A regex, so commit 8 can add `navArrived` to the same options object.
+    expect(nav).toMatch(/fieldOwnsArrow\(field, e\.key as ArrowKey, \{[^}]*rangeOwnsHorizontal: !get\(isTv\)/)
+    expect(nav).toContain('rovingTab: isRovingTab(target),')
+  })
+
+  it('the subtitle editor steps its slider through the shared pad adapter', () => {
+    const start = overlay.indexOf('if (subtitleEditorOpen) {')
+    const end = overlay.indexOf('// The track menu captures the pad while open', start)
+    const branch = overlay.slice(start, end)
+    expect(start).toBeGreaterThan(-1)
+    expect(end).toBeGreaterThan(start)
+    expect(branch).toContain('if (key) dispatchPadKey(key)')
+    expect(branch).not.toContain('stepDown()')
+    expect(branch).not.toContain('stepUp()')
+    expect(branch).not.toContain('new KeyboardEvent(')
+  })
+})

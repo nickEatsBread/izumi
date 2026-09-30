@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { containedInAxis, fieldOwnsArrow, isEnterInertInput, revealAxisDelta, type ArrowKey, type FieldShape } from './index'
+import { containedInAxis, fieldOwnsArrow, isEnterInertInput, revealAxisDelta, type ArrowKey, type FieldArrowOptions, type FieldShape } from './index'
 
 const input = (type: string): FieldShape => ({ tag: 'INPUT', type })
 const KEYS: ArrowKey[] = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']
@@ -42,6 +42,39 @@ describe('fieldOwnsArrow', () => {
 
   it('a plain button claims nothing', () => expect(owned({ tag: 'BUTTON' })).toEqual([]))
   it('a card div claims nothing', () => expect(owned({ tag: 'DIV' })).toEqual([]))
+})
+
+describe('fieldOwnsArrow options and roving tabs', () => {
+  const ownedWith = (field: FieldShape, options: FieldArrowOptions) =>
+    KEYS.filter((key) => fieldOwnsArrow(field, key, options))
+
+  // Decision 2: a keyboard-focused slider steps with Left/Right, as the web platform does. The nav
+  // handler passes rangeOwnsHorizontal = !isTv; pad arrows never reach this rule at all.
+  it('a keyboard-focused slider keeps Left/Right when the caller hands them over (off TV)', () =>
+    expect(ownedWith(input('range'), { rangeOwnsHorizontal: true })).toEqual(['ArrowLeft', 'ArrowRight']))
+
+  it('without the option (TV) a slider still yields all four to nav', () => {
+    expect(ownedWith(input('range'), { rangeOwnsHorizontal: false })).toEqual([])
+    expect(ownedWith(input('range'), {})).toEqual([])
+  })
+
+  it('the option only concerns sliders', () => {
+    for (const type of ['checkbox', 'radio', 'color', 'button', 'submit', 'reset', 'file', 'image']) {
+      expect(ownedWith(input(type), { rangeOwnsHorizontal: true }), type).toEqual([])
+    }
+    expect(ownedWith(input('text'), { rangeOwnsHorizontal: true })).toEqual(['ArrowLeft', 'ArrowRight'])
+    expect(ownedWith(input('number'), { rangeOwnsHorizontal: true })).toEqual(KEYS)
+    expect(ownedWith({ tag: 'SELECT' }, { rangeOwnsHorizontal: true })).toEqual(['ArrowUp', 'ArrowDown'])
+    expect(ownedWith({ tag: 'TEXTAREA' }, { rangeOwnsHorizontal: true })).toEqual(KEYS)
+  })
+
+  // Sources parks its inactive tabs at tabindex -1 and steps them itself (moveTab). Owning the
+  // horizontal pair makes that one step; Up/Down still leave the strip.
+  it('a roving tab owns Left/Right so the page steps it once', () =>
+    expect(owned({ tag: 'BUTTON', role: 'tab', rovingTab: true })).toEqual(['ArrowLeft', 'ArrowRight']))
+
+  it('a tab in a strip without roving tabindex claims nothing', () =>
+    expect(owned({ tag: 'BUTTON', role: 'tab' })).toEqual([]))
 })
 
 describe('isEnterInertInput', () => {
