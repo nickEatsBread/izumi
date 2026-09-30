@@ -22,15 +22,32 @@ describe('featured carousel UX', () => {
     expect(hero).toContain('{totalEpisodes(current)} episodes')
   })
 
-  it('anchors the featured rank to the bottom right of the banner', () => {
+  it('anchors the featured rank to a corner of the banner', () => {
     expect(hero.match(/\{featuredRankLabel\}/g)?.length).toBe(2)
+    // The rank says where the carousel placed the title, not a fact about the title, so both
+    // layouts keep it in the banner's own corner instead of among the title's facts.
     // Desktop: pinned to the artwork's bottom-right corner, clearing the carousel dots when the
-    // carousel has more than one title. Mobile has no room for an overlay, so its copy is
-    // right-aligned under the actions — the same corner of the content it belongs to.
+    // carousel has more than one title.
     expect(hero).toContain('pointer-events-none absolute right-8')
     expect(hero).toContain('class:bottom-16={medias.length > 1}')
     expect(hero).toContain('class:bottom-8={medias.length <= 1}')
-    expect(hero).toContain('flex justify-end')
+    // Phone: the card's copy fills its bottom, so the chip takes the top-right corner over the
+    // artwork. A row of its own under Watch and Details read as a stray element after the actions.
+    // Copy and chip share one wrapping layer, so a card too short for both (a phone in landscape)
+    // clips the chip instead of drawing it over the title.
+    const phone = hero.slice(hero.indexOf('data-variant="phone"'), hero.indexOf('data-variant="desktop"'))
+    const layer = phone.indexOf('pointer-events-none absolute inset-0 z-20 flex flex-col-reverse flex-wrap justify-between')
+    const copy = phone.indexOf('<div class="flex w-full flex-col gap-2 p-4">')
+    const corner = phone.indexOf('<div class="mr-3 mt-3 flex max-w-[calc(100%-1.5rem)] self-end">')
+    expect(layer).toBeGreaterThan(-1)
+    expect(copy).toBeGreaterThan(layer)
+    expect(corner).toBeGreaterThan(copy)
+    // The copy column closes before the corner slot opens: the chip is its sibling, not a row in it.
+    const between = phone.slice(copy, corner)
+    expect(between.match(/<div\b/g)?.length).toBe(between.match(/<\/div>/g)?.length)
+    expect(phone.indexOf('{featuredRankLabel}')).toBeGreaterThan(corner)
+    expect(phone.indexOf('<ThemeNode node={heroTheme.rank}')).toBeGreaterThan(corner)
+    expect(phone).not.toContain('flex justify-end')
   })
 
   it('uses provider title artwork with a readable text fallback', () => {

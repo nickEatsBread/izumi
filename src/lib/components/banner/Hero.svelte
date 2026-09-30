@@ -532,73 +532,80 @@
         <button type="button" data-focusable class="android-hero-hit absolute inset-0 z-10"
                 onclick={openCurrent} aria-label={`View details for ${title(current)}`}></button>
       {/if}
-      <div class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col gap-2 p-4">
-        {#if featuredAward}
-          <div class="flex flex-wrap gap-1.5">
-            <a href={animeAwardHref(featuredAward)} data-focusable class="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-orange-300/20 bg-black/65 px-2.5 py-1 text-[0.68rem] font-black text-white shadow-lg backdrop-blur transition-colors hover:border-orange-300/50 hover:bg-black/80">
-              <Award size={12} class="text-orange-300" aria-hidden="true" />Crunchyroll · {featuredAward.year} {featuredAward.category}
-            </a>
+      <!-- Copy and rank share one layer. The copy fills the card from the bottom. The rank says where
+           the carousel placed this title, so it takes the free top-right corner, as the desktop
+           chip does, rather than a row under the actions. The layer wraps: when the card is too
+           short for both (a phone in landscape), the chip moves to a second column past the right
+           edge, which the card clips, instead of landing on the title. -->
+      <div class="pointer-events-none absolute inset-0 z-20 flex flex-col-reverse flex-wrap justify-between">
+        <div class="flex w-full flex-col gap-2 p-4">
+          {#if featuredAward}
+            <div class="flex flex-wrap gap-1.5">
+              <a href={animeAwardHref(featuredAward)} data-focusable class="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-orange-300/20 bg-black/65 px-2.5 py-1 text-[0.68rem] font-black text-white shadow-lg backdrop-blur transition-colors hover:border-orange-300/50 hover:bg-black/80">
+                <Award size={12} class="text-orange-300" aria-hidden="true" />Crunchyroll · {featuredAward.year} {featuredAward.category}
+              </a>
+            </div>
+          {/if}
+          {#if currentLogo}
+            <h1 data-part="hero.logo" aria-label={title(current)} class="h-16 w-[82%]">
+              <img src={currentLogo} alt="" loading="eager" decoding="async"
+                   onerror={logoFailed}
+                   class="h-full w-full object-contain object-left drop-shadow-[2px_2px_5px_rgba(0,0,0,.9)]" />
+            </h1>
+          {:else}
+            <h1 data-part="hero.title" class="line-clamp-2 text-2xl font-black leading-tight text-white drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)]">{title(current)}</h1>
+          {/if}
+          <div data-part="hero.meta" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-white/90
+                      [&>span:not(:first-child)]:before:mr-2 [&>span:not(:first-child)]:before:text-white/40 [&>span:not(:first-child)]:before:content-['•']">
+            {#if format(current)}<span>{format(current)}</span>{/if}
+            {#if totalEpisodes(current) > 1}<span>{totalEpisodes(current)} eps</span>{/if}
+            {#if current.duration}<span>{current.duration} min</span>{/if}
+            {#if current.averageScore}<span class={scoreColor(current.averageScore)}>{current.averageScore}% score</span>{/if}
+            {#if !nextAiringLabel && status(current)}<span>{status(current)}</span>{/if}
           </div>
-        {/if}
-        {#if currentLogo}
-          <h1 data-part="hero.logo" aria-label={title(current)} class="h-16 w-[82%]">
-            <img src={currentLogo} alt="" loading="eager" decoding="async"
-                 onerror={logoFailed}
-                 class="h-full w-full object-contain object-left drop-shadow-[2px_2px_5px_rgba(0,0,0,.9)]" />
-          </h1>
-        {:else}
-          <h1 data-part="hero.title" class="line-clamp-2 text-2xl font-black leading-tight text-white drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)]">{title(current)}</h1>
-        {/if}
-        <div data-part="hero.meta" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-white/90
-                    [&>span:not(:first-child)]:before:mr-2 [&>span:not(:first-child)]:before:text-white/40 [&>span:not(:first-child)]:before:content-['•']">
-          {#if format(current)}<span>{format(current)}</span>{/if}
-          {#if totalEpisodes(current) > 1}<span>{totalEpisodes(current)} eps</span>{/if}
-          {#if current.duration}<span>{current.duration} min</span>{/if}
-          {#if current.averageScore}<span class={scoreColor(current.averageScore)}>{current.averageScore}% score</span>{/if}
-          {#if !nextAiringLabel && status(current)}<span>{status(current)}</span>{/if}
-        </div>
-        {#if nextAiringLabel || current.genres?.length}
-          <div class="flex flex-wrap items-center gap-1.5">
-            {#if nextAiringLabel}
-              <span aria-label={nextAiringAccessibleLabel} class="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-black/55 px-2.5 py-1 text-[0.7rem] font-black tabular-nums text-white shadow-lg backdrop-blur">
-                <Clock3 size={12} aria-hidden="true" />{nextAiringLabel}
-              </span>
-            {/if}
-            {#each current.genres?.slice(0, 3) ?? [] as g (g)}
-              <span class="rounded-full border border-white/10 bg-white/15 px-2.5 py-0.5 text-[0.7rem] font-bold text-white/90">{g}</span>
-            {/each}
+          {#if nextAiringLabel || current.genres?.length}
+            <div class="flex flex-wrap items-center gap-1.5">
+              {#if nextAiringLabel}
+                <span aria-label={nextAiringAccessibleLabel} class="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-black/55 px-2.5 py-1 text-[0.7rem] font-black tabular-nums text-white shadow-lg backdrop-blur">
+                  <Clock3 size={12} aria-hidden="true" />{nextAiringLabel}
+                </span>
+              {/if}
+              {#each current.genres?.slice(0, 3) ?? [] as g (g)}
+                <span class="rounded-full border border-white/10 bg-white/15 px-2.5 py-0.5 text-[0.7rem] font-bold text-white/90">{g}</span>
+              {/each}
+            </div>
+          {/if}
+          <div data-part="hero.actions" class="mt-1 flex items-center gap-2">
+            <button data-focusable onclick={() => { rememberDetail(current); onplay?.(current) }}
+                    class="pointer-events-auto flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 font-bold text-black shadow-lg"
+                    style="background:var(--accent)">
+              <Play size={18} fill="currentColor" /> Watch
+            </button>
+            <button data-focusable onclick={() => { rememberDetail(current); oninfo?.(current) }}
+                    class="pointer-events-auto flex items-center gap-2 rounded-lg bg-white/15 px-4 py-2.5 font-bold text-white backdrop-blur">
+              <Info size={18} /> Details
+            </button>
           </div>
-        {/if}
-        <div data-part="hero.actions" class="mt-1 flex items-center gap-2">
-          <button data-focusable onclick={() => { rememberDetail(current); onplay?.(current) }}
-                  class="pointer-events-auto flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 font-bold text-black shadow-lg"
-                  style="background:var(--accent)">
-            <Play size={18} fill="currentColor" /> Watch
-          </button>
-          <button data-focusable onclick={() => { rememberDetail(current); oninfo?.(current) }}
-                  class="pointer-events-auto flex items-center gap-2 rounded-lg bg-white/15 px-4 py-2.5 font-bold text-white backdrop-blur">
-            <Info size={18} /> Details
-          </button>
+          {#if indicator.style}
+            {@render slideIndicator(indicator.style, '#ffffff', 'mt-1.5 flex', 'center')}
+          {:else if medias.length > 1}
+            <div data-part="hero.indicator" data-variant="default" class="mt-1.5 flex justify-center gap-1.5">
+              {#each medias as _, idx (idx)}
+                <!-- The dots are 6px tall; a finger needs more than that. The pseudo-element grows each
+                     hit area to ~30px without changing what is drawn or spacing the row apart. -->
+                <button data-part="hero.dot" data-active={idx === i || undefined} type="button" onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`}
+                        class="pointer-events-auto relative h-1.5 rounded-full transition-all duration-300 before:absolute before:-inset-x-1.5 before:-inset-y-3 before:content-[''] {idx === i ? 'w-5 bg-white' : 'w-1.5 bg-white/40'}"></button>
+              {/each}
+            </div>
+          {/if}
         </div>
         {#if featuredRankLabel && !heroTheme?.rankHidden}
-          <div class="flex justify-end">
+          <div class="mr-3 mt-3 flex max-w-[calc(100%-1.5rem)] self-end">
             {#if heroTheme?.rank}<ThemeNode node={heroTheme.rank} model={themeModel} />{:else}
-            <span class="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-black/70 px-2.5 py-1 text-[0.68rem] font-black text-white shadow-lg backdrop-blur">
-              <TrendingUp size={12} class="text-orange-300" aria-hidden="true" />{featuredRankLabel}
+            <span class="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-white/15 bg-black/65 px-2.5 py-1 text-[0.68rem] font-black text-white shadow-lg backdrop-blur">
+              <TrendingUp size={12} class="shrink-0 text-orange-300" aria-hidden="true" /><span class="truncate">{featuredRankLabel}</span>
             </span>
             {/if}
-          </div>
-        {/if}
-        {#if indicator.style}
-          {@render slideIndicator(indicator.style, '#ffffff', 'mt-1.5 flex', 'center')}
-        {:else if medias.length > 1}
-          <div data-part="hero.indicator" data-variant="default" class="mt-1.5 flex justify-center gap-1.5">
-            {#each medias as _, idx (idx)}
-              <!-- The dots are 6px tall; a finger needs more than that. The pseudo-element grows each
-                   hit area to ~30px without changing what is drawn or spacing the row apart. -->
-              <button data-part="hero.dot" data-active={idx === i || undefined} type="button" onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`}
-                      class="pointer-events-auto relative h-1.5 rounded-full transition-all duration-300 before:absolute before:-inset-x-1.5 before:-inset-y-3 before:content-[''] {idx === i ? 'w-5 bg-white' : 'w-1.5 bg-white/40'}"></button>
-            {/each}
           </div>
         {/if}
       </div>
