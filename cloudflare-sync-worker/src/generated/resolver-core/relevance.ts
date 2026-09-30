@@ -94,10 +94,61 @@ export function releaseTitleTokens(name: string): string[] {
   return out
 }
 
+// What may sit between two release words that spell ONE requested word: "Toukutsu Ou",
+// "Toukutsu.Ou", "Toukutsu_Ou" or "Toukutsu-Ou". A spaced dash is the episode/title separator.
+const WORD_BREAK = /^(?:[\s._]+|-)$/
+
+/** Romanization disagrees about where words break. The catalogue writes "Akujo de wa Gozaimasu ga"
+ *  where release groups write "Akujo dewa Gozaimasu ga", and the reverse happens ("Toukutsuou"
+ *  against "Toukutsu Ou"). Every test in relevant() compares whole words, so the other spelling was
+ *  a word the request had never used, and the anchor filtered out every release that wrote it.
+ *
+ *  Returns the lowercased name re-spelled onto the request's own word breaks: a release word that
+ *  glues together consecutive words of one requested title is split back into them, and adjacent
+ *  release words that together spell one requested word are joined. Only consecutive words of a
+ *  single title count, so this re-spells words the request already has and never makes a new word
+ *  known: "One Piece Fan Letter" is still a spin-off and "Dogulwang End Line" still names "End Line". */
+function alignWordBreaks(name: string, wanted: string[]): string {
+  const words = new Set<string>()
+  const glued = new Map<string, string>()
+  for (const alias of wanted) {
+    const tokens = lexicalTitleTokens(alias)
+    for (let i = 0; i < tokens.length; i++) {
+      words.add(tokens[i])
+      for (let j = i + 2; j <= tokens.length; j++) {
+        const run = tokens.slice(i, j)
+        if (!glued.has(run.join(''))) glued.set(run.join(''), run.join(' '))
+      }
+    }
+  }
+  const lower = name.toLowerCase()
+  const runs = [...lower.matchAll(/[a-z0-9]+/g)].map((m) => ({ text: m[0], start: m.index, end: m.index + m[0].length }))
+  let out = ''
+  let at = 0
+  for (let i = 0; i < runs.length; i++) {
+    // Join first, longest span first: "toukutsu ou" is one requested word written as two.
+    let span = 1
+    for (let k = Math.min(3, runs.length - i); k >= 2 && span === 1; k--) {
+      const parts = runs.slice(i, i + k)
+      const spelled = parts.map((p) => p.text).join('')
+      const adjacent = parts.slice(1).every((p, n) => WORD_BREAK.test(lower.slice(parts[n].end, p.start)))
+      if (adjacent && words.has(spelled) && !parts.every((p) => words.has(p.text))) span = k
+    }
+    // Otherwise split: "dewa" is the requested "de wa" written as one word.
+    const text = span > 1
+      ? runs.slice(i, i + span).map((p) => p.text).join('')
+      : (!words.has(runs[i].text) && glued.get(runs[i].text)) || runs[i].text
+    out += lower.slice(at, runs[i].start) + text
+    at = runs[i + span - 1].end
+    i += span - 1
+  }
+  return out + lower.slice(at)
+}
+
 // Does a release filename plausibly belong to THIS anime? Guards against cross-title
 // matches on a shared id. Keeps unknowns (never drop on uncertainty).
 export function relevant(stream: Stream, wanted: string[]): boolean {
-  const name = nameOf(stream)
+  const name = alignWordBreaks(nameOf(stream), wanted)
   const toks = new Set(titleTokens(name))
   const known = new Set(wanted.flatMap((w) => lexicalTitleTokens(w)))
   const head = releaseTitleTokens(name)
