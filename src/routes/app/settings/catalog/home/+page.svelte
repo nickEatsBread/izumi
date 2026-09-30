@@ -237,7 +237,7 @@
         <form class="mt-4 grid gap-3 sm:grid-cols-2" onsubmit={createCustomTmdbRow}>
           <label class="sm:col-span-2">
             <span class="mb-1 block text-xs font-bold">Row title</span>
-            <input required maxlength="60" bind:value={customTitle} placeholder="e.g. Short sci-fi films"
+            <input required maxlength="60" bind:value={customTitle} data-focusable placeholder="e.g. Short sci-fi films"
               class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-theme/70" />
           </label>
           <label>
@@ -261,17 +261,17 @@
           </label>
           <label>
             <span class="mb-1 block text-xs font-bold">Release year <span class="font-normal text-muted-foreground">optional</span></span>
-            <input bind:value={customYear} type="number" min="1900" max={new Date().getFullYear() + 2} placeholder="Any year"
+            <input bind:value={customYear} type="number" data-focusable min="1900" max={new Date().getFullYear() + 2} placeholder="Any year"
               class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-theme/70" />
           </label>
           <label>
             <span class="mb-1 block text-xs font-bold">Minimum rating <span class="font-normal text-muted-foreground">out of 10</span></span>
-            <input bind:value={customMinimumScore} type="number" min="0" max="10" step="0.5" placeholder="Any rating"
+            <input bind:value={customMinimumScore} type="number" data-focusable min="0" max="10" step="0.5" placeholder="Any rating"
               class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-theme/70" />
           </label>
           <label>
             <span class="mb-1 block text-xs font-bold">Maximum runtime <span class="font-normal text-muted-foreground">minutes</span></span>
-            <input bind:value={customRuntimeMax} type="number" min="10" max="600" step="5" placeholder="Any runtime"
+            <input bind:value={customRuntimeMax} type="number" data-focusable min="10" max="600" step="5" placeholder="Any runtime"
               class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-theme/70" />
           </label>
           <label class="flex min-h-11 items-center gap-3 rounded-lg border border-border bg-background px-3 sm:col-span-2">
@@ -363,7 +363,7 @@
           <label class="relative mb-3 block">
             <span class="sr-only">Filter available Home rows</span>
             <Search size={17} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input bind:value={availableSearch} type="search" placeholder="Find a genre, year, or catalog…"
+            <input bind:value={availableSearch} type="search" data-focusable placeholder="Find a genre, year, or catalog…"
               class="h-11 w-full rounded-lg border border-border bg-card pl-10 pr-3 text-sm outline-none transition focus:border-theme/70" />
           </label>
         {/if}

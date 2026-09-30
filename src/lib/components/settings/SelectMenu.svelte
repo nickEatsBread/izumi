@@ -182,7 +182,7 @@
 
 {#snippet optionList()}
   {#if searchable}
-    <input bind:this={searchInput} bind:value={query} type="search" aria-label={`Search ${ariaLabel ?? 'options'}`} placeholder="Search languages…" class="sticky top-0 mb-1 w-full rounded-md border border-border bg-background px-3 py-3 text-sm outline-none focus:border-foreground" />
+    <input bind:this={searchInput} bind:value={query} type="search" data-focusable aria-label={`Search ${ariaLabel ?? 'options'}`} placeholder="Search languages…" class="sticky top-0 mb-1 w-full rounded-md border border-border bg-background px-3 py-3 text-sm outline-none focus:border-foreground" />
   {/if}
   <!-- Conditional listbox is programmatically focusable only; never a positive tab stop. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->

@@ -127,7 +127,7 @@
   <section aria-labelledby="collection-import-title" class="space-y-4 rounded-xl border border-border p-4 sm:p-5">
     <h2 id="collection-import-title" class="text-lg font-black">Import from a file or URL</h2>
     <label class="block text-sm font-semibold">Collection JSON or direct JSON file URL
-      <textarea bind:value={input} oninput={() => preview = null} disabled={busy} rows="5" placeholder="Paste exported collection JSON or a JSON file URL" class="mt-2 w-full resize-y rounded-md border border-border bg-background p-3 font-mono text-xs disabled:opacity-50"></textarea>
+      <textarea bind:value={input} data-focusable oninput={() => preview = null} disabled={busy} rows="5" placeholder="Paste exported collection JSON or a JSON file URL" class="mt-2 w-full resize-y rounded-md border border-border bg-background p-3 font-mono text-xs disabled:opacity-50"></textarea>
     </label>
     <div class="flex flex-wrap items-center gap-3">
       <button data-focusable disabled={busy || !input.trim()} onclick={() => inspect()} class="min-h-10 rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-50">{busy ? 'Working…' : 'Preview import'}</button>
@@ -168,8 +168,8 @@
       <div class="flex flex-col gap-5 sm:flex-row">
         <CollectionFolderCard collectionId={editing.collectionId} folder={{ ...editing.folder, coverImageUrl: collectionImageUrl(coverUrl), focusGifUrl: collectionImageUrl(focusUrl) }} />
         <div class="flex-1 space-y-3">
-          <label class="block text-sm font-semibold">Cover image URL<input bind:value={coverUrl} type="url" placeholder="Paste Copy Raw URL from Nuvio" class="mt-1 min-h-10 w-full rounded-md border border-border bg-background px-3" /></label>
-          <label class="block text-sm font-semibold">Focus GIF URL (optional)<input bind:value={focusUrl} type="url" class="mt-1 min-h-10 w-full rounded-md border border-border bg-background px-3" /></label>
+          <label class="block text-sm font-semibold">Cover image URL<input bind:value={coverUrl} type="url" data-focusable placeholder="Paste Copy Raw URL from Nuvio" class="mt-1 min-h-10 w-full rounded-md border border-border bg-background px-3" /></label>
+          <label class="block text-sm font-semibold">Focus GIF URL (optional)<input bind:value={focusUrl} type="url" data-focusable class="mt-1 min-h-10 w-full rounded-md border border-border bg-background px-3" /></label>
           <label class="block text-sm font-semibold">Shape<select data-focusable bind:value={editing.folder.tileShape} class="ml-3 min-h-10 rounded-md bg-secondary px-3"><option value="poster">Portrait</option><option value="landscape">Landscape</option><option value="square">Square</option></select></label>
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" data-focusable bind:checked={editing.folder.hideTitle} />Hide title over artwork</label>
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" data-focusable bind:checked={editing.folder.focusGifEnabled} />Animate on focus</label>

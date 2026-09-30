@@ -359,6 +359,7 @@
       min="1"
       step="1"
       value={$autoWatchlistEpisodes}
+      data-focusable
       disabled={!$autoWatchlistEnabled}
       aria-label="Episodes before adding to Watchlist"
       onchange={updateWatchlistThreshold}

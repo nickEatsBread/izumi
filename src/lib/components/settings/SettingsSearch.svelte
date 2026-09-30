@@ -73,7 +73,7 @@
       class="relative z-10 flex max-h-[min(75vh,42rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
       <div class="flex items-center gap-2 border-b border-border px-3">
         <Search size={20} class="shrink-0 text-muted-foreground" />
-        <input bind:this={input} bind:value={query} type="search"
+        <input bind:this={input} bind:value={query} type="search" data-focusable
           placeholder="Search settings…" aria-label="Search settings"
           style="box-shadow:none"
           class="settings-search-input min-w-0 flex-1 bg-transparent py-4 text-base outline-none placeholder:text-muted-foreground" />

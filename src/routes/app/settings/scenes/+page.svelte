@@ -110,6 +110,7 @@
 
             <input
               value={scene.note}
+              data-focusable
               maxlength="2000"
               placeholder="Add a note…"
               aria-label={`Note for ${title(scene)} at ${time(scene.position)}`}

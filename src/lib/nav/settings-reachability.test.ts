@@ -40,21 +40,7 @@ const FILES = importClosure(svelteFilesUnder(fromRepo('src/routes/app/settings')
 /** [T] text fields not marked yet. Commit 8 (A opens the keyboard, trusted arrows pass over a
  *  field) marks them and deletes each entry; this list must end empty. Counts are exact, so marking
  *  a field without lowering its count fails too. */
-const PENDING_TEXT_FIELDS: Record<string, number> = {
-  'src/lib/components/catalog/HomeEditor.svelte': 1,
-  'src/lib/components/catalog/NuvioBrowser.svelte': 1,
-  'src/lib/components/catalog/NuvioCloudCollections.svelte': 1,
-  'src/lib/components/catalog/NuvioCloudMedia.svelte': 1,
-  'src/lib/components/catalog/NuvioCloudSettings.svelte': 3,
-  'src/lib/components/catalog/NuvioCloudSources.svelte': 1,
-  'src/lib/components/catalog/NuvioConnection.svelte': 2,
-  'src/lib/components/settings/SelectMenu.svelte': 1,
-  'src/lib/components/settings/SettingsSearch.svelte': 1,
-  'src/routes/app/settings/accounts/+page.svelte': 1,
-  'src/routes/app/settings/catalog/collections/+page.svelte': 3,
-  'src/routes/app/settings/catalog/home/+page.svelte': 5,
-  'src/routes/app/settings/scenes/+page.svelte': 1,
-}
+const PENDING_TEXT_FIELDS: Record<string, number> = {}
 
 /** [TD] text fields: inside a native <dialog> the body-portalled keyboard is inert, so these wait
  *  for the keyboard-inside-modal follow-up (spec §3.7 known limit, §4 legend). A text field with

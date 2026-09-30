@@ -219,7 +219,7 @@
         class="grid size-11 place-items-center rounded-md bg-background/70 transition-colors hover:bg-accent disabled:opacity-30"><Minus size={18} /></button>
       <label class="min-w-0 text-center">
         <span class="sr-only">Episodes watched</span>
-        <input type="number" min="0" max={total || undefined} bind:value={progress}
+        <input type="number" data-focusable min="0" max={total || undefined} bind:value={progress}
           class="progress-input w-16 bg-transparent text-center text-lg font-black tabular-nums outline-none" />
         <span class="text-sm text-muted-foreground"> / {total || '?'}</span>
       </label>

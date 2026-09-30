@@ -176,7 +176,7 @@
           <label class="relative mx-4 mt-3 block">
             <span class="sr-only">Filter available sections</span>
             <Search size={17} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input bind:value={sectionSearch} type="search" placeholder="Find a genre, year, or catalog…"
+            <input bind:value={sectionSearch} type="search" data-focusable placeholder="Find a genre, year, or catalog…"
               class="h-11 w-full rounded-xl border border-border bg-card pl-10 pr-3 text-sm outline-none transition focus:border-theme/70" />
           </label>
         {/if}

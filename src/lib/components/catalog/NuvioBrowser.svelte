@@ -164,7 +164,7 @@
     {:else}
     <div class="my-5 flex flex-col gap-3 lg:flex-row">
       <form onsubmit={(event) => { event.preventDefault(); query = search.trim() }} role="search" class="flex min-h-11 flex-1 items-center gap-2 rounded-lg border border-border bg-background px-3 focus-within:border-primary">
-        <Search class="size-4 shrink-0 text-muted-foreground" /><input type="search" aria-label={`Search ${tab === 'covers' ? 'covers' : 'collections'}`} placeholder={tab === 'covers' ? 'Search covers…' : 'Search collections…'} bind:value={search} class="min-h-11 min-w-0 flex-1 bg-transparent text-sm outline-none" />
+        <Search class="size-4 shrink-0 text-muted-foreground" /><input type="search" data-focusable aria-label={`Search ${tab === 'covers' ? 'covers' : 'collections'}`} placeholder={tab === 'covers' ? 'Search covers…' : 'Search collections…'} bind:value={search} class="min-h-11 min-w-0 flex-1 bg-transparent text-sm outline-none" />
       </form>
       <div class="flex flex-wrap items-center gap-2">
         {#if tab === 'mine'}
