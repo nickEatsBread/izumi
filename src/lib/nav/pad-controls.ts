@@ -40,12 +40,12 @@ export function isPadEvent(event: Event | null | undefined): boolean {
  *  (Left/Right step it, commit 4); a <summary> toggles its <details> even in an engine where a
  *  synthetic click does not; everything else is clicked, exactly as the A button always did. */
 export function padActivate(el?: Element | null): boolean {
+  // An omitted argument means "the focused element"; an explicit null means "nothing".
+  const target = el === undefined ? (typeof document === 'undefined' ? null : document.activeElement) : el
   // Off TV, an enabled single <select> opens the app-drawn chooser, because a synthetic click cannot
   // open WebKitGTK's popup under gamescope. TV, disabled selects, list boxes and selects under a
   // modal <dialog> fall through to the rules below (TV keeps the click).
-  if (padOpenPicker(el === undefined ? (typeof document === 'undefined' ? null : document.activeElement) : el)) return true
-  // An omitted argument means "the focused element"; an explicit null means "nothing".
-  const target = el === undefined ? (typeof document === 'undefined' ? null : document.activeElement) : el
+  if (padOpenPicker(target)) return true
   if (!target || !(target instanceof HTMLElement) || target === target.ownerDocument.body) return false
   if (target.matches(':disabled') || target.getAttribute('aria-disabled') === 'true') return true
   if (target instanceof HTMLInputElement && target.type === 'range') return true

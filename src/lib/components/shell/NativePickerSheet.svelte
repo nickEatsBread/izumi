@@ -10,8 +10,10 @@
     chooseNativePickerOption,
     closeNativePicker,
     focusPickerRow,
+    groupPickerOptions,
     pickerKeydown,
     refreshNativePicker,
+    syncNativePickerSelection,
     watchControl,
   } from '$lib/nav/native-picker'
 
@@ -24,12 +26,21 @@
 
   const picker = $derived($nativePicker)
   const select = $derived($nativePicker?.select ?? null)
+  // One block per optgroup (by identity, so two adjacent groups with the same label stay apart).
+  const sections = $derived(picker ? groupPickerOptions(picker.options) : [])
   let panel = $state<HTMLElement | null>(null)
 
   // Over mpv in Game mode the page is only visible through the overlay snapshot, which re-captures
   // on request. The stores are read with get(), so no effect that calls this depends on them.
   function bump() {
     if (get(gameMode) && get(playing)) bumpPlayerOverlay()
+  }
+
+  // A value written as a property (bind:value following a store written elsewhere) fires no
+  // mutation, so every row focus re-checks the check mark before the snapshot is refreshed.
+  function onPanelFocusIn() {
+    syncNativePickerSelection()
+    bump()
   }
 
   // The open sheet is the top nav layer. It returns focus itself (closeNativePicker), so the layer
@@ -71,6 +82,7 @@
         })
       },
       onGone: () => closeNativePicker({ restore: false }),
+      onValue: syncNativePickerSelection,
     })
     return () => {
       cancelled = true
@@ -88,24 +100,33 @@
 <svelte:window onkeydowncapture={(event) => pickerKeydown(event, panel)} />
 
 {#if picker}
+  <!-- Click, not pointerdown: a touch pointerdown fires at touchstart, and a sheet removed then
+       lets the emulated click that follows land on the page behind it. -->
   <div class="fixed inset-0 z-[175] grid place-items-end bg-black/70 sm:place-items-center sm:p-4" role="presentation"
-       onpointerdown={(event) => { if (event.target === event.currentTarget) closeNativePicker({ restore: true }) }}>
+       onclick={(event) => { if (event.target === event.currentTarget) closeNativePicker({ restore: true }) }}>
     <div bind:this={panel} role="dialog" aria-modal="true" aria-labelledby="native-picker-title"
-         data-theme-protected data-nav-trap data-nav-escape data-native-picker onfocusin={bump}
+         data-theme-protected data-nav-trap data-nav-escape data-native-picker onfocusin={onPanelFocusIn}
          class="flex max-h-[min(80dvh,36rem)] w-full flex-col overflow-hidden rounded-t-2xl border border-border bg-card text-card-foreground shadow-2xl sm:max-w-md sm:rounded-2xl">
       <h2 id="native-picker-title" class="shrink-0 truncate px-5 pb-2 pt-4 text-base font-bold">{picker.title}</h2>
       <div role="listbox" aria-labelledby="native-picker-title" data-nav-scroll-container
            class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-2">
-        {#each picker.options as entry, index (entry.option)}
-          {#if entry.group && entry.group !== picker.options[index - 1]?.group}
-            <div role="presentation" class="px-3 pb-1 pt-3 text-xs font-bold uppercase tracking-wide text-muted-foreground">{entry.group}</div>
-          {/if}
-          <button type="button" data-focusable data-picker-row data-hint-a="Select" role="option" aria-selected={entry.selected}
-                  disabled={entry.disabled} onclick={() => chooseNativePickerOption(entry.option)}
-                  class="flex min-h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm transition-colors hover:bg-accent focus-visible:bg-accent disabled:opacity-40 {entry.selected ? 'font-bold' : ''}">
-            <span class="min-w-0 flex-1 truncate">{entry.label}</span>
-            {#if entry.selected}<Check size={16} class="shrink-0 text-primary" />{/if}
-          </button>
+        {#each sections as section (section.key)}
+          <!-- An optgroup is a labelled role="group" (its visible heading is hidden from the
+               accessibility tree, which reads the group's label); options outside one sit in a
+               role="none" wrapper, so they stay the listbox's own options. -->
+          <div role={section.optgroup ? 'group' : 'none'} aria-label={section.label ?? undefined}>
+            {#if section.label}
+              <div aria-hidden="true" class="px-3 pb-1 pt-3 text-xs font-bold uppercase tracking-wide text-muted-foreground">{section.label}</div>
+            {/if}
+            {#each section.entries as entry (entry.option)}
+              <button type="button" data-focusable data-picker-row data-hint-a="Select" role="option" aria-selected={entry.selected}
+                      disabled={entry.disabled} onclick={() => chooseNativePickerOption(entry.option)}
+                      class="flex min-h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-sm transition-colors hover:bg-accent focus-visible:bg-accent disabled:opacity-40 {entry.selected ? 'font-bold' : ''}">
+                <span class="min-w-0 flex-1 truncate">{entry.label}</span>
+                {#if entry.selected}<Check size={16} class="shrink-0 text-primary" />{/if}
+              </button>
+            {/each}
+          </div>
         {/each}
       </div>
       <div class="shrink-0 border-t border-border p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">

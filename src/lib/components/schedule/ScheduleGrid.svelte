@@ -227,7 +227,7 @@
     const [prev, next] = $bumperTabs ? ['l2', 'r2'] : ['l1', 'r1']
     return onPadButton(({ name, pressed }) => {
       if (!pressed) return
-      // An open chooser, dropdown or dialog owns the pad: the day behind it stays put.
+      // An open nav layer (chooser, dropdown, sheet) owns the pad: the day behind it stays put.
       if (topNavLayer()) return
       if (name === prev) selected = (selected + 6) % 7
       else if (name === next) selected = (selected + 1) % 7

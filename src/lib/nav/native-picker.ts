@@ -18,8 +18,20 @@ export interface NativePickerOption {
   /** The option or its optgroup is disabled. */
   disabled: boolean
   selected: boolean
-  /** The enclosing optgroup's label, or null outside a group. */
+  /** The enclosing optgroup's label, or null outside a group (or for an unlabelled one). */
   group: string | null
+  /** The enclosing optgroup itself, or null: two adjacent groups that share a label stay apart. */
+  optgroup: HTMLOptGroupElement | null
+}
+
+/** A run of consecutive options that share an optgroup (or share having none), drawn as one block. */
+export interface NativePickerSection {
+  /** A stable key for a keyed each: the optgroup, or the run's first option outside a group. */
+  key: HTMLOptGroupElement | HTMLOptionElement
+  optgroup: HTMLOptGroupElement | null
+  /** The optgroup's label, or null (no group, or an unlabelled one: no heading is drawn). */
+  label: string | null
+  entries: NativePickerOption[]
 }
 
 const FALLBACK_TITLE = 'Choose an option'
@@ -65,8 +77,24 @@ export function readSelectOptions(select: HTMLSelectElement): NativePickerOption
         disabled: option.disabled || !!group?.disabled,
         selected: option.selected,
         group: group ? collapse(group.getAttribute('label')) || null : null,
+        optgroup: group,
       }
     })
+}
+
+/** The options split into runs by optgroup identity, in DOM order. Grouping by the optgroup element
+ *  rather than its label keeps two adjacent groups with the same (or no) label apart. */
+export function groupPickerOptions(options: readonly NativePickerOption[]): NativePickerSection[] {
+  const sections: NativePickerSection[] = []
+  for (const entry of options) {
+    const last = sections.at(-1)
+    if (last && last.optgroup === entry.optgroup) {
+      last.entries.push(entry)
+      continue
+    }
+    sections.push({ key: entry.optgroup ?? entry.option, optgroup: entry.optgroup, label: entry.group, entries: [entry] })
+  }
+  return sections
 }
 
 /** The wrapping <label>, else a separate <label for="id">. */
@@ -234,6 +262,17 @@ export function closeNativePicker(options: { restore?: boolean } = {}): void {
   })
 }
 
+/** Re-read the open chooser when the select's value changed under it. A value written as a property
+ *  (Svelte's bind:value following a store written elsewhere) fires no mutation and no event, so the
+ *  sheet calls this on every row focus and on the select's own input/change. Returns whether the
+ *  check mark was stale and the options were re-read. */
+export function syncNativePickerSelection(): boolean {
+  const current = get(state)
+  if (!current || current.options.every((entry) => entry.selected === entry.option.selected)) return false
+  refreshNativePicker()
+  return true
+}
+
 /** A row was chosen: commit it exactly and close with a focus return. An option that vanished
  *  meanwhile re-reads the list instead and keeps the chooser open. */
 export function chooseNativePickerOption(option: HTMLOptionElement): void {
@@ -247,10 +286,14 @@ export function chooseNativePickerOption(option: HTMLOptionElement): void {
 }
 
 /** Watch the open select: its options (added, removed, relabelled, hidden, disabled, text edits) →
- *  onOptions; the select off the page or no longer isPickableSelect (disabled, aria-disabled, inert,
+ *  onOptions; its own input/change events → onValue (a mutation observer cannot see a value set as a
+ *  property); the select off the page or no longer isPickableSelect (disabled, aria-disabled, inert,
  *  a modal dialog opened) → onGone, once. A page observer only re-checks the "gone" conditions.
  *  Returns the disconnect function. */
-export function watchControl(select: HTMLSelectElement, handlers: { onOptions: () => void; onGone: () => void }): () => void {
+export function watchControl(
+  select: HTMLSelectElement,
+  handlers: { onOptions: () => void; onGone: () => void; onValue?: () => void },
+): () => void {
   let done = false
   const gone = () => {
     if (done) return true
@@ -263,10 +306,15 @@ export function watchControl(select: HTMLSelectElement, handlers: { onOptions: (
   own.observe(select, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['disabled', 'aria-disabled', 'label', 'hidden'] })
   const page = new MutationObserver(() => { gone() })
   page.observe(select.ownerDocument.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'inert', 'open'] })
+  const value = () => { if (!gone()) handlers.onValue?.() }
+  select.addEventListener('input', value)
+  select.addEventListener('change', value)
   return () => {
     done = true
     own.disconnect()
     page.disconnect()
+    select.removeEventListener('input', value)
+    select.removeEventListener('change', value)
   }
 }
 
@@ -290,13 +338,34 @@ export function focusPickerRow(root: ParentNode): HTMLElement | null {
   return target
 }
 
+/** The next usable row from `current` in DOM order, wrapping at the ends (Tab's order). From outside
+ *  the rows it enters at the first usable row going forward, the last going back. */
+function cyclePickerRow(rows: readonly HTMLElement[], current: Element | null, dir: 1 | -1): HTMLElement | null {
+  const index = current ? rows.indexOf(current as HTMLElement) : -1
+  if (index < 0) return stepPickerRow(rows, null, dir)
+  for (let step = 1; step <= rows.length; step += 1) {
+    const row = rows[(index + dir * step + rows.length) % rows.length]
+    if (usable(row)) return row
+  }
+  return null
+}
+
 /** The sheet's window-capture keydown. While the chooser is open (and the on-screen keyboard is not):
  *  every arrow is consumed here (preventDefault + stopImmediatePropagation, so nav/index.ts never
  *  sees it); Up/Down step the rows in DOM order through stepPickerRow, the same deterministic walk
  *  StreamPicker uses because WebKitGTK can leave focus behind snapshotted modals; Left/Right are
- *  swallowed. Other keys (Enter, Escape) pass. Returns whether it consumed the key. */
+ *  swallowed. Tab and Shift+Tab cycle the rows with wraparound (preventDefault only), so a physical
+ *  keyboard cannot move focus to the page behind the aria-modal panel while the arrows still step
+ *  the rows. Other keys (Enter, Escape) pass. Returns whether it consumed the key. */
 export function pickerKeydown(event: KeyboardEvent, root: ParentNode | null | undefined): boolean {
   if (!get(state) || get(oskOpen)) return false
+  if (event.key === 'Tab') {
+    if (!root || event.altKey || event.ctrlKey || event.metaKey) return false
+    event.preventDefault()
+    const next = cyclePickerRow(pickerRows(root), document.activeElement, event.shiftKey ? -1 : 1)
+    if (next && next !== document.activeElement) focusRow(next)
+    return true
+  }
   const dir = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0
   if (!dir && event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return false
   if (!root) return false

@@ -82,6 +82,18 @@ describe('NativePickerSheet contract', () => {
     expect(source).toContain('>Cancel</button>')
   })
 
+  it('draws one labelled role="group" per optgroup, split by the optgroup itself rather than its label', () => {
+    expect(source).toContain('const sections = $derived(picker ? groupPickerOptions(picker.options) : [])')
+    expect(source).toContain('{#each sections as section (section.key)}')
+    expect(source).toContain("<div role={section.optgroup ? 'group' : 'none'} aria-label={section.label ?? undefined}>")
+    expect(source).toContain('{#each section.entries as entry (entry.option)}')
+    // The visible heading repeats the group's aria-label, so it stays out of the accessibility tree.
+    const heading = elements.find((element) => attr(element, 'aria-hidden') === 'true')
+    expect(heading).toBeDefined()
+    expect(String(attr(heading!, 'class'))).toContain('uppercase')
+    expect(source).not.toContain('picker.options[index - 1]')
+  })
+
   it('registers as the native-picker nav layer and closes itself on B, backdrop, loss of the select and navigation', () => {
     expect(source).toContain("import { pushNavLayer } from '$lib/nav/layers'")
     expect(source).toContain('pushNavLayer({')
@@ -90,7 +102,16 @@ describe('NativePickerSheet contract', () => {
     expect(source).toContain("close: (reason) => closeNativePicker({ restore: reason === 'back' })")
     expect(source).toContain('onGone: () => closeNativePicker({ restore: false })')
     expect(source).toMatch(/afterNavigate\(\(\) => \{\n\s+if \(get\(nativePicker\)\) closeNativePicker\(\{ restore: false \}\)/)
-    expect(source).toContain('onpointerdown={(event) => { if (event.target === event.currentTarget) closeNativePicker({ restore: true }) }}')
+    // The backdrop closes on click, like every other backdrop: a touch pointerdown fires at
+    // touchstart, and a sheet removed then lets the emulated click land on the page behind it.
+    expect(source).toContain('onclick={(event) => { if (event.target === event.currentTarget) closeNativePicker({ restore: true }) }}')
+    expect(source).not.toContain('onpointerdown')
+  })
+
+  it("re-reads the check mark when the value changes under it, on every row focus and on the select's own events", () => {
+    expect(source).toContain('onfocusin={onPanelFocusIn}')
+    expect(source).toMatch(/function onPanelFocusIn\(\) \{\n\s+syncNativePickerSelection\(\)\n\s+bump\(\)\n\s+\}/)
+    expect(source).toContain('onValue: syncNativePickerSelection,')
   })
 
   it('steps its rows from a window capture listener that stands down for the on-screen keyboard', () => {
@@ -111,7 +132,7 @@ describe('NativePickerSheet contract', () => {
     expect(source).toContain("import { tick, untrack } from 'svelte'")
     expect(source).toMatch(/untrack\(\(\) => \{\n\s+focusPickerRow\(node\)\n\s+bump\(\)\n\s+\}\)/)
     for (const call of [
-      'onfocusin={bump}',
+      'onfocusin={onPanelFocusIn}',
       'requestAnimationFrame(() => requestAnimationFrame(() => { if (!cancelled) bump() }))',
       'setTimeout(() => { if (!cancelled) bump() }, 120)',
       'requestAnimationFrame(() => bump())',

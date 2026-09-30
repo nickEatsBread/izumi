@@ -110,12 +110,16 @@ describe('native select chooser wiring', () => {
     const activate = controls.slice(controls.indexOf('export function padActivate('))
     expect(activate.indexOf('padOpenPicker(')).toBeGreaterThan(-1)
     expect(activate.indexOf('padOpenPicker(')).toBeLessThan(activate.indexOf('.click()'))
+    // One resolution of an omitted argument, shared by the chooser branch and the rules below it.
+    expect(activate.indexOf('const target = ')).toBeLessThan(activate.indexOf('padOpenPicker('))
+    expect(activate).toContain('if (padOpenPicker(target)) return true')
+    expect(controls.match(/document\.activeElement/g)).toHaveLength(1)
   })
 
   it.each([
     ['PersonalSchedule', '../components/schedule/PersonalSchedule.svelte'],
     ['ScheduleGrid', '../components/schedule/ScheduleGrid.svelte'],
-  ])('%s leaves its day bumpers alone while a nav layer or dialog is open', (_name, file) => {
+  ])('%s leaves its day bumpers alone while a nav layer is open', (_name, file) => {
     const schedule = source(file)
     const start = schedule.indexOf('return onPadButton(')
     expect(start).toBeGreaterThan(-1)

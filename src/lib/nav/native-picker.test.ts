@@ -8,6 +8,7 @@ import {
   closeNativePicker,
   commitPickerOption,
   focusPickerRow,
+  groupPickerOptions,
   isPickableSelect,
   nativePicker,
   openNativePicker,
@@ -18,6 +19,7 @@ import {
   refreshNativePicker,
   resetNativePickerForTests,
   stepPickerRow,
+  syncNativePickerSelection,
   watchControl,
 } from './native-picker'
 
@@ -57,6 +59,36 @@ describe('readSelectOptions', () => {
     expect(rows.map((row) => row.disabled)).toEqual([false, false, false, true, true])
     expect(rows.map((row) => row.selected)).toEqual([false, true, false, false, false])
     expect(rows[1].option).toBe(select.options[2])
+    const [later, locked] = select.querySelectorAll('optgroup')
+    expect(rows.map((row) => row.optgroup)).toEqual([null, later, later, locked, null])
+  })
+})
+
+describe('groupPickerOptions', () => {
+  it('splits runs by the optgroup itself, so same-label and unlabelled groups stay apart', () => {
+    document.body.innerHTML = `
+      <select id="s">
+        <option>Loose</option>
+        <optgroup label="Same"><option>A1</option><option>A2</option></optgroup>
+        <optgroup label="Same"><option>B</option></optgroup>
+        <optgroup label=""><option>C</option></optgroup>
+        <optgroup><option>D</option></optgroup>
+        <option>Tail</option>
+      </select>`
+    const select = q<HTMLSelectElement>('#s')
+    const groups = [...select.querySelectorAll('optgroup')]
+    const sections = groupPickerOptions(readSelectOptions(select))
+    expect(sections.map((section) => section.entries.map((entry) => entry.label))).toEqual([
+      ['Loose'], ['A1', 'A2'], ['B'], ['C'], ['D'], ['Tail'],
+    ])
+    expect(sections.map((section) => section.optgroup)).toEqual([null, groups[0], groups[1], groups[2], groups[3], null])
+    expect(sections.map((section) => section.label)).toEqual([null, 'Same', 'Same', null, null, null])
+    // Keyed-each keys: the optgroup, or the run's first option outside a group; all distinct.
+    expect(sections.map((section) => section.key)).toEqual([
+      select.options[0], groups[0], groups[1], groups[2], groups[3], select.options[6],
+    ])
+    expect(new Set(sections.map((section) => section.key)).size).toBe(sections.length)
+    expect(groupPickerOptions([])).toEqual([])
   })
 })
 
@@ -234,6 +266,25 @@ describe('opening and refreshing the chooser', () => {
     expect(get(nativePicker)?.rev).toBe(2)
   })
 
+  it('re-reads the check mark when the value was set as a property under it, and only then', () => {
+    document.body.innerHTML = '<select id="s"><option>A</option><option selected>B</option><option>C</option></select>'
+    const select = q<HTMLSelectElement>('#s')
+    openNativePicker(select)
+    expect(syncNativePickerSelection()).toBe(false)
+    expect(get(nativePicker)?.rev).toBe(1)
+    // Svelte's bind:value following a store written elsewhere: a property write, no mutation, no event.
+    select.options[2].selected = true
+    expect(syncNativePickerSelection()).toBe(true)
+    expect(get(nativePicker)?.options.map((row) => row.selected)).toEqual([false, false, true])
+    expect(get(nativePicker)?.rev).toBe(2)
+    expect(syncNativePickerSelection()).toBe(false)
+    select.selectedIndex = -1
+    expect(syncNativePickerSelection()).toBe(true)
+    expect(get(nativePicker)?.options.map((row) => row.selected)).toEqual([false, false, false])
+    closeNativePicker({ restore: false })
+    expect(syncNativePickerSelection()).toBe(false)
+  })
+
   it('closes without returning focus when a refresh finds the select disabled', async () => {
     document.body.innerHTML = '<select id="s"><option>A</option></select>'
     const select = q<HTMLSelectElement>('#s')
@@ -350,17 +401,40 @@ describe('watchControl', () => {
     stop()
   })
 
+  it("reports the select's own input and change as value changes, until it is gone", async () => {
+    document.body.innerHTML = '<select id="s"><option>A</option><option>B</option></select>'
+    const select = q<HTMLSelectElement>('#s')
+    const onOptions = vi.fn()
+    const onGone = vi.fn()
+    const onValue = vi.fn()
+    const stop = watchControl(select, { onOptions, onGone, onValue })
+    select.dispatchEvent(new Event('input', { bubbles: true }))
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(onValue).toHaveBeenCalledTimes(2)
+    select.disabled = true
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(onValue).toHaveBeenCalledTimes(2)
+    expect(onGone).toHaveBeenCalledTimes(1)
+    await settle()
+    expect(onGone).toHaveBeenCalledTimes(1)
+    expect(onOptions).not.toHaveBeenCalled()
+    stop()
+  })
+
   it('reports nothing once stopped', async () => {
     document.body.innerHTML = '<select id="s"><option>A</option></select>'
     const select = q<HTMLSelectElement>('#s')
     const onOptions = vi.fn()
     const onGone = vi.fn()
-    watchControl(select, { onOptions, onGone })()
+    const onValue = vi.fn()
+    watchControl(select, { onOptions, onGone, onValue })()
+    select.dispatchEvent(new Event('change', { bubbles: true }))
     select.append(document.createElement('option'))
     select.remove()
     await settle()
     expect(onOptions).not.toHaveBeenCalled()
     expect(onGone).not.toHaveBeenCalled()
+    expect(onValue).not.toHaveBeenCalled()
   })
 })
 
@@ -426,6 +500,63 @@ describe('chooser rows and keys', () => {
     q('#s').focus()
     pickerKeydown(key('ArrowUp'), q('#panel'))
     expect(document.activeElement).toBe(q('#cancel'))
+  })
+
+  it('cycles the rows on Tab and Shift+Tab with wraparound, so focus never reaches the page behind', () => {
+    document.body.innerHTML = SHEET
+    openNativePicker(q<HTMLSelectElement>('#s'))
+    const panel = q('#panel')
+    const tab = (shiftKey = false) => new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true })
+    q('#r1').focus()
+    const forward = tab()
+    expect(pickerKeydown(forward, panel)).toBe(true)
+    expect(forward.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(q('#cancel'))
+    pickerKeydown(tab(), panel)
+    expect(document.activeElement).toBe(q('#r0'))
+    pickerKeydown(tab(true), panel)
+    expect(document.activeElement).toBe(q('#cancel'))
+    pickerKeydown(tab(true), panel)
+    expect(document.activeElement).toBe(q('#r1'))
+    // Focus left behind the sheet: Tab enters at the first usable row, Shift+Tab at the last.
+    q('#s').focus()
+    pickerKeydown(tab(), panel)
+    expect(document.activeElement).toBe(q('#r0'))
+    q('#s').focus()
+    pickerKeydown(tab(true), panel)
+    expect(document.activeElement).toBe(q('#cancel'))
+  })
+
+  it('lets Tab reach later listeners, and leaves a modified Tab, a closed chooser and the keyboard alone', () => {
+    document.body.innerHTML = SHEET
+    openNativePicker(q<HTMLSelectElement>('#s'))
+    const panel = q('#panel')
+    const capture = (event: KeyboardEvent) => { pickerKeydown(event, panel) }
+    const later = vi.fn()
+    window.addEventListener('keydown', capture, { capture: true })
+    window.addEventListener('keydown', later)
+    try {
+      q('#r0').focus()
+      window.dispatchEvent(key('Tab'))
+      expect(document.activeElement).toBe(q('#r1'))
+      expect(later).toHaveBeenCalledTimes(1)
+      const switchTab = new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
+      expect(pickerKeydown(switchTab, panel)).toBe(false)
+      expect(switchTab.defaultPrevented).toBe(false)
+      oskOpen.set(true)
+      const typing = key('Tab')
+      expect(pickerKeydown(typing, panel)).toBe(false)
+      expect(typing.defaultPrevented).toBe(false)
+      oskOpen.set(false)
+      closeNativePicker({ restore: false })
+      const idle = key('Tab')
+      expect(pickerKeydown(idle, panel)).toBe(false)
+      expect(idle.defaultPrevented).toBe(false)
+      expect(document.activeElement).toBe(q('#r1'))
+    } finally {
+      window.removeEventListener('keydown', capture, { capture: true })
+      window.removeEventListener('keydown', later)
+    }
   })
 
   it('stands down while nothing is open or the on-screen keyboard is up', () => {
