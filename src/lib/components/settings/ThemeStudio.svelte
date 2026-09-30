@@ -14,6 +14,7 @@
   import Check from '@lucide/svelte/icons/check'
   import { saveTextFile, ioErrorMessage } from '$lib/player/history-io'
   import { themePreset } from '$lib/settings/ui'
+  import { isTv } from '$lib/platform'
   import {
     activeStudioTheme,
     activeStudioThemeId,
@@ -237,7 +238,12 @@
   </button>
 {/if}
 
-<aside class="studio-panel" class:minimized={$themeStudioMinimized} aria-labelledby="studio-heading" data-theme-studio data-theme-protected data-nav-region="theme-studio">
+<!-- Its own d-pad region, like the Settings rail: moves inside the panel never fall to the page
+     under it, and Left/Right from the page enters on the current tab. Android TV keeps the shared
+     region until the TV pass (as the rail does). Known limit for the TV/phone pass: at 640px or
+     narrower the panel is a full-width bottom sheet, which vertical moves never enter; only a
+     Left/Right with nothing further that way on the page crosses into it. -->
+<aside class="studio-panel" class:minimized={$themeStudioMinimized} aria-labelledby="studio-heading" data-theme-studio data-theme-protected data-nav-region={$isTv ? undefined : 'theme-studio'}>
   <header class="studio-header">
     <div class="studio-title-row">
       <h2 id="studio-heading" bind:this={panelHeading} tabindex="-1"><Palette size={18} /> Theme Studio</h2>

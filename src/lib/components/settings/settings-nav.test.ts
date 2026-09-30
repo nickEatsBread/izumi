@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'vitest'
+import { attr, hasAttr, markupElementsFromSource, staticAttr } from '../../../test/svelte-markup'
 
 const src = readFileSync(fileURLToPath(new URL('./SettingsNav.svelte', import.meta.url)), 'utf8')
 const layout = readFileSync(fileURLToPath(new URL('../../../routes/app/settings/+layout.svelte', import.meta.url)), 'utf8')
@@ -54,13 +55,18 @@ describe('SettingsNav', () => {
     expect(dpad).toContain('target.scrollBy({ top: vertical ? top : 0, left: vertical ? 0 : left, behavior })')
   })
 
+  // The engine side (regionOf, the region default, data-nav-scroll-x) is exercised in
+  // src/lib/nav/regions.test.ts; this only checks the markers the engine reads.
   it('makes the desktop rail its own nav region, entered on the current category (off TV)', () => {
-    expect(layout).toContain("import { isMobile, isTv } from '$lib/platform'")
-    expect(layout).toContain(`<aside data-nav-region={$isTv ? undefined : 'settings'} class="sticky top-0`)
-    expect(layout.match(/data-nav-surface="settings"/g)).toHaveLength(2)
-    expect(src).toContain(`data-nav-region-default={active(it.href) ? '' : undefined}`)
-    expect(src).toContain(`aria-current={active(it.href) ? 'page' : undefined}`)
-    expect(dpad).toContain("closest<HTMLElement>('[data-nav-sidebar], [data-nav-region]')")
-    expect(dpad).toContain("'[data-carousel-scroller], [data-nav-scroll-x], [data-nav-scroll-container]'")
+    const shell = markupElementsFromSource(layout.replace(/\r\n/g, '\n'), '+layout.svelte')
+    const regions = shell.filter((el) => hasAttr(el, 'data-nav-region'))
+    expect(regions.map((el) => el.name)).toEqual(['aside'])
+    expect(attr(regions[0], 'data-nav-region')?.raw).toBe(`data-nav-region={$isTv ? undefined : 'settings'}`)
+    expect(shell.filter((el) => staticAttr(el, 'data-nav-surface') === 'settings')).toHaveLength(2)
+    const links = markupElementsFromSource(src.replace(/\r\n/g, '\n'), 'SettingsNav.svelte')
+      .filter((el) => el.name === 'a' && hasAttr(el, 'data-nav-region-default'))
+    expect(links).toHaveLength(1)
+    expect(attr(links[0], 'data-nav-region-default')?.raw).toBe(`data-nav-region-default={active(it.href) ? '' : undefined}`)
+    expect(attr(links[0], 'aria-current')?.raw).toBe(`aria-current={active(it.href) ? 'page' : undefined}`)
   })
 })

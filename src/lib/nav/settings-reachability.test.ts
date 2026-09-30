@@ -389,10 +389,10 @@ describe('Settings reachability contract (spec §4, §7)', () => {
 describe('Settings reachability: markers the generic rules cannot infer (spec §4)', () => {
   const elementsOf = (rel: string) => scanOf(rel).elements
 
-  it('gives Theme Studio its own nav region, entered on its current tab', () => {
+  it('gives Theme Studio its own nav region off TV (like the rail), entered on its current tab', () => {
     const elements = elementsOf('src/lib/components/settings/ThemeStudio.svelte')
     const [panel] = elements.filter((el) => hasAttr(el, 'data-theme-studio'))
-    expect(staticAttr(panel, 'data-nav-region')).toBe('theme-studio')
+    expect(attr(panel, 'data-nav-region')?.raw).toBe(`data-nav-region={$isTv ? undefined : 'theme-studio'}`)
     // After a tap inside the panel, body fallback step 3 returns the first pad press to this tab.
     const defaults = elements.filter((el) => hasAttr(el, 'data-nav-region-default'))
     expect(defaults.map((el) => attr(el, 'data-nav-region-default')?.raw))
@@ -444,16 +444,20 @@ describe('Settings reachability: markers the generic rules cannot infer (spec §
     const grip = scan.elements.find((el) => staticAttr(el, 'title') === 'Drag to reorder')
     expect(grip && staticAttr(grip, 'tabindex')).toBe('-1')
     expect(grip && hasAttr(grip, 'data-focusable')).toBe(false)
-    for (const direction of ['up', 'down']) {
+    for (const [direction, step] of [['up', '-1'], ['down', '1']]) {
       const move = scan.elements.find((el) => staticAttr(el, 'data-row-move') === direction)
       expect(move && hasAttr(move, 'aria-disabled'), direction).toBe(true)
       expect(move && hasAttr(move, 'disabled'), direction).toBe(false)
       expect(move && hasAttr(move, 'data-focusable'), direction).toBe(true)
+      // The move goes through the focus-keeping wrapper (a keyed re-insert blurs the button).
+      const onclick = (move && attr(move, 'onclick')?.raw) ?? ''
+      expect(onclick, direction).toMatch(/moveKeepingFocus\(/)
+      expect(onclick, direction).toMatch(new RegExp(`moveHomeRowBy\\([^)]*,\\s*${step}\\s*\\)`))
     }
+    // No component mount in vitest: the wrapper's refocus of the moved row's button is pinned by
+    // its two load-bearing pieces, waiting for the DOM and looking the button up by its marker.
     expect(scan.source).toContain('await tick()')
     expect(scan.source).toContain('[data-row-move="${button.dataset.rowMove}"]')
-    expect(scan.source).toContain('moveHomeRowBy(target, visibleIds, rowId, -1)')
-    expect(scan.source).toContain('moveHomeRowBy(target, visibleIds, rowId, 1)')
   })
 
   it('answers the Anime shader prompt from the pad and hands focus back to Video quality', () => {
@@ -464,9 +468,12 @@ describe('Settings reachability: markers the generic rules cannot infer (spec §
       expect(staticAttr(button!, 'type'), answer).toBe('button')
       expect(hasAttr(button!, 'data-focusable'), answer).toBe(true)
     }
-    expect(scan.source).toContain('bind:this={qualityField}')
-    expect(scan.source).toContain('if (focusRestoreAllowed()) trigger.focus({ preventScroll: true })')
-    expect(scan.source).toContain('else setFocusHint(trigger)')
+    const field = scan.elements.find((el) => attr(el, 'bind:this')?.raw === 'bind:this={qualityField}')
+    expect(field?.name).toBe('label')
+    // No component mount in vitest: the hand-back is pinned by its rule, focus when a restore is
+    // allowed, otherwise leave a hint for the first pad press.
+    expect(scan.source).toMatch(/if \(focusRestoreAllowed\(\)\) \w+\.focus\(/)
+    expect(scan.source).toMatch(/else setFocusHint\(\w+\)/)
   })
 })
 
