@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { parseSvelteSource, walkTemplate } from '../../test/svelte-markup'
 
 // Settings fix pass, commit 3 (spec §3.3, §4): dropdowns and Settings overlays are nav layers
 // (`use:navLayer`, src/lib/nav/overlay.ts), so Escape (one window capture), B and remote Back close
@@ -11,9 +12,17 @@ const read = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
 
 /** Markup only: script and style blocks and HTML comments are blanked (offsets kept), so prose and
- *  code never match an attribute search. */
-const markup = (source: string) =>
-  source.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<!--[\s\S]*?-->/g, (block) => block.replace(/[^\n]/g, ' '))
+ *  code never match an attribute search. The ranges come from the Svelte compiler's AST, not a
+ *  tag-matching regex, so they agree with what the compiler treats as markup. */
+function markup(source: string): string {
+  const ast = parseSvelteSource(source)
+  const ranges: Array<[number, number]> = []
+  for (const block of [ast.module, ast.instance, ast.css]) if (block) ranges.push([block.start, block.end])
+  walkTemplate(ast.fragment, (node) => { if (node.type === 'Comment') ranges.push([node.start, node.end]) })
+  let text = source
+  for (const [start, end] of ranges) text = text.slice(0, start) + text.slice(start, end).replace(/[^\n]/g, ' ') + text.slice(end)
+  return text
+}
 
 /** The whole opening tag containing `index`: quote- and brace-aware, because attribute values hold
  *  arrow functions and object literals with `>` in them. */
