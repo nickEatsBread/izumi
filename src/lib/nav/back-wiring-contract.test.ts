@@ -26,7 +26,10 @@ describe('the controller B goes through the layered Back', () => {
       '        if (performance.now() - playerClosedAt < 500) break',
       "        if (handleLayeredBack('gamepad')) break",
       "        if (location.pathname.replace(/\\/$/, '') === '/app/home') exitPrompt.set(true)",
-      '        else history.back()',
+      '        else {',
+      '          markBackPending()',
+      '          history.back()',
+      '        }',
       '        break',
     ].join('\n'))
     // The legacy trap probe moved into back.ts step 5, which also covers traps without data-nav-escape.
