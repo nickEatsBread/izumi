@@ -134,6 +134,9 @@ function clearPendingSeek(generation?: number) {
 }
 
 let embeddedChecked: boolean | undefined
+/** The last idle core preparation failed (a transient libmpv error on the full build). Routing reads
+ *  it through embeddedCoreFailed(); the flavor probe (embeddedChecked) never does. */
+let coreFailed = false
 export interface MpvPreparation {
   ready: boolean
   created: boolean
@@ -158,6 +161,7 @@ export function prepareEmbeddedPlayer(): Promise<boolean> {
   const pending = invoke<{ created?: boolean; durationMs?: number }>('plugin:mpv|mpv_prepare')
     .then((result) => {
       embeddedChecked = true
+      coreFailed = false
       preparation = {
         ready: true,
         created: result?.created !== false,
@@ -168,7 +172,9 @@ export function prepareEmbeddedPlayer(): Promise<boolean> {
       return true
     })
     .catch(() => {
-      embeddedChecked = false
+      // A failed prepare means the core could not start this time, not that the plugin is missing:
+      // the flavor probe stays as it was, so the updater keeps serving the full APK (spec §5.1).
+      coreFailed = true
       preparation = { ready: false, created: false, durationMs: 0 }
       return false
     })
@@ -176,16 +182,31 @@ export function prepareEmbeddedPlayer(): Promise<boolean> {
   return pending.finally(() => { if (preparationPromise === pending) preparationPromise = null })
 }
 
-/** Whether the embedded-player plugin is compiled in (full flavor). Cached after first probe. */
+/** The flavor probe's answer for the settings gates (src/lib/player/in-app-player.ts): null until
+ *  hasEmbeddedPlayer() has answered once, then true on the full build and false on lite. Written only
+ *  by hasEmbeddedPlayer(); a failed core preparation never changes it. */
+export const androidPlayerPlugin = writable<boolean | null>(null)
+
+/** Whether the embedded-player plugin is compiled in (full flavor): the one flavor probe. Cached after
+ *  the first answer (a successful prepare also fills the cache); every call publishes it to
+ *  androidPlayerPlugin. `mpv_get` resolves on the full build even before a core exists. */
 export async function hasEmbeddedPlayer(): Promise<boolean> {
-  if (embeddedChecked !== undefined) return embeddedChecked
-  try {
-    await invoke('plugin:mpv|mpv_get', { payload: { property: 'idle-active' } })
-    embeddedChecked = true
-  } catch {
-    embeddedChecked = false
+  if (embeddedChecked === undefined) {
+    try {
+      await invoke('plugin:mpv|mpv_get', { payload: { property: 'idle-active' } })
+      embeddedChecked = true
+    } catch {
+      embeddedChecked = false
+    }
   }
+  androidPlayerPlugin.set(embeddedChecked)
   return embeddedChecked
+}
+
+/** true while the last core preparation failed. play.ts routes such a session to the external player,
+ *  exactly as it did when a failure also cleared the flavor probe; a later successful prepare clears it. */
+export function embeddedCoreFailed(): boolean {
+  return coreFailed
 }
 
 /** True while the activity is in Android picture-in-picture (the miniplayer). Fed by the plugin, which

@@ -332,3 +332,73 @@ describe('getChapterList', () => {
     expect(await getChapterList()).toEqual([{ time: 0, title: 'Intro' }])
   })
 })
+
+describe('Android player flavor probe', () => {
+  // A fresh module per test: the probe cache and the core-failure flag are module state, and the
+  // describes above already prepared a core on the shared instance.
+  beforeEach(() => {
+    vi.resetModules()
+    mocks.invoke.mockReset()
+  })
+
+  it('keeps reporting the full flavor after the core fails to prepare', async () => {
+    const mpv = await import('./android-mpv')
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === 'plugin:mpv|mpv_prepare') throw new Error('libmpv failed to initialize')
+      return { value: null }
+    })
+    await expect(mpv.prepareEmbeddedPlayer()).resolves.toBe(false)
+    expect(mpv.embeddedCoreFailed()).toBe(true)
+    expect(get(mpv.androidPlayerPlugin)).toBeNull()
+    await expect(mpv.hasEmbeddedPlayer()).resolves.toBe(true)
+    expect(mocks.invoke).toHaveBeenCalledWith('plugin:mpv|mpv_get', { payload: { property: 'idle-active' } })
+    expect(get(mpv.androidPlayerPlugin)).toBe(true)
+  })
+
+  it('reports the lite flavor when the plugin is not compiled in', async () => {
+    const mpv = await import('./android-mpv')
+    mocks.invoke.mockRejectedValue(new Error('plugin mpv not found'))
+    await expect(mpv.hasEmbeddedPlayer()).resolves.toBe(false)
+    expect(get(mpv.androidPlayerPlugin)).toBe(false)
+  })
+
+  it('asks the plugin once and publishes the cached answer on every call', async () => {
+    const mpv = await import('./android-mpv')
+    mocks.invoke.mockResolvedValue({ value: null })
+    await mpv.hasEmbeddedPlayer()
+    mpv.androidPlayerPlugin.set(null)
+    await expect(mpv.hasEmbeddedPlayer()).resolves.toBe(true)
+    expect(mocks.invoke).toHaveBeenCalledTimes(1)
+    expect(get(mpv.androidPlayerPlugin)).toBe(true)
+  })
+
+  it('publishes the flavor from the cache when a successful prepare answered first', async () => {
+    const mpv = await import('./android-mpv')
+    mocks.invoke.mockResolvedValue({ created: true, durationMs: 7 })
+    await expect(mpv.prepareEmbeddedPlayer()).resolves.toBe(true)
+    expect(get(mpv.androidPlayerPlugin)).toBeNull()
+    await expect(mpv.hasEmbeddedPlayer()).resolves.toBe(true)
+    expect(mocks.invoke).toHaveBeenCalledTimes(1)
+    expect(get(mpv.androidPlayerPlugin)).toBe(true)
+  })
+
+  it('clears the core failure once a later prepare succeeds, as routing always recovered', async () => {
+    const mpv = await import('./android-mpv')
+    mocks.invoke.mockRejectedValueOnce(new Error('transient'))
+    await expect(mpv.prepareEmbeddedPlayer()).resolves.toBe(false)
+    expect(mpv.embeddedCoreFailed()).toBe(true)
+    mocks.invoke.mockResolvedValue({ created: true, durationMs: 7 })
+    await expect(mpv.prepareEmbeddedPlayer()).resolves.toBe(true)
+    expect(mpv.embeddedCoreFailed()).toBe(false)
+  })
+
+  it('routes a failed core to the external player and leaves the updater on the flavor probe', () => {
+    const read = (relative: string) =>
+      readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
+    const play = read('../stremio/play.ts')
+    const updater = read('../updater/android.ts')
+    expect(play).toContain('const androidEmbedded = android ? (await hasEmbeddedPlayer()) && !embeddedCoreFailed() : false')
+    expect(updater).toContain("const suffix = (await hasEmbeddedPlayer()) ? 'full.apk' : 'lite.apk'")
+    expect(updater).not.toContain('embeddedCoreFailed')
+  })
+})

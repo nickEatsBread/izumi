@@ -7,6 +7,7 @@
   import IncognitoBanner from '$lib/components/shell/IncognitoBanner.svelte'
   import AniListDegradedBanner from '$lib/components/shell/AniListDegradedBanner.svelte'
   import { androidMiniPlayer, androidMpvActive } from '$lib/player/android-mpv'
+  import { probeInAppPlayer } from '$lib/player/in-app-player'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
   import NativePickerSheet from '$lib/components/shell/NativePickerSheet.svelte'
   // Lazy-mounted: the player stack + its source-resolve overlays are substantial but never render
@@ -216,6 +217,7 @@
     initCrashReporting()
     markClientPerformance('izumi:app-layout-mounted')
     initPlatform() // resolve isAndroid/isMobile FIRST — playback + nav branch on it
+    void probeInAppPlayer() // Android full vs lite build: gates the in-app rows of Player settings
     const stopDeveloperLogging = get(isAndroid) ? () => {} : initDeveloperLogging()
     initOffline() // latch offline mode from launch connectivity + the persisted force toggle
     if (get(isAndroid)) initReturnTracking() // return-to-app = watched (external-player flow)
