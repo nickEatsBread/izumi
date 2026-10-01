@@ -67,6 +67,8 @@ export interface MpvState {
   /** A decoded frame has been presented after the current load/seek (`MPV_EVENT_PLAYBACK_RESTART`). */
   frameReady: boolean
   cacheEnd: number
+  /** mpv `sid`: the selected subtitle track id (or `no`). Subtitle styles are converted per track. */
+  sid: string
 }
 
 const IDLE_STATE: MpvState = {
@@ -80,6 +82,7 @@ const IDLE_STATE: MpvState = {
   seekBusy: false,
   frameReady: false,
   cacheEnd: 0,
+  sid: '',
 }
 
 export const mpvState = writable<MpvState>({ ...IDLE_STATE })
@@ -242,6 +245,7 @@ export async function startMpvEvents(): Promise<void> {
         if (property === 'seeking') return { ...s, seeking: value === true }
         if (property === 'core-idle') return { ...s, coreIdle: value === true }
         if (property === 'demuxer-cache-time' && typeof value === 'number') return { ...s, cacheEnd: value }
+        if (property === 'sid') return { ...s, sid: String(value ?? '') }
         return s
       })
     })

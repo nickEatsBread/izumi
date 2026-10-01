@@ -99,6 +99,7 @@ describe('Android mpv seek coordination', () => {
       seekBusy: false,
       frameReady: true,
       cacheEnd: 0,
+      sid: '',
     })
   })
 
@@ -181,6 +182,7 @@ describe('Android mpv loading signals', () => {
       seekBusy: false,
       frameReady: true,
       cacheEnd: 0,
+      sid: '',
     })
   })
 

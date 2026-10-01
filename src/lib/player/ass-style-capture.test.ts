@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseAssStyles, pickPrimaryStyle, toSubtitleStyle, captureFromExtradata } from './ass-style-capture'
+import { authoredDialogueBottom, dialogueStyles, parseAssStyles, pickPrimaryStyle, toSubtitleStyle, captureFromExtradata } from './ass-style-capture'
 import { subtitleStyleProps } from './subtitle-style'
 
 // Shaped like real muxed-fansub extradata: full Script Info + V4+ header, a dialogue style and
@@ -112,35 +112,104 @@ describe('toSubtitleStyle', () => {
   })
 })
 
+describe('alignment replay', () => {
+  it('keeps every row where it was authored', () => {
+    const line = (alignment: number) => `[Script Info]
+PlayResY: 720
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, Alignment
+Style: S,Arial,40,${alignment}
+`
+    const replayed = (alignment: number) => parseAssStyles(line(alignment))!.styles[0].fields.find(([field]) => field === 'Alignment')?.[1]
+    // libass: bottom row 0, top row VALIGN_TOP 4, middle row VALIGN_CENTER 8, OR-ed with 1-3 horizontal.
+    expect([1, 2, 3].map(replayed)).toEqual(['1', '2', '3'])
+    expect([7, 8, 9].map(replayed)).toEqual(['5', '6', '7'])
+    expect([4, 5, 6].map(replayed)).toEqual(['9', '10', '11'])
+  })
+})
+
+describe('dialogueStyles', () => {
+  const header = (styles: string[]) => parseAssStyles(`[Script Info]
+PlayResY: 360
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, Alignment, MarginV
+${styles.join('\n')}
+`)!
+
+  it('finds the family dialogue is written in, even when it is not called Default', () => {
+    const parsed = header([
+      'Style: Default,Arial,20,2,18',
+      'Style: main,Trebuchet MS,24,2,18',
+      'Style: top,Trebuchet MS,24,8,18',
+      'Style: italics,Trebuchet MS,24,2,18',
+      'Style: sign_Arial,Arial,30,8,10',
+    ])
+    expect(dialogueStyles(parsed.styles).map((s) => s.name)).toEqual(['main', 'top', 'italics'])
+    expect(pickPrimaryStyle(parsed.styles)?.name).toBe('main')
+    expect(authoredDialogueBottom(parsed)).toBe(95)
+  })
+
+  it('keeps near-identical sizes in one family and prefers Default on a tie', () => {
+    const parsed = header([
+      'Style: Default,Gandhi Sans,75,2,45',
+      'Style: Default - Top,Gandhi Sans,75,8,45',
+      'Style: Default - Alt,Gandhi Sans,74,2,45',
+      'Style: Default - Flashback,Gandhi Sans,74,2,45',
+      'Style: Signs,Change Tomorrow,120,2,10',
+    ])
+    expect(dialogueStyles(parsed.styles)).toHaveLength(4)
+    expect(pickPrimaryStyle(parsed.styles)?.name).toBe('Default')
+    const tie = header(['Style: Sign,Verdana,60,8,10', 'Style: Default,Roboto,40,2,20'])
+    expect(dialogueStyles(tie.styles).map((s) => s.name)).toEqual(['Default'])
+  })
+
+  it('does not merge a typeface used at many sizes for signs into one family', () => {
+    const parsed = header([
+      'Style: Default,Trebuchet MS,24,2,20',
+      'Style: Italics,Trebuchet MS,24,2,20',
+      'Style: Ep Title,Times New Roman,20,2,110',
+      'Style: Card,Times New Roman,12,9,20',
+      'Style: Title,Times New Roman,26,8,35',
+    ])
+    expect(dialogueStyles(parsed.styles).map((s) => s.name)).toEqual(['Default', 'Italics'])
+  })
+})
+
 describe('captureFromExtradata', () => {
   it('goes end to end from extradata to a saveable style', () => {
     const style = captureFromExtradata(SUBSPLEASE)!
     expect(style.font).toBe('Roboto Medium')
     expect(style.fontSize).toBe(52)
   })
-  it('replays exact script-space values instead of writing rounded 720-line UI values back', () => {
+  const sameRelease = { ass: true, header: parseAssStyles(SUBSPLEASE) }
+  it('replays exact script-space values onto the release they came from', () => {
     const captured = captureFromExtradata(SUBSPLEASE)!
-    const props = Object.fromEntries(subtitleStyleProps({ enabled: true, ...captured }))
+    const props = Object.fromEntries(subtitleStyleProps({ enabled: true, ...captured }, sameRelease))
     const overrides = props['sub-ass-style-overrides']
 
-    expect(props['sub-ass-override']).toBe('yes')
+    expect(props['sub-ass-override']).toBe('scale')
     expect(overrides).toContain('PlayResY=1080')
     expect(overrides).toContain('Default.FontSize=78')
     expect(overrides).toContain('Default.Outline=3.9')
     expect(overrides).toContain('Default.MarginV=69')
     expect(overrides).toContain('Sign.FontName=Verdana')
     expect(overrides).toContain('Sign.ScaleX=1')
-    expect(overrides).toContain('Sign.Alignment=10')
+    // Numpad 8 is top-centre: libass horizontal 2 | VALIGN_TOP 4. The old mapping gave 10 (centre).
+    expect(overrides).toContain('Sign.Alignment=6')
     expect(overrides).not.toContain('Default.FontSize=52')
     expect(overrides).not.toContain('Default.MarginV=43')
   })
-  it('falls back to editable UI overrides after a captured value is changed', () => {
+  it('restyles only dialogue, in script units, after a captured value is changed', () => {
     const captured = captureFromExtradata(SUBSPLEASE)!
-    const props = Object.fromEntries(subtitleStyleProps({ enabled: true, ...captured, fontSize: 53 }))
+    const props = Object.fromEntries(subtitleStyleProps({ enabled: true, ...captured, fontSize: 53 }, sameRelease))
     const overrides = props['sub-ass-style-overrides']
 
-    expect(overrides).toContain('FontSize=53')
+    // 53 on the 720-line scale is 79.5 at the script's 1080 lines.
+    expect(overrides).toContain('Default.FontSize=79.5')
     expect(overrides).not.toContain('Default.FontSize=78')
+    expect(overrides).not.toContain('Sign.')
   })
   it('is null when there is nothing to capture', () => {
     expect(captureFromExtradata(null)).toBeNull()
