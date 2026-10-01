@@ -3,6 +3,7 @@
   import Upload from '@lucide/svelte/icons/upload'
   import ShieldAlert from '@lucide/svelte/icons/shield-alert'
   import { parseBackup, restoreBackup, stringifyBackup, type AppBackup } from '$lib/backup'
+  import { baseStorageKey } from '$lib/storage/key-policy'
   import { ioErrorMessage, saveTextFile } from '$lib/player/history-io'
   import Toggle from '$lib/components/settings/Toggle.svelte'
 
@@ -12,13 +13,24 @@
   let pending = $state<AppBackup | null>(null)
   let pendingName = $state('')
 
+  /** Spec §6.2: after saving, say how many settings the storage-key policy kept out of the file. */
+  function savedMessage(text: string): string {
+    const leftOut = (JSON.parse(text) as AppBackup).redacted?.keys.length ?? 0
+    if (leftOut === 0) return 'Application backup saved.'
+    if (leftOut === 1) return 'Application backup saved. 1 setting was left out because it holds a sign-in, key or password.'
+    return `Application backup saved. ${leftOut} settings were left out because they hold a sign-in, key or password.`
+  }
+
+  /** Every profile's copy of a key reads as the key itself in the restore preview. */
+  function leftOutNames(keys: readonly string[]): string {
+    return [...new Set(keys.map(baseStorageKey))].join(', ')
+  }
+
   async function exportBackup() {
     try {
-      const saved = await saveTextFile(
-        `izumi-backup-${new Date().toISOString().slice(0, 10)}.json`,
-        await stringifyBackup(localStorage, includeSecrets),
-      )
-      if (saved) message = 'Application backup saved.'
+      const text = await stringifyBackup(localStorage, includeSecrets)
+      const saved = await saveTextFile(`izumi-backup-${new Date().toISOString().slice(0, 10)}.json`, text)
+      if (saved) message = savedMessage(text)
     } catch (error) {
       message = ioErrorMessage(error, 'Backup failed.')
     }
@@ -59,7 +71,7 @@
   <div class="max-w-2xl space-y-5">
     <section class="rounded-xl border border-border p-4">
       <h3 class="font-black">Create application backup</h3>
-      <p class="mb-3 mt-1 text-xs text-muted-foreground">Account tokens, passwords, API keys, and debrid credentials are excluded unless you explicitly include them.</p>
+      <p class="mb-3 mt-1 text-xs text-muted-foreground">Account tokens, passwords, API keys, and debrid credentials are excluded unless you explicitly include them. This device's sync membership and TV pairing are never included.</p>
       <div class="mb-3">
         <Toggle
           label="Include accounts and secrets"
@@ -93,6 +105,12 @@
             {Object.keys(pending.localStorage).length} values · exported {new Date(pending.exportedAt).toLocaleString()}
             {pending.includesSecrets ? ' · includes secrets' : ''}
           </div>
+          {#if pending.redacted && pending.redacted.keys.length > 0}
+            <p class="mt-2 text-xs text-muted-foreground">Left out of this file: {leftOutNames(pending.redacted.keys)}</p>
+          {/if}
+          {#each pending.redacted?.notes ?? [] as note (note)}
+            <p class="mt-2 text-xs text-muted-foreground">{note}</p>
+          {/each}
           <div class="mt-3 flex gap-2">
             <button data-focusable onclick={applyRestore} class="rounded-md bg-primary px-3 py-2.5 text-sm font-bold sm:py-2 text-primary-foreground">Restore and restart</button>
             <button data-focusable onclick={() => (pending = null)} class="rounded-md border border-border px-3 py-2.5 text-sm font-bold sm:py-2">Cancel</button>
