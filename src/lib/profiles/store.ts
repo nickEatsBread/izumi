@@ -120,6 +120,19 @@ export const activeProfileLocked: Readable<boolean> = derived(
   ([$profile, $unlocked]) => Boolean($profile.pin) && $unlocked !== unlockIdentity($profile),
 )
 
+/** A restricted session (owner decision 13): profiles are on, the active profile is not the main
+ * one, and the main profile has a PIN. The same condition the Profiles page gate reads (`main.pin`).
+ * The household gate (factory reset, backups, "Send this device's setup", adult sources) keys on it. */
+export function householdLockApplies(state: ProfileState, activeId: string): boolean {
+  if (state.enabled !== true || activeId === DEFAULT_PROFILE_ID) return false
+  return Boolean(state.profiles.find((profile) => profile.id === DEFAULT_PROFILE_ID)?.pin)
+}
+
+export const householdLocked: Readable<boolean> = derived(
+  [profileHousehold, activeProfileId],
+  ([$state, $active]) => householdLockApplies($state, $active),
+)
+
 /** Create a persisted value in the active profile's storage partition. The original profile keeps
  * legacy keys so existing installs migrate without copying or losing data. Switching profiles
  * reloads the shell, allowing every module to bind to its new partition atomically. */
@@ -201,17 +214,193 @@ export async function setProfilePin(id: string, pin: string | null): Promise<voi
     profiles: normalizeState(state).profiles.map((profile) => profile.id === id ? { ...profile, pin: record, updatedAt: Date.now() } : profile),
   }))
   if (id === get(activeProfileId)) rememberUnlocked(id)
+  forgetPinMisses(id)
 }
 
+/** Unthrottled comparison, for internal checks only. Every PIN a person types goes through
+ * verifyPinThrottled, so guesses are limited on every entry point. */
 export async function verifyProfilePin(profile: IzumiProfile, pin: string): Promise<boolean> {
   if (!profile.pin) return true
   if (!validPinFormat(pin)) return false
   return (await hashPin(pin, profile.pin.salt)) === profile.pin.hash
 }
 
+/** Device-only record of wrong PINs: a device key in storage/key-policy, so it is never synced,
+ * exported or restored. */
+export const PIN_THROTTLE_KEY = 'izumi-pin-throttle-v1'
+export const PIN_FREE_MISSES = 5
+export const PIN_LOCKOUT_BASE_MS = 30_000
+export const PIN_LOCKOUT_MAX_MS = 300_000
+
+/** The household-wide view: the most misses made against any one profile's PIN, and the one lock
+ * that pauses every PIN entry on this device, as stored (pinLockedUntil gives the live, capped end). */
+export interface PinThrottleState { misses: number; lockedUntil: number }
+export type PinVerdict = { ok: true } | { ok: false; reason: 'mismatch' } | { ok: false; reason: 'throttled'; retryAt: number }
+
+/** Stored shape. Misses are counted per profile, so typing your own PIN correctly never clears the
+ * misses made against another profile's PIN (the main one, say); the lock they trigger is shared. */
+interface StoredPinThrottle { lockedUntil: number; targets: Record<string, number> }
+
+function emptyPinThrottle(): StoredPinThrottle {
+  return { lockedUntil: 0, targets: {} }
+}
+
+// Mirrors the last write, so the throttle still holds for this session when storage is unavailable
+// or a write fails.
+let memoryPinThrottle: StoredPinThrottle = emptyPinThrottle()
+
+function parsePinThrottle(raw: string | null | undefined): StoredPinThrottle {
+  if (!raw) return emptyPinThrottle()
+  try {
+    const value: unknown = JSON.parse(raw)
+    if (!value || typeof value !== 'object') return emptyPinThrottle()
+    const record = value as { lockedUntil?: unknown; targets?: unknown }
+    const lockedUntil = typeof record.lockedUntil === 'number' && Number.isFinite(record.lockedUntil) && record.lockedUntil > 0 ? record.lockedUntil : 0
+    const targets: Record<string, number> = {}
+    if (record.targets && typeof record.targets === 'object') {
+      for (const [id, misses] of Object.entries(record.targets as Record<string, unknown>)) {
+        if (/^[a-zA-Z0-9_-]{1,100}$/.test(id) && typeof misses === 'number' && Number.isInteger(misses) && misses > 0) targets[id] = Math.min(misses, 1000)
+      }
+    }
+    return { lockedUntil, targets }
+  } catch {
+    return emptyPinThrottle()
+  }
+}
+
+function loadPinThrottle(): StoredPinThrottle {
+  let stored = emptyPinThrottle()
+  try { stored = parsePinThrottle(safeStorage()?.getItem(PIN_THROTTLE_KEY)) } catch { /* unreadable storage: the session copy still counts */ }
+  const targets = { ...stored.targets }
+  for (const [id, misses] of Object.entries(memoryPinThrottle.targets)) targets[id] = Math.max(targets[id] ?? 0, misses)
+  return { lockedUntil: Math.max(stored.lockedUntil, memoryPinThrottle.lockedUntil), targets }
+}
+
+function summarizePinThrottle(state: StoredPinThrottle): PinThrottleState {
+  return { misses: Math.max(0, ...Object.values(state.targets)), lockedUntil: state.lockedUntil }
+}
+
+/** Reads storage on every call, so a lock outlives a reload or an app restart. The lock end is as
+ * stored, never capped: use pinLockedUntil for when PIN entry really opens. */
+export function readPinThrottle(): PinThrottleState {
+  return summarizePinThrottle(loadPinThrottle())
+}
+
+const pinThrottleState = writable<PinThrottleState>(readPinThrottle())
+/** Updated on every recorded miss, cleared count or forgotten PIN; drives the countdown under PIN fields. */
+export const pinThrottle: Readable<PinThrottleState> = { subscribe: pinThrottleState.subscribe }
+
+/** Stores the record and the session copy, without notifying pinThrottle. */
+function writePinThrottle(state: StoredPinThrottle): void {
+  memoryPinThrottle = { lockedUntil: state.lockedUntil, targets: { ...state.targets } }
+  try {
+    const storage = safeStorage()
+    if (!state.lockedUntil && !Object.keys(state.targets).length) storage?.removeItem(PIN_THROTTLE_KEY)
+    else storage?.setItem(PIN_THROTTLE_KEY, JSON.stringify(state))
+  } catch { /* quota or private mode: the session copy above still throttles */ }
+}
+
+function savePinThrottle(state: StoredPinThrottle): void {
+  writePinThrottle(state)
+  pinThrottleState.set(summarizePinThrottle(state))
+}
+
+/** Drops a profile's miss count once its PIN is replaced or removed, or the profile is deleted: those
+ * misses were made against a PIN that no longer exists. The shared lock stays. */
+function forgetPinMisses(id: string): void {
+  const state = loadPinThrottle()
+  if (!state.targets[id]) return
+  const targets = { ...state.targets }
+  delete targets[id]
+  savePinThrottle({ lockedUntil: state.lockedUntil, targets })
+}
+
+/** The record at `now`, with its lock capped. No lock this code sets ends more than
+ * PIN_LOCKOUT_MAX_MS after the clock that set it, so a later end means the clock has since moved back
+ * or the record is damaged. The cap is written back, so it holds from the first time the lock is seen
+ * and does not move with the clock: nobody waits more than PIN_LOCKOUT_MAX_MS. pinThrottle is not
+ * notified, because this also runs inside pinLockSeconds, which reads the capped end directly. */
+function loadPinThrottleAt(now: number): StoredPinThrottle {
+  const state = loadPinThrottle()
+  const cap = now + PIN_LOCKOUT_MAX_MS
+  if (state.lockedUntil <= cap) return state
+  const capped: StoredPinThrottle = { lockedUntil: cap, targets: state.targets }
+  writePinThrottle(capped)
+  return capped
+}
+
+/** When PIN entry opens again (epoch ms), or 0 while it is open. Never more than PIN_LOCKOUT_MAX_MS
+ * after `now`. */
+export function pinLockedUntil(now = Date.now()): number {
+  const { lockedUntil } = loadPinThrottleAt(now)
+  return lockedUntil > now ? lockedUntil : 0
+}
+
+/** 0 for the first PIN_FREE_MISSES misses, then 30 s doubling per miss, capped at 5 min. */
+export function pinLockoutMs(misses: number): number {
+  if (!(misses > PIN_FREE_MISSES)) return 0
+  return Math.min(PIN_LOCKOUT_BASE_MS * 2 ** (misses - PIN_FREE_MISSES - 1), PIN_LOCKOUT_MAX_MS)
+}
+
+/** The one PIN check for everything a person types. A profile without a PIN passes and leaves the
+ * throttle alone. While locked, every PIN is refused without being checked. An entry that is not 4-6
+ * digits is refused without costing a try. A wrong PIN adds a miss for that profile and, past
+ * PIN_FREE_MISSES, locks all PIN entry for pinLockoutMs; a right one clears that profile's misses and
+ * leaves any running lock in place. */
+export async function verifyPinThrottled(profile: IzumiProfile, pin: string, now = Date.now()): Promise<PinVerdict> {
+  if (!profile.pin) return { ok: true }
+  const lockedUntil = pinLockedUntil(now)
+  if (lockedUntil) return { ok: false, reason: 'throttled', retryAt: lockedUntil }
+  if (!validPinFormat(pin)) return { ok: false, reason: 'mismatch' }
+  const matched = (await hashPin(pin, profile.pin.salt)) === profile.pin.hash
+  // Re-read after hashing: another entry point may have recorded a miss meanwhile.
+  const state = loadPinThrottleAt(now)
+  const liveLock = state.lockedUntil > now ? state.lockedUntil : 0
+  const targets = { ...state.targets }
+  if (matched) {
+    if (targets[profile.id]) {
+      delete targets[profile.id]
+      savePinThrottle({ lockedUntil: liveLock, targets })
+    }
+    return { ok: true }
+  }
+  const misses = (targets[profile.id] ?? 0) + 1
+  targets[profile.id] = misses
+  const lockout = pinLockoutMs(misses)
+  savePinThrottle({ lockedUntil: lockout ? now + lockout : liveLock, targets })
+  return { ok: false, reason: 'mismatch' }
+}
+
+/** Whole seconds until PIN entry opens again (0 while it is open). Recomputed whenever pinThrottle
+ * changes, from pinLockedUntil, so it never starts above PIN_LOCKOUT_MAX_MS; ticks once a second only
+ * while a lock lasts and something is subscribed (the countdown under a PIN field). */
+export const pinLockSeconds: Readable<number> = derived(pinThrottle, (_throttle, set) => {
+  const until = pinLockedUntil()
+  const remaining = () => Math.max(0, Math.ceil((until - Date.now()) / 1000))
+  const first = remaining()
+  set(first)
+  if (!first) return
+  const timer = setInterval(() => {
+    const seconds = remaining()
+    set(seconds)
+    if (!seconds) clearInterval(timer)
+  }, 1000)
+  return () => clearInterval(timer)
+}, 0)
+
+/** The one line shown under a PIN entry while it is locked ('' when it is not). */
+export function pinThrottleMessage(seconds: number): string {
+  if (!(seconds > 0)) return ''
+  const whole = Math.ceil(seconds)
+  const minutes = Math.floor(whole / 60)
+  const rest = whole % 60
+  const wait = minutes ? (rest ? `${minutes} min ${rest} s` : `${minutes} min`) : `${rest} s`
+  return `Too many wrong PINs. Try again in ${wait}.`
+}
+
 export async function activateProfile(id: string, pin = ''): Promise<boolean> {
   const profile = get(profiles).find((candidate) => candidate.id === id)
-  if (!profile || !(await verifyProfilePin(profile, pin))) return false
+  if (!profile || !(await verifyPinThrottled(profile, pin)).ok) return false
   await flushLibraryStorage()
   safeStorage()?.setItem(ACTIVE_PROFILE_KEY, JSON.stringify(id))
   rememberUnlocked(id)
@@ -231,7 +420,7 @@ function rememberUnlocked(id: string): void {
 
 export async function unlockActiveProfile(pin: string): Promise<boolean> {
   const profile = get(activeProfile)
-  if (!(await verifyProfilePin(profile, pin))) return false
+  if (!(await verifyPinThrottled(profile, pin)).ok) return false
   rememberUnlocked(profile.id)
   return true
 }
@@ -239,7 +428,7 @@ export async function unlockActiveProfile(pin: string): Promise<boolean> {
 export async function deleteProfile(id: string, pin = ''): Promise<boolean> {
   if (id === DEFAULT_PROFILE_ID || id === get(activeProfileId)) return false
   const profile = get(profiles).find((candidate) => candidate.id === id)
-  if (!profile || !(await verifyProfilePin(profile, pin))) return false
+  if (!profile || !(await verifyPinThrottled(profile, pin)).ok) return false
   await deleteLibraryProfile(id)
   storedProfiles.update((state) => ({ ...state, deleted: { ...state.deleted, [id]: Date.now() }, profiles: normalizeState(state).profiles.filter((candidate) => candidate.id !== id) }))
   const storage = safeStorage()
@@ -250,13 +439,14 @@ export async function deleteProfile(id: string, pin = ''): Promise<boolean> {
       if (key?.startsWith(prefix)) storage.removeItem(key)
     }
   }
+  forgetPinMisses(id)
   return true
 }
 
 /** Disabling never deletes a household or its data, and requires the main profile's PIN. */
 export async function disableProfiles(pin = ''): Promise<boolean> {
   const main = get(profiles).find((profile) => profile.id === DEFAULT_PROFILE_ID)!
-  if (!(await verifyProfilePin(main, pin))) return false
+  if (!(await verifyPinThrottled(main, pin)).ok) return false
   storedProfiles.update((state) => ({ ...state, enabled: false, modeUpdatedAt: Date.now() }))
   return activateProfile(DEFAULT_PROFILE_ID, pin)
 }

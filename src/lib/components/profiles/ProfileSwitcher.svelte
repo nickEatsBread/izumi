@@ -5,7 +5,7 @@
   import LockKeyhole from '@lucide/svelte/icons/lock-keyhole'
   import X from '@lucide/svelte/icons/x'
   import { profileAvatarUrl } from '$lib/profiles/avatars'
-  import { activateProfile, activeProfileId, activeProfileLocked, profiles, profileSwitcherOpen, unlockActiveProfile, type IzumiProfile } from '$lib/profiles/store'
+  import { activateProfile, activeProfileId, activeProfileLocked, pinLockSeconds, pinThrottleMessage, profiles, profileSwitcherOpen, unlockActiveProfile, type IzumiProfile } from '$lib/profiles/store'
 
   let pending = $state<IzumiProfile | null>(null)
   let pin = $state('')
@@ -33,7 +33,7 @@
     try { await activateProfile(profile.id) } finally { busy = false }
   }
   async function submitPin() {
-    if (!pending || busy) return
+    if (!pending || busy || $pinLockSeconds > 0) return
     busy = true; error = ''
     try {
       const ok = pending.id === $activeProfileId ? await unlockActiveProfile(pin) : await activateProfile(pending.id, pin)
@@ -72,7 +72,8 @@
           <label for="profile-pin" class="mb-4 block text-muted-foreground">Enter your profile PIN</label>
           <input id="profile-pin" type="password" bind:this={pinInput} bind:value={pin} data-focusable inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="6" autocomplete="off" class="h-14 w-full rounded-xl bg-secondary text-center font-mono text-2xl tracking-[0.5em] outline-none focus:ring-2 focus:ring-theme" />
           {#if error}<p role="alert" class="mt-3 text-sm text-destructive">{error}</p>{/if}
-          <button type="submit" data-focusable disabled={pin.length < 4 || busy} class="mt-5 min-h-12 w-full rounded-xl bg-primary font-bold text-primary-foreground disabled:opacity-40">{busy ? 'Checking…' : 'Continue'}</button>
+          {#if $pinLockSeconds > 0}<p role="timer" data-pin-countdown class="mt-2 text-sm text-muted-foreground">{pinThrottleMessage($pinLockSeconds)}</p>{/if}
+          <button type="submit" data-focusable disabled={pin.length < 4 || busy || $pinLockSeconds > 0} class="mt-5 min-h-12 w-full rounded-xl bg-primary font-bold text-primary-foreground disabled:opacity-40">{busy ? 'Checking…' : 'Continue'}</button>
           <button type="button" data-focusable onclick={back} class="mt-3 min-h-12 px-5 text-muted-foreground hover:text-foreground">Choose another profile</button>
         </form>
       {:else}
