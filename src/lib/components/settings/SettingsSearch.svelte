@@ -75,7 +75,6 @@
         <Search size={20} class="shrink-0 text-muted-foreground" />
         <input bind:this={input} bind:value={query} type="search" data-focusable
           placeholder="Search settings…" aria-label="Search settings"
-          style="box-shadow:none"
           class="settings-search-input min-w-0 flex-1 bg-transparent py-4 text-base outline-none placeholder:text-muted-foreground" />
         <button type="button" data-focusable onclick={close} aria-label="Close"
           class="grid size-9 place-items-center rounded-full text-muted-foreground transition-colors active:bg-accent hover:bg-secondary">
@@ -106,8 +105,10 @@
 {/if}
 
 <style>
-  .settings-search-input:focus,
-  .settings-search-input:focus-visible {
+  /* Pointer and keyboard users get the dialog's own frame, so the field drops the global ring. Under
+     a controller (Deck Game mode, a paired pad, Android TV) the field is a d-pad stop: the rule is off. */
+  :global(html:not(.gamemode):not(.controller-mode):not(.tv-mode)) .settings-search-input:focus,
+  :global(html:not(.gamemode):not(.controller-mode):not(.tv-mode)) .settings-search-input:focus-visible {
     outline: none;
     box-shadow: none;
   }

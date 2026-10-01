@@ -12,7 +12,9 @@ describe('mobile touch feel', () => {
     const block = css.match(/@media \(pointer: coarse\) \{[^}]*\}[^}]*\}/)
     expect(block, 'pointer: coarse block').toBeTruthy()
     expect(block![0]).toContain('-webkit-tap-highlight-color: transparent')
-    expect(block![0]).toMatch(/a, button, \[data-focusable\], \[data-theme-card\] \{[^}]*user-select: none/)
+    // Text fields are d-pad stops ([data-focusable]) too, and keep long-press select and paste.
+    expect(block![0]).toMatch(/a, button, \[data-focusable\]:not\(input, textarea, \[contenteditable\]\), \[data-theme-card\] \{[^}]*user-select: none/)
+    expect(block![0]).not.toMatch(/\[data-focusable\],/)
   })
 
   it('snaps phone carousels to card edges and contains their overscroll, phones only', () => {

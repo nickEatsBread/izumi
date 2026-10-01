@@ -330,9 +330,10 @@
 <style>
   /* The shell already communicates focus by tinting the field row's bottom border. Give this
      selector enough specificity to beat app.css's generic *:focus-visible outline, which otherwise
-     draws a theme-coloured rounded rectangle around the full-width search input on desktop. */
-  .global-search-input:focus,
-  .global-search-input:focus-visible {
+     draws a theme-coloured rounded rectangle around the full-width search input on desktop. Under a
+     controller (Deck Game mode, a paired pad, Android TV) the field keeps the controller ring. */
+  :global(html:not(.gamemode):not(.controller-mode):not(.tv-mode)) .global-search-input:focus,
+  :global(html:not(.gamemode):not(.controller-mode):not(.tv-mode)) .global-search-input:focus-visible {
     outline: none;
     box-shadow: none;
   }

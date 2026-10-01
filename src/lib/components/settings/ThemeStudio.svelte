@@ -405,6 +405,9 @@
   /* The editor stays legible even while the user experiments with low-contrast client colours. */
   .studio-panel, .studio-resume {
     --editor-bg: #19191d; --editor-fg: #f1f1f4; --editor-muted: #a5a5af; --editor-line: #34343d; --editor-control: #26262d; --editor-accent: #d6d6df; --editor-focus: #c8c8e0;
+    /* The Deck and controller focus ring (app.css) keeps the editor palette here too: a gap and a
+       light band that stay readable whatever ring colour the theme being edited has. */
+    --izumi-safe-focus-ring: 0 0 0 2px var(--editor-bg), 0 0 0 5px var(--editor-focus);
     color: var(--editor-fg); background: var(--editor-bg); color-scheme: dark;
     font-family: 'Nunito Variable', sans-serif; font-size: 14px; line-height: 1.4;
     border: 1px solid var(--editor-line); box-shadow: 0 16px 48px #07070c55, 0 2px 6px #07070c33;

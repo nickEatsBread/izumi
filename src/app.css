@@ -103,10 +103,11 @@ body { overflow-x: clip; }
 /* Touch feel. Android's WebView paints its own grey flash on every tapped link or button and starts
    a text selection when a card title is held; both read as a web page rather than an app. The app
    supplies its own press feedback (android-*-press, theme-press-sink), so the WebView's stays off
-   on any coarse pointer. Text content stays selectable; only controls and cards opt out. */
+   on any coarse pointer. Text content stays selectable; only controls and cards opt out. Text fields
+   are d-pad stops too ([data-focusable]) but keep long-press select and paste. */
 @media (pointer: coarse) {
   html { -webkit-tap-highlight-color: transparent; }
-  a, button, [data-focusable], [data-theme-card] { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  a, button, [data-focusable]:not(input, textarea, [contenteditable]), [data-theme-card] { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 }
 /* Phone rows settle on a card edge after a flick instead of stopping mid-poster, and a swipe that
    runs off a row's end stays in the row instead of handing the rest of the gesture to the page.
@@ -353,10 +354,20 @@ html.theme-press-sink input[type='range']:active { filter: none; transform: none
   content-visibility: visible;
   contain-intrinsic-size: none;
 }
+/* Deck and controller focus ring (owner decision 9): two-tone and coloured by the theme. A gap in
+   the page colour, a band in the theme's --ring, then a 1px foreground hairline, so a theme whose
+   ring sits close to its background still shows focus. The gap and the hairline read the
+   client-owned palette mirror (theme.ts), which theme stylesheets cannot declare (css-policy.ts). */
+:root {
+  --izumi-safe-focus-ring: 0 0 0 2px hsl(var(--izumi-safe-background, var(--background))), 0 0 0 5px hsl(var(--ring, var(--izumi-safe-foreground, var(--foreground)))), 0 0 0 6px hsl(var(--izumi-safe-foreground, var(--foreground)) / 0.55);
+}
+/* The player keeps its white ring over video: the desktop overlay and the Android player. Every
+   Game-mode and controller-mode ring rule inside them reads this value instead of the theme's. */
+.izumi-player-root, .player-shell { --izumi-safe-focus-ring: 0 0 0 3px #fff; }
 /* Default focus indicator = ring the focused element. The box-shadow follows the element's
    OWN border-radius (no override here) so a round button (play/pause) keeps a round ring
    instead of a squared-off rounded-rect. */
-.gamemode [data-focusable]:focus { outline: none; box-shadow: 0 0 0 3px #fff; }
+.gamemode [data-focusable]:focus { outline: none; box-shadow: var(--izumi-safe-focus-ring); }
 /* Player chrome (YouTube Leanback / VacuumTube): snappy 120ms pop between focused
    controls. Secondary buttons scale; the play circle grows a little and keeps a
    round white ring so it reads as the primary action. */
@@ -422,16 +433,24 @@ html.theme-press-sink input[type='range']:active { filter: none; transform: none
    players use. :has suppresses the whole-element ring so it doesn't double up. */
 .gamemode [data-focusable]:focus:has(.focus-cover) { box-shadow: none; }
 .gamemode [data-focusable]:focus .focus-cover {
-  box-shadow: 0 0 0 3px #fff;
+  box-shadow: var(--izumi-safe-focus-ring);
   /* Bottom-anchored pop: the cover grows UP + sideways, its bottom edge stays put just above
      the title, so the ring never covers the title. The row is given top padding in game mode
-     (Carousel) so the grown top + ring isn't clipped by the horizontally-scrolling track. */
+     (Carousel, raised below for the two-tone ring) so the grown top + ring isn't clipped by the
+     horizontally-scrolling track. */
   transform: scale(1.04);
   transform-origin: center bottom;
   transition: transform 80ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 80ms ease;
   position: relative;
   z-index: 10;
 }
+/* Room above a popped cover for that ring. Carousel gives its track `pt-3` (12 px) in Game and
+   controller mode: enough for the 4% pop of a 152 px poster (9.1 px) plus the old 3 px white ring.
+   The two-tone ring reaches 6 px (6.2 px popped): 15.4 px in all, 16.8 px at large density. Keep
+   this after the `overflow: hidden` rule above, the first `.gamemode [data-carousel-scroller]`
+   match, which deck-touch-scroll.test.ts reads. */
+html.gamemode [data-carousel-scroller],
+html.controller-mode [data-carousel-scroller] { padding-top: max(1.125rem, 18px); }
 
 /* Paired controllers on ordinary desktop/mobile clients share the Deck's focus language without
    inheriting Gamescope-only zoom, compositor snapshots, fullscreen policy, or touch routing. */
@@ -449,13 +468,13 @@ html.theme-press-sink input[type='range']:active { filter: none; transform: none
 }
 .controller-mode [data-focusable]:focus {
   outline: none;
-  box-shadow: 0 0 0 3px #fff, 0 8px 24px rgb(0 0 0 / 0.4);
+  box-shadow: var(--izumi-safe-focus-ring), 0 8px 24px rgb(0 0 0 / 0.4);
   position: relative;
   z-index: 10;
 }
 .controller-mode [data-focusable]:focus:has(.focus-cover) { box-shadow: none; }
 .controller-mode [data-focusable]:focus .focus-cover {
-  box-shadow: 0 0 0 3px #fff, 0 10px 28px rgb(0 0 0 / 0.5);
+  box-shadow: var(--izumi-safe-focus-ring), 0 10px 28px rgb(0 0 0 / 0.5);
   transform: scale(1.04);
   transform-origin: center bottom;
   position: relative;
