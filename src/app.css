@@ -118,10 +118,10 @@ body { overflow-x: clip; }
   [data-carousel-scroller] { scroll-snap-type: x proximity; scroll-padding-inline: 1rem; overscroll-behavior-x: contain; }
   [data-carousel-scroller] > * { scroll-snap-align: start; }
 }
-/* Mobile settings sub-pages: the back-header shows the category title, so hide each child page's
-   own redundant leading heading (its :first-child h2) — content starts right under the bar, native
-   app feel. Deeper section headings are never their parent's :first-child, so they still show. */
-@media (max-width: 640px) { .settings-child > div > h2:first-child { display: none; } }
+/* Phone settings sub-pages: the back-header's <h1> shows the page title (settings/hierarchy.ts), so
+   each page's own leading title, marked `data-settings-page-title`, is hidden: one title, right
+   under the bar. `.settings-child` exists only in the phone layout, so desktop keeps every title. */
+.settings-child [data-settings-page-title] { display: none; }
 ::-webkit-scrollbar { display: none; }
 .bg-striped { background: repeating-linear-gradient(-45deg, #202020 0 6px, #2a2a2a 6px 12px); }
 .bg-striped-muted { background: repeating-linear-gradient(-45deg, #1e1e1e 0 6px, #161616 6px 12px); }
@@ -292,6 +292,36 @@ html.theme-press-sink input[type='range']:active { filter: none; transform: none
    painted control, and generated content hit-tests as part of its originating element. */
 .a11y-large-targets [data-focusable][data-switch] { position: relative; }
 .a11y-large-targets [data-focusable][data-switch]::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+/* Touch targets (decision 12). Small controls marked `data-touch-target` get a 44px floor wherever
+   any pointer is coarse (phones, tablets, a touchscreen laptop, the Deck's screen) and in Game mode.
+   Standalone switch pills keep their fixed geometry and get the same centred, invisible 44px
+   ::after hit area as the large-targets mode above; a checkbox or radio is never marked (its label
+   is the target). Android TV is left out: the remote has no pointer and the ten-foot layout sizes
+   itself. */
+@media (any-pointer: coarse) {
+  html:not(.tv-mode) [data-touch-target] { min-width: 44px; min-height: 44px; }
+  html:not(.tv-mode) [data-focusable][data-switch] { position: relative; }
+  html:not(.tv-mode) [data-focusable][data-switch]::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+}
+html.gamemode:not(.tv-mode) [data-touch-target] { min-width: 44px; min-height: 44px; }
+html.gamemode:not(.tv-mode) [data-focusable][data-switch] { position: relative; }
+html.gamemode:not(.tv-mode) [data-focusable][data-switch]::after {
   content: '';
   position: absolute;
   left: 50%;

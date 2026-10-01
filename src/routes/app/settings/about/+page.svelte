@@ -106,7 +106,7 @@
 </script>
 
 <div class="p-4 sm:p-8">
-  <h2 class="mb-1 text-xl font-black">About</h2>
+  <h2 data-settings-page-title class="mb-1 text-xl font-black">About</h2>
   <p class="mb-4 text-sm text-muted-foreground">Version information.</p>
 
   <div class="mb-5 flex items-center gap-3">
@@ -133,7 +133,7 @@
   <p class="mt-3 max-w-md text-sm text-muted-foreground">Need help with a TV setup or sources? <a href="/docs" data-focusable class="font-bold text-foreground underline underline-offset-2">Read the izumi documentation</a>, including the <a href="/docs/companion/setup" data-focusable class="font-bold text-foreground underline underline-offset-2">Samsung Tizen guide</a>.</p>
 
   <!-- Updates -->
-  <div class="mt-6 max-w-md">
+  <div class="mt-6 max-w-md" data-setting-key="updates">
     <h3 class="mb-2 text-sm font-black">Updates</h3>
 
     <p class="mb-3 text-xs text-muted-foreground">
@@ -143,7 +143,7 @@
     <!-- Android always tracks the latest APK release. Desktop and Flatpak both support the
          persisted stable/beta channel; Flatpak maps it to its matching OSTree branch. -->
     {#if !$isAndroid}
-    <label class="mb-3 flex items-center justify-between gap-4 rounded-md border border-border p-4 sm:p-3">
+    <label data-setting-key="release-channel" class="mb-3 flex items-center justify-between gap-4 rounded-md border border-border p-4 sm:p-3">
       <div>
         <div class="text-sm font-bold">Release channel</div>
         <p class="mt-0.5 text-xs text-muted-foreground">Beta receives pre-releases first.</p>

@@ -210,7 +210,7 @@
 
 <div bind:this={root} class="relative {className}">
   <button
-    bind:this={trigger}
+    data-touch-target bind:this={trigger}
     type="button"
     data-focusable
     aria-label={ariaLabel}

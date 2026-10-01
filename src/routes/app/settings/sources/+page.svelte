@@ -296,7 +296,7 @@
 <div class="min-w-0 overflow-x-hidden p-4 sm:p-8">
   <div class="mb-5 max-w-7xl">
     <div class="mb-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <h2 class="text-xl font-black max-sm:hidden">Sources</h2>
+      <h2 data-settings-page-title class="text-xl font-black">Sources</h2>
       <div class="flex w-full flex-col gap-2 sm:w-auto sm:translate-y-3 sm:flex-row">
         <button type="button" data-focusable disabled={checkingUpdates} onclick={() => void checkForUpdates()}
           class="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-black text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60 sm:w-auto sm:min-w-44">
@@ -546,7 +546,7 @@
                 class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors sm:h-5 sm:w-9 {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
                 <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform sm:h-4 sm:w-4 {off ? 'translate-x-0.5' : 'translate-x-5 sm:translate-x-4'}"></span>
               </button>
-              <button onclick={() => remove(i)} data-focusable title="Remove" aria-label={`Remove ${host(url)}`}
+              <button onclick={() => remove(i)} data-focusable title="Remove" data-touch-target aria-label={`Remove ${host(url)}`}
                 class="grid size-10 shrink-0 place-items-center rounded-md text-destructive transition-colors hover:bg-accent active:bg-destructive/10 sm:size-8"><Trash2 size={16} /></button>
             </div>
           {:then m}
@@ -570,7 +570,7 @@
                 {#await findAddonConfigureUrl(url, m) then configureUrl}
                   {#if configureUrl}
                     <button type="button" data-focusable aria-label={`Configure ${m.name}`} title={`Configure ${m.name}`}
-                      onclick={() => beginConfiguration(url, m.name, m.id, configureUrl)}
+                      data-touch-target onclick={() => beginConfiguration(url, m.name, m.id, configureUrl)}
                       class="grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground">
                       <Settings size={17} />
                     </button>
@@ -583,7 +583,7 @@
                 class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors sm:h-5 sm:w-9 {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
                 <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform sm:h-4 sm:w-4 {off ? 'translate-x-0.5' : 'translate-x-5 sm:translate-x-4'}"></span>
               </button>
-              <button onclick={() => remove(i)} data-focusable title="Remove" aria-label={`Remove ${m?.name ?? host(url)}`}
+              <button onclick={() => remove(i)} data-focusable title="Remove" data-touch-target aria-label={`Remove ${m?.name ?? host(url)}`}
                 class="grid size-10 shrink-0 place-items-center rounded-md text-destructive transition-colors hover:bg-accent active:bg-destructive/10 sm:size-8"><Trash2 size={16} /></button>
             </div>
           {/await}

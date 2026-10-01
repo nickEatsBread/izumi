@@ -80,7 +80,7 @@
 </script>
 
 <div class="p-4 sm:p-8">
-  <h2 class="mb-1 text-xl font-black">Network</h2>
+  <h2 data-settings-page-title class="mb-1 text-xl font-black">Network</h2>
   <p class="mb-4 text-sm text-muted-foreground">Advanced networking. Limited effect with debrid streaming — see notes.</p>
 
   <div class="max-w-2xl space-y-3">

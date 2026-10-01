@@ -53,7 +53,7 @@
 </script>
 
 <div class="p-4 sm:p-8">
-  <h2 class="mb-1 text-xl font-black">Backup &amp; restore</h2>
+  <h2 data-settings-page-title class="mb-1 text-xl font-black">Backup &amp; restore</h2>
   <p class="mb-6 max-w-2xl text-sm text-muted-foreground">Move the whole Izumi setup: interface and player settings, navigation, sources, downloads metadata, watch history, and resume positions.</p>
 
   <div class="max-w-2xl space-y-5">

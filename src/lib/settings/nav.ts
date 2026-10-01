@@ -4,7 +4,9 @@
 import { persisted } from 'svelte-persisted-store'
 import { derived } from 'svelte/store'
 import { activeThemeLayout } from '$lib/themes/layout-state'
+import { isMobile } from '$lib/platform'
 import { themeNavConfig } from './theme-nav'
+import { pinNavItems } from './nav-rules'
 import Home from '@lucide/svelte/icons/house'
 import Calendar from '@lucide/svelte/icons/calendar'
 import Download from '@lucide/svelte/icons/download'
@@ -62,16 +64,17 @@ export const navConfig = persisted<NavItemConfig[]>('nav-config-v1', DEFAULT_NAV
  *  user's placement entirely (the user's own config, in `navConfig`, is never written to). Otherwise
  *  guarantees every known item appears exactly once (drops unknown ids, appends any missing at their
  *  default placement) so the UI is robust to items added/removed across versions and to a
- *  partially-written stored value. */
-export const effectiveNav = derived([navConfig, activeThemeLayout], ([$c, layout]) => {
+ *  partially-written stored value. Either way Settings never ends up hidden: `pinNavItems`
+ *  (nav-rules.ts) moves it to the bar or the top, depending on the layout and the phone layout. */
+export const effectiveNav = derived([navConfig, activeThemeLayout, isMobile], ([$c, layout, $isMobile]) => {
   const themed = layout?.nav ? themeNavConfig(layout.nav, Object.keys(NAV_META)) : null
-  if (themed) return themed as NavItemConfig[]
+  if (themed) return pinNavItems(themed as NavItemConfig[], { themed: true, phone: $isMobile })
   const known = Object.keys(NAV_META) as NavItemId[]
   const seen = new Set<NavItemId>()
   const out: NavItemConfig[] = []
   for (const it of $c) if (known.includes(it.id) && !seen.has(it.id)) { seen.add(it.id); out.push(it) }
   for (const d of DEFAULT_NAV) if (!seen.has(d.id)) out.push(d)
-  return out
+  return pinNavItems(out, { themed: false, phone: $isMobile })
 })
 
 /** Home's position on the bottom bar: 0 (first) unless the active theme layout places it elsewhere. */

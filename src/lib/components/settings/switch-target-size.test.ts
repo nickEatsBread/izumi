@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import postcss from 'postcss'
 import { describe, it, expect } from 'vitest'
+import { openingTagAt } from '../../../test/svelte-source'
 
 // The enable/disable switches are fixed-geometry pills (a 36 x 20 track with a round knob).
 // `.a11y-large-targets` (Settings -> Interface -> "Larger interaction targets") puts a 44px
@@ -23,27 +24,6 @@ const SWITCH_SOURCES: Array<[string, string]> = [
 
 /** The shared switch-track class recipe: a pill track with a knob inside. */
 const TRACK_RECIPE = /class="[^"]*\binline-flex\b[^"]*\bshrink-0 items-center rounded-full transition-colors\b/g
-
-/**
- * The whole opening tag containing `index`. Naive `[^>]*>` does not work here: Svelte
- * attributes hold arrow functions (`onclick={() => toggle(url)}`), so `>` appears inside
- * the tag. Track quotes and brace depth instead.
- */
-function openingTagAt(source: string, index: number): string {
-  const start = source.lastIndexOf('<', index)
-  let depth = 0
-  let quote = ''
-  let i = start + 1
-  for (; i < source.length; i++) {
-    const char = source[i]
-    if (quote) { if (char === quote) quote = ''; continue }
-    if (char === '"' || char === "'") quote = char
-    else if (char === '{') depth++
-    else if (char === '}') depth--
-    else if (char === '>' && depth === 0) break
-  }
-  return source.slice(start, i + 1)
-}
 
 /** Opening tags that carry the shared switch-track class recipe. */
 function switchTrackTags(source: string): string[] {
@@ -138,5 +118,56 @@ describe('switch track geometry', () => {
     expect(css).toMatch(/width:\s*44px/)
     expect(css).toMatch(/height:\s*44px/)
     expect(css).toMatch(/position:\s*absolute/)
+  })
+})
+
+/** Rules in app.css whose selector list mentions `needle`, with the @media query around them (null at top level). */
+function rulesMentioning(needle: string): Array<{ selector: string; media: string | null; css: string }> {
+  const found: Array<{ selector: string; media: string | null; css: string }> = []
+  postcss.parse(appCss).walkRules((rule) => {
+    const parent = rule.parent
+    const media = parent?.type === 'atrule' && (parent as postcss.AtRule).name === 'media' ? (parent as postcss.AtRule).params : null
+    for (const selector of rule.selectors) if (selector.includes(needle)) found.push({ selector: selector.trim(), media, css: rule.toString() })
+  })
+  return found
+}
+const where = (rule: { selector: string; media: string | null }) => `${rule.media ?? 'top level'} | ${rule.selector}`
+/** The touch rules live under a coarse pointer or in Game mode; the opt-in large-targets mode is separate. */
+const touchContext = (rule: { selector: string; media: string | null }) =>
+  rule.media === '(any-pointer: coarse)' || rule.selector.startsWith('html.gamemode')
+
+// Decision 12: `data-touch-target` controls get a 44px floor wherever any pointer is coarse and in
+// Game mode; standalone switch pills get the centred ::after hit area instead of a box minimum. Both
+// are scoped `html:not(.tv-mode)`: the TV remote has no pointer and the ten-foot layout sizes itself.
+describe('touch target rules', () => {
+  it('puts a 44px floor on marked controls under a coarse pointer and in Game mode, never on TV', () => {
+    const rules = rulesMentioning('[data-touch-target]')
+    expect(rules.map(where).sort()).toEqual([
+      '(any-pointer: coarse) | html:not(.tv-mode) [data-touch-target]',
+      'top level | html.gamemode:not(.tv-mode) [data-touch-target]',
+    ])
+    for (const rule of rules) {
+      expect(rule.css).toMatch(/min-width:\s*44px/)
+      expect(rule.css).toMatch(/min-height:\s*44px/)
+    }
+  })
+
+  it('gives standalone switch tracks the 44px overlay in the same two places, never on TV', () => {
+    const overlays = rulesMentioning('[data-switch]::after').filter(touchContext)
+    expect(overlays.map(where).sort()).toEqual([
+      '(any-pointer: coarse) | html:not(.tv-mode) [data-focusable][data-switch]::after',
+      'top level | html.gamemode:not(.tv-mode) [data-focusable][data-switch]::after',
+    ])
+    for (const rule of overlays) {
+      expect(rule.css).toMatch(/position:\s*absolute/)
+      expect(rule.css).toMatch(/width:\s*44px/)
+      expect(rule.css).toMatch(/height:\s*44px/)
+    }
+    const hosts = rulesMentioning('[data-switch]').filter((rule) => touchContext(rule) && !rule.selector.endsWith('::after'))
+    expect(hosts.map(where).sort()).toEqual([
+      '(any-pointer: coarse) | html:not(.tv-mode) [data-focusable][data-switch]',
+      'top level | html.gamemode:not(.tv-mode) [data-focusable][data-switch]',
+    ])
+    for (const rule of hosts) expect(rule.css).toMatch(/position:\s*relative/)
   })
 })

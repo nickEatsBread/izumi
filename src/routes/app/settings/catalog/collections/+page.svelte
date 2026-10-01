@@ -114,8 +114,8 @@
 
 <div class="max-w-4xl space-y-6 p-4 sm:p-8">
   <div>
-    <a href="/app/settings/catalog" data-focusable class="text-sm text-muted-foreground">← Catalog</a>
-    <h1 class="mt-3 text-2xl font-black">Collections & covers</h1>
+    <a data-settings-page-title href="/app/settings/catalog" data-focusable class="text-sm text-muted-foreground">← Catalog</a>
+    <h1 data-settings-page-title class="mt-3 text-2xl font-black">Collections & covers</h1>
     <p class="mt-2 text-sm text-muted-foreground">Bring Nuvio folders and their artwork to Home. Collections appear on every catalog screen.</p>
   </div>
 
@@ -189,7 +189,7 @@
           <div class="flex items-center gap-1">
             <button data-focusable disabled={index === 0} aria-label={`Move ${collection.title} up`} onclick={() => move(collection.id, -1)} class="min-h-10 min-w-10 rounded-md hover:bg-secondary disabled:opacity-30">↑</button>
             <button data-focusable disabled={index === $homeCollections.length - 1} aria-label={`Move ${collection.title} down`} onclick={() => move(collection.id, 1)} class="min-h-10 min-w-10 rounded-md hover:bg-secondary disabled:opacity-30">↓</button>
-            <button data-focusable onclick={() => homeCollections.update((collections) => collections.filter((item) => item.id !== collection.id))} class="min-h-10 rounded-md px-3 text-sm text-destructive hover:bg-secondary">Remove</button>
+            <button data-focusable data-touch-target onclick={() => homeCollections.update((collections) => collections.filter((item) => item.id !== collection.id))} class="min-h-10 rounded-md px-3 text-sm text-destructive hover:bg-secondary">Remove</button>
           </div>
         </div>
         {#if expanded === collection.id}

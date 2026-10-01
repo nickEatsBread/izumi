@@ -58,6 +58,7 @@
       type="button"
       data-focusable
       use:ripple
+      data-row-activate
       aria-pressed={pressed}
       aria-expanded={children ? expanded : undefined}
       onclick={() => { h.tap(); onActivate() }}

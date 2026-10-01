@@ -4,9 +4,10 @@
   import Search from '@lucide/svelte/icons/search'
   import X from '@lucide/svelte/icons/x'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
-  import { isAndroid } from '$lib/platform'
+  import { isAndroid, isMobile, isTv } from '$lib/platform'
+  import { inAppPlayerAvailable } from '$lib/player/in-app-player'
   import * as h from '$lib/haptics'
-  import { searchSettings, settingKey, type SettingSearchItem } from '$lib/settings/search'
+  import { searchSettings, settingHref, type SettingSearchItem } from '$lib/settings/search'
   import { openOskForField } from '$lib/nav/osk'
   import { navLayer } from '$lib/nav/overlay'
 
@@ -16,7 +17,9 @@
   let input = $state<HTMLInputElement>()
   let trigger = $state<HTMLButtonElement>()
   let returnFocus: HTMLElement | null = null
-  const results = $derived(searchSettings(query, $isAndroid).slice(0, 14))
+  // Hits for rows this device does not show are left out: phone layout, Android TV, and the lite
+  // build (no in-app player; `null` while the probe runs counts as lite, so hits never flash in).
+  const results = $derived(searchSettings(query, { android: $isAndroid, phone: $isMobile, tv: $isTv, lite: !$inAppPlayerAvailable }).slice(0, 14))
 
   // The desktop launcher lives inside a sticky sidebar, which is its own stacking context. Move
   // the actual overlay to <body> so focused controls in the page can never paint over the dialog.
@@ -46,10 +49,8 @@
 
   async function choose(item: SettingSearchItem) {
     h.tap()
-    const separator = item.href.includes('?') ? '&' : '?'
-    const search = item.anchored ? `${separator}setting=${encodeURIComponent(settingKey(item.title))}` : ''
     await close()
-    await goto(item.href + search)
+    await goto(settingHref(item))
   }
 </script>
 

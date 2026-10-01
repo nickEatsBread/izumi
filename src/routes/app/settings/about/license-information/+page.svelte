@@ -24,7 +24,7 @@
 </script>
 
 <div class="p-4 sm:p-8">
-  <h2 class="mb-1 text-xl font-black">License Information</h2>
+  <h2 data-settings-page-title class="mb-1 text-xl font-black">License Information</h2>
   <p class="mb-5 max-w-2xl text-sm text-muted-foreground">Open-source licensing, data providers and service acknowledgements.</p>
 
   <div class="max-w-2xl space-y-6">

@@ -726,7 +726,7 @@
   {#if $watchSyncError}
     <p role="alert" class="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">{$watchSyncError}</p>
   {/if}
-  <h2 class="mb-2 text-3xl font-bold tracking-tight">Device sync</h2>
+  <h2 data-settings-page-title class="mb-2 text-3xl font-bold tracking-tight">Device sync</h2>
   <p class="mb-5 max-w-2xl text-sm text-muted-foreground">
     Keep your progress and setup in step across Izumi devices. History and settings are end-to-end encrypted. Optional TV source resolution is configured separately.
   </p>

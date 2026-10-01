@@ -1,7 +1,7 @@
 <script lang="ts">
   import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, dragCarousels, episodeQueueEnabled, sceneBookmarksEnabled, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, androidTvMode, cwDismissAction, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, titleLanguage, ratingStyle, ratingOnPage, type RatingStyle, type RatingOnPage, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
-  import { isAndroid, isAndroidTv } from '$lib/platform'
+  import { isAndroid, isAndroidTv, isMobile } from '$lib/platform'
   import { setAiringNotificationsEnabled } from '$lib/notifications/airing'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import { m } from '$lib/paraglide/messages.js'
@@ -65,11 +65,11 @@
 </script>
 
 <div class="p-4 sm:p-8">
-  <h2 class="mb-1 text-xl font-black">{m.settings_interface()}</h2>
+  <h2 data-settings-page-title class="mb-1 text-xl font-black">{m.settings_interface()}</h2>
   <p class="mb-4 text-sm text-muted-foreground">{m.settings_interface_intro()}</p>
 
   <div class="max-w-2xl">
-    <label class="mb-5 flex items-center justify-between gap-3 rounded-md border border-border p-4 sm:p-3">
+    <label data-setting-key="app-language" class="mb-5 flex items-center justify-between gap-3 rounded-md border border-border p-4 sm:p-3">
       <span><span class="block font-bold">{m.settings_language()}</span><span class="text-xs text-muted-foreground">{m.settings_language_hint()}</span></span>
       <SelectMenu value={locale} onChange={changeLocale} ariaLabel={m.settings_language()} options={[
         { value: 'en', label: m.language_english() }, { value: 'ja', label: m.language_japanese() },
@@ -298,7 +298,10 @@
         {/if}
         {#if notificationError}<p role="alert" class="mt-1 text-xs text-amber-400">{notificationError}</p>{/if}
       </div>
-      <label class="flex flex-col gap-3 rounded-md border border-border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-3">
+      <!-- The phone layout renders at zoom 1 whatever this says (app layout), so the slider is for
+           desktop, the Deck and TV only. Search hides it there too (hideOn: phone). -->
+      {#if !$isMobile}
+      <label data-setting-key="ui-scale" class="flex flex-col gap-3 rounded-md border border-border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-3">
         <div>
           <div class="font-bold">{m.settings_ui_scale()}</div>
           <p class="mt-1 text-xs text-muted-foreground">{m.settings_ui_scale_hint()}</p>
@@ -308,6 +311,7 @@
           <span class="w-10 shrink-0 text-right text-sm tabular-nums text-muted-foreground">{$uiScale.toFixed(1)}×</span>
         </span>
       </label>
+      {/if}
 
       <Toggle label="Series-wide episode numbers" desc="Number episodes by their position in the whole series instead of the current season, where the two differ (episode 5 of a second season shows as A29). Affects the labels only — playback, downloads and tracking are unchanged." value={$absoluteEpisodeNumbers} onToggle={() => ($absoluteEpisodeNumbers = !$absoluteEpisodeNumbers)} />
       <Toggle label={m.settings_hide_spoilers()} desc={m.settings_hide_spoilers_hint()} value={$hideSpoilers} onToggle={() => ($hideSpoilers = !$hideSpoilers)} />

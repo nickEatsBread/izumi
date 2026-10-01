@@ -60,7 +60,7 @@
 </script>
 
 <div class="p-4 sm:p-8">
-  <h2 class="mb-1 text-xl font-black">Downloads</h2>
+  <h2 data-settings-page-title class="mb-1 text-xl font-black">Downloads</h2>
   <p class="mb-4 text-sm text-muted-foreground">Choose which releases downloads should prefer and manage series that watch for newly aired episodes.</p>
 
   <div class="max-w-2xl space-y-3">
@@ -142,8 +142,8 @@
             <div class="flex flex-wrap items-center gap-3 rounded-md bg-secondary/50 p-3 sm:p-2.5">
               {#if rule.poster}<img src={rule.poster} alt="" loading="lazy" decoding="async" class="h-12 w-9 rounded object-cover" />{/if}
               <div class="min-w-0 flex-1"><div class="truncate text-sm font-bold">{rule.title}</div><div class="text-xs text-muted-foreground">Waiting for episode {rule.nextEpisode}{rule.lastError ? ` · ${rule.lastError}` : ''}</div></div>
-              <label class="py-2 text-xs font-bold sm:py-0"><input data-focusable type="checkbox" checked={rule.enabled} onchange={(e) => updateAutoDownloadRule(rule.id, { enabled: e.currentTarget.checked })} /> Enabled</label>
-              <button data-focusable aria-label={`Remove ${rule.title}`} onclick={() => removeAutoDownloadRule(rule.id)} class="grid size-10 place-items-center rounded-md text-destructive hover:bg-accent sm:size-9"><Trash2 size={16} /></button>
+              <label data-touch-target class="inline-flex items-center gap-1 py-2 text-xs font-bold sm:py-0"><input data-focusable type="checkbox" checked={rule.enabled} onchange={(e) => updateAutoDownloadRule(rule.id, { enabled: e.currentTarget.checked })} /> Enabled</label>
+              <button data-focusable aria-label={`Remove ${rule.title}`} data-touch-target onclick={() => removeAutoDownloadRule(rule.id)} class="grid size-10 place-items-center rounded-md text-destructive hover:bg-accent sm:size-9"><Trash2 size={16} /></button>
             </div>
           {/each}
         </div>

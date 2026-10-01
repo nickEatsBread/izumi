@@ -269,30 +269,30 @@
 
 {#snippet anilistControl()}
   {#if $anilistToken}
-    <button type="button" data-focusable onclick={disconnectAniListClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
+    <button type="button" data-focusable data-touch-target onclick={disconnectAniListClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
   {:else}
-    <button type="button" data-focusable onclick={connectAniListClick} disabled={aniBusy} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40">{aniBusy ? 'Connecting…' : 'Connect'}</button>
+    <button type="button" data-focusable data-touch-target onclick={connectAniListClick} disabled={aniBusy} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40">{aniBusy ? 'Connecting…' : 'Connect'}</button>
   {/if}
 {/snippet}
 {#snippet malControl()}
   {#if $malToken}
-    <button type="button" data-focusable onclick={disconnectMalClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
+    <button type="button" data-focusable data-touch-target onclick={disconnectMalClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
   {:else}
-    <button type="button" data-focusable onclick={connectMalClick} disabled={malBusy} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40">{malBusy ? 'Connecting…' : 'Connect'}</button>
+    <button type="button" data-focusable data-touch-target onclick={connectMalClick} disabled={malBusy} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40">{malBusy ? 'Connecting…' : 'Connect'}</button>
   {/if}
 {/snippet}
 {#snippet kitsuControl()}
   {#if $kitsuToken}
-    <button type="button" data-focusable onclick={disconnectKitsuClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
+    <button type="button" data-focusable data-touch-target onclick={disconnectKitsuClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
   {:else}
-    <button type="button" data-focusable onclick={() => (kitsuFormOpen = !kitsuFormOpen)} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent">{kitsuFormOpen ? 'Cancel' : 'Sign in'}</button>
+    <button type="button" data-focusable data-touch-target onclick={() => (kitsuFormOpen = !kitsuFormOpen)} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent">{kitsuFormOpen ? 'Cancel' : 'Sign in'}</button>
   {/if}
 {/snippet}
 {#snippet simklControl()}
   {#if $simklToken}
-    <button type="button" data-focusable onclick={disconnectSimklClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
+    <button type="button" data-focusable data-touch-target onclick={disconnectSimklClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
   {:else}
-    <button type="button" data-focusable onclick={connectSimklClick} disabled={simklBusy} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40">{simklBusy ? 'Waiting…' : 'Connect'}</button>
+    <button type="button" data-focusable data-touch-target onclick={connectSimklClick} disabled={simklBusy} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40">{simklBusy ? 'Waiting…' : 'Connect'}</button>
   {/if}
 {/snippet}
 
@@ -347,7 +347,7 @@
   <button
     type="button"
     data-focusable
-    onclick={() => (stremioFormOpen = !stremioFormOpen)}
+    data-touch-target onclick={() => (stremioFormOpen = !stremioFormOpen)}
     disabled={Boolean(stremioBusy)}
     class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40"
   >{$stremioAuthKey ? (stremioFormOpen ? 'Close' : 'Manage') : (stremioFormOpen ? 'Cancel' : 'Sign in')}</button>
@@ -377,7 +377,7 @@
 
 <div class="mx-auto max-w-4xl p-4 pb-24 sm:p-8">
   <header class="mb-8 flex max-w-2xl flex-wrap items-center justify-between gap-4">
-    <div><h2 class="text-3xl font-bold tracking-tight">Accounts</h2><p class="mt-2 text-sm text-muted-foreground">{$profilesEnabled ? `Connections for ${$activeProfile.name}` : 'Your connected services, in one place.'}</p></div>
+    <div><h2 data-settings-page-title class="text-3xl font-bold tracking-tight">Accounts</h2><p class="mt-2 text-sm text-muted-foreground">{$profilesEnabled ? `Connections for ${$activeProfile.name}` : 'Your connected services, in one place.'}</p></div>
     <a href="/app/settings/profiles" data-focusable class="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground">{#if $profilesEnabled}<img src={profileAvatarUrl($activeProfile.avatar, $activeProfile.color)} alt="" class="size-8 rounded-lg" />Manage profiles{:else}Set up profiles{/if}</a>
   </header>
   <nav aria-label="Account settings sections" data-page-tabs data-nav-scroll-x class="mb-7 flex max-w-2xl gap-5 overflow-x-auto border-b border-border">
@@ -465,14 +465,14 @@
             <button
               type="button"
               data-focusable
-              onclick={syncStremioClick}
+              data-touch-target onclick={syncStremioClick}
               disabled={Boolean(stremioBusy) || $stremioAddonSyncState.state === 'syncing'}
               class="inline-flex min-h-9 items-center gap-2 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40"
             ><RefreshCw size={14} class={$stremioAddonSyncState.state === 'syncing' ? 'animate-spin' : ''} />{stremioBusy === 'sync' ? 'Syncing…' : 'Sync now'}</button>
             <button
               type="button"
               data-focusable
-              onclick={disconnectStremioClick}
+              data-touch-target onclick={disconnectStremioClick}
               disabled={Boolean(stremioBusy)}
               class="min-h-9 rounded-md px-3 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-40"
             >{stremioBusy === 'disconnect' ? 'Disconnecting…' : 'Disconnect'}</button>

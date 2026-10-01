@@ -507,7 +507,7 @@
               <div class="min-w-0 flex-1"><div class="skeloader h-4 w-1/3 rounded"></div></div>
             </div>
             <div class="flex w-full justify-end sm:w-auto">
-              <button onclick={() => removeExt(i)} data-focusable title="Remove" aria-label="Remove {sourceLabel(url)}" class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent sm:size-8"><Trash2 size={16} /></button>
+              <button data-touch-target onclick={() => removeExt(i)} data-focusable title="Remove" aria-label="Remove {sourceLabel(url)}" class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent sm:size-8"><Trash2 size={16} /></button>
             </div>
           {:then info}
             {@const metas = info.configs}
@@ -564,7 +564,7 @@
             </div>
             <div class="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap">
               {#if pkgs || metas.length > 1}
-                <button data-focusable onclick={() => toggleExpanded(url)} aria-expanded={isExpanded(url)}
+                <button data-focusable data-touch-target onclick={() => toggleExpanded(url)} aria-expanded={isExpanded(url)}
                   class="shrink-0 rounded-md bg-secondary px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-accent sm:bg-transparent sm:px-2 sm:py-1">
                   {isExpanded(url) ? 'Hide' : pkgs ? 'Packages' : 'Sources'}
                 </button>
@@ -579,7 +579,7 @@
                   <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {off ? 'translate-x-0.5' : 'translate-x-4'}"></span>
                 </button>
               {/if}
-              <button onclick={() => removeExt(i)} data-focusable title="Remove" aria-label="Remove {sourceLabel(url)}" class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent sm:size-8"><Trash2 size={16} /></button>
+              <button data-touch-target onclick={() => removeExt(i)} data-focusable title="Remove" aria-label="Remove {sourceLabel(url)}" class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent sm:size-8"><Trash2 size={16} /></button>
             </div>
           {/await}
           </div>
@@ -670,7 +670,7 @@
                             {#if p.backend === 'aniyomi-jvm' && p.sources[0]}
                               <button type="button" data-focusable disabled={pOff}
                                 aria-label={`Configure ${p.sources[0].name}`} title={`Configure ${p.sources[0].name}`}
-                                onclick={() => openJvmSourceSettings(p.sources[0].id, p.sources[0].name)}
+                                data-touch-target onclick={() => openJvmSourceSettings(p.sources[0].id, p.sources[0].name)}
                                 class="grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 sm:size-7">
                                 <Settings size={17} />
                               </button>
@@ -684,11 +684,11 @@
                           <button
                             data-focusable
                             disabled={packageBusy}
-                            onclick={() => installFromCatalog(url, p)}
+                            data-touch-target onclick={() => installFromCatalog(url, p)}
                             class="shrink-0 rounded-md px-3 py-2 text-xs font-bold sm:px-2 sm:py-1 {inst ? 'bg-secondary text-muted-foreground hover:bg-accent sm:bg-transparent' : 'bg-primary text-primary-foreground'} disabled:opacity-50"
                           >{!inst ? 'Install' : !mayUpdateFrom(url, p, inst) ? 'Replace' : inst.version === p.version ? 'Reinstall' : 'Update'}</button>
                           {#if inst}
-                            <button data-focusable disabled={packageBusy} onclick={() => removePackage(url, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
+                            <button data-focusable disabled={packageBusy} data-touch-target onclick={() => removePackage(url, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
                               class="grid size-9 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent disabled:opacity-50 sm:size-7"><Trash2 size={16} /></button>
                           {/if}
                         </div>
@@ -759,20 +759,20 @@
             {#if p.backend === 'aniyomi-jvm' && p.sourceId}
               <button type="button" data-focusable disabled={pOff}
                 aria-label={`Configure ${p.name}`} title={`Configure ${p.name}`}
-                onclick={() => openJvmSourceSettings(p.sourceId, p.name)}
+                data-touch-target onclick={() => openJvmSourceSettings(p.sourceId, p.name)}
                 class="grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 sm:size-8">
                 <Settings size={17} />
               </button>
             {/if}
             {#if p.backend === 'izumi-service'}
-              <button data-focusable onclick={() => openServiceSettings(p.id, p.name)}
+              <button data-focusable data-touch-target onclick={() => openServiceSettings(p.id, p.name)}
                 class="rounded-md bg-secondary px-3 py-2 text-xs font-bold hover:bg-accent">Settings</button>
             {/if}
             <button data-focusable data-switch onclick={() => togglePlugin(p.id)} aria-pressed={!pOff} title={pOff ? 'Enable' : 'Disable'}
               class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {pOff ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
               <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {pOff ? 'translate-x-0.5' : 'translate-x-4'}"></span>
             </button>
-            <button data-focusable disabled={packageBusy} onclick={() => removePackage(p.id, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
+            <button data-focusable disabled={packageBusy} data-touch-target onclick={() => removePackage(p.id, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
               class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent disabled:opacity-50 sm:size-8"><Trash2 size={16} /></button>
           </div>
         </li>

@@ -42,7 +42,7 @@
 </script>
 
 <div class="p-4 sm:p-8">
-  <h2 class="mb-1 text-xl font-black">Source priority</h2>
+  <h2 data-settings-page-title class="mb-1 text-xl font-black">Source priority</h2>
   <p class="mb-6 max-w-2xl text-sm text-muted-foreground">
     The order to trust your sources in, most trusted first. It settles ties the ranking
     already makes — a listed source is preferred within its quality tier, never ahead of a cached copy

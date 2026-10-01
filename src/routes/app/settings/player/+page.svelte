@@ -86,7 +86,7 @@
 </script>
 
 <div class="p-4 sm:p-8">
-  <h2 class="mb-1 text-xl font-black">Player</h2>
+  <h2 data-settings-page-title class="mb-1 text-xl font-black">Player</h2>
   <p class="mb-4 text-sm text-muted-foreground">Languages, playback behaviour, and the external player.</p>
 
   <div class="mb-4 grid max-w-2xl gap-3 sm:grid-cols-2">

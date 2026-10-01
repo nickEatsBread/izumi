@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { navConfig, effectiveNav, resetNav, NAV_META, HOME_META, type NavPlacement } from '$lib/settings/nav'
+  import { navConfig, effectiveNav, resetNav, NAV_META, HOME_META, type NavItemId, type NavPlacement } from '$lib/settings/nav'
+  import { allowedPlacements } from '$lib/settings/nav-rules'
   import { activeThemeKey, activeThemeLayout, setThemeLayoutEnabled } from '$lib/themes/layout-state'
   import ThemeLayoutNotice from '$lib/components/home/ThemeLayoutNotice.svelte'
   import * as h from '$lib/haptics'
@@ -17,7 +18,9 @@
   // copy" (below) is the only way to get editable controls back.
   const themeNavLocked = $derived(!!$activeThemeLayout?.nav)
 
-  function setPlacement(id: string, p: NavPlacement) {
+  function setPlacement(id: NavItemId, p: NavPlacement) {
+    // Settings can't be hidden (nav-rules.ts); the buttons below never offer it, this guards any caller.
+    if (!allowedPlacements(id).includes(p)) return
     h.tap()
     navConfig.set($effectiveNav.map((it) => (it.id === id ? { ...it, placement: p } : it)))
   }
@@ -41,8 +44,8 @@
 </script>
 
 <div class="p-4 sm:p-8">
-  <h2 class="mb-1 text-xl font-black">Navigation</h2>
-  <p class="mb-4 text-sm text-muted-foreground">Place each destination on the bottom bar, as a top-right icon on Home, or hide it — and reorder them. Home is always the first bottom tab.</p>
+  <h2 data-settings-page-title class="mb-1 text-xl font-black">Navigation</h2>
+  <p class="mb-4 text-sm text-muted-foreground">Place each destination on the bottom bar, as a top-right icon on Home, or hide it — and reorder them. Home is always the first bottom tab. Settings can't be hidden, so you can always get back here.</p>
 
   <div class="mb-4 max-w-2xl">
     <ThemeLayoutNotice what="navigation" oncopy={copyThemeNav} />
@@ -67,16 +70,16 @@
 
         <div class="flex items-center justify-end gap-2">
         <div class="flex shrink-0 rounded-lg bg-secondary p-1 text-sm font-bold sm:p-0.5 sm:text-xs">
-          {#each placements as p (p.value)}
-            <button data-focusable disabled={themeNavLocked} onclick={() => setPlacement(it.id, p.value)}
+          {#each placements.filter((p) => allowedPlacements(it.id).includes(p.value)) as p (p.value)}
+            <button data-focusable disabled={themeNavLocked} data-touch-target onclick={() => setPlacement(it.id, p.value)}
                     class="rounded-md px-3 py-2 transition-colors sm:px-2 sm:py-1 disabled:opacity-50 {it.placement === p.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">{p.label}</button>
           {/each}
         </div>
 
         <div class="flex shrink-0 gap-1 sm:flex-col sm:gap-0">
-          <button data-focusable aria-label="Move up" disabled={themeNavLocked || i === 0} onclick={() => move(i, -1)}
+          <button data-focusable aria-label="Move up" disabled={themeNavLocked || i === 0} data-touch-target onclick={() => move(i, -1)}
                   class="grid size-10 place-items-center rounded transition-colors active:bg-accent disabled:opacity-30 sm:size-6 sm:hover:bg-accent"><ChevronUp size={15} /></button>
-          <button data-focusable aria-label="Move down" disabled={themeNavLocked || i === $effectiveNav.length - 1} onclick={() => move(i, 1)}
+          <button data-focusable aria-label="Move down" disabled={themeNavLocked || i === $effectiveNav.length - 1} data-touch-target onclick={() => move(i, 1)}
                   class="grid size-10 place-items-center rounded transition-colors active:bg-accent disabled:opacity-30 sm:size-6 sm:hover:bg-accent"><ChevronDown size={15} /></button>
         </div>
         </div>

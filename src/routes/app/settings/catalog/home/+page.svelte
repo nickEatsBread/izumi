@@ -203,7 +203,7 @@
 <div class="p-4 sm:p-8">
   <div class="mb-5 flex max-w-3xl items-start justify-between gap-4">
     <div>
-      <h2 class="mb-1 text-xl font-black">Customize Home</h2>
+      <h2 data-settings-page-title class="mb-1 text-xl font-black">Customize Home</h2>
       <a href="/app/settings/catalog/collections" data-focusable class="mb-2 inline-block text-sm font-bold text-primary">Collections & covers</a>
       <p class="text-sm text-muted-foreground">Choose the rows each catalog shows and put the most useful ones first. Merged has its own layout.</p>
     </div>
@@ -292,7 +292,7 @@
             {#each customRows as row (row.id)}
               <div class="flex min-h-14 items-center gap-3 px-3 py-2">
                 <span class="min-w-0 flex-1"><strong class="block truncate text-sm">{row.title}</strong><small class="text-muted-foreground">{tmdbCustomHomeRowOption(row).description}</small></span>
-                <button data-focusable type="button" onclick={() => deleteCustomTmdbRow(row.id)} aria-label={`Delete ${row.title}`}
+                <button data-focusable type="button" data-touch-target onclick={() => deleteCustomTmdbRow(row.id)} aria-label={`Delete ${row.title}`}
                   class="grid size-10 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><Trash2 size={16} /></button>
               </div>
             {/each}

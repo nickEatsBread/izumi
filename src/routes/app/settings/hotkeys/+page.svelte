@@ -62,7 +62,7 @@
 <div class="p-4 sm:p-8">
   <div class="mb-6 flex max-w-3xl items-start justify-between gap-4">
     <div>
-      <h2 class="mb-1 text-xl font-black">Hotkeys</h2>
+      <h2 data-settings-page-title class="mb-1 text-xl font-black">Hotkeys</h2>
       <p class="text-sm text-muted-foreground">Click a binding, then press its replacement. Conflicting shortcuts are rejected within the same scope.</p>
     </div>
     <button data-focusable onclick={resetAll} class="flex shrink-0 items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-bold hover:bg-secondary">

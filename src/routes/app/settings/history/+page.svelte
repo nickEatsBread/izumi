@@ -53,7 +53,7 @@
 </script>
 
 <div class="p-4 sm:p-8">
-  <h2 class="mb-1 text-xl font-black">History</h2>
+  <h2 data-settings-page-title class="mb-1 text-xl font-black">History</h2>
   <p class="mb-4 max-w-2xl text-sm text-muted-foreground">
     izumi keeps your watch history, progress, and aggregate source reliability on this device, so
     Continue Watching, resume, and source selection improve locally. When the For You home row is
@@ -118,7 +118,7 @@
       <div class="mb-2 flex items-center justify-between">
         <h3 class="text-sm font-black">Watched ({entries.length})</h3>
         {#if entries.length}
-          <button data-focusable onclick={doClear}
+          <button data-focusable data-touch-target onclick={doClear}
             class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-colors sm:px-2.5 sm:py-1.5 {confirmClear ? 'bg-destructive text-white' : 'text-destructive active:bg-destructive/10 sm:hover:bg-destructive/10'}">
             <Trash2 size={14} /> {confirmClear ? 'Click again to clear all' : 'Clear all'}
           </button>
@@ -137,7 +137,7 @@
                 <a href={`/app/anime/${e.media.id}`} data-focusable class="block truncate text-sm font-bold hover:text-theme">{mediaTitle(e.media)}</a>
                 <p class="text-xs text-muted-foreground">{isFilm(e) ? fmt(e.updatedAt) : `Episode ${e.episode} · ${fmt(e.updatedAt)}`}</p>
               </div>
-              <button data-focusable onclick={() => forgetMedia(e.media.id)} title="Remove" aria-label="Remove from history"
+              <button data-focusable data-touch-target onclick={() => forgetMedia(e.media.id)} title="Remove" aria-label="Remove from history"
                 class="grid size-10 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors active:bg-secondary active:text-destructive sm:size-8 sm:hover:bg-secondary sm:hover:text-destructive">
                 <X size={16} />
               </button>

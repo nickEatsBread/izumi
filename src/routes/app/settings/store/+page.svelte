@@ -397,7 +397,7 @@
 
 <div class="min-w-0 overflow-x-hidden p-4 sm:p-8">
   <div class="mb-5 max-w-5xl">
-    <h2 class="text-xl font-black">Store</h2>
+    <h2 data-settings-page-title class="text-xl font-black">Store</h2>
     <p class="mt-1 text-sm text-muted-foreground">
       Sources and themes from izumi and from the stores you add. Third-party stores and community sources
       aren't reviewed by izumi; check their terms and privacy before use.

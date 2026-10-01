@@ -45,7 +45,7 @@
 </script>
 
 <div class="mx-auto max-w-2xl p-4 sm:p-8">
-  <h1 class="text-xl font-bold">Changelog</h1>
+  <h1 data-settings-page-title class="text-xl font-bold">Changelog</h1>
   <p class="mt-1 text-sm text-muted-foreground">Recent changes, straight from the commit history.</p>
 
   <div class="mt-6 space-y-2">

@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import { page } from '$app/stores'
+  import { afterNavigate } from '$app/navigation'
   import SettingsNav from '$lib/components/settings/SettingsNav.svelte'
   import SettingsSearch from '$lib/components/settings/SettingsSearch.svelte'
   import { isMobile, isTv } from '$lib/platform'
@@ -10,6 +11,8 @@
   import { fly } from 'svelte/transition'
   import { m } from '$lib/paraglide/messages.js'
   import { acquireEdgeToEdge } from '$lib/actions/edge-to-edge'
+  import { SETTING_FALLBACK_PARAM, SETTING_PARAM } from '$lib/settings/search'
+  import { revealSetting } from '$lib/settings/search-target'
   import { settingsPageTitle, settingsParent } from '$lib/settings/hierarchy'
   import { settingsBack } from '$lib/settings/back'
 
@@ -49,32 +52,24 @@
   // pushing it again: the header no longer ping-pongs between two pages.
   const parentHref = $derived(settingsParent($page.url.pathname)?.href ?? '/app/settings')
 
-  // Search results for shared Toggle rows carry a stable key. Once the destination page has
-  // rendered, bring that exact control into view and briefly tint it so the user's eye lands on
-  // the setting they searched for. Retry for a few frames because mobile route transitions mount
-  // the child after the URL store updates.
-  $effect(() => {
-    const path = $page.url.pathname
-    const key = $page.url.searchParams.get('setting')
-    void path
-    if (!key || typeof document === 'undefined') return
-    let cancelled = false
-    let tries = 0
-    let timer: ReturnType<typeof setTimeout>
-    const find = () => {
-      if (cancelled) return
-      const target = document.querySelector<HTMLElement>(`[data-setting-key="${CSS.escape(key)}"]`)
-      if (target) {
-        target.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        target.classList.add('settings-search-hit')
-        timer = setTimeout(() => target.classList.remove('settings-search-hit'), 1800)
-      } else if (++tries < 12) {
-        timer = setTimeout(find, 50)
-      }
-    }
-    timer = setTimeout(find, 0)
-    return () => { cancelled = true; clearTimeout(timer) }
+  // A search hit (SettingsSearch → settingHref) or a deep link such as ListEditor's
+  // `?setting=rating-style` names a row. After every navigation into or within Settings, including
+  // the one that mounts this layout, reveal it: scroll, tint and, on a pad or TV, focus its safe
+  // control (search-target.ts). History steps are skipped so route focus memory restores where the
+  // user was; a newer navigation aborts a reveal that is still waiting for its row.
+  let revealAbort: AbortController | null = null
+  afterNavigate((navigation) => {
+    revealAbort?.abort()
+    revealAbort = null
+    if (navigation.type === 'popstate') return
+    const url = navigation.to?.url
+    const key = url?.searchParams.get(SETTING_PARAM)
+    if (!url || !key) return
+    const controller = new AbortController()
+    revealAbort = controller
+    void revealSetting(key, url.searchParams.get(SETTING_FALLBACK_PARAM), controller.signal)
   })
+  onDestroy(() => revealAbort?.abort())
 
   // The sticky back-header carries the status-bar inset itself (see the header markup), so the
   // page must not be inset a second time by `main`. Shared with the series page via a refcount:
@@ -115,7 +110,7 @@
            class="grid h-10 w-10 place-items-center rounded-full transition-colors active:bg-accent">
           <ChevronLeft size={22} />
         </a>
-        <span class="text-lg font-black">{childTitle}</span>
+        <h1 class="text-lg font-black">{childTitle}</h1>
         <span class="ml-auto"><SettingsSearch compact /></span>
       </div>
       {#key $page.url.pathname}
