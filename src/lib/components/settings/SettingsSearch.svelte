@@ -71,11 +71,15 @@
     <button type="button" tabindex="-1" class="absolute inset-0 bg-black/70 backdrop-blur-sm" aria-label="Close settings search" onclick={close}></button>
     <div role="dialog" aria-modal="true" aria-label="Search settings"
       class="relative z-10 flex max-h-[min(75vh,42rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-      <div class="flex items-center gap-2 border-b border-border px-3">
+      <!-- The row's block padding is room for the controller focus ring, drawn 6 px outside the field
+           (so never under 6 px, whatever the root font size), which the dialog's overflow-hidden
+           would otherwise clip at the top. The field takes the rest of the old height and paints
+           above the results panel below. -->
+      <div class="flex items-center gap-2 border-b border-border px-3 py-[max(0.375rem,6px)]">
         <Search size={20} class="shrink-0 text-muted-foreground" />
         <input bind:this={input} bind:value={query} type="search" data-focusable
           placeholder="Search settings…" aria-label="Search settings"
-          class="settings-search-input min-w-0 flex-1 bg-transparent py-4 text-base outline-none placeholder:text-muted-foreground" />
+          class="settings-search-input relative z-10 min-w-0 flex-1 bg-transparent py-2.5 text-base outline-none placeholder:text-muted-foreground" />
         <button type="button" data-focusable onclick={close} aria-label="Close"
           class="grid size-9 place-items-center rounded-full text-muted-foreground transition-colors active:bg-accent hover:bg-secondary">
           <X size={20} />
