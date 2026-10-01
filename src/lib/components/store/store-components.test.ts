@@ -39,8 +39,12 @@ describe('Store components', () => {
     expect(read('StoreEntrySheet.svelte')).toContain('data-nav-trap data-nav-escape')
     expect(read('StoresDialog.svelte')).toContain('data-nav-trap data-nav-escape')
     expect(read('StoreEntrySheet.svelte')).toContain('aria-pressed={enabled}')
+    // B runs the layered Back: a nav layer closes itself, and a legacy trap still gets the window
+    // Escape these dialogs close on (nav/back.ts step 5).
     const gamepad = readFileSync(fileURLToPath(new URL('../../nav/gamepad.ts', import.meta.url)), 'utf8')
-    expect(gamepad).toContain("document.querySelector('[data-nav-trap][data-nav-escape]')")
+    const back = readFileSync(fileURLToPath(new URL('../../nav/back.ts', import.meta.url)), 'utf8')
+    expect(gamepad).toContain("if (handleLayeredBack('gamepad')) break")
+    expect(back).toContain("return plan('close', () => { dispatchPadKey('Escape'); return true })")
   })
 
   it('asks before replacing a package installed elsewhere, and says where it will update from', () => {

@@ -48,11 +48,14 @@
   import { page } from '$app/state'
   import { invoke } from '@tauri-apps/api/core'
   import { getCurrentWindow } from '@tauri-apps/api/window'
-  import { controllerMode, initInput, initDpadNav, startBrowserGamepadInput, suppressNativeContextMenus, suppressNativeTooltips, suppressPinchZoom } from '$lib/nav'
+  import { controllerMode, focusByNav, initInput, initDpadNav, startBrowserGamepadInput, suppressNativeContextMenus, suppressNativeTooltips, suppressPinchZoom } from '$lib/nav'
   import { startGamepadNav } from '$lib/nav/gamepad'
   import { closeAllNavLayers, closeTopNavLayer, topNavLayer } from '$lib/nav/layers'
-  import { navEpoch, navInFlight } from '$lib/nav/nav-state'
+  import { clearBackPending, navEpoch, navInFlight } from '$lib/nav/nav-state'
   import { setFocusHint } from '$lib/nav/focus-hint'
+  import { focusRestoreAllowed, rememberRouteFocus, restoreRouteFocus, routeFocusKey } from '$lib/nav/focus-memory'
+  import { publishBackHint, startBackHint } from '$lib/nav/back'
+  import { recordTrail } from '$lib/navigation/history-trail'
   import { isPadEvent } from '$lib/nav/pad-controls'
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { scheduleBootWork } from '$lib/util/boot-work'
@@ -79,6 +82,7 @@
   import UpNextOverlay from '$lib/components/player/UpNextOverlay.svelte'
   import SeriesRatingPrompt from '$lib/components/player/SeriesRatingPrompt.svelte'
   import ProfileSwitcher from '$lib/components/profiles/ProfileSwitcher.svelte'
+  import { onMount } from 'svelte'
   import { get } from 'svelte/store'
   import { initCrashReporting } from '$lib/diagnostics'
   import { initDeveloperLogging } from '$lib/debug/native-logging'
@@ -477,6 +481,9 @@
     void navigation.complete.catch(() => {}).finally(() => navInFlight.set(false))
     const { from } = navigation
     if (from?.url) rememberScroll(from.url)
+    // Route focus memory (spec §3.9): what held focus here, for a Back that returns to this page.
+    if (from?.url) rememberRouteFocus(routeFocusKey(from.url))
+    routeFocusRestore?.abort()
     if ($playing) {
       void exitPictureInPicture()
       invoke('close_player').catch(() => {})
@@ -495,6 +502,30 @@
       { path: to?.url.pathname ?? location.pathname },
     )))
   })
+  // Settings Back and route focus memory (spec §3.8, §3.9). The history trail learns which page
+  // each history entry holds, the Back guard ends with the navigation it started, a history return
+  // (B, the system Back, the mouse back button) puts a controller user's focus back where it was,
+  // before Home's own first focus, and the B prompt is republished for the new page. The next
+  // navigation's beforeNavigate aborts a restore still waiting for its row.
+  let routeFocusRestore: AbortController | null = null
+  afterNavigate(({ to, type }) => {
+    clearBackPending()
+    if (to?.url) {
+      recordTrail(to.url.pathname + to.url.search, type)
+      if (type === 'popstate' && !$playing && focusRestoreAllowed()) {
+        const controller = new AbortController()
+        routeFocusRestore = controller
+        void restoreRouteFocus(routeFocusKey(to.url), {
+          signal: controller.signal,
+          // The nav engine's own reveal, instantly: the card's row first, then the page.
+          focus: (el) => { focusByNav(el, false, true); focusByNav(el, true, true) },
+        })
+      }
+    }
+    publishBackHint()
+  })
+  // What B does next, on <html> for the button-hint bar (nav/back.ts); removed when the shell goes.
+  onMount(() => startBackHint())
 </script>
 
 <svelte:window onkeydown={handleShellKeydown} />

@@ -2,6 +2,8 @@
   import Wordmark from '$lib/components/Wordmark.svelte'
   import { tick } from 'svelte'
   import { goto } from '$app/navigation'
+  import { previousPath } from '$lib/navigation/history-trail'
+  import { markBackPending } from '$lib/nav/nav-state'
   import ArrowLeft from '@lucide/svelte/icons/arrow-left'
   import Pencil from '@lucide/svelte/icons/pencil'
   import Plus from '@lucide/svelte/icons/plus'
@@ -64,7 +66,16 @@
     error = ''
     if (screen === 'avatars' || screen === 'delete') screen = 'edit'
     else if (screen !== 'overview') { screen = 'overview'; currentPin = newPin = confirmPin = mainPin = '' }
-    else void goto('/app/settings/accounts')
+    else leave()
+  }
+  // Leave the household screen the way it was entered (Accounts, the profile switcher, the Settings
+  // rail): back through history when the previous page is where it came from, so Back and Done
+  // never stack a second copy of that page; with no known origin, up to Settings, replacing this entry.
+  function leave() {
+    const from = previousPath()
+    markBackPending()
+    if (from !== null && !from.startsWith('/app/settings/profiles')) history.back()
+    else void goto('/app/settings', { replaceState: true })
   }
   async function authorizedTarget() {
     if (!editing?.pin || (editing.id === main.id && managementAuthorized)) return true
@@ -136,7 +147,7 @@
           {/each}
           {#if $profiles.length < 8}<button type="button" data-focusable onclick={() => begin(null)} class="portrait-button"><span class="portrait add"><Plus size={40} /></span><span class="profile-name">Add profile</span></button>{/if}
         </div>
-        <div class="overview-actions"><button type="button" data-focusable class="primary" onclick={() => goto('/app/home')}>Done</button><button type="button" data-focusable class="quiet" onclick={() => { screen = 'disable'; mainPin = ''; error = ''; void focusScreen() }}>Turn off profiles</button></div>
+        <div class="overview-actions"><button type="button" data-focusable class="primary" onclick={leave}>Done</button><button type="button" data-focusable class="quiet" onclick={() => { screen = 'disable'; mainPin = ''; error = ''; void focusScreen() }}>Turn off profiles</button></div>
       {:else}
         <div class="welcome-portraits" aria-hidden="true">{#each ['fox', 'bear', 'owl'] as face, index}<img src={profileAvatarUrl(face, PROFILE_COLORS[index])} alt="" />{/each}</div>
         <button type="button" data-focusable data-first class="primary" onclick={() => begin(main)}>Set up profiles</button>

@@ -71,7 +71,7 @@ describe('gamepad layer wiring', () => {
   it('lets the pad owners preempt layers and keeps the pinned legacy strings', () => {
     expect(gamepad).toContain("closeAllNavLayers('preempted')")
     expect(gamepad).toContain('[deckKeyboardWarning, trackMenuOpen, debridCaching, seriesRatingPrompt, exitPrompt]')
-    expect(gamepad).toContain("document.querySelector('[data-nav-trap][data-nav-escape]')")
+    expect(gamepad).toContain("if (handleLayeredBack('gamepad')) break")
     expect(gamepad).toContain("case 'x': keydown('d')")
     expect(gamepad.indexOf('const onboarding = get(onboardingNav)')).toBeLessThan(gamepad.indexOf("case 'b':"))
   })

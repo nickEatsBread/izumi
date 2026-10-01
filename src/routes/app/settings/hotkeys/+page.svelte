@@ -92,6 +92,7 @@
               {/if}
               <button
                 data-focusable
+                data-nav-escape-local={recording === hotkey.id ? '' : undefined}
                 onkeydown={(event) => recording === hotkey.id && capture(event, hotkey.id)}
                 onclick={() => { recording = hotkey.id; conflict = '' }}
                 class="min-w-24 rounded-md border px-3 py-2 font-mono text-xs font-bold {recording === hotkey.id ? 'border-theme bg-theme/10 text-theme' : 'border-border bg-secondary'}"

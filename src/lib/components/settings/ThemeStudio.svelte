@@ -243,12 +243,12 @@
      region until the TV pass (as the rail does). Known limit for the TV/phone pass: at 640px or
      narrower the panel is a full-width bottom sheet, which vertical moves never enter; only a
      Left/Right with nothing further that way on the page crosses into it. -->
-<aside class="studio-panel" class:minimized={$themeStudioMinimized} aria-labelledby="studio-heading" data-theme-studio data-theme-protected data-nav-region={$isTv ? undefined : 'theme-studio'}>
+<aside class="studio-panel" class:minimized={$themeStudioMinimized} aria-labelledby="studio-heading" data-nav-back-scope data-theme-studio data-theme-protected data-nav-region={$isTv ? undefined : 'theme-studio'}>
   <header class="studio-header">
     <div class="studio-title-row">
       <h2 id="studio-heading" bind:this={panelHeading} tabindex="-1"><Palette size={18} /> Theme Studio</h2>
       <div class="header-actions">
-        <button type="button" data-focusable class="icon-button" onclick={minimize} aria-label="Minimize Theme Studio" title="Minimize"><Minus size={18} /></button>
+        <button type="button" data-focusable class="icon-button" onclick={minimize} aria-label="Minimize Theme Studio" data-nav-back={confirmClose ? undefined : ''} title="Minimize"><Minus size={18} /></button>
         <button type="button" data-focusable class="icon-button" onclick={requestClose} aria-label="Close Theme Studio" title="Close"><X size={18} /></button>
       </div>
     </div>
@@ -382,7 +382,7 @@
         <button type="button" data-focusable onclick={closeThemeStudio} disabled={fileBusy} class="studio-button secondary">Discard &amp; close</button>
         <button type="button" data-focusable onclick={() => saveAndApply(true)} disabled={fileBusy || !draft.name.trim()} class="studio-button primary">Save &amp; close</button>
       </div>
-      <button type="button" data-focusable onclick={() => confirmClose = false} class="keep-editing">Keep editing</button>
+      <button type="button" data-focusable onclick={() => confirmClose = false} class="keep-editing" data-nav-back>Keep editing</button>
     {:else}
       <div class="save-status"><span>{dirty ? 'Unsaved changes' : 'No unsaved changes'}</span><span class="theme-label">{draft.name}</span></div>
       <div class="footer-actions">

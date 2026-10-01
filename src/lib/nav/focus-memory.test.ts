@@ -212,3 +212,30 @@ describe('focus hint', () => {
     expect(takeFocusHint(byId('page'))).toBe(byId('a'))
   })
 })
+
+describe('card keys (commit 10)', () => {
+  const rows = `
+    <section data-row="trending"><a href="/app/anime/7" data-focusable data-nav-key="media:7" id="trending-7">Frieren</a></section>
+    <section data-row="popular"><a href="/app/anime/7" data-focusable data-nav-key="media:7" id="popular-7">Frieren</a></section>`
+
+  it('describes a card by its row and its key', () => {
+    document.body.innerHTML = rows
+    expect(describeFocus(one('#popular-7'))?.cardKey).toBe('popular|media:7')
+    document.body.innerHTML = '<a href="/x" data-focusable data-nav-key="media:1">No row</a>'
+    expect(describeFocus(one('a'))).not.toHaveProperty('cardKey')
+  })
+
+  it('resolves the card key first, so the same title in another row is not taken for it', () => {
+    document.body.innerHTML = rows
+    const descriptor = describeFocus(one('#popular-7'))!
+    document.body.innerHTML = rows.replace(/ id="[^"]+"/g, '')
+    expect(resolveFocus(descriptor)).toBe(one('[data-row="popular"] a'))
+  })
+
+  it('falls back to the other keys when the card itself is gone', () => {
+    document.body.innerHTML = rows
+    const descriptor = describeFocus(one('#popular-7'))!
+    document.body.innerHTML = '<section data-row="trending"><a href="/app/anime/7" data-focusable data-nav-key="media:7" id="left">Frieren</a></section>'
+    expect(resolveFocus(descriptor)?.id).toBe('left')
+  })
+})

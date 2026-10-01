@@ -12,8 +12,12 @@ vi.mock('$lib/search/global-search', async () => {
   const globalSearchOpen = writable(false)
   return { globalSearchOpen, closeGlobalSearch: () => globalSearchOpen.set(false) }
 })
+// gamepad.ts reaches $app/navigation through the layered Back (nav/back.ts → settings/back.ts).
+const navigationMocks = vi.hoisted(() => ({ goto: vi.fn() }))
+vi.mock('$app/navigation', () => ({ goto: navigationMocks.goto }))
 
 import { startGamepadNav } from './gamepad'
+import { clearBackPending } from './nav-state'
 import { BROWSER_GAMEPAD_EVENT } from './browser-gamepad'
 import { isPadEvent } from './pad-controls'
 import { pushNavLayer, resetNavLayersForTests, type NavLayer } from './layers'
@@ -115,10 +119,20 @@ describe('controller B and A with a nav layer open', () => {
     expect(document.activeElement?.id).toBe('option')
   })
 
-  it('B with nothing open still walks history outside Home', () => {
+  it('B with nothing open still walks history outside Home and outside Settings', () => {
+    history.replaceState(null, '', '/app/series/9')
     const back = vi.spyOn(history, 'back').mockImplementation(() => {})
     press('b')
     expect(back).toHaveBeenCalledTimes(1)
+  })
+
+  it('B with nothing open on a Settings page walks the Settings hierarchy instead (commit 10)', () => {
+    const back = vi.spyOn(history, 'back').mockImplementation(() => {})
+    press('b')
+    // No rail on screen and no history trail: leave Settings for Home, replacing the entry.
+    expect(back).not.toHaveBeenCalled()
+    expect(navigationMocks.goto).toHaveBeenCalledWith('/app/home', { replaceState: true })
+    clearBackPending()
   })
 })
 

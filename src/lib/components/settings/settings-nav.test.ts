@@ -70,3 +70,32 @@ describe('SettingsNav', () => {
     expect(attr(links[0], 'aria-current')?.raw).toBe(`aria-current={active(it.href) ? 'page' : undefined}`)
   })
 })
+
+describe('Settings Back wiring (commit 10)', () => {
+  const nav = src.replace(/\r\n/g, '\n')
+  const shell = layout.replace(/\r\n/g, '\n')
+
+  it('lights the rail item from the shared route table', () => {
+    expect(nav).toContain("import { settingsRailHref } from '$lib/settings/hierarchy'")
+    expect(nav).toContain('const active = (href: string) => settingsRailHref($page.url.pathname) === href')
+    expect(nav).not.toContain("href === '/app/settings/sources' && $page.url.pathname === '/app/settings/store'")
+  })
+
+  it('keeps controller focus on the rail across a category change, but lets a pointer click go', () => {
+    expect(nav).toContain('<nav data-settings-rail data-nav-scroll-container')
+    expect(nav).toContain('data-sveltekit-keepfocus onclick={releasePointerFocus}')
+    expect(nav).toContain('if (event.detail > 0) (event.currentTarget as HTMLElement).blur()')
+    // The desktop rail only: the phone list keeps its own navigation and haptics.
+    expect(nav.split('data-sveltekit-keepfocus').length - 1).toBe(1)
+  })
+
+  it('titles the phone header and points its back arrow at the structural parent, through settingsBack', () => {
+    expect(shell).toContain("import { settingsPageTitle, settingsParent } from '$lib/settings/hierarchy'")
+    expect(shell).toContain("import { settingsBack } from '$lib/settings/back'")
+    expect(shell).toContain('const childTitle = $derived(settingsPageTitle($page.url.pathname) ?? m.nav_settings())')
+    expect(shell).toContain("const parentHref = $derived(settingsParent($page.url.pathname)?.href ?? '/app/settings')")
+    expect(shell).toContain("<a href={parentHref} data-focusable onclick={(event) => { event.preventDefault(); h.tap(); settingsBack('header') }} aria-label={m.common_back_to_settings()}")
+    expect(shell).not.toContain('const childTitles')
+    expect(shell).not.toContain('backHref')
+  })
+})

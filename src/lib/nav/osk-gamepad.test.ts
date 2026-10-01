@@ -171,3 +171,8 @@ describe('the pad over text fields (decision 3)', () => {
     expect(document.activeElement).toBe(byId('key-q'))
   })
 })
+
+// gamepad.ts reaches $app/navigation through the layered Back (nav/back.ts → settings/back.ts).
+// vi.hoisted and vi.mock are hoisted above the imports, wherever they are written.
+const navigationMocks = vi.hoisted(() => ({ goto: vi.fn() }))
+vi.mock('$app/navigation', () => ({ goto: navigationMocks.goto }))

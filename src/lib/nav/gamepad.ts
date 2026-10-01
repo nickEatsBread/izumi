@@ -8,6 +8,7 @@ import { acknowledgeDeckKeyboardWarning, deckKeyboardWarning, dismissDeckKeyboar
 import { closeGlobalSearch, globalSearchOpen } from '$lib/search/global-search'
 import { ActiveFrameLoop } from '$lib/util/active-frame-loop'
 import { BROWSER_GAMEPAD_EVENT, type GamepadInputName } from './browser-gamepad'
+import { handleLayeredBack, isDuplicateBackPress } from './back'
 import { closeOsk, oskBackspace, oskInsert } from './osk'
 import { oskDismissedAt } from '$lib/player/session'
 import { closeAllNavLayers, closeTopNavLayer, topNavLayer } from './layers'
@@ -120,6 +121,9 @@ export function startGamepadNav(): () => void {
     // Any controller press = 'dpad' modality (so e.g. focusing the sidebar via ☰ expands it, and
     // a touch tap stays 'touch' and doesn't).
     inputType.set('dpad')
+    // One physical B can arrive twice on Android (this pad edge and the system Back it also raises).
+    // Whichever comes second within BACK_DEBOUNCE_MS is dropped here, before any owner below sees it.
+    if (name === 'b' && isDuplicateBackPress('gamepad')) return
     // Keep every controller action inside the warning. A continues, B cancels, and every other
     // button is swallowed so it cannot affect the page or player underneath.
     if (get(deckKeyboardWarning)) {
@@ -260,17 +264,15 @@ export function startGamepadNav(): () => void {
         ;(cur ?? items[1] ?? items[0])?.focus()
         break
       }
-      // Back: go up the history, UNLESS we're on the home screen (nothing further back) —
-      // there, open the exit-confirm prompt instead of silently going nowhere.
+      // Back: the layered Back (nav/back.ts) closes what is open (a dialog, or a legacy trap such as
+      // a Store sheet, which gets the window Escape it closes on), cancels an armed control, steps
+      // out of an in-page view or up the Settings hierarchy. With nothing for it there, go up the
+      // history, UNLESS we're on the home screen (nothing further back): there, open the
+      // exit-confirm prompt instead of silently going nowhere.
       case 'b':
         // Swallow B briefly after the player closed (the close-vs-exit race, above).
         if (performance.now() - playerClosedAt < 500) break
-        // A dialog that closes on Escape and opts in (data-nav-escape) closes on B too, instead of B
-        // walking history out of the page underneath it.
-        if (document.querySelector('[data-nav-trap][data-nav-escape]')) {
-          keydown('Escape')
-          break
-        }
+        if (handleLayeredBack('gamepad')) break
         if (location.pathname.replace(/\/$/, '') === '/app/home') exitPrompt.set(true)
         else history.back()
         break

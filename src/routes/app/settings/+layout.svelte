@@ -10,6 +10,8 @@
   import { fly } from 'svelte/transition'
   import { m } from '$lib/paraglide/messages.js'
   import { acquireEdgeToEdge } from '$lib/actions/edge-to-edge'
+  import { settingsPageTitle, settingsParent } from '$lib/settings/hierarchy'
+  import { settingsBack } from '$lib/settings/back'
 
   let { children } = $props()
 
@@ -37,40 +39,15 @@
 
   // Category title for the mobile back-header, so each child page's own leading heading can be
   // hidden (see <style>) — one title in the bar, app-style, not a redundant second heading below.
-  const childTitles: Record<string, string> = {
-    '/app/settings/player': 'Player', '/app/settings/subtitles': 'Subtitles',
-    '/app/settings/hotkeys': 'Hotkeys',
-    '/app/settings/store': 'Store',
-    '/app/settings/catalog/home': 'Customize Home',
-    '/app/settings/catalog': 'Catalog',
-    // Nested routes come FIRST: the lookup below takes the first prefix that matches, so listing
-    // /sources ahead of /sources/priority would title the reorder screen "Sources".
-    '/app/settings/sources/priority': 'Source priority',
-    '/app/settings/sources': 'Sources',
-    '/app/settings/downloads': 'Downloads', '/app/settings/interface': 'Interface',
-    '/app/settings/theme-studio': 'Theme Studio',
-    '/app/settings/themes': 'Themes',
-    '/app/settings/profiles': 'Profiles',
-    '/app/settings/history': 'History', '/app/settings/scenes': 'Scene bookmarks', '/app/settings/sync': 'Device sync',
-    '/app/settings/backup': 'Backup & restore',
-    '/app/settings/accounts': 'Accounts', '/app/settings/network': 'Network',
-    '/app/settings/changelog': 'Changelog',
-    '/app/settings/about/license-information': 'License Information', '/app/settings/about': 'About',
-  }
-  const childTitle = $derived.by(() => {
-    const p = $page.url.pathname
-    const hit = Object.keys(childTitles).find((k) => p === k || p.startsWith(k + '/'))
-    return hit ? childTitles[hit] : m.nav_settings()
-  })
+  // Titles and parents live in the shared route table (settings/hierarchy.ts).
+  const childTitle = $derived(settingsPageTitle($page.url.pathname) ?? m.nav_settings())
 
   // Back goes one level up, not straight to the index: a sub-screen like the source reorder is
   // reached FROM its category, and dropping the user two levels loses their place in that page.
-  const backHref = $derived.by(() => {
-    if ($page.url.pathname === '/app/settings/sources/priority') return '/app/settings/sources?tab=ordering'
-    if ($page.url.pathname === '/app/settings/store') return '/app/settings/sources?tab=manage'
-    const parts = $page.url.pathname.replace(/\/+$/, '').split('/')
-    return parts.length > 4 ? parts.slice(0, -1).join('/') : '/app/settings'
-  })
+  // The href is the structural parent; a tap runs the same Back as B and the system Back
+  // (settingsBack), which returns through history when the parent is the previous page instead of
+  // pushing it again: the header no longer ping-pongs between two pages.
+  const parentHref = $derived(settingsParent($page.url.pathname)?.href ?? '/app/settings')
 
   // Search results for shared Toggle rows carry a stable key. Once the destination page has
   // rendered, bring that exact control into view and briefly tint it so the user's eye lands on
@@ -134,7 +111,7 @@
            every scroll offset, and the blurred bar paints that band instead of leaving it black. -->
       <div class="sticky top-0 z-20 flex items-center gap-2 border-b border-border bg-background/95 px-2 py-2 backdrop-blur"
            style="padding-top:max(0.5rem,env(safe-area-inset-top))">
-        <a href={backHref} data-focusable onclick={() => h.tap()} aria-label={m.common_back_to_settings()}
+        <a href={parentHref} data-focusable onclick={(event) => { event.preventDefault(); h.tap(); settingsBack('header') }} aria-label={m.common_back_to_settings()}
            class="grid h-10 w-10 place-items-center rounded-full transition-colors active:bg-accent">
           <ChevronLeft size={22} />
         </a>
