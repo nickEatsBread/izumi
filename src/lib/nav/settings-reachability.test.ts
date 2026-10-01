@@ -11,8 +11,9 @@ import { NON_TEXT_INPUT_TYPES } from './text-field'
 // Static reachability contract for Settings (spec §4, §7). Every control a Settings page can show
 // must be a d-pad target, every overlay must be closable with B, every scroller the d-pad can
 // travel must say so, and every <summary> must take focus. Rules:
-//   R1  every interactive element carries data-focusable, or a written exemption; unmarked text
-//       fields are counted per file against PENDING_TEXT_FIELDS, which shrinks to empty
+//   R1  every interactive element carries data-focusable, or a written exemption; so does every
+//       text field, except a [TD] one inside a native <dialog> (in its own file, or in one of the
+//       MODAL_ONLY_COMPONENTS below)
 //   R2  a static data-focusable never pairs with tabindex="-1" (except a roving role=tab)
 //   R3  every data-nav-trap is a navLayer, or has data-nav-escape plus a window-level Escape;
 //       no element inside a legacy trap handles Escape itself (a double close)
@@ -36,11 +37,6 @@ const EXTRAS = [
   'src/routes/app/nuvio/+page.svelte',
 ]
 const FILES = importClosure(svelteFilesUnder(fromRepo('src/routes/app/settings')), EXTRAS.map(fromRepo))
-
-/** [T] text fields not marked yet. Commit 8 (A opens the keyboard, trusted arrows pass over a
- *  field) marks them and deletes each entry; this list must end empty. Counts are exact, so marking
- *  a field without lowering its count fails too. */
-const PENDING_TEXT_FIELDS: Record<string, number> = {}
 
 /** [TD] text fields: inside a native <dialog> the body-portalled keyboard is inert, so these wait
  *  for the keyboard-inside-modal follow-up (spec §3.7 known limit, §4 legend). A text field with
@@ -340,13 +336,9 @@ describe('Settings reachability contract (spec §4, §7)', () => {
     expect(SCANS.flatMap((scan) => ruleR1(scan, scan.rel in MODAL_ONLY_COMPONENTS).controls)).toEqual([])
   })
 
-  it('R1: unmarked text fields match PENDING_TEXT_FIELDS exactly', () => {
-    const counts: Record<string, number> = {}
-    for (const scan of SCANS) {
-      const pending = ruleR1(scan, scan.rel in MODAL_ONLY_COMPONENTS).textEntries.length
-      if (pending) counts[scan.rel] = pending
-    }
-    expect(counts).toEqual(PENDING_TEXT_FIELDS)
+  it('R1: every text field outside a native <dialog> is a d-pad target', () => {
+    // [T] fields (spec §4): the d-pad passes over them and A opens the on-screen keyboard.
+    expect(SCANS.flatMap((scan) => ruleR1(scan, scan.rel in MODAL_ONLY_COMPONENTS).textEntries)).toEqual([])
   })
 
   it('R1: a modal-only component renders only inside a native <dialog> of its host', () => {
