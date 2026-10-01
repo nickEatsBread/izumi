@@ -190,19 +190,20 @@ describe('keyboard arrow landing (commit 8)', () => {
     expect(nav).not.toContain('railPick.focus(')
   })
 
-  it('hands the landing to fieldOwnsArrow next to the slider option', () => {
-    expect(nav).toMatch(/fieldOwnsArrow\(field, e\.key as ArrowKey, \{ rangeOwnsHorizontal: !get\(isTv\), navArrived: isNavArrived\(e\.target\) \}\)/)
+  it('hands the landing to fieldOwnsArrow', () => {
+    // The pass-over itself is checked by behaviour in pad-delivery.test.ts.
+    expect(code(nav)).toMatch(/fieldOwnsArrow\(field, e\.key as ArrowKey, \{[^}]*\bnavArrived\b/)
   })
 
-  it('lets a landed keyboard arrow walk past a dropdown trigger instead of opening it', () => {
-    expect(nav).toContain("|| (el instanceof HTMLButtonElement && el.getAttribute('aria-haspopup') === 'listbox')")
+  it('both dropdown triggers ask the shared triggerOpensOnKey whether a key opens them', () => {
+    // What the helper decides is checked by behaviour in pad-delivery.test.ts.
     for (const file of ['../components/settings/SelectMenu.svelte', '../components/catalog/CatalogSwitcher.svelte']) {
-      const markup = source(file)
-      expect(markup, file).toContain("import { isNavArrived } from '$lib/nav'")
-      const handler = markup.slice(markup.indexOf('function onTriggerKeydown('))
-      const guard = handler.indexOf("if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && isNavArrived(event.currentTarget)) return")
-      expect(guard, file).toBeGreaterThan(-1)
-      expect(guard, file).toBeLessThan(handler.indexOf("if (['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) {"))
+      const script = source(file)
+      expect(script, file).toMatch(/import \{[^}]*\btriggerOpensOnKey\b[^}]*\} from '\$lib\/nav'/)
+      const at = script.indexOf('function onTriggerKeydown(')
+      expect(at, file).toBeGreaterThan(-1)
+      const handler = script.slice(at, script.indexOf('\n  }\n', at))
+      expect(handler, file).toMatch(/\btriggerOpensOnKey\(event\)/)
     }
   })
 

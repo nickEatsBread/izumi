@@ -7,7 +7,7 @@ import { activeNavTrap, visibleNavTraps } from './traps'
 import { takeFocusHint } from './focus-hint'
 import { isNavigable, isRovingTab } from './focusable'
 import { isPadEvent, padAdjust } from './pad-controls'
-import { navEpoch } from './nav-state'
+import { navEpoch, navInFlight } from './nav-state'
 export * from './input'
 export * from './actions'
 export * from './spatial'
@@ -60,7 +60,8 @@ export interface FieldArrowOptions {
   rangeOwnsHorizontal?: boolean
   /** Arrow navigation (`focusByNav`) just landed on this select or number/date stepper and nothing
    *  has engaged it yet: Up/Down pass over it (owner decision 2). The nav handler reads it from
-   *  `isNavArrived`, which is never armed on TV; pad arrows never reach field ownership at all. */
+   *  `isNavArrived` (never armed on TV) for an arrow without a shortcut chord; pad arrows never
+   *  reach field ownership at all. */
   navArrived?: boolean
 }
 
@@ -641,12 +642,19 @@ export function focusNearestFocusable(
 // it (a SelectMenu or CatalogSwitcher trigger). Pad arrows skip field ownership and are dispatched on
 // window, never at a trigger, so this only matters for real keys; it is never armed on TV.
 
+// A shortcut chord (Ctrl+C, Cmd+A, Alt+Down) is not typing, and its arrows are not navigation: on
+// Windows, Alt+Down opens a native select's popup. AltGr, which Windows reports as Ctrl+Alt, types
+// characters ('@' on many layouts), so it is no chord.
+const isShortcutChord = (event: KeyboardEvent) =>
+  (event.ctrlKey || event.altKey || event.metaKey) && !event.getModifierState('AltGraph')
+
 // What engages a landed field (decision 2: Enter, Space, typing, a click): a printable character
-// (Space is ' ') or an editing key. Everything else leaves it passed over: the arrows, Tab (focusout
-// clears the landing anyway), Escape, bare modifiers, CapsLock, function and media keys, and the
-// 'Unidentified' some Steam Input layouts send.
+// (Space is ' ') or an editing key, without a shortcut chord. Everything else leaves it passed over:
+// the arrows, Tab (focusout clears the landing anyway), Escape, bare modifiers, CapsLock, function
+// and media keys, shortcuts such as Ctrl+C, and the 'Unidentified' some Steam Input layouts send.
 const ENGAGING_KEYS = ['Enter', 'Backspace', 'Delete', 'Home', 'End', 'PageUp', 'PageDown']
-const engagesField = (key: string) => key.length === 1 || ENGAGING_KEYS.includes(key)
+const engagesField = (event: KeyboardEvent) =>
+  !isShortcutChord(event) && (event.key.length === 1 || ENGAGING_KEYS.includes(event.key))
 
 /** A field the arrows pass over once landed: a select, a number/date stepper, or a dropdown trigger
  *  that opens on ArrowDown/ArrowUp (aria-haspopup="listbox": SelectMenu, CatalogSwitcher). */
@@ -669,7 +677,7 @@ function markNavArrived(el: HTMLElement): void {
   if (get(isTv) || !isValueField(el)) return
   const stop = new AbortController()
   const options: AddEventListenerOptions = { capture: true, signal: stop.signal }
-  el.addEventListener('keydown', (event) => { if (engagesField(event.key)) clearNavArrived() }, options)
+  el.addEventListener('keydown', (event) => { if (engagesField(event)) clearNavArrived() }, options)
   el.addEventListener('pointerdown', clearNavArrived, options)
   el.addEventListener('change', clearNavArrived, options)
   el.addEventListener('focusout', clearNavArrived, options)
@@ -681,6 +689,19 @@ function markNavArrived(el: HTMLElement): void {
  *  ArrowDown/ArrowUp (SelectMenu, CatalogSwitcher). */
 export function isNavArrived(target: EventTarget | null): boolean {
   return arrived !== null && arrived.el === target
+}
+
+const TRIGGER_OPEN_KEYS = ['Enter', ' ', 'ArrowDown', 'ArrowUp']
+
+/** Does this keydown open a dropdown trigger (SelectMenu, CatalogSwitcher)? Enter, Space, ArrowDown
+ *  and ArrowUp do, except an arrow while arrow navigation has the trigger landed (isNavArrived): the
+ *  nav engine walks on past it with that arrow instead (owner decision 2), modified or not. A trigger
+ *  focused any other way opens on its arrows as before; pad arrows never reach a trigger's keydown
+ *  (they are dispatched on window). */
+export function triggerOpensOnKey(event: KeyboardEvent): boolean {
+  if (!TRIGGER_OPEN_KEYS.includes(event.key)) return false
+  const arrow = event.key === 'ArrowDown' || event.key === 'ArrowUp'
+  return !(arrow && isNavArrived(event.currentTarget))
 }
 
 // ---- Focus-loss recovery (body fallback step 2) ----------------------------------------------------
@@ -696,21 +717,26 @@ interface NavBox { left: number; top: number; width: number; height: number }
 interface LastNav { el: HTMLElement; surface: HTMLElement; box: NavBox; epoch: number }
 let lastNav: LastNav | null = null
 
-/** `el`'s box in its surface's content coordinates, so a later scroll of the page or of the surface
- *  does not move it. */
+/** `el`'s box in its surface's content coordinates with every scroller between them at rest (the
+ *  surface itself, a capped list inside it such as the extensions package list), so a later scroll
+ *  of the page, the surface or that list does not move it. That includes the reveal right after
+ *  the move is recorded, which can scroll such a list. */
 function boxInSurface(el: HTMLElement, surface: HTMLElement): NavBox {
   const item = el.getBoundingClientRect()
   const port = surface.getBoundingClientRect()
-  return {
-    left: item.left - port.left + surface.scrollLeft,
-    top: item.top - port.top + surface.scrollTop,
-    width: item.width,
-    height: item.height,
+  let left = item.left - port.left
+  let top = item.top - port.top
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    left += node.scrollLeft
+    top += node.scrollTop
+    if (node === surface) break
   }
+  return { left, top, width: item.width, height: item.height }
 }
 
 /** Outside a surface this is one closest() lookup. Inside one it reads two boxes from the layout that
- *  revealFocused measures right after anyway, so it adds no layout pass. */
+ *  revealFocused measures right after anyway, and the scroll offsets of the ancestors up to the
+ *  surface, so it adds no layout pass. */
 function recordLastNav(el: HTMLElement): void {
   const surface = el.closest<HTMLElement>('[data-nav-surface]')
   lastNav = surface ? { el, surface, box: boxInSurface(el, surface), epoch: get(navEpoch) } : null
@@ -752,13 +778,21 @@ function nearestInSurface(box: NavBox, surface: HTMLElement, candidates: HTMLEle
   return best
 }
 
+/** Drop the last arrow move once nothing can use it (a navigation since, or its surface gone), and a
+ *  landing whose control has left the document without a focusout (a removed element fires none).
+ *  Each holds its element and, through it, the whole detached subtree of a page that is gone. */
+function forgetStaleNav(): void {
+  if (lastNav && (lastNav.epoch !== get(navEpoch) || !lastNav.surface.isConnected)) lastNav = null
+  if (arrived && !arrived.el.isConnected) clearNavArrived()
+}
+
 /** Body fallback step 2. Only when focus really fell to <body>, the surface is still there and inside
  *  the active trap's root (`root`), and no navigation happened since the last arrow move. */
 function recoverLostFocus(root: ParentNode, active: Element | null): HTMLElement | null {
+  forgetStaleNav()
   const last = lastNav
   if (!last) return null
   if (active && active !== document.body && active !== document.documentElement) return null
-  if (last.epoch !== get(navEpoch) || !last.surface.isConnected) return null
   if (!(root as Node).contains(last.surface)) return null
   const candidates = focusables(last.surface)
   if (candidates.includes(last.el)) return last.el
@@ -781,6 +815,17 @@ export function focusByNav(el: HTMLElement, vertical: boolean, rapid = false, re
   else revealFocused(el, vertical, rapid)
 }
 
+// A navigation that has landed has removed the page it left, so the last arrow move and a landing
+// that pointed into it are dropped then (forgetStaleNav), not kept until the next arrow press, which
+// a mouse user may never make. One subscription per window; a re-init (HMR) replaces it.
+const NAV_LANDED_WATCH = Symbol.for('izumi.navLandedWatch')
+
+function forgetStaleNavOnLanding(): void {
+  const scope = globalThis as unknown as Record<symbol, (() => void) | undefined>
+  scope[NAV_LANDED_WATCH]?.()
+  scope[NAV_LANDED_WATCH] = navInFlight.subscribe((inFlight) => { if (!inFlight) forgetStaleNav() })
+}
+
 /** Test hook: forget the landing and the last arrow move, module state that every test in a file
  *  shares (contract §1.1). */
 export function resetNavLandingForTests(): void {
@@ -796,6 +841,7 @@ type NavKeydownHost = Record<symbol, ((e: KeyboardEvent) => void) | undefined>
 
 export function initDpadNav() {
   trackRegionFocus()
+  forgetStaleNavOnLanding()
   const host = globalThis as unknown as NavKeydownHost
   const previous = host[NAV_KEYDOWN]
   if (previous) window.removeEventListener('keydown', previous)
@@ -807,7 +853,16 @@ export function initDpadNav() {
     // Pad arrows always navigate (owner decision 3): a field the d-pad lands on never keeps them.
     // Only a real keyboard's arrows are the field's own to walk its caret or cycle its value.
     const field = dir && !isPadEvent(e) ? fieldShape(e.target) : null
-    if (field && fieldOwnsArrow(field, e.key as ArrowKey, { rangeOwnsHorizontal: !get(isTv), navArrived: isNavArrived(e.target) })) return
+    // Owner decision 2: Up/Down pass over a field that arrow navigation just landed on. A shortcut
+    // chord stays the field's own (Alt+Down opens a native select's popup on Windows).
+    const navArrived = !!field && isNavArrived(e.target) && !isShortcutChord(e)
+    if (field && fieldOwnsArrow(field, e.key as ArrowKey, { rangeOwnsHorizontal: !get(isTv), navArrived })) return
+    // A passed-over select or number/date field never keeps the press, even where nothing lies that
+    // way (the first control of a page, the last one of a page or a dialog): the browser's default
+    // would silently change its value, which is what the pass-over exists to prevent. A dropdown
+    // trigger's default is only a page scroll, and its own keydown already stood down.
+    if (navArrived && (dir === 'up' || dir === 'down')
+      && (e.target instanceof HTMLSelectElement || e.target instanceof HTMLInputElement)) e.preventDefault()
     // Resolve the active modal before the blanket player gate. Change source is deliberately
     // opened while playback continues, and its focus trap must still own the arrows. One resolver
     // decides which trap owns the pad: the open keyboard, the top nav layer, a modal <dialog>, then
