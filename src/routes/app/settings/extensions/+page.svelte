@@ -67,6 +67,8 @@
   import Settings from '@lucide/svelte/icons/settings'
   import { formatBytes } from '$lib/util/format'
   import { masonryItem } from '$lib/actions/masonry'
+  import { onDestroy } from 'svelte'
+  import { adultSourcesAllowed, cancelHouseholdPrompt, lockAdultSources, requestAdultSources } from '$lib/profiles/household-gate'
 
   const current = $derived(providerMeta($debridProvider))
   let account = $state<DebridAccountInfo | null>(null)
@@ -318,6 +320,27 @@
   // Per-catalog search text; the adult switch is a single preference across all of them.
   let catalogQuery = $state<Record<string, string>>({})
   let showNsfw = $state(false)
+  // 18+ packages stay hidden until asked for. On a restricted profile that takes the main profile's
+  // PIN, and the unlock lasts only until this page closes (spec §6.6).
+  const adultShown = $derived(showNsfw && $adultSourcesAllowed)
+  let adultAsking = false
+  async function toggleAdultSources() {
+    if (adultAsking) return
+    if (adultShown) {
+      showNsfw = false
+      lockAdultSources()
+      return
+    }
+    adultAsking = true
+    try {
+      showNsfw = await requestAdultSources()
+    } finally {
+      adultAsking = false
+    }
+  }
+  // Closing the page (or the Sources page that embeds it) cancels a PIN prompt still pending, so a
+  // PIN entered later cannot unlock anything, and hides 18+ sources again.
+  onDestroy(() => { cancelHouseholdPrompt(); lockAdultSources() })
   // A catalog runs to several hundred packages. Rendering them all was tolerable behind a nested
   // scroll box on desktop, but that box is unusable with a finger — it eats the page scroll — so on
   // mobile the list flows into the page instead, and the page can't carry 300 rows. Show a window
@@ -333,7 +356,7 @@
   function visiblePackages(url: string, packages: ExtensionCatalogPackage[]) {
     const query = (catalogQuery[url] ?? '').trim().toLocaleLowerCase()
     return packages.filter((extension) => {
-      if (extension.nsfw && !showNsfw) return false
+      if (extension.nsfw && !adultShown) return false
       if (section === 'manage') {
         const installed = installedById.has(extension.id)
         const disabled = installed && pluginOff(extension.id)
@@ -607,10 +630,14 @@
                       />
                     </label>
                     <div class="flex items-center justify-between gap-2">
-                      <label class="flex items-center gap-2 py-1 text-sm text-muted-foreground sm:px-1 sm:text-xs">
-                        <input type="checkbox" data-focusable bind:checked={showNsfw} class="size-4" />
-                        Adult sources
-                      </label>
+                      <div class="flex items-center gap-2 py-1 text-sm text-muted-foreground sm:px-1 sm:text-xs">
+                        <button type="button" data-focusable data-switch role="switch" aria-checked={adultShown}
+                          aria-label="Adult sources" onclick={() => void toggleAdultSources()}
+                          class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {adultShown ? 'bg-theme' : 'bg-white/20 ring-1 ring-inset ring-white/20'}">
+                          <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {adultShown ? 'translate-x-4' : 'translate-x-0.5'}"></span>
+                        </button>
+                        <span aria-hidden="true">Adult sources</span>
+                      </div>
                       {#if ids.length}
                         <span class="flex gap-1">
                           <button data-focusable onclick={() => setAllPlugins(ids, true)} class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold text-muted-foreground hover:bg-accent sm:bg-transparent sm:px-2 sm:py-0.5">All on</button>

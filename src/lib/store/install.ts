@@ -4,7 +4,8 @@ import { normalizeBase } from '$lib/stremio/origin-id'
 import { disabledPlugins, extensionUrls, disabledExtensions } from '$lib/settings/ui'
 import type { ExtensionCatalogPackage } from '$lib/extensions/catalog'
 import { currentLegacyStores } from './origins'
-import type { StoreAdapterId, StoreEntry } from './types'
+import { ADULT_SOURCES_LOCKED_MESSAGE, adultSourcesPermitted } from '$lib/profiles/household-gate'
+import type { InstallRef, StoreAdapterId, StoreEntry } from './types'
 
 // Installing a Store entry reuses the existing flows: addons → addonUrls, remote extensions →
 // extensionUrls, packages → the Rust package installer, themes → the Themes page preview.
@@ -87,6 +88,16 @@ export function installedRef(entry: StoreEntry, state: InstalledState, storeUrl:
 const without = (list: string[], item: string) => list.filter((value) => value !== item)
 const including = (list: string[], item: string) => (list.includes(item) ? list : [...list, item])
 
+/** An addon or source already in the source list (as itself, or as the whole store it came from). */
+function listedAlready(install: InstallRef, storeUrl: string): boolean {
+  if (install.type === 'addon') return get(addonUrls).includes(normalizeBase(install.manifestUrl))
+  if (install.type === 'extension') {
+    const specs = get(extensionUrls)
+    return specs.includes(install.spec) || (!!storeUrl && specs.includes(storeUrl))
+  }
+  return false
+}
+
 export async function installStoreEntry(
   entry: StoreEntry,
   context: InstallContext,
@@ -94,6 +105,13 @@ export async function installStoreEntry(
 ): Promise<InstallOutcome> {
   if (context.locked) throw new Error('This store failed its signing-key check. Review it under Manage stores first.')
   const install = entry.install
+  // A new 18+ addon or source needs the main profile's PIN on a restricted profile; one already
+  // installed keeps updating (spec §6.6). Packages are checked by the package installer
+  // (installCatalogPackage), which knows what is on disk.
+  if (entry.nsfw && (install.type === 'addon' || install.type === 'extension')
+    && !context.update && !listedAlready(install, context.storeUrl) && !adultSourcesPermitted()) {
+    throw new Error(ADULT_SOURCES_LOCKED_MESSAGE)
+  }
   if (install.type === 'addon') {
     if (install.configureUrl) {
       return { kind: 'configure', name: entry.name, id: install.manifestId ?? entry.id, configureUrl: install.configureUrl }

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { developerLogging, updateChannel } from '$lib/settings/ui'
   import { isAndroid } from '$lib/platform'
@@ -7,6 +7,8 @@
   import { copyToClipboard } from '$lib/util/clipboard'
   import { clearDiagnostics, diagnosticEvents, diagnosticsSnapshot } from '$lib/diagnostics'
   import { ioErrorMessage, saveTextFile } from '$lib/player/history-io'
+  import { authorizeHousehold, cancelHouseholdPrompt } from '$lib/profiles/household-gate'
+  import { startFactoryReset } from '$lib/storage/factory-reset'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import Toggle from '$lib/components/settings/Toggle.svelte'
 
@@ -20,15 +22,27 @@
   let confirmReset = $state(false)
   let resetting = $state(false)
   let resetError = $state('')
+  // True while the main-PIN keypad is up on a restricted profile; a second press is ignored.
+  let authorizing = false
+  // Leaving the page while the keypad is still loading or up cancels it, so a PIN entered later
+  // cannot start a reset from a page that is gone.
+  onDestroy(cancelHouseholdPrompt)
 
-  function resetToDefaults() {
-    if (!confirmReset || resetting) return
-    resetting = true
+  async function resetToDefaults() {
+    if (!confirmReset || resetting || authorizing) return
     resetError = ''
+    authorizing = true
+    let allowed = false
     try {
-      sessionStorage.setItem('izumi-reset-requested', 'true')
+      allowed = await authorizeHousehold('factory-reset')
+    } finally {
+      authorizing = false
+    }
+    if (!allowed) return
+    resetting = true
+    try {
       // A full navigation stops stores, workers and sync before any data is removed.
-      window.location.replace('/reset.html')
+      startFactoryReset()
     } catch (error) {
       resetError = ioErrorMessage(error, 'Could not start the reset.')
       resetting = false

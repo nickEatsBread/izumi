@@ -1,5 +1,8 @@
 import { exportLibraryStorage, isLibraryCollection, restoreLibraryStorage } from '$lib/storage/library-db'
 import { classifyStorageKey, exportDecision, harvestSecretStrings, mergeFieldValue, redactFieldValue } from '$lib/storage/key-policy'
+// Household backups are gated on restricted profiles: each export or restore uses up a one-shot
+// grant from authorizeHousehold (spec §6.6).
+import { assertHouseholdAction } from '$lib/profiles/household-gate'
 
 export interface AppBackup {
   app: 'izumi'
@@ -101,6 +104,7 @@ export function createBackup(storage: Storage, includeSecrets = false): AppBacku
 }
 
 export async function stringifyBackup(storage: Storage, includeSecrets = false) {
+  assertHouseholdAction('backup-export')
   const library = await exportLibraryStorage()
   // An inactive profile may still have a legacy value written by an older app version. Match
   // migration's precedence instead of replacing that value with an older database snapshot.
@@ -155,6 +159,7 @@ export function parseBackup(text: string): AppBackup {
  *  file says it has none (older builds leaked some into such files). Fields keys merge with this
  *  device's value. */
 export async function restoreBackup(storage: Storage, backup: AppBackup) {
+  assertHouseholdAction('backup-restore')
   const accepted: Record<string, string> = {}
   for (const [key, value] of Object.entries(backup.localStorage)) {
     const kind = classifyStorageKey(key)

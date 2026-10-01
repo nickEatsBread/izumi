@@ -1,7 +1,8 @@
 <script lang="ts">
   import TvAccounts from '$lib/components/catalog/TvAccounts.svelte'
   import { activeProfileId as tvAccountProfileId } from '$lib/profiles/store'
-  import { onMount, tick } from 'svelte'
+  import { authorizeHousehold, cancelHouseholdPrompt } from '$lib/profiles/household-gate'
+  import { onDestroy, onMount, tick } from 'svelte'
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
   import { listen } from '@tauri-apps/api/event'
@@ -614,10 +615,27 @@
     offerTarget = device
   }
 
-  function confirmSendSetup() {
+  // True while the main-PIN keypad is up on a restricted profile. Asked before `action`, so `busy`
+  // does not disable (and relabel "Sending…") the Send setup button the keypad gives focus back to.
+  let authorizingSend = false
+  // Leaving the page while the keypad is still loading or up cancels it, so a PIN entered later
+  // cannot send from a page that is gone.
+  onDestroy(cancelHouseholdPrompt)
+
+  async function confirmSendSetup() {
     const device = offerTarget
-    if (!device) return
+    if (!device || busy || authorizingSend) return
     const withAccounts = offerAccounts
+    // The same data as a household backup: a restricted profile needs the main PIN first.
+    authorizingSend = true
+    let allowed = false
+    try {
+      allowed = await authorizeHousehold('send-setup')
+    } finally {
+      authorizingSend = false
+    }
+    // Cancelled, or the confirmation was closed meanwhile: nothing is offered.
+    if (!allowed || offerTarget !== device) return
     void action(`offer-${device.endpointId}`, async () => {
       await offerSetupToDevice(device.endpointId)
       // Only now does anything actually leave: the offer above is a capability, these two calls

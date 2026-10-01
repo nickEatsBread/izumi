@@ -1,8 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createBackup, createBackupFromEntries, parseBackup, restoreBackup, stringifyBackup, type AppBackup } from './backup'
 import { ioErrorMessage } from './player/history-io'
+
+// The household gate is a no-op here unless a test says otherwise (spec §6.6 "gate asserts").
+const gate = vi.hoisted(() => ({ assertHouseholdAction: vi.fn() }))
+vi.mock('$lib/profiles/household-gate', () => ({ assertHouseholdAction: gate.assertHouseholdAction }))
 
 class MemoryStorage implements Storage {
   values = new Map<string, string>()
@@ -332,5 +336,46 @@ describe('ioErrorMessage', () => {
     expect(ioErrorMessage('   ', 'Backup failed.')).toBe('Backup failed.')
     expect(ioErrorMessage(undefined, 'Backup failed.')).toBe('Backup failed.')
     expect(ioErrorMessage(new Error(''), 'Backup failed.')).toBe('Backup failed.')
+  })
+})
+
+// Restricted profiles need the main PIN for a household backup (spec §6.6). The page asks; these
+// functions check the one-shot grant before anything is read or written.
+describe('household gate', () => {
+  const locked = () => { throw new Error('Enter the main profile PIN first.') }
+  const backupOf = (values: Record<string, string>) => parseBackup(JSON.stringify({
+    app: 'izumi', kind: 'app-backup', version: 1, exportedAt: 1, includesSecrets: false, localStorage: values,
+  }))
+
+  beforeEach(() => {
+    gate.assertHouseholdAction.mockReset()
+  })
+
+  it('checks the grant before building an export', async () => {
+    gate.assertHouseholdAction.mockImplementation(locked)
+    const storage = new MemoryStorage()
+    storage.setItem('nav-config-v1', '[]')
+    await expect(stringifyBackup(storage)).rejects.toThrow('Enter the main profile PIN first.')
+    expect(gate.assertHouseholdAction).toHaveBeenCalledWith('backup-export')
+  })
+
+  it('checks the grant before touching storage on restore', async () => {
+    gate.assertHouseholdAction.mockImplementation(locked)
+    const storage = new MemoryStorage()
+    storage.setItem('home-row-order', '["old"]')
+    await expect(restoreBackup(storage, backupOf({ 'home-row-order': '["new"]' }))).rejects.toThrow('Enter the main profile PIN first.')
+    expect(storage.getItem('home-row-order')).toBe('["old"]')
+    expect(gate.assertHouseholdAction).toHaveBeenCalledWith('backup-restore')
+  })
+
+  it('exports and restores once the grant is there', async () => {
+    const source = new MemoryStorage()
+    source.setItem('nav-config-v1', '[]')
+    const text = await stringifyBackup(source)
+    expect(JSON.parse(text).localStorage['nav-config-v1']).toBe('[]')
+    const target = new MemoryStorage()
+    expect(await restoreBackup(target, backupOf({ 'home-row-order': '["continue"]' }))).toBe(1)
+    expect(target.getItem('home-row-order')).toBe('["continue"]')
+    expect(gate.assertHouseholdAction.mock.calls).toEqual([['backup-export'], ['backup-restore']])
   })
 })

@@ -84,6 +84,10 @@
   import UpNextOverlay from '$lib/components/player/UpNextOverlay.svelte'
   import SeriesRatingPrompt from '$lib/components/player/SeriesRatingPrompt.svelte'
   import ProfileSwitcher from '$lib/components/profiles/ProfileSwitcher.svelte'
+  // The main-PIN keypad for household actions on restricted profiles (spec §6.5). Lazy: it is
+  // driven purely by the prompt store, which the gated Settings pages set.
+  import { householdPrompt } from '$lib/profiles/household-gate'
+  const loadHouseholdPinDialog = () => import('$lib/components/profiles/HouseholdPinDialog.svelte')
   import { onMount } from 'svelte'
   import { get } from 'svelte/store'
   import { initCrashReporting } from '$lib/diagnostics'
@@ -661,6 +665,7 @@
      a finale finished by backing out after the watch threshold asks over the series page. -->
 <SeriesRatingPrompt />
 <ProfileSwitcher />
+{#if $householdPrompt}<Lazy load={loadHouseholdPinDialog} />{/if}
 {#if $themeStudioOpen}
   <!-- Keep the draft mounted through navigation and playback; only hide the editor over video. -->
   <div hidden={$playing || $androidMpvActive}>

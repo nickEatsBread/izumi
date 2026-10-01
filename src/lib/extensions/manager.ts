@@ -3,6 +3,7 @@ import { get } from 'svelte/store'
 import { invokeNativeHttp, isNativeTransportFailure, phttp } from '$lib/net/http'
 import { enabledExtensionUrls, disabledPlugins } from '$lib/settings/ui'
 import { forgetPackageOrigin, isPackageOrigin, mayReplacePackage, packageOriginOf, recordPackageOrigin } from '$lib/store/origins'
+import { ADULT_SOURCES_LOCKED_MESSAGE, adultSourcesPermitted } from '$lib/profiles/household-gate'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
 import { manifestFetchUrls, normalizeManifest, pointerUrl, isRunnableType, isLegacyTorrentType, manifestProblem, catalogPackages, aniyomiRepositoryPackages } from './catalog'
 import type { ExtensionCatalogPackage } from './catalog'
@@ -219,6 +220,9 @@ export async function installCatalogPackage(
   // An update for a package removed meanwhile (say, while a background check loaded) must not bring
   // it back.
   if (!onDisk && options.updateOnly) throw new Error('That package is no longer installed.')
+  // A new 18+ package needs the main profile's PIN on a restricted profile. One already on disk
+  // keeps updating, reinstalling and being replaced (spec §6.6).
+  if (extension.nsfw && !onDisk && !adultSourcesPermitted()) throw new Error(ADULT_SOURCES_LOCKED_MESSAGE)
   const takesOver = !!onDisk && !mayReplacePackage(extension.id, origin, onDisk.backend === extension.backend)
   // Replacing a copy from somewhere else is only ever the user's explicit choice (they were asked
   // first); a background update never does it.

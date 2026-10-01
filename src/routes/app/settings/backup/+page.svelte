@@ -5,6 +5,8 @@
   import { parseBackup, restoreBackup, stringifyBackup, type AppBackup } from '$lib/backup'
   import { baseStorageKey } from '$lib/storage/key-policy'
   import { ioErrorMessage, saveTextFile } from '$lib/player/history-io'
+  import { onDestroy } from 'svelte'
+  import { authorizeHousehold, cancelHouseholdPrompt } from '$lib/profiles/household-gate'
   import Toggle from '$lib/components/settings/Toggle.svelte'
 
   let includeSecrets = $state(false)
@@ -12,6 +14,24 @@
   let fileInput = $state<HTMLInputElement>()
   let pending = $state<AppBackup | null>(null)
   let pendingName = $state('')
+  // True while the main-PIN keypad is up on a restricted profile; a second press is ignored, since a
+  // grant is good for one call only.
+  let authorizing = false
+
+  /** Restricted profiles need the main profile's PIN before a household backup is saved or
+   *  restored. Everyone else passes straight through. */
+  async function authorized(action: 'backup-export' | 'backup-restore'): Promise<boolean> {
+    if (authorizing) return false
+    authorizing = true
+    try {
+      return await authorizeHousehold(action)
+    } finally {
+      authorizing = false
+    }
+  }
+  // Leaving the page while the keypad is still loading or up cancels it, so a PIN entered later
+  // cannot save or restore from a page that is gone.
+  onDestroy(cancelHouseholdPrompt)
 
   /** Spec §6.2: after saving, say how many settings the storage-key policy kept out of the file. */
   function savedMessage(text: string): string {
@@ -27,6 +47,7 @@
   }
 
   async function exportBackup() {
+    if (!(await authorized('backup-export'))) return
     try {
       const text = await stringifyBackup(localStorage, includeSecrets)
       const saved = await saveTextFile(`izumi-backup-${new Date().toISOString().slice(0, 10)}.json`, text)
@@ -52,9 +73,11 @@
   }
 
   async function applyRestore() {
-    if (!pending) return
+    const backup = pending
+    if (!backup) return
+    if (!(await authorized('backup-restore'))) return
     try {
-      const count = await restoreBackup(localStorage, pending)
+      const count = await restoreBackup(localStorage, backup)
       message = `Restored ${count} values. Restarting Izumi…`
       pending = null
       setTimeout(() => location.reload(), 350)
