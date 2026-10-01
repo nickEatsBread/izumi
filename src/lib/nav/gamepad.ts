@@ -9,6 +9,7 @@ import { closeGlobalSearch, globalSearchOpen } from '$lib/search/global-search'
 import { ActiveFrameLoop } from '$lib/util/active-frame-loop'
 import { BROWSER_GAMEPAD_EVENT, type GamepadInputName } from './browser-gamepad'
 import { handleLayeredBack, isDuplicateBackPress } from './back'
+import { markBackPending } from './nav-state'
 import { closeOsk, oskBackspace, oskInsert } from './osk'
 import { oskDismissedAt } from '$lib/player/session'
 import { closeAllNavLayers, closeTopNavLayer, topNavLayer } from './layers'
@@ -268,13 +269,18 @@ export function startGamepadNav(): () => void {
       // a Store sheet, which gets the window Escape it closes on), cancels an armed control, steps
       // out of an in-page view or up the Settings hierarchy. With nothing for it there, go up the
       // history, UNLESS we're on the home screen (nothing further back): there, open the
-      // exit-confirm prompt instead of silently going nowhere.
+      // exit-confirm prompt instead of silently going nowhere. The history step marks Back pending
+      // (spec §3.8 step 0), so a quick second B is consumed until that step lands instead of
+      // stepping back a second entry from a page that is about to be replaced.
       case 'b':
         // Swallow B briefly after the player closed (the close-vs-exit race, above).
         if (performance.now() - playerClosedAt < 500) break
         if (handleLayeredBack('gamepad')) break
         if (location.pathname.replace(/\/$/, '') === '/app/home') exitPrompt.set(true)
-        else history.back()
+        else {
+          markBackPending()
+          history.back()
+        }
         break
       // L1/R1 on the home screen step through the featured hero banners (prev/next). The Hero
       // listens for `hero-nav`. Elsewhere in browse they stay reserved; the player owns them.

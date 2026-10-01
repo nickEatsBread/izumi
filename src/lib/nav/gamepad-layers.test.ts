@@ -17,7 +17,7 @@ const navigationMocks = vi.hoisted(() => ({ goto: vi.fn() }))
 vi.mock('$app/navigation', () => ({ goto: navigationMocks.goto }))
 
 import { startGamepadNav } from './gamepad'
-import { clearBackPending } from './nav-state'
+import { BACK_PENDING_MS, backPending, clearBackPending } from './nav-state'
 import { BROWSER_GAMEPAD_EVENT } from './browser-gamepad'
 import { isPadEvent } from './pad-controls'
 import { pushNavLayer, resetNavLayersForTests, type NavLayer } from './layers'
@@ -57,10 +57,12 @@ beforeEach(() => {
   window.addEventListener('keydown', recordPadKey)
   for (const type of WINDOW_EVENTS) window.addEventListener(type, recordEvent)
   history.replaceState(null, '', '/app/settings/player')
+  clearBackPending()
   stop = startGamepadNav()
 })
 afterEach(() => {
   stop()
+  clearBackPending()
   window.removeEventListener('keydown', recordPadKey)
   for (const type of WINDOW_EVENTS) window.removeEventListener(type, recordEvent)
   resetNavLayersForTests()
@@ -124,6 +126,36 @@ describe('controller B and A with a nav layer open', () => {
     const back = vi.spyOn(history, 'back').mockImplementation(() => {})
     press('b')
     expect(back).toHaveBeenCalledTimes(1)
+  })
+
+  it('a quick second B outside Home and outside Settings is swallowed until the first step lands (spec §3.8 step 0)', () => {
+    history.replaceState(null, '', '/app/series/9')
+    const back = vi.spyOn(history, 'back').mockImplementation(() => {})
+    press('b')
+    press('b')
+    expect(back).toHaveBeenCalledTimes(1)
+    expect(backPending()).toBe(true)
+    // The app layout's afterNavigate clears the guard when the popstate lands.
+    clearBackPending()
+    press('b')
+    expect(back).toHaveBeenCalledTimes(2)
+  })
+
+  it('B outside Home and outside Settings walks history again once a step that lands nowhere times out', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      history.replaceState(null, '', '/app/series/9')
+      const back = vi.spyOn(history, 'back').mockImplementation(() => {})
+      press('b')
+      press('b')
+      expect(back).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(BACK_PENDING_MS)
+      expect(backPending()).toBe(false)
+      press('b')
+      expect(back).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('B with nothing open on a Settings page walks the Settings hierarchy instead (commit 10)', () => {
