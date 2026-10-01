@@ -50,6 +50,7 @@
   import { getCurrentWindow } from '@tauri-apps/api/window'
   import { controllerMode, focusByNav, initInput, initDpadNav, startBrowserGamepadInput, suppressNativeContextMenus, suppressNativeTooltips, suppressPinchZoom } from '$lib/nav'
   import { startGamepadNav } from '$lib/nav/gamepad'
+  import { installSystemBack } from '$lib/nav/system-back'
   import { closeAllNavLayers, closeTopNavLayer, topNavLayer } from '$lib/nav/layers'
   import { clearBackPending, navEpoch, navInFlight } from '$lib/nav/nav-state'
   import { setFocusHint } from '$lib/nav/focus-hint'
@@ -368,6 +369,9 @@
   $effect(() => {
     invoke('set_doh', { enabled: $enableDoH, url: $doHUrl }).catch(() => {})
   })
+  // Phone system Back: MainActivity's back callback runs the layered Back pipeline through the
+  // bridge installed here (nav/system-back.ts) and falls through to stock Back when it answers false.
+  onMount(() => installSystemBack())
 
   $effect(() => {
     document.documentElement.classList.toggle('tv-mode', $isTv)

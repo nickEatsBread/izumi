@@ -80,3 +80,21 @@ describe('Settings Back and route focus memory in the app layout (commit 10)', (
     expect(layout.split('startBackHint(').length - 1).toBe(1)
   })
 })
+
+describe('phone system Back bridge', () => {
+  const shell = read('./+layout.svelte')
+  const bridge = read('../../lib/nav/system-back.ts')
+
+  it('assigns window.__izumiBack once, when the app layout mounts, and deletes it on teardown', () => {
+    expect(shell).toContain("import { installSystemBack } from '$lib/nav/system-back'")
+    expect(shell).toMatch(/^\s*import \{[^}]*\bonMount\b[^}]*\} from 'svelte'$/m)
+    expect(shell).toContain('onMount(() => installSystemBack())')
+    expect(shell.split('installSystemBack(').length - 1).toBe(1)
+    // One owner: nav/system-back.ts assigns the global and deletes only its own bridge on teardown;
+    // the layout never touches it directly.
+    expect(shell).not.toContain('__izumiBack')
+    expect(bridge).toContain("const bridge = () => handleLayeredBack('system')")
+    expect(bridge).toContain('target.__izumiBack = bridge')
+    expect(bridge).toContain('if (target.__izumiBack === bridge) delete target.__izumiBack')
+  })
+})

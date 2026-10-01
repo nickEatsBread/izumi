@@ -36,8 +36,9 @@ grep -q 'androidx.webkit:webkit:1.17.0' src-tauri/gen/android/app/build.gradle.k
 # differs from its template, so a patch could never survive the build anyway. (2) The code being
 # patched is unreachable: the generated TauriActivity sets `handleBackNavigation = false`, so
 # wry's back callback — the only caller of the patched line — is never registered in a Tauri app.
-# Back-press behavior is what it was in every prior release; changing it belongs in MainActivity
-# (app-owned, patchable here) via wry's `open` hooks, not in wry's regenerated file.
+# Back-press behavior therefore lives in MainActivity (app-owned, copied below). Off TV its
+# OnBackPressedCallback asks the web layer (window.__izumiBack) first and otherwise falls through
+# to Tauri's own callback; never patch wry's regenerated file for it.
 
 # The generated MainActivity already opts into AndroidX's inset handling. Make a template change
 # fail the build rather than silently shipping content under the status/navigation bars.
