@@ -65,6 +65,15 @@ describe('gameModeBitmapOverlayActive', () => {
   it('snapshots the polished HTML Skip pill', () => {
     expect(gameModeBitmapOverlayActive({ ...base, skipVisible: true })).toBe(true)
   })
+
+  it('snapshots an open nav layer or the on-screen keyboard over the video', () => {
+    expect(gameModeBitmapOverlayActive({ ...base, navLayerOpen: true })).toBe(true)
+    expect(gameModeBitmapOverlayActive({ ...base, oskOpen: true })).toBe(true)
+    expect(gameModeBitmapOverlayActive({ ...base, navLayerOpen: true, playing: false })).toBe(false)
+    expect(gameModeBitmapOverlayActive({ ...base, oskOpen: true, gameMode: false })).toBe(false)
+    // Live comments already show the keyboard above them; capturing them would stall Disqus.
+    expect(gameModeBitmapOverlayActive({ ...base, oskOpen: true, commentsOpen: true })).toBe(false)
+  })
 })
 
 describe('gameModeSnapshotCrop', () => {
@@ -218,6 +227,12 @@ describe('Game-mode Leanback motion', () => {
     const connecting = readFileSync(fileURLToPath(new URL('../components/player/SourceConnecting.svelte', import.meta.url)), 'utf8')
     expect(connecting).toContain('{:else if $gameMode && $playing}')
     expect(connecting).toContain('bg-black/45')
+  })
+
+  it('passes the open layer and keyboard to the bitmap policy', () => {
+    const overlay = readFileSync(fileURLToPath(new URL('../components/player/PlayerOverlay.svelte', import.meta.url)), 'utf8')
+    expect(overlay).toContain('navLayerOpen: $navLayerOpen,')
+    expect(overlay).toContain('oskOpen: $oskOpen,')
   })
 
   it('lets the picker exclusively consume a Game-mode B edge', () => {

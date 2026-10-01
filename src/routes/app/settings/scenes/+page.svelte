@@ -59,14 +59,14 @@
 <div class="p-4 sm:p-8">
   <div class="mb-5 flex max-w-4xl items-start justify-between gap-4">
     <div>
-      <h2 class="mb-1 text-xl font-black">Scene bookmarks</h2>
+      <h2 data-settings-page-title class="mb-1 text-xl font-black">Scene bookmarks</h2>
       <p class="max-w-2xl text-sm text-muted-foreground">
         Keep an exact moment, its subtitle line, and your own note. Resuming resolves a fresh source
         and starts at the saved timestamp.
       </p>
     </div>
     {#if $sceneBookmarks.length}
-      <button data-focusable onclick={clearAll}
+      <button data-focusable data-touch-target onclick={clearAll}
         class="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-colors {confirmClear ? 'bg-destructive text-white' : 'text-destructive hover:bg-destructive/10'}">
         <Trash2 size={14} /> {confirmClear ? 'Confirm clear' : 'Clear all'}
       </button>
@@ -98,7 +98,7 @@
                   {scene.episode != null ? `Episode ${scene.episode} · ` : ''}{time(scene.position)} · {date(scene.createdAt)}
                 </p>
               </div>
-              <button data-focusable onclick={() => removeSceneBookmark(scene.id)} aria-label="Remove scene bookmark" title="Remove"
+              <button data-focusable data-touch-target onclick={() => removeSceneBookmark(scene.id)} aria-label="Remove scene bookmark" title="Remove"
                 class="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-destructive">
                 <X size={15} />
               </button>
@@ -110,6 +110,7 @@
 
             <input
               value={scene.note}
+              data-focusable
               maxlength="2000"
               placeholder="Add a note…"
               aria-label={`Note for ${title(scene)} at ${time(scene.position)}`}

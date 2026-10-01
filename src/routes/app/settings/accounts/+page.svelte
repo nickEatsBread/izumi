@@ -269,30 +269,30 @@
 
 {#snippet anilistControl()}
   {#if $anilistToken}
-    <button type="button" data-focusable onclick={disconnectAniListClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
+    <button type="button" data-focusable data-touch-target onclick={disconnectAniListClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
   {:else}
-    <button type="button" data-focusable onclick={connectAniListClick} disabled={aniBusy} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40">{aniBusy ? 'Connecting…' : 'Connect'}</button>
+    <button type="button" data-focusable data-touch-target onclick={connectAniListClick} disabled={aniBusy} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40">{aniBusy ? 'Connecting…' : 'Connect'}</button>
   {/if}
 {/snippet}
 {#snippet malControl()}
   {#if $malToken}
-    <button type="button" data-focusable onclick={disconnectMalClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
+    <button type="button" data-focusable data-touch-target onclick={disconnectMalClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
   {:else}
-    <button type="button" data-focusable onclick={connectMalClick} disabled={malBusy} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40">{malBusy ? 'Connecting…' : 'Connect'}</button>
+    <button type="button" data-focusable data-touch-target onclick={connectMalClick} disabled={malBusy} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40">{malBusy ? 'Connecting…' : 'Connect'}</button>
   {/if}
 {/snippet}
 {#snippet kitsuControl()}
   {#if $kitsuToken}
-    <button type="button" data-focusable onclick={disconnectKitsuClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
+    <button type="button" data-focusable data-touch-target onclick={disconnectKitsuClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
   {:else}
-    <button type="button" data-focusable onclick={() => (kitsuFormOpen = !kitsuFormOpen)} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent">{kitsuFormOpen ? 'Cancel' : 'Sign in'}</button>
+    <button type="button" data-focusable data-touch-target onclick={() => (kitsuFormOpen = !kitsuFormOpen)} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent">{kitsuFormOpen ? 'Cancel' : 'Sign in'}</button>
   {/if}
 {/snippet}
 {#snippet simklControl()}
   {#if $simklToken}
-    <button type="button" data-focusable onclick={disconnectSimklClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
+    <button type="button" data-focusable data-touch-target onclick={disconnectSimklClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
   {:else}
-    <button type="button" data-focusable onclick={connectSimklClick} disabled={simklBusy} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40">{simklBusy ? 'Waiting…' : 'Connect'}</button>
+    <button type="button" data-focusable data-touch-target onclick={connectSimklClick} disabled={simklBusy} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40">{simklBusy ? 'Waiting…' : 'Connect'}</button>
   {/if}
 {/snippet}
 
@@ -347,7 +347,7 @@
   <button
     type="button"
     data-focusable
-    onclick={() => (stremioFormOpen = !stremioFormOpen)}
+    data-touch-target onclick={() => (stremioFormOpen = !stremioFormOpen)}
     disabled={Boolean(stremioBusy)}
     class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40"
   >{$stremioAuthKey ? (stremioFormOpen ? 'Close' : 'Manage') : (stremioFormOpen ? 'Cancel' : 'Sign in')}</button>
@@ -359,6 +359,7 @@
       min="1"
       step="1"
       value={$autoWatchlistEpisodes}
+      data-focusable
       disabled={!$autoWatchlistEnabled}
       aria-label="Episodes before adding to Watchlist"
       onchange={updateWatchlistThreshold}
@@ -376,10 +377,10 @@
 
 <div class="mx-auto max-w-4xl p-4 pb-24 sm:p-8">
   <header class="mb-8 flex max-w-2xl flex-wrap items-center justify-between gap-4">
-    <div><h2 class="text-3xl font-bold tracking-tight">Accounts</h2><p class="mt-2 text-sm text-muted-foreground">{$profilesEnabled ? `Connections for ${$activeProfile.name}` : 'Your connected services, in one place.'}</p></div>
+    <div><h2 data-settings-page-title class="text-3xl font-bold tracking-tight">Accounts</h2><p class="mt-2 text-sm text-muted-foreground">{$profilesEnabled ? `Connections for ${$activeProfile.name}` : 'Your connected services, in one place.'}</p></div>
     <a href="/app/settings/profiles" data-focusable class="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground">{#if $profilesEnabled}<img src={profileAvatarUrl($activeProfile.avatar, $activeProfile.color)} alt="" class="size-8 rounded-lg" />Manage profiles{:else}Set up profiles{/if}</a>
   </header>
-  <nav aria-label="Account settings sections" class="mb-7 flex max-w-2xl gap-5 overflow-x-auto border-b border-border">
+  <nav aria-label="Account settings sections" data-page-tabs data-nav-scroll-x class="mb-7 flex max-w-2xl gap-5 overflow-x-auto border-b border-border">
     {#each [{ id: 'connections', label: 'Connections' }, { id: 'libraries', label: 'Lists & imports' }, { id: 'behaviour', label: 'Sync behaviour' }] as item}
       <button type="button" data-focusable aria-current={section === item.id ? 'page' : undefined} onclick={() => section = item.id as AccountSection} class="min-h-12 shrink-0 border-b-2 px-1 text-sm font-bold transition-colors {section === item.id ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}">{item.label}</button>
     {/each}
@@ -464,14 +465,14 @@
             <button
               type="button"
               data-focusable
-              onclick={syncStremioClick}
+              data-touch-target onclick={syncStremioClick}
               disabled={Boolean(stremioBusy) || $stremioAddonSyncState.state === 'syncing'}
               class="inline-flex min-h-9 items-center gap-2 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40"
             ><RefreshCw size={14} class={$stremioAddonSyncState.state === 'syncing' ? 'animate-spin' : ''} />{stremioBusy === 'sync' ? 'Syncing…' : 'Sync now'}</button>
             <button
               type="button"
               data-focusable
-              onclick={disconnectStremioClick}
+              data-touch-target onclick={disconnectStremioClick}
               disabled={Boolean(stremioBusy)}
               class="min-h-9 rounded-md px-3 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-40"
             >{stremioBusy === 'disconnect' ? 'Disconnecting…' : 'Disconnect'}</button>
@@ -512,9 +513,9 @@
 
   </div>
   <div hidden={section !== 'libraries'}>
-  <p class="mb-6 max-w-2xl text-sm leading-6 text-muted-foreground">Bring in lists without adding more sidebar destinations. Browse everything in <a href="/app/library" class="font-bold text-foreground underline underline-offset-4">Library</a>, or choose which feeds appear on Home.</p>
+  <p class="mb-6 max-w-2xl text-sm leading-6 text-muted-foreground">Bring in lists without adding more sidebar destinations. Browse everything in <a href="/app/library" data-focusable class="font-bold text-foreground underline underline-offset-4">Library</a>, or choose which feeds appear on Home.</p>
   <LetterboxdAccountSettings />
-  <p class="mb-6 max-w-2xl border-b border-border pb-6 text-sm leading-6 text-muted-foreground">Trakt lists use your connection in <button type="button" data-focusable onclick={() => section = 'connections'} class="font-semibold text-foreground underline underline-offset-4">Connections</button>. Additional list add-ons belong in <a href="/app/settings/sources" class="font-semibold text-foreground underline underline-offset-4">Sources</a>; manage their rows in <a href="/app/settings/catalog/home?provider=stremio" class="font-semibold text-foreground underline underline-offset-4">Home layout</a>.</p>
+  <p class="mb-6 max-w-2xl border-b border-border pb-6 text-sm leading-6 text-muted-foreground">Trakt lists use your connection in <button type="button" data-focusable onclick={() => section = 'connections'} class="font-semibold text-foreground underline underline-offset-4">Connections</button>. Additional list add-ons belong in <a href="/app/settings/sources" data-focusable class="font-semibold text-foreground underline underline-offset-4">Sources</a>; manage their rows in <a href="/app/settings/catalog/home?provider=stremio" data-focusable class="font-semibold text-foreground underline underline-offset-4">Home layout</a>.</p>
 
   <SettingsGroup icon={Eye} title="Public libraries" desc="Browse a public AniList or MyAnimeList library without signing in. These profiles are never updated.">
     <SettingsRow
@@ -579,6 +580,6 @@
       <SettingsRow title="Pending tracker updates" leading={queueLeading} meta={queueMeta} />
     {/if}
   </SettingsGroup>
-  <p class="mt-6 max-w-2xl text-sm leading-6 text-muted-foreground">Looking for cross-device history and TV pairing? <a href="/app/settings/sync" class="font-bold text-foreground underline underline-offset-4">Open device sync</a>.</p>
+  <p class="mt-6 max-w-2xl text-sm leading-6 text-muted-foreground">Looking for cross-device history and TV pairing? <a href="/app/settings/sync" data-focusable class="font-bold text-foreground underline underline-offset-4">Open device sync</a>.</p>
   </div>
 </div>

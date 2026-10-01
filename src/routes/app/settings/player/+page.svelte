@@ -20,12 +20,26 @@
   import { drmDolbyStatus } from '$lib/player/drm-dolby'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { open } from '@tauri-apps/plugin-dialog'
-  import { isAndroid, isWindows } from '$lib/platform'
+  import { isAndroid, isAndroidTv, isWindows } from '$lib/platform'
+  import { inAppPlayerAvailable } from '$lib/player/in-app-player'
   import { PLAYBACK_LANGUAGES } from '$lib/shared/languages'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import { m } from '$lib/paraglide/messages.js'
+  import { tick } from 'svelte'
+  import { handFocusBack } from '$lib/nav/focus-memory'
 
   let pendingAnime = $state(false) // shows the one-time shader consent
+  let qualityField = $state<HTMLLabelElement>()
+
+  // Answering the Anime shader prompt removes the button that held focus. Focus goes back to the
+  // Video quality trigger, so the next d-pad press continues from the setting that asked (spec
+  // §3.9); after a mouse or touch answer only a focus hint is left for the first d-pad press.
+  async function answerAnimeConsent(download: boolean) {
+    pendingAnime = false
+    if (download) $videoQualityPreset = 'anime'
+    await tick()
+    handFocusBack(qualityField?.querySelector<HTMLElement>('button[data-focusable]'))
+  }
 
   // Neural upscale shaders are desktop-only. A persisted Anime value from another
   // device would otherwise sit on a SelectMenu option that Android does not list.
@@ -39,6 +53,17 @@
   let cacheCustomMode = $state(false)
   const cacheIsUncapped = $derived($playerCacheMb === CACHE_UNCAPPED)
   const cacheIsCustom = $derived(!cacheIsUncapped && !cachePresets.some((p) => p.mb === $playerCacheMb))
+
+  // Android seek step (spec §5.1): a menu of presets, because a number field owns every arrow key
+  // on a TV remote and opens the keyboard on a phone. A value set elsewhere (typed on a desktop, or
+  // restored from a backup) that is not a preset stays listed, so the menu never shows a wrong value.
+  const SEEK_PRESETS = [5, 10, 15, 20, 30, 45, 60, 90]
+  const seekOptions = $derived(
+    [...new Set([...SEEK_PRESETS, Number($seekDuration)])]
+      .filter((seconds) => Number.isFinite(seconds) && seconds >= 1 && seconds <= 90)
+      .sort((a, b) => a - b)
+      .map((seconds) => ({ value: String(seconds), label: `${seconds} sec` })),
+  )
 
   // Native file picker for the external-player executable.
   async function browsePlayer() {
@@ -61,7 +86,7 @@
 </script>
 
 <div class="p-4 sm:p-8">
-  <h2 class="mb-1 text-xl font-black">Player</h2>
+  <h2 data-settings-page-title class="mb-1 text-xl font-black">Player</h2>
   <p class="mb-4 text-sm text-muted-foreground">Languages, playback behaviour, and the external player.</p>
 
   <div class="mb-4 grid max-w-2xl gap-3 sm:grid-cols-2">
@@ -74,10 +99,11 @@
       <SelectMenu bind:value={$preferredSubLang} ariaLabel={m.player_subtitle_language()} searchable options={[...PLAYBACK_LANGUAGES.slice(0, 2), { value: 'none', label: m.cast_subtitles_off() }, ...PLAYBACK_LANGUAGES.slice(2)]} />
     </label>
 
+    {#if $inAppPlayerAvailable}
     <!-- Video-quality presets drive desktop mpv and the embedded Android libmpv plugin.
          Anime shaders need the desktop-only `ensure_upscale_shader` download, so that
          option stays off Android. Windows VSR is d3d11-only. -->
-    <label class="flex flex-col gap-1">
+    <label bind:this={qualityField} class="flex flex-col gap-1">
       <span class="text-sm font-bold">Video quality</span>
       <SelectMenu
         value={$videoQualityPreset}
@@ -103,8 +129,8 @@
         <!-- Size is the real asset size measured against the pinned release (~208 KB today); the
              download is one-time and cached under the app config dir. -->
         <p class="mb-2">Anime mode needs a shader file (~200 KB) that isn't bundled with the app. Turning it on downloads that file from the internet once, then keeps using the local copy. Download it now?</p>
-        <button class="mr-2 rounded bg-primary px-3 py-2 font-bold sm:py-1" onclick={() => { pendingAnime = false; $videoQualityPreset = 'anime' }}>Download</button>
-        <button class="rounded bg-muted px-3 py-2 sm:py-1" onclick={() => { pendingAnime = false }}>Cancel</button>
+        <button type="button" data-focusable class="mr-2 rounded bg-primary px-3 py-2 font-bold sm:py-1" onclick={() => answerAnimeConsent(true)}>Download</button>
+        <button type="button" data-focusable class="rounded bg-muted px-3 py-2 sm:py-1" onclick={() => answerAnimeConsent(false)}>Cancel</button>
       </div>
     {/if}
 
@@ -127,6 +153,7 @@
         {/if}
       </label>
     {/if}
+    {/if}
 
     {#if $isWindows}
     <label class="flex flex-col gap-1">
@@ -141,6 +168,7 @@
     {/if}
   </div>
 
+  {#if $inAppPlayerAvailable}
   <label class="mb-4 flex max-w-2xl flex-col gap-1 rounded-md border border-border p-3">
     <span class="text-sm font-bold">Audio processing</span>
     <SelectMenu bind:value={$audioProcessing} ariaLabel="Audio processing" options={[
@@ -164,6 +192,7 @@
       { value: 'always', label: 'Always visible' },
     ]} />
   </label>
+  {/if}
 
   <label class="mb-4 flex max-w-2xl flex-col gap-3 rounded-md border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
     <span class="min-w-0">
@@ -177,34 +206,37 @@
     ]} />
   </label>
 
-  <!-- The mpv-side tuning below (cache, quality presets, external player) is desktop-only; Android
-       gets the handful of options that do apply to the built-in player. -->
-  {#if $isAndroid}
-    <p class="max-w-2xl rounded-md border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
-      Playback uses the built-in player on the full build, or your device's video player on the lite build. The mpv tuning options further down don't apply on this platform.
+  <!-- Per-control platform gates (spec §5.1). A row shows wherever the player that reads it runs.
+       $inAppPlayerAvailable is every desktop build and the Android full build; the Android lite
+       build hands videos to the device's own player and shows the notice instead. Rows under
+       !$isAndroid are desktop-only. The desktop order of the rows is unchanged. -->
+  {#if !$inAppPlayerAvailable}
+    <p class="mb-3 max-w-2xl rounded-md border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
+      This build plays videos in your device's video player, so the in-app player options are not shown.
     </p>
-    <!-- The in-app player builds record GIFs from the live video; the recorder itself lives in the
-         player's own settings sheet, but this is the same preference the desktop build exposes. -->
-    <div class="mt-3 max-w-2xl space-y-3">
-      <Toggle label="Miniplayer when you leave the app" desc="Leaving izumi (home or recents) while a video is playing shrinks it into a floating miniplayer instead of leaving it on the watch page. Off leaves the app normally; playback keeps running with the notification controls either way." value={$androidAutoPip} onToggle={() => ($androidAutoPip = !$androidAutoPip)} />
-      <Toggle label="Include subtitles in GIFs" desc="Burn the currently displayed subtitle track into GIF recordings. Recording is started from the player's settings sheet." value={$gifIncludeSubtitles} onToggle={() => ($gifIncludeSubtitles = !$gifIncludeSubtitles)} />
-      <Toggle label={m.player_series_rating_prompt()} desc={m.player_series_rating_prompt_hint()} value={$seriesRatingPrompt} onToggle={() => ($seriesRatingPrompt = !$seriesRatingPrompt)} />
-    </div>
-  {:else}
+  {/if}
   <div class="max-w-2xl space-y-3">
-    <Toggle label={m.player_autoplay_next()} desc={m.player_autoplay_next_hint()} value={$autoplayNext} onToggle={() => ($autoplayNext = !$autoplayNext)} />
-    <Toggle label={m.player_up_next_overlay()} desc={m.player_up_next_overlay_hint()} value={$upNextOverlay} onToggle={() => ($upNextOverlay = !$upNextOverlay)} />
-    <Toggle label={m.player_series_rating_prompt()} desc={m.player_series_rating_prompt_hint()} value={$seriesRatingPrompt} onToggle={() => ($seriesRatingPrompt = !$seriesRatingPrompt)} />
+    {#if $inAppPlayerAvailable}
+    <Toggle label={m.player_autoplay_next()} settingKey="auto-play-next-episode" desc={m.player_autoplay_next_hint()} value={$autoplayNext} onToggle={() => ($autoplayNext = !$autoplayNext)} />
+    <Toggle label={m.player_up_next_overlay()} settingKey="show-up-next-countdown" desc={m.player_up_next_overlay_hint()} value={$upNextOverlay} onToggle={() => ($upNextOverlay = !$upNextOverlay)} />
+    {/if}
+    <Toggle label={m.player_series_rating_prompt()} settingKey="ask-for-a-rating-when-a-series-ends" desc={m.player_series_rating_prompt_hint()} value={$seriesRatingPrompt} onToggle={() => ($seriesRatingPrompt = !$seriesRatingPrompt)} />
+    {#if $isAndroid && !$isAndroidTv && $inAppPlayerAvailable}
+      <Toggle label="Miniplayer when you leave the app" desc="Leaving izumi (home or recents) while a video is playing shrinks it into a floating miniplayer instead of leaving it on the watch page. Off leaves the app normally; playback keeps running with the notification controls either way." value={$androidAutoPip} onToggle={() => ($androidAutoPip = !$androidAutoPip)} />
+    {/if}
     {#if !$isAndroid}
       <Toggle label="System media controls" desc="Show playback metadata and Play, Pause, Previous, Next, and seek actions in Windows SMTC or Linux MPRIS controls. Adult titles show no name, series, or artwork there — only the controls." value={$systemMediaControls} onToggle={() => ($systemMediaControls = !$systemMediaControls)} />
       <Toggle label="Discord Rich Presence" desc="Share the current series, episode, cover art, and progress with Discord. On by default; adult titles are never shared." value={$discordRichPresence} onToggle={() => ($discordRichPresence = !$discordRichPresence)} />
     {/if}
+    {#if $inAppPlayerAvailable}
     <Toggle label="Keep screen awake while playing" desc="Stop the screen dimming or sleeping during playback (fixes the Steam Deck screen turning off mid-episode). Releases when paused, so battery-saver still works when you're not watching." value={$keepAwakeWhilePlaying} onToggle={() => ($keepAwakeWhilePlaying = !$keepAwakeWhilePlaying)} />
-    <Toggle label="Binge next episode (preload)" desc="Keep the same release across episodes and pre-resolve + warm-buffer the next one near the end, so Next / auto-play starts instantly." value={$bingePreload} onToggle={() => ($bingePreload = !$bingePreload)} />
+    <Toggle label="Binge next episode (preload)" desc="Keep the same release across episodes and pre-resolve + warm-buffer the next one near the end, so Next / auto-play starts instantly. While it is on, the next episode also starts by itself when one ends, even with Auto-play off." value={$bingePreload} onToggle={() => ($bingePreload = !$bingePreload)} />
     <Toggle label="Auto-skip openings & endings" desc="Skip opening, recap, and ending segments automatically, using community skip times and the file's own chapters. Off shows a manual Skip button." value={$autoSkip} onToggle={() => ($autoSkip = !$autoSkip)} />
     <Toggle label="Auto-skip next-episode previews" desc="Also skip the preview after the ending, when the file marks one. Off still shows a manual Skip button for it. Needs auto-skip on." value={$skipPreviews} onToggle={() => ($skipPreviews = !$skipPreviews)} />
     <Toggle label="Skip filler episodes" desc="Auto next-episode jumps past filler (AnimeFillerList). Filler is always marked in the episode list." value={$skipFiller} onToggle={() => ($skipFiller = !$skipFiller)} />
     <Toggle label="Scrub preview thumbnails" desc="Show a frame preview while skimming the seek bar. Off shows just the time and chapter (and skips the frame grab — lighter on the Deck)." value={$scrubThumbnails} onToggle={() => ($scrubThumbnails = !$scrubThumbnails)} />
+    {/if}
+    {#if !$isAndroid}
     <Toggle label="Animate player progress controls" desc="Animate the Game-mode progress bar and controls as they appear and disappear. Turn off for instant controls." value={$playerProgressAnimations} onToggle={() => ($playerProgressAnimations = !$playerProgressAnimations)} />
     <Toggle label="Subtitle line navigation" desc="Show Previous, Replay, and Next subtitle-cue controls in the player. Useful for language learning; off by default." value={$subtitleLineNavigation} onToggle={() => ($subtitleLineNavigation = !$subtitleLineNavigation)} />
     <div class="rounded-md border border-border p-3 space-y-3" data-setting-key="gif-recorder">
@@ -212,7 +244,7 @@
         <div class="font-bold">GIF recorder</div>
         <p class="mt-1 text-xs text-muted-foreground">Unencrypted playback cuts the moment from the file. Encrypted playback grabs every compositor frame it can for as long as you hold record.</p>
       </div>
-      <Toggle label="Include subtitles" desc="Burn the currently displayed subtitle track into the GIF." value={$gifIncludeSubtitles} onToggle={() => ($gifIncludeSubtitles = !$gifIncludeSubtitles)} />
+      <Toggle label="Include subtitles" settingKey="include-subtitles-in-gifs" desc="Burn the currently displayed subtitle track into the GIF." value={$gifIncludeSubtitles} onToggle={() => ($gifIncludeSubtitles = !$gifIncludeSubtitles)} />
       <label class="flex items-center justify-between gap-4">
         <span class="min-w-0">
           <span class="block font-bold">Width</span>
@@ -264,7 +296,20 @@
         </div>
       {/if}
     </div>
+    {:else if $inAppPlayerAvailable}
+      <!-- Android records GIFs from the player's own settings sheet; only the subtitle choice lives here. -->
+      <Toggle label="Include subtitles in GIFs" desc="Burn the currently displayed subtitle track into GIF recordings. Recording is started from the player's settings sheet." value={$gifIncludeSubtitles} onToggle={() => ($gifIncludeSubtitles = !$gifIncludeSubtitles)} />
+    {/if}
 
+    {#if $isAndroid && $inAppPlayerAvailable}
+      <div class="flex items-center justify-between gap-4 rounded-md border border-border p-3" data-setting-key="seek-duration">
+        <div class="min-w-0">
+          <div class="font-bold">Seek duration</div>
+          <p class="mt-1 text-xs text-muted-foreground">Seconds the rewind and forward buttons, a double-tap and the remote's arrow keys jump.</p>
+        </div>
+        <SelectMenu className="w-28 shrink-0" value={String($seekDuration)} onChange={(value) => { $seekDuration = Number(value) }} ariaLabel="Seek duration" options={seekOptions} />
+      </div>
+    {:else if !$isAndroid}
     <label class="flex items-center justify-between rounded-md border border-border p-3">
       <div>
         <div class="font-bold">Seek duration</div>
@@ -287,10 +332,11 @@
         <span class="text-xs text-muted-foreground">Pick the player executable (mpv, VLC, …). The stream URL is passed as its only argument.</span>
       </label>
     {/if}
+    {/if}
 
   </div>
-  {/if}
 
+  {#if $inAppPlayerAvailable}
   <section class="mb-4 max-w-2xl rounded-md border border-border p-3">
     <div class="flex items-start justify-between gap-3">
       <div>
@@ -348,8 +394,9 @@
       ]} />
     </label>
   </section>
+  {/if}
 
-  {#if $developerLogging}
+  {#if $developerLogging && $inAppPlayerAvailable}
   <section class="mb-4 max-w-2xl rounded-md border border-border bg-secondary/35 p-3 text-xs">
     <div class="flex items-center justify-between gap-3">
       <h3 class="text-sm font-bold">Home-theatre capability diagnostics</h3>

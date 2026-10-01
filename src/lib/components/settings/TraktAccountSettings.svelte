@@ -117,9 +117,9 @@
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p class="text-[11px] leading-5 text-muted-foreground">Watches, Watchlist changes, and 1–10 ratings are mirrored automatically. Pending writes retry when Trakt is reachable again.</p>
         <div class="flex shrink-0 justify-end gap-2">
-          {#if $traktUserSlug}<button type="button" data-focusable onclick={openProfile} class="min-h-9 rounded-md bg-secondary px-3 text-xs font-bold hover:bg-accent">Open profile</button>{/if}
-          <a href="/app/trakt" data-focusable class="inline-flex min-h-9 items-center rounded-md bg-secondary px-3 text-xs font-bold hover:bg-accent">Open Trakt hub</a>
-          <button type="button" data-focusable onclick={disconnect} disabled={busy} class="min-h-9 rounded-md px-3 text-xs font-bold text-destructive hover:bg-destructive/10 disabled:opacity-40">Disconnect</button>
+          {#if $traktUserSlug}<button type="button" data-focusable data-touch-target onclick={openProfile} class="min-h-9 rounded-md bg-secondary px-3 text-xs font-bold hover:bg-accent">Open profile</button>{/if}
+          <a data-touch-target href="/app/trakt" data-focusable class="inline-flex min-h-9 items-center rounded-md bg-secondary px-3 text-xs font-bold hover:bg-accent">Open Trakt hub</a>
+          <button type="button" data-focusable data-touch-target onclick={disconnect} disabled={busy} class="min-h-9 rounded-md px-3 text-xs font-bold text-destructive hover:bg-destructive/10 disabled:opacity-40">Disconnect</button>
         </div>
       </div>
     {:else}
@@ -145,7 +145,7 @@
           <p class="mt-1 text-xs leading-5 text-muted-foreground">Trakt returns to izumi.watch/link/trakt. Keep this Izumi profile selected until the connection finishes.</p>
           {#if $traktBrowserAuth.phase === 'waiting'}
             <details class="mt-3 text-sm text-muted-foreground">
-              <summary class="cursor-pointer py-1" data-focusable>App didn’t reopen?</summary>
+              <summary class="cursor-pointer py-1" data-focusable tabindex="0">App didn’t reopen?</summary>
               <label class="mt-2 grid gap-1 text-xs">Paste the return link copied from izumi.watch
                 <input type="password" bind:value={returnLink} autocomplete="off" spellcheck="false" data-focusable placeholder="izumi://auth/trakt#…" class="h-10 min-w-0 rounded-md bg-input px-3 text-base text-foreground sm:text-sm" />
               </label>
@@ -158,11 +158,11 @@
       <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <span class="inline-flex max-w-md items-start gap-1.5 text-[11px] leading-4 text-muted-foreground"><ShieldCheck size={13} class="mt-0.5 shrink-0" aria-hidden="true" />The app exchanges the temporary code directly with Trakt. Your app secret stays on this device, inside the active profile; Izumi never includes it in profile sync.</span>
         <div class="flex shrink-0 justify-end gap-2">
-          <button type="button" data-focusable onclick={() => openUrl('https://app.trakt.tv/settings/apps')} class="min-h-9 rounded-md bg-secondary px-3 text-xs font-bold hover:bg-accent">Trakt app settings</button>
+          <button type="button" data-focusable data-touch-target onclick={() => openUrl('https://app.trakt.tv/settings/apps')} class="min-h-9 rounded-md bg-secondary px-3 text-xs font-bold hover:bg-accent">Trakt app settings</button>
           {#if busy || waiting}
-            <button type="button" data-focusable onclick={cancel} class="min-h-9 rounded-md px-3 text-xs font-bold text-destructive hover:bg-destructive/10">Cancel</button>
+            <button type="button" data-focusable data-touch-target onclick={cancel} class="min-h-9 rounded-md px-3 text-xs font-bold text-destructive hover:bg-destructive/10">Cancel</button>
           {:else}
-            <button type="button" data-focusable onclick={connect} disabled={!clientIdInput.trim() || !clientSecretInput.trim()} class="min-h-9 rounded-md bg-primary px-3 text-xs font-bold text-primary-foreground disabled:opacity-40">Connect</button>
+            <button type="button" data-focusable data-touch-target onclick={connect} disabled={!clientIdInput.trim() || !clientSecretInput.trim()} class="min-h-9 rounded-md bg-primary px-3 text-xs font-bold text-primary-foreground disabled:opacity-40">Connect</button>
           {/if}
         </div>
       </div>

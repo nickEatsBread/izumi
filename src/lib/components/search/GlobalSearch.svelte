@@ -11,6 +11,7 @@
   import type { Media } from '$lib/anilist/types'
   import * as h from '$lib/haptics'
   import { portal } from '$lib/util/portal'
+  import { openOskForField } from '$lib/nav/osk'
   import {
     RECENT_SEARCHES_KEY,
     addRecentSearch,
@@ -161,7 +162,13 @@
       wasOpen = true
       returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
       loadRecent()
-      tick().then(() => input?.focus({ preventScroll: true }))
+      tick().then(() => {
+        if (!input) return
+        input.focus({ preventScroll: true })
+        // Decision 7: search is a typing-only launcher, so a controller gets the built-in keyboard
+        // at once. A no-op for mouse, touch and keyboard users.
+        openOskForField(input)
+      })
     } else if (!$globalSearchOpen && wasOpen) {
       wasOpen = false
       const target = returnFocus
@@ -190,11 +197,15 @@
     <button type="button" class="absolute inset-0 bg-black/75 backdrop-blur-md" aria-label="Close search" onclick={() => close()}></button>
     <div role="dialog" aria-modal="true" aria-label="Search catalog"
       class="relative z-10 flex max-h-[min(86vh,52rem)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-card shadow-2xl">
-      <div class="flex items-center gap-3 border-b border-border px-4 transition-colors focus-within:border-theme/70 sm:px-5">
+      <!-- The row's block padding is room for the controller focus ring, drawn 6 px outside the field
+           (so never under 6 px, whatever the root font size), which the dialog's overflow-hidden
+           would otherwise clip at the top. The field takes the rest of the old height and paints
+           above the results panel below. -->
+      <div class="flex items-center gap-3 border-b border-border px-4 py-[max(0.375rem,6px)] transition-colors focus-within:border-theme/70 sm:px-5">
         <Search size={23} class="shrink-0 text-theme" />
         <input data-part="search.field" bind:this={input} bind:value={query} data-focusable type="search"
           placeholder="Search {providerLabel}…" aria-label="Search catalog" autocomplete="off" onkeydown={onInputKeydown}
-          class="global-search-input min-w-0 flex-1 bg-transparent py-4 text-lg font-semibold outline-none placeholder:font-normal placeholder:text-muted-foreground sm:py-5 sm:text-xl" />
+          class="global-search-input relative z-10 min-w-0 flex-1 bg-transparent py-2.5 text-lg font-semibold outline-none placeholder:font-normal placeholder:text-muted-foreground sm:py-3.5 sm:text-xl" />
         {#if searchState === 'loading'}<LoaderCircle size={20} class="shrink-0 animate-spin text-muted-foreground" />{/if}
         <span class="hidden rounded-md border border-border bg-background/70 px-2 py-1 font-mono text-[0.65rem] font-bold text-muted-foreground sm:inline">Esc</span>
         <button type="button" data-focusable onclick={() => close()} aria-label="Close search"
@@ -323,9 +334,10 @@
 <style>
   /* The shell already communicates focus by tinting the field row's bottom border. Give this
      selector enough specificity to beat app.css's generic *:focus-visible outline, which otherwise
-     draws a theme-coloured rounded rectangle around the full-width search input on desktop. */
-  .global-search-input:focus,
-  .global-search-input:focus-visible {
+     draws a theme-coloured rounded rectangle around the full-width search input on desktop. Under a
+     controller (Deck Game mode, a paired pad, Android TV) the field keeps the controller ring. */
+  :global(html:not(.gamemode):not(.controller-mode):not(.tv-mode)) .global-search-input:focus,
+  :global(html:not(.gamemode):not(.controller-mode):not(.tv-mode)) .global-search-input:focus-visible {
     outline: none;
     box-shadow: none;
   }

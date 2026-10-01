@@ -47,7 +47,7 @@
 
 
 <details class="mt-3 border-t border-border pt-5">
-  <summary class="cursor-pointer text-sm text-muted-foreground">{m.onboarding_ratings_expand()}</summary>
+  <summary data-focusable tabindex="0" class="cursor-pointer text-sm text-muted-foreground">{m.onboarding_ratings_expand()}</summary>
   <label for="setup-ratings-key" class="mt-4 block text-sm font-semibold">{m.onboarding_omdb_key_label()}</label>
   <p class="mt-2 text-xs leading-relaxed text-muted-foreground">{m.onboarding_omdb_key_hint()}</p>
   <div class="relative mt-3">

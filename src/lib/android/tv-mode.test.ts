@@ -11,7 +11,7 @@ describe('Android TV mode contract', () => {
   const layout = read('../../routes/app/+layout.svelte')
   const nav = read('../nav/index.ts')
   const player = read('../components/player/AndroidPlayer.svelte')
-  const keyboard = read('../components/shell/OnScreenKeyboard.svelte')
+  const keyboard = read('../nav/osk.ts')
   const css = read('../../app.css')
 
   it('publishes a remote-only-compatible Leanback launcher', () => {
@@ -43,7 +43,7 @@ describe('Android TV mode contract', () => {
     expect(layout).toContain("classList.toggle('tv-mode', $isTv)")
     expect(layout).toContain('getCurrentWindow().close()')
     expect(css).toContain('.tv-mode .player-shell button:focus')
-    expect(keyboard).toContain('const controllerUi = $derived($gameMode || $isTv || $controllerMode)')
+    expect(keyboard).toContain("if (input.isTv) return 'focus-legacy'")
   })
 
   it('keeps playback and modal controls inside a TV focus trap', () => {
@@ -52,5 +52,61 @@ describe('Android TV mode contract', () => {
     expect(player).toContain("event.key === 'MediaPlayPause'")
     expect(player).toContain("event.key === 'ArrowLeft') skip(-$seekDuration)")
     expect(player).toContain('setAndroidAutoPip($androidAutoPip && !$isAndroidTv)')
+  })
+
+  it('asks the web layer first on phone system Back and falls through to stock Back', () => {
+    const kotlin = activity.replace(/\r\n/g, '\n')
+    const bridge = read('../nav/system-back.ts').replace(/\r\n/g, '\n')
+    expect(kotlin).toContain('import androidx.activity.OnBackPressedCallback')
+    // Only phones and tablets get the callback; TV keeps its KEYCODE_BACK to Escape translation.
+    expect(kotlin).toContain('    if (!television) {\n      installSystemBackBridge(webView)\n      return\n    }')
+    expect(kotlin.split('installSystemBackBridge(').length - 1).toBe(2)
+    expect(kotlin).toContain('object : OnBackPressedCallback(true) {')
+    // The back gesture never sends KEYCODE_BACK, so this goes through the dispatcher, not dispatchKeyEvent.
+    expect(kotlin).toContain('webView.evaluateJavascript("window.__izumiBack?.()===true") { handled ->')
+    expect(kotlin).toContain('if (handled == "true" || isFinishing || isDestroyed) return@evaluateJavascript')
+    expect(kotlin).toContain('bridge.isEnabled = false\n          onBackPressedDispatcher.onBackPressed()\n          bridge.isEnabled = true')
+    expect(kotlin).toContain('onBackPressedDispatcher.addCallback(this, callback)')
+    expect(kotlin).toContain('if (television && event.keyCode == KeyEvent.KEYCODE_BACK) {')
+    // The global the activity evaluates is the one the web layer installs.
+    expect(bridge).toContain("const bridge = () => handleLayeredBack('system')")
+    expect(bridge).toContain('target.__izumiBack = bridge')
+  })
+
+  it('scopes phone Back to the full player and closes its settings sheet on a window Escape', () => {
+    const shell = player.replace(/\r\n/g, '\n')
+    // nav/back.ts limits every lookup to this marker while the full-screen player is up.
+    expect(shell).toContain('<div class="player-shell fixed inset-0 z-50 select-none overflow-hidden text-white" data-android-player class:hidden={overlayHidden}')
+    // The sheet is a legacy trap that closes on a window Escape, the form phone system Back takes.
+    // On a phone it stops being one while it slides closed, so a second Back is not absorbed.
+    expect(shell).toContain("  const sheetTrap = $derived(sheetClosing && !$isAndroidTv ? undefined : '')")
+    expect(shell).toContain('aria-label="Video settings" tabindex="-1" data-nav-trap={sheetTrap} data-nav-escape={sheetTrap}>')
+    expect(shell).toContain([
+      '  function onPhoneSheetKeydown(event: KeyboardEvent) {',
+      "    if ($isAndroidTv || miniLayout || !sheet || sheetClosing || event.defaultPrevented || event.key !== 'Escape') return",
+      '    event.preventDefault()',
+      '    dismissSettings()',
+      '  }',
+    ].join('\n'))
+    expect(shell).toContain([
+      '  function onWindowKeydown(event: KeyboardEvent) {',
+      '    onTvKeydown(event)',
+      '    onPhoneSheetKeydown(event)',
+      '  }',
+    ].join('\n'))
+    expect(shell).toContain('<svelte:window onkeydown={onWindowKeydown} />')
+    expect(shell.split('<svelte:window').length - 1).toBe(1)
+    // TV remote Back keeps its own handler, unchanged (spec §3.11).
+    expect(shell).toContain([
+      '  function onTvKeydown(event: KeyboardEvent) {',
+      '    if (!$isAndroidTv || miniLayout) return',
+      '',
+      "    if (event.key === 'Escape' || event.key === 'BrowserBack' || event.key === 'GoBack') {",
+      '      event.preventDefault()',
+      '      if (sheet) dismissSettings()',
+      '      else void close()',
+      '      return',
+      '    }',
+    ].join('\n'))
   })
 })

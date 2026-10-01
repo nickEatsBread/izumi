@@ -55,9 +55,12 @@ describe('score control', () => {
     expect(source).not.toContain('aria-label="Increase score"')
   })
 
-  it('floats its menu so the dialog body cannot clip it, and Escape closes only the menu', () => {
+  it('floats its menu so the dialog body cannot clip it, and Escape or B closes only the menu', () => {
     expect(source).toContain('floating')
     expect(select).toContain('{:else if floating}')
+    // The open list is a nav layer: the shared Escape capture and B close it alone, never the
+    // editor around it. The arrows it handles stop at the list, so the d-pad engine cannot step twice.
+    expect(select).toContain("use:navLayer={{ kind: 'select-menu', onClose: closeMenu")
     expect(select).toContain('event.stopPropagation()')
   })
 

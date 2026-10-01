@@ -7,7 +7,9 @@
   import IncognitoBanner from '$lib/components/shell/IncognitoBanner.svelte'
   import AniListDegradedBanner from '$lib/components/shell/AniListDegradedBanner.svelte'
   import { androidMiniPlayer, androidMpvActive } from '$lib/player/android-mpv'
+  import { probeInAppPlayer } from '$lib/player/in-app-player'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
+  import NativePickerSheet from '$lib/components/shell/NativePickerSheet.svelte'
   // Lazy-mounted: the player stack + its source-resolve overlays are substantial but never render
   // until playback/resolve starts. Loading them on demand
   // keeps first home paint off that code entirely. See Lazy.svelte.
@@ -47,8 +49,16 @@
   import { page } from '$app/state'
   import { invoke } from '@tauri-apps/api/core'
   import { getCurrentWindow } from '@tauri-apps/api/window'
-  import { controllerMode, initInput, initDpadNav, startBrowserGamepadInput, suppressNativeContextMenus, suppressNativeTooltips, suppressPinchZoom } from '$lib/nav'
+  import { controllerMode, focusByNav, initInput, initDpadNav, startBrowserGamepadInput, suppressNativeContextMenus, suppressNativeTooltips, suppressPinchZoom } from '$lib/nav'
   import { startGamepadNav } from '$lib/nav/gamepad'
+  import { installSystemBack } from '$lib/nav/system-back'
+  import { closeAllNavLayers, closeTopNavLayer, topNavLayer } from '$lib/nav/layers'
+  import { clearBackPending, navEpoch, navInFlight } from '$lib/nav/nav-state'
+  import { setFocusHint } from '$lib/nav/focus-hint'
+  import { focusRestoreAllowed, rememberRouteFocus, restoreRouteFocus, routeFocusKey } from '$lib/nav/focus-memory'
+  import { publishBackHint, startBackHint } from '$lib/nav/back'
+  import { recordTrail } from '$lib/navigation/history-trail'
+  import { isPadEvent } from '$lib/nav/pad-controls'
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { scheduleBootWork } from '$lib/util/boot-work'
   import { isAndroid, isMacOS, isMobile, isTv, initPlatform } from '$lib/platform'
@@ -74,6 +84,11 @@
   import UpNextOverlay from '$lib/components/player/UpNextOverlay.svelte'
   import SeriesRatingPrompt from '$lib/components/player/SeriesRatingPrompt.svelte'
   import ProfileSwitcher from '$lib/components/profiles/ProfileSwitcher.svelte'
+  // The main-PIN keypad for household actions on restricted profiles (spec §6.5). Lazy: it is
+  // driven purely by the prompt store, which the gated Settings pages set.
+  import { householdPrompt } from '$lib/profiles/household-gate'
+  const loadHouseholdPinDialog = () => import('$lib/components/profiles/HouseholdPinDialog.svelte')
+  import { onMount } from 'svelte'
   import { get } from 'svelte/store'
   import { initCrashReporting } from '$lib/diagnostics'
   import { initDeveloperLogging } from '$lib/debug/native-logging'
@@ -128,6 +143,12 @@
   })
 
   function handleShellKeydown(event: KeyboardEvent) {
+    if (isPadEvent(event)) return
+    // Controller keys belong to the nav engine and the gamepad router, never to these shortcuts. They
+    // are window-targeted, so isTypingTarget(event.target) below threw on every pad press made
+    // outside the player with no dialog open.
+    // Android TV's remote Back arrives as an unmarked Escape and keeps today's behaviour below
+    // (isTypingTarget(window) still throws on it; see hotkeys.ts).
     // Safe mode works even when a theme stylesheet has hidden the way back to Settings.
     if (isSafeModeChord(event)) { event.preventDefault(); themeSafeMode.update((on) => !on); return }
     if (event.defaultPrevented) return
@@ -200,6 +221,7 @@
     initCrashReporting()
     markClientPerformance('izumi:app-layout-mounted')
     initPlatform() // resolve isAndroid/isMobile FIRST — playback + nav branch on it
+    void probeInAppPlayer() // Android full vs lite build: gates the in-app rows of Player settings
     const stopDeveloperLogging = get(isAndroid) ? () => {} : initDeveloperLogging()
     initOffline() // latch offline mode from launch connectivity + the persisted force toggle
     if (get(isAndroid)) initReturnTracking() // return-to-app = watched (external-player flow)
@@ -353,6 +375,9 @@
   $effect(() => {
     invoke('set_doh', { enabled: $enableDoH, url: $doHUrl }).catch(() => {})
   })
+  // Phone system Back: MainActivity's back callback runs the layered Back pipeline through the
+  // bridge installed here (nav/system-back.ts) and falls through to stock Back when it answers false.
+  onMount(() => installSystemBack())
 
   $effect(() => {
     document.documentElement.classList.toggle('tv-mode', $isTv)
@@ -452,9 +477,23 @@
     sentInsets = insets
     invoke('player_set_inset', { ...insets }).catch(() => {})
   })
-  // Navigating away (e.g. a sidebar link) exits playback and restores the browse UI.
-  beforeNavigate(({ from }) => {
+  // Navigating away (e.g. a sidebar link) exits playback and restores the browse UI. A history Back
+  // (the mouse Back button, a phone popstate) with a dropdown, sheet or chooser open closes that
+  // layer instead and stays on the page; returning early also skips close_player.
+  beforeNavigate((navigation) => {
+    if (navigation.type === 'popstate' && topNavLayer()) { navigation.cancel(); closeTopNavLayer('back'); return }
+    // Anything else really leaves: close every layer, drop a pending focus hint, and mark the
+    // navigation so a closing layer does not pull focus back onto the page being left.
+    closeAllNavLayers('navigate')
+    setFocusHint(null)
+    navEpoch.update((epoch) => epoch + 1)
+    navInFlight.set(true)
+    void navigation.complete.catch(() => {}).finally(() => navInFlight.set(false))
+    const { from } = navigation
     if (from?.url) rememberScroll(from.url)
+    // Route focus memory (spec §3.9): what held focus here, for a Back that returns to this page.
+    if (from?.url) rememberRouteFocus(routeFocusKey(from.url))
+    routeFocusRestore?.abort()
     if ($playing) {
       void exitPictureInPicture()
       invoke('close_player').catch(() => {})
@@ -465,6 +504,7 @@
   // gamepad-side restore runs shortly after the button press; this second restore runs after Svelte
   // has completed the navigation, so touch scrolling remains available on the destination screen.
   afterNavigate(({ to }) => {
+    navInFlight.set(false)
     if (to?.url && !$playing) restoreScroll(to.url)
     if (get(gameMode)) invoke('restore_native_touch').catch(() => {})
     requestAnimationFrame(() => requestAnimationFrame(() => markClientPerformance(
@@ -472,6 +512,30 @@
       { path: to?.url.pathname ?? location.pathname },
     )))
   })
+  // Settings Back and route focus memory (spec §3.8, §3.9). The history trail learns which page
+  // each history entry holds, the Back guard ends with the navigation it started, a history return
+  // (B, the system Back, the mouse back button) puts a controller user's focus back where it was,
+  // before Home's own first focus, and the B prompt is republished for the new page. The next
+  // navigation's beforeNavigate aborts a restore still waiting for its row.
+  let routeFocusRestore: AbortController | null = null
+  afterNavigate(({ to, type }) => {
+    clearBackPending()
+    if (to?.url) {
+      recordTrail(to.url.pathname + to.url.search, type)
+      if (type === 'popstate' && !$playing && focusRestoreAllowed()) {
+        const controller = new AbortController()
+        routeFocusRestore = controller
+        void restoreRouteFocus(routeFocusKey(to.url), {
+          signal: controller.signal,
+          // The nav engine's own reveal, instantly: the card's row first, then the page.
+          focus: (el) => { focusByNav(el, false, true); focusByNav(el, true, true) },
+        })
+      }
+    }
+    publishBackHint()
+  })
+  // What B does next, on <html> for the button-hint bar (nav/back.ts); removed when the shell goes.
+  onMount(() => startBackHint())
 </script>
 
 <svelte:window onkeydown={handleShellKeydown} />
@@ -564,6 +628,7 @@
 {#if globalSearchMounted}<Lazy load={loadGlobalSearch} />{/if}
 {#if trailerDialogMounted}<Lazy load={loadTrailerDialog} />{/if}
 <OnScreenKeyboard />
+<NativePickerSheet />
 <DeckKeyboardWarning />
 <!-- Android external-play "marked watched" toast (the in-player overlay isn't mounted on mobile). -->
 {#if $watchToast}
@@ -600,6 +665,7 @@
      a finale finished by backing out after the watch threshold asks over the series page. -->
 <SeriesRatingPrompt />
 <ProfileSwitcher />
+{#if $householdPrompt}<Lazy load={loadHouseholdPinDialog} />{/if}
 {#if $themeStudioOpen}
   <!-- Keep the draft mounted through navigation and playback; only hide the editor over video. -->
   <div hidden={$playing || $androidMpvActive}>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { developerLogging, updateChannel } from '$lib/settings/ui'
   import { isAndroid } from '$lib/platform'
@@ -7,6 +7,8 @@
   import { copyToClipboard } from '$lib/util/clipboard'
   import { clearDiagnostics, diagnosticEvents, diagnosticsSnapshot } from '$lib/diagnostics'
   import { ioErrorMessage, saveTextFile } from '$lib/player/history-io'
+  import { authorizeHousehold, cancelHouseholdPrompt } from '$lib/profiles/household-gate'
+  import { startFactoryReset } from '$lib/storage/factory-reset'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import Toggle from '$lib/components/settings/Toggle.svelte'
 
@@ -20,15 +22,27 @@
   let confirmReset = $state(false)
   let resetting = $state(false)
   let resetError = $state('')
+  // True while the main-PIN keypad is up on a restricted profile; a second press is ignored.
+  let authorizing = false
+  // Leaving the page while the keypad is still loading or up cancels it, so a PIN entered later
+  // cannot start a reset from a page that is gone.
+  onDestroy(cancelHouseholdPrompt)
 
-  function resetToDefaults() {
-    if (!confirmReset || resetting) return
-    resetting = true
+  async function resetToDefaults() {
+    if (!confirmReset || resetting || authorizing) return
     resetError = ''
+    authorizing = true
+    let allowed = false
     try {
-      sessionStorage.setItem('izumi-reset-requested', 'true')
+      allowed = await authorizeHousehold('factory-reset')
+    } finally {
+      authorizing = false
+    }
+    if (!allowed) return
+    resetting = true
+    try {
       // A full navigation stops stores, workers and sync before any data is removed.
-      window.location.replace('/reset.html')
+      startFactoryReset()
     } catch (error) {
       resetError = ioErrorMessage(error, 'Could not start the reset.')
       resetting = false
@@ -106,7 +120,7 @@
 </script>
 
 <div class="p-4 sm:p-8">
-  <h2 class="mb-1 text-xl font-black">About</h2>
+  <h2 data-settings-page-title class="mb-1 text-xl font-black">About</h2>
   <p class="mb-4 text-sm text-muted-foreground">Version information.</p>
 
   <div class="mb-5 flex items-center gap-3">
@@ -130,10 +144,10 @@
     data-focusable
     class="mt-3 inline-block text-sm font-medium underline underline-offset-2 hover:no-underline"
   >License Information</a>
-  <p class="mt-3 max-w-md text-sm text-muted-foreground">Need help with a TV setup or sources? <a href="/docs" class="font-bold text-foreground underline underline-offset-2">Read the izumi documentation</a>, including the <a href="/docs/companion/setup" class="font-bold text-foreground underline underline-offset-2">Samsung Tizen guide</a>.</p>
+  <p class="mt-3 max-w-md text-sm text-muted-foreground">Need help with a TV setup or sources? <a href="/docs" data-focusable class="font-bold text-foreground underline underline-offset-2">Read the izumi documentation</a>, including the <a href="/docs/companion/setup" data-focusable class="font-bold text-foreground underline underline-offset-2">Samsung Tizen guide</a>.</p>
 
   <!-- Updates -->
-  <div class="mt-6 max-w-md">
+  <div class="mt-6 max-w-md" data-setting-key="updates">
     <h3 class="mb-2 text-sm font-black">Updates</h3>
 
     <p class="mb-3 text-xs text-muted-foreground">
@@ -143,7 +157,7 @@
     <!-- Android always tracks the latest APK release. Desktop and Flatpak both support the
          persisted stable/beta channel; Flatpak maps it to its matching OSTree branch. -->
     {#if !$isAndroid}
-    <label class="mb-3 flex items-center justify-between gap-4 rounded-md border border-border p-4 sm:p-3">
+    <label data-setting-key="release-channel" class="mb-3 flex items-center justify-between gap-4 rounded-md border border-border p-4 sm:p-3">
       <div>
         <div class="text-sm font-bold">Release channel</div>
         <p class="mt-0.5 text-xs text-muted-foreground">Beta receives pre-releases first.</p>

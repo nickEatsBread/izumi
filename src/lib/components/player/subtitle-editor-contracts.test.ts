@@ -38,10 +38,11 @@ describe('subtitle editor cross-platform contract', () => {
     expect(desktop).toContain('onpaint={gmBitmapMode ? bumpPlayerOverlay : undefined}')
     expect(editor).toContain('data-nav-trap')
     expect(editor).toContain('onfocusin={requestPaint}')
-    expect(desktop).toContain("active.type === 'range'")
-    expect(desktop).toContain("active.stepDown()")
-    expect(desktop).toContain("active.stepUp()")
-    expect(desktop).toContain("active.dispatchEvent(new Event('input', { bubbles: true }))")
+    // The pad steps this slider through nav's shared adapter (padAdjust: snapped, clamped, `input`
+    // then `change`), reached by one pad-marked arrow; the hand-rolled stepDown/stepUp is gone.
+    expect(desktop).toContain('if (key) dispatchPadKey(key)')
+    expect(desktop).not.toContain('active.stepDown()')
+    expect(desktop).not.toContain('active.stepUp()')
   })
   it('applies through the live desktop command path and keeps editor actions clear of window controls', () => {
     expect(desktop).toContain('return playerCommand(name, args).catch')

@@ -17,8 +17,12 @@
   }
 </script>
 
+<!-- A legacy trap: Escape closes the file list, and so does B (the pad sends Escape to a
+     data-nav-escape trap) instead of walking history out of Cloud. -->
+<svelte:window onkeydown={(event) => { if (event.key === 'Escape' && $cloudFiles) { event.preventDefault(); cloudFiles.set(null) } }} />
+
 {#if $cloudFiles}
-  <div class="fixed inset-0 z-40 grid place-items-center bg-black/70 p-3 sm:p-6" data-nav-trap>
+  <div class="fixed inset-0 z-40 grid place-items-center bg-black/70 p-3 sm:p-6" data-nav-trap data-nav-escape>
     <div class="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl border border-border bg-background p-4 shadow-xl sm:p-5">
       <div class="mb-3 flex items-center justify-between gap-3">
         <h2 class="min-w-0 truncate text-lg font-black">{$cloudFiles.item.name}</h2>

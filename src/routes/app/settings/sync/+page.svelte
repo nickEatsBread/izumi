@@ -1,7 +1,8 @@
 <script lang="ts">
   import TvAccounts from '$lib/components/catalog/TvAccounts.svelte'
   import { activeProfileId as tvAccountProfileId } from '$lib/profiles/store'
-  import { onMount, tick } from 'svelte'
+  import { authorizeHousehold, cancelHouseholdPrompt } from '$lib/profiles/household-gate'
+  import { onDestroy, onMount, tick } from 'svelte'
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
   import { listen } from '@tauri-apps/api/event'
@@ -614,10 +615,27 @@
     offerTarget = device
   }
 
-  function confirmSendSetup() {
+  // True while the main-PIN keypad is up on a restricted profile. Asked before `action`, so `busy`
+  // does not disable (and relabel "Sending…") the Send setup button the keypad gives focus back to.
+  let authorizingSend = false
+  // Leaving the page while the keypad is still loading or up cancels it, so a PIN entered later
+  // cannot send from a page that is gone.
+  onDestroy(cancelHouseholdPrompt)
+
+  async function confirmSendSetup() {
     const device = offerTarget
-    if (!device) return
+    if (!device || busy || authorizingSend) return
     const withAccounts = offerAccounts
+    // The same data as a household backup: a restricted profile needs the main PIN first.
+    authorizingSend = true
+    let allowed = false
+    try {
+      allowed = await authorizeHousehold('send-setup')
+    } finally {
+      authorizingSend = false
+    }
+    // Cancelled, or the confirmation was closed meanwhile: nothing is offered.
+    if (!allowed || offerTarget !== device) return
     void action(`offer-${device.endpointId}`, async () => {
       await offerSetupToDevice(device.endpointId)
       // Only now does anything actually leave: the offer above is a capability, these two calls
@@ -726,7 +744,7 @@
   {#if $watchSyncError}
     <p role="alert" class="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">{$watchSyncError}</p>
   {/if}
-  <h2 class="mb-2 text-3xl font-bold tracking-tight">Device sync</h2>
+  <h2 data-settings-page-title class="mb-2 text-3xl font-bold tracking-tight">Device sync</h2>
   <p class="mb-5 max-w-2xl text-sm text-muted-foreground">
     Keep your progress and setup in step across Izumi devices. History and settings are end-to-end encrypted. Optional TV source resolution is configured separately.
   </p>
@@ -741,7 +759,7 @@
     <div role="alert" class="mb-4 max-w-2xl rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
   {/if}
 
-  <nav aria-label="Device sync sections" class="mb-7 flex max-w-2xl gap-6 border-b border-border">
+  <nav aria-label="Device sync sections" data-page-tabs class="mb-7 flex max-w-2xl gap-6 border-b border-border">
     {#each [{ id: 'sync', label: 'Sync & devices' }, { id: 'tv', label: 'TV connections' }] as item}
       <button type="button" data-focusable aria-current={syncSection === item.id ? 'page' : undefined} onclick={() => syncSection = item.id as 'sync' | 'tv'} class="min-h-12 border-b-2 px-1 text-sm font-semibold {syncSection === item.id ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}">{item.label}</button>
     {/each}
@@ -882,7 +900,7 @@
     </div>
   {:else}
   <details class="mb-6 max-w-2xl border-b border-border pb-4" open={connectionMethodOpen || !paired}>
-    <summary class="cursor-pointer py-2 text-sm font-semibold">Connection method <span class="ml-2 font-normal text-muted-foreground">{$syncProvider === 'cloudflare' ? 'Private Cloudflare' : 'Peer-to-peer'}</span></summary>
+    <summary data-focusable tabindex="0" class="cursor-pointer py-2 text-sm font-semibold">Connection method <span class="ml-2 font-normal text-muted-foreground">{$syncProvider === 'cloudflare' ? 'Private Cloudflare' : 'Peer-to-peer'}</span></summary>
   <SettingsGroup title="Connection" desc="Choose where encrypted device records travel" icon={Cloud}>
     <div class="grid grid-cols-2 gap-2 p-3">
       <button type="button" data-focusable disabled={!!busy} aria-pressed={$syncProvider === 'iroh'} onclick={() => { h.tap(); void selectProvider('iroh') }}
@@ -1036,8 +1054,8 @@
                 <span class="text-sm leading-5">I accept Cloudflare’s Terms of Service and Privacy Policy and ask Izumi to create an expiring deployment for me.</span>
               </label>
               <p class="ml-7 mt-1 text-xs text-muted-foreground">
-                Read the <button type="button" onclick={() => openUrl(CLOUDFLARE_TERMS_URL)} class="font-bold text-foreground underline underline-offset-2">Terms</button>
-                and <button type="button" onclick={() => openUrl(CLOUDFLARE_PRIVACY_URL)} class="font-bold text-foreground underline underline-offset-2">Privacy Policy</button>.
+                Read the <button type="button" data-focusable onclick={() => openUrl(CLOUDFLARE_TERMS_URL)} class="font-bold text-foreground underline underline-offset-2">Terms</button>
+                and <button type="button" data-focusable onclick={() => openUrl(CLOUDFLARE_PRIVACY_URL)} class="font-bold text-foreground underline underline-offset-2">Privacy Policy</button>.
               </p>
             </div>
             <button type="button" data-focusable disabled={!!busy || !cloudflareTermsAccepted} onclick={() => { h.impact(); createCloudflarePreview() }} class="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
@@ -1060,7 +1078,7 @@
             </div>
           {/if}
           <details class="mt-4 border-t border-border/70 pt-4">
-            <summary class="cursor-pointer text-sm font-bold">Advanced setup</summary>
+            <summary data-focusable tabindex="0" class="cursor-pointer text-sm font-bold">Advanced setup</summary>
             <h4 class="mt-3 text-sm font-black">Deploy into an existing Cloudflare account</h4>
             <p class="mt-1 text-xs leading-5 text-muted-foreground">Prefer to use an account you already manage? Create a narrowly scoped setup token, paste it once, and Izumi will deploy directly into that account.</p>
             <button type="button" data-focusable onclick={() => { h.impact(); openCloudflareTokenSetup() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={16} /> Create setup token</button>
@@ -1096,7 +1114,7 @@
             <p class="mt-1 text-xs leading-5 text-muted-foreground">For Wrangler or the older Git-based deploy. Generate the secret before deploying, configure it as <code>BOOTSTRAP_SECRET</code>, then paste the resulting Worker URL.</p>
             {#if $cloudflareSetupSecret}
               <div class="mt-2 flex gap-2">
-                <input type="password" readonly value={$cloudflareSetupSecret} aria-label="Cloudflare setup secret" class="min-w-0 flex-1 rounded-lg bg-input px-3 py-2 font-mono text-xs" />
+                <input type="password" readonly value={$cloudflareSetupSecret} aria-label="Cloudflare setup secret" tabindex="-1" class="min-w-0 flex-1 rounded-lg bg-input px-3 py-2 font-mono text-xs" />
                 <button type="button" data-focusable aria-label="Copy setup secret" onclick={() => copyCloudflare($cloudflareSetupSecret, 'Setup secret')} class="grid min-h-10 min-w-10 place-items-center rounded-lg bg-secondary"><Copy size={16} /></button>
               </div>
             {:else}
@@ -1133,7 +1151,7 @@
           {#if cloudflareInvite}
             <div class="mt-4 rounded-lg bg-secondary/50 p-3">
               <p class="text-xs font-bold">Single-use invite · expires in ten minutes</p>
-              <textarea readonly value={cloudflareInvite} rows="4" aria-label="Cloudflare device invite" class="mt-2 w-full resize-y rounded-lg bg-input px-3 py-2 font-mono text-xs"></textarea>
+              <textarea readonly value={cloudflareInvite} rows="4" aria-label="Cloudflare device invite" tabindex="-1" class="mt-2 w-full resize-y rounded-lg bg-input px-3 py-2 font-mono text-xs"></textarea>
               <button type="button" data-focusable onclick={() => copyCloudflare(cloudflareInvite, 'Invite')} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><Copy size={16} /> Copy invite</button>
             </div>
           {/if}
@@ -1151,7 +1169,7 @@
         </section>
 
         <details class="border-y border-border py-4">
-          <summary class="cursor-pointer text-sm font-semibold">Transfer settings &amp; sources</summary>
+          <summary data-focusable tabindex="0" class="cursor-pointer text-sm font-semibold">Transfer settings &amp; sources</summary>
           <div class="pt-4"><h3 class="font-black">Settings & sources</h3>
           <p class="mt-1 text-xs leading-5 text-amber-400">This can include add-on URLs and debrid credentials. It remains encrypted, and is only applied when you choose a device below.</p>
           <button type="button" data-focusable disabled={!!busy} onclick={() => { h.impact(); sendManual() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50"><Upload size={16} /> {busy === 'send' ? 'Sending…' : 'Share this device’s setup'}</button>
@@ -1447,7 +1465,7 @@
             <div>
               <h4 class="text-xs font-black uppercase tracking-wide text-muted-foreground">Pairing ticket</h4>
               <p class="mt-1 text-xs text-muted-foreground">For devices that cannot use the same local network. Treat this like a password.</p>
-              <textarea readonly value={ticket} rows="4" aria-label="Pairing ticket" spellcheck="false" data-focusable
+              <textarea readonly value={ticket} rows="4" aria-label="Pairing ticket" spellcheck="false" tabindex="-1"
                 class="mt-2 w-full resize-y rounded-lg bg-input px-3 py-2.5 font-mono text-sm sm:py-2 sm:text-xs"></textarea>
               <button type="button" onclick={() => { h.tap(); copyTicket() }} disabled={!ticket} data-focusable
                 class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50">

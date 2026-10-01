@@ -57,10 +57,13 @@ describe('Steam Deck browse loading', () => {
   })
 
   it('animates the Deck focus ring and poster pop', () => {
-    const focusCover = css.slice(css.indexOf('.gamemode [data-focusable]:focus .focus-cover {'))
+    const start = css.indexOf('.gamemode [data-focusable]:focus .focus-cover {')
+    expect(start).toBeGreaterThan(-1)
+    const focusCover = css.slice(start, css.indexOf('}', start))
     expect(focusCover).toContain('transform: scale(1.04);')
     expect(focusCover).toContain('transition: transform 80ms')
-    expect(focusCover).toContain('box-shadow: 0 0 0 3px #fff;')
+    expect(focusCover).toContain('box-shadow: var(--izumi-safe-focus-ring);')
+    expect(focusCover).not.toContain('#fff')
   })
 
   it('does not run a continuous startup sampler or treat animation scroll as fresh input', () => {

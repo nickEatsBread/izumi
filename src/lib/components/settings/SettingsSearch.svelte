@@ -4,9 +4,12 @@
   import Search from '@lucide/svelte/icons/search'
   import X from '@lucide/svelte/icons/x'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
-  import { isAndroid } from '$lib/platform'
+  import { isAndroid, isMobile, isTv } from '$lib/platform'
+  import { inAppPlayerAvailable } from '$lib/player/in-app-player'
   import * as h from '$lib/haptics'
-  import { searchSettings, settingKey, type SettingSearchItem } from '$lib/settings/search'
+  import { searchSettings, settingHref, type SettingSearchItem } from '$lib/settings/search'
+  import { openOskForField } from '$lib/nav/osk'
+  import { navLayer } from '$lib/nav/overlay'
 
   let { compact = false }: { compact?: boolean } = $props()
   let open = $state(false)
@@ -14,7 +17,9 @@
   let input = $state<HTMLInputElement>()
   let trigger = $state<HTMLButtonElement>()
   let returnFocus: HTMLElement | null = null
-  const results = $derived(searchSettings(query, $isAndroid).slice(0, 14))
+  // Hits for rows this device does not show are left out: phone layout, Android TV, and the lite
+  // build (no in-app player; `null` while the probe runs counts as lite, so hits never flash in).
+  const results = $derived(searchSettings(query, { android: $isAndroid, phone: $isMobile, tv: $isTv, lite: !$inAppPlayerAvailable }).slice(0, 14))
 
   // The desktop launcher lives inside a sticky sidebar, which is its own stacking context. Move
   // the actual overlay to <body> so focused controls in the page can never paint over the dialog.
@@ -29,6 +34,9 @@
     open = true
     await tick()
     input?.focus()
+    // Decision 7: settings search is a typing-only launcher, so a controller gets the built-in
+    // keyboard at once. A no-op for mouse, touch and keyboard users.
+    if (input) openOskForField(input)
   }
 
   async function close() {
@@ -41,16 +49,10 @@
 
   async function choose(item: SettingSearchItem) {
     h.tap()
-    const separator = item.href.includes('?') ? '&' : '?'
-    const search = item.anchored ? `${separator}setting=${encodeURIComponent(settingKey(item.title))}` : ''
     await close()
-    await goto(item.href + search)
+    await goto(settingHref(item))
   }
 </script>
-
-<svelte:window onkeydown={(e) => {
-  if (open && e.key === 'Escape') { e.preventDefault(); close() }
-}} />
 
 <button bind:this={trigger} type="button" data-focusable onclick={show} aria-label="Search settings"
   aria-haspopup="dialog" aria-expanded={open}
@@ -64,23 +66,28 @@
 </button>
 
 {#if open}
-  <div use:portal data-nav-trap class="fixed inset-0 z-[100] isolate flex items-start justify-center px-3 pt-[max(4rem,env(safe-area-inset-top))] sm:pt-[12vh]">
-    <button type="button" class="absolute inset-0 bg-black/70 backdrop-blur-sm" aria-label="Close settings search" onclick={close}></button>
+  <!-- A nav layer: Escape (the shared capture), B and remote Back close only this overlay. It
+       focuses its own search box on open (show) and restores the launcher itself (close). -->
+  <div use:portal data-nav-trap data-nav-escape use:navLayer={{ kind: 'settings-search', onClose: () => { void close() }, initialFocus: 'none', returnFocus: 'none' }} class="fixed inset-0 z-[100] isolate flex items-start justify-center px-3 pt-[max(4rem,env(safe-area-inset-top))] sm:pt-[12vh]">
+    <button type="button" tabindex="-1" class="absolute inset-0 bg-black/70 backdrop-blur-sm" aria-label="Close settings search" onclick={close}></button>
     <div role="dialog" aria-modal="true" aria-label="Search settings"
       class="relative z-10 flex max-h-[min(75vh,42rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-      <div class="flex items-center gap-2 border-b border-border px-3">
+      <!-- The row's block padding is room for the controller focus ring, drawn 6 px outside the field
+           (so never under 6 px, whatever the root font size), which the dialog's overflow-hidden
+           would otherwise clip at the top. The field takes the rest of the old height and paints
+           above the results panel below. -->
+      <div class="flex items-center gap-2 border-b border-border px-3 py-[max(0.375rem,6px)]">
         <Search size={20} class="shrink-0 text-muted-foreground" />
-        <input bind:this={input} bind:value={query} type="search"
+        <input bind:this={input} bind:value={query} type="search" data-focusable
           placeholder="Search settings…" aria-label="Search settings"
-          style="box-shadow:none"
-          class="settings-search-input min-w-0 flex-1 bg-transparent py-4 text-base outline-none placeholder:text-muted-foreground" />
+          class="settings-search-input relative z-10 min-w-0 flex-1 bg-transparent py-2.5 text-base outline-none placeholder:text-muted-foreground" />
         <button type="button" data-focusable onclick={close} aria-label="Close"
           class="grid size-9 place-items-center rounded-full text-muted-foreground transition-colors active:bg-accent hover:bg-secondary">
           <X size={20} />
         </button>
       </div>
 
-      <div class="min-h-0 overflow-y-auto bg-card p-2">
+      <div class="min-h-0 overflow-y-auto bg-card p-2" data-nav-scroll-container>
         {#if !query.trim()}
           <p class="px-3 py-8 text-center text-sm text-muted-foreground">Type a setting, feature, or keyword.</p>
         {:else if results.length}
@@ -103,8 +110,10 @@
 {/if}
 
 <style>
-  .settings-search-input:focus,
-  .settings-search-input:focus-visible {
+  /* Pointer and keyboard users get the dialog's own frame, so the field drops the global ring. Under
+     a controller (Deck Game mode, a paired pad, Android TV) the field is a d-pad stop: the rule is off. */
+  :global(html:not(.gamemode):not(.controller-mode):not(.tv-mode)) .settings-search-input:focus,
+  :global(html:not(.gamemode):not(.controller-mode):not(.tv-mode)) .settings-search-input:focus-visible {
     outline: none;
     box-shadow: none;
   }

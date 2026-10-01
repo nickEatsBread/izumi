@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack } from 'svelte'
+  import { onDestroy, onMount, untrack } from 'svelte'
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
   import Search from '@lucide/svelte/icons/search'
@@ -26,6 +26,8 @@
     type InstalledExtensionPackage,
   } from '$lib/extensions/manager'
   import { disabledExtensions, disabledPlugins, enabledExtensionUrls, extensionUrls, showAdult } from '$lib/settings/ui'
+  import { adultSourcesAllowed, cancelHouseholdPrompt, lockAdultSources, requestAdultSources } from '$lib/profiles/household-gate'
+  import { householdLocked } from '$lib/profiles/store'
   import { installedThemes } from '$lib/themes/installed'
   import { newerVersion } from '$lib/themes/packages'
   import { BUILTIN_STORES, allStores, directoryEnabled, enabledStores } from '$lib/store/feeds'
@@ -177,7 +179,7 @@
     content: content as StoreFilter['content'],
     withoutDebrid,
     installedOnly,
-    showAdult: $showAdult,
+    showAdult: $showAdult && $adultSourcesAllowed,
     query,
     sort: sort as StoreFilter['sort'],
   })
@@ -272,12 +274,12 @@
     const add = page.url.searchParams.get('add')
     if (!add) return
     untrack(() => {
-      storesDialog = { mode: 'add', url: add }
       const url = new URL(page.url)
       url.searchParams.delete('add')
-      // A real replace navigation: shallow replaceState would keep the old URL in this history entry,
-      // and Back would open the preview again.
+      // A real replace navigation (a shallow replaceState would let Back reopen the preview). The
+      // preview (a nav layer) opens after it lands: a navigation closes every nav layer as it starts.
       void goto(url, { replaceState: true, noScroll: true, keepFocus: true }).catch(() => {})
+        .then(() => { storesDialog = { mode: 'add', url: add } })
     })
   })
 
@@ -289,6 +291,9 @@
     // Catalogs added before stores existed become stores the first time the Store opens.
     void migrateCatalogStores().catch(() => 0)
   })
+  // Closing the Store cancels a PIN prompt still pending, so a PIN entered later cannot unlock
+  // anything, and an 18+ unlock made here lasts only while the Store is open.
+  onDestroy(() => { cancelHouseholdPrompt(); lockAdultSources() })
 
   function trustLabel(entry: StoreEntry): string {
     if (entry.storeId === ADDON_DIRECTORY_ID) return 'Directory listing · addons are remote services'
@@ -397,7 +402,7 @@
 
 <div class="min-w-0 overflow-x-hidden p-4 sm:p-8">
   <div class="mb-5 max-w-5xl">
-    <h2 class="text-xl font-black">Store</h2>
+    <h2 data-settings-page-title class="text-xl font-black">Store</h2>
     <p class="mt-1 text-sm text-muted-foreground">
       Sources and themes from izumi and from the stores you add. Third-party stores and community sources
       aren't reviewed by izumi; check their terms and privacy before use.
@@ -441,6 +446,12 @@
             class="rounded-lg px-3 py-2.5 text-sm font-bold sm:py-2 {withoutDebrid ? 'bg-primary text-primary-foreground' : 'bg-secondary'}">No debrid needed</button>
     <button type="button" data-focusable aria-pressed={installedOnly} onclick={() => (installedOnly = !installedOnly)}
             class="rounded-lg px-3 py-2.5 text-sm font-bold sm:py-2 {installedOnly ? 'bg-primary text-primary-foreground' : 'bg-secondary'}">Installed</button>
+    {#if $showAdult && $householdLocked}
+      <!-- A restricted profile whose 18+ setting is on lists 18+ entries only after the main PIN. A
+           toggle that stays on screen once unlocked, so the PIN dialog can give focus back to it. -->
+      <button type="button" data-focusable aria-pressed={$adultSourcesAllowed} onclick={() => ($adultSourcesAllowed ? lockAdultSources() : void requestAdultSources())}
+              class="rounded-lg px-3 py-2.5 text-sm font-bold sm:py-2 {$adultSourcesAllowed ? 'bg-primary text-primary-foreground' : 'bg-secondary'}">Show 18+ sources</button>
+    {/if}
     <button type="button" data-focusable disabled={loading} aria-label="Refresh stores" onclick={() => void loadStores(true)}
             class="rounded-lg bg-secondary px-3 py-2.5 sm:py-2"><RefreshCw size={16} class={loading ? 'animate-spin' : ''} /></button>
   </div>
@@ -494,8 +505,8 @@
   {/if}
 
   <p class="mt-6 max-w-5xl text-xs text-muted-foreground">
-    Sources you added by hand are on <a href="/app/settings/sources?tab=manage" class="font-bold text-theme">Sources</a>;
-    installed themes are on <a href="/app/settings/themes" class="font-bold text-theme">Themes</a>.
+    Sources you added by hand are on <a href="/app/settings/sources?tab=manage" data-focusable class="font-bold text-theme">Sources</a>;
+    installed themes are on <a href="/app/settings/themes" data-focusable class="font-bold text-theme">Themes</a>.
   </p>
 </div>
 

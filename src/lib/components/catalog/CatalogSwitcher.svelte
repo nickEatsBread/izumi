@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte'
   import { fade, fly } from 'svelte/transition'
   import Check from '@lucide/svelte/icons/check'
+  import { isOskTarget } from '$lib/nav/osk'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Pencil from '@lucide/svelte/icons/pencil'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
@@ -16,7 +17,10 @@
   } from '$lib/settings/catalog'
   import { homeEditorOpen } from '$lib/catalog/home-editor'
   import { isMobile } from '$lib/platform'
+  import { triggerOpensOnKey } from '$lib/nav'
   import * as h from '$lib/haptics'
+  import { navLayer } from '$lib/nav/overlay'
+  import type { NavLayerCloseReason } from '$lib/nav/layers'
 
   let {
     appearance = 'overlay',
@@ -83,18 +87,23 @@
   }
 
   function onTriggerKeydown(event: KeyboardEvent) {
-    if (['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) {
+    // Owner decision 2: keyboard arrows that just landed on this trigger walk on past it (the nav
+    // engine moves focus). Enter, Space or a click opens it; a trigger focused any other way opens
+    // on its arrows as before. The decision is shared with SelectMenu ($lib/nav).
+    if (triggerOpensOnKey(event)) {
       event.preventDefault()
       void setOpen(true)
     }
   }
 
+  /** The open panel is a nav layer: Escape (the shared capture), B and remote Back close it alone
+   *  and put focus back on the trigger, as Escape always did. A navigation or a preempting prompt
+   *  just closes it. */
+  function closeSwitcher(reason: NavLayerCloseReason) {
+    void setOpen(false, reason === 'back')
+  }
+
   function onListKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      void setOpen(false, true)
-      return
-    }
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
     event.preventDefault()
     const options = [...(listbox?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])]
@@ -108,6 +117,8 @@
 
   onMount(() => {
     const closeOutside = (event: PointerEvent) => {
+      // A tap on the on-screen keyboard is typing, not a press outside.
+      if (isOskTarget(event.target)) return
       if (open && !root?.contains(event.target as Node)) void setOpen(false)
     }
     const closeOnBlur = () => { if (open) void setOpen(false) }
@@ -138,7 +149,7 @@
   <!-- Keep caller positioning on the outer wrapper. Combining `relative` with Home's supplied
        `absolute` class let Tailwind's generated order choose `relative`, putting this control in
        document flow and exposing a black strip above the full-bleed hero. -->
-  <div bind:this={root} class={className} data-nav-trap={open ? '' : undefined}>
+  <div bind:this={root} class={className}>
     <div class="relative {display === 'rail' ? 'w-full' : 'w-fit'}">
     <button
       bind:this={trigger}
@@ -226,6 +237,9 @@
         role={$isMobile ? 'dialog' : undefined}
         aria-modal={$isMobile ? 'true' : undefined}
         aria-label={$isMobile ? 'Choose catalog' : undefined}
+        data-nav-trap
+        data-nav-escape
+        use:navLayer={{ kind: 'catalog-switcher', onClose: closeSwitcher, initialFocus: 'none', returnFocus: 'none' }}
         class="z-[70] overflow-hidden border border-border bg-background text-foreground shadow-2xl
           {$isMobile
             ? 'fixed inset-x-0 bottom-0 max-h-[min(80vh,38rem)] rounded-t-3xl pb-[env(safe-area-inset-bottom)]'
@@ -247,6 +261,7 @@
           role="listbox"
           tabindex="-1"
           aria-label="Catalog"
+          data-nav-scroll-container
           class="max-h-[min(56vh,25rem)] space-y-1 overflow-y-auto overscroll-contain px-2 pb-2"
           onkeydown={onListKeydown}
         >

@@ -62,6 +62,7 @@ import {
 } from './cloudflare'
 import { isCompanionSnapshot, type CompanionHomeSnapshot } from '$lib/companion/protocol'
 import { activeProfileId, activeProfileLocked, profileSwitcherOpen, profileHousehold, profilesEnabled, mergeRemoteProfiles } from '$lib/profiles/store'
+import { assertHouseholdAction } from '$lib/profiles/household-gate'
 import { watchCategory, watchPayloadForProfile } from './profile-scope'
 
 // All playback stores bind at module initialization. Keep that identity even in the brief window
@@ -155,8 +156,10 @@ export const openAdoptWindow = () => get(syncProvider) === 'cloudflare'
   ? Promise.reject(new Error('Setting up from another device needs peer-to-peer sync.'))
   : invoke<PairingWindow>("sync_adopt_open");
 
-/** Send this device's room to a new one waiting for it. */
+/** Send this device's room to a new one waiting for it. The setup is the same data as a household
+ *  backup, so a restricted profile needs a grant from authorizeHousehold('send-setup') first. */
 export async function offerSetupToDevice(endpointId: string): Promise<void> {
+  assertHouseholdAction('send-setup');
   let status = await getSyncStatus();
   if (status.state !== "ready") throw new Error("Sync is still starting.");
   // Someone pairing a second device for the first time has never made a room, and a device with

@@ -67,6 +67,8 @@
   import Settings from '@lucide/svelte/icons/settings'
   import { formatBytes } from '$lib/util/format'
   import { masonryItem } from '$lib/actions/masonry'
+  import { onDestroy } from 'svelte'
+  import { adultSourcesAllowed, cancelHouseholdPrompt, lockAdultSources, requestAdultSources } from '$lib/profiles/household-gate'
 
   const current = $derived(providerMeta($debridProvider))
   let account = $state<DebridAccountInfo | null>(null)
@@ -318,6 +320,27 @@
   // Per-catalog search text; the adult switch is a single preference across all of them.
   let catalogQuery = $state<Record<string, string>>({})
   let showNsfw = $state(false)
+  // 18+ packages stay hidden until asked for. On a restricted profile that takes the main profile's
+  // PIN, and the unlock lasts only until this page closes (spec §6.6).
+  const adultShown = $derived(showNsfw && $adultSourcesAllowed)
+  let adultAsking = false
+  async function toggleAdultSources() {
+    if (adultAsking) return
+    if (adultShown) {
+      showNsfw = false
+      lockAdultSources()
+      return
+    }
+    adultAsking = true
+    try {
+      showNsfw = await requestAdultSources()
+    } finally {
+      adultAsking = false
+    }
+  }
+  // Closing the page (or the Sources page that embeds it) cancels a PIN prompt still pending, so a
+  // PIN entered later cannot unlock anything, and hides 18+ sources again.
+  onDestroy(() => { cancelHouseholdPrompt(); lockAdultSources() })
   // A catalog runs to several hundred packages. Rendering them all was tolerable behind a nested
   // scroll box on desktop, but that box is unusable with a finger — it eats the page scroll — so on
   // mobile the list flows into the page instead, and the page can't carry 300 rows. Show a window
@@ -333,7 +356,7 @@
   function visiblePackages(url: string, packages: ExtensionCatalogPackage[]) {
     const query = (catalogQuery[url] ?? '').trim().toLocaleLowerCase()
     return packages.filter((extension) => {
-      if (extension.nsfw && !showNsfw) return false
+      if (extension.nsfw && !adultShown) return false
       if (section === 'manage') {
         const installed = installedById.has(extension.id)
         const disabled = installed && pluginOff(extension.id)
@@ -507,7 +530,7 @@
               <div class="min-w-0 flex-1"><div class="skeloader h-4 w-1/3 rounded"></div></div>
             </div>
             <div class="flex w-full justify-end sm:w-auto">
-              <button onclick={() => removeExt(i)} data-focusable title="Remove" aria-label="Remove {sourceLabel(url)}" class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent sm:size-8"><Trash2 size={16} /></button>
+              <button data-touch-target onclick={() => removeExt(i)} data-focusable title="Remove" aria-label="Remove {sourceLabel(url)}" class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent sm:size-8"><Trash2 size={16} /></button>
             </div>
           {:then info}
             {@const metas = info.configs}
@@ -564,7 +587,7 @@
             </div>
             <div class="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap">
               {#if pkgs || metas.length > 1}
-                <button data-focusable onclick={() => toggleExpanded(url)} aria-expanded={isExpanded(url)}
+                <button data-focusable data-touch-target onclick={() => toggleExpanded(url)} aria-expanded={isExpanded(url)}
                   class="shrink-0 rounded-md bg-secondary px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-accent sm:bg-transparent sm:px-2 sm:py-1">
                   {isExpanded(url) ? 'Hide' : pkgs ? 'Packages' : 'Sources'}
                 </button>
@@ -579,7 +602,7 @@
                   <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {off ? 'translate-x-0.5' : 'translate-x-4'}"></span>
                 </button>
               {/if}
-              <button onclick={() => removeExt(i)} data-focusable title="Remove" aria-label="Remove {sourceLabel(url)}" class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent sm:size-8"><Trash2 size={16} /></button>
+              <button data-touch-target onclick={() => removeExt(i)} data-focusable title="Remove" aria-label="Remove {sourceLabel(url)}" class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent sm:size-8"><Trash2 size={16} /></button>
             </div>
           {/await}
           </div>
@@ -607,10 +630,14 @@
                       />
                     </label>
                     <div class="flex items-center justify-between gap-2">
-                      <label class="flex items-center gap-2 py-1 text-sm text-muted-foreground sm:px-1 sm:text-xs">
-                        <input type="checkbox" bind:checked={showNsfw} class="size-4" />
-                        Adult sources
-                      </label>
+                      <div class="flex items-center gap-2 py-1 text-sm text-muted-foreground sm:px-1 sm:text-xs">
+                        <button type="button" data-focusable data-switch role="switch" aria-checked={adultShown}
+                          aria-label="Adult sources" onclick={() => void toggleAdultSources()}
+                          class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {adultShown ? 'bg-theme' : 'bg-white/20 ring-1 ring-inset ring-white/20'}">
+                          <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {adultShown ? 'translate-x-4' : 'translate-x-0.5'}"></span>
+                        </button>
+                        <span aria-hidden="true">Adult sources</span>
+                      </div>
                       {#if ids.length}
                         <span class="flex gap-1">
                           <button data-focusable onclick={() => setAllPlugins(ids, true)} class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold text-muted-foreground hover:bg-accent sm:bg-transparent sm:px-2 sm:py-0.5">All on</button>
@@ -633,7 +660,7 @@
                     </p>
                   {/if}
                   <!-- Nested scroll box on desktop only; on touch it fights the page scroll. -->
-                  <ul class="space-y-1 sm:max-h-72 sm:overflow-y-auto sm:pr-1">
+                  <ul data-nav-scroll-container="nested" class="space-y-1 sm:max-h-72 sm:overflow-y-auto sm:pr-1">
                     {#each shown.slice(0, shownLimit(url)) as p (p.id)}
                       {@const inst = installedById.get(p.id)}
                       {@const pOff = !!inst && pluginOff(p.id)}
@@ -670,7 +697,7 @@
                             {#if p.backend === 'aniyomi-jvm' && p.sources[0]}
                               <button type="button" data-focusable disabled={pOff}
                                 aria-label={`Configure ${p.sources[0].name}`} title={`Configure ${p.sources[0].name}`}
-                                onclick={() => openJvmSourceSettings(p.sources[0].id, p.sources[0].name)}
+                                data-touch-target onclick={() => openJvmSourceSettings(p.sources[0].id, p.sources[0].name)}
                                 class="grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 sm:size-7">
                                 <Settings size={17} />
                               </button>
@@ -684,11 +711,11 @@
                           <button
                             data-focusable
                             disabled={packageBusy}
-                            onclick={() => installFromCatalog(url, p)}
+                            data-touch-target onclick={() => installFromCatalog(url, p)}
                             class="shrink-0 rounded-md px-3 py-2 text-xs font-bold sm:px-2 sm:py-1 {inst ? 'bg-secondary text-muted-foreground hover:bg-accent sm:bg-transparent' : 'bg-primary text-primary-foreground'} disabled:opacity-50"
                           >{!inst ? 'Install' : !mayUpdateFrom(url, p, inst) ? 'Replace' : inst.version === p.version ? 'Reinstall' : 'Update'}</button>
                           {#if inst}
-                            <button data-focusable disabled={packageBusy} onclick={() => removePackage(url, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
+                            <button data-focusable disabled={packageBusy} data-touch-target onclick={() => removePackage(url, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
                               class="grid size-9 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent disabled:opacity-50 sm:size-7"><Trash2 size={16} /></button>
                           {/if}
                         </div>
@@ -759,20 +786,20 @@
             {#if p.backend === 'aniyomi-jvm' && p.sourceId}
               <button type="button" data-focusable disabled={pOff}
                 aria-label={`Configure ${p.name}`} title={`Configure ${p.name}`}
-                onclick={() => openJvmSourceSettings(p.sourceId, p.name)}
+                data-touch-target onclick={() => openJvmSourceSettings(p.sourceId, p.name)}
                 class="grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 sm:size-8">
                 <Settings size={17} />
               </button>
             {/if}
             {#if p.backend === 'izumi-service'}
-              <button data-focusable onclick={() => openServiceSettings(p.id, p.name)}
+              <button data-focusable data-touch-target onclick={() => openServiceSettings(p.id, p.name)}
                 class="rounded-md bg-secondary px-3 py-2 text-xs font-bold hover:bg-accent">Settings</button>
             {/if}
             <button data-focusable data-switch onclick={() => togglePlugin(p.id)} aria-pressed={!pOff} title={pOff ? 'Enable' : 'Disable'}
               class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {pOff ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
               <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {pOff ? 'translate-x-0.5' : 'translate-x-4'}"></span>
             </button>
-            <button data-focusable disabled={packageBusy} onclick={() => removePackage(p.id, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
+            <button data-focusable disabled={packageBusy} data-touch-target onclick={() => removePackage(p.id, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
               class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent disabled:opacity-50 sm:size-8"><Trash2 size={16} /></button>
           </div>
         </li>

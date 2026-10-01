@@ -3,7 +3,7 @@
   import { invoke } from '@tauri-apps/api/core'
   import { playerTracks } from '$lib/player/native'
   import { listenSafe } from '$lib/util/listen'
-  import { trackMenuOpen, onlineSubCandidates, subtitleNotice, playerNotice, nowPlayingMedia, nowPlayingStream, bingeSource, bumpPlayerOverlay, playbackRecovery } from '$lib/player/session'
+  import { trackMenuOpen, onlineSubCandidates, subtitleNotice, playerNotice, nowPlayingMedia, nowPlayingStream, bingeSource, bumpPlayerOverlay, playbackRecovery, oskOpen } from '$lib/player/session'
   import { get } from 'svelte/store'
   import { playStream, searchOnlineSubtitles } from '$lib/stremio/play'
   import { openSubtitlesToken } from '$lib/settings/ui'
@@ -263,6 +263,8 @@
     const unGamepad = listenSafe<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
       if (!e.payload.pressed) return
       if (get(deckKeyboardWarning)) return
+      // The on-screen keyboard owns the pad while it is up: Start must not open this menu over it.
+      if (get(oskOpen)) return
       if (e.payload.name === 'start') { open ? closeMenu() : openMenu(); return }
       if (!open) return
       switch (e.payload.name) {
@@ -277,6 +279,7 @@
     // Keyboard parity (Desktop testing / a physical keyboard on the Deck).
     const onKey = (e: KeyboardEvent) => {
       if (get(deckKeyboardWarning)) return
+      if (get(oskOpen)) return
       if (e.key === 'm' && !open) { openMenu(); return }
       if (!open) return
       const k = e.key

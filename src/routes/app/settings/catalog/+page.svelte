@@ -200,7 +200,7 @@
 {/snippet}
 
 <div class="p-4 sm:p-8">
-  <h2 class="mb-1 text-xl font-black">Catalog</h2>
+  <h2 data-settings-page-title class="mb-1 text-xl font-black">Catalog</h2>
   <p class="mb-4 max-w-2xl text-sm text-muted-foreground">Enable one or more platforms. When two distinct catalogs are available, Merged joins them as another Home and Search destination.</p>
 
   <SettingsGroup icon={LibraryBig} title="Catalog platforms" desc="Choose the services and sources available throughout Home and Search.">
@@ -211,7 +211,7 @@
         description={platform.description}
         enabled={hasPlatform(platform.id)}
         locked={hasPlatform(platform.id) && enabled.length === 1}
-        settingKey={platform.id === 'auto' ? 'catalog-provider' : undefined}
+        settingKey={`catalog-platform-${platform.id}`}
         onToggle={() => togglePlatform(platform.id)}
       />
     {/each}
@@ -252,7 +252,7 @@
 
   {#if hasPlatform('tmdb') || collectionsUseTmdb}
     <SettingsGroup icon={KeyRound} title="TMDB access">
-      <SettingsRow title="Read access token" description="A personal free non-commercial credential; stored only on this device.">
+      <SettingsRow settingKey="tmdb-token" title="Read access token" description="A personal free non-commercial credential; stored only on this device.">
         <button type="button" data-focusable onclick={() => (showTmdbGuide = true)} class="mb-3 inline-flex min-h-9 items-center gap-2 rounded-lg bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent">
           <CircleHelp size={15} aria-hidden="true" /> How to get a free token
         </button>
@@ -264,7 +264,7 @@
 
   {#if hasPlatform('tmdb') || hasPlatform('stremio')}
     <SettingsGroup icon={KeyRound} title="Optional review ratings" desc="Add critic ratings to titles that have an IMDb ID.">
-      <SettingsRow title="OMDb API key" description="Adds Rotten Tomatoes, Metacritic, IMDb vote counts, and richer rating details. The keyless IMDb score continues to work without it.">
+      <SettingsRow settingKey="omdb-key" title="OMDb API key" description="Adds Rotten Tomatoes, Metacritic, IMDb vote counts, and richer rating details. The keyless IMDb score continues to work without it.">
         <button type="button" data-focusable onclick={() => openUrl('https://www.omdbapi.com/apikey.aspx')}
           class="mb-3 inline-flex min-h-9 items-center gap-2 rounded-lg bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent">
           Get a free OMDb key

@@ -7,6 +7,7 @@
   import { nowPlaying, nowPlayingMedia, nowPlayingStream, playbackRecovery, playerNotice, directTorrentStats } from '$lib/player/session'
   import { playEpisode, playEpisodeInPlayer, playStream } from '$lib/stremio/play'
   import { playerGetProperty } from '$lib/player/native'
+  import { isOskTarget } from '$lib/nav/osk'
   import { animeEpisodeNumbers } from '$lib/catalog/anime-detail'
   import { airedCount } from '$lib/anilist/media'
   import { serverSiblings, variantLabels } from '$lib/player/source-variants'
@@ -78,7 +79,11 @@
   let root = $state<HTMLElement | undefined>(undefined)
   $effect(() => {
     if (!open) return
-    const outside = (event: PointerEvent) => { if (!root?.contains(event.target as Node)) open = null }
+    const outside = (event: PointerEvent) => {
+      // A tap on the on-screen keyboard is typing, not a press outside.
+      if (isOskTarget(event.target)) return
+      if (!root?.contains(event.target as Node)) open = null
+    }
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') open = null }
     window.addEventListener('pointerdown', outside, true)
     window.addEventListener('keydown', escape)

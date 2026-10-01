@@ -5,6 +5,7 @@
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
   import { fetchManifest, type AddonManifest } from '$lib/stremio/manifest'
   import { normalizeBase } from '$lib/stremio/sources'
+  import { navLayer } from '$lib/nav/overlay'
 
   let {
     name,
@@ -23,9 +24,9 @@
   let input = $state('')
   let busy = $state(false)
   let error = $state('')
-  let dialogEl = $state<HTMLElement>()
 
-  $effect(() => { dialogEl?.focus() })
+  // The dialog is a nav layer (use:navLayer below) with initialFocus 'always': its first control
+  // takes focus on open for every input, where the dialog box itself used to.
   onMount(() => { void openConfiguration() })
 
   async function openConfiguration() {
@@ -62,20 +63,21 @@
   }
 </script>
 
-<svelte:window onkeydown={(event) => { if (event.key === 'Escape' && !busy) onCancel() }} />
-
 <div
   class="fixed inset-0 z-[100] grid place-items-center bg-black/75 p-4"
   role="presentation"
   onclick={(event) => { if (event.target === event.currentTarget && !busy) onCancel() }}
 >
+  <!-- A nav layer: Escape (the shared capture), B and remote Back cancel it, except while the link
+       is being verified. -->
   <div
-    bind:this={dialogEl}
     tabindex="-1"
     role="dialog"
     aria-modal="true"
     aria-labelledby="addon-configurator-title"
     data-nav-trap
+    data-nav-escape
+    use:navLayer={{ kind: 'addon-configurator', onClose: () => { if (busy) return false; onCancel() }, initialFocus: 'always' }}
     class="w-full max-w-lg rounded-2xl border border-border bg-background p-5 shadow-2xl outline-none sm:p-6"
   >
     <h2 id="addon-configurator-title" class="text-lg font-black">Configure {name}</h2>

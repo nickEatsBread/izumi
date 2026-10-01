@@ -26,11 +26,18 @@ export function gameModeBitmapOverlayActive(input: {
   sourcePickerOpen?: boolean
   connectingOpen?: boolean
   subtitleEditorOpen?: boolean
+  /** A nav layer (a dropdown, sheet or the select chooser) is open over the video. */
+  navLayerOpen?: boolean
+  /** The on-screen keyboard is open over the video. */
+  oskOpen?: boolean
 }): boolean {
   if (!input.gameMode || !input.playing) return false
   // Comments are a full-viewport, opaque live WebKit surface on Gamescope. Capturing Disqus into
   // mpv made late iframe loads invisible and forced every scroll frame through GPU readback.
   if (input.commentsOpen) return false
+  // A layer or the keyboard is plain HTML: without the bitmap it would own the pad while staying
+  // invisible behind mpv. (Over live comments the webview already shows it, hence the order.)
+  if (input.navLayerOpen || input.oskOpen) return true
   // Discrete menus only change on focus/selection, so a settled bitmap remains appropriate.
   if (input.trackMenuOpen || input.playerMenuOpen || input.statsOpen || input.sourcePickerOpen || input.connectingOpen || input.subtitleEditorOpen) return true
   // Keep the polished HTML Skip pill. The native progress/controls continue independently below

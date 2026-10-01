@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { fetchChangelogPage, type ChangelogEntry } from '$lib/changelog'
+  import { gameMode } from '$lib/player/session'
+  import { controllerMode } from '$lib/nav/input'
 
   let entries = $state<ChangelogEntry[]>([])
   let page = 1
@@ -8,6 +10,9 @@
   let hasMore = $state(true)
   let error = $state('')
   let sentinel = $state<HTMLElement>()
+  // Controller-only stops: each entry is text a d-pad can walk (and so scroll through, loading
+  // more at the end); entries stay out of the mouse and touch focus order.
+  const stops = $derived($gameMode || $controllerMode)
 
   const fmt = (d: string) => new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 
@@ -40,14 +45,15 @@
 </script>
 
 <div class="mx-auto max-w-2xl p-4 sm:p-8">
-  <h1 class="text-xl font-bold">Changelog</h1>
+  <h1 data-settings-page-title class="text-xl font-bold">Changelog</h1>
   <p class="mt-1 text-sm text-muted-foreground">Recent changes, straight from the commit history.</p>
 
   <div class="mt-6 space-y-2">
     {#each entries as e (e.sha)}
       <!-- Stacked on a phone: date + message + sha on one baseline squeezed the message to a
            sliver at 360px; the sha drops under the message instead. -->
-      <div class="flex flex-col gap-1 rounded-lg border border-border p-3 sm:flex-row sm:items-baseline sm:gap-3">
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <div data-focusable={stops ? '' : undefined} tabindex={stops ? 0 : undefined} class="flex flex-col gap-1 rounded-lg border border-border p-3 sm:flex-row sm:items-baseline sm:gap-3">
         <span class="shrink-0 text-xs tabular-nums text-muted-foreground">{fmt(e.date)}</span>
         <span class="min-w-0 flex-1 text-sm">{e.message}</span>
         <span class="shrink-0 font-mono text-xs text-muted-foreground sm:text-[0.65rem]">{e.sha.slice(0, 7)}</span>

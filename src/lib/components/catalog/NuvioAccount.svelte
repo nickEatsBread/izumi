@@ -59,8 +59,8 @@
 
 <section class="nuvio-workspace py-6" aria-label="Nuvio cloud account">
   <div class="nv-toolbar flex-col sm:flex-row sm:items-end">
-    <div class="flex min-w-0 flex-1 items-end gap-3"><label class="nv-label min-w-0 flex-1 sm:max-w-xs">Nuvio profile<select class="nv-input" bind:value={selected} disabled={loading}>{#each profiles as row}<option value={row.profile_index}>{row.name}{row.pin_enabled ? ' · PIN protected' : ''}</option>{/each}</select></label><button class="nv-btn" disabled={!profile || loading} onclick={() => edit(profile)}>Edit profile</button></div>
-    <div class="flex flex-wrap gap-2 self-end"><button class="nv-btn" disabled={loading} onclick={refresh}>Refresh profiles</button><button class="nv-btn" disabled={loading || profiles.length >= 6} onclick={() => edit()}>New profile</button></div>
+    <div class="flex min-w-0 flex-1 items-end gap-3"><label class="nv-label min-w-0 flex-1 sm:max-w-xs">Nuvio profile<select data-focusable class="nv-input" bind:value={selected} disabled={loading}>{#each profiles as row}<option value={row.profile_index}>{row.name}{row.pin_enabled ? ' · PIN protected' : ''}</option>{/each}</select></label><button data-focusable class="nv-btn" disabled={!profile || loading} onclick={() => edit(profile)}>Edit profile</button></div>
+    <div class="flex flex-wrap gap-2 self-end"><button data-focusable class="nv-btn" disabled={loading} onclick={refresh}>Refresh profiles</button><button data-focusable class="nv-btn" disabled={loading || profiles.length >= 6} onclick={() => edit()}>New profile</button></div>
   </div>
   {#if notice}<p class="nv-notice" role="status">{notice}</p>{/if}
   {#if error && !profileDialog?.open}<p class="nv-error" role="alert">{error}</p>{/if}
@@ -69,9 +69,9 @@
   {:else}
     <p class="nv-help mb-5 text-xs">Save changes to Nuvio, or copy selected data between Nuvio and izumi.</p>
     {#if profile?.pin_enabled}
-      <div class="nv-panel flex flex-col items-start gap-3"><LockKeyhole class="size-6 text-muted-foreground" /><h3 class="font-bold">This profile is PIN protected</h3><p class="nv-help">Nuvio’s public API does not provide a PIN unlock flow. Manage the PIN in Nuvio, then refresh profiles here.</p><a href="https://nuvio.tv/account" target="_blank" rel="noreferrer" class="nv-btn">Open Nuvio account ↗</a></div>
+      <div class="nv-panel flex flex-col items-start gap-3"><LockKeyhole class="size-6 text-muted-foreground" /><h3 class="font-bold">This profile is PIN protected</h3><p class="nv-help">Nuvio’s public API does not provide a PIN unlock flow. Manage the PIN in Nuvio, then refresh profiles here.</p><a href="https://nuvio.tv/account" target="_blank" rel="noreferrer" data-focusable class="nv-btn">Open Nuvio account ↗</a></div>
     {:else if profile}
-      <nav aria-label="Cloud data" class="mb-6 flex gap-1 overflow-x-auto border-b border-border pb-2">{#each sections as item}<button class="min-h-11 shrink-0 rounded-lg px-4 text-sm font-bold {section === item.id ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}" aria-current={section === item.id ? 'page' : undefined} onclick={() => section = item.id}>{item.name}</button>{/each}</nav>
+      <nav aria-label="Cloud data" data-nav-scroll-x class="mb-6 flex gap-1 overflow-x-auto border-b border-border pb-2">{#each sections as item}<button data-focusable class="min-h-11 shrink-0 rounded-lg px-4 text-sm font-bold {section === item.id ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}" aria-current={section === item.id ? 'page' : undefined} onclick={() => section = item.id}>{item.name}</button>{/each}</nav>
       {#key `${selected}:${section}`}
         {#if section === 'collections'}<NuvioCloudCollections {profile} />
         {:else if section === 'status'}<NuvioCloudStatus {profiles} />
@@ -81,21 +81,21 @@
       {/key}
     {/if}
   {/if}
-  <p class="nv-help mt-10 border-t border-border pt-4 text-xs"><a class="underline underline-offset-4" href="https://nuvio.tv/docs" target="_blank" rel="noreferrer">Nuvio documentation ↗</a></p>
+  <p class="nv-help mt-10 border-t border-border pt-4 text-xs"><a data-focusable class="underline underline-offset-4" href="https://nuvio.tv/docs" target="_blank" rel="noreferrer">Nuvio documentation ↗</a></p>
   <dialog class="nv-dialog" bind:this={profileDialog} aria-labelledby="nv-profile-title" oncancel={(event) => { if (busy) event.preventDefault() }}>
-    <div class="nv-toolbar"><h3 class="text-xl font-black" id="nv-profile-title">{expected ? 'Edit profile' : 'New profile'}</h3><button class="nv-btn" disabled={busy} onclick={() => profileDialog.close()}>Close</button></div>
+    <div class="nv-toolbar"><h3 class="text-xl font-black" id="nv-profile-title">{expected ? 'Edit profile' : 'New profile'}</h3><button data-focusable class="nv-btn" disabled={busy} onclick={() => profileDialog.close()}>Close</button></div>
     <form onsubmit={(event) => { event.preventDefault(); void saveProfile() }} class="space-y-4">
       <fieldset disabled={busy || expected?.pin_enabled} class="space-y-4">
         <label class="nv-label">Profile name<input class="nv-input" required maxlength="64" bind:value={name} /></label>
-        <div class="grid grid-cols-[80px_1fr] gap-4"><label class="nv-label">Colour<input class="nv-input p-1" type="color" bind:value={color} /></label><label class="nv-label">Avatar<select class="nv-input" bind:value={avatar}><option value="">Keep current avatar</option>{#each avatars as entry}<option value={string(entry.id)}>{string(entry.display_name)}</option>{/each}</select></label></div>
+        <div class="grid grid-cols-[80px_1fr] gap-4"><label class="nv-label">Colour<input data-focusable class="nv-input p-1" type="color" bind:value={color} /></label><label class="nv-label">Avatar<select data-focusable class="nv-input" bind:value={avatar}><option value="">Keep current avatar</option>{#each avatars as entry}<option value={string(entry.id)}>{string(entry.display_name)}</option>{/each}</select></label></div>
         <label class="nv-label">Custom avatar URL<input class="nv-input" type="url" placeholder="https://…" bind:value={avatarUrl} /></label>
-        {#if editing?.profile_index !== 1}<label class="flex items-center gap-3 text-sm"><input type="checkbox" bind:checked={inherit} />Use profile 1’s sources</label>{/if}
-        <button class="nv-btn nv-primary" disabled={busy}>{busy ? 'Saving…' : 'Save profile to Nuvio'}</button>
+        {#if editing?.profile_index !== 1}<label class="flex items-center gap-3 text-sm"><input data-focusable type="checkbox" bind:checked={inherit} />Use profile 1’s sources</label>{/if}
+        <button data-focusable class="nv-btn nv-primary" disabled={busy}>{busy ? 'Saving…' : 'Save profile to Nuvio'}</button>
       </fieldset>
     </form>
     {#if expected?.pin_enabled}<p class="nv-help mt-4">Manage this protected profile in Nuvio.</p>
     {:else if expected}
-      <div class="mt-7 border-t border-border pt-5">{#if !showDelete}<button class="nv-btn nv-danger" disabled={busy} onclick={() => showDelete = true}>Delete profile…</button>{:else}<p class="nv-help">Permanently deletes {expected.name} and all its Nuvio sources, library, playback data, settings and collections.</p><label class="nv-label mt-3">Type “{expected.name}” to confirm<input class="nv-input" bind:value={confirmation} /></label><button class="nv-btn nv-danger mt-3" disabled={busy || confirmation !== expected.name} onclick={() => saveProfile(true)}>Delete profile and cloud data</button>{/if}</div>
+      <div class="mt-7 border-t border-border pt-5">{#if !showDelete}<button data-focusable class="nv-btn nv-danger" disabled={busy} onclick={() => showDelete = true}>Delete profile…</button>{:else}<p class="nv-help">Permanently deletes {expected.name} and all its Nuvio sources, library, playback data, settings and collections.</p><label class="nv-label mt-3">Type “{expected.name}” to confirm<input class="nv-input" bind:value={confirmation} /></label><button data-focusable class="nv-btn nv-danger mt-3" disabled={busy || confirmation !== expected.name} onclick={() => saveProfile(true)}>Delete profile and cloud data</button>{/if}</div>
     {/if}
     {#if error}<p class="nv-error" role="alert">{error}</p>{/if}
   </dialog>

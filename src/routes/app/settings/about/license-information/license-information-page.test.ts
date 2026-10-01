@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { settingsPageTitle } from '$lib/settings/hierarchy'
 
 const license = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.url)), 'utf8')
 const about = readFileSync(fileURLToPath(new URL('../+page.svelte', import.meta.url)), 'utf8')
@@ -21,7 +22,9 @@ describe('About license information', () => {
   })
 
   it('titles the nested route before the broader About prefix', () => {
-    expect(layout.indexOf("'/app/settings/about/license-information': 'License Information'"))
-      .toBeLessThan(layout.indexOf("'/app/settings/about': 'About'"))
+    // The phone header takes its title from the shared route table, where the longest prefix wins.
+    expect(layout).toContain('settingsPageTitle($page.url.pathname)')
+    expect(settingsPageTitle('/app/settings/about/license-information')).toBe('License Information')
+    expect(settingsPageTitle('/app/settings/about')).toBe('About')
   })
 })

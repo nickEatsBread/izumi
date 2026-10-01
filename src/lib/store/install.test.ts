@@ -3,6 +3,7 @@ import { get, writable, type Writable } from 'svelte/store'
 
 const mocks = vi.hoisted(() => ({
   currentLegacyStores: vi.fn(),
+  adultSourcesPermitted: vi.fn(() => true),
   stores: {} as Record<string, Writable<string[]>>,
 }))
 vi.mock('$lib/stremio/sources', () => {
@@ -21,6 +22,10 @@ vi.mock('$lib/settings/ui', () => {
   }
 })
 vi.mock('./origins', () => ({ currentLegacyStores: mocks.currentLegacyStores }))
+vi.mock('$lib/profiles/household-gate', () => ({
+  ADULT_SOURCES_LOCKED_MESSAGE: 'Unlock 18+ sources with the main profile PIN first.',
+  adultSourcesPermitted: mocks.adultSourcesPermitted,
+}))
 
 import { installStoreEntry, installedRef, type InstalledState } from './install'
 import type { StoreEntry } from './types'
@@ -41,6 +46,7 @@ const themeEntry: StoreEntry = {
 beforeEach(() => {
   for (const store of Object.values(mocks.stores)) store.set([])
   mocks.currentLegacyStores.mockReset().mockReturnValue([])
+  mocks.adultSourcesPermitted.mockReset().mockReturnValue(true)
 })
 
 describe('installStoreEntry', () => {
@@ -186,5 +192,60 @@ describe('installedRef', () => {
 
   it('never resolves ids through the object prototype', () => {
     expect(installedRef(addon(undefined, 'constructor'), { ...state, addonBases: [] }, '')).toBeNull()
+  })
+})
+
+// Restricted profiles need the main PIN for a NEW 18+ add-on or source; one already installed keeps
+// updating and being re-enabled. Packages go to the package installer, which checks what is on disk.
+describe('installStoreEntry and 18+ entries', () => {
+  const adultAddon: StoreEntry = { ...addon(), nsfw: true }
+  const adultStream: StoreEntry = { ...streamEntry, nsfw: true }
+  const adultPackage: StoreEntry = { ...packageEntry, nsfw: true }
+
+  it('refuses a new 18+ addon or source while 18+ sources are locked', async () => {
+    mocks.adultSourcesPermitted.mockReturnValue(false)
+    await expect(installStoreEntry(adultAddon, { storeUrl: '' }, vi.fn())).rejects.toThrow('Unlock 18+ sources with the main profile PIN first.')
+    await expect(installStoreEntry(adultStream, { storeUrl: 'https://x.test/index.json' }, vi.fn())).rejects.toThrow('Unlock 18+ sources with the main profile PIN first.')
+    expect(get(mocks.stores.addonUrls)).toEqual([])
+    expect(get(mocks.stores.extensionUrls)).toEqual([])
+  })
+
+  it('never hands a new 18+ addon to its configurator while locked', async () => {
+    mocks.adultSourcesPermitted.mockReturnValue(false)
+    const configurable: StoreEntry = { ...addon('https://addon.example.test/configure', 'org.example.addon'), nsfw: true }
+    await expect(installStoreEntry(configurable, { storeUrl: '' }, vi.fn())).rejects.toThrow('Unlock 18+ sources')
+  })
+
+  it('keeps re-enabling, updating and reconfiguring 18+ entries that are already installed', async () => {
+    mocks.adultSourcesPermitted.mockReturnValue(false)
+    mocks.stores.addonUrls.set(['https://addon.example.test'])
+    mocks.stores.disabledSources.set(['https://addon.example.test'])
+    expect(await installStoreEntry(adultAddon, { storeUrl: '' }, vi.fn())).toEqual({ kind: 'installed', message: 'Example Addon installed and enabled.' })
+    expect(get(mocks.stores.disabledSources)).toEqual([])
+    mocks.stores.extensionUrls.set(['https://x.test/index.json'])
+    await installStoreEntry(adultStream, { storeUrl: 'https://x.test/index.json' }, vi.fn())
+    expect(get(mocks.stores.extensionUrls)).toContain('https://x.test/stream.json')
+    const configurable: StoreEntry = { ...addon('https://addon.example.test/configure', 'org.example.addon'), nsfw: true }
+    expect(await installStoreEntry(configurable, { storeUrl: '', update: true }, vi.fn())).toMatchObject({ kind: 'configure' })
+  })
+
+  it('installs a new 18+ addon once 18+ sources are unlocked', async () => {
+    mocks.adultSourcesPermitted.mockReturnValue(true)
+    await installStoreEntry(adultAddon, { storeUrl: '' }, vi.fn())
+    expect(get(mocks.stores.addonUrls)).toEqual(['https://addon.example.test'])
+  })
+
+  it('leaves 18+ packages to the package installer, which knows what is on disk', async () => {
+    mocks.adultSourcesPermitted.mockReturnValue(false)
+    const installPackage = vi.fn().mockResolvedValue({ id: 'example.pkg', name: 'Example Package' })
+    await installStoreEntry(adultPackage, { storeUrl: 'https://x.test/index.json' }, installPackage)
+    expect(installPackage).toHaveBeenCalledTimes(1)
+  })
+
+  it('never asks about entries that are not 18+', async () => {
+    mocks.adultSourcesPermitted.mockReturnValue(false)
+    await installStoreEntry(addon(), { storeUrl: '' }, vi.fn())
+    expect(get(mocks.stores.addonUrls)).toEqual(['https://addon.example.test'])
+    expect(mocks.adultSourcesPermitted).not.toHaveBeenCalled()
   })
 })

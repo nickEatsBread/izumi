@@ -167,7 +167,7 @@
 </script>
 
 <div class="p-4 sm:p-8">
-  <h2 class="mb-2 text-3xl font-bold tracking-tight">Subtitles</h2>
+  <h2 data-settings-page-title class="mb-2 text-3xl font-bold tracking-tight">Subtitles</h2>
   <p class="mb-4 max-w-2xl text-sm text-muted-foreground">Subtitle sources, appearance, and playback behaviour.</p>
 
   {#snippet openSubtitlesBadge()}<SubtitleProviderBadge provider="opensubtitles" />{/snippet}
@@ -374,9 +374,9 @@
               <span class="block truncate text-[11px] text-muted-foreground">{preset.style.font}{preset.style.bold ? ' Bold' : ''}{preset.source?.title ? ` · ${preset.source.title}` : ''}</span>
             </span>
             {#if renamingId !== preset.id}
-              <button type="button" onclick={() => applyPreset(preset)} data-focusable class="rounded-md bg-primary px-2.5 py-1.5 text-xs font-bold text-primary-foreground">Apply</button>
-              <button type="button" onclick={() => startRename(preset)} data-focusable class="rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground">Rename</button>
-              <button type="button" onclick={() => deleteSubtitlePreset(preset.id)} data-focusable aria-label={`Delete ${preset.name}`} class="rounded-md px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10">Delete</button>
+              <button type="button" data-touch-target onclick={() => applyPreset(preset)} data-focusable class="rounded-md bg-primary px-2.5 py-1.5 text-xs font-bold text-primary-foreground">Apply</button>
+              <button type="button" data-touch-target onclick={() => startRename(preset)} data-focusable class="rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground">Rename</button>
+              <button type="button" data-touch-target onclick={() => deleteSubtitlePreset(preset.id)} data-focusable aria-label={`Delete ${preset.name}`} class="rounded-md px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10">Delete</button>
             {/if}
           </div>
           {#if renamingId === preset.id}

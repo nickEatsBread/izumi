@@ -146,7 +146,7 @@ import {
 import { playViaIntent } from '$lib/player/android-playback'
 import { requestSeriesRating } from '$lib/player/series-rating'
 import {
-  hasEmbeddedPlayer, prepareEmbeddedPlayer, mpvLoad, mpvCommand, androidMpvActive, androidMiniPlayer, mpvState, startMpvEvents,
+  hasEmbeddedPlayer, embeddedCoreFailed, prepareEmbeddedPlayer, mpvLoad, mpvCommand, androidMpvActive, androidMiniPlayer, mpvState, startMpvEvents,
   confirmedNativeAndroidAudioRoute, inspectAndroidMediaSource, nativeAndroidAudioRoute,
   androidStreamInfo, waitForMpvFirstFrame,
 } from '$lib/player/android-mpv'
@@ -3008,8 +3008,9 @@ export async function playStream(
   const platformStartedAt = performance.now()
   const android = get(isAndroid)
   // Probe for the full Android flavor without constructing libmpv. Core initialization belongs to
-  // mpvLoad, where it cannot block source resolution before the P2P startup watchdog exists.
-  const androidEmbedded = android ? await hasEmbeddedPlayer() : false
+  // mpvLoad, where it cannot block source resolution before the P2P startup watchdog exists. A core
+  // whose last preparation failed routes to the external player, as it always has.
+  const androidEmbedded = android ? (await hasEmbeddedPlayer()) && !embeddedCoreFailed() : false
   traceResolve(trace, 'playback platform ready', {
     durationMs: Math.round(performance.now() - platformStartedAt),
     android, androidEmbedded, externalPlayer: get(enableExternalPlayer),

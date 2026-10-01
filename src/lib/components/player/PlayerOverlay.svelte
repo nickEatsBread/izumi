@@ -16,7 +16,7 @@
   import { SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { getMediaSkipSegments } from '$lib/stremio/skip-segments'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting, oskOpen } from '$lib/player/session'
   import { seriesRatingPrompt } from '$lib/player/series-rating'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
@@ -43,6 +43,8 @@
   import { initScrub, beginScrub, moveScrub, endScrub, scrub, scrubActive } from '$lib/player/scrub'
   import { ButtonPressLatch, startGamepadEventSeek } from '$lib/player/gamepad'
   import { controllerMode } from '$lib/nav/input'
+  import { navLayerDismissedAt, navLayerOpen, topNavLayer } from '$lib/nav/layers'
+  import { dispatchPadKey, padActivate } from '$lib/nav/pad-controls'
   import { discussionExpanded } from '$lib/comments'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import { reportWatchPlayback } from '$lib/watch-together/client'
@@ -56,7 +58,7 @@
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
   import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeSideSheetCrop, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay, usesGameModeBitmapCompositor } from '$lib/player/gm-overlay'
   import { deckWebviewZoom } from '$lib/deck/webview-zoom'
-  import { findHotkey, isTypingTarget } from '$lib/hotkeys'
+  import { findHotkey, playerHotkeyEligible } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
   import P2PStatusOverlay from './P2PStatusOverlay.svelte'
   import { isDirectP2PStream, shouldShowP2PStatus, shouldUseGameModeDynamicOverlay } from '$lib/player/p2p-status'
@@ -66,7 +68,7 @@
   import { isMobile, isWindows } from '$lib/platform'
   import { themePresentation, shellNav } from '$lib/themes/runtime'
   import { resolvePlayerDock, type PlayerChrome } from '$lib/themes/presentation'
-  import { playerStage } from '$lib/player/session'
+  import { oskDismissedAt, playerStage } from '$lib/player/session'
   import { measureStage } from '$lib/player/insets'
   import DockEpisodes from './DockEpisodes.svelte'
   import WatchToolbar from './WatchToolbar.svelte'
@@ -614,7 +616,9 @@
       moveScrub: (t) => { moveScrub(t, true); scheduleGmDynamicOverlay() },
       endScrub: () => { endScrub(); scheduleGmDynamicOverlay() },
       onActivity: () => poke(),
-      blocked: () => subtitleEditorOpen || get(commentsOpen) || get(trackMenuOpen) || get(playerMenuOpen),
+      // Change source (visible) and the on-screen keyboard own the d-pad and triggers while up, so
+      // L2/R2 and d-pad Left/Right must not seek the video behind them.
+      blocked: () => subtitleEditorOpen || get(commentsOpen) || get(trackMenuOpen) || get(playerMenuOpen) || sourcePickerVisible || get(oskOpen) || !!topNavLayer(),
     }, gmMode)
     return stop
   })
@@ -845,7 +849,7 @@
   const noticeVisible = $derived(!!$playerNotice)
   const sourcePickerVisible = $derived(!!$streamPicker && !$streamPicker.hidden)
   const sourceConnectingVisible = $derived(!!$connecting)
-  const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || subtitleEditorOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible || sourcePickerVisible || sourceConnectingVisible)
+  const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || subtitleEditorOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible || sourcePickerVisible || sourceConnectingVisible || $navLayerOpen || $oskOpen)
   // Ordinary controls are drawn by the 60Hz native OSD. Complex/persistent HTML surfaces still
   // take the bitmap path; that bitmap sits above ASS and includes the controls underneath it.
   const gmNativeControls = $derived(gmBitmapMode && firstFrame && controlsVisible && (!overlayFull || $playerSideSheetOpen))
@@ -865,6 +869,8 @@
     sourcePickerOpen: sourcePickerVisible,
     connectingOpen: sourceConnectingVisible,
     subtitleEditorOpen,
+    navLayerOpen: $navLayerOpen,
+    oskOpen: $oskOpen,
   }))
   $effect(() => {
     if (!gmBitmapMode) return
@@ -1271,6 +1277,12 @@
       if (get(deckKeyboardWarning)) return
       // The app-wide router owns every button while the end-of-series rating prompt is up.
       if (get(seriesRatingPrompt)) return
+      // An open nav layer (a dropdown, sheet or chooser) and the on-screen keyboard own the pad; the
+      // router closes them. Select/View still toggles the discussion under the keyboard.
+      if (topNavLayer() || (get(oskOpen) && e.payload.name !== 'select')) return
+      // The router may already have closed a layer on this very A/B edge; its stamp keeps the same
+      // press from also pausing, skipping or leaving the player, in either listener order.
+      if ((e.payload.name === 'a' || e.payload.name === 'b') && e.payload.pressed && performance.now() - get(navLayerDismissedAt) < 500) return
       if (e.payload.name === 'l4') {
         if (!deckL4Press.update(e.payload.pressed, performance.now())) return
         if (get(commentsOpen)) return
@@ -1293,25 +1305,22 @@
       // The app-wide router may already have cleared the picker while handling this very same B
       // edge. Its timestamp makes the ownership transfer deterministic in either listener order.
       if (e.payload.name === 'b' && e.payload.pressed && performance.now() - get(streamPickerDismissedAt) < 500) return
+      // The same for the B that just closed the on-screen keyboard (the router stamps
+      // oskDismissedAt before closing it), whichever listener ran first.
+      if (e.payload.name === 'b' && e.payload.pressed && performance.now() - get(oskDismissedAt) < 500) return
       if (subtitleEditorOpen) {
         if (!e.payload.pressed) return
         if (e.payload.name === 'b') {
           subtitleEditorOpen = false
           poke()
         } else if (e.payload.name === 'a') {
-          ;(document.activeElement as HTMLElement | null)?.click()
+          padActivate()
         } else {
-          const active = document.activeElement
-          if ((e.payload.name === 'left' || e.payload.name === 'right') && active instanceof HTMLInputElement && active.type === 'range') {
-            // Synthetic KeyboardEvents do not perform a range input's native default action in
-            // WebKitGTK. Apply one real slider step and emit input so Svelte's binding/repaint runs.
-            if (e.payload.name === 'left') active.stepDown()
-            else active.stepUp()
-            active.dispatchEvent(new Event('input', { bubbles: true }))
-            return
-          }
+          // One pad-marked arrow. Nav moves focus inside the editor's data-nav-trap, and on the
+          // slider its pad adapter (padAdjust) steps the value, snapped and clamped, firing `input`
+          // then `change`: synthetic keys never run a range input's native default action.
           const key = ({ up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' } as Record<string, string>)[e.payload.name]
-          if (key) window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+          if (key) dispatchPadKey(key)
         }
         return
       }
@@ -1477,7 +1486,12 @@
       // language like "spa[n]ish" / "ja[p]anese" fires n→next / p→prev — which re-resolves the
       // episode and pops the source picker ("change source search") — plus f→fullscreen, space/k→pause.
       // Capture-phase runs before the input's own handler, so this guard (not stopPropagation) is the fix.
-      if (isTypingTarget(e.target)) return
+      // Synthetic keys never reach the hotkeys either: the controller's d-pad arrows, the subtitle
+      // editor's re-dispatched arrows and the Android TV Back bridge are untrusted, and the player
+      // takes pad input only through `gamepad-input`. Until now only a TypeError from the typing
+      // check on a window target kept them from seeking. The on-screen keyboard owns every key
+      // while up.
+      if (!playerHotkeyEligible(e, { oskOpen: get(oskOpen), layerOpen: !!topNavLayer() })) return
       // The end-of-series rating prompt owns the keyboard while up: its arrows move the score,
       // Enter saves, Escape dismisses — none of them may seek, pause or close the player under it.
       if (get(seriesRatingPrompt)) return

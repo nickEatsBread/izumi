@@ -14,6 +14,7 @@
   import Check from '@lucide/svelte/icons/check'
   import { saveTextFile, ioErrorMessage } from '$lib/player/history-io'
   import { themePreset } from '$lib/settings/ui'
+  import { isTv } from '$lib/platform'
   import {
     activeStudioTheme,
     activeStudioThemeId,
@@ -237,12 +238,17 @@
   </button>
 {/if}
 
-<aside class="studio-panel" class:minimized={$themeStudioMinimized} aria-labelledby="studio-heading" data-theme-studio data-theme-protected>
+<!-- Its own d-pad region, like the Settings rail: moves inside the panel never fall to the page
+     under it, and Left/Right from the page enters on the current tab. Android TV keeps the shared
+     region until the TV pass (as the rail does). Known limit for the TV/phone pass: at 640px or
+     narrower the panel is a full-width bottom sheet, which vertical moves never enter; only a
+     Left/Right with nothing further that way on the page crosses into it. -->
+<aside class="studio-panel" class:minimized={$themeStudioMinimized} aria-labelledby="studio-heading" data-nav-back-scope data-theme-studio data-theme-protected data-nav-region={$isTv ? undefined : 'theme-studio'}>
   <header class="studio-header">
     <div class="studio-title-row">
       <h2 id="studio-heading" bind:this={panelHeading} tabindex="-1"><Palette size={18} /> Theme Studio</h2>
       <div class="header-actions">
-        <button type="button" data-focusable class="icon-button" onclick={minimize} aria-label="Minimize Theme Studio" title="Minimize"><Minus size={18} /></button>
+        <button type="button" data-focusable class="icon-button" onclick={minimize} aria-label="Minimize Theme Studio" data-nav-back={confirmClose ? undefined : ''} title="Minimize"><Minus size={18} /></button>
         <button type="button" data-focusable class="icon-button" onclick={requestClose} aria-label="Close Theme Studio" title="Close"><X size={18} /></button>
       </div>
     </div>
@@ -250,13 +256,13 @@
     <p class="studio-hint">Browse any page. Every change appears as you edit.</p>
   </header>
 
-  <nav aria-label="Theme controls" class="studio-tabs">
+  <nav aria-label="Theme controls" class="studio-tabs" data-nav-scroll-x>
     {#each [{ id: 'palette', label: 'Colours' }, { id: 'type', label: 'Type & shape' }, { id: 'backdrop', label: 'Backdrop' }, { id: 'layout', label: 'Layout' }, { id: 'saved', label: 'Saved' }] as item}
-      <button type="button" data-focusable aria-pressed={category === item.id} onclick={() => { category = item.id as typeof category; confirmDelete = false; notice = '' }}>{item.label}</button>
+      <button type="button" data-focusable data-nav-region-default={category === item.id ? '' : undefined} aria-pressed={category === item.id} onclick={() => { category = item.id as typeof category; confirmDelete = false; notice = '' }}>{item.label}</button>
     {/each}
   </nav>
 
-  <div class="studio-content" aria-busy={fileBusy}>
+  <div class="studio-content" data-nav-scroll-container aria-busy={fileBusy}>
     {#if notice}<p role="status" class="studio-notice">{notice}</p>{/if}
     {#if category === 'palette'}
       <section class="control-section">
@@ -280,7 +286,7 @@
         {/each}
       </section>
       <details class="control-section advanced-colours">
-        <summary>More colours <span>Buttons, borders & surfaces</span></summary>
+        <summary data-focusable tabindex="0">More colours <span>Buttons, borders & surfaces</span></summary>
         {#each colorGroups as group}
           <div class="colour-group">
             <h4>{group.label}</h4>
@@ -292,7 +298,7 @@
         <label class="setting-row"><span>Colour scheme</span><select bind:value={draft.tokens.scheme} data-focusable><option value="dark">Dark</option><option value="light">Light</option></select></label>
       </details>
       <details class="control-section contrast-check">
-        <summary>Text contrast <span>{contrastPasses ? 'Looks readable' : 'Needs attention'}</span></summary>
+        <summary data-focusable tabindex="0">Text contrast <span>{contrastPasses ? 'Looks readable' : 'Needs attention'}</span></summary>
         <div class="contrast-values">
           {#each contrasts as contrast}<p><span>{contrast.label}</span><span>{contrast.value.toFixed(2)}:1 · {contrast.value >= 4.5 ? 'Pass' : 'Low'}</span></p>{/each}
         </div>
@@ -376,7 +382,7 @@
         <button type="button" data-focusable onclick={closeThemeStudio} disabled={fileBusy} class="studio-button secondary">Discard &amp; close</button>
         <button type="button" data-focusable onclick={() => saveAndApply(true)} disabled={fileBusy || !draft.name.trim()} class="studio-button primary">Save &amp; close</button>
       </div>
-      <button type="button" data-focusable onclick={() => confirmClose = false} class="keep-editing">Keep editing</button>
+      <button type="button" data-focusable onclick={() => confirmClose = false} class="keep-editing" data-nav-back>Keep editing</button>
     {:else}
       <div class="save-status"><span>{dirty ? 'Unsaved changes' : 'No unsaved changes'}</span><span class="theme-label">{draft.name}</span></div>
       <div class="footer-actions">
@@ -399,6 +405,9 @@
   /* The editor stays legible even while the user experiments with low-contrast client colours. */
   .studio-panel, .studio-resume {
     --editor-bg: #19191d; --editor-fg: #f1f1f4; --editor-muted: #a5a5af; --editor-line: #34343d; --editor-control: #26262d; --editor-accent: #d6d6df; --editor-focus: #c8c8e0;
+    /* The Deck and controller focus ring (app.css) keeps the editor palette here too: a gap and a
+       light band that stay readable whatever ring colour the theme being edited has. */
+    --izumi-safe-focus-ring: 0 0 0 2px var(--editor-bg), 0 0 0 5px var(--editor-focus);
     color: var(--editor-fg); background: var(--editor-bg); color-scheme: dark;
     font-family: 'Nunito Variable', sans-serif; font-size: 14px; line-height: 1.4;
     border: 1px solid var(--editor-line); box-shadow: 0 16px 48px #07070c55, 0 2px 6px #07070c33;

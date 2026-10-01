@@ -97,7 +97,7 @@
         <button type="button" data-focusable aria-label="Close" onclick={onclose} class="grid size-10 shrink-0 place-items-center rounded-full hover:bg-secondary"><X size={19} /></button>
       </div>
 
-      <div class="space-y-5 overflow-y-auto overscroll-contain p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+      <div data-nav-scroll-container class="space-y-5 overflow-y-auto overscroll-contain p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
         <label class="block">
           <span class="text-sm font-bold">Heading</span>
           <input data-focusable type="text" maxlength={BLOCK_LIMITS.title} value={block.title ?? ''} placeholder={BLOCK_META[block.type].title}

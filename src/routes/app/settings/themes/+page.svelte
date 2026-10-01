@@ -16,6 +16,7 @@
   import { themePreset } from '$lib/settings/ui'
   import { protectedSurface, themeSafeMode } from '$lib/themes/safe-mode'
   import { themeCssStatus } from '$lib/theme'
+  import { navLayer } from '$lib/nav/overlay'
 
   let tab = $state<'browse' | 'installed'>('browse')
   // Raw, never proxied: listingFor is keyed by these exact objects.
@@ -150,9 +151,8 @@
 </script>
 
 <svelte:head><title>Themes · izumi</title></svelte:head>
-<svelte:window onkeydown={(event) => { if (event.key === 'Escape' && showAdd) closeAdd() }} />
 <div class="themes-page" data-theme-protected use:protectedSurface>
-  <header class="page-heading"><div><p class="eyebrow">Make it yours</p><h2>Themes</h2><p class="intro">A different look. Still your client.</p></div><a class="control gap-2" href="/app/settings/theme-studio" data-focusable><Palette size={16} aria-hidden="true" /> Theme Studio</a></header>
+  <header class="page-heading"><div><p class="eyebrow">Make it yours</p><h2 data-settings-page-title>Themes</h2><p class="intro">A different look. Still your client.</p></div><a class="control gap-2" href="/app/settings/theme-studio" data-focusable><Palette size={16} aria-hidden="true" /> Theme Studio</a></header>
   {#if $themeStudioOpen}<p class="message">Finish or discard your Theme Studio draft before applying another theme.</p>{/if}
   {#if $themeSafeMode}<p class="message">Safe mode is on: izumi's default appearance is showing until you turn themes back on or restart. <button type="button" class="text-close inline" data-focusable onclick={() => themeSafeMode.set(false)}>Turn themes back on</button></p>{/if}
   {#if $themeCssStatus.state === 'rejected'}<p role="alert" class="message error">The active theme's stylesheet was not applied: {$themeCssStatus.reason}</p>{/if}
@@ -161,8 +161,10 @@
   <input bind:this={folderInput} type="file" accept=".json,application/json" multiple webkitdirectory class="hidden" onchange={(event) => { const input = event.currentTarget; void fromFiles(input.files); input.value = '' }} aria-label="Import theme package folder" />
   {#if showAdd}
     <div class="add-layer">
-      <button type="button" class="add-scrim" aria-label="Close add theme" onclick={closeAdd}></button>
-      <section class="add-dialog" role="dialog" aria-modal="true" aria-labelledby="add-theme-title">
+      <button type="button" class="add-scrim" tabindex="-1" aria-label="Close add theme" onclick={closeAdd}></button>
+      <!-- A nav layer: Escape (the shared capture), B and remote Back close only this dialog, and the
+           d-pad stays inside it. -->
+      <div data-nav-scroll-container class="add-dialog" role="dialog" aria-modal="true" aria-labelledby="add-theme-title" data-nav-trap data-nav-escape use:navLayer={{ kind: 'themes-add', onClose: closeAdd }}>
         <h3 id="add-theme-title">Add a theme</h3>
         <p>Install from the community catalog, a public HTTPS link, a JSON file, or a folder of packages.</p>
         <button type="button" class="control catalog-link" data-focusable onclick={() => void openUrl(THEME_CATALOG_PROJECT_URL)}>Open izumi-themes catalog</button>
@@ -184,14 +186,14 @@
           </div>
         {/if}
         <button class="text-close" data-focusable onclick={closeAdd}>Cancel</button>
-      </section>
+      </div>
     </div>
   {/if}
   {#if error}<p role="alert" class="message error">{error}</p>{/if}
   {#if notice}<p role="status" class="message">{notice}</p>{/if}
   {#if selected || prepared}
-    <section class="theme-detail" aria-busy={busy}>
-      <button class="back" data-focusable disabled={busy} onclick={() => { selected = null; prepared = null; error = '' }}><ArrowLeft size={16} /> Back to themes</button>
+    <section class="theme-detail" aria-busy={busy} data-nav-back-scope>
+      <button class="back" data-focusable data-nav-back disabled={busy} onclick={() => { selected = null; prepared = null; error = '' }}><ArrowLeft size={16} /> Back to themes</button>
       <div class="detail-grid"><div class="preview-image">{#if selected?.preview}<img src={selected.preview} alt={`${selected.name} layout preview`} referrerpolicy="no-referrer" />{:else}<Palette size={72} strokeWidth={1} />{/if}</div><div><p class="eyebrow">{prepared?.package.author ?? selected?.author}</p><h3>{prepared?.package.name ?? selected?.name}</h3><p class="description">{prepared?.package.description ?? selected?.description}</p><p class="version">Version {prepared?.package.version ?? selected?.version} · {platformLabel(selected?.platforms)}</p>
         {#if prepared}<div class="theme-actions"><button class="control" data-focusable disabled={$themeStudioOpen || !canInstall} onclick={preview}>Preview in client</button><button class="control primary" data-focusable disabled={$themeStudioOpen || !canInstall} onclick={install}>{currentInstall ? canInstall ? 'Update & apply' : 'Installed' : 'Install & apply'}</button></div>{#if originConflict}<p class="detail-hint">A theme with this ID is already installed from a different source. Remove it there before installing this one.</p>{:else}<p class="detail-hint">You can edit this theme in Theme Studio after installing it.</p>{/if}{:else if busy}<p role="status">Checking theme package…</p>{/if}
       </div></div>

@@ -34,6 +34,7 @@
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import ListOrdered from '@lucide/svelte/icons/list-ordered'
   import Search from '@lucide/svelte/icons/search'
+  import { isOskTarget } from '$lib/nav/osk'
   import ArrowUpDown from '@lucide/svelte/icons/arrow-up-down'
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
   import Settings from '@lucide/svelte/icons/settings'
@@ -42,6 +43,7 @@
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { masonryItem } from '$lib/actions/masonry'
+  import { navLayer } from '$lib/nav/overlay'
 
   // One control over two stores: whether to auto-pick at all, and whether to wait first. They were
   // separate toggles, which read as unrelated settings even though the second only means anything
@@ -232,6 +234,8 @@
   $effect(() => {
     if (!filterOpen && !sortOpen) return
     const closeOutside = (event: PointerEvent) => {
+      // A tap on the on-screen keyboard is typing, not a press outside.
+      if (isOskTarget(event.target)) return
       if (event.target instanceof Node && !filterRoot?.contains(event.target)) filterOpen = false
       if (event.target instanceof Node && !sortRoot?.contains(event.target)) sortOpen = false
     }
@@ -289,18 +293,10 @@
   const configuredCount = $derived($addonUrls.length + $extensionUrls.length + orphanCount)
 </script>
 
-<svelte:window onkeydown={(event) => {
-  if ((filterOpen || sortOpen) && event.key === 'Escape') {
-    event.preventDefault()
-    filterOpen = false
-    sortOpen = false
-  }
-}} />
-
 <div class="min-w-0 overflow-x-hidden p-4 sm:p-8">
   <div class="mb-5 max-w-7xl">
     <div class="mb-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <h2 class="text-xl font-black max-sm:hidden">Sources</h2>
+      <h2 data-settings-page-title class="text-xl font-black">Sources</h2>
       <div class="flex w-full flex-col gap-2 sm:w-auto sm:translate-y-3 sm:flex-row">
         <button type="button" data-focusable disabled={checkingUpdates} onclick={() => void checkForUpdates()}
           class="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-black text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60 sm:w-auto sm:min-w-44">
@@ -321,7 +317,7 @@
     </p>
   </div>
 
-  <div role="tablist" aria-label="Source settings" class="mb-3 grid max-w-7xl grid-cols-3 gap-1 rounded-xl bg-secondary/60 p-1">
+  <div role="tablist" aria-label="Source settings" data-page-tabs class="mb-3 grid max-w-7xl grid-cols-3 gap-1 rounded-xl bg-secondary/60 p-1">
     {#each tabs as tab (tab.id)}
       {@const Icon = tab.icon}
       <button type="button" role="tab" id="sources-tab-{tab.id}" aria-controls="sources-panel-{tab.id}"
@@ -443,7 +439,10 @@
         </button>
 
         {#if sortOpen}
-          <div role="menu" aria-label="Source sort order"
+          <!-- Sort and Filter are nav layers: Escape, B and remote Back close only the open one, the
+               d-pad stays inside it, and closing hands focus back to its trigger (the opener). -->
+          <div role="menu" aria-label="Source sort order" data-nav-trap data-nav-escape
+            use:navLayer={{ kind: 'sources-sort', onClose: () => { sortOpen = false } }}
             class="absolute left-0 top-[calc(100%+0.35rem)] z-50 w-44 rounded-xl border border-border bg-card p-1.5 shadow-xl sm:left-auto sm:right-0">
             {#each manageSortOptions as option (option.value)}
               <button type="button" role="menuitemradio" aria-checked={manageSortMode === option.value} data-focusable
@@ -467,7 +466,8 @@
         </button>
 
         {#if filterOpen}
-          <div role="dialog" aria-label="Source filters"
+          <div role="dialog" aria-label="Source filters" data-nav-trap data-nav-escape
+            use:navLayer={{ kind: 'sources-filter', onClose: () => { filterOpen = false } }}
             class="absolute right-0 top-[calc(100%+0.35rem)] z-50 w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-border bg-card p-3 shadow-xl">
             <div>
               <p class="mb-1.5 text-[0.68rem] font-black uppercase tracking-wide text-muted-foreground">Status</p>
@@ -546,7 +546,7 @@
                 class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors sm:h-5 sm:w-9 {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
                 <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform sm:h-4 sm:w-4 {off ? 'translate-x-0.5' : 'translate-x-5 sm:translate-x-4'}"></span>
               </button>
-              <button onclick={() => remove(i)} data-focusable title="Remove" aria-label={`Remove ${host(url)}`}
+              <button onclick={() => remove(i)} data-focusable title="Remove" data-touch-target aria-label={`Remove ${host(url)}`}
                 class="grid size-10 shrink-0 place-items-center rounded-md text-destructive transition-colors hover:bg-accent active:bg-destructive/10 sm:size-8"><Trash2 size={16} /></button>
             </div>
           {:then m}
@@ -570,7 +570,7 @@
                 {#await findAddonConfigureUrl(url, m) then configureUrl}
                   {#if configureUrl}
                     <button type="button" data-focusable aria-label={`Configure ${m.name}`} title={`Configure ${m.name}`}
-                      onclick={() => beginConfiguration(url, m.name, m.id, configureUrl)}
+                      data-touch-target onclick={() => beginConfiguration(url, m.name, m.id, configureUrl)}
                       class="grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground">
                       <Settings size={17} />
                     </button>
@@ -583,7 +583,7 @@
                 class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors sm:h-5 sm:w-9 {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
                 <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform sm:h-4 sm:w-4 {off ? 'translate-x-0.5' : 'translate-x-5 sm:translate-x-4'}"></span>
               </button>
-              <button onclick={() => remove(i)} data-focusable title="Remove" aria-label={`Remove ${m?.name ?? host(url)}`}
+              <button onclick={() => remove(i)} data-focusable title="Remove" data-touch-target aria-label={`Remove ${m?.name ?? host(url)}`}
                 class="grid size-10 shrink-0 place-items-center rounded-md text-destructive transition-colors hover:bg-accent active:bg-destructive/10 sm:size-8"><Trash2 size={16} /></button>
             </div>
           {/await}

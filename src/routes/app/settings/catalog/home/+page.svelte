@@ -203,7 +203,7 @@
 <div class="p-4 sm:p-8">
   <div class="mb-5 flex max-w-3xl items-start justify-between gap-4">
     <div>
-      <h2 class="mb-1 text-xl font-black">Customize Home</h2>
+      <h2 data-settings-page-title class="mb-1 text-xl font-black">Customize Home</h2>
       <a href="/app/settings/catalog/collections" data-focusable class="mb-2 inline-block text-sm font-bold text-primary">Collections & covers</a>
       <p class="text-sm text-muted-foreground">Choose the rows each catalog shows and put the most useful ones first. Merged has its own layout.</p>
     </div>
@@ -213,7 +213,7 @@
   </div>
 
   {#if targets.length > 1}
-    <div class="mb-5 flex max-w-3xl gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Catalog platform">
+    <div class="mb-5 flex max-w-3xl gap-2 overflow-x-auto pb-1" data-nav-scroll-x role="tablist" aria-label="Catalog platform">
       {#each targets as target (target.selection)}
         <button data-focusable role="tab" aria-selected={selected === target.selection} onclick={() => (selected = target.selection)}
           class="min-h-10 shrink-0 rounded-full border px-4 text-sm font-bold transition-colors {selected === target.selection ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card hover:bg-secondary'}">
@@ -237,45 +237,45 @@
         <form class="mt-4 grid gap-3 sm:grid-cols-2" onsubmit={createCustomTmdbRow}>
           <label class="sm:col-span-2">
             <span class="mb-1 block text-xs font-bold">Row title</span>
-            <input required maxlength="60" bind:value={customTitle} placeholder="e.g. Short sci-fi films"
+            <input required maxlength="60" bind:value={customTitle} data-focusable placeholder="e.g. Short sci-fi films"
               class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-theme/70" />
           </label>
           <label>
             <span class="mb-1 block text-xs font-bold">Titles</span>
-            <select bind:value={customMediaType} onchange={() => (customGenreId = 0)} class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm">
+            <select data-focusable bind:value={customMediaType} onchange={() => (customGenreId = 0)} class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm">
               <option value="movie">Movies</option><option value="series">Series</option>
             </select>
           </label>
           <label>
             <span class="mb-1 block text-xs font-bold">Order by</span>
-            <select bind:value={customSort} class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm">
+            <select data-focusable bind:value={customSort} class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm">
               <option value="popular">Most popular</option><option value="rating">Highest rated</option><option value="recent">Newest first</option>
             </select>
           </label>
           <label>
             <span class="mb-1 block text-xs font-bold">Genre <span class="font-normal text-muted-foreground">optional</span></span>
-            <select bind:value={customGenreId} class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm">
+            <select data-focusable bind:value={customGenreId} class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm">
               <option value={0}>Any genre</option>
               {#each customGenres as genre (genre.id)}<option value={genre.id}>{genre.label}</option>{/each}
             </select>
           </label>
           <label>
             <span class="mb-1 block text-xs font-bold">Release year <span class="font-normal text-muted-foreground">optional</span></span>
-            <input bind:value={customYear} type="number" min="1900" max={new Date().getFullYear() + 2} placeholder="Any year"
+            <input bind:value={customYear} type="number" data-focusable min="1900" max={new Date().getFullYear() + 2} placeholder="Any year"
               class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-theme/70" />
           </label>
           <label>
             <span class="mb-1 block text-xs font-bold">Minimum rating <span class="font-normal text-muted-foreground">out of 10</span></span>
-            <input bind:value={customMinimumScore} type="number" min="0" max="10" step="0.5" placeholder="Any rating"
+            <input bind:value={customMinimumScore} type="number" data-focusable min="0" max="10" step="0.5" placeholder="Any rating"
               class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-theme/70" />
           </label>
           <label>
             <span class="mb-1 block text-xs font-bold">Maximum runtime <span class="font-normal text-muted-foreground">minutes</span></span>
-            <input bind:value={customRuntimeMax} type="number" min="10" max="600" step="5" placeholder="Any runtime"
+            <input bind:value={customRuntimeMax} type="number" data-focusable min="10" max="600" step="5" placeholder="Any runtime"
               class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-theme/70" />
           </label>
           <label class="flex min-h-11 items-center gap-3 rounded-lg border border-border bg-background px-3 sm:col-span-2">
-            <input bind:checked={customStreamingOnly} type="checkbox" class="size-4 accent-[hsl(var(--theme))]" />
+            <input data-focusable bind:checked={customStreamingOnly} type="checkbox" class="size-4 accent-[hsl(var(--theme))]" />
             <span><strong class="block text-sm">Available to stream in my region</strong><small class="text-muted-foreground">Uses TMDB watch-provider availability for the current locale.</small></span>
           </label>
           <div class="flex items-center justify-between gap-3 sm:col-span-2">
@@ -292,7 +292,7 @@
             {#each customRows as row (row.id)}
               <div class="flex min-h-14 items-center gap-3 px-3 py-2">
                 <span class="min-w-0 flex-1"><strong class="block truncate text-sm">{row.title}</strong><small class="text-muted-foreground">{tmdbCustomHomeRowOption(row).description}</small></span>
-                <button data-focusable type="button" onclick={() => deleteCustomTmdbRow(row.id)} aria-label={`Delete ${row.title}`}
+                <button data-focusable type="button" data-touch-target onclick={() => deleteCustomTmdbRow(row.id)} aria-label={`Delete ${row.title}`}
                   class="grid size-10 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><Trash2 size={16} /></button>
               </div>
             {/each}
@@ -363,7 +363,7 @@
           <label class="relative mb-3 block">
             <span class="sr-only">Filter available Home rows</span>
             <Search size={17} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <input bind:value={availableSearch} type="search" placeholder="Find a genre, year, or catalog…"
+            <input bind:value={availableSearch} type="search" data-focusable placeholder="Find a genre, year, or catalog…"
               class="h-11 w-full rounded-lg border border-border bg-card pl-10 pr-3 text-sm outline-none transition focus:border-theme/70" />
           </label>
         {/if}

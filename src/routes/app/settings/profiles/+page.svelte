@@ -2,6 +2,8 @@
   import Wordmark from '$lib/components/Wordmark.svelte'
   import { tick } from 'svelte'
   import { goto } from '$app/navigation'
+  import { previousPath } from '$lib/navigation/history-trail'
+  import { markBackPending } from '$lib/nav/nav-state'
   import ArrowLeft from '@lucide/svelte/icons/arrow-left'
   import Pencil from '@lucide/svelte/icons/pencil'
   import Plus from '@lucide/svelte/icons/plus'
@@ -9,7 +11,7 @@
   import Check from '@lucide/svelte/icons/check'
   import { profileSyncError } from '$lib/sync/client'
   import { PROFILE_AVATARS, profileAvatarUrl, validAvatar, type ProfileAvatarId } from '$lib/profiles/avatars'
-  import { DEFAULT_PROFILE_ID, PROFILE_COLORS, activeProfileId, createProfile, deleteProfile, disableProfiles, profiles, profilesEnabled, setProfilePin, updateProfile, verifyProfilePin, type IzumiProfile, type ProfileRatingLimit } from '$lib/profiles/store'
+  import { DEFAULT_PROFILE_ID, PROFILE_COLORS, activeProfileId, createProfile, deleteProfile, disableProfiles, pinLockSeconds, pinThrottleMessage, profiles, profilesEnabled, setProfilePin, updateProfile, verifyPinThrottled, type IzumiProfile, type ProfileRatingLimit } from '$lib/profiles/store'
 
   type Screen = 'overview' | 'edit' | 'avatars' | 'delete' | 'gate' | 'disable'
   let screen = $state<Screen>('overview')
@@ -32,6 +34,13 @@
   const main = $derived($profiles.find((profile) => profile.id === DEFAULT_PROFILE_ID)!)
   const title = $derived(screen === 'avatars' ? 'Choose an avatar' : screen === 'delete' ? 'Delete profile?' : screen === 'disable' ? 'Turn off profiles?' : screen === 'gate' ? 'Manage profiles' : screen === 'edit' ? editing ? 'Edit profile' : 'Add profile' : $profilesEnabled ? 'Manage profiles' : 'Make room for everyone')
 
+  // Screens with a PIN field or a PIN-checked action: the countdown shows only there. Deleting or
+  // turning off without a PIN is never throttled, so those screens show no countdown.
+  const pinEntry = $derived(
+    screen === 'gate' || (screen === 'delete' && !!editing?.pin) || (screen === 'disable' && !!main.pin)
+      || (screen === 'edit' && !!editing?.pin && !(editing.id === main.id && managementAuthorized)),
+  )
+
   async function focusScreen() {
     await tick()
     panel?.querySelector<HTMLElement>('input, button[data-first]')?.focus()
@@ -52,7 +61,8 @@
     if (busy) return
     busy = true
     try {
-      if (!(await verifyProfilePin(main, mainPin))) { error = 'That PIN didn’t match.'; return }
+      const verdict = await verifyPinThrottled(main, mainPin)
+      if (!verdict.ok) { error = verdict.reason === 'throttled' ? '' : 'That PIN didn’t match.'; mainPin = ''; void focusScreen(); return }
       managementAuthorized = true
       if (editing?.id === main.id) currentPin = mainPin
       mainPin = ''; error = ''; screen = 'edit'; void focusScreen()
@@ -64,12 +74,22 @@
     error = ''
     if (screen === 'avatars' || screen === 'delete') screen = 'edit'
     else if (screen !== 'overview') { screen = 'overview'; currentPin = newPin = confirmPin = mainPin = '' }
-    else void goto('/app/settings/accounts')
+    else leave()
+  }
+  // Leave the household screen the way it was entered (Accounts, the profile switcher, the Settings
+  // rail): back through history when the previous page is where it came from, so Back and Done
+  // never stack a second copy of that page; with no known origin, up to Settings, replacing this entry.
+  function leave() {
+    const from = previousPath()
+    markBackPending()
+    if (from !== null && !from.startsWith('/app/settings/profiles')) history.back()
+    else void goto('/app/settings', { replaceState: true })
   }
   async function authorizedTarget() {
     if (!editing?.pin || (editing.id === main.id && managementAuthorized)) return true
-    if (await verifyProfilePin(editing, currentPin)) return true
-    error = 'Enter this profile’s current PIN to make changes.'
+    const verdict = await verifyPinThrottled(editing, currentPin)
+    if (verdict.ok) return true
+    error = verdict.reason === 'throttled' ? '' : 'Enter this profile’s current PIN to make changes.'
     return false
   }
   async function save() {
@@ -103,14 +123,14 @@
   async function turnOff() {
     if (busy) return
     busy = true; error = ''
-    try { if (!(await disableProfiles(mainPin))) error = 'That main profile PIN didn’t match.' }
+    try { if (!(await disableProfiles(mainPin))) { error = 'That main profile PIN didn’t match.'; mainPin = ''; void focusScreen() } }
     catch { error = 'Could not turn off profiles.' }
     finally { busy = false }
   }
 </script>
 
 <svelte:window onkeydown={(event) => { if (event.key === 'Escape') { event.preventDefault(); back() } }} />
-<section bind:this={panel} class="profile-manager fixed inset-0 z-[85] overflow-y-auto bg-background px-6 pb-16 pt-12 sm:px-12" data-nav-trap aria-labelledby="manage-heading">
+<section bind:this={panel} class="profile-manager fixed inset-0 z-[85] overflow-y-auto bg-background px-6 pb-16 pt-12 sm:px-12" data-nav-trap data-nav-escape data-nav-scroll-container aria-labelledby="manage-heading">
   <button type="button" data-focusable onclick={back} aria-label="Back" class="back-button"><ArrowLeft size={24} /></button>
   <div class:overview={screen === 'overview'} class="profile-content">
     <header>
@@ -122,7 +142,8 @@
     </header>
     {#if notice && screen === 'overview'}<p role="status" class="notice">{notice}</p>{/if}
     {#if error}<p role="alert" class="error">{error}</p>{/if}
-    {#if $profileSyncError}<p role="status" class="error">{$profileSyncError} <a href="/app/settings/sync" class="underline">Sync settings</a></p>{/if}
+    {#if pinEntry && $pinLockSeconds > 0}<p role="timer" data-pin-countdown class="error">{pinThrottleMessage($pinLockSeconds)}</p>{/if}
+    {#if $profileSyncError}<p role="status" class="error">{$profileSyncError} <a href="/app/settings/sync" data-focusable class="underline">Sync settings</a></p>{/if}
 
     {#if screen === 'overview'}
       {#if $profilesEnabled}
@@ -136,7 +157,7 @@
           {/each}
           {#if $profiles.length < 8}<button type="button" data-focusable onclick={() => begin(null)} class="portrait-button"><span class="portrait add"><Plus size={40} /></span><span class="profile-name">Add profile</span></button>{/if}
         </div>
-        <div class="overview-actions"><button type="button" data-focusable class="primary" onclick={() => goto('/app/home')}>Done</button><button type="button" data-focusable class="quiet" onclick={() => { screen = 'disable'; mainPin = ''; error = ''; void focusScreen() }}>Turn off profiles</button></div>
+        <div class="overview-actions"><button type="button" data-focusable class="primary" onclick={leave}>Done</button><button type="button" data-focusable class="quiet" onclick={() => { screen = 'disable'; mainPin = ''; error = ''; void focusScreen() }}>Turn off profiles</button></div>
       {:else}
         <div class="welcome-portraits" aria-hidden="true">{#each ['fox', 'bear', 'owl'] as face, index}<img src={profileAvatarUrl(face, PROFILE_COLORS[index])} alt="" />{/each}</div>
         <button type="button" data-focusable data-first class="primary" onclick={() => begin(main)}>Set up profiles</button>
@@ -147,7 +168,7 @@
         <img src={profileAvatarUrl(main.avatar, main.color)} alt="" class="pin-avatar" />
         <label for="management-pin">Enter {main.name}’s PIN to manage this household.</label>
         <input id="management-pin" type="password" inputmode="numeric" maxlength="6" autocomplete="off" bind:value={mainPin} data-focusable />
-        <button type="submit" disabled={busy || mainPin.length < 4} data-focusable class="primary">{busy ? 'Checking…' : 'Continue'}</button>
+        <button type="submit" disabled={busy || mainPin.length < 4 || $pinLockSeconds > 0} data-focusable class="primary">{busy ? 'Checking…' : 'Continue'}</button>
       </form>
     {:else if screen === 'avatars'}
       <p class="intro">Choose a character, then make it your own with a colour.</p>
@@ -157,12 +178,12 @@
         <img src={profileAvatarUrl(avatar, color)} alt="" />
         <p>Delete <strong>{editing?.name}</strong> and their on-device history, watchlist and connections? This can’t be undone. Other profiles won’t be affected.</p>
       </div>
-      <div class="form-actions"><button type="button" data-focusable data-first class="primary" onclick={back}>Keep profile</button><button type="button" data-focusable class="danger" disabled={busy} onclick={remove}>{busy ? 'Deleting…' : 'Delete profile'}</button></div>
+      <div class="form-actions"><button type="button" data-focusable data-first class="primary" onclick={back}>Keep profile</button><button type="button" data-focusable class="danger" disabled={busy || (!!editing?.pin && $pinLockSeconds > 0)} onclick={remove}>{busy ? 'Deleting…' : 'Delete profile'}</button></div>
     {:else if screen === 'disable'}
       <p class="intro">Return to {main.name} and the normal account button. Your other profiles and their data are kept, ready to use again.</p>
       <form onsubmit={(event) => { event.preventDefault(); void turnOff() }} class="pin-form">
         {#if main.pin}<label for="disable-pin">Main profile PIN</label><input id="disable-pin" type="password" inputmode="numeric" maxlength="6" autocomplete="off" bind:value={mainPin} data-focusable />{/if}
-        <button type="submit" data-focusable data-first disabled={busy} class="primary">Turn off profiles</button>
+        <button type="submit" data-focusable data-first disabled={busy || (!!main.pin && $pinLockSeconds > 0)} class="primary">Turn off profiles</button>
       </form>
     {:else}
       <form onsubmit={(event) => { event.preventDefault(); void save() }} class="edit-form">

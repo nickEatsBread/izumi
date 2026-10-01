@@ -37,6 +37,12 @@ export function hasTauriRuntime(): boolean {
     && !!(window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
 }
 
+/** True only on a real Android device or emulator, never in the desktop preview of the Android UI
+ *  (isAndroid covers both). Resolved by initPlatform(); false before it runs. */
+export function isNativeAndroid(): boolean {
+  return nativeAndroid
+}
+
 export function resolveAndroidTv(
   android: boolean,
   mode: AndroidTvMode,

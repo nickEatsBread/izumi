@@ -13,4 +13,15 @@ describe('interface settings', () => {
     expect(playerPage).not.toContain('bind:value={$titleLanguage}')
     expect(playerPage).not.toContain('How titles and lists are shown.')
   })
+
+  it('drops the UI scale slider on the phone layout, where zoom is fixed at 1, and anchors it for search', () => {
+    const page = interfacePage.replace(/\r\n/g, '\n')
+    expect(read('../../+layout.svelte')).toContain("rootStyle.zoom = $isMobile ? '1' : String($uiScale)")
+    expect(page).toContain("import { isAndroid, isAndroidTv, isMobile } from '$lib/platform'")
+    expect(page).toMatch(/\{#if !\$isMobile\}\n\s*<label data-setting-key="ui-scale" [^>]*>[\s\S]*?bind:value=\{\$uiScale\}[\s\S]*?<\/label>\n\s*\{\/if\}/)
+  })
+
+  it('anchors the app language row for search', () => {
+    expect(interfacePage).toContain('<label data-setting-key="app-language" class="mb-5 flex items-center justify-between gap-3 rounded-md border border-border p-4 sm:p-3">')
+  })
 })

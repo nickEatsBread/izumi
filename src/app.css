@@ -103,10 +103,13 @@ body { overflow-x: clip; }
 /* Touch feel. Android's WebView paints its own grey flash on every tapped link or button and starts
    a text selection when a card title is held; both read as a web page rather than an app. The app
    supplies its own press feedback (android-*-press, theme-press-sink), so the WebView's stays off
-   on any coarse pointer. Text content stays selectable; only controls and cards opt out. */
+   on any coarse pointer. Text content stays selectable; only controls and cards opt out. Text fields
+   are d-pad stops too ([data-focusable]) but keep long-press select and paste. Controller mode's
+   blanket `user-select: none` (below) never meets a long-press: a touch outside the built-in keyboard
+   leaves controller mode on pointerdown (nav/input.ts), long before the press is held. */
 @media (pointer: coarse) {
   html { -webkit-tap-highlight-color: transparent; }
-  a, button, [data-focusable], [data-theme-card] { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  a, button, [data-focusable]:not(input, textarea, [contenteditable]), [data-theme-card] { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 }
 /* Phone rows settle on a card edge after a flick instead of stopping mid-poster, and a swipe that
    runs off a row's end stays in the row instead of handing the rest of the gesture to the page.
@@ -115,10 +118,10 @@ body { overflow-x: clip; }
   [data-carousel-scroller] { scroll-snap-type: x proximity; scroll-padding-inline: 1rem; overscroll-behavior-x: contain; }
   [data-carousel-scroller] > * { scroll-snap-align: start; }
 }
-/* Mobile settings sub-pages: the back-header shows the category title, so hide each child page's
-   own redundant leading heading (its :first-child h2) — content starts right under the bar, native
-   app feel. Deeper section headings are never their parent's :first-child, so they still show. */
-@media (max-width: 640px) { .settings-child > div > h2:first-child { display: none; } }
+/* Phone settings sub-pages: the back-header's <h1> shows the page title (settings/hierarchy.ts), so
+   each page's own leading title, marked `data-settings-page-title`, is hidden: one title, right
+   under the bar. `.settings-child` exists only in the phone layout, so desktop keeps every title. */
+.settings-child [data-settings-page-title] { display: none; }
 ::-webkit-scrollbar { display: none; }
 .bg-striped { background: repeating-linear-gradient(-45deg, #202020 0 6px, #2a2a2a 6px 12px); }
 .bg-striped-muted { background: repeating-linear-gradient(-45deg, #1e1e1e 0 6px, #161616 6px 12px); }
@@ -297,6 +300,36 @@ html.theme-press-sink input[type='range']:active { filter: none; transform: none
   height: 44px;
   transform: translate(-50%, -50%);
 }
+/* Touch targets (decision 12). Small controls marked `data-touch-target` get a 44px floor wherever
+   any pointer is coarse (phones, tablets, a touchscreen laptop, the Deck's screen) and in Game mode.
+   Standalone switch pills keep their fixed geometry and get the same centred, invisible 44px
+   ::after hit area as the large-targets mode above; a checkbox or radio is never marked (its label
+   is the target). Android TV is left out: the remote has no pointer and the ten-foot layout sizes
+   itself. */
+@media (any-pointer: coarse) {
+  html:not(.tv-mode) [data-touch-target] { min-width: 44px; min-height: 44px; }
+  html:not(.tv-mode) [data-focusable][data-switch] { position: relative; }
+  html:not(.tv-mode) [data-focusable][data-switch]::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+}
+html.gamemode:not(.tv-mode) [data-touch-target] { min-width: 44px; min-height: 44px; }
+html.gamemode:not(.tv-mode) [data-focusable][data-switch] { position: relative; }
+html.gamemode:not(.tv-mode) [data-focusable][data-switch]::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
 .a11y-high-contrast {
   --muted-foreground: 0 0% 82%;
   --border: 0 0% 48%;
@@ -353,10 +386,24 @@ html.theme-press-sink input[type='range']:active { filter: none; transform: none
   content-visibility: visible;
   contain-intrinsic-size: none;
 }
+/* Deck and controller focus ring (owner decision 9): two-tone and coloured by the theme. A gap in
+   the page colour, a band in the theme's --ring, then a 1px foreground hairline, so a theme whose
+   ring sits close to its background still shows focus. The gap and the hairline read the
+   client-owned palette mirror (theme.ts), which theme stylesheets cannot declare (css-policy.ts).
+   A custom property's var() references resolve where it is declared, and descendants inherit that
+   result: this ring is resolved once at the root, so a subtree that only remaps --ring (a theme
+   rule on a part) does not recolour it. Protected surfaces remap --ring to the mirror, so the ring
+   is declared again on them and their band follows --izumi-safe-ring. */
+:root, [data-theme-protected] {
+  --izumi-safe-focus-ring: 0 0 0 2px hsl(var(--izumi-safe-background, var(--background))), 0 0 0 5px hsl(var(--ring, var(--izumi-safe-foreground, var(--foreground)))), 0 0 0 6px hsl(var(--izumi-safe-foreground, var(--foreground)) / 0.55);
+}
+/* The player keeps its white ring over video: the desktop overlay and the Android player. Every
+   Game-mode and controller-mode ring rule inside them reads this value instead of the theme's. */
+.izumi-player-root, .player-shell { --izumi-safe-focus-ring: 0 0 0 3px #fff; }
 /* Default focus indicator = ring the focused element. The box-shadow follows the element's
    OWN border-radius (no override here) so a round button (play/pause) keeps a round ring
    instead of a squared-off rounded-rect. */
-.gamemode [data-focusable]:focus { outline: none; box-shadow: 0 0 0 3px #fff; }
+.gamemode [data-focusable]:focus { outline: none; box-shadow: var(--izumi-safe-focus-ring); }
 /* Player chrome (YouTube Leanback / VacuumTube): snappy 120ms pop between focused
    controls. Secondary buttons scale; the play circle grows a little and keeps a
    round white ring so it reads as the primary action. */
@@ -422,16 +469,26 @@ html.theme-press-sink input[type='range']:active { filter: none; transform: none
    players use. :has suppresses the whole-element ring so it doesn't double up. */
 .gamemode [data-focusable]:focus:has(.focus-cover) { box-shadow: none; }
 .gamemode [data-focusable]:focus .focus-cover {
-  box-shadow: 0 0 0 3px #fff;
+  box-shadow: var(--izumi-safe-focus-ring);
   /* Bottom-anchored pop: the cover grows UP + sideways, its bottom edge stays put just above
      the title, so the ring never covers the title. The row is given top padding in game mode
-     (Carousel) so the grown top + ring isn't clipped by the horizontally-scrolling track. */
+     (Carousel, raised below for the two-tone ring) so the grown top + ring isn't clipped by the
+     horizontally-scrolling track. */
   transform: scale(1.04);
   transform-origin: center bottom;
   transition: transform 80ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 80ms ease;
   position: relative;
   z-index: 10;
 }
+/* Room above a popped cover for that ring. Carousel gives its track `pt-3` (12 px) in Game and
+   controller mode: enough for the 4% pop of a 152 px poster (9.1 px) plus the old 3 px white ring.
+   The two-tone ring reaches 6 px (6.2 px popped): 15.4 px in all, 16.8 px at large density. In
+   these modes this rule replaces that `pt-3` and outranks a plain theme rule on the `row.track`
+   part, so the room is client-owned while a controller drives the page. Keep this after the
+   `overflow: hidden` rule above, the first `.gamemode [data-carousel-scroller]` match, which
+   deck-touch-scroll.test.ts reads. */
+html.gamemode [data-carousel-scroller],
+html.controller-mode [data-carousel-scroller] { padding-top: max(1.125rem, 18px); }
 
 /* Paired controllers on ordinary desktop/mobile clients share the Deck's focus language without
    inheriting Gamescope-only zoom, compositor snapshots, fullscreen policy, or touch routing. */
@@ -449,13 +506,13 @@ html.theme-press-sink input[type='range']:active { filter: none; transform: none
 }
 .controller-mode [data-focusable]:focus {
   outline: none;
-  box-shadow: 0 0 0 3px #fff, 0 8px 24px rgb(0 0 0 / 0.4);
+  box-shadow: var(--izumi-safe-focus-ring), 0 8px 24px rgb(0 0 0 / 0.4);
   position: relative;
   z-index: 10;
 }
 .controller-mode [data-focusable]:focus:has(.focus-cover) { box-shadow: none; }
 .controller-mode [data-focusable]:focus .focus-cover {
-  box-shadow: 0 0 0 3px #fff, 0 10px 28px rgb(0 0 0 / 0.5);
+  box-shadow: var(--izumi-safe-focus-ring), 0 10px 28px rgb(0 0 0 / 0.5);
   transform: scale(1.04);
   transform-origin: center bottom;
   position: relative;

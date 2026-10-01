@@ -2,9 +2,15 @@
   import { onMount, tick } from 'svelte'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Check from '@lucide/svelte/icons/check'
-  import { isMobile } from '$lib/platform'
+  import { isOskTarget, openOskForField } from '$lib/nav/osk'
+  import { isMobile, isTv } from '$lib/platform'
+  import { gameMode } from '$lib/player/session'
+  import { controllerMode } from '$lib/nav/input'
+  import { navLayer } from '$lib/nav/overlay'
+  import type { NavLayerCloseReason } from '$lib/nav/layers'
   import { rootZoom } from '$lib/components/cards/preview-pos'
   import { menuPlacement } from '$lib/components/menu-placement'
+  import { triggerOpensOnKey } from '$lib/nav'
 
   export type SelectOption = {
     value: string
@@ -49,6 +55,9 @@
   let searchInput = $state<HTMLInputElement>()
   const filteredOptions = $derived(options.filter(option => !query || `${option.label} ${option.value}`.toLowerCase().includes(query.toLowerCase())))
   const selected = $derived(options.find((option) => option.value === value) ?? options[0])
+  // A controller user opens onto the current option, not the search box: the d-pad walks the list,
+  // and typing needs the on-screen keyboard anyway.
+  const controllerUi = $derived($gameMode || $isTv || $controllerMode)
 
   // Placement: a menu anchored below a trigger that sits low on the screen used to run straight off
   // the bottom, unreachable, with no page scroll to bring it back. menuPlacement flips it up and
@@ -95,7 +104,10 @@
     measure(menu?.scrollHeight)
     const current = root.querySelector<HTMLElement>(`[data-select-value="${CSS.escape(value)}"]`)
     const first = root.querySelector<HTMLElement>('[data-select-value]:not(:disabled)')
-    ;(searchable ? searchInput : current ?? first)?.focus({ preventScroll: true })
+    ;(searchable && !controllerUi ? searchInput : current ?? first)?.focus({ preventScroll: true })
+    // Decision 7: the searchable language menu is a typing-only launcher, so a controller gets the
+    // built-in keyboard for its search at once. A no-op for mouse, touch and keyboard users.
+    if (searchable && searchInput) openOskForField(searchInput)
   }
 
   function choose(option: SelectOption) {
@@ -106,25 +118,32 @@
     trigger.focus({ preventScroll: true })
   }
 
+  /** The open list is a nav layer (use:navLayer on each panel below): the shared Escape capture, B
+   *  and remote Back close it alone, never a dialog around it. Back puts focus on the trigger, as
+   *  Escape always did; a navigation or a preempting prompt just closes it. */
+  function closeMenu(reason: NavLayerCloseReason) {
+    open = false
+    if (reason === 'back') trigger.focus({ preventScroll: true })
+  }
+
   function onTriggerKeydown(event: KeyboardEvent) {
-    if (['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(event.key)) {
+    // Owner decision 2: keyboard arrows that just landed on this trigger walk on past it (the nav
+    // engine moves focus). Enter, Space or a click opens it; a trigger focused any other way opens
+    // on its arrows as before. The decision is shared with CatalogSwitcher ($lib/nav).
+    if (triggerOpensOnKey(event)) {
       event.preventDefault()
       void setOpen(true)
     }
   }
 
   function onMenuKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      // Escape closes the menu only. Without this it also bubbled to the enclosing dialog's own
-      // Escape handler and closed that as well, throwing the rest of the form away.
-      event.stopPropagation()
-      open = false
-      trigger.focus({ preventScroll: true })
-      return
-    }
+    // Escape never gets here: the nav layer's window capture closes this menu first (closeMenu), so
+    // an enclosing dialog's own Escape handler never sees it either.
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
     event.preventDefault()
+    // This handler moves focus itself; stop the arrow here so the d-pad engine's window listener
+    // does not move it a second time.
+    event.stopPropagation()
     const items = [...root.querySelectorAll<HTMLButtonElement>('[data-select-value]:not(:disabled)')]
     const current = items.indexOf(document.activeElement as HTMLButtonElement)
     const step = event.key === 'ArrowDown' ? 1 : -1
@@ -133,6 +152,8 @@
 
   onMount(() => {
     const closeOutside = (event: PointerEvent) => {
+      // A tap on the on-screen keyboard types into this menu's search; it is not a press outside.
+      if (isOskTarget(event.target)) return
       if (open && !root.contains(event.target as Node)) open = false
     }
     const closeOnBlur = () => { open = false }
@@ -160,7 +181,7 @@
 
 {#snippet optionList()}
   {#if searchable}
-    <input bind:this={searchInput} bind:value={query} type="search" aria-label={`Search ${ariaLabel ?? 'options'}`} placeholder="Search languages…" class="sticky top-0 mb-1 w-full rounded-md border border-border bg-background px-3 py-3 text-sm outline-none focus:border-foreground" />
+    <input bind:this={searchInput} bind:value={query} type="search" data-focusable aria-label={`Search ${ariaLabel ?? 'options'}`} placeholder="Search languages…" class="sticky top-0 mb-1 w-full rounded-md border border-border bg-background px-3 py-3 text-sm outline-none focus:border-foreground" />
   {/if}
   <!-- Conditional listbox is programmatically focusable only; never a positive tab stop. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -187,9 +208,9 @@
   {#if !filteredOptions.length}<p role="status" class="px-3 py-4 text-sm text-muted-foreground">No matching language</p>{/if}
 {/snippet}
 
-<div bind:this={root} class="relative {className}" data-nav-trap={open ? '' : undefined}>
+<div bind:this={root} class="relative {className}">
   <button
-    bind:this={trigger}
+    data-touch-target bind:this={trigger}
     type="button"
     data-focusable
     aria-label={ariaLabel}
@@ -213,6 +234,10 @@
         role={searchable ? 'dialog' : 'listbox'}
         tabindex="-1"
         aria-label={ariaLabel}
+        data-nav-trap
+        data-nav-escape
+        data-nav-scroll-container
+        use:navLayer={{ kind: 'select-menu', onClose: closeMenu, initialFocus: 'none', returnFocus: 'none' }}
         class="fixed left-3 right-3 z-[80] overflow-y-auto overscroll-contain rounded-md border border-border bg-background p-1 text-foreground shadow-xl"
         style="{placement === 'down' ? `top:${panelTop}px` : `bottom:${panelBottom}px`};max-height:{maxHeight}px"
         onkeydown={onMenuKeydown}
@@ -227,6 +252,10 @@
         role={searchable ? 'dialog' : 'listbox'}
         tabindex="-1"
         aria-label={ariaLabel}
+        data-nav-trap
+        data-nav-escape
+        data-nav-scroll-container
+        use:navLayer={{ kind: 'select-menu', onClose: closeMenu, initialFocus: 'none', returnFocus: 'none' }}
         class="fixed z-[80] overflow-y-auto overscroll-contain rounded-md border border-border bg-background p-1 text-foreground shadow-xl"
         style="left:{panelLeft}px;min-width:{panelWidth}px;{placement === 'down' ? `top:${panelTop}px` : `bottom:${panelBottom}px`};max-height:{maxHeight}px"
         onkeydown={onMenuKeydown}
@@ -239,6 +268,10 @@
         role={searchable ? 'dialog' : 'listbox'}
         tabindex="-1"
         aria-label={ariaLabel}
+        data-nav-trap
+        data-nav-escape
+        data-nav-scroll-container
+        use:navLayer={{ kind: 'select-menu', onClose: closeMenu, initialFocus: 'none', returnFocus: 'none' }}
         class="absolute left-0 z-[80] min-w-full overflow-y-auto overscroll-contain rounded-md border border-border bg-background p-1 text-foreground shadow-xl
           {placement === 'down' ? 'top-[calc(100%+0.25rem)]' : 'bottom-[calc(100%+0.25rem)]'}"
         style="max-height:{maxHeight}px"

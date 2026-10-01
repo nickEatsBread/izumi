@@ -8,19 +8,21 @@
   import type { Snippet } from 'svelte'
   import { ripple } from '$lib/actions/ripple'
   import { settingKey as keyForSetting } from '$lib/settings/search'
-  let { label, desc, value, onToggle, leading }: {
+  let { label, desc, value, onToggle, leading, settingKey }: {
     label: string
     desc: string
     value: boolean
     onToggle: () => void
     leading?: Snippet
+    /** Search and focus-memory anchor. Defaults to the label's slug; pass it when the label is a
+     *  translated message or differs from the search entry's title. */
+    settingKey?: string
   } = $props()
-  const settingKey = $derived(keyForSetting(label))
 </script>
 
 <button
   data-focusable
-  data-setting-key={settingKey}
+  data-setting-key={settingKey ?? keyForSetting(label)}
   use:ripple
   onclick={() => { h.tap(); onToggle() }}
   aria-pressed={value}

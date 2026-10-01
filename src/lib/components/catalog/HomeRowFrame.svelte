@@ -10,6 +10,7 @@
     moveHomeRowBy,
   } from '$lib/catalog/home-editor'
   import { homeBlockSettingsId, removeHomeBlock } from '$lib/home/block-rows'
+  import { moveRowKeepingFocus } from './home-row-move'
   import { isBlockId } from '$lib/home/blocks'
   import ArrowDown from '@lucide/svelte/icons/arrow-down'
   import ArrowUp from '@lucide/svelte/icons/arrow-up'
@@ -68,6 +69,12 @@
     moveHomeRowBefore(target, visibleIds, rowId, beforeId)
   }
 
+  // Move up/down stay focusable at either end and keep focus across the keyed row move
+  // (moveRowKeepingFocus).
+  function moveKeepingFocus(event: MouseEvent, move: () => void) {
+    void moveRowKeepingFocus(event.currentTarget as HTMLElement, rowId, move)
+  }
+
   function endDrag(event: PointerEvent) {
     if (pointerId !== event.pointerId) return
     const handle = event.currentTarget as HTMLElement
@@ -105,7 +112,7 @@
         {#if !locked}
         <button
           type="button"
-          data-focusable
+          tabindex="-1"
           aria-label={`Drag ${title}`}
           title="Drag to reorder"
           onpointerdown={startDrag}
@@ -120,8 +127,8 @@
         <span class="min-w-0 flex-1 truncate text-sm font-black">{title}</span>
         {#if !locked}
         <div class="flex shrink-0 items-center">
-          <button type="button" data-focusable disabled={index <= 0} onclick={() => moveHomeRowBy(target, visibleIds, rowId, -1)} aria-label={`Move ${title} up`} class="grid size-10 place-items-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-20"><ArrowUp size={17} /></button>
-          <button type="button" data-focusable disabled={index < 0 || index >= visibleIds.length - 1} onclick={() => moveHomeRowBy(target, visibleIds, rowId, 1)} aria-label={`Move ${title} down`} class="grid size-10 place-items-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-20"><ArrowDown size={17} /></button>
+          <button type="button" data-focusable data-row-move="up" aria-disabled={index <= 0} onclick={(event) => moveKeepingFocus(event, () => moveHomeRowBy(target, visibleIds, rowId, -1))} aria-label={`Move ${title} up`} class="grid size-10 place-items-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground aria-disabled:opacity-20"><ArrowUp size={17} /></button>
+          <button type="button" data-focusable data-row-move="down" aria-disabled={index < 0 || index >= visibleIds.length - 1} onclick={(event) => moveKeepingFocus(event, () => moveHomeRowBy(target, visibleIds, rowId, 1))} aria-label={`Move ${title} down`} class="grid size-10 place-items-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground aria-disabled:opacity-20"><ArrowDown size={17} /></button>
           {#if block}
             <button type="button" data-focusable onclick={() => homeBlockSettingsId.set(rowId)} aria-label={`Settings for ${title}`} title="Block settings" class="grid size-10 place-items-center rounded-lg text-muted-foreground hover:bg-secondary hover:text-foreground"><SlidersHorizontal size={17} /></button>
             <button type="button" data-focusable onclick={() => removeHomeBlock(target, rowId)} aria-label={`Remove ${title}`} title="Remove block" class="grid size-10 place-items-center rounded-lg text-muted-foreground hover:bg-destructive/15 hover:text-destructive"><Trash2 size={17} /></button>

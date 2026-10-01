@@ -10,6 +10,7 @@
   import { untrack } from 'svelte'
   import { bumperTabs } from '$lib/nav/bumpers'
   import { onPadButton } from '$lib/nav/pad-events'
+  import { topNavLayer } from '$lib/nav/layers'
   import { groupByDay, weekRange, type Airing } from '$lib/anilist/schedule'
   import { cachedScheduleWeek, loadScheduleWeek } from '$lib/anilist/schedule-cache'
   import {
@@ -226,6 +227,8 @@
     const [prev, next] = $bumperTabs ? ['l2', 'r2'] : ['l1', 'r1']
     return onPadButton(({ name, pressed }) => {
       if (!pressed) return
+      // An open nav layer (chooser, dropdown, sheet) owns the pad: the day behind it stays put.
+      if (topNavLayer()) return
       if (name === prev) selected = (selected + 6) % 7
       else if (name === next) selected = (selected + 1) % 7
     })

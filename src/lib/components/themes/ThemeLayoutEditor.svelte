@@ -206,7 +206,7 @@
   {/if}
 
   {#if showTemplate}
-  <details><summary data-focusable>Advanced component template</summary><p class="help">Edit the theme’s data-only layout. Leave empty to use the default component.</p>
+  <details><summary data-focusable tabindex="0">Advanced component template</summary><p class="help">Edit the theme’s data-only layout. Leave empty to use the default component.</p>
     {#if scope === 'hero'}<label>Component<select bind:value={templateTarget} onchange={loadTemplate} data-focusable><option value="template">Entire hero</option><option value="rank">Rank badge</option></select></label>{/if}
     {#if scope === 'detail'}<label>Component<select bind:value={templateTarget} onchange={loadTemplate} data-focusable><option value="card">Episode card</option><option value="facts">Series facts</option><option value="header">Series header</option></select></label>{/if}
     {#if scope === 'cards'}<label>Family<select bind:value={templateTarget} onchange={loadTemplate} data-focusable><option value="poster">Poster tiles</option><option value="continue">Continue watching</option><option value="search">Search results</option></select></label>{/if}

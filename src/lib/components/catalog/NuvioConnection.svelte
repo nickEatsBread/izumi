@@ -65,10 +65,10 @@
         {/if}
       {:else}
         <form onsubmit={signIn} class="space-y-3">
-          <label class="block text-sm font-bold">Nuvio email<input type="email" autocomplete="username" required bind:value={email} disabled={busy} class="mt-1 min-h-11 w-full rounded-lg border border-border bg-background px-3 font-normal" /></label>
-          <label class="block text-sm font-bold">Password<input type="password" autocomplete={registering ? 'new-password' : 'current-password'} minlength={registering ? 6 : undefined} required bind:value={password} disabled={busy} class="mt-1 min-h-11 w-full rounded-lg border border-border bg-background px-3 font-normal" /></label>
+          <label class="block text-sm font-bold">Nuvio email<input type="email" data-focusable autocomplete="username" required bind:value={email} disabled={busy} class="mt-1 min-h-11 w-full rounded-lg border border-border bg-background px-3 font-normal" /></label>
+          <label class="block text-sm font-bold">Password<input type="password" data-focusable autocomplete={registering ? 'new-password' : 'current-password'} minlength={registering ? 6 : undefined} required bind:value={password} disabled={busy} class="mt-1 min-h-11 w-full rounded-lg border border-border bg-background px-3 font-normal" /></label>
           <button data-focusable disabled={busy} class="min-h-11 w-full rounded-lg bg-primary px-4 font-bold text-primary-foreground disabled:opacity-50">{busy ? 'Connecting…' : registering ? 'Create Nuvio account' : 'Sign in to Nuvio'}</button>
-          <button type="button" disabled={busy} class="min-h-10 w-full rounded-lg text-sm font-bold hover:bg-secondary" onclick={() => { registering = !registering; password = ''; error = ''; notice = '' }}>{registering ? 'Already have an account? Sign in' : 'New to Nuvio? Create an account'}</button>
+          <button type="button" data-focusable disabled={busy} class="min-h-10 w-full rounded-lg text-sm font-bold hover:bg-secondary" onclick={() => { registering = !registering; password = ''; error = ''; notice = '' }}>{registering ? 'Already have an account? Sign in' : 'New to Nuvio? Create an account'}</button>
           <button type="button" data-focusable onclick={() => { cancel(); mode = 'device'; error = '' }} class="min-h-10 w-full rounded-lg text-sm font-bold hover:bg-secondary">Use a device code instead</button>
         </form>
       {/if}

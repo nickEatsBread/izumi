@@ -535,6 +535,21 @@
     if (controlsShown) armHide()
   }
 
+  // Phone system Back reaches the player as a window Escape: MainActivity's back bridge runs the
+  // layered Back pipeline (nav/back.ts), which closes the topmost trap inside [data-android-player]
+  // that way. The video settings sheet is that trap while it is up and not already closing. TV keeps
+  // onTvKeydown above.
+  function onPhoneSheetKeydown(event: KeyboardEvent) {
+    if ($isAndroidTv || miniLayout || !sheet || sheetClosing || event.defaultPrevented || event.key !== 'Escape') return
+    event.preventDefault()
+    dismissSettings()
+  }
+  // A component has one svelte:window element: TV remote keys first (unchanged), then the phone sheet.
+  function onWindowKeydown(event: KeyboardEvent) {
+    onTvKeydown(event)
+    onPhoneSheetKeydown(event)
+  }
+
   // --- Seek preview: move the UI thumb while dragging, then issue one exact seek on release ---
   // Bar geometry, measured once per scrub gesture. Reading getBoundingClientRect() on every
   // pointermove was a textbook read→write→read thrash: the move writes `scrubPos`, which drives the
@@ -1887,6 +1902,11 @@
   let sheetBackdropOpacity = $state(1)
   let sheetDragging = $state(false)
   let sheetClosing = $state(false)
+  // The open Video settings sheet is a legacy trap: phone system Back (nav/back.ts step 5) closes it
+  // with a window Escape. On a phone it stops being a trap once it starts sliding closed, so a second
+  // Back inside the 280 ms animation reaches the player instead of being absorbed by a sheet that is
+  // already leaving. TV keeps the trap until the sheet unmounts, as before.
+  const sheetTrap = $derived(sheetClosing && !$isAndroidTv ? undefined : '')
   let sheetPointerId: number | null = null
   let sheetStartY = 0
   let sheetLastY = 0
@@ -2191,9 +2211,9 @@
   })
 </script>
 
-<svelte:window onkeydown={onTvKeydown} />
+<svelte:window onkeydown={onWindowKeydown} />
 
-<div class="player-shell fixed inset-0 z-50 select-none overflow-hidden text-white" class:hidden={overlayHidden}
+<div class="player-shell fixed inset-0 z-50 select-none overflow-hidden text-white" data-android-player class:hidden={overlayHidden}
   class:pulling-fullscreen={fullscreenPullDragging || miniPullDragging || pullDim > 0} class:mini-shell={miniLayout}
   class:mini-transitioning={miniCommitting}
   style={`--player-safe-top:${safeTop}px;--player-safe-right:${safeRight}px;--player-safe-bottom:${safeBottom}px;--player-safe-left:${safeLeft}px;--portrait-player-height:${portraitVideoHeight == null ? 'calc(100vw * 9 / 16)' : `${portraitVideoHeight}px`}`}>
@@ -2416,7 +2436,7 @@
     <!-- The pointer handlers sit on the sheet ROOT so a pull anywhere on it dismisses. They also
          stopPropagation on move+up (not just down) so swiping the sheet / scrolling the list never
          leaks to the video's gesture layer underneath (the "interferes with the video" bug). -->
-    <div bind:this={sheetEl} class="settings-sheet absolute z-40 bg-neutral-900 shadow-2xl" class:sheet-dragging={sheetDragging} class:sheet-closing={sheetClosing} style="transform:translateY({sheetDrag}px)" onpointerdown={handleDown} onpointermove={handleMove} onpointerup={handleUp} onpointercancel={handleCancel} onlostpointercapture={handleLostCapture} onclickcapture={handleSheetClick} role="dialog" aria-modal="true" aria-label="Video settings" tabindex="-1" data-nav-trap>
+    <div bind:this={sheetEl} class="settings-sheet absolute z-40 bg-neutral-900 shadow-2xl" class:sheet-dragging={sheetDragging} class:sheet-closing={sheetClosing} style="transform:translateY({sheetDrag}px)" onpointerdown={handleDown} onpointermove={handleMove} onpointerup={handleUp} onpointercancel={handleCancel} onlostpointercapture={handleLostCapture} onclickcapture={handleSheetClick} role="dialog" aria-modal="true" aria-label="Video settings" tabindex="-1" data-nav-trap={sheetTrap} data-nav-escape={sheetTrap}>
       <!-- Grab affordance only — the whole sheet is draggable, so this is decoration, not the target. -->
       <div class="sheet-handle py-4 touch-none">
         <div class="mx-auto h-1 w-10 rounded-full bg-white/25"></div>

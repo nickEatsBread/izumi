@@ -18,6 +18,7 @@ describe('home-theatre capability diagnostics', () => {
 
   it('only renders the raw capability report when developer logging is enabled', () => {
     expect(page).toContain('developerLogging,')
-    expect(page).toMatch(/\{#if \$developerLogging\}\s*<section[^>]*>[\s\S]*?Home-theatre capability diagnostics[\s\S]*?<\/section>\s*\{\/if\}/)
+    // The in-app player gate (spec §5.1) also hides it on the Android lite build, which has no in-app player.
+    expect(page).toMatch(/\{#if \$developerLogging && \$inAppPlayerAvailable\}\s*<section[^>]*>[\s\S]*?Home-theatre capability diagnostics[\s\S]*?<\/section>\s*\{\/if\}/)
   })
 })

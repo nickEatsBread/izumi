@@ -3,6 +3,7 @@
   import { isAndroid, isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
   import { ripple } from '$lib/actions/ripple'
+  import { settingsRailHref } from '$lib/settings/hierarchy'
   import Play from '@lucide/svelte/icons/play'
   import LayoutGrid from '@lucide/svelte/icons/layout-grid'
   import Rss from '@lucide/svelte/icons/rss'
@@ -68,13 +69,16 @@
   // desktop app uses the fixed sidebar instead. Keep it out of the desktop rail (mobile renders
   // `visibleGroups` directly, and that whole branch is already gated on $isMobile).
   const flat = $derived(visibleGroups.flatMap((g) => g.items).filter((it) => it.href !== '/app/settings/navigation')) // desktop rail order
-  const active = (href: string) =>
-    $page.url.pathname === href ||
-    $page.url.pathname.startsWith(href + '/') ||
-    (href === '/app/settings/sources' && $page.url.pathname === '/app/settings/store') ||
-    // The bare /app/settings landing renders the Player pane (desktop passthrough), so highlight
-    // Player there too — otherwise the default Settings screen has no active rail item.
-    (href === '/app/settings/player' && $page.url.pathname === '/app/settings')
+  // The lit rail item comes from the shared route table (settings/hierarchy.ts): a sub-page keeps its
+  // category lit (Store → Sources, Customize Home → Catalog), and the bare /app/settings landing,
+  // which renders the Player pane on desktop, lights Player.
+  const active = (href: string) => settingsRailHref($page.url.pathname) === href
+  // Rail links keep focus through the navigation (SvelteKit's keep-focus attribute below), so a
+  // controller or keyboard user stays on the rail. A pointer click (detail > 0) lets go instead: no
+  // ring is left behind, and the next d-pad press starts from the rail's current item.
+  function releasePointerFocus(event: MouseEvent) {
+    if (event.detail > 0) (event.currentTarget as HTMLElement).blur()
+  }
 </script>
 
 {#if $isMobile}
@@ -103,10 +107,13 @@
   </div>
 {:else}
   <!-- Desktop: vertical rail (unchanged behavior). -->
-  <nav data-nav-scroll-container class="flex h-full flex-col gap-1 overflow-y-auto overscroll-contain pr-1">
+  <nav data-settings-rail data-nav-scroll-container class="flex h-full flex-col gap-1 overflow-y-auto overscroll-contain pr-1">
     {#each flat as it (it.href)}
       {@const Icon = it.icon}
       <a href={it.href} data-focusable
+         data-nav-region-default={active(it.href) ? '' : undefined}
+         aria-current={active(it.href) ? 'page' : undefined}
+         data-sveltekit-keepfocus onclick={releasePointerFocus}
          class="flex shrink-0 items-center gap-3 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-bold transition-colors
            {active(it.href) ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'}">
         <Icon size={18} /> {it.title}
