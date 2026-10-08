@@ -7,7 +7,8 @@
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import ArrowRight from '@lucide/svelte/icons/arrow-right'
   import LoaderCircle from '@lucide/svelte/icons/loader-circle'
-  import { cover, format, mediaHref, season, status, title } from '$lib/anilist/media'
+  import { cover, format, season, status, title } from '$lib/anilist/media'
+  import { openDetail } from '$lib/anilist/detail-hint'
   import type { Media } from '$lib/anilist/types'
   import * as h from '$lib/haptics'
   import { portal } from '$lib/util/portal'
@@ -75,7 +76,7 @@
     h.tap()
     remember()
     await close()
-    await goto(mediaHref(media))
+    await openDetail(media)
   }
 
   async function advanced() {

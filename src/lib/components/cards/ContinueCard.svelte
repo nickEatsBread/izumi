@@ -18,7 +18,7 @@
   import Loader from '@lucide/svelte/icons/loader-circle'
   import { isAndroid, isTv } from '$lib/platform'
   import * as h from '$lib/haptics'
-  import { rememberDetail } from '$lib/anilist/detail-hint'
+  import { openDetail, rememberDetail } from '$lib/anilist/detail-hint'
   import { anilistIdOf } from '$lib/catalog/identity'
   import { getContext } from 'svelte'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
@@ -129,7 +129,11 @@
   </div>
 
   <div data-theme-card-label class="mt-1.5">
-    <a data-part="card.title" href={mediaHref(media)} onpointerdown={() => rememberDetail(media, name)} onclick={(e) => { e.stopPropagation(); rememberDetail(media, name); h.tap() }}
+    <!-- The click must not reach the card (that plays), but SvelteKit's router listens above the
+         app root, so a stopped click would fall through to a native load that reboots the webview.
+         The link therefore routes itself. -->
+    <a data-part="card.title" href={mediaHref(media)} onpointerdown={() => rememberDetail(media, name)}
+       onclick={(e) => { e.preventDefault(); e.stopPropagation(); h.tap(); void openDetail(media, name) }}
        class="block truncate text-sm font-bold hover:text-theme">{name}</a>
     <span data-part="card.meta" class="block truncate text-[0.7rem] text-muted-foreground">{episodeLabel}</span>
   </div>

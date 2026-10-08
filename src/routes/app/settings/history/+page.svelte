@@ -4,6 +4,7 @@
   import { localHistory, historyEntries, clearHistory, forgetMedia } from '$lib/player/history'
   import { exportJson, exportMalXml, importJson, ioErrorMessage, saveTextFile } from '$lib/player/history-io'
   import { title as mediaTitle } from '$lib/anilist/media'
+  import { detailLink } from '$lib/anilist/detail-hint'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import Download from '@lucide/svelte/icons/download'
   import Upload from '@lucide/svelte/icons/upload'
@@ -134,7 +135,7 @@
                 <img src={e.media.coverImage.medium} alt="" loading="lazy" decoding="async" class="h-12 w-9 shrink-0 rounded object-cover" />
               {/if}
               <div class="min-w-0 flex-1">
-                <a href={`/app/anime/${e.media.id}`} data-focusable class="block truncate text-sm font-bold hover:text-theme">{mediaTitle(e.media)}</a>
+                <a href={`/app/anime/${e.media.id}`} use:detailLink={e.media} data-focusable class="block truncate text-sm font-bold hover:text-theme">{mediaTitle(e.media)}</a>
                 <p class="text-xs text-muted-foreground">{isFilm(e) ? fmt(e.updatedAt) : `Episode ${e.episode} · ${fmt(e.updatedAt)}`}</p>
               </div>
               <button data-focusable data-touch-target onclick={() => forgetMedia(e.media.id)} title="Remove" aria-label="Remove from history"

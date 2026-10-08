@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import Check from '@lucide/svelte/icons/check'
   import { mediaHref, title as mediaTitle } from '$lib/anilist/media'
+  import { detailLink } from '$lib/anilist/detail-hint'
   import { releasedAgo } from '$lib/anime/airing-labels'
   import { fetchAniZip } from '$lib/anizip'
   import * as h from '$lib/haptics'
@@ -132,9 +133,9 @@
             {/if}
           </button>
           {#if block.caption === 'overlay'}
-            <a data-part="card.title" data-focusable href={mediaHref(release.media)} class="absolute bottom-3 left-3.5 right-12 z-10 line-clamp-1 text-[0.8rem] font-medium text-white [text-shadow:0_1px_2px_#000] hover:underline">{mediaTitle(release.media)}</a>
+            <a data-part="card.title" data-focusable href={mediaHref(release.media)} use:detailLink={release.media} class="absolute bottom-3 left-3.5 right-12 z-10 line-clamp-1 text-[0.8rem] font-medium text-white [text-shadow:0_1px_2px_#000] hover:underline">{mediaTitle(release.media)}</a>
           {:else}
-            <a data-part="card.title" data-focusable href={mediaHref(release.media)} class="mt-2 line-clamp-1 text-sm font-bold hover:underline">{mediaTitle(release.media)}</a>
+            <a data-part="card.title" data-focusable href={mediaHref(release.media)} use:detailLink={release.media} class="mt-2 line-clamp-1 text-sm font-bold hover:underline">{mediaTitle(release.media)}</a>
             <p data-part="card.meta" class="text-xs text-muted-foreground">Episode {release.episode} · {releasedAgo(release.airingAt, now)}</p>
           {/if}
         </article>

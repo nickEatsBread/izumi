@@ -1,5 +1,6 @@
 <script lang="ts">
   import { cardCover, format, mediaHref, title as mediaTitle } from '$lib/anilist/media'
+  import { detailLink } from '$lib/anilist/detail-hint'
   import type { Media } from '$lib/anilist/types'
   import Tabs from '$lib/components/detail/Tabs.svelte'
   import type { CatalogHomeTarget } from '$lib/catalog/home-layout'
@@ -63,7 +64,7 @@
       {:else}
         {#each media as item, index (item.id)}
           <li>
-            <a data-part="block.item" data-focusable href={mediaHref(item)} style:--cover-rgb={ambientFromHex(item.coverImage?.color)} class="flex items-center gap-3 rounded-lg p-1.5 transition hover:bg-secondary/60">
+            <a data-part="block.item" data-focusable href={mediaHref(item)} use:detailLink={item} style:--cover-rgb={ambientFromHex(item.coverImage?.color)} class="flex items-center gap-3 rounded-lg p-1.5 transition hover:bg-secondary/60">
               <span data-part="block.rank" class="w-8 shrink-0 text-center text-xl font-black tabular-nums {index < 3 ? 'text-theme' : 'text-muted-foreground'}">{index + 1}</span>
               <div data-part="card.art" class="aspect-[2/3] w-12 shrink-0 overflow-hidden rounded bg-muted">
                 <img src={cardCover(item, 48)} alt="" loading="lazy" decoding="async" draggable="false" class="size-full object-cover" />

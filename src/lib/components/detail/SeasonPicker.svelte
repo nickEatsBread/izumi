@@ -10,6 +10,7 @@
   // (`data-nav-scroll-container`), and Escape or B closes it and hands focus back to the button.
   import { tick } from 'svelte'
   import { cover, mediaHref } from '$lib/anilist/media'
+  import { detailLink } from '$lib/anilist/detail-hint'
   import type { SeasonEntry } from '$lib/anilist/seasons'
   import { reliableImage } from '$lib/util/reliable-image'
   import { portal } from '$lib/util/portal'
@@ -97,7 +98,7 @@
       <div use:portal bind:this={panel} data-part="episodes.menu" data-variant="seasons" data-nav-trap data-nav-escape style={place} data-nav-scroll-container
            class="fixed z-[60] w-56 overflow-y-auto overscroll-contain rounded-lg border border-border bg-card p-1.5 shadow-2xl">
         {#each entries as entry (entry.media.id)}
-          <a data-part="season" data-active={entry.active || undefined} data-focusable href={mediaHref(entry.media)}
+          <a data-part="season" data-active={entry.active || undefined} data-focusable href={mediaHref(entry.media)} use:detailLink={entry.media}
              aria-current={entry.active ? 'page' : undefined} onclick={() => close(true)}
              class="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
             <span data-part="season.label" class="flex-1">{entry.label}</span>
@@ -112,7 +113,7 @@
   <div data-slot="episodes.seasons" data-variant={variant} bind:this={track}
        class="relative -mx-4 mb-4 flex overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0 {variant === 'posters' ? 'gap-4' : 'gap-2'}">
     {#each entries as entry (entry.media.id)}
-      <a data-part="season" data-active={entry.active || undefined} data-focusable href={mediaHref(entry.media)}
+      <a data-part="season" data-active={entry.active || undefined} data-focusable href={mediaHref(entry.media)} use:detailLink={entry.media}
          aria-current={entry.active ? 'page' : undefined}
          class={variant === 'posters'
            ? `flex w-24 shrink-0 flex-col gap-2 text-center ${entry.active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`

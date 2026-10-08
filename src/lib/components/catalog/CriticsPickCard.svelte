@@ -4,12 +4,13 @@
   import Star from '@lucide/svelte/icons/star'
   import type { Media } from '$lib/anilist/types'
   import { banner, mediaHref, title } from '$lib/anilist/media'
+  import { detailLink } from '$lib/anilist/detail-hint'
 
   let { media }: { media: Media } = $props()
 </script>
 
 <section class="px-4 sm:px-8">
-  <a href={mediaHref(media)} data-focusable class="group relative block min-h-[24rem] overflow-hidden rounded-2xl bg-[#111217] text-white shadow-xl ring-1 ring-white/10 focus-visible:ring-2 focus-visible:ring-ring sm:min-h-[28rem]">
+  <a href={mediaHref(media)} use:detailLink={media} data-focusable class="group relative block min-h-[24rem] overflow-hidden rounded-2xl bg-[#111217] text-white shadow-xl ring-1 ring-white/10 focus-visible:ring-2 focus-visible:ring-ring sm:min-h-[28rem]">
     {#if banner(media)}<img src={banner(media)} alt="" class="absolute inset-0 size-full object-cover transition-transform duration-500 group-hover:scale-[1.015]" />{/if}
     <span aria-hidden="true" class="absolute inset-0 bg-[linear-gradient(90deg,rgba(7,8,12,.98)_0%,rgba(7,8,12,.88)_38%,rgba(7,8,12,.24)_72%,rgba(7,8,12,.08)_100%)]"></span>
     <span class="relative flex min-h-[24rem] max-w-2xl flex-col justify-end p-6 sm:min-h-[28rem] sm:p-10">

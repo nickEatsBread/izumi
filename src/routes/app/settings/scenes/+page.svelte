@@ -1,6 +1,7 @@
 <script lang="ts">
   import { playEpisode, type PlayState } from '$lib/stremio/play'
   import { mediaHref } from '$lib/anilist/media'
+  import { detailLink } from '$lib/anilist/detail-hint'
   import {
     clearSceneBookmarks,
     removeSceneBookmark,
@@ -93,7 +94,7 @@
           <div class="min-w-0 flex-1">
             <div class="flex items-start gap-2">
               <div class="min-w-0 flex-1">
-                <a href={mediaHref(scene.media)} data-focusable class="block truncate font-black hover:text-theme">{title(scene)}</a>
+                <a href={mediaHref(scene.media)} use:detailLink={scene.media} data-focusable class="block truncate font-black hover:text-theme">{title(scene)}</a>
                 <p class="text-xs text-muted-foreground">
                   {scene.episode != null ? `Episode ${scene.episode} · ` : ''}{time(scene.position)} · {date(scene.createdAt)}
                 </p>

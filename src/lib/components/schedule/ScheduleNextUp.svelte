@@ -4,6 +4,7 @@
   // (My Shows or All), so it reflects whatever view is active. Hidden when nothing's in the window.
   import { type Airing, airTime, until } from '$lib/anilist/schedule'
   import { title, cover } from '$lib/anilist/media'
+  import { detailLink } from '$lib/anilist/detail-hint'
   import { classifyMine, type MySets } from '$lib/anilist/my-shows'
   import Radio from '@lucide/svelte/icons/radio'
 
@@ -32,7 +33,7 @@
       {#each items as a (a.media.id + '-' + a.episode)}
         {@const soon = a.airingAt * 1000 > now}
         {@const kind = classifyMine(a.media, sets)}
-        <a data-focusable href={`/app/anime/${a.media.id}`}
+        <a data-focusable href={`/app/anime/${a.media.id}`} use:detailLink={a.media}
            class="group relative w-40 shrink-0 overflow-hidden rounded-lg border bg-secondary transition-colors hover:bg-accent
                   {kind ? 'border-border/80' : 'border-transparent'}">
           <div class="relative h-24 w-full overflow-hidden">

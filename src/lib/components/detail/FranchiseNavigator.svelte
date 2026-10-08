@@ -2,6 +2,7 @@
   import type { Media } from '$lib/anilist/types'
   import { fetchFranchise, sortFranchiseMedia } from '$lib/anilist/franchise'
   import { title, cover, isReadingMedia, mediaHref } from '$lib/anilist/media'
+  import { detailLink } from '$lib/anilist/detail-hint'
   import { reliableImage } from '$lib/util/reliable-image'
   import Clapperboard from '@lucide/svelte/icons/clapperboard'
 
@@ -44,6 +45,7 @@
       {#each items as item (item.id)}
         <a
           href={mediaHref(item)}
+          use:detailLink={item}
           data-focusable
           aria-current={item.id === media.id ? 'page' : undefined}
           class="flex w-48 shrink-0 snap-start items-center gap-2.5 rounded-lg border p-2 transition-colors

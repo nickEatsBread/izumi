@@ -56,6 +56,14 @@ describe('catalogue projection', () => {
     expect(query).toMatch(/description\(asHtml:\s*false\)\s*@include\(if:\s*\$withPreview\)/)
   })
 
+  it('always asks for the card banner, the header art of the series page a tapped card opens', () => {
+    // Phones and Game mode send withPreview=false; their card hints still need the real banner.
+    const query = PAGE_QUERY.loc?.source.body ?? ''
+    expect(query).toMatch(/\bbannerImage\b/)
+    expect(query).not.toMatch(/bannerImage\s*@include/)
+    expect(query).toMatch(/trailer\s*@include\(if:\s*\$withPreview\)/)
+  })
+
   it('keeps the hero projection bounded to its rendered discovery fields', () => {
     const query = heroQuery().loc?.source.body ?? ''
     expect(query).toContain('...HeroMediaFields')

@@ -5,6 +5,7 @@
   import { onMount } from 'svelte'
   import { type Airing, airTime, aired, scheduleItemLabel, scheduleSourceLabel, until } from '$lib/anilist/schedule'
   import { title, cover, mediaHref } from '$lib/anilist/media'
+  import { detailLink } from '$lib/anilist/detail-hint'
   import { agendaScrollTop, agendaTargetDay, isAgendaScrollKey } from './agenda-scroll'
   import type { Media } from '$lib/anilist/types'
   import type { ScheduleBadge } from '$lib/anilist/my-shows'
@@ -78,6 +79,7 @@
             <a
               data-focusable
               href={mediaHref(a.media)}
+              use:detailLink={a.media}
               class="flex items-center gap-4 rounded-lg border bg-secondary p-2.5 transition-colors hover:bg-accent {aired(a.airingAt) && !a.delayPlaceholder ? 'opacity-55' : ''} {mine ? 'border-border/80 pr-14' : 'border-transparent'}"
             >
               <img src={cover(a.media)} alt="" loading="lazy" decoding="async"
