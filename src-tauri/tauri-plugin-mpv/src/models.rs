@@ -111,6 +111,16 @@ pub struct RenderOptsRequest {
     pub opts: Vec<RenderOpt>,
 }
 
+/// Replace the stored encoded-audio/HDR output policy and live-apply it. `reload` also reopens
+/// the audio output, which throws its buffered audio away; mpv already reopens it when a value
+/// really changes, so only a re-detected route asks for it.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct DolbyOptsRequest {
+    pub opts: Vec<RenderOpt>,
+    #[serde(default)]
+    pub reload: bool,
+}
+
 /// Set screen brightness (0.0..1.0), or -1.0 to restore system/auto brightness.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BrightnessRequest {
@@ -390,6 +400,18 @@ mod tests {
         assert_eq!(r.artwork.as_deref(), Some("https://x/p.jpg"));
         assert!(r.has_prev);
         assert!(!r.has_next);
+    }
+
+    #[test]
+    fn dolby_opts_request_never_reloads_unless_asked() {
+        let r: DolbyOptsRequest =
+            serde_json::from_str(r#"{"opts":[{"key":"audio-spdif","value":""}]}"#).unwrap();
+        assert!(!r.reload);
+        assert_eq!(r.opts[0].key, "audio-spdif");
+        let r: DolbyOptsRequest = serde_json::from_str(r#"{"opts":[],"reload":true}"#).unwrap();
+        assert!(r.reload);
+        // The flag must survive the re-serialization that hands the payload to Kotlin.
+        assert_eq!(serde_json::to_value(&r).unwrap()["reload"], serde_json::json!(true));
     }
 
     #[test]

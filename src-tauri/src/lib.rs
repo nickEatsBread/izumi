@@ -1290,14 +1290,16 @@ fn player_set_enhancement_opts(
     player.set_enhancement_opts(opts)
 }
 
-/// Apply and retain the home-theatre audio plus HDR/Dolby-Vision output policy.
+/// Apply and retain the home-theatre audio plus HDR/Dolby-Vision output policy. `reload` (off
+/// when omitted) also reopens the audio output, for a re-detected route only.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_set_dolby_opts(
     opts: Vec<(String, String)>,
+    reload: Option<bool>,
     player: tauri::State<'_, player::PlayerHandle>,
 ) -> Vec<String> {
-    player.set_dolby_opts(opts)
+    player.set_dolby_opts(opts, reload.unwrap_or(false))
 }
 
 #[cfg(not(target_os = "android"))]

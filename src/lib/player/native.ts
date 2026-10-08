@@ -12,6 +12,8 @@ function drmStream(): boolean {
   return !!get(nowPlayingStream).drm
 }
 
+let speedSeq = 0
+
 export async function playerCommand(name: string, args: string[] = []): Promise<void> {
   const drm = getDrmEngine()
   if (drm) {
@@ -20,9 +22,16 @@ export async function playerCommand(name: string, args: string[] = []): Promise<
   }
   if (drmStream()) return
   const speed = name === 'set' && args[0] === 'speed' ? Number(args[1]) : null
-  if (speed != null && speed !== 1) await setDolbyPlaybackSpeed(speed)
+  if (speed == null) {
+    await invoke('player_command', { name, args })
+    return
+  }
+  // A speed change still waiting on a passthrough push must not land after a newer one.
+  const seq = ++speedSeq
+  if (speed !== 1) await setDolbyPlaybackSpeed(speed)
+  if (seq !== speedSeq) return
   await invoke('player_command', { name, args })
-  if (speed === 1) await setDolbyPlaybackSpeed(speed)
+  if (speed === 1 && seq === speedSeq) await setDolbyPlaybackSpeed(speed)
 }
 
 export function playerGetProperty(name: string): Promise<string> {

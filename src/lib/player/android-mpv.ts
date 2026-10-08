@@ -365,11 +365,21 @@ export async function mpvLoad(p: MpvLoad): Promise<void> {
   await mpvCommand(['set', 'pause', p.autoplay === false ? 'yes' : 'no'])
 }
 
+let speedSeq = 0
+
 export async function mpvCommand(args: string[]): Promise<void> {
   const speed = args[0] === 'set' && args[1] === 'speed' ? Number(args[2]) : null
-  if (speed != null && speed !== 1) await setDolbyPlaybackSpeed(speed)
+  if (speed == null) {
+    await invoke('plugin:mpv|mpv_command', { payload: { args } })
+    return
+  }
+  // A hold's 2× can still be waiting on a passthrough push when the release's 1× goes out. Only
+  // the newest speed change may reach mpv or the output policy, or playback sticks at 2×.
+  const seq = ++speedSeq
+  if (speed !== 1) await setDolbyPlaybackSpeed(speed)
+  if (seq !== speedSeq) return
   await invoke('plugin:mpv|mpv_command', { payload: { args } })
-  if (speed === 1) await setDolbyPlaybackSpeed(speed)
+  if (speed === 1 && seq === speedSeq) await setDolbyPlaybackSpeed(speed)
 }
 
 export interface AndroidMediaInspectionTrack {

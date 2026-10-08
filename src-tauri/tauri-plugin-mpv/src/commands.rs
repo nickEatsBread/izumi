@@ -2,10 +2,10 @@ use tauri::{command, AppHandle, Runtime};
 
 use crate::{
     models::{
-        AutoPipRequest, BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest,
-        GifSaveRequest, GifStartRequest, HapticRequest, InspectRequest, KeepScreenAwakeRequest,
-        LoadRequest, MediaSessionRequest, RenderOptsRequest, SetRequest, ThumbRequest,
-        TransformRequest, ViewportRequest,
+        AutoPipRequest, BrightnessRequest, CommandRequest, DolbyOptsRequest, FullscreenRequest,
+        GetRequest, GifSaveRequest, GifStartRequest, HapticRequest, InspectRequest,
+        KeepScreenAwakeRequest, LoadRequest, MediaSessionRequest, RenderOptsRequest, SetRequest,
+        ThumbRequest, TransformRequest, ViewportRequest,
     },
     MpvExt, Result,
 };
@@ -149,7 +149,7 @@ pub(crate) async fn mpv_thumb<R: Runtime>(
 #[command]
 pub(crate) async fn mpv_set_dolby_opts<R: Runtime>(
     app: AppHandle<R>,
-    payload: RenderOptsRequest,
+    payload: DolbyOptsRequest,
 ) -> Result<serde_json::Value> {
     app.mpv().set_dolby_opts(payload)
 }

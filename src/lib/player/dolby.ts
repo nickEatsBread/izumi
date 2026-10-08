@@ -210,12 +210,22 @@ let runtimePlaybackSpeed = 1
 
 /** Encoded IEC-61937 frames cannot be time-stretched. Disable passthrough before leaving 1× and
  * restore the selected policy only after returning to 1×. Player command wrappers await this so
- * an Atmos bitstream is never briefly fed through mpv's speed filter. */
+ * an Atmos bitstream is never briefly fed through mpv's speed filter. Only a speed change that
+ * flips the passthrough decision pushes anything: PCM output (the default), Auto without an
+ * encoded route and every other blocked state leave the output alone, so the speed command goes
+ * out without waiting on IPC. It still waits for a push already queued, whose decision the new
+ * speed relies on. */
 export async function setDolbyPlaybackSpeed(speed: number): Promise<void> {
   const normalized = Number.isFinite(speed) && speed > 0 ? speed : 1
-  if (Math.abs(normalized - runtimePlaybackSpeed) <= 0.001) return
+  if (Math.abs(normalized - runtimePlaybackSpeed) <= 0.001) return pushTail
+  const before = passthroughOpts()
   runtimePlaybackSpeed = normalized
+  if (passthroughOpts() === before) return pushTail
   await applyDolbySettings()
+}
+
+function passthroughOpts(): string {
+  return JSON.stringify(resolveAudioPassthrough(currentAudioSettings(), get(dolbyCapabilities)).opts)
 }
 
 /** Complete option set so switching modes also clears the target primaries/transfer from the
@@ -265,20 +275,47 @@ function currentAudioSettings(): AudioOutputSettings {
   }
 }
 
-async function pushDolbyOpts(opts: [string, string][]): Promise<void> {
-  try {
-    await invoke('player_set_dolby_opts', { opts })
-  } catch {
-    await invoke('plugin:mpv|mpv_set_dolby_opts', {
-      payload: { opts: opts.map(([key, value]) => ({ key, value })) },
-    }).catch(() => {})
+/** The command that applied the last push. Android has no `player_set_dolby_opts`, so trying it
+ * first there costs a failing IPC round trip on every push, which a passthrough user's hold
+ * waits on before 2× starts. */
+let dolbyBackend: 'player' | 'plugin' | undefined
+
+async function pushDolbyOpts(opts: [string, string][], reload: boolean): Promise<void> {
+  if (dolbyBackend !== 'plugin') {
+    try {
+      await invoke('player_set_dolby_opts', { opts, reload })
+      dolbyBackend = 'player'
+      return
+    } catch {
+      // Not the desktop player: fall through to the Android plugin.
+    }
   }
+  try {
+    await invoke('plugin:mpv|mpv_set_dolby_opts', {
+      payload: { opts: opts.map(([key, value]) => ({ key, value })), reload },
+    })
+    dolbyBackend = 'plugin'
+  } catch {}
 }
 
-export async function applyDolbySettings(): Promise<AudioPassthroughDecision> {
-  const decision = resolveAudioPassthrough(currentAudioSettings(), get(dolbyCapabilities))
-  await pushDolbyOpts([...decision.opts, ...dolbyVisionOpts(get(dolbyVisionOutputMode))])
-  return decision
+let pushTail: Promise<void> = Promise.resolve()
+
+/** Push the complete output policy. Pushes run one at a time and each resolves its decision
+ * when its turn comes, so a hold's 2× push still in flight can never land after the release's
+ * 1× push and leave passthrough off. mpv already reopens the audio output when the device,
+ * exclusive mode or encoded formats really change, and re-setting an unchanged value is a no-op,
+ * so a push never drops audio by itself. `reload` forces the reopen anyway: only a re-detected
+ * route or an explicit Recheck asks for it, to retry an encoded open that failed before. */
+export function applyDolbySettings(
+  { reload = false }: { reload?: boolean } = {},
+): Promise<AudioPassthroughDecision> {
+  const turn = pushTail.then(async () => {
+    const decision = resolveAudioPassthrough(currentAudioSettings(), get(dolbyCapabilities))
+    await pushDolbyOpts([...decision.opts, ...dolbyVisionOpts(get(dolbyVisionOutputMode))], reload)
+    return decision
+  })
+  pushTail = turn.then(() => undefined, () => undefined)
+  return turn
 }
 
 function normalizeCapabilities(value: Partial<DolbyCapabilities> | null | undefined): DolbyCapabilities {
@@ -331,7 +368,8 @@ let started = false
 let androidRouteListener: PluginListener | undefined
 /** Probe first so Auto never enables a codec from a filename guess, then keep the complete output
  * policy synchronized. The Android plugin emits another probe request when the routed device
- * changes; polling here also refreshes the live mpv output fields while playback is active. */
+ * changes; polling here also refreshes the live mpv output fields while playback is active. Only
+ * those two route paths reopen the audio output; a settings change relies on mpv's own reopen. */
 export function startDolbySync(): () => void {
   if (started) return () => {}
   started = true
@@ -357,14 +395,16 @@ export function startDolbySync(): () => void {
     const after = await refreshDolbyCapabilities()
     if (before.audioConfidence !== after.audioConfidence
       || JSON.stringify(before.audio) !== JSON.stringify(after.audio)) {
-      await applyDolbySettings()
+      await applyDolbySettings({ reload: true })
     }
   }, 10_000)
   if (typeof window !== 'undefined' && !androidRouteListener) {
-    void addPluginListener('mpv', 'dolby', async () => {
+    void addPluginListener<{ reason?: string }>('mpv', 'dolby', async (event) => {
       const capabilities = await refreshDolbyCapabilities()
       dolbyCapabilities.set(capabilities)
-      await applyDolbySettings()
+      // The native HDR/audio path asks for a re-probe too when it starts, falls back or is
+      // unavailable, just as mpv opens the file; only a routed-device change needs the reopen.
+      await applyDolbySettings({ reload: event?.reason === 'audio-route-changed' })
     }).then((listener) => { androidRouteListener = listener }).catch(() => {})
   }
   return () => {

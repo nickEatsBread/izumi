@@ -2,10 +2,10 @@ use serde::de::DeserializeOwned;
 use tauri::{plugin::PluginApi, AppHandle, Runtime};
 
 use crate::models::{
-    AutoPipRequest, BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest,
-    GifSaveRequest, GifStartRequest, HapticRequest, InspectRequest, KeepScreenAwakeRequest,
-    LoadRequest, MediaSessionRequest, RenderOptsRequest, SetRequest, ThumbRequest,
-    TransformRequest, ViewportRequest,
+    AutoPipRequest, BrightnessRequest, CommandRequest, DolbyOptsRequest, FullscreenRequest,
+    GetRequest, GifSaveRequest, GifStartRequest, HapticRequest, InspectRequest,
+    KeepScreenAwakeRequest, LoadRequest, MediaSessionRequest, RenderOptsRequest, SetRequest,
+    ThumbRequest, TransformRequest, ViewportRequest,
 };
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
@@ -54,7 +54,7 @@ impl<R: Runtime> Mpv<R> {
         Ok(serde_json::json!({ "failed": [] }))
     }
 
-    pub fn set_dolby_opts(&self, _payload: RenderOptsRequest) -> crate::Result<serde_json::Value> {
+    pub fn set_dolby_opts(&self, _payload: DolbyOptsRequest) -> crate::Result<serde_json::Value> {
         Ok(serde_json::json!({ "failed": [] }))
     }
 

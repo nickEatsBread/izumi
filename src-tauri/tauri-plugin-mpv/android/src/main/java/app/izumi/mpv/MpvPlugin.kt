@@ -211,6 +211,12 @@ class RenderOptsArgs {
 }
 
 @InvokeArg
+class DolbyOptsArgs {
+    var opts: Array<RenderOpt> = arrayOf()
+    var reload: Boolean = false
+}
+
+@InvokeArg
 class BrightnessArgs {
     var value: Double = -1.0
 }
@@ -2232,10 +2238,14 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         }.start()
     }
 
-    /** Store and live-apply the complete encoded-audio/HDR output policy. */
+    /** Store and live-apply the complete encoded-audio/HDR output policy. mpv reopens the audio
+     *  output by itself when audio-device/audio-exclusive really change and rebuilds the audio
+     *  chain when audio-spdif does; an unchanged value is a no-op. A forced ao-reload throws the
+     *  buffered audio away (a passthrough user's speed change pushes this policy), so it only runs
+     *  when asked: a re-detected route or an explicit Recheck, to retry a failed encoded open. */
     @Command
     fun setDolbyOpts(invoke: Invoke) {
-        val a = invoke.parseArgs(RenderOptsArgs::class.java)
+        val a = invoke.parseArgs(DolbyOptsArgs::class.java)
         activity.runOnUiThread {
             val failed = JSONArray()
             synchronized(coreLock) {
@@ -2254,7 +2264,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
                         }
                     }
                 }
-                if (live != null && a.opts.any { it.key.startsWith("audio-") }) {
+                if (live != null && a.reload) {
                     runCatching { live.command(arrayOf("ao-reload")) }
                 }
             }

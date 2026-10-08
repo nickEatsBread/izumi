@@ -1,15 +1,36 @@
+/// The source between `start` and the first `end` after it.
+fn section<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+    let from = source.find(start).unwrap_or_else(|| panic!("missing {start}"));
+    let rest = &source[from..];
+    let to = rest[start.len()..].find(end).map_or(rest.len(), |i| i + start.len());
+    &rest[..to]
+}
+
 #[test]
-fn desktop_keeps_dolby_policy_separate_and_reloads_audio() {
+fn desktop_keeps_dolby_policy_separate_and_reloads_audio_only_when_asked() {
     let player = include_str!("../src/player/mod.rs");
     assert!(player.contains("static DOLBY_OPTS"));
-    assert!(player.contains("pub fn set_dolby_opts"));
-    assert!(player.contains("mpv.command(\"ao-reload\""));
     assert!(
         player
             .matches("if let Ok(opts) = DOLBY_OPTS.lock()")
             .count()
             >= 2
     );
+    // A speed change can push this policy. A forced ao-reload throws the buffered audio away,
+    // so it must sit behind the explicit route-change flag, never behind "an audio-* key was sent".
+    let set = section(player, "pub fn set_dolby_opts", "\n    pub fn ");
+    assert!(set.contains("reload: bool"));
+    let gate = set.find("if reload {").expect("ao-reload is gated on the reload flag");
+    let reload = set.find("mpv.command(\"ao-reload\"").expect("route changes still reload");
+    assert!(gate < reload);
+    assert!(!set.contains("starts_with(\"audio-\")"));
+    let command = section(
+        include_str!("../src/lib.rs"),
+        "fn player_set_dolby_opts(",
+        "\n}",
+    );
+    assert!(command.contains("reload: Option<bool>"));
+    assert!(command.contains("reload.unwrap_or(false)"));
 }
 
 #[test]
@@ -28,7 +49,7 @@ fn android_probes_the_routed_sink_instead_of_trusting_a_badge() {
         "registerAudioDeviceCallback",
         "fun setDolbyOpts",
         "storedDolbyOpts",
-        "it.key.startsWith(\"audio-\")",
+        "class DolbyOptsArgs",
     ] {
         assert!(
             plugin.contains(required),
@@ -36,6 +57,24 @@ fn android_probes_the_routed_sink_instead_of_trusting_a_badge() {
             required
         );
     }
+}
+
+#[test]
+fn android_reloads_audio_only_when_the_route_asks() {
+    let plugin =
+        include_str!("../tauri-plugin-mpv/android/src/main/java/app/izumi/mpv/MpvPlugin.kt");
+    let set = section(plugin, "fun setDolbyOpts(", "fun encodingName(");
+    assert!(set.contains("parseArgs(DolbyOptsArgs::class.java)"));
+    assert!(set.contains("if (live != null && a.reload) {"));
+    assert!(!set.contains("startsWith(\"audio-\")"));
+    // setRenderOpts keeps its own argument class; the flag travels in a dedicated request so
+    // serde cannot drop it before it reaches Kotlin.
+    let models = include_str!("../tauri-plugin-mpv/src/models.rs");
+    let request = section(models, "pub struct DolbyOptsRequest", "}");
+    assert!(request.contains("#[serde(default)]"));
+    assert!(request.contains("pub reload: bool"));
+    let commands = include_str!("../tauri-plugin-mpv/src/commands.rs");
+    assert!(section(commands, "async fn mpv_set_dolby_opts", "\n}").contains("DolbyOptsRequest"));
 }
 
 #[test]
