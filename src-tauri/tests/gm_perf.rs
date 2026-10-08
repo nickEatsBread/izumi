@@ -348,3 +348,26 @@ fn pointer_unstick_reuses_the_keepalive_connection() {
     assert!(x11.contains("fn existing_touch_worker"));
     assert!(x11.contains("release_pointer_buttons(dpy, root)"));
 }
+
+#[test]
+fn game_mode_close_releases_the_video_output_before_its_window() {
+    // Destroying the X11 container under a live EGL output crashed the UI process on about every
+    // other Deck player exit; the output has to go down while its window still exists.
+    let commands = include_str!("../src/lib.rs");
+    let close = &commands[commands.find("async fn close_player").unwrap()..];
+    let close = &close[..close.find("\n}").unwrap()];
+    let hide = close.find("linux_x11::hide_container()").unwrap();
+    let release = close.find("release_video_output(").unwrap();
+    let destroy = close.find("linux_x11::destroy_container()").unwrap();
+    let stop = close.find("player.stop()").unwrap();
+    assert!(hide < release && release < destroy && destroy < stop);
+    // A timed-out release keeps the window rather than destroying it under a live output.
+    assert!(close.contains("if released {"));
+    // Embeds wait for a close that is still releasing the output; the closing window stays hidden.
+    assert_eq!(commands.matches("PLAYER_LIFECYCLE.lock()").count(), 2);
+    let x11 = include_str!("../src/player/linux_x11.rs");
+    assert!(x11.contains("if st.closing {"));
+    let player = include_str!("../src/player/mod.rs");
+    assert!(player.contains("mpv.set_property(\"force-window\", \"no\")"));
+    assert!(player.contains("mpv.get_property::<String>(\"current-vo\")"));
+}

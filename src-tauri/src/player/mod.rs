@@ -526,6 +526,48 @@ impl PlayerHandle {
         Ok(())
     }
 
+    /// Take mpv's video output down while the window it renders into still exists, and wait
+    /// (bounded) until it is gone. `stop` cannot promise that: `quit` finishes the core on mpv's
+    /// own threads after it returns. Game mode used to destroy the X11 container first, so the EGL
+    /// output died on a destroyed window, racing WebKit's GPU draws in this same process; the
+    /// Deck's UI process segfaulted on about every other player exit. Returns whether the output
+    /// is down (true when there is no core).
+    #[cfg(target_os = "linux")]
+    pub fn release_video_output(&self, timeout: std::time::Duration) -> bool {
+        {
+            let Ok(guard) = self.mpv.lock() else {
+                return false;
+            };
+            let Some(mpv) = guard.as_ref() else {
+                return true;
+            };
+            // force-window keeps an idle output alive, so it goes first.
+            if let Err(e) = mpv.set_property("force-window", "no") {
+                linux_embed::elog(&format!("release_video_output: force-window: {e:?}"));
+            }
+            let _ = mpv.command("stop", &[]);
+        }
+        // Poll without holding the core lock between samples: commands on the GTK thread take it.
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let down = match self.mpv.lock() {
+                // `current-vo` is unavailable once the output is destroyed. (`vo-configured` is
+                // already false before the first frame, while force-window's EGL output is live.)
+                Ok(guard) => guard.as_ref().map_or(true, |mpv| {
+                    mpv.get_property::<String>("current-vo").map_or(true, |vo| vo.is_empty())
+                }),
+                Err(_) => return false,
+            };
+            if down {
+                return true;
+            }
+            if std::time::Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
     /// Stop playback and tear down the mpv core.
     ///
     /// We must send mpv `quit` BEFORE dropping the main handle: the event-loop

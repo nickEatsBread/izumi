@@ -141,6 +141,9 @@ struct X11 {
     right: f64,
     top: f64,
     hidden: bool,
+    // A close is taking mpv's output down on this window (hide_container): a late dock request
+    // from the closing overlay must not map it again. The next embed clears it.
+    closing: bool,
 }
 // SAFETY: the display pointer is GTK's X connection; all uses are dispatched to the GTK
 // main thread (GTK calls XInitThreads, and we serialize via run_on_glib_main).
@@ -539,8 +542,10 @@ pub fn ensure_container(window: &tauri::WebviewWindow, w: u32, h: u32) -> Result
         // raised container silently swallowed every touch over the video for the whole session.
         // Idempotent and nearly free.
         crate::player::linux_embed::run_on_glib_main(move || {
-            if let Ok(guard) = STATE.lock() {
-                if let Some(st) = guard.as_ref() {
+            if let Ok(mut guard) = STATE.lock() {
+                if let Some(st) = guard.as_mut() {
+                    // A window kept from a close whose output outlived the release is live again.
+                    st.closing = false;
                     unsafe {
                         XShapeCombineRectangles(
                             st.dpy,
@@ -595,6 +600,7 @@ pub fn ensure_container(window: &tauri::WebviewWindow, w: u32, h: u32) -> Result
             right: 0.0,
             top: 0.0,
             hidden: false,
+            closing: false,
         });
         crate::player::linux_embed::elog(&format!("x11: container {container} created {w}x{h}"));
         Ok(container as i64)
@@ -611,6 +617,9 @@ pub fn dock_video(bottom: f64, right: f64, top: f64, hide: bool) {
     crate::player::linux_embed::run_on_glib_main(move || {
         if let Ok(mut g) = STATE.lock() {
             if let Some(st) = g.as_mut() {
+                if st.closing {
+                    return;
+                }
                 st.bottom = bottom;
                 st.right = right;
                 st.top = top;
@@ -653,7 +662,29 @@ pub fn resize_container(w: u32, h: u32) {
     });
 }
 
-/// Destroy the container on player close.
+/// Unmap the container without destroying it, so mpv's output still has a valid window to shut
+/// down on while the browse page (already painted underneath) shows at once. Returns whether a
+/// container exists.
+pub fn hide_container() -> bool {
+    crate::player::linux_embed::run_on_glib_main(|| {
+        let Ok(mut g) = STATE.lock() else {
+            return false;
+        };
+        let Some(st) = g.as_mut() else {
+            return false;
+        };
+        st.hidden = true;
+        st.closing = true;
+        unsafe {
+            XUnmapWindow(st.dpy, st.container);
+            XFlush(st.dpy);
+        }
+        true
+    })
+}
+
+/// Destroy the container on player close. Release mpv's video output first
+/// (`PlayerHandle::release_video_output`): this window is the surface it renders into.
 pub fn destroy_container() {
     let taken = STATE.lock().ok().and_then(|mut g| g.take());
     if let Some(st) = taken {

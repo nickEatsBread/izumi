@@ -397,6 +397,8 @@ async fn player_embed(
             // Game mode / gamescope (XWayland X11): no wl_subsurface — embed mpv via `--wid`
             // into a fullscreen X11 CONTAINER window we own (so it can be shown/hidden for the
             // touch-controls swap + made input-transparent). Fullscreen; no windowed layout.
+            // Wait out a close that is still releasing mpv's output from this container.
+            let _lifecycle = PLAYER_LIFECYCLE.lock().unwrap_or_else(|e| e.into_inner());
             let size = main.inner_size().map_err(|e| e.to_string())?;
             let xid = player::linux_x11::ensure_container(&main, size.width, size.height)?;
             player.play_embedded(
@@ -441,6 +443,11 @@ async fn player_embed(
     player::require_live_core(player.has_core())
 }
 
+/// Serializes Linux X11 embeds against a close that is still releasing mpv's output, so an embed
+/// never loads into a core, or reuses a container, that the close is taking down.
+#[cfg(target_os = "linux")]
+static PLAYER_LIFECYCLE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Stop playback and clear the current media. Windows/macOS keep the initialized mpv core and its
 /// hidden child surface ready for reuse; Linux tears down its X11 container. The overlay itself is
 /// torn down by the frontend (`playing = false`).
@@ -451,7 +458,19 @@ async fn close_player(player: tauri::State<'_, player::PlayerHandle>) -> Result<
     // performs a full teardown because the Gamescope/X11 path destroys its native host container.
     #[cfg(target_os = "linux")]
     {
-        player::linux_x11::destroy_container();
+        let _lifecycle = PLAYER_LIFECYCLE.lock().unwrap_or_else(|e| e.into_inner());
+        // Game mode: hide the video child (the browse page is already painted under it), take
+        // mpv's EGL output down while that window still exists, and only then destroy it.
+        // Destroying the window under a live output crashed the UI process on about every other
+        // exit: WebKit's next GPU draw reached driver state the dying output had freed.
+        let released = !player::linux_x11::hide_container()
+            || player.release_video_output(std::time::Duration::from_millis(1500));
+        if released {
+            player::linux_x11::destroy_container();
+        } else {
+            // Never destroy the window under a live output: it stays hidden for the next embed.
+            player::linux_embed::elog("x11: video output still up after 1.5s; keeping its window");
+        }
         player.stop()
     }
     #[cfg(any(windows, target_os = "macos"))]
