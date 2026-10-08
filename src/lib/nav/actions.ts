@@ -1,6 +1,12 @@
 import { get } from 'svelte/store'
 import { gameMode, playing } from '$lib/player/session'
 import { dragCarousels } from '$lib/settings/ui'
+import { isAndroid, isMacOS, isWindows } from '$lib/platform'
+
+/** A row the stylesheet pinned (`overflow: hidden` in app.css: every row in Game mode, every row on
+ *  a hover + fine-pointer desktop). It is not a native scroller, so a finger can only move it through
+ *  `gameModeCarouselTouch`. Phone rows stay native and are never pinned. */
+const pinnedRow = (node: HTMLElement) => getComputedStyle(node).overflowX === 'hidden'
 
 export function dragScroll(node: HTMLElement) {
   let down = false, moved = false, startX = 0, startLeft = 0
@@ -10,6 +16,8 @@ export function dragScroll(node: HTMLElement) {
   // and more the further you'd navigated (the accumulating-lag bug).
   const onDown = (e: PointerEvent) => {
     if (!get(dragCarousels) || get(gameMode) || get(playing) || e.button !== 0) return
+    // A finger or pen on a pinned row belongs to the carousel touch driver.
+    if (e.pointerType !== 'mouse' && pinnedRow(node)) return
     down = true; moved = false; startX = e.clientX; startLeft = node.scrollLeft
   }
   const onMove = (e: PointerEvent) => {
@@ -61,7 +69,13 @@ export function dragScroll(node: HTMLElement) {
  * `touchmove`: a prevented touch event is the one signal that makes WebKitGTK deny its whole touch
  * gesture group for that sequence (drag, swipe, zoom, tap), so the page does not creep vertically
  * under a row drag and no synthesized tap fires when the finger lifts. Pointer events keep
- * arriving regardless, so the scrollLeft drive below is unaffected. */
+ * arriving regardless, so the scrollLeft drive below is unaffected.
+ *
+ * Desktop rows are pinned too (app.css), so outside Game mode the same driver owns a finger or pen
+ * on a pinned row: a touchscreen laptop. The browser keeps the vertical pan through the stylesheet's
+ * `touch-action: pan-y`; the mouse stays with dragScroll. Linux's WebKitGTK ignores `touch-action`
+ * there exactly as in Game mode, so on Linux a pinned row also cancels the touch sequence once its
+ * drag is horizontal. */
 export function gameModeCarouselTouch(node: HTMLElement) {
   const previousTouchAction = node.style.touchAction
   const stopMode = gameMode.subscribe((enabled) => {
@@ -93,7 +107,8 @@ export function gameModeCarouselTouch(node: HTMLElement) {
     momentumFrame = requestAnimationFrame(frame)
   }
   const onDown = (event: PointerEvent) => {
-    if (!get(gameMode) || get(playing) || event.button !== 0) return
+    if (get(playing) || event.button !== 0) return
+    if (!get(gameMode) && (event.pointerType === 'mouse' || !pinnedRow(node))) return
     stopMomentum()
     pointer = event.pointerId
     axis = 'pending'
@@ -158,7 +173,8 @@ export function gameModeCarouselTouch(node: HTMLElement) {
   // The non-passive touchmove exists only to cancel the document scroll once a Game-mode row
   // drag has committed horizontally. Registered on every row on every platform, its mere presence
   // made the WebView wait for the JS main thread before EVERY vertical fling that started on a row
-  // — most of Home on a phone — so it is attached only while Game mode is actually on.
+  // — most of Home on a phone — so it is attached only while Game mode is actually on, or on a
+  // pinned Linux row, where WebKitGTK needs it for the same reason as Game mode.
   let touchBlocking = false
   const setTouchBlocking = (on: boolean) => {
     if (on === touchBlocking) return
@@ -166,7 +182,8 @@ export function gameModeCarouselTouch(node: HTMLElement) {
     if (on) node.addEventListener('touchmove', onTouchMove, { passive: false })
     else node.removeEventListener('touchmove', onTouchMove)
   }
-  const stopTouchMode = gameMode.subscribe(setTouchBlocking)
+  const linux = !get(isWindows) && !get(isMacOS) && !get(isAndroid)
+  const stopTouchMode = gameMode.subscribe((enabled) => setTouchBlocking(enabled || (linux && pinnedRow(node))))
   node.addEventListener('pointerup', onEnd)
   node.addEventListener('pointercancel', onEnd)
   node.addEventListener('click', onClick, true)

@@ -64,12 +64,35 @@
   // listens for this), so clicking the arrow never pops the card beneath it.
   const dismissPreview = () => window.dispatchEvent(new Event('carousel-nav'))
 
+  // WebKitGTK turns a finger drag into synthesized wheel events. While a finger (or Game mode's touch
+  // pointer) is down on the row those events are the drag itself, which the touch driver owns, so
+  // only real wheel and touchpad input reaches onWheel.
+  let pressed = false
+  function onTrackPointerDown(e: PointerEvent) {
+    if (e.pointerType === 'mouse' && !$gameMode) return
+    pressed = true
+    const release = () => {
+      pressed = false
+      window.removeEventListener('pointerup', release, true)
+      window.removeEventListener('pointercancel', release, true)
+    }
+    window.addEventListener('pointerup', release, true)
+    window.addEventListener('pointercancel', release, true)
+  }
+  $effect(() => {
+    const node = scroller
+    if (!node) return
+    node.addEventListener('pointerdown', onTrackPointerDown)
+    return () => node.removeEventListener('pointerdown', onTrackPointerDown)
+  })
+
   // Horizontal wheel/trackpad input moves the row. Vertical input only dismisses a hover preview
   // and remains entirely owned by the page — scrolling down over a carousel must still go down.
+  // Desktop rows are not native scrollers (app.css), so this is the only way a wheel moves one.
   // A portalled preview forwards horizontal input back here because it sits outside the row DOM.
   function onWheel(e: WheelEvent) {
-    if (grid) return
-    if (!$wheelScrollAcross) return // opt-in (Settings → Interface); arrows otherwise
+    if (grid || pressed) return
+    if (!$wheelScrollAcross) return // Settings → Interface; arrows otherwise
     if (!scroller) return
     const horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY)
     // Close/latch the preview for either axis, but never cancel or repurpose vertical scrolling.
@@ -123,8 +146,11 @@
     {/if}
   </div>
   <div class="relative">
+    <!-- `overflow-y-hidden`: with overflow-x alone the track computed `overflow-y: auto`, so any
+         vertical overflow (cards mid load-in, a press or hover transform) made the row a vertical
+         scroller that took a swipe or wheel meant for the page. -->
     <div data-part="row.track" bind:this={scroller} data-carousel-scroller={!grid ? '' : undefined} data-nav-row-items use:scrollBehavior={!grid} onwheel={onWheel} onscroll={update} onfocusin={onTrackFocusIn} onfocusout={onTrackFocusOut}
-         class="flex gap-3 overflow-x-scroll pb-2" class:px-8={!mob} class:px-4={mob} class:pt-3={gm}
+         class="flex gap-3 overflow-x-scroll overflow-y-hidden pb-2" class:px-8={!mob} class:px-4={mob} class:pt-3={gm}
          class:theme-grid={grid} style:gap={`${appearance.gap ?? Math.round(12 * densityScale($themePresentation))}px`} style:--theme-grid-width={`${appearance.width ?? Math.round(152 * densityScale($themePresentation))}px`}>
       {@render children()}
     </div>
@@ -159,7 +185,9 @@
 </section>
 
 <style>
-  .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--theme-grid-width)), 1fr)); overflow-x: visible; align-items: start; }
+  /* `overflow: visible` on both axes: the track's overflow-x/overflow-y utilities would otherwise
+     still make a grid a clipping scroll container, cutting off focus rings and hover lifts. */
+  .theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--theme-grid-width)), 1fr)); overflow: visible; align-items: start; }
   .theme-grid > :global(*) { min-width: 0; max-width: 100%; }
   .theme-grid :global([data-theme-card]), .theme-grid :global([data-theme-card] > a) { width: 100% !important; }
 </style>

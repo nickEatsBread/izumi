@@ -438,4 +438,31 @@ describe('series page composition keys (API 3)', () => {
     expect(resolveDetail(resolvePresentation(layout, true)).sections).toEqual({ labels: { overview: 'about' }, mode: 'stack', tabs: ['overview', 'episodes'] })
     expect(resolveDetail(resolvePresentation(layout, false)).sections).toEqual({ labels: { overview: 'about' }, mode: 'stack' })
   })
+  // `overflow-x` alone computes `overflow-y: auto`, which made a nowrap row a vertical scroller that took
+  // swipes and wheels meant for the page; inside a card it was also a sideways scroller nested in the row.
+  it('lets a nowrap row scroll sideways only, and never inside a card or badge tile', () => {
+    const line = { type: 'row', style: { wrap: 'nowrap' }, children: [{ type: 'text', field: 'format' }, { type: 'text', field: 'season' }] }
+    const sideways = nodeStyle(parseNode(line))
+    expect(sideways).toContain('overflow-x:auto')
+    expect(sideways).toContain('overflow-y:hidden')
+    const layout = parsePresentation({
+      cards: { poster: { type: 'stack', children: [{ type: 'artwork', artwork: 'poster' }, line] } },
+      rows: { byId: { trending: { card: { type: 'stack', children: [line] } } } },
+      detail: { episodes: { card: line }, header: { type: 'stack', children: [line] }, facts: { type: 'stack', children: [line] } },
+      hero: { rank: line, template: { type: 'stack', children: [line] } },
+    })
+    const tiles = [layout.cards!.poster!.children![1], resolveRow(layout, 'trending').card!.children![0], layout.detail!.episodes!.card!, layout.hero!.rank!]
+    for (const node of tiles) {
+      expect(nodeStyle(node)).toContain('overflow:hidden')
+      expect(nodeStyle(node)).not.toContain('overflow-x:auto')
+    }
+    // Templates that hold controls, and the series header, keep the sideways-only row.
+    for (const node of [layout.hero!.template!.children![0], layout.detail!.facts!.children![0], layout.detail!.header!.children![0]]) {
+      expect(nodeStyle(node)).toContain('overflow-x:auto;overflow-y:hidden')
+    }
+    // The tile mark is kept beside the tree: a parsed layout still serialises to what the parser accepts.
+    expect(layout.cards!.poster!.children![1]).toEqual(line)
+    const copy = parsePresentation(JSON.parse(JSON.stringify(layout)))
+    expect(nodeStyle(copy.cards!.poster!.children![1])).toContain('overflow:hidden')
+  })
 })

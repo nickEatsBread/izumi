@@ -297,8 +297,10 @@ export const hideSpoilers = persisted<boolean>('hide-spoilers', false)
  *  default: the numbering choice used to sit on the series page itself, where it was just clutter. */
 export const absoluteEpisodeNumbers = persisted<boolean>('absolute-episode-numbers', false)
 /** Let horizontal mouse-wheel/trackpad gestures scroll carousel rows. Vertical input always
- *  remains page scrolling. Off by default: use the row's ‹ › arrow buttons instead. */
-export const wheelScrollAcross = persisted<boolean>('carousel-wheel-scroll', false)
+ *  remains page scrolling. On by default: desktop rows are not native scrollers (so a slightly
+ *  diagonal two-finger scroll can no longer stall the page on a row), and this is what keeps a
+ *  sideways touchpad swipe moving them. Off: use the row's ‹ › arrow buttons instead. */
+export const wheelScrollAcross = persisted<boolean>('carousel-wheel-scroll', true)
 /** Allow a held primary mouse button to drag carousel rows and step the featured banner.
  *  Kept on by default because row dragging was the established desktop behaviour before this
  *  became configurable. Touch swipes remain available independently on mobile. */

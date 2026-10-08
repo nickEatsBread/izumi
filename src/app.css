@@ -118,6 +118,16 @@ body { overflow-x: clip; }
   [data-carousel-scroller] { scroll-snap-type: x proximity; scroll-padding-inline: 1rem; overscroll-behavior-x: contain; }
   [data-carousel-scroller] > * { scroll-snap-align: start; }
 }
+/* Desktop rows are not native scrollers. A touchpad or wheel event with any sideways component that
+   started over a scrollable row was given to the row, which took the dx and dropped the dy, so the
+   page stalled under a slightly diagonal two-finger scroll. With overflow hidden every wheel scrolls
+   the page; Carousel's onWheel moves the row for clearly horizontal input, and the arrows, mouse
+   drag, keyboard focus and scrollIntoView all still move it. A finger or pen on a touchscreen laptop
+   pans the page vertically (`pan-y`) while the carousel touch driver (nav/actions.ts) owns
+   horizontal drags, as it does in Game mode. */
+@media (hover: hover) and (pointer: fine) {
+  [data-carousel-scroller] { overflow: hidden; touch-action: pan-y; }
+}
 /* Phone settings sub-pages: the back-header's <h1> shows the page title (settings/hierarchy.ts), so
    each page's own leading title, marked `data-settings-page-title`, is hidden: one title, right
    under the bar. `.settings-child` exists only in the phone layout, so desktop keeps every title. */

@@ -359,6 +359,15 @@ function themeColor(value: unknown): string {
   if (typeof value !== 'string' || !(colors.includes(value) || /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value))) throw new Error('Use a theme color or a hex color.')
   return value
 }
+/** Nodes of card and badge templates, which draw static tiles (see nodeStyle). The mark sits beside
+ *  the tree rather than in it, so a parsed layout still serialises to exactly what the parser accepts;
+ *  a copied tree loses it and its nowrap rows fall back to the plain sideways-only rule. */
+const tileNodes = new WeakSet<ThemeNode>()
+function tile(node: ThemeNode): ThemeNode {
+  tileNodes.add(node)
+  node.children?.forEach(tile)
+  return node
+}
 export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, interactive = true, api: ThemeApi = LATEST_THEME_API): ThemeNode {
   if (++budget.count > 96 || depth > 8) throw new Error('This theme template is too complex.')
   const raw = record(value)
@@ -435,7 +444,7 @@ function parseRow(value: unknown, api: ThemeApi): RowPresentation {
     if (raw[key] !== undefined) result[key] = number(raw[key], min, max)
   }
   if (raw.heading !== undefined) result.heading = parseHeading(raw.heading)
-  if (raw.card !== undefined) result.card = parseNode(raw.card, undefined, 0, false, api)
+  if (raw.card !== undefined) result.card = tile(parseNode(raw.card, undefined, 0, false, api))
   if (raw.caption !== undefined) result.caption = choice(raw.caption, ['none', 'focus'])
   return result
 }
@@ -556,7 +565,7 @@ function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
     if (episodes.hover !== undefined) result.episodes.hover = choice(episodes.hover, ['scale', 'none'])
     if (episodes.order !== undefined) result.episodes.order = choice(episodes.order, api >= 3 ? ['tabs', 'flip', 'none'] : ['tabs', 'flip'])
     if (episodes.search !== undefined) result.episodes.search = api >= 3 && episodes.search === 'field' ? 'field' : flag(episodes.search)
-    if (episodes.card !== undefined) result.episodes.card = parseNode(episodes.card, undefined, 0, false, api)
+    if (episodes.card !== undefined) result.episodes.card = tile(parseNode(episodes.card, undefined, 0, false, api))
     if (episodes.toolbar !== undefined) result.episodes.toolbar = choice(episodes.toolbar, ['bar', 'header'])
     if (episodes.controls !== undefined) result.episodes.controls = controlList(episodes.controls)
     if (episodes.paging !== undefined) result.episodes.paging = choice(episodes.paging, ['pages', 'ranges', 'dropdown'])
@@ -614,7 +623,7 @@ function parseCards(value: unknown, api: ThemeApi): NonNullable<ThemePresentatio
   const raw = record(value); only(raw, ['poster', 'continue', 'search'])
   const result: NonNullable<ThemePresentation['cards']> = {}
   for (const family of ['poster', 'continue', 'search'] as const) {
-    if (raw[family] !== undefined) result[family] = parseNode(raw[family], undefined, 0, false, api)
+    if (raw[family] !== undefined) result[family] = tile(parseNode(raw[family], undefined, 0, false, api))
   }
   return result
 }
@@ -691,7 +700,7 @@ export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_A
     if (hero.scale !== undefined) result.hero.scale = choice(hero.scale, api >= 3 ? ['viewport', 'banner', 'wide'] : ['viewport', 'banner'])
     if (hero.bleed !== undefined) result.hero.bleed = number(hero.bleed, 0, 480)
     if (hero.interval !== undefined) result.hero.interval = number(hero.interval, 5, 60)
-    if (hero.rank !== undefined) result.hero.rank = parseNode(hero.rank, undefined, 0, false, api)
+    if (hero.rank !== undefined) result.hero.rank = tile(parseNode(hero.rank, undefined, 0, false, api))
     if (hero.template !== undefined) result.hero.template = parseNode(hero.template, undefined, 0, true, api)
     if (hero.indicator !== undefined) result.hero.indicator = parseIndicator(hero.indicator, api)
   }
@@ -791,7 +800,14 @@ export function nodeStyle(node: ThemeNode): string {
     else if (key === 'color' || key === 'background') styles[property] = String(value).startsWith('#') || value === 'transparent' ? String(value) : `hsl(var(--${value}))`
     else styles[property] = `${value}${numericStyles[key]?.[2] ?? ''}`
   }
-  if (node.type === 'row' && node.style?.wrap === 'nowrap') styles['overflow-x'] = 'auto'
+  // A nowrap row may scroll sideways, never vertically: `overflow-x` alone computes `overflow-y: auto`,
+  // and the row then took vertical swipes and wheels meant for the page. A card or badge tile is a
+  // static picture, so a line inside one (a poster's meta line) clips instead of becoming a small
+  // scroller that catches a wheel or swipe aimed at the row or the page.
+  if (node.type === 'row' && node.style?.wrap === 'nowrap') {
+    if (tileNodes.has(node)) styles.overflow = 'hidden'
+    else { styles['overflow-x'] = 'auto'; styles['overflow-y'] = 'hidden' }
+  }
   if (node.type === 'artwork' && node.style?.maxWidth !== undefined) styles.width = `${Number(node.style.maxWidth)}px`
   if (anchor !== undefined) {
     styles.position = 'absolute'
