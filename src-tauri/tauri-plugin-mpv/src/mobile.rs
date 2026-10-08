@@ -5,10 +5,10 @@ use tauri::{
 };
 
 use crate::models::{
-    AutoPipRequest, BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest,
-    GifSaveRequest, GifStartRequest, HapticRequest, InspectRequest, KeepScreenAwakeRequest,
-    LoadRequest, MediaSessionRequest, RenderOptsRequest, SetRequest, ThumbRequest,
-    TransformRequest, ViewportRequest,
+    AutoPipRequest, BrightnessRequest, CommandRequest, DolbyOptsRequest, FullscreenRequest,
+    GetRequest, GifSaveRequest, GifStartRequest, HapticRequest, InspectRequest,
+    KeepScreenAwakeRequest, LoadRequest, MediaSessionRequest, RenderOptsRequest, SetRequest,
+    ThumbRequest, TransformRequest, ViewportRequest,
 };
 
 #[cfg(target_os = "android")]
@@ -135,7 +135,7 @@ impl<R: Runtime> Mpv<R> {
             .map_err(Into::into)
     }
 
-    pub fn set_dolby_opts(&self, payload: RenderOptsRequest) -> crate::Result<serde_json::Value> {
+    pub fn set_dolby_opts(&self, payload: DolbyOptsRequest) -> crate::Result<serde_json::Value> {
         self.0
             .run_mobile_plugin("setDolbyOpts", payload)
             .map_err(Into::into)

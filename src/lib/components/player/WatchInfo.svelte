@@ -4,6 +4,7 @@
   // the season — the lines a streaming site prints under its player instead of over the video.
   import { nowPlaying, nowPlayingMedia } from '$lib/player/session'
   import { cover, format, mediaHref, season, title } from '$lib/anilist/media'
+  import { detailLink } from '$lib/anilist/detail-hint'
 
   const media = $derived($nowPlayingMedia?.media ?? null)
   const episode = $derived($nowPlaying.episode ?? $nowPlayingMedia?.episode ?? null)
@@ -21,13 +22,13 @@
 {#if media}
   <div data-slot="watch.info" class="flex gap-4 bg-background py-4 text-sm text-muted-foreground">
     {#if cover(media)}
-      <a data-part="watch.info.poster" href={mediaHref(media)} class="block w-20 shrink-0 self-start overflow-hidden rounded">
+      <a data-part="watch.info.poster" href={mediaHref(media)} use:detailLink={media} class="block w-20 shrink-0 self-start overflow-hidden rounded">
         <img src={cover(media)} alt="" class="aspect-[2/3] w-full object-cover" />
       </a>
     {/if}
     <div class="min-w-0">
       <h1 data-part="watch.info.title" class="text-base font-semibold text-foreground">
-        <a href={mediaHref(media)} class="hover:underline">{title(media)}</a>{#if episode != null}<span>{` - ${episode}`}</span>{/if}
+        <a href={mediaHref(media)} use:detailLink={media} class="hover:underline">{title(media)}</a>{#if episode != null}<span>{` - ${episode}`}</span>{/if}
       </h1>
       <div data-part="watch.info.meta">{[format(media), count].filter(Boolean).join(' - ')}{airing ? ` (${airing})` : ''}</div>
       {#if season(media)}<div data-part="watch.info.season">{season(media)}</div>{/if}

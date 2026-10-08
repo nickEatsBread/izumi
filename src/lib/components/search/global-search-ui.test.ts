@@ -6,6 +6,7 @@ const source = readFileSync(fileURLToPath(new URL('./GlobalSearch.svelte', impor
 // The live search itself is shared with the theme top bar's field.
 const quick = readFileSync(fileURLToPath(new URL('../../search/quick-search.ts', import.meta.url)), 'utf8')
 const topField = readFileSync(fileURLToPath(new URL('../shell/TopSearchField.svelte', import.meta.url)), 'utf8')
+const hint = readFileSync(fileURLToPath(new URL('../../anilist/detail-hint.ts', import.meta.url)), 'utf8')
 
 describe('global search focus styling', () => {
   it('suppresses the generic full-input focus outline while retaining the field-row focus state', () => {
@@ -17,7 +18,9 @@ describe('global search focus styling', () => {
 
   it('uses the selected catalog adapter and provider-owned detail route', () => {
     expect(quick).toContain('loadCatalogProvider(selection)')
-    expect(source).toContain('await goto(mediaHref(media))')
+    // openDetail records the result as the series page's hint, then routes by mediaHref.
+    expect(source).toContain('await openDetail(media)')
+    expect(hint).toContain('return goto(mediaHref(media))')
     expect(source).not.toContain('await goto(`/app/anime/${media.id}`)')
   })
 

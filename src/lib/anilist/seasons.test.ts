@@ -85,6 +85,14 @@ describe('season chain cache', () => {
     await fetchSeasonChain(501)
     expect(query).toHaveBeenCalledTimes(2)
   })
+  it('asks for every season banner, so picking one opens its page with the real header art', async () => {
+    query.mockReset()
+    query.mockReturnValueOnce(answer({ data: { Page: { media: [node(601, 'TV', 2020)] } } }))
+    await fetchSeasonChain(601)
+    const body: string = query.mock.calls[0][0].loc.source.body
+    // Once on the fetched seasons and once on their prequel/sequel nodes.
+    expect(body.match(/\bbannerImage\b/g)).toHaveLength(2)
+  })
 })
 
 describe('season entries', () => {

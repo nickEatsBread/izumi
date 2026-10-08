@@ -4,7 +4,7 @@
   // for the next one. Long-runners (One Piece) are paginated. The layout (rich
   // `cards` vs simple `compact` rows) follows the persisted Appearance setting;
   // per-episode thumbnails/titles/ratings come from AniZip.
-  import { untrack } from 'svelte'
+  import { tick, untrack } from 'svelte'
   import { playEpisode, prefetchEpisodeSources, resumeEpisode, type PlayState } from '$lib/stremio/play'
   import { airedCount, cover } from '$lib/anilist/media'
   import { animeEpisodeNumbers, animeEpisodeMetadata, animeEpisodeMetadataKey, animeResumeEpisode, animeWatchedProgress } from '$lib/catalog/anime-detail'
@@ -29,13 +29,17 @@
     autoDownloadRules, removeAutoDownloadForMedia, subscribeAutoDownloads,
   } from '$lib/downloads/rules'
   import EpisodeCard from './EpisodeCard.svelte'
+  import EpisodeDownload from './EpisodeDownload.svelte'
   import EpisodeToolbar from './EpisodeToolbar.svelte'
   import { planEpisodeToolbar } from './toolbar-plan'
   import SeasonPicker from './SeasonPicker.svelte'
   import { fetchSeasonChain, mayListSeasons, seasonEntries, type SeasonEntry } from '$lib/anilist/seasons'
   import AiringStatus from './AiringStatus.svelte'
+  import AiringCountdown from './AiringCountdown.svelte'
   import { episodeTileState, offlineResumeEpisode, playableThrough } from './episode-tile'
-  import { episodeRanges, pageSizeFor, searchEpisodes, shownPage } from './episode-ranges'
+  import { episodeRanges, openingPage, pageOf, pageSizeFor, searchEpisodes, shownPage } from './episode-ranges'
+  import { onDownloadSelect } from '$lib/detail/episode-commands'
+  import { seriesResumeProgress, seriesUnderWay } from '$lib/detail/resume'
   import { episodeNoText } from '$lib/themes/episode-fields'
   import Download from '@lucide/svelte/icons/download'
   import Loader from '@lucide/svelte/icons/loader-circle'
@@ -88,20 +92,31 @@
   const episodeHoverScale = $derived(episodeTheme?.hover === 'scale')
   const flipOrder = $derived(episodeTheme?.order === 'flip')
   const showEpisodeSearch = $derived(episodeTheme?.search !== false)
+  // API 4 `download: "button"`: every episode card and row ends in its own download button
+  // (`episode.download`), left out offline, where nothing can be downloaded, and in select mode.
+  const downloadButtons = $derived(episodeTheme?.download === 'button' && !offline)
   // A theme's grid or carousel arrangement draws cards whatever the layout setting says, so the
   // cards/numbers switch would do nothing there.
   const layoutSwitch = $derived(episodeTheme?.arrangement !== 'grid' && episodeTheme?.arrangement !== 'carousel')
   const PER = $derived(pageSizeFor(total, episodeTheme?.pageSize))
+  // Where the series Play button picks the series up (resume.ts): the episodes finished, or the
+  // episode last opened less one, as Continue Watching counts it. The watched marks keep
+  // `watchedThrough`.
+  const resumeThrough = $derived(seriesResumeProgress(media, $localHistory, $sessionProgress, $manualProgressOverrides))
+  // The episode the series Play button opens (the page CTA's own rule): `data-next` marks it for
+  // theme stylesheets and the Continue card plays it. Offline: the next downloaded episode, by the
+  // rule the Play button uses too (episode-tile.ts).
+  const ctaEpisode = $derived(offline
+    ? offlineResumeEpisode(offlineEps, resumeThrough)
+    : animeResumeEpisode(media, resumeThrough))
   // `page` stays null until the user manually pages; until then we show `autoPage` — the page that
-  // holds the next episode to watch — so opening a long-running series (One Piece) lands on where
-  // you're up to, not episode 1. Deriving it (vs a one-shot init) keeps it right if progress
-  // hydrates a tick late, and it stops following once the user hits Prev/Next.
+  // holds the episode Play would start — so opening a long-running series (One Piece) lands on where
+  // you're up to, not episode 1: the pager, the range chips and the range picker alike. Deriving it
+  // (vs a one-shot init) keeps it right if progress hydrates a tick late, and it stops following
+  // once the user hits Prev/Next.
   let page = $state<number | null>(null)
   const pages = $derived(Math.max(1, Math.ceil(total / PER)))
-  const autoPage = $derived.by(() => {
-    const next = allEpisodes.findIndex((episode) => episode > watchedThrough)
-    return Math.max(0, Math.floor((next < 0 ? total - 1 : next) / PER))
-  })
+  const autoPage = $derived(openingPage(allEpisodes, PER, ctaEpisode, resumeThrough))
   // A picked page stays inside the list when the page size changes (`pageSize: "auto"` grows with it).
   const curPage = $derived(shownPage(page, autoPage, pages))
   const startIdx = $derived(curPage * PER)
@@ -114,13 +129,46 @@
   // `ranges` replaces the Prev/Next pager, and so does the toolbar's range picker once it shows.
   const pagerShown = $derived(episodeTheme?.paging !== 'ranges' && !(episodeTheme?.paging === 'dropdown' && aired > 0))
   let rangesRow = $state<HTMLElement>()
-  // Keep the current range chip in view. Only the row scrolls: scrollIntoView would also move the
-  // page down to the episodes as the tab opens.
+  // A number, so a series delivered again with the same ranges never re-centres a row the viewer moved.
+  const rangeCount = $derived(rangeChips.length)
+  // Keep the current range chip in the middle of the row. Only the row scrolls: scrollIntoView would
+  // also move the page down to the episodes as the tab opens. The chips settle after the first layout
+  // (the theme's fonts and sizes, the printed numbers), so it is centred again as they do, until the
+  // viewer moves the row.
   $effect(() => {
     const row = rangesRow
-    const chip = row?.children[curPage] as HTMLElement | undefined
-    if (row && chip) row.scrollLeft = Math.max(0, chip.offsetLeft - (row.clientWidth - chip.offsetWidth) / 2)
+    const index = curPage
+    void rangeCount
+    if (!row) return
+    const centre = () => {
+      const chip = row.children[index] as HTMLElement | undefined
+      if (chip) row.scrollLeft = Math.max(0, chip.offsetLeft - (row.clientWidth - chip.offsetWidth) / 2)
+    }
+    centre()
+    let moved = false
+    const touched = () => { moved = true }
+    const types = ['wheel', 'touchmove', 'pointerdown', 'keydown'] as const
+    for (const type of types) row.addEventListener(type, touched, { passive: true })
+    const release = holdPlace(row, centre, () => moved)
+    return () => { release(); for (const type of types) row.removeEventListener(type, touched) }
   })
+  // Runs `place` again whenever the row or one of its items changes width, until `moved` says the
+  // viewer has scrolled it. Returns the function that stops watching.
+  function holdPlace(row: HTMLElement, place: () => void, moved: () => boolean): () => void {
+    const sizes = () => [row.clientWidth, ...Array.from(row.children, (child) => (child as HTMLElement).offsetWidth)].join()
+    let last = sizes()
+    const observer = new ResizeObserver(() => {
+      if (moved()) { observer.disconnect(); return }
+      const now = sizes()
+      if (now === last) return
+      last = now
+      place()
+    })
+    observer.observe(row)
+    for (const child of row.children) observer.observe(child)
+    return () => observer.disconnect()
+  }
+  const motionReduced = () => document.documentElement.dataset.motion === 'reduced'
   let episodeQuery = $state('')
   let searchOpen = $state(false)
   // The whole list, not the current page: number matches first, then the rest (episode-ranges.ts).
@@ -145,16 +193,63 @@
   // sort, tabs, or release metadata merely because those controls happen to sit between the rows.
   const quickEpisode = $derived.by(() => {
     const preferred = offline
-      ? (offlineEps.find((episode) => episode > watchedThrough) ?? offlineEps[0])
-      : Math.max(1, Math.min(watchedThrough + 1, aired || 1))
+      ? (offlineEps.find((episode) => episode > resumeThrough) ?? offlineEps[0])
+      : Math.max(1, Math.min(resumeThrough + 1, aired || 1))
     return rows.includes(preferred) ? preferred : (rows.find((episode) => episode <= aired) ?? rows[0])
   })
-  // The episode the series Play button opens (the page CTA's own rule): `data-next` marks it for
-  // theme stylesheets and the Continue card plays it. Offline: the next downloaded episode, by the
-  // rule the Play button uses too (episode-tile.ts).
-  const ctaEpisode = $derived(offline
-    ? offlineResumeEpisode(offlineEps, watchedThrough)
-    : animeResumeEpisode(media, watchedThrough))
+  // A carousel (`arrangement: "carousel"`) opens with the episode Play would start as its first card,
+  // where the viewer is up to rather than at episode 1. It follows that episode while progress hydrates
+  // or a finished episode moves it on, until the viewer moves the row themselves. A new page, order or
+  // search starts the row again (at that episode when the page holds it, else at its start); opening
+  // the list is instant, and the row glides when the episode moves on or the series changes in place.
+  let episodeTrack = $state<HTMLElement>()
+  let trackMoved = false
+  let placed: { track: HTMLElement; series: number; view: string } | null = null
+  $effect(() => {
+    const track = episodeTrack
+    const shown = rows
+    const target = searchedEpisodes ? undefined : ctaEpisode
+    const series = media.id
+    const view = `${curPage}:${rowOrder}`
+    if (!track) return
+    return untrack(() => {
+      const sameTrack = placed?.track === track
+      const sameSeries = sameTrack && placed?.series === series
+      const sameView = sameSeries && placed?.view === view
+      if (!sameView) trackMoved = false
+      if (trackMoved) return
+      placed = { track, series, view }
+      const place = (glide: boolean) => {
+        const first = track.firstElementChild as HTMLElement | null
+        const card = track.children[Math.max(0, target == null ? 0 : shown.indexOf(target))] as HTMLElement | undefined
+        if (!first || !card) return
+        // Measured from the first card, so a theme's padding or scroll padding on the row is kept.
+        const left = card.offsetLeft - first.offsetLeft
+        if (Math.abs(track.scrollLeft - left) < 1) return
+        if (glide && !motionReduced()) track.scrollTo({ left, behavior: 'smooth' })
+        else track.scrollLeft = left
+      }
+      place(sameTrack && (sameView || !sameSeries))
+      // Cards settle after the first layout too (a tab shown later, the theme's sizes).
+      return holdPlace(track, () => place(false), () => trackMoved)
+    })
+  })
+  // A swipe, wheel, key or focus inside the row (or a drag of its own scrollbar) is the viewer's own
+  // position, so it stays. A tap on a card focuses it without moving the row, so the focus a press
+  // brings does not count: the row still follows Play once the episode the tap started is finished.
+  $effect(() => {
+    const track = episodeTrack
+    if (!track) return
+    let pressedAt = -Infinity
+    const touched = (event: Event) => {
+      if (event.type === 'pointerdown' && event.target !== track) { pressedAt = performance.now(); return }
+      if (event.type === 'focusin' && performance.now() - pressedAt < 1000) return
+      trackMoved = true
+    }
+    const types = ['wheel', 'touchmove', 'keydown', 'focusin', 'pointerdown'] as const
+    for (const type of types) track.addEventListener(type, touched, { passive: true })
+    return () => { for (const type of types) track.removeEventListener(type, touched) }
+  })
   function toggleSort(dir: SortDir) { if (dir !== sortDir) { h.select(); sortDir = dir } }
   function flipSort() {
     h.select()
@@ -236,6 +331,13 @@
   // API 3 `detail.continue: "card"`: the Continue card plays what the series Play button would,
   // through the same resume path (the remembered source first).
   const continueCard = $derived(resolveDetail($themePresentation).continue === 'card')
+  // API 4 `detail.countdownAt: "episodes"` or `"both"`: the theme's countdown at the top of the list,
+  // under its controls (the series page drops it from the facts for `episodes`).
+  const listCountdown = $derived.by(() => {
+    const detail = resolveDetail($themePresentation)
+    const at = detail.countdownAt ?? 'info'
+    return detail.countdown && detail.countdown !== 'none' && at !== 'info' ? detail.countdown : undefined
+  })
   function continueWatching() {
     if (resolving || aired < 1) return
     h.impact('medium')
@@ -248,12 +350,15 @@
   // per-episode `abs` mapping is still loaded and still available to everything that needs it —
   // this only decides which number the badge prints.
   const numberLabel = (episode: number) => episodeNumberLabel(episode, meta[episode]?.abs, $absoluteEpisodeNumbers)
-  // The state every episode element carries (`data-state`): cards, rows and tiles share one rule.
+  // The state every episode element carries (`data-state`): cards, rows and tiles share one rule, and
+  // `resume` only ever marks the episode `data-next` marks (the Play episode), so one episode reads as
+  // where the viewer is up to.
   const stateOf = (ep: number) => episodeTileState({
     ep,
     watchedThrough,
     aired,
     percent: episodeBarPercent($positions[progressKey(media.id, ep)], false, ep <= aired),
+    resumeEpisode: ctaEpisode,
   }).kind
 
   const nextQueueEpisode = $derived(allEpisodes.find((episode) => episode > watchedThrough && episode <= aired)
@@ -341,6 +446,34 @@
     batchQuality = $downloadQuality; batchAudio = $downloadAudio; batchCodec = $downloadCodec
   }
   function cancelSelect() { selecting = false; selected = new Set(); followNew = false }
+  // The phone More menu's "Download episodes" (beside a header Download) asks for this selection with the
+  // Play episode picked (episode-commands.ts): its page shows and the page scrolls to the list.
+  let listRoot = $state<HTMLElement>()
+  $effect(() => onDownloadSelect(media.id, ({ episode }) => untrack(() => selectForDownload(episode))))
+  function selectForDownload(episode: number) {
+    if (offline || aired < 1) return
+    episodeQuery = ''
+    if (!selecting) startSelect()
+    if (episode >= 1 && episode <= aired) selected = new Set([episode])
+    const index = pageOf(allEpisodes, episode, PER)
+    if (index >= 0 && index !== curPage) page = index
+    void tick().then(revealList)
+  }
+  // Brings the list's controls to just under whatever stays pinned at the top: the phone's floating
+  // series bar, and a tab strip a theme pins under it.
+  function revealList() {
+    const root = listRoot
+    if (!root) return
+    let covered = 0
+    for (const element of document.querySelectorAll<HTMLElement>('[data-slot="detail.bar"], [data-part="tabs"]')) {
+      const style = getComputedStyle(element)
+      const box = element.getBoundingClientRect()
+      if (style.position === 'fixed' && box.top < window.innerHeight / 2) covered = Math.max(covered, box.bottom)
+      else if (style.position === 'sticky') covered = Math.max(covered, (parseFloat(style.top) || 0) + box.height)
+    }
+    const top = root.getBoundingClientRect().top + window.scrollY - covered - 8
+    window.scrollTo({ top: Math.max(0, top), behavior: motionReduced() ? 'auto' : 'smooth' })
+  }
   const allAiredSelected = $derived(aired > 0 && selected.size >= aired)
   function toggleAllAired() { h.select(); selected = allAiredSelected ? new Set() : new Set(airedList) }
   // One-line echo of the current batch pickers (used as a tooltip on the "Defaults" link now that
@@ -388,7 +521,7 @@
 {#snippet seasonLead()}<SeasonPicker entries={seasonList} variant="dropdown" inline />{/snippet}
 
 {#if total > 0}
-<div data-slot="detail.episodes" class="relative">
+<div data-slot="detail.episodes" class="relative" bind:this={listRoot}>
   {#if plan.gutter && aired > 0}
     <button type="button" data-focusable class="episode-order-flip" data-part="episodes.sort" data-variant="flip" data-dir={sortDir} onclick={flipSort}
             title={sortDir === 'asc' ? 'Show newest first' : 'Show oldest first'}
@@ -407,7 +540,7 @@
     <p class="mb-3 text-sm text-destructive">{playState.message}</p>
   {/if}
   {#if seasonList.length > 1 && !seasonsInHeader}
-    <SeasonPicker entries={seasonList} variant={seasonVariant} />
+    <SeasonPicker entries={seasonList} variant={seasonVariant} scroll={episodeTheme?.seasonsScroll} />
   {/if}
 
   {#if aired > 0}
@@ -651,9 +784,11 @@
     {/if}
   {/if}
 
+  {#if listCountdown}<AiringCountdown {media} variant={listCountdown} className="mb-4" />{/if}
+
   {#if continueCard && aired > 0 && !selecting}
     {@const target = ctaEpisode}
-    {@const started = episodeBarPercent($positions[progressKey(media.id, target)], false, target <= aired)}
+    {@const started = seriesUnderWay(resumeThrough, $positions[progressKey(media.id, target)])}
     {@const percent = episodeBarPercent($positions[progressKey(media.id, target)], watchedThrough >= target, target <= aired)}
     {@const shownTitle = $hideSpoilers && watchedThrough < target ? '' : meta[target]?.title ?? ''}
     {@const art = meta[target]?.image || media.bannerImage || cover(media)}
@@ -664,7 +799,7 @@
       <span class="absolute inset-0 bg-black/60"></span>
       <span class="relative flex h-full items-center gap-3 px-4">
         <span class="min-w-0 flex-1">
-          <span data-part="episode.continue.label" class="block truncate text-sm font-black text-white">{watchedThrough > 0 || started > 0 ? 'Continue' : 'Play'}: Episode {printedNumber(target)}</span>
+          <span data-part="episode.continue.label" class="block truncate text-sm font-black text-white">{started ? 'Continue' : 'Play'}: Episode {printedNumber(target)}</span>
           {#if shownTitle}<span data-part="episode.continue.title" class="block truncate text-xs font-bold text-white/80">{shownTitle}</span>{/if}
         </span>
         <Play size={20} class="shrink-0 text-white" />
@@ -676,8 +811,10 @@
   {/if}
 
   {#if episodeTheme?.paging === 'ranges' && pages > 1 && !searchedEpisodes}
+    <!-- Sideways only (`overflow-y-hidden`): overflow-x alone computes `overflow-y: auto`, and a vertical
+         swipe that started over the chips would scroll them instead of the page. -->
     <div data-part="episodes.ranges" bind:this={rangesRow}
-         class="relative -mx-4 mb-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0">
+         class="relative -mx-4 mb-4 flex gap-2 overflow-x-auto overflow-y-hidden px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0">
       {#each rangeChips as range, index (index)}
         <button type="button" data-part="chip" data-active={index === curPage || undefined} data-focusable
                 onclick={() => { h.select(); page = index }}
@@ -733,7 +870,8 @@
       </div>
     {/if}
   {:else if episodeCarousel}
-    <div data-part="episodes.track" class="flex gap-5 overflow-x-auto pb-3">
+    <!-- Sideways only, like the ranges above. -->
+    <div data-part="episodes.track" class="flex gap-5 overflow-x-auto overflow-y-hidden pb-3" bind:this={episodeTrack}>
       {#each rows as ep (`${rowOrder}-${ep}`)}
         <div class="w-[min(100%,18rem)] shrink-0">
         <EpisodeCard
@@ -760,6 +898,7 @@
           listRow={false}
           state={stateOf(ep)}
           cta={ep === ctaEpisode && ep <= aired}
+          download={downloadButtons}
         />
         </div>
       {/each}
@@ -792,6 +931,7 @@
           listRow={episodeListLayout}
           state={stateOf(ep)}
           cta={ep === ctaEpisode && ep <= aired}
+          download={downloadButtons}
         />
         </div>
       {/each}
@@ -806,6 +946,7 @@
           watchedThrough,
           aired,
           percent: episodeBarPercent($positions[progressKey(media.id, ep)], false, ep <= aired),
+          resumeEpisode: ctaEpisode,
         })}
         <button data-part="episode" data-variant="number" data-state={tile.kind} data-next={ep === ctaEpisode && ep <= aired || undefined} data-filler={fillerSet.has(ep) || undefined} data-focusable data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
                 data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
@@ -849,7 +990,7 @@
           aria-pressed={selecting ? sel : undefined}
           onclick={(event) => { if (!resolving) { h.tap(); tap(ep, event) } }}
           onpointerenter={() => intent(ep)} onfocus={() => intent(ep)}
-          onkeydown={(e) => { if (!resolving && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); tap(ep) } }}
+          onkeydown={(e) => { if (!resolving && e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); tap(ep) } }}
           title={selecting ? (released ? (sel ? 'Selected — tap to unselect' : 'Tap to select') : 'Not yet aired') : released ? `Play episode ${ep}${filler ? ' (filler)' : ''}` : isNext ? `Airing in ${countdown(next?.timeUntilAiring)}` : 'Not yet aired'}
           class="group relative flex items-center gap-3 overflow-hidden rounded-md px-2.5 py-1.5 text-left transition-colors sm:px-3 sm:py-2
             {released ? 'cursor-pointer bg-secondary hover:bg-accent' : 'cursor-not-allowed bg-background/40 opacity-60'} {filler ? 'ring-1 ring-yellow-400/70' : ''} {sel ? 'ring-2 ring-primary' : ''}"
@@ -876,8 +1017,9 @@
               <span class="block text-[0.7rem] text-muted-foreground">Not aired</span>
             {/if}
           </span>
-          <!-- Read-only download status (the trigger now lives in the header's select mode). -->
-          {#if dl && !selecting}
+          <!-- Read-only download status (the trigger lives in the header's select mode, or in the
+               episode's own download button, which then shows the status itself). -->
+          {#if dl && !selecting && !downloadButtons}
             <span class="grid size-7 shrink-0 place-items-center rounded-full bg-background/40" title="Download {dl.status}">
               {#if dl.status === 'error'}<Download size={13} class="text-destructive" />
               {:else if dl.status === 'done'}<Check size={13} class="text-green-400" />
@@ -893,6 +1035,7 @@
               <ListPlus size={14} />
             </button>
           {/if}
+          {#if downloadButtons && !selecting}<EpisodeDownload {media} {ep} {dl} {released} numberLabel={numberLabel(ep)} />{/if}
           <!-- Resume/watched bar, identical to the card layout: a real saved position wins, and a
                tracker-counted episode fills it as the fallback. -->
           {#if pct > 0 && !selecting}

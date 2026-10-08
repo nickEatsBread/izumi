@@ -18,6 +18,10 @@ describe('episode play-intent prefetch', () => {
   it('is wired to episode rows and both primary play buttons', () => {
     expect(list).toContain('onpointerenter={() => intent(ep)}')
     expect(list).toContain('onintent={intent}')
-    expect(detail.match(/onpointerenter=\{\(\) => prefetchEpisodeSources\(m, ctaEp\(m\)\)\}/g)).toHaveLength(4)
+    // The phone header's Play (stacked page and overlay body share one) and the two desktop ones.
+    expect(detail.match(/onpointerenter=\{warmPlay\}/g)).toHaveLength(3)
+    // The page renders before its record lands; the full record is what gets warmed, at once or on arrival.
+    expect(detail).toContain('if (media) prefetchEpisodeSources(media, ctaEp(media))')
+    expect(detail).toContain("untrack(() => prefetchEpisodeSources(target, ctaEp(target)))")
   })
 })

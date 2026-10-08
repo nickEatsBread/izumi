@@ -1,6 +1,7 @@
 <script lang="ts">
   import { type Airing, airTime, aired, scheduleItemLabel, scheduleSourceLabel, until } from '$lib/anilist/schedule'
   import { title, cover, mediaHref } from '$lib/anilist/media'
+  import { detailLink } from '$lib/anilist/detail-hint'
   import type { Media } from '$lib/anilist/types'
   import type { ScheduleBadge } from '$lib/anilist/my-shows'
   import { delayLines, type ScheduleInfo } from '$lib/anime/animeschedule'
@@ -34,6 +35,7 @@
             data-nav-left={nav.left}
             data-nav-right={nav.right}
             href={mediaHref(a.media)}
+            use:detailLink={a.media}
             class="flex h-full min-w-0 items-center gap-3 rounded-xl border bg-secondary p-2.5 transition-colors hover:bg-accent {aired(a.airingAt) && !a.delayPlaceholder ? 'opacity-70' : ''} {mine ? 'border-border/80 pr-14' : 'border-transparent'}"
           >
             <img src={cover(a.media)} alt="" loading="lazy" decoding="async"

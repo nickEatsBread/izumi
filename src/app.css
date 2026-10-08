@@ -98,8 +98,18 @@ body { overflow-x: clip; }
 /* Mobile density ramp: the browse UI was sized in rem for desktop, so the default 16px root
    made type/spacing ~1/6 too large on a ~390px phone viewport. Tighten the rem base on phones
    only — desktop and Steam Deck are unaffected (Deck scales via `zoom`, a different lever, and
-   never matches this query). Fixed-px tiles are handled separately (they don't follow rem). */
-@media (max-width: 640px) { :root { font-size: calc(14.5px * var(--theme-font-scale)); } }
+   never matches this query). Fixed-px tiles are handled separately (they don't follow rem).
+   A theme's `mobile.rootSize` replaces the 14.5px (theme.ts writes --theme-phone-root). */
+@media (max-width: 640px) { :root { font-size: calc(var(--theme-phone-root, 14.5px) * var(--theme-font-scale)); } }
+/* The brand's own rem: what 1rem is with izumi's own root size, whatever root size a theme picks.
+   The izumi mark and wordmark are sized from it, so they never change size under a theme.
+   theme.ts mirrors the font scale into --izumi-safe-font-scale, and theme stylesheets cannot
+   declare --izumi-safe-* (css-policy.ts). Android TV keeps its 18px root. */
+:root { --izumi-safe-rem: calc(16px * var(--izumi-safe-font-scale, 1)); }
+@media (max-width: 640px) { :root { --izumi-safe-rem: calc(14.5px * var(--izumi-safe-font-scale, 1)); } }
+:root.tv-mode { --izumi-safe-rem: 18px; }
+/* Home's integrated catalog switcher draws the wordmark beside the mark (CatalogSwitcher.svelte). */
+[data-theme-protected].catalog-brand-wordmark { height: calc(1.25 * var(--izumi-safe-rem)); }
 /* Touch feel. Android's WebView paints its own grey flash on every tapped link or button and starts
    a text selection when a card title is held; both read as a web page rather than an app. The app
    supplies its own press feedback (android-*-press, theme-press-sink), so the WebView's stays off
@@ -117,6 +127,16 @@ body { overflow-x: clip; }
 @media (max-width: 640px) and (pointer: coarse) {
   [data-carousel-scroller] { scroll-snap-type: x proximity; scroll-padding-inline: 1rem; overscroll-behavior-x: contain; }
   [data-carousel-scroller] > * { scroll-snap-align: start; }
+}
+/* Desktop rows are not native scrollers. A touchpad or wheel event with any sideways component that
+   started over a scrollable row was given to the row, which took the dx and dropped the dy, so the
+   page stalled under a slightly diagonal two-finger scroll. With overflow hidden every wheel scrolls
+   the page; Carousel's onWheel moves the row for clearly horizontal input, and the arrows, mouse
+   drag, keyboard focus and scrollIntoView all still move it. A finger or pen on a touchscreen laptop
+   pans the page vertically (`pan-y`) while the carousel touch driver (nav/actions.ts) owns
+   horizontal drags, as it does in Game mode. */
+@media (hover: hover) and (pointer: fine) {
+  [data-carousel-scroller] { overflow: hidden; touch-action: pan-y; }
 }
 /* Phone settings sub-pages: the back-header's <h1> shows the page title (settings/hierarchy.ts), so
    each page's own leading title, marked `data-settings-page-title`, is hidden: one title, right

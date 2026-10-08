@@ -1,6 +1,7 @@
 import { makeOperation, mapExchange, type Exchange, type Operation } from '@urql/core'
 import type { StorageAdapter } from '@urql/exchange-graphcache'
 import { makeDefaultStorage } from '@urql/exchange-graphcache/default-storage'
+import { withoutBackupEntries } from './backup-records'
 
 // Graphcache persisted to IndexedDB, so a cold boot paints Home from the last session's normalized
 // data instead of skeleton-waiting behind the 30-requests-per-minute AniList limiter.
@@ -12,6 +13,9 @@ import { makeDefaultStorage } from '@urql/exchange-graphcache/default-storage'
 //      before, so navigating Home ⇄ detail costs no extra quota.
 //   2. Nothing is written while incognito is on, and a storage that is being retired (account
 //      switch) drops any late delta so the cleared database cannot be repopulated.
+//
+// A backup provider's answer during an AniList outage is never written either, so the disk copy of a
+// title is always the last one AniList itself sent.
 
 export const ANILIST_CACHE_DB = 'izumi-anilist-graphcache'
 /** Days before an entry hydrated from disk is discarded by the default storage. */
@@ -38,11 +42,17 @@ export function revalidateOnceExchange(seen = new Set<number>()): Exchange {
   })
 }
 
-/** `base` with its writes suppressed whenever `blocked()` is true (incognito, or retired). */
+/** `base` with its writes suppressed whenever `blocked()` is true (incognito, or retired), and with
+ *  backup-provider records never written at all: they stand in for AniList during an outage only and
+ *  must not outlive it (backup-records.ts). */
 export function gatedStorage(base: StorageAdapter, blocked: () => boolean): StorageAdapter {
   return {
     ...base,
-    writeData: (delta) => (blocked() ? Promise.resolve() : base.writeData(delta)),
+    writeData: (delta) => {
+      if (blocked()) return Promise.resolve()
+      const kept = withoutBackupEntries(delta)
+      return Object.keys(kept).length ? base.writeData(kept) : Promise.resolve()
+    },
   }
 }
 

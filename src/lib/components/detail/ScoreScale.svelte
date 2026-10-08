@@ -18,7 +18,7 @@
   import * as h from '$lib/haptics'
 
   let {
-    value, onpick, label = 'Your rating', compact = false, style, hint = '',
+    value, onpick, label = 'Your rating', compact = false, style, hint = '', parts = false,
   }: {
     /** Committed score, 0-10 (0 = not rated). */
     value: number
@@ -31,6 +31,8 @@
     style?: RatingStyle
     /** Where the rating went (e.g. "Saved to AniList"). Shown briefly after each pick, not always. */
     hint?: string
+    /** The series page's row: its label, readout and steps carry the `detail.rating.*` hooks. */
+    parts?: boolean
   } = $props()
 
   const kind = $derived(style ?? $ratingStyle)
@@ -94,7 +96,7 @@
 </script>
 
 {#snippet readout()}
-  <span class="min-w-0 truncate text-sm {shown ? 'text-foreground' : 'text-muted-foreground'}">
+  <span data-part={parts ? 'detail.rating.value' : undefined} class="min-w-0 truncate text-sm {shown ? 'text-foreground' : 'text-muted-foreground'}">
     {#if shown}<span class="font-black tabular-nums">{shown}/10</span> <span class="text-muted-foreground">· {SCORE_LABELS[shown]}</span>{:else}Not rated{/if}
   </span>
 {/snippet}
@@ -102,7 +104,7 @@
 <div bind:this={root} class="score-scale min-w-0" role="group" aria-label={label}>
   {#if kind === 'dropdown'}
     <div class="flex items-center gap-3">
-      <span class="shrink-0 text-sm font-bold">{label}</span>
+      <span data-part={parts ? 'detail.rating.label' : undefined} class="shrink-0 text-sm font-bold">{label}</span>
       <div class="min-w-0 {compact ? 'flex-1' : 'w-56'}">
         <SelectMenu value={String(value)} options={DROPDOWN_OPTIONS} onChange={(v) => commit(Number(v) || 0, false)} ariaLabel={label} floating separator="" columns />
       </div>
@@ -110,7 +112,7 @@
   {:else}
     <div class="flex items-center gap-x-3 gap-y-1.5 {kind === 'stars' && !compact ? 'flex-wrap' : 'flex-col items-stretch'}" aria-live="polite">
       <div class="flex items-baseline gap-2 {kind === 'stars' && !compact ? 'order-2' : ''}">
-        {#if kind !== 'stars' || compact}<span class="shrink-0 text-sm font-bold">{label}</span>{/if}
+        {#if kind !== 'stars' || compact}<span data-part={parts ? 'detail.rating.label' : undefined} class="shrink-0 text-sm font-bold">{label}</span>{/if}
         {@render readout()}
       </div>
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -122,7 +124,7 @@
         {#if kind === 'stars'}
           {#each [0, 1, 2, 3, 4] as i (i)}
             {@const fill = Math.max(0, Math.min(2, shown - i * 2))}
-            <button type="button" role="radio" data-focusable data-score={i * 2 + 2}
+            <button type="button" role="radio" data-focusable data-score={i * 2 + 2} data-part={parts ? 'detail.rating.segment' : undefined} data-active={parts && fill > 0 ? '' : undefined}
                     aria-checked={value === i * 2 + 1 || value === i * 2 + 2}
                     aria-label={`${i + 1} star${i ? 's' : ''} — left half ${i * 2 + 1}, right half ${i * 2 + 2}`}
                     class="star relative grid {compact ? 'size-8' : 'size-9'} place-items-center rounded-md"
@@ -135,7 +137,8 @@
           {/each}
         {:else}
           {#each Array.from({ length: 10 }, (_, k) => k + 1) as n (n)}
-            <button type="button" role="radio" data-focusable data-score={n}
+            <button type="button" role="radio" data-focusable data-score={n} data-part={parts ? 'detail.rating.segment' : undefined}
+                    data-active={parts && (kind === 'bar' ? n <= shown : n === shown) ? '' : undefined}
                     aria-checked={value === n}
                     aria-label={`${n} · ${SCORE_LABELS[n]}${value === n ? ' (click to clear)' : ''}`}
                     title={value === n ? 'Clear rating' : `${n} · ${SCORE_LABELS[n]}`}

@@ -3,6 +3,7 @@
   import Clock from '@lucide/svelte/icons/clock-3'
   import { anilist } from '$lib/anilist/client'
   import { cover, mediaHref, title as mediaTitle } from '$lib/anilist/media'
+  import { detailLink } from '$lib/anilist/detail-hint'
   import { airTime, weekRange, type Airing } from '$lib/anilist/schedule'
   import { cachedScheduleWeek, loadScheduleWeek } from '$lib/anilist/schedule-cache'
   import type { AiringTodayBlock } from '$lib/home/blocks'
@@ -88,7 +89,7 @@
       {#each shown as airing (`${airing.media.id}-${airing.episode}-${airing.airingAt}`)}
         {@const aired = airing.airingAt * 1000 <= now}
         <li>
-          <a data-part="block.item" data-aired={aired || undefined} data-focusable href={mediaHref(airing.media)} title={`Episode ${airing.episode}`}
+          <a data-part="block.item" data-aired={aired || undefined} data-focusable href={mediaHref(airing.media)} use:detailLink={airing.media} title={`Episode ${airing.episode}`}
              class="flex items-center gap-3 rounded-md p-1.5 transition-colors hover:bg-accent">
             <img data-part="airing.poster" src={cover(airing.media)} alt="" loading="lazy" class="h-14 w-10 shrink-0 rounded object-cover" />
             <div class="min-w-0 flex-1">

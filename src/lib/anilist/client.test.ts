@@ -14,11 +14,13 @@ vi.mock('$lib/stremio/idmap', () => ({
 }))
 
 import { gql } from '@urql/core'
+import { pipe, subscribe } from 'wonka'
 import { anilistToken } from './auth'
 import { anilist, anilistFetch, anilistRequestPriority, parseRateLimitHeaders } from './client'
 import { anilistDegraded, clearAniListDegraded } from './degraded'
 import { PAGE_QUERY } from './queries'
 import { MEDIA_BY_ID } from './detail-queries'
+import { aniListDetail } from './__fixtures__/media-by-id'
 
 const QUERY = gql`query ($id: Int!) { Media(id: $id) { id mediaListEntry { id progress } } }`
 
@@ -262,6 +264,99 @@ describe('anilist client', () => {
       expect.stringMatching(/\/mappings\?.*include=item/),
       expect.stringContaining('/anime/7442?include=mappings%2Ccategories'),
     ])
+  })
+
+  // A Kitsu series record for AniList id `id`: no banner, Kitsu's own title (the shape that used to
+  // replace the AniList record and leave the page on a blurred cover).
+  const kitsuSeries = (kitsuId: string) => {
+    mocks.get
+      .mockResolvedValueOnce({
+        ok: true, status: 200,
+        json: async () => ({ data: [{ relationships: { item: { data: { type: 'anime', id: kitsuId } } } }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true, status: 200,
+        json: async () => ({
+          data: {
+            id: kitsuId,
+            attributes: {
+              canonicalTitle: 'Kitsu Title', titles: { en: 'Kitsu Title' }, status: 'finished',
+              posterImage: { large: 'https://img.test/kitsu-poster.jpg' }, coverImage: null, userCount: 3200,
+            },
+          },
+          included: [],
+        }),
+      })
+  }
+  const stability = 'The AniList API has been temporarily disabled due to severe stability issues.'
+  const aniListDown = { status: 200, headers: {}, body: JSON.stringify({ errors: [{ message: stability }] }) }
+  const aniListAnswers = (data: unknown) => ({ status: 200, headers: {}, body: JSON.stringify({ data }) })
+  type Series = { Media: { title: { userPreferred: string }; bannerImage: string | null; popularity: number } }
+
+  it('keeps the cached AniList series record when its revalidation is answered by Kitsu', async () => {
+    mocks.post.mockResolvedValueOnce(aniListAnswers({ Media: aniListDetail(182205) }))
+    await anilist.query(MEDIA_BY_ID, { id: 182205 }, { requestPolicy: 'network-only' }).toPromise()
+
+    mocks.post.mockResolvedValue(aniListDown)
+    kitsuSeries('48000')
+    const result = await anilist.query<Series>(MEDIA_BY_ID, { id: 182205 }, { requestPolicy: 'network-only' }).toPromise()
+
+    expect(mocks.get).toHaveBeenCalledTimes(2)
+    expect(get(anilistDegraded)?.provider).toBe('Kitsu')
+    expect(result.data?.Media).toMatchObject({
+      title: { userPreferred: 'Title 182205' },
+      bannerImage: 'https://anilist.test/banner/182205.jpg',
+      popularity: 140_000,
+    })
+  })
+
+  it('asks AniList again for a series page Kitsu answered once AniList may be probed', async () => {
+    mocks.post.mockResolvedValue(aniListDown)
+    kitsuSeries('44778')
+    const degraded = await anilist.query<Series>(MEDIA_BY_ID, { id: 135865 }).toPromise()
+    expect(degraded.data?.Media).toMatchObject({ title: { userPreferred: 'Kitsu Title' }, bannerImage: null })
+
+    // Inside the outage window a revisit costs nothing and shows what it showed.
+    await anilist.query<Series>(MEDIA_BY_ID, { id: 135865 }).toPromise()
+    expect(mocks.post).toHaveBeenCalledTimes(1)
+    expect(mocks.get).toHaveBeenCalledTimes(2)
+
+    // Once AniList may be probed again, the revisit asks it instead of repainting the backup.
+    clearAniListDegraded()
+    mocks.post.mockResolvedValue(aniListAnswers({ Media: aniListDetail(135865) }))
+    const recovered = await anilist.query<Series>(MEDIA_BY_ID, { id: 135865 }).toPromise()
+    expect(mocks.post).toHaveBeenCalledTimes(2)
+    expect(recovered.data?.Media).toMatchObject({
+      title: { userPreferred: 'Title 135865' },
+      bannerImage: 'https://anilist.test/banner/135865.jpg',
+      popularity: 140_000,
+    })
+
+    // AniList's answer is an ordinary cached record again: the next revisit is free.
+    await anilist.query<Series>(MEDIA_BY_ID, { id: 135865 }).toPromise()
+    expect(mocks.post).toHaveBeenCalledTimes(2)
+  })
+
+  it('refreshes a mounted series page showing Kitsu\'s record as soon as AniList answers again', async () => {
+    mocks.post.mockResolvedValue(aniListDown)
+    kitsuSeries('51000')
+    const seen: Series['Media'][] = []
+    const page = pipe(
+      anilist.query<Series>(MEDIA_BY_ID, { id: 191832 }),
+      subscribe((result) => { if (result.data) seen.push(result.data.Media) }),
+    )
+    await expect.poll(() => seen.at(-1)?.title.userPreferred, { timeout: 5000 }).toBe('Kitsu Title')
+
+    // Any public request that reaches a healthy AniList is the recovery signal.
+    clearAniListDegraded()
+    mocks.post.mockImplementation(async (_command: string, args: { body: string }) => /query\s+MediaById/.test(args.body)
+      ? aniListAnswers({ Media: aniListDetail(191832) })
+      : aniListAnswers({ Page: { __typename: 'Page', media: [] } }))
+    await anilist.query(gql`query Hero { Page { media { id } } }`, {}, { requestPolicy: 'network-only' }).toPromise()
+
+    await expect.poll(() => seen.at(-1)?.bannerImage, { timeout: 5000 }).toBe('https://anilist.test/banner/191832.jpg')
+    expect(seen.at(-1)).toMatchObject({ title: { userPreferred: 'Title 191832' }, popularity: 140_000 })
+    page.unsubscribe()
   })
 
   it('does not mask an unsupported non-catalog AniList failure with a backup', async () => {

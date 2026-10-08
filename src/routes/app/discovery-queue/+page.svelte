@@ -3,6 +3,7 @@
   import LibraryNav from '$lib/components/library/LibraryNav.svelte'
   import type { Media } from '$lib/anilist/types'
   import { cover, mediaHref, title } from '$lib/anilist/media'
+  import { detailLink } from '$lib/anilist/detail-hint'
   import { parseCatalogDescription } from '$lib/catalog/description'
   import { discoveryFacts, discoveryTrailerId, discoveryWindow, DISCOVERY_PAGE_SIZE } from '$lib/recommendations/discovery-presentation'
   import DiscoveryFacts from '$lib/components/cards/DiscoveryFacts.svelte'
@@ -313,7 +314,7 @@
             <button type="button" data-focusable onclick={() => decide('save')} class="queue-button save-button" class:trailer-button={!trailerId}><Bookmark size={17} /> Save to watchlist</button>
           </div>
           <div class="feature-links">
-            <a href={mediaHref(current.media)} data-focusable class="queue-button details-link"><Info size={15} /> Full details <ArrowRight size={14} /></a>
+            <a href={mediaHref(current.media)} use:detailLink={presented} data-focusable class="queue-button details-link"><Info size={15} /> Full details <ArrowRight size={14} /></a>
             {#if !trailerId}<span class="trailer-status">{enriching ? 'Checking for a trailer…' : 'Trailer unavailable'}</span>{/if}
           </div>
         </div>

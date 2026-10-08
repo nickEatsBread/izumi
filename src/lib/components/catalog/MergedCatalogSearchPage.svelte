@@ -96,10 +96,12 @@
 </script>
 
 <div class="px-4 pb-20 pt-4 sm:px-8" data-slot="search" data-variant="merged">
+  <!-- The page header (`search.header`, `display: contents` until a theme gives it a box). -->
+  <div data-slot="search.header" class="contents">
   <label class="relative block">
     <Search size={20} class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-theme" />
     <input
-      data-part="input"
+      data-part="search.field"
       bind:value={query}
       data-focusable
       type="search"
@@ -109,6 +111,7 @@
     />
   </label>
   <p class="mt-2 px-1 text-xs text-muted-foreground">A fast title search with no cross-provider filters. Choose one catalog above for its full filter set.</p>
+  </div>
 
   {#if failedProviders.length && media.length}
     <p class="mt-5 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
@@ -119,6 +122,8 @@
   {#if media.length}
     <div data-slot="search.results">
       <VirtualGrid
+        part="search.grid"
+        variant="grid"
         items={media}
         getKey={mediaKey}
         className="mt-6 grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:gap-5"
@@ -139,7 +144,7 @@
   {/if}
 
   {#if loading}
-    <div class="mt-6 grid grid-cols-3 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
+    <div data-part="search.grid" data-variant="grid" data-state="loading" class="mt-6 grid grid-cols-3 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
       {#each Array.from({ length: 9 }) as _}<div class="aspect-[2/3] rounded-md skeloader"></div>{/each}
     </div>
   {/if}

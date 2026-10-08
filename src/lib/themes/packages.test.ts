@@ -62,13 +62,31 @@ describe('installable theme packages', () => {
     expect(newerVersion('1.10.0', '1.9.0')).toBe(true)
     expect(newerVersion('1.0.0', '1.0.0')).toBe(false)
   })
-  it('accepts theme API 3 packages and advertises API 3 as the newest', async () => {
+  it('accepts theme API 4 packages and advertises API 4 as the newest', async () => {
     const { THEME_API, SUPPORTED_THEME_APIS, MAX_THEME_BYTES } = await import('./packages')
-    expect(THEME_API).toBe(3)
-    expect(SUPPORTED_THEME_APIS).toEqual([1, 2, 3])
+    expect(THEME_API).toBe(4)
+    expect(SUPPORTED_THEME_APIS).toEqual([1, 2, 3, 4])
     expect(MAX_THEME_BYTES).toBe(512_000)
     expect(parseThemePackage({ ...samplePackage, themeApi: 3 }).themeApi).toBe(3)
-    expect(() => parseThemePackage({ ...samplePackage, themeApi: 4 })).toThrow('theme API')
+    expect(parseThemePackage({ ...samplePackage, themeApi: 4 }).themeApi).toBe(4)
+    expect(() => parseThemePackage({ ...samplePackage, themeApi: 5 })).toThrow('theme API')
+  })
+  it('validates API 4 keys against the API a package declares', () => {
+    const presentation = { mobile: { rootSize: 16 }, detail: { buttons: ['play', 'download'] } }
+    const pkg = { ...samplePackage, themeApi: 4, design: { ...samplePackage.design, presentation } }
+    expect(parseThemePackage(pkg).design.presentation).toMatchObject(presentation)
+    expect(() => parseThemePackage({ ...pkg, themeApi: 3 })).toThrow('unsupported')
+  })
+  // An installed package is stored as parsed (at the newest API) and re-read against the API it
+  // declares on every start, so parsing must never add a newer key to an older package.
+  it('re-reads a stored API 3 package under API 3', () => {
+    const presentation = {
+      layout: { home: [{ block: 'tabbed-grid', tabs: [{ label: 'Trending', role: 'trending' }, { label: 'Popular', role: 'popular' }] }, { role: 'hero' }] },
+      shell: { bottomNav: { hide: 'scroll' } },
+      detail: { countdown: 'long', sections: { tabs: ['overview', 'episodes'] } },
+    }
+    const stored = parseThemePackage({ ...samplePackage, themeApi: 3, design: { ...samplePackage.design, presentation } })
+    expect(parseThemePackage(portablePackage(stored)).design.presentation).toEqual(stored.design.presentation)
   })
   it('accepts API 3 stylesheets and fonts and keeps them off older APIs', () => {
     const pkg = { ...samplePackage, themeApi: 3, design: { ...samplePackage.design, css: '[data-part="card"]{border-radius:4px}', fonts: { ui: 'poppins' } } }

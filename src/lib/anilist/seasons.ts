@@ -27,6 +27,7 @@ const SEASON_CHAIN_QUERY = gql`
         title { romaji english native userPreferred }
         startDate { year month day }
         coverImage { extraLarge large medium color }
+        bannerImage
         relations {
           edges {
             relationType
@@ -35,6 +36,7 @@ const SEASON_CHAIN_QUERY = gql`
               title { romaji english native userPreferred }
               startDate { year month day }
               coverImage { extraLarge large medium color }
+              bannerImage
             }
           }
         }

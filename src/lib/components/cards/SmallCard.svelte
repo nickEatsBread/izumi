@@ -12,6 +12,7 @@
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { themePresentation } from '$lib/themes/runtime'
   import { mediaDisplayModel } from '$lib/themes/host-model'
+  import { seriesCompletion, seriesProgress } from '$lib/themes/series-progress'
   import { ambientFromHex } from '$lib/themes/ambient'
   import { CARD_FAMILY, ROW_CONTEXT, densityScale, resolveCard, resolveRow, type CardFamily, type RowScope } from '$lib/themes/presentation'
   import type { Media } from '$lib/anilist/types'
@@ -66,6 +67,14 @@
   const cardTemplate = $derived(resolveCard($themePresentation, cardFamily, themeScope?.().id ?? ''))
   const coverWidth = $derived((themeRow.width ?? (fill ? 0 : $isTv ? 198 : $isMobile ? 131 : 152)) * (themeRow.width ? 1 : densityScale($themePresentation)))
   const coverSrc = $derived(cardCover(media, coverWidth))
+  // Only a template binds the watched count and the finished mark, so izumi's own card never
+  // subscribes to the lookups.
+  const cardModel = $derived(cardTemplate ? mediaDisplayModel(media, {
+    poster: coverSrc, backdrop: media.bannerImage ?? coverSrc,
+    ...(position ? { rankPosition: position, rank: String(position).padStart(2, '0') } : {}),
+    episodesWatched: $seriesProgress(media),
+    completed: $seriesCompletion(media) ? 'Completed' : undefined,
+  }, coverWidth) : undefined)
   let coverReady = $state(false)
   $effect(() => { void coverSrc; coverReady = false })
   let pos = $state({ left: 0, top: 0 })
@@ -166,8 +175,8 @@
      data-nav-key={`media:${media.catalog?.id ?? media.id}`} data-caption-title={title(media)} data-caption-meta={captionMeta}
      aria-label={title(media)} style:width={themeRow.width || cardTemplate ? '100%' : undefined}
      class="group block {fill ? 'w-full' : $isTv ? 'w-44' : 'w-36 sm:w-[152px]'} {$isAndroid ? 'android-card-press' : ''}">
-    {#if cardTemplate}
-      <ThemeNode node={cardTemplate} model={mediaDisplayModel(media, { poster: coverSrc, backdrop: media.bannerImage ?? coverSrc, ...(position ? { rankPosition: position, rank: String(position).padStart(2, '0') } : {}) }, coverWidth)} />
+    {#if cardTemplate && cardModel}
+      <ThemeNode node={cardTemplate} model={cardModel} />
     {:else}
     <div data-part="card.art" class="focus-cover relative aspect-[2/3] w-full overflow-hidden rounded-md bg-muted" style:aspect-ratio={themeRow.aspect === 'landscape' ? '16 / 9' : themeRow.aspect === 'square' ? '1' : undefined} style:border-radius={themeRow.radius !== undefined ? `${themeRow.radius}px` : undefined}>
       <!-- No `transform-gpu`/`will-change`: those permanently promote EVERY cover to its own

@@ -24,8 +24,15 @@ describe('episode states for theme stylesheets', () => {
   })
   it('takes the Play target from the page CTA rule and the playable count from the shared helper', () => {
     expect(list).toContain('const ctaEpisode = $derived(offline')
-    expect(list).toContain(': animeResumeEpisode(media, watchedThrough))')
+    expect(list).toContain(': animeResumeEpisode(media, resumeThrough))')
+    expect(list).toContain('const resumeThrough = $derived(seriesResumeProgress(media, $localHistory, $sessionProgress, $manualProgressOverrides))')
     expect(list).toContain('const aired = $derived(playableThrough(allEpisodes, airedCount(media), offline))')
+  })
+  it('gives `resume` only to the episode `data-next` marks, in every layout', () => {
+    // Cards and rows (stateOf) and the number tiles take the resume point from the Play episode, so a
+    // tracker count behind this device's history never rings a second episode.
+    expect(list.match(/resumeEpisode: ctaEpisode,/g)?.length).toBe(2)
+    expect(list).not.toContain('watchedThrough + 1')
   })
   it('binds the episode template fields', () => {
     expect(card).toContain('episodeNo: episodeNoText(ep, meta?.abs, $absoluteEpisodeNumbers)')

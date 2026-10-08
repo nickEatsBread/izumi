@@ -15,6 +15,7 @@
   import { anilistUser } from '$lib/anilist/account'
   import { anilistUserName, malToken, malUser, simklToken } from '$lib/trackers/config'
   import { title as mediaTitle, banner, cardCover, mediaHref, resumeEp, totalEpisodes } from '$lib/anilist/media'
+  import { detailLink } from '$lib/anilist/detail-hint'
   import { until } from '$lib/anilist/schedule'
   import { buildWatchlist, watchlistProgressSegments, type WatchlistItem } from './watchlist'
   import type { Media } from '$lib/anilist/types'
@@ -338,7 +339,7 @@
     <div class="grid grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-3 sm:grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))]" data-slot="library.grid">
       {#each visible as it (it.media.id)}
         <div class="group relative">
-          <a href={mediaHref(it.media)} data-focusable onclick={() => h.tap()} class="block">
+          <a href={mediaHref(it.media)} use:detailLink={it.media} data-focusable onclick={() => h.tap()} class="block">
             <div class="focus-cover relative aspect-[2/3] overflow-hidden rounded-lg bg-muted">
               <img src={cardCover(it.media)} alt={mediaTitle(it.media)} loading="lazy" decoding="async"
                    class="h-full w-full object-cover transition-transform duration-150 group-hover:scale-105" />
@@ -381,7 +382,7 @@
     <div class="space-y-1">
       {#each visible as it (it.media.id)}
         <article class="group flex min-w-0 items-stretch gap-3 rounded-xl px-1.5 py-2 transition-colors hover:bg-secondary/55 sm:px-2">
-          <a href={mediaHref(it.media)} data-focusable onclick={() => h.tap()} class="shrink-0">
+          <a href={mediaHref(it.media)} use:detailLink={it.media} data-focusable onclick={() => h.tap()} class="shrink-0">
             <span class="focus-cover relative block h-[4.5rem] w-28 overflow-hidden rounded-lg bg-muted sm:h-[5.25rem] sm:w-36">
               <img src={rowArtwork(it)} alt={mediaTitle(it.media)} loading="lazy" decoding="async"
                    class="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]" />
@@ -407,7 +408,7 @@
               {/if}
             </div>
 
-            <a href={mediaHref(it.media)} data-focusable onclick={() => h.tap()}
+            <a href={mediaHref(it.media)} use:detailLink={it.media} data-focusable onclick={() => h.tap()}
                class="mt-0.5 block truncate text-sm font-extrabold leading-tight transition-colors hover:text-theme sm:text-lg">
               {mediaTitle(it.media)}
             </a>
@@ -441,7 +442,7 @@
       {#each visible as it (it.media.id)}
         <div class="flex items-center gap-2 rounded-md px-1.5 py-1 transition-colors hover:bg-secondary
                     {it.behind === 0 ? 'opacity-70' : ''}">
-          <a href={mediaHref(it.media)} data-focusable onclick={() => h.tap()} class="flex min-w-0 flex-1 items-center gap-2.5">
+          <a href={mediaHref(it.media)} use:detailLink={it.media} data-focusable onclick={() => h.tap()} class="flex min-w-0 flex-1 items-center gap-2.5">
             <img src={cardCover(it.media, 40)} alt="" loading="lazy" decoding="async"
                  class="h-9 w-6 shrink-0 rounded-sm bg-muted object-cover" />
             <span class="min-w-0 flex-1 truncate text-sm font-bold">{mediaTitle(it.media)}</span>

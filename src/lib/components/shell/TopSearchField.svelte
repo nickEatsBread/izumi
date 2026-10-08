@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation'
   import Search from '@lucide/svelte/icons/search'
   import { cover, format, mediaHref, status, title } from '$lib/anilist/media'
+  import { detailLink, openDetail } from '$lib/anilist/detail-hint'
   import type { Media } from '$lib/anilist/types'
   import { mediaKey } from '$lib/catalog/identity'
   import { enabledCatalogProviders } from '$lib/settings/catalog'
@@ -88,7 +89,7 @@
   function choose(media: Media) {
     focused = false
     query = ''
-    void goto(mediaHref(media))
+    void openDetail(media)
   }
   function submit(event: SubmitEvent) {
     event.preventDefault()
@@ -115,7 +116,7 @@
          style={`left:${place.left}px;top:${place.top}px;width:${place.width}px`}
          class="fixed z-50 mt-2 overflow-hidden rounded-lg border border-border bg-card p-1 text-card-foreground shadow-xl">
       {#each results as media, index (mediaKey(media))}
-        <a data-part="search.suggestion" data-active={index === active || undefined} href={mediaHref(media)} role="option" aria-selected={index === active}
+        <a data-part="search.suggestion" data-active={index === active || undefined} href={mediaHref(media)} use:detailLink={media} role="option" aria-selected={index === active}
            onclick={(event) => { event.preventDefault(); choose(media) }}
            class="flex items-center gap-3 rounded-md p-2 transition-colors hover:bg-accent {index === active ? 'bg-accent' : ''}">
           {#if cover(media)}<img data-part="search.suggestion.poster" src={cover(media)} alt="" loading="lazy" class="h-14 w-10 shrink-0 rounded object-cover" />{/if}

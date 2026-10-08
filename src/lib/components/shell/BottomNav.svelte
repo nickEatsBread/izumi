@@ -3,7 +3,6 @@
   // user's nav config (Settings → Navigation). Items placed 'top' or 'hidden' don't appear here.
   // A theme's `shell.bottomNav` restyles the bar (flush, floating card or centred pill), its
   // labels, active indicator, colours and size; destinations stay the user's.
-  import { onMount } from 'svelte'
   import { page } from '$app/state'
   import * as h from '$lib/haptics'
   import { effectiveNav, NAV_META, HOME_META, navHomeIndex } from '$lib/settings/nav'
@@ -12,6 +11,7 @@
   import { themeColorCss } from '$lib/themes/presentation'
   import CompanionLinkIndicator from './CompanionLinkIndicator.svelte'
   import { androidMiniPlayer } from '$lib/player/android-mpv'
+  import { scrollChrome } from './scroll-chrome'
 
   const labels = {
     schedule: m.nav_schedule, downloads: m.nav_downloads, watch: m.nav_watch_together,
@@ -38,7 +38,9 @@
   const blur = $derived(nav.blur ?? true)
   const border = $derived(nav.border ?? style === 'bar')
   const radius = $derived(nav.radius ?? (style === 'pill' ? 999 : 24))
-  // Home is a fixed anchor, but a theme layout can place it anywhere on the bar (0 = first).
+  // Home is a fixed anchor, but a theme layout can place it anywhere on the bar (0 = first). The
+  // count (Home included) is published as `data-count` and `--nav-items`, so a stylesheet can size a
+  // pill to its destinations without counting them structurally.
   const items = $derived.by(() => {
     const rest = bottom.map((c) => ({ id: c.id, href: NAV_META[c.id].href, icon: NAV_META[c.id].icon, label: labels[c.id] }))
     const home = { id: 'home', href: HOME_META.href, icon: HomeIcon, label: m.nav_home }
@@ -47,27 +49,18 @@
   })
 
   // Auto-hide on scroll: glide the bar down when scrolling down (more content on screen), slide it
-  // back up on any upward scroll or near the top. Matches the native "immersive nav" pattern.
-  // Suspended while the Android mini-player is docked on top of it: the native video surface
-  // cannot follow a CSS transition, so the bar it rests on has to hold still.
-  let hidden = $state(false)
-  let lastY = 0
-  onMount(() => {
-    lastY = window.scrollY
-    const onScroll = () => {
-      if (nav.hide === 'never') { hidden = false; return }
-      const y = window.scrollY
-      if (y > lastY + 6 && y > 64) hidden = true
-      else if (y < lastY - 6 || y < 64) hidden = false
-      lastY = y
-    }
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  })
+  // back up on any upward scroll or near the top. Matches the native "immersive nav" pattern. The
+  // shell's scroll-chrome store tracks the page (`shell.bottomNav.hide`, `threshold`, `idle`); a
+  // `collapsed` bar stays put with its labels for a stylesheet to fold. Suspended while the Android
+  // mini-player is docked on top of it: the native video surface cannot follow a CSS transition, so
+  // the bar it rests on has to hold still.
+  const hidden = $derived($scrollChrome === 'hidden')
 </script>
 
 <nav
   data-slot="nav.bottom"
+  data-state={$scrollChrome}
+  data-count={items.length}
   data-nav-sidebar
   data-theme-surface="shell"
   data-theme-bottom-nav={style}
@@ -82,6 +75,7 @@
   style:background={background}
   style:border-radius={style === 'bar' ? undefined : `${radius}px`}
   style:bottom={style === 'bar' ? undefined : `calc(${style === 'pill' ? 16 : 12}px + env(safe-area-inset-bottom))`}
+  style:--nav-items={items.length}
 >
   <div class="absolute -top-10 right-3"><CompanionLinkIndicator floating /></div>
   {#each items as item (item.id)}
@@ -89,6 +83,7 @@
     {@const Icon = item.icon}
     <a
       data-part="nav.item"
+      data-dest={item.id}
       data-active={on || undefined}
       href={item.href}
       data-focusable

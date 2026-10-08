@@ -3,11 +3,13 @@
 // theme this reproduces izumi's own tabs exactly.
 import type { DetailSection, DetailSections, TabLabel } from '$lib/themes/presentation'
 
-/** izumi's own tab order. Desktop calls Overview "Details" and puts it last. */
+/** izumi's own tab order. Desktop calls Overview "Details" and puts it last. The phone Information
+ *  block (API 4 `information`) is a section only where a theme lists it; otherwise it sits inside
+ *  Overview, and desktop pages never have it. */
 const PHONE_ORDER: readonly DetailSection[] = ['episodes', 'overview', 'relations', 'characters', 'recommended']
 const DESKTOP_ORDER: readonly DetailSection[] = ['episodes', 'relations', 'characters', 'recommended', 'overview']
-const PHONE_LABELS: Record<DetailSection, string> = { episodes: 'Episodes', overview: 'Overview', relations: 'Relations', characters: 'Characters', recommended: 'Recommended' }
-const DESKTOP_LABELS: Record<DetailSection, string> = { episodes: 'Episodes', overview: 'Details', relations: 'Relations', characters: 'Cast & Crew', recommended: 'Recommended' }
+const PHONE_LABELS: Record<DetailSection, string> = { episodes: 'Episodes', overview: 'Overview', relations: 'Relations', characters: 'Characters', recommended: 'Recommended', information: 'Information' }
+const DESKTOP_LABELS: Record<DetailSection, string> = { episodes: 'Episodes', overview: 'Details', relations: 'Relations', characters: 'Cast & Crew', recommended: 'Recommended', information: 'Information' }
 
 /** The fixed tab names a theme picks from (`detail.sections.labels`). */
 export const TAB_LABEL_TEXT: Record<TabLabel, string> = {
@@ -16,6 +18,7 @@ export const TAB_LABEL_TEXT: Record<TabLabel, string> = {
   relations: 'Relations', related: 'Related',
   characters: 'Characters', cast: 'Cast',
   recommended: 'Recommended', 'more-like-this': 'More like this', recommendations: 'Recommendations',
+  information: 'Information', 'show-details': 'Show Details',
 }
 
 export interface ResolvedSections {
@@ -29,12 +32,25 @@ export interface ResolvedSections {
   initial: DetailSection
   /** Phones: the facts, countdown, release timing, genres and synopsis sit inside Overview. */
   infoInOverview: boolean
+  /** Phones: where the Information block (the facts grid) renders: inside Overview where it always
+   *  sits, as a section of its own (`tabs` lists `information`), or nowhere (`unlisted: "hidden"`
+   *  without Overview: the block leaves the page with it, never on its own, so a package that keeps
+   *  Overview keeps the grid it always showed). Desktop Overview keeps its own details (`overview`). */
+  information: 'overview' | 'section' | 'hidden'
+  /** API 4 `relations.recommended: "append"`: the recommended titles follow the related ones inside
+   *  Relations, and Recommended is no section of its own. */
+  recommendedInRelations: boolean
 }
 
 /** `episodesTabbed` is false when the episodes sit in a right-hand rail or below the info: then they
  *  render there and never take a tab. */
 export function resolveSections(sections: DetailSections | undefined, options: { phone: boolean; episodesTabbed: boolean }): ResolvedSections {
-  const available = (options.phone ? PHONE_ORDER : DESKTOP_ORDER).filter((id) => id !== 'episodes' || options.episodesTabbed)
+  // Information joins the sections only where it is listed, so it is never folded into Overview's end.
+  const infoListed = options.phone && !!sections?.tabs?.includes('information')
+  // Appended to the relations, the recommendations leave the sections (the parser keeps them off `tabs`).
+  const recommendedInRelations = sections?.relations?.recommended === 'append'
+  const available = [...(options.phone ? PHONE_ORDER : DESKTOP_ORDER), ...(infoListed ? ['information' as const] : [])]
+    .filter((id) => (id !== 'episodes' || options.episodesTabbed) && (id !== 'recommended' || !recommendedInRelations))
   const listed = sections?.tabs?.filter((id) => available.includes(id))
   // `unlisted: "hidden"` keeps only the listed tabs: no Overview of its own, nothing folded into it.
   const hidden = sections?.unlisted === 'hidden' && !!listed?.length
@@ -45,7 +61,8 @@ export function resolveSections(sections: DetailSections | undefined, options: {
     if (label) labels[id] = TAB_LABEL_TEXT[label]
   }
   const initial = sections?.default && tabs.includes(sections.default) ? sections.default : tabs[0]
-  return { mode: sections?.mode ?? 'tabs', tabs, folded, labels, initial, infoInOverview: options.phone && sections?.info === 'overview' }
+  const information = infoListed ? 'section' : options.phone && hidden && !tabs.includes('overview') ? 'hidden' : 'overview'
+  return { mode: sections?.mode ?? 'tabs', tabs, folded, labels, initial, infoInOverview: options.phone && sections?.info === 'overview', information, recommendedInRelations }
 }
 
 /** Where the desktop stacked and split pages show the synopsis. izumi's own page keeps a short one

@@ -1,6 +1,8 @@
 import { gql } from '@urql/core'
 import { get } from 'svelte/store'
 import { CARD_MEDIA_FIELDS, MEDIA_FIELDS, READING_MEDIA_FIELDS, SCHEDULE_MEDIA_FIELDS } from './fragments'
+import { isReadingMedia } from './media'
+import type { Media } from './types'
 import { showAdult } from '$lib/settings/ui'
 
 // Detail page only: pull the viewer's list entry (progress/status) + favourite
@@ -20,6 +22,8 @@ export const MEDIA_BY_ID = gql`
       ...MediaFields
       isFavourite
       source countryOfOrigin
+      endDate { year month day }
+      favourites
       tags { name rank isGeneralSpoiler isMediaSpoiler }
       mediaListEntry { id progress status score(format: POINT_100) repeat startedAt { year month day } completedAt { year month day } }
       relations { edges { relationType node { ...CardMediaFields } } }
@@ -147,17 +151,25 @@ export function searchProbeQuery(count: number): ReturnType<typeof gql> {
   return document
 }
 
+// AniList's `Studio.media` takes no `type` argument (asking for one fails the whole query with
+// "Unknown argument type"), and a voice actor's `characterMedia` has none either. Both lists can hold
+// manga or novels, so the credit pages keep the anime themselves (`animeCredits`); `type` comes with
+// the card fields. `Staff.staffMedia` does take `type`.
 export const STUDIO_MEDIA_QUERY = gql`
   query StudioMedia($id: Int!, $page: Int = 1, $withPreview: Boolean = true) {
     Studio(id: $id) {
       name
-      media(page: $page, perPage: 30, sort: POPULARITY_DESC, type: ANIME) {
+      media(page: $page, perPage: 30, sort: POPULARITY_DESC) {
         pageInfo { hasNextPage }
         nodes { ...CardMediaFields }
       }
     }
   }
   ${CARD_MEDIA_FIELDS}`
+
+/** The anime among a studio's or a person's credits: the lists AniList cannot narrow by type also
+ *  carry manga and novels, which izumi does not list as credits. */
+export const animeCredits = (items: Media[]): Media[] => items.filter((item) => !isReadingMedia(item))
 
 export const STUDIO_PROFILE_QUERY = gql`
   query StudioProfile($id: Int!) {

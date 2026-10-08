@@ -1149,9 +1149,12 @@ impl PlayerHandle {
 
     /// Store the encoded-audio and HDR/Dolby-Vision output policy and apply it to a live core.
     /// This has its own stash because render presets are replaced wholesale and audio filters are
-    /// independently composed. An `ao-reload` makes a transport change take effect immediately;
-    /// it is best-effort because there is no AO before the first file starts.
-    pub fn set_dolby_opts(&self, opts: Vec<(String, String)>) -> Vec<String> {
+    /// independently composed. mpv reopens the AO itself when audio-device/audio-exclusive really
+    /// change and rebuilds the audio chain when audio-spdif does; an unchanged value is a no-op.
+    /// `reload` forces an `ao-reload`, which throws the buffered audio away, so only a re-detected
+    /// route or an explicit Recheck asks for it (a passthrough user's speed change pushes this
+    /// policy). It is best-effort because there is no AO before the first file starts.
+    pub fn set_dolby_opts(&self, opts: Vec<(String, String)>, reload: bool) -> Vec<String> {
         if let Ok(mut stored) = DOLBY_OPTS.lock() {
             *stored = opts.clone();
         }
@@ -1163,7 +1166,7 @@ impl PlayerHandle {
                         failed.push(key.clone());
                     }
                 }
-                if opts.iter().any(|(key, _)| key.starts_with("audio-")) {
+                if reload {
                     let _ = mpv.command("ao-reload", &[] as &[&str]);
                 }
             }

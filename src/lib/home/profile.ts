@@ -3,6 +3,7 @@
 import { gql } from '@urql/core'
 import { anilist } from '$lib/anilist/client'
 import { banner, cover } from '$lib/anilist/media'
+import type { Media } from '$lib/anilist/types'
 import type { HistoryEntry } from '$lib/player/history'
 
 export interface ProfileSummary { name: string; avatar?: string; banner?: string; episodes: number; titles: number; source: 'anilist' | 'local' }
@@ -29,6 +30,23 @@ export async function loadAniListProfile(name: string): Promise<ProfileSummary |
     titles: user.statistics?.anime?.count ?? 0,
     source: 'anilist',
   }
+}
+
+/** Artwork for the profile-header buttons that ask for it (`art`): one of the viewer's own titles
+ *  per button, in order and never repeated — Continue Watching first (most recent first), then the
+ *  library (`library` in the caller's order, newest first). A title's banner, else its cover; a
+ *  button past the titles there are gets none. */
+export function profileButtonArt(watching: readonly Media[], library: readonly Media[], count: number): string[] {
+  const seen = new Set<number>()
+  const art: string[] = []
+  for (const media of [...watching, ...library]) {
+    if (art.length >= count) break
+    if (seen.has(media.id)) continue
+    seen.add(media.id)
+    const src = media.bannerImage || cover(media)
+    if (src) art.push(src)
+  }
+  return art
 }
 
 /** Episodes = the furthest episode reached in each title; the banner comes from the latest title. */

@@ -16,6 +16,22 @@ export function shownPage(picked: number | null, auto: number, pages: number): n
   return Math.max(0, Math.min(picked ?? auto, pages - 1))
 }
 
+/** The page holding `episode`, or -1 when the list does not have it. */
+export function pageOf(episodes: number[], episode: number, per: number): number {
+  const index = episodes.indexOf(episode)
+  return index < 0 ? -1 : Math.floor(index / per)
+}
+
+/** The page a list opens on: the one holding the episode the series Play button starts (`cta`), so
+ *  the ranges, the range picker and the pager all open where the viewer is up to. A list without that
+ *  episode opens on the first episode after the `watched` ones, or on its last page. */
+export function openingPage(episodes: number[], per: number, cta: number, watched: number): number {
+  const page = pageOf(episodes, cta, per)
+  if (page >= 0) return page
+  const next = episodes.findIndex((episode) => episode > watched)
+  return Math.max(0, Math.floor((next < 0 ? episodes.length - 1 : next) / per))
+}
+
 /** One label per page from its printed first and last episode ("1–50", "1051–1072"), or the bare
  *  number for a one-episode page. A picker passes the spaced separator (" – "). */
 export function episodeRanges(episodes: number[], per: number, label: (episode: number) => string = String, separator = '–'): string[] {

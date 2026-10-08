@@ -343,7 +343,7 @@
         <h3 class="font-bold">Home-theatre audio</h3>
         <p class="mt-1 text-xs text-muted-foreground">Atmos and DTS:X are preserved by sending their original carrier to a compatible receiver. Izumi does not perform object rendering itself.</p>
       </div>
-      <button data-focusable class="shrink-0 rounded bg-secondary px-2 py-1 text-xs font-bold hover:bg-accent" onclick={() => void refreshDolbyCapabilities().then(() => applyDolbySettings())}>Recheck</button>
+      <button data-focusable class="shrink-0 rounded bg-secondary px-2 py-1 text-xs font-bold hover:bg-accent" onclick={() => void refreshDolbyCapabilities().then(() => applyDolbySettings({ reload: true }))}>Recheck</button>
     </div>
     <label class="mt-3 flex flex-col gap-1">
       <span class="text-sm font-bold">Audio output</span>

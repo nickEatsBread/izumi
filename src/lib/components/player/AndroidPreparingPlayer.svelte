@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation'
   import type { Media } from '$lib/anilist/types'
   import { airedCount, banner, cover, mediaHref, title, totalEpisodes } from '$lib/anilist/media'
+  import { rememberDetail } from '$lib/anilist/detail-hint'
   import { connecting, streamPicker } from '$lib/player/session'
   import { androidMiniPull } from '$lib/player/android-mpv'
   import { requestAndroidRelated } from '$lib/player/android-watch-navigation'
@@ -42,6 +43,8 @@
     void playEpisodeFromWatchPage(media, target, () => {})
   }
   async function openRelated(target: Media) {
+    // Both routes below land on the series page, which draws this relation card while it loads.
+    rememberDetail(target)
     if (active && requestAndroidRelated(mediaHref(target))) return
     cancelResolve()
     connecting.set(null)

@@ -36,8 +36,10 @@ export const CONTINUE_MEDIA_FIELDS = gql`
 // Catalogue cards do not need the source-resolution and episode-history payload carried by the
 // detail fragment. In particular, nesting a 100-node airing schedule in every home/search card made
 // a twenty-card page normalize hundreds or thousands of objects that the card never reads.
-// Desktop hover previews opt into their three rich fields; Gamescope/mobile pass `withPreview=false`
-// because SmallCard deliberately disables that popup there.
+// Desktop hover previews opt into their two rich fields; Gamescope/mobile pass `withPreview=false`
+// because SmallCard deliberately disables that popup there. The banner is one URL and is always
+// asked for: a tapped card is the series page's hint while it loads, and without it every phone
+// and Game mode tap had to draw the header band before knowing whether the title has a banner.
 export const CARD_MEDIA_FIELDS = gql`
   fragment CardMediaFields on Media {
     id idMal type isAdult
@@ -47,7 +49,7 @@ export const CARD_MEDIA_FIELDS = gql`
     rankings { rank type allTime context year season format }
     startDate { year month day }
     coverImage { extraLarge large medium color }
-    bannerImage @include(if: $withPreview)
+    bannerImage
     trailer @include(if: $withPreview) { id site }
     nextAiringEpisode { episode airingAt timeUntilAiring }
   }`

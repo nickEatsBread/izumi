@@ -18,12 +18,12 @@
   import Loader from '@lucide/svelte/icons/loader-circle'
   import { isAndroid, isTv } from '$lib/platform'
   import * as h from '$lib/haptics'
-  import { rememberDetail } from '$lib/anilist/detail-hint'
+  import { openDetail, rememberDetail } from '$lib/anilist/detail-hint'
   import { anilistIdOf } from '$lib/catalog/identity'
   import { getContext } from 'svelte'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { themePresentation } from '$lib/themes/runtime'
-  import { episodeDisplayModel, timeLeftLabel } from '$lib/themes/host-model'
+  import { episodeDisplayModel, seriesRatingText, timeLeftLabel } from '$lib/themes/host-model'
   import { ROW_CONTEXT, densityScale, resolveCard, resolveRow, type RowScope } from '$lib/themes/presentation'
 
   let { media, progress }: { media: Media; progress: number } = $props()
@@ -62,9 +62,13 @@
   const themeRow = $derived(rowScope ? resolveRow($themePresentation, rowScope().id) : {})
   const cardWidth = $derived(themeRow.width ?? ($isTv ? 320 : 264) * densityScale($themePresentation))
   const continueTemplate = $derived(resolveCard($themePresentation, 'continue'))
+  // A resume card stands for its title, so `rating` is the series score here (an episode card binds
+  // the episode's own), and `episodesWatched` is the count this card resumes from.
   const continueModel = $derived(episodeDisplayModel(media, ep, meta[ep], {
     still: thumb, progress: pct, episodeTitle: epTitle || undefined, poster: cardCover(media),
     timeLeft: timeLeftLabel(savedPosition),
+    rating: seriesRatingText(media),
+    episodesWatched: progress,
   }))
 
   let resolving = $state(false)
@@ -100,11 +104,18 @@
   onpointerdown={() => void loadPlayback()}
   onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play() } }}
   title={`Resume — ${name} · Episode ${ep}`}
-  class="group flex shrink-0 cursor-pointer flex-col text-left {themeRow.width ? '' : $isTv ? 'w-80' : 'w-[72vw] sm:w-[264px]'} {$isAndroid ? 'android-card-press' : ''}"
+  class="group flex shrink-0 cursor-pointer flex-col text-left {continueTemplate ? 'relative' : ''} {themeRow.width ? '' : $isTv ? 'w-80' : 'w-[72vw] sm:w-[264px]'} {$isAndroid ? 'android-card-press' : ''}"
   style:width={themeRow.width ? `${cardWidth}px` : undefined}
 >
   {#if continueTemplate}
     <ThemeNode node={continueTemplate} model={continueModel} />
+    <!-- A template has no overlay of its own, so the tap feedback sits over the whole card while
+         the source resolves (a stylesheet may move it onto the artwork). -->
+    {#if resolving}
+      <span data-part="card.overlay" data-state="resolving" class="pointer-events-none absolute inset-0 z-10 grid place-items-center">
+        <span class="grid size-12 place-items-center rounded-full bg-white/90 text-black"><Loader size={22} class="animate-spin" /></span>
+      </span>
+    {/if}
   {:else}
   <div data-part="card.art" class="focus-cover relative aspect-video w-full overflow-hidden rounded-lg bg-muted">
     {#if !imgReady}<div class="absolute inset-0 skeloader"></div>{/if}
@@ -117,7 +128,7 @@
     <span data-part="card.episode" class="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-xs font-black">Ep {ep}</span>
 
     <!-- Center play affordance (hover), swapped for a spinner while a source resolves. -->
-    <span data-part="card.overlay" class="absolute inset-0 grid place-items-center transition-opacity {resolving ? 'opacity-100' : 'opacity-90 sm:opacity-0 sm:group-hover:opacity-100'}">
+    <span data-part="card.overlay" data-state={resolving ? 'resolving' : undefined} class="absolute inset-0 grid place-items-center transition-opacity {resolving ? 'opacity-100' : 'opacity-90 sm:opacity-0 sm:group-hover:opacity-100'}">
       <span class="grid size-12 place-items-center rounded-full bg-white/90 text-black">
         {#if resolving}<Loader size={22} class="animate-spin" />{:else}<Play size={22} class="translate-x-0.5 fill-current" />{/if}
       </span>
@@ -129,7 +140,11 @@
   </div>
 
   <div data-theme-card-label class="mt-1.5">
-    <a data-part="card.title" href={mediaHref(media)} onpointerdown={() => rememberDetail(media, name)} onclick={(e) => { e.stopPropagation(); rememberDetail(media, name); h.tap() }}
+    <!-- The click must not reach the card (that plays), but SvelteKit's router listens above the
+         app root, so a stopped click would fall through to a native load that reboots the webview.
+         The link therefore routes itself. -->
+    <a data-part="card.title" href={mediaHref(media)} onpointerdown={() => rememberDetail(media, name)}
+       onclick={(e) => { e.preventDefault(); e.stopPropagation(); h.tap(); void openDetail(media, name) }}
        class="block truncate text-sm font-bold hover:text-theme">{name}</a>
     <span data-part="card.meta" class="block truncate text-[0.7rem] text-muted-foreground">{episodeLabel}</span>
   </div>

@@ -36,13 +36,41 @@ describe('persisted AniList cache', () => {
     expect(gated.readData).toBe(readData)
   })
 
+  it('never writes a backup provider\'s records or the links that point at them', async () => {
+    const writeData = vi.fn(() => Promise.resolve())
+    const gated = gatedStorage({ writeData } as unknown as StorageAdapter, () => false)
+    await gated.writeData({
+      'Media:154587.bannerImage': '"https://img.test/banner.jpg"',
+      'Media:154587%2etitle.romaji': '"Sousou no Frieren"',
+      'Query.Media({"id":154587,"type":"ANIME"})': ':"Media:154587"',
+      'Media:backup-135865.bannerImage': 'null',
+      'Media:backup-135865%2etitle.romaji': '"Youjo Senki II"',
+      'Query.Media({"id":135865,"type":"ANIME"})': ':"Media:backup-135865"',
+      'Query%2ePage({"page":1}).media': ':["Media:backup-1","Media:backup-2"]',
+      'Media:135865.popularity': '140000',
+    })
+    expect(writeData).toHaveBeenCalledWith({
+      'Media:154587.bannerImage': '"https://img.test/banner.jpg"',
+      'Media:154587%2etitle.romaji': '"Sousou no Frieren"',
+      'Query.Media({"id":154587,"type":"ANIME"})': ':"Media:154587"',
+      'Media:135865.popularity': '140000',
+    })
+    // A delta made only of backup records costs no IndexedDB transaction at all.
+    writeData.mockClear()
+    await gated.writeData({ 'Media:backup-1.bannerImage': 'null' })
+    expect(writeData).not.toHaveBeenCalled()
+  })
+
   it('is absent where IndexedDB is unavailable', () => {
     expect(typeof indexedDB).toBe('undefined')
     expect(createAnilistPersistence(() => false)).toBeNull()
   })
 
   it('is wired ahead of graphcache and wiped on an account switch', () => {
-    expect(client).toMatch(/exchanges: \[\s*revalidateOnceExchange\(\),\s*cacheExchange\(\{ keys: ANILIST_CACHE_KEYS, storage: /)
+    // The series-page bookkeeping for backup answers (backup-details.ts) also sits in front of
+    // graphcache, after the once-per-session revalidation it must not undo.
+    expect(client).toMatch(/exchanges: \[\s*revalidateOnceExchange\(\),\s*backupDetails\.exchange\(aniListProbeAllowed\),\s*cacheExchange\(\{ keys: CACHE_KEYS, updates: backupDetails\.updates, storage: /)
+    expect(client).toContain('const CACHE_KEYS = { ...ANILIST_CACHE_KEYS, Media: mediaCacheKey }')
     expect(client).toContain('createAnilistPersistence(() => get(incognito))')
     // The old client (and its in-memory viewer fields) must go synchronously; the disk copy is
     // retired before a persisted client is built again.

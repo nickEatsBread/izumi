@@ -17,6 +17,7 @@
   import ListPlus from '@lucide/svelte/icons/list-plus'
   import { m } from '$lib/paraglide/messages.js'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
+  import EpisodeDownload from './EpisodeDownload.svelte'
   import { episodeDisplayModel } from '$lib/themes/host-model'
   import { episodeNameText, episodeNoText, episodeRatingText } from '$lib/themes/episode-fields'
   import type { EpisodeTileKind } from './episode-tile'
@@ -25,7 +26,7 @@
   let {
     media, ep, meta, showThumb, released, isNext, watchedThrough, filler = false, dl, next, onplay, onintent, onqueue,
     selecting = false, selectedEp = false, numberLabel, navId, navUp, themeCard, hoverScale = false, listRow = false,
-    state: tileState, cta = false,
+    state: tileState, cta = false, download = false,
   }: {
     media: Media
     ep: number
@@ -54,7 +55,12 @@
     state?: EpisodeTileKind
     /** This is the episode the series Play button opens (`data-next`). */
     cta?: boolean
+    /** API 4 `detail.episodes.download: "button"`: the episode's own download button at its end
+     *  (`episode.download`), which also takes over the read-only download status badge. */
+    download?: boolean
   } = $props()
+  // Outside select mode only: there a press picks the episode.
+  const downloadButton = $derived(download && !selecting)
   const shownNumber = $derived(numberLabel ?? String(ep))
 
   const img = $derived(meta?.image)
@@ -116,8 +122,9 @@
       {selectedEp ? 'border-theme bg-theme text-black' : 'border-white/80 bg-black/50 text-transparent'}">
       <Check size={15} />
     </span>
-  {:else if dl}
-    <!-- Read-only download status (the trigger now lives in EpisodeList's select mode). -->
+  {:else if dl && !downloadButton}
+    <!-- Read-only download status (the trigger lives in EpisodeList's select mode, or in the
+         episode's own download button, which then shows the status itself). -->
     <span class="{cls} z-20 grid size-7 place-items-center rounded-full bg-black/70 text-white" title={dlTip}>
       {#if dl.status === 'error'}<Download size={14} class="text-destructive" />
       {:else if dl.status === 'queued'}<Loader size={14} class="animate-spin" />
@@ -142,7 +149,7 @@
   onpointerenter={() => { if (released) onintent?.(ep) }}
   onfocus={() => { if (released) onintent?.(ep) }}
   onclick={play}
-  onkeydown={(e) => { if (released && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); play() } }}
+  onkeydown={(e) => { if (released && e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); play() } }}
   title={selecting ? (released ? (selectedEp ? 'Selected — tap to unselect' : 'Tap to select') : 'Not yet aired') : released ? `Play — ${labels.primary}` : isNext ? `Airing in ${countdown(next?.timeUntilAiring)}` : 'Not yet aired'}
   class="theme-episode group isolate select-none overflow-hidden text-left {listRow ? 'rounded-sm' : 'rounded-xl sm:rounded-lg'} {themeCard ? (listRow ? 'flex w-full min-w-0' : 'flex w-full min-w-0 flex-col') : listRow ? 'flex' : showThumb && img ? 'grid grid-cols-[42%_1fr] sm:flex sm:flex-col' : 'flex flex-col'}
     {released ? 'cursor-pointer' : 'cursor-not-allowed bg-background/40 opacity-60'}
@@ -152,6 +159,7 @@
 >
   {#if themeCard}
     <ThemeNode node={themeCard} model={themeModel} />
+    {#if downloadButton}<EpisodeDownload {media} {ep} {dl} {released} numberLabel={shownNumber} />{/if}
   {:else if showThumb && img}
     <div data-part="episode.still" class="relative z-0 aspect-video h-full min-h-24 w-full overflow-hidden bg-muted sm:h-auto sm:min-h-0">
       {#if !imgReady}<div class="absolute inset-0 skeloader"></div>{/if}
@@ -211,6 +219,7 @@
           <span data-part="episode.meta" class="block truncate text-[0.7rem] text-muted-foreground">{labels.secondary}{dl?.status === 'done' ? ' · Downloaded' : ''}</span>
         {/if}
       </div>
+      {#if downloadButton}<EpisodeDownload {media} {ep} {dl} {released} numberLabel={shownNumber} />{/if}
     </div>
   {:else}
     <div class="relative flex items-center gap-3 p-3">
@@ -241,6 +250,8 @@
           <ListPlus size={15} />
         </button>
       {/if}
+
+      {#if downloadButton}<EpisodeDownload {media} {ep} {dl} {released} numberLabel={shownNumber} />{/if}
 
       {#if dling}
         <span class="absolute inset-x-0 bottom-0 h-1 bg-white/20"><span class="block h-full bg-blue-400 transition-[width] duration-300 ease-out" style={`width:${dlPct}%`}></span></span>

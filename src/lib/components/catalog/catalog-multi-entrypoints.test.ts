@@ -71,7 +71,9 @@ describe('multi-platform catalog entry points', () => {
 
   it('feeds a featured carousel from every platform home', () => {
     expect(home).toContain('<Hero medias={heroMedias}')
-    expect(read('./CatalogHome.svelte')).toContain('<Hero medias={home.hero}')
+    // The provider's featured titles, capped by a theme's `hero.limit` (API 4).
+    expect(read('./CatalogHome.svelte')).toContain('<Hero medias={heroSlides}')
+    expect(read('./CatalogHome.svelte')).toContain('(home?.hero ?? []).slice(0, $themePresentation.hero.limit) : home?.hero ?? []')
     for (const provider of ['kitsu', 'tmdb', 'stremio', 'jvm']) {
       expect(read(`../../catalog/providers/${provider}.ts`)).toMatch(/\bhero[:,]/)
     }
@@ -90,7 +92,8 @@ describe('multi-platform catalog entry points', () => {
     expect(catalogHome).toContain('provider.home(abort.signal, undefined, publish)')
     expect(catalogHome).toContain('publish(result, result.partial !== true)')
     expect(catalogHome).toContain('if (result.hero.length || result.sections.length) loading = false')
-    expect(catalogHome).toContain('{:else if loading}')
+    // The hero placeholder shows while loading on every provider (a theme that hides the hero has none).
+    expect(catalogHome).toContain('{:else if loading && !$themePresentation?.hero?.hidden}')
     expect(catalogHome).not.toContain("loading && $catalogProvider !== 'jvm'")
     expect(catalogHome).not.toContain("class:deferred-skeleton={$catalogProvider === 'jvm'}")
     expect(catalogHome).toContain("showCatalogSource={$catalogProvider !== 'jvm'}")

@@ -6,7 +6,7 @@ import { parseThemeFonts } from './font-ids'
 /** The newest theme API this client renders. Older APIs stay installable; newer ones are refused
  *  with a clear message rather than a half-parsed package. */
 export const THEME_API: ThemeApi = LATEST_THEME_API
-export const SUPPORTED_THEME_APIS: readonly number[] = [1, 2, 3]
+export const SUPPORTED_THEME_APIS: readonly number[] = [1, 2, 3, 4]
 /** Stylesheets and templates together; the stylesheet alone is capped at 128 KB (css-policy.ts). */
 export const MAX_THEME_BYTES = 512_000
 export const THEME_CATALOG_URL = 'https://raw.githubusercontent.com/nickEatsBread/izumi-themes/main/index.json'

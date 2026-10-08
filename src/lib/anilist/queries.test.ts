@@ -7,7 +7,7 @@ import {
 } from './detail-queries'
 import {
   LOCAL_RECOMMENDATIONS_QUERY, PAGE_QUERY, PERSONAL_RECOMMENDATIONS_QUERY, RECENT_RELEASES_QUERY,
-  currentSeason, heroQuery, homeSections, pageQuery,
+  currentSeason, heroQuery, heroVars, homeSections, pageQuery,
 } from './queries'
 describe('currentSeason', () => {
   it('maps month to AniList season', () => {
@@ -16,6 +16,19 @@ describe('currentSeason', () => {
     expect(currentSeason(new Date('2026-07-15')).season).toBe('SUMMER')
     expect(currentSeason(new Date('2026-10-15')).season).toBe('FALL')
     expect(currentSeason(new Date('2026-07-15')).seasonYear).toBe(2026)
+  })
+})
+
+describe('hero pool variables', () => {
+  const now = new Date(Date.UTC(2026, 9, 2))
+  it("features this season's top-scored titles by default", () => {
+    expect(heroVars(now)).toEqual({ perPage: 15, sort: ['SCORE_DESC'], ...currentSeason(now) })
+    expect(heroVars(now, 'season')).toEqual(heroVars(now))
+  })
+  it('features the titles trending now for a theme that asks, whatever their season', () => {
+    // The season variables are omitted, never null: AniList reads an omitted argument as no filter.
+    expect(heroVars(now, 'trending')).toEqual({ perPage: 15, sort: ['TRENDING_DESC'] })
+    expect(heroVars(now, 'trending')).not.toHaveProperty('season')
   })
 })
 
@@ -54,6 +67,14 @@ describe('catalogue projection', () => {
     expect(query).toContain('...CardMediaFields')
     expect(query).not.toContain('airingSchedule')
     expect(query).toMatch(/description\(asHtml:\s*false\)\s*@include\(if:\s*\$withPreview\)/)
+  })
+
+  it('always asks for the card banner, the header art of the series page a tapped card opens', () => {
+    // Phones and Game mode send withPreview=false; their card hints still need the real banner.
+    const query = PAGE_QUERY.loc?.source.body ?? ''
+    expect(query).toMatch(/\bbannerImage\b/)
+    expect(query).not.toMatch(/bannerImage\s*@include/)
+    expect(query).toMatch(/trailer\s*@include\(if:\s*\$withPreview\)/)
   })
 
   it('keeps the hero projection bounded to its rendered discovery fields', () => {

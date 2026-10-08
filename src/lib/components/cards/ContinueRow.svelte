@@ -3,7 +3,7 @@
   // (the persisted `cwSnapshot` view cache ∪ local watch history), then AniList (CURRENT) + MyAnimeList
   // (watching) reconcile in the BACKGROUND — no skeleton wait on the network. De-duped by media id,
   // resume-aware, most-recent first. All merge/sync logic lives in $lib/player/continue-watching.
-  import { tick } from 'svelte'
+  import { getContext, tick } from 'svelte'
   import { get } from 'svelte/store'
   import { getContextClient } from '@urql/svelte'
   import { focusWhenIdle } from '$lib/nav/initial-focus'
@@ -14,6 +14,8 @@
   import Carousel from './Carousel.svelte'
   import ContinueCard from './ContinueCard.svelte'
   import * as h from '$lib/haptics'
+  import { themePresentation } from '$lib/themes/runtime'
+  import { ROW_CONTEXT, type RowScope } from '$lib/themes/presentation'
 
   let { title, userName, malActive, catalogScope }: {
     title: string
@@ -23,6 +25,26 @@
     catalogScope?: 'provider' | 'all'
   } = $props()
   const client = getContextClient()
+  const rowScope = getContext<(() => RowScope) | undefined>(ROW_CONTEXT)
+
+  // The row's view-more link (`row.more`) opens the Library, whose default list is the titles being
+  // watched, each with its resume Play. izumi's own Home shows none: a theme turns it on by naming a
+  // `heading.viewMore` style (`text` or `arrow`) on the continue row itself, the role `continue` or
+  // the row's id, so a style set for every row (`rows.defaults`) never adds one.
+  const viewMoreHref = $derived.by(() => {
+    const id = rowScope?.().id ?? ''
+    const byId = $themePresentation?.rows?.byId
+    const own = (byId?.[id]?.heading ?? byId?.continue?.heading)?.viewMore
+    return own === 'text' || own === 'arrow' ? '/app/library' : undefined
+  })
+
+  // API 4 `empty: "shown"` on the row's own entry (its id, else the role `continue`; never
+  // `rows.defaults`) keeps the row while there is nothing to continue, holding an empty-state part
+  // (`row.empty`). Without it the row leaves Home then, as on izumi's own Home.
+  const emptyShown = $derived.by(() => {
+    const byId = $themePresentation?.rows?.byId
+    return (byId?.[rowScope?.().id ?? '']?.empty ?? byId?.continue?.empty) === 'shown'
+  })
 
   const items = $derived(filterContinueWatching(
     $continueWatching,
@@ -66,7 +88,7 @@
   const provisional = $derived($reconciling && !$reconciledOnce && items.length > 0)
   // Home without a featured banner starts on the first Continue card in Game mode, so the first A
   // resumes. A focus restore (Back to the card you left) runs first and wins.
-  const firstFocus = () => get(gameMode) && location.pathname.replace(/\/$/, '') === '/app/home' && !document.querySelector('[data-slot="home.hero"]')
+  const firstFocus = () => get(gameMode) && location.pathname.replace(/\/$/, '') === '/app/home' && !document.querySelector('[data-slot="home.hero"]:not([data-state="loading"])')
 
   // Re-run whenever the tracker identity changes, not only on mount. With no tracker the reconcile
   // returns at once; when a device transfer (or a sign-in on the Sync/Accounts screens) then lands
@@ -81,13 +103,13 @@
 <svelte:window onkeydown={onKey} />
 
 {#if cold}
-  <Carousel {title}>
+  <Carousel {title} {viewMoreHref}>
     {#each Array.from({ length: 5 }) as _}
-      <div class="skeloader aspect-video w-[72vw] shrink-0 rounded-lg sm:w-[264px]" data-theme-continue-skeleton></div>
+      <div data-part="row.skeleton" class="skeloader aspect-video w-[72vw] shrink-0 rounded-lg sm:w-[264px]" data-theme-continue-skeleton></div>
     {/each}
   </Carousel>
 {:else if items.length}
-  <Carousel {title}>
+  <Carousel {title} {viewMoreHref}>
     {#each items as item, index (item.media.id)}
       <div class="shrink-0 transition-[opacity,filter] duration-300 {provisional ? 'opacity-40 grayscale' : ''}"
            data-cw-id={item.media.id}
@@ -101,5 +123,12 @@
         <ContinueCard media={item.media} progress={item.progress} />
       </div>
     {/each}
+  </Carousel>
+{:else if emptyShown}
+  <Carousel {title} {viewMoreHref}>
+    <div data-part="row.empty" class="flex min-h-32 w-full shrink-0 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border px-4 py-6 text-center">
+      <p data-part="row.empty.text" class="text-sm font-semibold text-muted-foreground">Nothing to continue yet</p>
+      <a data-part="row.empty.action" href="/app/search" data-focusable class="inline-flex min-h-9 items-center rounded-md bg-secondary px-4 text-sm font-bold transition-colors hover:bg-accent">Browse</a>
+    </div>
   </Carousel>
 {/if}
