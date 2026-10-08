@@ -6,6 +6,7 @@ import { createTvSourceLookup, tvSourceRequests, verifyTvSourceLookup } from './
 import {
   acceptsStreamId,
   addonOriginId,
+  alignProviderEpisodes,
   applyPriorityFilter,
   buildStreamIds,
   dedupeStreams,
@@ -40,6 +41,7 @@ const MAX_RESPONSE_CANDIDATES = 12
 // release it carried) from every TV lookup.
 const MAX_PROVIDER_RESPONSE_BYTES = 4 * 1024 * 1024
 const METADATA_TIMEOUT_MS = 5_000
+const KITSU_LINK_TIMEOUT_MS = 2_500
 const MANIFEST_TIMEOUT_MS = 4_000
 const STREAM_TIMEOUT_MS = 12_000
 const QUALITY = new Set(['any', '2160', '1440', '1080', '720', '480', '360'])
@@ -254,13 +256,13 @@ function addonEndpoint(base, suffix) {
   return url.toString()
 }
 
-async function fetchJson(fetcher, url, timeoutMs, onFailure = () => {}) {
+async function fetchJson(fetcher, url, timeoutMs, onFailure = () => {}, accept = 'application/json') {
   if (timeoutMs <= 0) { onFailure('could not be reached within the cloud lookup time limit.'); return null }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetcher(url, {
-      headers: { Accept: 'application/json', 'User-Agent': 'Izumi-Cloud-Resolver/1' },
+      headers: { Accept: accept, 'User-Agent': 'Izumi-Cloud-Resolver/1' },
       redirect: 'follow',
       signal: controller.signal,
     })
@@ -293,6 +295,22 @@ async function metadataFor(request, fetcher) {
   if (request.ref.provider !== 'anilist') return null
   if (!/^\d{1,10}$/.test(request.ref.id)) return null
   return fetchJson(fetcher, `https://api.ani.zip/mappings?anilist_id=${encodeURIComponent(request.ref.id)}`, METADATA_TIMEOUT_MS)
+}
+
+// AniZip names no Kitsu id for many shows in their first weeks while Kitsu itself already links them
+// to AniList or MAL, and Kitsu is the id anime add-ons index by. Same lookup as the client's.
+async function kitsuIdFromLinks(fetcher, anilistId, malId) {
+  const lookup = async (site, id) => {
+    if (!/^\d{1,10}$/.test(String(id ?? ''))) return undefined
+    const url = 'https://kitsu.io/api/edge/mappings'
+      + `?filter%5BexternalSite%5D=${encodeURIComponent(site)}&filter%5BexternalId%5D=${id}&include=item`
+    // Kitsu's JSON:API answers 406 to a plain JSON Accept header. A shorter cap than AniZip's: this
+    // runs after it, inside the time the resolve has left for debrid.
+    const answer = await fetchJson(fetcher, url, KITSU_LINK_TIMEOUT_MS, undefined, 'application/vnd.api+json')
+    return Number(answer?.included?.[0]?.id) || undefined
+  }
+  const [byAnilist, byMal] = await Promise.all([lookup('anilist/anime', anilistId), lookup('myanimelist/anime', malId)])
+  return byAnilist ?? byMal
 }
 
 function detailEnvelope(episodes, extra = {}) {
@@ -545,10 +563,11 @@ export async function streamRequestPlan(request, fetcher = fetch, profile = defa
   }
   const metadata = await metadataFor(request, fetcher)
   const mappings = metadata?.mappings ?? {}
-  const episode = request.episode != null ? metadata?.episodes?.[String(request.episode)] : undefined
+  const episode = request.episode != null ? alignProviderEpisodes(metadata?.episodes)[String(request.episode)] : undefined
+  const kitsu = Number(mappings.kitsu_id) || await kitsuIdFromLinks(fetcher, request.ref.id, mappings.mal_id)
   const ids = buildStreamIds({
     type: request.streamType,
-    kitsu: Number(mappings.kitsu_id) || undefined,
+    kitsu,
     episode: request.episode,
     imdb: typeof mappings.imdb_id === 'string' ? mappings.imdb_id : undefined,
     tmdb: typeof mappings.themoviedb_id === 'string' || typeof mappings.themoviedb_id === 'number'

@@ -116,6 +116,39 @@ describe('isStandaloneMovie (year-less film sharing a series id — the Ghost in
       __batch: true,
     })).toBe(false)
   })
+  // Every name below is a real episode file the rule used to drop as a film.
+  it.each([
+    'Tensei Shitara Slime Datta Ken 01.mkv',
+    '[Beatrice-Raws] Tensei Shitara Slime Datta Ken 01 [BDRip 1920x1080 HEVC FLAC]',
+    'Pocket Monsters (2023) 145 (1080p) [C282D06B].mkv',
+    'Spice and Wolf 13 1080p.mkv',
+    '[Daemon Anime] Naruto Shippuden 1 [Akira].mkv',
+    'One_Piece_020.mp4',
+    '[Cleo]Tensei_shitara_Slime_Datta_Ken_-_01_(Dual Audio_10bit_BD1080p_x265).mkv',
+    '[DB]_Naruto_Shippuuden_001-002_[75F021EA].avi',
+    '[Exiled-Destiny]_Hunter_X_Hunter_2011_Ep01_(57F1E3A4).mkv',
+    '[bonkai77].Sword.Art.Online.Episode.01.The.World.of.Swords.1080p.Dual.Audio.Bluray [D688CA7E].mkv',
+    'Bakemonogatari.2009.TV.BDRIP.1080P.X264.FLAC.2AUDIO.[2.0CH].[EQ].[RE].EP01_CherryBoyz.mkv',
+    'Mushoku Tensei - Jobless Reincarnation (2021) - S01E01v2 - Jobless Reincarnation [Bluray-1080p].mkv',
+    'One Piece - E020 - Das Restaurant auf dem Meer.mp4',
+    '[Studio GreenTea] Kusuriya no Hitorigoto [49][WebRip][HEVC-10bit 1080p AAC][JPTC].mp4',
+    '[Doomdos] - The Exiled Heavy Knight Knows How to Game the System - 第14话 - [1080p BILIBILI COM WEB-DL].mkv',
+    '01. Tensei shitara Slime Datta Ken (BDRip 1080p HEVC).mkv',
+    'Horimiya.01.A.Tiny.Happenstance.1080p.x265.opus.2.0.mkv',
+    'Naruto 001 Remaster (BDRip 1080p x264 AC3 Multi).mkv',
+    'Sword.Art.Online.II.(01.serija).2014.x264.HDTVRip.1080p.mkv',
+  ])('keeps an episode numbered the way release groups number it: %s', (name) => {
+    expect(isStandaloneMovie(s(name))).toBe(false)
+  })
+  it('still flags films whose only numbers are a year, a sequel or technical tags', () => {
+    expect(isStandaloneMovie(s('Kung Fu Panda 2 (2011).mkv'))).toBe(true)
+    expect(isStandaloneMovie(s('Example Film 2.mkv'))).toBe(true)
+    expect(isStandaloneMovie(s('Example Film 12 (2014) [1080p].mkv'))).toBe(true)
+    expect(isStandaloneMovie(s('Ghost in the Shell (1995) [BDRip 1080p x264 AAC2.0].mkv'))).toBe(true)
+    expect(isStandaloneMovie(s('Akira 1988 2160p UHD BluRay H.264 DDP5.1.mkv'))).toBe(true)
+    expect(isStandaloneMovie(s('Ghost.in.the.Shell.1995.1080p.BluRay.H.264.AAC2.0.mkv'))).toBe(true)
+    expect(isStandaloneMovie(s('[Group] Example Film [2026] [1080p].mkv'))).toBe(true)
+  })
 })
 
 describe('relevant', () => {

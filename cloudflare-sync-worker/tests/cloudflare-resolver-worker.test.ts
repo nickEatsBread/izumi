@@ -198,6 +198,45 @@ describe('self-hosted Cloudflare source resolver', () => {
     expect(plan.want).toEqual({ episode: 7, season: 2, abs: 31 })
   })
 
+  it('asks for the episode a lagging AniZip season map paired with its neighbour', async () => {
+    // AniList air dates a week ahead of the episode database: AniZip paired episode 2 with S2E1.
+    const fetcher = vi.fn(async () => json({
+      mappings: { kitsu_id: 46917, imdb_id: 'tt15483602', themoviedb_id: '134667' },
+      episodes: {
+        '1': { seasonNumber: 2, episodeNumber: 1, absoluteEpisodeNumber: 13 },
+        '2': { seasonNumber: 2, episodeNumber: 1, absoluteEpisodeNumber: 13 },
+        '3': { seasonNumber: 2, episodeNumber: 2, absoluteEpisodeNumber: 14 },
+      },
+    }))
+    const plan = await streamRequestPlan(normalizeResolveRequest({
+      ref: { provider: 'anilist', type: 'anime', id: '159042' }, episode: 2,
+    }), fetcher)
+    expect(plan.ids).toEqual(['kitsu:46917:2', 'tt15483602:2:2', 'tmdb:134667:2:2'])
+    expect(plan.want).toEqual({ episode: 2, season: 2, abs: 14 })
+  })
+
+  it('asks Kitsu for a new show AniZip has no Kitsu id for', async () => {
+    const fetcher = vi.fn(async (raw: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(raw))
+      if (url.hostname === 'api.ani.zip') return json({
+        mappings: { kitsu_id: null, mal_id: 60948, themoviedb_id: '283692' },
+        episodes: { '1': { seasonNumber: 1, episodeNumber: 1, absoluteEpisodeNumber: 1 } },
+      })
+      if (url.hostname === 'kitsu.io') {
+        // Kitsu's mapping endpoint answers 406 to a plain JSON Accept header.
+        if (new Headers(init?.headers).get('Accept') !== 'application/vnd.api+json') return json({}, 406)
+        const linked = url.searchParams.get('filter[externalSite]') === 'anilist/anime'
+          && url.searchParams.get('filter[externalId]') === '186541'
+        return json({ data: [], included: linked ? [{ type: 'anime', id: '51005' }] : [] })
+      }
+      return json({}, 404)
+    })
+    const plan = await streamRequestPlan(normalizeResolveRequest({
+      ref: { provider: 'anilist', type: 'anime', id: '186541' }, episode: 1,
+    }), fetcher)
+    expect(plan.ids).toEqual(['kitsu:51005:1', 'tmdb:283692:1:1'])
+  })
+
   it('maps TMDB identities to IMDb before asking prefix-limited add-ons', async () => {
     const fetcher = vi.fn(async (raw: RequestInfo | URL) => {
       const url = String(raw)

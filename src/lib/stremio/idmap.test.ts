@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildIndex, lookupAnilistByKitsu, lookupAnilistByMal, lookupKitsu, lookupMal } from './idmap'
+import { buildIndex, lookupAnilistByKitsu, lookupAnilistByMal, lookupImdb, lookupKitsu, lookupMal } from './idmap'
 const FIX = [ { anilist_id: 1, kitsu_id: 11, mal_id: 21 }, { anilist_id: 5, mal_id: 30 } ]
 describe('idmap', () => {
   const idx = buildIndex(FIX as any)
@@ -19,5 +19,24 @@ describe('idmap', () => {
     expect(lookupMal(idx, 1)).toBe(21)
     expect(lookupMal(idx, 5)).toBe(30)
     expect(lookupMal(idx, 999)).toBeUndefined()
+  })
+})
+describe('idmap IMDb ids', () => {
+  const idx = buildIndex([
+    { anilist_id: 186541, imdb_id: ['tt41298100'] },
+    { anilist_id: 2, imdb_id: 'tt0000002' },
+    { anilist_id: 3, imdb_id: ['tt0000003', 'tt0000033'] },
+    { anilist_id: 4, imdb_id: ['not-an-id'] },
+    { anilist_id: 5 },
+  ] as any)
+  it('names the IMDb title the list maps an AniList id to', () => {
+    expect(lookupImdb(idx, 186541)).toBe('tt41298100')
+    expect(lookupImdb(idx, 2)).toBe('tt0000002')
+  })
+  it('refuses to choose between several titles or a malformed one', () => {
+    expect(lookupImdb(idx, 3)).toBeUndefined()
+    expect(lookupImdb(idx, 4)).toBeUndefined()
+    expect(lookupImdb(idx, 5)).toBeUndefined()
+    expect(lookupImdb(idx, 999)).toBeUndefined()
   })
 })

@@ -5,6 +5,7 @@
 // persistence so the Worker always runs the same normalization/ranking code as the client.
 
 export { buildStreamIds, type StreamIdInput } from './stream-ids'
+export { alignProviderEpisodes } from './episode-alignment'
 export {
   acceptsStreamId,
   type AddonCatalog,

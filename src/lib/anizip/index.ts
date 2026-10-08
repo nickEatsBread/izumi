@@ -1,4 +1,5 @@
 import { phttp } from '$lib/net/http'
+import { alignProviderEpisodes } from '$lib/stremio/episode-alignment'
 import { get, set } from 'idb-keyval'
 import type { AniZipResponse, EpMeta } from './types'
 
@@ -7,10 +8,11 @@ import type { AniZipResponse, EpMeta } from './types'
 const cleanTitle = (t?: string) => t?.replace(/`/g, '’')
 
 /** Convert a raw AniZip response into a `{ episodeNumber -> EpMeta }` map,
- *  dropping non-numeric keys (specials like `S1`). */
+ *  dropping non-numeric keys (specials like `S1`). Season coordinates come back repaired where
+ *  AniZip's date matching visibly slipped (see episode-alignment). */
 export function parseEpisodes(res: AniZipResponse | undefined): Record<number, EpMeta> {
   const out: Record<number, EpMeta> = {}
-  for (const [k, e] of Object.entries(res?.episodes ?? {})) {
+  for (const [k, e] of Object.entries(alignProviderEpisodes(res?.episodes))) {
     const n = Number(k)
     if (!Number.isInteger(n)) continue
     out[n] = {
@@ -152,15 +154,16 @@ export interface ExtIds {
   season?: number
   absoluteEpisodeNumber?: number
   episodeNumber?: number // per-season episode number (fallback when no absolute is mapped)
-  // Raw AniZip objects, passed through to extensions verbatim (the SDK's TorrentQuery declares
-  // mappingsA/mappingsE and some sources read production fields we don't distill).
+  // AniZip objects passed through to extensions (the SDK's TorrentQuery declares mappingsA/mappingsE
+  // and some sources read production fields we don't distill). mappingsE carries the repaired
+  // season numbers, so it agrees with the ids above.
   mappingsA?: Record<string, unknown>
   mappingsE?: Record<string, unknown>
 }
 export async function getExtensionIds(anilistId: number, episode?: number): Promise<ExtIds> {
   const res = await fetchAniZip(anilistId, episode)
   const m = res?.mappings
-  const ep = episode != null ? res?.episodes?.[String(episode)] : undefined
+  const ep = episode != null ? alignProviderEpisodes(res?.episodes)[String(episode)] : undefined
   return {
     anidbAid: m?.anidb_id,
     anidbEid: ep?.anidbEid,

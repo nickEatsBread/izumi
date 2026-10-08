@@ -489,9 +489,32 @@ export function likelyOtherProduction(stream: Stream, animeYear?: number, absolu
 // episode marker and are kept. Only apply this to multi-episode series (see refineStreams) — a
 // real movie/OVA request WANTS the marker-less file.
 export function isStandaloneMovie(stream: Stream): boolean {
-  const name = nameOf(stream)
-  return !stream.__batch && !EPISODE_MARKER.test(name) && !BATCH_MARKER.test(name)
+  // Underscores separate words in release names; read as spaces they no longer hide the markers.
+  const name = nameOf(stream).replace(/_/g, ' ')
+  return !stream.__batch && !EPISODE_MARKER.test(name) && !BATCH_MARKER.test(name) && !LOOSE_EPISODE_NUMBER.test(name)
 }
+
+// Episode numbering the markers above cannot read, every form taken from files this rule used to
+// drop as films: about one row in thirteen of a saved corpus of real add-on rows, none of them a
+// film. It only keeps a file out of the film bucket and never rejects anything, so it may be
+// generous, but years (19xx/20xx) are excluded and a lone digit only counts before a bracketed tag,
+// so a dated film or a numbered sequel ("Title 2 (2011)", "Title 2.mkv") still reads as a film. In
+// order: S01E01v2, Ep01 / Episode.01, E020, 第14话, "01. Title", a zero-padded 01 / 001 between
+// separators, [49], a 2-4 digit number before tags or the end of the name, and a lone digit before
+// a bracketed tag.
+const NOT_YEAR = '(?!(?:19|20)\\d\\d(?!\\d))'
+const NOT_YEAR_TAG = String.raw`(?!\s*[[(](?:19|20)\d\d[\])])`
+const LOOSE_EPISODE_NUMBER = new RegExp([
+  String.raw`\bS\d{1,2}E\d{1,4}v\d\b`,
+  String.raw`\b(?:ep|episode)[\s.]?\d{1,4}(?:v\d)?\b`,
+  String.raw`\bE\d{2,4}(?:v\d)?\b`,
+  String.raw`第\s*\d{1,4}\s*[话話集回]`,
+  String.raw`^\s*${NOT_YEAR}\d{1,4}(?:v\d)?\s*[.\-–]\s`,
+  String.raw`(?:^|[\s.(\[-])0\d{1,3}(?:v\d)?(?=$|[\s.)\]-])`,
+  String.raw`\[\s*${NOT_YEAR}\d{1,4}(?:v\d)?\s*\]`,
+  String.raw`\s${NOT_YEAR}\d{2,4}(?!\d)(?:v\d)?${NOT_YEAR_TAG}(?=\s*(?:[[(]|\d{3,4}p\b|\.[a-z0-9]{2,4}$|$))`,
+  String.raw`\s\d(?:v\d)?${NOT_YEAR_TAG}(?=\s*[[(])`,
+].join('|'), 'i')
 
 // A SEQUEL-season marker used to DROP a file: a named final season, or a season numbered ≥ 2. Note
 // "Final Season" carries NO number, so parseSeasonEp/isWrongSeason (which key off a season NUMBER)

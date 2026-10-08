@@ -1,7 +1,7 @@
 import { get } from 'svelte/store'
 import { getKitsuId } from '$lib/anizip'
 import { getIndex, lookupAnilistByKitsu, lookupKitsu } from '$lib/stremio/idmap'
-import { kitsuIdFromMal } from '$lib/stremio/kitsu'
+import { kitsuIdFromLinks, kitsuIdFromMal } from '$lib/stremio/kitsu'
 import { kitsuToken, kitsuUserId } from './config'
 import { kitsuFetch, refreshKitsuViewer } from './kitsu-auth'
 import { classifyStatus, type PushResult, type TrackerOp } from './queue'
@@ -34,7 +34,7 @@ export async function resolveKitsuId(op: TrackerOp): Promise<number | undefined>
     if (mapped) return mapped
   } catch { /* continue through smaller fallbacks */ }
   const anizip = await getKitsuId(anilistId).catch(() => undefined)
-  return anizip ?? await kitsuIdFromMal(op.idMal)
+  return anizip ?? await kitsuIdFromLinks({ anilist: anilistId, mal: op.idMal })
 }
 
 interface LibraryEntry {

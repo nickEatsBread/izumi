@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('idb-keyval', () => ({ get: mocks.get, set: mocks.set }))
 vi.mock('$lib/net/http', () => ({ phttp: mocks.phttp }))
 
-import { episodeRatingPercent, fetchAniZip, getEpisodeMeta, parseEpisodes } from './index'
+import { episodeRatingPercent, fetchAniZip, getEpisodeMeta, getEpisodeSeasonMap, getExtensionIds, parseEpisodes } from './index'
 
 const RES = {
   episodes: {
@@ -31,6 +31,46 @@ describe('parseEpisodes', () => {
   it('keeps the season and the number within it', () => {
     const m = parseEpisodes({ episodes: { '1': { seasonNumber: 4, episodeNumber: 17, absoluteEpisodeNumber: 76 } } } as any)
     expect(m[1]).toMatchObject({ season: 4, seasonEpisode: 17, abs: 76 })
+  })
+  it('repairs a premiere the mapping paired with the next episode', () => {
+    const m = parseEpisodes(LAGGING_SEASON as any)
+    expect(m[2]).toMatchObject({ season: 2, seasonEpisode: 2, abs: 14, title: 'Jean du Vix Knows His Stuff' })
+    expect(m[3]).toMatchObject({ season: 2, seasonEpisode: 3, abs: 15 })
+  })
+})
+
+// A second season whose AniList air dates run a week ahead of the episode database: the mapping
+// pairs episode 2 with S2E1 and every later episode inherits the lag.
+const LAGGING_SEASON = {
+  mappings: { kitsu_id: 46917, imdb_id: 'tt15483602', thetvdb_id: 410378, anidb_id: 17789 },
+  episodes: {
+    '1': { seasonNumber: 2, episodeNumber: 1, absoluteEpisodeNumber: 13, tvdbId: 11877773, anidbEid: 316835, title: { en: 'The Floating Island' } },
+    '2': { seasonNumber: 2, episodeNumber: 1, absoluteEpisodeNumber: 13, tvdbId: 11877773, anidbEid: 316836, title: { en: 'Jean du Vix Knows His Stuff' } },
+    '3': { seasonNumber: 2, episodeNumber: 2, absoluteEpisodeNumber: 14, tvdbId: 12009468, anidbEid: 316837 },
+  },
+}
+
+describe('repaired episode coordinates', () => {
+  beforeEach(() => {
+    mocks.get.mockReset()
+    mocks.set.mockReset()
+    mocks.phttp.mockReset()
+    mocks.get.mockImplementation(async (key: string) => key.endsWith('-fetched-at') ? Date.now() : LAGGING_SEASON)
+  })
+
+  it('asks sources for the repaired episode, not the one the mapping lagged onto', async () => {
+    await expect(getExtensionIds(159042, 2)).resolves.toMatchObject({
+      imdbId: 'tt15483602', season: 2, episodeNumber: 2, absoluteEpisodeNumber: 14,
+      tvdbEId: 12009468, anidbEid: 316836,
+      mappingsE: { seasonNumber: 2, episodeNumber: 2, absoluteEpisodeNumber: 14 },
+    })
+    expect(mocks.phttp).not.toHaveBeenCalled()
+  })
+
+  it('verifies files against the repaired season map', async () => {
+    await expect(getEpisodeSeasonMap(159042)).resolves.toEqual({
+      1: { season: 2, abs: 13 }, 2: { season: 2, abs: 14 }, 3: { season: 2, abs: 15 },
+    })
   })
 })
 

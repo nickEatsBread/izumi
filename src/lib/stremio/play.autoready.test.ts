@@ -18,8 +18,8 @@ vi.mock('./sources', async (actual) => ({
   enabledAddonUrls: addonUrls,
   addonOriginId: () => 'addon',
 }))
-vi.mock('./idmap', () => ({ getIndex: async () => ({}), lookupKitsu: () => undefined }))
-vi.mock('./kitsu', () => ({ kitsuIdFromMal: async () => undefined }))
+vi.mock('./idmap', () => ({ getIndex: async () => ({}), indexWithin: async () => null, lookupImdb: () => undefined, lookupKitsu: () => undefined }))
+vi.mock('./kitsu', () => ({ kitsuIdFromMal: async () => undefined, kitsuIdFromLinks: async () => undefined }))
 vi.mock('./onlinestream', () => ({ resolveOnlineStreams: () => new Promise<never>(() => {}) }))
 vi.mock('$lib/anizip', () => ({
   getKitsuId: async () => 42,

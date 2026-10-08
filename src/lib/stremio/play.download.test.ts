@@ -21,8 +21,8 @@ vi.mock('./sources', async (actual) => ({
   enabledAddonUrls: readable<string[]>(['https://addon.test']),
   addonOriginId: () => 'addon',
 }))
-vi.mock('./idmap', () => ({ getIndex: async () => ({}), lookupKitsu: () => undefined }))
-vi.mock('./kitsu', () => ({ kitsuIdFromMal: async () => undefined }))
+vi.mock('./idmap', () => ({ getIndex: async () => ({}), indexWithin: async () => null, lookupImdb: () => undefined, lookupKitsu: () => undefined }))
+vi.mock('./kitsu', () => ({ kitsuIdFromMal: async () => undefined, kitsuIdFromLinks: async () => undefined }))
 // Resolves empty (not pending): resolveDownloadUrl now awaits the online wave (with a budget),
 // so a never-settling mock would stall every test to its own timeout.
 const resolveOnlineStreams = vi.fn(async (..._args: unknown[]): Promise<unknown[]> => [])

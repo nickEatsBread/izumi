@@ -20,9 +20,11 @@ vi.mock('./sources', () => ({
 }))
 vi.mock('./idmap', () => ({
   getIndex: async () => ({}),
+  indexWithin: async () => null,
+  lookupImdb: () => undefined,
   lookupKitsu: () => undefined,
 }))
-vi.mock('./kitsu', () => ({ kitsuIdFromMal: async () => undefined }))
+vi.mock('./kitsu', () => ({ kitsuIdFromMal: async () => undefined, kitsuIdFromLinks: async () => undefined }))
 vi.mock('./onlinestream', () => ({
   resolveOnlineStreams: (...args: unknown[]) => resolveOnlineStreams(...args),
 }))

@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ fetch: vi.fn(), mapping: vi.fn() }))
 vi.mock('./kitsu-auth', () => ({ kitsuFetch: mocks.fetch, refreshKitsuViewer: vi.fn() }))
 vi.mock('$lib/anizip', () => ({ getKitsuId: mocks.mapping }))
 vi.mock('$lib/stremio/idmap', () => ({ getIndex: mocks.mapping, lookupAnilistByKitsu: vi.fn(), lookupKitsu: vi.fn() }))
-vi.mock('$lib/stremio/kitsu', () => ({ kitsuIdFromMal: mocks.mapping }))
+vi.mock('$lib/stremio/kitsu', () => ({ kitsuIdFromMal: mocks.mapping, kitsuIdFromLinks: mocks.mapping }))
 
 import { getKitsuProgress } from './kitsu'
 import { kitsuToken, kitsuUserId } from './config'

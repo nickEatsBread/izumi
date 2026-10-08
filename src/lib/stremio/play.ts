@@ -6,7 +6,7 @@ import { downloadAudioLang, offlineManifestUrl, preferredDrmPresentation, refres
 import { listen, type EventCallback } from '@tauri-apps/api/event'
 import { get } from 'svelte/store'
 import { addonUrls, enabledAddonUrls } from './sources'
-import { getIndex, lookupKitsu } from './idmap'
+import { getIndex, indexWithin, lookupImdb, lookupKitsu } from './idmap'
 import { resolveKitsuMapping } from './kitsu-resolution'
 import { getStreams, fetchAddonStreams, prefetchAddonStreams, pickBest, pickCandidates, preferDirectStartupCandidates, parseSeasonEp, isWrongSeason, isUncached, isCached, isNotice, describe, type Stream } from './addon'
 import { refineStreams, type Rejection } from './refine'
@@ -76,7 +76,7 @@ function activeSourceCandidates(
   }).planned
 }
 import { getKitsuId, getEpisodeSeasonMap, getExtensionIds, type ExtIds } from '$lib/anizip'
-import { kitsuIdFromMal } from './kitsu'
+import { kitsuIdFromLinks } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
 import { anilistIdOf, externalIdsOf, kitsuIdOf } from '$lib/catalog/identity'
 import { downloadOf, getDownloadedMedia, type DownloadPreferences } from '$lib/downloads/state'
@@ -951,7 +951,7 @@ async function resolveKitsu(media: Media): Promise<number | undefined> {
   const anilistId = anilistIdOf(media)
   return resolveKitsuMapping(
     () => anilistId ? getKitsuId(anilistId) : Promise.resolve(undefined),
-    () => kitsuIdFromMal(media.idMal),
+    () => kitsuIdFromLinks({ anilist: anilistId, mal: media.idMal }),
     async () => anilistId ? lookupKitsu(await getIndex(), anilistId) : undefined,
   )
 }
@@ -1001,14 +1001,30 @@ async function mediaSeasonMap(media: Media): Promise<Record<number, { season?: n
   return { ...native, ...mapped }
 }
 
+// AniZip names no IMDb title for most airing shows, so the aligned IMDb wave and IMDb-keyed sources
+// had nothing to ask. The Fribb list usually names it weeks earlier. It is optional enrichment, so a
+// list that is not loaded yet only gets a short wait: a stale copy re-downloads the whole list.
+const LISTED_IMDB_WAIT_MS = 1_500
+async function listedImdbId(anilistId: number): Promise<string | undefined> {
+  const index = await indexWithin(LISTED_IMDB_WAIT_MS)
+  return index ? lookupImdb(index, anilistId) : undefined
+}
+
+// AniZip's production ids for an episode. Hover prefetch calls only this: it warms AniZip for the
+// click without waiting on, or downloading, the IMDb list.
+function mappedExtensionIds(media: Media, episode: number | undefined): Promise<ExtIds> {
+  const anilistId = anilistIdOf(media)
+  return anilistId ? getExtensionIds(anilistId, episode).catch(() => ({} as ExtIds)) : Promise.resolve({})
+}
+
 async function mediaExtensionIds(media: Media, episode: number | undefined): Promise<ExtIds> {
   const anilistId = anilistIdOf(media)
-  const mapped = anilistId ? await getExtensionIds(anilistId, episode).catch(() => ({} as ExtIds)) : {}
+  const mapped = await mappedExtensionIds(media, episode)
   const external = externalIdsOf(media)
   const video = mediaVideo(media, episode)
   return {
     ...mapped,
-    imdbId: mapped.imdbId ?? external.imdb,
+    imdbId: mapped.imdbId ?? external.imdb ?? (anilistId ? await listedImdbId(anilistId) : undefined),
     tmdbId: mapped.tmdbId ?? (external.tmdb == null ? undefined : String(external.tmdb)),
     tvdbId: mapped.tvdbId ?? external.tvdb,
     season: video?.season ?? mapped.season,
@@ -1372,7 +1388,7 @@ export function prefetchEpisodeSources(media: Media, episode: number | undefined
       const [kitsu] = await Promise.all([
         resolveKitsu(media),
         episode == null ? Promise.resolve({}) : mediaSeasonMap(media),
-        mediaExtensionIds(media, episode),
+        mappedExtensionIds(media, episode),
       ])
       const ids = primaryStreamIds(media, episode, kitsu)
       if (!ids.length) return

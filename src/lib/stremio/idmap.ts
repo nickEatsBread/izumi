@@ -1,6 +1,6 @@
 import { phttp } from '$lib/net/http'
 import { get, set } from 'idb-keyval'
-export interface MapEntry { anilist_id?: number; kitsu_id?: number; mal_id?: number }
+export interface MapEntry { anilist_id?: number; kitsu_id?: number; mal_id?: number; imdb_id?: string | string[] }
 export type Index = Map<number, MapEntry>
 export function buildIndex(entries: MapEntry[]): Index {
   const m: Index = new Map()
@@ -15,6 +15,14 @@ export function lookupKitsu(idx: Index, anilistId: number): number | undefined {
  *  marks, no "My Shows" membership), so every Kitsu-derived record fills this gap from here. */
 export function lookupMal(idx: Index, anilistId: number): number | undefined {
   return idx.get(anilistId)?.mal_id
+}
+/** IMDb title for a canonical AniList id, when the list names exactly one. AniZip leaves it out for
+ *  most airing shows, so IMDb-indexed add-ons were never asked for them; this list usually carries
+ *  it weeks earlier. Several titles (a compilation, a split production) are not guessed between. */
+export function lookupImdb(idx: Index, anilistId: number): string | undefined {
+  const listed = idx.get(anilistId)?.imdb_id
+  const ids = (Array.isArray(listed) ? listed : listed ? [listed] : []).filter((id) => /^tt\d+$/.test(id))
+  return ids.length === 1 ? ids[0] : undefined
 }
 const malIndexes = new WeakMap<Index, Map<number, number>>()
 const kitsuIndexes = new WeakMap<Index, Map<number, number>>()
@@ -58,6 +66,17 @@ export function getIndex(): Promise<Index> {
   if (cached) return Promise.resolve(cached)
   if (!inflight) inflight = loadIndex().finally(() => { inflight = null })
   return inflight
+}
+
+/** The map if it is in memory or loads within `ms`, else null while the load carries on for the next
+ *  caller. For optional enrichment on a latency-sensitive path: a stale cache re-downloads the whole
+ *  list, and nothing optional should wait for that. */
+export async function indexWithin(ms: number): Promise<Index | null> {
+  if (cached) return cached
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), ms) })
+  try { return await Promise.race([getIndex().catch(() => null), late]) }
+  finally { clearTimeout(timer) }
 }
 
 async function loadIndex(): Promise<Index> {

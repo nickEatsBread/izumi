@@ -3,7 +3,7 @@ import { phttp } from '$lib/net/http'
 import { fetchManifest, type AddonManifest } from './manifest'
 import { getExtensionIds, getKitsuId } from '$lib/anizip'
 import { getIndex, lookupKitsu } from './idmap'
-import { kitsuIdFromMal } from './kitsu'
+import { kitsuIdFromLinks } from './kitsu'
 import { preferredSubLang, enabledSubtitleProviders } from '$lib/settings/ui'
 import { createOpenSubtitles } from './subtitles/opensubtitles'
 import { createSubDL } from './subtitles/subdl'
@@ -40,7 +40,7 @@ export function pickSubtitleId(prefixes: string[] | undefined, imdbVid?: string,
 async function kitsuIdOf(media: Media): Promise<number | undefined> {
   try {
     const idx = await getIndex()
-    return lookupKitsu(idx, media.id) ?? (await getKitsuId(media.id)) ?? (await kitsuIdFromMal(media.idMal)) ?? undefined
+    return lookupKitsu(idx, media.id) ?? (await getKitsuId(media.id)) ?? (await kitsuIdFromLinks({ anilist: media.id > 0 ? media.id : undefined, mal: media.idMal })) ?? undefined
   } catch { return undefined }
 }
 

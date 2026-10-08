@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   fetchManifest: vi.fn(),
   getIndex: vi.fn(),
   lookupKitsu: vi.fn(),
-  kitsuIdFromMal: vi.fn(),
+  kitsuIdFromLinks: vi.fn(),
   osSearch: vi.fn(),
   subdlSearch: vi.fn(),
   jimakuSearch: vi.fn(),
@@ -17,7 +17,7 @@ vi.mock('$lib/net/http', () => ({ phttp: mocks.phttp }))
 vi.mock('$lib/anizip', () => ({ getExtensionIds: mocks.getExtensionIds, getKitsuId: mocks.getKitsuId }))
 vi.mock('./manifest', () => ({ fetchManifest: mocks.fetchManifest }))
 vi.mock('./idmap', () => ({ getIndex: mocks.getIndex, lookupKitsu: mocks.lookupKitsu }))
-vi.mock('./kitsu', () => ({ kitsuIdFromMal: mocks.kitsuIdFromMal }))
+vi.mock('./kitsu', () => ({ kitsuIdFromLinks: mocks.kitsuIdFromLinks }))
 vi.mock('./subtitles/opensubtitles', () => ({
   createOpenSubtitles: () => ({ id: 'opensubtitles', search: mocks.osSearch }),
   OPEN_SUBS_API_KEY: 'TEST_KEY',
