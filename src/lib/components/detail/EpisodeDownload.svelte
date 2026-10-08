@@ -3,15 +3,14 @@
   // of an episode card or row. It sits inside the episode's element, so its press stops there: the
   // episode never plays from it (EpisodeCard and the list's rows also ignore keys that start on it).
   // `--download-progress` is the share downloaded ("42%"), for a theme's ring or bar.
-  import { goto } from '$app/navigation'
   import type { Media } from '$lib/anilist/types'
-  import { enqueue, type DownloadItem } from '$lib/downloads/store'
-  import { downloadAudio, downloadCachedOnly, downloadCodec, downloadQuality } from '$lib/settings/ui'
+  import type { DownloadItem } from '$lib/downloads/store'
   import * as h from '$lib/haptics'
   import Download from '@lucide/svelte/icons/download'
   import Loader from '@lucide/svelte/icons/loader-circle'
   import Check from '@lucide/svelte/icons/check'
   import { episodeDownloadAction, episodeDownloadLabel, episodeDownloadPercent, episodeDownloadState } from './episode-download'
+  import { pressEpisodeDownload } from './episode-download-press'
 
   let { media, ep, dl, released, numberLabel }: {
     media: Media
@@ -30,10 +29,8 @@
   function press(event: MouseEvent) {
     event.stopPropagation()
     if (!released) return
-    if (episodeDownloadAction(downloadState) === 'queue') {
-      h.select()
-      enqueue(media, ep, { quality: $downloadQuality, cachedOnly: $downloadCachedOnly, audio: $downloadAudio, codec: $downloadCodec })
-    } else void goto('/app/downloads')
+    // Queue with the download defaults, or open Downloads (shared with the header's Download E{n}).
+    if (pressEpisodeDownload(media, ep, dl) === 'queue') h.select()
   }
 </script>
 

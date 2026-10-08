@@ -29,7 +29,9 @@ describe('studio and staff profile navigation', () => {
 
   it('combines production and voice credits and applies the adult preference', () => {
     const results = read('src/lib/components/search/SearchResults.svelte')
-    expect(results).toContain('batch = [...credited, ...voiced]')
+    expect(results).toContain('batch = animeCredits([...credited, ...voiced])')
+    // A studio's list cannot be narrowed to anime by AniList itself (detail-queries.ts).
+    expect(results).toContain('batch = animeCredits(conn?.nodes ?? [])')
     expect(results).toContain('$showAdult || !item.isAdult')
     expect(results).toContain('queueMicrotask(() => void loadMore())')
   })

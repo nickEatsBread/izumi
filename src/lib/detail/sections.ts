@@ -37,6 +37,9 @@ export interface ResolvedSections {
    *  without Overview: the block leaves the page with it, never on its own, so a package that keeps
    *  Overview keeps the grid it always showed). Desktop Overview keeps its own details (`overview`). */
   information: 'overview' | 'section' | 'hidden'
+  /** API 4 `relations.recommended: "append"`: the recommended titles follow the related ones inside
+   *  Relations, and Recommended is no section of its own. */
+  recommendedInRelations: boolean
 }
 
 /** `episodesTabbed` is false when the episodes sit in a right-hand rail or below the info: then they
@@ -44,8 +47,10 @@ export interface ResolvedSections {
 export function resolveSections(sections: DetailSections | undefined, options: { phone: boolean; episodesTabbed: boolean }): ResolvedSections {
   // Information joins the sections only where it is listed, so it is never folded into Overview's end.
   const infoListed = options.phone && !!sections?.tabs?.includes('information')
+  // Appended to the relations, the recommendations leave the sections (the parser keeps them off `tabs`).
+  const recommendedInRelations = sections?.relations?.recommended === 'append'
   const available = [...(options.phone ? PHONE_ORDER : DESKTOP_ORDER), ...(infoListed ? ['information' as const] : [])]
-    .filter((id) => id !== 'episodes' || options.episodesTabbed)
+    .filter((id) => (id !== 'episodes' || options.episodesTabbed) && (id !== 'recommended' || !recommendedInRelations))
   const listed = sections?.tabs?.filter((id) => available.includes(id))
   // `unlisted: "hidden"` keeps only the listed tabs: no Overview of its own, nothing folded into it.
   const hidden = sections?.unlisted === 'hidden' && !!listed?.length
@@ -57,7 +62,7 @@ export function resolveSections(sections: DetailSections | undefined, options: {
   }
   const initial = sections?.default && tabs.includes(sections.default) ? sections.default : tabs[0]
   const information = infoListed ? 'section' : options.phone && hidden && !tabs.includes('overview') ? 'hidden' : 'overview'
-  return { mode: sections?.mode ?? 'tabs', tabs, folded, labels, initial, infoInOverview: options.phone && sections?.info === 'overview', information }
+  return { mode: sections?.mode ?? 'tabs', tabs, folded, labels, initial, infoInOverview: options.phone && sections?.info === 'overview', information, recommendedInRelations }
 }
 
 /** Where the desktop stacked and split pages show the synopsis. izumi's own page keeps a short one

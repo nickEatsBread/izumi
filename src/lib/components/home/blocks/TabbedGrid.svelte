@@ -17,6 +17,8 @@
   let selected = $state('')
   let page = $state(1)
   let media = $state.raw<Media[]>([])
+  // The recently aired tab (`recent`) names each title's latest aired episode, as its row does.
+  let episodes = $state.raw<Record<number, number>>({})
   let hasNext = $state(false)
   let lastPage = $state<number | undefined>()
   let loading = $state(false)
@@ -45,6 +47,7 @@
     const append = block.pagination === 'more' && pageNumber > 1
     if (!id) {
       media = []
+      episodes = {}
       hasNext = false
       return
     }
@@ -54,6 +57,7 @@
     loadRowPage(target, id, pageNumber, size, abort.signal).then((result) => {
       if (abort.signal.aborted) return
       media = append ? appendUnique(media, result.media) : appendUnique([], result.media)
+      episodes = append ? { ...result.episodes, ...episodes } : result.episodes ?? {}
       hasNext = result.hasNextPage
       lastPage = result.lastPage
     }).catch((reason) => {
@@ -97,7 +101,7 @@
         {/each}
       {:else}
         {#each media as item, index (item.id)}
-          <div data-part="block.item" class="min-w-0"><SmallCard media={item} fill reserveTitleLines position={cardPosition(index)} /></div>
+          <div data-part="block.item" class="min-w-0"><SmallCard media={item} fill reserveTitleLines position={cardPosition(index)} badge={episodes[item.id] ? `Episode ${episodes[item.id]}` : undefined} /></div>
         {/each}
       {/if}
     </div>

@@ -4,7 +4,7 @@
   import { resolveDetail, themeColorCss, type DisplayModel, type HeroIndicator, type ThemeAction } from '$lib/themes/presentation'
   import { mediaDisplayModel } from '$lib/themes/host-model'
   import { seriesCompletion } from '$lib/themes/series-progress'
-  import { artNeeds, loadTitleExtras, metaNeeds, primeTitleExtras, templateNeeds, type TitleExtras } from '$lib/themes/title-extras'
+  import { artNeeds, loadTitleExtras, metaNeeds, primeTitleExtras, templateNeeds, type TitleExtra, type TitleExtras } from '$lib/themes/title-extras'
   import { sampleAmbient } from '$lib/themes/ambient'
   import { themeCssStatus } from '$lib/theme'
   import { motionPreference } from '$lib/settings/ui'
@@ -33,6 +33,7 @@
   import { untrack } from 'svelte'
   import { animeAwardHref, findTopAnimeAward } from '$lib/catalog/anime-awards'
   import { createSlideScheduler } from './hero-slides'
+  import { heroBackdrop, heroNeedsKeyart, type HeroKeyart } from './hero-art'
 
   // Bottom-left content column + clean linear scrims. Discovery facts stay deliberately compact:
   // format/runtime/production/score, then one context line for next-airing + genres. Detail pages
@@ -73,6 +74,7 @@
   let clock = $state(Date.now())
   let countdownOrigin = $state(Date.now())
   let failedLogos = $state<string[]>([])
+  const KEYART_ONLY: ReadonlySet<TitleExtra> = new Set(['keyart'])
   const controllerUi = $derived($gameMode || $controllerMode)
   const heroTheme = $derived(showOverlay ? $themePresentation?.hero : undefined)
   const seriesTheme = $derived(!showOverlay ? resolveDetail($themePresentation) : undefined)
@@ -91,9 +93,9 @@
     if (!m) return []
     if (heroTheme?.template) {
       const art = heroArt[extrasKey(m.id)]
-      return [banner(m), cover(m), ...[art?.keyart, art?.logo, art?.posterHd].filter((src): src is string => !!src)]
+      return [templateBackdrop(m) ?? banner(m), cover(m), ...[art?.keyart, art?.logo, art?.posterHd].filter((src): src is string => !!src)]
     }
-    return [artworkMode === 'cover' || ($isMobile && showOverlay) ? cover(m) : banner(m)]
+    return [artworkMode === 'cover' || ($isMobile && showOverlay) ? cover(m) : showOverlay ? homeBackdrop(m) : banner(m)]
   }
   // A slide is committed only once its artwork has decoded (see hero-slides.ts): swapping first and
   // decoding second painted a skeleton, then popped to the image a few frames later — on the Deck's
@@ -428,7 +430,41 @@
     const timer = setTimeout(() => (extrasWaitOver = true), 1500)
     return () => clearTimeout(timer)
   })
-  const extrasPending = $derived(heroArtNeeded && !!current && !currentArt && !extrasWaitOver)
+  // Key art for slides without a catalog banner, wherever a Home hero shows wide artwork: izumi's own
+  // desktop banner (key art before a trailer still, see hero-art.ts) and a template with API 4
+  // `hero.art: "banner-cover"`. Asked for every such slide at once (ani.zip answers from its cache
+  // for later visits), so a step rarely waits; the current slide waits for it as long as a
+  // template waits for its extras, then does without.
+  const backdropLookups = $derived(showOverlay && !artwork && (heroTheme?.template ? heroTheme.art === 'banner-cover' : !$isMobile && artworkMode === 'backdrop'))
+  let backdropKeyart = $state<Record<number, string | null>>({})
+  // A plain Set, not $state: the effect below both reads and writes it.
+  const requestedKeyart = new Set<number>()
+  $effect(() => {
+    void heroIds
+    if (!backdropLookups) return
+    for (const media of untrack(() => medias)) {
+      if (!heroNeedsKeyart(media) || requestedKeyart.has(media.id)) continue
+      requestedKeyart.add(media.id)
+      void loadTitleExtras(media, KEYART_ONLY).then((value) => {
+        backdropKeyart = { ...backdropKeyart, [media.id]: value.keyart ?? null }
+        scheduleWarm()
+      })
+    }
+  })
+  /** A slide's key art for its backdrop; the current slide stops waiting with the extras wait. */
+  function keyartOf(m: Media): HeroKeyart {
+    const found = backdropKeyart[m.id]
+    if (found !== undefined) return found
+    return m.id === current?.id && extrasWaitOver ? null : undefined
+  }
+  /** izumi's own desktop banner on Home (`hero.art` may drop the trailer still). */
+  const homeBackdrop = (m: Media) => heroBackdrop(m, keyartOf(m), heroTheme?.art ?? 'banner', failedArtwork)
+  /** A template's `backdrop` under `hero.art: "banner-cover"`; undefined keeps izumi's own `banner()`. */
+  const templateBackdrop = (m: Media) => (heroTheme?.art === 'banner-cover' ? heroBackdrop(m, keyartOf(m), 'banner-cover') : undefined)
+  // API 4 `hero.art: "banner-cover"`: a template's `backdrop` waits for the key art of a slide without
+  // a banner as it waits for the artwork it binds, then takes the cover rather than a trailer still.
+  const backdropPending = $derived(!!heroTheme?.template && heroTheme.art === 'banner-cover' && !!current && keyartOf(current) === undefined && heroNeedsKeyart(current))
+  const extrasPending = $derived(((heroArtNeeded && !!current && !currentArt) || backdropPending) && !extrasWaitOver)
   // API 3 `scale: "wide"` and `bleed` shape a template hero on wider windows; phones keep `mobileHeight`.
   const wideScale = $derived(!$isMobile && heroTheme?.scale === 'wide')
   // Bleed belongs to the wide scale: the other scales do not add it to their height, so lifting the
@@ -444,8 +480,16 @@
   const backdropSrc = $derived.by(() => {
     if (!current) return ''
     if (artwork) return 'src' in artwork ? artwork.src : ''
+    // Home: the banner, key art, then a trailer still or the cover (hero-art.ts); '' while the key
+    // art of a slide without a banner is still on its way.
+    if (showOverlay) return homeBackdrop(current)
     const wide = banner(current)
     return wide && !failedArtwork.includes(wide) ? wide : cover(current)
+  })
+  // izumi's own desktop banner: a slide still waiting for its key art has nothing to show, however it
+  // was committed, so it keeps its placeholder until the artwork it gets has loaded (the <img> settles it).
+  $effect(() => {
+    if (backdropLookups && !heroTheme?.template && current && !backdropSrc && loadedArtworkId === current.id) loadedArtworkId = null
   })
   function backdropFailed(src: string) {
     if (artwork) { onartworkfailed?.(src); return }
@@ -496,7 +540,7 @@
   // Only a template reads the finished mark, so izumi's own hero never subscribes to its stores.
   const themeModel = $derived(current ? mediaDisplayModel(current, {
     description: cleanDesc(current.description), rank: featuredRankLabel,
-    rankPosition: current.featuredRank?.position, poster: cover(current), backdrop: banner(current),
+    rankPosition: current.featuredRank?.position, poster: cover(current), backdrop: heroTheme?.art === 'banner-cover' ? templateBackdrop(current) || undefined : banner(current),
     logo: currentLogo || currentExtras?.logo || undefined,
     keyart: currentExtras?.keyart, ageRating: currentExtras?.ageRating, audio: currentExtras?.audio,
     ...(currentArt?.posterHd ? { posterHd: currentArt.posterHd } : {}),

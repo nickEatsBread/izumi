@@ -39,6 +39,7 @@
   import { episodeTileState, offlineResumeEpisode, playableThrough } from './episode-tile'
   import { episodeRanges, openingPage, pageOf, pageSizeFor, searchEpisodes, shownPage } from './episode-ranges'
   import { onDownloadSelect } from '$lib/detail/episode-commands'
+  import { seriesResumeProgress, seriesUnderWay } from '$lib/detail/resume'
   import { episodeNoText } from '$lib/themes/episode-fields'
   import Download from '@lucide/svelte/icons/download'
   import Loader from '@lucide/svelte/icons/loader-circle'
@@ -98,12 +99,16 @@
   // cards/numbers switch would do nothing there.
   const layoutSwitch = $derived(episodeTheme?.arrangement !== 'grid' && episodeTheme?.arrangement !== 'carousel')
   const PER = $derived(pageSizeFor(total, episodeTheme?.pageSize))
+  // Where the series Play button picks the series up (resume.ts): the episodes finished, or the
+  // episode last opened less one, as Continue Watching counts it. The watched marks keep
+  // `watchedThrough`.
+  const resumeThrough = $derived(seriesResumeProgress(media, $localHistory, $sessionProgress, $manualProgressOverrides))
   // The episode the series Play button opens (the page CTA's own rule): `data-next` marks it for
   // theme stylesheets and the Continue card plays it. Offline: the next downloaded episode, by the
   // rule the Play button uses too (episode-tile.ts).
   const ctaEpisode = $derived(offline
-    ? offlineResumeEpisode(offlineEps, watchedThrough)
-    : animeResumeEpisode(media, watchedThrough))
+    ? offlineResumeEpisode(offlineEps, resumeThrough)
+    : animeResumeEpisode(media, resumeThrough))
   // `page` stays null until the user manually pages; until then we show `autoPage` — the page that
   // holds the episode Play would start — so opening a long-running series (One Piece) lands on where
   // you're up to, not episode 1: the pager, the range chips and the range picker alike. Deriving it
@@ -111,7 +116,7 @@
   // once the user hits Prev/Next.
   let page = $state<number | null>(null)
   const pages = $derived(Math.max(1, Math.ceil(total / PER)))
-  const autoPage = $derived(openingPage(allEpisodes, PER, ctaEpisode, watchedThrough))
+  const autoPage = $derived(openingPage(allEpisodes, PER, ctaEpisode, resumeThrough))
   // A picked page stays inside the list when the page size changes (`pageSize: "auto"` grows with it).
   const curPage = $derived(shownPage(page, autoPage, pages))
   const startIdx = $derived(curPage * PER)
@@ -188,8 +193,8 @@
   // sort, tabs, or release metadata merely because those controls happen to sit between the rows.
   const quickEpisode = $derived.by(() => {
     const preferred = offline
-      ? (offlineEps.find((episode) => episode > watchedThrough) ?? offlineEps[0])
-      : Math.max(1, Math.min(watchedThrough + 1, aired || 1))
+      ? (offlineEps.find((episode) => episode > resumeThrough) ?? offlineEps[0])
+      : Math.max(1, Math.min(resumeThrough + 1, aired || 1))
     return rows.includes(preferred) ? preferred : (rows.find((episode) => episode <= aired) ?? rows[0])
   })
   // A carousel (`arrangement: "carousel"`) opens with the episode Play would start as its first card,
@@ -345,12 +350,15 @@
   // per-episode `abs` mapping is still loaded and still available to everything that needs it —
   // this only decides which number the badge prints.
   const numberLabel = (episode: number) => episodeNumberLabel(episode, meta[episode]?.abs, $absoluteEpisodeNumbers)
-  // The state every episode element carries (`data-state`): cards, rows and tiles share one rule.
+  // The state every episode element carries (`data-state`): cards, rows and tiles share one rule, and
+  // `resume` only ever marks the episode `data-next` marks (the Play episode), so one episode reads as
+  // where the viewer is up to.
   const stateOf = (ep: number) => episodeTileState({
     ep,
     watchedThrough,
     aired,
     percent: episodeBarPercent($positions[progressKey(media.id, ep)], false, ep <= aired),
+    resumeEpisode: ctaEpisode,
   }).kind
 
   const nextQueueEpisode = $derived(allEpisodes.find((episode) => episode > watchedThrough && episode <= aired)
@@ -438,7 +446,7 @@
     batchQuality = $downloadQuality; batchAudio = $downloadAudio; batchCodec = $downloadCodec
   }
   function cancelSelect() { selecting = false; selected = new Set(); followNew = false }
-  // The series header's Download button (`detail.buttons` `download`) asks for this selection with the
+  // The phone More menu's "Download episodes" (beside a header Download) asks for this selection with the
   // Play episode picked (episode-commands.ts): its page shows and the page scrolls to the list.
   let listRoot = $state<HTMLElement>()
   $effect(() => onDownloadSelect(media.id, ({ episode }) => untrack(() => selectForDownload(episode))))
@@ -780,7 +788,7 @@
 
   {#if continueCard && aired > 0 && !selecting}
     {@const target = ctaEpisode}
-    {@const started = episodeBarPercent($positions[progressKey(media.id, target)], false, target <= aired)}
+    {@const started = seriesUnderWay(resumeThrough, $positions[progressKey(media.id, target)])}
     {@const percent = episodeBarPercent($positions[progressKey(media.id, target)], watchedThrough >= target, target <= aired)}
     {@const shownTitle = $hideSpoilers && watchedThrough < target ? '' : meta[target]?.title ?? ''}
     {@const art = meta[target]?.image || media.bannerImage || cover(media)}
@@ -791,7 +799,7 @@
       <span class="absolute inset-0 bg-black/60"></span>
       <span class="relative flex h-full items-center gap-3 px-4">
         <span class="min-w-0 flex-1">
-          <span data-part="episode.continue.label" class="block truncate text-sm font-black text-white">{watchedThrough > 0 || started > 0 ? 'Continue' : 'Play'}: Episode {printedNumber(target)}</span>
+          <span data-part="episode.continue.label" class="block truncate text-sm font-black text-white">{started ? 'Continue' : 'Play'}: Episode {printedNumber(target)}</span>
           {#if shownTitle}<span data-part="episode.continue.title" class="block truncate text-xs font-bold text-white/80">{shownTitle}</span>{/if}
         </span>
         <Play size={20} class="shrink-0 text-white" />
@@ -938,6 +946,7 @@
           watchedThrough,
           aired,
           percent: episodeBarPercent($positions[progressKey(media.id, ep)], false, ep <= aired),
+          resumeEpisode: ctaEpisode,
         })}
         <button data-part="episode" data-variant="number" data-state={tile.kind} data-next={ep === ctaEpisode && ep <= aired || undefined} data-filler={fillerSet.has(ep) || undefined} data-focusable data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
                 data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}

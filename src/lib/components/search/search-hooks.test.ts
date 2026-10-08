@@ -56,3 +56,40 @@ describe('Search page styling hooks', () => {
     expect(catalog).toContain('{#if !embedded}<h1 data-part="search.title" class="sr-only">{m.nav_search()}</h1>{/if}')
   })
 })
+
+describe('the Search page header (search.header)', () => {
+  it('wraps the title and the filter bar in one box on the AniList page', () => {
+    const header = page.slice(page.indexOf('<div data-slot="search.header" class="contents">\n      {#if filters.studioId'), page.indexOf('<div class="mt-6">\n      {#key key}\n        <SearchResults'))
+    expect(header).toContain('data-part="search.title" data-variant="explore"')
+    expect(header).toContain('<h1 data-part="search.title" class="sr-only">{m.nav_search()}</h1>')
+    expect(header).toContain('<FilterBar bind:filters />')
+  })
+  it('wraps the filter bar of an AniList scope on the all-catalogs page', () => {
+    expect(page).toContain('<div data-slot="search.header" class="contents"><FilterBar bind:filters /></div>')
+  })
+  it("wraps the title, the streaming service and the filters on another catalog's page", () => {
+    const header = catalog.slice(catalog.indexOf('<div data-slot="search.header" class="contents">'), catalog.indexOf('{#if (isTmdb || isStremio) && (media.length || resultTotal != null)}'))
+    expect(header).toContain('data-part="search.title"')
+    expect(header).toContain('Streaming service')
+    expect(header).toContain('data-part="search.filters"')
+  })
+  it('wraps the field on the all-catalogs search', () => {
+    const header = merged.slice(merged.indexOf('<div data-slot="search.header" class="contents">'), merged.indexOf('{#if failedProviders.length'))
+    expect(header).toContain('data-part="search.field"')
+  })
+  it('renders one header per page', () => {
+    for (const file of [catalog, merged]) expect(file.match(/data-slot="search\.header"/g)).toHaveLength(1)
+    // The AniList page and an AniList scope of the all-catalogs page are separate branches.
+    expect(page.match(/data-slot="search\.header"/g)).toHaveLength(2)
+  })
+  // A wrapper box would become the scroll range of a title or field a stylesheet already made
+  // sticky (they stopped sticking past the filter bar). Until a theme gives the header a box
+  // (`display: block`), it generates none.
+  it('adds no box of its own until a theme gives it one', () => {
+    for (const file of [page, catalog, merged]) {
+      const headers = file.match(/<div data-slot="search\.header"[^>]*>/g) ?? []
+      expect(headers.length).toBeGreaterThan(0)
+      for (const header of headers) expect(header).toBe('<div data-slot="search.header" class="contents">')
+    }
+  })
+})

@@ -1,5 +1,6 @@
-// Requests other parts of the series page make of its episode list. The header's Download button
-// (`detail.buttons` `download`) opens the list's download selection with the Play episode picked.
+// Requests other parts of the series page make of its episode list. The phone More menu's "Download
+// episodes" (beside a header Download, `detail.buttons` `download`) opens the list's download selection
+// with the Play episode picked; the header Download itself queues that one episode.
 // The list may not be on screen when it is asked (a theme's tabs mount it on first open), so a request
 // made with no list open waits briefly for the next one to open: long enough for the page to switch to
 // the episodes, never long enough to reach another series' page.

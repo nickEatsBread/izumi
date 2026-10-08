@@ -4,7 +4,7 @@
 // pairs, for the table, card and chip fact styles and the phone Information grid. A theme picks
 // which show and in what order (`detail.factsKeys`, `infoKeys`), renames them from a fixed list
 // (`factsLabels`) and sets how scores, dates and counts read (`factsFormat`).
-import { format, season, seasonBrowseHref, status, totalEpisodes } from '$lib/anilist/media'
+import { airedCount, format, season, seasonBrowseHref, status, totalEpisodes } from '$lib/anilist/media'
 import type { Media } from '$lib/anilist/types'
 import { FACT_LABEL_TEXT, FACT_LABELS, type FactKey, type FactLabel, type FactsFormat } from '$lib/themes/presentation'
 import { durationLongText } from '$lib/themes/host-model'
@@ -90,7 +90,30 @@ export const INFO_KEYS: readonly FactKey[] = ['studio', 'format', 'status', 'epi
 /** The Information grid's own names, where they differ from the facts' ("Format" rather than "Type"). */
 const INFO_LABELS: Partial<Record<FactKey, FactLabel>> = { format: 'format', duration: 'runtime', aired: 'premiered', members: 'popularity' }
 
-const studioHref = (studio: { id?: number; name: string }) => (studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`)
+/** A studio's page, or a search for it when the catalog gives it no id. */
+export const studioHref = (studio: { id?: number; name: string }) => (studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`)
+
+const PLAIN_STATUS: Record<string, string> = { RELEASING: 'Ongoing', FINISHED: 'Completed', HIATUS: 'Hiatus', CANCELLED: 'Cancelled' }
+/** A title's status as `factsFormat.status` asks: the catalog's word ("Releasing", "Finished"), or
+ *  under `plain` "Ongoing", "Completed", "Hiatus" or "Cancelled", and nothing for a title not out yet
+ *  (or a status the catalog does not name). */
+export function statusText(m: Pick<Media, 'status'>, style: FactsFormat['status'] = 'catalog'): string {
+  if (style !== 'plain') return status(m as Media)
+  return PLAIN_STATUS[m.status ?? ''] ?? ''
+}
+
+/** The episodes fact as `factsFormat.episodes` asks: the episode count (`total`), or while the title
+ *  airs the episodes aired so far (`aired`), followed under `aired-of` by " / " and the catalog's
+ *  planned total, "?" when it has none ("1147 / ?"). A title that is not airing, or whose aired count
+ *  is unknown, reads its total. */
+export function episodesFact(m: Media, style: FactsFormat['episodes'] = 'total'): { value: string; suffix?: string } {
+  const total = totalEpisodes(m)
+  const aired = airedCount(m)
+  if (style !== 'total' && (m.status === 'RELEASING' || m.status === 'HIATUS') && Number.isFinite(aired) && aired > 0) {
+    return { value: String(aired), suffix: style === 'aired-of' ? ` / ${m.episodes || '?'}` : undefined }
+  }
+  return { value: total ? String(total) : '' }
+}
 // Staff pages exist for AniList's records only.
 const staffHref = (m: Media, id: number) => (!m.catalog || m.catalog.provider === 'anilist' ? `/app/staff/${id}` : undefined)
 /** The credit AniList gives the original author ("Original Creator", "Original Story"). */
@@ -121,12 +144,13 @@ export function mediaFacts(m: Media, options: FactOptions = {}): MediaFact[] {
         fact.value = format(m)
         break
       case 'episodes': {
-        const episodes = totalEpisodes(m)
-        fact.value = episodes ? String(episodes) : own && !options.pending ? 'Unknown' : ''
+        const episodes = episodesFact(m, formatting.episodes)
+        fact.value = episodes.value || (own && !options.pending ? 'Unknown' : '')
+        if (episodes.suffix) fact.suffix = episodes.suffix
         break
       }
       case 'status':
-        fact.value = status(m)
+        fact.value = statusText(m, formatting.status)
         break
       case 'aired':
         fact.value = factDate(m.startDate, formatting.dates)

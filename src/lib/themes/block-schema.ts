@@ -5,7 +5,8 @@ export type HomeBlockType = (typeof HOME_BLOCK_TYPES)[number]
 export type BlockPagination = 'numbers' | 'more' | 'none'
 export type BlockArea = 'main' | 'aside'
 /** One tab of a tabbed grid or ranked list. `role` is a Home row id (`trending`, `tmdb:movies`) or,
- * on Merged Home, a bare role that resolves to the first catalog offering it. */
+ * on Merged Home, a bare role that resolves to the first catalog offering it. `recent` is the
+ * recently aired schedule: newest first, one entry per show at its latest episode. */
 export interface BlockTab { label: string; role: string }
 
 /** Every movable navigation destination (mirrors `NAV_META` in `$lib/settings/nav`; the app checks

@@ -120,3 +120,23 @@ describe('the desktop synopsis', () => {
     expect(desktopSynopsis({ info: 'overview' })).toBe('overview')
   })
 })
+
+describe('recommendations among the relations (API 4)', () => {
+  it('drops the Recommended section on phones and desktop when they follow the relations', () => {
+    const sections = { relations: { recommended: 'append' as const } }
+    const phone = resolveSections(sections, { phone: true, episodesTabbed: true })
+    expect(phone.tabs).toEqual(['episodes', 'overview', 'relations', 'characters'])
+    expect(phone.recommendedInRelations).toBe(true)
+    const desktop = resolveSections(sections, { phone: false, episodesTabbed: true })
+    expect(desktop.tabs).toEqual(['episodes', 'relations', 'characters', 'overview'])
+    // Never folded into Overview either.
+    const listed = resolveSections({ tabs: ['overview', 'relations'], relations: { recommended: 'append' } }, { phone: true, episodesTabbed: true })
+    expect(listed.folded).toEqual(['episodes', 'characters'])
+  })
+  it("keeps izumi's own Recommended section otherwise", () => {
+    expect(resolveSections(undefined, { phone: true, episodesTabbed: true }).recommendedInRelations).toBe(false)
+    const separate = resolveSections({ relations: { recommended: 'separate' } }, { phone: true, episodesTabbed: true })
+    expect(separate.tabs).toContain('recommended')
+    expect(separate.recommendedInRelations).toBe(false)
+  })
+})

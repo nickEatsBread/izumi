@@ -3,27 +3,40 @@ import { episodeTileState, offlineResumeEpisode, playableThrough } from './episo
 
 describe('episodeTileState', () => {
   it('marks everything up to the watched-through point as watched', () => {
-    expect(episodeTileState({ ep: 3, watchedThrough: 6, aired: 12, percent: 0 }).kind).toBe('watched')
+    expect(episodeTileState({ ep: 3, watchedThrough: 6, aired: 12, percent: 0, resumeEpisode: 7 }).kind).toBe('watched')
   })
 
-  it('marks the first unwatched aired episode as the resume point', () => {
-    expect(episodeTileState({ ep: 7, watchedThrough: 6, aired: 12, percent: 0 }).kind).toBe('resume')
+  it('marks the episode Play opens as the resume point', () => {
+    expect(episodeTileState({ ep: 7, watchedThrough: 6, aired: 12, percent: 0, resumeEpisode: 7 }).kind).toBe('resume')
   })
 
   it('reports partial progress on an episode that was left mid-way', () => {
-    const state = episodeTileState({ ep: 8, watchedThrough: 6, aired: 12, percent: 42 })
+    const state = episodeTileState({ ep: 8, watchedThrough: 6, aired: 12, percent: 42, resumeEpisode: 7 })
     expect(state.kind).toBe('partial')
     expect(state.percent).toBe(42)
   })
 
   it('marks episodes past the aired count as unaired and unplayable', () => {
-    const state = episodeTileState({ ep: 13, watchedThrough: 6, aired: 12, percent: 0 })
+    const state = episodeTileState({ ep: 13, watchedThrough: 6, aired: 12, percent: 0, resumeEpisode: 7 })
     expect(state.kind).toBe('unaired')
     expect(state.playable).toBe(false)
   })
 
+  // One Piece with episode 5 opened here and nothing finished: Play, `data-next` and Continue Watching
+  // name episode 5, so the episode after the finished ones (1) is not a second resume point.
+  it('puts the resume point on the episode Play opens, never on a second one', () => {
+    const tiles = [1, 2, 3, 4, 5, 6].map((ep) => episodeTileState({ ep, watchedThrough: 0, aired: 12, percent: 0, resumeEpisode: 5 }).kind)
+    expect(tiles).toEqual(['unwatched', 'unwatched', 'unwatched', 'unwatched', 'resume', 'unwatched'])
+    expect(episodeTileState({ ep: 1, watchedThrough: 0, aired: 12, percent: 0, resumeEpisode: 1 }).kind).toBe('resume')
+  })
+
+  it('lets a started Play episode read as partial, with no other resume point', () => {
+    const tiles = [1, 5].map((ep) => episodeTileState({ ep, watchedThrough: 0, aired: 12, percent: ep === 5 ? 30 : 0, resumeEpisode: 5 }).kind)
+    expect(tiles).toEqual(['unwatched', 'partial'])
+  })
+
   it('treats a fully-watched show as having no resume point', () => {
-    expect(episodeTileState({ ep: 12, watchedThrough: 12, aired: 12, percent: 0 }).kind).toBe('watched')
+    expect(episodeTileState({ ep: 12, watchedThrough: 12, aired: 12, percent: 0, resumeEpisode: 12 }).kind).toBe('watched')
   })
 })
 

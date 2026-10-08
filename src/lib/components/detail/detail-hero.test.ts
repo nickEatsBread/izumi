@@ -161,7 +161,7 @@ describe('mobile series hero', () => {
     const template = detail.slice(detail.indexOf('</script>'))
     const handlers = [...template.matchAll(/onclick=\{([^\n]*)/g)].map((match) => match[1])
     // Navigation and menu toggles act on the page, not the title.
-    const pageOnly = ['heroBack}', 'pressPlay}', 'retryDetail}', '() => (showMore = false)}', '() => { h.tap(); showMore = !showMore }}', "() => tapSynopsis('info')}", '() => pressSynopsisMore(place)}']
+    const pageOnly = ['heroBack}', 'pressPlay}', 'retryDetail}', 'closeMenu}', 'pressMore}', "() => tapSynopsis('info')}", '() => pressSynopsisMore(place)}']
     for (const handler of handlers) expect(handler.startsWith('ready(') || pageOnly.some((ok) => handler.startsWith(ok)), handler).toBe(true)
     expect(handlers.filter((handler) => handler.startsWith('ready(')).length).toBeGreaterThanOrEqual(13)
     expect(detail).toContain('const ready = <T extends unknown[]>(run: (m: Media, ...args: T) => void) => (...args: T) => { if (media) run(media, ...args) }')

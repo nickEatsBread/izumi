@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Media } from '$lib/anilist/types'
-import { creatorsText, durationLongText, episodeDisplayModel, mediaDisplayModel, seriesRatingText, starringText, timeLeftLabel } from './host-model'
+import { creatorsText, durationLongText, episodeDisplayModel, mediaDisplayModel, seriesKindText, seriesRatingText, starringText, timeLeftLabel } from './host-model'
 import { displayText } from './presentation'
 
 const media = {
@@ -235,5 +235,19 @@ describe('credit lines in the host model', () => {
     expect(creatorsText({ studios: { nodes: [{ name: 'MADHOUSE' }, { name: 'Studio X' }] } })).toBe('MADHOUSE, Studio X')
     expect(creatorsText({ studios: { nodes: [] }, creators: ['Someone'] })).toBe('Someone')
     expect(creatorsText({})).toBeUndefined()
+  })
+})
+
+describe('the kind of title (API 4 `kind`)', () => {
+  it('names a series, a movie or a special from the format', () => {
+    for (const format of ['TV', 'TV_SHORT', 'ONA']) expect(seriesKindText(format), format).toBe('Series')
+    expect(seriesKindText('MOVIE')).toBe('Movie')
+    for (const format of ['OVA', 'SPECIAL', 'MUSIC']) expect(seriesKindText(format), format).toBe('Special')
+    for (const format of ['MANGA', 'NOVEL', 'ONE_SHOT', '', null, undefined]) expect(seriesKindText(format), String(format)).toBeUndefined()
+  })
+  it('is bound wherever a title is', () => {
+    expect(mediaDisplayModel(media).kind).toBe('Series')
+    expect(mediaDisplayModel({ ...media, format: 'MOVIE' }).kind).toBe('Movie')
+    expect(mediaDisplayModel({ ...media, format: undefined }).kind).toBeUndefined()
   })
 })

@@ -10,7 +10,7 @@
   // unkeyed `Page` type — can't hand back a stale/embedded page for page 2+.
   import { onMount, setContext } from 'svelte'
   import { getContextClient } from '@urql/svelte'
-  import { searchQuery, searchVariables, STUDIO_MEDIA_QUERY, STAFF_MEDIA_QUERY, type SearchFilters } from '$lib/anilist/detail-queries'
+  import { animeCredits, searchQuery, searchVariables, STUDIO_MEDIA_QUERY, STAFF_MEDIA_QUERY, type SearchFilters } from '$lib/anilist/detail-queries'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import { browseLayout, showAdult } from '$lib/settings/ui'
   import { title, cover, format, season } from '$lib/anilist/media'
@@ -53,7 +53,7 @@
           .toPromise()
         if (res.error) { error = res.error.message; hasNext = false; return }
         const conn = res.data?.Studio?.media as { nodes?: Media[]; pageInfo?: { hasNextPage?: boolean } } | undefined
-        batch = conn?.nodes ?? []
+        batch = animeCredits(conn?.nodes ?? [])
         nextPage = !!conn?.pageInfo?.hasNextPage
       } else if (filters.staffId) {
         const res = await client
@@ -66,7 +66,7 @@
         } | undefined
         const credited = staff?.staffMedia?.nodes ?? []
         const voiced = (staff?.characterMedia?.edges ?? []).map((edge) => edge.node).filter((item): item is Media => !!item)
-        batch = [...credited, ...voiced]
+        batch = animeCredits([...credited, ...voiced])
         nextPage = !!staff?.staffMedia?.pageInfo?.hasNextPage || !!staff?.characterMedia?.pageInfo?.hasNextPage
       } else {
         firstTextPage = page === 1 && !!filters.search?.trim()

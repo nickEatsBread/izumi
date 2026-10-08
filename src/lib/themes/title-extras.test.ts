@@ -6,16 +6,21 @@ const mocks = vi.hoisted(() => ({
   fetchMalRating: vi.fn(),
   getScheduleInfo: vi.fn(),
   getScheduleInfoMany: vi.fn(),
+  tmdb: vi.fn(),
+  locale: 'en',
 }))
 vi.mock('$lib/anizip', () => ({ fetchAniZip: mocks.fetchAniZip }))
 vi.mock('$lib/anilist/jikan', () => ({ fetchMalRating: mocks.fetchMalRating }))
+vi.mock('$lib/catalog/providers/tmdb', () => ({ tmdb: mocks.tmdb }))
+vi.mock('$lib/paraglide/runtime.js', () => ({ getLocale: () => mocks.locale }))
 vi.mock('$lib/anime/animeschedule', () => ({
   getScheduleInfo: mocks.getScheduleInfo,
   getScheduleInfoMany: mocks.getScheduleInfoMany,
   scheduleTitles: (t: { romaji?: string; english?: string }) => [t.romaji, t.english],
 }))
 
-import { ART_EXTRAS, artNeeds, audioLabel, clearTitleExtrasCache, loadTitleExtras, malAgeRating, metaNeeds, peekTitleArt, pickTitleArt, primeTitleExtras, templateNeeds, titleExtrasKey } from './title-extras'
+import { ART_EXTRAS, artNeeds, audioLabel, clearTitleExtrasCache, languageCode, loadTitleExtras, logoLanguages, malAgeRating, metaNeeds, nativeLanguage, peekTitleArt, pickTitleArt, pickTitleLogo, primeTitleExtras, templateNeeds, titleExtrasKey } from './title-extras'
+import { tmdbReadToken } from '$lib/settings/catalog'
 import type { ThemeNode } from './presentation'
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
@@ -28,7 +33,9 @@ const all = new Set(['keyart', 'logo', 'ageRating', 'audio'] as const)
 
 beforeEach(() => {
   clearTitleExtrasCache()
-  for (const mock of Object.values(mocks)) mock.mockReset()
+  for (const mock of [mocks.fetchAniZip, mocks.fetchMalRating, mocks.getScheduleInfo, mocks.getScheduleInfoMany, mocks.tmdb]) mock.mockReset()
+  mocks.locale = 'en'
+  tmdbReadToken.set('')
   mocks.fetchAniZip.mockResolvedValue({ images: [
     { coverType: 'Banner', url: 'https://artworks.thetvdb.com/banners/v4/series/424536/banners/a.jpg' },
     { coverType: 'Fanart', url: FANART },
@@ -62,6 +69,98 @@ describe('pickTitleArt', () => {
   it('takes the TVDB poster as the full-resolution portrait art (API 4 `posterHd`)', () => {
     expect(pickTitleArt([{ coverType: 'Poster', url: POSTER }, { coverType: 'Fanart', url: FANART }])).toEqual({ keyart: FANART, posterHd: POSTER })
     expect(pickTitleArt([{ coverType: 'Poster', url: 'http://artworks.thetvdb.com/x/posters/1.jpg' }]).posterHd).toBeUndefined()
+  })
+})
+
+describe('title logo language', () => {
+  const JA = 'https://artworks.thetvdb.com/banners/v4/series/1/clearlogo/ja.png'
+  const EN = 'https://artworks.thetvdb.com/banners/v4/series/1/clearlogo/en.png'
+  const DE = 'https://artworks.thetvdb.com/banners/v4/series/1/clearlogo/de.png'
+  const logo = (url: string, language?: string) => ({ coverType: 'Clearlogo', url, ...(language ? { language } : {}) })
+  it("prefers a logo in the app language, then English, then the title's own, then none", () => {
+    expect(pickTitleLogo([logo(JA, 'jpn'), logo(EN, 'eng')], ['en'])).toBe(EN)
+    expect(pickTitleLogo([logo(EN, 'en'), logo(JA, 'ja')], ['ja', 'en'])).toBe(JA)
+    expect(pickTitleLogo([logo(JA, 'jpn')], ['en'])).toBe(JA)
+    // A logo in a language that is neither wanted nor the title's own is never used.
+    expect(pickTitleLogo([logo(DE, 'deu')], ['en'])).toBeUndefined()
+    expect(pickTitleLogo([logo(DE, 'de'), logo(JA, 'ja')], ['en'])).toBe(JA)
+    expect(pickTitleLogo([logo(JA, 'kor')], ['en'], 'ko')).toBe(JA)
+    expect(pickTitleLogo([], ['en'])).toBeUndefined()
+  })
+  it("keeps the untagged logo ani.zip carries today as the title's own", () => {
+    expect(pickTitleLogo([logo(JA)], ['en'])).toBe(JA)
+    expect(pickTitleLogo([logo(JA), logo(EN, 'en')], ['en'])).toBe(EN)
+    expect(pickTitleArt([{ coverType: 'Fanart', url: FANART }, logo(JA), logo(EN, 'eng')], ['en'])).toEqual({ keyart: FANART, logo: EN, posterHd: undefined })
+  })
+  it('reads language tags in either ISO form', () => {
+    expect(languageCode('eng')).toBe('en')
+    expect(languageCode('jpn')).toBe('ja')
+    expect(languageCode('en-US')).toBe('en')
+    expect(languageCode('JA')).toBe('ja')
+    expect(languageCode('')).toBeUndefined()
+    expect(languageCode(null)).toBeUndefined()
+    expect(languageCode('xx-yy-zz')).toBe('xx')
+  })
+  it('wants the app language first, then English', () => {
+    expect(logoLanguages('en')).toEqual(['en'])
+    expect(logoLanguages('ja')).toEqual(['ja', 'en'])
+    mocks.locale = 'ja'
+    expect(logoLanguages()).toEqual(['ja', 'en'])
+    expect(nativeLanguage('JP')).toBe('ja')
+    expect(nativeLanguage('KR')).toBe('ko')
+    expect(nativeLanguage(undefined)).toBe('ja')
+  })
+})
+
+describe('an English title logo from TMDB', () => {
+  const TMDB_EN = '/en-logo.png'
+  const anizip = { images: [{ coverType: 'Fanart', url: FANART }, { coverType: 'Clearlogo', url: LOGO }], mappings: { themoviedb_id: '209867' } }
+  beforeEach(() => {
+    mocks.fetchAniZip.mockResolvedValue(anizip)
+    mocks.tmdb.mockResolvedValue({ logos: [{ file_path: '/ja-logo.png', iso_639_1: 'ja', vote_average: 9 }, { file_path: TMDB_EN, iso_639_1: 'en', vote_average: 5 }] })
+  })
+  it('is never asked for without a TMDB token: the TVDB logo stays', async () => {
+    await expect(loadTitleExtras(media(), new Set(['logo']))).resolves.toEqual({ logo: LOGO })
+    expect(mocks.tmdb).not.toHaveBeenCalled()
+  })
+  it('replaces the untagged TVDB logo once TMDB is set up, for the series or the film ani.zip maps', async () => {
+    tmdbReadToken.set('token')
+    await expect(loadTitleExtras(media(), new Set(['logo']))).resolves.toEqual({ logo: `https://image.tmdb.org/t/p/w500${TMDB_EN}` })
+    expect(mocks.tmdb).toHaveBeenCalledWith('/tv/209867/images', { include_image_language: 'en' })
+    clearTitleExtrasCache()
+    await loadTitleExtras(media({ id: 5, format: 'MOVIE' }), new Set(['logo']))
+    expect(mocks.tmdb).toHaveBeenLastCalledWith('/movie/209867/images', { include_image_language: 'en' })
+  })
+  it('keeps the TVDB logo when TMDB has none in a wanted language, or fails', async () => {
+    tmdbReadToken.set('token')
+    mocks.tmdb.mockResolvedValue({ logos: [{ file_path: '/ja-logo.png', iso_639_1: 'ja' }, { file_path: '/x.png', iso_639_1: null }] })
+    await expect(loadTitleExtras(media(), new Set(['logo']))).resolves.toEqual({ logo: LOGO })
+    clearTitleExtrasCache()
+    mocks.tmdb.mockRejectedValue(new Error('401'))
+    await expect(loadTitleExtras(media(), new Set(['logo', 'keyart']))).resolves.toEqual({ logo: LOGO, keyart: FANART })
+  })
+  it('skips TMDB when ani.zip already has a logo in a wanted language', async () => {
+    tmdbReadToken.set('token')
+    mocks.fetchAniZip.mockResolvedValue({ images: [{ coverType: 'Clearlogo', url: LOGO, language: 'eng' }], mappings: { themoviedb_id: '209867' } })
+    await expect(loadTitleExtras(media(), new Set(['logo']))).resolves.toEqual({ logo: LOGO })
+    expect(mocks.tmdb).not.toHaveBeenCalled()
+  })
+  it('never holds key art or the poster back for it', async () => {
+    tmdbReadToken.set('token')
+    mocks.tmdb.mockReturnValue(new Promise(() => {}))
+    await expect(loadTitleExtras(media(), new Set(['keyart', 'posterHd']))).resolves.toEqual({ keyart: FANART })
+    expect(mocks.tmdb).not.toHaveBeenCalled()
+  })
+  it('is what a page opened again paints first', async () => {
+    tmdbReadToken.set('token')
+    await loadTitleExtras(media(), new Set(['logo']))
+    expect(peekTitleArt(154587)).toMatchObject({ keyart: FANART, logo: `https://image.tmdb.org/t/p/w500${TMDB_EN}` })
+  })
+  it('asks in the app language first', async () => {
+    tmdbReadToken.set('token')
+    mocks.locale = 'ja'
+    await expect(loadTitleExtras(media(), new Set(['logo']))).resolves.toEqual({ logo: 'https://image.tmdb.org/t/p/w500/ja-logo.png' })
+    expect(mocks.tmdb).toHaveBeenCalledWith('/tv/209867/images', { include_image_language: 'ja,en' })
   })
 })
 

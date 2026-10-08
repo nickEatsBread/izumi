@@ -36,15 +36,30 @@ describe('the phone header buttons', () => {
     expect(row).toContain('{#if !detailTheme.buttons}\n    {@render headerButtonList(m, overlay)}')
     expect(row).toContain('{:else if shownButtons.length}\n    <div data-part="detail.buttons"')
   })
-  it('opens the download selection with the Play episode, and leaves Download out with nothing to download', () => {
+  it('downloads the Play episode in one tap, and leaves Download out with nothing to download', () => {
     const list = snippet('headerButtonList')
-    expect(list).toContain('data-part="button" data-variant="secondary" data-action="download"')
-    expect(list).toContain('Download E{ctaEp(m)}')
+    expect(list).toContain('data-part="button" data-variant="secondary" data-action="download" data-state={downloadState} data-episode={downloadEp}')
+    expect(list).toContain('{@const downloadEp = ctaEp(m)}')
+    expect(list).toContain('{@const download = $downloads[keyFor(m.id, downloadEp)]}')
     expect(list).toContain('onclick={ready((full) => downloadCta(full))}')
-    expect(detail).toContain('if (startDownloadSelect(ctaEp(m), m.id)) return')
-    // With the episodes in another tab, that tab opens and its list takes the request.
-    expect(detail).toContain("if (mobileTabs.tabs.includes('episodes')) pickedTab = 'episodes'")
+    // Its text and progress follow the download, the tap's feedback.
+    expect(list).toContain('<span aria-live="polite">{episodeDownloadText(download, String(downloadEp))}</span>')
+    expect(list).toContain('style:--download-progress="{episodeDownloadPercent(download)}%"')
+    // The press the episode's own download button makes: queue with the defaults, else open Downloads.
+    const press = detail.slice(detail.indexOf('function downloadCta('), detail.indexOf('function downloadSelect('))
+    expect(press).toContain('if (pressEpisodeDownload(m, ep, $downloads[keyFor(m.id, ep)]) === \'queue\') h.select()')
+    expect(press).not.toContain('startDownloadSelect')
     expect(detail).toContain("const downloadable = $derived(shown != null && !$offlineMode && (pending || playableThrough(listEpisodes(shown), airedCount(shown), false) > 0))")
+  })
+  it('keeps the download selection a menu tap away beside a header Download', () => {
+    const select = detail.slice(detail.indexOf('function downloadSelect('), detail.indexOf('// A TV request already chose'))
+    expect(select).toContain('if (startDownloadSelect(ctaEp(m), m.id)) return')
+    // With the episodes in another tab, that tab opens and its list takes the request.
+    expect(select).toContain("if (mobileTabs.tabs.includes('episodes')) pickedTab = 'episodes'")
+    const menu = detail.slice(detail.indexOf('<div data-part="detail.menu"'), detail.indexOf('{#each externalTrackerLinks as tracker'))
+    expect(menu).toContain("{#if shownButtons.includes('download')}")
+    expect(menu).toContain('onclick={ready((full) => downloadSelect(full))}')
+    expect(menu).toContain('Download episodes')
   })
 })
 

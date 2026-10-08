@@ -50,6 +50,18 @@ export function creatorsText(media: Pick<Media, 'studios' | 'creators'>): string
   return names.length ? names.join(', ') : undefined
 }
 
+/** The kind of title as streaming apps word it (`kind`): "Series" for TV, TV short and ONA, "Movie" for a
+ *  film, "Special" for an OVA, a special or a music video. Nothing for a reading title or an unknown
+ *  format. */
+export function seriesKindText(format: string | null | undefined): string | undefined {
+  switch (format) {
+    case 'TV': case 'TV_SHORT': case 'ONA': return 'Series'
+    case 'MOVIE': return 'Movie'
+    case 'OVA': case 'SPECIAL': case 'MUSIC': return 'Special'
+    default: return undefined
+  }
+}
+
 /** Shared host bindings so every surface formats score, duration and artwork the same way.
  *  `now` lets a live surface (the hero clock) re-derive the countdown without refetching. */
 export function mediaDisplayModel(media: Media, extras: Partial<DisplayModel> = {}, coverWidth = 0, now = Date.now()): DisplayModel {
@@ -74,6 +86,8 @@ export function mediaDisplayModel(media: Media, extras: Partial<DisplayModel> = 
     scoreValue: score != null ? String(score) : undefined,
     rating: seriesRatingText(media),
     format: format(media) || undefined,
+    // "Series", "Movie" or "Special" (API 4), for a meta line that names the kind of title.
+    kind: seriesKindText(media.format),
     // `year` is the season ("Fall 2023") for older templates; `startYear` is the year alone.
     year: season(media) || (media.startDate?.year ? String(media.startDate.year) : undefined),
     startYear: String(media.seasonYear ?? media.startDate?.year ?? '') || undefined,

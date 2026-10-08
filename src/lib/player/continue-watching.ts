@@ -7,7 +7,7 @@ import { cwDismissAction } from '$lib/settings/ui'
 import type { CatalogSelection, ContinueWatchingCatalogScope } from '$lib/settings/catalog'
 import { airedCount, hasAiredEpisodeToWatch } from '$lib/anilist/media'
 import { hydrateAnimeAiring } from '$lib/anime/airing'
-import { localHistory, durableHistory, sessionProgress, historyEntries, mediaSnapshot, type HistoryEntry } from './history'
+import { localHistory, durableHistory, sessionProgress, historyEntries, historyResumeProgress, mediaSnapshot, type HistoryEntry } from './history'
 import { incognito, onIncognitoPurge } from '$lib/stores/incognito'
 import type { Media } from '$lib/anilist/types'
 import { localLibrary, localWatchingAllowed } from '$lib/library/local-lists'
@@ -67,7 +67,8 @@ export const reconciledOnce = writable(false)
 
 // Local history contributes a resume-aware progress: `episode - 1` covers an episode that was OPENED
 // but not finished (resume lands on it), while `progress` is the completed count. Take the larger.
-const localProgress = (h: HistoryEntry) => Math.max(h.progress, h.episode - 1)
+// The series page's Play button resumes by the same rule (historyResumeProgress).
+const localProgress = (h: HistoryEntry) => historyResumeProgress(h)
 
 function upsert(map: Map<number, CwEntry>, e: CwEntry, preferNewerProgress = false) {
   const cur = map.get(e.media.id)

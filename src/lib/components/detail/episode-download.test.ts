@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { episodeDownloadAction, episodeDownloadLabel, episodeDownloadPercent, episodeDownloadState } from './episode-download'
+import { episodeDownloadAction, episodeDownloadLabel, episodeDownloadPercent, episodeDownloadState, episodeDownloadText } from './episode-download'
 import type { DownloadItem } from '$lib/downloads/state'
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
@@ -40,6 +40,18 @@ describe('the per-episode download state', () => {
   })
 })
 
+describe("the series header's Download E{n} text", () => {
+  it('names the episode and follows its download', () => {
+    expect(episodeDownloadText(undefined, '5')).toBe('Download E5')
+    // A failed download says so; a tap queues it again.
+    expect(episodeDownloadText(item('error'), '5')).toBe('Retry E5')
+    expect(episodeDownloadText(item('queued'), '5')).toBe('Queued E5')
+    expect(episodeDownloadText(item('downloading', 421, 1000), '5')).toBe('Downloading E5 · 42%')
+    expect(episodeDownloadText(item('paused', 1, 2), '5')).toBe('Paused E5 · 50%')
+    expect(episodeDownloadText(item('done'), '5')).toBe('Downloaded E5')
+  })
+})
+
 describe('the per-episode download button markup', () => {
   const button = read('./EpisodeDownload.svelte')
   const card = read('./EpisodeCard.svelte')
@@ -50,10 +62,10 @@ describe('the per-episode download button markup', () => {
     expect(button).toContain('style:--download-progress="{percent}%"')
   })
 
-  it('stops its press at itself, queues with the download defaults and otherwise opens Downloads', () => {
+  it('stops its press at itself, then makes the shared press (queue with the defaults, else open Downloads)', () => {
     expect(button).toMatch(/function press\(event: MouseEvent\) \{\s+event\.stopPropagation\(\)/)
-    expect(button).toContain('enqueue(media, ep, { quality: $downloadQuality, cachedOnly: $downloadCachedOnly, audio: $downloadAudio, codec: $downloadCodec })')
-    expect(button).toContain("void goto('/app/downloads')")
+    expect(button).toContain("import { pressEpisodeDownload } from './episode-download-press'")
+    expect(button).toContain("if (pressEpisodeDownload(media, ep, dl) === 'queue') h.select()")
     expect(button).not.toContain('playEpisode')
   })
 

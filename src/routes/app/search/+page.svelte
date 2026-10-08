@@ -244,7 +244,7 @@
     {#key catalogSearchKey}<CatalogSearchPage selection={mergedScope} embedded onQueryChange={(value) => (mergedQuery = value)} />{/key}
   {:else}
     <div class="p-4 pt-5 sm:px-8" data-slot="search" data-variant="anilist-scope">
-      <FilterBar bind:filters />
+      <div data-slot="search.header" class="contents"><FilterBar bind:filters /></div>
       <div class="mt-6">
         {#key key}<SearchResults filters={debounced} />{/key}
       </div>
@@ -256,16 +256,21 @@
   <!-- Normal padding clears the mobile edge/titlebar. While the fixed degraded strip exists, add
        its 1.75rem height as well so it cannot cover the browse controls. -->
   <div class="p-4 sm:p-8 {$anilistDegradedBannerVisible ? 'pt-[2.75rem] sm:pt-[3.75rem]' : ''}" data-slot="search" data-variant="anilist">
-    <!-- The page title (`search.title`): a genre, studio or voice actor being explored, shown; else
-         "Search", visually hidden until a theme shows it. -->
-    {#if filters.studioId || filters.staffId || filters.genres?.[0]}
-      <h1 data-part="search.title" data-variant="explore" class="mb-4 text-2xl font-black">
-        {filters.staffId ? (filters.exploreName || 'Voice actor') : filters.studioId ? (filters.exploreName || 'Studio') : filters.genres?.[0]}
-      </h1>
-    {:else}
-      <h1 data-part="search.title" class="sr-only">{m.nav_search()}</h1>
-    {/if}
-    <FilterBar bind:filters />
+    <!-- The page header (`search.header`): the title and the filter bar, one box a theme can pin
+         or slide away. It is `display: contents` until a theme gives it a box, so a title or field
+         a stylesheet already made sticky keeps the whole page as its scroll range. The title
+         (`search.title`): a genre, studio or voice actor being explored, shown; else "Search",
+         visually hidden until a theme shows it. -->
+    <div data-slot="search.header" class="contents">
+      {#if filters.studioId || filters.staffId || filters.genres?.[0]}
+        <h1 data-part="search.title" data-variant="explore" class="mb-4 text-2xl font-black">
+          {filters.staffId ? (filters.exploreName || 'Voice actor') : filters.studioId ? (filters.exploreName || 'Studio') : filters.genres?.[0]}
+        </h1>
+      {:else}
+        <h1 data-part="search.title" class="sr-only">{m.nav_search()}</h1>
+      {/if}
+      <FilterBar bind:filters />
+    </div>
     <div class="mt-6">
       {#key key}
         <SearchResults filters={debounced} />

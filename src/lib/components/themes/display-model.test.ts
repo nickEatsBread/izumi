@@ -29,7 +29,7 @@ describe('theme display model', () => {
     expect(node).toContain('failedArtwork.includes(value)')
     expect(node).toContain('onerror={() => markFailed(String(src))}')
     expect(node).toContain('{@const ActionIcon = item.icon ? icons[item.icon] : item.action === \'play\' ? Play : undefined}')
-    expect(node).toContain("aria-label={label ? undefined : labels[item.action]}")
+    expect(node).toContain("aria-label={label ? undefined : item.action === 'studio' ? `${labels.studio}: ${displayText('studio', model)}` : labels[item.action]}")
     for (const icon of ['bookmark: Bookmark', 'plus: Plus', 'info: Info', 'share: Share2']) expect(node).toContain(icon)
   })
 })

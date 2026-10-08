@@ -26,8 +26,8 @@ describe('the header art', () => {
 
 describe('Play states', () => {
   it('marks every Play button with its state and episode', () => {
-    expect(detail).toContain("const ctaState = (m: Media) => (ctaHasProgress(m) ? 'resume' : 'start')")
-    expect(detail.match(/data-action="play" data-state=\{ctaState\(m\)\} data-episode=\{ctaEp\(m\)\}/g)?.length).toBe(3)
+    expect(detail).toContain("const ctaState = $derived(ctaStarted ? 'resume' : 'start')")
+    expect(detail.match(/data-action="play" data-state=\{ctaState\} data-episode=\{ctaEp\(m\)\} data-season=\{ctaSeason\(m\)\?\.season\} data-season-episode=\{ctaSeason\(m\)\?\.episode\}/g)?.length).toBe(3)
     expect(detail.match(/data-action="play"/g)?.length).toBe(3)
   })
 })
@@ -59,12 +59,15 @@ describe('the phone series bar', () => {
 })
 
 describe('template models', () => {
-  it('binds the title extras in the facts and lead templates', () => {
-    expect(detail).toContain('episodesWatched, ...detailExtras })')
+  it('binds the title extras in the header, facts and lead templates', () => {
+    expect(detail).toContain('reviews: m.popularity ? String(m.popularity) : undefined, episodesWatched, ...detailExtras,')
+    expect(detail).toContain('<ThemeNode node={detailTheme.header} model={factsModel(m)} actions={templateActions(m)} />')
+    expect(detail).toContain('<ThemeNode node={detailTheme.actionsLead} model={leadModel(m)} />')
   })
-  it("counts the catalog's episodes, else the aired ones, in the actions-row lead", () => {
-    expect(detail).toContain('const total = m.episodes || (Number.isFinite(aired) && aired > 0 ? aired : model.episodesAired)')
-    expect(detail).not.toMatch(/const leadModel[^}]*epsTotal/)
+  it("leaves the actions-row lead's episode count to the catalog, as the cards do", () => {
+    // Absent while the catalog does not know it ("Total of 1180 / ??"), never the aired count again.
+    expect(detail).toContain('const leadModel = factsModel')
+    expect(detail).not.toMatch(/const leadModel[^\n]*(epsTotal|airedCount)/)
   })
 })
 

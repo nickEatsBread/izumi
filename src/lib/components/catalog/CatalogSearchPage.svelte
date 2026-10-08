@@ -384,7 +384,10 @@
 </script>
 
 <div class="pb-20 {embedded ? 'px-4 pt-4 sm:px-8' : 'p-4 sm:p-8'}" data-slot="search" data-variant="catalog">
-  <!-- Embedded in the all-catalogs page, that page's heading is the title. -->
+  <!-- The page header (`search.header`, `display: contents` until a theme gives it a box): the
+       title, the streaming service and the filter bar. Embedded in the all-catalogs page, that
+       page's heading is the title. -->
+  <div data-slot="search.header" class="contents">
   {#if !embedded}<h1 data-part="search.title" class="sr-only">{m.nav_search()}</h1>{/if}
   {#if isTmdb && watchProvider}
     <div class="mb-4 flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
@@ -442,6 +445,7 @@
         </button>
       {/if}
     </div>
+  </div>
   </div>
 
   {#if (isTmdb || isStremio) && (media.length || resultTotal != null)}

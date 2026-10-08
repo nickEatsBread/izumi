@@ -38,6 +38,14 @@
     return own === 'text' || own === 'arrow' ? '/app/library' : undefined
   })
 
+  // API 4 `empty: "shown"` on the row's own entry (its id, else the role `continue`; never
+  // `rows.defaults`) keeps the row while there is nothing to continue, holding an empty-state part
+  // (`row.empty`). Without it the row leaves Home then, as on izumi's own Home.
+  const emptyShown = $derived.by(() => {
+    const byId = $themePresentation?.rows?.byId
+    return (byId?.[rowScope?.().id ?? '']?.empty ?? byId?.continue?.empty) === 'shown'
+  })
+
   const items = $derived(filterContinueWatching(
     $continueWatching,
     $catalogProvider,
@@ -115,5 +123,12 @@
         <ContinueCard media={item.media} progress={item.progress} />
       </div>
     {/each}
+  </Carousel>
+{:else if emptyShown}
+  <Carousel {title} {viewMoreHref}>
+    <div data-part="row.empty" class="flex min-h-32 w-full shrink-0 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border px-4 py-6 text-center">
+      <p data-part="row.empty.text" class="text-sm font-semibold text-muted-foreground">Nothing to continue yet</p>
+      <a data-part="row.empty.action" href="/app/search" data-focusable class="inline-flex min-h-9 items-center rounded-md bg-secondary px-4 text-sm font-bold transition-colors hover:bg-accent">Browse</a>
+    </div>
   </Carousel>
 {/if}

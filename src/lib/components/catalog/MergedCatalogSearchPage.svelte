@@ -96,6 +96,8 @@
 </script>
 
 <div class="px-4 pb-20 pt-4 sm:px-8" data-slot="search" data-variant="merged">
+  <!-- The page header (`search.header`, `display: contents` until a theme gives it a box). -->
+  <div data-slot="search.header" class="contents">
   <label class="relative block">
     <Search size={20} class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-theme" />
     <input
@@ -109,6 +111,7 @@
     />
   </label>
   <p class="mt-2 px-1 text-xs text-muted-foreground">A fast title search with no cross-provider filters. Choose one catalog above for its full filter set.</p>
+  </div>
 
   {#if failedProviders.length && media.length}
     <p class="mt-5 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-200">

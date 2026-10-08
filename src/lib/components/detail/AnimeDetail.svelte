@@ -7,11 +7,11 @@
   import Tabs from '$lib/components/detail/Tabs.svelte'
   import EpisodeList from '$lib/components/detail/EpisodeList.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
-  import { title, cover, format, status, season, seasonBrowseHref, ratingBg, totalEpisodes, airedCount } from '$lib/anilist/media'
+  import { title, cover, format, season, seasonBrowseHref, ratingBg, totalEpisodes, airedCount } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
   import { resumeEpisode, playEpisode, prefetchEpisodeSources, type PlayState } from '$lib/stremio/play'
   import { offlineMode } from '$lib/stores/offline'
-  import { downloads, downloadedMedia } from '$lib/downloads/state'
+  import { downloads, downloadedMedia, keyFor } from '$lib/downloads/state'
   import { localHistory, sessionProgress, manualProgressOverrides } from '$lib/player/history'
   // Aliased: this file also defines a `seriesTitle` snippet (the rendered <h1>/logo), which would
   // otherwise shadow this helper everywhere in the component — Svelte hoists a markup-level snippet
@@ -19,7 +19,7 @@
   import { seriesTitle as seriesTitleFromItem } from '$lib/downloads/library'
   import { tick, untrack } from 'svelte'
   import { readable, type Readable } from 'svelte/store'
-  import { animeEpisodeNumbers, animeResumeEpisode, animeWatchedProgress, recordedWatched, type AnimeDetailState } from '$lib/catalog/anime-detail'
+  import { animeEpisodeMetadata, animeEpisodeMetadataKey, animeEpisodeNumbers, animeResumeEpisode, animeWatchedProgress, recordedWatched, type AnimeDetailState } from '$lib/catalog/anime-detail'
   import { focusOnMount } from '$lib/nav'
   import { copyToClipboard } from '$lib/util/clipboard'
   import { anilistToken } from '$lib/anilist/auth'
@@ -43,6 +43,7 @@
   import ExternalLink from '@lucide/svelte/icons/external-link'
   import Play from '@lucide/svelte/icons/play'
   import Download from '@lucide/svelte/icons/download'
+  import Loader from '@lucide/svelte/icons/loader-circle'
   import Check from '@lucide/svelte/icons/check'
   import MoreHorizontal from '@lucide/svelte/icons/ellipsis'
   import { isAndroid, isMobile } from '$lib/platform'
@@ -62,7 +63,9 @@
   import { openTrailerPopup } from '$lib/stores/trailer'
   import { connecting, gameMode } from '$lib/player/session'
   import { controllerMode } from '$lib/nav/input'
-  import { getKitsuId } from '$lib/anizip'
+  import { getEpisodeMeta, getKitsuId } from '$lib/anizip'
+  import type { EpMeta } from '$lib/anizip/types'
+  import { positions, positionPercent, progressKey } from '$lib/player/progress'
   import { anilistIdOf, kitsuIdOf, providerExternalUrl } from '$lib/catalog/identity'
   import { detailTrackerLinks } from './tracker-links'
   import TrackerProviderBadge from '$lib/components/settings/TrackerProviderBadge.svelte'
@@ -80,13 +83,17 @@
   import { artNeeds, loadTitleExtras, metaNeeds, peekTitleArt, templateNeeds, titleExtrasKey, type TitleExtras } from '$lib/themes/title-extras'
   import { baseImageSrc, detailArt, recordBanner, washBackground } from '$lib/detail/backdrop'
   import { headerImage } from '$lib/detail/header-image'
-  import { formatDate as fmtDate, mediaFacts, prettyEnum, type MediaFact } from '$lib/detail/facts'
+  import { formatDate as fmtDate, mediaFacts, prettyEnum, statusText, studioHref, type MediaFact } from '$lib/detail/facts'
+  import { seriesFraction, seriesResumeProgress, seriesUnderWay } from '$lib/detail/resume'
+  import { recommendedTitles, relationMedia } from '$lib/detail/relations'
   import { startDownloadSelect } from '$lib/detail/episode-commands'
   import { singleSeasonLabel } from '$lib/detail/season-label'
   import { fetchSeasonChain, mayListSeasons } from '$lib/anilist/seasons'
   import FactList from './FactList.svelte'
   import AiringCountdown from './AiringCountdown.svelte'
   import { offlineResumeEpisode, playableThrough } from './episode-tile'
+  import { episodeDownloadLabel, episodeDownloadPercent, episodeDownloadState, episodeDownloadText } from './episode-download'
+  import { pressEpisodeDownload } from './episode-download-press'
   import { flipInGutter } from './toolbar-plan'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
@@ -241,22 +248,60 @@
     ? animeWatchedProgress(shown, $localHistory, $sessionProgress, $manualProgressOverrides)
     : 0)
 
-  // Resume target for the hero CTA. Offline = the first DOWNLOADED episode past the progress the
-  // episode list shows (else the first downloaded), by the rule the Continue card uses too
-  // (episode-tile.ts) — never resumeEp(), which could point at an episode that isn't on disk.
-  // `playCta` also routes offline through playEpisode (the local swap) instead of resumeEpisode
-  // (which would fire a live fetchMediaById + online resolve).
+  // Where Play picks the series up: the episodes finished, or the episode last opened here less one,
+  // the rule Continue Watching resumes by (resume.ts), so an episode opened but not finished is the
+  // one Play opens and the one its Continue Watching card names. The watched marks keep
+  // `watchedThrough`; the episode list opens on, and its Continue card plays, this episode too.
+  const resumeThrough = $derived(shown ? seriesResumeProgress(shown, $localHistory, $sessionProgress, $manualProgressOverrides) : 0)
+  // Resume target for the hero CTA. Offline = the first DOWNLOADED episode past that count (else the
+  // first downloaded), by the rule the Continue card uses too (episode-tile.ts) — never resumeEp(),
+  // which could point at an episode that isn't on disk. `playCta` also routes offline through
+  // playEpisode (the local swap) instead of resumeEpisode (which would fire a live fetchMediaById +
+  // online resolve).
   function offlineResumeEp(m: Media): number {
-    return offlineResumeEpisode(downloadedEpisodes(m), watchedThrough)
+    return offlineResumeEpisode(downloadedEpisodes(m), resumeThrough)
   }
   const ctaEp = (m: Media) => {
     if ($offlineMode) return offlineResumeEp(m)
-    return animeResumeEpisode(m, watchedThrough)
+    return animeResumeEpisode(m, resumeThrough)
   }
-  const ctaHasProgress = (m: Media) => ($offlineMode ? (m.mediaListEntry?.progress ?? 0) : watchedThrough) > 0
+  // The series is under way: an episode finished, one opened here, or a saved position in the episode
+  // Play opens (an episode 1 left part-way), by the shared rule (resume.ts).
+  const ctaStarted = $derived(shown != null && seriesUnderWay(resumeThrough, $positions[progressKey(shown.id, ctaEp(shown))]))
   // API 4 play states: every Play button carries `data-state` (`start`, `resume`) and `data-episode`
   // (the episode it opens), so a stylesheet can word it its own way ("Resume E3").
-  const ctaState = (m: Media) => (ctaHasProgress(m) ? 'resume' : 'start')
+  const ctaState = $derived(ctaStarted ? 'resume' : 'start')
+  // The season of the episode Play opens (`data-season`, and its number within that season in
+  // `data-season-episode`), from the episode metadata the episode list reads, so "Play S1 E3" agrees
+  // with the cards' "S1 E3". Loaded per series, never per delivery of the same record.
+  const seasonMetaKey = $derived(media && !$offlineMode ? animeEpisodeMetadataKey(media) : '')
+  let seasonMeta = $state<Record<number, EpMeta>>({})
+  $effect(() => {
+    const key = seasonMetaKey
+    const current = untrack(() => media)
+    seasonMeta = {}
+    if (!key || !current) return
+    const supplied = animeEpisodeMetadata(current)
+    seasonMeta = supplied
+    const canonical = anilistIdOf(current)
+    if (canonical == null) return
+    let cancelled = false
+    const apply = (found: Record<number, EpMeta>) => {
+      if (cancelled) return
+      const combined = { ...supplied }
+      for (const [episode, details] of Object.entries(found)) {
+        combined[Number(episode)] = { ...supplied[Number(episode)], ...Object.fromEntries(Object.entries(details).filter(([, value]) => value != null)) }
+      }
+      seasonMeta = combined
+    }
+    void getEpisodeMeta(canonical, undefined, apply).then(apply, () => {})
+    return () => { cancelled = true }
+  })
+  const ctaSeason = (m: Media): { season: number; episode: number } | undefined => {
+    const episode = ctaEp(m)
+    const meta = seasonMeta[episode]
+    return meta?.season != null && meta.season > 0 ? { season: meta.season, episode: meta.seasonEpisode ?? episode } : undefined
+  }
   function playCta(m: Media, haptic = true) {
     if (haptic) h.impact('medium')
     prefetchEpisodeSources(m, ctaEp(m), 0)
@@ -408,7 +453,19 @@
   // What a facts template (`detail.facts`) binds, on phones and desktop alike, with the episodes the
   // viewer has watched (API 4 `episodesWatched`; set from a list entry even at 0, else once one is)
   // and the title extras its template asks for (an age rating), as the header template gets them.
-  const factsModel = (m: Media) => mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined, episodesWatched, ...detailExtras })
+  // API 4 `factsFormat.status: "plain"` words the status the same way in these templates as in the
+  // facts ("Ongoing"; nothing for a title not out yet).
+  const factsModel = (m: Media) => mediaDisplayModel(m, {
+    reviews: m.popularity ? String(m.popularity) : undefined, episodesWatched, ...detailExtras,
+    ...(detailTheme.factsFormat?.status === 'plain' ? { status: statusText(m, 'plain') || undefined } : {}),
+  })
+  // The status in izumi's own facts lines, worded as the facts word it (`factsFormat.status`).
+  const statusWord = (m: Media) => statusText(m, detailTheme.factsFormat?.status)
+  // API 4 `studio` in the header and facts templates: the main studio's page, or a search for it.
+  const templateActions = (m: Media) => {
+    const studio = m.studios?.nodes?.[0]
+    return studio ? { studio: () => { h.tap(); void goto(studioHref(studio)) } } : {}
+  }
   // The countdown with the facts. API 4 `countdownAt: "episodes"` moves it to the top of the episode
   // list (EpisodeList), which also draws it for `both`.
   const countdown = $derived(detailTheme.countdownAt === 'episodes' ? 'none' : detailTheme.countdown ?? 'none')
@@ -448,10 +505,22 @@
   // before the first episode airs. While loading it holds its place.
   const downloadable = $derived(shown != null && !$offlineMode && (pending || playableThrough(listEpisodes(shown), airedCount(shown), false) > 0))
   const shownButtons = $derived(headerButtons.filter((button) => button === 'play' ? !headerCtaHidden : button === 'download' ? downloadable : true))
-  // The header's Download: the episode list's download selection with the Play episode picked. With
-  // the episodes in another tab, that tab opens and its list takes the request (episode-commands.ts).
+  // The header's Download E{n}: one tap downloads the episode it names (the one Play opens) with the
+  // Settings → Downloads defaults, the press the episode's own download button makes
+  // (episode-download-press.ts); once that episode is queued, downloading or saved, a tap opens
+  // Downloads. The button's text and `data-state` follow the download, which is the tap's feedback.
   function downloadCta(m: Media) {
+    const ep = ctaEp(m)
+    if (pressEpisodeDownload(m, ep, $downloads[keyFor(m.id, ep)]) === 'queue') h.select()
+    else h.tap()
+  }
+  // Picking several episodes stays with the episode list's download selection: the list's own Download
+  // control, and the More menu's "Download episodes" beside a header Download, which opens it with the
+  // Play episode picked. With the episodes in another tab, that tab opens and its list takes the
+  // request (episode-commands.ts).
+  function downloadSelect(m: Media) {
     h.tap()
+    closeMenu()
     if (startDownloadSelect(ctaEp(m), m.id)) return
     if (mobileTabs.tabs.includes('episodes')) pickedTab = 'episodes'
     else if (mobileTabs.folded.includes('episodes')) pickedTab = 'overview'
@@ -548,14 +617,32 @@
   // The phone Information grid (API 4 `detail.infoKeys`, `factsLabels`, `factsFormat`); without keys,
   // its own facts and wording. While loading, a fact the card cannot fill holds a placeholder.
   const infoFacts = (m: Media) => mediaFacts(m, { place: 'info', keys: detailTheme.infoKeys, labels: detailTheme.factsLabels, format: detailTheme.factsFormat, progress: progressFact(m), pending })
-  // API 4 `detail.actionsLead`: the template at the start of the phone actions row. Its `episodeCount`
-  // is the catalog's count, else the episodes aired so far: never the airing schedule's last episode,
-  // which falls below what has aired on a long runner ("Total of 1180 / 1147").
-  const leadModel = (m: Media) => {
-    const model = factsModel(m)
+  // API 4 `detail.actionsLead`: the template at the start of the phone actions row binds what the facts
+  // template does. Its `episodeCount` is the catalog's count alone, absent while the catalog does not
+  // know it (a long runner), as on the cards: "Total of 1180 / ??" through `when: { absent: true }`,
+  // never a count that reads as finished ("1180 / 1180") or falls below what has aired.
+  const leadModel = factsModel
+
+  // API 4 `detail.progress: "row"`: the phone progress row under the header buttons, once the series
+  // is under way. Its count is the episode total, or the episodes aired when that is more (a long
+  // runner without a planned total); its share adds how far into the Play episode the viewer got.
+  const progressTotal = (m: Media) => {
     const aired = airedCount(m)
-    const total = m.episodes || (Number.isFinite(aired) && aired > 0 ? aired : model.episodesAired)
-    return { ...model, episodeCount: total ? String(total) : undefined }
+    return Math.max(totalEpisodes(m), Number.isFinite(aired) ? aired : 0)
+  }
+
+  // API 4 `detail.actions: "expand"`: More first reveals Save, Share and Trailer (`data-expanded` on
+  // `detail.actions`); a tap while they show opens the menu, and closing the menu folds them again.
+  const actionsFold = $derived(detailTheme.actions === 'expand')
+  let actionsOpen = $state(false)
+  function pressMore() {
+    h.tap()
+    if (actionsFold && !actionsOpen) { actionsOpen = true; return }
+    showMore = !showMore
+  }
+  function closeMenu() {
+    showMore = false
+    if (actionsFold) actionsOpen = false
   }
 
   // The phone synopses: the one with the facts (`info`), the overlay page's (`body`) and Overview's
@@ -730,7 +817,7 @@
   }
 </script>
 
-<svelte:window onscroll={$isMobile ? onHeroScroll : undefined} onkeydown={(e) => { if (e.key === 'Escape' && showMore) showMore = false }} />
+<svelte:window onscroll={$isMobile ? onHeroScroll : undefined} onkeydown={(e) => { if (e.key === 'Escape' && (showMore || actionsOpen)) closeMenu() }} />
 
 {#if !pending && !$offlineMode && $store.error}
   {#if $isMobile}{@render failureBar()}{/if}
@@ -778,6 +865,7 @@
           {@render seriesTitle(m, 'text-3xl font-black leading-tight text-white drop-shadow')}
           {@render seriesHeader(m, '')}
           {@render headerButtonRow(m, true)}
+          {@render progressRow(m, true)}
           {#if m.description}
             <p data-part="detail.synopsis" data-expanded={synopsisOpen.body || undefined} use:clampWatch={{ place: 'body', more: synopsisMore, text: m.description }}
                class="{synopsisOpen.body ? '' : 'line-clamp-4'} text-sm leading-relaxed text-white/85">{stripHtml(m.description)}</p>
@@ -797,7 +885,7 @@
         {#if heroPlay.status === 'error'}
           <p class="mt-3 text-sm text-destructive">{heroPlay.message}</p>
         {/if}
-        {#if showRatingRow && media}<div class="mt-4">{@render ratingRow()}</div>{/if}
+        {#if showRatingRow && media}<div class="mt-4"><div data-part="detail.rating" class="contents">{@render ratingRow()}</div></div>{/if}
         {#if belowEpisodes}
           <div class="mt-6">
             {@render episodeList(m)}
@@ -875,15 +963,18 @@
 
         <!-- Primary CTA, and the full-width list button or Download the theme puts with it. -->
         {@render headerButtonRow(m, false)}
+        {@render progressRow(m, false)}
 
         <!-- Compact action row: 4 icons + overflow. Handlers are the SAME functions the desktop bar uses. -->
-        <div data-part="detail.actions" class="relative mt-2 flex items-center gap-2">
+        <div data-part="detail.actions" data-expanded={actionsFold && actionsOpen ? '' : undefined} class="relative mt-2 flex items-center gap-2">
           {#if detailTheme.actionsLead}
             <!-- API 4 `detail.actionsLead`: a template taking the row's free width before its buttons. -->
             <div data-part="detail.lead" class="min-w-0 flex-1">
               <ThemeNode node={detailTheme.actionsLead} model={leadModel(m)} />
             </div>
           {/if}
+          <!-- API 4 `detail.actions: "expand"`: Save, Share and Trailer only while More has unfolded them. -->
+          {#if !actionsFold || actionsOpen}
           <button data-part="button" data-variant="secondary" data-action="save" data-state={savedLocally ? 'saved' : undefined} data-focusable onclick={ready(() => { h.tap(); showLocalLists = true })} aria-label="Save to lists"
                   class="flex h-11 flex-[2] items-center justify-center gap-1.5 rounded-lg bg-secondary px-2 text-sm font-bold">
             {#if savedLocally}<BookmarkCheck size={17} class="text-theme" /> Saved{:else}<BookmarkPlus size={17} /> Save{/if}
@@ -898,8 +989,9 @@
               <Clapperboard size={18} />
             </button>
           {/if}
-          <button data-part="detail.action" data-action="more" data-focusable onclick={() => { h.tap(); showMore = !showMore }} aria-label="More"
-                  aria-haspopup="true" aria-expanded={showMore}
+          {/if}
+          <button data-part="detail.action" data-action="more" data-focusable onclick={pressMore} aria-label="More"
+                  aria-haspopup="true" aria-expanded={actionsFold ? actionsOpen : showMore}
                   class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
             <MoreHorizontal size={18} />
           </button>
@@ -907,15 +999,21 @@
           {#if showMore}
             <!-- Full-screen backdrop (below the menu) so a tap anywhere else dismisses it, matching
                  the trailer dialog's dismissal convention. Escape is handled on <svelte:window>. -->
-            <button type="button" aria-label="Close menu" onclick={() => (showMore = false)}
+            <button type="button" aria-label="Close menu" onclick={closeMenu}
                     class="fixed inset-0 z-40 cursor-default"></button>
             <div data-part="detail.menu" class="absolute bottom-full right-0 z-50 mb-2 w-56 rounded-lg border border-border bg-card p-2 shadow-2xl">
-              <button data-part="detail.list-button" data-action="list" data-state={effStatus ? 'listed' : undefined} data-focusable onclick={ready(() => { h.tap(); showMore = false; showEditor = true })}
+              <button data-part="detail.list-button" data-action="list" data-state={effStatus ? 'listed' : undefined} data-focusable onclick={ready(() => { h.tap(); closeMenu(); showEditor = true })}
                       class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
                 <ChevronDown size={15} /> {effStatus ? `Edit ${STATUS_LABEL[effStatus]}` : 'Add to list'}
               </button>
+              {#if shownButtons.includes('download')}
+                <button data-focusable onclick={ready((full) => downloadSelect(full))}
+                        class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
+                  <Download size={15} /> Download episodes
+                </button>
+              {/if}
               {#each externalTrackerLinks as tracker (tracker.id)}
-                <button data-focusable onclick={ready(() => { h.tap(); showMore = false; openUrl(tracker.url) })}
+                <button data-focusable onclick={ready(() => { h.tap(); closeMenu(); openUrl(tracker.url) })}
                         class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
                   <ExternalLink size={15} /> {tracker.title}
                 </button>
@@ -927,7 +1025,7 @@
         {#if heroPlay.status === 'error'}
           <p class="mt-3 text-sm text-destructive">{heroPlay.message}</p>
         {/if}
-        {#if showRatingRow && media}<div class="mt-4">{@render ratingRow()}</div>{/if}
+        {#if showRatingRow && media}<div data-part="detail.rating" class="mt-4">{@render ratingRow()}</div>{/if}
 
         {#if belowEpisodes}
           <div class="mt-6">
@@ -961,13 +1059,13 @@
         {@render seriesTitle(m, 'text-5xl font-black leading-[1.02] text-white drop-shadow-md sm:text-6xl')}
         {@render seriesHeader(m, '')}
         <div data-part="detail.actions" class="flex flex-wrap items-center gap-3">
-          <button data-part="button" data-variant="primary" data-action="play" data-state={ctaState(m)} data-episode={ctaEp(m)} data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
+          <button data-part="button" data-variant="primary" data-action="play" data-state={ctaState} data-episode={ctaEp(m)} data-season={ctaSeason(m)?.season} data-season-episode={ctaSeason(m)?.episode} data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
                   data-nav-down={controllerUi ? 'series-quick-episode' : undefined}
                   onpointerenter={warmPlay}
                   onfocus={warmPlay}
                   use:focusOnMount onclick={pressPlay} aria-busy={playWhenReady || undefined}
                   class="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 font-bold text-primary-foreground">
-            <Play size={18} />{ctaHasProgress(m) ? `Play · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
+            <Play size={18} />{ctaStarted ? `Play · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
           </button>
           <button data-part="button" data-variant="secondary" data-action="save" data-state={savedLocally ? 'saved' : undefined} data-focusable onclick={ready(() => (showLocalLists = true))} title="Save to lists"
                   class="grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25">
@@ -992,7 +1090,7 @@
           {#if m.averageScore}<span class="opacity-40">·</span><span>{m.averageScore}%</span>{/if}
         </div>
         <div data-part="detail.meta" class="flex flex-wrap items-center gap-2 text-xs font-bold text-white/75">
-          {#if status(m)}<span class="rounded-full border border-white/25 px-2.5 py-1">{status(m)}</span>{/if}
+          {#if statusWord(m)}<span class="rounded-full border border-white/25 px-2.5 py-1">{statusWord(m)}</span>{/if}
           {#if m.duration}<span>{m.duration}m</span>{/if}
         </div>
         {#if heroPlay.status === 'error'}
@@ -1030,7 +1128,7 @@
           <FactList media={m} variant={factsStyle} className="mb-3" progress={progressFact(m)} {controllerUi} keys={detailTheme.factsKeys} labels={detailTheme.factsLabels} format={detailTheme.factsFormat} {pending} />
         {:else if detailTheme.facts}
           <div data-part="detail.facts" class="mb-3">
-            <ThemeNode node={detailTheme.facts} model={factsModel(m)} />
+            <ThemeNode node={detailTheme.facts} model={factsModel(m)} actions={templateActions(m)} />
           </div>
         {:else}
         <!-- One scannable facts line replaces two rows of competing pills. Genres remain useful
@@ -1040,7 +1138,7 @@
           {#if unnamed(m)}<span class="my-0.5 h-3 w-72 rounded skeloader" aria-hidden="true"></span>{:else}
           <span class="text-foreground">{effProgress}/{epsTotal(m) || '?'} episodes</span>
           {#if format(m)}<span class="opacity-40">·</span><span>{format(m)}</span>{/if}
-          {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
+          {#if statusWord(m)}<span class="opacity-40">·</span><span>{statusWord(m)}</span>{/if}
           {#if season(m)}
             <span class="opacity-40">·</span>
             <a data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
@@ -1063,13 +1161,13 @@
     {#snippet actionsBlock()}
         <!-- Action bar -->
         <div data-part="detail.actions" class="flex flex-wrap items-center gap-2">
-          <button data-part="button" data-variant="primary" data-action="play" data-state={ctaState(m)} data-episode={ctaEp(m)} data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
+          <button data-part="button" data-variant="primary" data-action="play" data-state={ctaState} data-episode={ctaEp(m)} data-season={ctaSeason(m)?.season} data-season-episode={ctaSeason(m)?.episode} data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
                   data-nav-down={controllerUi ? 'series-quick-episode' : undefined}
                   onpointerenter={warmPlay}
                   onfocus={warmPlay}
                   use:focusOnMount onclick={pressPlay} aria-busy={playWhenReady || undefined}
                   class="inline-flex items-center gap-2 rounded-md bg-primary font-bold text-primary-foreground {detailTheme.cta === 'large' ? 'min-w-56 px-6 py-3 text-base' : 'px-4 py-2'}">
-            <Play size={detailTheme.cta === 'large' ? 18 : 16} />{detailTheme.cta === 'large' ? (effStatus === 'COMPLETED' ? 'Rewatch Now' : ctaHasProgress(m) ? 'Continue Now' : 'Watch Now') : (ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play')}
+            <Play size={detailTheme.cta === 'large' ? 18 : 16} />{detailTheme.cta === 'large' ? (effStatus === 'COMPLETED' ? 'Rewatch Now' : ctaStarted ? 'Continue Now' : 'Watch Now') : (ctaStarted ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play')}
           </button>
 
           <button data-part="button" data-variant="secondary" data-action="save" data-state={savedLocally ? 'saved' : undefined} data-focusable onclick={ready(() => (showLocalLists = true))} title="Save to lists"
@@ -1145,7 +1243,7 @@
         {/if}
 
         {@render actionsBlock()}
-        {#if showRatingRow && media}<div class="mt-4">{@render ratingRow()}</div>{/if}
+        {#if showRatingRow && media}<div data-part="detail.rating" class="mt-4">{@render ratingRow()}</div>{/if}
       </div>
     </div>
     {#if m.description && detailTheme.actionsFirst && synopsisAt !== 'overview'}
@@ -1187,7 +1285,7 @@
             <p data-part="detail.synopsis" class="mb-3 line-clamp-3 max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{@render placeholderLines(3)}</p>
           {/if}
           {@render actionsBlock()}
-          {#if showRatingRow && media}<div class="mt-4">{@render ratingRow()}</div>{/if}
+          {#if showRatingRow && media}<div data-part="detail.rating" class="mt-4">{@render ratingRow()}</div>{/if}
           {#if m.description && detailTheme.actionsFirst && synopsisAt !== 'overview'}
             <p data-part="detail.synopsis" class="mt-4 line-clamp-4 max-w-3xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
           {:else if pending && detailTheme.actionsFirst && synopsisAt !== 'overview'}
@@ -1270,7 +1368,7 @@
 
 <!-- Only ever rendered with the full record (`media`), never the card's. -->
 {#snippet ratingRow()}
-  <ScoreScale value={effScore10} onpick={ready((full, n: number) => rate(full, n))} hint={ratingHint} />
+  <ScoreScale value={effScore10} onpick={ready((full, n: number) => rate(full, n))} hint={ratingHint} parts />
 {/snippet}
 
 <!-- The episode list. While the record loads, neutral placeholders hold its place: the card's record
@@ -1309,14 +1407,14 @@
 {#snippet headerButtonList(m: Media, overlay: boolean)}
   {#each shownButtons as button (button)}
     {#if button === 'play'}
-      <button data-part="button" data-variant="primary" data-action="play" data-state={ctaState(m)} data-episode={ctaEp(m)} data-focusable use:focusOnMount
+      <button data-part="button" data-variant="primary" data-action="play" data-state={ctaState} data-episode={ctaEp(m)} data-season={ctaSeason(m)?.season} data-season-episode={ctaSeason(m)?.episode} data-focusable use:focusOnMount
               onpointerenter={warmPlay}
               onfocus={warmPlay}
               onclick={pressPlay} aria-busy={playWhenReady || undefined}
               class={overlay
                 ? 'mt-1 inline-flex w-fit items-center gap-2 rounded-full bg-primary px-5 py-2.5 font-bold text-primary-foreground'
                 : 'mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3 font-bold text-primary-foreground'}>
-        <Play size={18} />{ctaHasProgress(m) ? `${overlay ? 'Play' : 'Continue'} · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
+        <Play size={18} />{ctaStarted ? `${overlay ? 'Play' : 'Continue'} · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
       </button>
     {:else if button === 'list'}
       <button data-part="detail.list-button" data-variant="full" data-action="list" data-state={effStatus ? 'listed' : undefined} data-focusable onclick={ready(() => { h.tap(); showEditor = true })}
@@ -1324,12 +1422,40 @@
         {effStatus ? STATUS_LABEL[effStatus] : 'Add to list'}
       </button>
     {:else}
-      <button data-part="button" data-variant="secondary" data-action="download" data-focusable onclick={ready((full) => downloadCta(full))}
+      {@const downloadEp = ctaEp(m)}
+      {@const download = $downloads[keyFor(m.id, downloadEp)]}
+      {@const downloadState = episodeDownloadState(download)}
+      <button data-part="button" data-variant="secondary" data-action="download" data-state={downloadState} data-episode={downloadEp} data-focusable onclick={ready((full) => downloadCta(full))}
+              style:--download-progress="{episodeDownloadPercent(download)}%" aria-label={episodeDownloadLabel(download, String(downloadEp))}
               class="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-secondary py-2.5 text-sm font-bold">
-        <Download size={17} />Download E{ctaEp(m)}
+        {#if downloadState === 'done'}<Check size={17} class="text-theme" />{:else if downloadState === 'queued'}<Loader size={17} class="animate-spin" />{:else}<Download size={17} />{/if}<span aria-live="polite">{episodeDownloadText(download, String(downloadEp))}</span>
       </button>
     {/if}
   {/each}
+{/snippet}
+
+<!-- API 4 `detail.progress: "row"`: the series progress row under the phone header buttons, once the
+     series is under way: "Episode 4 of 12", the share watched ("31%") and a meter filled to it (also
+     `--progress` on the row). Drawn from the full record only. -->
+{#snippet progressRow(m: Media, overlay: boolean)}
+  {#if detailTheme.progress === 'row' && media && ctaStarted}
+    {@const episode = ctaEp(m)}
+    {@const total = progressTotal(m)}
+    {@const share = seriesFraction(episode, resumeThrough, positionPercent($positions[progressKey(m.id, episode)]), total)}
+    {@const percent = share == null ? undefined : `${Math.round(share * 100)}%`}
+    <div data-part="detail.progress" data-episode={episode} style:--progress={percent} class={overlay ? 'mt-1' : 'mt-3'}>
+      <div class="flex items-baseline justify-between gap-3 text-xs font-bold">
+        <span data-part="detail.progress.label" class="min-w-0 truncate {overlay ? 'text-white/75' : 'text-muted-foreground'}">Episode {episode}{total ? ` of ${total}` : ''}</span>
+        {#if percent}<span data-part="detail.progress.value" class="shrink-0 text-theme">{percent}</span>{/if}
+      </div>
+      {#if percent}
+        <div data-part="detail.progress.meter" role="progressbar" aria-label="Series watched" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round((share ?? 0) * 100)}
+             class="mt-1.5 h-1 overflow-hidden rounded-full {overlay ? 'bg-white/25' : 'bg-foreground/15'}">
+          <span class="block h-full rounded-full bg-theme" style:width={percent}></span>
+        </div>
+      {/if}
+    </div>
+  {/if}
 {/snippet}
 
 <!-- API 4 `detail.synopsis`: the "more" control after a phone synopsis, only while the stylesheet's
@@ -1383,7 +1509,7 @@
 {#snippet seriesHeader(m: Media, className: string)}
   {#if detailTheme.header}
     <div data-part="detail.header" class={className}>
-      <ThemeNode node={detailTheme.header} model={mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined, episodesWatched, ...detailExtras })} />
+      <ThemeNode node={detailTheme.header} model={factsModel(m)} actions={templateActions(m)} />
     </div>
   {/if}
 {/snippet}
@@ -1412,7 +1538,7 @@
   {#if factsStyle === 'template' && detailTheme.facts}
     <!-- A theme's facts template stands in for the facts line and byline, as a table, cards or chips do. -->
     <div data-part="detail.facts" class="mt-3">
-      <ThemeNode node={detailTheme.facts} model={factsModel(m)} />
+      <ThemeNode node={detailTheme.facts} model={factsModel(m)} actions={templateActions(m)} />
     </div>
   {:else if factsStyle === 'template'}
   <!-- One line of facts instead of seven chips: on a phone the chips wrapped into three
@@ -1427,7 +1553,7 @@
     <span>{effProgress}/{epsTotal(m) || '?'} eps</span>
     {#if m.duration}<span class="opacity-40">·</span><span>{m.duration} min</span>{/if}
     {#if season(m)}<span class="opacity-40">·</span><a href={seasonBrowseHref(m)} class="underline-offset-2 active:opacity-70">{season(m)}</a>{/if}
-    {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
+    {#if statusWord(m)}<span class="opacity-40">·</span><span>{statusWord(m)}</span>{/if}
     {/if}
   </div>
 
@@ -1613,23 +1739,38 @@
   {:else if pending}
     {@render sectionPlaceholder(phone)}
   {:else if id === 'relations'}
+    <!-- API 4 `sections.relations.recommended: "append"`: the recommended titles follow the related
+         ones, as relations of their own kind. -->
+    {@const appended = (phone ? mobileTabs : desktopTabs).recommendedInRelations ? recommendedTitles(m) : []}
     {#if phone}
-      {#if m.relations?.edges?.length}
+      {#if m.relations?.edges?.length || appended.length}
         <div data-slot="detail.relations" class="mt-3 grid grid-cols-2 gap-4">
-          {#each m.relations.edges as e (e.node.id)}
-            <div data-part="relation" data-relation={e.relationType.toLowerCase()} class="min-w-0">
+          {#each m.relations?.edges ?? [] as e (e.node.id)}
+            <div data-part="relation" data-relation={e.relationType.toLowerCase()} data-media={relationMedia(e.node)} class="min-w-0">
               <div data-part="relation.type" class="mb-1 truncate text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
               <SmallCard media={e.node} fill />
             </div>
           {/each}
+          {#each appended as recommendation (recommendation.id)}
+            <div data-part="relation" data-relation="recommended" data-media={relationMedia(recommendation)} class="min-w-0">
+              <div data-part="relation.type" class="mb-1 truncate text-[0.65rem] uppercase text-muted-foreground">recommended</div>
+              <SmallCard media={recommendation} fill />
+            </div>
+          {/each}
         </div>
       {:else}<p class="mt-3 text-muted-foreground">No related titles.</p>{/if}
-    {:else if m.relations?.edges?.length}
+    {:else if m.relations?.edges?.length || appended.length}
       <div data-slot="detail.relations" class="flex flex-wrap {$themePresentation ? 'gap-x-6 gap-y-8' : 'gap-4'}">
-        {#each m.relations.edges as e (e.node.id)}
-          <div data-part="relation" data-relation={e.relationType.toLowerCase()} class={$themePresentation ? 'shrink-0' : 'w-[152px]'}>
+        {#each m.relations?.edges ?? [] as e (e.node.id)}
+          <div data-part="relation" data-relation={e.relationType.toLowerCase()} data-media={relationMedia(e.node)} class={$themePresentation ? 'shrink-0' : 'w-[152px]'}>
             <div data-part="relation.type" class="{$themePresentation ? 'mb-1.5' : 'mb-1'} text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
             <SmallCard media={e.node} />
+          </div>
+        {/each}
+        {#each appended as recommendation (recommendation.id)}
+          <div data-part="relation" data-relation="recommended" data-media={relationMedia(recommendation)} class={$themePresentation ? 'shrink-0' : 'w-[152px]'}>
+            <div data-part="relation.type" class="{$themePresentation ? 'mb-1.5' : 'mb-1'} text-[0.65rem] uppercase text-muted-foreground">recommended</div>
+            <SmallCard media={recommendation} />
           </div>
         {/each}
       </div>

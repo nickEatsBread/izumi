@@ -151,7 +151,9 @@ describe('theme presentation contract', () => {
     expect(resolveDetail(layout).header).toEqual(header)
     expect(resolveDetail(layout).factsStyle).toBe('cards')
     expect(() => parsePresentation({ detail: { header } }, 2)).toThrow('unsupported')
-    expect(() => parsePresentation({ detail: { header: { type: 'action', action: 'play' } } })).toThrow('nested actions')
+    expect(() => parsePresentation({ detail: { header: { type: 'action', action: 'play' } } }, 3)).toThrow('nested actions')
+    // From API 4 the header may hold the studio button, and no other action.
+    expect(() => parsePresentation({ detail: { header: { type: 'action', action: 'play' } } })).toThrow('unsupported')
     const phone = parsePresentation({ detail: { posterWidth: 180 }, mobile: { detail: { header } } })
     expect(resolveDetail(resolvePresentation(phone, true)).header).toEqual(header)
     expect(resolveDetail(resolvePresentation(phone, true)).posterWidth).toBe(180)

@@ -1,13 +1,10 @@
 <script lang="ts">
   import type { Media } from '$lib/anilist/types'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
+  import { recommendedTitles } from '$lib/detail/relations'
 
   let { media, view }: { media: Media; view: 'people' | 'recommendations' } = $props()
-  const recommendations = $derived(
-    (media.recommendations?.nodes ?? [])
-      .filter((node): node is { rating?: number; mediaRecommendation: Media } => !!node.mediaRecommendation)
-      .map((node) => node.mediaRecommendation),
-  )
+  const recommendations = $derived(recommendedTitles(media))
   const tmdbPeople = $derived(media.catalog?.provider === 'tmdb')
   const personHref = (id: number) => tmdbPeople ? `/app/person/tmdb/${id}`
     : !media.catalog || media.catalog.provider === 'anilist' ? `/app/staff/${id}` : undefined

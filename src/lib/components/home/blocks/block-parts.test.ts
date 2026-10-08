@@ -38,3 +38,11 @@ describe('tabbed grid opening tab', () => {
     expect(grid).toContain("const current = $derived(labels.includes(selected) ? selected : labels[block.default ?? 0] ?? labels[0] ?? '')")
   })
 })
+
+describe('the recently aired tab', () => {
+  it("names each title's latest aired episode on its card", () => {
+    const grid = read('./TabbedGrid.svelte')
+    expect(grid).toContain('episodes = append ? { ...result.episodes, ...episodes } : result.episodes ?? {}')
+    expect(grid).toContain("badge={episodes[item.id] ? `Episode ${episodes[item.id]}` : undefined}")
+  })
+})

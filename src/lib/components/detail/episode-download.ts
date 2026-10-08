@@ -29,6 +29,19 @@ export function episodeDownloadPercent(item?: Item): number {
 /** What a press does: queue the episode, or open the Downloads page that manages it. */
 export const episodeDownloadAction = (state: EpisodeDownloadState): 'queue' | 'manage' => (state === 'none' ? 'queue' : 'manage')
 
+/** The text of the series header's "Download E{n}" button (`detail.buttons` `download`), which follows
+ *  the download of the episode it names the way `episode.download` does: "Download E5", "Queued E5",
+ *  "Downloading E5 · 42%" (or "Paused E5 · 42%"), "Downloaded E5", and "Retry E5" after a failed one,
+ *  which a tap queues again. `episode` is the number it prints. */
+export function episodeDownloadText(item: Item | undefined, episode: string): string {
+  if (item?.status === 'error') return `Retry E${episode}`
+  const state = episodeDownloadState(item)
+  if (state === 'queued') return `Queued E${episode}`
+  if (state === 'done') return `Downloaded E${episode}`
+  if (state === 'progress') return `${item?.status === 'paused' ? 'Paused' : 'Downloading'} E${episode} · ${episodeDownloadPercent(item)}%`
+  return `Download E${episode}`
+}
+
 /** The button's accessible name and tooltip. `episode` is the number the list prints. */
 export function episodeDownloadLabel(item: Item | undefined, episode: string): string {
   const state = episodeDownloadState(item)

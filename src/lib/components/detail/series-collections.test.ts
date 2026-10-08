@@ -56,7 +56,7 @@ describe('series countdown formats', () => {
 
 describe('the episode list opens where the viewer is up to', () => {
   it('opens pages, ranges and the range picker on the Play episode', () => {
-    expect(list).toContain('const autoPage = $derived(openingPage(allEpisodes, PER, ctaEpisode, watchedThrough))')
+    expect(list).toContain('const autoPage = $derived(openingPage(allEpisodes, PER, ctaEpisode, resumeThrough))')
     expect(list.indexOf('const ctaEpisode = $derived(offline')).toBeLessThan(list.indexOf('const autoPage'))
   })
   it('starts the carousel at the Play episode and leaves a row the viewer moved', () => {

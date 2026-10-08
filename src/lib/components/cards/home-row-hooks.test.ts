@@ -22,9 +22,25 @@ describe('the Continue Watching view-more link', () => {
     expect(row).toContain("return own === 'text' || own === 'arrow' ? '/app/library' : undefined")
     // The resolved heading (which folds in `rows.defaults`) is not what decides it.
     expect(row).not.toContain('resolveRow')
-    expect(row.match(/<Carousel \{title\} \{viewMoreHref\}>/g)).toHaveLength(2)
+    // The loading row, the cards and (API 4 `empty: "shown"`) the empty state.
+    expect(row.match(/<Carousel \{title\} \{viewMoreHref\}>/g)).toHaveLength(3)
   })
   it('links to a page that exists', () => {
     expect(read('../../../routes/app/library/+page.svelte')).toContain('<WatchlistView />')
+  })
+})
+
+describe('the Continue Watching empty state (API 4)', () => {
+  const row = read('./ContinueRow.svelte')
+  it("is shown only when the theme asks on that row itself, never from rows.defaults", () => {
+    expect(row).toContain("return (byId?.[rowScope?.().id ?? '']?.empty ?? byId?.continue?.empty) === 'shown'")
+    // Cards first, then the cold-start placeholders; the empty state only when neither applies.
+    expect(row.indexOf('{:else if emptyShown}')).toBeGreaterThan(row.indexOf('{:else if items.length}'))
+    expect(row.indexOf('{:else if items.length}')).toBeGreaterThan(row.indexOf('{#if cold}'))
+  })
+  it('names the box, its line and its Browse link', () => {
+    expect(row).toContain('<div data-part="row.empty" class=')
+    expect(row).toContain('<p data-part="row.empty.text" class="text-sm font-semibold text-muted-foreground">Nothing to continue yet</p>')
+    expect(row).toContain('<a data-part="row.empty.action" href="/app/search" data-focusable')
   })
 })
