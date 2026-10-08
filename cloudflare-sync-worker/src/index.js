@@ -20,7 +20,7 @@ import {
   searchCatalog,
 } from './resolver.js'
 
-const VERSION = '1.14.7'
+const VERSION = '1.14.8'
 const PROTOCOL = 1
 const CATEGORIES = new Set(['watch', 'manual', 'presence', 'companion', 'profiles'])
 const MAX_BODY_BYTES = 512 * 1024
