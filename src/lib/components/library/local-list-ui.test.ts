@@ -11,7 +11,8 @@ const watchlist = readFileSync(fileURLToPath(new URL('../schedule/WatchlistView.
 describe('account-independent saved lists UI', () => {
   it('opens the same list picker from provider and AniList detail pages', () => {
     expect(catalogDetail).toContain('<LocalListPicker {media}')
-    expect(animeDetail).toContain('<LocalListPicker media={m}')
+    // Only ever the full record, never the card's record the page shows while it loads.
+    expect(animeDetail).toContain('{#if showLocalLists && media}<LocalListPicker media={media}')
     expect(picker).toContain('No account needed.')
     expect(picker).toContain('createLocalList(newListName)')
     expect(picker).toContain('event.target === event.currentTarget')

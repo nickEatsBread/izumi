@@ -32,9 +32,11 @@ describe('player mount follows the navigation placement', () => {
 })
 
 describe('full-bleed banners follow the shell margin', () => {
+  // The series page draws its desktop banner through Hero, while loading too: it has no breakout of its own.
   it('offsets the banner by the sidebar width only when there is a sidebar', () => {
     // A fixed -left-14 with a top or bottom navigation bar (margin 0) left a 56px band at the right.
-    for (const file of ['../banner/Hero.svelte', '../detail/AnimeDetail.svelte']) {
+    expect(read('../detail/AnimeDetail.svelte')).not.toContain('sm:-left-14')
+    for (const file of ['../banner/Hero.svelte']) {
       const source = read(file)
       expect(source).toContain('left-[calc(-1*var(--theme-shell-left,0px))] top-0 h-[calc(100%+2rem)] w-screen overflow-hidden')
       expect(source).not.toContain('sm:-left-14')
@@ -43,7 +45,8 @@ describe('full-bleed banners follow the shell margin', () => {
 
   it('reaches up under the whole top bar, not just the titlebar', () => {
     // A 2rem reach under a transparent top bar left a band of page background above the artwork.
-    for (const file of ['../banner/Hero.svelte', '../detail/AnimeDetail.svelte']) {
+    expect(read('../detail/AnimeDetail.svelte')).not.toContain('sm:-top-8')
+    for (const file of ['../banner/Hero.svelte']) {
       const source = read(file)
       expect(source).toContain('sm:top-[calc(-1*var(--theme-shell-top,2rem))] sm:h-[calc(100%+var(--theme-shell-top,2rem))]')
       expect(source).not.toContain('sm:-top-8')

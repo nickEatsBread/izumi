@@ -69,12 +69,13 @@ describe('Steam Deck featured banner flicker', () => {
 
   it('keeps detail banners, the late-artwork fade and the scroll dim static in Game mode', () => {
     expect(gameMode('.hero-slide-in:not(.hero-carousel-slide)')).toContain('animation: none')
-    expect(gameMode('.detail-hero-reveal')).toContain('animation: none')
+    // The series page keeps one hero from its loading state to its loaded one, so no second,
+    // shorter reveal is needed for artwork a skeleton already painted.
+    expect(hero).not.toContain('detail-hero-reveal')
     expect(gameMode('.hero-artwork')).toContain('transition: none')
     expect(gameMode('.hero-root')).toContain('transition: none')
     // Without the animation's fill the artwork would jump to full opacity: the rest state is static.
     expect(hero).toContain('.hero-slide-in { opacity: var(--hero-final-opacity, 1); animation: hero-slide-in')
-    expect(hero).toContain('.detail-hero-reveal { opacity: var(--hero-final-opacity, .7); animation: detail-hero-reveal')
     expect(hero.match(/class="hero-artwork /g)?.length).toBe(3)
     expect(hero).toContain('class="hero-root relative mb-6')
   })

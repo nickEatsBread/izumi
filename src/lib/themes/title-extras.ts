@@ -71,6 +71,8 @@ export function audioLabel(info: ScheduleInfo | null | undefined): string | unde
 // ani.zip records are cached in IndexedDB already; this keeps one parsed lookup per title for the
 // session. Empty results are dropped so a title that failed offline is retried next time.
 const artCache = new Map<number, Promise<Pick<TitleExtras, 'keyart' | 'logo'>>>()
+// The same lookups once they have answered with artwork, readable without waiting.
+const artFound = new Map<number, Pick<TitleExtras, 'keyart' | 'logo'>>()
 function aniZipArt(anilistId: number): Promise<Pick<TitleExtras, 'keyart' | 'logo'>> {
   const hit = artCache.get(anilistId)
   if (hit) return hit
@@ -81,10 +83,29 @@ function aniZipArt(anilistId: number): Promise<Pick<TitleExtras, 'keyart' | 'log
     .catch((): Pick<TitleExtras, 'keyart' | 'logo'> => ({}))
     .then((art) => {
       if (!art.keyart && !art.logo) artCache.delete(anilistId)
+      else artFound.set(anilistId, art)
       return art
     })
   artCache.set(anilistId, promise)
   return promise
+}
+
+/** The key art and logo an earlier lookup found for an AniList title, without waiting, so a page
+ *  opened again paints them on its first frame. Undefined until a lookup has found artwork. */
+export function peekTitleArt(anilistId: number | undefined): Pick<TitleExtras, 'keyart' | 'logo'> | undefined {
+  return anilistId ? artFound.get(anilistId) : undefined
+}
+
+/** What `loadTitleExtras` reads from a record, as one comparable string. A page that loads extras
+ *  for a partial record (the card the user tapped) loads them again when the full record changes
+ *  this, and not when it only repeats it. */
+export function titleExtrasKey(media: Media): string {
+  const provider = media.catalog?.provider
+  return JSON.stringify([
+    media.id, anilistIdOf(media) ?? null, media.idMal ?? null, media.contentRating ?? null, media.logoImage ?? null,
+    provider ?? null, provider === 'tmdb' || provider === 'stremio' ? media.bannerImage ?? null : null,
+    media.title?.romaji ?? null, media.title?.english ?? null, media.title?.native ?? null,
+  ])
 }
 
 // The batch schedule lookup `primeTitleExtras` started, per title. A title's own lookup waits for it
@@ -95,6 +116,7 @@ const primedSchedule = new Map<number, Promise<unknown>>()
 /** Test hook: forget the session cache. */
 export function clearTitleExtrasCache(): void {
   artCache.clear()
+  artFound.clear()
   primedSchedule.clear()
 }
 

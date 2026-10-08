@@ -55,7 +55,9 @@ Optional templates for three families: `poster` (ordinary tiles), `continue` (re
 - Optional episode-card templates (non-interactive, like poster tiles). Arrangement can be a wrapping grid or one full-width tile per row; hover can grow the tile. The cards / compact / grid control in Appearance still chooses cards vs numbers.
 - Optional series-facts template (icons + text). Theme Studio can edit facts and episode cards per theme.
 - Tab style (API 2, `detail.tabs`): underline, pills, an iOS-style segmented control, or a bar of equal tabs with a tinted pill behind the active one (`Tabs.svelte`).
-- API 3: `factsStyle` (`table`, `cards`, `chips` or the `facts` template), `countdown` (`compact` or `long` airing countdown), `listButton` (`inline`, `full` or `hidden`), `tabs: "bottom"` (a phone tab bar that takes the bottom navigation's place), and `header`, a non-interactive template rendered under the series title on every layout (a studio chip, a score, a meta line) whatever `factsStyle` shows. `art: "keyart"` paints 16:9 key art behind the overlay layouts (falling back to the banner), and `title: "logo"` shows the title logo instead of the text title on every layout when the title has one.
+- API 3: `factsStyle` (`table`, `cards`, `chips` or the `facts` template), `countdown` (`compact` or `long` airing countdown), `listButton` (`inline`, `full` or `hidden`), `tabs: "bottom"` (a phone tab bar that takes the bottom navigation's place), and `header`, a non-interactive template rendered under the series title on every layout (a studio chip, a score, a meta line) whatever `factsStyle` shows. `art: "keyart"` puts 16:9 key art first in every series-page header (the phone band, the overlay backdrops and the desktop banner), falling back to the banner; without it the banner comes first and key art stands in for a missing or broken one. `title: "logo"` shows the title logo instead of the text title on every layout when the title has one.
+- Header art (`src/lib/detail/backdrop.ts`), the same choice on every layout and while the page loads: the banner or key art in the theme's order, retried twice before the next one takes its place. A banner never waits for key art; without one the page waits for key art at most 1.2 s from its arrival. A title with neither gets a wash of its cover's colour, never a trailer still or a blurred or stretched cover; the cover stays in the header, hidden, as `[data-part="detail.backdrop"][data-art="cover"]`, for a theme that wants it shown. `data-art` on `detail.banner`, `detail.backdrop` and the desktop banner's `hero.art` names what is shown: `banner`, `keyart`, `wash` (the slot only), `pending` (the slot only, while the choice still waits) or `cover`.
+- While the series record loads, the page is the theme's own page drawn from what the card the user tapped showed, with `data-pending` on `[data-slot="detail"]`: every hook is present (the bar and Back included), in the order the loaded page has it, and the parts the card cannot fill (a missing title, synopsis or byline, the episode list, relations, cast, recommendations) hold `.skeloader` placeholders inside their usual containers. The artwork painted while loading stays when the record lands. A page that fails to load or finds nothing keeps the phone bar with Back.
 - API 3 composition (`detail.sections`): `tabs` lists the sections that get a tab, in order (1–5 of `overview`, `episodes`, `relations`, `characters`, `recommended`, each once). Sections left out render inside Overview after its own content, each as a titled `detail.section`; Overview always keeps a tab, unless `unlisted: "hidden"` drops everything `tabs` leaves out (Overview included) for a page whose info column already carries the facts and synopsis. `labels` renames a tab from a fixed set — Overview: `overview`, `info`, `details`, `about`, `home`; Episodes: `episodes`, `watch`; Relations: `relations`, `related`; Characters: `characters`, `cast`; Recommended: `recommended`, `more-like-this` ("More like this"), `recommendations`. `default` is the tab open on arrival. `info: "overview"` (phones, stacked and split layouts) moves the facts, countdown, release timing, genres and synopsis from above the tabs into Overview. On desktop stacked and split pages a theme that sets `sections` shows the synopsis once: the info column's short synopsis, which Overview then leaves out, or with `info: "overview"` the whole text in Overview and none in the info column (the facts stay in the info column). Without `sections` the info column keeps its short synopsis and Details holds the whole text. `mode: "stack"` drops the tab strip and renders every section in `tabs` order, then the rest, each as a titled `detail.section`. Episodes placed on a right-hand rail or below the info stay there and never take a tab. Series tabs carry `data-tab` with their section id. `detail.column: "poster"` (API 3, desktop stacked and split pages without an episode rail) turns the poster into the head of a left column (`detail.column`, `posterWidth` wide, default 248 px) holding a labelled Watch Trailer button (`detail.trailer`, which then leaves the action bar), the countdown and the facts, with the titles, actions, synopsis and sections beside it. Without the key the tabs are izumi's own: Episodes, Overview, Relations, Characters, Recommended on phones; Episodes, Relations, Cast & Crew, Recommended, Details on desktop.
 - API 3 `nav: "hidden"`: the series page covers the phone's bottom navigation, like a page pushed over an app's tab bar, and the room the bar took at the bottom goes with it (bottom tabs, `tabs: "bottom"`, keep theirs).
 - API 3 `continue: "card"`: a Continue card (`episode.continue`) above the episode list — the next episode's still, "Continue: Episode N" (or "Play: Episode N" before the series is started), its title and a progress line — plays what the Play button would. On phones it takes the header Play button's place once an episode has aired, while the episodes are on the page (below the header, stacked, or the Episodes tab open, or Overview when the episodes fold into it); with another tab open the header keeps its Play button. Desktop keeps both.
@@ -111,6 +113,8 @@ Theme stylesheets target these attributes, never Tailwind classes: `[data-slot="
 
 Never give `watch.stage` or its ancestors a background: the video is drawn behind the page, and the app pins that path transparent with inline `!important`.
 
+A horizontal scroller made in theme CSS must pair `overflow-x: auto` with `overflow-y: hidden`; the client clamps row tracks and template `nowrap` rows itself.
+
 ```css
 [data-slot="nav.side"] { background: #101014; }
 [data-part="nav.item"][data-active] [data-part="nav.item.label"] { font-weight: 700; }
@@ -143,6 +147,8 @@ State values:
 | `data-variant` | `detail.list-button` | `full` (the full-width button) |
 | `data-action` | series page actions: `button`, `detail.action`, `detail.list-button` | `save`, `share` (`button`); `trailer`, `more` (`detail.action`); `list` (`detail.list-button`, also inside the phone's More menu) |
 | `data-solid` | `detail.bar` | present once the artwork has scrolled under the bar |
+| `data-pending` | `detail` | present while the series record loads (the page shows the tapped card's record and placeholders) |
+| `data-art` | `detail.banner`, `detail.backdrop`, `hero.art` on a series page | `banner`, `keyart`, `wash`, `pending`, `cover` (see the series page's header art) |
 | `data-key` | `fact` | `format`, `episodes`, `status`, `aired`, `season`, `duration`, `studio`, `source`, `country`, `score`, `members`, `genres`, `progress`, `synonyms` |
 | `data-variant` | `episode` | `template`, `thumb`, `compact`, `number`, `row` |
 | `data-filler` | `episode.continue` | present when that episode is a known filler |
@@ -212,7 +218,7 @@ State values:
 | `home` | slot | The Home page. | `data-variant` |
 | `home.hero` | slot | The featured banner on Home. | `data-variant` |
 | `hero.slide` | part | The current slide (the artwork layer). |  |
-| `hero.art` | part | The slide artwork image. |  |
+| `hero.art` | part | The slide artwork image. On a series page `data-art` names the artwork it shows. | `data-art` |
 | `hero.scrim` | part | A gradient over the artwork. |  |
 | `hero.logo` | part | The title logo, when the show has one. |  |
 | `hero.title` | part | The text title, when there is no logo. |  |
@@ -281,14 +287,14 @@ State values:
 
 | Hook | Kind | What | States |
 |---|---|---|---|
-| `detail` | slot | The series page. | `data-layout`, `data-variant` |
-| `detail.banner` | slot | The artwork area at the top of the series page. |  |
+| `detail` | slot | The series page. `data-pending` while its record loads: the page is drawn from the card the user tapped, with placeholders (`.skeloader`) inside the parts it cannot fill yet. | `data-layout`, `data-variant`, `data-pending` |
+| `detail.banner` | slot | The artwork area at the top of the series page; `data-art` names the artwork it shows. | `data-art` |
 | `detail.poster` | part | The cover image. |  |
 | `detail.column` | slot | The left column headed by the poster (`detail.column: "poster"`): the trailer button, the countdown and the facts. |  |
 | `detail.trailer` | part | The labelled Watch Trailer button in the poster column. |  |
 | `detail.title` | part | The title. |  |
 | `detail.logo` | part | The title logo inside `detail.title` (`detail.title: "logo"`). |  |
-| `detail.backdrop` | part | The artwork behind an overlay series page: the banner, key art (`detail.art: "keyart"`) or a blurred cover. |  |
+| `detail.backdrop` | part | The header artwork of the series page (the phone band, the backdrop of an overlay page): the banner or key art. On a title with neither, the cover, hidden behind a wash of its colour until a theme shows it (`data-art="cover"`). | `data-art` |
 | `detail.body` | part | The text column over the artwork of an overlay series page. |  |
 | `detail.studio` | part | The studio line of the desktop overlay page. |  |
 | `detail.rating` | part | The rating row (your score) of the desktop overlay page. |  |

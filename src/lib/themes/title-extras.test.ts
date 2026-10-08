@@ -15,7 +15,7 @@ vi.mock('$lib/anime/animeschedule', () => ({
   scheduleTitles: (t: { romaji?: string; english?: string }) => [t.romaji, t.english],
 }))
 
-import { ART_EXTRAS, artNeeds, audioLabel, clearTitleExtrasCache, loadTitleExtras, malAgeRating, metaNeeds, pickTitleArt, primeTitleExtras, templateNeeds } from './title-extras'
+import { ART_EXTRAS, artNeeds, audioLabel, clearTitleExtrasCache, loadTitleExtras, malAgeRating, metaNeeds, peekTitleArt, pickTitleArt, primeTitleExtras, templateNeeds, titleExtrasKey } from './title-extras'
 import type { ThemeNode } from './presentation'
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
@@ -160,5 +160,42 @@ describe('primeTitleExtras', () => {
     mocks.getScheduleInfoMany.mockRejectedValue(new Error('429'))
     primeTitleExtras([media()], all)
     await expect(loadTitleExtras(media(), new Set(['audio']))).resolves.toEqual({ audio: 'Sub | Dub' })
+  })
+})
+
+describe('peekTitleArt', () => {
+  it('reads artwork a finished lookup found, without waiting', async () => {
+    expect(peekTitleArt(154587)).toBeUndefined()
+    const pending = loadTitleExtras(media(), new Set(['keyart', 'logo'] as const))
+    // Still in flight: nothing to read yet.
+    expect(peekTitleArt(154587)).toBeUndefined()
+    await pending
+    expect(peekTitleArt(154587)).toEqual({ keyart: FANART, logo: LOGO })
+    expect(peekTitleArt(undefined)).toBeUndefined()
+  })
+  it('keeps nothing for a lookup that found no artwork, so it is asked again', async () => {
+    mocks.fetchAniZip.mockResolvedValue({ images: [] })
+    await loadTitleExtras(media({ id: 21 }), new Set(['keyart'] as const))
+    expect(peekTitleArt(21)).toBeUndefined()
+  })
+})
+
+describe('titleExtrasKey', () => {
+  it('changes only when the record brings something the lookups read', () => {
+    const card = media({ coverImage: { extraLarge: 'a.jpg' }, genres: ['Drama'] } as Partial<Media>)
+    // The full record repeats the card's inputs and adds fields the lookups never read.
+    const full = media({ coverImage: { extraLarge: 'a.jpg' }, genres: ['Drama'], description: 'text', popularity: 9 } as Partial<Media>)
+    expect(titleExtrasKey(full)).toBe(titleExtrasKey(card))
+    // A provider logo, a MyAnimeList id or a certification is new input.
+    expect(titleExtrasKey(media({ logoImage: 'logo.png' }))).not.toBe(titleExtrasKey(card))
+    expect(titleExtrasKey(media({ idMal: 1 }))).not.toBe(titleExtrasKey(card))
+    expect(titleExtrasKey(media({ contentRating: 'TV-14' }))).not.toBe(titleExtrasKey(card))
+    // A placeholder that knows only the id gains the titles the schedule lookup matches on.
+    expect(titleExtrasKey({ id: 154587, title: {} } as Media)).not.toBe(titleExtrasKey(card))
+  })
+  it('reads a TMDB or add-on banner as key art input, and no other banner', () => {
+    const tmdb = (bannerImage: string) => media({ bannerImage, catalog: { provider: 'tmdb', type: 'anime', id: '1' } } as Partial<Media>)
+    expect(titleExtrasKey(tmdb('a.jpg'))).not.toBe(titleExtrasKey(tmdb('b.jpg')))
+    expect(titleExtrasKey(media({ bannerImage: 'a.jpg' }))).toBe(titleExtrasKey(media({ bannerImage: 'b.jpg' })))
   })
 })

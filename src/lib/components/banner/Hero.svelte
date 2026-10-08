@@ -9,6 +9,8 @@
   import { motionPreference } from '$lib/settings/ui'
   import type { Media } from '$lib/anilist/types'
   import { banner, cover, title, format, status, season, totalEpisodes } from '$lib/anilist/media'
+  import { baseImageSrc, isPlaceholderThumb, washBackground, type DetailArt } from '$lib/detail/backdrop'
+  import { headerImage } from '$lib/detail/header-image'
   import { rememberDetail } from '$lib/anilist/detail-hint'
   import Play from '@lucide/svelte/icons/play'
   import Info from '@lucide/svelte/icons/info'
@@ -40,22 +42,27 @@
     oninfo,
     onfav,
     showOverlay = true,
-    initialArtworkVisible = false,
     artworkMode = 'backdrop',
+    artwork,
+    onartworkfailed,
   }: {
     medias: Media[]
     onplay?: (m: Media) => void
     oninfo?: (m: Media) => void
     onfav?: (m: Media) => void
     showOverlay?: boolean
-    /** The detail skeleton already painted this exact banner; settle it without replaying a slide. */
-    initialArtworkVisible?: boolean
     /** Desktop Home can retain portrait cover art instead of cropping it into a wide backdrop. */
     artworkMode?: 'backdrop' | 'cover'
+    /** The series page's header art (src/lib/detail/backdrop.ts), chosen there for every layout. The
+     *  page renders this hero while its record still loads, so the slide (keyed by id) and the art it
+     *  painted carry over to the loaded page. */
+    artwork?: DetailArt
+    /** The chosen art failed after its retries; the series page moves to its next candidate. */
+    onartworkfailed?: (src: string) => void
   } = $props()
 
   let i = $state(0)
-  let loadedArtworkId = $state<number | null>(untrack(() => initialArtworkVisible ? (medias[0]?.id ?? null) : null))
+  let loadedArtworkId = $state<number | null>(null)
   let cycle = $state(0)
   let scrolled = $state(false)
   let navDirection = $state<1 | -1>(1)
@@ -205,8 +212,9 @@
   let heroWheelSteppedAt = 0
   let heroWheelLastMagnitude = 0
   let heroWheelReset: ReturnType<typeof setTimeout> | undefined
+  // Not in Game mode: WebKitGTK turns a finger swipe into wheel events, and the swipe already steps.
   function onHeroWheel(e: WheelEvent) {
-    if (!$wheelScrollAcross || medias.length < 2 || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return
+    if (!$wheelScrollAcross || $gameMode || medias.length < 2 || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return
     e.preventDefault()
     const now = performance.now()
     const magnitude = Math.abs(e.deltaX)
@@ -400,6 +408,31 @@
   const heroBleed = $derived(wideScale && heroTheme?.template ? heroTheme.bleed ?? 0 : 0)
   const artworkReady = $derived(loadedArtworkId === current?.id)
   const artworkSettled = () => { loadedArtworkId = current.id; scheduleWarm() }
+  // The wide artwork. Home paints the banner and steps to the cover when the banner fails after its
+  // retries or is YouTube's placeholder still; the series page paints what it chose and asks it for
+  // the next candidate. A failure never counts as settled: WebKitGTK fires `error` on a 404, which
+  // left an empty hero.
+  let failedArtwork = $state<string[]>([])
+  const backdropSrc = $derived.by(() => {
+    if (!current) return ''
+    if (artwork) return artwork.kind === 'banner' || artwork.kind === 'keyart' ? artwork.src : ''
+    const wide = banner(current)
+    return wide && !failedArtwork.includes(wide) ? wide : cover(current)
+  })
+  function backdropFailed(src: string) {
+    if (artwork) { onartworkfailed?.(src); return }
+    // Nothing further to step to: settle on what is there rather than hold the skeleton forever.
+    if (src === cover(current) || failedArtwork.includes(src)) { artworkSettled(); return }
+    failedArtwork = [...failedArtwork, src]
+  }
+  function backdropLoaded(event: Event) {
+    const image = event.currentTarget as HTMLImageElement
+    const src = baseImageSrc(image.getAttribute('src'))
+    if (isPlaceholderThumb(src, image.naturalWidth)) backdropFailed(src)
+    else artworkSettled()
+  }
+  // A series page without a banner or key art shows a wash, which has nothing to wait for.
+  $effect(() => { if (artwork?.kind === 'wash' && current) loadedArtworkId = current.id })
   // Accent: tint everything off the cover's dominant color; theme fallback.
   const accent = $derived(current?.coverImage?.color || 'hsl(346.6 79.12% 51.18%)')
   const nextAiring = $derived(current?.nextAiringEpisode)
@@ -652,6 +685,7 @@
     data-slot={showOverlay ? 'home.hero' : 'detail.banner'}
     data-variant="desktop"
     data-nav-row
+    data-art={showOverlay ? undefined : artwork?.kind}
     class="hero-root relative mb-6 h-[40vh] touch-pan-y select-none transition-opacity duration-500 {bannerScale ? 'theme-banner-scale mb-0' : seriesBannerHeight ? '' : showOverlay ? 'sm:h-[50vh]' : controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'} {scrolled ? 'opacity-40' : 'opacity-100'}"
     class:cursor-grab={$dragCarousels && medias.length > 1}
     class:cursor-grabbing={heroDragging}
@@ -678,7 +712,7 @@
          with the viewport edge. Keyed for a crossfade. -->
     <div class="pointer-events-none absolute left-[calc(-1*var(--theme-shell-left,0px))] top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:top-[calc(-1*var(--theme-shell-top,2rem))] sm:h-[calc(100%+var(--theme-shell-top,2rem))]">
       {#key current.id}
-        <div data-part="hero.slide" class="{initialArtworkVisible && !showOverlay ? 'detail-hero-reveal' : 'hero-slide-in'} absolute inset-0" class:hero-carousel-slide={showOverlay} style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:{bannerScale && !showOverlay ? .5 : .7}">
+        <div data-part="hero.slide" class="hero-slide-in absolute inset-0" class:hero-carousel-slide={showOverlay} style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:{bannerScale && !showOverlay ? .5 : .7}">
           {#if !artworkReady}<div class="absolute inset-0 skeloader"></div>{/if}
           {#if artworkMode === 'cover'}
             <img src={cover(current)} alt="" aria-hidden="true" draggable="false" loading="eager" decoding="async"
@@ -686,11 +720,17 @@
             <img data-part="hero.art" src={cover(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
                  onload={artworkSettled} onerror={artworkSettled}
                  class="hero-artwork relative ml-auto h-full w-[min(50vw,36rem)] object-contain object-right py-7 pr-[5vw] transition-opacity duration-200 {artworkReady ? 'opacity-100' : 'opacity-0'}" />
-          {:else}
-            <img data-part="hero.art" src={banner(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
-                 onload={artworkSettled} onerror={artworkSettled}
+          {:else if backdropSrc}
+            <img data-part="hero.art" data-art={artwork?.kind} use:headerImage={{ src: backdropSrc, onfailed: backdropFailed }} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
+                 onload={backdropLoaded}
                  class="hero-artwork relative h-full w-full object-cover transition-opacity duration-200 {artworkReady ? 'opacity-100' : 'opacity-0'}"
                  style="object-position:center 20%" />
+          {:else if artwork?.kind === 'wash'}
+            <!-- No banner and no key art: a wash of the cover's colour. The cover stays here, hidden,
+                 for a theme to show (`[data-part="detail.backdrop"][data-art="cover"]`). -->
+            <div class="absolute inset-0" style:background-image={washBackground(artwork.rgb)}></div>
+            <img data-part="detail.backdrop" data-art="cover" src={cover(current)} alt="" aria-hidden="true"
+                 class="absolute inset-0 h-full w-full object-cover opacity-0" style="object-position:center 30%" />
           {/if}
         </div>
       {/key}
@@ -915,11 +955,6 @@
   /* The resting opacity is declared statically as well as in the keyframes, so a surface that
      drops the entrance animation (a Game-mode detail banner, below) still settles at the same level. */
   .hero-slide-in { opacity: var(--hero-final-opacity, 1); animation: hero-slide-in 480ms cubic-bezier(.22, 1, .36, 1) both; }
-  @keyframes detail-hero-reveal {
-    from { opacity: .5; }
-    to { opacity: var(--hero-final-opacity, .7); }
-  }
-  .detail-hero-reveal { opacity: var(--hero-final-opacity, .7); animation: detail-hero-reveal 220ms ease-out both; }
   .hero-copy { animation: hero-copy-in 360ms cubic-bezier(.22, 1, .36, 1) both; }
   /* Game mode (the Deck's WebKitGTK 2.52). A transform or opacity tween lifts its element onto a
      compositor layer for the tween only. When the tween ends the layer is dropped and its pixels are
@@ -950,14 +985,12 @@
   /* A one-off tween or transition would hand its layer back when it ends, so these stay static in
      Game mode: a detail banner (a single slide, nothing to animate between), artwork that arrives
      after the decode deadline, and the dim when Home scrolls. */
-  :global(html.gamemode) .hero-slide-in:not(.hero-carousel-slide),
-  :global(html.gamemode) .detail-hero-reveal { animation: none; }
+  :global(html.gamemode) .hero-slide-in:not(.hero-carousel-slide) { animation: none; }
   :global(html.gamemode) .hero-artwork,
   :global(html.gamemode) .hero-root { transition: none; }
   @media (min-width: 640px) {
     .game-home-hero { height: 54vh; }
   }
   :global(html[data-motion='reduced']) .hero-slide-in,
-  :global(html[data-motion='reduced']) .detail-hero-reveal,
   :global(html[data-motion='reduced']) .hero-copy { animation-duration: 1ms; }
 </style>

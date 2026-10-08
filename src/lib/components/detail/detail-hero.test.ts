@@ -46,11 +46,43 @@ describe('mobile series hero', () => {
     expect(detail).toContain('if (next.solid === wasSolid) return')
   })
 
-  it('never crops the cover art or feeds a trailer thumbnail to the band', () => {
+  it('never crops the cover art, blurs a photograph or feeds a trailer thumbnail to the header', () => {
     expect(detail).toContain('object-contain')
-    // banner() falls back to a YouTube still whose blurred pillarbox is baked into the JPEG.
-    expect(detail).toContain('<img src={cover(m)} alt="" class="h-full w-full scale-110 object-cover')
-    expect(detail).not.toContain('src={banner(m)}')
+    // banner() falls back to a YouTube still whose blurred pillarbox is baked into the JPEG; the
+    // header art comes from backdrop.ts on every layout, loading or loaded.
+    expect(detail).not.toMatch(/\bbanner\(/)
+    expect(detail).not.toContain('import { banner,')
+    // A title without art used to get its cover blurred into the header (blur-xl on phones,
+    // blur-2xl on the desktop overlay), which read as broken art. The last resort is a wash of the
+    // cover's colour; the cover stays, hidden, for a theme that wants it shown.
+    expect(detail).not.toMatch(/blur-(xl|2xl)/)
+    expect(detail).not.toContain('scale-110')
+    expect(detail).toContain("const headerWash = $derived(headerArt.kind === 'wash' ? washBackground(headerArt.rgb) : undefined)")
+    expect(detail.match(/style:background-image=\{headerWash\}/g)?.length).toBe(3)
+    expect(detail).toContain('<img data-part="detail.backdrop" data-art="cover" src={cover(m)} alt="" aria-hidden="true"')
+    expect(detail).toContain('h-full w-full object-cover opacity-0')
+  })
+
+  it('chooses the header art once, for every layout, while loading and once loaded', () => {
+    expect(detail).toContain("import { baseImageSrc, detailArt, recordBanner, washBackground } from '$lib/detail/backdrop'")
+    expect(detail).toContain('const headerArt = $derived(detailArt({')
+    expect(detail).toContain('banner: recordBanner(shown, { loading: pending, anilistBanner }),')
+    expect(detail).toContain('keyartPending: !detailExtrasSettled,')
+    expect(detail).toContain('themeArt: detailTheme.art,')
+    // Phone overlay, phone band and desktop overlay paint it themselves; the desktop banner is Hero's.
+    expect(detail.match(/data-art=\{headerArt\.kind\}/g)?.length).toBe(5)
+    expect(detail).toContain('<Hero medias={[m]} showOverlay={false} artwork={headerArt} onartworkfailed={backdropFailed} />')
+  })
+
+  it('retries header art before giving it up for the next candidate', () => {
+    // One network hiccup used to cost a title its art for the whole visit (and left the phone band
+    // empty: its image had no error handler at all). Posters already retried; header art does too.
+    expect(detail).toContain("import { headerImage } from '$lib/detail/header-image'")
+    expect(detail.match(/use:headerImage=\{\{ src: headerSrc, onfailed: backdropFailed \}\}/g)?.length).toBe(3)
+    expect(detail).not.toMatch(/<img data-part="detail\.backdrop"[^>]*src=\{headerSrc\}/)
+    const action = readFileSync(fileURLToPath(new URL('../../detail/header-image.ts', import.meta.url)), 'utf8')
+    expect(action).toContain('const retrying = reliableImage(node, params.src)')
+    expect(action).toContain("node.addEventListener('imagefailed', failed)")
   })
 
   it('fades the artwork in rather than popping it', () => {
@@ -64,37 +96,112 @@ describe('mobile series hero', () => {
     // object each time. A fade flag an effect reset on that object hid a banner whose image had
     // already loaded: an unchanged image never fires `load` again. The fade follows the image itself.
     expect(detail).not.toContain('artLoaded')
-    expect(detail.match(/onload=\{markArtLoaded\}/g)?.length).toBe(4)
-    expect(detail).toContain("artReady(overlayBackdrop) ? 'opacity-100' : 'opacity-0'")
-    expect(detail).toContain("artReady(m.bannerImage) ? 'opacity-100' : 'opacity-0'")
-    expect(detail.match(/artReady\(cover\(m\)\) \? 'opacity-50' : 'opacity-0'/g)?.length).toBe(2)
+    expect(detail.match(/onload=\{markArtLoaded\}/g)?.length).toBe(3)
+    expect(detail.match(/artReady\(headerSrc\) \? 'opacity-100' : 'opacity-0'/g)?.length).toBe(3)
+    // A retried image carries a retry marker in its URL; the art it stands for is the URL without it.
+    expect(detail).toContain("loadedArt = baseImageSrc(event.currentTarget.getAttribute('src'))")
   })
 
-  it('shapes the loading skeleton like the hero it is standing in for', () => {
-    // Same height classes as the real band, so the page does not re-lay-out when data lands.
-    const bands = detail.match(/h-\[26vh\] max-h-72 min-h-44/g) ?? []
-    expect(bands.length).toBeGreaterThanOrEqual(2)
-    // Desktop and Deck use the same compact hero variants and overlap as the loaded branch.
-    expect(detail).toContain("controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'")
+  it("loads in the theme's own page, not a hand-made skeleton", () => {
+    // The loading layout used to be a default-izumi skeleton without a single hook, so every themed
+    // page jumped into a different layout when its record landed. The real branches render from the
+    // tapped card's record (or a placeholder) instead, with `data-pending` on each page root.
+    expect(detail).toContain('const pending = $derived(!$offlineMode && !media && $store.fetching)')
+    expect(detail).toContain('{:else if shown}\n  {@const m = shown}')
+    expect(detail).not.toContain('$store.fetching && !media}')
+    expect(detail.match(/data-slot="detail" [^>]*data-pending=\{pending \|\| undefined\}/g)?.length).toBe(4)
+    expect(detail.match(/data-slot="detail"/g)?.length).toBe(4)
+    // Placeholders live inside the page's parts: no skeleton markup precedes the page.
+    const template = detail.slice(detail.indexOf('</script>'))
+    expect(template.indexOf('skeloader')).toBeGreaterThan(template.indexOf('{:else if shown}'))
+    expect(detail).toContain('{#snippet placeholderLines(count: number)}')
+    // The band and the desktop hero keep their sizes; the desktop overlap follows the theme.
+    expect(detail).toContain('h-[26vh] max-h-72 min-h-44')
     expect(hero).toContain('h-[40vh]')
     expect(hero).toContain("controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'")
-    expect(detail).toContain("controllerUi ? '-mt-[16vh]' : '-mt-[18vh]'")
     expect(detail).toContain('const bannerOverlap = $derived(detailTheme.bannerHeight ? Math.round(detailTheme.bannerHeight * 0.58) : (controllerUi ? 16 : 18))')
     expect(detail).toContain('`-${bannerOverlap}vh`')
   })
 
-  it('settles artwork already painted by the skeleton without replaying a directional slide', () => {
-    expect(detail).toContain('let loadedHintBanner = $state')
-    expect(detail).toContain('onload={() => (loadedHintBanner = banner(detailHint))}')
-    expect(detail).toContain('initialArtworkVisible={loadedHintBanner === banner(m)}')
-    expect(hero).toContain("initialArtworkVisible && !showOverlay ? 'detail-hero-reveal' : 'hero-slide-in'")
-    expect(hero).toMatch(/@keyframes detail-hero-reveal\s*\{\s*from \{ opacity: \.5; \}\s*to \{ opacity:/)
+  it('keeps the artwork the loading page painted', () => {
+    // One <img> (and one desktop Hero, keyed by id) serves the loading and the loaded page, so the
+    // banner neither dips to transparent and fades in again nor replays its slide.
+    expect(detail).not.toContain('loadedHintBanner')
+    expect(detail).not.toContain('initialArtworkVisible')
+    expect(hero).not.toContain('initialArtworkVisible')
+    expect(detail).not.toContain('object-cover opacity-35')
   })
 
-  it('carries known titles into loading without a fake alternate-title shimmer', () => {
+  it('carries known titles into loading and holds a line only for an unknown one', () => {
     expect(detail).not.toContain('Loading title…')
-    expect(detail.match(/detailHint\?\.title\.native \|\| detailHint\?\.title\.romaji/g)?.length).toBe(2)
     expect(detail).not.toContain('h-4 w-40 rounded skeloader')
+    expect(detail).toContain('const named = (m: Media) => !!(m.title.romaji || m.title.english || m.title.userPreferred)')
+    // Only while loading: a loaded record without a name (an offline title rebuilt from its
+    // downloads) is not still loading, so it never keeps a placeholder for good.
+    expect(detail).toContain('const unnamed = (m: Media) => pending && !named(m)')
+    // An inline block holding a space takes the heading's own line height, so the title row keeps its size.
+    // It keeps a width of its own in a heading sized to its content (a centred overlay column).
+    expect(detail).toContain('{:else if unnamed(m)}\n    <h1 data-part="detail.title" class={className}><span class="inline-block w-3/5 min-w-32 max-w-full rounded-md align-top skeloader" aria-hidden="true">&nbsp;</span><span class="sr-only">Loading</span></h1>')
+    // No made-up facts for a title known only by id.
+    expect(detail.match(/\{#if unnamed\(m\)\}<span class="my-0\.5 h-3 w-\d+ rounded skeloader"/g)?.length).toBe(2)
+    expect(detail).not.toMatch(/\{(#if|:else if) !named\(m\)\}/)
+    // The poster's placeholder too: a loaded title without a cover does not shimmer for good.
+    expect(detail).toContain('const posterWaiting = (m: Media) => (cover(m) ? loadedPoster !== cover(m) : pending)')
+    // A placeholder knows no title: the bar never prints "TBA".
+    expect(detail.match(/\{#if barState\.showTitle && named\(m\)\}/g)?.length).toBe(2)
+  })
+
+  it('shows the card only to a profile allowed to see it', () => {
+    expect(detail).toContain('const hintFits = (hint: Media | undefined): hint is Media => !!hint && profileAllowsMedia(hint, $activeProfile)')
+    expect(detail).toContain('&& (hint.isAdult != null || profileAllowsAdult($activeProfile))')
+    expect(detail).toContain('{:else if media && !profileAllowsMedia(media, $activeProfile)}')
+  })
+
+  it('runs no action on the card record the loading page shows', () => {
+    const template = detail.slice(detail.indexOf('</script>'))
+    const handlers = [...template.matchAll(/onclick=\{([^\n]*)/g)].map((match) => match[1])
+    // Navigation and menu toggles act on the page, not the title.
+    const pageOnly = ['heroBack}', 'pressPlay}', 'retryDetail}', '() => (showMore = false)}', '() => { h.tap(); showMore = !showMore }}', '() => (descExpanded = !descExpanded)}']
+    for (const handler of handlers) expect(handler.startsWith('ready(') || pageOnly.some((ok) => handler.startsWith(ok)), handler).toBe(true)
+    expect(handlers.filter((handler) => handler.startsWith('ready(')).length).toBeGreaterThanOrEqual(13)
+    expect(detail).toContain('const ready = <T extends unknown[]>(run: (m: Media, ...args: T) => void) => (...args: T) => { if (media) run(media, ...args) }')
+    // Play pressed while loading waits for the record; hovering or focusing it warms once it lands.
+    expect(detail).toContain('if (media) { playCta(media); return }')
+    expect(detail).toContain('untrack(() => playCta(target, false))')
+    expect(detail.match(/onclick=\{pressPlay\}/g)?.length).toBe(4)
+    // Editors and the data components only ever get the full record.
+    expect(detail).toContain('{#if showEditor && media}')
+    expect(detail).toContain('{#if showLocalLists && media}')
+    expect(detail.match(/\{#if showRatingRow && media\}/g)?.length).toBe(5)
+    expect(detail.match(/<EpisodeList /g)?.length).toBe(1)
+    expect(detail).toContain('{#if pending}\n    <div data-slot="detail.episodes" class="relative" aria-hidden="true">')
+    expect(detail).toContain("{:else if pending}\n    {@render sectionPlaceholder(phone)}\n  {:else if id === 'relations'}")
+    // The countdown only formats `nextAiringEpisode`, which the card's record carries as well.
+    expect(detail.match(/\{#if countdown !== 'none'\}<AiringCountdown media=\{m\}/g)?.length).toBe(3)
+    // The poster keeps its placeholder shape until its image has loaded; a blank image stands in.
+    expect(detail.match(/use:reliableImage=\{posterSrc\(m\)\} alt="" onload=\{markPosterLoaded\}/g)?.length).toBe(3)
+    expect(detail.match(/posterWaiting\(m\) \? 'aspect-\[46\/65\] skeloader' : ''/g)?.length).toBe(3)
+  })
+
+  it('starts the artwork lookups with the page and merges what the full record adds', () => {
+    // Keyed on the title plus what the lookups read, so the card's record starts them and the full
+    // record re-runs them only when it brings more (a provider logo, a MyAnimeList id).
+    expect(detail).toContain("const extrasInputs = $derived(shown ? titleExtrasKey(shown) : '')")
+    expect(detail).toContain('const target = untrack(() => shown)')
+    expect(detail).toContain('if (target.id !== extrasTitle) {')
+    expect(detail).toContain('const found = peekTitleArt(anilistIdOf(target))')
+    expect(detail).toContain('detailExtras = { ...detailExtras, ...value }')
+    // The wait for key art and the logo runs from the page's arrival, at most 1.2 s. It starts
+    // unsettled, so the first render never picks the wash for a title whose key art is on its way.
+    expect(detail).toContain('artDeadline = setTimeout(() => (detailExtrasSettled = true), 1200)')
+    expect(detail).toContain('let detailExtrasSettled = $state(false)')
+  })
+
+  it('keeps a way back on a page that failed to load or found nothing', () => {
+    expect(detail).toContain('{#snippet failureBar()}')
+    expect(detail.match(/\{#if \$isMobile\}\{@render failureBar\(\)\}\{\/if\}/g)?.length).toBe(2)
+    expect(detail).toContain('onclick={retryDetail}')
+    expect(detail).toContain("query.reexecute?.({ requestPolicy: 'network-only' })")
   })
 
   it('does not let the portrait cover create a dead zone before episodes', () => {
@@ -102,8 +209,8 @@ describe('mobile series hero', () => {
     // the adjacent title/description/actions ended much earlier. Loading and loaded layouts must
     // share the balanced 11rem identity-cover geometry.
     expect(detail).not.toContain('md:w-52')
-    expect(detail.match(/h-auto w-44 shrink-0/g)?.length).toBeGreaterThanOrEqual(2)
-    expect(detail).toContain('self-start rounded-lg')
+    // One desktop cover, which the loading page renders too.
+    expect(detail.match(/h-auto w-44 shrink-0/g)?.length).toBe(1)
     expect(detail).toContain("detailTheme.coverAlign === 'end' ? 'self-end' : 'self-start'")
     expect(detail).toContain('mb-4 flex flex-col gap-5 md:flex-row')
   })
@@ -118,7 +225,7 @@ describe('mobile series hero', () => {
     // The band is positioned, so it paints over static in-flow content - and the poster row is
     // pulled up into it. Without its own stacking context the band covered the poster's top the
     // moment its image loaded, which read as the cover being cropped.
-    expect(detail).toContain('relative z-10 -mt-10 flex gap-4')
+    expect(detail).toContain("relative z-10 {detailTheme.bannerHidden ? 'mt-2' : '-mt-10'} flex gap-4")
   })
 
   it('keeps a quiet borderless schedule summary beneath mobile facts', () => {

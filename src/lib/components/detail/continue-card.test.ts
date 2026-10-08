@@ -19,9 +19,10 @@ describe('continue card', () => {
     expect(detail).toContain("detailTheme.continue === 'card'")
     // `listEpisodes` is the list's own numbers (downloaded ones offline), shared with the flip rule.
     expect(detail).toContain('const listEpisodes = (m: Media) => ($offlineMode ? downloadedEpisodes(m) : animeEpisodeNumbers(m))')
-    expect(detail).toContain('playableThrough(listEpisodes(media), airedCount(media), $offlineMode) > 0')
+    // From what the page shows, so the header keeps its shape from the loading page to the loaded one.
+    expect(detail).toContain('playableThrough(listEpisodes(shown), airedCount(shown), $offlineMode) > 0')
     expect(detail.match(/\{#if !headerCtaHidden\}/g)?.length).toBe(2)
-    expect(detail.match(/onpointerenter=\{\(\) => prefetchEpisodeSources\(m, ctaEp\(m\)\)\}/g)).toHaveLength(4)
+    expect(detail.match(/onpointerenter=\{warmPlay\}/g)).toHaveLength(4)
   })
   // "Continue: Episode 1071", not the number badges' "A1071" form, like the other new pieces.
   it('prints the plain episode number on the card', () => {

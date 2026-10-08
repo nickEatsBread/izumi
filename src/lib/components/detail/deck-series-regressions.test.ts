@@ -7,7 +7,7 @@ const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.m
 describe('Steam Deck series interactions', () => {
   it('opens Browse with the selected series season and year', () => {
     const detail = read('./AnimeDetail.svelte')
-    expect(detail).toContain("import { banner, title, cover, format, status, season, seasonBrowseHref")
+    expect(detail).toContain("import { title, cover, format, status, season, seasonBrowseHref")
     expect(detail.match(/href=\{seasonBrowseHref\(m\)\}/g)?.length).toBe(3)
   })
 

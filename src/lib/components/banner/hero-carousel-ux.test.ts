@@ -69,8 +69,13 @@ describe('featured carousel UX', () => {
   it('keeps a skeleton visible until the active artwork has loaded', () => {
     expect(hero).toContain('const artworkReady = $derived(loadedArtworkId === current?.id)')
     expect(hero.match(/\{#if !artworkReady\}<div class="absolute inset-0 skeloader"><\/div>\{\/if\}/g)?.length).toBe(2)
-    // Mobile plus the two mutually exclusive desktop treatments (backdrop or full cover).
-    expect(hero.match(/onload=\{artworkSettled\} onerror=\{artworkSettled\}/g)?.length).toBe(3)
+    // Mobile and the desktop full cover. The desktop backdrop settles on load only: a failure (after
+    // its retries) or YouTube's placeholder still steps to the next artwork instead of settling on
+    // an empty or grey hero (WebKitGTK fires `error` on a 404).
+    expect(hero.match(/onload=\{artworkSettled\} onerror=\{artworkSettled\}/g)?.length).toBe(2)
+    expect(hero).toContain('use:headerImage={{ src: backdropSrc, onfailed: backdropFailed }}')
+    expect(hero).toContain('if (isPlaceholderThumb(src, image.naturalWidth)) backdropFailed(src)')
+    expect(hero).toContain("return wide && !failedArtwork.includes(wide) ? wide : cover(current)")
   })
 
   it('keeps pointer-only carousel controls out of Steam Deck spatial navigation', () => {

@@ -7,7 +7,7 @@
   import Tabs from '$lib/components/detail/Tabs.svelte'
   import EpisodeList from '$lib/components/detail/EpisodeList.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
-  import { banner, title, cover, format, status, season, seasonBrowseHref, ratingBg, totalEpisodes, airedCount } from '$lib/anilist/media'
+  import { title, cover, format, status, season, seasonBrowseHref, ratingBg, totalEpisodes, airedCount } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
   import { resumeEpisode, playEpisode, prefetchEpisodeSources, type PlayState } from '$lib/stremio/play'
   import { offlineMode } from '$lib/stores/offline'
@@ -57,7 +57,7 @@
   import { acquireEdgeToEdge } from '$lib/actions/edge-to-edge'
   import { suppressBottomNav } from '$lib/shell/chrome'
   import { openTrailerPopup } from '$lib/stores/trailer'
-  import { gameMode } from '$lib/player/session'
+  import { connecting, gameMode } from '$lib/player/session'
   import { controllerMode } from '$lib/nav/input'
   import { getKitsuId } from '$lib/anizip'
   import { anilistIdOf, kitsuIdOf, providerExternalUrl } from '$lib/catalog/identity'
@@ -66,7 +66,7 @@
   import { pendingCompanionPlayback, type PendingCompanionPlayback } from '$lib/companion/client'
   import { companionPlaybackTarget } from '$lib/companion/playback'
   import { activeProfile } from '$lib/profiles/store'
-  import { profileAllowsMedia } from '$lib/profiles/content'
+  import { profileAllowsAdult, profileAllowsMedia } from '$lib/profiles/content'
   import ParentalBlock from '$lib/components/profiles/ParentalBlock.svelte'
   import { themePresentation } from '$lib/themes/runtime'
   import { episodesBelow, episodesOnSide, resolveDetail, type DetailSection } from '$lib/themes/presentation'
@@ -74,7 +74,9 @@
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { mediaDisplayModel } from '$lib/themes/host-model'
   import { ambientFromHex } from '$lib/themes/ambient'
-  import { artNeeds, loadTitleExtras, metaNeeds, templateNeeds, type TitleExtras } from '$lib/themes/title-extras'
+  import { artNeeds, loadTitleExtras, metaNeeds, peekTitleArt, templateNeeds, titleExtrasKey, type TitleExtras } from '$lib/themes/title-extras'
+  import { baseImageSrc, detailArt, recordBanner, washBackground } from '$lib/detail/backdrop'
+  import { headerImage } from '$lib/detail/header-image'
   import { countryName, formatDate as fmtDate, prettyEnum } from '$lib/detail/facts'
   import FactList from './FactList.svelte'
   import AiringCountdown from './AiringCountdown.svelte'
@@ -161,6 +163,27 @@
     const progress = Math.max(rawEntry?.progress ?? 0, externalEntry?.progress ?? 0, local?.progress ?? 0)
     return { ...base, mediaListEntry: { ...rawEntry, progress, status: local?.status ?? rawEntry?.status ?? externalEntry?.status } }
   })
+  const detailHint = $derived($detailHints[id])
+  // While the detail query runs with nothing cached, the page is the theme's real page, drawn from
+  // what the card the user tapped already showed (or a placeholder that knows only the id), with
+  // `data-pending` on it: every hook and element is where the loaded page puts it, so nothing
+  // re-lays out, and the artwork painted while loading is the artwork the page keeps. The card's
+  // record never reaches the data components (episodes, relations, the list editor), and no action
+  // runs on it (see `ready`).
+  const pending = $derived(!$offlineMode && !media && $store.fetching)
+  // A profile that may not see this title must not see the card's art and title either; one that
+  // excludes adult titles also skips a card that cannot say whether the title is one.
+  const hintFits = (hint: Media | undefined): hint is Media => !!hint && profileAllowsMedia(hint, $activeProfile)
+    && (hint.isAdult != null || profileAllowsAdult($activeProfile))
+  const shown = $derived(media ?? (pending ? (hintFits(detailHint) ? detailHint : ({ id, title: {}, coverImage: {} } as Media)) : undefined))
+  // A title known by name: a placeholder has none, and `title()` would print "TBA".
+  const named = (m: Media) => !!(m.title.romaji || m.title.english || m.title.userPreferred)
+  // A loading page without a name holds placeholder lines; a loaded record without one is not still
+  // loading (an offline title rebuilt from its downloads), so it keeps the text it always had.
+  const unnamed = (m: Media) => pending && !named(m)
+  // Display reads `shown`; every action needs the full record. Pressed before it lands, an action
+  // does nothing, except Play, which waits for it (`pressPlay`).
+  const ready = <T extends unknown[]>(run: (m: Media, ...args: T) => void) => (...args: T) => { if (media) run(media, ...args) }
   // AniList does not expose Kitsu IDs. AniZip is already the detail page's episode-metadata
   // mapping source, so reuse its cached per-title mapping to make the Kitsu destination exact.
   // Looked up per title id, never per `media` object: the page builds a new one each time its query
@@ -188,13 +211,25 @@
     kitsu: Boolean($kitsuToken),
     simkl: Boolean($simklToken),
   }, externalKitsuId) : [])
-  const detailHint = $derived($detailHints[id])
-  $effect(() => { if (media) rememberDetail(media) })
+  // The AniList banner seen for this title: the card the user tapped, then any AniList record of it
+  // this page showed. While AniList is unavailable the detail record comes from the fallback catalog,
+  // which has no banner for about half of the titles that have one, so the page keeps this one
+  // rather than trading the real art for a stand-in.
+  let anilistBanner = $state(untrack(() => (source ? undefined : $detailHints[id]?.bannerImage)))
+  $effect(() => {
+    if (!source && media && media.catalog?.provider !== 'kitsu' && media.bannerImage) anilistBanner = media.bannerImage
+  })
+  $effect(() => {
+    if (!media) return
+    // Nor does the fallback record overwrite the banner the next visit's hint carries.
+    const keep = !source && media.catalog?.provider === 'kitsu' && !media.bannerImage ? untrack(() => anilistBanner) : undefined
+    rememberDetail(keep ? { ...media, bannerImage: keep } : media)
+  })
 
   // Match the episode list's progress ownership. Tracker queries can still be stale when Android
   // returns from the player, while session/local history has already recorded the completed episode.
-  const watchedThrough = $derived(media
-    ? animeWatchedProgress(media, $localHistory, $sessionProgress, $manualProgressOverrides)
+  const watchedThrough = $derived(shown
+    ? animeWatchedProgress(shown, $localHistory, $sessionProgress, $manualProgressOverrides)
     : 0)
 
   // Resume target for the hero CTA. Offline = the first DOWNLOADED episode past the progress the
@@ -210,47 +245,108 @@
     return animeResumeEpisode(m, watchedThrough)
   }
   const ctaHasProgress = (m: Media) => ($offlineMode ? (m.mediaListEntry?.progress ?? 0) : watchedThrough) > 0
-  function playCta(m: Media) {
-    h.impact('medium')
+  function playCta(m: Media, haptic = true) {
+    if (haptic) h.impact('medium')
     prefetchEpisodeSources(m, ctaEp(m), 0)
     if ($offlineMode) playEpisode(m, offlineResumeEp(m), (s) => (heroPlay = s))
     else resumeEpisode(m, ctaEp(m), (s) => (heroPlay = s))
   }
+  // Play pressed while the record loads: the connecting screen comes up at once (cancel drops the
+  // press), and playback starts when the record lands, if the page is still open.
+  let playWhenReady = $state(false)
+  function pressPlay() {
+    if (media) { playCta(media); return }
+    if (playWhenReady || !shown) return
+    h.impact('medium')
+    playWhenReady = true
+    heroPlay = { status: 'resolving' }
+    connecting.set({
+      title: named(shown) ? title(shown) : '',
+      art: cover(shown) || undefined,
+      cancel: () => { connecting.set(null); playWhenReady = false; heroPlay = { status: 'idle' } },
+    })
+  }
+  $effect(() => {
+    if (!playWhenReady) return
+    if (media) {
+      playWhenReady = false
+      const target = media
+      // No second haptic: the press gave one when it was made.
+      untrack(() => playCta(target, false))
+    } else if (!pending) {
+      // The record never came (an error): drop the press with the screen it raised.
+      playWhenReady = false
+      heroPlay = { status: 'idle' }
+      connecting.set(null)
+    }
+  })
+  $effect(() => () => { if (playWhenReady) connecting.set(null) })
+  // Hovering or focusing Play warms the sources it would play. Before the record lands there is
+  // nothing to warm with; remember the button and warm once it lands if the pointer or focus is
+  // still there (a controller lands on Play while the page loads). Plain, not $state: only the
+  // record's arrival should run the check.
+  let warmOnLoad: HTMLElement | null = null
+  function warmPlay(event: Event) {
+    if (media) prefetchEpisodeSources(media, ctaEp(media))
+    else warmOnLoad = event.currentTarget as HTMLElement
+  }
+  $effect(() => {
+    if (!media || !warmOnLoad) return
+    const button = warmOnLoad
+    const target = media
+    warmOnLoad = null
+    if (button.isConnected && (button.matches(':hover') || button === document.activeElement)) untrack(() => prefetchEpisodeSources(target, ctaEp(target)))
+  })
 
   // The tab the viewer picked; until then, or when that tab is gone, the theme's default (`shownTab`).
   let pickedTab = $state('')
   let heroPlay = $state<PlayState>({ status: 'idle' })
   const detailTheme = $derived(resolveDetail($themePresentation))
   // The series' cover colour for theme stylesheets (`--cover-rgb`).
-  const coverRgb = $derived(ambientFromHex(media?.coverImage?.color))
-  // API 3 extras the series page binds: key art (`detail.art`, drawn by the overlay layouts only),
-  // the title logo (`detail.title`) and whatever the header template shows (an age rating, audio).
-  // Keyed by id so a refetch of the same series does not reload them.
+  const coverRgb = $derived(ambientFromHex(shown?.coverImage?.color))
+  // API 3 extras the series page binds: key art (behind every series-page header: first with
+  // `detail.art: "keyart"`, otherwise in place of a missing or broken banner), the title logo
+  // (`detail.title`) and whatever the header template shows (an age rating, audio).
   const detailNeeds = $derived.by(() => {
     const needs = templateNeeds(detailTheme.header)
-    if (detailTheme.art === 'keyart' && detailTheme.layout === 'overlay') needs.add('keyart')
+    needs.add('keyart')
     if (detailTheme.title === 'logo') needs.add('logo')
     return needs
   })
-  const extrasId = $derived(media?.id)
+  // The lookups start with the page, on the card's record or on the placeholder (which carries the
+  // route's AniList id), so key art and the logo load while the detail query runs, and also while
+  // AniList is unavailable. The full record runs them again only when it brings something they read
+  // that the card did not (a provider logo, a MyAnimeList id), and its results merge into what is
+  // there; only a new title starts over.
+  const extrasInputs = $derived(shown ? titleExtrasKey(shown) : '')
   let detailExtras = $state<TitleExtras>({})
-  // Whether the artwork (key art, the logo) has arrived or is no longer waited for. The age rating
-  // and audio come from slower, rate-limited lookups and fill in whenever they land.
-  let detailExtrasSettled = $state(true)
+  // Whether the artwork (key art, the logo) has arrived or is no longer waited for: at most 1.2 s from
+  // the page's arrival, so the page does not swap text → logo. The age rating and audio come from
+  // slower, rate-limited lookups and fill in whenever they land. Unsettled until the effect below has
+  // looked: the first render must not pick the wash for a title whose key art is about to load.
+  let detailExtrasSettled = $state(false)
   let failedDetailLogo = $state('')
+  // Plain, not $state: the effect below both reads and writes them.
+  let extrasTitle: number | undefined
+  let artDeadline: ReturnType<typeof setTimeout> | undefined
   $effect(() => {
-    const id = extrasId
+    void extrasInputs
     const needs = detailNeeds
     const offline = $offlineMode
-    const target = untrack(() => media)
-    detailExtras = {}
-    if (id == null || !target || !needs.size || offline) { detailExtrasSettled = true; return }
+    const target = untrack(() => shown)
     const art = artNeeds(needs)
     const meta = metaNeeds(needs)
-    detailExtrasSettled = !art.size
+    if (!target || !needs.size || offline) { detailExtrasSettled = true; return }
+    if (target.id !== extrasTitle) {
+      extrasTitle = target.id
+      clearTimeout(artDeadline)
+      // Artwork an earlier visit found paints on the first frame.
+      const found = peekTitleArt(anilistIdOf(target))
+      detailExtras = found ? Object.fromEntries(Object.entries(found).filter(([need]) => art.has(need as keyof TitleExtras))) : {}
+      detailExtrasSettled = !art.size || !!found
+      if (!detailExtrasSettled) artDeadline = setTimeout(() => (detailExtrasSettled = true), 1200)
+    }
     let cancelled = false
-    // Key art and logos wait up to 1.2 s so the page does not swap banner → key art, text → logo.
-    const timer = art.size ? setTimeout(() => { if (!cancelled) detailExtrasSettled = true }, 1200) : undefined
     if (art.size) {
       void loadTitleExtras(target, art).then((value) => {
         if (cancelled) return
@@ -258,26 +354,34 @@
         detailExtrasSettled = true
       })
     }
-    if (meta.size) {
+    // A placeholder has no title for the schedule lookup to match; the record brings one.
+    if (meta.size && named(target)) {
       void loadTitleExtras(target, meta).then((value) => {
         if (!cancelled) detailExtras = { ...detailExtras, ...value }
       })
     }
-    return () => { cancelled = true; clearTimeout(timer) }
+    return () => { cancelled = true }
   })
-  // Overlay artwork that failed to load. The next candidate takes its place: key art, then the
-  // banner, then the blurred cover.
+  $effect(() => () => clearTimeout(artDeadline))
+  // The header artwork, one choice for every layout and for the loading and loaded page alike
+  // (backdrop.ts): the banner, key art, a placeholder while the choice still waits, or a wash of the
+  // cover's colour. Never a trailer still or a blurred photograph.
   let failedBackdrops = $state<string[]>([])
-  const backdropFailed = (src: string | null) => {
-    if (src && !failedBackdrops.includes(src)) failedBackdrops = [...failedBackdrops, src]
+  // Called once an image has failed its retries (`reliableImage`); the next candidate takes its place.
+  const backdropFailed = (src: string | null | undefined) => {
+    const failed = baseImageSrc(src)
+    if (failed && !failedBackdrops.includes(failed)) failedBackdrops = [...failedBackdrops, failed]
   }
-  const overlayBackdrop = $derived.by(() => {
-    if (!media) return ''
-    if (detailTheme.art === 'keyart' && !detailExtrasSettled) return ''
-    const candidates = detailTheme.art === 'keyart' ? [detailExtras.keyart, media.bannerImage] : [media.bannerImage]
-    return candidates.find((src): src is string => !!src && !failedBackdrops.includes(src)) ?? ''
-  })
-  const overlayArtWaiting = $derived(detailTheme.art === 'keyart' && !detailExtrasSettled)
+  const headerArt = $derived(detailArt({
+    banner: recordBanner(shown, { loading: pending, anilistBanner }),
+    keyart: detailExtras.keyart,
+    keyartPending: !detailExtrasSettled,
+    themeArt: detailTheme.art,
+    failed: failedBackdrops,
+    rgb: coverRgb,
+  }))
+  const headerSrc = $derived(headerArt.kind === 'banner' || headerArt.kind === 'keyart' ? headerArt.src : '')
+  const headerWash = $derived(headerArt.kind === 'wash' ? washBackground(headerArt.rgb) : undefined)
   const detailLogo = $derived(detailTheme.title === 'logo' && detailExtras.logo && detailExtras.logo !== failedDetailLogo ? detailExtras.logo : '')
   const factsStyle = $derived(detailTheme.factsStyle ?? 'template')
   // What a facts template (`detail.facts`) binds, on phones and desktop alike.
@@ -306,18 +410,19 @@
   // API 3 `detail.continue: "card"`: on phones the Continue card at the top of the episodes takes
   // the header Play button's place, once an episode can play (the card needs one to show) and only
   // while the episodes are on the page: with another tab open, the header keeps its Play button.
-  const headerCtaHidden = $derived(media != null && $isMobile && detailTheme.continue === 'card'
+  const headerCtaHidden = $derived(shown != null && $isMobile && detailTheme.continue === 'card'
     && episodesOnPage(mobileTabs, shownTab(mobileTabs), !episodeTabbed)
-    && playableThrough(listEpisodes(media), airedCount(media), $offlineMode) > 0)
+    && playableThrough(listEpisodes(shown), airedCount(shown), $offlineMode) > 0)
   // A flip order drawn as the round button in the list's gutter (beside a right-hand rail, or with
   // izumi's own toolbar) leaves no toolbar line for release timing, so the info column shows it.
-  const flipGutter = $derived(media != null && flipInGutter({ ...detailTheme.episodes, total: listEpisodes(media).length, phone: $isMobile, rail: sideEpisodes }))
+  const flipGutter = $derived(shown != null && flipInGutter({ ...detailTheme.episodes, total: listEpisodes(shown).length, phone: $isMobile, rail: sideEpisodes }))
 
   // A TV request already chose the title/episode. Once its detail data is ready, open the same
   // source picker as a local Play press; selecting (or auto-selecting) a source then consumes the
   // pending target in startPendingCompanionCast and sends that source to the TV.
   let startedCompanionRequest: PendingCompanionPlayback | null = null
   $effect(() => {
+    // (Shadows the page's `pending` here: this is the TV's request.)
     const pending = $pendingCompanionPlayback
     const current = media
     if (!pending || pending.headless || !current || pending === startedCompanionRequest) return
@@ -350,7 +455,8 @@
   let editorAnchor = $state<HTMLButtonElement>()
   let showLocalLists = $state(false)
   let listOpt = $state<ListEdit>({})
-  const localEntry = $derived(media ? localTrackingForMedia($localLibrary, media) : undefined)
+  // Read from `shown`, so the list status and Save labels are right while the record loads.
+  const localEntry = $derived(shown ? localTrackingForMedia($localLibrary, shown) : undefined)
   // This page is only hidden while the player is up, so the edit above and the tracker reads predate
   // any episode watched there. Episodes this device records after the page read them (or saved an
   // edit) are newer than both; `seriesListEntry` moves the count up to them.
@@ -371,7 +477,7 @@
   const hasEntry = $derived(!!effStatus)
   const canRemove = $derived(!entryRemoved && (hasEntry || (!!media && Object.values($localHistory)
     .some((entry) => localTrackingKey(entry.media) === localTrackingKey(media)))))
-  const savedLocally = $derived(media ? mediaIsSaved($localLibrary, media) : false)
+  const savedLocally = $derived(shown ? mediaIsSaved($localLibrary, shown) : false)
   // "Your rating" sits on the page itself once the viewer has actually watched something — rating a
   // title from the plan-to-watch pile is noise, and before this the score was only reachable three
   // clicks deep inside the list editor and never shown anywhere.
@@ -424,14 +530,22 @@
   // flag reset when `media` changes: `media` is a new object whenever the detail query delivers the
   // same series again (a cached page's revalidation, the season picker's chain walk), and an unchanged
   // image never fires `load` again, so that reset hid the banner for good. New artwork is a new URL.
+  // The loading page paints the same <img> the loaded page keeps, so artwork it already showed stays.
   let loadedArt = $state('')
   const artReady = (src: string | null | undefined) => !!src && src === loadedArt
   const markArtLoaded = (event: Event & { currentTarget: EventTarget & Element }) => {
-    loadedArt = event.currentTarget.getAttribute('src') ?? ''
+    loadedArt = baseImageSrc(event.currentTarget.getAttribute('src'))
   }
-  // The loading branch records only artwork that actually painted. If the detail response wins
-  // first, the loaded Hero keeps its ordinary entrance rather than assuming the hint was visible.
-  let loadedHintBanner = $state('')
+  // The poster keeps a cover-shaped placeholder until its image has loaded: a placeholder page has no
+  // cover yet, and an image still loading has no height, so the title row would jump when it lands.
+  // A blank image stands in for a missing cover, so no broken-image icon is drawn.
+  const BLANK_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+  let loadedPoster = $state('')
+  const posterSrc = (m: Media) => cover(m) || BLANK_IMAGE
+  const posterWaiting = (m: Media) => (cover(m) ? loadedPoster !== cover(m) : pending)
+  const markPosterLoaded = (event: Event & { currentTarget: EventTarget & Element }) => {
+    loadedPoster = baseImageSrc(event.currentTarget.getAttribute('src'))
+  }
   // `wasSolid` is deliberately a plain `let`, NOT $state: the scroll handler both reads and writes
   // it to resolve the hysteresis, and a reactive latch read+written by its own effect is a cycle
   // Svelte resolves as an update loop, not a settled value (same trap as malEntryFor above).
@@ -447,7 +561,8 @@
   }
   // Acquired for every branch on mobile, not just once the hero has loaded — gating this on `media`
   // made the page jump by the status-bar height the instant the skeleton was replaced by the loaded
-  // hero. The loading/error/not-found branches carry their own top padding instead of the bar.
+  // hero. The failure branches carry the bar too (`failureBar`), so a page without the bottom
+  // navigation never strands the user.
   // Shared with the settings layout via a refcount: their lifetimes can overlap mid-navigation.
   $effect(() => {
     if (!$isMobile) return
@@ -470,91 +585,32 @@
     if (typeof history !== 'undefined' && history.length > 1) history.back()
     else void goto('/app/home')
   }
+  // The AniList query can be asked again; a provider's detail source has no retry of its own.
+  const retryable = $derived(!source && 'reexecute' in store)
+  function retryDetail() {
+    h.tap()
+    const query = store as { reexecute?: (context: { requestPolicy: 'network-only' }) => void }
+    query.reexecute?.({ requestPolicy: 'network-only' })
+  }
 </script>
 
 <svelte:window onscroll={$isMobile ? onHeroScroll : undefined} onkeydown={(e) => { if (e.key === 'Escape' && showMore) showMore = false }} />
 
-{#if !$offlineMode && $store.fetching && !media}
-  {#if $isMobile}
-    <!-- Shapes the loading skeleton after the real hero below: a full-bleed artwork band (same
-         height classes, so the two cannot drift apart), then poster + stacked title/meta beside
-         it, a synopsis block, and a full-width button bar — so the page does not visibly
-         re-lay-out the instant data lands. -->
-    <div class="relative pb-8 pt-[max(2.5rem,env(safe-area-inset-top))]">
-      {#if detailHint && banner(detailHint)}
-        <img src={banner(detailHint)} alt="" onload={() => (loadedHintBanner = banner(detailHint))} class="h-[26vh] max-h-72 min-h-44 w-full object-cover opacity-35" />
-      {:else}
-        <div class="h-[26vh] max-h-72 min-h-44 w-full skeloader"></div>
-      {/if}
-      <div class="px-4">
-        <div class="relative z-10 -mt-10 flex gap-4">
-          {#if detailHint && cover(detailHint)}<img src={cover(detailHint)} alt="" class="h-auto w-28 shrink-0 self-start rounded-xl object-contain shadow-xl min-[420px]:w-32" />{:else}<div class="aspect-[46/65] w-28 shrink-0 self-start rounded-xl skeloader min-[420px]:w-32"></div>{/if}
-          <div class="min-w-0 flex-1 self-end space-y-2 pb-1">
-            <div class="min-h-3 text-xs text-muted-foreground">{detailHint?.title.native || detailHint?.title.romaji || ''}</div>
-            {#if detailHint}
-              <h1 class="line-clamp-2 text-xl font-black leading-tight">{title(detailHint)}</h1>
-            {:else}
-              <div class="h-12 w-4/5 rounded skeloader"></div>
-            {/if}
-          </div>
-        </div>
-        <div class="mt-3 flex gap-2"><span class="h-5 w-16 rounded-full skeloader"></span><span class="h-5 w-24 rounded-full skeloader"></span></div>
-        <div class="mt-4 space-y-1.5">
-          <div class="h-4 w-full rounded skeloader"></div>
-          <div class="h-4 w-full rounded skeloader"></div>
-          <div class="h-4 w-2/3 rounded skeloader"></div>
-        </div>
-        <div class="mt-4 h-12 w-full rounded-lg skeloader"></div>
-        <div class="mt-2 grid grid-cols-4 gap-2">{#each Array(4) as _}<div class="h-11 rounded-lg skeloader"></div>{/each}</div>
-      </div>
-    </div>
-  {:else}
-    <!-- Match the loaded desktop Hero + overlapping info panel exactly. The previous pt-24
-         skeleton started the poster near the window top, then the real page moved it beneath a
-         55vh banner — a large avoidable layout jump on every series navigation. -->
-    <div class="relative mb-6 h-[40vh] {controllerUi ? 'sm:h-[42vh]' : 'sm:h-[48vh]'}">
-      <div class="absolute left-[calc(-1*var(--theme-shell-left,0px))] top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:top-[calc(-1*var(--theme-shell-top,2rem))] sm:h-[calc(100%+var(--theme-shell-top,2rem))]">
-        {#if detailHint && banner(detailHint)}
-          <img src={banner(detailHint)} alt="" onload={() => (loadedHintBanner = banner(detailHint))} class="absolute inset-0 h-full w-full object-cover opacity-30" style="object-position:center 20%" />
-        {:else}
-          <div class="absolute inset-0 skeloader opacity-60"></div>
-        {/if}
-        <div class="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent"></div>
-        <div class="absolute inset-y-0 left-0 w-[45%] bg-gradient-to-r from-background/85 via-background/40 to-transparent"></div>
-      </div>
-    </div>
-    <div class="relative {controllerUi ? '-mt-[16vh]' : '-mt-[18vh]'} px-4 pb-16 sm:px-8">
-      <div class="mb-6 flex flex-col gap-6 md:flex-row">
-        <!-- Same intrinsic cover sizing as the loaded panel; using the real hint image avoids a
-             ratio correction when AniList's artwork is not exactly the fallback 46/65 shape. -->
-        {#if detailHint && cover(detailHint)}<img src={cover(detailHint)} alt="" class="h-auto w-44 shrink-0 self-start rounded-lg object-contain shadow-lg" />{:else}<div class="aspect-[46/65] w-44 shrink-0 self-start rounded-lg skeloader"></div>{/if}
-        <div class="min-w-0 max-w-3xl flex-1">
-          <div class="min-h-5 text-sm text-muted-foreground">{detailHint?.title.native || detailHint?.title.romaji || ''}</div>
-          {#if detailHint}
-            <h1 class="mb-3 text-3xl font-black">{title(detailHint)}</h1>
-          {:else}
-            <div class="mb-3 h-9 w-3/5 rounded skeloader"></div>
-          {/if}
-          <div class="mb-4 flex h-6 gap-2">
-            <span class="w-24 rounded-full skeloader"></span><span class="w-16 rounded-full skeloader"></span><span class="w-20 rounded-full skeloader"></span>
-          </div>
-          <div class="mb-4 space-y-1.5">
-            <div class="h-4 w-full rounded skeloader"></div><div class="h-4 w-full rounded skeloader"></div><div class="h-4 w-4/5 rounded skeloader"></div><div class="h-4 w-1/2 rounded skeloader"></div>
-          </div>
-          <div class="mb-4 flex h-6 gap-2"><span class="w-16 rounded-full skeloader"></span><span class="w-20 rounded-full skeloader"></span><span class="w-14 rounded-full skeloader"></span></div>
-          <div class="flex h-10 gap-2"><span class="w-24 rounded-md skeloader"></span><span class="w-28 rounded-md skeloader"></span><span class="w-10 rounded-md skeloader"></span></div>
-        </div>
-      </div>
-    </div>
-  {/if}
-{:else if !$offlineMode && $store.error}
-  <div class="p-8 pt-[max(2rem,env(safe-area-inset-top))] text-muted-foreground">Failed to load: {$store.error.message}</div>
+{#if !pending && !$offlineMode && $store.error}
+  {#if $isMobile}{@render failureBar()}{/if}
+  <div class="p-8 text-muted-foreground {$isMobile ? 'pt-[calc(4rem+env(safe-area-inset-top))]' : 'pt-[max(2rem,env(safe-area-inset-top))]'}">
+    <p>Failed to load: {$store.error.message}</p>
+    {#if retryable}
+      <button type="button" data-focusable onclick={retryDetail}
+              class="mt-4 rounded-md bg-secondary px-4 py-2 text-sm font-bold text-foreground transition-colors hover:bg-accent">Try again</button>
+    {/if}
+  </div>
 {:else if media && !profileAllowsMedia(media, $activeProfile)}
   <ParentalBlock />
-{:else if media}
-  {@const m = media}
+{:else if shown}
+  {@const m = shown}
   {#if $isMobile && overlayDetail}
-    <div data-slot="detail" data-layout="overlay" data-variant="phone" style:--cover-rgb={coverRgb} class="relative pb-8">
+    <div data-slot="detail" data-layout="overlay" data-variant="phone" data-pending={pending || undefined} style:--cover-rgb={coverRgb} class="relative pb-8">
       <div data-slot="detail.bar" data-solid={barState.solid || undefined} bind:clientHeight={barHeight}
            class="fixed inset-x-0 top-0 z-30 flex items-center gap-2 px-2 py-2 transition-colors duration-200
                   {barState.solid ? 'border-b border-border bg-background/80 backdrop-blur' : 'text-white'}"
@@ -566,19 +622,19 @@
                 class="grid h-10 w-10 shrink-0 place-items-center rounded-full transition-colors active:bg-white/15">
           <ChevronLeft size={22} />
         </button>
-        {#if barState.showTitle}
+        {#if barState.showTitle && named(m)}
           <span class="min-w-0 flex-1 truncate text-base font-black">{title(m)}</span>
         {/if}
       </div>
-      <div data-slot="detail.banner" bind:clientHeight={artHeight} class="relative min-h-[56vh] w-full overflow-hidden">
-        {#if overlayBackdrop}
-          <img data-part="detail.backdrop" src={overlayBackdrop} alt="" onload={markArtLoaded}
-               onerror={(event) => backdropFailed(event.currentTarget.getAttribute('src'))}
-               class="absolute inset-0 h-full w-full object-cover transition-opacity duration-500 {artReady(overlayBackdrop) ? 'opacity-100' : 'opacity-0'}"
+      <div data-slot="detail.banner" data-art={headerArt.kind} bind:clientHeight={artHeight} style:background-image={headerWash} class="relative min-h-[56vh] w-full overflow-hidden">
+        {#if headerSrc}
+          <img data-part="detail.backdrop" data-art={headerArt.kind} use:headerImage={{ src: headerSrc, onfailed: backdropFailed }} alt="" onload={markArtLoaded}
+               class="absolute inset-0 h-full w-full object-cover transition-opacity duration-500 {artReady(headerSrc) ? 'opacity-100' : 'opacity-0'}"
                style="object-position:center 20%" />
-        {:else if !overlayArtWaiting}
-          <img data-part="detail.backdrop" src={cover(m)} alt="" class="absolute inset-0 h-full w-full scale-110 object-cover blur-xl transition-opacity duration-500 {artReady(cover(m)) ? 'opacity-50' : 'opacity-0'}"
-               onload={markArtLoaded} style="object-position:center 30%" />
+        {:else if headerArt.kind === 'wash'}
+          {@render hiddenCover(m, 'absolute inset-0')}
+        {:else}
+          <span class="!absolute inset-0 skeloader" aria-hidden="true"></span>
         {/if}
         <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
         <div data-part="detail.body" class="relative z-10 flex min-h-[56vh] flex-col justify-end gap-3 px-4 pb-8 pt-24">
@@ -586,15 +642,17 @@
           {@render seriesHeader(m, '')}
           {#if !headerCtaHidden}
           <button data-part="button" data-variant="primary" data-focusable use:focusOnMount
-                  onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
-                  onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
-                  onclick={() => playCta(m)}
+                  onpointerenter={warmPlay}
+                  onfocus={warmPlay}
+                  onclick={pressPlay} aria-busy={playWhenReady || undefined}
                   class="mt-1 inline-flex w-fit items-center gap-2 rounded-full bg-primary px-5 py-2.5 font-bold text-primary-foreground">
             <Play size={18} />{ctaHasProgress(m) ? `Play · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
           </button>
           {/if}
           {#if m.description}
             <p data-part="detail.synopsis" class="line-clamp-4 text-sm leading-relaxed text-white/85">{stripHtml(m.description)}</p>
+          {:else if pending}
+            <p data-part="detail.synopsis" class="line-clamp-4 text-sm leading-relaxed text-white/85">{@render placeholderLines(3)}</p>
           {/if}
           <div data-part="detail.meta" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-white/75">
             {#if format(m)}<span>{format(m)}</span>{/if}
@@ -608,10 +666,10 @@
         {#if heroPlay.status === 'error'}
           <p class="mt-3 text-sm text-destructive">{heroPlay.message}</p>
         {/if}
-        {#if showRatingRow}<div class="mt-4">{@render ratingRow(m)}</div>{/if}
+        {#if showRatingRow && media}<div class="mt-4">{@render ratingRow()}</div>{/if}
         {#if belowEpisodes}
           <div class="mt-6">
-            <EpisodeList media={m} offline={$offlineMode} />
+            {@render episodeList(m)}
           </div>
         {/if}
         <div class="mt-6">
@@ -620,7 +678,7 @@
       </div>
     </div>
   {:else if $isMobile}
-    <div data-slot="detail" data-layout={detailTheme.layout} data-variant="phone" style:--cover-rgb={coverRgb} class="relative pb-8">
+    <div data-slot="detail" data-layout={detailTheme.layout} data-variant="phone" data-pending={pending || undefined} style:--cover-rgb={coverRgb} class="relative pb-8">
       <!-- Floating bar. Transparent over the artwork (with a scrim so the chevron survives light
            art), blurred and titled once the artwork has scrolled under it. It carries the status-bar
            inset itself: a fixed element does not inherit main's padding once it locks. -->
@@ -635,7 +693,7 @@
                 class="grid h-10 w-10 shrink-0 place-items-center rounded-full transition-colors active:bg-white/15">
           <ChevronLeft size={22} />
         </button>
-        {#if barState.showTitle}
+        {#if barState.showTitle && named(m)}
           <span class="min-w-0 flex-1 truncate text-base font-black">{title(m)}</span>
         {/if}
       </div>
@@ -643,17 +701,19 @@
       <!-- Artwork band: a bounded strip that ends in a hard cut. Nothing is written on top of it,
            so legibility no longer depends on how busy the banner is. -->
       {#if !detailTheme.bannerHidden}
-      <div data-slot="detail.banner" bind:clientHeight={artHeight} class="hero-art relative h-[26vh] max-h-72 min-h-44 w-full overflow-hidden">
-        {#if m.bannerImage}
-          <img src={m.bannerImage} alt="" onload={markArtLoaded}
-               class="h-full w-full object-cover transition-opacity duration-500 {artReady(m.bannerImage) ? 'opacity-100' : 'opacity-0'}"
+      <div data-slot="detail.banner" data-art={headerArt.kind} bind:clientHeight={artHeight} style:background-image={headerWash} class="hero-art relative h-[26vh] max-h-72 min-h-44 w-full overflow-hidden">
+        {#if headerSrc}
+          <img data-part="detail.backdrop" data-art={headerArt.kind} use:headerImage={{ src: headerSrc, onfailed: backdropFailed }} alt="" onload={markArtLoaded}
+               class="h-full w-full object-cover transition-opacity duration-500 {artReady(headerSrc) ? 'opacity-100' : 'opacity-0'}"
                style="object-position:center 20%" />
+        {:else if headerArt.kind === 'wash'}
+          <!-- No banner and no key art: the band is a wash of the cover's colour (its background). A
+               YouTube trailer still has blurred pillarbox bars baked into the JPEG, and a blurred or
+               stretched cover reads as broken art. -->
+          {@render hiddenCover(m, '')}
         {:else}
-          <!-- No banner: a YouTube trailer still has blurred pillarbox bars baked into the JPEG, and a
-               portrait cover cropped to a wide band loses its subject. Blur the cover into a wash
-               instead — it reads as ambient colour rather than a broken photograph. -->
-          <img src={cover(m)} alt="" class="h-full w-full scale-110 object-cover blur-xl transition-opacity duration-500 {artReady(cover(m)) ? 'opacity-50' : 'opacity-0'}"
-               onload={markArtLoaded} style="object-position:center 30%" />
+          <!-- `!absolute`: app.css declares `.skeloader { position: relative }` after the utilities. -->
+          <span class="!absolute inset-0 skeloader" aria-hidden="true"></span>
         {/if}
         <div class="absolute inset-x-0 bottom-0 h-1/6 bg-gradient-to-b from-transparent to-background"></div>
       </div>
@@ -667,8 +727,8 @@
         <div class="relative z-10 {detailTheme.bannerHidden ? 'mt-2' : '-mt-10'} flex gap-4">
           <!-- Covers vary in aspect; forcing them all into one ratio with object-cover crops real
                artwork the user came here to see. Follow the image's own height instead. -->
-          <img data-part="detail.poster" use:reliableImage={cover(m)} alt=""
-               class="h-auto w-28 shrink-0 self-start rounded-xl object-contain shadow-xl min-[420px]:w-32"
+          <img data-part="detail.poster" use:reliableImage={posterSrc(m)} alt="" onload={markPosterLoaded}
+               class="h-auto w-28 shrink-0 self-start rounded-xl object-contain shadow-xl min-[420px]:w-32 {posterWaiting(m) ? 'aspect-[46/65] skeloader' : ''}"
                style:width={detailTheme.posterWidth ? `${Math.min(detailTheme.posterWidth, 160)}px` : undefined} />
           <div class="min-w-0 flex-1 self-end">
             {#if m.title.native || m.title.romaji}
@@ -684,16 +744,16 @@
         <!-- Primary CTA -->
         {#if !headerCtaHidden}
         <button data-part="button" data-variant="primary" data-focusable use:focusOnMount
-                onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
-                onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
-                onclick={() => playCta(m)}
+                onpointerenter={warmPlay}
+                onfocus={warmPlay}
+                onclick={pressPlay} aria-busy={playWhenReady || undefined}
                 class="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3 font-bold text-primary-foreground">
           <Play size={18} />{ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
         </button>
         {/if}
 
         {#if detailTheme.listButton === 'full'}
-          <button data-part="detail.list-button" data-variant="full" data-action="list" data-focusable onclick={() => { h.tap(); showEditor = true }}
+          <button data-part="detail.list-button" data-variant="full" data-action="list" data-focusable onclick={ready(() => { h.tap(); showEditor = true })}
                   class="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border-2 border-theme py-2.5 text-sm font-black uppercase tracking-wide text-theme">
             {effStatus ? STATUS_LABEL[effStatus] : 'Add to list'}
           </button>
@@ -701,16 +761,16 @@
 
         <!-- Compact action row: 4 icons + overflow. Handlers are the SAME functions the desktop bar uses. -->
         <div data-part="detail.actions" class="relative mt-2 flex items-center gap-2">
-          <button data-part="button" data-variant="secondary" data-action="save" data-focusable onclick={() => { h.tap(); showLocalLists = true }} aria-label="Save to lists"
+          <button data-part="button" data-variant="secondary" data-action="save" data-focusable onclick={ready(() => { h.tap(); showLocalLists = true })} aria-label="Save to lists"
                   class="flex h-11 flex-[2] items-center justify-center gap-1.5 rounded-lg bg-secondary px-2 text-sm font-bold">
             {#if savedLocally}<BookmarkCheck size={17} class="text-theme" /> Saved{:else}<BookmarkPlus size={17} /> Save{/if}
           </button>
-          <button data-part="button" data-variant="icon" data-action="share" data-focusable onclick={() => { h.tap(); void onShare(m) }} aria-label="Share series"
+          <button data-part="button" data-variant="icon" data-action="share" data-focusable onclick={ready((full) => { h.tap(); void onShare(full) })} aria-label="Share series"
                   class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
             {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
           </button>
           {#if m.trailer?.id}
-            <button data-part="detail.action" data-action="trailer" data-focusable onclick={() => { h.tap(); openTrailerPopup(m.trailer!.id!, title(m)) }} aria-label="Trailer"
+            <button data-part="detail.action" data-action="trailer" data-focusable onclick={ready((full) => { if (!full.trailer?.id) return; h.tap(); openTrailerPopup(full.trailer.id, title(full)) })} aria-label="Trailer"
                     class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
               <Clapperboard size={18} />
             </button>
@@ -727,12 +787,12 @@
             <button type="button" aria-label="Close menu" onclick={() => (showMore = false)}
                     class="fixed inset-0 z-40 cursor-default"></button>
             <div class="absolute bottom-full right-0 z-50 mb-2 w-56 rounded-lg border border-border bg-card p-2 shadow-2xl">
-              <button data-part="detail.list-button" data-action="list" data-focusable onclick={() => { h.tap(); showMore = false; showEditor = true }}
+              <button data-part="detail.list-button" data-action="list" data-focusable onclick={ready(() => { h.tap(); showMore = false; showEditor = true })}
                       class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
                 <ChevronDown size={15} /> {effStatus ? `Edit ${STATUS_LABEL[effStatus]}` : 'Add to list'}
               </button>
               {#each externalTrackerLinks as tracker (tracker.id)}
-                <button data-focusable onclick={() => { h.tap(); showMore = false; openUrl(tracker.url) }}
+                <button data-focusable onclick={ready(() => { h.tap(); showMore = false; openUrl(tracker.url) })}
                         class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
                   <ExternalLink size={15} /> {tracker.title}
                 </button>
@@ -744,11 +804,11 @@
         {#if heroPlay.status === 'error'}
           <p class="mt-3 text-sm text-destructive">{heroPlay.message}</p>
         {/if}
-        {#if showRatingRow}<div class="mt-4">{@render ratingRow(m)}</div>{/if}
+        {#if showRatingRow && media}<div class="mt-4">{@render ratingRow()}</div>{/if}
 
         {#if belowEpisodes}
           <div class="mt-6">
-            <EpisodeList media={m} offline={$offlineMode} />
+            {@render episodeList(m)}
           </div>
         {/if}
 
@@ -758,12 +818,16 @@
       </div>
     </div>
   {:else if overlayDetail}
-    <section data-slot="detail" data-layout="overlay" data-variant="desktop" style:--cover-rgb={coverRgb} class="relative isolate min-h-[72vh] w-full overflow-hidden" data-theme-surface="detail-overlay">
-      {#if overlayBackdrop}
-        <img data-part="detail.backdrop" src={overlayBackdrop} alt="" onerror={(event) => backdropFailed(event.currentTarget.getAttribute('src'))}
-             class="absolute inset-0 h-full w-full object-cover" style="object-position:center 20%" />
-      {:else if !overlayArtWaiting}
-        <img data-part="detail.backdrop" src={cover(m)} alt="" class="absolute inset-0 h-full w-full scale-110 object-cover blur-2xl opacity-60" />
+    <section data-slot="detail" data-layout="overlay" data-variant="desktop" data-pending={pending || undefined} style:--cover-rgb={coverRgb} class="relative isolate min-h-[72vh] w-full overflow-hidden" data-theme-surface="detail-overlay">
+      {#if headerSrc}
+        <img data-part="detail.backdrop" data-art={headerArt.kind} use:headerImage={{ src: headerSrc, onfailed: backdropFailed }} alt="" onload={markArtLoaded}
+             class="absolute inset-0 h-full w-full object-cover transition-opacity duration-500 {artReady(headerSrc) ? 'opacity-100' : 'opacity-0'}"
+             style="object-position:center 20%" />
+      {:else if headerArt.kind === 'wash'}
+        <span class="absolute inset-0" style:background-image={headerWash} aria-hidden="true"></span>
+        {@render hiddenCover(m, 'absolute inset-0')}
+      {:else}
+        <span class="!absolute inset-0 skeloader" aria-hidden="true"></span>
       {/if}
       <div class="absolute inset-0 bg-gradient-to-t from-background via-background/25 to-transparent"></div>
       <div class="absolute inset-y-0 left-0 w-[58%] bg-gradient-to-r from-background/95 via-background/55 to-transparent"></div>
@@ -776,13 +840,13 @@
         <div data-part="detail.actions" class="flex flex-wrap items-center gap-3">
           <button data-part="button" data-variant="primary" data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
                   data-nav-down={controllerUi ? 'series-quick-episode' : undefined}
-                  onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
-                  onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
-                  use:focusOnMount onclick={() => playCta(m)}
+                  onpointerenter={warmPlay}
+                  onfocus={warmPlay}
+                  use:focusOnMount onclick={pressPlay} aria-busy={playWhenReady || undefined}
                   class="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 font-bold text-primary-foreground">
             <Play size={18} />{ctaHasProgress(m) ? `Play · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
           </button>
-          <button data-part="button" data-variant="secondary" data-action="save" data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
+          <button data-part="button" data-variant="secondary" data-action="save" data-focusable onclick={ready(() => (showLocalLists = true))} title="Save to lists"
                   class="grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25">
             {#if savedLocally}<BookmarkCheck size={20} />{:else}<BookmarkPlus size={20} />{/if}
           </button>
@@ -790,9 +854,13 @@
         {#if m.studios?.nodes?.[0]}
           {@const studio = m.studios.nodes[0]}
           <p data-part="detail.studio" class="text-sm text-white/80">Studio: <a class="underline-offset-2 hover:underline" href={studio.id ? `/app/studio/${studio.id}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a></p>
+        {:else if pending}
+          <p data-part="detail.studio" class="text-sm text-white/80"><span class="inline-block w-40 rounded align-top skeloader" aria-hidden="true">&nbsp;</span></p>
         {/if}
         {#if m.description}
           <p data-part="detail.synopsis" class="max-w-2xl text-base leading-relaxed text-white/90 line-clamp-6">{stripHtml(m.description)}</p>
+        {:else if pending}
+          <p data-part="detail.synopsis" class="max-w-2xl text-base leading-relaxed text-white/90 line-clamp-6">{@render placeholderLines(4)}</p>
         {/if}
         <div data-part="detail.meta" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-bold text-white/80">
           {#if format(m)}<span>{format(m)}</span>{/if}
@@ -807,13 +875,13 @@
         {#if heroPlay.status === 'error'}
           <p class="text-sm text-destructive">{heroPlay.message}</p>
         {/if}
-        {#if showRatingRow}<div data-part="detail.rating" class="mt-4">{@render ratingRow(m)}</div>{/if}
+        {#if showRatingRow && media}<div data-part="detail.rating" class="mt-4">{@render ratingRow()}</div>{/if}
       </div>
     </section>
     <div class="relative px-4 pb-16 sm:px-8" data-theme-surface="detail">
       {#if belowEpisodes}
         <div class="mb-6">
-          <EpisodeList media={m} offline={$offlineMode} />
+          {@render episodeList(m)}
         </div>
       {/if}
       {@render detailSections(m, false, true)}
@@ -822,10 +890,10 @@
   <!-- Title-less banner backdrop; the info panel below overlaps its lower fade.
        Width-scaled banners sit behind the cover from the top of the page (the artwork
        follows the window width at 5:1) instead of a viewport-height strip with a gap above the cover. -->
-  <div data-slot="detail" data-layout={detailTheme.layout} data-variant="desktop" style:--cover-rgb={coverRgb} class="relative">
+  <div data-slot="detail" data-layout={detailTheme.layout} data-variant="desktop" data-pending={pending || undefined} style:--cover-rgb={coverRgb} class="relative">
   {#if !detailTheme.bannerHidden}
   <div class={detailTheme.bannerScale === 'banner' ? 'pointer-events-none absolute inset-x-0 top-0 z-0 w-full' : ''}>
-  <Hero medias={[m]} showOverlay={false} initialArtworkVisible={loadedHintBanner === banner(m)} />
+  <Hero medias={[m]} showOverlay={false} artwork={headerArt} onartworkfailed={backdropFailed} />
   </div>
   {/if}
   <div class="relative z-10 px-4 pb-16 sm:px-8 {detailTheme.bannerHidden ? 'pt-8' : detailTheme.bannerScale === 'banner' ? 'pt-[7.5rem]' : ''}" style:margin-top={detailTheme.bannerHidden || detailTheme.bannerScale === 'banner' ? undefined : `-${bannerOverlap}vh`} data-theme-surface="detail">
@@ -846,6 +914,7 @@
              discovery links for pointer users, but are deliberately not D-pad stops in Game mode:
              Down from the primary action is a content path, not a tour through metadata. -->
         <div data-part="detail.meta" class="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-muted-foreground">
+          {#if unnamed(m)}<span class="my-0.5 h-3 w-72 rounded skeloader" aria-hidden="true"></span>{:else}
           <span class="text-foreground">{effProgress}/{epsTotal(m) || '?'} episodes</span>
           {#if format(m)}<span class="opacity-40">·</span><span>{format(m)}</span>{/if}
           {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
@@ -864,6 +933,7 @@
           {#if (m.genres?.length ?? 0) > (controllerUi ? 3 : 4)}
             <span class="font-medium opacity-60">+{(m.genres?.length ?? 0) - (controllerUi ? 3 : 4)}</span>
           {/if}
+          {/if}
         </div>
         {/if}
     {/snippet}
@@ -872,20 +942,20 @@
         <div data-part="detail.actions" class="flex flex-wrap items-center gap-2">
           <button data-part="button" data-variant="primary" data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
                   data-nav-down={controllerUi ? 'series-quick-episode' : undefined}
-                  onpointerenter={() => prefetchEpisodeSources(m, ctaEp(m))}
-                  onfocus={() => prefetchEpisodeSources(m, ctaEp(m))}
-                  use:focusOnMount onclick={() => playCta(m)}
+                  onpointerenter={warmPlay}
+                  onfocus={warmPlay}
+                  use:focusOnMount onclick={pressPlay} aria-busy={playWhenReady || undefined}
                   class="inline-flex items-center gap-2 rounded-md bg-primary font-bold text-primary-foreground {detailTheme.cta === 'large' ? 'min-w-56 px-6 py-3 text-base' : 'px-4 py-2'}">
             <Play size={detailTheme.cta === 'large' ? 18 : 16} />{detailTheme.cta === 'large' ? (effStatus === 'COMPLETED' ? 'Rewatch Now' : ctaHasProgress(m) ? 'Continue Now' : 'Watch Now') : (ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play')}
           </button>
 
-          <button data-part="button" data-variant="secondary" data-action="save" data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
+          <button data-part="button" data-variant="secondary" data-action="save" data-focusable onclick={ready(() => (showLocalLists = true))} title="Save to lists"
                   class="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 font-bold transition-colors hover:bg-accent">
             {#if savedLocally}<BookmarkCheck size={18} class="text-theme" /> Saved{:else}<BookmarkPlus size={18} /> Save{/if}
           </button>
 
           {#if detailTheme.listButton !== 'hidden'}
-          <button data-part="detail.list-button" data-action="list" bind:this={editorAnchor} data-focusable onclick={() => (showEditor = true)} title="Edit list status"
+          <button data-part="detail.list-button" data-action="list" bind:this={editorAnchor} data-focusable onclick={ready(() => (showEditor = true))} title="Edit list status"
                   aria-haspopup="dialog" aria-expanded={showEditor}
                   class="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 font-bold transition-colors hover:bg-accent">
             {#if effStatus}
@@ -897,20 +967,20 @@
           </button>
           {/if}
 
-          <button data-part="button" data-variant="icon" data-action="share" data-focusable onclick={() => void onShare(m)} title="Copy AniList link"
+          <button data-part="button" data-variant="icon" data-action="share" data-focusable onclick={ready((full) => void onShare(full))} title="Copy AniList link"
                   class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
             {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
           </button>
 
           {#if m.trailer?.id && !posterColumn}
-            <button data-part="detail.action" data-action="trailer" data-focusable onclick={() => openTrailerPopup(m.trailer!.id!, title(m))} title="Watch trailer"
+            <button data-part="detail.action" data-action="trailer" data-focusable onclick={ready((full) => { if (full.trailer?.id) openTrailerPopup(full.trailer.id, title(full)) })} title="Watch trailer"
                     class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
               <Clapperboard size={18} />
             </button>
           {/if}
 
           {#each externalTrackerLinks as tracker (tracker.id)}
-            <button data-focusable onclick={() => openUrl(tracker.url)} title={tracker.title} aria-label={tracker.title}
+            <button data-focusable onclick={ready(() => openUrl(tracker.url))} title={tracker.title} aria-label={tracker.title}
                     class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
               <TrackerProviderBadge provider={tracker.id} compact />
             </button>
@@ -925,7 +995,7 @@
          column, delaying Episodes by roughly a full D-pad viewport. An 11rem cover retains a clear
          visual identity while keeping both columns close enough in height for Episodes to follow. -->
     <div class="mb-4 flex flex-col gap-5 md:flex-row {detailTheme.coverAlign === 'end' ? 'md:items-end' : detailTheme.coverAlign === 'start' ? 'md:items-start' : ''}">
-      <img data-part="detail.poster" use:reliableImage={cover(m)} alt="" class="h-auto w-44 shrink-0 rounded-lg object-contain shadow-lg {detailTheme.coverAlign === 'end' ? 'self-end' : 'self-start'}" style:width={detailTheme.posterWidth ? `${detailTheme.posterWidth}px` : undefined} />
+      <img data-part="detail.poster" use:reliableImage={posterSrc(m)} alt="" onload={markPosterLoaded} class="h-auto w-44 shrink-0 rounded-lg object-contain shadow-lg {detailTheme.coverAlign === 'end' ? 'self-end' : 'self-start'} {posterWaiting(m) ? 'aspect-[46/65] skeloader' : ''}" style:width={detailTheme.posterWidth ? `${detailTheme.posterWidth}px` : undefined} />
 
       <div class="min-w-0 flex-1 {detailTheme.bannerScale === 'banner' ? 'md:pt-12' : ''}">
         {#if m.title.native || m.title.romaji}
@@ -941,20 +1011,24 @@
              (toolbar-plan.ts); everywhere else the episode controls show it. -->
         {#if flipGutter}
           <div class="mb-3 flex flex-wrap items-center gap-2 empty:mb-0">
-            <AiringStatus media={m} />
+            {#if !pending || named(m)}<AiringStatus media={m} />{/if}
           </div>
         {/if}
 
         {#if m.description && !detailTheme.actionsFirst && synopsisAt !== 'overview'}
           <p data-part="detail.synopsis" class="mb-3 {controllerUi ? 'line-clamp-2' : 'line-clamp-3'} max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
+        {:else if pending && !detailTheme.actionsFirst && synopsisAt !== 'overview'}
+          <p data-part="detail.synopsis" class="mb-3 {controllerUi ? 'line-clamp-2' : 'line-clamp-3'} max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{@render placeholderLines(controllerUi ? 2 : 3)}</p>
         {/if}
 
         {@render actionsBlock()}
-        {#if showRatingRow}<div class="mt-4">{@render ratingRow(m)}</div>{/if}
+        {#if showRatingRow && media}<div class="mt-4">{@render ratingRow()}</div>{/if}
       </div>
     </div>
     {#if m.description && detailTheme.actionsFirst && synopsisAt !== 'overview'}
       <p data-part="detail.synopsis" class="mb-4 {controllerUi ? 'line-clamp-4' : 'line-clamp-6'} max-w-3xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
+    {:else if pending && detailTheme.actionsFirst && synopsisAt !== 'overview'}
+      <p data-part="detail.synopsis" class="mb-4 {controllerUi ? 'line-clamp-4' : 'line-clamp-6'} max-w-3xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{@render placeholderLines(3)}</p>
     {/if}
     {/snippet}
 
@@ -967,9 +1041,9 @@
            countdown and the facts under it; the title, actions, synopsis and sections run beside it. -->
       <div class="flex flex-col gap-5 md:grid md:items-start md:gap-4" style:grid-template-columns={`${detailTheme.posterWidth ?? 248}px minmax(0, 1fr)`}>
         <aside data-slot="detail.column" class="flex min-w-0 flex-col gap-3">
-          <img data-part="detail.poster" use:reliableImage={cover(m)} alt="" class="h-auto w-full rounded-lg object-cover shadow-lg" />
+          <img data-part="detail.poster" use:reliableImage={posterSrc(m)} alt="" onload={markPosterLoaded} class="h-auto w-full rounded-lg object-cover shadow-lg {posterWaiting(m) ? 'aspect-[46/65] skeloader' : ''}" />
           {#if m.trailer?.id}
-            <button data-part="detail.trailer" data-action="trailer" data-focusable onclick={() => openTrailerPopup(m.trailer!.id!, title(m))}
+            <button data-part="detail.trailer" data-action="trailer" data-focusable onclick={ready((full) => { if (full.trailer?.id) openTrailerPopup(full.trailer.id, title(full)) })}
                     class="inline-flex w-full items-center justify-center gap-2 rounded-md bg-secondary px-3 py-2 text-sm font-bold transition-colors hover:bg-accent">
               <Play size={16} />Watch Trailer
             </button>
@@ -983,16 +1057,20 @@
           {/if}
           {@render seriesTitle(m, 'mb-2 text-3xl font-black')}
           {@render seriesHeader(m, 'mb-3')}
-          {#if flipGutter}<div class="mb-3 flex flex-wrap items-center gap-2 empty:mb-0"><AiringStatus media={m} /></div>{/if}
+          {#if flipGutter}<div class="mb-3 flex flex-wrap items-center gap-2 empty:mb-0">{#if !pending || named(m)}<AiringStatus media={m} />{/if}</div>{/if}
           {#if m.description && !detailTheme.actionsFirst && synopsisAt !== 'overview'}
             <p data-part="detail.synopsis" class="mb-3 line-clamp-3 max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
+          {:else if pending && !detailTheme.actionsFirst && synopsisAt !== 'overview'}
+            <p data-part="detail.synopsis" class="mb-3 line-clamp-3 max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{@render placeholderLines(3)}</p>
           {/if}
           {@render actionsBlock()}
-          {#if showRatingRow}<div class="mt-4">{@render ratingRow(m)}</div>{/if}
+          {#if showRatingRow && media}<div class="mt-4">{@render ratingRow()}</div>{/if}
           {#if m.description && detailTheme.actionsFirst && synopsisAt !== 'overview'}
             <p data-part="detail.synopsis" class="mt-4 line-clamp-4 max-w-3xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
+          {:else if pending && detailTheme.actionsFirst && synopsisAt !== 'overview'}
+            <p data-part="detail.synopsis" class="mt-4 line-clamp-4 max-w-3xl whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{@render placeholderLines(3)}</p>
           {/if}
-          {#if belowEpisodes}<div class="mt-6"><EpisodeList media={m} offline={$offlineMode} /></div>{/if}
+          {#if belowEpisodes}<div class="mt-6">{@render episodeList(m)}</div>{/if}
           <div class="mt-6">{@render desktopSecondary()}</div>
         </div>
       </div>
@@ -1003,14 +1081,14 @@
           {@render desktopSecondary()}
         </div>
         <aside class="relative min-w-0 min-[960px]:sticky min-[960px]:top-10">
-          <EpisodeList media={m} offline={$offlineMode} />
+          {@render episodeList(m)}
         </aside>
       </div>
     {:else}
       {@render seriesInfo()}
       {#if belowEpisodes}
         <div class="mb-6">
-          <EpisodeList media={m} offline={$offlineMode} />
+          {@render episodeList(m)}
         </div>
       {/if}
       {@render desktopSecondary()}
@@ -1019,13 +1097,13 @@
   </div>
   {/if}
 
-  {#if showEditor}
+  {#if showEditor && media}
     <ListEditor
-      media={m}
+      media={media}
       initStatus={effStatus}
       initProgress={effProgress}
       initScore0to100={effScore100}
-      total={epsTotal(m) || 0}
+      total={epsTotal(media) || 0}
       {hasEntry}
       {canRemove}
       anchor={editorAnchor}
@@ -1033,7 +1111,7 @@
       onsaved={(patch) => { listOpt = { ...listEntry.edit, ...patch }; watchedBefore = watched }}
     />
   {/if}
-  {#if showLocalLists}<LocalListPicker media={m} onclose={() => (showLocalLists = false)} />{/if}
+  {#if showLocalLists && media}<LocalListPicker media={media} onclose={() => (showLocalLists = false)} />{/if}
 {:else if $offlineMode}
   <div class="grid min-h-[50vh] place-items-center p-8 text-center">
     <div class="max-w-sm text-muted-foreground">
@@ -1042,11 +1120,53 @@
     </div>
   </div>
 {:else}
-  <div class="p-8 pt-[max(2rem,env(safe-area-inset-top))] text-muted-foreground">Not found.</div>
+  {#if $isMobile}{@render failureBar()}{/if}
+  <div class="p-8 text-muted-foreground {$isMobile ? 'pt-[calc(4rem+env(safe-area-inset-top))]' : 'pt-[max(2rem,env(safe-area-inset-top))]'}">Not found.</div>
 {/if}
 
-{#snippet ratingRow(m: Media)}
-  <ScoreScale value={effScore10} onpick={(n) => rate(m, n)} hint={ratingHint} />
+<!-- The phone bar on a page that failed to load or found nothing: a theme that covers the bottom
+     navigation (`detail.nav: "hidden"`) would otherwise leave no way back. -->
+{#snippet failureBar()}
+  <div data-slot="detail.bar" data-solid class="fixed inset-x-0 top-0 z-30 flex items-center gap-2 border-b border-border bg-background/80 px-2 py-2 backdrop-blur"
+       style="padding-top:max(0.5rem,env(safe-area-inset-top))">
+    <button data-focusable onclick={heroBack} aria-label="Back"
+            class="grid h-10 w-10 shrink-0 place-items-center rounded-full transition-colors active:bg-white/15">
+      <ChevronLeft size={22} />
+    </button>
+  </div>
+{/snippet}
+
+<!-- Only ever rendered with the full record (`media`), never the card's. -->
+{#snippet ratingRow()}
+  <ScoreScale value={effScore10} onpick={ready((full, n: number) => rate(full, n))} hint={ratingHint} />
+{/snippet}
+
+<!-- The episode list. While the record loads, neutral placeholders hold its place: the card's record
+     lacks the schedule and the aliases the list and its source prefetch need. -->
+{#snippet episodeList(m: Media)}
+  {#if pending}
+    <div data-slot="detail.episodes" class="relative" aria-hidden="true">
+      <div class="grid grid-cols-1 gap-3">
+        {#each Array(3) as _, index (index)}<div class="h-24 rounded-lg skeloader"></div>{/each}
+      </div>
+    </div>
+  {:else}
+    <EpisodeList media={m} offline={$offlineMode} />
+  {/if}
+{/snippet}
+
+<!-- Lines standing in for text the card's record does not carry, inside the part the text fills. -->
+{#snippet placeholderLines(count: number)}
+  {#each Array(count) as _, index (index)}<span class="my-1.5 block h-3.5 rounded skeloader {index === count - 1 ? 'w-2/3' : 'w-full'}" aria-hidden="true"></span>{/each}
+{/snippet}
+
+<!-- The cover behind a page with neither a banner nor key art. izumi's own look hides it and shows a
+     wash of the cover's colour; a theme can show it instead (`[data-part="detail.backdrop"][data-art="cover"]`). -->
+{#snippet hiddenCover(m: Media, place: string)}
+  {#if cover(m)}
+    <img data-part="detail.backdrop" data-art="cover" src={cover(m)} alt="" aria-hidden="true"
+         class="{place} h-full w-full object-cover opacity-0" style="object-position:center 30%" />
+  {/if}
 {/snippet}
 
 <!-- A theme's template under the title (API 3 `detail.header`), the same on every layout. -->
@@ -1060,13 +1180,16 @@
 
 <!-- The series title: the title logo when the theme asks for it (API 3 `detail.title: "logo"`) and
      the title has one, else the text. While the logo may still arrive the text is transparent, not
-     hidden, so screen readers still read the title. -->
+     hidden, so screen readers still read the title. A page still loading without a known title
+     shows a placeholder line inside the heading. -->
 {#snippet seriesTitle(m: Media, className: string)}
   {#if detailLogo}
-    <h1 data-part="detail.title" aria-label={title(m)} class={className}>
+    <h1 data-part="detail.title" aria-label={named(m) ? title(m) : undefined} class={className}>
       <img data-part="detail.logo" src={detailLogo} alt="" onerror={() => (failedDetailLogo = detailLogo)}
            class="block max-h-44 w-auto max-w-[min(26rem,85%)] object-contain object-left-bottom" />
     </h1>
+  {:else if unnamed(m)}
+    <h1 data-part="detail.title" class={className}><span class="inline-block w-3/5 min-w-32 max-w-full rounded-md align-top skeloader" aria-hidden="true">&nbsp;</span><span class="sr-only">Loading</span></h1>
   {:else}
     <h1 data-part="detail.title" class="{className} {detailTheme.title === 'logo' && !detailExtrasSettled ? 'opacity-0' : ''}">{title(m)}</h1>
   {/if}
@@ -1086,6 +1209,7 @@
        rows and read as a wall of pills rather than a summary. Facts sit directly under the
        title — identity first, schedule after. -->
   <div data-part="detail.meta" class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-muted-foreground">
+    {#if unnamed(m)}<span class="my-0.5 h-3 w-56 rounded skeloader" aria-hidden="true"></span>{:else}
     {#if m.averageScore}
       <span class="rounded-full px-1.5 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>
     {/if}
@@ -1094,6 +1218,7 @@
     {#if m.duration}<span class="opacity-40">·</span><span>{m.duration} min</span>{/if}
     {#if season(m)}<span class="opacity-40">·</span><a href={seasonBrowseHref(m)} class="underline-offset-2 active:opacity-70">{season(m)}</a>{/if}
     {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
+    {/if}
   </div>
 
   <!-- Give the title useful provenance without turning the summary into another pill wall.
@@ -1107,10 +1232,12 @@
     {/if}
     {#if m.source}<span class="opacity-35">·</span><span>From {prettyEnum(m.source)}</span>{/if}
     {#if m.popularity}<span class="opacity-35">·</span><span>{compactNumber.format(m.popularity)} members</span>{/if}
+    {#if pending && !m.studios?.nodes?.[0] && !m.source && !m.popularity}<span class="my-0.5 h-3 w-44 rounded skeloader" aria-hidden="true"></span>{/if}
   </div>
   {:else}
     <FactList media={m} variant={factsStyle} progress={effProgress > 0 ? `${effProgress}/${epsTotal(m) || '?'}` : undefined} {controllerUi} genres={false} />
   {/if}
+  <!-- Only formats `nextAiringEpisode`, which the card's record carries too. -->
   {#if countdown !== 'none'}<AiringCountdown media={m} variant={countdown} />{/if}
 
   {#if m.genres?.length}
@@ -1125,9 +1252,11 @@
   {/if}
 
   <!-- Phones have no room for release timing in their episode controls. Keep one quiet
-       grouped summary under the facts; desktop anchors it to the episode toolbar instead. -->
+       grouped summary under the facts; desktop anchors it to the episode toolbar instead. The
+       lookup needs only the id and the titles, so it starts on the card's record; a placeholder has
+       no titles to match. -->
   <div class="mt-3 flex flex-wrap items-center gap-2 empty:mt-0">
-    <AiringStatus media={m} />
+    {#if !pending || named(m)}<AiringStatus media={m} />{/if}
   </div>
 
   {#if m.description}
@@ -1135,7 +1264,18 @@
             class="mt-3 w-full text-left text-sm text-muted-foreground {descExpanded ? 'block' : 'line-clamp-3'}">
       {stripHtml(m.description)}
     </button>
+  {:else if pending}
+    <button data-part="detail.synopsis" type="button" tabindex="-1" aria-hidden="true"
+            class="mt-3 w-full text-left text-sm text-muted-foreground line-clamp-3">{@render placeholderLines(3)}</button>
   {/if}
+{/snippet}
+
+<!-- A section's place while the record loads: the card's record has no relations, cast or
+     recommendations, so nothing may claim there are none. -->
+{#snippet sectionPlaceholder(phone: boolean)}
+  <div class="{phone ? 'mt-3' : ''} space-y-2" aria-hidden="true">
+    {#each Array(3) as _, index (index)}<div class="h-4 rounded skeloader {index === 2 ? 'w-1/2' : 'w-full'}"></div>{/each}
+  </div>
 {/snippet}
 
 <!-- The page's sections (API 3 `detail.sections`): a tab strip over the active section, or every
@@ -1171,7 +1311,7 @@
 
 {#snippet sectionBody(m: Media, id: DetailSection, phone: boolean, overlay: boolean)}
   {#if id === 'episodes'}
-    <EpisodeList media={m} offline={$offlineMode} />
+    {@render episodeList(m)}
   {:else if id === 'overview'}
     {#if phone && overlay}
       <div class="mt-4 space-y-5">
@@ -1179,6 +1319,11 @@
           <section>
             <h2 class="mb-2 text-base font-black">Synopsis</h2>
             <p data-part="detail.synopsis" class="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
+          </section>
+        {:else if pending}
+          <section>
+            <h2 class="mb-2 text-base font-black">Synopsis</h2>
+            <p data-part="detail.synopsis" class="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{@render placeholderLines(3)}</p>
           </section>
         {/if}
       </div>
@@ -1189,6 +1334,11 @@
           <section>
             <h2 class="mb-2 text-base font-black">Synopsis</h2>
             <p data-part="detail.synopsis" class="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
+          </section>
+        {:else if pending && !mobileTabs.infoInOverview}
+          <section>
+            <h2 class="mb-2 text-base font-black">Synopsis</h2>
+            <p data-part="detail.synopsis" class="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{@render placeholderLines(3)}</p>
           </section>
         {/if}
 
@@ -1255,6 +1405,8 @@
         {/if}
       </div>
     {/if}
+  {:else if pending}
+    {@render sectionPlaceholder(phone)}
   {:else if id === 'relations'}
     {#if phone}
       {#if m.relations?.edges?.length}

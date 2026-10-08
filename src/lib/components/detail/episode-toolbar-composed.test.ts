@@ -36,7 +36,7 @@ describe('themed episode toolbar', () => {
   // shows it. The rule is the plan's (toolbar-plan.test.ts); a themed toolbar elsewhere shows it.
   it('keeps the release timing in the info column wherever the flip sits in the gutter', () => {
     expect(detail).toContain("import { flipInGutter } from './toolbar-plan'")
-    expect(detail).toContain('const flipGutter = $derived(media != null && flipInGutter({ ...detailTheme.episodes, total: listEpisodes(media).length, phone: $isMobile, rail: sideEpisodes }))')
+    expect(detail).toContain('const flipGutter = $derived(shown != null && flipInGutter({ ...detailTheme.episodes, total: listEpisodes(shown).length, phone: $isMobile, rail: sideEpisodes }))')
     expect(detail).toContain('{#if flipGutter}')
     expect(detail).not.toContain("{#if detailTheme.episodes?.order === 'flip' && sideEpisodes}")
     expect(list).toContain('{#if !$isMobile && !selecting && !plan.gutter}')
