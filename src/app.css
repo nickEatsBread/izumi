@@ -406,16 +406,11 @@ html.gamemode:not(.tv-mode) [data-focusable][data-switch]::after {
   content-visibility: visible;
   contain-intrinsic-size: none;
 }
-/* Deck and controller focus ring (owner decision 9): two-tone and coloured by the theme. A gap in
-   the page colour, a band in the theme's --ring, then a 1px foreground hairline, so a theme whose
-   ring sits close to its background still shows focus. The gap and the hairline read the
-   client-owned palette mirror (theme.ts), which theme stylesheets cannot declare (css-policy.ts).
-   A custom property's var() references resolve where it is declared, and descendants inherit that
-   result: this ring is resolved once at the root, so a subtree that only remaps --ring (a theme
-   rule on a part) does not recolour it. Protected surfaces remap --ring to the mirror, so the ring
-   is declared again on them and their band follows --izumi-safe-ring. */
+/* Deck and controller focus ring: the plain 3px white ring the Deck always had, back on 2026-10-08
+   in place of the theme-coloured two-tone ring. It stays a variable so the player, Theme Studio and
+   the install preview can still give their own. */
 :root, [data-theme-protected] {
-  --izumi-safe-focus-ring: 0 0 0 2px hsl(var(--izumi-safe-background, var(--background))), 0 0 0 5px hsl(var(--ring, var(--izumi-safe-foreground, var(--foreground)))), 0 0 0 6px hsl(var(--izumi-safe-foreground, var(--foreground)) / 0.55);
+  --izumi-safe-focus-ring: 0 0 0 3px #fff;
 }
 /* The player keeps its white ring over video: the desktop overlay and the Android player. Every
    Game-mode and controller-mode ring rule inside them reads this value instead of the theme's. */
