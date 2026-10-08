@@ -41,6 +41,7 @@
     role="dialog"
     aria-modal="true"
     aria-label={m.up_next_title()}
+    data-gm-dock-avoid
     class="fixed inset-0 z-[85] flex items-end justify-center bg-black/55 p-4 sm:items-center"
   >
     <div class="w-full max-w-lg overflow-hidden rounded-2xl border border-white/15 bg-neutral-950 text-white shadow-2xl">

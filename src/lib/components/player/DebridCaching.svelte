@@ -36,7 +36,7 @@
     />
   {:else}
     <!-- Desktop keeps the immersive caching screen. NO backdrop-blur on Deck WebKit. -->
-    <div class="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-6 bg-black px-6 text-white">
+    <div data-gm-dock-avoid class="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-6 bg-black px-6 text-white">
     {#if c.cover}
       <!-- Desktop uses a blurred cover. Game mode keeps it unfiltered via loading-backdrop so the
            spinner/progress updates do not invalidate a full-screen filter on every frame. -->

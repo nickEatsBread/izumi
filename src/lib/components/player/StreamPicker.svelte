@@ -445,6 +445,15 @@
     window.addEventListener('stream-picker-nav', onNav)
     return () => window.removeEventListener('stream-picker-nav', onNav)
   })
+  // The controller's B on a visible picker arrives from the app-wide router. Closing through close()
+  // also cancels the resolve and the "Switching source" card, which clearing the store alone left
+  // running behind the player. Only the on-screen picker answers; the TV's headless one never shows.
+  $effect(() => {
+    if (pickerStore !== streamPicker) return
+    const onDismiss = () => close()
+    window.addEventListener('stream-picker-dismiss', onDismiss)
+    return () => window.removeEventListener('stream-picker-dismiss', onDismiss)
+  })
   // The source picker is lazy-loaded outside PlayerOverlay. On a cold open, the player's first
   // one-shot Gamescope snapshot can therefore happen while only the pending placeholder exists.
   // Re-snapshot once the real trap mounts, after WebKit has painted its card, regardless of whether
@@ -640,6 +649,9 @@
   function close() {
     cancelAuto()
     cancelResolve(resolveSession)
+    // A pick already handed to playStream stops only through its own cancel. Clearing the card
+    // alone left that start running, and it replaced the video after the picker had gone.
+    if (pickerStore === streamPicker) $connecting?.cancel()
     connecting.set(null)
     busy = false
     error = ''
@@ -882,6 +894,7 @@
        its whole shell while `streamPicker` is set), so it has to survive a ~360px-tall landscape
        viewport — hence the short-viewport rules in the style block. -->
   <div
+    data-gm-dock-avoid
     class="fixed inset-0 z-40 grid bg-black/70 {$isMobile ? '' : 'place-items-center p-4'}"
     class:backdrop-blur-sm={!$gameMode && !$isMobile}
     transition:fade={{ duration: $gameMode ? 0 : 200 }}

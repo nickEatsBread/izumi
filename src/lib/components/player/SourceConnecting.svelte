@@ -25,8 +25,9 @@
     </div>
   {:else if $gameMode && $playing}
   <!-- A mid-playback source swap must not replace the current frame with a black loading page.
-       This translucent, compact surface is snapshotted into mpv with the picker/player chrome. -->
+       This compact surface renders live beside the docked video tile (gm-overlay gameModeDock). -->
   <div
+    data-gm-dock-avoid
     class="fixed inset-0 z-[55] grid place-items-center bg-black/45"
     onclick={() => c?.cancel()}
     onkeydown={(e) => e.key === 'Escape' && c?.cancel()}

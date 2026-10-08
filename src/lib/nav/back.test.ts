@@ -6,7 +6,7 @@ import { isMobile } from '$lib/platform'
 import { androidMiniPlayer, androidMpvActive } from '$lib/player/android-mpv'
 import { seriesRatingPrompt } from '$lib/player/series-rating'
 import {
-  advancedFiltersOpen, debridCaching, exitPrompt, listEditorOpen, onboardingNav, oskDismissedAt, oskOpen,
+  advancedFiltersOpen, connecting, debridCaching, exitPrompt, listEditorOpen, onboardingNav, oskDismissedAt, oskOpen,
   streamPicker, streamPickerDismissedAt,
 } from '$lib/player/session'
 import { globalSearchOpen } from '$lib/search/global-search'
@@ -61,6 +61,7 @@ beforeEach(() => {
   listEditorOpen.set(false)
   advancedFiltersOpen.set(false)
   debridCaching.set(null)
+  connecting.set(null)
   seriesRatingPrompt.set(null)
   mocks.goto.mockReset()
   mocks.closeOsk.mockReset()
@@ -212,10 +213,15 @@ describe('step 3: the top nav layer, then the chain-owned screens in gamepad ord
 
   it('dismisses the source picker (stamped for the player), then the list editor, then advanced filters', () => {
     vi.spyOn(performance, 'now').mockReturnValue(777)
+    // The mounted picker closes itself on this event, cancelling a switch already under way.
+    const dismissed = vi.fn()
+    window.addEventListener('stream-picker-dismiss', dismissed)
     streamPicker.set({ hidden: false } as never)
     expect(handleLayeredBack('system')).toBe(true)
     expect(get(streamPicker)).toBeNull()
     expect(get(streamPickerDismissedAt)).toBe(777)
+    expect(dismissed).toHaveBeenCalledTimes(1)
+    window.removeEventListener('stream-picker-dismiss', dismissed)
     const editor = vi.fn()
     const advanced = vi.fn()
     window.addEventListener('list-editor-close', editor)
@@ -229,6 +235,19 @@ describe('step 3: the top nav layer, then the chain-owned screens in gamepad ord
     expect(advanced).toHaveBeenCalledTimes(1)
     window.removeEventListener('list-editor-close', editor)
     window.removeEventListener('advanced-close', advanced)
+  })
+
+  it('cancels a connecting card with no picker under it, and leaves a picker-owned one to the picker', () => {
+    const cancel = vi.fn()
+    connecting.set({ title: 't', cancel })
+    expect(handleLayeredBack('system')).toBe(true)
+    expect(cancel).toHaveBeenCalledTimes(1)
+    expect(history.back).not.toHaveBeenCalled()
+    resetLayeredBackForTests()
+    streamPicker.set({ hidden: false } as never)
+    expect(handleLayeredBack('system')).toBe(true)
+    expect(get(streamPicker)).toBeNull()
+    expect(cancel).toHaveBeenCalledTimes(1)
   })
 
   it('leaves a hidden picker alone', () => {

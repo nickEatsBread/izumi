@@ -72,7 +72,8 @@ export function startGamepadNav(): () => void {
 
   // A direction fires once on press, then repeats while held. In the player, left/right are
   // owned by the overlay's TriggerScrubber (same skim path as L2/R2) so a paused seek still
-  // moves the bar and the frame; up/down are unused. Everywhere else this drives focus nav.
+  // moves the bar and the frame, and Up opens the player settings (Change source, speed, quality),
+  // which were otherwise reachable only by touch. Everywhere else this drives focus nav.
   function fireDir(dir: Dir, repeat = false) {
     if (get(deckKeyboardWarning)) return // the keyboard shortcut warning owns the pad
     if (get(oskOpen)) { keydown(ARROW[dir], repeat); return } // the on-screen keyboard sits above everything else
@@ -104,6 +105,10 @@ export function startGamepadNav(): () => void {
         window.dispatchEvent(new CustomEvent('comments-nav', { detail: dir }))
       } else if (get(playerMenuOpen)) {
         window.dispatchEvent(new CustomEvent('player-menu-nav', { detail: dir }))
+      } else if (dir === 'up' && !repeat) {
+        // PlayerOverlay decides: it knows when another surface (the subtitle mover, stats, a
+        // prompt or the switching card) owns Up, and it can reveal the bar Controls lives in.
+        window.dispatchEvent(new Event('player-settings-request'))
       }
       return
     }
@@ -149,9 +154,14 @@ export function startGamepadNav(): () => void {
     // Track menu open (Game mode ☰): it captures ALL buttons — d-pad, A, B, ☰ — so nothing
     // here should drive focus nav / seek / back while it's up.
     if (get(trackMenuOpen)) return
-    // The debrid caching screen captures the pad: B cancels, everything else is ignored.
+    // The debrid caching screen captures the pad: B cancels, everything else is ignored. It is the
+    // picker's next step, so it publishes the picker's hand-off: PlayerOverlay hears this same B and
+    // must not also close the player under it, in either listener order.
     if (get(debridCaching)) {
-      if (name === 'b') get(debridCaching)?.cancel()
+      if (name === 'b') {
+        streamPickerDismissedAt.set(performance.now())
+        get(debridCaching)?.cancel()
+      }
       return
     }
     // The end-of-series rating prompt owns the pad while up: directions move focus inside its
@@ -226,6 +236,9 @@ export function startGamepadNav(): () => void {
         // PlayerOverlay receives this same raw edge. Publish ownership before clearing the picker,
         // so listener registration order cannot turn one B press into picker-close + player-close.
         streamPickerDismissedAt.set(performance.now())
+        // The mounted picker closes itself: that also cancels its in-flight resolve and the
+        // "Switching source" card, which merely clearing the store left running.
+        window.dispatchEvent(new Event('stream-picker-dismiss'))
         streamPicker.set(null)
       }
       return

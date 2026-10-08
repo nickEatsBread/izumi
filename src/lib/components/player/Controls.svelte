@@ -555,6 +555,8 @@
       else if (dir === 'left') gmBack()
     }
     window.addEventListener('player-menu-nav', onMenuNav)
+    const onOpenSettings = () => { if (!showOptions) toggleOptions() }
+    window.addEventListener('player-open-settings', onOpenSettings)
     const unPad = listenSafe<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
       if (!gm || !showOptions || !e.payload.pressed || get(deckKeyboardWarning)) return
       // Directions are owned by the app-wide repeat translator, which dispatches
@@ -583,6 +585,7 @@
       window.removeEventListener('izumi-drm-quality', onQuality)
       window.removeEventListener('player-menu-close', closePlayerMenus)
       window.removeEventListener('player-menu-nav', onMenuNav)
+      window.removeEventListener('player-open-settings', onOpenSettings)
       void unlistenMuted.then((unlisten) => unlisten())
       playerMenuOpen.set(false)
       playerSideSheetOpen.set(false)
@@ -842,7 +845,7 @@
     <!-- Same reasoning as the bottom bar: this bar spans the full width for the sake of one Back
          button, so leaving it pointer-events-auto made the entire top of the video a click-to-pause
          dead zone. The button and the 32px drag strip opt back in; the rest falls through. -->
-    <div class="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-4 bg-gradient-to-b from-black/70 to-transparent {gm ? 'px-8 py-6' : 'px-4 pb-3 pt-2'}"
+    <div data-gm-bar class="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-4 bg-gradient-to-b from-black/70 to-transparent {gm ? 'px-8 py-6' : 'px-4 pb-3 pt-2'}"
          style:padding-left={backInset}>
       {#if underTitlebar}
         <div data-tauri-drag-region class="pointer-events-auto absolute inset-x-0 top-0 h-8"></div>
@@ -867,7 +870,7 @@
        Only the rows that actually ARE controls opt back in below; the gradient, the padding and the
        title now fall through to the overlay's click-to-pause. The Seekbar keeps its own `py-3` grab
        padding, so there is still a forgiving band that seeks rather than pausing. -->
-  <div class="pointer-events-none absolute inset-x-0 bottom-0 {gm ? 'bg-gradient-to-t from-black/80 via-black/40 to-transparent px-8 pb-6 pt-14' : 'bg-gradient-to-t from-black/85 via-black/45 to-transparent px-6 pb-5 pt-20'}">
+  <div data-gm-bar class="pointer-events-none absolute inset-x-0 bottom-0 {gm ? 'bg-gradient-to-t from-black/80 via-black/40 to-transparent px-8 pb-6 pt-14' : 'bg-gradient-to-t from-black/85 via-black/45 to-transparent px-6 pb-5 pt-20'}">
     <!-- Now-playing title above the seek bar (unless it's been moved to the top). Scales up
          in Game mode to match the enlarged controls. -->
     {#if !titleTop}
@@ -1435,7 +1438,7 @@
   </div>
 
   {#if gm && showOptions}
-    <div class="gm-sheet-backdrop pointer-events-auto fixed inset-0 z-40 bg-black/50" onclick={closePlayerMenus} role="presentation">
+    <div data-gm-dock-avoid class="gm-sheet-backdrop pointer-events-auto fixed inset-0 z-40 bg-black/50" onclick={closePlayerMenus} role="presentation">
     <div data-gm-side-sheet class="gm-sheet gm-sheet-in absolute top-10 bottom-10 right-8 z-40 flex w-[22rem] flex-col overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-white shadow-2xl" onclick={(e) => e.stopPropagation()} role="presentation">
       {#if gmSettingsPage === 'root'}
         <p class="px-3 py-2 text-2xl font-bold">Settings</p>

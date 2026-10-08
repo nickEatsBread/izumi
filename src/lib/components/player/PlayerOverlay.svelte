@@ -16,7 +16,7 @@
   import { SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { getMediaSkipSegments } from '$lib/stremio/skip-segments'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting, oskOpen } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting, oskOpen, debridCaching, upNextPrompt } from '$lib/player/session'
   import { seriesRatingPrompt } from '$lib/player/series-rating'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
@@ -56,7 +56,7 @@
   import { sessionSubtitleStyle, sessionSubtitleAdjustments, effectiveSubtitleStyle, resetSubtitleSession } from '$lib/settings/subtitle-presets'
   import { incognito } from '$lib/stores/incognito'
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
-  import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeSideSheetCrop, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay, usesGameModeBitmapCompositor } from '$lib/player/gm-overlay'
+  import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeLiveMenuOpen, gameModeSideSheetCrop, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay, usesGameModeBitmapCompositor } from '$lib/player/gm-overlay'
   import { deckWebviewZoom } from '$lib/deck/webview-zoom'
   import { findHotkey, playerHotkeyEligible } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
@@ -190,19 +190,51 @@
     return true
   }
 
+  // Where the finger that revealed the controls went down. Only the compatibility click of THAT
+  // touch is swallowed: a later touch, or a click somewhere else, is a real press.
+  let revealTouch: { x: number; y: number } | null = null
+
   function onOverlayTouchStart(e: TouchEvent) {
     if (e.touches.length !== 1) return
     if ((e.target as HTMLElement)?.closest?.('[data-comments-panel]')) return
+    const touch = e.touches[0]
+    if (performance.now() < suppressTouchRevealClickUntil) {
+      if (revealTouch) {
+        // A new touch: the revealing touch's click has come and gone (or was prevented), and this
+        // touch's own click is a real press on whatever the reveal put there.
+        suppressTouchRevealClickUntil = 0
+        revealTouch = null
+      } else {
+        // Gamescope's native touch-begin armed the reveal a moment before this DOM start.
+        revealTouch = { x: touch.clientX, y: touch.clientY }
+      }
+    }
     // WebKitGTK on SteamOS exposes touch PointerEvents as compatibility mouse events, which can
     // arrive only after the finger lifts. Native TouchEvent starts are immediate. Preventing this
     // bare-video sequence's compatibility click also stops it being re-hit-tested against the Play
     // button that the same touch just caused Svelte to mount.
-    if (revealFromTouchBegin()) e.preventDefault()
+    if (revealFromTouchBegin()) {
+      revealTouch = { x: touch.clientX, y: touch.clientY }
+      e.preventDefault()
+    }
+  }
+
+  function onOverlayTouchMove(e: TouchEvent) {
+    // A drag never produces the compatibility click the window waits for, so it would swallow the
+    // next real tap instead.
+    const touch = e.touches[0]
+    if (!revealTouch || !touch) return
+    if (Math.hypot(touch.clientX - revealTouch.x, touch.clientY - revealTouch.y) > 12) {
+      suppressTouchRevealClickUntil = 0
+      revealTouch = null
+    }
   }
 
   function captureOverlayClick(e: MouseEvent) {
     if (!gmMode || performance.now() >= suppressTouchRevealClickUntil) return
+    if (revealTouch && Math.hypot(e.clientX - revealTouch.x, e.clientY - revealTouch.y) > 24) return
     suppressTouchRevealClickUntil = 0
+    revealTouch = null
     e.preventDefault()
     e.stopImmediatePropagation()
   }
@@ -850,9 +882,25 @@
   const sourcePickerVisible = $derived(!!$streamPicker && !$streamPicker.hidden)
   const sourceConnectingVisible = $derived(!!$connecting)
   const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || subtitleEditorOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible || sourcePickerVisible || sourceConnectingVisible || $navLayerOpen || $oskOpen)
+  // A menu, the source picker, the switching card or a prompt is up: the video shrinks to a corner
+  // tile and those surfaces render live beside it (gameModeDock). Comments still unmap the video.
+  const gmMenuDocked = $derived(gmBitmapMode && $playing && !$commentsOpen && gameModeLiveMenuOpen({
+    playerMenuOpen: $playerMenuOpen,
+    trackMenuOpen: $trackMenuOpen,
+    sourcePickerOpen: sourcePickerVisible,
+    connecting: sourceConnectingVisible,
+    cachingOpen: !!$debridCaching,
+    ratingOpen: !!$seriesRatingPrompt,
+    upNextOpen: !!$upNextPrompt,
+  }))
+  $effect(() => {
+    document.documentElement.classList.toggle('gm-docked', gmMenuDocked)
+    return () => document.documentElement.classList.remove('gm-docked')
+  })
   // Ordinary controls are drawn by the 60Hz native OSD. Complex/persistent HTML surfaces still
   // take the bitmap path; that bitmap sits above ASS and includes the controls underneath it.
-  const gmNativeControls = $derived(gmBitmapMode && firstFrame && controlsVisible && (!overlayFull || $playerSideSheetOpen))
+  // Docked, the OSD would draw into the corner tile at full-screen positions, so it stays off.
+  const gmNativeControls = $derived(gmBitmapMode && firstFrame && controlsVisible && !gmMenuDocked && (!overlayFull || $playerSideSheetOpen))
   const gmDynamicOwnsChrome = $derived(gmNativeControls)
   const overlayActive = $derived(gameModeBitmapOverlayActive({
     gameMode: gmBitmapMode,
@@ -889,6 +937,9 @@
       sourcePickerOpen: sourcePickerVisible,
       connecting: sourceConnectingVisible,
       subtitleEditorOpen,
+      cachingOpen: !!$debridCaching,
+      ratingOpen: !!$seriesRatingPrompt,
+      upNextOpen: !!$upNextPrompt,
     })
     invoke('player_gm_dock', dock).catch(() => {})
     if (gameModeDockIsLive(dock)) {
@@ -1308,6 +1359,15 @@
       // The same for the B that just closed the on-screen keyboard (the router stamps
       // oskDismissedAt before closing it), whichever listener ran first.
       if (e.payload.name === 'b' && e.payload.pressed && performance.now() - get(oskDismissedAt) < 500) return
+      // The debrid caching screen is the router's: it cancels on B and stamps the hand-off above.
+      if (get(debridCaching)) return
+      // B on the "Switching source" card cancels the switch, exactly as its ✕ does. With no picker
+      // under the card nothing else owned that B, so it closed the player instead.
+      const pendingSwitch = get(connecting)
+      if (pendingSwitch && e.payload.name === 'b') {
+        if (e.payload.pressed) pendingSwitch.cancel()
+        return
+      }
       if (subtitleEditorOpen) {
         if (!e.payload.pressed) return
         if (e.payload.name === 'b') {
@@ -1362,6 +1422,24 @@
         case 'r1': padEpisode(1); break
       }
     })
+  })
+
+  // D-pad Up opens the settings sheet. Controls is mounted only while the bar shows, so this
+  // overlay takes the request, reveals the bar and hands it on once Controls is there. Up stays
+  // with whatever surface already owns it (the subtitle mover, stats, a prompt, the switching card).
+  $effect(() => {
+    const onRequest = async () => {
+      if (subtitleEditorOpen || get(playerStatsOpen) || get(upNextPrompt) || get(connecting) || get(debridCaching)
+        || get(seriesRatingPrompt) || get(commentsOpen) || get(trackMenuOpen) || get(playerMenuOpen)
+        || get(oskOpen) || topNavLayer()) return
+      const picker = get(streamPicker)
+      if (picker && !picker.hidden) return
+      poke()
+      await tick()
+      window.dispatchEvent(new Event('player-open-settings'))
+    }
+    window.addEventListener('player-settings-request', onRequest)
+    return () => window.removeEventListener('player-settings-request', onRequest)
   })
 
   // TEMP diagnostic: log mpv's actual render-surface size vs the window on first frame,
@@ -1698,6 +1776,7 @@
   onclick={onOverlayTap}
   onclickcapture={captureOverlayClick}
   ontouchstart={onOverlayTouchStart}
+  ontouchmove={onOverlayTouchMove}
   onpointerdown={onOverlayPointerDown}
   onpointermove={pipDragMove}
   onpointerup={endPipDrag}
@@ -1705,6 +1784,20 @@
   onfocusin={() => { if (gmMode) gmFocusRev += 1 }}
   role="presentation"
 >
+  {#if gmMenuDocked}
+    <!-- Game mode with a menu open: the video is the corner tile above this; the menu surfaces sit
+         beside it (html.gm-docked moves them clear) and the rest of the window is this backdrop. -->
+    <div data-gm-dock-backdrop class="pointer-events-none fixed inset-0 bg-[#0b0b0d]" aria-hidden="true">
+      {#if $nowPlaying.animeTitle}
+        <div class="absolute left-6 top-[calc(36vh+1.25rem)] w-[calc(40vw-3rem)] text-white">
+          <p class="line-clamp-2 text-2xl font-black leading-tight">{$nowPlaying.animeTitle}</p>
+          {#if $nowPlaying.episode != null}<p class="mt-1 text-lg font-semibold text-white/60">Episode {$nowPlaying.episode}</p>{/if}
+          <p class="mt-4 text-sm font-semibold text-white/40">B closes the menu</p>
+        </div>
+      {/if}
+    </div>
+  {/if}
+
   {#if drmActive && $nowPlayingStream.drm}
     <DrmSurface
       url={$nowPlayingStream.url}
@@ -1887,3 +1980,25 @@
   </aside>
 {/if}
 </div>
+
+<style>
+  /* Game mode with a menu open (gm-overlay GAME_MODE_MENU_TILE): the video window is a 40vw × 36vh
+     tile in the top-left corner, above the webview. Menu surfaces opt in with data-gm-dock-avoid
+     to keep their content clear of it and drop their own dim, since the dock backdrop already
+     covers the page underneath. The control bars belong to full-screen video, so they step aside. */
+  :global(html.gm-docked [data-gm-dock-avoid]) {
+    padding-left: calc(40vw + 1.5rem) !important;
+    background: transparent !important;
+  }
+  :global(html.gm-docked [data-gm-bar]) {
+    visibility: hidden;
+  }
+  :global(html.gm-docked .gm-track-col) {
+    width: 21rem !important;
+  }
+  /* Two 21rem columns beside the tile leave room for "Subtitle style" on one line at text-2xl. */
+  :global(html.gm-docked .gm-track-col button) {
+    font-size: 1.5rem !important;
+    line-height: 2rem !important;
+  }
+</style>

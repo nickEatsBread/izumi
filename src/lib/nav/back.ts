@@ -5,6 +5,7 @@ import { androidMiniPlayer, androidMpvActive } from '$lib/player/android-mpv'
 import { seriesRatingPrompt } from '$lib/player/series-rating'
 import {
   advancedFiltersOpen,
+  connecting,
   debridCaching,
   exitPrompt,
   listEditorOpen,
@@ -111,10 +112,16 @@ function planBack(source: LayeredBackSource): BackPlan {
     return plan('close', () => {
       // PlayerOverlay hears the same press: publish ownership first, as gamepad.ts does.
       streamPickerDismissedAt.set(performance.now())
+      // The mounted picker closes itself, which also cancels a switch already under way.
+      window.dispatchEvent(new Event('stream-picker-dismiss'))
       streamPicker.set(null)
       return true
     })
   }
+  // A connecting card with no picker under it (Continue Watching, the next episode): Back cancels
+  // it like its ✕ does, instead of leaving the page while the source keeps starting.
+  const pendingSwitch = get(connecting)
+  if (pendingSwitch) return plan('close', () => { pendingSwitch.cancel(); return true })
   if (get(listEditorOpen)) return plan('close', () => { window.dispatchEvent(new Event('list-editor-close')); return true })
   if (get(advancedFiltersOpen)) return plan('close', () => { window.dispatchEvent(new Event('advanced-close')); return true })
   // 4. An open modal <dialog>: cancel it, honouring its busy guard.

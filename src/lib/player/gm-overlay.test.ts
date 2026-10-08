@@ -4,8 +4,10 @@ import { describe, expect, it } from 'vitest'
 import {
   gameModeBitmapOverlayActive,
   gameModeChromeActive,
+  GAME_MODE_MENU_TILE,
   gameModeDock,
   gameModeDockIsLive,
+  gameModeLiveMenuOpen,
   gameModeSnapshotCrop,
   gameModeSideSheetCrop,
   presenceAllowed,
@@ -47,13 +49,13 @@ describe('gameModeBitmapOverlayActive', () => {
     expect(gameModeBitmapOverlayActive({ ...base, p2pVisible: true })).toBe(true)
   })
 
-  it('snapshots discrete menus but leaves live comments off the bitmap path', () => {
-    expect(gameModeBitmapOverlayActive({ ...base, trackMenuOpen: true })).toBe(true)
-    expect(gameModeBitmapOverlayActive({ ...base, playerMenuOpen: true })).toBe(true)
+  it('leaves menus, the picker and comments live, and snapshots only picture-relative panels', () => {
+    expect(gameModeBitmapOverlayActive({ ...base, trackMenuOpen: true })).toBe(false)
+    expect(gameModeBitmapOverlayActive({ ...base, playerMenuOpen: true })).toBe(false)
     expect(gameModeBitmapOverlayActive({ ...base, commentsOpen: true })).toBe(false)
+    expect(gameModeBitmapOverlayActive({ ...base, sourcePickerOpen: true })).toBe(false)
+    expect(gameModeBitmapOverlayActive({ ...base, connectingOpen: true })).toBe(false)
     expect(gameModeBitmapOverlayActive({ ...base, statsOpen: true })).toBe(true)
-    expect(gameModeBitmapOverlayActive({ ...base, sourcePickerOpen: true })).toBe(true)
-    expect(gameModeBitmapOverlayActive({ ...base, connectingOpen: true })).toBe(true)
     expect(gameModeBitmapOverlayActive({ ...base, subtitleEditorOpen: true })).toBe(true)
   })
 
@@ -132,7 +134,7 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('gmNativeControls')
     expect(overlay).toContain('usesGameModeBitmapCompositor')
     expect(overlay).toContain('native={gmBitmapMode}')
-    expect(overlay).toContain('controlsVisible && (!overlayFull || $playerSideSheetOpen)')
+    expect(overlay).toContain('controlsVisible && !gmMenuDocked && (!overlayFull || $playerSideSheetOpen)')
     expect(overlay).toContain('currentSeg && !overlayActive')
     expect(overlay).not.toContain('!overlayFull && !showSkip')
     expect(overlay).toContain('measureNativeChrome')
@@ -166,6 +168,34 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('e.stopImmediatePropagation()')
   })
 
+  it('swallows only the click of the touch that revealed the controls', () => {
+    const body = overlay.replace(/\r\n/g, '\n')
+    expect(body).toContain('ontouchmove={onOverlayTouchMove}')
+    // The revealing touch is adopted once; any later touch disarms the window, since its own click
+    // is a real press on whatever the reveal put there. The window keeps its full length: the
+    // compatibility click's latency after the lift is not something to guess.
+    expect(body).toContain('      if (revealTouch) {\n')
+    expect(body).toContain('        suppressTouchRevealClickUntil = 0\n        revealTouch = null\n      } else {')
+    expect(body).not.toContain('onOverlayTouchEnd')
+    // A drag disarms it too, and a tap elsewhere inside the window is a real press.
+    expect(body).toContain('Math.hypot(touch.clientX - revealTouch.x, touch.clientY - revealTouch.y) > 12')
+    expect(body).toContain('Math.hypot(e.clientX - revealTouch.x, e.clientY - revealTouch.y) > 24) return')
+  })
+
+  it('docks the video beside live menus instead of snapshotting them', () => {
+    expect(overlay).toContain('gameModeLiveMenuOpen({')
+    expect(overlay).toContain("document.documentElement.classList.toggle('gm-docked', gmMenuDocked)")
+    expect(overlay).toContain('data-gm-dock-backdrop')
+    expect(overlay).toContain(':global(html.gm-docked [data-gm-dock-avoid])')
+    expect(overlay).toContain(':global(html.gm-docked [data-gm-bar])')
+    for (const file of ['TrackMenu', 'StreamPicker', 'SourceConnecting', 'DebridCaching', 'UpNextOverlay', 'SeriesRatingPrompt', 'Controls']) {
+      const source = readFileSync(fileURLToPath(new URL(`../components/player/${file}.svelte`, import.meta.url)), 'utf8')
+      expect(source, file).toContain('data-gm-dock-avoid')
+    }
+    const controls = readFileSync(fileURLToPath(new URL('../components/player/Controls.svelte', import.meta.url)), 'utf8')
+    expect(controls).toContain('data-gm-bar')
+  })
+
   it('re-focuses the overlay after fullscreen so player hotkeys keep working', () => {
     // Native macOS fullscreen steals first responder from WKWebView. The capture-phase
     // key listener is on `window`, but if the webview is not first responder the events
@@ -186,16 +216,33 @@ describe('gameModeDock', () => {
     noticeVisible: false,
   }
 
-  it('keeps controls over fullscreen video and hides mpv only for live HTML surfaces', () => {
+  const tile = { bottom: GAME_MODE_MENU_TILE.bottom, right: GAME_MODE_MENU_TILE.right, top: 0, hide: false }
+
+  it('keeps controls over full-screen video', () => {
     expect(gameModeDock({ ...base, loading: true })).toEqual({ bottom: 0, right: 0, top: 0, hide: false })
     expect(gameModeDock({ ...base, controlsVisible: true })).toEqual({ bottom: 0, right: 0, top: 0, hide: false })
     expect(gameModeDockIsLive(gameModeDock({ ...base, controlsVisible: true }))).toBe(false)
-    expect(gameModeDock({ ...base, playerMenuOpen: true }).hide).toBe(false)
-    expect(gameModeDock({ ...base, trackMenuOpen: true }).hide).toBe(false)
+    expect(gameModeDock({ ...base, subtitleEditorOpen: true })).toEqual({ bottom: 0, right: 0, top: 0, hide: false })
+  })
+
+  it('shrinks the video to a 16:9 corner tile while a menu, picker or prompt is open', () => {
+    for (const open of ['playerMenuOpen', 'trackMenuOpen', 'sourcePickerOpen', 'connecting', 'cachingOpen', 'ratingOpen', 'upNextOpen'] as const) {
+      expect(gameModeDock({ ...base, [open]: true }), open).toEqual(tile)
+      expect(gameModeDockIsLive(gameModeDock({ ...base, [open]: true })), open).toBe(true)
+    }
+    // 512×288 out of the Deck's 1280×800.
+    expect(Math.round(1280 * (1 - GAME_MODE_MENU_TILE.right))).toBe(512)
+    expect(Math.round(800 * (1 - GAME_MODE_MENU_TILE.bottom))).toBe(288)
+  })
+
+  it('still unmaps the video under the opaque comments panel', () => {
     expect(gameModeDock({ ...base, commentsOpen: true }).hide).toBe(true)
-    expect(gameModeDock({ ...base, sourcePickerOpen: true }).hide).toBe(false)
-    expect(gameModeDock({ ...base, connecting: true }).hide).toBe(false)
-    expect(gameModeDock({ ...base, subtitleEditorOpen: true }).hide).toBe(false)
+    expect(gameModeDock({ ...base, commentsOpen: true, sourcePickerOpen: true }).hide).toBe(true)
+  })
+
+  it('names every live menu surface', () => {
+    expect(gameModeLiveMenuOpen({ playerMenuOpen: false, trackMenuOpen: false })).toBe(false)
+    expect(gameModeLiveMenuOpen({ playerMenuOpen: false, trackMenuOpen: false, upNextOpen: true })).toBe(true)
   })
 })
 
@@ -240,6 +287,54 @@ describe('Game-mode Leanback motion', () => {
     const overlay = readFileSync(fileURLToPath(new URL('../components/player/PlayerOverlay.svelte', import.meta.url)), 'utf8')
     expect(gamepad).toContain('streamPickerDismissedAt.set(performance.now())')
     expect(overlay).toContain('performance.now() - get(streamPickerDismissedAt) < 500')
+  })
+
+  it('lets B cancel a source switch, not just hide the picker', () => {
+    const gamepad = readFileSync(fileURLToPath(new URL('../nav/gamepad.ts', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
+    const picker = readFileSync(fileURLToPath(new URL('../components/player/StreamPicker.svelte', import.meta.url)), 'utf8')
+    expect(gamepad).toContain("window.dispatchEvent(new Event('stream-picker-dismiss'))\n        streamPicker.set(null)")
+    expect(picker).toContain("window.addEventListener('stream-picker-dismiss', onDismiss)")
+    expect(picker).toContain('const onDismiss = () => close()')
+    // A pick already handed to playStream stops only through the card's own cancel.
+    const close = picker.slice(picker.indexOf('  function close() {'))
+    expect(close.indexOf('if (pickerStore === streamPicker) $connecting?.cancel()')).toBeGreaterThan(-1)
+    expect(close.indexOf('if (pickerStore === streamPicker) $connecting?.cancel()')).toBeLessThan(close.indexOf('connecting.set(null)'))
+  })
+
+  it('cancels the switching card or caching screen on B instead of closing the player', () => {
+    const gamepad = readFileSync(fileURLToPath(new URL('../nav/gamepad.ts', import.meta.url)), 'utf8')
+    const overlay = readFileSync(fileURLToPath(new URL('../components/player/PlayerOverlay.svelte', import.meta.url)), 'utf8')
+    // The card with no picker under it: the player listener is its only B owner.
+    expect(overlay).toContain('const pendingSwitch = get(connecting)')
+    expect(overlay).toContain('if (e.payload.pressed) pendingSwitch.cancel()')
+    // The caching screen is the router's; it stamps the picker hand-off before cancelling.
+    expect(overlay).toContain('if (get(debridCaching)) return')
+    const caching = gamepad.slice(gamepad.indexOf('if (get(debridCaching)) {'))
+    expect(caching.indexOf('streamPickerDismissedAt.set(performance.now())')).toBeGreaterThan(-1)
+    expect(caching.indexOf('streamPickerDismissedAt.set(performance.now())')).toBeLessThan(caching.indexOf('get(debridCaching)?.cancel()'))
+    // Both checks sit before the B → close() fallthrough.
+    expect(overlay.indexOf('const pendingSwitch = get(connecting)')).toBeLessThan(overlay.indexOf('// Reveals the page underneath (the series page you launched from), NOT home'))
+    // The track menu under the card leaves that B to it, so one press cannot do both.
+    const menu = readFileSync(fileURLToPath(new URL('../components/player/TrackMenu.svelte', import.meta.url)), 'utf8')
+    expect(menu).toContain("if (e.payload.name === 'b' && get(connecting)) return")
+  })
+
+  it('opens the settings sheet with D-pad Up during playback', () => {
+    const gamepad = readFileSync(fileURLToPath(new URL('../nav/gamepad.ts', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
+    const overlay = readFileSync(fileURLToPath(new URL('../components/player/PlayerOverlay.svelte', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
+    const controls = readFileSync(fileURLToPath(new URL('../components/player/Controls.svelte', import.meta.url)), 'utf8')
+    expect(gamepad).toContain("} else if (dir === 'up' && !repeat) {")
+    expect(gamepad).toContain("window.dispatchEvent(new Event('player-settings-request'))")
+    expect(gamepad).not.toContain("new Event('player-open-settings')")
+    // The overlay is mounted for the whole playback (Controls only while the bar shows): it leaves
+    // Up to whatever owns it, reveals the bar, then hands the request to the mounted Controls.
+    const handler = overlay.slice(overlay.indexOf('const onRequest = async () => {'))
+    expect(handler).toContain('if (subtitleEditorOpen || get(playerStatsOpen) || get(upNextPrompt) || get(connecting) || get(debridCaching)')
+    expect(handler.indexOf('poke()')).toBeLessThan(handler.indexOf('await tick()'))
+    expect(handler.indexOf('await tick()')).toBeLessThan(handler.indexOf("window.dispatchEvent(new Event('player-open-settings'))"))
+    expect(overlay).toContain("window.addEventListener('player-settings-request', onRequest)")
+    expect(controls).toContain("window.addEventListener('player-open-settings', onOpenSettings)")
+    expect(controls).toContain("window.removeEventListener('player-open-settings', onOpenSettings)")
   })
 
   it('routes picker Up/Down locally instead of relying on hidden-page geometry', () => {

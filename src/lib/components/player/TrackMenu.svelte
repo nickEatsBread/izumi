@@ -3,7 +3,7 @@
   import { invoke } from '@tauri-apps/api/core'
   import { playerTracks } from '$lib/player/native'
   import { listenSafe } from '$lib/util/listen'
-  import { trackMenuOpen, onlineSubCandidates, subtitleNotice, playerNotice, nowPlayingMedia, nowPlayingStream, bingeSource, bumpPlayerOverlay, playbackRecovery, oskOpen } from '$lib/player/session'
+  import { trackMenuOpen, onlineSubCandidates, subtitleNotice, playerNotice, nowPlayingMedia, nowPlayingStream, bingeSource, bumpPlayerOverlay, playbackRecovery, oskOpen, connecting } from '$lib/player/session'
   import { get } from 'svelte/store'
   import { playStream, searchOnlineSubtitles } from '$lib/stremio/play'
   import { openSubtitlesToken } from '$lib/settings/ui'
@@ -267,6 +267,8 @@
       if (get(oskOpen)) return
       if (e.payload.name === 'start') { open ? closeMenu() : openMenu(); return }
       if (!open) return
+      // The switching card sits above this menu: PlayerOverlay gives it the B (cancel the switch).
+      if (e.payload.name === 'b' && get(connecting)) return
       switch (e.payload.name) {
         case 'up': move(-1); break
         case 'down': move(1); break
@@ -307,12 +309,13 @@
 {#if open}
   <!-- Backdrop + sheet. One snapshot after paint, then CPU-fade; d-pad bumps re-snapshot. -->
   <div
+    data-gm-dock-avoid
     class="fixed inset-0 z-40 flex items-center justify-center bg-black/50"
     onclick={closeMenu}
     role="presentation"
   >
     <div class="flex items-start gap-4" onclick={(e) => e.stopPropagation()} role="presentation">
-      <div class="gm-sheet gm-sheet-in w-[26rem] rounded-3xl border border-white/10 bg-[#1a1a1a] p-2 shadow-2xl">
+      <div class="gm-sheet gm-sheet-in gm-track-col w-[26rem] rounded-3xl border border-white/10 bg-[#1a1a1a] p-2 shadow-2xl">
         {#each roots as r, i (r.key)}
           <button
             data-focusable
@@ -338,7 +341,7 @@
 
       <!-- Track column (appears when descended). -->
       {#if level === 1}
-        <div bind:this={trackColEl} class="gm-sheet gm-menu-col-in max-h-[85vh] w-[26rem] overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-2 shadow-2xl">
+        <div bind:this={trackColEl} class="gm-sheet gm-menu-col-in gm-track-col max-h-[85vh] w-[26rem] overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-2 shadow-2xl">
           <p class="px-5 py-3 text-xl font-bold uppercase tracking-wide text-white/40">{roots[openIdx]?.label}</p>
           {#each subItems as it, i (leafKey(it))}
             <button

@@ -121,6 +121,7 @@
     aria-label={m.series_rating_eyebrow()}
     data-nav-trap
     tabindex="-1"
+    data-gm-dock-avoid
     class="series-rating fixed inset-0 z-[90] flex items-end justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:items-center"
     onkeydown={onKey}
   >
