@@ -964,34 +964,33 @@ impl PlayerHandle {
                 .saturating_add(4)
                 .min(800);
 
-            let _ = client.set_property("screenshot-format", "jpg");
-            let _ = client.set_property("screenshot-jpeg-quality", 92_i64);
-            let _ = client.set_property("screenshot-sw", "yes");
-            let started = Instant::now();
-            let mut next_due = started;
-            let mut frame = 0_u32;
-            while !worker_stop.load(Ordering::Relaxed)
-                && frame < max_frames
-                && started.elapsed() < max_duration
-            {
-                let path = worker_dir.join(format!("f{frame:05}.jpg"));
-                let path = path.to_string_lossy().into_owned();
-                if client
-                    .command("screenshot-to-file", &[path.as_str(), screenshot_mode])
-                    .is_ok()
+            with_jpeg_screenshots(&client, 92, || {
+                let started = Instant::now();
+                let mut next_due = started;
+                let mut frame = 0_u32;
+                while !worker_stop.load(Ordering::Relaxed)
+                    && frame < max_frames
+                    && started.elapsed() < max_duration
                 {
-                    frame += 1;
-                    worker_captured_ms
-                        .store(started.elapsed().as_millis() as u64, Ordering::Relaxed);
+                    let path = worker_dir.join(format!("f{frame:05}.jpg"));
+                    let path = path.to_string_lossy().into_owned();
+                    if client
+                        .command("screenshot-to-file", &[path.as_str(), screenshot_mode])
+                        .is_ok()
+                    {
+                        frame += 1;
+                        worker_captured_ms
+                            .store(started.elapsed().as_millis() as u64, Ordering::Relaxed);
+                    }
+                    next_due += frame_interval;
+                    let now = Instant::now();
+                    if next_due > now {
+                        std::thread::sleep(next_due - now);
+                    } else {
+                        next_due = now;
+                    }
                 }
-                next_due += frame_interval;
-                let now = Instant::now();
-                if next_due > now {
-                    std::thread::sleep(next_due - now);
-                } else {
-                    next_due = now;
-                }
-            }
+            });
         });
 
         *slot = Some(GifSession {
@@ -1430,11 +1429,10 @@ impl PlayerHandle {
     pub fn editor_snapshot_to_file(&self, path: &str) -> Result<(), String> {
         let guard = self.mpv.lock().map_err(|e| e.to_string())?;
         let mpv = guard.as_ref().ok_or("no player")?;
-        let _ = mpv.set_property("screenshot-format", "jpg");
-        let _ = mpv.set_property("screenshot-jpeg-quality", 90_i64);
-        let _ = mpv.set_property("screenshot-sw", "yes");
-        mpv.command("screenshot-to-file", &[path, "video"])
-            .map_err(|e| e.to_string())
+        with_jpeg_screenshots(mpv, 90, || {
+            mpv.command("screenshot-to-file", &[path, "video"])
+                .map_err(|e| e.to_string())
+        })
     }
 
     /// Return the current track list as a JSON array (`[{id,type,title,lang,
@@ -1581,6 +1579,30 @@ fn sub_filter_regex_commands(pattern: &str) -> Vec<[&str; 3]> {
         cmds.push([SUB_FILTER_REGEX, "append", pattern]);
     }
     cmds
+}
+
+/// Run `capture` with mpv writing JPEG screenshots at `quality`, then put back the screenshot
+/// properties it borrowed so the user's own screenshots (`player_screenshot`, PNG) keep their format.
+/// The VO renders the frame (screenshot-sw off; mpv itself falls back to software when the VO can't):
+/// forcing software fails outright under hardware decoding on the Deck.
+fn with_jpeg_screenshots<T>(mpv: &Mpv, quality: i64, capture: impl FnOnce() -> T) -> T {
+    let format = mpv.get_property::<String>("screenshot-format").ok();
+    let prior_quality = mpv.get_property::<i64>("screenshot-jpeg-quality").ok();
+    let software = mpv.get_property::<String>("screenshot-sw").ok();
+    let _ = mpv.set_property("screenshot-format", "jpg");
+    let _ = mpv.set_property("screenshot-jpeg-quality", quality);
+    let _ = mpv.set_property("screenshot-sw", "no");
+    let result = capture();
+    if let Some(format) = format {
+        let _ = mpv.set_property("screenshot-format", format.as_str());
+    }
+    if let Some(prior_quality) = prior_quality {
+        let _ = mpv.set_property("screenshot-jpeg-quality", prior_quality);
+    }
+    if let Some(software) = software {
+        let _ = mpv.set_property("screenshot-sw", software.as_str());
+    }
+    result
 }
 
 /// Apply ONE enhancement option to a live core. Returns false if mpv rejected it.
