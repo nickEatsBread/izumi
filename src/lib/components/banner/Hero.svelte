@@ -24,6 +24,8 @@
   import * as h from '$lib/haptics'
   import { isAndroid, isMobile } from '$lib/platform'
   import { get } from 'svelte/store'
+  import { linear, quintOut } from 'svelte/easing'
+  import { motion, type MotionParams } from '$lib/motion/gm-motion'
   import { gameMode, playing } from '$lib/player/session'
   import { controllerMode } from '$lib/nav/input'
   import { bumperTabs } from '$lib/nav/bumpers'
@@ -151,6 +153,20 @@
   // keeps a static translateZ(0) for its whole life in Game mode (the WebKitGTK layer-drop blink,
   // see the styles below).
   const FADE_MS = 650
+  // Game mode runs the slide and copy entrances from script (gm-motion): their CSS animations
+  // dropped a compositor layer as they ended and the banner blinked once per step. The outgoing
+  // slide stays under the incoming one and fades with it, so a step is a crossfade rather than a
+  // dip to the page colour. Everywhere else the slides keep their CSS animations (gameModeOnly).
+  const slideIn = (carousel: boolean, shown: number): MotionParams => !carousel
+    ? { gameModeOnly: true, duration: 0 }
+    : fadeTransition
+      ? { gameModeOnly: true, opacity: [0, shown], duration: FADE_MS, easing: linear }
+      : { gameModeOnly: true, opacity: [0, shown], xPercent: [navDirection * 3, 0], scale: [1.015, 1], duration: 480, easing: quintOut }
+  const slideOut = (carousel: boolean, shown: number): MotionParams =>
+    ({ gameModeOnly: true, opacity: [0, shown], duration: carousel && !fadeTransition ? 480 : 0, easing: quintOut })
+  const copyIn = (): MotionParams => fadeTransition
+    ? { gameModeOnly: true, opacity: [0, 1], duration: FADE_MS, easing: linear }
+    : { gameModeOnly: true, opacity: [0, 1], xPercent: [navDirection * 1.5, 0], y: [8, 0], duration: 360, easing: quintOut }
   const fadeTransition = $derived(showOverlay && heroTheme?.transition === 'fade')
   let fadeFrom = $state<{ key: number; model: DisplayModel; art?: string } | null>(null)
   let fadeTimer: ReturnType<typeof setTimeout> | undefined
@@ -682,7 +698,8 @@
         {/key}
       {/if}
       {#key current.id}
-        <div data-part="hero.slide" class="hero-slide-in hero-carousel-slide absolute inset-0" style="--hero-enter-x:{navDirection * 3}%">
+        <div data-part="hero.slide" class="hero-slide-in hero-carousel-slide absolute inset-0" style="--hero-enter-x:{navDirection * 3}%"
+             in:motion={slideIn(true, 1)} out:motion={slideOut(true, 1)}>
           {#if !artworkReady}<div class="absolute inset-0 skeloader"></div>{/if}
           <img data-part="hero.art" src={cover(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
                onload={artworkSettled} onerror={artworkSettled}
@@ -814,7 +831,8 @@
         {/key}
       {/if}
       {#key current.id}
-        <div data-part="hero.slide" class="hero-slide-in absolute inset-0" class:hero-carousel-slide={showOverlay} style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:{bannerScale && !showOverlay ? .5 : .7}">
+        <div data-part="hero.slide" class="hero-slide-in absolute inset-0" class:hero-carousel-slide={showOverlay} style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:{bannerScale && !showOverlay ? .5 : .7}"
+             in:motion={slideIn(showOverlay, .7)} out:motion={slideOut(showOverlay, .7)}>
           {#if !artworkReady}<div class="absolute inset-0 skeloader"></div>{/if}
           {#if artworkMode === 'cover'}
             <img src={cover(current)} alt="" aria-hidden="true" draggable="false" loading="eager" decoding="async"
@@ -877,7 +895,7 @@
     {#if showOverlay}
       <div class="absolute inset-x-0 bottom-0 flex flex-col gap-3 px-4 pb-6 sm:px-8 sm:pb-8">
         {#key current.id}
-        <div data-part="hero.slide" class="hero-copy max-w-2xl" style="--hero-enter-x:{navDirection * 1.5}%">
+        <div data-part="hero.slide" class="hero-copy max-w-2xl" style="--hero-enter-x:{navDirection * 1.5}%" in:motion={copyIn()}>
           {#if featuredAward}
             <div class="mb-4 flex flex-wrap gap-2">
               <a href={animeAwardHref(featuredAward)} data-focusable class="pointer-events-auto inline-flex items-center gap-2 rounded-lg border border-orange-300/20 bg-black/55 px-3 py-1.5 text-sm font-black text-white shadow-lg backdrop-blur transition-colors hover:border-orange-300/50 hover:bg-black/75">
@@ -1085,20 +1103,13 @@
   :global(html.gamemode) .hero-carousel-slide,
   :global(html.gamemode) .hero-copy,
   :global(html.gamemode) .hero-progress { transform: translateZ(0); }
-  :global(html.gamemode) .hero-carousel-slide { animation-name: hero-slide-in-layer; }
-  :global(html.gamemode) .hero-copy { animation-name: hero-copy-in-layer; }
-  :global(html.gamemode) .hero-fade .hero-carousel-slide,
-  :global(html.gamemode) .hero-fade .hero-copy { animation-name: hero-fade-in; }
+  /* Even an element-lifetime layer still blinked when its keyframes ended (measured on WebKitGTK
+     2.52: one frame without the artwork ~480 ms after each step), so in Game mode the slides and
+     their copy carry no CSS animation at all: `slideIn`/`copyIn` drive them from script. */
+  :global(html.gamemode) .hero-carousel-slide,
+  :global(html.gamemode) .hero-copy { animation: none; }
   /* The bar keeps its layer but no tween: the script above steps `scale` at 15 fps. */
   :global(html.gamemode) .hero-progress { animation: none; scale: 0 1; }
-  @keyframes hero-slide-in-layer {
-    from { opacity: 0; translate: var(--hero-enter-x) 0; scale: 1.015; }
-    to { opacity: var(--hero-final-opacity, 1); translate: 0 0; scale: 1; }
-  }
-  @keyframes hero-copy-in-layer {
-    from { opacity: 0; translate: var(--hero-enter-x) 8px; }
-    to { opacity: 1; translate: 0 0; }
-  }
   /* A one-off tween or transition would hand its layer back when it ends, so these stay static in
      Game mode: a detail banner (a single slide, nothing to animate between), artwork that arrives
      after the decode deadline, and the dim when Home scrolls. */

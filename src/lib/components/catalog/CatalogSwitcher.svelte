@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte'
-  import { fade, fly } from 'svelte/transition'
+  import { fade } from 'svelte/transition'
+  import { motion } from '$lib/motion/gm-motion'
   import Check from '@lucide/svelte/icons/check'
   import { isOskTarget } from '$lib/nav/osk'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
@@ -244,8 +245,8 @@
           {$isMobile
             ? 'fixed inset-x-0 bottom-0 max-h-[min(80vh,38rem)] rounded-t-3xl pb-[env(safe-area-inset-bottom)]'
             : `absolute top-[calc(100%+0.5rem)] w-[22rem] rounded-2xl ${align === 'end' ? 'right-0' : 'left-0'}`}"
-        in:fly={{ y: $isMobile ? 20 : -5, duration: 150 }}
-        out:fade={{ duration: 100 }}
+        in:motion={{ y: [$isMobile ? 20 : -5, 0], opacity: [0, 1], duration: 150 }}
+        out:motion={{ opacity: [0, 1], duration: 100 }}
       >
         {#if $isMobile}
           <div class="pb-1 pt-3"><div class="mx-auto h-1 w-10 rounded-full bg-foreground/20"></div></div>
