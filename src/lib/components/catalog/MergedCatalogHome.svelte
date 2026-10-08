@@ -2,6 +2,7 @@
   import { untrack } from 'svelte'
   import { goto } from '$app/navigation'
   import Hero from '$lib/components/banner/Hero.svelte'
+  import MediaListSheet from '$lib/components/detail/MediaListSheet.svelte'
   import CollectionsHome from './CollectionsHome.svelte'
   import ContinueRow from '$lib/components/cards/ContinueRow.svelte'
   import HomeRow from '$lib/components/cards/HomeRow.svelte'
@@ -27,6 +28,7 @@
   import { CatalogConfigurationError, type CatalogHome, type CatalogHomeRowOption } from '$lib/catalog/types'
   import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
   import { activeThemeLayout } from '$lib/themes/layout-state'
+  import { themePresentation } from '$lib/themes/runtime'
   import { isThemeBlockId, resolveThemeHome } from '$lib/home/theme-layout'
   import { blockRowOptions, blockTitle, splitHomeColumns } from '$lib/home/block-rows'
   import { homeAsideWidth, homeBlocks, isBlockId } from '$lib/home/blocks'
@@ -48,6 +50,8 @@
   // usable Aniyomi update and its final result instead of recursively proxying every card.
   let homes = $state.raw<Partial<Record<CatalogSelection, CatalogHome>>>({})
   let optionsLoading = $state(true)
+  // A theme hero template's `list` action opens the list editor for that slide's title.
+  let listMedia = $state<Media | null>(null)
   let homeLoading = $state(false)
   let errors = $state<Array<{ provider: CatalogSelection; message: string; configuration: boolean }>>([])
   const tmdbNeedsConfiguration = $derived(errors.some((error) => error.provider === 'tmdb' && error.configuration))
@@ -133,7 +137,8 @@
     if (hasAniList && anilistHero.length) return anilistHero
     const candidates = selections.flatMap((selection) => homes[selection]?.hero ?? [])
     const withLandscapeArt = candidates.filter((media) => media.bannerImage || media.trailer?.id)
-    return (withLandscapeArt.length ? withLandscapeArt : candidates).slice(0, 10)
+    // A theme's `hero.limit` (API 4) caps the slides here too; the AniList pool arrives capped.
+    return (withLandscapeArt.length ? withLandscapeArt : candidates).slice(0, $themePresentation?.hero?.limit ?? 10)
   })
 
   function moreHref(selection: CatalogSelection, more?: CatalogHome['sections'][number]['more']): string | undefined {
@@ -163,9 +168,10 @@
 <div data-slot="home" data-variant="merged" class="pb-16">
   {#snippet heroBlock()}
     {#if hero.length}
-      <Hero medias={hero} onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} />
-    {:else if optionsLoading || homeLoading}
-      <div class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
+      <Hero medias={hero} onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} onlist={(media) => (listMedia = media)} />
+    {:else if (optionsLoading || homeLoading) && !$themePresentation?.hero?.hidden}
+      <!-- The variant of the hero that replaces it (this Home keeps the banner box for all three). -->
+      <div data-slot="home.hero" data-state="loading" data-variant={$themePresentation?.hero?.template ? 'template' : $isMobile ? 'phone' : 'desktop'} aria-hidden="true" class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
         <div class="absolute inset-0 skeloader"></div>
         <div class="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent"></div>
       </div>
@@ -220,7 +226,7 @@
       {#each Array.from({ length: 3 }) as _}
         <div class="px-4 sm:px-8">
           <div class="mb-3 h-5 w-44 rounded skeloader"></div>
-          <div class="flex gap-3 overflow-hidden">{#each Array.from({ length: 8 }) as _}<div class="aspect-[2/3] w-36 shrink-0 rounded-md skeloader sm:w-[152px]"></div>{/each}</div>
+          <div class="flex gap-3 overflow-hidden">{#each Array.from({ length: 8 }) as _}<div data-part="row.skeleton" class="aspect-[2/3] w-36 shrink-0 rounded-md skeloader sm:w-[152px]"></div>{/each}</div>
         </div>
       {/each}
     {/if}
@@ -236,3 +242,4 @@
     {/if}
   </div>
 </div>
+{#if listMedia}<MediaListSheet media={listMedia} onclose={() => (listMedia = null)} />{/if}

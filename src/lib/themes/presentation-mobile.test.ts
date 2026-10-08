@@ -59,6 +59,24 @@ describe('phone presentation overrides', () => {
 
   it('counts phone-only surfaces towards coverage', () => {
     expect(themeCoverage(parsePresentation({ mobile: { detail: { layout: 'stack' } } }))).toEqual(['Details'])
+    expect(themeCoverage(parsePresentation({ mobile: { rootSize: 16 } }))).toEqual(['Shell'])
+  })
+
+  it('sets the phone root size inside the mobile block only (API 4)', () => {
+    const parsed = parsePresentation({ density: 'comfortable', mobile: { rootSize: 16, density: 'compact' } })
+    expect(parsed.mobile).toEqual({ rootSize: 16, density: 'compact' })
+    expect(resolvePresentation(parsed, true)?.rootSize).toBe(16)
+    expect(resolvePresentation(parsed, false)?.rootSize).toBeUndefined()
+    expect(parsePresentation({ mobile: { rootSize: 14 } }).mobile?.rootSize).toBe(14)
+    expect(parsePresentation({ mobile: { rootSize: 14.5 } }).mobile?.rootSize).toBe(14.5)
+    expect(parsePresentation({ mobile: { rootSize: 18 } }).mobile?.rootSize).toBe(18)
+    for (const rootSize of [13.9, 18.1, '16px', null]) expect(() => parsePresentation({ mobile: { rootSize } }), String(rootSize)).toThrow()
+    // Never at the top level, never on an API 3 package.
+    expect(() => parsePresentation({ rootSize: 16 })).toThrow('unsupported')
+    expect(() => parsePresentation({ mobile: { rootSize: 16 } }, 3)).toThrow('unsupported')
+    expect(() => parsePresentation({ mobile: { mobile: { rootSize: 16 } } })).toThrow('unsupported')
+    // A parsed phone block still serialises to what the parser accepts.
+    expect(parsePresentation(JSON.parse(JSON.stringify(parsed)))).toEqual(parsed)
   })
 
   it('resolves the runtime presentation against the mobile platform store', async () => {

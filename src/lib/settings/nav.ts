@@ -5,7 +5,7 @@ import { persisted } from 'svelte-persisted-store'
 import { derived } from 'svelte/store'
 import { activeThemeLayout } from '$lib/themes/layout-state'
 import { isMobile } from '$lib/platform'
-import { themeNavConfig } from './theme-nav'
+import { themeHeaderIds, themeNavConfig } from './theme-nav'
 import { pinNavItems } from './nav-rules'
 import Home from '@lucide/svelte/icons/house'
 import Calendar from '@lucide/svelte/icons/calendar'
@@ -75,6 +75,14 @@ export const effectiveNav = derived([navConfig, activeThemeLayout, isMobile], ([
   for (const it of $c) if (known.includes(it.id) && !seen.has(it.id)) { seen.add(it.id); out.push(it) }
   for (const d of DEFAULT_NAV) if (!seen.has(d.id)) out.push(d)
   return pinNavItems(out, { themed: false, phone: $isMobile })
+})
+
+/** The phone Home header's destination icons. A theme's `nav.top` may repeat a bottom-bar tab there
+ *  as a shortcut (API 4); the effective config above keeps one placement per destination, so the
+ *  bottom bar and the Navigation settings never see the repeat. */
+export const homeHeaderNav = derived([effectiveNav, activeThemeLayout], ([$nav, layout]) => {
+  const ids = themeHeaderIds(layout?.nav, Object.keys(NAV_META), $nav.filter((item) => item.placement === 'top').map((item) => item.id))
+  return ids.map((id) => ({ id: id as NavItemId, placement: 'top' as const }))
 })
 
 /** Home's position on the bottom bar: 0 (first) unless the active theme layout places it elsewhere. */

@@ -8,11 +8,19 @@ export type DisplayField =
   | 'nextEpisode' | 'airingIn' | 'airingCountdown' | 'slide' | 'slides' | 'episodesAired' | 'genre'
   | 'ageRating' | 'audio' | 'timeLeft'
   | 'episodeNo' | 'episodeCode' | 'watched' | 'filler' | 'rating' | 'episodeName'
+  | 'startYear' | 'genre2' | 'genre3' | 'episodesWatched'
+  | 'durationLong' | 'scoreValue' | 'completed' | 'airingSoon'
+  | 'starring' | 'creators'
+  | 'kind'
 /** Host numbers. `when.atMost` compares these; text nodes render them through `displayText`. */
-export type NumericDisplayField = 'rankPosition' | 'score' | 'duration' | 'episodeNumber' | 'progress' | 'nextEpisode' | 'slide' | 'slides' | 'episodesAired'
-/** `keyart` (API 3) is 16:9 title artwork: a TVDB background for AniList titles, a TMDB or add-on backdrop otherwise. */
-export type ArtworkKind = 'poster' | 'backdrop' | 'logo' | 'still' | 'keyart'
-export type ThemeAction = 'play' | 'details' | 'favorite' | 'previous' | 'next' | 'list' | 'trailer' | 'share'
+export type NumericDisplayField = 'rankPosition' | 'score' | 'duration' | 'episodeNumber' | 'progress' | 'nextEpisode' | 'slide' | 'slides' | 'episodesAired' | 'episodesWatched'
+/** `keyart` (API 3) is 16:9 title artwork: a TVDB background for AniList titles, a TMDB or add-on backdrop otherwise.
+ *  `posterHd` (API 4) is portrait artwork at full resolution: the TVDB poster where the hero or the
+ *  series header has looked it up, otherwise the catalog cover at its largest size. */
+export type ArtworkKind = 'poster' | 'backdrop' | 'logo' | 'still' | 'keyart' | 'posterHd'
+/** API 4 `studio`: the title's main studio as a button that opens its page (else a search for it);
+ *  accepted in the series header and facts templates only. */
+export type ThemeAction = 'play' | 'details' | 'favorite' | 'previous' | 'next' | 'list' | 'trailer' | 'share' | 'studio'
 export type CardFamily = 'poster' | 'continue' | 'search'
 export type ThemeDensity = 'compact' | 'comfortable' | 'large'
 export type ThemeNavPlacement = 'sidebar' | 'top' | 'bottom'
@@ -25,18 +33,23 @@ export type EpisodeHover = 'scale' | 'none'
 export type EpisodeOrderControl = 'tabs' | 'flip' | 'none'
 /** API 3: the episode toolbar's controls (`detail.episodes.controls`). */
 export type EpisodeControl = 'sort' | 'layout' | 'search' | 'download' | 'queue'
-/** API 3: the series page sections (`detail.sections`). */
-export type DetailSection = 'overview' | 'episodes' | 'relations' | 'characters' | 'recommended'
-/** API 3: the fixed tab names a theme picks from — never free text. */
+/** API 3: the series page sections (`detail.sections`). API 4 adds `information`, the phone
+ *  Overview's Information block, which becomes a section of its own only when `tabs` lists it. */
+export type DetailSection = 'overview' | 'episodes' | 'relations' | 'characters' | 'recommended' | 'information'
+/** API 3: the fixed tab names a theme picks from — never free text. API 4 adds `information` and
+ *  `show-details` (for the `information` section). */
 export type TabLabel =
   | 'overview' | 'info' | 'details' | 'about' | 'home' | 'episodes' | 'watch' | 'relations' | 'related'
   | 'characters' | 'cast' | 'recommended' | 'more-like-this' | 'recommendations'
+  | 'information' | 'show-details'
 /** API 3: which sections get a tab, their names, the tab open on arrival, and where the phone facts sit. */
 export interface DetailSections {
   /** `tabs` (default) draws a tab strip; `stack` renders every section in turn under its own title. */
   mode?: 'tabs' | 'stack'
-  /** Sections with a tab, in order (1–5, each once). The rest render inside Overview after its own
-   *  content; Overview always keeps a tab, unless `unlisted` hides what `tabs` leaves out. */
+  /** Sections with a tab, in order (1–5, each once; 1–6 from API 4). The rest render inside Overview
+   *  after its own content; Overview always keeps a tab, unless `unlisted` hides what `tabs` leaves
+   *  out. `information` is the exception: left out, it stays where it always sits inside Overview
+   *  (never folded to the end), and `unlisted: "hidden"` removes it. */
   tabs?: DetailSection[]
   /** `hidden`: the sections `tabs` leaves out (Overview included) are not on the page at all, for
    *  a site whose info column already carries the facts and synopsis. */
@@ -47,6 +60,16 @@ export interface DetailSections {
   default?: DetailSection
   /** Phones: `overview` moves the facts, countdown, release timing, genres and synopsis into Overview. */
   info?: 'above' | 'overview'
+  /** API 4: what the Relations section holds besides the related titles. `recommended: "append"`
+   *  follows them with the recommended titles (each a `relation` with `data-relation="recommended"`),
+   *  and the Recommended section leaves the page. */
+  relations?: DetailRelations
+}
+/** API 4: the Relations section's contents (`detail.sections.relations`). */
+export interface DetailRelations {
+  /** `separate` (default): the recommended titles keep their own section; `append`: they follow the
+   *  related titles inside Relations. */
+  recommended?: 'separate' | 'append'
 }
 /** The series page's episode list. */
 export interface DetailEpisodes {
@@ -70,7 +93,76 @@ export interface DetailEpisodes {
   toolbarMin?: number
   /** API 3: a season picker above the episodes of a multi-season franchise. */
   seasons?: 'chips' | 'posters' | 'dropdown' | 'none'
+  /** API 4: `button` puts a download button (`episode.download`) beside every episode; `none`
+   *  (default) leaves downloads to the toolbar's selection. */
+  download?: 'none' | 'button'
+  /** API 4: where a `chips` or `posters` season row opens: scrolled to the current season (`active`,
+   *  default) or at its start, the first season (`start`). */
+  seasonsScroll?: 'active' | 'start'
 }
+/** API 4: a button of the phone series header (`detail.buttons`): Play, the full-width list button,
+ *  or Download, which downloads the Play episode with the Downloads defaults in one tap (and opens
+ *  Downloads once that episode is queued, downloading or saved). */
+export type DetailButton = 'play' | 'list' | 'download'
+/** API 4: the standard series facts (`detail.factsKeys`, `detail.infoKeys`, `data-key` on `fact`). */
+export type FactKey =
+  | 'format' | 'episodes' | 'status' | 'aired' | 'season' | 'duration' | 'studio' | 'source' | 'country'
+  | 'score' | 'members' | 'genres' | 'progress' | 'year' | 'ended' | 'favourites' | 'author'
+  | 'romaji' | 'english' | 'native'
+/** API 4: the fixed names a fact may take (`detail.factsLabels`), per key in `FACT_LABELS`. */
+export type FactLabel =
+  | 'type' | 'format' | 'episodes' | 'total-episodes' | 'status' | 'aired' | 'premiered' | 'start-date' | 'release-date'
+  | 'season' | 'duration' | 'runtime' | 'average-duration' | 'studio' | 'studios' | 'source' | 'source-material'
+  | 'country' | 'origin-country' | 'score' | 'mean-score' | 'rating' | 'members' | 'popularity' | 'genres'
+  | 'watched' | 'progress' | 'year' | 'release-year' | 'ended' | 'end-date' | 'favourites' | 'favorites'
+  | 'author' | 'creator' | 'romaji' | 'name-romaji' | 'romaji-title' | 'english' | 'name' | 'english-title'
+  | 'native' | 'native-title'
+/** API 4: how fact values read (`detail.factsFormat`). */
+export interface FactsFormat {
+  /** `percent` (default) "86%"; `ten` "8.6"; `ten-of` "8.6" followed by a " / 10" suffix part. */
+  score?: 'percent' | 'ten' | 'ten-of'
+  /** `numeric` (default) "2026-1-1"; `short` and `long` are the viewer's locale ("1/1/2026", "1 January 2026"). */
+  dates?: 'numeric' | 'short' | 'long'
+  /** `compact` (default) "184K"; `full` "184,000"; `raw` "184000". */
+  counts?: 'compact' | 'full' | 'raw'
+  /** Absent: izumi's own, "24 min" ("24 minutes" in the phone Information block). `min` "24 min"
+   *  everywhere; `long` "24 mins", "1 hr 45 mins"; `short` "24m", "1h 45m". */
+  duration?: 'min' | 'long' | 'short'
+  /** `catalog` (default) is the catalog's word ("Releasing", "Finished", "Not Yet Released");
+   *  `plain` reads "Ongoing", "Completed", "Hiatus" or "Cancelled", and nothing for a title not out
+   *  yet. It feeds the `status` fact and the series page templates' `status` field. */
+  status?: 'catalog' | 'plain'
+  /** `total` (default) is the episode count (the catalog's, else the schedule's). While a title airs,
+   *  `aired` is the episodes aired so far, and `aired-of` those followed by " / " and the catalog's
+   *  planned total, or "?" without one, in a `fact.suffix` part ("1147 / ?", "14 / 26"). A title that
+   *  is not airing reads its total either way. */
+  episodes?: 'total' | 'aired' | 'aired-of'
+}
+/** API 4: a "more" control under a clamped phone synopsis (`detail.synopsis`). */
+export interface DetailSynopsis {
+  /** `none` (default) keeps tap-to-expand without a link; `expand` toggles the full text in place
+   *  ("Show less" once open); `tab` opens the section holding the whole synopsis. The control only
+   *  renders while the text is actually clamped; the line count stays in theme CSS. */
+  more?: 'none' | 'expand' | 'tab'
+  /** The control's wording: "More", "Read more" or "Show more". */
+  label?: 'more' | 'read-more' | 'show-more'
+}
+/** API 4: the phone series bar (`detail.bar`). */
+export interface DetailBar {
+  /** A Home link after Back (`detail.home`). */
+  home?: boolean
+  /** What the bar shows once the artwork is under it: the title as text (default), or the title logo
+   *  (`detail.bar.logo`) when the title has one. */
+  title?: 'text' | 'logo'
+  /** How far through the artwork's scroll (its height less the bar's) the bar turns solid, 0.2–1;
+   *  1 (izumi's own) is once the artwork has scrolled fully under it. */
+  solidAt?: number
+}
+/** The airing countdown (`detail.countdown`): API 3 `compact` ("2d 21h") and `long` ("4 days 19 hrs");
+ *  API 4 `words` (the two largest units in words, "Episode 13 airs in 2 days 3 hours"), `full` (days,
+ *  hours, minutes and seconds, ticking each second) and `date` ("Next episode 13" over the local airing
+ *  time). */
+export type DetailCountdown = 'none' | 'compact' | 'long' | 'words' | 'full' | 'date'
 export type ThemeIcon =
   | 'score' | 'format' | 'episodes' | 'reviews' | 'studio' | 'season' | 'status' | 'source' | 'country' | 'duration'
   | 'bookmark' | 'plus' | 'info' | 'share'
@@ -102,14 +194,26 @@ export interface RowPresentation {
   /** API 3: `focus` keeps one line under the row's cards for the focused card's full title and detail
    *  line while a pad is in use (Game or controller mode). */
   caption?: 'none' | 'focus'
+  /** API 4, Continue Watching: `shown` keeps the row on Home while there is nothing to continue, with
+   *  an empty-state part (`row.empty`) in its track; `hidden` (default) leaves the row out then. Read
+   *  from the row's own entry (`rows.byId.continue` or its scoped id), never from `rows.defaults`. */
+  empty?: 'hidden' | 'shown'
 }
 /** Theme API 1 is the original contract; API 2 adds the phone block, bottom-bar and slide-marker
  *  chrome, row headings, series tabs and the docked player. A package declares which it uses, so
  *  a client that only knows API 1 refuses an API 2 package cleanly instead of failing mid-parse. */
-export type ThemeApi = 1 | 2 | 3
+export type ThemeApi = 1 | 2 | 3 | 4
 /** The newest theme API this client renders. API 3 adds stylesheets, fonts, template parts,
- *  airing and slide fields, and the text wordmark. */
-export const LATEST_THEME_API: ThemeApi = 3
+ *  airing and slide fields, and the text wordmark. API 4 adds the phone root size, scroll chrome,
+ *  the series header buttons, fact keys, names and formats, the Information section, the synopsis
+ *  control, countdown formats and placement, the actions-row lead template, more display fields, the
+ *  full-resolution poster, the hero's slide count, source and transition, header shortcuts that
+ *  repeat a bottom-bar tab, artwork on profile-header buttons, the tabbed grid's opening tab, the
+ *  portrait header art and its cover fallback, the phone series bar options, per-episode
+ *  download buttons, the series progress row, the folding actions row, the studio button, plain
+ *  status words and aired episode counts, recommendations among the relations, the hero's artwork
+ *  choice, the kind of title and the Continue Watching empty state. */
+export const LATEST_THEME_API: ThemeApi = 4
 /** Series-page tab strip: an underlined row, pills, an iOS-style segmented control, or a bar of
  *  equal tabs with a tinted pill behind the active one (the two-tab Info/Watch bar of some apps).
  *  API 3 `bottom`: on phones the tabs become a bar fixed to the bottom of the screen in place of the
@@ -131,15 +235,57 @@ export interface DetailPresentation {
   /** API 3: how the standard facts render — the `facts` template (default), a label/value table,
    *  a scrolling row of value-over-label cards, or chips. */
   factsStyle?: 'template' | 'table' | 'cards' | 'chips'
-  /** API 3: an airing countdown under the facts, compact ("2d 21h") or long ("4 days 19 hrs"). */
-  countdown?: 'none' | 'compact' | 'long'
+  /** API 3: an airing countdown under the facts, compact ("2d 21h") or long ("4 days 19 hrs");
+   *  API 4 adds `words`, `full` and `date` (see `DetailCountdown`). */
+  countdown?: DetailCountdown
+  /** API 4: where the countdown sits — with the facts (`info`, default), at the top of the episode
+   *  list under its toolbar (`episodes`), or both. */
+  countdownAt?: 'info' | 'episodes' | 'both'
+  /** API 4: hide the countdown while the next episode is more than this many days away (1–365, whole). */
+  countdownWithin?: number
   /** API 3: the tracker list button — inline (default), a full-width outlined button, or hidden. */
   listButton?: 'inline' | 'full' | 'hidden'
+  /** API 4: the phone header's buttons, in order (0–3, each once): `play` (hidden as before once a
+   *  `continue: "card"` takes its place), `list` (the full-width list button) and `download`. `[]`
+   *  shows none. Absent keeps izumi's own: Play, then the list button with `listButton: "full"`. The
+   *  stacked page and the overlay body on phones; desktop ignores it. */
+  buttons?: DetailButton[]
   /** API 3: a template under the series title on phones and desktop (a studio chip, a score, a meta
    *  line), whatever `factsStyle` shows. Non-interactive, like card templates. */
   header?: ThemeNode
-  /** API 3: the overlay artwork — the catalog banner (default) or 16:9 key art when the title has it. */
-  art?: 'banner' | 'keyart'
+  /** API 4: a template at the start of the phone actions row (`detail.lead`, taking the free width),
+   *  bound to the series facts plus `episodesWatched`, `episodesAired` and `episodeCount`.
+   *  Non-interactive, like card templates. */
+  actionsLead?: ThemeNode
+  /** API 4: the standard facts shown and their order (1–17 keys, each once), in the table, cards and
+   *  chips styles on phones and desktop. */
+  factsKeys?: FactKey[]
+  /** API 4: the same for the phone Information block (Overview, or its own `information` section). */
+  infoKeys?: FactKey[]
+  /** API 4: a fixed replacement name per fact, from that key's list in `FACT_LABELS`. */
+  factsLabels?: Partial<Record<FactKey, FactLabel>>
+  /** API 4: how scores, dates and counts read in the facts. */
+  factsFormat?: FactsFormat
+  /** API 4: the phone synopsis' "more" control. */
+  synopsis?: DetailSynopsis
+  /** API 3: the series-page header artwork on every layout (the phone band, the overlay backdrops,
+   *  the desktop banner): the catalog banner first (default), or 16:9 key art first when the title
+   *  has it. Either stands in for the other when it is missing or fails to load. API 4 `portrait`:
+   *  key art, else the full-resolution portrait poster (`posterHd`, else the largest cover), never the
+   *  wide banner, for a tall portrait header. */
+  art?: 'banner' | 'keyart' | 'portrait'
+  /** API 4: what a title without header art shows: a wash of its cover's colour (default), or the
+   *  cover itself, sharp. */
+  artFallback?: 'wash' | 'cover'
+  /** API 4: the phone series bar: a Home link, the title logo, when it turns solid. */
+  bar?: DetailBar
+  /** API 4, phones: `row` puts a series progress row (`detail.progress`) under the header buttons once
+   *  the series is started: "Episode 4 of 12", the share watched and a meter. `none` (default) has none. */
+  progress?: 'none' | 'row'
+  /** API 4, phones: `row` (default) shows every action of the actions row. `expand` folds Save, Share
+   *  and Trailer behind More: its first tap reveals them (`data-expanded` on `detail.actions`), a tap
+   *  while they show opens the More menu, and closing the menu folds them again. */
+  actions?: 'row' | 'expand'
   /** API 3: the series title as text (default) or the title logo when there is one, on every layout. */
   title?: 'text' | 'logo'
   /** API 3: which sections get tabs, their names, the default tab, and where the phone facts sit. */
@@ -169,8 +315,16 @@ export interface BottomNavPresentation {
   inactiveColor?: string
   blur?: boolean
   border?: boolean
-  /** `scroll` slides the bar away while scrolling down (the default); `never` keeps it put. */
-  hide?: 'scroll' | 'never'
+  /** `scroll` slides the bar away while scrolling down (the default); `never` keeps it put. API 4
+   *  `collapse` keeps the bar in place (labels in the DOM, the same reserved height) and only reports
+   *  the state, for a stylesheet to fold it. The state is `data-chrome` on `<html>` and `data-state`
+   *  on `nav.bottom`. */
+  hide?: 'scroll' | 'never' | 'collapse'
+  /** API 4: how far the page scrolls in one direction (8–160 px, whole) before the bar hides or
+   *  returns; a change of direction starts the count again. Absent keeps izumi's own rule. */
+  threshold?: number
+  /** API 4: return the bar after this long without scrolling (0–5000 ms, whole; 0 never). */
+  idle?: number
 }
 /** API 3: the desktop top bar (`shell.nav: "top"`). */
 export interface TopBarPresentation {
@@ -236,6 +390,34 @@ export interface PlayerPresentation {
   layout?: 'full' | 'docked'
   dock?: PlayerDock
 }
+/** The featured banner on Home. */
+export interface HeroPresentation {
+  hidden?: boolean
+  height?: number
+  mobileHeight?: number
+  rotate?: boolean
+  interval?: number
+  rankHidden?: boolean
+  rank?: ThemeNode
+  template?: ThemeNode
+  scale?: 'viewport' | 'banner' | 'wide'
+  indicator?: HeroIndicator
+  bleed?: number
+  /** API 4: how many slides (1–15, whole; izumi's own is 7). */
+  limit?: number
+  /** API 4: `season` (default) features this season's top-scored titles that have landscape art, in
+   *  a stable shuffle; `trending` the titles trending now, in trending order, with or without it. */
+  source?: 'season' | 'trending'
+  /** API 4: `slide` (default) is izumi's directional entrance; `fade` cross-fades the outgoing slide
+   *  into the incoming one over 650 ms (an instant swap under reduced motion). */
+  transition?: 'slide' | 'fade'
+  /** API 4: the wide artwork of a slide. `banner` (default) is izumi's own choice: its desktop banner
+   *  shows the catalog banner, then key art, then a trailer still, then the cover, and a template's
+   *  `backdrop` stays the banner, else the trailer still, else the cover. `banner-cover` gives both
+   *  the catalog banner, then key art, then the cover, never a trailer still. izumi's own phone card
+   *  shows the cover either way. */
+  art?: 'banner' | 'banner-cover'
+}
 /** The featured banner's slide marker. */
 export interface HeroIndicator {
   style?: 'bars' | 'dots' | 'pills' | 'counter' | 'none'
@@ -257,6 +439,8 @@ export interface ThemeNav {
   /** Home's position on the bottom bar (0 = first). */
   home?: number
   bottom?: NavDestination[]
+  /** The phone Home header's destination icons. From API 4 one may repeat a bottom-bar destination
+   *  as a header shortcut (a search icon beside a Search tab); older packages keep them apart. */
   top?: NavDestination[]
 }
 /** API 3: the theme's Home and navigation, applied while the theme is active and its layout switch is on. */
@@ -273,7 +457,7 @@ export interface ThemePresentation {
   density?: ThemeDensity
   hideCardLabels?: boolean
   trueBlack?: boolean
-  hero?: { hidden?: boolean; height?: number; mobileHeight?: number; rotate?: boolean; interval?: number; rankHidden?: boolean; rank?: ThemeNode; template?: ThemeNode; scale?: 'viewport' | 'banner' | 'wide'; indicator?: HeroIndicator; bleed?: number }
+  hero?: HeroPresentation
   rows?: { defaults?: RowPresentation; byId?: Record<string, RowPresentation> }
   detail?: DetailPresentation
   shell?: ShellPresentation
@@ -285,9 +469,13 @@ export interface ThemePresentation {
   cardPreview?: 'popup' | 'none'
   /** Phone overrides (the Android app and any viewport up to 640px), resolved on top of the rest. */
   mobile?: MobilePresentation
+  /** API 4, phones only: the root font size in px (14–18; izumi's own is 14.5) that every rem of the
+   *  app's phone UI follows, times the design's font scale. The izumi mark keeps its own size. Only
+   *  accepted inside `mobile`; the resolved phone presentation carries it here. */
+  rootSize?: number
 }
 /** What a phone variant can change. Navigation is always the bottom bar there, so `shell` stays shared. */
-export type MobilePresentation = Pick<ThemePresentation, 'density' | 'hideCardLabels' | 'trueBlack' | 'hero' | 'rows' | 'detail' | 'player' | 'cards' | 'layout'>
+export type MobilePresentation = Pick<ThemePresentation, 'density' | 'hideCardLabels' | 'trueBlack' | 'hero' | 'rows' | 'detail' | 'player' | 'cards' | 'layout' | 'rootSize'>
 /** Every host binds the same shapes: numeric fields are numbers, the rest strings. */
 export type DisplayModel = Partial<Record<Exclude<DisplayField, NumericDisplayField> | ArtworkKind, string> & Record<NumericDisplayField, number>>
 export const ROW_CONTEXT = Symbol('theme-row')
@@ -301,16 +489,29 @@ const fields = [
   'nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired', 'genre',
   'ageRating', 'audio', 'timeLeft',
   'episodeNo', 'episodeCode', 'watched', 'filler', 'rating', 'episodeName',
+  'startYear', 'genre2', 'genre3', 'episodesWatched',
+  'durationLong', 'scoreValue', 'completed', 'airingSoon',
+  'starring', 'creators',
+  'kind',
 ] as const satisfies readonly DisplayField[]
 const API3_FIELDS: readonly DisplayField[] = ['nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired', 'genre', 'ageRating', 'audio', 'timeLeft', 'episodeNo', 'episodeCode', 'watched', 'filler', 'rating', 'episodeName']
-/** An API 1/2 package is held to the fields its clients know, so it renders identically everywhere. */
-const fieldsFor = (api: ThemeApi) => (api >= 3 ? fields : fields.filter(field => !API3_FIELDS.includes(field)))
-const numericFields: string[] = ['rankPosition', 'score', 'duration', 'episodeNumber', 'progress', 'nextEpisode', 'slide', 'slides', 'episodesAired'] satisfies NumericDisplayField[]
-const actions = ['play', 'details', 'favorite', 'previous', 'next', 'list', 'trailer', 'share']
-const artworkKinds = ['poster', 'backdrop', 'logo', 'still', 'keyart'] as const
-/** Key art is API 3; older packages keep the artwork their clients know. */
-const artworkFor = (api: ThemeApi): readonly ArtworkKind[] => (api >= 3 ? artworkKinds : artworkKinds.filter((kind) => kind !== 'keyart'))
-const DETAIL_SECTIONS = ['overview', 'episodes', 'relations', 'characters', 'recommended'] as const satisfies readonly DetailSection[]
+/** The release year, the second and third genres, the episodes watched, the long duration, the bare
+ *  score, the finished mark, the due countdown, the starring line, every studio and the kind of
+ *  title are API 4. */
+const API4_FIELDS: readonly DisplayField[] = ['startYear', 'genre2', 'genre3', 'episodesWatched', 'durationLong', 'scoreValue', 'completed', 'airingSoon', 'starring', 'creators', 'kind']
+/** An older package is held to the fields its clients know, so it renders identically everywhere. */
+const fieldsFor = (api: ThemeApi): readonly DisplayField[] => fields.filter(field => (api >= 3 || !API3_FIELDS.includes(field)) && (api >= 4 || !API4_FIELDS.includes(field)))
+const numericFields: string[] = ['rankPosition', 'score', 'duration', 'episodeNumber', 'progress', 'nextEpisode', 'slide', 'slides', 'episodesAired', 'episodesWatched'] satisfies NumericDisplayField[]
+const actions: readonly ThemeAction[] = ['play', 'details', 'favorite', 'previous', 'next', 'list', 'trailer', 'share']
+/** The actions the series header (`detail.header`) and facts (`detail.facts`) templates may add from
+ *  API 4: the studio button. Every other template keeps the actions it always had. */
+const SERIES_ACTIONS: readonly ThemeAction[] = ['studio']
+const artworkKinds = ['poster', 'backdrop', 'logo', 'still', 'keyart', 'posterHd'] as const
+/** Key art is API 3 and the full-resolution poster API 4; older packages keep the artwork their clients know. */
+const artworkFor = (api: ThemeApi): readonly ArtworkKind[] => artworkKinds.filter((kind) => (api >= 3 || kind !== 'keyart') && (api >= 4 || kind !== 'posterHd'))
+const DETAIL_SECTIONS = ['overview', 'episodes', 'relations', 'characters', 'recommended', 'information'] as const satisfies readonly DetailSection[]
+/** The Information section is API 4; older packages keep the sections their clients know. */
+const sectionsFor = (api: ThemeApi): readonly DetailSection[] => (api >= 4 ? DETAIL_SECTIONS : DETAIL_SECTIONS.filter((section) => section !== 'information'))
 /** The fixed names each section may take (`detail.sections.labels`). */
 const SECTION_LABELS: Record<DetailSection, readonly TabLabel[]> = {
   overview: ['overview', 'info', 'details', 'about', 'home'],
@@ -318,7 +519,51 @@ const SECTION_LABELS: Record<DetailSection, readonly TabLabel[]> = {
   relations: ['relations', 'related'],
   characters: ['characters', 'cast'],
   recommended: ['recommended', 'more-like-this', 'recommendations'],
+  information: ['information', 'details', 'show-details'],
 }
+/** Every standard fact: izumi's own, in the order its facts list them, then the API 4 additions. */
+export const FACT_KEYS = [
+  'format', 'episodes', 'status', 'aired', 'season', 'duration', 'studio', 'source', 'country',
+  'score', 'members', 'genres', 'progress', 'year', 'ended', 'favourites', 'author',
+  'romaji', 'english', 'native',
+] as const satisfies readonly FactKey[]
+/** The fixed names each fact may take (`detail.factsLabels`); the first is the one izumi's facts use. */
+export const FACT_LABELS: Record<FactKey, readonly FactLabel[]> = {
+  format: ['type', 'format'],
+  episodes: ['episodes', 'total-episodes'],
+  status: ['status'],
+  aired: ['aired', 'premiered', 'start-date', 'release-date'],
+  season: ['season'],
+  duration: ['duration', 'runtime', 'average-duration'],
+  studio: ['studio', 'studios'],
+  source: ['source', 'source-material'],
+  country: ['country', 'origin-country'],
+  score: ['score', 'mean-score', 'rating'],
+  members: ['members', 'popularity'],
+  genres: ['genres'],
+  progress: ['watched', 'progress'],
+  year: ['year', 'release-year'],
+  ended: ['ended', 'end-date'],
+  favourites: ['favourites', 'favorites'],
+  author: ['author', 'creator'],
+  romaji: ['romaji', 'name-romaji', 'romaji-title'],
+  english: ['english', 'name', 'english-title'],
+  native: ['native', 'native-title'],
+}
+/** The text each fact name renders, in Title Case (a stylesheet may change the case). */
+export const FACT_LABEL_TEXT: Record<FactLabel, string> = {
+  type: 'Type', format: 'Format', episodes: 'Episodes', 'total-episodes': 'Total Episodes', status: 'Status',
+  aired: 'Aired', premiered: 'Premiered', 'start-date': 'Start Date', 'release-date': 'Release Date',
+  season: 'Season', duration: 'Duration', runtime: 'Runtime', 'average-duration': 'Average Duration',
+  studio: 'Studio', studios: 'Studios', source: 'Source', 'source-material': 'Source Material',
+  country: 'Country', 'origin-country': 'Origin Country', score: 'Score', 'mean-score': 'Mean Score',
+  rating: 'Rating', members: 'Members', popularity: 'Popularity', genres: 'Genres', watched: 'Watched',
+  progress: 'Progress', year: 'Year', 'release-year': 'Release Year', ended: 'Ended', 'end-date': 'End Date',
+  favourites: 'Favourites', favorites: 'Favorites', author: 'Author', creator: 'Creator',
+  romaji: 'Romaji', 'name-romaji': 'Name Romaji', 'romaji-title': 'Romaji Title', english: 'English', name: 'Name',
+  'english-title': 'English Title', native: 'Native', 'native-title': 'Native Title',
+}
+const DETAIL_BUTTONS = ['play', 'list', 'download'] as const satisfies readonly DetailButton[]
 const EPISODE_CONTROLS = ['sort', 'layout', 'search', 'download', 'queue'] as const satisfies readonly EpisodeControl[]
 const numericStyles: Record<string, [number, number, string]> = {
   gap: [0, 96, 'px'], padding: [0, 96, 'px'], fontSize: [10, 96, 'px'], fontWeight: [400, 900, ''],
@@ -368,12 +613,15 @@ function tile(node: ThemeNode): ThemeNode {
   node.children?.forEach(tile)
   return node
 }
-export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, interactive = true, api: ThemeApi = LATEST_THEME_API): ThemeNode {
+/** `interactive`: `true` for templates that may hold actions (the hero, the facts), `false` for static
+ *  tiles (cards, badges), or the only actions a template may hold (the series header's studio button). */
+export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, interactive: boolean | readonly ThemeAction[] = true, api: ThemeApi = LATEST_THEME_API): ThemeNode {
   if (++budget.count > 96 || depth > 8) throw new Error('This theme template is too complex.')
   const raw = record(value)
   only(raw, ['type', 'text', 'field', 'artwork', 'action', 'icon', 'when', 'style', 'children', ...api3(api, ['part'])])
   const node: ThemeNode = { type: choice(raw.type, ['stack', 'row', 'grid', 'overlay', 'text', 'artwork', 'action', 'icon', 'meter']) }
-  if (node.type === 'action' && !interactive) throw new Error('Card and badge templates cannot contain nested actions.')
+  const allowed: readonly ThemeAction[] = interactive === true ? actions : interactive === false ? [] : interactive
+  if (node.type === 'action' && !allowed.length) throw new Error('Card and badge templates cannot contain nested actions.')
   if (raw.text !== undefined) {
     if (typeof raw.text !== 'string' || raw.text.length > 300) throw new Error('Theme text is too long.')
     node.text = raw.text
@@ -381,7 +629,7 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
   if (raw.field !== undefined) node.field = choice(raw.field, fieldsFor(api))
   if (raw.artwork !== undefined) node.artwork = choice(raw.artwork, artworkFor(api))
   if (node.type === 'artwork' && !node.artwork) throw new Error('Choose artwork for this template.')
-  if (node.type === 'action') node.action = choice(raw.action, actions) as ThemeAction
+  if (node.type === 'action') node.action = choice(raw.action, allowed)
   if (raw.icon !== undefined || node.type === 'icon') {
     const icon = choice(raw.icon, iconsFor(api))
     // Actions draw their icon from API 3. Older packages could always carry one harmlessly, since it
@@ -396,7 +644,7 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
     const condition = record(raw.when); only(condition, ['field', 'atMost', ...api3(api, ['absent'])])
     node.when = { field: choice<DisplayField | ArtworkKind>(condition.field, api >= 3 ? [...fieldsFor(api), ...artworkFor(api)] : fieldsFor(api)) }
     if (condition.atMost !== undefined) {
-      if (!numericFields.includes(node.when.field)) throw new Error('atMost only applies to numeric fields: rankPosition, score, duration, episodeNumber, progress, nextEpisode, slide, slides and episodesAired.')
+      if (!numericFields.includes(node.when.field)) throw new Error('atMost only applies to numeric fields: rankPosition, score, duration, episodeNumber, progress, nextEpisode, slide, slides, episodesAired and episodesWatched.')
       node.when.atMost = number(condition.atMost, 0, 10000)
     }
     if (condition.absent !== undefined) {
@@ -426,6 +674,7 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
 /** Keys each API level accepts, so an API 1 package cannot smuggle API 2 chrome past an old client. */
 const api2 = (api: ThemeApi, keys: string[]) => (api >= 2 ? keys : [])
 const api3 = (api: ThemeApi, keys: string[]) => (api >= 3 ? keys : [])
+const api4 = (api: ThemeApi, keys: string[]) => (api >= 4 ? keys : [])
 function parseHeading(value: unknown): RowHeading {
   const raw = record(value); only(raw, ['weight', 'transform', 'accent', 'viewMore'])
   const result: RowHeading = {}
@@ -436,8 +685,9 @@ function parseHeading(value: unknown): RowHeading {
   return result
 }
 function parseRow(value: unknown, api: ThemeApi): RowPresentation {
-  const raw = record(value); only(raw, ['layout', 'width', 'gap', 'spacing', 'radius', 'aspect', 'titleSize', 'card', ...api2(api, ['heading']), ...api3(api, ['caption'])])
+  const raw = record(value); only(raw, ['layout', 'width', 'gap', 'spacing', 'radius', 'aspect', 'titleSize', 'card', ...api2(api, ['heading']), ...api3(api, ['caption']), ...api4(api, ['empty'])])
   const result: RowPresentation = {}
+  if (raw.empty !== undefined) result.empty = choice(raw.empty, ['hidden', 'shown'])
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['carousel', 'grid'])
   if (raw.aspect !== undefined) result.aspect = choice(raw.aspect, ['poster', 'landscape', 'square'])
   for (const [key, min, max] of [['width', 96, 400], ['gap', 0, 48], ['spacing', 0, 100], ['radius', 0, 48], ['titleSize', 12, 32]] as const) {
@@ -448,8 +698,8 @@ function parseRow(value: unknown, api: ThemeApi): RowPresentation {
   if (raw.caption !== undefined) result.caption = choice(raw.caption, ['none', 'focus'])
   return result
 }
-function parseBottomNav(value: unknown): BottomNavPresentation {
-  const raw = record(value); only(raw, ['style', 'labels', 'indicator', 'height', 'iconSize', 'radius', 'background', 'activeColor', 'inactiveColor', 'blur', 'border', 'hide'])
+function parseBottomNav(value: unknown, api: ThemeApi): BottomNavPresentation {
+  const raw = record(value); only(raw, ['style', 'labels', 'indicator', 'height', 'iconSize', 'radius', 'background', 'activeColor', 'inactiveColor', 'blur', 'border', 'hide', ...api4(api, ['threshold', 'idle'])])
   const result: BottomNavPresentation = {}
   if (raw.style !== undefined) result.style = choice(raw.style, ['bar', 'floating', 'pill'])
   if (raw.labels !== undefined) result.labels = choice(raw.labels, ['always', 'active', 'none'])
@@ -459,7 +709,9 @@ function parseBottomNav(value: unknown): BottomNavPresentation {
   if (raw.radius !== undefined) result.radius = number(raw.radius, 0, 40)
   for (const key of ['background', 'activeColor', 'inactiveColor'] as const) if (raw[key] !== undefined) result[key] = themeColor(raw[key])
   for (const key of ['blur', 'border'] as const) if (raw[key] !== undefined) result[key] = flag(raw[key])
-  if (raw.hide !== undefined) result.hide = choice(raw.hide, ['scroll', 'never'])
+  if (raw.hide !== undefined) result.hide = choice(raw.hide, api >= 4 ? ['scroll', 'never', 'collapse'] : ['scroll', 'never'])
+  if (raw.threshold !== undefined) result.threshold = whole(raw.threshold, 8, 160)
+  if (raw.idle !== undefined) result.idle = whole(raw.idle, 0, 5000)
   return result
 }
 function parseTopBar(value: unknown): TopBarPresentation {
@@ -499,24 +751,25 @@ function controlList(value: unknown): EpisodeControl[] {
     return control
   })
 }
-function parseSections(value: unknown): DetailSections {
-  const raw = record(value); only(raw, ['mode', 'tabs', 'labels', 'default', 'info', 'unlisted'])
+function parseSections(value: unknown, api: ThemeApi): DetailSections {
+  const raw = record(value); only(raw, ['mode', 'tabs', 'labels', 'default', 'info', 'unlisted', ...api4(api, ['relations'])])
+  const sections = sectionsFor(api)
   const result: DetailSections = {}
   if (raw.mode !== undefined) result.mode = choice(raw.mode, ['tabs', 'stack'])
   if (raw.tabs !== undefined) {
-    if (!Array.isArray(raw.tabs) || raw.tabs.length < 1 || raw.tabs.length > 5) throw new Error('A theme series page needs 1–5 tabs.')
+    if (!Array.isArray(raw.tabs) || raw.tabs.length < 1 || raw.tabs.length > sections.length) throw new Error(`A theme series page needs 1–${sections.length} tabs.`)
     const seen = new Set<DetailSection>()
     result.tabs = raw.tabs.map((id) => {
-      const section = choice(id, DETAIL_SECTIONS)
+      const section = choice(id, sections)
       if (seen.has(section)) throw new Error('A theme lists a series section twice.')
       seen.add(section)
       return section
     })
   }
   if (raw.labels !== undefined) {
-    const labels = record(raw.labels); only(labels, [...DETAIL_SECTIONS])
+    const labels = record(raw.labels); only(labels, [...sections])
     result.labels = {}
-    for (const section of DETAIL_SECTIONS) {
+    for (const section of sections) {
       if (labels[section] !== undefined) result.labels[section] = choice(labels[section], SECTION_LABELS[section])
     }
   }
@@ -526,21 +779,63 @@ function parseSections(value: unknown): DetailSections {
   }
   const hidesOverview = result.unlisted === 'hidden' && !result.tabs?.includes('overview')
   if (raw.default !== undefined) {
-    result.default = choice(raw.default, DETAIL_SECTIONS)
-    // Overview has a tab whatever `tabs` lists, unless the unlisted sections are hidden.
-    if (result.tabs && (result.default !== 'overview' || hidesOverview) && !result.tabs.includes(result.default)) throw new Error('The default series tab must be one of its tabs.')
+    result.default = choice(raw.default, sections)
+    // Overview has a tab whatever `tabs` lists, unless the unlisted sections are hidden. Information
+    // only has one when `tabs` lists it; otherwise it stays inside Overview.
+    const listed = result.tabs?.includes(result.default)
+    if (result.default === 'information' ? !listed : result.tabs && (result.default !== 'overview' || hidesOverview) && !listed) throw new Error('The default series tab must be one of its tabs.')
   }
   if (raw.info !== undefined) result.info = choice(raw.info, ['above', 'overview'])
   if (hidesOverview && result.info === 'overview') throw new Error('A series page cannot move its info into a hidden Overview.')
+  if (raw.relations !== undefined) {
+    const relations = record(raw.relations); only(relations, ['recommended'])
+    result.relations = {}
+    if (relations.recommended !== undefined) result.relations.recommended = choice(relations.recommended, ['separate', 'append'])
+    // Appended, the recommendations have no section of their own to list or open on.
+    if (result.relations.recommended === 'append' && (result.tabs?.includes('recommended') || result.default === 'recommended')) throw new Error('A series page that adds the recommendations to its relations cannot give them a tab.')
+  }
+  return result
+}
+function parseFactsLabels(value: unknown): Partial<Record<FactKey, FactLabel>> {
+  const raw = record(value); only(raw, [...FACT_KEYS])
+  const result: Partial<Record<FactKey, FactLabel>> = {}
+  for (const key of FACT_KEYS) if (raw[key] !== undefined) result[key] = choice(raw[key], FACT_LABELS[key])
+  return result
+}
+function parseFactsFormat(value: unknown): FactsFormat {
+  const raw = record(value); only(raw, ['score', 'dates', 'counts', 'duration', 'status', 'episodes'])
+  const result: FactsFormat = {}
+  if (raw.score !== undefined) result.score = choice(raw.score, ['percent', 'ten', 'ten-of'])
+  if (raw.dates !== undefined) result.dates = choice(raw.dates, ['numeric', 'short', 'long'])
+  if (raw.counts !== undefined) result.counts = choice(raw.counts, ['compact', 'full', 'raw'])
+  if (raw.duration !== undefined) result.duration = choice(raw.duration, ['min', 'long', 'short'])
+  if (raw.status !== undefined) result.status = choice(raw.status, ['catalog', 'plain'])
+  if (raw.episodes !== undefined) result.episodes = choice(raw.episodes, ['total', 'aired', 'aired-of'])
+  return result
+}
+function parseBar(value: unknown): DetailBar {
+  const raw = record(value); only(raw, ['home', 'title', 'solidAt'])
+  const result: DetailBar = {}
+  if (raw.home !== undefined) result.home = flag(raw.home)
+  if (raw.title !== undefined) result.title = choice(raw.title, ['text', 'logo'])
+  if (raw.solidAt !== undefined) result.solidAt = number(raw.solidAt, 0.2, 1)
+  return result
+}
+function parseSynopsis(value: unknown): DetailSynopsis {
+  const raw = record(value); only(raw, ['more', 'label'])
+  const result: DetailSynopsis = {}
+  if (raw.more !== undefined) result.more = choice(raw.more, ['none', 'expand', 'tab'])
+  if (raw.label !== undefined) result.label = choice(raw.label, ['more', 'read-more', 'show-more'])
   return result
 }
 function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
-  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'bannerScale', 'episodes', ...api2(api, ['tabs']), ...api3(api, ['factsStyle', 'countdown', 'listButton', 'header', 'art', 'title', 'sections', 'nav', 'continue', 'column'])])
+  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'bannerScale', 'episodes', ...api2(api, ['tabs']), ...api3(api, ['factsStyle', 'countdown', 'listButton', 'header', 'art', 'title', 'sections', 'nav', 'continue', 'column']), ...api4(api, ['buttons', 'actionsLead', 'factsKeys', 'infoKeys', 'factsLabels', 'factsFormat', 'synopsis', 'countdownAt', 'countdownWithin', 'artFallback', 'bar', 'progress', 'actions'])])
   const result: DetailPresentation = {}
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['stack', 'split', 'overlay'])
   if (raw.bannerHidden !== undefined) result.bannerHidden = flag(raw.bannerHidden)
   if (raw.posterWidth !== undefined) result.posterWidth = number(raw.posterWidth, 96, 360)
-  if (raw.facts !== undefined) result.facts = parseNode(raw.facts, undefined, 0, true, api)
+  // The series templates may add the studio button from API 4 (the header holds no other action).
+  if (raw.facts !== undefined) result.facts = parseNode(raw.facts, undefined, 0, api >= 4 ? [...actions, ...SERIES_ACTIONS] : true, api)
   if (raw.actionsFirst !== undefined) result.actionsFirst = flag(raw.actionsFirst)
   if (raw.coverAlign !== undefined) result.coverAlign = choice(raw.coverAlign, ['start', 'end'])
   if (raw.cta !== undefined) result.cta = choice(raw.cta, ['default', 'large'])
@@ -548,17 +843,30 @@ function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
   if (raw.bannerScale !== undefined) result.bannerScale = choice(raw.bannerScale, ['viewport', 'banner'])
   if (raw.tabs !== undefined) result.tabs = choice(raw.tabs, api >= 3 ? ['underline', 'pills', 'segmented', 'bar', 'bottom'] : ['underline', 'pills', 'segmented', 'bar'])
   if (raw.factsStyle !== undefined) result.factsStyle = choice(raw.factsStyle, ['template', 'table', 'cards', 'chips'])
-  if (raw.countdown !== undefined) result.countdown = choice(raw.countdown, ['none', 'compact', 'long'])
+  if (raw.countdown !== undefined) result.countdown = choice(raw.countdown, api >= 4 ? ['none', 'compact', 'long', 'words', 'full', 'date'] : ['none', 'compact', 'long'])
+  if (raw.countdownAt !== undefined) result.countdownAt = choice(raw.countdownAt, ['info', 'episodes', 'both'])
+  if (raw.countdownWithin !== undefined) result.countdownWithin = whole(raw.countdownWithin, 1, 365)
   if (raw.listButton !== undefined) result.listButton = choice(raw.listButton, ['inline', 'full', 'hidden'])
-  if (raw.header !== undefined) result.header = parseNode(raw.header, undefined, 0, false, api)
-  if (raw.art !== undefined) result.art = choice(raw.art, ['banner', 'keyart'])
+  if (raw.buttons !== undefined) result.buttons = uniqueChoices(raw.buttons, DETAIL_BUTTONS, 'detail.buttons', 0)
+  if (raw.header !== undefined) result.header = parseNode(raw.header, undefined, 0, api >= 4 ? SERIES_ACTIONS : false, api)
+  if (raw.actionsLead !== undefined) result.actionsLead = parseNode(raw.actionsLead, undefined, 0, false, api)
+  if (raw.factsKeys !== undefined) result.factsKeys = uniqueChoices(raw.factsKeys, FACT_KEYS, 'detail.factsKeys')
+  if (raw.infoKeys !== undefined) result.infoKeys = uniqueChoices(raw.infoKeys, FACT_KEYS, 'detail.infoKeys')
+  if (raw.factsLabels !== undefined) result.factsLabels = parseFactsLabels(raw.factsLabels)
+  if (raw.factsFormat !== undefined) result.factsFormat = parseFactsFormat(raw.factsFormat)
+  if (raw.synopsis !== undefined) result.synopsis = parseSynopsis(raw.synopsis)
+  if (raw.art !== undefined) result.art = choice(raw.art, api >= 4 ? ['banner', 'keyart', 'portrait'] : ['banner', 'keyart'])
+  if (raw.artFallback !== undefined) result.artFallback = choice(raw.artFallback, ['wash', 'cover'])
+  if (raw.bar !== undefined) result.bar = parseBar(raw.bar)
+  if (raw.progress !== undefined) result.progress = choice(raw.progress, ['none', 'row'])
+  if (raw.actions !== undefined) result.actions = choice(raw.actions, ['row', 'expand'])
   if (raw.title !== undefined) result.title = choice(raw.title, ['text', 'logo'])
-  if (raw.sections !== undefined) result.sections = parseSections(raw.sections)
+  if (raw.sections !== undefined) result.sections = parseSections(raw.sections, api)
   if (raw.nav !== undefined) result.nav = choice(raw.nav, ['shown', 'hidden'])
   if (raw.continue !== undefined) result.continue = choice(raw.continue, ['button', 'card'])
   if (raw.column !== undefined) result.column = choice(raw.column, ['none', 'poster'])
   if (raw.episodes !== undefined) {
-    const episodes = record(raw.episodes); only(episodes, ['placement', 'arrangement', 'hover', 'order', 'search', 'card', ...api3(api, ['toolbar', 'controls', 'paging', 'pageSize', 'toolbarMin', 'seasons'])])
+    const episodes = record(raw.episodes); only(episodes, ['placement', 'arrangement', 'hover', 'order', 'search', 'card', ...api3(api, ['toolbar', 'controls', 'paging', 'pageSize', 'toolbarMin', 'seasons']), ...api4(api, ['download', 'seasonsScroll'])])
     result.episodes = {}
     if (episodes.placement !== undefined) result.episodes.placement = choice(episodes.placement, ['tab', 'right', 'below'])
     if (episodes.arrangement !== undefined) result.episodes.arrangement = choice(episodes.arrangement, ['list', 'grid', 'carousel'])
@@ -572,6 +880,8 @@ function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
     if (episodes.pageSize !== undefined) result.episodes.pageSize = episodes.pageSize === 'auto' ? 'auto' : whole(episodes.pageSize, 12, 200)
     if (episodes.toolbarMin !== undefined) result.episodes.toolbarMin = whole(episodes.toolbarMin, 0, 100)
     if (episodes.seasons !== undefined) result.episodes.seasons = choice(episodes.seasons, ['chips', 'posters', 'dropdown', 'none'])
+    if (episodes.download !== undefined) result.episodes.download = choice(episodes.download, ['none', 'button'])
+    if (episodes.seasonsScroll !== undefined) result.episodes.seasonsScroll = choice(episodes.seasonsScroll, ['active', 'start'])
   }
   return result
 }
@@ -582,7 +892,7 @@ function parseShell(value: unknown, api: ThemeApi): ShellPresentation {
   if (raw.compact !== undefined) result.compact = flag(raw.compact)
   if (raw.overlay !== undefined) result.overlay = choice(raw.overlay, ['none', 'fade'])
   if (raw.press !== undefined) result.press = choice(raw.press, ['none', 'sink'])
-  if (raw.bottomNav !== undefined) result.bottomNav = parseBottomNav(raw.bottomNav)
+  if (raw.bottomNav !== undefined) result.bottomNav = parseBottomNav(raw.bottomNav, api)
   if (raw.top !== undefined) result.top = parseTopBar(raw.top)
   if (raw.hints !== undefined) result.hints = flag(raw.hints)
   return result
@@ -608,9 +918,9 @@ function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
   }
   return result
 }
-/** A list of distinct values from a fixed set, in the theme's order (1 to every value). */
-function uniqueChoices<const T extends string>(value: unknown, values: readonly T[], name: string): T[] {
-  if (!Array.isArray(value) || value.length < 1 || value.length > values.length) throw new Error(`Invalid theme ${name} list.`)
+/** A list of distinct values from a fixed set, in the theme's order (`min`, 1 by default, to every value). */
+function uniqueChoices<const T extends string>(value: unknown, values: readonly T[], name: string, min = 1): T[] {
+  if (!Array.isArray(value) || value.length < min || value.length > values.length) throw new Error(`Invalid theme ${name} list.`)
   const seen = new Set<T>()
   return value.map((entry) => {
     const item = choice(entry, values)
@@ -637,7 +947,7 @@ function destinationList(value: unknown, max: number): NavDestination[] {
     return destination
   })
 }
-function parseLayout(value: unknown, phone: boolean): ThemeLayout {
+function parseLayout(value: unknown, phone: boolean, api: ThemeApi): ThemeLayout {
   const raw = record(value); only(raw, ['home', 'asideWidth', 'asideGap', 'asideStart', ...(phone ? [] : ['nav'])])
   const result: ThemeLayout = {}
   if (raw.home !== undefined) {
@@ -654,7 +964,7 @@ function parseLayout(value: unknown, phone: boolean): ThemeLayout {
         }
         return { role: item.role }
       }
-      const { type, ...settings } = parseThemeBlock(item)
+      const { type, ...settings } = parseThemeBlock(item, api)
       return { block: type, ...settings } as ThemeLayoutEntry
     })
   }
@@ -671,14 +981,20 @@ function parseLayout(value: unknown, phone: boolean): ThemeLayout {
     }
     if (nav.bottom !== undefined) result.nav.bottom = destinationList(nav.bottom, 5)
     if (nav.top !== undefined) result.nav.top = destinationList(nav.top, 4)
-    if (result.nav.bottom?.some((id) => result.nav?.top?.includes(id))) throw new Error('A destination can sit on the bottom bar or the top, not both.')
+    // A header icon that repeats a bottom-bar tab is a shortcut, not a second placement: it renders
+    // only in the phone Home header, and the navigation settings keep one row per destination.
+    if (api < 4 && result.nav.bottom?.some((id) => result.nav?.top?.includes(id))) throw new Error('A destination can sit on the bottom bar or the top, not both.')
   }
   return result
 }
 const MOBILE_KEYS = ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'player', 'cards', 'layout']
 function parseMobile(value: unknown, api: ThemeApi): MobilePresentation {
-  const raw = record(value); only(raw, MOBILE_KEYS)
-  return parsePresentation(raw, api, true)
+  const raw = record(value); only(raw, [...MOBILE_KEYS, ...api4(api, ['rootSize'])])
+  // The root size is phone-only, so the shared parser (which also reads the top level) never accepts it.
+  const { rootSize, ...shared } = raw
+  const result: MobilePresentation = parsePresentation(shared, api, true)
+  if (rootSize !== undefined) result.rootSize = number(rootSize, 14, 18)
+  return result
 }
 /** Validate a presentation. `api` is the package's declared theme API: API 1 packages get the
  *  original key set (so they behave identically on every client), API 2 the additions. Personal
@@ -693,7 +1009,7 @@ export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_A
   if (raw.hideCardLabels !== undefined) result.hideCardLabels = flag(raw.hideCardLabels)
   if (raw.trueBlack !== undefined) result.trueBlack = flag(raw.trueBlack)
   if (raw.hero !== undefined) {
-    const hero = record(raw.hero); only(hero, ['hidden', 'height', 'mobileHeight', 'rotate', 'interval', 'rankHidden', 'rank', 'template', 'scale', ...api2(api, ['indicator']), ...api3(api, ['bleed'])])
+    const hero = record(raw.hero); only(hero, ['hidden', 'height', 'mobileHeight', 'rotate', 'interval', 'rankHidden', 'rank', 'template', 'scale', ...api2(api, ['indicator']), ...api3(api, ['bleed']), ...api4(api, ['limit', 'source', 'transition', 'art'])])
     result.hero = {}
     for (const key of ['hidden', 'rotate', 'rankHidden'] as const) if (hero[key] !== undefined) result.hero[key] = flag(hero[key])
     for (const key of ['height', 'mobileHeight'] as const) if (hero[key] !== undefined) result.hero[key] = number(hero[key], 24, 75)
@@ -703,6 +1019,10 @@ export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_A
     if (hero.rank !== undefined) result.hero.rank = tile(parseNode(hero.rank, undefined, 0, false, api))
     if (hero.template !== undefined) result.hero.template = parseNode(hero.template, undefined, 0, true, api)
     if (hero.indicator !== undefined) result.hero.indicator = parseIndicator(hero.indicator, api)
+    if (hero.limit !== undefined) result.hero.limit = whole(hero.limit, 1, 15)
+    if (hero.source !== undefined) result.hero.source = choice(hero.source, ['season', 'trending'])
+    if (hero.transition !== undefined) result.hero.transition = choice(hero.transition, ['slide', 'fade'])
+    if (hero.art !== undefined) result.hero.art = choice(hero.art, ['banner', 'banner-cover'])
   }
   if (raw.rows !== undefined) {
     const rows = record(raw.rows); only(rows, ['defaults', 'byId']); result.rows = {}
@@ -720,7 +1040,7 @@ export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_A
   if (raw.shell !== undefined) result.shell = parseShell(raw.shell, api)
   if (raw.player !== undefined) result.player = parsePlayer(raw.player, api)
   if (raw.cards !== undefined) result.cards = parseCards(raw.cards, api)
-  if (raw.layout !== undefined) result.layout = parseLayout(raw.layout, phone)
+  if (raw.layout !== undefined) result.layout = parseLayout(raw.layout, phone, api)
   if (raw.cardPreview !== undefined) result.cardPreview = choice(raw.cardPreview, ['popup', 'none'])
   return result
 }
@@ -741,6 +1061,10 @@ export function resolvePresentation(layout: ThemePresentation | undefined, mobil
     resolved.detail = { ...shared.detail, ...phone.detail }
     if (phone.detail.episodes) resolved.detail.episodes = { ...shared.detail?.episodes, ...phone.detail.episodes }
     if (phone.detail.sections) resolved.detail.sections = { ...shared.detail?.sections, ...phone.detail.sections }
+    if (phone.detail.factsLabels) resolved.detail.factsLabels = { ...shared.detail?.factsLabels, ...phone.detail.factsLabels }
+    if (phone.detail.factsFormat) resolved.detail.factsFormat = { ...shared.detail?.factsFormat, ...phone.detail.factsFormat }
+    if (phone.detail.synopsis) resolved.detail.synopsis = { ...shared.detail?.synopsis, ...phone.detail.synopsis }
+    if (phone.detail.bar) resolved.detail.bar = { ...shared.detail?.bar, ...phone.detail.bar }
   }
   if (phone.player) resolved.player = { ...shared.player, ...phone.player }
   if (phone.cards) resolved.cards = { ...shared.cards, ...phone.cards }
@@ -843,9 +1167,22 @@ export function resolveDetail(layout?: ThemePresentation): Required<Pick<DetailP
     tabs: detail.tabs,
     factsStyle: detail.factsStyle,
     countdown: detail.countdown,
+    countdownAt: detail.countdownAt,
+    countdownWithin: detail.countdownWithin,
     listButton: detail.listButton,
+    buttons: detail.buttons,
     header: detail.header,
+    actionsLead: detail.actionsLead,
+    factsKeys: detail.factsKeys,
+    infoKeys: detail.infoKeys,
+    factsLabels: detail.factsLabels,
+    factsFormat: detail.factsFormat,
+    synopsis: detail.synopsis,
     art: detail.art,
+    artFallback: detail.artFallback,
+    bar: detail.bar,
+    progress: detail.progress,
+    actions: detail.actions,
     title: detail.title,
     sections: detail.sections,
     nav: detail.nav,
@@ -864,6 +1201,8 @@ export function resolveDetail(layout?: ThemePresentation): Required<Pick<DetailP
       pageSize: detail.episodes?.pageSize,
       toolbarMin: detail.episodes?.toolbarMin,
       seasons: detail.episodes?.seasons,
+      download: detail.episodes?.download,
+      seasonsScroll: detail.episodes?.seasonsScroll,
     },
   }
 }
@@ -932,7 +1271,7 @@ export function themeCoverage(layout?: ThemePresentation): ThemeSurface[] {
   const surfaces: ThemeSurface[] = []
   const phone = layout.mobile ?? {}
   if (layout.hero || layout.rows || layout.cards || layout.cardPreview || layout.layout?.home || phone.hero || phone.rows || phone.cards || phone.layout?.home) surfaces.push('Home')
-  if (layout.shell || layout.density || layout.hideCardLabels || layout.trueBlack || layout.layout?.nav || phone.density || phone.hideCardLabels || phone.trueBlack) surfaces.push('Shell')
+  if (layout.shell || layout.density || layout.hideCardLabels || layout.trueBlack || layout.layout?.nav || phone.density || phone.hideCardLabels || phone.trueBlack || phone.rootSize !== undefined) surfaces.push('Shell')
   if (layout.detail || phone.detail) surfaces.push('Details')
   if (layout.player || phone.player) surfaces.push('Player')
   return surfaces.length === 4 ? ['Full'] : surfaces

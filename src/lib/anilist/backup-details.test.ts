@@ -6,7 +6,7 @@ import { ANILIST_CACHE_KEYS } from './cache'
 import { ANIME_LIST_ENTRY, MEDIA_BY_ID } from './detail-queries'
 import { CARD_MEDIA_FIELDS } from './fragments'
 import { backupProvider, mediaCacheKey, stampBackupData } from './backup-records'
-import { createBackupDetails, detailFieldFragments } from './backup-details'
+import { createBackupDetails, detailFieldFragments, isBackupRecord } from './backup-details'
 import { aniListCard, aniListDetail, backupDetail } from './__fixtures__/media-by-id'
 
 type Fields = Record<string, unknown>
@@ -245,3 +245,27 @@ describe('series page answered by a backup provider', () => {
   })
 })
 
+// The series page keeps the AniList banner it has seen over a backup record's own. The query does not
+// select the record's catalog identity, so the page asks which answer it is showing.
+describe('the series page asking whether it shows a backup record', () => {
+  it('is told only for a backup answer, and no longer once AniList answers', async () => {
+    const { backup, answers, query } = harness()
+    answers.push(backupAnswer(135865))
+    const result = await query(MEDIA_BY_ID, { id: 135865 }, 'network-only')
+    // The record itself carries no sign of where it came from.
+    expect(result.data?.Media).not.toHaveProperty('catalog')
+    expect(isBackupRecord(135865)).toBe(true)
+
+    // A cached AniList record kept on screen is AniList's.
+    answers.push({ Media: aniListDetail(182205) })
+    await query(MEDIA_BY_ID, { id: 182205 })
+    answers.push(backupAnswer(182205))
+    await query(MEDIA_BY_ID, { id: 182205 }, 'network-only')
+    expect(backup.served.get(182205)).toBe('cached')
+    expect(isBackupRecord(182205)).toBe(false)
+
+    backup.live(135865)
+    expect(isBackupRecord(135865)).toBe(false)
+    expect(isBackupRecord(7)).toBe(false)
+  })
+})

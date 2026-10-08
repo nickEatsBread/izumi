@@ -24,6 +24,7 @@
   import { changedJvmFilters } from '$lib/extensions/jvm-filters'
   import type { Media } from '$lib/anilist/types'
   import VirtualGrid from '$lib/components/VirtualGrid.svelte'
+  import { m } from '$lib/paraglide/messages.js'
   import { CARD_FAMILY } from '$lib/themes/presentation'
 
   setContext(CARD_FAMILY, 'search')
@@ -383,6 +384,11 @@
 </script>
 
 <div class="pb-20 {embedded ? 'px-4 pt-4 sm:px-8' : 'p-4 sm:p-8'}" data-slot="search" data-variant="catalog">
+  <!-- The page header (`search.header`, `display: contents` until a theme gives it a box): the
+       title, the streaming service and the filter bar. Embedded in the all-catalogs page, that
+       page's heading is the title. -->
+  <div data-slot="search.header" class="contents">
+  {#if !embedded}<h1 data-part="search.title" class="sr-only">{m.nav_search()}</h1>{/if}
   {#if isTmdb && watchProvider}
     <div class="mb-4 flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
       <div><p class="text-xs font-semibold text-muted-foreground">Streaming service</p><p class="font-black">{watchProviderName || 'Selected provider'}</p></div>
@@ -392,17 +398,20 @@
   <div class="mb-6 flex flex-col gap-3" data-part="search.filters">
     <label class="relative min-w-0 flex-1">
       <Search size={19} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-      <input data-part="input" bind:value={query} data-focusable placeholder="Search {animeOnly ? 'anime' : 'movies and series'}…"
+      <input data-part="search.field" bind:value={query} data-focusable placeholder="Search {animeOnly ? 'anime' : 'movies and series'}…"
         class="h-11 w-full rounded-lg bg-input pl-10 pr-3 text-base" />
     </label>
     <div class="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
-      <SelectMenu bind:value={type} ariaLabel="Content type" options={typeOptions} className="w-48 shrink-0" />
-      <SelectMenu bind:value={sort} ariaLabel="Sort results" className="w-40 shrink-0" options={sortOptions} />
+      <SelectMenu bind:value={type} ariaLabel="Content type" filter="type" options={typeOptions} className="w-48 shrink-0" />
+      <SelectMenu bind:value={sort} ariaLabel="Sort results" filter="sort" className="w-40 shrink-0" options={sortOptions} />
       {#if isJvm}
-        <SelectMenu bind:value={jvmSourceId} ariaLabel="Aniyomi source" className="w-52 shrink-0" options={jvmSourceOptions} />
+        <SelectMenu bind:value={jvmSourceId} ariaLabel="Aniyomi source" filter="source" className="w-52 shrink-0" options={jvmSourceOptions} />
         {#if jvmSourceId}
           <button
             type="button"
+            data-part="search.filter"
+            data-filter="source-filters"
+            data-active={jvmFilterCount > 0 || undefined}
             data-focusable
             disabled={jvmFiltersLoading || !jvmFilters.length}
             onclick={() => (showJvmFilters = true)}
@@ -413,18 +422,21 @@
         {/if}
       {/if}
       {#if availableGenres.length}
-        <SelectMenu bind:value={genre} ariaLabel="Genre" className="w-44 shrink-0" options={genreOptions} />
+        <SelectMenu bind:value={genre} ariaLabel="Genre" filter="genre" className="w-44 shrink-0" options={genreOptions} />
       {:else if activeSelection === 'stremio'}
-        <input bind:value={genre} data-focusable placeholder="Genre" aria-label="Genre"
+        <input data-part="search.filter" data-filter="genre" data-active={!!genre || undefined} bind:value={genre} data-focusable placeholder="Genre" aria-label="Genre"
           class="h-11 w-32 shrink-0 rounded-lg bg-input px-3 text-base" />
       {/if}
       {#if activeSelection !== 'jvm'}
-        <input bind:value={year} inputmode="numeric" maxlength="4" data-focusable placeholder="Year" aria-label="Release year"
+        <input data-part="search.filter" data-filter="year" data-active={!!year || undefined} bind:value={year} inputmode="numeric" maxlength="4" data-focusable placeholder="Year" aria-label="Release year"
           class="h-11 w-24 shrink-0 rounded-lg bg-input px-3 text-base" />
       {/if}
       {#if isTmdb || isStremio}
         <button
           type="button"
+          data-part="search.filter"
+          data-filter="advanced"
+          data-active={advancedCount > 0 || undefined}
           data-focusable
           onclick={() => (showAdvanced = true)}
           class="flex h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-bold transition-colors {advancedCount ? 'bg-theme/20 text-theme hover:bg-theme/30' : 'bg-secondary hover:bg-accent'}"
@@ -433,6 +445,7 @@
         </button>
       {/if}
     </div>
+  </div>
   </div>
 
   {#if (isTmdb || isStremio) && (media.length || resultTotal != null)}
@@ -444,6 +457,8 @@
   {#if media.length}
     <div data-slot="search.results">
       <VirtualGrid
+        part="search.grid"
+        variant="grid"
         items={media}
         getKey={mediaKey}
         className="grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:gap-5"
@@ -459,7 +474,7 @@
   {/if}
 
   {#if loading}
-    <div class="mt-5 grid grid-cols-3 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
+    <div data-part="search.grid" data-variant="grid" data-state="loading" class="mt-5 grid grid-cols-3 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
       {#each Array.from({ length: 9 }) as _}<div class="aspect-[2/3] rounded-md skeloader"></div>{/each}
     </div>
   {/if}

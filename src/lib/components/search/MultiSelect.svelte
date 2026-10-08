@@ -15,7 +15,7 @@
   import { menuPlacement } from '$lib/components/menu-placement'
 
   let {
-    label, options, selected = [], onchange, labelOf,
+    label, options, selected = [], onchange, labelOf, filter,
   }: {
     label: string
     options: string[]
@@ -25,6 +25,9 @@
     // codes, where the stored value must stay 'fr' but the row should read "French". Without it the
     // default title-casing applies, so existing callers are unaffected.
     labelOf?: (value: string) => string
+    /** A search page filter: the trigger is the `search.filter` hook with this name in `data-filter`,
+     *  and `data-active` while something is selected. */
+    filter?: string
   } = $props()
 
   let open = $state(false)
@@ -124,6 +127,9 @@
 <div bind:this={root} class="relative shrink-0">
   <button
     bind:this={trigger}
+    data-part={filter ? 'search.filter' : undefined}
+    data-filter={filter}
+    data-active={(filter && selected.length > 0) || undefined}
     data-focusable
     onclick={toggleOpen}
     class="flex items-center gap-1.5 rounded-md bg-secondary px-3 py-2 text-sm outline-none transition-colors hover:bg-accent focus:ring-2 focus:ring-accent"

@@ -33,11 +33,14 @@ describe('hero title extras', () => {
     expect(hero).toContain('.theme-custom-hero[data-pending] :global(.theme-template) { visibility: hidden; }')
     expect(hero).toContain('setTimeout(() => (extrasWaitOver = true), 1500)')
     // Only the artwork decides the wait; a rating or audio still loading does not.
-    expect(hero).toContain('const extrasPending = $derived(heroArtNeeded && !!current && !currentArt && !extrasWaitOver)')
+    // API 4 `hero.art: "banner-cover"` adds the key art a backdrop without a banner waits for.
+    expect(hero).toContain('const extrasPending = $derived(((heroArtNeeded && !!current && !currentArt) || backdropPending) && !extrasWaitOver)')
   })
   it('decodes a slide\'s key art and logo before stepping to it', () => {
     expect(hero).toContain('const art = heroArt[extrasKey(m.id)]')
-    expect(hero).toContain('return [banner(m), cover(m), ...[art?.keyart, art?.logo].filter((src): src is string => !!src)]')
+    // `banner(m)` unless the theme asks for `hero.art: "banner-cover"` (hero-art.ts).
+    expect(hero).toContain('return [templateBackdrop(m) ?? banner(m), cover(m), ...[art?.keyart, art?.logo, art?.posterHd].filter((src): src is string => !!src)]')
+    expect(hero).toContain("const templateBackdrop = (m: Media) => (heroTheme?.art === 'banner-cover' ? heroBackdrop(m, keyartOf(m), 'banner-cover') : undefined)")
   })
   it('sizes a wide hero as the 16:9 artwork and runs its bottom under the rows', () => {
     expect(hero).toContain("const wideScale = $derived(!$isMobile && heroTheme?.scale === 'wide')")

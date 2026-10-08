@@ -17,6 +17,8 @@
   let selected = $state('')
   let page = $state(1)
   let media = $state.raw<Media[]>([])
+  // The recently aired tab (`recent`) names each title's latest aired episode, as its row does.
+  let episodes = $state.raw<Record<number, number>>({})
   let hasNext = $state(false)
   let lastPage = $state<number | undefined>()
   let loading = $state(false)
@@ -24,7 +26,8 @@
   let retry = $state(0)
 
   const labels = $derived(block.tabs.map((tab) => tab.label))
-  const current = $derived(labels.includes(selected) ? selected : labels[0] ?? '')
+  // Until the viewer picks one, the block's opening tab (`default`, else the first) is shown.
+  const current = $derived(labels.includes(selected) ? selected : labels[block.default ?? 0] ?? labels[0] ?? '')
   const tab = $derived(block.tabs.find((item) => item.label === current))
   const rowId = $derived(tab ? resolveRowId(target, tab.role, optionIds) : null)
   const columns = $derived($isMobile ? Math.min(3, block.columns) : block.columns)
@@ -44,6 +47,7 @@
     const append = block.pagination === 'more' && pageNumber > 1
     if (!id) {
       media = []
+      episodes = {}
       hasNext = false
       return
     }
@@ -53,6 +57,7 @@
     loadRowPage(target, id, pageNumber, size, abort.signal).then((result) => {
       if (abort.signal.aborted) return
       media = append ? appendUnique(media, result.media) : appendUnique([], result.media)
+      episodes = append ? { ...result.episodes, ...episodes } : result.episodes ?? {}
       hasNext = result.hasNextPage
       lastPage = result.lastPage
     }).catch((reason) => {
@@ -96,7 +101,7 @@
         {/each}
       {:else}
         {#each media as item, index (item.id)}
-          <div data-part="block.item" class="min-w-0"><SmallCard media={item} fill reserveTitleLines position={cardPosition(index)} /></div>
+          <div data-part="block.item" class="min-w-0"><SmallCard media={item} fill reserveTitleLines position={cardPosition(index)} badge={episodes[item.id] ? `Episode ${episodes[item.id]}` : undefined} /></div>
         {/each}
       {/if}
     </div>

@@ -26,9 +26,9 @@ describe('row source', () => {
     clearRowSourceCache()
   })
 
-  it('offers only catalog rows as tabs', () => {
-    const rows = [{ id: 'continue', title: 'C' }, { id: 'trending', title: 'T' }, { id: 'anilist:recent', title: 'R' }, { id: 'tmdb:movies', title: 'M' }, { id: 'list', title: 'L' }]
-    expect(tabbableRows(rows).map((row) => row.id)).toEqual(['trending', 'tmdb:movies'])
+  it('offers catalog rows and the recently aired schedule as tabs', () => {
+    const rows = [{ id: 'continue', title: 'C' }, { id: 'trending', title: 'T' }, { id: 'anilist:recent', title: 'R' }, { id: 'tmdb:movies', title: 'M' }, { id: 'list', title: 'L' }, { id: 'recommendations', title: 'F' }]
+    expect(tabbableRows(rows).map((row) => row.id)).toEqual(['trending', 'anilist:recent', 'tmdb:movies'])
   })
 
   it('resolves a tab role against the current Home', () => {
@@ -69,6 +69,47 @@ describe('row source', () => {
     expect(page).toEqual({ media: [media(4)], hasNextPage: false, lastPage: 1 })
     expect(query.mock.calls[0][1]).toMatchObject({ page: 1, perPage: 18, format: 'MOVIE', sort: ['POPULARITY_DESC'] })
     expect(query.mock.calls[0][1]).not.toHaveProperty('status')
+  })
+
+  describe('the recently aired row', () => {
+    const release = (id: number, episode: number, extra: Record<string, unknown> = {}) => ({ episode, airingAt: 1_000 - id, media: { ...media(id), ...extra } })
+    const schedule = (releases: unknown[]) => ({ data: { Page: { airingSchedules: releases } } })
+
+    it('pages the airing schedule newest first, one entry per show at its latest episode', async () => {
+      query.mockResolvedValueOnce(schedule([release(1, 12), release(2, 5), release(1, 11), release(3, 8), release(2, 4)]))
+      const page = await loadRowPage('anilist', 'recent', 1, 2)
+      expect(page).toEqual({ media: [media(1), media(2)], hasNextPage: true, episodes: { 1: 12, 2: 5 } })
+      // Newest first over the Recently Released row's window, read once for both pages.
+      const vars = query.mock.calls[0][1]
+      expect(vars).toMatchObject({ page: 1, perPage: 50 })
+      expect(vars.before - vars.after).toBe(21 * 86_400)
+      expect(await loadRowPage('anilist', 'recent', 2, 2)).toEqual({ media: [media(3)], hasNextPage: false, episodes: { 3: 8 } })
+      expect(query).toHaveBeenCalledTimes(1)
+    })
+
+    it('reads further schedule pages until a page of shows is full', async () => {
+      const first = Array.from({ length: 50 }, (_, index) => release(1 + (index % 2), 50 - index))
+      query.mockResolvedValueOnce(schedule(first)).mockResolvedValueOnce(schedule([release(3, 2), release(4, 1)]))
+      const page = await loadRowPage('anilist', 'recent', 1, 3)
+      expect(page.media.map((item) => item.id)).toEqual([1, 2, 3])
+      expect(page.hasNextPage).toBe(true)
+      expect(query.mock.calls[1][1]).toMatchObject({ page: 2 })
+    })
+
+    it('leaves out adult titles and the ones dismissed from the Recently Released row', async () => {
+      const { dismissedRecentReleaseIds } = await import('$lib/settings/ui')
+      dismissedRecentReleaseIds.set([2])
+      query.mockResolvedValueOnce(schedule([release(1, 3), release(2, 4), release(3, 5, { isAdult: true }), { episode: 1, airingAt: 1, media: null }]))
+      expect((await loadRowPage('anilist', 'recent', 1, 10)).media.map((item) => item.id)).toEqual([1])
+      dismissedRecentReleaseIds.set([])
+    })
+
+    it('resolves on the merged Home and surfaces errors', async () => {
+      expect(resolveRowId('merged', 'recent', ['continue', 'anilist:recent'])).toBe('anilist:recent')
+      expect(rowSource('merged', 'anilist:recent')).toEqual({ kind: 'anilist', role: 'recent' })
+      query.mockResolvedValueOnce({ error: new Error('rate limited') })
+      await expect(loadRowPage('merged', 'anilist:recent', 1, 10)).rejects.toThrow('rate limited')
+    })
   })
 
   it('surfaces AniList errors', async () => {

@@ -11,6 +11,8 @@
     overscanViewports = 1,
     endThresholdPx = 900,
     onEndReached,
+    part,
+    variant,
   }: {
     items: T[]
     getKey: (item: T) => string | number
@@ -20,6 +22,10 @@
     overscanViewports?: number
     endThresholdPx?: number
     onEndReached?: () => void
+    /** A theme styling hook on the grid itself (`data-part`), e.g. `search.grid`. */
+    part?: string
+    /** Its `data-variant`. */
+    variant?: string
   } = $props()
 
   const EMPTY_RANGE: VirtualGridRange = {
@@ -159,7 +165,7 @@
   })
 </script>
 
-<div bind:this={root} class={className} data-virtual-grid data-virtual-total={items.length}>
+<div bind:this={root} class={className} data-part={part} data-variant={variant} data-virtual-grid data-virtual-total={items.length}>
   {#if rowHeight > 0 && range.topSpacerPx > 0}
     <div aria-hidden="true" data-virtual-grid-spacer style={`grid-column:1/-1;height:${range.topSpacerPx}px`}></div>
   {/if}

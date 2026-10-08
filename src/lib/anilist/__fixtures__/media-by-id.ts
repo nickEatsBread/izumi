@@ -36,6 +36,7 @@ export function aniListDetail(id: number, overrides: Fields = {}): Fields {
     studios: { __typename: 'StudioConnection', nodes: [{ __typename: 'Studio', id: 7, name: 'Studio Seven' }] },
     airingSchedule: { __typename: 'AiringScheduleConnection', nodes: [{ __typename: 'AiringSchedule', episode: 4, airingAt: now() - 120 * HOUR }] },
     isFavourite: false, source: 'LIGHT_NOVEL', countryOfOrigin: 'JP',
+    endDate: date(null, null, null), favourites: 2_400,
     tags: [{ __typename: 'MediaTag', name: 'Military', rank: 90, isGeneralSpoiler: false, isMediaSpoiler: false }],
     mediaListEntry: null,
     relations: {
@@ -61,7 +62,7 @@ export function backupDetail(id: number, overrides: Fields = {}): Fields {
     bannerImage: null, trailer: null, studios: { __typename: 'StudioConnection', nodes: [] },
     nextAiringEpisode: { __typename: 'AiringSchedule', episode: 6, airingAt: now() + 24 * HOUR, timeUntilAiring: 24 * HOUR },
     airingSchedule: { __typename: 'AiringScheduleConnection', nodes: [] },
-    isFavourite: null, source: null, countryOfOrigin: null, tags: [],
+    isFavourite: null, source: null, countryOfOrigin: null, endDate: null, favourites: 90, tags: [],
     relations: { __typename: 'MediaRelationConnection', edges: [] },
     ...overrides,
   })

@@ -5,7 +5,8 @@ export type HomeBlockType = (typeof HOME_BLOCK_TYPES)[number]
 export type BlockPagination = 'numbers' | 'more' | 'none'
 export type BlockArea = 'main' | 'aside'
 /** One tab of a tabbed grid or ranked list. `role` is a Home row id (`trending`, `tmdb:movies`) or,
- * on Merged Home, a bare role that resolves to the first catalog offering it. */
+ * on Merged Home, a bare role that resolves to the first catalog offering it. `recent` is the
+ * recently aired schedule: newest first, one entry per show at its latest episode. */
 export interface BlockTab { label: string; role: string }
 
 /** Every movable navigation destination (mirrors `NAV_META` in `$lib/settings/nav`; the app checks
@@ -13,7 +14,9 @@ export interface BlockTab { label: string; role: string }
 export const NAV_DESTINATIONS = ['schedule', 'downloads', 'watch', 'settings', 'search', 'trakt', 'letterboxd', 'library'] as const
 export type NavDestination = (typeof NAV_DESTINATIONS)[number]
 export type BlockDestination = NavDestination | 'home'
-export interface BlockButton { label: string; to: BlockDestination }
+/** A profile-header shortcut. `art` (Theme API 4 in packages) draws artwork under the label: the
+ *  banner of one of the viewer's own titles, from Continue Watching then the library. */
+export interface BlockButton { label: string; to: BlockDestination; art?: boolean }
 
 interface BlockCommon {
   /** Heading shown above the block; blocks without one fall back to their own default. */
@@ -24,7 +27,9 @@ interface BlockCommon {
 }
 export type LatestEpisodesCaption = 'below' | 'overlay'
 export interface LatestEpisodesBlock extends BlockCommon { type: 'latest-episodes'; columns: number; pageSize: number; pagination: BlockPagination; caption: LatestEpisodesCaption }
-export interface TabbedGridBlock extends BlockCommon { type: 'tabbed-grid'; tabs: BlockTab[]; columns: number; pageSize: number; pagination: BlockPagination }
+/** `default` is the tab open on arrival, as an index into `tabs` (absent opens the first; Theme API 4
+ *  in packages). */
+export interface TabbedGridBlock extends BlockCommon { type: 'tabbed-grid'; tabs: BlockTab[]; columns: number; pageSize: number; pagination: BlockPagination; default?: number }
 export interface GenreChipsBlock extends BlockCommon { type: 'genre-chips'; genres: 'top' | string[]; all: boolean }
 export interface RankedListBlock extends BlockCommon { type: 'ranked-list'; tabs: BlockTab[]; limit: number }
 export interface ProfileHeaderBlock extends BlockCommon { type: 'profile-header'; buttons: BlockButton[] }
@@ -91,7 +96,8 @@ function parseButtons(value: unknown): BlockButton[] {
     const label = text((item as BlockButton).label, 20)
     const to = (item as BlockButton).to
     if (!label || !(to === 'home' || (NAV_DESTINATIONS as readonly string[]).includes(to))) continue
-    buttons.push({ label, to })
+    const art = (item as BlockButton).art
+    buttons.push({ label, to, ...(typeof art === 'boolean' ? { art } : {}) })
     if (buttons.length >= BLOCK_LIMITS.buttons) break
   }
   return buttons
@@ -110,7 +116,13 @@ export function parseHomeBlock(value: unknown): HomeBlock | null {
   const common = { ...(title ? { title } : {}), area: raw.area === 'aside' ? 'aside' as const : 'main' as const, phone: raw.phone === true }
   switch (type) {
     case 'latest-episodes': return { type, ...common, columns: clampInt(raw.columns, BLOCK_LIMITS.columns, 4), pageSize: clampInt(raw.pageSize, BLOCK_LIMITS.pageSize, 12), pagination: pagination(raw.pagination), caption: caption(raw.caption) }
-    case 'tabbed-grid': return { type, ...common, tabs: parseTabs(raw.tabs, BLOCK_LIMITS.tabs), columns: clampInt(raw.columns, BLOCK_LIMITS.columns, 6), pageSize: clampInt(raw.pageSize, BLOCK_LIMITS.pageSize, 18), pagination: pagination(raw.pagination) }
+    case 'tabbed-grid': {
+      const tabs = parseTabs(raw.tabs, BLOCK_LIMITS.tabs)
+      // Only kept when given: a block that never named one re-reads exactly as it was, so a package
+      // stored by this client still validates against the older theme API it declares.
+      const opening = raw.default === undefined ? {} : { default: clampInt(raw.default, [0, Math.max(0, tabs.length - 1)], 0) }
+      return { type, ...common, tabs, columns: clampInt(raw.columns, BLOCK_LIMITS.columns, 6), pageSize: clampInt(raw.pageSize, BLOCK_LIMITS.pageSize, 18), pagination: pagination(raw.pagination), ...opening }
+    }
     case 'genre-chips': return { type, ...common, genres: raw.genres === 'top' ? 'top' : parseGenres(raw.genres), all: raw.all !== false }
     case 'ranked-list': return { type, ...common, tabs: parseTabs(raw.tabs, BLOCK_LIMITS.rankedTabs), limit: clampInt(raw.limit, BLOCK_LIMITS.limit, 10) }
     case 'profile-header': return { type, ...common, buttons: parseButtons(raw.buttons) }
@@ -120,22 +132,30 @@ export function parseHomeBlock(value: unknown): HomeBlock | null {
 
 const BLOCK_KEYS: Record<HomeBlockType, readonly string[]> = {
   'latest-episodes': ['columns', 'pageSize', 'pagination', 'caption'],
-  'tabbed-grid': ['tabs', 'columns', 'pageSize', 'pagination'],
+  'tabbed-grid': ['tabs', 'columns', 'pageSize', 'pagination', 'default'],
   'genre-chips': ['genres', 'all'],
   'ranked-list': ['tabs', 'limit'],
   'profile-header': ['buttons'],
   'airing-today': ['limit', 'clock', 'more'],
 }
+/** Block settings a package may only use from Theme API 4. */
+const API4_BLOCK_KEYS: readonly string[] = ['default']
+/** Profile-header button settings a package may only use from Theme API 4. */
+const API4_BUTTON_KEYS: readonly string[] = ['art']
 
 /** A block declared by a theme package (`{ "block": "genre-chips", … }`). Unlike stored settings,
- * which are repaired, a package is rejected when any value is not already valid. */
-export function parseThemeBlock(value: unknown): HomeBlock {
+ * which are repaired, a package is rejected when any value is not already valid. `api` is the
+ * package's declared theme API: settings added later are refused on older packages. */
+export function parseThemeBlock(value: unknown, api: number): HomeBlock {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected a theme object.')
   const raw = value as Record<string, unknown>
   const type = raw.block as HomeBlockType
   if (!HOME_BLOCK_TYPES.includes(type)) throw new Error('This theme uses an unsupported home block.')
-  const allowed = ['block', 'title', 'area', 'phone', ...BLOCK_KEYS[type]]
+  const allowed = ['block', 'title', 'area', 'phone', ...BLOCK_KEYS[type].filter((key) => api >= 4 || !API4_BLOCK_KEYS.includes(key))]
   if (Object.keys(raw).some((key) => !allowed.includes(key))) throw new Error('This theme uses an unsupported presentation property.')
+  if (api < 4 && Array.isArray(raw.buttons) && raw.buttons.some((button) => button && typeof button === 'object' && Object.keys(button).some((key) => API4_BUTTON_KEYS.includes(key)))) {
+    throw new Error('This theme uses an unsupported presentation property.')
+  }
   const { block: _block, ...settings } = raw
   const parsed = parseHomeBlock({ ...settings, type }) as HomeBlock & Record<string, unknown>
   for (const [key, given] of Object.entries(settings)) {

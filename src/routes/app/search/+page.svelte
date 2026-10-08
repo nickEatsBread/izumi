@@ -24,6 +24,7 @@
   import CatalogPlatformLogo from '$lib/components/catalog/CatalogPlatformLogo.svelte'
   import MergedCatalogSearchPage from '$lib/components/catalog/MergedCatalogSearchPage.svelte'
   import Layers3 from '@lucide/svelte/icons/layers-3'
+  import { m } from '$lib/paraglide/messages.js'
 
   // No hero on this page — clear the shared banner so it doesn't persist.
   heroMedia.set(null)
@@ -204,7 +205,7 @@
   <OfflineUnavailable title="Search is unavailable offline" subtitle="Searching needs a connection. Your downloaded titles are available on the Downloads page." />
 {:else if $catalogScreen === 'merged'}
   <div class="px-4 pt-4 sm:px-8 sm:pt-8">
-    <h1 class="text-2xl font-black">Search</h1>
+    <h1 data-part="search.title" class="text-2xl font-black">{m.nav_search()}</h1>
     <p class="mt-1 text-sm text-muted-foreground">Search everything together, or choose one catalog to unlock its filters.</p>
     <div class="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0" role="tablist" aria-label="Search catalog">
       <button
@@ -243,7 +244,7 @@
     {#key catalogSearchKey}<CatalogSearchPage selection={mergedScope} embedded onQueryChange={(value) => (mergedQuery = value)} />{/key}
   {:else}
     <div class="p-4 pt-5 sm:px-8" data-slot="search" data-variant="anilist-scope">
-      <FilterBar bind:filters />
+      <div data-slot="search.header" class="contents"><FilterBar bind:filters /></div>
       <div class="mt-6">
         {#key key}<SearchResults filters={debounced} />{/key}
       </div>
@@ -255,12 +256,21 @@
   <!-- Normal padding clears the mobile edge/titlebar. While the fixed degraded strip exists, add
        its 1.75rem height as well so it cannot cover the browse controls. -->
   <div class="p-4 sm:p-8 {$anilistDegradedBannerVisible ? 'pt-[2.75rem] sm:pt-[3.75rem]' : ''}" data-slot="search" data-variant="anilist">
-    {#if filters.studioId || filters.staffId || filters.genres?.[0]}
-      <h1 class="mb-4 text-2xl font-black">
-        {filters.staffId ? (filters.exploreName || 'Voice actor') : filters.studioId ? (filters.exploreName || 'Studio') : filters.genres?.[0]}
-      </h1>
-    {/if}
-    <FilterBar bind:filters />
+    <!-- The page header (`search.header`): the title and the filter bar, one box a theme can pin
+         or slide away. It is `display: contents` until a theme gives it a box, so a title or field
+         a stylesheet already made sticky keeps the whole page as its scroll range. The title
+         (`search.title`): a genre, studio or voice actor being explored, shown; else "Search",
+         visually hidden until a theme shows it. -->
+    <div data-slot="search.header" class="contents">
+      {#if filters.studioId || filters.staffId || filters.genres?.[0]}
+        <h1 data-part="search.title" data-variant="explore" class="mb-4 text-2xl font-black">
+          {filters.staffId ? (filters.exploreName || 'Voice actor') : filters.studioId ? (filters.exploreName || 'Studio') : filters.genres?.[0]}
+        </h1>
+      {:else}
+        <h1 data-part="search.title" class="sr-only">{m.nav_search()}</h1>
+      {/if}
+      <FilterBar bind:filters />
+    </div>
     <div class="mt-6">
       {#key key}
         <SearchResults filters={debounced} />

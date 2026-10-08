@@ -6,8 +6,8 @@ import { describe, expect, it } from 'vitest'
 // so legibility depended on how busy that particular banner was. The artwork is now a band that
 // ends in a hard cut, with every piece of text below it on solid background.
 
-const detail = readFileSync(fileURLToPath(new URL('./AnimeDetail.svelte', import.meta.url)), 'utf8')
-const hero = readFileSync(fileURLToPath(new URL('../banner/Hero.svelte', import.meta.url)), 'utf8')
+const detail = readFileSync(fileURLToPath(new URL('./AnimeDetail.svelte', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
+const hero = readFileSync(fileURLToPath(new URL('../banner/Hero.svelte', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
 
 describe('mobile series hero', () => {
   it('takes the full canvas while mounted and gives it back on teardown', () => {
@@ -23,7 +23,7 @@ describe('mobile series hero', () => {
 
   it('drives the floating bar from the tested helper', () => {
     expect(detail).toContain("import { heroBarState } from './hero-bar'")
-    expect(detail).toContain('heroBarState(window.scrollY, artHeight, barHeight, wasSolid)')
+    expect(detail).toContain('heroBarState(window.scrollY, artHeight, barHeight, wasSolid, detailTheme.bar?.solidAt)')
     // A $derived that reads what an $effect writes back is an update loop, not a settled value.
     expect(detail).not.toContain('$derived(heroBarState')
   })
@@ -66,7 +66,7 @@ describe('mobile series hero', () => {
   it('chooses the header art once, for every layout, while loading and once loaded', () => {
     expect(detail).toContain("import { baseImageSrc, detailArt, recordBanner, washBackground } from '$lib/detail/backdrop'")
     expect(detail).toContain('const headerArt = $derived(detailArt({')
-    expect(detail).toContain('banner: recordBanner(shown, { loading: pending, anilistBanner }),')
+    expect(detail).toContain('banner: recordBanner(shown, { loading: pending, anilistBanner, backup: backupRecord }),')
     expect(detail).toContain('keyartPending: !detailExtrasSettled,')
     expect(detail).toContain('themeArt: detailTheme.art,')
     // Phone overlay, phone band and desktop overlay paint it themselves; the desktop banner is Hero's.
@@ -80,7 +80,7 @@ describe('mobile series hero', () => {
     expect(detail).toContain("import { headerImage } from '$lib/detail/header-image'")
     expect(detail.match(/use:headerImage=\{\{ src: headerSrc, onfailed: backdropFailed \}\}/g)?.length).toBe(3)
     expect(detail).not.toMatch(/<img data-part="detail\.backdrop"[^>]*src=\{headerSrc\}/)
-    const action = readFileSync(fileURLToPath(new URL('../../detail/header-image.ts', import.meta.url)), 'utf8')
+    const action = readFileSync(fileURLToPath(new URL('../../detail/header-image.ts', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
     expect(action).toContain('const retrying = reliableImage(node, params.src)')
     expect(action).toContain("node.addEventListener('imagefailed', failed)")
   })
@@ -161,14 +161,14 @@ describe('mobile series hero', () => {
     const template = detail.slice(detail.indexOf('</script>'))
     const handlers = [...template.matchAll(/onclick=\{([^\n]*)/g)].map((match) => match[1])
     // Navigation and menu toggles act on the page, not the title.
-    const pageOnly = ['heroBack}', 'pressPlay}', 'retryDetail}', '() => (showMore = false)}', '() => { h.tap(); showMore = !showMore }}', '() => (descExpanded = !descExpanded)}']
+    const pageOnly = ['heroBack}', 'pressPlay}', 'retryDetail}', 'closeMenu}', 'pressMore}', "() => tapSynopsis('info')}", '() => pressSynopsisMore(place)}']
     for (const handler of handlers) expect(handler.startsWith('ready(') || pageOnly.some((ok) => handler.startsWith(ok)), handler).toBe(true)
     expect(handlers.filter((handler) => handler.startsWith('ready(')).length).toBeGreaterThanOrEqual(13)
     expect(detail).toContain('const ready = <T extends unknown[]>(run: (m: Media, ...args: T) => void) => (...args: T) => { if (media) run(media, ...args) }')
     // Play pressed while loading waits for the record; hovering or focusing it warms once it lands.
     expect(detail).toContain('if (media) { playCta(media); return }')
     expect(detail).toContain('untrack(() => playCta(target, false))')
-    expect(detail.match(/onclick=\{pressPlay\}/g)?.length).toBe(4)
+    expect(detail.match(/onclick=\{pressPlay\}/g)?.length).toBe(3)
     // Editors and the data components only ever get the full record.
     expect(detail).toContain('{#if showEditor && media}')
     expect(detail).toContain('{#if showLocalLists && media}')
@@ -231,7 +231,7 @@ describe('mobile series hero', () => {
   it('keeps a quiet borderless schedule summary beneath mobile facts', () => {
     expect(detail).toContain('mt-3 flex flex-wrap items-center gap-2 empty:mt-0')
     expect(detail).toContain('<AiringStatus media={m} />')
-    const airing = readFileSync(fileURLToPath(new URL('./AiringStatus.svelte', import.meta.url)), 'utf8')
+    const airing = readFileSync(fileURLToPath(new URL('./AiringStatus.svelte', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
     expect(airing).toContain('gap-x-2 whitespace-nowrap text-xs text-muted-foreground')
     expect(airing).toContain("toolbar ? 'h-9' : ''")
     expect(airing).not.toContain('compact = false')
@@ -239,21 +239,27 @@ describe('mobile series hero', () => {
   })
 
   it('surfaces a complete, discoverable mobile anime overview without crowding the hero', () => {
-    expect(readFileSync(fileURLToPath(new URL('../../detail/sections.ts', import.meta.url)), 'utf8'))
+    expect(readFileSync(fileURLToPath(new URL('../../detail/sections.ts', import.meta.url)), 'utf8').replace(/\r\n/g, '\n'))
       .toContain("const PHONE_ORDER: readonly DetailSection[] = ['episodes', 'overview', 'relations', 'characters', 'recommended']")
     expect(detail).toContain('aria-label="Genres"')
     expect(detail).toContain('From {prettyEnum(m.source)}')
     expect(detail).toContain('{m.duration} min')
     expect(detail).toContain("{:else if id === 'overview'}")
-    for (const heading of ['Synopsis', 'Information', 'Studio', 'Runtime', 'Source', 'Country', 'Popularity', 'Themes', 'Alternative titles']) {
+    for (const heading of ['Synopsis', 'Information', 'Themes', 'Alternative titles']) {
       expect(detail).toContain(`>${heading}<`)
     }
+    // The Information grid's facts and wording come from facts.ts: every studio, the runtime, the
+    // source, the country and the popularity among them.
+    expect(detail).toContain("mediaFacts(m, { place: 'info', keys: detailTheme.infoKeys")
+    const facts = readFileSync(fileURLToPath(new URL('../../detail/facts.ts', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
+    expect(facts).toContain("export const INFO_KEYS: readonly FactKey[] = ['studio', 'format', 'status', 'episodes', 'duration', 'season', 'aired', 'source', 'country', 'score', 'members']")
+    expect(facts).toContain("const INFO_LABELS: Partial<Record<FactKey, FactLabel>> = { format: 'format', duration: 'runtime', aired: 'premiered', members: 'popularity' }")
   })
 })
 
 describe('series airing schedule', () => {
   it('renders SUB and DUB as distinct colored words in one quiet schedule line', () => {
-    const airing = readFileSync(fileURLToPath(new URL('./AiringStatus.svelte', import.meta.url)), 'utf8')
+    const airing = readFileSync(fileURLToPath(new URL('./AiringStatus.svelte', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
     expect(airing).toContain("kind === 'Dub'")
     expect(airing).toContain('text-violet-300')
     expect(airing).toContain('text-sky-300')

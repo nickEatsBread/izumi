@@ -3,6 +3,8 @@ import { baseImageSrc, detailArt, isPlaceholderThumb, recordBanner, washBackgrou
 
 const BANNER = 'https://s4.anilist.co/file/anilistcdn/media/anime/banner/1-a.jpg'
 const KEYART = 'https://artworks.thetvdb.com/banners/fanart/original/1.jpg'
+const POSTER = 'https://artworks.thetvdb.com/banners/posters/1.jpg'
+const COVER = 'https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx1-a.jpg'
 
 describe('series header art', () => {
   it('paints a banner at once, without waiting for key art', () => {
@@ -58,6 +60,33 @@ describe('series header art', () => {
   })
 })
 
+describe('portrait header art and the cover fallback (API 4)', () => {
+  it('puts key art first, then the portrait poster or cover, and never the wide banner', () => {
+    const portrait = { banner: BANNER, poster: POSTER, cover: COVER, themeArt: 'portrait' } as const
+    expect(detailArt({ ...portrait, keyart: KEYART })).toEqual({ kind: 'keyart', src: KEYART })
+    expect(detailArt(portrait)).toEqual({ kind: 'poster', src: POSTER })
+    expect(detailArt({ ...portrait, poster: undefined })).toEqual({ kind: 'poster', src: COVER })
+    // The poster that failed its retries gives way to the cover; with both gone, the wash.
+    expect(detailArt({ ...portrait, failed: [POSTER] })).toEqual({ kind: 'poster', src: COVER })
+    expect(detailArt({ ...portrait, failed: [POSTER, COVER], rgb: '1 2 3' })).toEqual({ kind: 'wash', rgb: '1 2 3' })
+    // The key art and poster lookup may still answer; the banner the record brings does not matter.
+    expect(detailArt({ ...portrait, keyartPending: true })).toEqual({ kind: 'pending' })
+    expect(detailArt({ banner: undefined, cover: COVER, themeArt: 'portrait' })).toEqual({ kind: 'poster', src: COVER })
+  })
+
+  it('shows the cover, sharp, when the theme asks for it in place of the wash', () => {
+    expect(detailArt({ banner: null, cover: COVER, fallback: 'cover', rgb: '1 2 3' })).toEqual({ kind: 'cover', src: COVER })
+    expect(detailArt({ banner: null, cover: COVER, fallback: 'wash', rgb: '1 2 3' })).toEqual({ kind: 'wash', rgb: '1 2 3' })
+    expect(detailArt({ banner: null, cover: COVER, rgb: '1 2 3' })).toEqual({ kind: 'wash', rgb: '1 2 3' })
+    // Only once nothing else is there: a banner, key art or a pending choice come first.
+    expect(detailArt({ banner: BANNER, cover: COVER, fallback: 'cover' })).toEqual({ kind: 'banner', src: BANNER })
+    expect(detailArt({ banner: null, keyart: KEYART, cover: COVER, fallback: 'cover' })).toEqual({ kind: 'keyart', src: KEYART })
+    expect(detailArt({ banner: undefined, cover: COVER, fallback: 'cover' })).toEqual({ kind: 'pending' })
+    expect(detailArt({ banner: null, cover: COVER, fallback: 'cover', failed: [COVER] })).toEqual({ kind: 'wash', rgb: undefined })
+    expect(detailArt({ banner: null, fallback: 'cover' })).toEqual({ kind: 'wash', rgb: undefined })
+  })
+})
+
 describe('the banner a record stands for', () => {
   it('reads an AniList record as it is', () => {
     expect(recordBanner({ bannerImage: BANNER }, { loading: false })).toBe(BANNER)
@@ -72,13 +101,15 @@ describe('the banner a record stands for', () => {
   })
 
   it('keeps the AniList banner for a record served by the fallback catalog', () => {
-    const fallback = { bannerImage: null, catalog: { provider: 'kitsu' } }
-    expect(recordBanner(fallback, { loading: false, anilistBanner: BANNER })).toBe(BANNER)
+    const fallback = { bannerImage: null }
+    expect(recordBanner(fallback, { loading: false, anilistBanner: BANNER, backup: true })).toBe(BANNER)
     // Its own wide art when there is no AniList banner to keep.
-    expect(recordBanner({ ...fallback, bannerImage: 'https://media.kitsu.app/cover.jpg' }, { loading: false })).toBe('https://media.kitsu.app/cover.jpg')
-    expect(recordBanner(fallback, { loading: false })).toBeNull()
+    expect(recordBanner({ bannerImage: 'https://media.kitsu.app/cover.jpg' }, { loading: false, backup: true })).toBe('https://media.kitsu.app/cover.jpg')
+    expect(recordBanner(fallback, { loading: false, backup: true })).toBeNull()
     // The AniList banner wins over the fallback's own, so the art does not swap.
-    expect(recordBanner({ ...fallback, bannerImage: 'https://media.kitsu.app/cover.jpg' }, { loading: false, anilistBanner: BANNER })).toBe(BANNER)
+    expect(recordBanner({ bannerImage: 'https://media.kitsu.app/cover.jpg' }, { loading: false, anilistBanner: BANNER, backup: true })).toBe(BANNER)
+    // An AniList record keeps its own, even none.
+    expect(recordBanner(fallback, { loading: false, anilistBanner: BANNER })).toBeNull()
   })
 })
 

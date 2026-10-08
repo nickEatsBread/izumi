@@ -21,18 +21,23 @@ describe('continue card', () => {
     expect(detail).toContain('const listEpisodes = (m: Media) => ($offlineMode ? downloadedEpisodes(m) : animeEpisodeNumbers(m))')
     // From what the page shows, so the header keeps its shape from the loading page to the loaded one.
     expect(detail).toContain('playableThrough(listEpisodes(shown), airedCount(shown), $offlineMode) > 0')
-    expect(detail.match(/\{#if !headerCtaHidden\}/g)?.length).toBe(2)
-    expect(detail.match(/onpointerenter=\{warmPlay\}/g)).toHaveLength(4)
+    // One Play button serves the phone header and the overlay body (`headerButtonRow`).
+    expect(detail).toContain("headerButtons.filter((button) => button === 'play' ? !headerCtaHidden")
+    expect(detail.match(/\{@render headerButtonRow\(m, /g)?.length).toBe(2)
+    expect(detail.match(/onpointerenter=\{warmPlay\}/g)).toHaveLength(3)
   })
   // "Continue: Episode 1071", not the number badges' "A1071" form, like the other new pieces.
   it('prints the plain episode number on the card', () => {
     expect(list).toContain("const printedNumber = (episode: number) => episodeNoText(episode, meta[episode]?.abs, $absoluteEpisodeNumbers)")
-    expect(list).toContain("{watchedThrough > 0 || started > 0 ? 'Continue' : 'Play'}: Episode {printedNumber(target)}</span>")
+    expect(list).toContain("{started ? 'Continue' : 'Play'}: Episode {printedNumber(target)}</span>")
+    // Continue by the rule the header Play button follows, an episode 1 left part-way included.
+    expect(list).toContain('{@const started = seriesUnderWay(resumeThrough, $positions[progressKey(media.id, target)])}')
     expect(list).not.toContain('Episode {numberLabel(target)}')
   })
   it('resumes offline from the episode the header Play button opens', () => {
-    expect(list).toContain('? offlineResumeEpisode(offlineEps, watchedThrough)')
-    expect(detail).toContain('return offlineResumeEpisode(downloadedEpisodes(m), watchedThrough)')
+    // Both resume by the count Continue Watching uses (resume.ts), not the watched marks.
+    expect(list).toContain('? offlineResumeEpisode(offlineEps, resumeThrough)')
+    expect(detail).toContain('return offlineResumeEpisode(downloadedEpisodes(m), resumeThrough)')
     expect(detail).not.toContain('$localHistory[m.id]?.progress ?? 0')
   })
   it('keeps the phone Play button while the episodes, and so the card, are off the page', () => {

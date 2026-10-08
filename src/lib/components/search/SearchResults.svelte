@@ -10,7 +10,7 @@
   // unkeyed `Page` type — can't hand back a stale/embedded page for page 2+.
   import { onMount, setContext } from 'svelte'
   import { getContextClient } from '@urql/svelte'
-  import { searchQuery, searchVariables, STUDIO_MEDIA_QUERY, STAFF_MEDIA_QUERY, type SearchFilters } from '$lib/anilist/detail-queries'
+  import { animeCredits, searchQuery, searchVariables, STUDIO_MEDIA_QUERY, STAFF_MEDIA_QUERY, type SearchFilters } from '$lib/anilist/detail-queries'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import { browseLayout, showAdult } from '$lib/settings/ui'
   import { title, cover, format, season } from '$lib/anilist/media'
@@ -53,7 +53,7 @@
           .toPromise()
         if (res.error) { error = res.error.message; hasNext = false; return }
         const conn = res.data?.Studio?.media as { nodes?: Media[]; pageInfo?: { hasNextPage?: boolean } } | undefined
-        batch = conn?.nodes ?? []
+        batch = animeCredits(conn?.nodes ?? [])
         nextPage = !!conn?.pageInfo?.hasNextPage
       } else if (filters.staffId) {
         const res = await client
@@ -66,7 +66,7 @@
         } | undefined
         const credited = staff?.staffMedia?.nodes ?? []
         const voiced = (staff?.characterMedia?.edges ?? []).map((edge) => edge.node).filter((item): item is Media => !!item)
-        batch = [...credited, ...voiced]
+        batch = animeCredits([...credited, ...voiced])
         nextPage = !!staff?.staffMedia?.pageInfo?.hasNextPage || !!staff?.characterMedia?.pageInfo?.hasNextPage
       } else {
         firstTextPage = page === 1 && !!filters.search?.trim()
@@ -141,6 +141,8 @@
 {#if $browseLayout === 'list'}
   <!-- List: a vertical run of compact rows (small cover + title + meta) — denser, text-forward. -->
   <VirtualGrid
+    part="search.grid"
+    variant="list"
     items={media}
     getKey={(m) => m.id}
     className="grid grid-cols-1 gap-1.5"
@@ -165,7 +167,7 @@
     {/snippet}
   </VirtualGrid>
   {#if loading || (lookingClose && !media.length)}
-    <div class="mt-1.5 flex flex-col gap-1.5">
+    <div data-part="search.grid" data-variant="list" data-state="loading" class="mt-1.5 flex flex-col gap-1.5">
       {#each Array.from({ length: media.length ? 4 : 8 }) as _}
         <div class="flex items-center gap-3 p-2"><div class="aspect-[2/3] w-12 shrink-0 animate-pulse rounded-md bg-muted"></div><div class="h-4 flex-1 animate-pulse rounded bg-muted"></div></div>
       {/each}
@@ -175,6 +177,8 @@
   <!-- Grid: cover-art tiles. Three across on phones (fills edge-to-edge, no dead right margin);
        an auto-fill responsive grid on desktop. -->
   <VirtualGrid
+    part="search.grid"
+    variant="grid"
     items={media}
     getKey={(m) => m.id}
     className="grid grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-3"
@@ -186,7 +190,7 @@
     {/snippet}
   </VirtualGrid>
   {#if loading || (lookingClose && !media.length)}
-    <div class="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-3">
+    <div data-part="search.grid" data-variant="grid" data-state="loading" class="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-3">
       {#each Array.from({ length: media.length ? 6 : 12 }) as _}
         <div class="aspect-[2/3] w-full animate-pulse rounded-md bg-muted"></div>
       {/each}

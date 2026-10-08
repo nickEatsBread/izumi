@@ -31,6 +31,12 @@ export interface HistoryEntry {
   release?: { group?: string; bingeGroup?: string }
 }
 
+/** The watched count an entry resumes after: the episodes finished, or the episode last opened less
+ *  one, so an episode opened but not finished is where playback picks up. Continue Watching and the
+ *  series page's Play button both resume by this rule. */
+export const historyResumeProgress = (entry: Pick<HistoryEntry, 'progress' | 'episode'>): number =>
+  Math.max(entry.progress, entry.episode - 1)
+
 /** The PERSISTED history (`mediaId -> HistoryEntry`). Everything that must never see an incognito
  *  entry — export/import, device sync, airing notifications, the Continue Watching reconcile that
  *  writes the persisted snapshot — reads THIS store. Display paths read `localHistory` below. */

@@ -1,9 +1,10 @@
 <script lang="ts">
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { themePresentation } from '$lib/themes/runtime'
-  import { resolveDetail, themeColorCss, type HeroIndicator } from '$lib/themes/presentation'
+  import { resolveDetail, themeColorCss, type DisplayModel, type HeroIndicator, type ThemeAction } from '$lib/themes/presentation'
   import { mediaDisplayModel } from '$lib/themes/host-model'
-  import { artNeeds, loadTitleExtras, metaNeeds, primeTitleExtras, templateNeeds, type TitleExtras } from '$lib/themes/title-extras'
+  import { seriesCompletion } from '$lib/themes/series-progress'
+  import { artNeeds, loadTitleExtras, metaNeeds, primeTitleExtras, templateNeeds, type TitleExtra, type TitleExtras } from '$lib/themes/title-extras'
   import { sampleAmbient } from '$lib/themes/ambient'
   import { themeCssStatus } from '$lib/theme'
   import { motionPreference } from '$lib/settings/ui'
@@ -32,6 +33,7 @@
   import { untrack } from 'svelte'
   import { animeAwardHref, findTopAnimeAward } from '$lib/catalog/anime-awards'
   import { createSlideScheduler } from './hero-slides'
+  import { heroBackdrop, heroNeedsKeyart, type HeroKeyart } from './hero-art'
 
   // Bottom-left content column + clean linear scrims. Discovery facts stay deliberately compact:
   // format/runtime/production/score, then one context line for next-airing + genres. Detail pages
@@ -41,6 +43,7 @@
     onplay,
     oninfo,
     onfav,
+    onlist,
     showOverlay = true,
     artworkMode = 'backdrop',
     artwork,
@@ -50,6 +53,8 @@
     onplay?: (m: Media) => void
     oninfo?: (m: Media) => void
     onfav?: (m: Media) => void
+    /** A hero template's `list` action: the host opens its list editor for the slide's title. */
+    onlist?: (m: Media) => void
     showOverlay?: boolean
     /** Desktop Home can retain portrait cover art instead of cropping it into a wide backdrop. */
     artworkMode?: 'backdrop' | 'cover'
@@ -69,6 +74,7 @@
   let clock = $state(Date.now())
   let countdownOrigin = $state(Date.now())
   let failedLogos = $state<string[]>([])
+  const KEYART_ONLY: ReadonlySet<TitleExtra> = new Set(['keyart'])
   const controllerUi = $derived($gameMode || $controllerMode)
   const heroTheme = $derived(showOverlay ? $themePresentation?.hero : undefined)
   const seriesTheme = $derived(!showOverlay ? resolveDetail($themePresentation) : undefined)
@@ -87,9 +93,9 @@
     if (!m) return []
     if (heroTheme?.template) {
       const art = heroArt[extrasKey(m.id)]
-      return [banner(m), cover(m), ...[art?.keyart, art?.logo].filter((src): src is string => !!src)]
+      return [templateBackdrop(m) ?? banner(m), cover(m), ...[art?.keyart, art?.logo, art?.posterHd].filter((src): src is string => !!src)]
     }
-    return [artworkMode === 'cover' || ($isMobile && showOverlay) ? cover(m) : banner(m)]
+    return [artworkMode === 'cover' || ($isMobile && showOverlay) ? cover(m) : showOverlay ? homeBackdrop(m) : banner(m)]
   }
   // A slide is committed only once its artwork has decoded (see hero-slides.ts): swapping first and
   // decoding second painted a skeleton, then popped to the image a few frames later — on the Deck's
@@ -114,6 +120,7 @@
     },
     commit(n, direction, ready) {
       if (!medias[n]) return
+      if (fadeTransition && n !== i && medias[i] && motionAllowed()) startFade()
       navDirection = direction
       // Ready artwork settles BEFORE the swap, so the first paint of the new slide is the image
       // itself, never the skeleton. A slow or broken image keeps the old path: skeleton until the
@@ -135,7 +142,30 @@
       slides.warm([...slideArtwork(medias[(i + 1) % n]), ...slideArtwork(medias[(i - 1 + n) % n])])
     }, 400)
   }
-  $effect(() => () => { slides.cancel(); clearTimeout(warmTimer) })
+  $effect(() => () => { slides.cancel(); clearTimeout(warmTimer); clearTimeout(fadeTimer) })
+
+  // API 4 `transition: "fade"`: the outgoing slide stays drawn while the incoming one comes in, a
+  // 650 ms cross-fade. A template hero lays its outgoing copy over the incoming one and fades it out
+  // (its buttons inert); the built-in layouts keep the outgoing artwork under the incoming slide,
+  // which fades in. Reduced motion swaps at once, like the slide entrance. Every layer that animates
+  // keeps a static translateZ(0) for its whole life in Game mode (the WebKitGTK layer-drop blink,
+  // see the styles below).
+  const FADE_MS = 650
+  const fadeTransition = $derived(showOverlay && heroTheme?.transition === 'fade')
+  let fadeFrom = $state<{ key: number; model: DisplayModel; art?: string } | null>(null)
+  let fadeTimer: ReturnType<typeof setTimeout> | undefined
+  const motionAllowed = () => {
+    const motion = get(motionPreference)
+    return motion !== 'reduce' && (motion === 'full' || !matchMedia('(prefers-reduced-motion: reduce)').matches)
+  }
+  function startFade() {
+    clearTimeout(fadeTimer)
+    // The built-in layouts' outgoing artwork: the phone card's cover, the desktop banner (a desktop
+    // hero showing covers just fades its incoming slide in).
+    const art = !current ? undefined : get(isMobile) ? cover(current) : artworkMode === 'cover' ? undefined : backdropSrc || undefined
+    fadeFrom = { key: (fadeFrom?.key ?? 0) + 1, model: themeModel, art }
+    fadeTimer = setTimeout(() => (fadeFrom = null), FADE_MS)
+  }
 
   function go(n: number, direction?: 1 | -1) {
     if (n === i) { slides.cancel(); return }
@@ -392,7 +422,7 @@
   const currentExtras = $derived(current ? { ...heroMeta[extrasKey(current.id)], ...currentArt } : undefined)
   // A template that shows key art or a logo waits up to 1.5 s for them, so the slide does not
   // flash the catalog banner and the text title before swapping.
-  const heroArtNeeded = $derived(heroNeeds.has('keyart') || heroNeeds.has('logo'))
+  const heroArtNeeded = $derived(heroNeeds.has('keyart') || heroNeeds.has('logo') || heroNeeds.has('posterHd'))
   let extrasWaitOver = $state(false)
   $effect(() => {
     void current?.id
@@ -400,7 +430,41 @@
     const timer = setTimeout(() => (extrasWaitOver = true), 1500)
     return () => clearTimeout(timer)
   })
-  const extrasPending = $derived(heroArtNeeded && !!current && !currentArt && !extrasWaitOver)
+  // Key art for slides without a catalog banner, wherever a Home hero shows wide artwork: izumi's own
+  // desktop banner (key art before a trailer still, see hero-art.ts) and a template with API 4
+  // `hero.art: "banner-cover"`. Asked for every such slide at once (ani.zip answers from its cache
+  // for later visits), so a step rarely waits; the current slide waits for it as long as a
+  // template waits for its extras, then does without.
+  const backdropLookups = $derived(showOverlay && !artwork && (heroTheme?.template ? heroTheme.art === 'banner-cover' : !$isMobile && artworkMode === 'backdrop'))
+  let backdropKeyart = $state<Record<number, string | null>>({})
+  // A plain Set, not $state: the effect below both reads and writes it.
+  const requestedKeyart = new Set<number>()
+  $effect(() => {
+    void heroIds
+    if (!backdropLookups) return
+    for (const media of untrack(() => medias)) {
+      if (!heroNeedsKeyart(media) || requestedKeyart.has(media.id)) continue
+      requestedKeyart.add(media.id)
+      void loadTitleExtras(media, KEYART_ONLY).then((value) => {
+        backdropKeyart = { ...backdropKeyart, [media.id]: value.keyart ?? null }
+        scheduleWarm()
+      })
+    }
+  })
+  /** A slide's key art for its backdrop; the current slide stops waiting with the extras wait. */
+  function keyartOf(m: Media): HeroKeyart {
+    const found = backdropKeyart[m.id]
+    if (found !== undefined) return found
+    return m.id === current?.id && extrasWaitOver ? null : undefined
+  }
+  /** izumi's own desktop banner on Home (`hero.art` may drop the trailer still). */
+  const homeBackdrop = (m: Media) => heroBackdrop(m, keyartOf(m), heroTheme?.art ?? 'banner', failedArtwork)
+  /** A template's `backdrop` under `hero.art: "banner-cover"`; undefined keeps izumi's own `banner()`. */
+  const templateBackdrop = (m: Media) => (heroTheme?.art === 'banner-cover' ? heroBackdrop(m, keyartOf(m), 'banner-cover') : undefined)
+  // API 4 `hero.art: "banner-cover"`: a template's `backdrop` waits for the key art of a slide without
+  // a banner as it waits for the artwork it binds, then takes the cover rather than a trailer still.
+  const backdropPending = $derived(!!heroTheme?.template && heroTheme.art === 'banner-cover' && !!current && keyartOf(current) === undefined && heroNeedsKeyart(current))
+  const extrasPending = $derived(((heroArtNeeded && !!current && !currentArt) || backdropPending) && !extrasWaitOver)
   // API 3 `scale: "wide"` and `bleed` shape a template hero on wider windows; phones keep `mobileHeight`.
   const wideScale = $derived(!$isMobile && heroTheme?.scale === 'wide')
   // Bleed belongs to the wide scale: the other scales do not add it to their height, so lifting the
@@ -415,9 +479,17 @@
   let failedArtwork = $state<string[]>([])
   const backdropSrc = $derived.by(() => {
     if (!current) return ''
-    if (artwork) return artwork.kind === 'banner' || artwork.kind === 'keyart' ? artwork.src : ''
+    if (artwork) return 'src' in artwork ? artwork.src : ''
+    // Home: the banner, key art, then a trailer still or the cover (hero-art.ts); '' while the key
+    // art of a slide without a banner is still on its way.
+    if (showOverlay) return homeBackdrop(current)
     const wide = banner(current)
     return wide && !failedArtwork.includes(wide) ? wide : cover(current)
+  })
+  // izumi's own desktop banner: a slide still waiting for its key art has nothing to show, however it
+  // was committed, so it keeps its placeholder until the artwork it gets has loaded (the <img> settles it).
+  $effect(() => {
+    if (backdropLookups && !heroTheme?.template && current && !backdropSrc && loadedArtworkId === current.id) loadedArtworkId = null
   })
   function backdropFailed(src: string) {
     if (artwork) { onartworkfailed?.(src); return }
@@ -465,13 +537,25 @@
   const scoreColor = (s?: number) =>
     s == null ? 'text-white/70' : s >= 75 ? 'text-green-400' : s >= 65 ? 'text-orange-400' : 'text-red-400'
   const cleanDesc = (d?: string) => (d ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
+  // Only a template reads the finished mark, so izumi's own hero never subscribes to its stores.
   const themeModel = $derived(current ? mediaDisplayModel(current, {
     description: cleanDesc(current.description), rank: featuredRankLabel,
-    rankPosition: current.featuredRank?.position, poster: cover(current), backdrop: banner(current),
+    rankPosition: current.featuredRank?.position, poster: cover(current), backdrop: heroTheme?.art === 'banner-cover' ? templateBackdrop(current) || undefined : banner(current),
     logo: currentLogo || currentExtras?.logo || undefined,
     keyart: currentExtras?.keyart, ageRating: currentExtras?.ageRating, audio: currentExtras?.audio,
+    ...(currentArt?.posterHd ? { posterHd: currentArt.posterHd } : {}),
+    ...(heroTheme?.template || heroTheme?.rank ? { completed: $seriesCompletion(current) ? 'Completed' : undefined } : {}),
     slide: i + 1, slides: medias.length,
   }, 0, clock) : {})
+  const templateActions = $derived<Partial<Record<ThemeAction, () => void>>>(current ? {
+    details: oninfo ? () => themeAction(() => { rememberDetail(current); oninfo?.(current) }) : undefined,
+    play: onplay ? () => themeAction(() => { rememberDetail(current); onplay?.(current) }) : undefined,
+    favorite: onfav ? () => themeAction(() => onfav?.(current)) : undefined,
+    list: onlist ? () => themeAction(() => onlist?.(current)) : undefined,
+    previous: medias.length > 1 ? () => themeAction(() => step(-1)) : undefined, next: medias.length > 1 ? () => themeAction(() => step(1)) : undefined,
+  } : {})
+  // The fading copy draws the same buttons, inert: they do nothing and take no focus.
+  const fadeActions = $derived(Object.fromEntries(Object.entries(templateActions).filter(([, action]) => action).map(([name]) => [name, () => {}])) as Partial<Record<ThemeAction, () => void>>)
   // Home hero only, and only while a theme stylesheet is applied: publish the current artwork's colour so the theme can tint the page behind it.
   $effect(() => {
     if (!showOverlay || !current || $themeCssStatus.state !== 'applied') return
@@ -530,12 +614,14 @@
 {#if current && !heroTheme?.hidden}
   {#if heroTheme?.template}
     <section data-slot="home.hero" data-variant="template" data-nav-row data-theme-hero aria-label="Featured" class="theme-custom-hero" class:theme-banner-scale={bannerScale} class:theme-wide-scale={wideScale} class:theme-hero-bleed={heroBleed > 0} data-pending={extrasPending || undefined} class:cursor-grab={$dragCarousels && medias.length > 1} class:cursor-grabbing={heroDragging} style:height={bannerScale || wideScale ? undefined : `${($isMobile ? heroTheme.mobileHeight : heroTheme.height) ?? 46}vh`} style:--hero-bleed={heroBleed > 0 ? `${heroBleed}px` : undefined} style:--theme-hero-interval={`${DURATION}ms`} ontouchstart={onTouchStart} ontouchend={onTouchEnd} onpointerdown={onHeroPointerDown} onpointermove={onHeroPointerMove} onpointerup={(e) => endHeroPointer(e, true)} onpointercancel={(e) => endHeroPointer(e, false)} onwheel={onHeroWheel}>
-      <ThemeNode node={heroTheme.template} model={themeModel} eager titleHeading actions={{
-        details: oninfo ? () => themeAction(() => { rememberDetail(current); oninfo?.(current) }) : undefined,
-        play: onplay ? () => themeAction(() => { rememberDetail(current); onplay?.(current) }) : undefined,
-        favorite: onfav ? () => themeAction(() => onfav?.(current)) : undefined,
-        previous: medias.length > 1 ? () => themeAction(() => step(-1)) : undefined, next: medias.length > 1 ? () => themeAction(() => step(1)) : undefined,
-      }} />
+      <ThemeNode node={heroTheme.template} model={themeModel} eager titleHeading actions={templateActions} />
+      {#if fadeFrom}
+        {#key fadeFrom.key}
+          <!-- The same markup as the live slide (its title an h1 too), so heading styles never change
+               as the fade starts; aria-hidden keeps the copy's heading out of the page outline. -->
+          <div class="hero-fade-out" aria-hidden="true" inert><ThemeNode node={heroTheme.template} model={fadeFrom.model} eager titleHeading actions={fadeActions} /></div>
+        {/key}
+      {/if}
       {#if medias.length > 1}
         <button type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
                 aria-label="Previous featured title" onclick={() => step(-1)}
@@ -580,6 +666,7 @@
       data-slot="home.hero"
       data-variant="phone"
       class="relative mx-4 mb-6 h-[46vh] touch-pan-y overflow-hidden rounded-2xl shadow-xl {$isAndroid ? 'android-hero-press' : ''}"
+      class:hero-fade={fadeTransition}
       style="--accent:{accent}"
       style:height={heroTheme?.mobileHeight ? `${heroTheme.mobileHeight}vh` : undefined}
       role="group"
@@ -587,6 +674,13 @@
       ontouchstart={onTouchStart}
       ontouchend={onTouchEnd}
     >
+      {#if fadeFrom?.art}
+        {#key fadeFrom.key}
+          <div data-part="hero.slide" data-state="leaving" aria-hidden="true" class="absolute inset-0">
+            <img data-part="hero.art" src={fadeFrom.art} alt="" draggable="false" class="relative h-full w-full object-cover" />
+          </div>
+        {/key}
+      {/if}
       {#key current.id}
         <div data-part="hero.slide" class="hero-slide-in hero-carousel-slide absolute inset-0" style="--hero-enter-x:{navDirection * 3}%">
           {#if !artworkReady}<div class="absolute inset-0 skeloader"></div>{/if}
@@ -690,6 +784,7 @@
     class:cursor-grab={$dragCarousels && medias.length > 1}
     class:cursor-grabbing={heroDragging}
     class:game-home-hero={controllerUi && showOverlay}
+    class:hero-fade={fadeTransition}
     style="--accent:{accent}"
     style:height={bannerScale ? undefined : seriesBannerHeight ? `${seriesBannerHeight}vh` : heroTheme?.height ? `${heroTheme.height}vh` : undefined}
     style:--theme-hero-interval={`${DURATION}ms`}
@@ -711,6 +806,13 @@
          of page background at the right. On mobile there's no sidebar/titlebar, so it sits flush
          with the viewport edge. Keyed for a crossfade. -->
     <div class="pointer-events-none absolute left-[calc(-1*var(--theme-shell-left,0px))] top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:top-[calc(-1*var(--theme-shell-top,2rem))] sm:h-[calc(100%+var(--theme-shell-top,2rem))]">
+      {#if fadeFrom?.art}
+        {#key fadeFrom.key}
+          <div data-part="hero.slide" data-state="leaving" aria-hidden="true" class="absolute inset-0" style="opacity:.7">
+            <img data-part="hero.art" src={fadeFrom.art} alt="" draggable="false" class="relative h-full w-full object-cover" style="object-position:center 20%" />
+          </div>
+        {/key}
+      {/if}
       {#key current.id}
         <div data-part="hero.slide" class="hero-slide-in absolute inset-0" class:hero-carousel-slide={showOverlay} style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:{bannerScale && !showOverlay ? .5 : .7}">
           {#if !artworkReady}<div class="absolute inset-0 skeloader"></div>{/if}
@@ -956,6 +1058,19 @@
      drops the entrance animation (a Game-mode detail banner, below) still settles at the same level. */
   .hero-slide-in { opacity: var(--hero-final-opacity, 1); animation: hero-slide-in 480ms cubic-bezier(.22, 1, .36, 1) both; }
   .hero-copy { animation: hero-copy-in 360ms cubic-bezier(.22, 1, .36, 1) both; }
+  /* API 4 `transition: "fade"`. Opacity only, so the static translateZ(0) the layers carry in Game
+     mode is never touched; the outgoing template copy holds its layer until it is removed. */
+  @keyframes hero-fade-in {
+    from { opacity: 0; }
+    to { opacity: var(--hero-final-opacity, 1); }
+  }
+  @keyframes hero-fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+  .hero-fade .hero-slide-in,
+  .hero-fade .hero-copy { animation: hero-fade-in 650ms ease both; }
+  .hero-fade-out { position: absolute; inset: 0; z-index: 1; pointer-events: none; transform: translateZ(0); animation: hero-fade-out 650ms ease both; }
   /* Game mode (the Deck's WebKitGTK 2.52). A transform or opacity tween lifts its element onto a
      compositor layer for the tween only. When the tween ends the layer is dropped and its pixels are
      repainted into the page's tiles, and since 2.52 WebKit composites without waiting for that
@@ -972,6 +1087,8 @@
   :global(html.gamemode) .hero-progress { transform: translateZ(0); }
   :global(html.gamemode) .hero-carousel-slide { animation-name: hero-slide-in-layer; }
   :global(html.gamemode) .hero-copy { animation-name: hero-copy-in-layer; }
+  :global(html.gamemode) .hero-fade .hero-carousel-slide,
+  :global(html.gamemode) .hero-fade .hero-copy { animation-name: hero-fade-in; }
   /* The bar keeps its layer but no tween: the script above steps `scale` at 15 fps. */
   :global(html.gamemode) .hero-progress { animation: none; scale: 0 1; }
   @keyframes hero-slide-in-layer {
@@ -992,5 +1109,6 @@
     .game-home-hero { height: 54vh; }
   }
   :global(html[data-motion='reduced']) .hero-slide-in,
-  :global(html[data-motion='reduced']) .hero-copy { animation-duration: 1ms; }
+  :global(html[data-motion='reduced']) .hero-copy,
+  :global(html[data-motion='reduced']) .hero-fade-out { animation-duration: 1ms; }
 </style>

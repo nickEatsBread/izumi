@@ -22,6 +22,7 @@ export interface KitsuAnime {
     posterImage?: KitsuImage | null
     coverImage?: KitsuImage | null
     startDate?: string | null
+    endDate?: string | null
     season?: string | null
     seasonYear?: number | null
     subtype?: string | null
@@ -30,6 +31,7 @@ export interface KitsuAnime {
     episodeLength?: number | null
     averageRating?: string | null
     userCount?: number | null
+    favoritesCount?: number | null
     youtubeVideoId?: string | null
     ageRating?: string | null
   }
@@ -134,6 +136,7 @@ export function mapKitsuMedia(raw: KitsuAnime, anilistId?: number): Media {
   const title = a.titles ?? {}
   const score = n(a.averageRating)
   const start = /^([0-9]{4})-([0-9]{2})-([0-9]{2})/.exec(a.startDate ?? '')
+  const end = /^([0-9]{4})-([0-9]{2})-([0-9]{2})/.exec(a.endDate ?? '')
   const subtype = a.subtype ?? ''
   const kitsuId = n(raw.id)
   const ref = { provider: 'kitsu' as const, type: 'anime' as const, id: String(raw.id ?? '') }
@@ -171,6 +174,10 @@ export function mapKitsuMedia(raw: KitsuAnime, anilistId?: number): Media {
     startDate: start
       ? { __typename: 'FuzzyDate', year: Number(start[1]), month: Number(start[2]), day: Number(start[3]) }
       : null,
+    endDate: end
+      ? { __typename: 'FuzzyDate', year: Number(end[1]), month: Number(end[2]), day: Number(end[3]) }
+      : null,
+    favourites: a.favoritesCount ?? null,
     studios: { __typename: 'StudioConnection', nodes: [] },
     coverImage: {
       __typename: 'MediaCoverImage',

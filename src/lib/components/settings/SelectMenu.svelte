@@ -30,6 +30,7 @@
     floating = false,
     separator = '·',
     columns = false,
+    filter,
   }: {
     value: string
     options: SelectOption[]
@@ -46,6 +47,9 @@
     /** Short labels (e.g. numbers) in a fixed right-aligned column, with the description at full
      *  size beside them — for menus where the description IS the meaning, not a footnote. */
     columns?: boolean
+    /** A search page filter: the trigger is the `search.filter` hook with this name in `data-filter`,
+     *  and `data-active` while an option other than the first (the default) is chosen. */
+    filter?: string
   } = $props()
 
   let root: HTMLDivElement
@@ -212,6 +216,9 @@
   <button
     data-touch-target bind:this={trigger}
     type="button"
+    data-part={filter ? 'search.filter' : undefined}
+    data-filter={filter}
+    data-active={(filter && value !== options[0]?.value) || undefined}
     data-focusable
     aria-label={ariaLabel}
     aria-haspopup="listbox"

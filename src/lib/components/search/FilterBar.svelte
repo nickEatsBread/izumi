@@ -52,10 +52,12 @@
 
 <!-- Mobile: search on its own full-width row, then the filters in a single horizontally-scrollable
      row (bleeds to the screen edges) so nothing wraps or gets orphaned. Desktop: the inner wrapper
-     becomes `display:contents` so everything flows into one wrapping flex row as before. -->
+     becomes `display:contents` so everything flows into one wrapping flex row as before.
+     Theme hooks: the field is `search.field` (the name the search overlay's field has), and every
+     control after it is a `search.filter` named by `data-filter`, `data-active` while it is set. -->
 <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center" data-part="search.filters">
   <input
-    data-part="input"
+    data-part="search.field"
     data-focusable
     type="text"
     placeholder="Search anime…"
@@ -65,28 +67,28 @@
   />
 
   <div class="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:contents sm:overflow-visible sm:px-0 sm:pb-0">
-    <MultiSelect label="Genres" options={genres} selected={filters.genres ?? []}
+    <MultiSelect label="Genres" filter="genres" options={genres} selected={filters.genres ?? []}
                  onchange={(v) => (filters = { ...filters, genres: v })} />
-    <MultiSelect label="Format" options={FORMATS} selected={filters.formats ?? []}
+    <MultiSelect label="Format" filter="format" options={FORMATS} selected={filters.formats ?? []}
                  onchange={(v) => (filters = { ...filters, formats: v })} />
-    <MultiSelect label="Status" options={STATUSES} selected={filters.statuses ?? []}
+    <MultiSelect label="Status" filter="status" options={STATUSES} selected={filters.statuses ?? []}
                  onchange={(v) => (filters = { ...filters, statuses: v })} />
 
     {#if $isMobile}
       <!-- Keep Android's space-efficient native pickers inside the horizontal chip scroller. -->
-      <select data-focusable value={filters.season ?? ''}
+      <select data-part="search.filter" data-filter="season" data-active={!!filters.season || undefined} data-focusable value={filters.season ?? ''}
               onchange={(e) => (filters = { ...filters, season: e.currentTarget.value || undefined })}
               class="shrink-0 rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent">
         <option value="">Any Season</option>
         {#each SEASONS as s (s)}<option value={s}>{label(s)}</option>{/each}
       </select>
-      <select data-focusable value={filters.year != null ? String(filters.year) : ''}
+      <select data-part="search.filter" data-filter="year" data-active={filters.year != null || undefined} data-focusable value={filters.year != null ? String(filters.year) : ''}
               onchange={(e) => (filters = { ...filters, year: e.currentTarget.value ? Number(e.currentTarget.value) : null })}
               class="shrink-0 rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent">
         <option value="">Any Year</option>
         {#each YEARS as y (y)}<option value={String(y)}>{y}</option>{/each}
       </select>
-      <select data-focusable value={filters.sort ?? ''}
+      <select data-part="search.filter" data-filter="sort" data-active={!!filters.sort || undefined} data-focusable value={filters.sort ?? ''}
               onchange={(e) => (filters = { ...filters, sort: e.currentTarget.value || undefined })}
               class="shrink-0 rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent">
         <option value="">Default Sort</option>
@@ -96,22 +98,22 @@
       <!-- WKWebView leaves native macOS selects with an Aqua face/menu that ignores the app's dark
            palette. Desktop search uses the same fully-themed, keyboard/gamepad-capable menu as
            Settings; Android keeps its native picker above because this row scrolls horizontally. -->
-      <SelectMenu value={filters.season ?? ''} ariaLabel="Season" className="w-36 shrink-0"
+      <SelectMenu value={filters.season ?? ''} ariaLabel="Season" filter="season" className="w-36 shrink-0"
                   options={[{ value: '', label: 'Any Season' }, ...SEASONS.map((s) => ({ value: s, label: label(s) }))]}
                   onChange={(value) => (filters = { ...filters, season: value || undefined })} />
-      <SelectMenu value={filters.year != null ? String(filters.year) : ''} ariaLabel="Year" className="w-32 shrink-0"
+      <SelectMenu value={filters.year != null ? String(filters.year) : ''} ariaLabel="Year" filter="year" className="w-32 shrink-0"
                   options={[{ value: '', label: 'Any Year' }, ...YEARS.map((year) => ({ value: String(year), label: String(year) }))]}
                   onChange={(value) => (filters = { ...filters, year: value ? Number(value) : null })} />
-      <SelectMenu value={filters.sort ?? ''} ariaLabel="Sort" className="w-40 shrink-0"
+      <SelectMenu value={filters.sort ?? ''} ariaLabel="Sort" filter="sort" className="w-40 shrink-0"
                   options={[{ value: '', label: 'Default Sort' }, ...SORTS.map((sort) => ({ value: sort, label: label(sort) }))]}
                   onChange={(value) => (filters = { ...filters, sort: value || undefined })} />
     {/if}
 
-    <button data-part="button" data-variant="secondary" data-focusable onclick={() => (showAdvanced = true)}
+    <button data-part="search.filter" data-filter="advanced" data-active={advCount > 0 || undefined} data-focusable onclick={() => (showAdvanced = true)}
             class="flex shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-sm font-bold transition-colors {advCount ? 'bg-theme/20 text-theme hover:bg-theme/30' : 'bg-secondary hover:bg-accent'}">
       <SlidersHorizontal size={15} /> Advanced{advCount ? ` · ${advCount}` : ''}
     </button>
-    <button data-focusable onclick={clear} class="shrink-0 rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">Clear</button>
+    <button data-part="search.filter" data-filter="clear" data-focusable onclick={clear} class="shrink-0 rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">Clear</button>
   </div>
 </div>
 

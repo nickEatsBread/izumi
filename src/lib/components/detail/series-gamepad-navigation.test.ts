@@ -15,7 +15,8 @@ describe('series page gamepad fast lane', () => {
   })
 
   it('chooses the next watched-progress episode and returns Up directly to Play', () => {
-    expect(list).toContain('Math.min(watchedThrough + 1, aired || 1)')
+    // The episode Play opens: the count Continue Watching resumes by (resume.ts).
+    expect(list).toContain('Math.min(resumeThrough + 1, aired || 1)')
     expect(list).toContain("data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}")
     expect(card).toContain('data-nav-up={navUp}')
   })

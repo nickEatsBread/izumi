@@ -45,7 +45,7 @@
   {#if !visible || $store.fetching}
     <Carousel {title}>
       {#each Array.from({ length: 6 }) as _}
-        <div class="skeloader aspect-[2/3] w-36 shrink-0 rounded-md sm:w-[152px]"></div>
+        <div data-part="row.skeleton" class="skeloader aspect-[2/3] w-36 shrink-0 rounded-md sm:w-[152px]"></div>
       {/each}
     </Carousel>
   {:else if shown.length}

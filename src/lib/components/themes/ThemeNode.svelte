@@ -23,7 +23,7 @@
   const model = $derived<DisplayModel>(failedArtwork.length
     ? Object.fromEntries(Object.entries(boundModel).filter(([, value]) => !(typeof value === 'string' && failedArtwork.includes(value)))) as DisplayModel
     : boundModel)
-  const labels: Record<ThemeAction, string> = { play: 'Watch', details: 'Details', favorite: 'Favorite', previous: 'Previous slide', next: 'Next slide', list: 'Add to list', trailer: 'Trailer', share: 'Share' }
+  const labels: Record<ThemeAction, string> = { play: 'Watch', details: 'Details', favorite: 'Favorite', previous: 'Previous slide', next: 'Next slide', list: 'Add to list', trailer: 'Trailer', share: 'Share', studio: 'Studio' }
   const icons: Record<ThemeIcon, typeof TrendingUp> = {
     score: TrendingUp, format: Tv, episodes: Clapperboard, reviews: Users, studio: Building2,
     season: CalendarDays, status: MonitorPlay, source: Library, country: Globe, duration: Timer,
@@ -41,10 +41,12 @@
         {#if src}<img src={String(src)} alt="" draggable="false" loading={eager ? 'eager' : 'lazy'} decoding="async" onerror={() => markFailed(String(src))} class="duration-150 ease-out transition-transform group-hover:scale-105" />{/if}
       </div>
     {:else if item.type === 'action'}
-      {#if item.action && actions[item.action]}
+      <!-- API 4 `studio` (the series header and facts): the main studio's name as a button, there only
+           when the title names a studio. -->
+      {#if item.action && actions[item.action] && (item.action !== 'studio' || model.studio)}
         {@const ActionIcon = item.icon ? icons[item.icon] : item.action === 'play' ? Play : undefined}
-        {@const label = item.text || (item.icon ? '' : labels[item.action])}
-        <button type="button" data-focusable class="theme-action" style={nodeStyle(item)} data-part={item.part} onclick={actions[item.action]} aria-label={label ? undefined : labels[item.action]}>{#if ActionIcon}<ActionIcon size={item.icon ? Number(item.style?.fontSize) || 20 : 16} fill={item.icon ? 'none' : 'currentColor'} />{/if}{label}</button>
+        {@const label = item.text || (item.icon ? '' : item.action === 'studio' ? displayText('studio', model) : labels[item.action])}
+        <button type="button" data-focusable class="theme-action" style={nodeStyle(item)} data-part={item.part} data-action={item.action === 'studio' ? 'studio' : undefined} onclick={actions[item.action]} aria-label={label ? undefined : item.action === 'studio' ? `${labels.studio}: ${displayText('studio', model)}` : labels[item.action]}>{#if ActionIcon}<ActionIcon size={item.icon ? Number(item.style?.fontSize) || 20 : 16} fill={item.icon ? 'none' : 'currentColor'} />{/if}{label}</button>
       {/if}
     {:else if item.type === 'icon' && item.icon}
       {@const Icon = icons[item.icon]}

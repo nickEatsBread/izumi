@@ -33,6 +33,14 @@ describe('theme stylesheet policy', () => {
     expect(() => precheckThemeCss('a'.repeat(THEME_CSS_MAX_BYTES + 1))).toThrow('128 KB')
     expect(() => precheckThemeCss(42)).toThrow('text')
   })
+  it('lets content read a data attribute, so a Play button can be reworded from its state', () => {
+    const css = '[data-action="play"][data-state="resume"]::after{content:"Resume E" attr(data-episode)} [data-season-label]::after{content:attr(data-season-label)}'
+    expect(forbiddenCss(css)).toBeUndefined()
+    expect(precheckThemeCss(css)).toBe(css)
+    // attr() never reaches a loading function: url() and its relatives stay refused around it.
+    expect(forbiddenCss('.a{background:url(attr(data-src))}')).toBeTruthy()
+    expect(forbiddenCss('.a{background-image:image-set(attr(data-src) 1x)}')).toBeTruthy()
+  })
   it('does not flag gradients or property names that contain "image"', () => {
     expect(forbiddenCss('.a{background-image:linear-gradient(red,blue);mask-image:radial-gradient(black,transparent)}')).toBeUndefined()
   })

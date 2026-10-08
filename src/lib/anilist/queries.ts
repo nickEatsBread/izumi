@@ -83,8 +83,11 @@ export const RECENT_RELEASES_QUERY = gql`
   }
   ${CARD_MEDIA_FIELDS}`
 
-/** Variables for the hero pool: this season's highest-scored, already-airing titles. */
-export function heroVars(now: Date) {
+/** Variables for the hero pool: this season's highest-scored, already-airing titles, or (a theme's
+ *  `hero.source: "trending"`) the titles trending now, whatever their season. The season variables
+ *  are left out there, which AniList reads as no filter (see the OMIT rule above). */
+export function heroVars(now: Date, source: 'season' | 'trending' = 'season') {
+  if (source === 'trending') return { perPage: 15, sort: ['TRENDING_DESC'] }
   const { season, seasonYear } = currentSeason(now)
   return { perPage: 15, sort: ['SCORE_DESC'], season, seasonYear }
 }
