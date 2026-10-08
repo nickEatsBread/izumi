@@ -8,7 +8,9 @@ describe('Steam Deck series interactions', () => {
   it('opens Browse with the selected series season and year', () => {
     const detail = read('./AnimeDetail.svelte')
     expect(detail).toContain("import { title, cover, format, status, season, seasonBrowseHref")
-    expect(detail.match(/href=\{seasonBrowseHref\(m\)\}/g)?.length).toBe(3)
+    expect(detail.match(/href=\{seasonBrowseHref\(m\)\}/g)?.length).toBe(2)
+    // The phone Information grid's season fact links to the same place (facts.ts).
+    expect(read('../../detail/facts.ts')).toContain('if (fact.value) fact.href = seasonBrowseHref(m)')
   })
 
   it('releases pointer focus from a tapped tab without releasing controller focus', () => {

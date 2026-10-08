@@ -51,15 +51,17 @@
   // A centred brand owns the middle of the bar, so a centre field moves to the end instead of under it.
   const fieldCenter = $derived(searchField && topBar.search === 'field-center' && !brandCentered)
   const fieldEnd = $derived(searchField && !fieldCenter)
-  // Nav items (top). Settings + profile are pinned to the BOTTOM.
+  // Nav items (top). Settings + profile are pinned to the BOTTOM. `id` is the destination's
+  // `data-dest` (the bottom bar's ids), so a theme styles a destination wherever it sits.
   const items = [
-    { href: '/app/home', icon: Home, label: m.nav_home(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
-    { href: '/app/schedule', icon: Calendar, label: m.nav_schedule(), anim: 'group-hover:animate-[swing_0.5s_ease]' },
-    { href: '/app/search', icon: Search, label: m.nav_search(), anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
-    { href: '/app/downloads', icon: Download, label: m.nav_downloads(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
-    { href: '/app/watch', icon: Users, label: m.nav_watch_together(), anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
-    { href: '/app/library', icon: LibraryBig, label: 'Library', anim: '' },
+    { id: 'home', href: '/app/home', icon: Home, label: m.nav_home(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
+    { id: 'schedule', href: '/app/schedule', icon: Calendar, label: m.nav_schedule(), anim: 'group-hover:animate-[swing_0.5s_ease]' },
+    { id: 'search', href: '/app/search', icon: Search, label: m.nav_search(), anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
+    { id: 'downloads', href: '/app/downloads', icon: Download, label: m.nav_downloads(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
+    { id: 'watch', href: '/app/watch', icon: Users, label: m.nav_watch_together(), anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
+    { id: 'library', href: '/app/library', icon: LibraryBig, label: 'Library', anim: '' },
   ]
+  const settingsItem = { id: 'settings', href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }
   const shown = $derived(searchField ? items.filter((it) => it.href !== '/app/search') : items)
   // `menu: "side"`: the menu is a pinned panel down the left on windows from 1100 px (the bar keeps
   // only its brand, search and trailing buttons); the menu button folds it away, and narrower
@@ -251,8 +253,8 @@
     {@render accountButton()}
   {/if}
 </nav>
-{#if top && (topBar.menu === 'drawer' || bumpers || (sideMenu && !wide))}<NavDrawer bind:open={drawerOpen} items={[...items, { href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }]} {active} />{/if}
-{#if panelShown}<NavPanel width={sideWidth} items={[...shown, { href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }]} {active} />{/if}
+{#if top && (topBar.menu === 'drawer' || bumpers || (sideMenu && !wide))}<NavDrawer bind:open={drawerOpen} items={[...items, settingsItem]} {active} />{/if}
+{#if panelShown}<NavPanel width={sideWidth} items={[...shown, settingsItem]} {active} />{/if}
 {#if $themePresentation?.shell?.hints}<ButtonHints />{/if}
 
 {#snippet menuButton()}
@@ -274,9 +276,9 @@
         <CatalogBrandLogo platform={$catalogScreen} />
       </a>
     {/if}
-    {#if top}<BrandText className="whitespace-nowrap text-lg font-black" />{/if}
+    {#if top}<BrandText className="whitespace-nowrap font-black" />{/if}
     {#if !top}
-      <BrandText className="whitespace-nowrap text-lg font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}" />
+      <BrandText className="whitespace-nowrap font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}" />
     {/if}
   </div>
 {/snippet}
@@ -292,7 +294,7 @@
   {#if bumpers && padUi}<span data-part="nav.bumper" data-button="l1" class="grid shrink-0 place-items-center px-1"><Glyph {family} button="l1" /></span>{/if}
   {#each sideMenu ? [] : shown as it (it.href)}
     {@const on = active(it.href)}
-    <a data-part="nav.item" data-active={on || undefined} href={it.href} title={it.label} data-focusable={df} tabindex={tab} aria-current={on ? 'page' : undefined}
+    <a data-part="nav.item" data-dest={it.id} data-active={on || undefined} href={it.href} title={it.label} data-focusable={df} tabindex={tab} aria-current={on ? 'page' : undefined}
        class={destClass(on, true)}>
       {#if labelMode !== 'text'}
         <span data-part="nav.item.icon" class="grid {top ? 'size-5' : 'w-8'} shrink-0 place-items-center"><it.icon size={20} class={it.anim} /></span>

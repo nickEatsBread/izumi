@@ -37,7 +37,7 @@ describe('hero title extras', () => {
   })
   it('decodes a slide\'s key art and logo before stepping to it', () => {
     expect(hero).toContain('const art = heroArt[extrasKey(m.id)]')
-    expect(hero).toContain('return [banner(m), cover(m), ...[art?.keyart, art?.logo].filter((src): src is string => !!src)]')
+    expect(hero).toContain('return [banner(m), cover(m), ...[art?.keyart, art?.logo, art?.posterHd].filter((src): src is string => !!src)]')
   })
   it('sizes a wide hero as the 16:9 artwork and runs its bottom under the rows', () => {
     expect(hero).toContain("const wideScale = $derived(!$isMobile && heroTheme?.scale === 'wide')")

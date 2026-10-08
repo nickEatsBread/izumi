@@ -13,17 +13,19 @@ export interface TitleExtras {
   keyart?: string
   /** A transparent title logo. */
   logo?: string
+  /** Portrait artwork at full resolution: the TVDB poster for AniList titles (Theme API 4 `posterHd`). */
+  posterHd?: string
   /** A short maturity badge: the provider certification, else MyAnimeList's rating ("13+"). */
   ageRating?: string
   /** "Sub | Dub" when a dub has premiered, "Subtitled" when the title is known to have none. */
   audio?: string
 }
 export type TitleExtra = keyof TitleExtras
-const EXTRAS: readonly string[] = ['keyart', 'logo', 'ageRating', 'audio'] satisfies TitleExtra[]
+const EXTRAS: readonly string[] = ['keyart', 'logo', 'posterHd', 'ageRating', 'audio'] satisfies TitleExtra[]
 
 /** The extras drawn as artwork. They decide how a slide or a series page first paints, so callers
  *  load them on their own instead of waiting for the rate-limited rating and schedule lookups. */
-export const ART_EXTRAS: readonly TitleExtra[] = ['keyart', 'logo']
+export const ART_EXTRAS: readonly TitleExtra[] = ['keyart', 'logo', 'posterHd']
 /** The artwork among `needs`. */
 export const artNeeds = (needs: ReadonlySet<TitleExtra>): Set<TitleExtra> =>
   new Set([...needs].filter((need) => ART_EXTRAS.includes(need)))
@@ -42,12 +44,15 @@ export function templateNeeds(...nodes: (ThemeNode | undefined)[]): Set<TitleExt
   return needs
 }
 
-/** TVDB artwork from an ani.zip record: the background as key art and the clear logo. ani.zip also
- *  labels square icons `Clearlogo`; only files under `/clearlogo/` are title logos. */
-export function pickTitleArt(images: AniZipImage[] | undefined): Pick<TitleExtras, 'keyart' | 'logo'> {
+/** The artwork extras one ani.zip record answers. */
+type TitleArt = Pick<TitleExtras, 'keyart' | 'logo' | 'posterHd'>
+
+/** TVDB artwork from an ani.zip record: the background as key art, the clear logo and the poster.
+ *  ani.zip also labels square icons `Clearlogo`; only files under `/clearlogo/` are title logos. */
+export function pickTitleArt(images: AniZipImage[] | undefined): TitleArt {
   const find = (type: string, test: (url: string) => boolean = () => true) =>
     images?.find((image) => image.coverType === type && typeof image.url === 'string' && image.url.startsWith('https://') && test(image.url))?.url
-  return { keyart: find('Fanart'), logo: find('Clearlogo', (url) => url.includes('/clearlogo/')) }
+  return { keyart: find('Fanart'), logo: find('Clearlogo', (url) => url.includes('/clearlogo/')), posterHd: find('Poster') }
 }
 
 /** MyAnimeList's rating ("PG-13 - Teens 13 or older") as a badge. */
@@ -70,19 +75,19 @@ export function audioLabel(info: ScheduleInfo | null | undefined): string | unde
 
 // ani.zip records are cached in IndexedDB already; this keeps one parsed lookup per title for the
 // session. Empty results are dropped so a title that failed offline is retried next time.
-const artCache = new Map<number, Promise<Pick<TitleExtras, 'keyart' | 'logo'>>>()
+const artCache = new Map<number, Promise<TitleArt>>()
 // The same lookups once they have answered with artwork, readable without waiting.
-const artFound = new Map<number, Pick<TitleExtras, 'keyart' | 'logo'>>()
-function aniZipArt(anilistId: number): Promise<Pick<TitleExtras, 'keyart' | 'logo'>> {
+const artFound = new Map<number, TitleArt>()
+function aniZipArt(anilistId: number): Promise<TitleArt> {
   const hit = artCache.get(anilistId)
   if (hit) return hit
   const promise = fetchAniZip(anilistId)
     .then((record) => pickTitleArt(record?.images))
     // A failed fetch and a record that cannot be read are both simply no art: the cache must never
     // hold a rejected lookup, which would fail every later load of the title.
-    .catch((): Pick<TitleExtras, 'keyart' | 'logo'> => ({}))
+    .catch((): TitleArt => ({}))
     .then((art) => {
-      if (!art.keyart && !art.logo) artCache.delete(anilistId)
+      if (!art.keyart && !art.logo && !art.posterHd) artCache.delete(anilistId)
       else artFound.set(anilistId, art)
       return art
     })
@@ -90,9 +95,9 @@ function aniZipArt(anilistId: number): Promise<Pick<TitleExtras, 'keyart' | 'log
   return promise
 }
 
-/** The key art and logo an earlier lookup found for an AniList title, without waiting, so a page
- *  opened again paints them on its first frame. Undefined until a lookup has found artwork. */
-export function peekTitleArt(anilistId: number | undefined): Pick<TitleExtras, 'keyart' | 'logo'> | undefined {
+/** The key art, logo and poster an earlier lookup found for an AniList title, without waiting, so a
+ *  page opened again paints them on its first frame. Undefined until a lookup has found artwork. */
+export function peekTitleArt(anilistId: number | undefined): TitleArt | undefined {
   return anilistId ? artFound.get(anilistId) : undefined
 }
 
@@ -131,10 +136,11 @@ export async function loadTitleExtras(media: Media, needs: ReadonlySet<TitleExtr
   if (needs.has('logo') && media.logoImage) out.logo = media.logoImage
   // TMDB and add-on catalogs already carry 16:9 backdrops as their banner.
   if (needs.has('keyart') && (provider === 'tmdb' || provider === 'stremio') && media.bannerImage) out.keyart = media.bannerImage
-  if (anilistId && ((needs.has('keyart') && !out.keyart) || (needs.has('logo') && !out.logo))) {
+  if (anilistId && ((needs.has('keyart') && !out.keyart) || (needs.has('logo') && !out.logo) || needs.has('posterHd'))) {
     tasks.push(aniZipArt(anilistId).then((art) => {
       if (needs.has('keyart')) out.keyart ??= art.keyart
       if (needs.has('logo')) out.logo ??= art.logo
+      if (needs.has('posterHd')) out.posterHd ??= art.posterHd
     }))
   }
   if (needs.has('ageRating')) {

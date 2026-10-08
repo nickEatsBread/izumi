@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Media } from '$lib/anilist/types'
   import { mediaFacts, type MediaFact } from '$lib/detail/facts'
+  import type { FactKey, FactLabel, FactsFormat } from '$lib/themes/presentation'
 
   // The standard facts as a label/value table (site-style info panels), a scrolling row of
   // value-over-label cards (phone apps), or chips.
@@ -11,6 +12,10 @@
     progress,
     controllerUi = false,
     genres = true,
+    keys,
+    labels,
+    format,
+    pending = false,
   }: {
     media: Media
     variant: 'table' | 'cards' | 'chips'
@@ -22,23 +27,30 @@
      * place a non-template facts style could otherwise lose it entirely. */
     progress?: string
     controllerUi?: boolean
-    /** Phones already show genres as their own chip rail under the facts, so they leave them out here. */
+    /** Phones already show genres as their own chip rail under the facts, so they leave them out here
+     * (unless the theme lists them itself in `keys`). */
     genres?: boolean
+    /** API 4 `detail.factsKeys`, `factsLabels` and `factsFormat`: which facts, their names, how values read. */
+    keys?: readonly FactKey[]
+    labels?: Partial<Record<FactKey, FactLabel>>
+    format?: FactsFormat
+    /** The page is still loading: facts the record cannot fill yet hold a placeholder. */
+    pending?: boolean
   } = $props()
-  const facts = $derived.by((): MediaFact[] => [
-    ...(progress ? [{ key: 'progress', label: 'Watched', value: progress }] : []),
-    ...mediaFacts(media).filter((fact) => genres || fact.key !== 'genres'),
-  ])
+  const facts = $derived(mediaFacts(media, { keys, labels, format, progress, pending })
+    .filter((fact) => genres || keys || fact.key !== 'genres'))
 </script>
 
 {#snippet value(fact: MediaFact)}
-  {#if fact.links}
+  {#if fact.pending}
+    <span class="inline-block h-3.5 w-16 max-w-full rounded align-middle skeloader" aria-hidden="true"></span>
+  {:else if fact.links}
     {#each fact.links as link, i (link.href)}{i ? ', ' : ''}<a href={link.href} data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined} class="underline-offset-2 hover:underline">{link.text}</a>{/each}
   {:else if fact.href}
     <a href={fact.href} data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined} class="underline-offset-2 hover:underline">{fact.value}</a>
   {:else}
     {fact.value}
-  {/if}
+  {/if}{#if fact.suffix}<span data-part="fact.suffix">{fact.suffix}</span>{/if}
 {/snippet}
 
 {#if facts.length}

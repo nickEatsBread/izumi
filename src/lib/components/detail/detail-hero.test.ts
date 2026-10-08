@@ -23,7 +23,7 @@ describe('mobile series hero', () => {
 
   it('drives the floating bar from the tested helper', () => {
     expect(detail).toContain("import { heroBarState } from './hero-bar'")
-    expect(detail).toContain('heroBarState(window.scrollY, artHeight, barHeight, wasSolid)')
+    expect(detail).toContain('heroBarState(window.scrollY, artHeight, barHeight, wasSolid, detailTheme.bar?.solidAt)')
     // A $derived that reads what an $effect writes back is an update loop, not a settled value.
     expect(detail).not.toContain('$derived(heroBarState')
   })
@@ -66,7 +66,7 @@ describe('mobile series hero', () => {
   it('chooses the header art once, for every layout, while loading and once loaded', () => {
     expect(detail).toContain("import { baseImageSrc, detailArt, recordBanner, washBackground } from '$lib/detail/backdrop'")
     expect(detail).toContain('const headerArt = $derived(detailArt({')
-    expect(detail).toContain('banner: recordBanner(shown, { loading: pending, anilistBanner }),')
+    expect(detail).toContain('banner: recordBanner(shown, { loading: pending, anilistBanner, backup: backupRecord }),')
     expect(detail).toContain('keyartPending: !detailExtrasSettled,')
     expect(detail).toContain('themeArt: detailTheme.art,')
     // Phone overlay, phone band and desktop overlay paint it themselves; the desktop banner is Hero's.
@@ -161,14 +161,14 @@ describe('mobile series hero', () => {
     const template = detail.slice(detail.indexOf('</script>'))
     const handlers = [...template.matchAll(/onclick=\{([^\n]*)/g)].map((match) => match[1])
     // Navigation and menu toggles act on the page, not the title.
-    const pageOnly = ['heroBack}', 'pressPlay}', 'retryDetail}', '() => (showMore = false)}', '() => { h.tap(); showMore = !showMore }}', '() => (descExpanded = !descExpanded)}']
+    const pageOnly = ['heroBack}', 'pressPlay}', 'retryDetail}', '() => (showMore = false)}', '() => { h.tap(); showMore = !showMore }}', "() => tapSynopsis('info')}", '() => pressSynopsisMore(place)}']
     for (const handler of handlers) expect(handler.startsWith('ready(') || pageOnly.some((ok) => handler.startsWith(ok)), handler).toBe(true)
     expect(handlers.filter((handler) => handler.startsWith('ready(')).length).toBeGreaterThanOrEqual(13)
     expect(detail).toContain('const ready = <T extends unknown[]>(run: (m: Media, ...args: T) => void) => (...args: T) => { if (media) run(media, ...args) }')
     // Play pressed while loading waits for the record; hovering or focusing it warms once it lands.
     expect(detail).toContain('if (media) { playCta(media); return }')
     expect(detail).toContain('untrack(() => playCta(target, false))')
-    expect(detail.match(/onclick=\{pressPlay\}/g)?.length).toBe(4)
+    expect(detail.match(/onclick=\{pressPlay\}/g)?.length).toBe(3)
     // Editors and the data components only ever get the full record.
     expect(detail).toContain('{#if showEditor && media}')
     expect(detail).toContain('{#if showLocalLists && media}')
@@ -245,9 +245,15 @@ describe('mobile series hero', () => {
     expect(detail).toContain('From {prettyEnum(m.source)}')
     expect(detail).toContain('{m.duration} min')
     expect(detail).toContain("{:else if id === 'overview'}")
-    for (const heading of ['Synopsis', 'Information', 'Studio', 'Runtime', 'Source', 'Country', 'Popularity', 'Themes', 'Alternative titles']) {
+    for (const heading of ['Synopsis', 'Information', 'Themes', 'Alternative titles']) {
       expect(detail).toContain(`>${heading}<`)
     }
+    // The Information grid's facts and wording come from facts.ts: every studio, the runtime, the
+    // source, the country and the popularity among them.
+    expect(detail).toContain("mediaFacts(m, { place: 'info', keys: detailTheme.infoKeys")
+    const facts = readFileSync(fileURLToPath(new URL('../../detail/facts.ts', import.meta.url)), 'utf8')
+    expect(facts).toContain("export const INFO_KEYS: readonly FactKey[] = ['studio', 'format', 'status', 'episodes', 'duration', 'season', 'aired', 'source', 'country', 'score', 'members']")
+    expect(facts).toContain("const INFO_LABELS: Partial<Record<FactKey, FactLabel>> = { format: 'format', duration: 'runtime', aired: 'premiered', members: 'popularity' }")
   })
 })
 

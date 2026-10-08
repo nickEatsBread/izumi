@@ -23,6 +23,18 @@ describe('heroBarState', () => {
     expect(heroBarState(ART - BAR - 20, ART, BAR, true).solid).toBe(false)
   })
 
+  it("turns solid earlier at the theme's fraction of the artwork's scroll", () => {
+    // 45% of the 204 px the artwork scrolls before it is under the bar: about 92 px.
+    expect(heroBarState(80, ART, BAR, false, 0.45).solid).toBe(false)
+    expect(heroBarState(102, ART, BAR, false, 0.45)).toEqual({ solid: true, showTitle: true })
+    // The same hysteresis band around the earlier switch point.
+    expect(heroBarState(88, ART, BAR, true, 0.45).solid).toBe(true)
+    expect(heroBarState(80, ART, BAR, true, 0.45).solid).toBe(false)
+    // 1 is izumi's own threshold.
+    expect(heroBarState(ART - BAR + 9, ART, BAR, false, 1).solid).toBe(true)
+    expect(heroBarState(ART - BAR + 4, ART, BAR, false, 1).solid).toBe(false)
+  })
+
   it('treats a missing artwork measurement as not-yet-scrolled', () => {
     expect(heroBarState(50, 0, BAR)).toEqual({ solid: false, showTitle: false })
   })

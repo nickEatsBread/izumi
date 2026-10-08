@@ -11,7 +11,7 @@ describe('series page theme options', () => {
   })
   it('renders a facts template on phones with the model desktop uses', () => {
     const detail = read('./AnimeDetail.svelte')
-    expect(detail).toContain('const factsModel = (m: Media) => mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined })')
+    expect(detail).toContain('const factsModel = (m: Media) => mediaDisplayModel(m, { reviews: m.popularity ? String(m.popularity) : undefined, episodesWatched, ...detailExtras })')
     expect(detail.match(/<ThemeNode node=\{detailTheme\.facts\} model=\{factsModel\(m\)\} \/>/g)?.length).toBe(2)
     const start = detail.indexOf('{#snippet phoneInfo(m: Media)}')
     const phone = detail.slice(start, detail.indexOf('{/snippet}', start))

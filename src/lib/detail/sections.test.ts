@@ -4,8 +4,8 @@ import { desktopSynopsis, episodesOnPage, resolveSections, TAB_LABEL_TEXT } from
 describe('series page sections', () => {
   it("keeps izumi's phone tabs without a theme", () => {
     const view = resolveSections(undefined, { phone: true, episodesTabbed: true })
-    expect(view).toMatchObject({ mode: 'tabs', tabs: ['episodes', 'overview', 'relations', 'characters', 'recommended'], folded: [], initial: 'episodes', infoInOverview: false })
-    expect(view.labels).toEqual({ episodes: 'Episodes', overview: 'Overview', relations: 'Relations', characters: 'Characters', recommended: 'Recommended' })
+    expect(view).toMatchObject({ mode: 'tabs', tabs: ['episodes', 'overview', 'relations', 'characters', 'recommended'], folded: [], initial: 'episodes', infoInOverview: false, information: 'overview' })
+    expect(view.labels).toEqual({ episodes: 'Episodes', overview: 'Overview', relations: 'Relations', characters: 'Characters', recommended: 'Recommended', information: 'Information' })
   })
   it("keeps izumi's desktop tabs and names without a theme", () => {
     const view = resolveSections(undefined, { phone: false, episodesTabbed: true })
@@ -37,9 +37,45 @@ describe('series page sections', () => {
     expect(resolveSections({ tabs: ['episodes', 'relations'], unlisted: 'hidden' }, { phone: false, episodesTabbed: false }).tabs).toEqual(['relations'])
   })
   it('names tabs from the fixed set only', () => {
-    expect(Object.keys(TAB_LABEL_TEXT)).toHaveLength(14)
+    expect(Object.keys(TAB_LABEL_TEXT)).toHaveLength(16)
+    expect(TAB_LABEL_TEXT['show-details']).toBe('Show Details')
     expect(TAB_LABEL_TEXT.recommendations).toBe('Recommendations')
     expect(TAB_LABEL_TEXT['more-like-this']).toBe('More like this')
+  })
+})
+
+// API 4: the phone Overview's Information block is a section of its own only where a theme lists it.
+describe('the Information section', () => {
+  const phone = (sections?: Parameters<typeof resolveSections>[0]) => resolveSections(sections, { phone: true, episodesTabbed: true })
+  it('stays inside Overview, where it always sits, when it is not listed', () => {
+    for (const view of [phone(), phone({ tabs: ['overview', 'episodes'] }), phone({ mode: 'stack', tabs: ['overview', 'episodes'] })]) {
+      expect(view.information).toBe('overview')
+      // Never a tab, and never folded to the end of Overview.
+      expect(view.tabs).not.toContain('information')
+      expect(view.folded).not.toContain('information')
+    }
+  })
+  it('becomes its own section at the listed position', () => {
+    const stacked = phone({ mode: 'stack', tabs: ['overview', 'characters', 'episodes', 'information'], labels: { information: 'show-details' } })
+    expect(stacked).toMatchObject({ mode: 'stack', tabs: ['overview', 'characters', 'episodes', 'information'], folded: ['relations', 'recommended'], information: 'section' })
+    expect(stacked.labels.information).toBe('Show Details')
+    const tabbed = phone({ tabs: ['information', 'episodes'], default: 'information' })
+    expect(tabbed).toMatchObject({ tabs: ['information', 'episodes', 'overview'], initial: 'information', information: 'section' })
+    expect(tabbed.labels.information).toBe('Information')
+  })
+  it('leaves the page with Overview, never on its own', () => {
+    expect(phone({ tabs: ['episodes', 'relations'], unlisted: 'hidden' })).toMatchObject({ tabs: ['episodes', 'relations'], information: 'hidden' })
+    expect(phone({ tabs: ['episodes', 'information'], unlisted: 'hidden' })).toMatchObject({ tabs: ['episodes', 'information'], information: 'section' })
+    // A page that keeps Overview keeps the grid inside it, as it always did (an API 3 package's
+    // `unlisted: "hidden"` hides only the sections it leaves out).
+    expect(phone({ tabs: ['overview', 'episodes'], unlisted: 'hidden' })).toMatchObject({ tabs: ['overview', 'episodes'], information: 'overview' })
+    expect(phone({ tabs: ['episodes', 'characters', 'relations', 'overview'], unlisted: 'hidden' }).information).toBe('overview')
+  })
+  it('leaves desktop pages as they are', () => {
+    const view = resolveSections({ tabs: ['episodes', 'information', 'relations'] }, { phone: false, episodesTabbed: true })
+    expect(view.tabs).toEqual(['episodes', 'relations', 'overview'])
+    expect(view.folded).toEqual(['characters', 'recommended'])
+    expect(view.information).toBe('overview')
   })
 })
 

@@ -3,7 +3,7 @@
 
   let {
     platform,
-    className = 'h-7 w-7',
+    className = '',
   }: {
     platform: CatalogScreen
     className?: string
@@ -32,9 +32,12 @@
 ></span>
 
 <style>
+  /* Sized from the brand's rem (app.css), so a theme's root size never changes the mark. */
   .catalog-provider-mark {
     display: inline-block;
     flex: none;
+    width: calc(1.75 * var(--izumi-safe-rem));
+    height: calc(1.75 * var(--izumi-safe-rem));
     background: linear-gradient(135deg, var(--catalog-start) 0%, var(--catalog-mid) 55%, var(--catalog-end) 100%);
     -webkit-mask: url('/brand/izumi-mark-color.svg') center / contain no-repeat;
     mask: url('/brand/izumi-mark-color.svg') center / contain no-repeat;

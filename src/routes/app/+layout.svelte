@@ -62,8 +62,9 @@
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { scheduleBootWork } from '$lib/util/boot-work'
   import { isAndroid, isMacOS, isMobile, isTv, initPlatform } from '$lib/platform'
-  import { shellNav } from '$lib/themes/runtime'
+  import { shellNav, themePresentation } from '$lib/themes/runtime'
   import { bottomBarRoom, bottomNavSuppressed } from '$lib/shell/chrome'
+  import { resetScrollChrome, startScrollChrome } from '$lib/components/shell/scroll-chrome'
   import { initOffline } from '$lib/stores/offline'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
   import { getContextClient } from '@urql/svelte'
@@ -89,7 +90,7 @@
   import { householdPrompt } from '$lib/profiles/household-gate'
   const loadHouseholdPinDialog = () => import('$lib/components/profiles/HouseholdPinDialog.svelte')
   import { onMount } from 'svelte'
-  import { get } from 'svelte/store'
+  import { derived, get } from 'svelte/store'
   import { initCrashReporting } from '$lib/diagnostics'
   import { initDeveloperLogging } from '$lib/debug/native-logging'
   import { rememberScroll, restoreScroll } from '$lib/navigation/scroll-restoration'
@@ -536,6 +537,14 @@
   })
   // What B does next, on <html> for the button-hint bar (nav/back.ts); removed when the shell goes.
   onMount(() => startBackHint())
+  // Scroll chrome (`shell.bottomNav.hide`): one tracker for the whole shell, so <html data-chrome>
+  // keeps following the page where a series page hides the bar. Only the bottom-bar shell has a bar
+  // that moves; every navigation starts with the chrome shown.
+  onMount(() => startScrollChrome({
+    rule: derived([themePresentation, isMobile, shellNav], ([presentation, mobile, nav]) => (mobile || nav === 'bottom' ? presentation?.shell?.bottomNav : { hide: 'never' as const })),
+    dock: androidMiniPlayer,
+  }))
+  afterNavigate(() => resetScrollChrome())
 </script>
 
 <svelte:window onkeydown={handleShellKeydown} />

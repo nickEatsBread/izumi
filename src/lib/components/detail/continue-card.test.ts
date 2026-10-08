@@ -21,8 +21,10 @@ describe('continue card', () => {
     expect(detail).toContain('const listEpisodes = (m: Media) => ($offlineMode ? downloadedEpisodes(m) : animeEpisodeNumbers(m))')
     // From what the page shows, so the header keeps its shape from the loading page to the loaded one.
     expect(detail).toContain('playableThrough(listEpisodes(shown), airedCount(shown), $offlineMode) > 0')
-    expect(detail.match(/\{#if !headerCtaHidden\}/g)?.length).toBe(2)
-    expect(detail.match(/onpointerenter=\{warmPlay\}/g)).toHaveLength(4)
+    // One Play button serves the phone header and the overlay body (`headerButtonRow`).
+    expect(detail).toContain("headerButtons.filter((button) => button === 'play' ? !headerCtaHidden")
+    expect(detail.match(/\{@render headerButtonRow\(m, /g)?.length).toBe(2)
+    expect(detail.match(/onpointerenter=\{warmPlay\}/g)).toHaveLength(3)
   })
   // "Continue: Episode 1071", not the number badges' "A1071" form, like the other new pieces.
   it('prints the plain episode number on the card', () => {

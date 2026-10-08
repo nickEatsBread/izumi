@@ -104,6 +104,16 @@ export interface BackupDetails {
   readonly served: ReadonlyMap<number, Served>
 }
 
+/** The series-page answers of the app's client (client.ts creates it), for `isBackupRecord`. */
+let current: BackupDetails | null = null
+
+/** Whether the series page of `id` shows a backup provider's record rather than AniList's (rule 2):
+ *  the page keeps the AniList banner it has seen over that record's own. The query does not select
+ *  the record's catalog identity, so the page cannot tell from the record itself. */
+export function isBackupRecord(id: number): boolean {
+  return current?.served.get(id) === 'backup'
+}
+
 export function createBackupDetails(): BackupDetails {
   const served = new Map<number, Served>()
   const refreshing = new Set<number>()
@@ -130,7 +140,7 @@ export function createBackupDetails(): BackupDetails {
     served.set(id, 'backup')
   }
 
-  return {
+  const details: BackupDetails = {
     // Only the series page's MediaById is ever answered by a backup at the root `Media` field.
     updates: { Query: { Media: keepAniListRecord } },
     exchange(probeAllowed) {
@@ -178,4 +188,6 @@ export function createBackupDetails(): BackupDetails {
     },
     served,
   }
+  current = details
+  return details
 }

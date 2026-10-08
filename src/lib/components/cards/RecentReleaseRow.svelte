@@ -77,7 +77,7 @@
     <Carousel title="Recently Released" viewMoreHref="/app/schedule">
       {#if !active || $store.fetching}
         {#each Array.from({ length: 8 }) as _}
-          <div class="skeloader aspect-[2/3] w-36 shrink-0 rounded-md sm:w-[152px]"></div>
+          <div data-part="row.skeleton" class="skeloader aspect-[2/3] w-36 shrink-0 rounded-md sm:w-[152px]"></div>
         {/each}
       {:else}
         {#each releases as release (`${release.media.id}-${release.episode}-${release.airingAt}`)}

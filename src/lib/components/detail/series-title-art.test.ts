@@ -5,12 +5,14 @@ const detail = readFileSync(new URL('./AnimeDetail.svelte', import.meta.url), 'u
 
 describe('series title art', () => {
   it('loads the extras the page and its header template bind', () => {
-    expect(detail).toContain('const needs = templateNeeds(detailTheme.header)')
+    // The facts and actions-row templates bind the same extras (an age rating).
+    expect(detail).toContain('const needs = templateNeeds(detailTheme.header, detailTheme.facts, detailTheme.actionsLead)')
     // Key art backs every series-page header: first with `detail.art: "keyart"`, otherwise in place
     // of a missing or broken banner. It is the ani.zip record the page fetches anyway.
     expect(detail).toContain("needs.add('keyart')")
     expect(detail).not.toContain("detailTheme.layout === 'overlay') needs.add('keyart')")
-    expect(detail).toContain("if (detailTheme.title === 'logo') needs.add('logo')")
+    expect(detail).toContain("if (detailTheme.title === 'logo' || detailTheme.bar?.title === 'logo') needs.add('logo')")
+    expect(detail).toContain("if (detailTheme.art === 'portrait') needs.add('posterHd')")
     expect(detail).toContain('...detailExtras')
   })
   it('loads the artwork apart from the slower rating and audio lookups, and waits for the artwork only', () => {

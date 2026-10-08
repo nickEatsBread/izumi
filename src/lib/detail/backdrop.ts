@@ -5,15 +5,19 @@
  *  - `banner`: the catalog's wide banner.
  *  - `keyart`: 16:9 title artwork (`detail.art: "keyart"` puts it first; otherwise it stands in for
  *    a missing or broken banner).
+ *  - `poster`: portrait artwork at full resolution (`detail.art: "portrait"`, after key art): the
+ *    TVDB poster, else the catalog cover at its largest. The wide banner is never used then.
  *  - `pending`: the choice still waits on a banner the detail record may bring, or on key art the
  *    theme asked for; the page shows a placeholder.
- *  - `wash`: no banner and no key art. A wash of the cover's colour, never a blurred or stretched
- *    photograph; a theme can show the cover itself instead (`[data-art="cover"]`).
+ *  - `cover`: nothing else exists and the theme shows the cover itself, sharp
+ *    (`detail.artFallback: "cover"`).
+ *  - `wash`: nothing else exists. A wash of the cover's colour, never a blurred or stretched
+ *    photograph; a theme can show the hidden cover instead (`[data-art="cover"]`).
  *
  *  A YouTube trailer still is never chosen: YouTube bakes blurred pillarbox bars and burned-in text
  *  into those JPEGs, so they read as broken art. */
 export type DetailArt =
-  | { kind: 'banner' | 'keyart'; src: string }
+  | { kind: 'banner' | 'keyart' | 'poster' | 'cover'; src: string }
   | { kind: 'pending' }
   | { kind: 'wash'; rgb?: string }
 export type DetailArtKind = DetailArt['kind']
@@ -26,8 +30,14 @@ export interface DetailArtInput {
   keyart?: string
   /** The key-art lookup has not answered yet and its deadline has not passed. */
   keyartPending?: boolean
+  /** The full-resolution portrait poster, once looked up (`portrait` only). */
+  poster?: string
+  /** The catalog cover at its largest: the portrait art without a poster, and the cover fallback. */
+  cover?: string
   /** The theme's `detail.art`. */
-  themeArt?: 'banner' | 'keyart'
+  themeArt?: 'banner' | 'keyart' | 'portrait'
+  /** The theme's `detail.artFallback`: what a title without any of the above shows. */
+  fallback?: 'wash' | 'cover'
   /** Sources that failed to load after their retries. */
   failed?: readonly string[]
   /** The cover's colour as "r g b", for the wash. */
@@ -38,7 +48,14 @@ export function detailArt(input: DetailArtInput): DetailArt {
   const failed = new Set(input.failed ?? [])
   const usable = (src: string | null | undefined): src is string => !!src && !failed.has(src)
   const bannerUnknown = input.banner === undefined
-  if (input.themeArt === 'keyart') {
+  if (input.themeArt === 'portrait') {
+    // A tall header: key art, else the portrait poster or cover, never the wide banner (a 5:1 strip
+    // upscaled several times into a portrait box).
+    if (usable(input.keyart)) return { kind: 'keyart', src: input.keyart }
+    if (input.keyartPending) return { kind: 'pending' }
+    if (usable(input.poster)) return { kind: 'poster', src: input.poster }
+    if (usable(input.cover)) return { kind: 'poster', src: input.cover }
+  } else if (input.themeArt === 'keyart') {
     if (usable(input.keyart)) return { kind: 'keyart', src: input.keyart }
     if (input.keyartPending) return { kind: 'pending' }
     if (usable(input.banner)) return { kind: 'banner', src: input.banner }
@@ -50,19 +67,21 @@ export function detailArt(input: DetailArtInput): DetailArt {
     if (usable(input.keyart)) return { kind: 'keyart', src: input.keyart }
     if (input.keyartPending) return { kind: 'pending' }
   }
+  if (input.fallback === 'cover' && usable(input.cover)) return { kind: 'cover', src: input.cover }
   return { kind: 'wash', rgb: input.rgb }
 }
 
 /** The banner a record stands for. A record served by the fallback catalog while AniList is
- *  unavailable often has no banner of its own although the title has one on AniList, so the banner
- *  seen on an AniList record of the title (the card the user tapped) wins over its own. While the
- *  page is still loading, a hint without the field says nothing yet (`undefined`). */
+ *  unavailable (`backup`, from backup-details.ts: the record itself does not say) often has no banner
+ *  of its own although the title has one on AniList, so the banner seen on an AniList record of the
+ *  title (the card the user tapped) wins over its own. While the page is still loading, a hint
+ *  without the field says nothing yet (`undefined`). */
 export function recordBanner(
-  record: { bannerImage?: string | null; catalog?: { provider: string } } | undefined,
-  options: { loading: boolean; anilistBanner?: string | null },
+  record: { bannerImage?: string | null } | undefined,
+  options: { loading: boolean; anilistBanner?: string | null; backup?: boolean },
 ): string | null | undefined {
   if (!record) return options.loading ? undefined : null
-  if (record.catalog?.provider === 'kitsu') return options.anilistBanner || record.bannerImage || (options.loading ? undefined : null)
+  if (options.backup) return options.anilistBanner || record.bannerImage || (options.loading ? undefined : null)
   if (record.bannerImage !== undefined) return record.bannerImage
   return options.loading ? undefined : null
 }

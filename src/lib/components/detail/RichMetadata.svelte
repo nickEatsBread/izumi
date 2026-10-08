@@ -16,9 +16,9 @@
 {#if view === 'people'}
   <div class="space-y-7">
     <section data-slot="detail.characters">
-      <h3 class="mb-3 text-lg font-black">{media.type === 'MANGA' ? 'Characters' : 'Characters & Japanese voices'}</h3>
+      <h3 data-part="detail.heading" class="mb-3 text-lg font-black">{media.type === 'MANGA' ? 'Characters' : 'Characters & Japanese voices'}</h3>
       {#if media.characters?.edges?.length}
-        <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div data-part="detail.track" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {#each media.characters.edges as character (character.node.id)}
             {@const actor = character.voiceActors?.[0]}
             {#if tmdbPeople}
@@ -36,11 +36,11 @@
                 <div data-part="person.name" class="truncate font-black">{character.node.name.full}</div>
                 <div data-part="person.role" class="text-xs text-muted-foreground">{character.role.toLowerCase()}</div>
                 {#if actor}
-                  <svelte:element this={personHref(actor.id) ? 'a' : 'div'} href={personHref(actor.id)} data-focusable={personHref(actor.id) ? '' : undefined} class="mt-3 flex items-center gap-2 rounded-md hover:bg-accent/50">
-                    <img src={actor.image?.large} alt="" loading="lazy" decoding="async" class="size-9 rounded-full object-cover" />
+                  <svelte:element this={personHref(actor.id) ? 'a' : 'div'} data-part="person.voice" href={personHref(actor.id)} data-focusable={personHref(actor.id) ? '' : undefined} class="mt-3 flex items-center gap-2 rounded-md hover:bg-accent/50">
+                    <img data-part="person.voice.photo" src={actor.image?.large} alt="" loading="lazy" decoding="async" class="size-9 rounded-full object-cover" />
                     <div class="min-w-0">
-                      <div class="truncate text-sm font-bold">{actor.name.full}</div>
-                      <div class="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Japanese voice</div>
+                      <div data-part="person.voice.name" class="truncate text-sm font-bold">{actor.name.full}</div>
+                      <div data-part="person.voice.role" class="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Japanese voice</div>
                     </div>
                   </svelte:element>
                 {/if}
@@ -53,9 +53,9 @@
     </section>
 
     <section data-slot="detail.staff">
-      <h3 class="mb-3 text-lg font-black">Staff</h3>
+      <h3 data-part="detail.heading" class="mb-3 text-lg font-black">Staff</h3>
       {#if media.staff?.edges?.length}
-        <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div data-part="detail.track" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {#each media.staff.edges as credit (`${credit.node.id}-${credit.role}`)}
             <svelte:element this={personHref(credit.node.id) ? 'a' : 'div'} data-part="person" href={personHref(credit.node.id)} data-focusable={personHref(credit.node.id) ? '' : undefined} class="flex items-center gap-3 rounded-lg border border-border bg-secondary/30 p-2 hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring">
               <img data-part="person.photo" src={credit.node.image?.large} alt="" loading="lazy" decoding="async" class="size-14 rounded-md object-cover" />
@@ -70,7 +70,7 @@
     </section>
   </div>
 {:else if recommendations.length}
-  <div class="grid grid-cols-2 gap-4 sm:flex sm:flex-wrap">
+  <div data-slot="detail.recommended" data-part="detail.track" class="grid grid-cols-2 gap-4 sm:flex sm:flex-wrap">
     {#each recommendations as recommendation (recommendation.id)}
       <div class="min-w-0 sm:w-[152px]"><SmallCard media={recommendation} fill /></div>
     {/each}

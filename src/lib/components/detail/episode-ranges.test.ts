@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_PAGE_SIZE, episodeRanges, pageSizeFor, searchEpisodes, shownPage } from './episode-ranges'
+import { DEFAULT_PAGE_SIZE, episodeRanges, openingPage, pageOf, pageSizeFor, searchEpisodes, shownPage } from './episode-ranges'
 
 const numbers = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i)
 
@@ -48,6 +48,31 @@ describe('shown page', () => {
 })
 
 function pageCount(total: number, per: number) { return Math.max(1, Math.ceil(total / per)) }
+
+describe('opening page', () => {
+  it('finds the page holding an episode', () => {
+    expect(pageOf(numbers(1, 120), 1, 50)).toBe(0)
+    expect(pageOf(numbers(1, 120), 50, 50)).toBe(0)
+    expect(pageOf(numbers(1, 120), 51, 50)).toBe(1)
+    expect(pageOf(numbers(1051, 1101), 1101, 50)).toBe(1)
+    expect(pageOf(numbers(1, 12), 13, 50)).toBe(-1)
+  })
+  it('opens on the page holding the Play episode', () => {
+    // A long-runner resumed at 1100: the range holding it, whatever the page size.
+    expect(openingPage(numbers(1, 1150), 100, 1100, 1099)).toBe(10)
+    expect(openingPage(numbers(1, 1150), 48, 1100, 1099)).toBe(22)
+    // Caught up with an airing show: Play replays the last aired episode, so its page shows rather
+    // than the next page of upcoming episodes.
+    expect(openingPage(numbers(1, 30), 25, 25, 25)).toBe(0)
+    // Offline lists hold only the downloaded episodes.
+    expect(openingPage([3, 7, 60], 2, 60, 7)).toBe(1)
+  })
+  it('falls back to the first episode after the watched ones, else the last page', () => {
+    expect(openingPage(numbers(1, 120), 50, 500, 60)).toBe(1)
+    expect(openingPage(numbers(1, 120), 50, 500, 200)).toBe(2)
+    expect(openingPage([], 50, 1, 0)).toBe(0)
+  })
+})
 
 describe('episode search', () => {
   const meta = { 1: { title: 'Romance Dawn' }, 10: { title: 'The Strongest Crew' }, 21: { title: 'Episode of 10 bounties' } }

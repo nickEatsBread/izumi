@@ -20,11 +20,14 @@
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Check from '@lucide/svelte/icons/check'
 
-  let { entries, variant, inline = false }: {
+  let { entries, variant, inline = false, scroll = 'active' }: {
     entries: SeasonEntry[]
     variant: 'chips' | 'posters' | 'dropdown'
     /** The dropdown sits inside a heading-row toolbar (no margin of its own). */
     inline?: boolean
+    /** API 4 `detail.episodes.seasonsScroll`: a `chips` or `posters` row opens scrolled to the current
+     *  season (`active`) or at its start, the first season (`start`). */
+    scroll?: 'active' | 'start'
   } = $props()
   const current = $derived(entries.find((entry) => entry.active))
   let open = $state(false)
@@ -34,6 +37,7 @@
   let track = $state<HTMLElement>()
   // Bring the current season into view on long franchises. Only the row scrolls, never the page.
   $effect(() => {
+    if (scroll === 'start') return
     const row = track
     const index = entries.findIndex((entry) => entry.active)
     const item = index < 0 ? undefined : (row?.children[index] as HTMLElement | undefined)

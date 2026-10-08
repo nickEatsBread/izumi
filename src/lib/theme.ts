@@ -82,6 +82,12 @@ function apply() {
   root.style.setProperty('--font-display', fontStack(fonts?.display) ?? 'var(--font-heading)')
   for (const id of [fonts?.ui, fonts?.heading, fonts?.display]) void loadThemeFont(id)
   root.style.setProperty('--theme-font-scale', customActive ? String(studio.fontScale) : '1')
+  // The brand's rem (app.css --izumi-safe-rem) follows the design's font scale through a reserved copy.
+  root.style.setProperty('--izumi-safe-font-scale', customActive ? String(studio.fontScale) : '1')
+  // `mobile.rootSize` (API 4): the phone root size. Only app.css's phone media query reads it.
+  const rootSize = customActive ? resolvePresentation(studio.presentation, true)?.rootSize : undefined
+  if (rootSize !== undefined) root.style.setProperty('--theme-phone-root', `${rootSize}px`)
+  else root.style.removeProperty('--theme-phone-root')
   root.style.setProperty('--theme-backdrop-strength', customActive ? String(studio.backdropStrength) : '0')
   root.style.setProperty('--theme-glass-blur', customActive ? `${studio.glassBlur}px` : '0px')
   root.style.colorScheme = tokens.scheme

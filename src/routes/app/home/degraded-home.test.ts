@@ -13,7 +13,7 @@ describe('degraded home', () => {
 
   it('stops the hero skeleton when both catalog providers have failed', () => {
     expect(page).toContain('const catalogUnavailable = $derived(!!$anilistDegraded?.fallbackError)')
-    expect(page).toContain('{:else if !catalogUnavailable && hero.fetching}')
+    expect(page).toContain('{:else if !catalogUnavailable && hero.fetching && !heroTheme?.hidden}')
     expect(page).toContain('{#if section && !catalogUnavailable}<HomeRow')
   })
 
@@ -27,7 +27,7 @@ describe('degraded home', () => {
   })
 
   it('recreates the anime hero query when the active platform changes', () => {
-    expect(page).toContain('heroStore = makeHeroStore(!active)')
+    expect(page).toContain('heroStore = makeHeroStore(!active, source)')
     expect(page).toContain('if ($offlineMode || !heroStore) return')
     expect(page).toContain('why the anime platform had no hero carousel')
   })

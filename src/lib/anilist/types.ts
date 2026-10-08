@@ -128,6 +128,9 @@ export interface Media {
   genres?: string[]
   synonyms?: string[]
   startDate?: FuzzyDate | null
+  /** The series page's record only (MEDIA_BY_ID): the last air date and AniList's favourite count. */
+  endDate?: FuzzyDate | null
+  favourites?: number | null
   studios?: { nodes?: { id?: number; name: string }[] } | null
   coverImage?: { extraLarge?: string; large?: string; medium?: string; color?: string }
   bannerImage?: string

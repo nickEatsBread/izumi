@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseNode, parsePresentation, resolvePresentation, resolvePlayerDock, nodeStyle, resolveRow, resolveCard, resolveDetail, episodesOnSide, episodesBelow, themeCoverage, densityScale, visibleNode, displayText, type DisplayModel } from './presentation'
+import { parseNode, parsePresentation, resolvePresentation, resolvePlayerDock, nodeStyle, resolveRow, resolveCard, resolveDetail, episodesOnSide, episodesBelow, themeCoverage, densityScale, visibleNode, displayText, FACT_KEYS, FACT_LABELS, FACT_LABEL_TEXT, LATEST_THEME_API, type DisplayModel, type FactLabel } from './presentation'
 
 describe('theme presentation contract', () => {
   it('composes new layouts from primitives with bounded styles', () => {
@@ -195,7 +195,8 @@ describe('theme presentation contract', () => {
     expect(() => parsePresentation({ layout: { home: [{ role: 'hero' }, { role: 'hero' }] } })).toThrow('hero once')
     expect(() => parsePresentation({ layout: { home: [{ block: 'carousel' }] } })).toThrow('home block')
     expect(() => parsePresentation({ layout: { home: [{ role: 'x', title: 'y' }] } })).toThrow('unsupported')
-    expect(() => parsePresentation({ layout: { nav: { bottom: ['search'], top: ['search'] } } })).toThrow('not both')
+    // API 4 lets the header repeat a bottom-bar destination as a shortcut; older packages keep them apart.
+    expect(() => parsePresentation({ layout: { nav: { bottom: ['search'], top: ['search'] } } }, 3)).toThrow('not both')
     expect(() => parsePresentation({ layout: { nav: { bottom: ['nowhere'] } } })).toThrow('unsupported')
     expect(() => parsePresentation({ layout: { asideWidth: 999 } })).toThrow('range')
     expect(() => parsePresentation({ layout: { home: Array.from({ length: 31 }, () => ({ role: 'x' })) } })).toThrow('1–30')
@@ -407,7 +408,8 @@ describe('series page composition keys (API 3)', () => {
   it('validates section ids, the fixed tab names and the default tab', () => {
     expect(() => parsePresentation({ detail: { sections: { tabs: ['episodes', 'episodes'] } } })).toThrow('twice')
     expect(() => parsePresentation({ detail: { sections: { tabs: ['comments'] } } })).toThrow('unsupported')
-    expect(() => parsePresentation({ detail: { sections: { tabs: [] } } })).toThrow('1–5')
+    expect(() => parsePresentation({ detail: { sections: { tabs: [] } } }, 3)).toThrow('1–5')
+    expect(() => parsePresentation({ detail: { sections: { tabs: [] } } })).toThrow('1–6')
     expect(() => parsePresentation({ detail: { sections: { labels: { overview: 'Home page' } } } })).toThrow('unsupported')
     expect(() => parsePresentation({ detail: { sections: { labels: { episodes: 'cast' } } } })).toThrow('unsupported')
     expect(() => parsePresentation({ detail: { sections: { labels: { comments: 'watch' } } } })).toThrow('unsupported')
@@ -464,5 +466,320 @@ describe('series page composition keys (API 3)', () => {
     expect(layout.cards!.poster!.children![1]).toEqual(line)
     const copy = parsePresentation(JSON.parse(JSON.stringify(layout)))
     expect(nodeStyle(copy.cards!.poster!.children![1])).toContain('overflow:hidden')
+  })
+})
+
+describe('phone replica keys (API 4)', () => {
+  /** Every API 4 key with a valid value, each refused by an API 3 package. */
+  const additions: [string, Record<string, unknown>][] = [
+    ['mobile.rootSize', { mobile: { rootSize: 16 } }],
+    ['bottomNav.hide collapse', { shell: { bottomNav: { hide: 'collapse' } } }],
+    ['bottomNav.threshold', { shell: { bottomNav: { threshold: 60 } } }],
+    ['bottomNav.idle', { shell: { bottomNav: { idle: 1000 } } }],
+    ['detail.buttons', { detail: { buttons: ['play', 'download'] } }],
+    ['detail.actionsLead', { detail: { actionsLead: { type: 'text', text: 'Total of' } } }],
+    ['detail.factsKeys', { detail: { factsKeys: ['status', 'format'] } }],
+    ['detail.infoKeys', { detail: { infoKeys: ['aired'] } }],
+    ['detail.factsLabels', { detail: { factsLabels: { score: 'mean-score' } } }],
+    ['detail.factsFormat', { detail: { factsFormat: { score: 'ten-of' } } }],
+    ['detail.synopsis', { detail: { synopsis: { more: 'expand' } } }],
+    ['detail.countdown words', { detail: { countdown: 'words' } }],
+    ['detail.countdown full', { detail: { countdown: 'full' } }],
+    ['detail.countdown date', { detail: { countdown: 'date' } }],
+    ['detail.countdownAt', { detail: { countdownAt: 'episodes' } }],
+    ['detail.countdownWithin', { detail: { countdownWithin: 28 } }],
+    ['sections information tab', { detail: { sections: { tabs: ['overview', 'information'] } } }],
+    ['sections information label', { detail: { sections: { labels: { information: 'show-details' } } } }],
+    ['tabbed-grid default', { layout: { home: [{ block: 'tabbed-grid', tabs: [{ label: 'A', role: 'trending' }, { label: 'B', role: 'popular' }], default: 1 }] } }],
+    ...(['startYear', 'genre2', 'genre3', 'episodesWatched'] as const).map((field): [string, Record<string, unknown>] => [`field ${field}`, { cards: { poster: { type: 'text', field } } }]),
+    ['condition on episodesWatched', { cards: { poster: { type: 'text', text: 'New', when: { field: 'episodesWatched' } } } }],
+    ...(['durationLong', 'scoreValue', 'completed', 'airingSoon'] as const).map((field): [string, Record<string, unknown>] => [`field ${field}`, { cards: { poster: { type: 'text', field, when: { field } } } }]),
+    ['artwork posterHd', { hero: { template: { type: 'artwork', artwork: 'posterHd' } } }],
+    ['condition on posterHd', { hero: { template: { type: 'text', field: 'title', when: { field: 'posterHd', absent: true } } } }],
+    ['hero.limit', { hero: { limit: 6 } }],
+    ['hero.source', { hero: { source: 'trending' } }],
+    ['hero.transition', { hero: { transition: 'fade' } }],
+    ['phone hero options', { mobile: { hero: { limit: 6, source: 'trending', transition: 'fade' } } }],
+    ['profile-header button art', { layout: { home: [{ block: 'profile-header', buttons: [{ label: 'Lists', to: 'library', art: true }] }] } }],
+    ['detail.art portrait', { detail: { art: 'portrait' } }],
+    ['detail.artFallback', { detail: { artFallback: 'cover' } }],
+    ['detail.bar', { detail: { bar: { home: true, title: 'logo', solidAt: 0.45 } } }],
+    ['detail.episodes.download', { detail: { episodes: { download: 'button' } } }],
+    ['name facts', { detail: { infoKeys: ['romaji', 'english', 'native'] } }],
+    ['raw counts and long durations', { detail: { factsFormat: { counts: 'raw', duration: 'long' } } }],
+    ...(['starring', 'creators'] as const).map((field): [string, Record<string, unknown>] => [`field ${field}`, { detail: { header: { type: 'text', field, when: { field } } } }]),
+  ]
+  it.each(additions)('accepts %s on API 4 packages only', (_name, presentation) => {
+    expect(() => parsePresentation(presentation, 4)).not.toThrow()
+    expect(() => parsePresentation(presentation, 3)).toThrow('unsupported')
+  })
+  it('is the newest API and the default for personal designs', () => {
+    expect(LATEST_THEME_API).toBe(4)
+    expect(parsePresentation({ detail: { countdown: 'words' } }).detail?.countdown).toBe('words')
+  })
+  it('keeps the API 3 values of the extended keys valid on API 3', () => {
+    expect(parsePresentation({ shell: { bottomNav: { hide: 'never' } }, detail: { countdown: 'long', sections: { tabs: ['overview', 'episodes', 'relations', 'characters', 'recommended'] } } }, 3))
+      .toEqual({ shell: { bottomNav: { hide: 'never' } }, detail: { countdown: 'long', sections: { tabs: ['overview', 'episodes', 'relations', 'characters', 'recommended'] } } })
+  })
+
+  it('bounds the scroll chrome threshold and idle time to whole numbers', () => {
+    expect(parsePresentation({ shell: { bottomNav: { hide: 'collapse', threshold: 8, idle: 0 } } }).shell?.bottomNav).toEqual({ hide: 'collapse', threshold: 8, idle: 0 })
+    expect(parsePresentation({ shell: { bottomNav: { threshold: 160, idle: 5000 } } }).shell?.bottomNav).toEqual({ threshold: 160, idle: 5000 })
+    for (const threshold of [7, 161, 24.5, '24']) expect(() => parsePresentation({ shell: { bottomNav: { threshold } } }), String(threshold)).toThrow()
+    for (const idle of [-1, 5001, 1000.5, true]) expect(() => parsePresentation({ shell: { bottomNav: { idle } } }), String(idle)).toThrow()
+    expect(() => parsePresentation({ shell: { bottomNav: { hide: 'fold' } } })).toThrow('unsupported')
+  })
+
+  it('binds the release year, two more genres and the episodes watched', () => {
+    const card = { type: 'stack', children: [
+      { type: 'text', field: 'startYear' }, { type: 'text', field: 'genre2', when: { field: 'genre2' } }, { type: 'text', field: 'genre3' },
+      { type: 'text', field: 'episodesWatched', when: { field: 'episodesWatched', atMost: 12 } },
+    ] }
+    const parsed = parsePresentation({ cards: { poster: card } }).cards?.poster
+    expect(parsed).toEqual(card)
+    expect(displayText('episodesWatched', { episodesWatched: 4 })).toBe('4')
+    expect(displayText('startYear', { startYear: '2023' })).toBe('2023')
+    expect(visibleNode(parsed!.children![3], { episodesWatched: 4 })).toBe(true)
+    expect(visibleNode(parsed!.children![3], { episodesWatched: 13 })).toBe(false)
+    expect(visibleNode(parsed!.children![3], {})).toBe(false)
+    expect(() => parseNode({ type: 'meter', field: 'episodesWatched' })).not.toThrow()
+    expect(() => parseNode({ type: 'text', when: { field: 'startYear', atMost: 2020 } })).toThrow('numeric')
+    // `rating` (API 3) stays a string field that any template may bind.
+    expect(parseNode({ type: 'text', field: 'rating' }, undefined, 0, false, 3).field).toBe('rating')
+  })
+
+  it('parses the series header buttons: up to three, each once, none allowed', () => {
+    expect(parsePresentation({ detail: { buttons: ['list', 'play', 'download'] } }).detail?.buttons).toEqual(['list', 'play', 'download'])
+    expect(parsePresentation({ detail: { buttons: [] } }).detail?.buttons).toEqual([])
+    expect(() => parsePresentation({ detail: { buttons: ['play', 'play'] } })).toThrow('twice')
+    expect(() => parsePresentation({ detail: { buttons: ['trailer'] } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { buttons: 'play' } })).toThrow('detail.buttons')
+    expect(() => parsePresentation({ detail: { buttons: ['play', 'list', 'download', 'play'] } })).toThrow('detail.buttons')
+  })
+
+  it('parses the actions-row lead as a non-interactive template', () => {
+    const lead = { type: 'row', part: 'lead', children: [{ type: 'text', text: 'Watched' }, { type: 'text', field: 'episodesWatched' }, { type: 'text', text: 'out of' }, { type: 'text', field: 'episodesAired' }] }
+    expect(resolveDetail(parsePresentation({ detail: { actionsLead: lead } })).actionsLead).toEqual(lead)
+    expect(() => parsePresentation({ detail: { actionsLead: { type: 'action', action: 'favorite' } } })).toThrow('nested actions')
+    expect(() => parsePresentation({ detail: { actionsLead: { type: 'text', field: 'episodesWatched' } } }, 3)).toThrow('unsupported')
+  })
+
+  it('parses the fact keys, names and formats', () => {
+    const detail = {
+      factsKeys: ['score', 'episodes', 'duration', 'aired', 'ended', 'members', 'favourites', 'author'],
+      infoKeys: ['aired', 'ended', 'season', 'members', 'favourites'],
+      factsLabels: { score: 'mean-score', episodes: 'total-episodes', duration: 'average-duration', aired: 'start-date', ended: 'end-date', members: 'popularity', favourites: 'favorites' },
+      factsFormat: { score: 'ten-of', dates: 'long', counts: 'full' },
+    }
+    expect(parsePresentation({ detail }).detail).toEqual(detail)
+    expect(resolveDetail(parsePresentation({ detail }))).toMatchObject(detail)
+    expect(parsePresentation({ detail: { factsKeys: [...FACT_KEYS] } }).detail?.factsKeys).toHaveLength(20)
+    expect(() => parsePresentation({ detail: { factsKeys: [] } })).toThrow('detail.factsKeys')
+    expect(() => parsePresentation({ detail: { infoKeys: ['aired', 'aired'] } })).toThrow('twice')
+    expect(() => parsePresentation({ detail: { factsKeys: ['synonyms'] } })).toThrow('unsupported')
+    // Each key takes only its own names.
+    expect(() => parsePresentation({ detail: { factsLabels: { score: 'popularity' } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { factsLabels: { status: 'state' } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { factsLabels: { synonyms: 'also-known-as' } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { factsLabels: { score: 'Mean Score' } } })).toThrow('unsupported')
+    for (const factsFormat of [{ score: 'stars' }, { dates: 'relative' }, { counts: 'short' }, { currency: 'eur' }]) {
+      expect(() => parsePresentation({ detail: { factsFormat } }), JSON.stringify(factsFormat)).toThrow('unsupported')
+    }
+  })
+
+  it('names every fact from a fixed list whose first entry is the name izumi uses', () => {
+    expect(Object.keys(FACT_LABELS).sort()).toEqual([...FACT_KEYS].sort())
+    const labels = Object.values(FACT_LABELS).flat()
+    expect(Object.keys(FACT_LABEL_TEXT).sort()).toEqual([...new Set(labels)].sort())
+    for (const label of labels) expect(FACT_LABEL_TEXT[label as FactLabel], label).toMatch(/^[A-Z][a-z]*( (of|[A-Z][a-z]*))*$/)
+    const own = Object.fromEntries(FACT_KEYS.map((key) => [key, FACT_LABEL_TEXT[FACT_LABELS[key][0]]]))
+    expect(own).toEqual({
+      format: 'Type', episodes: 'Episodes', status: 'Status', aired: 'Aired', season: 'Season', duration: 'Duration',
+      studio: 'Studio', source: 'Source', country: 'Country', score: 'Score', members: 'Members', genres: 'Genres',
+      progress: 'Watched', year: 'Year', ended: 'Ended', favourites: 'Favourites', author: 'Author',
+      romaji: 'Romaji', english: 'English', native: 'Native',
+    })
+  })
+
+  it('parses the synopsis control', () => {
+    expect(parsePresentation({ detail: { synopsis: { more: 'tab', label: 'read-more' } } }).detail?.synopsis).toEqual({ more: 'tab', label: 'read-more' })
+    expect(resolveDetail(parsePresentation({ detail: { synopsis: { more: 'none' } } })).synopsis).toEqual({ more: 'none' })
+    expect(() => parsePresentation({ detail: { synopsis: { more: 'popup' } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { synopsis: { label: 'Read more' } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { synopsis: { lines: 4 } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { synopsis: 'expand' } })).toThrow()
+  })
+
+  it('parses the countdown formats, placement and horizon', () => {
+    const detail = { countdown: 'full', countdownAt: 'both', countdownWithin: 28 }
+    expect(resolveDetail(parsePresentation({ detail }))).toMatchObject(detail)
+    expect(parsePresentation({ detail: { countdownWithin: 1 } }).detail?.countdownWithin).toBe(1)
+    expect(parsePresentation({ detail: { countdownWithin: 365 } }).detail?.countdownWithin).toBe(365)
+    for (const countdownWithin of [0, 366, 7.5]) expect(() => parsePresentation({ detail: { countdownWithin } }), String(countdownWithin)).toThrow('range')
+    expect(() => parsePresentation({ detail: { countdownAt: 'header' } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { countdown: 'relative' } })).toThrow('unsupported')
+  })
+
+  it('makes the Information block a section only where the tabs list it', () => {
+    const sections = { mode: 'stack', tabs: ['overview', 'characters', 'episodes', 'information'], labels: { information: 'show-details' } }
+    expect(parsePresentation({ detail: { sections } }).detail?.sections).toEqual(sections)
+    expect(parsePresentation({ detail: { sections: { tabs: ['overview', 'episodes', 'relations', 'characters', 'recommended', 'information'] } } }).detail?.sections?.tabs).toHaveLength(6)
+    for (const label of ['information', 'details', 'show-details']) {
+      expect(parsePresentation({ detail: { sections: { labels: { information: label } } } }).detail?.sections?.labels?.information).toBe(label)
+    }
+    expect(() => parsePresentation({ detail: { sections: { labels: { information: 'info' } } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { sections: { labels: { overview: 'show-details' } } } })).toThrow('unsupported')
+    // The default tab must be a tab: unlisted, Information stays inside Overview.
+    expect(parsePresentation({ detail: { sections: { tabs: ['episodes', 'information'], default: 'information' } } }).detail?.sections?.default).toBe('information')
+    expect(() => parsePresentation({ detail: { sections: { tabs: ['episodes'], default: 'information' } } })).toThrow('default')
+    expect(() => parsePresentation({ detail: { sections: { default: 'information' } } })).toThrow('default')
+    expect(() => parsePresentation({ detail: { sections: { tabs: ['information', 'information'] } } })).toThrow('twice')
+    expect(() => parsePresentation({ detail: { sections: { default: 'information' } } }, 3)).toThrow('unsupported')
+  })
+
+  it('passes every new series key through resolveDetail', () => {
+    const detail = {
+      buttons: ['list'], actionsLead: { type: 'text', text: 'Total of' }, factsKeys: ['score'], infoKeys: ['ended'],
+      factsLabels: { score: 'rating' }, factsFormat: { dates: 'short' }, synopsis: { more: 'expand', label: 'more' },
+      countdown: 'date', countdownAt: 'episodes', countdownWithin: 7,
+    }
+    expect(resolveDetail(parsePresentation({ detail }))).toMatchObject(detail)
+    expect(resolveDetail(undefined)).toMatchObject({ buttons: undefined, factsKeys: undefined, synopsis: undefined, countdownAt: undefined })
+  })
+
+  it('merges the phone fact names, formats and synopsis one level deep', () => {
+    const layout = parsePresentation({
+      detail: { factsLabels: { score: 'mean-score', aired: 'premiered' }, factsFormat: { score: 'ten', dates: 'long' }, synopsis: { more: 'expand', label: 'more' }, factsKeys: ['score', 'aired'] },
+      mobile: { detail: { factsLabels: { aired: 'start-date' }, factsFormat: { counts: 'full' }, synopsis: { label: 'show-more' }, factsKeys: ['aired'] } },
+    })
+    const phone = resolveDetail(resolvePresentation(layout, true))
+    expect(phone.factsLabels).toEqual({ score: 'mean-score', aired: 'start-date' })
+    expect(phone.factsFormat).toEqual({ score: 'ten', dates: 'long', counts: 'full' })
+    expect(phone.synopsis).toEqual({ more: 'expand', label: 'show-more' })
+    // A key list is replaced whole.
+    expect(phone.factsKeys).toEqual(['aired'])
+    const desktop = resolveDetail(resolvePresentation(layout, false))
+    expect(desktop.factsLabels).toEqual({ score: 'mean-score', aired: 'premiered' })
+    expect(desktop.synopsis).toEqual({ more: 'expand', label: 'more' })
+  })
+
+  it('bounds the hero slide count and names its pool and transition', () => {
+    expect(parsePresentation({ hero: { limit: 1, source: 'season', transition: 'slide' } }).hero).toEqual({ limit: 1, source: 'season', transition: 'slide' })
+    expect(parsePresentation({ hero: { limit: 15 } }).hero?.limit).toBe(15)
+    for (const limit of [0, 16, 6.5, '6', true]) expect(() => parsePresentation({ hero: { limit } }), String(limit)).toThrow()
+    expect(() => parsePresentation({ hero: { source: 'popular' } })).toThrow('unsupported')
+    expect(() => parsePresentation({ hero: { transition: 'wipe' } })).toThrow('unsupported')
+    // A phone hero keeps the shared options it does not set (the merge is one level deep).
+    const layout = parsePresentation({ hero: { limit: 9, transition: 'fade' }, mobile: { hero: { limit: 6, source: 'trending' } } })
+    expect(resolvePresentation(layout, true)?.hero).toEqual({ limit: 6, source: 'trending', transition: 'fade' })
+    expect(resolvePresentation(layout, false)?.hero).toEqual({ limit: 9, transition: 'fade' })
+  })
+
+  it('binds the long duration, the bare score, the finished mark, the due countdown and the full-resolution poster', () => {
+    const hero = { type: 'overlay', children: [
+      { type: 'artwork', artwork: 'posterHd', when: { field: 'posterHd' } },
+      { type: 'text', field: 'durationLong' }, { type: 'text', field: 'scoreValue' },
+      { type: 'text', text: 'Watched', when: { field: 'completed' } },
+      { type: 'row', when: { field: 'airingSoon' }, children: [{ type: 'text', text: 'EP' }, { type: 'text', field: 'nextEpisode' }, { type: 'text', field: 'airingSoon' }] },
+    ] }
+    const parsed = parsePresentation({ hero: { template: hero } }).hero?.template
+    expect(parsed).toEqual(hero)
+    expect(displayText('durationLong', { durationLong: '1 hr 45 mins' })).toBe('1 hr 45 mins')
+    expect(displayText('scoreValue', { scoreValue: '81' })).toBe('81')
+    expect(displayText('score', { score: 81 })).toBe('81%')
+    expect(visibleNode(parsed!.children![3], { completed: 'Completed' })).toBe(true)
+    expect(visibleNode(parsed!.children![3], {})).toBe(false)
+    expect(visibleNode(parsed!.children![4], { airingSoon: 'Soon', nextEpisode: 13 })).toBe(true)
+    // The new fields are strings: `atMost` stays for the numeric ones.
+    for (const field of ['durationLong', 'scoreValue', 'completed', 'airingSoon']) {
+      expect(() => parseNode({ type: 'text', when: { field, atMost: 1 } }), field).toThrow('numeric')
+    }
+    expect(() => parseNode({ type: 'artwork', artwork: 'posterHd' }, undefined, 0, false, 3)).toThrow('unsupported')
+  })
+
+  it('lets the header repeat a bottom-bar destination from API 4', () => {
+    const nav = { bottom: ['search', 'library'], top: ['search'] }
+    expect(parsePresentation({ layout: { nav } }).layout?.nav).toEqual(nav)
+    expect(() => parsePresentation({ layout: { nav } }, 3)).toThrow('not both')
+    // Each list still names a destination once.
+    expect(() => parsePresentation({ layout: { nav: { top: ['search', 'search'] } } })).toThrow('twice')
+  })
+
+  it('serialises a parsed API 4 presentation to exactly what the parser accepts', () => {
+    const presentation = {
+      hero: { limit: 6, source: 'trending', transition: 'fade', template: { type: 'artwork', artwork: 'posterHd' } },
+      shell: { bottomNav: { hide: 'collapse', threshold: 24, idle: 1000 } },
+      detail: { buttons: ['play'], factsKeys: ['status', 'format', 'year', 'duration'], factsFormat: { dates: 'short' }, synopsis: { more: 'expand', label: 'more' }, countdown: 'date', sections: { tabs: ['overview', 'episodes', 'information'] } },
+      layout: {
+        home: [{ block: 'tabbed-grid', tabs: [{ label: 'TRENDING', role: 'trending' }, { label: 'POPULAR', role: 'popular' }], default: 1 }, { block: 'profile-header', buttons: [{ label: 'Lists', to: 'library', art: true }, { label: 'Search', to: 'search' }] }],
+        nav: { bottom: ['search'], top: ['search'] },
+      },
+      mobile: { rootSize: 16 },
+    }
+    const parsed = parsePresentation(presentation)
+    expect(parsePresentation(JSON.parse(JSON.stringify(parsed)))).toEqual(parsed)
+    expect(parsed.layout?.home?.[0]).toMatchObject({ block: 'tabbed-grid', default: 1 })
+    expect(() => parsePresentation({ layout: { home: [{ block: 'tabbed-grid', tabs: [{ label: 'A', role: 'trending' }], default: 1 }] } })).toThrow('range')
+  })
+})
+
+describe('series page gap keys (API 4)', () => {
+  it('parses the portrait header art and the cover fallback', () => {
+    expect(parsePresentation({ detail: { art: 'portrait', artFallback: 'cover' } }).detail).toEqual({ art: 'portrait', artFallback: 'cover' })
+    expect(resolveDetail(parsePresentation({ detail: { art: 'portrait', artFallback: 'wash' } }))).toMatchObject({ art: 'portrait', artFallback: 'wash' })
+    expect(resolveDetail(undefined)).toMatchObject({ art: undefined, artFallback: undefined, bar: undefined })
+    // API 3 packages keep the two arts they know.
+    expect(parsePresentation({ detail: { art: 'keyart' } }, 3).detail?.art).toBe('keyart')
+    expect(() => parsePresentation({ detail: { art: 'portrait' } }, 3)).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { art: 'poster' } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { artFallback: 'blur' } })).toThrow('unsupported')
+  })
+
+  it('parses the phone series bar: a Home link, the title logo and when it turns solid', () => {
+    expect(parsePresentation({ detail: { bar: { home: true, title: 'logo', solidAt: 0.45 } } }).detail?.bar).toEqual({ home: true, title: 'logo', solidAt: 0.45 })
+    expect(parsePresentation({ detail: { bar: {} } }).detail?.bar).toEqual({})
+    expect(parsePresentation({ detail: { bar: { solidAt: 0.2 } } }).detail?.bar?.solidAt).toBe(0.2)
+    expect(parsePresentation({ detail: { bar: { solidAt: 1 } } }).detail?.bar?.solidAt).toBe(1)
+    for (const solidAt of [0.1, 1.2, '0.5', 0]) expect(() => parsePresentation({ detail: { bar: { solidAt } } }), String(solidAt)).toThrow()
+    expect(() => parsePresentation({ detail: { bar: { home: 'yes' } } })).toThrow('toggle')
+    expect(() => parsePresentation({ detail: { bar: { title: 'image' } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { bar: { search: true } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { bar: true } })).toThrow()
+  })
+
+  it('merges a phone bar over the shared one key by key', () => {
+    const layout = parsePresentation({ detail: { bar: { home: true, solidAt: 0.5 } }, mobile: { detail: { bar: { title: 'logo', solidAt: 0.45 } } } })
+    expect(resolveDetail(resolvePresentation(layout, true)).bar).toEqual({ home: true, title: 'logo', solidAt: 0.45 })
+    expect(resolveDetail(resolvePresentation(layout, false)).bar).toEqual({ home: true, solidAt: 0.5 })
+  })
+
+  it('parses the per-episode download control for the episode list', () => {
+    expect(parsePresentation({ detail: { episodes: { download: 'button' } } }).detail?.episodes).toEqual({ download: 'button' })
+    expect(resolveDetail(parsePresentation({ detail: { episodes: { download: 'none' } } })).episodes?.download).toBe('none')
+    expect(resolveDetail(undefined).episodes?.download).toBeUndefined()
+    expect(() => parsePresentation({ detail: { episodes: { download: true } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { episodes: { download: 'button' } } }, 3)).toThrow('unsupported')
+  })
+
+  it('names the romaji, English and native titles, and reads counts raw and durations in words', () => {
+    const detail = {
+      infoKeys: ['romaji', 'english', 'native', 'members', 'duration'],
+      factsLabels: { romaji: 'name-romaji', english: 'name', native: 'native-title' },
+      factsFormat: { counts: 'raw', duration: 'long' },
+    }
+    expect(parsePresentation({ detail }).detail).toEqual(detail)
+    for (const duration of ['min', 'long', 'short']) expect(parsePresentation({ detail: { factsFormat: { duration } } }).detail?.factsFormat?.duration).toBe(duration)
+    expect(() => parsePresentation({ detail: { factsFormat: { duration: 'hours' } } })).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { factsLabels: { romaji: 'name' } } })).toThrow('unsupported')
+    expect(FACT_LABEL_TEXT['name-romaji']).toBe('Name Romaji')
+    expect(FACT_LABEL_TEXT.name).toBe('Name')
+  })
+
+  it('binds the starring line and every studio as template fields', () => {
+    const header = { type: 'row', children: [{ type: 'text', text: 'Starring:' }, { type: 'text', field: 'starring', when: { field: 'starring' } }, { type: 'text', field: 'creators' }] }
+    expect(parsePresentation({ detail: { header } }).detail?.header).toEqual(header)
+    expect(displayText('starring', { starring: 'Frieren, Fern, Stark' })).toBe('Frieren, Fern, Stark')
+    expect(() => parseNode({ type: 'text', field: 'starring' }, undefined, 0, false, 3)).toThrow('unsupported')
+    expect(() => parseNode({ type: 'text', when: { field: 'creators', atMost: 2 } })).toThrow('numeric')
   })
 })

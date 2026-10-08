@@ -17,15 +17,19 @@ export interface HeroBarState {
  * @param artHeight  measured height of the artwork band (0 before it is measured)
  * @param barHeight  measured height of the bar, including its safe-area padding
  * @param wasSolid   the bar's current state, used to resolve the hysteresis band
+ * @param solidAt    how far through the artwork's scroll (its height less the bar's) the bar turns
+ *                   solid (Theme API 4 `detail.bar.solidAt`, 0.2–1); 1, the default, is once the
+ *                   artwork has scrolled fully under the bar
  */
 export function heroBarState(
   scrollY: number,
   artHeight: number,
   barHeight: number,
   wasSolid = false,
+  solidAt = 1,
 ): HeroBarState {
   if (artHeight <= 0) return { solid: false, showTitle: false }
-  const threshold = artHeight - barHeight
+  const threshold = (artHeight - barHeight) * solidAt
   const solid = wasSolid
     ? scrollY > threshold - HERO_BAR_HYSTERESIS_PX
     : scrollY > threshold + HERO_BAR_HYSTERESIS_PX

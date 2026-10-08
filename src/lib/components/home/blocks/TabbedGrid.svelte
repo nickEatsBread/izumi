@@ -24,7 +24,8 @@
   let retry = $state(0)
 
   const labels = $derived(block.tabs.map((tab) => tab.label))
-  const current = $derived(labels.includes(selected) ? selected : labels[0] ?? '')
+  // Until the viewer picks one, the block's opening tab (`default`, else the first) is shown.
+  const current = $derived(labels.includes(selected) ? selected : labels[block.default ?? 0] ?? labels[0] ?? '')
   const tab = $derived(block.tabs.find((item) => item.label === current))
   const rowId = $derived(tab ? resolveRowId(target, tab.role, optionIds) : null)
   const columns = $derived($isMobile ? Math.min(3, block.columns) : block.columns)

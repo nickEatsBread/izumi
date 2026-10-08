@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Media } from '$lib/anilist/types'
-import { episodeDisplayModel, mediaDisplayModel, timeLeftLabel } from './host-model'
+import { creatorsText, durationLongText, episodeDisplayModel, mediaDisplayModel, seriesRatingText, starringText, timeLeftLabel } from './host-model'
 import { displayText } from './presentation'
 
 const media = {
@@ -91,6 +91,44 @@ describe('theme host display model', () => {
   })
 })
 
+describe('API 4 title fields in the host model', () => {
+  it('binds the score out of ten on a title, and nothing for an unscored one', () => {
+    expect(mediaDisplayModel({ ...media, averageScore: 86 }).rating).toBe('8.6')
+    expect(mediaDisplayModel({ ...media, averageScore: 80 }).rating).toBe('8.0')
+    expect(mediaDisplayModel({ ...media, averageScore: 0 }).rating).toBeUndefined()
+    expect(mediaDisplayModel({ ...media, averageScore: undefined }).rating).toBeUndefined()
+    expect(seriesRatingText({ averageScore: 86 })).toBe('8.6')
+  })
+  it('never lends the series score to an episode: an unrated or unaired episode has no rating', () => {
+    const scored = { ...media, averageScore: 86 }
+    expect(episodeDisplayModel(scored, 13, { title: 'Not Yet' }).rating).toBeUndefined()
+    expect(episodeDisplayModel(scored, 13, undefined, { rating: undefined }).rating).toBeUndefined()
+    expect(episodeDisplayModel(scored, 4, undefined, { rating: '7.9' }).rating).toBe('7.9')
+    // The series score itself stays bound, as before.
+    expect(episodeDisplayModel(scored, 13).score).toBe(86)
+  })
+  it('binds the release year apart from the season', () => {
+    const fall = { ...media, season: 'FALL', seasonYear: 2023, startDate: { year: 2023 } } as Media
+    expect(mediaDisplayModel(fall).startYear).toBe('2023')
+    expect(mediaDisplayModel(fall).year).toBe('Fall 2023')
+    expect(mediaDisplayModel({ ...media, season: undefined, seasonYear: undefined, startDate: { year: 1998 } } as Media).startYear).toBe('1998')
+    expect(mediaDisplayModel({ ...media, season: undefined, seasonYear: undefined, startDate: null } as Media).startYear).toBeUndefined()
+  })
+  it('binds the second and third genres on their own', () => {
+    const model = mediaDisplayModel({ ...media, genres: ['Action', 'Drama', 'Fantasy', 'Mystery'] })
+    expect([model.genre, model.genre2, model.genre3]).toEqual(['Action', 'Drama', 'Fantasy'])
+    expect(mediaDisplayModel({ ...media, genres: ['Action'] }).genre2).toBeUndefined()
+    expect(mediaDisplayModel({ ...media, genres: ['Action', 'Drama'] }).genre3).toBeUndefined()
+  })
+  it('prints the episodes watched a host passes as a bare number', () => {
+    const model = mediaDisplayModel(media, { episodesWatched: 4 })
+    expect(model.episodesWatched).toBe(4)
+    expect(displayText('episodesWatched', model)).toBe('4')
+    expect(displayText('episodesWatched', mediaDisplayModel(media, { episodesWatched: 0 }))).toBe('0')
+    expect(mediaDisplayModel(media).episodesWatched).toBeUndefined()
+  })
+})
+
 describe('timeLeftLabel', () => {
   it('formats the time left in a started episode', () => {
     expect(timeLeftLabel({ pos: 180, dur: 1440 })).toBe('21m left')
@@ -130,5 +168,72 @@ describe('episode template fields in the host model', () => {
     expect(episodeDisplayModel(media, 5).episodeCode).toBe('E5')
     expect(episodeDisplayModel(media, 5, undefined, { episodeNo: '1071', watched: 'Watched', filler: 'Filler', rating: '8.5' }))
       .toMatchObject({ episodeNo: '1071', watched: 'Watched', filler: 'Filler', rating: '8.5' })
+  })
+})
+
+describe('API 4 fields added for phone replicas', () => {
+  it('writes the running time out in words', () => {
+    expect(durationLongText(24)).toBe('24 mins')
+    expect(durationLongText(1)).toBe('1 min')
+    expect(durationLongText(60)).toBe('1 hr')
+    expect(durationLongText(105)).toBe('1 hr 45 mins')
+    expect(durationLongText(121)).toBe('2 hrs 1 min')
+    expect(durationLongText(120)).toBe('2 hrs')
+    expect(durationLongText(23.6)).toBe('24 mins')
+    for (const none of [0, -5, null, undefined, Number.NaN]) expect(durationLongText(none), String(none)).toBeUndefined()
+    expect(mediaDisplayModel(media).durationLong).toBe('24 mins')
+    expect(mediaDisplayModel({ ...media, duration: undefined }).durationLong).toBeUndefined()
+    // An episode's own runtime wins over the series average.
+    expect(episodeDisplayModel(media, 3, { runtime: 47 }).durationLong).toBe('47 mins')
+  })
+
+  it('binds the bare score beside the percentage', () => {
+    const model = mediaDisplayModel(media)
+    expect(model.scoreValue).toBe('78')
+    expect(displayText('scoreValue', model)).toBe('78')
+    expect(displayText('score', model)).toBe('78%')
+    expect(mediaDisplayModel({ ...media, averageScore: undefined }).scoreValue).toBeUndefined()
+    expect(mediaDisplayModel(media, { score: 91 }).scoreValue).toBe('91')
+  })
+
+  it('reports a due episode once its countdown has run out and no newer one is known', () => {
+    const now = Date.UTC(2026, 0, 10, 12)
+    const at = (offset: number) => ({ ...media, nextAiringEpisode: { episode: 13, airingAt: now / 1000 + offset, timeUntilAiring: offset } }) as Media
+    const due = mediaDisplayModel(at(-600), {}, 0, now)
+    expect(due).toMatchObject({ airingSoon: 'Soon', nextEpisode: 13 })
+    expect(due.airingIn).toBeUndefined()
+    const ahead = mediaDisplayModel(at(3600), {}, 0, now)
+    expect(ahead.airingSoon).toBeUndefined()
+    expect(ahead.airingIn).toBe('1h 0m')
+    expect(mediaDisplayModel(media, {}, 0, now).airingSoon).toBeUndefined()
+  })
+
+  it('binds the full-resolution poster: a looked-up one, else the largest catalog cover', () => {
+    expect(mediaDisplayModel(media).posterHd).toBe('https://example.test/poster.jpg')
+    // A card passes its card-sized cover as `poster`; the full-resolution one stays the largest.
+    expect(mediaDisplayModel(media, { poster: 'https://example.test/poster-small.jpg' }).posterHd).toBe('https://example.test/poster.jpg')
+    expect(mediaDisplayModel(media, { posterHd: 'https://artworks.example.test/poster.jpg' }).posterHd).toBe('https://artworks.example.test/poster.jpg')
+  })
+
+  it('passes the finished mark a host computes', () => {
+    expect(mediaDisplayModel(media).completed).toBeUndefined()
+    expect(mediaDisplayModel(media, { completed: 'Completed' }).completed).toBe('Completed')
+  })
+})
+
+describe('credit lines in the host model', () => {
+  const character = (id: number, full?: string) => ({ role: 'MAIN', node: { id, name: { full } } })
+  it('names the first three characters for a starring line', () => {
+    const cast = { ...media, characters: { edges: [character(1, 'Frieren'), character(2, 'Fern'), character(3, ' Stark '), character(4, 'Himmel')] } } as Media
+    expect(mediaDisplayModel(cast).starring).toBe('Frieren, Fern, Stark')
+    expect(starringText({ characters: { edges: [character(1), character(2, 'Fern')] } })).toBe('Fern')
+    expect(mediaDisplayModel(media).starring).toBeUndefined()
+    expect(starringText({ characters: { edges: [] } })).toBeUndefined()
+  })
+  it('joins every studio, else the provider creators', () => {
+    expect(mediaDisplayModel(media).creators).toBe('White Fox')
+    expect(creatorsText({ studios: { nodes: [{ name: 'MADHOUSE' }, { name: 'Studio X' }] } })).toBe('MADHOUSE, Studio X')
+    expect(creatorsText({ studios: { nodes: [] }, creators: ['Someone'] })).toBe('Someone')
+    expect(creatorsText({})).toBeUndefined()
   })
 })

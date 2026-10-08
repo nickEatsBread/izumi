@@ -114,7 +114,7 @@
   {#if hasTasteData && (!visible || loading)}
     <Carousel title="Recommended for You">
       {#each Array.from({ length: 8 }) as _}
-        <div class="skeloader aspect-[2/3] shrink-0 rounded-md {themedWidth ? '' : 'w-36 sm:w-[152px]'}" style:width={themedWidth ? `${tileWidth}px` : undefined}></div>
+        <div data-part="row.skeleton" class="skeloader aspect-[2/3] shrink-0 rounded-md {themedWidth ? '' : 'w-36 sm:w-[152px]'}" style:width={themedWidth ? `${tileWidth}px` : undefined}></div>
       {/each}
     </Carousel>
   {:else if recommendations.length}

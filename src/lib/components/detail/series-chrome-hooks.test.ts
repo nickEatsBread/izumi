@@ -17,7 +17,9 @@ describe('series page chrome for themes', () => {
   })
   it('keys every fact', () => {
     expect(read('./FactList.svelte').match(/data-part="fact" data-key=\{fact\.key\}/g)?.length).toBe(3)
-    expect(detail.match(/data-part="fact" data-key="[a-z]+"/g)?.length).toBe(14)
+    // The desktop Overview's own three; the phone Information grid keys its facts from facts.ts.
+    expect(detail.match(/data-part="fact" data-key="[a-z]+"/g)?.length).toBe(3)
+    expect(detail.match(/data-part="fact" data-key=\{fact\.key\}/g)?.length).toBe(1)
     expect(detail).not.toContain('data-part="fact" class=')
     expect(detail).not.toContain('data-part="fact">')
   })
@@ -44,6 +46,6 @@ describe('series page chrome for themes', () => {
     expect(detail.match(/<div data-part="relation\.type" class="[^"]*">\{e\.relationType\.replaceAll\('_', ' '\)\.toLowerCase\(\)\}<\/div>/g)?.length).toBe(2)
   })
   it('names the scrolling row of a carousel episode list', () => {
-    expect(read('./EpisodeList.svelte')).toContain('<div data-part="episodes.track" class="flex gap-5 overflow-x-auto pb-3">')
+    expect(read('./EpisodeList.svelte')).toContain('<div data-part="episodes.track" class="flex gap-5 overflow-x-auto overflow-y-hidden pb-3" bind:this={episodeTrack}>')
   })
 })

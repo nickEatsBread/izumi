@@ -32,11 +32,16 @@
   }
 </script>
 
+<!-- Every tag is a `chip` with its rank in `data-rank` and in a `chip.meta` part ("94%"), which stays
+     hidden unless `showRank` prints the rank after the name (" · 94%") or a theme shows it. -->
+{#snippet rank(tag: MediaTag)}{showRank && tag.rank ? ' · ' : ''}{#if tag.rank}<span data-part="chip.meta" class={showRank ? undefined : 'hidden'}>{tag.rank}%</span>{/if}{/snippet}
+
 <div class="flex flex-wrap gap-2">
   {#each displayed as tag (tag.name)}
     {#if isSpoilerTag(tag)}
       <button
         data-part="chip"
+        data-rank={tag.rank || undefined}
         data-active={revealed.has(tag.name) || undefined}
         type="button"
         data-focusable
@@ -46,7 +51,7 @@
         class="group relative inline-flex min-h-7 items-center justify-center rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-accent active:bg-accent {revealed.has(tag.name) ? 'border-transparent bg-secondary/55 text-foreground/80' : 'border-border/70 bg-secondary/45 text-muted-foreground'}"
       >
         {#if revealed.has(tag.name)}
-          {tag.name}{showRank && tag.rank ? ` · ${tag.rank}%` : ''}
+          {tag.name}{@render rank(tag)}
         {:else}
           <!-- Keep the real label under the same soft 6px veil used for larger spoiler content.
                A tiny checker pattern gives short tag names enough texture to read as intentionally
@@ -59,7 +64,7 @@
             aria-hidden="true"
             class="pointer-events-none select-none whitespace-nowrap blur-[6px] opacity-75 transition-opacity duration-150 group-hover:opacity-15 group-focus-visible:opacity-15"
           >
-            {tag.name}{showRank && tag.rank ? ` · ${tag.rank}%` : ''}
+            {tag.name}{@render rank(tag)}
           </span>
           <span
             aria-hidden="true"
@@ -70,8 +75,8 @@
         {/if}
       </button>
     {:else}
-      <span class="rounded-full bg-secondary/55 px-3 py-1.5 text-xs font-semibold text-foreground/80">
-        {tag.name}{showRank && tag.rank ? ` · ${tag.rank}%` : ''}
+      <span data-part="chip" data-rank={tag.rank || undefined} class="rounded-full bg-secondary/55 px-3 py-1.5 text-xs font-semibold text-foreground/80">
+        {tag.name}{@render rank(tag)}
       </span>
     {/if}
   {/each}

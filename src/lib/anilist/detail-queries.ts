@@ -20,6 +20,8 @@ export const MEDIA_BY_ID = gql`
       ...MediaFields
       isFavourite
       source countryOfOrigin
+      endDate { year month day }
+      favourites
       tags { name rank isGeneralSpoiler isMediaSpoiler }
       mediaListEntry { id progress status score(format: POINT_100) repeat startedAt { year month day } completedAt { year month day } }
       relations { edges { relationType node { ...CardMediaFields } } }

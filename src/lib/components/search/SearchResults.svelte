@@ -141,6 +141,8 @@
 {#if $browseLayout === 'list'}
   <!-- List: a vertical run of compact rows (small cover + title + meta) — denser, text-forward. -->
   <VirtualGrid
+    part="search.grid"
+    variant="list"
     items={media}
     getKey={(m) => m.id}
     className="grid grid-cols-1 gap-1.5"
@@ -165,7 +167,7 @@
     {/snippet}
   </VirtualGrid>
   {#if loading || (lookingClose && !media.length)}
-    <div class="mt-1.5 flex flex-col gap-1.5">
+    <div data-part="search.grid" data-variant="list" data-state="loading" class="mt-1.5 flex flex-col gap-1.5">
       {#each Array.from({ length: media.length ? 4 : 8 }) as _}
         <div class="flex items-center gap-3 p-2"><div class="aspect-[2/3] w-12 shrink-0 animate-pulse rounded-md bg-muted"></div><div class="h-4 flex-1 animate-pulse rounded bg-muted"></div></div>
       {/each}
@@ -175,6 +177,8 @@
   <!-- Grid: cover-art tiles. Three across on phones (fills edge-to-edge, no dead right margin);
        an auto-fill responsive grid on desktop. -->
   <VirtualGrid
+    part="search.grid"
+    variant="grid"
     items={media}
     getKey={(m) => m.id}
     className="grid grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-3"
@@ -186,7 +190,7 @@
     {/snippet}
   </VirtualGrid>
   {#if loading || (lookingClose && !media.length)}
-    <div class="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-3">
+    <div data-part="search.grid" data-variant="grid" data-state="loading" class="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-3">
       {#each Array.from({ length: media.length ? 6 : 12 }) as _}
         <div class="aspect-[2/3] w-full animate-pulse rounded-md bg-muted"></div>
       {/each}

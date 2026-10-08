@@ -22,6 +22,7 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 const FANART = 'https://artworks.thetvdb.com/banners/v4/series/424536/backgrounds/64e6cbe29d9c0.jpg'
 const LOGO = 'https://artworks.thetvdb.com/banners/v4/series/424536/clearlogo/696a802a5aa22.png'
+const POSTER = 'https://artworks.thetvdb.com/banners/v4/series/424536/posters/64e6cb7b4d5ba.jpg'
 const media = (extra: Partial<Media> = {}): Media => ({ id: 154587, idMal: 52991, title: { romaji: 'Sousou no Frieren', english: 'Frieren' }, ...extra }) as Media
 const all = new Set(['keyart', 'logo', 'ageRating', 'audio'] as const)
 
@@ -57,6 +58,10 @@ describe('pickTitleArt', () => {
     expect(pickTitleArt([{ coverType: 'Clearlogo', url: 'https://artworks.thetvdb.com/banners/images/icons/1.png' }])).toEqual({ keyart: undefined, logo: undefined })
     expect(pickTitleArt([{ coverType: 'Fanart', url: 'http://artworks.thetvdb.com/x/backgrounds/1.jpg' }]).keyart).toBeUndefined()
     expect(pickTitleArt(undefined)).toEqual({ keyart: undefined, logo: undefined })
+  })
+  it('takes the TVDB poster as the full-resolution portrait art (API 4 `posterHd`)', () => {
+    expect(pickTitleArt([{ coverType: 'Poster', url: POSTER }, { coverType: 'Fanart', url: FANART }])).toEqual({ keyart: FANART, posterHd: POSTER })
+    expect(pickTitleArt([{ coverType: 'Poster', url: 'http://artworks.thetvdb.com/x/posters/1.jpg' }]).posterHd).toBeUndefined()
   })
 })
 
@@ -107,6 +112,18 @@ describe('loadTitleExtras', () => {
     await loadTitleExtras(media(), new Set(['logo']))
     expect(mocks.fetchAniZip).toHaveBeenCalledTimes(1)
   })
+  it('looks the full-resolution poster up in the same ani.zip record, only when a template binds it', async () => {
+    const node: ThemeNode = { type: 'artwork', artwork: 'posterHd', when: { field: 'posterHd' } }
+    expect([...templateNeeds(node)]).toEqual(['posterHd'])
+    mocks.fetchAniZip.mockResolvedValue({ images: [{ coverType: 'Fanart', url: FANART }, { coverType: 'Poster', url: POSTER }] })
+    await expect(loadTitleExtras(media(), new Set(['posterHd']))).resolves.toEqual({ posterHd: POSTER })
+    await expect(loadTitleExtras(media(), new Set(['keyart']))).resolves.toEqual({ keyart: FANART })
+    expect(mocks.fetchAniZip).toHaveBeenCalledTimes(1)
+    expect(peekTitleArt(154587)).toMatchObject({ keyart: FANART, posterHd: POSTER })
+    // A title without an AniList identity has none to look up: the host binds its cover instead.
+    const tmdb = media({ id: -5, catalog: { provider: 'tmdb', id: '5', type: 'series' }, idMal: undefined })
+    await expect(loadTitleExtras(tmdb, new Set(['posterHd']))).resolves.toEqual({})
+  })
   it('treats an ani.zip record it cannot read as no art, and asks again next time', async () => {
     mocks.fetchAniZip.mockResolvedValue({ images: 'not a list' })
     await expect(loadTitleExtras(media(), new Set(['keyart', 'logo']))).resolves.toEqual({})
@@ -117,7 +134,8 @@ describe('loadTitleExtras', () => {
 
 describe('art and metadata needs', () => {
   it('splits the artwork a template binds from the slower lookups', () => {
-    expect([...ART_EXTRAS].sort()).toEqual(['keyart', 'logo'])
+    expect([...ART_EXTRAS].sort()).toEqual(['keyart', 'logo', 'posterHd'])
+    expect([...artNeeds(new Set(['posterHd', 'audio']))]).toEqual(['posterHd'])
     expect([...artNeeds(all)].sort()).toEqual(['keyart', 'logo'])
     expect([...metaNeeds(all)].sort()).toEqual(['ageRating', 'audio'])
     expect(artNeeds(new Set(['audio'])).size).toBe(0)

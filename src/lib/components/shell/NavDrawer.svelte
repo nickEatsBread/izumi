@@ -4,7 +4,8 @@
   import X from '@lucide/svelte/icons/x'
 
   // Every destination in a drawer from the left (the theme top bar's `menu: "drawer"`).
-  type Destination = { href: string; label: string; icon: Component<{ size?: number }> }
+  // `id` is the destination's `data-dest` (`home`, `schedule`, `settings`, …).
+  type Destination = { id: string; href: string; label: string; icon: Component<{ size?: number }> }
   let { open = $bindable(false), items, active }: { open: boolean; items: Destination[]; active: (href: string) => boolean } = $props()
 
   let panel = $state<HTMLElement>()
@@ -25,7 +26,7 @@
     <button type="button" data-focusable aria-label="Close menu" onclick={() => (open = false)} class="mb-2 grid size-10 place-items-center self-end rounded-lg hover:bg-accent"><X size={20} /></button>
     {#each items as item (item.href)}
       {@const on = active(item.href)}
-      <a data-part="nav.item" data-active={on || undefined} data-focusable href={item.href} aria-current={on ? 'page' : undefined} onclick={() => (open = false)}
+      <a data-part="nav.item" data-dest={item.id} data-active={on || undefined} data-focusable href={item.href} aria-current={on ? 'page' : undefined} onclick={() => (open = false)}
         class="flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-semibold transition-colors hover:bg-accent {on ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}">
         <span data-part="nav.item.icon" class="grid w-6 place-items-center"><item.icon size={19} /></span>
         <span data-part="nav.item.label">{item.label}</span>

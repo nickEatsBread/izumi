@@ -99,7 +99,7 @@
   <label class="relative block">
     <Search size={20} class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-theme" />
     <input
-      data-part="input"
+      data-part="search.field"
       bind:value={query}
       data-focusable
       type="search"
@@ -119,6 +119,8 @@
   {#if media.length}
     <div data-slot="search.results">
       <VirtualGrid
+        part="search.grid"
+        variant="grid"
         items={media}
         getKey={mediaKey}
         className="mt-6 grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:gap-5"
@@ -139,7 +141,7 @@
   {/if}
 
   {#if loading}
-    <div class="mt-6 grid grid-cols-3 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
+    <div data-part="search.grid" data-variant="grid" data-state="loading" class="mt-6 grid grid-cols-3 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))]">
       {#each Array.from({ length: 9 }) as _}<div class="aspect-[2/3] rounded-md skeloader"></div>{/each}
     </div>
   {/if}

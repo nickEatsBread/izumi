@@ -8,6 +8,8 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import Hero from '$lib/components/banner/Hero.svelte'
+  import MediaListSheet from '$lib/components/detail/MediaListSheet.svelte'
+  import type { Media } from '$lib/anilist/types'
   import ContinueRow from '$lib/components/cards/ContinueRow.svelte'
   import CatalogSectionRow from './CatalogSectionRow.svelte'
   import CollectionsHome from './CollectionsHome.svelte'
@@ -22,6 +24,7 @@
   import { CONTINUE_HOME_ROW, HERO_HOME_ROW } from '$lib/catalog/home-options'
   import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
   import { activeThemeLayout } from '$lib/themes/layout-state'
+  import { themePresentation } from '$lib/themes/runtime'
   import { isThemeBlockId, resolveThemeHome } from '$lib/home/theme-layout'
   import { blockRowOptions, blockTitle, splitHomeColumns } from '$lib/home/block-rows'
   import { homeAsideWidth, homeBlocks, isBlockId } from '$lib/home/blocks'
@@ -38,6 +41,11 @@
   let loading = $state(true)
   let error = $state('')
   let tmdbNeedsConfiguration = $state(false)
+  // A theme hero template's `list` action opens the list editor for that slide's title (this
+  // device's Save sheet for a title without an AniList identity, as on its series page).
+  let listMedia = $state<Media | null>(null)
+  // A theme's `hero.limit` (API 4) caps the provider's featured titles.
+  const heroSlides = $derived($themePresentation?.hero?.limit ? (home?.hero ?? []).slice(0, $themePresentation.hero.limit) : home?.hero ?? [])
   let retry = $state(0)
   const listUser = $derived($anilistUserName || $anilistUser)
   type ContentRow = { id: string; kind: 'hero' } | { id: string; kind: 'continue' } | { id: string; kind: 'block' } | { id: string; kind: 'section'; section: CatalogHomeSection }
@@ -153,10 +161,11 @@
 <div data-slot="home" data-variant="catalog" class="pb-16">
   {#snippet heroBlock()}
     {#if home?.hero.length}
-      <Hero medias={home.hero} artworkMode={$catalogProvider === 'stremio' ? $stremioHeroArtwork : 'backdrop'}
-        onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} />
-    {:else if loading}
-      <div class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
+      <Hero medias={heroSlides} artworkMode={$catalogProvider === 'stremio' ? $stremioHeroArtwork : 'backdrop'}
+        onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} onlist={(media) => (listMedia = media)} />
+    {:else if loading && !$themePresentation?.hero?.hidden}
+      <!-- The variant of the hero that replaces it (this Home keeps the banner box for all three). -->
+      <div data-slot="home.hero" data-state="loading" data-variant={$themePresentation?.hero?.template ? 'template' : $isMobile ? 'phone' : 'desktop'} aria-hidden="true" class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
         <div class="absolute inset-0 skeloader"></div>
         <div class="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent"></div>
       </div>
@@ -189,7 +198,7 @@
       {#each Array.from({ length: 4 }) as _}
         <div class="px-4 sm:px-8">
           <div class="mb-3 h-5 w-40 rounded skeloader"></div>
-          <div class="flex gap-3 overflow-hidden">{#each Array.from({ length: 8 }) as _}<div class="aspect-[2/3] w-36 shrink-0 rounded-md skeloader sm:w-[152px]"></div>{/each}</div>
+          <div class="flex gap-3 overflow-hidden">{#each Array.from({ length: 8 }) as _}<div data-part="row.skeleton" class="aspect-[2/3] w-36 shrink-0 rounded-md skeloader sm:w-[152px]"></div>{/each}</div>
         </div>
       {/each}
     {:else if home}
@@ -219,3 +228,4 @@
     {/if}
   </div>
 </div>
+{#if listMedia}<MediaListSheet media={listMedia} onclose={() => (listMedia = null)} />{/if}
