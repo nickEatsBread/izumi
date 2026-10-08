@@ -10,6 +10,8 @@
   import AndroidConnectionStatus from './AndroidConnectionStatus.svelte'
   import { fade } from 'svelte/transition'
   import { isAndroid } from '$lib/platform'
+  import { gmPanel, gmPanelOut } from '$lib/player/gm-freeze'
+  import { motion } from '$lib/motion/gm-motion'
 
   const c = $derived($connecting)
   const backdrop = $derived(c?.art ?? '')
@@ -25,15 +27,15 @@
     </div>
   {:else if $gameMode && $playing}
   <!-- A mid-playback source swap must not replace the current frame with a black loading page.
-       This compact surface renders live beside the docked video tile (gm-overlay gameModeDock). -->
+       This compact card renders live over the paused video's frozen frame (gm-freeze.ts). -->
   <div
-    data-gm-dock-avoid
+    data-gm-menu-surface
     class="fixed inset-0 z-[55] grid place-items-center bg-black/45"
     onclick={() => c?.cancel()}
     onkeydown={(e) => e.key === 'Escape' && c?.cancel()}
     role="presentation"
   >
-    <div class="relative w-full max-w-xl rounded-2xl border border-white/10 bg-black/80 py-6 shadow-2xl" onclick={(e) => e.stopPropagation()} role="presentation">
+    <div use:gmPanel={'bottom'} out:motion|global={gmPanelOut('bottom')} class="relative w-full max-w-xl rounded-2xl border border-white/10 bg-[#101012]/95 py-6 shadow-2xl" onclick={(e) => e.stopPropagation()} role="presentation">
       <SourceLoader title={c.title} caption="Switching source" detail={c.detail} onCancel={c.cancel} />
     </div>
   </div>

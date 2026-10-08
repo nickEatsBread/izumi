@@ -38,9 +38,9 @@ export function gameModeBitmapOverlayActive(input: {
   // A layer or the keyboard is plain HTML: without the bitmap it would own the pad while staying
   // invisible behind mpv. (Over live comments the webview already shows it, hence the order.)
   if (input.navLayerOpen || input.oskOpen) return true
-  // Menus, the source picker and the switching card render live beside the docked video tile
-  // (gameModeDock), so they never come through here. Stats and the subtitle mover stay over
-  // full-size video: both are read against the picture itself.
+  // Menus, the source picker and the switching card render live over the paused video's frozen
+  // frame (gm-freeze.ts), so they never come through here. Stats and the subtitle mover stay over
+  // the moving video: both are read against the picture itself.
   if (input.statsOpen || input.subtitleEditorOpen) return true
   // Keep the polished HTML Skip pill. The native progress/controls continue independently below
   // its transparent bitmap; PlayerOverlay must never disable gmNativeControls just because this
@@ -112,15 +112,10 @@ export function presenceAllowed(gameMode: boolean): boolean {
   return !gameMode
 }
 
-/** What the video window gives up, as fractions of the Game-mode window, while a menu is open: it
- * keeps a 16:9 tile in the top-left corner (40% × 36%, 512×288 on the Deck) and the menu renders
- * live in the rest. `html.gm-docked` moves menu surfaces out from under the tile (app.css). */
-export const GAME_MODE_MENU_TILE = { right: 0.6, bottom: 0.64 } as const
-
-/** A menu, prompt or the source picker is open over the playing video. Each renders live beside a
- * docked video tile rather than as a WebKit snapshot pushed into mpv: a snapshot was never
- * refreshed by scrolling or late-loading rows, so taps landed on rows the viewer could not see,
- * and every change cost two full-window software renders. */
+/** A menu, prompt or the source picker is open over the playing video. Each pauses the video and
+ * renders live over its frozen frame (gm-freeze.ts) rather than as a WebKit snapshot pushed into
+ * mpv: a snapshot was never refreshed by scrolling or late-loading rows, so taps landed on rows the
+ * viewer could not see, and every change cost two full-window software renders. */
 export function gameModeLiveMenuOpen(input: {
   playerMenuOpen: boolean
   trackMenuOpen: boolean
@@ -134,32 +129,16 @@ export function gameModeLiveMenuOpen(input: {
     || !!input.cachingOpen || !!input.ratingOpen || !!input.upNextOpen
 }
 
-/** Where the Game-mode video window sits: full screen with bitmap chrome over it, a corner tile
- * beside a live menu, or unmapped under the opaque comments panel. Moving the window never
- * unmaps it, so a source swap made from the picker does not flash black. */
+/** Where the Game-mode video window sits: always full screen, unmapped while the menu stage shows
+ * its frozen frame or the opaque comments panel is open. It never shrinks to a tile. */
 export function gameModeDock(input: {
-  loading: boolean
-  controlsVisible: boolean
-  playerMenuOpen: boolean
-  trackMenuOpen: boolean
   commentsOpen: boolean
-  noticeVisible: boolean
-  sourcePickerOpen?: boolean
-  connecting?: boolean
-  subtitleEditorOpen?: boolean
-  cachingOpen?: boolean
-  ratingOpen?: boolean
-  upNextOpen?: boolean
+  /** The menu stage has painted the frozen frame (gm-freeze.ts). */
+  frozen: boolean
 }): { bottom: number; right: number; top: number; hide: boolean } {
-  void input.noticeVisible
-  void input.subtitleEditorOpen
-  void input.loading
-  void input.controlsVisible
   // Disqus is both late-loading and continuously interactive. Give it the live WebKit surface
   // while its opaque full-screen panel is open instead of snapshotting it over the X11 child.
-  if (input.commentsOpen) return { bottom: 0, right: 0, top: 0, hide: true }
-  if (gameModeLiveMenuOpen(input)) return { bottom: GAME_MODE_MENU_TILE.bottom, right: GAME_MODE_MENU_TILE.right, top: 0, hide: false }
-  return { bottom: 0, right: 0, top: 0, hide: false }
+  return { bottom: 0, right: 0, top: 0, hide: input.commentsOpen || input.frozen }
 }
 
 export function gameModeDockIsLive(dock: { bottom: number; right: number; top: number; hide: boolean }): boolean {

@@ -9,7 +9,7 @@
   // Save step. The descriptor under the scale ("Very Good") tells a mouse user what the number
   // they are hovering means before they commit; the confirmation offers "Change" for a mis-tap.
   import { onMount, tick } from 'svelte'
-  import { fade, fly } from 'svelte/transition'
+  import { motion } from '$lib/motion/gm-motion'
   import { cubicOut } from 'svelte/easing'
   import Check from '@lucide/svelte/icons/check'
   import {
@@ -121,13 +121,14 @@
     aria-label={m.series_rating_eyebrow()}
     data-nav-trap
     tabindex="-1"
-    data-gm-dock-avoid
     class="series-rating fixed inset-0 z-[90] flex items-end justify-center p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:items-center"
     onkeydown={onKey}
   >
-    <div in:fade={{ duration: 200 }} class="absolute inset-0 bg-black/60"></div>
+    <!-- Script-driven in Game mode (gm-motion): a CSS fade or fly blinks as it ends there. Over the
+         frozen frame of a paused video the stage already dims, so this dim clears (gm-freeze.ts). -->
+    <div data-gm-menu-surface in:motion={{ opacity: [0, 1], duration: 200 }} class="absolute inset-0 bg-black/60"></div>
     <div
-      in:fly={{ y: 28, duration: 260, easing: cubicOut }}
+      in:motion={{ opacity: [0, 1], y: [28, 0], duration: 260, easing: cubicOut }}
       class="series-rating-card relative w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-neutral-950 text-white shadow-2xl"
     >
       {#if banner(prompt.media) || cover(prompt.media)}
@@ -144,7 +145,7 @@
         </p>
 
         {#if saved}
-          <div in:fly={{ y: 10, duration: 200, easing: cubicOut }} class="mt-6 flex items-center gap-3 rounded-2xl bg-theme/15 px-4 py-3.5 text-theme">
+          <div in:motion={{ opacity: [0, 1], y: [10, 0], duration: 200, easing: cubicOut }} class="mt-6 flex items-center gap-3 rounded-2xl bg-theme/15 px-4 py-3.5 text-theme">
             <span class="grid size-9 shrink-0 place-items-center rounded-full bg-theme text-white"><Check size={18} strokeWidth={3} /></span>
             <span class="min-w-0">
               <span class="block text-sm font-black">{m.series_rating_saved({ score: value })} · {SCORE_LABELS[value]}</span>
@@ -177,8 +178,8 @@
           </div>
           <div class="mt-3 flex h-9 items-baseline gap-2" aria-live="polite">
             {#key shown}
-              <span in:fade={{ duration: 120 }} class="text-2xl font-black tabular-nums leading-none">{shown ? `${shown}/10` : '—'}</span>
-              <span in:fade={{ duration: 120 }} class="truncate text-sm font-semibold text-white/65">{shown ? SCORE_LABELS[shown] : m.series_rating_pick()}</span>
+              <span in:motion={{ opacity: [0, 1], duration: 120 }} class="text-2xl font-black tabular-nums leading-none">{shown ? `${shown}/10` : '—'}</span>
+              <span in:motion={{ opacity: [0, 1], duration: 120 }} class="truncate text-sm font-semibold text-white/65">{shown ? SCORE_LABELS[shown] : m.series_rating_pick()}</span>
             {/key}
           </div>
           <p class="mt-1 truncate text-xs text-white/45">{trackers.length ? m.series_rating_saves_to({ trackers: trackers.join(' · ') }) : m.series_rating_saves_local()}</p>

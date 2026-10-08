@@ -5,8 +5,9 @@ import postcss from 'postcss'
 import { describe, expect, it } from 'vitest'
 import { hasAttr, markupElements, markupElementsFromSource, staticAttr, type MarkupElement } from '../../test/svelte-markup'
 
-// Deck and controller focus ring (spec §4 "Focus ring", owner decision 9). One two-tone ring built
-// from the theme's tokens for Game mode and controller mode; the player keeps its white ring; the
+// Deck and controller focus ring (spec §4 "Focus ring"). One plain white ring for Game mode and
+// controller mode (the owner chose it back over the theme-coloured two-tone ring on 2026-10-08); the
+// player keeps its white ring; the
 // Android TV rings are untouched; Theme Studio and the install preview keep their editor palette;
 // and no inline style or component rule hides the ring from a d-pad user.
 
@@ -16,10 +17,7 @@ const css = read('../../app.css')
 const sheet = postcss.parse(css)
 
 const RING = 'var(--izumi-safe-focus-ring)'
-const RING_VALUE =
-  '0 0 0 2px hsl(var(--izumi-safe-background, var(--background))), ' +
-  '0 0 0 5px hsl(var(--ring, var(--izumi-safe-foreground, var(--foreground)))), ' +
-  '0 0 0 6px hsl(var(--izumi-safe-foreground, var(--foreground)) / 0.55)'
+const RING_VALUE = '0 0 0 3px #fff'
 /** How far the ring reaches outside the element, in px: its widest spread. */
 const RING_REACH = Math.max(...[...RING_VALUE.matchAll(/0 0 0 (\d+)px/g)].map((match) => Number(match[1])))
 /** The only prefix under which a component may drop a focused field's ring: no controller drives the page. */
@@ -145,12 +143,11 @@ const svelteFiles = readdirSync(SRC, { recursive: true, encoding: 'utf8' })
 const textOf = (file: string) => readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
 
 describe('Deck and controller focus ring', () => {
-  it('defines one two-tone ring from the theme tokens on the root and on protected surfaces', () => {
+  it('defines one plain white ring on the root and on protected surfaces', () => {
     expect(declared(':root, [data-theme-protected]', '--izumi-safe-focus-ring')).toEqual([RING_VALUE])
-    // The band is the theme's --ring with a foreground fallback; the gap and the hairline read the
-    // client-owned palette mirror (theme.ts), which a theme stylesheet cannot declare (css-policy.ts).
+    // Not the theme's ring colour: a red theme gave every focused control a red outline.
     const [ring] = declared(':root, [data-theme-protected]', '--izumi-safe-focus-ring')
-    expect(ring).toContain('hsl(var(--ring, var(--izumi-safe-foreground, var(--foreground))))')
+    expect(ring).not.toContain('--ring')
     // A custom property resolves its var()s where it is declared: on a protected surface --ring is
     // the mirror, so the band follows --izumi-safe-ring there instead of the root's value.
     expect(declared('[data-theme-protected]', '--ring')).toEqual(['var(--izumi-safe-ring)'])
@@ -237,7 +234,7 @@ describe('room for the ring in the search dialogs', () => {
   it('counts only px-floored room as room for the px ring', () => {
     expect(blockPadding('px-3 py-[max(0.375rem,6px)]')).toBe(6)
     expect(blockPadding('py-[6px] sm:pt-[8px]')).toBe(6)
-    expect(blockPadding('px-3 py-1.5')).toBeLessThan(RING_REACH) // 0.375rem is 4.6 px at the smallest root
+    expect(blockPadding('px-3 py-1.5')).toBeCloseTo(4.62, 1) // 0.375rem is 4.6 px at the smallest root
     expect(blockPadding('px-3')).toBe(0)
   })
 })

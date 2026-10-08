@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest'
 import {
   gameModeBitmapOverlayActive,
   gameModeChromeActive,
-  GAME_MODE_MENU_TILE,
   gameModeDock,
   gameModeDockIsLive,
   gameModeLiveMenuOpen,
@@ -134,7 +133,7 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('gmNativeControls')
     expect(overlay).toContain('usesGameModeBitmapCompositor')
     expect(overlay).toContain('native={gmBitmapMode}')
-    expect(overlay).toContain('controlsVisible && !gmMenuDocked && (!overlayFull || $playerSideSheetOpen)')
+    expect(overlay).toContain('controlsVisible && !gmMenuStage && !gmVideoHidden && (!overlayFull || $playerSideSheetOpen)')
     expect(overlay).toContain('currentSeg && !overlayActive')
     expect(overlay).not.toContain('!overlayFull && !showSkip')
     expect(overlay).toContain('measureNativeChrome')
@@ -182,18 +181,63 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(body).toContain('Math.hypot(e.clientX - revealTouch.x, e.clientY - revealTouch.y) > 24) return')
   })
 
-  it('docks the video beside live menus instead of snapshotting them', () => {
+  it('pauses behind live menus over the frozen frame instead of shrinking the video', () => {
+    const body = overlay.replace(/\r\n/g, '\n')
     expect(overlay).toContain('gameModeLiveMenuOpen({')
-    expect(overlay).toContain("document.documentElement.classList.toggle('gm-docked', gmMenuDocked)")
-    expect(overlay).toContain('data-gm-dock-backdrop')
-    expect(overlay).toContain(':global(html.gm-docked [data-gm-dock-avoid])')
-    expect(overlay).toContain(':global(html.gm-docked [data-gm-bar])')
-    for (const file of ['TrackMenu', 'StreamPicker', 'SourceConnecting', 'DebridCaching', 'UpNextOverlay', 'SeriesRatingPrompt', 'Controls']) {
+    expect(overlay).toContain('const frozen = gmMenuStage || gmVideoHidden')
+    expect(overlay).toContain("document.documentElement.classList.toggle('gm-frozen', frozen)")
+    // Pause first, so the captured frame is the one the video window keeps showing; never in a
+    // watch party, where a pause stops the whole room.
+    expect(body).toContain("await gmPauseForMenu()\n    // The capture is the window as shown, OSD included: let mpv redraw without the controls.\n    await new Promise((resolve) => setTimeout(resolve, GM_OSD_CLEAR_MS))\n    if (token !== gmStageToken) return\n    const stream = $nowPlayingStream.url\n    const url = firstFrame ? await captureFrozenFrame() : ''")
+    expect(overlay).toContain('if (!firstFrame || paused || get(watchParty)) return')
+    // Every close and teardown supersedes a freeze still capturing.
+    expect(overlay).toContain('const thaw = ++gmStageToken')
+    // The video window unmaps only once the frame is painted, and maps back before resuming.
+    expect(body).toContain("await framePainted(gmFrameImg)\n    if (token !== gmStageToken) return\n    gmVideoHidden = true")
+    // The menus reveal only once the unmap has landed, so the dim starts from nothing.
+    expect(body).toContain("await new Promise((resolve) => setTimeout(resolve, GM_UNMAP_SETTLE_MS))\n    if (token !== gmStageToken) return\n    gmStage.set('frozen')")
+    expect(overlay).toContain('const dock = gameModeDock({ commentsOpen: $commentsOpen, frozen: gmVideoHidden })')
+    // A source picked from the menu shows its own first frame before the video window returns,
+    // and the old source is never resumed over it.
+    expect(overlay).toContain('gmFirstFrameWaiters.push(resolve)')
+    expect(overlay).toContain('setTimeout(resolve, GM_FIRST_FRAME_WAIT_MS)')
+    expect(overlay).toContain('if ($nowPlayingStream.url === gmPausedStream) {')
+    // Any other pause (the user, the subtitle editor, the sleep timer) owns the play state again.
+    expect(overlay).toContain("if (args[0] === 'pause' && !gmOwnPause) gmPausedForMenu = false")
+    expect(overlay).toContain('paused={paused && !gmPausedForMenu}')
+    // The control-strip snapshot never carries the paused picture over the moving video.
+    expect(overlay).toContain('if (gmMenuStage || $gmFrozenFrame != null) {')
+    expect(overlay).toContain('data-gm-stage')
+    // The frame is the window as shown (fit, letterbox and subtitles included), OSD hidden first.
+    expect(overlay).toContain('class="h-full w-full object-contain" />')
+    expect(overlay).toContain('animateControls: $playerProgressAnimations && !gmMenuStage,')
+    expect(overlay).toContain('await new Promise((resolve) => setTimeout(resolve, GM_OSD_CLEAR_MS))')
+    expect(overlay).toContain(':global(html.gm-frozen [data-gm-menu-surface])')
+    expect(overlay).not.toContain('gm-docked')
+    for (const file of ['TrackMenu', 'StreamPicker', 'SourceConnecting', 'UpNextOverlay', 'SeriesRatingPrompt', 'Controls']) {
       const source = readFileSync(fileURLToPath(new URL(`../components/player/${file}.svelte`, import.meta.url)), 'utf8')
-      expect(source, file).toContain('data-gm-dock-avoid')
+      expect(source, file).toContain('data-gm-menu-surface')
+      expect(source, file).not.toContain('data-gm-dock-avoid')
     }
+    // The caching screen is opaque on purpose: it hides the frame rather than dimming it.
+    const caching = readFileSync(fileURLToPath(new URL('../components/player/DebridCaching.svelte', import.meta.url)), 'utf8')
+    expect(caching).not.toContain('data-gm-menu-surface')
     const controls = readFileSync(fileURLToPath(new URL('../components/player/Controls.svelte', import.meta.url)), 'utf8')
     expect(controls).toContain('data-gm-bar')
+  })
+
+  it('draws the Deck player menus as TV side panels that slide over the paused frame', () => {
+    for (const file of ['TrackMenu', 'StreamPicker', 'Controls']) {
+      const source = readFileSync(fileURLToPath(new URL(`../components/player/${file}.svelte`, import.meta.url)), 'utf8')
+      expect(source, file).toContain('data-gm-tv-panel')
+      expect(source, file).toContain("import { gmPanel, gmPanelOut } from '$lib/player/gm-freeze'")
+      expect(source, file).toMatch(/inset-y-0 right-0|justify-items-end/)
+      expect(source, file).toContain('<Glyph family="deck" button="b" />')
+    }
+    const menu = readFileSync(fileURLToPath(new URL('../components/player/TrackMenu.svelte', import.meta.url)), 'utf8')
+    // B steps back out of a category before it closes the panel.
+    expect(menu).toContain("case 'b': ascend(); break")
+    expect(menu).toContain('{#key level}')
   })
 
   it('re-focuses the overlay after fullscreen so player hotkeys keep working', () => {
@@ -207,37 +251,15 @@ describe('PlayerOverlay Game-mode wiring', () => {
 })
 
 describe('gameModeDock', () => {
-  const base = {
-    loading: false,
-    controlsVisible: false,
-    playerMenuOpen: false,
-    trackMenuOpen: false,
-    commentsOpen: false,
-    noticeVisible: false,
-  }
-
-  const tile = { bottom: GAME_MODE_MENU_TILE.bottom, right: GAME_MODE_MENU_TILE.right, top: 0, hide: false }
-
-  it('keeps controls over full-screen video', () => {
-    expect(gameModeDock({ ...base, loading: true })).toEqual({ bottom: 0, right: 0, top: 0, hide: false })
-    expect(gameModeDock({ ...base, controlsVisible: true })).toEqual({ bottom: 0, right: 0, top: 0, hide: false })
-    expect(gameModeDockIsLive(gameModeDock({ ...base, controlsVisible: true }))).toBe(false)
-    expect(gameModeDock({ ...base, subtitleEditorOpen: true })).toEqual({ bottom: 0, right: 0, top: 0, hide: false })
+  it('keeps the video full screen and never shrinks it', () => {
+    expect(gameModeDock({ commentsOpen: false, frozen: false })).toEqual({ bottom: 0, right: 0, top: 0, hide: false })
+    expect(gameModeDockIsLive(gameModeDock({ commentsOpen: false, frozen: false }))).toBe(false)
   })
 
-  it('shrinks the video to a 16:9 corner tile while a menu, picker or prompt is open', () => {
-    for (const open of ['playerMenuOpen', 'trackMenuOpen', 'sourcePickerOpen', 'connecting', 'cachingOpen', 'ratingOpen', 'upNextOpen'] as const) {
-      expect(gameModeDock({ ...base, [open]: true }), open).toEqual(tile)
-      expect(gameModeDockIsLive(gameModeDock({ ...base, [open]: true })), open).toBe(true)
-    }
-    // 512×288 out of the Deck's 1280×800.
-    expect(Math.round(1280 * (1 - GAME_MODE_MENU_TILE.right))).toBe(512)
-    expect(Math.round(800 * (1 - GAME_MODE_MENU_TILE.bottom))).toBe(288)
-  })
-
-  it('still unmaps the video under the opaque comments panel', () => {
-    expect(gameModeDock({ ...base, commentsOpen: true }).hide).toBe(true)
-    expect(gameModeDock({ ...base, commentsOpen: true, sourcePickerOpen: true }).hide).toBe(true)
+  it('unmaps the video only behind the painted frozen frame or the opaque comments panel', () => {
+    expect(gameModeDock({ commentsOpen: false, frozen: true })).toEqual({ bottom: 0, right: 0, top: 0, hide: true })
+    expect(gameModeDock({ commentsOpen: true, frozen: false }).hide).toBe(true)
+    expect(gameModeDockIsLive(gameModeDock({ commentsOpen: false, frozen: true }))).toBe(true)
   })
 
   it('names every live menu surface', () => {

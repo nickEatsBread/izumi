@@ -68,7 +68,9 @@ describe('hero slide count, pool and transition (API 4)', () => {
     }
     expect(hero).toContain('.hero-fade-out { position: absolute; inset: 0; z-index: 1; pointer-events: none; transform: translateZ(0); animation: hero-fade-out 650ms ease both; }')
     expect(hero).toContain(':global(html.gamemode) .hero-carousel-slide,\n  :global(html.gamemode) .hero-copy,\n  :global(html.gamemode) .hero-progress { transform: translateZ(0); }')
-    expect(hero).toContain(':global(html.gamemode) .hero-fade .hero-carousel-slide,\n  :global(html.gamemode) .hero-fade .hero-copy { animation-name: hero-fade-in; }')
+    // Game mode fades the same way from script (gm-motion): opacity alone, over the same 650 ms.
+    expect(hero).toContain('? { gameModeOnly: true, opacity: [0, shown], duration: FADE_MS, easing: linear }')
+    expect(hero).toContain('? { gameModeOnly: true, opacity: [0, 1], duration: FADE_MS, easing: linear }')
     expect(hero).toContain(":global(html[data-motion='reduced']) .hero-fade-out { animation-duration: 1ms; }")
   })
 })

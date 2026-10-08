@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount, tick } from 'svelte'
+  import { onDestroy, onMount, tick, untrack } from 'svelte'
   import { fade } from 'svelte/transition'
   import { listen } from '@tauri-apps/api/event'
   import { listenSafe } from '$lib/util/listen'
@@ -47,7 +47,7 @@
   import { dispatchPadKey, padActivate } from '$lib/nav/pad-controls'
   import { discussionExpanded } from '$lib/comments'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
-  import { reportWatchPlayback } from '$lib/watch-together/client'
+  import { reportWatchPlayback, watchParty } from '$lib/watch-together/client'
   import { currentDirectTorrentPlaybackId, directTorrentHealth, reportDirectTorrentBuffer, reportDirectTorrentFirstFrame, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
   import { pickSubtitleTrackId } from '$lib/player/track-policy'
@@ -57,6 +57,8 @@
   import { incognito } from '$lib/stores/incognito'
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
   import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeLiveMenuOpen, gameModeSideSheetCrop, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay, usesGameModeBitmapCompositor } from '$lib/player/gm-overlay'
+  import { GM_THAW_DELAY_MS, captureFrozenFrame, framePainted, gmFrozenFrame, gmPanel, gmPanelOut, gmStage } from '$lib/player/gm-freeze'
+  import { motion } from '$lib/motion/gm-motion'
   import { deckWebviewZoom } from '$lib/deck/webview-zoom'
   import { findHotkey, playerHotkeyEligible } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
@@ -286,7 +288,10 @@
   const controlsVisible = $derived(
     visible || (!(quietPadSeek || quietDpadScrub) && (transportPaused || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen,
   )
-  const controlsMounted = $derived(controlsVisible || quietDpadScrub)
+  // Game mode: the video window is unmapped behind the menu stage (gm-freeze.ts). Until it is back,
+  // the HTML controls stay mounted and own the chrome, so a closing menu inside them slides out.
+  let gmVideoHidden = $state(false)
+  const controlsMounted = $derived(controlsVisible || quietDpadScrub || gmVideoHidden)
   const currentSeg = $derived(segments.find((s) => pos >= s.start && pos <= s.end))
   // A preview sits after the ending, so auto-skipping it runs off the end of the episode. It opts in
   // separately; every other type follows the one auto-skip toggle.
@@ -387,6 +392,7 @@
     // remains authoritative and reconciles this optimistic value after the command lands.
     const previousPaused = paused
     let changedPause = false
+    if (args[0] === 'pause' && !gmOwnPause) gmPausedForMenu = false
     if (args[0] === 'pause') {
       if (name === 'cycle') paused = !paused
       else if (name === 'set' && (args[1] === 'yes' || args[1] === 'no')) paused = args[1] === 'yes'
@@ -882,9 +888,9 @@
   const sourcePickerVisible = $derived(!!$streamPicker && !$streamPicker.hidden)
   const sourceConnectingVisible = $derived(!!$connecting)
   const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || subtitleEditorOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible || sourcePickerVisible || sourceConnectingVisible || $navLayerOpen || $oskOpen)
-  // A menu, the source picker, the switching card or a prompt is up: the video shrinks to a corner
-  // tile and those surfaces render live beside it (gameModeDock). Comments still unmap the video.
-  const gmMenuDocked = $derived(gmBitmapMode && $playing && !$commentsOpen && gameModeLiveMenuOpen({
+  // A menu, the source picker, the switching card or a prompt is up: the video pauses and those
+  // surfaces render live over its frozen frame (gm-freeze.ts). Comments still unmap the video.
+  const gmMenuStage = $derived(gmBitmapMode && $playing && !drmActive && !$commentsOpen && gameModeLiveMenuOpen({
     playerMenuOpen: $playerMenuOpen,
     trackMenuOpen: $trackMenuOpen,
     sourcePickerOpen: sourcePickerVisible,
@@ -893,14 +899,168 @@
     ratingOpen: !!$seriesRatingPrompt,
     upNextOpen: !!$upNextPrompt,
   }))
+  let gmFrameImg = $state<HTMLImageElement | null>(null)
+  let gmSpinnerTurn = $state(0)
+  // Bumped by every open, close and teardown: an older freeze or thaw stops at its next await.
+  let gmStageToken = 0
+  // The menu paused this stream, so closing it resumes; any other pause (the user, the subtitle
+  // editor, the sleep timer, a watch party) clears it in cmd().
+  let gmPausedForMenu = $state(false)
+  let gmPausedStream = ''
+  let gmOwnPause = false
+  // The stream whose paused frame the stage holds.
+  let gmFrameStream = ''
+  let gmFirstFrameWaiters: (() => void)[] = []
+  const GM_FIRST_FRAME_WAIT_MS = 4000
+  const GM_OSD_CLEAR_MS = 60
+  const GM_UNMAP_SETTLE_MS = 40
+
   $effect(() => {
-    document.documentElement.classList.toggle('gm-docked', gmMenuDocked)
-    return () => document.documentElement.classList.remove('gm-docked')
+    // Through the outro too: the menus' own backdrops stay clear until the video is back.
+    const frozen = gmMenuStage || gmVideoHidden
+    document.documentElement.classList.toggle('gm-frozen', frozen)
+    return () => document.documentElement.classList.remove('gm-frozen')
   })
+  $effect(() => {
+    if (!gmMenuStage) return
+    const token = ++gmStageToken
+    untrack(() => void gmFreeze(token))
+    return () => {
+      const thaw = ++gmStageToken
+      untrack(() => void gmThaw(thaw))
+    }
+  })
+  // A source picked from a menu loads (and plays) on its own; never resume the old one over it.
+  $effect(() => {
+    const url = $nowPlayingStream.url
+    if (gmPausedForMenu && url !== gmPausedStream) gmPausedForMenu = false
+  })
+  $effect(() => {
+    if (firstFrame || !$playing) for (const resolve of gmFirstFrameWaiters.splice(0)) resolve()
+  })
+  // A menu opened before the video's first frame (a slow source): when it arrives behind the
+  // stage, pause it there and show it rather than let it play unseen.
+  $effect(() => {
+    if (!firstFrame || !gmMenuStage) return
+    untrack(() => {
+      if (get(gmStage) === 'frozen' && !get(gmFrozenFrame)) void gmCatchFirstFrame(gmStageToken)
+    })
+  })
+  // Stepped, not a CSS spin: a running animation composites the whole Deck screen every frame.
+  $effect(() => {
+    if (!gmBitmapMode || $gmFrozenFrame == null || gmMenuStage || firstFrame) return
+    const id = setInterval(() => { gmSpinnerTurn = (gmSpinnerTurn + 45) % 360 }, 110)
+    return () => clearInterval(id)
+  })
+  onDestroy(() => {
+    gmStageToken++
+    gmClearStage()
+  })
+
+  function gmSetFrame(url: string | null, stream = '') {
+    const previous = get(gmFrozenFrame)
+    gmFrozenFrame.set(url)
+    gmFrameStream = url ? stream : ''
+    if (previous && previous !== url) URL.revokeObjectURL(previous)
+  }
+
+  function gmClearStage() {
+    gmStage.set('live')
+    gmVideoHidden = false
+    gmSetFrame(null)
+  }
+
+  /** Pause for a menu unless something else owns the play state (a watch party pauses everyone). */
+  async function gmPauseForMenu(): Promise<void> {
+    if (!firstFrame || paused || get(watchParty)) return
+    gmPausedForMenu = true
+    gmPausedStream = $nowPlayingStream.url
+    gmOwnPause = true
+    const pausing = cmd('set', ['pause', 'yes'])
+    gmOwnPause = false
+    await pausing
+  }
+
+  /** Pause, paint the exact paused frame full-size under the menus, then unmap the video. */
+  async function gmFreeze(token: number) {
+    const stage = get(gmStage)
+    // Reopened before the last thaw finished: its frame of this stream is still painted.
+    if ((stage === 'thawing' || stage === 'frozen') && get(gmFrozenFrame) && gmFrameStream === $nowPlayingStream.url) {
+      gmStage.set('frozen')
+      gmVideoHidden = true
+      return
+    }
+    gmStage.set('freezing')
+    await gmPauseForMenu()
+    // The capture is the window as shown, OSD included: let mpv redraw without the controls.
+    await new Promise((resolve) => setTimeout(resolve, GM_OSD_CLEAR_MS))
+    if (token !== gmStageToken) return
+    const stream = $nowPlayingStream.url
+    const url = firstFrame ? await captureFrozenFrame() : ''
+    if (token !== gmStageToken) { if (url) URL.revokeObjectURL(url); return }
+    gmSetFrame(url, stream)
+    await tick()
+    await framePainted(gmFrameImg)
+    if (token !== gmStageToken) return
+    gmVideoHidden = true
+    // Reveal the menus once the video window is really gone. Started with the unmap request, the
+    // first frames of the dim ran behind the video and it appeared already part-way dark.
+    await framePainted()
+    await new Promise((resolve) => setTimeout(resolve, GM_UNMAP_SETTLE_MS))
+    if (token !== gmStageToken) return
+    gmStage.set('frozen')
+  }
+
+  /** The first frame arrived behind a frozen stage that had none to show. */
+  async function gmCatchFirstFrame(token: number) {
+    await gmPauseForMenu()
+    if (token !== gmStageToken) return
+    const stream = $nowPlayingStream.url
+    const url = await captureFrozenFrame()
+    if (token !== gmStageToken || get(gmStage) !== 'frozen') { if (url) URL.revokeObjectURL(url); return }
+    if (url) gmSetFrame(url, stream)
+  }
+
+  /** The menus closed: let them slide out, map the video back over the identical frame, resume. */
+  async function gmThaw(token: number) {
+    if (!$playing) { gmPausedForMenu = false; gmClearStage(); return }
+    const wasHidden = gmVideoHidden
+    gmStage.set('thawing')
+    if (wasHidden) await new Promise((resolve) => setTimeout(resolve, GM_THAW_DELAY_MS))
+    if (token !== gmStageToken) return
+    // A source picked from the menu shows its own first frame before the video comes back; a slow
+    // one brings the video window back after a few seconds, with mpv's own loading spinner.
+    if (!firstFrame) {
+      await new Promise<void>((resolve) => {
+        gmFirstFrameWaiters.push(resolve)
+        setTimeout(resolve, GM_FIRST_FRAME_WAIT_MS)
+      })
+      if (token !== gmStageToken) return
+    }
+    if (!$playing) { gmPausedForMenu = false; gmClearStage(); return }
+    gmVideoHidden = false
+    if (wasHidden) {
+      await framePainted()
+      await new Promise((resolve) => setTimeout(resolve, 60))
+      if (token !== gmStageToken) return
+    }
+    if (gmPausedForMenu) {
+      gmPausedForMenu = false
+      if ($nowPlayingStream.url === gmPausedStream) {
+        gmOwnPause = true
+        void cmd('set', ['pause', 'no'])
+        gmOwnPause = false
+      }
+    }
+    // The video covers the frame by now. Drop it at once: a control-strip snapshot taken while it
+    // was still in the page would paint the paused picture over the moving video.
+    gmStage.set('live')
+    gmSetFrame(null)
+  }
   // Ordinary controls are drawn by the 60Hz native OSD. Complex/persistent HTML surfaces still
   // take the bitmap path; that bitmap sits above ASS and includes the controls underneath it.
-  // Docked, the OSD would draw into the corner tile at full-screen positions, so it stays off.
-  const gmNativeControls = $derived(gmBitmapMode && firstFrame && controlsVisible && !gmMenuDocked && (!overlayFull || $playerSideSheetOpen))
+  // Under the menu stage the video is paused behind live menus, so the OSD stays off.
+  const gmNativeControls = $derived(gmBitmapMode && firstFrame && controlsVisible && !gmMenuStage && !gmVideoHidden && (!overlayFull || $playerSideSheetOpen))
   const gmDynamicOwnsChrome = $derived(gmNativeControls)
   const overlayActive = $derived(gameModeBitmapOverlayActive({
     gameMode: gmBitmapMode,
@@ -927,21 +1087,15 @@
       invoke('player_gm_overlay', { visible: false, fast: false, animate: $playerProgressAnimations, crop: null }).catch(() => {})
       return
     }
-    const dock = gameModeDock({
-      loading,
-      controlsVisible,
-      playerMenuOpen: $playerMenuOpen,
-      trackMenuOpen: $trackMenuOpen,
-      commentsOpen: $commentsOpen,
-      noticeVisible,
-      sourcePickerOpen: sourcePickerVisible,
-      connecting: sourceConnectingVisible,
-      subtitleEditorOpen,
-      cachingOpen: !!$debridCaching,
-      ratingOpen: !!$seriesRatingPrompt,
-      upNextOpen: !!$upNextPrompt,
-    })
+    const dock = gameModeDock({ commentsOpen: $commentsOpen, frozen: gmVideoHidden })
     invoke('player_gm_dock', dock).catch(() => {})
+    // Between pausing and painting the frozen frame the menus are still behind the video: no
+    // snapshot for them, and the OSD is already off. Nor while the frame is still in the page: a
+    // snapshot would carry the paused picture over the moving video.
+    if (gmMenuStage || $gmFrozenFrame != null) {
+      invoke('player_gm_overlay', { visible: false, fast: false, animate: false, crop: null }).catch(() => {})
+      return
+    }
     if (gameModeDockIsLive(dock)) {
       invoke('player_gm_overlay', { visible: false, fast: false, animate: $playerProgressAnimations, crop: null }).catch(() => {})
       return
@@ -1188,7 +1342,8 @@
       firstFrame,
       controls: visible && nativeControls,
       paused: transportPaused,
-      animateControls: $playerProgressAnimations,
+      // The menu stage captures the window, OSD included: its controls leave at once.
+      animateControls: $playerProgressAnimations && !gmMenuStage,
       scrubbing: visible && s.active,
       pos: gmDynamicPos,
       dur: transportDur,
@@ -1784,15 +1939,23 @@
   onfocusin={() => { if (gmMode) gmFocusRev += 1 }}
   role="presentation"
 >
-  {#if gmMenuDocked}
-    <!-- Game mode with a menu open: the video is the corner tile above this; the menu surfaces sit
-         beside it (html.gm-docked moves them clear) and the rest of the window is this backdrop. -->
-    <div data-gm-dock-backdrop class="pointer-events-none fixed inset-0 bg-[#0b0b0d]" aria-hidden="true">
-      {#if $nowPlaying.animeTitle}
-        <div class="absolute left-6 top-[calc(36vh+1.25rem)] w-[calc(40vw-3rem)] text-white">
-          <p class="line-clamp-2 text-2xl font-black leading-tight">{$nowPlaying.animeTitle}</p>
-          {#if $nowPlaying.episode != null}<p class="mt-1 text-lg font-semibold text-white/60">Episode {$nowPlaying.episode}</p>{/if}
-          <p class="mt-4 text-sm font-semibold text-white/40">B closes the menu</p>
+  {#if gmBitmapMode && $gmFrozenFrame != null}
+    <!-- Game-mode menu stage (gm-freeze.ts): the paused frame, full size, standing in for the video
+         window while it is unmapped under the live menus. Pixel-identical to the paused picture,
+         so neither the swap in nor the swap back shows. -->
+    <div data-gm-stage class="pointer-events-none fixed inset-0 z-[25] bg-black" aria-hidden="true">
+      {#if $gmFrozenFrame}
+        <img bind:this={gmFrameImg} src={$gmFrozenFrame} alt="" draggable="false"
+             class="h-full w-full object-contain" />
+      {/if}
+      {#if gmMenuStage}
+        <div data-gm-scrim use:gmPanel={'fade'} out:motion={gmPanelOut('fade')} class="absolute inset-0 bg-black/55"></div>
+      {:else if !firstFrame}
+        <!-- A source picked from the menu is loading behind the frame; the native spinner is in
+             the unmapped video window, so the stage shows its own. -->
+        <div class="absolute bottom-8 right-8 flex items-center gap-3 rounded-full bg-black/70 px-5 py-3 text-base font-semibold text-white">
+          <span class="size-5 rounded-full border-[3px] border-white/25 border-t-white" style:rotate="{gmSpinnerTurn}deg"></span>
+          Loading
         </div>
       {/if}
     </div>
@@ -1924,7 +2087,7 @@
 
   {#if subtitleEditorOpen}
     <SubtitleEditor
-      {paused}
+      paused={paused && !gmPausedForMenu}
       command={cmd}
       getProperty={(name) => playerGetProperty(name)}
       position={dialogueBottom(effectiveSubtitle, subtitleTrack, $sessionSubtitleAdjustments, subtitleDefaults)}
@@ -1982,23 +2145,13 @@
 </div>
 
 <style>
-  /* Game mode with a menu open (gm-overlay GAME_MODE_MENU_TILE): the video window is a 40vw × 36vh
-     tile in the top-left corner, above the webview. Menu surfaces opt in with data-gm-dock-avoid
-     to keep their content clear of it and drop their own dim, since the dock backdrop already
-     covers the page underneath. The control bars belong to full-screen video, so they step aside. */
-  :global(html.gm-docked [data-gm-dock-avoid]) {
-    padding-left: calc(40vw + 1.5rem) !important;
+  /* Game-mode menu stage (gm-freeze.ts): menus render live over the paused video's frozen frame,
+     which already carries the dim (data-gm-scrim), so the menus' own backdrops stay clear and the
+     paused picture reads through them. The HTML control bars belong to the moving video. */
+  :global(html.gm-frozen [data-gm-menu-surface]) {
     background: transparent !important;
   }
-  :global(html.gm-docked [data-gm-bar]) {
+  :global(html.gm-frozen [data-gm-bar]) {
     visibility: hidden;
-  }
-  :global(html.gm-docked .gm-track-col) {
-    width: 21rem !important;
-  }
-  /* Two 21rem columns beside the tile leave room for "Subtitle style" on one line at text-2xl. */
-  :global(html.gm-docked .gm-track-col button) {
-    font-size: 1.5rem !important;
-    line-height: 2rem !important;
   }
 </style>

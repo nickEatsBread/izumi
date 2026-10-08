@@ -45,26 +45,28 @@ describe('Steam Deck featured banner flicker', () => {
     // Only the Home carousel is marked; a detail banner is a single slide and stays static.
     expect(hero).toContain('class:hero-carousel-slide={showOverlay}')
     expect(gameMode('.hero-slide-in'), 'no Game-mode rule may stop every slide').toBe('')
-    expect(gameMode('.hero-carousel-slide')).toContain('animation-name: hero-slide-in-layer')
-    expect(gameMode('.hero-copy')).toContain('animation-name: hero-copy-in-layer')
-    expect(gameMode('.hero-copy')).not.toContain('animation: none')
+    // The motion is scripted in Game mode (gm-motion), so the CSS animations are off there.
+    expect(gameMode('.hero-carousel-slide')).toContain('animation: none')
+    expect(gameMode('.hero-copy')).toContain('animation: none')
+    expect(hero).toContain('in:motion={slideIn(showOverlay, .7)} out:motion={slideOut(showOverlay, .7)}>')
+    expect(hero).toContain('in:motion={slideIn(true, 1)} out:motion={slideOut(true, 1)}>')
+    expect(hero).toContain('in:motion={copyIn()}>')
     // The direction still comes from the step: L1/R1, a swipe or the auto-advance.
-    expect(keyframes('hero-slide-in-layer')).toContain('translate: var(--hero-enter-x) 0')
-    expect(keyframes('hero-copy-in-layer')).toContain('translate: var(--hero-enter-x) 8px')
+    expect(hero).toContain('xPercent: [navDirection * 3, 0], scale: [1.015, 1], duration: 480')
+    expect(hero).toContain('xPercent: [navDirection * 1.5, 0], y: [8, 0], duration: 360')
+    // The outgoing slide fades under the incoming one: a crossfade, never a dip to the page colour.
+    expect(hero).toContain('duration: carousel && !fadeTransition ? 480 : 0')
   })
 
-  it('pins every Game-mode hero tween to a layer that outlives the tween', () => {
-    for (const [selector, name] of [
-      ['.hero-carousel-slide', 'hero-slide-in-layer'],
-      ['.hero-copy', 'hero-copy-in-layer'],
-    ]) {
-      // A static 3D transform keeps the element composited from creation to removal.
+  it('runs Game-mode hero motion from script on a layer that outlives it', () => {
+    // Even element-lifetime layers blinked when their keyframes ended (one frame without the artwork
+    // ~480 ms after each step on WebKitGTK 2.52), so no Game-mode hero keyframes remain at all.
+    for (const selector of ['.hero-carousel-slide', '.hero-copy']) {
       expect(gameMode(selector), selector).toContain('transform: translateZ(0)')
-      // The keyframes must not touch `transform`: that would override the anchor, and a
-      // translate3d(x, 0, 0) → translate3d(0, 0, 0) tween blends down to a 2D translate, which drops
-      // the layer as soon as the fill takes over.
-      expect(keyframes(name), `${name} keyframes`).not.toMatch(/transform:/)
     }
+    expect(hero).not.toContain('@keyframes hero-slide-in-layer')
+    expect(hero).not.toContain('@keyframes hero-copy-in-layer')
+    expect(hero).toContain("import { motion, type MotionParams } from '$lib/motion/gm-motion'")
   })
 
   it('keeps detail banners, the late-artwork fade and the scroll dim static in Game mode', () => {

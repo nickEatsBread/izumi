@@ -718,6 +718,42 @@ async fn player_editor_snapshot(
     Err("subtitle editor screenshot timed out".into())
 }
 
+/// Game mode: the paused frame, subtitles included, that the menu stage paints full-size while the
+/// video window is unmapped under live menus (gm-freeze.ts). Raw bytes rather than a JSON number
+/// array, so a 1080p JPEG costs no serialisation on the Deck.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn player_frame_snapshot(
+    app: AppHandle,
+    player: tauri::State<'_, player::PlayerHandle>,
+) -> Result<tauri::ipc::Response, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let path = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| error.to_string())?
+        .join(format!("menu-frame-{stamp}.jpg"));
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let path_text = path.to_string_lossy().into_owned();
+    player.frame_snapshot_to_file(&path_text)?;
+    for _ in 0..60 {
+        if std::fs::metadata(&path).is_ok_and(|metadata| metadata.len() > 0) {
+            let bytes = std::fs::read(&path).map_err(|error| error.to_string());
+            let _ = std::fs::remove_file(&path);
+            return bytes.map(tauri::ipc::Response::new);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    let _ = std::fs::remove_file(&path);
+    Err("menu frame snapshot timed out".into())
+}
+
 /// Register the scrub-preview grid of the loaded file `url`. `key` is the infoHash (or
 /// media-episode) cache key; the duration is read from mpv. `width` is the tile width in device
 /// pixels. The headless libmpv decoder renders hovered tiles at once and the rest of the grid in
@@ -6409,6 +6445,7 @@ pub fn run() {
             spawn_external_player,
             player_get_property,
             player_editor_snapshot,
+            player_frame_snapshot,
             player_sprite_start,
             player_thumb_tile,
             player_thumb_info,
