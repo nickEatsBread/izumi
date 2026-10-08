@@ -6,8 +6,8 @@ import { describe, expect, it } from 'vitest'
 // so legibility depended on how busy that particular banner was. The artwork is now a band that
 // ends in a hard cut, with every piece of text below it on solid background.
 
-const detail = readFileSync(fileURLToPath(new URL('./AnimeDetail.svelte', import.meta.url)), 'utf8')
-const hero = readFileSync(fileURLToPath(new URL('../banner/Hero.svelte', import.meta.url)), 'utf8')
+const detail = readFileSync(fileURLToPath(new URL('./AnimeDetail.svelte', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
+const hero = readFileSync(fileURLToPath(new URL('../banner/Hero.svelte', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
 
 describe('mobile series hero', () => {
   it('takes the full canvas while mounted and gives it back on teardown', () => {
@@ -80,7 +80,7 @@ describe('mobile series hero', () => {
     expect(detail).toContain("import { headerImage } from '$lib/detail/header-image'")
     expect(detail.match(/use:headerImage=\{\{ src: headerSrc, onfailed: backdropFailed \}\}/g)?.length).toBe(3)
     expect(detail).not.toMatch(/<img data-part="detail\.backdrop"[^>]*src=\{headerSrc\}/)
-    const action = readFileSync(fileURLToPath(new URL('../../detail/header-image.ts', import.meta.url)), 'utf8')
+    const action = readFileSync(fileURLToPath(new URL('../../detail/header-image.ts', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
     expect(action).toContain('const retrying = reliableImage(node, params.src)')
     expect(action).toContain("node.addEventListener('imagefailed', failed)")
   })
@@ -231,7 +231,7 @@ describe('mobile series hero', () => {
   it('keeps a quiet borderless schedule summary beneath mobile facts', () => {
     expect(detail).toContain('mt-3 flex flex-wrap items-center gap-2 empty:mt-0')
     expect(detail).toContain('<AiringStatus media={m} />')
-    const airing = readFileSync(fileURLToPath(new URL('./AiringStatus.svelte', import.meta.url)), 'utf8')
+    const airing = readFileSync(fileURLToPath(new URL('./AiringStatus.svelte', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
     expect(airing).toContain('gap-x-2 whitespace-nowrap text-xs text-muted-foreground')
     expect(airing).toContain("toolbar ? 'h-9' : ''")
     expect(airing).not.toContain('compact = false')
@@ -239,7 +239,7 @@ describe('mobile series hero', () => {
   })
 
   it('surfaces a complete, discoverable mobile anime overview without crowding the hero', () => {
-    expect(readFileSync(fileURLToPath(new URL('../../detail/sections.ts', import.meta.url)), 'utf8'))
+    expect(readFileSync(fileURLToPath(new URL('../../detail/sections.ts', import.meta.url)), 'utf8').replace(/\r\n/g, '\n'))
       .toContain("const PHONE_ORDER: readonly DetailSection[] = ['episodes', 'overview', 'relations', 'characters', 'recommended']")
     expect(detail).toContain('aria-label="Genres"')
     expect(detail).toContain('From {prettyEnum(m.source)}')
@@ -251,7 +251,7 @@ describe('mobile series hero', () => {
     // The Information grid's facts and wording come from facts.ts: every studio, the runtime, the
     // source, the country and the popularity among them.
     expect(detail).toContain("mediaFacts(m, { place: 'info', keys: detailTheme.infoKeys")
-    const facts = readFileSync(fileURLToPath(new URL('../../detail/facts.ts', import.meta.url)), 'utf8')
+    const facts = readFileSync(fileURLToPath(new URL('../../detail/facts.ts', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
     expect(facts).toContain("export const INFO_KEYS: readonly FactKey[] = ['studio', 'format', 'status', 'episodes', 'duration', 'season', 'aired', 'source', 'country', 'score', 'members']")
     expect(facts).toContain("const INFO_LABELS: Partial<Record<FactKey, FactLabel>> = { format: 'format', duration: 'runtime', aired: 'premiered', members: 'popularity' }")
   })
@@ -259,7 +259,7 @@ describe('mobile series hero', () => {
 
 describe('series airing schedule', () => {
   it('renders SUB and DUB as distinct colored words in one quiet schedule line', () => {
-    const airing = readFileSync(fileURLToPath(new URL('./AiringStatus.svelte', import.meta.url)), 'utf8')
+    const airing = readFileSync(fileURLToPath(new URL('./AiringStatus.svelte', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
     expect(airing).toContain("kind === 'Dub'")
     expect(airing).toContain('text-violet-300')
     expect(airing).toContain('text-sky-300')

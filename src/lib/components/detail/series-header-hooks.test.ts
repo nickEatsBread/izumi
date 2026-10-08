@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 // names and formats, the Information block, related titles by type, the synopsis control, the
 // countdown's place and the actions-row lead. Every hook renders in the loading page too: it is the
 // same markup, drawn from the tapped card's record.
-const read = (file: string) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8')
+const read = (file: string) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
 const detail = read('./AnimeDetail.svelte')
 const snippet = (name: string) => {
   const start = detail.indexOf(`{#snippet ${name}(`)
