@@ -1,6 +1,6 @@
 [package]
 name = "izumi"
-version = "0.1.72"
+version = "0.1.73"
 description = "A native desktop anime client"
 authors = ["izumi contributors"]
 edition = "2021"
