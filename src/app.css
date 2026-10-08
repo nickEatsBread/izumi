@@ -463,16 +463,23 @@ html.gamemode:not(.tv-mode) [data-focusable][data-switch]::after {
    WebKit snapshot contain only the compact sheet, so its right-to-left motion is cheap and the
    backdrop does not visibly travel with it. */
 .gamemode .gm-sheet-backdrop { background: transparent; }
+/* The Game-mode player panels are always dark, whatever the theme's foreground is. */
+.gamemode [data-gm-tv-panel] [data-part="hints.glyph"] {
+  background: #fff;
+  color: #101012;
+}
 .gamemode .gm-set-row {
   display: flex;
   width: 100%;
+  min-height: 3.75rem;
+  margin: 0.125rem 0;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  border-radius: 0.85rem;
-  padding: 0.9rem 1rem;
+  border-radius: 0.75rem;
+  padding: 0.5rem 1rem;
   text-align: left;
-  font-size: 1.05rem;
+  font-size: 1.25rem;
   font-weight: 600;
 }
 /* Buttons whose fill already matches the ring colour (the solid-white play/pause circle) would

@@ -51,6 +51,9 @@
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
   import { savedSubtitleStyles, sessionSubtitleAdjustments, sessionSubtitleStyle, saveSubtitlePreset, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
   import { bingeSource } from '$lib/player/session'
+  import { gmPanel, gmPanelOut } from '$lib/player/gm-freeze'
+  import { motion } from '$lib/motion/gm-motion'
+  import Glyph from '$lib/components/shell/Glyph.svelte'
   import Brush from '@lucide/svelte/icons/brush'
   import { chapters as chapterStore } from '$lib/player/session'
   import { activeChapterIndex, formatChapterTime, isGenericChapterTitle } from '$lib/player/chapters'
@@ -1438,10 +1441,15 @@
   </div>
 
   {#if gm && showOptions}
-    <div data-gm-dock-avoid class="gm-sheet-backdrop pointer-events-auto fixed inset-0 z-40 bg-black/50" onclick={closePlayerMenus} role="presentation">
-    <div data-gm-side-sheet class="gm-sheet gm-sheet-in absolute top-10 bottom-10 right-8 z-40 flex w-[22rem] flex-col overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-white shadow-2xl" onclick={(e) => e.stopPropagation()} role="presentation">
+    <!-- A TV-style side panel over the paused video's frozen frame (gm-freeze.ts); pages push in
+         place and B steps back. -->
+    <div data-gm-menu-surface class="gm-sheet-backdrop pointer-events-auto fixed inset-0 z-40 bg-black/50" onclick={closePlayerMenus} role="presentation">
+    <div data-gm-side-sheet data-gm-tv-panel use:gmPanel out:motion={gmPanelOut()} class="gm-sheet absolute inset-y-0 right-0 z-40 flex w-[min(26rem,42vw)] flex-col border-l border-white/10 bg-[#101012]/95 text-white" onclick={(e) => e.stopPropagation()} role="presentation">
+    {#key gmSettingsPage}
+    <div class="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-3 pb-3 pt-6"
+         in:motion={{ gameModeOnly: true, opacity: [0, 1], x: [gmSettingsPage === 'root' ? -40 : 40, 0], duration: 180 }}>
       {#if gmSettingsPage === 'root'}
-        <p class="px-3 py-2 text-2xl font-bold">Settings</p>
+        <p class="px-4 pb-3 text-2xl font-bold">Settings</p>
         <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 0} class:text-black={gmSetIdx === 0} onclick={changeSource}><span>Change source</span><span class="opacity-50">›</span></button>
         <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 1} class:text-black={gmSetIdx === 1} onclick={() => gmOpenPage('speed')}><span>Speed</span><span class="opacity-50">{speed}× ›</span></button>
         {#if qualityInfo.heights.length}
@@ -1480,6 +1488,12 @@
           <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 5 + ($sceneBookmarksEnabled ? 1 : 0)} class:text-black={gmSetIdx === 5 + ($sceneBookmarksEnabled ? 1 : 0)} onclick={() => setSleep('end')}>Sleep: episode end</button>
         {/if}
       {/if}
+    </div>
+    {/key}
+    <div class="flex shrink-0 items-center gap-6 border-t border-white/10 px-6 py-3.5 text-base font-semibold text-white/65">
+      <span class="flex items-center gap-2"><Glyph family="deck" button="a" />Select</span>
+      <span class="flex items-center gap-2"><Glyph family="deck" button="b" />{gmSettingsPage === 'root' ? 'Close' : 'Back'}</span>
+    </div>
     </div>
     </div>
   {/if}

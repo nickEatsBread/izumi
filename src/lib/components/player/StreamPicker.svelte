@@ -9,7 +9,10 @@
   import { flip } from 'svelte/animate'
   import { fade, scale } from 'svelte/transition'
   import { goto, pushState } from '$app/navigation'
-  import { streamPicker, gameMode, bingeSource, debridCaching, connecting, bumpPlayerOverlay, type StreamPickerState } from '$lib/player/session'
+  import { streamPicker, gameMode, playing, bingeSource, debridCaching, connecting, bumpPlayerOverlay, type StreamPickerState } from '$lib/player/session'
+  import { gmPanel, gmPanelOut } from '$lib/player/gm-freeze'
+  import { motion } from '$lib/motion/gm-motion'
+  import Glyph from '$lib/components/shell/Glyph.svelte'
   import type { Writable } from 'svelte/store'
   import { rankInfos, pickCandidates, preferDirectStartupCandidates, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
   import { isDead, markDead, markRouteDead } from '$lib/stremio/dead-sources'
@@ -55,6 +58,14 @@
 
   const pick = $derived($pickerStore)
   const controllerUi = $derived($gameMode || $controllerMode)
+  // Over a playing video on the Deck the picker is a TV-style side panel over the paused frame
+  // (gm-freeze.ts); everywhere else it stays the centred card.
+  const tvPanel = $derived($gameMode && $playing && !$isMobile)
+  // Global: the panel sits in a nested block, and a local outro never runs when the picker closes.
+  // Elsewhere it stays instant, as it always has been.
+  const panelOut = (node: Element) => $gameMode
+    ? motion(node as HTMLElement, gmPanelOut(tvPanel ? 'right' : 'fade'))
+    : { duration: 0 }
   const directP2p = $derived($torrentPlaybackMode === 'direct' || !$debridKey)
   const cacheCheck = $derived($debridKey ? cacheCheckMode($debridProvider) : 'none')
 
@@ -894,15 +905,15 @@
        its whole shell while `streamPicker` is set), so it has to survive a ~360px-tall landscape
        viewport — hence the short-viewport rules in the style block. -->
   <div
-    data-gm-dock-avoid
-    class="fixed inset-0 z-40 grid bg-black/70 {$isMobile ? '' : 'place-items-center p-4'}"
+    data-gm-menu-surface
+    class="fixed inset-0 z-40 grid bg-black/70 {tvPanel ? 'justify-items-end' : $isMobile ? '' : 'place-items-center p-4'}"
     class:backdrop-blur-sm={!$gameMode && !$isMobile}
     transition:fade={{ duration: $gameMode ? 0 : 200 }}
     onclick={close}
     onkeydown={(e) => e.key === 'Escape' && close()}
     role="presentation"
   >
-    <div bind:this={pickerTrap} data-nav-trap class="sp-panel flex flex-col overflow-hidden bg-card shadow-2xl {$isMobile ? 'sp-mobile h-full w-full' : 'max-h-[85vh] w-full max-w-3xl rounded-2xl border border-border'}" in:scale={{ duration: $gameMode ? 0 : 200, start: 0.95, opacity: 1 }} out:scale={{ duration: $gameMode ? 0 : 200, start: 0.95, opacity: 1 }} onclick={(e) => e.stopPropagation()} onfocusin={() => $gameMode && bumpPlayerOverlay()} role="presentation">
+    <div bind:this={pickerTrap} data-nav-trap data-gm-tv-panel={tvPanel ? '' : undefined} use:gmPanel={tvPanel ? 'right' : 'fade'} class="sp-panel flex flex-col overflow-hidden shadow-2xl {tvPanel ? 'h-full w-[min(46rem,62vw)] border-l border-white/10 bg-[#101012]/95' : $isMobile ? 'sp-mobile h-full w-full bg-card' : 'max-h-[85vh] w-full max-w-3xl rounded-2xl border border-border bg-card'}" in:scale={{ duration: $gameMode ? 0 : 200, start: 0.95, opacity: 1 }} out:panelOut|global onclick={(e) => e.stopPropagation()} onfocusin={() => $gameMode && bumpPlayerOverlay()} role="presentation">
       <!-- Banner-headed title (shrink-0 so a tall list never squeezes it) -->
       <div class="relative shrink-0 overflow-hidden border-b border-border">
         {#if banner(pick.media)}
@@ -1119,7 +1130,7 @@
                group. Its key is stable across the flat-row → group transition (a group is keyed by
                its head), so flip never sees a remove+insert for the same source. -->
           {@const grouped = isGroup(entry) && entry.rest.length > 0 ? entry : null}
-          <div animate:flip={{ duration: resolving ? 0 : 220 }} in:fade={{ duration: 150 }}>
+          <div animate:flip={{ duration: resolving || $gameMode ? 0 : 220 }} in:fade={{ duration: $gameMode ? 0 : 150 }}>
             {#if grouped}
               {@const gk = variantGroupKey(grouped.head)}
               {@const open = forceExpand || expandedGroups.has(gk) || groupHasBest(grouped)}
@@ -1189,6 +1200,12 @@
         {/if}
         {/if}
       </div>
+      {#if tvPanel}
+        <div class="flex shrink-0 items-center gap-6 border-t border-white/10 px-6 py-3.5 text-base font-semibold text-white/65">
+          <span class="flex items-center gap-2"><Glyph family="deck" button="a" />Play</span>
+          <span class="flex items-center gap-2"><Glyph family="deck" button="b" />Back</span>
+        </div>
+      {/if}
     </div>
   </div>
   {/if}

@@ -12,6 +12,7 @@
   import { trackLabel, langName } from '$lib/player/track-label'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
+  import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import Check from '@lucide/svelte/icons/check'
   import Captions from '@lucide/svelte/icons/captions'
   import ServerIcon from '@lucide/svelte/icons/server'
@@ -23,6 +24,9 @@
   import { serverSiblings, variantLabels } from '$lib/player/source-variants'
   import type { Stream } from '$lib/stremio/addon'
   import { rememberSeriesTrack } from '$lib/player/track-preferences'
+  import { gmPanel, gmPanelOut } from '$lib/player/gm-freeze'
+  import { motion } from '$lib/motion/gm-motion'
+  import Glyph from '$lib/components/shell/Glyph.svelte'
 
   // Game-mode (Deck) audio/subtitle/server picker: a controller-navigable CASCADING column menu.
   // Opens on the ☰ (start) button; d-pad up/down moves within a column, →/A descends into the
@@ -117,6 +121,9 @@
     : it.kind === 'style-preset' ? `style-${it.preset.id}`
       : it.kind === 'server' ? `server-${it.target.url ?? it.label}`
         : it.kind === 'aid' || it.kind === 'sid' || it.kind === 'ccid' ? `${it.kind}${it.id}` : it.kind
+  // Each category row shows what is in effect now, like a TV settings list.
+  const currentLabel = (key: string) => key === 'style' ? ($sessionSubtitleStyle?.name ?? 'Default')
+    : key === 'online' ? '' : itemsFor(key).find((it) => it.selected)?.label ?? ''
 
   let open = $state(false)
   let level = $state(0) // 0 = category column, 1 = track column
@@ -275,7 +282,7 @@
         case 'right': descend(); break
         case 'left': ascend(); break
         case 'a': activate(); break
-        case 'b': closeMenu(); break
+        case 'b': ascend(); break
       }
     })
     // Keyboard parity (Desktop testing / a physical keyboard on the Deck).
@@ -307,57 +314,81 @@
 </script>
 
 {#if open}
-  <!-- Backdrop + sheet. One snapshot after paint, then CPU-fade; d-pad bumps re-snapshot. -->
+  <!-- A TV-style side panel over the paused video's frozen frame (gm-freeze.ts). Categories push to
+       their tracks in the same panel; B or the back arrow returns, a tap outside closes. -->
   <div
-    data-gm-dock-avoid
-    class="fixed inset-0 z-40 flex items-center justify-center bg-black/50"
+    data-gm-menu-surface
+    class="fixed inset-0 z-40 bg-black/50"
     onclick={closeMenu}
     role="presentation"
   >
-    <div class="flex items-start gap-4" onclick={(e) => e.stopPropagation()} role="presentation">
-      <div class="gm-sheet gm-sheet-in gm-track-col w-[26rem] rounded-3xl border border-white/10 bg-[#1a1a1a] p-2 shadow-2xl">
-        {#each roots as r, i (r.key)}
-          <button
-            data-focusable
-            class="my-1 flex w-full select-none items-center rounded-lg py-5 pl-7 pr-5 text-left text-3xl font-bold outline-none"
-            class:bg-white={level === 0 && rootIdx === i}
-            class:text-black={level === 0 && rootIdx === i}
-            onpointerenter={() => { if (level === 0 && pointerAllowed()) rootIdx = i }}
-            onclick={() => { if (level === 0) { rootIdx = i; descend() } }}
-          >
-            <span class="grid w-10 shrink-0 place-items-center">
-              {#if r.key === 'audio'}<Volume2 size={30} />
-              {:else if r.key === 'subs'}<Captions size={30} />
-              {:else if r.key === 'server'}<ServerIcon size={30} />
-              {:else if r.key === 'captions'}<Captions size={30} />
-              {:else if r.key === 'online'}<Search size={30} />
-              {:else}<Brush size={30} />{/if}
-            </span>
-            <span>{r.label}</span>
-            <ChevronRight size={36} class="ml-auto" />
+    <div
+      data-gm-tv-panel
+      use:gmPanel
+      out:motion={gmPanelOut()}
+      class="gm-sheet absolute inset-y-0 right-0 flex w-[min(30rem,46vw)] flex-col border-l border-white/10 bg-[#101012]/95 text-white"
+      onclick={(e) => e.stopPropagation()}
+      role="presentation"
+    >
+      <div class="flex shrink-0 items-center gap-2 px-6 pb-3 pt-7">
+        {#if level === 1}
+          <button data-focusable aria-label="Back" onclick={ascend}
+                  class="-ml-3 grid size-11 shrink-0 place-items-center rounded-full text-white/80 hover:bg-white/10">
+            <ChevronLeft size={28} />
           </button>
-        {/each}
+        {/if}
+        <h2 class="line-clamp-1 text-2xl font-bold">{level === 1 ? roots[openIdx]?.label : 'Audio and subtitles'}</h2>
       </div>
-
-      <!-- Track column (appears when descended). -->
-      {#if level === 1}
-        <div bind:this={trackColEl} class="gm-sheet gm-menu-col-in gm-track-col max-h-[85vh] w-[26rem] overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-2 shadow-2xl">
-          <p class="px-5 py-3 text-xl font-bold uppercase tracking-wide text-white/40">{roots[openIdx]?.label}</p>
-          {#each subItems as it, i (leafKey(it))}
-            <button
-              data-focusable
-              class="my-1 flex w-full select-none items-center gap-3 rounded-lg py-5 pl-7 pr-5 text-left text-3xl font-bold outline-none"
-              class:bg-white={subIdx === i}
-              class:text-black={subIdx === i}
-              onpointerenter={() => { if (pointerAllowed()) subIdx = i }}
-              onclick={() => void apply(it)}
-            >
-              <span class="grid w-8 shrink-0 place-items-center">{#if it.selected}<Check size={32} />{/if}</span>
-              <span class="line-clamp-2">{it.label}</span>
-            </button>
-          {/each}
+      {#key level}
+        <div
+          bind:this={trackColEl}
+          class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3"
+          in:motion={{ gameModeOnly: true, opacity: [0, 1], x: [level === 1 ? 40 : -40, 0], duration: 180 }}
+        >
+          {#if level === 0}
+            {#each roots as r, i (r.key)}
+              <button
+                data-focusable
+                class="my-0.5 flex min-h-[3.75rem] w-full select-none items-center gap-4 rounded-xl px-4 text-left text-xl font-semibold outline-none"
+                class:bg-white={rootIdx === i}
+                class:text-black={rootIdx === i}
+                onpointerenter={() => { if (pointerAllowed()) rootIdx = i }}
+                onclick={() => { rootIdx = i; descend() }}
+              >
+                <span class="grid w-7 shrink-0 place-items-center">
+                  {#if r.key === 'audio'}<Volume2 size={24} />
+                  {:else if r.key === 'subs'}<Captions size={24} />
+                  {:else if r.key === 'server'}<ServerIcon size={24} />
+                  {:else if r.key === 'captions'}<Captions size={24} />
+                  {:else if r.key === 'online'}<Search size={24} />
+                  {:else}<Brush size={24} />{/if}
+                </span>
+                <span class="min-w-0 flex-1">{r.label}</span>
+                <span class="max-w-[40%] truncate text-base font-medium opacity-60">{currentLabel(r.key)}</span>
+                <ChevronRight size={24} class="shrink-0 opacity-70" />
+              </button>
+            {/each}
+          {:else}
+            {#each subItems as it, i (leafKey(it))}
+              <button
+                data-focusable
+                class="my-0.5 flex min-h-[3.75rem] w-full select-none items-center gap-4 rounded-xl px-4 py-2 text-left text-xl font-semibold outline-none"
+                class:bg-white={subIdx === i}
+                class:text-black={subIdx === i}
+                onpointerenter={() => { if (pointerAllowed()) subIdx = i }}
+                onclick={() => { subIdx = i; void apply(it) }}
+              >
+                <span class="grid w-7 shrink-0 place-items-center">{#if it.selected}<Check size={26} />{/if}</span>
+                <span class="line-clamp-2">{it.label}</span>
+              </button>
+            {/each}
+          {/if}
         </div>
-      {/if}
+      {/key}
+      <div class="flex shrink-0 items-center gap-6 border-t border-white/10 px-6 py-3.5 text-base font-semibold text-white/65">
+        <span class="flex items-center gap-2"><Glyph family="deck" button="a" />Select</span>
+        <span class="flex items-center gap-2"><Glyph family="deck" button="b" />{level === 1 ? 'Back' : 'Close'}</span>
+      </div>
     </div>
   </div>
 {/if}

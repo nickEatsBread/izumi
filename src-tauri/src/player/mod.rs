@@ -1437,6 +1437,37 @@ impl PlayerHandle {
             .map_err(|e| e.to_string())
     }
 
+    /// Write a JPEG of the paused frame exactly as the viewer sees it for the Game-mode menu stage
+    /// (gm-freeze.ts): it stands in for the video while the video window is unmapped under the
+    /// menus. 'window' is the only mode that places subtitles where the window does ('subtitles'
+    /// renders them at the video's own resolution, so the line jumped at the swap); it also takes
+    /// the OSD, which the stage hides instantly first. The VO renders it (screenshot-sw off): the
+    /// software path fails outright under hardware decoding on the Deck.
+    pub fn frame_snapshot_to_file(&self, path: &str) -> Result<(), String> {
+        let guard = self.mpv.lock().map_err(|e| e.to_string())?;
+        let mpv = guard.as_ref().ok_or("no player")?;
+        // The user's own screenshots keep their format: restore what this borrowed.
+        let format = mpv.get_property::<String>("screenshot-format").ok();
+        let quality = mpv.get_property::<i64>("screenshot-jpeg-quality").ok();
+        let software = mpv.get_property::<String>("screenshot-sw").ok();
+        let _ = mpv.set_property("screenshot-format", "jpg");
+        let _ = mpv.set_property("screenshot-jpeg-quality", 92_i64);
+        let _ = mpv.set_property("screenshot-sw", "no");
+        let result = mpv
+            .command("screenshot-to-file", &[path, "window"])
+            .map_err(|e| e.to_string());
+        if let Some(format) = format {
+            let _ = mpv.set_property("screenshot-format", format.as_str());
+        }
+        if let Some(quality) = quality {
+            let _ = mpv.set_property("screenshot-jpeg-quality", quality);
+        }
+        if let Some(software) = software {
+            let _ = mpv.set_property("screenshot-sw", software.as_str());
+        }
+        result
+    }
+
     /// Return the current track list as a JSON array (`[{id,type,title,lang,
     /// selected}, ...]`) for the audio/subtitle pickers.
     ///
