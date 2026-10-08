@@ -284,6 +284,43 @@
     }
   })
 
+  // Game mode: the bar's 15 s compositor tween made WebKitGTK composite the whole Deck screen at
+  // 60 Hz, which was nearly all of Home's idle cost (~40% CPU, ~20% GPU). The fill steps at 15 fps
+  // from the slide clock instead, under half a pixel a step, so it still reads as continuous. Like
+  // the auto-advance above, it restarts when Home comes back from under the player.
+  const GM_BAR_FPS = 15
+  $effect(() => {
+    if (!$gameMode || !medias.length || !showOverlay || heroTheme?.hidden) return
+    void cycle
+    let start = 0
+    let ticker: ReturnType<typeof setInterval> | undefined
+    const paint = () => {
+      const progress = Math.min(1, (performance.now() - start) / DURATION)
+      for (const bar of document.querySelectorAll<HTMLElement>('[data-slot="home.hero"] .hero-progress')) {
+        // Scrolled out of view: a write would still cost a full-screen composite.
+        if (bar.getBoundingClientRect().bottom > 0) bar.style.scale = `${progress} 1`
+      }
+      if (progress >= 1) clearInterval(ticker)
+    }
+    const restart = () => {
+      clearInterval(ticker)
+      start = performance.now()
+      if (document.hidden || get(playing) || get(androidMpvActive)) return
+      paint()
+      ticker = setInterval(paint, 1000 / GM_BAR_FPS)
+    }
+    restart()
+    document.addEventListener('visibilitychange', restart)
+    const stopPlaying = playing.subscribe(restart)
+    const stopAndroidMpv = androidMpvActive.subscribe(restart)
+    return () => {
+      clearInterval(ticker)
+      document.removeEventListener('visibilitychange', restart)
+      stopPlaying()
+      stopAndroidMpv()
+    }
+  })
+
   // Countdown targets are absolute in current AniList responses. Keep a response-time fallback for
   // an older cached object that only has timeUntilAiring, and update the compact badge once a second.
   $effect(() => {
@@ -900,7 +937,8 @@
   :global(html.gamemode) .hero-progress { transform: translateZ(0); }
   :global(html.gamemode) .hero-carousel-slide { animation-name: hero-slide-in-layer; }
   :global(html.gamemode) .hero-copy { animation-name: hero-copy-in-layer; }
-  :global(html.gamemode) .hero-progress { animation-name: hero-progress-fill-layer; }
+  /* The bar keeps its layer but no tween: the script above steps `scale` at 15 fps. */
+  :global(html.gamemode) .hero-progress { animation: none; scale: 0 1; }
   @keyframes hero-slide-in-layer {
     from { opacity: 0; translate: var(--hero-enter-x) 0; scale: 1.015; }
     to { opacity: var(--hero-final-opacity, 1); translate: 0 0; scale: 1; }
@@ -908,10 +946,6 @@
   @keyframes hero-copy-in-layer {
     from { opacity: 0; translate: var(--hero-enter-x) 8px; }
     to { opacity: 1; translate: 0 0; }
-  }
-  @keyframes hero-progress-fill-layer {
-    from { scale: 0 1; }
-    to { scale: 1 1; }
   }
   /* A one-off tween or transition would hand its layer back when it ends, so these stay static in
      Game mode: a detail banner (a single slide, nothing to animate between), artwork that arrives

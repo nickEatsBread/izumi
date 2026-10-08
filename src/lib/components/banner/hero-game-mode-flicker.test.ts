@@ -57,7 +57,6 @@ describe('Steam Deck featured banner flicker', () => {
     for (const [selector, name] of [
       ['.hero-carousel-slide', 'hero-slide-in-layer'],
       ['.hero-copy', 'hero-copy-in-layer'],
-      ['.hero-progress', 'hero-progress-fill-layer'],
     ]) {
       // A static 3D transform keeps the element composited from creation to removal.
       expect(gameMode(selector), selector).toContain('transform: translateZ(0)')
@@ -80,11 +79,25 @@ describe('Steam Deck featured banner flicker', () => {
     expect(hero).toContain('class="hero-root relative mb-6')
   })
 
-  it('fills the rotation progress bar continuously in Game mode', () => {
+  it('fills the rotation progress bar smoothly in Game mode without a 60 Hz tween', () => {
     const rule = gameMode('.hero-progress')
-    expect(rule).toContain('animation-name: hero-progress-fill-layer')
+    // The bar keeps a layer for its whole life, so a write to `scale` never drops it.
+    expect(rule).toContain('transform: translateZ(0)')
+    // A running tween composited the whole screen every frame (nearly all of Home's idle cost);
+    // CSS steps() did not help, since WebKitGTK still composited at the display rate.
+    expect(rule).toContain('animation: none; scale: 0 1;')
     expect(rule).not.toMatch(/steps\(|animation-timing-function/)
-    expect(keyframes('hero-progress-fill-layer')).toMatch(/from \{ scale: 0 1; \}\s*to \{ scale: 1 1; \}/)
     expect(hero).not.toContain('hero-progress-steps')
+    expect(hero).not.toContain('@keyframes hero-progress-fill-layer')
+    // A script steps it from the slide clock instead, restarted with the slide.
+    const fps = Number(hero.match(/const GM_BAR_FPS = (\d+)/)?.[1])
+    expect(fps).toBeGreaterThanOrEqual(15)
+    expect(hero).toContain('const progress = Math.min(1, (performance.now() - start) / DURATION)')
+    expect(hero).toContain('bar.style.scale = `${progress} 1`')
+    expect(hero).toContain('ticker = setInterval(paint, 1000 / GM_BAR_FPS)')
+    expect(hero).toContain('const stopPlaying = playing.subscribe(restart)')
+    // A visibly ticking fill is what made the old steps(24) bar read as broken: the widest stock
+    // bar (5rem on the Deck) must move under half a pixel per step at the default interval.
+    expect(80 / 15 / fps).toBeLessThan(0.5)
   })
 })
