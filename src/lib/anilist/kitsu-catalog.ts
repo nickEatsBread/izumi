@@ -393,7 +393,9 @@ export async function fetchKitsuCatalog(request: JikanCatalogRequest): Promise<R
 
 /** Resolve an AniList id through Kitsu's mapping resource, then return the full anime record in the
  * exact GraphQL shape consumed by AnimeDetail. Unsupported rich tabs are honest empty collections;
- * playback still receives canonical AniList/MAL ids and the complete episode/card metadata. */
+ * playback still receives canonical AniList/MAL ids and the complete episode/card metadata. The
+ * client stamps the answer as a backup record, so it never replaces or outlives what the cache
+ * already has from AniList for the same title (backup-records.ts, backup-details.ts). */
 export async function fetchKitsuDetail(request: KitsuDetailRequest): Promise<Response> {
   const mappingUrl = new URL(`${API}/mappings`)
   mappingUrl.searchParams.set('filter[externalSite]', 'anilist/anime')

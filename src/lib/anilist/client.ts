@@ -13,6 +13,8 @@ import { incognito } from '$lib/stores/incognito'
 import { anilistToken, getToken } from './auth'
 import { ANILIST_CACHE_KEYS } from './cache'
 import { createAnilistPersistence, revalidateOnceExchange, type AnilistPersistence } from './persisted-cache'
+import { mediaCacheKey, stampBackupData } from './backup-records'
+import { createBackupDetails, type BackupDetails } from './backup-details'
 import {
   aniListCatalogFailure, aniListNetworkFailure, fetchJikanCatalog, parseJikanCatalogRequest,
 } from './jikan'
@@ -198,6 +200,9 @@ function activeCooldownResponse(now = Date.now()): Response | null {
   return wait > 0 ? rateLimitedResponse(wait) : null
 }
 
+/** Whether a backup-eligible request made now would reach AniList rather than its backup. */
+const aniListProbeAllowed = (): boolean => !shouldUseJikanCatalog() && cooldownUntil <= Date.now()
+
 function abortError(): DOMException {
   return new DOMException('The request was aborted', 'AbortError')
 }
@@ -269,9 +274,17 @@ type BackupRequest =
   | { kind: 'catalog'; request: NonNullable<ReturnType<typeof parseJikanCatalogRequest>> }
   | { kind: 'detail'; request: KitsuDetailRequest }
 
+/** A backup provider's GraphQL answer with its records stamped, so graphcache keeps them apart from
+ *  AniList's and never persists them (backup-records.ts). */
+async function backupAnswer(response: Response, provider: 'Kitsu' | 'Jikan'): Promise<Response> {
+  const body = await response.json() as { data?: unknown }
+  stampBackupData(body.data, provider)
+  return Response.json(body, { status: response.status, headers: response.headers })
+}
+
 async function fetchFromBackup(request: BackupRequest): Promise<Response> {
   if (request.kind === 'detail') {
-    const response = await fetchKitsuDetail(request.request)
+    const response = await backupAnswer(await fetchKitsuDetail(request.request), 'Kitsu')
     markCatalogProvider('Kitsu')
     return response
   }
@@ -279,14 +292,14 @@ async function fetchFromBackup(request: BackupRequest): Promise<Response> {
   try {
     // Kitsu is independent of MyAnimeList. Try it first: Jikan can be healthy while its upstream
     // MAL dependency is down, which otherwise makes every degraded row wait through retries.
-    const response = await fetchKitsuCatalog(request.request)
+    const response = await backupAnswer(await fetchKitsuCatalog(request.request), 'Kitsu')
     markCatalogProvider('Kitsu')
     return response
   } catch (error) {
     kitsuError = error
   }
   try {
-    const response = await fetchJikanCatalog(request.request)
+    const response = await backupAnswer(await fetchJikanCatalog(request.request), 'Jikan')
     markCatalogProvider('Jikan')
     return response
   } catch (jikanError) {
@@ -323,6 +336,9 @@ async function fetchWithCatalogFallback(input: RequestInfo | URL, init?: Request
     const failure = await aniListCatalogFailure(response)
     if (!failure) {
       clearAniListDegraded()
+      // Series pages still showing a backup answer ask AniList for theirs now that it answers.
+      backupDetails.live(detail?.variables.id)
+      backupDetails.refresh()
       return response
     }
     markAniListDegraded(failure)
@@ -343,10 +359,18 @@ async function fetchWithCatalogFallback(input: RequestInfo | URL, init?: Request
 export const anilistFetch: typeof fetch = (input, init) =>
   fetchWithCatalogFallback(input as RequestInfo | URL, init)
 
+// Backup answers are normalized beside AniList's records, never over them (backup-records.ts).
+const CACHE_KEYS = { ...ANILIST_CACHE_KEYS, Media: mediaCacheKey }
+
+// Series-page bookkeeping of the CURRENT client (backup-details.ts); rebuilt with it, because the
+// pages it tracks and the records it judges live in that client's cache.
+let backupDetails: BackupDetails
+
 // The normalized cache also lives on disk (IndexedDB) so a cold boot paints from the previous
 // session while the first execution of each query revalidates in the background — see
 // persisted-cache.ts for the two rules that keep network traffic identical to before.
 function createAnilistClient(persisted: AnilistPersistence | null) {
+  backupDetails = createBackupDetails()
   return new Client({
     url: 'https://graphql.anilist.co',
     // AniList's GraphQL endpoint only accepts POST. urql v6 defaults
@@ -354,7 +378,8 @@ function createAnilistClient(persisted: AnilistPersistence | null) {
     preferGetMethod: false,
     exchanges: [
       revalidateOnceExchange(),
-      cacheExchange({ keys: ANILIST_CACHE_KEYS, storage: persisted?.storage }),
+      backupDetails.exchange(aniListProbeAllowed),
+      cacheExchange({ keys: CACHE_KEYS, updates: backupDetails.updates, storage: persisted?.storage }),
       authExchange(async (utils) => ({
         addAuthToOperation(op) {
           const t = getToken()
