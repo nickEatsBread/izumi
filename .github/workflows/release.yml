@@ -215,7 +215,10 @@ jobs:
         run: |
           set -euo pipefail
           brew update
-          brew install mpv ffmpeg dylibbundler
+          # The macos-15 image ships a bin/openssl that the openssl@3 upgrade mpv pulls in cannot link
+          # over ("Could not symlink bin/openssl"), which aborted the install mid-dependency. Take the
+          # link over as brew suggests, then let the same install finish.
+          brew install mpv ffmpeg dylibbundler || { brew link --overwrite openssl@3; brew install mpv ffmpeg dylibbundler; }
           mpv_version="$(mpv --version | sed -n '1p')"
           echo "$mpv_version"
           grep -Eq '^mpv v?0\.(4[1-9]|[5-9][0-9])' <<<"$mpv_version"
