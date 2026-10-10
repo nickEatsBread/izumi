@@ -193,6 +193,23 @@ describe('relevant', () => {
     expect(relevant(s('Dr STONE S04E25 CR WEB-DL.mkv'), drStone)).toBe(true)
   })
 
+  it('keeps scene-style releases that carry only the main title before a long subtitle', () => {
+    // Web releases name a light-novel adaptation by its short main title, then append the episode
+    // title, audio channels, a subtitle flag and a -Group suffix. None of that is title, so it must
+    // not outvote the three title words the release does carry.
+    const lender = [
+      'Spell Lender: Kicked Out of the Guild, I Collect My Loans With a Fairy Partner',
+      'Kashidashi Mahou wa Kyousei Kaishuu',
+    ]
+    expect(relevant(s('Spell.Lender.S01E01.Kicked.Out.1080p.CR.WEB-DL.JPN.AAC2.0.H.264.MSubs-Group.mkv'), lender)).toBe(true)
+    expect(relevant(s('Spell.Lender.S01E02.Exile.1080p.BILI.WEB-DL.JPN.AAC2.0.H.265.MSubs-Group.mkv'), lender)).toBe(true)
+    expect(relevant(s('Spell.Lender.S01E02.1080p.BILI.WEB-DL.AAC2.0.H.264-GRP.mkv'), lender)).toBe(true)
+    expect(relevant(s('Spell Lender S01E02 SUBFRENCH 1080p CR WEB-DL AAC2.0 H.264-Some-Raws.mkv'), lender)).toBe(true)
+    // The anchor still rejects a title run that adds or swaps words.
+    expect(relevant(s('Spell.Lender.Returns.S01E01.1080p.CR.WEB-DL.AAC2.0.H.264-GRP.mkv'), lender)).toBe(false)
+    expect(relevant(s('Spell.Breaker.S01E01.1080p.CR.WEB-DL.AAC2.0.H.264-GRP.mkv'), lender)).toBe(false)
+  })
+
   it('rejects a different title that replaces the distinctive leading words', () => {
     const reZero = [
       'Re:Zero kara Hajimeru Isekai Seikatsu',
