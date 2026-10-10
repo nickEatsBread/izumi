@@ -1,10 +1,18 @@
 import { phttp } from '$lib/net/http'
 import { get, set } from 'idb-keyval'
-export interface MapEntry { anilist_id?: number; kitsu_id?: number; mal_id?: number; imdb_id?: string | string[] }
+export interface MapEntry { anilist_id?: number; kitsu_id?: number; mal_id?: number; imdb_id?: string | string[]; tvdb_id?: number; season?: { tvdb?: number } }
 export type Index = Map<number, MapEntry>
+const seasonShares = new WeakMap<Index, Map<string, number>>()
+const seasonKey = (e: MapEntry) => e.tvdb_id != null && e.season?.tvdb != null ? `${e.tvdb_id}:${e.season.tvdb}` : undefined
 export function buildIndex(entries: MapEntry[]): Index {
   const m: Index = new Map()
-  for (const e of entries) if (e.anilist_id != null) m.set(e.anilist_id, e)
+  const shares = new Map<string, number>()
+  for (const e of entries) {
+    if (e.anilist_id != null) m.set(e.anilist_id, e)
+    const key = seasonKey(e)
+    if (key) shares.set(key, (shares.get(key) ?? 0) + 1)
+  }
+  seasonShares.set(m, shares)
   return m
 }
 export function lookupKitsu(idx: Index, anilistId: number): number | undefined {
@@ -23,6 +31,14 @@ export function lookupImdb(idx: Index, anilistId: number): string | undefined {
   const listed = idx.get(anilistId)?.imdb_id
   const ids = (Array.isArray(listed) ? listed : listed ? [listed] : []).filter((id) => /^tt\d+$/.test(id))
   return ids.length === 1 ? ids[0] : undefined
+}
+/** The TVDB season an entry has to itself. AniZip has no TVDB mapping for a brand-new show, so no
+ *  episode of it carries a season; when no other entry lists the same TVDB season, that season
+ *  starts at this entry's episode 1. A shared season (a split cour) is not guessed into. */
+export function lookupTvdbSeason(idx: Index, anilistId: number): number | undefined {
+  const entry = idx.get(anilistId)
+  const key = entry && seasonKey(entry)
+  return key && seasonShares.get(idx)?.get(key) === 1 ? entry?.season?.tvdb : undefined
 }
 const malIndexes = new WeakMap<Index, Map<number, number>>()
 const kitsuIndexes = new WeakMap<Index, Map<number, number>>()
