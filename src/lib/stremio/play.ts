@@ -6,7 +6,7 @@ import { downloadAudioLang, offlineManifestUrl, preferredDrmPresentation, refres
 import { listen, type EventCallback } from '@tauri-apps/api/event'
 import { get } from 'svelte/store'
 import { addonUrls, enabledAddonUrls } from './sources'
-import { getIndex, indexWithin, lookupImdb, lookupKitsu } from './idmap'
+import { getIndex, indexWithin, lookupImdb, lookupKitsu, lookupTvdbSeason } from './idmap'
 import { resolveKitsuMapping } from './kitsu-resolution'
 import { getStreams, fetchAddonStreams, prefetchAddonStreams, pickBest, pickCandidates, preferDirectStartupCandidates, parseSeasonEp, isWrongSeason, isUncached, isCached, isNotice, describe, type Stream } from './addon'
 import { refineStreams, type Rejection } from './refine'
@@ -1005,9 +1005,9 @@ async function mediaSeasonMap(media: Media): Promise<Record<number, { season?: n
 // had nothing to ask. The Fribb list usually names it weeks earlier. It is optional enrichment, so a
 // list that is not loaded yet only gets a short wait: a stale copy re-downloads the whole list.
 const LISTED_IMDB_WAIT_MS = 1_500
-async function listedImdbId(anilistId: number): Promise<string | undefined> {
+async function listedIds(anilistId: number): Promise<{ imdb?: string; season?: number }> {
   const index = await indexWithin(LISTED_IMDB_WAIT_MS)
-  return index ? lookupImdb(index, anilistId) : undefined
+  return index ? { imdb: lookupImdb(index, anilistId), season: lookupTvdbSeason(index, anilistId) } : {}
 }
 
 // AniZip's production ids for an episode. Hover prefetch calls only this: it warms AniZip for the
@@ -1022,13 +1022,19 @@ async function mediaExtensionIds(media: Media, episode: number | undefined): Pro
   const mapped = await mappedExtensionIds(media, episode)
   const external = externalIdsOf(media)
   const video = mediaVideo(media, episode)
+  // Without a TVDB mapping AniZip numbers no episode into a season, so a new show's aligned IMDb
+  // wave never fired; its releases are often indexed under the IMDb episode first.
+  const unmapped = !mapped.tvdbId && !video && episode != null
+  const listed: { imdb?: string; season?: number } = anilistId && ((!mapped.imdbId && !external.imdb) || unmapped)
+    ? await listedIds(anilistId) : {}
+  const listedSeason = unmapped ? listed.season : undefined
   return {
     ...mapped,
-    imdbId: mapped.imdbId ?? external.imdb ?? (anilistId ? await listedImdbId(anilistId) : undefined),
+    imdbId: mapped.imdbId ?? external.imdb ?? listed.imdb,
     tmdbId: mapped.tmdbId ?? (external.tmdb == null ? undefined : String(external.tmdb)),
     tvdbId: mapped.tvdbId ?? external.tvdb,
-    season: video?.season ?? mapped.season,
-    episodeNumber: video?.episode ?? mapped.episodeNumber,
+    season: video?.season ?? mapped.season ?? listedSeason,
+    episodeNumber: video?.episode ?? mapped.episodeNumber ?? (listedSeason != null ? episode : undefined),
   }
 }
 

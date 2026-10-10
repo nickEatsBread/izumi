@@ -366,9 +366,12 @@ function relevantName(raw: string, wanted: string[]): boolean {
   // numbers, the leading [Group] tag, and scene episode codes. A short-title release
   // ("[SubsPlease] Dr STONE S04E25 NF WEB-DL") must reduce to just {stone} — NOT
   // {subsplease, stone, s04e25} — so its content ratio against a LONG official title
-  // ("Dr. Stone: Science Future") isn't sunk by group/episode noise.
+  // ("Dr. Stone: Science Future") isn't sunk by group/episode noise. Nothing after an explicit
+  // episode marker is title either: scene names append an episode title, "AAC2.0", "MSubs" and a
+  // "-Group" suffix, which outvoted "Spell.Lender.S01E01.Kicked.Out...MSubs-Group".
   const bare = name.replace(/^\s*\[[^\]]*\]\s*/, '') // drop a leading [Group] tag
-  const content = titleTokens(bare).filter(
+  const marker = bare.search(EPISODE_MARKER)
+  const content = titleTokens(marker > 0 ? bare.slice(0, marker) : bare).filter(
     (t) => !RELEASE_JUNK.test(t) && !/^\d+$/.test(t) && !SCENE_CODE.test(t),
   )
   for (const w of wanted) {

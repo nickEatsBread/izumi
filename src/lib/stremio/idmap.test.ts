@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildIndex, lookupAnilistByKitsu, lookupAnilistByMal, lookupImdb, lookupKitsu, lookupMal } from './idmap'
+import { buildIndex, lookupAnilistByKitsu, lookupAnilistByMal, lookupImdb, lookupKitsu, lookupMal, lookupTvdbSeason } from './idmap'
 const FIX = [ { anilist_id: 1, kitsu_id: 11, mal_id: 21 }, { anilist_id: 5, mal_id: 30 } ]
 describe('idmap', () => {
   const idx = buildIndex(FIX as any)
@@ -38,5 +38,27 @@ describe('idmap IMDb ids', () => {
     expect(lookupImdb(idx, 4)).toBeUndefined()
     expect(lookupImdb(idx, 5)).toBeUndefined()
     expect(lookupImdb(idx, 999)).toBeUndefined()
+  })
+})
+describe('idmap TVDB seasons', () => {
+  const idx = buildIndex([
+    { anilist_id: 10, tvdb_id: 900, season: { tvdb: 1 } },
+    { anilist_id: 11, tvdb_id: 901, season: { tvdb: 2 } },
+    // A split cour: two entries share one TVDB season, so the second does not start at its episode 1.
+    { anilist_id: 12, tvdb_id: 902, season: { tvdb: 1 } },
+    { anilist_id: 13, tvdb_id: 902, season: { tvdb: 1 } },
+    { anilist_id: 14, tvdb_id: 903 },
+    { anilist_id: 15, season: { tvdb: 1 } },
+  ] as any)
+  it('names the TVDB season an entry has to itself', () => {
+    expect(lookupTvdbSeason(idx, 10)).toBe(1)
+    expect(lookupTvdbSeason(idx, 11)).toBe(2)
+  })
+  it('refuses a season several entries share, or one without a show id', () => {
+    expect(lookupTvdbSeason(idx, 12)).toBeUndefined()
+    expect(lookupTvdbSeason(idx, 13)).toBeUndefined()
+    expect(lookupTvdbSeason(idx, 14)).toBeUndefined()
+    expect(lookupTvdbSeason(idx, 15)).toBeUndefined()
+    expect(lookupTvdbSeason(idx, 999)).toBeUndefined()
   })
 })
