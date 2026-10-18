@@ -457,14 +457,20 @@ export function isEpisodeExtra(stream: Stream): boolean {
 //       "One Piece - 001", so a low SxxExx number is a different production (catches a
 //       year-less live-action "One Piece S01E01"). A live-action season never reaches episode
 //       31, while web releases of a long-running anime count straight through ("Title S01E81").
+//       Skipped when the requested titles name a later season: a 72-episode "Season 2" is long
+//       enough to count as a long-runner, its web releases are numbered season-locally
+//       ("Title S02E05"), and a live action adapts a franchise's base entry, not its sequel.
+//       The file's own season is NOT used — a year-less live-action "Title S02E03" would pass.
 //   (2) a disambiguation YEAR newer than the anime's debut alongside scene SxxExx
 //       numbering (catches "One.Piece.2023.S01E01" for shorter shows too).
 // Both keep unknowns (never drop a plain absolute-numbered release).
-export function likelyOtherProduction(stream: Stream, animeYear?: number, absoluteNumbered = false): boolean {
+export function likelyOtherProduction(stream: Stream, animeYear?: number, absoluteNumbered = false, wanted: string[] = []): boolean {
   const name = nameOf(stream)
   const sceneEp = name.match(/\bS\d{1,2}E(\d{1,3})\b/i)
   const hasSceneEp = !!sceneEp
-  if (sceneEp && absoluteNumbered && Number(sceneEp[1]) <= 30) return true // long-runner + live-action-sized SxxExx ⇒ not the anime
+  const laterSeason = wanted.some((t) => SEQUEL_SEASON.test(t))
+  // long-runner + live-action-sized SxxExx ⇒ not the anime
+  if (sceneEp && absoluteNumbered && !laterSeason && Number(sceneEp[1]) <= 30) return true
   if (!animeYear) return false
   const years = [...name.matchAll(/\b(19\d{2}|20\d{2})\b/g)].map((m) => Number(m[1]))
     .filter((y) => y >= 1950 && y <= 2035)

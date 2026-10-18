@@ -113,7 +113,7 @@ export function refineStreams(media: Media, raw: Stream[]): Refined {
     if (!idVerified && !relevant(s, wantedTitles)) return 'title-mismatch'
     // `high` is a source-declared confidence value, not an independently verified guarantee. An
     // explicit year/production/shape contradiction therefore still wins over that claim.
-    if (likelyOtherProduction(s, animeYear, absoluteNumbered)) return 'other-production'
+    if (likelyOtherProduction(s, animeYear, absoluteNumbered, wantedTitles)) return 'other-production'
     if (isEpisodeExtra(s)) return 'episode-extra'
     // The add-on may put the trailer marker only on a second title line or in its description.
     if (isSupplementalVideo(s, wantedTitles[0] ?? '')) return 'episode-extra'

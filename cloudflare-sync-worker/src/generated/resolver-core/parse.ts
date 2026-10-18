@@ -556,7 +556,8 @@ export function parseSeasonEp(s: Stream): { season?: number; episode?: number; a
     || s.title?.split('\n')[0]
     || s.description?.match(/📄\s*([^\n]+)/)?.[1]
     || s.name || ''
-  const se = f.match(/\bS(\d{1,2})\s?E(\d{1,4})\b/i) || f.match(/\bS(\d{1,2})\s*P(\d{1,3})\b/i)
+  // A revised upload carries a version suffix ("S01E69v2") that would otherwise defeat the boundary.
+  const se = f.match(/\bS(\d{1,2})\s?E(\d{1,4})(?:v\d)?\b/i) || f.match(/\bS(\d{1,2})\s*P(\d{1,3})\b/i)
   if (se) return { season: Number(se[1]), episode: Number(se[2]) }
   // Cross-style "1x04". The season group is capped at two digits so a resolution can't parse as
   // one: "1920x1080" offers no two-or-fewer-digit run ending at the x that starts on a boundary.

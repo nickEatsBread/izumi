@@ -60,7 +60,7 @@ export function refineStreamsLite(ctx: RefineLiteContext, streams: Stream[]): Re
     // so the sequel-season marker is only evidence once at least one alias is present.
     if (titles.length && wrongFranchiseSeason(s, titles)) return true
     if (titleEvidence && !relevant(s, titles)) return true
-    if (likelyOtherProduction(s, ctx.year, ctx.absoluteNumbered ?? false)) return true
+    if (likelyOtherProduction(s, ctx.year, ctx.absoluteNumbered ?? false, titles)) return true
     if (isEpisodeExtra(s)) return true
     if (isSeries && isStandaloneMovie(s)) return true
     return false

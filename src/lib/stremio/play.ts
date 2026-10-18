@@ -78,6 +78,7 @@ function activeSourceCandidates(
 import { getKitsuId, getEpisodeSeasonMap, getExtensionIds, type ExtIds } from '$lib/anizip'
 import { kitsuIdFromLinks } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
+import { episodeOffset, fetchSeasonChain, mayListSeasons } from '$lib/anilist/seasons'
 import { anilistIdOf, externalIdsOf, kitsuIdOf } from '$lib/catalog/identity'
 import { downloadOf, getDownloadedMedia, type DownloadPreferences } from '$lib/downloads/state'
 import { resolveHash, resolveSidecars, providerName, cacheCheckMode, checkCached, isDebridBlocked, type EpisodeWant } from './debrid'
@@ -1491,7 +1492,27 @@ export async function episodeWant(media: Media, episode: number | undefined, str
   const map = await mediaSeasonMap(media)
   const sm = map[episode]
   const video = mediaVideo(media, episode)
-  return { episode: video?.episode ?? episode, abs: sm?.abs, season: video?.season ?? sm?.season, filename: stream?.behaviorHints?.filename }
+  const offset = video || Object.values(map).some((entry) => entry.abs != null) ? undefined : await chainEpisodeOffset(media)
+  const abs = sm?.abs ?? (offset ? episode + offset : undefined)
+  return { episode: video?.episode ?? episode, abs, season: video?.season ?? sm?.season, filename: stream?.behaviorHints?.filename }
+}
+
+// Some groups number a later season from the show's first episode (season 2's 28th uploaded as
+// "- 87") while AniList numbers it on its own. With no absolute number from AniZip, the lengths of
+// the earlier seasons along the AniList chain give it. The walk is cached per session; a slow or
+// rate-limited AniList never holds playback, and a late walk still serves the next lookup.
+const CHAIN_OFFSET_WAIT_MS = 3_000
+async function chainEpisodeOffset(media: Media): Promise<number | undefined> {
+  const anilistId = anilistIdOf(media)
+  if (!anilistId || !mayListSeasons(media.format)) return undefined
+  // Only a record that names a prequel is walked, so a first season never waits on AniList.
+  // shortcut: a record without loaded relations (a bare card) is skipped too; fetch them if card plays need this.
+  if (!media.relations?.edges.some((edge) => edge.relationType === 'PREQUEL')) return undefined
+  const offset = fetchSeasonChain(anilistId, media.catalog ? undefined : media)
+    .then((chain) => episodeOffset(chain, anilistId), () => undefined)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), CHAIN_OFFSET_WAIT_MS) })
+  try { return await Promise.race([offset, late]) } finally { clearTimeout(timer) }
 }
 
 // Next episode resolved ahead of time (near the end of the current one) so Next /
@@ -1528,10 +1549,7 @@ export async function resolveDirectPreloadStream(
   // but do not make it a prerequisite: ID-aware extension providers can resolve titles absent from
   // the Kitsu map and were previously excluded from direct-P2P preload entirely.
   const kitsuPromise = resolveKitsu(media)
-  const seasonMap = await mediaSeasonMap(media)
-  const mapped = seasonMap[episode]
-  const video = mediaVideo(media, episode)
-  const want: EpisodeWant = { episode: video?.episode ?? episode, ...(mapped ?? {}), season: video?.season ?? mapped?.season }
+  const want = (await episodeWant(media, episode))!
   const controller = new AbortController()
   const kind = media.format === 'MOVIE' ? 'movie' : 'series'
   const waitForHedge = (delayMs: number) => new Promise<void>((resolve, reject) => {
