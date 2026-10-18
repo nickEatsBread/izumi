@@ -23,7 +23,7 @@ const SEASON_CHAIN_QUERY = gql`
   query SeasonChain($ids: [Int]) {
     Page(page: 1, perPage: 50) {
       media(id_in: $ids, type: ANIME) {
-        id type format season seasonYear
+        id type format episodes season seasonYear
         title { romaji english native userPreferred }
         startDate { year month day }
         coverImage { extraLarge large medium color }
@@ -32,7 +32,7 @@ const SEASON_CHAIN_QUERY = gql`
           edges {
             relationType
             node {
-              id type format season seasonYear
+              id type format episodes season seasonYear
               title { romaji english native userPreferred }
               startDate { year month day }
               coverImage { extraLarge large medium color }
@@ -105,6 +105,21 @@ export function seasonEntries(chain: Media[], currentId: number): SeasonEntry[] 
     year: media.seasonYear ?? media.startDate?.year ?? undefined,
     active: media.id === currentId,
   }))
+}
+
+/** The episodes of the chain's seasons released before `id`: what a release counting from the
+ *  show's first episode adds to this season's own numbers. Undefined for a first season, a title
+ *  that is not a season, or when an earlier season's length is unknown. */
+export function episodeOffset(chain: Media[], id: number): number | undefined {
+  const seasons = sortFranchiseMedia(chain.filter((media) => SEASON_FORMATS.has(media.format ?? '')))
+  const at = seasons.findIndex((media) => media.id === id)
+  if (at < 1) return undefined
+  let total = 0
+  for (const media of seasons.slice(0, at)) {
+    if (!media.episodes) return undefined
+    total += media.episodes
+  }
+  return total
 }
 
 const chains = new Map<number, Promise<Media[]>>()
