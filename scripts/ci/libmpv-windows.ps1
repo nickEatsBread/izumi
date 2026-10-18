@@ -10,9 +10,9 @@
 $ErrorActionPreference = 'Stop'
 $dir = "$env:RUNNER_TEMP\libmpv"
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
-$PinnedTag = '20260829'
-$PinnedAsset = 'mpv-dev-x86_64-20260829-git-e8673660ab.7z'
-$PinnedSha256 = 'e99b8c85e184463571088c79732f7e1e09ed4524c2945cdca177a4df70ba6f2e'
+$PinnedTag = '20261018'
+$PinnedAsset = 'mpv-dev-x86_64-20261018-git-01e2533f31.7z'
+$PinnedSha256 = 'd7f5621f42b6e161fe032df914a10bdece28a89df3e57c6c3e16a5a250929b5e'
 # Authenticate requests so shared runner IPs do not hit GitHub's small anonymous limit.
 $hdr = @{
   'User-Agent' = 'izumi-ci'
