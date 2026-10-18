@@ -163,7 +163,7 @@ describe('title-searched tracker rows', () => {
   it('never fill the list with the show\'s other episodes', async () => {
     addonUrls.set([])
     queryExtensions.mockImplementation(async (...args: unknown[]) => {
-      (args[1] as (rows: unknown[]) => void)([otherEpisode('torznab:indexer.test/1')])
+      (args[1] as (rows: unknown[]) => void)([otherEpisode('tracker:indexer.test/1')])
       return []
     })
     void playEpisode(media as never, 2, () => {})

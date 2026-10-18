@@ -25,7 +25,7 @@
   import { findAddonConfigureUrl } from '$lib/stremio/configure'
   import { defaultDiscussionPlatform } from '$lib/comments'
   import { checkExtensionUpdates } from '$lib/extensions/auto-update'
-  import { checkTorznab, torznabUrls } from '$lib/extensions/torznab'
+  import { checkTrackerFeed, trackerFeedUrls } from '$lib/extensions/tracker-feeds'
   import AddonConfigurator from '$lib/components/settings/AddonConfigurator.svelte'
   import CommunitySources from '../extensions/+page.svelte'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
@@ -84,7 +84,7 @@
     { value: 'all', label: 'Any type' },
     { value: 'addon', label: 'Stremio add-ons' },
     { value: 'community', label: 'Community sources' },
-    { value: 'indexer', label: 'Tracker indexers' },
+    { value: 'indexer', label: 'Torrent trackers' },
     { value: 'catalog', label: 'Package catalogs' },
     { value: 'package', label: 'Installed packages' },
   ]
@@ -108,11 +108,12 @@
     try {
       const result = await classifySourceSpec(input)
       if ('error' in result) {
-        // Not an add-on or a catalog: it may be an indexer manager's Torznab feed, which answers XML.
-        const indexer = await checkTorznab(input)
+        // Not an add-on or a catalog: it may be a torrent tracker's feed (a Torznab endpoint or a
+        // tracker's own RSS search), which answers XML.
+        const indexer = await checkTrackerFeed(input)
         if (indexer && 'name' in indexer) {
           const spec = input.trim()
-          if (!$torznabUrls.includes(spec)) $torznabUrls = [...$torznabUrls, spec]
+          if (!$trackerFeedUrls.includes(spec)) $trackerFeedUrls = [...$trackerFeedUrls, spec]
           $disabledSources = $disabledSources.filter((url) => url !== spec)
           input = ''
           return
@@ -158,7 +159,7 @@
   }
   function toggle(url: string) { $disabledSources = $disabledSources.includes(url) ? $disabledSources.filter((u) => u !== url) : [...$disabledSources, url] }
   function remove(i: number) { const url = $addonUrls[i]; $addonUrls = $addonUrls.filter((_, j) => j !== i); $disabledSources = $disabledSources.filter((u) => u !== url) }
-  function removeIndexer(url: string) { $torznabUrls = $torznabUrls.filter((u) => u !== url); $disabledSources = $disabledSources.filter((u) => u !== url) }
+  function removeIndexer(url: string) { $trackerFeedUrls = $trackerFeedUrls.filter((u) => u !== url); $disabledSources = $disabledSources.filter((u) => u !== url) }
   function beginConfiguration(currentBase: string, name: string, id: string, configureUrl: string) {
     configuring = { currentBase, name, id, configureUrl }
   }
@@ -175,16 +176,16 @@
   let indexerNames = $state(new Map<string, string>())
   $effect(() => {
     let stale = false
-    const urls = $torznabUrls
+    const urls = $trackerFeedUrls
     void Promise.all(urls.map(async (url) => {
-      const checked = await checkTorznab(url)
+      const checked = await checkTrackerFeed(url)
       return [url, checked && 'name' in checked ? checked.name : undefined] as const
     })).then((entries) => {
       if (!stale) indexerNames = new Map(entries.filter((entry): entry is readonly [string, string] => !!entry[1]))
     })
     return () => { stale = true }
   })
-  const visibleIndexerRows = $derived($torznabUrls
+  const visibleIndexerRows = $derived($trackerFeedUrls
     .map((url) => ({ url, disabled: $disabledSources.includes(url) }))
     .filter(({ url, disabled }) =>
       matchesSourceFilters({ types: ['indexer'], enabled: !disabled, disabled }, manageStatusFilter, manageTypeFilter)
@@ -328,7 +329,7 @@
     buttons[next].focus()
     buttons[next].click()
   }
-  const configuredCount = $derived($addonUrls.length + $torznabUrls.length + $extensionUrls.length + orphanCount)
+  const configuredCount = $derived($addonUrls.length + $trackerFeedUrls.length + $extensionUrls.length + orphanCount)
 </script>
 
 <div class="min-w-0 overflow-x-hidden p-4 sm:p-8">
@@ -454,7 +455,7 @@
       <button onclick={() => void add()} data-focusable disabled={adding} class="w-full rounded-md bg-primary px-4 py-2.5 font-bold text-primary-foreground disabled:opacity-50 sm:w-auto sm:py-2">{adding ? 'Adding…' : 'Add'}</button>
     </div>
     {#if addError}<p role="alert" class="mt-2 text-xs text-destructive">{addError}</p>{/if}
-    <p class="mt-2 text-xs text-muted-foreground">Supports Nuvio provider manifests, Stremio add-on links from Nuvio or Omni, and Torznab feeds from Jackett or Prowlarr (add <code>?apikey=</code> and your key) to search torrent trackers directly.</p>
+    <p class="mt-2 text-xs text-muted-foreground">Supports Nuvio provider manifests, Stremio add-on links from Nuvio or Omni, and torrent trackers: a tracker's RSS search URL (put <code>{'{query}'}</code> where the search words go, or keep its search parameter), or a Torznab feed from Jackett or Prowlarr with <code>?apikey=</code> and your key.</p>
     <div class="mt-2 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
       <div class="relative col-span-2 min-w-0 sm:min-w-52 sm:flex-1">
         <Search size={14} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -563,7 +564,7 @@
         {/if}
       </div>
     {/if}
-    {#if !$addonUrls.length && !$torznabUrls.length && !hasManageRows}
+    {#if !$addonUrls.length && !$trackerFeedUrls.length && !hasManageRows}
       <div class="mt-3 rounded-xl border border-dashed border-border p-4 text-center">
         <p class="text-sm font-bold">Nothing here yet</p>
         <p class="mt-1 text-xs text-muted-foreground">Paste a Nuvio provider manifest, a Stremio add-on from Nuvio or Omni, a GitHub repo, or a catalog. Or add one from the Store.</p>
@@ -638,7 +639,7 @@
             <div class="min-w-0 flex-1">
               <div class="flex min-w-0 flex-wrap items-center gap-1.5">
                 <span class="min-w-0 flex-1 truncate font-bold">{indexerNames.get(url) ?? host(url)}</span>
-                <span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">INDEXER</span>
+                <span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">TRACKER</span>
               </div>
               <p class="mt-0.5 line-clamp-2 break-words text-xs text-muted-foreground">{indexerLabel(url)}</p>
             </div>
