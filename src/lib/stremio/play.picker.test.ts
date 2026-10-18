@@ -100,6 +100,11 @@ vi.mock('$lib/player/session', () => ({
 vi.mock('$lib/anilist/fetch-media', () => ({
   fetchMediaById: (...args: unknown[]) => fetchMediaById(...args),
 }))
+const fetchSeasonChain = vi.fn(async (..._args: unknown[]): Promise<unknown[]> => [])
+vi.mock('$lib/anilist/seasons', async (actual) => ({
+  ...(await actual() as object),
+  fetchSeasonChain: (...args: unknown[]) => fetchSeasonChain(...args),
+}))
 vi.mock('$lib/player/source-origin', () => ({
   sourceOrigins: rememberedSources,
   episodeSourceOrigins: rememberedEpisodeSources,
@@ -117,6 +122,7 @@ const {
   resumeEpisode,
 } = await import('./play')
 const { durablePositions } = await import('$lib/player/progress')
+const { isWrongSeason } = await import('./parse')
 
 const media = {
   id: 1,
@@ -157,6 +163,31 @@ describe('manual episode source chooser', () => {
       season: 5,
       episode: 1,
     })
+  })
+
+  it('keeps a later season episode uploaded under the whole show numbering', async () => {
+    // Season 2 numbers its episodes from 1, AniZip maps no absolute number, and the upload counts
+    // from season 1's first episode: season 2 episode 28 is the show's 87th.
+    const sequel = {
+      id: 902,
+      idMal: 902,
+      title: { romaji: 'Kani no Sanpo Season 2' },
+      format: 'TV_SHORT',
+      episodes: 72,
+      startDate: { year: 2026, month: 4, day: 1 },
+      relations: { edges: [{ relationType: 'PREQUEL', node: { id: 901 } }] },
+    }
+    fetchSeasonChain.mockResolvedValueOnce([
+      { id: 901, format: 'TV_SHORT', episodes: 59, startDate: { year: 2025, month: 1, day: 1 } },
+      sequel,
+    ])
+    const want = await episodeWant(sequel as never, 28)
+    expect(want).toMatchObject({ episode: 28, abs: 87 })
+    const upload = (filename: string) => ({ name: 'Tracker', infoHash: 'a', behaviorHints: { filename } })
+    expect(isWrongSeason(upload('[Grp] Kani no Sanpo (Crab Walks) - 87 [1080p].mkv'), want!)).toBe(false)
+    expect(isWrongSeason(upload('[Grp] Kani no Sanpo - 28 [1080p].mkv'), want!)).toBe(false)
+    expect(isWrongSeason(upload('Kani.no.Sanpo.S02E28.1080p.WEB.mkv'), want!)).toBe(false)
+    expect(isWrongSeason(upload('[Grp] Kani no Sanpo - 86 [1080p].mkv'), want!)).toBe(true)
   })
 
   it('keeps background TV resolution isolated from the on-screen picker', async () => {

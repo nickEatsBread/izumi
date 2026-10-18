@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { chainNeighbours, fetchSeasonChain, mayListSeasons, seasonEntries, walkSeasonChain } from './seasons'
+import { chainNeighbours, episodeOffset, fetchSeasonChain, mayListSeasons, seasonEntries, walkSeasonChain } from './seasons'
 import type { Media } from './types'
 
 // fetchSeasonChain's AniList requests, answered per test.
@@ -107,5 +107,20 @@ describe('season entries', () => {
   it('stays empty for one season, or when this title is not one of them', () => {
     expect(seasonEntries([graph[1], graph[2]], 1)).toEqual([])
     expect(seasonEntries(chain, 2)).toEqual([])
+  })
+})
+
+describe('episode offset', () => {
+  const sized = (media: Media, episodes: number | null) => ({ ...media, episodes }) as Media
+  // Season 1 (59 episodes) → a 1-episode film → Season 2 → Season 3.
+  const chain = [sized(graph[1], 59), sized(graph[2], 1), sized(graph[3], 72), sized(graph[4], null)]
+  it('adds up the episodes of the seasons released before this one, skipping films', () => {
+    expect(episodeOffset(chain, 3)).toBe(59)
+    expect(episodeOffset(chain, 4)).toBe(131)
+  })
+  it('has none for a first season, a film, or when an earlier season has no episode count', () => {
+    expect(episodeOffset(chain, 1)).toBeUndefined()
+    expect(episodeOffset(chain, 2)).toBeUndefined()
+    expect(episodeOffset([sized(graph[1], null), sized(graph[3], 72)], 3)).toBeUndefined()
   })
 })
