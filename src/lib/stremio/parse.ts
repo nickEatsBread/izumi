@@ -334,11 +334,19 @@ export const isCached = (s: Stream) => !isUncached(s) && CACHED_MARKER.test(hayO
 // URL — so a legitimate release whose name happens to mention "3 days left" is never dropped.
 const STATUS_CARD = /\b(?:expires? in|days? left|quota used|subscription|limit reached|no results)\b/i
 const VIDEO_URL = /\.(?:mkv|mp4|avi|m4v|webm|mov|ts)(?:[?#]|$)/i
+// Error placeholders open with a status emoji: in the name ("[⛔️] Comet") or, when the row names
+// no file, on the title's first line ("⚠️ ERROR!" above a link to a stock error video).
+const NOTICE_NAME = /^\s*\[(?:❌|⚠|⛔|🔄)\uFE0F?\]/u
+const NOTICE_TITLE = /^\s*(?:❌|⚠|⛔|🚫)/u
 
 export const isNotice = (s: Stream) =>
-  /^\s*\[(?:❌|⚠️|🔄)\]/.test(s.name ?? '')
+  NOTICE_NAME.test(s.name ?? '')
   || /\berror\b/i.test(s.name ?? '')
   || s.url === 'https://comet.feels.legal'
+  || (NOTICE_TITLE.test(s.title || s.description || '')
+      && !s.infoHash
+      && !s.behaviorHints?.videoSize
+      && !s.behaviorHints?.filename)
   || (STATUS_CARD.test(`${s.name ?? ''} ${s.title ?? ''} ${s.description ?? ''}`)
       && !s.infoHash
       && !s.behaviorHints?.videoSize

@@ -25,10 +25,12 @@
   import { findAddonConfigureUrl } from '$lib/stremio/configure'
   import { defaultDiscussionPlatform } from '$lib/comments'
   import { checkExtensionUpdates } from '$lib/extensions/auto-update'
+  import { checkTorznab, torznabUrls } from '$lib/extensions/torznab'
   import AddonConfigurator from '$lib/components/settings/AddonConfigurator.svelte'
   import CommunitySources from '../extensions/+page.svelte'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import Globe from '@lucide/svelte/icons/globe'
+  import Radar from '@lucide/svelte/icons/radar'
   import Store from '@lucide/svelte/icons/store'
   import Layers3 from '@lucide/svelte/icons/layers-3'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
@@ -82,6 +84,7 @@
     { value: 'all', label: 'Any type' },
     { value: 'addon', label: 'Stremio add-ons' },
     { value: 'community', label: 'Community sources' },
+    { value: 'indexer', label: 'Tracker indexers' },
     { value: 'catalog', label: 'Package catalogs' },
     { value: 'package', label: 'Installed packages' },
   ]
@@ -105,7 +108,16 @@
     try {
       const result = await classifySourceSpec(input)
       if ('error' in result) {
-        addError = result.error
+        // Not an add-on or a catalog: it may be an indexer manager's Torznab feed, which answers XML.
+        const indexer = await checkTorznab(input)
+        if (indexer && 'name' in indexer) {
+          const spec = input.trim()
+          if (!$torznabUrls.includes(spec)) $torznabUrls = [...$torznabUrls, spec]
+          $disabledSources = $disabledSources.filter((url) => url !== spec)
+          input = ''
+          return
+        }
+        addError = indexer?.error ?? result.error
         return
       }
       if (result.kind === 'addon') {
@@ -146,6 +158,7 @@
   }
   function toggle(url: string) { $disabledSources = $disabledSources.includes(url) ? $disabledSources.filter((u) => u !== url) : [...$disabledSources, url] }
   function remove(i: number) { const url = $addonUrls[i]; $addonUrls = $addonUrls.filter((_, j) => j !== i); $disabledSources = $disabledSources.filter((u) => u !== url) }
+  function removeIndexer(url: string) { $torznabUrls = $torznabUrls.filter((u) => u !== url); $disabledSources = $disabledSources.filter((u) => u !== url) }
   function beginConfiguration(currentBase: string, name: string, id: string, configureUrl: string) {
     configuring = { currentBase, name, id, configureUrl }
   }
@@ -157,6 +170,25 @@
     configuring = null
   }
   const host = (u: string) => { try { return new URL(/^https?:/.test(u) ? u : `https://${u}`).hostname } catch { return u } }
+  // An indexer URL carries its API key in the query, so only its host and path are ever shown.
+  const indexerLabel = (u: string) => { try { const url = new URL(u); return `${url.host}${url.pathname}` } catch { return host(u) } }
+  let indexerNames = $state(new Map<string, string>())
+  $effect(() => {
+    let stale = false
+    const urls = $torznabUrls
+    void Promise.all(urls.map(async (url) => {
+      const checked = await checkTorznab(url)
+      return [url, checked && 'name' in checked ? checked.name : undefined] as const
+    })).then((entries) => {
+      if (!stale) indexerNames = new Map(entries.filter((entry): entry is readonly [string, string] => !!entry[1]))
+    })
+    return () => { stale = true }
+  })
+  const visibleIndexerRows = $derived($torznabUrls
+    .map((url) => ({ url, disabled: $disabledSources.includes(url) }))
+    .filter(({ url, disabled }) =>
+      matchesSourceFilters({ types: ['indexer'], enabled: !disabled, disabled }, manageStatusFilter, manageTypeFilter)
+      && matchesSourceQuery(manageQuery, indexerNames.get(url), indexerLabel(url))))
   const addonMetaByUrl = $derived(new Map($addonUrls.map((url) => [url, fetchManifest(url)] as const)))
   let addonNames = $state(new Map<string, string>())
   $effect(() => {
@@ -186,8 +218,14 @@
     enabled: !disabled,
     disabled,
   })))
+  const indexerSortEntries = $derived(visibleIndexerRows.map(({ url, disabled }) => ({
+    id: `indexer:${url}`,
+    label: indexerNames.get(url) ?? indexerLabel(url),
+    enabled: !disabled,
+    disabled,
+  })))
   const manageSortRanks = $derived(new Map(
-    sortManagedSources([...addonSortEntries, ...communitySortEntries], manageSortMode)
+    sortManagedSources([...addonSortEntries, ...indexerSortEntries, ...communitySortEntries], manageSortMode)
       .map((entry, index) => [entry.id, index] as const),
   ))
   const manageFiltersActive = $derived(manageStatusFilter !== 'all' || manageTypeFilter !== 'all')
@@ -290,7 +328,7 @@
     buttons[next].focus()
     buttons[next].click()
   }
-  const configuredCount = $derived($addonUrls.length + $extensionUrls.length + orphanCount)
+  const configuredCount = $derived($addonUrls.length + $torznabUrls.length + $extensionUrls.length + orphanCount)
 </script>
 
 <div class="min-w-0 overflow-x-hidden p-4 sm:p-8">
@@ -416,7 +454,7 @@
       <button onclick={() => void add()} data-focusable disabled={adding} class="w-full rounded-md bg-primary px-4 py-2.5 font-bold text-primary-foreground disabled:opacity-50 sm:w-auto sm:py-2">{adding ? 'Adding…' : 'Add'}</button>
     </div>
     {#if addError}<p role="alert" class="mt-2 text-xs text-destructive">{addError}</p>{/if}
-    <p class="mt-2 text-xs text-muted-foreground">Supports Nuvio provider manifests and Stremio add-on links from Nuvio or Omni.</p>
+    <p class="mt-2 text-xs text-muted-foreground">Supports Nuvio provider manifests, Stremio add-on links from Nuvio or Omni, and Torznab feeds from Jackett or Prowlarr (add <code>?apikey=</code> and your key) to search torrent trackers directly.</p>
     <div class="mt-2 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
       <div class="relative col-span-2 min-w-0 sm:min-w-52 sm:flex-1">
         <Search size={14} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -505,7 +543,7 @@
 
       {#if manageFiltersReady}
         <span class="col-span-2 text-right text-[0.68rem] font-bold tabular-nums text-muted-foreground sm:ml-auto sm:shrink-0">
-          {visibleAddonRows.length + filteredCommunityCount} of {configuredCount}
+          {visibleAddonRows.length + visibleIndexerRows.length + filteredCommunityCount} of {configuredCount}
         </span>
       {/if}
     </div>
@@ -525,7 +563,7 @@
         {/if}
       </div>
     {/if}
-    {#if !$addonUrls.length && !hasManageRows}
+    {#if !$addonUrls.length && !$torznabUrls.length && !hasManageRows}
       <div class="mt-3 rounded-xl border border-dashed border-border p-4 text-center">
         <p class="text-sm font-bold">Nothing here yet</p>
         <p class="mt-1 text-xs text-muted-foreground">Paste a Nuvio provider manifest, a Stremio add-on from Nuvio or Omni, a GitHub repo, or a catalog. Or add one from the Store.</p>
@@ -591,6 +629,32 @@
       {/each}
     </ul>
     {/if}
+    {#if visibleIndexerRows.length}
+    <ul class="contents">
+      {#each visibleIndexerRows as { url, disabled: off } (url)}
+        <li use:masonryItem style:order={manageSortRanks.get(`indexer:${url}`) ?? 0} class="flex min-w-0 flex-col gap-3 overflow-hidden rounded-lg border border-border p-3 sm:flex-row sm:items-center" class:opacity-50={off}>
+          <div class="flex min-w-0 items-start gap-3 sm:flex-1 sm:items-center">
+            <div class="grid size-10 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground"><Radar size={18} /></div>
+            <div class="min-w-0 flex-1">
+              <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+                <span class="min-w-0 flex-1 truncate font-bold">{indexerNames.get(url) ?? host(url)}</span>
+                <span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">INDEXER</span>
+              </div>
+              <p class="mt-0.5 line-clamp-2 break-words text-xs text-muted-foreground">{indexerLabel(url)}</p>
+            </div>
+          </div>
+          <div class="flex w-full min-w-0 items-center justify-end gap-2 sm:w-auto">
+            <button data-focusable data-switch onclick={() => toggle(url)} aria-pressed={!off} title={off ? 'Enable' : 'Disable'}
+              class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors sm:h-5 sm:w-9 {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
+              <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform sm:h-4 sm:w-4 {off ? 'translate-x-0.5' : 'translate-x-5 sm:translate-x-4'}"></span>
+            </button>
+            <button onclick={() => removeIndexer(url)} data-focusable title="Remove" data-touch-target aria-label={`Remove ${indexerNames.get(url) ?? host(url)}`}
+              class="grid size-10 shrink-0 place-items-center rounded-md text-destructive transition-colors hover:bg-accent active:bg-destructive/10 sm:size-8"><Trash2 size={16} /></button>
+          </div>
+        </li>
+      {/each}
+    </ul>
+    {/if}
 
   <div class="contents">
     <CommunitySources
@@ -608,7 +672,7 @@
     />
   </div>
   </div>
-  {#if manageFiltersReady && configuredCount > 0 && visibleAddonRows.length + filteredCommunityCount === 0}
+  {#if manageFiltersReady && configuredCount > 0 && visibleAddonRows.length + visibleIndexerRows.length + filteredCommunityCount === 0}
     <div class="mt-3 rounded-xl border border-dashed border-border p-4 text-center">
       <p class="text-sm font-bold">No matching sources</p>
       <button type="button" data-focusable onclick={clearManageView}

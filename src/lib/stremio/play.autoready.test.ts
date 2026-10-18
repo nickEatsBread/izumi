@@ -150,6 +150,39 @@ describe('direct-P2P next-episode preload', () => {
   })
 })
 
+describe('title-searched tracker rows', () => {
+  const otherEpisode = (providerId: string) => ({
+    title: '[Group] Test Anime - 01 [1080p].mkv',
+    hash: '0123456789abcdef0123456789abcdef01234567',
+    seeders: 20,
+    provider: 'Provider',
+    providerId,
+  })
+  const pickerRows = () => (get(picker)?.streams as unknown[] | undefined)?.length
+
+  it('never fill the list with the show\'s other episodes', async () => {
+    addonUrls.set([])
+    queryExtensions.mockImplementation(async (...args: unknown[]) => {
+      (args[1] as (rows: unknown[]) => void)([otherEpisode('torznab:indexer.test/1')])
+      return []
+    })
+    void playEpisode(media as never, 2, () => {})
+    await vi.waitFor(() => expect(queryExtensions).toHaveBeenCalled())
+    await sleep(200)
+    expect(pickerRows() ?? 0).toBe(0)
+  })
+
+  it('leave the id-searched safety net in place', async () => {
+    addonUrls.set([])
+    queryExtensions.mockImplementation(async (...args: unknown[]) => {
+      (args[1] as (rows: unknown[]) => void)([otherEpisode('provider-1')])
+      return []
+    })
+    void playEpisode(media as never, 2, () => {})
+    await vi.waitFor(() => expect(pickerRows()).toBe(1))
+  })
+})
+
 describe('autoplay readiness', () => {
   it('becomes ready from a held cached pick while a provider is still hanging', async () => {
     phttp.mockResolvedValue({

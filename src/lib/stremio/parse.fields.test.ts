@@ -172,6 +172,22 @@ suite('notice detection', () => {
   it('keeps a torrent row with an infoHash whatever its text says', () => {
     expect(isNotice({ infoHash: 'abc', description: 'quota used: 40%' })).toBe(false)
   })
+  it('drops "nothing yet" placeholders whatever status emoji they open with', () => {
+    expect(isNotice({ name: '[⛔️] Addon', description: 'Searches are disabled on this instance', url: 'https://addon/playback/x' })).toBe(true)
+    expect(isNotice({
+      name: '🪐 ADDON',
+      title: '⚠️ ERROR! \nNo Streams Found\nThe streams could not be found or do not exist yet.',
+      url: 'https://cdn.example/videos/error-general.mp4',
+    })).toBe(true)
+  })
+  it('keeps a real file whose title opens with a warning emoji', () => {
+    expect(isNotice({
+      name: 'Addon',
+      title: '⚠️ Show - 01 (1080p).mkv',
+      url: 'https://cdn/file.mkv',
+      behaviorHints: { filename: 'Show - 01 (1080p).mkv' },
+    })).toBe(false)
+  })
 })
 
 suite('theatrical copy detection', () => {
