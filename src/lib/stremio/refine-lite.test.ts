@@ -131,6 +131,18 @@ describe('refineStreamsLite', () => {
     expect(r.rejectedCount).toBe(1)
   })
 
+  it('keeps season-local SxxExx releases of a long sequel season', () => {
+    const ctx: RefineLiteContext = {
+      titles: ['Example Shark Season 2', 'Little Example Shark Season 2'],
+      streamType: 'series',
+      totalEpisodes: 72,
+      absoluteNumbered: true,
+    }
+    const r = refineStreamsLite(ctx, [named('Example Shark S02E05 1080p WEB-DL.mkv')])
+    expect(r.kept).toHaveLength(1)
+    expect(r.rejectedCount).toBe(0)
+  })
+
   it('returns everything untouched for an empty context', () => {
     const ctx: RefineLiteContext = { titles: [], streamType: 'series' }
     const rows = [named('anything.mkv'), named('[Group] Whatever - 01.mkv')]

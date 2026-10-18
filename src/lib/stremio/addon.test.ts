@@ -159,6 +159,8 @@ describe('parseSeasonEp (wrong-season guard)', () => {
     expect(parseSeasonEp({ behaviorHints: { filename: 'Re Zero S04E01 1080p WEB' } } as any)).toEqual({ season: 4, episode: 1 }))
   it('reads an absolute "- NN" number', () =>
     expect(parseSeasonEp({ behaviorHints: { filename: '[SubsPlease] Re Zero - 67 (1080p)' } } as any)).toEqual({ abs: 67 }))
+  it('reads a revised SxxExx release before its season text', () =>
+    expect(parseSeasonEp({ behaviorHints: { filename: '[Group] Example Shark 2nd Season S01E69v2 (1080p)' } } as any)).toEqual({ season: 1, episode: 69 }))
   it('does not treat a resolution as an episode number', () =>
     expect(parseSeasonEp({ behaviorHints: { filename: 'Re Zero 1080p WEB x264' } } as any)).toEqual({}))
   it('reads a season-only batch (no episode)', () =>

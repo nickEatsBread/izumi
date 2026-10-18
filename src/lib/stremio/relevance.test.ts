@@ -460,6 +460,16 @@ describe('likelyOtherProduction (One Piece anime vs 2023 live action)', () => {
   it('keeps an absolute-numbered release even for a long-runner (the real anime file)', () => {
     expect(likelyOtherProduction(s('[SubsPlease] One Piece - 001 (1080p).mkv'), 1999, true)).toBe(false)
   })
+  it('keeps a season-local SxxExx of a long sequel season whose titles name that season', () => {
+    const sequel = ['Example Shark Season 2', 'Little Example Shark Season 2']
+    expect(likelyOtherProduction(s('Example.Shark.S02E05.1080p.WEB-DL.mkv'), 2025, true, sequel)).toBe(false)
+    expect(likelyOtherProduction(s('Example Shark 2nd Season S01E05 1080p.mkv'), 2025, true, ['Example Shark 2nd Season'])).toBe(false)
+  })
+  it('still drops an SxxExx under the base entry of a long-runner', () => {
+    const base = ['Example Pirate', 'EXAMPLE PIRATE']
+    expect(likelyOtherProduction(s('Example Pirate S01E01 1080p.mkv'), 1999, true, base)).toBe(true)
+    expect(likelyOtherProduction(s('Example.Pirate.S02E03.1080p.WEB-DL.mkv'), 1999, true, base)).toBe(true)
+  })
   it('keeps a legit SxxExx BD batch of a normal-length anime (not absolute-numbered)', () => {
     expect(likelyOtherProduction(s('Death.Note.S01E37.1080p.BluRay.x265.mkv'), 2006, false)).toBe(false)
   })
