@@ -183,7 +183,7 @@ rustls-platform-verifier = "0.7.0"
 # librqbit uses AWS-LC's legacy SHA-1 implementation for torrent piece hashes.
 # Bundle NASM for Windows builders instead of requiring a system installation.
 aws-lc-rs = { version = "1.17.3", features = ["prebuilt-nasm"] }
-windows = { version = "0.61", features = [
+windows = { version = "0.62", features = [
   "Win32_Foundation",
   "Win32_Devices_Display",
   "Win32_Graphics_Gdi",
@@ -200,7 +200,7 @@ windows = { version = "0.61", features = [
   "Win32_UI_Shell_PropertiesSystem",
   "Win32_UI_WindowsAndMessaging",
 ] }
-webview2-com = "0.38"
+webview2-com = "0.39"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
