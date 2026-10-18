@@ -5,7 +5,7 @@
     "rqbit": {
       "url": "https://github.com/ikatson/rqbit.git",
       "branch": "main",
-      "rev": "2b123074052418f3679c5df01edd2c265aa71821"
+      "rev": "57e95d16c830863a1fde32d8fa98153b53a3d0b4"
     },
     "librqbit-utp": {
       "url": "https://github.com/ikatson/librqbit-utp.git",
