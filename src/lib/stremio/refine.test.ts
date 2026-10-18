@@ -327,6 +327,19 @@ describe('refineStreams', () => {
     startDate: { year: 1999 },
   } as never
 
+  it('keeps a season-local SxxExx upload of a long sequel season', () => {
+    const sequel = {
+      title: { romaji: 'Example Shark Season 2', english: 'Little Example Shark Season 2' },
+      format: 'TV_SHORT',
+      episodes: 72,
+      duration: 3,
+      startDate: { year: 2025 },
+    } as never
+    const r = refineStreams(sequel, [named('Example Shark S02E05 1080p WEB-DL.mkv')] as never)
+    expect(r.rejected).toEqual([])
+    expect(r.kept).toHaveLength(1)
+  })
+
   it('keeps only the main series for a long-running series episode 1', () => {
     const r = refineStreams(onePiece, [
       named('[SubsPlease] One Piece Fan Letter - 01 (1080p) [ABCD1234].mkv', {
