@@ -5,8 +5,10 @@ import { BATCH_MARKER, type Stream } from './parse'
 // torrents or a same-title different production (One Piece's id also maps to the
 // 2023 live action); these guard the picker/auto-play without dropping legit files.
 
+// "and" is not a title word: "Tanuki & Kitsune" is released as "Tanuki and Kitsune", and the "&"
+// was already gone.
 const lexicalTitleTokens = (s: string): string[] =>
-  s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean)
+  s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter((t) => t && t !== 'and')
 
 export function titleTokens(s: string): string[] {
   return lexicalTitleTokens(s).filter((t) => t.length > 2)
@@ -14,7 +16,7 @@ export function titleTokens(s: string): string[] {
 
 /** The same normalisation titleTokens uses, minus the length filter, so a phrase keeps its short
  *  words: "Dr. Stone" has to stay "dr stone" to be findable in a release name. */
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+const norm = (s: string) => lexicalTitleTokens(s).join(' ')
 
 const nameOf = (s: Stream) =>
   s.behaviorHints?.filename || s.title?.split('\n')[0] || s.description?.split('\n')[0] || s.name || ''
@@ -452,8 +454,9 @@ export function isEpisodeExtra(stream: Stream): boolean {
 // AND the 2023 Netflix live action) survives relevant() because the title matches.
 // Two independent tells, either drops the file:
 //   (1) `absoluteNumbered` — a long-running anime (One Piece, Naruto, Conan) ships as
-//       "One Piece - 001", never scene "S01E01", so ANY SxxExx file is a different
-//       production (catches a year-less live-action "One Piece S01E01").
+//       "One Piece - 001", so a low SxxExx number is a different production (catches a
+//       year-less live-action "One Piece S01E01"). A live-action season never reaches episode
+//       31, while web releases of a long-running anime count straight through ("Title S01E81").
 //       Skipped when the requested titles name a later season: a 72-episode "Season 2" is long
 //       enough to count as a long-runner, its web releases are numbered season-locally
 //       ("Title S02E05"), and a live action adapts a franchise's base entry, not its sequel.
@@ -463,9 +466,11 @@ export function isEpisodeExtra(stream: Stream): boolean {
 // Both keep unknowns (never drop a plain absolute-numbered release).
 export function likelyOtherProduction(stream: Stream, animeYear?: number, absoluteNumbered = false, wanted: string[] = []): boolean {
   const name = nameOf(stream)
-  const hasSceneEp = /\bS\d{1,2}E\d{1,3}\b/i.test(name)
+  const sceneEp = name.match(/\bS\d{1,2}E(\d{1,3})\b/i)
+  const hasSceneEp = !!sceneEp
   const laterSeason = wanted.some((t) => SEQUEL_SEASON.test(t))
-  if (hasSceneEp && absoluteNumbered && !laterSeason) return true // long-runner + SxxExx ⇒ not the anime
+  // long-runner + live-action-sized SxxExx ⇒ not the anime
+  if (sceneEp && absoluteNumbered && !laterSeason && Number(sceneEp[1]) <= 30) return true
   if (!animeYear) return false
   const years = [...name.matchAll(/\b(19\d{2}|20\d{2})\b/g)].map((m) => Number(m[1]))
     .filter((y) => y >= 1950 && y <= 2035)

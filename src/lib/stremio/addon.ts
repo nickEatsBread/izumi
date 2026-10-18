@@ -194,7 +194,9 @@ export async function fetchAddonStreams(
       const usable = dedupeStreams(all.filter((s) => (
         !!s.url || !!s.infoHash || !!s.ytId || !!s.externalUrl
       ) && !isNotice(s)))
-      return { streams: usable, total: all.length }
+      // An add-on's "no results yet" placeholder is not a torrent: counting it told a viewer of a
+      // just-aired episode that sources were found but none were usable.
+      return { streams: usable, total: all.filter((s) => !isNotice(s)).length }
     } catch { return { streams: [], total: 0 } }
   })()
 

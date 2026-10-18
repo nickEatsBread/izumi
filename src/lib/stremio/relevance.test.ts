@@ -224,6 +224,15 @@ describe('relevant', () => {
   })
 })
 
+describe('relevant (an ampersand written out)', () => {
+  it('reads "&" and "and" as the same title', () => {
+    const wanted = ['Example Dog & Fox', 'Rei to Kitsune (TV)', 'Rei & Kitsune']
+    expect(relevant(s('[Group] Rei and Kitsune (2026) - S01E03 [WEB 1080p].mkv'), wanted)).toBe(true)
+    expect(relevant(s('Example.Dog.and.Fox.S01E03.1080p.WEB-DL.mkv'), wanted)).toBe(true)
+    expect(relevant(s('[Group] Example Cat and Fox - 03 (1080p).mkv'), wanted)).toBe(false)
+  })
+})
+
 describe('relevant (romanized titles that break words differently)', () => {
   // The catalogue writes "... de wa Arimasen ga" while release groups write "... dewa Arimasen ga".
   // The glued word was one the request had never used, so the anchor filtered every romaji-titled
@@ -459,6 +468,11 @@ describe('likelyOtherProduction (One Piece anime vs 2023 live action)', () => {
   })
   it('keeps an absolute-numbered release even for a long-runner (the real anime file)', () => {
     expect(likelyOtherProduction(s('[SubsPlease] One Piece - 001 (1080p).mkv'), 1999, true)).toBe(false)
+  })
+  it('keeps a long-runner web release numbered past any live-action season', () => {
+    expect(likelyOtherProduction(s('Example-chan.S01E81.1080p.AMZN.WEB-DL.JPN.DDP2.0.H.264-Group.mkv'), 2025, true)).toBe(false)
+    expect(likelyOtherProduction(s('Example.Show.S01E31.1080p.WEB-DL.mkv'), 2020, true)).toBe(false)
+    expect(likelyOtherProduction(s('Example.Show.S01E30.1080p.WEB-DL.mkv'), 2020, true)).toBe(true)
   })
   it('keeps a season-local SxxExx of a long sequel season whose titles name that season', () => {
     const sequel = ['Example Shark Season 2', 'Little Example Shark Season 2']

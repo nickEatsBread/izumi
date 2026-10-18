@@ -16,6 +16,7 @@ const configuredAddonUrls = writable<string[]>([])
 vi.mock('./sources', () => ({
   addonUrls: configuredAddonUrls,
   enabledAddonUrls: readable<string[]>([]),
+  disabledSources: readable<string[]>([]),
   addonOriginId: () => '',
 }))
 vi.mock('./idmap', () => ({

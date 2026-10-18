@@ -19,7 +19,7 @@ const PROFILE_PREFIX = /^izumi-profile:[A-Za-z0-9_-]{1,100}:/
 
 /** Sign-ins, keys and configured add-on URLs: exported only with "Include accounts and secrets". */
 const SECRET_KEYS: ReadonlySet<string> = new Set([
-  'debrid-key', 'stremio-addon-urls', 'disabled-sources',
+  'debrid-key', 'stremio-addon-urls', 'disabled-sources', 'tracker-feed-urls',
   'subdl-api-key', 'jimaku-api-key', 'tmdb-read-token', 'omdb-api-key',
   'anilist-token', 'mal-token', 'mal-refresh', 'kitsu-token', 'kitsu-refresh',
   'nuvio-auth-tokens-v1', 'stremio-account-token', 'stremio-sync-credential-baseline-v1',

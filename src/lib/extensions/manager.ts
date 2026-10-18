@@ -15,6 +15,7 @@ import { currentResolveTrace, traceResolve } from '$lib/debug/resolve-trace'
 import { afterExtensionReady, settleExtensionMethods } from './method-stream'
 import { loadCachedExtensionModule } from './module-cache'
 import { extensionSourceScheduler } from './source-scheduler'
+import { enabledTrackerFeedUrls } from './tracker-feeds'
 import { jvmRuntimeState, JVM_RUNTIME_STARTING_MESSAGE, registerJvmColdStartProbe } from './jvm-runtime-state'
 import { playing } from '$lib/player/session'
 
@@ -300,7 +301,7 @@ export async function removeInstalledExtension(id: string): Promise<void> {
  * also sees enabled `.izumi-ext` packages stored by the desktop installer. */
 export async function hasConfiguredExtensions(): Promise<boolean> {
   const manifests = get(enabledExtensionUrls)
-  if (manifests.length) return true
+  if (manifests.length || get(enabledTrackerFeedUrls).length) return true
   return extensionSourceConfigured(
     manifests,
     await installedExtensionPackages(),

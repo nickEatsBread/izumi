@@ -27,6 +27,7 @@ const TARGETS: Record<string, TouchTarget> = {
   'Sources: remove an add-on while its details load': { file: SOURCES, anchor: 'aria-label={`Remove ${host(url)}`}' },
   'Sources: configure an add-on': { file: SOURCES, anchor: 'onclick={() => beginConfiguration(url, m.name, m.id, configureUrl)}' },
   'Sources: remove an add-on': { file: SOURCES, anchor: 'aria-label={`Remove ${m?.name ?? host(url)}`}' },
+  'Sources: remove a tracker indexer': { file: SOURCES, anchor: 'onclick={() => removeIndexer(url)}' },
   'Extensions: remove a source (loading and loaded)': { file: EXTENSIONS, anchor: 'onclick={() => removeExt(i)}', count: 2 },
   'Extensions: show packages or sources': { file: EXTENSIONS, anchor: 'onclick={() => toggleExpanded(url)}' },
   'Extensions: configure a package source': { file: EXTENSIONS, anchor: 'onclick={() => openJvmSourceSettings(p.sources[0].id, p.sources[0].name)}' },

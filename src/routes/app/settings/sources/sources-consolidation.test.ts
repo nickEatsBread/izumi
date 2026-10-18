@@ -11,9 +11,9 @@ const priority = read('./priority/+page.svelte')
 const search = read('../../../../lib/settings/search.ts')
 
 describe('unified Sources settings', () => {
-  it('uses compact accessible bin actions for removing add-ons', () => {
+  it('uses compact accessible bin actions for removing add-ons and indexers', () => {
     expect(page).toContain("import Trash2 from '@lucide/svelte/icons/trash-2'")
-    expect(page.match(/<Trash2 size=\{16\} \/>/g)).toHaveLength(2)
+    expect(page.match(/<Trash2 size=\{16\} \/>/g)).toHaveLength(3)
     expect(page).not.toContain('>Remove</button>')
   })
 
@@ -88,7 +88,7 @@ describe('unified Sources settings', () => {
   it('sorts enabled sources first by default without redundant state badges', () => {
     expect(page).toContain("let manageSortMode = $state<SourceSortMode>('enabled')")
     expect(page).toContain("{ value: 'enabled', label: 'Enabled first' }")
-    expect(page).toContain('sortManagedSources([...addonSortEntries, ...communitySortEntries], manageSortMode)')
+    expect(page).toContain('sortManagedSources([...addonSortEntries, ...indexerSortEntries, ...communitySortEntries], manageSortMode)')
     expect(page).toContain('bind:manageSortEntries={communitySortEntries}')
     expect(communitySources).toContain('style:order={sortRanks.get(`extension:${url}`) ?? 0}')
     expect(communitySources).toContain('style:order={sortRanks.get(`package:${p.id}`) ?? 0}')

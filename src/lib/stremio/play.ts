@@ -94,6 +94,7 @@ import { promoteBootWork } from '$lib/util/boot-work'
 import { markClientPerformance } from '$lib/performance/client'
 import { cancelExtensionFetches } from '$lib/extensions/fetch-registry'
 import { queryTorrentProviders, toProviderMedia } from '$lib/extensions/torrentProvider'
+import { queryTrackerFeeds } from '$lib/extensions/tracker-feeds'
 import { torrentQueryIdFields, type TorrentResult } from '$lib/extensions/types'
 import { extToStream } from './ext-stream'
 import { markWatched } from '$lib/trackers'
@@ -920,7 +921,9 @@ export function finalizeAndroidWatch(pos: number, dur: number) {
 // matches above unknown parses. Unknown parses are kept (never drop on uncertainty).
 function verifySeason(streams: Stream[], want: EpisodeWant): Stream[] {
   const kept = streams.filter((s) => !isWrongSeason(s, want))
-  if (!kept.length) return streams // safety net: never empty the list on over-eager parsing
+  // Safety net: never empty the list on over-eager parsing of rows an episode id asked for. A
+  // tracker title search returns the show's other episodes too, and those really are wrong.
+  if (!kept.length) return streams.filter((s) => !s.__origin?.id.startsWith('tracker:'))
   const good: Stream[] = [], unknown: Stream[] = []
   for (const s of kept) {
     const p = parseSeasonEp(s)
@@ -1222,6 +1225,7 @@ async function extToStreams(
     await Promise.all([
       queryExtensions(query, fold, onlyOriginId, signal),
       queryTorrentProviders(query, toProviderMedia(media), fold, onlyOriginId, signal),
+      queryTrackerFeeds(query, fold, onlyOriginId, signal),
     ])
   } catch { /* best-effort: failed sources contributed nothing */ }
 }

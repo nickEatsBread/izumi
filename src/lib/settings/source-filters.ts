@@ -1,5 +1,5 @@
 export type SourceStatusFilter = 'all' | 'enabled' | 'disabled'
-export type SourceTypeFilter = 'all' | 'addon' | 'community' | 'catalog' | 'package'
+export type SourceTypeFilter = 'all' | 'addon' | 'indexer' | 'community' | 'catalog' | 'package'
 export type SourceSortMode = 'enabled' | 'disabled' | 'name-asc' | 'name-desc' | 'added'
 export type ManagedSourceType = Exclude<SourceTypeFilter, 'all'>
 
