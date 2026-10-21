@@ -1,6 +1,6 @@
 import type { Client } from '@urql/core'
 import { SCHEDULE_QUERY, SCHEDULE_WEEK_QUERY } from './detail-queries'
-import type { Airing } from './schedule'
+import { uniqueAirings, type Airing } from './schedule'
 
 type PageData = {
   Page?: {
@@ -107,9 +107,9 @@ export function loadScheduleWeek(
             all.push(...(current?.airingSchedules ?? []))
           }
         }
-        all.sort((a, b) => a.airingAt - b.airingAt)
-        remember(key, all)
-        return all
+        const week = uniqueAirings(all.sort((a, b) => a.airingAt - b.airingAt))
+        remember(key, week)
+        return week
       } catch (error) {
         if (timedOut) throw new Error('AniList schedule request timed out')
         throw error

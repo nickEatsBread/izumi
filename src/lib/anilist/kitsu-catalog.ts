@@ -218,9 +218,10 @@ function animeUrl(request: JikanCatalogRequest): string {
   if (genres.length) url.searchParams.set('filter[categories]', genres.map((g) => g.toLowerCase()).join(','))
   if (typeof v.season === 'string') url.searchParams.set('filter[season]', v.season.toLowerCase())
   if (n(v.seasonYear) != null) url.searchParams.set('filter[seasonYear]', String(n(v.seasonYear)))
-  const formats = Array.isArray(v.format_in) ? v.format_in : []
+  // A Home row preset's single `format`/`status` narrows exactly like a one-element search filter.
+  const formats = Array.isArray(v.format_in) ? v.format_in : typeof v.format === 'string' ? [v.format] : []
   if (formats.length === 1) url.searchParams.set('filter[subtype]', String(formats[0]).toLowerCase())
-  const statuses = Array.isArray(v.status_in) ? v.status_in : []
+  const statuses = Array.isArray(v.status_in) ? v.status_in : typeof v.status === 'string' ? [v.status] : []
   const status = statuses.length === 1
     ? ({ FINISHED: 'finished', RELEASING: 'current', NOT_YET_RELEASED: 'upcoming' } as Record<string, string>)[String(statuses[0])]
     : undefined
@@ -229,6 +230,11 @@ function animeUrl(request: JikanCatalogRequest): string {
   if (sort === 'SCORE_DESC') url.searchParams.set('sort', '-averageRating')
   else if (sort === 'START_DATE_DESC') url.searchParams.set('sort', '-startDate')
   else if (sort === 'POPULARITY_DESC' || sort === 'TRENDING_DESC') url.searchParams.set('sort', '-userCount')
+  // Kitsu has no trending order; what draws attention now is what is airing, as on its own Airing Now
+  // row. Only for a plain trending row: Search sorts by trending by default and keeps its own filters.
+  const plainTrending = sort === 'TRENDING_DESC' && !request.operation.startsWith('Search')
+    && !statuses.length && !genres.length && v.season == null && v.seasonYear == null
+  if (plainTrending) url.searchParams.set('filter[status]', 'current')
   return url.toString()
 }
 
@@ -388,11 +394,14 @@ export async function fetchKitsuCatalog(request: JikanCatalogRequest): Promise<R
   // the compatibility index cannot fill any, let the caller try Jikan or surface the real outage.
   if (raw.length && !media.length) throw new Error('Kitsu returned catalog entries without AniList mappings')
   const page = Math.max(1, n(request.variables.page) ?? 1)
+  const perPage = Math.min(20, Math.max(1, n(request.variables.perPage) ?? 20))
+  const total = result.meta?.count
   return Response.json({ data: { Page: {
     __typename: 'Page',
+    // Every PageInfo field a catalog query may select: graphcache drops an answer missing one.
     pageInfo: {
       __typename: 'PageInfo', hasNextPage: !!result.links?.next, currentPage: page,
-      total: result.meta?.count ?? null,
+      total: total ?? null, lastPage: total ? Math.ceil(total / perPage) : null,
     },
     media,
   } } })

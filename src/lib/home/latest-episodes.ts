@@ -4,6 +4,7 @@
 import { gql } from '@urql/core'
 import { get } from 'svelte/store'
 import { anilist } from '$lib/anilist/client'
+import { airedBefore } from '$lib/anime/airing-week'
 import { CARD_MEDIA_FIELDS } from '$lib/anilist/fragments'
 import type { Media } from '$lib/anilist/types'
 import { gameMode } from '$lib/player/session'
@@ -27,10 +28,15 @@ export const LATEST_EPISODES_QUERY = gql`
 /** `before` is a Unix time in seconds; keep it fixed for the life of the block. */
 export async function loadLatestEpisodes(page: number, perPage: number, before: number): Promise<ReleasePage> {
   const result = await anilist.query(LATEST_EPISODES_QUERY, { page, perPage, before, withPreview: !get(gameMode) }).toPromise()
-  if (result.error) throw result.error
-  const data = result.data?.Page as { pageInfo?: { hasNextPage?: boolean; lastPage?: number | null }; airingSchedules?: Array<EpisodeRelease | { media: null }> } | undefined
   const adult = get(showAdult)
-  const items = (data?.airingSchedules ?? []).filter((item): item is EpisodeRelease => !!item.media && (adult || !item.media.isAdult))
+  const shown = (item: EpisodeRelease | { media: null }): item is EpisodeRelease => !!item.media && (adult || !item.media.isAdult)
+  if (result.error) {
+    // While AniList is out the backup schedule lists the same feed for its last few weeks.
+    const aired = await airedBefore(anilist, before, page * perPage + 1, 3, undefined, shown).catch(() => { throw result.error })
+    return { items: aired.slice((page - 1) * perPage, page * perPage), hasNextPage: aired.length > page * perPage }
+  }
+  const data = result.data?.Page as { pageInfo?: { hasNextPage?: boolean; lastPage?: number | null }; airingSchedules?: Array<EpisodeRelease | { media: null }> } | undefined
+  const items = (data?.airingSchedules ?? []).filter(shown)
   return { items, hasNextPage: !!data?.pageInfo?.hasNextPage, ...(data?.pageInfo?.lastPage ? { lastPage: data.pageInfo.lastPage } : {}) }
 }
 

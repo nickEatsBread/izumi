@@ -4,6 +4,7 @@
 import { gql } from '@urql/core'
 import { get } from 'svelte/store'
 import { anilist } from '$lib/anilist/client'
+import { airedBefore } from '$lib/anime/airing-week'
 import { CARD_MEDIA_FIELDS } from '$lib/anilist/fragments'
 import { homeSections, RECENT_RELEASES_QUERY } from '$lib/anilist/queries'
 import type { Media } from '$lib/anilist/types'
@@ -32,6 +33,9 @@ export function appendUnique(current: Media[], next: Media[]): Media[] {
   return [...current, ...next.filter((item) => !seen.has(item.id) && seen.add(item.id))]
 }
 
+/** A catalog row a theme slot can show: not a block, the banner, or a local or tracker row. */
+export const isContentRow = (id: string): boolean => id !== 'hero' && !id.startsWith('block:') && !LOCAL_ROLES.has(bareRole(id))
+
 /** Rows a tab can show: catalog rows and the recently aired schedule. Local and tracker rows have
  * their own sections. */
 export function tabbableRows(options: CatalogHomeRowOption[]): CatalogHomeRowOption[] {
@@ -51,6 +55,59 @@ export function resolveRowId(target: CatalogHomeTarget, role: string, optionIds:
   if (optionIds.includes(role)) return role
   if (role.includes(':')) return null
   return optionIds.find((id) => id.endsWith(`:${role}`)) ?? null
+}
+
+// What another catalog calls the rows a theme names by AniList role, read from the words of a row's
+// id (`top`, `imdbRating`, `latest:<source>`, `now-playing` …).
+const ROLE_WORDS: Record<string, string[]> = {
+  trending: ['trending', 'trend', 'hot'],
+  popular: ['popular', 'popularity', 'top', 'top10', 'most'],
+  rated: ['rated', 'rating', 'score', 'best', 'featured', 'acclaimed'],
+  newest: ['newest', 'new', 'latest', 'recent', 'year', 'now'],
+  recent: ['recent', 'latest', 'new', 'newest', 'today'],
+  season: ['season', 'seasonal', 'airing', 'ongoing', 'current', 'air'],
+  upcoming: ['upcoming', 'next', 'soon', 'anticipated'],
+  movies: ['movie', 'movies', 'film', 'films'],
+  romance: ['romance'],
+  action: ['action'],
+  fantasy: ['fantasy'],
+}
+const idWords = (id: string) => new Set(id.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/))
+
+/** Theme layouts name AniList's rows by role; another catalog's rows have ids of their own. Each role
+ *  takes, in turn, the row with its id, a row whose id says the same thing (the one naming the
+ *  fewest of these roles, then the earliest), then the catalog's next row no other role took — so a
+ *  theme's every slot shows this catalog's rows. On AniList, and for local roles (Continue, Your List),
+ *  a role only matches exactly. */
+export function resolveRoles(target: CatalogHomeTarget, roles: string[], optionIds: string[], shown?: string[]): Map<string, string> {
+  const resolved = new Map<string, string>()
+  const used = new Set<string>()
+  const take = (role: string, id: string) => { resolved.set(role, id); used.add(id) }
+  const unique = [...new Set(roles)]
+  // Theme layouts are drawn against AniList's rows: there a role means exactly that row.
+  const native = target === 'auto' || target === 'anilist'
+  for (const role of unique) {
+    const id = resolveRowId(target, role, optionIds)
+    if (id && (native || optionIds.includes(id))) take(role, id)
+  }
+  if (native) return resolved
+  const open = unique.filter((role) => !resolved.has(role) && role !== 'hero' && !LOCAL_ROLES.has(bareRole(role)))
+  // Word and next-row matches come from the rows this Home loads (`shown`), when it says which.
+  const pool = optionIds.filter((id) => isContentRow(id) && (!shown || shown.includes(id)))
+  const named = new Map(pool.map((id) => {
+    const words = idWords(id)
+    return [id, open.filter((role) => ROLE_WORDS[role]?.some((word) => words.has(word)))]
+  }))
+  for (const role of open) {
+    const match = pool.filter((id) => !used.has(id) && named.get(id)!.includes(role))
+      .sort((a, b) => named.get(a)!.length - named.get(b)!.length)[0]
+    if (match) take(role, match)
+  }
+  for (const role of open) {
+    const next = resolved.has(role) ? undefined : pool.find((id) => !used.has(id))
+    if (next) take(role, next)
+  }
+  return resolved
 }
 
 export function rowSource(target: CatalogHomeTarget, rowId: string): RowSource | null {
@@ -96,6 +153,8 @@ const RECENT_WINDOW_DAYS = 21
 const RECENT_SCHEDULE_PAGE = 50
 /** At most this many schedule pages (episodes) are read into one list. */
 const RECENT_MAX_SCHEDULE_PAGES = 10
+/** Calendar weeks the backup schedule reads to cover the window (it starts mid-week). */
+const RECENT_BACKUP_WEEKS = 4
 type RecentRelease = { episode: number; airingAt: number; media: Media | null }
 interface RecentList {
   at: number
@@ -114,10 +173,15 @@ async function readRecentSchedule(list: RecentList): Promise<void> {
   const result = await anilist.query(RECENT_RELEASES_QUERY, {
     page: list.schedulePage + 1, perPage: RECENT_SCHEDULE_PAGE, after: list.after, before: list.before, withPreview: !get(gameMode),
   }).toPromise()
-  if (result.error) throw result.error
-  const releases = (result.data?.Page as { airingSchedules?: RecentRelease[] } | undefined)?.airingSchedules ?? []
+  let releases = (result.data?.Page as { airingSchedules?: RecentRelease[] } | undefined)?.airingSchedules ?? []
+  if (result.error) {
+    // While AniList is out the backup schedule lists the whole window at once.
+    if (list.schedulePage > 0) throw result.error
+    releases = (await airedBefore(anilist, list.before, Infinity, RECENT_BACKUP_WEEKS).catch(() => { throw result.error }))
+      .filter((release) => release.airingAt > list.after)
+  }
   list.schedulePage += 1
-  list.more = releases.length >= RECENT_SCHEDULE_PAGE
+  list.more = !result.error && releases.length >= RECENT_SCHEDULE_PAGE
   for (const release of releases) {
     // AniList's airing schedule has no adult filter of its own, as on the Recently Released row.
     if (!release.media || list.seen.has(release.media.id) || (!list.adult && release.media.isAdult)) continue

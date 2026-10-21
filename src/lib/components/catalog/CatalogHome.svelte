@@ -8,6 +8,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import Hero from '$lib/components/banner/Hero.svelte'
+  import HeroPlaceholder from '$lib/components/banner/HeroPlaceholder.svelte'
   import MediaListSheet from '$lib/components/detail/MediaListSheet.svelte'
   import type { Media } from '$lib/anilist/types'
   import ContinueRow from '$lib/components/cards/ContinueRow.svelte'
@@ -25,7 +26,7 @@
   import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
   import { activeThemeLayout } from '$lib/themes/layout-state'
   import { themePresentation } from '$lib/themes/runtime'
-  import { isThemeBlockId, resolveThemeHome } from '$lib/home/theme-layout'
+  import { isThemeBlockId, resolveThemeHome, themeHomeHas } from '$lib/home/theme-layout'
   import { blockRowOptions, blockTitle, splitHomeColumns } from '$lib/home/block-rows'
   import { homeAsideWidth, homeBlocks, isBlockId } from '$lib/home/blocks'
   import { mediaHref } from '$lib/anilist/media'
@@ -78,9 +79,12 @@
   // While a theme layout is active, it replaces the row order below (the user's own layout, in
   // `catalogHomeLayouts`, is never written to); it only resolves once the provider Home has loaded,
   // since role rows need `home.sections` to resolve against. Its ephemeral `theme:<n>` blocks join
-  // `$homeBlocks` for lookups so a theme block renders exactly like a real one.
+  // `$homeBlocks` for lookups so a theme block renders exactly like a real one. The theme was drawn
+  // for AniList's rows: its slots take this catalog's poster rows, and the rows it left follow it.
   const themeHome = $derived($activeThemeLayout?.home && home
-    ? resolveThemeHome($activeThemeLayout.home, $catalogProvider, [HERO_HOME_ROW, CONTINUE_HOME_ROW, ...home.sections].map((option) => option.id))
+    ? resolveThemeHome($activeThemeLayout.home, $catalogProvider,
+      [HERO_HOME_ROW, CONTINUE_HOME_ROW, ...home.sections.filter((section) => section.presentation !== 'providers' && section.presentation !== 'editorial')].map((option) => option.id),
+      contentRows.flatMap((row) => (row.kind === 'section' ? [row.id] : [])))
     : null)
   const allBlocks = $derived(themeHome ? { ...$homeBlocks, ...themeHome.blocks } : $homeBlocks)
   const visibleRowIds = $derived(themeHome?.rows ?? contentRows.map((row) => row.id))
@@ -164,21 +168,17 @@
       <Hero medias={heroSlides} artworkMode={$catalogProvider === 'stremio' ? $stremioHeroArtwork : 'backdrop'}
         onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} onlist={(media) => (listMedia = media)} />
     {:else if loading && !$themePresentation?.hero?.hidden}
-      <!-- The variant of the hero that replaces it (this Home keeps the banner box for all three). -->
-      <div data-slot="home.hero" data-state="loading" data-variant={$themePresentation?.hero?.template ? 'template' : $isMobile ? 'phone' : 'desktop'} aria-hidden="true" class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
-        <div class="absolute inset-0 skeloader"></div>
-        <div class="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent"></div>
-      </div>
+      <HeroPlaceholder />
     {/if}
   {/snippet}
 
   <!-- Row order is unknown before `home` resolves (contentRows is empty pre-load), so the pre-load
-       skeleton renders unconditionally here rather than waiting on heroFirst. -->
-  {#if !home || heroFirst}{@render heroBlock()}{/if}
+       skeleton renders here rather than waiting on heroFirst, unless a theme layout opens on something else. -->
+  {#if (!home && (themeHomeHas($activeThemeLayout?.home, 'hero', true) ?? true)) || heroFirst}{@render heroBlock()}{/if}
 
   <div class="space-y-5">
     <CollectionsHome />
-    {#if continueEnabled && !home}
+    {#if (themeHomeHas($activeThemeLayout?.home, 'continue') ?? continueEnabled) && !home}
       {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />{/key}
     {/if}
 
@@ -206,7 +206,7 @@
         {@const row = toContentRow(id)}
         {@const visibleIds = columns.main.includes(id) ? columns.main : columns.aside}
         {#if row}
-          <HomeRowFrame rowId={row.id} title={row.kind === 'hero' ? HERO_HOME_ROW.title : row.kind === 'continue' ? 'Continue Watching' : row.kind === 'block' ? (allBlocks[row.id] ? blockTitle(allBlocks[row.id]) : row.id) : row.section.title} target={$catalogProvider} {visibleIds} locked={!!themeHome}>
+          <HomeRowFrame rowId={row.id} title={row.kind === 'hero' ? HERO_HOME_ROW.title : row.kind === 'continue' ? 'Continue Watching' : row.kind === 'block' ? (allBlocks[row.id] ? blockTitle(allBlocks[row.id]) : row.id) : row.section.title} target={$catalogProvider} {visibleIds} locked={!!themeHome} role={themeHome?.roles[row.id]}>
             {#if row.kind === 'hero'}
               {@render heroBlock()}
             {:else if row.kind === 'continue'}

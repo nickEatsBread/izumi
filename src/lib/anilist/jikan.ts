@@ -54,6 +54,7 @@ interface JikanPage {
   pagination?: {
     has_next_page?: boolean
     current_page?: number
+    last_visible_page?: number
     items?: { total?: number }
   }
 }
@@ -279,6 +280,11 @@ async function catalogUrl(request: JikanCatalogRequest): Promise<string> {
   if (sort === 'SCORE_DESC') { url.searchParams.set('order_by', 'score'); url.searchParams.set('sort', 'desc') }
   else if (sort === 'START_DATE_DESC') { url.searchParams.set('order_by', 'start_date'); url.searchParams.set('sort', 'desc') }
   else if (sort === 'POPULARITY_DESC' || sort === 'TRENDING_DESC') { url.searchParams.set('order_by', 'members'); url.searchParams.set('sort', 'desc') }
+  // Jikan has no trending order; what draws attention now is what is airing. Only for a plain trending
+  // row: Search sorts by trending by default and keeps its own filters.
+  const plainTrending = sort === 'TRENDING_DESC' && !request.operation.startsWith('Search')
+    && !statuses.length && !names.length && !range
+  if (plainTrending) url.searchParams.set('status', 'airing')
   // SEARCH_MATCH deliberately leaves Jikan's relevance ordering untouched.
   return url.toString()
 }
@@ -311,6 +317,8 @@ export async function fetchJikanCatalog(request: JikanCatalogRequest): Promise<R
           hasNextPage: !!page?.has_next_page,
           currentPage: page?.current_page ?? number(request.variables.page) ?? 1,
           total: page?.items?.total ?? null,
+          // Every PageInfo field a catalog query may select: graphcache drops an answer missing one.
+          lastPage: page?.last_visible_page ?? null,
         },
         media,
       },

@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { weekRange, groupByDay, aired, until } from './schedule'
+import { weekRange, groupByDay, aired, until, airingsBetween, uniqueAirings } from './schedule'
 describe('schedule helpers', () => {
+  it('keeps one entry per airing inside the window', () => {
+    const show = (id: number, airingAt: number, episode = 1) => ({ airingAt, episode, media: { id } }) as never
+    const list = [show(1, 100), show(1, 100), show(1, 200, 2), show(2, 50), show(3, 300), { airingAt: 150, episode: 1, media: null } as never]
+    expect(airingsBetween(list, 100, 300).map((item: { media: { id: number }; episode: number }) => `${item.media.id}:${item.episode}`)).toEqual(['1:1', '1:2'])
+    expect(uniqueAirings(list)).toHaveLength(4)
+  })
   it('weekRange returns 7-day [start,end] unix seconds', () => {
     const { start, end } = weekRange(new Date('2026-07-02T12:00:00Z'))
     expect(end - start).toBe(7 * 24 * 3600)

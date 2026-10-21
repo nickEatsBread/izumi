@@ -2,15 +2,34 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const query = vi.fn()
 vi.mock('$lib/anilist/client', () => ({ anilist: { query: (...args: unknown[]) => ({ toPromise: () => query(...args) }) } }))
+const aired = vi.fn()
+vi.mock('$lib/anime/airing-week', () => ({ airedBefore: (...args: unknown[]) => aired(...args) }))
 const provider = { home: vi.fn(), search: vi.fn() }
 vi.mock('$lib/catalog/registry', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/catalog/registry')>()),
   loadCatalogProvider: vi.fn(async () => provider),
 }))
 
-const { loadRowPage, resolveRowId, rowSource, tabbableRows, clearRowSourceCache, appendUnique } = await import('./row-source')
+const { loadRowPage, resolveRowId, resolveRoles, rowSource, tabbableRows, clearRowSourceCache, appendUnique } = await import('./row-source')
 
 const media = (id: number) => ({ id, title: { romaji: `T${id}` } })
+
+describe('theme roles on other catalogs', () => {
+  it('match TMDB, Aniyomi and Merged rows by what their ids say', () => {
+    const tmdb = ['hero', 'continue', 'trending', 'top10-movies', 'streaming-providers', 'network-spotlight', 'rated-series', 'now-playing']
+    expect(Object.fromEntries(resolveRoles('tmdb', ['trending', 'popular', 'rated', 'newest', 'season'], tmdb)))
+      .toEqual({ trending: 'trending', popular: 'top10-movies', rated: 'rated-series', newest: 'now-playing', season: 'streaming-providers' })
+    expect(Object.fromEntries(resolveRoles('jvm', ['popular', 'newest'], ['continue', 'latest:12', 'popular:12'])))
+      .toEqual({ popular: 'popular:12', newest: 'latest:12' })
+    expect(Object.fromEntries(resolveRoles('merged', ['trending', 'rated'], ['continue', 'kitsu:trending', 'stremio:o1:movie:imdbRating'])))
+      .toEqual({ trending: 'kitsu:trending', rated: 'stremio:o1:movie:imdbRating' })
+  })
+
+  it('leave local roles and roles without a free row unresolved', () => {
+    expect(Object.fromEntries(resolveRoles('stremio', ['list', 'trending', 'popular'], ['continue', 'o1:movie:top'])))
+      .toEqual({ popular: 'o1:movie:top' })
+  })
+})
 
 describe('appending pages', () => {
   it('keeps the first copy of a title that appears on two pages', () => {
@@ -21,6 +40,7 @@ describe('appending pages', () => {
 describe('row source', () => {
   beforeEach(() => {
     query.mockReset()
+    aired.mockReset().mockRejectedValue(new Error('backup down'))
     provider.home.mockReset()
     provider.search.mockReset()
     clearRowSourceCache()
@@ -102,6 +122,18 @@ describe('row source', () => {
       query.mockResolvedValueOnce(schedule([release(1, 3), release(2, 4), release(3, 5, { isAdult: true }), { episode: 1, airingAt: 1, media: null }]))
       expect((await loadRowPage('anilist', 'recent', 1, 10)).media.map((item) => item.id)).toEqual([1])
       dismissedRecentReleaseIds.set([])
+    })
+
+    it('reads the backup schedule once while AniList is out', async () => {
+      query.mockResolvedValue({ error: new Error('disabled') })
+      // Newest first, as the backup lists it; a release older than the window is left out.
+      const now = Math.floor(Date.now() / 1000)
+      const at = (item: ReturnType<typeof release>, ago: number) => ({ ...item, airingAt: now - ago })
+      aired.mockResolvedValueOnce([at(release(1, 12), 60), at(release(2, 5), 120), at(release(1, 11), 180), at(release(4, 1), 22 * 86_400)])
+      expect(await loadRowPage('anilist', 'recent', 1, 1)).toEqual({ media: [media(1)], hasNextPage: true, episodes: { 1: 12 } })
+      expect(await loadRowPage('anilist', 'recent', 2, 1)).toEqual({ media: [media(2)], hasNextPage: false, episodes: { 2: 5 } })
+      expect(query).toHaveBeenCalledTimes(1)
+      expect(aired).toHaveBeenCalledTimes(1)
     })
 
     it('resolves on the merged Home and surfaces errors', async () => {
