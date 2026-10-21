@@ -640,14 +640,14 @@
       {/if}
       {#if medias.length > 1}
         <button type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
-                aria-label="Previous featured title" onclick={() => step(-1)}
+                data-part="hero.edge" data-dir="previous" aria-label="Previous featured title" onclick={() => step(-1)}
                 class="hero-edge group absolute left-0 top-1/2 z-20 hidden h-28 w-16 -translate-y-1/2 place-items-center sm:grid">
           <span class="grid size-10 -translate-x-2 place-items-center rounded-full border border-white/15 bg-black/65 text-white opacity-0 shadow-xl backdrop-blur transition-all duration-150 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100">
             <ChevronLeft size={23} />
           </span>
         </button>
         <button type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
-                aria-label="Next featured title" onclick={() => step(1)}
+                data-part="hero.edge" data-dir="next" aria-label="Next featured title" onclick={() => step(1)}
                 class="hero-edge group absolute right-0 top-1/2 z-20 hidden h-28 w-16 -translate-y-1/2 place-items-center sm:grid">
           <span class="grid size-10 translate-x-2 place-items-center rounded-full border border-white/15 bg-black/65 text-white opacity-0 shadow-xl backdrop-blur transition-all duration-150 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100">
             <ChevronRight size={23} />
@@ -863,14 +863,14 @@
       <!-- Miruro-style edge navigation: entering an edge reveals the control, while an explicit
            click changes the slide. Hover alone never replaces what the viewer was reading. -->
       <button type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
-              aria-label="Previous featured title" onclick={() => step(-1)}
+              data-part="hero.edge" data-dir="previous" aria-label="Previous featured title" onclick={() => step(-1)}
               class="hero-edge group absolute left-0 top-1/2 z-20 hidden h-28 w-16 -translate-y-1/2 place-items-center sm:grid">
         <span class="grid size-10 -translate-x-2 place-items-center rounded-full border border-white/15 bg-black/65 text-white opacity-0 shadow-xl backdrop-blur transition-all duration-150 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100">
           <ChevronLeft size={23} />
         </span>
       </button>
       <button type="button" data-focusable={controllerUi ? undefined : ''} tabindex={controllerUi ? -1 : undefined}
-              aria-label="Next featured title" onclick={() => step(1)}
+              data-part="hero.edge" data-dir="next" aria-label="Next featured title" onclick={() => step(1)}
               class="hero-edge group absolute right-0 top-1/2 z-20 hidden h-28 w-16 -translate-y-1/2 place-items-center sm:grid">
         <span class="grid size-10 translate-x-2 place-items-center rounded-full border border-white/15 bg-black/65 text-white opacity-0 shadow-xl backdrop-blur transition-all duration-150 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100">
           <ChevronRight size={23} />

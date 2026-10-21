@@ -50,7 +50,7 @@ describe('theme top bar', () => {
     expect(bar).toContain('class="flex items-center justify-end gap-1"')
     // The side rail and the non-centred top bar must keep their exact existing layout classes —
     // the grid override is appended, not substituted, so this string must stay byte-for-byte.
-    expect(bar).toContain("top ? 'inset-x-0 top-0 h-[4.75rem] w-full flex-row items-center border-b border-border/50 bg-background px-3 pt-8' : 'inset-y-0 left-0 flex-col py-3 pt-9'")
+    expect(bar).toContain("top ? 'inset-x-0 top-0 h-[var(--theme-top-bar)] w-full flex-row items-center border-b border-border/50 bg-background px-3 pt-8' : 'inset-y-0 left-0 flex-col py-3 pt-9'")
   })
 
   it('gives TopSearchField a focusable/tabindex passthrough so it is not a Tab stop during playback', () => {

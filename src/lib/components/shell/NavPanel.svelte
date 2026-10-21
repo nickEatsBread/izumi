@@ -10,7 +10,7 @@
 </script>
 
 <nav data-slot="nav.panel" aria-label="Menu" data-theme-surface="shell" style:width={`${width}px`}
-     class="fixed bottom-0 left-0 top-[4.75rem] z-20 flex flex-col gap-1 overflow-y-auto border-r border-border/50 bg-background p-3">
+     class="fixed bottom-0 left-0 top-[var(--theme-top-bar)] z-20 flex flex-col gap-1 overflow-y-auto border-r border-border/50 bg-background p-3">
   {#each items as item (item.href)}
     {@const on = active(item.href)}
     <a data-part="nav.item" data-dest={item.id} data-active={on || undefined} data-focusable href={item.href} aria-current={on ? 'page' : undefined}

@@ -7,7 +7,7 @@ import {
 } from './detail-queries'
 import {
   LOCAL_RECOMMENDATIONS_QUERY, PAGE_QUERY, PERSONAL_RECOMMENDATIONS_QUERY, RECENT_RELEASES_QUERY,
-  currentSeason, heroQuery, heroVars, homeSections, pageQuery,
+  currentSeason, heroQuery, heroVars, homeSections, nextSeason, pageQuery,
 } from './queries'
 describe('currentSeason', () => {
   it('maps month to AniList season', () => {
@@ -106,6 +106,13 @@ describe('homeSections presets', () => {
     expect(keys.slice(keys.indexOf('popular'), keys.indexOf('popular') + 4)).toEqual([
       'popular', 'newest', 'movies', 'rated',
     ])
+  })
+
+  it('lists next season by popularity as Upcoming Next Season, across the year end', () => {
+    expect(homeSections(new Date('2026-01-15')).find((item) => item.key === 'upcoming')).toMatchObject({
+      title: 'Upcoming Next Season', vars: { sort: ['POPULARITY_DESC'], season: 'SPRING', seasonYear: 2026 },
+    })
+    expect(nextSeason(new Date('2026-11-02'))).toEqual({ season: 'WINTER', seasonYear: 2027 })
   })
 
   it('filters Newest to currently-airing titles, newest start date first', () => {

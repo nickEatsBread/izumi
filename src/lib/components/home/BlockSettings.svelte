@@ -20,7 +20,7 @@
   const COLUMN_CHOICES = [2, 3, 4, 5, 6, 8]
   const PAGE_CHOICES = [8, 12, 16, 18, 24, 30, 36, 48]
   const LIMIT_CHOICES = [5, 10, 15, 20]
-  const PAGINATION_CHOICES = [{ value: 'numbers', label: 'Page numbers' }, { value: 'more', label: 'Load more' }, { value: 'none', label: 'One page' }] as const
+  const PAGINATION_CHOICES = [{ value: 'numbers', label: 'Page numbers' }, { value: 'arrows', label: 'Arrows only' }, { value: 'more', label: 'Load more' }, { value: 'none', label: 'One page' }] as const
   const DESTINATIONS: BlockButton[] = [{ label: 'Home', to: 'home' }, ...(Object.keys(NAV_META) as NavItemId[]).map((to) => ({ label: NAV_META[to].label, to }))]
 
   let catalogGenres = $state<string[]>([])

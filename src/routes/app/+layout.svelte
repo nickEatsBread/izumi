@@ -579,7 +579,7 @@
      default): while it is up, pages reserve both so their last rows are never buried under the video.
      A page that covers the navigation without a bar of its own (`detail.nav: "hidden"`) keeps only
      the safe-area inset; a bar drawn in the navigation's place (series bottom tabs) keeps its room. -->
-<main data-slot="page" class="theme-shell-main relative min-h-screen {($isMobile || $shellNav === 'bottom') ? ($androidMiniPlayer ? 'mb-[calc(var(--theme-bottom-nav,4rem)+4rem+env(safe-area-inset-bottom))]' : $bottomBarRoom ? 'mb-[calc(var(--theme-bottom-nav,4rem)+env(safe-area-inset-bottom))]' : 'mb-[env(safe-area-inset-bottom)]') : ''} {$shellNav === 'top' ? 'pt-[4.75rem]' : ''}" class:hidden={$playing || ($androidMpvActive && !$androidMiniPlayer)} style:display|important={$playing || ($androidMpvActive && !$androidMiniPlayer) ? 'none' : undefined}>{@render children()}</main>
+<main data-slot="page" class="theme-shell-main relative min-h-screen {($isMobile || $shellNav === 'bottom') ? ($androidMiniPlayer ? 'mb-[calc(var(--theme-bottom-nav,4rem)+4rem+env(safe-area-inset-bottom))]' : $bottomBarRoom ? 'mb-[calc(var(--theme-bottom-nav,4rem)+env(safe-area-inset-bottom))]' : 'mb-[env(safe-area-inset-bottom)]') : ''} {$shellNav === 'top' ? 'pt-[var(--theme-top-bar)]' : ''}" class:hidden={$playing || ($androidMpvActive && !$androidMiniPlayer)} style:display|important={$playing || ($androidMpvActive && !$androidMiniPlayer) ? 'none' : undefined}>{@render children()}</main>
 {#if $playing}<Lazy load={loadPlayerOverlay} />{/if}
 <!-- One Android watch-details instance spans source preparation and native playback. In particular,
      its Disqus iframe is never destroyed merely because libmpv presented its first frame. -->

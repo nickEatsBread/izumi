@@ -132,13 +132,13 @@
       <!-- Heading accents: a coloured bar or dot before the title, or an underline beneath it. -->
       {#if heading.accent === 'bar'}<span class="h-[1.1em] w-1 shrink-0 rounded-full bg-theme" aria-hidden="true"></span>{/if}
       {#if heading.accent === 'dot'}<span class="size-2 shrink-0 rounded-full bg-theme" aria-hidden="true"></span>{/if}
-      <h2 data-part="row.title" class="truncate text-lg font-black {heading.transform === 'uppercase' ? 'uppercase tracking-wide' : ''} {heading.accent === 'underline' ? 'border-b-2 border-theme pb-0.5' : ''}" style:font-size={appearance.titleSize ? `${appearance.titleSize}px` : undefined} style:font-weight={heading.weight}>{title}</h2>
+      <h2 data-part="row.title" class="truncate text-lg font-black {heading.transform === 'uppercase' ? 'uppercase tracking-wide' : ''} {heading.accent === 'underline' ? 'border-b-2 border-theme pb-0.5' : ''}" style:font-size={appearance.titleSize ? `${appearance.titleSize}px` : undefined} style:font-weight={heading.weight}>{appearance.title ?? title}</h2>
       {#if attribution}<span class="shrink-0 text-[0.65rem] font-semibold text-muted-foreground">{attribution}</span>{/if}
     </div>
     {#if viewMoreHref && heading.viewMore !== 'hidden'}
       <!-- On a phone the link is always visible and tapped, not hovered: pad its hit area to a
            comfortable height while the negative margin keeps the heading row where it was. -->
-      <a data-part="row.more" href={viewMoreHref} data-focusable aria-label={heading.viewMore === 'arrow' ? `View more ${title}` : undefined}
+      <a data-part="row.more" href={viewMoreHref} data-focusable aria-label={heading.viewMore === 'arrow' ? `View more ${appearance.title ?? title}` : undefined}
          class="flex items-center gap-0.5 text-xs font-bold text-muted-foreground transition hover:text-foreground group-hover/carousel:opacity-100 {mob ? '-my-2 py-2 pl-2' : ''}"
          class:opacity-0={!mob}>
         {#if heading.viewMore !== 'arrow'}View more{/if}<ChevronRight size={heading.viewMore === 'arrow' ? 18 : 14} />
@@ -164,13 +164,13 @@
          a card — and z-[60] then painted the arrows over the source picker (z-40) that the
          same tap opened. Touch drag-scrolls the row, so there is nothing to render. -->
     {#if canLeft && !gm && !mob}
-      <button aria-label="Scroll left" onclick={() => page(-1)} onpointerenter={dismissPreview}
+      <button data-part="row.step" data-dir="previous" aria-label="Scroll left" onclick={() => page(-1)} onpointerenter={dismissPreview}
               class="absolute left-2 top-[45%] z-[60] grid size-9 -translate-y-1/2 place-items-center rounded-full border border-white/10 bg-black/70 text-white opacity-0 shadow-lg backdrop-blur transition hover:bg-black/90 group-hover/carousel:opacity-100">
         <ChevronLeft size={20} />
       </button>
     {/if}
     {#if canRight && !gm && !mob}
-      <button aria-label="Scroll right" onclick={() => page(1)} onpointerenter={dismissPreview}
+      <button data-part="row.step" data-dir="next" aria-label="Scroll right" onclick={() => page(1)} onpointerenter={dismissPreview}
               class="absolute right-2 top-[45%] z-[60] grid size-9 -translate-y-1/2 place-items-center rounded-full border border-white/10 bg-black/70 text-white opacity-0 shadow-lg backdrop-blur transition hover:bg-black/90 group-hover/carousel:opacity-100">
         <ChevronRight size={20} />
       </button>

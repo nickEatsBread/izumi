@@ -1886,14 +1886,14 @@
   <!-- A scrolled page carries the native video up past the dock's top edge, under the top bar, and
        a theme may paint that bar translucent (it sits over its banners). Back it with the page
        colour so the video stops at the dock's edge like the rest of the page. -->
-  <div aria-hidden="true" class="pointer-events-none fixed inset-x-0 top-0 z-20 h-[4.75rem] bg-background"></div>
+  <div aria-hidden="true" class="pointer-events-none fixed inset-x-0 top-0 z-20 h-[var(--theme-top-bar)] bg-background"></div>
 {/if}
 <div
   data-slot="watch" data-layout={docked ? 'docked' : 'full'} data-flow={pageFlow ? 'page' : undefined} style:background|important="transparent"
   bind:this={dockScroller}
   class={pageFlow && !columnFlow ? 'izumi-player-dock fixed z-20 overflow-y-auto overscroll-contain' : docked ? `izumi-player-dock fixed z-20 flex ${dock.episodes === 'below' ? 'flex-col' : 'flex-row'}` : 'contents'}
   style:left={docked ? ($shellNav === 'sidebar' ? '3.5rem' : '0') : undefined}
-  style:top={docked ? ($shellNav === 'top' ? '4.75rem' : '0') : undefined}
+  style:top={docked ? ($shellNav === 'top' ? 'var(--theme-top-bar)' : '0') : undefined}
   style:right={docked ? '0' : undefined}
   style:bottom={docked ? ($shellNav === 'bottom' ? bottomNavInset : '0') : undefined}
 >
@@ -1926,7 +1926,7 @@
   style:width={docked ? (!pageFlow && dock.episodes === 'below' ? `${dock.width}%` : '100%') : undefined}
   style:max-height={docked && (!pageFlow || columnFlow) ? '100%' : undefined}
   style:box-shadow={pageFlow ? '0 0 0 200vmax hsl(var(--background))' : undefined}
-  style:top={!docked && windowedChrome && $shellNav === 'top' ? '4.75rem' : undefined}
+  style:top={!docked && windowedChrome && $shellNav === 'top' ? 'var(--theme-top-bar)' : undefined}
   style:bottom={!docked && windowedChrome && $shellNav === 'bottom' ? bottomNavInset : undefined}
   onclick={onOverlayTap}
   onclickcapture={captureOverlayClick}

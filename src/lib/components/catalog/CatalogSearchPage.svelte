@@ -424,11 +424,11 @@
       {#if availableGenres.length}
         <SelectMenu bind:value={genre} ariaLabel="Genre" filter="genre" className="w-44 shrink-0" options={genreOptions} />
       {:else if activeSelection === 'stremio'}
-        <input data-part="search.filter" data-filter="genre" data-active={!!genre || undefined} bind:value={genre} data-focusable placeholder="Genre" aria-label="Genre"
+        <input data-part="search.filter" data-filter="genre" data-label="Genre" data-active={!!genre || undefined} bind:value={genre} data-focusable placeholder="Genre" aria-label="Genre"
           class="h-11 w-32 shrink-0 rounded-lg bg-input px-3 text-base" />
       {/if}
       {#if activeSelection !== 'jvm'}
-        <input data-part="search.filter" data-filter="year" data-active={!!year || undefined} bind:value={year} inputmode="numeric" maxlength="4" data-focusable placeholder="Year" aria-label="Release year"
+        <input data-part="search.filter" data-filter="year" data-label="Year" data-active={!!year || undefined} bind:value={year} inputmode="numeric" maxlength="4" data-focusable placeholder="Year" aria-label="Release year"
           class="h-11 w-24 shrink-0 rounded-lg bg-input px-3 text-base" />
       {/if}
       {#if isTmdb || isStremio}

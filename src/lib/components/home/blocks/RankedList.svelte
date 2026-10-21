@@ -8,6 +8,9 @@
   import { appendUnique, loadRowPage, resolveRowId } from '$lib/home/row-source'
   import { nearViewport } from '$lib/util/near-viewport'
   import { ambientFromHex } from '$lib/themes/ambient'
+  import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
+  import { mediaDisplayModel } from '$lib/themes/host-model'
+  import { themePresentation } from '$lib/themes/runtime'
 
   // A numbered top list (thumbnail, title, facts), optionally switching between rows with tabs.
   let { block, target, optionIds = [] }: { block: RankedListBlock; target: CatalogHomeTarget; optionIds?: string[] } = $props()
@@ -44,6 +47,8 @@
     return () => abort.abort()
   })
 
+  // A theme's ranked card (API 5 `cards.ranked`) draws each entry, its rank bound as `rankPosition`/`rank`.
+  const template = $derived($themePresentation?.cards?.ranked)
   const facts = (item: Media) => [format(item), item.episodes ? `${item.episodes} eps` : '', item.averageScore ? `${item.averageScore}%` : ''].filter(Boolean).join(' · ')
 </script>
 
@@ -64,7 +69,10 @@
       {:else}
         {#each media as item, index (item.id)}
           <li>
-            <a data-part="block.item" data-focusable href={mediaHref(item)} use:detailLink={item} style:--cover-rgb={ambientFromHex(item.coverImage?.color)} class="flex items-center gap-3 rounded-lg p-1.5 transition hover:bg-secondary/60">
+            <a data-part="block.item" data-focusable href={mediaHref(item)} use:detailLink={item} style:--cover-rgb={ambientFromHex(item.coverImage?.color)} class={template ? 'block' : 'flex items-center gap-3 rounded-lg p-1.5 transition hover:bg-secondary/60'}>
+              {#if template}
+                <ThemeNode node={template} model={mediaDisplayModel(item, { rankPosition: index + 1, rank: String(index + 1).padStart(2, '0') }, 96)} />
+              {:else}
               <span data-part="block.rank" class="w-8 shrink-0 text-center text-xl font-black tabular-nums {index < 3 ? 'text-theme' : 'text-muted-foreground'}">{index + 1}</span>
               <div data-part="card.art" class="aspect-[2/3] w-12 shrink-0 overflow-hidden rounded bg-muted">
                 <img src={cardCover(item, 48)} alt="" loading="lazy" decoding="async" draggable="false" class="size-full object-cover" />
@@ -73,6 +81,7 @@
                 <span data-part="card.title" class="line-clamp-2 text-sm font-bold">{mediaTitle(item)}</span>
                 {#if facts(item)}<span data-part="card.meta" class="mt-0.5 block text-xs text-muted-foreground">{facts(item)}</span>{/if}
               </span>
+              {/if}
             </a>
           </li>
         {/each}

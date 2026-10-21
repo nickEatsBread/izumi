@@ -71,7 +71,7 @@
 
   function goTo(next: number) {
     page = next
-    if (block.pagination === 'numbers') section?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    if (block.pagination === 'numbers' || block.pagination === 'arrows') section?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   }
 
   async function play(release: EpisodeRelease) {

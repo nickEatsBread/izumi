@@ -14,6 +14,8 @@ describe('theme block schema', () => {
     expect(() => parseThemeBlock({ block: 'latest-episodes', columns: 40 }, 3)).toThrow('outside the supported range')
     expect(() => parseThemeBlock({ block: 'tabbed-grid', tabs: [{ label: 'A', role: 'x' }, { label: 'A', role: 'y' }] }, 3)).toThrow('outside the supported range')
     expect(() => parseThemeBlock({ block: 'latest-episodes', pagination: 'sideways' }, 3)).toThrow('outside the supported range')
+    expect(() => parseThemeBlock({ block: 'tabbed-grid', pagination: 'arrows' }, 4)).toThrow('outside the supported range')
+    expect(parseThemeBlock({ block: 'tabbed-grid', pagination: 'arrows' }, 5)).toMatchObject({ pagination: 'arrows' })
     expect(() => parseThemeBlock('genre-chips', 3)).toThrow()
   })
 

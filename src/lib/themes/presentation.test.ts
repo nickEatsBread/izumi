@@ -515,9 +515,28 @@ describe('phone replica keys (API 4)', () => {
     expect(() => parsePresentation(presentation, 4)).not.toThrow()
     expect(() => parsePresentation(presentation, 3)).toThrow('unsupported')
   })
-  it('is the newest API and the default for personal designs', () => {
-    expect(LATEST_THEME_API).toBe(4)
+  it('is still accepted by the newest API, the default for personal designs', () => {
+    expect(LATEST_THEME_API).toBe(5)
     expect(parsePresentation({ detail: { countdown: 'words' } }).detail?.countdown).toBe('words')
+  })
+  it('binds the worded air date from API 5', () => {
+    expect(parseNode({ type: 'text', field: 'airDateLong' }, undefined, 0, false, 5)).toEqual({ type: 'text', field: 'airDateLong' })
+    expect(() => parseNode({ type: 'text', field: 'airDateLong' }, undefined, 0, false, 4)).toThrow()
+  })
+  it('renames a row from its own entry from API 5, never from the defaults', () => {
+    expect(parsePresentation({ rows: { byId: { newest: { title: 'Latest Anime' } } } }, 5).rows?.byId?.newest?.title).toBe('Latest Anime')
+    expect(() => parsePresentation({ rows: { byId: { newest: { title: 'Latest Anime' } } } }, 4)).toThrow()
+    expect(() => parsePresentation({ rows: { defaults: { title: 'Everything' } } }, 5)).toThrow()
+    expect(() => parsePresentation({ rows: { byId: { newest: { title: ' ' } } } }, 5)).toThrow()
+  })
+  it('gates the API 5 ranked card, icons, 3:4 shape and 8 px text', () => {
+    const ranked = { type: 'row', children: [{ type: 'icon', icon: 'star' }, { type: 'artwork', artwork: 'poster', style: { aspect: '3 / 4' } }, { type: 'text', field: 'rank', style: { fontSize: 8 } }] }
+    expect(parsePresentation({ cards: { ranked } }, 5).cards?.ranked).toEqual(ranked)
+    expect(() => parsePresentation({ cards: { ranked } }, 4)).toThrow()
+    expect(() => parseNode({ type: 'icon', icon: 'chevron-left' }, undefined, 0, false, 4)).toThrow()
+    expect(() => parseNode({ type: 'artwork', artwork: 'poster', style: { aspect: '3 / 4' } }, undefined, 0, false, 4)).toThrow()
+    expect(() => parseNode({ type: 'text', text: 'x', style: { fontSize: 8 } }, undefined, 0, false, 4)).toThrow()
+    expect(parseNode({ type: 'action', action: 'next', icon: 'chevron-right' }, undefined, 0, true, 5)).toMatchObject({ icon: 'chevron-right' })
   })
   it('keeps the API 3 values of the extended keys valid on API 3', () => {
     expect(parsePresentation({ shell: { bottomNav: { hide: 'never' } }, detail: { countdown: 'long', sections: { tabs: ['overview', 'episodes', 'relations', 'characters', 'recommended'] } } }, 3))

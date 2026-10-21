@@ -96,11 +96,11 @@
       style:color={on ? activeColor : inactiveColor}
     >
       {#if indicator === 'line' && on}
-        <span class="absolute inset-x-3 top-0 h-0.5 rounded-full" style:background={activeColor ?? 'hsl(var(--theme))'}></span>
+        <span data-part="nav.item.indicator" data-variant="line" class="absolute inset-x-3 top-0 h-0.5 rounded-full" style:background={activeColor ?? 'hsl(var(--theme))'}></span>
       {/if}
       <span data-part="nav.item.icon" class="relative grid place-items-center rounded-full px-4 py-1">
         {#if indicator === 'pill' && on}
-          <span class="absolute inset-0 rounded-full" style:background={indicatorTint}></span>
+          <span data-part="nav.item.indicator" data-variant="pill" class="absolute inset-0 rounded-full" style:background={indicatorTint}></span>
         {/if}
         <Icon size={iconSize} class="relative" />
       </span>
@@ -108,7 +108,7 @@
         <span data-part="nav.item.label">{item.label()}</span>
       {/if}
       {#if indicator === 'dot' && on}
-        <span class="size-1 rounded-full" style:background={activeColor ?? 'hsl(var(--theme))'}></span>
+        <span data-part="nav.item.indicator" data-variant="dot" class="size-1 rounded-full" style:background={activeColor ?? 'hsl(var(--theme))'}></span>
       {/if}
     </a>
   {/each}

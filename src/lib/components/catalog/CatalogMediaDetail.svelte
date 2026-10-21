@@ -29,6 +29,7 @@
   import { activeProfile } from '$lib/profiles/store'
   import { profileAllowsMedia } from '$lib/profiles/content'
   import ParentalBlock from '$lib/components/profiles/ParentalBlock.svelte'
+  import { isMobile } from '$lib/platform'
 
   let { provider, type, id }: { provider: CatalogProviderId; type: CatalogContentType; id: string } = $props()
   const ref = $derived({ provider, type, id } as MediaRef)
@@ -144,29 +145,31 @@
 {:else if !profileAllowsMedia(media, $activeProfile)}
   <ParentalBlock />
 {:else}
-  <div class="pb-20">
-    <section class="relative min-h-[52vh] overflow-hidden">
-      <img src={banner(media)} alt="" class="absolute inset-0 h-full w-full object-cover" />
+  <!-- The series page's styling hooks (as on an anime's overlay page), so a theme styles a movie or
+       a show from any catalog like its series pages. -->
+  <div data-slot="detail" data-layout="overlay" data-variant={$isMobile ? 'phone' : 'desktop'} class="pb-20">
+    <section data-slot="detail.banner" data-art="banner" class="relative min-h-[52vh] overflow-hidden">
+      <img data-part="detail.backdrop" data-art="banner" src={banner(media)} alt="" class="absolute inset-0 h-full w-full object-cover" />
       <div class="absolute inset-0 bg-gradient-to-r from-background via-background/75 to-background/15"></div>
       <div class="absolute inset-0 bg-gradient-to-t from-background via-transparent to-black/35"></div>
       <button data-focusable onclick={() => history.length > 1 ? history.back() : goto('/app/home')} aria-label="Back"
         class="absolute left-4 top-10 z-10 grid size-10 place-items-center rounded-full bg-black/55 text-white backdrop-blur sm:left-8"><ChevronLeft size={22} /></button>
       <div class="relative flex min-h-[52vh] max-w-6xl items-end gap-8 px-5 pb-8 pt-24 sm:px-8">
-        <img src={cover(media)} alt="" class="hidden aspect-[2/3] rounded-xl bg-muted object-cover shadow-2xl md:block md:w-48 lg:w-56 xl:w-64" />
-        <div class="min-w-0 flex-1">
+        <img data-part="detail.poster" src={cover(media)} alt="" class="hidden aspect-[2/3] rounded-xl bg-muted object-cover shadow-2xl md:block md:w-48 lg:w-56 xl:w-64" />
+        <div data-part="detail.body" class="min-w-0 flex-1">
           {#if provider === 'kitsu'}
             <div class="mb-2 text-xs font-black uppercase tracking-[0.18em] text-theme">Kitsu</div>
           {/if}
           {#if titleLogo}
-            <h1 aria-label={title(media)} class="h-28 w-[min(34rem,82vw)]">
-              <img src={titleLogo} alt="" loading="eager" decoding="async"
+            <h1 data-part="detail.title" aria-label={title(media)} class="h-28 w-[min(34rem,82vw)]">
+              <img data-part="detail.logo" src={titleLogo} alt="" loading="eager" decoding="async"
                    onerror={titleLogoFailed}
                    class="h-full w-full object-contain object-left drop-shadow-[2px_2px_6px_rgba(0,0,0,.85)]" />
             </h1>
           {:else}
-            <h1 class="text-3xl font-black leading-tight sm:text-5xl">{title(media)}</h1>
+            <h1 data-part="detail.title" class="text-3xl font-black leading-tight sm:text-5xl">{title(media)}</h1>
           {/if}
-          <div class="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-sm text-foreground/75">
+          <div data-part="detail.meta" class="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-sm text-foreground/75">
             {#if format(media)}<span>{format(media)}</span>{/if}
             {#if season(media)}<span>{season(media)}</span>{/if}
             {#if status(media)}<span>{status(media)}</span>{/if}
@@ -176,7 +179,7 @@
           <div class="mt-3"><MediaRatings {media} embeddedScore={parsedDescription.score} /></div>
           {#if media.tagline}<p class="mt-4 text-base font-semibold italic text-foreground/75">“{media.tagline}”</p>{/if}
           {#if parsedDescription.synopsis}
-            <p class="mt-3 line-clamp-5 max-w-3xl whitespace-pre-line text-sm leading-relaxed text-foreground/80 sm:text-base">{parsedDescription.synopsis}</p>
+            <p data-part="detail.synopsis" class="mt-3 line-clamp-5 max-w-3xl whitespace-pre-line text-sm leading-relaxed text-foreground/80 sm:text-base">{parsedDescription.synopsis}</p>
           {/if}
           {#if provider === 'jvm' && attributedMedia?.catalog?.sourceName}
             <div class="mt-4 max-w-full text-sm font-bold text-foreground/75">
@@ -184,14 +187,16 @@
               <CatalogSourceAttribution media={attributedMedia} iconSize={20} />
             </div>
           {/if}
-          <div class="mt-5 flex flex-wrap gap-2">
-            <button data-focusable onclick={() => play(videos[0])} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {isMovie ? 'Play' : 'Play episode 1'}</button>
-            <button data-focusable onclick={() => (showLocalLists = true)} class="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold">
+          <div data-part="detail.actions" class="mt-5 flex flex-wrap gap-2">
+            <button data-part="button" data-variant="primary" data-action="play" data-focusable onclick={() => play(videos[0])} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {isMovie ? 'Play' : 'Play episode 1'}</button>
+            <button data-part="button" data-variant="secondary" data-action="save" data-state={savedLocally ? 'saved' : undefined} data-focusable onclick={() => (showLocalLists = true)} class="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold">
               {#if savedLocally}<BookmarkCheck size={18} class="text-theme" /> Saved{:else}<BookmarkPlus size={18} /> Save{/if}
             </button>
             {#if media.trailer?.id}
               <button
                 type="button"
+                data-part="detail.action"
+                data-action="trailer"
                 data-focusable
                 title="Watch trailer"
                 aria-label="Watch trailer"
@@ -200,7 +205,7 @@
               ><Clapperboard size={19} /></button>
             {/if}
             {#if externalUrl}
-              <button data-focusable onclick={() => openUrl(externalUrl)} class="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold"><ExternalLink size={17} /> {provider === 'tmdb' ? 'TMDB' : 'Open provider'}</button>
+              <button data-part="button" data-variant="secondary" data-focusable onclick={() => openUrl(externalUrl)} class="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold"><ExternalLink size={17} /> {provider === 'tmdb' ? 'TMDB' : 'Open provider'}</button>
             {/if}
           </div>
           {#if playState.status === 'error'}<p class="mt-3 text-sm text-destructive">{playState.message}</p>{/if}
@@ -212,8 +217,8 @@
     {#if media.genres?.length || parsedDescription.links.length}
       <div class="flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-5 sm:px-8">
         {#if media.genres?.length}
-          <div class="flex flex-wrap gap-2">
-            {#each media.genres as genre}<span class="rounded-full bg-secondary px-3 py-1 text-xs font-bold">{genre}</span>{/each}
+          <div data-part="detail.genres" class="flex flex-wrap gap-2">
+            {#each media.genres as genre}<span data-part="chip" class="rounded-full bg-secondary px-3 py-1 text-xs font-bold">{genre}</span>{/each}
           </div>
         {/if}
         {#if parsedDescription.links.length}
@@ -230,11 +235,11 @@
 
     {#if parsedDescription.facts.length}
       <section class="mt-3 max-w-6xl px-5 sm:px-8" aria-label="Source information">
-        <dl class="flex flex-wrap gap-x-7 gap-y-3 border-y border-border/60 py-3">
+        <dl data-part="detail.facts" class="flex flex-wrap gap-x-7 gap-y-3 border-y border-border/60 py-3">
           {#each parsedDescription.facts as fact (fact.label)}
-            <div class="min-w-24 max-w-sm">
-              <dt class="text-[0.7rem] font-semibold text-muted-foreground">{fact.label}</dt>
-              <dd class="mt-0.5 break-words text-sm font-bold leading-snug text-foreground/90">{fact.value}</dd>
+            <div data-part="fact" data-key={fact.label.toLowerCase()} class="min-w-24 max-w-sm">
+              <dt data-part="fact.label" class="text-[0.7rem] font-semibold text-muted-foreground">{fact.label}</dt>
+              <dd data-part="fact.value" class="mt-0.5 break-words text-sm font-bold leading-snug text-foreground/90">{fact.value}</dd>
             </div>
           {/each}
         </dl>
@@ -243,36 +248,36 @@
 
     {#if releaseDate || media.duration || media.originalLanguage || media.studios?.nodes?.length}
       <section class="mt-3 max-w-6xl px-5 sm:px-8" aria-label="Title information">
-        <dl class="flex flex-wrap gap-x-7 gap-y-3 border-y border-border/60 py-3">
-          {#if releaseDate}<div><dt class="text-[0.7rem] font-semibold text-muted-foreground">Released</dt><dd class="mt-0.5 text-sm font-bold">{releaseDate}</dd></div>{/if}
-          {#if media.duration}<div><dt class="text-[0.7rem] font-semibold text-muted-foreground">Runtime</dt><dd class="mt-0.5 text-sm font-bold">{media.duration} min</dd></div>{/if}
-          {#if media.originalLanguage}<div><dt class="text-[0.7rem] font-semibold text-muted-foreground">Original language</dt><dd class="mt-0.5 text-sm font-bold uppercase">{media.originalLanguage}</dd></div>{/if}
-          {#if media.studios?.nodes?.length}<div class="max-w-xl"><dt class="text-[0.7rem] font-semibold text-muted-foreground">Studios & networks</dt><dd class="mt-0.5 text-sm font-bold">{media.studios.nodes.map((studio) => studio.name).join(', ')}</dd></div>{/if}
+        <dl data-part="detail.facts" class="flex flex-wrap gap-x-7 gap-y-3 border-y border-border/60 py-3">
+          {#if releaseDate}<div data-part="fact" data-key="aired"><dt data-part="fact.label" class="text-[0.7rem] font-semibold text-muted-foreground">Released</dt><dd data-part="fact.value" class="mt-0.5 text-sm font-bold">{releaseDate}</dd></div>{/if}
+          {#if media.duration}<div data-part="fact" data-key="duration"><dt data-part="fact.label" class="text-[0.7rem] font-semibold text-muted-foreground">Runtime</dt><dd data-part="fact.value" class="mt-0.5 text-sm font-bold">{media.duration} min</dd></div>{/if}
+          {#if media.originalLanguage}<div data-part="fact" data-key="language"><dt data-part="fact.label" class="text-[0.7rem] font-semibold text-muted-foreground">Original language</dt><dd data-part="fact.value" class="mt-0.5 text-sm font-bold uppercase">{media.originalLanguage}</dd></div>{/if}
+          {#if media.studios?.nodes?.length}<div data-part="fact" data-key="studio" class="max-w-xl"><dt data-part="fact.label" class="text-[0.7rem] font-semibold text-muted-foreground">Studios & networks</dt><dd data-part="fact.value" class="mt-0.5 text-sm font-bold">{media.studios.nodes.map((studio) => studio.name).join(', ')}</dd></div>{/if}
         </dl>
       </section>
     {/if}
 
     {#if !isMovie && videos.length}
-      <section class="mt-8 px-5 sm:px-8">
-        <h2 class="mb-4 text-xl font-black">Episodes <span class="text-sm font-normal text-muted-foreground">{videos.length}</span></h2>
-        <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <section data-slot="detail.episodes" class="mt-8 px-5 sm:px-8">
+        <h2 data-part="detail.section-title" class="mb-4 text-xl font-black">Episodes <span class="text-sm font-normal text-muted-foreground">{videos.length}</span></h2>
+        <div data-part="episodes.grid" class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {#each videos as video (video.id ?? video.number)}
-            <button data-focusable onclick={() => play(video)} class="group flex min-h-16 items-center gap-3 rounded-lg bg-secondary/60 p-2 text-left hover:bg-secondary">
-              {#if video.thumbnail}<img src={video.thumbnail} alt="" loading="lazy" class="aspect-video w-24 rounded-md bg-muted object-cover" />{/if}
-              <span class="min-w-0"><span class="block text-xs text-muted-foreground">{video.season != null && video.episode != null ? `S${video.season} E${video.episode}` : `Episode ${video.number}`}</span><span class="line-clamp-2 text-sm font-bold">{video.title || `Episode ${video.number}`}</span></span>
+            <button data-part="episode" data-variant={video.thumbnail ? 'thumb' : 'compact'} data-focusable onclick={() => play(video)} class="group flex min-h-16 items-center gap-3 rounded-lg bg-secondary/60 p-2 text-left hover:bg-secondary">
+              {#if video.thumbnail}<img data-part="episode.still" src={video.thumbnail} alt="" loading="lazy" class="aspect-video w-24 rounded-md bg-muted object-cover" />{/if}
+              <span class="min-w-0"><span data-part="episode.number" class="block text-xs text-muted-foreground">{video.season != null && video.episode != null ? `S${video.season} E${video.episode}` : `Episode ${video.number}`}</span><span data-part="episode.title" class="line-clamp-2 text-sm font-bold">{video.title || `Episode ${video.number}`}</span></span>
             </button>
           {/each}
         </div>
       </section>
     {/if}
 
-    {#if relations.length}<div class="mt-8"><Carousel title="Related">{#each relations as item (item.catalog?.id ?? item.id)}<SmallCard media={item} />{/each}</Carousel></div>{/if}
-    {#if recommendations.length}<div class="mt-8"><Carousel title="Recommendations">{#each recommendations as item (item.catalog?.id ?? item.id)}<SmallCard media={item} />{/each}</Carousel></div>{/if}
+    {#if relations.length}<div data-slot="detail.relations" class="mt-8"><Carousel title="Related">{#each relations as item (item.catalog?.id ?? item.id)}<SmallCard media={item} />{/each}</Carousel></div>{/if}
+    {#if recommendations.length}<div data-slot="detail.recommended" class="mt-8"><Carousel title="Recommendations">{#each recommendations as item (item.catalog?.id ?? item.id)}<SmallCard media={item} />{/each}</Carousel></div>{/if}
 
     {#if cast.length || crew.length}
-      <section class="mt-8 px-5 sm:px-8">
-        <h2 class="mb-4 text-xl font-black">Cast & crew</h2>
-        <div class="flex gap-3 overflow-x-auto pb-2">
+      <section data-slot="detail.characters" class="mt-8 px-5 sm:px-8">
+        <h2 data-part="detail.heading" class="mb-4 text-xl font-black">Cast & crew</h2>
+        <div data-part="detail.track" class="flex gap-3 overflow-x-auto pb-2">
           {#each [...cast.slice(0, 14), ...crew.slice(0, 10)] as credit, index (`${credit.node.id}:${index}`)}
             <div class="w-28 shrink-0">
               {#if credit.node.image?.large}<img src={credit.node.image.large} alt="" loading="lazy" class="aspect-[2/3] w-full rounded-lg bg-muted object-cover" />{:else}<div class="grid aspect-[2/3] place-items-center rounded-lg bg-secondary text-3xl font-black text-muted-foreground">{credit.node.name.full?.[0] ?? '?'}</div>{/if}

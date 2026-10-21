@@ -1050,8 +1050,8 @@
       {:else}
         <span class="!absolute inset-0 skeloader" aria-hidden="true"></span>
       {/if}
-      <div class="absolute inset-0 bg-gradient-to-t from-background via-background/25 to-transparent"></div>
-      <div class="absolute inset-y-0 left-0 w-[58%] bg-gradient-to-r from-background/95 via-background/55 to-transparent"></div>
+      <div data-part="detail.scrim" data-dir="bottom" class="absolute inset-0 bg-gradient-to-t from-background via-background/25 to-transparent"></div>
+      <div data-part="detail.scrim" data-dir="left" class="absolute inset-y-0 left-0 w-[58%] bg-gradient-to-r from-background/95 via-background/55 to-transparent"></div>
       <div data-part="detail.body" class="relative z-10 flex min-h-[72vh] max-w-3xl flex-col justify-center gap-5 px-8 py-20 sm:px-12">
         {#if m.title.native || m.title.romaji}
           <div data-part="detail.alt-title" class="text-sm text-white/70">{m.title.native || m.title.romaji}</div>
@@ -1117,7 +1117,7 @@
   <Hero medias={[m]} showOverlay={false} artwork={headerArt} onartworkfailed={backdropFailed} />
   </div>
   {/if}
-  <div class="relative z-10 px-4 pb-16 sm:px-8 {detailTheme.bannerHidden ? 'pt-8' : detailTheme.bannerScale === 'banner' ? 'pt-[7.5rem]' : ''}" style:margin-top={detailTheme.bannerHidden || detailTheme.bannerScale === 'banner' ? undefined : `-${bannerOverlap}vh`} data-theme-surface="detail">
+  <div data-part="detail.content" class="relative z-10 px-4 pb-16 sm:px-8 {detailTheme.bannerHidden ? 'pt-8' : detailTheme.bannerScale === 'banner' ? 'pt-[7.5rem]' : ''}" style:margin-top={detailTheme.bannerHidden || detailTheme.bannerScale === 'banner' ? undefined : `-${bannerOverlap}vh`} data-theme-surface="detail">
     {#if heroPlay.status === 'error'}
       <p class="mb-3 text-sm text-destructive">{heroPlay.message}</p>
     {/if}

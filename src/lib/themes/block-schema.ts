@@ -2,7 +2,7 @@
 // too, and the theme catalog mirrors this file.
 export const HOME_BLOCK_TYPES = ['latest-episodes', 'tabbed-grid', 'genre-chips', 'ranked-list', 'profile-header', 'airing-today'] as const
 export type HomeBlockType = (typeof HOME_BLOCK_TYPES)[number]
-export type BlockPagination = 'numbers' | 'more' | 'none'
+export type BlockPagination = 'numbers' | 'arrows' | 'more' | 'none'
 export type BlockArea = 'main' | 'aside'
 /** One tab of a tabbed grid or ranked list. `role` is a Home row id (`trending`, `tmdb:movies`) or,
  * on Merged Home, a bare role that resolves to the first catalog offering it. `recent` is the
@@ -103,7 +103,8 @@ function parseButtons(value: unknown): BlockButton[] {
   return buttons
 }
 
-const pagination = (value: unknown): BlockPagination => (value === 'more' || value === 'none' ? value : 'numbers')
+// Stored settings repair an unknown mode to page numbers; a package needs Theme API 5 for `arrows`.
+const pagination = (value: unknown): BlockPagination => (value === 'arrows' || value === 'more' || value === 'none' ? value : 'numbers')
 const caption = (value: unknown): LatestEpisodesCaption => (value === 'overlay' ? 'overlay' : 'below')
 
 /** Repair a stored or imported block. Returns null only for values that are not blocks at all. */
@@ -157,6 +158,7 @@ export function parseThemeBlock(value: unknown, api: number): HomeBlock {
     throw new Error('This theme uses an unsupported presentation property.')
   }
   const { block: _block, ...settings } = raw
+  if (api < 5 && settings.pagination === 'arrows') throw new Error('A home block setting is outside the supported range.')
   const parsed = parseHomeBlock({ ...settings, type }) as HomeBlock & Record<string, unknown>
   for (const [key, given] of Object.entries(settings)) {
     if (JSON.stringify(parsed[key]) !== JSON.stringify(given)) throw new Error('A home block setting is outside the supported range.')

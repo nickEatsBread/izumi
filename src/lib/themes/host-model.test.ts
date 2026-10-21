@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Media } from '$lib/anilist/types'
-import { creatorsText, durationLongText, episodeDisplayModel, mediaDisplayModel, seriesKindText, seriesRatingText, starringText, timeLeftLabel } from './host-model'
+import { creatorsText, durationLongText, episodeDisplayModel, longDayText, mediaDisplayModel, seriesKindText, seriesRatingText, starringText, timeLeftLabel } from './host-model'
 import { displayText } from './presentation'
 
 const media = {
@@ -23,6 +23,13 @@ const media = {
 } as Media
 
 describe('theme host display model', () => {
+  it('words an episode air date in the viewer locale', () => {
+    const expected = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(2026, 8, 16)))
+    expect(longDayText('2026-09-16')).toBe(expected)
+    expect(episodeDisplayModel({ id: 1, title: { romaji: 'T' } } as never, 2, { airDate: '2026-09-16' } as never).airDateLong).toBe(expected)
+    expect(longDayText('soon')).toBeUndefined()
+    expect(longDayText(undefined)).toBeUndefined()
+  })
   it('binds the first genre on its own beside the joined list', () => {
     expect(mediaDisplayModel(media).genre).toBe('Drama')
     expect(mediaDisplayModel(media).genres).toBe('Drama · Fantasy')

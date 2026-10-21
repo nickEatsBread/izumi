@@ -12,6 +12,7 @@ export type DisplayField =
   | 'durationLong' | 'scoreValue' | 'completed' | 'airingSoon'
   | 'starring' | 'creators'
   | 'kind'
+  | 'airDateLong'
 /** Host numbers. `when.atMost` compares these; text nodes render them through `displayText`. */
 export type NumericDisplayField = 'rankPosition' | 'score' | 'duration' | 'episodeNumber' | 'progress' | 'nextEpisode' | 'slide' | 'slides' | 'episodesAired' | 'episodesWatched'
 /** `keyart` (API 3) is 16:9 title artwork: a TVDB background for AniList titles, a TMDB or add-on backdrop otherwise.
@@ -21,7 +22,7 @@ export type ArtworkKind = 'poster' | 'backdrop' | 'logo' | 'still' | 'keyart' | 
 /** API 4 `studio`: the title's main studio as a button that opens its page (else a search for it);
  *  accepted in the series header and facts templates only. */
 export type ThemeAction = 'play' | 'details' | 'favorite' | 'previous' | 'next' | 'list' | 'trailer' | 'share' | 'studio'
-export type CardFamily = 'poster' | 'continue' | 'search'
+export type CardFamily = 'poster' | 'continue' | 'search' | 'ranked'
 export type ThemeDensity = 'compact' | 'comfortable' | 'large'
 export type ThemeNavPlacement = 'sidebar' | 'top' | 'bottom'
 export type DetailLayout = 'stack' | 'split' | 'overlay'
@@ -166,6 +167,7 @@ export type DetailCountdown = 'none' | 'compact' | 'long' | 'words' | 'full' | '
 export type ThemeIcon =
   | 'score' | 'format' | 'episodes' | 'reviews' | 'studio' | 'season' | 'status' | 'source' | 'country' | 'duration'
   | 'bookmark' | 'plus' | 'info' | 'share'
+  | 'star' | 'chevron-left' | 'chevron-right' | 'chevron-down' | 'captions' | 'mic' | 'list'
 export type ThemeSurface = 'Home' | 'Shell' | 'Details' | 'Player' | 'Full'
 export interface ThemeNode {
   type: 'stack' | 'row' | 'grid' | 'overlay' | 'text' | 'artwork' | 'action' | 'icon' | 'meter'
@@ -198,11 +200,14 @@ export interface RowPresentation {
    *  an empty-state part (`row.empty`) in its track; `hidden` (default) leaves the row out then. Read
    *  from the row's own entry (`rows.byId.continue` or its scoped id), never from `rows.defaults`. */
   empty?: 'hidden' | 'shown'
+  /** API 5: the row's own heading text ("Latest Anime" for the newest row), from its `rows.byId` entry
+   *  only; Continue Watching, tracker rows and catalog rows alike. */
+  title?: string
 }
 /** Theme API 1 is the original contract; API 2 adds the phone block, bottom-bar and slide-marker
  *  chrome, row headings, series tabs and the docked player. A package declares which it uses, so
  *  a client that only knows API 1 refuses an API 2 package cleanly instead of failing mid-parse. */
-export type ThemeApi = 1 | 2 | 3 | 4
+export type ThemeApi = 1 | 2 | 3 | 4 | 5
 /** The newest theme API this client renders. API 3 adds stylesheets, fonts, template parts,
  *  airing and slide fields, and the text wordmark. API 4 adds the phone root size, scroll chrome,
  *  the series header buttons, fact keys, names and formats, the Information section, the synopsis
@@ -213,7 +218,7 @@ export type ThemeApi = 1 | 2 | 3 | 4
  *  download buttons, the series progress row, the folding actions row, the studio button, plain
  *  status words and aired episode counts, recommendations among the relations, the hero's artwork
  *  choice, the kind of title and the Continue Watching empty state. */
-export const LATEST_THEME_API: ThemeApi = 4
+export const LATEST_THEME_API: ThemeApi = 5
 /** Series-page tab strip: an underlined row, pills, an iOS-style segmented control, or a bar of
  *  equal tabs with a tinted pill behind the active one (the two-tab Info/Watch bar of some apps).
  *  API 3 `bottom`: on phones the tabs become a bar fixed to the bottom of the screen in place of the
@@ -493,6 +498,7 @@ const fields = [
   'durationLong', 'scoreValue', 'completed', 'airingSoon',
   'starring', 'creators',
   'kind',
+  'airDateLong',
 ] as const satisfies readonly DisplayField[]
 const API3_FIELDS: readonly DisplayField[] = ['nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired', 'genre', 'ageRating', 'audio', 'timeLeft', 'episodeNo', 'episodeCode', 'watched', 'filler', 'rating', 'episodeName']
 /** The release year, the second and third genres, the episodes watched, the long duration, the bare
@@ -500,7 +506,9 @@ const API3_FIELDS: readonly DisplayField[] = ['nextEpisode', 'airingIn', 'airing
  *  title are API 4. */
 const API4_FIELDS: readonly DisplayField[] = ['startYear', 'genre2', 'genre3', 'episodesWatched', 'durationLong', 'scoreValue', 'completed', 'airingSoon', 'starring', 'creators', 'kind']
 /** An older package is held to the fields its clients know, so it renders identically everywhere. */
-const fieldsFor = (api: ThemeApi): readonly DisplayField[] => fields.filter(field => (api >= 3 || !API3_FIELDS.includes(field)) && (api >= 4 || !API4_FIELDS.includes(field)))
+/** An episode's air date in words ("16 September 2026") is API 5. */
+const API5_FIELDS: readonly DisplayField[] = ['airDateLong']
+const fieldsFor = (api: ThemeApi): readonly DisplayField[] => fields.filter(field => (api >= 3 || !API3_FIELDS.includes(field)) && (api >= 4 || !API4_FIELDS.includes(field)) && (api >= 5 || !API5_FIELDS.includes(field)))
 const numericFields: string[] = ['rankPosition', 'score', 'duration', 'episodeNumber', 'progress', 'nextEpisode', 'slide', 'slides', 'episodesAired', 'episodesWatched'] satisfies NumericDisplayField[]
 const actions: readonly ThemeAction[] = ['play', 'details', 'favorite', 'previous', 'next', 'list', 'trailer', 'share']
 /** The actions the series header (`detail.header`) and facts (`detail.facts`) templates may add from
@@ -576,10 +584,12 @@ const choices: Record<string, string[]> = {
   anchor: ['fill', 'bottom-start', 'bottom-end', 'top-start', 'top-end'],
   fit: ['cover', 'contain'], aspect: ['2 / 3', '16 / 9', '2 / 1', '1 / 1'], wrap: ['wrap', 'nowrap'],
 }
-const icons = ['score', 'format', 'episodes', 'reviews', 'studio', 'season', 'status', 'source', 'country', 'duration', 'bookmark', 'plus', 'info', 'share'] as const
+const icons = ['score', 'format', 'episodes', 'reviews', 'studio', 'season', 'status', 'source', 'country', 'duration', 'bookmark', 'plus', 'info', 'share', 'star', 'chevron-left', 'chevron-right', 'chevron-down', 'captions', 'mic', 'list'] as const
 const API3_ICONS: readonly ThemeIcon[] = ['bookmark', 'plus', 'info', 'share']
-/** Bookmark/plus/info/share are API 3; older packages keep the icons their clients know. */
-const iconsFor = (api: ThemeApi): readonly ThemeIcon[] => (api >= 3 ? icons : icons.filter((icon) => !API3_ICONS.includes(icon)))
+const API5_ICONS: readonly ThemeIcon[] = ['star', 'chevron-left', 'chevron-right', 'chevron-down', 'captions', 'mic', 'list']
+/** Bookmark/plus/info/share are API 3 and the star, chevrons, captions, mic and list API 5; older
+ *  packages keep the icons their clients know. */
+const iconsFor = (api: ThemeApi): readonly ThemeIcon[] => icons.filter((icon) => (api >= 3 || !API3_ICONS.includes(icon)) && (api >= 5 || !API5_ICONS.includes(icon)))
 const colors = ['foreground', 'background', 'muted', 'muted-foreground', 'theme', 'card', 'card-foreground', 'primary', 'primary-foreground', 'transparent']
 export function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected a theme object.')
@@ -659,8 +669,9 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
   if (raw.style !== undefined) {
     const style = record(raw.style); node.style = {}
     for (const [key, value] of Object.entries(style)) {
-      if (numericStyles[key]) node.style[key] = number(value, numericStyles[key][0], numericStyles[key][1])
-      else if (choices[key]) node.style[key] = choice(value, choices[key])
+      // API 5: an 8 px minimum font size (badge and chip text) and a 3:4 artwork shape.
+      if (numericStyles[key]) node.style[key] = number(value, key === 'fontSize' && api >= 5 ? 8 : numericStyles[key][0], numericStyles[key][1])
+      else if (choices[key]) node.style[key] = choice(value, key === 'aspect' && api >= 5 ? [...choices.aspect, '3 / 4'] : choices[key])
       else if (key === 'color' || key === 'background') node.style[key] = themeColor(value)
       else throw new Error('This theme style is not supported.')
     }
@@ -674,6 +685,7 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
 /** Keys each API level accepts, so an API 1 package cannot smuggle API 2 chrome past an old client. */
 const api2 = (api: ThemeApi, keys: string[]) => (api >= 2 ? keys : [])
 const api3 = (api: ThemeApi, keys: string[]) => (api >= 3 ? keys : [])
+const api5 = (api: ThemeApi, keys: string[]) => (api >= 5 ? keys : [])
 const api4 = (api: ThemeApi, keys: string[]) => (api >= 4 ? keys : [])
 function parseHeading(value: unknown): RowHeading {
   const raw = record(value); only(raw, ['weight', 'transform', 'accent', 'viewMore'])
@@ -684,9 +696,13 @@ function parseHeading(value: unknown): RowHeading {
   if (raw.viewMore !== undefined) result.viewMore = choice(raw.viewMore, ['text', 'arrow', 'hidden'])
   return result
 }
-function parseRow(value: unknown, api: ThemeApi): RowPresentation {
-  const raw = record(value); only(raw, ['layout', 'width', 'gap', 'spacing', 'radius', 'aspect', 'titleSize', 'card', ...api2(api, ['heading']), ...api3(api, ['caption']), ...api4(api, ['empty'])])
+function parseRow(value: unknown, api: ThemeApi, named = false): RowPresentation {
+  const raw = record(value); only(raw, ['layout', 'width', 'gap', 'spacing', 'radius', 'aspect', 'titleSize', 'card', ...api2(api, ['heading']), ...api3(api, ['caption']), ...api4(api, ['empty']), ...api5(api, named ? ['title'] : [])])
   const result: RowPresentation = {}
+  if (raw.title !== undefined) {
+    if (typeof raw.title !== 'string' || !raw.title.trim() || raw.title.length > 60) throw new Error('A theme row title needs 1–60 characters.')
+    result.title = raw.title
+  }
   if (raw.empty !== undefined) result.empty = choice(raw.empty, ['hidden', 'shown'])
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['carousel', 'grid'])
   if (raw.aspect !== undefined) result.aspect = choice(raw.aspect, ['poster', 'landscape', 'square'])
@@ -930,9 +946,9 @@ function uniqueChoices<const T extends string>(value: unknown, values: readonly 
   })
 }
 function parseCards(value: unknown, api: ThemeApi): NonNullable<ThemePresentation['cards']> {
-  const raw = record(value); only(raw, ['poster', 'continue', 'search'])
+  const raw = record(value); only(raw, ['poster', 'continue', 'search', ...api5(api, ['ranked'])])
   const result: NonNullable<ThemePresentation['cards']> = {}
-  for (const family of ['poster', 'continue', 'search'] as const) {
+  for (const family of ['poster', 'continue', 'search', 'ranked'] as const) {
     if (raw[family] !== undefined) result[family] = tile(parseNode(raw[family], undefined, 0, false, api))
   }
   return result
@@ -1032,7 +1048,7 @@ export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_A
       if (Object.keys(byId).length > 100) throw new Error('Too many row overrides.')
       result.rows.byId = Object.fromEntries(Object.entries(byId).map(([id, row]) => {
         if (!/^[a-z0-9][a-z0-9:._/-]{0,199}$/i.test(id) || ['__proto__', 'constructor', 'prototype'].includes(id)) throw new Error('Invalid theme row identity.')
-        return [id, parseRow(row, api)]
+        return [id, parseRow(row, api, true)]
       }))
     }
   }
