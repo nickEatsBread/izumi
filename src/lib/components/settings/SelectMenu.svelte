@@ -218,6 +218,7 @@
     type="button"
     data-part={filter ? 'search.filter' : undefined}
     data-filter={filter}
+    data-label={filter ? ariaLabel : undefined}
     data-active={(filter && value !== options[0]?.value) || undefined}
     data-focusable
     aria-label={ariaLabel}

@@ -12,7 +12,7 @@
   import { forkThemeHome, resolveThemeHome } from '$lib/home/theme-layout'
   import { addHomeBlock, blockRowOptions, homeBlockSettingsId, pruneHomeBlocks } from '$lib/home/block-rows'
   import { BLOCK_META, HOME_BLOCK_TYPES, blockAvailable, homeBlocks, type HomeBlockType } from '$lib/home/blocks'
-  import { tabbableRows } from '$lib/home/row-source'
+  import { isContentRow, tabbableRows } from '$lib/home/row-source'
   import { catalogLabel, catalogProviders, isLegacyAniListCatalog, mergedCatalogProviders } from '$lib/settings/catalog'
   import Check from '@lucide/svelte/icons/check'
   import Layers3 from '@lucide/svelte/icons/layers-3'
@@ -114,7 +114,9 @@
     const key = $activeThemeKey
     if (!layout?.home || !key || loading || error) return
     const optionIds = options.map((option) => option.id)
-    forkThemeHome(target, resolveThemeHome(layout.home, target, optionIds), optionIds, key, layout.asideWidth)
+    // As the Home itself resolves it: on another catalog the rows it left follow its own.
+    const rest = target === 'auto' || target === 'anilist' ? [] : rows.filter((row) => row.enabled).map((row) => row.id).filter(isContentRow)
+    forkThemeHome(target, resolveThemeHome(layout.home, target, optionIds, rest), optionIds, key, layout.asideWidth)
   }
 
   function addBlock(type: HomeBlockType) {

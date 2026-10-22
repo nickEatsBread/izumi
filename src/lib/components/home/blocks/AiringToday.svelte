@@ -4,8 +4,9 @@
   import { anilist } from '$lib/anilist/client'
   import { cover, mediaHref, title as mediaTitle } from '$lib/anilist/media'
   import { detailLink } from '$lib/anilist/detail-hint'
-  import { airTime, weekRange, type Airing } from '$lib/anilist/schedule'
-  import { cachedScheduleWeek, loadScheduleWeek } from '$lib/anilist/schedule-cache'
+  import { airingsBetween, airTime, weekRange, type Airing } from '$lib/anilist/schedule'
+  import { cachedScheduleWeek } from '$lib/anilist/schedule-cache'
+  import { loadAiringWeek } from '$lib/anime/airing-week'
   import type { AiringTodayBlock } from '$lib/home/blocks'
   import { nearViewport } from '$lib/util/near-viewport'
 
@@ -22,7 +23,7 @@
     date.setHours(0, 0, 0, 0)
     return Math.floor(date.getTime() / 1000)
   })()
-  const today = (all: Airing[]) => all.filter((airing) => airing.media && airing.airingAt >= dayStart && airing.airingAt < dayStart + 24 * 3600)
+  const today = (all: Airing[]) => airingsBetween(all, dayStart, dayStart + 24 * 3600)
   let visible = $state(false)
   let items = $state.raw<Airing[]>(today(cachedScheduleWeek(week.start, week.end) ?? []))
   let loading = $state(false)
@@ -37,8 +38,8 @@
     const controller = new AbortController()
     loading = true
     error = ''
-    loadScheduleWeek(anilist, week.start, week.end, controller.signal)
-      .then((all) => { items = today(all) })
+    loadAiringWeek(anilist, week.start, week.end, controller.signal)
+      .then((all) => { if (!controller.signal.aborted) items = today(all) })
       .catch((reason) => { if (!controller.signal.aborted) error = reason instanceof Error ? reason.message : String(reason) })
       .finally(() => { if (!controller.signal.aborted) loading = false })
     return () => controller.abort()

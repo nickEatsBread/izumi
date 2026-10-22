@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const query = vi.fn()
 vi.mock('$lib/anilist/client', () => ({ anilist: { query: (...args: unknown[]) => ({ toPromise: () => query(...args) }) } }))
+const aired = vi.fn()
+vi.mock('$lib/anime/airing-week', () => ({ airedBefore: (...args: unknown[]) => aired(...args) }))
 const { loadLatestEpisodes, releaseStill, appendReleases, releaseKey, isFinale } = await import('./latest-episodes')
 const { showAdult } = await import('$lib/settings/ui')
 
@@ -10,6 +12,7 @@ const release = (id: number, episode: number, isAdult = false) => ({ episode, ai
 describe('latest episodes', () => {
   beforeEach(() => {
     query.mockReset()
+    aired.mockReset().mockRejectedValue(new Error('backup down'))
     showAdult.set(false)
   })
 
@@ -25,6 +28,15 @@ describe('latest episodes', () => {
     showAdult.set(true)
     query.mockResolvedValue({ data: { Page: { pageInfo: { hasNextPage: false }, airingSchedules: [release(2, 7, true)] } } })
     expect((await loadLatestEpisodes(1, 12, 1)).items).toHaveLength(1)
+  })
+
+  it('pages the backup schedule while AniList is out', async () => {
+    query.mockResolvedValue({ error: new Error('disabled') })
+    // The backup counts only what the block keeps (adult titles hidden here).
+    aired.mockImplementation(async (...args: unknown[]) => [release(1, 3), release(2, 7, true), release(3, 1), release(4, 2)].filter(args[5] as (item: unknown) => boolean))
+    const page = await loadLatestEpisodes(2, 1, 1_700_000_000)
+    expect(page).toEqual({ items: [release(3, 1)], hasNextPage: true })
+    expect(aired.mock.calls[0].slice(1, 3)).toEqual([1_700_000_000, 3])
   })
 
   it('surfaces errors', async () => {

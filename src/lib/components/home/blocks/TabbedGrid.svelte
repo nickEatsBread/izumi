@@ -68,7 +68,7 @@
 
   function goTo(next: number) {
     page = next
-    if (block.pagination === 'numbers') section?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    if (block.pagination === 'numbers' || block.pagination === 'arrows') section?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   }
 
   // "Load more" accumulates every page into one list, so a card's rank is just its place in it.
@@ -94,7 +94,7 @@
       <button type="button" data-part="button" data-variant="secondary" data-focusable onclick={() => retry++}
         class="mb-3 min-h-9 rounded-md bg-secondary px-4 text-sm font-bold transition hover:bg-accent">Retry</button>
     {/if}
-    <div data-nav-row data-nav-row-wrap data-nav-row-items class="grid gap-x-3 gap-y-5" style:grid-template-columns={`repeat(${columns}, minmax(0, 1fr))`}>
+    <div data-part="block.grid" data-nav-row data-nav-row-wrap data-nav-row-items class="grid gap-x-3 gap-y-5" style:grid-template-columns={`repeat(${columns}, minmax(0, 1fr))`}>
       {#if !visible || (loading && !media.length)}
         {#each Array.from({ length: Math.min(block.pageSize, columns * 2) }) as _, index (index)}
           <div class="aspect-[2/3] rounded-md skeloader"></div>

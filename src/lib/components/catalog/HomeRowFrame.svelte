@@ -27,6 +27,7 @@
     visibleIds,
     children,
     locked = false,
+    role,
   }: {
     rowId: string
     title: string
@@ -36,9 +37,11 @@
     /** A theme layout is active: children render inert with only the title chrome — no drag,
      * reorder, hide/settings/remove controls or "Add here" gap. Outside Edit Home this is a no-op. */
     locked?: boolean
+    /** The theme role this row fills, which the theme styles it by (its own id on another catalog differs). */
+    role?: string
   } = $props()
 
-  setContext<() => RowScope>(ROW_CONTEXT, () => ({ id: `${target}:${rowId}`, title }))
+  setContext<() => RowScope>(ROW_CONTEXT, () => ({ id: `${target}:${role ?? rowId}`, title }))
 
   let dragging = $state(false)
   let pointerId = $state<number | null>(null)

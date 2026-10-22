@@ -94,10 +94,20 @@ export function heroVars(now: Date, source: 'season' | 'trending' = 'season') {
 
 // Public home sections (personalized ones deferred to Plan 2b). The adult filter
 // is baked into the query variant (pageQuery()), not the vars.
+/** The season after the current one ("SPRING 2026" in winter 2026, "WINTER 2027" in fall 2026). */
+export function nextSeason(now: Date) {
+  const { season, seasonYear } = currentSeason(now)
+  const order = ['WINTER', 'SPRING', 'SUMMER', 'FALL']
+  const index = order.indexOf(season)
+  return { season: order[(index + 1) % 4], seasonYear: index === 3 ? seasonYear + 1 : seasonYear }
+}
+
 export function homeSections(now: Date) {
   const { season, seasonYear } = currentSeason(now)
+  const upcoming = nextSeason(now)
   return [
     { key: 'season', title: 'Popular This Season', vars: { sort: ['POPULARITY_DESC'], season, seasonYear } },
+    { key: 'upcoming', title: 'Upcoming Next Season', vars: { sort: ['POPULARITY_DESC'], season: upcoming.season, seasonYear: upcoming.seasonYear } },
     { key: 'trending', title: 'Trending Now', vars: { sort: ['TRENDING_DESC'] } },
     { key: 'popular', title: 'All Time Popular', vars: { sort: ['POPULARITY_DESC'] } },
     { key: 'newest', title: 'Newest', vars: { sort: ['START_DATE_DESC'], status: 'RELEASING' } },

@@ -32,6 +32,22 @@ export function groupByDay(items: Airing[], start: number): Airing[][] {
   return days
 }
 
+/** One entry per show, episode and airing time: a schedule (or its backup) can list the same airing
+ *  twice, and the lists keyed by it must never see a repeat. */
+export function uniqueAirings(items: Airing[]): Airing[] {
+  const seen = new Set<string>()
+  return items.filter((airing) => {
+    const key = `${airing.media?.id}-${airing.episode}-${airing.airingAt}`
+    if (!airing.media || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+/** The airings within [start, end), once each. */
+export const airingsBetween = (items: Airing[], start: number, end: number): Airing[] =>
+  uniqueAirings(items.filter((airing) => airing.airingAt >= start && airing.airingAt < end))
+
 /** Local HH:MM airing time. */
 export const airTime = (unix: number) =>
   new Date(unix * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })

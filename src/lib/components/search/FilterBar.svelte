@@ -76,19 +76,19 @@
 
     {#if $isMobile}
       <!-- Keep Android's space-efficient native pickers inside the horizontal chip scroller. -->
-      <select data-part="search.filter" data-filter="season" data-active={!!filters.season || undefined} data-focusable value={filters.season ?? ''}
+      <select data-part="search.filter" data-filter="season" data-label="Season" data-active={!!filters.season || undefined} data-focusable value={filters.season ?? ''}
               onchange={(e) => (filters = { ...filters, season: e.currentTarget.value || undefined })}
               class="shrink-0 rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent">
         <option value="">Any Season</option>
         {#each SEASONS as s (s)}<option value={s}>{label(s)}</option>{/each}
       </select>
-      <select data-part="search.filter" data-filter="year" data-active={filters.year != null || undefined} data-focusable value={filters.year != null ? String(filters.year) : ''}
+      <select data-part="search.filter" data-filter="year" data-label="Year" data-active={filters.year != null || undefined} data-focusable value={filters.year != null ? String(filters.year) : ''}
               onchange={(e) => (filters = { ...filters, year: e.currentTarget.value ? Number(e.currentTarget.value) : null })}
               class="shrink-0 rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent">
         <option value="">Any Year</option>
         {#each YEARS as y (y)}<option value={String(y)}>{y}</option>{/each}
       </select>
-      <select data-part="search.filter" data-filter="sort" data-active={!!filters.sort || undefined} data-focusable value={filters.sort ?? ''}
+      <select data-part="search.filter" data-filter="sort" data-label="Sort" data-active={!!filters.sort || undefined} data-focusable value={filters.sort ?? ''}
               onchange={(e) => (filters = { ...filters, sort: e.currentTarget.value || undefined })}
               class="shrink-0 rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent">
         <option value="">Default Sort</option>

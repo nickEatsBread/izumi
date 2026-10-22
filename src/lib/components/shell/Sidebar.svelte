@@ -43,6 +43,15 @@
   let { placement = 'sidebar' }: { placement?: 'sidebar' | 'top' } = $props()
   const compact = $derived($themePresentation?.shell?.compact === true)
   const top = $derived(placement === 'top')
+  // `data-scrolled` once the page has scrolled, so a theme can keep the bar clear over the top of a page.
+  let scrolled = $state(false)
+  $effect(() => {
+    if (!top) return
+    const update = () => { scrolled = window.scrollY > 0 }
+    update()
+    window.addEventListener('scroll', update, { passive: true })
+    return () => window.removeEventListener('scroll', update)
+  })
   const topBar = $derived($themePresentation?.shell?.top ?? {})
   const labelMode = $derived(top ? topBar.labels ?? 'icons' : 'icons')
   const brandCentered = $derived(top && topBar.brand === 'center')
@@ -213,14 +222,14 @@
      expanded, so no per-state markup swap. `main` keeps its 56px margin — the expanded rail
      overlays the content (fixed) rather than reflowing it. Selection uses a quiet active-row fill;
      keyboard/gamepad FOCUS fills the row more strongly (see app.css) — no squared ring. -->
-<nav data-slot={top ? 'nav.top' : 'nav.side'} data-nav-sidebar data-theme-surface="shell" onfocusin={onFocusIn} onfocusout={onFocusOut}
+<nav data-slot={top ? 'nav.top' : 'nav.side'} data-scrolled={top && scrolled || undefined} data-nav-sidebar data-theme-surface="shell" onfocusin={onFocusIn} onfocusout={onFocusOut}
      class="fixed z-30 flex gap-1 transition-[width] duration-200 ease-out
-       {top ? 'inset-x-0 top-0 h-[4.75rem] w-full flex-row items-center border-b border-border/50 bg-background px-3 pt-8' : 'inset-y-0 left-0 flex-col py-3 pt-9'}
+       {top ? 'inset-x-0 top-0 h-[var(--theme-top-bar)] w-full flex-row items-center border-b border-border/50 bg-background px-3 pt-8' : 'inset-y-0 left-0 flex-col py-3 pt-9'}
        {catalogPickerOpen ? 'overflow-visible' : 'overflow-hidden'}
        {top ? '' : open ? 'w-[200px]' : compact ? 'w-12' : 'w-14'}
        {$playing || open ? 'bg-background' : ''} {open ? 'shadow-2xl' : $playing || top ? '' : 'drop-shadow-md'}
        {brandCentered ? '!grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]' : ''}
-       {top && $gameMode ? '!h-[2.75rem] !pt-0' : ''}">
+       {top && $gameMode ? '!h-[var(--theme-top-row)] !pt-0' : ''}">
   {#if brandCentered}
     <!-- A centred brand gets its own grid column instead of sharing the flex row: the links (or the
          trailing cluster) otherwise run under the absolutely-centred brand and steal its clicks once
@@ -315,34 +324,34 @@
 {#snippet incognitoToggle()}
   <!-- Incognito toggle: same row anatomy as the links; violet accent + tinted icon while active
        (the top banner is the loud indicator — this stays quiet). -->
-  <button onclick={toggleIncognito} title={m.nav_incognito()} data-focusable={df} tabindex={tab}
+  <button data-part="nav.action" data-action="incognito" data-active={$incognito || undefined} onclick={toggleIncognito} title={m.nav_incognito()} data-focusable={df} tabindex={tab}
      aria-pressed={$incognito}
      class="{destClass($incognito)} {top ? '' : 'text-left'}">
     {#if $incognito && !top}<span class="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-violet-500"></span>{/if}
     <span class="grid {top ? 'size-5' : 'w-8'} shrink-0 place-items-center"><VenetianMask size={20} class="group-hover:animate-[wiggle_0.4s_ease] {$incognito ? 'text-violet-400' : ''}" /></span>
     {#if top}
-      <span class="sr-only">{m.nav_incognito()}</span>
+      <span data-part="nav.action.label" class="sr-only">{m.nav_incognito()}</span>
     {:else}
-      <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{m.nav_incognito()}</span>
+      <span data-part="nav.action.label" class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{m.nav_incognito()}</span>
     {/if}
   </button>
 {/snippet}
 
 {#snippet settingsLink()}
-  <a href="/app/settings" title={m.nav_settings()} data-focusable={df} tabindex={tab}
+  <a data-part="nav.action" data-action="settings" data-active={active('/app/settings') || undefined} href="/app/settings" title={m.nav_settings()} data-focusable={df} tabindex={tab}
      aria-current={active('/app/settings') ? 'page' : undefined}
      class={destClass(active('/app/settings'))}>
     <span class="grid {top ? 'size-5' : 'w-8'} shrink-0 place-items-center"><Settings size={20} class="group-hover:animate-[spin_0.6s_ease]" /></span>
     {#if top}
-      <span class="sr-only">{m.nav_settings()}</span>
+      <span data-part="nav.action.label" class="sr-only">{m.nav_settings()}</span>
     {:else}
-      <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{m.nav_settings()}</span>
+      <span data-part="nav.action.label" class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{m.nav_settings()}</span>
     {/if}
   </a>
 {/snippet}
 
 {#snippet accountButton()}
-  <button type="button" onclick={() => $profilesEnabled ? ($profileSwitcherOpen = true) : goto('/app/settings/accounts')} title={$profilesEnabled ? `Switch profile · ${$activeProfile.name}` : accountLabel} data-focusable={df} tabindex={tab}
+  <button type="button" data-part="nav.action" data-action="account" onclick={() => $profilesEnabled ? ($profileSwitcherOpen = true) : goto('/app/settings/accounts')} title={$profilesEnabled ? `Switch profile · ${$activeProfile.name}` : accountLabel} data-focusable={df} tabindex={tab}
      class="{top ? destClass(false) : 'group mt-1 flex h-12 w-full shrink-0 items-center gap-3 rounded-md pl-3 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground'}">
     <span class="grid {top ? 'size-8' : 'w-8'} shrink-0 place-items-center">
       {#if $profilesEnabled}
@@ -352,9 +361,9 @@
       {:else}<LogIn size={20} />{/if}
     </span>
     {#if top}
-      <span class="sr-only">{accountLabel}</span>
+      <span data-part="nav.action.label" class="sr-only">{accountLabel}</span>
     {:else}
-      <span class="max-w-[140px] truncate whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{accountLabel}</span>
+      <span data-part="nav.action.label" class="max-w-[140px] truncate whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{accountLabel}</span>
     {/if}
   </button>
 {/snippet}

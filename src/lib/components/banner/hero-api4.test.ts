@@ -83,21 +83,22 @@ describe('the full-resolution poster on the hero', () => {
 })
 
 describe('the Home hero placeholder', () => {
-  it('is a loading home.hero shaped like the hero that replaces it', () => {
-    expect(home).toContain('{:else if !catalogUnavailable && hero.fetching && !heroTheme?.hidden}')
-    expect(home).toContain('<div data-slot="home.hero" data-state="loading" data-variant="template" aria-hidden="true"')
+  it('is a loading home.hero shaped like the hero that replaces it, on every Home', () => {
+    const placeholder = read('./HeroPlaceholder.svelte')
+    expect(home).toContain('{:else if !catalogUnavailable && hero.fetching && !heroTheme?.hidden}\n        <HeroPlaceholder />')
+    expect(placeholder).toContain('<div data-slot="home.hero" data-state="loading" data-variant="template" aria-hidden="true"')
     // The template box follows the hero's own scale rules: `banner` on every window, `wide` above a phone.
     expect(hero).toContain("const bannerScale = $derived(showOverlay ? heroTheme?.scale === 'banner' : seriesTheme?.bannerScale === 'banner')")
     expect(hero).toContain("const wideScale = $derived(!$isMobile && heroTheme?.scale === 'wide')")
-    expect(home).toContain("const heroPlaceholderScale = $derived(heroTheme?.scale === 'banner' ? 'banner' : !$isMobile && heroTheme?.scale === 'wide' ? 'wide' : undefined)")
-    expect(home).toContain("style:min-height={heroPlaceholderScale === 'wide' ? '24rem' : heroPlaceholderScale === 'banner' ? '25rem' : undefined}")
-    expect(home).toContain('<div data-slot="home.hero" data-state="loading" data-variant="phone" aria-hidden="true" class="relative mx-4 mb-6 h-[46vh] overflow-hidden rounded-2xl bg-muted shadow-xl"')
-    expect(home).toContain('<div data-slot="home.hero" data-state="loading" data-variant="desktop" aria-hidden="true" class="relative mb-6 h-[50vh] overflow-hidden bg-muted"')
-    // The other catalogs keep their banner box, but name the hero that replaces it and show none
-    // for a hidden hero, like the AniList Home.
+    expect(placeholder).toContain("const heroPlaceholderScale = $derived(heroTheme?.scale === 'banner' ? 'banner' : !$isMobile && heroTheme?.scale === 'wide' ? 'wide' : undefined)")
+    expect(placeholder).toContain("style:min-height={heroPlaceholderScale === 'wide' ? '24rem' : heroPlaceholderScale === 'banner' ? '25rem' : undefined}")
+    expect(placeholder).toContain('<div data-slot="home.hero" data-state="loading" data-variant="phone" aria-hidden="true" class="relative mx-4 mb-6 h-[46vh] overflow-hidden rounded-2xl bg-muted shadow-xl"')
+    expect(placeholder).toContain('<div data-slot="home.hero" data-state="loading" data-variant="desktop" aria-hidden="true" class="relative mb-6 h-[50vh] overflow-hidden bg-muted"')
+    // The other catalogs draw the same placeholder, none for a hidden hero, and none before load
+    // when the theme's Home does not open on its banner.
     for (const page of [merged, catalog]) {
-      expect(page).toContain(`<div data-slot="home.hero" data-state="loading" data-variant={$themePresentation?.hero?.template ? 'template' : $isMobile ? 'phone' : 'desktop'} aria-hidden="true" class="relative mb-6 h-[50vh] overflow-hidden bg-muted">`)
-      expect(page).toContain('&& !$themePresentation?.hero?.hidden}')
+      expect(page).toContain('&& !$themePresentation?.hero?.hidden}\n      <HeroPlaceholder />')
+      expect(page).toContain("themeHomeHas($activeThemeLayout?.home, 'hero', true) ?? true")
     }
   })
 

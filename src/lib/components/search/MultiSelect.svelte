@@ -129,6 +129,7 @@
     bind:this={trigger}
     data-part={filter ? 'search.filter' : undefined}
     data-filter={filter}
+    data-label={filter ? label : undefined}
     data-active={(filter && selected.length > 0) || undefined}
     data-focusable
     onclick={toggleOpen}

@@ -1,7 +1,7 @@
 import { phttp } from '$lib/net/http'
 import { del, get, set } from 'idb-keyval'
 import type { Media } from '$lib/anilist/types'
-import type { Airing } from '$lib/anilist/schedule'
+import { uniqueAirings, type Airing } from '$lib/anilist/schedule'
 import { fetchKitsuScheduleIndex } from '$lib/anilist/kitsu-catalog'
 
 // AnimeSchedule's airing metadata — the things AniList carries no field for at all: whether a show
@@ -444,7 +444,7 @@ export async function getWeeklySchedule(start: number, end: number, options: Wee
     if (item) airings.push({ airingAt: card.airingAt, episode: card.episode, media: item })
     else unresolved.set(route, [...(unresolved.get(route) ?? []), card])
   }
-  const sorted = () => [...airings].sort((a, b) => a.airingAt - b.airingAt)
+  const sorted = () => uniqueAirings([...airings].sort((a, b) => a.airingAt - b.airingAt))
 
   // The indices only know popular and current-season titles. Every other broadcast on the
   // timetable is resolved by route, cached for a month, and delivered as it arrives; a viewer's

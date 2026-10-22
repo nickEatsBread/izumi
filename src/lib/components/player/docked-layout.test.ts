@@ -12,7 +12,7 @@ describe('player mount follows the navigation placement', () => {
   it('no longer insets the left edge unconditionally while windowed', () => {
     expect(overlay).not.toContain("class:left-14={!$fullscreen && !gmMode && !$pictureInPicture}")
     expect(overlay).toContain("class:left-14={!docked && windowedChrome && $shellNav === 'sidebar'}")
-    expect(overlay).toContain("style:top={!docked && windowedChrome && $shellNav === 'top' ? '4.75rem' : undefined}")
+    expect(overlay).toContain("style:top={!docked && windowedChrome && $shellNav === 'top' ? 'var(--theme-top-bar)' : undefined}")
     expect(overlay).toContain("style:bottom={!docked && windowedChrome && $shellNav === 'bottom' ? bottomNavInset : undefined}")
   })
 
@@ -52,7 +52,8 @@ describe('full-bleed banners follow the shell margin', () => {
       expect(source).not.toContain('sm:-top-8')
     }
     const css = read('../../../app.css')
-    expect(css).toContain("html[data-theme-nav='top'] { --theme-shell-top: 4.75rem; }")
+    expect(css).toContain("html[data-theme-nav='top'] { --theme-shell-top: var(--theme-top-bar); }")
+    expect(css).toContain('html { --theme-top-row: 2.75rem; --theme-top-bar: calc(2rem + var(--theme-top-row)); }')
   })
 })
 
@@ -175,7 +176,7 @@ describe('page-flow watch view', () => {
 
   it('backs a translucent top bar so the scrolled video never shows through it', () => {
     expect(overlay).toContain("{#if pageFlow && $shellNav === 'top'}")
-    expect(overlay).toContain('<div aria-hidden="true" class="pointer-events-none fixed inset-x-0 top-0 z-20 h-[4.75rem] bg-background"></div>')
+    expect(overlay).toContain('<div aria-hidden="true" class="pointer-events-none fixed inset-x-0 top-0 z-20 h-[var(--theme-top-bar)] bg-background"></div>')
   })
 
   it('lets a docked theme drop the player chrome it shows elsewhere', () => {

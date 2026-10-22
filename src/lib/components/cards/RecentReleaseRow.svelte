@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte'
   import { queryStore, getContextClient } from '@urql/svelte'
   import { RECENT_RELEASES_QUERY } from '$lib/anilist/queries'
+  import { airedBefore } from '$lib/anime/airing-week'
   import type { Media } from '$lib/anilist/types'
   import { dismissedRecentReleaseIds, showAdult } from '$lib/settings/ui'
   import { releasedAgo } from '$lib/anime/airing-labels'
@@ -27,13 +28,26 @@
     pause: !active,
   }))
 
+  // While AniList is out the backup schedule lists the same window.
+  let backup = $state.raw<Release[] | null>(null)
+  const failed = $derived(!!$store.error)
+  $effect(() => {
+    if (!failed) return
+    let live = true
+    airedBefore(client, before, Infinity, 4)
+      .then((aired) => { if (live) backup = aired.filter((release) => release.airingAt > after) })
+      .catch(() => { if (live) backup = [] })
+    return () => { live = false }
+  })
+  const loading = $derived($store.fetching || (failed && !backup))
+
   // Latest episode per title. Multi-episode drops otherwise repeat the same cover several times and
   // make the row harder to scan than the "recently updated" rows used by dedicated anime clients.
   const releases = $derived.by(() => {
     const seen = new Set<number>()
     const dismissed = new Set($dismissedRecentReleaseIds)
     const out: Release[] = []
-    for (const release of $store.data?.Page.airingSchedules ?? []) {
+    for (const release of (failed ? backup : $store.data?.Page.airingSchedules) ?? []) {
       if (!release.media || dismissed.has(release.media.id) || seen.has(release.media.id) || (!$showAdult && release.media.isAdult)) continue
       seen.add(release.media.id)
       out.push(release)
@@ -73,9 +87,9 @@
 <svelte:window onkeydown={onKey} />
 
 <div class:deferred-skeleton={!active} use:nearViewport={{ onEnter: reveal }}>
-  {#if !active || $store.fetching || releases.length > 0}
+  {#if !active || loading || releases.length > 0}
     <Carousel title="Recently Released" viewMoreHref="/app/schedule">
-      {#if !active || $store.fetching}
+      {#if !active || loading}
         {#each Array.from({ length: 8 }) as _}
           <div data-part="row.skeleton" class="skeloader aspect-[2/3] w-36 shrink-0 rounded-md sm:w-[152px]"></div>
         {/each}

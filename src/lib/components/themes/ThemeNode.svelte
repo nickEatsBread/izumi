@@ -15,6 +15,13 @@
   import Plus from '@lucide/svelte/icons/plus'
   import Info from '@lucide/svelte/icons/info'
   import Share2 from '@lucide/svelte/icons/share-2'
+  import Star from '@lucide/svelte/icons/star'
+  import ChevronLeft from '@lucide/svelte/icons/chevron-left'
+  import ChevronRight from '@lucide/svelte/icons/chevron-right'
+  import ChevronDown from '@lucide/svelte/icons/chevron-down'
+  import Captions from '@lucide/svelte/icons/captions'
+  import Mic from '@lucide/svelte/icons/mic'
+  import List from '@lucide/svelte/icons/list'
   let { node, model: boundModel, actions = {}, eager = false, titleHeading = false }: { node: ThemeNode; model: DisplayModel; actions?: Partial<Record<ThemeAction, () => void>>; eager?: boolean; titleHeading?: boolean } = $props()
   // Artwork that fails to load counts as absent, so `when: { field: "logo", absent: true }` shows the
   // title instead of a broken image. Keyed by URL: the next slide's artwork starts fresh.
@@ -28,6 +35,8 @@
     score: TrendingUp, format: Tv, episodes: Clapperboard, reviews: Users, studio: Building2,
     season: CalendarDays, status: MonitorPlay, source: Library, country: Globe, duration: Timer,
     bookmark: Bookmark, plus: Plus, info: Info, share: Share2,
+    star: Star, 'chevron-left': ChevronLeft, 'chevron-right': ChevronRight, 'chevron-down': ChevronDown,
+    captions: Captions, mic: Mic, list: List,
   }
 </script>
 

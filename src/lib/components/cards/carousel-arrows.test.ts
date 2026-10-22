@@ -14,7 +14,7 @@ const nav = readFileSync(fileURLToPath(new URL('../../nav/index.ts', import.meta
 
 /** Each arrow button paired with the `{#if}` condition that guards it. */
 function arrowGuards(): Array<{ direction: string; condition: string }> {
-  return [...src.matchAll(/\{#if ([^}]+)\}\s*<button aria-label="Scroll (left|right)"/g)].map((match) => ({
+  return [...src.matchAll(/\{#if ([^}]+)\}\s*<button [^>]*?aria-label="Scroll (left|right)"/g)].map((match) => ({
     direction: match[2],
     condition: match[1],
   }))

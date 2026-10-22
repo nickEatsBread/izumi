@@ -119,6 +119,14 @@ export function mediaDisplayModel(media: Media, extras: Partial<DisplayModel> = 
   }
 }
 
+/** An ISO day ("2026-09-16") in words in the viewer's locale ("16 September 2026"). */
+export function longDayText(iso?: string): string | undefined {
+  const day = iso ? /^(\d{4})-(\d{2})-(\d{2})/.exec(iso) : null
+  if (!day) return undefined
+  return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })
+    .format(new Date(Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3]))))
+}
+
 export function episodeDisplayModel(
   media: Media,
   ep: number,
@@ -139,6 +147,7 @@ export function episodeDisplayModel(
     description: extras.description ?? (strip(meta?.overview) || undefined),
     duration: extras.duration ?? meta?.runtime ?? media.duration ?? undefined,
     airDate: extras.airDate ?? meta?.airDate,
+    airDateLong: extras.airDateLong ?? longDayText(extras.airDate ?? meta?.airDate),
     still: extras.still ?? meta?.image,
     ...extras,
   })

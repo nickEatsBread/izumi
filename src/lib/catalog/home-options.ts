@@ -25,6 +25,7 @@ export const ANILIST_HOME_ROWS: CatalogHomeRowOption[] = [
   { id: 'list', title: 'Your List', description: 'Planned titles from your connected tracker.', group: 'Your anime', defaultEnabled: true },
   { id: 'recommendations', title: 'Recommended for You', description: 'Suggestions ranked locally from your watch history and connected AniList account.', group: 'Your anime', defaultEnabled: true },
   { id: 'season', title: 'Popular This Season', description: 'The most popular anime in the current season.', group: 'Discover', defaultEnabled: true },
+  { id: 'upcoming', title: 'Upcoming Next Season', description: 'The most anticipated anime of the next season.', group: 'Discover', defaultEnabled: false },
   { id: 'trending', title: 'Trending Now', description: 'Anime receiving the most attention right now.', group: 'Discover', defaultEnabled: true },
   { id: 'popular', title: 'All Time Popular', description: 'The most popular anime across AniList.', group: 'Discover', defaultEnabled: true },
   { id: 'newest', title: 'Newest', description: 'Currently airing anime, newest premieres first.', group: 'Discover', defaultEnabled: false },

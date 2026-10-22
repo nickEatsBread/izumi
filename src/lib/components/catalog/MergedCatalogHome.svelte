@@ -2,6 +2,7 @@
   import { untrack } from 'svelte'
   import { goto } from '$app/navigation'
   import Hero from '$lib/components/banner/Hero.svelte'
+  import HeroPlaceholder from '$lib/components/banner/HeroPlaceholder.svelte'
   import MediaListSheet from '$lib/components/detail/MediaListSheet.svelte'
   import CollectionsHome from './CollectionsHome.svelte'
   import ContinueRow from '$lib/components/cards/ContinueRow.svelte'
@@ -29,9 +30,10 @@
   import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
   import { activeThemeLayout } from '$lib/themes/layout-state'
   import { themePresentation } from '$lib/themes/runtime'
-  import { isThemeBlockId, resolveThemeHome } from '$lib/home/theme-layout'
+  import { isThemeBlockId, resolveThemeHome, themeHomeHas } from '$lib/home/theme-layout'
   import { blockRowOptions, blockTitle, splitHomeColumns } from '$lib/home/block-rows'
   import { homeAsideWidth, homeBlocks, isBlockId } from '$lib/home/blocks'
+  import { isContentRow } from '$lib/home/row-source'
   import { isMobile } from '$lib/platform'
   import {
     catalogLabel,
@@ -65,7 +67,8 @@
   // While a theme layout is active, it replaces the row order below (the user's own layout, in
   // `catalogHomeLayouts`, is never written to); its ephemeral `theme:<n>` blocks join `$homeBlocks`
   // for lookups so a theme block renders exactly like a real one.
-  const themeHome = $derived($activeThemeLayout?.home ? resolveThemeHome($activeThemeLayout.home, 'merged', optionIds) : null)
+  // The theme was drawn for AniList's rows: the catalog rows it left out follow its own.
+  const themeHome = $derived($activeThemeLayout?.home ? resolveThemeHome($activeThemeLayout.home, 'merged', optionIds, rows.map((row) => row.id).filter(isContentRow)) : null)
   const allBlocks = $derived(themeHome ? { ...$homeBlocks, ...themeHome.blocks } : $homeBlocks)
   const visibleRowIds = $derived(themeHome?.rows ?? rows.map((row) => row.id))
   // The hero renders full-bleed above HomeColumns only while it truly leads the row order; while
@@ -170,17 +173,13 @@
     {#if hero.length}
       <Hero medias={hero} onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} onlist={(media) => (listMedia = media)} />
     {:else if (optionsLoading || homeLoading) && !$themePresentation?.hero?.hidden}
-      <!-- The variant of the hero that replaces it (this Home keeps the banner box for all three). -->
-      <div data-slot="home.hero" data-state="loading" data-variant={$themePresentation?.hero?.template ? 'template' : $isMobile ? 'phone' : 'desktop'} aria-hidden="true" class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
-        <div class="absolute inset-0 skeloader"></div>
-        <div class="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent"></div>
-      </div>
+      <HeroPlaceholder />
     {/if}
   {/snippet}
 
   <!-- Row order is unknown before the row library loads (`rows` is empty pre-load), so the pre-load
-       skeleton renders unconditionally here rather than waiting on heroFirst. -->
-  {#if optionsLoading || heroFirst}{@render heroBlock()}{/if}
+       skeleton renders here rather than waiting on heroFirst, unless a theme layout opens on something else. -->
+  {#if (optionsLoading && (themeHomeHas($activeThemeLayout?.home, 'hero', true) ?? true)) || heroFirst}{@render heroBlock()}{/if}
 
   <div class="space-y-5">
     <CollectionsHome />
@@ -188,7 +187,7 @@
       {@const row = rows.find((item) => item.id === id) ?? (isThemeBlockId(id) ? { id, title: blockTitle(allBlocks[id]) } : options.find((item) => item.id === id))}
       {@const visibleIds = columns.main.includes(id) ? columns.main : columns.aside}
       {#if row}
-        <HomeRowFrame rowId={row.id} title={editorTitle(row)} target="merged" {visibleIds} locked={!!themeHome}>
+        <HomeRowFrame rowId={row.id} title={editorTitle(row)} target="merged" {visibleIds} locked={!!themeHome} role={themeHome?.roles[row.id]}>
           {#if row.id === 'hero'}
             {@render heroBlock()}
           {:else if row.id === 'continue'}
