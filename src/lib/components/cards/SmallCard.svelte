@@ -8,11 +8,11 @@
 </script>
 
 <script lang="ts">
-  import { getContext } from 'svelte'
+  import { getContext, untrack } from 'svelte'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { themePresentation } from '$lib/themes/runtime'
   import { mediaDisplayModel } from '$lib/themes/host-model'
-  import { artNeeds, queueTitleArt, templateNeeds, type TitleExtra, type TitleExtras } from '$lib/themes/title-extras'
+  import { artNeeds, queueTitleArt, templateNeeds, titleExtrasKey, type TitleExtra, type TitleExtras } from '$lib/themes/title-extras'
   import { nearViewport } from '$lib/util/near-viewport'
   import { seriesCompletion, seriesProgress } from '$lib/themes/series-progress'
   import { ambientFromHex } from '$lib/themes/ambient'
@@ -76,11 +76,17 @@
   let near = $state(false)
   const artGate = { onEnter: () => { near = true }, observeParent: false }
   let cardArt = $state<TitleExtras>({})
+  // Keyed on the title, not the record object: a title delivered again as a new object (Continue
+  // Watching repaints its snapshot, then reconciles) keeps the art on screen instead of reloading it.
+  const artKey = $derived(artWanted.size ? titleExtrasKey(media) : '')
+  let loadedKey = ''
   $effect(() => {
+    const key = artKey
     const wanted = artWanted
-    const target = media
-    cardArt = {}
     if (!near || !wanted.size) return
+    const target = untrack(() => media)
+    if (loadedKey && key !== loadedKey) cardArt = {}
+    loadedKey = key
     let live = true
     void queueTitleArt(target, wanted).then((extras) => { if (live) cardArt = extras }, () => {})
     return () => { live = false }

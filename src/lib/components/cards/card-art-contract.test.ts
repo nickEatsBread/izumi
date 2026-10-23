@@ -12,7 +12,10 @@ describe('card templates load the artwork they bind (API 6)', () => {
       expect(source).toContain("import { nearViewport } from '$lib/util/near-viewport'")
       expect(source).toContain('use:nearViewport={artWanted.size ? artGate : undefined}')
       expect(source).toContain('queueTitleArt(target, wanted)')
-      expect(source).toContain('...cardArt')
+      expect(source).toMatch(/\.\.\.cardArt,?\s*\}/)
+      // Keyed on the title, so the same title delivered as a new object keeps its art in place.
+      expect(source).toContain('titleExtrasKey(media)')
+      expect(source).toContain('untrack(() => media)')
     })
   }
 })
