@@ -80,4 +80,14 @@ describe('nearViewport action', () => {
     expect(onEnter).toHaveBeenCalledTimes(1)
     expect(window.addEventListener).toHaveBeenCalledTimes(2)
   })
+
+  it('skips a node released by an earlier node in the same pass', async () => {
+    const { nearViewport, node, nextFrame } = await setup()
+    const onEnterB = vi.fn()
+    let b: ReturnType<typeof nearViewport>
+    nearViewport(node(100), { onEnter: () => b.destroy() })
+    b = nearViewport(node(100), { onEnter: onEnterB })
+    nextFrame()
+    expect(onEnterB).not.toHaveBeenCalled()
+  })
 })

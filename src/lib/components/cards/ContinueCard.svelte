@@ -24,6 +24,8 @@
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { themePresentation } from '$lib/themes/runtime'
   import { episodeDisplayModel, seriesRatingText, timeLeftLabel } from '$lib/themes/host-model'
+  import { artNeeds, queueTitleArt, templateNeeds, type TitleExtra, type TitleExtras } from '$lib/themes/title-extras'
+  import { nearViewport } from '$lib/util/near-viewport'
   import { ROW_CONTEXT, densityScale, resolveCard, resolveRow, type RowScope } from '$lib/themes/presentation'
 
   let { media, progress }: { media: Media; progress: number } = $props()
@@ -62,6 +64,22 @@
   const themeRow = $derived(rowScope ? resolveRow($themePresentation, rowScope().id) : {})
   const cardWidth = $derived(themeRow.width ?? ($isTv ? 320 : 264) * densityScale($themePresentation))
   const continueTemplate = $derived(resolveCard($themePresentation, 'continue'))
+  // API 6: key art and a title logo, only when the template binds them, loaded once the card nears
+  // the screen through a queue capped at four lookups. Cards without such a template register no
+  // viewport gate at all.
+  const artWanted = $derived<ReadonlySet<TitleExtra>>(continueTemplate ? artNeeds(templateNeeds(continueTemplate)) : new Set())
+  let near = $state(false)
+  const artGate = { onEnter: () => { near = true }, observeParent: false }
+  let cardArt = $state<TitleExtras>({})
+  $effect(() => {
+    const wanted = artWanted
+    const target = media
+    cardArt = {}
+    if (!near || !wanted.size) return
+    let live = true
+    void queueTitleArt(target, wanted).then((extras) => { if (live) cardArt = extras }, () => {})
+    return () => { live = false }
+  })
   // A resume card stands for its title, so `rating` is the series score here (an episode card binds
   // the episode's own), and `episodesWatched` is the count this card resumes from.
   const continueModel = $derived(episodeDisplayModel(media, ep, meta[ep], {
@@ -69,6 +87,7 @@
     timeLeft: timeLeftLabel(savedPosition),
     rating: seriesRatingText(media),
     episodesWatched: progress,
+    ...cardArt,
   }))
 
   let resolving = $state(false)
@@ -94,6 +113,7 @@
 <div
   data-part="card"
   data-family="continue"
+  use:nearViewport={artWanted.size ? artGate : undefined}
   data-focusable
   data-nav-key={`continue:${media.id}`}
   data-caption-title={name}

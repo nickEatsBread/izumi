@@ -68,6 +68,8 @@ function check(): void {
   frame = 0
   const height = viewportHeight()
   for (const entry of [...entries]) {
+    // An earlier onEnter in this pass can switch a sibling's gate off through Svelte effects.
+    if (!entries.has(entry)) continue
     if (!entry.node.isConnected) {
       remove(entry)
       continue
