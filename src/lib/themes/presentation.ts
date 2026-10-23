@@ -399,6 +399,15 @@ export interface PlayerPresentation {
   seekbarColor?: string
   layout?: 'full' | 'docked'
   dock?: PlayerDock
+  /** API 6: rewind and forward buttons beside Play, stepping by the viewer's Seek step setting. */
+  seekButtons?: boolean
+  /** API 6: `default` (izumi's "pos / dur" in the button row), `remaining` (the time left at the seek bar's
+   *  right end), `split` (elapsed left of the bar, total right of it). */
+  time?: 'default' | 'remaining' | 'split'
+  /** API 6: `episode` turns the episode line into "E12" plus the episode's own title when it has one. */
+  title?: 'default' | 'episode'
+  /** API 6: `summary` shows a "You're watching" summary after five seconds paused with no input. */
+  paused?: 'none' | 'summary'
 }
 /** The featured banner on Home. */
 export interface HeroPresentation {
@@ -932,7 +941,7 @@ function parseShell(value: unknown, api: ThemeApi): ShellPresentation {
   return result
 }
 function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
-  const raw = record(value); only(raw, ['seekbarHeight', 'seekbarColor', ...api2(api, ['layout', 'dock'])])
+  const raw = record(value); only(raw, ['seekbarHeight', 'seekbarColor', ...api2(api, ['layout', 'dock']), ...api6(api, ['seekButtons', 'time', 'title', 'paused'])])
   const result: PlayerPresentation = {}
   if (raw.seekbarHeight !== undefined) result.seekbarHeight = number(raw.seekbarHeight, 2, 16)
   if (raw.seekbarColor !== undefined) result.seekbarColor = themeColor(raw.seekbarColor)
@@ -950,6 +959,10 @@ function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
     if (dock.toolbar !== undefined) result.dock.toolbar = uniqueChoices(dock.toolbar, ['server', 'episode', 'release', 'download'], 'dock.toolbar')
     if (dock.hide !== undefined) result.dock.hide = uniqueChoices(dock.hide, ['back', 'title'], 'dock.hide')
   }
+  if (raw.seekButtons !== undefined) result.seekButtons = flag(raw.seekButtons)
+  if (raw.time !== undefined) result.time = choice(raw.time, ['default', 'remaining', 'split'])
+  if (raw.title !== undefined) result.title = choice(raw.title, ['default', 'episode'])
+  if (raw.paused !== undefined) result.paused = choice(raw.paused, ['none', 'summary'])
   return result
 }
 /** A list of distinct values from a fixed set, in the theme's order (`min`, 1 by default, to every value). */
@@ -1299,6 +1312,17 @@ export function resolvePlayerDock(layout?: ThemePresentation): ResolvedPlayerDoc
     toolbar: player?.dock?.toolbar ?? ['server', 'episode', 'release', 'download'],
     hide: player?.dock?.hide ?? [],
   }
+}
+export interface ResolvedPlayerControls {
+  seekButtons: boolean
+  time: NonNullable<PlayerPresentation['time']>
+  title: NonNullable<PlayerPresentation['title']>
+  paused: NonNullable<PlayerPresentation['paused']>
+}
+/** API 6 player control choices with their defaults (izumi's own player). */
+export function resolvePlayerControls(layout?: ThemePresentation): ResolvedPlayerControls {
+  const player = layout?.player
+  return { seekButtons: player?.seekButtons ?? false, time: player?.time ?? 'default', title: player?.title ?? 'default', paused: player?.paused ?? 'none' }
 }
 /** `color` values from a template or chrome block as CSS, optionally at a reduced alpha. */
 export function themeColorCss(value: string | undefined, alpha?: number): string | undefined {
