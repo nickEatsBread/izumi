@@ -53,6 +53,10 @@ updates:
         update-types: [version-update:semver-major]
       - dependency-name: "@tauri-apps/plugin-*"
         update-types: [version-update:semver-major]
+      # Tailwind 4 replaces the PostCSS plugin and the JS config this app is built on, so the
+      # build fails until the stylesheets are migrated. That migration is its own change.
+      - dependency-name: "tailwindcss"
+        update-types: [version-update:semver-major]
 
   # Covers the in-tree plugin crates too: they are path dependencies of this manifest, so
   # their external deps resolve through this same lockfile.
