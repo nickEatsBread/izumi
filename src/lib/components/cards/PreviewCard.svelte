@@ -37,7 +37,8 @@
   let failedLogo = $state(false)
   $effect(() => { void logo; failedLogo = false })
 
-  // YouTube trailers only; WebKitGTK (no `credentialless`) will just show the still.
+  // YouTube trailers only. The iframe stays transparent until the video plays and a failed embed
+  // removes it (YoutubeTrailer's dead state), so the artwork shows whenever the trailer cannot.
   const trailerId = $derived(youtubeTrailerId(media.trailer))
 
   // Favourite is AniList-only. Watchlist saving is device-local and never requires an account.

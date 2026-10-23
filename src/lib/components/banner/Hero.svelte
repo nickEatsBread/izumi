@@ -133,6 +133,8 @@
     // itself, never the skeleton. A slow or broken image keeps the old path: skeleton until the
     // <img> reports load/error.
     if (ready) loadedArtworkId = medias[n].id
+    // A new slide never inherits the trailer hold of the one it replaces.
+    if (n !== i) trailerFor = null
     i = n
     cycle += 1
     scheduleWarm()
@@ -391,10 +393,15 @@
   })
   const current = $derived(medias[Math.min(i, Math.max(0, medias.length - 1))])
   // API 6 `hero.preview` / `detail.preview: "trailer"`. The slide whose trailer is playing holds the
-  // rotation (`arm` above) until the trailer ends.
-  const trailerOn = $derived(showOverlay ? heroTheme?.preview === 'trailer' : seriesTheme?.preview === 'trailer')
+  // rotation (`arm` above) until the trailer ends. A width-scaled series banner gets none: the page's
+  // content layer covers it (AnimeDetail), so its mute button could never be clicked.
+  const trailerOn = $derived(showOverlay ? heroTheme?.preview === 'trailer' : seriesTheme?.preview === 'trailer' && !bannerScale)
   let trailerFor = $state<number | null>(null)
   const trailerHeld = $derived(trailerFor !== null && trailerFor === current?.id)
+  // Slides whose trailer ran to its end during this Home visit: each plays at most once, so an idle
+  // Home ends up rotating artwork only. Plain on purpose: it is read when a slide's trailer mounts,
+  // and the trailer that just ended fades out undisturbed (its own `finished` keeps it from replaying).
+  const played = new Set<number>()
   const currentLogo = $derived(current?.logoImage && !failedLogos.includes(current.logoImage) ? current.logoImage : '')
   function logoFailed(event: Event) {
     const src = (event.currentTarget as HTMLImageElement).src
@@ -640,21 +647,28 @@
   {/if}
 {/snippet}
 
-<!-- The slide's trailer with that slide's own callbacks, so a late report from a leaving slide never
-     touches the next one. On Home the mute button sits top right: the copy layer spans the bottom. izumi's banner reaches up
+<!-- Snippet arguments are getters: `media` is whichever slide is current when it is read, even in a
+     callback from a leaving slide. The keyed each remounts the trailer per slide and hands its callbacks
+     that slide's id as a plain value, so a late report from a leaving slide only ever names that slide.
+     On Home the mute button sits top right: the copy layer spans the bottom. izumi's banner reaches up
      under the top bar by --theme-shell-top, hence twice that; a template's trailer box starts at its own top. -->
 {#snippet slideTrailer(media: Media)}
-  <BackdropTrailer id={youtubeTrailerId(media.trailer)} title={title(media)} enabled={trailerOn} held={showOverlay && scrolled}
-    dwell={showOverlay ? HERO_TRAILER_DWELL : DETAIL_TRAILER_DWELL}
-    part={showOverlay ? 'hero.video' : 'detail.video'} mutePart={showOverlay ? 'hero.mute' : 'detail.mute'}
-    muteClass={!showOverlay ? 'right-8 top-24 z-30' : heroTheme?.template ? 'right-4 top-[calc(var(--theme-shell-top,2rem)+0.75rem)] z-30' : 'right-[4vw] top-[calc(var(--theme-shell-top,2rem)*2+0.75rem)] z-30'}
-    onplaying={() => (trailerFor = media.id)}
-    onended={(natural) => {
-      if (trailerFor === media.id) trailerFor = null
-      if (natural && showOverlay && media.id === current?.id && medias.length > 1 && heroTheme?.rotate !== false) step(1)
-    }} />
+  {#each [media.id] as slide (slide)}
+    <BackdropTrailer id={youtubeTrailerId(media.trailer)} title={title(media)} enabled={trailerOn && !played.has(slide)} held={showOverlay && scrolled}
+      dwell={showOverlay ? HERO_TRAILER_DWELL : DETAIL_TRAILER_DWELL}
+      part={showOverlay ? 'hero.video' : 'detail.video'} mutePart={showOverlay ? 'hero.mute' : 'detail.mute'}
+      muteClass={!showOverlay ? 'right-8 top-24 z-30' : heroTheme?.template ? 'right-4 top-[calc(var(--theme-shell-top,2rem)+0.75rem)] z-30' : 'right-[4vw] top-[calc(var(--theme-shell-top,2rem)*2+0.75rem)] z-30'}
+      onplaying={() => (trailerFor = slide)}
+      onended={(natural) => {
+        if (trailerFor === slide) trailerFor = null
+        // Stopped early, the auto-advance restarts a full interval: bumping `cycle` restarts its marker too.
+        if (!natural && slide === current?.id) cycle += 1
+        if (natural) played.add(slide)
+        if (natural && showOverlay && slide === current?.id && medias.length > 1 && heroTheme?.rotate !== false) step(1)
+      }} />
+  {/each}
 {/snippet}
-{#snippet heroTrailer()}{#key current.id}{@render slideTrailer(current)}{/key}{/snippet}
+{#snippet heroTrailer()}{@render slideTrailer(current)}{/snippet}
 
 {#if current && !heroTheme?.hidden}
   {#if heroTheme?.template}

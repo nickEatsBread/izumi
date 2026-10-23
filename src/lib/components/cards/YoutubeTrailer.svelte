@@ -12,7 +12,7 @@
   import VolumeX from '@lucide/svelte/icons/volume-x'
   import Volume2 from '@lucide/svelte/icons/volume-2'
   import type { Writable } from 'svelte/store'
-  import { trailerMuted as hoverTrailerMuted, openTrailerPopup } from '$lib/stores/trailer'
+  import { hoverTrailers, trailerMuted as hoverTrailerMuted, openTrailerPopup } from '$lib/stores/trailer'
   import {
     youtubeEmbedSource,
     youtubePlayerOrigins,
@@ -81,6 +81,8 @@
   }
   function onKey(e: KeyboardEvent) {
     if (activeKeyboardTrailers[activeKeyboardTrailers.length - 1] !== keyboardOwner) return
+    // A backdrop trailer offers M and T only while its mute button is on screen.
+    if (!loop && !playing) return
     const key = e.key.toLowerCase()
     if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || (key !== 'm' && key !== 't')) return
     // T is specifically a playing-preview affordance; while the iframe is still loading there is
@@ -133,10 +135,14 @@
     }
   }
   onMount(() => {
+    // Only the hover previews loop; while one is mounted the backdrop trailers hold (BackdropTrailer).
+    const hover = loop
+    if (hover) hoverTrailers.update((n) => n + 1)
     activeKeyboardTrailers.push(keyboardOwner)
     window.addEventListener('message', onMessage)
     window.addEventListener('keydown', onKey, true)
     return () => {
+      if (hover) hoverTrailers.update((n) => n - 1)
       window.removeEventListener('message', onMessage)
       window.removeEventListener('keydown', onKey, true)
       const at = activeKeyboardTrailers.indexOf(keyboardOwner)

@@ -24,5 +24,11 @@ export function expandPos(card: CardBox, viewport: Viewport, zoom = 1, railLocal
   const cy = card.top + card.height / 2
   const left = Math.max(Math.max(rail, edge), Math.min(cx - width / 2, viewport.width - width - edge))
   const top = Math.max(edge, Math.min(cy - artHeight / 2, viewport.height - height - edge))
-  return { left: left / z, top: top / z, width: width / z, artHeight: artHeight / z, originX: (cx - left) / z, originY: (cy - top) / z }
+  // scale(s) about origin o puts the art's left edge at left + o(1 - s) and shrinks it to the card's
+  // width. Landing it on the card (cx - width·s/2) with s = 2/3 gives o = 3(cx - left) - width, which is
+  // width/2 when the box is centred; the same holds vertically for the art.
+  return {
+    left: left / z, top: top / z, width: width / z, artHeight: artHeight / z,
+    originX: (3 * (cx - left) - width) / z, originY: (3 * (cy - top) - artHeight) / z,
+  }
 }

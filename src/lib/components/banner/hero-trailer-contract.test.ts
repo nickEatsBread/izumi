@@ -5,6 +5,9 @@ import { describe, expect, it } from 'vitest'
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
 const hero = read('./Hero.svelte')
 const node = read('../themes/ThemeNode.svelte')
+const backdrop = read('../cards/BackdropTrailer.svelte')
+const youtube = read('../cards/YoutubeTrailer.svelte')
+const store = read('../../stores/trailer.ts')
 const between = (src: string, start: string, end: string) => {
   const from = src.indexOf(start)
   return from < 0 ? '' : src.slice(from, src.indexOf(end, from))
@@ -28,7 +31,7 @@ describe('hero trailers (API 6 `hero.preview` / `detail.preview: "trailer"`)', (
   it('passes the trailer to the live template only, keyed by slide', () => {
     expect(hero).toContain('<ThemeNode node={heroTheme.template} model={themeModel} eager titleHeading actions={templateActions} trailer={trailerOn ? heroTrailer : undefined} />')
     expect(hero.match(/<ThemeNode [^>]*trailer=/g)?.length).toBe(1)
-    expect(hero).toContain('{#snippet heroTrailer()}{#key current.id}{@render slideTrailer(current)}{/key}{/snippet}')
+    expect(hero).toContain('{#snippet heroTrailer()}{@render slideTrailer(current)}{/snippet}')
   })
 
   it('plays over the desktop slide art, under the scrims', () => {
@@ -46,24 +49,52 @@ describe('hero trailers (API 6 `hero.preview` / `detail.preview: "trailer"`)', (
     const snippet = between(hero, '{#snippet slideTrailer(media: Media)}', '{/snippet}')
     expect(snippet).toContain('<BackdropTrailer')
     expect(snippet).toContain('id={youtubeTrailerId(media.trailer)}')
-    expect(snippet).toContain('enabled={trailerOn}')
+    expect(snippet).toContain('enabled={trailerOn && !played.has(slide)}')
     expect(snippet).toContain('held={showOverlay && scrolled}')
     expect(snippet).toContain('dwell={showOverlay ? HERO_TRAILER_DWELL : DETAIL_TRAILER_DWELL}')
     expect(snippet).toContain("part={showOverlay ? 'hero.video' : 'detail.video'}")
     expect(snippet).toContain("mutePart={showOverlay ? 'hero.mute' : 'detail.mute'}")
-    expect(hero).toContain("const trailerOn = $derived(showOverlay ? heroTheme?.preview === 'trailer' : seriesTheme?.preview === 'trailer')")
+    // A width-scaled series banner sits under the page content, where its mute button cannot be clicked.
+    expect(hero).toContain("const trailerOn = $derived(showOverlay ? heroTheme?.preview === 'trailer' : seriesTheme?.preview === 'trailer' && !bannerScale)")
   })
 
   it('holds the rotation while a slide plays its trailer and moves on when it ends', () => {
     const snippet = between(hero, '{#snippet slideTrailer(media: Media)}', '{/snippet}')
-    expect(snippet).toContain('onplaying={() => (trailerFor = media.id)}')
-    expect(snippet).toContain('if (trailerFor === media.id) trailerFor = null')
-    expect(snippet).toContain('if (natural && showOverlay && media.id === current?.id && medias.length > 1 && heroTheme?.rotate !== false) step(1)')
+    expect(snippet).toContain('onplaying={() => (trailerFor = slide)}')
+    expect(snippet).toContain('if (trailerFor === slide) trailerFor = null')
+    expect(snippet).toContain('if (natural && showOverlay && slide === current?.id && medias.length > 1 && heroTheme?.rotate !== false) step(1)')
+    // Stopped early: the timer restarts a full interval and `cycle` restarts the marker with it, without stepping.
+    expect(snippet).toContain('if (!natural && slide === current?.id) cycle += 1')
     expect(hero).toContain('const trailerHeld = $derived(trailerFor !== null && trailerFor === current?.id)')
     const arm = between(hero, 'const arm = () => {', '\n    }')
     expect(arm).toContain('!stalled() && !trailerHeld &&')
     // The effect also registers the scroll and hero-nav listeners: no early return on the trailer.
     expect(hero).not.toMatch(/if \(trailerHeld\) return/)
     expect(hero).toContain(":global([data-slot='home.hero']:has([data-part='hero.video'][data-state='playing'])) .hero-progress { animation-play-state: paused; }")
+  })
+
+  it("gives each slide's callbacks that slide's id, never the live getter, and clears the hold on every slide change", () => {
+    // Snippet arguments are getters, so `media.id` in a callback would read the slide current when it runs.
+    const snippet = between(hero, '{#snippet slideTrailer(media: Media)}', '{/snippet}')
+    expect(snippet).toContain('{#each [media.id] as slide (slide)}')
+    expect(snippet.slice(snippet.indexOf('onplaying='))).not.toContain('media.id')
+    const commit = between(hero, 'function commitSlide(n: number, direction: 1 | -1, ready: boolean) {', 'scheduleWarm()')
+    expect(commit).toContain('if (n !== i) trailerFor = null')
+    expect(commit.indexOf('trailerFor = null')).toBeLessThan(commit.indexOf('i = n'))
+  })
+
+  it("plays each slide's trailer at most once per Home visit", () => {
+    expect(hero).toContain('const played = new Set<number>()')
+    expect(between(hero, '{#snippet slideTrailer(media: Media)}', '{/snippet}')).toContain('if (natural) played.add(slide)')
+  })
+
+  it('never plays a backdrop trailer alongside the full dialog or a hover preview', () => {
+    expect(store).toContain('export const hoverTrailers = writable(0)')
+    expect(backdrop).toContain("import { backdropTrailerMuted, hoverTrailers, trailerPopup } from '$lib/stores/trailer'")
+    expect(backdrop).toContain('held: held || $trailerPopup !== null || $hoverTrailers > 0')
+    // Only the looping hover previews count, once each, and release on teardown.
+    expect(youtube).toContain('const hover = loop')
+    expect(youtube).toContain('if (hover) hoverTrailers.update((n) => n + 1)')
+    expect(youtube).toContain('if (hover) hoverTrailers.update((n) => n - 1)')
   })
 })

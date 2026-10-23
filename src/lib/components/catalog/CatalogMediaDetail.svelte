@@ -154,7 +154,7 @@
   <!-- The series page's styling hooks (as on an anime's overlay page), so a theme styles a movie or
        a show from any catalog like its series pages. -->
   <div data-slot="detail" data-layout="overlay" data-variant={$isMobile ? 'phone' : 'desktop'} class="pb-20">
-    <section data-slot="detail.banner" data-art="banner" class="relative min-h-[52vh] overflow-hidden">
+    <section data-slot="detail.banner" data-art="banner" class="relative isolate min-h-[52vh] overflow-hidden">
       <img data-part="detail.backdrop" data-art="banner" src={banner(media)} alt="" class="absolute inset-0 h-full w-full object-cover" />
       <!-- API 6 detail.preview: a muted trailer over the art; the layers after it pass clicks through to its mute button. -->
       <BackdropTrailer id={youtubeTrailerId(media.trailer)} title={title(media)} enabled={trailerOn} dwell={DETAIL_TRAILER_DWELL}

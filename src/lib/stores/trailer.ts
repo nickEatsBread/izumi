@@ -6,6 +6,8 @@ import { writable } from 'svelte/store'
 export const trailerMuted = writable(true)
 // The same for hero and series backdrop trailers, kept apart so neither surface unmutes the other.
 export const backdropTrailerMuted = writable(true)
+/** Hover-preview trailers currently mounted; backdrop trailers hold while any is, so two never play at once. */
+export const hoverTrailers = writable(0)
 
 export interface TrailerPopupState { id: string; title: string }
 /** App-level dialog state. It cannot live inside a hover card: opening a fullscreen overlay causes

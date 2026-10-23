@@ -3,14 +3,15 @@
   // artwork (fading in and out over 500 ms), then the artwork returns. Desktop only; never under reduced
   // motion, data saver, the player or a hidden window. `onended(natural)` fires once for a trailer that
   // started playing: natural = it reached its end. A trailer that has not started 10 s after it mounted
-  // counts as failed. Its mute state is the backdrop one, so hover previews never unmute it.
+  // counts as failed. Its mute state is the backdrop one, so hover previews never unmute it. It holds
+  // while the full trailer dialog or a hover-preview trailer is up, so two videos never play at once.
   import { untrack } from 'svelte'
   import YoutubeTrailer from './YoutubeTrailer.svelte'
   import { backdropTrailerOn } from './backdrop-trailer'
   import { isAndroid, isMobile, isTv } from '$lib/platform'
   import { gameMode, playing as playerUp } from '$lib/player/session'
   import { motionPreference } from '$lib/settings/ui'
-  import { backdropTrailerMuted } from '$lib/stores/trailer'
+  import { backdropTrailerMuted, hoverTrailers, trailerPopup } from '$lib/stores/trailer'
 
   let { id, title = 'Trailer', enabled, dwell, part, mutePart, muteClass = 'bottom-4 right-4 z-30', held = false, onplaying, onended }: {
     id?: string; title?: string; enabled: boolean; dwell: number; part: string; mutePart: string; muteClass?: string; held?: boolean
@@ -23,7 +24,7 @@
     enabled, id, desktop: !$isMobile && !$isAndroid && !$isTv && !$gameMode,
     // The same rule as reducedMotion() in gm-motion.ts, written against the store so it stays reactive.
     reducedMotion: $motionPreference === 'reduce' || ($motionPreference !== 'full' && typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches),
-    saveData, playerUp: $playerUp, pageHidden, held,
+    saveData, playerUp: $playerUp, pageHidden, held: held || $trailerPopup !== null || $hoverTrailers > 0,
   }))
 
   // Template state, only ever written by the code below (no effect reads it).
