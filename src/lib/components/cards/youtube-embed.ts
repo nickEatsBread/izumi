@@ -15,6 +15,11 @@ export const youtubePlayerOrigins = new Set([
   'https://www.youtube.com',
 ])
 
+/** A title's trailer id when it is on YouTube (the only host the embeds handle). */
+export function youtubeTrailerId(trailer: { id?: string; site?: string } | null | undefined): string | undefined {
+  return trailer?.id && (!trailer.site || trailer.site.toLowerCase() === 'youtube') ? trailer.id : undefined
+}
+
 export function youtubeEmbedNeedsBridge(protocol = location.protocol): boolean {
   return protocol !== 'http:' && protocol !== 'https:'
 }
