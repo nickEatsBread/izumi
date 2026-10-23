@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { TAB_LABEL_TEXT } from '$lib/detail/sections'
-import { parsePresentation, resolvePresentation, shellNavFor, themeCoverage } from './presentation'
+import { parseNode, parsePresentation, resolvePresentation, shellNavFor, themeCoverage } from './presentation'
 
 describe('TV block (API 6)', () => {
   it('parses a TV variant with its own navigation, rows, hero, player and preview choice', () => {
@@ -105,5 +105,13 @@ describe('Suggested tab name (API 6)', () => {
     expect(() => parsePresentation({ detail: { sections } }, 5)).toThrow('unsupported')
     expect(() => parsePresentation({ detail: { sections: { labels: { episodes: 'suggested' } } } })).toThrow('unsupported')
     expect(TAB_LABEL_TEXT.suggested).toBe('Suggested')
+  })
+})
+
+describe('newBadge field gate', () => {
+  it('is a field from API 6', () => {
+    const node = { type: 'text', field: 'newBadge', when: { field: 'newBadge' } }
+    expect(parseNode(node)).toEqual(node)
+    expect(() => parseNode(node, undefined, 0, false, 5)).toThrow('unsupported')
   })
 })

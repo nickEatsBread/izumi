@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Media } from '$lib/anilist/types'
-import { creatorsText, durationLongText, episodeDisplayModel, longDayText, mediaDisplayModel, seriesKindText, seriesRatingText, starringText, timeLeftLabel } from './host-model'
+import { creatorsText, durationLongText, episodeDisplayModel, longDayText, mediaDisplayModel, newBadgeText, seriesKindText, seriesRatingText, starringText, timeLeftLabel } from './host-model'
 import { displayText } from './presentation'
 
 const media = {
@@ -256,5 +256,44 @@ describe('the kind of title (API 4 `kind`)', () => {
     expect(mediaDisplayModel(media).kind).toBe('Series')
     expect(mediaDisplayModel({ ...media, format: 'MOVIE' }).kind).toBe('Movie')
     expect(mediaDisplayModel({ ...media, format: undefined }).kind).toBeUndefined()
+  })
+})
+
+describe('newBadge (API 6)', () => {
+  const now = Date.UTC(2026, 9, 23, 12)
+  const day = 86_400
+  const at = (days: number) => Math.floor(now / 1000) + days * day
+  const started = (daysAgo: number) => {
+    const d = new Date(now - daysAgo * day * 1000)
+    return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() }
+  }
+  const base = { id: 7, title: { romaji: 'Kumo', english: 'Kumo' }, format: 'TV', status: 'RELEASING' } as Media
+
+  it('marks a title that started recently by its kind', () => {
+    expect(newBadgeText({ ...base, startDate: started(10) }, now)).toBe('New Series')
+    expect(newBadgeText({ ...base, format: 'MOVIE', status: 'FINISHED', startDate: started(20) }, now)).toBe('New Movie')
+    const sequel = { ...base, relations: { edges: [{ relationType: 'PREQUEL', node: { id: 6, type: 'ANIME' } as Media }] } }
+    expect(newBadgeText({ ...sequel, startDate: started(14) }, now)).toBe('New Season')
+    expect(newBadgeText({ ...base, title: { romaji: 'Kumo Season 2' }, startDate: started(14) } as Media, now)).toBe('New Season')
+    // Past the window a sequel is not a new season any more, and a series not new.
+    expect(newBadgeText({ ...sequel, startDate: started(40), nextAiringEpisode: null }, now)).toBeUndefined()
+    // One-off titles with "Part" or a number are not sequels.
+    expect(newBadgeText({ ...base, title: { romaji: 'Part-Time Job' }, startDate: started(25) } as Media, now)).toBe('New Series')
+    expect(newBadgeText({ ...base, title: { romaji: 'Kaiju No. 8' }, startDate: started(25) } as Media, now)).toBe('New Series')
+  })
+
+  it('marks a running series whose weekly episode aired in the last week', () => {
+    const running = { ...base, startDate: started(60) }
+    expect(newBadgeText({ ...running, nextAiringEpisode: { episode: 9, airingAt: at(2), timeUntilAiring: 2 * day } }, now)).toBe('New Episode')
+    // Due now (the countdown ran out): the episode just aired.
+    expect(newBadgeText({ ...running, nextAiringEpisode: { episode: 9, airingAt: at(-0.1), timeUntilAiring: 0 } }, now)).toBe('New Episode')
+    // A break longer than a week, or episode 1 still to come, is no new episode.
+    expect(newBadgeText({ ...running, nextAiringEpisode: { episode: 9, airingAt: at(12), timeUntilAiring: 12 * day } }, now)).toBeUndefined()
+    expect(newBadgeText({ ...base, status: 'NOT_YET_RELEASED', startDate: started(-5), nextAiringEpisode: { episode: 1, airingAt: at(5), timeUntilAiring: 5 * day } }, now)).toBeUndefined()
+  })
+
+  it('binds it on the display model', () => {
+    expect(mediaDisplayModel({ ...media, startDate: started(3) } as Media, {}, 0, now).newBadge).toBe('New Series')
+    expect(mediaDisplayModel(media, {}, 0, now).newBadge).toBeUndefined()
   })
 })
