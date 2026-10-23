@@ -120,6 +120,15 @@ describe('listing screenshots', () => {
   })
 })
 
+describe('listing accent colour', () => {
+  const entry = { ...samplePackage, download: 'https://example.test/theme.json', sha256: 'a'.repeat(64), bytes: 500, tags: [] }
+  it('keeps a valid HSL accent and rejects anything else', () => {
+    expect(parseRelease({ ...entry, accent: '249 100% 83%' }).accent).toBe('249 100% 83%')
+    expect(parseRelease(entry).accent).toBeUndefined()
+    expect(() => parseRelease({ ...entry, accent: 'url(https://example.test)' })).toThrow('accent')
+  })
+})
+
 describe('screenshot platform for a device', () => {
   const entry = { ...samplePackage, download: 'https://example.test/theme.json', sha256: 'a'.repeat(64), bytes: 500, tags: [] }
   const shot = (screen: string, platform: string) => ({ screen, platform, url: `https://example.test/${platform}-${screen}.jpg` })

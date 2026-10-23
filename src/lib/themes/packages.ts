@@ -29,6 +29,8 @@ export interface ThemeRelease {
   platforms?: ThemePlatform[]
   /** Store screenshots, one per platform and screen. */
   screenshots?: ThemeScreenshot[]
+  /** The theme's accent colour as an HSL token, for store artwork. */
+  accent?: string
   download: string; sha256: string; bytes: number
 }
 /** A short label for where a listing was designed to live. */
@@ -148,10 +150,12 @@ export function parseRelease(value: unknown): ThemeRelease {
   if (!Array.isArray(raw.tags) || raw.tags.length > 12) throw new Error('Invalid theme tags.')
   const targets = platforms(raw.platforms)
   const shots = screenshots(raw.screenshots)
+  if (raw.accent !== undefined && !validHslToken(raw.accent)) throw new Error('Invalid theme accent.')
   return { id: identity(raw.id), name: text(raw.name, 48), version: version(raw.version), author: text(raw.author, 80),
     description: text(raw.description, 600), themeApi: Number(raw.themeApi), tags: raw.tags.map(tag => text(tag, 32)),
     ...(targets ? { platforms: targets } : {}),
     ...(shots?.length ? { screenshots: shots } : {}),
+    ...(raw.accent !== undefined ? { accent: raw.accent as string } : {}),
     download: themeUrl(raw.download), sha256: raw.sha256.toLowerCase(), bytes,
     ...(raw.preview ? { preview: themeUrl(raw.preview) } : {}), ...(raw.project ? { project: themeUrl(raw.project) } : {}) }
 }

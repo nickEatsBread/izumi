@@ -6,7 +6,7 @@
   import { shelvesFor } from '$lib/themes/store-shelves'
   import type { ThemeListing } from '$lib/store/themes'
 
-  let { listings, filtered, official, installed, note, onopen }: {
+  let { listings, filtered, official, installed, note, onopen, onpreview, previewLocked }: {
     listings: ThemeListing[]
     /** A search is on: one results grid instead of the storefront. */
     filtered: boolean
@@ -14,6 +14,8 @@
     installed: (listing: ThemeListing) => boolean
     note: (listing: ThemeListing) => string
     onopen: (listing: ThemeListing) => void
+    onpreview: (listing: ThemeListing, from: HTMLImageElement | null) => Promise<void>
+    previewLocked: boolean
   } = $props()
   const featured = $derived(listings.filter((item) => item.release.screenshots?.length && !note(item)).slice(0, 6))
   const shelves = $derived(shelvesFor(listings, official))
@@ -28,7 +30,7 @@
 {#if filtered}
   <div data-nav-row data-nav-row-wrap><div class="grid" data-nav-row-items>{#each listings as listing (`${listing.origin}|${listing.release.id}`)}{@render card(listing)}{/each}</div></div>
 {:else}
-  <ThemeFeatured listings={featured} {onopen} />
+  <ThemeFeatured listings={featured} {onopen} {onpreview} {previewLocked} />
   {#each shelves as shelf (shelf.id)}
     <!-- Big cards, two to a row: each screenshot is wide enough to actually read. -->
     <section class="shelf" data-nav-row data-nav-row-wrap aria-labelledby={`theme-shelf-${shelf.id}`}>

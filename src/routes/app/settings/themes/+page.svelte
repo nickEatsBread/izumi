@@ -190,6 +190,16 @@
     const target = prepared
     await stepIntoPreview(from, () => previewTheme(target), screenRoute(screen, newestSeriesId(get(cwSnapshot))))
   }
+  // Preview straight from the store's spotlight, with the same origin guard as the theme page.
+  async function previewListing(listing: ThemeListing, from: HTMLImageElement | null) {
+    if ($themeStudioOpen) return
+    error = ''
+    try {
+      const target = await prepareRelease(listing.release, listing.origin)
+      if ($installedThemes.some(item => item.id === target.package.id && item.origin !== target.origin)) throw new Error('A theme with this ID is already installed from a different source. Remove it there before previewing this one.')
+      await stepIntoPreview(from, () => previewTheme(target), screenRoute('home', null))
+    } catch (cause) { error = failure(cause) }
+  }
   async function update(item: InstalledTheme) {
     busy = true; error = ''; notice = ''
     try {
@@ -280,7 +290,7 @@
     {#if cached}<p class="message">Showing the saved catalog. <button type="button" class="text-close inline" data-focusable disabled={loading} onclick={() => refresh(true)}>Refresh</button> when you’re back online.</p>{/if}
     {#if loading && !entries.length}<div class="skeletons" aria-label="Loading themes" aria-busy="true">{#each [1, 2, 3] as item (item)}<div class="skeleton" aria-hidden="true"></div>{/each}</div>
     {:else if !filtered.length}<div class="empty"><Palette size={36} /><h3>{entries.length ? 'No matching themes' : 'Your next look starts here'}</h3><p>{entries.length ? 'Try another name or style.' : 'Refresh the catalog, or add a theme from a link, file or folder.'}</p></div>
-    {:else}<ThemeBrowse listings={filteredListings} filtered={!!query.trim()} official={THEME_CATALOG_URL} installed={(listing) => isInstalled(listing.release)} note={listingNote} onopen={open} />{/if}
+    {:else}<ThemeBrowse listings={filteredListings} filtered={!!query.trim()} official={THEME_CATALOG_URL} installed={(listing) => isInstalled(listing.release)} note={listingNote} onopen={open} onpreview={previewListing} previewLocked={$themeStudioOpen} />{/if}
   {:else}
     <div class="default-theme"><div><strong>Izumi default</strong><p>The original appearance is always available.</p></div><button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => { $themePreset = 'izumi'; notice = 'Default appearance restored.' }}>Use default</button></div>
     {#each $installedThemes as item (item.id)}{@const thumb = thumbOf(item)}<article class="installed-theme"><div class="installed-thumb">{#if thumb}<img src={thumb} alt="" loading="lazy" referrerpolicy="no-referrer" />{:else}<Palette size={22} />{/if}</div><div><h3>{item.package.name}</h3><p>By {item.package.author} · {item.package.version}{#if $themePreset === 'custom' && $activeStudioThemeId === item.designId} · Applied{/if}</p><p class="summary">{item.package.description}</p></div><div class="installed-actions"><button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => apply(item)}>Apply</button>{#if $allStores.some((store) => store.url === item.origin) || item.updateUrl}<button class="control" data-focusable disabled={busy || $themeStudioOpen} onclick={() => update(item)}>Check update</button>{/if}{#if item.previous}<button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => restore(item)}>Restore previous</button>{/if}<button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => remove(item)}>Remove</button></div></article>{/each}

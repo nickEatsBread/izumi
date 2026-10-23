@@ -1,93 +1,94 @@
 <script lang="ts">
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
-  import ThemeShots from './ThemeShots.svelte'
-  import { reducedMotion } from '$lib/motion/gm-motion'
-  import { platformFor, shotsFor } from '$lib/themes/packages'
-  import { isMobile } from '$lib/platform'
+  import { motion } from '$lib/motion/gm-motion'
+  import type { ThemeRelease, ThemePlatform } from '$lib/themes/packages'
   import type { ThemeListing } from '$lib/store/themes'
 
-  let { listings, onopen }: { listings: ThemeListing[]; onopen: (listing: ThemeListing) => void } = $props()
-  let track = $state<HTMLElement>()
+  let { listings, onopen, onpreview, previewLocked = false }: {
+    listings: ThemeListing[]
+    onopen: (listing: ThemeListing) => void
+    /** Prepares the theme and steps into its preview from the given screenshot. */
+    onpreview: (listing: ThemeListing, from: HTMLImageElement | null) => Promise<void>
+    /** A Theme Studio draft is open: nothing may be previewed. */
+    previewLocked?: boolean
+  } = $props()
   let at = $state(0)
-  // Moves only when asked (arrows, a swipe, a scroll or controller focus): carousels that advance on
-  // their own get ignored and annoy. The next slide peeks in, so it reads as a carousel.
-  function go(i: number) {
-    if (!track) return
-    at = Math.max(0, Math.min(listings.length - 1, i))
-    const slide = track.children[at] as HTMLElement | undefined
-    if (slide) track.scrollTo({ left: slide.offsetLeft, behavior: reducedMotion() ? 'auto' : 'smooth' })
-  }
-  // After a swipe or scroll, the slide nearest the left edge is the current one.
-  function sync() {
-    if (!track) return
-    let best = 0, distance = Infinity
-    for (const [i, slide] of [...track.children].entries()) {
-      const d = Math.abs((slide as HTMLElement).offsetLeft - track.scrollLeft)
-      if (d < distance) { distance = d; best = i }
-    }
-    at = best
+  let opening = $state(false)
+  let windowImage = $state<HTMLImageElement>()
+  const listing = $derived(listings.length ? listings[at % listings.length] : undefined)
+  // Marketing-style art, not a raw screenshot: the theme's Home in a desktop window with its phone
+  // Home in front, on a backdrop tinted with the theme's own accent colour.
+  const home = (release: ThemeRelease, platform: ThemePlatform) => release.screenshots?.find((shot) => shot.platform === platform && shot.screen === 'home')?.url
+  const desktopUrl = $derived(listing ? home(listing.release, 'desktop') ?? (listing.release.screenshots?.length ? undefined : listing.release.preview) : undefined)
+  const phoneUrl = $derived(listing ? home(listing.release, 'phone') : undefined)
+  // Moves only when asked: carousels that advance on their own get ignored and annoy.
+  function step(by: number) { at = (at + by + listings.length) % listings.length }
+  async function preview() {
+    if (!listing || opening) return
+    opening = true
+    try { await onpreview(listing, windowImage ?? null) } finally { opening = false }
   }
 </script>
 
-{#if listings.length}
-  <section class="featured" aria-labelledby="theme-featured-title">
-    <div class="head">
-      <h3 id="theme-featured-title">Featured</h3>
-      {#if listings.length > 1}
-        <div class="arrows">
-          <button type="button" data-focusable aria-label="Previous featured theme" disabled={at === 0} onclick={() => go(at - 1)}><ChevronLeft size={18} /></button>
-          <button type="button" data-focusable aria-label="Next featured theme" disabled={at === listings.length - 1} onclick={() => go(at + 1)}><ChevronRight size={18} /></button>
-        </div>
-      {/if}
-    </div>
-    <div class="track" bind:this={track} onscroll={sync} data-nav-row data-nav-row-items data-nav-scroll-x>
-      {#each listings as listing, i (`${listing.origin}|${listing.release.id}`)}
-        {@const platform = platformFor(listing.release, $isMobile ? 'phone' : 'desktop')}
-        <article class="slide" aria-label={`${listing.release.name}, ${i + 1} of ${listings.length}`}>
-          <!-- The screenshot is never covered: the name and actions sit beside it. -->
-          <button type="button" class="stage" data-focusable data-theme-key={`${listing.origin}|${listing.release.id}`} aria-label={`View ${listing.release.name}`} onclick={() => onopen(listing)} onfocus={() => go(i)}>
-            <ThemeShots shots={shotsFor(listing.release, platform)} name={listing.release.name} chrome={false} phone={platform === 'phone'} strip={platform === 'phone'} />
-          </button>
-          <div class="info">
-            <strong class="name">{listing.release.name}</strong>
-            <p class="description">{listing.release.description}</p>
-            <button type="button" class="view" data-focusable onclick={() => onopen(listing)} onfocus={() => go(i)}>View theme</button>
+{#if listing}
+  <section class="spotlight" aria-roledescription="carousel" aria-label="Featured themes" data-nav-row>
+    {#key `${listing.origin}|${listing.release.id}`}
+      <div class="slide" class:tinted={!!listing.release.accent} style:--spot={listing.release.accent} aria-label={`${listing.release.name}, ${at + 1} of ${listings.length}`} in:motion={{ opacity: [0, 1], duration: 400 }}>
+        <div class="copy">
+          <h3 class="name">{listing.release.name}</h3>
+          <p class="description">{listing.release.description}</p>
+          <div class="actions">
+            <button type="button" class="view" data-focusable data-theme-key={`${listing.origin}|${listing.release.id}`} onclick={() => onopen(listing)}>View theme</button>
+            <button type="button" class="ghost" data-focusable disabled={previewLocked || opening} onclick={preview}>{opening ? 'Opening…' : 'Preview'}</button>
           </div>
-        </article>
-      {/each}
-    </div>
-    {#if listings.length > 1}<span class="pips" aria-hidden="true">{#each listings as item, i (`${item.origin}|${item.release.id}`)}<i class:on={i === at}></i>{/each}</span>{/if}
+        </div>
+        <button type="button" class="stage" tabindex="-1" aria-label={`View ${listing.release.name}`} onclick={() => onopen(listing)}>
+          {#if desktopUrl}<span class="window"><img bind:this={windowImage} src={desktopUrl} alt="" referrerpolicy="no-referrer" /></span>{/if}
+          {#if phoneUrl}<span class="phone" class:alone={!desktopUrl}><img src={phoneUrl} alt="" referrerpolicy="no-referrer" /></span>{/if}
+        </button>
+      </div>
+    {/key}
+    {#if listings.length > 1}
+      <div class="pager">
+        <button type="button" data-focusable aria-label="Previous featured theme" onclick={() => step(-1)}><ChevronLeft size={16} /></button>
+        <span>{at + 1} / {listings.length}</span>
+        <button type="button" data-focusable aria-label="Next featured theme" onclick={() => step(1)}><ChevronRight size={16} /></button>
+      </div>
+    {/if}
   </section>
 {/if}
 
 <style>
-  .head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 12px; }
-  h3 { font-size: 20px; font-weight: 900; letter-spacing: -.02em; }
-  .arrows { display: flex; gap: 6px; }
-  .arrows button { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 999px; background: hsl(var(--foreground) / .07); }
-  .arrows button:hover:not(:disabled) { background: hsl(var(--foreground) / .14); }
-  .arrows button:disabled { opacity: .35; }
-  .track { position: relative; display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
-  .track::-webkit-scrollbar { display: none; }
-  /* About 40% of a window tall: the screenshot takes 62% of the slide, the details the rest. */
-  .slide { flex: 0 0 82%; scroll-snap-align: start; display: grid; grid-template-columns: minmax(0, 62fr) minmax(0, 38fr); gap: 20px; padding: 12px; border-radius: 18px; background: hsl(var(--foreground) / .05); }
-  .stage { display: block; align-self: start; overflow: hidden; border-radius: 12px; box-shadow: 0 0 0 2px transparent; }
-  .stage :global([data-theme-shots]) { border-radius: 12px; background: transparent; }
-  .stage :global([data-theme-shots] > img) { object-position: top; }
-  .stage:hover { box-shadow: 0 0 0 2px hsl(var(--foreground) / .55); filter: brightness(1.05); }
-  .info { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 6px 4px 4px 0; }
-  .name { font-size: 26px; font-weight: 900; letter-spacing: -.03em; line-height: 1.1; }
-  .description { font-size: 13px; line-height: 1.6; color: hsl(var(--muted-foreground)); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
-  .view { align-self: flex-start; margin-top: auto; padding: 10px 20px; border-radius: 999px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font-size: 13px; font-weight: 800; }
-  .view:hover { filter: brightness(1.08); }
-  .pips { display: flex; justify-content: center; gap: 5px; margin-top: 12px; }
-  .pips i { width: 6px; height: 6px; border-radius: 999px; background: hsl(var(--foreground) / .22); }
-  .pips i.on { width: 18px; background: hsl(var(--foreground) / .8); }
-  /* Narrow pages: the details stack under the screenshot. */
+  .spotlight { position: relative; overflow: hidden; border-radius: 22px; background: hsl(var(--foreground) / .05); }
+  .slide { display: grid; grid-template-columns: minmax(0, 40fr) minmax(0, 60fr); aspect-ratio: 2.8 / 1; min-height: 280px; }
+  /* The theme's accent (a validated HSL token) glowing from behind the devices. */
+  .slide.tinted { background: radial-gradient(120% 140% at 85% 30%, hsl(var(--spot) / .5), hsl(var(--spot) / .12) 45%, transparent 75%); }
+  .copy { display: flex; flex-direction: column; justify-content: center; gap: 12px; min-width: 0; padding: 0 24px 56px 36px; }
+  .name { font-size: clamp(28px, 3.6vw, 42px); font-weight: 900; letter-spacing: -.035em; line-height: 1.05; }
+  .description { font-size: 14px; line-height: 1.6; color: hsl(var(--foreground) / .78); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .view, .ghost { padding: 10px 20px; border-radius: 999px; font-size: 13px; font-weight: 800; }
+  .view { background: hsl(var(--foreground)); color: hsl(var(--background)); }
+  .ghost { background: hsl(var(--foreground) / .12); }
+  .view:hover, .ghost:hover:not(:disabled) { filter: brightness(1.12); }
+  .ghost:disabled { opacity: .5; cursor: not-allowed; }
+  .stage { position: relative; display: block; overflow: hidden; }
+  .window { position: absolute; left: 4%; top: 13%; width: 86%; overflow: hidden; border-radius: 10px; border: 1px solid hsl(0 0% 100% / .12); box-shadow: 0 24px 60px hsl(0 0% 0% / .55); }
+  .phone { position: absolute; right: 3%; bottom: -6%; width: 20%; overflow: hidden; border-radius: 14px; border: 3px solid #0b0b0d; box-shadow: 0 24px 60px hsl(0 0% 0% / .65); }
+  .phone.alone { right: auto; left: 34%; width: 32%; bottom: -12%; }
+  .window img, .phone img { display: block; width: 100%; }
+  .stage:hover .window { box-shadow: 0 24px 60px hsl(0 0% 0% / .55), 0 0 0 2px hsl(var(--foreground) / .6); }
+  .pager { position: absolute; left: 36px; bottom: 18px; display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 800; color: hsl(var(--foreground) / .7); }
+  .pager button { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 999px; background: hsl(var(--foreground) / .1); color: hsl(var(--foreground)); }
+  .pager button:hover { background: hsl(var(--foreground) / .18); }
+  /* Narrow pages: the devices on top, the details underneath. */
   @container (max-width: 640px) {
-    .slide { flex-basis: 88%; grid-template-columns: 1fr; gap: 12px; }
-    .info { padding: 0 4px 4px; }
-    .description { -webkit-line-clamp: 2; line-clamp: 2; }
+    .slide { grid-template-columns: 1fr; aspect-ratio: auto; min-height: 0; }
+    .stage { order: -1; height: 220px; }
+    .window { left: 6%; top: 10%; width: 78%; }
+    .phone { width: 24%; }
+    .copy { padding: 18px 20px 64px; }
+    .pager { left: 20px; }
   }
 </style>

@@ -16,7 +16,7 @@ describe('theme store shelves', () => {
       listing('custom', ['Site'], 'https://mine.test/store.json', 'My store'),
     ], OFFICIAL)
     expect(shelves.map((shelf) => [shelf.title, shelf.listings.map((item) => item.release.id)])).toEqual([
-      ['Look like the sites you know', ['site', 'both']],
+      ['Familiar layouts', ['site', 'both']],
       ['Made for phones', ['phone', 'app']],
       ['Classic themes', ['classic']],
       ['My store', ['custom']],

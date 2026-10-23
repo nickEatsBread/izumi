@@ -5,7 +5,7 @@ export interface ThemeShelf { id: string; title: string; listings: ThemeListing[
 /** Storefront shelves: the official catalog grouped by tag (first match wins), then one shelf per
  *  other store. Empty shelves are left out. */
 export function shelvesFor(listings: readonly ThemeListing[], official: string): ThemeShelf[] {
-  const sites: ThemeShelf = { id: 'sites', title: 'Look like the sites you know', listings: [] }
+  const sites: ThemeShelf = { id: 'sites', title: 'Familiar layouts', listings: [] }
   const phones: ThemeShelf = { id: 'phones', title: 'Made for phones', listings: [] }
   const classic: ThemeShelf = { id: 'classic', title: 'Classic themes', listings: [] }
   const stores = new Map<string, ThemeShelf>()
