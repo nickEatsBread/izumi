@@ -72,6 +72,7 @@ describe('player styling hooks', () => {
       'data-part="player.episode.number"',
       'data-part="player.episode.name"',
       'loadEpisodeMeta(',
+      'data-season={episodeMeta?.season || undefined} data-season-episode={episodeMeta?.season ? episodeMeta.seasonEpisode ?? np.episode : undefined}',
     ]) expect(controls).toContain(needle)
   })
 

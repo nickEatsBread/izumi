@@ -2396,7 +2396,7 @@
         <div data-part="player.heading" class="min-w-0 flex-1">
           <div data-part="player.title" class="truncate text-base font-bold">{np.animeTitle ?? np.title}</div>
           {#if np.episode != null}
-            <div data-part="player.episode" data-episode={np.episode} data-season={episodeMeta?.season} class="truncate text-[11px] text-white/70">
+            <div data-part="player.episode" data-episode={np.episode} data-season={episodeMeta?.season || undefined} data-season-episode={episodeMeta?.season ? episodeMeta.seasonEpisode ?? np.episode : undefined} class="truncate text-[11px] text-white/70">
               {#if playerControls.title === 'episode'}
                 <span data-part="player.episode.number">E{np.episode}</span>{#if episodeTitle}{' '}<span data-part="player.episode.name">{episodeTitle}</span>{/if}
               {:else}

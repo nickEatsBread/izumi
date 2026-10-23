@@ -33,6 +33,7 @@ describe('Android and TV player styling hooks', () => {
       expect(player).toContain(`data-part="player.${part}"`)
     }
     expect(player).toContain('data-part="player.episode" data-episode={np.episode}')
+    expect(player).toContain('data-season={episodeMeta?.season || undefined} data-season-episode={episodeMeta?.season ? episodeMeta.seasonEpisode ?? np.episode : undefined}')
     expect(player).toContain('data-part="player.time" data-variant="default"')
     expect(player).toContain('data-part="player.skip" data-kind={currentSeg.type}')
   })

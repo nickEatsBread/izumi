@@ -25,13 +25,14 @@
 
 <!-- "You're watching": shown over a paused video after five seconds without input (API 6 `player.paused`).
      Any input hides it. -->
-<div data-part="player.summary" data-episode={episode} data-season={meta?.season}
+<div data-part="player.summary" data-episode={episode} data-season={meta?.season || undefined}
+     data-season-episode={meta?.season ? meta.seasonEpisode ?? episode : undefined}
      in:fade={{ duration: 250 }}
      class="izumi-hud pointer-events-none absolute inset-0 z-30 flex flex-col justify-center bg-black/50 px-[12%] text-white">
   <div data-part="player.summary.kicker" class="text-lg text-white/80">You're watching</div>
   <div data-part="player.summary.title" class="mt-1 text-5xl font-bold">{title}</div>
   {#if (meta?.season ?? 0) > 0}<div data-part="player.summary.season" class="mt-3 text-2xl font-semibold">Season {meta?.season}</div>{/if}
-  {#if episode != null}<div data-part="player.summary.episode" class="mt-2 text-2xl font-semibold">{#if name}{name}: {/if}Ep. {episode}</div>{/if}
+  {#if episode != null}<div data-part="player.summary.episode" class="mt-2 text-2xl font-semibold">{#if name}{`${name}: `}{/if}Ep. {episode}</div>{/if}
   {#if synopsis}<p data-part="player.summary.synopsis" class="mt-4 line-clamp-4 max-w-3xl text-lg text-white/80">{synopsis}</p>{/if}
   <div data-part="player.summary.state" class="absolute bottom-[12%] right-[12%] text-lg text-white/80">Paused</div>
 </div>

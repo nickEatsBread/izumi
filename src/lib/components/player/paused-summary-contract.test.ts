@@ -13,6 +13,14 @@ describe('paused summary (theme API 6 `player.paused: "summary"`)', () => {
     expect(summary).toContain('loadEpisodeMeta(')
   })
 
+  it('carries the season numbers and keeps the space after the episode name', () => {
+    const summary = read('./PausedSummary.svelte')
+    expect(summary).toContain('data-season={meta?.season || undefined}')
+    expect(summary).toContain('data-season-episode={meta?.season ? meta.seasonEpisode ?? episode : undefined}')
+    // Svelte trims whitespace at a block edge: `{#if name}{name}: {/if}` rendered "Name:Ep. 3".
+    expect(summary).toContain('{#if name}{`${name}: `}{/if}Ep. {episode}')
+  })
+
   it('shows after five idle seconds paused and lets any input restart the wait', () => {
     const overlay = read('./PlayerOverlay.svelte')
     for (const needle of [

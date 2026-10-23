@@ -852,7 +852,7 @@
     <div data-part="player.heading" class="min-w-0 pt-0.5 [text-shadow:0_1px_4px_rgba(0,0,0,.7)]">
       <div data-part="player.title" data-gm-title class="line-clamp-1 text-white {big ? 'text-3xl font-black leading-tight drop-shadow' : 'text-lg font-semibold'}">{np.animeTitle}</div>
       {#if np.episode != null}
-        <div data-part="player.episode" data-episode={np.episode} data-season={episodeMeta?.season} data-gm-episode class="line-clamp-1 {big ? 'text-lg font-semibold leading-snug text-white/75' : 'text-sm font-normal text-white/60'}">
+        <div data-part="player.episode" data-episode={np.episode} data-season={episodeMeta?.season || undefined} data-season-episode={episodeMeta?.season ? episodeMeta.seasonEpisode ?? np.episode : undefined} data-gm-episode class="line-clamp-1 {big ? 'text-lg font-semibold leading-snug text-white/75' : 'text-sm font-normal text-white/60'}">
           {#if controls.title === 'episode'}
             <span data-part="player.episode.number">E{np.episode}</span>{#if episodeTitle}{' '}<span data-part="player.episode.name">{episodeTitle}</span>{/if}
           {:else}
