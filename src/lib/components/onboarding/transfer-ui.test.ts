@@ -36,17 +36,17 @@ describe('set up from another device', () => {
     expect(shell).not.toMatch(/StepId\s*=\s*[^\n]*'transfer'/)
   })
 
-  it('offers the alternative beside Next, and only on the screen it can still replace', () => {
-    // In the footer rather than inside the step: it is the other way forward, not a setting on
-    // the screen. Past the first screen it would throw away answers already given.
+  it('offers the transfer as a way to start, not as a footer button mid-wizard', () => {
+    const start = read('./steps/StartStep.svelte')
+    expect(start).toContain('action: ontransfer')
+    expect(shell).toContain('ontransfer={enterTransfer}')
+    expect(shell).not.toContain('m.onboarding_transfer_cta()')
     expect(watch).not.toContain('onboarding_transfer_cta')
-    // The transfer branch has a footer of its own earlier in the file; this is the wizard's.
-    const footer = shell.slice(shell.lastIndexOf('<footer class="setup-actions'))
-    const cta = footer.indexOf('m.onboarding_transfer_cta()')
-    expect(cta).toBeGreaterThan(-1)
-    expect(cta).toBeLessThan(footer.indexOf('m.onboarding_next()'))
-    expect(footer.slice(0, cta)).toContain("{#if step === 'watch'}")
-    expect(footer).toContain('onclick={enterTransfer}')
+  })
+
+  it('returns to the start screen when the wizard is chosen over a transfer', () => {
+    const body = shell.slice(shell.indexOf('function leaveTransfer'))
+    expect(body.slice(0, body.indexOf('\n  }'))).toContain("step = 'start'")
   })
 
   it('treats a finished transfer as a finished setup', () => {

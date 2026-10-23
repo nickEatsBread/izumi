@@ -13,7 +13,7 @@ const exitPrompt = read('../shell/ExitPrompt.svelte')
 // heading styling it used to scope to itself had to move to the global sheet to keep reaching them.
 const css = read('../../../app.css')
 const steps = Object.fromEntries(
-  ['WatchStep', 'MetadataStep', 'AccessStep', 'StartupStep', 'ConnectStep', 'SyncStep', 'SourcesStep', 'PlaybackStep', 'ReadyStep']
+  ['StartStep', 'WatchStep', 'ConnectStep', 'SourcesStep', 'ReadyStep']
     .map(name => [name, read(`./steps/${name}.svelte`)]),
 ) as Record<string, string>
 const watch = steps.WatchStep
@@ -31,7 +31,7 @@ describe('onboarding presentation contracts', () => {
   })
 
   it('routes by named step rather than by index, so the order can change safely', () => {
-    for (const step of ['watch', 'metadata', 'access', 'startup', 'connect', 'sync', 'sources', 'playback']) {
+    for (const step of ['start', 'watch', 'connect', 'sources']) {
       expect(shell).toContain(`step === '${step}'`)
     }
     expect(shell).not.toMatch(/step === \d/)
@@ -69,16 +69,13 @@ describe('onboarding presentation contracts', () => {
     expect(css).toContain('@media (prefers-reduced-motion: reduce) { .tile-spinner { animation: none; } }')
   })
 
-  it('gives each film decision its own screen instead of nesting them under the checkboxes', () => {
-    // An earlier draft folded the provider choice, the TMDB key and the startup picker into the
-    // watch screen. One decision per screen is the contract; the watch screen owns only the
-    // checkboxes, and the key screen exists separately so it can follow the provider choice.
-    expect(watch).not.toContain('m.onboarding_metadata_title()')
-    expect(watch).not.toContain('m.onboarding_startup_title()')
+  it('never asks for film metadata, an API key or a startup library during setup', () => {
     expect(watch).not.toContain('tmdbToken')
-    expect(steps.MetadataStep).toContain('m.onboarding_metadata_title()')
-    expect(steps.AccessStep).toContain('m.onboarding_tmdb_access_title()')
-    expect(steps.StartupStep).toContain('m.onboarding_startup_title()')
+    for (const gone of ['MetadataStep', 'AccessStep', 'StartupStep', 'PlaybackStep', 'SyncStep']) {
+      expect(shell).not.toContain(gone)
+    }
+    expect(shell).not.toContain('tmdbReadToken.set(')
+    expect(shell).toContain('onboardingMovieMetadata(')
   })
 
   it('offers two independent library checkboxes instead of a third combined mode', () => {
@@ -92,16 +89,11 @@ describe('onboarding presentation contracts', () => {
     expect(shell).toContain('disabled={busy || blocked}')
   })
 
-  it('sends both token guides to the maintained walkthrough instead of hardcoding the steps', () => {
-    const access = steps.AccessStep
+  it('sends the token guide to the maintained walkthrough instead of hardcoding the steps', () => {
     const guide = read('../catalog/TmdbCredentialGuide.svelte')
-    for (const source of [access, guide]) {
-      expect(source).toContain('https://duckkota.gitlab.io/guides/tmdb/')
-    }
-    expect(access).not.toContain('onboarding_tmdb_instruction_1')
+    expect(guide).toContain('https://duckkota.gitlab.io/guides/tmdb/')
     expect(guide).not.toContain('const steps = [')
-    // Both screens offer the keyless provider so a user without a token is never stuck.
-    expect(access).toContain('onswitch')
+    // The settings guide still offers the keyless provider so a user without a token is never stuck.
     expect(guide).toContain('onUseKeyless')
   })
 
@@ -327,6 +319,18 @@ describe('onboarding presentation contracts', () => {
     expect(ready).toContain('m.onboarding_ready_tmdb_tip()')
     expect(ready).not.toContain('onboarding_ready_list')
     expect(ready).not.toContain('onboarding_ready_metadata')
+  })
+
+  it('uses the whole screen instead of a half-width column beside the artwork', () => {
+    expect(shell).not.toContain('setup-art-panel')
+    expect(shell).not.toContain('minmax(0, 1.3fr)')
+    expect(shell).toContain('max-width: 64rem')
+    expect(artwork).toContain('{#each [0, 1, 2, 3, 4, 5] as column}')
+  })
+
+  it('installs ticked sources before leaving the sources screen, and lets the user skip instead', () => {
+    expect(shell).toContain("if (step === 'sources' && sourcesStep && !(await sourcesStep.install())) return")
+    expect(shell).toContain('onclick={skipStep}')
   })
 
   it.each([['en', 'home screen'], ['ja', 'ホーム画面']])('no longer promises a home-screen checklist in %s', (locale, phrase) => {

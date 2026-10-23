@@ -66,8 +66,8 @@
     </div>
   {:else}
   <div class="poster-columns">
-    {#each [0, 1, 2] as column}
-      <div class="poster-column" class:reverse={column === 1}>
+    {#each [0, 1, 2, 3, 4, 5] as column}
+      <div class="poster-column" class:reverse={column % 2 === 1}>
         <!-- Identical halves make the loop seamless. Images stay mounted when the focus changes,
              so choosing a catalog crossfades the artwork without resetting its movement. -->
         {#each [0, 1] as repeat (repeat)}
@@ -90,7 +90,7 @@
 <style>
   .artwork-wall { position: absolute; inset: 0; overflow: hidden; background: #121316; contain: paint; }
   .artwork-wall::after { content: ''; position: absolute; inset: 0; background: linear-gradient(0deg, #111216 0%, #11121618 30%, #11121640 100%); pointer-events: none; }
-  .poster-columns { --poster-gap: 1rem; position: absolute; inset: -22% -12%; display: grid; align-items: start; grid-template-columns: repeat(3, 1fr); gap: var(--poster-gap); transform: rotate(10deg); }
+  .poster-columns { --poster-gap: 1rem; position: absolute; inset: -22% -12%; display: grid; align-items: start; grid-template-columns: repeat(6, 1fr); gap: var(--poster-gap); transform: rotate(10deg); }
   .poster-column { animation: drift 140s linear infinite; will-change: transform; }
   .poster-column.reverse { margin-top: -35%; animation-direction: reverse; }
   .poster-group { display: grid; gap: var(--poster-gap); padding-bottom: var(--poster-gap); }
