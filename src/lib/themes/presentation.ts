@@ -477,6 +477,9 @@ export interface ThemePresentation {
   cardPreview?: 'popup' | 'none'
   /** Phone overrides (the Android app and any viewport up to 640px), resolved on top of the rest. */
   mobile?: MobilePresentation
+  /** API 6: the TV variant (Android TV and Game mode), resolved on top of the rest there and dropped
+   *  everywhere else. Unlike `mobile` it may move the navigation (`shell`) and choose the hover preview. */
+  tv?: TvPresentation
   /** API 4, phones only: the root font size in px (14–18; izumi's own is 14.5) that every rem of the
    *  app's phone UI follows, times the design's font scale. The izumi mark keeps its own size. Only
    *  accepted inside `mobile`; the resolved phone presentation carries it here. */
@@ -484,6 +487,9 @@ export interface ThemePresentation {
 }
 /** What a phone variant can change. Navigation is always the bottom bar there, so `shell` stays shared. */
 export type MobilePresentation = Pick<ThemePresentation, 'density' | 'hideCardLabels' | 'trueBlack' | 'hero' | 'rows' | 'detail' | 'player' | 'cards' | 'layout' | 'rootSize'>
+/** What the TV variant can change: the phone set without the phone root size, plus the shell and the
+ *  hover preview choice. */
+export type TvPresentation = Pick<ThemePresentation, 'density' | 'hideCardLabels' | 'trueBlack' | 'hero' | 'rows' | 'detail' | 'player' | 'cards' | 'layout' | 'shell' | 'cardPreview'>
 /** Every host binds the same shapes: numeric fields are numbers, the rest strings. */
 export type DisplayModel = Partial<Record<Exclude<DisplayField, NumericDisplayField> | ArtworkKind, string> & Record<NumericDisplayField, number>>
 export const ROW_CONTEXT = Symbol('theme-row')
@@ -1016,15 +1022,21 @@ function parseMobile(value: unknown, api: ThemeApi): MobilePresentation {
   if (rootSize !== undefined) result.rootSize = number(rootSize, 14, 18)
   return result
 }
+const TV_KEYS = [...MOBILE_KEYS, 'shell', 'cardPreview']
+function parseTv(value: unknown, api: ThemeApi): TvPresentation {
+  const raw = record(value); only(raw, TV_KEYS)
+  return parsePresentation(raw, api)
+}
 /** Validate a presentation. `api` is the package's declared theme API: API 1 packages get the
  *  original key set (so they behave identically on every client), API 2 the additions. Personal
  *  Theme Studio designs and previews use the newest API. `phone` marks a `mobile` block being
  *  parsed, so its layout cannot carry navigation (phones always use the bottom bar). */
 export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_API, phone = false): ThemePresentation {
   const raw = record(value)
-  only(raw, ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'shell', 'player', 'cards', ...api2(api, ['mobile']), ...api3(api, ['layout', 'cardPreview'])])
+  only(raw, ['density', 'hideCardLabels', 'trueBlack', 'hero', 'rows', 'detail', 'shell', 'player', 'cards', ...api2(api, ['mobile']), ...api3(api, ['layout', 'cardPreview']), ...api6(api, ['tv'])])
   const result: ThemePresentation = {}
   if (raw.mobile !== undefined) result.mobile = parseMobile(raw.mobile, api)
+  if (raw.tv !== undefined) result.tv = parseTv(raw.tv, api)
   if (raw.density !== undefined) result.density = choice(raw.density, ['compact', 'comfortable', 'large'])
   if (raw.hideCardLabels !== undefined) result.hideCardLabels = flag(raw.hideCardLabels)
   if (raw.trueBlack !== undefined) result.trueBlack = flag(raw.trueBlack)
