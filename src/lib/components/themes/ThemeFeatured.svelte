@@ -10,21 +10,19 @@
   let { listings, onopen }: { listings: ThemeListing[]; onopen: (listing: ThemeListing) => void } = $props()
   let at = $state(0)
   let held = $state(false)
-  // The screen in the big viewer, and whether a screen thumbnail is being pointed at (it holds there).
+  // The screen in the big view. It changes only when someone picks one; nothing cycles on its own.
   let index = $state(0)
-  let pinned = $state(false)
   const listing = $derived(listings.length ? listings[at % listings.length] : undefined)
   const platform = $derived(listing ? platformFor(listing.release, $isMobile ? 'phone' : 'desktop') : 'desktop')
   const shots = $derived(listing ? shotsFor(listing.release, platform) : [])
   const phone = $derived(platform === 'phone')
-  // The next featured theme every 8 s, but never while any part of the banner is hovered or focused.
+  // Calm on purpose: the next featured theme every 12 s, and never while the banner is hovered or focused.
   $effect(() => {
     if (held || listings.length < 2 || reducedMotion()) return
-    const timer = setInterval(() => step(1), 8000)
+    const timer = setInterval(() => step(1), 12000)
     return () => clearInterval(timer)
   })
-  function step(by: number) { at = (at + by + listings.length) % listings.length; index = 0; pinned = false }
-  function show(i: number) { index = i; pinned = true }
+  function step(by: number) { at = (at + by + listings.length) % listings.length; index = 0 }
 </script>
 
 {#if listing}
@@ -40,22 +38,17 @@
       {/if}
     </div>
     {#key `${listing.origin}|${listing.release.id}`}
-      <div class="card" data-nav-row in:motion={{ opacity: [0, 1], duration: 300 }}>
-        <!-- The screenshot is never covered: everything about the theme sits in the column beside it. -->
+      <div class="card" data-nav-row in:motion={{ opacity: [0, 1], duration: 600 }}>
+        <!-- The theme is shown big and uncovered; everything about it sits in the row underneath. -->
         <button type="button" class="stage" data-focusable data-theme-key={`${listing.origin}|${listing.release.id}`} aria-label={`View ${listing.release.name}`} onclick={() => onopen(listing)}>
-          <ThemeShots {shots} name={listing.release.name} bind:index playing={!pinned} rewind={false} chrome={false} {phone} strip={phone} />
+          <ThemeShots {shots} name={listing.release.name} bind:index chrome={false} {phone} strip={phone} />
         </button>
-        <div class="side">
-          <strong class="name">{listing.release.name}</strong>
-          <p class="description">{listing.release.description}</p>
+        <div class="info">
+          <div class="text"><strong class="name">{listing.release.name}</strong><p class="description">{listing.release.description}</p></div>
           {#if !phone && shots.length > 1}
             <div class="screens" role="group" aria-label={`${listing.release.name} screens`}>
               {#each shots as shot, i (shot.url)}
-                <button type="button" class="screen" data-focusable aria-pressed={i === index} aria-label={`Show ${SCREEN_LABELS[shot.screen]}`}
-                  onmouseenter={() => show(i)} onmouseleave={() => pinned = false} onfocus={() => show(i)} onblur={() => pinned = false} onclick={() => show(i)}>
-                  <img src={shot.url} alt="" loading="lazy" referrerpolicy="no-referrer" />
-                  <span>{SCREEN_LABELS[shot.screen]}</span>
-                </button>
+                <button type="button" data-focusable aria-pressed={i === index} onmouseenter={() => index = i} onfocus={() => index = i} onclick={() => index = i}>{SCREEN_LABELS[shot.screen]}</button>
               {/each}
             </div>
           {/if}
@@ -73,29 +66,29 @@
   .arrows { display: flex; gap: 6px; }
   .arrows button { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 999px; background: hsl(var(--foreground) / .07); }
   .arrows button:hover { background: hsl(var(--foreground) / .14); }
-  .card { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(220px, 1fr); gap: 20px; padding: 12px; border-radius: 18px; background: hsl(var(--foreground) / .05); }
+  .card { padding: 12px; border-radius: 20px; background: hsl(var(--foreground) / .05); }
   /* The stage reads as clickable: a ring and a lift in brightness on hover, no motion (Deck-safe). */
-  .stage { display: block; overflow: hidden; border-radius: 12px; box-shadow: 0 0 0 2px transparent; }
-  .stage :global([data-theme-shots]) { border-radius: 12px; background: transparent; }
+  .stage { display: block; width: 100%; overflow: hidden; border-radius: 14px; box-shadow: 0 0 0 2px transparent; }
+  .stage :global([data-theme-shots]) { aspect-ratio: 16 / 9; border-radius: 14px; background: transparent; }
+  .stage :global([data-theme-shots] > img) { object-position: top; }
   .stage:hover { box-shadow: 0 0 0 2px hsl(var(--foreground) / .55); filter: brightness(1.05); }
-  .side { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 4px 6px 4px 0; }
-  .name { font-size: 26px; font-weight: 900; letter-spacing: -.03em; line-height: 1.1; }
-  .description { font-size: 13px; line-height: 1.55; color: hsl(var(--muted-foreground)); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
-  .screens { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  /* Each screen's name sits on its thumbnail, so the column stays as tall as the screenshot. */
-  .screen { position: relative; display: block; border-radius: 6px; outline: 2px solid transparent; outline-offset: 1px; }
-  .screen img { display: block; aspect-ratio: 16 / 10; width: 100%; object-fit: cover; object-position: top; border-radius: 6px; background: hsl(var(--muted)); }
-  .screen span { position: absolute; left: 5px; bottom: 5px; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 800; background: hsl(0 0% 0% / .72); color: #fff; }
-  .screen:hover, .screen[aria-pressed='true'] { outline-color: hsl(var(--foreground)); }
-  .view { align-self: flex-start; margin-top: auto; padding: 10px 20px; border-radius: 999px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font-size: 13px; font-weight: 800; }
+  .info { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 14px 6px 4px; }
+  .text { flex: 1 1 240px; min-width: 0; }
+  .name { font-size: 24px; font-weight: 900; letter-spacing: -.03em; line-height: 1.15; }
+  .description { margin-top: 2px; font-size: 13px; color: hsl(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .screens { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: hsl(var(--foreground) / .07); }
+  .screens button { height: 32px; padding: 0 14px; border-radius: 999px; font-size: 12px; font-weight: 800; color: hsl(var(--muted-foreground)); }
+  .screens button:hover { color: hsl(var(--foreground)); }
+  .screens button[aria-pressed='true'] { background: hsl(var(--foreground)); color: hsl(var(--background)); }
+  .view { padding: 10px 20px; border-radius: 999px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font-size: 13px; font-weight: 800; }
   .view:hover { filter: brightness(1.08); }
   .pips { display: flex; justify-content: center; gap: 5px; margin-top: 12px; }
   .pips i { width: 6px; height: 6px; border-radius: 999px; background: hsl(var(--foreground) / .22); }
   .pips i.on { width: 18px; background: hsl(var(--foreground) / .8); }
-  /* Narrower pages stack the column under the screenshot; its screens become one row. */
-  @container (max-width: 760px) {
-    .card { grid-template-columns: 1fr; gap: 14px; }
-    .side { padding: 0 4px 4px; }
-    .screens { grid-template-columns: repeat(4, 1fr); }
+  /* Narrow pages: the screen switch takes its own full-width row above the button. */
+  @container (max-width: 640px) {
+    .screens { order: 1; width: 100%; }
+    .screens button { flex: 1 1 0; padding: 0 6px; }
+    .view { order: 2; }
   }
 </style>
