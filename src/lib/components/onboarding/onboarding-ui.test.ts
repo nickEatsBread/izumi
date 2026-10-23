@@ -271,4 +271,27 @@ describe('onboarding presentation contracts', () => {
     expect(copy.filter(([, value]) => /\bIzumi\b/.test(value))).toEqual([])
     expect(messages.onboarding_welcome_title).toContain('izumi')
   })
+
+  it('imports what a source account holds as soon as it connects, one task at a time', () => {
+    const connect = steps.ConnectStep
+    expect(connect).toContain('plannedSyncTasks([service], nuvioExtras)')
+    expect(connect).toContain("enqueue('stremio')")
+    expect(connect).toContain("enqueue('nuvio')")
+    // Stremio and Nuvio write the same source list, so a second drain loop must never start.
+    expect(connect).toContain('if (draining) return')
+    expect(connect).toContain('importAbort.abort()')
+  })
+
+  it('asks about Nuvio watch-state imports inside the Nuvio tile, off by default', () => {
+    expect(steps.ConnectStep).toContain('m.onboarding_sync_extras_title()')
+    expect(steps.ConnectStep).toContain('nuvioExtras = $bindable({ library: false, progress: false, history: false })')
+  })
+
+  it('shares one set of tracker tiles between sign-in and the final screen', () => {
+    const trackers = read('./steps/TrackerTiles.svelte')
+    expect(steps.ConnectStep).toContain('<TrackerTiles bind:connections />')
+    expect(steps.ConnectStep).not.toContain('connectAniList')
+    expect(trackers).toContain('await connectAniList()')
+    expect(trackers).toContain('await connectMal()')
+  })
 })
