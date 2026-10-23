@@ -105,15 +105,29 @@ function observeParent(entry: Entry): void {
   observedParents.set(parent, count + 1)
 }
 
-/** Svelte action. The gate is one-shot: after activation the entry owns no global resources. */
-export function nearViewport(node: HTMLElement, options: NearViewportOptions) {
-  const entry: Entry = { node, options }
-  entries.add(entry)
-  observeParent(entry)
-  startListening()
-  schedule()
-  return {
-    update(next: NearViewportOptions) { entry.options = next; schedule() },
-    destroy() { remove(entry) },
+/** Svelte action. The gate is one-shot: after activation the entry owns no global resources and
+ *  never registers again. Without options it does nothing (a caller can switch the gate on later
+ *  through update). */
+export function nearViewport(node: HTMLElement, options?: NearViewportOptions) {
+  let entry: Entry | undefined
+  let fired = false
+  // Wrapping onEnter tells the action the one-shot is spent, so a later update cannot register again.
+  const wrap = (next: NearViewportOptions): NearViewportOptions =>
+    ({ ...next, onEnter: () => { fired = true; entry = undefined; next.onEnter() } })
+  const apply = (next?: NearViewportOptions) => {
+    if (fired) return
+    if (!next) {
+      if (entry) remove(entry)
+      entry = undefined
+      return
+    }
+    if (entry) { entry.options = wrap(next); schedule(); return }
+    entry = { node, options: wrap(next) }
+    entries.add(entry)
+    observeParent(entry)
+    startListening()
+    schedule()
   }
+  apply(options)
+  return { update: apply, destroy: () => apply(undefined) }
 }

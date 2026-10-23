@@ -19,7 +19,7 @@ vi.mock('$lib/anime/animeschedule', () => ({
   scheduleTitles: (t: { romaji?: string; english?: string }) => [t.romaji, t.english],
 }))
 
-import { ART_EXTRAS, artNeeds, audioLabel, clearTitleExtrasCache, languageCode, loadTitleExtras, logoLanguages, malAgeRating, metaNeeds, nativeLanguage, peekTitleArt, pickTitleArt, pickTitleLogo, primeTitleExtras, templateNeeds, titleExtrasKey } from './title-extras'
+import { ART_EXTRAS, artNeeds, audioLabel, clearTitleExtrasCache, languageCode, loadTitleExtras, logoLanguages, malAgeRating, metaNeeds, nativeLanguage, peekTitleArt, pickTitleArt, pickTitleLogo, primeTitleExtras, queueTitleArt, templateNeeds, titleExtrasKey, type TitleExtras } from './title-extras'
 import { tmdbReadToken } from '$lib/settings/catalog'
 import type { ThemeNode } from './presentation'
 
@@ -314,5 +314,35 @@ describe('titleExtrasKey', () => {
     const tmdb = (bannerImage: string) => media({ bannerImage, catalog: { provider: 'tmdb', type: 'anime', id: '1' } } as Partial<Media>)
     expect(titleExtrasKey(tmdb('a.jpg'))).not.toBe(titleExtrasKey(tmdb('b.jpg')))
     expect(titleExtrasKey(media({ bannerImage: 'a.jpg' }))).toBe(titleExtrasKey(media({ bannerImage: 'b.jpg' })))
+  })
+})
+
+describe('queueTitleArt', () => {
+  it('runs at most four lookups at once and hands each freed slot to the next caller', async () => {
+    let running = 0
+    let peak = 0
+    const releases: (() => void)[] = []
+    const load = (m: Media) => new Promise<TitleExtras>((resolve) => {
+      running++; peak = Math.max(peak, running)
+      releases.push(() => { running--; resolve({ keyart: `k${m.id}` }) })
+    })
+    const results = Array.from({ length: 7 }, (_, i) => queueTitleArt({ id: i } as Media, new Set(['keyart']), load))
+    await settle()
+    expect(running).toBe(4)
+    // Free one slot, and start a fresh call in the same tick: the freed slot goes to a waiter, never over 4.
+    releases.shift()!()
+    const late = queueTitleArt({ id: 99 } as Media, new Set(['keyart']), load)
+    await settle()
+    expect(running).toBe(4)
+    expect(peak).toBe(4)
+    while (releases.length) { releases.shift()!(); await settle() }
+    expect((await Promise.all([...results, late])).map((r) => r.keyart)).toEqual(['k0', 'k1', 'k2', 'k3', 'k4', 'k5', 'k6', 'k99'])
+  })
+
+  it('frees its slot when a lookup fails', async () => {
+    const failing = () => Promise.reject(new Error('offline'))
+    await expect(queueTitleArt({ id: 1 } as Media, new Set(['logo']), failing)).rejects.toThrow('offline')
+    const ok = await queueTitleArt({ id: 2 } as Media, new Set(['logo']), async () => ({ logo: 'l' }))
+    expect(ok.logo).toBe('l')
   })
 })
