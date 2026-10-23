@@ -10,7 +10,7 @@
   import ConnectTile from './ConnectTile.svelte'
   import TrackerTiles from './TrackerTiles.svelte'
   import { CONNECT_SERVICES, tileBusy, type ConnectService, type ConnectStates } from '$lib/onboarding/connect-state'
-  import { plannedSyncTasks, sourcesLanded, tasksFor, type NuvioExtras, type SyncTask, type SyncTaskId } from '$lib/onboarding/sync-receipt'
+  import { plannedSyncTasks, serialDrain, sourcesLanded, tasksFor, type NuvioExtras, type SyncTask, type SyncTaskId } from '$lib/onboarding/sync-receipt'
   import { connectStremio, connectStremioWithAuthKey, stremioAccountEmail, stremioAuthKey } from '$lib/stremio/account'
   import { createStremioLink, pollStremioLink } from '$lib/stremio/link'
   import { resetStremioAddonSync, syncStremioAddons } from '$lib/stremio/account-sync'
@@ -39,8 +39,6 @@
   let nuvioEmail = $state('')
   let nuvioPassword = $state('')
   let tasks = $state<SyncTask[]>([])
-  /** Deliberately not $state: it only stops a second drain loop from starting, it is never rendered. */
-  let draining = false
   // One controller per tile: two tiles can each be mid-approval, and starting a flow in one must
   // never silently kill the other's poll while its code is still on screen.
   const controllers: Partial<Record<ConnectService, AbortController>> = {}
@@ -65,10 +63,18 @@
   })
 
   // Reflect source accounts that were already connected before setup ran, so a re-run does not
-  // offer to connect something that is already live. TrackerTiles does the same for trackers.
+  // offer to connect something that is already live. Their sources are already here, so the
+  // sources screen should review them rather than open on an empty picker. TrackerTiles does the
+  // same reflection for trackers.
   $effect(() => {
-    if ($stremioAuthKey && connections.stremio.status !== 'connected') connections = { ...connections, stremio: { status: 'connected', identity: $stremioAccountEmail } }
-    if ($nuvioSession && connections.nuvio.status !== 'connected') connections = { ...connections, nuvio: { status: 'connected', identity: $nuvioSession.email } }
+    if ($stremioAuthKey && connections.stremio.status !== 'connected') {
+      connections = { ...connections, stremio: { status: 'connected', identity: $stremioAccountEmail } }
+      imported = true
+    }
+    if ($nuvioSession && connections.nuvio.status !== 'connected') {
+      connections = { ...connections, nuvio: { status: 'connected', identity: $nuvioSession.email } }
+      imported = true
+    }
   })
 
   onDestroy(() => {
@@ -109,18 +115,6 @@
 
   const nextPending = () => tasks.find((task) => task.state.status === 'pending')
 
-  /** One task at a time: Stremio and Nuvio both write the same source list, and parallel writes
-   *  would race each other. A retry or a second sign-in joins the loop already running. */
-  async function drain() {
-    if (draining) return
-    draining = true
-    try {
-      for (let next = nextPending(); next && !importAbort.signal.aborted; next = nextPending()) await runTask(next.id)
-    } finally {
-      draining = false
-    }
-  }
-
   function setTask(id: SyncTaskId, state: SyncTask['state']) {
     tasks = tasks.map((task) => task.id === id ? { ...task, state } : task)
   }
@@ -139,6 +133,10 @@
       setTask(id, { status: 'failed', message: message(cause, m.onboarding_sync_failed()) })
     }
   }
+
+  /** One task at a time: Stremio and Nuvio both write the same source list. A retry or a second
+   *  sign-in joins the loop already running. */
+  const drain = serialDrain(() => nextPending()?.id, runTask, importAbort.signal)
 
   async function perform(id: SyncTaskId): Promise<string> {
     if (id === 'stremio') {
@@ -256,24 +254,32 @@
 </script>
 
 {#snippet importRows(service: ConnectService)}
-  {#if tasksFor(tasks, service).length}
-    <ul class="mt-3 grid grid-cols-[minmax(0,1fr)] gap-2 border-t border-border pt-3" role="status" aria-live="polite">
-      {#each tasksFor(tasks, service) as task (task.id)}
-        <li class="flex min-w-0 items-center gap-2 text-xs">
-          {#if task.state.status === 'done'}<Check size={14} class="shrink-0 text-muted-foreground" />
-          {:else if task.state.status === 'failed'}<TriangleAlert size={14} class="shrink-0 text-destructive" />
-          {:else}<LoaderCircle size={14} class="tile-spinner shrink-0 text-muted-foreground" />{/if}
-          <span class="min-w-0 flex-1 truncate">
-            <span class="font-semibold">{label(task.id)}</span>
-            <span class="text-muted-foreground"> · {task.state.status === 'done' ? task.state.detail : task.state.status === 'failed' ? task.state.message : task.state.status === 'running' ? m.onboarding_sync_running() : m.onboarding_sync_pending()}</span>
-          </span>
-          {#if task.state.status === 'failed'}
-            <button type="button" data-focusable onclick={() => retry(task.id)} class="setup-inline-button min-h-8 shrink-0 bg-secondary px-2 text-xs"><RefreshCw size={12} />{m.onboarding_sync_retry()}</button>
-          {/if}
-        </li>
-      {/each}
-    </ul>
-  {/if}
+  <!-- Always rendered, so the live region exists before its first update is announced. -->
+  <div role="status">
+    {#if tasksFor(tasks, service).length}
+      <ul class="mt-3 grid grid-cols-[minmax(0,1fr)] gap-2 border-t border-border pt-3">
+        {#each tasksFor(tasks, service) as task (task.id)}
+          <li class="flex min-w-0 items-center gap-2 text-xs">
+            {#if task.state.status === 'done'}<Check size={14} class="shrink-0 text-muted-foreground" />
+            {:else if task.state.status === 'failed'}<TriangleAlert size={14} class="shrink-0 text-destructive" />
+            {:else}<LoaderCircle size={14} class="tile-spinner shrink-0 text-muted-foreground" />{/if}
+            <!-- A failure wraps: its message is the one thing the user needs to read in full. -->
+            <span class="min-w-0 flex-1 {task.state.status === 'failed' ? 'break-words' : 'truncate'}">
+              <span class="font-semibold">{label(task.id)}</span>
+              <span class="text-muted-foreground"> · {task.state.status === 'done' ? task.state.detail : task.state.status === 'failed' ? task.state.message : task.state.status === 'running' ? m.onboarding_sync_running() : m.onboarding_sync_pending()}</span>
+            </span>
+            {#if task.state.status === 'failed'}
+              <!-- Not setup-inline-button: that global class comes after Tailwind's utilities in
+                   app.css, so size overrides on it never apply. -->
+              <button type="button" data-focusable onclick={() => retry(task.id)} class="inline-flex min-h-8 shrink-0 items-center gap-1 rounded-md bg-secondary px-2 text-xs font-semibold">
+                <RefreshCw size={12} />{m.onboarding_sync_retry()}
+              </button>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </div>
 {/snippet}
 
 <h1 id="setup-title" data-step-heading tabindex="-1" aria-describedby="setup-progress" class="setup-heading">{m.onboarding_connect_title()}</h1>
@@ -326,9 +332,9 @@
       {:else}
         <!-- Asked before signing in, because the import starts the moment the account connects.
              These write watch state, so every box starts off. -->
-        <fieldset class="mb-4">
+        <fieldset class="mb-4" aria-describedby="connect-nuvio-extras-hint">
           <legend class="text-sm font-semibold">{m.onboarding_sync_extras_title()}</legend>
-          <p class="mt-1 text-xs leading-relaxed text-muted-foreground">{m.onboarding_sync_extras_body()}</p>
+          <p id="connect-nuvio-extras-hint" class="mt-1 text-xs leading-relaxed text-muted-foreground">{m.onboarding_sync_extras_body()}</p>
           <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2">
             {#each [{ key: 'library' as const, label: m.onboarding_sync_library() }, { key: 'progress' as const, label: m.onboarding_sync_progress() }, { key: 'history' as const, label: m.onboarding_sync_history() }] as extra}
               <label class="flex cursor-pointer items-center gap-2 text-sm">

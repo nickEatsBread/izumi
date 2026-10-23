@@ -277,8 +277,8 @@ describe('onboarding presentation contracts', () => {
     expect(connect).toContain('plannedSyncTasks([service], nuvioExtras)')
     expect(connect).toContain("enqueue('stremio')")
     expect(connect).toContain("enqueue('nuvio')")
-    // Stremio and Nuvio write the same source list, so a second drain loop must never start.
-    expect(connect).toContain('if (draining) return')
+    // Stremio and Nuvio write the same source list, so imports go through the tested serial drain.
+    expect(connect).toContain('serialDrain(() => nextPending()?.id, runTask, importAbort.signal)')
     expect(connect).toContain('importAbort.abort()')
   })
 

@@ -67,3 +67,20 @@ export function sourcesLanded(tasks: readonly SyncTask[]): boolean {
 export function tasksFor(tasks: readonly SyncTask[], service: ConnectService): SyncTask[] {
   return tasks.filter((task) => task.id === service || task.id.startsWith(`${service}-`))
 }
+
+/**
+ * Runs pending tasks one at a time. Calling the returned function while a run is in progress
+ * joins it: the running loop picks up anything queued meanwhile, so two writers never overlap.
+ */
+export function serialDrain(next: () => SyncTaskId | undefined, run: (id: SyncTaskId) => Promise<void>, signal: AbortSignal): () => Promise<void> {
+  let draining = false
+  return async () => {
+    if (draining) return
+    draining = true
+    try {
+      for (let id = next(); id && !signal.aborted; id = next()) await run(id)
+    } finally {
+      draining = false
+    }
+  }
+}

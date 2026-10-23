@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { plannedSyncTasks, sourcesLanded, syncFailures, syncSettled, syncSucceededAny, tasksFor, type SyncTask } from './sync-receipt'
+import { plannedSyncTasks, serialDrain, sourcesLanded, syncFailures, syncSettled, syncSucceededAny, tasksFor, type SyncTask, type SyncTaskId } from './sync-receipt'
 
 const noExtras = { library: false, progress: false, history: false }
 
@@ -78,5 +78,61 @@ describe('tasks for one service', () => {
     expect(tasksFor(all, 'stremio').map((task) => task.id)).toEqual(['stremio'])
     expect(tasksFor(all, 'nuvio').map((task) => task.id)).toEqual(['nuvio-sources', 'nuvio-library'])
     expect(tasksFor(all, 'mal').map((task) => task.id)).toEqual(['mal'])
+  })
+})
+
+describe('serial drain', () => {
+  function harness(initial: SyncTaskId[]) {
+    const queue = [...initial]
+    const ran: SyncTaskId[] = []
+    let active = 0
+    let peak = 0
+    const release: Array<() => void> = []
+    const run = async (id: SyncTaskId) => {
+      active += 1
+      peak = Math.max(peak, active)
+      ran.push(id)
+      await new Promise<void>((resolve) => release.push(resolve))
+      active -= 1
+    }
+    const next = () => queue.shift()
+    return { queue, ran, run, next, peak: () => peak, release }
+  }
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  it('runs queued tasks in order, never two at once, and picks up tasks queued mid-run', async () => {
+    const h = harness(['stremio', 'nuvio-sources'])
+    const drain = serialDrain(h.next, h.run, new AbortController().signal)
+    const done = drain()
+    await settle()
+    h.queue.push('nuvio-collections')
+    while (h.release.length) { h.release.shift()!(); await settle() }
+    await done
+    expect(h.ran).toEqual(['stremio', 'nuvio-sources', 'nuvio-collections'])
+    expect(h.peak()).toBe(1)
+  })
+
+  it('joins the running loop instead of starting a second one', async () => {
+    const h = harness(['stremio'])
+    const drain = serialDrain(h.next, h.run, new AbortController().signal)
+    const first = drain()
+    await settle()
+    h.queue.push('nuvio-sources')
+    await drain() // returns at once: a loop is already running
+    while (h.release.length) { h.release.shift()!(); await settle() }
+    await first
+    expect(h.ran).toEqual(['stremio', 'nuvio-sources'])
+    expect(h.peak()).toBe(1)
+  })
+
+  it('stops picking up tasks once aborted', async () => {
+    const h = harness(['stremio', 'nuvio-sources'])
+    const abort = new AbortController()
+    const done = serialDrain(h.next, h.run, abort.signal)()
+    await settle()
+    abort.abort()
+    h.release.shift()!()
+    await done
+    expect(h.ran).toEqual(['stremio'])
   })
 })
