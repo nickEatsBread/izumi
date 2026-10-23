@@ -1076,34 +1076,52 @@ export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_A
   if (raw.cardPreview !== undefined) result.cardPreview = choice(raw.cardPreview, ['popup', 'none'])
   return result
 }
-/** The presentation for one surface: on a phone the `mobile` block is layered over the shared one.
- *  Objects merge one level deep per section (a phone hero keeps the shared interval unless it says
- *  otherwise); a row override in `rows.byId` and a card family replace their shared entry whole. */
-export function resolvePresentation(layout: ThemePresentation | undefined, mobile: boolean): ThemePresentation | undefined {
-  if (!layout?.mobile) return layout
-  const { mobile: phone, ...shared } = layout
-  if (!mobile) return shared
-  const resolved: ThemePresentation = { ...shared, ...phone }
-  if (phone.hero) resolved.hero = { ...shared.hero, ...phone.hero }
-  if (phone.rows) resolved.rows = {
-    ...(shared.rows?.defaults || phone.rows.defaults ? { defaults: { ...shared.rows?.defaults, ...phone.rows.defaults } } : {}),
-    ...(shared.rows?.byId || phone.rows.byId ? { byId: { ...shared.rows?.byId, ...phone.rows.byId } } : {}),
+/** The presentation for one surface: on a phone the `mobile` block is layered over the shared one, on a
+ *  TV surface (Android TV or Game mode, API 6) the `tv` block. Objects merge one level deep per section (a
+ *  phone hero keeps the shared interval unless it says otherwise); a row override in `rows.byId` and a
+ *  card family replace their shared entry whole. The phone block wins on a phone that reports a TV. */
+export function resolvePresentation(layout: ThemePresentation | undefined, mobile: boolean, tv = false): ThemePresentation | undefined {
+  if (!layout?.mobile && !layout?.tv) return layout
+  const { mobile: phone, tv: television, ...shared } = layout
+  const block: (MobilePresentation & TvPresentation) | undefined = mobile ? phone : tv ? television : undefined
+  return block ? layerBlock(shared, block) : shared
+}
+function layerBlock(shared: ThemePresentation, block: MobilePresentation & TvPresentation): ThemePresentation {
+  const resolved: ThemePresentation = { ...shared, ...block }
+  if (block.hero) resolved.hero = { ...shared.hero, ...block.hero }
+  if (block.rows) resolved.rows = {
+    ...(shared.rows?.defaults || block.rows.defaults ? { defaults: { ...shared.rows?.defaults, ...block.rows.defaults } } : {}),
+    ...(shared.rows?.byId || block.rows.byId ? { byId: { ...shared.rows?.byId, ...block.rows.byId } } : {}),
   }
-  if (phone.detail) {
-    resolved.detail = { ...shared.detail, ...phone.detail }
-    if (phone.detail.episodes) resolved.detail.episodes = { ...shared.detail?.episodes, ...phone.detail.episodes }
-    if (phone.detail.sections) resolved.detail.sections = { ...shared.detail?.sections, ...phone.detail.sections }
-    if (phone.detail.factsLabels) resolved.detail.factsLabels = { ...shared.detail?.factsLabels, ...phone.detail.factsLabels }
-    if (phone.detail.factsFormat) resolved.detail.factsFormat = { ...shared.detail?.factsFormat, ...phone.detail.factsFormat }
-    if (phone.detail.synopsis) resolved.detail.synopsis = { ...shared.detail?.synopsis, ...phone.detail.synopsis }
-    if (phone.detail.bar) resolved.detail.bar = { ...shared.detail?.bar, ...phone.detail.bar }
+  if (block.detail) {
+    resolved.detail = { ...shared.detail, ...block.detail }
+    if (block.detail.episodes) resolved.detail.episodes = { ...shared.detail?.episodes, ...block.detail.episodes }
+    if (block.detail.sections) resolved.detail.sections = { ...shared.detail?.sections, ...block.detail.sections }
+    if (block.detail.factsLabels) resolved.detail.factsLabels = { ...shared.detail?.factsLabels, ...block.detail.factsLabels }
+    if (block.detail.factsFormat) resolved.detail.factsFormat = { ...shared.detail?.factsFormat, ...block.detail.factsFormat }
+    if (block.detail.synopsis) resolved.detail.synopsis = { ...shared.detail?.synopsis, ...block.detail.synopsis }
+    if (block.detail.bar) resolved.detail.bar = { ...shared.detail?.bar, ...block.detail.bar }
   }
-  if (phone.player) resolved.player = { ...shared.player, ...phone.player }
-  if (phone.cards) resolved.cards = { ...shared.cards, ...phone.cards }
+  if (block.player) resolved.player = { ...shared.player, ...block.player }
+  if (block.cards) resolved.cards = { ...shared.cards, ...block.cards }
   // The phone block can only carry `home` and the side-column keys (`parseLayout` rejects `nav` there), so
-  // navigation always comes from the shared layout.
-  if (phone.layout) resolved.layout = { ...shared.layout, ...phone.layout }
+  // its navigation always comes from the shared layout; the TV block may carry its own.
+  if (block.layout) resolved.layout = { ...shared.layout, ...block.layout }
+  // Only the TV block carries a shell: one level deep, and the top bar and bottom bar one more.
+  if (block.shell) {
+    resolved.shell = { ...shared.shell, ...block.shell }
+    if (block.shell.top) resolved.shell.top = { ...shared.shell?.top, ...block.shell.top }
+    if (block.shell.bottomNav) resolved.shell.bottomNav = { ...shared.shell?.bottomNav, ...block.shell.bottomNav }
+  }
   return resolved
+}
+/** Where the navigation chrome sits: phones always use the bottom bar; an Android TV the side rail unless
+ *  the theme's TV block asks for the top bar (API 6); desktops and Game mode follow the resolved
+ *  `shell.nav`. `layout` is the unresolved presentation, `resolved` the one for this surface. */
+export function shellNavFor(mobile: boolean, androidTv: boolean, layout: ThemePresentation | undefined, resolved: ThemePresentation | undefined): ThemeNavPlacement {
+  if (mobile) return 'bottom'
+  if (androidTv) return layout?.tv?.shell?.nav === 'top' ? 'top' : 'sidebar'
+  return resolved?.shell?.nav ?? 'sidebar'
 }
 export function visibleNode(node: ThemeNode, model: DisplayModel): boolean {
   if (!node.when) return true
@@ -1302,10 +1320,11 @@ export function themeCoverage(layout?: ThemePresentation): ThemeSurface[] {
   if (!layout) return []
   const surfaces: ThemeSurface[] = []
   const phone = layout.mobile ?? {}
-  if (layout.hero || layout.rows || layout.cards || layout.cardPreview || layout.layout?.home || phone.hero || phone.rows || phone.cards || phone.layout?.home) surfaces.push('Home')
-  if (layout.shell || layout.density || layout.hideCardLabels || layout.trueBlack || layout.layout?.nav || phone.density || phone.hideCardLabels || phone.trueBlack || phone.rootSize !== undefined) surfaces.push('Shell')
-  if (layout.detail || phone.detail) surfaces.push('Details')
-  if (layout.player || phone.player) surfaces.push('Player')
+  const tv = layout.tv ?? {}
+  if (layout.hero || layout.rows || layout.cards || layout.cardPreview || layout.layout?.home || phone.hero || phone.rows || phone.cards || phone.layout?.home || tv.hero || tv.rows || tv.cards || tv.cardPreview || tv.layout?.home) surfaces.push('Home')
+  if (layout.shell || layout.density || layout.hideCardLabels || layout.trueBlack || layout.layout?.nav || phone.density || phone.hideCardLabels || phone.trueBlack || phone.rootSize !== undefined || tv.shell || tv.density || tv.hideCardLabels || tv.trueBlack || tv.layout?.nav) surfaces.push('Shell')
+  if (layout.detail || phone.detail || tv.detail) surfaces.push('Details')
+  if (layout.player || phone.player || tv.player) surfaces.push('Player')
   return surfaces.length === 4 ? ['Full'] : surfaces
 }
 export interface TemplateOutline { type: ThemeNode['type']; label?: string; children?: TemplateOutline[] }
