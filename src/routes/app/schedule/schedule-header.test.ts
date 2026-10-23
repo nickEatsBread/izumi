@@ -105,7 +105,7 @@ describe('schedule page header', () => {
 
   it('masks the transparent desktop titlebar while the schedule header is pinned', () => {
     expect(page).toContain('{#if stickyActive && !$isMobile}')
-    expect(page).toMatch(/data-schedule-titlebar-shield[^>]+fixed[^>]+top-0[^>]+z-20[^>]+h-8[^>]+bg-background/)
+    expect(page).toMatch(/data-schedule-titlebar-shield[^>]+fixed[^>]+top-0[^>]+z-20[^>]+h-\[var\(--theme-shell-top,2rem\)\][^>]+bg-background/)
   })
 
   it('renders provider media through the shared catalog route helper', () => {
@@ -120,12 +120,18 @@ describe('schedule page header', () => {
 
   it('keeps both the normal and sticky schedule header below the degraded alert', () => {
     expect(page).toContain("$anilistDegradedBannerVisible ? 'pt-[3rem] sm:pt-[4.25rem]' : ''")
-    expect(page).toContain("$anilistDegradedBannerVisible ? 'top-[3.75rem]' : 'top-8'")
+    expect(page).toContain("$anilistDegradedBannerVisible ? 'top-[calc(var(--theme-shell-top,2rem)+1.75rem)]' : 'top-[var(--theme-shell-top,2rem)]'")
     expect(page).toContain('($anilistDegradedBannerVisible ? 28 : 0)')
   })
 
+  it("pins the header under a theme's top bar, not behind it", () => {
+    // --theme-shell-top is the frameless titlebar's 2rem, or the whole bar when a theme puts navigation on top.
+    expect(page).toContain('bind:clientHeight={shieldH}')
+    expect(page).toContain('headerH + ($isMobile ? ($anilistDegradedBannerVisible ? 28 : 0) : shieldH)')
+  })
+
   it('extends the pinned titlebar shield over the degraded strip so rows cannot slice through', () => {
-    expect(page).toMatch(/data-schedule-titlebar-shield[^>]+\{\$anilistDegradedBannerVisible \? 'h-\[3\.75rem\]' : 'h-8'\}/)
+    expect(page).toContain("{$anilistDegradedBannerVisible ? 'h-[calc(var(--theme-shell-top,2rem)+1.75rem)]' : 'h-[var(--theme-shell-top,2rem)]'}")
   })
 
   it('hands weekday Down navigation to the first airing instead of a geometric lower row', () => {
