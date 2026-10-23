@@ -540,6 +540,11 @@ State values:
 | `comments.tab` | part | One discussion source. | `data-active` |
 | `player.controls` | slot | The player controls layer. |  |
 | `player.seekbar` | part | The seek bar. |  |
+| `player.seekbar.track` | part | The seek bar's empty track (one piece per chapter). |  |
+| `player.seekbar.buffer` | part | The buffered stretch of the seek bar. |  |
+| `player.seekbar.fill` | part | The played stretch of the seek bar (the theme's seek bar colour on desktop). |  |
+| `player.seekbar.knob` | part | The round knob at the playhead: always drawn on desktop but hidden (`opacity: 0`) until a stylesheet shows it; Game mode draws its own while scrubbing. |  |
+| `player.seekbar.preview` | part | The hover and scrub preview above the bar: the thumbnail or time chip. |  |
 | `player.title` | part | The playing title. |  |
 | `player.top` | part | The top bar of the player controls (Back; the title in Game mode's title-at-top option). |  |
 | `player.bottom` | part | The bottom bar of the player controls: the title, the seek bar row and the button row. |  |
