@@ -421,9 +421,9 @@
     <div data-part="player.seekbar.knob" class="pointer-events-none absolute top-1/2 z-20 h-[22px] w-[22px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow"
          style="left:{pct(scrubT)}%"></div>
   {/if}
-  <!-- Desktop knob at the playhead (follows the played fill). Hidden until a theme sets `opacity: 1`. -->
+  <!-- Desktop knob: at the playhead, or under the pointer while dragging (`seeking`, the grab the preview bar tracks). Hidden until a theme sets `opacity: 1`. -->
   {#if !gm}
-    <span data-part="player.seekbar.knob" aria-hidden="true" class="pointer-events-none absolute top-1/2 z-10 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white opacity-0" style:left="{progressPct}%"></span>
+    <span data-part="player.seekbar.knob" aria-hidden="true" class="pointer-events-none absolute top-1/2 z-10 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white opacity-0" data-scrubbing={seeking || undefined} style:left="{seeking ? hoverPct : progressPct}%"></span>
   {/if}
 
   <!-- Skip-segment tints overlaid on the segmented track. -->

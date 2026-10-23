@@ -13,6 +13,11 @@ describe('seek bar styling hooks', () => {
     expect(seekbar.split('data-part="player.seekbar.knob"').length - 1).toBeGreaterThanOrEqual(2)
   })
 
+  it('moves the desktop knob with a drag and marks it', () => {
+    expect(seekbar).toContain('data-scrubbing={seeking || undefined}')
+    expect(seekbar).toContain('style:left="{seeking ? hoverPct : progressPct}%"')
+  })
+
   it('keeps the root findable and hideable for the native player', () => {
     expect(seekbar).toContain('aria-label="Seek"')
     expect(seekbar).toContain('class:opacity-0={native}')

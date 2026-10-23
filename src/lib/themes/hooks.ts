@@ -260,7 +260,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'player.seekbar.track', kind: 'part', description: "The seek bar's empty track (one piece per chapter)." },
     { name: 'player.seekbar.buffer', kind: 'part', description: 'The buffered stretch of the seek bar.' },
     { name: 'player.seekbar.fill', kind: 'part', description: "The played stretch of the seek bar (the theme's seek bar colour on desktop)." },
-    { name: 'player.seekbar.knob', kind: 'part', description: 'The round knob at the playhead: always drawn on desktop but hidden (`opacity: 0`) until a stylesheet shows it; Game mode draws its own while scrubbing.' },
+    { name: 'player.seekbar.knob', kind: 'part', description: 'The round knob at the playhead: always drawn on desktop but hidden (`opacity: 0`) until a stylesheet shows it, and under the pointer while it is dragged (`data-scrubbing`); Game mode draws its own while scrubbing.', states: ['data-scrubbing'] },
     { name: 'player.seekbar.preview', kind: 'part', description: 'The hover and scrub preview above the bar: the thumbnail or time chip.' },
     { name: 'player.title', kind: 'part', description: 'The playing title.' },
     { name: 'player.top', kind: 'part', description: "The top bar of the player controls (Back; the title in Game mode's title-at-top option)." },
