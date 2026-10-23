@@ -26,7 +26,7 @@ describe('player mount follows the navigation placement', () => {
   })
 
   it('shares one navigation placement between the shell and the player', () => {
-    expect(read('../../themes/runtime.ts')).toContain('export const shellNav = derived([isMobile, isTv, themePresentation]')
+    expect(read('../../themes/runtime.ts')).toContain('export const shellNav = derived([isMobile, isTv, activeLayout, themePresentation]')
     expect(layout).not.toContain("const shellNav = $derived(")
   })
 })

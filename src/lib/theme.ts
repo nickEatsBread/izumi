@@ -4,6 +4,7 @@ import { activeStudioTheme, themeStudioPreview, type StudioTheme } from '$lib/se
 import { resolvedThemeTokens } from '$lib/theme-tokens'
 import { isMobile } from '$lib/platform'
 import { resolvePresentation } from '$lib/themes/presentation'
+import { tvSurface } from '$lib/themes/runtime'
 import { fontStack } from '$lib/themes/font-ids'
 import { loadThemeFont } from '$lib/themes/fonts'
 import { sanitizeThemeCssCached, themeStyleText } from '$lib/themes/css'
@@ -94,8 +95,11 @@ function apply() {
   root.dataset.theme = preset
   root.dataset.scheme = tokens.scheme
   root.dataset.themeBackdrop = customActive ? studio.backdrop : 'solid'
-  // Document chrome follows the same phone/shared resolution as the component renderers.
-  const presentation = customActive ? resolvePresentation(studio.presentation, get(isMobile)) : undefined
+  // Document chrome follows the same phone/TV/shared resolution as the component renderers.
+  const presentation = customActive ? resolvePresentation(studio.presentation, get(isMobile), get(tvSurface)) : undefined
+  // API 6: theme stylesheets scope their TV rules under `:scope[data-surface="tv"]`.
+  if (customActive && get(tvSurface) && !get(isMobile)) root.dataset.surface = 'tv'
+  else delete root.dataset.surface
   root.dataset.themeDensity = presentation?.density ?? 'comfortable'
   root.dataset.themeNav = presentation?.shell?.nav ?? 'sidebar'
   root.classList.toggle('theme-true-black', !!presentation?.trueBlack && tokens.scheme === 'dark')
@@ -138,7 +142,7 @@ export function startThemeSync(): () => void {
   const media = matchMedia('(prefers-color-scheme: dark)')
   const subscriptions = [
     themePreset, highContrast, largeInteractionTargets, motionPreference,
-    activeStudioTheme, themeStudioPreview, isMobile, themeSafeMode, protectedSurfaceCount,
+    activeStudioTheme, themeStudioPreview, isMobile, tvSurface, themeSafeMode, protectedSurfaceCount,
   ].map((store) => store.subscribe(apply))
   media.addEventListener('change', apply)
   apply()
