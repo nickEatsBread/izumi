@@ -299,8 +299,7 @@ export interface DetailPresentation {
   actions?: 'row' | 'expand'
   /** API 3: the series title as text (default) or the title logo when there is one, on every layout. */
   title?: 'text' | 'logo'
-  /** API 6: `trailer` plays the title's trailer, muted, over the artwork after a dwell (Home hero 3 s,
-   *  series page 1.5 s), on desktop only. */
+  /** API 6: `trailer` plays the title's trailer, muted, over the series artwork after 1.5 s, on desktop only. */
   preview?: 'none' | 'trailer'
   /** API 3: which sections get tabs, their names, the default tab, and where the phone facts sit. */
   sections?: DetailSections
@@ -440,8 +439,7 @@ export interface HeroPresentation {
    *  the catalog banner, then key art, then the cover, never a trailer still. izumi's own phone card
    *  shows the cover either way. */
   art?: 'banner' | 'banner-cover'
-  /** API 6: `trailer` plays the title's trailer, muted, over the artwork after a dwell (Home hero 3 s,
-   *  series page 1.5 s), on desktop only. */
+  /** API 6: `trailer` plays the slide's trailer, muted, over the artwork after 3 s, on desktop only. */
   preview?: 'none' | 'trailer'
 }
 /** The featured banner's slide marker. */
