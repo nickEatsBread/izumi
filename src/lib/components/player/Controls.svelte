@@ -120,11 +120,15 @@
   const controls = $derived(gm ? resolvePlayerControls(undefined) : resolvePlayerControls($themePresentation))
   const wantsEpisodeTitle = $derived(controls.title === 'episode')
   let episodeMeta = $state<EpMeta | undefined>()
-  // `nowPlayingMedia` is set once per playback start, so this runs per episode, not per tick.
+  // Keyed on the title and episode, not the wrapper object: a source swap re-sets `nowPlayingMedia`
+  // for the same episode and must not blank the name while the lookup lands. A derived string only
+  // notifies when it changes, so the effect (and its reset) runs once per episode.
+  const episodeKey = $derived(wantsEpisodeTitle && $nowPlayingMedia?.episode ? `${$nowPlayingMedia.media.id}|${$nowPlayingMedia.episode}` : '')
   $effect(() => {
-    const target = $nowPlayingMedia
+    const key = episodeKey
     episodeMeta = undefined
-    if (!wantsEpisodeTitle || !target?.episode) return
+    const target = get(nowPlayingMedia)
+    if (!key || !target?.episode) return
     return loadEpisodeMeta(target.media, target.episode, (meta) => { episodeMeta = meta })
   })
   const episodeTitle = $derived(np.episode != null ? episodeName(np.episode, episodeMeta, $hideSpoilers) : undefined)
@@ -922,9 +926,9 @@
       <div class="pointer-events-auto"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} {native} onseek={seekTo} {onscrubinput} /></div>
     {:else}
       <div class="pointer-events-auto flex items-center gap-3">
-        {#if controls.time === 'split'}<span data-part="player.time" data-variant="elapsed" class="shrink-0 select-none font-mono text-sm tabular-nums">{fmt(pos)}</span>{/if}
+        {#if controls.time === 'split'}<span data-part="player.time" data-variant="elapsed" class="w-16 shrink-0 select-none font-mono text-sm tabular-nums">{fmt(pos)}</span>{/if}
         <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} {native} onseek={seekTo} {onscrubinput} /></div>
-        <span data-part="player.time" data-variant={controls.time === 'split' ? 'total' : 'remaining'} class="shrink-0 select-none font-mono text-sm tabular-nums">{fmt(controls.time === 'split' ? dur : Math.max(0, dur - pos))}</span>
+        <span data-part="player.time" data-variant={controls.time === 'split' ? 'total' : 'remaining'} class="w-16 shrink-0 select-none text-right font-mono text-sm tabular-nums">{fmt(controls.time === 'split' ? dur : Math.max(0, dur - pos))}</span>
       </div>
     {/if}
 
