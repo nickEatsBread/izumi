@@ -6,6 +6,7 @@
   import { invoke } from '@tauri-apps/api/core'
   import { getCurrentWindow } from '@tauri-apps/api/window'
   import Controls from './Controls.svelte'
+  import PausedSummary from './PausedSummary.svelte'
   import SubtitleEditor from './SubtitleEditor.svelte'
   import TrackMenu from './TrackMenu.svelte'
   import CommentsPanel from './CommentsPanel.svelte'
@@ -69,7 +70,7 @@
   import PlayIcon from '@lucide/svelte/icons/play'
   import { isMobile, isWindows } from '$lib/platform'
   import { themePresentation, shellNav } from '$lib/themes/runtime'
-  import { resolvePlayerDock, type PlayerChrome } from '$lib/themes/presentation'
+  import { resolvePlayerControls, resolvePlayerDock, type PlayerChrome } from '$lib/themes/presentation'
   import { oskDismissedAt, playerStage } from '$lib/player/session'
   import { measureStage } from '$lib/player/insets'
   import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
@@ -288,8 +289,23 @@
   // measured geometry), but do not turn a hidden player into the complete title/button chrome.
   // Triggers and touch retain the established reveal behaviour.
   const quietDpadScrub = $derived(gmMode && $scrub.active && $scrub.source === 'dpad')
+  const playerControls = $derived(resolvePlayerControls($themePresentation))
+  // API 6 paused summary: five seconds after the last input while paused on the full (not docked)
+  // player, never in Game mode and never over an open menu. `inputTick` is bumped by poke(), so any
+  // input restarts the wait and hides it. While it shows, the controls give way (see `controlsVisible`).
+  let inputTick = $state(0)
+  let pausedIdle = $state(false)
+  $effect(() => {
+    void inputTick
+    const armed = playerControls.paused === 'summary' && transportPaused && !loading && !gmMode && !docked && !$isMobile && !$pictureInPicture
+      && !$scrubActive && !$playerMenuOpen && !$trackMenuOpen && !$commentsOpen && !subtitleEditorOpen
+    pausedIdle = false
+    if (!armed) return
+    const t = setTimeout(() => { pausedIdle = true }, 5000)
+    return () => clearTimeout(t)
+  })
   const controlsVisible = $derived(
-    visible || (!(quietPadSeek || quietDpadScrub) && (transportPaused || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen,
+    visible || (!(quietPadSeek || quietDpadScrub) && ((transportPaused && !pausedIdle) || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen,
   )
   // Game mode: the video window is unmapped behind the menu stage (gm-freeze.ts). Until it is back,
   // the HTML controls stay mounted and own the chrome, so a closing menu inside them slides out.
@@ -325,6 +341,7 @@
   const showSkip = $derived(!!currentSeg && !autoSkipCurrent && (skipTimer || controlsVisible))
 
   function poke() {
+    inputTick++
     visible = true
     clearTimeout(hideT)
     // Match Crunchy Deck's breathing room: the chrome itself fades for 300ms after this hold.
@@ -1862,7 +1879,8 @@
 <!-- Arrow seeks are RELATIVE + EXACT (mpv computes from its OWN live position, so a repeated tap
      advances instead of looping a keyframe). Keys are handled by the CAPTURE-phase listener in
      onMount (above) — NOT here — so they never leak to the spatial nav and move focus. -->
-<svelte:window onmousemove={poke} />
+<!-- Keys and presses that poke() never sees (an unbound key, a click on the scrim) still count as input for the paused summary. -->
+<svelte:window onmousemove={poke} onkeydowncapture={() => inputTick++} onpointerdowncapture={() => inputTick++} onwheel={() => inputTick++} />
 
 <!-- Transparent full-window overlay: mpv shows through, controls composite on top.
      z-20 keeps it below the sidebar nav (z-30) and titlebar (z-50), so those stay
@@ -2045,6 +2063,10 @@
     >
       Skip {currentSeg.label}
     </button>
+  {/if}
+
+  {#if pausedIdle}
+    <PausedSummary media={$nowPlayingMedia?.media} episode={$nowPlayingMedia?.episode ?? np.episode ?? undefined} title={np.animeTitle || np.title} />
   {/if}
 
   {#if controlsVisible && $pictureInPicture}

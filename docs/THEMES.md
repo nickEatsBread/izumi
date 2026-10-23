@@ -263,8 +263,8 @@ State values:
 | `data-control` | `player.control`, and `button` in the player | `back`, `previous`, `rewind`, `play`, `forward`, `next`, `volume`, `options`, `comments`, `tracks`, `subtitle-previous`, `subtitle-replay`, `subtitle-next`, `cast`, `bookmark`, `screenshot`, `pip`, `fullscreen`, `upnext-stay`, `upnext-play` |
 | `data-kind` | `player.skip` | `op`, `ed`, `recap`, `preview` |
 | `data-variant` | `player.time` | `default` (the "pos / dur" readout in the button row), `elapsed`, `remaining`, `total` |
-| `data-episode` | `player.episode` | the episode number |
-| `data-season` | `player.episode` | the season number (with `player.title: "episode"`, when known) |
+| `data-episode` | `player.episode`, `player.summary` | the episode number |
+| `data-season` | `player.episode`, `player.summary` | the season number (with `player.title: "episode"`, when known) |
 | `data-variant` | `home.main` | `lead` on the full-width rows above the side column (`layout.asideStart`) |
 | `data-variant` | `search` | `anilist-scope`, `anilist`, `merged`, `catalog` |
 | `data-variant` | `search.title` | `explore` while a genre, studio or voice actor is being explored (the heading is then shown) |
@@ -561,6 +561,13 @@ State values:
 | `player.volume` | part | The volume slider beside the mute button. |  |
 | `player.time` | part | A time readout: `default` ("pos / dur" in the row), `elapsed`, `remaining` or `total`. | `data-variant` |
 | `player.skip` | part | The Skip button over the video while an opening, ending, recap or preview plays (`data-kind` `op`, `ed`, `recap`, `preview`). | `data-kind` |
+| `player.summary` | part | The "You're watching" summary over a paused video (`player.paused: "summary"`): it shows after five seconds paused with no input and any input hides it. `data-episode` and `data-season` carry the numbers for wording such as `content: "Ep. " attr(data-episode)`. | `data-episode`, `data-season` |
+| `player.summary.kicker` | part | The "You're watching" line. |  |
+| `player.summary.title` | part | The series title in the paused summary. |  |
+| `player.summary.season` | part | "Season 2" in the paused summary, when the season is known. |  |
+| `player.summary.episode` | part | "<episode name>: Ep. 3" in the paused summary; the name is left out while spoilers are hidden. |  |
+| `player.summary.synopsis` | part | The episode's synopsis in the paused summary; hidden with spoilers. |  |
+| `player.summary.state` | part | The "Paused" label at the bottom right of the paused summary. |  |
 | `player.upnext` | part | The Up Next card at the end of an episode (Settings → Up Next overlay). |  |
 | `player.upnext.art` | part | The artwork of the next episode at the top of the Up Next card. |  |
 | `player.upnext.kicker` | part | The "Up next" label above the next episode's title. |  |
