@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Media } from '$lib/anilist/types'
 import type { EpMeta } from '$lib/anizip/types'
-import { episodeName, loadEpisodeMeta } from './episode-info'
+import { episodeName, loadEpisodeMeta, recentEpisodeMeta } from './episode-info'
 
 describe('episodeName', () => {
   it('gives the episode its own title unless it is a placeholder or spoilers are hidden', () => {
@@ -15,6 +15,7 @@ describe('episodeName', () => {
 describe('loadEpisodeMeta', () => {
   const media = { id: 1, videos: [{ number: 2, title: 'From catalog', overview: 'cat', season: 1 }] } as unknown as Media
   const tick = () => new Promise((r) => setTimeout(r, 0))
+  beforeEach(() => recentEpisodeMeta.clear())
 
   it('answers from the catalog first, then merges the episode lookup', async () => {
     const seen: (string | undefined)[] = []
@@ -73,5 +74,32 @@ describe('loadEpisodeMeta', () => {
     loadEpisodeMeta(media, 2, (meta) => seen.push(meta?.title), { fetchMeta, anilistId: () => 1 })
     await tick()
     expect(seen).toEqual(['From catalog'])
+  })
+
+  it('answers a repeat lookup of the same episode at once with the last answer', async () => {
+    const fetchMeta = vi.fn(async () => ({ 2: { title: 'From lookup' } }))
+    loadEpisodeMeta(media, 2, () => {}, { fetchMeta, anilistId: () => 1 })
+    await tick()
+    const seen: (string | undefined)[] = []
+    loadEpisodeMeta(media, 2, (meta) => seen.push(meta?.title), { fetchMeta: () => new Promise(() => {}), anilistId: () => 1 })
+    expect(seen).toEqual(['From lookup'])
+  })
+
+  it('never answers another episode or title from the last answer', async () => {
+    const fetchMeta = vi.fn(async () => ({ 2: { title: 'From lookup' } }))
+    loadEpisodeMeta(media, 2, () => {}, { fetchMeta, anilistId: () => 1 })
+    await tick()
+    const seen: (string | undefined)[] = []
+    const pending = () => new Promise<Record<number, EpMeta>>(() => {})
+    loadEpisodeMeta(media, 3, (meta) => seen.push(meta?.title), { fetchMeta: pending, anilistId: () => 1 })
+    loadEpisodeMeta(media, 2, (meta) => seen.push(meta?.title), { fetchMeta: pending, anilistId: () => 9 })
+    expect(seen).toEqual([undefined, 'From catalog'])
+  })
+
+  it('keeps only the last eight answers', async () => {
+    for (let id = 1; id <= 9; id++) loadEpisodeMeta(media, 2, () => {}, { fetchMeta: async () => ({ 2: { title: `T${id}` } }), anilistId: () => id })
+    await tick()
+    expect(recentEpisodeMeta.size).toBe(8)
+    expect(recentEpisodeMeta.has('1|2')).toBe(false)
   })
 })
