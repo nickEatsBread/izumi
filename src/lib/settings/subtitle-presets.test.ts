@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { get } from 'svelte/store'
 import {
   savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, deleteSubtitlePreset,
-  applyPresetGlobally, effectiveSubtitleStyle, subtitlePresetSourceName, type SubtitleStylePreset,
+  applyPresetGlobally, effectiveSubtitleStyle, subtitlePresetSourceName, subtitleStyleFonts, type SubtitleStylePreset,
 } from './subtitle-presets'
 import {
   subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
@@ -120,5 +120,21 @@ describe('effectiveSubtitleStyle', () => {
     const style = effectiveSubtitleStyle(preset, globals)
     expect(style.scope).toBe('all')
     expect(style.bold).toBe(false)
+  })
+})
+
+describe('subtitleStyleFonts', () => {
+  it('lists the style font and every font its captured ASS styles name, once each', () => {
+    const assSnapshot = {
+      reference: STYLE,
+      scriptInfo: [] as [string, string][],
+      styles: [
+        { name: 'Default', fields: [['FontName', 'Roboto Medium'], ['FontSize', '78']] as [string, string][] },
+        { name: 'Sign', fields: [['FontName', ' Gandhi Sans '], ['Bold', '-1']] as [string, string][] },
+        { name: 'Blank', fields: [['FontName', '']] as [string, string][] },
+      ],
+    }
+    expect(subtitleStyleFonts({ ...STYLE, assSnapshot })).toEqual(['Roboto Medium', 'Gandhi Sans'])
+    expect(subtitleStyleFonts(STYLE)).toEqual(['Roboto Medium'])
   })
 })

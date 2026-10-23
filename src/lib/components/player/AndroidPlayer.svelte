@@ -83,7 +83,7 @@
   import { banner, cover } from '$lib/anilist/media'
   import { MPV_SUBTITLE_DEFAULTS, TEXT_TRACK, dialogueBottom, readSubtitleDefaults, subtitleStyleProps, subtitleTrackFrom, type SubtitleTrack } from '$lib/player/subtitle-style'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
-  import { savedSubtitleStyles, sessionSubtitleAdjustments, sessionSubtitleStyle, saveSubtitlePreset, effectiveSubtitleStyle, resetSubtitleSession, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
+  import { savedSubtitleStyles, sessionSubtitleAdjustments, sessionSubtitleStyle, saveSubtitlePreset, saveSubtitleStyleFonts, effectiveSubtitleStyle, resetSubtitleSession, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
   import { bingeSource } from '$lib/player/session'
   import { SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { getMediaSkipSegments } from '$lib/stremio/skip-segments'
@@ -1657,6 +1657,9 @@
       title: np.animeTitle ?? np.title ?? undefined,
     })
     sessionSubtitleStyle.set(preset)
+    void mpvGet('path').catch(() => '')
+      .then((path) => saveSubtitleStyleFonts(path, preset.style))
+      .then((fonts) => { if (fonts.length) playerNotice.set(`Saved subtitle style “${preset.name}” with its fonts (${fonts.join(', ')})`) })
   }
 
   let downloadingSubtitle = $state<string | null>(null)

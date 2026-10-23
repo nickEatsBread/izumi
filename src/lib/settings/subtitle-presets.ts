@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core'
 import { persisted } from 'svelte-persisted-store'
 import { writable, get } from 'svelte/store'
 import { NO_SUBTITLE_ADJUSTMENTS, type SubtitleAdjustments, type SubtitleStyle } from '$lib/player/subtitle-style'
@@ -62,6 +63,26 @@ export function saveSubtitlePreset(
   savedSubtitleStyles.update((list) =>
     existing ? list.map((p) => (p.id === existing.id ? preset : p)) : [...list, preset])
   return preset
+}
+
+/** Every font a style asks libass for: its own face plus each face its captured ASS styles name. */
+export function subtitleStyleFonts(style: Omit<SubtitleStyle, 'enabled'>): string[] {
+  const snapshot = (style.assSnapshot?.styles ?? [])
+    .flatMap((s) => s.fields.filter(([field]) => field === 'FontName').map(([, value]) => value))
+  return [...new Set([style.font, ...snapshot].map((font) => font.trim()).filter(Boolean))]
+}
+
+/** Keep the fonts a just-saved style takes from the playing file's attachments (`source` = mpv's
+ *  `path`), so the style still renders where that file's fonts are not loaded. A preset only stores
+ *  font names; a release-attached font missing from the system silently fell back to another face.
+ *  Resolves to the families now kept; system fonts are never attached, so they are not in it. */
+export async function saveSubtitleStyleFonts(source: string | null | undefined, style: Omit<SubtitleStyle, 'enabled'>): Promise<string[]> {
+  if (!source) return []
+  return invoke<string[]>('subtitle_fonts_save', { source, families: subtitleStyleFonts(style) })
+    .catch((error) => {
+      console.warn('subtitle fonts not saved', error)
+      return []
+    })
 }
 
 export function deleteSubtitlePreset(id: string): void {
