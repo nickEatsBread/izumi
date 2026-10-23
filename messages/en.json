@@ -370,8 +370,8 @@
   "onboarding_start_import_title": "I use Stremio or Nuvio",
   "onboarding_start_import_body": "Sign in and bring your add-ons, collections and progress with you.",
   "onboarding_start_transfer_title": "izumi is on another device",
-  "onboarding_start_transfer_body": "Copy the whole setup from a device you already use with a QR code.",
-  "onboarding_sources_picked": "{count} selected · they install when you continue",
+  "onboarding_start_transfer_body": "Use a QR code to copy the whole setup from a device you already use.",
+  "onboarding_sources_picked": "Selected: {count} · installs when you continue",
   "onboarding_playback_choice_title": "How torrents play",
   "onboarding_ready_extras_trackers": "Track your anime (optional)",
   "onboarding_ready_tmdb_tip": "Want richer film and TV details? Add a free TMDB key in Settings → Catalog."
