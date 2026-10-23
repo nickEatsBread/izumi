@@ -1123,12 +1123,13 @@ function layerBlock(shared: ThemePresentation, block: MobilePresentation & TvPre
   }
   return resolved
 }
-/** Where the navigation chrome sits: phones always use the bottom bar; an Android TV the side rail unless
- *  the theme's TV block asks for the top bar (API 6); desktops and Game mode follow the resolved
- *  `shell.nav`. `layout` is the unresolved presentation, `resolved` the one for this surface. */
-export function shellNavFor(mobile: boolean, androidTv: boolean, layout: ThemePresentation | undefined, resolved: ThemePresentation | undefined): ThemeNavPlacement {
+/** Where the navigation chrome sits: phones always use the bottom bar; a television (`tv`: any
+ *  supported television runtime) the side rail unless the theme's TV block asks for the top bar (API 6);
+ *  desktops and Game mode follow the resolved `shell.nav`. `layout` is the unresolved presentation,
+ *  `resolved` the one for this surface. */
+export function shellNavFor(mobile: boolean, tv: boolean, layout: ThemePresentation | undefined, resolved: ThemePresentation | undefined): ThemeNavPlacement {
   if (mobile) return 'bottom'
-  if (androidTv) return layout?.tv?.shell?.nav === 'top' ? 'top' : 'sidebar'
+  if (tv) return layout?.tv?.shell?.nav === 'top' ? 'top' : 'sidebar'
   return resolved?.shell?.nav ?? 'sidebar'
 }
 export function visibleNode(node: ThemeNode, model: DisplayModel): boolean {
