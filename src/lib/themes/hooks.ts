@@ -255,7 +255,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'comments.header', kind: 'part', description: 'The discussion heading row ("Discussion · Ep 12").' },
     { name: 'comments.tabs', kind: 'part', description: 'The row of discussion sources (All, then each source found).' },
     { name: 'comments.tab', kind: 'part', description: 'One discussion source.', states: ['data-active'] },
-    { name: 'player.controls', kind: 'slot', description: 'The player controls layer.' },
+    { name: 'player.controls', kind: 'slot', description: 'The player controls layer; `data-variant` names the player: `desktop`, `game` (Game mode, which the stylesheet does not reach) or `android` (the whole Android and Android TV player).', states: ['data-variant'] },
     { name: 'player.seekbar', kind: 'part', description: 'The seek bar.' },
     { name: 'player.seekbar.track', kind: 'part', description: "The seek bar's empty track: one piece per chapter on desktop, one track holding the buffer and fill on Android." },
     { name: 'player.seekbar.buffer', kind: 'part', description: 'The buffered stretch of the seek bar; on desktop one in each chapter piece, a full-width bar shifted inside its piece.' },

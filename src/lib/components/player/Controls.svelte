@@ -865,7 +865,7 @@
 {/snippet}
 
 <!-- stopPropagation: control clicks must not bubble to the video click-to-pause. -->
-<div data-slot="player.controls" data-gm-control-root data-theme-unthemed={gm || undefined} class="pointer-events-none absolute inset-0" onclick={(e) => e.stopPropagation()} role="presentation">
+<div data-slot="player.controls" data-variant={gm ? 'game' : 'desktop'} data-gm-control-root data-theme-unthemed={gm || undefined} class="pointer-events-none absolute inset-0" onclick={(e) => e.stopPropagation()} role="presentation">
   <!-- Top bar: Back button (Desktop only — Game mode uses the B button to leave, so no
        redundant on-screen Back) and, when the Game-mode "title at top" option is on, the
        title. Rendered only when it has something to show. -->

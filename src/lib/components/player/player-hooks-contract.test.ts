@@ -75,6 +75,11 @@ describe('player styling hooks', () => {
     ]) expect(controls).toContain(needle)
   })
 
+  it('says which player it is', () => {
+    expect(controls).toContain(`data-slot="player.controls" data-variant={gm ? 'game' : 'desktop'}`)
+    expect(read('./AndroidPlayer.svelte')).toContain('data-android-player class:hidden={overlayHidden} data-slot="player.controls" data-variant="android"')
+  })
+
   it('keeps theme stylesheets out of the Game mode player', () => {
     expect(read('../../themes/css.ts')).toContain('@scope (:root) to ([data-theme-protected], [data-theme-unthemed])')
     expect(controls).toMatch(/data-slot="player.controls"[^>]*data-theme-unthemed=\{gm \|\| undefined\}/)

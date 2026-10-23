@@ -2284,7 +2284,7 @@
 
 <svelte:window onkeydown={onWindowKeydown} />
 
-<div class="player-shell fixed inset-0 z-50 select-none overflow-hidden text-white" data-android-player class:hidden={overlayHidden}
+<div class="player-shell fixed inset-0 z-50 select-none overflow-hidden text-white" data-android-player class:hidden={overlayHidden} data-slot="player.controls" data-variant="android"
   class:pulling-fullscreen={fullscreenPullDragging || miniPullDragging || pullDim > 0} class:mini-shell={miniLayout}
   class:mini-transitioning={miniCommitting}
   style={`--player-safe-top:${safeTop}px;--player-safe-right:${safeRight}px;--player-safe-bottom:${safeBottom}px;--player-safe-left:${safeLeft}px;--portrait-player-height:${portraitVideoHeight == null ? 'calc(100vw * 9 / 16)' : `${portraitVideoHeight}px`}`}>
