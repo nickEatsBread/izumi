@@ -260,6 +260,9 @@ State values:
 | `data-state` | `watch.toolbar.option` | `active` on the current server, episode or release, or a finished download |
 | `data-variant` | `watch.episodes` | `right`, `below` |
 | `data-variant` | `watch.comments` | `inline`, `sheet` |
+| `data-control` | `player.control`, and `button` in the player | `back`, `previous`, `rewind`, `play`, `forward`, `next`, `volume`, `options`, `comments`, `tracks`, `subtitle-previous`, `subtitle-replay`, `subtitle-next`, `cast`, `bookmark`, `screenshot`, `pip`, `fullscreen` |
+| `data-variant` | `player.time` | `default` (the "pos / dur" readout in the button row), `elapsed`, `remaining`, `total` |
+| `data-episode` | `player.episode` | the episode number |
 | `data-variant` | `home.main` | `lead` on the full-width rows above the side column (`layout.asideStart`) |
 | `data-variant` | `search` | `anilist-scope`, `anilist`, `merged`, `catalog` |
 | `data-variant` | `search.title` | `explore` while a genre, studio or voice actor is being explored (the heading is then shown) |
@@ -537,6 +540,16 @@ State values:
 | `player.controls` | slot | The player controls layer. |  |
 | `player.seekbar` | part | The seek bar. |  |
 | `player.title` | part | The playing title. |  |
+| `player.top` | part | The top bar of the player controls (Back; the title in Game mode's title-at-top option). |  |
+| `player.bottom` | part | The bottom bar of the player controls: the title, the seek bar row and the button row. |  |
+| `player.heading` | part | The title block: the series title (`player.title`) and the episode line (`player.episode`). |  |
+| `player.episode` | part | The episode line under the title; `data-episode` is the episode number. | `data-episode` |
+| `player.row` | part | The button row under the seek bar. |  |
+| `player.transport` | part | The Previous, Play and Next buttons (and Rewind and Forward with `player.seekButtons`). |  |
+| `player.actions` | part | The buttons at the end of the row: volume, options, discussion, tracks, subtitle line navigation, cast, bookmark, screenshot, picture-in-picture and full screen. |  |
+| `player.control` | part | A player button, named by `data-control` (Back and Play are `button` parts with `data-control` too). | `data-control` |
+| `player.volume` | part | The volume slider beside the mute button. |  |
+| `player.time` | part | A time readout: `default` ("pos / dur" in the row), `elapsed`, `remaining` or `total`. | `data-variant` |
 
 #### Search, schedule and library
 

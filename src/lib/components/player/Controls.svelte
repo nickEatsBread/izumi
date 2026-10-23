@@ -827,10 +827,10 @@
 <!-- Now-playing title, reused above the seek bar (default) or at the top (Game-mode option). -->
 {#snippet titleBlock(big: boolean)}
   {#if np.animeTitle && !hideTitle}
-    <div class="min-w-0 pt-0.5 [text-shadow:0_1px_4px_rgba(0,0,0,.7)]">
+    <div data-part="player.heading" class="min-w-0 pt-0.5 [text-shadow:0_1px_4px_rgba(0,0,0,.7)]">
       <div data-part="player.title" data-gm-title class="line-clamp-1 text-white {big ? 'text-3xl font-black leading-tight drop-shadow' : 'text-lg font-semibold'}">{np.animeTitle}</div>
       {#if np.episode != null}
-        <div data-gm-episode class="line-clamp-1 {big ? 'text-lg font-semibold leading-snug text-white/75' : 'text-sm font-normal text-white/60'}">Episode {np.episode}{np.total ? ` / ${np.total}` : ''}</div>
+        <div data-part="player.episode" data-episode={np.episode} data-gm-episode class="line-clamp-1 {big ? 'text-lg font-semibold leading-snug text-white/75' : 'text-sm font-normal text-white/60'}">Episode {np.episode}{np.total ? ` / ${np.total}` : ''}</div>
       {/if}
     </div>
   {/if}
@@ -852,13 +852,13 @@
     <!-- Same reasoning as the bottom bar: this bar spans the full width for the sake of one Back
          button, so leaving it pointer-events-auto made the entire top of the video a click-to-pause
          dead zone. The button and the 32px drag strip opt back in; the rest falls through. -->
-    <div data-gm-bar class="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-4 bg-gradient-to-b from-black/70 to-transparent {gm ? 'px-8 py-6' : 'px-4 pb-3 pt-2'}"
+    <div data-part="player.top" data-gm-bar class="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-4 bg-gradient-to-b from-black/70 to-transparent {gm ? 'px-8 py-6' : 'px-4 pb-3 pt-2'}"
          style:padding-left={backInset}>
       {#if underTitlebar}
         <div data-tauri-drag-region class="pointer-events-auto absolute inset-x-0 top-0 h-8"></div>
       {/if}
       {#if !gm && !hideBack}
-        <button data-part="button" data-variant="ghost" data-focusable onclick={onclose} aria-label="Back"
+        <button data-part="button" data-variant="ghost" data-control="back" data-focusable onclick={onclose} aria-label="Back"
                 class="pointer-events-auto relative flex shrink-0 select-none items-center gap-1.5 rounded-full bg-black/60 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white transition hover:bg-black/80">
           <ArrowLeft size={icSize} /><span>Back</span>
         </button>
@@ -877,7 +877,7 @@
        Only the rows that actually ARE controls opt back in below; the gradient, the padding and the
        title now fall through to the overlay's click-to-pause. The Seekbar keeps its own `py-3` grab
        padding, so there is still a forgiving band that seeks rather than pausing. -->
-  <div data-gm-bar class="pointer-events-none absolute inset-x-0 bottom-0 {gm ? 'bg-gradient-to-t from-black/80 via-black/40 to-transparent px-8 pb-6 pt-14' : 'bg-gradient-to-t from-black/85 via-black/45 to-transparent px-6 pb-5 pt-20'}">
+  <div data-part="player.bottom" data-gm-bar class="pointer-events-none absolute inset-x-0 bottom-0 {gm ? 'bg-gradient-to-t from-black/80 via-black/40 to-transparent px-8 pb-6 pt-14' : 'bg-gradient-to-t from-black/85 via-black/45 to-transparent px-6 pb-5 pt-20'}">
     <!-- Now-playing title above the seek bar (unless it's been moved to the top). Scales up
          in Game mode to match the enlarged controls. -->
     {#if !titleTop}
@@ -890,21 +890,22 @@
       <div class="pointer-events-auto flex items-center gap-3">
         <!-- XWayland's visible time/bar pixels come from mpv's live OSD, so these HTML elements
              become transparent measurement/hit targets there. Native Wayland paints them live. -->
-        <span class="w-16 shrink-0 select-none text-right font-mono text-base tabular-nums" class:opacity-0={native}>{fmt(pos)}</span>
+        <span data-part="player.time" data-variant="elapsed" class="w-16 shrink-0 select-none text-right font-mono text-base tabular-nums" class:opacity-0={native}>{fmt(pos)}</span>
         <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} {native} onseek={seekTo} {onscrubinput} /></div>
-        <span class="w-16 shrink-0 select-none font-mono text-base tabular-nums" class:opacity-0={native}>{fmt(dur)}</span>
+        <span data-part="player.time" data-variant="total" class="w-16 shrink-0 select-none font-mono text-base tabular-nums" class:opacity-0={native}>{fmt(dur)}</span>
       </div>
     {:else}
       <div class="pointer-events-auto"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} {native} onseek={seekTo} {onscrubinput} /></div>
     {/if}
 
-    <div class="pointer-events-auto mt-1 flex items-center gap-3 text-white {gm ? 'gap-4' : ''}">
+    <div data-part="player.row" class="pointer-events-auto mt-1 flex items-center gap-3 text-white {gm ? 'gap-4' : ''}">
+      <div data-part="player.transport" class="flex items-center gap-3 {gm ? 'gap-4' : ''}">
       {#if hasPrev}
-        <button data-focusable class={iconBtn} onclick={() => (gm ? episodeStep(-1) : playPrev(undefined, !paused))} aria-label="Previous episode"><SkipBack size={icSize} fill="currentColor" /></button>
+        <button data-part="player.control" data-control="previous" data-focusable class={iconBtn} onclick={() => (gm ? episodeStep(-1) : playPrev(undefined, !paused))} aria-label="Previous episode"><SkipBack size={icSize} fill="currentColor" /></button>
       {/if}
       <!-- Play/pause: Game mode gets a filled white circle (no outline) — the primary,
            thumb-sized touch target; Desktop keeps the subtle hover-only button. -->
-      <button data-part="button" data-variant="icon" data-focusable onclick={togglePlay} aria-label={paused ? 'Play' : 'Pause'}
+      <button data-part="button" data-variant="icon" data-control="play" data-focusable onclick={togglePlay} aria-label={paused ? 'Play' : 'Pause'}
               class="grid place-items-center rounded-full focus-ring-inset {gm ? 'gm-play size-16 bg-white text-black shadow-lg' : 'size-10 transition hover:bg-white/15'}">
         {#if paused}<Play size={gm ? 30 : 22} fill="currentColor" />{:else}<Pause size={gm ? 30 : 22} fill="currentColor" />{/if}
       </button>
@@ -913,6 +914,8 @@
              when true: under the noAdd contract most episodes are NOT preloaded, so a persistent
              "not ready" state would be noise rather than information. -->
         <button
+          data-part="player.control"
+          data-control="next"
           data-focusable
           class="{iconBtn} relative"
           onclick={() => (gm ? episodeStep(1) : playNext(undefined, !paused))}
@@ -925,25 +928,27 @@
           {/if}
         </button>
       {/if}
+      </div>
 
       <!-- Desktop shows the time here; Game mode moved it to flank the bar (above). The active
            chapter title rides along, Desktop-only — Game mode's bar is already tight on a Deck,
            and confining the experiment to one surface keeps a revert clean either way. -->
       {#if !gm}
-        <span class="ml-1 select-none font-mono tabular-nums text-sm">{fmt(pos)} / {fmt(dur)}</span>
+        <span data-part="player.time" data-variant="default" class="ml-1 select-none font-mono tabular-nums text-sm">{fmt(pos)} / {fmt(dur)}</span>
         {#if activeChapterTitle}
           <span class="hidden min-w-0 max-w-[16rem] truncate text-xs text-white/50 sm:inline">{activeChapterTitle}</span>
         {/if}
       {/if}
 
-      <div class="ml-auto flex items-center gap-3 {gm ? 'gap-4' : ''}">
+      <div data-part="player.actions" class="ml-auto flex items-center gap-3 {gm ? 'gap-4' : ''}">
         <!-- Volume — Desktop only; Game mode uses the Deck's hardware volume. -->
         {#if !gm}
         <div class="group/vol flex items-center gap-1">
-          <button data-focusable class={iconBtn} onclick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'}>
+          <button data-part="player.control" data-control="volume" data-focusable class={iconBtn} onclick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'}>
             {#if muted}<VolumeX size={icSize} />{:else}<Volume2 size={icSize} />{/if}
           </button>
           <input
+            data-part="player.volume"
             data-focusable
             type="range"
             class="h-1 w-0 cursor-pointer accent-white opacity-0 transition-all duration-200 group-hover/vol:w-20 group-hover/vol:opacity-100"
@@ -957,7 +962,7 @@
         <!-- Playback options: speed, audio/subtitle delay, subtitle size. In Game mode it sits to
              the RIGHT of the Subtitles button (Crunchy-Deck order) via order-last. -->
         <div class="relative {gm ? 'order-last' : ''}">
-          <button data-focusable class={iconBtn} onclick={toggleOptions} aria-label="Playback options"><Settings size={icSize} /></button>
+          <button data-part="player.control" data-control="options" data-focusable class={iconBtn} onclick={toggleOptions} aria-label="Playback options"><Settings size={icSize} /></button>
           {#if showOptions && !gm}
             <!-- Match the subtitle picker: a compact summary column drills into one focused list
                  instead of exposing every control in one tall wall. -->
@@ -1095,7 +1100,7 @@
         </div>
 
         <!-- Discussion / comments panel toggle (keyed on the playing episode). -->
-        <button data-focusable class={iconBtn} onclick={toggleComments}
+        <button data-part="player.control" data-control="comments" data-focusable class={iconBtn} onclick={toggleComments}
                 aria-label="Discussion" aria-pressed={$commentsOpen}>
           <MessageSquare size={icSize} class={$commentsOpen ? 'text-theme' : ''} />
         </button>
@@ -1103,7 +1108,7 @@
         <!-- Audio, subtitle and server menu. Server selection lives here so the control strip has
              one predictable media-options entry point rather than a second, unlabeled arrows icon. -->
         <div class="relative">
-          <button data-focusable class={iconBtn} onclick={loadTracks} aria-label="Audio, subtitles and server"><Captions size={icSize} /></button>
+          <button data-part="player.control" data-control="tracks" data-focusable class={iconBtn} onclick={loadTracks} aria-label="Audio, subtitles and server"><Captions size={icSize} /></button>
           {#if showTracks}
             {#if gm}
               <!-- Game mode keeps the flat, tap-friendly list (the ☰ TrackMenu is the primary
@@ -1403,19 +1408,19 @@
 
         {#if $subtitleLineNavigation}
           <div class="hidden items-center gap-1 sm:flex" aria-label="Subtitle line navigation">
-            <button data-focusable class={iconBtn} onclick={() => navigateSubtitleLine(-1)} aria-label="Previous subtitle line" title="Previous subtitle line">
+            <button data-part="player.control" data-control="subtitle-previous" data-focusable class={iconBtn} onclick={() => navigateSubtitleLine(-1)} aria-label="Previous subtitle line" title="Previous subtitle line">
               <span class="relative grid place-items-center">
                 <Captions size={icSize} />
                 <ChevronLeft size={11} strokeWidth={3} class="absolute -bottom-1 -left-1 rounded-full bg-black/80" />
               </span>
             </button>
-            <button data-focusable class={iconBtn} onclick={() => navigateSubtitleLine(0)} aria-label="Replay subtitle line" title="Replay subtitle line">
+            <button data-part="player.control" data-control="subtitle-replay" data-focusable class={iconBtn} onclick={() => navigateSubtitleLine(0)} aria-label="Replay subtitle line" title="Replay subtitle line">
               <span class="relative grid place-items-center">
                 <Captions size={icSize} />
                 <RefreshCw size={10} strokeWidth={3} class="absolute -bottom-1 -right-1 rounded-full bg-black/80" />
               </span>
             </button>
-            <button data-focusable class={iconBtn} onclick={() => navigateSubtitleLine(1)} aria-label="Next subtitle line" title="Next subtitle line">
+            <button data-part="player.control" data-control="subtitle-next" data-focusable class={iconBtn} onclick={() => navigateSubtitleLine(1)} aria-label="Next subtitle line" title="Next subtitle line">
               <span class="relative grid place-items-center">
                 <Captions size={icSize} />
                 <ChevronRight size={11} strokeWidth={3} class="absolute -bottom-1 -right-1 rounded-full bg-black/80" />
@@ -1428,15 +1433,15 @@
              bar because Izumi maps its own screenshot action to L4 (R4 is Izumi's GIF recorder). -->
         {#if !gm}
           <DesktopCastButton {pos} {dur} buttonClass={iconBtn} iconSize={icSize} {cmd} onopen={closePlayerMenus} />
-          {#if $sceneBookmarksEnabled}<button data-focusable class={iconBtn} onclick={() => void bookmarkScene()} aria-label="Save scene bookmark" title="Save scene bookmark"><Bookmark size={icSize} /></button>{/if}
-          <button data-focusable class={iconBtn} onclick={screenshot} aria-label="Screenshot"><Camera size={icSize} /></button>
-          <button data-focusable class={iconBtn} onclick={togglePictureInPicture} aria-label="Picture in picture"><PictureInPicture size={icSize} /></button>
+          {#if $sceneBookmarksEnabled}<button data-focusable class={iconBtn} data-part="player.control" data-control="bookmark" onclick={() => void bookmarkScene()} aria-label="Save scene bookmark" title="Save scene bookmark"><Bookmark size={icSize} /></button>{/if}
+          <button data-part="player.control" data-control="screenshot" data-focusable class={iconBtn} onclick={screenshot} aria-label="Screenshot"><Camera size={icSize} /></button>
+          <button data-part="player.control" data-control="pip" data-focusable class={iconBtn} onclick={togglePictureInPicture} aria-label="Picture in picture"><PictureInPicture size={icSize} /></button>
         {/if}
 
         <!-- Fullscreen (user-initiated; player opens windowed). Hidden in game mode —
              the Deck player is always fullscreen, there is no windowed state. -->
         {#if !gm}
-          <button data-focusable class={iconBtn} onclick={toggleFullscreen} aria-label="Toggle fullscreen">
+          <button data-part="player.control" data-control="fullscreen" data-focusable class={iconBtn} onclick={toggleFullscreen} aria-label="Toggle fullscreen">
             {#if $fullscreen}<Minimize size={icSize} />{:else}<Maximize size={icSize} />{/if}
           </button>
         {/if}
