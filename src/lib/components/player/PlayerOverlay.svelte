@@ -2054,7 +2054,7 @@
   {#if showSkip && currentSeg}
     <button
       data-part="player.skip" data-kind={currentSeg.type}
-      data-focusable
+      data-focusable data-theme-unthemed={gmMode || undefined}
       transition:fade={{ duration: gmMode ? 0 : 150 }}
       class="izumi-hud absolute z-10 font-bold
         {gmMode

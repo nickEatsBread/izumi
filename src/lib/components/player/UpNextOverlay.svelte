@@ -3,7 +3,7 @@
   import Play from '@lucide/svelte/icons/play'
   import X from '@lucide/svelte/icons/x'
   import { upNextPrompt } from '$lib/player/session'
-  import { playing } from '$lib/player/session'
+  import { playing, gameMode } from '$lib/player/session'
   import { androidMpvActive } from '$lib/player/android-mpv'
   import { m } from '$lib/paraglide/messages.js'
   import { gmPanel, gmPanelOut } from '$lib/player/gm-freeze'
@@ -44,6 +44,7 @@
     aria-modal="true"
     aria-label={m.up_next_title()}
     data-gm-menu-surface
+    data-theme-unthemed={$gameMode || undefined}
     class="fixed inset-0 z-[85] flex items-end justify-center bg-black/55 p-4 sm:items-center"
   >
     <div data-part="player.upnext" use:gmPanel={'bottom'} out:motion={gmPanelOut('bottom')} class="w-full max-w-lg overflow-hidden rounded-2xl border border-white/15 bg-neutral-950 text-white shadow-2xl">

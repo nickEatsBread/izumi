@@ -321,6 +321,7 @@
        their tracks in the same panel; B or the back arrow returns, a tap outside closes. -->
   <div
     data-gm-menu-surface
+    data-theme-unthemed
     class="fixed inset-0 z-40 bg-black/50"
     onclick={closeMenu}
     role="presentation"

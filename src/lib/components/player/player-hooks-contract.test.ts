@@ -74,4 +74,15 @@ describe('player styling hooks', () => {
       'loadEpisodeMeta(',
     ]) expect(controls).toContain(needle)
   })
+
+  it('keeps theme stylesheets out of the Game mode player', () => {
+    expect(read('../../themes/css.ts')).toContain('@scope (:root) to ([data-theme-protected], [data-theme-unthemed])')
+    expect(controls).toMatch(/data-slot="player.controls"[^>]*data-theme-unthemed=\{gm \|\| undefined\}/)
+    expect(read('./PlayerOverlay.svelte')).toMatch(/data-part="player.skip"[^>]*data-theme-unthemed=\{gmMode \|\| undefined\}/)
+    expect(read('./UpNextOverlay.svelte')).toContain('data-theme-unthemed={$gameMode || undefined}')
+    // The media menu only mounts in Game mode.
+    expect(read('./TrackMenu.svelte')).toMatch(/data-gm-menu-surface\s+data-theme-unthemed\s/)
+    // Unlike data-theme-protected, the marker carries no styling of its own.
+    expect(read('../../../app.css')).not.toContain('data-theme-unthemed')
+  })
 })

@@ -75,8 +75,9 @@ export function sanitizeThemeCssCached(text: string): SanitizedCss {
   return last.result
 }
 
-/** With `@scope` support the theme can never match inside `[data-theme-protected]` subtrees. */
+/** With `@scope` support the theme can never match inside `[data-theme-protected]` subtrees, nor inside
+ *  `[data-theme-unthemed]` ones (Game mode's player, whose HUD is measured from the DOM). */
 export function themeStyleText(result: { css: string; global: string }, scoped: boolean): string {
-  const body = scoped ? `@scope (:root) to ([data-theme-protected]) {\n${result.css}\n}` : result.css
+  const body = scoped ? `@scope (:root) to ([data-theme-protected], [data-theme-unthemed]) {\n${result.css}\n}` : result.css
   return result.global ? `${result.global}\n${body}` : body
 }
