@@ -4,8 +4,11 @@
 //! while that file plays. A saved style stored just the font's NAME, so on any other file (another
 //! release, an SRT, a later episode streamed elsewhere) libass silently fell back to a different
 //! face. Saving a style now copies the attached faces it names into one folder that both mpv cores
-//! read through `sub-fonts-dir`, which is additive to the system's own fonts.
+//! read through `sub-fonts-dir`, which is additive to the system's own fonts. Faces the system
+//! already has are not copied: a saved copy (often an older or subset version) would otherwise
+//! shadow the installed one for every subtitle that asks for it.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use tauri::Manager;
@@ -140,67 +143,185 @@ fn attachments_offset(head: &[u8]) -> Option<u64> {
     None
 }
 
-/// Every family, full and PostScript name in a TrueType/OpenType font or collection: the names
-/// libass matches a style's FontName against. Anything that is not a font yields none.
-fn font_names(data: &[u8]) -> Vec<String> {
-    let be16 = |at: usize| {
-        data.get(at..at + 2)
+/// `name` table ids: family, full name, PostScript name, typographic family. libass matches a
+/// style's FontName against all four; full and PostScript names identify one face (Arial Bold).
+const NAME_IDS: [usize; 4] = [1, 4, 6, 16];
+const FACE_NAME_IDS: [usize; 2] = [4, 6];
+
+/// The `(name id, text)` records of every face in a TrueType/OpenType font or collection, read
+/// through `read(offset, len)` so an installed font only has its headers and name table read.
+/// Anything that is not a font yields no faces.
+fn face_names(mut read: impl FnMut(usize, usize) -> Option<Vec<u8>>) -> Vec<Vec<(usize, String)>> {
+    let be16 = |b: &[u8], at: usize| {
+        b.get(at..at + 2)
             .map(|b| u16::from_be_bytes([b[0], b[1]]) as usize)
     };
-    let be32 = |at: usize| {
-        data.get(at..at + 4)
+    let be32 = |b: &[u8], at: usize| {
+        b.get(at..at + 4)
             .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as usize)
     };
-    let faces: Vec<usize> = if data.starts_with(b"ttcf") {
-        (0..be32(8).unwrap_or(0).min(256))
-            .filter_map(|i| be32(12 + 4 * i))
-            .collect()
+    let Some(head) = read(0, 12) else {
+        return Vec::new();
+    };
+    let faces: Vec<usize> = if head.starts_with(b"ttcf") {
+        let count = be32(&head, 8).unwrap_or(0).min(256);
+        read(12, 4 * count)
+            .map(|offsets| (0..count).filter_map(|i| be32(&offsets, 4 * i)).collect())
+            .unwrap_or_default()
     } else {
         vec![0]
     };
-    let mut names = Vec::new();
+    let mut out = Vec::new();
     for face in faces {
-        let Some(tables) = be16(face + 4) else {
+        let Some(tables) = read(face, 12).and_then(|header| be16(&header, 4)) else {
+            continue;
+        };
+        let Some(directory) = read(face + 12, 16 * tables) else {
             continue;
         };
         let Some(table) = (0..tables)
-            .map(|i| face + 12 + 16 * i)
-            .find(|&record| data.get(record..record + 4) == Some(b"name"))
-            .and_then(|record| be32(record + 8))
+            .map(|i| 16 * i)
+            .find(|&record| directory.get(record..record + 4) == Some(b"name"))
+            .and_then(|record| {
+                read(
+                    be32(&directory, record + 8)?,
+                    be32(&directory, record + 12)?,
+                )
+            })
         else {
             continue;
         };
-        let (Some(count), Some(strings)) = (be16(table + 2), be16(table + 4)) else {
+        let (Some(count), Some(strings)) = (be16(&table, 2), be16(&table, 4)) else {
             continue;
         };
-        for record in (0..count).map(|i| table + 6 + 12 * i) {
+        let mut names = Vec::new();
+        for record in (0..count).map(|i| 6 + 12 * i) {
             let (Some(platform), Some(id), Some(len), Some(offset)) = (
-                be16(record),
-                be16(record + 6),
-                be16(record + 8),
-                be16(record + 10),
+                be16(&table, record),
+                be16(&table, record + 6),
+                be16(&table, record + 8),
+                be16(&table, record + 10),
             ) else {
                 break;
             };
-            if ![1, 4, 6, 16].contains(&id) {
-                continue;
-            }
-            let start = table + strings + offset;
-            let Some(raw) = data.get(start..start + len) else {
+            let start = strings + offset;
+            let Some(raw) = table
+                .get(start..start + len)
+                .filter(|_| NAME_IDS.contains(&id))
+            else {
                 continue;
             };
-            names.push(if platform == 1 {
-                raw.iter().map(|&b| b as char).collect()
-            } else {
-                let units: Vec<u16> = raw
-                    .chunks_exact(2)
-                    .map(|c| u16::from_be_bytes([c[0], c[1]]))
-                    .collect();
-                String::from_utf16_lossy(&units)
-            });
+            names.push((
+                id,
+                if platform == 1 {
+                    raw.iter().map(|&b| b as char).collect()
+                } else {
+                    let units: Vec<u16> = raw
+                        .chunks_exact(2)
+                        .map(|c| u16::from_be_bytes([c[0], c[1]]))
+                        .collect();
+                    String::from_utf16_lossy(&units)
+                },
+            ));
+        }
+        if !names.is_empty() {
+            out.push(names);
         }
     }
-    names
+    out
+}
+
+fn names_in(data: &[u8]) -> Vec<Vec<(usize, String)>> {
+    face_names(|at, len| data.get(at..at.checked_add(len)?).map(<[u8]>::to_vec))
+}
+
+fn names_in_file(path: &Path) -> Vec<Vec<(usize, String)>> {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return Vec::new();
+    };
+    face_names(|at, len| {
+        // A name table is a few KB; anything this big is not a font header.
+        if len > 1 << 20 {
+            return None;
+        }
+        let mut buf = vec![0; len];
+        file.seek(SeekFrom::Start(at as u64)).ok()?;
+        file.read_exact(&mut buf).ok()?;
+        Some(buf)
+    })
+}
+
+/// The face names (full and PostScript) of one face, normalized.
+fn face_ids(face: &[(usize, String)]) -> impl Iterator<Item = String> + '_ {
+    face.iter()
+        .filter(|(id, _)| FACE_NAME_IDS.contains(id))
+        .map(|(_, name)| normalize(name))
+}
+
+/// Where the platform's font providers (DirectWrite, CoreText, fontconfig) find installed fonts.
+fn system_font_dirs() -> Vec<PathBuf> {
+    let env = |key: &str| std::env::var_os(key).map(PathBuf::from);
+    let mut dirs = Vec::new();
+    if cfg!(windows) {
+        dirs.extend(env("WINDIR").map(|dir| dir.join("Fonts")));
+        dirs.extend(
+            env("LOCALAPPDATA").map(|dir| dir.join("Microsoft").join("Windows").join("Fonts")),
+        );
+    } else if cfg!(target_os = "macos") {
+        dirs.extend(["/System/Library/Fonts", "/Library/Fonts"].map(PathBuf::from));
+        dirs.extend(env("HOME").map(|home| home.join("Library/Fonts")));
+    } else if cfg!(target_os = "android") {
+        dirs.extend(["/system/fonts", "/product/fonts"].map(PathBuf::from));
+    } else {
+        // `/run/host/*` is how the Flatpak build sees the host's fonts.
+        dirs.extend(
+            [
+                "/usr/share/fonts",
+                "/usr/local/share/fonts",
+                "/run/host/fonts",
+                "/run/host/user-fonts",
+            ]
+            .map(PathBuf::from),
+        );
+        dirs.extend(
+            env("HOME")
+                .into_iter()
+                .flat_map(|home| [home.join(".local/share/fonts"), home.join(".fonts")]),
+        );
+    }
+    dirs
+}
+
+/// Face names of every installed font. Only headers and name tables are read.
+fn installed_faces() -> HashSet<String> {
+    let mut pending = system_font_dirs();
+    let mut faces = HashSet::new();
+    while let Some(dir) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            // DirEntry::file_type does not follow symlinks, so a looping link is never walked.
+            if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                pending.push(path);
+                continue;
+            }
+            let font = path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| {
+                    ["ttf", "otf", "ttc", "otc"].contains(&ext.to_ascii_lowercase().as_str())
+                });
+            if font {
+                for face in names_in_file(&path) {
+                    faces.extend(face_ids(&face));
+                }
+            }
+        }
+    }
+    faces
 }
 
 /// libass compares names case-insensitively; a leading `@` asks for the vertical variant.
@@ -272,7 +393,13 @@ async fn read_range(source: &str, start: u64, len: u64) -> Result<Vec<u8>, Strin
     Ok(out)
 }
 
-async fn save_into(dir: &Path, source: &str, families: &[String]) -> Result<Vec<String>, String> {
+/// `installed` is only awaited when the file attaches a face the style names.
+async fn save_into(
+    dir: &Path,
+    source: &str,
+    families: &[String],
+    installed: impl std::future::Future<Output = HashSet<String>>,
+) -> Result<Vec<String>, String> {
     let wanted: Vec<(&String, String)> = families
         .iter()
         .map(|family| (family, normalize(family)))
@@ -295,7 +422,7 @@ async fn save_into(dir: &Path, source: &str, families: &[String]) -> Result<Vec<
         .ok_or("attachments-too-large")?;
     let body = read_range(source, at + attachments.data as u64, size).await?;
 
-    let mut saved: Vec<String> = Vec::new();
+    let mut matches = Vec::new();
     for (id, file) in children(&body) {
         if id != ATTACHED_FILE {
             continue;
@@ -305,19 +432,37 @@ async fn save_into(dir: &Path, source: &str, families: &[String]) -> Result<Vec<
         let Some(data) = field(FILE_DATA) else {
             continue;
         };
-        let names: Vec<String> = font_names(data).iter().map(|n| normalize(n)).collect();
+        let faces = names_in(data);
+        let names: Vec<String> = faces
+            .iter()
+            .flatten()
+            .map(|(_, name)| normalize(name))
+            .collect();
         let hits: Vec<&String> = wanted
             .iter()
             .filter(|(_, key)| names.contains(key))
             .map(|(family, _)| *family)
             .collect();
-        if hits.is_empty() {
+        if !hits.is_empty() {
+            matches.push((field(FILE_NAME).unwrap_or_default(), data, faces, hits));
+        }
+    }
+    if matches.is_empty() {
+        return Ok(Vec::new());
+    }
+    let installed = installed.await;
+
+    let mut saved: Vec<String> = Vec::new();
+    for (file_name, data, faces, hits) in matches {
+        // The system's own copy of the exact face already renders it (any version will do), so
+        // only faces it lacks are kept: a release's Bold of a family installed in Regular only.
+        if faces
+            .iter()
+            .all(|face| face_ids(face).any(|id| installed.contains(&id)))
+        {
             continue;
         }
-        let path = dir.join(stored_name(
-            &String::from_utf8_lossy(field(FILE_NAME).unwrap_or_default()),
-            data,
-        ));
+        let path = dir.join(stored_name(&String::from_utf8_lossy(file_name), data));
         if !path.exists() {
             // Through a temp name: a half-written file would never be rewritten (the name exists).
             let partial = path.with_extension("partial");
@@ -332,15 +477,20 @@ async fn save_into(dir: &Path, source: &str, families: &[String]) -> Result<Vec<
 }
 
 /// Copy the font attachments of the playing Matroska `source` (an http(s) URL or an absolute path)
-/// that any of `families` names into the saved-fonts folder. Returns the families now kept there.
-/// A family the file does not attach (a system font) is left to the system.
+/// that any of `families` names into the saved-fonts folder, except faces already installed on
+/// the system. Returns the families now kept there.
 #[tauri::command]
 pub async fn subtitle_fonts_save(
     source: String,
     families: Vec<String>,
 ) -> Result<Vec<String>, String> {
     let dir = DIR.get().ok_or("fonts-folder-unavailable")?;
-    save_into(dir, &source, &families).await
+    let installed = async {
+        tauri::async_runtime::spawn_blocking(installed_faces)
+            .await
+            .unwrap_or_default()
+    };
+    save_into(dir, &source, &families, installed).await
 }
 
 #[cfg(test)]
@@ -360,17 +510,23 @@ mod tests {
         out
     }
 
-    /// A minimal sfnt with only a `name` table carrying `family` as a Windows (UTF-16BE) record.
-    fn font(family: &str) -> Vec<u8> {
-        let text: Vec<u8> = family.encode_utf16().flat_map(u16::to_be_bytes).collect();
+    /// A minimal sfnt whose only table is `name`: family, full and PostScript names as Windows
+    /// (UTF-16BE) records.
+    fn face(family: &str, full: &str, postscript: &str) -> Vec<u8> {
+        let records = [(1u16, family), (4, full), (6, postscript)];
         let mut name = Vec::new();
-        for v in [0u16, 1, 18] {
+        let mut strings = Vec::new();
+        for v in [0u16, records.len() as u16, 6 + 12 * records.len() as u16] {
             name.extend_from_slice(&v.to_be_bytes()); // format, count, string offset
         }
-        for v in [3u16, 1, 0x409, 1, text.len() as u16, 0] {
-            name.extend_from_slice(&v.to_be_bytes()); // platform, encoding, language, id, len, offset
+        for (id, value) in records {
+            let text: Vec<u8> = value.encode_utf16().flat_map(u16::to_be_bytes).collect();
+            for v in [3u16, 1, 0x409, id, text.len() as u16, strings.len() as u16] {
+                name.extend_from_slice(&v.to_be_bytes()); // platform, encoding, language, id, len, offset
+            }
+            strings.extend(text);
         }
-        name.extend_from_slice(&text);
+        name.extend(strings);
         let mut out = vec![0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0];
         out.extend_from_slice(b"name");
         out.extend_from_slice(&[0, 0, 0, 0]);
@@ -412,47 +568,122 @@ mod tests {
         [el(EBML, &[]), el(SEGMENT, &body)].concat()
     }
 
+    fn temp_root(tag: &str) -> PathBuf {
+        let root =
+            std::env::temp_dir().join(format!("izumi-subfonts-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("fonts")).unwrap();
+        root
+    }
+
+    fn saved_files(dir: &Path) -> Vec<String> {
+        let mut files: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        files.sort();
+        files
+    }
+
     #[test]
-    fn reads_font_names() {
-        assert_eq!(
-            font_names(&font("Gandhi Sans")),
-            vec!["Gandhi Sans".to_string()]
-        );
-        assert!(font_names(b"\x89PNG not a font").is_empty());
+    fn reads_font_names_from_memory_and_disk() {
+        let data = face("Gandhi Sans", "Gandhi Sans Bold", "GandhiSans-Bold");
+        let expected = vec![vec![
+            (1, "Gandhi Sans".to_string()),
+            (4, "Gandhi Sans Bold".to_string()),
+            (6, "GandhiSans-Bold".to_string()),
+        ]];
+        assert_eq!(names_in(&data), expected);
+        let root = temp_root("names");
+        let path = root.join("bold.otf");
+        std::fs::write(&path, &data).unwrap();
+        assert_eq!(names_in_file(&path), expected);
+        assert!(names_in(b"\x89PNG not a font").is_empty());
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[tokio::test]
     async fn saves_only_the_attached_fonts_a_style_names() {
-        let root = std::env::temp_dir().join(format!("izumi-subfonts-{}", std::process::id()));
+        let root = temp_root("save");
         let fonts = root.join("fonts");
-        std::fs::create_dir_all(&fonts).unwrap();
         let video = root.join("episode.mkv");
         std::fs::write(
             &video,
             mkv(&[
-                attached("GandhiSans-Bold.otf", &font("Gandhi Sans")),
-                attached("other.ttf", &font("Other")),
+                attached(
+                    "GandhiSans-Bold.otf",
+                    &face("Gandhi Sans", "Gandhi Sans Bold", "GandhiSans-Bold"),
+                ),
+                attached("other.ttf", &face("Other", "Other", "Other")),
             ]),
         )
         .unwrap();
         let source = video.to_string_lossy().to_string();
+        let none = || async { HashSet::new() };
 
-        let saved = save_into(&fonts, &source, &["@gandhi sans".into(), "Arial".into()])
-            .await
-            .unwrap();
+        let saved = save_into(
+            &fonts,
+            &source,
+            &["@gandhi sans".into(), "Arial".into()],
+            none(),
+        )
+        .await
+        .unwrap();
         assert_eq!(saved, vec!["@gandhi sans".to_string()]);
-        let files: Vec<String> = std::fs::read_dir(&fonts)
-            .unwrap()
-            .map(|e| e.unwrap().file_name().to_string_lossy().to_string())
-            .collect();
+        let files = saved_files(&fonts);
         assert_eq!(files.len(), 1);
         assert!(files[0].ends_with("-GandhiSans-Bold.otf"));
 
         // Saving again keeps the one copy.
-        save_into(&fonts, &source, &["Gandhi Sans".into()])
+        save_into(&fonts, &source, &["Gandhi Sans".into()], none())
             .await
             .unwrap();
-        assert_eq!(std::fs::read_dir(&fonts).unwrap().count(), 1);
+        assert_eq!(saved_files(&fonts).len(), 1);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn finds_installed_windows_fonts() {
+        let faces = installed_faces();
+        assert!(faces.contains("arialmt") && faces.contains("arial bold"));
+    }
+
+    #[tokio::test]
+    async fn skips_faces_the_system_already_has() {
+        let root = temp_root("installed");
+        let fonts = root.join("fonts");
+        let video = root.join("episode.mkv");
+        std::fs::write(
+            &video,
+            mkv(&[
+                attached("arial.ttf", &face("Arial", "Arial", "ArialMT")),
+                attached("arialbd.ttf", &face("Arial", "Arial Bold", "Arial-BoldMT")),
+            ]),
+        )
+        .unwrap();
+        let source = video.to_string_lossy().to_string();
+        let installed = |faces: &[&str]| {
+            let set: HashSet<String> = faces.iter().map(|f| f.to_string()).collect();
+            async { set }
+        };
+
+        // Regular installed, Bold missing: only the Bold is kept.
+        let saved = save_into(&fonts, &source, &["Arial".into()], installed(&["arialmt"]))
+            .await
+            .unwrap();
+        assert_eq!(saved, vec!["Arial".to_string()]);
+        let files = saved_files(&fonts);
+        assert_eq!(files.len(), 1);
+        assert!(files[0].ends_with("-arialbd.ttf"));
+
+        // Both installed: nothing is copied and nothing is reported.
+        std::fs::remove_file(fonts.join(&files[0])).unwrap();
+        let both = installed(&["arialmt", "arial bold"]);
+        let saved = save_into(&fonts, &source, &["Arial".into()], both)
+            .await
+            .unwrap();
+        assert!(saved.is_empty());
+        assert!(saved_files(&fonts).is_empty());
         std::fs::remove_dir_all(&root).unwrap();
     }
 }
