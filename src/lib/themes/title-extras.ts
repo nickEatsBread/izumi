@@ -264,19 +264,40 @@ export async function loadTitleExtras(media: Media, needs: ReadonlySet<TitleExtr
 
 // API 6: card templates that bind key art or a logo load them through this queue — at most four lookups
 // at once, so a Home of a hundred cards never floods ani.zip. A finished lookup hands its slot straight to
-// the next waiter, so a call arriving in between can never push the count past the cap.
+// a waiter, so a call arriving in between can never push the count past the cap. The waiter is chosen then,
+// not when it queued: cards that are gone (`alive`) are dropped without a lookup, and of the rest the one
+// nearest the screen (`distance`, earliest queued on a tie) goes next, so a fast scroll past many rows
+// spends the slots on the rows on screen.
 const CARD_ART_SLOTS = 4
 let cardArtRunning = 0
-const cardArtWaiting: (() => void)[] = []
-export async function queueTitleArt(media: Media, needs: ReadonlySet<TitleExtra>, load: typeof loadTitleExtras = loadTitleExtras): Promise<TitleExtras> {
+const cardArtWaiting: { alive: () => boolean; distance: () => number; resolve: (slot: boolean) => void }[] = []
+export interface QueueTitleArtOptions {
+  load?: typeof loadTitleExtras
+  /** False once the caller no longer wants the result (its card is gone): the lookup is skipped. */
+  alive?: () => boolean
+  /** How far the caller is from being seen, read each time a slot frees; smallest goes first. */
+  distance?: () => number
+}
+function handOffCardArtSlot(): void {
+  for (let i = cardArtWaiting.length - 1; i >= 0; i--) {
+    if (!cardArtWaiting[i].alive()) cardArtWaiting.splice(i, 1)[0].resolve(false)
+  }
+  let best = 0
+  const far = cardArtWaiting.map((waiter) => waiter.distance())
+  for (let i = 1; i < far.length; i++) if (far[i] < far[best]) best = i
+  const next = cardArtWaiting.splice(best, 1)[0]
+  if (next) next.resolve(true)
+  else cardArtRunning--
+}
+export async function queueTitleArt(media: Media, needs: ReadonlySet<TitleExtra>, options: QueueTitleArtOptions = {}): Promise<TitleExtras> {
+  const { load = loadTitleExtras, alive = () => true, distance = () => 0 } = options
+  if (!alive()) return {}
   if (cardArtRunning < CARD_ART_SLOTS) cardArtRunning++
-  else await new Promise<void>((resolve) => cardArtWaiting.push(resolve))
+  else if (!await new Promise<boolean>((resolve) => cardArtWaiting.push({ alive, distance, resolve }))) return {}
   try {
     return await load(media, needs)
   } finally {
-    const next = cardArtWaiting.shift()
-    if (next) next()
-    else cardArtRunning--
+    handOffCardArtSlot()
   }
 }
 

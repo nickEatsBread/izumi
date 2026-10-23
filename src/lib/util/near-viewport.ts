@@ -31,6 +31,19 @@ export function isNearViewport(top: number, viewportHeight: number, marginViewpo
     && top < Math.max(1, viewportHeight) * Math.max(0, marginViewports)
 }
 
+/** How far an element is from the viewport in px, vertical and horizontal gaps added: 0 for one that
+ *  intersects it, Infinity for no element. A queue of lookups for cards uses it to serve the cards
+ *  on screen before the ones scrolled past. */
+export function offscreenDistance(
+  node: Pick<Element, 'getBoundingClientRect'> | undefined,
+  width = window.innerWidth,
+  height = window.innerHeight,
+): number {
+  if (!node) return Infinity
+  const rect = node.getBoundingClientRect()
+  return Math.max(0, -rect.right, rect.left - width) + Math.max(0, -rect.bottom, rect.top - height)
+}
+
 function viewportHeight(): number {
   return Math.max(window.innerHeight || 0, document.documentElement.clientHeight || 0, 1)
 }

@@ -318,31 +318,122 @@ describe('titleExtrasKey', () => {
 })
 
 describe('queueTitleArt', () => {
-  it('runs at most four lookups at once and hands each freed slot to the next caller', async () => {
+  const keyart = new Set<'keyart'>(['keyart'])
+  // A lookup that stays open until released, so a test decides when each slot frees.
+  function lookups() {
     let running = 0
     let peak = 0
-    const releases: (() => void)[] = []
+    const started: number[] = []
+    const releases = new Map<number, () => void>()
     const load = (m: Media) => new Promise<TitleExtras>((resolve) => {
-      running++; peak = Math.max(peak, running)
-      releases.push(() => { running--; resolve({ keyart: `k${m.id}` }) })
+      const id = m.id as number
+      running++; peak = Math.max(peak, running); started.push(id)
+      releases.set(id, () => { running--; releases.delete(id); resolve({ keyart: `k${id}` }) })
     })
-    const results = Array.from({ length: 7 }, (_, i) => queueTitleArt({ id: i } as Media, new Set(['keyart']), load))
+    const drain = async () => { while (releases.size) { releases.values().next().value!(); await settle() } }
+    return { load, started, releases, drain, running: () => running, peak: () => peak }
+  }
+  const call = (id: number, options: Parameters<typeof queueTitleArt>[2]) => queueTitleArt({ id } as Media, keyart, options)
+
+  it('runs at most four lookups at once and hands each freed slot to the next caller', async () => {
+    const { load, releases, drain, running, peak } = lookups()
+    const results = Array.from({ length: 7 }, (_, i) => call(i, { load }))
     await settle()
-    expect(running).toBe(4)
+    expect(running()).toBe(4)
     // Free one slot, and start a fresh call in the same tick: the freed slot goes to a waiter, never over 4.
-    releases.shift()!()
-    const late = queueTitleArt({ id: 99 } as Media, new Set(['keyart']), load)
+    releases.get(0)!()
+    const late = call(99, { load })
     await settle()
-    expect(running).toBe(4)
-    expect(peak).toBe(4)
-    while (releases.length) { releases.shift()!(); await settle() }
+    expect(running()).toBe(4)
+    expect(peak()).toBe(4)
+    await drain()
     expect((await Promise.all([...results, late])).map((r) => r.keyart)).toEqual(['k0', 'k1', 'k2', 'k3', 'k4', 'k5', 'k6', 'k99'])
+  })
+
+  it('serves waiters in the order they queued when none says how far it is', async () => {
+    const { load, releases, started, drain } = lookups()
+    const all = [0, 1, 2, 3, 4, 5, 6].map((id) => call(id, { load }))
+    await settle()
+    for (const id of [0, 1, 2]) { releases.get(id)!(); await settle() }
+    expect(started).toEqual([0, 1, 2, 3, 4, 5, 6])
+    await drain()
+    await Promise.all(all)
+  })
+
+  it('hands a freed slot to the nearest waiter, judged when the slot frees', async () => {
+    const { load, releases, started, drain } = lookups()
+    const far: Record<number, number> = { 4: 900, 5: 300, 6: 600 }
+    const all = [0, 1, 2, 3].map((id) => call(id, { load }))
+    all.push(...[4, 5, 6].map((id) => call(id, { load, distance: () => far[id] })))
+    await settle()
+    expect(started).toEqual([0, 1, 2, 3])
+    // 4 was the farthest when it queued; by the time a slot frees it is the nearest.
+    far[4] = 0
+    releases.get(0)!(); await settle()
+    expect(started.at(-1)).toBe(4)
+    releases.get(1)!(); await settle()
+    expect(started.at(-1)).toBe(5)
+    releases.get(2)!(); await settle()
+    expect(started.at(-1)).toBe(6)
+    await drain()
+    await Promise.all(all)
+  })
+
+  it('keeps first come first served between waiters at the same distance', async () => {
+    const { load, releases, started, drain } = lookups()
+    const all = [0, 1, 2, 3].map((id) => call(id, { load }))
+    all.push(...[4, 5, 6, 7].map((id) => call(id, { load, distance: () => (id === 7 ? 10 : 50) })))
+    await settle()
+    for (const id of [0, 1, 2]) { releases.get(id)!(); await settle() }
+    expect(started.slice(4)).toEqual([7, 4, 5])
+    await drain()
+    await Promise.all(all)
+  })
+
+  it('skips callers that are gone without a lookup and without taking a slot', async () => {
+    const { load, releases, started, drain, running } = lookups()
+    const gone = new Set<number>()
+    const all = [0, 1, 2, 3].map((id) => call(id, { load }))
+    const dead = [4, 5].map((id) => call(id, { load, alive: () => !gone.has(id), distance: () => 0 }))
+    const live = call(6, { load, distance: () => 800 })
+    // They were alive when queued and are gone by the time a slot frees.
+    await settle()
+    gone.add(4); gone.add(5)
+    releases.get(0)!(); await settle()
+    // The two dead waiters are nearer but never load; the live one takes the slot.
+    expect(started).toEqual([0, 1, 2, 3, 6])
+    expect(running()).toBe(4)
+    expect(await Promise.all(dead)).toEqual([{}, {}])
+    // A caller that is already gone does not load even when a slot is free.
+    for (const id of [1, 2, 3, 6]) { releases.get(id)!(); await settle() }
+    expect(running()).toBe(0)
+    expect(await call(7, { load, alive: () => false })).toEqual({})
+    expect(started).toEqual([0, 1, 2, 3, 6])
+    // Every slot is still there to use.
+    const next = Array.from({ length: 5 }, (_, i) => call(10 + i, { load }))
+    await settle()
+    expect(running()).toBe(4)
+    await drain()
+    await Promise.all([...all, live, ...next])
   })
 
   it('frees its slot when a lookup fails', async () => {
     const failing = () => Promise.reject(new Error('offline'))
-    await expect(queueTitleArt({ id: 1 } as Media, new Set(['logo']), failing)).rejects.toThrow('offline')
-    const ok = await queueTitleArt({ id: 2 } as Media, new Set(['logo']), async () => ({ logo: 'l' }))
+    await expect(call(1, { load: failing })).rejects.toThrow('offline')
+    const ok = await call(2, { load: async () => ({ logo: 'l' }) })
     expect(ok.logo).toBe('l')
+  })
+
+  it('hands the slot on when the lookup a waiter was queued behind fails', async () => {
+    const { load, started, drain } = lookups()
+    const failing = () => new Promise<TitleExtras>((_, reject) => setTimeout(() => reject(new Error('offline')), 5))
+    const held = [0, 1, 2].map((id) => call(id, { load }))
+    const bad = call(3, { load: failing })
+    const waiter = call(4, { load })
+    await expect(bad).rejects.toThrow('offline')
+    await settle()
+    expect(started).toEqual([0, 1, 2, 4])
+    await drain()
+    await Promise.all([...held, waiter])
   })
 })

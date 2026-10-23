@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { isNearViewport } from './near-viewport'
+import { isNearViewport, offscreenDistance } from './near-viewport'
 
 describe('near viewport threshold', () => {
   it('activates visible and one-and-a-half-screen-ahead rows', () => {
@@ -89,5 +89,27 @@ describe('nearViewport action', () => {
     b = nearViewport(node(100), { onEnter: onEnterB })
     nextFrame()
     expect(onEnterB).not.toHaveBeenCalled()
+  })
+})
+
+describe('offscreenDistance', () => {
+  const rect = (left: number, top: number, right: number, bottom: number) => ({ getBoundingClientRect: () => ({ left, top, right, bottom }) as DOMRect })
+
+  it('is 0 for anything that touches the viewport', () => {
+    expect(offscreenDistance(rect(100, 100, 250, 400), 1000, 800)).toBe(0)
+    expect(offscreenDistance(rect(-100, -50, 20, 10), 1000, 800)).toBe(0)
+    expect(offscreenDistance(rect(900, 700, 1100, 900), 1000, 800)).toBe(0)
+  })
+
+  it('measures the gap above, below, left and right, and adds the two axes', () => {
+    expect(offscreenDistance(rect(100, 1500, 250, 1800), 1000, 800)).toBe(700)
+    expect(offscreenDistance(rect(100, -600, 250, -300), 1000, 800)).toBe(300)
+    expect(offscreenDistance(rect(1200, 100, 1350, 400), 1000, 800)).toBe(200)
+    expect(offscreenDistance(rect(-400, 100, -250, 400), 1000, 800)).toBe(250)
+    expect(offscreenDistance(rect(1200, 1500, 1350, 1800), 1000, 800)).toBe(900)
+  })
+
+  it('treats a card that is not mounted as far away', () => {
+    expect(offscreenDistance(undefined, 1000, 800)).toBe(Infinity)
   })
 })

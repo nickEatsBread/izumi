@@ -8,11 +8,11 @@
 </script>
 
 <script lang="ts">
-  import { getContext, untrack } from 'svelte'
+  import { getContext } from 'svelte'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { themePresentation } from '$lib/themes/runtime'
   import { mediaDisplayModel } from '$lib/themes/host-model'
-  import { artNeeds, queueTitleArt, templateNeeds, titleExtrasKey, type TitleExtra, type TitleExtras } from '$lib/themes/title-extras'
+  import { useCardArt } from '$lib/themes/card-art.svelte'
   import { nearViewport } from '$lib/util/near-viewport'
   import { seriesCompletion, seriesProgress } from '$lib/themes/series-progress'
   import { ambientFromHex } from '$lib/themes/ambient'
@@ -69,28 +69,8 @@
   const cardTemplate = $derived(resolveCard($themePresentation, cardFamily, themeScope?.().id ?? ''))
   const coverWidth = $derived((themeRow.width ?? (fill ? 0 : $isTv ? 198 : $isMobile ? 131 : 152)) * (themeRow.width ? 1 : densityScale($themePresentation)))
   const coverSrc = $derived(cardCover(media, coverWidth))
-  // API 6: key art and a title logo, only when the card's template binds them, loaded once the card
-  // nears the screen through a queue capped at four lookups. Cards without such a template register no
-  // viewport gate at all.
-  const artWanted = $derived<ReadonlySet<TitleExtra>>(cardTemplate ? artNeeds(templateNeeds(cardTemplate)) : new Set())
-  let near = $state(false)
-  const artGate = { onEnter: () => { near = true }, observeParent: false }
-  let cardArt = $state<TitleExtras>({})
-  // Keyed on the title, not the record object: a title delivered again as a new object (Continue
-  // Watching repaints its snapshot, then reconciles) keeps the art on screen instead of reloading it.
-  const artKey = $derived(artWanted.size ? titleExtrasKey(media) : '')
-  let loadedKey = ''
-  $effect(() => {
-    const key = artKey
-    const wanted = artWanted
-    if (!near || !wanted.size) return
-    const target = untrack(() => media)
-    if (loadedKey && key !== loadedKey) cardArt = {}
-    loadedKey = key
-    let live = true
-    void queueTitleArt(target, wanted).then((extras) => { if (live) cardArt = extras }, () => {})
-    return () => { live = false }
-  })
+  // API 6: key art and a title logo, only when the card's template binds them (see useCardArt).
+  const cardArt = useCardArt(() => cardTemplate, () => media, () => el)
   // Only a template binds the watched count and the finished mark, so izumi's own card never
   // subscribes to the lookups.
   const cardModel = $derived(cardTemplate ? mediaDisplayModel(media, {
@@ -98,7 +78,7 @@
     ...(position ? { rankPosition: position, rank: String(position).padStart(2, '0') } : {}),
     episodesWatched: $seriesProgress(media),
     completed: $seriesCompletion(media) ? 'Completed' : undefined,
-    ...cardArt,
+    ...cardArt.art,
   }, coverWidth) : undefined)
   let coverReady = $state(false)
   $effect(() => { void coverSrc; coverReady = false })
@@ -195,7 +175,7 @@
   $effect(() => () => clearTimeout(closeT))
 </script>
 
-<div data-part="card" data-family={cardFamily} bind:this={el} use:nearViewport={artWanted.size ? artGate : undefined} data-theme-card style:--cover-rgb={ambientFromHex(media.coverImage?.color)} class={fill ? 'w-full' : $isTv ? 'w-44 shrink-0' : 'w-36 shrink-0 sm:w-[152px]'} style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
+<div data-part="card" data-family={cardFamily} bind:this={el} use:nearViewport={cardArt.wanted.size ? cardArt.gate : undefined} data-theme-card style:--cover-rgb={ambientFromHex(media.coverImage?.color)} class={fill ? 'w-full' : $isTv ? 'w-44 shrink-0' : 'w-36 shrink-0 sm:w-[152px]'} style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
   <a href={mediaHref(media)} data-focusable draggable="false" onclick={() => { rememberDetail(media); h.tap() }}
      data-nav-key={`media:${media.catalog?.id ?? media.id}`} data-caption-title={title(media)} data-caption-meta={captionMeta}
      aria-label={title(media)} style:width={themeRow.width || cardTemplate ? '100%' : undefined}
