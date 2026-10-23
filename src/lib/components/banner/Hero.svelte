@@ -641,12 +641,13 @@
 {/snippet}
 
 <!-- The slide's trailer with that slide's own callbacks, so a late report from a leaving slide never
-     touches the next one. On Home the mute button sits top right: the copy layer spans the bottom. -->
+     touches the next one. On Home the mute button sits top right: the copy layer spans the bottom. izumi's banner reaches up
+     under the top bar by --theme-shell-top, hence twice that; a template's trailer box starts at its own top. -->
 {#snippet slideTrailer(media: Media)}
   <BackdropTrailer id={youtubeTrailerId(media.trailer)} title={title(media)} enabled={trailerOn} held={showOverlay && scrolled}
     dwell={showOverlay ? HERO_TRAILER_DWELL : DETAIL_TRAILER_DWELL}
     part={showOverlay ? 'hero.video' : 'detail.video'} mutePart={showOverlay ? 'hero.mute' : 'detail.mute'}
-    muteClass={showOverlay ? 'right-[4vw] top-[calc(var(--theme-shell-top,2rem)+1rem)] z-30' : 'right-8 top-24 z-30'}
+    muteClass={!showOverlay ? 'right-8 top-24 z-30' : heroTheme?.template ? 'right-4 top-[calc(var(--theme-shell-top,2rem)+0.75rem)] z-30' : 'right-[4vw] top-[calc(var(--theme-shell-top,2rem)*2+0.75rem)] z-30'}
     onplaying={() => (trailerFor = media.id)}
     onended={(natural) => {
       if (trailerFor === media.id) trailerFor = null
