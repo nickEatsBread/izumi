@@ -30,18 +30,23 @@
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
   import ServerIcon from '@lucide/svelte/icons/server'
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
+  import RotateCcw from '@lucide/svelte/icons/rotate-ccw'
+  import RotateCw from '@lucide/svelte/icons/rotate-cw'
   import DesktopCastButton from './DesktopCastButton.svelte'
   import { get } from 'svelte/store'
   import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, playerSideSheetOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery, bumpPlayerOverlay, playerTopBarUnderTitlebar } from '$lib/player/session'
   import { isMacOS, isMobile, isTv } from '$lib/platform'
-  import { shellNav } from '$lib/themes/runtime'
+  import { shellNav, themePresentation } from '$lib/themes/runtime'
   import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
+  import { resolvePlayerControls } from '$lib/themes/presentation'
+  import { loadEpisodeMeta, episodeName } from '$lib/player/episode-info'
+  import type { EpMeta } from '$lib/anizip/types'
   import { listenSafe } from '$lib/util/listen'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from '@lucide/svelte/icons/wrench'
   import { discussionExpanded } from '$lib/comments'
-  import { videoFit, playerTitleTop, openSubtitlesToken, subtitleAutoSync, secondarySubtitles, subtitleLineNavigation, gifIncludeSubtitles, sceneBookmarksEnabled } from '$lib/settings/ui'
+  import { videoFit, seekDuration, hideSpoilers, playerTitleTop, openSubtitlesToken, subtitleAutoSync, secondarySubtitles, subtitleLineNavigation, gifIncludeSubtitles, sceneBookmarksEnabled } from '$lib/settings/ui'
   import { playPrev, playNext, playEpisode, playStream, searchOnlineSubtitles } from '$lib/stremio/play'
   import { serverSiblings, variantLabels } from '$lib/player/source-variants'
   import type { Stream } from '$lib/stremio/addon'
@@ -111,6 +116,19 @@
     hideTitle?: boolean
   } = $props()
   const togglePlay = () => (ontoggleplay ? ontoggleplay() : cmd('cycle', ['pause']))
+  // API 6 player choices; Game mode keeps its own player (its native HUD draws icons by name).
+  const controls = $derived(gm ? resolvePlayerControls(undefined) : resolvePlayerControls($themePresentation))
+  const wantsEpisodeTitle = $derived(controls.title === 'episode')
+  let episodeMeta = $state<EpMeta | undefined>()
+  // `nowPlayingMedia` is set once per playback start, so this runs per episode, not per tick.
+  $effect(() => {
+    const target = $nowPlayingMedia
+    episodeMeta = undefined
+    if (!wantsEpisodeTitle || !target?.episode) return
+    return loadEpisodeMeta(target.media, target.episode, (meta) => { episodeMeta = meta })
+  })
+  const episodeTitle = $derived(np.episode != null ? episodeName(np.episode, episodeMeta, $hideSpoilers) : undefined)
+  const seekBy = (seconds: number) => cmd('seek', [String(seconds), 'relative+exact'])
   function toggleComments() {
     const opening = !$commentsOpen
     // The docked desktop sheet is too narrow at handheld distance. Open directly into the large
@@ -830,7 +848,13 @@
     <div data-part="player.heading" class="min-w-0 pt-0.5 [text-shadow:0_1px_4px_rgba(0,0,0,.7)]">
       <div data-part="player.title" data-gm-title class="line-clamp-1 text-white {big ? 'text-3xl font-black leading-tight drop-shadow' : 'text-lg font-semibold'}">{np.animeTitle}</div>
       {#if np.episode != null}
-        <div data-part="player.episode" data-episode={np.episode} data-gm-episode class="line-clamp-1 {big ? 'text-lg font-semibold leading-snug text-white/75' : 'text-sm font-normal text-white/60'}">Episode {np.episode}{np.total ? ` / ${np.total}` : ''}</div>
+        <div data-part="player.episode" data-episode={np.episode} data-season={episodeMeta?.season} data-gm-episode class="line-clamp-1 {big ? 'text-lg font-semibold leading-snug text-white/75' : 'text-sm font-normal text-white/60'}">
+          {#if controls.title === 'episode'}
+            <span data-part="player.episode.number">E{np.episode}</span>{#if episodeTitle}{' '}<span data-part="player.episode.name">{episodeTitle}</span>{/if}
+          {:else}
+            Episode {np.episode}{np.total ? ` / ${np.total}` : ''}
+          {/if}
+        </div>
       {/if}
     </div>
   {/if}
@@ -894,8 +918,14 @@
         <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} {native} onseek={seekTo} {onscrubinput} /></div>
         <span data-part="player.time" data-variant="total" class="w-16 shrink-0 select-none font-mono text-base tabular-nums" class:opacity-0={native}>{fmt(dur)}</span>
       </div>
-    {:else}
+    {:else if controls.time === 'default'}
       <div class="pointer-events-auto"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} {native} onseek={seekTo} {onscrubinput} /></div>
+    {:else}
+      <div class="pointer-events-auto flex items-center gap-3">
+        {#if controls.time === 'split'}<span data-part="player.time" data-variant="elapsed" class="shrink-0 select-none font-mono text-sm tabular-nums">{fmt(pos)}</span>{/if}
+        <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} {native} onseek={seekTo} {onscrubinput} /></div>
+        <span data-part="player.time" data-variant={controls.time === 'split' ? 'total' : 'remaining'} class="shrink-0 select-none font-mono text-sm tabular-nums">{fmt(controls.time === 'split' ? dur : Math.max(0, dur - pos))}</span>
+      </div>
     {/if}
 
     <div data-part="player.row" class="pointer-events-auto mt-1 flex items-center gap-3 text-white {gm ? 'gap-4' : ''}">
@@ -903,12 +933,22 @@
       {#if hasPrev}
         <button data-part="player.control" data-control="previous" data-focusable class={iconBtn} onclick={() => (gm ? episodeStep(-1) : playPrev(undefined, !paused))} aria-label="Previous episode"><SkipBack size={icSize} fill="currentColor" /></button>
       {/if}
+      {#if controls.seekButtons && !gm}
+        <button data-part="player.control" data-control="rewind" data-focusable class="{iconBtn} relative" onclick={() => seekBy(-$seekDuration)} aria-label={`Back ${$seekDuration} seconds`}>
+          <RotateCcw size={icSize} /><span data-part="player.control.step" class="pointer-events-none absolute inset-0 grid place-items-center pt-[3px] text-[0.55rem] font-bold">{$seekDuration}</span>
+        </button>
+      {/if}
       <!-- Play/pause: Game mode gets a filled white circle (no outline) — the primary,
            thumb-sized touch target; Desktop keeps the subtle hover-only button. -->
       <button data-part="button" data-variant="icon" data-control="play" data-focusable onclick={togglePlay} aria-label={paused ? 'Play' : 'Pause'}
               class="grid place-items-center rounded-full focus-ring-inset {gm ? 'gm-play size-16 bg-white text-black shadow-lg' : 'size-10 transition hover:bg-white/15'}">
         {#if paused}<Play size={gm ? 30 : 22} fill="currentColor" />{:else}<Pause size={gm ? 30 : 22} fill="currentColor" />{/if}
       </button>
+      {#if controls.seekButtons && !gm}
+        <button data-part="player.control" data-control="forward" data-focusable class="{iconBtn} relative" onclick={() => seekBy($seekDuration)} aria-label={`Forward ${$seekDuration} seconds`}>
+          <RotateCw size={icSize} /><span data-part="player.control.step" class="pointer-events-none absolute inset-0 grid place-items-center pt-[3px] text-[0.55rem] font-bold">{$seekDuration}</span>
+        </button>
+      {/if}
       {#if hasNext}
         <!-- A dot when the next episode is already resolved and will start instantly. Shown only
              when true: under the noAdd contract most episodes are NOT preloaded, so a persistent
@@ -934,7 +974,9 @@
            chapter title rides along, Desktop-only — Game mode's bar is already tight on a Deck,
            and confining the experiment to one surface keeps a revert clean either way. -->
       {#if !gm}
-        <span data-part="player.time" data-variant="default" class="ml-1 select-none font-mono tabular-nums text-sm">{fmt(pos)} / {fmt(dur)}</span>
+        {#if controls.time === 'default'}
+          <span data-part="player.time" data-variant="default" class="ml-1 select-none font-mono tabular-nums text-sm">{fmt(pos)} / {fmt(dur)}</span>
+        {/if}
         {#if activeChapterTitle}
           <span class="hidden min-w-0 max-w-[16rem] truncate text-xs text-white/50 sm:inline">{activeChapterTitle}</span>
         {/if}

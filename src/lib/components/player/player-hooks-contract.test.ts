@@ -23,6 +23,11 @@ function buttonTags(source: string): string[] {
 
 describe('player styling hooks', () => {
   const controls = read('./Controls.svelte')
+  // The popovers hold menu entries, not controls, so they are cut out first.
+  const rowButtons = () => buttonTags(controls
+    .slice(controls.indexOf('data-slot="player.controls"'), controls.indexOf('data-gm-menu-surface'))
+    .replace(/data-options-menu[\s\S]*?<!-- Discussion/, '')
+    .replace(/\{#if showTracks\}[\s\S]*?\{#if \$subtitleLineNavigation\}/, ''))
 
   it('hooks the bars, the heading and the row groups', () => {
     for (const part of ['top', 'bottom', 'heading', 'episode', 'row', 'transport', 'actions', 'time', 'volume']) {
@@ -38,12 +43,35 @@ describe('player styling hooks', () => {
   })
 
   it('leaves no labelled control unnamed', () => {
-    // The popovers hold menu entries, not controls, so they are cut out first.
-    const row = controls
-      .slice(controls.indexOf('data-slot="player.controls"'), controls.indexOf('data-gm-menu-surface'))
-      .replace(/data-options-menu[\s\S]*?<!-- Discussion/, '')
-      .replace(/\{#if showTracks\}[\s\S]*?\{#if \$subtitleLineNavigation\}/, '')
-    const unnamed = buttonTags(row).filter((tag) => tag.includes('aria-label=') && !tag.includes('data-control='))
+    const tags = rowButtons()
+    // A renamed anchor must not make the scan pass over nothing.
+    expect(tags.length).toBeGreaterThan(10)
+    const unnamed = tags.filter((tag) => tag.includes('aria-label=') && !tag.includes('data-control='))
     expect(unnamed).toEqual([])
+  })
+
+  it('marks Back and Play as buttons and every other control as a player control', () => {
+    const named = rowButtons().filter((tag) => tag.includes('data-control='))
+    expect(named.length).toBeGreaterThan(10)
+    for (const tag of named) {
+      const back = tag.includes('data-control="back"') || tag.includes('data-control="play"')
+      expect(tag, tag).toContain(back ? 'data-part="button"' : 'data-part="player.control"')
+    }
+  })
+
+  it('lets a theme add rewind and forward, show the time left and name the episode', () => {
+    for (const needle of [
+      "import { resolvePlayerControls } from '$lib/themes/presentation'",
+      "import { shellNav, themePresentation } from '$lib/themes/runtime'",
+      'const controls = $derived(gm ? resolvePlayerControls(undefined) : resolvePlayerControls($themePresentation))',
+      'data-control="rewind"',
+      'data-control="forward"',
+      'data-part="player.control.step"',
+      '{#if controls.seekButtons && !gm}',
+      "data-variant={controls.time === 'split' ? 'total' : 'remaining'}",
+      'data-part="player.episode.number"',
+      'data-part="player.episode.name"',
+      'loadEpisodeMeta(',
+    ]) expect(controls).toContain(needle)
   })
 })
