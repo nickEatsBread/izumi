@@ -9,9 +9,9 @@ import { normalizeTorrentCount, type TorrentQuery, type TorrentResult } from './
 
 // Torrent trackers searched directly. Searching a tracker finds an episode as soon as it is
 // uploaded, where Stremio add-ons index it an hour or two later, and finds titles those add-ons have
-// no id for. A feed is any torrent RSS/Atom feed the user pastes: an indexer manager's Torznab
-// endpoint, a tracker's own RSS search, or a fixed "latest uploads" feed. Nothing is configured by
-// default.
+// no id for. A feed is any torrent feed the user pastes: an indexer manager's Torznab endpoint, a
+// tracker's own RSS search, a fixed "latest uploads" feed, or a search API that answers JSON.
+// Nothing is configured by default.
 export const trackerFeedUrls = persisted<string[]>('tracker-feed-urls', [])
 export const enabledTrackerFeedUrls = derived([trackerFeedUrls, disabledSources], ([$urls, $off]) => $urls.filter((u) => !$off.includes(u)))
 
@@ -32,6 +32,7 @@ const parseUrl = (spec: string) => {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('Enter an http(s) feed URL.')
   return url
 }
+const feedHost = (spec: string) => parseUrl(spec.replace(PLACEHOLDER, '')).hostname
 
 /** An indexer manager's Torznab endpoint (Jackett, Prowlarr), which takes `t=search&q=`. */
 export function isTorznabFeed(spec: string): boolean {
@@ -43,6 +44,13 @@ export function isTorznabFeed(spec: string): boolean {
 export function feedTakesQuery(spec: string): boolean {
   PLACEHOLDER.lastIndex = 0
   return PLACEHOLDER.test(spec) || isTorznabFeed(spec) || QUERY_PARAMS.some((p) => parseUrl(spec).searchParams.has(p))
+}
+
+/** A pasted URL that takes search words, so it is checked as a tracker feed before anything else:
+ *  asked for an add-on manifest it would search for "/manifest.json", and a JSON search API's
+ *  answer can pass for a list of sources. */
+export function isSearchFeedUrl(spec: string): boolean {
+  try { return feedTakesQuery(spec) } catch { return false }
 }
 
 /** The request for one search. A feed that takes no query is requested unchanged. */
@@ -141,6 +149,34 @@ function itemFacts(item: unknown): { fields: Map<string, string[]>; texts: strin
   return { fields, texts }
 }
 
+const HASH_FIELDS = ['infohash', 'info_hash', 'btih', 'hash']
+const looksJson = (body: string) => /^\s*[[{]/.test(body)
+
+/** A JSON search API's releases: the list, anywhere in the body, holding the most objects with a
+ *  title and a hash or magnet, so a list of something else (the API's indexers, say) loses. Their
+ *  keys are read like a feed item's elements. */
+function jsonItems(body: string): unknown[] {
+  let doc: unknown
+  try { doc = JSON.parse(body) } catch { throw new Error(NOT_A_FEED) }
+  const isRelease = (node: unknown) => {
+    if (!node || typeof node !== 'object' || Array.isArray(node)) return false
+    const { fields, texts } = itemFacts(node)
+    return (fields.has('title') || fields.has('name'))
+      && (HASH_FIELDS.some((f) => fields.has(f)) || texts.some((t) => /^magnet:\?/i.test(t)))
+  }
+  let best: unknown[] = []
+  const walk = (node: unknown, depth: number) => {
+    if (!node || typeof node !== 'object' || depth > 4) return
+    if (Array.isArray(node)) {
+      const releases = node.filter(isRelease)
+      if (releases.length > best.length) best = releases
+    }
+    for (const child of Object.values(node)) walk(child, depth + 1)
+  }
+  walk(doc, 0)
+  return best
+}
+
 const UNITS: Record<string, number> = { '': 1, K: 1024, M: 1024 ** 2, G: 1024 ** 3, T: 1024 ** 4 }
 /** Bytes from "1468006400", "1.7 GiB" or "Size: 1.37GB". */
 export function parseSize(value: string | undefined): number | undefined {
@@ -165,18 +201,22 @@ export async function parseTrackerFeed(
   spec: string,
   fetchTorrentFile: (url: string) => Promise<Uint8Array> = downloadTorrentFile,
 ): Promise<TorrentResult[]> {
-  const doc = parseDoc(body)
-  const channel = doc.rss?.channel ?? doc['rdf:RDF']?.channel ?? doc.feed
-  const feedName = text(channel?.title) || parseUrl(spec.replace(PLACEHOLDER, '')).hostname
-  const items = list(doc.rss?.channel?.item ?? doc['rdf:RDF']?.item ?? doc.feed?.entry)
+  let feedName = feedHost(spec)
+  let items: unknown[]
+  if (looksJson(body)) items = jsonItems(body)
+  else {
+    const doc = parseDoc(body)
+    feedName = text((doc.rss?.channel ?? doc['rdf:RDF']?.channel ?? doc.feed)?.title) || feedName
+    items = list(doc.rss?.channel?.item ?? doc['rdf:RDF']?.item ?? doc.feed?.entry)
+  }
   let filesLeft = MAX_TORRENT_FILES
   const rows = await Promise.all(items.map(async (item, rank): Promise<TorrentResult | null> => {
     const { fields, texts } = itemFacts(item)
     const first = (...names: string[]) => names.flatMap((n) => fields.get(n) ?? [])[0]
-    const title = first('title')
+    const title = first('title', 'name')
     if (!title) return null
     const magnet = texts.map((t) => t.match(/magnet:\?[^\s"'<>]+/i)?.[0]).find(Boolean)?.replace(/&amp;/g, '&')
-    const declared = [first('infohash', 'info_hash', 'btih'), first('guid', 'id')].find((h) => h && (HEX_HASH.test(h) || BASE32_HASH.test(h)))
+    const declared = [first(...HASH_FIELDS), first('guid', 'id')].find((h) => h && (HEX_HASH.test(h) || BASE32_HASH.test(h)))
     const torrentFile = [...fields.get('enclosure.url') ?? [], ...fields.get('link') ?? [], ...fields.get('link.href') ?? []]
       .find((u) => /^https?:\/\//i.test(u) && (/\.torrent(?:[?#]|$)/i.test(u) || /bittorrent/i.test(first('enclosure.type') ?? '')))
     let hash = declared && HEX_HASH.test(declared) ? declared.toLowerCase()
@@ -186,7 +226,8 @@ export async function parseTrackerFeed(
       filesLeft -= 1
       hash = await fetchTorrentFile(torrentFile).then(hashOf).catch(() => undefined)
     }
-    if (!hash) return null
+    // An all-zero hash is a search API's "no results" placeholder row.
+    if (!hash || /^0+$/.test(hash)) return null
     const seeders = normalizeTorrentCount(first('seeders', 'seeds', 'seed'))
     const peers = normalizeTorrentCount(first('peers'))
     return {
@@ -198,8 +239,8 @@ export async function parseTrackerFeed(
         ?? (peers != null && seeders != null ? Math.max(0, peers - seeders) : undefined),
       size: parseSize(first('size', 'contentlength', 'enclosure.length'))
         ?? texts.map((t) => /\bsize\b/i.test(t) ? parseSize(t.slice(t.search(/\bsize\b/i))) : undefined).find(Boolean),
-      // Aggregate feeds name the tracker each row came from.
-      provider: first('jackettindexer', 'prowlarrindexer', 'indexer') ?? feedName,
+      // Aggregate feeds name the tracker each row came from; a `tracker` that is an announce URL is no name.
+      provider: ['jackettindexer', 'prowlarrindexer', 'indexer', 'tracker'].flatMap((n) => fields.get(n) ?? []).find((v) => !v.includes('://')) ?? feedName,
       providerId: trackerFeedOriginId(spec),
       evidence: { publishedAt: first('pubdate', 'published', 'updated', 'date'), upstreamRank: rank },
     }
@@ -218,14 +259,21 @@ async function downloadTorrentFile(url: string): Promise<Uint8Array> {
 /** Checks a pasted URL is a torrent feed (for a Torznab endpoint, that its API key works) and names
  *  it. null when the URL is not a feed at all; `error` when it is one that refused. */
 export async function checkTrackerFeed(spec: string): Promise<{ name: string } | { error: string } | null> {
+  const fetchBody = async (query: string) => (await phttp(trackerFeedRequestUrl(spec, query), { timeoutMs: SEARCH_TIMEOUT_MS })).text()
   let body: string
-  try {
-    body = await (await phttp(trackerFeedRequestUrl(spec, ''), { timeoutMs: SEARCH_TIMEOUT_MS })).text()
-  } catch { return null }
+  try { body = await fetchBody('') } catch { return null }
+  if (looksJson(body)) {
+    // A JSON search API has no feed title and often refuses an empty search, so it counts as a feed
+    // once a sample search finds releases ("1080p" is in nearly every video release name).
+    try {
+      if (jsonItems(body).length || (feedTakesQuery(spec) && jsonItems(await fetchBody('1080p')).length)) return { name: feedHost(spec) }
+    } catch { /* not a feed */ }
+    return null
+  }
   try {
     const doc = parseDoc(body)
     const name = doc.caps ? doc.caps.server?.['@_title'] : text((doc.rss?.channel ?? doc['rdf:RDF']?.channel ?? doc.feed)?.title)
-    return { name: name || parseUrl(spec.replace(PLACEHOLDER, '')).hostname }
+    return { name: name || feedHost(spec) }
   } catch (error) {
     return (error as Error).message === NOT_A_FEED ? null : { error: (error as Error).message }
   }

@@ -25,7 +25,7 @@
   import { findAddonConfigureUrl } from '$lib/stremio/configure'
   import { defaultDiscussionPlatform } from '$lib/comments'
   import { checkExtensionUpdates } from '$lib/extensions/auto-update'
-  import { checkTrackerFeed, trackerFeedUrls } from '$lib/extensions/tracker-feeds'
+  import { checkTrackerFeed, isSearchFeedUrl, trackerFeedUrls } from '$lib/extensions/tracker-feeds'
   import AddonConfigurator from '$lib/components/settings/AddonConfigurator.svelte'
   import CommunitySources from '../extensions/+page.svelte'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
@@ -106,11 +106,13 @@
     adding = true
     addError = ''
     try {
-      const result = await classifySourceSpec(input)
+      // undefined until checked; a search URL is checked as a tracker feed first.
+      let indexer = isSearchFeedUrl(input) ? await checkTrackerFeed(input) : undefined
+      const result = indexer && 'name' in indexer ? { error: '' } : await classifySourceSpec(input)
       if ('error' in result) {
-        // Not an add-on or a catalog: it may be a torrent tracker's feed (a Torznab endpoint or a
-        // tracker's own RSS search), which answers XML.
-        const indexer = await checkTrackerFeed(input)
+        // Not an add-on or a catalog: it may be a torrent tracker's feed (a Torznab endpoint, a
+        // tracker's own RSS search, or a JSON search API).
+        if (indexer === undefined) indexer = await checkTrackerFeed(input)
         if (indexer && 'name' in indexer) {
           const spec = input.trim()
           if (!$trackerFeedUrls.includes(spec)) $trackerFeedUrls = [...$trackerFeedUrls, spec]
@@ -455,7 +457,7 @@
       <button onclick={() => void add()} data-focusable disabled={adding} class="w-full rounded-md bg-primary px-4 py-2.5 font-bold text-primary-foreground disabled:opacity-50 sm:w-auto sm:py-2">{adding ? 'Adding…' : 'Add'}</button>
     </div>
     {#if addError}<p role="alert" class="mt-2 text-xs text-destructive">{addError}</p>{/if}
-    <p class="mt-2 text-xs text-muted-foreground">Supports Nuvio provider manifests, Stremio add-on links from Nuvio or Omni, and torrent trackers: a tracker's RSS search URL (put <code>{'{query}'}</code> where the search words go, or keep its search parameter), or a Torznab feed from Jackett or Prowlarr with <code>?apikey=</code> and your key.</p>
+    <p class="mt-2 text-xs text-muted-foreground">Supports Nuvio provider manifests, Stremio add-on links from Nuvio or Omni, and torrent trackers: a tracker's RSS or JSON search URL (put <code>{'{query}'}</code> where the search words go, or keep its search parameter), or a Torznab feed from Jackett or Prowlarr with <code>?apikey=</code> and your key.</p>
     <div class="mt-2 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
       <div class="relative col-span-2 min-w-0 sm:min-w-52 sm:flex-1">
         <Search size={14} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
