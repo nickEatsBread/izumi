@@ -21,13 +21,16 @@ export function loadEpisodeMeta(
 ): () => void {
   const { fetchMeta = getEpisodeMeta, anilistId = anilistIdOf } = deps
   let live = true
-  let known = animeEpisodeMetadata(media)
+  const known = animeEpisodeMetadata(media)
   onmeta(known[episode])
   const id = anilistId(media)
   if (id) {
     const merge = (next: Record<number, EpMeta>) => {
       if (!live) return
-      known = { ...known, ...next }
+      // Field by field: a lookup entry's missing synopsis must not blank the catalog's own.
+      for (const [n, details] of Object.entries(next)) {
+        known[Number(n)] = { ...known[Number(n)], ...Object.fromEntries(Object.entries(details).filter(([, v]) => v != null)) }
+      }
       onmeta(known[episode])
     }
     void fetchMeta(id, undefined, merge).then(merge, () => {})
