@@ -262,6 +262,24 @@ export async function loadTitleExtras(media: Media, needs: ReadonlySet<TitleExtr
   return Object.fromEntries(Object.entries(out).filter(([, value]) => value)) as TitleExtras
 }
 
+// API 6: card templates that bind key art or a logo load them through this queue — at most four lookups
+// at once, so a Home of a hundred cards never floods ani.zip. A finished lookup hands its slot straight to
+// the next waiter, so a call arriving in between can never push the count past the cap.
+const CARD_ART_SLOTS = 4
+let cardArtRunning = 0
+const cardArtWaiting: (() => void)[] = []
+export async function queueTitleArt(media: Media, needs: ReadonlySet<TitleExtra>, load: typeof loadTitleExtras = loadTitleExtras): Promise<TitleExtras> {
+  if (cardArtRunning < CARD_ART_SLOTS) cardArtRunning++
+  else await new Promise<void>((resolve) => cardArtWaiting.push(resolve))
+  try {
+    return await load(media, needs)
+  } finally {
+    const next = cardArtWaiting.shift()
+    if (next) next()
+    else cardArtRunning--
+  }
+}
+
 /** Warm the batchable lookups for a list (the hero's slides): AnimeSchedule answers up to 18 titles
  *  per request, and `getScheduleInfo` then reads them from its memo. Call it before loading the
  *  titles' extras: their schedule lookups wait for this batch. */
