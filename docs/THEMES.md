@@ -565,6 +565,8 @@ State values:
 | `player.actions` | part | The buttons at the end of the desktop row: volume, options, discussion, tracks, subtitle line navigation, cast, bookmark, screenshot, picture-in-picture and full screen. |  |
 | `player.control` | part | A player button, named by `data-control`. On desktop Back and Play are `button` parts with `data-control` instead; on Android they are `player.control` too. | `data-control` |
 | `player.control.step` | part | The step in seconds drawn inside the desktop Rewind and Forward (the viewer's Seek duration setting). |  |
+| `player.menu` | part | A desktop player popup: the options menu (`data-variant="options"`) or the audio, subtitles and server menu (`data-variant="tracks"`). | `data-variant` |
+| `player.scrim` | part | The shade over the video behind the Android controls, shown with them. |  |
 | `player.volume` | part | The volume slider beside the mute button (desktop). |  |
 | `player.time` | part | A time readout: `default` ("pos / dur" in the desktop button row, or at the start of the Android timeline row), `elapsed`, `remaining` or `total`. | `data-variant` |
 | `player.skip` | part | The Skip button over the video while an opening, ending, recap or preview plays (`data-kind` `op`, `ed`, `recap`, `preview`). | `data-kind` |

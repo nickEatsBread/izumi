@@ -77,6 +77,12 @@ describe('player styling hooks', () => {
     ]) expect(controls).toContain(needle)
   })
 
+  it('hooks the desktop popups and the Android scrim', () => {
+    expect(controls).toContain('data-options-menu data-part="player.menu" data-variant="options"')
+    expect(controls).toContain('data-part="player.menu" data-variant="tracks"')
+    expect(read('./AndroidPlayer.svelte')).toContain('data-part="player.scrim"')
+  })
+
   it('says which player it is', () => {
     expect(controls).toContain(`data-slot="player.controls" data-variant={gm ? 'game' : 'desktop'}`)
     expect(read('./AndroidPlayer.svelte')).toContain('data-android-player class:hidden={overlayHidden} data-slot="player.controls" data-variant="android"')

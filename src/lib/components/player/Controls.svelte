@@ -1012,7 +1012,7 @@
           {#if showOptions && !gm}
             <!-- Match the subtitle picker: a compact summary column drills into one focused list
                  instead of exposing every control in one tall wall. -->
-            <div data-options-menu class="absolute bottom-full right-0 mb-2 w-72 overflow-hidden rounded-xl border border-white/10 bg-neutral-900 text-sm text-white shadow-2xl [transform:translateZ(0)] [will-change:transform]">
+            <div data-options-menu data-part="player.menu" data-variant="options" class="absolute bottom-full right-0 mb-2 w-72 overflow-hidden rounded-xl border border-white/10 bg-neutral-900 text-sm text-white shadow-2xl [transform:translateZ(0)] [will-change:transform]">
               <div class="overflow-hidden transition-[height] duration-200 ease-out" style="height:{optionsPage === 'root' ? optionsRootH : optionsDetailH}px">
                 <div class="flex w-[200%] [transition:transform_200ms_cubic-bezier(.25,1,.5,1)]" style="transform:translateX({optionsPage === 'root' ? '0' : '-50%'})">
                   <div class="w-1/2 p-2" bind:clientHeight={optionsRootH}>
@@ -1208,7 +1208,7 @@
                    active track; picking one slides (Miller-column) into just that category's
                    list — not one flat wall. The port height morphs between the two columns'
                    measured heights so the panel resizes with the slide. -->
-              <div class="absolute bottom-full right-0 mb-2 w-72 overflow-hidden rounded-xl border border-white/10 bg-neutral-900 text-sm text-white shadow-2xl [transform:translateZ(0)] [will-change:transform]">
+              <div data-part="player.menu" data-variant="tracks" class="absolute bottom-full right-0 mb-2 w-72 overflow-hidden rounded-xl border border-white/10 bg-neutral-900 text-sm text-white shadow-2xl [transform:translateZ(0)] [will-change:transform]">
                 <div class="overflow-hidden transition-[height] duration-200 ease-out" style="height:{menuLevel === 'root' ? rootH : detailH}px">
                   <div class="flex w-[200%] [transition:transform_200ms_cubic-bezier(.25,1,.5,1)]" style="transform:translateX({menuLevel === 'root' ? '0' : '-50%'})">
                     <!-- ROOT: media track and source categories -->
