@@ -77,7 +77,7 @@ describe('Android and TV player choices (theme API 6)', () => {
   it('shows the paused summary in place of the controls after five idle seconds', () => {
     expect(player).toContain("import PausedSummary from './PausedSummary.svelte'")
     expect(player).toContain('{#if pausedIdle}\n    <PausedSummary ')
-    expect(player).toContain('function showControls() { inputTick++; controlsShown = true; armHide() }')
+    expect(player).toContain('function showControls() { untrack(() => { inputTick++ }); controlsShown = true; armHide() }')
     expect(player).toContain('$effect(() => { if (paused && !pausedIdle) { clearTimeout(hideTimer); controlsShown = true }')
     const idle = effectAfter('let pausedIdle = $state(false)')
     expect(idle).toContain("playerControls.paused === 'summary' && paused")
@@ -96,6 +96,9 @@ describe('Android and TV player choices (theme API 6)', () => {
     const keys = effectAfter('// The summary\'s first key only')
     expect(keys).toContain('if (!pausedIdle) return')
     expect(keys).toContain('event.stopImmediatePropagation()')
+    // Back and the media keys keep acting (leave, play); only D-pad and OK are swallowed.
+    expect(player).toContain("const SUMMARY_PASS_KEYS = new Set(['Escape', 'BrowserBack', 'GoBack', 'MediaPlayPause', 'MediaPlay', 'MediaPause'])")
+    expect(keys).toContain('if (SUMMARY_PASS_KEYS.has(event.key)) { inputTick++; return }')
     expect(keys).toContain("window.addEventListener('keydown', dismiss, true)")
     expect(keys).toContain("return () => window.removeEventListener('keydown', dismiss, true)")
     // Touch: never reaches the tap, seek or drag handlers; any other touch restarts the wait.

@@ -9,7 +9,7 @@
   //   horizontal drag    — live scrub anywhere over the video
   // A pure recognizer (android-gestures.ts) classifies each pointer stream; this component wires
   // its verdicts to mpv/native calls.
-  import { onMount, tick } from 'svelte'
+  import { onMount, tick, untrack } from 'svelte'
   import { get } from 'svelte/store'
   import { goto } from '$app/navigation'
   import { addPluginListener, invoke, type PluginListener } from '@tauri-apps/api/core'
@@ -495,7 +495,8 @@
   }
 
   function armHide() { clearTimeout(hideTimer); if (!paused && !scrubbing) hideTimer = setTimeout(() => (controlsShown = false), $isAndroidTv ? 6500 : 3500) }
-  function showControls() { inputTick++; controlsShown = true; armHide() }
+  // untrack: the handover effect calls this, and must not subscribe to the input counter it bumps.
+  function showControls() { untrack(() => { inputTick++ }); controlsShown = true; armHide() }
   function toggleControls() {
     if (scrubbing) { controlsShown = true; return }
     controlsShown = !controlsShown
@@ -506,7 +507,8 @@
 
   function focusTvTransport() {
     requestAnimationFrame(() => {
-      rootEl?.querySelector<HTMLElement>('[data-tv-primary], button')?.focus({ preventScroll: true })
+      // Play first: a selector list matches in document order, which would land on the top bar's Back.
+      ;(rootEl?.querySelector<HTMLElement>('[data-tv-primary]') ?? rootEl?.querySelector<HTMLElement>('button'))?.focus({ preventScroll: true })
     })
   }
 
@@ -1853,11 +1855,14 @@
     return () => clearTimeout(t)
   })
   // The summary's first key only takes it away and brings the controls back: ahead of every other
-  // handler (window capture, and the TV's Back is dispatched on window itself), so it never also
-  // plays, seeks, moves focus or leaves the player.
+  // handler (window capture, and the TV's Back is dispatched on window itself), so a D-pad or OK press
+  // never also seeks, moves focus or pauses. Back and the media keys keep their meaning (leave, play) and
+  // also restart the wait, since onTvKeydown only bumps it on TV.
+  const SUMMARY_PASS_KEYS = new Set(['Escape', 'BrowserBack', 'GoBack', 'MediaPlayPause', 'MediaPlay', 'MediaPause'])
   $effect(() => {
     if (!pausedIdle) return
     const dismiss = (event: KeyboardEvent) => {
+      if (SUMMARY_PASS_KEYS.has(event.key)) { inputTick++; return }
       event.preventDefault()
       event.stopImmediatePropagation()
       showControls()
