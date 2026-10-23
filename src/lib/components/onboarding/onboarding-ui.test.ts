@@ -326,11 +326,15 @@ describe('onboarding presentation contracts', () => {
     expect(shell).not.toContain('minmax(0, 1.3fr)')
     expect(shell).toContain('max-width: 64rem')
     expect(artwork).toContain('{#each [0, 1, 2, 3, 4, 5] as column}')
+    expect(artwork).toContain('grid-template-columns: repeat(6, 1fr);')
+    expect(css).toMatch(/\.setup-heading \{[^}]*max-width: 42rem;/)
   })
 
   it('installs ticked sources before leaving the sources screen, and lets the user skip instead', () => {
     expect(shell).toContain("if (step === 'sources' && sourcesStep && !(await sourcesStep.install())) return")
     expect(shell).toContain('onclick={skipStep}')
+    // Start's cards are the way forward; it has no Next of its own.
+    expect(shell).toContain("{:else if step !== 'start'}")
   })
 
   it.each([['en', 'home screen'], ['ja', 'ホーム画面']])('no longer promises a home-screen checklist in %s', (locale, phrase) => {

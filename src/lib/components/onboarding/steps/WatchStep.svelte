@@ -17,7 +17,7 @@
 <h1 id="setup-title" data-step-heading tabindex="-1" aria-describedby="setup-progress" class="setup-heading">{m.onboarding_watch_title()}</h1>
 <p class="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">{m.onboarding_watch_body()}</p>
 
-<fieldset class="mt-7 space-y-3">
+<fieldset class="mt-7 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
   <legend class="sr-only">{m.onboarding_watch_title()}</legend>
   {#each [{ key: 'anime' as const, title: m.onboarding_anime_title(), body: m.onboarding_automatic_body(), Icon: Sparkles }, { key: 'films' as const, title: m.onboarding_movies_title(), body: m.onboarding_movies_body(), Icon: Film }] as choice}
     <label class="setup-choice flex w-full cursor-pointer items-center gap-4 p-5 text-left {intent[choice.key] ? 'selected' : ''}">

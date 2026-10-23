@@ -56,6 +56,15 @@ export function onboardingMovieMetadata(hasTmdbToken: boolean): OnboardingMovieM
   return hasTmdbToken ? 'tmdb' : 'stremio'
 }
 
+/** Not asked during setup either: a re-run keeps the library the user already opens on, and a
+ *  fresh install with both libraries opens on the merged one. */
+export function onboardingStartupLibrary(defaultProvider: CatalogDefaultSelection, bothEnabled: boolean): OnboardingStartupLibrary {
+  if (defaultProvider === 'adaptive') return 'adaptive'
+  if (bothEnabled && defaultProvider === 'auto') return 'auto'
+  if (bothEnabled && (defaultProvider === 'tmdb' || defaultProvider === 'stremio')) return 'movies'
+  return 'merged'
+}
+
 /** Versioned so a future materially different setup flow can be offered without losing history. */
 export const onboardingComplete = persisted<boolean>('onboarding-complete-v1', false)
 

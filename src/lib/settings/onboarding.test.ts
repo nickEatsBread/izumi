@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { onboardingCatalogPlan, onboardingMovieMetadata, onboardingSteps, type OnboardingIntent } from './onboarding'
+import { onboardingCatalogPlan, onboardingMovieMetadata, onboardingStartupLibrary, onboardingSteps, type OnboardingIntent } from './onboarding'
 import { resolveCatalogScreenStartup } from './catalog'
 
 const anime: OnboardingIntent = { anime: true, films: false }
@@ -84,5 +84,19 @@ describe('film metadata during setup', () => {
 
   it('falls back to the keyless catalog instead of asking for a key', () => {
     expect(onboardingMovieMetadata(false)).toBe('stremio')
+  })
+})
+
+describe('startup library during setup', () => {
+  it('opens a fresh install on the merged library', () => {
+    expect(onboardingStartupLibrary('auto', false)).toBe('merged')
+  })
+
+  it('keeps the library a re-run user already opens on', () => {
+    expect(onboardingStartupLibrary('adaptive', true)).toBe('adaptive')
+    expect(onboardingStartupLibrary('auto', true)).toBe('auto')
+    expect(onboardingStartupLibrary('tmdb', true)).toBe('movies')
+    expect(onboardingStartupLibrary('stremio', true)).toBe('movies')
+    expect(onboardingStartupLibrary('merged', true)).toBe('merged')
   })
 })

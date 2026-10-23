@@ -34,11 +34,11 @@
     finishOnboarding,
     onboardingCatalogPlan,
     onboardingMovieMetadata,
+    onboardingStartupLibrary,
     onboardingSteps,
     onboardingComplete,
     type OnboardingIntent,
     type OnboardingPath,
-    type OnboardingStartupLibrary,
     type StepId,
   } from '$lib/settings/onboarding'
   import { debridKey, extensionUrls, preferredAudioLang, preferredSubLang, torrentPlaybackMode, type AudioLang, type SubLang } from '$lib/settings/ui'
@@ -50,9 +50,8 @@
   // Setup never asks for an API key. TMDB is used when a token is already there (saved on an
   // earlier run, or built into a private build), and the keyless catalog otherwise.
   const movieMetadata = onboardingMovieMetadata(Boolean(get(tmdbReadToken).trim() || (publicEnv as Record<string, string | undefined>).PUBLIC_TMDB_READ_TOKEN?.trim()))
-  // Not asked either: a re-run keeps the library the user already opens on, and a fresh install
-  // with both libraries opens on the merged one. Settings → Catalog changes it.
-  const startupLibrary: OnboardingStartupLibrary = initialProvider === 'adaptive' ? 'adaptive' : initialBoth && initialProvider === 'auto' ? 'auto' : initialBoth && (initialProvider === 'tmdb' || initialProvider === 'stremio') ? 'movies' : 'merged'
+  // Not asked either; Settings → Catalog changes it.
+  const startupLibrary = onboardingStartupLibrary(initialProvider, initialBoth)
 
   let root = $state<HTMLElement>()
   // Only a brand-new install ever reaches this component, so the ident needs no flag of its own —
@@ -77,7 +76,8 @@
   let nuvioExtras = $state<NuvioExtras>({ library: false, progress: false, history: false })
   let imported = $state(false)
 
-  const sourceReady = $derived($addonUrls.length > 0 || $extensionUrls.length > 0)
+  // Cinemeta (added for film users) only supplies metadata, so it does not count as a way to play.
+  const sourceReady = $derived($addonUrls.some((url) => normalizeBase(url) !== normalizeBase(CINEMETA_BASE)) || $extensionUrls.length > 0)
   const steps = $derived(onboardingSteps(path))
   const stepIndex = $derived(steps.indexOf(step))
   const totalSteps = $derived(steps.length)
@@ -197,15 +197,9 @@
     finishOnboarding()
   }
 
-  // Defensive: should a step ever leave the list under the user, fall back to the last valid one
-  // rather than rendering nothing with a broken footer.
-  $effect(() => {
-    if (!$onboardingComplete && stepIndex === -1) step = steps[steps.length - 1]
-  })
-
   $effect(() => {
     if ($onboardingComplete) return
-    step
+    step; mode
     const frame = requestAnimationFrame(() => {
       root?.querySelector('.setup-step')?.scrollTo({ top: 0 })
       root?.querySelector<HTMLElement>('[data-step-heading]')?.focus({ preventScroll: true })
@@ -272,7 +266,7 @@
         <!-- Its own branch rather than a step: this screen is not "2 of 4" of anything, it is
              the alternative to the whole wizard, and it owns its own footer. -->
         <div class="setup-step">
-          <section class="setup-content">
+          <section class="setup-content max-w-2xl">
             <TransferStep oncancel={leaveTransfer} onfinished={completeTransfer} />
           </section>
         </div>
@@ -333,6 +327,11 @@
   .setup-content { animation: step-enter 320ms cubic-bezier(.2, .7, .2, 1) both; }
   .setup-actions { flex-shrink: 0; width: 100%; max-width: 64rem; margin-inline: auto; margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid hsl(var(--border) / .65); }
   @keyframes step-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  /* A docked Deck or a small laptop: keep the wordmark clear but give the step the height back. */
+  @media (max-height: 760px) {
+    .setup-main { padding-top: max(4.25rem, calc(env(safe-area-inset-top) + 3.5rem)); }
+    .setup-actions { margin-top: 1.25rem; padding-top: 1rem; }
+  }
   @media (max-width: 767px), (max-height: 500px) and (pointer: coarse) {
     .onboarding-surface { height: var(--setup-viewport-height, 100dvh); top: var(--setup-viewport-top, 0px); width: 100%; }
     .art-wordmark { top: max(1.5rem, env(safe-area-inset-top)); left: max(1.5rem, env(safe-area-inset-left)); }
