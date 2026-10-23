@@ -313,4 +313,26 @@ describe('onboarding presentation contracts', () => {
   it('lays the source picker out across the wide panel', () => {
     expect(sources).toContain('sm:grid-cols-2 lg:grid-cols-3')
   })
+
+  it('opens on three ways to start, each one the way forward itself', () => {
+    const start = read('./steps/StartStep.svelte')
+    for (const handler of ['onnew', 'onimport', 'ontransfer']) expect(start).toContain(`action: ${handler}`)
+    expect(start).toContain('onclick={choice.action}')
+    expect(start).toContain('data-step-heading tabindex="-1" aria-describedby="setup-progress"')
+  })
+
+  it('ends with optional extras instead of nagging rows', () => {
+    const ready = steps.ReadyStep
+    expect(ready).toContain('<TrackerTiles bind:connections />')
+    expect(ready).toContain('m.onboarding_ready_tmdb_tip()')
+    expect(ready).not.toContain('onboarding_ready_list')
+    expect(ready).not.toContain('onboarding_ready_metadata')
+  })
+
+  it.each([['en', 'home screen'], ['ja', 'ホーム画面']])('no longer promises a home-screen checklist in %s', (locale, phrase) => {
+    // The checklist was removed; copy that still points at it describes a screen that never comes.
+    const messages = JSON.parse(read(`../../../../messages/${locale}.json`)) as Record<string, string>
+    expect(messages.onboarding_ready_body).not.toContain(phrase)
+    expect(messages.onboarding_ready_remainder_hint).not.toContain(phrase)
+  })
 })
