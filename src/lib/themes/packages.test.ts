@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseCatalog, parseThemePackage, parseSharedTheme, parseRelease, themeUrl, newerVersion, portablePackage } from './packages'
+import { parseCatalog, parseThemePackage, parseSharedTheme, parseRelease, shotsFor, themeUrl, newerVersion, portablePackage } from './packages'
 import { defaultStudioTheme } from '$lib/settings/theme-studio'
 
 export const samplePackage = { app: 'izumi', kind: 'theme-package', schemaVersion: 1, themeApi: 1, id: 'test.cinema', name: 'Cinema', author: 'Test', description: 'An optional rank design.', version: '1.0.0', design: { radius: 1, backdrop: 'solid', presentation: { hero: { rank: { type: 'text', field: 'rank' } } } } }
@@ -96,5 +96,26 @@ describe('installable theme packages', () => {
     expect(() => parseThemePackage({ ...pkg, themeApi: 2 })).toThrow('unsupported design')
     expect(() => parseThemePackage({ ...pkg, design: { css: '.a{background:url(https://e.test/a.png)}' } })).toThrow('URLs')
     expect(() => parseThemePackage({ ...pkg, design: { fonts: { ui: 'comic-sans' } } })).toThrow('font')
+  })
+})
+
+describe('listing screenshots', () => {
+  const entry = { ...samplePackage, download: 'https://example.test/theme.json', sha256: 'a'.repeat(64), bytes: 500, tags: [] }
+  const shot = (screen: string, platform = 'desktop') => ({ screen, platform, url: `https://example.test/${platform}-${screen}.jpg` })
+  it('keeps valid per-screen screenshots', () => {
+    expect(parseRelease({ ...entry, screenshots: [shot('home'), shot('series', 'phone')] }).screenshots).toEqual([shot('home'), shot('series', 'phone')])
+  })
+  it('rejects unknown screens and platforms, plain HTTP, duplicates and long lists', () => {
+    expect(() => parseRelease({ ...entry, screenshots: [shot('player')] })).toThrow('screenshots')
+    expect(() => parseRelease({ ...entry, screenshots: [shot('home', 'tv')] })).toThrow('screenshots')
+    expect(() => parseRelease({ ...entry, screenshots: [{ ...shot('home'), url: 'http://example.test/a.jpg' }] })).toThrow('HTTPS')
+    expect(() => parseRelease({ ...entry, screenshots: [shot('home'), shot('home')] })).toThrow('screenshots')
+    expect(() => parseRelease({ ...entry, screenshots: Array.from({ length: 13 }, (_, i) => shot('home', String(i))) })).toThrow('screenshots')
+  })
+  it('orders one platform by screen and falls back to the single preview', () => {
+    const release = parseRelease({ ...entry, preview: 'https://example.test/p.png', screenshots: [shot('search'), shot('home'), shot('home', 'phone')] })
+    expect(shotsFor(release, 'desktop').map((item) => item.screen)).toEqual(['home', 'search'])
+    expect(shotsFor(parseRelease({ ...entry, preview: 'https://example.test/p.png' }), 'phone')).toEqual([{ screen: 'home', platform: 'phone', url: 'https://example.test/p.png' }])
+    expect(shotsFor(parseRelease(entry), 'desktop')).toEqual([])
   })
 })

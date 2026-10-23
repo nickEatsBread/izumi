@@ -12,6 +12,11 @@ export const MAX_THEME_BYTES = 512_000
 export const THEME_CATALOG_URL = 'https://raw.githubusercontent.com/nickEatsBread/izumi-themes/main/index.json'
 export const THEME_CATALOG_PROJECT_URL = 'https://github.com/nickEatsBread/izumi-themes'
 export type ThemePlatform = 'desktop' | 'phone'
+export type ThemeScreen = 'home' | 'series' | 'search' | 'schedule'
+/** Store screens in listing order. */
+export const THEME_SCREENS: readonly ThemeScreen[] = ['home', 'series', 'search', 'schedule']
+export const SCREEN_LABELS: Record<ThemeScreen, string> = { home: 'Home', series: 'Series', search: 'Search', schedule: 'Schedule' }
+export interface ThemeScreenshot { screen: ThemeScreen; platform: ThemePlatform; url: string }
 export interface ThemePackage {
   app: 'izumi'; kind: 'theme-package'; schemaVersion: 1; themeApi: ThemeApi
   id: string; name: string; version: string; author: string; description: string
@@ -22,6 +27,8 @@ export interface ThemeRelease {
   themeApi: number; tags: string[]; preview?: string; project?: string
   /** Which layouts the author designed, primary first. Absent means the shared layout serves both. */
   platforms?: ThemePlatform[]
+  /** Store screenshots, one per platform and screen. */
+  screenshots?: ThemeScreenshot[]
   download: string; sha256: string; bytes: number
 }
 /** A short label for where a listing was designed to live. */
@@ -107,6 +114,27 @@ function platforms(value: unknown): ThemePlatform[] | undefined {
   if (!Array.isArray(value) || !value.length || value.length > 2 || value.some(item => item !== 'desktop' && item !== 'phone') || new Set(value).size !== value.length) throw new Error('Invalid theme platforms.')
   return value as ThemePlatform[]
 }
+function screenshots(value: unknown): ThemeScreenshot[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || value.length > 12) throw new Error('Invalid theme screenshots.')
+  const seen = new Set<string>()
+  return value.map((item) => {
+    const raw = record(item)
+    const key = `${raw.platform}:${raw.screen}`
+    if (!THEME_SCREENS.includes(raw.screen as ThemeScreen) || (raw.platform !== 'desktop' && raw.platform !== 'phone') || seen.has(key)) throw new Error('Invalid theme screenshots.')
+    seen.add(key)
+    return { screen: raw.screen as ThemeScreen, platform: raw.platform as ThemePlatform, url: themeUrl(raw.url) }
+  })
+}
+/** One platform's screenshots in screen order; a listing with only `preview` shows it as Home. */
+export function shotsFor(release: ThemeRelease, platform: ThemePlatform): ThemeScreenshot[] {
+  const shots = (release.screenshots ?? []).filter((shot) => shot.platform === platform)
+    .sort((a, b) => THEME_SCREENS.indexOf(a.screen) - THEME_SCREENS.indexOf(b.screen))
+  if (shots.length) return shots
+  return release.preview ? [{ screen: 'home', platform, url: release.preview }] : []
+}
+/** The layout a listing is shown in by default. */
+export const primaryPlatform = (release: ThemeRelease): ThemePlatform => release.platforms?.[0] ?? 'desktop'
 export function parseRelease(value: unknown): ThemeRelease {
   const raw = record(value)
   const bytes = raw.bytes
@@ -115,9 +143,11 @@ export function parseRelease(value: unknown): ThemeRelease {
   if (!Number.isSafeInteger(raw.themeApi) || Number(raw.themeApi) < 1) throw new Error('Missing theme API version.')
   if (!Array.isArray(raw.tags) || raw.tags.length > 12) throw new Error('Invalid theme tags.')
   const targets = platforms(raw.platforms)
+  const shots = screenshots(raw.screenshots)
   return { id: identity(raw.id), name: text(raw.name, 48), version: version(raw.version), author: text(raw.author, 80),
     description: text(raw.description, 600), themeApi: Number(raw.themeApi), tags: raw.tags.map(tag => text(tag, 32)),
     ...(targets ? { platforms: targets } : {}),
+    ...(shots?.length ? { screenshots: shots } : {}),
     download: themeUrl(raw.download), sha256: raw.sha256.toLowerCase(), bytes,
     ...(raw.preview ? { preview: themeUrl(raw.preview) } : {}), ...(raw.project ? { project: themeUrl(raw.project) } : {}) }
 }
