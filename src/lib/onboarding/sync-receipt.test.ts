@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { plannedSyncTasks, sourcesLanded, syncFailures, syncSettled, syncSucceededAny, type SyncTask } from './sync-receipt'
+import { plannedSyncTasks, sourcesLanded, syncFailures, syncSettled, syncSucceededAny, tasksFor, type SyncTask } from './sync-receipt'
 
 const noExtras = { library: false, progress: false, history: false }
 
@@ -67,5 +67,16 @@ describe('sync receipt', () => {
   it('does not count a source task that failed or is still running', () => {
     expect(sourcesLanded([task('stremio', { status: 'failed', message: 'offline' })])).toBe(false)
     expect(sourcesLanded([task('nuvio-sources', { status: 'running' })])).toBe(false)
+  })
+})
+
+describe('tasks for one service', () => {
+  const all: SyncTask[] = (['stremio', 'nuvio-sources', 'nuvio-library', 'anilist', 'mal'] as const)
+    .map((id): SyncTask => ({ id, state: { status: 'pending' } }))
+
+  it('gives each connect tile only its own imports', () => {
+    expect(tasksFor(all, 'stremio').map((task) => task.id)).toEqual(['stremio'])
+    expect(tasksFor(all, 'nuvio').map((task) => task.id)).toEqual(['nuvio-sources', 'nuvio-library'])
+    expect(tasksFor(all, 'mal').map((task) => task.id)).toEqual(['mal'])
   })
 })

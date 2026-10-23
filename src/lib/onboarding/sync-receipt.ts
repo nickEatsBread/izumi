@@ -62,3 +62,8 @@ const SOURCE_TASKS: readonly SyncTaskId[] = ['stremio', 'nuvio-sources']
 export function sourcesLanded(tasks: readonly SyncTask[]): boolean {
   return tasks.some((task) => SOURCE_TASKS.includes(task.id) && task.state.status === 'done')
 }
+
+/** The tasks a service owns, so its sign-in tile can show its own import result. */
+export function tasksFor(tasks: readonly SyncTask[], service: ConnectService): SyncTask[] {
+  return tasks.filter((task) => task.id === service || task.id.startsWith(`${service}-`))
+}
