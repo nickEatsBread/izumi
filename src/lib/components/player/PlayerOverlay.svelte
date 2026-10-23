@@ -291,7 +291,7 @@
   const quietDpadScrub = $derived(gmMode && $scrub.active && $scrub.source === 'dpad')
   const playerControls = $derived(resolvePlayerControls($themePresentation))
   // API 6 paused summary: five seconds after the last input while paused on the full (not docked)
-  // player, never in Game mode, at the end of the file or under an open menu or prompt. `inputTick` is bumped by poke(), so any
+  // player, never in Game mode, at the end of the file, under an open menu or prompt, over the stats or while a cast plays it. `inputTick` is bumped by poke(), so any
   // input restarts the wait and hides it. While it shows, the controls give way (see `controlsVisible`).
   let inputTick = $state(0)
   let pausedIdle = $state(false)
@@ -299,6 +299,7 @@
     const armed = playerControls.paused === 'summary' && transportPaused && !loading && !eof && !gmMode && !docked && !$isMobile && !$pictureInPicture
       && !$scrubActive && !$playerMenuOpen && !$trackMenuOpen && !$commentsOpen && !subtitleEditorOpen
       && !sourcePickerVisible && !sourceConnectingVisible && !$upNextPrompt && !$seriesRatingPrompt && !$oskOpen && !$navLayerOpen
+      && !$playerStatsOpen && !remoteCastOwnsPlayback
     pausedIdle = false
     if (!armed) return
     void inputTick
@@ -342,7 +343,7 @@
   const showSkip = $derived(!!currentSeg && !autoSkipCurrent && (skipTimer || controlsVisible))
 
   function poke() {
-    inputTick++
+    untrack(() => { inputTick++ })
     visible = true
     clearTimeout(hideT)
     // Match Crunchy Deck's breathing room: the chrome itself fades for 300ms after this hold.

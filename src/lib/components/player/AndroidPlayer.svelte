@@ -2442,7 +2442,7 @@
         {:else}
           {#if playerControls.time === 'split'}<span data-part="player.time" data-variant="elapsed" class="pointer-events-none">{fmt(pos)}</span>{/if}
           <!-- The time left (or the total, after the elapsed time) sits at the row's end, beside full screen. -->
-          <span data-part="player.time" data-variant={playerControls.time === 'split' ? 'total' : 'remaining'} class="pointer-events-none ml-auto">{fmt(playerControls.time === 'split' ? dur : Math.max(0, dur - pos))}</span>
+          {#if dur > 0}<span data-part="player.time" data-variant={playerControls.time === 'split' ? 'total' : 'remaining'} class="pointer-events-none ml-auto">{fmt(playerControls.time === 'split' ? dur : Math.max(0, dur - pos))}</span>{/if}
         {/if}
         <button
           data-part="player.control" data-control="fullscreen"

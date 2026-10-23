@@ -261,7 +261,16 @@
   // maps a global percent into 0–100% within the chapter; `skewclamp` hides a 0-fill
   // fully (−5 not 0) so no sliver shows.
   const skewclamp = (v: number) => { const c = Math.min(Math.max(v, 0), 100); return c === 0 ? -5 : c }
-  const progressPct = $derived(pct(pos))
+  // A click or drag release holds the bar at its target until mpv reports a playhead within a second
+  // of it (or 1.5 s pass): `seeking` ends first, and the knob and fill must not snap back meanwhile.
+  let heldT = $state<number | undefined>()
+  $effect(() => { if (heldT !== undefined && Math.abs(pos - heldT) < 1) heldT = undefined })
+  $effect(() => {
+    if (heldT === undefined) return
+    const t = setTimeout(() => { heldT = undefined }, 1500)
+    return () => clearTimeout(t)
+  })
+  const progressPct = $derived(pct(heldT ?? pos))
   const bufferPct = $derived(pct(buffer))
   const hoverPct = $derived(pct(hoverT))
   const seekActive = $derived(hovering || seeking)
@@ -366,6 +375,7 @@
       }
     } else if (seeking) {
       seeking = false
+      heldT = hoverT
       onseek(hoverT)
     }
   }

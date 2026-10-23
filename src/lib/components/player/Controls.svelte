@@ -928,7 +928,7 @@
       <div class="pointer-events-auto flex items-center gap-3">
         {#if controls.time === 'split'}<span data-part="player.time" data-variant="elapsed" class="w-16 shrink-0 select-none font-mono text-sm tabular-nums">{fmt(pos)}</span>{/if}
         <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} {native} onseek={seekTo} {onscrubinput} /></div>
-        <span data-part="player.time" data-variant={controls.time === 'split' ? 'total' : 'remaining'} class="w-16 shrink-0 select-none text-right font-mono text-sm tabular-nums">{fmt(controls.time === 'split' ? dur : Math.max(0, dur - pos))}</span>
+        {#if dur > 0}<span data-part="player.time" data-variant={controls.time === 'split' ? 'total' : 'remaining'} class="w-16 shrink-0 select-none text-right font-mono text-sm tabular-nums">{fmt(controls.time === 'split' ? dur : Math.max(0, dur - pos))}</span>{/if}
       </div>
     {/if}
 

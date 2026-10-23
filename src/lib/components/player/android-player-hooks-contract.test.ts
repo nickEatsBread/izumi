@@ -65,6 +65,7 @@ describe('Android and TV player choices (theme API 6)', () => {
     expect(player).toContain("{#if playerControls.time === 'default'}")
     expect(player).toContain('data-part="player.time" data-variant="elapsed"')
     expect(player).toContain("data-variant={playerControls.time === 'split' ? 'total' : 'remaining'}")
+    expect(player).toContain(`{#if dur > 0}<span data-part="player.time" data-variant={playerControls.time === 'split' ? 'total' : 'remaining'}`)
     expect(player).toContain("{fmt(playerControls.time === 'split' ? dur : Math.max(0, dur - pos))}")
   })
 

@@ -28,6 +28,8 @@ describe('paused summary (theme API 6 `player.paused: "summary"`)', () => {
       'inputTick++',
       '(transportPaused && !pausedIdle)',
       '{#if pausedIdle}',
+      'untrack(() => { inputTick++ })',
+      '&& !$playerStatsOpen && !remoteCastOwnsPlayback',
     ]) expect(overlay, needle).toContain(needle)
   })
 })

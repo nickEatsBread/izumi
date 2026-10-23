@@ -69,6 +69,7 @@ describe('player styling hooks', () => {
       'data-part="player.control.step"',
       '{#if controls.seekButtons && !gm}',
       "data-variant={controls.time === 'split' ? 'total' : 'remaining'}",
+      `{#if dur > 0}<span data-part="player.time" data-variant={controls.time === 'split' ? 'total' : 'remaining'}`,
       'data-part="player.episode.number"',
       'data-part="player.episode.name"',
       'loadEpisodeMeta(',

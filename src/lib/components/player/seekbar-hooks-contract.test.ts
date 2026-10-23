@@ -16,6 +16,9 @@ describe('seek bar styling hooks', () => {
   it('moves the desktop knob with a drag and marks it', () => {
     expect(seekbar).toContain('data-scrubbing={seeking || undefined}')
     expect(seekbar).toContain('const knobX = $derived((barW * (seeking ? hoverPct : progressPct)) / 100)')
+    // After the release the knob holds the target until the reported playhead reaches it.
+    expect(seekbar).toContain('const progressPct = $derived(pct(heldT ?? pos))')
+    expect(seekbar).toContain('heldT = hoverT')
   })
 
   it('draws the desktop knob inert, hidden and above the segment marks, moved by transform', () => {
