@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte'
+  import { onDestroy, onMount, tick } from 'svelte'
   import Check from '@lucide/svelte/icons/check'
   import LoaderCircle from '@lucide/svelte/icons/loader-circle'
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
@@ -26,6 +26,7 @@
   let health = $state<'empty' | 'checking' | 'ready' | 'error'>('empty')
   let installing = $state(false)
   let checkingKey = $state(false)
+  let errorAlert = $state<HTMLElement>()
   const abort = new AbortController()
 
   const configured = $derived($addonUrls.length > 0 || $extensionUrls.length > 0)
@@ -36,7 +37,12 @@
     busy = installing || checkingKey
   })
 
-  onDestroy(() => abort.abort())
+  // The shell's busy flag is bound to this screen. If it unmounts mid-install or mid key check,
+  // nothing else would ever clear it, leaving Back disabled on the next screen.
+  onDestroy(() => {
+    abort.abort()
+    busy = false
+  })
   onMount(() => {
     // Sources that came over with an import get a health check; everyone gets the picker, which
     // reads as "add more" once sources are already there.
@@ -113,6 +119,7 @@
           // A re-run of setup can meet a source the user switched off earlier. Installing it here
           // has to re-enable it, or it lands in the list already disabled and silently does nothing.
           if (base) disabledSources.update((urls) => urls.filter((url) => normalizeBase(url) !== base))
+          picked = picked.filter((value) => value !== id)
           continue
         }
         const entry = packages.find((value) => value.id === id)
@@ -122,18 +129,28 @@
           if (cause instanceof PackageInstalledElsewhereError) return null
           throw cause
         })
-        if (!installed) continue
+        if (!installed) {
+          picked = picked.filter((value) => value !== id)
+          continue
+        }
         disabledPlugins.update((ids) => ids.filter((value) => value !== installed.id))
         // The package came from the maintained catalog, so keep that catalog in the source list
         // the same way the store screen does when it installs from it.
         if (!$extensionUrls.includes(OFFICIAL_ANIME_CATALOG)) extensionUrls.update((urls) => [...urls, OFFICIAL_ANIME_CATALOG])
         disabledExtensions.update((urls) => urls.filter((spec) => spec !== OFFICIAL_ANIME_CATALOG))
+        picked = picked.filter((value) => value !== id)
       }
       if (abort.signal.aborted) return false
       picked = []
       return true
     } catch (cause) {
-      if (!abort.signal.aborted) installError = cause instanceof Error ? cause.message : m.onboarding_sources_install_failed()
+      if (!abort.signal.aborted) {
+        installError = cause instanceof Error ? cause.message : m.onboarding_sources_install_failed()
+        // Next disabled itself while installing, which drops focus out of the dialog; the error is
+        // also often scrolled out of view under the playback row.
+        await tick()
+        errorAlert?.focus()
+      }
       return false
     } finally {
       if (!abort.signal.aborted) installing = false
@@ -158,7 +175,7 @@
 {/if}
 
 {#if loading}
-  <p class="mt-7 flex items-center gap-2 text-sm text-muted-foreground" role="status"><LoaderCircle size={16} class="tile-spinner" />{m.onboarding_checking()}</p>
+  <p class="mt-7 flex items-center gap-2 text-sm text-muted-foreground" role="status"><LoaderCircle size={16} class="tile-spinner" />{m.onboarding_sources_loading()}</p>
 {:else if error}
   <p class="mt-7 text-sm leading-relaxed text-muted-foreground" role="status">{error}</p>
   <button type="button" data-focusable onclick={() => void load()} class="setup-inline-button mt-4 bg-secondary">{m.onboarding_sources_retry()}</button>
@@ -167,7 +184,7 @@
        column sizes to the widest row's max-content. `truncate` sets white-space:nowrap, which
        makes that max-content the full untruncated description — the track blows past the
        container and the text clips at the card edge instead of ellipsising. -->
-  <fieldset class="mt-7 grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2 lg:grid-cols-3">
+  <fieldset disabled={installing} class="mt-7 grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2 lg:grid-cols-3">
     <legend class="sr-only">{m.onboarding_sources_title()}</legend>
     {#each suggestions as suggestion (suggestion.id)}
       <label class="setup-choice flex min-w-0 cursor-pointer items-center gap-3 p-4 {picked.includes(suggestion.id) ? 'selected' : ''}">
@@ -186,7 +203,6 @@
     {:else}{m.onboarding_sources_none_selected()}{/if}
   </p>
 {/if}
-{#if installError}<p role="alert" class="mt-3 text-sm text-destructive">{installError}</p>{/if}
+{#if installError}<p bind:this={errorAlert} role="alert" tabindex="-1" class="mt-3 text-sm text-destructive">{installError}</p>{/if}
 
-<h2 class="mt-10 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{m.onboarding_playback_choice_title()}</h2>
 <PlaybackChoice bind:checking={checkingKey} />

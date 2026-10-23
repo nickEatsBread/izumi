@@ -374,5 +374,6 @@
   "onboarding_sources_picked": "{count} 件選択中 · 続けると追加されます",
   "onboarding_playback_choice_title": "トレントの再生方法",
   "onboarding_ready_extras_trackers": "アニメを記録する（任意）",
-  "onboarding_ready_tmdb_tip": "映画やドラマの情報をより充実させたい場合は、「設定 → カタログ」で無料の TMDB キーを追加できます。"
+  "onboarding_ready_tmdb_tip": "映画やドラマの情報をより充実させたい場合は、「設定 → カタログ」で無料の TMDB キーを追加できます。",
+  "onboarding_sources_loading": "ソースを読み込み中…"
 }

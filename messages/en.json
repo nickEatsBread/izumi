@@ -374,5 +374,6 @@
   "onboarding_sources_picked": "Selected: {count} · installs when you continue",
   "onboarding_playback_choice_title": "How torrents play",
   "onboarding_ready_extras_trackers": "Track your anime (optional)",
-  "onboarding_ready_tmdb_tip": "Want richer film and TV details? Add a free TMDB key in Settings → Catalog."
+  "onboarding_ready_tmdb_tip": "Want richer film and TV details? Add a free TMDB key in Settings → Catalog.",
+  "onboarding_sources_loading": "Loading sources…"
 }

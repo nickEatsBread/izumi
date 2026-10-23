@@ -30,6 +30,8 @@
   async function validate() {
     const key = $debridKey.trim()
     if (!key) {
+      generation += 1
+      checking = false
       keyState = 'idle'
       keyMessage = ''
       return
@@ -60,14 +62,23 @@
     clearTimeout(timer)
     timer = setTimeout(() => void validate(), 700)
   }
+
+  /** Peer-to-peer needs no key, so a pending or in-flight key check must not keep holding Next. */
+  function chooseDirect() {
+    clearTimeout(timer)
+    generation += 1
+    checking = false
+    $torrentPlaybackMode = 'direct'
+  }
 </script>
 
-<div class="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
+<h2 id="setup-playback-title" class="mt-10 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{m.onboarding_playback_choice_title()}</h2>
+<div role="group" aria-labelledby="setup-playback-title" class="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
   <button type="button" data-focusable onclick={() => $torrentPlaybackMode = 'debrid'} aria-pressed={$torrentPlaybackMode === 'debrid'} class="setup-choice flex items-start gap-3 p-4 text-left {$torrentPlaybackMode === 'debrid' ? 'selected' : ''}">
     <Cloud size={22} class="mt-0.5 shrink-0 text-muted-foreground" />
     <span class="min-w-0"><span class="block font-semibold">{m.onboarding_playback_debrid()}</span><span class="mt-1 block text-sm leading-relaxed text-muted-foreground">{m.onboarding_playback_debrid_body()}</span></span>
   </button>
-  <button type="button" data-focusable onclick={() => $torrentPlaybackMode = 'direct'} aria-pressed={$torrentPlaybackMode === 'direct'} class="setup-choice flex items-start gap-3 p-4 text-left {$torrentPlaybackMode === 'direct' ? 'selected' : ''}">
+  <button type="button" data-focusable onclick={chooseDirect} aria-pressed={$torrentPlaybackMode === 'direct'} class="setup-choice flex items-start gap-3 p-4 text-left {$torrentPlaybackMode === 'direct' ? 'selected' : ''}">
     <Share2 size={22} class="mt-0.5 shrink-0 text-muted-foreground" />
     <span class="min-w-0"><span class="block font-semibold">{m.onboarding_playback_p2p()}</span><span class="mt-1 block text-sm leading-relaxed text-muted-foreground">{m.onboarding_playback_p2p_body()}</span></span>
   </button>
