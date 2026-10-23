@@ -291,16 +291,17 @@
   const quietDpadScrub = $derived(gmMode && $scrub.active && $scrub.source === 'dpad')
   const playerControls = $derived(resolvePlayerControls($themePresentation))
   // API 6 paused summary: five seconds after the last input while paused on the full (not docked)
-  // player, never in Game mode and never over an open menu. `inputTick` is bumped by poke(), so any
+  // player, never in Game mode, at the end of the file or under an open menu or prompt. `inputTick` is bumped by poke(), so any
   // input restarts the wait and hides it. While it shows, the controls give way (see `controlsVisible`).
   let inputTick = $state(0)
   let pausedIdle = $state(false)
   $effect(() => {
-    void inputTick
-    const armed = playerControls.paused === 'summary' && transportPaused && !loading && !gmMode && !docked && !$isMobile && !$pictureInPicture
+    const armed = playerControls.paused === 'summary' && transportPaused && !loading && !eof && !gmMode && !docked && !$isMobile && !$pictureInPicture
       && !$scrubActive && !$playerMenuOpen && !$trackMenuOpen && !$commentsOpen && !subtitleEditorOpen
+      && !sourcePickerVisible && !sourceConnectingVisible && !$upNextPrompt && !$seriesRatingPrompt && !$oskOpen && !$navLayerOpen
     pausedIdle = false
     if (!armed) return
+    void inputTick
     const t = setTimeout(() => { pausedIdle = true }, 5000)
     return () => clearTimeout(t)
   })
