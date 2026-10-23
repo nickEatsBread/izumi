@@ -64,9 +64,11 @@
 
   // The desktop window titlebar is a 32px `fixed` bar whose drag region spans the FULL width, so a
   // `top-0` sticky header pinned underneath it would sit behind the window controls and swallow
-  // clicks. Park it just below instead. Mobile has no titlebar, only the status-bar inset.
-  const TITLEBAR_H = 32
+  // clicks. Park it just below instead: below `--theme-shell-top`, the titlebar's 2rem or the whole
+  // bar when a theme puts navigation on top. Mobile has no titlebar, only the status-bar inset.
   let headerH = $state(0)
+  // The shield spans exactly what sits above the pinned header (shell top + any degraded strip).
+  let shieldH = $state(0)
   // Game mode never pinned this header: gamescope repaints a backdrop-blur bar every scroll frame
   // (app.css forces will-change:auto under .gamemode, so the layer is never promoted), and the
   // controller UI has no need for a sticky filter it can reach with one D-pad press.
@@ -75,11 +77,11 @@
   // the viewer dismisses the strip, the reserved rows would read as mystery blank space.
   const stickyTop = $derived($isMobile
     ? ($anilistDegradedBannerVisible ? 'top-[calc(env(safe-area-inset-top)+1.75rem)]' : 'top-[env(safe-area-inset-top)]')
-    : ($anilistDegradedBannerVisible ? 'top-[3.75rem]' : 'top-8'))
+    : ($anilistDegradedBannerVisible ? 'top-[calc(var(--theme-shell-top,2rem)+1.75rem)]' : 'top-[var(--theme-shell-top,2rem)]'))
   // What the header actually occludes at the top of the viewport: itself plus the titlebar above
   // it. Handed down to ScheduleGrid, which forwards it to the agenda view's scroll-to-today gate.
   const headerOffset = $derived(stickyActive
-    ? headerH + ($isMobile ? 0 : TITLEBAR_H) + ($anilistDegradedBannerVisible ? 28 : 0)
+    ? headerH + ($isMobile ? ($anilistDegradedBannerVisible ? 28 : 0) : shieldH)
     : 0)
 </script>
 
@@ -98,8 +100,8 @@
        must grow to the same height or agenda rows scroll through the uncovered 28px band and read
        as broken content slicing between the strip and the header. -->
   {#if stickyActive && !$isMobile}
-    <div data-schedule-titlebar-shield aria-hidden="true"
-         class="pointer-events-none fixed inset-x-0 top-0 z-20 {$anilistDegradedBannerVisible ? 'h-[3.75rem]' : 'h-8'} bg-background"></div>
+    <div data-schedule-titlebar-shield aria-hidden="true" bind:clientHeight={shieldH}
+         class="pointer-events-none fixed inset-x-0 top-0 z-20 {$anilistDegradedBannerVisible ? 'h-[calc(var(--theme-shell-top,2rem)+1.75rem)]' : 'h-[var(--theme-shell-top,2rem)]'} bg-background"></div>
   {/if}
 
   <!-- Schedule/Watchlist tabs, week nav, and (schedule tab only) the My Shows/All filter all share

@@ -2,6 +2,7 @@ import { get } from 'svelte/store'
 import type { ThemeRelease } from '$lib/themes/packages'
 import { allStores, enabledStores, type StoreFeed } from './feeds'
 import { loadStoreAndPin } from './service'
+import type { LoadedStore } from './load'
 
 /** A theme as listed by one store. The store URL is the theme's install origin, so a theme can only
  *  ever update from the store it came from. */
@@ -13,8 +14,10 @@ export interface ThemeListing {
 
 export async function loadThemeListings(
   options: { force?: boolean } = {},
-): Promise<{ listings: ThemeListing[]; cached: boolean; errors: string[] }> {
+): Promise<{ listings: ThemeListing[]; cached: boolean; errors: string[]; loaded: Record<string, LoadedStore> }> {
   const results = await Promise.all(get(enabledStores).map((store) => loadStoreAndPin(store, options)))
+  // Every store's load result by id, for the store manager the Themes page opens.
+  const loaded = Object.fromEntries(results.map((result) => [result.store.id, result]))
   const listings: ThemeListing[] = []
   const errors: string[] = []
   let cached = false
@@ -34,7 +37,7 @@ export async function loadThemeListings(
       }
     }
   }
-  return { listings, cached, errors }
+  return { listings, cached, errors, loaded }
 }
 
 export function themeStoreFor(origin: string): StoreFeed | undefined {

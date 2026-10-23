@@ -7,10 +7,10 @@ const read = (relative: string) =>
 
 // The in-page targets of the layered Back (nav/back.ts steps 5, 7, 8) and the Profiles exit.
 describe('layered Back markers on Settings pages', () => {
-  it('Themes detail: B clicks "Back to themes", and still consumes B while it is busy', () => {
-    const themes = read('./themes/+page.svelte')
+  it('Themes detail: B clicks the Themes back button, and still consumes B while it is busy', () => {
+    const themes = read('../../../lib/components/themes/ThemeDetail.svelte')
     expect(themes).toContain('<section class="theme-detail" aria-busy={busy} data-nav-back-scope>')
-    expect(themes).toContain('<button class="back" data-focusable data-nav-back disabled={busy}')
+    expect(themes).toContain('<button type="button" class="back" data-focusable data-nav-back disabled={busy}')
   })
 
   it('Theme Studio: B minimizes, or keeps editing while the close prompt is open', () => {
