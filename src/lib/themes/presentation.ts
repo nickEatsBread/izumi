@@ -399,7 +399,7 @@ export interface PlayerPresentation {
   seekbarColor?: string
   layout?: 'full' | 'docked'
   dock?: PlayerDock
-  /** API 6: rewind and forward buttons beside Play, stepping by the viewer's Seek step setting. */
+  /** API 6: rewind and forward buttons beside Play, stepping by the viewer's Seek duration setting. */
   seekButtons?: boolean
   /** API 6: `default` (izumi's "pos / dur" in the button row), `remaining` (the time left at the seek bar's
    *  right end), `split` (elapsed left of the bar, total right of it). */
