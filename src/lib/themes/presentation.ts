@@ -207,7 +207,7 @@ export interface RowPresentation {
 /** Theme API 1 is the original contract; API 2 adds the phone block, bottom-bar and slide-marker
  *  chrome, row headings, series tabs and the docked player. A package declares which it uses, so
  *  a client that only knows API 1 refuses an API 2 package cleanly instead of failing mid-parse. */
-export type ThemeApi = 1 | 2 | 3 | 4 | 5
+export type ThemeApi = 1 | 2 | 3 | 4 | 5 | 6
 /** The newest theme API this client renders. API 3 adds stylesheets, fonts, template parts,
  *  airing and slide fields, and the text wordmark. API 4 adds the phone root size, scroll chrome,
  *  the series header buttons, fact keys, names and formats, the Information section, the synopsis
@@ -217,8 +217,11 @@ export type ThemeApi = 1 | 2 | 3 | 4 | 5
  *  portrait header art and its cover fallback, the phone series bar options, per-episode
  *  download buttons, the series progress row, the folding actions row, the studio button, plain
  *  status words and aired episode counts, recommendations among the relations, the hero's artwork
- *  choice, the kind of title and the Continue Watching empty state. */
-export const LATEST_THEME_API: ThemeApi = 5
+ *  choice, the kind of title and the Continue Watching empty state. API 6 adds the TV block (applied on
+ *  Android TV and in Game mode), the freshness badge field, artwork on card templates and the Suggested
+ *  tab name; later API 6 keys add player controls, the expanding preview, trailer backgrounds, anchored
+ *  TV rows and the grid search keyboard. */
+export const LATEST_THEME_API: ThemeApi = 6
 /** Series-page tab strip: an underlined row, pills, an iOS-style segmented control, or a bar of
  *  equal tabs with a tinted pill behind the active one (the two-tab Info/Watch bar of some apps).
  *  API 3 `bottom`: on phones the tabs become a bar fixed to the bottom of the screen in place of the
@@ -687,6 +690,7 @@ const api2 = (api: ThemeApi, keys: string[]) => (api >= 2 ? keys : [])
 const api3 = (api: ThemeApi, keys: string[]) => (api >= 3 ? keys : [])
 const api5 = (api: ThemeApi, keys: string[]) => (api >= 5 ? keys : [])
 const api4 = (api: ThemeApi, keys: string[]) => (api >= 4 ? keys : [])
+const api6 = (api: ThemeApi, keys: string[]) => (api >= 6 ? keys : [])
 function parseHeading(value: unknown): RowHeading {
   const raw = record(value); only(raw, ['weight', 'transform', 'accent', 'viewMore'])
   const result: RowHeading = {}

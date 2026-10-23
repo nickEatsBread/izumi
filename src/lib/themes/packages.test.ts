@@ -62,14 +62,14 @@ describe('installable theme packages', () => {
     expect(newerVersion('1.10.0', '1.9.0')).toBe(true)
     expect(newerVersion('1.0.0', '1.0.0')).toBe(false)
   })
-  it('accepts theme API 5 packages and advertises API 5 as the newest', async () => {
+  it('accepts theme API 6 packages and advertises API 6 as the newest', async () => {
     const { THEME_API, SUPPORTED_THEME_APIS, MAX_THEME_BYTES } = await import('./packages')
-    expect(THEME_API).toBe(5)
-    expect(SUPPORTED_THEME_APIS).toEqual([1, 2, 3, 4, 5])
+    expect(THEME_API).toBe(6)
+    expect(SUPPORTED_THEME_APIS).toEqual([1, 2, 3, 4, 5, 6])
     expect(MAX_THEME_BYTES).toBe(512_000)
-    expect(parseThemePackage({ ...samplePackage, themeApi: 4 }).themeApi).toBe(4)
     expect(parseThemePackage({ ...samplePackage, themeApi: 5 }).themeApi).toBe(5)
-    expect(() => parseThemePackage({ ...samplePackage, themeApi: 6 })).toThrow('theme API')
+    expect(parseThemePackage({ ...samplePackage, themeApi: 6 }).themeApi).toBe(6)
+    expect(() => parseThemePackage({ ...samplePackage, themeApi: 7 })).toThrow('theme API')
   })
   it('validates API 4 keys against the API a package declares', () => {
     const presentation = { mobile: { rootSize: 16 }, detail: { buttons: ['play', 'download'] } }
