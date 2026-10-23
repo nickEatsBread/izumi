@@ -18,8 +18,9 @@ export type DisplayField =
 export type NumericDisplayField = 'rankPosition' | 'score' | 'duration' | 'episodeNumber' | 'progress' | 'nextEpisode' | 'slide' | 'slides' | 'episodesAired' | 'episodesWatched'
 /** `keyart` (API 3) is 16:9 title artwork: a TVDB background for AniList titles, a TMDB or add-on backdrop otherwise.
  *  `posterHd` (API 4) is portrait artwork at full resolution: the TVDB poster where the hero or the
- *  series header has looked it up, otherwise the catalog cover at its largest size. */
-export type ArtworkKind = 'poster' | 'backdrop' | 'logo' | 'still' | 'keyart' | 'posterHd'
+ *  series header has looked it up, otherwise the catalog cover at its largest size.
+ *  `trailer` (API 6) marks where a hero template places the title's muted trailer; it is never an image. */
+export type ArtworkKind = 'poster' | 'backdrop' | 'logo' | 'still' | 'keyart' | 'posterHd' | 'trailer'
 /** API 4 `studio`: the title's main studio as a button that opens its page (else a search for it);
  *  accepted in the series header and facts templates only. */
 export type ThemeAction = 'play' | 'details' | 'favorite' | 'previous' | 'next' | 'list' | 'trailer' | 'share' | 'studio'
@@ -298,6 +299,9 @@ export interface DetailPresentation {
   actions?: 'row' | 'expand'
   /** API 3: the series title as text (default) or the title logo when there is one, on every layout. */
   title?: 'text' | 'logo'
+  /** API 6: `trailer` plays the title's trailer, muted, over the artwork after a dwell (Home hero 3 s,
+   *  series page 1.5 s), on desktop only. */
+  preview?: 'none' | 'trailer'
   /** API 3: which sections get tabs, their names, the default tab, and where the phone facts sit. */
   sections?: DetailSections
   /** API 3: `hidden` covers the phone's bottom navigation while the series page is open. */
@@ -436,6 +440,9 @@ export interface HeroPresentation {
    *  the catalog banner, then key art, then the cover, never a trailer still. izumi's own phone card
    *  shows the cover either way. */
   art?: 'banner' | 'banner-cover'
+  /** API 6: `trailer` plays the title's trailer, muted, over the artwork after a dwell (Home hero 3 s,
+   *  series page 1.5 s), on desktop only. */
+  preview?: 'none' | 'trailer'
 }
 /** The featured banner's slide marker. */
 export interface HeroIndicator {
@@ -484,8 +491,9 @@ export interface ThemePresentation {
   cards?: Partial<Record<CardFamily, ThemeNode>>
   /** API 3: the theme's Home and navigation layout. */
   layout?: ThemeLayout
-  /** API 3: `none` switches off izumi's hover popup on poster cards, for themes that draw their own hover panel in the card template. */
-  cardPreview?: 'popup' | 'none'
+  /** API 3: `none` switches off izumi's hover popup on poster cards, for themes that draw their own hover panel in the card template.
+   *  API 6 `expand`: the preview grows out of the hovered card (1.5x, after 500 ms). */
+  cardPreview?: 'popup' | 'none' | 'expand'
   /** Phone overrides (the Android app and any viewport up to 640px), resolved on top of the rest. */
   mobile?: MobilePresentation
   /** API 6: the TV variant (Android TV and Game mode), resolved on top of the rest there and dropped
@@ -537,9 +545,9 @@ const actions: readonly ThemeAction[] = ['play', 'details', 'favorite', 'previou
 /** The actions the series header (`detail.header`) and facts (`detail.facts`) templates may add from
  *  API 4: the studio button. Every other template keeps the actions it always had. */
 const SERIES_ACTIONS: readonly ThemeAction[] = ['studio']
-const artworkKinds = ['poster', 'backdrop', 'logo', 'still', 'keyart', 'posterHd'] as const
+const artworkKinds = ['poster', 'backdrop', 'logo', 'still', 'keyart', 'posterHd', 'trailer'] as const
 /** Key art is API 3 and the full-resolution poster API 4; older packages keep the artwork their clients know. */
-const artworkFor = (api: ThemeApi): readonly ArtworkKind[] => artworkKinds.filter((kind) => (api >= 3 || kind !== 'keyart') && (api >= 4 || kind !== 'posterHd'))
+const artworkFor = (api: ThemeApi): readonly ArtworkKind[] => artworkKinds.filter((kind) => (api >= 3 || kind !== 'keyart') && (api >= 4 || kind !== 'posterHd') && (api >= 6 || kind !== 'trailer'))
 const DETAIL_SECTIONS = ['overview', 'episodes', 'relations', 'characters', 'recommended', 'information'] as const satisfies readonly DetailSection[]
 /** The Information section is API 4; older packages keep the sections their clients know. */
 const sectionsFor = (api: ThemeApi): readonly DetailSection[] => (api >= 4 ? DETAIL_SECTIONS : DETAIL_SECTIONS.filter((section) => section !== 'information'))
@@ -872,9 +880,10 @@ function parseSynopsis(value: unknown): DetailSynopsis {
   return result
 }
 function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
-  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'bannerScale', 'episodes', ...api2(api, ['tabs']), ...api3(api, ['factsStyle', 'countdown', 'listButton', 'header', 'art', 'title', 'sections', 'nav', 'continue', 'column']), ...api4(api, ['buttons', 'actionsLead', 'factsKeys', 'infoKeys', 'factsLabels', 'factsFormat', 'synopsis', 'countdownAt', 'countdownWithin', 'artFallback', 'bar', 'progress', 'actions'])])
+  const raw = record(value); only(raw, ['layout', 'bannerHidden', 'posterWidth', 'facts', 'actionsFirst', 'coverAlign', 'cta', 'bannerHeight', 'bannerScale', 'episodes', ...api2(api, ['tabs']), ...api3(api, ['factsStyle', 'countdown', 'listButton', 'header', 'art', 'title', 'sections', 'nav', 'continue', 'column']), ...api4(api, ['buttons', 'actionsLead', 'factsKeys', 'infoKeys', 'factsLabels', 'factsFormat', 'synopsis', 'countdownAt', 'countdownWithin', 'artFallback', 'bar', 'progress', 'actions']), ...api6(api, ['preview'])])
   const result: DetailPresentation = {}
   if (raw.layout !== undefined) result.layout = choice(raw.layout, ['stack', 'split', 'overlay'])
+  if (raw.preview !== undefined) result.preview = choice(raw.preview, ['none', 'trailer'])
   if (raw.bannerHidden !== undefined) result.bannerHidden = flag(raw.bannerHidden)
   if (raw.posterWidth !== undefined) result.posterWidth = number(raw.posterWidth, 96, 360)
   // The series templates may add the studio button from API 4 (the header holds no other action).
@@ -1062,7 +1071,7 @@ export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_A
   if (raw.hideCardLabels !== undefined) result.hideCardLabels = flag(raw.hideCardLabels)
   if (raw.trueBlack !== undefined) result.trueBlack = flag(raw.trueBlack)
   if (raw.hero !== undefined) {
-    const hero = record(raw.hero); only(hero, ['hidden', 'height', 'mobileHeight', 'rotate', 'interval', 'rankHidden', 'rank', 'template', 'scale', ...api2(api, ['indicator']), ...api3(api, ['bleed']), ...api4(api, ['limit', 'source', 'transition', 'art'])])
+    const hero = record(raw.hero); only(hero, ['hidden', 'height', 'mobileHeight', 'rotate', 'interval', 'rankHidden', 'rank', 'template', 'scale', ...api2(api, ['indicator']), ...api3(api, ['bleed']), ...api4(api, ['limit', 'source', 'transition', 'art']), ...api6(api, ['preview'])])
     result.hero = {}
     for (const key of ['hidden', 'rotate', 'rankHidden'] as const) if (hero[key] !== undefined) result.hero[key] = flag(hero[key])
     for (const key of ['height', 'mobileHeight'] as const) if (hero[key] !== undefined) result.hero[key] = number(hero[key], 24, 75)
@@ -1076,6 +1085,7 @@ export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_A
     if (hero.source !== undefined) result.hero.source = choice(hero.source, ['season', 'trending'])
     if (hero.transition !== undefined) result.hero.transition = choice(hero.transition, ['slide', 'fade'])
     if (hero.art !== undefined) result.hero.art = choice(hero.art, ['banner', 'banner-cover'])
+    if (hero.preview !== undefined) result.hero.preview = choice(hero.preview, ['none', 'trailer'])
   }
   if (raw.rows !== undefined) {
     const rows = record(raw.rows); only(rows, ['defaults', 'byId']); result.rows = {}
@@ -1094,7 +1104,7 @@ export function parsePresentation(value: unknown, api: ThemeApi = LATEST_THEME_A
   if (raw.player !== undefined) result.player = parsePlayer(raw.player, api)
   if (raw.cards !== undefined) result.cards = parseCards(raw.cards, api)
   if (raw.layout !== undefined) result.layout = parseLayout(raw.layout, phone, api)
-  if (raw.cardPreview !== undefined) result.cardPreview = choice(raw.cardPreview, ['popup', 'none'])
+  if (raw.cardPreview !== undefined) result.cardPreview = choice(raw.cardPreview, api >= 6 ? ['popup', 'none', 'expand'] : ['popup', 'none'])
   return result
 }
 /** The presentation for one surface: on a phone the `mobile` block is layered over the shared one, on a
