@@ -17,22 +17,25 @@
   } = $props()
 
   const current = $derived(shots[index] ?? shots[0])
-  // The timer only lands on screens whose image already decoded, so a fade never shows a blank.
-  let ready = $state<Record<string, boolean>>({})
+  // The timer only lands on screens whose image already decoded, so a fade never shows a blank: it
+  // waits on one still loading and skips one that failed.
+  let ready = $state<Record<string, 'loading' | 'ready' | 'failed'>>({})
   function preload() {
     for (const shot of shots.slice(1)) {
       if (shot.url in ready) continue
-      ready[shot.url] = false
+      ready[shot.url] = 'loading'
       const image = new Image()
       image.referrerPolicy = 'no-referrer'
       image.src = shot.url
-      image.decode().then(() => { ready[shot.url] = true }, () => { /* never shown */ })
+      image.decode().then(() => { ready[shot.url] = 'ready' }, () => { ready[shot.url] = 'failed' })
     }
   }
   function advance() {
     for (let step = 1; step < shots.length; step++) {
       const next = (index + step) % shots.length
-      if (next === 0 || ready[shots[next].url]) { index = next; return }
+      const state = next === 0 ? 'ready' : ready[shots[next].url]
+      if (state === 'loading') return
+      if (state === 'ready') { index = next; return }
     }
   }
   $effect(() => {

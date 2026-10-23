@@ -52,7 +52,7 @@ function stage(src: string) {
     image.style.height = `${mix(from.height, to.height, t)}px`
     image.style.borderRadius = `${radius}px`
   }
-  return { root, scrim, place }
+  return { root, scrim, image, place }
 }
 
 async function waitFor(target: () => Element | null, timeout: number): Promise<Element | null> {
@@ -81,24 +81,24 @@ export async function stepIntoPreview(from: HTMLImageElement | null, start: () =
   } finally { root.remove() }
 }
 
-/** Cover the live screen with its screenshot, end the preview and return to the theme page
- *  underneath, then shrink the screenshot into the page's viewer (a fade if it never appears). */
+/** Dim the live screen, end the preview and return to the theme page underneath, then fade this
+ *  screen's screenshot in as it shrinks into the page's viewer (a plain fade if it never appears).
+ *  The live screen never crossfades with the screenshot: their content differs. */
 export async function stepOutOfPreview(src: string | null, end: () => void, route: string, target: () => Element | null): Promise<void> {
   if (!src || reducedMotion()) { end(); await goto(route); return }
-  const { root, scrim, place } = stage(src)
+  const { root, scrim, image, place } = stage(src)
   place(viewport(), viewport(), 0, 0)
-  root.style.opacity = '0'
-  scrim.style.opacity = '1'
+  image.style.opacity = '0'
   try {
-    await tween(FADE_MS, (t) => { root.style.opacity = String(t) })
+    await tween(FADE_MS, (t) => { scrim.style.opacity = String(t) })
     end()
     await goto(route)
     const found = await waitFor(target, 1500)
     if (found) {
       const box = boxOf(found)
-      await tween(GROW_MS, (t) => { place(viewport(), box, t, 12 * t); scrim.style.opacity = String(1 - t) })
+      await tween(GROW_MS, (t) => { place(viewport(), box, t, 12 * t); image.style.opacity = String(Math.min(1, t * 3)); scrim.style.opacity = String(1 - t) })
     } else {
-      await tween(FADE_MS, (t) => { root.style.opacity = String(1 - t) })
+      await tween(FADE_MS, (t) => { scrim.style.opacity = String(1 - t) })
     }
   } finally { root.remove() }
 }
