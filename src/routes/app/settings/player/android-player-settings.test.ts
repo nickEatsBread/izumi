@@ -157,7 +157,7 @@ const IN_APP = [
 /** Desktop mpv tuning and OS / Game-mode integrations. */
 const DESKTOP_ONLY = [
   'windowsVsr', 'systemMediaControls', 'discordRichPresence', 'playerProgressAnimations',
-  'subtitleLineNavigation', 'gifScale', 'gifMaxSeconds', 'playerCacheMb', 'enableExternalPlayer',
+  'subtitleLineNavigation', 'hideSidebarWhilePlaying', 'gifScale', 'gifMaxSeconds', 'playerCacheMb', 'enableExternalPlayer',
   'externalPlayerPath', 'audioOutputDevice', 'playerTitleTop',
 ]
 const LITE_NOTICE = "This build plays videos in your device's video player, so the in-app player options are not shown."
@@ -169,7 +169,7 @@ describe('Player settings per build (spec §5.1)', () => {
       'qualityFailedKeys', 'windowsVsr', 'audioProcessing', 'p2pStatusVisibility', 'continueSourcePreference',
       'autoplayNext', 'upNextOverlay', 'seriesRatingPrompt', 'systemMediaControls', 'discordRichPresence',
       'keepAwakeWhilePlaying', 'bingePreload', 'autoSkip', 'skipPreviews', 'skipFiller', 'scrubThumbnails',
-      'playerProgressAnimations', 'subtitleLineNavigation', 'gifIncludeSubtitles', 'gifScale', 'gifMaxSeconds',
+      'playerProgressAnimations', 'subtitleLineNavigation', 'hideSidebarWhilePlaying', 'gifIncludeSubtitles', 'gifScale', 'gifMaxSeconds',
       'playerCacheMb', 'seekDuration', 'enableExternalPlayer', 'externalPlayerPath', 'audioOutputMode',
       'audioPassthroughAc3', 'audioPassthroughEac3', 'audioPassthroughTruehd', 'audioPassthroughDts',
       'audioPassthroughDtsHd', 'audioExclusive', 'audioOutputDevice', 'dolbyCapabilities',

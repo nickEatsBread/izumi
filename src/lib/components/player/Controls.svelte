@@ -35,6 +35,7 @@
   import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, playerSideSheetOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery, bumpPlayerOverlay, playerTopBarUnderTitlebar } from '$lib/player/session'
   import { isMacOS, isMobile, isTv } from '$lib/platform'
   import { shellNav } from '$lib/themes/runtime'
+  import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
   import { listenSafe } from '$lib/util/listen'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import { copyToClipboard } from '$lib/util/clipboard'
@@ -138,7 +139,7 @@
   const backInset = $derived.by(() => {
     if (!underTitlebar) return undefined
     const slot = $isMacOS ? 7 : 3.5
-    const playerLeft = $shellNav === 'sidebar' ? 3.5 : 0
+    const playerLeft = $shellNav === 'sidebar' && !$sidebarHiddenForPlayback ? 3.5 : 0
     return `${Math.max(1, slot + 0.5 - playerLeft)}rem`
   })
   $effect(() => {

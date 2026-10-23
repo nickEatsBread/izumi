@@ -18,6 +18,15 @@ describe('playerInsets', () => {
     expect(playerInsets({ chrome: true, nav: 'sidebar', stage: null, viewport, dpr: 1, uiScale: 1.25 })).toEqual({ left: 70, top: 0, right: 0, bottom: 0 })
   })
 
+  it('gives the left edge back to the video while the sidebar is hidden for playback', () => {
+    expect(playerInsets({ chrome: true, nav: 'sidebar', sidebarHidden: true, stage: null, viewport, dpr: 2, uiScale: 1.25 })).toEqual({ left: 0, top: 0, right: 0, bottom: 0 })
+    // A top or bottom bar is not the sidebar, so it keeps its inset.
+    expect(playerInsets({ chrome: true, nav: 'top', sidebarHidden: true, stage: null, viewport, dpr: 1, uiScale: 1 })).toEqual({ left: 0, top: 76, right: 0, bottom: 0 })
+    // A docked stage is measured, so it follows its own edges either way.
+    const stage = measureStage(rect(0, 0, 832, 468), rect(0, 0, 1280, 800))!
+    expect(playerInsets({ chrome: true, nav: 'sidebar', sidebarHidden: true, stage, viewport, dpr: 1, uiScale: 1 })).toEqual({ left: 0, top: 0, right: 448, bottom: 332 })
+  })
+
   it('moves the inset to the top bar or bottom bar when the theme docks the navigation there', () => {
     // The old code always inset the LEFT edge, which left a blank rail beside a top bar.
     expect(playerInsets({ chrome: true, nav: 'top', stage: null, viewport, dpr: 1, uiScale: 1 })).toEqual({ left: 0, top: 76, right: 0, bottom: 0 })

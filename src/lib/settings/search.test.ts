@@ -110,7 +110,7 @@ const IN_APP_PLAYER_ROWS = [
   'Seek duration', 'Home-theatre audio', 'Dolby Vision source handling',
 ]
 const DESKTOP_ONLY_ROWS = [
-  'Discord Rich Presence', 'Animate player progress controls', 'Subtitle line navigation', 'GIF recorder',
+  'Discord Rich Presence', 'Animate player progress controls', 'Subtitle line navigation', 'Hide sidebar while playing', 'GIF recorder',
   'Player cache size', 'Enable external player', 'Title at top of player (Game mode)', 'Release channel',
   'Developer tools', 'Hotkeys',
 ]

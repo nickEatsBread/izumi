@@ -47,6 +47,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Scrub preview thumbnails', category: 'Player', href: '/app/settings/player', keywords: 'seek frame preview', key: 'scrub-preview-thumbnails', hideOn: ['lite'] },
   { title: 'Animate player progress controls', category: 'Player', href: '/app/settings/player', keywords: 'animation motion fade smooth controls seek bar progress Steam Deck Game mode VacuumTube', key: 'animate-player-progress-controls', desktopOnly: true },
   { title: 'Subtitle line navigation', category: 'Player', href: '/app/settings/player', keywords: 'captions previous replay next cue language learning', key: 'subtitle-line-navigation', desktopOnly: true },
+  { title: 'Hide sidebar while playing', category: 'Player', href: '/app/settings/player', keywords: 'navigation rail full width video windowed theater', key: 'hide-sidebar-while-playing', desktopOnly: true },
   { title: 'GIF recorder', category: 'Player', href: '/app/settings/player', keywords: 'gif capture record width quality anime screenshot', key: 'gif-recorder', desktopOnly: true },
   { title: 'Include subtitles in GIFs', category: 'Player', href: '/app/settings/player', keywords: 'gif capture record captions burn in', key: 'include-subtitles-in-gifs', fallbackKey: 'gif-recorder', hideOn: ['lite'] },
   { title: 'Player cache size', category: 'Player', href: '/app/settings/player', keywords: 'buffer ram memory', desktopOnly: true },
