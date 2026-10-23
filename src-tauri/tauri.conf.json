@@ -30,6 +30,11 @@
     ],
     "android": {
       "minSdkVersion": 26
+    },
+    "windows": {
+      "nsis": {
+        "installerHooks": "./windows/installer-hooks.nsh"
+      }
     }
   },
   "plugins": {
