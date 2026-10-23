@@ -14,6 +14,7 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async (cmd: string) => {
   if (cmd === 'is_flatpak') return h.flatpak
   if (cmd === 'flatpak_current_channel') return h.flatpakChannel
   if (cmd === 'updater_check') return { version: '0.2.0', current: '0.1.3', notes: 'x', date: null }
+  if (cmd === 'updater_download_apk') return '/cache/izumi-update.apk'
   return null
 }) }))
 // The opener plugin isn't part of the facade logic under test; stub it so the flatpak branch's
@@ -158,6 +159,30 @@ it('applyUpdate on flatpak still falls back to the release page outside Game mod
   await applyUpdate()
   expect(openUrl).toHaveBeenCalled()
   expect(get(updatePhase)).toBe('idle')
+})
+
+// Backing out of the system installer used to leave the update UI on a finished 100% download.
+it('applyUpdate on android ends in ready and reopens the installer without downloading again', async () => {
+  const { invoke } = await import('@tauri-apps/api/core')
+  ;(invoke as any).mockClear()
+  const android = { version: '0.2.0', notes: '', apkUrl: 'https://example.com/izumi-full.apk' }
+  availableUpdate.set({ version: '0.2.0', notes: '', target: 'android', android })
+  updatePhase.set('idle')
+  await applyUpdate()
+  expect(get(updatePhase)).toBe('ready')
+  await applyUpdate()
+  const calls = (invoke as any).mock.calls.map((c: unknown[]) => c[0])
+  expect(calls.filter((c: string) => c === 'updater_download_apk')).toHaveLength(1)
+  expect(calls.filter((c: string) => c === 'plugin:extplayer|install_apk')).toHaveLength(2)
+})
+
+// A periodic re-check used to flip a running download back to "Update now", inviting a second
+// download over the same file.
+it('checkForUpdate leaves a running download alone', async () => {
+  availableUpdate.set({ version: '0.2.0', notes: '', target: 'desktop' })
+  updatePhase.set('downloading')
+  await checkForUpdate()
+  expect(get(updatePhase)).toBe('downloading')
 })
 
 // append to updater.test.ts — fake timers drive the schedule
