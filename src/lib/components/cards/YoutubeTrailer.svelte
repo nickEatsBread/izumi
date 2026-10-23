@@ -11,19 +11,21 @@
   import { onMount } from 'svelte'
   import VolumeX from '@lucide/svelte/icons/volume-x'
   import Volume2 from '@lucide/svelte/icons/volume-2'
-  import { trailerMuted, openTrailerPopup } from '$lib/stores/trailer'
+  import type { Writable } from 'svelte/store'
+  import { trailerMuted as hoverTrailerMuted, openTrailerPopup } from '$lib/stores/trailer'
   import {
     youtubeEmbedSource,
     youtubePlayerOrigins,
     type YoutubeEmbedSource,
   } from './youtube-embed'
-  // The defaults are the hover preview; BackdropTrailer plays once (`loop: false`), covers its box and
-  // listens for the start and the end (`natural` = the video reached its end, false = it failed).
-  let { id, title = 'Trailer', loop = true, fit = 'crop', mutePart, muteClass = 'right-1 top-1 z-10', onplaying, onended }: {
+  // The defaults are the hover preview; BackdropTrailer plays once (`loop: false`), covers its box,
+  // follows its own session mute store and listens for the start and the end (`natural` = the video
+  // reached its end, false = it failed).
+  let { id, title = 'Trailer', loop = true, fit = 'crop', mutePart, muteClass = 'right-1 top-1 z-10', trailerMuted = hoverTrailerMuted, onplaying, onended }: {
     id: string; title?: string; loop?: boolean; fit?: 'crop' | 'cover'; mutePart?: string; muteClass?: string
-    onplaying?: () => void; onended?: (natural: boolean) => void
+    trailerMuted?: Writable<boolean>; onplaying?: () => void; onended?: (natural: boolean) => void
   } = $props()
-  // `cover` fills a size container (`container-type: size`) at 16:9; the extra 240 px letterboxes
+  // `cover` fills its own size container (`container-type: size`) at 16:9; the extra 240 px letterboxes
   // YouTube's own title and branding above and below the picture, where the box's overflow cuts them.
   const COVER_STYLE = 'width:max(100cqw,calc(100cqh*16/9));height:calc(max(56.25cqw,100cqh) + 240px)'
 
@@ -32,6 +34,7 @@
   let dead = $state(false)
   let embed = $state<YoutubeEmbedSource>()
   let poll: ReturnType<typeof setInterval> | undefined
+  let ended = false // YouTube can repeat ENDED; a play-once trailer reports it once
   const keyboardOwner = Symbol('hover-trailer')
 
   $effect(() => {
@@ -40,6 +43,7 @@
     embed = undefined
     playing = false
     dead = false
+    ended = false
     clearInterval(poll)
     void youtubeEmbedSource(videoId, { controls: false, muted: true })
       .then((source) => { if (!cancelled) embed = source })
@@ -115,7 +119,7 @@
     // ENDED (0): restart from the top instead of showing YouTube's end screen, or, playing once, fade
     // out (the iframe's opacity transition) before the end screen can show.
     if (json.event === 'infoDelivery' && info?.playerState === 0) {
-      if (loop) { send('seekTo', [0, true]); send('playVideo') } else { playing = false; onended?.(true) }
+      if (loop) { send('seekTo', [0, true]); send('playVideo') } else if (!ended) { ended = true; playing = false; onended?.(true) }
     }
   }
   function handshake() {
@@ -142,17 +146,27 @@
   })
 </script>
 
-{#if !dead && embed}
+{#snippet player(src: string)}
   <iframe
     bind:this={frame}
     title="Trailer"
     onload={() => { clearInterval(poll); handshake(); poll = setInterval(handshake, 100) }}
     allow="autoplay"
     referrerpolicy="strict-origin-when-cross-origin"
-    src={embed.src}
+    {src}
     class="pointer-events-none absolute {fit === 'cover' ? 'left-1/2 top-1/2 -translate-x-1/2' : 'left-0 top-1/2 h-[calc(100%+200px)] w-full'} -translate-y-1/2 border-0 transition-opacity duration-500 {playing ? 'opacity-100' : 'opacity-0'}"
     style={fit === 'cover' ? COVER_STYLE : undefined}
   ></iframe>
+{/snippet}
+
+{#if !dead && embed}
+  {#if fit === 'cover'}
+    <!-- Size containment makes a stacking context, so it wraps the picture only: the mute button
+         stays outside it, where its z-index can lift it over the host's copy and scrims. -->
+    <div class="pointer-events-none absolute inset-0 overflow-hidden [container-type:size]">{@render player(embed.src)}</div>
+  {:else}
+    {@render player(embed.src)}
+  {/if}
   {#if playing}
     <button
       data-part={mutePart}

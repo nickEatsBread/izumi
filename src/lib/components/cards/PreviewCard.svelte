@@ -109,7 +109,7 @@
 
 {#if variant === 'expand'}
 <div data-part="preview" data-variant="expand" class="w-full cursor-pointer overflow-hidden rounded-md bg-card shadow-2xl ring-1 ring-border"
-     onclick={openDetail} role="link" tabindex="0" onkeydown={(e) => { if (e.key === 'Enter') openDetail() }}>
+     onclick={openDetail} role="link" tabindex="0" onkeydown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) openDetail() }}>
   <div data-part="preview.art" class="relative overflow-hidden bg-black" style:height={artHeight ? `${artHeight}px` : undefined} class:aspect-video={!artHeight}>
     <img src={banner(media)} alt="" class="absolute inset-0 h-full w-full object-cover" />
     {#if trailerId}<YoutubeTrailer id={trailerId} title={title(media)} />{/if}
@@ -141,7 +141,7 @@
     </div>
     {#if media.genres?.length}
       <div data-part="preview.genres" class="flex flex-wrap gap-x-2 text-sm text-foreground">
-        {#each media.genres.slice(0, 3) as genre, index (genre)}{#if index}<span class="text-muted-foreground" aria-hidden="true">•</span>{/if}<span>{genre}</span>{/each}
+        {#each media.genres.slice(0, 3) as genre, index}{#if index}<span class="text-muted-foreground" aria-hidden="true">•</span>{/if}<span>{genre}</span>{/each}
       </div>
     {/if}
   </div>
@@ -149,7 +149,7 @@
 {:else}
 <div data-part="card" data-family="preview" class="preview-in w-[17.5rem] cursor-pointer overflow-hidden rounded-lg bg-card shadow-2xl ring-1 ring-border"
      onclick={openDetail} role="link" tabindex="0"
-     onkeydown={(e) => { if (e.key === 'Enter') openDetail() }}>
+     onkeydown={(e) => { if (e.key === 'Enter' && e.target === e.currentTarget) openDetail() }}>
   <div data-part="card.art" class="relative h-40 overflow-hidden bg-muted">
     <img src={banner(media)} alt="" class="absolute inset-0 h-full w-full object-cover" />
     {#if trailerId}

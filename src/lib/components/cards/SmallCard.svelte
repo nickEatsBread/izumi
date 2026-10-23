@@ -1,9 +1,14 @@
 <script module lang="ts">
+  import { cubicOut } from 'svelte/easing'
   // ONE shared carousel-nav latch for ALL cards. A row moving under a stationary cursor must not
   // start another trailer; only a real pointer movement over a card explicitly rearms previews.
   let needsPointerMove = false
   if (typeof window !== 'undefined') {
     window.addEventListener('carousel-nav', () => { needsPointerMove = true })
+  }
+  // Grows the preview out of the card: at scale 2/3 the 1.5x box sits exactly on it (expand-pos.ts).
+  function grow(_node: Element, { duration }: { duration: number }) {
+    return { duration, easing: cubicOut, css: (t: number) => `transform: scale(${2 / 3 + t / 3}); opacity: ${Math.min(1, t * 4)}` }
   }
 </script>
 
@@ -22,7 +27,6 @@
   import { title, cardCover, season, format, mediaHref, status } from '$lib/anilist/media'
   import { rememberDetail } from '$lib/anilist/detail-hint'
   import { fade } from 'svelte/transition'
-  import { cubicOut } from 'svelte/easing'
   import { get } from 'svelte/store'
   import { gameMode } from '$lib/player/session'
   import { controllerMode } from '$lib/nav/input'
@@ -120,10 +124,6 @@
     if (expandMode) expandBox = expandPos({ left: box.left, top: box.top, width: box.width, height: box.height }, { width: window.innerWidth, height: window.innerHeight }, rootZoom(), rail)
     else pos = previewPos(box, { width: window.innerWidth, height: window.innerHeight }, rootZoom(), rail)
   }
-  // Grows the preview out of the card: at scale 2/3 the 1.5x box sits exactly on it (expand-pos.ts).
-  function grow(_node: Element, { duration }: { duration: number }) {
-    return { duration, easing: cubicOut, css: (t: number) => `transform: scale(${2 / 3 + t / 3}); opacity: ${Math.min(1, t * 4)}` }
-  }
   // Hovercard bridge: opening cancels any pending close; leaving the card (or the
   // preview) schedules a short delayed close so the pointer can travel card→preview
   // without dismissing it. `keepOpen` (preview enter) cancels that pending close.
@@ -134,12 +134,14 @@
   // affordance.
   // A theme that draws its own hover panel in the card template switches the popup off (API 3 `cardPreview`).
   const previewOff = $derived(simpleHover || $themePresentation?.cardPreview === 'none')
-  function open() { if (previewOff || get(gameMode) || get(controllerMode) || get(isMobile) || get(isTv) || needsPointerMove) return
+  const blocked = () => get(gameMode) || get(controllerMode) || get(isMobile) || get(isTv) || needsPointerMove
+  function open() { if (previewOff || blocked()) return
     clearTimeout(closeT)
     if (!expandMode) { place(); hovered = true; return }
     clearTimeout(openT)
-    // A row that moved during the dwell (`carousel-nav`) slid this card out from under the pointer.
-    openT = setTimeout(() => { if (needsPointerMove) return; place(); hovered = true }, 500)
+    // The guards can change during the dwell, and a row that moved (`carousel-nav`) slides the card
+    // out from under a still pointer: check both again before opening.
+    openT = setTimeout(() => { if (previewOff || blocked() || !el.matches(':hover')) return; place(); hovered = true }, 500)
   }
   function openAfterPointerMove() {
     if (!needsPointerMove) return
