@@ -2,9 +2,9 @@ import { get, writable } from 'svelte/store'
 import { highContrast, largeInteractionTargets, motionPreference, themePreset } from '$lib/settings/ui'
 import { activeStudioTheme, themeStudioPreview, type StudioTheme } from '$lib/settings/theme-studio'
 import { resolvedThemeTokens } from '$lib/theme-tokens'
-import { isMobile } from '$lib/platform'
+import { isMobile, isTv } from '$lib/platform'
 import { resolvePresentation } from '$lib/themes/presentation'
-import { tvSurface } from '$lib/themes/runtime'
+import { shellNav, tvSurface } from '$lib/themes/runtime'
 import { fontStack } from '$lib/themes/font-ids'
 import { loadThemeFont } from '$lib/themes/fonts'
 import { sanitizeThemeCssCached, themeStyleText } from '$lib/themes/css'
@@ -101,7 +101,8 @@ function apply() {
   if (customActive && get(tvSurface) && !get(isMobile)) root.dataset.surface = 'tv'
   else delete root.dataset.surface
   root.dataset.themeDensity = presentation?.density ?? 'comfortable'
-  root.dataset.themeNav = presentation?.shell?.nav ?? 'sidebar'
+  // On an Android TV the rendered placement can differ from the theme's shared `shell.nav` (API 6).
+  root.dataset.themeNav = get(isTv) ? get(shellNav) : presentation?.shell?.nav ?? 'sidebar'
   root.classList.toggle('theme-true-black', !!presentation?.trueBlack && tokens.scheme === 'dark')
   root.classList.toggle('theme-hide-labels', !!presentation?.hideCardLabels)
   root.classList.toggle('theme-shell-compact', !!presentation?.shell?.compact)
@@ -142,7 +143,7 @@ export function startThemeSync(): () => void {
   const media = matchMedia('(prefers-color-scheme: dark)')
   const subscriptions = [
     themePreset, highContrast, largeInteractionTargets, motionPreference,
-    activeStudioTheme, themeStudioPreview, isMobile, tvSurface, themeSafeMode, protectedSurfaceCount,
+    activeStudioTheme, themeStudioPreview, isMobile, tvSurface, shellNav, themeSafeMode, protectedSurfaceCount,
   ].map((store) => store.subscribe(apply))
   media.addEventListener('change', apply)
   apply()
