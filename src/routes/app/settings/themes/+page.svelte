@@ -345,9 +345,14 @@
     .pill { width: 38px; padding: 0; justify-content: center; }
     .pill span { display: none; }
   }
+  /* Phones: the Discover / Installed switch fills the first row beside three light icon actions;
+     search gets a full-width row of its own. */
   @container (max-width: 560px) {
-    .store-head { flex-wrap: wrap; }
-    .head-actions { flex-basis: 100%; }
-    .search { flex: 1 1 auto; }
+    .store-head { flex-wrap: wrap; gap: 12px 4px; }
+    .head-actions { display: contents; }
+    .tabs { flex: 1 1 auto; margin-right: 4px; }
+    .tabs button { flex: 1 1 0; }
+    .pill { background: transparent; color: hsl(var(--foreground) / .85); }
+    .search { order: 1; flex: 1 1 100%; height: 42px; }
   }
 </style>

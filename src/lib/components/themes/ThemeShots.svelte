@@ -4,7 +4,7 @@
   import { motion, reducedMotion } from '$lib/motion/gm-motion'
   import { SCREEN_LABELS, type ThemeScreenshot } from '$lib/themes/packages'
 
-  let { shots, name, playing = false, index = $bindable(0), phone = false, chrome = true, strip = false }: {
+  let { shots, name, playing = false, index = $bindable(0), phone = false, chrome = true, strip = false, rewind = true }: {
     shots: ThemeScreenshot[]
     name: string
     /** Fade through the screens on a timer: hovered or focused cards and the featured banner. */
@@ -16,6 +16,8 @@
     chrome?: boolean
     /** Phone screens side by side, store style, instead of one at a time. */
     strip?: boolean
+    /** Back to the first screen when the timer stops (cards); off where a picked screen should stay. */
+    rewind?: boolean
   } = $props()
 
   const current = $derived(shots[index] ?? shots[0])
@@ -44,7 +46,7 @@
     if (!playing || strip || shots.length < 2 || reducedMotion()) return
     untrack(preload)
     const timer = setInterval(advance, 1600)
-    return () => { clearInterval(timer); index = 0 }
+    return () => { clearInterval(timer); if (untrack(() => rewind)) index = 0 }
   })
 </script>
 
