@@ -120,19 +120,20 @@
         return true
       }, () => false)
     },
-    commit(n, direction, ready) {
-      if (!medias[n]) return
-      if (fadeTransition && n !== i && medias[i] && motionAllowed()) startFade()
-      navDirection = direction
-      // Ready artwork settles BEFORE the swap, so the first paint of the new slide is the image
-      // itself, never the skeleton. A slow or broken image keeps the old path: skeleton until the
-      // <img> reports load/error.
-      if (ready) loadedArtworkId = medias[n].id
-      i = n
-      cycle += 1
-      scheduleWarm()
-    },
+    commit: commitSlide,
   })
+  function commitSlide(n: number, direction: 1 | -1, ready: boolean) {
+    if (!medias[n]) return
+    if (fadeTransition && n !== i && medias[i] && motionAllowed()) startFade()
+    navDirection = direction
+    // Ready artwork settles BEFORE the swap, so the first paint of the new slide is the image
+    // itself, never the skeleton. A slow or broken image keeps the old path: skeleton until the
+    // <img> reports load/error.
+    if (ready) loadedArtworkId = medias[n].id
+    i = n
+    cycle += 1
+    scheduleWarm()
+  }
   // Decode the neighbouring slides a beat after each settle, so L1/R1 and the auto-advance land on
   // artwork that is already hot instead of paying the decode on the step itself.
   let warmTimer: ReturnType<typeof setTimeout> | undefined
@@ -183,15 +184,18 @@
     fadeTimer = setTimeout(() => (fadeFrom = null), FADE_MS)
   }
 
-  function go(n: number, direction?: 1 | -1) {
+  // `now` (a finger swipe) moves at once: waiting for the incoming artwork to decode made a quick run
+  // of phone swipes lag by an image fetch each. The skeleton shows until that cover lands.
+  function go(n: number, direction?: 1 | -1, now = false) {
     if (n === i) { slides.cancel(); return }
+    if (now) { slides.cancel(); commitSlide(n, direction ?? (n > i ? 1 : -1), slides.ready(slideArtwork(medias[n]))); return }
     slides.request(n, direction ?? (n > i ? 1 : -1), slideArtwork(medias[n]))
   }
 
-  function step(direction: 1 | -1) {
+  function step(direction: 1 | -1, now = false) {
     const n = medias.length
     // Rapid presses chain from the slide already on its way, not the one still on screen.
-    if (n > 1) go(((slides.pending() ?? i) + direction + n) % n, direction)
+    if (n > 1) go(((slides.pending() ?? i) + direction + n) % n, direction, now)
   }
 
   // Swipe left/right to change the featured slide (only when there's more than one). `touch-pan-y`
@@ -214,7 +218,8 @@
     // leaving a boolean armed until the next real tap made the newly-arrived slide feel disabled.
     swipeResetFrame = requestAnimationFrame(() => (swiped = false))
     h.tap()
-    step(dx < 0 ? 1 : -1)
+    // Game mode keeps the decode wait: it is what stops the Deck banner flicker (hero-slides.ts).
+    step(dx < 0 ? 1 : -1, !$gameMode)
   }
 
   // Desktop counterpart to touch swiping. It is intentionally release-to-step rather than a

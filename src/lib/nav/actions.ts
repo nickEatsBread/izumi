@@ -16,8 +16,9 @@ export function dragScroll(node: HTMLElement) {
   // and more the further you'd navigated (the accumulating-lag bug).
   const onDown = (e: PointerEvent) => {
     if (!get(dragCarousels) || get(gameMode) || get(playing) || e.button !== 0) return
-    // A finger or pen on a pinned row belongs to the carousel touch driver.
-    if (e.pointerType !== 'mouse' && pinnedRow(node)) return
+    // Mouse only. A finger or pen scrolls a phone row natively (driving it from JS too fought the
+    // browser's own pan and snap), and a pinned row through the carousel touch driver.
+    if (e.pointerType !== 'mouse') return
     down = true; moved = false; startX = e.clientX; startLeft = node.scrollLeft
   }
   const onMove = (e: PointerEvent) => {
