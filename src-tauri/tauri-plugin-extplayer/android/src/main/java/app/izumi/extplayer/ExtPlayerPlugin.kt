@@ -2,9 +2,11 @@ package app.izumi.extplayer
 
 import android.Manifest
 import android.app.Activity
+import android.app.PendingIntent
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.ConnectivityManager
@@ -1034,9 +1036,11 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
         invoke.resolve()
     }
 
-    // Self-update: hand a downloaded APK to the system package installer. The OS shows its
-    // own confirmation dialog (and asks the user to allow installs from this source the first
-    // time). The APK is shared through the same FileProvider as downloaded media.
+    // Self-update through a PackageInstaller session. On Android 12+ izumi may update itself
+    // without the system "update this app?" confirmation (USER_ACTION_NOT_REQUIRED, the user
+    // already tapped Update now); otherwise InstallResultReceiver opens that confirmation. Google
+    // Play Protect still checks the new APK either way. Resolves once the system confirmation is
+    // shown; a silent update replaces the process before it can resolve.
     @Command
     fun installApk(invoke: Invoke) {
         val args = invoke.parseArgs(InstallArgs::class.java)
@@ -1045,22 +1049,38 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.reject("Update file not found")
             return
         }
-        val uri: Uri = FileProvider.getUriForFile(
-            activity,
-            activity.packageName + ".extplayer.fileprovider",
-            file
-        )
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        if (intent.resolveActivity(activity.packageManager) == null) {
-            invoke.reject("No package installer available")
-            return
-        }
-        activity.startActivity(intent)
-        invoke.resolve()
+        Thread {
+            val installer = activity.packageManager.packageInstaller
+            var sessionId = -1
+            try {
+                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+                    setAppPackageName(activity.packageName)
+                    setSize(file.length())
+                    if (android.os.Build.VERSION.SDK_INT >= 31) {
+                        setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+                    }
+                }
+                sessionId = installer.createSession(params)
+                installer.openSession(sessionId).use { session ->
+                    session.openWrite("izumi.apk", 0, file.length()).use { out ->
+                        file.inputStream().use { it.copyTo(out) }
+                        session.fsync(out)
+                    }
+                    InstallResultReceiver.pending[sessionId] = invoke
+                    val result = Intent(activity, InstallResultReceiver::class.java)
+                    // Mutable: the system fills in the status extras.
+                    val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+                        (if (android.os.Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+                    session.commit(PendingIntent.getBroadcast(activity, sessionId, result, flags).intentSender)
+                }
+            } catch (ex: Exception) {
+                if (sessionId != -1) {
+                    InstallResultReceiver.pending.remove(sessionId)
+                    runCatching { installer.abandonSession(sessionId) }
+                }
+                invoke.reject(ex.message ?: "Could not start the update")
+            }
+        }.apply { isDaemon = true }.start()
     }
 
     // Combined SAF create + write. Do not split this into dialog.save() + std::fs::write:

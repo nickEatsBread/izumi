@@ -1,6 +1,7 @@
 <script lang="ts">
   import { availableUpdate, updatePhase, updateProgress, updateBytes, updateError, updateDismissed, applyUpdate } from '$lib/updater'
-  import { isMobile } from '$lib/platform'
+  import { isAndroid, isMobile } from '$lib/platform'
+  import UpdateDialog from './UpdateDialog.svelte'
   const pct = $derived(Math.round($updateProgress * 100))
   // No Content-Length (or nothing downloaded yet) → no honest percentage. Show the byte count
   // and a sliding bar instead of a dead 0%, which is what a stalled updater looks like.
@@ -8,7 +9,10 @@
   const mb = $derived(($updateBytes / 1_048_576).toFixed(1))
 </script>
 
-{#if $availableUpdate && !$updateDismissed}
+<!-- Android (phone and TV) asks in a centred dialog instead. -->
+{#if $isAndroid}
+  <UpdateDialog />
+{:else if $availableUpdate && !$updateDismissed}
   <!-- Mobile: sit ABOVE the fixed bottom tab bar (~52px + gesture inset) and span the width, instead
        of the desktop bottom-right corner card that otherwise lands on top of the nav. -->
   <div

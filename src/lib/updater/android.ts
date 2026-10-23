@@ -1,9 +1,9 @@
 // Android self-update. `tauri-plugin-updater` is desktop-only (it hot-swaps the app
 // binary, which Android's package model forbids), so on Android we roll our own: ask the
 // GitHub Releases API for the latest tag, and if it's newer than the running build,
-// download the .apk asset and hand it to the system package installer (which shows its own
-// confirmation dialog). Every published APK is signed with the same release key, so Android
-// accepts it as an in-place update.
+// download the .apk asset and commit it to a system install session (Android 12+ applies it
+// without a confirmation; older versions show the system one). Every published APK is signed
+// with the same release key, so Android accepts it as an in-place update.
 import { invoke } from '@tauri-apps/api/core'
 import { getVersion } from '@tauri-apps/api/app'
 import { writable } from 'svelte/store'
@@ -56,10 +56,21 @@ export async function checkAndroidUpdate(): Promise<UpdateInfo | null> {
   }
 }
 
-/** Download the update APK and launch the system installer. Throws on failure. */
+// The APK already downloaded this session, so reopening the installer after the user backed out
+// of it (or out of a Play Protect prompt) does not download it again.
+let downloaded: { version: string; path: string } | null = null
+
+/** Download the update APK (once per version) and launch the system installer. Throws on failure. */
 export async function downloadAndInstall(info: UpdateInfo): Promise<void> {
-  const path = await invoke<string>('updater_download_apk', { url: info.apkUrl })
-  await invoke('plugin:extplayer|install_apk', { payload: { path } })
+  if (downloaded?.version !== info.version) {
+    downloaded = { version: info.version, path: await invoke<string>('updater_download_apk', { url: info.apkUrl }) }
+  }
+  try {
+    await invoke('plugin:extplayer|install_apk', { payload: { path: downloaded.path } })
+  } catch (e) {
+    downloaded = null // e.g. the cache was cleared: the next try downloads again
+    throw e
+  }
 }
 
 /**

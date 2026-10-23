@@ -51,6 +51,8 @@ export async function pickTarget(): Promise<UpdateTarget> {
 
 /** Check the active channel for an update. Never throws — errors set updateError + leave phase idle. */
 export async function checkForUpdate(): Promise<void> {
+  // The 6h re-check must not swap a running download back to "Update now".
+  if (get(updatePhase) === 'downloading') return
   updateError.set('') // clear any stale error from a prior failed check
   try {
     const target = await pickTarget()
@@ -100,6 +102,9 @@ export async function applyUpdate(): Promise<void> {
       try {
         await downloadAndInstall(u.android) // launches the system installer
         updateProgress.set(1)
+        // The installer replaces izumi on success. If the user backs out of it instead, the dialog
+        // offers to open it again rather than sitting on a finished download.
+        updatePhase.set('ready')
       } finally { unlisten() }
       return
     }
