@@ -92,6 +92,8 @@ describe('hero trailers (API 6 `hero.preview` / `detail.preview: "trailer"`)', (
     expect(store).toContain('export const hoverTrailers = writable(0)')
     expect(backdrop).toContain("import { backdropTrailerMuted, hoverTrailers, trailerPopup } from '$lib/stores/trailer'")
     expect(backdrop).toContain('held: held || $trailerPopup !== null || $hoverTrailers > 0')
+    // WebView2 keeps a minimised window's page visible, so the window state stops it too.
+    expect(backdrop).toContain('pageHidden: pageHidden || $windowMinimized')
     // Only the looping hover previews count, once each, and release on teardown.
     expect(youtube).toContain('const hover = loop')
     expect(youtube).toContain('if (hover) hoverTrailers.update((n) => n + 1)')

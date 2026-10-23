@@ -11,6 +11,7 @@
   import { isAndroid, isMobile, isTv } from '$lib/platform'
   import { gameMode, playing as playerUp } from '$lib/player/session'
   import { motionPreference } from '$lib/settings/ui'
+  import { windowMinimized } from '$lib/stores/window-state'
   import { backdropTrailerMuted, hoverTrailers, trailerPopup } from '$lib/stores/trailer'
 
   let { id, title = 'Trailer', enabled, dwell, part, mutePart, muteClass = 'bottom-4 right-4 z-30', held = false, onplaying, onended }: {
@@ -24,7 +25,7 @@
     enabled, id, desktop: !$isMobile && !$isAndroid && !$isTv && !$gameMode,
     // The same rule as reducedMotion() in gm-motion.ts, written against the store so it stays reactive.
     reducedMotion: $motionPreference === 'reduce' || ($motionPreference !== 'full' && typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches),
-    saveData, playerUp: $playerUp, pageHidden, held: held || $trailerPopup !== null || $hoverTrailers > 0,
+    saveData, playerUp: $playerUp, pageHidden: pageHidden || $windowMinimized, held: held || $trailerPopup !== null || $hoverTrailers > 0,
   }))
 
   // Template state, only ever written by the code below (no effect reads it).
