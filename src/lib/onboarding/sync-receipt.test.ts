@@ -135,4 +135,19 @@ describe('serial drain', () => {
     await done
     expect(h.ran).toEqual(['stremio'])
   })
+
+  it('starts a fresh run when called again after going idle', async () => {
+    const h = harness(['stremio'])
+    const drain = serialDrain(h.next, h.run, new AbortController().signal)
+    const first = drain()
+    await settle()
+    h.release.shift()!()
+    await first
+    h.queue.push('nuvio-sources')
+    const second = drain()
+    await settle()
+    h.release.shift()!()
+    await second
+    expect(h.ran).toEqual(['stremio', 'nuvio-sources'])
+  })
 })

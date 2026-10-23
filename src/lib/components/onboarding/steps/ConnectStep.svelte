@@ -126,8 +126,10 @@
       if (importAbort.signal.aborted) return
       setTask(id, { status: 'done', detail })
       // The sources screen shows a review face only if real sources landed. Collections do not
-      // count, which is why this asks the module rather than checking ids here.
-      imported = sourcesLanded(tasks)
+      // count, which is why this asks the module rather than checking ids here. One-way on
+      // purpose: a later failed import must not hide sources that already came over, such as a
+      // pre-connected account on a re-run.
+      if (sourcesLanded(tasks)) imported = true
     } catch (cause) {
       if (importAbort.signal.aborted) return
       setTask(id, { status: 'failed', message: message(cause, m.onboarding_sync_failed()) })
