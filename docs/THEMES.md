@@ -260,7 +260,8 @@ State values:
 | `data-state` | `watch.toolbar.option` | `active` on the current server, episode or release, or a finished download |
 | `data-variant` | `watch.episodes` | `right`, `below` |
 | `data-variant` | `watch.comments` | `inline`, `sheet` |
-| `data-control` | `player.control`, and `button` in the player | `back`, `previous`, `rewind`, `play`, `forward`, `next`, `volume`, `options`, `comments`, `tracks`, `subtitle-previous`, `subtitle-replay`, `subtitle-next`, `cast`, `bookmark`, `screenshot`, `pip`, `fullscreen` |
+| `data-control` | `player.control`, and `button` in the player | `back`, `previous`, `rewind`, `play`, `forward`, `next`, `volume`, `options`, `comments`, `tracks`, `subtitle-previous`, `subtitle-replay`, `subtitle-next`, `cast`, `bookmark`, `screenshot`, `pip`, `fullscreen`, `upnext-stay`, `upnext-play` |
+| `data-kind` | `player.skip` | `op`, `ed`, `recap`, `preview` |
 | `data-variant` | `player.time` | `default` (the "pos / dur" readout in the button row), `elapsed`, `remaining`, `total` |
 | `data-episode` | `player.episode` | the episode number |
 | `data-season` | `player.episode` | the season number (with `player.title: "episode"`, when known) |
@@ -559,6 +560,12 @@ State values:
 | `player.control.step` | part | The step in seconds drawn inside Rewind and Forward (the viewer's Seek step setting). |  |
 | `player.volume` | part | The volume slider beside the mute button. |  |
 | `player.time` | part | A time readout: `default` ("pos / dur" in the row), `elapsed`, `remaining` or `total`. | `data-variant` |
+| `player.skip` | part | The Skip button over the video while an opening, ending, recap or preview plays (`data-kind` `op`, `ed`, `recap`, `preview`). | `data-kind` |
+| `player.upnext` | part | The Up Next card at the end of an episode (Settings → Up Next overlay). |  |
+| `player.upnext.art` | part | The artwork of the next episode at the top of the Up Next card. |  |
+| `player.upnext.kicker` | part | The "Up next" label above the next episode's title. |  |
+| `player.upnext.title` | part | The next episode's title. |  |
+| `player.upnext.countdown` | part | The countdown line ("Episode 5 starts in 8 seconds"). |  |
 
 #### Search, schedule and library
 

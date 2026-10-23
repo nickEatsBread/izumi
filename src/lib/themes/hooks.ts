@@ -276,6 +276,12 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'player.control.step', kind: 'part', description: "The step in seconds drawn inside Rewind and Forward (the viewer's Seek step setting)." },
     { name: 'player.volume', kind: 'part', description: 'The volume slider beside the mute button.' },
     { name: 'player.time', kind: 'part', description: 'A time readout: `default` ("pos / dur" in the row), `elapsed`, `remaining` or `total`.', states: ['data-variant'] },
+    { name: 'player.skip', kind: 'part', description: 'The Skip button over the video while an opening, ending, recap or preview plays (`data-kind` `op`, `ed`, `recap`, `preview`).', states: ['data-kind'] },
+    { name: 'player.upnext', kind: 'part', description: 'The Up Next card at the end of an episode (Settings → Up Next overlay).' },
+    { name: 'player.upnext.art', kind: 'part', description: 'The artwork of the next episode at the top of the Up Next card.' },
+    { name: 'player.upnext.kicker', kind: 'part', description: "The \"Up next\" label above the next episode's title." },
+    { name: 'player.upnext.title', kind: 'part', description: "The next episode's title." },
+    { name: 'player.upnext.countdown', kind: 'part', description: 'The countdown line ("Episode 5 starts in 8 seconds").' },
   ],
   pages: [
     { name: 'search', kind: 'slot', description: 'The search page.', states: ['data-variant'] },
