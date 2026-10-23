@@ -38,11 +38,12 @@ export type EpisodeControl = 'sort' | 'layout' | 'search' | 'download' | 'queue'
  *  Overview's Information block, which becomes a section of its own only when `tabs` lists it. */
 export type DetailSection = 'overview' | 'episodes' | 'relations' | 'characters' | 'recommended' | 'information'
 /** API 3: the fixed tab names a theme picks from — never free text. API 4 adds `information` and
- *  `show-details` (for the `information` section). */
+ *  `show-details` (for the `information` section). API 6 adds `suggested` (for the Recommended section). */
 export type TabLabel =
   | 'overview' | 'info' | 'details' | 'about' | 'home' | 'episodes' | 'watch' | 'relations' | 'related'
   | 'characters' | 'cast' | 'recommended' | 'more-like-this' | 'recommendations'
   | 'information' | 'show-details'
+  | 'suggested'
 /** API 3: which sections get a tab, their names, the tab open on arrival, and where the phone facts sit. */
 export interface DetailSections {
   /** `tabs` (default) draws a tab strip; `stack` renders every section in turn under its own title. */
@@ -535,9 +536,12 @@ const SECTION_LABELS: Record<DetailSection, readonly TabLabel[]> = {
   episodes: ['episodes', 'watch'],
   relations: ['relations', 'related'],
   characters: ['characters', 'cast'],
-  recommended: ['recommended', 'more-like-this', 'recommendations'],
+  recommended: ['recommended', 'more-like-this', 'recommendations', 'suggested'],
   information: ['information', 'details', 'show-details'],
 }
+/** "Suggested" is API 6; older packages keep the names their clients know. */
+const labelsFor = (section: DetailSection, api: ThemeApi): readonly TabLabel[] =>
+  api >= 6 ? SECTION_LABELS[section] : SECTION_LABELS[section].filter((label) => label !== 'suggested')
 /** Every standard fact: izumi's own, in the order its facts list them, then the API 4 additions. */
 export const FACT_KEYS = [
   'format', 'episodes', 'status', 'aired', 'season', 'duration', 'studio', 'source', 'country',
@@ -796,7 +800,7 @@ function parseSections(value: unknown, api: ThemeApi): DetailSections {
     const labels = record(raw.labels); only(labels, [...sections])
     result.labels = {}
     for (const section of sections) {
-      if (labels[section] !== undefined) result.labels[section] = choice(labels[section], SECTION_LABELS[section])
+      if (labels[section] !== undefined) result.labels[section] = choice(labels[section], labelsFor(section, api))
     }
   }
   if (raw.unlisted !== undefined) {

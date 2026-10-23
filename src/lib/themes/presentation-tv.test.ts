@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { TAB_LABEL_TEXT } from '$lib/detail/sections'
 import { parsePresentation, resolvePresentation, shellNavFor, themeCoverage } from './presentation'
 
 describe('TV block (API 6)', () => {
@@ -94,5 +95,15 @@ describe('resolving the TV block', () => {
     expect(themeCoverage(parsePresentation({ tv: { shell: { nav: 'top' } } }))).toEqual(['Shell'])
     expect(themeCoverage(parsePresentation({ tv: { detail: { layout: 'overlay' } } }))).toEqual(['Details'])
     expect(themeCoverage(parsePresentation({ tv: { player: { seekbarHeight: 8 } } }))).toEqual(['Player'])
+  })
+})
+
+describe('Suggested tab name (API 6)', () => {
+  it('names the Recommended section Suggested from API 6 only', () => {
+    const sections = { tabs: ['episodes', 'recommended', 'overview'], labels: { recommended: 'suggested', overview: 'details' } }
+    expect(parsePresentation({ detail: { sections } }).detail?.sections?.labels).toEqual(sections.labels)
+    expect(() => parsePresentation({ detail: { sections } }, 5)).toThrow('unsupported')
+    expect(() => parsePresentation({ detail: { sections: { labels: { episodes: 'suggested' } } } })).toThrow('unsupported')
+    expect(TAB_LABEL_TEXT.suggested).toBe('Suggested')
   })
 })

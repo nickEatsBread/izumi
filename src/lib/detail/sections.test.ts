@@ -37,7 +37,7 @@ describe('series page sections', () => {
     expect(resolveSections({ tabs: ['episodes', 'relations'], unlisted: 'hidden' }, { phone: false, episodesTabbed: false }).tabs).toEqual(['relations'])
   })
   it('names tabs from the fixed set only', () => {
-    expect(Object.keys(TAB_LABEL_TEXT)).toHaveLength(16)
+    expect(Object.keys(TAB_LABEL_TEXT)).toHaveLength(17)
     expect(TAB_LABEL_TEXT['show-details']).toBe('Show Details')
     expect(TAB_LABEL_TEXT.recommendations).toBe('Recommendations')
     expect(TAB_LABEL_TEXT['more-like-this']).toBe('More like this')

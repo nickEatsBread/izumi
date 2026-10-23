@@ -17,7 +17,7 @@ export const TAB_LABEL_TEXT: Record<TabLabel, string> = {
   episodes: 'Episodes', watch: 'Watch',
   relations: 'Relations', related: 'Related',
   characters: 'Characters', cast: 'Cast',
-  recommended: 'Recommended', 'more-like-this': 'More like this', recommendations: 'Recommendations',
+  recommended: 'Recommended', 'more-like-this': 'More like this', recommendations: 'Recommendations', suggested: 'Suggested',
   information: 'Information', 'show-details': 'Show Details',
 }
 
