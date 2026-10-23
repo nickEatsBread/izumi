@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parsePresentation, resolvePresentation } from './presentation'
+import { parsePresentation, resolveDetail, resolvePresentation } from './presentation'
 
 describe('motion keys (API 6)', () => {
   it('parses expand previews and trailer backgrounds', () => {
@@ -8,6 +8,11 @@ describe('motion keys (API 6)', () => {
     expect(layout.hero?.preview).toBe('trailer')
     expect(layout.detail?.preview).toBe('trailer')
     expect(parsePresentation({ hero: { preview: 'none' }, detail: { preview: 'none' } })).toMatchObject({ hero: { preview: 'none' }, detail: { preview: 'none' } })
+  })
+
+  it('the series page reads its trailer switch through resolveDetail', () => {
+    expect(resolveDetail(parsePresentation({ detail: { preview: 'trailer' } })).preview).toBe('trailer')
+    expect(resolveDetail(parsePresentation({})).preview).toBeUndefined()
   })
 
   it('accepts a trailer artwork node in a hero template', () => {

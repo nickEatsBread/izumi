@@ -1268,6 +1268,7 @@ export function resolveDetail(layout?: ThemePresentation): Required<Pick<DetailP
     nav: detail.nav,
     continue: detail.continue,
     column: detail.column,
+    preview: detail.preview,
     episodes: {
       placement,
       arrangement: detail.episodes?.arrangement,

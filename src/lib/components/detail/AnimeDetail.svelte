@@ -4,6 +4,9 @@
   import { invoke } from '@tauri-apps/api/core'
   import { ANIME_LIST_ENTRY, MEDIA_BY_ID } from '$lib/anilist/detail-queries'
   import Hero from '$lib/components/banner/Hero.svelte'
+  import BackdropTrailer from '$lib/components/cards/BackdropTrailer.svelte'
+  import { DETAIL_TRAILER_DWELL } from '$lib/components/cards/backdrop-trailer'
+  import { youtubeTrailerId } from '$lib/components/cards/youtube-embed'
   import Tabs from '$lib/components/detail/Tabs.svelte'
   import EpisodeList from '$lib/components/detail/EpisodeList.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
@@ -1050,8 +1053,11 @@
       {:else}
         <span class="!absolute inset-0 skeloader" aria-hidden="true"></span>
       {/if}
-      <div data-part="detail.scrim" data-dir="bottom" class="absolute inset-0 bg-gradient-to-t from-background via-background/25 to-transparent"></div>
-      <div data-part="detail.scrim" data-dir="left" class="absolute inset-y-0 left-0 w-[58%] bg-gradient-to-r from-background/95 via-background/55 to-transparent"></div>
+      <!-- API 6 detail.preview: a muted trailer over the art. The scrims below paint over its layer, so they pass clicks through to its mute button. -->
+      <BackdropTrailer id={youtubeTrailerId(m.trailer)} title={title(m)} enabled={detailTheme.preview === 'trailer'} dwell={DETAIL_TRAILER_DWELL}
+                       part="detail.video" mutePart="detail.mute" muteClass="right-8 top-24 z-20" />
+      <div data-part="detail.scrim" data-dir="bottom" class="pointer-events-none absolute inset-0 bg-gradient-to-t from-background via-background/25 to-transparent"></div>
+      <div data-part="detail.scrim" data-dir="left" class="pointer-events-none absolute inset-y-0 left-0 w-[58%] bg-gradient-to-r from-background/95 via-background/55 to-transparent"></div>
       <div data-part="detail.body" class="relative z-10 flex min-h-[72vh] max-w-3xl flex-col justify-center gap-5 px-8 py-20 sm:px-12">
         {#if m.title.native || m.title.romaji}
           <div data-part="detail.alt-title" class="text-sm text-white/70">{m.title.native || m.title.romaji}</div>

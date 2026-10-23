@@ -13,6 +13,7 @@
   import { toggleFavourite } from '$lib/trackers'
   import { WATCHLIST_ID, localLibrary, mediaIsInLocalList, toggleMediaInLocalList } from '$lib/library/local-lists'
   import YoutubeTrailer from './YoutubeTrailer.svelte'
+  import { youtubeTrailerId } from './youtube-embed'
   import Play from '@lucide/svelte/icons/play'
   import Heart from '@lucide/svelte/icons/heart'
   import Bookmark from '@lucide/svelte/icons/bookmark'
@@ -37,11 +38,7 @@
   $effect(() => { void logo; failedLogo = false })
 
   // YouTube trailers only; WebKitGTK (no `credentialless`) will just show the still.
-  const trailerId = $derived(
-    media.trailer?.id && (!media.trailer.site || media.trailer.site.toLowerCase() === 'youtube')
-      ? media.trailer.id
-      : undefined,
-  )
+  const trailerId = $derived(youtubeTrailerId(media.trailer))
 
   // Favourite is AniList-only. Watchlist saving is device-local and never requires an account.
   const canFavourite = $derived(!!$anilistToken)
