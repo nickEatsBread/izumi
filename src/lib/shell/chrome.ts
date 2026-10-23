@@ -3,6 +3,14 @@
 // bar. A page that only covers the navigation (`detail.nav: "hidden"`) claims it without a bar, and
 // the room goes too. The app bar returns when every claim is released.
 import { derived, writable } from 'svelte/store'
+import { hideSidebarWhilePlaying } from '$lib/settings/ui'
+import { playing } from '$lib/player/session'
+import { shellNav } from '$lib/themes/runtime'
+
+/** The left sidebar steps aside while the player is open (Player setting), so the windowed video,
+ *  its controls and the native surface take its width. A top or bottom bar is unaffected. */
+export const sidebarHiddenForPlayback = derived([hideSidebarWhilePlaying, playing, shellNav],
+  ([hide, open, nav]) => hide && open && nav === 'sidebar')
 
 interface Claim { bar: boolean }
 

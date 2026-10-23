@@ -4,7 +4,7 @@
     autoplayNext, upNextOverlay, seriesRatingPrompt, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
     scrubThumbnails, playerProgressAnimations, playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying,
     videoQualityPreset, rawMpvOptions, gifIncludeSubtitles, gifScale, gifMaxSeconds, androidAutoPip,
-    audioProcessing, windowsVsr, systemMediaControls, discordRichPresence, subtitleLineNavigation,
+    audioProcessing, windowsVsr, systemMediaControls, discordRichPresence, subtitleLineNavigation, hideSidebarWhilePlaying,
     audioOutputMode, audioOutputDevice, audioExclusive,
     audioPassthroughAc3, audioPassthroughEac3, audioPassthroughTruehd,
     audioPassthroughDts, audioPassthroughDtsHd, dolbyVisionOutputMode,
@@ -239,6 +239,7 @@
     {#if !$isAndroid}
     <Toggle label="Animate player progress controls" desc="Animate the Game-mode progress bar and controls as they appear and disappear. Turn off for instant controls." value={$playerProgressAnimations} onToggle={() => ($playerProgressAnimations = !$playerProgressAnimations)} />
     <Toggle label="Subtitle line navigation" desc="Show Previous, Replay, and Next subtitle-cue controls in the player. Useful for language learning; off by default." value={$subtitleLineNavigation} onToggle={() => ($subtitleLineNavigation = !$subtitleLineNavigation)} />
+    <Toggle label="Hide sidebar while playing" desc="Tuck the left sidebar away while a video is open, so the windowed player fills the window. It comes back when you leave the player. Has no effect when the navigation sits at the top or bottom." value={$hideSidebarWhilePlaying} onToggle={() => ($hideSidebarWhilePlaying = !$hideSidebarWhilePlaying)} />
     <div class="rounded-md border border-border p-3 space-y-3" data-setting-key="gif-recorder">
       <div>
         <div class="font-bold">GIF recorder</div>

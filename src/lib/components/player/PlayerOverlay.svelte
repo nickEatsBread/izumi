@@ -72,6 +72,7 @@
   import { resolvePlayerDock, type PlayerChrome } from '$lib/themes/presentation'
   import { oskDismissedAt, playerStage } from '$lib/player/session'
   import { measureStage } from '$lib/player/insets'
+  import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
   import DockEpisodes from './DockEpisodes.svelte'
   import WatchToolbar from './WatchToolbar.svelte'
   import WatchInfo from './WatchInfo.svelte'
@@ -143,6 +144,8 @@
   // Browse chrome is around the video (windowed playback): the root is inset from the edge the
   // navigation occupies and reports its geometry to the native surface.
   const windowedChrome = $derived(!$fullscreen && !gmMode && !$pictureInPicture)
+  // The sidebar is beside the video, unless the player setting tucks it away during playback.
+  const sidebarRail = $derived($shellNav === 'sidebar' && !$sidebarHiddenForPlayback)
   // A theme's docked watch layout: the video keeps to a stage with the episode rail beside or below
   // it while the browse chrome stays. Phones, fullscreen, picture-in-picture and Game mode keep the
   // whole container — there is no room to give up there.
@@ -341,6 +344,7 @@
   $effect(() => {
     void docked
     void $shellNav
+    void sidebarRail
     const flow = pageFlow
     const root = overlayRoot
     const probe = viewportProbe
@@ -1892,7 +1896,7 @@
   data-slot="watch" data-layout={docked ? 'docked' : 'full'} data-flow={pageFlow ? 'page' : undefined} style:background|important="transparent"
   bind:this={dockScroller}
   class={pageFlow && !columnFlow ? 'izumi-player-dock fixed z-20 overflow-y-auto overscroll-contain' : docked ? `izumi-player-dock fixed z-20 flex ${dock.episodes === 'below' ? 'flex-col' : 'flex-row'}` : 'contents'}
-  style:left={docked ? ($shellNav === 'sidebar' ? '3.5rem' : '0') : undefined}
+  style:left={docked ? (sidebarRail ? '3.5rem' : '0') : undefined}
   style:top={docked ? ($shellNav === 'top' ? 'var(--theme-top-bar)' : '0') : undefined}
   style:right={docked ? '0' : undefined}
   style:bottom={docked ? ($shellNav === 'bottom' ? bottomNavInset : '0') : undefined}
@@ -1921,8 +1925,8 @@
   class:touch-auto={$commentsOpen}
   class:cursor-pointer={!gmMode && controlsVisible}
   class:cursor-none={gmMode || !controlsVisible}
-  class:left-14={!docked && windowedChrome && $shellNav === 'sidebar'}
-  class:left-0={docked || !windowedChrome || $shellNav !== 'sidebar'}
+  class:left-14={!docked && windowedChrome && sidebarRail}
+  class:left-0={docked || !windowedChrome || !sidebarRail}
   style:width={docked ? (!pageFlow && dock.episodes === 'below' ? `${dock.width}%` : '100%') : undefined}
   style:max-height={docked && (!pageFlow || columnFlow) ? '100%' : undefined}
   style:box-shadow={pageFlow ? '0 0 0 200vmax hsl(var(--background))' : undefined}
