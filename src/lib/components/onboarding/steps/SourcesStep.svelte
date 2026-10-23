@@ -5,6 +5,7 @@
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
   import { m } from '$lib/paraglide/messages.js'
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
+  import PlaybackChoice from './PlaybackChoice.svelte'
   import { addonSuggestions, packageSuggestions, type SourceSuggestion } from '$lib/onboarding/source-suggestions'
   import { listCommunityAddons } from '$lib/stremio/community-store'
   import { fetchManifest } from '$lib/stremio/manifest'
@@ -23,15 +24,24 @@
   let picked = $state<string[]>([])
   let installError = $state('')
   let health = $state<'empty' | 'checking' | 'ready' | 'error'>('empty')
+  let installing = $state(false)
+  let checkingKey = $state(false)
   const abort = new AbortController()
 
   const configured = $derived($addonUrls.length > 0 || $extensionUrls.length > 0)
   const reviewFace = $derived(synced && configured)
 
+  // Two things hold the footer here: an install in flight and a debrid key still being checked.
+  $effect(() => {
+    busy = installing || checkingKey
+  })
+
   onDestroy(() => abort.abort())
   onMount(() => {
+    // Sources that came over with an import get a health check; everyone gets the picker, which
+    // reads as "add more" once sources are already there.
     if (reviewFace) void check()
-    else void load()
+    void load()
   })
 
   async function check() {
@@ -83,15 +93,18 @@
     picked = picked.includes(id) ? picked.filter((value) => value !== id) : [...picked, id]
   }
 
-  /** Installs only what the user ticked. Nothing is ticked for them, so izumi never installs a
-   * source the user did not choose. */
-  async function install() {
-    if (!picked.length || busy) return
-    busy = true
+  /**
+   * Installs only what the user ticked. Nothing is ticked for them, so izumi never installs a
+   * source the user did not choose. The shell's Next calls this; true means it may move on.
+   */
+  export async function install(): Promise<boolean> {
+    if (!picked.length) return true
+    if (installing) return false
+    installing = true
     installError = ''
     try {
       for (const id of picked) {
-        if (abort.signal.aborted) return
+        if (abort.signal.aborted) return false
         const suggestion = suggestions.find((entry) => entry.id === id)
         if (!suggestion) continue
         if (suggestion.kind === 'addon') {
@@ -116,13 +129,14 @@
         if (!$extensionUrls.includes(OFFICIAL_ANIME_CATALOG)) extensionUrls.update((urls) => [...urls, OFFICIAL_ANIME_CATALOG])
         disabledExtensions.update((urls) => urls.filter((spec) => spec !== OFFICIAL_ANIME_CATALOG))
       }
-      if (abort.signal.aborted) return
+      if (abort.signal.aborted) return false
       picked = []
-      await check()
+      return true
     } catch (cause) {
       if (!abort.signal.aborted) installError = cause instanceof Error ? cause.message : m.onboarding_sources_install_failed()
+      return false
     } finally {
-      if (!abort.signal.aborted) busy = false
+      if (!abort.signal.aborted) installing = false
     }
   }
 </script>
@@ -131,7 +145,7 @@
 <p class="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">{reviewFace ? m.onboarding_sources_review_body() : m.onboarding_sources_body()}</p>
 
 {#if reviewFace}
-  <div class="mt-7 flex items-center gap-3 border-y border-border py-5" role="status" aria-live="polite">
+  <div class="mt-7 flex max-w-2xl items-center gap-3 border-y border-border py-5" role="status" aria-live="polite">
     {#if health === 'checking'}<LoaderCircle size={21} class="tile-spinner shrink-0" />
     {:else if health === 'error'}<TriangleAlert size={21} class="shrink-0 text-destructive" />
     {:else}<Check size={21} class="shrink-0" />{/if}
@@ -140,37 +154,39 @@
       <p class="mt-1 text-sm text-muted-foreground">{health === 'checking' ? m.onboarding_checking() : health === 'error' ? m.onboarding_source_unavailable() : m.onboarding_ready()}</p>
     </div>
   </div>
+  <h2 class="mt-8 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{m.onboarding_sources_add_more()}</h2>
 {/if}
 
-{#if !reviewFace}
-  {#if loading}
-    <p class="mt-7 flex items-center gap-2 text-sm text-muted-foreground" role="status"><LoaderCircle size={16} class="tile-spinner" />{m.onboarding_checking()}</p>
-  {:else if error}
-    <p class="mt-7 text-sm leading-relaxed text-muted-foreground" role="status">{error}</p>
-    <button type="button" data-focusable onclick={() => void load()} class="setup-inline-button mt-4 bg-secondary">{m.onboarding_sources_retry()}</button>
-  {:else}
-    <!-- minmax(0,1fr) is load-bearing: a grid item defaults to min-width:auto, so the implicit
-         column sizes to the widest row's max-content. `truncate` sets white-space:nowrap, which
-         makes that max-content the full untruncated description — the track blows past the
-         container and the text clips at the card edge instead of ellipsising. -->
-    <fieldset class="mt-7 grid grid-cols-[minmax(0,1fr)] gap-2">
-      <legend class="sr-only">{m.onboarding_sources_title()}</legend>
-      {#each suggestions as suggestion (suggestion.id)}
-        <label class="setup-choice flex min-w-0 cursor-pointer items-center gap-3 p-4 {picked.includes(suggestion.id) ? 'selected' : ''}">
-          <input type="checkbox" data-focusable class="shrink-0" checked={picked.includes(suggestion.id)} onchange={() => toggle(suggestion.id)} />
-          <AddonLogo logo={suggestion.logo} name={suggestion.name} id={suggestion.id} size={32} />
-          <span class="min-w-0 flex-1">
-            <span class="block truncate text-sm font-semibold">{suggestion.name}</span>
-            <span class="mt-0.5 block truncate text-xs text-muted-foreground">{suggestion.description}</span>
-          </span>
-        </label>
-      {/each}
-    </fieldset>
-    <button type="button" data-focusable onclick={install} disabled={!picked.length || busy} class="setup-inline-button mt-5 bg-foreground text-background">
-      {#if busy}<LoaderCircle size={15} class="tile-spinner" />{/if}
-      {busy ? m.onboarding_sources_installing() : m.onboarding_sources_install({ count: String(picked.length) })}
-    </button>
-    {#if !picked.length}<p class="mt-3 text-xs leading-relaxed text-muted-foreground">{m.onboarding_sources_none_selected()}</p>{/if}
-  {/if}
-  {#if installError}<p role="alert" class="mt-3 text-sm text-destructive">{installError}</p>{/if}
+{#if loading}
+  <p class="mt-7 flex items-center gap-2 text-sm text-muted-foreground" role="status"><LoaderCircle size={16} class="tile-spinner" />{m.onboarding_checking()}</p>
+{:else if error}
+  <p class="mt-7 text-sm leading-relaxed text-muted-foreground" role="status">{error}</p>
+  <button type="button" data-focusable onclick={() => void load()} class="setup-inline-button mt-4 bg-secondary">{m.onboarding_sources_retry()}</button>
+{:else}
+  <!-- minmax(0,1fr) is load-bearing: a grid item defaults to min-width:auto, so the implicit
+       column sizes to the widest row's max-content. `truncate` sets white-space:nowrap, which
+       makes that max-content the full untruncated description — the track blows past the
+       container and the text clips at the card edge instead of ellipsising. -->
+  <fieldset class="mt-7 grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2 lg:grid-cols-3">
+    <legend class="sr-only">{m.onboarding_sources_title()}</legend>
+    {#each suggestions as suggestion (suggestion.id)}
+      <label class="setup-choice flex min-w-0 cursor-pointer items-center gap-3 p-4 {picked.includes(suggestion.id) ? 'selected' : ''}">
+        <input type="checkbox" data-focusable class="shrink-0" checked={picked.includes(suggestion.id)} onchange={() => toggle(suggestion.id)} />
+        <AddonLogo logo={suggestion.logo} name={suggestion.name} id={suggestion.id} size={32} />
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-sm font-semibold">{suggestion.name}</span>
+          <span class="mt-0.5 block truncate text-xs text-muted-foreground">{suggestion.description}</span>
+        </span>
+      </label>
+    {/each}
+  </fieldset>
+  <p class="mt-3 flex items-center gap-2 text-xs leading-relaxed text-muted-foreground" role="status">
+    {#if installing}<LoaderCircle size={14} class="tile-spinner" />{m.onboarding_sources_installing()}
+    {:else if picked.length}{m.onboarding_sources_picked({ count: String(picked.length) })}
+    {:else}{m.onboarding_sources_none_selected()}{/if}
+  </p>
 {/if}
+{#if installError}<p role="alert" class="mt-3 text-sm text-destructive">{installError}</p>{/if}
+
+<h2 class="mt-10 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{m.onboarding_playback_choice_title()}</h2>
+<PlaybackChoice bind:checking={checkingKey} />

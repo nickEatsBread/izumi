@@ -294,4 +294,23 @@ describe('onboarding presentation contracts', () => {
     expect(trackers).toContain('await connectAniList()')
     expect(trackers).toContain('await connectMal()')
   })
+
+  it('installs ticked sources from Next instead of a button of its own', () => {
+    expect(sources).toContain('export async function install(): Promise<boolean>')
+    expect(sources).not.toContain('m.onboarding_sources_install(')
+    // An empty selection is not a failure: Next simply moves on.
+    expect(sources).toContain('if (!picked.length) return true')
+  })
+
+  it('asks how torrents play on the sources screen rather than a screen of its own', () => {
+    const playback = read('./steps/PlaybackChoice.svelte')
+    expect(sources).toContain('<PlaybackChoice bind:checking={checkingKey} />')
+    expect(playback).toContain("$torrentPlaybackMode = 'direct'")
+    // Debounced, blur included: checking on blur would disable the button being clicked.
+    expect(playback).toContain('timer = setTimeout(() => void validate(), 700)')
+  })
+
+  it('lays the source picker out across the wide panel', () => {
+    expect(sources).toContain('sm:grid-cols-2 lg:grid-cols-3')
+  })
 })
