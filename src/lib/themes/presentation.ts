@@ -199,6 +199,12 @@ export interface RowPresentation {
   /** API 3: `focus` keeps one line under the row's cards for the focused card's full title and detail
    *  line while a pad is in use (Game or controller mode). */
   caption?: 'none' | 'focus'
+  /** API 6, carousels: `anchor` keeps the focused card in the row's first column while a pad is in use
+   *  (the track slides under it) and snaps the focused row under the top bar. */
+  focus?: 'default' | 'anchor'
+  /** API 6: a non-interactive template drawn in the `caption: "focus"` line in place of the title and detail
+   *  line, bound to the focused card's title (genres, year, synopsis, ...). */
+  captionTemplate?: ThemeNode
   /** API 4, Continue Watching: `shown` keeps the row on Home while there is nothing to continue, with
    *  an empty-state part (`row.empty`) in its track; `hidden` (default) leaves the row out then. Read
    *  from the row's own entry (`rows.byId.continue` or its scoped id), never from `rows.defaults`. */
@@ -411,6 +417,15 @@ export interface PlayerPresentation {
   title?: 'default' | 'episode'
   /** API 6: `summary` shows a "You're watching" summary after five seconds paused with no input. */
   paused?: 'none' | 'summary'
+  /** API 6: `restart` (seek to the start) and `next` (the next episode) buttons beside Play. The desktop
+   *  player has its own Next, so it shows `restart` only. */
+  buttons?: PlayerButton[]
+}
+export type PlayerButton = 'restart' | 'next'
+/** API 6, TV block only: how the Search page takes text. */
+export interface SearchPresentation {
+  /** `grid` docks an A–Z / 0–9 keyboard beside the results. */
+  keyboard?: 'default' | 'grid'
 }
 /** The featured banner on Home. */
 export interface HeroPresentation {
@@ -497,6 +512,8 @@ export interface ThemePresentation {
   /** API 6: the TV variant (Android TV and Game mode), resolved on top of the rest there and dropped
    *  everywhere else. Unlike `mobile` it may move the navigation (`shell`) and choose the hover preview. */
   tv?: TvPresentation
+  /** API 6, only accepted inside `tv`; the resolved TV presentation carries it here. */
+  search?: SearchPresentation
   /** API 4, phones only: the root font size in px (14–18; izumi's own is 14.5) that every rem of the
    *  app's phone UI follows, times the design's font scale. The izumi mark keeps its own size. Only
    *  accepted inside `mobile`; the resolved phone presentation carries it here. */
@@ -506,7 +523,7 @@ export interface ThemePresentation {
 export type MobilePresentation = Pick<ThemePresentation, 'density' | 'hideCardLabels' | 'trueBlack' | 'hero' | 'rows' | 'detail' | 'player' | 'cards' | 'layout' | 'rootSize'>
 /** What the TV variant can change: the phone set without the phone root size, plus the shell and the
  *  hover preview choice. */
-export type TvPresentation = Pick<ThemePresentation, 'density' | 'hideCardLabels' | 'trueBlack' | 'hero' | 'rows' | 'detail' | 'player' | 'cards' | 'layout' | 'shell' | 'cardPreview'>
+export type TvPresentation = Pick<ThemePresentation, 'density' | 'hideCardLabels' | 'trueBlack' | 'hero' | 'rows' | 'detail' | 'player' | 'cards' | 'layout' | 'shell' | 'cardPreview' | 'search'>
 /** Every host binds the same shapes: numeric fields are numbers, the rest strings. */
 export type DisplayModel = Partial<Record<Exclude<DisplayField, NumericDisplayField> | ArtworkKind, string> & Record<NumericDisplayField, number>>
 export const ROW_CONTEXT = Symbol('theme-row')
@@ -730,7 +747,7 @@ function parseHeading(value: unknown): RowHeading {
   return result
 }
 function parseRow(value: unknown, api: ThemeApi, named = false): RowPresentation {
-  const raw = record(value); only(raw, ['layout', 'width', 'gap', 'spacing', 'radius', 'aspect', 'titleSize', 'card', ...api2(api, ['heading']), ...api3(api, ['caption']), ...api4(api, ['empty']), ...api5(api, named ? ['title'] : [])])
+  const raw = record(value); only(raw, ['layout', 'width', 'gap', 'spacing', 'radius', 'aspect', 'titleSize', 'card', ...api2(api, ['heading']), ...api3(api, ['caption']), ...api4(api, ['empty']), ...api5(api, named ? ['title'] : []), ...api6(api, ['focus', 'captionTemplate'])])
   const result: RowPresentation = {}
   if (raw.title !== undefined) {
     if (typeof raw.title !== 'string' || !raw.title.trim() || raw.title.length > 60) throw new Error('A theme row title needs 1–60 characters.')
@@ -745,6 +762,8 @@ function parseRow(value: unknown, api: ThemeApi, named = false): RowPresentation
   if (raw.heading !== undefined) result.heading = parseHeading(raw.heading)
   if (raw.card !== undefined) result.card = tile(parseNode(raw.card, undefined, 0, false, api))
   if (raw.caption !== undefined) result.caption = choice(raw.caption, ['none', 'focus'])
+  if (raw.focus !== undefined) result.focus = choice(raw.focus, ['default', 'anchor'])
+  if (raw.captionTemplate !== undefined) result.captionTemplate = tile(parseNode(raw.captionTemplate, undefined, 0, false, api))
   return result
 }
 function parseBottomNav(value: unknown, api: ThemeApi): BottomNavPresentation {
@@ -948,7 +967,7 @@ function parseShell(value: unknown, api: ThemeApi): ShellPresentation {
   return result
 }
 function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
-  const raw = record(value); only(raw, ['seekbarHeight', 'seekbarColor', ...api2(api, ['layout', 'dock']), ...api6(api, ['seekButtons', 'time', 'title', 'paused'])])
+  const raw = record(value); only(raw, ['seekbarHeight', 'seekbarColor', ...api2(api, ['layout', 'dock']), ...api6(api, ['seekButtons', 'time', 'title', 'paused', 'buttons'])])
   const result: PlayerPresentation = {}
   if (raw.seekbarHeight !== undefined) result.seekbarHeight = number(raw.seekbarHeight, 2, 16)
   if (raw.seekbarColor !== undefined) result.seekbarColor = themeColor(raw.seekbarColor)
@@ -970,6 +989,7 @@ function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
   if (raw.time !== undefined) result.time = choice(raw.time, ['default', 'remaining', 'split'])
   if (raw.title !== undefined) result.title = choice(raw.title, ['default', 'episode'])
   if (raw.paused !== undefined) result.paused = choice(raw.paused, ['none', 'summary'])
+  if (raw.buttons !== undefined) result.buttons = uniqueChoices(raw.buttons, ['restart', 'next'], 'player.buttons', 0)
   return result
 }
 /** A list of distinct values from a fixed set, in the theme's order (`min`, 1 by default, to every value). */
@@ -1050,10 +1070,18 @@ function parseMobile(value: unknown, api: ThemeApi): MobilePresentation {
   if (rootSize !== undefined) result.rootSize = number(rootSize, 14, 18)
   return result
 }
-const TV_KEYS = [...MOBILE_KEYS, 'shell', 'cardPreview']
+const TV_KEYS = [...MOBILE_KEYS, 'shell', 'cardPreview', 'search']
 function parseTv(value: unknown, api: ThemeApi): TvPresentation {
   const raw = record(value); only(raw, TV_KEYS)
-  return parsePresentation(raw, api)
+  // `search` is TV-only, so the shared parser (which also reads the top level) never accepts it.
+  const { search, ...shared } = raw
+  const result: TvPresentation = parsePresentation(shared, api)
+  if (search !== undefined) {
+    const block = record(search); only(block, ['keyboard'])
+    result.search = {}
+    if (block.keyboard !== undefined) result.search.keyboard = choice(block.keyboard, ['default', 'grid'])
+  }
+  return result
 }
 /** Validate a presentation. `api` is the package's declared theme API: API 1 packages get the
  *  original key set (so they behave identically on every client), API 2 the additions. Personal
@@ -1327,11 +1355,16 @@ export interface ResolvedPlayerControls {
   time: NonNullable<PlayerPresentation['time']>
   title: NonNullable<PlayerPresentation['title']>
   paused: NonNullable<PlayerPresentation['paused']>
+  buttons: PlayerButton[]
 }
 /** API 6 player control choices with their defaults (izumi's own player). */
 export function resolvePlayerControls(layout?: ThemePresentation): ResolvedPlayerControls {
   const player = layout?.player
-  return { seekButtons: player?.seekButtons ?? false, time: player?.time ?? 'default', title: player?.title ?? 'default', paused: player?.paused ?? 'none' }
+  return { seekButtons: player?.seekButtons ?? false, time: player?.time ?? 'default', title: player?.title ?? 'default', paused: player?.paused ?? 'none', buttons: player?.buttons ?? [] }
+}
+/** API 6: how the Search page takes text on this surface (only a TV block can ask for the grid). */
+export function resolveSearch(layout?: ThemePresentation): { keyboard: NonNullable<SearchPresentation['keyboard']> } {
+  return { keyboard: layout?.search?.keyboard ?? 'default' }
 }
 /** `color` values from a template or chrome block as CSS, optionally at a reduced alpha. */
 export function themeColorCss(value: string | undefined, alpha?: number): string | undefined {
