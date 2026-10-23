@@ -34,9 +34,11 @@ describe('themes store front', () => {
     expect(page).toContain('<ThemeBrowse')
     expect(page).toContain('<ThemeDetail')
   })
-  it('opens a theme page through the URL and steps into its preview', () => {
+  it('opens a theme page through the URL and goes straight into its preview', () => {
     expect(page).toContain("goto(`?${new URLSearchParams({ store: store.id, theme: listing.release.id })}`)")
-    expect(page).toContain('stepIntoPreview(from, () => previewTheme(target)')
+    // No zoom from the screenshot: the theme applies and its screen opens, loading skeletons and all.
+    expect(page).toContain('previewTheme(target); void goto(screenRoute(screen,')
+    expect(page).not.toContain('preview-transition')
   })
   it('lets people add other theme stores from the store header', () => {
     expect(page).toContain('<StoresDialog {loaded}')

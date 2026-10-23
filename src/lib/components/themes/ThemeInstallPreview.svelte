@@ -5,7 +5,6 @@
   import { themeInstallPreview, cancelThemePreview, installTheme, applyInstalledTheme } from '$lib/themes/installed'
   import { SCREEN_LABELS, shotsFor } from '$lib/themes/packages'
   import { PREVIEW_SCREENS, newestSeriesId, screenOf, screenRoute, themePageUrl } from '$lib/themes/preview-routes'
-  import { stepOutOfPreview } from '$lib/themes/preview-transition'
   import { cwSnapshot } from '$lib/player/continue-watching'
   import { allStores } from '$lib/store/feeds'
   import { isMobile } from '$lib/platform'
@@ -21,7 +20,7 @@
     try { applyInstalledTheme(installTheme(prepared)); cancelThemePreview() }
     catch (cause) { error = cause instanceof Error ? cause.message : 'Could not install this theme.' }
   }
-  // Back to the theme page, shrinking this screen's screenshot into its viewer.
+  // Back to the theme page, on the screenshot of the screen being previewed.
   function exit() {
     const prepared = $themeInstallPreview
     if (!prepared || leaving) return
@@ -29,7 +28,7 @@
     const platform = $isMobile ? 'phone' : 'desktop'
     const shot = prepared.release ? shotsFor(prepared.release, platform).find((item) => item.screen === current) : undefined
     const storeId = $allStores.find((store) => store.url === prepared.origin)?.id
-    void stepOutOfPreview(shot?.url ?? null, cancelThemePreview, themePageUrl(storeId, prepared.package.id, shot?.screen, platform), () => document.querySelector(`[data-theme-shot="${shot?.screen}"] img`) ?? document.querySelector('[data-theme-viewer]'))
+    cancelThemePreview(); void goto(themePageUrl(storeId, prepared.package.id, shot?.screen, platform))
   }
 </script>
 {#if $themeInstallPreview}

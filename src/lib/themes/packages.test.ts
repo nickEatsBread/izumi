@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseCatalog, parseThemePackage, parseSharedTheme, parseRelease, platformFor, shotsFor, themeUrl, newerVersion, portablePackage } from './packages'
+import { parseCatalog, parseThemePackage, parseSharedTheme, parseRelease, homeShot, platformFor, shotsFor, themeUrl, newerVersion, portablePackage } from './packages'
 import { defaultStudioTheme } from '$lib/settings/theme-studio'
 
 export const samplePackage = { app: 'izumi', kind: 'theme-package', schemaVersion: 1, themeApi: 1, id: 'test.cinema', name: 'Cinema', author: 'Test', description: 'An optional rank design.', version: '1.0.0', design: { radius: 1, backdrop: 'solid', presentation: { hero: { rank: { type: 'text', field: 'rank' } } } } }
@@ -126,6 +126,20 @@ describe('listing accent colour', () => {
     expect(parseRelease({ ...entry, accent: '249 100% 83%' }).accent).toBe('249 100% 83%')
     expect(parseRelease(entry).accent).toBeUndefined()
     expect(() => parseRelease({ ...entry, accent: 'url(https://example.test)' })).toThrow('accent')
+  })
+})
+
+describe('home screenshots for store artwork', () => {
+  const entry = { ...samplePackage, download: 'https://example.test/theme.json', sha256: 'a'.repeat(64), bytes: 500, tags: [], preview: 'https://example.test/p.png' }
+  const shot = (screen: string, platform: string) => ({ screen, platform, url: `https://example.test/${platform}-${screen}.jpg` })
+  it('picks each platform Home, and the old preview only for a desktop listing without screenshots', () => {
+    const both = parseRelease({ ...entry, screenshots: [shot('series', 'desktop'), shot('home', 'desktop'), shot('home', 'phone')] })
+    expect(homeShot(both, 'desktop')).toBe('https://example.test/desktop-home.jpg')
+    expect(homeShot(both, 'phone')).toBe('https://example.test/phone-home.jpg')
+    const desktopOnly = parseRelease({ ...entry, screenshots: [shot('home', 'desktop')] })
+    expect(homeShot(desktopOnly, 'phone')).toBeUndefined()
+    expect(homeShot(parseRelease(entry), 'desktop')).toBe('https://example.test/p.png')
+    expect(homeShot(parseRelease(entry), 'phone')).toBeUndefined()
   })
 })
 

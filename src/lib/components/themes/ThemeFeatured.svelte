@@ -1,33 +1,30 @@
 <script lang="ts">
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
+  import ThemeDevices from './ThemeDevices.svelte'
   import { motion } from '$lib/motion/gm-motion'
-  import type { ThemeRelease, ThemePlatform } from '$lib/themes/packages'
+  import { homeShot } from '$lib/themes/packages'
   import type { ThemeListing } from '$lib/store/themes'
 
   let { listings, onopen, onpreview, previewLocked = false }: {
     listings: ThemeListing[]
     onopen: (listing: ThemeListing) => void
-    /** Prepares the theme and steps into its preview from the given screenshot. */
-    onpreview: (listing: ThemeListing, from: HTMLImageElement | null) => Promise<void>
+    /** Prepares the theme and opens its preview. */
+    onpreview: (listing: ThemeListing) => Promise<void>
     /** A Theme Studio draft is open: nothing may be previewed. */
     previewLocked?: boolean
   } = $props()
   let at = $state(0)
   let opening = $state(false)
-  let windowImage = $state<HTMLImageElement>()
   const listing = $derived(listings.length ? listings[at % listings.length] : undefined)
   // Marketing-style art, not a raw screenshot: the theme's Home in a desktop window with its phone
   // Home in front, on a backdrop tinted with the theme's own accent colour.
-  const home = (release: ThemeRelease, platform: ThemePlatform) => release.screenshots?.find((shot) => shot.platform === platform && shot.screen === 'home')?.url
-  const desktopUrl = $derived(listing ? home(listing.release, 'desktop') ?? (listing.release.screenshots?.length ? undefined : listing.release.preview) : undefined)
-  const phoneUrl = $derived(listing ? home(listing.release, 'phone') : undefined)
   // Moves only when asked: carousels that advance on their own get ignored and annoy.
   function step(by: number) { at = (at + by + listings.length) % listings.length }
   async function preview() {
     if (!listing || opening) return
     opening = true
-    try { await onpreview(listing, windowImage ?? null) } finally { opening = false }
+    try { await onpreview(listing) } finally { opening = false }
   }
 </script>
 
@@ -43,10 +40,7 @@
             <button type="button" class="ghost" data-focusable disabled={previewLocked || opening} onclick={preview}>{opening ? 'Opening…' : 'Preview'}</button>
           </div>
         </div>
-        <button type="button" class="stage" tabindex="-1" aria-label={`View ${listing.release.name}`} onclick={() => onopen(listing)}>
-          {#if desktopUrl}<span class="window"><img bind:this={windowImage} src={desktopUrl} alt="" referrerpolicy="no-referrer" /></span>{/if}
-          {#if phoneUrl}<span class="phone" class:alone={!desktopUrl}><img src={phoneUrl} alt="" referrerpolicy="no-referrer" /></span>{/if}
-        </button>
+        <div class="stage"><ThemeDevices desktop={homeShot(listing.release, 'desktop')} phone={homeShot(listing.release, 'phone')} label={`View ${listing.release.name}`} onclick={() => onopen(listing)} /></div>
       </div>
     {/key}
     {#if listings.length > 1}
@@ -73,12 +67,7 @@
   .ghost { background: hsl(var(--foreground) / .12); }
   .view:hover, .ghost:hover:not(:disabled) { filter: brightness(1.12); }
   .ghost:disabled { opacity: .5; cursor: not-allowed; }
-  .stage { position: relative; display: block; overflow: hidden; }
-  .window { position: absolute; left: 4%; top: 13%; width: 86%; overflow: hidden; border-radius: 10px; border: 1px solid hsl(0 0% 100% / .12); box-shadow: 0 24px 60px hsl(0 0% 0% / .55); }
-  .phone { position: absolute; right: 3%; bottom: -6%; width: 20%; overflow: hidden; border-radius: 14px; border: 3px solid #0b0b0d; box-shadow: 0 24px 60px hsl(0 0% 0% / .65); }
-  .phone.alone { right: auto; left: 34%; width: 32%; bottom: -12%; }
-  .window img, .phone img { display: block; width: 100%; }
-  .stage:hover .window { box-shadow: 0 24px 60px hsl(0 0% 0% / .55), 0 0 0 2px hsl(var(--foreground) / .6); }
+  .stage { position: relative; min-width: 0; }
   .pager { position: absolute; left: 36px; bottom: 18px; display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 800; color: hsl(var(--foreground) / .7); }
   .pager button { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 999px; background: hsl(var(--foreground) / .1); color: hsl(var(--foreground)); }
   .pager button:hover { background: hsl(var(--foreground) / .18); }
@@ -86,8 +75,6 @@
   @container (max-width: 640px) {
     .slide { grid-template-columns: 1fr; aspect-ratio: auto; min-height: 0; }
     .stage { order: -1; height: 220px; }
-    .window { left: 6%; top: 10%; width: 78%; }
-    .phone { width: 24%; }
     .copy { padding: 18px 20px 64px; }
     .pager { left: 20px; }
   }

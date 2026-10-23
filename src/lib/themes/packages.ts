@@ -135,6 +135,13 @@ export function shotsFor(release: ThemeRelease, platform: ThemePlatform): ThemeS
   if (shots.length) return shots
   return release.preview ? [{ screen: 'home', platform, url: release.preview }] : []
 }
+/** A listing's Home screenshot for one platform, for store artwork; a listing with no screenshots
+ *  at all offers its single `preview` as the desktop one. */
+export function homeShot(release: ThemeRelease, platform: ThemePlatform): string | undefined {
+  const shot = release.screenshots?.find((item) => item.platform === platform && item.screen === 'home')
+  if (shot) return shot.url
+  return platform === 'desktop' && !release.screenshots?.length ? release.preview : undefined
+}
 /** Which platform's screenshots to show on this device: its own, unless the listing only has the other's. */
 export function platformFor(release: ThemeRelease, device: ThemePlatform): ThemePlatform {
   const has = (platform: ThemePlatform) => release.screenshots?.some((shot) => shot.platform === platform)

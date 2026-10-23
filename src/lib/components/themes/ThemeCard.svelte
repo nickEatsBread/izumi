@@ -33,9 +33,12 @@
 
 <style>
   .theme-card { display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: start; }
-  .theme-card :global([data-theme-shots]) { border-radius: 12px; box-shadow: 0 0 0 1px hsl(var(--foreground) / .08); }
-  .theme-card :global([data-theme-shots] > img) { object-position: top; }
-  .theme-card:not(:disabled):hover :global([data-theme-shots]) { box-shadow: 0 0 0 2px hsl(var(--foreground) / .55); }
+  /* Hover lifts the picture, deepens its shadow and zooms it slightly inside its frame. */
+  .theme-card :global([data-theme-shots]) { border-radius: 12px; box-shadow: 0 0 0 1px hsl(var(--foreground) / .08), 0 6px 18px hsl(0 0% 0% / .25); transition: translate 350ms cubic-bezier(.2, .8, .2, 1), box-shadow 350ms ease; }
+  .theme-card :global([data-theme-shots] > img) { object-position: top; transition: scale 500ms cubic-bezier(.2, .8, .2, 1); }
+  .theme-card:not(:disabled):hover :global([data-theme-shots]) { translate: 0 -4px; box-shadow: 0 0 0 1px hsl(var(--foreground) / .1), 0 18px 40px hsl(0 0% 0% / .5); }
+  .theme-card:not(:disabled):hover :global([data-theme-shots] > img) { scale: 1.035; }
+  @media (prefers-reduced-motion: reduce) { .theme-card :global([data-theme-shots]), .theme-card :global([data-theme-shots] > img) { transition: none; } }
   .theme-card:disabled { opacity: .45; cursor: not-allowed; }
   .title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 10px; font-size: 17px; font-weight: 900; letter-spacing: -.015em; }
   em { font-style: normal; font-size: 11px; font-weight: 700; color: hsl(var(--muted-foreground)); }

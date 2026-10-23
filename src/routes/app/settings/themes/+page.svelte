@@ -23,7 +23,6 @@
   import { THEME_API, SUPPORTED_THEME_APIS, THEME_CATALOG_PROJECT_URL, THEME_CATALOG_URL, THEME_SCREENS, newerVersion, platformFor, shotsFor, type PreparedTheme, type ThemeRelease, type ThemeScreen } from '$lib/themes/packages'
   import { installedThemes, installTheme, applyInstalledTheme, removeInstalledTheme, rollbackTheme, previewTheme, type InstalledTheme } from '$lib/themes/installed'
   import { newestSeriesId, screenRoute } from '$lib/themes/preview-routes'
-  import { stepIntoPreview } from '$lib/themes/preview-transition'
   import { cwSnapshot } from '$lib/player/continue-watching'
   import { allStores } from '$lib/store/feeds'
   import { findStoreThemeRelease, loadThemeListings } from '$lib/store/themes'
@@ -185,19 +184,19 @@
       leaveDetail(); tab = 'installed'
     } catch (cause) { error = failure(cause) }
   }
-  async function preview(screen: ThemeScreen, from: HTMLImageElement | null) {
+  function preview(screen: ThemeScreen) {
     if (!prepared || $themeStudioOpen) return
     const target = prepared
-    await stepIntoPreview(from, () => previewTheme(target), screenRoute(screen, newestSeriesId(get(cwSnapshot))))
+    previewTheme(target); void goto(screenRoute(screen, newestSeriesId(get(cwSnapshot))))
   }
   // Preview straight from the store's spotlight, with the same origin guard as the theme page.
-  async function previewListing(listing: ThemeListing, from: HTMLImageElement | null) {
+  async function previewListing(listing: ThemeListing) {
     if ($themeStudioOpen) return
     error = ''
     try {
       const target = await prepareRelease(listing.release, listing.origin)
       if ($installedThemes.some(item => item.id === target.package.id && item.origin !== target.origin)) throw new Error('A theme with this ID is already installed from a different source. Remove it there before previewing this one.')
-      await stepIntoPreview(from, () => previewTheme(target), screenRoute('home', null))
+      previewTheme(target); await goto(screenRoute('home', null))
     } catch (cause) { error = failure(cause) }
   }
   async function update(item: InstalledTheme) {

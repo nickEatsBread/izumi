@@ -14,7 +14,7 @@
     installed: (listing: ThemeListing) => boolean
     note: (listing: ThemeListing) => string
     onopen: (listing: ThemeListing) => void
-    onpreview: (listing: ThemeListing, from: HTMLImageElement | null) => Promise<void>
+    onpreview: (listing: ThemeListing) => Promise<void>
     previewLocked: boolean
   } = $props()
   const featured = $derived(listings.filter((item) => item.release.screenshots?.length && !note(item)).slice(0, 6))
