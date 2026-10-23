@@ -140,10 +140,11 @@ describe('the carousel touch driver on pinned rows', { timeout: 20_000 }, () => 
     expect(drag(mouseRow, 'touch', -60, 0).left).toBe(120)
   })
 
-  it('leaves a phone row, which stays a native scroller, to the browser', () => {
+  it('leaves a finger or pen on a phone row, which stays a native scroller, to the browser', () => {
     const node = row('scroll')
-    attach(node, gameModeCarouselTouch)
+    attach(node, dragScroll, gameModeCarouselTouch)
     expect(drag(node, 'touch', -120, 0).left).toBe(0)
+    expect(drag(node, 'pen', -120, 0).left).toBe(0)
   })
 
   it('still drives every pointer in Game mode', () => {

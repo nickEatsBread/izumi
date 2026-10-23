@@ -33,7 +33,12 @@ describe('Steam Deck featured banner flicker', () => {
     expect(hero).toContain('if (ready) loadedArtworkId = medias[n].id')
     expect(hero).toContain('slides.request(n, direction ?? (n > i ? 1 : -1), slideArtwork(medias[n]))')
     // Rapid L1/R1 presses chain from the slide already on its way.
-    expect(hero).toContain('go(((slides.pending() ?? i) + direction + n) % n, direction)')
+    expect(hero).toContain('go(((slides.pending() ?? i) + direction + n) % n, direction, now)')
+  })
+
+  it('moves at once for a finger swipe off the Deck, where waiting on the artwork only lagged', () => {
+    expect(hero).toContain('if (now) { slides.cancel(); commitSlide(n, direction ?? (n > i ? 1 : -1), slides.ready(slideArtwork(medias[n]))); return }')
+    expect(hero).toContain('step(dx < 0 ? 1 : -1, !$gameMode)')
   })
 
   it('keeps the neighbouring slides warm so the next step is instant', () => {
