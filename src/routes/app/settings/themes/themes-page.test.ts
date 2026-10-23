@@ -28,3 +28,14 @@ describe('themes settings add dialog', () => {
     expect(page).toContain('item.id === entry.id && item.origin === originOf(entry)')
   })
 })
+
+describe('themes store front', () => {
+  it('renders the storefront and the theme page from components', () => {
+    expect(page).toContain('<ThemeBrowse')
+    expect(page).toContain('<ThemeDetail')
+  })
+  it('opens a theme page through the URL and steps into its preview', () => {
+    expect(page).toContain("goto(`?${new URLSearchParams({ store: store.id, theme: listing.release.id })}`)")
+    expect(page).toContain('stepIntoPreview(from, () => previewTheme(target)')
+  })
+})
