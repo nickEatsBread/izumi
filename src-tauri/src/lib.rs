@@ -33,6 +33,7 @@ mod oauth;
 mod reset;
 #[cfg(not(target_os = "android"))]
 mod reset_data;
+mod subtitle_fonts;
 mod sync;
 mod text_file;
 mod torrent_download;
@@ -5817,6 +5818,7 @@ pub fn run() {
             // Reclaim what the last session left behind, before anything writes more. Detached: a
             // stat walk over an abandoned torrent payload must not sit between launch and paint.
             cache_gc::sweep_at_startup(app.handle());
+            subtitle_fonts::init(app.handle());
             // Stash a magnet URL only when the OS/user explicitly launched this executable with
             // one. Izumi never registers or claims the magnet scheme itself.
             #[cfg(not(target_os = "android"))]
@@ -6465,6 +6467,7 @@ pub fn run() {
             player_prefetch,
             http_get,
             opensubtitles_moviehash,
+            subtitle_fonts::subtitle_fonts_save,
             http_post,
             ext_fetch,
             http_cancel,
@@ -6603,6 +6606,7 @@ pub fn run() {
         clear_cache,
         http_get,
         opensubtitles_moviehash,
+        subtitle_fonts::subtitle_fonts_save,
         http_post,
         ext_fetch,
         http_cancel,

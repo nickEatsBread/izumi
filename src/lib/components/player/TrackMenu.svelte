@@ -20,7 +20,7 @@
   import Brush from '@lucide/svelte/icons/brush'
   import Search from '@lucide/svelte/icons/search'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
-  import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, subtitlePresetSourceName, type SubtitleStylePreset } from '$lib/settings/subtitle-presets'
+  import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, saveSubtitleStyleFonts, subtitlePresetSourceName, type SubtitleStylePreset } from '$lib/settings/subtitle-presets'
   import { serverSiblings, variantLabels } from '$lib/player/source-variants'
   import type { Stream } from '$lib/stremio/addon'
   import { rememberSeriesTrack } from '$lib/player/track-preferences'
@@ -212,6 +212,9 @@
     sessionSubtitleStyle.set(preset)
     playerNotice.set(`Saved and applied subtitle style “${preset.name}”`)
     closeMenu()
+    const path = await invoke<string>('player_get_property', { name: 'path' }).catch(() => '')
+    const fonts = await saveSubtitleStyleFonts(path, preset.style)
+    if (fonts.length) playerNotice.set(`Saved and applied subtitle style “${preset.name}” with its fonts (${fonts.join(', ')})`)
   }
   async function swapTo(target: Stream) {
     const context = get(nowPlayingMedia)

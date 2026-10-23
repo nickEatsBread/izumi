@@ -49,7 +49,7 @@
   import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
   import { autoSyncSelectedSubtitle } from '$lib/player/subtitle-sync'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
-  import { savedSubtitleStyles, sessionSubtitleAdjustments, sessionSubtitleStyle, saveSubtitlePreset, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
+  import { savedSubtitleStyles, sessionSubtitleAdjustments, sessionSubtitleStyle, saveSubtitlePreset, saveSubtitleStyleFonts, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
   import { bingeSource } from '$lib/player/session'
   import { gmPanel, gmPanelOut } from '$lib/player/gm-freeze'
   import { motion } from '$lib/motion/gm-motion'
@@ -635,6 +635,9 @@
     })
     sessionSubtitleStyle.set(preset) // hearing is believing — show the saved look right away
     playerNotice.set(`Saved subtitle style “${preset.name}”`)
+    void invoke<string>('player_get_property', { name: 'path' }).catch(() => '')
+      .then((path) => saveSubtitleStyleFonts(path, preset.style))
+      .then((fonts) => { if (fonts.length) playerNotice.set(`Saved subtitle style “${preset.name}” with its fonts (${fonts.join(', ')})`) })
   }
 
   async function saveDeckSubtitleStyle() {

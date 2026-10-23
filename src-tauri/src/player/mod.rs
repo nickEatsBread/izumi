@@ -2216,6 +2216,10 @@ fn new_mpv_libmpv(game_mode_wayland: bool) -> Result<Mpv, libmpv2::Error> {
                 let _ = init.set_option(k.as_str(), v.as_str());
             }
         }
+        // Fonts kept for saved subtitle styles (see subtitle_fonts.rs). Additive to system fonts.
+        if let Some(dir) = crate::subtitle_fonts::dir() {
+            let _ = init.set_option("sub-fonts-dir", &*dir.to_string_lossy());
+        }
         let _ = init.set_option("screenshot-format", "png");
         // Name saved screenshots "izumi-shot0001.png" etc. (mpv's default is "mpv-shot%n").
         let _ = init.set_option("screenshot-template", "izumi-shot%n");
@@ -2425,6 +2429,10 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
             for (k, v) in opts.iter() {
                 let _ = init.set_option(k.as_str(), v.as_str());
             }
+        }
+        // Fonts kept for saved subtitle styles (see subtitle_fonts.rs). Additive to system fonts.
+        if let Some(dir) = crate::subtitle_fonts::dir() {
+            let _ = init.set_option("sub-fonts-dir", &*dir.to_string_lossy());
         }
         // Never let mpv hide the OS cursor. When embedded, the WebView2 overlay
         // sits above mpv and grabs mouse-move events, so mpv's autohide timer

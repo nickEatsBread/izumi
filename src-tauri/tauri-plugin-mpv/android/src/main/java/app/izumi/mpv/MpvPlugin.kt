@@ -530,24 +530,24 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
      * even once they were being applied. `sub-fonts-dir` is ADDITIVE: the platform font provider
      * still supplies the device's own families (and CJK coverage) on top of these.
      *
-     * Returns null when no fonts are bundled (the assets directory is populated at build time), in
-     * which case mpv is left on its own defaults.
+     * The directory is shared with the Rust side (`subtitle_fonts.rs`), which saves the fonts a
+     * saved subtitle style uses there: Tauri's app data dir on Android is the activity's `dataDir`.
      */
     private fun prepareFontsDir(): String? {
         return try {
+            val dir = File(activity.dataDir, "subtitle-fonts")
+            dir.mkdirs()
             val names = activity.assets.list("fonts")?.filter {
                 it.endsWith(".ttf", true) || it.endsWith(".otf", true) || it.endsWith(".ttc", true)
             }.orEmpty()
-            if (names.isEmpty()) return null
-            val dir = File(activity.filesDir, "mpv-fonts")
-            dir.mkdirs()
+            if (names.isEmpty()) return dir.absolutePath
             // Assets only change with a reinstall/update, and they are stored compressed (so their
             // uncompressed size isn't cheaply readable) — stamp the copy with the build instead.
             val info = activity.packageManager.getPackageInfo(activity.packageName, 0)
             @Suppress("DEPRECATION")
             val build = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
             // Kept OUTSIDE the fonts directory — libass scans everything in there.
-            val stamp = File(activity.filesDir, "mpv-fonts.stamp")
+            val stamp = File(activity.filesDir, "subtitle-fonts.stamp")
             val want = "$build|${names.sorted().joinToString(",")}"
             if (stamp.isFile && stamp.readText() == want) return dir.absolutePath
             for (name in names) {
