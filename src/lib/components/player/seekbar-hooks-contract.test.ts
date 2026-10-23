@@ -15,7 +15,15 @@ describe('seek bar styling hooks', () => {
 
   it('moves the desktop knob with a drag and marks it', () => {
     expect(seekbar).toContain('data-scrubbing={seeking || undefined}')
-    expect(seekbar).toContain('style:left="{seeking ? hoverPct : progressPct}%"')
+    expect(seekbar).toContain('const knobX = $derived((barW * (seeking ? hoverPct : progressPct)) / 100)')
+  })
+
+  it('draws the desktop knob inert, hidden and above the segment marks, moved by transform', () => {
+    const tag = seekbar.match(/\{#if !gm\}\s*(<span data-part="player\.seekbar\.knob"[^>]*>)/)?.[1] ?? ''
+    expect(tag).toContain('aria-hidden="true"')
+    for (const cls of ['pointer-events-none', 'opacity-0', 'z-20']) expect((tag.match(/class="([^"]*)"/)?.[1] ?? '').split(' ')).toContain(cls)
+    expect(tag).toContain('translateX(calc({knobX}px - 50%)) translateY(-50%)')
+    expect(tag).not.toContain('style:left')
   })
 
   it('keeps the root findable and hideable for the native player', () => {

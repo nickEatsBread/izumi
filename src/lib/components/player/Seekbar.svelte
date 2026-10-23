@@ -314,6 +314,8 @@
     if (barW <= 0 || dur <= 0) return 0
     return Math.min(barW - 100, Math.max(100, (scrubT / dur) * barW))
   })
+  // Desktop knob X in pixels, moved by transform for the same no-ghost-trail reason as the tooltip.
+  const knobX = $derived((barW * (seeking ? hoverPct : progressPct)) / 100)
 
   // A gamepad-driven scrub has no pointer events, so drive the thumbnail + tooltip width
   // from the store instead (touch already does this via the pointer handlers).
@@ -423,7 +425,7 @@
   {/if}
   <!-- Desktop knob: at the playhead, or under the pointer while dragging (`seeking`, the grab the preview bar tracks). Hidden until a theme sets `opacity: 1`. -->
   {#if !gm}
-    <span data-part="player.seekbar.knob" aria-hidden="true" class="pointer-events-none absolute top-1/2 z-10 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white opacity-0" data-scrubbing={seeking || undefined} style:left="{seeking ? hoverPct : progressPct}%"></span>
+    <span data-part="player.seekbar.knob" aria-hidden="true" class="pointer-events-none absolute left-0 top-1/2 z-20 size-3.5 rounded-full bg-white opacity-0" data-scrubbing={seeking || undefined} style="transform:translateX(calc({knobX}px - 50%)) translateY(-50%);will-change:transform"></span>
   {/if}
 
   <!-- Skip-segment tints overlaid on the segmented track. -->
