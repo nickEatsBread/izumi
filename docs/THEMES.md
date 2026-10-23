@@ -209,6 +209,7 @@ State values:
 | `data-variant` | `home.hero` | `template`, `phone`, `desktop` (the desktop banner is `detail.banner` on a series page) |
 | `data-state` | `home.hero` | `loading` on the placeholder shown while the featured titles load |
 | `data-state` | `hero.slide` | `leaving` on the outgoing artwork during a `fade` transition |
+| `data-state` | `hero.video`, `detail.video` | `playing` while the trailer plays (API 6) |
 | `data-variant` | `hero.indicator` | `default`, `bars`, `dots`, `pills`, `counter` |
 | `data-layout` | `row` | `carousel`, `grid` |
 | `data-row`, `data-role` | `row` | the row's stable id; the role is the part after its `:` (the whole id when it has none) |
@@ -334,6 +335,8 @@ State values:
 | `hero.slide` | part | The current slide (the artwork layer). During a `fade` transition the outgoing artwork stays under it as a second `hero.slide` with `data-state="leaving"`. | `data-state` |
 | `hero.art` | part | The slide artwork image. On a series page `data-art` names the artwork it shows. | `data-art` |
 | `hero.scrim` | part | A gradient over the artwork. |  |
+| `hero.video` | part | API 6 `hero.preview: "trailer"`: the layer the muted trailer plays in, over the slide artwork of the desktop banner or at the `trailer` artwork of a hero template; `data-state="playing"` while it plays. | `data-state` |
+| `hero.mute` | part | The mute button of the trailer in `hero.video`. |  |
 | `hero.logo` | part | The title logo, when the show has one. |  |
 | `hero.title` | part | The text title, when there is no logo. |  |
 | `hero.meta` | part | The facts line (format, episodes, score, status). |  |
@@ -432,6 +435,8 @@ State values:
 | `detail.title` | part | The title. |  |
 | `detail.logo` | part | The title logo inside `detail.title` (`detail.title: "logo"`). |  |
 | `detail.backdrop` | part | The header artwork of the series page (the phone band, the backdrop of an overlay page): the banner or key art, or the portrait poster (`detail.art: "portrait"`). On a title with none of them, the cover: shown, sharp, with `detail.artFallback: "cover"`, else hidden behind a wash of its colour until a theme shows it (`data-art="cover"`). | `data-art` |
+| `detail.video` | part | API 6 `detail.preview: "trailer"`: the layer the muted trailer plays in, over the header artwork of the series page; `data-state="playing"` while it plays. | `data-state` |
+| `detail.mute` | part | The mute button of the trailer in `detail.video`. |  |
 | `detail.body` | part | The text column over the artwork of an overlay series page. |  |
 | `detail.scrim` | part | A gradient over the artwork of the desktop overlay series page: the bottom fade (`data-dir="bottom"`) and the side fade behind the text (`data-dir="left"`). | `data-dir` |
 | `detail.studio` | part | The studio line of the desktop overlay page. |  |

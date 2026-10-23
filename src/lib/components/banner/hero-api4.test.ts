@@ -13,7 +13,7 @@ describe("a hero template's list action", () => {
   it('calls the host for the current slide', () => {
     expect(hero).toContain('onlist?: (m: Media) => void')
     expect(hero).toContain('list: onlist ? () => themeAction(() => onlist?.(current)) : undefined,')
-    expect(hero).toContain('<ThemeNode node={heroTheme.template} model={themeModel} eager titleHeading actions={templateActions} />')
+    expect(hero).toContain('<ThemeNode node={heroTheme.template} model={themeModel} eager titleHeading actions={templateActions} trailer={trailerOn ? heroTrailer : undefined} />')
   })
 
   it('opens the list editor over every Home that features titles', () => {
