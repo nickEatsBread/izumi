@@ -24,7 +24,7 @@
 
 <button type="button" class="theme-card" data-focusable data-theme-key={`${listing.origin}|${release.id}`} disabled={!!note}
   onmouseenter={hover} onmouseleave={stop} onfocus={focus} onblur={stop} onclick={() => onopen(listing)}>
-  <ThemeShots shots={shotsFor(release, platform)} name={release.name} {playing} phone={platform === 'phone'} />
+  <ThemeShots shots={shotsFor(release, platform)} name={release.name} {playing} phone={platform === 'phone'} strip={platform === 'phone'} />
   <span class="title"><strong>{release.name}</strong>{#if installed}<em>Installed</em>{/if}</span>
   <span class="meta">{release.author} · {platformLabel(release.platforms)}{#if storeName} · {storeName}{/if}</span>
   {#if note}<span class="meta">{note}</span>{/if}

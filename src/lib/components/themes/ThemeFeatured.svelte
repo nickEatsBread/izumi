@@ -22,7 +22,7 @@
     onmouseenter={() => held = true} onmouseleave={() => held = false} onfocusin={() => held = true} onfocusout={() => held = false}>
     {#key `${listing.origin}|${listing.release.id}`}
       <button type="button" class="feature" data-focusable data-theme-key={`${listing.origin}|${listing.release.id}`} onclick={() => onopen(listing)} in:motion={{ opacity: [0, 1], duration: 400 }}>
-        <ThemeShots shots={shotsFor(listing.release, platform)} name={listing.release.name} playing phone={platform === 'phone'} />
+        <ThemeShots shots={shotsFor(listing.release, platform)} name={listing.release.name} playing phone={platform === 'phone'} strip={platform === 'phone'} />
         <span class="copy">
           <span class="eyebrow">Featured</span>
           <strong>{listing.release.name}</strong>

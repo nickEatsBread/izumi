@@ -30,12 +30,13 @@ function tween(duration: number, frame: (t: number) => void): Promise<void> {
   })
 }
 
-/** A protected overlay: a black scrim and the screenshot, above everything (including the bar). */
+/** A protected overlay: a black scrim and the screenshot, above the app and the preview bar (70) but
+ *  below the on-screen keyboard (190, osk-contracts). */
 function stage(src: string) {
   const root = document.createElement('div')
   root.setAttribute('data-theme-protected', '')
   root.setAttribute('aria-hidden', 'true')
-  root.style.cssText = 'position:fixed;inset:0;z-index:2147483000;pointer-events:none;transform:translateZ(0)'
+  root.style.cssText = 'position:fixed;inset:0;z-index:180;pointer-events:none;transform:translateZ(0)'
   const scrim = document.createElement('div')
   scrim.style.cssText = 'position:absolute;inset:0;background:#000;opacity:0;transform:translateZ(0)'
   const image = document.createElement('img')
