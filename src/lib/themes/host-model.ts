@@ -63,29 +63,36 @@ export function seriesKindText(format: string | null | undefined): string | unde
 }
 
 const DAY = 86_400
-// Sequel wording when the catalog record carries no relations (cards and search results do not).
-const SEQUEL_TITLE = /\b(season|part|cour)\s*\d+\b|\b\d+(st|nd|rd|th)\s+season\b|\s(II|III|IV)\b/i
+// Sequel wording when the catalog record carries no usable relations (cards, search results and some
+// backup catalogs send none). A bare 1 ("Season 1") is the first season, and the Roman numerals are
+// case-sensitive so a lowercase " iv " in a title is not a sequel.
+const SEQUEL_TITLE = /\b(season|part|cour)\s*(?!0*1\b)\d+\b|\b(?!0*1st\b)\d+(st|nd|rd|th)\s+season\b/i
+const SEQUEL_ROMAN = /\s(II|III|IV)\b/
 
 /** The freshness ribbon streaming apps put on fresh titles (API 6 `newBadge`): "New Season" for a sequel
  *  that started in the last 21 days, "New Series" / "New Movie" for anything else that started in the last
  *  30, else "New Episode" while a running series' weekly episode aired in the last 7 days (its next one is
- *  at most a week away, or due). Nothing otherwise, and nothing without dates. */
+ *  at most a week away, or at most a week overdue). Never "New Episode" for a film. Nothing otherwise,
+ *  and nothing without dates. */
 export function newBadgeText(media: Pick<Media, 'format' | 'status' | 'startDate' | 'nextAiringEpisode' | 'relations' | 'title'>, now = Date.now()): string | undefined {
   const seconds = Math.floor(now / 1000)
   const start = media.startDate
   const startedAt = start?.year && start.month && start.day ? Date.UTC(start.year, start.month - 1, start.day) / 1000 : undefined
   const age = startedAt !== undefined ? seconds - startedAt : undefined
-  if (age !== undefined && age >= 0) {
-    if (media.format === 'MOVIE') return age <= 30 * DAY ? 'New Movie' : undefined
-    const sequel = media.relations?.edges?.some((edge) => edge.relationType === 'PREQUEL' && (edge.node.type ?? 'ANIME') === 'ANIME')
-      ?? [media.title?.romaji, media.title?.english].some((name) => !!name && SEQUEL_TITLE.test(name))
-    if (sequel && age <= 21 * DAY) return 'New Season'
-    if (!sequel && age <= 30 * DAY) return 'New Series'
+  const movie = media.format === 'MOVIE'
+  if (age !== undefined && age >= 0 && age <= 30 * DAY) {
+    if (movie) return 'New Movie'
+    const edges = media.relations?.edges
+    const sequel = edges?.length
+      ? edges.some((edge) => edge.relationType === 'PREQUEL' && (edge.node.type ?? 'ANIME') === 'ANIME')
+      : [media.title?.romaji, media.title?.english].some((name) => !!name && (SEQUEL_TITLE.test(name) || SEQUEL_ROMAN.test(name)))
+    if (!sequel) return 'New Series'
+    if (age <= 21 * DAY) return 'New Season'
   }
   const next = media.nextAiringEpisode
-  if (media.status !== 'RELEASING' || !next || next.episode < 2) return undefined
+  if (movie || media.status !== 'RELEASING' || !next || next.episode < 2) return undefined
   const left = next.airingAt ? next.airingAt - seconds : next.timeUntilAiring
-  return left <= 7 * DAY ? 'New Episode' : undefined
+  return left >= -7 * DAY && left <= 7 * DAY ? 'New Episode' : undefined
 }
 
 /** Shared host bindings so every surface formats score, duration and artwork the same way.

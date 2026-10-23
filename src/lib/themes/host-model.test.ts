@@ -292,6 +292,28 @@ describe('newBadge (API 6)', () => {
     expect(newBadgeText({ ...base, status: 'NOT_YET_RELEASED', startDate: started(-5), nextAiringEpisode: { episode: 1, airingAt: at(5), timeUntilAiring: 5 * day } }, now)).toBeUndefined()
   })
 
+  it('refuses films, stale airings and a bare first season', () => {
+    // A film is never a new episode, whatever its airing data says.
+    expect(newBadgeText({ ...base, format: 'MOVIE', nextAiringEpisode: { episode: 3, airingAt: at(2), timeUntilAiring: 2 * day } }, now)).toBeUndefined()
+    // An airing a month overdue is stale; a tenth of a day overdue is still fresh.
+    const running = { ...base, startDate: started(60) }
+    expect(newBadgeText({ ...running, nextAiringEpisode: { episode: 9, airingAt: at(-30), timeUntilAiring: -30 * day } }, now)).toBeUndefined()
+    expect(newBadgeText({ ...running, nextAiringEpisode: { episode: 9, airingAt: at(-0.1), timeUntilAiring: 0 } }, now)).toBe('New Episode')
+    // Empty relations mean unknown, so the title wording decides.
+    const empty = { relations: { edges: [] } }
+    expect(newBadgeText({ ...base, ...empty, title: { romaji: 'Kumo Season 2' }, startDate: started(14) } as Media, now)).toBe('New Season')
+    // "Season 1" is the first season; later seasons, "2nd Season" and a Roman numeral are sequels.
+    const named = (romaji: string) => newBadgeText({ ...base, title: { romaji }, startDate: started(14) } as Media, now)
+    expect(named('Kumo Season 1')).toBe('New Series')
+    expect(named('Kumo Part 01')).toBe('New Series')
+    expect(named('Kumo 1st Season')).toBe('New Series')
+    expect(named('Kumo Season 2')).toBe('New Season')
+    expect(named('Kumo Season 10')).toBe('New Season')
+    expect(named('Re:Zero 2nd Season')).toBe('New Season')
+    expect(named('Mob Psycho 100 II')).toBe('New Season')
+    expect(named('Kumo iv test')).toBe('New Series')
+  })
+
   it('binds it on the display model', () => {
     expect(mediaDisplayModel({ ...media, startDate: started(3) } as Media, {}, 0, now).newBadge).toBe('New Series')
     expect(mediaDisplayModel(media, {}, 0, now).newBadge).toBeUndefined()
