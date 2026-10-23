@@ -78,13 +78,19 @@
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition, subtitleAssSnapshot,
     gifIncludeSubtitles, androidAutoPip, keepAwakeWhilePlaying,
     preferredAudioLang, preferredSubLang, audioProcessing, sceneBookmarksEnabled,
-    autoSelectSource, autoSelectCountdown,
+    autoSelectSource, autoSelectCountdown, hideSpoilers,
   } from '$lib/settings/ui'
   import { banner, cover } from '$lib/anilist/media'
   import { MPV_SUBTITLE_DEFAULTS, TEXT_TRACK, dialogueBottom, readSubtitleDefaults, subtitleStyleProps, subtitleTrackFrom, type SubtitleTrack } from '$lib/player/subtitle-style'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
   import { savedSubtitleStyles, sessionSubtitleAdjustments, sessionSubtitleStyle, saveSubtitlePreset, saveSubtitleStyleFonts, effectiveSubtitleStyle, resetSubtitleSession, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
-  import { bingeSource } from '$lib/player/session'
+  import { bingeSource, oskOpen, upNextPrompt } from '$lib/player/session'
+  import { seriesRatingPrompt } from '$lib/player/series-rating'
+  import { navLayerOpen } from '$lib/nav/layers'
+  import { themePresentation } from '$lib/themes/runtime'
+  import { resolvePlayerControls } from '$lib/themes/presentation'
+  import { loadEpisodeMeta, episodeName } from '$lib/player/episode-info'
+  import type { EpMeta } from '$lib/anizip/types'
   import { SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { getMediaSkipSegments } from '$lib/stremio/skip-segments'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
@@ -134,6 +140,7 @@
   import P2PStatusOverlay from './P2PStatusOverlay.svelte'
   import BufferSpinner from './BufferSpinner.svelte'
   import SubtitleEditor from './SubtitleEditor.svelte'
+  import PausedSummary from './PausedSummary.svelte'
   import { matchRememberedTrack, rememberSeriesTrack, rememberedSeriesTrack } from '$lib/player/track-preferences'
   import { addSceneBookmark } from '$lib/player/scene-bookmarks'
   import { incognito } from '$lib/stores/incognito'
@@ -488,13 +495,14 @@
   }
 
   function armHide() { clearTimeout(hideTimer); if (!paused && !scrubbing) hideTimer = setTimeout(() => (controlsShown = false), $isAndroidTv ? 6500 : 3500) }
-  function showControls() { controlsShown = true; armHide() }
+  function showControls() { inputTick++; controlsShown = true; armHide() }
   function toggleControls() {
     if (scrubbing) { controlsShown = true; return }
     controlsShown = !controlsShown
     if (controlsShown) armHide()
   }
-  $effect(() => { if (paused) { clearTimeout(hideTimer); controlsShown = true } else if (controlsShown) armHide() })
+  // Paused pins the controls up, except under the paused summary (theme API 6), which replaces them.
+  $effect(() => { if (paused && !pausedIdle) { clearTimeout(hideTimer); controlsShown = true } else if (controlsShown) armHide() })
 
   function focusTvTransport() {
     requestAnimationFrame(() => {
@@ -532,6 +540,7 @@
       return
     }
 
+    inputTick++
     if (controlsShown) armHide()
   }
 
@@ -727,6 +736,14 @@
   let downWasOnButton = false
   function noteDownTarget(e: PointerEvent) {
     downWasOnButton = !!(e.target as Element | null)?.closest?.('button')
+  }
+  // Every touch on the video restarts the paused-summary wait. A touch while the summary shows only
+  // takes it away and brings the controls back: it never reaches the tap, seek or drag handlers.
+  function onFrameDownCapture(e: PointerEvent) {
+    noteDownTarget(e)
+    if (!pausedIdle) { inputTick++; return }
+    e.stopPropagation()
+    showControls()
   }
   function suppressGhostClick(e: MouseEvent) {
     if (!downWasOnButton && (e.target as Element | null)?.closest?.('button')) {
@@ -1803,6 +1820,52 @@
     subtitleEditorOpen = false
     if (gifRecording) { gifRecording = false; void androidGifAbort().catch(() => {}) }
   })
+
+  // --- Theme API 6 player choices (`player.time`, `.title`, `.paused`; Rewind and Forward always exist here) ---
+  const playerControls = $derived(resolvePlayerControls($themePresentation))
+  let episodeMeta = $state<EpMeta | undefined>()
+  // Keyed on the title and episode, not the wrapper object: a source swap re-sets `nowPlayingMedia`
+  // for the same episode and must not blank the name while the lookup lands.
+  const episodeKey = $derived(playerControls.title === 'episode' && $nowPlayingMedia?.episode ? `${$nowPlayingMedia.media.id}|${$nowPlayingMedia.episode}` : '')
+  $effect(() => {
+    const key = episodeKey
+    episodeMeta = undefined
+    const target = get(nowPlayingMedia)
+    if (!key || !target?.episode) return
+    return loadEpisodeMeta(target.media, target.episode, (meta) => { episodeMeta = meta })
+  })
+  const episodeTitle = $derived(np.episode != null ? episodeName(np.episode, episodeMeta, $hideSpoilers) : undefined)
+  // Paused summary: five seconds after the last input while paused on the full-screen player (landscape;
+  // TV is always landscape), never while loading, at the end of the file, locked, docked, in PiP, during
+  // a handover or under an open sheet, editor, picker, prompt, keyboard or layer. `inputTick` is bumped
+  // by showControls(), every touch on the video and every remote key, so any input restarts the wait
+  // and hides it. While it shows, the controls give way (`controlsShown` is false).
+  let inputTick = $state(0)
+  let pausedIdle = $state(false)
+  $effect(() => {
+    const armed = playerControls.paused === 'summary' && paused && landscape && firstFrameSeen && !loading && !recovering
+      && !atEof && !locked && !scrubbing && !miniLayout && !handover && !resolvingNext && !overlayHidden
+      && !sheet && !subtitleEditorOpen && !$upNextPrompt && !$seriesRatingPrompt && !$oskOpen && !$navLayerOpen
+    pausedIdle = false
+    if (!armed) return
+    void inputTick
+    const t = setTimeout(() => { pausedIdle = true; controlsShown = false }, 5000)
+    return () => clearTimeout(t)
+  })
+  // The summary's first key only takes it away and brings the controls back: ahead of every other
+  // handler (window capture, and the TV's Back is dispatched on window itself), so it never also
+  // plays, seeks, moves focus or leaves the player.
+  $effect(() => {
+    if (!pausedIdle) return
+    const dismiss = (event: KeyboardEvent) => {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      showControls()
+      if ($isAndroidTv) focusTvTransport()
+    }
+    window.addEventListener('keydown', dismiss, true)
+    return () => window.removeEventListener('keydown', dismiss, true)
+  })
   const handoverArt = $derived.by(() => {
     const target = $connecting?.media ?? $streamPicker?.media ?? $nowPlayingMedia?.media
     return target ? banner(target) || cover(target) : ''
@@ -2229,7 +2292,7 @@
     style:height={miniLayout && miniDock ? `${miniDock.height}px` : null}
     onpointerdown={onRootDown} onpointermove={onRootMove} onpointerup={onRootUp} onpointercancel={onRootCancel} onlostpointercapture={onRootLostCapture}
     oncontextmenu={(e) => e.preventDefault()}
-    onpointerdowncapture={noteDownTarget} onclickcapture={suppressGhostClick} role="presentation">
+    onpointerdowncapture={onFrameDownCapture} onclickcapture={suppressGhostClick} role="presentation">
   <!-- Loading with the controls hidden (or locked): the spinner is the only thing on screen, so it
        still reads as "working on it" without a tap. With controls up it moves into the transport
        button below instead, so the play/pause target is never taken away. -->
@@ -2302,7 +2365,11 @@
   {/if}
 
   {#if showSkip && currentSeg}
-    <button transition:fade={{ duration: 180 }} onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skipSegment() }} class="absolute bottom-14 right-3 z-10 rounded-lg bg-white/90 px-4 py-2 text-sm font-bold text-black shadow-lg">Skip {currentSeg.label}</button>
+    <button transition:fade={{ duration: 180 }} data-part="player.skip" data-kind={currentSeg.type} onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skipSegment() }} class="absolute bottom-14 right-3 z-10 rounded-lg bg-white/90 px-4 py-2 text-sm font-bold text-black shadow-lg">Skip {currentSeg.label}</button>
+  {/if}
+
+  {#if pausedIdle}
+    <PausedSummary media={$nowPlayingMedia?.media} episode={$nowPlayingMedia?.episode ?? np.episode ?? undefined} title={np.animeTitle || np.title} />
   {/if}
 
   <!-- Locked: only an unlock affordance -->
@@ -2314,29 +2381,37 @@
     <div in:fade={{ duration: 180 }} class="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/65 via-transparent to-black/75"></div>
 
     <!-- Top bar -->
-    <div in:fade={{ duration: 180 }} class="player-top-bar absolute inset-x-0 top-0 flex items-center gap-2 p-2 landscape:p-3" onclick={(e) => e.stopPropagation()} role="presentation">
+    <div in:fade={{ duration: 180 }} data-part="player.top" class="player-top-bar absolute inset-x-0 top-0 flex items-center gap-2 p-2 landscape:p-3" onclick={(e) => e.stopPropagation()} role="presentation">
       <!-- Portrait: the chevron collapses to the mini-player, as YouTube's does; stopping is the
            bar's ✕. Landscape keeps its back arrow as the way out of fullscreen playback. -->
-      <button onclick={() => { if (landscape) void close(); else minimizeFromButton() }} class="grid h-10 w-10 shrink-0 place-items-center active:scale-90" aria-label={landscape ? 'Close player' : 'Minimize player'}>
+      <button data-part="player.control" data-control="back" onclick={() => { if (landscape) void close(); else minimizeFromButton() }} class="grid h-10 w-10 shrink-0 place-items-center active:scale-90" aria-label={landscape ? 'Close player' : 'Minimize player'}>
         {#if landscape}<ChevronLeft size={27} />{:else}<ChevronDown size={29} />{/if}
       </button>
       {#if landscape}
-        <div class="min-w-0 flex-1">
-          <div class="truncate text-base font-bold">{np.animeTitle ?? np.title}</div>
-          {#if np.episode != null}<div class="truncate text-[11px] text-white/70">Episode {np.episode}{np.total ? ` / ${np.total}` : ''}</div>{/if}
+        <div data-part="player.heading" class="min-w-0 flex-1">
+          <div data-part="player.title" class="truncate text-base font-bold">{np.animeTitle ?? np.title}</div>
+          {#if np.episode != null}
+            <div data-part="player.episode" data-episode={np.episode} data-season={episodeMeta?.season} class="truncate text-[11px] text-white/70">
+              {#if playerControls.title === 'episode'}
+                <span data-part="player.episode.number">E{np.episode}</span>{#if episodeTitle}{' '}<span data-part="player.episode.name">{episodeTitle}</span>{/if}
+              {:else}
+                Episode {np.episode}{np.total ? ` / ${np.total}` : ''}
+              {/if}
+            </div>
+          {/if}
         </div>
       {:else}
         <div class="flex-1"></div>
       {/if}
-      <button onclick={openSettings} class="grid h-10 w-10 shrink-0 place-items-center active:scale-90" aria-label="Video settings"><Settings size={24} /></button>
+      <button data-part="player.control" data-control="options" onclick={openSettings} class="grid h-10 w-10 shrink-0 place-items-center active:scale-90" aria-label="Video settings"><Settings size={24} /></button>
     </div>
 
     <!-- Center transport (morphing play/pause). While loading the centre glyph becomes a spinner in
          place — the row itself never disappears, so rewind/forward stay usable and the button keeps
          its hit target (you can still pause a stream that is still buffering). -->
-    <div in:fade|global={{ duration: 180 }} class="pointer-events-none absolute inset-0 flex items-center justify-center gap-10">
-      <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip(-$seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Rewind"><RotateCcw size={30} /></button>
-      <button data-tv-primary onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); pressPause() }} class="transport-button pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full transition-transform active:scale-90" aria-label={loading || recovering ? 'Loading' : paused ? 'Play' : 'Pause'} aria-busy={loading || recovering}>
+    <div in:fade|global={{ duration: 180 }} data-part="player.transport" class="pointer-events-none absolute inset-0 flex items-center justify-center gap-10">
+      <button data-part="player.control" data-control="rewind" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip(-$seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Rewind"><RotateCcw size={30} /></button>
+      <button data-tv-primary data-part="player.control" data-control="play" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); pressPause() }} class="transport-button pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full transition-transform active:scale-90" aria-label={loading || recovering ? 'Loading' : paused ? 'Play' : 'Pause'} aria-busy={loading || recovering}>
         {#if loading || recovering}
           <span in:fade={{ duration: 120 }} class="grid place-items-center">
             <BufferSpinner size={40} />
@@ -2351,14 +2426,21 @@
           {/key}
         {/if}
       </button>
-      <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip($seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Forward"><RotateCw size={30} /></button>
+      <button data-part="player.control" data-control="forward" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip($seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Forward"><RotateCw size={30} /></button>
     </div>
 
     <!-- Timeline sits on the actual bottom edge of the video, matching native mobile players. -->
-    <div in:fade={{ duration: 180 }} class="player-timeline absolute inset-x-0 bottom-0 h-14" onclick={(e) => e.stopPropagation()} role="presentation">
+    <div in:fade={{ duration: 180 }} data-part="player.bottom" class="player-timeline absolute inset-x-0 bottom-0 h-14" onclick={(e) => e.stopPropagation()} role="presentation">
       <div class="timeline-controls absolute inset-x-0 bottom-3 flex items-center justify-between px-3 text-xs tabular-nums text-white/90">
-        <span class="pointer-events-none">{fmt(pos)} / {fmt(dur)}</span>
+        {#if playerControls.time === 'default'}
+          <span data-part="player.time" data-variant="default" class="pointer-events-none">{fmt(pos)} / {fmt(dur)}</span>
+        {:else}
+          {#if playerControls.time === 'split'}<span data-part="player.time" data-variant="elapsed" class="pointer-events-none">{fmt(pos)}</span>{/if}
+          <!-- The time left (or the total, after the elapsed time) sits at the row's end, beside full screen. -->
+          <span data-part="player.time" data-variant={playerControls.time === 'split' ? 'total' : 'remaining'} class="pointer-events-none ml-auto">{fmt(playerControls.time === 'split' ? dur : Math.max(0, dur - pos))}</span>
+        {/if}
         <button
+          data-part="player.control" data-control="fullscreen"
           class="grid h-9 w-9 place-items-center active:scale-90"
           onpointerdown={(e) => e.stopPropagation()}
           onpointerup={(e) => e.stopPropagation()}
@@ -2368,23 +2450,23 @@
           {#if landscape}<Minimize size={22} />{:else}<Maximize size={22} />{/if}
         </button>
       </div>
-      <div bind:this={barEl} class="timeline-hitbox absolute inset-x-0 bottom-0 h-5 w-full cursor-pointer touch-none" onpointerdown={onBarDown} onpointermove={onBarMove} onpointerup={onBarUp} onpointercancel={onBarCancel} onlostpointercapture={onBarLostCapture}
+      <div bind:this={barEl} data-part="player.seekbar" class="timeline-hitbox absolute inset-x-0 bottom-0 h-5 w-full cursor-pointer touch-none" onpointerdown={onBarDown} onpointermove={onBarMove} onpointerup={onBarUp} onpointercancel={onBarCancel} onlostpointercapture={onBarLostCapture}
              role="slider" tabindex="0" aria-label="Seek" aria-valuemin={0} aria-valuemax={Math.round(dur)} aria-valuenow={Math.round(pos)}>
         <!-- YouTube-style edge timeline: the track is flush with the video bottom and the centred
              thumb crosses that boundary. Portrait video overflow stays visible so it is not cut. -->
-        <div class="absolute inset-x-0 bottom-0 h-1 overflow-hidden bg-white/25">
+        <div data-part="player.seekbar.track" class="absolute inset-x-0 bottom-0 h-1 overflow-hidden bg-white/25">
           <!-- Fills scale on the compositor (transform), not via width: a width change is a layout
                plus paint on every position tick while the controls are up. -->
-          <div class="absolute inset-y-0 left-0 w-full origin-left bg-white/40" style="transform:scaleX({cachePct / 100})"></div>
+          <div data-part="player.seekbar.buffer" class="absolute inset-y-0 left-0 w-full origin-left bg-white/40" style="transform:scaleX({cachePct / 100})"></div>
           {#each segments as s (s.type + s.start)}
             <div class="absolute inset-y-0 {s.type === 'op' ? 'bg-sky-400/60' : s.type === 'ed' ? 'bg-fuchsia-400/60' : 'bg-amber-400/60'}" style="left:{(s.start / dur) * 100}%;width:{((s.end - s.start) / dur) * 100}%"></div>
           {/each}
-          <div class="absolute inset-y-0 left-0 w-full origin-left bg-theme" style="transform:scaleX({playedPct / 100})"></div>
+          <div data-part="player.seekbar.fill" class="absolute inset-y-0 left-0 w-full origin-left bg-theme" style="transform:scaleX({playedPct / 100})"></div>
         </div>
         {#each chapterTimes as t (t)}<div class="absolute bottom-0 h-1 w-[3px] -translate-x-1/2 rounded-full bg-black/70" style="left:{(t / dur) * 100}%"></div>{/each}
-        <div class="absolute -bottom-[5px] h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-theme shadow-md" style="left:clamp(7px, {playedPct}%, calc(100% - 7px))"></div>
+        <div data-part="player.seekbar.knob" class="absolute -bottom-[5px] h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-theme shadow-md" style="left:clamp(7px, {playedPct}%, calc(100% - 7px))"></div>
         {#if scrubbing}
-          <div class="pointer-events-none absolute bottom-8 flex -translate-x-1/2 flex-col items-center gap-1" style="left:{playedPct}%">
+          <div data-part="player.seekbar.preview" class="pointer-events-none absolute bottom-8 flex -translate-x-1/2 flex-col items-center gap-1" style="left:{playedPct}%">
             {#if thumbUrl}<img src={thumbUrl} alt="" class="h-20 w-36 rounded-md border border-white/20 object-cover shadow-lg" />{/if}
             <span class="rounded bg-black/80 px-2 py-0.5 text-xs font-bold tabular-nums">{fmt(pos)}</span>
           </div>
