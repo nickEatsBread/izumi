@@ -32,6 +32,8 @@
   import Play from '@lucide/svelte/icons/play'
   import PreviewCard from './PreviewCard.svelte'
   import { previewPos, rootZoom, SIDEBAR_W } from './preview-pos'
+  import { expandPos, type ExpandBox } from './expand-pos'
+  import { reducedMotion } from '$lib/motion/gm-motion'
   import { portal } from '$lib/util/portal'
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   import { compactRatingLabel, primaryRating } from '$lib/catalog/media-metadata'
@@ -85,6 +87,10 @@
   let pos = $state({ left: 0, top: 0 })
   let el: HTMLElement
   let closeT: ReturnType<typeof setTimeout>
+  // API 6 `cardPreview: "expand"`: the preview grows out of the card after a dwell (expand-pos.ts).
+  const expandMode = $derived($themePresentation?.cardPreview === 'expand')
+  let expandBox = $state<ExpandBox | undefined>()
+  let openT: ReturnType<typeof setTimeout> | undefined
   const dot = (m: Media) => m.status === 'RELEASING' ? '#3db4f2'
     : m.status === 'NOT_YET_RELEASED' ? '#f79a63'
     : m.catalog?.provider === 'jvm' && !m.status ? undefined
@@ -111,7 +117,12 @@
     const box = art?.getBoundingClientRect() ?? r
     const nav = document.documentElement.dataset.themeNav
     const rail = nav === 'top' || nav === 'bottom' ? 0 : SIDEBAR_W
-    pos = previewPos(box, { width: window.innerWidth, height: window.innerHeight }, rootZoom(), rail)
+    if (expandMode) expandBox = expandPos({ left: box.left, top: box.top, width: box.width, height: box.height }, { width: window.innerWidth, height: window.innerHeight }, rootZoom(), rail)
+    else pos = previewPos(box, { width: window.innerWidth, height: window.innerHeight }, rootZoom(), rail)
+  }
+  // Grows the preview out of the card: at scale 2/3 the 1.5x box sits exactly on it (expand-pos.ts).
+  function grow(_node: Element, { duration }: { duration: number }) {
+    return { duration, easing: cubicOut, css: (t: number) => `transform: scale(${2 / 3 + t / 3}); opacity: ${Math.min(1, t * 4)}` }
   }
   // Hovercard bridge: opening cancels any pending close; leaving the card (or the
   // preview) schedules a short delayed close so the pointer can travel card→preview
@@ -123,13 +134,19 @@
   // affordance.
   // A theme that draws its own hover panel in the card template switches the popup off (API 3 `cardPreview`).
   const previewOff = $derived(simpleHover || $themePresentation?.cardPreview === 'none')
-  function open() { if (previewOff || get(gameMode) || get(controllerMode) || get(isMobile) || get(isTv) || needsPointerMove) return; clearTimeout(closeT); place(); hovered = true }
+  function open() { if (previewOff || get(gameMode) || get(controllerMode) || get(isMobile) || get(isTv) || needsPointerMove) return
+    clearTimeout(closeT)
+    if (!expandMode) { place(); hovered = true; return }
+    clearTimeout(openT)
+    // A row that moved during the dwell (`carousel-nav`) slid this card out from under the pointer.
+    openT = setTimeout(() => { if (needsPointerMove) return; place(); hovered = true }, 500)
+  }
   function openAfterPointerMove() {
     if (!needsPointerMove) return
     needsPointerMove = false
     open()
   }
-  function scheduleClose() { clearTimeout(closeT); closeT = setTimeout(() => (hovered = false), 60) }
+  function scheduleClose() { clearTimeout(openT); clearTimeout(closeT); closeT = setTimeout(() => (hovered = false), 60) }
   function keepOpen() { clearTimeout(closeT) }
   // The hover preview is portalled to <body>, so a wheel over it cannot naturally bubble to the
   // row it came from. Forward the same deltas to that exact row; Carousel owns normalization,
@@ -164,7 +181,7 @@
   // listener meant hundreds firing on every scroll on big grids (the accumulating scroll lag).
   $effect(() => {
     if (!hovered) return
-    const close = () => (hovered = false)
+    const close = () => { clearTimeout(openT); hovered = false }
     window.addEventListener('scroll', close, true)
     window.addEventListener('carousel-nav', close)
     return () => {
@@ -172,7 +189,7 @@
       window.removeEventListener('carousel-nav', close)
     }
   })
-  $effect(() => () => clearTimeout(closeT))
+  $effect(() => () => { clearTimeout(closeT); clearTimeout(openT) })
 </script>
 
 <div data-part="card" data-family={cardFamily} bind:this={el} use:nearViewport={cardArt.wanted.size ? cardArt.gate : undefined} data-theme-card style:--cover-rgb={ambientFromHex(media.coverImage?.color)} class={fill ? 'w-full' : $isTv ? 'w-44 shrink-0' : 'w-36 shrink-0 sm:w-[152px]'} style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
@@ -236,10 +253,19 @@
   </a>
 </div>
 
-{#if hovered && !previewOff}
-  <!-- use:portal — re-parent to <body>. In place, the row's `.load-in` transform animation makes
-       the card wrapper the containing block for this `fixed` popup (offset by the card's origin,
-       clipped by the carousel, painted under sibling posters). From <body>, fixed = viewport. -->
+<!-- use:portal — re-parent to <body>. In place, the row's `.load-in` transform animation makes
+     the card wrapper the containing block for this `fixed` popup (offset by the card's origin,
+     clipped by the carousel, painted under sibling posters). From <body>, fixed = viewport.
+     Two sibling blocks, not one nested in the other: Svelte transitions are local to their block. -->
+{#if hovered && !previewOff && expandMode && expandBox}
+  <div use:portal class="pointer-events-auto fixed z-50 will-change-[transform,opacity]"
+       style={`left:${expandBox.left}px;top:${expandBox.top}px;width:${expandBox.width}px;transform-origin:${expandBox.originX}px ${expandBox.originY}px`}
+       in:grow={{ duration: reducedMotion() ? 0 : 300 }} out:grow={{ duration: reducedMotion() ? 0 : 220 }}
+       onpointerenter={keepOpen} onpointerleave={scheduleClose} onwheel={forwardPreviewWheel} role="presentation">
+    <PreviewCard {media} {preferLinkedRating} variant="expand" artHeight={expandBox.artHeight} logo={cardArt.art.logo} />
+  </div>
+{/if}
+{#if hovered && !previewOff && !expandMode}
   <div use:portal class="pointer-events-auto fixed z-50 will-change-[transform,opacity]" style={`left:${pos.left}px;top:${pos.top}px`}
        in:fade={{ duration: 140, easing: cubicOut }} out:fade={{ duration: 120, easing: cubicOut }}
        onpointerenter={keepOpen} onpointerleave={scheduleClose} onwheel={forwardPreviewWheel} role="presentation">

@@ -41,6 +41,6 @@ describe('card extras', () => {
     const card = read('./SmallCard.svelte')
     expect(card).toContain("const previewOff = $derived(simpleHover || $themePresentation?.cardPreview === 'none')")
     expect(card).toContain('function open() { if (previewOff ||')
-    expect(card).toContain('{#if hovered && !previewOff}')
+    expect(card).toContain('{#if hovered && !previewOff && !expandMode}')
   })
 })

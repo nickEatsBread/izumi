@@ -214,6 +214,8 @@ State values:
 | `data-row`, `data-role` | `row` | the row's stable id; the role is the part after its `:` (the whole id when it has none) |
 | `data-family` | `card` | `poster`, `search`, `continue`, `preview` |
 | `data-state` | `card.overlay` | `resolving` while a Continue card looks up its source (also over a `continue` template) |
+| `data-variant` | `preview` | `expand` (API 6 `cardPreview: "expand"`) |
+| `data-action` | `preview.action` | `play`, `list`, `favorite`, `details` |
 | `data-caption` | `block.latest-episodes` | `below`, `overlay` |
 | `data-aired` | `block.item` (airing-today) | present once the episode has aired |
 | `data-key` | `block.stat` | `episodes`, `titles` |
@@ -409,6 +411,14 @@ State values:
 | `card.progress` | part | The watch-progress track; the fill is its child. |  |
 | `card.episode` | part | The episode number on resume cards. |  |
 | `card.overlay` | part | The hover or play overlay on the artwork. A Continue card shows it with `data-state="resolving"` while it looks up its source; over a `continue` template it covers the whole card and exists only then. | `data-state` |
+| `preview` | part | The expanding hover preview (API 6 `cardPreview: "expand"`, `data-variant="expand"`): it grows out of the hovered card after a short dwell. The classic popup is a `card` with `data-family="preview"`. | `data-variant` |
+| `preview.art` | part | The expanding preview's 16:9 artwork, with the trailer over it when the title has one. |  |
+| `preview.logo` | part | The title logo at the bottom left of `preview.art`, when the card's template binds one. |  |
+| `preview.title` | part | The title over `preview.art` when there is no logo. |  |
+| `preview.actions` | part | The row of round buttons in the expanding preview. |  |
+| `preview.action` | part | One round button, named by `data-action`: `play` (opens the series page), `list` (the device watchlist), `favorite` (AniList, signed in) and `details` (opens the series page). | `data-action` |
+| `preview.meta` | part | The score and the format, season, episodes and status line of the expanding preview. |  |
+| `preview.genres` | part | Up to three genres, dot-separated. |  |
 
 #### Series page
 
