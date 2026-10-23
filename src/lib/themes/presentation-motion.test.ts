@@ -26,6 +26,7 @@ describe('motion keys (API 6)', () => {
     expect(() => parsePresentation({ detail: { preview: 'trailer' } }, 5)).toThrow('unsupported')
     expect(() => parsePresentation({ hero: { template: { type: 'artwork', artwork: 'trailer' } } }, 5)).toThrow('unsupported')
     expect(parsePresentation({ cardPreview: 'none' }, 5).cardPreview).toBe('none')
+    expect(() => parsePresentation({ hero: { template: { type: 'text', text: 'x', when: { field: 'trailer' } } } })).toThrow('unsupported')
   })
 
   it('refuses unknown values', () => {

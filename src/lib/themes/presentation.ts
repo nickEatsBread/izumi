@@ -684,7 +684,7 @@ export function parseNode(value: unknown, budget = { count: 0 }, depth = 0, inte
   }
   if (raw.when !== undefined) {
     const condition = record(raw.when); only(condition, ['field', 'atMost', ...api3(api, ['absent'])])
-    node.when = { field: choice<DisplayField | ArtworkKind>(condition.field, api >= 3 ? [...fieldsFor(api), ...artworkFor(api)] : fieldsFor(api)) }
+    node.when = { field: choice<DisplayField | ArtworkKind>(condition.field, api >= 3 ? [...fieldsFor(api), ...artworkFor(api).filter((kind) => kind !== 'trailer')] : fieldsFor(api)) }
     if (condition.atMost !== undefined) {
       if (!numericFields.includes(node.when.field)) throw new Error('atMost only applies to numeric fields: rankPosition, score, duration, episodeNumber, progress, nextEpisode, slide, slides, episodesAired and episodesWatched.')
       node.when.atMost = number(condition.atMost, 0, 10000)
