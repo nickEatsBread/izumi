@@ -362,19 +362,15 @@ describe('queueTitleArt', () => {
 
   it('hands a freed slot to the nearest waiter, judged when the slot frees', async () => {
     const { load, releases, started, drain } = lookups()
-    const far: Record<number, number> = { 4: 900, 5: 300, 6: 600 }
+    const far: Record<number, number> = { 4: 900, 5: 600, 6: 300 }
     const all = [0, 1, 2, 3].map((id) => call(id, { load }))
     all.push(...[4, 5, 6].map((id) => call(id, { load, distance: () => far[id] })))
     await settle()
     expect(started).toEqual([0, 1, 2, 3])
-    // 4 was the farthest when it queued; by the time a slot frees it is the nearest.
-    far[4] = 0
-    releases.get(0)!(); await settle()
-    expect(started.at(-1)).toBe(4)
-    releases.get(1)!(); await settle()
-    expect(started.at(-1)).toBe(5)
-    releases.get(2)!(); await settle()
-    expect(started.at(-1)).toBe(6)
+    // 4 was the farthest when it queued; by the time a slot frees it is the second nearest.
+    far[4] = 450
+    for (const id of [0, 1, 2]) { releases.get(id)!(); await settle() }
+    expect(started.slice(4)).toEqual([6, 4, 5])
     await drain()
     await Promise.all(all)
   })
@@ -415,6 +411,46 @@ describe('queueTitleArt', () => {
     expect(running()).toBe(4)
     await drain()
     await Promise.all([...all, live, ...next])
+  })
+
+  it('serves a waiter whose distance throws after the others, with the slot count intact', async () => {
+    const { load, releases, started, drain, running, peak } = lookups()
+    const all = [0, 1, 2, 3].map((id) => call(id, { load }))
+    all.push(call(4, { load, distance: () => { throw new Error('detached') } }))
+    all.push(...[5, 6].map((id) => call(id, { load, distance: () => id * 100 })))
+    await settle()
+    for (const id of [0, 1, 2]) { releases.get(id)!(); await settle() }
+    expect(started.slice(4)).toEqual([5, 6, 4])
+    expect(running()).toBe(4)
+    await drain()
+    await Promise.all(all)
+    expect(running()).toBe(0)
+    const next = Array.from({ length: 5 }, (_, i) => call(10 + i, { load }))
+    await settle()
+    expect(running()).toBe(4)
+    expect(peak()).toBe(4)
+    await drain()
+    await Promise.all(next)
+  })
+
+  it('drops a waiter whose alive check throws without a lookup and without leaking the slot', async () => {
+    const { load, releases, started, drain, running } = lookups()
+    let broken = false
+    const all = [0, 1, 2, 3].map((id) => call(id, { load }))
+    const bad = call(4, { load, alive: () => { if (broken) throw new Error('detached'); return true } })
+    await settle()
+    broken = true
+    for (const id of [0, 1, 2, 3]) { releases.get(id)!(); await settle() }
+    expect(await bad).toEqual({})
+    expect(started).toEqual([0, 1, 2, 3])
+    expect(running()).toBe(0)
+    // A check that throws up front is gone too.
+    expect(await call(5, { load, alive: () => { throw new Error('detached') } })).toEqual({})
+    const next = Array.from({ length: 5 }, (_, i) => call(10 + i, { load }))
+    await settle()
+    expect(running()).toBe(4)
+    await drain()
+    await Promise.all([...all, ...next])
   })
 
   it('frees its slot when a lookup fails', async () => {

@@ -278,12 +278,15 @@ export interface QueueTitleArtOptions {
   /** How far the caller is from being seen, read each time a slot frees; smallest goes first. */
   distance?: () => number
 }
+// A caller's checks run while a slot is being handed on: one that throws must not strand the slot, so a
+// failing `alive` counts as gone and a failing `distance` as infinitely far.
+const safe = <T>(check: () => T, fallback: T): T => { try { return check() } catch { return fallback } }
 function handOffCardArtSlot(): void {
   for (let i = cardArtWaiting.length - 1; i >= 0; i--) {
-    if (!cardArtWaiting[i].alive()) cardArtWaiting.splice(i, 1)[0].resolve(false)
+    if (!safe(cardArtWaiting[i].alive, false)) cardArtWaiting.splice(i, 1)[0].resolve(false)
   }
   let best = 0
-  const far = cardArtWaiting.map((waiter) => waiter.distance())
+  const far = cardArtWaiting.map((waiter) => safe(waiter.distance, Infinity))
   for (let i = 1; i < far.length; i++) if (far[i] < far[best]) best = i
   const next = cardArtWaiting.splice(best, 1)[0]
   if (next) next.resolve(true)
@@ -291,7 +294,7 @@ function handOffCardArtSlot(): void {
 }
 export async function queueTitleArt(media: Media, needs: ReadonlySet<TitleExtra>, options: QueueTitleArtOptions = {}): Promise<TitleExtras> {
   const { load = loadTitleExtras, alive = () => true, distance = () => 0 } = options
-  if (!alive()) return {}
+  if (!safe(alive, false)) return {}
   if (cardArtRunning < CARD_ART_SLOTS) cardArtRunning++
   else if (!await new Promise<boolean>((resolve) => cardArtWaiting.push({ alive, distance, resolve }))) return {}
   try {
