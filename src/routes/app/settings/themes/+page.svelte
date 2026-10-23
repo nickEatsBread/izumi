@@ -1,8 +1,9 @@
 <script module lang="ts">
   import type { ThemeListing } from '$lib/store/themes'
+  import type { LoadedStore } from '$lib/store/load'
   // The last loaded listings: returning from a preview reopens the theme page at once, so the
   // screenshot can shrink back into its viewer instead of waiting on the stores.
-  let lastListings: { listings: ThemeListing[]; cached: boolean } | null = null
+  let lastListings: { listings: ThemeListing[]; cached: boolean; loaded: Record<string, LoadedStore> } | null = null
 </script>
 
 <script lang="ts">
@@ -11,12 +12,15 @@
   import { goto } from '$app/navigation'
   import Search from '@lucide/svelte/icons/search'
   import Palette from '@lucide/svelte/icons/palette'
+  import Plus from '@lucide/svelte/icons/plus'
+  import Store from '@lucide/svelte/icons/store'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import { page } from '$app/state'
   import ThemeBrowse from '$lib/components/themes/ThemeBrowse.svelte'
   import ThemeDetail from '$lib/components/themes/ThemeDetail.svelte'
+  import StoresDialog from '$lib/components/store/StoresDialog.svelte'
   import { collectLocalThemes, prepareRelease, prepareThemeLink } from '$lib/themes/catalog'
-  import { THEME_API, SUPPORTED_THEME_APIS, THEME_CATALOG_PROJECT_URL, THEME_CATALOG_URL, THEME_SCREENS, newerVersion, primaryPlatform, shotsFor, type PreparedTheme, type ThemePlatform, type ThemeRelease, type ThemeScreen } from '$lib/themes/packages'
+  import { THEME_API, SUPPORTED_THEME_APIS, THEME_CATALOG_PROJECT_URL, THEME_CATALOG_URL, THEME_SCREENS, newerVersion, platformFor, shotsFor, type PreparedTheme, type ThemeRelease, type ThemeScreen } from '$lib/themes/packages'
   import { installedThemes, installTheme, applyInstalledTheme, removeInstalledTheme, rollbackTheme, previewTheme, type InstalledTheme } from '$lib/themes/installed'
   import { newestSeriesId, screenRoute } from '$lib/themes/preview-routes'
   import { stepIntoPreview } from '$lib/themes/preview-transition'
@@ -29,6 +33,7 @@
   import { protectedSurface, themeSafeMode } from '$lib/themes/safe-mode'
   import { themeCssStatus } from '$lib/theme'
   import { navLayer } from '$lib/nav/overlay'
+  import { isMobile } from '$lib/platform'
 
   let tab = $state<'browse' | 'installed'>('browse')
   // Raw, never proxied: listingFor is keyed by these exact objects.
@@ -41,6 +46,9 @@
   let error = $state('')
   let notice = $state('')
   let cached = $state(false)
+  // Each store's last load, for the store manager; `showStores` opens it.
+  let loaded = $state.raw<Record<string, LoadedStore>>({})
+  let showStores = $state(false)
   let selected = $state<ThemeRelease | null>(null)
   let prepared = $state<PreparedTheme | null>(null)
   // `${origin}|${id}` of the theme page the URL opened; empty for link, file and update views.
@@ -53,11 +61,7 @@
   let folderInput: HTMLInputElement
   let batch = $state<PreparedTheme[]>([])
   let batchErrors = $state<string[]>([])
-  // Platform filter: a listing without `platforms` serves both layouts, so it stays under every filter.
-  let platform = $state<'all' | ThemePlatform>('all')
-  const PLATFORMS: { id: 'all' | ThemePlatform; label: string }[] = [{ id: 'all', label: 'All' }, { id: 'desktop', label: 'Desktop' }, { id: 'phone', label: 'Phone' }]
-  const forPlatform = (entry: ThemeRelease) => platform === 'all' || !entry.platforms?.length || entry.platforms.includes(platform)
-  const filtered = $derived(entries.filter(entry => forPlatform(entry) && `${entry.name} ${entry.author} ${entry.description} ${entry.tags.join(' ')}`.toLowerCase().includes(query.toLowerCase())))
+  const filtered = $derived(entries.filter(entry => `${entry.name} ${entry.author} ${entry.description} ${entry.tags.join(' ')}`.toLowerCase().includes(query.toLowerCase())))
   const filteredListings = $derived(filtered.map(entry => listingFor.get(entry)).filter((item): item is ThemeListing => !!item))
   // A listing built for a newer theme API than this client renders is shown but not installable;
   // one for an older API this client still reads installs as usual.
@@ -75,10 +79,11 @@
   const startScreen = $derived(THEME_SCREENS.find(screen => screen === page.url.searchParams.get('screen')) ?? null)
   const startPlatform = $derived((['desktop', 'phone'] as const).find(option => option === page.url.searchParams.get('platform')) ?? null)
 
-  function useListings(result: { listings: ThemeListing[]; cached: boolean }) {
+  function useListings(result: { listings: ThemeListing[]; cached: boolean; loaded: Record<string, LoadedStore> }) {
     listingFor = new Map(result.listings.map((listing) => [listing.release, listing]))
     entries = result.listings.map((listing) => listing.release)
     cached = result.cached
+    loaded = result.loaded
   }
   async function refresh(force = false) {
     if (lastListings && !force && !entries.length) useListings(lastListings)
@@ -205,17 +210,26 @@
   // The Installed tab's thumbnail: the listing's own screenshot, when the theme is still listed.
   function thumbOf(item: InstalledTheme) {
     const entry = entries.find(candidate => candidate.id === item.id && originOf(candidate) === item.origin)
-    return entry ? shotsFor(entry, primaryPlatform(entry))[0]?.url : undefined
+    return entry ? shotsFor(entry, platformFor(entry, $isMobile ? 'phone' : 'desktop'))[0]?.url : undefined
   }
 </script>
 
 <svelte:head><title>Themes · izumi</title></svelte:head>
 <div class="themes-page" data-theme-protected use:protectedSurface>
-  <header class="page-heading"><div><p class="eyebrow">Make it yours</p><h2 data-settings-page-title>Themes</h2><p class="intro">A different look. Still your client.</p></div><a class="control gap-2" href="/app/settings/theme-studio" data-focusable><Palette size={16} aria-hidden="true" /> Theme Studio</a></header>
+  <!-- One store header: the title, the Discover / Installed switch, then search and the store actions. -->
+  <header class="store-head">
+    <h2 data-settings-page-title>Themes</h2>
+    <nav class="tabs" aria-label="Theme library"><button type="button" data-focusable aria-pressed={tab === 'browse'} onclick={() => { tab = 'browse'; leaveDetail() }}>Discover</button><button type="button" data-focusable aria-pressed={tab === 'installed'} onclick={() => { tab = 'installed'; leaveDetail() }}>Installed <span>{$installedThemes.length}</span></button></nav>
+    <div class="head-actions">
+      {#if tab === 'browse' && !(selected || prepared)}<label class="search"><Search size={16} aria-hidden="true" /><input bind:value={query} aria-label="Search themes" placeholder="Search themes" data-focusable /></label>{/if}
+      <button type="button" class="pill" data-focusable aria-label="Stores" title="Stores" onclick={() => showStores = true}><Store size={16} aria-hidden="true" /><span>Stores</span></button>
+      <button type="button" class="pill" data-focusable aria-label="Add theme" title="Add theme" onclick={() => { showAdd = true; error = '' }}><Plus size={16} aria-hidden="true" /><span>Add theme</span></button>
+      <a class="pill" href="/app/settings/theme-studio" data-focusable aria-label="Theme Studio" title="Theme Studio"><Palette size={16} aria-hidden="true" /><span>Theme Studio</span></a>
+    </div>
+  </header>
   {#if $themeStudioOpen}<p class="message">Finish or discard your Theme Studio draft before applying another theme.</p>{/if}
   {#if $themeSafeMode}<p class="message">Safe mode is on: izumi's default appearance is showing until you turn themes back on or restart. <button type="button" class="text-close inline" data-focusable onclick={() => themeSafeMode.set(false)}>Turn themes back on</button></p>{/if}
   {#if $themeCssStatus.state === 'rejected'}<p role="alert" class="message error">The active theme's stylesheet was not applied: {$themeCssStatus.reason}</p>{/if}
-  <div class="toolbar"><nav aria-label="Theme library"><button type="button" data-focusable aria-pressed={tab === 'browse'} onclick={() => { tab = 'browse'; leaveDetail() }}>Browse</button><button type="button" data-focusable aria-pressed={tab === 'installed'} onclick={() => { tab = 'installed'; leaveDetail() }}>Installed <span>{$installedThemes.length}</span></button></nav><div class="toolbar-actions"><button class="control" data-focusable onclick={() => { showAdd = true; error = '' }}>Add theme</button></div></div>
   <input bind:this={fileInput} type="file" accept=".json,application/json" multiple class="hidden" onchange={(event) => { const input = event.currentTarget; void fromFiles(input.files); input.value = '' }} aria-label="Import theme package files" />
   <input bind:this={folderInput} type="file" accept=".json,application/json" multiple webkitdirectory class="hidden" onchange={(event) => { const input = event.currentTarget; void fromFiles(input.files); input.value = '' }} aria-label="Import theme package folder" />
   {#if showAdd}
@@ -248,6 +262,10 @@
       </div>
     </div>
   {/if}
+  {#if showStores}
+    <!-- The shared store manager: add any theme catalog or store link; its themes get their own shelf. -->
+    <StoresDialog {loaded} onclose={() => { showStores = false; void refresh(true) }} onadded={() => { notice = 'Store added. Its themes are in their own shelf.' }} />
+  {/if}
   {#if error}<p role="alert" class="message error">{error}</p>{/if}
   {#if notice}<p role="status" class="message">{notice}</p>{/if}
   {#if selected || prepared}
@@ -257,11 +275,10 @@
         {startScreen} {startPlatform} onback={back} oninstall={install} onpreview={preview} />
     {/key}
   {:else if tab === 'browse'}
-    <div class="browse-tools"><label class="search"><Search size={18} /><input bind:value={query} aria-label="Search themes" placeholder="Search themes, authors or styles" data-focusable /></label><div class="platform-filter" role="group" aria-label="Show themes for">{#each PLATFORMS as option (option.id)}<button type="button" data-focusable aria-pressed={platform === option.id} onclick={() => platform = option.id}>{option.label}</button>{/each}</div><button class="control" data-focusable disabled={loading} onclick={() => refresh(true)}>Refresh</button></div>
-    {#if cached}<p class="message">Showing the saved catalog. Refresh when you’re back online.</p>{/if}
+    {#if cached}<p class="message">Showing the saved catalog. <button type="button" class="text-close inline" data-focusable disabled={loading} onclick={() => refresh(true)}>Refresh</button> when you’re back online.</p>{/if}
     {#if loading && !entries.length}<div class="skeletons" aria-label="Loading themes" aria-busy="true">{#each [1, 2, 3] as item (item)}<div class="skeleton" aria-hidden="true"></div>{/each}</div>
     {:else if !filtered.length}<div class="empty"><Palette size={36} /><h3>{entries.length ? 'No matching themes' : 'Your next look starts here'}</h3><p>{entries.length ? 'Try another name or style.' : 'Refresh the catalog, or add a theme from a link, file or folder.'}</p></div>
-    {:else}<ThemeBrowse listings={filteredListings} filtered={!!query.trim() || platform !== 'all'} official={THEME_CATALOG_URL} {platform} installed={(listing) => isInstalled(listing.release)} note={listingNote} onopen={open} />{/if}
+    {:else}<ThemeBrowse listings={filteredListings} filtered={!!query.trim()} official={THEME_CATALOG_URL} installed={(listing) => isInstalled(listing.release)} note={listingNote} onopen={open} />{/if}
   {:else}
     <div class="default-theme"><div><strong>Izumi default</strong><p>The original appearance is always available.</p></div><button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => { $themePreset = 'izumi'; notice = 'Default appearance restored.' }}>Use default</button></div>
     {#each $installedThemes as item (item.id)}{@const thumb = thumbOf(item)}<article class="installed-theme"><div class="installed-thumb">{#if thumb}<img src={thumb} alt="" loading="lazy" referrerpolicy="no-referrer" />{:else}<Palette size={22} />{/if}</div><div><h3>{item.package.name}</h3><p>By {item.package.author} · {item.package.version}{#if $themePreset === 'custom' && $activeStudioThemeId === item.designId} · Applied{/if}</p><p class="summary">{item.package.description}</p></div><div class="installed-actions"><button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => apply(item)}>Apply</button>{#if $allStores.some((store) => store.url === item.origin) || item.updateUrl}<button class="control" data-focusable disabled={busy || $themeStudioOpen} onclick={() => update(item)}>Check update</button>{/if}{#if item.previous}<button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => restore(item)}>Restore previous</button>{/if}<button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => remove(item)}>Remove</button></div></article>{/each}
@@ -270,27 +287,25 @@
 </div>
 
 <style>
-  .themes-page { max-width: 1160px; padding: clamp(20px, 4vw, 40px); margin: auto; }
-  .page-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 32px; }
-  .eyebrow { color: hsl(var(--muted-foreground)); font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
-  h2 { font-size: clamp(28px, 4vw, 42px); font-weight: 900; letter-spacing: -.04em; line-height: 1.2; margin: 6px 0; }
-  .intro { color: hsl(var(--muted-foreground)); font-size: 14px; line-height: 1.65; }
-  .toolbar, .browse-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
-  .toolbar { padding-bottom: 20px; border-bottom: 1px solid hsl(var(--border)); }
-  nav, .toolbar-actions, .installed-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-  nav button { min-height: 44px; padding: 10px 14px; font-weight: 800; border-bottom: 2px solid transparent; color: hsl(var(--muted-foreground)); }
-  nav button[aria-pressed='true'] { color: hsl(var(--foreground)); border-color: hsl(var(--theme)); }
-  nav span { font-size: 11px; margin-left: 5px; }
+  /* A size container: the header adapts to the page's own width, which the settings rail narrows. */
+  .themes-page { max-width: 1160px; padding: clamp(20px, 4vw, 40px); margin: auto; container-type: inline-size; }
+  .store-head { display: flex; align-items: center; gap: 12px 16px; margin-bottom: 26px; }
+  h2 { font-size: 30px; font-weight: 900; letter-spacing: -.035em; line-height: 1; margin: 0; }
+  .tabs { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: hsl(var(--foreground) / .07); }
+  .tabs button { min-height: 34px; padding: 0 16px; border-radius: 999px; font-size: 13px; font-weight: 800; color: hsl(var(--muted-foreground)); }
+  .tabs button[aria-pressed='true'] { background: hsl(var(--foreground)); color: hsl(var(--background)); }
+  .tabs span { margin-left: 4px; font-size: 11px; opacity: .7; }
+  .head-actions { display: flex; flex: 1 1 auto; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+  .search { display: flex; flex: 0 1 260px; min-width: 120px; align-items: center; gap: 8px; height: 38px; padding: 0 14px; border-radius: 999px; background: hsl(var(--foreground) / .07); color: hsl(var(--muted-foreground)); }
+  .search input { min-height: 0; height: 100%; font-size: 13px; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 14px; border-radius: 999px; font-size: 12px; font-weight: 800; white-space: nowrap; background: hsl(var(--foreground) / .07); }
+  .pill:hover { background: hsl(var(--foreground) / .12); }
+  .installed-actions { display: flex; flex-wrap: wrap; gap: 8px; }
   .control { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 9px 14px; border: 1px solid hsl(var(--border)); border-radius: 8px; font-size: 12px; font-weight: 800; white-space: nowrap; background: hsl(var(--card)); }
   .control:hover { background: hsl(var(--accent)); }
   .control.primary { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: transparent; }
   :is(button, a, input):focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 4px; }
   button:disabled { opacity: .45; cursor: not-allowed; }
-  .browse-tools { margin: 24px 0; }
-  .search { display: flex; align-items: center; gap: 10px; color: hsl(var(--muted-foreground)); flex: 1; min-width: 180px; max-width: 420px; border-bottom: 1px solid hsl(var(--border)); }
-  .platform-filter { display: flex; gap: 4px; padding: 3px; border-radius: 999px; background: hsl(var(--muted)); }
-  .platform-filter button { min-height: 32px; padding: 0 14px; border-radius: 999px; font-size: 12px; font-weight: 800; color: hsl(var(--muted-foreground)); }
-  .platform-filter button[aria-pressed="true"] { background: hsl(var(--background)); color: hsl(var(--foreground)); box-shadow: 0 1px 2px hsl(0 0% 0% / .2); }
   input { background: transparent; color: hsl(var(--foreground)); min-height: 44px; min-width: 0; width: 100%; font-size: 14px; }
   input::placeholder { color: hsl(var(--muted-foreground)); }
   h3 { font-size: 17px; font-weight: 900; letter-spacing: -.02em; }
@@ -325,4 +340,14 @@
   .installed-thumb { width: 112px; aspect-ratio: 16 / 10; flex: none; display: grid; place-items: center; overflow: hidden; border-radius: 8px; background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); }
   .installed-thumb img { width: 100%; height: 100%; object-fit: cover; }
   .default-theme p, .installed-theme p { color: hsl(var(--muted-foreground)); font-size: 12px; margin-top: 5px; }
+  /* Narrower pages keep one header row with icon-only actions; phones put search and actions on a row of their own. */
+  @container (max-width: 900px) {
+    .pill { width: 38px; padding: 0; justify-content: center; }
+    .pill span { display: none; }
+  }
+  @container (max-width: 560px) {
+    .store-head { flex-wrap: wrap; }
+    .head-actions { flex-basis: 100%; }
+    .search { flex: 1 1 auto; }
+  }
 </style>

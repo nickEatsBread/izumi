@@ -1,8 +1,10 @@
 <script lang="ts">
   import { untrack } from 'svelte'
+  import { get } from 'svelte/store'
   import ArrowLeft from '@lucide/svelte/icons/arrow-left'
   import ThemeShots from './ThemeShots.svelte'
-  import { SCREEN_LABELS, platformLabel, primaryPlatform, shotsFor, type PreparedTheme, type ThemePlatform, type ThemeRelease, type ThemeScreen } from '$lib/themes/packages'
+  import { isMobile } from '$lib/platform'
+  import { SCREEN_LABELS, platformFor, platformLabel, shotsFor, type PreparedTheme, type ThemePlatform, type ThemeRelease, type ThemeScreen } from '$lib/themes/packages'
 
   let { release, prepared, storeName, busy, canInstall, installLabel, locked, conflict, startScreen, startPlatform, onback, oninstall, onpreview }: {
     release: ThemeRelease | null
@@ -30,7 +32,7 @@
   const platforms = $derived((['desktop', 'phone'] as const).filter((option) => release?.screenshots?.some((shot) => shot.platform === option)))
   // Seeded once from the URL (a preview returning to this page; the page re-keys this component per
   // theme); the switch and thumbnails own them after.
-  const initialPlatform = untrack(() => startPlatform ?? (release ? primaryPlatform(release) : 'desktop'))
+  const initialPlatform = untrack(() => startPlatform ?? (release ? platformFor(release, get(isMobile) ? 'phone' : 'desktop') : 'desktop'))
   let platform = $state<ThemePlatform>(initialPlatform)
   const shots = $derived(release ? shotsFor(release, platform) : [])
   let index = $state(untrack(() => Math.max(0, release && startScreen ? shotsFor(release, initialPlatform).findIndex((shot) => shot.screen === startScreen) : 0)))

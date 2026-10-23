@@ -133,8 +133,12 @@ export function shotsFor(release: ThemeRelease, platform: ThemePlatform): ThemeS
   if (shots.length) return shots
   return release.preview ? [{ screen: 'home', platform, url: release.preview }] : []
 }
-/** The layout a listing is shown in by default. */
-export const primaryPlatform = (release: ThemeRelease): ThemePlatform => release.platforms?.[0] ?? 'desktop'
+/** Which platform's screenshots to show on this device: its own, unless the listing only has the other's. */
+export function platformFor(release: ThemeRelease, device: ThemePlatform): ThemePlatform {
+  const has = (platform: ThemePlatform) => release.screenshots?.some((shot) => shot.platform === platform)
+  const other: ThemePlatform = device === 'phone' ? 'desktop' : 'phone'
+  return has(device) || !has(other) ? device : other
+}
 export function parseRelease(value: unknown): ThemeRelease {
   const raw = record(value)
   const bytes = raw.bytes

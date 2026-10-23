@@ -1,23 +1,24 @@
 <script lang="ts">
   import ThemeCard from './ThemeCard.svelte'
   import ThemeFeatured from './ThemeFeatured.svelte'
-  import { primaryPlatform, type ThemePlatform } from '$lib/themes/packages'
+  import { platformFor, type ThemePlatform } from '$lib/themes/packages'
+  import { isMobile } from '$lib/platform'
   import { shelvesFor } from '$lib/themes/store-shelves'
   import type { ThemeListing } from '$lib/store/themes'
 
-  let { listings, filtered, official, platform, installed, note, onopen }: {
+  let { listings, filtered, official, installed, note, onopen }: {
     listings: ThemeListing[]
-    /** A search or platform filter is on: one results grid instead of the storefront. */
+    /** A search is on: one results grid instead of the storefront. */
     filtered: boolean
     official: string
-    platform: 'all' | ThemePlatform
     installed: (listing: ThemeListing) => boolean
     note: (listing: ThemeListing) => string
     onopen: (listing: ThemeListing) => void
   } = $props()
   const featured = $derived(listings.filter((item) => item.release.screenshots?.length && !note(item)).slice(0, 6))
   const shelves = $derived(shelvesFor(listings, official))
-  const shown = (listing: ThemeListing): ThemePlatform => platform === 'all' ? primaryPlatform(listing.release) : platform
+  // Screenshots follow the device: desktop shots on desktop, phone shots on phones.
+  const shown = (listing: ThemeListing): ThemePlatform => platformFor(listing.release, $isMobile ? 'phone' : 'desktop')
 </script>
 
 {#snippet card(listing: ThemeListing)}
@@ -37,7 +38,7 @@
 {/if}
 
 <style>
-  .shelf { margin-top: 30px; }
+  .shelf { margin-top: 34px; }
   h3 { margin: 0 0 8px 8px; font-size: 19px; font-weight: 900; letter-spacing: -.02em; }
   .track { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(240px, 290px); gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: 8px; padding-bottom: 8px; scrollbar-width: thin; }
   .track > :global(*) { scroll-snap-align: start; }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseCatalog, parseThemePackage, parseSharedTheme, parseRelease, shotsFor, themeUrl, newerVersion, portablePackage } from './packages'
+import { parseCatalog, parseThemePackage, parseSharedTheme, parseRelease, platformFor, shotsFor, themeUrl, newerVersion, portablePackage } from './packages'
 import { defaultStudioTheme } from '$lib/settings/theme-studio'
 
 export const samplePackage = { app: 'izumi', kind: 'theme-package', schemaVersion: 1, themeApi: 1, id: 'test.cinema', name: 'Cinema', author: 'Test', description: 'An optional rank design.', version: '1.0.0', design: { radius: 1, backdrop: 'solid', presentation: { hero: { rank: { type: 'text', field: 'rank' } } } } }
@@ -117,5 +117,19 @@ describe('listing screenshots', () => {
     expect(shotsFor(release, 'desktop').map((item) => item.screen)).toEqual(['home', 'search'])
     expect(shotsFor(parseRelease({ ...entry, preview: 'https://example.test/p.png' }), 'phone')).toEqual([{ screen: 'home', platform: 'phone', url: 'https://example.test/p.png' }])
     expect(shotsFor(parseRelease(entry), 'desktop')).toEqual([])
+  })
+})
+
+describe('screenshot platform for a device', () => {
+  const entry = { ...samplePackage, download: 'https://example.test/theme.json', sha256: 'a'.repeat(64), bytes: 500, tags: [] }
+  const shot = (screen: string, platform: string) => ({ screen, platform, url: `https://example.test/${platform}-${screen}.jpg` })
+  it("shows the device's own screenshots, even for a phone-first theme on desktop", () => {
+    const both = parseRelease({ ...entry, platforms: ['phone', 'desktop'], screenshots: [shot('home', 'phone'), shot('home', 'desktop')] })
+    expect(platformFor(both, 'desktop')).toBe('desktop')
+    expect(platformFor(both, 'phone')).toBe('phone')
+  })
+  it('falls back to the other platform only when the device has none', () => {
+    expect(platformFor(parseRelease({ ...entry, screenshots: [shot('home', 'phone')] }), 'desktop')).toBe('phone')
+    expect(platformFor(parseRelease(entry), 'desktop')).toBe('desktop')
   })
 })

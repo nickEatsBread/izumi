@@ -38,4 +38,12 @@ describe('themes store front', () => {
     expect(page).toContain("goto(`?${new URLSearchParams({ store: store.id, theme: listing.release.id })}`)")
     expect(page).toContain('stepIntoPreview(from, () => previewTheme(target)')
   })
+  it('lets people add other theme stores from the store header', () => {
+    expect(page).toContain('<StoresDialog {loaded}')
+    expect(page).toContain('onclick={() => showStores = true}')
+  })
+  it('shows screenshots for this device instead of a platform filter', () => {
+    expect(page).not.toContain('PLATFORMS')
+    expect(page).toContain("platformFor(entry, $isMobile ? 'phone' : 'desktop')")
+  })
 })
