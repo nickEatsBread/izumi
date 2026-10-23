@@ -76,6 +76,8 @@
   const currentInstall = $derived(prepared ? $installedThemes.find(item => item.id === prepared?.package.id && item.origin === prepared.origin) : undefined)
   const originConflict = $derived(!!prepared && $installedThemes.some(item => item.id === prepared?.package.id && item.origin !== prepared.origin))
   const canInstall = $derived(!originConflict && (!currentInstall || !!prepared && (newerVersion(prepared.package.version, currentInstall.package.version) || prepared.package.version === currentInstall.package.version && !$studioThemes.some(theme => theme.id === currentInstall.designId))))
+  // By the open theme's store URL: a catalog refresh replaces the listing objects themselves.
+  const selectedStoreName = $derived(selectedKey ? $allStores.find((store) => selectedKey.startsWith(`${store.url}|`))?.name ?? '' : '')
   const startScreen = $derived(THEME_SCREENS.find(screen => screen === page.url.searchParams.get('screen')) ?? null)
   const startPlatform = $derived((['desktop', 'phone'] as const).find(option => option === page.url.searchParams.get('platform')) ?? null)
 
@@ -270,8 +272,8 @@
   {#if notice}<p role="status" class="message">{notice}</p>{/if}
   {#if selected || prepared}
     {#key selectedKey || prepared?.package.id}
-      <ThemeDetail release={selected ?? prepared?.release ?? null} {prepared} storeName={selected ? listingFor.get(selected)?.storeName ?? '' : ''} {busy} {canInstall}
-        installLabel={currentInstall ? canInstall ? 'Update & apply' : 'Installed' : 'Install & apply'} locked={$themeStudioOpen} conflict={originConflict}
+      <ThemeDetail release={selected ?? prepared?.release ?? null} {prepared} storeName={selectedStoreName} {busy} {canInstall}
+        installLabel={currentInstall ? canInstall ? 'Update & apply' : 'Installed' : 'Install & apply'} installed={!!currentInstall} locked={$themeStudioOpen} conflict={originConflict}
         {startScreen} {startPlatform} onback={back} oninstall={install} onpreview={preview} />
     {/key}
   {:else if tab === 'browse'}

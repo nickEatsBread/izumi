@@ -1,6 +1,6 @@
 <script lang="ts">
   import ThemeShots from './ThemeShots.svelte'
-  import { platformLabel, shotsFor, type ThemePlatform } from '$lib/themes/packages'
+  import { shotsFor, type ThemePlatform } from '$lib/themes/packages'
   import type { ThemeListing } from '$lib/store/themes'
 
   let { listing, platform, installed, note = '', storeName = '', onopen }: {
@@ -26,16 +26,18 @@
   onmouseenter={hover} onmouseleave={stop} onfocus={focus} onblur={stop} onclick={() => onopen(listing)}>
   <ThemeShots shots={shotsFor(release, platform)} name={release.name} {playing} phone={platform === 'phone'} strip={platform === 'phone'} />
   <span class="title"><strong>{release.name}</strong>{#if installed}<em>Installed</em>{/if}</span>
-  <span class="meta">{release.author} · {platformLabel(release.platforms)}{#if storeName} · {storeName}{/if}</span>
+  <span class="meta">{release.description}</span>
+  {#if storeName}<span class="meta">From {storeName}</span>{/if}
   {#if note}<span class="meta">{note}</span>{/if}
 </button>
 
 <style>
-  .theme-card { display: flex; flex-direction: column; gap: 4px; width: 100%; padding: 8px; border-radius: 14px; text-align: start; }
-  .theme-card :global([data-theme-shots]) { border-radius: 10px; }
-  .theme-card:not(:disabled):hover { background: hsl(var(--foreground) / .06); }
+  .theme-card { display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: start; }
+  .theme-card :global([data-theme-shots]) { border-radius: 12px; box-shadow: 0 0 0 1px hsl(var(--foreground) / .08); }
+  .theme-card :global([data-theme-shots] > img) { object-position: top; }
+  .theme-card:not(:disabled):hover :global([data-theme-shots]) { box-shadow: 0 0 0 2px hsl(var(--foreground) / .55); }
   .theme-card:disabled { opacity: .45; cursor: not-allowed; }
-  .title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: 15px; font-weight: 900; letter-spacing: -.01em; }
+  .title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 10px; font-size: 17px; font-weight: 900; letter-spacing: -.015em; }
   em { font-style: normal; font-size: 11px; font-weight: 700; color: hsl(var(--muted-foreground)); }
-  .meta { font-size: 11px; color: hsl(var(--muted-foreground)); }
+  .meta { font-size: 12px; color: hsl(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>

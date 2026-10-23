@@ -30,18 +30,17 @@
 {:else}
   <ThemeFeatured listings={featured} {onopen} />
   {#each shelves as shelf (shelf.id)}
-    <section class="shelf" data-nav-row aria-labelledby={`theme-shelf-${shelf.id}`}>
+    <!-- Big cards, two to a row: each screenshot is wide enough to actually read. -->
+    <section class="shelf" data-nav-row data-nav-row-wrap aria-labelledby={`theme-shelf-${shelf.id}`}>
       <h3 id={`theme-shelf-${shelf.id}`}>{shelf.title}</h3>
-      <div class="track" data-nav-row-items data-nav-scroll-x>{#each shelf.listings as listing (`${listing.origin}|${listing.release.id}`)}{@render card(listing)}{/each}</div>
+      <div class="grid" data-nav-row-items>{#each shelf.listings as listing (`${listing.origin}|${listing.release.id}`)}{@render card(listing)}{/each}</div>
     </section>
   {/each}
 {/if}
 
 <style>
-  .shelf { margin-top: 34px; }
-  h3 { margin: 0 0 8px 8px; font-size: 19px; font-weight: 900; letter-spacing: -.02em; }
-  .track { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(240px, 290px); gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: 8px; padding-bottom: 8px; scrollbar-width: thin; }
-  .track > :global(*) { scroll-snap-align: start; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 8px; }
-  @media (max-width: 640px) { .track { grid-auto-columns: 80%; } }
+  .shelf { margin-top: 40px; }
+  h3 { margin: 0 0 12px; font-size: 20px; font-weight: 900; letter-spacing: -.02em; }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 16px; }
+  @container (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
 </style>

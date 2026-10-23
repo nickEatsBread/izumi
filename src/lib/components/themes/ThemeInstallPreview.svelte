@@ -29,7 +29,7 @@
     const platform = $isMobile ? 'phone' : 'desktop'
     const shot = prepared.release ? shotsFor(prepared.release, platform).find((item) => item.screen === current) : undefined
     const storeId = $allStores.find((store) => store.url === prepared.origin)?.id
-    void stepOutOfPreview(shot?.url ?? null, cancelThemePreview, themePageUrl(storeId, prepared.package.id, shot?.screen, platform), () => document.querySelector('[data-theme-viewer]'))
+    void stepOutOfPreview(shot?.url ?? null, cancelThemePreview, themePageUrl(storeId, prepared.package.id, shot?.screen, platform), () => document.querySelector(`[data-theme-shot="${shot?.screen}"] img`) ?? document.querySelector('[data-theme-viewer]'))
   }
 </script>
 {#if $themeInstallPreview}

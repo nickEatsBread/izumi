@@ -2,93 +2,92 @@
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import ThemeShots from './ThemeShots.svelte'
-  import { motion, reducedMotion } from '$lib/motion/gm-motion'
-  import { SCREEN_LABELS, platformFor, shotsFor } from '$lib/themes/packages'
+  import { reducedMotion } from '$lib/motion/gm-motion'
+  import { platformFor, shotsFor } from '$lib/themes/packages'
   import { isMobile } from '$lib/platform'
   import type { ThemeListing } from '$lib/store/themes'
 
   let { listings, onopen }: { listings: ThemeListing[]; onopen: (listing: ThemeListing) => void } = $props()
+  let track = $state<HTMLElement>()
   let at = $state(0)
-  let held = $state(false)
-  // The screen in the big view. It changes only when someone picks one; nothing cycles on its own.
-  let index = $state(0)
-  const listing = $derived(listings.length ? listings[at % listings.length] : undefined)
-  const platform = $derived(listing ? platformFor(listing.release, $isMobile ? 'phone' : 'desktop') : 'desktop')
-  const shots = $derived(listing ? shotsFor(listing.release, platform) : [])
-  const phone = $derived(platform === 'phone')
-  // Calm on purpose: the next featured theme every 12 s, and never while the banner is hovered or focused.
-  $effect(() => {
-    if (held || listings.length < 2 || reducedMotion()) return
-    const timer = setInterval(() => step(1), 12000)
-    return () => clearInterval(timer)
-  })
-  function step(by: number) { at = (at + by + listings.length) % listings.length; index = 0 }
+  // Moves only when asked (arrows, a swipe, a scroll or controller focus): carousels that advance on
+  // their own get ignored and annoy. The next slide peeks in, so it reads as a carousel.
+  function go(i: number) {
+    if (!track) return
+    at = Math.max(0, Math.min(listings.length - 1, i))
+    const slide = track.children[at] as HTMLElement | undefined
+    if (slide) track.scrollTo({ left: slide.offsetLeft, behavior: reducedMotion() ? 'auto' : 'smooth' })
+  }
+  // After a swipe or scroll, the slide nearest the left edge is the current one.
+  function sync() {
+    if (!track) return
+    let best = 0, distance = Infinity
+    for (const [i, slide] of [...track.children].entries()) {
+      const d = Math.abs((slide as HTMLElement).offsetLeft - track.scrollLeft)
+      if (d < distance) { distance = d; best = i }
+    }
+    at = best
+  }
 </script>
 
-{#if listing}
-  <section class="featured" aria-labelledby="theme-featured-title"
-    onmouseenter={() => held = true} onmouseleave={() => held = false} onfocusin={() => held = true} onfocusout={() => held = false}>
+{#if listings.length}
+  <section class="featured" aria-labelledby="theme-featured-title">
     <div class="head">
       <h3 id="theme-featured-title">Featured</h3>
       {#if listings.length > 1}
         <div class="arrows">
-          <button type="button" data-focusable aria-label="Previous featured theme" onclick={() => step(-1)}><ChevronLeft size={18} /></button>
-          <button type="button" data-focusable aria-label="Next featured theme" onclick={() => step(1)}><ChevronRight size={18} /></button>
+          <button type="button" data-focusable aria-label="Previous featured theme" disabled={at === 0} onclick={() => go(at - 1)}><ChevronLeft size={18} /></button>
+          <button type="button" data-focusable aria-label="Next featured theme" disabled={at === listings.length - 1} onclick={() => go(at + 1)}><ChevronRight size={18} /></button>
         </div>
       {/if}
     </div>
-    {#key `${listing.origin}|${listing.release.id}`}
-      <div class="card" data-nav-row in:motion={{ opacity: [0, 1], duration: 600 }}>
-        <!-- The theme is shown big and uncovered; everything about it sits in the row underneath. -->
-        <button type="button" class="stage" data-focusable data-theme-key={`${listing.origin}|${listing.release.id}`} aria-label={`View ${listing.release.name}`} onclick={() => onopen(listing)}>
-          <ThemeShots {shots} name={listing.release.name} bind:index chrome={false} {phone} strip={phone} />
-        </button>
-        <div class="info">
-          <div class="text"><strong class="name">{listing.release.name}</strong><p class="description">{listing.release.description}</p></div>
-          {#if !phone && shots.length > 1}
-            <div class="screens" role="group" aria-label={`${listing.release.name} screens`}>
-              {#each shots as shot, i (shot.url)}
-                <button type="button" data-focusable aria-pressed={i === index} onmouseenter={() => index = i} onfocus={() => index = i} onclick={() => index = i}>{SCREEN_LABELS[shot.screen]}</button>
-              {/each}
-            </div>
-          {/if}
-          <button type="button" class="view" data-focusable onclick={() => onopen(listing)}>View theme</button>
-        </div>
-      </div>
-    {/key}
-    {#if listings.length > 1}<span class="pips" aria-hidden="true">{#each listings as item, i (`${item.origin}|${item.release.id}`)}<i class:on={i === at % listings.length}></i>{/each}</span>{/if}
+    <div class="track" bind:this={track} onscroll={sync} data-nav-row data-nav-row-items data-nav-scroll-x>
+      {#each listings as listing, i (`${listing.origin}|${listing.release.id}`)}
+        {@const platform = platformFor(listing.release, $isMobile ? 'phone' : 'desktop')}
+        <article class="slide" aria-label={`${listing.release.name}, ${i + 1} of ${listings.length}`}>
+          <!-- The screenshot is never covered: the name and actions sit beside it. -->
+          <button type="button" class="stage" data-focusable data-theme-key={`${listing.origin}|${listing.release.id}`} aria-label={`View ${listing.release.name}`} onclick={() => onopen(listing)} onfocus={() => go(i)}>
+            <ThemeShots shots={shotsFor(listing.release, platform)} name={listing.release.name} chrome={false} phone={platform === 'phone'} strip={platform === 'phone'} />
+          </button>
+          <div class="info">
+            <strong class="name">{listing.release.name}</strong>
+            <p class="description">{listing.release.description}</p>
+            <button type="button" class="view" data-focusable onclick={() => onopen(listing)} onfocus={() => go(i)}>View theme</button>
+          </div>
+        </article>
+      {/each}
+    </div>
+    {#if listings.length > 1}<span class="pips" aria-hidden="true">{#each listings as item, i (`${item.origin}|${item.release.id}`)}<i class:on={i === at}></i>{/each}</span>{/if}
   </section>
 {/if}
 
 <style>
-  .head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 10px 8px; }
-  h3 { font-size: 19px; font-weight: 900; letter-spacing: -.02em; }
+  .head { display: flex; align-items: center; justify-content: space-between; margin: 0 0 12px; }
+  h3 { font-size: 20px; font-weight: 900; letter-spacing: -.02em; }
   .arrows { display: flex; gap: 6px; }
   .arrows button { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 999px; background: hsl(var(--foreground) / .07); }
-  .arrows button:hover { background: hsl(var(--foreground) / .14); }
-  .card { padding: 12px; border-radius: 20px; background: hsl(var(--foreground) / .05); }
-  /* The stage reads as clickable: a ring and a lift in brightness on hover, no motion (Deck-safe). */
-  .stage { display: block; width: 100%; overflow: hidden; border-radius: 14px; box-shadow: 0 0 0 2px transparent; }
-  .stage :global([data-theme-shots]) { aspect-ratio: 16 / 9; border-radius: 14px; background: transparent; }
+  .arrows button:hover:not(:disabled) { background: hsl(var(--foreground) / .14); }
+  .arrows button:disabled { opacity: .35; }
+  .track { position: relative; display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
+  .track::-webkit-scrollbar { display: none; }
+  /* About 40% of a window tall: the screenshot takes 62% of the slide, the details the rest. */
+  .slide { flex: 0 0 82%; scroll-snap-align: start; display: grid; grid-template-columns: minmax(0, 62fr) minmax(0, 38fr); gap: 20px; padding: 12px; border-radius: 18px; background: hsl(var(--foreground) / .05); }
+  .stage { display: block; align-self: start; overflow: hidden; border-radius: 12px; box-shadow: 0 0 0 2px transparent; }
+  .stage :global([data-theme-shots]) { border-radius: 12px; background: transparent; }
   .stage :global([data-theme-shots] > img) { object-position: top; }
   .stage:hover { box-shadow: 0 0 0 2px hsl(var(--foreground) / .55); filter: brightness(1.05); }
-  .info { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 14px 6px 4px; }
-  .text { flex: 1 1 240px; min-width: 0; }
-  .name { font-size: 24px; font-weight: 900; letter-spacing: -.03em; line-height: 1.15; }
-  .description { margin-top: 2px; font-size: 13px; color: hsl(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .screens { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: hsl(var(--foreground) / .07); }
-  .screens button { height: 32px; padding: 0 14px; border-radius: 999px; font-size: 12px; font-weight: 800; color: hsl(var(--muted-foreground)); }
-  .screens button:hover { color: hsl(var(--foreground)); }
-  .screens button[aria-pressed='true'] { background: hsl(var(--foreground)); color: hsl(var(--background)); }
-  .view { padding: 10px 20px; border-radius: 999px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font-size: 13px; font-weight: 800; }
+  .info { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 6px 4px 4px 0; }
+  .name { font-size: 26px; font-weight: 900; letter-spacing: -.03em; line-height: 1.1; }
+  .description { font-size: 13px; line-height: 1.6; color: hsl(var(--muted-foreground)); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
+  .view { align-self: flex-start; margin-top: auto; padding: 10px 20px; border-radius: 999px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font-size: 13px; font-weight: 800; }
   .view:hover { filter: brightness(1.08); }
   .pips { display: flex; justify-content: center; gap: 5px; margin-top: 12px; }
   .pips i { width: 6px; height: 6px; border-radius: 999px; background: hsl(var(--foreground) / .22); }
   .pips i.on { width: 18px; background: hsl(var(--foreground) / .8); }
-  /* Narrow pages: the screen switch takes its own full-width row above the button. */
+  /* Narrow pages: the details stack under the screenshot. */
   @container (max-width: 640px) {
-    .screens { order: 1; width: 100%; }
-    .screens button { flex: 1 1 0; padding: 0 6px; }
-    .view { order: 2; }
+    .slide { flex-basis: 88%; grid-template-columns: 1fr; gap: 12px; }
+    .info { padding: 0 4px 4px; }
+    .description { -webkit-line-clamp: 2; line-clamp: 2; }
   }
 </style>
