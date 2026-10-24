@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte'
   import Check from '@lucide/svelte/icons/check'
+  import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import LoaderCircle from '@lucide/svelte/icons/loader-circle'
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
   import { m } from '$lib/paraglide/messages.js'
@@ -27,6 +28,7 @@
   let installing = $state(false)
   let checkingKey = $state(false)
   let errorAlert = $state<HTMLElement>()
+  let showMore = $state(false)
   const abort = new AbortController()
 
   // Cinemeta only supplies metadata, so it does not count as a source.
@@ -86,8 +88,8 @@
       if (abort.signal.aborted) return
       packages = catalog?.packages ?? []
       suggestions = [
-        ...packageSuggestions(packages, 6),
-        ...addonSuggestions(community?.addons ?? [], 6),
+        ...packageSuggestions(packages, 4),
+        ...addonSuggestions(community?.addons ?? [], 4),
       ]
       if (!suggestions.length) error = m.onboarding_sources_unavailable()
     } catch (cause) {
@@ -95,6 +97,13 @@
     } finally {
       if (!abort.signal.aborted) loading = false
     }
+  }
+
+  /** Collapsing drops any ticks: Next installs what is ticked, and that must never be something
+   *  the user can no longer see. */
+  function toggleMore() {
+    showMore = !showMore
+    if (!showMore) picked = []
   }
 
   function toggle(id: string) {
@@ -161,49 +170,58 @@
 </script>
 
 <h1 id="setup-title" data-step-heading tabindex="-1" aria-describedby="setup-progress" class="setup-heading">{reviewFace ? m.onboarding_sources_review_title() : m.onboarding_sources_title()}</h1>
-<p class="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">{reviewFace ? m.onboarding_sources_review_body() : m.onboarding_sources_body()}</p>
-
-{#if reviewFace}
-  <div class="mt-7 flex max-w-2xl items-center gap-3 border-y border-border py-5" role="status" aria-live="polite">
-    {#if health === 'checking'}<LoaderCircle size={21} class="tile-spinner shrink-0" />
-    {:else if health === 'error'}<TriangleAlert size={21} class="shrink-0 text-destructive" />
-    {:else}<Check size={21} class="shrink-0" />{/if}
-    <div class="min-w-0">
-      <p class="font-semibold">{m.onboarding_count_sources({ count: String(streamAddons.length + $extensionUrls.length) })}</p>
-      <p class="mt-1 text-sm text-muted-foreground">{health === 'checking' ? m.onboarding_checking() : health === 'error' ? m.onboarding_source_unavailable() : m.onboarding_ready()}</p>
-    </div>
-  </div>
-  <h2 class="mt-8 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{m.onboarding_sources_add_more()}</h2>
+{#if !reviewFace}
+  <p class="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">{m.onboarding_sources_body()}</p>
 {/if}
 
-{#if loading}
-  <p class="mt-7 flex items-center gap-2 text-sm text-muted-foreground" role="status"><LoaderCircle size={16} class="tile-spinner" />{m.onboarding_sources_loading()}</p>
-{:else if error}
-  <p class="mt-7 text-sm leading-relaxed text-muted-foreground" role="status">{error}</p>
-  <button type="button" data-focusable onclick={() => void load()} class="setup-inline-button mt-4 bg-secondary">{m.onboarding_sources_retry()}</button>
-{:else}
-  <!-- minmax(0,1fr) is load-bearing: a grid item defaults to min-width:auto, so the implicit
-       column sizes to the widest row's max-content. `truncate` sets white-space:nowrap, which
-       makes that max-content the full untruncated description — the track blows past the
-       container and the text clips at the card edge instead of ellipsising. -->
-  <fieldset disabled={installing} class="mt-7 grid grid-cols-[minmax(0,1fr)] gap-2 sm:grid-cols-2 lg:grid-cols-3">
-    <legend class="sr-only">{m.onboarding_sources_title()}</legend>
-    {#each suggestions as suggestion (suggestion.id)}
-      <label class="setup-choice flex min-w-0 cursor-pointer items-center gap-3 p-4 {picked.includes(suggestion.id) ? 'selected' : ''}">
-        <input type="checkbox" data-focusable class="shrink-0" checked={picked.includes(suggestion.id)} onchange={() => toggle(suggestion.id)} />
-        <AddonLogo logo={suggestion.logo} name={suggestion.name} id={suggestion.id} size={32} />
-        <span class="min-w-0 flex-1">
-          <span class="block truncate text-sm font-semibold">{suggestion.name}</span>
-          <span class="mt-0.5 block truncate text-xs text-muted-foreground">{suggestion.description}</span>
-        </span>
-      </label>
-    {/each}
-  </fieldset>
-  <p class="mt-3 flex items-center gap-2 text-xs leading-relaxed text-muted-foreground" role="status">
-    {#if installing}<LoaderCircle size={14} class="tile-spinner" />{m.onboarding_sources_installing()}
-    {:else if picked.length}{m.onboarding_sources_picked({ count: String(picked.length) })}
-    {:else}{m.onboarding_sources_none_selected()}{/if}
-  </p>
+{#if reviewFace}
+  <div class="mt-6 flex items-center gap-3 rounded-xl border border-border px-4 py-3" role="status" aria-live="polite">
+    {#if health === 'checking'}<LoaderCircle size={18} class="tile-spinner shrink-0" />
+    {:else if health === 'error'}<TriangleAlert size={18} class="shrink-0 text-destructive" />
+    {:else}<Check size={18} class="shrink-0" />{/if}
+    <p class="min-w-0 text-sm">
+      <span class="font-semibold">{m.onboarding_count_sources({ count: String(streamAddons.length + $extensionUrls.length) })}</span>
+      <span class="text-muted-foreground"> · {health === 'checking' ? m.onboarding_checking() : health === 'error' ? m.onboarding_source_unavailable() : m.onboarding_ready()}</span>
+    </p>
+  </div>
+  <!-- Someone whose sources came over has little reason to browse more, so the picker waits behind
+       this instead of filling the screen. -->
+  <button type="button" data-focusable onclick={toggleMore} aria-expanded={showMore} class="mt-5 inline-flex items-center gap-2 text-sm font-semibold">
+    <ChevronDown size={16} class="transition-transform {showMore ? 'rotate-180' : ''}" />{m.onboarding_sources_add_more()}
+  </button>
+{/if}
+
+{#if !reviewFace || showMore}
+  {#if loading}
+    <p class="mt-6 flex items-center gap-2 text-sm text-muted-foreground" role="status"><LoaderCircle size={16} class="tile-spinner" />{m.onboarding_sources_loading()}</p>
+  {:else if error}
+    <p class="mt-6 text-sm leading-relaxed text-muted-foreground" role="status">{error}</p>
+    <button type="button" data-focusable onclick={() => void load()} class="setup-inline-button mt-4 bg-secondary">{m.onboarding_sources_retry()}</button>
+  {:else}
+    <!-- One hairline-ruled list rather than a wall of cards. minmax(0,1fr) is load-bearing: a grid
+         item defaults to min-width:auto, so a `truncate` row would size its track to the full
+         untruncated text and clip at the edge instead of ellipsising. -->
+    <fieldset disabled={installing} class="mt-4 grid grid-cols-[minmax(0,1fr)] gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2">
+      <legend class="sr-only">{m.onboarding_sources_title()}</legend>
+      {#each suggestions as suggestion (suggestion.id)}
+        <label class="flex min-w-0 cursor-pointer items-center gap-3 px-4 py-3 transition-colors {picked.includes(suggestion.id) ? 'bg-secondary' : 'bg-background hover:bg-secondary/60'}">
+          <input type="checkbox" data-focusable class="shrink-0" checked={picked.includes(suggestion.id)} onchange={() => toggle(suggestion.id)} />
+          <AddonLogo logo={suggestion.logo} name={suggestion.name} id={suggestion.id} size={24} />
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-sm font-semibold">{suggestion.name}</span>
+            <span class="mt-0.5 block truncate text-xs text-muted-foreground">{suggestion.description}</span>
+          </span>
+        </label>
+      {/each}
+      <!-- Fills the last cell of an odd list, which would otherwise show the rule colour. -->
+      {#if suggestions.length % 2}<span aria-hidden="true" class="hidden bg-background sm:block"></span>{/if}
+    </fieldset>
+    <p class="mt-3 flex items-center gap-2 text-xs leading-relaxed text-muted-foreground" role="status">
+      {#if installing}<LoaderCircle size={14} class="tile-spinner" />{m.onboarding_sources_installing()}
+      {:else if picked.length}{m.onboarding_sources_picked({ count: String(picked.length) })}
+      {:else}{m.onboarding_sources_none_selected()}{/if}
+    </p>
+  {/if}
 {/if}
 {#if installError}<p bind:this={errorAlert} role="alert" tabindex="-1" class="mt-3 text-sm text-destructive">{installError}</p>{/if}
 

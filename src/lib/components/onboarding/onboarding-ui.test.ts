@@ -22,7 +22,9 @@ const sources = steps.SourcesStep
 describe('onboarding presentation contracts', () => {
   it('keeps a single artwork wordmark without captions or a visible step header', () => {
     expect(shell.match(/<Wordmark\b/g)).toHaveLength(1)
-    expect(shell).toContain('class="art-wordmark"><Wordmark />')
+    expect(shell).toContain('class="setup-wordmark"><Wordmark />')
+    // Inside the sheet, so the mark belongs to the content instead of floating in a screen corner.
+    expect(shell.indexOf('<div class="setup-sheet">')).toBeLessThan(shell.indexOf('class="setup-wordmark"'))
     expect(shell).not.toContain('<header')
     expect(shell).not.toContain('step-progress')
     expect(shell).not.toContain('art-caption')
@@ -302,8 +304,13 @@ describe('onboarding presentation contracts', () => {
     expect(playback).toContain('timer = setTimeout(() => void validate(), 700)')
   })
 
-  it('lays the source picker out across the wide panel', () => {
-    expect(sources).toContain('sm:grid-cols-2 lg:grid-cols-3')
+  it('lists sources as one compact ruled list, folded away once sources already came over', () => {
+    expect(sources).toContain('rounded-xl border border-border bg-border sm:grid-cols-2')
+    expect(sources).toContain('aria-expanded={showMore}')
+    expect(sources).toContain('{#if !reviewFace || showMore}')
+    // Collapsing must not leave hidden ticks for Next to install.
+    expect(sources).toContain('if (!showMore) picked = []')
+    expect(sources).not.toContain('onboarding_sources_review_body')
   })
 
   it('opens on three ways to start, each one the way forward itself', () => {
@@ -321,12 +328,15 @@ describe('onboarding presentation contracts', () => {
     expect(ready).not.toContain('onboarding_ready_metadata')
   })
 
-  it('uses the whole screen instead of a half-width column beside the artwork', () => {
+  it('puts every word on one solid sheet over the poster wall, in izumi\'s own font', () => {
     expect(shell).not.toContain('setup-art-panel')
     expect(shell).not.toContain('minmax(0, 1.3fr)')
-    expect(shell).toContain('max-width: 64rem')
-    expect(artwork).toContain('{#each [0, 1, 2, 3, 4, 5] as column}')
-    expect(artwork).toContain('grid-template-columns: repeat(6, 1fr);')
+    expect(shell).toContain('<div class="setup-sheet">')
+    expect(shell).toMatch(/\.setup-sheet \{[^}]*max-width: 52rem;[^}]*background: hsl\(var\(--background\) \/ \.97\)/)
+    // A re-run inherits whatever theme is active; setup keeps the brand font regardless.
+    expect(css).toContain(".onboarding-surface { font-family: 'Nunito Variable', sans-serif; }")
+    expect(artwork).toContain('{#each [0, 1, 2, 3, 4, 5, 6, 7] as column}')
+    expect(artwork).toContain('grid-template-columns: repeat(8, 1fr);')
     expect(css).toMatch(/\.setup-heading \{[^}]*max-width: 42rem;/)
   })
 

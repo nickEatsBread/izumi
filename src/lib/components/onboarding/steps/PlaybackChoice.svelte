@@ -76,11 +76,11 @@
 <div role="group" aria-labelledby="setup-playback-title" class="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
   <button type="button" data-focusable onclick={() => $torrentPlaybackMode = 'debrid'} aria-pressed={$torrentPlaybackMode === 'debrid'} class="setup-choice flex items-start gap-3 p-4 text-left {$torrentPlaybackMode === 'debrid' ? 'selected' : ''}">
     <Cloud size={22} class="mt-0.5 shrink-0 text-muted-foreground" />
-    <span class="min-w-0"><span class="block font-semibold">{m.onboarding_playback_debrid()}</span><span class="mt-1 block text-sm leading-relaxed text-muted-foreground">{m.onboarding_playback_debrid_body()}</span></span>
+    <span class="min-w-0"><span class="block text-sm font-semibold">{m.onboarding_playback_debrid()}</span><span class="mt-1 block text-xs leading-relaxed text-muted-foreground">{m.onboarding_playback_debrid_body()}</span></span>
   </button>
   <button type="button" data-focusable onclick={chooseDirect} aria-pressed={$torrentPlaybackMode === 'direct'} class="setup-choice flex items-start gap-3 p-4 text-left {$torrentPlaybackMode === 'direct' ? 'selected' : ''}">
     <Share2 size={22} class="mt-0.5 shrink-0 text-muted-foreground" />
-    <span class="min-w-0"><span class="block font-semibold">{m.onboarding_playback_p2p()}</span><span class="mt-1 block text-sm leading-relaxed text-muted-foreground">{m.onboarding_playback_p2p_body()}</span></span>
+    <span class="min-w-0"><span class="block text-sm font-semibold">{m.onboarding_playback_p2p()}</span><span class="mt-1 block text-xs leading-relaxed text-muted-foreground">{m.onboarding_playback_p2p_body()}</span></span>
   </button>
 </div>
 

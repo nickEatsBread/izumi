@@ -20,9 +20,9 @@
 
 <div class="mt-8 grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-3">
   {#each choices as choice}
-    <button type="button" data-focusable onclick={choice.action} class="setup-choice flex flex-col items-start gap-3 p-6 text-left">
-      <choice.Icon size={28} class="text-muted-foreground" />
-      <span class="block text-xl font-semibold">{choice.title}</span>
+    <button type="button" data-focusable onclick={choice.action} class="setup-choice flex flex-col items-start gap-3 p-5 text-left">
+      <choice.Icon size={24} class="text-muted-foreground" />
+      <span class="block text-lg font-semibold">{choice.title}</span>
       <span class="block flex-1 text-sm leading-relaxed text-muted-foreground">{choice.body}</span>
       <ArrowRight size={18} class="mt-2 text-muted-foreground" />
     </button>

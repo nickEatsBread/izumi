@@ -256,7 +256,6 @@
   "onboarding_sources_title": "視聴の準備",
   "onboarding_sources_body": "izumi にはソースが含まれていないため、1つ以上選んでください。続けてトレントの再生方法を選びます。",
   "onboarding_sources_review_title": "ソースの準備ができました",
-  "onboarding_sources_review_body": "アカウントから取り込まれたソースです。必要なら追加できます。",
   "onboarding_sources_add_more": "ソースを追加",
   "onboarding_sources_installing": "インストール中…",
   "onboarding_sources_install_failed": "そのソースはインストールできませんでした。別のものをお試しください。",

@@ -262,8 +262,10 @@
   <div bind:this={root} role="dialog" aria-modal="true" aria-labelledby="setup-title" tabindex="-1" data-nav-trap class:keyboard-open={keyboardOpen} class="onboarding-surface fixed inset-0 z-[160] flex h-[100dvh] w-screen flex-col overflow-hidden bg-background text-foreground" onkeydown={handleKeydown}>
     <span id="setup-progress" class="sr-only">{m.onboarding_step_count({ current: String(stepIndex + 1), total: String(totalSteps) })}</span>
     <div class="setup-art" aria-hidden="true"><SetupArtwork {intent} /></div>
-    <div class="art-wordmark"><Wordmark /></div>
     <main class="setup-main min-w-0 flex-1">
+      <!-- Every word on screen sits on this solid sheet; the posters stay behind it, never under text. -->
+      <div class="setup-sheet">
+      <div class="setup-wordmark"><Wordmark /></div>
       {#if mode === 'transfer'}
         <!-- Its own branch rather than a step: this screen is not "2 of 4" of anything, it is
              the alternative to the whole wizard, and it owns its own footer. -->
@@ -313,6 +315,7 @@
         {/if}
       </footer>
       {/if}
+      </div>
     </main>
     {#if introRunning}<IntroSequence oncomplete={() => (introRunning = false)} />{/if}
   </div>
@@ -320,24 +323,28 @@
 
 <style>
   .setup-art { position: absolute; inset: 0; pointer-events: none; }
-  /* The poster wall sits behind the whole surface under a scrim instead of taking a column of its
-     own, so every step gets the full width. Phones already worked this way. */
-  .setup-art::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, hsl(var(--background) / .35), hsl(var(--background) / .88) 28%, hsl(var(--background) / .96) 70%); }
-  .art-wordmark { position: absolute; z-index: 1; top: max(1.75rem, env(safe-area-inset-top)); left: max(2rem, env(safe-area-inset-left)); display: flex; color: white; }
-  .setup-main { position: relative; z-index: 1; min-height: 0; display: flex; flex-direction: column; justify-content: safe center; padding: max(5.5rem, calc(env(safe-area-inset-top) + 4rem)) clamp(1.5rem, 5vw, 5rem) max(2rem, env(safe-area-inset-bottom)); }
-  .setup-step { min-height: 0; overflow-y: auto; overscroll-behavior: contain; width: 100%; max-width: 64rem; margin-inline: auto; padding: 4px; scroll-behavior: auto; }
+  /* Dimmed evenly: with every word on the sheet, the wall is only backdrop. */
+  .setup-art::after { content: ''; position: absolute; inset: 0; background: hsl(var(--background) / .65); }
+  .setup-main { position: relative; z-index: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: safe center; padding: max(2rem, env(safe-area-inset-top)) clamp(1rem, 4vw, 3rem) max(2rem, env(safe-area-inset-bottom)); }
+  .setup-sheet { display: flex; flex-direction: column; min-height: 0; max-height: 100%; width: 100%; max-width: 52rem; padding: 1.75rem 2.25rem 1.25rem; border: 1px solid hsl(var(--border)); border-radius: 1.25rem; background: hsl(var(--background) / .97); box-shadow: 0 24px 80px rgb(0 0 0 / .45); }
+  .setup-wordmark { display: flex; flex-shrink: 0; margin-bottom: 1.5rem; }
+  .setup-step { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px; scroll-behavior: auto; }
   .setup-content { animation: step-enter 320ms cubic-bezier(.2, .7, .2, 1) both; }
-  .setup-actions { flex-shrink: 0; width: 100%; max-width: 64rem; margin-inline: auto; margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid hsl(var(--border) / .65); }
+  .setup-actions { flex-shrink: 0; margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid hsl(var(--border) / .65); }
   @keyframes step-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-  /* A docked Deck or a small laptop: keep the wordmark clear but give the step the height back. */
+  /* A docked Deck or a small laptop: tighter margins give the step its height back. */
   @media (max-height: 760px) {
-    .setup-main { padding-top: max(4.25rem, calc(env(safe-area-inset-top) + 3.5rem)); }
-    .setup-actions { margin-top: 1.25rem; padding-top: 1rem; }
+    .setup-main { padding-block: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-bottom)); }
+    .setup-sheet { padding-top: 1.25rem; }
+    .setup-wordmark { margin-bottom: 1rem; }
+    .setup-actions { margin-top: 1rem; padding-top: 1rem; }
   }
   @media (max-width: 767px), (max-height: 500px) and (pointer: coarse) {
     .onboarding-surface { height: var(--setup-viewport-height, 100dvh); top: var(--setup-viewport-top, 0px); width: 100%; }
-    .art-wordmark { top: max(1.5rem, env(safe-area-inset-top)); left: max(1.5rem, env(safe-area-inset-left)); }
-    .setup-main { justify-content: flex-start; padding: max(6rem, calc(env(safe-area-inset-top) + 4.5rem)) max(1.5rem, env(safe-area-inset-right)) 0 max(1.5rem, env(safe-area-inset-left)); }
+    /* A bottom sheet: a strip of posters stays visible above it. */
+    .setup-main { justify-content: flex-end; padding: max(3.5rem, calc(env(safe-area-inset-top) + 2.5rem)) 0 0; }
+    .setup-sheet { flex: 1; max-width: none; padding: 1.25rem max(1.25rem, env(safe-area-inset-right)) 0 max(1.25rem, env(safe-area-inset-left)); border-width: 1px 0 0; border-radius: 1.25rem 1.25rem 0 0; background: hsl(var(--background)); box-shadow: none; }
+    .setup-wordmark { margin-bottom: 1rem; }
     .setup-step { flex: 1; padding: 4px 4px 1rem; }
     .setup-content :global(.text-sm) { font-size: 14px; }
     .setup-content :global(.text-xs) { font-size: 12px; }
@@ -346,9 +353,8 @@
     /* Keep the forward action off the screen edge on a phone. The last child is the primary button
        on the final screen and the skip/next pair everywhere else, so this targets whichever it is. */
     .setup-actions > :last-child { max-width: 72%; }
-    .keyboard-open .setup-main { padding-top: max(1rem, env(safe-area-inset-top)); }
-    .keyboard-open .art-wordmark { display: none; }
-    .keyboard-open .setup-art::after { background: hsl(var(--background) / .97); }
+    .keyboard-open .setup-main { padding-top: max(.5rem, env(safe-area-inset-top)); }
+    .keyboard-open .setup-wordmark { display: none; }
   }
   @media (max-height: 600px) and (max-width: 767px), (max-height: 500px) and (pointer: coarse) {
     .setup-actions { padding-top: .6rem; }

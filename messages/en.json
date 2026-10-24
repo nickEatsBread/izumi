@@ -256,7 +256,6 @@
   "onboarding_sources_title": "Get ready to watch",
   "onboarding_sources_body": "izumi ships with no sources, so pick at least one. Then choose how torrents play.",
   "onboarding_sources_review_title": "Your sources are ready",
-  "onboarding_sources_review_body": "These came over with your accounts. Add more if you want to.",
   "onboarding_sources_add_more": "Add more sources",
   "onboarding_sources_installing": "Installing…",
   "onboarding_sources_install_failed": "That source did not install. Try another one.",
