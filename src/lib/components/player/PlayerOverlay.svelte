@@ -66,7 +66,7 @@
   import { isDirectP2PStream, shouldShowP2PStatus, shouldUseGameModeDynamicOverlay } from '$lib/player/p2p-status'
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
   import X from '@lucide/svelte/icons/x'
-  import PlayIcon from '@lucide/svelte/icons/play'
+  import PlayPauseIcon from './PlayPauseIcon.svelte'
   import { isMobile, isWindows } from '$lib/platform'
   import { themePresentation, shellNav } from '$lib/themes/runtime'
   import { resolvePlayerDock, type PlayerChrome } from '$lib/themes/presentation'
@@ -76,7 +76,6 @@
   import DockEpisodes from './DockEpisodes.svelte'
   import WatchToolbar from './WatchToolbar.svelte'
   import WatchInfo from './WatchInfo.svelte'
-  import PauseIcon from '@lucide/svelte/icons/pause'
   import PartyPresence from '$lib/components/watch/PartyPresence.svelte'
   import { matchRememberedTrack, rememberedSeriesTrack } from '$lib/player/track-preferences'
   import { addSceneBookmark } from '$lib/player/scene-bookmarks'
@@ -2065,7 +2064,7 @@
       <div class="flex items-center gap-3">
         <button data-focusable onclick={(event) => { event.stopPropagation(); cmd('cycle', ['pause']) }}
                 class="pointer-events-auto grid size-10 shrink-0 place-items-center rounded-full bg-white text-black" aria-label={transportPaused ? 'Play' : 'Pause'}>
-          {#if transportPaused}<PlayIcon size={20} fill="currentColor" />{:else}<PauseIcon size={20} fill="currentColor" />{/if}
+          <PlayPauseIcon paused={transportPaused} size={20} />
         </button>
         <div class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/25">
           <div class="h-full bg-theme" style="width:{transportDur > 0 ? Math.min(100, transportPos / transportDur * 100) : 0}%"></div>
