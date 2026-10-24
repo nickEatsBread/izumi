@@ -57,6 +57,29 @@
     if (playing) send($trailerMuted ? 'mute' : 'unMute')
   })
 
+  // A backdrop trailer's mute button fades away (`data-idle`) after 3 s without pointer or key input
+  // and comes back on the next one; keyboard focus keeps it. Reduced motion drops the fade (app.css).
+  let idle = $state(false)
+  let focusVisible = $state(false)
+  let idleTimer: ReturnType<typeof setTimeout> | undefined
+  function wake() {
+    idle = false
+    clearTimeout(idleTimer)
+    idleTimer = setTimeout(() => (idle = true), 3000)
+  }
+  $effect(() => {
+    if (loop || !playing) return
+    wake()
+    window.addEventListener('pointermove', wake, { passive: true })
+    window.addEventListener('keydown', wake, true)
+    return () => {
+      clearTimeout(idleTimer)
+      window.removeEventListener('pointermove', wake)
+      window.removeEventListener('keydown', wake, true)
+      idle = false
+    }
+  })
+
   function fail() {
     if (dead) return
     dead = true
@@ -74,6 +97,8 @@
     }
   }
   function toggleMute() {
+    // M is swallowed before the idle listener hears it, so show the button it just changed.
+    if (!loop) wake()
     $trailerMuted = !$trailerMuted
     // Keep the command inside the click/keypress user gesture. This matters to autoplay policies
     // that reject an asynchronous attempt to add audio to an already-autoplaying video.
@@ -176,8 +201,11 @@
   {#if playing}
     <button
       data-part={mutePart}
+      data-idle={(idle && !focusVisible) || undefined}
       onclick={(e) => { e.stopPropagation(); toggleMute() }}
-      class="pointer-events-auto absolute {muteClass} rounded-md bg-black/50 p-1 text-white"
+      onfocus={(e) => (focusVisible = e.currentTarget.matches(':focus-visible'))}
+      onblur={() => (focusVisible = false)}
+      class="pointer-events-auto absolute {muteClass} rounded-md bg-black/50 p-1 text-white transition-opacity duration-300 {idle && !focusVisible ? 'opacity-0' : ''}"
       aria-label={$trailerMuted ? 'Unmute' : 'Mute'}
     >
       {#if $trailerMuted}<VolumeX size={14} />{:else}<Volume2 size={14} />{/if}

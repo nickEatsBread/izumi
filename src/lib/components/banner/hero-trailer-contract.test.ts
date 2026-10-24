@@ -88,6 +88,26 @@ describe('hero trailers (API 6 `hero.preview` / `detail.preview: "trailer"`)', (
     expect(between(hero, '{#snippet slideTrailer(media: Media)}', '{/snippet}')).toContain('if (natural) played.add(slide)')
   })
 
+  it("fades a backdrop trailer's mute button away while idle, never a hover preview's", () => {
+    const idle = between(youtube, 'let idle = $state(false)', 'function fail()')
+    // Backdrop trailers only (the hover previews loop), and only while one plays.
+    expect(idle).toContain('if (loop || !playing) return')
+    expect(idle).toContain('idleTimer = setTimeout(() => (idle = true), 3000)')
+    for (const type of ["'pointermove'", "'keydown'"]) {
+      expect(idle).toContain(`window.addEventListener(${type}, wake`)
+      expect(idle).toContain(`window.removeEventListener(${type}, wake`)
+    }
+    expect(idle).toContain('clearTimeout(idleTimer)')
+    // M is consumed before the window listener hears it, so the toggle wakes the button itself.
+    expect(between(youtube, 'function toggleMute() {', '\n  }')).toContain('if (!loop) wake()')
+    const button = between(youtube, '<button\n      data-part={mutePart}', '>\n')
+    expect(button).toContain('data-idle={(idle && !focusVisible) || undefined}')
+    expect(button).toContain("onfocus={(e) => (focusVisible = e.currentTarget.matches(':focus-visible'))}")
+    expect(button).toContain('onblur={() => (focusVisible = false)}')
+    // A fade, which app.css drops under reduced motion.
+    expect(button).toContain("transition-opacity duration-300 {idle && !focusVisible ? 'opacity-0' : ''}")
+  })
+
   it('never plays a backdrop trailer alongside the full dialog or a hover preview', () => {
     expect(store).toContain('export const hoverTrailers = writable(0)')
     expect(backdrop).toContain("import { backdropTrailerMuted, hoverTrailers, trailerPopup } from '$lib/stores/trailer'")
