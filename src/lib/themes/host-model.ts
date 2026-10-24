@@ -140,7 +140,7 @@ export function mediaDisplayModel(media: Media, extras: Partial<DisplayModel> = 
     episodeCountLabel: media.episodes ? `${media.episodes} ${media.episodes === 1 ? 'Episode' : 'Episodes'}` : undefined,
     duration: media.duration || undefined,
     // An episode host passes its own runtime as `duration`; the long form follows it.
-    durationLong: durationLongText(extras.duration ?? media.duration),
+    durationLong: durationLongText(extras.duration || media.duration),
     source: media.source ? media.source.replace(/_/g, ' ').toLowerCase() : undefined,
     country: ({ JP: 'Japan', KR: 'South Korea', CN: 'China', TW: 'Taiwan', HK: 'Hong Kong', US: 'United States' } as Record<string, string>)[media.countryOfOrigin ?? ''] ?? media.countryOfOrigin,
     nextEpisode: next?.episode || undefined,
@@ -182,7 +182,8 @@ export function episodeDisplayModel(
     episodeNo: extras.episodeNo ?? String(ep),
     episodeCode: extras.episodeCode ?? episodeCodeText(ep, meta?.season, meta?.seasonEpisode),
     description: extras.description ?? (strip(meta?.overview) || undefined),
-    duration: extras.duration ?? meta?.runtime ?? media.duration ?? undefined,
+    // A runtime of 0 is unknown (a movie's single episode), never "0m".
+    duration: extras.duration || meta?.runtime || media.duration || undefined,
     airDate: extras.airDate ?? meta?.airDate,
     airDateLong: extras.airDateLong ?? longDayText(extras.airDate ?? meta?.airDate),
     still: extras.still ?? meta?.image,

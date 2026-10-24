@@ -75,6 +75,15 @@ describe('theme host display model', () => {
     expect(model.score).toBe(91)
     expect(displayText('progress', model)).toBe('42%')
   })
+  it('treats a runtime of 0 as unknown, never "0m"', () => {
+    const movie = { ...media, format: 'MOVIE', episodes: 1, duration: 0 } as Media
+    expect(episodeDisplayModel(movie, 1, { runtime: 0 } as never).duration).toBeUndefined()
+    expect(episodeDisplayModel(movie, 1, { runtime: 0 } as never).durationLong).toBeUndefined()
+    expect(episodeDisplayModel({ ...movie, duration: 105 }, 1, { runtime: 0 } as never).duration).toBe(105)
+    expect(episodeDisplayModel({ ...movie, duration: 105 }, 1, { runtime: 0 } as never).durationLong).toBe('1 hr 45 mins')
+    expect(mediaDisplayModel(movie).duration).toBeUndefined()
+    expect(mediaDisplayModel(movie).durationLong).toBeUndefined()
+  })
   it('exposes source and country labels for series-facts templates', () => {
     const model = mediaDisplayModel({ ...media, source: 'MANGA', countryOfOrigin: 'JP' })
     expect(model.source).toBe('manga')
