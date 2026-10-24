@@ -18,11 +18,14 @@
   // The layered Back model publishes what B does next on <html> (`data-nav-back-hint`); without it
   // the bar falls back to its own reading of the page.
   let back = $state<string | undefined>()
+  // What Y does on this page, when the page says (`data-nav-hint-y`, Settings in controller mode).
+  let y = $state<string | undefined>()
   const refresh = () => {
     focused = document.activeElement
     pageTabs = findPageTabs() !== null
     dialog = [...document.querySelectorAll<HTMLElement>('[data-nav-trap]')].some((trap) => trap.checkVisibility?.() ?? true)
     back = document.documentElement.dataset.navBackHint || undefined
+    y = document.documentElement.dataset.navHintY || undefined
   }
 
   $effect(() => onPadButton(({ pressed }) => {
@@ -59,7 +62,7 @@
 
   const shown = $derived(padActive && ($gameMode || $controllerMode) && !$playing)
   const home = $derived(page.url.pathname.replace(/\/$/, '') === '/app/home')
-  const hints = $derived(hintsFor(focused, { home, pageTabs, dialog, back }))
+  const hints = $derived(hintsFor(focused, { home, pageTabs, dialog, back, y }))
   const family = $derived(glyphFamily($lastPadId, $gameMode))
   const glyphOf = (button: HintButton): GlyphButton => (button === 'l2r2' ? 'l2' : button)
 
