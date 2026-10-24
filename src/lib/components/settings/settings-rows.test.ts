@@ -141,8 +141,9 @@ describe('SelectMenu variants', () => {
     expect(source).toContain("class=\"absolute {variant === 'inline' ? 'right-0' : 'left-0'} z-[80] min-w-full")
   })
 
+  // The fallback itself is tested in src/lib/settings/controller-picker.test.ts.
   it('opens onto the first enabled option when the current one is disabled', () => {
-    expect(source).toContain('`[data-select-value="${CSS.escape(value)}"]:not(:disabled)`')
+    expect(source).toContain('openingOption(list, value))?.focus({ preventScroll: true })')
   })
 })
 

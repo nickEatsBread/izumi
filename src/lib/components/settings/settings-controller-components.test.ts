@@ -37,16 +37,28 @@ describe('SelectMenu in controller mode (spec §3.5)', () => {
     const controller = source.indexOf('{#if $settingsControllerMode}')
     expect(controller).toBeGreaterThan(-1)
     expect(source.indexOf('{:else if $isMobile}')).toBeGreaterThan(controller)
-    expect(source).toContain('<div use:portal class="fixed inset-0 z-[80] grid place-items-center bg-black/60 p-4" role="presentation">')
+    // Above first-run setup (z-160), which hosts a SelectMenu; below the native picker (175) and OSK (190).
+    expect(source).toContain('<div use:portal bind:this={backdrop} class="fixed inset-0 z-[165] grid place-items-center bg-black/60 p-4" role="presentation"')
     expect(source).toContain('class="w-[23.333rem] max-w-full rounded-2xl border border-border bg-card p-3 text-card-foreground shadow-2xl"')
-    expect(source).toContain('<div data-nav-scroll-container class="max-h-[17.778rem] overflow-y-auto overscroll-contain">')
+    expect(source).toContain('class="max-h-[17.778rem] overflow-y-auto overscroll-contain">')
     expect(source).toContain('data-select-picker')
   })
 
-  it('opens on the current value, finds options in the open panel, and keeps taps inside it from closing it', () => {
+  it('is a modal dialog whose list is the listbox, not a listbox around a heading', () => {
+    const picker = source.slice(source.indexOf('{#if $settingsControllerMode}'), source.indexOf('{:else if $isMobile}'))
+    expect(picker).toContain('role="dialog"\n          aria-modal="true"')
+    expect(picker).toContain("<div data-nav-scroll-container role={searchable ? undefined : 'listbox'} aria-label={searchable ? undefined : ariaLabel}")
+  })
+
+  it('dismisses from a click on the backdrop, never the pointerdown a touch tap starts with', () => {
+    expect(source).toContain('onclick={(event) => { if (event.target === event.currentTarget) open = false }}')
+    expect(source).toContain('!backdrop?.contains(event.target as Node)) open = false')
+  })
+
+  // The option lookup, stepping and reveal are tested in src/lib/settings/controller-picker.test.ts.
+  it('opens on the current value and walks the open panel, revealing each option in the picker', () => {
     expect(source).toContain('const list: ParentNode = menu ?? root')
     expect(source).toContain('if ($settingsControllerMode) centrePickerValue(list, value)')
-    expect(source).toContain('[...(menu ?? root).querySelectorAll<HTMLButtonElement>')
-    expect(source).toContain('!menu?.contains(event.target as Node)')
+    expect(source).toContain("stepMenuOption(menu ?? root, event.key === 'ArrowDown' ? 1 : -1, $settingsControllerMode)")
   })
 })

@@ -13,7 +13,7 @@
   import { triggerOpensOnKey } from '$lib/nav'
   import { portal } from '$lib/util/portal'
   import { settingsControllerMode } from '$lib/settings/surface'
-  import { centrePickerValue } from '$lib/settings/controller-picker'
+  import { centrePickerValue, openingOption, stepMenuOption } from '$lib/settings/controller-picker'
 
   export type SelectOption = {
     value: string
@@ -76,6 +76,8 @@
   // the bottom, unreachable, with no page scroll to bring it back. menuPlacement flips it up and
   // caps its height to the room on whichever side it chose (see that module for the zoom caveat).
   let menu = $state<HTMLDivElement>()
+  // The controller picker's dimmed backdrop: a tap on it dismisses on click (see the template).
+  let backdrop = $state<HTMLDivElement>()
   let placement = $state<'down' | 'up'>('down')
   let maxHeight = $state(260)
   // Viewport offsets in LOCAL px for the fixed mobile panel (same pattern as MultiSelect): the
@@ -115,12 +117,9 @@
     await tick()
     // Now that it exists, re-decide against the real content height rather than the estimate.
     measure(menu?.scrollHeight)
-    // A disabled current option (Appearance's "Custom" theme) can't take focus; fall back to the first.
     // The controller picker is portalled to <body>, so options are looked up in the open panel.
     const list: ParentNode = menu ?? root
-    const current = list.querySelector<HTMLElement>(`[data-select-value="${CSS.escape(value)}"]:not(:disabled)`)
-    const first = list.querySelector<HTMLElement>('[data-select-value]:not(:disabled)')
-    ;(searchable && !controllerUi ? searchInput : current ?? first)?.focus({ preventScroll: true })
+    ;(searchable && !controllerUi ? searchInput : openingOption(list, value))?.focus({ preventScroll: true })
     if ($settingsControllerMode) centrePickerValue(list, value)
     // Decision 7: the searchable language menu is a typing-only launcher, so a controller gets the
     // built-in keyboard for its search at once. A no-op for mouse, touch and keyboard users.
@@ -161,17 +160,17 @@
     // This handler moves focus itself; stop the arrow here so the d-pad engine's window listener
     // does not move it a second time.
     event.stopPropagation()
-    const items = [...(menu ?? root).querySelectorAll<HTMLButtonElement>('[data-select-value]:not(:disabled)')]
-    const current = items.indexOf(document.activeElement as HTMLButtonElement)
-    const step = event.key === 'ArrowDown' ? 1 : -1
-    items[(current + step + items.length) % items.length]?.focus({ preventScroll: true })
+    // Which is also why the picker's capped list must scroll to the new option itself.
+    stepMenuOption(menu ?? root, event.key === 'ArrowDown' ? 1 : -1, $settingsControllerMode)
   }
 
   onMount(() => {
     const closeOutside = (event: PointerEvent) => {
       // A tap on the on-screen keyboard types into this menu's search; it is not a press outside.
       if (isOskTarget(event.target)) return
-      if (open && !root.contains(event.target as Node) && !menu?.contains(event.target as Node)) open = false
+      // The picker's backdrop closes on its own click: a touch pointerdown fires at touchstart, and a
+      // picker removed then lets the emulated click that follows land on the settings row behind it.
+      if (open && !root.contains(event.target as Node) && !backdrop?.contains(event.target as Node)) open = false
     }
     const closeOnBlur = () => { open = false }
     window.addEventListener('pointerdown', closeOutside, true)
@@ -252,11 +251,15 @@
       <!-- Controller mode (spec §3.5, NuvioTV's single-choice dialog): a centred picker 420 px wide
            whose list stops at 320 px, opened on the current value. A picks, saves and closes; B
            closes it unchanged (the nav layer). Portalled to <body>, so a section's cross-fade
-           transform can never become its containing block. -->
-      <div use:portal class="fixed inset-0 z-[80] grid place-items-center bg-black/60 p-4" role="presentation">
+           transform can never become its containing block. z-[165]: above every dialog that can
+           host a SelectMenu (first-run setup is 160), below the native picker sheet (175) and the
+           on-screen keyboard (190). -->
+      <div use:portal bind:this={backdrop} class="fixed inset-0 z-[165] grid place-items-center bg-black/60 p-4" role="presentation"
+           onclick={(event) => { if (event.target === event.currentTarget) open = false }}>
         <div
           bind:this={menu}
-          role={searchable ? 'dialog' : 'listbox'}
+          role="dialog"
+          aria-modal="true"
           tabindex="-1"
           aria-label={ariaLabel}
           data-nav-trap
@@ -268,7 +271,8 @@
           onkeydown={onMenuKeydown}
         >
           {#if ariaLabel}<h2 class="truncate px-3 pb-2 text-base font-bold">{ariaLabel}</h2>{/if}
-          <div data-nav-scroll-container class="max-h-[17.778rem] overflow-y-auto overscroll-contain">
+          <!-- A searchable list carries its own listbox inside the snippet, after the search box. -->
+          <div data-nav-scroll-container role={searchable ? undefined : 'listbox'} aria-label={searchable ? undefined : ariaLabel} class="max-h-[17.778rem] overflow-y-auto overscroll-contain">
             {@render optionList()}
           </div>
         </div>

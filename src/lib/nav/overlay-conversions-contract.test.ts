@@ -117,7 +117,7 @@ describe('SelectMenu is a nav layer', () => {
 
   it('opens a searchable list onto the current option for controller users', () => {
     expect(source).toContain('const controllerUi = $derived($gameMode || $isTv || $controllerMode)')
-    expect(source).toContain('(searchable && !controllerUi ? searchInput : current ?? first)?.focus({ preventScroll: true })')
+    expect(source).toContain('(searchable && !controllerUi ? searchInput : openingOption(list, value))?.focus({ preventScroll: true })')
   })
 })
 
