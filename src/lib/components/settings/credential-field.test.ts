@@ -15,4 +15,10 @@ describe('credential editor', () => {
     expect(source).toContain('if (!confirmRemove)')
     expect(source).toContain('Not yet verified with the service')
   })
+  it('offers typing here or sending from a phone in controller mode (spec §5.4)', () => {
+    expect(source).toContain("import { settingsControllerMode } from '$lib/settings/surface'")
+    expect(source).toContain("{$settingsControllerMode ? ($isTv ? 'Enter on this TV' : 'Enter on this device') : value ? 'Edit' : 'Set up'}")
+    expect(source).toContain("const SEND_FROM_PHONE_HREF = '/app/settings/devices'")
+    expect(source).toContain('>Send from phone</a>')
+  })
 })
