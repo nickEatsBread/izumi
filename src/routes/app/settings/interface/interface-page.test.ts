@@ -18,4 +18,15 @@ describe('interface settings', () => {
     expect(page).toContain("import { isAndroid, isAndroidTv, isMobile } from '$lib/platform'")
     expect(page).toMatch(/\{#if !\$isMobile\}\n\s*<label data-setting-key="ui-scale" [^>]*>[\s\S]*?bind:value=\{\$uiScale\}[\s\S]*?<\/label>\n\s*\{\/if\}/)
   })
+
+  it('leaves the library rows to Home and library', () => {
+    for (const moved of [
+      '$episodeLayout', '$browseLayout', '$scheduleLayout', '$scheduleDefaultTab', '$scheduleStickyHeader',
+      '$scheduleShowNextUp', '$cwDismissAction', '$ratingStyle', '$ratingOnPage', '$airingNotifications',
+      '$hideSpoilers', '$absoluteEpisodeNumbers', '$episodeQueueEnabled', '$sceneBookmarksEnabled', 'ScoreScale',
+      'Optional features',
+    ]) {
+      expect(interfacePage, moved).not.toContain(moved)
+    }
+  })
 })
