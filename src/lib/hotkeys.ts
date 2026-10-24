@@ -9,6 +9,7 @@ export type HotkeyId =
   | 'playerSeekForward'
   | 'playerPreviousChapter'
   | 'playerNextChapter'
+  | 'playerSkipSegment'
   | 'playerVolumeUp'
   | 'playerVolumeDown'
   | 'playerMute'
@@ -58,6 +59,7 @@ export const HOTKEYS: HotkeyDefinition[] = [
   { id: 'playerSeekForward', scope: 'Player', group: 'Seeking', label: 'Seek forward', description: 'Seek by the configured player step.', defaultBinding: 'ArrowRight' },
   { id: 'playerPreviousChapter', scope: 'Player', group: 'Seeking', label: 'Previous chapter', description: 'Restart this chapter, or jump back a chapter if it just started.', defaultBinding: 'PageUp' },
   { id: 'playerNextChapter', scope: 'Player', group: 'Seeking', label: 'Next chapter', description: 'Jump to the start of the next chapter.', defaultBinding: 'PageDown' },
+  { id: 'playerSkipSegment', scope: 'Player', group: 'Seeking', label: 'Skip opening / ending', description: 'Skip the opening, ending, recap or preview playing now.', defaultBinding: 'Enter' },
   { id: 'playerVolumeUp', scope: 'Player', group: 'Audio', label: 'Volume up', description: 'Raise volume five points.', defaultBinding: 'ArrowUp' },
   { id: 'playerVolumeDown', scope: 'Player', group: 'Audio', label: 'Volume down', description: 'Lower volume five points.', defaultBinding: 'ArrowDown' },
   { id: 'playerSubtitleCycle', scope: 'Player', group: 'Subtitles', label: 'Cycle subtitles', description: 'Select the next subtitle track.', defaultBinding: 's' },

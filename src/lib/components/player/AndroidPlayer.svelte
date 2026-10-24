@@ -533,6 +533,13 @@
       return
     }
 
+    // OK skips while the Skip prompt is up, as controller A does on desktop, instead of pausing.
+    if (!controlsShown && event.key === 'Enter' && showSkip) {
+      event.preventDefault()
+      skipSegment()
+      return
+    }
+
     if (!controlsShown && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].includes(event.key)) {
       event.preventDefault()
       if (event.key === 'Enter') pressPause()

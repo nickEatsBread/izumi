@@ -1758,6 +1758,8 @@
       const action = findHotkey(e, get(hotkeyBindings), 'Player')
       if (!action) return
       if (get(deckKeyboardWarning)) return
+      // Outside an opening/ending the skip key is not the player's, so Enter still presses a focused button.
+      if (action === 'playerSkipSegment' && !currentSeg) return
       e.preventDefault(); e.stopImmediatePropagation()
       // Back/Escape is an exit command, not player activity. Game-mode arrow seeking is also quiet:
       // the native seek feedback can move without flashing the complete controls over the video.
@@ -1783,6 +1785,7 @@
         const t = nextChapterTarget(chapters, transportPos)
         if (t !== null) seekTo(t)
       }
+      else if (action === 'playerSkipSegment' && currentSeg) seekTo(currentSeg.end + 0.5)
       else if (action === 'playerVolumeUp') cmd('add', ['volume', '5'])
       else if (action === 'playerVolumeDown') cmd('add', ['volume', '-5'])
       else if (action === 'playerMute') cmd('cycle', ['mute'])
