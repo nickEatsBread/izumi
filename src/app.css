@@ -622,6 +622,8 @@ html.controller-mode [data-carousel-scroller] { padding-top: max(1.125rem, 18px)
 html.gamemode[data-theme-nav='top'] [data-settings-controller] { --settings-top: var(--theme-top-row); }
 html.gamemode[data-theme-nav='bottom'] [data-settings-controller] { --settings-bar: var(--theme-bottom-nav, 4rem); }
 html[data-theme-hints] [data-settings-controller] { --settings-hints: 2.5rem; }
+/* The controller picker's options: NuvioTV's roomy cards, not the desktop menu's compact rows. */
+[data-select-picker] [data-select-value] { min-height: 3rem; font-size: 1rem; }
 
 /* Press ripple (see src/lib/actions/ripple.ts). Transform/opacity only, so it stays off the layout
    path; the span deletes itself on animationend. */

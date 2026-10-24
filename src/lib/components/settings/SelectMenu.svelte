@@ -11,6 +11,9 @@
   import { rootZoom } from '$lib/components/cards/preview-pos'
   import { menuPlacement } from '$lib/components/menu-placement'
   import { triggerOpensOnKey } from '$lib/nav'
+  import { portal } from '$lib/util/portal'
+  import { settingsControllerMode } from '$lib/settings/surface'
+  import { centrePickerValue } from '$lib/settings/controller-picker'
 
   export type SelectOption = {
     value: string
@@ -113,9 +116,12 @@
     // Now that it exists, re-decide against the real content height rather than the estimate.
     measure(menu?.scrollHeight)
     // A disabled current option (Appearance's "Custom" theme) can't take focus; fall back to the first.
-    const current = root.querySelector<HTMLElement>(`[data-select-value="${CSS.escape(value)}"]:not(:disabled)`)
-    const first = root.querySelector<HTMLElement>('[data-select-value]:not(:disabled)')
+    // The controller picker is portalled to <body>, so options are looked up in the open panel.
+    const list: ParentNode = menu ?? root
+    const current = list.querySelector<HTMLElement>(`[data-select-value="${CSS.escape(value)}"]:not(:disabled)`)
+    const first = list.querySelector<HTMLElement>('[data-select-value]:not(:disabled)')
     ;(searchable && !controllerUi ? searchInput : current ?? first)?.focus({ preventScroll: true })
+    if ($settingsControllerMode) centrePickerValue(list, value)
     // Decision 7: the searchable language menu is a typing-only launcher, so a controller gets the
     // built-in keyboard for its search at once. A no-op for mouse, touch and keyboard users.
     if (searchable && searchInput) openOskForField(searchInput)
@@ -155,7 +161,7 @@
     // This handler moves focus itself; stop the arrow here so the d-pad engine's window listener
     // does not move it a second time.
     event.stopPropagation()
-    const items = [...root.querySelectorAll<HTMLButtonElement>('[data-select-value]:not(:disabled)')]
+    const items = [...(menu ?? root).querySelectorAll<HTMLButtonElement>('[data-select-value]:not(:disabled)')]
     const current = items.indexOf(document.activeElement as HTMLButtonElement)
     const step = event.key === 'ArrowDown' ? 1 : -1
     items[(current + step + items.length) % items.length]?.focus({ preventScroll: true })
@@ -165,7 +171,7 @@
     const closeOutside = (event: PointerEvent) => {
       // A tap on the on-screen keyboard types into this menu's search; it is not a press outside.
       if (isOskTarget(event.target)) return
-      if (open && !root.contains(event.target as Node)) open = false
+      if (open && !root.contains(event.target as Node) && !menu?.contains(event.target as Node)) open = false
     }
     const closeOnBlur = () => { open = false }
     window.addEventListener('pointerdown', closeOutside, true)
@@ -242,7 +248,32 @@
   </button>
 
   {#if open}
-    {#if $isMobile}
+    {#if $settingsControllerMode}
+      <!-- Controller mode (spec §3.5, NuvioTV's single-choice dialog): a centred picker 420 px wide
+           whose list stops at 320 px, opened on the current value. A picks, saves and closes; B
+           closes it unchanged (the nav layer). Portalled to <body>, so a section's cross-fade
+           transform can never become its containing block. -->
+      <div use:portal class="fixed inset-0 z-[80] grid place-items-center bg-black/60 p-4" role="presentation">
+        <div
+          bind:this={menu}
+          role={searchable ? 'dialog' : 'listbox'}
+          tabindex="-1"
+          aria-label={ariaLabel}
+          data-nav-trap
+          data-nav-escape
+          data-nav-scroll-container
+          data-select-picker
+          use:navLayer={{ kind: 'select-menu', onClose: closeMenu, initialFocus: 'none', returnFocus: 'none' }}
+          class="w-[23.333rem] max-w-full rounded-2xl border border-border bg-card p-3 text-card-foreground shadow-2xl"
+          onkeydown={onMenuKeydown}
+        >
+          {#if ariaLabel}<h2 class="truncate px-3 pb-2 text-base font-bold">{ariaLabel}</h2>{/if}
+          <div data-nav-scroll-container class="max-h-[17.778rem] overflow-y-auto overscroll-contain">
+            {@render optionList()}
+          </div>
+        </div>
+      </div>
+    {:else if $isMobile}
       <!-- Mobile: a viewport-anchored sheet (same pattern as MultiSelect). The absolutely-positioned
            desktop dropdown reads as a desktop widget on a phone and can be clipped by a narrow
            parent; the fixed panel gets the full width minus margins. -->

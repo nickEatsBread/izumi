@@ -95,7 +95,7 @@ describe('SelectMenu is a nav layer', () => {
 
   it('makes each open panel a layer that closes only itself and scrolls inside itself', () => {
     const tags = layerTags(source)
-    expect(tags).toHaveLength(3)
+    expect(tags).toHaveLength(4)
     for (const tag of tags) {
       expectLayerMarkers(tag)
       expect(bare(tag, 'data-nav-scroll-container'), tag).toBe(true)
