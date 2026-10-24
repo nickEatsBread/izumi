@@ -163,6 +163,20 @@
   const bottomNavInset = 'calc(var(--theme-bottom-nav, 4rem) + env(safe-area-inset-bottom))'
   const controllerInputMode = $derived(gmMode || $controllerMode)
   const gmBitmapMode = $derived(usesGameModeBitmapCompositor(gmMode, $playerCompositorPath))
+  // Desktop right-click: reveal the bar and hand the point to Controls, which owns the actions
+  // (same handoff as `player-open-settings`). The discussion panel, prompts and the source picker
+  // keep the plain no-menu behaviour.
+  async function onOverlayContextMenu(e: MouseEvent) {
+    e.preventDefault()
+    if (gmMode || $pictureInPicture || subtitleEditorOpen || sourcePickerVisible || get(seriesRatingPrompt)
+      || get(oskOpen) || topNavLayer()) return
+    if ((e.target as HTMLElement)?.closest?.('[data-comments-panel]')) return
+    const point = { x: e.clientX, y: e.clientY }
+    poke()
+    await tick()
+    window.dispatchEvent(new CustomEvent('player-context-menu', { detail: point }))
+  }
+
   function onOverlayTap(e: MouseEvent) {
     // Clicks inside the discussion panel (links, filter pills) bubble up here — don't let them
     // toggle play/pause. The panel tags itself `data-comments-panel` instead of stopPropagation
@@ -1732,6 +1746,13 @@
       // The end-of-series rating prompt owns the keyboard while up: its arrows move the score,
       // Enter saves, Escape dismisses — none of them may seek, pause or close the player under it.
       if (get(seriesRatingPrompt)) return
+      // Escape closes an open player menu (right-click menu, episodes, settings, tracks, Cast) instead
+      // of leaving fullscreen under it — the keyboard twin of the pad's B.
+      if (e.key === 'Escape' && get(playerMenuOpen)) {
+        e.preventDefault(); e.stopImmediatePropagation()
+        window.dispatchEvent(new Event('player-menu-close'))
+        return
+      }
       const action = findHotkey(e, get(hotkeyBindings), 'Player')
       if (!action) return
       if (get(deckKeyboardWarning)) return
@@ -1933,6 +1954,7 @@
   style:top={!docked && windowedChrome && $shellNav === 'top' ? 'var(--theme-top-bar)' : undefined}
   style:bottom={!docked && windowedChrome && $shellNav === 'bottom' ? bottomNavInset : undefined}
   onclick={onOverlayTap}
+  oncontextmenu={onOverlayContextMenu}
   onclickcapture={captureOverlayClick}
   ontouchstart={onOverlayTouchStart}
   ontouchmove={onOverlayTouchMove}
