@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { canPool, clearParkedPlayer, PARK_MS, parkPlayer, takePlayer } from './youtube-pool'
 
-const proto = Element.prototype as Element & { moveBefore?: (node: Node, child: Node | null) => void }
+// The DOM typings declare moveBefore; jsdom has none, so the tests add and remove it.
+const proto = Element.prototype as unknown as { moveBefore?: (this: Element, node: Node, child: Node | null) => void }
 const frame = () => { const el = document.createElement('iframe'); document.body.append(el); return el }
 const box = () => { const el = document.createElement('div'); document.body.append(el); return el }
 

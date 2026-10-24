@@ -12,7 +12,7 @@
   import VolumeX from '@lucide/svelte/icons/volume-x'
   import Volume2 from '@lucide/svelte/icons/volume-2'
   import type { Writable } from 'svelte/store'
-  import { hoverTrailers, trailerMuted as hoverTrailerMuted, openTrailerPopup } from '$lib/stores/trailer'
+  import { hoverTrailers, trailerMuted as hoverTrailerMuted, openTrailerPopup, trailerPopup } from '$lib/stores/trailer'
   import {
     youtubeEmbedSource,
     youtubePlayerOrigins,
@@ -201,6 +201,8 @@
   }
   function onKey(e: KeyboardEvent) {
     if (activeKeyboardTrailers[activeKeyboardTrailers.length - 1] !== keyboardOwner) return
+    // Under the full trailer player or dialog, M and the other keys are theirs.
+    if ($trailerPopup) return
     // A backdrop trailer offers M and T only while its mute button is on screen.
     if (!loop && !playing) return
     const key = e.key.toLowerCase()
