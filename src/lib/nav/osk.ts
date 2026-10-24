@@ -21,7 +21,7 @@ export type OskPolicy = 'activate' | 'off'
 export type OskLayout = 'text' | 'numeric'
 export interface RemoteKeyboard { insert(text: string): void; backspace(): void; submit(): void; close?(): void }
 export type OskSession =
-  | { kind: 'field'; field: TextEntryField; policy: OskPolicy; layout: OskLayout; initialValue: string; draft: string }
+  | { kind: 'field'; field: TextEntryField; layout: OskLayout; initialValue: string; draft: string }
   | { kind: 'remote'; remote: RemoteKeyboard; layout: 'text' }
 
 const NUMERIC_INPUT_MODES = ['numeric', 'decimal', 'tel']
@@ -179,7 +179,7 @@ function writeValue(field: TextEntryField, value: string, caret?: number): void 
   if (field.value !== before) field.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
-function openFieldSession(field: TextEntryField, policy: OskPolicy): void {
+function openFieldSession(field: TextEntryField): void {
   const current = get(session)
   if (current?.kind === 'field' && current.field === field) return
   if (current) closeOsk({ restore: false })
@@ -189,7 +189,7 @@ function openFieldSession(field: TextEntryField, policy: OskPolicy): void {
   fieldRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
   // The keyboard has no cursor keys, so typing continues from the end of what is there.
   try { field.setSelectionRange(field.value.length, field.value.length) } catch { /* no caret */ }
-  setSession({ kind: 'field', field, policy, layout, initialValue: field.value, draft: field.value })
+  setSession({ kind: 'field', field, layout, initialValue: field.value, draft: field.value })
   bump()
 }
 
@@ -206,9 +206,8 @@ function closeIfStill(field: TextEntryField, options?: { restore?: boolean }): v
  *  language menu): open at once instead of waiting for A. False, and nothing happens, for mouse,
  *  touch and keyboard users ('off') and for fields the keyboard cannot serve. */
 export function openOskForField(field: TextEntryField): boolean {
-  const policy = currentOskPolicy()
-  if (policy === 'off' || !servesField(field)) return false
-  openFieldSession(field, policy)
+  if (currentOskPolicy() === 'off' || !servesField(field)) return false
+  openFieldSession(field)
   return true
 }
 
@@ -366,8 +365,14 @@ export function startOsk(): () => void {
     if (currentOskPolicy() !== 'activate') return
     const target = event.target
     if (isOskTarget(target) || !servesField(target)) return
-    openFieldSession(target, 'activate')
+    openFieldSession(target)
   }
+  // The field a physical keyboard last typed into: its Enter is that keyboard's own (a submit), not
+  // the remote's OK. Forgotten once focus leaves the field.
+  let typedInto: EventTarget | null = null
+  // The remote's OK that opened the keyboard is still held: its repeats must not press the key focus
+  // moved to. A fresh press (or a hold begun on Backspace) still repeats.
+  let okHeld = false
   const onFocusIn = (event: FocusEvent) => {
     const target = event.target
     if (isOskTarget(target)) {
@@ -382,20 +387,35 @@ export function startOsk(): () => void {
   }
   const onFocusOut = (event: FocusEvent) => {
     const target = event.target
+    if (target === typedInto) typedInto = null
     if (!isTextEntryField(target)) return
     const current = get(session)
     if (current?.kind === 'field' && current.field === target) return
     restoreIme(target)
   }
   const onKeydown = (event: KeyboardEvent) => {
-    if (!get(session)) {
+    if (event.key === 'Enter' && !isPadEvent(event)) {
+      // A held Enter never opens the keyboard, so holding OK on Done cannot reopen it.
+      if (event.repeat) {
+        if (okHeld) {
+          event.preventDefault()
+          event.stopImmediatePropagation()
+        }
+        return
+      }
+      okHeld = false
       // Android TV: the remote's OK reaches a focused field as Enter, never as a click, so Enter is
       // its A (spec §5.4). A pad's A clicks instead and never sends Enter.
-      if (event.key === 'Enter' && get(isTv) && !isPadEvent(event) && servesField(event.target)) {
+      if (!get(session) && get(isTv) && event.target !== typedInto && servesField(event.target)) {
         event.preventDefault()
         event.stopImmediatePropagation()
-        openFieldSession(event.target, 'activate')
+        okHeld = true
+        openFieldSession(event.target)
+        return
       }
+    }
+    if (!get(session)) {
+      if (event.key.length === 1 && !isPadEvent(event)) typedInto = event.target
       return
     }
     if (event.key === 'Escape' || event.key === 'GoBack' || event.key === 'BrowserBack') {
@@ -412,6 +432,7 @@ export function startOsk(): () => void {
     event.stopImmediatePropagation()
     oskInsert(event.key)
     closeOsk()
+    typedInto = document.activeElement
   }
   const onPointerDown = (event: PointerEvent) => {
     const target = event.target

@@ -7,6 +7,7 @@ import { activeNavTrap, visibleNavTraps } from './traps'
 import { takeFocusHint } from './focus-hint'
 import { isNavigable, isRovingTab } from './focusable'
 import { isPadEvent, padAdjust } from './pad-controls'
+import { isTextEntryField } from './text-field'
 import { navEpoch, navInFlight } from './nav-state'
 export * from './input'
 export * from './actions'
@@ -15,8 +16,8 @@ export * from './browser-gamepad'
 
 interface ElCand { id: string; rect: DOMRect; el: HTMLElement }
 
-// A text field auto-opens the on-screen keyboard on focus (Deck) and captures the arrows, so it
-// must never be the AUTO-landing target — the user reaches it deliberately, not by entering a page.
+// A text field opens the on-screen keyboard on A (the TV remote's OK) and a keyboard's arrows walk
+// its caret, so it must never be the AUTO-landing target — the user reaches it deliberately.
 const isTextInput = (el: HTMLElement) =>
   el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable
 
@@ -896,8 +897,10 @@ export function initDpadNav() {
     const map: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }
     const dir = map[e.key]
     // Pad arrows always navigate (owner decision 3): a field the d-pad lands on never keeps them.
+    // On TV the remote's arrows are its d-pad, so a text field gives them up too: the on-screen
+    // keyboard types only at the end, so a caret walk would only trap focus.
     // Only a real keyboard's arrows are the field's own to walk its caret or cycle its value.
-    const field = dir && !isPadEvent(e) ? fieldShape(e.target) : null
+    const field = dir && !isPadEvent(e) && !(get(isTv) && isTextEntryField(e.target)) ? fieldShape(e.target) : null
     // Owner decision 2: Up/Down pass over a field that arrow navigation just landed on. A shortcut
     // chord stays the field's own (Alt+Down opens a native select's popup on Windows).
     const navArrived = !!field && isNavArrived(e.target) && !isShortcutChord(e)

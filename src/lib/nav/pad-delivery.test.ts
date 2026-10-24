@@ -195,6 +195,16 @@ describe('pad arrows and text fields', () => {
     expect(document.activeElement).toBe(el('Name'))
     expect(typed.defaultPrevented).toBe(false)
   })
+
+  it("on TV the remote's Right leaves a text field for the button beside it: the field keeps no arrow", () => {
+    isTv.set(true)
+    document.body.innerHTML = fieldRow
+    el('Name').focus()
+    const remote = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })
+    el('Name').dispatchEvent(remote)
+    expect(document.activeElement).toBe(el('Save'))
+    expect(remote.defaultPrevented).toBe(true)
+  })
 })
 
 describe('initDpadNav re-run (Vite HMR)', () => {

@@ -4,6 +4,7 @@ import { get } from 'svelte/store'
 import { gameMode, oskOpen, playerOverlayRev, playing } from '$lib/player/session'
 import { isTv } from '$lib/platform'
 import { controllerMode, initInput, inputType } from './input'
+import { PAD_KEY } from './pad-controls'
 import { deckKeyboardWarning, dismissDeckKeyboardWarning, warnBeforeThirdPartyLogin } from '$lib/deck/keyboard-warning'
 import {
   closeOsk, currentOskPolicy, implicitSubmitTarget, isOskTarget, openOskForField, openRemoteOsk, oskBackspace,
@@ -135,7 +136,7 @@ describe('keyboard sessions', () => {
     expect(get(oskSession)).toBeNull()
     gameMode.set(true)
     expect(openOskForField(field)).toBe(true)
-    expect(get(oskSession)).toEqual({ kind: 'field', field, policy: 'activate', layout: 'text', initialValue: '', draft: '' })
+    expect(get(oskSession)).toEqual({ kind: 'field', field, layout: 'text', initialValue: '', draft: '' })
     expect(get(oskOpen)).toBe(true)
     expect(get(oskEcho)).toEqual({ label: 'Search', value: '', masked: false })
   })
@@ -397,7 +398,7 @@ describe('keyboard listeners (startOsk)', () => {
     field.focus()
     expect(get(oskSession)).toBeNull()
     field.click()
-    expect(get(oskSession)).toMatchObject({ kind: 'field', field, policy: 'activate' })
+    expect(get(oskSession)).toMatchObject({ kind: 'field', field })
     closeOsk()
     byId<HTMLLabelElement>('label').click()
     expect(get(oskSession)).toMatchObject({ field })
@@ -417,7 +418,7 @@ describe('keyboard listeners (startOsk)', () => {
     const ok = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
     field.dispatchEvent(ok)
     expect(ok.defaultPrevented).toBe(true)
-    expect(get(oskSession)).toMatchObject({ kind: 'field', field, policy: 'activate', layout: 'numeric' })
+    expect(get(oskSession)).toMatchObject({ kind: 'field', field, layout: 'numeric' })
     byId('key').focus()
     closeOsk()
     expect(document.activeElement).toBe(field)
@@ -429,6 +430,67 @@ describe('keyboard listeners (startOsk)', () => {
     const field = input('f')
     field.focus()
     field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(get(oskSession)).toBeNull()
+  })
+
+  /** A cancellable keydown dispatched at `target`, as a TV remote or a physical keyboard sends it. */
+  const press = (target: EventTarget, key: string, init: KeyboardEventInit = {}) => {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })
+    target.dispatchEvent(event)
+    return event
+  }
+
+  it('Android TV: a pad-marked Enter, or Enter on a field inside an open modal dialog, never opens it', () => {
+    gameMode.set(false)
+    isTv.set(true)
+    document.body.innerHTML = '<input id="f"><dialog id="modal" open><input id="inside"></dialog>'
+    const modal = byId<HTMLDialogElement>('modal')
+    modal.matches = ((selector: string) => selector === ':modal' || Element.prototype.matches.call(modal, selector)) as HTMLDialogElement['matches']
+    input('f').focus()
+    const pad = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    Object.defineProperty(pad, PAD_KEY, { value: true })
+    input('f').dispatchEvent(pad)
+    expect(get(oskSession)).toBeNull()
+    expect(pad.defaultPrevented).toBe(false)
+    input('inside').focus()
+    expect(press(input('inside'), 'Enter').defaultPrevented).toBe(false)
+    expect(get(oskSession)).toBeNull()
+  })
+
+  it('Android TV: a held OK neither presses the key focus moved to nor reopens after Done; a fresh press does', () => {
+    gameMode.set(false)
+    isTv.set(true)
+    document.body.innerHTML = '<input id="f">' + KEYS
+    const field = input('f')
+    field.focus()
+    press(field, 'Enter')
+    byId('key').focus()
+    expect(press(byId('key'), 'Enter', { repeat: true }).defaultPrevented).toBe(true)
+    expect(press(byId('key'), 'Enter').defaultPrevented).toBe(false)
+    oskDone()
+    expect(document.activeElement).toBe(field)
+    press(field, 'Enter', { repeat: true })
+    expect(get(oskSession)).toBeNull()
+  })
+
+  it("Android TV: Enter after typing on a physical keyboard is that keyboard's own, until focus leaves", () => {
+    gameMode.set(false)
+    isTv.set(true)
+    document.body.innerHTML = '<input id="f"><input id="g">' + KEYS
+    const field = input('f')
+    field.focus()
+    press(field, 'a')
+    expect(press(field, 'Enter').defaultPrevented).toBe(false)
+    expect(get(oskSession)).toBeNull()
+    input('g').focus()
+    field.focus()
+    expect(press(field, 'Enter').defaultPrevented).toBe(true)
+    expect(get(oskSession)).toMatchObject({ field })
+    // A character typed while the keyboard is up closes it onto the field; Enter is then the typist's.
+    byId('key').focus()
+    press(byId('key'), 'b')
+    expect(document.activeElement).toBe(field)
+    expect(press(field, 'Enter').defaultPrevented).toBe(false)
     expect(get(oskSession)).toBeNull()
   })
 
