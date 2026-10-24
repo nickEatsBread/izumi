@@ -15,6 +15,7 @@
   import { ripple } from '$lib/actions/ripple'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import LearnMore from './LearnMore.svelte'
+  import { controllerHides, controllerSurfaces } from '$lib/settings/surface'
 
   let {
     title,
@@ -56,6 +57,9 @@
      *  onActivate: children and onActivate are ignored, and a control would nest inside the <a>. */
     href?: string
   } = $props()
+  // Rows the index hides on a controller surface (hideOn 'tv' / 'gamemode', spec §5.6) render
+  // nothing, so a row is hidden exactly where its search hit is.
+  const shown = $derived(!controllerHides(settingKey, $controllerSurfaces))
   const large = $derived(size === 'lg')
 </script>
 
@@ -88,6 +92,7 @@
   {#if learnMore}<div class="-mt-1.5 pb-2.5 {large ? 'px-3.5' : 'px-3'}"><LearnMore text={learnMore} label={title} /></div>{/if}
 {/snippet}
 
+{#if shown}
 {#if href}
   <div data-setting-key={settingKey}>
     <a
@@ -131,4 +136,5 @@
       <div class="mt-2.5 border-t border-border/70 pt-3">{@render children()}</div>
     {/if}
   </div>
+{/if}
 {/if}
