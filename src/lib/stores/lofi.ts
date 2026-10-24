@@ -1,11 +1,11 @@
 import { persisted } from 'svelte-persisted-store'
 
-// Lo-fi background music. Tracks live on the first-party quack.si CDN (same infra
+// Lo-fi background music. Tracks live on the first-party miaou.si CDN (same infra
 // as the updater endpoint). Kept as pure helpers + one persisted store so the
 // component stays thin and the logic is unit-testable.
 
 /** Base CDN for the lo-fi tracks. */
-export const LOFI_BASE = 'https://lofmu-prod-pubdist.quack.si'
+export const LOFI_BASE = 'https://lofmu-prod-pubdist.miaou.si'
 /** Number of tracks: lof1.ogg … lof4.ogg. */
 export const LOFI_COUNT = 4
 

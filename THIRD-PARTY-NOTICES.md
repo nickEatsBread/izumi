@@ -82,6 +82,13 @@ https://github.com/harborstremio/harbor
 Copyright (c) Harbor contributors. Licensed under the MIT License; the complete license is
 available at https://github.com/harborstremio/harbor/blob/main/LICENSE.
 
+## Debrid service logos
+
+The logos in `static/brand/debrid/` are trademarks of their respective services and are shown only
+to identify each service in Settings. The Real-Debrid, AllDebrid, Premiumize, TorBox and Debrid-Link
+marks are resized from Harbor's addon logo assets (MIT, see above). The Offcloud, EasyDebrid,
+Deepbrid and Mega-Debrid marks are each service's own site icon, resized.
+
 
 ## ISO 639-2 language registry — MIT
 

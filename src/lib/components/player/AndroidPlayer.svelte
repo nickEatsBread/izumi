@@ -118,8 +118,7 @@
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
-  import Play from '@lucide/svelte/icons/play'
-  import Pause from '@lucide/svelte/icons/pause'
+  import PlayPauseIcon from './PlayPauseIcon.svelte'
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw'
   import RotateCw from '@lucide/svelte/icons/rotate-cw'
   import SkipBack from '@lucide/svelte/icons/skip-back'
@@ -2432,13 +2431,9 @@
             <BufferSpinner size={40} />
           </span>
         {:else}
-          {#key paused}
-            <!-- The transport row already fades with the rest of the controls. Keep this glyph
-                 animation transform-only so its opacity is not multiplied during that fade. -->
-            <span class="transport-glyph grid place-items-center">
-              {#if paused}<Play size={38} class="ml-1" fill="currentColor" />{:else}<Pause size={38} fill="currentColor" />{/if}
-            </span>
-          {/key}
+          <!-- The transport row already fades with the rest of the controls; the glyph crossfade only
+               runs on a toggle, never on that reveal, so the two opacities do not multiply. -->
+          <PlayPauseIcon {paused} size={38} playClass="translate-x-0.5" />
         {/if}
       </button>
       <button data-part="player.control" data-control="forward" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip($seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Forward"><RotateCw size={30} /></button>
@@ -2511,7 +2506,7 @@
         <span class="block truncate text-xs text-white/55">{np.episode != null ? `Episode ${np.episode}${np.total ? ` of ${np.total}` : ''}` : np.title}</span>
       </button>
       <button onclick={pressPause} class="grid w-12 shrink-0 place-items-center active:bg-white/10" aria-label={paused ? 'Play' : 'Pause'}>
-        {#if paused}<Play size={22} fill="currentColor" />{:else}<Pause size={22} fill="currentColor" />{/if}
+        <PlayPauseIcon {paused} size={22} />
       </button>
       <button onclick={() => void dismissMiniPlayer()} class="grid w-12 shrink-0 place-items-center active:bg-white/10" aria-label="Close mini player">✕</button>
       <div class="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 bg-white/15" aria-hidden="true">
@@ -2745,11 +2740,9 @@
   .settings-row:active, .settings-choice:active { background: rgb(255 255 255 / 0.1); }
   .settings-choice { display: flex; width: 100%; align-items: center; justify-content: space-between; border-radius: 0.75rem; padding: 0.8rem 1rem; text-align: left; font-size: 0.875rem; }
   .settings-choice-selected { background: rgb(var(--theme-rgb, 239 42 89) / 0.18); color: var(--theme, #ef2a59); font-weight: 700; }
-  .transport-glyph { animation: transport-glyph-pop 160ms cubic-bezier(0.2, 0.8, 0.2, 1); }
   /* backdrop-filter over Android's native video Surface can invalidate a full compositor strip
      when controls remount. An opaque composited fill gives the same contrast without the flash. */
   .transport-button { background: rgb(0 0 0 / 0.58); box-shadow: 0 8px 24px rgb(0 0 0 / 0.35), inset 0 0 0 1px rgb(255 255 255 / 0.14); contain: paint; }
-  @keyframes transport-glyph-pop { from { transform: scale(0.5); } to { transform: scale(1); } }
 
   @media (orientation: landscape) {
     .video-frame { width: 100%; height: 100%; margin-top: 0; aspect-ratio: auto; overflow: hidden; }

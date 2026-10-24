@@ -6,6 +6,7 @@
   import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte'
   import SetupElsewhere from '$lib/components/settings/SetupElsewhere.svelte'
   import PhoneNavEditor from '$lib/components/settings/PhoneNavEditor.svelte'
+  import PaletteHomePreview from '$lib/components/settings/PaletteHomePreview.svelte'
   import {
     androidTvMode, backdropTrailers, dragCarousels, haptics, highContrast, largeInteractionTargets, motionPreference, themePreset, uiScale, wheelScrollAcross,
     type AndroidTvMode, type MotionPreference, type ThemePreset,
@@ -30,6 +31,7 @@
     : presets)
 </script>
 
+{#snippet palettePreview(value: string)}{#if value !== 'custom'}<PaletteHomePreview preset={value as Exclude<ThemePreset, 'custom'>} />{/if}{/snippet}
 {#snippet contrastSwitch()}<SettingsSwitch value={$highContrast} onToggle={() => ($highContrast = !$highContrast)} label={m.settings_high_contrast()} interactive={false} />{/snippet}
 {#snippet targetsSwitch()}<SettingsSwitch value={$largeInteractionTargets} onToggle={() => ($largeInteractionTargets = !$largeInteractionTargets)} label={m.settings_large_targets()} interactive={false} />{/snippet}
 {#snippet hapticsSwitch()}<SettingsSwitch value={$haptics} onToggle={() => ($haptics = !$haptics)} label={m.settings_haptics()} interactive={false} />{/snippet}
@@ -45,7 +47,7 @@
 
 <SettingsSection section="appearance">
   <SettingsSubcategory id="theme">
-    <SettingsChoiceRow settingKey="theme-preset" title={m.settings_theme()} description={m.settings_theme_hint()} value={$themePreset} options={presetOptions} onChange={(value) => ($themePreset = value as ThemePreset)} />
+    <SettingsChoiceRow settingKey="theme-preset" title={m.settings_theme()} description={m.settings_theme_hint()} value={$themePreset} options={presetOptions} onChange={(value) => ($themePreset = value as ThemePreset)} preview={palettePreview} />
     {#if $screenThemeName !== null}
       <!-- The open catalog screen has a theme of its own, which hides the app theme picked above. -->
       <SettingsRow title={`${catalogLabel($catalogScreen, $customScreens)} uses ${$screenThemeName}`} description="This screen has its own theme; the theme above shows on your other screens">

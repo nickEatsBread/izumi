@@ -11,7 +11,7 @@ describe('lofi track helpers', () => {
     expect(prevTrack(0)).toBe(LOFI_COUNT - 1)
   })
   it('lofiUrl maps a 0-based index to lofN.ogg', () => {
-    expect(lofiUrl(0)).toBe('https://lofmu-prod-pubdist.quack.si/lof1.ogg')
-    expect(lofiUrl(3)).toBe('https://lofmu-prod-pubdist.quack.si/lof4.ogg')
+    expect(lofiUrl(0)).toBe('https://lofmu-prod-pubdist.miaou.si/lof1.ogg')
+    expect(lofiUrl(3)).toBe('https://lofmu-prod-pubdist.miaou.si/lof4.ogg')
   })
 })

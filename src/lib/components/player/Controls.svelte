@@ -5,8 +5,7 @@
   import { onMount } from 'svelte'
   import type { Segment } from '$lib/stremio/aniskip'
   import Seekbar from './Seekbar.svelte'
-  import Play from '@lucide/svelte/icons/play'
-  import Pause from '@lucide/svelte/icons/pause'
+  import PlayPauseIcon from './PlayPauseIcon.svelte'
   import Volume2 from '@lucide/svelte/icons/volume-2'
   import VolumeX from '@lucide/svelte/icons/volume-x'
   import Captions from '@lucide/svelte/icons/captions'
@@ -949,7 +948,7 @@
            thumb-sized touch target; Desktop keeps the subtle hover-only button. -->
       <button data-part="button" data-variant="icon" data-control="play" data-focusable onclick={togglePlay} aria-label={paused ? 'Play' : 'Pause'}
               class="grid place-items-center rounded-full focus-ring-inset {gm ? 'gm-play size-16 bg-white text-black shadow-lg' : 'size-10 transition hover:bg-white/15'}">
-        {#if paused}<Play size={gm ? 30 : 22} fill="currentColor" />{:else}<Pause size={gm ? 30 : 22} fill="currentColor" />{/if}
+        <PlayPauseIcon {paused} size={gm ? 30 : 22} />
       </button>
       {#if controls.seekButtons && !gm}
         <button data-part="player.control" data-control="forward" data-focusable class="{iconBtn} relative" onclick={() => seekBy($seekDuration)} aria-label={`Forward ${$seekDuration} seconds`}>

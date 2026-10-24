@@ -38,6 +38,8 @@ static LITE: AtomicBool = AtomicBool::new(false);
 /// Normal playback progress needs to feel live, but a few vector shapes do not need a 60fps ASS
 /// reparse. Ten updates per second is smooth at seekbar scale and keeps ample video-render headroom.
 const PROGRESS_FRAME_MS: u64 = 100;
+/// Same length as the HTML play/pause crossfade.
+const PLAY_FADE_MS: f64 = 150.0;
 // osd-overlay z (higher = nearer the viewer): gradient/track behind, played/knob above, spinner
 // next, then skip/toasts. The P2P status is the HTML bitmap card, never an ASS fallback.
 // overlay-add bitmaps (the snapshot chrome, id 1) always sit above ALL of these.
@@ -173,6 +175,57 @@ impl SeekbarTween {
     }
 }
 
+/// Play/pause crossfade weight: 1 = play glyph, 0 = pause glyph. Keyed off the measured button
+/// label, so it flips exactly when the HTML control does (PlayPauseIcon.svelte).
+struct PlayFade {
+    target: Option<f64>,
+    value: f64,
+    start: f64,
+    started: Instant,
+}
+
+impl PlayFade {
+    fn new(now: Instant) -> Self {
+        Self {
+            target: None,
+            value: 1.0,
+            start: 1.0,
+            started: now,
+        }
+    }
+
+    fn step(&mut self, items: &[GmControlItem], animate: bool, now: Instant) -> (f64, bool) {
+        let shown = items
+            .iter()
+            .find_map(|item| match item.label.to_ascii_lowercase().as_str() {
+                "play" => Some(1.0),
+                "pause" => Some(0.0),
+                _ => None,
+            });
+        if let Some(end) = shown {
+            if self.target != Some(end) {
+                // The first sighting snaps; only a real toggle fades.
+                self.start = if animate && self.target.is_some() {
+                    self.value
+                } else {
+                    end
+                };
+                self.target = Some(end);
+                self.started = now;
+            }
+        }
+        let end = self.target.unwrap_or(1.0);
+        let elapsed = now.duration_since(self.started).as_secs_f64() * 1000.0;
+        let t = (elapsed / PLAY_FADE_MS).clamp(0.0, 1.0);
+        // Sine-out tracks the HTML control's CSS ease-out within 0.025.
+        self.value = self.start + (end - self.start) * (t * PI / 2.0).sin();
+        (
+            quantize_animation_unit(self.value),
+            (self.value - end).abs() > 0.0005,
+        )
+    }
+}
+
 pub fn update(app: AppHandle, state: GmDynamicOverlay) {
     let visible = state.visible;
     let runtime = RUNTIME.get_or_init(|| Mutex::new(Runtime::default()));
@@ -210,6 +263,7 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
     let mut shown = Shown::default();
     let mut control_tween = ControlTween::new(t0);
     let mut seekbar_tween = SeekbarTween::new(t0);
+    let mut play_fade = PlayFade::new(t0);
     let mut last_control_state: Option<Arc<GmDynamicOverlay>> = None;
 
     glib::timeout_add_local(Duration::from_millis(1000 / OSD_FPS), move || {
@@ -237,6 +291,8 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
         let chrome: &GmDynamicOverlay = retained.as_deref().unwrap_or(&state);
         let controls = state.controls || retained.is_some();
         let (bar_height, bar_animating) = seekbar_tween.step(state.scrubbing, now);
+        let (play, play_animating) =
+            play_fade.step(&chrome.control_items, state.animate_controls, now);
         if !state.visible && motion.main <= 0.0 && !motion.animating {
             remove(&app);
             RUNNING.store(false, Ordering::SeqCst);
@@ -262,6 +318,7 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
             && !progress_due
             && !motion.animating
             && !bar_animating
+            && !play_animating
             && version == last_drawn_version
         {
             return glib::ControlFlow::Continue;
@@ -305,7 +362,14 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
             .clamp(0.0, draw_state.dur.max(0.0));
         }
 
-        draw(&app, &draw_state, spinner_phase(t0), motion, &mut shown);
+        draw(
+            &app,
+            &draw_state,
+            spinner_phase(t0),
+            motion,
+            play,
+            &mut shown,
+        );
         if draw_state.controls {
             last_progress_draw = now;
         }
@@ -426,6 +490,7 @@ fn draw(
     state: &GmDynamicOverlay,
     phase: u32,
     motion: ControlMotion,
+    play: f64,
     shown: &mut Shown,
 ) {
     let w = state.width.round() as i64;
@@ -487,7 +552,7 @@ fn draw(
     }
 
     let control_content = if state.controls && motion.content > 0.0005 {
-        controls_content_ass(state, motion.content, motion.y)
+        controls_content_ass(state, motion.content, motion.y, play)
     } else {
         String::new()
     };
@@ -814,7 +879,12 @@ fn controls_background_ass(w: f64, h: f64, opacity: f64) -> String {
     lines.join("\n")
 }
 
-fn controls_content_ass(state: &GmDynamicOverlay, opacity: f64, y_offset: f64) -> String {
+fn controls_content_ass(
+    state: &GmDynamicOverlay,
+    opacity: f64,
+    y_offset: f64,
+    play: f64,
+) -> String {
     let mut lines = Vec::new();
     let title_at_top = state.title_y < state.height * 0.35;
     if !state.title.trim().is_empty() {
@@ -846,12 +916,18 @@ fn controls_content_ass(state: &GmDynamicOverlay, opacity: f64, y_offset: f64) -
         );
     }
     for item in &state.control_items {
-        control_item_ass(item, opacity, y_offset, &mut lines);
+        control_item_ass(item, opacity, y_offset, play, &mut lines);
     }
     lines.join("\n")
 }
 
-fn control_item_ass(item: &GmControlItem, opacity: f64, y_offset: f64, lines: &mut Vec<String>) {
+fn control_item_ass(
+    item: &GmControlItem,
+    opacity: f64,
+    y_offset: f64,
+    play: f64,
+    lines: &mut Vec<String>,
+) {
     let scale = if item.focused {
         if item.primary {
             1.12
@@ -894,18 +970,21 @@ fn control_item_ass(item: &GmControlItem, opacity: f64, y_offset: f64, lines: &m
     } else {
         "FFFFFF"
     };
-    control_icon_ass(
-        &item.label.to_ascii_lowercase(),
-        cx,
-        cy,
-        // Match the 24px Lucide glyph inside the HTML control's 48px hit target. A 0.5 scale
-        // made the ASS approximation fill the whole nominal icon box, visibly boldening captions,
-        // discussion and the filled previous/next episode shapes only once video was playing.
-        item.w.min(item.h) * 0.42,
-        icon_color,
-        opacity,
-        lines,
-    );
+    let label = item.label.to_ascii_lowercase();
+    // Match the 24px Lucide glyph inside the HTML control's 48px hit target. A 0.5 scale
+    // made the ASS approximation fill the whole nominal icon box, visibly boldening captions,
+    // discussion and the filled previous/next episode shapes only once video was playing.
+    let size = item.w.min(item.h) * 0.42;
+    if label == "play" || label == "pause" {
+        // Crossfade like the HTML control: the outgoing glyph fades out over the incoming one.
+        for (glyph, weight) in [("play", play), ("pause", 1.0 - play)] {
+            if weight > 0.0005 {
+                control_icon_ass(glyph, cx, cy, size, icon_color, opacity * weight, lines);
+            }
+        }
+    } else {
+        control_icon_ass(&label, cx, cy, size, icon_color, opacity, lines);
+    }
 }
 
 fn control_icon_ass(
@@ -1561,4 +1640,48 @@ fn ir(v: f64) -> i64 {
 /// libass avoids the jagged, uneven 20px icon strokes produced by the old `\p1` integer paths.
 fn dr(v: f64) -> i64 {
     (v * 8.0).round() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn button(label: &str) -> GmControlItem {
+        GmControlItem {
+            x: 0.0,
+            y: 0.0,
+            w: 48.0,
+            h: 48.0,
+            label: label.into(),
+            focused: false,
+            primary: true,
+        }
+    }
+
+    #[test]
+    fn play_pause_glyphs_crossfade() {
+        let shapes = |play| {
+            let mut lines = Vec::new();
+            control_item_ass(&button("Play"), 1.0, 0.0, play, &mut lines);
+            lines.len()
+        };
+        // Mid-fade draws the triangle and both bars; at either end only one glyph remains.
+        assert_eq!(shapes(0.5), shapes(1.0) + 2);
+        assert_eq!(shapes(0.0), shapes(1.0) + 1);
+    }
+
+    #[test]
+    fn play_fade_snaps_on_first_sight_and_tweens_toggles() {
+        let t0 = Instant::now();
+        let ms = |n| t0 + Duration::from_millis(n);
+        let mut fade = PlayFade::new(t0);
+        assert_eq!(fade.step(&[button("Pause")], true, t0), (0.0, false));
+        assert_eq!(fade.step(&[button("Play")], true, ms(10)), (0.0, true));
+        let (mid, animating) = fade.step(&[button("Play")], true, ms(85));
+        assert!(mid > 0.0 && mid < 1.0 && animating);
+        // Hidden controls keep the last glyph while the fade finishes.
+        assert_eq!(fade.step(&[], true, ms(170)), (1.0, false));
+        // Animations off: a toggle swaps instantly.
+        assert_eq!(fade.step(&[button("Pause")], false, ms(300)), (0.0, false));
+    }
 }
