@@ -406,10 +406,18 @@ function shellTop(): number {
   return top
 }
 
+/** Per track: stops listening for the card-width transitions after its last sideways move. */
+const anchorSettles = new WeakMap<HTMLElement, () => void>()
+const ANCHOR_SETTLE_PROPS = new Set(['width', 'min-width', 'max-width', 'flex-basis'])
+const ANCHOR_SETTLE_MS = 1000
+
 /** Anchored rows (`data-row-focus="anchor"`, a theme's `rows.*.focus`; the Netflix TV model): a
  *  sideways move slides the track until the focused card sits where the first card rests (clamped
  *  at the track's ends), and entering the row snaps its top to its scroll-margin-top, or 16 px under
- *  the top bar when it has none. `instant`: a held repeat or reduced motion jumps. */
+ *  the top bar when it has none. `instant`: a held repeat or reduced motion jumps. A theme may
+ *  animate the focused card's width (a portrait tile growing to 16:9), so the slide is measured
+ *  while the previous card is still wide: for a second, each width transition ending in the track
+ *  re-measures and slides the rest of the way. */
 function revealAnchored(el: HTMLElement, track: HTMLElement, row: HTMLElement, vertical: boolean, instant: boolean): void {
   if (vertical) {
     const to = anchorScrollTop({
@@ -421,14 +429,36 @@ function revealAnchored(el: HTMLElement, track: HTMLElement, row: HTMLElement, v
     runAnchorScroll(window, () => window.scrollY, (top) => window.scrollTo({ top, behavior: 'instant' }), to, instant ? 0 : ANCHOR_SNAP_MS)
     return
   }
-  const to = anchorScrollLeft({
+  const measure = () => anchorScrollLeft({
     cardLeft: trackItem(el, track).getBoundingClientRect().left,
     trackLeft: track.getBoundingClientRect().left + track.clientLeft,
     paddingLeft: parseFloat(getComputedStyle(track).paddingLeft) || 0,
     scrollLeft: track.scrollLeft,
     maxScroll: track.scrollWidth - track.clientWidth,
   })
-  runAnchorScroll(track, () => track.scrollLeft, (left) => track.scrollTo({ left, behavior: 'instant' }), to, instant ? 0 : ANCHOR_SLIDE_MS)
+  const ms = instant ? 0 : ANCHOR_SLIDE_MS
+  const slide = (to: number) => runAnchorScroll(track, () => track.scrollLeft, (left) => track.scrollTo({ left, behavior: 'instant' }), to, Math.abs(to - track.scrollLeft) < 1 ? 0 : ms)
+  let to = measure()
+  slide(to)
+  anchorSettles.get(track)?.()
+  const settle = (event: TransitionEvent) => {
+    if (!ANCHOR_SETTLE_PROPS.has(event.propertyName) || !el.isConnected) return
+    const next = measure()
+    // Unchanged: leave the running slide on its curve.
+    if (Math.abs(next - to) < 1) return
+    to = next
+    slide(to)
+  }
+  const stop = () => {
+    clearTimeout(timer)
+    track.removeEventListener('transitionend', settle)
+    track.removeEventListener('transitioncancel', settle)
+    anchorSettles.delete(track)
+  }
+  const timer = setTimeout(stop, ANCHOR_SETTLE_MS)
+  track.addEventListener('transitionend', settle)
+  track.addEventListener('transitioncancel', settle)
+  anchorSettles.set(track, stop)
 }
 
 /** The position:fixed layer holding `el` (a dialog, the on-screen keyboard), or null when `el`

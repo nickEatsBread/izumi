@@ -38,7 +38,10 @@ beforeEach(() => {
   vi.stubGlobal('cancelAnimationFrame', (id: number) => { frames.delete(id) })
 })
 
-afterEach(() => { vi.unstubAllGlobals() })
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+})
 
 describe('anchorEase', () => {
   it('starts at 0 and ends at 1, clamped outside', () => {
@@ -232,6 +235,41 @@ describe('anchored rows', () => {
     expect(track('a').scrollLeft).toBe(660)
     expect(trackScrolls.get(track('a'))!.every((options) => options.behavior === 'instant')).toBe(true)
     expect(windowScrolls).toEqual([])
+  })
+
+  it("re-anchors when a theme's card-width transition ends, then stops listening", () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    // Row a's cards, 18 px apart from `by` px of scroll, card `wide` grown to a theme's 905 px tile.
+    const layOut = (wide: number, by: number) => {
+      let left = 32 - by
+      for (const [i, card] of [...track('a').children].entries()) {
+        const width = i === wide ? 905 : 312
+        card.setAttribute('data-rect', `${left},450,${width},280`)
+        left += width + 18
+      }
+    }
+    layOut(0, 0)
+    button('a0').focus()
+    press('ArrowRight')
+    expect(document.activeElement).toBe(button('a1'))
+    frame(0)
+    frame(300)
+    // Measured while a0 was still wide, so heading for 923, past a1's settled place.
+    expect(track('a').scrollLeft).toBeGreaterThan(330)
+    // The transition ends: a0 is back to 312 and a1 is 905.
+    const widthEnd = () => button('a1').dispatchEvent(new TransitionEvent('transitionend', { propertyName: 'width', bubbles: true }))
+    layOut(1, track('a').scrollLeft)
+    widthEnd()
+    frame(400)
+    frame(400 + ANCHOR_SLIDE_MS)
+    // a1's left edge (362 - 330) sits on the track's 32 px padding.
+    expect(track('a').scrollLeft).toBe(330)
+    // A second after the move the track no longer listens.
+    vi.advanceTimersByTime(1000)
+    layOut(1, 0)
+    widthEnd()
+    expect(frames.size).toBe(0)
+    expect(track('a').scrollLeft).toBe(330)
   })
 
   it('a held repeat and reduced motion jump', () => {
