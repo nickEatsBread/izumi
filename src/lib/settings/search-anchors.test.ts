@@ -3,8 +3,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { importClosure } from '../../test/svelte-markup'
-import { openingTagAt } from '../../test/svelte-source'
-import { SETTINGS_SEARCH_INDEX, settingKey, type SettingSearchItem } from './search'
+import { SETTINGS_SEARCH_INDEX, type SettingSearchItem } from './search'
 import { sectionForPath, subcategoryDef } from './sections'
 
 // Every search hit that names a row (`key`, `fallbackKey`) must land on markup that renders that
@@ -16,22 +15,12 @@ const read = (file: string) => readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
 const LIB = here('../')
 const ROUTES = here('../../routes/')
 const BASE = 'https://izumi.invalid'
-const messages = JSON.parse(read(here('../../../messages/en.json'))) as Record<string, string>
 
 const routeFile = (href: string) => resolve(ROUTES, `.${new URL(href, BASE).pathname}`, '+page.svelte')
 
-/** Keys a file renders as literal text: `data-setting-key="…"`, `settingKey="…"` props, and Toggle
- *  rows without a settingKey prop, keyed settingKey(label) (label literal, {'…'} or {m.key()} in English). */
+/** Keys a file renders as literal text: `data-setting-key="…"` and `settingKey="…"` props. */
 function staticKeys(source: string): string[] {
-  const keys = [...source.matchAll(/(?:data-setting-key|settingKey)="([^"]+)"/g)].map((match) => match[1])
-  for (const match of source.matchAll(/<Toggle\b/g)) {
-    const tag = openingTagAt(source, match.index)
-    if (/\ssettingKey[=\s>]/.test(tag)) continue
-    const label = /\slabel=(?:"([^"]*)"|\{'([^']*)'\}|\{m\.(\w+)\(\)\})/.exec(tag)
-    const text = label?.[1] ?? label?.[2] ?? (label?.[3] ? messages[label[3]] : undefined)
-    if (text) keys.push(settingKey(text))
-  }
-  return keys
+  return [...source.matchAll(/(?:data-setting-key|settingKey)="([^"]+)"/g)].map((match) => match[1])
 }
 
 /** Keys built at runtime, with the template (pinned in its file) and the ids it is built from. */

@@ -81,10 +81,9 @@ describe('SettingsSubcategory', () => {
     expect(source).toContain('<h3 id={`${id}-heading`} class="mb-2 px-1 text-sm font-black">{heading}</h3>')
   })
 
-  it('keeps a folded body in the DOM, hidden, in the SettingsGroup card unless plain', () => {
+  it('keeps a folded body in the DOM, hidden, in the row card unless plain', () => {
     const body = subElements.find((el) => hasAttr(el, 'data-settings-subcategory-body'))!
     expect(attr(body, 'hidden')?.raw).toBe('hidden={collapsed || undefined}')
-    expect(read('./SettingsGroup.svelte')).toContain(CARD)
     expect(attr(body, 'class')?.raw).toBe(`class={plain ? '' : '${CARD}'}`)
   })
 

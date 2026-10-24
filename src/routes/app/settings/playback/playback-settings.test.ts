@@ -7,19 +7,6 @@ import { settingKey as keyForSetting } from '$lib/settings/search'
 const read = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
 
-const toggle = read('../../../../lib/components/settings/Toggle.svelte')
-
-describe('Toggle settingKey', () => {
-  it('takes an explicit search key and keeps the label slug as the default', () => {
-    expect(toggle).toContain('let { label, desc, value, onToggle, leading, settingKey }: {')
-    expect(toggle).toContain('    settingKey?: string\n  } = $props()')
-    expect(toggle).toContain('  data-setting-key={settingKey ?? keyForSetting(label)}')
-    expect(toggle).toContain("import { settingKey as keyForSetting } from '$lib/settings/search'")
-    // One source for the key: the old label-only derived value is gone.
-    expect(toggle).not.toContain('$derived(keyForSetting(label))')
-  })
-})
-
 // Spec §5.1: the Playback page shows a row wherever the player that reads the setting runs. The
 // evaluator below walks the page markup with the build's {#if} gates decided and lists the settings
 // stores a user can reach. A gate on other runtime state ($developerLogging, the chosen preset, the
