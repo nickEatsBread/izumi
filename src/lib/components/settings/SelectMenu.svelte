@@ -209,7 +209,7 @@
 
 {#snippet optionIcon(option: SelectOption, icon: string)}
   {#if brokenIcons[icon]}
-    <span aria-hidden="true" class="grid size-4 shrink-0 place-items-center self-center rounded-sm bg-muted text-[10px] font-black text-muted-foreground">{option.label.charAt(0)}</span>
+    <span aria-hidden="true" class="grid size-4 shrink-0 place-items-center self-center rounded-sm bg-muted text-[0.625rem] font-black text-muted-foreground">{option.label.charAt(0)}</span>
   {:else}
     <img src={icon} alt="" class="size-4 shrink-0 self-center rounded-sm object-contain" onerror={() => (brokenIcons[icon] = true)} />
   {/if}
