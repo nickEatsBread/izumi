@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 import { isMobile, isTv } from '$lib/platform'
 import { gameMode, playing } from '$lib/player/session'
 import { HISTORY_INDEX, recordTrail, resetHistoryTrail } from '$lib/navigation/history-trail'
 import { initDpadNav, resetNavLandingForTests } from '$lib/nav'
 import { resetLayeredBackForTests } from '$lib/nav/back'
+import { BROWSER_GAMEPAD_EVENT } from '$lib/nav/browser-gamepad'
+import { pageBumpers } from '$lib/nav/bumpers'
 import { inputType } from '$lib/nav/input'
-import { resetNavLayersForTests } from '$lib/nav/layers'
+import { pushNavLayer, resetNavLayersForTests } from '$lib/nav/layers'
 import { clearBackPending, navEpoch } from '$lib/nav/nav-state'
 import { dispatchPadKey, resetPadControlsForTests } from '$lib/nav/pad-controls'
 import {
@@ -88,6 +91,10 @@ const press = (key: string) => {
   const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
   window.dispatchEvent(event)
   return event
+}
+const pad = (name: string) => {
+  window.dispatchEvent(new CustomEvent(BROWSER_GAMEPAD_EVENT, { detail: { name, pressed: true } }))
+  window.dispatchEvent(new CustomEvent(BROWSER_GAMEPAD_EVENT, { detail: { name, pressed: false } }))
 }
 const settle = async () => { for (let turn = 0; turn < 10; turn++) await Promise.resolve() }
 const url = (path: string) => new URL(path, 'http://localhost')
@@ -404,5 +411,100 @@ describe('scrollEdges', () => {
     expect(scrollEdges({ scrollTop: 0, clientHeight: 400, scrollHeight: 900 })).toEqual({ up: false, down: true })
     expect(scrollEdges({ scrollTop: 250, clientHeight: 400, scrollHeight: 900 })).toEqual({ up: true, down: true })
     expect(scrollEdges({ scrollTop: 500, clientHeight: 400, scrollHeight: 900 })).toEqual({ up: true, down: false })
+  })
+})
+
+describe('Back: never skips a level, never asks (spec §5.2)', () => {
+  beforeEach(() => {
+    gameMode.set(false)
+    isTv.set(true)
+  })
+
+  it('the TV remote walks pane → rail → out of Settings, consuming each press', () => {
+    row('Text size').focus()
+    const later = vi.fn()
+    window.addEventListener('keydown', later)
+    const first = press('Escape')
+    expect(first.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(rail('subtitles'))
+    press('Escape')
+    expect(history.go).toHaveBeenCalledWith(-1)
+    expect(later).not.toHaveBeenCalled()
+    window.removeEventListener('keydown', later)
+  })
+
+  it('an open picker closes first, alone', () => {
+    row('Text size').focus()
+    const panel = document.createElement('div')
+    panel.setAttribute('data-nav-trap', '')
+    document.body.append(panel)
+    const close = vi.fn()
+    const stop = pushNavLayer({ kind: 'select-menu', node: () => panel, close, restore: 'none', opener: null })
+    press('Escape')
+    expect(close).toHaveBeenCalledWith('back')
+    expect(document.activeElement).toBe(row('Text size'))
+    stop()
+  })
+
+  it('a sub-page steps up to its section before the rail', () => {
+    history.replaceState({ [HISTORY_INDEX]: 2 }, '', '/app/settings/sources')
+    recordTrail('/app/settings/sources', 'link')
+    history.replaceState({ [HISTORY_INDEX]: 3 }, '', '/app/settings/sources/manage')
+    recordTrail('/app/settings/sources/manage', 'link')
+    row('Text size').focus()
+    press('Escape')
+    expect(history.back).toHaveBeenCalledTimes(1)
+    expect(document.activeElement).toBe(row('Text size'))
+  })
+
+  it('off TV the Escape is left alone (the Deck goes through B)', () => {
+    isTv.set(false)
+    gameMode.set(true)
+    row('Text size').focus()
+    expect(press('Escape').defaultPrevented).toBe(false)
+    expect(document.activeElement).toBe(row('Text size'))
+  })
+})
+
+describe('pad extras (spec §5.5)', () => {
+  it('L1 and R1 step the rail sections without wrapping, moving focus with them', async () => {
+    pad('r1')
+    expect(document.activeElement).toBe(rail('languages'))
+    expect(mocks.goto).toHaveBeenCalledWith('/app/settings/languages', SWITCH)
+    await settle()
+    pad('r1')
+    expect(mocks.goto).toHaveBeenCalledTimes(1)
+    pad('l1')
+    expect(document.activeElement).toBe(rail('subtitles'))
+    expect(mocks.goto).toHaveBeenCalledTimes(2)
+  })
+
+  it('a bumper pressed while a section still loads steps on from that section', () => {
+    mocks.goto.mockImplementation(() => new Promise(() => {}))
+    pad('r1')
+    pad('l1')
+    expect(mocks.goto).toHaveBeenLastCalledWith('/app/settings/subtitles', SWITCH)
+    expect(document.activeElement).toBe(rail('subtitles'))
+  })
+
+  it('Y opens settings search, but not while the player is up', () => {
+    const search = document.querySelector<HTMLButtonElement>('[data-settings-search] button')!
+    const clicked = vi.fn()
+    search.addEventListener('click', clicked)
+    pad('y')
+    expect(clicked).toHaveBeenCalledTimes(1)
+    playing.set(true)
+    pad('y')
+    playing.set(false)
+    expect(clicked).toHaveBeenCalledTimes(1)
+  })
+
+  it('claims L1/R1 from theme bumper tabs and publishes the Y prompt while installed', () => {
+    expect(get(pageBumpers)).toBe(true)
+    expect(document.documentElement.dataset.navHintY).toBe('Search')
+    uninstall()
+    uninstall = () => {}
+    expect(get(pageBumpers)).toBe(false)
+    expect(document.documentElement.dataset.navHintY).toBeUndefined()
   })
 })

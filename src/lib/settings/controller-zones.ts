@@ -1,10 +1,17 @@
 import { tick } from 'svelte'
 import { get } from 'svelte/store'
 import { goto } from '$app/navigation'
+import { isTv } from '$lib/platform'
+import { oskOpen, playing } from '$lib/player/session'
 import { focusByNav, setNavMoveOwner, type Dir } from '$lib/nav'
+import { handleLayeredBack } from '$lib/nav/back'
+import { pageBumpers, stepSection } from '$lib/nav/bumpers'
 import { describeFocus, focusRestoreAllowed, resolveFocus, type FocusDescriptor } from '$lib/nav/focus-memory'
 import { isNavigable } from '$lib/nav/focusable'
+import { topNavLayer } from '$lib/nav/layers'
 import { backPending, navEpoch } from '$lib/nav/nav-state'
+import { isPadEvent } from '$lib/nav/pad-controls'
+import { onPadButton, type PadButton } from '$lib/nav/pad-events'
 import { SETTINGS_ROOT, isSettingsPath, normaliseSettingsPath, settingsRailHref } from './hierarchy'
 import { SETTING_PARAM } from './search'
 
@@ -13,6 +20,7 @@ import { SETTING_PARAM } from './search'
 // enters the pane on the control last used on that page, else its first; Left at the pane's edge is
 // the nav engine's region crossing back to the lit rail item (the region default). The settings
 // layout installs this on its controller branch. Every rule reads the DOM, so jsdom tests cover it.
+// B is the layered Back, which the TV remote's Back is routed into here; on a pad L1/R1 step sections and Y opens search.
 
 export const RAIL_PREVIEW_MS = 140
 /** A switch from the rail replaces the history entry, so Back leaves Settings in one step however
@@ -26,6 +34,8 @@ let lastSection: string | null = null
 const lastRows = new Map<string, FocusDescriptor>()
 
 const isLit = (link: Element) => link.getAttribute('aria-current') === 'page'
+const BACK_KEYS = ['Escape', 'BrowserBack', 'GoBack']
+const dialogOpen = () => [...document.querySelectorAll<HTMLElement>('[data-nav-trap]')].some((trap) => trap.checkVisibility?.() ?? true)
 /** Pane memory's key for a page. The bare landing shows Playback, so it shares Playback's key. */
 function pageKey(pathname: string): string {
   const path = normaliseSettingsPath(pathname)
@@ -168,16 +178,55 @@ export function installControllerZones(root: HTMLElement): () => void {
     enterPane(link).catch(() => {})
   }
 
+  // The TV remote's Back is an Escape from the activity (MainActivity.kt). The shell's TV branch
+  // does not walk Settings, so here it takes the layered Back B uses: an open picker, dialog or the
+  // keyboard closes through its own handler first (this stands aside), then a sub-page goes up, the
+  // pane returns to the rail and the rail leaves Settings.
+  const onKeydown = (event: KeyboardEvent) => {
+    if (!get(isTv) || !BACK_KEYS.includes(event.key) || isPadEvent(event) || event.defaultPrevented) return
+    if (get(oskOpen) || topNavLayer() || dialogOpen() || !isSettingsPath(location.pathname)) return
+    if (!handleLayeredBack('system')) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+  }
+
+  const onPad = ({ name, pressed }: PadButton) => {
+    if (!pressed || get(playing) || get(oskOpen) || topNavLayer() || dialogOpen()) return
+    if (name === 'y') {
+      root.querySelector<HTMLElement>('[data-settings-search] button')?.click()
+      return
+    }
+    if (name !== 'l1' && name !== 'r1') return
+    const links = [...root.querySelectorAll<HTMLAnchorElement>(RAIL_LINK)]
+    // From the section a switch still loading will show, so a quick second press steps on from it.
+    const current = shownHref() ?? undefined
+    const href = stepSection(links.map((link) => link.getAttribute('href') ?? ''), current, name === 'l1' ? -1 : 1)
+    const link = links.find((candidate) => candidate.getAttribute('href') === href)
+    if (!href || !link) return
+    focusByNav(link, true)
+    // The focus just queued a preview; a bumper switches at once instead.
+    cancelPreview()
+    showSection(href).catch(() => {})
+  }
+
   root.addEventListener('focusin', onFocusIn)
   root.addEventListener('focusout', onFocusOut)
   root.addEventListener('click', onClick)
+  window.addEventListener('keydown', onKeydown, true)
   const stopOwner = setNavMoveOwner(owner)
+  const stopPad = onPadButton(onPad)
+  pageBumpers.set(true)
+  document.documentElement.dataset.navHintY = 'Search'
   return () => {
     cancelPreview()
     root.removeEventListener('focusin', onFocusIn)
     root.removeEventListener('focusout', onFocusOut)
     root.removeEventListener('click', onClick)
+    window.removeEventListener('keydown', onKeydown, true)
     stopOwner()
+    stopPad()
+    pageBumpers.set(false)
+    delete document.documentElement.dataset.navHintY
   }
 }
 
