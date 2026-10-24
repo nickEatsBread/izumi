@@ -18,7 +18,7 @@ const ACCOUNTS = `${SETTINGS}accounts/+page.svelte`
 const TRAKT = './TraktAccountSettings.svelte'
 const LETTERBOXD = './LetterboxdAccountSettings.svelte'
 const SUBTITLES = `${SETTINGS}subtitles/+page.svelte`
-const NAVIGATION = `${SETTINGS}navigation/+page.svelte`
+const NAVIGATION = './PhoneNavEditor.svelte'
 const DOWNLOADS = `${SETTINGS}downloads/+page.svelte`
 
 interface TouchTarget { file: string; anchor: string; count?: number }
@@ -72,7 +72,6 @@ const TARGETS: Record<string, TouchTarget> = {
   'Customize Home: delete a custom row': { file: `${SETTINGS}library/home/+page.svelte`, anchor: 'onclick={() => deleteCustomTmdbRow(row.id)}' },
   'Downloads: auto-download Enabled label': { file: DOWNLOADS, anchor: 'class="inline-flex items-center gap-1 py-2 text-xs font-bold sm:py-0"' },
   'Downloads: remove an auto-download rule': { file: DOWNLOADS, anchor: 'onclick={() => removeAutoDownloadRule(rule.id)}' },
-  'Navigation: placement buttons': { file: NAVIGATION, anchor: 'onclick={() => setPlacement(it.id, p.value)}' },
   'Navigation: move up': { file: NAVIGATION, anchor: 'onclick={() => move(i, -1)}' },
   'Navigation: move down': { file: NAVIGATION, anchor: 'onclick={() => move(i, 1)}' },
   'SelectMenu: trigger': { file: './SelectMenu.svelte', anchor: 'bind:this={trigger}' },

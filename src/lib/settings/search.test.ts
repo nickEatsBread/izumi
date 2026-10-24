@@ -13,7 +13,7 @@ describe('settings search', () => {
   })
 
   it('finds settings through friendly keywords', () => {
-    expect(searchSettings('vibration')[0]?.title).toBe('Haptics')
+    expect(searchSettings('vibration', true)[0]?.title).toBe('Haptics')
     expect(searchSettings('4k resolution')[0]?.title).toBe('Preferred quality')
   })
 

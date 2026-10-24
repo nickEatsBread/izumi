@@ -4,14 +4,14 @@ import { describe, expect, it } from 'vitest'
 
 const source = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.url)), 'utf8')
 const catalogPage = readFileSync(fileURLToPath(new URL('../+page.svelte', import.meta.url)), 'utf8')
-const interfacePage = readFileSync(fileURLToPath(new URL('../../interface/+page.svelte', import.meta.url)), 'utf8')
+const appearancePage = readFileSync(fileURLToPath(new URL('../../appearance/+page.svelte', import.meta.url)), 'utf8')
 
 describe('Home row customization screen', () => {
-  it('is entered from Home and library rather than general Interface settings', () => {
+  it('is entered from Home and library rather than general Appearance settings', () => {
     expect(catalogPage).toContain('/app/settings/library/home?provider=')
     expect(catalogPage).toContain('Customize Home')
-    expect(interfacePage).not.toContain('DEFAULT_HOME_ROWS')
-    expect(interfacePage).not.toContain('homeRowOrder')
+    expect(appearancePage).not.toContain('DEFAULT_HOME_ROWS')
+    expect(appearancePage).not.toContain('homeRowOrder')
   })
 
   it('switches providers and separates ordered and available rows', () => {

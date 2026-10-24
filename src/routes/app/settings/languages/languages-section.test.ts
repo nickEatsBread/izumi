@@ -64,9 +64,9 @@ describe('Languages section', () => {
   })
 
   it('leaves no copy of a moved row on its old page', () => {
-    const interfacePage = read('../interface/+page.svelte')
-    expect(interfacePage).not.toContain('$titleLanguage')
-    expect(interfacePage).not.toContain('data-setting-key="app-language"')
+    const appearancePage = read('../appearance/+page.svelte')
+    expect(appearancePage).not.toContain('$titleLanguage')
+    expect(appearancePage).not.toContain('settingKey="app-language"')
     expect(read('../downloads/+page.svelte')).not.toContain('$downloadAudio')
     const communitySources = read('../extensions/+page.svelte')
     expect(communitySources).not.toContain('$providerAudio')

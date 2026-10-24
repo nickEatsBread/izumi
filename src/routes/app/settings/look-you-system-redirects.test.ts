@@ -5,6 +5,8 @@ import { legacySettingsRedirect } from '$lib/settings/legacy-routes'
 import { load as accountsLoad } from './accounts/+page'
 import { load as profilesLoad } from './profiles/+page'
 import { load as changelogLoad } from './changelog/+page'
+import { load as interfaceLoad } from './interface/+page'
+import { load as navigationLoad } from './navigation/+page'
 
 const BASE = 'https://izumi.invalid'
 const here = (relative: string) => fileURLToPath(new URL(relative, import.meta.url))
@@ -23,6 +25,8 @@ function redirectOf(load: (event: never) => unknown, href: string): { status: nu
 const LEGACY: Array<[string, (event: never) => unknown, string]> = [
   ['profiles', profilesLoad, '/app/settings/accounts#profiles'],
   ['changelog', changelogLoad, '/app/settings/about/changelog'],
+  ['interface', interfaceLoad, '/app/settings/appearance'],
+  ['navigation', navigationLoad, '/app/settings/appearance#navigation'],
 ]
 
 describe('Look, You and System legacy routes', () => {
@@ -36,6 +40,13 @@ describe('Look, You and System legacy routes', () => {
     expect(thrown.status).toBe(307)
     expect(thrown.location).toBe(legacySettingsRedirect(new URL(href, BASE)))
     expect(thrown.location).toBe(target)
+  })
+
+  it('sends a searched Interface row that moved sections to its new section', () => {
+    const thrown = redirectOf(interfaceLoad, '/app/settings/interface?setting=show-18-content')
+    const url = new URL(thrown.location, BASE)
+    expect(url.pathname).toBe('/app/settings/accounts')
+    expect(url.searchParams.get('setting')).toBe('show-18-content')
   })
 
   it('sends old Accounts sections to Trackers and leaves current Accounts URLs alone', () => {

@@ -91,12 +91,12 @@ describe('effective navigation wiring', () => {
   })
 })
 
-describe('Navigation settings page', () => {
-  const page = read('../../routes/app/settings/navigation/+page.svelte')
+describe('Phone navigation editor', () => {
+  const page = read('../components/settings/PhoneNavEditor.svelte')
 
   it('offers Settings only the placements it may take and guards every write', () => {
     expect(page).toContain("import { allowedPlacements } from '$lib/settings/nav-rules'")
-    expect(page).toContain('{#each placements.filter((p) => allowedPlacements(it.id).includes(p.value)) as p (p.value)}')
+    expect(page).toContain('options={placements.filter((p) => allowedPlacements(it.id).includes(p.value))}')
     const guard = page.indexOf('if (!allowedPlacements(id).includes(p)) return')
     expect(guard).toBeGreaterThan(-1)
     expect(guard).toBeLessThan(page.indexOf('navConfig.set($effectiveNav.map((it) => (it.id === id ? { ...it, placement: p } : it)))'))
