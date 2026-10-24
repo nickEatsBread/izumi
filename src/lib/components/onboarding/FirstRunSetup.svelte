@@ -67,6 +67,9 @@
   let busy = $state(false)
   let keyboardOpen = $state(false)
   let sourcesStep = $state<ReturnType<typeof SourcesStep>>()
+  /** Setup steps aside while the user browses the real Store. It stays mounted, only hidden, so
+   *  "Back to setup" returns to the same step with every answer intact. */
+  let browsing = $state(false)
 
   let intent = $state<OnboardingIntent>({
     anime: initialBoth || !(initialProvider === 'tmdb' || initialProvider === 'stremio'),
@@ -115,6 +118,11 @@
   })
 
   /** The start screen's cards are the way forward themselves, so choosing one also moves on. */
+  async function browseStore() {
+    browsing = true
+    await goto('/app/settings/store')
+  }
+
   function choosePath(next: OnboardingPath) {
     path = next
     step = 'watch'
@@ -199,7 +207,7 @@
   }
 
   $effect(() => {
-    if ($onboardingComplete) return
+    if ($onboardingComplete || browsing) return
     step; mode
     const frame = requestAnimationFrame(() => {
       root?.querySelector('.setup-step')?.scrollTo({ top: 0 })
@@ -212,6 +220,13 @@
     if ($onboardingComplete) return
     step = 'start'
     const previousFocus = document.activeElement as HTMLElement | null
+    return () => previousFocus?.focus({ preventScroll: true })
+  })
+
+  // The page under setup must not scroll, except while setup has stepped aside for the Store. Kept
+  // apart from the effect above so resuming never re-runs its reset to the start screen.
+  $effect(() => {
+    if ($onboardingComplete || browsing) return
     const htmlOverflow = document.documentElement.style.overflow
     const bodyOverflow = document.body.style.overflow
     document.documentElement.style.overflow = 'hidden'
@@ -219,7 +234,6 @@
     return () => {
       document.documentElement.style.overflow = htmlOverflow
       document.body.style.overflow = bodyOverflow
-      previousFocus?.focus({ preventScroll: true })
     }
   })
 
@@ -228,7 +242,8 @@
   // for home, so B did nothing a user could see on a Deck's first launch. From the transfer screen,
   // Back returns to the start screen, where the transfer card is.
   $effect(() => {
-    if ($onboardingComplete) {
+    // While browsing the Store, Back belongs to the Store; setup returns through its own bar.
+    if ($onboardingComplete || browsing) {
       onboardingNav.set(null)
       return
     }
@@ -259,13 +274,15 @@
 </script>
 
 {#if !$onboardingComplete}
-  <div bind:this={root} role="dialog" aria-modal="true" aria-labelledby="setup-title" tabindex="-1" data-nav-trap class:keyboard-open={keyboardOpen} class="onboarding-surface fixed inset-0 z-[160] flex h-[100dvh] w-screen flex-col overflow-hidden bg-background text-foreground" onkeydown={handleKeydown}>
+  <div bind:this={root} role="dialog" aria-modal="true" aria-labelledby="setup-title" tabindex="-1" data-nav-trap={browsing ? undefined : ''} class:keyboard-open={keyboardOpen} class:setup-away={browsing} class="onboarding-surface fixed inset-0 z-[160] flex h-[100dvh] w-screen flex-col overflow-hidden bg-background text-foreground" onkeydown={handleKeydown}>
     <span id="setup-progress" class="sr-only">{m.onboarding_step_count({ current: String(stepIndex + 1), total: String(totalSteps) })}</span>
     <div class="setup-art" aria-hidden="true"><SetupArtwork {intent} /></div>
+    <!-- Signs the screen from its corner, outside the sheet, where the old art panel carried it. -->
+    <div class="setup-wordmark"><Wordmark /></div>
     <main class="setup-main min-w-0 flex-1">
-      <!-- Every word on screen sits on this solid sheet; the posters stay behind it, never under text. -->
-      <div class="setup-sheet">
-      <div class="setup-wordmark"><Wordmark /></div>
+      <!-- Every word on screen sits on this solid sheet; the posters stay behind it, never under text.
+           Its width follows the content: the welcome is a short read, the sources screen is landscape. -->
+      <div class="setup-sheet" class:narrow={mode === 'wizard' && step === 'start'} class:wide={mode === 'wizard' && (step === 'connect' || step === 'sources')}>
       {#if mode === 'transfer'}
         <!-- Its own branch rather than a step: this screen is not "2 of 4" of anything, it is
              the alternative to the whole wizard, and it owns its own footer. -->
@@ -292,7 +309,7 @@
           {:else if step === 'connect'}
             <ConnectStep bind:connections bind:nuvioExtras bind:imported bind:busy />
           {:else if step === 'sources'}
-            <SourcesStep bind:this={sourcesStep} {intent} synced={imported} bind:busy />
+            <SourcesStep bind:this={sourcesStep} synced={imported} bind:busy onbrowse={() => void browseStore()} />
           {:else}
             <ReadyStep {readiness} bind:connections trackers={intent.anime} tmdbTip={intent.films && movieMetadata === 'stremio'} />
           {/if}
@@ -319,6 +336,11 @@
     </main>
     {#if introRunning}<IntroSequence oncomplete={() => (introRunning = false)} />{/if}
   </div>
+  {#if browsing}
+    <div class="fixed bottom-6 left-1/2 z-[170] -translate-x-1/2">
+      <button type="button" data-focusable onclick={() => (browsing = false)} class="setup-button bg-foreground text-background shadow-xl"><ChevronLeft size={17} />{m.onboarding_back_to_setup()}</button>
+    </div>
+  {/if}
 {/if}
 
 <style>
@@ -327,7 +349,11 @@
   .setup-art::after { content: ''; position: absolute; inset: 0; background: hsl(var(--background) / .65); }
   .setup-main { position: relative; z-index: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: safe center; padding: max(2rem, env(safe-area-inset-top)) clamp(1rem, 4vw, 3rem) max(2rem, env(safe-area-inset-bottom)); }
   .setup-sheet { display: flex; flex-direction: column; min-height: 0; max-height: 100%; width: 100%; max-width: 52rem; padding: 1.75rem 2.25rem 1.25rem; border: 1px solid hsl(var(--border)); border-radius: 1.25rem; background: hsl(var(--background) / .97); box-shadow: 0 24px 80px rgb(0 0 0 / .45); }
-  .setup-wordmark { display: flex; flex-shrink: 0; margin-bottom: 1.5rem; }
+  .setup-sheet.narrow { max-width: 40rem; }
+  .setup-sheet.wide { max-width: 64rem; }
+  /* Below the sheet in paint order, so on a narrow window the sheet covers it rather than the reverse. */
+  .setup-wordmark { position: absolute; right: max(2rem, env(safe-area-inset-right)); bottom: max(1.75rem, env(safe-area-inset-bottom)); display: flex; }
+  .setup-away { display: none !important; }
   .setup-step { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px; scroll-behavior: auto; }
   .setup-content { animation: step-enter 320ms cubic-bezier(.2, .7, .2, 1) both; }
   .setup-actions { flex-shrink: 0; margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid hsl(var(--border) / .65); }
@@ -336,7 +362,6 @@
   @media (max-height: 760px) {
     .setup-main { padding-block: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-bottom)); }
     .setup-sheet { padding-top: 1.25rem; }
-    .setup-wordmark { margin-bottom: 1rem; }
     .setup-actions { margin-top: 1rem; padding-top: 1rem; }
   }
   @media (max-width: 767px), (max-height: 500px) and (pointer: coarse) {
@@ -344,7 +369,8 @@
     /* A bottom sheet: a strip of posters stays visible above it. */
     .setup-main { justify-content: flex-end; padding: max(3.5rem, calc(env(safe-area-inset-top) + 2.5rem)) 0 0; }
     .setup-sheet { flex: 1; max-width: none; padding: 1.25rem max(1.25rem, env(safe-area-inset-right)) 0 max(1.25rem, env(safe-area-inset-left)); border-width: 1px 0 0; border-radius: 1.25rem 1.25rem 0 0; background: hsl(var(--background)); box-shadow: none; }
-    .setup-wordmark { margin-bottom: 1rem; }
+    /* The bottom sheet covers the corner, so the mark moves into the poster strip above it. */
+    .setup-wordmark { top: max(1rem, env(safe-area-inset-top)); bottom: auto; left: max(1.25rem, env(safe-area-inset-left)); right: auto; }
     .setup-step { flex: 1; padding: 4px 4px 1rem; }
     .setup-content :global(.text-sm) { font-size: 14px; }
     .setup-content :global(.text-xs) { font-size: 12px; }

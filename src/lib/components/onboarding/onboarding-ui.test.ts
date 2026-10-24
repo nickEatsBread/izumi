@@ -23,8 +23,8 @@ describe('onboarding presentation contracts', () => {
   it('keeps a single artwork wordmark without captions or a visible step header', () => {
     expect(shell.match(/<Wordmark\b/g)).toHaveLength(1)
     expect(shell).toContain('class="setup-wordmark"><Wordmark />')
-    // Inside the sheet, so the mark belongs to the content instead of floating in a screen corner.
-    expect(shell.indexOf('<div class="setup-sheet">')).toBeLessThan(shell.indexOf('class="setup-wordmark"'))
+    // Outside the sheet, signing the screen from its corner as the old art panel did.
+    expect(shell.indexOf('class="setup-wordmark"')).toBeLessThan(shell.indexOf('<main'))
     expect(shell).not.toContain('<header')
     expect(shell).not.toContain('step-progress')
     expect(shell).not.toContain('art-caption')
@@ -99,10 +99,6 @@ describe('onboarding presentation contracts', () => {
     expect(guide).toContain('onUseKeyless')
   })
 
-  it('shows each source its own artwork rather than an unlabelled row', () => {
-    expect(sources).toContain('<AddonLogo logo={suggestion.logo}')
-  })
-
   it('never lets a truncating row blow its grid track out past the container', () => {
     // A grid item defaults to min-width:auto, so a column with no explicit track sizes to the
     // widest row's max-content. `truncate` is white-space:nowrap, which makes that the whole
@@ -122,13 +118,13 @@ describe('onboarding presentation contracts', () => {
     }
   })
 
-  it('never pre-selects a source for the user', () => {
-    expect(sources).toContain('let picked = $state<string[]>([])')
-    expect(sources).not.toMatch(/picked\s*=\s*\[[^\]]/)
-  })
-
-  it('keeps a package already installed from another store instead of stopping setup', () => {
-    expect(sources).toContain('if (cause instanceof PackageInstalledElsewhereError) return null')
+  it('never adds a source the user did not paste or pick themselves', () => {
+    // No suggestion list and no store writes of its own: the only way in is what the user pasted,
+    // through the same helper as Settings → Sources, or what they install from the Store.
+    expect(sources).toContain('await addSourceSpec(input)')
+    expect(sources).not.toContain('listCommunityAddons')
+    expect(sources).not.toContain('addonUrls.update')
+    expect(sources).not.toContain('extensionUrls.update')
   })
 
   it('lets every step be skipped, and leaves the home screen alone afterwards', () => {
@@ -289,11 +285,10 @@ describe('onboarding presentation contracts', () => {
     expect(trackers).toContain('await connectMal()')
   })
 
-  it('installs ticked sources from Next instead of a button of its own', () => {
+  it('adds a pasted URL from Next rather than dropping it', () => {
     expect(sources).toContain('export async function install(): Promise<boolean>')
-    expect(sources).not.toContain('m.onboarding_sources_install(')
-    // An empty selection is not a failure: Next simply moves on.
-    expect(sources).toContain('if (!picked.length) return true')
+    // An empty field is not a failure: Next simply moves on.
+    expect(sources).toContain('if (adding || !input.trim()) return !input.trim()')
   })
 
   it('asks how torrents play on the sources screen rather than a screen of its own', () => {
@@ -304,19 +299,22 @@ describe('onboarding presentation contracts', () => {
     expect(playback).toContain('timer = setTimeout(() => void validate(), 700)')
   })
 
-  it('lists sources as one compact ruled list, folded away once sources already came over', () => {
-    expect(sources).toContain('rounded-xl border border-border bg-border sm:grid-cols-2')
-    expect(sources).toContain('aria-expanded={showMore}')
-    expect(sources).toContain('{#if !reviewFace || showMore}')
-    // Collapsing must not leave hidden ticks for Next to install.
-    expect(sources).toContain('if (!showMore) picked = []')
-    expect(sources).not.toContain('onboarding_sources_review_body')
+  it('adds sources by URL or from the real Store, side by side with playback', () => {
+    expect(sources).toContain('onclick={onbrowse}')
+    expect(sources).toContain('lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]')
+    // Setup steps aside for the Store and comes back to the same step: hidden, never unmounted,
+    // with its nav trap and scroll lock released meanwhile.
+    expect(shell).toContain("await goto('/app/settings/store')")
+    expect(shell).toContain('class:setup-away={browsing}')
+    expect(shell).toContain("data-nav-trap={browsing ? undefined : ''}")
+    expect(shell).toContain('if ($onboardingComplete || browsing) return')
+    expect(shell).toContain('m.onboarding_back_to_setup()')
   })
 
-  it('opens on three ways to start, each one the way forward itself', () => {
+  it('opens on one way forward, with the other two starts as links', () => {
     const start = read('./steps/StartStep.svelte')
-    for (const handler of ['onnew', 'onimport', 'ontransfer']) expect(start).toContain(`action: ${handler}`)
-    expect(start).toContain('onclick={choice.action}')
+    for (const handler of ['onnew', 'onimport', 'ontransfer']) expect(start).toContain(`onclick={${handler}}`)
+    expect(start.match(/setup-inline-button/g)).toHaveLength(1)
     expect(start).toContain('data-step-heading tabindex="-1" aria-describedby="setup-progress"')
   })
 
@@ -331,7 +329,7 @@ describe('onboarding presentation contracts', () => {
   it('puts every word on one solid sheet over the poster wall, in izumi\'s own font', () => {
     expect(shell).not.toContain('setup-art-panel')
     expect(shell).not.toContain('minmax(0, 1.3fr)')
-    expect(shell).toContain('<div class="setup-sheet">')
+    expect(shell).toContain('<div class="setup-sheet"')
     expect(shell).toMatch(/\.setup-sheet \{[^}]*max-width: 52rem;[^}]*background: hsl\(var\(--background\) \/ \.97\)/)
     // A re-run inherits whatever theme is active; setup keeps the brand font regardless.
     expect(css).toContain(".onboarding-surface { font-family: 'Nunito Variable', sans-serif; }")

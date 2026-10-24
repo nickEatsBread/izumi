@@ -38,7 +38,7 @@ describe('set up from another device', () => {
 
   it('offers the transfer as a way to start, not as a footer button mid-wizard', () => {
     const start = read('./steps/StartStep.svelte')
-    expect(start).toContain('action: ontransfer')
+    expect(start).toContain('onclick={ontransfer}')
     expect(shell).toContain('ontransfer={enterTransfer}')
     expect(shell).not.toContain('m.onboarding_transfer_cta()')
     expect(watch).not.toContain('onboarding_transfer_cta')

@@ -9,6 +9,8 @@ const communitySources = read('../extensions/+page.svelte')
 const store = read('../store/+page.svelte')
 const priority = read('./priority/+page.svelte')
 const search = read('../../../../lib/settings/search.ts')
+// The paste field's add logic, shared with first-run setup.
+const addSource = read('../../../../lib/settings/add-source.ts')
 
 describe('unified Sources settings', () => {
   it('uses compact accessible bin actions for removing add-ons and indexers', () => {
@@ -43,7 +45,9 @@ describe('unified Sources settings', () => {
 
   it('uses one paste field and one list on My sources', () => {
     expect(page).toContain('URL, GitHub repo, or catalog')
-    expect(page).toContain("import { classifySourceSpec")
+    expect(page).toContain("import { addSourceSpec, type AddSourceResult } from '$lib/settings/add-source'")
+    // An already-added source keeps its own message instead of falling through to the tracker check.
+    expect(page).toContain('if (result.duplicate) {')
     expect(page).toContain('Nothing here yet')
     expect(page).not.toMatch(/<h[1-6][^>]*>Stremio add-ons<\/h[1-6]>/)
     expect(page).not.toContain('source connections configured')
@@ -144,7 +148,7 @@ describe('unified Sources settings', () => {
     expect(communitySources).toContain('error instanceof PackageInstalledElsewhereError')
     expect(communitySources).toContain('<ReplacePackageDialog')
     expect(communitySources).toContain('void installFromCatalog(chosen.url, chosen.extension, true)')
-    expect(page).toContain('currentLegacyStores()')
+    expect(addSource).toContain('currentLegacyStores()')
   })
 
   it('keeps old Extensions bookmarks working without retaining a second destination', () => {

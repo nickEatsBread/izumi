@@ -1,57 +1,49 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte'
   import Check from '@lucide/svelte/icons/check'
-  import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import Store from '@lucide/svelte/icons/store'
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
   import { m } from '$lib/paraglide/messages.js'
-  import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   import PlaybackChoice from './PlaybackChoice.svelte'
-  import { addonSuggestions, packageSuggestions, type SourceSuggestion } from '$lib/onboarding/source-suggestions'
-  import { listCommunityAddons } from '$lib/stremio/community-store'
+  import { addSourceSpec } from '$lib/settings/add-source'
   import { fetchManifest } from '$lib/stremio/manifest'
-  import { addonUrls, CINEMETA_BASE, disabledSources, normalizeBase } from '$lib/stremio/sources'
-  import { OFFICIAL_ANIME_CATALOG, PackageInstalledElsewhereError, fetchExtensionInfo, installCatalogPackage } from '$lib/extensions/manager'
-  import type { ExtensionCatalogPackage } from '$lib/extensions/catalog'
-  import { disabledExtensions, disabledPlugins, extensionUrls } from '$lib/settings/ui'
-  import type { OnboardingIntent } from '$lib/settings/onboarding'
+  import { addonUrls, CINEMETA_BASE, normalizeBase } from '$lib/stremio/sources'
+  import { fetchExtensionInfo } from '$lib/extensions/manager'
+  import { extensionUrls } from '$lib/settings/ui'
 
-  let { intent, synced = false, busy = $bindable() }: { intent: OnboardingIntent; synced?: boolean; busy: boolean } = $props()
+  let {
+    synced = false,
+    busy = $bindable(),
+    onbrowse,
+  }: { synced?: boolean; busy: boolean; onbrowse: () => void } = $props()
 
-  let loading = $state(true)
-  let error = $state('')
-  let suggestions = $state<SourceSuggestion[]>([])
-  let packages = $state<ExtensionCatalogPackage[]>([])
-  let picked = $state<string[]>([])
-  let installError = $state('')
-  let health = $state<'empty' | 'checking' | 'ready' | 'error'>('empty')
-  let installing = $state(false)
+  let input = $state('')
+  let adding = $state(false)
+  let addError = $state('')
   let checkingKey = $state(false)
+  let health = $state<'empty' | 'checking' | 'ready' | 'error'>('empty')
   let errorAlert = $state<HTMLElement>()
-  let showMore = $state(false)
   const abort = new AbortController()
 
   // Cinemeta only supplies metadata, so it does not count as a source.
   const streamAddons = $derived($addonUrls.filter((url) => normalizeBase(url) !== normalizeBase(CINEMETA_BASE)))
-  const configured = $derived(streamAddons.length > 0 || $extensionUrls.length > 0)
-  const reviewFace = $derived(synced && configured)
+  const sourceCount = $derived(streamAddons.length + $extensionUrls.length)
+  const reviewFace = $derived(synced && sourceCount > 0)
 
-  // Two things hold the footer here: an install in flight and a debrid key still being checked.
+  // Two things hold the footer here: a source still being added and a debrid key still being checked.
   $effect(() => {
-    busy = installing || checkingKey
+    busy = adding || checkingKey
   })
 
-  // The shell's busy flag is bound to this screen. If it unmounts mid-install or mid key check,
-  // nothing else would ever clear it, leaving Back disabled on the next screen.
+  // The shell's busy flag is bound to this screen. If it unmounts mid-add or mid key check, nothing
+  // else would ever clear it, leaving Back disabled on the next screen.
   onDestroy(() => {
     abort.abort()
     busy = false
   })
   onMount(() => {
-    // Sources that came over with an import get a health check; everyone gets the picker, which
-    // reads as "add more" once sources are already there.
-    if (reviewFace) void check()
-    void load()
+    if (sourceCount) void check()
   })
 
   async function check() {
@@ -73,156 +65,69 @@
     health = checks.some(Boolean) ? 'ready' : 'error'
   }
 
-  async function load() {
-    loading = true
-    error = ''
+  /** Adds whatever the user pasted, through the same path as Settings → Sources. Nothing is ever
+   *  added for them, so izumi never ends up with a source the user did not choose. */
+  async function add(): Promise<boolean> {
+    if (adding || !input.trim()) return !input.trim()
+    adding = true
+    addError = ''
     try {
-      // An empty intent is unreachable through the UI but a stored profile could hold one, and
-      // onboardingCatalogPlan answers it with the anime library. Match that rather than showing
-      // an empty picker.
-      const anime = intent.anime || !intent.films
-      const [catalog, community] = await Promise.all([
-        anime ? fetchExtensionInfo(OFFICIAL_ANIME_CATALOG).catch(() => null) : Promise.resolve(null),
-        intent.films ? listCommunityAddons({ limit: 12, sort: 'stars' }).catch(() => null) : Promise.resolve(null),
-      ])
-      if (abort.signal.aborted) return
-      packages = catalog?.packages ?? []
-      suggestions = [
-        ...packageSuggestions(packages, 4),
-        ...addonSuggestions(community?.addons ?? [], 4),
-      ]
-      if (!suggestions.length) error = m.onboarding_sources_unavailable()
-    } catch (cause) {
-      if (!abort.signal.aborted) error = cause instanceof Error ? cause.message : m.onboarding_sources_unavailable()
-    } finally {
-      if (!abort.signal.aborted) loading = false
-    }
-  }
-
-  /** Collapsing drops any ticks: Next installs what is ticked, and that must never be something
-   *  the user can no longer see. */
-  function toggleMore() {
-    showMore = !showMore
-    if (!showMore) picked = []
-  }
-
-  function toggle(id: string) {
-    picked = picked.includes(id) ? picked.filter((value) => value !== id) : [...picked, id]
-  }
-
-  /**
-   * Installs only what the user ticked. Nothing is ticked for them, so izumi never installs a
-   * source the user did not choose. The shell's Next calls this; true means it may move on.
-   */
-  export async function install(): Promise<boolean> {
-    if (!picked.length) return true
-    if (installing) return false
-    installing = true
-    installError = ''
-    try {
-      for (const id of picked) {
-        if (abort.signal.aborted) return false
-        const suggestion = suggestions.find((entry) => entry.id === id)
-        if (!suggestion) continue
-        if (suggestion.kind === 'addon') {
-          const base = normalizeBase(suggestion.url)
-          if (base && !$addonUrls.some((url) => normalizeBase(url) === base)) addonUrls.update((urls) => [...urls, base])
-          // A re-run of setup can meet a source the user switched off earlier. Installing it here
-          // has to re-enable it, or it lands in the list already disabled and silently does nothing.
-          if (base) disabledSources.update((urls) => urls.filter((url) => normalizeBase(url) !== base))
-          picked = picked.filter((value) => value !== id)
-          continue
-        }
-        const entry = packages.find((value) => value.id === id)
-        if (!entry) continue
-        const installed = await installCatalogPackage(entry, OFFICIAL_ANIME_CATALOG).catch((cause: unknown) => {
-          // Already installed from another store: setup keeps that copy rather than replacing it.
-          if (cause instanceof PackageInstalledElsewhereError) return null
-          throw cause
-        })
-        if (!installed) {
-          picked = picked.filter((value) => value !== id)
-          continue
-        }
-        disabledPlugins.update((ids) => ids.filter((value) => value !== installed.id))
-        // The package came from the maintained catalog, so keep that catalog in the source list
-        // the same way the store screen does when it installs from it.
-        if (!$extensionUrls.includes(OFFICIAL_ANIME_CATALOG)) extensionUrls.update((urls) => [...urls, OFFICIAL_ANIME_CATALOG])
-        disabledExtensions.update((urls) => urls.filter((spec) => spec !== OFFICIAL_ANIME_CATALOG))
-        picked = picked.filter((value) => value !== id)
-      }
+      const result = await addSourceSpec(input)
       if (abort.signal.aborted) return false
-      picked = []
-      return true
-    } catch (cause) {
-      if (!abort.signal.aborted) {
-        installError = cause instanceof Error ? cause.message : m.onboarding_sources_install_failed()
-        // Next disabled itself while installing, which drops focus out of the dialog; the error is
-        // also often scrolled out of view under the playback row.
+      if ('error' in result) {
+        addError = result.error
+        // Next disables itself while adding, which drops focus out of the dialog.
         await tick()
         errorAlert?.focus()
+        return false
       }
-      return false
+      input = ''
+      void check()
+      return true
     } finally {
-      if (!abort.signal.aborted) installing = false
+      if (!abort.signal.aborted) adding = false
     }
+  }
+
+  /** The shell's Next calls this: a URL pasted but not yet added is added rather than dropped.
+   *  True means the flow may move on. */
+  export async function install(): Promise<boolean> {
+    return add()
   }
 </script>
 
 <h1 id="setup-title" data-step-heading tabindex="-1" aria-describedby="setup-progress" class="setup-heading">{reviewFace ? m.onboarding_sources_review_title() : m.onboarding_sources_title()}</h1>
-{#if !reviewFace}
+{#if !sourceCount}
   <p class="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">{m.onboarding_sources_body()}</p>
 {/if}
 
-{#if reviewFace}
-  <div class="mt-6 flex items-center gap-3 rounded-xl border border-border px-4 py-3" role="status" aria-live="polite">
-    {#if health === 'checking'}<LoaderCircle size={18} class="tile-spinner shrink-0" />
-    {:else if health === 'error'}<TriangleAlert size={18} class="shrink-0 text-destructive" />
-    {:else}<Check size={18} class="shrink-0" />{/if}
-    <p class="min-w-0 text-sm">
-      <span class="font-semibold">{m.onboarding_count_sources({ count: String(streamAddons.length + $extensionUrls.length) })}</span>
-      <span class="text-muted-foreground"> · {health === 'checking' ? m.onboarding_checking() : health === 'error' ? m.onboarding_source_unavailable() : m.onboarding_ready()}</span>
+<!-- Landscape: adding sources and choosing playback sit side by side instead of stacking into a scroll. -->
+<div class="mt-7 grid grid-cols-[minmax(0,1fr)] gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+  <section aria-labelledby="setup-add-source-title">
+    <h2 id="setup-add-source-title" class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{m.onboarding_sources_add_title()}</h2>
+    <form class="mt-3 flex gap-2" onsubmit={(event) => { event.preventDefault(); void add() }}>
+      <input bind:value={input} data-focusable aria-label={m.onboarding_sources_add_title()} placeholder={m.onboarding_sources_url_placeholder()} autocomplete="off" autocapitalize="none" spellcheck="false" class="setup-field !min-h-10 flex-1 py-2 text-sm" />
+      <button type="submit" data-focusable disabled={adding || !input.trim()} class="setup-inline-button !min-h-10 shrink-0 bg-foreground px-4 py-2 text-sm text-background">
+        {#if adding}<LoaderCircle size={15} class="tile-spinner" />{m.onboarding_sources_adding()}{:else}{m.onboarding_sources_add()}{/if}
+      </button>
+    </form>
+    {#if addError}<p bind:this={errorAlert} role="alert" tabindex="-1" class="mt-2 text-xs text-destructive">{addError}</p>{/if}
+    <div class="mt-3 flex items-center gap-3 text-sm">
+      <span class="text-muted-foreground">{m.onboarding_sources_or()}</span>
+      <button type="button" data-focusable onclick={onbrowse} class="setup-inline-button !min-h-10 border border-border px-4 py-2 text-sm"><Store size={15} />{m.onboarding_sources_browse_store()}</button>
+    </div>
+    <p class="mt-5 flex items-center gap-2 text-sm" role="status" aria-live="polite">
+      {#if !sourceCount}<span class="text-muted-foreground">{m.onboarding_sources_none()}</span>
+      {:else}
+        {#if health === 'checking'}<LoaderCircle size={16} class="tile-spinner shrink-0" />
+        {:else if health === 'error'}<TriangleAlert size={16} class="shrink-0 text-destructive" />
+        {:else}<Check size={16} class="shrink-0" />{/if}
+        <span><span class="font-semibold">{m.onboarding_count_sources({ count: String(sourceCount) })}</span>
+          <span class="text-muted-foreground"> · {health === 'checking' ? m.onboarding_checking() : health === 'error' ? m.onboarding_source_unavailable() : m.onboarding_ready()}</span></span>
+      {/if}
     </p>
-  </div>
-  <!-- Someone whose sources came over has little reason to browse more, so the picker waits behind
-       this instead of filling the screen. -->
-  <button type="button" data-focusable onclick={toggleMore} aria-expanded={showMore} class="mt-5 inline-flex items-center gap-2 text-sm font-semibold">
-    <ChevronDown size={16} class="transition-transform {showMore ? 'rotate-180' : ''}" />{m.onboarding_sources_add_more()}
-  </button>
-{/if}
-
-{#if !reviewFace || showMore}
-  {#if loading}
-    <p class="mt-6 flex items-center gap-2 text-sm text-muted-foreground" role="status"><LoaderCircle size={16} class="tile-spinner" />{m.onboarding_sources_loading()}</p>
-  {:else if error}
-    <p class="mt-6 text-sm leading-relaxed text-muted-foreground" role="status">{error}</p>
-    <button type="button" data-focusable onclick={() => void load()} class="setup-inline-button mt-4 bg-secondary">{m.onboarding_sources_retry()}</button>
-  {:else}
-    <!-- One hairline-ruled list rather than a wall of cards. minmax(0,1fr) is load-bearing: a grid
-         item defaults to min-width:auto, so a `truncate` row would size its track to the full
-         untruncated text and clip at the edge instead of ellipsising. -->
-    <fieldset disabled={installing} class="mt-4 grid grid-cols-[minmax(0,1fr)] gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2">
-      <legend class="sr-only">{m.onboarding_sources_title()}</legend>
-      {#each suggestions as suggestion (suggestion.id)}
-        <label class="flex min-w-0 cursor-pointer items-center gap-3 px-4 py-3 transition-colors {picked.includes(suggestion.id) ? 'bg-secondary' : 'bg-background hover:bg-secondary/60'}">
-          <input type="checkbox" data-focusable class="shrink-0" checked={picked.includes(suggestion.id)} onchange={() => toggle(suggestion.id)} />
-          <AddonLogo logo={suggestion.logo} name={suggestion.name} id={suggestion.id} size={24} />
-          <span class="min-w-0 flex-1">
-            <span class="block truncate text-sm font-semibold">{suggestion.name}</span>
-            <span class="mt-0.5 block truncate text-xs text-muted-foreground">{suggestion.description}</span>
-          </span>
-        </label>
-      {/each}
-      <!-- Fills the last cell of an odd list, which would otherwise show the rule colour. -->
-      {#if suggestions.length % 2}<span aria-hidden="true" class="hidden bg-background sm:block"></span>{/if}
-    </fieldset>
-    <p class="mt-3 flex items-center gap-2 text-xs leading-relaxed text-muted-foreground" role="status">
-      {#if installing}<LoaderCircle size={14} class="tile-spinner" />{m.onboarding_sources_installing()}
-      {:else if picked.length}{m.onboarding_sources_picked({ count: String(picked.length) })}
-      {:else}{m.onboarding_sources_none_selected()}{/if}
-    </p>
-  {/if}
-{/if}
-{#if installError}<p bind:this={errorAlert} role="alert" tabindex="-1" class="mt-3 text-sm text-destructive">{installError}</p>{/if}
-
-<PlaybackChoice bind:checking={checkingKey} />
+  </section>
+  <section>
+    <PlaybackChoice bind:checking={checkingKey} />
+  </section>
+</div>

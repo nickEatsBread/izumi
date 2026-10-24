@@ -24,6 +24,7 @@
   onDestroy(() => clearTimeout(timer))
 
   const providerOptions = providerList.map((provider) => ({ value: provider.id, label: provider.name }))
+  const debrid = $derived($torrentPlaybackMode === 'debrid')
 
   /** Catch a mistyped key here rather than at the first play. A network failure is a warning, not
    * a block: the key is already saved either way. The key goes nowhere but this call. */
@@ -72,36 +73,28 @@
   }
 </script>
 
-<h2 id="setup-playback-title" class="mt-10 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{m.onboarding_playback_choice_title()}</h2>
-<div role="group" aria-labelledby="setup-playback-title" class="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
-  <button type="button" data-focusable onclick={() => $torrentPlaybackMode = 'debrid'} aria-pressed={$torrentPlaybackMode === 'debrid'} class="setup-choice flex items-start gap-3 p-4 text-left {$torrentPlaybackMode === 'debrid' ? 'selected' : ''}">
-    <Cloud size={22} class="mt-0.5 shrink-0 text-muted-foreground" />
-    <span class="min-w-0"><span class="block text-sm font-semibold">{m.onboarding_playback_debrid()}</span><span class="mt-1 block text-xs leading-relaxed text-muted-foreground">{m.onboarding_playback_debrid_body()}</span></span>
-  </button>
-  <button type="button" data-focusable onclick={chooseDirect} aria-pressed={$torrentPlaybackMode === 'direct'} class="setup-choice flex items-start gap-3 p-4 text-left {$torrentPlaybackMode === 'direct' ? 'selected' : ''}">
-    <Share2 size={22} class="mt-0.5 shrink-0 text-muted-foreground" />
-    <span class="min-w-0"><span class="block text-sm font-semibold">{m.onboarding_playback_p2p()}</span><span class="mt-1 block text-xs leading-relaxed text-muted-foreground">{m.onboarding_playback_p2p_body()}</span></span>
-  </button>
+<h2 id="setup-playback-title" class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{m.onboarding_playback_choice_title()}</h2>
+<!-- A segmented control rather than two cards: it is one either-or setting, not two features. -->
+<div role="group" aria-labelledby="setup-playback-title" class="mt-3 grid grid-cols-2 gap-1 rounded-lg border border-border p-1">
+  <button type="button" data-focusable onclick={() => $torrentPlaybackMode = 'debrid'} aria-pressed={debrid} class="flex min-w-0 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition-colors {debrid ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}"><Cloud size={16} class="shrink-0" /><span class="truncate">{m.onboarding_playback_debrid()}</span></button>
+  <button type="button" data-focusable onclick={chooseDirect} aria-pressed={!debrid} class="flex min-w-0 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition-colors {!debrid ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}"><Share2 size={16} class="shrink-0" /><span class="truncate">{m.onboarding_playback_p2p()}</span></button>
 </div>
+<p class="mt-2 text-xs leading-relaxed text-muted-foreground">{debrid ? m.onboarding_playback_debrid_body() : m.onboarding_playback_p2p_body()}</p>
 
-{#if $torrentPlaybackMode === 'debrid'}
-  <div class="mt-4 grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
-    <!-- A verdict belongs to the provider it was fetched from, so re-check instead of leaving a
-         stale tick behind when the provider changes. -->
-    <label class="grid gap-2 text-sm font-semibold">{m.onboarding_playback_provider()}
-      <SelectMenu value={$debridProvider} onChange={(provider) => { $debridProvider = provider; scheduleValidate() }} ariaLabel={m.onboarding_playback_provider()} options={providerOptions} /></label>
-    <div>
-      <label for="setup-debrid-key" class="text-sm font-semibold">{m.onboarding_playback_key_label()}</label>
-      <div class="relative mt-2">
-        <input id="setup-debrid-key" data-focusable bind:value={$debridKey} oninput={scheduleValidate} onblur={scheduleValidate} type={showKey ? 'text' : 'password'} autocomplete="off" spellcheck="false" class="setup-field pr-12 font-mono text-sm" />
-        <button type="button" data-focusable onclick={() => showKey = !showKey} aria-label={showKey ? m.onboarding_hide_key() : m.onboarding_show_key()} class="absolute right-1 top-1 grid size-10 place-items-center rounded-md text-muted-foreground hover:bg-secondary">{#if showKey}<EyeOff size={17} />{:else}<Eye size={17} />{/if}</button>
-      </div>
-      <p role="status" aria-live="polite" class="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-        {#if checking}<LoaderCircle size={14} class="tile-spinner" />{m.onboarding_playback_key_checking()}
-        {:else if keyState === 'valid'}<Check size={14} />{m.onboarding_playback_key_valid()}
-        {:else if keyState === 'invalid'}{keyMessage || m.onboarding_playback_key_invalid()}
-        {:else}{m.onboarding_playback_key_hint()}{/if}
-      </p>
+{#if debrid}
+  <!-- A verdict belongs to the provider it was fetched from, so re-check instead of leaving a
+       stale tick behind when the provider changes. -->
+  <div class="mt-4 grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-2">
+    <SelectMenu value={$debridProvider} onChange={(provider) => { $debridProvider = provider; scheduleValidate() }} ariaLabel={m.onboarding_playback_provider()} options={providerOptions} />
+    <div class="relative">
+      <input id="setup-debrid-key" data-focusable bind:value={$debridKey} oninput={scheduleValidate} onblur={scheduleValidate} type={showKey ? 'text' : 'password'} aria-label={m.onboarding_playback_key_label()} placeholder={m.onboarding_playback_key_label()} autocomplete="off" spellcheck="false" class="setup-field !min-h-10 py-2 pr-11 font-mono text-sm placeholder:font-sans" />
+      <button type="button" data-focusable onclick={() => showKey = !showKey} aria-label={showKey ? m.onboarding_hide_key() : m.onboarding_show_key()} class="absolute right-0.5 top-0.5 grid size-9 place-items-center rounded-md text-muted-foreground hover:bg-secondary">{#if showKey}<EyeOff size={16} />{:else}<Eye size={16} />{/if}</button>
     </div>
   </div>
+  <p role="status" aria-live="polite" class="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+    {#if checking}<LoaderCircle size={14} class="tile-spinner" />{m.onboarding_playback_key_checking()}
+    {:else if keyState === 'valid'}<Check size={14} />{m.onboarding_playback_key_valid()}
+    {:else if keyState === 'invalid'}{keyMessage || m.onboarding_playback_key_invalid()}
+    {:else}{m.onboarding_playback_key_hint()}{/if}
+  </p>
 {/if}
