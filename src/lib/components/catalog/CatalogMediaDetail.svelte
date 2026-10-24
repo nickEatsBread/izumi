@@ -123,7 +123,7 @@
 
   function watchTrailer() {
     if (!media?.trailer?.id) return
-    openTrailerPopup(media.trailer.id, `${title(media)} trailer`)
+    openTrailerPopup(media.trailer.id, title(media))
   }
 
   function titleLogoFailed(event: Event) {

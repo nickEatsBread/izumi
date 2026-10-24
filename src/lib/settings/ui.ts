@@ -189,6 +189,10 @@ export const seekDuration = persisted<number>('player-seek-seconds', 10)
 export const subtitleLineNavigation = persisted<boolean>('player-subtitle-line-navigation', false)
 /** Hide the left sidebar while the player is open, so windowed video takes its width. Off by default. */
 export const hideSidebarWhilePlaying = persisted<boolean>('player-hide-sidebar', false)
+/** Where a desktop trailer opens with mouse and keyboard: izumi's full-window trailer player or the
+ *  popup. TV, Game mode and a controller always use the player, phones the popup (trailerOpensIn). */
+export type TrailerOpenMode = 'player' | 'popup'
+export const trailerOpenMode = persisted<TrailerOpenMode>('trailer-open-mode', 'player')
 /** Show the frame-preview thumbnail while skimming the seek bar. Off = time/chapter only
  *  (also skips the on-demand frame grab — lighter on the Deck iGPU). */
 export const scrubThumbnails = persisted<boolean>('player-scrub-thumbnails', true)

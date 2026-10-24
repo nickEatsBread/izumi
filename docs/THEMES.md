@@ -630,6 +630,7 @@ State values:
 | `player.upnext.kicker` | part | The "Up next" label above the next episode's title. |  |
 | `player.upnext.title` | part | The next episode's title. |  |
 | `player.upnext.countdown` | part | The countdown line ("Episode 5 starts in 8 seconds"). |  |
+| `trailer.player` | slot | izumi's full-window trailer player: the YouTube trailer letterboxed at 16:9 on black, Back and the title at the top, the seek bar and buttons at the bottom. It opens on TV, in Game mode, with a controller, and on desktop unless Settings → Playback sets trailers to open in a popup. |  |
 
 #### Search, schedule and library
 
