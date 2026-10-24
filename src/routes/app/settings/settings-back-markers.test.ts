@@ -28,21 +28,20 @@ describe('layered Back markers on Settings pages', () => {
   })
 
   it('Profiles leaves the way it was entered, from Back on the overview and from Done', () => {
-    const profiles = read('./profiles/+page.svelte')
+    const profiles = read('../../../lib/components/profiles/ProfileManager.svelte')
     expect(profiles).toContain("import { previousPath } from '$lib/navigation/history-trail'")
     expect(profiles).toContain("import { markBackPending } from '$lib/nav/nav-state'")
     expect(profiles).toContain([
       '  function leave() {',
       '    const from = previousPath()',
       '    markBackPending()',
-      "    if (from !== null && !from.startsWith('/app/settings/profiles')) history.back()",
-      "    else void goto('/app/settings', { replaceState: true })",
+      "    if (from !== null && !from.startsWith('/app/settings/accounts?manage=profiles')) history.back()",
+      "    else void goto('/app/settings/accounts', { replaceState: true })",
       '  }',
     ].join('\n'))
     expect(profiles).toContain('    else leave()\n  }')
     expect(profiles).toContain('class="primary" onclick={leave}>Done</button>')
     expect(profiles).not.toContain("goto('/app/home')")
-    expect(profiles).not.toContain("goto('/app/settings/accounts')")
   })
 
   it('a locked profile switcher marks itself, so B offers the exit prompt (commit 3)', () => {

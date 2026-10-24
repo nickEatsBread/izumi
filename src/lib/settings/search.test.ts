@@ -176,15 +176,21 @@ describe('settings search entries', () => {
     expect(searchSettings('release channel')[0]).toMatchObject({ title: 'Release channel', key: 'release-channel', desktopOnly: true })
   })
 
-  it('opens each Accounts hit on the section that holds its row', () => {
-    expect(searchSettings('episodes before watchlist')[0]).toMatchObject({ href: '/app/settings/accounts?section=behaviour', key: 'episodes-before-watchlist' })
-    expect(searchSettings('automatically add watched')[0]).toMatchObject({ href: '/app/settings/accounts?section=behaviour', key: 'automatically-add-watched-shows' })
-    expect(searchSettings('anilist account')[0]).toMatchObject({ href: '/app/settings/accounts?section=connections', key: 'anilist-account' })
-    expect(searchSettings('simkl account')[0]).toMatchObject({ href: '/app/settings/accounts?section=connections', key: 'simkl-account' })
-    expect(searchSettings('trakt list provider')[0]).toMatchObject({ href: '/app/settings/accounts?section=connections', key: 'trakt-account' })
-    expect(searchSettings('stremio add-on sync')[0]).toMatchObject({ href: '/app/settings/accounts?section=connections', key: 'stremio-addon-account' })
-    expect(searchSettings('anilist public profile')[0]).toMatchObject({ href: '/app/settings/accounts?section=libraries', key: 'anilist-public-profile' })
-    expect(searchSettings('letterboxd')[0]).toMatchObject({ href: '/app/settings/accounts?section=libraries', key: 'letterboxd-account' })
+  it('opens each Accounts hit on its subcategory row', () => {
+    for (const [query, key, subcategory] of [
+      ['episodes before watchlist', 'episodes-before-watchlist', 'trackers'],
+      ['automatically add watched', 'automatically-add-watched-shows', 'trackers'],
+      ['anilist account', 'anilist-account', 'trackers'],
+      ['simkl account', 'simkl-account', 'trackers'],
+      ['trakt list provider', 'trakt-account', 'trackers'],
+      ['stremio add-on sync', 'stremio-addon-account', 'trackers'],
+      ['anilist public profile', 'anilist-public-profile', 'trackers'],
+      ['letterboxd', 'letterboxd-account', 'trackers'],
+      ['parental pins', 'household-profiles', 'profiles'],
+      ['show 18+', 'show-18-content', 'content'],
+    ] as const) {
+      expect(searchSettings(query)[0], query).toMatchObject({ href: '/app/settings/accounts', key, section: 'accounts', subcategory })
+    }
   })
 
   it('finds the settings that had no entry', () => {
@@ -220,7 +226,7 @@ describe('settingHref', () => {
     const gif = SETTINGS_SEARCH_INDEX.find((item) => item.title === 'Include subtitles in GIFs')!
     expect(settingHref(gif)).toBe('/app/settings/playback?setting=include-subtitles-in-gifs&settingFallback=gif-recorder')
     const threshold = SETTINGS_SEARCH_INDEX.find((item) => item.title === 'Episodes before Watchlist')!
-    expect(settingHref(threshold)).toBe('/app/settings/accounts?section=behaviour&setting=episodes-before-watchlist')
+    expect(settingHref(threshold)).toBe('/app/settings/accounts?setting=episodes-before-watchlist')
     const caches = SETTINGS_SEARCH_INDEX.find((item) => item.title === 'Cache sizes')!
     expect(settingHref(caches)).toBe('/app/settings/downloads?setting=cache-total')
   })

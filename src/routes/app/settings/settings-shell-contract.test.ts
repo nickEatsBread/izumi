@@ -23,7 +23,6 @@ const PAGE_TITLES: Array<[string, string]> = [
   ['navigation/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Navigation</h2>'],
   ['sync/+page.svelte', '<h2 data-settings-page-title class="mb-2 text-3xl font-bold tracking-tight">Device sync</h2>'],
   ['backup/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Backup &amp; restore</h2>'],
-  ['accounts/+page.svelte', '<h2 data-settings-page-title class="text-3xl font-bold tracking-tight">Accounts</h2>'],
   ['network/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Network</h2>'],
   ['changelog/+page.svelte', '<h1 data-settings-page-title class="text-xl font-bold">Changelog</h1>'],
   ['about/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">About</h2>'],

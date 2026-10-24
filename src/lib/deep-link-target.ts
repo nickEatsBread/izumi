@@ -19,7 +19,7 @@ export function parseDeepLink(raw: string): DeepLinkTarget | null {
     if (url.protocol !== 'izumi:') return null
     const restore = parseCompanionRestoreLink(raw)
     if (restore) return { path: restore, notice: 'Restore from TV opened' }
-    if (parseTraktCallback(raw)) return { path: '/app/settings/accounts?section=connections' }
+    if (parseTraktCallback(raw)) return { path: '/app/settings/accounts#trackers' }
     const parts = [url.hostname, ...url.pathname.split('/').filter(Boolean)]
     const kind = parts.shift()
     if (kind === 'companion' && parts[0] === 'pair' && parseCompanionPairingLink(raw)) {

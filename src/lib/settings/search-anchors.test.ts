@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { importClosure } from '../../test/svelte-markup'
@@ -9,8 +9,7 @@ import { sectionForPath, subcategoryDef } from './sections'
 
 // Every search hit that names a row (`key`, `fallbackKey`) must land on markup that renders that
 // `data-setting-key`, searched through the destination page's transitive .svelte imports. Keys built
-// at runtime are listed in DYNAMIC_KEYS with the template that builds them. Accounts hits also name
-// the section (`?section=`) whose hidden block holds their row.
+// at runtime are listed in DYNAMIC_KEYS with the template that builds them.
 
 const here = (relative: string) => fileURLToPath(new URL(relative, import.meta.url))
 const read = (file: string) => readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
@@ -61,27 +60,6 @@ function renderedKeys(page: string): Set<string> {
   return keys
 }
 
-/** The keys inside each `<div hidden={section !== '…'}>` block of the Accounts page, including the
- *  keys of the components (and their imports) rendered in that block. */
-function accountsSections(): Map<string, Set<string>> {
-  const file = routeFile('/app/settings/accounts')
-  const source = read(file)
-  const markers = [...source.matchAll(/<div hidden=\{section !== '(\w+)'\}>/g)]
-  const sections = new Map<string, Set<string>>()
-  markers.forEach((marker, index) => {
-    const block = source.slice(marker.index, markers[index + 1]?.index ?? source.length)
-    const keys = new Set(staticKeys(block))
-    for (const [, name] of block.matchAll(/<([A-Z]\w*)[\s/>]/g)) {
-      const specifier = new RegExp(`import ${name} from '([^']+\\.svelte)'`).exec(source)?.[1]
-      if (!specifier) continue
-      const component = specifier.startsWith('$lib/') ? resolve(LIB, specifier.slice(5)) : resolve(dirname(file), specifier)
-      for (const nested of [component, ...importClosure([component])]) for (const key of staticKeys(read(nested))) keys.add(key)
-    }
-    sections.set(marker[1], keys)
-  })
-  return sections
-}
-
 const keyed = SETTINGS_SEARCH_INDEX.filter((item) => item.key || item.fallbackKey)
 
 describe('settings search anchors', () => {
@@ -113,25 +91,6 @@ describe('settings search anchors', () => {
       expect(source).toContain(dynamic.template)
       for (const id of dynamic.ids) expect(source).toContain(`{ id: '${id}'`)
     }
-  })
-
-  it('sends every Accounts hit to the section whose hidden block holds its row', () => {
-    const sections = accountsSections()
-    expect([...sections.keys()].sort()).toEqual(['behaviour', 'connections', 'libraries'])
-    const accounts = SETTINGS_SEARCH_INDEX.filter((item) => new URL(item.href, BASE).pathname === '/app/settings/accounts')
-    expect(accounts.length).toBeGreaterThanOrEqual(11)
-    for (const item of accounts) {
-      const section = new URL(item.href, BASE).searchParams.get('section')
-      expect(section, item.title).not.toBeNull()
-      expect(item.key, item.title).toBeTruthy()
-      expect([...(sections.get(section!) ?? [])], `${item.title} in ${section}`).toContain(item.key)
-    }
-  })
-
-  it('opens the section named in the URL on the Accounts page', () => {
-    const page = read(routeFile('/app/settings/accounts'))
-    expect(page).toContain("const requested = page.url.searchParams.get('section')")
-    expect(page).toContain("if (requested === 'libraries' || requested === 'behaviour' || requested === 'connections') section = requested")
   })
 })
 

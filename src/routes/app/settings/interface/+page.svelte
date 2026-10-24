@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, dragCarousels, haptics, androidTvMode, themePreset, motionPreference, highContrast, largeInteractionTargets, type ThemePreset } from '$lib/settings/ui'
+  import { uiScale, wheelScrollAcross, dragCarousels, haptics, androidTvMode, themePreset, motionPreference, highContrast, largeInteractionTargets, type ThemePreset } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid, isAndroidTv, isMobile } from '$lib/platform'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
@@ -86,8 +86,6 @@
       </label>
       {/if}
 
-      <Toggle label={m.settings_show_adult()} desc={m.settings_show_adult_hint()} value={$showAdult} onToggle={() => ($showAdult = !$showAdult)} />
-      <Toggle label={m.settings_auto_incognito()} desc={m.settings_auto_incognito_hint()} value={$autoIncognitoAdult} onToggle={() => ($autoIncognitoAdult = !$autoIncognitoAdult)} />
       <Toggle label="Wheel-scroll carousels" desc="Let horizontal wheel and trackpad gestures scroll home rows. Vertical scrolling always moves the page. Off = use the row's ‹ › arrows." value={$wheelScrollAcross} onToggle={() => ($wheelScrollAcross = !$wheelScrollAcross)} />
       <Toggle label="Mouse-drag carousels" desc="Drag home rows sideways and swipe the featured banner to its previous or next title with the mouse." value={$dragCarousels} onToggle={() => ($dragCarousels = !$dragCarousels)} />
     </div>

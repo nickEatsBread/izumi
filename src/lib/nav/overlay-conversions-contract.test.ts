@@ -80,8 +80,7 @@ const FILES = {
   degradedBanner: '../components/shell/AniListDegradedBanner.svelte',
   sources: '../../routes/app/settings/sources/manage/+page.svelte',
   themes: '../../routes/app/settings/themes/+page.svelte',
-  profiles: '../../routes/app/settings/profiles/+page.svelte',
-  accounts: '../../routes/app/settings/accounts/+page.svelte',
+  profiles: '../components/profiles/ProfileManager.svelte',
   sync: '../../routes/app/settings/sync/+page.svelte',
 } as const
 
@@ -328,10 +327,6 @@ describe('legacy traps close on B and Escape', () => {
 
 describe('page tab strips for the theme bumpers (data-page-tabs, Themes page-tabs.ts)', () => {
   it('marks the Accounts and Sync section navs, whose active item is aria-current', () => {
-    const accounts = read(FILES.accounts)
-    const [accountsNav] = tagsWith(accounts, 'aria-label="Account settings sections"')
-    expect(bare(accountsNav, 'data-page-tabs'), accountsNav).toBe(true)
-    expect(accounts).toContain("aria-current={section === item.id ? 'page' : undefined}")
     const sync = read(FILES.sync)
     const [syncNav] = tagsWith(sync, 'aria-label="Device sync sections"')
     expect(bare(syncNav, 'data-page-tabs'), syncNav).toBe(true)

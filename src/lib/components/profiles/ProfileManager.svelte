@@ -76,14 +76,14 @@
     else if (screen !== 'overview') { screen = 'overview'; currentPin = newPin = confirmPin = mainPin = '' }
     else leave()
   }
-  // Leave the household screen the way it was entered (Accounts, the profile switcher, the Settings
-  // rail): back through history when the previous page is where it came from, so Back and Done
-  // never stack a second copy of that page; with no known origin, up to Settings, replacing this entry.
+  // Leave the household screen the way it was entered (Accounts › Profiles, the profile switcher):
+  // back through history when the previous page is where it came from, so Back and Done never stack
+  // a second copy of that page; with no known origin, close it on Accounts, replacing this entry.
   function leave() {
     const from = previousPath()
     markBackPending()
-    if (from !== null && !from.startsWith('/app/settings/profiles')) history.back()
-    else void goto('/app/settings', { replaceState: true })
+    if (from !== null && !from.startsWith('/app/settings/accounts?manage=profiles')) history.back()
+    else void goto('/app/settings/accounts', { replaceState: true })
   }
   async function authorizedTarget() {
     if (!editing?.pin || (editing.id === main.id && managementAuthorized)) return true
@@ -143,7 +143,7 @@
     {#if notice && screen === 'overview'}<p role="status" class="notice">{notice}</p>{/if}
     {#if error}<p role="alert" class="error">{error}</p>{/if}
     {#if pinEntry && $pinLockSeconds > 0}<p role="timer" data-pin-countdown class="error">{pinThrottleMessage($pinLockSeconds)}</p>{/if}
-    {#if $profileSyncError}<p role="status" class="error">{$profileSyncError} <a href="/app/settings/sync" data-focusable class="underline">Sync settings</a></p>{/if}
+    {#if $profileSyncError}<p role="status" class="error">{$profileSyncError} <a href="/app/settings/devices#devices" data-focusable class="underline">Device sync</a></p>{/if}
 
     {#if screen === 'overview'}
       {#if $profilesEnabled}

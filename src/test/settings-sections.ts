@@ -3,6 +3,8 @@
 // declares, in source order, and which row keys it renders as literal text.
 import type { AST } from 'svelte/compiler'
 import { importClosure, parseSvelte, readSvelteSource, walkTemplate } from './svelte-markup'
+import { basename, dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export interface SubcategoryNode {
   id: string
@@ -53,6 +55,29 @@ export function renderedSettingKeys(file: string): Set<string> {
   const keys = new Set<string>()
   for (const each of importClosure([file])) {
     for (const match of readSvelteSource(each).matchAll(/(?:data-setting-key|settingKey)="([^"]+)"/g)) keys.add(match[1])
+  }
+  return keys
+}
+
+const LIB_DIR = fileURLToPath(new URL('../lib/', import.meta.url))
+/** Shared row components: a row key is never written inside them. */
+const SHARED_ROWS = new Set(['SettingsRow', 'SettingsChoiceRow', 'SettingsSwitch', 'SelectMenu', 'LearnMore', 'SettingsSubcategory', 'SettingsSection'])
+const ROW_KEY = /(?:data-setting-key|settingKey)="([^"]+)"/g
+
+/** Keys one subcategory renders: literal keys in its own markup plus those of the components it
+ *  renders (and their imports), so a row inside e.g. <BackupRestore /> counts for its block. */
+export function subcategoryKeys(file: string, sub: SubcategoryNode): Set<string> {
+  const page = readSvelteSource(file)
+  const keys = new Set([...sub.source.matchAll(ROW_KEY)].map((match) => match[1]))
+  for (const [, name] of sub.source.matchAll(/<([A-Z]\w*)[\s/>]/g)) {
+    if (SHARED_ROWS.has(name)) continue
+    const specifier = new RegExp(`import ${name} from '([^']+\\.svelte)'`).exec(page)?.[1]
+    if (!specifier) continue
+    const component = specifier.startsWith('$lib/') ? resolve(LIB_DIR, specifier.slice(5)) : resolve(dirname(file), specifier)
+    for (const each of importClosure([component])) {
+      if (SHARED_ROWS.has(basename(each, '.svelte'))) continue
+      for (const match of readSvelteSource(each).matchAll(ROW_KEY)) keys.add(match[1])
+    }
   }
   return keys
 }

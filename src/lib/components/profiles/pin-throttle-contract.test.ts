@@ -6,7 +6,7 @@ const read = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
 
 const switcher = read('./ProfileSwitcher.svelte')
-const manager = read('../../../routes/app/settings/profiles/+page.svelte')
+const manager = read('./ProfileManager.svelte')
 
 describe('PIN entry points share the household throttle', () => {
   it('never checks a typed PIN with the unthrottled verifier', () => {

@@ -21,7 +21,7 @@ describe('Trakt native deep-link dispatch', () => {
     mocks.onOpenUrl.mockResolvedValue(stop)
     expect(await initDeepLinks()).toBe(stop)
     expect(mocks.complete).toHaveBeenCalledWith(link)
-    expect(mocks.goto).toHaveBeenCalledWith('/app/settings/accounts?section=connections')
+    expect(mocks.goto).toHaveBeenCalledWith('/app/settings/accounts#trackers')
     expect(get(deepLinkNotice)).toBe('Trakt connected')
     expect(JSON.stringify(mocks.goto.mock.calls)).not.toContain('private-code')
   })
@@ -36,7 +36,7 @@ describe('Trakt native deep-link dispatch', () => {
     mocks.onOpenUrl.mock.calls[0][0]([link])
     await vi.waitFor(() => expect(mocks.goto).toHaveBeenCalled())
     expect(get(deepLinkNotice)).toBe('This Trakt link expired. Start again.')
-    expect(mocks.goto).toHaveBeenCalledWith('/app/settings/accounts?section=connections')
+    expect(mocks.goto).toHaveBeenCalledWith('/app/settings/accounts#trackers')
   })
 
   it('preserves the existing first-understood-link policy for mixed batches', async () => {
