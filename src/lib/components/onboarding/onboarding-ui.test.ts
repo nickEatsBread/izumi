@@ -61,9 +61,10 @@ describe('onboarding presentation contracts', () => {
     }
   })
 
-  it('crossfades mounted images and loops identical groups with reduced-motion support', () => {
+  it('crossfades mounted images over a still wall, with reduced-motion support', () => {
+    // Drifting columns behind the form felt queasy; the wall stays put and only crossfades.
+    expect(artwork).not.toContain('@keyframes')
     expect(artwork).toContain('{#each [0, 1] as repeat (repeat)}')
-    expect(artwork).toContain('translateY(-50%)')
     expect(artwork).toContain('transition: opacity')
     expect(artwork).toContain('img.shown:global([data-loaded])')
     expect(artwork).toContain('prefers-reduced-motion: reduce')
@@ -297,6 +298,9 @@ describe('onboarding presentation contracts', () => {
     expect(playback).toContain("$torrentPlaybackMode = 'direct'")
     // Debounced, blur included: checking on blur would disable the button being clicked.
     expect(playback).toContain('timer = setTimeout(() => void validate(), 700)')
+    // Peer-to-peer first and the default, except for someone who already saved a debrid key.
+    expect(playback.indexOf('onclick={chooseDirect}')).toBeLessThan(playback.indexOf("onclick={() => $torrentPlaybackMode = 'debrid'}"))
+    expect(playback).toContain("if (!$debridKey.trim()) $torrentPlaybackMode = 'direct'")
   })
 
   it('adds sources by URL or from the real Store, side by side with playback', () => {
@@ -316,6 +320,8 @@ describe('onboarding presentation contracts', () => {
     for (const handler of ['onnew', 'onimport', 'ontransfer']) expect(start).toContain(`onclick={${handler}}`)
     expect(start.match(/setup-inline-button/g)).toHaveLength(1)
     expect(start).toContain('data-step-heading tabindex="-1" aria-describedby="setup-progress"')
+    // Three lines on what izumi is, so the first screen is not just a heading and a button.
+    for (const key of ['library', 'sources', 'tracking']) expect(start).toContain(`m.onboarding_start_feature_${key}()`)
   })
 
   it('ends with optional extras instead of nagging rows', () => {

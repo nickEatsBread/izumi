@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import Check from '@lucide/svelte/icons/check'
   import Cloud from '@lucide/svelte/icons/cloud'
   import Eye from '@lucide/svelte/icons/eye'
@@ -22,6 +22,11 @@
   /** Deliberately not $state: it orders overlapping checks, it is never rendered. */
   let generation = 0
   onDestroy(() => clearTimeout(timer))
+  // Debrid without a key cannot play anything, so peer-to-peer is the working default. Someone who
+  // already saved a debrid key keeps their choice.
+  onMount(() => {
+    if (!$debridKey.trim()) $torrentPlaybackMode = 'direct'
+  })
 
   const providerOptions = providerList.map((provider) => ({ value: provider.id, label: provider.name }))
   const debrid = $derived($torrentPlaybackMode === 'debrid')
@@ -76,8 +81,8 @@
 <h2 id="setup-playback-title" class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{m.onboarding_playback_choice_title()}</h2>
 <!-- A segmented control rather than two cards: it is one either-or setting, not two features. -->
 <div role="group" aria-labelledby="setup-playback-title" class="mt-3 grid grid-cols-2 gap-1 rounded-lg border border-border p-1">
-  <button type="button" data-focusable onclick={() => $torrentPlaybackMode = 'debrid'} aria-pressed={debrid} class="flex min-w-0 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition-colors {debrid ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}"><Cloud size={16} class="shrink-0" /><span class="truncate">{m.onboarding_playback_debrid()}</span></button>
   <button type="button" data-focusable onclick={chooseDirect} aria-pressed={!debrid} class="flex min-w-0 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition-colors {!debrid ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}"><Share2 size={16} class="shrink-0" /><span class="truncate">{m.onboarding_playback_p2p()}</span></button>
+  <button type="button" data-focusable onclick={() => $torrentPlaybackMode = 'debrid'} aria-pressed={debrid} class="flex min-w-0 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition-colors {debrid ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}"><Cloud size={16} class="shrink-0" /><span class="truncate">{m.onboarding_playback_debrid()}</span></button>
 </div>
 <p class="mt-2 text-xs leading-relaxed text-muted-foreground">{debrid ? m.onboarding_playback_debrid_body() : m.onboarding_playback_p2p_body()}</p>
 

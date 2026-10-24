@@ -328,5 +328,8 @@
   "onboarding_sources_or": "または",
   "onboarding_sources_browse_store": "ストアを見る",
   "onboarding_sources_none": "ソースはまだありません",
-  "onboarding_back_to_setup": "セットアップに戻る"
+  "onboarding_back_to_setup": "セットアップに戻る",
+  "onboarding_start_feature_library": "アニメ・映画・ドラマをひとつのライブラリで",
+  "onboarding_start_feature_sources": "自分のソースを使えて、縛りなし",
+  "onboarding_start_feature_tracking": "視聴状況を AniList や MyAnimeList と同期"
 }

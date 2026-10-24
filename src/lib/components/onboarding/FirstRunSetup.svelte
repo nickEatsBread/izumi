@@ -345,8 +345,9 @@
 
 <style>
   .setup-art { position: absolute; inset: 0; pointer-events: none; }
-  /* Dimmed evenly: with every word on the sheet, the wall is only backdrop. */
-  .setup-art::after { content: ''; position: absolute; inset: 0; background: hsl(var(--background) / .65); }
+  /* With every word on the sheet the wall is only backdrop: dimmed, and darker toward the edges so
+     the eye settles on the centre instead of roaming the posters. */
+  .setup-art::after { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at center, hsl(var(--background) / .7) 0%, hsl(var(--background) / .82) 55%, hsl(var(--background) / .95) 100%); }
   .setup-main { position: relative; z-index: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: safe center; padding: max(2rem, env(safe-area-inset-top)) clamp(1rem, 4vw, 3rem) max(2rem, env(safe-area-inset-bottom)); }
   .setup-sheet { display: flex; flex-direction: column; min-height: 0; max-height: 100%; width: 100%; max-width: 52rem; padding: 1.75rem 2.25rem 1.25rem; border: 1px solid hsl(var(--border)); border-radius: 1.25rem; background: hsl(var(--background) / .97); box-shadow: 0 24px 80px rgb(0 0 0 / .45); }
   .setup-sheet.narrow { max-width: 40rem; }
