@@ -312,7 +312,7 @@
             {:else if step === 'sources'}
               <SourcesStep bind:this={sourcesStep} synced={imported} bind:busy onbrowse={() => void browseStore()} />
             {:else}
-              <ReadyStep {readiness} bind:connections trackers={intent.anime} tmdbTip={intent.films && movieMetadata === 'stremio'} />
+              <ReadyStep {readiness} bind:connections trackers={intent.anime} tmdbTip={intent.films && movieMetadata === 'stremio'} catalogTip={intent.anime && intent.films} />
             {/if}
           </section>
           {/key}

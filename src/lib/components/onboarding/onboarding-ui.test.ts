@@ -333,6 +333,9 @@ describe('onboarding presentation contracts', () => {
     const ready = steps.ReadyStep
     expect(ready).toContain('<TrackerTiles bind:connections />')
     expect(ready).toContain('m.onboarding_ready_tmdb_tip()')
+    // With both libraries picked only one opens at a time, so the final screen says where the other lives.
+    expect(ready).toContain('m.onboarding_ready_tip_catalogs()')
+    expect(shell).toContain('catalogTip={intent.anime && intent.films}')
     expect(ready).not.toContain('onboarding_ready_list')
     expect(ready).not.toContain('onboarding_ready_metadata')
   })

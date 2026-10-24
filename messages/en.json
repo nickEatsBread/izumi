@@ -324,5 +324,7 @@
   "onboarding_start_feature_sources": "Your own sources, nothing locked in",
   "onboarding_start_feature_tracking": "Progress synced with AniList or MyAnimeList",
   "onboarding_start_import_button": "Sign in with Stremio or Nuvio",
-  "onboarding_start_transfer_button": "Copy setup from another device"
+  "onboarding_start_transfer_button": "Copy setup from another device",
+  "onboarding_ready_good_to_know": "Good to know",
+  "onboarding_ready_tip_catalogs": "izumi opens on Anime and remembers the catalog you used last. Switch to Movies & TV from the catalog menu."
 }

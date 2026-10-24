@@ -88,8 +88,12 @@ describe('film metadata during setup', () => {
 })
 
 describe('startup library during setup', () => {
-  it('opens a fresh install on the merged library', () => {
-    expect(onboardingStartupLibrary('auto', false)).toBe('merged')
+  it('opens a fresh install on Adaptive, which starts on anime and then remembers the last catalog', () => {
+    expect(onboardingStartupLibrary('auto', false)).toBe('adaptive')
+    const plan = onboardingCatalogPlan({ anime: true, films: true }, 'stremio', onboardingStartupLibrary('auto', false))
+    expect(plan.defaultProvider).toBe('adaptive')
+    // No catalog used yet: Adaptive falls back to the first enabled one, which is anime.
+    expect(resolveCatalogScreenStartup(plan.defaultProvider, 'kitsu', plan.providers)).toBe('auto')
   })
 
   it('keeps the library a re-run user already opens on', () => {

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { get } from 'svelte/store'
   import Check from '@lucide/svelte/icons/check'
+  import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right'
   import Info from '@lucide/svelte/icons/info'
   import Minus from '@lucide/svelte/icons/minus'
   import { m } from '$lib/paraglide/messages.js'
@@ -14,7 +15,8 @@
     connections = $bindable(),
     trackers,
     tmdbTip,
-  }: { readiness: SetupReadiness; connections: ConnectStates; trackers: boolean; tmdbTip: boolean } = $props()
+    catalogTip,
+  }: { readiness: SetupReadiness; connections: ConnectStates; trackers: boolean; tmdbTip: boolean; catalogTip: boolean } = $props()
 
   // Read once on arrival: signing in here should turn a tile to Connected, not make the whole
   // section vanish under the pointer.
@@ -47,6 +49,12 @@
     </li>
   {/each}
 </ul>
+
+<!-- Both libraries were picked but only one opens at a time, so say where the other one lives. -->
+{#if catalogTip}
+  <h2 class="mt-8 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{m.onboarding_ready_good_to_know()}</h2>
+  <p class="mt-3 flex max-w-2xl items-start gap-3 text-sm leading-relaxed"><span aria-hidden="true" class="grid size-8 shrink-0 place-items-center rounded-lg bg-secondary text-muted-foreground"><ArrowLeftRight size={16} /></span><span class="pt-1">{m.onboarding_ready_tip_catalogs()}</span></p>
+{/if}
 
 {#if offerTrackers}
   <h2 class="mt-8 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{m.onboarding_ready_extras_trackers()}</h2>

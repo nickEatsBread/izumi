@@ -324,5 +324,7 @@
   "onboarding_start_feature_sources": "自分のソースを使えて、縛りなし",
   "onboarding_start_feature_tracking": "視聴状況を AniList や MyAnimeList と同期",
   "onboarding_start_import_button": "Stremio・Nuvio でサインイン",
-  "onboarding_start_transfer_button": "別の端末から設定をコピー"
+  "onboarding_start_transfer_button": "別の端末から設定をコピー",
+  "onboarding_ready_good_to_know": "知っておくと便利",
+  "onboarding_ready_tip_catalogs": "izumi はアニメから始まり、最後に使ったカタログを覚えています。映画・ドラマにはカタログメニューから切り替えられます。"
 }
