@@ -466,10 +466,48 @@ describe('keyboard listeners (startOsk)', () => {
     press(field, 'Enter')
     byId('key').focus()
     expect(press(byId('key'), 'Enter', { repeat: true }).defaultPrevented).toBe(true)
+    // A hold begun on a key repeats that key.
     expect(press(byId('key'), 'Enter').defaultPrevented).toBe(false)
+    expect(press(byId('key'), 'Enter', { repeat: true }).defaultPrevented).toBe(false)
+    // The OK on Done is still held once Done hands focus back to the field: no submit, no reopen.
     oskDone()
     expect(document.activeElement).toBe(field)
-    press(field, 'Enter', { repeat: true })
+    expect(press(field, 'Enter', { repeat: true }).defaultPrevented).toBe(true)
+    expect(get(oskSession)).toBeNull()
+  })
+
+  it('Android TV: a held OK on a launcher button types nothing on the key focus moved to', () => {
+    gameMode.set(false)
+    isTv.set(true)
+    document.body.innerHTML = '<button id="search">Search</button><input id="f">' + KEYS
+    const field = input('f')
+    byId('search').focus()
+    expect(press(byId('search'), 'Enter').defaultPrevented).toBe(false)
+    openOskForField(field) // the launcher's click handler
+    byId('key').focus() // the keyboard's first key, a frame later
+    expect(press(byId('key'), 'Enter', { repeat: true }).defaultPrevented).toBe(true)
+    expect(field.value).toBe('')
+  })
+
+  it('Android TV: OK on a button, a checkbox or a slider passes through untouched', () => {
+    gameMode.set(false)
+    isTv.set(true)
+    document.body.innerHTML = '<button id="b">Go</button><input id="c" type="checkbox"><input id="r" type="range">'
+    for (const id of ['b', 'c', 'r']) {
+      byId(id).focus()
+      expect(press(byId(id), 'Enter').defaultPrevented).toBe(false)
+    }
+    expect(get(oskSession)).toBeNull()
+  })
+
+  it("Android TV: a physical keyboard's Shift+Enter or Ctrl+Enter on a field stays the field's own", () => {
+    gameMode.set(false)
+    isTv.set(true)
+    document.body.innerHTML = '<textarea id="t"></textarea>'
+    const area = byId('t')
+    area.focus()
+    expect(press(area, 'Enter', { shiftKey: true }).defaultPrevented).toBe(false)
+    expect(press(area, 'Enter', { ctrlKey: true }).defaultPrevented).toBe(false)
     expect(get(oskSession)).toBeNull()
   })
 

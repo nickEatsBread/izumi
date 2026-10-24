@@ -86,6 +86,8 @@ const echo = writable<OskEcho | null>(null)
 export const oskEcho: Readable<OskEcho | null> = { subscribe: echo.subscribe }
 
 let fieldRect: { left: number; top: number; width: number; height: number } | null = null
+/** The Enter Done dispatches at the field: a commit, not a press, so a held OK keeps its first target. */
+let doneEnter: Event | null = null
 
 const isNumberField = (field: TextEntryField): field is HTMLInputElement =>
   field instanceof HTMLInputElement && field.type === 'number'
@@ -304,6 +306,7 @@ export function oskDone(): void {
     if (get(session) === current) session.set({ ...current, initialValue: field.value })
   }
   const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+  doneEnter = enter
   field.dispatchEvent(enter)
   if (!enter.defaultPrevented) {
     const target = implicitSubmitTarget(field)
@@ -370,9 +373,10 @@ export function startOsk(): () => void {
   // The field a physical keyboard last typed into: its Enter is that keyboard's own (a submit), not
   // the remote's OK. Forgotten once focus leaves the field.
   let typedInto: EventTarget | null = null
-  // The remote's OK that opened the keyboard is still held: its repeats must not press the key focus
-  // moved to. A fresh press (or a hold begun on Backspace) still repeats.
-  let okHeld = false
+  // The element the held Enter (the remote's OK) was first pressed on. Its repeats press nothing once
+  // focus has moved (the keyboard's first key, the field Done returned to); a hold begun on Backspace
+  // or a letter key still repeats. Null after the press that opened the keyboard: none of its repeats count.
+  let okTarget: EventTarget | null = null
   const onFocusIn = (event: FocusEvent) => {
     const target = event.target
     if (isOskTarget(target)) {
@@ -397,19 +401,21 @@ export function startOsk(): () => void {
     if (event.key === 'Enter' && !isPadEvent(event)) {
       // A held Enter never opens the keyboard, so holding OK on Done cannot reopen it.
       if (event.repeat) {
-        if (okHeld) {
+        if (event.target !== okTarget) {
           event.preventDefault()
           event.stopImmediatePropagation()
         }
         return
       }
-      okHeld = false
+      if (event !== doneEnter) okTarget = event.target
       // Android TV: the remote's OK reaches a focused field as Enter, never as a click, so Enter is
-      // its A (spec §5.4). A pad's A clicks instead and never sends Enter.
-      if (!get(session) && get(isTv) && event.target !== typedInto && servesField(event.target)) {
+      // its A (spec §5.4). A pad's A clicks instead and never sends Enter. The OK carries no
+      // modifiers, so a physical keyboard's Shift+Enter or Ctrl+Enter stays the field's own.
+      const chord = event.shiftKey || event.ctrlKey || event.metaKey || event.altKey
+      if (!get(session) && get(isTv) && !chord && event.target !== typedInto && servesField(event.target)) {
         event.preventDefault()
         event.stopImmediatePropagation()
-        okHeld = true
+        okTarget = null
         openFieldSession(event.target)
         return
       }
