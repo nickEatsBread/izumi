@@ -92,9 +92,10 @@ describe('SettingsSubcategory', () => {
 
   it('folds Advanced by default and unfolds on its hash or the open event', () => {
     expect(source).toContain('const section = getContext<SettingsSectionDef | undefined>(SETTINGS_SECTION_CONTEXT)')
-    expect(source).toContain('const folds = $derived(collapsible ?? def?.advanced === true)')
-    expect(source).toContain('if (page.url.hash === `#${id}`) open = true')
-    expect(source).toContain('el.addEventListener(SUBCATEGORY_OPEN_EVENT, unfold)')
+    // subcategoryFoldable: Advanced (or the page's collapsible) off controller mode; subcategory-fold.test.ts.
+    expect(source).toContain('const foldable = $derived(subcategoryFoldable($settingsControllerMode, collapsible, def?.advanced === true))')
+    expect(source).toContain('if (page.url.hash === `#${id}`) untrack(() => setCollapsed(false))')
+    expect(source).toContain('node.addEventListener(SUBCATEGORY_OPEN_EVENT, onOpen)')
   })
 
   it('exposes open for bind:open', () => {
