@@ -89,7 +89,7 @@ describe('Playback section', () => {
     for (const id of ['skipping', 'seeking', 'player-window']) {
       expect(page).toMatch(new RegExp(`\\{#if \\$inAppPlayerAvailable\\}\\s*<SettingsSubcategory id="${id}"`))
     }
-    expect(page).toMatch(/\{#if !\$isAndroid && !\$gameMode\}\s*<SettingsSubcategory id="controls" plain>\s*<HotkeyBindings \/>/)
+    expect(page).toMatch(/\{#if !\$isAndroid\}\s*<SettingsSubcategory id="controls" plain>\s*\{#if \$gameMode\}<ControllerMap \/>\{:else\}\s*<HotkeyBindings \/>/)
     expect(read('../../../../lib/components/settings/HotkeyBindings.svelte')).toContain('<div data-setting-key="hotkeys">')
   })
 

@@ -29,6 +29,7 @@
   import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte'
   import SetupElsewhere from '$lib/components/settings/SetupElsewhere.svelte'
   import HotkeyBindings from '$lib/components/settings/HotkeyBindings.svelte'
+  import ControllerMap from '$lib/components/settings/ControllerMap.svelte'
   import { m } from '$lib/paraglide/messages.js'
   import { tick } from 'svelte'
   import { handFocusBack } from '$lib/nav/focus-memory'
@@ -261,10 +262,11 @@
     ]} />
   </SettingsSubcategory>
 
-  <!-- Game mode hides the hotkey editor like its search hit (hideOn gamemode), with its card. -->
-  {#if !$isAndroid && !$gameMode}
+  {#if !$isAndroid}
     <SettingsSubcategory id="controls" plain>
-      <HotkeyBindings />
+      {#if $gameMode}<ControllerMap />{:else}
+        <HotkeyBindings />
+      {/if}
     </SettingsSubcategory>
   {/if}
 

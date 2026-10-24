@@ -13,7 +13,7 @@
   import { hotkeyBindings } from '$lib/settings/ui'
 
   // Keyboard rebinding for Playback › Controls. The page renders it only off Android, which has no
-  // keyboard scope to bind into, and outside Game mode, where the controller has its own map.
+  // keyboard scope to bind into, and outside Game mode, which shows the controller map in its place.
   let recording = $state<HotkeyId | null>(null)
   let conflict = $state('')
 

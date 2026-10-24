@@ -133,3 +133,16 @@ describe('setup-heavy rows in controller mode (spec §5.4)', () => {
     expect(page('appearance')).toContain('where="Needs a mouse and keyboard: connect them to design here"')
   })
 })
+
+describe('Playback › Controls in Game mode (spec §5.5)', () => {
+  it('shows the controller map instead of keyboard rebinding', () => {
+    const playback = read('../../../routes/app/settings/playback/+page.svelte')
+    expect(playback).toMatch(/<SettingsSubcategory id="controls"[^>]*>\s*\{#if \$gameMode\}<ControllerMap \/>\{:else\}/)
+    // Task 12's fix-up gated the whole Controls block on !$gameMode until the map lands; it must not hide the map.
+    expect(playback).toMatch(/\{#if !\$isAndroid\}\s*<SettingsSubcategory id="controls"/)
+    expect(playback).not.toMatch(/\{#if [^}]*\$gameMode[^}]*\}\s*<SettingsSubcategory id="controls"/)
+    const map = read('./ControllerMap.svelte')
+    expect(map).toContain('{#each CONTROLLER_MAP as group (group.title)}')
+    expect(map).toContain('<Glyph {family} button={key} />')
+  })
+})
