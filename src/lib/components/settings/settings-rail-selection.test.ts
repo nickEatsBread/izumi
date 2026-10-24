@@ -9,8 +9,9 @@ const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.m
 const nav = read('./SettingsNav.svelte')
 const appCss = read('../../../app.css')
 const elements = markupElementsFromSource(nav, 'SettingsNav.svelte')
-const rail = elements.find((el) => el.name === 'nav' && hasAttr(el, 'data-settings-rail'))
-const railLinks = elements.filter((el) => el.name === 'a' && hasAttr(el, 'data-section'))
+// The desktop rail: the controller-mode rail comes first (settings-nav.test.ts covers it).
+const rail = elements.filter((el) => el.name === 'nav' && hasAttr(el, 'data-settings-rail')).at(-1)
+const railLinks = elements.filter((el) => el.name === 'a' && hasAttr(el, 'data-section') && el.ancestors.includes(rail!))
 
 describe('desktop Settings rail selection', () => {
   it('draws one indicator, first in the rail, in the marker the theme picks', () => {

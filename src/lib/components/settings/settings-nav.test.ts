@@ -48,9 +48,11 @@ describe('SettingsNav', () => {
     expect(shell.filter((el) => staticAttr(el, 'data-nav-surface') === 'settings')).toHaveLength(2)
     const links = markupElementsFromSource(src.replace(/\r\n/g, '\n'), 'SettingsNav.svelte')
       .filter((el) => el.name === 'a' && hasAttr(el, 'data-nav-region-default'))
-    expect(links).toHaveLength(1)
-    expect(attr(links[0], 'data-nav-region-default')?.raw).toBe(`data-nav-region-default={active(it.href) ? '' : undefined}`)
-    expect(attr(links[0], 'aria-current')?.raw).toBe(`aria-current={active(it.href) ? 'page' : undefined}`)
+    // The controller rail and the desktop rail.
+    expect(links).toHaveLength(2)
+    for (const link of links) {
+      expect(attr(link, 'aria-current')?.raw).toMatch(/^aria-current=\{active\(\w+\.href\) \? 'page' : undefined\}$/)
+    }
   })
 })
 
@@ -68,8 +70,8 @@ describe('Settings Back wiring (commit 10)', () => {
     expect(nav).toContain('<nav data-settings-rail data-nav-scroll-container')
     expect(nav).toContain('data-sveltekit-keepfocus onclick={releasePointerFocus}')
     expect(nav).toContain('if (event.detail > 0) (event.currentTarget as HTMLElement).blur()')
-    // The desktop rail only: the phone list keeps its own navigation and haptics.
-    expect(nav.split('data-sveltekit-keepfocus').length - 1).toBe(1)
+    // The desktop and controller rails only: the phone list keeps its own navigation and haptics.
+    expect(nav.split('data-sveltekit-keepfocus').length - 1).toBe(2)
   })
 
   it('titles the phone header and points its back arrow at the structural parent, through settingsBack', () => {
@@ -80,5 +82,28 @@ describe('Settings Back wiring (commit 10)', () => {
     expect(shell).toContain("<a href={parentHref} data-focusable onclick={(event) => { event.preventDefault(); h.tap(); settingsBack('header') }} aria-label={m.common_back_to_settings()}")
     expect(shell).not.toContain('const childTitles')
     expect(shell).not.toContain('backHref')
+  })
+})
+
+describe('controller rail (spec §5.1)', () => {
+  const nav = src.replace(/\r\n/g, '\n')
+
+  it('renders first in controller mode, with a divider between groups', () => {
+    const controller = nav.indexOf('{#if $settingsControllerMode}')
+    expect(controller).toBeGreaterThan(-1)
+    expect(nav.indexOf('{:else if $isMobile}')).toBeGreaterThan(controller)
+    expect(nav).toContain("import { settingsControllerMode } from '$lib/settings/surface'")
+    expect(nav).toContain('{#if index > 0 && SETTINGS_SECTIONS[index - 1].group !== section.group}')
+    expect(nav).toContain('<div role="separator" class="mx-4 my-1 h-px shrink-0 bg-border"></div>')
+  })
+
+  it('keeps the markers the zones, Back and search read, as 48-56 px pills with a pivoting scroll', () => {
+    expect(nav).toContain('<nav data-settings-rail data-nav-scroll-container data-nav-scroll-pivot="0.42"')
+    const link = markupElementsFromSource(nav, 'SettingsNav.svelte').find((el) => el.name === 'a' && hasAttr(el, 'data-section'))!
+    expect(attr(link, 'data-section')?.raw).toBe('data-section={section.id}')
+    expect(attr(link, 'data-group')?.raw).toBe('data-group={section.group}')
+    expect(hasAttr(link, 'data-sveltekit-keepfocus')).toBe(true)
+    expect(attr(link, 'data-nav-region-default')?.raw).toBe(`data-nav-region-default={active(section.href) ? '' : undefined}`)
+    expect(nav).toContain('class="flex h-12 shrink-0 items-center gap-3 rounded-full px-4 text-base transition-colors')
   })
 })

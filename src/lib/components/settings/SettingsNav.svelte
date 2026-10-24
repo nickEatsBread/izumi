@@ -6,6 +6,7 @@
   import { settingsRailHref } from '$lib/settings/hierarchy'
   import { SETTINGS_GROUPS, SETTINGS_SECTIONS } from '$lib/settings/sections'
   import { sectionIcon } from '$lib/components/settings/section-icons'
+  import { settingsControllerMode } from '$lib/settings/surface'
   import { settingsRailMarker } from '$lib/settings/rail-marker'
   import { railIndicator } from '$lib/settings/rail-indicator'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
@@ -28,7 +29,30 @@
   }
 </script>
 
-{#if $isMobile}
+{#if $settingsControllerMode}
+  <!-- Controller mode (spec §5.1-§5.2): NuvioTV's rail. Pills with a divider between the five groups;
+       the lit item is the section in the pane, and while the rail has focus only the focused item is
+       lit (app.css). The aside around it is its own d-pad region; settings/controller-zones.ts runs
+       the preview, Right/A into the pane and L1/R1. -->
+  <nav data-settings-rail data-nav-scroll-container data-nav-scroll-pivot="0.42"
+       class="flex h-full flex-col gap-1 overflow-y-auto overscroll-contain p-1">
+    {#each SETTINGS_SECTIONS as section, index (section.id)}
+      {@const Icon = sectionIcon(section.id)}
+      {#if index > 0 && SETTINGS_SECTIONS[index - 1].group !== section.group}
+        <div role="separator" class="mx-4 my-1 h-px shrink-0 bg-border"></div>
+      {/if}
+      <a href={section.href} data-focusable data-section={section.id} data-group={section.group}
+         data-nav-region-default={active(section.href) ? '' : undefined}
+         aria-current={active(section.href) ? 'page' : undefined}
+         data-sveltekit-keepfocus
+         class="flex h-12 shrink-0 items-center gap-3 rounded-full px-4 text-base transition-colors
+           {active(section.href) ? 'bg-foreground/10 font-semibold text-foreground' : 'font-medium text-muted-foreground'}">
+        <Icon size={18} class="shrink-0" />
+        <span class="truncate">{section.title}</span>
+      </a>
+    {/each}
+  </nav>
+{:else if $isMobile}
   <!-- Mobile: a vertical grouped list of chevron rows. Tapping a row navigates to its route; the
        layout shows a back-header on the child page. Vertical scroll only — no horizontal strip. -->
   <div class="space-y-4">

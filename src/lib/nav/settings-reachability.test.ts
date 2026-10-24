@@ -628,7 +628,8 @@ describe('reachability scanner self-tests', () => {
   it('reports the line of each element and its nearest-first ancestors', () => {
     const file = fromRepo('src/lib/components/settings/SettingsNav.svelte')
     const lines = readSvelteSource(file).split('\n')
-    const railLink = markupElements(file).find((el) => el.name === 'a' && hasAttr(el, 'data-section'))
+    // The desktop rail's link, inside its group box (the controller rail's sit straight in the nav).
+    const railLink = markupElements(file).find((el) => el.name === 'a' && attr(el, 'data-section')?.raw === 'data-section={it.id}')
     expect(railLink?.ancestors.map((el) => el.name)).toEqual(['div', 'nav'])
     // Each reported line is where that element's tag opens, whatever the file's length.
     const nav = railLink!.ancestors[1]
