@@ -25,3 +25,12 @@ export function pickInDirection<T extends Cand>(cur: DOMRect, cands: T[], dir: D
   }
   return best
 }
+
+/** The box a directional move measures `el` by. A narrow control marked data-nav-measure-row (the
+ *  inline SelectMenu trigger at a settings row's right edge) counts as its whole [data-setting-key]
+ *  row on Up/Down, so the full-width row above or below reaches it instead of skipping it. Left/Right
+ *  keep its own box: from the row's centre, Right would jump to the next row's right-hand control. */
+export function navRect(el: Element, vertical = true): DOMRect {
+  const row = vertical && el.hasAttribute('data-nav-measure-row') ? el.closest('[data-setting-key]') : null
+  return (row ?? el).getBoundingClientRect()
+}

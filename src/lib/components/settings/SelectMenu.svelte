@@ -240,6 +240,7 @@
     data-label={filter ? ariaLabel : undefined}
     data-active={(filter && value !== options[0]?.value) || undefined}
     data-focusable
+    data-nav-measure-row={variant === 'inline' || undefined}
     aria-label={ariaLabel}
     aria-haspopup={$settingsControllerMode ? 'dialog' : 'listbox'}
     aria-expanded={open}

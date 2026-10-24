@@ -5,7 +5,7 @@ import { HISTORY_INDEX, recordTrail, resetHistoryTrail } from '$lib/navigation/h
 import { RAIL_RETURN_ID } from '$lib/settings/back'
 import { handleLayeredBack, resetLayeredBackForTests } from './back'
 import { setFocusHint } from './focus-hint'
-import { initDpadNav, resetNavLandingForTests } from './index'
+import { initDpadNav, navRect, resetNavLandingForTests } from './index'
 import { inputType } from './input'
 import { resetNavLayersForTests } from './layers'
 import { clearBackPending } from './nav-state'
@@ -141,5 +141,44 @@ describe('the Settings rail with a controller', () => {
     el('Apply').focus()
     press('ArrowDown')
     expect(document.activeElement).toBe(el('Apply'))
+  })
+})
+
+// Settings › Languages in controller mode: a full-width subcategory header, then two value rows whose
+// only control is the inline SelectMenu trigger, a narrow button at the row's right edge.
+const valueRows = `
+  <div data-nav-surface="settings" data-rect="224,0,1056,720">
+    <button data-focusable data-subcategory-toggle data-rect="260,100,760,40">App and titles</button>
+    <div data-setting-key="language" data-rect="260,150,760,56">
+      <button data-focusable data-nav-measure-row aria-haspopup="listbox" data-rect="880,162,120,32">English</button>
+    </div>
+    <div data-setting-key="titleLanguage" data-rect="260,206,760,56">
+      <button data-focusable data-nav-measure-row aria-haspopup="listbox" data-rect="880,218,120,32">Romaji</button>
+    </div>
+    <button data-focusable data-subcategory-toggle data-rect="260,280,760,40">Region</button>
+  </div>`
+
+describe('value rows with a controller', () => {
+  it('Down from a full-width header lands on the inline trigger in the row below, not the next header', () => {
+    document.body.innerHTML = valueRows
+    el('App and titles').focus()
+    press('ArrowDown')
+    expect(document.activeElement).toBe(el('English'))
+    press('ArrowDown')
+    expect(document.activeElement).toBe(el('Romaji'))
+    press('ArrowDown')
+    expect(document.activeElement).toBe(el('Region'))
+    press('ArrowUp')
+    expect(document.activeElement).toBe(el('Romaji'))
+  })
+
+  it('navRect measures a marked trigger by its row on Up/Down only, else by its own box', () => {
+    document.body.innerHTML = `${valueRows}<button data-nav-measure-row data-rect="10,10,40,20">Loose</button>`
+    expect(navRect(el('English')).width).toBe(760)
+    expect(navRect(el('English'), false).width).toBe(120)
+    // No [data-setting-key] row around it, or no marker at all: the element's own box.
+    expect(navRect(document.querySelector('button:not([data-focusable])')!).width).toBe(40)
+    expect(navRect(el('Region')).width).toBe(760)
+    expect(navRect(document.querySelector('[data-setting-key]')!).height).toBe(56)
   })
 })

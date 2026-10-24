@@ -610,6 +610,22 @@ html.controller-mode [data-carousel-scroller] { padding-top: max(1.125rem, 18px)
 [data-settings-controller] [data-settings-subcategory-body] [data-focusable]:focus,
 [data-settings-controller] [data-subcategory-toggle]:focus,
 [data-settings-controller] [data-settings-rail] a:focus { background-color: hsl(var(--foreground) / 0.1); }
+/* A value row's inline trigger (data-nav-measure-row) is a narrow button at the row's right edge that
+   the d-pad measures by its whole row (nav `navRect`), so a controller lights that row with the ring
+   and fill instead of the small trigger. Desktop focus-visible keeps the trigger's own ring. */
+.gamemode [data-setting-key]:has([data-nav-measure-row]:focus) { box-shadow: var(--izumi-safe-focus-ring); }
+.controller-mode [data-setting-key]:has([data-nav-measure-row]:focus) {
+  box-shadow: var(--izumi-safe-focus-ring), 0 8px 24px rgb(0 0 0 / 0.4);
+  position: relative;
+  z-index: 10;
+}
+.tv-mode [data-setting-key]:has([data-nav-measure-row]:focus) {
+  box-shadow: 0 0 0 4px #fff, 0 8px 28px rgb(0 0 0 / 0.45);
+  position: relative;
+  z-index: 10;
+}
+[data-settings-controller] [data-setting-key]:has([data-nav-measure-row]:focus) { background-color: hsl(var(--foreground) / 0.1); }
+:is(.gamemode, .controller-mode, .tv-mode) [data-focusable][data-nav-measure-row]:focus { box-shadow: none; background-color: transparent; }
 /* NuvioTV: while the rail has focus, only the focused item is lit. */
 [data-settings-controller] [data-settings-rail]:focus-within a[aria-current="page"]:not(:focus) { background-color: transparent; }
 /* The layout fills the height main leaves instead of scrolling the window: below a Game-mode top bar

@@ -2,7 +2,7 @@ import { get } from 'svelte/store'
 import { gameMode, playing } from '$lib/player/session'
 import { isTv } from '$lib/platform'
 import { controllerMode } from './input'
-import { pickInDirection, type Dir } from './spatial'
+import { navRect, pickInDirection, type Dir } from './spatial'
 import { activeNavTrap, visibleNavTraps } from './traps'
 import { takeFocusHint } from './focus-hint'
 import { isNavigable, isRovingTab } from './focusable'
@@ -460,7 +460,7 @@ function deadEndScroll(active: HTMLElement, dir: Dir, rapid = false): boolean {
     room = scrollRoom(null, direction)
   }
   if (!room) return false
-  const item = active.getBoundingClientRect()
+  const item = navRect(active)
   // The window's port leaves out the fixed chrome over the page: the desktop titlebar on top and
   // a theme's button-hint bar at the bottom (the same band revealFocused keeps at its start).
   const inset = clamp(window.innerHeight * 0.12, 40, 96)
@@ -515,7 +515,7 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
       if (!pane) return
     }
   }
-  const item = el.getBoundingClientRect()
+  const item = navRect(el, vertical)
   const port = pane?.getBoundingClientRect() ?? {
     top: 0,
     left: 0,
@@ -1046,7 +1046,7 @@ export function initDpadNav() {
       return
     }
     const els = focusables(root)
-    const cur = active.getBoundingClientRect()
+    const cur = navRect(active, vertical)
     if (!cur) return
     // Regions (regionOf): the app sidebar or top bar and every [data-nav-region] (the Settings
     // category rail, Theme Studio) are separate from the page content and from each other.
@@ -1056,7 +1056,7 @@ export function initDpadNav() {
     // above it (the "fantasy row can't reach the menu" bug), and lands on the entered region's
     // default item when it has one.
     const activeRegion = regionOf(active)
-    const all: ElCand[] = els.filter(el => el !== active).map(el => ({ id: '', rect: el.getBoundingClientRect(), el }))
+    const all: ElCand[] = els.filter(el => el !== active).map(el => ({ id: '', rect: navRect(el, vertical), el }))
     const sameRegion = all.filter(c => regionOf(c.el) === activeRegion)
     let pick = pickInDirection(cur, sameRegion, dir)
     let entersRegionDefault = false

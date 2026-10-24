@@ -44,6 +44,19 @@ describe('SelectMenu in controller mode (spec §3.5)', () => {
     expect(source).toContain('data-select-picker')
   })
 
+  it('lets the d-pad measure an inline trigger by its row, and lights that row in controller mode', () => {
+    // nav `navRect` reads this marker; a field-variant trigger keeps its own box.
+    expect(source).toContain("data-nav-measure-row={variant === 'inline' || undefined}")
+    const css = read('../../../app.css')
+    expect(css).toContain('.gamemode [data-setting-key]:has([data-nav-measure-row]:focus) { box-shadow: var(--izumi-safe-focus-ring); }')
+    expect(css).toContain('.controller-mode [data-setting-key]:has([data-nav-measure-row]:focus) {\n  box-shadow: var(--izumi-safe-focus-ring), 0 8px 24px rgb(0 0 0 / 0.4);')
+    expect(css).toContain('.tv-mode [data-setting-key]:has([data-nav-measure-row]:focus) {\n  box-shadow: 0 0 0 4px #fff, 0 8px 28px rgb(0 0 0 / 0.45);')
+    expect(css).toContain('[data-settings-controller] [data-setting-key]:has([data-nav-measure-row]:focus) { background-color: hsl(var(--foreground) / 0.1); }')
+    // The trigger's own ring and fill are suppressed, after (and as specific as) the row-fill rule.
+    const suppress = css.indexOf(':is(.gamemode, .controller-mode, .tv-mode) [data-focusable][data-nav-measure-row]:focus { box-shadow: none; background-color: transparent; }')
+    expect(suppress).toBeGreaterThan(css.indexOf('[data-settings-controller] [data-settings-subcategory-body] [data-focusable]:focus'))
+  })
+
   it('is a modal dialog whose list is the listbox, not a listbox around a heading', () => {
     const picker = source.slice(source.indexOf('{#if $settingsControllerMode}'), source.indexOf('{:else if $isMobile}'))
     expect(picker).toContain('role="dialog"')
