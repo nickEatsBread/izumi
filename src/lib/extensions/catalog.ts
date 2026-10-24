@@ -236,6 +236,12 @@ export function isLegacyTorrentType(type?: string): boolean {
   return !type || type === 'torrent'
 }
 
+/** Whether a source answers a plain-text release search (search box mode). Torrent extensions and
+ *  anime-torrent providers do; online-stream and Nuvio sources need a catalog title first. */
+export function isTextSearchableSource(config: Pick<ExtensionConfig, 'type' | 'runtime'>): boolean {
+  return config.runtime !== 'nuvio' && (isLegacyTorrentType(config.type) || config.type === 'anime-torrent-provider')
+}
+
 export function extensionBackendLabel(backend: string): string {
   if (backend === 'izumi-service') return 'Local service'
   if (backend === 'izumi-js') return 'Native'
