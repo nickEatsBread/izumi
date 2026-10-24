@@ -43,4 +43,10 @@ describe('rows hidden in controller mode (spec §5.6)', () => {
     expect(row).toContain('{#if shown}')
     expect(row.trimEnd().endsWith('{/if}')).toBe(true)
   })
+
+  it('hides the hotkey editor (not a SettingsRow) and its Controls card in Game mode', () => {
+    const playback = read('../../routes/app/settings/playback/+page.svelte')
+    expect(playback).toContain("import { gameMode } from '$lib/player/session'")
+    expect(playback).toMatch(/\{#if !\$isAndroid && !\$gameMode\}\s*<SettingsSubcategory id="controls" plain>\s*<HotkeyBindings \/>/)
+  })
 })

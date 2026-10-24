@@ -21,6 +21,7 @@
   import { open } from '@tauri-apps/plugin-dialog'
   import { isAndroid, isAndroidTv, isWindows } from '$lib/platform'
   import { inAppPlayerAvailable } from '$lib/player/in-app-player'
+  import { gameMode } from '$lib/player/session'
   import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
   import SettingsSubcategory from '$lib/components/settings/SettingsSubcategory.svelte'
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
@@ -259,7 +260,8 @@
     ]} />
   </SettingsSubcategory>
 
-  {#if !$isAndroid}
+  <!-- Game mode hides the hotkey editor like its search hit (hideOn gamemode), with its card. -->
+  {#if !$isAndroid && !$gameMode}
     <SettingsSubcategory id="controls" plain>
       <HotkeyBindings />
     </SettingsSubcategory>
