@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
   import { anilistUser } from '$lib/anilist/account'
   import SettingsGroup from '$lib/components/settings/SettingsGroup.svelte'
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
@@ -375,6 +376,7 @@
   <span>{$trackerQueue.length} update{$trackerQueue.length === 1 ? '' : 's'} will retry automatically when the connection returns.</span>
 {/snippet}
 
+<SettingsSection section="accounts">
 <div class="mx-auto max-w-4xl p-4 pb-24 sm:p-8">
   <header class="mb-8 flex max-w-2xl flex-wrap items-center justify-between gap-4">
     <div><h2 data-settings-page-title class="text-3xl font-bold tracking-tight">Accounts</h2><p class="mt-2 text-sm text-muted-foreground">{$profilesEnabled ? `Connections for ${$activeProfile.name}` : 'Your connected services, in one place.'}</p></div>
@@ -583,3 +585,4 @@
   <p class="mt-6 max-w-2xl text-sm leading-6 text-muted-foreground">Looking for cross-device history and TV pairing? <a href="/app/settings/sync" data-focusable class="font-bold text-foreground underline underline-offset-4">Open device sync</a>.</p>
   </div>
 </div>
+</SettingsSection>

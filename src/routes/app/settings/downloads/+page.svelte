@@ -1,4 +1,8 @@
 <script lang="ts">
+  import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
+  import SettingsSubcategory from '$lib/components/settings/SettingsSubcategory.svelte'
+  // The old Storage page renders here until its rows move into Storage and caches.
+  import StoragePage from '../storage/+page.svelte'
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { open } from '@tauri-apps/plugin-dialog'
@@ -59,6 +63,7 @@
   })
 </script>
 
+<SettingsSection section="downloads">
 <div class="p-4 sm:p-8">
   <h2 data-settings-page-title class="mb-1 text-xl font-black">Downloads</h2>
   <p class="mb-4 text-sm text-muted-foreground">Choose which releases downloads should prefer and manage series that watch for newly aired episodes.</p>
@@ -156,3 +161,5 @@
     </div>
   </div>
 </div>
+<SettingsSubcategory id="storage" plain><StoragePage /></SettingsSubcategory>
+</SettingsSection>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
   import { onDestroy } from 'svelte'
   import { goto } from '$app/navigation'
   import { page } from '$app/stores'
@@ -334,6 +335,7 @@
   const configuredCount = $derived($addonUrls.length + $trackerFeedUrls.length + $extensionUrls.length + orphanCount)
 </script>
 
+<SettingsSection section="sources">
 <div class="min-w-0 overflow-x-hidden p-4 sm:p-8">
   <div class="mb-5 max-w-7xl">
     <div class="mb-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -734,6 +736,7 @@
   </div>
   {/if}
 </div>
+</SettingsSection>
 
 {#if configuring}
   <AddonConfigurator

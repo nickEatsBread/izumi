@@ -1,4 +1,7 @@
 <script lang="ts">
+  import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
+  import SettingsSubcategory from '$lib/components/settings/SettingsSubcategory.svelte'
+  import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
   import { onDestroy, onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { developerLogging, updateChannel } from '$lib/settings/ui'
@@ -119,6 +122,7 @@
   }
 </script>
 
+<SettingsSection section="about">
 <div class="p-4 sm:p-8">
   <h2 data-settings-page-title class="mb-1 text-xl font-black">About</h2>
   <p class="mb-4 text-sm text-muted-foreground">Version information.</p>
@@ -263,3 +267,7 @@
     {#if diagnosticNotice}<p class="mt-2 text-xs text-muted-foreground">{diagnosticNotice}</p>{/if}
   </div>
 </div>
+<SettingsSubcategory id="changelog">
+  <SettingsRow title="Release notes" description="Recent changes, straight from the commit history" href="/app/settings/changelog" chevron />
+</SettingsSubcategory>
+</SettingsSection>

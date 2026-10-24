@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
   import { invoke } from '@tauri-apps/api/core'
   import {
     subtitleProviders,
@@ -166,6 +167,7 @@
   }
 </script>
 
+<SettingsSection section="subtitles">
 <div class="p-4 sm:p-8">
   <h2 data-settings-page-title class="mb-2 text-3xl font-bold tracking-tight">Subtitles</h2>
   <p class="mb-4 max-w-2xl text-sm text-muted-foreground">Subtitle sources, appearance, and playback behaviour.</p>
@@ -432,3 +434,4 @@
   </div>
 
 </div>
+</SettingsSection>
