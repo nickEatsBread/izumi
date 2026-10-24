@@ -48,7 +48,7 @@ describe('Android and TV player styling hooks', () => {
       expect(player).toContain(`data-part="player.control" data-control="${name}"`)
     }
     const bars = buttonTags(player.slice(player.indexOf('data-part="player.top"'), player.indexOf('data-part="player.seekbar"')))
-    expect(bars).toHaveLength(6)
+    expect(bars).toHaveLength(8) // the six always-on controls plus the opt-in Restart and Next
     for (const tag of bars) expect(tag, tag).toContain('data-control=')
     const play = player.split('\n').find((line) => line.includes('class="transport-button'))
     expect(play).toContain('data-tv-primary data-part="player.control" data-control="play"')
@@ -112,5 +112,41 @@ describe('Android and TV player choices (theme API 6)', () => {
     // Every remote key that reaches the player restarts the wait.
     const tv = player.slice(player.indexOf('function onTvKeydown'), player.indexOf('function onPhoneSheetKeydown'))
     expect(tv).toContain('inputTick++\n    if (controlsShown) armHide()')
+  })
+})
+
+describe('Android and TV player buttons (theme API 6)', () => {
+  const transport = player.slice(player.indexOf('data-part="player.transport"'), player.indexOf('data-part="player.bottom"'))
+  const tagOf = (control: string) => buttonTags(transport).find((tag) => tag.includes(`data-control="${control}"`)) ?? ''
+  const at = (control: string) => transport.indexOf(`data-control="${control}"`)
+
+  it('puts Restart before Rewind and Next after Forward, only when the theme asks', () => {
+    expect(transport).toContain("{#if playerControls.buttons.includes('restart')}")
+    expect(transport).toContain("{#if playerControls.buttons.includes('next')}")
+    expect(at('restart')).toBeGreaterThan(-1)
+    expect(at('restart')).toBeLessThan(at('rewind'))
+    expect(at('rewind')).toBeLessThan(at('play'))
+    expect(at('play')).toBeLessThan(at('forward'))
+    expect(at('forward')).toBeLessThan(at('next'))
+    for (const control of ['restart', 'next']) {
+      expect(tagOf(control), control).toContain(`data-part="player.control" data-control="${control}"`)
+      expect(tagOf(control), control).toContain('pointer-events-auto grid h-12 w-12 place-items-center')
+    }
+    expect(tagOf('restart')).toContain('aria-label="Restart"')
+    expect(tagOf('next')).toContain('aria-label="Next episode"')
+  })
+
+  it('restarts with an absolute seek to zero and disables Next when there is no next episode', () => {
+    const restart = player.slice(player.indexOf('function restart() {'), player.indexOf('function pressPause() {'))
+    expect(restart).toContain('cancelScrub()')
+    expect(restart).toContain('void seekAbsolute(0)')
+    expect(tagOf('restart')).toContain('restart()')
+    expect(tagOf('next')).toContain('disabled={!hasNext}')
+    expect(tagOf('next')).toContain('if (hasNext) void playNext(undefined, !paused)')
+  })
+
+  it('keeps Play the only TV focus target of the transport', () => {
+    expect(transport.match(/data-tv-primary/g)).toHaveLength(1)
+    expect(tagOf('play')).toContain('data-tv-primary')
   })
 })

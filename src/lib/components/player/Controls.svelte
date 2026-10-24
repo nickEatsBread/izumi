@@ -934,6 +934,9 @@
 
     <div data-part="player.row" class="pointer-events-auto mt-1 flex items-center gap-3 text-white {gm ? 'gap-4' : ''}">
       <div data-part="player.transport" class="flex items-center gap-3 {gm ? 'gap-4' : ''}">
+      {#if controls.buttons.includes('restart')}
+        <button data-part="player.control" data-control="restart" data-focusable class={iconBtn} onclick={() => cmd('seek', ['0', 'absolute'])} aria-label="Restart"><RotateCcw size={icSize} /></button>
+      {/if}
       {#if hasPrev}
         <button data-part="player.control" data-control="previous" data-focusable class={iconBtn} onclick={() => (gm ? episodeStep(-1) : playPrev(undefined, !paused))} aria-label="Previous episode"><SkipBack size={icSize} fill="currentColor" /></button>
       {/if}

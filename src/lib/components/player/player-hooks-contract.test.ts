@@ -99,3 +99,23 @@ describe('player styling hooks', () => {
     expect(read('../../../app.css')).not.toContain('data-theme-unthemed')
   })
 })
+
+describe('player buttons (theme API 6)', () => {
+  const controls = read('./Controls.svelte')
+
+  it('lets a theme put Restart first in the transport, which seeks to the start', () => {
+    expect(controls).toContain("{#if controls.buttons.includes('restart')}")
+    const restart = controls.indexOf('data-control="restart"')
+    expect(controls.indexOf('data-part="player.transport"')).toBeLessThan(restart)
+    expect(restart).toBeLessThan(controls.indexOf('data-control="previous"'))
+    const tag = buttonTags(controls).find((candidate) => candidate.includes('data-control="restart"')) ?? ''
+    expect(tag).toContain('data-part="player.control" data-control="restart" data-focusable')
+    expect(tag).toContain("onclick={() => cmd('seek', ['0', 'absolute'])}")
+    expect(tag).toContain('aria-label="Restart"')
+  })
+
+  it('ignores "next", which the desktop already has', () => {
+    expect(controls).not.toContain("buttons.includes('next')")
+    expect(controls).toContain('data-control="next"')
+  })
+})

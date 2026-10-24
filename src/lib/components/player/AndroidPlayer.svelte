@@ -122,6 +122,8 @@
   import Pause from '@lucide/svelte/icons/pause'
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw'
   import RotateCw from '@lucide/svelte/icons/rotate-cw'
+  import SkipBack from '@lucide/svelte/icons/skip-back'
+  import SkipForward from '@lucide/svelte/icons/skip-forward'
   import Lock from '@lucide/svelte/icons/lock'
   import Ratio from '@lucide/svelte/icons/ratio'
   import Layers from '@lucide/svelte/icons/layers'
@@ -710,6 +712,11 @@
     resetTapSequence()
     const target = Math.max(0, $mpvState.pos + delta)
     void seekAbsolute(dur > 0 ? Math.min(dur, target) : target)
+  }
+  function restart() {
+    cancelScrub()
+    resetTapSequence()
+    void seekAbsolute(0)
   }
   function pressPause() {
     // A stream that never produced a frame has nothing to pause — and pausing it anyway disarms
@@ -2415,6 +2422,9 @@
          place — the row itself never disappears, so rewind/forward stay usable and the button keeps
          its hit target (you can still pause a stream that is still buffering). -->
     <div in:fade|global={{ duration: 180 }} data-part="player.transport" class="pointer-events-none absolute inset-0 flex items-center justify-center gap-10">
+      {#if playerControls.buttons.includes('restart')}
+        <button data-part="player.control" data-control="restart" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); restart() }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Restart"><SkipBack size={30} /></button>
+      {/if}
       <button data-part="player.control" data-control="rewind" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip(-$seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Rewind"><RotateCcw size={30} /></button>
       <button data-tv-primary data-part="player.control" data-control="play" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); pressPause() }} class="transport-button pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full transition-transform active:scale-90" aria-label={loading || recovering ? 'Loading' : paused ? 'Play' : 'Pause'} aria-busy={loading || recovering}>
         {#if loading || recovering}
@@ -2432,6 +2442,9 @@
         {/if}
       </button>
       <button data-part="player.control" data-control="forward" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip($seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Forward"><RotateCw size={30} /></button>
+      {#if playerControls.buttons.includes('next')}
+        <button data-part="player.control" data-control="next" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); if (hasNext) void playNext(undefined, !paused) }} disabled={!hasNext} class="pointer-events-auto grid h-12 w-12 place-items-center disabled:opacity-40" aria-label="Next episode"><SkipForward size={30} /></button>
+      {/if}
     </div>
 
     <!-- Timeline sits on the actual bottom edge of the video, matching native mobile players. -->
