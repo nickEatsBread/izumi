@@ -65,6 +65,9 @@ describe('LearnMore', () => {
     expect(row).toContain("role={describedBy ? 'group' : undefined} aria-label={describedBy ? title : undefined} aria-describedby={describedBy}")
     const css = read('../../../app.css')
     expect(css).toContain('[data-learn-more] { display: none; }\n:focus-within > [data-learn-more] { display: block; }')
+    // The row showing that text takes the ring and fill, so the text sits inside them.
+    expect(css).toContain('.tv-mode [data-setting-key]:has([data-learn-more]):focus-within { box-shadow: 0 0 0 4px #fff')
+    expect(css).toContain(':is(.gamemode, .controller-mode, .tv-mode) [data-setting-key]:has([data-learn-more]) [data-focusable]:focus { box-shadow: none; }')
   })
 
   it('keeps the muted paragraph in the page, hidden while closed, so aria-controls always resolves', () => {

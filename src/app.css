@@ -633,6 +633,13 @@ html.controller-mode [data-carousel-scroller] { padding-top: max(1.125rem, 18px)
 /* Controller mode's Learn more (SettingsRow, spec §5.1): no button; the text shows while its row has focus. */
 [data-learn-more] { display: none; }
 :focus-within > [data-learn-more] { display: block; }
+/* A row that shows its Learn more text lights as a whole, so the text sits inside the ring and fill. */
+.gamemode [data-setting-key]:has([data-learn-more]):focus-within { box-shadow: var(--izumi-safe-focus-ring); }
+.controller-mode [data-setting-key]:has([data-learn-more]):focus-within { box-shadow: var(--izumi-safe-focus-ring), 0 8px 24px rgb(0 0 0 / 0.4); position: relative; z-index: 10; }
+.tv-mode [data-setting-key]:has([data-learn-more]):focus-within { box-shadow: 0 0 0 4px #fff, 0 8px 28px rgb(0 0 0 / 0.45); position: relative; z-index: 10; }
+[data-settings-controller] [data-setting-key]:has([data-learn-more]):focus-within { background-color: hsl(var(--foreground) / 0.1); }
+:is(.gamemode, .controller-mode, .tv-mode) [data-setting-key]:has([data-learn-more]) [data-focusable]:focus { box-shadow: none; }
+[data-settings-controller] [data-setting-key]:has([data-learn-more]) [data-focusable]:focus { background-color: transparent; }
 /* NuvioTV: while the rail has focus, only the focused item is lit. */
 [data-settings-controller] [data-settings-rail]:focus-within a[aria-current="page"]:not(:focus) { background-color: transparent; }
 /* The layout fills the height main leaves instead of scrolling the window: below a Game-mode top bar
