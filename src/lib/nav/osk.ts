@@ -14,10 +14,10 @@ import { focusNearestFocusable } from './index'
 // - Done presses the form's enabled default button, and only from the form's last field;
 // - typing-only launchers (global search, settings search, the searchable language menu) open it at
 //   once through openOskForField;
-// - Android TV keeps opening it on focus ('focus-legacy'); mouse, touch and keyboard users never
-//   see it ('off').
+// - Android TV opens it on A too: the remote's OK, which reaches a field as Enter (spec §5.4); mouse,
+//   touch and keyboard users never see it ('off').
 
-export type OskPolicy = 'activate' | 'focus-legacy' | 'off'
+export type OskPolicy = 'activate' | 'off'
 export type OskLayout = 'text' | 'numeric'
 export interface RemoteKeyboard { insert(text: string): void; backspace(): void; submit(): void; close?(): void }
 export type OskSession =
@@ -31,12 +31,9 @@ const BLOCKING_INPUT_TYPES = ['text', 'search', 'url', 'tel', 'email', 'password
 /** Each field's own `inputmode` (null = none) while the keyboard has set it to `none`. */
 let originalInputMode = new WeakMap<TextEntryField, string | null>()
 
-/** gameMode wins over isTv; isTv wins over controllerMode. */
+/** Game mode, Android TV and a pad on a phone or desktop open the keyboard on A; nothing else does. */
 export function oskPolicy(input: { gameMode: boolean; isTv: boolean; controllerMode: boolean }): OskPolicy {
-  if (input.gameMode) return 'activate'
-  if (input.isTv) return 'focus-legacy'
-  if (input.controllerMode) return 'activate'
-  return 'off'
+  return input.gameMode || input.isTv || input.controllerMode ? 'activate' : 'off'
 }
 
 export function currentOskPolicy(): OskPolicy {
@@ -77,8 +74,6 @@ export function implicitSubmitTarget(field: TextEntryField): HTMLButtonElement |
 const NUMERIC_CHAR = /[0-9.-]/
 /** A value an input[type=number] keeps; '-', '1.' and the like would blank it. */
 const VALID_NUMBER = /^-?(?:\d+(?:\.\d+)?|\.\d+)$/
-/** Android TV: a focus arriving this soon after a close is the keyboard's own focus return. */
-const LEGACY_REOPEN_GUARD_MS = 400
 
 const session = writable<OskSession | null>(null)
 /** The open session, or null. Every change is mirrored into `oskOpen` ($lib/player/session). */
@@ -91,8 +86,6 @@ const echo = writable<OskEcho | null>(null)
 export const oskEcho: Readable<OskEcho | null> = { subscribe: echo.subscribe }
 
 let fieldRect: { left: number; top: number; width: number; height: number } | null = null
-let restoringFocus = false
-let closedAt = -1e9
 
 const isNumberField = (field: TextEntryField): field is HTMLInputElement =>
   field instanceof HTMLInputElement && field.type === 'number'
@@ -163,14 +156,9 @@ function usable(field: TextEntryField): boolean {
   return field.isConnected && !field.disabled && (field.checkVisibility?.() ?? true) && !field.closest('[inert]')
 }
 
-/** Focus the field without the focus-to-open listener (Android TV) taking it as a new open. */
+/** Focus the field without scrolling the page under the keyboard. */
 function focusField(field: TextEntryField): void {
-  restoringFocus = true
-  try {
-    field.focus({ preventScroll: true })
-  } finally {
-    restoringFocus = false
-  }
+  field.focus({ preventScroll: true })
 }
 
 function selectionOf(field: TextEntryField): [number, number] {
@@ -295,8 +283,7 @@ export function oskBackspace(): void {
 /** Done. A controller field session: focus back on the field, commit (`change`), a cancellable
  *  Enter keydown on it for fields that act on Enter, then, unless that was prevented, the implicit
  *  submission (decision 6); then close, unless a handler already moved the keyboard to another
- *  field. Android TV keeps today's plain Enter with no submit and no refocus. A remote session
- *  submits its composer. */
+ *  field. A remote session submits its composer. */
 export function oskDone(): void {
   const current = get(session)
   if (!current) return
@@ -307,11 +294,6 @@ export function oskDone(): void {
     return
   }
   const { field } = current
-  if (current.policy === 'focus-legacy') {
-    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-    closeIfStill(field, { restore: false })
-    return
-  }
   if (!usable(field)) {
     closeOsk()
     return
@@ -335,7 +317,7 @@ export function oskDone(): void {
 /** Close the keyboard. With `restore` (the default), focus goes back to the field when it is still
  *  on the keys (or nowhere) and the field is connected, enabled, visible and not inert; otherwise to
  *  the nearest control (focusNearestFocusable). Then a bubbling `change` when the value changed.
- *  Under 'activate' the refocus cannot reopen it (only a click opens). The gamepad B path stamps
+ *  The refocus cannot reopen it: only A opens it. The gamepad B path stamps
  *  `oskDismissedAt` itself; this does not. */
 export function closeOsk(options: { restore?: boolean } = {}): void {
   const current = get(session)
@@ -346,7 +328,6 @@ export function closeOsk(options: { restore?: boolean } = {}): void {
   }
   const active = document.activeElement
   const focusOnKeys = !active || active === document.body || isOskTarget(active)
-  closedAt = performance.now()
   setSession(null)
   if (current.kind === 'remote') {
     current.remote.close?.()
@@ -374,15 +355,13 @@ export function resetOskForTests(): void {
   echo.set(null)
   originalInputMode = new WeakMap()
   fieldRect = null
-  restoringFocus = false
-  closedAt = -1e9
 }
 
 /** Install the keyboard's listeners; returns the uninstaller. Called once, from OnScreenKeyboard's
  *  onMount at app boot, so its window capture listeners run before any player, menu or layer
  *  listener registered later. */
 export function startOsk(): () => void {
-  // 'activate': A (the pad's click), a Game-mode tap, a trackpad click or a <label> click opens it.
+  // A (the pad's click), a Game-mode tap, a trackpad click or a <label> click opens it; on TV the remote's OK does (onKeydown).
   const onClick = (event: MouseEvent) => {
     if (currentOskPolicy() !== 'activate') return
     const target = event.target
@@ -396,16 +375,10 @@ export function startOsk(): () => void {
       return
     }
     if (!isTextEntryField(target)) return
-    const policy = currentOskPolicy()
-    if (policy === 'off') return
+    if (currentOskPolicy() === 'off') return
     // Only a field the keyboard can serve loses its system IME: one inside an open modal <dialog>
     // gets no built-in keyboard, so it keeps its own (Android TV, a phone with a pad).
-    const served = servesField(target)
-    if (served && get(inputType) === 'dpad') suppressIme(target)
-    // Android TV keeps opening on focus, except for the keyboard's own focus return.
-    if (policy !== 'focus-legacy' || restoringFocus) return
-    if (performance.now() - closedAt < LEGACY_REOPEN_GUARD_MS) return
-    if (served) openFieldSession(target, 'focus-legacy')
+    if (servesField(target) && get(inputType) === 'dpad') suppressIme(target)
   }
   const onFocusOut = (event: FocusEvent) => {
     const target = event.target
@@ -415,7 +388,16 @@ export function startOsk(): () => void {
     restoreIme(target)
   }
   const onKeydown = (event: KeyboardEvent) => {
-    if (!get(session)) return
+    if (!get(session)) {
+      // Android TV: the remote's OK reaches a focused field as Enter, never as a click, so Enter is
+      // its A (spec §5.4). A pad's A clicks instead and never sends Enter.
+      if (event.key === 'Enter' && get(isTv) && !isPadEvent(event) && servesField(event.target)) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        openFieldSession(event.target, 'activate')
+      }
+      return
+    }
     if (event.key === 'Escape' || event.key === 'GoBack' || event.key === 'BrowserBack') {
       // Keyboard Escape, the TV remote's Back (MainActivity's Escape) and the phone bridge close only
       // the keyboard: nothing registered later (player, track menu, layers, dialogs) sees the key.

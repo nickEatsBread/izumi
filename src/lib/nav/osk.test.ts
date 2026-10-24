@@ -42,8 +42,8 @@ describe('oskPolicy', () => {
   it.each([
     [true, false, false, 'activate'],
     [true, true, true, 'activate'],
-    [false, true, true, 'focus-legacy'],
-    [false, true, false, 'focus-legacy'],
+    [false, true, true, 'activate'],
+    [false, true, false, 'activate'],
     [false, false, true, 'activate'],
     [false, false, false, 'off'],
   ] as const)('gameMode %s, isTv %s, controllerMode %s → %s', (game, tv, controller, policy) => {
@@ -55,7 +55,7 @@ describe('oskPolicy', () => {
     controllerMode.set(true)
     expect(currentOskPolicy()).toBe('activate')
     isTv.set(true)
-    expect(currentOskPolicy()).toBe('focus-legacy')
+    expect(currentOskPolicy()).toBe('activate')
     gameMode.set(true)
     expect(currentOskPolicy()).toBe('activate')
   })
@@ -407,37 +407,45 @@ describe('keyboard listeners (startOsk)', () => {
     expect(get(oskSession)).toBeNull()
   })
 
-  it('Android TV keeps focus-to-open, and the focus return on close does not reopen it', () => {
+  it('Android TV opens on the remote OK (Enter on the field), never on focus (spec §5.4)', () => {
     gameMode.set(false)
     isTv.set(true)
     document.body.innerHTML = '<input id="f" inputmode="numeric">' + KEYS
     const field = input('f')
     field.focus()
-    expect(get(oskSession)).toMatchObject({ kind: 'field', field, policy: 'focus-legacy', layout: 'numeric' })
-    expect(field.getAttribute('inputmode')).toBe('none')
+    expect(get(oskSession)).toBeNull()
+    const ok = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    field.dispatchEvent(ok)
+    expect(ok.defaultPrevented).toBe(true)
+    expect(get(oskSession)).toMatchObject({ kind: 'field', field, policy: 'activate', layout: 'numeric' })
     byId('key').focus()
     closeOsk()
     expect(document.activeElement).toBe(field)
     expect(get(oskSession)).toBeNull()
-    field.click()
+  })
+
+  it('off TV, Enter on a field never opens it: a pad A clicks and a keyboard types', () => {
+    document.body.innerHTML = '<input id="f">'
+    const field = input('f')
+    field.focus()
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
     expect(get(oskSession)).toBeNull()
   })
 
-  it('Android TV Done is a plain Enter: no submit and no refocus', () => {
+  it('Android TV Done commits like every controller: the value, an Enter, then the form default', () => {
     gameMode.set(false)
     isTv.set(true)
     document.body.innerHTML = '<form id="form"><input id="f"><button>Go</button></form>' + KEYS
     const field = input('f')
     const onSubmit = vi.fn((event: Event) => event.preventDefault())
-    const onEnter = vi.fn()
     byId<HTMLFormElement>('form').addEventListener('submit', onSubmit)
-    field.addEventListener('keydown', (event) => { if (event.key === 'Enter') onEnter(event.cancelable) })
     field.focus()
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    oskInsert('a')
     byId('key').focus()
     oskDone()
-    expect(onEnter).toHaveBeenCalledWith(false)
-    expect(onSubmit).not.toHaveBeenCalled()
-    expect(document.activeElement).toBe(byId('key'))
+    expect(field.value).toBe('a')
+    expect(onSubmit).toHaveBeenCalledTimes(1)
     expect(get(oskSession)).toBeNull()
   })
 
