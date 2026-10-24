@@ -40,7 +40,7 @@
   import { episodeRanges, openingPage, pageOf, pageSizeFor, searchEpisodes, shownPage } from './episode-ranges'
   import { onDownloadSelect } from '$lib/detail/episode-commands'
   import { seriesResumeProgress, seriesUnderWay } from '$lib/detail/resume'
-  import { episodeNoText } from '$lib/themes/episode-fields'
+  import { arrivalDayText, episodeNoText } from '$lib/themes/episode-fields'
   import Download from '@lucide/svelte/icons/download'
   import Loader from '@lucide/svelte/icons/loader-circle'
   import Pause from '@lucide/svelte/icons/pause'
@@ -1014,7 +1014,8 @@
             {#if isNext}
               <span class="block text-[0.7rem] font-bold text-theme">airing in {countdown(next?.timeUntilAiring)}</span>
             {:else if !released}
-              <span class="block text-[0.7rem] text-muted-foreground">Not aired</span>
+              {@const arrival = arrivalDayText(media.airingSchedule?.nodes?.find((node) => node.episode === ep)?.airingAt, meta[ep]?.airDate)}
+              <span class="block text-[0.7rem] text-muted-foreground">{arrival ? `Coming ${arrival}` : 'Not aired'}</span>
             {/if}
           </span>
           <!-- Read-only download status (the trigger lives in the header's select mode, or in the

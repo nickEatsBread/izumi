@@ -109,9 +109,9 @@ describe('Suggested tab name (API 6)', () => {
   })
 })
 
-describe('newBadge field gate', () => {
-  it('is a field from API 6', () => {
-    const node = { type: 'text', field: 'newBadge', when: { field: 'newBadge' } }
+describe('API 6 display field gates', () => {
+  it.each(['newBadge', 'upcoming'])('%s is a field from API 6', (field) => {
+    const node = { type: 'text', field, when: { field } }
     expect(parseNode(node)).toEqual(node)
     expect(() => parseNode(node, undefined, 0, false, 5)).toThrow('unsupported')
   })

@@ -13,7 +13,7 @@ export type DisplayField =
   | 'starring' | 'creators'
   | 'kind'
   | 'airDateLong'
-  | 'newBadge'
+  | 'newBadge' | 'upcoming'
 /** Host numbers. `when.atMost` compares these; text nodes render them through `displayText`. */
 export type NumericDisplayField = 'rankPosition' | 'score' | 'duration' | 'episodeNumber' | 'progress' | 'nextEpisode' | 'slide' | 'slides' | 'episodesAired' | 'episodesWatched'
 /** `keyart` (API 3) is 16:9 title artwork: a TVDB background for AniList titles, a TMDB or add-on backdrop otherwise.
@@ -542,7 +542,7 @@ const fields = [
   'starring', 'creators',
   'kind',
   'airDateLong',
-  'newBadge',
+  'newBadge', 'upcoming',
 ] as const satisfies readonly DisplayField[]
 const API3_FIELDS: readonly DisplayField[] = ['nextEpisode', 'airingIn', 'airingCountdown', 'slide', 'slides', 'episodesAired', 'genre', 'ageRating', 'audio', 'timeLeft', 'episodeNo', 'episodeCode', 'watched', 'filler', 'rating', 'episodeName']
 /** The release year, the second and third genres, the episodes watched, the long duration, the bare
@@ -552,8 +552,8 @@ const API4_FIELDS: readonly DisplayField[] = ['startYear', 'genre2', 'genre3', '
 /** An older package is held to the fields its clients know, so it renders identically everywhere. */
 /** An episode's air date in words ("16 September 2026") is API 5. */
 const API5_FIELDS: readonly DisplayField[] = ['airDateLong']
-/** The freshness badge ("New Episode") is API 6. */
-const API6_FIELDS: readonly DisplayField[] = ['newBadge']
+/** The freshness badge ("New Episode") and an unaired episode's arrival ("Coming Friday, October 30") are API 6. */
+const API6_FIELDS: readonly DisplayField[] = ['newBadge', 'upcoming']
 const fieldsFor = (api: ThemeApi): readonly DisplayField[] => fields.filter(field => (api >= 3 || !API3_FIELDS.includes(field)) && (api >= 4 || !API4_FIELDS.includes(field)) && (api >= 5 || !API5_FIELDS.includes(field)) && (api >= 6 || !API6_FIELDS.includes(field)))
 const numericFields: string[] = ['rankPosition', 'score', 'duration', 'episodeNumber', 'progress', 'nextEpisode', 'slide', 'slides', 'episodesAired', 'episodesWatched'] satisfies NumericDisplayField[]
 const actions: readonly ThemeAction[] = ['play', 'details', 'favorite', 'previous', 'next', 'list', 'trailer', 'share']
