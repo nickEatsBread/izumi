@@ -9,6 +9,7 @@
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import { m } from '$lib/paraglide/messages.js'
   import { providerList, accountInfo } from '$lib/stremio/debrid'
+  import { providerIcon } from '$lib/stremio/debrid/icons'
   import { debridKey, debridProvider, torrentPlaybackMode, type AudioLang, type SubLang } from '$lib/settings/ui'
 
   // Audio and subtitle defaults are derived from the chosen libraries instead of asked for; see
@@ -24,7 +25,7 @@
   let generation = 0
   onDestroy(() => clearTimeout(timer))
 
-  const providerOptions = providerList.map((provider) => ({ value: provider.id, label: provider.name }))
+  const providerOptions = providerList.map((provider) => ({ value: provider.id, label: provider.name, icon: providerIcon(provider.id) }))
 
   /** Catch a mistyped key here rather than at the first play. A network failure is a warning, not
    * a block: the key is already saved either way. The key goes nowhere but this call. */

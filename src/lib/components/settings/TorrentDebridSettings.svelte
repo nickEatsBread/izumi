@@ -3,6 +3,7 @@
   // mounting the source list, which fetches every source manifest.
   import { debridKey, debridProvider, torrentPlaybackMode } from '$lib/settings/ui'
   import { accountInfo, providerList, providerMeta, type DebridAccountInfo } from '$lib/stremio/debrid'
+  import { providerIcon } from '$lib/stremio/debrid/icons'
   import { formatBytes } from '$lib/util/format'
   import RefreshButton from '$lib/components/RefreshButton.svelte'
   import CredentialField from './CredentialField.svelte'
@@ -14,6 +15,7 @@
   const providerOptions = providerList.map((provider) => ({
     value: provider.id,
     label: `${provider.name}${provider.experimental ? ' (experimental)' : ''}`,
+    icon: providerIcon(provider.id),
   }))
   let keyOpen = $state(false)
   let account = $state<DebridAccountInfo | null>(null)
