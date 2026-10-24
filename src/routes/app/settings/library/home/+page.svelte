@@ -204,7 +204,7 @@
   <div class="mb-5 flex max-w-3xl items-start justify-between gap-4">
     <div>
       <h2 data-settings-page-title class="mb-1 text-xl font-black">Customize Home</h2>
-      <a href="/app/settings/catalog/collections" data-focusable class="mb-2 inline-block text-sm font-bold text-primary">Collections & covers</a>
+      <a href="/app/settings/library/collections" data-focusable class="mb-2 inline-block text-sm font-bold text-primary">Collections & covers</a>
       <p class="text-sm text-muted-foreground">Choose the rows each catalog shows and put the most useful ones first. Merged has its own layout.</p>
     </div>
     <button data-focusable onclick={resetSelected} class="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md border border-border px-3 text-sm font-bold transition-colors hover:bg-secondary active:bg-secondary">

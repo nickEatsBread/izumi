@@ -114,7 +114,7 @@
 
 <div class="max-w-4xl space-y-6 p-4 sm:p-8">
   <div>
-    <a data-settings-page-title href="/app/settings/catalog" data-focusable class="text-sm text-muted-foreground">← Catalog</a>
+    <a data-settings-page-title href="/app/settings/library" data-focusable class="text-sm text-muted-foreground">← Home and library</a>
     <h1 data-settings-page-title class="mt-3 text-2xl font-black">Collections & covers</h1>
     <p class="mt-2 text-sm text-muted-foreground">Bring Nuvio folders and their artwork to Home. Collections appear on every catalog screen.</p>
   </div>
@@ -143,7 +143,7 @@
           {#each preview.collections as collection (collection.id)}<!-- svelte-ignore a11y_no_noninteractive_tabindex --><li data-focusable={stops ? '' : undefined} tabindex={stops ? 0 : undefined}>{collection.title} — {collection.folders.length} folders</li>{/each}
         </ul>
         {#if replacements}<p class="text-sm">{replacements} existing collections with matching IDs will be updated, including their covers. Other collections stay in place.</p>{/if}
-        {#if providers.includes('tmdb')}<p class="text-sm text-muted-foreground">TMDB feeds need a Read Access Token in <a href="/app/settings/catalog" data-focusable class="text-primary underline">Catalog settings</a>.</p>{/if}
+        {#if providers.includes('tmdb')}<p class="text-sm text-muted-foreground">TMDB feeds need a Read Access Token in <a href="/app/settings/library" data-focusable class="text-primary underline">Home and library settings</a>.</p>{/if}
         {#if providers.includes('trakt')}<p class="text-sm text-muted-foreground">Trakt lists need a connected account in <a href="/app/settings/accounts" data-focusable class="text-primary underline">Accounts</a>.</p>{/if}
         {#if providers.some((provider) => !['addon', 'tmdb', 'trakt'].includes(provider))}<p class="text-sm text-destructive">Some folders use unsupported providers: {providers.filter((provider) => !['addon', 'tmdb', 'trakt'].includes(provider)).join(', ')}. Their catalogs will show an explanation when opened.</p>{/if}
         {#if providers.includes('addon')}<p class="text-sm text-muted-foreground">Add-on catalogs use your enabled Sources. A collection export may omit the add-on installation URLs; add your configured manifests separately if needed.</p>{/if}

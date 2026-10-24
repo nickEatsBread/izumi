@@ -79,7 +79,7 @@
     <a href="/app/home" data-focusable class="text-sm text-muted-foreground hover:text-foreground">← Home · {collection.title}</a>
     <h1 class="mt-4 text-3xl font-black">{folder.title}</h1>
     <p class="mt-2 text-sm text-muted-foreground">{folder.sources.length} {folder.sources.length === 1 ? 'catalog' : 'catalogs'}</p>
-    <a href="/app/settings/catalog/collections" data-focusable class="mt-3 inline-block text-sm font-semibold text-primary">Edit collection and cover</a>
+    <a href="/app/settings/library/collections" data-focusable class="mt-3 inline-block text-sm font-semibold text-primary">Edit collection and cover</a>
   </div>
 
   {#if folder.sources.length > 1}

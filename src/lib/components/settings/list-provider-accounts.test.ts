@@ -11,7 +11,7 @@ describe('single service setup', () => {
   })
   it('routes optional add-on management to Sources without deleting existing installs', () => {
     expect(accounts).toContain('href="/app/settings/sources"')
-    expect(accounts).toContain('href="/app/settings/catalog/home?provider=stremio"')
+    expect(accounts).toContain('href="/app/settings/library/home?provider=stremio"')
     expect(accounts).not.toContain('$addonUrls =')
   })
 })

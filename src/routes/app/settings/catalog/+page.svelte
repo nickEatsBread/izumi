@@ -243,10 +243,10 @@
 
   <SettingsGroup icon={Rows3} title="Home layout" desc="Edit each catalog screen independently.">
     <SettingsRow title="Collections & covers" description="Import Nuvio collection JSON and customize folder artwork with community cover URLs.">
-      <a href="/app/settings/catalog/collections" data-focusable class="inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Manage collections</a>
+      <a href="/app/settings/library/collections" data-focusable class="inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Manage collections</a>
     </SettingsRow>
     <SettingsRow title="Home sections" description="Use the pencil in the Home catalog picker to edit in place, or open the full list here.">
-      <a href={`/app/settings/catalog/home?provider=${homeCustomizeProvider}`} data-focusable class="inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Customize Home</a>
+      <a href={`/app/settings/library/home?provider=${homeCustomizeProvider}`} data-focusable class="inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Customize Home</a>
     </SettingsRow>
   </SettingsGroup>
 

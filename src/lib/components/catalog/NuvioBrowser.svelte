@@ -146,7 +146,7 @@
 
 <div data-nav-surface="nuvio" class="mx-auto w-full max-w-[1440px] px-4 pb-16 pt-5 sm:px-8 sm:pt-8">
   <div class="flex items-center justify-between gap-3">
-    <a href="/app/settings/catalog/collections" data-focusable class="inline-flex min-h-10 items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft class="size-4" />Manage collections</a>
+    <a href="/app/settings/library/collections" data-focusable class="inline-flex min-h-10 items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft class="size-4" />Manage collections</a>
     <a href="/app/home" data-focusable class="inline-flex min-h-10 items-center gap-2 rounded-lg px-2 text-sm font-bold hover:bg-secondary sm:px-4">Open Home <ArrowRight class="size-4" /></a>
   </div>
   <header class="mb-2 mt-3 flex flex-wrap items-end justify-between gap-4 sm:mt-5">

@@ -423,7 +423,7 @@ describe('Settings reachability: markers the generic rules cannot infer (spec §
   it('marks the in-page capped lists nested: extension packages, the import preview, izumi collections', () => {
     for (const [rel, name] of [
       ['src/routes/app/settings/extensions/+page.svelte', 'ul'],
-      ['src/routes/app/settings/catalog/collections/+page.svelte', 'ul'],
+      ['src/routes/app/settings/library/collections/+page.svelte', 'ul'],
       ['src/lib/components/catalog/NuvioCloudCollections.svelte', 'div'],
     ]) {
       const nested = elementsOf(rel).filter((el) => staticAttr(el, 'data-nav-scroll-container') === 'nested')
@@ -453,7 +453,7 @@ describe('Settings reachability: markers the generic rules cannot infer (spec §
       attr(el, name)?.raw.match(new RegExp(`^${name}=\\{\\s*(.+?)\\s*\\?\\s*${on}\\s*:\\s*undefined\\s*\\}$`))?.[1]
     for (const rel of [
       'src/routes/app/settings/changelog/+page.svelte',
-      'src/routes/app/settings/catalog/collections/+page.svelte',
+      'src/routes/app/settings/library/collections/+page.svelte',
       'src/lib/components/catalog/NuvioCloudSettings.svelte',
     ]) {
       const stops = scanOf(rel).elements.filter((el) => {

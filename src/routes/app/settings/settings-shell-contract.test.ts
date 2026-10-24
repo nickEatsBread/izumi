@@ -10,13 +10,13 @@ const layout = read('./+layout.svelte')
 const css = read('../../../app.css')
 
 /** Each settings page's leading title as it reads with the marker (spec §5.4). Collections marks its
- *  "← Catalog" link too: on the phone the back-header replaces both. */
+ *  "← Home and library" link too: on the phone the back-header replaces both. */
 const PAGE_TITLES: Array<[string, string]> = [
   ['store/+page.svelte', '<h2 data-settings-page-title class="text-xl font-black">Store</h2>'],
   ['catalog/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Catalog</h2>'],
-  ['catalog/home/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Customize Home</h2>'],
-  ['catalog/collections/+page.svelte', '<a data-settings-page-title href="/app/settings/catalog" data-focusable class="text-sm text-muted-foreground">← Catalog</a>'],
-  ['catalog/collections/+page.svelte', '<h1 data-settings-page-title class="mt-3 text-2xl font-black">Collections & covers</h1>'],
+  ['library/home/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Customize Home</h2>'],
+  ['library/collections/+page.svelte', '<a data-settings-page-title href="/app/settings/library" data-focusable class="text-sm text-muted-foreground">← Home and library</a>'],
+  ['library/collections/+page.svelte', '<h1 data-settings-page-title class="mt-3 text-2xl font-black">Collections & covers</h1>'],
   ['sources/+page.svelte', '<h2 data-settings-page-title class="text-xl font-black">Sources</h2>'],
   ['sources/priority/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Source priority</h2>'],
   ['downloads/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Downloads</h2>'],

@@ -66,10 +66,10 @@ const TARGETS: Record<string, TouchTarget> = {
   'History: clear all': { file: `${SETTINGS}history/+page.svelte`, anchor: 'onclick={doClear}' },
   'History: forget a title': { file: `${SETTINGS}history/+page.svelte`, anchor: 'onclick={() => forgetMedia(e.media.id)}' },
   'Collections: remove a collection': {
-    file: `${SETTINGS}catalog/collections/+page.svelte`,
+    file: `${SETTINGS}library/collections/+page.svelte`,
     anchor: 'onclick={() => homeCollections.update((collections) => collections.filter((item) => item.id !== collection.id))}',
   },
-  'Customize Home: delete a custom row': { file: `${SETTINGS}catalog/home/+page.svelte`, anchor: 'onclick={() => deleteCustomTmdbRow(row.id)}' },
+  'Customize Home: delete a custom row': { file: `${SETTINGS}library/home/+page.svelte`, anchor: 'onclick={() => deleteCustomTmdbRow(row.id)}' },
   'Downloads: auto-download Enabled label': { file: DOWNLOADS, anchor: 'class="inline-flex items-center gap-1 py-2 text-xs font-bold sm:py-0"' },
   'Downloads: remove an auto-download rule': { file: DOWNLOADS, anchor: 'onclick={() => removeAutoDownloadRule(rule.id)}' },
   'Navigation: placement buttons': { file: NAVIGATION, anchor: 'onclick={() => setPlacement(it.id, p.value)}' },
