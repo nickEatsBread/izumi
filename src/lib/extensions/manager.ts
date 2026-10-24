@@ -5,7 +5,7 @@ import { enabledExtensionUrls, disabledPlugins } from '$lib/settings/ui'
 import { forgetPackageOrigin, isPackageOrigin, mayReplacePackage, packageOriginOf, recordPackageOrigin } from '$lib/store/origins'
 import { ADULT_SOURCES_LOCKED_MESSAGE, adultSourcesPermitted } from '$lib/profiles/household-gate'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
-import { manifestFetchUrls, normalizeManifest, pointerUrl, isRunnableType, isLegacyTorrentType, manifestProblem, catalogPackages, aniyomiRepositoryPackages } from './catalog'
+import { manifestFetchUrls, normalizeManifest, pointerUrl, isRunnableType, isLegacyTorrentType, isTextSearchableSource, manifestProblem, catalogPackages, aniyomiRepositoryPackages } from './catalog'
 import type { ExtensionCatalogPackage } from './catalog'
 import { extensionSourceConfigured, liveJvmSources } from './availability'
 import { clearProviderCache } from '$lib/stremio/online-cache'
@@ -309,6 +309,17 @@ export async function hasConfiguredExtensions(): Promise<boolean> {
   )
 }
 
+/** For search box mode: how many enabled sources can answer a plain-text release search (tracker
+ *  feeds and release extensions) and how many cannot (online-stream, Nuvio and Aniyomi sources).
+ *  Reads the memoized config listing; starts no workers. */
+export async function releaseSearchSourceCounts(): Promise<{ searchable: number; unsearchable: number }> {
+  const [configs, installed] = await Promise.all([loadConfigsFor(configKey()), installedExtensionPackages()])
+  const off = get(disabledPlugins)
+  const jvm = installed.filter((item) => item.backend === 'aniyomi-jvm' && !off.includes(item.id)).length
+  const searchable = configs.filter(isTextSearchableSource).length
+  return { searchable: searchable + get(enabledTrackerFeedUrls).length, unsearchable: configs.length - searchable + jvm }
+}
+
 // Fetch a manifest by spec and expand it into ExtensionConfig[]. A top-level GitHub
 // repo index (array of {main} pointers) is expanded one level into its per-folder
 // manifests; a normal manifest is normalized directly. Best-effort: [] on failure.
@@ -447,6 +458,7 @@ async function loadConfigs(): Promise<ExtensionConfig[]> {
   })
 }
 
+const configKey = () => JSON.stringify([get(enabledExtensionUrls), get(disabledPlugins), installedRevision])
 function loadConfigsFor(key: string): Promise<ExtensionConfig[]> {
   if (configMemo?.key === key && Date.now() - configMemo.at < CONFIG_MEMO_TTL_MS) return configMemo.value
   const entry = { key, at: Date.now(), value: loadConfigs() }
@@ -562,7 +574,7 @@ let buildPromise: Promise<RunningExt[]> | null = null
 async function ensureRunning(): Promise<RunningExt[]> {
   // The key must cover the per-plugin switches too: keyed on the URL list alone, toggling a plugin
   // left the previous worker set live and the change did nothing until a URL was added or removed.
-  const key = JSON.stringify([get(enabledExtensionUrls), get(disabledPlugins), installedRevision])
+  const key = configKey()
   // Do not remember a transient all-failed build forever. A local or remote provider may become
   // ready just after warmExtensions(); caching [] for the whole app session would prevent retry.
   if (running && builtFrom === key && (running.length > 0 || Date.now() - emptyBuildAt < 1_000)) {

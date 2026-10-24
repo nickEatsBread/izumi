@@ -14,7 +14,7 @@ export interface BackdropTrailerGate {
   /** izumi's player is up (Home stays mounted underneath it). */
   playerUp: boolean
   pageHidden: boolean
-  /** The host holds it back (the hero scrolled away). */
+  /** Held back: by its host, by scrolling the page past 100 px, by the trailer dialog or a hover preview. */
   held: boolean
 }
 

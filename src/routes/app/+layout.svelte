@@ -33,6 +33,7 @@
   const loadExitPrompt = () => import('$lib/components/shell/ExitPrompt.svelte')
   const loadGlobalSearch = () => import('$lib/components/search/GlobalSearch.svelte')
   const loadTrailerDialog = () => import('$lib/components/cards/TrailerDialog.svelte')
+  const loadTrailerPlayer = () => import('$lib/components/cards/TrailerPlayer.svelte')
   // NOT lazy: its onMount registers the `deck-keyboard-warning` listener that ANSWERS the native
   // side, and the native login popup stays hidden until that answer arrives. Mounting it only once
   // `$deckKeyboardWarning` is set would be circular — the listener is what leads to the store being
@@ -105,6 +106,7 @@
   const companionCatalogClient = getContextClient()
   let globalSearchMounted = $state(false)
   let trailerDialogMounted = $state(false)
+  let trailerPlayerMounted = $state(false)
   const androidWatchTarget = $derived.by(() => {
     if (!$isAndroid) return null
     const caching = $debridCaching
@@ -118,7 +120,8 @@
   })
   $effect(() => {
     if ($globalSearchOpen) globalSearchMounted = true
-    if ($trailerPopup) trailerDialogMounted = true
+    if ($trailerPopup?.mode === 'popup') trailerDialogMounted = true
+    if ($trailerPopup?.mode === 'player') trailerPlayerMounted = true
   })
 
   // Catalog navigation is logo-driven, so there is no longer a tab component around to repair an
@@ -639,6 +642,7 @@
 {#if $exitPrompt}<Lazy load={loadExitPrompt} />{/if}
 {#if globalSearchMounted}<Lazy load={loadGlobalSearch} />{/if}
 {#if trailerDialogMounted}<Lazy load={loadTrailerDialog} />{/if}
+{#if trailerPlayerMounted}<Lazy load={loadTrailerPlayer} />{/if}
 <OnScreenKeyboard />
 <NativePickerSheet />
 <DeckKeyboardWarning />

@@ -312,6 +312,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'player.upnext.kicker', kind: 'part', description: "The \"Up next\" label above the next episode's title." },
     { name: 'player.upnext.title', kind: 'part', description: "The next episode's title." },
     { name: 'player.upnext.countdown', kind: 'part', description: 'The countdown line ("Episode 5 starts in 8 seconds").' },
+    { name: 'trailer.player', kind: 'slot', description: "izumi's full-window trailer player: the YouTube trailer letterboxed at 16:9 on black, Back and the title at the top, the seek bar and buttons at the bottom. It opens on TV, in Game mode, with a controller, and on desktop unless Settings → Playback sets trailers to open in a popup." },
   ],
   pages: [
     { name: 'search', kind: 'slot', description: 'The search page.', states: ['data-variant'] },

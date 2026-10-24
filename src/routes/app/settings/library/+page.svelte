@@ -38,6 +38,7 @@
   import { addonUrls, CINEMETA_BASE, disabledSources, normalizeBase, replaceAddonBase } from '$lib/stremio/sources'
   import { isMobile, isTv } from '$lib/platform'
   import { gameMode } from '$lib/player/session'
+  import { interfaceMode, type InterfaceMode } from '$lib/settings/interface-mode'
   import { setAiringNotificationsEnabled } from '$lib/notifications/airing'
   import { installedJvmCatalogSources, type JvmCatalogSource } from '$lib/extensions/manager'
   import { m } from '$lib/paraglide/messages.js'
@@ -86,6 +87,10 @@
       label: isMergedScreen(id) ? catalogLabel(id, $customScreens) : platforms.find((platform) => platform.id === id)?.label ?? id,
     })),
   ])
+  const interfaceOptions = [
+    { value: 'catalogs', label: 'Catalogs' },
+    { value: 'search', label: 'Search box' },
+  ]
   const continueWatchingOptions = [
     { value: 'provider', label: 'Current platform only' },
     { value: 'all', label: 'All platforms' },
@@ -240,6 +245,15 @@
 
 <SettingsSection section="library">
   <SettingsSubcategory id="home">
+    <SettingsChoiceRow
+      settingKey="interface-mode"
+      title="Interface"
+      description="Browse catalogs, or use one search box over your sources"
+      learnMore="Search box lists releases from your tracker feeds and torrent extensions and plays the one you pick. Sources that need a title first, such as Stremio add-ons, are skipped there. Nothing is synced to trackers from that screen."
+      value={$interfaceMode}
+      options={interfaceOptions}
+      onChange={(value) => ($interfaceMode = value as InterfaceMode)}
+    />
     {#each platforms as platform (platform.id)}
       <CatalogPlatformRow
         platform={platform.id}

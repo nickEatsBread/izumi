@@ -149,7 +149,7 @@ const IN_APP = [
 const DESKTOP_ONLY = [
   'windowsVsr', 'systemMediaControls', 'discordRichPresence', 'hideSidebarWhilePlaying', 'playerProgressAnimations',
   'subtitleLineNavigation', 'gifScale', 'gifMaxSeconds', 'playerCacheMb', 'enableExternalPlayer',
-  'externalPlayerPath', 'audioOutputDevice', 'playerTitleTop',
+  'externalPlayerPath', 'audioOutputDevice', 'playerTitleTop', 'trailerOpenMode',
 ]
 const LITE_NOTICE = "This build plays videos in your device's video player, so the in-app player options are not shown."
 
@@ -158,7 +158,7 @@ describe('Playback settings per build (spec §5.1)', () => {
     expect(reach('desktop').stores).toEqual([
       'autoplayNext', 'upNextOverlay', 'bingePreload', 'seriesRatingPrompt', 'autoSkip', 'skipPreviews',
       'skipFiller', 'seekDuration', 'scrubThumbnails', 'keepAwakeWhilePlaying', 'systemMediaControls',
-      'discordRichPresence', 'hideSidebarWhilePlaying', 'p2pStatusVisibility', 'gifIncludeSubtitles', 'gifScale',
+      'discordRichPresence', 'hideSidebarWhilePlaying', 'trailerOpenMode', 'p2pStatusVisibility', 'gifIncludeSubtitles', 'gifScale',
       'gifMaxSeconds', 'preferredQuality', 'continueSourcePreference', 'videoQualityPreset', 'qualityNotice',
       'rawMpvOptions', 'qualityFailedKeys', 'windowsVsr', 'playerCacheMb', 'audioProcessing', 'audioOutputMode',
       'audioPassthroughAc3', 'audioPassthroughEac3', 'audioPassthroughTruehd', 'audioPassthroughDts',

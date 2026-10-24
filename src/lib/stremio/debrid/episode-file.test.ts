@@ -213,3 +213,18 @@ describe('trailer packs', () => {
     expect(pickVideoFile([...trailers, feature, { name: 'Example_sample.mkv', bytes: 50_000_000 }])).toBe(feature)
   })
 })
+
+describe('strict episode picks (search box packs)', () => {
+  const pack = [
+    { name: 'Quiet Harbor - 01.mkv', bytes: 900 },
+    { name: 'Quiet Harbor - 02.mkv', bytes: 1000 },
+  ]
+  it('plays the asked file, and nothing rather than the largest one past the last episode', () => {
+    expect(pickVideoFile(pack, { episode: 1, strict: true })?.name).toBe('Quiet Harbor - 01.mkv')
+    expect(pickVideoFile(pack, { episode: 3, strict: true })).toBeUndefined()
+    expect(pickVideoFile(pack, { episode: 3 })?.name).toBe('Quiet Harbor - 02.mkv')
+  })
+  it('still plays a lone video, as the native matcher does', () => {
+    expect(pickVideoFile([{ name: 'Quiet Harbor Special.mkv', bytes: 5 }, { name: 'notes.txt', bytes: 9 }], { episode: 3, strict: true })?.name).toBe('Quiet Harbor Special.mkv')
+  })
+})

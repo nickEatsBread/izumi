@@ -257,6 +257,8 @@ export function updateProgress(
 //      MAL is_rewatching + num_times_rewatched).
 // Returns the pre-bump known count (the Android undo toast needs it).
 export function markWatched(media: Media, episode: number, options: { importedAt?: number } = {}): number {
+  // A search box release has no tracker title; never sync it or count it as progress.
+  if (media.release) return 0
   // Movies play without an episode number (playEpisode passes undefined); resolve it to the
   // movie's single episode so the watch threshold records progress 1 and completes the title
   // instead of writing NaN/undefined into tracking.

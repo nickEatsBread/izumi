@@ -38,3 +38,11 @@ export function pinNavItems(config: readonly NavItemConfig[], options: { themed:
     return { ...item, placement }
   })
 }
+
+/** Search box mode keeps only the destinations that work without a catalog title: Home (the search
+ *  screen itself), Downloads and Settings. */
+export const SEARCH_MODE_NAV_IDS: readonly string[] = ['home', 'downloads', 'settings']
+
+export function searchModeNav<T extends { id: string }>(items: readonly T[]): T[] {
+  return items.filter((item) => SEARCH_MODE_NAV_IDS.includes(item.id))
+}

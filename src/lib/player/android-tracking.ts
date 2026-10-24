@@ -36,6 +36,8 @@ export function initReturnTracking() {
     const p = pending
     if (!p) return
     pending = null
+    // A search box release is never tracked, so there is nothing to confirm or undo.
+    if (p.media.release) return
     // markWatched bumps local history + pushes to the trackers (with the only-increase /
     // complete-on-finish guards) and returns the pre-bump count for the undo revert.
     const prev = markWatched(p.media, p.episode)

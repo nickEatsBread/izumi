@@ -1896,6 +1896,10 @@
       flashToast('No episode is available to bookmark')
       return
     }
+    if (current.media.release) {
+      flashToast('Scene bookmarks need a catalog title')
+      return
+    }
     const quote = (await mpvGet('sub-text').catch(() => '')) ?? ''
     const result = addSceneBookmark({ media: current.media, episode: current.episode, position: pos, duration: dur, quote })
     haptic(15)

@@ -11,13 +11,16 @@ export interface MediaRef {
 
 /** FNV-1a folded into the negative 31-bit range. AniList ids are positive, so old persisted maps
  * cannot collide with a provider-native item. The full namespaced identity remains authoritative. */
-export function compatibilityMediaId(ref: MediaRef): number {
-  const value = `${ref.provider}:${ref.type}:${ref.id}`
+export function negativeHashId(value: string): number {
   let hash = 0x811c9dc5
   for (let index = 0; index < value.length; index++) {
     hash = Math.imul(hash ^ value.charCodeAt(index), 0x01000193)
   }
   return -((hash >>> 0) % 0x7ffffffe + 1)
+}
+
+export function compatibilityMediaId(ref: MediaRef): number {
+  return negativeHashId(`${ref.provider}:${ref.type}:${ref.id}`)
 }
 
 export function mediaRef(media: Pick<Media, 'id' | 'type' | 'format' | 'catalog'>): MediaRef {

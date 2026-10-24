@@ -6,7 +6,8 @@ import { derived } from 'svelte/store'
 import { activeThemeLayout } from '$lib/themes/layout-state'
 import { isMobile } from '$lib/platform'
 import { themeHeaderIds, themeNavConfig } from './theme-nav'
-import { pinNavItems } from './nav-rules'
+import { pinNavItems, searchModeNav } from './nav-rules'
+import { interfaceMode } from './interface-mode'
 import Home from '@lucide/svelte/icons/house'
 import Calendar from '@lucide/svelte/icons/calendar'
 import Download from '@lucide/svelte/icons/download'
@@ -66,7 +67,9 @@ export const navConfig = persisted<NavItemConfig[]>('nav-config-v1', DEFAULT_NAV
  *  default placement) so the UI is robust to items added/removed across versions and to a
  *  partially-written stored value. Either way Settings never ends up hidden: `pinNavItems`
  *  (nav-rules.ts) moves it to the bar or the top, depending on the layout and the phone layout. */
-export const effectiveNav = derived([navConfig, activeThemeLayout, isMobile], ([$c, layout, $isMobile]) => {
+export const effectiveNav = derived([navConfig, activeThemeLayout, isMobile, interfaceMode], ([$c, layout, $isMobile, $mode]) => {
+  // Search box mode replaces both the user's and a theme's placement; neither is written to.
+  if ($mode === 'search') return searchModeNav(DEFAULT_NAV).map((item) => ({ ...item, placement: 'bottom' as const }))
   const themed = layout?.nav ? themeNavConfig(layout.nav, Object.keys(NAV_META)) : null
   if (themed) return pinNavItems(themed as NavItemConfig[], { themed: true, phone: $isMobile })
   const known = Object.keys(NAV_META) as NavItemId[]

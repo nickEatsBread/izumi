@@ -14,6 +14,7 @@
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
   import { isAndroid, isMobile } from '$lib/platform'
   import { offlineMode } from '$lib/stores/offline'
+  import { interfaceMode } from '$lib/settings/interface-mode'
   import DownloadedLibrary from '$lib/components/offline/DownloadedLibrary.svelte'
   import * as h from '$lib/haptics'
   import { homeHeaderNav, NAV_META } from '$lib/settings/nav'
@@ -46,6 +47,7 @@
   import CatalogSwitcher from '$lib/components/catalog/CatalogSwitcher.svelte'
   import CatalogBrandLogo from '$lib/components/catalog/CatalogBrandLogo.svelte'
   import HomeEditor from '$lib/components/catalog/HomeEditor.svelte'
+  import ReleaseSearchHome from '$lib/components/release-search/ReleaseSearchHome.svelte'
   import HomeRowFrame from '$lib/components/catalog/HomeRowFrame.svelte'
   import HomeBlockView from '$lib/components/home/HomeBlockView.svelte'
   import HomeColumns from '$lib/components/home/HomeColumns.svelte'
@@ -57,7 +59,9 @@
   const client = getContextClient()
   const legacyCatalog = $derived(isLegacyAniListCatalog($catalogProvider))
   const mergedUsesAniList = $derived(mergedCatalogProviders($catalogProviders).some((provider) => isLegacyAniListCatalog(provider)))
-  const usesAniListHome = $derived(isMergedScreen($catalogScreen) ? mergedUsesAniList : legacyCatalog)
+  const searchMode = $derived($interfaceMode === 'search')
+  // A paused hero: no catalog query while the search screen is showing.
+  const usesAniListHome = $derived(!searchMode && (isMergedScreen($catalogScreen) ? mergedUsesAniList : legacyCatalog))
   const sections = homeSections(new Date())
 
   // Top-bar icons come from the nav config (items the user placed 'top'), or the theme's header list,
@@ -167,7 +171,7 @@
 
 </script>
 
-{#if $isMobile}
+{#if $isMobile && !searchMode}
   <!-- Top app bar: brand mark + wordmark on the left, configured top icons on the right. In-flow
        (NOT pinned) so it only shows at the very top and scrolls away with the page. Kept ABOVE the
        offline/online split so the offline home shares the same chrome. -->
@@ -204,7 +208,7 @@
   </div>
 {/if}
 
-{#if !$offlineMode}<HomeEditor target={$catalogScreen} />{/if}
+{#if !$offlineMode && !searchMode}<HomeEditor target={$catalogScreen} />{/if}
 
 <style>
   /* The brand's rem (app.css), so a theme's phone root size never changes the wordmark. */
@@ -214,7 +218,9 @@
   }
 </style>
 
-{#if $offlineMode}
+{#if searchMode}
+  <ReleaseSearchHome />
+{:else if $offlineMode}
   <!-- Offline: local-first Continue Watching + the downloaded-series library. No network fired. -->
   <div data-slot="home" data-variant="offline" class="space-y-4 pb-16 pt-2">
     {#if orderedRows.includes('continue')}
