@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
-  import { goto } from '$app/navigation'
   import Search from '@lucide/svelte/icons/search'
   import X from '@lucide/svelte/icons/x'
   import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
   import type { Media } from '$lib/anilist/types'
-  import { cover, mediaHref, title } from '$lib/anilist/media'
+  import { openDetail } from '$lib/anilist/detail-hint'
+  import { cover, title } from '$lib/anilist/media'
   import { mediaKey } from '$lib/catalog/identity'
   import { searchMergedCatalogs } from '$lib/catalog/merged-search'
   import { releaseSearchSourceCounts } from '$lib/extensions/manager'
@@ -96,7 +96,7 @@
     const movie = media.format === 'MOVIE' || media.type === 'MOVIE' || media.catalog?.type === 'movie'
     const episode = movie ? undefined : episodeFor(media)
     // A series without an exact episode from the search opens its page, where every episode is listed.
-    if (!movie && episode == null) return void goto(mediaHref(media))
+    if (!movie && episode == null) return void openDetail(media)
     void playEpisode(media, episode, report, { forceManual: true })
   }
 
