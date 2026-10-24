@@ -9,7 +9,7 @@ describe('multi-platform catalog entry points', () => {
   const layout = read('../../../routes/app/+layout.svelte')
   const search = read('../../../routes/app/search/+page.svelte')
   const sidebar = read('../shell/Sidebar.svelte')
-  const catalogSettings = read('../../../routes/app/settings/catalog/+page.svelte')
+  const catalogSettings = read('../../../routes/app/settings/library/+page.svelte')
   const catalogStore = read('../../settings/catalog.ts')
 
   it('removes the horizontal platform tabs from Home and Search', () => {

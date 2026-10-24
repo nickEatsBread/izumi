@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const source = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.url)), 'utf8')
-const catalogPage = readFileSync(fileURLToPath(new URL('../../catalog/+page.svelte', import.meta.url)), 'utf8')
+const catalogPage = readFileSync(fileURLToPath(new URL('../+page.svelte', import.meta.url)), 'utf8')
 const interfacePage = readFileSync(fileURLToPath(new URL('../../interface/+page.svelte', import.meta.url)), 'utf8')
 
 describe('Home row customization screen', () => {

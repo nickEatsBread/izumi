@@ -43,7 +43,7 @@ describe('settings search', () => {
   })
 
   it('finds the rating settings by the words people use for scoring', () => {
-    expect(searchSettings('rating style')[0]).toMatchObject({ title: 'Rating style', href: '/app/settings/appearance', key: 'rating-style', section: 'library', subcategory: 'ratings' })
+    expect(searchSettings('rating style')[0]).toMatchObject({ title: 'Rating style', href: '/app/settings/library', key: 'rating-style', section: 'library', subcategory: 'ratings' })
     expect(searchSettings('stars')[0]?.title).toBe('Rating style')
     expect(searchSettings('score').map((r) => r.title)).toContain('Show rating on the series page')
     expect(settingKey('Rating style')).toBe('rating-style')

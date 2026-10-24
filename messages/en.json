@@ -39,7 +39,7 @@
   "settings_show": "Show",
   "settings_hide": "Hide",
   "settings_notifications": "Episode airing notifications",
-  "settings_notifications_hint": "Notify you when an episode in your watch history airs. Off by default; enabling asks for system permission.",
+  "settings_notifications_hint": "Alerts when a show from your history airs; asks for permission",
   "settings_notification_permission_error": "Notification permission was not granted.",
   "settings_notify_me": "Notify me",
   "settings_when_it_airs": "When it airs",

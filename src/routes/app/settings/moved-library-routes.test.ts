@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { legacySettingsRedirect } from '$lib/settings/legacy-routes'
+import { load as catalog } from './catalog/+page'
 import { load as catalogHome } from './catalog/home/+page'
 import { load as catalogCollections } from './catalog/collections/+page'
+import { load as history } from './history/+page'
+import { load as scenes } from './scenes/+page'
 
 const BASE = 'https://izumi.invalid'
 type Load = (event: { url: URL }) => unknown
@@ -18,8 +21,11 @@ function redirectOf(load: Load, href: string): { status: number; location: strin
 
 describe('Library routes that moved', () => {
   it.each([
+    ['/app/settings/catalog', catalog, '/app/settings/library', '#home'],
     ['/app/settings/catalog/home', catalogHome, '/app/settings/library/home', ''],
     ['/app/settings/catalog/collections', catalogCollections, '/app/settings/library/collections', ''],
+    ['/app/settings/history', history, '/app/settings/library', '#history'],
+    ['/app/settings/scenes', scenes, '/app/settings/library', '#scenes'],
   ] as Array<[string, Load, string, string]>)('%s redirects through legacySettingsRedirect', (href, load, path, hash) => {
     const target = redirectOf(load, href)
     expect(target?.status).toBe(307)
@@ -27,5 +33,13 @@ describe('Library routes that moved', () => {
     const landed = new URL(target!.location, BASE)
     expect(landed.pathname).toBe(path)
     expect(landed.hash).toBe(hash)
+  })
+
+  it('keeps the searched row when an old link carries ?setting=', () => {
+    const target = redirectOf(history, '/app/settings/history?setting=incognito-mode')
+    expect(target?.status).toBe(307)
+    const landed = new URL(target!.location, BASE)
+    expect(landed.pathname).toBe('/app/settings/library')
+    expect(landed.searchParams.get('setting')).toBe('incognito-mode')
   })
 })

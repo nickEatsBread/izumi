@@ -13,7 +13,6 @@ const css = read('../../../app.css')
  *  "← Home and library" link too: on the phone the back-header replaces both. */
 const PAGE_TITLES: Array<[string, string]> = [
   ['store/+page.svelte', '<h2 data-settings-page-title class="text-xl font-black">Store</h2>'],
-  ['catalog/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Catalog</h2>'],
   ['library/home/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Customize Home</h2>'],
   ['library/collections/+page.svelte', '<a data-settings-page-title href="/app/settings/library" data-focusable class="text-sm text-muted-foreground">← Home and library</a>'],
   ['library/collections/+page.svelte', '<h1 data-settings-page-title class="mt-3 text-2xl font-black">Collections & covers</h1>'],
@@ -24,8 +23,6 @@ const PAGE_TITLES: Array<[string, string]> = [
   ['interface/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">{m.settings_interface()}</h2>'],
   ['themes/+page.svelte', '<h2 data-settings-page-title>Themes</h2>'],
   ['navigation/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Navigation</h2>'],
-  ['history/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">History</h2>'],
-  ['scenes/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Scene bookmarks</h2>'],
   ['sync/+page.svelte', '<h2 data-settings-page-title class="mb-2 text-3xl font-bold tracking-tight">Device sync</h2>'],
   ['backup/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Backup &amp; restore</h2>'],
   ['accounts/+page.svelte', '<h2 data-settings-page-title class="text-3xl font-bold tracking-tight">Accounts</h2>'],

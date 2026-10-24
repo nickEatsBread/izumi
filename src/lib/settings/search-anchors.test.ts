@@ -38,7 +38,7 @@ function staticKeys(source: string): string[] {
 /** Keys built at runtime, with the template (pinned in its file) and the ids it is built from. */
 const DYNAMIC_KEYS: Array<{ file: string; template: string; ids: string[]; key: (id: string) => string }> = [
   {
-    file: routeFile('/app/settings/catalog'),
+    file: routeFile('/app/settings/library'),
     template: 'settingKey={`catalog-platform-${platform.id}`}',
     ids: ['auto', 'anilist', 'kitsu', 'tmdb', 'stremio', 'jvm'],
     key: (id) => `catalog-platform-${id}`,
