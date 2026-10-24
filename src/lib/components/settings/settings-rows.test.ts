@@ -107,3 +107,37 @@ describe('SettingsRow additions', () => {
     expect(source).toContain('<p class="mt-0.5 text-xs leading-4 text-muted-foreground">{description}</p>')
   })
 })
+
+const FIELD_TRIGGER = 'flex min-h-11 w-full items-center justify-between gap-3 rounded-md bg-input px-3 py-2.5 text-left text-base sm:min-h-0 sm:py-2 sm:text-sm'
+const INLINE_TRIGGER = 'flex min-h-11 max-w-[16rem] items-center justify-end gap-1.5 rounded-md px-2 py-2 text-right text-sm text-muted-foreground transition-colors hover:text-foreground sm:min-h-0 sm:py-1.5'
+
+describe('SelectMenu variants', () => {
+  const source = read('./SelectMenu.svelte')
+
+  it('keeps the filled field trigger by default and adds a borderless inline one', () => {
+    expect(source).toContain("    variant = 'field',\n")
+    expect(source).toContain("variant?: 'field' | 'inline'")
+    expect(source).toContain(`? '${INLINE_TRIGGER}'`)
+    expect(source).toContain(`: '${FIELD_TRIGGER}'}`)
+  })
+
+  it('exposes open for bind:open', () => {
+    expect(source).toContain('    open = $bindable(false),\n')
+    expect(source).toContain('open?: boolean')
+    expect(source).not.toContain('let open = $state(false)')
+  })
+
+  it('anchors the inline menu to the right edge of its trigger', () => {
+    expect(source).toContain("class=\"absolute {variant === 'inline' ? 'right-0' : 'left-0'} z-[80] min-w-full")
+  })
+})
+
+describe('SettingsChoiceRow', () => {
+  const source = read('./SettingsChoiceRow.svelte')
+
+  it('is a SettingsRow whose control is an inline SelectMenu labelled by the row title', () => {
+    expect(source).toContain('<SelectMenu variant="inline" {value} {options} {onChange} {searchable} ariaLabel={ariaLabel ?? title} />')
+    expect(source).toContain('<SettingsRow {title} {description} {learnMore} {settingKey} {control} />')
+    expect(source).toContain("options: ComponentProps<typeof SelectMenu>['options']")
+  })
+})

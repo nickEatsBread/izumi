@@ -22,6 +22,7 @@
 
   let {
     value = $bindable(),
+    open = $bindable(false),
     options,
     onChange,
     className = '',
@@ -31,8 +32,11 @@
     separator = '·',
     columns = false,
     filter,
+    variant = 'field',
   }: {
     value: string
+    /** Bindable, so a settings row can open its own picker. */
+    open?: boolean
     options: SelectOption[]
     onChange?: (value: string) => void
     className?: string
@@ -50,11 +54,13 @@
     /** A search page filter: the trigger is the `search.filter` hook with this name in `data-filter`,
      *  and `data-active` while an option other than the first (the default) is chosen. */
     filter?: string
+    /** `field` (default): the filled input-style trigger. `inline`: a borderless, right-aligned muted
+     *  value and caret for a settings row (SettingsChoiceRow). Same menu, keys and phone sheet. */
+    variant?: 'field' | 'inline'
   } = $props()
 
   let root: HTMLDivElement
   let trigger: HTMLButtonElement
-  let open = $state(false)
   let query = $state('')
   let searchInput = $state<HTMLInputElement>()
   const filteredOptions = $derived(options.filter(option => !query || `${option.label} ${option.value}`.toLowerCase().includes(query.toLowerCase())))
@@ -224,7 +230,9 @@
     aria-label={ariaLabel}
     aria-haspopup="listbox"
     aria-expanded={open}
-    class="flex min-h-11 w-full items-center justify-between gap-3 rounded-md bg-input px-3 py-2.5 text-left text-base sm:min-h-0 sm:py-2 sm:text-sm"
+    class={variant === 'inline'
+      ? 'flex min-h-11 max-w-[16rem] items-center justify-end gap-1.5 rounded-md px-2 py-2 text-right text-sm text-muted-foreground transition-colors hover:text-foreground sm:min-h-0 sm:py-1.5'
+      : 'flex min-h-11 w-full items-center justify-between gap-3 rounded-md bg-input px-3 py-2.5 text-left text-base sm:min-h-0 sm:py-2 sm:text-sm'}
     onclick={() => void setOpen(!open)}
     onkeydown={onTriggerKeydown}
   >
@@ -280,7 +288,7 @@
         data-nav-escape
         data-nav-scroll-container
         use:navLayer={{ kind: 'select-menu', onClose: closeMenu, initialFocus: 'none', returnFocus: 'none' }}
-        class="absolute left-0 z-[80] min-w-full overflow-y-auto overscroll-contain rounded-md border border-border bg-background p-1 text-foreground shadow-xl
+        class="absolute {variant === 'inline' ? 'right-0' : 'left-0'} z-[80] min-w-full overflow-y-auto overscroll-contain rounded-md border border-border bg-background p-1 text-foreground shadow-xl
           {placement === 'down' ? 'top-[calc(100%+0.25rem)]' : 'bottom-[calc(100%+0.25rem)]'}"
         style="max-height:{maxHeight}px"
         onkeydown={onMenuKeydown}
