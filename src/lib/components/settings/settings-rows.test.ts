@@ -42,13 +42,19 @@ describe('LearnMore', () => {
   })
 
   it('names each button after its row and points it at the text it opens', () => {
-    expect(attr(button, 'aria-label')?.raw).toBe('aria-label="Learn more about {label}"')
+    expect(attr(button, 'aria-label')?.raw).toBe('aria-label={label ? `Learn more about ${label}` : undefined}')
     expect(attr(button, 'aria-controls')?.raw).toBe('aria-controls={id}')
     expect(source).toContain('const id = $props.id()')
   })
 
-  it('shows the text in a muted paragraph only while open', () => {
-    expect(source).toContain('{#if open}<p {id} class="mt-1 text-xs text-muted-foreground">{text}</p>{/if}')
+  it('keeps the muted paragraph in the page, hidden while closed, so aria-controls always resolves', () => {
+    expect(source).toContain('<p {id} hidden={!open} class="mt-1 text-xs text-muted-foreground">{text}</p>')
+  })
+
+  it('sits above the row button its negative top margin overlaps', () => {
+    // The row button is a positioned .ripple-host; a non-positioned Learn more would lose its top strip to it.
+    expect(staticAttr(button, 'class')?.split(/\s+/)).toContain('relative')
+    expect(read('./SettingsRow.svelte')).toContain('<div class="-mt-1.5 ')
   })
 })
 
