@@ -56,7 +56,7 @@ describe('phone settings titles', () => {
 
 describe('settings search reveal', () => {
   it('reveals the searched row from afterNavigate, never on a history step', () => {
-    expect(layout).toContain("import { afterNavigate } from '$app/navigation'")
+    expect(layout).toContain("import { afterNavigate, beforeNavigate } from '$app/navigation'")
     expect(layout).toContain("import { SETTING_FALLBACK_PARAM, SETTING_PARAM } from '$lib/settings/search'")
     expect(layout).toContain("import { revealBlock, revealSetting } from '$lib/settings/search-target'")
     const start = layout.indexOf('afterNavigate((navigation) => {')

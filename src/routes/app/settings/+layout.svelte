@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
   import { page } from '$app/stores'
-  import { afterNavigate } from '$app/navigation'
+  import { afterNavigate, beforeNavigate } from '$app/navigation'
   import SettingsNav from '$lib/components/settings/SettingsNav.svelte'
   import SettingsSearch from '$lib/components/settings/SettingsSearch.svelte'
   import { isMobile, isTv } from '$lib/platform'
@@ -15,6 +15,9 @@
   import { revealBlock, revealSetting } from '$lib/settings/search-target'
   import { settingsPageTitle, settingsParent } from '$lib/settings/hierarchy'
   import { settingsBack } from '$lib/settings/back'
+  import { sectionForPath } from '$lib/settings/sections'
+  import { sectionFade } from '$lib/settings/section-scroll'
+  import { forgetScroll } from '$lib/navigation/scroll-restoration'
 
   let { children } = $props()
 
@@ -73,6 +76,18 @@
   })
   onDestroy(() => revealAbort?.abort())
 
+  // Desktop content is keyed by section: a rail switch fades the new section in (sectionFade), a
+  // sub-page move inside one section does not.
+  const railSection = $derived(sectionForPath($page.url.pathname)?.id ?? $page.url.pathname)
+
+  // A rail switch to another section starts at that section's top; the app layout would otherwise
+  // restore where it was last left. History steps, anchors and search hits keep their own scroll.
+  beforeNavigate(({ to, type }) => {
+    if ($isMobile || type !== 'link' || !to?.url || to.url.hash || to.url.searchParams.has(SETTING_PARAM)) return
+    const next = sectionForPath(to.url.pathname)
+    if (next && next.id !== sectionForPath($page.url.pathname)?.id) forgetScroll(to.url)
+  })
+
   // The sticky back-header carries the status-bar inset itself (see the header markup), so the
   // page must not be inset a second time by `main`. Shared with the series page via a refcount:
   // their lifetimes can overlap mid-navigation, so a bare add/remove here could strip the inset
@@ -123,7 +138,7 @@
     </div>
   {/if}
 {:else}
-  <!-- Desktop: nav rail + content side-by-side (unchanged). -->
+  <!-- Desktop: nav rail + content side-by-side. -->
   <div class="flex min-h-screen flex-row">
     <!-- The rail is its own d-pad region: Down at the end of a page never drops into it, and Left
          lands on the current category. Android TV keeps the shared region until the TV pass. -->
@@ -136,6 +151,13 @@
         {#if osLine}<div>{osLine}</div>{/if}
       </div>
     </aside>
-    <div class="min-w-0 flex-1" data-nav-surface="settings">{@render children()}</div>
+    <div class="min-w-0 flex-1" data-nav-surface="settings">
+      <!-- A section switch fades the new section in and lifts it 6 px (sectionFade: instant under
+           reduced motion and in Game mode). The rail link keeps keyboard focus through it
+           (data-sveltekit-keepfocus). -->
+      {#key railSection}
+        <div in:fly={sectionFade()}>{@render children()}</div>
+      {/key}
+    </div>
   </div>
 {/if}

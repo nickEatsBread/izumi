@@ -11,6 +11,11 @@ export function rememberScroll(url: URL) {
   try { sessionStorage.setItem(key(url), String(window.scrollY)) } catch { /* unavailable */ }
 }
 
+/** Drop a remembered position, so the next restore of `url` starts at the top. */
+export function forgetScroll(url: URL) {
+  try { sessionStorage.removeItem(key(url)) } catch { /* unavailable */ }
+}
+
 export function restoreScroll(url: URL) {
   cleanupPendingRestore?.()
   cleanupPendingRestore = null

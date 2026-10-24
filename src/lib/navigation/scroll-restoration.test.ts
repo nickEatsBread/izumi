@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { restoreScroll } from './scroll-restoration'
+import { forgetScroll, restoreScroll } from './scroll-restoration'
 
 class TestWindow extends EventTarget {
   scrollTo = vi.fn()
@@ -69,5 +69,13 @@ describe('scroll restoration', () => {
 
     expect(testWindow.scrollTo).toHaveBeenCalledOnce()
     expect(testWindow.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'instant' })
+  })
+
+  it('forgets a remembered position, so the next visit to that URL starts at the top', () => {
+    const removeItem = vi.fn()
+    vi.stubGlobal('sessionStorage', { getItem: () => stored, removeItem })
+    forgetScroll(new URL('https://izumi.test/app/settings/subtitles?x=1'))
+
+    expect(removeItem).toHaveBeenCalledWith('izumi-scroll:/app/settings/subtitles?x=1')
   })
 })
