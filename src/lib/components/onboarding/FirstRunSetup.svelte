@@ -16,6 +16,8 @@
   import ArrowRight from '@lucide/svelte/icons/arrow-right'
   import Check from '@lucide/svelte/icons/check'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
+  import LogIn from '@lucide/svelte/icons/log-in'
+  import MonitorSmartphone from '@lucide/svelte/icons/monitor-smartphone'
   import SkipForward from '@lucide/svelte/icons/skip-forward'
   import { m } from '$lib/paraglide/messages.js'
   import { idleConnectStates, type ConnectStates } from '$lib/onboarding/connect-state'
@@ -283,7 +285,7 @@
       <main class="setup-main min-w-0">
         <!-- The column's width follows the content: the welcome is a short read, the sources screen
              is landscape. -->
-        <div class="setup-column" class:narrow={mode === 'wizard' && step === 'start'} class:wide={mode === 'wizard' && (step === 'connect' || step === 'sources')}>
+        <div class="setup-column" class:wide={mode === 'wizard' && (step === 'start' || step === 'connect' || step === 'sources')}>
         {#if mode === 'transfer'}
           <!-- Its own branch rather than a step: this screen is not "2 of 4" of anything, it is
                the alternative to the whole wizard, and it owns its own footer. -->
@@ -304,7 +306,7 @@
           {#key step}
           <section class="setup-content">
             {#if step === 'start'}
-              <StartStep onimport={() => choosePath('import')} ontransfer={enterTransfer} />
+              <StartStep />
             {:else if step === 'watch'}
               <WatchStep bind:intent />
             {:else if step === 'connect'}
@@ -320,20 +322,31 @@
         <!-- The forward action always sits bottom right, with the way to skip beside it; Back, when
              there is one, keeps the left. -->
         <footer class="setup-actions flex items-center justify-between gap-3">
-          {#if stepIndex > 0}<button type="button" data-focusable onclick={goBack} disabled={busy} class="setup-button hover:bg-secondary"><ChevronLeft size={17} />{m.onboarding_back()}</button>{/if}
-          <div class="ml-auto flex items-center gap-3">
-            {#if step === 'start'}
-              <button type="button" data-focusable onclick={skip} class="setup-button text-muted-foreground hover:bg-secondary"><SkipForward size={17} />{m.onboarding_skip()}</button>
-              <button type="button" data-focusable onclick={() => choosePath('new')} class="setup-button bg-foreground text-background">{m.onboarding_start_cta()}<ArrowRight size={17} /></button>
-            {:else if step === 'ready'}
-              <button type="button" data-focusable onclick={complete} class="setup-button bg-foreground text-background"><Check size={17} />{m.onboarding_ready_start()}</button>
-            {:else}
-              {#if step === 'connect' || step === 'sources'}
-                <button type="button" data-focusable onclick={skipStep} disabled={busy} class="setup-button text-muted-foreground hover:bg-secondary">{m.onboarding_skip_step()}</button>
+          {#if step === 'start'}
+            <!-- Every way to start. The other two sit quietly between Skip setup and Get started, so
+                 Get started stays the one filled action. Too narrow for one row, they take a row of
+                 their own above, and Skip setup and Get started stay together on the bottom row. -->
+            <div class="start-actions">
+              <button type="button" data-focusable onclick={skip} class="start-skip setup-button text-muted-foreground hover:bg-secondary"><SkipForward size={17} />{m.onboarding_skip()}</button>
+              <div class="start-alternatives">
+                <button type="button" data-focusable onclick={() => choosePath('import')} class="setup-button text-muted-foreground hover:bg-secondary"><LogIn size={17} />{m.onboarding_start_import_button()}</button>
+                <button type="button" data-focusable onclick={enterTransfer} class="setup-button text-muted-foreground hover:bg-secondary"><MonitorSmartphone size={17} />{m.onboarding_start_transfer_button()}</button>
+              </div>
+              <button type="button" data-focusable onclick={() => choosePath('new')} class="start-go setup-button bg-foreground text-background">{m.onboarding_start_cta()}<ArrowRight size={17} /></button>
+            </div>
+          {:else}
+            {#if stepIndex > 0}<button type="button" data-focusable onclick={goBack} disabled={busy} class="setup-button hover:bg-secondary"><ChevronLeft size={17} />{m.onboarding_back()}</button>{/if}
+            <div class="ml-auto flex items-center gap-3">
+              {#if step === 'ready'}
+                <button type="button" data-focusable onclick={complete} class="setup-button bg-foreground text-background"><Check size={17} />{m.onboarding_ready_start()}</button>
+              {:else}
+                {#if step === 'connect' || step === 'sources'}
+                  <button type="button" data-focusable onclick={skipStep} disabled={busy} class="setup-button text-muted-foreground hover:bg-secondary">{m.onboarding_skip_step()}</button>
+                {/if}
+                <button type="button" data-focusable onclick={() => void goNext()} disabled={busy || blocked} class="setup-button bg-foreground text-background">{m.onboarding_next()}<ArrowRight size={17} /></button>
               {/if}
-              <button type="button" data-focusable onclick={() => void goNext()} disabled={busy || blocked} class="setup-button bg-foreground text-background">{m.onboarding_next()}<ArrowRight size={17} /></button>
-            {/if}
-          </div>
+            </div>
+          {/if}
         </footer>
         {/if}
         </div>
@@ -354,12 +367,20 @@
   .art-wordmark { position: absolute; bottom: max(2.5rem, env(safe-area-inset-bottom)); right: max(2.5rem, env(safe-area-inset-right)); display: flex; color: white; }
   .setup-main { grid-column: 1; grid-row: 1; min-height: 0; display: flex; flex-direction: column; justify-content: safe center; padding: max(2.5rem, env(safe-area-inset-top)) clamp(1.5rem, 4.5vw, 5rem) max(2.5rem, env(safe-area-inset-bottom)); }
   .setup-column { display: flex; flex-direction: column; min-height: 0; width: 100%; max-width: 44rem; margin-inline: auto; }
-  .setup-column.narrow { max-width: 38rem; }
   .setup-column.wide { max-width: 60rem; }
   .setup-away { display: none !important; }
   .setup-step { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px; scroll-behavior: auto; }
   .setup-content { animation: step-enter 320ms cubic-bezier(.2, .7, .2, 1) both; }
-  .setup-actions { flex-shrink: 0; margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid hsl(var(--border) / .65); }
+  .setup-actions { flex-shrink: 0; margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid hsl(var(--border) / .65); container-type: inline-size; }
+  .start-actions { display: grid; width: 100%; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: 'skip alternatives go'; align-items: center; gap: .5rem .75rem; }
+  .start-skip { grid-area: skip; justify-self: start; }
+  .start-go { grid-area: go; }
+  .start-alternatives { grid-area: alternatives; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .25rem .75rem; }
+  /* Measured: all four need about 44rem in a row. */
+  @container (max-width: 45rem) {
+    .start-actions { grid-template-areas: 'alternatives alternatives alternatives' 'skip . go'; }
+    .start-alternatives { justify-content: flex-start; }
+  }
   @keyframes step-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
   /* A docked Deck or a small laptop: tighter margins give the step its height back. */
   @media (max-height: 760px) {
@@ -373,7 +394,7 @@
     .setup-art-panel::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, hsl(var(--background) / .12), hsl(var(--background) / .94) 24%, hsl(var(--background)) 65%); }
     .art-wordmark { z-index: 1; top: max(1.5rem, env(safe-area-inset-top)); bottom: auto; left: max(1.5rem, env(safe-area-inset-left)); right: auto; }
     .setup-main { z-index: 1; width: 100%; justify-content: flex-start; padding: max(6rem, calc(env(safe-area-inset-top) + 4.5rem)) max(1.5rem, env(safe-area-inset-right)) 0 max(1.5rem, env(safe-area-inset-left)); }
-    .setup-column, .setup-column.narrow, .setup-column.wide { flex: 1; max-width: 34rem; }
+    .setup-column, .setup-column.wide { flex: 1; max-width: 34rem; }
     .setup-step { flex: 1; padding: 4px 4px 1rem; }
     .setup-content :global(.text-sm) { font-size: 14px; }
     .setup-content :global(.text-xs) { font-size: 12px; }
@@ -381,7 +402,7 @@
     .setup-actions .setup-button { min-height: 48px; font-size: 14px; }
     /* Keep the forward action off the screen edge on a phone. The last child is the right-hand
        cluster holding it, on every screen. */
-    .setup-actions > :last-child { max-width: 72%; }
+    .setup-actions > :last-child:not(.start-actions) { max-width: 72%; }
     .keyboard-open .setup-main { padding-top: max(1rem, env(safe-area-inset-top)); }
     .keyboard-open .art-wordmark { display: none; }
     .keyboard-open .setup-art-panel::after { background: hsl(var(--background) / .97); }

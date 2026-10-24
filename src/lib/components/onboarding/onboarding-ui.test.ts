@@ -316,14 +316,17 @@ describe('onboarding presentation contracts', () => {
     expect(shell).toContain('m.onboarding_back_to_setup()')
   })
 
-  it('opens on one way forward, with the other two starts as links', () => {
+  it('opens on one way forward, with the other starts as quiet footer buttons', () => {
     const start = read('./steps/StartStep.svelte')
-    for (const handler of ['onimport', 'ontransfer']) expect(start).toContain(`onclick={${handler}}`)
-    // Get started sits bottom right in the footer beside Skip setup, like every screen's forward action.
-    // The other two starts are real buttons, outlined so Get started stays the one filled action.
-    expect(start.match(/setup-inline-button border border-border/g)).toHaveLength(2)
+    expect(start).not.toContain('<button')
+    // Skip setup on the left; Stremio or Nuvio and another device sit quietly before Get started,
+    // which stays the one filled action, bottom right like every screen's forward action.
     const footer = shell.slice(shell.lastIndexOf('<footer class="setup-actions'))
-    expect(footer.indexOf('onclick={skip}')).toBeLessThan(footer.indexOf("onclick={() => choosePath('new')}"))
+    const order = ['onclick={skip}', "onclick={() => choosePath('import')}", 'onclick={enterTransfer}', "onclick={() => choosePath('new')}"]
+      .map((handler) => footer.indexOf(handler))
+    expect(order.every((at, index) => at > -1 && (index === 0 || at > order[index - 1]))).toBe(true)
+    expect(footer).toContain('class="setup-button text-muted-foreground hover:bg-secondary"><LogIn size={17} />{m.onboarding_start_import_button()}')
+    expect(footer).toContain('class="setup-button text-muted-foreground hover:bg-secondary"><MonitorSmartphone size={17} />{m.onboarding_start_transfer_button()}')
     expect(start).toContain('data-step-heading tabindex="-1" aria-describedby="setup-progress"')
     // Three lines on what izumi is, so the first screen is not just a heading and a button.
     for (const key of ['library', 'sources', 'tracking']) expect(start).toContain(`m.onboarding_start_feature_${key}()`)

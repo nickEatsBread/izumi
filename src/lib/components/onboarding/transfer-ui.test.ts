@@ -37,9 +37,11 @@ describe('set up from another device', () => {
   })
 
   it('offers the transfer as a way to start, not as a footer button mid-wizard', () => {
-    const start = read('./steps/StartStep.svelte')
-    expect(start).toContain('onclick={ontransfer}')
-    expect(shell).toContain('ontransfer={enterTransfer}')
+    // Only the Welcome footer offers it: mid-wizard it would discard answers already given.
+    expect(shell.match(/onclick=\{enterTransfer\}/g)).toHaveLength(1)
+    const footer = shell.slice(shell.lastIndexOf('<footer class="setup-actions'))
+    const welcome = footer.slice(footer.indexOf("{#if step === 'start'}"), footer.indexOf('{:else}'))
+    expect(welcome).toContain('onclick={enterTransfer}')
     expect(shell).not.toContain('m.onboarding_transfer_cta()')
     expect(watch).not.toContain('onboarding_transfer_cta')
   })
