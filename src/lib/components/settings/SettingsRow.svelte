@@ -16,6 +16,7 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import LearnMore from './LearnMore.svelte'
   import { controllerHides, controllerSurfaces, settingsControllerMode } from '$lib/settings/surface'
+  import { describeRowFocusables } from '$lib/settings/row-description'
 
   let {
     title,
@@ -62,7 +63,8 @@
   const shown = $derived(!controllerHides(settingKey, $controllerSurfaces))
   const large = $derived(size === 'lg')
   // Controller mode (spec §5.1): Learn more is no extra d-pad stop. Its text shows while the row has
-  // focus (app.css [data-learn-more]) and describes the row's focusable for screen readers.
+  // focus (app.css [data-learn-more]) and describes the row's focusables for screen readers
+  // (describeRowFocusables: a control row's focusables live in its control snippet and children).
   const learnId = $props.id()
   const describedBy = $derived(learnMore && $settingsControllerMode ? learnId : undefined)
 </script>
@@ -102,11 +104,10 @@
 
 {#if shown}
 {#if href}
-  <div data-setting-row data-setting-key={settingKey}>
+  <div data-setting-row data-setting-key={settingKey} use:describeRowFocusables={describedBy}>
     <a
       href={href}
       data-focusable
-      aria-describedby={describedBy}
       use:ripple
       onclick={() => h.tap()}
       class="ripple-host block w-full rounded-[inherit] text-left transition-colors active:bg-secondary sm:hover:bg-secondary/70
@@ -117,14 +118,13 @@
     {@render more()}
   </div>
 {:else if onActivate}
-  <div data-setting-row data-setting-key={settingKey}>
+  <div data-setting-row data-setting-key={settingKey} use:describeRowFocusables={describedBy}>
     <button
       type="button"
       data-focusable
       use:ripple
       data-row-activate
       aria-pressed={pressed}
-      aria-describedby={describedBy}
       aria-expanded={children ? expanded : undefined}
       onclick={() => { h.tap(); onActivate() }}
       class="ripple-host block w-full text-left transition-colors active:bg-secondary sm:hover:bg-secondary/70
@@ -139,8 +139,7 @@
     {/if}
   </div>
 {:else}
-  <!-- Its focusables live in the control snippet, so a group carries the controller description. -->
-  <div data-setting-row data-setting-key={settingKey} role={describedBy ? 'group' : undefined} aria-label={describedBy ? title : undefined} aria-describedby={describedBy}
+  <div data-setting-row data-setting-key={settingKey} use:describeRowFocusables={describedBy}
        class="{large ? 'px-3.5 py-3.5' : 'px-3 py-2.5'}">
     {@render header()}
     {#if learnMore}<div data-learn-more={describedBy ? '' : undefined} class="mt-1"><LearnMore text={learnMore} label={title} id={learnId} /></div>{/if}

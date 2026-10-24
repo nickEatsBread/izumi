@@ -53,16 +53,19 @@ describe('LearnMore', () => {
     // Spec §5.1: one-line descriptions, full text on focus. Desktop and phone keep the button.
     expect(source).toContain("import { settingsControllerMode } from '$lib/settings/surface'")
     const controller = source.slice(source.indexOf('{#if $settingsControllerMode}'), source.indexOf('{:else}'))
-    expect(controller).toContain('<p {id} class="text-xs text-muted-foreground">{text}</p>')
-    expect(controller).not.toMatch(/<button|data-focusable|hidden=/)
+    // Hidden from browse mode: the row's focusables read it as their description instead.
+    expect(controller).toContain('<p {id} aria-hidden="true" class="text-xs text-muted-foreground">{text}</p>')
+    expect(controller).not.toMatch(/<button|data-focusable|\shidden=/)
     expect(source.indexOf('>Learn more</button>')).toBeGreaterThan(source.indexOf('{:else}'))
     // The row's wrapper hides the text until the row has focus; aria-describedby reads hidden text.
     const row = read('./SettingsRow.svelte')
     expect(row).toContain('const describedBy = $derived(learnMore && $settingsControllerMode ? learnId : undefined)')
     expect(row.split("data-learn-more={describedBy ? '' : undefined}")).toHaveLength(3)
-    expect(row.split('aria-describedby={describedBy}')).toHaveLength(4)
-    // A control-only row has no row focusable of its own, so a named group carries the description.
-    expect(row).toContain("role={describedBy ? 'group' : undefined} aria-label={describedBy ? title : undefined} aria-describedby={describedBy}")
+    // Every root hands the description to the focusables it owns (row-description.test.ts), so a
+    // control row's snippet control announces it, not a wrapper that never takes focus.
+    expect(row.split('data-setting-row data-setting-key={settingKey} use:describeRowFocusables={describedBy}')).toHaveLength(4)
+    expect(row).not.toContain('aria-describedby')
+    expect(row).not.toContain('role=')
     const css = read('../../../app.css')
     expect(css).toContain('[data-learn-more] { display: none; }\n:focus-within > [data-learn-more] { display: block; }')
     // The row showing that text takes the ring and fill (settings-row-focus.test.ts).

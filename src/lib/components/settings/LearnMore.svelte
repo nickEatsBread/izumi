@@ -8,8 +8,10 @@
 
 {#if $settingsControllerMode}
   <!-- Controller mode (spec §5.1: one-line descriptions, full text on focus): no extra d-pad stop.
-       The row's wrapper ([data-learn-more], app.css) shows this text while the row has focus. -->
-  <p {id} class="text-xs text-muted-foreground">{text}</p>
+       The row's wrapper ([data-learn-more], app.css) shows this text while the row has focus. The row's
+       focusables read it as their description (aria-describedby reads hidden text), so aria-hidden
+       keeps browse mode from reading it a second time. -->
+  <p {id} aria-hidden="true" class="text-xs text-muted-foreground">{text}</p>
 {:else}
   <!-- Opens on click, tap or A only: a pad or a TV remote cannot hover.
        `relative` lifts it above the row button (a positioned ripple-host) that its negative top margin overlaps. -->
