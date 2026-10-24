@@ -341,9 +341,11 @@
 {/snippet}
 
 {#snippet settingsLink()}
+  <!-- Left from the controller Settings rail lands on Settings in a side strip; in a top bar the link
+       sits at the far right, so a move there would read as a jump across the screen. -->
   <a data-part="nav.action" data-action="settings" data-active={active('/app/settings') || undefined} href="/app/settings" title={m.nav_settings()} data-focusable={df} tabindex={tab}
      aria-current={active('/app/settings') ? 'page' : undefined}
-     data-nav-region-default={active('/app/settings') && $settingsControllerMode ? '' : undefined}
+     data-nav-region-default={active('/app/settings') && $settingsControllerMode && !top ? '' : undefined}
      class={destClass(active('/app/settings'))}>
     <span class="grid {top ? 'size-5' : 'w-8'} shrink-0 place-items-center"><Settings size={20} class="group-hover:animate-[spin_0.6s_ease]" /></span>
     {#if top}

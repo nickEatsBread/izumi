@@ -1,17 +1,25 @@
+<script module lang="ts">
+  // Two bars can hand over mid-page (Settings' Game-mode bar and a theme's): the page keeps the
+  // bar's room while either is shown, so one unmounting never strips it from the other.
+  let shownBars = 0
+</script>
+
 <script lang="ts">
   import { page } from '$app/state'
+  import { get } from 'svelte/store'
   import { hintsFor, type HintButton } from '$lib/nav/hints'
   import { findPageTabs } from '$lib/nav/page-tabs'
   import { onPadButton } from '$lib/nav/pad-events'
   import { glyphFamily, lastPadId, rememberPad, type GlyphButton } from '$lib/nav/glyphs'
-  import { controllerMode } from '$lib/nav/input'
+  import { controllerMode, inputType } from '$lib/nav/input'
   import { gameMode, playing } from '$lib/player/session'
   import Glyph from './Glyph.svelte'
 
   // The controller prompts (`shell.hints`): what A, X, B, the page-tab triggers and the menu button
   // do for whatever holds focus, re-derived on every focus change. Only after pad input in Game or
   // controller mode; the first touch, tap or mouse move hides the bar until the pad is used again.
-  let padActive = $state(false)
+  // A bar mounted mid-session (Settings' own, a theme applied) starts shown if the pad is in use.
+  let padActive = $state(get(inputType) === 'dpad')
   let focused = $state<Element | null>(null)
   let pageTabs = $state(false)
   let dialog = $state(false)
@@ -68,10 +76,11 @@
 
   // While shown, the page keeps the bar's height free at its end, so the last row never sits under it.
   $effect(() => {
+    if (!shown) return
     const root = document.documentElement
-    if (shown) root.setAttribute('data-theme-hints', '')
-    else root.removeAttribute('data-theme-hints')
-    return () => root.removeAttribute('data-theme-hints')
+    shownBars++
+    root.setAttribute('data-theme-hints', '')
+    return () => { if (--shownBars === 0) root.removeAttribute('data-theme-hints') }
   })
 </script>
 

@@ -612,8 +612,16 @@ html.controller-mode [data-carousel-scroller] { padding-top: max(1.125rem, 18px)
 [data-settings-controller] [data-settings-rail] a:focus { background-color: hsl(var(--foreground) / 0.1); }
 /* NuvioTV: while the rail has focus, only the focused item is lit. */
 [data-settings-controller] [data-settings-rail]:focus-within a[aria-current="page"]:not(:focus) { background-color: transparent; }
-/* The hint bar takes the bottom 2.5rem; the layout stops above it instead of scrolling the page. */
-html[data-theme-hints] [data-settings-controller] { height: calc(100vh - 2.5rem); }
+/* The layout fills the height main leaves instead of scrolling the window: below a Game-mode top bar
+   row (the page pads under it), above a Game-mode bottom bar (main keeps its room) and above the hint
+   bar (the body keeps its 2.5rem). TV always shows the side strip, whatever the theme's nav. */
+[data-settings-controller] {
+  --settings-top: 0px; --settings-bar: 0px; --settings-hints: 0px;
+  height: calc(100vh - var(--settings-top) - var(--settings-bar) - var(--settings-hints));
+}
+html.gamemode[data-theme-nav='top'] [data-settings-controller] { --settings-top: var(--theme-top-row); }
+html.gamemode[data-theme-nav='bottom'] [data-settings-controller] { --settings-bar: var(--theme-bottom-nav, 4rem); }
+html[data-theme-hints] [data-settings-controller] { --settings-hints: 2.5rem; }
 
 /* Press ripple (see src/lib/actions/ripple.ts). Transform/opacity only, so it stays off the layout
    path; the span deletes itself on animationend. */

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte'
+  import { onDestroy, onMount, untrack } from 'svelte'
   import { page } from '$app/stores'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
   import SettingsNav from '$lib/components/settings/SettingsNav.svelte'
@@ -99,8 +99,13 @@
   $effect(() => {
     const pane = controllerPane
     if (!pane) return
-    const update = () => { paneEdges = scrollEdges(pane) }
-    update()
+    // Assigned only on a change: held d-pad scrolls fire this every frame on slow TV WebViews.
+    const update = () => {
+      const next = scrollEdges(pane)
+      if (next.up !== paneEdges.up || next.down !== paneEdges.down) paneEdges = next
+    }
+    // Untracked: the effect must not rerun (and rewire its listeners) whenever an edge flips.
+    untrack(update)
     pane.addEventListener('scroll', update, { passive: true })
     const observer = new ResizeObserver(update)
     observer.observe(pane)
@@ -112,6 +117,10 @@
   })
   afterNavigate((navigation) => {
     if (!get(settingsControllerMode)) return
+    // The pane, not the window, scrolls here, so the router's scroll reset never reaches it: a new
+    // page starts at its top. History steps keep route focus memory; search hits and #blocks reveal.
+    const to = navigation.to?.url
+    if (controllerPane && navigation.type !== 'popstate' && to && !to.hash && !to.searchParams.has(SETTING_PARAM)) controllerPane.scrollTop = 0
     void controllerLanded({ type: navigation.type, from: navigation.from?.url ?? null, to: navigation.to?.url ?? null }, controllerRoot ?? document)
   })
 
@@ -179,9 +188,11 @@
 {:else if $settingsControllerMode}
   <!-- Controller mode (Android TV, Steam Deck Game mode; spec §5): NuvioTV's two zones. The rail is
        its own d-pad region; the pane is a rounded card that keeps the focused row at 42% of its
-       height. Sizes are rem against the TV's 18px root (spec §5.1, CSS px at 960x540). -->
+       height. Sizes are rem against the TV's 18px root (spec §5.1, CSS px at 960x540). app.css sets
+       the root's height to what main leaves under a Game-mode top or bottom bar and the hint bar. -->
   <div bind:this={controllerRoot} data-settings-controller
-       class="flex h-screen gap-[0.889rem] overflow-hidden py-[1.5rem] pl-[1.333rem] pr-[2.667rem]">
+       class="flex gap-[0.889rem] overflow-hidden py-[1.5rem] pl-[1.333rem] pr-[2.667rem]">
+    <h1 class="sr-only">{m.nav_settings()}</h1>
     <aside data-nav-region="settings" class="flex w-[12.222rem] shrink-0 flex-col">
       <div data-settings-search class="mb-2 px-1"><SettingsSearch /></div>
       <div class="min-h-0 flex-1"><SettingsNav /></div>
@@ -189,7 +200,12 @@
     <div class="relative min-w-0 flex-1">
       <div bind:this={controllerPane} data-settings-pane data-nav-surface="settings" data-nav-scroll-container data-nav-scroll-pivot="0.42"
            class="h-full overflow-y-auto overscroll-contain rounded-[1.556rem] border border-border bg-card/40 p-[1.111rem]">
-        <div bind:this={controllerContent}>{@render children()}</div>
+        <!-- Outside the key block, so the resize observer keeps its target across section switches. -->
+        <div bind:this={controllerContent}>
+          {#key railSection}
+            <div in:fly={sectionFade()}>{@render children()}</div>
+          {/key}
+        </div>
       </div>
       <!-- NuvioTV's scroll indicators: faint chevrons while the pane has more above or below. -->
       <ChevronUp aria-hidden="true" size={28}

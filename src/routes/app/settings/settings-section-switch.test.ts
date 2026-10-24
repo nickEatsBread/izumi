@@ -9,9 +9,10 @@ const elements = markupElementsFromSource(layout, '+layout.svelte')
 describe('desktop Settings section switch', () => {
   it('fades the new section in, keyed by section, inside the desktop content column', () => {
     const column = elements.find((el) => staticAttr(el, 'data-nav-surface') === 'settings' && staticAttr(el, 'class') === 'min-w-0 flex-1')
-    const faded = elements.find((el) => attr(el, 'in:fly')?.raw === 'in:fly={sectionFade()}')
+    // The controller pane fades too (its own test); the desktop one sits in the content column.
+    const faded = elements.filter((el) => attr(el, 'in:fly')?.raw === 'in:fly={sectionFade()}')
     expect(column).toBeDefined()
-    expect(faded?.ancestors[0]).toBe(column)
+    expect(faded.some((el) => el.ancestors[0] === column)).toBe(true)
     expect(layout).toContain('{#key railSection}')
     expect(layout).toContain('const railSection = $derived(sectionForPath($page.url.pathname)?.id ?? $page.url.pathname)')
     expect(layout).toContain("import { sectionFade } from '$lib/settings/section-scroll'")
