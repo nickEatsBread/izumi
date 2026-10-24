@@ -516,7 +516,7 @@ describe('phone replica keys (API 4)', () => {
     expect(() => parsePresentation(presentation, 3)).toThrow('unsupported')
   })
   it('is still accepted by the newest API, the default for personal designs', () => {
-    expect(LATEST_THEME_API).toBe(5)
+    expect(LATEST_THEME_API).toBe(6)
     expect(parsePresentation({ detail: { countdown: 'words' } }).detail?.countdown).toBe('words')
   })
   it('binds the worded air date from API 5', () => {

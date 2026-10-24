@@ -19,6 +19,16 @@ describe('Search page styling hooks', () => {
     for (const file of [bar, catalog, merged]) expect(file).not.toContain('data-part="input"')
   })
 
+  // The TV grid keyboard types into whichever field the page shows; while it is docked that field
+  // takes no on-screen keyboard or system IME (osk.ts skips inputmode="none").
+  it('marks every Search page field for the grid keyboard', () => {
+    for (const file of [bar, catalog, merged]) {
+      expect(file).toContain('data-search-input')
+      expect(file).toContain("inputmode={$searchGridKeyboard ? 'none' : undefined}")
+    }
+    expect(page).toContain('<div data-slot="search.layout" class="flex items-start">\n    <GridKeyboard />')
+  })
+
   it('names every filter control, with its state', () => {
     for (const filter of ['genres', 'format', 'status']) expect(bar).toContain(`filter="${filter}"`)
     for (const filter of ['season', 'year', 'sort']) {

@@ -11,19 +11,30 @@
   import { onMount } from 'svelte'
   import VolumeX from '@lucide/svelte/icons/volume-x'
   import Volume2 from '@lucide/svelte/icons/volume-2'
-  import { trailerMuted, openTrailerPopup } from '$lib/stores/trailer'
+  import type { Writable } from 'svelte/store'
+  import { hoverTrailers, trailerMuted as hoverTrailerMuted, openTrailerPopup } from '$lib/stores/trailer'
   import {
     youtubeEmbedSource,
     youtubePlayerOrigins,
     type YoutubeEmbedSource,
   } from './youtube-embed'
-  let { id, title = 'Trailer' }: { id: string; title?: string } = $props()
+  // The defaults are the hover preview; BackdropTrailer plays once (`loop: false`), covers its box,
+  // follows its own session mute store and listens for the start and the end (`natural` = the video
+  // reached its end, false = it failed).
+  let { id, title = 'Trailer', loop = true, fit = 'crop', mutePart, muteClass = 'right-1 top-1 z-10', trailerMuted = hoverTrailerMuted, onplaying, onended }: {
+    id: string; title?: string; loop?: boolean; fit?: 'crop' | 'cover'; mutePart?: string; muteClass?: string
+    trailerMuted?: Writable<boolean>; onplaying?: () => void; onended?: (natural: boolean) => void
+  } = $props()
+  // `cover` fills its own size container (`container-type: size`) at 16:9; the extra 240 px letterboxes
+  // YouTube's own title and branding above and below the picture, where the box's overflow cuts them.
+  const COVER_STYLE = 'width:max(100cqw,calc(100cqh*16/9));height:calc(max(56.25cqw,100cqh) + 240px)'
 
   let frame = $state<HTMLIFrameElement>()
   let playing = $state(false)
   let dead = $state(false)
   let embed = $state<YoutubeEmbedSource>()
   let poll: ReturnType<typeof setInterval> | undefined
+  let ended = false // YouTube can repeat ENDED; a play-once trailer reports it once
   const keyboardOwner = Symbol('hover-trailer')
 
   $effect(() => {
@@ -32,10 +43,11 @@
     embed = undefined
     playing = false
     dead = false
+    ended = false
     clearInterval(poll)
     void youtubeEmbedSource(videoId, { controls: false, muted: true })
       .then((source) => { if (!cancelled) embed = source })
-      .catch(() => { if (!cancelled) dead = true })
+      .catch(() => { if (!cancelled) fail() })
     return () => { cancelled = true }
   })
 
@@ -45,6 +57,12 @@
     if (playing) send($trailerMuted ? 'mute' : 'unMute')
   })
 
+  function fail() {
+    if (dead) return
+    dead = true
+    clearInterval(poll)
+    onended?.(false)
+  }
   function send(func: string, args: unknown[] = []) {
     const target = frame?.contentWindow
     if (!target || !embed) return
@@ -63,6 +81,8 @@
   }
   function onKey(e: KeyboardEvent) {
     if (activeKeyboardTrailers[activeKeyboardTrailers.length - 1] !== keyboardOwner) return
+    // A backdrop trailer offers M and T only while its mute button is on screen.
+    if (!loop && !playing) return
     const key = e.key.toLowerCase()
     if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || (key !== 'm' && key !== 't')) return
     // T is specifically a playing-preview affordance; while the iframe is still loading there is
@@ -95,11 +115,14 @@
     try { json = JSON.parse(payload) } catch { return }
     const info = typeof json.info === 'object' ? json.info : undefined
     if (json.event === 'onReady') { send('setVolume', [30]); clearInterval(poll) }
-    if (json.event === 'onError') { dead = true; clearInterval(poll) }
-    if (json.event === 'initialDelivery' && info?.videoData?.isPlayable === false) dead = true
-    if (json.event === 'infoDelivery' && info?.playerState === 1) playing = true
-    // ENDED (0): restart from the top instead of showing YouTube's end screen.
-    if (json.event === 'infoDelivery' && info?.playerState === 0) { send('seekTo', [0, true]); send('playVideo') }
+    if (json.event === 'onError') fail()
+    if (json.event === 'initialDelivery' && info?.videoData?.isPlayable === false) fail()
+    if (json.event === 'infoDelivery' && info?.playerState === 1 && !playing) { playing = true; onplaying?.() }
+    // ENDED (0): restart from the top instead of showing YouTube's end screen, or, playing once, fade
+    // out (the iframe's opacity transition) before the end screen can show.
+    if (json.event === 'infoDelivery' && info?.playerState === 0) {
+      if (loop) { send('seekTo', [0, true]); send('playVideo') } else if (!ended) { ended = true; playing = false; onended?.(true) }
+    }
   }
   function handshake() {
     const target = frame?.contentWindow
@@ -112,10 +135,14 @@
     }
   }
   onMount(() => {
+    // Only the hover previews loop; while one is mounted the backdrop trailers hold (BackdropTrailer).
+    const hover = loop
+    if (hover) hoverTrailers.update((n) => n + 1)
     activeKeyboardTrailers.push(keyboardOwner)
     window.addEventListener('message', onMessage)
     window.addEventListener('keydown', onKey, true)
     return () => {
+      if (hover) hoverTrailers.update((n) => n - 1)
       window.removeEventListener('message', onMessage)
       window.removeEventListener('keydown', onKey, true)
       const at = activeKeyboardTrailers.indexOf(keyboardOwner)
@@ -125,20 +152,32 @@
   })
 </script>
 
-{#if !dead && embed}
+{#snippet player(src: string)}
   <iframe
     bind:this={frame}
     title="Trailer"
     onload={() => { clearInterval(poll); handshake(); poll = setInterval(handshake, 100) }}
     allow="autoplay"
     referrerpolicy="strict-origin-when-cross-origin"
-    src={embed.src}
-    class="pointer-events-none absolute left-0 top-1/2 h-[calc(100%+200px)] w-full -translate-y-1/2 border-0 transition-opacity duration-500 {playing ? 'opacity-100' : 'opacity-0'}"
+    {src}
+    class="pointer-events-none absolute {fit === 'cover' ? 'left-1/2 top-1/2 -translate-x-1/2' : 'left-0 top-1/2 h-[calc(100%+200px)] w-full'} -translate-y-1/2 border-0 transition-opacity duration-500 {playing ? 'opacity-100' : 'opacity-0'}"
+    style={fit === 'cover' ? COVER_STYLE : undefined}
   ></iframe>
+{/snippet}
+
+{#if !dead && embed}
+  {#if fit === 'cover'}
+    <!-- Size containment makes a stacking context, so it wraps the picture only: the mute button
+         stays outside it, where its z-index can lift it over the host's copy and scrims. -->
+    <div class="pointer-events-none absolute inset-0 overflow-hidden [container-type:size]">{@render player(embed.src)}</div>
+  {:else}
+    {@render player(embed.src)}
+  {/if}
   {#if playing}
     <button
+      data-part={mutePart}
       onclick={(e) => { e.stopPropagation(); toggleMute() }}
-      class="pointer-events-auto absolute right-1 top-1 z-10 rounded-md bg-black/50 p-1 text-white"
+      class="pointer-events-auto absolute {muteClass} rounded-md bg-black/50 p-1 text-white"
       aria-label={$trailerMuted ? 'Unmute' : 'Mute'}
     >
       {#if $trailerMuted}<VolumeX size={14} />{:else}<Volume2 size={14} />{/if}

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { nodeStyle, visibleNode, displayText, type ThemeNode, type DisplayModel, type ThemeAction, type ThemeIcon } from '$lib/themes/presentation'
+  import type { Snippet } from 'svelte'
   import TrendingUp from '@lucide/svelte/icons/trending-up'
   import Tv from '@lucide/svelte/icons/tv'
   import Clapperboard from '@lucide/svelte/icons/clapperboard'
@@ -22,7 +23,7 @@
   import Captions from '@lucide/svelte/icons/captions'
   import Mic from '@lucide/svelte/icons/mic'
   import List from '@lucide/svelte/icons/list'
-  let { node, model: boundModel, actions = {}, eager = false, titleHeading = false }: { node: ThemeNode; model: DisplayModel; actions?: Partial<Record<ThemeAction, () => void>>; eager?: boolean; titleHeading?: boolean } = $props()
+  let { node, model: boundModel, actions = {}, eager = false, titleHeading = false, trailer }: { node: ThemeNode; model: DisplayModel; actions?: Partial<Record<ThemeAction, () => void>>; eager?: boolean; titleHeading?: boolean; trailer?: Snippet } = $props()
   // Artwork that fails to load counts as absent, so `when: { field: "logo", absent: true }` shows the
   // title instead of a broken image. Keyed by URL: the next slide's artwork starts fresh.
   let failedArtwork = $state<string[]>([])
@@ -44,6 +45,9 @@
   {#if visibleNode(item, model)}
     {#if item.type === 'text'}
       <svelte:element this={titleHeading && item.field === 'title' ? 'h1' : 'span'} style={nodeStyle(item)} class="theme-text" data-part={item.part}>{item.field ? displayText(item.field, model) : item.text ?? ''}</svelte:element>
+    {:else if item.type === 'artwork' && item.artwork === 'trailer'}
+      <!-- API 6: where a hero template plays its trailer (the host passes it; elsewhere this is empty). -->
+      {#if trailer}<div class="theme-artwork relative" style={nodeStyle(item)} data-part={item.part}>{@render trailer()}</div>{/if}
     {:else if item.type === 'artwork'}
       {@const src = model[item.artwork ?? 'poster']}
       <div class="theme-artwork" class:theme-artwork-fallback={!src} style={nodeStyle(item)} data-part={item.part}>

@@ -40,7 +40,7 @@ describe('theme chrome application', () => {
   })
   it('renders template part names as data-part on every node kind', () => {
     const node = read('./components/themes/ThemeNode.svelte')
-    expect(node.match(/data-part=\{item\.part\}/g)?.length).toBe(6)
+    expect(node.match(/data-part=\{item\.part\}/g)?.length).toBe(7)
   })
   it('gives hero templates the slide counter and a ticking countdown', () => {
     const hero = read('./components/banner/Hero.svelte')

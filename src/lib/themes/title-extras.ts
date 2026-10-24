@@ -262,6 +262,48 @@ export async function loadTitleExtras(media: Media, needs: ReadonlySet<TitleExtr
   return Object.fromEntries(Object.entries(out).filter(([, value]) => value)) as TitleExtras
 }
 
+// API 6: card templates that bind key art or a logo load them through this queue — at most four lookups
+// at once, so a Home of a hundred cards never floods ani.zip. A finished lookup hands its slot straight to
+// a waiter, so a call arriving in between can never push the count past the cap. The waiter is chosen then,
+// not when it queued: cards that are gone (`alive`) are dropped without a lookup, and of the rest the one
+// nearest the screen (`distance`, earliest queued on a tie) goes next, so a fast scroll past many rows
+// spends the slots on the rows on screen.
+const CARD_ART_SLOTS = 4
+let cardArtRunning = 0
+const cardArtWaiting: { alive: () => boolean; distance: () => number; resolve: (slot: boolean) => void }[] = []
+export interface QueueTitleArtOptions {
+  load?: typeof loadTitleExtras
+  /** False once the caller no longer wants the result (its card is gone): the lookup is skipped. */
+  alive?: () => boolean
+  /** How far the caller is from being seen, read each time a slot frees; smallest goes first. */
+  distance?: () => number
+}
+// A caller's checks run while a slot is being handed on: one that throws must not strand the slot, so a
+// failing `alive` counts as gone and a failing `distance` as infinitely far.
+const safe = <T>(check: () => T, fallback: T): T => { try { return check() } catch { return fallback } }
+function handOffCardArtSlot(): void {
+  for (let i = cardArtWaiting.length - 1; i >= 0; i--) {
+    if (!safe(cardArtWaiting[i].alive, false)) cardArtWaiting.splice(i, 1)[0].resolve(false)
+  }
+  let best = 0
+  const far = cardArtWaiting.map((waiter) => safe(waiter.distance, Infinity))
+  for (let i = 1; i < far.length; i++) if (far[i] < far[best]) best = i
+  const next = cardArtWaiting.splice(best, 1)[0]
+  if (next) next.resolve(true)
+  else cardArtRunning--
+}
+export async function queueTitleArt(media: Media, needs: ReadonlySet<TitleExtra>, options: QueueTitleArtOptions = {}): Promise<TitleExtras> {
+  const { load = loadTitleExtras, alive = () => true, distance = () => 0 } = options
+  if (!safe(alive, false)) return {}
+  if (cardArtRunning < CARD_ART_SLOTS) cardArtRunning++
+  else if (!await new Promise<boolean>((resolve) => cardArtWaiting.push({ alive, distance, resolve }))) return {}
+  try {
+    return await load(media, needs)
+  } finally {
+    handOffCardArtSlot()
+  }
+}
+
 /** Warm the batchable lookups for a list (the hero's slides): AnimeSchedule answers up to 18 titles
  *  per request, and `getScheduleInfo` then reads them from its memo. Call it before loading the
  *  titles' extras: their schedule lookups wait for this batch. */

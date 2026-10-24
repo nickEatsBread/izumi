@@ -261,7 +261,16 @@
   // maps a global percent into 0–100% within the chapter; `skewclamp` hides a 0-fill
   // fully (−5 not 0) so no sliver shows.
   const skewclamp = (v: number) => { const c = Math.min(Math.max(v, 0), 100); return c === 0 ? -5 : c }
-  const progressPct = $derived(pct(pos))
+  // A click or drag release holds the bar at its target until mpv reports a playhead within a second
+  // of it (or 1.5 s pass): `seeking` ends first, and the knob and fill must not snap back meanwhile.
+  let heldT = $state<number | undefined>()
+  $effect(() => { if (heldT !== undefined && Math.abs(pos - heldT) < 1) heldT = undefined })
+  $effect(() => {
+    if (heldT === undefined) return
+    const t = setTimeout(() => { heldT = undefined }, 1500)
+    return () => clearTimeout(t)
+  })
+  const progressPct = $derived(pct(heldT ?? pos))
   const bufferPct = $derived(pct(buffer))
   const hoverPct = $derived(pct(hoverT))
   const seekActive = $derived(hovering || seeking)
@@ -314,6 +323,8 @@
     if (barW <= 0 || dur <= 0) return 0
     return Math.min(barW - 100, Math.max(100, (scrubT / dur) * barW))
   })
+  // Desktop knob X in pixels, moved by transform for the same no-ghost-trail reason as the tooltip.
+  const knobX = $derived((barW * (seeking ? hoverPct : progressPct)) / 100)
 
   // A gamepad-driven scrub has no pointer events, so drive the thumbnail + tooltip width
   // from the store instead (touch already does this via the pointer handlers).
@@ -364,6 +375,7 @@
       }
     } else if (seeking) {
       seeking = false
+      heldT = hoverT
       onseek(hoverT)
     }
   }
@@ -401,9 +413,9 @@
     <div class="flex shrink-0 items-center justify-center {gm ? 'py-5' : 'py-3'}" style="width:{chap.size}%">
       <div class="relative {gm ? 'h-[10px]' : 'h-1'} w-full overflow-hidden rounded-[3px] {i ? 'ml-0.5' : ''}" style:height={!gm && seekHeight ? `${seekHeight}px` : undefined}>
         <!-- empty track -->
-        <div class="absolute left-0 top-1/2 {gm ? 'h-[8px]' : 'h-0.5'} w-full -translate-y-1/2 bg-white/25 {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[10px]={active && gm}></div>
+        <div data-part="player.seekbar.track" class="absolute left-0 top-1/2 {gm ? 'h-[8px]' : 'h-0.5'} w-full -translate-y-1/2 bg-white/25 {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[10px]={active && gm}></div>
         <!-- buffered -->
-        <div class="absolute left-0 top-1/2 {gm ? 'h-[8px]' : 'h-0.5'} w-full bg-white/40 {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[10px]={active && gm}
+        <div data-part="player.seekbar.buffer" class="absolute left-0 top-1/2 {gm ? 'h-[8px]' : 'h-0.5'} w-full bg-white/40 {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[10px]={active && gm}
              style="transform:translate({skewclamp(chap.scale * (bufferPct - chap.offset)) - 100}%, -50%)"></div>
         <!-- hover/scrub preview -->
         {#if grabbed}
@@ -411,15 +423,19 @@
                style="transform:translate({skewclamp(chap.scale * ((gm ? pct(scrubT) : hoverPct) - chap.offset)) - 100}%, -50%)"></div>
         {/if}
         <!-- played -->
-        <div class="absolute left-0 top-1/2 {gm ? 'h-[8px]' : 'h-0.5'} w-full bg-white {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[10px]={active && gm}
+        <div data-part="player.seekbar.fill" class="absolute left-0 top-1/2 {gm ? 'h-[8px]' : 'h-0.5'} w-full bg-white {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[10px]={active && gm}
              style="transform:translate({skewclamp(chap.scale * (progressPct - chap.offset)) - 100}%, -50%);{!gm && seekColor ? `background:${cssThemeColor(seekColor)}` : ''}"></div>
       </div>
     </div>
   {/each}
 
   {#if gm && grabbed && dur > 0}
-    <div class="pointer-events-none absolute top-1/2 z-20 h-[22px] w-[22px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow"
+    <div data-part="player.seekbar.knob" class="pointer-events-none absolute top-1/2 z-20 h-[22px] w-[22px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow"
          style="left:{pct(scrubT)}%"></div>
+  {/if}
+  <!-- Desktop knob: at the playhead, or under the pointer while dragging (`seeking`, the grab the preview bar tracks). Hidden until a theme sets `opacity: 1`. -->
+  {#if !gm}
+    <span data-part="player.seekbar.knob" aria-hidden="true" class="pointer-events-none absolute left-0 top-1/2 z-20 size-3.5 rounded-full bg-white opacity-0" data-scrubbing={seeking || undefined} style="transform:translateX(calc({knobX}px - 50%)) translateY(-50%);will-change:transform"></span>
   {/if}
 
   <!-- Skip-segment tints overlaid on the segmented track. -->
@@ -431,7 +447,7 @@
        timestamp (bottom) overlaid; a loading shimmer for positions whose tile isn't
        generated yet (never blank/white). -->
   {#if grabbed && dur > 0}
-    <div class="pointer-events-none absolute bottom-9 left-0 flex" style="transform:translateX(calc({tipX}px - 50%));will-change:transform">
+    <div data-part="player.seekbar.preview" class="pointer-events-none absolute bottom-9 left-0 flex" style="transform:translateX(calc({tipX}px - 50%));will-change:transform">
       {#if thumbsEnabled}
         <div class="overflow-hidden rounded-lg border border-white bg-neutral-200 shadow-lg">
           <div class="relative">

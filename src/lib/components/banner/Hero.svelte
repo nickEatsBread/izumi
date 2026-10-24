@@ -36,6 +36,9 @@
   import { animeAwardHref, findTopAnimeAward } from '$lib/catalog/anime-awards'
   import { createSlideScheduler } from './hero-slides'
   import { heroBackdrop, heroNeedsKeyart, type HeroKeyart } from './hero-art'
+  import BackdropTrailer from '$lib/components/cards/BackdropTrailer.svelte'
+  import { DETAIL_TRAILER_DWELL, HERO_TRAILER_DWELL } from '$lib/components/cards/backdrop-trailer'
+  import { youtubeTrailerId } from '$lib/components/cards/youtube-embed'
 
   // Bottom-left content column + clean linear scrims. Discovery facts stay deliberately compact:
   // format/runtime/production/score, then one context line for next-airing + genres. Detail pages
@@ -130,6 +133,8 @@
     // itself, never the skeleton. A slow or broken image keeps the old path: skeleton until the
     // <img> reports load/error.
     if (ready) loadedArtworkId = medias[n].id
+    // A new slide never inherits the trailer hold of the one it replaces.
+    if (n !== i) trailerFor = null
     i = n
     cycle += 1
     scheduleWarm()
@@ -318,7 +323,7 @@
     const arm = () => {
       if (timer) clearTimeout(timer)
       timer = undefined
-      if (!stalled() && heroTheme?.rotate !== false && $motionPreference !== 'reduce' && ($motionPreference === 'full' || !matchMedia('(prefers-reduced-motion: reduce)').matches)) timer = setTimeout(() => step(1), DURATION)
+      if (!stalled() && !trailerHeld && heroTheme?.rotate !== false && $motionPreference !== 'reduce' && ($motionPreference === 'full' || !matchMedia('(prefers-reduced-motion: reduce)').matches)) timer = setTimeout(() => step(1), DURATION)
     }
     arm()
     const onWake = () => arm()
@@ -387,6 +392,16 @@
     countdownOrigin = Date.now()
   })
   const current = $derived(medias[Math.min(i, Math.max(0, medias.length - 1))])
+  // API 6 `hero.preview` / `detail.preview: "trailer"`. The slide whose trailer is playing holds the
+  // rotation (`arm` above) until the trailer ends. A width-scaled series banner gets none: the page's
+  // content layer covers it (AnimeDetail), so its mute button could never be clicked.
+  const trailerOn = $derived(showOverlay ? heroTheme?.preview === 'trailer' : seriesTheme?.preview === 'trailer' && !bannerScale)
+  let trailerFor = $state<number | null>(null)
+  const trailerHeld = $derived(trailerFor !== null && trailerFor === current?.id)
+  // Slides whose trailer ran to its end during this Home visit: each plays at most once, so an idle
+  // Home ends up rotating artwork only. Plain on purpose: it is read when a slide's trailer mounts,
+  // and the trailer that just ended fades out undisturbed (its own `finished` keeps it from replaying).
+  const played = new Set<number>()
   const currentLogo = $derived(current?.logoImage && !failedLogos.includes(current.logoImage) ? current.logoImage : '')
   function logoFailed(event: Event) {
     const src = (event.currentTarget as HTMLImageElement).src
@@ -632,10 +647,33 @@
   {/if}
 {/snippet}
 
+<!-- Snippet arguments are getters: `media` is whichever slide is current when it is read, even in a
+     callback from a leaving slide. The keyed each remounts the trailer per slide and hands its callbacks
+     that slide's id as a plain value, so a late report from a leaving slide only ever names that slide.
+     On Home the mute button sits top right: the copy layer spans the bottom. izumi's banner reaches up
+     under the top bar by --theme-shell-top, hence twice that; a template's trailer box starts at its own top. -->
+{#snippet slideTrailer(media: Media)}
+  {#each [media.id] as slide (slide)}
+    <BackdropTrailer id={youtubeTrailerId(media.trailer)} title={title(media)} enabled={trailerOn && !played.has(slide)} held={showOverlay && scrolled}
+      dwell={showOverlay ? HERO_TRAILER_DWELL : DETAIL_TRAILER_DWELL}
+      part={showOverlay ? 'hero.video' : 'detail.video'} mutePart={showOverlay ? 'hero.mute' : 'detail.mute'}
+      muteClass={!showOverlay ? 'right-8 top-24 z-30' : heroTheme?.template ? 'right-4 top-[calc(var(--theme-shell-top,2rem)+0.75rem)] z-30' : 'right-[4vw] top-[calc(var(--theme-shell-top,2rem)*2+0.75rem)] z-30'}
+      onplaying={() => (trailerFor = slide)}
+      onended={(natural) => {
+        if (trailerFor === slide) trailerFor = null
+        // Stopped early, the auto-advance restarts a full interval: bumping `cycle` restarts its marker too.
+        if (!natural && slide === current?.id) cycle += 1
+        if (natural) played.add(slide)
+        if (natural && showOverlay && slide === current?.id && medias.length > 1 && heroTheme?.rotate !== false) step(1)
+      }} />
+  {/each}
+{/snippet}
+{#snippet heroTrailer()}{@render slideTrailer(current)}{/snippet}
+
 {#if current && !heroTheme?.hidden}
   {#if heroTheme?.template}
     <section data-slot="home.hero" data-variant="template" data-nav-row data-theme-hero aria-label="Featured" class="theme-custom-hero" class:theme-banner-scale={bannerScale} class:theme-wide-scale={wideScale} class:theme-hero-bleed={heroBleed > 0} data-pending={extrasPending || undefined} class:cursor-grab={$dragCarousels && medias.length > 1} class:cursor-grabbing={heroDragging} style:height={bannerScale || wideScale ? undefined : `${($isMobile ? heroTheme.mobileHeight : heroTheme.height) ?? 46}vh`} style:--hero-bleed={heroBleed > 0 ? `${heroBleed}px` : undefined} style:--theme-hero-interval={`${DURATION}ms`} ontouchstart={onTouchStart} ontouchend={onTouchEnd} onpointerdown={onHeroPointerDown} onpointermove={onHeroPointerMove} onpointerup={(e) => endHeroPointer(e, true)} onpointercancel={(e) => endHeroPointer(e, false)} onwheel={onHeroWheel}>
-      <ThemeNode node={heroTheme.template} model={themeModel} eager titleHeading actions={templateActions} />
+      <ThemeNode node={heroTheme.template} model={themeModel} eager titleHeading actions={templateActions} trailer={trailerOn ? heroTrailer : undefined} />
       {#if fadeFrom}
         {#key fadeFrom.key}
           <!-- The same markup as the live slide (its title an h1 too), so heading styles never change
@@ -857,6 +895,7 @@
             <img data-part="detail.backdrop" data-art="cover" src={cover(current)} alt="" aria-hidden="true"
                  class="absolute inset-0 h-full w-full object-cover opacity-0" style="object-position:center 30%" />
           {/if}
+          {@render slideTrailer(current)}
         </div>
       {/key}
       <!-- Dual linear scrims: bright top-right, dark bottom-left. -->
@@ -1069,6 +1108,8 @@
     transform-origin: left;
     animation: hero-progress-fill var(--theme-hero-interval, 15s) linear forwards;
   }
+  /* API 6: the marker holds with the timer while the slide's trailer plays. */
+  :global([data-slot='home.hero']:has([data-part='hero.video'][data-state='playing'])) .hero-progress { animation-play-state: paused; }
   @keyframes hero-slide-in {
     from { opacity: 0; transform: translate3d(var(--hero-enter-x), 0, 0) scale(1.015); }
     to { opacity: var(--hero-final-opacity, 1); transform: translate3d(0, 0, 0) scale(1); }

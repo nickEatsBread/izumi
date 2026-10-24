@@ -6,10 +6,13 @@
   import { wheelScrollAcross } from '$lib/settings/ui'
   import { gameMode } from '$lib/player/session'
   import { controllerMode } from '$lib/nav/input'
-  import { isMobile } from '$lib/platform'
+  import { isMobile, isTv } from '$lib/platform'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import { captionOf } from './caption'
+  import { cardMedia, type CardEntry } from './card-registry'
+  import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
+  import { mediaDisplayModel } from '$lib/themes/host-model'
   // Game mode (Deck): controller/touch scrolls the row directly, so the mouse-only
   // page arrows are hidden.
   const gm = $derived($gameMode || $controllerMode)
@@ -28,12 +31,29 @@
   // `caption: "focus"` (API 3): with a pad in use, one line under the track names the focused card in
   // full with its detail line. Every such row keeps the line, so moving between rows never shifts
   // the page.
-  const captioned = $derived(appearance.caption === 'focus' && gm)
-  let caption = $state({ title: '', meta: '' })
-  const onTrackFocusIn = (event: FocusEvent) => { if (captioned) caption = captionOf(event.target as Element) }
-  const onTrackFocusOut = (event: FocusEvent & { currentTarget: HTMLElement }) => {
-    if (captioned && !event.currentTarget.contains(event.relatedTarget as Node | null)) caption = { title: '', meta: '' }
+  // A TV is always driven by its remote, so it counts as a pad in use even before controller mode is set.
+  const captioned = $derived(appearance.caption === 'focus' && (gm || $isTv))
+  // Raw: `entry` holds a whole catalog record, replaced on every focus move and never mutated.
+  let caption = $state.raw<{ title: string; meta: string; entry?: CardEntry }>({ title: '', meta: '' })
+  let captionActive = $state(false)
+  const onTrackFocusIn = (event: FocusEvent) => {
+    if (!captioned) return
+    const target = event.target as Element
+    const card = target.closest('[data-part="card"]')
+    caption = { ...captionOf(target), entry: card ? cardMedia.get(card) : undefined }
+    captionActive = true
   }
+  const onTrackFocusOut = (event: FocusEvent & { currentTarget: HTMLElement }) => {
+    if (!captioned || event.currentTarget.contains(event.relatedTarget as Node | null)) return
+    captionActive = false
+    // A template caption keeps its last card, only hidden: its height then never changes as focus leaves,
+    // so the rows below do not move while an anchored row is being scrolled into place.
+    if (!appearance.captionTemplate) caption = { title: '', meta: '' }
+  }
+  // API 6 `captionTemplate`: bound to the model the focused card registers (a Continue card's resume
+  // episode), else to its media's (genres, year, synopsis, ...); an empty model until a card in the row
+  // has been focused. A card that registers nothing keeps the title and meta line.
+  const captionModel = $derived(caption.entry ? caption.entry.model ?? mediaDisplayModel(caption.entry.media) : {})
 
   let scroller = $state<HTMLDivElement>()
   let canLeft = $state(false)
@@ -126,7 +146,7 @@
 <!-- Grid rows stay inside the game/TV nav fast path: the section always exposes `data-nav-row`,
      and `data-nav-row-wrap` tells pickInNavRows the row paints several lines, so vertical moves
      search this row's own cards instead of stepping whole sections (and skipping grid lines). -->
-<section data-slot="row" data-row={rowId} data-role={rowRole} data-layout={grid ? 'grid' : 'carousel'} data-nav-row data-nav-row-wrap={grid ? '' : undefined} data-theme-row={scope?.().id} data-theme-row-title={scope?.().title ?? title} class="browse-render-row group/carousel relative mb-8" style:margin-bottom={appearance.spacing !== undefined ? `${appearance.spacing}px` : undefined}>
+<section data-slot="row" data-row={rowId} data-role={rowRole} data-layout={grid ? 'grid' : 'carousel'} data-nav-row data-nav-row-wrap={grid ? '' : undefined} data-row-focus={!grid && appearance.focus === 'anchor' ? 'anchor' : undefined} data-theme-row={scope?.().id} data-theme-row-title={scope?.().title ?? title} class="browse-render-row group/carousel relative mb-8" style:margin-bottom={appearance.spacing !== undefined ? `${appearance.spacing}px` : undefined}>
   <div data-part="row.header" class="mb-2 flex items-baseline justify-between" class:px-8={!mob} class:px-4={mob}>
     <div class="flex min-w-0 items-center gap-2">
       <!-- Heading accents: a coloured bar or dot before the title, or an underline beneath it. -->
@@ -177,10 +197,16 @@
     {/if}
   </div>
   {#if captioned}
-    <p data-part="row.caption" aria-hidden="true" class="flex h-7 min-w-0 items-baseline gap-2 pt-1" class:px-8={!mob} class:px-4={mob}>
-      <span data-part="row.caption.title" class="min-w-0 truncate text-base font-bold">{caption.title}</span>
-      <span data-part="row.caption.meta" class="shrink-0 whitespace-nowrap text-sm text-muted-foreground">{caption.meta}</span>
-    </p>
+    <!-- A div, not a p: a caption template renders block elements. -->
+    <div data-part="row.caption" data-active={captionActive || undefined} aria-hidden="true" class="flex min-h-7 min-w-0 items-baseline gap-2 pt-1" class:px-8={!mob} class:px-4={mob} class:invisible={appearance.captionTemplate && !captionActive}>
+      {#if appearance.captionTemplate && (caption.entry || !caption.title)}
+        <!-- Redrawn on every focus move (`caption` is replaced each time), so a theme's CSS animation replays per card. -->
+        {#key caption}<ThemeNode node={appearance.captionTemplate} model={captionModel} />{/key}
+      {:else}
+        <span data-part="row.caption.title" class="min-w-0 truncate text-base font-bold">{caption.title}</span>
+        <span data-part="row.caption.meta" class="shrink-0 whitespace-nowrap text-sm text-muted-foreground">{caption.meta}</span>
+      {/if}
+    </div>
   {/if}
 </section>
 

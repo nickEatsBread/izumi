@@ -285,6 +285,8 @@
 
 <div class="relative">
   <button
+    data-part="player.control"
+    data-control="cast"
     data-focusable
     class="{buttonClass} {$desktopCastSession ? 'bg-primary/25 text-primary' : ''}"
     onclick={toggle}

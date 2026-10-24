@@ -30,9 +30,15 @@
   import { profileAllowsMedia } from '$lib/profiles/content'
   import ParentalBlock from '$lib/components/profiles/ParentalBlock.svelte'
   import { isMobile } from '$lib/platform'
+  import BackdropTrailer from '$lib/components/cards/BackdropTrailer.svelte'
+  import { DETAIL_TRAILER_DWELL } from '$lib/components/cards/backdrop-trailer'
+  import { youtubeTrailerId } from '$lib/components/cards/youtube-embed'
+  import { resolveDetail } from '$lib/themes/presentation'
+  import { themePresentation } from '$lib/themes/runtime'
 
   let { provider, type, id }: { provider: CatalogProviderId; type: CatalogContentType; id: string } = $props()
   const ref = $derived({ provider, type, id } as MediaRef)
+  const trailerOn = $derived(resolveDetail($themePresentation).preview === 'trailer')
   let media = $state<Media | null>(null)
   let loading = $state(true)
   let error = $state('')
@@ -148,13 +154,16 @@
   <!-- The series page's styling hooks (as on an anime's overlay page), so a theme styles a movie or
        a show from any catalog like its series pages. -->
   <div data-slot="detail" data-layout="overlay" data-variant={$isMobile ? 'phone' : 'desktop'} class="pb-20">
-    <section data-slot="detail.banner" data-art="banner" class="relative min-h-[52vh] overflow-hidden">
+    <section data-slot="detail.banner" data-art="banner" class="relative isolate min-h-[52vh] overflow-hidden">
       <img data-part="detail.backdrop" data-art="banner" src={banner(media)} alt="" class="absolute inset-0 h-full w-full object-cover" />
-      <div class="absolute inset-0 bg-gradient-to-r from-background via-background/75 to-background/15"></div>
-      <div class="absolute inset-0 bg-gradient-to-t from-background via-transparent to-black/35"></div>
+      <!-- API 6 detail.preview: a muted trailer over the art; the layers after it pass clicks through to its mute button. -->
+      <BackdropTrailer id={youtubeTrailerId(media.trailer)} title={title(media)} enabled={trailerOn} dwell={DETAIL_TRAILER_DWELL}
+                       part="detail.video" mutePart="detail.mute" muteClass="right-8 top-24 z-20" />
+      <div class="pointer-events-none absolute inset-0 bg-gradient-to-r from-background via-background/75 to-background/15"></div>
+      <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-background via-transparent to-black/35"></div>
       <button data-focusable onclick={() => history.length > 1 ? history.back() : goto('/app/home')} aria-label="Back"
         class="absolute left-4 top-10 z-10 grid size-10 place-items-center rounded-full bg-black/55 text-white backdrop-blur sm:left-8"><ChevronLeft size={22} /></button>
-      <div class="relative flex min-h-[52vh] max-w-6xl items-end gap-8 px-5 pb-8 pt-24 sm:px-8">
+      <div class="relative flex min-h-[52vh] max-w-6xl items-end gap-8 px-5 pb-8 pt-24 sm:px-8 pointer-events-none [&>*]:pointer-events-auto">
         <img data-part="detail.poster" src={cover(media)} alt="" class="hidden aspect-[2/3] rounded-xl bg-muted object-cover shadow-2xl md:block md:w-48 lg:w-56 xl:w-64" />
         <div data-part="detail.body" class="min-w-0 flex-1">
           {#if provider === 'kitsu'}

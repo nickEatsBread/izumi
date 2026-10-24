@@ -558,9 +558,11 @@ html.controller-mode [data-carousel-scroller] { padding-top: max(1.125rem, 18px)
    focus language without inheriting its gamescope/native-snapshot behaviour. */
 .tv-mode { font-size: 18px; }
 .tv-mode, .tv-mode * { cursor: none !important; }
-.tv-mode main { margin-left: 5rem !important; margin-bottom: 0 !important; }
-.tv-mode [data-nav-sidebar] { width: 5rem !important; }
-.tv-mode [data-nav-sidebar]:focus-within { width: 14rem !important; }
+.tv-mode main { margin-bottom: 0 !important; }
+/* The ten-foot rail: a 5rem icon column that widens on focus. A theme's TV top bar (API 6) has neither. */
+.tv-mode:not([data-theme-nav='top']) main { margin-left: 5rem !important; }
+.tv-mode [data-slot='nav.side'] { width: 5rem !important; }
+.tv-mode [data-slot='nav.side']:focus-within { width: 14rem !important; }
 .tv-mode .browse-render-row,
 .tv-mode .browse-render-list-item,
 .tv-mode .browse-render-grid-item {
@@ -654,6 +656,9 @@ html[data-theme-nav='top'] { --theme-shell-top: var(--theme-top-bar); }
    up (the Deck's 640 px of browse height is too short to spend on an empty strip). */
 html.gamemode[data-theme-nav='top'] { --theme-shell-top: var(--theme-top-row); }
 html.gamemode[data-theme-nav='top'] [data-slot='page'] { padding-top: var(--theme-top-row); }
+/* Android TV has no window titlebar either, so a theme's TV top bar drops the same band. */
+html.tv-mode[data-theme-nav='top'] { --theme-shell-top: var(--theme-top-row); }
+html.tv-mode[data-theme-nav='top'] [data-slot='page'] { padding-top: var(--theme-top-row); }
 /* A top bar's pinned side menu (`shell.top.menu: "side"`): the page and every full-bleed surface
    start right of the panel, which the shell sizes through --theme-side-width. */
 html[data-theme-side-panel] { --theme-shell-left: var(--theme-side-width, 260px); }

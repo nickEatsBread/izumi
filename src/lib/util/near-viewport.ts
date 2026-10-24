@@ -31,6 +31,19 @@ export function isNearViewport(top: number, viewportHeight: number, marginViewpo
     && top < Math.max(1, viewportHeight) * Math.max(0, marginViewports)
 }
 
+/** How far an element is from the viewport in px, vertical and horizontal gaps added: 0 for one that
+ *  intersects it, Infinity for no element. A queue of lookups for cards uses it to serve the cards
+ *  on screen before the ones scrolled past. */
+export function offscreenDistance(
+  node: Pick<Element, 'getBoundingClientRect'> | undefined,
+  width = window.innerWidth,
+  height = window.innerHeight,
+): number {
+  if (!node) return Infinity
+  const rect = node.getBoundingClientRect()
+  return Math.max(0, -rect.right, rect.left - width) + Math.max(0, -rect.bottom, rect.top - height)
+}
+
 function viewportHeight(): number {
   return Math.max(window.innerHeight || 0, document.documentElement.clientHeight || 0, 1)
 }
@@ -68,6 +81,8 @@ function check(): void {
   frame = 0
   const height = viewportHeight()
   for (const entry of [...entries]) {
+    // An earlier onEnter in this pass can switch a sibling's gate off through Svelte effects.
+    if (!entries.has(entry)) continue
     if (!entry.node.isConnected) {
       remove(entry)
       continue
@@ -105,15 +120,29 @@ function observeParent(entry: Entry): void {
   observedParents.set(parent, count + 1)
 }
 
-/** Svelte action. The gate is one-shot: after activation the entry owns no global resources. */
-export function nearViewport(node: HTMLElement, options: NearViewportOptions) {
-  const entry: Entry = { node, options }
-  entries.add(entry)
-  observeParent(entry)
-  startListening()
-  schedule()
-  return {
-    update(next: NearViewportOptions) { entry.options = next; schedule() },
-    destroy() { remove(entry) },
+/** Svelte action. The gate is one-shot: after activation the entry owns no global resources and
+ *  never registers again. Without options it does nothing (a caller can switch the gate on later
+ *  through update). */
+export function nearViewport(node: HTMLElement, options?: NearViewportOptions) {
+  let entry: Entry | undefined
+  let fired = false
+  // Wrapping onEnter tells the action the one-shot is spent, so a later update cannot register again.
+  const wrap = (next: NearViewportOptions): NearViewportOptions =>
+    ({ ...next, onEnter: () => { fired = true; entry = undefined; next.onEnter() } })
+  const apply = (next?: NearViewportOptions) => {
+    if (fired) return
+    if (!next) {
+      if (entry) remove(entry)
+      entry = undefined
+      return
+    }
+    if (entry) { entry.options = wrap(next); schedule(); return }
+    entry = { node, options: wrap(next) }
+    entries.add(entry)
+    observeParent(entry)
+    startListening()
+    schedule()
   }
+  apply(options)
+  return { update: apply, destroy: () => apply(undefined) }
 }

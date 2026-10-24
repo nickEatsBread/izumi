@@ -423,6 +423,21 @@ describe('keyboard listeners (startOsk)', () => {
     expect(get(oskSession)).toBeNull()
   })
 
+  it('never serves a field that brings its own keyboard (inputmode="none", the TV search grid)', () => {
+    document.body.innerHTML = '<input id="f" inputmode="none">' + KEYS
+    const field = input('f')
+    field.click()
+    expect(get(oskSession)).toBeNull()
+    gameMode.set(false)
+    isTv.set(true)
+    inputType.set('dpad')
+    field.focus()
+    expect(get(oskSession)).toBeNull()
+    expect(openOskForField(field)).toBe(false)
+    field.blur()
+    expect(field.getAttribute('inputmode')).toBe('none')
+  })
+
   it('Android TV Done is a plain Enter: no submit and no refocus', () => {
     gameMode.set(false)
     isTv.set(true)
