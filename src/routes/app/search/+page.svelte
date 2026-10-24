@@ -1,6 +1,8 @@
 <script lang="ts">
   import FilterBar from '$lib/components/search/FilterBar.svelte'
+  import GridKeyboard from '$lib/components/search/GridKeyboard.svelte'
   import SearchResults from '$lib/components/search/SearchResults.svelte'
+  import { searchGridKeyboard } from '$lib/themes/runtime'
   import type { SearchFilters } from '$lib/anilist/detail-queries'
   import { heroMedia } from '$lib/stores/hero'
   import { showAdult } from '$lib/settings/ui'
@@ -201,6 +203,17 @@
   })
 </script>
 
+{#if $searchGridKeyboard && !$offlineMode}
+  <!-- A TV theme's grid keyboard (`search.layout`) docks left of the page and types into its field. -->
+  <div data-slot="search.layout" class="flex items-start">
+    <GridKeyboard />
+    <div class="min-w-0 flex-1">{@render searchPage()}</div>
+  </div>
+{:else}
+  {@render searchPage()}
+{/if}
+
+{#snippet searchPage()}
 {#if $offlineMode}
   <OfflineUnavailable title="Search is unavailable offline" subtitle="Searching needs a connection. Your downloaded titles are available on the Downloads page." />
 {:else if $catalogScreen === 'merged'}
@@ -278,3 +291,4 @@
     </div>
   </div>
 {/if}
+{/snippet}

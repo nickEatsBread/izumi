@@ -147,9 +147,11 @@ function restoreIme(field: TextEntryField): void {
 
 /** A field the keyboard can serve. The keyboard is portalled to <body>, which is inert under an open
  *  modal <dialog> (a known limit of this pass), so a field inside one gets no keyboard at all rather
- *  than one it can never reach, and keeps its system IME. */
+ *  than one it can never reach, and keeps its system IME. A field whose own `inputmode` is `none`
+ *  brings its own keyboard (the TV search grid), so it gets neither. */
 function servesField(target: EventTarget | null | undefined): target is TextEntryField {
   if (!isTextEntryField(target)) return false
+  if (!originalInputMode.has(target) && target.getAttribute('inputmode') === 'none') return false
   const dialog = target.closest('dialog')
   if (!dialog?.open) return true
   try {

@@ -294,6 +294,7 @@ State values:
 | `data-active` | `search.filter` | present while the filter is set (a selection, a value other than the default) |
 | `data-variant` | `search.grid` | `grid`, `list` (the browse layout) |
 | `data-state` | `search.grid` | `loading` on the placeholder grid shown while more results load |
+| `data-key` | `search.key` | `space`, `backspace`, or the character the key types (`a`–`z`, `0`–`9`) (API 6) |
 | `data-variant` | `button` | `primary`, `secondary`, `ghost`, `icon` |
 | `data-variant` | `tabs` | `underline`, `pills`, `segmented`, `bar` |
 | `data-tab` | `tab` (series page) | `overview`, `episodes`, `relations`, `characters`, `recommended`, `information` (API 4, when `sections.tabs` lists it) |
@@ -621,6 +622,9 @@ State values:
 | `search.filter` | part | One control of the search filter bar, named by `data-filter` (`genres`, `format`, `status`, `season`, `year`, `sort`, `advanced`, `clear`; on other catalogs `type`, `genre`, `source`, `source-filters`), with `data-active` while it is set. Pickers and fields carry their name in `data-label` ("Season"), so a stylesheet can print it above the value with `::before { content: attr(data-label) }` (buttons only: a native select or a text field draws no `::before`). | `data-filter`, `data-active`, `data-label` |
 | `search.grid` | part | The grid holding the search results (`data-variant` `grid` or `list`); a stylesheet sets its gaps and columns. The placeholders shown while more results load are a second one with `data-state="loading"`. | `data-variant`, `data-state` |
 | `search.results` | slot | The search results. |  |
+| `search.layout` | slot | API 6, TV surfaces: the Search page while a theme docks the grid keyboard (`tv.search.keyboard: "grid"`), a row holding the `search.keyboard` on the left and the rest of the page on the right. |  |
+| `search.keyboard` | part | API 6, TV surfaces: the grid keyboard docked left of the Search page, six columns of `search.key` buttons: Space and Backspace (three columns each), then a–z and 0–9. It types into the page's search field; controller focus starts on "a". |  |
+| `search.key` | part | One key of the `search.keyboard`, named by `data-key` (`space`, `backspace`, or the lowercase letter or digit it types). izumi draws the focused key white with a black glyph; style `:focus` to change it. | `data-key` |
 | `schedule` | slot | The airing schedule page. |  |
 | `schedule.day` | part | One day of airings: a day of the week agenda, or the selected day. |  |
 | `schedule.item` | part | One airing entry. |  |

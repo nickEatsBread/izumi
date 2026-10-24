@@ -7,6 +7,7 @@
   import AdvancedFilters from './AdvancedFilters.svelte'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import { isMobile } from '$lib/platform'
+  import { searchGridKeyboard } from '$lib/themes/runtime'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
 
   let { filters = $bindable() }: { filters: SearchFilters } = $props()
@@ -59,6 +60,8 @@
   <input
     data-part="search.field"
     data-focusable
+    data-search-input
+    inputmode={$searchGridKeyboard ? 'none' : undefined}
     type="text"
     placeholder="Search anime…"
     value={filters.search ?? ''}
