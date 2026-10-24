@@ -9,6 +9,7 @@
   import { gameMode } from '$lib/player/session'
   import * as h from '$lib/haptics'
   import { searchSettings, settingHref, type SettingSearchItem } from '$lib/settings/search'
+  import { subcategoryDef } from '$lib/settings/sections'
   import { openOskForField } from '$lib/nav/osk'
   import { navLayer } from '$lib/nav/overlay'
 
@@ -94,11 +95,12 @@
           <p class="px-3 py-8 text-center text-sm text-muted-foreground">Type a setting, feature, or keyword.</p>
         {:else if results.length}
           {#each results as item (item.category + item.title)}
+            {@const sub = subcategoryDef(item.section, item.subcategory)}
             <button type="button" data-focusable onclick={() => choose(item)}
               class="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors active:bg-accent hover:bg-secondary">
               <span class="min-w-0 flex-1">
                 <span class="block font-bold">{item.title}</span>
-                <span class="block text-xs text-muted-foreground">{item.category}</span>
+                <span class="block text-xs text-muted-foreground">{sub ? `${item.category} › ${sub.title}` : item.category}</span>
               </span>
               <ChevronRight size={18} class="shrink-0 text-muted-foreground" />
             </button>

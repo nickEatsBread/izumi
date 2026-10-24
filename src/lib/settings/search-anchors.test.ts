@@ -111,4 +111,11 @@ describe('SettingsSearch', () => {
     expect(search).toContain('await goto(settingHref(item))')
     expect(search).not.toContain('item.anchored')
   })
+
+  it('labels each hit "Section › Subcategory", falling back to the section alone', () => {
+    const search = read(here('../components/settings/SettingsSearch.svelte'))
+    expect(search).toContain("import { subcategoryDef } from '$lib/settings/sections'")
+    expect(search).toContain('{@const sub = subcategoryDef(item.section, item.subcategory)}')
+    expect(search).toContain('{sub ? `${item.category} › ${sub.title}` : item.category}')
+  })
 })
