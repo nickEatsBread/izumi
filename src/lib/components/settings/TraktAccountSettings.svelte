@@ -1,8 +1,6 @@
 <script lang="ts">
   import { openUrl } from '@tauri-apps/plugin-opener'
-  import KeyRound from '@lucide/svelte/icons/key-round'
   import ShieldCheck from '@lucide/svelte/icons/shield-check'
-  import SettingsGroup from './SettingsGroup.svelte'
   import SettingsRow from './SettingsRow.svelte'
   import {
     traktClientId,
@@ -100,14 +98,10 @@
   >{formOpen ? 'Close' : $traktToken ? 'Manage' : 'Set up'}</button>
 {/snippet}
 
-<SettingsGroup
-  icon={KeyRound}
-  title="Trakt account"
-  desc="Native history, Watchlist, rating sync, and a dedicated recommendation hub for this Izumi profile."
->
   <SettingsRow
     settingKey="trakt-account"
     title="Trakt"
+    learnMore="Native history, Watchlist, rating sync, and a dedicated recommendation hub for this Izumi profile."
     leading={leading}
     meta={meta}
     control={control}
@@ -115,7 +109,7 @@
   >
     {#if $traktToken}
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p class="text-[11px] leading-5 text-muted-foreground">Watches, Watchlist changes, and 1–10 ratings are mirrored automatically. Pending writes retry when Trakt is reachable again.</p>
+        <p class="text-xs leading-5 text-muted-foreground">Watches, Watchlist changes, and 1–10 ratings are mirrored automatically. Pending writes retry when Trakt is reachable again.</p>
         <div class="flex shrink-0 justify-end gap-2">
           {#if $traktUserSlug}<button type="button" data-focusable data-touch-target onclick={openProfile} class="min-h-9 rounded-md bg-secondary px-3 text-xs font-bold hover:bg-accent">Open profile</button>{/if}
           <a data-touch-target href="/app/trakt" data-focusable class="inline-flex min-h-9 items-center rounded-md bg-secondary px-3 text-xs font-bold hover:bg-accent">Open Trakt hub</a>
@@ -128,11 +122,11 @@
       <code class="mt-2 block break-all text-sm text-foreground">{TRAKT_SITE_REDIRECT_URI}</code>
       <p class="mb-4 mt-2 text-xs leading-5 text-muted-foreground">Leave JavaScript origins blank, then paste your app credentials below. You’ll approve the connection in your browser.</p>
       <div class="grid gap-2 sm:grid-cols-2">
-        <label class="grid gap-1 text-[11px] font-bold text-muted-foreground">
+        <label class="grid gap-1 text-xs font-bold text-muted-foreground">
           Client ID
           <input disabled={busy || waiting} bind:value={clientIdInput} autocomplete="off" data-focusable placeholder="From Trakt app settings" class="h-10 min-w-0 rounded-md bg-input px-3 text-base text-foreground sm:text-sm" />
         </label>
-        <label class="grid gap-1 text-[11px] font-bold text-muted-foreground">
+        <label class="grid gap-1 text-xs font-bold text-muted-foreground">
           Client secret
           <input disabled={busy || waiting} bind:value={clientSecretInput} autocomplete="off" type="password" data-focusable placeholder="Stored only in this profile" class="h-10 min-w-0 rounded-md bg-input px-3 text-base text-foreground sm:text-sm" />
         </label>
@@ -156,7 +150,7 @@
       {/if}
 
       <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <span class="inline-flex max-w-md items-start gap-1.5 text-[11px] leading-4 text-muted-foreground"><ShieldCheck size={13} class="mt-0.5 shrink-0" aria-hidden="true" />The app exchanges the temporary code directly with Trakt. Your app secret stays on this device, inside the active profile; Izumi never includes it in profile sync.</span>
+        <span class="inline-flex max-w-md items-start gap-1.5 text-xs leading-4 text-muted-foreground"><ShieldCheck size={13} class="mt-0.5 shrink-0" aria-hidden="true" />The app exchanges the temporary code directly with Trakt. Your app secret stays on this device, inside the active profile; Izumi never includes it in profile sync.</span>
         <div class="flex shrink-0 justify-end gap-2">
           <button type="button" data-focusable data-touch-target onclick={() => openUrl('https://app.trakt.tv/settings/apps')} class="min-h-9 rounded-md bg-secondary px-3 text-xs font-bold hover:bg-accent">Trakt app settings</button>
           {#if busy || waiting}
@@ -169,4 +163,3 @@
     {/if}
     {#if authError}<p role="alert" class="mt-2 text-xs text-destructive">{authError}</p>{/if}
   </SettingsRow>
-</SettingsGroup>

@@ -16,4 +16,10 @@ describe('Letterboxd account settings', () => {
     expect(component).toContain('$letterboxdFeedCache = []')
     expect(component).toContain('$letterboxdFeedUpdatedAt = 0')
   })
+
+  it('renders one row that sits in the Trackers and lists card', () => {
+    expect(component).not.toContain('SettingsGroup')
+    expect(component).toContain('learnMore="A supported public-diary and data-export experience; no scraping or unofficial sign-in."')
+    expect(component).not.toMatch(/text-\[1[01]px\]/)
+  })
 })
