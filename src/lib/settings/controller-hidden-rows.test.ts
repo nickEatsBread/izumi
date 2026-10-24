@@ -44,9 +44,27 @@ describe('rows hidden in controller mode (spec §5.6)', () => {
     expect(row.trimEnd().endsWith('{/if}')).toBe(true)
   })
 
-  it('hides the hotkey editor (not a SettingsRow) and its Controls card in Game mode', () => {
-    const playback = read('../../routes/app/settings/playback/+page.svelte')
-    expect(playback).toContain("import { gameMode } from '$lib/player/session'")
-    expect(playback).toMatch(/\{#if !\$isAndroid && !\$gameMode\}\s*<SettingsSubcategory id="controls" plain>\s*<HotkeyBindings \/>/)
+  // A fold whose rows all hide on a surface would be an empty, focusable header there (controller
+  // mode folds every subcategory). Its page gates it on that surface, or opens it with that surface's
+  // own content (`{#if $gameMode}…`).
+  it('gates every subcategory whose indexed rows all hide on a controller surface', () => {
+    const folds = Map.groupBy(SETTINGS_SEARCH_INDEX, (item) => `${item.href.split('#')[0]}#${item.subcategory}`)
+    const stores = { tv: 'isTv|settingsControllerMode', gamemode: 'gameMode|settingsControllerMode' } as const
+    const checked: string[] = []
+    for (const [fold, items] of folds) {
+      const [href, id] = fold.split('#')
+      for (const surface of ['tv', 'gamemode'] as const) {
+        const surfaces = { tv: surface === 'tv', gamemode: surface === 'gamemode' }
+        if (!items.every((item) => controllerHides(item.key, surfaces))) continue
+        const page = read(`../../routes${href}/+page.svelte`)
+        const gated = new RegExp(String.raw`\{#if [^}]*!\$(?:${stores[surface]})\b[^}]*\}\s*<SettingsSubcategory id="${id}"`)
+        const ownContent = new RegExp(String.raw`<SettingsSubcategory id="${id}"[^>]*>\s*\{#if \$(?:${stores[surface]})\}`)
+        expect(gated.test(page) || ownContent.test(page), `${fold} on ${surface}`).toBe(true)
+        checked.push(`${fold} ${surface}`)
+      }
+    }
+    expect(checked).toEqual(expect.arrayContaining([
+      '/app/settings/appearance#advanced tv', '/app/settings/appearance#advanced gamemode', '/app/settings/playback#controls gamemode',
+    ]))
   })
 })

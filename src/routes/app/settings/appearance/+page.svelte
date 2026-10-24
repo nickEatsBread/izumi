@@ -10,6 +10,7 @@
     type AndroidTvMode, type MotionPreference, type ThemePreset,
   } from '$lib/settings/ui'
   import { isAndroid, isAndroidTv, isMobile } from '$lib/platform'
+  import { settingsControllerMode } from '$lib/settings/surface'
   import { m } from '$lib/paraglide/messages.js'
 
   const presets = [
@@ -87,10 +88,13 @@
     </SettingsSubcategory>
   {/if}
 
-  <SettingsSubcategory id="advanced" summary="Wheel-scroll and mouse-drag carousels">
-    <SettingsRow settingKey="wheel-scroll-carousels" title="Wheel-scroll carousels" description="Sideways wheel and trackpad gestures scroll home rows" learnMore="Vertical scrolling always moves the page. Turn this off to use each row's arrows instead." control={wheelSwitch} onActivate={() => ($wheelScrollAcross = !$wheelScrollAcross)} pressed={$wheelScrollAcross} />
-    <SettingsRow settingKey="mouse-drag-carousels" title="Mouse-drag carousels" description="Drag home rows and the featured banner with the mouse" control={dragSwitch} onActivate={() => ($dragCarousels = !$dragCarousels)} pressed={$dragCarousels} />
-  </SettingsSubcategory>
+  <!-- Both rows hide on TV and Game mode (hideOn), so the fold goes with them. -->
+  {#if !$settingsControllerMode}
+    <SettingsSubcategory id="advanced" summary="Wheel-scroll and mouse-drag carousels">
+      <SettingsRow settingKey="wheel-scroll-carousels" title="Wheel-scroll carousels" description="Sideways wheel and trackpad gestures scroll home rows" learnMore="Vertical scrolling always moves the page. Turn this off to use each row's arrows instead." control={wheelSwitch} onActivate={() => ($wheelScrollAcross = !$wheelScrollAcross)} pressed={$wheelScrollAcross} />
+      <SettingsRow settingKey="mouse-drag-carousels" title="Mouse-drag carousels" description="Drag home rows and the featured banner with the mouse" control={dragSwitch} onActivate={() => ($dragCarousels = !$dragCarousels)} pressed={$dragCarousels} />
+    </SettingsSubcategory>
+  {/if}
 </SettingsSection>
 
 <style>
