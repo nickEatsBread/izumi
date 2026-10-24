@@ -19,7 +19,6 @@ const PAGE_TITLES: Array<[string, string]> = [
   ['sources/manage/+page.svelte', '<h2 data-settings-page-title class="text-xl font-black">Manage sources</h2>'],
   ['sources/priority/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Source priority</h2>'],
   ['themes/+page.svelte', '<h2 data-settings-page-title>Themes</h2>'],
-  ['network/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Network</h2>'],
   ['about/changelog/+page.svelte', '<h1 data-settings-page-title class="text-xl font-bold">Changelog</h1>'],
   ['about/license-information/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">License information</h2>'],
 ]

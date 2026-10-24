@@ -1,23 +1,20 @@
 <script lang="ts">
-  import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
   import { onMount } from 'svelte'
   import { get } from 'svelte/store'
   import {
     enableDoH, doHUrl, torrentAndroidPostSeed, torrentBindInterface, torrentDownloadLimitMbps,
     torrentUploadLimitMode, torrentUpstreamCapacityMbps, torrentProxyEnabled, torrentProxyUrl,
-    syncRelayMode, syncRelayUrl,
   } from '$lib/settings/ui'
   import { torrentProxyEndpoint } from '$lib/player/torrent-proxy'
   import { listNetworkInterfaces, type NetInterfaceInfo } from '$lib/player/direct-torrent'
-  import { getSyncRelayConfig, setSyncRelay } from '$lib/sync/client'
   import { isAndroid } from '$lib/platform'
-  import Toggle from '$lib/components/settings/Toggle.svelte'
-  import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
+  import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
+  import SettingsSubcategory from '$lib/components/settings/SettingsSubcategory.svelte'
+  import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
+  import SettingsChoiceRow from '$lib/components/settings/SettingsChoiceRow.svelte'
+  import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte'
   import RefreshButton from '$lib/components/RefreshButton.svelte'
 
-  let applyingRelay = $state(false)
-  let relayNotice = $state('')
-  let relayError = $state('')
   let ifaces = $state<NetInterfaceInfo[]>([])
   let ifaceError = $state('')
 
@@ -46,8 +43,8 @@
         label: `${iface.label}${ip}${iface.isVpnLike ? ' (VPN)' : ''}${iface.isUp ? '' : ' (down)'}`,
       })
     }
-    // Keep a vanished adapter selectable so the dropdown doesn't silently jump off the binding —
-    // VPN clients recreate their adapter under a new id on reinstall/protocol switches.
+    // Keep a vanished adapter selectable so the menu doesn't silently jump off the binding — VPN
+    // clients recreate their adapter under a new id on reinstall/protocol switches.
     const bound = $torrentBindInterface
     if (bound && !ifaces.some((iface) => iface.name === bound)) {
       options.push({ value: bound, label: `${bound} (not found)` })
@@ -58,156 +55,77 @@
 
   onMount(() => {
     if (!get(isAndroid)) void refreshInterfaces()
-    void getSyncRelayConfig().then((config) => {
-      syncRelayMode.set(config.customUrl ? 'custom' : 'public')
-      if (config.customUrl) syncRelayUrl.set(config.customUrl)
-    }).catch(() => {})
   })
-
-
-  async function applyRelay() {
-    applyingRelay = true
-    relayNotice = ''
-    relayError = ''
-    try {
-      await setSyncRelay($syncRelayMode === 'custom' ? $syncRelayUrl : null)
-      relayNotice = $syncRelayMode === 'custom' ? 'Custom relay applied.' : 'Public relay network applied.'
-    } catch (error) {
-      relayError = error instanceof Error ? error.message : String(error)
-    } finally {
-      applyingRelay = false
-    }
-  }
 </script>
 
-<SettingsSection section="network">
-<div class="p-4 sm:p-8">
-  <h2 data-settings-page-title class="mb-1 text-xl font-black">Network</h2>
-  <p class="mb-4 text-sm text-muted-foreground">Advanced networking. Limited effect with debrid streaming — see notes.</p>
+{#snippet downloadLimitControl()}
+  <span class="flex items-center gap-2">
+    <input type="number" min="0" max="10000" step="1" data-focusable bind:value={$torrentDownloadLimitMbps} aria-label="Download limit in Mb/s" class="w-24 rounded-md bg-input px-3 py-2.5 text-right text-base sm:py-2 sm:text-sm" />
+    <span class="text-sm text-muted-foreground">Mb/s</span>
+  </span>
+{/snippet}
+{#snippet capacityControl()}
+  <span class="flex items-center gap-2">
+    <input type="number" min="0.1" max="10000" step="0.1" data-focusable bind:value={$torrentUpstreamCapacityMbps} aria-label="Upstream capacity in Mb/s" class="w-24 rounded-md bg-input px-3 py-2.5 text-right text-base sm:py-2 sm:text-sm" />
+    <span class="text-sm text-muted-foreground">Mb/s</span>
+  </span>
+{/snippet}
+{#snippet dohSwitch()}<SettingsSwitch value={$enableDoH} onToggle={() => ($enableDoH = !$enableDoH)} label="Use DNS over HTTPS" interactive={false} />{/snippet}
+{#snippet proxySwitch()}<SettingsSwitch value={$torrentProxyEnabled} onToggle={() => ($torrentProxyEnabled = !$torrentProxyEnabled)} label="Require SOCKS5 proxy" interactive={false} />{/snippet}
+{#snippet seedSwitch()}<SettingsSwitch value={$torrentAndroidPostSeed} onToggle={() => ($torrentAndroidPostSeed = !$torrentAndroidPostSeed)} label="Continue seeding after playback" interactive={false} />{/snippet}
+{#snippet refreshControl()}
+  <RefreshButton onRefresh={refreshInterfaces} class="min-w-[7.25rem] rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent" />
+{/snippet}
+{#snippet adapterMeta()}
+  {#if !$torrentBindInterface}
+    Not bound; torrents may use any interface
+  {:else if boundIface && boundIface.isUp}
+    <span class="text-green-500">Bound to {boundIface.label}{boundIface.ips[0] ? ` (${boundIface.ips[0]})` : ''}</span>
+  {:else}
+    <span class="text-destructive">Bound adapter is offline; Direct P2P waits for it</span>
+  {/if}
+{/snippet}
 
-  <div class="max-w-2xl space-y-3">
-    <Toggle label="Use DNS over HTTPS" desc="Resolves hostnames via the DoH endpoint below for community sources, add-ons, metadata (AniZip/Kitsu) and downloads. Aniyomi sources fail closed instead of falling back to intercepted system DNS; other app requests fall back if DoH is unreachable. AniList/MAL browse and mpv playback still use the OS resolver." value={$enableDoH} onToggle={() => ($enableDoH = !$enableDoH)} />
-    {#if $enableDoH}
+<SettingsSection section="network">
+  <SettingsSubcategory id="p2p">
+    <SettingsRow settingKey="torrent-download-limit" title="Download limit" description="Direct P2P only; 0 means uncapped" learnMore="Only affects Direct P2P playback. Downloads are uncapped by default; upload is limited separately so seeding cannot saturate a slow upstream connection." control={downloadLimitControl} />
+    <SettingsChoiceRow settingKey="torrent-upload-limit" title="Upload limit" description="Auto caps seeding at 1 Mb/s" learnMore="One torrent seeds while you watch. When playback closes, desktop continues for up to 30 minutes or a 0.25 ratio, whichever happens first. Upload is reduced automatically whenever less than one minute is buffered." value={$torrentUploadLimitMode} onChange={(value) => ($torrentUploadLimitMode = value as 'auto' | 'capacity')} options={[
+      { value: 'auto', label: 'Auto (1 Mb/s)' },
+      { value: 'capacity', label: 'Use my upstream' },
+    ]} />
+    {#if $torrentUploadLimitMode === 'capacity'}
+      <SettingsRow title="Upstream capacity" description={`izumi uses at most 70% (${Math.max(0, Number($torrentUpstreamCapacityMbps) || 0) * 0.7} Mb/s)`} control={capacityControl} />
+    {/if}
+  </SettingsSubcategory>
+
+  <SettingsSubcategory id="advanced" summary="DNS over HTTPS, VPN binding, SOCKS5 proxy, seeding">
+    <SettingsRow settingKey="use-dns-over-https" title="Use DNS over HTTPS" description="Encrypted DNS for sources, add-ons, metadata and downloads" learnMore="Resolves hostnames through the endpoint below for community sources, add-ons, metadata and downloads. Some extension sources fail closed instead of falling back to system DNS; other requests fall back if the endpoint is unreachable. Tracker browsing and mpv playback still use the system resolver." control={dohSwitch} onActivate={() => ($enableDoH = !$enableDoH)} pressed={$enableDoH} expanded={$enableDoH}>
       <label class="flex flex-col gap-1">
         <span class="text-sm font-bold">DNS-over-HTTPS URL</span>
         <input type="text" data-focusable bind:value={$doHUrl} placeholder="https://cloudflare-dns.com/dns-query" class="rounded-md bg-input px-3 py-2.5 text-base sm:py-2 sm:text-sm" />
       </label>
-    {/if}
-
-    <section class="rounded-md border border-border p-3">
-      <div class="font-bold">Direct torrent bandwidth</div>
-      <p class="mt-1 text-xs text-muted-foreground">Only affects Direct P2P playback. Downloads are uncapped by default; upload is limited separately so seeding cannot saturate a slow upstream connection.</p>
-
-      <label class="mt-3 flex items-center justify-between gap-4">
-        <span>
-          <span class="block text-sm font-bold">Download limit</span>
-          <span class="block text-xs text-muted-foreground">Use 0 for uncapped.</span>
-        </span>
-        <span class="flex items-center gap-2">
-          <input type="number" min="0" max="10000" step="1" data-focusable bind:value={$torrentDownloadLimitMbps} class="w-24 rounded-md bg-input px-3 py-2.5 text-right text-base sm:py-2 sm:text-sm" />
-          <span class="text-sm text-muted-foreground">Mb/s</span>
-        </span>
-      </label>
-
-      <label class="mt-3 flex items-center justify-between gap-4">
-        <span>
-          <span class="block text-sm font-bold">Upload limit</span>
-          <span class="block text-xs text-muted-foreground">Auto caps seeding at 1 Mb/s.</span>
-        </span>
-        <SelectMenu bind:value={$torrentUploadLimitMode} className="min-w-44" ariaLabel="Upload limit" options={[
-          { value: 'auto', label: 'Auto (1 Mb/s)' },
-          { value: 'capacity', label: 'Use my upstream' },
-        ]} />
-      </label>
-
-      {#if $torrentUploadLimitMode === 'capacity'}
-        <label class="mt-3 flex items-center justify-between gap-4">
-          <span>
-            <span class="block text-sm font-bold">Upstream capacity</span>
-            <span class="block text-xs text-muted-foreground">Izumi uses at most 70% ({Math.max(0, Number($torrentUpstreamCapacityMbps) || 0) * 0.7} Mb/s).</span>
-          </span>
-          <span class="flex items-center gap-2">
-            <input type="number" min="0.1" max="10000" step="0.1" data-focusable bind:value={$torrentUpstreamCapacityMbps} class="w-24 rounded-md bg-input px-3 py-2.5 text-right text-base sm:py-2 sm:text-sm" />
-            <span class="text-sm text-muted-foreground">Mb/s</span>
-          </span>
-        </label>
-      {/if}
-
-      <p class="mt-3 text-xs text-muted-foreground">One torrent seeds while you watch. When playback closes, desktop continues for up to 30 minutes or a 0.25 ratio, whichever happens first. Upload is reduced automatically whenever less than one minute is buffered.</p>
-    </section>
+    </SettingsRow>
 
     {#if !$isAndroid}
-      <section class="rounded-md border border-border p-3">
-        <div class="font-bold">VPN adapter binding</div>
-        <p class="mt-1 text-xs text-muted-foreground">Tie Direct P2P to one network adapter. macOS and Linux bind torrent sockets to it at the OS level; Windows keeps bound sessions outbound-only. Every desktop also refuses to start while the adapter is missing and pauses all torrents the instant it drops.</p>
-
-        <label class="mt-3 flex items-center justify-between gap-4">
-          <span>
-            <span class="block text-sm font-bold">Bind to network interface</span>
-            <span class="block text-xs text-muted-foreground">Connect your VPN first, then pick its adapter.</span>
-          </span>
-          <span class="flex items-center gap-2">
-            <SelectMenu bind:value={$torrentBindInterface} className="max-w-72 min-w-44" ariaLabel="Bind to network interface" options={ifaceOptions} />
-            <RefreshButton
-              onRefresh={refreshInterfaces}
-              class="min-w-[7.25rem] rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent"
-            />
-          </span>
-        </label>
-        {#if ifaceError}<p role="alert" class="mt-2 text-xs text-destructive">{ifaceError}</p>{/if}
-
-        {#if $torrentBindInterface}
-          {#if boundIface && boundIface.isUp}
-            <p class="mt-2 text-xs text-green-500">Bound to {boundIface.label}{boundIface.ips[0] ? ` (${boundIface.ips[0]})` : ''}. Torrenting stops the moment this adapter disconnects and resumes when it's back.</p>
-          {:else}
-            <p class="mt-2 text-xs text-destructive">The bound adapter is not connected right now — Direct P2P won't start until it is (or the binding is cleared).</p>
-          {/if}
-          <p class="mt-2 text-xs text-muted-foreground">Restart Izumi after changing this so the torrent session is recreated. On macOS and Linux, the selected adapter is applied to peer TCP/uTP, DHT, trackers, incoming peers, and local discovery. Keep the VPN app's kill switch on too, and combine with the SOCKS5 proxy below for defense in depth.</p>
-        {/if}
-      </section>
+      <SettingsChoiceRow settingKey="vpn-adapter-binding" title="VPN adapter binding" description="Tie Direct P2P to one adapter; connect your VPN first" learnMore="macOS and Linux bind torrent sockets to the adapter at the OS level; Windows keeps bound sessions outbound-only. Every desktop refuses to start while the adapter is missing and pauses all torrents the instant it drops. Restart izumi after changing this so the torrent session is recreated. Keep your VPN app's kill switch on too, and combine it with the SOCKS5 proxy for defence in depth." value={$torrentBindInterface} onChange={(value) => ($torrentBindInterface = value)} options={ifaceOptions} />
+      <SettingsRow title="Adapter status" meta={adapterMeta} control={refreshControl} expanded={!!ifaceError}>
+        {#if ifaceError}<p role="alert" class="text-xs text-destructive">{ifaceError}</p>{/if}
+      </SettingsRow>
     {/if}
 
-    <section class="rounded-md border border-border p-3">
-      <div class="font-bold">Direct P2P SOCKS5 proxy</div>
-      <p class="mt-1 text-xs text-muted-foreground">Route torrent peer connections and HTTP trackers through a SOCKS5 endpoint supplied by your VPN client or proxy provider. This is proxy routing, not qBittorrent-style VPN adapter binding.</p>
-      <div class="mt-3">
-        <Toggle label="Require SOCKS5 proxy" desc="Kill-switch mode: playback fails instead of falling back to the normal connection. Direct DHT and UDP trackers are disabled because they cannot use this proxy safely." value={$torrentProxyEnabled} onToggle={() => ($torrentProxyEnabled = !$torrentProxyEnabled)} />
-      </div>
-      {#if $torrentProxyEnabled}
-        <label class="mt-3 flex flex-col gap-1">
-          <span class="text-sm font-bold">SOCKS5 URL</span>
-          <input type="text" autocomplete="off" spellcheck="false" data-focusable bind:value={$torrentProxyUrl}
-                 placeholder="socks5://127.0.0.1:1080"
-                 class="rounded-md bg-input px-3 py-2.5 font-mono text-base sm:py-2 sm:text-sm" />
-          <span class="text-xs text-muted-foreground">Credentials are optional: <code>socks5://user:password@host:port</code>. Many VPN desktop clients expose a local SOCKS5 port.</span>
-        </label>
-        {#if proxyError}<p class="mt-2 text-xs text-destructive">{proxyError}</p>{/if}
-        <p class="mt-2 text-xs text-muted-foreground">Restart Izumi after changing this setting so the warmed torrent session is recreated on the selected route. Proxy mode may discover fewer peers because UDP-only trackers and DHT are intentionally unavailable.</p>
-      {/if}
-    </section>
+    <SettingsRow settingKey="require-socks5-proxy" title="Require SOCKS5 proxy" description="Kill switch: playback fails rather than skip the proxy" learnMore="Routes torrent peer connections and HTTP trackers through a SOCKS5 endpoint from your VPN client or proxy provider. Direct DHT and UDP trackers are disabled because they cannot use the proxy safely, so fewer peers may be found. Restart izumi after changing this so the torrent session uses the new route." control={proxySwitch} onActivate={() => ($torrentProxyEnabled = !$torrentProxyEnabled)} pressed={$torrentProxyEnabled} expanded={$torrentProxyEnabled}>
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-bold">SOCKS5 URL</span>
+        <input type="text" autocomplete="off" spellcheck="false" data-focusable bind:value={$torrentProxyUrl}
+               placeholder="socks5://127.0.0.1:1080"
+               class="rounded-md bg-input px-3 py-2.5 font-mono text-base sm:py-2 sm:text-sm" />
+        <span class="text-xs text-muted-foreground">Credentials are optional: <code>socks5://user:password@host:port</code>.</span>
+      </label>
+      {#if proxyError}<p role="alert" class="mt-2 text-xs text-destructive">{proxyError}</p>{/if}
+    </SettingsRow>
 
     {#if $isAndroid}
-      <Toggle label="Continue seeding after playback" desc="Android only: continue toward the 30-minute / 0.25-ratio target when the device is charging on an unmetered network. Off by default; active playback still seeds." value={$torrentAndroidPostSeed} onToggle={() => ($torrentAndroidPostSeed = !$torrentAndroidPostSeed)} />
+      <SettingsRow settingKey="continue-seeding-after-playback" title="Continue seeding after playback" description="While charging on unmetered networks, to 30 min or a 0.25 ratio" learnMore="Off by default; active playback still seeds." control={seedSwitch} onActivate={() => ($torrentAndroidPostSeed = !$torrentAndroidPostSeed)} pressed={$torrentAndroidPostSeed} />
     {/if}
-
-    <section class="rounded-md border border-border p-3">
-      <div class="font-bold">Peer-to-peer relay</div>
-      <p class="mt-1 text-xs text-muted-foreground">Peer-to-peer Device Sync (when selected) and Watch Together use separate encrypted connections, but may independently use this Iroh relay when a direct path is unavailable. Cloudflare Device Sync does not use this relay.</p>
-      <div class="mt-3 grid grid-cols-2 gap-2">
-        <button data-focusable onclick={() => ($syncRelayMode = 'public')} class="rounded-md px-3 py-2.5 text-sm font-bold sm:py-2 {$syncRelayMode === 'public' ? 'bg-theme text-white' : 'bg-secondary'}">Public relay</button>
-        <button data-focusable onclick={() => ($syncRelayMode = 'custom')} class="rounded-md px-3 py-2.5 text-sm font-bold sm:py-2 {$syncRelayMode === 'custom' ? 'bg-theme text-white' : 'bg-secondary'}">Custom relay</button>
-      </div>
-      {#if $syncRelayMode === 'custom'}
-        <label class="mt-3 flex flex-col gap-1">
-          <span class="text-sm font-bold">Iroh relay URL</span>
-          <input type="url" data-focusable bind:value={$syncRelayUrl} placeholder="https://relay.example.com." class="rounded-md bg-input px-3 py-2.5 text-base sm:py-2 sm:text-sm" />
-        </label>
-      {/if}
-      <button data-focusable disabled={applyingRelay || ($syncRelayMode === 'custom' && !$syncRelayUrl.trim())} onclick={applyRelay} class="mt-3 w-full rounded-md bg-secondary px-4 py-2.5 text-sm font-bold disabled:opacity-50 sm:w-auto sm:py-2">{applyingRelay ? 'Applying…' : 'Apply relay'}</button>
-      <p class="mt-2 text-xs text-muted-foreground">The selection is used for new connections. Leave and rejoin an active room after changing it.</p>
-      {#if relayNotice}<p class="mt-2 text-xs text-green-500">{relayNotice}</p>{/if}
-      {#if relayError}<p class="mt-2 text-xs text-destructive">{relayError}</p>{/if}
-    </section>
-  </div>
-</div>
+  </SettingsSubcategory>
 </SettingsSection>
