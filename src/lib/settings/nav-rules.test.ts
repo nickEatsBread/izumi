@@ -105,4 +105,8 @@ describe('Phone navigation editor', () => {
   it('says why Settings has no Hidden option', () => {
     expect(page).toContain("Settings can't be hidden, so you can always get back here.")
   })
+
+  it('stacks each destination row so its controls never squeeze the name on a narrow phone', () => {
+    expect(page).toContain('<SettingsRow title={meta.label} leading={destinationIcon} control={placementControl} controlLayout="stack" />')
+  })
 })

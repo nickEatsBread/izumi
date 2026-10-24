@@ -58,8 +58,7 @@ describe('About section', () => {
     expect(page).toContain('href="/app/settings/devices#backup"')
     expect(page).toContain('settingKey="setup-assistant"')
     expect(page).toContain('onclick={restartOnboarding}')
-    const interfacePage = here('../interface/+page.svelte')
-    if (existsSync(interfacePage)) expect(readFileSync(interfacePage, 'utf8')).not.toContain('restartOnboarding')
+    expect(readFileSync(here('../appearance/+page.svelte'), 'utf8')).not.toContain('restartOnboarding')
   })
 
   it('keeps every description to one short line', () => {

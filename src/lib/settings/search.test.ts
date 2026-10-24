@@ -154,6 +154,15 @@ describe('settings search per device', () => {
     expect(titles('ui scale', { android: true, phone: true })).not.toContain('UI scale')
   })
 
+  it('offers the navigation editor only in the phone layout, where Appearance renders it', () => {
+    const title = 'Navigation items'
+    expect(titles('reorder', { android: true, phone: true })).toContain(title)
+    expect(titles('reorder', { android: false, phone: true })).toContain(title)
+    expect(titles('reorder')).not.toContain(title)
+    expect(titles('reorder', { android: true, tv: true })).not.toContain(title)
+    expect(titles('reorder', { android: false, gamemode: true })).not.toContain(title)
+  })
+
   it('decides visibility with the same rules the search uses', () => {
     const item: SettingSearchItem = { title: 'x', category: 'x', href: '/app/settings/playback', section: 'playback', subcategory: 'up-next', hideOn: ['tv', 'lite'] }
     expect(settingVisible(item, { android: true })).toBe(true)

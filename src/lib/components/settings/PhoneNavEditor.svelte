@@ -78,7 +78,8 @@
         <button type="button" data-focusable aria-label={`Move ${meta.label} down`} disabled={themeNavLocked || i === $effectiveNav.length - 1} data-touch-target onclick={() => move(i, 1)}
                 class="grid size-9 place-items-center rounded transition-colors active:bg-accent disabled:opacity-30 sm:hover:bg-accent"><ChevronDown size={15} /></button>
       {/snippet}
-      <SettingsRow title={meta.label} leading={destinationIcon} control={placementControl} />
+      <!-- Stacked on a phone: the placement menu and two 44px move buttons leave no room for the name inline. -->
+      <SettingsRow title={meta.label} leading={destinationIcon} control={placementControl} controlLayout="stack" />
     {/each}
     <SettingsRow title="Reset to defaults" description="Bottom bar and Home header" control={resetControl} />
   </div>

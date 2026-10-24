@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { settingsSection } from '$lib/settings/sections'
@@ -105,11 +105,10 @@ describe('Accounts and profiles section', () => {
     expect(switcher).toContain("void goto('/app/settings/accounts?manage=profiles')")
   })
 
-  it('moves adult content and auto-incognito into Content and off the Interface page', () => {
+  it('moves adult content and auto-incognito into Content and off Appearance', () => {
     expect([...keysIn('content')].sort()).toEqual(['incognito-for-18-titles', 'show-18-content'])
     expect(source).toContain('learnMore={m.settings_auto_incognito_more()}')
-    const interfacePage = here('../interface/+page.svelte')
-    if (existsSync(interfacePage)) expect(readFileSync(interfacePage, 'utf8')).not.toContain('$showAdult')
+    expect(read('../appearance/+page.svelte')).not.toContain('$showAdult')
   })
 
   it('keeps every description to one short line', () => {

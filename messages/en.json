@@ -9,8 +9,6 @@
   "nav_incognito": "Incognito",
   "nav_settings": "Settings",
   "nav_sign_in": "Sign in",
-  "settings_interface": "Interface",
-  "settings_interface_intro": "Layout, scale, language, and content visibility.",
   "settings_language": "Language",
   "settings_language_hint": "Choose the language used by Izumi's interface.",
   "settings_setup_assistant": "Setup assistant",

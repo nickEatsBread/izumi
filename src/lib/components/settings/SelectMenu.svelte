@@ -112,7 +112,8 @@
     await tick()
     // Now that it exists, re-decide against the real content height rather than the estimate.
     measure(menu?.scrollHeight)
-    const current = root.querySelector<HTMLElement>(`[data-select-value="${CSS.escape(value)}"]`)
+    // A disabled current option (Appearance's "Custom" theme) can't take focus; fall back to the first.
+    const current = root.querySelector<HTMLElement>(`[data-select-value="${CSS.escape(value)}"]:not(:disabled)`)
     const first = root.querySelector<HTMLElement>('[data-select-value]:not(:disabled)')
     ;(searchable && !controllerUi ? searchInput : current ?? first)?.focus({ preventScroll: true })
     // Decision 7: the searchable language menu is a typing-only launcher, so a controller gets the

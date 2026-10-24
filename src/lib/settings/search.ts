@@ -23,6 +23,8 @@ export type SettingSearchItem = {
   desktopOnly?: boolean
   androidOnly?: boolean
   hideOn?: ReadonlyArray<SettingHideOn>
+  /** The row renders only in the phone layout (`phone`, `$isMobile`). */
+  phoneOnly?: true
   /** The section the row belongs to, and the subcategory of it that holds the row (sections.ts). */
   section: SettingsSectionId
   subcategory: string
@@ -141,7 +143,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Larger interaction targets', category: 'Appearance', href: '/app/settings/appearance', section: 'appearance', subcategory: 'accessibility', keywords: 'large touch targets 44 accessibility', key: 'larger-interaction-targets' },
   { title: 'UI scale', category: 'Appearance', href: '/app/settings/appearance', section: 'appearance', subcategory: 'accessibility', keywords: 'zoom size accessibility', key: 'ui-scale', hideOn: ['phone'] },
   { title: 'Haptics', category: 'Appearance', href: '/app/settings/appearance', section: 'appearance', subcategory: 'accessibility', keywords: 'vibration feedback Android', key: 'haptics', androidOnly: true },
-  { title: 'Navigation items', category: 'Appearance', href: '/app/settings/appearance', section: 'appearance', subcategory: 'navigation', keywords: 'bottom tabs top bar hidden reorder Android phone', key: 'navigation-items' },
+  { title: 'Navigation items', category: 'Appearance', href: '/app/settings/appearance', section: 'appearance', subcategory: 'navigation', keywords: 'bottom tabs top bar hidden reorder Android phone', key: 'navigation-items', phoneOnly: true },
   { title: 'Android TV layout', category: 'Appearance', href: '/app/settings/appearance', section: 'appearance', subcategory: 'tv', keywords: 'television remote dpad leanback ten foot focus wide couch', key: 'android-tv-layout', androidOnly: true },
   { title: 'Wheel-scroll carousels', category: 'Appearance', href: '/app/settings/appearance', section: 'appearance', subcategory: 'advanced', advanced: true, keywords: 'mouse horizontal home rows trackpad', key: 'wheel-scroll-carousels' },
   { title: 'Mouse-drag carousels', category: 'Appearance', href: '/app/settings/appearance', section: 'appearance', subcategory: 'advanced', advanced: true, keywords: 'mouse drag swipe banner home rows', key: 'mouse-drag-carousels' },
@@ -207,6 +209,7 @@ const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9+]+/g,
 /** false when the hit's row is not shown in `env` (the platform flags and every `hideOn` tag). */
 export function settingVisible(item: SettingSearchItem, env: SettingsSearchEnv): boolean {
   if (env.android ? item.desktopOnly : item.androidOnly) return false
+  if (item.phoneOnly && !env.phone) return false
   return !(item.hideOn ?? []).some((tag) => env[tag] === true)
 }
 

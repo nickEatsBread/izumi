@@ -134,6 +134,10 @@ describe('SelectMenu variants', () => {
   it('anchors the inline menu to the right edge of its trigger', () => {
     expect(source).toContain("class=\"absolute {variant === 'inline' ? 'right-0' : 'left-0'} z-[80] min-w-full")
   })
+
+  it('opens onto the first enabled option when the current one is disabled', () => {
+    expect(source).toContain('`[data-select-value="${CSS.escape(value)}"]:not(:disabled)`')
+  })
 })
 
 describe('SettingsChoiceRow', () => {

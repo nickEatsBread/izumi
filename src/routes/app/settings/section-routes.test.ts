@@ -38,10 +38,4 @@ describe('settings section routes', () => {
     if (!playback.includes("'../hotkeys/+page.svelte'")) return
     expect(playback).toMatch(/\{#if !\$isAndroid\}\s*<SettingsSubcategory id="controls"[^>]*><HotkeysPage \/>/)
   })
-
-  it('mounts the old Navigation page in the phone layout only (it arranges the phone bar)', () => {
-    const appearance = read('./appearance/+page.svelte')
-    if (!appearance.includes("'../navigation/+page.svelte'")) return
-    expect(appearance).toMatch(/\{#if \$isMobile\}\s*<SettingsSubcategory id="navigation"[^>]*><NavigationPage \/>/)
-  })
 })
