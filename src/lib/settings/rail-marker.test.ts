@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { settingsRailMarker } from './rail-marker'
 
 describe('settingsRailMarker', () => {
-  it('draws the accent marker while no theme chooses one', () => {
-    expect(get(settingsRailMarker)).toBe('accent')
+  it('draws the neutral fill marker while no theme chooses one', () => {
+    expect(get(settingsRailMarker)).toBe('fill')
   })
 })

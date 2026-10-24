@@ -98,7 +98,7 @@
              data-sveltekit-keepfocus onclick={releasePointerFocus}
              class="relative flex shrink-0 items-center gap-3 rounded-lg px-3 py-2 text-sm leading-tight transition-colors focus-visible:outline-offset-[-2px]
                {active(it.href) ? 'font-medium text-foreground' : 'text-muted-foreground hover:bg-foreground/5 hover:text-foreground'}">
-            <Icon size={18} class={active(it.href) ? 'text-theme' : ''} aria-hidden="true" /> {it.railTitle}
+            <Icon size={18} aria-hidden="true" /> {it.railTitle}
           </a>
         {/each}
       </div>

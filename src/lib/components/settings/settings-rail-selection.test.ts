@@ -82,7 +82,7 @@ describe('desktop Settings rail selection', () => {
     expect(classes).toContain("'text-muted-foreground hover:bg-foreground/5 hover:text-foreground'")
     expect(classes).toContain('focus-visible:outline-offset-[-2px]')
     expect(classes).not.toMatch(/font-bold|bg-secondary|focus(-visible)?:bg-/)
-    expect(nav).toContain(`<Icon size={18} class={active(it.href) ? 'text-theme' : ''} aria-hidden="true" /> {it.railTitle}`)
+    expect(nav).toContain(`<Icon size={18} aria-hidden="true" /> {it.railTitle}`)
     // Amendment 1: icons come from section-icons.ts, never from the registry.
     expect(nav).toContain('{@const Icon = sectionIcon(it.id)}')
     expect(nav).toContain("import { sectionIcon } from '$lib/components/settings/section-icons'")

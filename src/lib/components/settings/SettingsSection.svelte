@@ -40,7 +40,7 @@
     <div class="sticky top-0 z-20 -mx-4 h-0 sm:-mx-8">
       <div data-settings-sticky data-visible={scroll.stuck ? '' : undefined} aria-hidden="true"
            class="settings-sticky absolute inset-x-0 top-0 flex items-center gap-2 border-b border-border bg-background/95 px-4 pb-2.5 text-sm backdrop-blur sm:px-8">
-        <Icon size={16} class="shrink-0 text-theme" aria-hidden="true" />
+        <Icon size={16} class="shrink-0 text-muted-foreground" aria-hidden="true" />
         <span class="font-medium">{def.title}</span>
         {#if scroll.active}
           <span class="text-muted-foreground">›</span>
@@ -51,7 +51,7 @@
   {/if}
   <div data-settings-section-body class="max-w-[880px]">
     <header bind:this={header} data-settings-section-header class="mb-5 flex items-center gap-3.5">
-      <span data-part="settings.section.icon" aria-hidden="true" class="grid size-11 shrink-0 place-items-center rounded-xl bg-theme/[0.16] text-theme">
+      <span data-part="settings.section.icon" aria-hidden="true" class="grid size-11 shrink-0 place-items-center rounded-xl bg-secondary text-foreground">
         <Icon size={22} />
       </span>
       <h2 id="settings-section-{def.id}-title" data-settings-page-title class="text-2xl font-bold tracking-tight">{def.title}</h2>
@@ -64,7 +64,7 @@
                   aria-current={scroll.active === id ? 'location' : undefined}
                   onclick={() => tracker?.jump(id)}
                   class="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors
-                    {scroll.active === id ? 'border-transparent bg-theme/[0.16] text-foreground' : 'border-border text-muted-foreground hover:bg-foreground/5 hover:text-foreground'}">
+                    {scroll.active === id ? 'border-transparent bg-secondary text-foreground' : 'border-border text-muted-foreground hover:bg-foreground/5 hover:text-foreground'}">
             {titleOf(id)}
           </button>
         {/each}

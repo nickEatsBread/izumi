@@ -38,13 +38,13 @@ describe('SettingsSection on desktop', () => {
     expect(source).not.toContain('def.icon')
   })
 
-  it('draws a 44 px accent icon tile and a large title, with no summary line', () => {
+  it('draws a 44 px neutral icon tile and a large title, with no summary line', () => {
     const [header] = withAttr('data-settings-section-header')
     expect(header.name).toBe('header')
     const tile = elements.find((el) => staticAttr(el, 'data-part') === 'settings.section.icon')!
     expect(tile.ancestors[0]).toBe(header)
     expect(staticAttr(tile, 'class')).toContain('size-11')
-    expect(staticAttr(tile, 'class')).toContain('bg-theme/[0.16] text-theme')
+    expect(staticAttr(tile, 'class')).toContain('bg-secondary text-foreground')
     const [title] = withAttr('data-settings-page-title')
     expect(title.name).toBe('h2')
     expect(staticAttr(title, 'class')).toContain('text-2xl')
