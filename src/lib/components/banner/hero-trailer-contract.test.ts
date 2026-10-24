@@ -50,7 +50,8 @@ describe('hero trailers (API 6 `hero.preview` / `detail.preview: "trailer"`)', (
     expect(snippet).toContain('<BackdropTrailer')
     expect(snippet).toContain('id={youtubeTrailerId(media.trailer)}')
     expect(snippet).toContain('enabled={trailerOn && !played.has(slide)}')
-    expect(snippet).toContain('held={showOverlay && scrolled}')
+    // Scrolling away holds it inside BackdropTrailer, on Home and the series page alike.
+    expect(snippet).not.toContain('held=')
     expect(snippet).toContain('dwell={showOverlay ? HERO_TRAILER_DWELL : DETAIL_TRAILER_DWELL}')
     expect(snippet).toContain("part={showOverlay ? 'hero.video' : 'detail.video'}")
     expect(snippet).toContain("mutePart={showOverlay ? 'hero.mute' : 'detail.mute'}")
@@ -111,7 +112,7 @@ describe('hero trailers (API 6 `hero.preview` / `detail.preview: "trailer"`)', (
   it('never plays a backdrop trailer alongside the full dialog or a hover preview', () => {
     expect(store).toContain('export const hoverTrailers = writable(0)')
     expect(backdrop).toContain("import { backdropTrailerMuted, hoverTrailers, trailerPopup } from '$lib/stores/trailer'")
-    expect(backdrop).toContain('held: held || $trailerPopup !== null || $hoverTrailers > 0')
+    expect(backdrop).toContain('held: held || scrolled || $trailerPopup !== null || $hoverTrailers > 0')
     // WebView2 keeps a minimised window's page visible, so the window state stops it too.
     expect(backdrop).toContain('pageHidden: pageHidden || $windowMinimized')
     // Only the looping hover previews count, once each, and release on teardown.

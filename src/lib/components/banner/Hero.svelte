@@ -654,7 +654,7 @@
      under the top bar by --theme-shell-top, hence twice that; a template's trailer box starts at its own top. -->
 {#snippet slideTrailer(media: Media)}
   {#each [media.id] as slide (slide)}
-    <BackdropTrailer id={youtubeTrailerId(media.trailer)} title={title(media)} enabled={trailerOn && !played.has(slide)} held={showOverlay && scrolled}
+    <BackdropTrailer id={youtubeTrailerId(media.trailer)} title={title(media)} enabled={trailerOn && !played.has(slide)}
       dwell={showOverlay ? HERO_TRAILER_DWELL : DETAIL_TRAILER_DWELL}
       part={showOverlay ? 'hero.video' : 'detail.video'} mutePart={showOverlay ? 'hero.mute' : 'detail.mute'}
       muteClass={!showOverlay ? 'right-8 top-24 z-30' : heroTheme?.template ? 'right-4 top-[calc(var(--theme-shell-top,2rem)+0.75rem)] z-30' : 'right-[4vw] top-[calc(var(--theme-shell-top,2rem)*2+0.75rem)] z-30'}
