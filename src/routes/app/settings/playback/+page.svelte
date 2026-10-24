@@ -293,7 +293,7 @@
           <p class="px-3 py-2.5 text-sm text-yellow-500">{$qualityNotice}</p>
         {/if}
         {#if $videoQualityPreset === 'custom'}
-          <SetupElsewhere title="Custom mpv options" status={$rawMpvOptions.trim() ? 'Set' : 'Not set'} where="Keyboard needed: connect one, or set it up on a computer" settingKey="custom-mpv-options">
+          <SetupElsewhere title="Custom mpv options" status={$rawMpvOptions.trim() ? 'Set' : 'Not set'} where="Needs a keyboard: connect one to edit here" settingKey="custom-mpv-options">
             <SettingsRow settingKey="custom-mpv-options" title="Custom mpv options" description="One key=value per line. Some options apply from the next video.">
               <textarea
                 data-focusable

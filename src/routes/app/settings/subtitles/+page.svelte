@@ -373,7 +373,7 @@
             {#snippet control()}<SettingsSwitch interactive={false} label="Stronger SDH removal" value={$subtitleStripSdhHarder} onToggle={() => ($subtitleStripSdhHarder = !$subtitleStripSdhHarder)} />{/snippet}
           </SettingsRow>
         {/if}
-        <SetupElsewhere title="Text filter" status={$subtitleRegexFilter.trim() ? 'Set' : 'Off'} where="Keyboard needed: connect one, or set it up on a computer" settingKey="text-filter">
+        <SetupElsewhere title="Text filter" status={$subtitleRegexFilter.trim() ? 'Set' : 'Off'} where="Needs a keyboard: connect one to edit here" settingKey="text-filter">
           <SettingsRow settingKey="text-filter" title="Text filter" description="Hide lines matching an mpv regular expression.">
             {#snippet control()}
               <input type="text" bind:value={$subtitleRegexFilter} data-focusable aria-label="Subtitle text filter" placeholder="Optional regex" class="h-9 w-36 rounded-md bg-input px-3 text-sm sm:w-48" />

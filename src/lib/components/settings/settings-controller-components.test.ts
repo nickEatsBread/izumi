@@ -101,14 +101,35 @@ describe('setup-heavy rows in controller mode (spec §5.4)', () => {
 
   it('renders a status row in controller mode and the full controls elsewhere', () => {
     expect(component).toContain('{#if $settingsControllerMode}')
-    expect(component).toContain('<SettingsRow {title} description={where} value={status} {settingKey} chevron onActivate={() => (expanded = !expanded)} {expanded} {children} />')
+    expect(component).toContain('<SettingsRow {title} description={where} value={status} {settingKey} control={disclosure} onActivate={() => (expanded = !expanded)} {expanded} {children} />')
+    // An inline disclosure: a ChevronDown that turns, not the link row's fixed ChevronRight.
+    expect(component).toContain("transition-transform {expanded ? 'rotate-180' : ''}")
     expect(component).toContain('{@render children()}')
   })
 
   it('wraps custom mpv options, the subtitle text filter, Worker setup and Theme Studio', () => {
-    expect(page('playback')).toMatch(/<SetupElsewhere title="Custom mpv options"[^>]*>[\s\S]*?bind:value=\{\$rawMpvOptions\}[\s\S]*?<\/SetupElsewhere>/)
-    expect(page('subtitles')).toMatch(/<SetupElsewhere title="Text filter"[^>]*>[\s\S]*?\$subtitleRegexFilter[\s\S]*?<\/SetupElsewhere>/)
-    expect(page('devices')).toMatch(/<SetupElsewhere title="Worker setup and updates"[^>]*>[\s\S]*?<\/SetupElsewhere>/)
+    // settingKey on the wrapper is what lands a search hit on the status row.
+    expect(page('playback')).toMatch(/<SetupElsewhere title="Custom mpv options"[^>]*settingKey="custom-mpv-options"[^>]*>[\s\S]*?bind:value=\{\$rawMpvOptions\}[\s\S]*?<\/SetupElsewhere>/)
+    expect(page('subtitles')).toMatch(/<SetupElsewhere title="Text filter"[^>]*settingKey="text-filter"[^>]*>[\s\S]*?\$subtitleRegexFilter[\s\S]*?<\/SetupElsewhere>/)
     expect(page('appearance')).toMatch(/<SetupElsewhere title="Theme Studio"[^>]*>[\s\S]*?href="\/app\/settings\/theme-studio"[\s\S]*?<\/SetupElsewhere>/)
+  })
+
+  it('wraps only the Worker deployment rows, and only while they show', () => {
+    const devices = page('devices')
+    // Gated like its content, so peer-to-peer users never see an empty Cloudflare row.
+    const block = devices.match(/\{#if cloudflareSetupOpen\}\s*<SetupElsewhere title="Worker setup"[^>]*>([\s\S]*?)<\/SetupElsewhere>\s*\{\/if\}/)
+    expect(block).not.toBeNull()
+    expect(block![1]).toContain('deployCloudflare()')
+    expect(block![1]).toContain('connectCloudflare()')
+    // Worker updates is a plain button with a pending-update panel; it stays a direct row.
+    expect(block![1]).not.toContain('openCloudflareWorkerUpdate')
+    expect(devices.match(/<SetupElsewhere /g)).toHaveLength(1)
+    expect(devices).toContain('settingKey="worker-updates"')
+  })
+
+  it('tells controller users how to edit device-local values here, not on another device', () => {
+    // Custom mpv options, the text filter and studio themes are not synced settings.
+    for (const name of ['playback', 'subtitles']) expect(page(name)).toContain('where="Needs a keyboard: connect one to edit here"')
+    expect(page('appearance')).toContain('where="Needs a mouse and keyboard: connect them to design here"')
   })
 })

@@ -44,7 +44,7 @@
   <SettingsSubcategory id="theme">
     <SettingsChoiceRow settingKey="theme-preset" title={m.settings_theme()} description={m.settings_theme_hint()} value={$themePreset} options={presetOptions} onChange={(value) => ($themePreset = value as ThemePreset)} />
     <SettingsRow title="Themes" description="Install, update and manage themes" href="/app/settings/themes" chevron />
-    <SetupElsewhere title="Theme Studio" status={$themePreset === 'custom' ? 'In use' : 'Not used'} where="Design themes in izumi on a computer or phone">
+    <SetupElsewhere title="Theme Studio" status={$themePreset === 'custom' ? 'In use' : 'Not used'} where="Needs a mouse and keyboard: connect them to design here">
       <SettingsRow title="Theme Studio" description="Design your own colours, type and backdrop" href="/app/settings/theme-studio" chevron />
     </SetupElsewhere>
   </SettingsSubcategory>
