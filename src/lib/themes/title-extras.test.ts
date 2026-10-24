@@ -7,8 +7,10 @@ const mocks = vi.hoisted(() => ({
   getScheduleInfo: vi.fn(),
   getScheduleInfoMany: vi.fn(),
   tmdb: vi.fn(),
+  fetch: vi.fn(),
   locale: 'en',
 }))
+vi.mock('$lib/trakt/config', async () => ({ traktAppClientId: '', traktClientId: (await import('svelte/store')).writable('') }))
 vi.mock('$lib/anizip', () => ({ fetchAniZip: mocks.fetchAniZip }))
 vi.mock('$lib/anilist/jikan', () => ({ fetchMalRating: mocks.fetchMalRating }))
 vi.mock('$lib/catalog/providers/tmdb', () => ({ tmdb: mocks.tmdb }))
@@ -21,9 +23,12 @@ vi.mock('$lib/anime/animeschedule', () => ({
 
 import { ART_EXTRAS, artNeeds, audioLabel, clearTitleExtrasCache, languageCode, loadTitleExtras, logoLanguages, malAgeRating, metaNeeds, nativeLanguage, peekTitleArt, pickTitleArt, pickTitleLogo, primeTitleExtras, queueTitleArt, templateNeeds, titleExtrasKey, type TitleExtras } from './title-extras'
 import { tmdbReadToken } from '$lib/settings/catalog'
+import { traktClientId } from '$lib/trakt/config'
 import type { ThemeNode } from './presentation'
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+// A stubbed `fetch` answer.
+const answer = (body: unknown, status = 200) => async () => ({ ok: status < 400, status, json: async () => body })
 
 const FANART = 'https://artworks.thetvdb.com/banners/v4/series/424536/backgrounds/64e6cbe29d9c0.jpg'
 const LOGO = 'https://artworks.thetvdb.com/banners/v4/series/424536/clearlogo/696a802a5aa22.png'
@@ -33,9 +38,12 @@ const all = new Set(['keyart', 'logo', 'ageRating', 'audio'] as const)
 
 beforeEach(() => {
   clearTitleExtrasCache()
-  for (const mock of [mocks.fetchAniZip, mocks.fetchMalRating, mocks.getScheduleInfo, mocks.getScheduleInfoMany, mocks.tmdb]) mock.mockReset()
+  for (const mock of [mocks.fetchAniZip, mocks.fetchMalRating, mocks.getScheduleInfo, mocks.getScheduleInfoMany, mocks.tmdb, mocks.fetch]) mock.mockReset()
   mocks.locale = 'en'
   tmdbReadToken.set('')
+  traktClientId.set('trakt-id')
+  mocks.fetch.mockImplementation(answer([]))
+  vi.stubGlobal('fetch', mocks.fetch)
   mocks.fetchAniZip.mockResolvedValue({ images: [
     { coverType: 'Banner', url: 'https://artworks.thetvdb.com/banners/v4/series/424536/banners/a.jpg' },
     { coverType: 'Fanart', url: FANART },
@@ -161,6 +169,72 @@ describe('an English title logo from TMDB', () => {
     mocks.locale = 'ja'
     await expect(loadTitleExtras(media(), new Set(['logo']))).resolves.toEqual({ logo: 'https://image.tmdb.org/t/p/w500/ja-logo.png' })
     expect(mocks.tmdb).toHaveBeenCalledWith('/tv/209867/images', { include_image_language: 'ja,en' })
+  })
+})
+
+describe('an English title logo from Trakt', () => {
+  const TRAKT_LOGO = 'media.trakt.tv/images/shows/000/173/241/logos/medium/066bcd9b77.png.webp'
+  const TRAKT_FULL = 'https://media.trakt.tv/images/shows/000/173/241/logos/full/066bcd9b77.png.webp'
+  const mappings = { thetvdb_id: 397934, themoviedb_id: '114410', imdb_id: 'tt13616990' }
+  const logoOnly = new Set(['logo'] as const)
+  beforeEach(() => {
+    mocks.fetchAniZip.mockResolvedValue({ images: [{ coverType: 'Fanart', url: FANART }, { coverType: 'Clearlogo', url: LOGO }], mappings })
+    mocks.fetch.mockImplementation(answer([{ type: 'show', show: { images: { logo: [TRAKT_LOGO] } } }]))
+  })
+  it('replaces the untagged TVDB logo when TMDB is not set up, at full size', async () => {
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: TRAKT_FULL })
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+    const [url, init] = mocks.fetch.mock.calls[0]
+    expect(url).toBe('https://api.trakt.tv/search/tvdb/397934?type=show&extended=images')
+    expect(init.headers).toMatchObject({ 'trakt-api-version': '2', 'trakt-api-key': 'trakt-id' })
+    expect(peekTitleArt(154587)).toMatchObject({ keyart: FANART, logo: TRAKT_FULL })
+  })
+  it('looks a film up by its TMDB id, and keeps a URL that already names its scheme', async () => {
+    mocks.fetch.mockImplementation(answer([{ type: 'movie', movie: { images: { logo: ['https://media.trakt.tv/images/movies/000/001/logos/medium/a.png.webp'] } } }]))
+    await expect(loadTitleExtras(media({ format: 'MOVIE' }), logoOnly)).resolves.toEqual({ logo: 'https://media.trakt.tv/images/movies/000/001/logos/full/a.png.webp' })
+    expect(mocks.fetch.mock.calls[0][0]).toBe('https://api.trakt.tv/search/tmdb/114410?type=movie&extended=images')
+  })
+  it('comes after an English TMDB logo, and before the TVDB one when TMDB has none', async () => {
+    tmdbReadToken.set('token')
+    mocks.tmdb.mockResolvedValue({ logos: [{ file_path: '/en.png', iso_639_1: 'en' }] })
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: 'https://image.tmdb.org/t/p/w500/en.png' })
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    clearTitleExtrasCache()
+    mocks.tmdb.mockResolvedValue({ logos: [] })
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: TRAKT_FULL })
+  })
+  it('is not asked when the TVDB logo is tagged English', async () => {
+    mocks.fetchAniZip.mockResolvedValue({ images: [{ coverType: 'Clearlogo', url: LOGO, language: 'eng' }], mappings })
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: LOGO })
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+  it('is never asked without a client id', async () => {
+    traktClientId.set('')
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: LOGO })
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+  it("keeps the title's own logo for an app in the title's language", async () => {
+    mocks.locale = 'ja'
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: LOGO })
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    // A Korean title has no own-language claim on a Japanese app: English still beats it.
+    await expect(loadTitleExtras(media({ id: 7, countryOfOrigin: 'KR' }), logoOnly)).resolves.toEqual({ logo: TRAKT_FULL })
+  })
+  it('falls back to the TVDB logo when the request fails, and asks again next time', async () => {
+    mocks.fetch.mockImplementationOnce(answer({ error: 'rate limited' }, 429))
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: LOGO })
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: TRAKT_FULL })
+    await loadTitleExtras(media(), logoOnly)
+    expect(mocks.fetch).toHaveBeenCalledTimes(2)
+    clearTitleExtrasCache()
+    mocks.fetch.mockRejectedValueOnce(new DOMException('timed out', 'TimeoutError'))
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: LOGO })
+  })
+  it('keeps the TVDB logo when Trakt has none, without asking again', async () => {
+    mocks.fetch.mockImplementation(answer([]))
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: LOGO })
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: LOGO })
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
   })
 })
 
