@@ -7,11 +7,12 @@
   import SettingsRow from './SettingsRow.svelte'
   import Trash2 from '@lucide/svelte/icons/trash-2'
 
-  // Ids match cache_gc::BUCKETS. Anything not listed here is app DATA (downloads, extensions,
+  // Ids match cache_gc::BUCKETS (cache-storage-settings.test.ts checks it). Anything not listed here is app DATA (downloads, extensions,
   // sync state) — user-owned, and deliberately not clearable from a "caches" screen.
   const BUCKETS = [
     { id: 'thumbs', title: 'Scrub previews', desc: 'Seek-bar thumbnails from the episode playing now', more: 'Generated as you hover and dropped automatically when you leave an episode; anything here is from the episode playing now or a session that ended badly.' },
     { id: 'direct-torrents', title: 'Direct P2P playback', desc: 'Torrent pieces the last session left behind', more: 'Pieces downloaded while streaming a torrent without a debrid service. Cleared on every launch.' },
+    { id: 'torrent-metadata', title: 'Torrent metadata', desc: 'Saved torrent info so repeat plays start faster', more: 'Small files that let a torrent you played before start without asking peers for its details again. Anything untouched for 90 days is removed on launch.' },
     { id: 'subs', title: 'Downloaded subtitles', desc: 'Subtitle files; unused ones go after 30 days', more: 'Subtitle files fetched from your subtitle providers. Shared across rewatches; anything untouched for 30 days is removed on launch.' },
     { id: 'gif-capture', title: 'GIF recorder scratch', desc: 'Frames left if the app closed mid-recording', more: 'Frames from a GIF capture. Only holds anything if the app was killed mid-recording.' },
   ]
@@ -63,15 +64,16 @@
   description="Total cached on this device"
   learnMore="What izumi keeps on disk to avoid re-fetching it. All of it regenerates on demand, so clearing costs time, never data. Downloads, source packages and watch history are not caches."
   value={loaded ? formatBytes(total) || '0 B' : '…'}
+  controlLayout="stack"
 >
   {#snippet control()}
     <RefreshButton
       onRefresh={refresh}
       successLabel="Updated"
-      class="min-w-[7rem] rounded-md border border-border px-3 py-2 text-xs font-bold hover:bg-accent"
+      class="min-w-[7rem] rounded-md border border-border px-3 py-2.5 text-sm font-bold hover:bg-accent sm:py-2 sm:text-xs"
     />
     <button data-focusable onclick={() => clear('all')} disabled={busy !== '' || total === 0}
-            class="flex items-center gap-2 rounded-md bg-secondary px-3 py-2 text-xs font-bold hover:bg-accent disabled:opacity-50">
+            class="flex items-center gap-2 rounded-md bg-secondary px-3 py-2.5 text-sm font-bold hover:bg-accent disabled:opacity-50 sm:py-2 sm:text-xs">
       <Trash2 size={14} /> Clear all
     </button>
   {/snippet}
@@ -87,7 +89,7 @@
   >
     {#snippet control()}
       <button data-focusable onclick={() => clear(bucket.id)} disabled={busy !== '' || !sizes[bucket.id]}
-              class="rounded-md border border-border px-3 py-2 text-xs font-bold hover:bg-accent disabled:opacity-50">
+              class="rounded-md border border-border px-3 py-2 text-sm font-bold hover:bg-accent disabled:opacity-50 sm:py-1.5 sm:text-xs">
         {busy === bucket.id ? 'Clearing…' : 'Clear'}
       </button>
     {/snippet}
