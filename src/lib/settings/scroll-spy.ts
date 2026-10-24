@@ -5,9 +5,10 @@ export interface SubcategoryTop { id: string; top: number }
  *  reading line sits, so a chip jump lights its own chip. */
 export const SCROLL_SPY_GAP = 16
 
-/** How far below the viewport top a heading starts counting as the one being read, with the
- *  default 2rem titlebar band: under the sticky bar, and SCROLL_SPY_GAP below SettingsSubcategory's
- *  96 px scroll margin. A top nav bar pushes both down; section-scroll.ts reads the live margin. */
+/** activeSubcategory's default reading line, used by tests only: SCROLL_SPY_GAP below the 96 px
+ *  that SettingsSubcategory's scroll margin (calc(var(--theme-shell-top,2rem)+4rem)) comes to under
+ *  the default 2rem band. A hand copy, nothing checks it against that class; section-scroll.ts
+ *  always passes a line measured from the live margin. */
 export const SCROLL_SPY_LINE = 96 + SCROLL_SPY_GAP
 
 /** The subcategory being read, for the chips and the sticky bar: the last one in page order whose

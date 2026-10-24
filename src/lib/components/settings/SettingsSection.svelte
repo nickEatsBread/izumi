@@ -39,8 +39,7 @@
          it repeats is the page's real heading. -->
     <div class="sticky top-0 z-20 -mx-4 h-0 sm:-mx-8">
       <div data-settings-sticky data-visible={scroll.stuck ? '' : undefined} aria-hidden="true"
-           class="settings-sticky absolute inset-x-0 top-0 flex items-center gap-2 border-b border-border bg-background/95 px-4 pb-2.5 text-sm backdrop-blur sm:px-8"
-           style:padding-top="calc(var(--theme-shell-top, 2rem) + 0.625rem)">
+           class="settings-sticky absolute inset-x-0 top-0 flex items-center gap-2 border-b border-border bg-background/95 px-4 pb-2.5 text-sm backdrop-blur sm:px-8">
         <Icon size={16} class="shrink-0 text-theme" aria-hidden="true" />
         <span class="font-medium">{def.title}</span>
         {#if scroll.active}
@@ -78,7 +77,10 @@
 <style>
   /* Fades in when the header leaves and hides at once when it returns; while hidden it is out of
      hit-testing too. app.css zeroes the fade under reduced motion. */
-  .settings-sticky { transition: opacity 150ms ease-out, transform 150ms ease-out; }
+  .settings-sticky { padding-top: calc(var(--theme-shell-top, 2rem) + 0.625rem); transition: opacity 150ms ease-out, transform 150ms ease-out; }
+  /* Game mode draws no window titlebar (app/+layout.svelte), yet --theme-shell-top keeps its 2rem
+     under a side or bottom nav: there is no band to clear, so the bar would pin an empty strip. */
+  :global(html.gamemode:not([data-theme-nav='top'])) .settings-sticky { padding-top: 0.625rem; }
   .settings-sticky:not([data-visible]) { visibility: hidden; opacity: 0; transform: translateY(-0.25rem); }
   /* Game mode: the end of a CSS transition blinks on WebKitGTK and the tween promotes the bar's
      text to a soft layer (motion/gm-motion.ts), so the bar shows and hides at once. */
