@@ -1,5 +1,32 @@
 import { describe, expect, it } from 'vitest'
-import { episodeFromSearch } from './episode'
+import { episodeForTitle, episodeFromSearch, titleFromSearch } from './episode'
+
+describe('episodeForTitle', () => {
+  it('reads a plain trailing number as the episode once a title is picked', () => {
+    expect(episodeForTitle('quiet harbor 12', ['Quiet Harbor'])).toEqual({ episode: 12 })
+    expect(episodeForTitle('quiet harbor ep 3', ['Quiet Harbor'])).toEqual({ episode: 3 })
+    expect(episodeForTitle('quiet harbor s02e05', ['Quiet Harbor'])).toEqual({ season: 2, episode: 5 })
+  })
+  it('keeps a number that belongs to the title, a year, or nothing at all', () => {
+    expect(episodeForTitle('harbor 100', ['Harbor 100'])).toBeUndefined()
+    expect(episodeForTitle('harbor 100', ['Other name', 'Harbor 100: Part One'])).toBeUndefined()
+    expect(episodeForTitle('quiet harbor 2023', ['Quiet Harbor'])).toBeUndefined()
+    expect(episodeForTitle('quiet harbor', ['Quiet Harbor'])).toBeUndefined()
+  })
+})
+
+describe('titleFromSearch', () => {
+  it.each([
+    ['quiet harbor 12', 'quiet harbor 12'],
+    ['quiet harbor ep 12', 'quiet harbor'],
+    ['Quiet Harbor S02E05 1080p', 'Quiet Harbor'],
+    ['quiet harbor - 05 [1080p] x265 10bit', 'quiet harbor'],
+    ['quiet harbor season 2 05 web-dl', 'quiet harbor'],
+    ['quiet harbor 2023', 'quiet harbor 2023'],
+  ])('reads the title in %s', (text, title) => {
+    expect(titleFromSearch(text)).toBe(title)
+  })
+})
 
 describe('episodeFromSearch', () => {
   it.each([

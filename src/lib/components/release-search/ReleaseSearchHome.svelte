@@ -1,24 +1,32 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
+  import { goto } from '$app/navigation'
   import Search from '@lucide/svelte/icons/search'
   import X from '@lucide/svelte/icons/x'
   import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
+  import type { Media } from '$lib/anilist/types'
+  import { cover, mediaHref, title } from '$lib/anilist/media'
+  import { mediaKey } from '$lib/catalog/identity'
+  import { searchMergedCatalogs } from '$lib/catalog/merged-search'
   import { releaseSearchSourceCounts } from '$lib/extensions/manager'
   import { positions, progressKey } from '$lib/player/progress'
-  import { episodeFromSearch } from '$lib/release-search/episode'
+  import { episodeForTitle, episodeFromSearch, titleFromSearch } from '$lib/release-search/episode'
   import { forgetRelease, recentReleases, type RecentRelease } from '$lib/release-search/recent'
   import { releaseMedia } from '$lib/release-search/release-media'
   import { searchReleases } from '$lib/release-search/search'
+  import { rankQuickSearchResults } from '$lib/search/global-search'
+  import { catalogProviders } from '$lib/settings/catalog'
   import { interfaceMode } from '$lib/settings/interface-mode'
   import { offlineMode } from '$lib/stores/offline'
   import { describe, type Stream } from '$lib/stremio/parse'
-  import { playStream, type PlayState } from '$lib/stremio/play'
+  import { playEpisode, playStream, type PlayState } from '$lib/stremio/play'
   import { CINEMETA_BASE, enabledAddonUrls, normalizeBase } from '$lib/stremio/sources'
   import ReleaseRow from './ReleaseRow.svelte'
 
   let text = $state('')
   let searched = $state('')
   let rows = $state<Stream[]>([])
+  let titles = $state<Media[]>([])
   let searching = $state(false)
   let sort = $state<'seeders' | 'size'>('seeders')
   let error = $state('')
@@ -26,9 +34,12 @@
   let input = $state<HTMLInputElement>()
   let controller: AbortController | null = null
 
-  // Cinemeta only supplies metadata, so it is not a source this screen skipped.
+  // Cinemeta only supplies metadata, so it is not a source of streams.
   const stremioAddons = $derived($enabledAddonUrls.filter((url) => normalizeBase(url) !== normalizeBase(CINEMETA_BASE)).length)
-  const skipped = $derived((counts?.unsearchable ?? 0) + stremioAddons)
+  // Stremio add-ons and online sources only answer for a title, so they are reached through the
+  // Titles strip: picking a title opens the normal source picker, which asks every source.
+  const titleSources = $derived(stremioAddons + (counts?.unsearchable ?? 0))
+  const noSources = $derived(!!counts && counts.searchable === 0 && titleSources === 0)
   const want = $derived(episodeFromSearch(searched))
   const sortOptions = [{ id: 'seeders', label: 'Seeders' }, { id: 'size', label: 'Size' }] as const
   const sorted = $derived([...rows].sort((a, b) => sort === 'size'
@@ -45,12 +56,19 @@
     const query = text.trim()
     controller?.abort()
     error = ''
-    if (!query) { rows = []; searched = ''; return }
+    if (!query) { rows = []; titles = []; searched = ''; return }
     const own = (controller = new AbortController())
     searched = query
     rows = []
+    titles = []
     searching = true
-    try { await searchReleases(query, (next) => { if (!own.signal.aborted) rows = next }, own.signal) }
+    const titleQuery = titleFromSearch(query)
+    const findTitles = titleSources && titleQuery
+      ? searchMergedCatalogs($catalogProviders, titleQuery, 1, own.signal).then((result) => {
+        if (!own.signal.aborted) titles = rankQuickSearchResults(result.media, titleQuery).slice(0, 12)
+      }, () => {})
+      : Promise.resolve()
+    try { await Promise.all([searchReleases(query, (next) => { if (!own.signal.aborted) rows = next }, own.signal), findTitles]) }
     finally { if (controller === own) searching = false }
   }
 
@@ -62,6 +80,24 @@
     const episode = media.release?.pack ? want?.episode ?? 1 : 1
     error = ''
     void playStream(media, episode, stream, report)
+  }
+
+  /** The searched episode in this title's numbering. AniList titles are one season each; other
+   *  catalogs number episodes across seasons, so a later season needs the title's episode list. */
+  function episodeFor(media: Media): number | undefined {
+    const asked = episodeForTitle(searched, [media.title.romaji, media.title.english, media.title.userPreferred].filter((name): name is string => !!name))
+    if (!asked) return undefined
+    if (!asked.season || asked.season === 1 || !media.catalog || media.catalog.provider === 'anilist') return asked.episode
+    return media.videos?.find((video) => video.season === asked.season && video.episode === asked.episode)?.number
+  }
+
+  function pickTitle(media: Media) {
+    error = ''
+    const movie = media.format === 'MOVIE' || media.type === 'MOVIE' || media.catalog?.type === 'movie'
+    const episode = movie ? undefined : episodeFor(media)
+    // A series without an exact episode from the search opens its page, where every episode is listed.
+    if (!movie && episode == null) return void goto(mediaHref(media))
+    void playEpisode(media, episode, report, { forceManual: true })
   }
 
   function resume(entry: RecentRelease) {
@@ -92,15 +128,29 @@
 
     {#if error}<p role="alert" class="mt-3 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>{/if}
 
-    {#if counts && counts.searchable === 0}
+    {#if noSources}
       <div class="mt-8 rounded-2xl border border-border bg-secondary/30 p-6">
-        <h2 class="text-lg font-semibold">Add a tracker feed or torrent extension</h2>
+        <h2 class="text-lg font-semibold">Add a source</h2>
         <p class="mt-1 text-sm text-muted-foreground">This screen searches only the sources you add. izumi doesn't come with any.</p>
         <a href="/app/settings/sources" data-focusable class="mt-4 inline-block rounded-lg bg-theme px-4 py-2 text-sm font-semibold text-white">Open Sources</a>
       </div>
     {:else if searched}
+      {#if titles.length}
+        <h2 class="mt-6 text-sm font-semibold text-muted-foreground">Titles</h2>
+        <p class="text-xs text-muted-foreground">Pick one to see every source for it.</p>
+        <ul class="mt-2 flex gap-3 overflow-x-auto pb-2">
+          {#each titles as media (mediaKey(media))}
+            <li class="w-24 shrink-0">
+              <button type="button" data-focusable data-title-pick onclick={() => pickTitle(media)} class="w-full text-left">
+                <img src={cover(media)} alt="" loading="lazy" class="aspect-[2/3] w-full rounded-lg bg-secondary object-cover" />
+                <span class="mt-1 line-clamp-2 text-xs">{title(media)}</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
       <p class="mt-3 text-sm text-muted-foreground" aria-live="polite">
-        {rows.length} {rows.length === 1 ? 'release' : 'releases'}{searching ? ' · searching…' : ''}{#if skipped}{' · '}<a href="/app/settings/sources" class="underline underline-offset-2">{skipped} {skipped === 1 ? "source can't" : "sources can't"} search by text</a>{/if}
+        {rows.length} {rows.length === 1 ? 'release' : 'releases'}{searching ? ' · searching…' : ''}
       </p>
       {#if rows.length}
         <div class="mt-3 flex items-center gap-1 text-xs text-muted-foreground" role="radiogroup" aria-label="Sort">
@@ -115,8 +165,8 @@
             <li><ReleaseRow {stream} episode={want?.episode} onpick={() => play(stream)} /></li>
           {/each}
         </ul>
-      {:else if !searching}
-        <p class="mt-8 text-center text-sm text-muted-foreground">No releases matched. Try fewer words.</p>
+      {:else if !searching && !titles.length}
+        <p class="mt-8 text-center text-sm text-muted-foreground">Nothing matched. Try fewer words.</p>
       {/if}
     {:else if $recentReleases.length}
       <h2 class="mt-8 text-sm font-semibold text-muted-foreground">Recent</h2>
