@@ -69,3 +69,9 @@
     {@render children()}
   </div>
 </section>
+
+<style>
+  /* Game mode and Android TV draw no titlebar, so under a side or bottom nav the section's sticky bar
+     drops the 2rem band (SettingsSection) and a chip jump lands just as far below it as elsewhere. */
+  :global(html:is(.gamemode, .tv-mode):not([data-theme-nav='top'])) section[data-settings-subcategory] { scroll-margin-top: 4rem; }
+</style>

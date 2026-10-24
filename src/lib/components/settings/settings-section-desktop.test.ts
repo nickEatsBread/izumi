@@ -95,8 +95,8 @@ describe('SettingsSection on desktop', () => {
     expect(source).toContain('.settings-sticky:not([data-visible]) { visibility: hidden;')
     // The bar clears the titlebar/top-bar band; SettingsSubcategory's scroll margin follows the same variable.
     expect(source).toContain('.settings-sticky { padding-top: calc(var(--theme-shell-top, 2rem) + 0.625rem);')
-    // Game mode has no titlebar, so a side or bottom nav leaves no band: the bar drops the empty strip.
-    expect(source).toContain(":global(html.gamemode:not([data-theme-nav='top'])) .settings-sticky { padding-top: 0.625rem; }")
+    // Game mode and TV have no titlebar, so a side or bottom nav leaves no band: the bar drops the empty strip.
+    expect(source).toContain(":global(html:is(.gamemode, .tv-mode):not([data-theme-nav='top'])) .settings-sticky { padding-top: 0.625rem; }")
     // Game mode: a CSS transition's end blinks on WebKitGTK and the tween softens the bar's text.
     expect(source).toContain(':global(html.gamemode) .settings-sticky { transition: none; }')
     expect(source).toContain(':global(.settings-child) [data-settings-section-header] { display: none; }')

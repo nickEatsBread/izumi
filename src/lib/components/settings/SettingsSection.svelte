@@ -78,9 +78,10 @@
   /* Fades in when the header leaves and hides at once when it returns; while hidden it is out of
      hit-testing too. app.css zeroes the fade under reduced motion. */
   .settings-sticky { padding-top: calc(var(--theme-shell-top, 2rem) + 0.625rem); transition: opacity 150ms ease-out, transform 150ms ease-out; }
-  /* Game mode draws no window titlebar (app/+layout.svelte), yet --theme-shell-top keeps its 2rem
-     under a side or bottom nav: there is no band to clear, so the bar would pin an empty strip. */
-  :global(html.gamemode:not([data-theme-nav='top'])) .settings-sticky { padding-top: 0.625rem; }
+  /* Game mode and Android TV draw no window titlebar (app/+layout.svelte), yet --theme-shell-top
+     keeps its 2rem under a side or bottom nav: there is no band to clear, so the bar would pin an
+     empty strip. SettingsSubcategory's scroll margin drops the same 2rem. */
+  :global(html:is(.gamemode, .tv-mode):not([data-theme-nav='top'])) .settings-sticky { padding-top: 0.625rem; }
   .settings-sticky:not([data-visible]) { visibility: hidden; opacity: 0; transform: translateY(-0.25rem); }
   /* Game mode: the end of a CSS transition blinks on WebKitGTK and the tween promotes the bar's
      text to a soft layer (motion/gm-motion.ts), so the bar shows and hides at once. */

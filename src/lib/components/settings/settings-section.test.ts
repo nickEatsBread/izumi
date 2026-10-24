@@ -70,6 +70,8 @@ describe('SettingsSubcategory', () => {
     expect(attr(section, 'aria-labelledby')?.raw).toBe('aria-labelledby={`${id}-heading`}')
     // A chip jump lands the heading below the sticky bar, which grows with the titlebar/top-bar band.
     expect(staticAttr(section, 'class')).toBe('mb-7 scroll-mt-[calc(var(--theme-shell-top,2rem)+4rem)]')
+    // Game mode and TV: no titlebar band under a side or bottom nav, so the bar and the margin both drop it.
+    expect(source).toContain(":global(html:is(.gamemode, .tv-mode):not([data-theme-nav='top'])) section[data-settings-subcategory] { scroll-margin-top: 4rem; }")
   })
 
   it('makes a foldable heading a d-pad toggle and a fixed one a plain heading', () => {
