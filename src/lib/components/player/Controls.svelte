@@ -2,7 +2,7 @@
   import { invoke } from '@tauri-apps/api/core'
   import { playerCommand, playerGetProperty, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
   import { listen } from '@tauri-apps/api/event'
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import type { Segment } from '$lib/stremio/aniskip'
   import Seekbar from './Seekbar.svelte'
   import Play from '@lucide/svelte/icons/play'
@@ -31,6 +31,12 @@
   import ServerIcon from '@lucide/svelte/icons/server'
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
   import DesktopCastButton from './DesktopCastButton.svelte'
+  import PlayerContextMenu, { type PlayerMenuItem } from './PlayerContextMenu.svelte'
+  import PlayerEpisodes from './PlayerEpisodes.svelte'
+  import ListVideo from '@lucide/svelte/icons/list-video'
+  import Activity from '@lucide/svelte/icons/activity'
+  import Cast from '@lucide/svelte/icons/cast'
+  import { displayBinding, effectiveBinding, type HotkeyId } from '$lib/hotkeys'
   import { get } from 'svelte/store'
   import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, playerSideSheetOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery, bumpPlayerOverlay, playerTopBarUnderTitlebar } from '$lib/player/session'
   import { isMacOS, isMobile, isTv } from '$lib/platform'
@@ -41,7 +47,7 @@
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from '@lucide/svelte/icons/wrench'
   import { discussionExpanded } from '$lib/comments'
-  import { videoFit, playerTitleTop, openSubtitlesToken, subtitleAutoSync, secondarySubtitles, subtitleLineNavigation, gifIncludeSubtitles, sceneBookmarksEnabled } from '$lib/settings/ui'
+  import { videoFit, playerTitleTop, openSubtitlesToken, subtitleAutoSync, secondarySubtitles, subtitleLineNavigation, gifIncludeSubtitles, sceneBookmarksEnabled, playerHiddenControls, hotkeyBindings } from '$lib/settings/ui'
   import { playPrev, playNext, playEpisode, playStream, searchOnlineSubtitles } from '$lib/stremio/play'
   import { serverSiblings, variantLabels } from '$lib/player/source-variants'
   import type { Stream } from '$lib/stremio/addon'
@@ -70,6 +76,9 @@
   const nextReady = $derived(
     !!$nextEpisodeReady && $nextEpisodeReady.mediaId === np.id && $nextEpisodeReady.episode === (np.episode ?? 0) + 1,
   )
+  // Settings › Playback › Player buttons. The Episodes switcher needs a series with more than one episode.
+  const hiddenControls = $derived(new Set($playerHiddenControls))
+  const hasEpisodes = $derived(np.episode != null && Math.max(np.airedTotal ?? 0, np.total ?? 0) > 1)
 
   // `cmd` runs an mpv command; the page owns the invoke plumbing + live state.
   let {
@@ -216,6 +225,7 @@
   function toggleOptions() {
     showOptions = !showOptions
     showTracks = false
+    showEpisodes = false
     optionsPage = 'root'
     gmSettingsPage = 'root'
     gmSetIdx = 0
@@ -228,6 +238,8 @@
   function closePlayerMenus() {
     showOptions = false
     showTracks = false
+    showEpisodes = false
+    menuAt = null
     optionsPage = 'root'
     gmSettingsPage = 'root'
     gmSetIdx = 0
@@ -561,6 +573,12 @@
     window.addEventListener('player-menu-nav', onMenuNav)
     const onOpenSettings = () => { if (!showOptions) toggleOptions() }
     window.addEventListener('player-open-settings', onOpenSettings)
+    // Right-click on the video (PlayerOverlay reveals the bar, then hands the point on).
+    const onContextMenu = (event: Event) => {
+      window.dispatchEvent(new Event('player-menu-close'))
+      menuAt = (event as CustomEvent<{ x: number; y: number }>).detail
+    }
+    window.addEventListener('player-context-menu', onContextMenu)
     const unPad = listenSafe<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
       if (!gm || !showOptions || !e.payload.pressed || get(deckKeyboardWarning)) return
       // Directions are owned by the app-wide repeat translator, which dispatches
@@ -590,6 +608,7 @@
       window.removeEventListener('player-menu-close', closePlayerMenus)
       window.removeEventListener('player-menu-nav', onMenuNav)
       window.removeEventListener('player-open-settings', onOpenSettings)
+      window.removeEventListener('player-context-menu', onContextMenu)
       void unlistenMuted.then((unlisten) => unlisten())
       playerMenuOpen.set(false)
       playerSideSheetOpen.set(false)
@@ -682,6 +701,7 @@
   }
   async function loadTracks() {
     showOptions = false
+    showEpisodes = false
     if (gm) {
       window.dispatchEvent(new Event('gm-open-tracks'))
       return
@@ -816,10 +836,38 @@
     finally { downloadingKey = null }
   }
 
+  // Episode switcher (Player buttons › Episodes, or the right-click menu).
+  let showEpisodes = $state(false)
+  function toggleEpisodes() {
+    const opening = !showEpisodes
+    closePlayerMenus()
+    showEpisodes = opening
+  }
+
+  // Right-click menu: each item runs its control-bar button's handler; hints are the user's hotkeys.
+  let menuAt = $state<{ x: number; y: number } | null>(null)
+  let root = $state<HTMLElement>()
+  let castButton = $state<{ toggle: () => void }>()
+  const hint = (id: HotkeyId) => displayBinding(effectiveBinding(id, $hotkeyBindings, $isMacOS), $isMacOS)
+  const contextItems = $derived.by((): PlayerMenuItem[] => [
+    { label: paused ? 'Play' : 'Pause', icon: paused ? Play : Pause, hint: hint('playerPlayPause'), run: togglePlay },
+    ...(hasPrev ? [{ label: 'Previous episode', icon: SkipBack, hint: hint('playerPreviousEpisode'), run: () => playPrev(undefined, !paused) }] : []),
+    ...(hasNext ? [{ label: 'Next episode', icon: SkipForward, hint: hint('playerNextEpisode'), run: () => playNext(undefined, !paused) }] : []),
+    ...(hasEpisodes ? [{ label: 'Episodes', icon: ListVideo, run: toggleEpisodes }] : []),
+    { label: 'Speed', icon: Gauge, value: `${speed}×`, divider: true, submenu: speeds.map((s) => ({ label: `${s}×`, checked: speed === s, run: () => setSpeed(s) })) },
+    { label: 'Audio and subtitles', icon: Captions, run: () => void loadTracks() },
+    // After the flush: the closing menu's playerMenuOpen write must not land after the Cast list's.
+    { label: 'Cast', icon: Cast, run: () => void tick().then(() => castButton?.toggle()) },
+    { label: 'Screenshot', icon: Camera, hint: hint('playerScreenshot'), divider: true, run: screenshot },
+    { label: 'Miniplayer', icon: PictureInPicture, run: togglePictureInPicture },
+    { label: $fullscreen ? 'Exit fullscreen' : 'Fullscreen', icon: $fullscreen ? Minimize : Maximize, hint: hint('playerFullscreen'), run: toggleFullscreen },
+    { label: $playerStatsOpen ? 'Hide stats' : 'Show stats', icon: Activity, hint: hint('playerStats'), run: () => playerStatsOpen.update((value) => !value) },
+  ])
+
   // Keep Controls mounted (and the overlay full-viewport) while a popover is open. Reset on
   // unmount so the flag cannot stick true after the player closes.
   $effect(() => {
-    playerMenuOpen.set(showOptions || showTracks)
+    playerMenuOpen.set(showOptions || showTracks || showEpisodes || !!menuAt)
     playerSideSheetOpen.set(native && (showOptions || showTracks))
   })
 </script>
@@ -837,7 +885,7 @@
 {/snippet}
 
 <!-- stopPropagation: control clicks must not bubble to the video click-to-pause. -->
-<div data-slot="player.controls" data-gm-control-root class="pointer-events-none absolute inset-0" onclick={(e) => e.stopPropagation()} role="presentation">
+<div bind:this={root} data-slot="player.controls" data-gm-control-root class="pointer-events-none absolute inset-0" onclick={(e) => e.stopPropagation()} role="presentation">
   <!-- Top bar: Back button (Desktop only — Game mode uses the B button to leave, so no
        redundant on-screen Back) and, when the Game-mode "title at top" option is on, the
        title. Rendered only when it has something to show. -->
@@ -899,7 +947,7 @@
     {/if}
 
     <div class="pointer-events-auto mt-1 flex items-center gap-3 text-white {gm ? 'gap-4' : ''}">
-      {#if hasPrev}
+      {#if hasPrev && !hiddenControls.has('episode-nav')}
         <button data-focusable class={iconBtn} onclick={() => (gm ? episodeStep(-1) : playPrev(undefined, !paused))} aria-label="Previous episode"><SkipBack size={icSize} fill="currentColor" /></button>
       {/if}
       <!-- Play/pause: Game mode gets a filled white circle (no outline) — the primary,
@@ -908,7 +956,7 @@
               class="grid place-items-center rounded-full focus-ring-inset {gm ? 'gm-play size-16 bg-white text-black shadow-lg' : 'size-10 transition hover:bg-white/15'}">
         {#if paused}<Play size={gm ? 30 : 22} fill="currentColor" />{:else}<Pause size={gm ? 30 : 22} fill="currentColor" />{/if}
       </button>
-      {#if hasNext}
+      {#if hasNext && !hiddenControls.has('episode-nav')}
         <!-- A dot when the next episode is already resolved and will start instantly. Shown only
              when true: under the noAdd contract most episodes are NOT preloaded, so a persistent
              "not ready" state would be noise rather than information. -->
@@ -936,7 +984,8 @@
         {/if}
       {/if}
 
-      <div class="ml-auto flex items-center gap-3 {gm ? 'gap-4' : ''}">
+      <!-- relative: the Episodes panel, and the Cast list when its button is hidden, open above this row. -->
+      <div class="relative ml-auto flex items-center gap-3 {gm ? 'gap-4' : ''}">
         <!-- Volume — Desktop only; Game mode uses the Deck's hardware volume. -->
         {#if !gm}
         <div class="group/vol flex items-center gap-1">
@@ -1095,10 +1144,12 @@
         </div>
 
         <!-- Discussion / comments panel toggle (keyed on the playing episode). -->
-        <button data-focusable class={iconBtn} onclick={toggleComments}
-                aria-label="Discussion" aria-pressed={$commentsOpen}>
-          <MessageSquare size={icSize} class={$commentsOpen ? 'text-theme' : ''} />
-        </button>
+        {#if !hiddenControls.has('discussion')}
+          <button data-focusable class={iconBtn} onclick={toggleComments}
+                  aria-label="Discussion" aria-pressed={$commentsOpen}>
+            <MessageSquare size={icSize} class={$commentsOpen ? 'text-theme' : ''} />
+          </button>
+        {/if}
 
         <!-- Audio, subtitle and server menu. Server selection lives here so the control strip has
              one predictable media-options entry point rather than a second, unlabeled arrows icon. -->
@@ -1401,6 +1452,11 @@
           {/if}
         </div>
 
+        {#if !gm && hasEpisodes && !hiddenControls.has('episodes')}
+          <button data-focusable class={iconBtn} onclick={toggleEpisodes} aria-label="Episodes" aria-expanded={showEpisodes}><ListVideo size={icSize} /></button>
+        {/if}
+        {#if showEpisodes && !gm}<PlayerEpisodes onclose={() => (showEpisodes = false)} />{/if}
+
         {#if $subtitleLineNavigation}
           <div class="hidden items-center gap-1 sm:flex" aria-label="Subtitle line navigation">
             <button data-focusable class={iconBtn} onclick={() => navigateSubtitleLine(-1)} aria-label="Previous subtitle line" title="Previous subtitle line">
@@ -1427,10 +1483,10 @@
         <!-- Screenshot the current frame → Pictures/izumi. Game mode keeps this off the visual
              bar because Izumi maps its own screenshot action to L4 (R4 is Izumi's GIF recorder). -->
         {#if !gm}
-          <DesktopCastButton {pos} {dur} buttonClass={iconBtn} iconSize={icSize} {cmd} onopen={closePlayerMenus} />
+          <DesktopCastButton bind:this={castButton} hidden={hiddenControls.has('cast')} {pos} {dur} buttonClass={iconBtn} iconSize={icSize} {cmd} onopen={closePlayerMenus} />
           {#if $sceneBookmarksEnabled}<button data-focusable class={iconBtn} onclick={() => void bookmarkScene()} aria-label="Save scene bookmark" title="Save scene bookmark"><Bookmark size={icSize} /></button>{/if}
-          <button data-focusable class={iconBtn} onclick={screenshot} aria-label="Screenshot"><Camera size={icSize} /></button>
-          <button data-focusable class={iconBtn} onclick={togglePictureInPicture} aria-label="Picture in picture"><PictureInPicture size={icSize} /></button>
+          {#if !hiddenControls.has('screenshot')}<button data-focusable class={iconBtn} onclick={screenshot} aria-label="Screenshot"><Camera size={icSize} /></button>{/if}
+          {#if !hiddenControls.has('miniplayer')}<button data-focusable class={iconBtn} onclick={togglePictureInPicture} aria-label="Picture in picture"><PictureInPicture size={icSize} /></button>{/if}
         {/if}
 
         <!-- Fullscreen (user-initiated; player opens windowed). Hidden in game mode —
@@ -1500,5 +1556,9 @@
     </div>
     </div>
     </div>
+  {/if}
+
+  {#if menuAt && root && !gm}
+    <PlayerContextMenu at={menuAt} {root} items={contextItems} onclose={() => (menuAt = null)} />
   {/if}
 </div>

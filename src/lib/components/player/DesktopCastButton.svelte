@@ -48,6 +48,7 @@
     iconSize = 20,
     cmd,
     onopen,
+    hidden = false,
   }: {
     pos: number
     dur: number
@@ -55,6 +56,9 @@
     iconSize?: number
     cmd: (name: string, args?: string[]) => void
     onopen?: () => void
+    /** Player buttons › Cast is off: no button, but the right-click menu can still open the list,
+     *  above the right end of the control row. */
+    hidden?: boolean
   } = $props()
 
   let open = $state(false)
@@ -98,7 +102,7 @@
     }
   }
 
-  function toggle() {
+  export function toggle() {
     if (open) {
       close()
       return
@@ -278,12 +282,20 @@
     }
   }
 
+  // Escape (and the pad's B) close every player menu, this list included.
+  $effect(() => {
+    const onMenuClose = () => { if (open) close() }
+    window.addEventListener('player-menu-close', onMenuClose)
+    return () => window.removeEventListener('player-menu-close', onMenuClose)
+  })
+
   onDestroy(() => {
     if (open) playerMenuOpen.set(false)
   })
 </script>
 
-<div class="relative">
+<div class={hidden ? 'absolute right-0 top-0' : 'relative'}>
+  {#if !hidden}
   <button
     data-focusable
     class="{buttonClass} {$desktopCastSession ? 'bg-primary/25 text-primary' : ''}"
@@ -294,6 +306,7 @@
   >
     <Cast size={iconSize} />
   </button>
+  {/if}
 
   {#if open}
     <button class="fixed inset-0 z-20 cursor-default" onclick={close} aria-label="Close Cast devices"></button>
