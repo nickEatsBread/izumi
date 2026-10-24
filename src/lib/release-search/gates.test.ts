@@ -45,3 +45,16 @@ describe('playStream treats a release as its own torrent, not a title', () => {
     expect(body(play, 'export function playNext(')).toContain("if (currentMedia.release && !currentMedia.release.pack) return onState({ status: 'error', message: 'This release has no next episode.' })")
   })
 })
+
+describe('search box mode wiring', () => {
+  it('renders the search screen on Home and pauses the catalog hero', () => {
+    const home = read('../../routes/app/home/+page.svelte')
+    expect(home).toContain("const searchMode = $derived($interfaceMode === 'search')")
+    expect(home).toContain('const usesAniListHome = $derived(!searchMode && (')
+    expect(home).toContain('{#if searchMode}\n  <ReleaseSearchHome />\n{:else if $offlineMode}')
+  })
+
+  it('offers the Interface choice in Settings', () => {
+    expect(read('../../routes/app/settings/library/+page.svelte')).toContain('settingKey="interface-mode"')
+  })
+})
