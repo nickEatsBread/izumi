@@ -14,9 +14,10 @@
 </script>
 
 <!-- The TV themes' search keyboard (`search.keyboard`): `search.key` buttons named by `data-key`.
-     Controller focus starts on "a". -->
+     Controller focus starts on "a". Sticky, so it stays beside the results as they scroll, 1rem under
+     the top bar (`search.layout` aligns its items to the start, which lets it stick). -->
 <div data-part="search.keyboard" role="group" aria-label="Search keyboard"
-     class="ml-4 mt-4 grid shrink-0 grid-cols-[repeat(6,3.25rem)] auto-rows-[3.25rem] gap-1 sm:ml-8 sm:mt-8">
+     class="sticky top-[calc(var(--theme-shell-top,2rem)+1rem)] ml-4 mt-4 grid shrink-0 grid-cols-[repeat(6,3.25rem)] auto-rows-[3.25rem] gap-1 sm:ml-8 sm:mt-8">
   {#each GRID_KEYBOARD_ROWS.flat() as key (key.key)}
     <button type="button" data-part="search.key" data-key={key.key} data-focusable
             aria-label={key.key === 'backspace' ? 'Backspace' : undefined}

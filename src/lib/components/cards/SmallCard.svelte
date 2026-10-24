@@ -92,7 +92,7 @@
   let pos = $state({ left: 0, top: 0 })
   let el: HTMLElement
   // A row's caption template binds the focused card's media through the registry.
-  $effect(() => { const node = el; cardMedia.set(node, media); return () => cardMedia.delete(node) })
+  $effect(() => { const node = el; cardMedia.set(node, { media }); return () => cardMedia.delete(node) })
   let closeT: ReturnType<typeof setTimeout>
   // API 6 `cardPreview: "expand"`: the preview grows out of the card after a dwell (expand-pos.ts).
   const expandMode = $derived($themePresentation?.cardPreview === 'expand')

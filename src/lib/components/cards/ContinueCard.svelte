@@ -67,8 +67,6 @@
   const continueTemplate = $derived(resolveCard($themePresentation, 'continue'))
   // API 6: key art and a title logo, only when the template binds them (see useCardArt).
   let root: HTMLElement | undefined
-  // A row's caption template binds the focused card's media through the registry.
-  $effect(() => { const node = root; if (!node) return; cardMedia.set(node, media); return () => cardMedia.delete(node) })
   const cardArt = useCardArt(() => continueTemplate, () => media, () => root)
   // A resume card stands for its title, so `rating` is the series score here (an episode card binds
   // the episode's own), and `episodesWatched` is the count this card resumes from.
@@ -79,6 +77,9 @@
     episodesWatched: progress,
     ...cardArt.art,
   }))
+  // A row's caption template binds this card's own model through the registry: the resume episode, and
+  // the few series fields a Continue row loads.
+  $effect(() => { const node = root; if (!node) return; cardMedia.set(node, { media, model: continueModel }); return () => cardMedia.delete(node) })
 
   let resolving = $state(false)
   // Prefer the last successful origin/release; if it is missing or fails, resumeEpisode opens the

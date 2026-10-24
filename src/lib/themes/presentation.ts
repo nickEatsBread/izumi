@@ -1397,7 +1397,8 @@ export function themeCoverage(layout?: ThemePresentation): ThemeSurface[] {
   const phone = layout.mobile ?? {}
   const tv = layout.tv ?? {}
   if (layout.hero || layout.rows || layout.cards || layout.cardPreview || layout.layout?.home || phone.hero || phone.rows || phone.cards || phone.layout?.home || tv.hero || tv.rows || tv.cards || tv.cardPreview || tv.layout?.home) surfaces.push('Home')
-  if (layout.shell || layout.density || layout.hideCardLabels || layout.trueBlack || layout.layout?.nav || phone.density || phone.hideCardLabels || phone.trueBlack || phone.rootSize !== undefined || tv.shell || tv.density || tv.hideCardLabels || tv.trueBlack || tv.layout?.nav) surfaces.push('Shell')
+  // Search has no chip of its own; its TV keyboard counts as Shell, the chip for what sits outside Home, Details and the player.
+  if (layout.shell || layout.density || layout.hideCardLabels || layout.trueBlack || layout.layout?.nav || phone.density || phone.hideCardLabels || phone.trueBlack || phone.rootSize !== undefined || tv.shell || tv.density || tv.hideCardLabels || tv.trueBlack || tv.layout?.nav || tv.search) surfaces.push('Shell')
   if (layout.detail || phone.detail || tv.detail) surfaces.push('Details')
   if (layout.player || phone.player || tv.player) surfaces.push('Player')
   return surfaces.length === 4 ? ['Full'] : surfaces

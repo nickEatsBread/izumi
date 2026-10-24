@@ -10,6 +10,9 @@
   import SmallCard from './SmallCard.svelte'
   import { nearViewport } from '$lib/util/near-viewport'
   import { gameMode } from '$lib/player/session'
+  import { getContext } from 'svelte'
+  import { themePresentation } from '$lib/themes/runtime'
+  import { ROW_CONTEXT, resolveRow, type RowScope } from '$lib/themes/presentation'
   let {
     title, userName, status, kind = 'anime', preferLinkedRating = false,
   }: {
@@ -20,6 +23,9 @@
     preferLinkedRating?: boolean
   } = $props()
   const client = getContextClient()
+  // Game mode leaves out the hover-preview fields, but a row's caption template binds the synopsis among them.
+  const rowScope = getContext<(() => RowScope) | undefined>(ROW_CONTEXT)
+  const captionData = $derived(!!rowScope && !!resolveRow($themePresentation, rowScope().id).captionTemplate)
   // Deferred like HomeRow. Anime previews use Page.mediaList(perPage:30), so a carousel never
   // downloads an account's complete list. Reading rows still need the collection because filtering
   // manga from novels after a 30-entry page could incorrectly produce an empty section.
@@ -28,7 +34,7 @@
   const store = $derived(queryStore({
     client,
     query: kind === 'anime' ? LIST_PREVIEW_QUERY : READING_LIST_QUERY,
-    variables: { userName, status, withPreview: !$gameMode },
+    variables: { userName, status, withPreview: !$gameMode || captionData },
     pause: !visible,
   }))
   // Cap what actually renders: a 1000-entry list otherwise mounts ~1000 cards. The row links to the

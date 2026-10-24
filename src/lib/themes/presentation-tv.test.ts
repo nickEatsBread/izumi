@@ -93,6 +93,7 @@ describe('resolving the TV block', () => {
   it('counts what the TV block styles in the coverage chips', () => {
     expect(themeCoverage(parsePresentation({ tv: { hero: { height: 70 } } }))).toEqual(['Home'])
     expect(themeCoverage(parsePresentation({ tv: { shell: { nav: 'top' } } }))).toEqual(['Shell'])
+    expect(themeCoverage(parsePresentation({ tv: { search: { keyboard: 'grid' } } }))).toEqual(['Shell'])
     expect(themeCoverage(parsePresentation({ tv: { detail: { layout: 'overlay' } } }))).toEqual(['Details'])
     expect(themeCoverage(parsePresentation({ tv: { player: { seekbarHeight: 8 } } }))).toEqual(['Player'])
   })
