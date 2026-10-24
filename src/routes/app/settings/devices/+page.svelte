@@ -115,6 +115,7 @@
   let cloudflarePreview = $state<CloudflarePreview | null>(null)
   let cloudflareInvite = $state('')
   let cloudflareUpdatePanel = $state<HTMLElement>()
+  let advancedOpen = $state(false)
   let cloudflareNeedsDeploymentAccess = $state(false)
   let cloudflareUpdateFailure = $state('')
   let tvPairingCode = $state('')
@@ -208,7 +209,7 @@
       }
       const enrollment = await createCloudflareCompanionEnrollment()
       await invoke('plugin:extplayer|open_browser', { payload: { url: enrollment.url } })
-      showMessage('Grant browser notification permission, then return to Izumi.')
+      showMessage('Grant browser notification permission, then return to izumi.')
     })
   }
 
@@ -487,7 +488,7 @@
       cloudflareUpdateFailure = feedback.failure
       const available = await checkCloudflareWorkerUpdate({ throwOnError: true })
       if (!available && !cloudflareNeedsDeploymentAccess && !cloudflareUpdateFailure) {
-        showMessage('Your Worker is up to date with this version of Izumi.')
+        showMessage('Your Worker is up to date with this version of izumi.')
         return
       }
       await tick()
@@ -580,7 +581,7 @@
       await disableDeviceSync()
       nearby = []
       resetPairingUi()
-      showMessage('Device sync is off. Izumi is no longer listening or discoverable.')
+      showMessage('Device sync is off. izumi is no longer listening or discoverable.')
     })
   }
 
@@ -738,6 +739,11 @@
     return () => clearInterval(poll)
   })
 
+  // The background Worker check can find an update at any time; its panel sits in Advanced, so unfold it.
+  $effect(() => {
+    if ($cloudflareWorkerUpdateAvailable) advancedOpen = true
+  })
+
   $effect(() => {
     if (!paired) return
     const name = $syncDeviceName
@@ -828,7 +834,7 @@
 
     {#if $syncProvider === 'cloudflare'}
       {#if status.state === 'starting'}
-        <SettingsRow title="Connecting to your Worker…" description="This normally takes only a moment." />
+        <SettingsRow title="Connecting to your Worker…" description="Usually takes a moment" />
       {:else if status.state === 'disabled'}
         {#snippet cloudflareEnableControl()}
           <button type="button" data-focusable disabled={!!busy} onclick={() => { h.impact(); enable() }}
@@ -836,26 +842,26 @@
             {busy === 'enable' ? 'Enabling…' : 'Enable Cloudflare sync'}
           </button>
         {/snippet}
-        <SettingsRow title="Self-hosted sync is off" description="Nothing leaves this device; your Worker and records are unchanged" control={cloudflareEnableControl} />
+        <SettingsRow settingKey="device-sync" title="Self-hosted sync is off" description="Nothing leaves this device; your Worker and records are unchanged" control={cloudflareEnableControl} />
       {:else if status.state === 'failed'}
         {#snippet cloudflareRetryControl()}
           <button type="button" data-focusable onclick={() => { status = { state: 'starting' }; void refresh() }} class="min-h-10 rounded-lg bg-secondary px-3 py-2 text-sm font-bold">Try again</button>
           <button type="button" data-focusable onclick={() => openUrl(CLOUDFLARE_UPDATE_GUIDE)} class="inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={15} /> Worker guide</button>
         {/snippet}
-        <SettingsRow title="Couldn’t reach your Worker" description={status.error} control={cloudflareRetryControl} controlLayout="stack" />
+        <SettingsRow settingKey="device-sync" title="Couldn’t reach your Worker" description={status.error} control={cloudflareRetryControl} controlLayout="stack" />
       {:else if !paired}
-        <SettingsChoiceRow title="Cloudflare sync" description="Create a Worker, or join one your devices already use" value={cloudSetup} onChange={(value) => (cloudSetup = value as 'create' | 'join')} options={[
+        <SettingsChoiceRow settingKey="device-sync" title="Cloudflare sync" description="Create a Worker, or join one your devices already use" value={cloudSetup} onChange={(value) => (cloudSetup = value as 'create' | 'join')} options={[
           { value: 'create', label: 'Set up for the first time' },
           { value: 'join', label: 'Join my devices' },
         ]} />
         {#if cloudSetup === 'create'}
           {#snippet cloudIcon()}<span class="grid size-9 place-items-center rounded-lg bg-primary/15 text-primary"><Cloud size={18} /></span>{/snippet}
-          <SettingsRow title="Create my private Worker" description="izumi prepares it; you sign in to Cloudflare to claim it" learnMore="Izumi prepares the Worker first; then you sign in to Cloudflare—or create an account—to claim it. No GitHub, repository, command line, token, or technical fields." leading={cloudIcon}>
+          <SettingsRow title="Create my private Worker" description="izumi prepares it; you sign in to Cloudflare to claim it" learnMore="izumi prepares the Worker first; then you sign in to Cloudflare—or create an account—to claim it. No GitHub, repository, command line, token, or technical fields." leading={cloudIcon}>
             {#if !cloudflarePreview}
               <div class="rounded-lg border border-border bg-secondary/30 p-3">
                 <label class="flex items-start gap-3" for="cloudflare-terms">
                   <input id="cloudflare-terms" type="checkbox" bind:checked={cloudflareTermsAccepted} data-focusable class="mt-1 size-4 shrink-0 accent-primary" />
-                  <span class="text-sm leading-5">I accept Cloudflare’s Terms of Service and Privacy Policy and ask Izumi to create an expiring deployment for me.</span>
+                  <span class="text-sm leading-5">I accept Cloudflare’s Terms of Service and Privacy Policy and ask izumi to create an expiring deployment for me.</span>
                 </label>
                 <p class="ml-7 mt-1 text-xs text-muted-foreground">
                   Read the <button type="button" data-focusable onclick={() => openUrl(CLOUDFLARE_TERMS_URL)} class="font-bold text-foreground underline underline-offset-2">Terms</button>
@@ -871,7 +877,7 @@
               <div class="rounded-lg border border-emerald-400/30 bg-emerald-400/10 p-3">
                 <p class="text-xs font-black uppercase tracking-wide text-emerald-300">Worker ready to claim</p>
                 <p class="mt-1 text-sm leading-5">Finish the Cloudflare page that opened. The deployment becomes permanent when you sign in or create an account and select <strong>Claim</strong>.</p>
-                <p class="mt-1 text-xs text-muted-foreground">Keep Izumi open. Cloudflare deletes unclaimed deployments after about one hour.</p>
+                <p class="mt-1 text-xs text-muted-foreground">Keep izumi open. Cloudflare deletes unclaimed deployments after about one hour.</p>
                 <div class="mt-3 flex flex-wrap gap-2">
                   <button type="button" data-focusable onclick={() => openUrl(cloudflarePreview!.claimUrl)} class="inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={15} /> Open Cloudflare claim</button>
                   <button type="button" data-focusable disabled={!!busy} onclick={() => { h.impact(); connectCloudflarePreview() }} class="inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
@@ -895,7 +901,8 @@
         {#snippet inviteControl()}
           <button type="button" data-focusable disabled={!!busy} onclick={() => { h.impact(); makeCloudflareInvite() }} class="min-h-10 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">{busy === 'cloudflare-invite' ? 'Creating…' : 'Add device'}</button>
         {/snippet}
-        <SettingsRow title="{roomDeviceCount} {roomDeviceCount === 1 ? 'device' : 'devices'} syncing" description="Worker connected · {$cloudflareSyncConfig.endpoint}" leading={workerIcon} control={inviteControl} expanded={!!cloudflareInvite}>
+        {#snippet workerMeta()}<span class="block truncate">Worker connected · {$cloudflareSyncConfig.endpoint}</span>{/snippet}
+        <SettingsRow settingKey="device-sync" title="{roomDeviceCount} {roomDeviceCount === 1 ? 'device' : 'devices'} syncing" meta={workerMeta} leading={workerIcon} control={inviteControl} expanded={!!cloudflareInvite}>
           {#if cloudflareInvite}
             <p class="text-xs font-bold">Single-use invite · expires in ten minutes</p>
             <textarea readonly value={cloudflareInvite} rows="4" aria-label="Cloudflare device invite" tabindex="-1" class="mt-2 w-full resize-y rounded-lg bg-input px-3 py-2 font-mono text-xs"></textarea>
@@ -914,7 +921,7 @@
       {/if}
 
     {:else if status.state === 'starting'}
-      <SettingsRow title="Starting device sync…" description="Preparing the encrypted connection." />
+      <SettingsRow title="Starting device sync…" description="Preparing the encrypted connection" />
 
     {:else if status.state === 'disabled'}
       {#snippet enableControl()}
@@ -923,7 +930,7 @@
           {busy === 'enable' ? 'Enabling…' : 'Enable device sync'}
         </button>
       {/snippet}
-      <SettingsRow title="Device sync is off" description="Izumi does not listen, advertise, or talk to a relay until you enable it." control={enableControl} />
+      <SettingsRow settingKey="device-sync" title="Device sync is off" description="No listening, advertising or relay until enabled" control={enableControl} />
 
     {:else if status.state === 'failed'}
       {#snippet retryControl()}
@@ -932,7 +939,7 @@
           {busy === 'enable' ? 'Retrying…' : 'Try again'}
         </button>
       {/snippet}
-      <SettingsRow title="Couldn’t start sync" description={status.error} control={retryControl} />
+      <SettingsRow settingKey="device-sync" title="Couldn’t start sync" description={status.error} control={retryControl} />
 
     {:else if !paired}
       {#snippet startIcon()}
@@ -954,7 +961,7 @@
           class="min-h-10 rounded-lg px-3 py-2 text-sm font-bold text-destructive transition-colors active:bg-destructive/10 sm:hover:bg-destructive/10 disabled:opacity-50">Turn off</button>
       {/snippet}
 
-      <SettingsRow title="Start my own" description="Visible on this network for two minutes." leading={startIcon} control={startControl} />
+      <SettingsRow settingKey="device-sync" title="Start my own" description="Visible on this network for two minutes" leading={startIcon} control={startControl} />
       {#if nearby.length}
         {#each nearby as device (device.endpointId)}
           {#snippet deviceIcon()}
@@ -987,7 +994,7 @@
       {:else}
         <SettingsRow title="Looking for devices…" description="Devices appear while in first-run setup or after Start my own" leading={scanningIcon} />
       {/if}
-      <SettingsRow title="Device sync is on" description="Not in a room yet. Nothing is being shared." control={disableControl} />
+      <SettingsRow title="Device sync is on" description="Not in a room yet; nothing is shared" control={disableControl} />
 
     {:else}
       {#if incoming}
@@ -1022,7 +1029,7 @@
           {busy === 'nearby-open' ? 'Opening…' : pairingActive ? 'Open again' : 'Add device'}
         </button>
       {/snippet}
-      <SettingsRow title="{roomDeviceCount} {roomDeviceCount === 1 ? 'device' : 'devices'} connected" description="Room active · Watch progress syncs automatically" leading={roomIcon} control={addDeviceControl} expanded={pairingActive && !!pairingWindow}>
+      <SettingsRow settingKey="device-sync" title="{roomDeviceCount} {roomDeviceCount === 1 ? 'device' : 'devices'} connected" description="Room active · Watch progress syncs automatically" leading={roomIcon} control={addDeviceControl} expanded={pairingActive && !!pairingWindow}>
         {#if pairingActive && pairingWindow}
           <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
             <span class="font-bold text-foreground">Visible as Izumi device {pairingWindow.shortId}</span>
@@ -1103,7 +1110,7 @@
           <Unlink size={16} /> {busy === 'leave' ? 'Leaving…' : confirmLeave ? 'Confirm leave' : 'Leave room'}
         </button>
       {/snippet}
-      <SettingsRow title="Leave room" description={confirmLeave ? 'Press Confirm leave within five seconds.' : 'Stop syncing this device. Your other devices stay connected.'} control={leaveRoomControl} />
+      <SettingsRow title="Leave room" description={confirmLeave ? 'Press Confirm leave within five seconds' : 'Stops syncing here; your other devices stay connected'} control={leaveRoomControl} />
     {/if}
   </SettingsSubcategory>
 
@@ -1170,25 +1177,25 @@
       />
       {#if cloudResolverEnabled}
         {#snippet fallbackSwitch()}
-          <SettingsSwitch value={cloudResolverConnectedDevices} onToggle={toggleCloudResolverConnectedDevices} label="Linked-device fallback" interactive={false} />
+          <span class={busy ? 'opacity-50' : ''}><SettingsSwitch value={cloudResolverConnectedDevices} onToggle={toggleCloudResolverConnectedDevices} label="Linked-device fallback" interactive={false} /></span>
         {/snippet}
         <SettingsRow
           title="Linked-device fallback"
           description="Off by default; for streams the Worker can't handle"
           learnMore="Keep this only for raw P2P, true transcoding or remuxing, client-local sources, or unusual header-bound streams the free Worker cannot handle. Android may be notified when closed; desktop is used only while izumi is open."
           control={fallbackSwitch}
-          onActivate={() => { if (!busy) { h.impact(); toggleCloudResolverConnectedDevices() } }}
+          onActivate={() => { if (!busy) toggleCloudResolverConnectedDevices() }}
           pressed={cloudResolverConnectedDevices}
         />
         {#snippet lanSwitch()}
-          <SettingsSwitch value={$cloudflareAllowLanSources} onToggle={() => ($cloudflareAllowLanSources = !$cloudflareAllowLanSources)} label="Allow direct LAN sources" interactive={false} />
+          <span class={busy ? 'opacity-50' : ''}><SettingsSwitch value={$cloudflareAllowLanSources} onToggle={() => ($cloudflareAllowLanSources = !$cloudflareAllowLanSources)} label="Allow direct LAN sources" interactive={false} /></span>
         {/snippet}
         <SettingsRow
           title="Allow direct LAN sources"
           description="The Worker hands private URLs to this TV only"
           learnMore="It never fetches or proxies them. Enable only for add-ons and media servers you trust on the same network."
           control={lanSwitch}
-          onActivate={() => { if (!busy) { h.impact(); $cloudflareAllowLanSources = !$cloudflareAllowLanSources } }}
+          onActivate={() => { if (!busy) $cloudflareAllowLanSources = !$cloudflareAllowLanSources }}
           pressed={$cloudflareAllowLanSources}
         />
         {#snippet resolverUpdateControl()}
@@ -1254,7 +1261,7 @@
     {/if}
   </SettingsSubcategory>
 
-  <SettingsSubcategory id="advanced" summary="Connection method, Worker updates, pairing ticket, relay">
+  <SettingsSubcategory id="advanced" summary="Connection method, Worker updates, pairing ticket, relay" bind:open={advancedOpen}>
     <div bind:this={cloudflareOption} id="cloudflare-connection" class:cloudflare-setup-highlight={highlightCloudflare}>
       <SettingsChoiceRow
         settingKey="sync-connection"
@@ -1288,7 +1295,7 @@
             <h4 id="worker-update-available-title" class="font-black text-amber-300">{$cloudflareWorkerUpdateAvailable ? `Worker update ${$cloudflareWorkerUpdateAvailable} is available` : cloudflareNeedsDeploymentAccess ? 'Update Worker deployment access' : 'The automatic update could not finish'}</h4>
             {#if cloudflareUpdateFailure && !cloudflareNeedsDeploymentAccess}<p class="mt-1 text-xs leading-5 text-muted-foreground">{cloudflareUpdateFailure} Installing it directly from here replaces the Worker with the current version.</p>{/if}
             {#if $cloudflareSyncConfig.deployment}
-              <p class="mt-1 text-xs leading-5 text-muted-foreground">Authorize this update with your Cloudflare deployment token. Izumi also enables future automatic updates, keeping your data and device links.</p>
+              <p class="mt-1 text-xs leading-5 text-muted-foreground">Authorize this update with your Cloudflare deployment token. izumi also enables future automatic updates, keeping your data and device links.</p>
               <div class="mt-3 flex flex-wrap gap-2">
                 <button type="button" data-focusable onclick={() => openCloudflareTokenSetup()} class="inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={15} /> Create update token</button>
                 <button type="button" data-focusable onclick={() => openUrl(CLOUDFLARE_TOKEN_MANAGE_URL)} class="min-h-10 rounded-lg bg-secondary px-3 py-2 text-sm font-bold">Manage tokens</button>

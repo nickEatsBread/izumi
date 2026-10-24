@@ -33,7 +33,7 @@ describe('Devices and backup section', () => {
   it('renders every Devices search key inside its subcategory', () => {
     const entries = SETTINGS_SEARCH_INDEX.filter((item) => item.section === 'devices' && item.key)
     expect(entries.map((item) => item.key).sort()).toEqual([
-      'add-a-device', 'create-backup', 'device-name', 'pairing-ticket', 'peer-to-peer-relay', 'settings-and-sources-sync',
+      'add-a-device', 'create-backup', 'device-name', 'device-sync', 'pairing-ticket', 'peer-to-peer-relay', 'settings-and-sources-sync',
       'sync-connection', 'tv-pairing', 'tv-playback-worker', 'watch-progress-sync', 'worker-updates',
     ])
     for (const item of entries) {
@@ -43,6 +43,38 @@ describe('Devices and backup section', () => {
       if (item.fallbackKey) expect(keys, item.title).toContain(item.fallbackKey)
       expect(item.advanced === true, item.title).toBe(item.subcategory === 'advanced')
     }
+  })
+
+  it('keys the status row of every settled sync state, so state-only rows fall back to it', () => {
+    const devices = subcategoriesOf(file).find((sub) => sub.id === 'devices')!.source
+    for (const title of ['Self-hosted sync is off', 'Couldn’t reach your Worker', 'Cloudflare sync', 'Device sync is off', 'Couldn’t start sync', 'Start my own']) {
+      expect(devices, title).toContain(`settingKey="device-sync" title="${title}"`)
+    }
+    expect(devices).toMatch(/settingKey="device-sync" title="\{roomDeviceCount\}[^"]*syncing"/)
+    expect(devices).toMatch(/settingKey="device-sync" title="\{roomDeviceCount\}[^"]*connected"/)
+    // A starting row would win the fallback before the real state renders.
+    expect(devices).not.toMatch(/settingKey="device-sync" title="(Connecting|Starting)/)
+    for (const key of ['device-name', 'watch-progress-sync', 'add-a-device']) {
+      expect(SETTINGS_SEARCH_INDEX.find((item) => item.key === key)?.fallbackKey, key).toBe('device-sync')
+    }
+  })
+
+  it('unfolds Advanced while a Worker update is waiting', () => {
+    expect(page).toContain('let advancedOpen = $state(false)')
+    expect(page).toMatch(/\$effect\(\(\) => \{\s*if \(\$cloudflareWorkerUpdateAvailable\) advancedOpen = true\s*\}\)/)
+    expect(page).toContain('summary="Connection method, Worker updates, pairing ticket, relay" bind:open={advancedOpen}')
+  })
+
+  it('gives a resolver switch row one haptic and dims the switch while busy', () => {
+    expect(page).toContain('onActivate={() => { if (!busy) toggleCloudResolverConnectedDevices() }}')
+    expect(page).toContain('onActivate={() => { if (!busy) $cloudflareAllowLanSources = !$cloudflareAllowLanSources }}')
+    expect(page.match(/<span class=\{busy \? 'opacity-50' : ''\}><SettingsSwitch/g)).toHaveLength(2)
+  })
+
+  it('truncates the Worker endpoint instead of letting it overflow the row', () => {
+    expect(page).toContain('<span class="block truncate">Worker connected · {$cloudflareSyncConfig.endpoint}</span>')
+    expect(page).toContain('meta={workerMeta}')
+    expect(page).not.toContain('description="Worker connected')
   })
 
   it('gives every row key a search entry', () => {
@@ -120,7 +152,15 @@ describe('Devices and backup section', () => {
   })
 
   it('keeps every description to one short line', () => {
-    for (const source of [page, backup]) for (const [, text] of source.matchAll(/\sdescription="([^"]*)"/g)) expect(text.length, text).toBeLessThanOrEqual(80)
+    const literals = (source: string) => [
+      ...[...source.matchAll(/\sdescription="([^"]*)"/g)].map((match) => match[1]),
+      // String literals inside a one-line description={…} expression.
+      ...[...source.matchAll(/\sdescription=\{([^\n]*)\}/g)].flatMap((match) => [...match[1].matchAll(/'([^']*)'/g)].map((inner) => inner[1])),
+    ]
+    for (const source of [page, backup]) for (const text of literals(source)) {
+      expect(text.length, text).toBeLessThanOrEqual(80)
+      expect(text, text).not.toMatch(/\.$/)
+    }
     expect(page).not.toMatch(/text-\[1[01]px\]/)
   })
 
