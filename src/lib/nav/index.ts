@@ -731,11 +731,12 @@ const TRIGGER_OPEN_KEYS = ['Enter', ' ', 'ArrowDown', 'ArrowUp']
  *  and ArrowUp do, except an arrow while arrow navigation has the trigger landed (isNavArrived): the
  *  nav engine walks on past it with that arrow instead (owner decision 2), modified or not. A trigger
  *  focused any other way opens on its arrows as before; pad arrows never reach a trigger's keydown
- *  (they are dispatched on window). */
+ *  (they are dispatched on window). A TV remote's arrows do reach it, so on TV they always walk on and
+ *  only OK opens it. */
 export function triggerOpensOnKey(event: KeyboardEvent): boolean {
   if (!TRIGGER_OPEN_KEYS.includes(event.key)) return false
   const arrow = event.key === 'ArrowDown' || event.key === 'ArrowUp'
-  return !(arrow && isNavArrived(event.currentTarget))
+  return !(arrow && (get(isTv) || isNavArrived(event.currentTarget)))
 }
 
 // ---- Focus-loss recovery (body fallback step 2) ----------------------------------------------------

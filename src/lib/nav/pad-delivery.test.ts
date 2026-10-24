@@ -862,6 +862,13 @@ line two</textarea>
       listen()
     })
 
+    it('on TV the remote arrows never open a trigger, however it got focus; OK still does', () => {
+      isTv.set(true)
+      byLabel('Language').focus()
+      for (const key of ['ArrowUp', 'ArrowDown', 'Enter']) realKey(key)
+      expect(opened).toEqual(['Enter'])
+    })
+
     it('opens on Enter, Space and the vertical arrows only', () => {
       byLabel('Language').focus()
       for (const key of ['Tab', 'Escape', 'a', 'ArrowLeft', 'ArrowRight', 'Enter', ' ', 'ArrowUp']) realKey(key)
@@ -920,14 +927,14 @@ line two</textarea>
       expect(opened).toEqual(['ArrowDown'])
     })
 
-    it('never passes over on TV, where the remote opens it as before', () => {
+    it('always passes over on TV, where the remote moves on with its arrows and OK opens it', () => {
       isTv.set(true)
       byLabel('Top').focus()
       realKey('ArrowDown')
       expect(document.activeElement).toBe(byLabel('Language'))
-      expect(isNavArrived(byLabel('Language'))).toBe(false)
       realKey('ArrowDown')
-      expect(opened).toEqual(['ArrowDown'])
+      expect(opened).toEqual([])
+      expect(document.activeElement).toBe(byLabel('Quality'))
     })
   })
 
