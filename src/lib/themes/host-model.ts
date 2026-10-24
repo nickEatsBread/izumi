@@ -136,6 +136,8 @@ export function mediaDisplayModel(media: Media, extras: Partial<DisplayModel> = 
     genre3: media.genres?.[2] || undefined,
     members: media.popularity ? compact.format(media.popularity) : undefined,
     episodeCount: media.episodes != null ? String(media.episodes) : undefined,
+    // "1 Episode" / "12 Episodes" (API 6), so a template never writes "1 Episodes".
+    episodeCountLabel: media.episodes ? `${media.episodes} ${media.episodes === 1 ? 'Episode' : 'Episodes'}` : undefined,
     duration: media.duration || undefined,
     // An episode host passes its own runtime as `duration`; the long form follows it.
     durationLong: durationLongText(extras.duration ?? media.duration),

@@ -49,6 +49,12 @@ describe('theme host display model', () => {
     expect(model.source).toBeUndefined()
     expect(model.country).toBeUndefined()
   })
+  it('words the episode count in the singular for one episode, and leaves it out when unknown', () => {
+    expect(mediaDisplayModel(media).episodeCountLabel).toBe('12 Episodes')
+    expect(mediaDisplayModel({ ...media, episodes: 1 }).episodeCountLabel).toBe('1 Episode')
+    expect(mediaDisplayModel({ ...media, episodes: null }).episodeCountLabel).toBeUndefined()
+    expect(mediaDisplayModel({ ...media, episodes: 0 }).episodeCountLabel).toBeUndefined()
+  })
   it('strips complete markup and leftover angle brackets from descriptions', () => {
     expect(mediaDisplayModel({ ...media, description: '<i>A story.</i>' }).description).toBe('A story.')
     expect(mediaDisplayModel({ ...media, description: '<script alert' }).description).toBe('script alert')
