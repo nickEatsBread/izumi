@@ -5,7 +5,7 @@
   //   The whole row is the button; the switch only shows the state. No On/Off text.
   // - Choice/value row: <SettingsChoiceRow … />, an inline SelectMenu printing the current value.
   // - Slider row: controlLayout="stack" with a control snippet holding the range input and an <output> readout.
-  // - Link row: <SettingsRow {title} {description} {value} {href} chevron />.
+  // - Link row: <SettingsRow {title} {description} {value} {href} chevron />, with no control, children or onActivate.
   // - Action row: a control snippet holding one button.
   // - Credential row: value = the masked status ("Saved · hidden" / "Not set"), the CredentialField as
   //   children, expanded on activate.
@@ -52,7 +52,8 @@
     chevron?: boolean
     /** Long explanation behind a "Learn more" disclosure, kept out of the one-line description. */
     learnMore?: string
-    /** Link row: the whole row is one link to this href. */
+    /** Link row: the whole row is one link to this href. A link row takes no control, children or
+     *  onActivate: children and onActivate are ignored, and a control would nest inside the <a>. */
     href?: string
   } = $props()
   const large = $derived(size === 'lg')
@@ -81,7 +82,7 @@
 
 <!-- Learn more sits after the row's own button or link: one control never nests inside another. -->
 {#snippet more()}
-  {#if learnMore}<div class="-mt-1.5 pb-2.5 {large ? 'px-3.5' : 'px-3'}"><LearnMore text={learnMore} /></div>{/if}
+  {#if learnMore}<div class="-mt-1.5 pb-2.5 {large ? 'px-3.5' : 'px-3'}"><LearnMore text={learnMore} label={title} /></div>{/if}
 {/snippet}
 
 {#if href}
@@ -122,7 +123,7 @@
 {:else}
   <div data-setting-key={settingKey} class="{large ? 'px-3.5 py-3.5' : 'px-3 py-2.5'}">
     {@render header()}
-    {#if learnMore}<div class="mt-1"><LearnMore text={learnMore} /></div>{/if}
+    {#if learnMore}<div class="mt-1"><LearnMore text={learnMore} label={title} /></div>{/if}
     {#if children && expanded}
       <div class="mt-2.5 border-t border-border/70 pt-3">{@render children()}</div>
     {/if}

@@ -1,11 +1,28 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { attr, hasAttr, markupElementsFromSource, staticAttr } from '../../../test/svelte-markup'
+import type { AST } from 'svelte/compiler'
+import {
+  attr, childFragments, hasAttr, markupElementsFromSource, parseSvelteSource, staticAttr, type TemplateNode,
+} from '../../../test/svelte-markup'
 
 // Vitest has no Svelte plugin, so these read the component source (parsed by the Svelte compiler).
 const read = (file: string) => readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
 const elements = (file: string) => markupElementsFromSource(read(file), file)
+
+/** Element-ancestor names (nearest first) of every template node matching `match`, components included. */
+function ancestorsOf(source: string, match: (node: TemplateNode) => boolean): string[][] {
+  const found: string[][] = []
+  const visit = (fragment: AST.Fragment, ancestors: string[]) => {
+    for (const node of fragment.nodes) {
+      if (match(node)) found.push(ancestors)
+      const next = node.type === 'RegularElement' || node.type === 'SvelteElement' ? [node.name, ...ancestors] : ancestors
+      for (const child of childFragments(node)) visit(child, next)
+    }
+  }
+  visit(parseSvelteSource(source).fragment, [])
+  return found
+}
 
 describe('LearnMore', () => {
   const source = read('./LearnMore.svelte')
@@ -14,14 +31,24 @@ describe('LearnMore', () => {
   it('is one d-pad target that opens on click, tap or A, never on hover', () => {
     expect(staticAttr(button, 'type')).toBe('button')
     expect(hasAttr(button, 'data-focusable')).toBe(true)
+    expect(hasAttr(button, 'data-touch-target')).toBe(true)
     expect(attr(button, 'aria-expanded')?.raw).toBe('aria-expanded={open}')
     expect(attr(button, 'onclick')?.raw).toBe('onclick={() => (open = !open)}')
     expect(source).toContain('>Learn more</button>')
     expect(source).not.toMatch(/onmouse|onpointerenter|onpointerover|onfocus/)
+    // A bare hover: style sticks after a tap on a touch screen.
+    expect(source).toContain('sm:hover:text-foreground')
+    expect(source).not.toMatch(/(?<!sm:)hover:/)
+  })
+
+  it('names each button after its row and points it at the text it opens', () => {
+    expect(attr(button, 'aria-label')?.raw).toBe('aria-label="Learn more about {label}"')
+    expect(attr(button, 'aria-controls')?.raw).toBe('aria-controls={id}')
+    expect(source).toContain('const id = $props.id()')
   })
 
   it('shows the text in a muted paragraph only while open', () => {
-    expect(source).toContain('{#if open}<p class="mt-1 text-xs text-muted-foreground">{text}</p>{/if}')
+    expect(source).toContain('{#if open}<p {id} class="mt-1 text-xs text-muted-foreground">{text}</p>{/if}')
   })
 })
 
@@ -45,6 +72,8 @@ describe('SettingsRow additions', () => {
     expect(attr(links[0], 'href')?.raw).toBe('href={href}')
     expect(hasAttr(links[0], 'data-focusable')).toBe(true)
     expect(attr(links[0].ancestors[0], 'data-setting-key')?.raw).toBe('data-setting-key={settingKey}')
+    // The search focus target is the switch/action button only (deviation 6).
+    expect(hasAttr(links[0], 'data-row-activate')).toBe(false)
   })
 
   it('prints the value muted before the control and the chevron after it', () => {
@@ -57,9 +86,14 @@ describe('SettingsRow additions', () => {
   })
 
   it('puts Learn more after the row button or link, never inside it', () => {
-    expect(source).toContain('    </a>\n    {@render more()}')
-    expect(source).toContain('    </button>\n    {@render more()}')
-    expect(source).toContain('{#snippet more()}\n  {#if learnMore}<div class="-mt-1.5 pb-2.5 {large ? \'px-3.5\' : \'px-3\'}"><LearnMore text={learnMore} /></div>{/if}')
+    const insideControl = (ancestors: string[]) => ancestors.some((name) => name === 'a' || name === 'button')
+    const learnMores = ancestorsOf(source, (node) => node.type === 'Component' && node.name === 'LearnMore')
+    // A snippet is walked where it is declared, so also check every place `more` is rendered.
+    const renders = ancestorsOf(source, (node) => node.type === 'RenderTag' && source.slice(node.start, node.end) === '{@render more()}')
+    expect(learnMores).toHaveLength(2)
+    expect(renders).toHaveLength(2)
+    for (const ancestors of [...learnMores, ...renders]) expect(insideControl(ancestors), ancestors.join(' < ')).toBe(false)
+    expect(source.split('<LearnMore text={learnMore} label={title} />')).toHaveLength(3)
   })
 
   it('uses rem text sizes, never 10 or 11 px', () => {

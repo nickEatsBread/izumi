@@ -76,6 +76,7 @@ const TARGETS: Record<string, TouchTarget> = {
   'Navigation: move up': { file: NAVIGATION, anchor: 'onclick={() => move(i, -1)}' },
   'Navigation: move down': { file: NAVIGATION, anchor: 'onclick={() => move(i, 1)}' },
   'SelectMenu: trigger': { file: './SelectMenu.svelte', anchor: 'bind:this={trigger}' },
+  'LearnMore: toggle': { file: './LearnMore.svelte', anchor: 'onclick={() => (open = !open)}' },
 }
 
 function occurrences(source: string, needle: string): number[] {
