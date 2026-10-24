@@ -435,7 +435,7 @@
   {/if}
   <!-- Desktop knob: at the playhead, or under the pointer while dragging (`seeking`, the grab the preview bar tracks). Hidden until a theme sets `opacity: 1`. -->
   {#if !gm}
-    <span data-part="player.seekbar.knob" aria-hidden="true" class="pointer-events-none absolute left-0 top-1/2 z-20 size-3.5 rounded-full bg-white opacity-0" data-scrubbing={seeking || undefined} style="transform:translateX(calc({knobX}px - 50%)) translateY(-50%);will-change:transform"></span>
+    <span data-part="player.seekbar.knob" aria-hidden="true" class="pointer-events-none absolute left-0 top-1/2 z-20 size-3.5 rounded-full bg-white opacity-0" data-scrubbing={seeking || undefined} style="translate:calc({knobX}px - 50%) -50%;will-change:translate"></span>
   {/if}
 
   <!-- Skip-segment tints overlaid on the segmented track. -->

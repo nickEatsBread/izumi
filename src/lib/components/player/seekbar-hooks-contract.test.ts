@@ -21,11 +21,14 @@ describe('seek bar styling hooks', () => {
     expect(seekbar).toContain('heldT = hoverT')
   })
 
-  it('draws the desktop knob inert, hidden and above the segment marks, moved by transform', () => {
+  it('draws the desktop knob inert, hidden and above the segment marks, moved by the translate property', () => {
     const tag = seekbar.match(/\{#if !gm\}\s*(<span data-part="player\.seekbar\.knob"[^>]*>)/)?.[1] ?? ''
     expect(tag).toContain('aria-hidden="true"')
     for (const cls of ['pointer-events-none', 'opacity-0', 'z-20']) expect((tag.match(/class="([^"]*)"/)?.[1] ?? '').split(' ')).toContain(cls)
-    expect(tag).toContain('translateX(calc({knobX}px - 50%)) translateY(-50%)')
+    // `translate` applies after `scale` and `transform`, so a theme's hover grow scales the knob in
+    // place; with `transform` positioning a `scale` multiplied the playhead offset and moved the knob.
+    expect(tag).toContain('translate:calc({knobX}px - 50%) -50%')
+    expect(tag).not.toContain('transform:')
     expect(tag).not.toContain('style:left')
   })
 
