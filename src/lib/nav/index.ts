@@ -8,6 +8,7 @@ import { takeFocusHint } from './focus-hint'
 import { isNavigable, isRovingTab } from './focusable'
 import { isPadEvent, padAdjust } from './pad-controls'
 import { navEpoch, navInFlight } from './nav-state'
+import { ANCHOR_SLIDE_MS, ANCHOR_SNAP_MS, anchorScrollLeft, anchorScrollTop, animateScroll, stopScroll } from './anchor'
 export * from './input'
 export * from './actions'
 export * from './spatial'
@@ -346,10 +347,60 @@ function runControllerScroll(
   request: () => void,
 ): void {
   const now = performance.now()
+  // An anchored row's eased scroll (runAnchorScroll) would keep writing over this one each frame.
+  stopScroll(target)
   if ((controllerScrollUntil.get(target) ?? 0) > now) abortOngoingScroll(target)
   request()
   if (behavior === 'smooth') controllerScrollUntil.set(target, now + CONTROLLER_SMOOTH_WINDOW_MS)
   else controllerScrollUntil.delete(target)
+}
+
+/** runControllerScroll for an anchored row's own eased scroll (nav/anchor.ts): a native smooth
+ *  scroll still running on `target` is stopped where it is first, and its window closes, since the
+ *  frames that follow are instant writes that nothing needs to abort. */
+function runAnchorScroll(target: RevealScrollTarget, get: () => number, set: (value: number) => void, to: number, ms: number): void {
+  if ((controllerScrollUntil.get(target) ?? 0) > performance.now()) abortOngoingScroll(target)
+  controllerScrollUntil.delete(target)
+  animateScroll(target, get, set, to, ms)
+}
+
+/** `--theme-shell-top` (the top bar's height) in viewport px: a fixed, invisible probe, measured and
+ *  removed. */
+function shellTop(): number {
+  const probe = document.createElement('div')
+  probe.style.cssText = 'position: fixed; top: var(--theme-shell-top, 2rem); visibility: hidden; pointer-events: none'
+  document.body.append(probe)
+  const top = probe.getBoundingClientRect().top
+  probe.remove()
+  return top
+}
+
+/** Anchored rows (`data-row-focus="anchor"`, a theme's `rows.*.focus`; the Netflix TV model): a
+ *  sideways move slides the track until the focused card sits where the first card rests (clamped
+ *  at the track's ends), and entering the row snaps its top to its scroll-margin-top, or 16 px under
+ *  the top bar when it has none. `instant`: a held repeat or reduced motion jumps. */
+function revealAnchored(el: HTMLElement, track: HTMLElement, row: HTMLElement, vertical: boolean, instant: boolean): void {
+  if (vertical) {
+    const to = anchorScrollTop({
+      rowTop: row.getBoundingClientRect().top,
+      scrollY: window.scrollY,
+      offset: parseFloat(getComputedStyle(row).scrollMarginTop) || shellTop() + 16,
+      maxScroll: document.documentElement.scrollHeight - window.innerHeight,
+    })
+    runAnchorScroll(window, () => window.scrollY, (top) => window.scrollTo({ top, behavior: 'instant' }), to, instant ? 0 : ANCHOR_SNAP_MS)
+    return
+  }
+  // The track's own child: a card's focusable may sit inset inside it.
+  let item = el
+  while (item.parentElement && item.parentElement !== track) item = item.parentElement
+  const to = anchorScrollLeft({
+    cardLeft: item.getBoundingClientRect().left,
+    trackLeft: track.getBoundingClientRect().left + track.clientLeft,
+    paddingLeft: parseFloat(getComputedStyle(track).paddingLeft) || 0,
+    scrollLeft: track.scrollLeft,
+    maxScroll: track.scrollWidth - track.clientWidth,
+  })
+  runAnchorScroll(track, () => track.scrollLeft, (left) => track.scrollTo({ left, behavior: 'instant' }), to, instant ? 0 : ANCHOR_SLIDE_MS)
 }
 
 /** The position:fixed layer holding `el` (a dialog, the on-screen keyboard), or null when `el`
@@ -473,6 +524,12 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
   // Entering its primary action means reveal the whole feature, not just the focused button.
   if (vertical && el.hasAttribute('data-nav-scroll-top')) {
     runControllerScroll(window, behavior, () => window.scrollTo({ top: 0, behavior }))
+    return
+  }
+  const track = el.closest<HTMLElement>('[data-carousel-scroller]')
+  const row = track?.closest<HTMLElement>('[data-slot="row"]')
+  if (track && row?.dataset.rowFocus === 'anchor') {
+    revealAnchored(el, track, row, vertical, rapid || reduced)
     return
   }
   // Horizontal carousel navigation owns only that row. Vertical navigation still reveals the
