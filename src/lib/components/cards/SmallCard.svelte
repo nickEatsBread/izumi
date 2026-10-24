@@ -120,7 +120,7 @@
   // preview-pos.ts for why the UI-scale setting otherwise throws the popup off by that factor.
   function place() {
     const r = el.getBoundingClientRect()
-    const art = el.querySelector<HTMLElement>('.theme-artwork, img')
+    const art = el.querySelector<HTMLElement>('[data-part="preview.anchor"]') ?? el.querySelector<HTMLElement>('.theme-artwork, img')
     const box = art?.getBoundingClientRect() ?? r
     const nav = document.documentElement.dataset.themeNav
     const rail = nav === 'top' || nav === 'bottom' ? 0 : SIDEBAR_W

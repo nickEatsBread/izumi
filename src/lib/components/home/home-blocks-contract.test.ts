@@ -58,7 +58,7 @@ describe('Home blocks wiring', () => {
 
     const tabbedGrid = read('./blocks/TabbedGrid.svelte')
     expect(tabbedGrid).not.toMatch(/data-slot="block\.tabbed-grid"[^>]*data-nav-row/)
-    expect(tabbedGrid).toContain('<div data-nav-row><Tabs')
+    expect(tabbedGrid).toContain('<div data-part="block.tabs" data-nav-row><Tabs')
     expect(tabbedGrid).toContain('data-nav-row data-nav-row-wrap data-nav-row-items')
 
     const rankedList = read('./blocks/RankedList.svelte')

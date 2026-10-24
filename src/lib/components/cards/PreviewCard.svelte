@@ -121,7 +121,7 @@
       <div data-part="preview.title" class="pointer-events-none absolute inset-x-3 bottom-3 truncate text-lg font-black text-white drop-shadow">{title(media)}</div>
     {/if}
   </div>
-  <div class="flex flex-col gap-2 p-4">
+  <div data-part="preview.body" class="flex flex-col gap-2 p-4">
     <div data-part="preview.actions" class="flex items-center gap-2">
       <button data-part="preview.action" data-action="play" aria-label={reading ? 'Information' : 'Play'} onclick={(e) => { e.stopPropagation(); openDetail() }}
               class="grid size-9 place-items-center rounded-full bg-white text-black">{#if reading}<BookOpen size={16} />{:else}<Play size={16} fill="currentColor" />{/if}</button>

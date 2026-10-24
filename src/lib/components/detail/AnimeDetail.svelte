@@ -1221,10 +1221,10 @@
          the whole header. At 13rem it left a poster-height void beneath the much shorter info
          column, delaying Episodes by roughly a full D-pad viewport. An 11rem cover retains a clear
          visual identity while keeping both columns close enough in height for Episodes to follow. -->
-    <div class="mb-4 flex flex-col gap-5 md:flex-row {detailTheme.coverAlign === 'end' ? 'md:items-end' : detailTheme.coverAlign === 'start' ? 'md:items-start' : ''}">
+    <div data-part="detail.row" class="mb-4 flex flex-col gap-5 md:flex-row {detailTheme.coverAlign === 'end' ? 'md:items-end' : detailTheme.coverAlign === 'start' ? 'md:items-start' : ''}">
       <img data-part="detail.poster" use:reliableImage={posterSrc(m)} alt="" onload={markPosterLoaded} class="h-auto w-44 shrink-0 rounded-lg object-contain shadow-lg {detailTheme.coverAlign === 'end' ? 'self-end' : 'self-start'} {posterWaiting(m) ? 'aspect-[46/65] skeloader' : ''}" style:width={detailTheme.posterWidth ? `${detailTheme.posterWidth}px` : undefined} />
 
-      <div class="min-w-0 flex-1 {detailTheme.bannerScale === 'banner' ? 'md:pt-12' : ''}">
+      <div data-part="detail.summary" class="min-w-0 flex-1 {detailTheme.bannerScale === 'banner' ? 'md:pt-12' : ''}">
         {#if m.title.native || m.title.romaji}
           <div data-part="detail.alt-title" class="text-sm text-muted-foreground">{m.title.native || m.title.romaji}</div>
         {/if}
