@@ -345,7 +345,7 @@
               </div>
               <span class="min-w-0 flex-1">
                 <span class="block font-bold leading-tight">{row.title}</span>
-                <span class="mt-0.5 block text-[11px] text-muted-foreground">{row.description ?? row.group}</span>
+                <span class="mt-0.5 block text-xs text-muted-foreground">{row.description ?? row.group}</span>
               </span>
               <button data-focusable onclick={() => hide(row.id)} aria-label={`Hide ${row.title}`} class="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-bold transition-colors hover:bg-secondary active:bg-secondary">
                 <EyeOff size={15} /> <span class="hidden sm:inline">Hide</span>
@@ -377,7 +377,7 @@
                     <div class="flex min-h-16 items-center gap-3 px-3 py-2">
                       <span class="min-w-0 flex-1">
                         <span class="block font-bold leading-tight">{row.title}</span>
-                        {#if row.description}<span class="mt-0.5 block text-[11px] text-muted-foreground">{row.description}</span>{/if}
+                        {#if row.description}<span class="mt-0.5 block text-xs text-muted-foreground">{row.description}</span>{/if}
                       </span>
                       <button data-focusable onclick={() => add(row.id)} class="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-bold text-primary-foreground">
                         <Plus size={15} /> Add
