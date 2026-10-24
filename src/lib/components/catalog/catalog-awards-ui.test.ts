@@ -6,7 +6,7 @@ const detail = readFileSync(fileURLToPath(new URL('./CatalogMediaDetail.svelte',
 const awards = readFileSync(fileURLToPath(new URL('./CatalogAwards.svelte', import.meta.url)), 'utf8')
 const hero = readFileSync(fileURLToPath(new URL('../banner/Hero.svelte', import.meta.url)), 'utf8')
 const catalogHome = readFileSync(fileURLToPath(new URL('./CatalogHome.svelte', import.meta.url)), 'utf8')
-const homeSettings = readFileSync(fileURLToPath(new URL('../../../routes/app/settings/catalog/home/+page.svelte', import.meta.url)), 'utf8')
+const homeSettings = readFileSync(fileURLToPath(new URL('../../../routes/app/settings/library/home/+page.svelte', import.meta.url)), 'utf8')
 const tmdb = readFileSync(fileURLToPath(new URL('../../catalog/providers/tmdb.ts', import.meta.url)), 'utf8')
 
 describe('catalogue discovery context UI', () => {

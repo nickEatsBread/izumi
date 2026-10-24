@@ -1,0 +1,70 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`phone Settings markup > keeps the phone section list as it was 1`] = `
+"
+  <!-- Mobile: a vertical grouped list of chevron rows. Tapping a row navigates to its route; the
+       layout shows a back-header on the child page. Vertical scroll only — no horizontal strip. -->
+  <div class="space-y-4">
+    {#each groups as g (g.id)}
+      <div>
+        <div class="mb-1 px-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">{g.label}</div>
+        <div class="overflow-hidden rounded-xl bg-secondary/40">
+          {#each g.items as it (it.id)}
+            {@const Icon = sectionIcon(it.id)}
+            <a href={it.href} data-focusable use:ripple onclick={() => h.tap()}
+               class="ripple-host flex min-h-14 items-center gap-3 border-b border-border/50 px-3 py-2.5 last:border-b-0 transition-transform active:scale-[0.985]">
+              <Icon size={20} class="shrink-0 text-muted-foreground" />
+              <span class="min-w-0 flex-1">
+                <span class="block text-[0.95rem] font-bold leading-tight">{it.title}</span>
+                <span class="mt-0.5 block truncate text-xs text-muted-foreground">{it.subtitle}</span>
+              </span>
+              <ChevronRight size={18} class="shrink-0 text-muted-foreground" />
+            </a>
+          {/each}
+        </div>
+      </div>
+    {/each}
+  </div>
+"
+`;
+
+exports[`phone Settings markup > keeps the phone settings shell as it was 1`] = `
+"
+  {#if isIndex}
+    <!-- Mobile index: the grouped list, full width. -->
+    <div class="p-4">
+      <div class="mb-4 flex items-center justify-between px-1">
+        <h1 class="text-2xl font-black">{m.nav_settings()}</h1>
+        <SettingsSearch compact />
+      </div>
+      <SettingsNav />
+      <div class="mt-6 space-y-0.5 px-1 text-xs text-muted-foreground">
+        {#if appVersion}<div>{m.common_client_version({ version: appVersion })}</div>{/if}
+        {#if osLine}<div>{osLine}</div>{/if}
+      </div>
+    </div>
+  {:else}
+    <!-- Mobile child: back-header + the category content. -->
+    <div class="min-h-screen">
+      <!-- This header owns the status-bar inset for the whole settings screen: it is \`sticky\`, so
+           once the page scrolls it locks to the physical viewport top and \`main\`'s padding no
+           longer protects it. Padding it here keeps the back button clear of the status bar at
+           every scroll offset, and the blurred bar paints that band instead of leaving it black. -->
+      <div class="sticky top-0 z-20 flex items-center gap-2 border-b border-border bg-background/95 px-2 py-2 backdrop-blur"
+           style="padding-top:max(0.5rem,env(safe-area-inset-top))">
+        <a href={parentHref} data-focusable onclick={(event) => { event.preventDefault(); h.tap(); settingsBack('header') }} aria-label={m.common_back_to_settings()}
+           class="grid h-10 w-10 place-items-center rounded-full transition-colors active:bg-accent">
+          <ChevronLeft size={22} />
+        </a>
+        <h1 class="text-lg font-black">{childTitle}</h1>
+        <span class="ml-auto"><SettingsSearch compact /></span>
+      </div>
+      {#key $page.url.pathname}
+        <!-- Vertical, short, and fading: a push that reads as a platform screen change rather than
+             a carousel. app.css shortens every transition under the reduced-motion gate. -->
+        <div class="settings-child" data-nav-surface="settings" in:fly={{ y: 12, duration: 160, opacity: 0 }}>{@render children()}</div>
+      {/key}
+    </div>
+  {/if}
+"
+`;

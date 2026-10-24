@@ -19,9 +19,9 @@ const RAIL = `
   <aside data-nav-region="settings">
     <button data-focusable id="search">Search settings</button>
     <nav data-settings-rail data-nav-scroll-container>
-      <a href="/app/settings/player" data-focusable id="rail-player">Player</a>
-      <a href="/app/settings/sources" data-focusable id="rail-sources">Sources</a>
-      <a href="/app/settings/themes" data-focusable id="rail-themes">Themes</a>
+      <a href="/app/settings/playback" data-focusable id="rail-playback">Playback</a>
+      <a href="/app/settings/sources" data-focusable id="rail-sources">Sources and store</a>
+      <a href="/app/settings/appearance" data-focusable id="rail-appearance">Appearance</a>
     </nav>
   </aside>`
 function page(activeRail: string | null, content = '<button data-focusable id="row">Row</button><button data-focusable id="other">Other</button>') {
@@ -55,7 +55,7 @@ describe('settingsBackAction', () => {
     history.replaceState(null, '', '/app/settings/sources')
     byId('search').focus()
     expect(settingsBackAction('gamepad')).toBe('leave')
-    byId('rail-player').focus()
+    byId('rail-playback').focus()
     expect(settingsBackAction('gamepad')).toBe('leave')
     byId('row').focus()
     expect(settingsBackAction('gamepad')).toBe('rail')
@@ -67,13 +67,13 @@ describe('settingsBackAction', () => {
     page('rail-sources')
     byId('search').closest('aside')!.removeAttribute('data-nav-region')
     history.replaceState(null, '', '/app/settings/sources')
-    byId('rail-player').focus()
+    byId('rail-playback').focus()
     expect(settingsBackAction('gamepad')).toBe('leave')
     byId('row').focus()
     expect(settingsBackAction('gamepad')).toBe('rail')
   })
 
-  it('rail layout on a page the rail has no item for (Navigation) leaves', () => {
+  it('rail layout with no rail item lit on screen leaves', () => {
     page(null)
     history.replaceState(null, '', '/app/settings/navigation')
     byId('row').focus()
@@ -86,7 +86,7 @@ describe('settingsBackAction', () => {
     byId('row').focus()
     const expected: Array<[string, string]> = [
       ['/app/settings', 'leave'],
-      ['/app/settings/player', 'up'],
+      ['/app/settings/playback', 'up'],
       ['/app/settings/store', 'up'],
       ['/app/settings/about/license-information', 'up'],
     ]
@@ -97,7 +97,7 @@ describe('settingsBackAction', () => {
   })
 
   it('the phone header arrow always goes up', () => {
-    history.replaceState(null, '', '/app/settings/player')
+    history.replaceState(null, '', '/app/settings/playback')
     expect(settingsBackAction('header')).toBe('up')
   })
 
@@ -122,26 +122,36 @@ describe('goUp', () => {
 
   it('replaces the entry with the structural parent after a cross-link (decision 8)', () => {
     visit(1, '/app/collections')
-    visit(2, '/app/settings/catalog/collections')
+    visit(2, '/app/settings/library/collections')
     goUp()
     expect(history.back).not.toHaveBeenCalled()
-    expect(mocks.goto).toHaveBeenCalledWith('/app/settings/catalog', { replaceState: true })
+    expect(mocks.goto).toHaveBeenCalledWith('/app/settings/library', { replaceState: true })
   })
 
-  it('accepts Catalog as the Store parent, and Customize Home as the Collections parent', () => {
-    visit(1, '/app/settings/catalog'); visit(2, '/app/settings/store')
+  it('accepts Home and library as the Store parent, and Customize Home as the Collections parent', () => {
+    visit(1, '/app/settings/library'); visit(2, '/app/settings/store')
     goUp()
     expect(history.back).toHaveBeenCalledTimes(1)
-    visit(1, '/app/settings/catalog/home'); visit(2, '/app/settings/catalog/collections')
+    visit(1, '/app/settings/library/home'); visit(2, '/app/settings/library/collections')
     goUp()
     expect(history.back).toHaveBeenCalledTimes(2)
     expect(mocks.goto).not.toHaveBeenCalled()
   })
 
-  it('with no trail (a fresh start on a sub-page) goes to the parent tab, replacing', () => {
+  it('returns through an old route that still renders the parent', () => {
+    visit(1, '/app/settings/catalog/home'); visit(2, '/app/settings/catalog/collections')
+    goUp()
+    expect(history.back).toHaveBeenCalledTimes(1)
+    visit(1, '/app/settings/catalog'); visit(2, '/app/settings/store')
+    goUp()
+    expect(history.back).toHaveBeenCalledTimes(2)
+    expect(mocks.goto).not.toHaveBeenCalled()
+  })
+
+  it('with no trail (a fresh start on a sub-page) goes to the parent section, replacing', () => {
     history.replaceState({ [HISTORY_INDEX]: 5 }, '', '/app/settings/store')
     goUp()
-    expect(mocks.goto).toHaveBeenCalledWith('/app/settings/sources?tab=manage', { replaceState: true })
+    expect(mocks.goto).toHaveBeenCalledWith('/app/settings/sources', { replaceState: true })
   })
 })
 
@@ -167,16 +177,16 @@ describe('leaveSettings', () => {
 
 describe('focusRailItem', () => {
   it('focuses the active rail link and marks the row B came from, for Right to return to', () => {
-    page('rail-themes')
+    page('rail-appearance')
     byId('row').focus()
     expect(focusRailItem()).toBe(true)
-    expect(document.activeElement).toBe(byId('rail-themes'))
+    expect(document.activeElement).toBe(byId('rail-appearance'))
     expect(byId('row').dataset.navId).toBe(RAIL_RETURN_ID)
-    expect(byId('rail-themes').dataset.navRight).toBe(RAIL_RETURN_ID)
+    expect(byId('rail-appearance').dataset.navRight).toBe(RAIL_RETURN_ID)
   })
 
   it('moves the mark to the newest row, off the old one', () => {
-    page('rail-themes')
+    page('rail-appearance')
     byId('row').focus(); focusRailItem()
     byId('other').focus(); focusRailItem()
     expect(byId('row').hasAttribute('data-nav-id')).toBe(false)
@@ -184,21 +194,21 @@ describe('focusRailItem', () => {
   })
 
   it('keeps a row’s own nav id and points the rail link at it', () => {
-    page('rail-themes', '<button data-focusable id="row" data-nav-id="theme-grid-first">Row</button>')
+    page('rail-appearance', '<button data-focusable id="row" data-nav-id="theme-grid-first">Row</button>')
     byId('row').focus(); focusRailItem()
     expect(byId('row').dataset.navId).toBe('theme-grid-first')
-    expect(byId('rail-themes').dataset.navRight).toBe('theme-grid-first')
+    expect(byId('rail-appearance').dataset.navRight).toBe('theme-grid-first')
   })
 
   it('marks nothing when B came from outside the settings content', () => {
-    page('rail-themes')
+    page('rail-appearance')
     byId('row').focus(); focusRailItem()
     document.body.insertAdjacentHTML('beforeend', '<nav data-nav-sidebar><a href="/app/home" data-focusable id="side">Home</a></nav>')
     byId('side').focus()
     expect(focusRailItem()).toBe(true)
     expect(byId('side').hasAttribute('data-nav-id')).toBe(false)
     expect(byId('row').hasAttribute('data-nav-id')).toBe(false)
-    expect(byId('rail-themes').hasAttribute('data-nav-right')).toBe(false)
+    expect(byId('rail-appearance').hasAttribute('data-nav-right')).toBe(false)
   })
 
   it('falls back to aria-current without the region default (TV), and fails without either', () => {
@@ -216,11 +226,11 @@ describe('focusRailItem', () => {
 
 describe('settingsBack', () => {
   it('runs the action it names: page → rail item, then rail → out of Settings', () => {
-    page('rail-themes')
-    visit(1, '/app/home'); visit(2, '/app/settings/themes')
+    page('rail-appearance')
+    visit(1, '/app/home'); visit(2, '/app/settings/appearance')
     byId('row').focus()
     expect(settingsBack('gamepad')).toBe(true)
-    expect(document.activeElement).toBe(byId('rail-themes'))
+    expect(document.activeElement).toBe(byId('rail-appearance'))
     expect(settingsBack('gamepad')).toBe(true)
     expect(history.go).toHaveBeenCalledWith(-1)
   })

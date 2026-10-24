@@ -3,20 +3,24 @@
   import { invoke } from '@tauri-apps/api/core'
   import { open } from '@tauri-apps/plugin-dialog'
   import {
-    downloadDir, downloadConcurrency, downloadCachedOnly, downloadQuality, downloadAudio,
-    downloadCodec, autoDownloadDelayMinutes,
+    downloadDir, downloadConcurrency, downloadCachedOnly, downloadQuality, downloadCodec,
+    autoDownloadDelayMinutes, type Quality,
   } from '$lib/settings/ui'
   import { isAndroid } from '$lib/platform'
   import { downloads } from '$lib/downloads/store'
   import { forceOffline } from '$lib/stores/offline'
-  import Toggle from '$lib/components/settings/Toggle.svelte'
-  import RefreshButton from '$lib/components/RefreshButton.svelte'
   import {
     autoDownloadRules, autoDownloadRunning, removeAutoDownloadRule, runAutoDownloadRules,
     updateAutoDownloadRule,
   } from '$lib/downloads/rules'
+  import RefreshButton from '$lib/components/RefreshButton.svelte'
+  import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
+  import SettingsSubcategory from '$lib/components/settings/SettingsSubcategory.svelte'
+  import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
+  import SettingsChoiceRow from '$lib/components/settings/SettingsChoiceRow.svelte'
+  import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte'
+  import CacheStorageSettings from '$lib/components/settings/CacheStorageSettings.svelte'
   import Trash2 from '@lucide/svelte/icons/trash-2'
-  import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
 
   // Desktop: native folder picker → an absolute filesystem path the reqwest downloader can write to.
   // (Android's picker returns a content:// tree URI, which the downloader can't use — so it's
@@ -41,6 +45,8 @@
   const used = $derived(Object.values($downloads).filter((d) => d.status === 'done').reduce((s, d) => s + (d.bytes || 0), 0))
   let checkResult = $state('Checked')
   let checkError = $state('')
+  const toggleOffline = () => ($forceOffline = !$forceOffline)
+  const toggleCachedOnly = () => ($downloadCachedOnly = !$downloadCachedOnly)
 
   async function checkAutoDownloads() {
     checkError = ''
@@ -59,85 +65,74 @@
   })
 </script>
 
-<div class="p-4 sm:p-8">
-  <h2 data-settings-page-title class="mb-1 text-xl font-black">Downloads</h2>
-  <p class="mb-4 text-sm text-muted-foreground">Choose which releases downloads should prefer and manage series that watch for newly aired episodes.</p>
+<SettingsSection section="downloads">
+  <SettingsSubcategory id="offline">
+    <SettingsRow
+      settingKey="offline-mode"
+      title="Offline mode"
+      description="Only downloaded content, no network requests"
+      learnMore="Turns on automatically if you open the app with no connection."
+      onActivate={toggleOffline}
+      pressed={$forceOffline}
+    >
+      {#snippet control()}
+        <SettingsSwitch value={$forceOffline} onToggle={toggleOffline} label="Offline mode" interactive={false} />
+      {/snippet}
+    </SettingsRow>
+  </SettingsSubcategory>
 
-  <div class="max-w-2xl space-y-3">
-    <Toggle label="Offline mode" desc="Show only downloaded content and skip network requests. Turns on automatically if you open the app with no connection." value={$forceOffline} onToggle={() => ($forceOffline = !$forceOffline)} />
-
-    <label class="flex flex-col gap-1">
-      <span class="text-sm font-bold">Download folder</span>
-      <span class="flex gap-2">
-        <input type="text" data-focusable bind:value={$downloadDir} readonly={$isAndroid} placeholder="(default: app data / downloads)" class="min-w-0 flex-1 rounded-md bg-input px-3 py-2.5 text-base sm:py-2 sm:text-sm {$isAndroid ? 'text-muted-foreground' : ''}" />
-        {#if !$isAndroid}
-          <button data-focusable onclick={browse} class="shrink-0 rounded-md bg-secondary px-4 py-2 text-sm font-bold transition-colors hover:bg-accent">Browse…</button>
-        {/if}
-      </span>
-      {#if $isAndroid}
-        <span class="text-xs text-muted-foreground">On Android, downloads are saved to the app's private storage. Picking a custom folder needs Android's document-provider support and isn't available yet.</span>
-      {:else}
-        <span class="text-xs text-muted-foreground">Absolute path, or use Browse. Leave as the default unless you want downloads on another drive.{pickMsg ? ` ${pickMsg}` : ''}</span>
-      {/if}
-    </label>
-
-    <label class="flex items-center justify-between rounded-md border border-border p-4 sm:p-3">
-      <div>
-        <div class="font-bold">Simultaneous downloads</div>
-        <p class="mt-1 text-xs text-muted-foreground">1–2 recommended (debrid CDN + disk).</p>
-      </div>
-      <input type="number" min="1" max="4" data-focusable bind:value={$downloadConcurrency} class="w-20 rounded-md bg-input px-3 py-2.5 text-right text-base sm:py-2 sm:text-sm" />
-    </label>
-
-    <section class="rounded-md border border-border p-4 sm:p-3">
-      <div class="font-bold">Source matching</div>
-      <p class="mt-1 text-xs text-muted-foreground">Used by both manual downloads and automatic new-episode downloads. A preference falls back to the best available match when no exact match exists.</p>
-      <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <label class="text-sm font-bold">Quality
-          <SelectMenu bind:value={$downloadQuality} className="mt-1 w-full font-normal" ariaLabel="Download quality" options={[
-            { value: '2160', label: '4K' }, { value: '1080', label: '1080p' },
-            { value: '720', label: '720p' }, { value: '480', label: '480p' },
-            { value: 'any', label: 'Any' },
-          ]} />
-        </label>
-        <label class="text-sm font-bold">Audio
-          <SelectMenu bind:value={$downloadAudio} className="mt-1 w-full font-normal" ariaLabel="Download audio" options={[
-            { value: 'sub', label: 'Sub' }, { value: 'dub', label: 'Dub' }, { value: 'any', label: 'Any' },
-          ]} />
-        </label>
-        <label class="text-sm font-bold">Codec
-          <SelectMenu bind:value={$downloadCodec} className="mt-1 w-full font-normal" ariaLabel="Download codec" options={[
-            { value: 'any', label: 'Any' }, { value: 'h264', label: 'H.264' },
-            { value: 'h265', label: 'H.265 / HEVC' }, { value: 'av1', label: 'AV1' },
-          ]} />
-        </label>
-      </div>
-      <div class="mt-3"><Toggle label="Only download cached sources" desc="Require a source that is already available through the configured debrid service." value={$downloadCachedOnly} onToggle={() => ($downloadCachedOnly = !$downloadCachedOnly)} /></div>
-    </section>
-
-    <label class="flex items-center justify-between rounded-md border border-border p-4 sm:p-3">
-      <div class="pr-4"><div class="font-bold">New-episode delay</div><p class="mt-1 text-xs text-muted-foreground">Wait after the scheduled air time before looking for a release.</p></div>
-      <span class="flex items-center gap-2"><input data-focusable type="number" min="0" max="1440" bind:value={$autoDownloadDelayMinutes} class="w-20 rounded-md bg-input px-3 py-2.5 text-right text-base sm:py-2 sm:text-sm" /><span class="text-sm text-muted-foreground">min</span></span>
-    </label>
-
-    <section class="rounded-md border border-border p-4 sm:p-3">
-      <!-- Stacked on a phone: the long description squeezed the button into a stub beside it. -->
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div><div class="font-bold">Automatic downloads</div><p class="mt-1 text-xs text-muted-foreground">Enable a series from its episode Download menu. Izumi checks on launch, when reconnecting, and every 15 minutes while running.</p></div>
+  <SettingsSubcategory id="folder">
+    <SettingsRow
+      settingKey="download-folder"
+      title="Download folder"
+      description={$isAndroid ? "Saved to the app's private storage on Android" : 'Absolute path, or Browse to pick one'}
+      learnMore={$isAndroid
+        ? "Picking a custom folder needs Android's document-provider support and isn't available yet."
+        : 'Leave the default unless you want downloads on another drive.'}
+      controlLayout="stack"
+    >
+      {#snippet control()}
+        <span class="flex w-full gap-2 sm:w-80">
+          <input type="text" data-focusable bind:value={$downloadDir} readonly={$isAndroid} aria-label="Download folder" placeholder="(default: app data / downloads)" class="min-w-0 flex-1 rounded-md bg-input px-3 py-2.5 text-base sm:py-2 sm:text-sm {$isAndroid ? 'text-muted-foreground' : ''}" />
+          {#if !$isAndroid}<button data-focusable onclick={browse} class="shrink-0 rounded-md bg-secondary px-4 py-2 text-sm font-bold transition-colors hover:bg-accent">Browse…</button>{/if}
+        </span>
+      {/snippet}
+    </SettingsRow>
+    {#if pickMsg}<p role="alert" class="px-3 py-2 text-xs text-destructive">{pickMsg}</p>{/if}
+    <SettingsChoiceRow
+      settingKey="download-quality"
+      title="Download quality"
+      description="Falls back to the best match when none is exact"
+      learnMore="Used by manual downloads and automatic new-episode downloads."
+      value={$downloadQuality}
+      options={[
+        { value: '2160', label: '4K' }, { value: '1080', label: '1080p' },
+        { value: '720', label: '720p' }, { value: '480', label: '480p' },
+        { value: 'any', label: 'Any' },
+      ]}
+      onChange={(value) => ($downloadQuality = value as Quality)}
+    />
+    <SettingsRow
+      settingKey="automatic-downloads"
+      title="Automatic downloads"
+      description="Turn on per series from its Download menu"
+      learnMore="izumi checks on launch, when reconnecting and every 15 minutes while running."
+    >
+      {#snippet control()}
         <RefreshButton
           onRefresh={checkAutoDownloads}
           label="Check now"
           busyLabel="Checking…"
           successLabel={checkResult}
           disabled={$autoDownloadRunning}
-          class="min-w-[7.5rem] shrink-0 self-start rounded-md bg-secondary px-3 py-2.5 text-sm font-bold hover:bg-accent sm:self-auto sm:py-2 sm:text-xs"
+          class="min-w-[7.5rem] shrink-0 rounded-md bg-secondary px-3 py-2 text-xs font-bold hover:bg-accent"
         />
-      </div>
-      {#if checkError}<p role="alert" class="mt-3 text-xs text-destructive">{checkError}</p>{/if}
+      {/snippet}
+      {#if checkError}<p role="alert" class="mb-3 text-xs text-destructive">{checkError}</p>{/if}
       {#if !$autoDownloadRules.length}
-        <p class="mt-3 rounded-md border border-dashed border-border p-4 text-center text-xs text-muted-foreground">No series enabled. Open a series, choose Download…, then turn on “Auto-download new episodes”.</p>
+        <p class="rounded-md border border-dashed border-border p-4 text-center text-xs text-muted-foreground">No series enabled. Open a series, choose Download…, then turn on “Auto-download new episodes”.</p>
       {:else}
-        <div class="mt-3 space-y-2">
+        <div class="space-y-2">
           {#each $autoDownloadRules as rule (rule.id)}
             <div class="flex flex-wrap items-center gap-3 rounded-md bg-secondary/50 p-3 sm:p-2.5">
               {#if rule.poster}<img src={rule.poster} alt="" loading="lazy" decoding="async" class="h-12 w-9 rounded object-cover" />{/if}
@@ -148,11 +143,54 @@
           {/each}
         </div>
       {/if}
-    </section>
+    </SettingsRow>
+  </SettingsSubcategory>
 
-    <div class="flex items-center justify-between rounded-md border border-border p-3 text-sm">
-      <span class="font-bold">Storage used</span>
-      <span class="tabular-nums text-muted-foreground">{fmtBytes(used)}</span>
-    </div>
-  </div>
-</div>
+  <SettingsSubcategory id="storage">
+    <SettingsRow settingKey="storage-used" title="Storage used" description="Space taken by finished downloads" value={fmtBytes(used)} />
+    <CacheStorageSettings />
+  </SettingsSubcategory>
+
+  <SettingsSubcategory id="advanced" summary="Simultaneous downloads, new-episode delay, codec, +1">
+    <SettingsChoiceRow
+      settingKey="simultaneous-downloads"
+      title="Simultaneous downloads"
+      description="1–2 recommended (debrid CDN + disk)."
+      value={String($downloadConcurrency)}
+      options={[
+        { value: '1', label: '1' }, { value: '2', label: '2' },
+        { value: '3', label: '3' }, { value: '4', label: '4' },
+      ]}
+      onChange={(value) => ($downloadConcurrency = Number(value))}
+    />
+    <SettingsRow settingKey="new-episode-delay" title="New-episode delay" description="Wait after the scheduled air time before looking for a release.">
+      {#snippet control()}
+        <span class="flex items-center gap-2">
+          <input data-focusable type="number" min="0" max="1440" aria-label="New-episode delay in minutes" bind:value={$autoDownloadDelayMinutes} class="w-20 rounded-md bg-input px-3 py-2.5 text-right text-base sm:py-2 sm:text-sm" />
+          <span class="text-sm text-muted-foreground">min</span>
+        </span>
+      {/snippet}
+    </SettingsRow>
+    <SettingsChoiceRow
+      settingKey="download-codec"
+      title="Download codec"
+      value={$downloadCodec}
+      options={[
+        { value: 'any', label: 'Any' }, { value: 'h264', label: 'H.264' },
+        { value: 'h265', label: 'H.265 / HEVC' }, { value: 'av1', label: 'AV1' },
+      ]}
+      onChange={(value) => ($downloadCodec = value as 'any' | 'h264' | 'h265' | 'av1')}
+    />
+    <SettingsRow
+      settingKey="only-download-cached-sources"
+      title="Only download cached sources"
+      description="Require a source your debrid service already has"
+      onActivate={toggleCachedOnly}
+      pressed={$downloadCachedOnly}
+    >
+      {#snippet control()}
+        <SettingsSwitch value={$downloadCachedOnly} onToggle={toggleCachedOnly} label="Only download cached sources" interactive={false} />
+      {/snippet}
+    </SettingsRow>
+  </SettingsSubcategory>
+</SettingsSection>

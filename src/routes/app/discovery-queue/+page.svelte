@@ -281,7 +281,7 @@
   {:else if error && !pool.length}
     <section class="queue-state">
       <h2>Couldn’t load your picks</h2><p>{error}</p>
-      <div class="state-actions"><a href="/app/settings/catalog" data-focusable class="queue-button primary-button">Catalog settings</a><button type="button" data-focusable onclick={() => load(true)} class="queue-button secondary-button"><RefreshCw size={16} /> Retry</button></div>
+      <div class="state-actions"><a href="/app/settings/library" data-focusable class="queue-button primary-button">Catalog settings</a><button type="button" data-focusable onclick={() => load(true)} class="queue-button secondary-button"><RefreshCw size={16} /> Retry</button></div>
     </section>
   {:else if current && presented}
     <!-- Shortcuts belong to this focusable feature, never to the whole application. -->

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import CredentialField from '$lib/components/settings/CredentialField.svelte'
   let {
     section = 'manage',
     hasManageRows = $bindable(false),
@@ -13,7 +12,7 @@
     sortRanks = new Map<string, number>(),
     manageSortEntries = $bindable([]),
   }: {
-    section?: 'manage' | 'community-results' | 'torrent-debrid'
+    section?: 'manage'
     hasManageRows?: boolean
     orphanCount?: number
     visibleManageRows?: number
@@ -26,7 +25,7 @@
     manageSortEntries?: ManagedSourceSortEntry[]
   } = $props()
 
-  import { debridKey, debridProvider, extensionUrls, disabledExtensions, disabledPlugins, torrentPlaybackMode, providerLanguages, providerAudio } from '$lib/settings/ui'
+  import { extensionUrls, disabledExtensions, disabledPlugins } from '$lib/settings/ui'
   import {
     fetchExtensionInfo,
     installCatalogPackage,
@@ -52,43 +51,17 @@
     type SourceTypeFilter,
   } from '$lib/settings/source-filters'
   import { langName } from '$lib/player/track-label'
-  import { SOURCE_LANGUAGES } from '$lib/stremio/sublang'
-  import MultiSelect from '$lib/components/search/MultiSelect.svelte'
-  import { accountInfo, providerList, providerMeta, type DebridAccountInfo } from '$lib/stremio/debrid'
   import Boxes from '@lucide/svelte/icons/boxes'
   import Search from '@lucide/svelte/icons/search'
   import Trash2 from '@lucide/svelte/icons/trash-2'
-  import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   import SourcePlaceholder from '$lib/components/SourcePlaceholder.svelte'
   import ExtensionServiceSettings from '$lib/components/settings/ExtensionServiceSettings.svelte'
   import JvmSourcePreferences from '$lib/components/catalog/JvmSourcePreferences.svelte'
-  import RefreshButton from '$lib/components/RefreshButton.svelte'
   import Settings from '@lucide/svelte/icons/settings'
-  import { formatBytes } from '$lib/util/format'
   import { masonryItem } from '$lib/actions/masonry'
   import { onDestroy } from 'svelte'
   import { adultSourcesAllowed, cancelHouseholdPrompt, lockAdultSources, requestAdultSources } from '$lib/profiles/household-gate'
-
-  const current = $derived(providerMeta($debridProvider))
-  let account = $state<DebridAccountInfo | null>(null)
-  let accountError = $state('')
-  async function refreshAccount() {
-    if (!$debridKey) { account = null; accountError = ''; return false }
-    accountError = ''
-    try {
-      account = await accountInfo($debridProvider, $debridKey)
-      return true
-    } catch (error) {
-      account = null
-      accountError = error instanceof Error ? error.message : String(error)
-      return false
-    }
-  }
-  const accountDate = (value?: number) => value
-    ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(value)
-    : ''
-  $effect(() => { void $debridProvider; void $debridKey; account = null; accountError = '' })
 
   let localPackages = $state<InstalledExtensionPackage[]>([])
   // Keyed by the source that raised it, so an install result lands under the catalog it came from
@@ -172,10 +145,6 @@
   const metaByUrl = $derived(new Map($extensionUrls.map((u) =>
     [u, fetchExtensionInfo(u).catch((): ExtensionSourceInfo => ({ configs: [], problem: 'That URL could not be fetched.' }))] as const)))
   const langLabel = (l: string) => langName(l) ?? l.toUpperCase()
-  // Which languages the installed sources actually declare — used only to sort those to the top of
-  // the list, NOT to limit it: a source may declare no language at all, and a language can be
-  // chosen before adding a source that serves it.
-  let installedLangs = $state<string[]>([])
   // Which stored specs turned out to be package catalogs. Needed OUTSIDE the {#await} below, where
   // the row-level enable switch and the dimming live: a catalog runs nothing itself, so switching
   // its URL off would have no effect and must not be offered.
@@ -193,7 +162,6 @@
       catalogPackagesByUrl = new Map()
       sourceSearchTextByUrl = new Map()
       catalogsReady = true
-      installedLangs = [...new Set(localPackages.map((extension) => extension.lang).filter((lang): lang is string => !!lang))]
       return
     }
     catalogsReady = false
@@ -214,10 +182,6 @@
         ]),
       ].filter(Boolean).join(' ')]))
       catalogsReady = true
-      installedLangs = [...new Set([
-        ...entries.flatMap(([, info]) => info.configs).map((m) => m.lang).filter((l): l is string => !!l),
-        ...localPackages.map((extension) => extension.lang).filter((lang): lang is string => !!lang),
-      ])]
     })
     return () => { stale = true }
   })
@@ -287,16 +251,6 @@
       })),
     ]
   })
-  // Installed languages first (alphabetically within each group), then the rest.
-  const langOptions = $derived(
-    [...SOURCE_LANGUAGES].sort((a, b) => {
-      const ia = installedLangs.includes(a) ? 0 : 1
-      const ib = installedLangs.includes(b) ? 0 : 1
-      return ia - ib || langLabel(a).localeCompare(langLabel(b))
-    }),
-  )
-  // Empty = every language, matching the resolver's "no allowlist means all" rule.
-  const allLangs = $derived($providerLanguages.length === 0)
 
   // Per-plugin switches. One source URL expands to many plugins (a marketplace index yields ~18),
   // so the URL toggle above is all-or-nothing and this is the finer control. A catalog row expands
@@ -388,130 +342,6 @@
     })
   }
 </script>
-
-{#if section === 'torrent-debrid'}
-  <div class="max-w-2xl">
-    <div class="mb-4">
-      <h3 class="text-base font-black">Torrent & debrid</h3>
-      <p class="mt-1 text-xs text-muted-foreground">Choose how torrent results play and connect an optional debrid account.</p>
-    </div>
-    <div class="mb-4 grid gap-x-4 gap-y-1 sm:grid-cols-2">
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-bold">Torrent playback</span>
-        <SelectMenu bind:value={$torrentPlaybackMode} ariaLabel="Torrent playback" options={[
-          { value: 'debrid', label: 'Prefer debrid' },
-          { value: 'direct', label: 'Direct P2P' },
-        ]} />
-      </label>
-
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-bold">Debrid service</span>
-        <SelectMenu
-          bind:value={$debridProvider}
-          ariaLabel="Debrid service"
-          options={providerList.map((provider) => ({
-            value: provider.id,
-            label: `${provider.name}${provider.experimental ? ' (experimental)' : ''}`,
-          }))}
-        />
-      </label>
-
-      <span class="text-xs text-muted-foreground sm:col-span-2">
-        {#if $torrentPlaybackMode === 'direct'}Streams the selected episode from peers and seeds with a protected upload limit. Playback data is temporary and your IP address is visible to torrent peers.{:else}Uses your configured debrid service. If no credential is configured, Izumi falls back to direct P2P playback.{/if}
-      </span>
-    </div>
-
-    <div class="mb-6">
-      <CredentialField bind:value={$debridKey} label={`${current?.name ?? 'Debrid'} ${current?.credential === 'userpass' ? 'login' : 'API key'}`} placeholder={current?.credential === 'userpass' ? 'username:password' : 'Paste your token'} description={`From ${current?.keyHint ?? 'your debrid account'}. Turns torrent results into cached streams. Only shared if you explicitly transfer a setup including credentials.`} />
-    </div>
-
-    {#if $debridKey}
-      <section class="mb-6 rounded-lg border border-border bg-card p-4" aria-label="Debrid account usage">
-        <div class="flex items-center justify-between gap-3">
-          <div>
-            <h3 class="text-sm font-black">Account & usage</h3>
-            <p class="text-xs text-muted-foreground">Live data from {current?.name ?? 'your provider'}; fetched only when you ask.</p>
-          </div>
-          <RefreshButton
-            onRefresh={refreshAccount}
-            label={account ? 'Refresh' : 'Check account'}
-            busyLabel="Checking…"
-            successLabel="Account updated"
-            errorLabel="Check failed"
-            class="min-w-[8.5rem] rounded-md bg-secondary px-3 py-1.5 text-xs font-bold hover:bg-accent"
-          />
-        </div>
-        {#if account}
-          <dl class="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-            {#if account.username}<div><dt class="text-xs text-muted-foreground">Account</dt><dd class="truncate font-bold">{account.username}</dd></div>{/if}
-            {#if account.plan}<div><dt class="text-xs text-muted-foreground">Plan</dt><dd class="font-bold capitalize">{account.plan}</dd></div>{/if}
-            {#if account.premiumUntil}<div><dt class="text-xs text-muted-foreground">Premium until</dt><dd class="font-bold">{accountDate(account.premiumUntil)}</dd></div>{/if}
-            {#if account.points != null}<div><dt class="text-xs text-muted-foreground">Points</dt><dd class="font-bold">{account.points}</dd></div>{/if}
-            {#if account.downloadedBytes != null}<div><dt class="text-xs text-muted-foreground">Downloaded</dt><dd class="font-bold tabular-nums">{formatBytes(account.downloadedBytes)}</dd></div>{/if}
-          </dl>
-          {#if account.quotaUsed != null}
-            <div class="mt-3">
-              <div class="mb-1 flex justify-between text-xs"><span>Fair-use allowance</span><span>{Math.round(account.quotaUsed * 100)}% used</span></div>
-              <div class="h-2 overflow-hidden rounded-full bg-secondary" role="progressbar" aria-label="Fair-use allowance used" aria-valuenow={Math.round(account.quotaUsed * 100)} aria-valuemin="0" aria-valuemax="100">
-                <div class="h-full rounded-full bg-theme" style={`width:${Math.round(account.quotaUsed * 100)}%`}></div>
-              </div>
-            </div>
-          {/if}
-        {:else if accountError}
-          <p role="alert" class="mt-3 text-xs text-amber-400">{accountError}</p>
-        {/if}
-      </section>
-    {/if}
-
-  </div>
-{/if}
-
-{#if section === 'community-results'}
-  <div class="max-w-2xl">
-    <div class="mb-3">
-      <h3 class="text-base font-black">Community source results</h3>
-      <p class="mt-1 text-xs text-muted-foreground">Limit the audio variants and languages requested from community sources.</p>
-    </div>
-
-    <div class="grid items-start gap-x-4 gap-y-4 sm:grid-cols-2">
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-bold">Audio</span>
-        <SelectMenu bind:value={$providerAudio} ariaLabel="Audio" options={[
-          { value: 'both', label: 'Subbed and dubbed' },
-          { value: 'sub', label: 'Subbed only' },
-          { value: 'dub', label: 'Dubbed only' },
-        ]} />
-        <span class="text-xs text-muted-foreground">
-          {#if $providerAudio === 'both'}Both are offered when a source carries them, each labelled SUB or DUB.{:else}Only {$providerAudio === 'dub' ? 'dubbed' : 'subbed'} results are requested — sources that carry nothing else are skipped entirely, which also makes the search faster.{/if}
-        </span>
-      </label>
-
-      <div class="flex flex-col gap-1">
-        <span class="text-sm font-bold">Source languages</span>
-        <div class="mt-1 flex flex-wrap items-center gap-2">
-          <MultiSelect
-            label="Languages"
-            options={langOptions}
-            selected={$providerLanguages}
-            labelOf={langLabel}
-            onchange={(v) => ($providerLanguages = v)}
-          />
-          {#if !allLangs}
-            <button data-focusable onclick={() => ($providerLanguages = [])}
-              class="rounded-md px-2 py-1 text-xs font-bold text-muted-foreground hover:bg-accent">Clear (all languages)</button>
-          {/if}
-        </div>
-        <span class="mt-1 text-xs text-muted-foreground">
-          {#if allLangs}
-            Every language is searched. Pick one or more to narrow it — sources serving other languages are then not queried at all, which also speeds up the source list.
-          {:else}
-            Only {$providerLanguages.map(langLabel).join(', ')} {$providerLanguages.length === 1 ? 'is' : 'are'} searched. Sources that don't declare a language are always included.
-          {/if}
-        </span>
-      </div>
-    </div>
-  </div>
-{/if}
 
 {#if section === 'manage'}
   <div class="contents" data-sort-mode={sortMode}>

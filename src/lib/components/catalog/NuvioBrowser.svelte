@@ -146,7 +146,7 @@
 
 <div data-nav-surface="nuvio" class="mx-auto w-full max-w-[1440px] px-4 pb-16 pt-5 sm:px-8 sm:pt-8">
   <div class="flex items-center justify-between gap-3">
-    <a href="/app/settings/catalog/collections" data-focusable class="inline-flex min-h-10 items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft class="size-4" />Manage collections</a>
+    <a href="/app/settings/library/collections" data-focusable class="inline-flex min-h-10 items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft class="size-4" />Manage collections</a>
     <a href="/app/home" data-focusable class="inline-flex min-h-10 items-center gap-2 rounded-lg px-2 text-sm font-bold hover:bg-secondary sm:px-4">Open Home <ArrowRight class="size-4" /></a>
   </div>
   <header class="mb-2 mt-3 flex flex-wrap items-end justify-between gap-4 sm:mt-5">
@@ -256,7 +256,7 @@
           <section class="space-y-3 border-t border-border pt-5">
             <h3 class="font-extrabold">Sources for these folders</h3>
             {#if !sourceProviders.length}<p class="text-sm text-muted-foreground">These folders have no catalog sources yet.</p>{/if}
-            {#if sourceProviders.includes('tmdb')}<p class="text-sm text-muted-foreground">TMDB feeds use your token in <a href="/app/settings/catalog" data-focusable class="font-bold text-foreground underline underline-offset-4">Catalog settings</a>.</p>{/if}
+            {#if sourceProviders.includes('tmdb')}<p class="text-sm text-muted-foreground">TMDB feeds use your token in <a href="/app/settings/library" data-focusable class="font-bold text-foreground underline underline-offset-4">Catalog settings</a>.</p>{/if}
             {#if sourceProviders.includes('trakt')}<p class="text-sm text-muted-foreground">Trakt lists use your connected <a href="/app/settings/accounts" data-focusable class="font-bold text-foreground underline underline-offset-4">Trakt account</a>.</p>{/if}
             {#if missingManifests.length}<p class="text-sm text-muted-foreground">Uses {missingManifests.join(', ')} from your enabled <a href="/app/settings/sources" data-focusable class="font-bold text-foreground underline underline-offset-4">Sources</a>. Add your configured manifests there if needed.</p>{/if}
             {#if tab === 'mine' && missingManifests.length}<button data-focusable disabled={findingSources || saving} onclick={findSources} class="control disabled:opacity-50">{findingSources ? 'Finding profile sources…' : 'Find sources in this Nuvio profile'}</button>{/if}

@@ -101,12 +101,12 @@
       <!-- Episode range -->
       <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-border/70 p-3 text-sm font-semibold sm:grid-cols-[8rem_minmax(0,1fr)_auto_minmax(0,1fr)]">
         <span class="col-span-3 sm:col-span-1">Episodes</span>
-        <input type="number" min="0" placeholder="min" data-focusable
+        <input type="number" min="0" placeholder="min" data-focusable data-nav-no-step
                value={draft.epMin ?? ''} oninput={(e) => set({ epMin: num(e.currentTarget.value) })}
                aria-label="Minimum episodes"
                class="min-w-0 w-full rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent" />
         <span class="text-muted-foreground">–</span>
-        <input type="number" min="0" placeholder="max" data-focusable
+        <input type="number" min="0" placeholder="max" data-focusable data-nav-no-step
                value={draft.epMax ?? ''} oninput={(e) => set({ epMax: num(e.currentTarget.value) })}
                aria-label="Maximum episodes"
                class="min-w-0 w-full rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent" />

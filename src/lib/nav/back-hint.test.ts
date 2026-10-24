@@ -303,8 +303,8 @@ describe('publishing the B prompt', () => {
 
   it('looks again after a press, since a view can change without any focus event', () => {
     vi.useFakeTimers()
-    at('/app/settings/themes')
-    settingsPage('/app/settings/themes', '<section data-nav-back-scope><button data-focusable data-nav-back id="back">Back to themes</button></section>')
+    at('/app/settings/appearance')
+    settingsPage('/app/settings/appearance', '<section data-nav-back-scope><button data-focusable data-nav-back id="back">Back to themes</button></section>')
     byId('back').addEventListener('click', () => byId('back').closest('section')!.remove())
     const stop = startBackHint()
     expect(document.documentElement.dataset.navBackHint).toBe('parent')

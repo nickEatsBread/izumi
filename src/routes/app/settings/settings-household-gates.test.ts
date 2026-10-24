@@ -26,7 +26,7 @@ function firstStatement(body: string): string {
 }
 
 describe('household backups', () => {
-  const page = read('./backup/+page.svelte')
+  const page = read('../../../lib/components/settings/BackupRestore.svelte')
   const backup = read('../../../lib/backup.ts')
 
   it('asks for the main PIN before saving or restoring, and ignores a second press meanwhile', () => {
@@ -81,7 +81,7 @@ describe('factory reset', () => {
 })
 
 describe("sending this device's setup", () => {
-  const page = read('./sync/+page.svelte')
+  const page = read('./devices/+page.svelte')
   const client = read('../../../lib/sync/client.ts')
 
   it('asks for the main PIN before `action` marks the page busy, and before anything is offered', () => {

@@ -61,9 +61,10 @@ export function padActivate(el?: Element | null): boolean {
 }
 
 // ── Sliders ─────────────────────────────────────────────────────────────────────────────────────
-// A synthetic arrow never runs a range input's native default action, so the pad steps sliders
-// here: the value a keyboard step would give (snapped to the grid, clamped, rounded to the step's
-// decimals), then `input` and `change` like a real drag, so bindings and live previews follow.
+// A synthetic arrow never runs a range input's native default action, so the pad (and the TV remote)
+// steps sliders and number fields here: the value a keyboard step would give (snapped to the grid,
+// clamped, rounded to the step's decimals), then `input` and `change` like a real drag, so bindings
+// and live previews follow.
 
 export interface RangeInput { value: number | string; min?: number | string; max?: number | string; step?: number | string }
 
@@ -136,29 +137,47 @@ let adjustTarget: Element | null = null
 let adjustDir: Dir | null = null
 let adjustRepeats = 0
 
-function isRangeInput(el: Element | null): el is HTMLInputElement {
-  return !!el && el.tagName === 'INPUT' && (el as HTMLInputElement).type === 'range'
+function isSteppable(el: Element | null): el is HTMLInputElement {
+  if (!el || el.tagName !== 'INPUT') return false
+  const input = el as HTMLInputElement
+  if (input.type === 'range') return true
+  // An empty number field means "any" (stepUp would write a value the user never chose), and one
+  // marked data-nav-no-step sits beside a neighbour that Left/Right must reach (min/max pairs).
+  return input.type === 'number' && input.value !== '' && !input.hasAttribute('data-nav-no-step')
 }
 
-/** Pad Left/Right on an enabled slider: one (accelerating) step via nextRangeValue, then bubbling
- *  `input` and `change`. True when the press is the slider's, including a press at a bound, which
- *  changes nothing and fires nothing (focus must not slide off the end of the slider). False for
- *  Up/Down and for anything that is not an enabled range input. Callers gate on !isTv. */
+/** Pad Left/Right (and, on TV, the remote's) on an enabled slider or number field: one
+ *  (accelerating) step, then bubbling `input` and `change`. A slider steps through nextRangeValue; a
+ *  number field through the browser's own stepUp/stepDown, which snap and clamp to its step, min and
+ *  max (spec §5.4: number fields are steppers under a controller). True when the press is the
+ *  control's, including a press at a bound, which changes nothing and fires nothing (focus must not
+ *  slide off the end). False for Up/Down, for anything else, and for a number field that is empty,
+ *  marked data-nav-no-step, or has no step (step="any"): its arrows move focus. */
 export function padAdjust(el: Element | null, dir: Dir, repeat: boolean): boolean {
   if (dir !== 'left' && dir !== 'right') return false
-  if (!isRangeInput(el) || el.matches(':disabled') || el.closest('[inert]')) return false
+  if (!isSteppable(el) || el.matches(':disabled') || el.closest('[inert]')) return false
   adjustRepeats = repeat && el === adjustTarget && dir === adjustDir ? adjustRepeats + 1 : 0
   adjustTarget = el
   adjustDir = dir
   const { min, max, step } = rangeBounds(el)
-  const totalSteps = step > 0 ? Math.round((max - min) / step) : 0
-  const rtl = el.ownerDocument.defaultView?.getComputedStyle(el).direction === 'rtl'
-  const next = nextRangeValue(el, dir === 'right' ? 1 : -1, {
-    rtl,
-    multiplier: padRangeMultiplier(adjustRepeats, totalSteps),
-  })
   const before = el.value
-  el.value = String(next)
+  if (el.type === 'number') {
+    const bounded = el.min !== '' && el.max !== '' && step > 0
+    const multiplier = padRangeMultiplier(adjustRepeats, bounded ? Math.round((max - min) / step) : 0)
+    try {
+      if (dir === 'right') el.stepUp(multiplier)
+      else el.stepDown(multiplier)
+    } catch {
+      return false
+    }
+  } else {
+    const totalSteps = step > 0 ? Math.round((max - min) / step) : 0
+    const rtl = el.ownerDocument.defaultView?.getComputedStyle(el).direction === 'rtl'
+    el.value = String(nextRangeValue(el, dir === 'right' ? 1 : -1, {
+      rtl,
+      multiplier: padRangeMultiplier(adjustRepeats, totalSteps),
+    }))
+  }
   // The browser re-sanitises the value (step mismatch, bounds); unchanged means "at a bound".
   if (el.value === before) return true
   el.dispatchEvent(new Event('input', { bubbles: true }))

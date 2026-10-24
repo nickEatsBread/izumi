@@ -86,7 +86,7 @@
             </button>
           {/each}
         </div>
-        {#if !$activeProfileLocked}<button type="button" data-focusable onclick={() => { $profileSwitcherOpen = false; void goto('/app/settings/profiles') }} class="mt-14 min-h-12 rounded-lg border border-border px-7 text-base text-muted-foreground transition hover:border-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-theme">Manage profiles</button>{/if}
+        {#if !$activeProfileLocked}<button type="button" data-focusable onclick={() => { $profileSwitcherOpen = false; void goto('/app/settings/accounts?manage=profiles') }} class="mt-14 min-h-12 rounded-lg border border-border px-7 text-base text-muted-foreground transition hover:border-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-theme">Manage profiles</button>{/if}
       {/if}
     </div>
   </div>

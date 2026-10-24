@@ -541,6 +541,8 @@ State values:
 | `library` | slot | The library page. |  |
 | `library.tabs` | part | The library section tabs. |  |
 | `library.grid` | slot | The library card grid. |  |
+| `settings.section.icon` | part | The icon tile beside a Settings section heading. |  |
+| `settings.rail.indicator` | part | The Settings rail's selection marker, which slides to the current section. `data-marker` is its style: `accent` (default), `fill`, `bar`, `tile` or `dot`. | `data-marker` |
 
 The hidden `search.title` is shown by undoing its visually hidden box, for example `[data-part="search.title"]:not([data-variant]) { position: static; width: auto; height: auto; margin: 0 0 12px; overflow: visible; clip: auto; white-space: normal; }`; its text follows the app language.
 

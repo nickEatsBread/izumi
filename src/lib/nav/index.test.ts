@@ -49,7 +49,7 @@ describe('fieldOwnsArrow options and roving tabs', () => {
     KEYS.filter((key) => fieldOwnsArrow(field, key, options))
 
   // Decision 2: a keyboard-focused slider steps with Left/Right, as the web platform does. The nav
-  // handler passes rangeOwnsHorizontal = !isTv; pad arrows never reach this rule at all.
+  // handler passes rangeOwnsHorizontal = !isTv; on TV the engine steps it through padAdjust instead.
   it('a keyboard-focused slider keeps Left/Right when the caller hands them over (off TV)', () =>
     expect(ownedWith(input('range'), { rangeOwnsHorizontal: true })).toEqual(['ArrowLeft', 'ArrowRight']))
 
@@ -66,6 +66,13 @@ describe('fieldOwnsArrow options and roving tabs', () => {
     expect(ownedWith(input('number'), { rangeOwnsHorizontal: true })).toEqual(KEYS)
     expect(ownedWith({ tag: 'SELECT' }, { rangeOwnsHorizontal: true })).toEqual(['ArrowUp', 'ArrowDown'])
     expect(ownedWith({ tag: 'TEXTAREA' }, { rangeOwnsHorizontal: true })).toEqual(KEYS)
+  })
+
+  // Spec §5.4: on TV a number field is a stepper; the engine steps it (padAdjust) and Up/Down leave.
+  it('with numberSteps (TV) a number field keeps no arrow; other steppers keep theirs', () => {
+    expect(ownedWith(input('number'), { numberSteps: true })).toEqual([])
+    expect(ownedWith(input('date'), { numberSteps: true })).toEqual(KEYS)
+    expect(ownedWith(input('number'), { numberSteps: false })).toEqual(KEYS)
   })
 
   // Sources parks its inactive tabs at tabindex -1 and steps them itself (moveTab). Owning the

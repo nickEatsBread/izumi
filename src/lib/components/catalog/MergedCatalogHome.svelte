@@ -235,7 +235,7 @@
         <p class="font-black">Some catalogs couldn’t load</p>
         <p class="mt-1 text-muted-foreground">{errors.map((error) => catalogLabel(error.provider)).join(', ')} can be retried by refreshing Home.</p>
         {#if tmdbNeedsConfiguration}
-          <a href="/app/settings/catalog" data-focusable class="mt-3 inline-flex min-h-10 items-center rounded-md bg-primary px-4 font-bold text-primary-foreground">Add TMDB token</a>
+          <a href="/app/settings/library" data-focusable class="mt-3 inline-flex min-h-10 items-center rounded-md bg-primary px-4 font-bold text-primary-foreground">Add TMDB token</a>
         {/if}
       </div>
     {/if}

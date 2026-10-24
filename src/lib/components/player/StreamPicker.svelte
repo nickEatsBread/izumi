@@ -674,7 +674,7 @@
     const replaceState = $isMobile && backTrapOpen
     replacePickerHistory = replaceState
     close()
-    void goto('/app/settings/sources?tab=manage', { replaceState })
+    void goto('/app/settings/sources/manage', { replaceState })
   }
 
   // Android's hardware Back arrives as webView.goBack() (WryActivity installs exactly that

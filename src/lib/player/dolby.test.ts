@@ -344,7 +344,7 @@ describe('Dolby output pushes around speed changes', () => {
   })
 
   it('has the Settings Recheck button ask for the reopen', () => {
-    const page = readFileSync(fileURLToPath(new URL('../../routes/app/settings/player/+page.svelte', import.meta.url)), 'utf8')
+    const page = readFileSync(fileURLToPath(new URL('../../routes/app/settings/playback/+page.svelte', import.meta.url)), 'utf8')
     expect(page).toContain('refreshDolbyCapabilities().then(() => applyDolbySettings({ reload: true }))')
   })
 })

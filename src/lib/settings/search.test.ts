@@ -3,6 +3,8 @@ import {
   SETTINGS_SEARCH_INDEX, SETTING_FALLBACK_PARAM, SETTING_PARAM, searchSettings, settingHref, settingKey,
   settingVisible, type SettingSearchItem,
 } from './search'
+import { isSettingsPath, settingsPageTitle } from './hierarchy'
+import { SETTINGS_SECTIONS, settingsSection, subcategoryDef } from './sections'
 
 describe('settings search', () => {
   it('ranks direct title matches ahead of keyword matches', () => {
@@ -11,7 +13,7 @@ describe('settings search', () => {
   })
 
   it('finds settings through friendly keywords', () => {
-    expect(searchSettings('vibration')[0]?.title).toBe('Haptics')
+    expect(searchSettings('vibration', true)[0]?.title).toBe('Haptics')
     expect(searchSettings('4k resolution')[0]?.title).toBe('Preferred quality')
   })
 
@@ -27,18 +29,21 @@ describe('settings search', () => {
     expect(searchSettings('discord rpc', true)).toHaveLength(0)
     expect(searchSettings('title language', true)[0]).toMatchObject({
       title: 'Title language',
-      category: 'Interface',
-      href: '/app/settings/interface',
+      category: 'Languages',
+      href: '/app/settings/languages',
       key: 'title-language',
+      section: 'languages',
+      subcategory: 'app',
     })
   })
 
-  it('finds video quality on Android now that embedded libmpv consumes the presets', () => {
-    expect(searchSettings('video quality', true)[0]?.title).toBe('Video quality')
+  it('finds the rendering preset on Android, by its old name too', () => {
+    expect(searchSettings('rendering preset', true)[0]?.title).toBe('Rendering preset')
+    expect(searchSettings('video quality', true)[0]?.title).toBe('Rendering preset')
   })
 
   it('finds the rating settings by the words people use for scoring', () => {
-    expect(searchSettings('rating style')[0]).toMatchObject({ title: 'Rating style', href: '/app/settings/interface', key: 'rating-style' })
+    expect(searchSettings('rating style')[0]).toMatchObject({ title: 'Rating style', href: '/app/settings/library', key: 'rating-style', section: 'library', subcategory: 'ratings' })
     expect(searchSettings('stars')[0]?.title).toBe('Rating style')
     expect(searchSettings('score').map((r) => r.title)).toContain('Show rating on the series page')
     expect(settingKey('Rating style')).toBe('rating-style')
@@ -85,7 +90,7 @@ describe('settings search', () => {
 
   it('finds the series-wide numbering toggle now that it left the series page', () => {
     expect(searchSettings('absolute episode numbers')[0]?.title).toBe('Series-wide episode numbers')
-    expect(searchSettings('absolute')[0]?.category).toBe('Interface')
+    expect(searchSettings('absolute')[0]).toMatchObject({ category: 'Home and library', section: 'library', subcategory: 'advanced', advanced: true })
   })
 
   it('uses the same stable keys as Toggle rows', () => {
@@ -104,7 +109,7 @@ const titles = (query: string, env?: Parameters<typeof searchSettings>[1]) => se
 
 /** Rows the in-app player owns (commit 12's gates): desktop and Android full builds, not the lite build. */
 const IN_APP_PLAYER_ROWS = [
-  'Audio processing', 'Video quality', 'P2P playback status', 'Auto-play next episode', 'Show Up Next countdown',
+  'Audio processing', 'Rendering preset', 'P2P playback status', 'Auto-play next episode', 'Show Up Next countdown',
   'Keep screen awake while playing', 'Binge next episode (preload)', 'Auto-skip openings & endings',
   'Auto-skip next-episode previews', 'Skip filler episodes', 'Scrub preview thumbnails', 'Include subtitles in GIFs',
   'Seek duration', 'Home-theatre audio', 'Dolby Vision source handling',
@@ -149,13 +154,24 @@ describe('settings search per device', () => {
     expect(titles('ui scale', { android: true, phone: true })).not.toContain('UI scale')
   })
 
+  it('offers the navigation editor only in the phone layout, where Appearance renders it', () => {
+    const title = 'Navigation items'
+    expect(titles('reorder', { android: true, phone: true })).toContain(title)
+    expect(titles('reorder', { android: false, phone: true })).toContain(title)
+    expect(titles('reorder')).not.toContain(title)
+    expect(titles('reorder', { android: true, tv: true })).not.toContain(title)
+    expect(titles('reorder', { android: false, gamemode: true })).not.toContain(title)
+  })
+
   it('decides visibility with the same rules the search uses', () => {
-    const item: SettingSearchItem = { title: 'x', category: 'x', href: '/app/settings/player', hideOn: ['tv', 'lite'] }
+    const item: SettingSearchItem = { title: 'x', category: 'x', href: '/app/settings/playback', section: 'playback', subcategory: 'up-next', hideOn: ['tv', 'lite'] }
     expect(settingVisible(item, { android: true })).toBe(true)
     expect(settingVisible(item, { android: true, tv: true })).toBe(false)
     expect(settingVisible(item, { android: false, lite: true })).toBe(false)
     expect(settingVisible({ ...item, hideOn: undefined, desktopOnly: true }, { android: true })).toBe(false)
     expect(settingVisible({ ...item, hideOn: undefined, androidOnly: true }, { android: false })).toBe(false)
+    expect(settingVisible({ ...item, hideOn: ['gamemode'] }, { android: false, gamemode: true })).toBe(false)
+    expect(settingVisible({ ...item, hideOn: ['gamemode'] }, { android: false })).toBe(true)
   })
 })
 
@@ -169,21 +185,27 @@ describe('settings search entries', () => {
     expect(searchSettings('release channel')[0]).toMatchObject({ title: 'Release channel', key: 'release-channel', desktopOnly: true })
   })
 
-  it('opens each Accounts hit on the section that holds its row', () => {
-    expect(searchSettings('episodes before watchlist')[0]).toMatchObject({ href: '/app/settings/accounts?section=behaviour', key: 'episodes-before-watchlist' })
-    expect(searchSettings('automatically add watched')[0]).toMatchObject({ href: '/app/settings/accounts?section=behaviour', key: 'automatically-add-watched-shows' })
-    expect(searchSettings('anilist account')[0]).toMatchObject({ href: '/app/settings/accounts?section=connections', key: 'anilist-account' })
-    expect(searchSettings('simkl account')[0]).toMatchObject({ href: '/app/settings/accounts?section=connections', key: 'simkl-account' })
-    expect(searchSettings('trakt list provider')[0]).toMatchObject({ href: '/app/settings/accounts?section=connections', key: 'trakt-account' })
-    expect(searchSettings('stremio add-on sync')[0]).toMatchObject({ href: '/app/settings/accounts?section=connections', key: 'stremio-addon-account' })
-    expect(searchSettings('anilist public profile')[0]).toMatchObject({ href: '/app/settings/accounts?section=libraries', key: 'anilist-public-profile' })
-    expect(searchSettings('letterboxd')[0]).toMatchObject({ href: '/app/settings/accounts?section=libraries', key: 'letterboxd-account' })
+  it('opens each Accounts hit on its subcategory row', () => {
+    for (const [query, key, subcategory] of [
+      ['episodes before watchlist', 'episodes-before-watchlist', 'trackers'],
+      ['automatically add watched', 'automatically-add-watched-shows', 'trackers'],
+      ['anilist account', 'anilist-account', 'trackers'],
+      ['simkl account', 'simkl-account', 'trackers'],
+      ['trakt list provider', 'trakt-account', 'trackers'],
+      ['stremio add-on sync', 'stremio-addon-account', 'trackers'],
+      ['anilist public profile', 'anilist-public-profile', 'trackers'],
+      ['letterboxd', 'letterboxd-account', 'trackers'],
+      ['parental pins', 'household-profiles', 'profiles'],
+      ['show 18+', 'show-18-content', 'content'],
+    ] as const) {
+      expect(searchSettings(query)[0], query).toMatchObject({ href: '/app/settings/accounts', key, section: 'accounts', subcategory })
+    }
   })
 
   it('finds the settings that had no entry', () => {
-    expect(searchSettings('backup')[0]?.title).toBe('Backup & restore')
+    expect(searchSettings('backup')[0]?.title).toBe('Backup and restore')
     expect(searchSettings('reset izumi')[0]).toMatchObject({ title: 'Reset izumi to defaults', key: 'reset-defaults' })
-    expect(searchSettings('diagnostics', true)[0]).toMatchObject({ title: 'Diagnostics report', key: 'developer-tools' })
+    expect(searchSettings('diagnostics', true)[0]).toMatchObject({ title: 'Diagnostics report', key: 'diagnostics-report' })
     expect(searchSettings('hotkeys')[0]?.title).toBe('Hotkeys')
     expect(searchSettings('app language', true)[0]).toMatchObject({ title: 'App language', key: 'app-language' })
     expect(searchSettings('tmdb token')[0]).toMatchObject({ title: 'TMDB read access token', key: 'tmdb-token', fallbackKey: 'catalog-platform-tmdb' })
@@ -211,10 +233,39 @@ describe('settingHref', () => {
     expect(SETTING_PARAM).toBe('setting')
     expect(SETTING_FALLBACK_PARAM).toBe('settingFallback')
     const gif = SETTINGS_SEARCH_INDEX.find((item) => item.title === 'Include subtitles in GIFs')!
-    expect(settingHref(gif)).toBe('/app/settings/player?setting=include-subtitles-in-gifs&settingFallback=gif-recorder')
+    expect(settingHref(gif)).toBe('/app/settings/playback?setting=include-subtitles-in-gifs&settingFallback=gif-recorder')
     const threshold = SETTINGS_SEARCH_INDEX.find((item) => item.title === 'Episodes before Watchlist')!
-    expect(settingHref(threshold)).toBe('/app/settings/accounts?section=behaviour&setting=episodes-before-watchlist')
+    expect(settingHref(threshold)).toBe('/app/settings/accounts?setting=episodes-before-watchlist')
     const caches = SETTINGS_SEARCH_INDEX.find((item) => item.title === 'Cache sizes')!
-    expect(settingHref(caches)).toBe('/app/settings/storage')
+    expect(settingHref(caches)).toBe('/app/settings/downloads?setting=cache-total')
+  })
+
+  it('anchors only keyless hits, since the setting query would land after a hash', () => {
+    for (const item of SETTINGS_SEARCH_INDEX) if (item.key) expect(item.href, item.title).not.toContain('#')
+  })
+})
+
+describe('settings search metadata', () => {
+  it('files every hit under a registry section and subcategory, titled after its section', () => {
+    expect(SETTINGS_SEARCH_INDEX.length).toBeGreaterThanOrEqual(132)
+    for (const item of SETTINGS_SEARCH_INDEX) {
+      const sub = subcategoryDef(item.section, item.subcategory)
+      expect(sub, `${item.title}: ${item.section}#${item.subcategory}`).toBeDefined()
+      expect(item.category, item.title).toBe(settingsSection(item.section).title)
+      // `advanced` marks exactly the rows of the folded Advanced subcategory.
+      expect(item.advanced === true, `${item.title} advanced`).toBe(sub?.advanced === true)
+    }
+  })
+
+  it('opens every Settings hit on a route the route table knows', () => {
+    for (const item of SETTINGS_SEARCH_INDEX) {
+      if (isSettingsPath(item.href)) expect(settingsPageTitle(item.href), item.href).not.toBeNull()
+    }
+  })
+
+  it('gives every section at least one hit', () => {
+    for (const section of SETTINGS_SECTIONS) {
+      expect(SETTINGS_SEARCH_INDEX.some((item) => item.section === section.id), section.id).toBe(true)
+    }
   })
 })

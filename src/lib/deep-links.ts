@@ -27,7 +27,7 @@ async function openUrls(urls: string[] | null) {
       } catch (reason) {
         showDeepLinkNotice(reason instanceof Error ? reason.message : 'Trakt connection failed')
       }
-      await goto('/app/settings/accounts?section=connections')
+      await goto('/app/settings/accounts#trackers')
       return
     }
     if (parseDeepLink(link)) break

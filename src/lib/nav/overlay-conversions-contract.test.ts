@@ -78,11 +78,9 @@ const FILES = {
   profileSwitcher: '../components/profiles/ProfileSwitcher.svelte',
   homeEditor: '../components/catalog/HomeEditor.svelte',
   degradedBanner: '../components/shell/AniListDegradedBanner.svelte',
-  sources: '../../routes/app/settings/sources/+page.svelte',
+  sources: '../../routes/app/settings/sources/manage/+page.svelte',
   themes: '../../routes/app/settings/themes/+page.svelte',
-  profiles: '../../routes/app/settings/profiles/+page.svelte',
-  accounts: '../../routes/app/settings/accounts/+page.svelte',
-  sync: '../../routes/app/settings/sync/+page.svelte',
+  profiles: '../components/profiles/ProfileManager.svelte',
 } as const
 
 /** Every layer node keeps the literal trap markers: hints.ts, page-tabs.ts and the button-hint bar
@@ -97,7 +95,7 @@ describe('SelectMenu is a nav layer', () => {
 
   it('makes each open panel a layer that closes only itself and scrolls inside itself', () => {
     const tags = layerTags(source)
-    expect(tags).toHaveLength(3)
+    expect(tags).toHaveLength(4)
     for (const tag of tags) {
       expectLayerMarkers(tag)
       expect(bare(tag, 'data-nav-scroll-container'), tag).toBe(true)
@@ -119,7 +117,7 @@ describe('SelectMenu is a nav layer', () => {
 
   it('opens a searchable list onto the current option for controller users', () => {
     expect(source).toContain('const controllerUi = $derived($gameMode || $isTv || $controllerMode)')
-    expect(source).toContain('(searchable && !controllerUi ? searchInput : current ?? first)?.focus({ preventScroll: true })')
+    expect(source).toContain('(searchable && !controllerUi ? searchInput : openingOption(list, value))?.focus({ preventScroll: true })')
   })
 })
 
@@ -323,25 +321,5 @@ describe('legacy traps close on B and Escape', () => {
 
   it('keeps the Home editor section picker pin (escape after class=)', () => {
     expect(read(FILES.homeEditor)).toContain('data-nav-trap class="pointer-events-auto')
-  })
-})
-
-describe('page tab strips for the theme bumpers (data-page-tabs, Themes page-tabs.ts)', () => {
-  it('marks the Sources tablist, whose active tab is aria-selected', () => {
-    const source = read(FILES.sources)
-    const [strip] = tagsWith(source, 'role="tablist"')
-    expect(bare(strip, 'data-page-tabs'), strip).toBe(true)
-    expect(source).toContain('aria-selected={activeTab === tab.id}')
-  })
-
-  it('marks the Accounts and Sync section navs, whose active item is aria-current', () => {
-    const accounts = read(FILES.accounts)
-    const [accountsNav] = tagsWith(accounts, 'aria-label="Account settings sections"')
-    expect(bare(accountsNav, 'data-page-tabs'), accountsNav).toBe(true)
-    expect(accounts).toContain("aria-current={section === item.id ? 'page' : undefined}")
-    const sync = read(FILES.sync)
-    const [syncNav] = tagsWith(sync, 'aria-label="Device sync sections"')
-    expect(bare(syncNav, 'data-page-tabs'), syncNav).toBe(true)
-    expect(sync).toContain("aria-current={syncSection === item.id ? 'page' : undefined}")
   })
 })

@@ -42,7 +42,11 @@ describe('the controller B goes through the layered Back', () => {
     expect(back).not.toContain("from '$app/")
     expect(read('./nav-state.ts')).not.toMatch(/from '(\$app|\$lib|\.)/)
     expect(read('./focus-memory.ts')).not.toMatch(/from '\.\/(gamepad|index|back)'/)
-    expect(read('../settings/hierarchy.ts')).not.toMatch(/^import /m)
+    // The route table stays pure: its one import is the registry, which imports nothing.
+    expect(read('../settings/hierarchy.ts').match(/^import .*$/gm)).toEqual([
+      "import { LEGACY_SETTINGS_ROUTES, SETTINGS_SECTIONS, SETTINGS_SUB_PAGES, settingsSection } from './sections'",
+    ])
+    expect(read('../settings/sections.ts')).not.toMatch(/^import /m)
     expect(read('../navigation/history-trail.ts')).not.toContain("from '$app/")
     expect(read('../settings/back.ts')).toContain("import { goto } from '$app/navigation'")
   })

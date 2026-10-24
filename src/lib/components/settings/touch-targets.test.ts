@@ -12,13 +12,13 @@ const read = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
 
 const SETTINGS = '../../../routes/app/settings/'
-const SOURCES = `${SETTINGS}sources/+page.svelte`
+const SOURCES = `${SETTINGS}sources/manage/+page.svelte`
 const EXTENSIONS = `${SETTINGS}extensions/+page.svelte`
 const ACCOUNTS = `${SETTINGS}accounts/+page.svelte`
 const TRAKT = './TraktAccountSettings.svelte'
 const LETTERBOXD = './LetterboxdAccountSettings.svelte'
 const SUBTITLES = `${SETTINGS}subtitles/+page.svelte`
-const NAVIGATION = `${SETTINGS}navigation/+page.svelte`
+const NAVIGATION = './PhoneNavEditor.svelte'
 const DOWNLOADS = `${SETTINGS}downloads/+page.svelte`
 
 interface TouchTarget { file: string; anchor: string; count?: number }
@@ -61,21 +61,21 @@ const TARGETS: Record<string, TouchTarget> = {
   'Subtitles: apply a saved style': { file: SUBTITLES, anchor: 'onclick={() => applyPreset(preset)}' },
   'Subtitles: rename a saved style': { file: SUBTITLES, anchor: 'onclick={() => startRename(preset)}' },
   'Subtitles: delete a saved style': { file: SUBTITLES, anchor: 'onclick={() => deleteSubtitlePreset(preset.id)}' },
-  'Scenes: clear all': { file: `${SETTINGS}scenes/+page.svelte`, anchor: 'onclick={clearAll}' },
-  'Scenes: remove a bookmark': { file: `${SETTINGS}scenes/+page.svelte`, anchor: 'onclick={() => removeSceneBookmark(scene.id)}' },
-  'History: clear all': { file: `${SETTINGS}history/+page.svelte`, anchor: 'onclick={doClear}' },
-  'History: forget a title': { file: `${SETTINGS}history/+page.svelte`, anchor: 'onclick={() => forgetMedia(e.media.id)}' },
+  'Scenes: clear all': { file: './SceneBookmarkSettings.svelte', anchor: 'onclick={clearAll}' },
+  'Scenes: remove a bookmark': { file: './SceneBookmarkSettings.svelte', anchor: 'onclick={() => removeSceneBookmark(scene.id)}' },
+  'History: clear all': { file: './HistorySettings.svelte', anchor: 'onclick={doClear}' },
+  'History: forget a title': { file: './HistorySettings.svelte', anchor: 'onclick={() => forgetMedia(e.media.id)}' },
   'Collections: remove a collection': {
-    file: `${SETTINGS}catalog/collections/+page.svelte`,
+    file: `${SETTINGS}library/collections/+page.svelte`,
     anchor: 'onclick={() => homeCollections.update((collections) => collections.filter((item) => item.id !== collection.id))}',
   },
-  'Customize Home: delete a custom row': { file: `${SETTINGS}catalog/home/+page.svelte`, anchor: 'onclick={() => deleteCustomTmdbRow(row.id)}' },
+  'Customize Home: delete a custom row': { file: `${SETTINGS}library/home/+page.svelte`, anchor: 'onclick={() => deleteCustomTmdbRow(row.id)}' },
   'Downloads: auto-download Enabled label': { file: DOWNLOADS, anchor: 'class="inline-flex items-center gap-1 py-2 text-xs font-bold sm:py-0"' },
   'Downloads: remove an auto-download rule': { file: DOWNLOADS, anchor: 'onclick={() => removeAutoDownloadRule(rule.id)}' },
-  'Navigation: placement buttons': { file: NAVIGATION, anchor: 'onclick={() => setPlacement(it.id, p.value)}' },
   'Navigation: move up': { file: NAVIGATION, anchor: 'onclick={() => move(i, -1)}' },
   'Navigation: move down': { file: NAVIGATION, anchor: 'onclick={() => move(i, 1)}' },
   'SelectMenu: trigger': { file: './SelectMenu.svelte', anchor: 'bind:this={trigger}' },
+  'LearnMore: toggle': { file: './LearnMore.svelte', anchor: 'onclick={() => (open = !open)}' },
 }
 
 function occurrences(source: string, needle: string): number[] {

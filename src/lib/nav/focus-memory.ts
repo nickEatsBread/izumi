@@ -21,7 +21,8 @@ export interface FocusDescriptor {
   tag: string
   /** aria-label, else text, whitespace-collapsed, trimmed, at most 80 characters. */
   label: string
-  /** Index among the document's focus candidates (TWIN_CANDIDATES) with the same tag and label. */
+  /** Index among the document's (or describeFocus's root's) focus candidates (TWIN_CANDIDATES) with
+   *  the same tag and label. */
   labelIndex: number
   /** location.pathname + location.search when described. */
   path: string
@@ -74,12 +75,13 @@ function firstTarget(candidates: readonly HTMLElement[]): HTMLElement | null {
   return null
 }
 
-export function describeFocus(el: Element | null | undefined): FocusDescriptor | null {
+/** `root` scopes labelIndex: pass the root the descriptor will be resolved in. */
+export function describeFocus(el: Element | null | undefined, root?: ParentNode): FocusDescriptor | null {
   if (!(el instanceof HTMLElement)) return null
   const doc = el.ownerDocument
   if (el === doc.body || el === doc.documentElement) return null
   const label = labelOf(el)
-  const twins = labelTwins(doc, el.tagName, label)
+  const twins = labelTwins(root ?? doc, el.tagName, label)
   const ancestors: FocusAncestor[] = []
   for (let parent = el.parentElement; parent && ancestors.length < ANCESTOR_LIMIT; parent = parent.parentElement) {
     const current = parent
