@@ -1,7 +1,9 @@
 import { get } from 'svelte/store'
 import { rootZoom } from '$lib/components/cards/preview-pos'
 import { reducedMotion } from '$lib/motion/gm-motion'
+import { focusRestoreAllowed } from '$lib/nav/focus-memory'
 import { gameMode } from '$lib/player/session'
+import { firstSafeControl } from './search-target'
 import { SUBCATEGORY_OPEN_EVENT } from './sections'
 import { activeSubcategory, SCROLL_SPY_GAP } from './scroll-spy'
 
@@ -20,7 +22,7 @@ export interface SectionScrollState {
 
 export interface SectionScrollTracker {
   /** A chip press: unfold the subcategory if folded, scroll to it, and keep it lit until the user
-   *  scrolls. */
+   *  scrolls. On a pad or TV focus moves to its first safe control. */
   jump(id: string): void
   destroy(): void
 }
@@ -87,6 +89,9 @@ export function trackSectionScroll(
       const go = () => {
         jumpFrame = 0
         target.scrollIntoView({ behavior: reducedMotion() ? 'instant' : 'smooth', block: 'start' })
+        // On a pad or TV focus follows the jump: left on the chip, the next press would start from
+        // there and scroll straight back up.
+        if (focusRestoreAllowed()) firstSafeControl(target)?.focus({ preventScroll: true })
       }
       cancelAnimationFrame(jumpFrame)
       // A folded body unhides on Svelte's next flush; scrolling before it would stop at the old page end.

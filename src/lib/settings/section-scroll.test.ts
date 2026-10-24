@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { inputType } from '$lib/nav/input'
 import { gameMode } from '$lib/player/session'
+import { isTv } from '$lib/platform'
 import { motionPreference } from '$lib/settings/ui'
 import { sectionFade, trackSectionScroll, type SectionScrollState } from './section-scroll'
 import { SUBCATEGORY_OPEN_EVENT } from './sections'
@@ -79,6 +81,8 @@ afterEach(() => {
   vi.unstubAllGlobals()
   motionPreference.set('system')
   gameMode.set(false)
+  inputType.set('mouse')
+  isTv.set(false)
   document.documentElement.style.zoom = ''
   document.body.replaceChildren()
 })
@@ -200,6 +204,41 @@ describe('trackSectionScroll', () => {
     window.dispatchEvent(new Event(type))
     flushFrames()
     expect(last().active).toBe('up-next')
+  })
+
+  describe('focus after a jump', () => {
+    // A chip and two rows per subcategory: a destructive control the pad must never land on, then a safe one.
+    const withControls = () => {
+      const page = track()
+      document.querySelector('header')!.insertAdjacentHTML('afterend', '<button id="chip" data-focusable>Skipping</button>')
+      for (const section of document.querySelectorAll('[data-settings-subcategory]')) {
+        section.innerHTML = `<button data-focusable class="text-destructive">Reset ${section.id}</button><button id="${section.id}-first" data-focusable>First</button>`
+      }
+      document.getElementById('chip')!.focus()
+      return page
+    }
+
+    it("moves to the subcategory's first safe control on a pad, so the next press starts there", () => {
+      inputType.set('dpad')
+      const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+      withControls().tracker.jump('skipping')
+      expect(document.activeElement?.id).toBe('skipping-first')
+      expect(focus).toHaveBeenLastCalledWith({ preventScroll: true })
+      focus.mockRestore()
+    })
+
+    it('moves on a TV after a folded subcategory has unfolded', () => {
+      isTv.set(true)
+      withControls().tracker.jump('advanced')
+      expect(document.activeElement?.id).toBe('chip')
+      flushFrames()
+      expect(document.activeElement?.id).toBe('advanced-first')
+    })
+
+    it('stays on the chip for mouse and touch', () => {
+      withControls().tracker.jump('skipping')
+      expect(document.activeElement?.id).toBe('chip')
+    })
   })
 
   it('jump leaves an open subcategory as it is', () => {

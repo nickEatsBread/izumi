@@ -13,6 +13,10 @@ const HIT_MS = 1800
 /** Reachable, not destructive and not a text field (A on a field would open the keyboard). */
 const safe = (el: HTMLElement) => !el.matches(DESTRUCTIVE_SELECTOR) && !isTextEntryField(el) && isNavigable(el)
 
+/** The first safe `[data-focusable]` under `root`: where a pad lands after a jump into a block. */
+export const firstSafeControl = (root: ParentNode): HTMLElement | null =>
+  [...root.querySelectorAll<HTMLElement>('[data-focusable]')].find(safe) ?? null
+
 /**
  * Where focus goes for a revealed row: its SettingsRow activation button (`data-row-activate`); else
  * the row itself when it is a safe control (a Toggle row is its own button); else the row's first safe
@@ -72,7 +76,7 @@ function pause(ms: number, signal: AbortSignal): Promise<boolean> {
 export async function revealBlock(id: string, signal: AbortSignal): Promise<HTMLElement | null> {
   if (!(await pause(0, signal)) || !focusRestoreAllowed()) return null
   const block = document.getElementById(id)
-  const target = block && [...block.querySelectorAll<HTMLElement>('[data-focusable]')].find(safe)
+  const target = block && firstSafeControl(block)
   target?.focus({ preventScroll: true })
   return target || null
 }
