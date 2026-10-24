@@ -1,21 +1,24 @@
 <script lang="ts">
   import { onMount, type Snippet } from 'svelte'
+  import { get } from 'svelte/store'
   import Eye from '@lucide/svelte/icons/eye'
   import EyeOff from '@lucide/svelte/icons/eye-off'
   import { isTv } from '$lib/platform'
   import { settingsControllerMode } from '$lib/settings/surface'
-  // Controller mode (spec §5.4): typing a key on a remote is slow, so the row also offers the device
-  // transfer in Devices and backup, which brings keys over from a phone or a computer.
-  const SEND_FROM_PHONE_HREF = '/app/settings/devices'
-  let { value = $bindable(''), label, description = 'Stored on this device.', placeholder = 'Paste your key', help, startOpen = false }: {
-    value: string; label: string; description?: string; placeholder?: string; help?: Snippet; startOpen?: boolean
+  // Controller mode (spec §5.4): typing a key on a remote is slow, so a row can link to the device
+  // transfer in Devices and backup. Only rows whose key that transfer carries opt in with
+  // sendFromPhone (today just the debrid key, see createManualSnapshot in $lib/sync/manual).
+  const SEND_FROM_PHONE_HREF = '/app/settings/devices?setting=settings-and-sources-sync'
+  let { value = $bindable(''), label, description = 'Stored on this device.', placeholder = 'Paste your key', help, startOpen = false, sendFromPhone = false }: {
+    value: string; label: string; description?: string; placeholder?: string; help?: Snippet; startOpen?: boolean; sendFromPhone?: boolean
   } = $props()
   let editing = $state(false)
   let draft = $state('')
   let revealed = $state(false)
   let confirmRemove = $state(false)
   let notice = $state('')
-  onMount(() => { if (startOpen && !value) edit() })
+  // Controller mode stays closed so the Enter (and Send) choices show first.
+  onMount(() => { if (startOpen && !value && !get(settingsControllerMode)) edit() })
   function edit() { draft = value; revealed = false; confirmRemove = false; notice = ''; editing = true }
   function cancel() { draft = ''; revealed = false; confirmRemove = false; editing = false }
   function save(event: SubmitEvent) {
@@ -34,8 +37,8 @@
     <div class="min-w-0"><p class="text-sm font-semibold">{label}</p><p class="mt-1 text-xs text-muted-foreground">{value ? 'Credential saved · hidden' : 'Not configured'}</p></div>
     {#if !editing}
       <div class="flex shrink-0 items-center gap-2">
-        <button type="button" data-focusable onclick={edit} class="min-h-10 shrink-0 rounded-lg bg-secondary px-3 text-xs font-semibold transition-colors hover:bg-accent">{$settingsControllerMode ? ($isTv ? 'Enter on this TV' : 'Enter on this device') : value ? 'Edit' : 'Set up'}</button>
-        {#if $settingsControllerMode}<a href={SEND_FROM_PHONE_HREF} data-focusable class="flex min-h-10 shrink-0 items-center rounded-lg px-3 text-xs font-semibold transition-colors hover:bg-secondary">Send from phone</a>{/if}
+        <button type="button" data-focusable onclick={edit} aria-label={$settingsControllerMode ? `Enter ${label} on this ${$isTv ? 'TV' : 'device'}` : undefined} class="min-h-10 shrink-0 rounded-lg bg-secondary px-3 text-xs font-semibold transition-colors hover:bg-accent">{$settingsControllerMode ? ($isTv ? 'Enter on this TV' : 'Enter on this device') : value ? 'Edit' : 'Set up'}</button>
+        {#if $settingsControllerMode && sendFromPhone}<a href={SEND_FROM_PHONE_HREF} data-focusable aria-label={`Send ${label} from phone`} class="flex min-h-10 shrink-0 items-center rounded-lg px-3 text-xs font-semibold transition-colors hover:bg-secondary">Send from phone</a>{/if}
       </div>
     {/if}
   </div>

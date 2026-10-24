@@ -67,6 +67,7 @@
 >
   <CredentialField bind:value={$debridKey}
     label={credentialLabel}
+    sendFromPhone
     placeholder={current?.credential === 'userpass' ? 'username:password' : 'Paste your token'}
     description="Turns torrent results into cached streams. Only shared if you explicitly transfer a setup including credentials."
   />
