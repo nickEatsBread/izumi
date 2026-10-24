@@ -1,7 +1,20 @@
 <script lang="ts">
+  // Row recipes (settings redesign spec §3.3). Every Settings page builds its rows from these:
+  // - Switch row: <SettingsRow {settingKey} {title} {description} control={toggleSwitch} onActivate={toggle} pressed={on} />,
+  //   the snippet rendering <SettingsSwitch value={on} onToggle={toggle} label={title} interactive={false} />.
+  //   The whole row is the button; the switch only shows the state. No On/Off text.
+  // - Choice/value row: <SettingsChoiceRow … />, an inline SelectMenu printing the current value.
+  // - Slider row: controlLayout="stack" with a control snippet holding the range input and an <output> readout.
+  // - Link row: <SettingsRow {title} {description} {value} {href} chevron />.
+  // - Action row: a control snippet holding one button.
+  // - Credential row: value = the masked status ("Saved · hidden" / "Not set"), the CredentialField as
+  //   children, expanded on activate.
+  // Descriptions stay on one line (about 80 characters, keyword first); longer text goes in learnMore.
   import type { Snippet } from 'svelte'
   import * as h from '$lib/haptics'
   import { ripple } from '$lib/actions/ripple'
+  import ChevronRight from '@lucide/svelte/icons/chevron-right'
+  import LearnMore from './LearnMore.svelte'
 
   let {
     title,
@@ -16,6 +29,10 @@
     size = 'default',
     onActivate,
     pressed,
+    value,
+    chevron = false,
+    learnMore,
+    href,
   }: {
     title: string
     description?: string
@@ -29,6 +46,14 @@
     size?: 'default' | 'lg'
     onActivate?: () => void
     pressed?: boolean
+    /** Muted current value printed before the control (value and link rows). */
+    value?: string
+    /** Trailing chevron: a link row, or a row that opens something. */
+    chevron?: boolean
+    /** Long explanation behind a "Learn more" disclosure, kept out of the one-line description. */
+    learnMore?: string
+    /** Link row: the whole row is one link to this href. */
+    href?: string
   } = $props()
   const large = $derived(size === 'lg')
 </script>
@@ -39,20 +64,41 @@
     <div class="min-w-0 flex-1">
       <div class="font-bold leading-5 {large ? 'text-base' : 'text-sm'}">{title}</div>
       {#if meta}
-        <div class="mt-0.5 leading-4 text-muted-foreground {large ? 'text-xs' : 'text-[11px]'}">{@render meta()}</div>
+        <div class="mt-0.5 text-xs leading-4 text-muted-foreground">{@render meta()}</div>
       {:else if description}
-        <p class="mt-0.5 leading-4 text-muted-foreground {large ? 'text-xs' : 'text-[11px]'}">{description}</p>
+        <p class="mt-0.5 text-xs leading-4 text-muted-foreground">{description}</p>
       {/if}
     </div>
-    {#if control}
+    {#if control || value || chevron}
       <div class="flex items-center gap-1.5 {controlLayout === 'stack' ? 'w-full justify-end sm:w-auto sm:shrink-0' : 'shrink-0'}">
-        {@render control()}
+        {#if value}<span class="max-w-[12rem] truncate text-sm text-muted-foreground">{value}</span>{/if}
+        {#if control}{@render control()}{/if}
+        {#if chevron}<ChevronRight size={16} class="shrink-0 text-muted-foreground" aria-hidden="true" />{/if}
       </div>
     {/if}
   </div>
 {/snippet}
 
-{#if onActivate}
+<!-- Learn more sits after the row's own button or link: one control never nests inside another. -->
+{#snippet more()}
+  {#if learnMore}<div class="-mt-1.5 pb-2.5 {large ? 'px-3.5' : 'px-3'}"><LearnMore text={learnMore} /></div>{/if}
+{/snippet}
+
+{#if href}
+  <div data-setting-key={settingKey}>
+    <a
+      href={href}
+      data-focusable
+      use:ripple
+      onclick={() => h.tap()}
+      class="ripple-host block w-full rounded-[inherit] text-left transition-colors active:bg-secondary sm:hover:bg-secondary/70
+        {large ? 'px-3.5 py-3.5' : 'px-3 py-2.5'}"
+    >
+      {@render header()}
+    </a>
+    {@render more()}
+  </div>
+{:else if onActivate}
   <div data-setting-key={settingKey}>
     <button
       type="button"
@@ -68,6 +114,7 @@
     >
       {@render header()}
     </button>
+    {@render more()}
     {#if children && expanded}
       <div class="mx-3 mb-2.5 border-t border-border/70 pt-3">{@render children()}</div>
     {/if}
@@ -75,6 +122,7 @@
 {:else}
   <div data-setting-key={settingKey} class="{large ? 'px-3.5 py-3.5' : 'px-3 py-2.5'}">
     {@render header()}
+    {#if learnMore}<div class="mt-1"><LearnMore text={learnMore} /></div>{/if}
     {#if children && expanded}
       <div class="mt-2.5 border-t border-border/70 pt-3">{@render children()}</div>
     {/if}
