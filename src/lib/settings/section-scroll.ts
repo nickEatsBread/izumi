@@ -1,4 +1,5 @@
 import { get } from 'svelte/store'
+import { rootZoom } from '$lib/components/cards/preview-pos'
 import { reducedMotion } from '$lib/motion/gm-motion'
 import { gameMode } from '$lib/player/session'
 import { SUBCATEGORY_OPEN_EVENT } from './sections'
@@ -36,6 +37,7 @@ export function trackSectionScroll(
   onChange: (state: SectionScrollState) => void,
 ): SectionScrollTracker {
   let frame = 0
+  let jumpFrame = 0
   let held: string | null = null
   let last = ''
   const subcategories = () => [...root.querySelectorAll<HTMLElement>('[data-settings-subcategory]')]
@@ -44,7 +46,8 @@ export function trackSectionScroll(
     const tops = subcategories().map((el) => ({ id: el.id, top: el.getBoundingClientRect().top }))
     const ids = tops.map(({ id }) => id)
     const atEnd = window.scrollY > 0 && window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 1
-    const active = held !== null && ids.includes(held) ? held : activeSubcategory(tops, SCROLL_SPY_LINE, atEnd)
+    // Rect tops are screen px under the UI-scale zoom on <html>; the line is local px.
+    const active = held !== null && ids.includes(held) ? held : activeSubcategory(tops, SCROLL_SPY_LINE * rootZoom(), atEnd)
     const state: SectionScrollState = { ids, active, stuck: header.getBoundingClientRect().bottom <= 0 }
     const key = JSON.stringify(state)
     if (key === last) return
@@ -70,13 +73,22 @@ export function trackSectionScroll(
     jump(id) {
       const target = subcategories().find((el) => el.id === id)
       if (!target) return
-      if (target.hasAttribute('data-collapsed')) target.dispatchEvent(new CustomEvent(SUBCATEGORY_OPEN_EVENT))
       held = id
-      target.scrollIntoView({ behavior: reducedMotion() ? 'instant' : 'smooth', block: 'start' })
+      const go = () => {
+        jumpFrame = 0
+        target.scrollIntoView({ behavior: reducedMotion() ? 'instant' : 'smooth', block: 'start' })
+      }
+      cancelAnimationFrame(jumpFrame)
+      // A folded body unhides on Svelte's next flush; scrolling before it would stop at the old page end.
+      if (target.hasAttribute('data-collapsed')) {
+        target.dispatchEvent(new CustomEvent(SUBCATEGORY_OPEN_EVENT))
+        jumpFrame = requestAnimationFrame(go)
+      } else go()
       schedule()
     },
     destroy() {
       if (frame) cancelAnimationFrame(frame)
+      if (jumpFrame) cancelAnimationFrame(jumpFrame)
       resize?.disconnect()
       window.removeEventListener('scroll', schedule)
       window.removeEventListener('resize', schedule)

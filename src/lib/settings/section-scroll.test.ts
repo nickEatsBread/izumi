@@ -8,12 +8,17 @@ import { SUBCATEGORY_OPEN_EVENT } from './sections'
 // jsdom has no layout: each element reports the top/bottom held here, keyed by id ('header' for
 // the page header).
 let rects: Record<string, { top: number; bottom: number }>
-let frames: FrameRequestCallback[]
+let frames: Map<number, FrameRequestCallback>
+let nextFrame = 0
 let scrollIntoView: ReturnType<typeof vi.fn>
 // Every tracker a test starts, destroyed after it so its window listeners do not leak into the next.
 let trackers: { destroy(): void }[] = []
+// Runs every pending frame, including frames those callbacks request.
 const flushFrames = () => {
-  while (frames.length) frames.shift()?.(0)
+  for (const [id, callback] of frames) {
+    frames.delete(id)
+    callback(0)
+  }
 }
 
 function rectOf(this: Element): DOMRect {
@@ -55,13 +60,13 @@ beforeEach(() => {
     skipping: { top: 520, bottom: 900 },
     advanced: { top: 920, bottom: 980 },
   }
-  frames = []
+  frames = new Map()
   setScroll(0)
   Element.prototype.getBoundingClientRect = rectOf
   scrollIntoView = vi.fn()
   Element.prototype.scrollIntoView = scrollIntoView as unknown as Element['scrollIntoView']
-  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback))
-  vi.stubGlobal('cancelAnimationFrame', () => {})
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.set(++nextFrame, callback) && nextFrame)
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
 })
 
 afterEach(() => {
@@ -70,6 +75,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
   motionPreference.set('system')
   gameMode.set(false)
+  document.documentElement.style.zoom = ''
   document.body.replaceChildren()
 })
 
@@ -108,9 +114,20 @@ describe('trackSectionScroll', () => {
     expect(states).toHaveLength(1)
     window.dispatchEvent(new Event('scroll'))
     window.dispatchEvent(new Event('scroll'))
-    expect(frames).toHaveLength(1)
+    expect(frames.size).toBe(1)
     flushFrames()
     expect(states).toHaveLength(1)
+  })
+
+  it('places the reading line in screen px under the UI-scale zoom', () => {
+    document.documentElement.style.zoom = '2'
+    const { last } = track()
+    rects.skipping = { top: 200, bottom: 580 }
+    scroll()
+    expect(last().active).toBe('skipping')
+    rects.skipping = { top: 230, bottom: 610 }
+    scroll()
+    expect(last().active).toBe('up-next')
   })
 
   it('lights the last subcategory once the page is scrolled to its end', () => {
@@ -130,21 +147,30 @@ describe('trackSectionScroll', () => {
     expect(SUBCATEGORY_OPEN_EVENT).toBe('izumi-subcategory-open')
   })
 
-  it('jump unfolds a folded subcategory, scrolls to it smoothly and keeps its chip lit until the user scrolls', () => {
+  it('jump unfolds a folded subcategory, then scrolls to it smoothly once it has unfolded, and keeps its chip lit', () => {
     const { tracker, last } = track()
     const advanced = document.getElementById('advanced')!
     const opened = vi.fn()
     advanced.addEventListener(SUBCATEGORY_OPEN_EVENT, opened)
     tracker.jump('advanced')
     expect(opened).toHaveBeenCalledOnce()
+    // Svelte unhides the body on its next flush, so the scroll waits a frame for the page to grow.
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    flushFrames()
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' })
     expect(scrollIntoView.mock.contexts[0]).toBe(advanced)
-    flushFrames()
     expect(last().active).toBe('advanced')
     // The smooth scroll's own scroll events keep it lit.
     scroll()
     expect(last().active).toBe('advanced')
-    window.dispatchEvent(new Event('wheel'))
+  })
+
+  it.each(['wheel', 'touchstart', 'keydown', 'pointerdown'])('a %s of the user ends the jump hold', (type) => {
+    const { tracker, last } = track()
+    tracker.jump('skipping')
+    flushFrames()
+    expect(last().active).toBe('skipping')
+    window.dispatchEvent(new Event(type))
     flushFrames()
     expect(last().active).toBe('up-next')
   })
@@ -177,10 +203,20 @@ describe('trackSectionScroll', () => {
 
   it('stops following the page once destroyed', () => {
     const { tracker } = track()
+    tracker.jump('skipping')
     tracker.destroy()
     window.dispatchEvent(new Event('scroll'))
     window.dispatchEvent(new Event('resize'))
-    expect(frames).toHaveLength(0)
+    window.dispatchEvent(new Event('wheel'))
+    expect(frames.size).toBe(0)
+  })
+
+  it('drops a pending jump scroll once destroyed', () => {
+    const { tracker } = track()
+    tracker.jump('advanced')
+    tracker.destroy()
+    flushFrames()
+    expect(scrollIntoView).not.toHaveBeenCalled()
   })
 })
 
