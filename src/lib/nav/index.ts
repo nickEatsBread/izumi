@@ -262,6 +262,9 @@ function visibleRowCandidates(root: HTMLElement): ElCand[] {
     .filter(({ rect }) => containedInAxis(rect.left, rect.right, port.left, port.right))
 }
 
+/** A controller drives this surface: Deck Game mode, a TV, or a pad on desktop or phone. */
+const controllerSurface = () => get(gameMode) || get(isTv) || get(controllerMode)
+
 /**
  * Fast path for the Home/Browse surface in Game mode. A geometric search across the entire page
  * forces WebKitGTK to style and lay out every card before it can move the focus ring. Rows expose
@@ -272,7 +275,7 @@ function visibleRowCandidates(root: HTMLElement): ElCand[] {
  * generic search may still cross into the sidebar.
  */
 function pickInNavRows(active: HTMLElement, dir: Dir): HTMLElement | null | undefined {
-  if (!get(gameMode) && !get(isTv) && !get(controllerMode)) return undefined
+  if (!controllerSurface()) return undefined
   const row = active.closest<HTMLElement>('[data-nav-row]')
   if (!row) return undefined
 
@@ -460,7 +463,7 @@ function deadEndScroll(active: HTMLElement, dir: Dir, rapid = false): boolean {
     room = scrollRoom(null, direction)
   }
   if (!room) return false
-  const item = navRect(active)
+  const item = navRect(active, true, controllerSurface())
   // The window's port leaves out the fixed chrome over the page: the desktop titlebar on top and
   // a theme's button-hint bar at the bottom (the same band revealFocused keeps at its start).
   const inset = clamp(window.innerHeight * 0.12, 40, 96)
@@ -515,7 +518,7 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
       if (!pane) return
     }
   }
-  const item = navRect(el, vertical)
+  const item = navRect(el, vertical, controllerSurface())
   const port = pane?.getBoundingClientRect() ?? {
     top: 0,
     left: 0,
@@ -1047,7 +1050,10 @@ export function initDpadNav() {
       return
     }
     const els = focusables(root)
-    const cur = navRect(active, vertical)
+    // Controller surfaces measure a control on a [data-nav-line] by its line (navRect) and walk the
+    // line in reading order; desktop keeps own boxes, so every control on a line stays reachable.
+    const lines = controllerSurface()
+    const cur = navRect(active, vertical, lines)
     if (!cur) return
     // Regions (regionOf): the app sidebar or top bar and every [data-nav-region] (the Settings
     // category rail, Theme Studio) are separate from the page content and from each other.
@@ -1057,11 +1063,11 @@ export function initDpadNav() {
     // above it (the "fantasy row can't reach the menu" bug), and lands on the entered region's
     // default item when it has one.
     const activeRegion = regionOf(active)
-    const all: ElCand[] = els.filter(el => el !== active).map(el => ({ id: '', rect: navRect(el, vertical), el }))
+    const all: ElCand[] = els.filter(el => el !== active).map(el => ({ id: '', rect: navRect(el, vertical, lines), el }))
     const sameRegion = all.filter(c => regionOf(c.el) === activeRegion)
     // Left/Right on a [data-nav-line] step to the line's neighbour in reading order: a line that wraps
     // (a button group, a paragraph's links) is one box on Up/Down, so its wrapped part stays reachable.
-    const line = vertical ? null : navLine(active)
+    const line = vertical || !lines ? null : navLine(active)
     const onLine = line ? els.filter((el) => navLine(el) === line) : []
     const at = onLine.indexOf(active)
     const neighbour = at < 0 ? undefined : onLine[at + (dir === 'right' ? 1 : -1)]

@@ -67,7 +67,10 @@
   const describedBy = $derived(learnMore && $settingsControllerMode ? learnId : undefined)
 </script>
 
-<!-- data-nav-line: the d-pad measures a narrow control here by this whole line on Up/Down (nav navRect). -->
+<!-- data-setting-row marks every row's root, keyed or not (a [data-setting-key] can also wrap several
+     rows): nav navRect and the controller row highlight in app.css anchor on it.
+     data-nav-line: on a controller the d-pad measures a narrow control here by this whole line on
+     Up/Down (nav navRect). -->
 {#snippet header()}
   <div data-nav-line class="flex gap-3 {large ? 'min-h-12' : 'min-h-9'} {controlLayout === 'stack' ? 'flex-col items-stretch sm:flex-row sm:items-center' : 'items-center'}">
     <!-- One inner row, so a stacked row drops only its controls below and the icon stays beside the title. -->
@@ -99,7 +102,7 @@
 
 {#if shown}
 {#if href}
-  <div data-setting-key={settingKey}>
+  <div data-setting-row data-setting-key={settingKey}>
     <a
       href={href}
       data-focusable
@@ -114,7 +117,7 @@
     {@render more()}
   </div>
 {:else if onActivate}
-  <div data-setting-key={settingKey}>
+  <div data-setting-row data-setting-key={settingKey}>
     <button
       type="button"
       data-focusable
@@ -137,7 +140,7 @@
   </div>
 {:else}
   <!-- Its focusables live in the control snippet, so a group carries the controller description. -->
-  <div data-setting-key={settingKey} role={describedBy ? 'group' : undefined} aria-label={describedBy ? title : undefined} aria-describedby={describedBy}
+  <div data-setting-row data-setting-key={settingKey} role={describedBy ? 'group' : undefined} aria-label={describedBy ? title : undefined} aria-describedby={describedBy}
        class="{large ? 'px-3.5 py-3.5' : 'px-3 py-2.5'}">
     {@render header()}
     {#if learnMore}<div data-learn-more={describedBy ? '' : undefined} class="mt-1"><LearnMore text={learnMore} label={title} id={learnId} /></div>{/if}

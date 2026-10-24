@@ -125,6 +125,13 @@ describe('SettingsRow additions', () => {
     expect(source.split('<LearnMore text={learnMore} label={title} id={learnId} />')).toHaveLength(3)
   })
 
+  it('marks every root with data-setting-row, keyed or not, for nav and the controller highlight', () => {
+    const roots = rowElements.filter((el) => hasAttr(el, 'data-setting-key'))
+    expect(roots).toHaveLength(3)
+    for (const root of roots) expect(hasAttr(root, 'data-setting-row')).toBe(true)
+    expect(rowElements.filter((el) => hasAttr(el, 'data-setting-row'))).toHaveLength(3)
+  })
+
   it('marks its header as one d-pad line, outside the row button and the expanded children', () => {
     // nav `navRect` measures a narrow control on this line by the whole line on Up/Down.
     const lines = rowElements.filter((el) => hasAttr(el, 'data-nav-line'))
