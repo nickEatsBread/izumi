@@ -241,6 +241,13 @@ describe('pad sliders and roving tabs (commit 4)', () => {
       <button data-focusable data-rect="300,120,120,40">Beside</button>
       <button data-focusable data-rect="40,200,200,40">Below</button>
     </main>`
+  const numberPage = (attributes: string) => `
+    <main>
+      <button data-focusable data-rect="40,40,200,40">Above</button>
+      <input data-focusable aria-label="Seconds" type="number" ${attributes} data-rect="40,120,200,40">
+      <button data-focusable data-rect="300,120,120,40">Beside</button>
+      <button data-focusable data-rect="40,200,200,40">Below</button>
+    </main>`
   // Sources (sources/+page.svelte:324-336): one tab stop, the inactive tabs parked at tabindex -1.
   const tabsPage = `
     <main>
@@ -410,14 +417,14 @@ describe('pad sliders and roving tabs (commit 4)', () => {
     expect(document.activeElement).toBe(slider)
   })
 
-  it('on TV the pad Left/Right still move focus off a slider', () => {
+  it('on TV the pad Left/Right step the slider too (spec §5.4)', () => {
     isTv.set(true)
     document.body.innerHTML = sliderPage('min="0.5" max="2" step="0.1" value="1"')
     const slider = byLabel('Slider') as HTMLInputElement
     slider.focus()
     dispatchPadKey('ArrowRight')
-    expect(document.activeElement).toBe(byLabel('Beside'))
-    expect(slider.value).toBe('1')
+    expect(document.activeElement).toBe(slider)
+    expect(slider.value).toBe('1.1')
   })
 
   it('steps the Move subtitles slider during playback, inside the editor trap', () => {
@@ -472,14 +479,19 @@ describe('pad sliders and roving tabs (commit 4)', () => {
     expect(document.activeElement).toBe(slider)
   })
 
-  it('on TV a keyboard Right still moves focus off the slider', () => {
+  it("on TV the remote's Right steps the slider and Up/Down still leave it (spec §5.4)", () => {
     isTv.set(true)
     document.body.innerHTML = sliderPage('min="0.5" max="2" step="0.1" value="1"')
-    const slider = byLabel('Slider')
+    const slider = byLabel('Slider') as HTMLInputElement
+    const events = record(slider)
     slider.focus()
     const event = keyboard(slider, 'ArrowRight')
     expect(event.defaultPrevented).toBe(true)
-    expect(document.activeElement).toBe(byLabel('Beside'))
+    expect(document.activeElement).toBe(slider)
+    expect(slider.value).toBe('1.1')
+    expect(events).toEqual(['input', 'change'])
+    keyboard(slider, 'ArrowDown')
+    expect(document.activeElement).toBe(byLabel('Below'))
   })
 
   it('a keyboard Down on a roving tab still leaves the strip', () => {
@@ -514,6 +526,57 @@ describe('pad sliders and roving tabs (commit 4)', () => {
     byLabel('Add source').focus()
     dispatchPadKey('ArrowUp')
     expect(document.activeElement, 'explicit data-nav-up').toBe(byLabel('Manage'))
+  })
+
+  it('padAdjust steps a number field by its own step and holds at its bounds', () => {
+    document.body.innerHTML = numberPage('min="1" max="90" step="1" value="10"')
+    const field = byLabel('Seconds') as HTMLInputElement
+    const events = record(field)
+    expect(padAdjust(field, 'right', false)).toBe(true)
+    expect(field.value).toBe('11')
+    expect(events).toEqual(['input', 'change'])
+    field.value = '90'
+    expect(padAdjust(field, 'right', false)).toBe(true)
+    expect(field.value).toBe('90')
+    expect(events).toEqual(['input', 'change'])
+    expect(padAdjust(field, 'up', false)).toBe(false)
+  })
+
+  it('a number field with step="any" is no stepper: the press moves focus instead', () => {
+    document.body.innerHTML = numberPage('step="any" value="1.5"')
+    const field = byLabel('Seconds') as HTMLInputElement
+    expect(padAdjust(field, 'right', false)).toBe(false)
+    expect(field.value).toBe('1.5')
+  })
+
+  it('a pad Right steps a focused number field; Down leaves it', () => {
+    document.body.innerHTML = numberPage('min="16" max="4096" step="16" value="64"')
+    const field = byLabel('Seconds') as HTMLInputElement
+    field.focus()
+    dispatchPadKey('ArrowRight')
+    expect(field.value).toBe('80')
+    expect(document.activeElement).toBe(field)
+    dispatchPadKey('ArrowDown')
+    expect(document.activeElement).toBe(byLabel('Below'))
+  })
+
+  it("on TV the remote's Left/Right step a number field and Up leaves it: it never traps focus", () => {
+    isTv.set(true)
+    document.body.innerHTML = numberPage('min="1" max="4" value="2"')
+    const field = byLabel('Seconds') as HTMLInputElement
+    field.focus()
+    expect(keyboard(field, 'ArrowLeft').defaultPrevented).toBe(true)
+    expect(field.value).toBe('1')
+    keyboard(field, 'ArrowUp')
+    expect(document.activeElement).toBe(byLabel('Above'))
+  })
+
+  it('off TV a keyboard keeps a number field its own arrows', () => {
+    document.body.innerHTML = numberPage('min="1" max="4" value="2"')
+    const field = byLabel('Seconds') as HTMLInputElement
+    field.focus()
+    expect(keyboard(field, 'ArrowRight').defaultPrevented).toBe(false)
+    expect(document.activeElement).toBe(field)
   })
 })
 

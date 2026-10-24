@@ -45,9 +45,9 @@ const ENTER_INERT_INPUT_TYPES = ['checkbox', 'radio', 'range', 'color']
 // Controls with no caret at all, where an arrow is never "move the cursor". Swallowing their arrows
 // would strand keyboard focus on a checkbox with no way back out, so nav keeps all four. A slider is
 // the one exception: under a keyboard off TV it keeps the horizontal pair for its native step
-// (`rangeOwnsHorizontal`) while Up/Down still leave; pad arrows skip field ownership altogether and
-// reach sliders through `padAdjust` instead. The tail already activates on Enter by itself (they
-// behave like buttons), which is why it is excluded from the list above.
+// (`rangeOwnsHorizontal`) while Up/Down still leave; pad arrows and TV remote arrows reach sliders
+// through `padAdjust` instead. The tail already activates on Enter by itself (they behave like
+// buttons), which is why it is excluded from the list above.
 const CARETLESS_INPUT_TYPES = [...ENTER_INERT_INPUT_TYPES, 'button', 'submit', 'reset', 'file', 'image']
 
 // Steppers: Up/Down change the value and Left/Right walk between segments, so all four are theirs.
@@ -56,8 +56,12 @@ const STEPPER_INPUT_TYPES = ['number', 'date', 'datetime-local', 'month', 'time'
 /** Caller context for `fieldOwnsArrow`, kept out of the shape so the rules stay a pure function. */
 export interface FieldArrowOptions {
   /** A keyboard-focused slider steps with Left/Right (web standard, owner decision 2). The nav
-   *  handler passes `!get(isTv)`: a TV remote keeps Left/Right as focus moves (spec §3.11). */
+   *  handler passes `!get(isTv)`: on TV the engine steps the slider itself (padAdjust, spec §5.4). */
   rangeOwnsHorizontal?: boolean
+  /** TV (spec §5.4): a number field is a stepper row. The engine steps it with Left/Right
+   *  (padAdjust) and Up/Down leave it, so the field keeps no arrow. The nav handler passes
+   *  `get(isTv)`. */
+  numberSteps?: boolean
   /** Arrow navigation (`focusByNav`) just landed on this select or number/date stepper and nothing
    *  has engaged it yet: Up/Down pass over it (owner decision 2). The nav handler reads it from
    *  `isNavArrived` (never armed on TV) for an arrow without a shortcut chord; pad arrows never
@@ -100,6 +104,7 @@ export function fieldOwnsArrow(field: FieldShape, key: ArrowKey, options: FieldA
     // A keyboard slider steps natively with Left/Right; Up/Down stay nav's, so it never traps.
     if (type === 'range' && options.rangeOwnsHorizontal) return !vertical
     if (CARETLESS_INPUT_TYPES.includes(type)) return false
+    if (type === 'number' && options.numberSteps) return false
     if (STEPPER_INPUT_TYPES.includes(type)) return true
     // Single-line text-ish (text/search/password/url/email/tel): only the horizontal pair walks the
     // caret, and nav must not consume those — it preventDefaults, which froze the caret.
@@ -895,7 +900,7 @@ export function initDpadNav() {
     // Owner decision 2: Up/Down pass over a field that arrow navigation just landed on. A shortcut
     // chord stays the field's own (Alt+Down opens a native select's popup on Windows).
     const navArrived = !!field && isNavArrived(e.target) && !isShortcutChord(e)
-    if (field && fieldOwnsArrow(field, e.key as ArrowKey, { rangeOwnsHorizontal: !get(isTv), navArrived })) return
+    if (field && fieldOwnsArrow(field, e.key as ArrowKey, { rangeOwnsHorizontal: !get(isTv), numberSteps: get(isTv), navArrived })) return
     // A passed-over select or number/date field never keeps the press, even where nothing lies that
     // way (the first control of a page, the last one of a page or a dialog): the browser's default
     // would silently change its value, which is what the pass-over exists to prevent. A dropdown
@@ -983,10 +988,11 @@ export function initDpadNav() {
       }
       return
     }
-    // A focused slider takes the pad's Left/Right as steps; TV keeps them as focus moves (spec
-    // §3.11). This sits after the landing block, so it only acts on a slider that already holds
-    // focus, and before the named overrides, so a data-nav-left/right can never pre-empt stepping.
-    if (isPadEvent(e) && !get(isTv) && padAdjust(active, dir, e.repeat)) {
+    // A focused slider or number field takes Left/Right as steps (spec §5.4): every pad press, and
+    // on TV the remote's arrows too. This sits after the landing block, so it only acts on a control
+    // that already holds focus, and before the move owner and the named overrides, so neither can
+    // pre-empt stepping.
+    if ((isPadEvent(e) || get(isTv)) && padAdjust(active, dir, e.repeat)) {
       e.preventDefault()
       return
     }

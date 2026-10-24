@@ -72,18 +72,19 @@ describe('pad sliders and roving tabs wiring (commit 4)', () => {
   const nav = source('./index.ts')
   const overlay = source('../components/player/PlayerOverlay.svelte')
 
-  it('steps a focused slider after the landing block and before the named overrides, off TV only', () => {
+  it('steps a focused slider or number field after the landing block and before the named overrides, on a pad and on TV', () => {
     const landing = nav.indexOf('const active = document.activeElement as HTMLElement')
-    const hook = nav.indexOf('if (isPadEvent(e) && !get(isTv) && padAdjust(active, dir, e.repeat)) {')
+    const hook = nav.indexOf('if ((isPadEvent(e) || get(isTv)) && padAdjust(active, dir, e.repeat)) {')
     expect(landing).toBeGreaterThan(-1)
     expect(hook).toBeGreaterThan(landing)
     expect(hook).toBeLessThan(nav.indexOf('const explicitName = active.getAttribute('))
     expect(nav.split('padAdjust(').length - 1).toBe(1)
   })
 
-  it('hands a keyboard-focused slider its Left/Right off TV, and a roving tab its own Left/Right', () => {
+  it('hands a keyboard slider its Left/Right off TV, a TV number field to the engine, and a roving tab its own Left/Right', () => {
     // A regex, so commit 8 can add `navArrived` to the same options object.
     expect(nav).toMatch(/fieldOwnsArrow\(field, e\.key as ArrowKey, \{[^}]*rangeOwnsHorizontal: !get\(isTv\)/)
+    expect(nav).toMatch(/fieldOwnsArrow\(field, e\.key as ArrowKey, \{[^}]*numberSteps: get\(isTv\)/)
     expect(nav).toContain('rovingTab: isRovingTab(target),')
   })
 
