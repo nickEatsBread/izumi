@@ -25,17 +25,17 @@ describe('SettingsSection', () => {
   const source = read('./SettingsSection.svelte')
   const sectionElements = elements('./SettingsSection.svelte')
 
-  it('renders the section root, its header, the 40 px icon tile and the page title', () => {
+  it('renders the section root, its header, the 44 px icon tile and the page title', () => {
     const [root] = sectionElements
     expect(root.name).toBe('div')
     expect(attr(root, 'data-settings-section')?.raw).toBe('data-settings-section={def.id}')
     expect(staticAttr(root, 'class')).toBe('p-4 sm:p-8')
     const header = sectionElements.find((el) => hasAttr(el, 'data-settings-section-header'))!
     expect(header.name).toBe('header')
-    expect(staticAttr(header, 'class')).toBe('mb-6 flex items-center gap-3')
+    expect(staticAttr(header, 'class')).toBe('mb-5 flex items-center gap-3.5')
     const tile = sectionElements.find((el) => staticAttr(el, 'data-part') === 'settings.section.icon')!
     expect(tile.ancestors[0]?.name).toBe('header')
-    expect(staticAttr(tile, 'class')).toContain('size-10')
+    expect(staticAttr(tile, 'class')).toContain('size-11')
     const title = sectionElements.find((el) => hasAttr(el, 'data-settings-page-title'))!
     expect(title.name).toBe('h2')
     expect(title.ancestors[0]?.name).toBe('header')
@@ -44,7 +44,7 @@ describe('SettingsSection', () => {
   it('shares its registry entry with its subcategories and resolves its icon outside the registry', () => {
     expect(source).toContain('const def = untrack(() => settingsSection(section))')
     expect(source).toContain('setContext(SETTINGS_SECTION_CONTEXT, def)')
-    expect(source).toContain('const Icon = sectionIcon(def.id)')
+    expect(source).toContain('const Icon = $derived(sectionIcon(def.id))')
   })
 
   it('caps the content at 880 px', () => {
