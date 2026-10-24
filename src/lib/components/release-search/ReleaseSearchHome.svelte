@@ -78,7 +78,7 @@
   }
 </script>
 
-<div data-slot="release-search" class="mx-auto w-full max-w-4xl px-4 pb-24 pt-6 sm:px-8 sm:pt-12">
+<div class="mx-auto w-full max-w-4xl px-4 pb-24 pt-6 sm:px-8 sm:pt-12">
   {#if $offlineMode}
     <OfflineUnavailable title="Search is unavailable offline" subtitle="Searching your sources needs a connection. Your downloads are available on the Downloads page." />
   {:else}
