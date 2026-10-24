@@ -187,8 +187,8 @@ export const bingePreload = persisted<boolean>('player-binge-preload', true)
 export const seekDuration = persisted<number>('player-seek-seconds', 10)
 /** Show controls that seek playback to the previous, current, or next subtitle cue. */
 export const subtitleLineNavigation = persisted<boolean>('player-subtitle-line-navigation', false)
-/** Hide the left sidebar while the player is open, so windowed video takes its width. Off by default. */
-export const hideSidebarWhilePlaying = persisted<boolean>('player-hide-sidebar', false)
+/** Hide the left sidebar while the player is open, so windowed video takes its width. On by default. */
+export const hideSidebarWhilePlaying = persisted<boolean>('player-hide-sidebar', true)
 /** Where a desktop trailer opens with mouse and keyboard: izumi's full-window trailer player or the
  *  popup. TV, Game mode and a controller always use the player, phones the popup (trailerOpensIn). */
 export type TrailerOpenMode = 'player' | 'popup'

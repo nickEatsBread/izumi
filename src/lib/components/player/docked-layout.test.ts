@@ -32,8 +32,8 @@ describe('player mount follows the navigation placement', () => {
 })
 
 describe('hide sidebar while playing', () => {
-  it('drops only the left sidebar, only while the player is open, and only when asked', () => {
-    expect(read('../../settings/ui.ts')).toContain("export const hideSidebarWhilePlaying = persisted<boolean>('player-hide-sidebar', false)")
+  it('drops only the left sidebar, only while the player is open, unless turned off', () => {
+    expect(read('../../settings/ui.ts')).toContain("export const hideSidebarWhilePlaying = persisted<boolean>('player-hide-sidebar', true)")
     expect(read('../../shell/chrome.ts')).toContain("([hide, open, nav]) => hide && open && nav === 'sidebar')")
     expect(layout).toContain("{:else if !$sidebarHiddenForPlayback && !($playing && $playerCoversWindow)}<Sidebar placement={$shellNav === 'top' ? 'top' : 'sidebar'} />{/if}")
   })
