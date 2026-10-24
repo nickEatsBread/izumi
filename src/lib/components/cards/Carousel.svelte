@@ -6,7 +6,7 @@
   import { wheelScrollAcross } from '$lib/settings/ui'
   import { gameMode } from '$lib/player/session'
   import { controllerMode } from '$lib/nav/input'
-  import { isMobile } from '$lib/platform'
+  import { isMobile, isTv } from '$lib/platform'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import { captionOf } from './caption'
@@ -32,20 +32,27 @@
   // `caption: "focus"` (API 3): with a pad in use, one line under the track names the focused card in
   // full with its detail line. Every such row keeps the line, so moving between rows never shifts
   // the page.
-  const captioned = $derived(appearance.caption === 'focus' && gm)
+  // A TV is always driven by its remote, so it counts as a pad in use even before controller mode is set.
+  const captioned = $derived(appearance.caption === 'focus' && (gm || $isTv))
   // Raw: `media` is a whole catalog record, replaced on every focus move and never mutated.
   let caption = $state.raw<{ title: string; meta: string; media?: Media }>({ title: '', meta: '' })
+  let captionActive = $state(false)
   const onTrackFocusIn = (event: FocusEvent) => {
     if (!captioned) return
     const target = event.target as Element
     const card = target.closest('[data-part="card"]')
     caption = { ...captionOf(target), media: card ? cardMedia.get(card) : undefined }
+    captionActive = true
   }
   const onTrackFocusOut = (event: FocusEvent & { currentTarget: HTMLElement }) => {
-    if (captioned && !event.currentTarget.contains(event.relatedTarget as Node | null)) caption = { title: '', meta: '' }
+    if (!captioned || event.currentTarget.contains(event.relatedTarget as Node | null)) return
+    captionActive = false
+    // A template caption keeps its last card, only hidden: its height then never changes as focus leaves,
+    // so the rows below do not move while an anchored row is being scrolled into place.
+    if (!appearance.captionTemplate) caption = { title: '', meta: '' }
   }
   // API 6 `captionTemplate`: bound to the focused card's media (genres, year, synopsis, ...); an empty
-  // model while nothing in the row is focused. A card that registers no media keeps the title and meta line.
+  // model until a card in the row has been focused. A card that registers no media keeps the title and meta line.
   const captionModel = $derived(caption.media ? mediaDisplayModel(caption.media) : {})
 
   let scroller = $state<HTMLDivElement>()
@@ -191,7 +198,7 @@
   </div>
   {#if captioned}
     <!-- A div, not a p: a caption template renders block elements. -->
-    <div data-part="row.caption" aria-hidden="true" class="flex min-h-7 min-w-0 items-baseline gap-2 pt-1" class:px-8={!mob} class:px-4={mob}>
+    <div data-part="row.caption" data-active={captionActive || undefined} aria-hidden="true" class="flex min-h-7 min-w-0 items-baseline gap-2 pt-1" class:px-8={!mob} class:px-4={mob} class:invisible={appearance.captionTemplate && !captionActive}>
       {#if appearance.captionTemplate && (caption.media || !caption.title)}
         <ThemeNode node={appearance.captionTemplate} model={captionModel} />
       {:else}
