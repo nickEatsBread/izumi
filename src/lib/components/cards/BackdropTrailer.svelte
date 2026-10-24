@@ -1,8 +1,11 @@
 <script lang="ts">
   // The API 6 backdrop trailer: after `dwell` ms, the title's YouTube trailer plays once, muted, over the
-  // artwork (fading in and out over 500 ms), then the artwork returns. Desktop only; never under reduced
+  // artwork (fading in and out over 500 ms), then the artwork returns. It loads and starts hidden when the
+  // dwell begins: YouTube draws its own play/pause button for the first ~4 s of playback, which
+  // YoutubeTrailer waits out, so that wait runs alongside the dwell instead of after it (the opening
+  // seconds of the trailer play unseen). Desktop only; never under reduced
   // motion, data saver, the player, a hidden window or the Theme trailers setting off. `onended(natural)`
-  // fires once for a trailer that started playing: natural = it reached its end. A trailer that has not shown 15 s after it mounted
+  // fires once for a trailer that started playing: natural = it reached its end. A trailer that has not shown 15 s after its dwell
   // counts as failed. Its mute state is the backdrop one, so hover previews never unmute it. It holds
   // while the full trailer dialog or a hover-preview trailer is up, so two videos never play at once.
   import { untrack } from 'svelte'
@@ -30,6 +33,7 @@
 
   // Template state, only ever written by the code below (no effect reads it).
   let mounted = $state(false)
+  let waiting = $state(true) // the dwell is still running: the trailer may load, not show
   let playing = $state(false)
   // Bookkeeping, plain so callbacks and teardowns read it without tracking.
   let started = false // YouTube reported playing and onended has not fired yet
@@ -42,8 +46,10 @@
   // only applies from the next run: changing it never stops a playing trailer.
   $effect(() => {
     if (!on || !id || finished.has(id)) return
+    mounted = true
+    waiting = true
     const dwellTimer = setTimeout(() => {
-      mounted = true
+      waiting = false
       startTimer = setTimeout(() => onEnd(false), 15_000)
     }, untrack(() => dwell))
     return () => {
@@ -89,6 +95,6 @@
 
 {#if id && mounted}
   <div data-part={part} data-state={playing ? 'playing' : undefined} class="pointer-events-none absolute inset-0 overflow-hidden">
-    <YoutubeTrailer {id} {title} loop={false} fit="cover" {mutePart} {muteClass} trailerMuted={backdropTrailerMuted} onplaying={onStart} onended={onEnd} />
+    <YoutubeTrailer {id} {title} loop={false} fit="cover" {mutePart} {muteClass} trailerMuted={backdropTrailerMuted} wait={waiting} onplaying={onStart} onended={onEnd} />
   </div>
 {/if}

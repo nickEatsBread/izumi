@@ -8,7 +8,7 @@
 <script lang="ts">
   // Muted autoplay YouTube trailer for the hover preview. Desktop WebViews with a non-HTTP app
   // origin use a loopback document so YouTube receives the HTTP embedder identity it requires.
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import VolumeX from '@lucide/svelte/icons/volume-x'
   import Volume2 from '@lucide/svelte/icons/volume-2'
   import type { Writable } from 'svelte/store'
@@ -20,10 +20,11 @@
   } from './youtube-embed'
   // The defaults are the hover preview; BackdropTrailer plays once (`loop: false`), covers its box,
   // follows its own session mute store and listens for the start and the end (`natural` = the video
-  // reached its end, false = it failed).
-  let { id, title = 'Trailer', loop = true, fit = 'crop', mutePart, muteClass = 'right-1 top-1 z-10', trailerMuted = hoverTrailerMuted, onplaying, onended }: {
+  // reached its end, false = it failed). `wait` keeps the picture hidden while it is true, so a host can load
+  // and start the video early and show it later.
+  let { id, title = 'Trailer', loop = true, fit = 'crop', mutePart, muteClass = 'right-1 top-1 z-10', trailerMuted = hoverTrailerMuted, wait = false, onplaying, onended }: {
     id: string; title?: string; loop?: boolean; fit?: 'crop' | 'cover'; mutePart?: string; muteClass?: string
-    trailerMuted?: Writable<boolean>; onplaying?: () => void; onended?: (natural: boolean) => void
+    trailerMuted?: Writable<boolean>; wait?: boolean; onplaying?: () => void; onended?: (natural: boolean) => void
   } = $props()
   // `cover` fills its own size container (`container-type: size`) at 16:9; the extra 240 px letterboxes
   // YouTube's own title and branding above and below the picture, where the box's overflow cuts them.
@@ -40,8 +41,9 @@
   // every start of playback, the first one and each restart, and while it buffers or has ended,
   // whatever `controls=0` says. So the picture fades in once playback has run 4.5 s, fades out just
   // before the end, and drops at once when playback stops early (a stall). `playing` (the mute
-  // button, `onplaying`) waits for the first reveal.
+  // button, `onplaying`) waits for the first reveal, and no reveal happens while the host says `wait`.
   const CONTROLS_SETTLE_MS = 4500
+  let settled = $state(false) // playback has run CONTROLS_SETTLE_MS since it last started
   let shown = $state(false)
   let fading = $state(false) // the opacity change animates: a reveal, or the fade before the end
   let duration = 0
@@ -50,18 +52,25 @@
     if (!running) {
       clearTimeout(revealTimer)
       revealTimer = undefined
+      settled = false
       fading = false
       shown = false
       return
     }
-    if (shown || revealTimer) return
+    if (settled || revealTimer) return
     revealTimer = setTimeout(() => {
       revealTimer = undefined
+      settled = true
+    }, CONTROLS_SETTLE_MS)
+  }
+  $effect(() => {
+    if (!settled || wait) return
+    untrack(() => {
       fading = true
       shown = true
       if (!playing) { playing = true; onplaying?.() }
-    }, CONTROLS_SETTLE_MS)
-  }
+    })
+  })
 
   $effect(() => {
     const videoId = id
