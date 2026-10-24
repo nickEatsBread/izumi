@@ -21,6 +21,9 @@
     label: string
     /** Muted secondary text after the label (a score's descriptor, a unit), also echoed in the trigger. */
     description?: string
+    /** Small logo URL before the label, in the trigger too. One that fails to load shows the
+     *  label's first letter instead. */
+    icon?: string
     disabled?: boolean
   }
 
@@ -69,6 +72,7 @@
   const pickerTitle = $props.id()
   let query = $state('')
   let searchInput = $state<HTMLInputElement>()
+  let brokenIcons = $state<Record<string, boolean>>({})
   const filteredOptions = $derived(options.filter(option => !query || `${option.label} ${option.value}`.toLowerCase().includes(query.toLowerCase())))
   const selected = $derived(options.find((option) => option.value === value) ?? options[0])
   // A controller user opens onto the current option, not the search box: the d-pad walks the list,
@@ -203,6 +207,14 @@
   <input bind:this={searchInput} bind:value={query} type="search" data-focusable aria-label={`Search ${ariaLabel ?? 'options'}`} placeholder="Search languages…" class="sticky top-0 mb-1 w-full rounded-md border border-border bg-background px-3 py-3 text-sm outline-none focus:border-foreground" />
 {/snippet}
 
+{#snippet optionIcon(option: SelectOption, icon: string)}
+  {#if brokenIcons[icon]}
+    <span aria-hidden="true" class="grid size-4 shrink-0 place-items-center self-center rounded-sm bg-muted text-[0.625rem] font-black text-muted-foreground">{option.label.charAt(0)}</span>
+  {:else}
+    <img src={icon} alt="" class="size-4 shrink-0 self-center rounded-sm object-contain" onerror={() => (brokenIcons[icon] = true)} />
+  {/if}
+{/snippet}
+
 {#snippet optionList()}
   <!-- The controller picker draws the search box above its capped list instead (see there). -->
   {#if searchable && !$settingsControllerMode}{@render searchBox()}{/if}
@@ -221,6 +233,7 @@
       onclick={() => choose(option)}
     >
       <span class="flex min-w-0 items-baseline gap-2">
+        {#if option.icon}{@render optionIcon(option, option.icon)}{/if}
         <span class="truncate {columns ? 'w-6 shrink-0 text-right font-bold tabular-nums' : ''}">{option.label}</span>
         {#if option.description}<span class="truncate text-muted-foreground {columns ? 'ml-1' : 'text-xs'}">{option.description}</span>{/if}
       </span>
@@ -250,7 +263,10 @@
     onclick={() => void setOpen(!open)}
     onkeydown={onTriggerKeydown}
   >
-    <span class="truncate">{selected?.label ?? value}{#if selected?.description && variant !== 'inline'}<span class="ml-1.5 text-muted-foreground">{#if separator}<span class="mr-1.5">{separator}</span>{/if}{selected.description}</span>{/if}</span>
+    <span class="flex min-w-0 items-center gap-2">
+      {#if selected?.icon}{@render optionIcon(selected, selected.icon)}{/if}
+      <span class="truncate">{selected?.label ?? value}{#if selected?.description && variant !== 'inline'}<span class="ml-1.5 text-muted-foreground">{#if separator}<span class="mr-1.5">{separator}</span>{/if}{selected.description}</span>{/if}</span>
+    </span>
     <ChevronDown size={15} class="shrink-0 transition-transform {open ? 'rotate-180' : ''}" />
   </button>
 

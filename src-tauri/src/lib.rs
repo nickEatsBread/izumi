@@ -5103,7 +5103,7 @@ fn updater_endpoints(channel: &str) -> Vec<url::Url> {
     // the same signed latest.json per channel and validates the repository/key headers set in
     // `build_updater`). Only updates signed with the release key can install, so a mirror can't
     // inject an unsigned build.
-    const FAILOVER: &str = "https://anmw-prod-distnet.quack.si";
+    const FAILOVER: &str = "https://anmw-prod-distnet.miaou.si";
     let github = if channel == "beta" {
         format!("https://github.com/{REPO}/releases/download/beta/latest.json")
     } else {

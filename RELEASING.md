@@ -2,14 +2,14 @@
 
 Binaries are built in CI and published as **GitHub Releases**. The app auto-updates via
 a signed [Tauri updater](https://tauri.app/plugin/updater/), with a **failover** mirror
-(`anmw-prod-distnet.quack.si`) for when GitHub is unreachable.
+(`anmw-prod-distnet.miaou.si`) for when GitHub is unreachable.
 
 - **Stable channel** → newest normal release (`v1.2.3`).
   - primary: `https://github.com/nickEatsBread/izumi/releases/latest/download/latest.json`
-  - failover: `https://anmw-prod-distnet.quack.si/stable/latest.json`
+  - failover: `https://anmw-prod-distnet.miaou.si/stable/latest.json`
 - **Beta channel** → a single **rolling `beta` pre-release** CI overwrites each beta build.
   - primary: `https://github.com/nickEatsBread/izumi/releases/download/beta/latest.json`
-  - failover: `https://anmw-prod-distnet.quack.si/beta/latest.json`
+  - failover: `https://anmw-prod-distnet.miaou.si/beta/latest.json`
 
 Any tag containing `-` (e.g. `v1.3.0-beta.1`) is a beta.
 
@@ -58,15 +58,16 @@ ignores them; the Worker returns `403` if they're missing/wrong.
    - `src-tauri/src/lib.rs` → `updater_endpoints()` `REPO`
    - `distnet/wrangler.toml` → `GH_REPO`
 
-4. **Deploy the failover Worker**:
+4. **Deploy the failover Worker**. The `miaou.si` zone must be on the same Cloudflare account
+   (its nameservers pointed at Cloudflare); `distnet/wrangler.toml` then attaches the
+   `anmw-prod-distnet.miaou.si` custom domain on deploy:
    ```sh
    cd distnet
    npx wrangler deploy
    ```
-   Map `anmw-prod-distnet.quack.si` to it (Cloudflare dashboard → the Worker → Custom
-   Domain). Test it (must pass the headers):
+   Test it (must pass the headers):
    ```sh
-   curl -H 'repository: izumi' -H 'key: stable' https://anmw-prod-distnet.quack.si/stable/latest.json
+   curl -H 'repository: izumi' -H 'key: stable' https://anmw-prod-distnet.miaou.si/stable/latest.json
    ```
 
 5. **Set repository Actions variables** for the public OAuth configuration used by every CI,
@@ -85,7 +86,7 @@ ignores them; the Worker returns `403` if they're missing/wrong.
    package **`com.nicho.izumi`** and the SHA-256 certificate digest of the same release keystore held
    in `ANDROID_KEYSTORE_BASE64`. Obtain the digest from any release APK without exposing the key:
    ```sh
-   apksigner verify --print-certs izumi-android-full.apk
+   apksigner verify --print-certs izumi-v0.1.73-android-arm64-full.apk
    ```
    Repeat the registration if the package name or signing key ever changes. This is an account-side
    release gate; changing the in-app GitHub downloader cannot bypass it.

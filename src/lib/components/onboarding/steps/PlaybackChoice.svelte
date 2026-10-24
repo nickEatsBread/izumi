@@ -9,6 +9,7 @@
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import { m } from '$lib/paraglide/messages.js'
   import { providerList, accountInfo } from '$lib/stremio/debrid'
+  import { providerIcon } from '$lib/stremio/debrid/icons'
   import { debridKey, debridProvider, torrentPlaybackMode } from '$lib/settings/ui'
 
   /** How a torrent becomes a playable stream. `checking` is true while a debrid key is being
@@ -28,7 +29,7 @@
     if (!$debridKey.trim()) $torrentPlaybackMode = 'direct'
   })
 
-  const providerOptions = providerList.map((provider) => ({ value: provider.id, label: provider.name }))
+  const providerOptions = providerList.map((provider) => ({ value: provider.id, label: provider.name, icon: providerIcon(provider.id) }))
   const debrid = $derived($torrentPlaybackMode === 'debrid')
 
   /** Catch a mistyped key here rather than at the first play. A network failure is a warning, not
