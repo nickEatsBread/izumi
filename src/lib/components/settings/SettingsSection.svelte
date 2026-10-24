@@ -27,7 +27,4 @@
 <style>
   /* The phone layout's sticky back-header already names the section (settings/+layout.svelte). */
   :global(.settings-child) [data-settings-section-header] { display: none; }
-  /* shortcut: old pages render inside sections until their rows move; their own titles would repeat
-     the section header. Delete once no old page renders inside a section. */
-  [data-settings-section-body] :global([data-settings-page-title]) { display: none; }
 </style>

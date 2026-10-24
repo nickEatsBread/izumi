@@ -51,9 +51,9 @@ describe('SettingsSection', () => {
     expect(source).toContain('<div data-settings-section-body class="max-w-[880px]">')
   })
 
-  it('hides its header in the phone layout and the titles of old pages rendered inside it', () => {
+  it('hides its header in the phone layout, where the back-header names the section', () => {
     expect(source).toContain(':global(.settings-child) [data-settings-section-header] { display: none; }')
-    expect(source).toContain('[data-settings-section-body] :global([data-settings-page-title]) { display: none; }')
+    expect(source).not.toContain(':global([data-settings-page-title])')
   })
 })
 
