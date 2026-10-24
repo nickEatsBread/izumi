@@ -1,6 +1,7 @@
 import { get, writable } from 'svelte/store'
-import { highContrast, largeInteractionTargets, motionPreference, themePreset } from '$lib/settings/ui'
-import { activeStudioTheme, themeStudioPreview, type StudioTheme } from '$lib/settings/theme-studio'
+import { highContrast, largeInteractionTargets, motionPreference } from '$lib/settings/ui'
+import { themeStudioPreview, type StudioTheme } from '$lib/settings/theme-studio'
+import { effectiveStudioTheme, effectiveThemePreset } from '$lib/themes/screen-theme'
 import { resolvedThemeTokens } from '$lib/theme-tokens'
 import { isMobile, isTv } from '$lib/platform'
 import { resolvePresentation } from '$lib/themes/presentation'
@@ -57,9 +58,10 @@ function apply() {
   if (typeof document === 'undefined') return
   const safe = get(themeSafeMode)
   const media = matchMedia('(prefers-color-scheme: dark)')
-  const preset = get(themePreset)
+  // The active catalog screen's own theme, else the app theme (screen-theme.ts).
+  const preset = get(effectiveThemePreset)
   const preview = get(themeStudioPreview)
-  const studio = preview ?? get(activeStudioTheme)
+  const studio = preview ?? get(effectiveStudioTheme)
   // The open Theme Studio applies drafts live without persisting them until Save. Safe mode
   // overrides both: it always resolves the default izumi palette for the session.
   const tokens = safe
@@ -142,8 +144,8 @@ export function startThemeSync(): () => void {
   started = true
   const media = matchMedia('(prefers-color-scheme: dark)')
   const subscriptions = [
-    themePreset, highContrast, largeInteractionTargets, motionPreference,
-    activeStudioTheme, themeStudioPreview, isMobile, tvSurface, shellNav, themeSafeMode, protectedSurfaceCount,
+    effectiveThemePreset, highContrast, largeInteractionTargets, motionPreference,
+    effectiveStudioTheme, themeStudioPreview, isMobile, tvSurface, shellNav, themeSafeMode, protectedSurfaceCount,
   ].map((store) => store.subscribe(apply))
   media.addEventListener('change', apply)
   apply()

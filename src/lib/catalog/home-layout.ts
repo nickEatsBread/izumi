@@ -1,11 +1,11 @@
 import { persisted } from 'svelte-persisted-store'
 import { get } from 'svelte/store'
 import { hiddenHomeRows, homeRowOrder } from '$lib/settings/ui'
-import type { CatalogSelection } from '$lib/settings/catalog'
+import type { CatalogScreen, CustomScreenId } from '$lib/settings/catalog'
 import type { CatalogHomeRowOption } from './types'
 
-export type CatalogHomeLayoutKey = 'anilist' | 'kitsu' | 'tmdb' | 'stremio' | 'jvm' | 'merged'
-export type CatalogHomeTarget = CatalogSelection | 'merged'
+export type CatalogHomeLayoutKey = 'anilist' | 'kitsu' | 'tmdb' | 'stremio' | 'jvm' | 'merged' | CustomScreenId
+export type CatalogHomeTarget = CatalogScreen
 
 export interface CatalogHomeLayout {
   /** Contains visible and hidden rows so a hidden row remembers its former position. */
@@ -40,7 +40,11 @@ export function resolveCatalogHomeRows(
   // A layout saved before the hero was a row gets it FIRST, not appended at the end, so an
   // existing Home looks the same after this row is introduced.
   const heroIsNew = optionById.has('hero') && !rawOrder.includes('hero')
-  const order = heroIsNew ? ['hero', ...savedOrder, ...newIds.filter((id) => id !== 'hero')] : [...savedOrder, ...newIds]
+  // A new lead row (a collection) joins right after the banner, where collections always sat.
+  const lead = newIds.filter((id) => optionById.get(id)?.lead)
+  const base = heroIsNew ? ['hero', ...savedOrder] : savedOrder
+  const afterHero = base.indexOf('hero') + 1
+  const order = [...base.slice(0, afterHero), ...lead, ...base.slice(afterHero), ...newIds.filter((id) => id !== 'hero' && !lead.includes(id))]
   const disabled = new Set(layout ? rawDisabled : options.filter((option) => option.defaultEnabled === false).map((option) => option.id))
 
   // A preset introduced after a user saved this provider follows its shipped default. Existing

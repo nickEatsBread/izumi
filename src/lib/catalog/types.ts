@@ -110,6 +110,8 @@ export interface CatalogHomeRowOption {
   description?: string
   group?: string
   defaultEnabled?: boolean
+  /** A row new to a saved layout joins right after the banner instead of at the end. */
+  lead?: boolean
 }
 
 export interface CatalogProvider {

@@ -1,16 +1,16 @@
 import { derived } from 'svelte/store'
-import { activeStudioTheme, themeStudioPreview } from '$lib/settings/theme-studio'
-import { themePreset } from '$lib/settings/ui'
+import { themeStudioPreview } from '$lib/settings/theme-studio'
 import { isMobile, isTv } from '$lib/platform'
 import { gameMode } from '$lib/player/session'
 import { resolvePlayerControls, resolvePlayerDock, resolvePresentation, resolveSearch, shellNavFor, type ThemeNavPlacement } from './presentation'
 import { themeSafeMode } from './safe-mode'
+import { effectiveStudioTheme, effectiveThemePreset } from './screen-theme'
 
 /** API 6: a TV surface — an Android TV, or Game mode on a handheld — gets the theme's `tv` block. */
 export const tvSurface = derived([isTv, gameMode], ([tv, gm]) => tv || gm)
 
 // The theme's presentation before any surface block is layered (safe mode: none at all).
-const activeLayout = derived([activeStudioTheme, themeStudioPreview, themePreset, themeSafeMode], ([theme, preview, preset, safe]) =>
+const activeLayout = derived([effectiveStudioTheme, themeStudioPreview, effectiveThemePreset, themeSafeMode], ([theme, preview, preset, safe]) =>
   safe ? undefined : preview?.presentation ?? (preview ? undefined : preset === 'custom' ? theme.presentation : undefined))
 
 // The active presentation for THIS surface: a package's `mobile` block is layered over its shared layout

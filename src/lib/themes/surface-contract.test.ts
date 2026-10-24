@@ -18,6 +18,6 @@ describe('TV surface wiring (API 6)', () => {
     expect(theme).toContain("root.dataset.surface = 'tv'")
     expect(theme).toContain('delete root.dataset.surface')
     expect(theme).toContain('resolvePresentation(studio.presentation, get(isMobile), get(tvSurface))')
-    expect(theme).toMatch(/activeStudioTheme, themeStudioPreview, isMobile, tvSurface,/)
+    expect(theme).toMatch(/effectiveStudioTheme, themeStudioPreview, isMobile, tvSurface,/)
   })
 })

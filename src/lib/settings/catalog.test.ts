@@ -4,7 +4,8 @@ import {
   catalogLabel, catalogLastProvider, catalogLastScreen, catalogProvider, catalogScreen, catalogScreens, nextCatalogProvider, nextCatalogScreen,
   isJvmCatalogSourceEnabled, mergedCatalogProviders, normalizeCatalogProviders, previousCatalogProvider,
   resolveCatalogScreenStartup, resolveCatalogStartup, resolveCatalogSwitcherPlacement, selectCatalogProvider, selectCatalogScreen,
-  stremioHeroArtwork,
+  stremioHeroArtwork, companionScreen, customScreenId, isCustomScreen, isMergedScreen, normalizeCustomScreens,
+  previousCatalogScreen, CUSTOM_SCREEN_LIMIT,
 } from './catalog'
 
 describe('catalog platform selection', () => {
@@ -110,6 +111,63 @@ describe('catalog platform selection', () => {
       expect(get(catalogScreen)).toBe('merged')
       expect(get(catalogProvider)).toBe('tmdb')
       expect(get(catalogLastScreen)).toBe('merged')
+    } finally {
+      catalogProvider.set(previousProvider)
+      catalogScreen.set(previousScreen)
+      catalogLastScreen.set(previousLastScreen)
+    }
+  })
+})
+
+describe('custom screens', () => {
+  const movie = { id: 'movienight', name: 'Movie night' }
+
+  it('repairs stored screens: valid ids, trimmed names, no duplicates, bounded count', () => {
+    expect(normalizeCustomScreens([{ id: 'abc', name: '  Movie   night ' }, { id: 'abc', name: 'Again' }, { id: 'BAD id', name: 'x' }, { id: 'n', name: '' }, null]))
+      .toEqual([{ id: 'abc', name: 'Movie night' }])
+    expect(normalizeCustomScreens('nope')).toEqual([])
+    const many = Array.from({ length: 20 }, (_, index) => ({ id: `s${index}`, name: `Screen ${index}` }))
+    expect(normalizeCustomScreens(many)).toHaveLength(CUSTOM_SCREEN_LIMIT)
+    expect(normalizeCustomScreens([{ id: 'long', name: 'x'.repeat(80) }])[0].name).toHaveLength(32)
+  })
+
+  it('names custom screens and treats them like Merged', () => {
+    expect(customScreenId('movienight')).toBe('custom:movienight')
+    expect(isCustomScreen('custom:movienight')).toBe(true)
+    expect(isCustomScreen('merged')).toBe(false)
+    expect(isMergedScreen('custom:movienight')).toBe(true)
+    expect(isMergedScreen('merged')).toBe(true)
+    expect(isMergedScreen('tmdb')).toBe(false)
+    expect(catalogLabel('custom:movienight', [movie])).toBe('Movie night')
+    expect(catalogLabel('custom:gone', [movie])).toBe('Custom screen')
+  })
+
+  it('lists custom screens after the built-in ones, even with one platform', () => {
+    expect(catalogScreens(['auto'], [movie])).toEqual(['auto', 'custom:movienight'])
+    expect(catalogScreens(['auto', 'tmdb'], [movie])).toEqual(['auto', 'tmdb', 'merged', 'custom:movienight'])
+    expect(nextCatalogScreen('merged', ['auto', 'tmdb'], [movie])).toBe('custom:movienight')
+    expect(nextCatalogScreen('custom:movienight', ['auto', 'tmdb'], [movie])).toBe('auto')
+    expect(previousCatalogScreen('auto', ['auto', 'tmdb'], [movie])).toBe('custom:movienight')
+  })
+
+  it('restores a custom screen at startup only while it still exists', () => {
+    expect(resolveCatalogScreenStartup('custom:movienight', 'auto', ['auto'], [movie])).toBe('custom:movienight')
+    expect(resolveCatalogScreenStartup('adaptive', 'custom:movienight', ['auto'], [movie])).toBe('custom:movienight')
+    expect(resolveCatalogScreenStartup('adaptive', 'custom:movienight', ['auto'], [])).toBe('auto')
+  })
+
+  it('selects a custom screen without replacing the concrete provider, and hides it from the companion', () => {
+    const previousProvider = get(catalogProvider)
+    const previousScreen = get(catalogScreen)
+    const previousLastScreen = get(catalogLastScreen)
+    try {
+      catalogProvider.set('tmdb')
+      selectCatalogScreen('custom:movienight')
+      expect(get(catalogScreen)).toBe('custom:movienight')
+      expect(get(catalogProvider)).toBe('tmdb')
+      expect(get(catalogLastScreen)).toBe('custom:movienight')
+      expect(companionScreen('custom:movienight')).toBe('tmdb')
+      expect(companionScreen('merged')).toBe('merged')
     } finally {
       catalogProvider.set(previousProvider)
       catalogScreen.set(previousScreen)
