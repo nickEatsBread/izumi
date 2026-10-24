@@ -1,5 +1,4 @@
 <script lang="ts">
-  import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
   import { invoke } from '@tauri-apps/api/core'
   import {
     subtitleProviders,
@@ -28,20 +27,14 @@
     subtitleRegexFilter,
   } from '$lib/settings/ui'
   import CredentialField from '$lib/components/settings/CredentialField.svelte'
-  import SettingsGroup from '$lib/components/settings/SettingsGroup.svelte'
+  import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
+  import SettingsSubcategory from '$lib/components/settings/SettingsSubcategory.svelte'
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
+  import SettingsChoiceRow from '$lib/components/settings/SettingsChoiceRow.svelte'
   import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte'
-  import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import SubtitleProviderBadge from '$lib/components/settings/SubtitleProviderBadge.svelte'
-  import Palette from '@lucide/svelte/icons/palette'
-  import Bookmark from '@lucide/svelte/icons/bookmark'
-  import RefreshCw from '@lucide/svelte/icons/refresh-cw'
-  import Languages from '@lucide/svelte/icons/languages'
-  import ChevronDown from '@lucide/svelte/icons/chevron-down'
-  import Check from '@lucide/svelte/icons/check'
   import ExternalLink from '@lucide/svelte/icons/external-link'
   import { isAndroid } from '$lib/platform'
-  import { ripple } from '$lib/actions/ripple'
   import { savedSubtitleStyles, applyPresetGlobally, deleteSubtitlePreset, saveSubtitlePreset, type SubtitleStylePreset } from '$lib/settings/subtitle-presets'
 
   // Saved fonting presets (captured in the player). Applying one writes the appearance stores
@@ -76,6 +69,10 @@
     { font: 'Noto Sans', label: 'Noto Sans Bold', note: 'Broad script support' },
     { font: 'Roboto', label: 'Roboto Bold', note: 'Compact and familiar' },
   ]
+  const typefaceOptions = [
+    ...DIALOGUE_TYPEFACES.map((typeface) => ({ value: typeface.font, label: typeface.label, description: typeface.note })),
+    { value: 'custom', label: 'Custom', description: 'Set in Advanced' },
+  ]
 
   function applyDialogueTypeface(font: string) {
     $subtitleFont = font
@@ -88,13 +85,13 @@
       ? $subtitleFont
       : 'custom',
   )
-  let hoveredTypeface = $state<string | null>(null)
-  const selectedTypeface = $derived(quickTypeface === 'custom' ? $subtitleFont : quickTypeface)
-  const previewTypeface = $derived(hoveredTypeface ?? selectedTypeface)
+  const previewTypeface = $derived(quickTypeface === 'custom' ? $subtitleFont : quickTypeface)
   const previewTypefaceLabel = $derived(
     DIALOGUE_TYPEFACES.find((typeface) => typeface.font === previewTypeface)?.label ?? previewTypeface,
   )
-  let fineTuningOpen = $state(false)
+  const styleSummary = $derived($subtitleStyleEnabled
+    ? `${$subtitleFont}${$subtitleBold ? ' Bold' : ''} · ${$subtitleOverrideScope === 'dialogue' ? 'dialogue only' : 'all elements'}`
+    : 'Use each subtitle track’s original styling')
 
   // Shape returned by the Rust `opensubtitles_login` command.
   type OpenSubtitlesLogin = {
@@ -167,48 +164,105 @@
   }
 </script>
 
+{#snippet openSubtitlesBadge()}<SubtitleProviderBadge provider="opensubtitles" />{/snippet}
+{#snippet openSubtitlesMeta()}
+  <span class="inline-flex items-center gap-1.5">
+    <span class="size-1.5 rounded-full {hasProvider('opensubtitles') ? 'bg-emerald-400' : 'bg-white/25'}"></span>
+    {#if !hasProvider('opensubtitles')}Off
+    {:else if $openSubtitlesToken && $openSubtitlesUserName}Connected as {$openSubtitlesUserName}
+    {:else}Search ready · sign in to download{/if}
+  </span>
+{/snippet}
+{#snippet openSubtitlesControl()}
+  <button type="button" data-focusable aria-expanded={expandedProvider === 'opensubtitles'} onclick={() => toggleProviderDetails('opensubtitles')} class="min-h-10 rounded-lg bg-secondary px-3 text-xs font-semibold">{$openSubtitlesToken ? 'Manage' : 'Sign in'}</button>
+  <SettingsSwitch label="Enable OpenSubtitles" value={hasProvider('opensubtitles')} onToggle={() => toggleProvider('opensubtitles')} />
+{/snippet}
+{#snippet subDlBadge()}<SubtitleProviderBadge provider="subdl" />{/snippet}
+{#snippet subDlMeta()}
+  <span class="inline-flex items-center gap-1.5">
+    <span class="size-1.5 rounded-full {!hasProvider('subdl') ? 'bg-white/25' : $subDlApiKey.trim() ? 'bg-emerald-400' : 'bg-amber-400'}"></span>
+    {!hasProvider('subdl') ? 'Off' : $subDlApiKey.trim() ? 'Ready · API key saved' : 'API key required'}
+  </span>
+{/snippet}
+{#snippet subDlControl()}
+  <button type="button" data-focusable aria-expanded={expandedProvider === 'subdl'} onclick={() => toggleProviderDetails('subdl')} class="min-h-10 rounded-lg bg-secondary px-3 text-xs font-semibold">{$subDlApiKey ? 'Manage' : 'Set up'}</button>
+  <SettingsSwitch label="Enable SubDL" value={hasProvider('subdl')} onToggle={() => toggleProvider('subdl')} />
+{/snippet}
+{#snippet jimakuBadge()}<SubtitleProviderBadge provider="jimaku" />{/snippet}
+{#snippet jimakuMeta()}
+  <span class="inline-flex items-center gap-1.5">
+    <span class="size-1.5 rounded-full {!hasProvider('jimaku') ? 'bg-white/25' : $jimakuApiKey.trim() ? 'bg-emerald-400' : 'bg-amber-400'}"></span>
+    {!hasProvider('jimaku') ? 'Off' : $jimakuApiKey.trim() ? 'Ready · API key saved' : 'API key required'}
+  </span>
+{/snippet}
+{#snippet jimakuControl()}
+  <button type="button" data-focusable aria-expanded={expandedProvider === 'jimaku'} onclick={() => toggleProviderDetails('jimaku')} class="min-h-10 rounded-lg bg-secondary px-3 text-xs font-semibold">{$jimakuApiKey ? 'Manage' : 'Set up'}</button>
+  <SettingsSwitch label="Enable Jimaku" value={hasProvider('jimaku')} onToggle={() => toggleProvider('jimaku')} />
+{/snippet}
+
+{#snippet typefacePreview()}
+  <div class="flex min-h-40 items-center justify-center overflow-hidden rounded-xl border border-border bg-black/55 px-5 py-6 text-center">
+    <div class="min-w-0">
+      <p class="truncate text-xs font-bold uppercase tracking-widest text-white/45">Preview · {previewTypefaceLabel}</p>
+      <div
+        class="mt-5 text-2xl font-bold leading-snug"
+        style:font-family={previewTypeface}
+        style:color={$subtitleTextColor}
+        style:-webkit-text-stroke={`${Math.min(1.5, Number($subtitleBorderSize) * 0.35)}px ${$subtitleBorderColor}`}
+        style:text-shadow={`0 ${Math.min(2, Number($subtitleShadow) * 0.4)}px ${Math.min(4, Number($subtitleShadow) * 0.8)}px ${$subtitleBorderColor}`}
+      >
+        <span class="block">The moon is beautiful tonight.</span>
+        <span class="mt-2 block text-[0.78em]">字幕を読みやすく。</span>
+      </div>
+    </div>
+  </div>
+{/snippet}
+
 <SettingsSection section="subtitles">
-<div class="p-4 sm:p-8">
-  <h2 data-settings-page-title class="mb-2 text-3xl font-bold tracking-tight">Subtitles</h2>
-  <p class="mb-4 max-w-2xl text-sm text-muted-foreground">Subtitle sources, appearance, and playback behaviour.</p>
+  <SettingsSubcategory id="appearance">
+    <SettingsRow settingKey="use-custom-subtitle-style" title="Custom subtitle style" description={styleSummary} onActivate={() => ($subtitleStyleEnabled = !$subtitleStyleEnabled)} pressed={$subtitleStyleEnabled}>
+      {#snippet control()}<SettingsSwitch interactive={false} label="Use custom subtitle style" value={$subtitleStyleEnabled} onToggle={() => ($subtitleStyleEnabled = !$subtitleStyleEnabled)} />{/snippet}
+    </SettingsRow>
+    {#if $subtitleStyleEnabled}
+      <SettingsChoiceRow settingKey="typeface" title="Typeface" description="Dialogue font for your custom style." value={quickTypeface} onChange={(font) => { if (font !== 'custom') applyDialogueTypeface(font) }} options={typefaceOptions} />
+      <div class="px-3 py-2.5">{@render typefacePreview()}</div>
+    {/if}
+    {#if !$isAndroid}
+      <SettingsRow settingKey="dual-subtitles" title="Dual subtitles" description="Show a second subtitle-track picker for language learning." onActivate={() => ($secondarySubtitles = !$secondarySubtitles)} pressed={$secondarySubtitles}>
+        {#snippet control()}<SettingsSwitch interactive={false} label="Dual subtitles" value={$secondarySubtitles} onToggle={() => ($secondarySubtitles = !$secondarySubtitles)} />{/snippet}
+      </SettingsRow>
+    {/if}
+  </SettingsSubcategory>
 
-  {#snippet openSubtitlesBadge()}<SubtitleProviderBadge provider="opensubtitles" />{/snippet}
-  {#snippet openSubtitlesMeta()}
-    <span class="inline-flex items-center gap-1.5">
-      <span class="size-1.5 rounded-full {hasProvider('opensubtitles') ? 'bg-emerald-400' : 'bg-white/25'}"></span>
-      {#if !hasProvider('opensubtitles')}Off
-      {:else if $openSubtitlesToken && $openSubtitlesUserName}Connected as {$openSubtitlesUserName}
-      {:else}Search ready · sign in to download{/if}
-    </span>
-  {/snippet}
-  {#snippet openSubtitlesControl()}
-    <button type="button" data-focusable aria-expanded={expandedProvider === 'opensubtitles'} onclick={() => toggleProviderDetails('opensubtitles')} class="min-h-10 rounded-lg bg-secondary px-3 text-xs font-semibold">{$openSubtitlesToken ? 'Manage' : 'Sign in'}</button>
-    <SettingsSwitch label="Enable OpenSubtitles" value={hasProvider('opensubtitles')} onToggle={() => toggleProvider('opensubtitles')} />
-  {/snippet}
-  {#snippet subDlBadge()}<SubtitleProviderBadge provider="subdl" />{/snippet}
-  {#snippet subDlMeta()}
-    <span class="inline-flex items-center gap-1.5">
-      <span class="size-1.5 rounded-full {!hasProvider('subdl') ? 'bg-white/25' : $subDlApiKey.trim() ? 'bg-emerald-400' : 'bg-amber-400'}"></span>
-      {!hasProvider('subdl') ? 'Off' : $subDlApiKey.trim() ? 'Ready · API key saved' : 'API key required'}
-    </span>
-  {/snippet}
-  {#snippet subDlControl()}
-    <button type="button" data-focusable aria-expanded={expandedProvider === 'subdl'} onclick={() => toggleProviderDetails('subdl')} class="min-h-10 rounded-lg bg-secondary px-3 text-xs font-semibold">{$subDlApiKey ? 'Manage' : 'Set up'}</button>
-    <SettingsSwitch label="Enable SubDL" value={hasProvider('subdl')} onToggle={() => toggleProvider('subdl')} />
-  {/snippet}
-  {#snippet jimakuBadge()}<SubtitleProviderBadge provider="jimaku" />{/snippet}
-  {#snippet jimakuMeta()}
-    <span class="inline-flex items-center gap-1.5">
-      <span class="size-1.5 rounded-full {!hasProvider('jimaku') ? 'bg-white/25' : $jimakuApiKey.trim() ? 'bg-emerald-400' : 'bg-amber-400'}"></span>
-      {!hasProvider('jimaku') ? 'Off' : $jimakuApiKey.trim() ? 'Ready · API key saved' : 'API key required'}
-    </span>
-  {/snippet}
-  {#snippet jimakuControl()}
-    <button type="button" data-focusable aria-expanded={expandedProvider === 'jimaku'} onclick={() => toggleProviderDetails('jimaku')} class="min-h-10 rounded-lg bg-secondary px-3 text-xs font-semibold">{$jimakuApiKey ? 'Manage' : 'Set up'}</button>
-    <SettingsSwitch label="Enable Jimaku" value={hasProvider('jimaku')} onToggle={() => toggleProvider('jimaku')} />
-  {/snippet}
+  <SettingsSubcategory id="styles">
+    {#if $savedSubtitleStyles.length}
+      {#each $savedSubtitleStyles as preset (preset.id)}
+        <div class="px-3 py-2.5">
+          <div class="flex min-h-9 flex-wrap items-center gap-2">
+            <span class="min-w-0 flex-1 basis-full sm:basis-40">
+              <span class="block truncate text-sm font-bold">{preset.name}</span>
+              <span class="block truncate text-xs text-muted-foreground">{preset.style.font}{preset.style.bold ? ' Bold' : ''}{preset.source?.title ? ` · ${preset.source.title}` : ''}</span>
+            </span>
+            {#if renamingId !== preset.id}
+              <button type="button" data-touch-target onclick={() => applyPreset(preset)} data-focusable class="rounded-md bg-primary px-2.5 py-1.5 text-xs font-bold text-primary-foreground">Apply</button>
+              <button type="button" data-touch-target onclick={() => startRename(preset)} data-focusable class="rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground">Rename</button>
+              <button type="button" data-touch-target onclick={() => deleteSubtitlePreset(preset.id)} data-focusable aria-label={`Delete ${preset.name}`} class="rounded-md px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10">Delete</button>
+            {/if}
+          </div>
+          {#if renamingId === preset.id}
+          <div class="mt-2 flex items-center gap-2">
+            <input bind:value={renameText} data-focusable aria-label="Style name" class="h-9 min-w-0 flex-1 rounded-md bg-input px-3 text-sm" onkeydown={(e) => { if (e.key === 'Enter') commitRename(preset); else if (e.key === 'Escape') renamingId = null }} />
+            <button type="button" onclick={() => commitRename(preset)} data-focusable class="rounded-md bg-primary px-3 py-2 text-xs font-bold text-primary-foreground">Done</button>
+          </div>
+          {/if}
+        </div>
+      {/each}
+    {:else}
+      <SettingsRow title="No saved styles" description="Save a release’s subtitle style from the player to reuse it here." />
+    {/if}
+  </SettingsSubcategory>
 
-  <SettingsGroup icon={Languages} title="Providers" desc="Choose your sources. Account details stay tucked away until you need them.">
+  <SettingsSubcategory id="providers">
     <SettingsRow settingKey="opensubtitles" title="OpenSubtitles" leading={openSubtitlesBadge} meta={openSubtitlesMeta} control={openSubtitlesControl} expanded={expandedProvider === 'opensubtitles'}>
       {#if $openSubtitlesToken && $openSubtitlesUserName}
         <div class="flex items-center justify-between gap-3">
@@ -242,196 +296,88 @@
     </SettingsRow>
 
     <SettingsRow settingKey="subdl" title="SubDL" leading={subDlBadge} meta={subDlMeta} control={subDlControl} expanded={expandedProvider === 'subdl'}>
-      <CredentialField bind:value={$subDlApiKey} label="SubDL API key" startOpen description="Add your SubDL key to enable subtitle results from this source. The key stays on this device.">
+      <CredentialField bind:value={$subDlApiKey} label="SubDL API key" startOpen description="Enables SubDL results. The key stays on this device.">
         {#snippet help()}<a href="https://subdl.com/panel/api" target="_blank" rel="noopener noreferrer" data-focusable class="inline-flex min-h-9 items-center gap-2 font-semibold underline underline-offset-4">Get API key <ExternalLink size={12} /></a>{/snippet}
       </CredentialField>
     </SettingsRow>
 
     <SettingsRow settingKey="jimaku" title="Jimaku" leading={jimakuBadge} meta={jimakuMeta} control={jimakuControl} expanded={expandedProvider === 'jimaku'}>
-      <CredentialField bind:value={$jimakuApiKey} label="Jimaku API key" startOpen description="Add your Jimaku key to enable subtitle results from this source. The key stays on this device.">
+      <CredentialField bind:value={$jimakuApiKey} label="Jimaku API key" startOpen description="Enables Jimaku results. The key stays on this device.">
         {#snippet help()}<a href="https://jimaku.cc/account" target="_blank" rel="noopener noreferrer" data-focusable class="inline-flex min-h-9 items-center gap-2 font-semibold underline underline-offset-4">Get API key <ExternalLink size={12} /></a>{/snippet}
       </CredentialField>
     </SettingsRow>
-  </SettingsGroup>
+  </SettingsSubcategory>
 
-  {#snippet styleMeta()}
-    {$subtitleStyleEnabled ? `${$subtitleFont}${$subtitleBold ? ' Bold' : ''} · ${$subtitleOverrideScope === 'dialogue' ? 'dialogue only' : 'all elements'}` : 'Use each subtitle track’s original styling'}
-  {/snippet}
-  {#snippet styleControl()}
-    <SettingsSwitch interactive={false} label="Use custom subtitle style" value={$subtitleStyleEnabled} onToggle={() => ($subtitleStyleEnabled = !$subtitleStyleEnabled)} />
-  {/snippet}
-  {#snippet scopeControl()}
-    <SelectMenu className="w-full sm:w-36" value={$subtitleOverrideScope} onChange={(value) => ($subtitleOverrideScope = value as typeof $subtitleOverrideScope)} ariaLabel="Subtitle style scope" options={[
-      { value: 'dialogue', label: 'Dialogue only' },
-      { value: 'all', label: 'All elements' },
-    ]} />
-  {/snippet}
-  {#snippet fineTuningControl()}
-    <span class="grid size-8 place-items-center text-muted-foreground" aria-hidden="true">
-      <ChevronDown size={16} class="transition-transform {fineTuningOpen ? 'rotate-180' : ''}" />
-    </span>
-  {/snippet}
-
-  {#snippet typefacePreview()}
-    <div class="flex min-h-40 items-center justify-center overflow-hidden rounded-xl border border-border bg-black/55 px-5 py-6 text-center lg:min-h-[22rem]">
-      <div class="min-w-0">
-        <p class="truncate text-[10px] font-bold uppercase tracking-widest text-white/45">Preview · {previewTypefaceLabel}</p>
-        <div
-          class="mt-5 text-2xl font-bold leading-snug xl:text-3xl"
-          style:font-family={previewTypeface}
-          style:color={$subtitleTextColor}
-          style:-webkit-text-stroke={`${Math.min(1.5, Number($subtitleBorderSize) * 0.35)}px ${$subtitleBorderColor}`}
-          style:text-shadow={`0 ${Math.min(2, Number($subtitleShadow) * 0.4)}px ${Math.min(4, Number($subtitleShadow) * 0.8)}px ${$subtitleBorderColor}`}
-        >
-          <span class="block">The moon is beautiful tonight.</span>
-          <span class="mt-2 block text-[0.78em]">字幕を読みやすく。</span>
-        </div>
-      </div>
-    </div>
-  {/snippet}
-
-  <div class="lg:grid lg:grid-cols-[minmax(0,42rem)_minmax(18rem,1fr)] lg:items-start lg:gap-6">
-    <div class="min-w-0">
-
-  <SettingsGroup icon={Palette} title="Appearance">
-    <SettingsRow settingKey="use-custom-subtitle-style" title="Custom subtitle style" meta={styleMeta} control={styleControl} onActivate={() => ($subtitleStyleEnabled = !$subtitleStyleEnabled)} pressed={$subtitleStyleEnabled} />
-
-    {#if $subtitleStyleEnabled}
-      <SettingsRow settingKey="subtitle-dialogue-style-overrides" title="Apply style to" description={$subtitleOverrideScope === 'dialogue' ? 'Preserves signs and positioned text where mpv can identify them.' : 'Forces one style over signs, songs, and other typesetting.'} control={scopeControl} controlLayout="stack" />
-
-      <SettingsRow title="Typeface" description="Hover or focus a face to preview it; tap anywhere on a choice to apply it.">
-        <div class="grid gap-1.5 sm:grid-cols-3" role="group" aria-label="Dialogue typeface">
-            {#each DIALOGUE_TYPEFACES as typeface (typeface.font)}
-              {@const selected = quickTypeface === typeface.font}
-              <button
-                type="button"
-                data-focusable
-                aria-pressed={selected}
-                use:ripple
-                onclick={() => applyDialogueTypeface(typeface.font)}
-                onpointerenter={() => (hoveredTypeface = typeface.font)}
-                onpointerleave={() => (hoveredTypeface = null)}
-                onfocus={() => (hoveredTypeface = typeface.font)}
-                onblur={() => (hoveredTypeface = null)}
-                class="ripple-host flex min-h-16 w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left transition-colors
-                  {selected ? 'border-primary/60 bg-primary/10' : 'border-border bg-background/35 hover:border-primary/35 hover:bg-secondary/70'}"
-              >
-                <span class="min-w-0 flex-1">
-                  <span class="block truncate text-sm font-bold">{typeface.label}</span>
-                  <span class="block truncate text-[11px] text-muted-foreground">{typeface.note}</span>
-                </span>
-                <span class="text-lg font-bold text-muted-foreground" style:font-family={typeface.font} aria-hidden="true">Aa</span>
-                <span class="grid size-5 shrink-0 place-items-center rounded-full border {selected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'}" aria-hidden="true">
-                  {#if selected}<Check size={12} strokeWidth={3} />{/if}
-                </span>
-              </button>
-            {/each}
-        </div>
-        <div class="mt-3 lg:hidden">{@render typefacePreview()}</div>
-      </SettingsRow>
-
-      <SettingsRow title="Fine tuning" description="Font, weight, colours, outline, shadow, and position." control={fineTuningControl} expanded={fineTuningOpen} onActivate={() => (fineTuningOpen = !fineTuningOpen)}>
-        <div class="space-y-3">
-          <button
-            type="button"
-            data-focusable
-            use:ripple
-            aria-pressed={$subtitleBold}
-            onclick={() => ($subtitleBold = !$subtitleBold)}
-            class="ripple-host flex min-h-11 w-full items-center justify-between gap-3 rounded-md px-2 text-left transition-colors active:bg-secondary sm:hover:bg-secondary/70"
-          >
-            <span class="text-xs font-bold">Bold dialogue</span>
-            <SettingsSwitch interactive={false} label="Bold dialogue" value={$subtitleBold} onToggle={() => ($subtitleBold = !$subtitleBold)} />
-          </button>
-          <label class="block">
-            <span class="mb-1 block text-xs font-bold">Font family</span>
-            <input type="text" list="subtitle-font-suggestions" bind:value={$subtitleFont} data-focusable class="h-10 w-full rounded-md bg-input px-3 text-sm" />
+  {#if !$isAndroid || $subtitleStyleEnabled}
+    <SettingsSubcategory id="advanced" summary={$isAndroid ? 'Style scope and fine tuning' : 'Fine tuning, SDH cleanup, text filter and sync'}>
+      {#if $subtitleStyleEnabled}
+        <SettingsChoiceRow settingKey="subtitle-dialogue-style-overrides" title="Apply style to" description={$subtitleOverrideScope === 'dialogue' ? 'Preserves signs and positioned text where mpv can identify them.' : 'Forces one style over signs, songs, and other typesetting.'} ariaLabel="Subtitle style scope" value={$subtitleOverrideScope} onChange={(value) => ($subtitleOverrideScope = value as typeof $subtitleOverrideScope)} options={[
+          { value: 'dialogue', label: 'Dialogue only' },
+          { value: 'all', label: 'All elements' },
+        ]} />
+        <SettingsRow settingKey="bold-dialogue" title="Bold dialogue" onActivate={() => ($subtitleBold = !$subtitleBold)} pressed={$subtitleBold}>
+          {#snippet control()}<SettingsSwitch interactive={false} label="Bold dialogue" value={$subtitleBold} onToggle={() => ($subtitleBold = !$subtitleBold)} />{/snippet}
+        </SettingsRow>
+        <SettingsRow settingKey="font-family" title="Font family" description={$isAndroid ? 'Nunito is bundled; missing device fonts fall back automatically.' : 'Any installed font, plus bundled Nunito.'} controlLayout="stack">
+          {#snippet control()}
+            <input type="text" list="subtitle-font-suggestions" bind:value={$subtitleFont} data-focusable aria-label="Font family" class="h-10 w-full rounded-md bg-input px-3 text-sm sm:w-48" />
             <datalist id="subtitle-font-suggestions">
               {#each FONT_SUGGESTIONS as font (font)}<option value={font}></option>{/each}
             </datalist>
-            <span class="mt-1 block text-[11px] text-muted-foreground">{$isAndroid ? 'Nunito is bundled; missing device fonts fall back automatically.' : 'Any installed font, plus bundled Nunito.'}</span>
-          </label>
-          <div class="grid grid-cols-2 gap-3">
-            <label><span class="mb-1 block text-xs font-bold">Text</span><input type="color" bind:value={$subtitleTextColor} data-focusable class="h-9 w-full rounded-md bg-input p-1" /></label>
-            <label><span class="mb-1 block text-xs font-bold">Outline</span><input type="color" bind:value={$subtitleBorderColor} data-focusable class="h-9 w-full rounded-md bg-input p-1" /></label>
-          </div>
-          <div class="grid gap-x-4 gap-y-3 sm:grid-cols-2">
-            <label class="text-xs"><span class="flex justify-between font-bold"><span>Size</span><span>{$subtitleFontSize}px</span></span><input type="range" min="20" max="80" step="1" bind:value={$subtitleFontSize} data-focusable class="h-7 w-full accent-primary" /></label>
-            <label class="text-xs"><span class="flex justify-between font-bold"><span>Outline</span><span>{$subtitleBorderSize}px</span></span><input type="range" min="0" max="8" step="0.5" bind:value={$subtitleBorderSize} data-focusable class="h-7 w-full accent-primary" /></label>
-            <label class="text-xs"><span class="flex justify-between font-bold"><span>Shadow</span><span>{$subtitleShadow}px</span></span><input type="range" min="0" max="8" step="0.5" bind:value={$subtitleShadow} data-focusable class="h-7 w-full accent-primary" /></label>
-            <label class="text-xs"><span class="flex justify-between font-bold"><span>Position</span><span>{$subtitlePosition}%</span></span><input type="range" min="10" max="100" step="1" bind:value={$subtitlePosition} data-focusable class="h-7 w-full accent-primary" /></label>
-          </div>
-        </div>
-      </SettingsRow>
-    {/if}
-  </SettingsGroup>
-
-  <SettingsGroup icon={Bookmark} title="Saved styles">
-    {#if $savedSubtitleStyles.length}
-      {#each $savedSubtitleStyles as preset (preset.id)}
-        <div class="px-3 py-2.5">
-          <div class="flex min-h-9 flex-wrap items-center gap-2">
-            <span class="min-w-0 flex-1 basis-full sm:basis-40">
-              <span class="block truncate text-sm font-bold">{preset.name}</span>
-              <span class="block truncate text-[11px] text-muted-foreground">{preset.style.font}{preset.style.bold ? ' Bold' : ''}{preset.source?.title ? ` · ${preset.source.title}` : ''}</span>
-            </span>
-            {#if renamingId !== preset.id}
-              <button type="button" data-touch-target onclick={() => applyPreset(preset)} data-focusable class="rounded-md bg-primary px-2.5 py-1.5 text-xs font-bold text-primary-foreground">Apply</button>
-              <button type="button" data-touch-target onclick={() => startRename(preset)} data-focusable class="rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground">Rename</button>
-              <button type="button" data-touch-target onclick={() => deleteSubtitlePreset(preset.id)} data-focusable aria-label={`Delete ${preset.name}`} class="rounded-md px-2 py-1.5 text-xs text-destructive hover:bg-destructive/10">Delete</button>
-            {/if}
-          </div>
-          {#if renamingId === preset.id}
-          <div class="mt-2 flex items-center gap-2">
-            <input bind:value={renameText} data-focusable aria-label="Style name" class="h-9 min-w-0 flex-1 rounded-md bg-input px-3 text-sm" onkeydown={(e) => { if (e.key === 'Enter') commitRename(preset); else if (e.key === 'Escape') renamingId = null }} />
-            <button type="button" onclick={() => commitRename(preset)} data-focusable class="rounded-md bg-primary px-3 py-2 text-xs font-bold text-primary-foreground">Done</button>
-          </div>
-          {/if}
-        </div>
-      {/each}
-    {:else}
-      <SettingsRow title="No saved styles" description="Save a release’s subtitle style from the player to reuse it here." />
-    {/if}
-  </SettingsGroup>
-
-  <!-- Speech-analysis sync shells out to a local ffmpeg, which Android has no path to — the toggle
-       was a control that could never do anything there. -->
-  {#if !$isAndroid}
-    {#snippet autoSyncControl()}<SettingsSwitch interactive={false} label="Automatically sync external subtitles" value={$subtitleAutoSync} onToggle={() => ($subtitleAutoSync = !$subtitleAutoSync)} />{/snippet}
-    {#snippet dualControl()}<SettingsSwitch interactive={false} label="Dual subtitles" value={$secondarySubtitles} onToggle={() => ($secondarySubtitles = !$secondarySubtitles)} />{/snippet}
-    {#snippet sdhControl()}<SettingsSwitch interactive={false} label="Remove SDH annotations" value={$subtitleStripSdh} onToggle={() => ($subtitleStripSdh = !$subtitleStripSdh)} />{/snippet}
-    {#snippet strongerSdhControl()}<SettingsSwitch interactive={false} label="Stronger SDH removal" value={$subtitleStripSdhHarder} onToggle={() => ($subtitleStripSdhHarder = !$subtitleStripSdhHarder)} />{/snippet}
-    {#snippet regexControl()}
-      <input type="text" bind:value={$subtitleRegexFilter} data-focusable aria-label="Subtitle text filter" placeholder="Optional regex" class="h-9 w-36 rounded-md bg-input px-3 text-sm sm:w-48" />
-    {/snippet}
-
-    <SettingsGroup icon={RefreshCw} title="Playback & cleanup">
-      <SettingsRow title="Automatic sync" description="Align external text subtitles using local speech analysis." control={autoSyncControl} onActivate={() => ($subtitleAutoSync = !$subtitleAutoSync)} pressed={$subtitleAutoSync} />
-
-      <SettingsRow title="Dual subtitles" description="Show a second subtitle-track picker for language learning." control={dualControl} onActivate={() => ($secondarySubtitles = !$secondarySubtitles)} pressed={$secondarySubtitles} />
-
-      <SettingsRow title="Remove SDH annotations" description="Hide speaker labels and sound descriptions." control={sdhControl} onActivate={() => ($subtitleStripSdh = !$subtitleStripSdh)} pressed={$subtitleStripSdh} />
-
-      {#if $subtitleStripSdh}
-        <SettingsRow title="Stronger cleanup" description="Catches more annotations but can remove intentional text." control={strongerSdhControl} onActivate={() => ($subtitleStripSdhHarder = !$subtitleStripSdhHarder)} pressed={$subtitleStripSdhHarder} />
+          {/snippet}
+        </SettingsRow>
+        <SettingsRow settingKey="subtitle-colours" title="Colours" description="Text and outline.">
+          {#snippet control()}
+            <input type="color" bind:value={$subtitleTextColor} data-focusable aria-label="Text colour" class="h-9 w-12 rounded-md bg-input p-1" />
+            <input type="color" bind:value={$subtitleBorderColor} data-focusable aria-label="Outline colour" class="h-9 w-12 rounded-md bg-input p-1" />
+          {/snippet}
+        </SettingsRow>
+        <SettingsRow settingKey="subtitle-size" title="Size" controlLayout="stack">
+          {#snippet control()}
+            <input type="range" min="20" max="80" step="1" bind:value={$subtitleFontSize} data-focusable aria-label="Subtitle size" class="h-7 w-full accent-primary sm:w-48" />
+            <output class="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{$subtitleFontSize}px</output>
+          {/snippet}
+        </SettingsRow>
+        <SettingsRow settingKey="subtitle-outline" title="Outline" controlLayout="stack">
+          {#snippet control()}
+            <input type="range" min="0" max="8" step="0.5" bind:value={$subtitleBorderSize} data-focusable aria-label="Subtitle outline" class="h-7 w-full accent-primary sm:w-48" />
+            <output class="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{$subtitleBorderSize}px</output>
+          {/snippet}
+        </SettingsRow>
+        <SettingsRow settingKey="subtitle-shadow" title="Shadow" controlLayout="stack">
+          {#snippet control()}
+            <input type="range" min="0" max="8" step="0.5" bind:value={$subtitleShadow} data-focusable aria-label="Subtitle shadow" class="h-7 w-full accent-primary sm:w-48" />
+            <output class="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{$subtitleShadow}px</output>
+          {/snippet}
+        </SettingsRow>
+        <SettingsRow settingKey="subtitle-position" title="Position" controlLayout="stack">
+          {#snippet control()}
+            <input type="range" min="10" max="100" step="1" bind:value={$subtitlePosition} data-focusable aria-label="Subtitle position" class="h-7 w-full accent-primary sm:w-48" />
+            <output class="w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{$subtitlePosition}%</output>
+          {/snippet}
+        </SettingsRow>
       {/if}
 
-      <SettingsRow title="Text filter" description="Hide lines matching an mpv regular expression." control={regexControl} />
-    </SettingsGroup>
+      <!-- Speech-analysis sync shells out to a local ffmpeg, which Android has no path to — the toggle
+           was a control that could never do anything there. -->
+      {#if !$isAndroid}
+        <SettingsRow settingKey="automatic-sync" title="Automatic sync" description="Align external text subtitles using local speech analysis." onActivate={() => ($subtitleAutoSync = !$subtitleAutoSync)} pressed={$subtitleAutoSync}>
+          {#snippet control()}<SettingsSwitch interactive={false} label="Automatically sync external subtitles" value={$subtitleAutoSync} onToggle={() => ($subtitleAutoSync = !$subtitleAutoSync)} />{/snippet}
+        </SettingsRow>
+        <SettingsRow settingKey="remove-sdh-annotations" title="Remove SDH annotations" description="Hide speaker labels and sound descriptions." onActivate={() => ($subtitleStripSdh = !$subtitleStripSdh)} pressed={$subtitleStripSdh}>
+          {#snippet control()}<SettingsSwitch interactive={false} label="Remove SDH annotations" value={$subtitleStripSdh} onToggle={() => ($subtitleStripSdh = !$subtitleStripSdh)} />{/snippet}
+        </SettingsRow>
+        {#if $subtitleStripSdh}
+          <SettingsRow settingKey="stronger-cleanup" title="Stronger cleanup" description="Catches more annotations but can remove intentional text." onActivate={() => ($subtitleStripSdhHarder = !$subtitleStripSdhHarder)} pressed={$subtitleStripSdhHarder}>
+            {#snippet control()}<SettingsSwitch interactive={false} label="Stronger SDH removal" value={$subtitleStripSdhHarder} onToggle={() => ($subtitleStripSdhHarder = !$subtitleStripSdhHarder)} />{/snippet}
+          </SettingsRow>
+        {/if}
+        <SettingsRow settingKey="text-filter" title="Text filter" description="Hide lines matching an mpv regular expression.">
+          {#snippet control()}
+            <input type="text" bind:value={$subtitleRegexFilter} data-focusable aria-label="Subtitle text filter" placeholder="Optional regex" class="h-9 w-36 rounded-md bg-input px-3 text-sm sm:w-48" />
+          {/snippet}
+        </SettingsRow>
+      {/if}
+    </SettingsSubcategory>
   {/if}
-
-    </div>
-
-    {#if $subtitleStyleEnabled}
-      <aside class="sticky top-8 hidden min-w-0 lg:block" aria-label="Typeface preview">
-        <div class="mb-2 px-1">
-          <h3 class="text-sm font-black">Typeface preview</h3>
-          <p class="text-[11px] leading-4 text-muted-foreground">Hover or focus a typeface to compare it here.</p>
-        </div>
-        {@render typefacePreview()}
-      </aside>
-    {/if}
-  </div>
-
-</div>
 </SettingsSection>

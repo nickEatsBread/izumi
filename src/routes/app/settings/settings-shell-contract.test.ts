@@ -12,7 +12,6 @@ const css = read('../../../app.css')
 /** Each settings page's leading title as it reads with the marker (spec §5.4). Collections marks its
  *  "← Catalog" link too: on the phone the back-header replaces both. */
 const PAGE_TITLES: Array<[string, string]> = [
-  ['subtitles/+page.svelte', '<h2 data-settings-page-title class="mb-2 text-3xl font-bold tracking-tight">Subtitles</h2>'],
   ['store/+page.svelte', '<h2 data-settings-page-title class="text-xl font-black">Store</h2>'],
   ['catalog/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Catalog</h2>'],
   ['catalog/home/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Customize Home</h2>'],
