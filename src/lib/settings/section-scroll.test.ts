@@ -235,6 +235,17 @@ describe('trackSectionScroll', () => {
       expect(document.activeElement?.id).toBe('advanced-first')
     })
 
+    it("skips a folded subcategory's fold toggle, where the next A would fold it back up", () => {
+      inputType.set('dpad')
+      const page = withControls()
+      // SettingsSubcategory's foldable markup: the heading is a toggle, the rows sit in the body.
+      document.getElementById('advanced')!.innerHTML = `<h3><button data-focusable data-subcategory-toggle>Advanced</button></h3>
+        <div data-settings-subcategory-body><button id="advanced-first" data-focusable>First</button></div>`
+      page.tracker.jump('advanced')
+      flushFrames()
+      expect(document.activeElement?.id).toBe('advanced-first')
+    })
+
     it('stays on the chip for mouse and touch', () => {
       withControls().tracker.jump('skipping')
       expect(document.activeElement?.id).toBe('chip')

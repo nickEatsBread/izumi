@@ -90,8 +90,12 @@ export function trackSectionScroll(
         jumpFrame = 0
         target.scrollIntoView({ behavior: reducedMotion() ? 'instant' : 'smooth', block: 'start' })
         // On a pad or TV focus follows the jump: left on the chip, the next press would start from
-        // there and scroll straight back up.
-        if (focusRestoreAllowed()) firstSafeControl(target)?.focus({ preventScroll: true })
+        // there and scroll straight back up. A foldable block's heading is its fold toggle, where the
+        // next A would fold the block straight back up, so look in the body first.
+        if (!focusRestoreAllowed()) return
+        const body = target.querySelector<HTMLElement>('[data-settings-subcategory-body]')
+        const control = (body && firstSafeControl(body)) ?? firstSafeControl(target)
+        control?.focus({ preventScroll: true })
       }
       cancelAnimationFrame(jumpFrame)
       // A folded body unhides on Svelte's next flush; scrolling before it would stop at the old page end.

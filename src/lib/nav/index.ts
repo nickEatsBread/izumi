@@ -500,6 +500,11 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
   }
   const portHeight = Math.max(0, port.bottom - port.top)
   const portWidth = Math.max(0, port.right - port.left)
+  // A settings section's pinned bar (SettingsSection) sits under the titlebar/top bar, and under a
+  // top bar the two outgrow the start margin: keep the control clear of the bar's bottom edge.
+  const pinned = vertical && !pane
+    ? document.querySelector('[data-settings-sticky][data-visible]')?.getBoundingClientRect().bottom ?? 0
+    : 0
   // Keep extra space in the direction of travel. This makes the NEXT row/card visible and prevents
   // controller focus from slowly riding the bottom/right edge until it disappears from view.
   const top = revealAxisDelta({
@@ -507,7 +512,7 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
     itemEnd: item.bottom,
     portStart: port.top,
     portEnd: port.bottom,
-    startMargin: clamp(portHeight * 0.12, 40, 96),
+    startMargin: Math.max(clamp(portHeight * 0.12, 40, 96), pinned + 16),
     endMargin: clamp(portHeight * 0.2, 64, 144),
   })
   const left = revealAxisDelta({
