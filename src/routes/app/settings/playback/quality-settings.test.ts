@@ -4,16 +4,21 @@ import { describe, expect, it } from 'vitest'
 
 const page = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.url)), 'utf8')
 
-describe('player quality settings', () => {
-  it('exposes video quality on Android instead of treating playback as an external app', () => {
+describe('playback rendering preset', () => {
+  it('exposes the rendering preset on Android instead of treating playback as an external app', () => {
     expect(page).not.toContain('On Android playback hands off to an external app')
     expect(page).toContain('embedded Android libmpv plugin')
-    expect(page).toContain('ariaLabel="Video quality"')
+    expect(page).toContain('settingKey="rendering-preset" title="Rendering preset"')
   })
 
   it('keeps Anime shaders desktop-only', () => {
     expect(page).toContain('$isAndroid ? []')
     expect(page).toContain("value: 'anime'")
+  })
+
+  it('asks before downloading the Anime shader', () => {
+    expect(page).toContain("if (value === 'anime') { pendingAnime = true; return } // confirm download first")
+    expect(page).toContain('onChange={chooseRenderingPreset}')
   })
 
   it('only shows Direct3D driver upscaling on Windows', () => {

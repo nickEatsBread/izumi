@@ -37,8 +37,9 @@ describe('settings search', () => {
     })
   })
 
-  it('finds video quality on Android now that embedded libmpv consumes the presets', () => {
-    expect(searchSettings('video quality', true)[0]?.title).toBe('Video quality')
+  it('finds the rendering preset on Android, by its old name too', () => {
+    expect(searchSettings('rendering preset', true)[0]?.title).toBe('Rendering preset')
+    expect(searchSettings('video quality', true)[0]?.title).toBe('Rendering preset')
   })
 
   it('finds the rating settings by the words people use for scoring', () => {
@@ -108,7 +109,7 @@ const titles = (query: string, env?: Parameters<typeof searchSettings>[1]) => se
 
 /** Rows the in-app player owns (commit 12's gates): desktop and Android full builds, not the lite build. */
 const IN_APP_PLAYER_ROWS = [
-  'Audio processing', 'Video quality', 'P2P playback status', 'Auto-play next episode', 'Show Up Next countdown',
+  'Audio processing', 'Rendering preset', 'P2P playback status', 'Auto-play next episode', 'Show Up Next countdown',
   'Keep screen awake while playing', 'Binge next episode (preload)', 'Auto-skip openings & endings',
   'Auto-skip next-episode previews', 'Skip filler episodes', 'Scrub preview thumbnails', 'Include subtitles in GIFs',
   'Seek duration', 'Home-theatre audio', 'Dolby Vision source handling',

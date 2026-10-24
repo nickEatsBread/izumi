@@ -5,8 +5,7 @@
   import { page } from '$app/stores'
   import { addonUrls, disabledSources, normalizeBase, replaceAddonBase } from '$lib/stremio/sources'
   import {
-    autoSelectSource, autoSelectCountdown, preferredQuality, seadexAnnotations,
-    sourcePriority, sourcePriorityMode, adaptiveSourceMode, extensionUrls,
+    sourcePriority, sourcePriorityMode, extensionUrls,
     disabledExtensions,
   } from '$lib/settings/ui'
   import { classifySourceSpec } from '$lib/settings/classify-source-spec'
@@ -44,18 +43,8 @@
   import Trash2 from '@lucide/svelte/icons/trash-2'
   import X from '@lucide/svelte/icons/x'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
-  import Toggle from '$lib/components/settings/Toggle.svelte'
   import { masonryItem } from '$lib/actions/masonry'
   import { navLayer } from '$lib/nav/overlay'
-
-  // One control over two stores: whether to auto-pick at all, and whether to wait first. They were
-  // separate toggles, which read as unrelated settings even though the second only means anything
-  // when the first is on.
-  const autoMode = $derived(!$autoSelectSource ? 'off' : $autoSelectCountdown ? 'countdown' : 'instant')
-  function setAutoMode(mode: string) {
-    $autoSelectSource = mode !== 'off'
-    if (mode !== 'off') $autoSelectCountdown = mode === 'countdown'
-  }
 
   let input = $state('')
   let addError = $state('')
@@ -377,75 +366,6 @@
   {#if activeTab === 'playback'}
   <div id="sources-panel-playback" role="tabpanel" aria-labelledby="sources-tab-playback">
   <CommunitySources section="torrent-debrid" />
-
-  <section class="mt-10" aria-labelledby="automatic-selection-heading">
-    <div class="mb-4">
-      <h3 id="automatic-selection-heading" class="text-base font-black">Automatic selection</h3>
-      <p class="mt-1 text-xs text-muted-foreground">Control whether Izumi chooses for you and what makes a result the best match.</p>
-    </div>
-  <div class="mb-6 max-w-2xl space-y-3">
-    <label data-setting-key="auto-play-the-best-source" class="flex flex-col gap-1">
-      <span class="text-sm font-bold">Auto-play the best source</span>
-      <SelectMenu
-        value={autoMode}
-        onChange={setAutoMode}
-        ariaLabel="Auto-play the best source"
-        options={[
-          { value: 'countdown', label: 'After a short countdown' },
-          { value: 'instant', label: 'Immediately' },
-          { value: 'off', label: 'Off — always choose manually' },
-        ]}
-      />
-      <span class="text-xs text-muted-foreground">
-        {#if autoMode === 'off'}The source list stays open until you pick one yourself.
-        {:else if autoMode === 'instant'}The best cached match for your preferred quality plays the moment the source list settles — no wait, no chance to cancel.
-        {:else}Once the source list settles, the Auto button fills left→right, then the best cached match for your preferred quality plays. With Mark best releases on, it waits a moment longer for the curated verdict rather than committing without it. Cancel any time by picking another source or interacting.{/if}
-      </span>
-    </label>
-
-    {#if $autoSelectSource}
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-bold">Preferred quality</span>
-        <SelectMenu
-          bind:value={$preferredQuality}
-          ariaLabel="Preferred quality"
-          options={[
-            { value: '2160', label: '4K' },
-            { value: '1080', label: '1080p' },
-            { value: '720', label: '720p' },
-            { value: '480', label: '480p' },
-            { value: 'any', label: 'Any (highest available)' },
-          ]}
-        />
-      </label>
-    {/if}
-
-    <label data-setting-key="adaptive-source-planner" class="flex flex-col gap-1">
-      <span class="text-sm font-bold">Adaptive source planner</span>
-      <SelectMenu
-        bind:value={$adaptiveSourceMode}
-        ariaLabel="Adaptive source planner"
-        options={[
-          { value: 'active', label: 'On — adapt automatic choices' },
-          { value: 'shadow', label: 'Preview — learn without changing playback' },
-          { value: 'off', label: 'Off' },
-        ]}
-      />
-      <span class="text-xs text-muted-foreground">
-        {#if $adaptiveSourceMode === 'active'}Adapts automatic choices and bounded recovery using repeated, recent outcomes stored only on this device. A bad route can trigger another route; wrong content always triggers another release. It cannot override cache, quality, audio language, or your source order.
-        {:else if $adaptiveSourceMode === 'shadow'}Uses repeated, recent playback outcomes stored only on this device to preview a safer first source. It cannot override cache, quality, audio language, or your source order, and it does not change what Auto plays yet.
-        {:else}Only the established source ranking is used. Existing local outcome summaries stay private on this device and can be cleared with local history.{/if}
-      </span>
-    </label>
-
-    <Toggle
-      label="Mark best releases"
-      desc="Check releases.moe for the release its curators rate best for each title, badge it in the source list, and put it first among the sources of the same resolution. Never picks a lower resolution than you would have got without it. Adds no source — it only annotates what your addons already found."
-      value={$seadexAnnotations}
-      onToggle={() => ($seadexAnnotations = !$seadexAnnotations)}
-    />
-  </div>
-  </section>
   </div>
   {/if}
 

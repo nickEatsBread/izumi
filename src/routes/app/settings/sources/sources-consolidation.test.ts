@@ -34,11 +34,12 @@ describe('unified Sources settings', () => {
     expect(page).toContain("{ id: 'playback', label: 'Playback'")
     expect(page).toContain("{ id: 'ordering', label: 'Ordering'")
     expect(page).toMatch(/<CommunitySources\s+[\s\S]*?section="manage"/)
-    // Sub/dub and source languages moved to Settings › Languages (settings redesign P1B).
+    // Sub/dub and source languages moved to Settings › Languages, automatic selection to Settings ›
+    // Playback (settings redesign P1B); Torrent and debrid waits for its Sources subcategory.
     expect(page).not.toContain('section="community-results"')
     expect(communitySources).not.toContain("section === 'community-results'")
+    expect(page).not.toContain('automatic-selection-heading')
     expect(page).toContain('<CommunitySources section="torrent-debrid" />')
-    expect(page.indexOf('section="torrent-debrid"')).toBeLessThan(page.indexOf('automatic-selection-heading'))
     expect(communitySources).not.toContain('Community sources run third-party code')
   })
 

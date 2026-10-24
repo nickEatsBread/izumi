@@ -5,15 +5,16 @@ import { describe, expect, it } from 'vitest'
 const page = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.url)), 'utf8')
 
 describe('home-theatre capability diagnostics', () => {
-  it('keeps home-theatre controls near the bottom of Player settings', () => {
-    const externalPlayer = page.indexOf('Enable external player')
-    const homeTheatreAudio = page.indexOf('Home-theatre audio')
-    const dolbyVision = page.indexOf('Dolby Vision source handling')
-    const gameMode = page.indexOf('>Game mode<')
+  it('keeps home-theatre audio and Dolby Vision in Advanced, before the external player', () => {
+    const advanced = page.indexOf('<SettingsSubcategory id="advanced"')
+    const homeTheatreAudio = page.indexOf('title="Home-theatre audio"')
+    const dolbyVision = page.indexOf('title="Dolby Vision source handling"')
+    const externalPlayer = page.indexOf('title="Enable external player"')
 
-    expect(homeTheatreAudio).toBeGreaterThan(externalPlayer)
+    expect(advanced).toBeGreaterThan(-1)
+    expect(homeTheatreAudio).toBeGreaterThan(advanced)
     expect(dolbyVision).toBeGreaterThan(homeTheatreAudio)
-    expect(gameMode).toBeGreaterThan(dolbyVision)
+    expect(externalPlayer).toBeGreaterThan(dolbyVision)
   })
 
   it('only renders the raw capability report when developer logging is enabled', () => {

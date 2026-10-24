@@ -20,10 +20,10 @@ describe('Toggle settingKey', () => {
   })
 })
 
-// Spec §5.1: the Player page shows a row wherever the player that reads the setting runs. The
+// Spec §5.1: the Playback page shows a row wherever the player that reads the setting runs. The
 // evaluator below walks the page markup with the build's {#if} gates decided and lists the settings
-// stores a user can reach. A gate on other runtime state ($developerLogging, the chosen quality
-// preset, the audio output mode, a pending consent) counts as "either way": both branches are reachable.
+// stores a user can reach. A gate on other runtime state ($developerLogging, the chosen preset, the
+// audio output mode, a pending consent) counts as "either way": both branches are reachable.
 const page = read('./+page.svelte')
 
 type Gate = '$isAndroid' | '$isAndroidTv' | '$inAppPlayerAvailable' | '$isWindows'
@@ -106,6 +106,10 @@ function visit(nodes: AstNode[], env: Env, reached: Reached) {
         visit((node.body as Fragment).nodes, env, reached)
         if (node.fallback) visit((node.fallback as Fragment).nodes, env, reached)
         break
+      // A row's control snippet is declared inside the row and rendered by it.
+      case 'SnippetBlock':
+        visit((node.body as Fragment).nodes, env, reached)
+        break
       case 'ExpressionTag':
       case 'HtmlTag':
       case 'RenderTag':
@@ -118,7 +122,7 @@ function visit(nodes: AstNode[], env: Env, reached: Reached) {
         visit((node.fragment as Fragment).nodes, env, reached)
         break
       default:
-        throw new Error(`the Player page has a ${node.type} node; teach this evaluator about it`)
+        throw new Error(`the Playback page has a ${node.type} node; teach this evaluator about it`)
     }
   }
 }
@@ -144,7 +148,7 @@ function attribute(element: AstNode, name: string): string | true | null | undef
 const sorted = (values: readonly string[]) => [...values].sort()
 
 /** Rows every build shows: they steer source choice and the end-of-series prompt, not a player. */
-const EVERY_BUILD = ['continueSourcePreference', 'seriesRatingPrompt']
+const EVERY_BUILD = ['seriesRatingPrompt', 'preferredQuality', 'continueSourcePreference', 'adaptiveSourceMode', 'seadexAnnotations']
 /** Settings the in-app player reads: desktop mpv and the Android full build's embedded player. */
 const IN_APP = [
   'videoQualityPreset', 'qualityNotice', 'rawMpvOptions', 'qualityFailedKeys', 'audioProcessing',
@@ -156,24 +160,25 @@ const IN_APP = [
 ]
 /** Desktop mpv tuning and OS / Game-mode integrations. */
 const DESKTOP_ONLY = [
-  'windowsVsr', 'systemMediaControls', 'discordRichPresence', 'playerProgressAnimations',
-  'subtitleLineNavigation', 'hideSidebarWhilePlaying', 'gifScale', 'gifMaxSeconds', 'playerCacheMb', 'enableExternalPlayer',
+  'windowsVsr', 'systemMediaControls', 'discordRichPresence', 'hideSidebarWhilePlaying', 'playerProgressAnimations',
+  'subtitleLineNavigation', 'gifScale', 'gifMaxSeconds', 'playerCacheMb', 'enableExternalPlayer',
   'externalPlayerPath', 'audioOutputDevice', 'playerTitleTop',
 ]
 const LITE_NOTICE = "This build plays videos in your device's video player, so the in-app player options are not shown."
 
-describe('Player settings per build (spec §5.1)', () => {
-  it('keeps every desktop row, in the order it had before the gates', () => {
+describe('Playback settings per build (spec §5.1)', () => {
+  it('keeps every desktop row, in subcategory order', () => {
     expect(reach('desktop').stores).toEqual([
-      'videoQualityPreset', 'qualityNotice', 'rawMpvOptions',
-      'qualityFailedKeys', 'windowsVsr', 'audioProcessing', 'p2pStatusVisibility', 'continueSourcePreference',
-      'autoplayNext', 'upNextOverlay', 'seriesRatingPrompt', 'systemMediaControls', 'discordRichPresence',
-      'keepAwakeWhilePlaying', 'bingePreload', 'autoSkip', 'skipPreviews', 'skipFiller', 'scrubThumbnails',
-      'playerProgressAnimations', 'subtitleLineNavigation', 'hideSidebarWhilePlaying', 'gifIncludeSubtitles', 'gifScale', 'gifMaxSeconds',
-      'playerCacheMb', 'seekDuration', 'enableExternalPlayer', 'externalPlayerPath', 'audioOutputMode',
+      'autoplayNext', 'upNextOverlay', 'bingePreload', 'seriesRatingPrompt', 'autoSkip', 'skipPreviews',
+      'skipFiller', 'seekDuration', 'scrubThumbnails', 'keepAwakeWhilePlaying', 'systemMediaControls',
+      'discordRichPresence', 'hideSidebarWhilePlaying', 'p2pStatusVisibility', 'gifIncludeSubtitles', 'gifScale',
+      'gifMaxSeconds', 'preferredQuality', 'continueSourcePreference', 'videoQualityPreset', 'qualityNotice',
+      'rawMpvOptions', 'qualityFailedKeys', 'windowsVsr', 'playerCacheMb', 'audioProcessing', 'audioOutputMode',
       'audioPassthroughAc3', 'audioPassthroughEac3', 'audioPassthroughTruehd', 'audioPassthroughDts',
       'audioPassthroughDtsHd', 'audioExclusive', 'audioOutputDevice', 'dolbyCapabilities',
-      'dolbyVisionOutputMode', 'drmDolbyStatus', 'dolbyCapabilityError', 'playerTitleTop',
+      'dolbyVisionOutputMode', 'enableExternalPlayer', 'externalPlayerPath', 'playerProgressAnimations',
+      'subtitleLineNavigation', 'playerTitleTop', 'adaptiveSourceMode', 'seadexAnnotations',
+      'drmDolbyStatus', 'dolbyCapabilityError',
     ])
     expect(sorted(reach('desktop').stores)).toEqual(sorted([...EVERY_BUILD, ...IN_APP, ...DESKTOP_ONLY]))
   })
@@ -197,35 +202,34 @@ describe('Player settings per build (spec §5.1)', () => {
     for (const name of ['full', 'tv'] as const) {
       const { elements } = reach(name)
       expect(elements.filter((el) => el.name === 'input' && attribute(el, 'type') === 'number'), name).toEqual([])
-      const seek = elements.filter((el) => el.name === 'SelectMenu' && attribute(el, 'ariaLabel') === 'Seek duration')
+      const seek = elements.filter((el) => el.name === 'SettingsChoiceRow' && attribute(el, 'settingKey') === 'seek-duration')
       expect(seek, name).toHaveLength(1)
       expect(attribute(seek[0], 'searchable'), name).toBeUndefined()
     }
-    // Desktop keeps its two number fields: the Custom player cache and the seek step.
+    // Desktop keeps its two number fields: the custom player cache and the seek step.
     expect(reach('desktop').elements.filter((el) => el.name === 'input' && attribute(el, 'type') === 'number')).toHaveLength(2)
     expect(page).toContain('const SEEK_PRESETS = [5, 10, 15, 20, 30, 45, 60, 90]')
-    expect(page).toContain('ariaLabel="Seek duration" options={seekOptions}')
+    expect(page).toContain('options={seekOptions}')
   })
 
   it('documents that Binge also advances with Auto-play off (decision 11)', () => {
-    const binge = reach('desktop').elements.find((el) => el.name === 'Toggle' && attribute(el, 'label') === 'Binge next episode (preload)')
-    expect(binge && attribute(binge, 'desc')).toContain('the next episode also starts by itself when one ends, even with Auto-play off')
+    const binge = reach('desktop').elements.find((el) => el.name === 'SettingsRow' && attribute(el, 'settingKey') === 'binge-next-episode-preload')
+    expect(binge && attribute(binge, 'description')).toContain('even with Auto-play off')
   })
 
-  it('keys every Toggle whose label is a translated message, and the desktop GIF row, for search', () => {
-    const toggles = [...reach('desktop').elements, ...reach('full').elements].filter((el) => el.name === 'Toggle')
-    const translated = toggles.filter((el) => attribute(el, 'label') === null)
-    expect(translated.length).toBeGreaterThan(0)
-    for (const el of translated) expect(typeof attribute(el, 'settingKey')).toBe('string')
-    const keys = new Set(toggles.map((el) => attribute(el, 'settingKey')).filter((key): key is string => typeof key === 'string'))
-    expect([...keys].sort()).toEqual([
-      'ask-for-a-rating-when-a-series-ends',
-      'auto-play-next-episode',
-      'include-subtitles-in-gifs',
-      'show-up-next-countdown',
+  it('keys every switch row, keeping the keys the old Toggle labels made', () => {
+    const switches = [...reach('desktop').elements, ...reach('full').elements]
+      .filter((el) => el.name === 'SettingsRow' && attribute(el, 'onActivate') !== undefined)
+    for (const el of switches) expect(typeof attribute(el, 'settingKey')).toBe('string')
+    expect([...new Set(switches.map((el) => attribute(el, 'settingKey') as string))].sort()).toEqual([
+      'animate-player-progress-controls', 'ask-for-a-rating-when-a-series-ends', 'auto-play-next-episode',
+      'auto-skip-next-episode-previews', 'auto-skip-openings-endings', 'binge-next-episode-preload',
+      'discord-rich-presence', 'dolby-digital', 'dolby-digital-plus', 'dolby-truehd', 'dts', 'dts-hd-dts-x',
+      'enable-external-player', 'exclusive-audio-device', 'hide-sidebar-while-playing', 'include-subtitles-in-gifs',
+      'keep-screen-awake-while-playing', 'mark-best-releases', 'miniplayer-when-you-leave-the-app',
+      'scrub-preview-thumbnails', 'show-up-next-countdown', 'skip-filler-episodes', 'subtitle-line-navigation',
+      'system-media-controls', 'title-at-top-of-player-game-mode',
     ])
-    const desktopGif = reach('desktop').elements.find((el) => el.name === 'Toggle' && attribute(el, 'label') === 'Include subtitles')
-    expect(desktopGif && attribute(desktopGif, 'settingKey')).toBe('include-subtitles-in-gifs')
   })
 
   it('uses the keys English already derives, so search anchors do not move in English', () => {
@@ -234,5 +238,6 @@ describe('Player settings per build (spec §5.1)', () => {
     expect(keyForSetting(en.player_up_next_overlay)).toBe('show-up-next-countdown')
     expect(keyForSetting(en.player_series_rating_prompt)).toBe('ask-for-a-rating-when-a-series-ends')
     expect(keyForSetting('Include subtitles in GIFs')).toBe('include-subtitles-in-gifs')
+    expect(keyForSetting('Hide sidebar while playing')).toBe('hide-sidebar-while-playing')
   })
 })
