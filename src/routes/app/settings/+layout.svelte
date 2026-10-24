@@ -12,7 +12,7 @@
   import { m } from '$lib/paraglide/messages.js'
   import { acquireEdgeToEdge } from '$lib/actions/edge-to-edge'
   import { SETTING_FALLBACK_PARAM, SETTING_PARAM } from '$lib/settings/search'
-  import { revealSetting } from '$lib/settings/search-target'
+  import { revealBlock, revealSetting } from '$lib/settings/search-target'
   import { settingsPageTitle, settingsParent } from '$lib/settings/hierarchy'
   import { settingsBack } from '$lib/settings/back'
 
@@ -56,7 +56,8 @@
   // `?setting=rating-style` names a row. After every navigation into or within Settings, including
   // the one that mounts this layout, reveal it: scroll, tint and, on a pad or TV, focus its safe
   // control (search-target.ts). History steps are skipped so route focus memory restores where the
-  // user was; a newer navigation aborts a reveal that is still waiting for its row.
+  // user was; a newer navigation aborts a reveal that is still waiting for its row. A keyless hit
+  // or a legacy redirect names a `#subcategory` block instead (revealBlock).
   let revealAbort: AbortController | null = null
   afterNavigate((navigation) => {
     revealAbort?.abort()
@@ -64,10 +65,11 @@
     if (navigation.type === 'popstate') return
     const url = navigation.to?.url
     const key = url?.searchParams.get(SETTING_PARAM)
-    if (!url || !key) return
+    if (!url || (!key && !url.hash)) return
     const controller = new AbortController()
     revealAbort = controller
-    void revealSetting(key, url.searchParams.get(SETTING_FALLBACK_PARAM), controller.signal)
+    if (key) void revealSetting(key, url.searchParams.get(SETTING_FALLBACK_PARAM), controller.signal)
+    else void revealBlock(decodeURIComponent(url.hash.slice(1)), controller.signal)
   })
   onDestroy(() => revealAbort?.abort())
 

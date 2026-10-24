@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { inputType } from '$lib/nav/input'
 import { isTv } from '$lib/platform'
-import { DESTRUCTIVE_SELECTOR, revealSetting, settingFocusTarget } from './search-target'
+import { DESTRUCTIVE_SELECTOR, revealBlock, revealSetting, settingFocusTarget } from './search-target'
 
 const scrollIntoView = vi.fn()
 const byKey = (key: string) => document.querySelector<HTMLElement>(`[data-setting-key="${key}"]`)!
@@ -168,6 +168,42 @@ describe('revealSetting', () => {
     await vi.advanceTimersByTimeAsync(50)
     await expect(pending).resolves.toBeNull()
     expect(byKey('late').classList.contains('settings-search-hit')).toBe(false)
+  })
+})
+
+describe('revealBlock', () => {
+  const BLOCK = `<section id="storage">
+    <button data-focusable class="text-destructive">Clear all caches</button>
+    <input data-focusable type="text" />
+    <button data-focusable>Change folder</button>
+  </section>`
+
+  it("focuses the block's first safe control on a pad, after SvelteKit's fragment focus reset", async () => {
+    inputType.set('dpad')
+    document.body.innerHTML = BLOCK
+    // reset_focus re-applies the hash in a timeout queued before afterNavigate; the engine drops focus.
+    setTimeout(() => (document.activeElement as HTMLElement).blur())
+    const target = await revealBlock('storage', live())
+    await new Promise((settle) => setTimeout(settle))
+    expect(target?.textContent).toBe('Change folder')
+    expect(document.activeElement).toBe(target)
+  })
+
+  it('leaves focus alone for mouse and touch', async () => {
+    document.body.innerHTML = `<button id="before" data-focusable>Before</button>${BLOCK}`
+    document.getElementById('before')!.focus()
+    await expect(revealBlock('storage', live())).resolves.toBeNull()
+    expect(document.activeElement?.id).toBe('before')
+  })
+
+  it('does nothing once aborted or when the block is missing', async () => {
+    inputType.set('dpad')
+    document.body.innerHTML = BLOCK
+    const aborted = new AbortController()
+    aborted.abort()
+    await expect(revealBlock('storage', aborted.signal)).resolves.toBeNull()
+    await expect(revealBlock('missing', live())).resolves.toBeNull()
+    expect(document.activeElement).toBe(document.body)
   })
 })
 

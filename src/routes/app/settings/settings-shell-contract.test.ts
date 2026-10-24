@@ -73,15 +73,18 @@ describe('settings search reveal', () => {
   it('reveals the searched row from afterNavigate, never on a history step', () => {
     expect(layout).toContain("import { afterNavigate } from '$app/navigation'")
     expect(layout).toContain("import { SETTING_FALLBACK_PARAM, SETTING_PARAM } from '$lib/settings/search'")
-    expect(layout).toContain("import { revealSetting } from '$lib/settings/search-target'")
+    expect(layout).toContain("import { revealBlock, revealSetting } from '$lib/settings/search-target'")
     const start = layout.indexOf('afterNavigate((navigation) => {')
     const abort = layout.indexOf('revealAbort?.abort()', start)
     const popstate = layout.indexOf("if (navigation.type === 'popstate') return", start)
-    const reveal = layout.indexOf('void revealSetting(key, url.searchParams.get(SETTING_FALLBACK_PARAM), controller.signal)', start)
+    const reveal = layout.indexOf('if (key) void revealSetting(key, url.searchParams.get(SETTING_FALLBACK_PARAM), controller.signal)', start)
+    // A keyless hit's `#subcategory` block, same abort and history-step rules.
+    const block = layout.indexOf('else void revealBlock(decodeURIComponent(url.hash.slice(1)), controller.signal)', start)
     expect(start).toBeGreaterThan(-1)
     expect(abort).toBeGreaterThan(start)
     expect(popstate).toBeGreaterThan(abort)
     expect(reveal).toBeGreaterThan(popstate)
+    expect(block).toBeGreaterThan(reveal)
     expect(layout).toContain('onDestroy(() => revealAbort?.abort())')
   })
 

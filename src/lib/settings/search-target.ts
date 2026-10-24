@@ -53,6 +53,20 @@ function pause(ms: number, signal: AbortSignal): Promise<boolean> {
 }
 
 /**
+ * A keyless hit opens on its `#id` block, which SvelteKit scrolls into view. On a pad or TV focus
+ * moves to the block's first safe control, so the first press starts there and not at the top of the
+ * page. It waits one task, behind SvelteKit's fragment focus reset (it re-applies the hash in a
+ * timeout queued before afterNavigate), which would otherwise clear this focus. Resolves the control.
+ */
+export async function revealBlock(id: string, signal: AbortSignal): Promise<HTMLElement | null> {
+  if (!(await pause(0, signal)) || !focusRestoreAllowed()) return null
+  const block = document.getElementById(id)
+  const target = block && [...block.querySelectorAll<HTMLElement>('[data-focusable]')].find(safe)
+  target?.focus({ preventScroll: true })
+  return target || null
+}
+
+/**
  * Brings a searched row into view. Polls `attempts` × `intervalMs` (default 20 × 50 ms) for a
  * rendered `[data-setting-key=key]`: the page may still be mounting, or the row may sit in a section
  * that opens once the page reads its URL. `fallbackKey` stands in when the row is absent from the page
