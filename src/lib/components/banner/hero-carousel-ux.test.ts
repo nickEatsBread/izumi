@@ -100,6 +100,13 @@ describe('featured carousel UX', () => {
     expect(hero).toContain('onpointercancel={(e) => endHeroPointer(e, false)}')
   })
 
+  it('never selects the banner text while it is dragged or scrolled sideways', () => {
+    const template = hero.slice(hero.indexOf('data-variant="template"'), hero.indexOf('>', hero.indexOf('data-variant="template"')))
+    expect(template).toContain('class="theme-custom-hero select-none"')
+    const desktop = hero.slice(hero.indexOf('data-variant="desktop"'), hero.indexOf('>', hero.indexOf('data-variant="desktop"')))
+    expect(desktop).toContain('touch-pan-y select-none')
+  })
+
   it('steps once per two-finger horizontal trackpad gesture', () => {
     expect(hero).toContain('dragCarousels, wheelScrollAcross')
     expect(hero).toContain('Math.abs(e.deltaX) <= Math.abs(e.deltaY)')
