@@ -1,14 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  anyConnected,
-  CONNECT_SERVICES,
-  connectedServices,
-  idleConnectStates,
-  tileBusy,
-  type ConnectStates,
-} from './connect-state'
-
-const states = (overrides: Partial<ConnectStates>): ConnectStates => ({ ...idleConnectStates(), ...overrides })
+import { CONNECT_SERVICES, idleConnectStates, tileBusy } from './connect-state'
 
 describe('connect tile state', () => {
   it('draws the four services in a fixed order', () => {
@@ -16,27 +7,9 @@ describe('connect tile state', () => {
   })
 
   it('starts every service idle', () => {
-    expect(connectedServices(idleConnectStates())).toEqual([])
-    expect(anyConnected(idleConnectStates())).toBe(false)
-  })
-
-  it('reports connected services in a stable order', () => {
-    const value = states({
-      mal: { status: 'connected', identity: 'alex' },
-      stremio: { status: 'connected', identity: 'alex@example.com' },
-    })
-    expect(connectedServices(value)).toEqual(['stremio', 'mal'])
-    expect(anyConnected(value)).toBe(true)
-  })
-
-  it('does not count a failed or waiting service as connected', () => {
-    const value = states({
-      stremio: { status: 'error', message: 'Wrong password.' },
-      nuvio: { status: 'code', code: 'ABC-123', url: 'https://example.invalid/link', completing: false },
-      anilist: { status: 'busy' },
-    })
-    expect(connectedServices(value)).toEqual([])
-    expect(anyConnected(value)).toBe(false)
+    const idle = idleConnectStates()
+    expect(Object.keys(idle)).toEqual([...CONNECT_SERVICES])
+    expect(Object.values(idle).every((state) => state.status === 'idle')).toBe(true)
   })
 
   it('treats waiting on an approval code as busy so the tile cannot be re-fired', () => {

@@ -13,7 +13,7 @@ const exitPrompt = read('../shell/ExitPrompt.svelte')
 // heading styling it used to scope to itself had to move to the global sheet to keep reaching them.
 const css = read('../../../app.css')
 const steps = Object.fromEntries(
-  ['WatchStep', 'MetadataStep', 'AccessStep', 'StartupStep', 'ConnectStep', 'SyncStep', 'SourcesStep', 'PlaybackStep', 'ReadyStep']
+  ['StartStep', 'WatchStep', 'ConnectStep', 'SourcesStep', 'ReadyStep']
     .map(name => [name, read(`./steps/${name}.svelte`)]),
 ) as Record<string, string>
 const watch = steps.WatchStep
@@ -23,6 +23,8 @@ describe('onboarding presentation contracts', () => {
   it('keeps a single artwork wordmark without captions or a visible step header', () => {
     expect(shell.match(/<Wordmark\b/g)).toHaveLength(1)
     expect(shell).toContain('class="art-wordmark"><Wordmark />')
+    // On the poster panel, bottom right, as in the original design.
+    expect(shell.indexOf('<aside class="setup-art-panel"')).toBeLessThan(shell.indexOf('class="art-wordmark"'))
     expect(shell).not.toContain('<header')
     expect(shell).not.toContain('step-progress')
     expect(shell).not.toContain('art-caption')
@@ -31,7 +33,7 @@ describe('onboarding presentation contracts', () => {
   })
 
   it('routes by named step rather than by index, so the order can change safely', () => {
-    for (const step of ['watch', 'metadata', 'access', 'startup', 'connect', 'sync', 'sources', 'playback']) {
+    for (const step of ['start', 'watch', 'connect', 'sources']) {
       expect(shell).toContain(`step === '${step}'`)
     }
     expect(shell).not.toMatch(/step === \d/)
@@ -60,8 +62,8 @@ describe('onboarding presentation contracts', () => {
   })
 
   it('crossfades mounted images and loops identical groups with reduced-motion support', () => {
-    expect(artwork).toContain('{#each [0, 1] as repeat (repeat)}')
     expect(artwork).toContain('translateY(-50%)')
+    expect(artwork).toContain('{#each [0, 1] as repeat (repeat)}')
     expect(artwork).toContain('transition: opacity')
     expect(artwork).toContain('img.shown:global([data-loaded])')
     expect(artwork).toContain('prefers-reduced-motion: reduce')
@@ -69,16 +71,13 @@ describe('onboarding presentation contracts', () => {
     expect(css).toContain('@media (prefers-reduced-motion: reduce) { .tile-spinner { animation: none; } }')
   })
 
-  it('gives each film decision its own screen instead of nesting them under the checkboxes', () => {
-    // An earlier draft folded the provider choice, the TMDB key and the startup picker into the
-    // watch screen. One decision per screen is the contract; the watch screen owns only the
-    // checkboxes, and the key screen exists separately so it can follow the provider choice.
-    expect(watch).not.toContain('m.onboarding_metadata_title()')
-    expect(watch).not.toContain('m.onboarding_startup_title()')
+  it('never asks for film metadata, an API key or a startup library during setup', () => {
     expect(watch).not.toContain('tmdbToken')
-    expect(steps.MetadataStep).toContain('m.onboarding_metadata_title()')
-    expect(steps.AccessStep).toContain('m.onboarding_tmdb_access_title()')
-    expect(steps.StartupStep).toContain('m.onboarding_startup_title()')
+    for (const gone of ['MetadataStep', 'AccessStep', 'StartupStep', 'PlaybackStep', 'SyncStep']) {
+      expect(shell).not.toContain(gone)
+    }
+    expect(shell).not.toContain('tmdbReadToken.set(')
+    expect(shell).toContain('onboardingMovieMetadata(')
   })
 
   it('offers two independent library checkboxes instead of a third combined mode', () => {
@@ -92,21 +91,12 @@ describe('onboarding presentation contracts', () => {
     expect(shell).toContain('disabled={busy || blocked}')
   })
 
-  it('sends both token guides to the maintained walkthrough instead of hardcoding the steps', () => {
-    const access = steps.AccessStep
+  it('sends the token guide to the maintained walkthrough instead of hardcoding the steps', () => {
     const guide = read('../catalog/TmdbCredentialGuide.svelte')
-    for (const source of [access, guide]) {
-      expect(source).toContain('https://duckkota.gitlab.io/guides/tmdb/')
-    }
-    expect(access).not.toContain('onboarding_tmdb_instruction_1')
+    expect(guide).toContain('https://duckkota.gitlab.io/guides/tmdb/')
     expect(guide).not.toContain('const steps = [')
-    // Both screens offer the keyless provider so a user without a token is never stuck.
-    expect(access).toContain('onswitch')
+    // The settings guide still offers the keyless provider so a user without a token is never stuck.
     expect(guide).toContain('onUseKeyless')
-  })
-
-  it('shows each source its own artwork rather than an unlabelled row', () => {
-    expect(sources).toContain('<AddonLogo logo={suggestion.logo}')
   })
 
   it('never lets a truncating row blow its grid track out past the container', () => {
@@ -128,13 +118,13 @@ describe('onboarding presentation contracts', () => {
     }
   })
 
-  it('never pre-selects a source for the user', () => {
-    expect(sources).toContain('let picked = $state<string[]>([])')
-    expect(sources).not.toMatch(/picked\s*=\s*\[[^\]]/)
-  })
-
-  it('keeps a package already installed from another store instead of stopping setup', () => {
-    expect(sources).toContain('if (cause instanceof PackageInstalledElsewhereError) return null')
+  it('never adds a source the user did not paste or pick themselves', () => {
+    // No suggestion list and no store writes of its own: the only way in is what the user pasted,
+    // through the same helper as Settings → Sources, or what they install from the Store.
+    expect(sources).toContain('await addSourceSpec(input)')
+    expect(sources).not.toContain('listCommunityAddons')
+    expect(sources).not.toContain('addonUrls.update')
+    expect(sources).not.toContain('extensionUrls.update')
   })
 
   it('lets every step be skipped, and leaves the home screen alone afterwards', () => {
@@ -208,8 +198,8 @@ describe('onboarding presentation contracts', () => {
     // anywhere but home — either walks into the page being replaced or opens the exit prompt
     // underneath an opaque full-screen surface. Both read as "B does nothing".
     expect(shell).toContain('onboardingNav.set({')
-    expect(shell).toContain('canGoBack: mode === \'wizard\' && stepIndex > 0 && !busy')
-    expect(shell).toContain('back: goBack')
+    expect(shell).toContain('canGoBack: mode === \'transfer\' || (stepIndex > 0 && !busy)')
+    expect(shell).toContain('back: () => (mode === \'transfer\' ? leaveTransfer() : goBack())')
     expect(shell).toContain('onboardingNav.set(null)')
 
     const branch = gamepad.slice(gamepad.indexOf('const onboarding = get(onboardingNav)'))
@@ -270,5 +260,108 @@ describe('onboarding presentation contracts', () => {
     expect(copy.length).toBeGreaterThan(0)
     expect(copy.filter(([, value]) => /\bIzumi\b/.test(value))).toEqual([])
     expect(messages.onboarding_welcome_title).toContain('izumi')
+  })
+
+  it('imports what a source account holds as soon as it connects, one task at a time', () => {
+    const connect = steps.ConnectStep
+    expect(connect).toContain('plannedSyncTasks([service], EVERYTHING)')
+    expect(connect).toContain("enqueue('stremio')")
+    expect(connect).toContain("enqueue('nuvio')")
+    // Stremio and Nuvio write the same source list, so imports go through the tested serial drain.
+    expect(connect).toContain('serialDrain(() => nextPending()?.id, runTask, importAbort.signal)')
+    expect(connect).toContain('importAbort.abort()')
+  })
+
+  it('brings everything over on sign-in, with no boxes to tick first', () => {
+    // Signing in during setup has no other purpose, so watch state comes with it.
+    expect(steps.ConnectStep).toContain('const EVERYTHING: NuvioExtras = { library: true, progress: true, history: true }')
+    expect(steps.ConnectStep).not.toContain('onboarding_sync_extras')
+    expect(steps.ConnectStep).not.toContain('type="checkbox"')
+  })
+
+  it('shares one set of tracker tiles between sign-in and the final screen', () => {
+    const trackers = read('./steps/TrackerTiles.svelte')
+    expect(steps.ConnectStep).toContain('<TrackerTiles bind:connections />')
+    expect(steps.ConnectStep).not.toContain('connectAniList')
+    expect(trackers).toContain('await connectAniList()')
+    expect(trackers).toContain('await connectMal()')
+  })
+
+  it('adds a pasted URL from Next rather than dropping it', () => {
+    expect(sources).toContain('export async function install(): Promise<boolean>')
+    // An empty field is not a failure: Next simply moves on.
+    expect(sources).toContain('if (adding || !input.trim()) return !input.trim()')
+  })
+
+  it('asks how torrents play on the sources screen rather than a screen of its own', () => {
+    const playback = read('./steps/PlaybackChoice.svelte')
+    expect(sources).toContain('<PlaybackChoice bind:checking={checkingKey} />')
+    expect(playback).toContain("$torrentPlaybackMode = 'direct'")
+    // Debounced, blur included: checking on blur would disable the button being clicked.
+    expect(playback).toContain('timer = setTimeout(() => void validate(), 700)')
+    // Peer-to-peer first and the default, except for someone who already saved a debrid key.
+    expect(playback.indexOf('onclick={chooseDirect}')).toBeLessThan(playback.indexOf("onclick={() => $torrentPlaybackMode = 'debrid'}"))
+    expect(playback).toContain("if (!$debridKey.trim()) $torrentPlaybackMode = 'direct'")
+  })
+
+  it('adds sources by URL or from the real Store, side by side with playback', () => {
+    expect(sources).toContain('onclick={onbrowse}')
+    expect(sources).toContain('xl:grid-cols-2')
+    // Setup steps aside for the Store and comes back to the same step: hidden, never unmounted,
+    // with its nav trap and scroll lock released meanwhile.
+    expect(shell).toContain("await goto('/app/settings/store')")
+    expect(shell).toContain('class:setup-away={browsing}')
+    expect(shell).toContain("data-nav-trap={browsing ? undefined : ''}")
+    expect(shell).toContain('if ($onboardingComplete || browsing) return')
+    expect(shell).toContain('m.onboarding_back_to_setup()')
+  })
+
+  it('opens on one way forward, with the other starts as quiet footer buttons', () => {
+    const start = read('./steps/StartStep.svelte')
+    expect(start).not.toContain('<button')
+    // Skip setup on the left; Stremio or Nuvio and another device sit quietly before Get started,
+    // which stays the one filled action, bottom right like every screen's forward action.
+    const footer = shell.slice(shell.lastIndexOf('<footer class="setup-actions'))
+    const order = ['onclick={skip}', "onclick={() => choosePath('import')}", 'onclick={enterTransfer}', "onclick={() => choosePath('new')}"]
+      .map((handler) => footer.indexOf(handler))
+    expect(order.every((at, index) => at > -1 && (index === 0 || at > order[index - 1]))).toBe(true)
+    expect(footer).toContain('class="setup-button text-muted-foreground hover:bg-secondary"><LogIn size={17} />{m.onboarding_start_import_button()}')
+    expect(footer).toContain('class="setup-button text-muted-foreground hover:bg-secondary"><MonitorSmartphone size={17} />{m.onboarding_start_transfer_button()}')
+    expect(start).toContain('data-step-heading tabindex="-1" aria-describedby="setup-progress"')
+    // Three lines on what izumi is, so the first screen is not just a heading and a button.
+    for (const key of ['library', 'sources', 'tracking']) expect(start).toContain(`m.onboarding_start_feature_${key}()`)
+  })
+
+  it('ends with optional extras instead of nagging rows', () => {
+    const ready = steps.ReadyStep
+    expect(ready).toContain('<TrackerTiles bind:connections />')
+    expect(ready).toContain('m.onboarding_ready_tmdb_tip()')
+    // With both libraries picked only one opens at a time, so the final screen says where the other lives.
+    expect(ready).toContain('m.onboarding_ready_tip_catalogs()')
+    expect(shell).toContain('catalogTip={intent.anime && intent.films}')
+    expect(ready).not.toContain('onboarding_ready_list')
+    expect(ready).not.toContain('onboarding_ready_metadata')
+  })
+
+  it('keeps the posters in a panel of their own, never behind text, in izumi\'s own font', () => {
+    // Content gets the wider share so the sources screen can sit side by side.
+    expect(shell).toContain('<aside class="setup-art-panel" aria-hidden="true">')
+    expect(shell).toContain('grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);')
+    expect(shell).not.toContain('setup-sheet')
+    // A re-run inherits whatever theme is active; setup keeps the brand font regardless.
+    expect(css).toContain(".onboarding-surface { font-family: 'Nunito Variable', sans-serif; }")
+    expect(css).toMatch(/\.setup-heading \{[^}]*max-width: 42rem;/)
+  })
+
+  it('adds a pasted source before leaving the sources screen, and lets the user skip instead', () => {
+    expect(shell).toContain("if (step === 'sources' && sourcesStep && !(await sourcesStep.install())) return")
+    expect(shell).toContain('onclick={skipStep}')
+  })
+
+  it.each([['en', 'home screen'], ['ja', 'ホーム画面']])('no longer promises a home-screen checklist in %s', (locale, phrase) => {
+    // The checklist was removed; copy that still points at it describes a screen that never comes.
+    const messages = JSON.parse(read(`../../../../messages/${locale}.json`)) as Record<string, string>
+    expect(messages.onboarding_ready_body).not.toContain(phrase)
+    expect(messages.onboarding_ready_remainder_hint).not.toContain(phrase)
   })
 })

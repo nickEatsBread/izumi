@@ -1,9 +1,7 @@
 <script lang="ts">
   import { addonUrls, disabledSources, normalizeBase, replaceAddonBase } from '$lib/stremio/sources'
-  import { extensionUrls, disabledExtensions } from '$lib/settings/ui'
-  import { classifySourceSpec } from '$lib/settings/classify-source-spec'
-  import { registerCatalogStore } from '$lib/store/feeds'
-  import { currentLegacyStores } from '$lib/store/origins'
+  import { extensionUrls } from '$lib/settings/ui'
+  import { addSourceSpec, type AddSourceResult } from '$lib/settings/add-source'
   import {
     matchesSourceFilters,
     matchesSourceQuery,
@@ -80,8 +78,13 @@
     try {
       // undefined until checked; a search URL is checked as a tracker feed first.
       let indexer = isSearchFeedUrl(input) ? await checkTrackerFeed(input) : undefined
-      const result = indexer && 'name' in indexer ? { error: '' } : await classifySourceSpec(input)
+      const result: AddSourceResult = indexer && 'name' in indexer ? { error: '' } : await addSourceSpec(input)
       if ('error' in result) {
+        // A source that is already added needs no second guess; it keeps its own message.
+        if (result.duplicate) {
+          addError = result.error
+          return
+        }
         // Not an add-on or a catalog: it may be a torrent tracker's feed (a Torznab endpoint, a
         // tracker's own RSS search, or a JSON search API).
         if (indexer === undefined) indexer = await checkTrackerFeed(input)
@@ -95,37 +98,6 @@
         addError = indexer?.error ?? result.error
         return
       }
-      if (result.kind === 'addon') {
-        const alreadyCommunity = $extensionUrls.some((url) =>
-          url === result.spec || normalizeBase(url) === result.spec)
-        if (alreadyCommunity) {
-          addError = "That's already added as a community source."
-          return
-        }
-        if (!$addonUrls.some((url) => normalizeBase(url) === result.spec)) {
-          $addonUrls = [...$addonUrls, result.spec]
-        }
-        $disabledSources = $disabledSources.filter((url) =>
-          url !== result.spec && normalizeBase(url) !== result.spec)
-        input = ''
-        return
-      }
-      const alreadyAddon = $addonUrls.some((url) =>
-        url === result.spec || normalizeBase(url) === normalizeBase(result.spec))
-      if (alreadyAddon) {
-        addError = "That's already added as an add-on."
-        return
-      }
-      if ($extensionUrls.includes(result.spec)) {
-        $disabledExtensions = $disabledExtensions.filter((url) => url !== result.spec)
-      } else {
-        // Freeze the legacy stores first: a source added now never claims packages installed before
-        // origins were recorded.
-        currentLegacyStores()
-        $extensionUrls = [...$extensionUrls, result.spec]
-      }
-      // A package catalog is also a store, so it shows up in the Store with its packages.
-      if (result.catalog) registerCatalogStore(result.spec)
       input = ''
     } finally {
       adding = false

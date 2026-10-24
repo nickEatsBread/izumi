@@ -18,6 +18,8 @@ const priority = read('./priority/+page.svelte')
 const debrid = read('../../../../lib/components/settings/TorrentDebridSettings.svelte')
 const subcategories = subcategoriesOf(file)
 const block = (id: string) => subcategories.find((sub) => sub.id === id)?.source ?? ''
+// The paste field's add logic, shared with first-run setup.
+const addSource = read('../../../../lib/settings/add-source.ts')
 
 /** Row keys on the section page (or its debrid component), with the subcategory that renders them. */
 const ROWS: Record<string, string> = {
@@ -146,7 +148,9 @@ describe('Manage sources sub-page', () => {
 
   it('uses one paste field and one list', () => {
     expect(manage).toContain('URL, GitHub repo, or catalog')
-    expect(manage).toContain('import { classifySourceSpec')
+    expect(manage).toContain("import { addSourceSpec, type AddSourceResult } from '$lib/settings/add-source'")
+    // An already-added source keeps its own message instead of falling through to the tracker check.
+    expect(manage).toContain('if (result.duplicate) {')
     expect(manage).toContain('Nothing here yet')
     expect(manage).toMatch(/<CommunitySources\s+[\s\S]*?section="manage"/)
     expect(manage).not.toMatch(/<h[1-6][^>]*>Stremio add-ons<\/h[1-6]>/)
@@ -223,7 +227,8 @@ describe('Manage sources sub-page', () => {
     expect(communitySources).toContain("!mayUpdateFrom(url, p, inst) ? 'Replace'")
     expect(communitySources).toContain('error instanceof PackageInstalledElsewhereError')
     expect(communitySources).toContain('<ReplacePackageDialog')
-    expect(manage).toContain('currentLegacyStores()')
+    expect(communitySources).toContain('void installFromCatalog(chosen.url, chosen.extension, true)')
+    expect(addSource).toContain('currentLegacyStores()')
   })
 
   it('keeps old Extensions bookmarks working without a second destination', () => {

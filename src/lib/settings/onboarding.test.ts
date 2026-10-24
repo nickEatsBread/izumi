@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { onboardingCatalogPlan, onboardingSteps, type OnboardingIntent } from './onboarding'
+import { onboardingCatalogPlan, onboardingMovieMetadata, onboardingStartupLibrary, onboardingSteps, type OnboardingIntent } from './onboarding'
 import { resolveCatalogScreenStartup } from './catalog'
 
 const anime: OnboardingIntent = { anime: true, films: false }
@@ -60,50 +60,47 @@ describe('first-run catalog profile', () => {
 })
 
 describe('first-run step list', () => {
-  it('adds the sync screen only when an account was connected', () => {
-    expect(onboardingSteps(false, anime, 'tmdb')).toEqual(['watch', 'connect', 'sources', 'playback', 'ready'])
-    expect(onboardingSteps(true, anime, 'tmdb')).toEqual(['watch', 'connect', 'sync', 'sources', 'playback', 'ready'])
+  it('takes a new user from the start screen to a playable app in four screens', () => {
+    expect(onboardingSteps('new')).toEqual(['start', 'watch', 'sources', 'ready'])
   })
 
-  it('never asks an anime-only run about film metadata, a TMDB key or a startup library', () => {
-    const steps = onboardingSteps(false, anime, 'tmdb')
-    expect(steps).not.toContain('metadata')
-    expect(steps).not.toContain('access')
-    expect(steps).not.toContain('startup')
+  it('adds the sign-in screen only for someone bringing an existing setup', () => {
+    expect(onboardingSteps('import')).toEqual(['start', 'watch', 'connect', 'sources', 'ready'])
   })
 
-  it('puts the TMDB key on its own screen straight after choosing TMDB', () => {
-    const steps = onboardingSteps(false, films, 'tmdb')
-    expect(steps).toEqual(['watch', 'metadata', 'access', 'connect', 'sources', 'playback', 'ready'])
-    expect(steps.indexOf('access')).toBe(steps.indexOf('metadata') + 1)
+  it('never routes through the removed film, startup, sync or playback screens', () => {
+    for (const path of ['new', 'import'] as const) {
+      for (const gone of ['metadata', 'access', 'startup', 'sync', 'playback']) {
+        expect(onboardingSteps(path)).not.toContain(gone)
+      }
+    }
+  })
+})
+
+describe('film metadata during setup', () => {
+  it('uses TMDB only when a token is already available', () => {
+    expect(onboardingMovieMetadata(true)).toBe('tmdb')
   })
 
-  it('skips the key screen for the keyless metadata option', () => {
-    const steps = onboardingSteps(false, films, 'stremio')
-    expect(steps).toContain('metadata')
-    expect(steps).not.toContain('access')
+  it('falls back to the keyless catalog instead of asking for a key', () => {
+    expect(onboardingMovieMetadata(false)).toBe('stremio')
+  })
+})
+
+describe('startup library during setup', () => {
+  it('opens a fresh install on Adaptive, which starts on anime and then remembers the last catalog', () => {
+    expect(onboardingStartupLibrary('auto', false)).toBe('adaptive')
+    const plan = onboardingCatalogPlan({ anime: true, films: true }, 'stremio', onboardingStartupLibrary('auto', false))
+    expect(plan.defaultProvider).toBe('adaptive')
+    // No catalog used yet: Adaptive falls back to the first enabled one, which is anime.
+    expect(resolveCatalogScreenStartup(plan.defaultProvider, 'kitsu', plan.providers)).toBe('auto')
   })
 
-  it('only asks which library to open when there are two of them', () => {
-    expect(onboardingSteps(false, films, 'stremio')).not.toContain('startup')
-    expect(onboardingSteps(false, both, 'stremio')).toContain('startup')
-  })
-
-  it('skips the playback question once sources are configured', () => {
-    // The screen only exists to guarantee a way to play. Someone who imported or picked sources
-    // already has one, and the debrid-versus-P2P call is better made at first playback.
-    expect(onboardingSteps(false, anime, 'tmdb', false)).toContain('playback')
-    expect(onboardingSteps(false, anime, 'tmdb', true)).not.toContain('playback')
-  })
-
-  it('still ends on the readiness card when the playback screen is skipped', () => {
-    const steps = onboardingSteps(false, anime, 'tmdb', true)
-    expect(steps).toEqual(['watch', 'connect', 'sources', 'ready'])
-    expect(steps[steps.length - 1]).toBe('ready')
-  })
-
-  it('orders the film screens before connecting accounts', () => {
-    const steps = onboardingSteps(true, both, 'tmdb')
-    expect(steps).toEqual(['watch', 'metadata', 'access', 'startup', 'connect', 'sync', 'sources', 'playback', 'ready'])
+  it('keeps the library a re-run user already opens on', () => {
+    expect(onboardingStartupLibrary('adaptive', true)).toBe('adaptive')
+    expect(onboardingStartupLibrary('auto', true)).toBe('auto')
+    expect(onboardingStartupLibrary('tmdb', true)).toBe('movies')
+    expect(onboardingStartupLibrary('stremio', true)).toBe('movies')
+    expect(onboardingStartupLibrary('merged', true)).toBe('merged')
   })
 })

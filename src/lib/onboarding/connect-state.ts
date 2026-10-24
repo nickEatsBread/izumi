@@ -16,14 +16,6 @@ export function idleConnectStates(): ConnectStates {
   return { stremio: { status: 'idle' }, nuvio: { status: 'idle' }, anilist: { status: 'idle' }, mal: { status: 'idle' } }
 }
 
-export function connectedServices(states: ConnectStates): ConnectService[] {
-  return CONNECT_SERVICES.filter((service) => states[service].status === 'connected')
-}
-
-export function anyConnected(states: ConnectStates): boolean {
-  return connectedServices(states).length > 0
-}
-
 /** True while the tile is waiting on the network or on an approval, so its action must not re-fire. */
 export function tileBusy(state: ConnectState): boolean {
   return state.status === 'busy' || state.status === 'code'

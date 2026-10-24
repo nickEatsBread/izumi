@@ -79,7 +79,7 @@
   import { initTorrentVpnToasts, torrentVpnNotice } from '$lib/player/direct-torrent'
   import { startExtensionUpdateChecks, extensionUpdateNotice } from '$lib/extensions/auto-update'
   import UpdateToast from '$lib/components/shell/UpdateToast.svelte'
-  // First-run setup is a one-time screen with ten step components behind it; mount it lazily and
+  // First-run setup is a one-time screen with five step components plus the transfer screen behind it; mount it lazily and
   // only while onboarding is incomplete, so a normal boot never loads that graph.
   import { onboardingComplete } from '$lib/settings/onboarding'
   const loadFirstRunSetup = () => import('$lib/components/onboarding/FirstRunSetup.svelte')
