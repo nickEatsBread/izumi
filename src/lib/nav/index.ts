@@ -239,6 +239,33 @@ function visibleRowCandidates(root: HTMLElement): ElCand[] {
     .filter(({ rect }) => containedInAxis(rect.left, rect.right, port.left, port.right))
 }
 
+/** The track's own child holding `el`: a card's focusable may sit inset inside it. */
+function trackItem(el: HTMLElement, track: HTMLElement): HTMLElement {
+  let item = el
+  while (item.parentElement && item.parentElement !== track) item = item.parentElement
+  return item
+}
+
+/** Up/Down into an anchored row lands in its first column (the Netflix TV model), at the row's own
+ *  scroll: the card whose track child's left edge is nearest the track's content start, the one at
+ *  or after it on a tie. The row keeps no other focus memory, and after a slide this card is where
+ *  the row was left. */
+function anchorSlotCard(track: HTMLElement): HTMLElement | null {
+  const slot = track.getBoundingClientRect().left + track.clientLeft + (parseFloat(getComputedStyle(track).paddingLeft) || 0)
+  let best: HTMLElement | null = null
+  let bestOffset = Infinity
+  for (const el of focusables(track)) {
+    const offset = trackItem(el, track).getBoundingClientRect().left - slot
+    const distance = Math.abs(offset)
+    const bestDistance = Math.abs(bestOffset)
+    if (distance < bestDistance || (distance === bestDistance && offset >= 0 && bestOffset < 0)) {
+      best = el
+      bestOffset = offset
+    }
+  }
+  return best
+}
+
 /**
  * Fast path for the Home/Browse surface in Game mode. A geometric search across the entire page
  * forces WebKitGTK to style and lay out every card before it can move the focus ring. Rows expose
@@ -296,6 +323,10 @@ function pickInNavRows(active: HTMLElement, dir: Dir): HTMLElement | null | unde
   const preferred = targetRow.querySelector<HTMLElement>('[data-nav-row-default][data-focusable]')
   if (preferred && isNavigable(preferred)) return preferred
   const targetRoot = targetRow.querySelector<HTMLElement>('[data-nav-row-items]') ?? targetRow
+  if (targetRow.dataset.rowFocus === 'anchor' && targetRoot.hasAttribute('data-carousel-scroller')) {
+    const slotted = anchorSlotCard(targetRoot)
+    if (slotted) return slotted
+  }
   // Row order already establishes the intended direction, so do not reject a target merely
   // because the adjacent row has a different card width or horizontal scroll position. Do reject
   // cards clipped to the left/right: vertical reveal intentionally scrolls only the page axis.
@@ -390,11 +421,8 @@ function revealAnchored(el: HTMLElement, track: HTMLElement, row: HTMLElement, v
     runAnchorScroll(window, () => window.scrollY, (top) => window.scrollTo({ top, behavior: 'instant' }), to, instant ? 0 : ANCHOR_SNAP_MS)
     return
   }
-  // The track's own child: a card's focusable may sit inset inside it.
-  let item = el
-  while (item.parentElement && item.parentElement !== track) item = item.parentElement
   const to = anchorScrollLeft({
-    cardLeft: item.getBoundingClientRect().left,
+    cardLeft: trackItem(el, track).getBoundingClientRect().left,
     trackLeft: track.getBoundingClientRect().left + track.clientLeft,
     paddingLeft: parseFloat(getComputedStyle(track).paddingLeft) || 0,
     scrollLeft: track.scrollLeft,

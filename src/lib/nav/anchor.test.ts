@@ -2,6 +2,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ANCHOR_SLIDE_MS, ANCHOR_SNAP_MS, anchorEase, anchorScrollLeft, anchorScrollTop, animateScroll, stopScroll } from './anchor'
 import { initDpadNav } from './index'
+import { controllerMode } from './input'
 
 // The reference curve, cubic-bezier(.2,.8,.2,1), from its own polynomial form and Newton's method
 // to 1e-12: a different solver from the implementation's, so the two check each other.
@@ -284,5 +285,41 @@ describe('anchored rows', () => {
     frame(1000)
     frame(1000 + ANCHOR_SNAP_MS)
     expect(pageY).toBe(400 - 137)
+  })
+
+  // The row fast path (pickInNavRows) runs for a controller, Game mode and TV.
+  describe('moving down into an anchored row', () => {
+    beforeEach(() => { controllerMode.set(true) })
+    afterEach(() => { controllerMode.set(false) })
+
+    // a0 focused and widened as a theme's focused tile grows; b scrolled `by` px, so its cards sit
+    // that far left of where they rest.
+    function setUp(by: number) {
+      button('a0').setAttribute('data-rect', '32,450,905,280')
+      track('b').scrollTo({ left: by })
+      for (const [i, card] of [...track('b').children].entries()) card.setAttribute('data-rect', `${32 + i * 330 - by},950,312,280`)
+      button('a0').focus()
+    }
+
+    it('lands on the card in the first column, not the one under the wide tile', () => {
+      setUp(990)
+      press('ArrowDown')
+      expect(document.activeElement).toBe(button('b3'))
+      // The row keeps its own scroll; only the page snaps.
+      expect(track('b').scrollLeft).toBe(990)
+    })
+
+    it('between two cards, takes the one after the first column', () => {
+      setUp(990 + 165)
+      press('ArrowDown')
+      expect(document.activeElement).toBe(button('b4'))
+    })
+
+    it('a row that is not anchored keeps the pick under the focused tile', () => {
+      document.getElementById('b')!.removeAttribute('data-row-focus')
+      setUp(990)
+      press('ArrowDown')
+      expect(document.activeElement).toBe(button('b4'))
+    })
   })
 })
