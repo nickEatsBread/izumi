@@ -776,6 +776,11 @@
   })
 </script>
 
+<!-- Top level: a snippet that is a direct child of a component tag becomes that component's prop. -->
+{#snippet relayApplyControl()}
+  <button type="button" data-focusable disabled={applyingRelay || ($syncRelayMode === 'custom' && !$syncRelayUrl.trim())} onclick={applyRelay} class="min-h-10 rounded-lg bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50">{applyingRelay ? 'Applying…' : 'Apply relay'}</button>
+{/snippet}
+
 <SettingsSection section="devices">
   {#if message}
     <div role="status" aria-live="polite" class="pointer-events-none fixed inset-x-4 bottom-20 z-[60] mx-auto flex w-fit max-w-[92vw] items-center gap-2 rounded-full bg-neutral-900/95 px-4 py-2.5 text-sm text-white shadow-lg">
@@ -1422,9 +1427,6 @@
         { value: 'custom', label: 'Custom relay' },
       ]}
     />
-    {#snippet relayApplyControl()}
-      <button type="button" data-focusable disabled={applyingRelay || ($syncRelayMode === 'custom' && !$syncRelayUrl.trim())} onclick={applyRelay} class="min-h-10 rounded-lg bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50">{applyingRelay ? 'Applying…' : 'Apply relay'}</button>
-    {/snippet}
     <SettingsRow title="Apply relay" description="Used for new connections; rejoin an active room after changing it" control={relayApplyControl} expanded={$syncRelayMode === 'custom' || !!relayNotice || !!relayError}>
       {#if $syncRelayMode === 'custom'}
         <label class="flex flex-col gap-1">
