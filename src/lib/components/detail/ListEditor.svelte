@@ -259,7 +259,7 @@
       {#if customized}
         <p class="text-xs text-muted-foreground">
           Saved. You can change this anytime in
-          <a href="/app/settings/interface?setting=rating-style" onclick={onclose} class="font-bold text-foreground underline underline-offset-2">Settings → Interface</a>.
+          <a href="/app/settings/library?setting=rating-style" onclick={onclose} class="font-bold text-foreground underline underline-offset-2">Settings → Home and library</a>.
         </p>
       {/if}
     </div>

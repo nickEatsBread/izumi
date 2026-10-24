@@ -34,6 +34,7 @@
   import { openUrl } from '@tauri-apps/plugin-opener'
   import { addonUrls, CINEMETA_BASE, disabledSources, normalizeBase, replaceAddonBase } from '$lib/stremio/sources'
   import { isMobile, isTv } from '$lib/platform'
+  import { gameMode } from '$lib/player/session'
   import { setAiringNotificationsEnabled } from '$lib/notifications/airing'
   import { installedJvmCatalogSources, type JvmCatalogSource } from '$lib/extensions/manager'
   import { m } from '$lib/paraglide/messages.js'
@@ -67,8 +68,10 @@
   let jvmSourcesError = $state('')
   let configuringJvmSource = $state<JvmCatalogSource | null>(null)
   let showTmdbGuide = $state(false)
-  let tmdbOpen = $state(false)
+  // Open while no token is saved: TMDB content cannot load without one.
+  let tmdbOpen = $state(!$tmdbReadToken)
   let omdbOpen = $state(false)
+  let advancedOpen = $state(false)
 
   const enabled = $derived(normalizeCatalogProviders($catalogProviders, $catalogProvider))
   const collectionsUseTmdb = $derived($homeCollections.some((collection) => collection.folders.some((folder) => folder.sources.some((source) => source.provider === 'tmdb'))))
@@ -93,8 +96,9 @@
     ? 'merged'
     : $catalogProvider === 'auto' ? 'anilist' : $catalogProvider)
 
+  // Starting the extension runtime is heavy: wait until Advanced, which lists the sources, unfolds.
   $effect(() => {
-    if (!hasPlatform('jvm') || jvmSourcesLoaded || jvmSourcesLoading) return
+    if (!advancedOpen || !hasPlatform('jvm') || jvmSourcesLoaded || jvmSourcesLoading) return
     void loadJvmSources()
   })
 
@@ -225,8 +229,8 @@
   let notificationError = $state('')
   async function toggleAiringNotifications() {
     notificationError = ''
-    const enabled = await setAiringNotificationsEnabled(!$airingNotifications)
-    if (!enabled) notificationError = m.settings_notification_permission_error()
+    const granted = await setAiringNotificationsEnabled(!$airingNotifications)
+    if (!granted) notificationError = m.settings_notification_permission_error()
   }
 </script>
 
@@ -285,7 +289,7 @@
       <SettingsRow
         settingKey="tmdb-token"
         title="TMDB read access token"
-        description="A personal free non-commercial credential; stored only on this device."
+        description="Free personal credential, kept on this device"
         value={$tmdbReadToken ? 'Saved · hidden' : 'Not set'}
         onActivate={() => (tmdbOpen = !tmdbOpen)}
         expanded={tmdbOpen}
@@ -343,8 +347,8 @@
       onChange={(value) => ($browseLayout = value as BrowseLayout)}
     />
     <!-- Only the desktop schedule reads this: phones always show one day at a time and controller
-         layouts draw their own view. Search hides it there too. -->
-    {#if !$isMobile && !$isTv}
+         layouts (TV, Game mode) draw their own view. Search hides it there too. -->
+    {#if !$isMobile && !$isTv && !$gameMode}
       <SettingsChoiceRow
         settingKey="schedule-layout"
         title={m.settings_schedule_layout()}
@@ -365,7 +369,7 @@
     <SettingsRow
       settingKey="show-next-up-on-the-schedule"
       title={'Show "Next up" on the schedule'}
-      description="The strip of soonest episodes above the schedule grid."
+      description="Soonest episodes above the schedule"
       onActivate={() => ($scheduleShowNextUp = !$scheduleShowNextUp)}
       pressed={$scheduleShowNextUp}
     >
@@ -379,7 +383,7 @@
     <SettingsChoiceRow
       settingKey="rating-style"
       title="Rating style"
-      description="How you score a series — on its page and in the list editor."
+      description="Scoring control on the series page and list editor"
       value={$ratingStyle}
       options={ratingStyles}
       onChange={(value) => ($ratingStyle = value as RatingStyle)}
@@ -391,7 +395,7 @@
     <SettingsChoiceRow
       settingKey="show-rating-on-the-series-page"
       title="Show rating on the series page"
-      description="Under Play and the list button. Hidden keeps rating inside the list editor."
+      description="Under Play; Hidden keeps it in the list editor"
       value={$ratingOnPage}
       options={ratingOnPageOptions}
       onChange={(value) => ($ratingOnPage = value as RatingOnPage)}
@@ -454,7 +458,7 @@
     </SettingsRow>
   </SettingsSubcategory>
 
-  <SettingsSubcategory id="advanced" summary="Catalog switcher, series-wide numbers, pinned schedule header">
+  <SettingsSubcategory id="advanced" summary="Catalog switcher, series-wide numbers, pinned schedule header" bind:open={advancedOpen}>
     <SettingsChoiceRow
       settingKey="catalog-switcher-placement"
       title="Catalog switcher"
@@ -470,7 +474,7 @@
         description="Which installed extensions add browse and search results"
       />
       {#if jvmSourcesLoading}
-        <SettingsRow title="Loading extension catalogs…" description="Starting the extension runtime and reading installed providers." />
+        <SettingsRow title="Loading extension catalogs…" description="Starting the extension runtime" />
       {:else if jvmSourcesError}
         <SettingsRow title="Couldn’t load extension catalogs" description={jvmSourcesError}>
           {#snippet control()}

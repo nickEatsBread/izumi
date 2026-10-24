@@ -94,4 +94,10 @@ describe('SettingsSubcategory', () => {
     expect(source).toContain('if (page.url.hash === `#${id}`) open = true')
     expect(source).toContain('el.addEventListener(SUBCATEGORY_OPEN_EVENT, unfold)')
   })
+
+  it('exposes open for bind:open', () => {
+    expect(source).toContain('    open = $bindable(false),\n')
+    expect(source).toContain('open?: boolean')
+    expect(source).not.toContain('let open = $state(false)')
+  })
 })

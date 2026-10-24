@@ -113,7 +113,7 @@ describe('Home and library section', () => {
   })
 
   it('shows the desktop schedule layout only where the desktop schedule reads it', () => {
-    expect(source).toMatch(/\{#if !\$isMobile && !\$isTv\}\s*<SettingsChoiceRow\s+settingKey="schedule-layout"/)
+    expect(source).toMatch(/\{#if !\$isMobile && !\$isTv && !\$gameMode\}\s*<SettingsChoiceRow\s+settingKey="schedule-layout"/)
     expect(SETTINGS_SEARCH_INDEX.find((item) => item.key === 'schedule-layout')?.hideOn).toEqual(['phone', 'tv', 'gamemode'])
   })
 
@@ -194,6 +194,10 @@ describe('Home and library section', () => {
     expect(source).toContain("value={$omdbApiKey ? 'Saved · hidden' : 'Not set'}")
   })
 
+  it('opens the TMDB credential row while no token is saved', () => {
+    expect(source).toContain('let tmdbOpen = $state(!$tmdbReadToken)')
+  })
+
   it('filters extension catalog providers independently with their source artwork', () => {
     expect(source).toContain('installedJvmCatalogSources')
     expect(source).toContain('JvmCatalogSourceRow')
@@ -201,5 +205,10 @@ describe('Home and library section', () => {
     expect(source).toContain('onToggle={() => toggleJvmSource(source.id)}')
     expect(source).toContain('onSettings={() => (configuringJvmSource = source)}')
     expect(source).toContain('<JvmSourcePreferences')
+  })
+
+  it('starts the extension runtime only once Advanced unfolds', () => {
+    expect(block('advanced')).toContain('bind:open={advancedOpen}')
+    expect(source).toContain("if (!advancedOpen || !hasPlatform('jvm') || jvmSourcesLoaded || jvmSourcesLoading) return")
   })
 })

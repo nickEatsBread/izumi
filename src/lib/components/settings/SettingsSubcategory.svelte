@@ -10,6 +10,7 @@
     summary,
     collapsible,
     plain = false,
+    open = $bindable(false),
     children,
   }: {
     /** Registry subcategory id; also the DOM id (anchor) and the hash that unfolds it. */
@@ -22,6 +23,8 @@
     collapsible?: boolean
     /** Skip the rounded row card (list editors, previews, free-form content). */
     plain?: boolean
+    /** Unfolded state, for pages that defer work until a folded block opens. */
+    open?: boolean
     children: Snippet
   } = $props()
 
@@ -29,7 +32,6 @@
   const def = $derived(section ? subcategoryDef(section.id, id) : undefined)
   const heading = $derived(title ?? def?.title ?? id)
   const folds = $derived(collapsible ?? def?.advanced === true)
-  let open = $state(false)
   const collapsed = $derived(folds && !open)
   let root = $state<HTMLElement>()
 

@@ -127,6 +127,10 @@ describe('SelectMenu variants', () => {
     expect(source).not.toContain('let open = $state(false)')
   })
 
+  it('shows only the label in the inline trigger so a phone row keeps room for its title', () => {
+    expect(source).toContain("{#if selected?.description && variant !== 'inline'}")
+  })
+
   it('anchors the inline menu to the right edge of its trigger', () => {
     expect(source).toContain("class=\"absolute {variant === 'inline' ? 'right-0' : 'left-0'} z-[80] min-w-full")
   })

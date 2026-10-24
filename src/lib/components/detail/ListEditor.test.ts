@@ -64,6 +64,12 @@ describe('score control', () => {
     expect(select).toContain('event.stopPropagation()')
   })
 
+  it('points the saved-style note at the rating row in Home and library', () => {
+    expect(source).toContain('href="/app/settings/library?setting=rating-style"')
+    expect(source).toContain('Settings → Home and library</a>')
+    expect(source).not.toContain('/app/settings/interface')
+  })
+
   it('keeps the episode stepper (a count is a stepper; a rating is a choice)', () => {
     expect(source).toContain('aria-label="Increase episodes watched"')
     expect(source).toContain('class="progress-input')

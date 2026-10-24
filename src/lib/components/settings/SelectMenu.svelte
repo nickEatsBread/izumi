@@ -236,7 +236,7 @@
     onclick={() => void setOpen(!open)}
     onkeydown={onTriggerKeydown}
   >
-    <span class="truncate">{selected?.label ?? value}{#if selected?.description}<span class="ml-1.5 text-muted-foreground">{#if separator}<span class="mr-1.5">{separator}</span>{/if}{selected.description}</span>{/if}</span>
+    <span class="truncate">{selected?.label ?? value}{#if selected?.description && variant !== 'inline'}<span class="ml-1.5 text-muted-foreground">{#if separator}<span class="mr-1.5">{separator}</span>{/if}{selected.description}</span>{/if}</span>
     <ChevronDown size={15} class="shrink-0 transition-transform {open ? 'rotate-180' : ''}" />
   </button>
 
