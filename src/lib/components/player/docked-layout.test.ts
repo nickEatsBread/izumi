@@ -35,14 +35,14 @@ describe('hide sidebar while playing', () => {
   it('drops only the left sidebar, only while the player is open, and only when asked', () => {
     expect(read('../../settings/ui.ts')).toContain("export const hideSidebarWhilePlaying = persisted<boolean>('player-hide-sidebar', false)")
     expect(read('../../shell/chrome.ts')).toContain("([hide, open, nav]) => hide && open && nav === 'sidebar')")
-    expect(layout).toContain("{:else if !$sidebarHiddenForPlayback}<Sidebar placement={$shellNav === 'top' ? 'top' : 'sidebar'} />{/if}")
+    expect(layout).toContain("{:else if !$sidebarHiddenForPlayback && !($playing && $playerCoversWindow)}<Sidebar placement={$shellNav === 'top' ? 'top' : 'sidebar'} />{/if}")
   })
 
   it('gives the sidebar width to the video, its docked stage, the Back button and the native surface', () => {
     expect(overlay).toContain("const sidebarRail = $derived($shellNav === 'sidebar' && !$sidebarHiddenForPlayback)")
     expect(overlay).toContain("style:left={docked ? (sidebarRail ? '3.5rem' : '0') : undefined}")
     expect(overlay).toContain('void sidebarRail')
-    expect(read('./Controls.svelte')).toContain("const playerLeft = $shellNav === 'sidebar' && !$sidebarHiddenForPlayback ? 3.5 : 0")
+    expect(read('./Controls.svelte')).toContain("const playerLeft = $shellNav === 'sidebar' && !$sidebarHiddenForPlayback && !$playerCoversWindow ? 3.5 : 0")
     expect(layout).toContain('sidebarHidden: $sidebarHiddenForPlayback,')
   })
 })
@@ -76,7 +76,15 @@ describe('full-bleed banners follow the shell margin', () => {
 describe('docked watch layout', () => {
   it('keeps the whole container on phones, in fullscreen, picture-in-picture and Game mode', () => {
     expect(overlay).toContain('const docked = $derived(dock.docked && windowedChrome && !$isMobile)')
-    expect(overlay).toContain('const windowedChrome = $derived(!$fullscreen && !gmMode && !$pictureInPicture)')
+    expect(overlay).toContain('const windowedChrome = $derived(!$fullscreen && !gmMode && !$pictureInPicture && !$playerCoversWindow)')
+  })
+
+  it('gives a windowed player the whole window when the theme asks (player.window "full")', () => {
+    const runtime = read('../../themes/runtime.ts')
+    expect(runtime).toContain("!mobile && !tv && resolvePlayerControls(presentation).window === 'full' && !resolvePlayerDock(presentation).docked")
+    const layout = read('../../../routes/app/+layout.svelte')
+    expect(layout).toContain('chrome: $playing && !$fullscreen && !$gameMode && !$pictureInPicture && !$playerCoversWindow,')
+    expect(layout).toContain("{:else if !$sidebarHiddenForPlayback && !($playing && $playerCoversWindow)}<Sidebar placement={$shellNav === 'top' ? 'top' : 'sidebar'} />{/if}")
   })
 
   it('mounts the video in a stage sized by the theme with the episode rail beside or below it', () => {

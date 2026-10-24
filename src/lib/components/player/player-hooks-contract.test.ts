@@ -62,7 +62,7 @@ describe('player styling hooks', () => {
   it('lets a theme add rewind and forward, show the time left and name the episode', () => {
     for (const needle of [
       "import { resolvePlayerControls } from '$lib/themes/presentation'",
-      "import { shellNav, themePresentation } from '$lib/themes/runtime'",
+      "import { playerCoversWindow, shellNav, themePresentation } from '$lib/themes/runtime'",
       'const controls = $derived(gm ? resolvePlayerControls(undefined) : resolvePlayerControls($themePresentation))',
       'data-control="rewind"',
       'data-control="forward"',

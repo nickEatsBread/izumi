@@ -420,6 +420,9 @@ export interface PlayerPresentation {
   /** API 6: `restart` (seek to the start) and `next` (the next episode) buttons beside Play. The desktop
    *  player has its own Next, so it shows `restart` only. */
   buttons?: PlayerButton[]
+  /** API 6: `full` gives the windowed desktop player the whole window, as full screen does: the navigation
+   *  hides while a video plays. `app` (the default) keeps the video beside or under the navigation. */
+  window?: 'app' | 'full'
 }
 export type PlayerButton = 'restart' | 'next'
 /** API 6, TV block only: how the Search page takes text. */
@@ -968,7 +971,7 @@ function parseShell(value: unknown, api: ThemeApi): ShellPresentation {
   return result
 }
 function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
-  const raw = record(value); only(raw, ['seekbarHeight', 'seekbarColor', ...api2(api, ['layout', 'dock']), ...api6(api, ['seekButtons', 'time', 'title', 'paused', 'buttons'])])
+  const raw = record(value); only(raw, ['seekbarHeight', 'seekbarColor', ...api2(api, ['layout', 'dock']), ...api6(api, ['seekButtons', 'time', 'title', 'paused', 'buttons', 'window'])])
   const result: PlayerPresentation = {}
   if (raw.seekbarHeight !== undefined) result.seekbarHeight = number(raw.seekbarHeight, 2, 16)
   if (raw.seekbarColor !== undefined) result.seekbarColor = themeColor(raw.seekbarColor)
@@ -991,6 +994,7 @@ function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
   if (raw.title !== undefined) result.title = choice(raw.title, ['default', 'episode'])
   if (raw.paused !== undefined) result.paused = choice(raw.paused, ['none', 'summary'])
   if (raw.buttons !== undefined) result.buttons = uniqueChoices(raw.buttons, ['restart', 'next'], 'player.buttons', 0)
+  if (raw.window !== undefined) result.window = choice(raw.window, ['app', 'full'])
   return result
 }
 /** A list of distinct values from a fixed set, in the theme's order (`min`, 1 by default, to every value). */
@@ -1357,11 +1361,12 @@ export interface ResolvedPlayerControls {
   title: NonNullable<PlayerPresentation['title']>
   paused: NonNullable<PlayerPresentation['paused']>
   buttons: PlayerButton[]
+  window: NonNullable<PlayerPresentation['window']>
 }
 /** API 6 player control choices with their defaults (izumi's own player). */
 export function resolvePlayerControls(layout?: ThemePresentation): ResolvedPlayerControls {
   const player = layout?.player
-  return { seekButtons: player?.seekButtons ?? false, time: player?.time ?? 'default', title: player?.title ?? 'default', paused: player?.paused ?? 'none', buttons: player?.buttons ?? [] }
+  return { seekButtons: player?.seekButtons ?? false, time: player?.time ?? 'default', title: player?.title ?? 'default', paused: player?.paused ?? 'none', buttons: player?.buttons ?? [], window: player?.window ?? 'app' }
 }
 /** API 6: how the Search page takes text on this surface (only a TV block can ask for the grid). */
 export function resolveSearch(layout?: ThemePresentation): { keyboard: NonNullable<SearchPresentation['keyboard']> } {

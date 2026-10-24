@@ -69,7 +69,7 @@
   import X from '@lucide/svelte/icons/x'
   import PlayIcon from '@lucide/svelte/icons/play'
   import { isMobile, isWindows } from '$lib/platform'
-  import { themePresentation, shellNav } from '$lib/themes/runtime'
+  import { playerCoversWindow, themePresentation, shellNav } from '$lib/themes/runtime'
   import { resolvePlayerControls, resolvePlayerDock, type PlayerChrome } from '$lib/themes/presentation'
   import { oskDismissedAt, playerStage } from '$lib/player/session'
   import { measureStage } from '$lib/player/insets'
@@ -144,7 +144,7 @@
   const gmMode = $derived($gameMode)
   // Browse chrome is around the video (windowed playback): the root is inset from the edge the
   // navigation occupies and reports its geometry to the native surface.
-  const windowedChrome = $derived(!$fullscreen && !gmMode && !$pictureInPicture)
+  const windowedChrome = $derived(!$fullscreen && !gmMode && !$pictureInPicture && !$playerCoversWindow)
   // The sidebar is beside the video, unless the player setting tucks it away during playback.
   const sidebarRail = $derived($shellNav === 'sidebar' && !$sidebarHiddenForPlayback)
   // A theme's docked watch layout: the video keeps to a stage with the episode rail beside or below

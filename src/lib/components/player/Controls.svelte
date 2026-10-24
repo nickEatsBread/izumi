@@ -36,7 +36,7 @@
   import { get } from 'svelte/store'
   import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, playerSideSheetOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery, bumpPlayerOverlay, playerTopBarUnderTitlebar } from '$lib/player/session'
   import { isMacOS, isMobile, isTv } from '$lib/platform'
-  import { shellNav, themePresentation } from '$lib/themes/runtime'
+  import { playerCoversWindow, shellNav, themePresentation } from '$lib/themes/runtime'
   import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
   import { resolvePlayerControls } from '$lib/themes/presentation'
   import { loadEpisodeMeta, episodeName } from '$lib/player/episode-info'
@@ -155,13 +155,13 @@
   // 32px titlebar (unless the navigation bar sits on top). Back shares the top row with the P2P
   // readout, so while this bar is up the titlebar yields its pointer events and the bar carries
   // the window-drag strip instead.
-  const underTitlebar = $derived(!gm && !$fullscreen && !$isMobile && !$isTv && $shellNav !== 'top')
+  const underTitlebar = $derived(!gm && !$fullscreen && !$isMobile && !$isTv && ($shellNav !== 'top' || $playerCoversWindow))
   // Keep Back clear of the titlebar's leading slot (macOS traffic lights, or the GIF indicator
   // over the sidebar) when the player starts at the window's left edge.
   const backInset = $derived.by(() => {
     if (!underTitlebar) return undefined
     const slot = $isMacOS ? 7 : 3.5
-    const playerLeft = $shellNav === 'sidebar' && !$sidebarHiddenForPlayback ? 3.5 : 0
+    const playerLeft = $shellNav === 'sidebar' && !$sidebarHiddenForPlayback && !$playerCoversWindow ? 3.5 : 0
     return `${Math.max(1, slot + 0.5 - playerLeft)}rem`
   })
   $effect(() => {
