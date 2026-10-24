@@ -222,7 +222,7 @@ describe('settingHref', () => {
     const threshold = SETTINGS_SEARCH_INDEX.find((item) => item.title === 'Episodes before Watchlist')!
     expect(settingHref(threshold)).toBe('/app/settings/accounts?section=behaviour&setting=episodes-before-watchlist')
     const caches = SETTINGS_SEARCH_INDEX.find((item) => item.title === 'Cache sizes')!
-    expect(settingHref(caches)).toBe('/app/settings/downloads#storage')
+    expect(settingHref(caches)).toBe('/app/settings/downloads?setting=cache-total')
   })
 
   it('anchors only keyless hits, since the setting query would land after a hash', () => {

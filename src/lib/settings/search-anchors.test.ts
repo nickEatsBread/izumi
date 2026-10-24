@@ -43,6 +43,12 @@ const DYNAMIC_KEYS: Array<{ file: string; template: string; ids: string[]; key: 
     ids: ['auto', 'anilist', 'kitsu', 'tmdb', 'stremio', 'jvm'],
     key: (id) => `catalog-platform-${id}`,
   },
+  {
+    file: resolve(LIB, 'components/settings/CacheStorageSettings.svelte'),
+    template: 'settingKey={`cache-${bucket.id}`}',
+    ids: ['thumbs', 'direct-torrents', 'torrent-metadata', 'subs', 'gif-capture'],
+    key: (id) => `cache-${id}`,
+  },
 ]
 
 function renderedKeys(page: string): Set<string> {

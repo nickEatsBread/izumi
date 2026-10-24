@@ -18,8 +18,6 @@ const PAGE_TITLES: Array<[string, string]> = [
   ['library/collections/+page.svelte', '<h1 data-settings-page-title class="mt-3 text-2xl font-black">Collections & covers</h1>'],
   ['sources/manage/+page.svelte', '<h2 data-settings-page-title class="text-xl font-black">Manage sources</h2>'],
   ['sources/priority/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Source priority</h2>'],
-  ['downloads/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Downloads</h2>'],
-  ['storage/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Storage</h2>'],
   ['interface/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">{m.settings_interface()}</h2>'],
   ['themes/+page.svelte', '<h2 data-settings-page-title>Themes</h2>'],
   ['navigation/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Navigation</h2>'],

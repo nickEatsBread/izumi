@@ -7,6 +7,7 @@ import { load as history } from './history/+page'
 import { load as scenes } from './scenes/+page'
 import { load as extensions } from './extensions/+page'
 import { load as sources } from './sources/+page'
+import { load as storage } from './storage/+page'
 
 const BASE = 'https://izumi.invalid'
 type Load = (event: { url: URL }) => unknown
@@ -32,6 +33,7 @@ describe('Library routes that moved', () => {
     ['/app/settings/sources?tab=manage', sources, '/app/settings/sources/manage', ''],
     ['/app/settings/sources?tab=ordering', sources, '/app/settings/sources', '#priority'],
     ['/app/settings/sources?tab=playback', sources, '/app/settings/playback', '#quality'],
+    ['/app/settings/storage', storage, '/app/settings/downloads', '#storage'],
   ] as Array<[string, Load, string, string]>)('%s redirects through legacySettingsRedirect', (href, load, path, hash) => {
     const target = redirectOf(load, href)
     expect(target?.status).toBe(307)
