@@ -139,8 +139,11 @@ let adjustRepeats = 0
 
 function isSteppable(el: Element | null): el is HTMLInputElement {
   if (!el || el.tagName !== 'INPUT') return false
-  const type = (el as HTMLInputElement).type
-  return type === 'range' || type === 'number'
+  const input = el as HTMLInputElement
+  if (input.type === 'range') return true
+  // An empty number field means "any" (stepUp would write a value the user never chose), and one
+  // marked data-nav-no-step sits beside a neighbour that Left/Right must reach (min/max pairs).
+  return input.type === 'number' && input.value !== '' && !input.hasAttribute('data-nav-no-step')
 }
 
 /** Pad Left/Right (and, on TV, the remote's) on an enabled slider or number field: one
@@ -148,8 +151,8 @@ function isSteppable(el: Element | null): el is HTMLInputElement {
  *  number field through the browser's own stepUp/stepDown, which snap and clamp to its step, min and
  *  max (spec §5.4: number fields are steppers under a controller). True when the press is the
  *  control's, including a press at a bound, which changes nothing and fires nothing (focus must not
- *  slide off the end). False for Up/Down, for anything else, and for a number field with no step
- *  (step="any"), whose arrows move focus. */
+ *  slide off the end). False for Up/Down, for anything else, and for a number field that is empty,
+ *  marked data-nav-no-step, or has no step (step="any"): its arrows move focus. */
 export function padAdjust(el: Element | null, dir: Dir, repeat: boolean): boolean {
   if (dir !== 'left' && dir !== 'right') return false
   if (!isSteppable(el) || el.matches(':disabled') || el.closest('[inert]')) return false

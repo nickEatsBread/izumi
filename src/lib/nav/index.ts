@@ -50,7 +50,8 @@ const ENTER_INERT_INPUT_TYPES = ['checkbox', 'radio', 'range', 'color']
 // buttons), which is why it is excluded from the list above.
 const CARETLESS_INPUT_TYPES = [...ENTER_INERT_INPUT_TYPES, 'button', 'submit', 'reset', 'file', 'image']
 
-// Steppers: Up/Down change the value and Left/Right walk between segments, so all four are theirs.
+// Steppers: Up/Down change the value and Left/Right walk between segments, so all four are theirs
+// (on TV a number field gives all four to the engine; see numberSteps).
 const STEPPER_INPUT_TYPES = ['number', 'date', 'datetime-local', 'month', 'time', 'week']
 
 /** Caller context for `fieldOwnsArrow`, kept out of the shape so the rules stay a pure function. */

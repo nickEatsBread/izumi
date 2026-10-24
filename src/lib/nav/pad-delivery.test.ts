@@ -542,11 +542,55 @@ describe('pad sliders and roving tabs (commit 4)', () => {
     expect(padAdjust(field, 'up', false)).toBe(false)
   })
 
-  it('a number field with step="any" is no stepper: the press moves focus instead', () => {
+  it('a number field with step="any" is no stepper: on TV the remote’s Right moves focus instead', () => {
+    isTv.set(true)
     document.body.innerHTML = numberPage('step="any" value="1.5"')
     const field = byLabel('Seconds') as HTMLInputElement
     expect(padAdjust(field, 'right', false)).toBe(false)
+    field.focus()
+    keyboard(field, 'ArrowRight')
+    expect(document.activeElement).toBe(byLabel('Beside'))
     expect(field.value).toBe('1.5')
+  })
+
+  it('a disabled or inert number field is no stepper', () => {
+    document.body.innerHTML = numberPage('min="1" max="90" value="10" disabled')
+    const disabled = byLabel('Seconds') as HTMLInputElement
+    expect(padAdjust(disabled, 'right', false)).toBe(false)
+    expect(disabled.value).toBe('10')
+    document.body.innerHTML = `<div inert>${numberPage('min="1" max="90" value="10"')}</div>`
+    const inert = byLabel('Seconds') as HTMLInputElement
+    expect(padAdjust(inert, 'right', false)).toBe(false)
+    expect(inert.value).toBe('10')
+  })
+
+  it('an empty number field ("any") is no stepper: a pad Right moves focus and writes nothing', () => {
+    document.body.innerHTML = numberPage('min="1900" max="2030"')
+    const field = byLabel('Seconds') as HTMLInputElement
+    const events = record(field)
+    field.focus()
+    dispatchPadKey('ArrowRight')
+    expect(document.activeElement).toBe(byLabel('Beside'))
+    expect(field.value).toBe('')
+    expect(events).toEqual([])
+  })
+
+  it('a min/max pair marked data-nav-no-step: Right moves from Minimum to Maximum, on a pad and on TV', () => {
+    document.body.innerHTML = `
+      <main>
+        <input data-focusable data-nav-no-step aria-label="Minimum" type="number" min="0" max="100" value="20" data-rect="40,120,200,40">
+        <input data-focusable data-nav-no-step aria-label="Maximum" type="number" min="0" max="100" value="80" data-rect="300,120,200,40">
+      </main>`
+    const minimum = byLabel('Minimum') as HTMLInputElement
+    minimum.focus()
+    dispatchPadKey('ArrowRight')
+    expect(document.activeElement).toBe(byLabel('Maximum'))
+    expect(minimum.value).toBe('20')
+    isTv.set(true)
+    minimum.focus()
+    keyboard(minimum, 'ArrowRight')
+    expect(document.activeElement).toBe(byLabel('Maximum'))
+    expect(minimum.value).toBe('20')
   })
 
   it('a pad Right steps a focused number field; Down leaves it', () => {

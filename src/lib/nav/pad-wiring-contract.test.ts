@@ -88,6 +88,22 @@ describe('pad sliders and roving tabs wiring (commit 4)', () => {
     expect(nav).toContain('rovingTab: isRovingTab(target),')
   })
 
+  it('number fields that sit beside a neighbour opt out of stepping, so Left/Right still reach it', () => {
+    // padAdjust skips data-nav-no-step: min/max pairs, the list editor's [-] [count] [+] and the
+    // custom home-row form grid keep Left/Right as focus moves (pad-delivery.test.ts pins the engine).
+    const paired: [string, number][] = [
+      ['../components/search/AdvancedFilters.svelte', 2],
+      ['../components/catalog/StremioAdvancedFilters.svelte', 4],
+      ['../components/detail/ListEditor.svelte', 1],
+      ['../../routes/app/settings/library/home/+page.svelte', 3],
+    ]
+    for (const [file, count] of paired) {
+      const text = source(file)
+      expect(text.split('type="number"').length - 1, file).toBe(count)
+      expect(text.split('data-nav-no-step').length - 1, file).toBe(count)
+    }
+  })
+
   it('the subtitle editor steps its slider through the shared pad adapter', () => {
     const start = overlay.indexOf('if (subtitleEditorOpen) {')
     const end = overlay.indexOf('// The track menu captures the pad while open', start)

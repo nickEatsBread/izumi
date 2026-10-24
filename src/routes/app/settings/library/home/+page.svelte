@@ -261,17 +261,17 @@
           </label>
           <label>
             <span class="mb-1 block text-xs font-bold">Release year <span class="font-normal text-muted-foreground">optional</span></span>
-            <input bind:value={customYear} type="number" data-focusable min="1900" max={new Date().getFullYear() + 2} placeholder="Any year"
+            <input bind:value={customYear} type="number" data-focusable data-nav-no-step min="1900" max={new Date().getFullYear() + 2} placeholder="Any year"
               class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-theme/70" />
           </label>
           <label>
             <span class="mb-1 block text-xs font-bold">Minimum rating <span class="font-normal text-muted-foreground">out of 10</span></span>
-            <input bind:value={customMinimumScore} type="number" data-focusable min="0" max="10" step="0.5" placeholder="Any rating"
+            <input bind:value={customMinimumScore} type="number" data-focusable data-nav-no-step min="0" max="10" step="0.5" placeholder="Any rating"
               class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-theme/70" />
           </label>
           <label>
             <span class="mb-1 block text-xs font-bold">Maximum runtime <span class="font-normal text-muted-foreground">minutes</span></span>
-            <input bind:value={customRuntimeMax} type="number" data-focusable min="10" max="600" step="5" placeholder="Any runtime"
+            <input bind:value={customRuntimeMax} type="number" data-focusable data-nav-no-step min="10" max="600" step="5" placeholder="Any runtime"
               class="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-theme/70" />
           </label>
           <label class="flex min-h-11 items-center gap-3 rounded-lg border border-border bg-background px-3 sm:col-span-2">
