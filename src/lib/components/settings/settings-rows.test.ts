@@ -102,6 +102,12 @@ describe('SettingsRow additions', () => {
     expect(source.split('<LearnMore text={learnMore} label={title} />')).toHaveLength(3)
   })
 
+  it('keeps the leading icon beside the title when a stacked row drops its controls below', () => {
+    // The stacked header is a column below sm, so the icon and title share one inner row.
+    expect(source).toContain("controlLayout === 'stack' ? 'flex-col items-stretch")
+    expect(source).toMatch(/<div class="flex min-w-0 flex-1 items-center gap-3">\s*\{#if leading\}<span class="shrink-0">\{@render leading\(\)\}<\/span>\{\/if\}\s*<div class="min-w-0 flex-1">\s*<div class="font-bold/)
+  })
+
   it('uses rem text sizes, never 10 or 11 px', () => {
     expect(source).not.toMatch(/text-\[1[01]px\]/)
     expect(source).toContain('<p class="mt-0.5 text-xs leading-4 text-muted-foreground">{description}</p>')

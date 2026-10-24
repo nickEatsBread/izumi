@@ -63,6 +63,12 @@ describe('Appearance section', () => {
   })
 
   it('keeps every description to one short line', () => {
-    for (const [, text] of page.matchAll(/\sdescription="([^"]*)"/g)) expect(text.length, text).toBeLessThanOrEqual(80)
+    const en = JSON.parse(readFileSync(here('../../../../../messages/en.json'), 'utf8')) as Record<string, string>
+    const hints = [...page.matchAll(/\sdescription=\{m\.(\w+)\(\)\}/g)].map(([, key]) => en[key])
+    const branches = [...page.matchAll(/\sdescription=\{[^}]*\}/g)].flatMap(([expr]) => [...expr.matchAll(/'([^']*)'/g)].map(([, text]) => text))
+    const literals = [...page.matchAll(/\sdescription="([^"]*)"/g)].map(([, text]) => text)
+    expect(hints.length).toBeGreaterThan(0)
+    expect(branches.length).toBeGreaterThan(0)
+    for (const text of [...literals, ...hints, ...branches]) expect(text?.length ?? Infinity, text).toBeLessThanOrEqual(80)
   })
 })

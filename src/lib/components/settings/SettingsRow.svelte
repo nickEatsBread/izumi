@@ -61,14 +61,17 @@
 
 {#snippet header()}
   <div class="flex gap-3 {large ? 'min-h-12' : 'min-h-9'} {controlLayout === 'stack' ? 'flex-col items-stretch sm:flex-row sm:items-center' : 'items-center'}">
-    {#if leading}<span class="shrink-0">{@render leading()}</span>{/if}
-    <div class="min-w-0 flex-1">
-      <div class="font-bold leading-5 {large ? 'text-base' : 'text-sm'}">{title}</div>
-      {#if meta}
-        <div class="mt-0.5 text-xs leading-4 text-muted-foreground">{@render meta()}</div>
-      {:else if description}
-        <p class="mt-0.5 text-xs leading-4 text-muted-foreground">{description}</p>
-      {/if}
+    <!-- One inner row, so a stacked row drops only its controls below and the icon stays beside the title. -->
+    <div class="flex min-w-0 flex-1 items-center gap-3">
+      {#if leading}<span class="shrink-0">{@render leading()}</span>{/if}
+      <div class="min-w-0 flex-1">
+        <div class="font-bold leading-5 {large ? 'text-base' : 'text-sm'}">{title}</div>
+        {#if meta}
+          <div class="mt-0.5 text-xs leading-4 text-muted-foreground">{@render meta()}</div>
+        {:else if description}
+          <p class="mt-0.5 text-xs leading-4 text-muted-foreground">{description}</p>
+        {/if}
+      </div>
     </div>
     {#if control || value || chevron}
       <div class="flex items-center gap-1.5 {controlLayout === 'stack' ? 'w-full justify-end sm:w-auto sm:shrink-0' : 'shrink-0'}">
