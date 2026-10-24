@@ -53,3 +53,7 @@ export const screenTheme = derived([catalogScreen, screenThemes, studioThemes], 
 export const effectiveThemePreset = derived([themePreset, screenTheme], ([preset, screen]) => screen?.preset ?? preset)
 /** A shipped-palette screen theme keeps the app's design here; it goes unused while the preset is not `custom`. */
 export const effectiveStudioTheme = derived([activeStudioTheme, screenTheme], ([theme, screen]) => screen?.design ?? theme)
+/** The active screen's own theme by name (null: it follows the app theme), for the Themes and Interface notices. */
+export const screenThemeName = derived(screenTheme, (theme) => (theme
+  ? theme.design?.name ?? SCREEN_THEME_PRESETS.find((preset) => preset.value === theme.preset)?.label ?? ''
+  : null))

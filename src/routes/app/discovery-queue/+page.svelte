@@ -90,7 +90,7 @@
   const currentIndex = $derived(current ? ranked.indexOf(current) : 0)
   const visiblePicks = $derived(discoveryWindow(ranked, currentIndex))
   const presented = $derived(enriched && current && mediaKey(enriched) === mediaKey(current.media) ? enriched : current?.media)
-  const providerNames = $derived(mergedCatalogProviders($catalogProviders).map(catalogLabel).join(' · '))
+  const providerNames = $derived(mergedCatalogProviders($catalogProviders).map((provider) => catalogLabel(provider)).join(' · '))
   const displayRating = $derived(presented?.ratings?.[0]
     ? `${presented.ratings[0].score}/${presented.ratings[0].scale} · ${presented.ratings[0].source}`
     : presented?.averageScore ? `${Math.round(presented.averageScore)}/100 · ${catalogLabel(presented.catalog?.provider ?? 'anilist')}` : '')
@@ -162,7 +162,7 @@
       pool = [...unique.values()]
       nextPage = page + 1
       hasNextPage = result.hasNextPage
-      failedProviders = result.failedProviders.map(catalogLabel)
+      failedProviders = result.failedProviders.map((provider) => catalogLabel(provider))
     } catch (reason) {
       if (abort.signal.aborted || loadAbort !== abort) return
       error = reason instanceof Error ? reason.message : String(reason)

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { page } from '$app/stores'
-  import { catalogHomeRowOptions, mergedCatalogHomeRowOptions } from '$lib/catalog/registry'
+  import { homeRowOptions } from '$lib/catalog/registry'
+  import { homeCollections } from '$lib/catalog/collections/store'
+  import { collectionRowOptions } from '$lib/catalog/collections/rows'
   import {
     catalogHomeLayoutFromRows,
     catalogHomeLayoutKey,
@@ -12,6 +14,8 @@
     catalogLabel,
     catalogProviders,
     catalogScreens,
+    customScreenId,
+    customScreens,
     normalizeCatalogProviders,
     stremioHeroArtwork,
     type CatalogSelection,
@@ -53,7 +57,8 @@
     const merged = catalogScreens($catalogProviders).includes('merged')
       ? [{ selection: 'merged' as CatalogHomeTarget, label: 'Merged' }]
       : []
-    return [...merged, ...separate]
+    const custom = $customScreens.map((screen) => ({ selection: customScreenId(screen.id) as CatalogHomeTarget, label: screen.name }))
+    return [...merged, ...separate, ...custom]
   })
 
   let selected = $state<CatalogHomeTarget>('anilist')
@@ -93,10 +98,7 @@
     loading = true
     error = ''
     options = []
-    const request = selection === 'merged'
-      ? mergedCatalogHomeRowOptions($catalogProviders, abort.signal)
-      : catalogHomeRowOptions(selection, abort.signal)
-    void request.then((rows) => {
+    void homeRowOptions(selection, $catalogProviders, abort.signal).then((rows) => {
       if (!abort.signal.aborted) options = rows
     }).catch((reason) => {
       if (!abort.signal.aborted) error = reason instanceof Error ? reason.message : String(reason)
@@ -104,9 +106,9 @@
     return () => abort.abort()
   })
 
-  // Blocks live in the same saved layout as ordinary rows, so they must be offered here too — else
-  // any move, hide or add on this screen would `save()` a layout with every block dropped.
-  const rows = $derived(resolveCatalogHomeRows(selected, [...options, ...blockRowOptions(selected, $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts))
+  // Collections and blocks live in the same saved layout as ordinary rows, so they must be offered here
+  // too — else any move, hide or add on this screen would `save()` a layout with every one of them dropped.
+  const rows = $derived(resolveCatalogHomeRows(selected, [...options, ...collectionRowOptions($homeCollections, selected), ...blockRowOptions(selected, $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts))
   const visibleRows = $derived(rows.filter((row) => row.enabled))
   const availableGroups = $derived.by(() => {
     const grouped = new Map<string, typeof rows>()

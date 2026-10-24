@@ -17,7 +17,9 @@ describe('merged catalog Home', () => {
   it('loads only configured rows and keeps Continue Watching cross-provider', () => {
     expect(home).toContain('provider.home(abort.signal, rowIds, publish)')
     expect(home).toContain('catalogScope="all"')
-    expect(home).toContain("resolveCatalogHomeRows('merged'")
+    expect(home).toContain("let { target = 'merged', anilistHero = [] }")
+    expect(home).toContain('resolveCatalogHomeRows(target, [...options, ...collectionOptions')
+    expect(home).toContain('homeRowOptions(target, selections, abort.signal)')
     expect(home).toContain("params = new URLSearchParams({ provider: selection })")
   })
 })

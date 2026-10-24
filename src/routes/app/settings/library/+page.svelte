@@ -2,6 +2,7 @@
   import { homeCollections } from '$lib/catalog/collections/store'
   import {
     catalogDefaultProvider,
+    catalogLabel,
     catalogLastProvider,
     catalogLastScreen,
     catalogProvider,
@@ -10,7 +11,9 @@
     catalogScreens,
     catalogSwitcherPlacement,
     continueWatchingCatalogScope,
+    customScreens,
     isJvmCatalogSourceEnabled,
+    isMergedScreen,
     jvmCatalogSourceOverrides,
     normalizeCatalogProviders,
     omdbApiKey,
@@ -47,6 +50,7 @@
   import HistorySettings from '$lib/components/settings/HistorySettings.svelte'
   import SceneBookmarkSettings from '$lib/components/settings/SceneBookmarkSettings.svelte'
   import CatalogPlatformRow from '$lib/components/catalog/CatalogPlatformRow.svelte'
+  import CatalogScreensSettings from '$lib/components/catalog/CatalogScreensSettings.svelte'
   import JvmCatalogSourceRow from '$lib/components/catalog/JvmCatalogSourceRow.svelte'
   import JvmSourcePreferences from '$lib/components/catalog/JvmSourcePreferences.svelte'
   import TmdbCredentialGuide from '$lib/components/catalog/TmdbCredentialGuide.svelte'
@@ -77,9 +81,9 @@
   const collectionsUseTmdb = $derived($homeCollections.some((collection) => collection.folders.some((folder) => folder.sources.some((source) => source.provider === 'tmdb'))))
   const defaultOptions = $derived([
     { value: 'adaptive', label: 'Adaptive · last selected' },
-    ...catalogScreens($catalogProviders).map((id) => ({
+    ...catalogScreens($catalogProviders, $customScreens).map((id) => ({
       value: id,
-      label: id === 'merged' ? 'Merged' : platforms.find((platform) => platform.id === id)?.label ?? id,
+      label: isMergedScreen(id) ? catalogLabel(id, $customScreens) : platforms.find((platform) => platform.id === id)?.label ?? id,
     })),
   ])
   const continueWatchingOptions = [
@@ -92,8 +96,8 @@
     { value: 'integrated', label: 'Integrated into Izumi logo' },
   ]
   const hasPlatform = (id: CatalogSelection) => enabled.includes(id)
-  const homeCustomizeProvider = $derived($catalogScreen === 'merged'
-    ? 'merged'
+  const homeCustomizeProvider = $derived(isMergedScreen($catalogScreen)
+    ? $catalogScreen
     : $catalogProvider === 'auto' ? 'anilist' : $catalogProvider)
 
   // Starting the extension runtime is heavy: wait until Advanced, which lists the sources, unfolds.
@@ -124,12 +128,12 @@
   function setDefaultPlatform(value: string) {
     if (value === 'adaptive') {
       $catalogDefaultProvider = 'adaptive'
-      selectCatalogScreen(resolveCatalogScreenStartup('adaptive', $catalogLastScreen, enabled))
+      selectCatalogScreen(resolveCatalogScreenStartup('adaptive', $catalogLastScreen, enabled, $customScreens))
       return
     }
-    if (value === 'merged' && catalogScreens($catalogProviders).includes('merged')) {
-      $catalogDefaultProvider = 'merged'
-      selectCatalogScreen('merged')
+    if (isMergedScreen(value) && catalogScreens($catalogProviders, $customScreens).includes(value)) {
+      $catalogDefaultProvider = value
+      selectCatalogScreen(value)
       return
     }
     if (!enabled.includes(value as CatalogSelection)) return
@@ -155,13 +159,13 @@
     if (turningOff && current.length === 1) return
     const next = turningOff ? current.filter((provider) => provider !== id) : [...current, id]
     $catalogProviders = next
-    const nextScreens = catalogScreens(next)
+    const nextScreens = catalogScreens(next, $customScreens)
     const nextDefault: CatalogDefaultSelection = $catalogDefaultProvider === 'adaptive'
       || nextScreens.includes($catalogDefaultProvider as typeof nextScreens[number]) ? $catalogDefaultProvider : next[0]
     $catalogDefaultProvider = nextDefault
     const fallback = resolveCatalogStartup(nextDefault, $catalogLastProvider, next)
     if (!next.includes($catalogProvider)) {
-      if ($catalogScreen === 'merged' && nextScreens.includes('merged')) {
+      if (isMergedScreen($catalogScreen) && nextScreens.includes($catalogScreen)) {
         $catalogProvider = fallback
         $catalogLastProvider = fallback
       } else {
@@ -329,6 +333,9 @@
         chevron
       />
     {/if}
+  </SettingsSubcategory>
+  <SettingsSubcategory id="screens">
+    <CatalogScreensSettings />
   </SettingsSubcategory>
 
   <SettingsSubcategory id="layouts">

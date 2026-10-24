@@ -23,9 +23,11 @@
   import { catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
   import {
     decodeMergedCatalogHomeRowId,
+    homeRowOptions,
     loadCatalogProvider,
-    mergedCatalogHomeRowOptions,
   } from '$lib/catalog/registry'
+  import { homeCollections } from '$lib/catalog/collections/store'
+  import { collectionIdOf, collectionRowOptions } from '$lib/catalog/collections/rows'
   import { CatalogConfigurationError, type CatalogHome, type CatalogHomeRowOption } from '$lib/catalog/types'
   import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
   import { activeThemeLayout } from '$lib/themes/layout-state'
@@ -38,16 +40,20 @@
   import {
     catalogLabel,
     catalogProviders,
+    isCustomScreen,
+    isLegacyAniListCatalog,
     mergedCatalogProviders,
     type CatalogSelection,
+    type CustomScreenId,
   } from '$lib/settings/catalog'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
 
   type ExternalCatalogSelection = Exclude<CatalogSelection, 'auto' | 'anilist'>
 
-  let { anilistHero = [] }: { anilistHero?: Media[] } = $props()
+  // Merged Home, or a custom screen: a named Merged screen with its own layout, whose sections all start off.
+  let { target = 'merged', anilistHero = [] }: { target?: 'merged' | CustomScreenId; anilistHero?: Media[] } = $props()
 
-  let options = $state<Awaited<ReturnType<typeof mergedCatalogHomeRowOptions>>>([])
+  let options = $state<Awaited<ReturnType<typeof homeRowOptions>>>([])
   // Catalog homes are immutable snapshots. A raw root preserves Media identity between the first
   // usable Aniyomi update and its final result instead of recursively proxying every card.
   let homes = $state.raw<Partial<Record<CatalogSelection, CatalogHome>>>({})
@@ -61,15 +67,21 @@
   const anilistSections = homeSections(new Date())
   const anilistSectionMap = new Map(anilistSections.map((section) => [section.key, section]))
   const selections = $derived(mergedCatalogProviders($catalogProviders))
-  const hasAniList = $derived(selections.includes('auto') || selections.includes('anilist'))
-  const rows = $derived(resolveCatalogHomeRows('merged', [...options, ...blockRowOptions('merged', $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts).filter((row) => row.enabled))
+  const collectionOptions = $derived(collectionRowOptions($homeCollections, target))
+  const rows = $derived(resolveCatalogHomeRows(target, [...options, ...collectionOptions, ...blockRowOptions(target, $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts).filter((row) => row.enabled))
+  // A custom screen features AniList's banner only when it shows an AniList row; Merged whenever AniList is on.
+  const hasAniList = $derived(isCustomScreen(target)
+    ? rows.some((row) => { const decoded = decodeMergedCatalogHomeRowId(row.id); return !!decoded && isLegacyAniListCatalog(decoded.selection) })
+    : selections.some(isLegacyAniListCatalog))
   const optionIds = $derived(options.map((option) => option.id))
   // While a theme layout is active, it replaces the row order below (the user's own layout, in
   // `catalogHomeLayouts`, is never written to); its ephemeral `theme:<n>` blocks join `$homeBlocks`
   // for lookups so a theme block renders exactly like a real one.
   // The theme was drawn for AniList's rows: the catalog rows it left out follow its own.
-  const themeHome = $derived($activeThemeLayout?.home ? resolveThemeHome($activeThemeLayout.home, 'merged', optionIds, rows.map((row) => row.id).filter(isContentRow)) : null)
+  const themeHome = $derived($activeThemeLayout?.home ? resolveThemeHome($activeThemeLayout.home, target, optionIds, rows.map((row) => row.id).filter(isContentRow)) : null)
   const allBlocks = $derived(themeHome ? { ...$homeBlocks, ...themeHome.blocks } : $homeBlocks)
+  // A theme layout places only catalog rows, so this Home's collections keep their place after the banner.
+  const themeCollectionIds = $derived(themeHome ? rows.flatMap((row) => collectionIdOf(row.id) ?? []) : [])
   const visibleRowIds = $derived(themeHome?.rows ?? rows.map((row) => row.id))
   // The hero renders full-bleed above HomeColumns only while it truly leads the row order; while
   // Edit Home is open it always flows through HomeColumns instead, so it can be dragged/hidden like
@@ -89,7 +101,7 @@
     void optionsKey
     const abort = new AbortController()
     optionsLoading = true
-    void mergedCatalogHomeRowOptions(selections, abort.signal).then((result) => {
+    void homeRowOptions(target, selections, abort.signal).then((result) => {
       if (!abort.signal.aborted) options = result
     }).finally(() => {
       if (!abort.signal.aborted) optionsLoading = false
@@ -182,18 +194,20 @@
   {#if (optionsLoading && (themeHomeHas($activeThemeLayout?.home, 'hero', true) ?? true)) || heroFirst}{@render heroBlock()}{/if}
 
   <div class="space-y-5">
-    <CollectionsHome />
+    {#if themeHome}<CollectionsHome ids={themeCollectionIds} />{/if}
     {#snippet mergedRow(id: string)}
       {@const row = rows.find((item) => item.id === id) ?? (isThemeBlockId(id) ? { id, title: blockTitle(allBlocks[id]) } : options.find((item) => item.id === id))}
       {@const visibleIds = columns.main.includes(id) ? columns.main : columns.aside}
       {#if row}
-        <HomeRowFrame rowId={row.id} title={editorTitle(row)} target="merged" {visibleIds} locked={!!themeHome} role={themeHome?.roles[row.id]}>
+        <HomeRowFrame rowId={row.id} title={editorTitle(row)} {target} {visibleIds} locked={!!themeHome} role={themeHome?.roles[row.id]}>
           {#if row.id === 'hero'}
             {@render heroBlock()}
           {:else if row.id === 'continue'}
             {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} catalogScope="all" />{/key}
+          {:else if collectionIdOf(row.id)}
+            <CollectionsHome ids={[collectionIdOf(row.id) ?? '']} />
           {:else if isBlockId(row.id) || isThemeBlockId(row.id)}
-            <HomeBlockView id={row.id} target="merged" {optionIds} block={allBlocks[row.id]} />
+            <HomeBlockView id={row.id} {target} {optionIds} block={allBlocks[row.id]} />
           {:else}
             {@const decoded = decodeMergedCatalogHomeRowId(row.id)}
             {#if decoded?.selection === 'auto' || decoded?.selection === 'anilist'}

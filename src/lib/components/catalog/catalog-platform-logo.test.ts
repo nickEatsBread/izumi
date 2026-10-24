@@ -22,7 +22,7 @@ describe('catalog platform logos', () => {
   })
 
   it('keeps every logo on the same square mobile-safe canvas', () => {
-    expect(source.match(/size-10 shrink-0/g)).toHaveLength(7)
+    expect(source.match(/size-10 shrink-0/g)).toHaveLength(8)
   })
 
   it('shows the complete TMDB mark with breathing room', () => {

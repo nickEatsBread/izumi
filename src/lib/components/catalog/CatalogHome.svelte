@@ -24,6 +24,8 @@
   import { catalogHomeLayoutKey, catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
   import { CONTINUE_HOME_ROW, HERO_HOME_ROW } from '$lib/catalog/home-options'
   import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
+  import { homeCollections } from '$lib/catalog/collections/store'
+  import { collectionIdOf, collectionRowOptions } from '$lib/catalog/collections/rows'
   import { activeThemeLayout } from '$lib/themes/layout-state'
   import { themePresentation } from '$lib/themes/runtime'
   import { isThemeBlockId, resolveThemeHome, themeHomeHas } from '$lib/home/theme-layout'
@@ -49,8 +51,13 @@
   const heroSlides = $derived($themePresentation?.hero?.limit ? (home?.hero ?? []).slice(0, $themePresentation.hero.limit) : home?.hero ?? [])
   let retry = $state(0)
   const listUser = $derived($anilistUserName || $anilistUser)
-  type ContentRow = { id: string; kind: 'hero' } | { id: string; kind: 'continue' } | { id: string; kind: 'block' } | { id: string; kind: 'section'; section: CatalogHomeSection }
+  type ContentRow = { id: string; kind: 'hero' } | { id: string; kind: 'continue' } | { id: string; kind: 'block' } | { id: string; kind: 'collection'; collectionId: string } | { id: string; kind: 'section'; section: CatalogHomeSection }
   const continueEnabled = $derived(resolveCatalogHomeRows($catalogProvider, [CONTINUE_HOME_ROW], $catalogHomeLayouts)[0]?.enabled ?? true)
+  const collectionOptions = $derived(collectionRowOptions($homeCollections, $catalogProvider))
+  // Known before the provider answers (and under a theme layout, which places only catalog rows): the
+  // collections this Home shows, in their layout order.
+  const collectionIds = $derived(resolveCatalogHomeRows($catalogProvider, [HERO_HOME_ROW, CONTINUE_HOME_ROW, ...collectionOptions], $catalogHomeLayouts)
+    .flatMap((row) => (row.enabled && collectionIdOf(row.id)) || []))
   const sectionMap = $derived(new Map((home?.sections ?? []).map((section) => [section.id, section])))
   // Shared by the user's own resolved rows and a theme row naming an id the user has hidden (a
   // theme layout can show a row regardless of the user's own Edit Home choices).
@@ -58,6 +65,8 @@
     if (id === 'hero') return { id, kind: 'hero' }
     if (id === 'continue') return { id, kind: 'continue' }
     if (isBlockId(id) || isThemeBlockId(id)) return { id, kind: 'block' }
+    const collectionId = collectionIdOf(id)
+    if (collectionId) return { id, kind: 'collection', collectionId }
     const section = sectionMap.get(id)
     return section ? { id, kind: 'section', section } : null
   }
@@ -67,6 +76,7 @@
       HERO_HOME_ROW,
       CONTINUE_HOME_ROW,
       ...home.sections.map((section) => ({ id: section.id, title: section.title })),
+      ...collectionOptions,
       ...blockRowOptions($catalogProvider, $catalogHomeLayouts, $homeBlocks),
     ]
     return resolveCatalogHomeRows($catalogProvider, options, $catalogHomeLayouts)
@@ -104,12 +114,13 @@
     const abort = new AbortController()
     // A provider's visible rows are part of the request, not merely presentation. Include them in
     // the cache identity so enabling an Aniyomi source or restoring a hidden Home row cannot reuse
-    // an older one-source snapshot that was previously considered complete. Block ids are stripped
-    // out of that identity: a block's own settings live in `homeBlocks`, not in the provider's
+    // an older one-source snapshot that was previously considered complete. Block and collection ids are stripped
+    // out of that identity: they live in `homeBlocks` and the collection store, not in the provider's
     // response, so adding, moving or removing one must not look like a request to reload the
     // provider's Home all over again.
     const layout = $catalogHomeLayouts[catalogHomeLayoutKey(selection)] ?? null
-    const layoutForCache = layout && { order: layout.order.filter((id) => !isBlockId(id)), disabled: layout.disabled.filter((id) => !isBlockId(id)) }
+    const local = (id: string) => isBlockId(id) || !!collectionIdOf(id)
+    const layoutForCache = layout && { order: layout.order.filter((id) => !local(id)), disabled: layout.disabled.filter((id) => !local(id)) }
     const cacheKey = JSON.stringify([
       selection,
       layoutForCache,
@@ -177,7 +188,7 @@
   {#if (!home && (themeHomeHas($activeThemeLayout?.home, 'hero', true) ?? true)) || heroFirst}{@render heroBlock()}{/if}
 
   <div class="space-y-5">
-    <CollectionsHome />
+    {#if !home || themeHome}<CollectionsHome ids={collectionIds} />{/if}
     {#if (themeHomeHas($activeThemeLayout?.home, 'continue') ?? continueEnabled) && !home}
       {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />{/key}
     {/if}
@@ -206,13 +217,15 @@
         {@const row = toContentRow(id)}
         {@const visibleIds = columns.main.includes(id) ? columns.main : columns.aside}
         {#if row}
-          <HomeRowFrame rowId={row.id} title={row.kind === 'hero' ? HERO_HOME_ROW.title : row.kind === 'continue' ? 'Continue Watching' : row.kind === 'block' ? (allBlocks[row.id] ? blockTitle(allBlocks[row.id]) : row.id) : row.section.title} target={$catalogProvider} {visibleIds} locked={!!themeHome} role={themeHome?.roles[row.id]}>
+          <HomeRowFrame rowId={row.id} title={row.kind === 'hero' ? HERO_HOME_ROW.title : row.kind === 'continue' ? 'Continue Watching' : row.kind === 'block' ? (allBlocks[row.id] ? blockTitle(allBlocks[row.id]) : row.id) : row.kind === 'collection' ? (collectionOptions.find((option) => option.id === row.id)?.title ?? row.id) : row.section.title} target={$catalogProvider} {visibleIds} locked={!!themeHome} role={themeHome?.roles[row.id]}>
             {#if row.kind === 'hero'}
               {@render heroBlock()}
             {:else if row.kind === 'continue'}
               {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />{/key}
             {:else if row.kind === 'block'}
               <HomeBlockView id={row.id} target={$catalogProvider} optionIds={visibleRowIds} block={allBlocks[row.id]} />
+            {:else if row.kind === 'collection'}
+              <CollectionsHome ids={[row.collectionId]} />
             {:else}
               {@const section = row.section}
               <CatalogSectionRow {section} viewMoreHref={section.more ? moreHref(section.more) : undefined}

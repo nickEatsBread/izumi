@@ -85,6 +85,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     href: '/app/settings/library', iconName: 'library',
     subcategories: [
       { id: 'home', title: 'Platforms and Home' },
+      { id: 'screens', title: 'Screens and themes' },
       { id: 'layouts', title: 'Layouts' },
       { id: 'ratings', title: 'Ratings and spoilers' },
       { id: 'notifications', title: 'Notifications' },

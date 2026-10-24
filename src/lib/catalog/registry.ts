@@ -1,4 +1,5 @@
-import { catalogLabel, mergedCatalogProviders, type CatalogSelection } from '$lib/settings/catalog'
+import { catalogLabel, isMergedScreen, mergedCatalogProviders, type CatalogSelection } from '$lib/settings/catalog'
+import type { CatalogHomeTarget } from './home-layout'
 import { ANILIST_HOME_ROWS, CONTINUE_HOME_ROW, HERO_HOME_ROW } from './home-options'
 import type { CatalogHomeRowOption, CatalogProvider } from './types'
 
@@ -61,4 +62,13 @@ export async function mergedCatalogHomeRowOptions(
     }
   }
   return rows
+}
+
+/** The row library Edit Home offers for a screen. A custom screen offers Merged Home's whole library with
+ *  every section off, so a new screen opens on the banner and Continue Watching alone. */
+export async function homeRowOptions(target: CatalogHomeTarget, providers: unknown, signal?: AbortSignal): Promise<CatalogHomeRowOption[]> {
+  if (!isMergedScreen(target)) return catalogHomeRowOptions(target, signal)
+  const rows = await mergedCatalogHomeRowOptions(providers, signal)
+  if (target === 'merged') return rows
+  return rows.map((row) => (row.id === HERO_HOME_ROW.id || row.id === CONTINUE_HOME_ROW.id ? row : { ...row, defaultEnabled: false }))
 }

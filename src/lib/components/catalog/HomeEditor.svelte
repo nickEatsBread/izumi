@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte'
   import { fade, fly } from 'svelte/transition'
-  import { catalogHomeRowOptions, mergedCatalogHomeRowOptions } from '$lib/catalog/registry'
+  import { homeRowOptions } from '$lib/catalog/registry'
+  import { homeCollections } from '$lib/catalog/collections/store'
+  import { collectionRowOptions } from '$lib/catalog/collections/rows'
   import { catalogHomeLayouts, resetCatalogHomeLayout, resolveCatalogHomeRows, type CatalogHomeTarget } from '$lib/catalog/home-layout'
   import { homeEditorInsertRequest, homeEditorOpen, insertHomeRow } from '$lib/catalog/home-editor'
   import type { CatalogHomeRowOption } from '$lib/catalog/types'
@@ -13,7 +15,7 @@
   import { addHomeBlock, blockRowOptions, homeBlockSettingsId, pruneHomeBlocks } from '$lib/home/block-rows'
   import { BLOCK_META, HOME_BLOCK_TYPES, blockAvailable, homeBlocks, type HomeBlockType } from '$lib/home/blocks'
   import { isContentRow, tabbableRows } from '$lib/home/row-source'
-  import { catalogLabel, catalogProviders, isLegacyAniListCatalog, mergedCatalogProviders } from '$lib/settings/catalog'
+  import { catalogLabel, catalogProviders, customScreens, isLegacyAniListCatalog, isMergedScreen, mergedCatalogProviders } from '$lib/settings/catalog'
   import Check from '@lucide/svelte/icons/check'
   import Layers3 from '@lucide/svelte/icons/layers-3'
   import LayoutGrid from '@lucide/svelte/icons/layout-grid'
@@ -29,9 +31,9 @@
   let error = $state('')
   let sectionSearch = $state('')
   let dialog = $state<HTMLDivElement>()
-  const label = $derived(target === 'merged' ? 'Merged' : catalogLabel(target))
-  const rows = $derived(resolveCatalogHomeRows(target, [...options, ...blockRowOptions(target, $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts))
-  const usesAniList = $derived(target === 'merged' ? mergedCatalogProviders($catalogProviders).some((provider) => isLegacyAniListCatalog(provider)) : isLegacyAniListCatalog(target))
+  const label = $derived(catalogLabel(target, $customScreens))
+  const rows = $derived(resolveCatalogHomeRows(target, [...options, ...collectionRowOptions($homeCollections, target), ...blockRowOptions(target, $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts))
+  const usesAniList = $derived(isMergedScreen(target) ? mergedCatalogProviders($catalogProviders).some((provider) => isLegacyAniListCatalog(provider)) : isLegacyAniListCatalog(target))
   const tabRows = $derived(tabbableRows(options))
   const blockTypes = $derived.by(() => {
     const query = sectionSearch.trim().toLowerCase()
@@ -53,7 +55,7 @@
   })
   const request = $derived($homeEditorInsertRequest?.target === target ? $homeEditorInsertRequest : null)
   const beforeTitle = $derived(request?.beforeId ? rows.find((row) => row.id === request.beforeId)?.title : null)
-  const customRowsKey = $derived(target === 'tmdb' || target === 'merged' ? JSON.stringify($tmdbCustomHomeRows) : '')
+  const customRowsKey = $derived(target === 'tmdb' || isMergedScreen(target) ? JSON.stringify($tmdbCustomHomeRows) : '')
 
   $effect(() => {
     if (!$homeEditorOpen) return
@@ -63,10 +65,7 @@
     const abort = new AbortController()
     loading = true
     error = ''
-    const load = selection === 'merged'
-      ? mergedCatalogHomeRowOptions(providers, abort.signal)
-      : catalogHomeRowOptions(selection, abort.signal)
-    void load.then((result) => {
+    void homeRowOptions(selection, providers, abort.signal).then((result) => {
       if (!abort.signal.aborted) options = result
     }).catch((reason) => {
       if (!abort.signal.aborted) error = reason instanceof Error ? reason.message : String(reason)
@@ -146,7 +145,7 @@
 
   <div class="fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom))] left-1/2 z-[65] flex -translate-x-1/2 items-center gap-1 rounded-2xl border border-white/10 bg-neutral-950/95 p-1.5 text-white shadow-2xl backdrop-blur-xl sm:bottom-6" transition:fly={{ y: 16, duration: 160 }}>
     <span class="hidden items-center gap-2 whitespace-nowrap px-2 text-sm font-black sm:flex">
-      {#if target === 'merged'}<Layers3 size={17} class="text-cyan-300" />{/if}
+      {#if isMergedScreen(target)}<Layers3 size={17} class="text-cyan-300" />{/if}
       Editing {label}
     </span>
     {#if !$activeThemeLayout?.home}

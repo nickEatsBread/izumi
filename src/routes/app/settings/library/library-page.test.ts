@@ -129,8 +129,10 @@ describe('Home and library section', () => {
   })
 
   it('treats Merged as a Home destination instead of a global experience mode', () => {
-    expect(source).toContain("label: id === 'merged' ? 'Merged'")
-    expect(source).toContain("selectCatalogScreen('merged')")
+    expect(source).toContain('label: isMergedScreen(id) ? catalogLabel(id, $customScreens)')
+    expect(source).toContain('selectCatalogScreen(value)')
+    expect(source).toContain('<SettingsSubcategory id="screens">')
+    expect(source).toContain('<CatalogScreensSettings />')
     expect(source).not.toContain('onChange={setCatalogMode}')
     expect(source).not.toContain('settingKey="catalog-mode"')
   })
@@ -158,7 +160,7 @@ describe('Home and library section', () => {
     expect(source).toContain('onChange={setDefaultPlatform}')
     expect(source).toContain("{ value: 'adaptive', label: 'Adaptive · last selected' }")
     expect(source).toContain("if (value === 'adaptive')")
-    expect(source).toContain("if (value === 'merged'")
+    expect(source).toContain('if (isMergedScreen(value) && catalogScreens($catalogProviders, $customScreens).includes(value))')
   })
 
   it('lets Continue Watching stay provider-specific or combine every platform', () => {

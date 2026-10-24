@@ -15,6 +15,7 @@ import {
   catalogLabel,
   catalogProviders,
   catalogScreens,
+  companionScreen,
   type CatalogScreen,
 } from '$lib/settings/catalog'
 import {
@@ -930,7 +931,7 @@ export function initCompanionConnections(
         snapshots.push(await createSnapshot(screen))
         if (stopped || !companionProfileReady() || get(activeProfileId) !== profileId) return
       }
-      const snapshot = snapshots.find((value) => value.catalog.screen === get(catalogScreen)) ?? snapshots[0]
+      const snapshot = snapshots.find((value) => value.catalog.screen === companionScreen(get(catalogScreen))) ?? snapshots[0]
       if (snapshot) await publishCompanionSnapshot(snapshot).catch(() => {})
       for (const device of get(pairedCompanions)) {
         if (!device.cloudflare) continue

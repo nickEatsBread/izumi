@@ -33,7 +33,8 @@ describe('Home blocks wiring', () => {
 
   it('does not let a block-only edit refetch a provider or external Home', () => {
     const catalogHome = read('../catalog/CatalogHome.svelte')
-    expect(catalogHome, 'CatalogHome.svelte').toContain('layout.order.filter((id) => !isBlockId(id))')
+    expect(catalogHome, 'CatalogHome.svelte').toContain('const local = (id: string) => isBlockId(id) || !!collectionIdOf(id)')
+    expect(catalogHome, 'CatalogHome.svelte').toContain('layout.order.filter((id) => !local(id))')
     const mergedHome = read('../catalog/MergedCatalogHome.svelte')
     expect(mergedHome, 'MergedCatalogHome.svelte').toContain("import { untrack } from 'svelte'")
     expect(mergedHome, 'MergedCatalogHome.svelte').toContain('untrack(() => rows)')

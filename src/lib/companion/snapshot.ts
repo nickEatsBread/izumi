@@ -29,11 +29,14 @@ import {
   catalogProvider,
   catalogProviders,
   catalogScreen,
+  companionScreen,
   enabledCatalogScreens,
   continueWatchingCatalogScope,
+  isCustomScreen,
   mergedCatalogProviders,
   type CatalogSelection,
   type CatalogScreen,
+  type CustomScreenId,
 } from '$lib/settings/catalog'
 import { hideSpoilers, showAdult } from '$lib/settings/ui'
 import {
@@ -45,6 +48,8 @@ import {
   type CompanionMedia,
   type CompanionPersonFilter,
 } from './protocol'
+
+type CompanionScreen = Exclude<CatalogScreen, CustomScreenId>
 
 type QueryClient = Pick<Client, 'query'>
 const SNAPSHOT_CACHE_MS = 60_000
@@ -535,7 +540,7 @@ async function mergedHome(client: QueryClient): Promise<CatalogHome> {
   return { hero, sections }
 }
 
-async function selectedHome(client: QueryClient, screen: CatalogScreen, provider: CatalogSelection): Promise<CatalogHome> {
+async function selectedHome(client: QueryClient, screen: CompanionScreen, provider: CatalogSelection): Promise<CatalogHome> {
   const load = async (selection: Exclude<CatalogSelection, 'auto' | 'anilist'>) => {
     const selected = await loadCatalogProvider(selection)
     return selected.home ? selected.home() : { hero: [], sections: [] }
@@ -549,9 +554,10 @@ export async function createCompanionSnapshot(
   now = Date.now(),
   screenOverride?: CatalogScreen,
 ): Promise<CompanionHomeSnapshot> {
-  const screen = screenOverride ?? get(catalogScreen)
+  // The TV knows only built-in screens; a custom one is sent as the catalog it browses.
+  const screen = companionScreen(screenOverride ?? get(catalogScreen))
   const active = screen === 'merged' ? get(catalogProvider) : screen
-  const availableScreens = get(enabledCatalogScreens)
+  const availableScreens = get(enabledCatalogScreens).filter((value) => !isCustomScreen(value))
   const watchingEntries = get(continueWatching)
   const localHistoryEntries = historyEntries(get(localHistory))
   const playbackPositions = get(positions)

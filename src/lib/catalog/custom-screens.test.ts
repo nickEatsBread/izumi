@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { get } from 'svelte/store'
-import { catalogHomeLayouts } from './home-layout'
+import { get, type Readable } from 'svelte/store'
+import { catalogHomeLayouts, resolveCatalogHomeRows } from './home-layout'
 import { createCustomScreen, deleteCustomScreen, renameCustomScreen } from './custom-screens'
+import { homeRowOptions } from './registry'
 import { homeBlocks } from '$lib/home/blocks'
 import { CUSTOM_SCREEN_LIMIT, catalogDefaultProvider, catalogProvider, catalogProviders, catalogScreen, customScreens } from '$lib/settings/catalog'
 import { screenThemes } from '$lib/themes/screen-theme'
@@ -10,7 +11,7 @@ const stores = [customScreens, catalogHomeLayouts, screenThemes, homeBlocks, cat
 let saved: unknown[] = []
 
 beforeEach(() => {
-  saved = stores.map((store) => get(store))
+  saved = stores.map((store) => get(store as Readable<unknown>))
   customScreens.set([])
   catalogHomeLayouts.set({})
   screenThemes.set({})
@@ -57,5 +58,16 @@ describe('custom screens', () => {
     expect(get(homeBlocks)).toEqual({})
     expect(get(catalogDefaultProvider)).toBe('adaptive')
     expect(get(catalogScreen)).toBe('auto')
+  })
+})
+
+describe('custom screen row library', () => {
+  it("offers Merged Home's library with every section off but the banner and Continue Watching", async () => {
+    const options = await homeRowOptions('custom:night', ['auto'])
+    expect(options.some((option) => option.id === 'auto:trending')).toBe(true)
+    const rows = resolveCatalogHomeRows('custom:night', options, { 'custom:night': { order: ['hero', 'continue'], disabled: [] } })
+    expect(rows.filter((row) => row.enabled).map((row) => row.id)).toEqual(['hero', 'continue'])
+    const merged = await homeRowOptions('merged', ['auto'])
+    expect(merged.find((option) => option.id === 'auto:list')?.defaultEnabled).not.toBe(false)
   })
 })

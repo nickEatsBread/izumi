@@ -1,7 +1,7 @@
 import { cloudSubtitleServices } from '$lib/stremio/subtitles'
 import { get, type Readable } from 'svelte/store'
 import { profileHousehold } from '$lib/profiles/store'
-import { catalogScreen, enabledCatalogScreens, tmdbReadToken } from '$lib/settings/catalog'
+import { catalogScreen, companionScreen, enabledCatalogScreens, isCustomScreen, tmdbReadToken } from '$lib/settings/catalog'
 import {
   debridKey, debridProvider, hideSpoilers, preferredAudioLang, preferredQuality, preferredStreamSort, showAdult,
   enabledSubtitleProviders, preferredSubLang, cloudSubtitleSession, subtitleStyleEnabled, subtitleOverrideScope,
@@ -41,8 +41,8 @@ export function currentCloudflareCompanionProfile(connectedDeviceFallback: boole
     allowPrivateNetworkSources: get(cloudflareAllowLanSources),
     debrid: key && providerMeta(provider) ? { provider, credential: key } : null,
     catalog: {
-      screens: [...get(enabledCatalogScreens)],
-      defaultScreen: get(catalogScreen),
+      screens: get(enabledCatalogScreens).filter((screen) => !isCustomScreen(screen)),
+      defaultScreen: companionScreen(get(catalogScreen)),
       showAdult: get(showAdult),
       hideSpoilers: get(hideSpoilers),
       tmdbToken: get(tmdbReadToken).trim(),

@@ -1,8 +1,9 @@
 <script lang="ts">
-  import type { CatalogScreen } from '$lib/settings/catalog'
+  import { isCustomScreen, type CatalogScreen } from '$lib/settings/catalog'
   import Sparkles from '@lucide/svelte/icons/sparkles'
   import Coffee from '@lucide/svelte/icons/coffee'
   import Layers3 from '@lucide/svelte/icons/layers-3'
+  import LayoutGrid from '@lucide/svelte/icons/layout-grid'
 
   let { platform }: { platform: CatalogScreen } = $props()
   let failedPlatform = $state<CatalogScreen | null>(null)
@@ -19,6 +20,10 @@
 {#if platform === 'merged'}
   <span class="relative grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-600 text-white shadow-inner" aria-hidden="true">
     <Layers3 size={23} strokeWidth={2.5} />
+  </span>
+{:else if isCustomScreen(platform)}
+  <span class="relative grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-fuchsia-400 via-rose-500 to-orange-400 text-white shadow-inner" aria-hidden="true">
+    <LayoutGrid size={22} strokeWidth={2.5} />
   </span>
 {:else if platform === 'auto'}
   <span class="relative grid size-10 shrink-0 place-items-center rounded-xl bg-[#152232]" aria-hidden="true">
