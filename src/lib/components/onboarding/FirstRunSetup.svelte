@@ -49,7 +49,7 @@
   // Setup never asks for an API key. TMDB is used when a token is already there (saved on an
   // earlier run, or built into a private build), and the keyless catalog otherwise.
   const movieMetadata = onboardingMovieMetadata(Boolean(get(tmdbReadToken).trim() || (publicEnv as Record<string, string | undefined>).PUBLIC_TMDB_READ_TOKEN?.trim()))
-  // Not asked either; Settings → Catalog changes it.
+  // Not asked either; Settings → Library changes it.
   const startupLibrary = onboardingStartupLibrary(initialProvider, initialBoth)
 
   let root = $state<HTMLElement>()
@@ -199,7 +199,7 @@
   }
 
   function skip() {
-    // Nothing is recorded about what was left undone. Settings → Interface reruns setup, and the
+    // Nothing is recorded about what was left undone. Settings → About reruns setup, and the
     // Sources and Accounts screens each say what they still need.
     finishOnboarding()
   }
