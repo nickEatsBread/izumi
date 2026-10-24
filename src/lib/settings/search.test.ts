@@ -221,13 +221,17 @@ describe('settingHref', () => {
     const threshold = SETTINGS_SEARCH_INDEX.find((item) => item.title === 'Episodes before Watchlist')!
     expect(settingHref(threshold)).toBe('/app/settings/accounts?section=behaviour&setting=episodes-before-watchlist')
     const caches = SETTINGS_SEARCH_INDEX.find((item) => item.title === 'Cache sizes')!
-    expect(settingHref(caches)).toBe('/app/settings/downloads')
+    expect(settingHref(caches)).toBe('/app/settings/downloads#storage')
+  })
+
+  it('anchors only keyless hits, since the setting query would land after a hash', () => {
+    for (const item of SETTINGS_SEARCH_INDEX) if (item.key) expect(item.href, item.title).not.toContain('#')
   })
 })
 
 describe('settings search metadata', () => {
   it('files every hit under a registry section and subcategory, titled after its section', () => {
-    expect(SETTINGS_SEARCH_INDEX.length).toBeGreaterThanOrEqual(131)
+    expect(SETTINGS_SEARCH_INDEX.length).toBeGreaterThanOrEqual(132)
     for (const item of SETTINGS_SEARCH_INDEX) {
       const sub = subcategoryDef(item.section, item.subcategory)
       expect(sub, `${item.title}: ${item.section}#${item.subcategory}`).toBeDefined()

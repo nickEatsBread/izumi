@@ -82,6 +82,13 @@ describe('settings search anchors', () => {
     for (const item of SETTINGS_SEARCH_INDEX) expect(existsSync(routeFile(item.href)), item.href).toBe(true)
   })
 
+  it('opens every anchored hit on a block its page renders with that id', () => {
+    for (const item of SETTINGS_SEARCH_INDEX) {
+      const hash = new URL(item.href, BASE).hash.slice(1)
+      if (hash) expect(read(routeFile(item.href)), item.href).toContain(`id="${hash}"`)
+    }
+  })
+
   it.each(keyed.map((item): [string, SettingSearchItem] => [`${item.category}: ${item.title}`, item]))('%s lands on a rendered row', (_label, item) => {
     const keys = [...renderedKeys(routeFile(item.href))]
     if (item.key) expect(keys, `${item.key} on ${item.href}`).toContain(item.key)

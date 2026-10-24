@@ -10,7 +10,8 @@ export type SettingSearchItem = {
   /** The title of the row's section (sections.ts), shown beside the hit. */
   category: string
   /** The route that renders the row: its section page or a sub-page. A row whose old page still
-   *  renders inside another section page opens that page until the row moves. */
+   *  renders inside another section page opens that page until the row moves; a hit with no `key`
+   *  adds the `#id` of the block that renders it there, so it opens on that block. */
   href: string
   description?: string
   keywords?: string
@@ -117,13 +118,13 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Episode airing notifications', category: 'Home and library', href: '/app/settings/appearance', keywords: 'notify alert schedule new episode', key: 'episode-airing-notifications', section: 'library', subcategory: 'notifications' },
   { title: 'Theme and accessibility', category: 'Appearance', href: '/app/settings/appearance', keywords: 'light dark contrast motion focus wcag large targets', section: 'appearance', subcategory: 'accessibility' },
   { title: 'Storage used', category: 'Downloads and storage', href: '/app/settings/downloads', keywords: 'disk space size', section: 'downloads', subcategory: 'storage' },
-  { title: 'Saved scenes', category: 'Home and library', href: '/app/settings/library', keywords: 'scene bookmarks quotes notes timestamps resume manage', section: 'library', subcategory: 'scenes' },
+  { title: 'Saved scenes', category: 'Home and library', href: '/app/settings/library#scenes', keywords: 'scene bookmarks quotes notes timestamps resume manage', section: 'library', subcategory: 'scenes' },
 
-  { title: 'Cache sizes', category: 'Downloads and storage', href: '/app/settings/downloads', keywords: 'disk space used free cleanup hoarding', section: 'downloads', subcategory: 'storage' },
-  { title: 'Scrub previews cache', category: 'Downloads and storage', href: '/app/settings/downloads', keywords: 'thumbnails seek bar hover tiles clear', section: 'downloads', subcategory: 'storage' },
-  { title: 'Direct P2P playback cache', category: 'Downloads and storage', href: '/app/settings/downloads', keywords: 'torrent pieces streaming clear space', section: 'downloads', subcategory: 'storage' },
-  { title: 'Downloaded subtitles cache', category: 'Downloads and storage', href: '/app/settings/downloads', keywords: 'opensubtitles subdl jimaku srt clear', section: 'downloads', subcategory: 'storage' },
-  { title: 'Clear all caches', category: 'Downloads and storage', href: '/app/settings/downloads', keywords: 'free disk space delete cleanup', section: 'downloads', subcategory: 'storage' },
+  { title: 'Cache sizes', category: 'Downloads and storage', href: '/app/settings/downloads#storage', keywords: 'disk space used free cleanup hoarding', section: 'downloads', subcategory: 'storage' },
+  { title: 'Scrub previews cache', category: 'Downloads and storage', href: '/app/settings/downloads#storage', keywords: 'thumbnails seek bar hover tiles clear', section: 'downloads', subcategory: 'storage' },
+  { title: 'Direct P2P playback cache', category: 'Downloads and storage', href: '/app/settings/downloads#storage', keywords: 'torrent pieces streaming clear space', section: 'downloads', subcategory: 'storage' },
+  { title: 'Downloaded subtitles cache', category: 'Downloads and storage', href: '/app/settings/downloads#storage', keywords: 'opensubtitles subdl jimaku srt clear', section: 'downloads', subcategory: 'storage' },
+  { title: 'Clear all caches', category: 'Downloads and storage', href: '/app/settings/downloads#storage', keywords: 'free disk space delete cleanup', section: 'downloads', subcategory: 'storage' },
 
   { title: 'Haptics', category: 'Appearance', href: '/app/settings/appearance', keywords: 'vibration feedback Android', key: 'haptics', section: 'appearance', subcategory: 'accessibility' },
   { title: 'Theme Studio', category: 'Appearance', href: '/app/settings/theme-studio', keywords: 'custom theme colours palette typography font radius backdrop contrast import export appearance', section: 'appearance', subcategory: 'theme' },
@@ -147,10 +148,10 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Save watch history on this device', category: 'Home and library', href: '/app/settings/library', keywords: 'local progress privacy', key: 'save-watch-history-on-this-device', section: 'library', subcategory: 'history' },
   { title: 'Incognito mode', category: 'Home and library', href: '/app/settings/library', keywords: 'private browsing session ghost pause tracking sync anilist mal secret', key: 'incognito-mode', section: 'library', subcategory: 'history' },
   { title: 'Store', category: 'Sources and store', href: '/app/settings/store', keywords: 'source store addons extensions themes marketplace discover install packages custom stores', section: 'sources', subcategory: 'store' },
-  { title: 'Import & export history', category: 'Devices and backup', href: '/app/settings/library', keywords: 'backup restore json', section: 'devices', subcategory: 'transfer' },
-  { title: 'Clear watch history', category: 'Home and library', href: '/app/settings/library', keywords: 'delete forget watched', section: 'library', subcategory: 'history' },
-  { title: 'Backup & restore', category: 'Devices and backup', href: '/app/settings/devices', keywords: 'export import save file settings transfer move device secrets accounts', section: 'devices', subcategory: 'backup' },
-  { title: 'Hotkeys', category: 'Playback', href: '/app/settings/playback', keywords: 'keyboard shortcuts keys bindings remap', desktopOnly: true, section: 'playback', subcategory: 'controls' },
+  { title: 'Import & export history', category: 'Devices and backup', href: '/app/settings/library#history', keywords: 'backup restore json', section: 'devices', subcategory: 'transfer' },
+  { title: 'Clear watch history', category: 'Home and library', href: '/app/settings/library#history', keywords: 'delete forget watched', section: 'library', subcategory: 'history' },
+  { title: 'Backup & restore', category: 'Devices and backup', href: '/app/settings/devices#backup', keywords: 'export import save file settings transfer move device secrets accounts', section: 'devices', subcategory: 'backup' },
+  { title: 'Hotkeys', category: 'Playback', href: '/app/settings/playback#controls', keywords: 'keyboard shortcuts keys bindings remap', desktopOnly: true, section: 'playback', subcategory: 'controls' },
 
   { title: 'Device sync', category: 'Devices and backup', href: '/app/settings/devices', keywords: 'pair transfer another device local network', section: 'devices', subcategory: 'devices' },
   { title: 'Device name', category: 'Devices and backup', href: '/app/settings/devices', keywords: 'sync identity', key: 'device-name', section: 'devices', subcategory: 'devices' },
