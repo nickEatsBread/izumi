@@ -15,7 +15,7 @@
   import { addHomeBlock, blockRowOptions, homeBlockSettingsId, pruneHomeBlocks } from '$lib/home/block-rows'
   import { BLOCK_META, HOME_BLOCK_TYPES, blockAvailable, homeBlocks, type HomeBlockType } from '$lib/home/blocks'
   import { isContentRow, tabbableRows } from '$lib/home/row-source'
-  import { catalogLabel, catalogProviders, customScreens, isLegacyAniListCatalog, isMergedScreen, mergedCatalogProviders } from '$lib/settings/catalog'
+  import { catalogLabel, catalogProviders, customScreens, isCustomScreen, isLegacyAniListCatalog, isMergedScreen, mergedCatalogProviders } from '$lib/settings/catalog'
   import Check from '@lucide/svelte/icons/check'
   import Layers3 from '@lucide/svelte/icons/layers-3'
   import LayoutGrid from '@lucide/svelte/icons/layout-grid'
@@ -31,6 +31,8 @@
   let error = $state('')
   let sectionSearch = $state('')
   let dialog = $state<HTMLDivElement>()
+  // Custom screens never take a theme's Home layout (MergedCatalogHome), so their editor is never locked by one.
+  const themeLayout = $derived(isCustomScreen(target) ? null : $activeThemeLayout)
   const label = $derived(catalogLabel(target, $customScreens))
   const rows = $derived(resolveCatalogHomeRows(target, [...options, ...collectionRowOptions($homeCollections, target), ...blockRowOptions(target, $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts))
   const usesAniList = $derived(isMergedScreen(target) ? mergedCatalogProviders($catalogProviders).some((provider) => isLegacyAniListCatalog(provider)) : isLegacyAniListCatalog(target))
@@ -109,7 +111,7 @@
   }
 
   function copyThemeHome() {
-    const layout = $activeThemeLayout
+    const layout = themeLayout
     const key = $activeThemeKey
     if (!layout?.home || !key || loading || error) return
     const optionIds = options.map((option) => option.id)
@@ -140,7 +142,7 @@
 
 {#if $homeEditorOpen}
   <div class="fixed inset-x-4 bottom-[calc(9.25rem+env(safe-area-inset-bottom))] z-[64] mx-auto max-w-xl sm:inset-x-0 sm:bottom-24 sm:left-1/2 sm:right-auto sm:w-full sm:-translate-x-1/2" transition:fly={{ y: 16, duration: 160 }}>
-    <ThemeLayoutNotice what="Home" oncopy={copyThemeHome} />
+    {#if !isCustomScreen(target)}<ThemeLayoutNotice what="Home" oncopy={copyThemeHome} />{/if}
   </div>
 
   <div class="fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom))] left-1/2 z-[65] flex -translate-x-1/2 items-center gap-1 rounded-2xl border border-white/10 bg-neutral-950/95 p-1.5 text-white shadow-2xl backdrop-blur-xl sm:bottom-6" transition:fly={{ y: 16, duration: 160 }}>
@@ -148,7 +150,7 @@
       {#if isMergedScreen(target)}<Layers3 size={17} class="text-cyan-300" />{/if}
       Editing {label}
     </span>
-    {#if !$activeThemeLayout?.home}
+    {#if !themeLayout?.home}
     <button type="button" data-focusable onclick={() => homeEditorInsertRequest.set({ target, beforeId: null })} class="inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-sm font-bold transition hover:bg-white/10">
       <Plus size={17} /> <span class="hidden sm:inline">Add section</span><span class="sm:hidden">Add</span>
     </button>

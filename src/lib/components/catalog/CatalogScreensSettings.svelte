@@ -55,10 +55,10 @@
 
 {#each screens as screen (screen)}
   {@const label = catalogLabel(screen, $customScreens)}
-  <SettingsRow title={label} description={isCustomScreen(screen) ? 'Your own screen' : undefined} controlLayout="stack" expanded={renaming === screen}>
+  <SettingsRow title={label} description={isCustomScreen(screen) ? 'Your own screen' : undefined} expanded={renaming === screen}>
     {#snippet leading()}<span class="block scale-90"><CatalogPlatformLogo platform={screen} /></span>{/snippet}
     {#snippet control()}
-      <SelectMenu className="w-full sm:w-52" value={themeOf(screen)} {options} ariaLabel={`Theme for ${label}`}
+      <SelectMenu variant="inline" value={themeOf(screen)} {options} ariaLabel={`Theme for ${label}`}
         onChange={(value) => setScreenTheme(screen, (value || null) as ScreenThemeRef | null)} />
       {#if isCustomScreen(screen)}
         <button type="button" data-focusable onclick={() => startRename(screen)} aria-label={`Rename ${label}`} class="grid size-10 shrink-0 place-items-center rounded-lg hover:bg-accent"><Pencil size={16} /></button>

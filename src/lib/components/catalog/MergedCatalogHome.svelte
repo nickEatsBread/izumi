@@ -53,6 +53,10 @@
   // Merged Home, or a custom screen: a named Merged screen with its own layout, whose sections all start off.
   let { target = 'merged', anilistHero = [] }: { target?: 'merged' | CustomScreenId; anilistHero?: Media[] } = $props()
 
+  // A custom screen is arranged by its owner: the theme styles it, but its Home layout never replaces the
+  // sections the user chose (nor locks Edit Home's Add section).
+  const themeLayout = $derived(isCustomScreen(target) ? null : $activeThemeLayout)
+
   let options = $state<Awaited<ReturnType<typeof homeRowOptions>>>([])
   // Catalog homes are immutable snapshots. A raw root preserves Media identity between the first
   // usable Aniyomi update and its final result instead of recursively proxying every card.
@@ -78,7 +82,7 @@
   // `catalogHomeLayouts`, is never written to); its ephemeral `theme:<n>` blocks join `$homeBlocks`
   // for lookups so a theme block renders exactly like a real one.
   // The theme was drawn for AniList's rows: the catalog rows it left out follow its own.
-  const themeHome = $derived($activeThemeLayout?.home ? resolveThemeHome($activeThemeLayout.home, target, optionIds, rows.map((row) => row.id).filter(isContentRow)) : null)
+  const themeHome = $derived(themeLayout?.home ? resolveThemeHome(themeLayout.home, target, optionIds, rows.map((row) => row.id).filter(isContentRow)) : null)
   const allBlocks = $derived(themeHome ? { ...$homeBlocks, ...themeHome.blocks } : $homeBlocks)
   // A theme layout places only catalog rows, so this Home's collections keep their place after the banner.
   const themeCollectionIds = $derived(themeHome ? rows.flatMap((row) => collectionIdOf(row.id) ?? []) : [])
@@ -191,7 +195,7 @@
 
   <!-- Row order is unknown before the row library loads (`rows` is empty pre-load), so the pre-load
        skeleton renders here rather than waiting on heroFirst, unless a theme layout opens on something else. -->
-  {#if (optionsLoading && (themeHomeHas($activeThemeLayout?.home, 'hero', true) ?? true)) || heroFirst}{@render heroBlock()}{/if}
+  {#if (optionsLoading && (themeHomeHas(themeLayout?.home, 'hero', true) ?? true)) || heroFirst}{@render heroBlock()}{/if}
 
   <div class="space-y-5">
     {#if themeHome}<CollectionsHome ids={themeCollectionIds} />{/if}
@@ -233,7 +237,7 @@
         </HomeRowFrame>
       {/if}
     {/snippet}
-    <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$activeThemeLayout?.asideWidth ?? $homeAsideWidth} asideGap={$activeThemeLayout?.asideGap} asideStart={$activeThemeLayout?.asideStart} stack="space-y-5" row={mergedRow} />
+    <HomeColumns main={columns.main} aside={columns.aside} asideWidth={themeLayout?.asideWidth ?? $homeAsideWidth} asideGap={themeLayout?.asideGap} asideStart={themeLayout?.asideStart} stack="space-y-5" row={mergedRow} />
 
     {#if optionsLoading || (homeLoading && !rows.length)}
       {#each Array.from({ length: 3 }) as _}

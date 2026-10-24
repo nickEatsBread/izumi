@@ -20,6 +20,12 @@ describe('merged catalog Home', () => {
     expect(home).toContain("let { target = 'merged', anilistHero = [] }")
     expect(home).toContain('resolveCatalogHomeRows(target, [...options, ...collectionOptions')
     expect(home).toContain('homeRowOptions(target, selections, abort.signal)')
+  })
+
+  it('never lets a theme Home layout rearrange or lock a custom screen', () => {
+    const editor = readFileSync(fileURLToPath(new URL('./HomeEditor.svelte', import.meta.url)), 'utf8')
+    for (const source of [home, editor]) expect(source).toContain('const themeLayout = $derived(isCustomScreen(target) ? null : $activeThemeLayout)')
+    expect(editor).toContain('{#if !isCustomScreen(target)}<ThemeLayoutNotice')
     expect(home).toContain("params = new URLSearchParams({ provider: selection })")
   })
 })

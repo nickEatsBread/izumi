@@ -109,6 +109,9 @@ Differences from Merged:
 
 - **Everything starts off.** A new screen shows only the Featured banner and Continue Watching; the
   user adds sections with Edit Home's *Add section*, which already lists the whole library.
+- **The user arranges it.** A theme on a custom screen styles it, but the theme's Home layout never
+  rearranges or locks its sections (found in the live run: Starlight's layout replaced a new screen's
+  sections and hid *Add section*). Built-in screens keep today's behaviour.
 - **Hero** comes from the providers of the rows on the screen (AniList's hero only when the screen has
   an AniList row). Merged keeps its current rule.
 - **Search**, Continue Watching (all platforms), Categories, the AniList degraded banner and block tab
