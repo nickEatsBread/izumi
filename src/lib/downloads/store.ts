@@ -27,6 +27,8 @@ const filenameOf = (it?: DownloadItem) => it?.filename ?? `${it?.title ?? 'downl
 
 /** Queue one episode for download (no-op if already queued/downloading/done). */
 export function enqueue(media: Media, episode: number, preferences?: DownloadPreferences, ruleId?: string) {
+  // A search box release has no title to resolve a download by (its toolbar hides Download).
+  if (media.release) return
   const id = keyFor(media.id, episode)
   const cur = get(downloads)[id]
   if (cur && cur.status !== 'error') return

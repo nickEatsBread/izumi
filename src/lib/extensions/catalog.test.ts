@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pointerUrl, normalizeManifest, isRunnableType, isLegacyTorrentType, extensionBackendLabel, resolveManifestUrl, manifestProblem, sourceLabel, catalogPackages, aniyomiRepositoryPackages, OFFICIAL_ANIME_CATALOG } from './catalog'
+import { pointerUrl, normalizeManifest, isRunnableType, isLegacyTorrentType, isTextSearchableSource, extensionBackendLabel, resolveManifestUrl, manifestProblem, sourceLabel, catalogPackages, aniyomiRepositoryPackages, OFFICIAL_ANIME_CATALOG } from './catalog'
 
 // Shapes below are the real ones served by the catalogs we support, trimmed to the fields we read.
 
@@ -346,5 +346,15 @@ describe('aniyomiRepositoryPackages', () => {
 describe('OFFICIAL_ANIME_CATALOG', () => {
   it('is owned by the pure catalog module', () => {
     expect(OFFICIAL_ANIME_CATALOG).toBe('https://raw.githubusercontent.com/nickEatsBread/izumi-extension-repo/refs/heads/main/index.json')
+  })
+})
+
+describe('isTextSearchableSource', () => {
+  it('accepts release sources and refuses ones that need a title first', () => {
+    expect(isTextSearchableSource({})).toBe(true)
+    expect(isTextSearchableSource({ type: 'torrent' })).toBe(true)
+    expect(isTextSearchableSource({ type: 'anime-torrent-provider' })).toBe(true)
+    expect(isTextSearchableSource({ type: 'onlinestream-provider' })).toBe(false)
+    expect(isTextSearchableSource({ type: 'torrent', runtime: 'nuvio' })).toBe(false)
   })
 })

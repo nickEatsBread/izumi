@@ -129,6 +129,8 @@ export function mediaSnapshot(m: Media): Media {
  *  No-op when history is off; in incognito it records to the in-memory overlay instead (the
  *  session still gets Continue Watching + same-release resume, nothing touches disk). */
 export function recordPlay(media: Media, episode: number | undefined, release?: { group?: string; bingeGroup?: string }) {
+  // A search box release is not a title: it has its own Recent list and never reaches history.
+  if (media.release) return
   const played = historyEpisodeOf(media, episode)
   if (played == null) return
   const target = get(incognito) ? incognitoHistory : durableHistory

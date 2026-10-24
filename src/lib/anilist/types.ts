@@ -1,3 +1,4 @@
+import type { Stream } from '$lib/stremio/parse'
 // A partial calendar date (AniList FuzzyDate). Any part may be absent. Reused by
 // Media.startDate + the viewer's list-entry start/finish dates.
 export type FuzzyDate = { year?: number; month?: number; day?: number }
@@ -91,6 +92,9 @@ export interface Media {
   catalog?: MediaCatalogIdentity
   /** Other installed sources collapsed into the same JVM search result. */
   catalogAlternatives?: MediaCatalogIdentity[]
+  /** Set only on a search box stand-in: the picked release, not a catalog title. History, trackers
+   *  and title lookups skip media that carry it. */
+  release?: { stream: Stream; pack: boolean; season?: number }
   externalIds?: ExternalMediaIds
   videos?: MediaVideo[]
   type?: 'ANIME' | 'MANGA' | 'MOVIE' | 'SERIES'
