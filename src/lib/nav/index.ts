@@ -8,7 +8,7 @@ import { takeFocusHint } from './focus-hint'
 import { isNavigable, isRovingTab } from './focusable'
 import { isPadEvent, padAdjust } from './pad-controls'
 import { navEpoch, navInFlight } from './nav-state'
-import { ANCHOR_SLIDE_MS, ANCHOR_SNAP_MS, anchorScrollLeft, anchorScrollTop, animateScroll, stopScroll } from './anchor'
+import { ANCHOR_SLIDE_MS, ANCHOR_SNAP_MS, anchorScrollLeft, anchorScrollTop, animateScroll, stopAllScrolls, stopScroll } from './anchor'
 export * from './input'
 export * from './actions'
 export * from './spatial'
@@ -251,7 +251,7 @@ function trackItem(el: HTMLElement, track: HTMLElement): HTMLElement {
  *  or after it on a tie. The row keeps no other focus memory, and after a slide this card is where
  *  the row was left. */
 function anchorSlotCard(track: HTMLElement): HTMLElement | null {
-  const slot = track.getBoundingClientRect().left + track.clientLeft + (parseFloat(getComputedStyle(track).paddingLeft) || 0)
+  const slot = track.getBoundingClientRect().left + (track.clientLeft + (parseFloat(getComputedStyle(track).paddingLeft) || 0)) * zoomOf(track)
   let best: HTMLElement | null = null
   let bestOffset = Infinity
   for (const el of focusables(track)) {
@@ -406,6 +406,14 @@ function shellTop(): number {
   return top
 }
 
+/** The UI scale (CSS `zoom` on <html>) as `el` sees it: rects, shellTop() and the window's scroll
+ *  are screen px, while `el`'s own scrollLeft, border, padding and scroll-margin are local px, this
+ *  many times smaller on screen (cards/preview-pos.ts). 1 where nothing is laid out. */
+function zoomOf(el: HTMLElement): number {
+  const z = el.getBoundingClientRect().width / el.offsetWidth
+  return Number.isFinite(z) && z > 0 ? z : 1
+}
+
 /** Per track: stops listening for the card-width transitions after its last sideways move. */
 const anchorSettles = new WeakMap<HTMLElement, () => void>()
 const ANCHOR_SETTLE_PROPS = new Set(['width', 'min-width', 'max-width', 'flex-basis'])
@@ -442,19 +450,21 @@ function settlingShrink(item: HTMLElement, track: HTMLElement): number {
  *  focused one, and for a second each width transition ending in the track re-measures and slides
  *  the rest of the way. */
 function revealAnchored(el: HTMLElement, track: HTMLElement, row: HTMLElement, vertical: boolean, instant: boolean): void {
+  const z = zoomOf(track)
   if (vertical) {
     const to = anchorScrollTop({
       rowTop: row.getBoundingClientRect().top,
       scrollY: window.scrollY,
-      offset: parseFloat(getComputedStyle(row).scrollMarginTop) || shellTop() + 16,
+      offset: parseFloat(getComputedStyle(row).scrollMarginTop) * z || shellTop() + 16 * z,
       maxScroll: document.documentElement.scrollHeight - window.innerHeight,
     })
     runAnchorScroll(window, () => window.scrollY, (top) => window.scrollTo({ top, behavior: 'instant' }), to, instant ? 0 : ANCHOR_SNAP_MS)
     return
   }
+  // The rects and settlingShrink are screen px; the track's scroll, border and padding are its own.
   const measure = () => anchorScrollLeft({
-    cardLeft: trackItem(el, track).getBoundingClientRect().left - settlingShrink(trackItem(el, track), track),
-    trackLeft: track.getBoundingClientRect().left + track.clientLeft,
+    cardLeft: (trackItem(el, track).getBoundingClientRect().left - settlingShrink(trackItem(el, track), track)) / z,
+    trackLeft: track.getBoundingClientRect().left / z + track.clientLeft,
     paddingLeft: parseFloat(getComputedStyle(track).paddingLeft) || 0,
     scrollLeft: track.scrollLeft,
     maxScroll: track.scrollWidth - track.clientWidth,
@@ -955,13 +965,15 @@ export function focusByNav(el: HTMLElement, vertical: boolean, rapid = false, re
 
 // A navigation that has landed has removed the page it left, so the last arrow move and a landing
 // that pointed into it are dropped then (forgetStaleNav), not kept until the next arrow press, which
-// a mouse user may never make. One subscription per window; a re-init (HMR) replaces it.
+// a mouse user may never make. One subscription per window; a re-init (HMR) replaces it. A
+// navigation starting also stops an anchored row's eased scroll, which would keep writing its frames
+// over the page that replaces it.
 const NAV_LANDED_WATCH = Symbol.for('izumi.navLandedWatch')
 
 function forgetStaleNavOnLanding(): void {
   const scope = globalThis as unknown as Record<symbol, (() => void) | undefined>
   scope[NAV_LANDED_WATCH]?.()
-  scope[NAV_LANDED_WATCH] = navInFlight.subscribe((inFlight) => { if (!inFlight) forgetStaleNav() })
+  scope[NAV_LANDED_WATCH] = navInFlight.subscribe((inFlight) => { if (inFlight) stopAllScrolls(); else forgetStaleNav() })
 }
 
 /** Test hook: forget the landing and the last arrow move, module state that every test in a file

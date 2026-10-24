@@ -37,11 +37,17 @@ export function anchorScrollTop(o: { rowTop: number; scrollY: number; offset: nu
   return clampScroll(o.scrollY + o.rowTop - o.offset, o.maxScroll)
 }
 
-const running = new WeakMap<object, () => void>()
+// A Map, not a WeakMap, so a navigation can stop them all; each entry leaves when its animation ends.
+const running = new Map<object, () => void>()
 
 /** Stop the animation running on `key`, if any. */
 export function stopScroll(key: object): void {
   running.get(key)?.()
+}
+
+/** Stop every running animation: a navigation is replacing the page they would write over. */
+export function stopAllScrolls(): void {
+  for (const cancel of [...running.values()]) cancel()
 }
 
 /** Animates `get`/`set` from the current value to `to` over `ms` with anchorEase; returns cancel.

@@ -3,6 +3,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { ANCHOR_SLIDE_MS, ANCHOR_SNAP_MS, anchorEase, anchorScrollLeft, anchorScrollTop, animateScroll, stopScroll } from './anchor'
 import { initDpadNav } from './index'
 import { controllerMode } from './input'
+import { navInFlight } from './nav-state'
 
 // The reference curve, cubic-bezier(.2,.8,.2,1), from its own polynomial form and Newton's method
 // to 1e-12: a different solver from the implementation's, so the two check each other.
@@ -367,6 +368,69 @@ describe('anchored rows', () => {
     expect(pageY).toBe(400 - 137)
   })
 
+  it('a navigation starting stops the snap and the slide over the next page', () => {
+    button('a1').focus()
+    press('ArrowRight')
+    frame(0)
+    frame(100)
+    press('ArrowDown')
+    expect(document.activeElement).toBe(button('b2'))
+    frame(150)
+    expect(frames.size).toBe(2)
+    const left = track('a').scrollLeft
+    const top = pageY
+    const writes = windowScrolls.length
+    try {
+      navInFlight.set(true)
+      expect(frames.size).toBe(0)
+      frame(ANCHOR_SNAP_MS)
+      expect(windowScrolls).toHaveLength(writes)
+      expect(pageY).toBe(top)
+      expect(track('a').scrollLeft).toBe(left)
+    } finally {
+      navInFlight.set(false)
+    }
+  })
+
+  // UI scale (CSS zoom on <html>): rects and the window's scroll are screen px, while a track's
+  // scroll, padding and the row's scroll-margin are its own px, `z` times smaller on screen. The
+  // top bar probe still measures 72 screen px.
+  const zoom = (z: number) => {
+    for (const node of document.querySelectorAll('[data-rect]'))
+      node.setAttribute('data-rect', node.getAttribute('data-rect')!.split(',').map((n) => Number(n) * z).join(','))
+    for (const scroller of document.querySelectorAll('[data-carousel-scroller]'))
+      Object.defineProperty(scroller, 'offsetWidth', { configurable: true, value: 1280 })
+  }
+
+  describe('at a UI scale of 1.25', () => {
+    beforeEach(() => zoom(1.25))
+
+    it('slides the track in its own px', () => {
+      button('a1').focus()
+      press('ArrowRight')
+      frame(0)
+      frame(ANCHOR_SLIDE_MS)
+      // a2 sits at 865 screen px, 692 of the track's own.
+      expect(track('a').scrollLeft).toBe(660)
+    })
+
+    it('snaps to the scaled scroll-margin-top', () => {
+      button('Play').focus()
+      press('ArrowDown')
+      frame(0)
+      frame(ANCHOR_SNAP_MS)
+      expect(pageY).toBeCloseTo((400 - 137) * 1.25, 6)
+    })
+
+    it('without a scroll margin, snaps a scaled 16 px under the top bar', () => {
+      button('a1').focus()
+      press('ArrowDown')
+      frame(0)
+      frame(ANCHOR_SNAP_MS)
+      expect(pageY).toBeCloseTo(900 * 1.25 - 72 - 16 * 1.25, 6)
+    })
+  })
+
   // The row fast path (pickInNavRows) runs for a controller, Game mode and TV.
   describe('moving down into an anchored row', () => {
     beforeEach(() => { controllerMode.set(true) })
@@ -391,6 +455,13 @@ describe('anchored rows', () => {
 
     it('between two cards, takes the one after the first column', () => {
       setUp(990 + 165)
+      press('ArrowDown')
+      expect(document.activeElement).toBe(button('b4'))
+    })
+
+    it('at a UI scale, measures the first column with the scaled padding', () => {
+      setUp(990 + 165)
+      zoom(1.25)
       press('ArrowDown')
       expect(document.activeElement).toBe(button('b4'))
     })
