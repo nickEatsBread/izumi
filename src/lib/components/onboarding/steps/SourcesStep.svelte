@@ -53,7 +53,7 @@
   })
 
   async function check() {
-    const addons = [...$addonUrls]
+    const addons = [...streamAddons]
     const extensions = [...$extensionUrls]
     if (!addons.length && !extensions.length) {
       health = 'empty'
