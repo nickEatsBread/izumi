@@ -24,7 +24,7 @@ function staticKeys(source: string): string[] {
 }
 
 /** Keys built at runtime, with the template (pinned in its file) and the ids it is built from. */
-const DYNAMIC_KEYS: Array<{ file: string; template: string; ids: string[]; key: (id: string) => string }> = [
+const DYNAMIC_KEYS: Array<{ file: string; idsFile?: string; template: string; ids: string[]; key: (id: string) => string }> = [
   {
     file: routeFile('/app/settings/library'),
     template: 'settingKey={`catalog-platform-${platform.id}`}',
@@ -36,6 +36,13 @@ const DYNAMIC_KEYS: Array<{ file: string; template: string; ids: string[]; key: 
     template: 'settingKey={`cache-${bucket.id}`}',
     ids: ['thumbs', 'direct-torrents', 'torrent-metadata', 'subs', 'gif-capture'],
     key: (id) => `cache-${id}`,
+  },
+  {
+    file: routeFile('/app/settings/accounts'),
+    idsFile: resolve(LIB, 'settings/keys-hub.ts'),
+    template: 'settingKey={`key-${entry.id}`}',
+    ids: ['tmdb', 'omdb', 'opensubtitles', 'subdl', 'jimaku', 'debrid'],
+    key: (id) => `key-${id}`,
   },
 ]
 
@@ -59,8 +66,12 @@ const SETTINGS_PAGES = [
 
 // Rendered keys with no hit of their own. The per-platform items of the Catalog platforms list are
 // built from ids (DYNAMIC_KEYS above): its hit lands on catalog-platform-auto, and tmdb and jvm are
-// already fallbacks of the token and per-extension hits.
-const UNINDEXED_KEYS = new Set(['catalog-platform-anilist', 'catalog-platform-kitsu', 'catalog-platform-stremio'])
+// already fallbacks of the token and per-extension hits. The Accounts › Keys rows are status links
+// to each key's own editor, which has its own hit.
+const UNINDEXED_KEYS = new Set([
+  'catalog-platform-anilist', 'catalog-platform-kitsu', 'catalog-platform-stremio',
+  'key-tmdb', 'key-omdb', 'key-opensubtitles', 'key-subdl', 'key-jimaku', 'key-debrid',
+])
 
 describe('settings search anchors', () => {
   it('opens a real route for every hit', () => {
@@ -94,9 +105,9 @@ describe('settings search anchors', () => {
 
   it('keeps the runtime key templates in their files', () => {
     for (const dynamic of DYNAMIC_KEYS) {
-      const source = read(dynamic.file)
-      expect(source).toContain(dynamic.template)
-      for (const id of dynamic.ids) expect(source).toContain(`{ id: '${id}'`)
+      expect(read(dynamic.file)).toContain(dynamic.template)
+      const idSource = read(dynamic.idsFile ?? dynamic.file)
+      for (const id of dynamic.ids) expect(idSource).toContain(`{ id: '${id}'`)
     }
   })
 })
