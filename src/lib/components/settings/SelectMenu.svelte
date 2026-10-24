@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte'
+  import { onMount, tick, type Snippet } from 'svelte'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Check from '@lucide/svelte/icons/check'
   import { isOskTarget, openOskForField } from '$lib/nav/osk'
@@ -37,6 +37,7 @@
     columns = false,
     filter,
     variant = 'field',
+    preview,
   }: {
     value: string
     /** Bindable, so a settings row can open its own picker. */
@@ -61,6 +62,9 @@
     /** `field` (default): the filled input-style trigger. `inline`: a borderless, right-aligned muted
      *  value and caret for a settings row (SettingsChoiceRow). Same menu, keys and phone sheet. */
     variant?: 'field' | 'inline'
+    /** A 16:10 card beside the open menu showing what the hovered or focused option looks like
+     *  (the palette picker's Home preview). Desktop and controller pickers only, never phones. */
+    preview?: Snippet<[string]>
   } = $props()
 
   let root: HTMLDivElement
@@ -114,8 +118,21 @@
     panelWidth = rect.width / zoom
   }
 
+  // The preview hangs left of the open menu, in local viewport px, only where it fits.
+  const PREVIEW_GAP = 12
+  let previewValue = $state<string>()
+  let previewBox = $state<{ left: number; top: number; width: number }>()
+  function placePreview() {
+    const rect = menu?.getBoundingClientRect()
+    const zoom = rootZoom()
+    const width = rect ? Math.min(320, rect.left / zoom - 2 * PREVIEW_GAP) : 0
+    if (!rect || $isMobile || width < 160) { previewBox = undefined; return }
+    const top = Math.min(rect.top / zoom, window.innerHeight / zoom - width * 0.625 - PREVIEW_GAP)
+    previewBox = { left: rect.left / zoom - PREVIEW_GAP - width, top: Math.max(PREVIEW_GAP, top), width }
+  }
+
   async function setOpen(next: boolean) {
-    if (next) { query = ''; measure() }
+    if (next) { query = ''; previewValue = undefined; measure() }
     open = next
     if (!next) return
     await tick()
@@ -128,6 +145,8 @@
     // Decision 7: the searchable language menu is a typing-only launcher, so a controller gets the
     // built-in keyboard for its search at once. A no-op for mouse, touch and keyboard users.
     if (searchable && searchInput) openOskForField(searchInput)
+    // After the placement above has re-rendered the menu on its final side.
+    if (preview) { await tick(); placePreview() }
   }
 
   function choose(option: SelectOption) {
@@ -188,8 +207,11 @@
   // The trigger moves under an open menu when the page scrolls (including the scroll the keyboard
   // shoves the view up by on Android), so re-decide the side rather than leave it stale.
   $effect(() => {
-    if (!open || $settingsControllerMode) return
-    const remeasure = () => measure(menu?.scrollHeight)
+    if (!open || ($settingsControllerMode && !preview)) return
+    const remeasure = () => {
+      measure(menu?.scrollHeight)
+      if (preview) void tick().then(placePreview)
+    }
     window.addEventListener('resize', remeasure)
     window.addEventListener('scroll', remeasure, true)
     return () => {
@@ -218,6 +240,8 @@
       aria-selected={option.value === value}
       disabled={option.disabled}
       class="flex w-full items-center justify-between gap-4 whitespace-nowrap rounded px-3 py-3 text-left text-base hover:bg-accent focus:bg-accent disabled:opacity-40 sm:py-2 sm:text-sm"
+      onpointerenter={preview ? () => (previewValue = option.value) : undefined}
+      onfocus={preview ? () => (previewValue = option.value) : undefined}
       onclick={() => choose(option)}
     >
       <span class="flex min-w-0 items-baseline gap-2">
@@ -346,6 +370,15 @@
         onkeydown={onMenuKeydown}
       >
         {@render optionList()}
+      </div>
+    {/if}
+    {#if preview && previewValue !== undefined && previewBox}
+      <!-- Decorative: the options already name and describe each choice. Portalled, so no menu or
+           page container can clip it; above the controller picker's backdrop there. -->
+      <div use:portal aria-hidden="true" inert data-select-preview
+           class="pointer-events-none fixed overflow-hidden border border-border bg-background {$settingsControllerMode ? 'z-[166] rounded-2xl shadow-2xl' : 'z-[80] rounded-md shadow-xl'}"
+           style="left:{previewBox.left}px;top:{previewBox.top}px;width:{previewBox.width}px">
+        {@render preview(previewValue)}
       </div>
     {/if}
   {/if}

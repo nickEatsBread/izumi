@@ -193,7 +193,7 @@ describe('SettingsChoiceRow', () => {
   const source = read('./SettingsChoiceRow.svelte')
 
   it('is a SettingsRow whose control is an inline SelectMenu labelled by the row title', () => {
-    expect(source).toContain('<SelectMenu variant="inline" {value} {options} {onChange} {searchable} ariaLabel={ariaLabel ?? title} />')
+    expect(source).toContain('<SelectMenu variant="inline" {value} {options} {onChange} {searchable} ariaLabel={ariaLabel ?? title} {preview} />')
     expect(source).toContain('<SettingsRow {title} {description} {learnMore} {settingKey} {control} />')
     expect(source).toContain("options: ComponentProps<typeof SelectMenu>['options']")
   })

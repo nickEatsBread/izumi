@@ -15,6 +15,7 @@
     onChange,
     searchable = false,
     ariaLabel,
+    preview,
   }: {
     title: string
     description?: string
@@ -26,11 +27,13 @@
     searchable?: boolean
     /** Default: the row title. */
     ariaLabel?: string
+    /** SelectMenu's hover/focus preview card. */
+    preview?: ComponentProps<typeof SelectMenu>['preview']
   } = $props()
 </script>
 
 {#snippet control()}
-  <SelectMenu variant="inline" {value} {options} {onChange} {searchable} ariaLabel={ariaLabel ?? title} />
+  <SelectMenu variant="inline" {value} {options} {onChange} {searchable} ariaLabel={ariaLabel ?? title} {preview} />
 {/snippet}
 
 <SettingsRow {title} {description} {learnMore} {settingKey} {control} />
