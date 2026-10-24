@@ -92,7 +92,8 @@
 
   /** @param content the menu's natural height in local px, once it has rendered. */
   function measure(content?: number) {
-    if (!trigger) return
+    // The centred controller picker never reads the placement: skip the layout reads.
+    if (!trigger || $settingsControllerMode) return
     const rect = trigger.getBoundingClientRect()
     const zoom = rootZoom()
     const fit = menuPlacement({
@@ -184,7 +185,7 @@
   // The trigger moves under an open menu when the page scrolls (including the scroll the keyboard
   // shoves the view up by on Android), so re-decide the side rather than leave it stale.
   $effect(() => {
-    if (!open) return
+    if (!open || $settingsControllerMode) return
     const remeasure = () => measure(menu?.scrollHeight)
     window.addEventListener('resize', remeasure)
     window.addEventListener('scroll', remeasure, true)
@@ -234,7 +235,7 @@
     data-active={(filter && value !== options[0]?.value) || undefined}
     data-focusable
     aria-label={ariaLabel}
-    aria-haspopup="listbox"
+    aria-haspopup={$settingsControllerMode ? 'dialog' : 'listbox'}
     aria-expanded={open}
     class={variant === 'inline'
       ? 'flex min-h-11 max-w-[16rem] items-center justify-end gap-1.5 rounded-md px-2 py-2 text-right text-sm text-muted-foreground transition-colors hover:text-foreground sm:min-h-0 sm:py-1.5'
@@ -253,8 +254,10 @@
            closes it unchanged (the nav layer). Portalled to <body>, so a section's cross-fade
            transform can never become its containing block. z-[165]: above every dialog that can
            host a SelectMenu (first-run setup is 160), below the native picker sheet (175) and the
-           on-screen keyboard (190). -->
+           on-screen keyboard (190). data-select-picker-backdrop lets a host that closes on outside
+           presses (ListEditor's popover) treat a press on the picker as inside it. -->
       <div use:portal bind:this={backdrop} class="fixed inset-0 z-[165] grid place-items-center bg-black/60 p-4" role="presentation"
+           data-select-picker-backdrop
            onclick={(event) => { if (event.target === event.currentTarget) open = false }}>
         <div
           bind:this={menu}

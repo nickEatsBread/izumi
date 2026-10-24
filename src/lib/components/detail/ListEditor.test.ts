@@ -39,6 +39,16 @@ describe('desktop list editor popover', () => {
     expect(source).toContain('panel?.contains(target) || anchor?.contains(target)')
   })
 
+  it('treats a press on a menu’s portalled controller picker as inside the editor', () => {
+    // Game mode opens this popover, and its menus' pickers live in <body>, outside `panel`.
+    expect(select).toContain('data-select-picker-backdrop')
+    expect(source).toContain("if (event.target instanceof Element && event.target.closest('[data-select-picker-backdrop]')) return")
+    const outside = source.slice(source.indexOf('const outside = '), source.indexOf("window.addEventListener('pointerdown', outside, true)"))
+    const guard = outside.indexOf("closest('[data-select-picker-backdrop]')")
+    expect(guard).toBeGreaterThan(-1)
+    expect(guard).toBeLessThan(outside.indexOf('onclose()'))
+  })
+
   it('flips above the anchor when there is more room there', () => {
     expect(source).toContain("const down = below >= height || below >= above")
     expect(source).toContain("origin: down ? 'top left' : 'bottom left'")

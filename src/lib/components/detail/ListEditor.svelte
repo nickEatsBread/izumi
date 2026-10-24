@@ -101,6 +101,8 @@
     const outside = (event: PointerEvent) => {
       // A tap on the on-screen keyboard is typing into this editor, not a press outside it.
       if (isOskTarget(event.target)) return
+      // Nor is a press on the controller picker of a menu in this editor: SelectMenu portals it to <body>.
+      if (event.target instanceof Element && event.target.closest('[data-select-picker-backdrop]')) return
       if (!popover) return
       const target = event.target as Node | null
       if (!target || panel?.contains(target) || anchor?.contains(target)) return

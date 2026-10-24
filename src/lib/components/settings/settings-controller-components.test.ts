@@ -46,13 +46,24 @@ describe('SelectMenu in controller mode (spec §3.5)', () => {
 
   it('is a modal dialog whose list is the listbox, not a listbox around a heading', () => {
     const picker = source.slice(source.indexOf('{#if $settingsControllerMode}'), source.indexOf('{:else if $isMobile}'))
-    expect(picker).toContain('role="dialog"\n          aria-modal="true"')
+    expect(picker).toContain('role="dialog"')
+    expect(picker).toContain('aria-modal="true"')
+    // The trigger announces what opens: the picker dialog here, the listbox menu elsewhere.
+    expect(source).toContain("aria-haspopup={$settingsControllerMode ? 'dialog' : 'listbox'}")
     expect(picker).toContain("<div data-nav-scroll-container role={searchable ? undefined : 'listbox'} aria-label={searchable ? undefined : ariaLabel}")
   })
 
   it('dismisses from a click on the backdrop, never the pointerdown a touch tap starts with', () => {
     expect(source).toContain('onclick={(event) => { if (event.target === event.currentTarget) open = false }}')
     expect(source).toContain('!backdrop?.contains(event.target as Node)) open = false')
+    // A host that closes on outside presses (ListEditor) recognises the portalled picker by this.
+    const backdrop = source.slice(source.indexOf('<div use:portal bind:this={backdrop}'), source.indexOf('bind:this={menu}'))
+    expect(backdrop).toContain('data-select-picker-backdrop')
+  })
+
+  it('skips placement work for the centred picker, which never reads it', () => {
+    expect(source).toContain('if (!trigger || $settingsControllerMode) return')
+    expect(source).toContain('if (!open || $settingsControllerMode) return')
   })
 
   // The option lookup, stepping and reveal are tested in src/lib/settings/controller-picker.test.ts.
