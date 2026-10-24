@@ -18,6 +18,7 @@
     youtubePlayerOrigins,
     type YoutubeEmbedSource,
   } from './youtube-embed'
+  import { parkPlayer, takePlayer } from './youtube-pool'
   // The defaults are the hover preview; BackdropTrailer plays once (`loop: false`), covers its box,
   // follows its own session mute store and listens for the start and the end (`natural` = the video
   // reached its end, false = it failed). `wait` keeps the picture hidden while it is true, so a host can load
@@ -31,6 +32,7 @@
   const COVER_STYLE = 'width:max(100cqw,calc(100cqh*16/9));height:calc(max(56.25cqw,100cqh) + 240px)'
 
   let frame = $state<HTMLIFrameElement>()
+  let host = $state<HTMLElement>()
   let playing = $state(false)
   let dead = $state(false)
   let embed = $state<YoutubeEmbedSource>()
@@ -124,16 +126,71 @@
     settle(false)
     onended?.(false)
   }
-  function send(func: string, args: unknown[] = []) {
-    const target = frame?.contentWindow
-    if (!target || !embed) return
+  function command(target: HTMLIFrameElement | undefined, source: YoutubeEmbedSource | undefined, func: string, args: unknown[] = []) {
+    const player = target?.contentWindow
+    if (!player || !source) return
     const payload = JSON.stringify({ event: 'command', func, args })
-    if (embed.bridgeOrigin) {
-      target.postMessage({ type: 'izumi-youtube-command', payload }, embed.bridgeOrigin)
+    if (source.bridgeOrigin) {
+      player.postMessage({ type: 'izumi-youtube-command', payload }, source.bridgeOrigin)
     } else {
-      target.postMessage(payload, 'https://www.youtube-nocookie.com')
+      player.postMessage(payload, 'https://www.youtube-nocookie.com')
     }
   }
+  function send(func: string, args: unknown[] = []) {
+    command(frame, embed, func, args)
+  }
+
+  // The player: the parked one when there is one (the video swapped in, see youtube-pool), else a new
+  // iframe. Players made through a loopback bridge only serve the same bridge.
+  const poolKey = (source: YoutubeEmbedSource) => source.bridgeOrigin ?? 'direct'
+  // The player in the box and the embed it was set up for, plain so the outro reads it after `embed` resets.
+  let attached: { el: HTMLIFrameElement; source: YoutubeEmbedSource } | undefined
+  $effect(() => {
+    const source = embed
+    const box = host
+    if (!source || !box) return
+    const el = untrack(() => {
+      const reused = takePlayer(poolKey(source), box)
+      if (reused) {
+        command(reused, source, 'loadVideoById', [id])
+        return reused
+      }
+      const created = document.createElement('iframe')
+      created.title = 'Trailer'
+      created.allow = 'autoplay'
+      created.referrerPolicy = 'strict-origin-when-cross-origin'
+      created.onload = () => { clearInterval(poll); handshake(); poll = setInterval(handshake, 100) }
+      created.src = source.src
+      box.append(created)
+      return created
+    })
+    frame = el
+    attached = { el, source }
+    return () => {
+      clearInterval(poll)
+      frame = undefined
+      if (attached?.el === el) attached = undefined
+      // Still in its box: not parked on the way out (a failed player, or no `moveBefore`).
+      if (el.parentElement === box) el.remove()
+    }
+  })
+  // Svelte takes a block's DOM away before the teardowns inside it run, so the outro (a no-op one) is
+  // where the live player can still be moved out: stopped, muted, parked for the next trailer.
+  function parkOnExit(node: HTMLElement) {
+    const current = attached
+    if (current && !dead && node.contains(current.el)) {
+      command(current.el, current.source, 'stopVideo')
+      command(current.el, current.source, 'mute')
+      parkPlayer(current.el, poolKey(current.source))
+    }
+    return { duration: 0 }
+  }
+  const frameClass = $derived(`pointer-events-none absolute ${fit === 'cover' ? 'left-1/2 top-1/2 -translate-x-1/2' : 'left-0 top-1/2 h-[calc(100%+200px)] w-full'} -translate-y-1/2 border-0 transition-opacity ${fading ? 'duration-500' : 'duration-0'} ${shown ? 'opacity-100' : 'opacity-0'}`)
+  $effect(() => {
+    if (!frame) return
+    frame.className = frameClass
+    frame.style.cssText = fit === 'cover' ? COVER_STYLE : ''
+  })
   function toggleMute() {
     // M is swallowed before the idle listener hears it, so show the button it just changed.
     if (!loop) wake()
@@ -223,26 +280,18 @@
   })
 </script>
 
-{#snippet player(src: string)}
-  <iframe
-    bind:this={frame}
-    title="Trailer"
-    onload={() => { clearInterval(poll); handshake(); poll = setInterval(handshake, 100) }}
-    allow="autoplay"
-    referrerpolicy="strict-origin-when-cross-origin"
-    {src}
-    class="pointer-events-none absolute {fit === 'cover' ? 'left-1/2 top-1/2 -translate-x-1/2' : 'left-0 top-1/2 h-[calc(100%+200px)] w-full'} -translate-y-1/2 border-0 transition-opacity {fading ? 'duration-500' : 'duration-0'} {shown ? 'opacity-100' : 'opacity-0'}"
-    style={fit === 'cover' ? COVER_STYLE : undefined}
-  ></iframe>
+{#snippet player()}
+  <!-- The iframe is placed here by script (a new one, or the parked player moved in). -->
+  <div bind:this={host} class="contents" out:parkOnExit|global></div>
 {/snippet}
 
 {#if !dead && embed}
   {#if fit === 'cover'}
     <!-- Size containment makes a stacking context, so it wraps the picture only: the mute button
          stays outside it, where its z-index can lift it over the host's copy and scrims. -->
-    <div class="pointer-events-none absolute inset-0 overflow-hidden [container-type:size]">{@render player(embed.src)}</div>
+    <div class="pointer-events-none absolute inset-0 overflow-hidden [container-type:size]">{@render player()}</div>
   {:else}
-    {@render player(embed.src)}
+    {@render player()}
   {/if}
   {#if playing}
     <button
