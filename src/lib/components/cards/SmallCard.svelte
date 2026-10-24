@@ -36,6 +36,7 @@
   import Play from '@lucide/svelte/icons/play'
   import PreviewCard from './PreviewCard.svelte'
   import { previewPos, rootZoom, SIDEBAR_W } from './preview-pos'
+  import { cardMedia } from './card-registry'
   import { expandPos, type ExpandBox } from './expand-pos'
   import { reducedMotion } from '$lib/motion/gm-motion'
   import { portal } from '$lib/util/portal'
@@ -90,6 +91,8 @@
   $effect(() => { void coverSrc; coverReady = false })
   let pos = $state({ left: 0, top: 0 })
   let el: HTMLElement
+  // A row's caption template binds the focused card's media through the registry.
+  $effect(() => { const node = el; cardMedia.set(node, media); return () => cardMedia.delete(node) })
   let closeT: ReturnType<typeof setTimeout>
   // API 6 `cardPreview: "expand"`: the preview grows out of the card after a dwell (expand-pos.ts).
   const expandMode = $derived($themePresentation?.cardPreview === 'expand')

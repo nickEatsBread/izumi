@@ -10,6 +10,10 @@
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import { captionOf } from './caption'
+  import { cardMedia } from './card-registry'
+  import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
+  import { mediaDisplayModel } from '$lib/themes/host-model'
+  import type { Media } from '$lib/anilist/types'
   // Game mode (Deck): controller/touch scrolls the row directly, so the mouse-only
   // page arrows are hidden.
   const gm = $derived($gameMode || $controllerMode)
@@ -29,11 +33,20 @@
   // full with its detail line. Every such row keeps the line, so moving between rows never shifts
   // the page.
   const captioned = $derived(appearance.caption === 'focus' && gm)
-  let caption = $state({ title: '', meta: '' })
-  const onTrackFocusIn = (event: FocusEvent) => { if (captioned) caption = captionOf(event.target as Element) }
+  // Raw: `media` is a whole catalog record, replaced on every focus move and never mutated.
+  let caption = $state.raw<{ title: string; meta: string; media?: Media }>({ title: '', meta: '' })
+  const onTrackFocusIn = (event: FocusEvent) => {
+    if (!captioned) return
+    const target = event.target as Element
+    const card = target.closest('[data-part="card"]')
+    caption = { ...captionOf(target), media: card ? cardMedia.get(card) : undefined }
+  }
   const onTrackFocusOut = (event: FocusEvent & { currentTarget: HTMLElement }) => {
     if (captioned && !event.currentTarget.contains(event.relatedTarget as Node | null)) caption = { title: '', meta: '' }
   }
+  // API 6 `captionTemplate`: bound to the focused card's media (genres, year, synopsis, ...); an empty
+  // model while nothing in the row is focused. A card that registers no media keeps the title and meta line.
+  const captionModel = $derived(caption.media ? mediaDisplayModel(caption.media) : {})
 
   let scroller = $state<HTMLDivElement>()
   let canLeft = $state(false)
@@ -126,7 +139,7 @@
 <!-- Grid rows stay inside the game/TV nav fast path: the section always exposes `data-nav-row`,
      and `data-nav-row-wrap` tells pickInNavRows the row paints several lines, so vertical moves
      search this row's own cards instead of stepping whole sections (and skipping grid lines). -->
-<section data-slot="row" data-row={rowId} data-role={rowRole} data-layout={grid ? 'grid' : 'carousel'} data-nav-row data-nav-row-wrap={grid ? '' : undefined} data-theme-row={scope?.().id} data-theme-row-title={scope?.().title ?? title} class="browse-render-row group/carousel relative mb-8" style:margin-bottom={appearance.spacing !== undefined ? `${appearance.spacing}px` : undefined}>
+<section data-slot="row" data-row={rowId} data-role={rowRole} data-layout={grid ? 'grid' : 'carousel'} data-nav-row data-nav-row-wrap={grid ? '' : undefined} data-row-focus={!grid && appearance.focus === 'anchor' ? 'anchor' : undefined} data-theme-row={scope?.().id} data-theme-row-title={scope?.().title ?? title} class="browse-render-row group/carousel relative mb-8" style:margin-bottom={appearance.spacing !== undefined ? `${appearance.spacing}px` : undefined}>
   <div data-part="row.header" class="mb-2 flex items-baseline justify-between" class:px-8={!mob} class:px-4={mob}>
     <div class="flex min-w-0 items-center gap-2">
       <!-- Heading accents: a coloured bar or dot before the title, or an underline beneath it. -->
@@ -177,10 +190,15 @@
     {/if}
   </div>
   {#if captioned}
-    <p data-part="row.caption" aria-hidden="true" class="flex h-7 min-w-0 items-baseline gap-2 pt-1" class:px-8={!mob} class:px-4={mob}>
-      <span data-part="row.caption.title" class="min-w-0 truncate text-base font-bold">{caption.title}</span>
-      <span data-part="row.caption.meta" class="shrink-0 whitespace-nowrap text-sm text-muted-foreground">{caption.meta}</span>
-    </p>
+    <!-- A div, not a p: a caption template renders block elements. -->
+    <div data-part="row.caption" aria-hidden="true" class="flex min-h-7 min-w-0 items-baseline gap-2 pt-1" class:px-8={!mob} class:px-4={mob}>
+      {#if appearance.captionTemplate && (caption.media || !caption.title)}
+        <ThemeNode node={appearance.captionTemplate} model={captionModel} />
+      {:else}
+        <span data-part="row.caption.title" class="min-w-0 truncate text-base font-bold">{caption.title}</span>
+        <span data-part="row.caption.meta" class="shrink-0 whitespace-nowrap text-sm text-muted-foreground">{caption.meta}</span>
+      {/if}
+    </div>
   {/if}
 </section>
 

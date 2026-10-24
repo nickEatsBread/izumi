@@ -27,6 +27,7 @@
   import { useCardArt } from '$lib/themes/card-art.svelte'
   import { nearViewport } from '$lib/util/near-viewport'
   import { ROW_CONTEXT, densityScale, resolveCard, resolveRow, type RowScope } from '$lib/themes/presentation'
+  import { cardMedia } from './card-registry'
 
   let { media, progress }: { media: Media; progress: number } = $props()
 
@@ -66,6 +67,8 @@
   const continueTemplate = $derived(resolveCard($themePresentation, 'continue'))
   // API 6: key art and a title logo, only when the template binds them (see useCardArt).
   let root: HTMLElement | undefined
+  // A row's caption template binds the focused card's media through the registry.
+  $effect(() => { const node = root; if (!node) return; cardMedia.set(node, media); return () => cardMedia.delete(node) })
   const cardArt = useCardArt(() => continueTemplate, () => media, () => root)
   // A resume card stands for its title, so `rating` is the series score here (an episode card binds
   // the episode's own), and `episodesWatched` is the count this card resumes from.
