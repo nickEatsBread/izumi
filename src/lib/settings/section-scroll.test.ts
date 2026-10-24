@@ -33,10 +33,14 @@ function setScroll(y: number, innerHeight = 700, scrollHeight = 2000) {
   Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: scrollHeight })
 }
 
-function track(subcategories = ['up-next', 'skipping', 'advanced']) {
+/** `bar` and `margin` stand in for the sticky bar's top padding and the subcategories' scroll
+ *  margin, which jsdom cannot resolve from the Tailwind classes. The default margin is the 2rem
+ *  titlebar band's 96 px. */
+function track(subcategories = ['up-next', 'skipping', 'advanced'], { bar, margin = '96px' }: { bar?: string; margin?: string } = {}) {
   document.body.innerHTML = `<div data-settings-section="playback">
+    ${bar ? `<div data-settings-sticky style="padding-top: ${bar}"></div>` : ''}
     <header data-settings-section-header></header>
-    ${subcategories.map((id) => `<section id="${id}" data-settings-subcategory="${id}"${id === 'advanced' ? ' data-collapsed' : ''}></section>`).join('')}
+    ${subcategories.map((id) => `<section id="${id}" data-settings-subcategory="${id}"${id === 'advanced' ? ' data-collapsed' : ''} style="scroll-margin-top: ${margin}"></section>`).join('')}
   </div>`
   const root = document.querySelector<HTMLElement>('[data-settings-section]')!
   const header = document.querySelector<HTMLElement>('[data-settings-section-header]')!
@@ -109,6 +113,18 @@ describe('trackSectionScroll', () => {
     expect(last().stuck).toBe(false)
   })
 
+  it('shows the sticky bar once the header has gone under the titlebar band the bar pads over', () => {
+    // A top nav bar: --theme-shell-top 4.75rem (76 px) plus the bar's 0.625rem, under a 1.5 UI zoom.
+    document.documentElement.style.zoom = '1.5'
+    const { last } = track(undefined, { bar: '86px' })
+    rects.header = { top: 85, bottom: 130 }
+    scroll()
+    expect(last().stuck).toBe(false)
+    rects.header = { top: 84, bottom: 129 }
+    scroll()
+    expect(last().stuck).toBe(true)
+  })
+
   it('reports a state only when it changes, measuring at most once per frame', () => {
     const { states } = track()
     expect(states).toHaveLength(1)
@@ -126,6 +142,17 @@ describe('trackSectionScroll', () => {
     scroll()
     expect(last().active).toBe('skipping')
     rects.skipping = { top: 230, bottom: 610 }
+    scroll()
+    expect(last().active).toBe('up-next')
+  })
+
+  it('moves the reading line with the subcategory scroll margin, so a jump under a top bar lights its own chip', () => {
+    // A top nav bar: the scroll margin is --theme-shell-top 4.75rem + 4rem = 140 px; the line sits 16 px lower.
+    const { last } = track(undefined, { margin: '140px' })
+    rects.skipping = { top: 156, bottom: 536 }
+    scroll()
+    expect(last().active).toBe('skipping')
+    rects.skipping = { top: 157, bottom: 537 }
     scroll()
     expect(last().active).toBe('up-next')
   })

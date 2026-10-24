@@ -55,10 +55,10 @@
       <span data-part="settings.section.icon" aria-hidden="true" class="grid size-11 shrink-0 place-items-center rounded-xl bg-theme/[0.16] text-theme">
         <Icon size={22} />
       </span>
-      <h2 data-settings-page-title class="text-2xl font-bold tracking-tight">{def.title}</h2>
+      <h2 id="settings-section-{def.id}-title" data-settings-page-title class="text-2xl font-bold tracking-tight">{def.title}</h2>
     </header>
     {#if desktop && scroll.ids.length}
-      <div data-settings-chips class="mb-7 flex flex-wrap gap-2">
+      <div data-settings-chips role="group" aria-labelledby="settings-section-{def.id}-title" class="mb-7 flex flex-wrap gap-2">
         {#each scroll.ids as id (id)}
           <button type="button" data-part="chip" data-focusable data-settings-chip={id}
                   data-active={scroll.active === id ? '' : undefined}
@@ -80,6 +80,9 @@
      hit-testing too. app.css zeroes the fade under reduced motion. */
   .settings-sticky { transition: opacity 150ms ease-out, transform 150ms ease-out; }
   .settings-sticky:not([data-visible]) { visibility: hidden; opacity: 0; transform: translateY(-0.25rem); }
+  /* Game mode: the end of a CSS transition blinks on WebKitGTK and the tween promotes the bar's
+     text to a soft layer (motion/gm-motion.ts), so the bar shows and hides at once. */
+  :global(html.gamemode) .settings-sticky { transition: none; }
   /* The phone layout's sticky back-header already names the section (settings/+layout.svelte). */
   :global(.settings-child) [data-settings-section-header] { display: none; }
 </style>

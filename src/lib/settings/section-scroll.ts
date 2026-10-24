@@ -3,7 +3,7 @@ import { rootZoom } from '$lib/components/cards/preview-pos'
 import { reducedMotion } from '$lib/motion/gm-motion'
 import { gameMode } from '$lib/player/session'
 import { SUBCATEGORY_OPEN_EVENT } from './sections'
-import { activeSubcategory, SCROLL_SPY_LINE } from './scroll-spy'
+import { activeSubcategory, SCROLL_SPY_GAP } from './scroll-spy'
 
 // Desktop section pages (SettingsSection): which subcategories a page renders, which one is being
 // read, whether the page header has scrolled away, the chip jump, and the section-switch fade.
@@ -43,12 +43,22 @@ export function trackSectionScroll(
   const subcategories = () => [...root.querySelectorAll<HTMLElement>('[data-settings-subcategory]')]
   const measure = () => {
     frame = 0
-    const tops = subcategories().map((el) => ({ id: el.id, top: el.getBoundingClientRect().top }))
+    const els = subcategories()
+    const tops = els.map((el) => ({ id: el.id, top: el.getBoundingClientRect().top }))
     const ids = tops.map(({ id }) => id)
     const atEnd = window.scrollY > 0 && window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 1
-    // Rect tops are screen px under the UI-scale zoom on <html>; the line is local px.
-    const active = held !== null && ids.includes(held) ? held : activeSubcategory(tops, SCROLL_SPY_LINE * rootZoom(), atEnd)
-    const state: SectionScrollState = { ids, active, stuck: header.getBoundingClientRect().bottom <= 0 }
+    // Rect tops are screen px under the UI-scale zoom on <html>; computed lengths are local px.
+    const zoom = rootZoom()
+    // A jump lands a heading at its scroll margin, which grows with the titlebar/top-bar band
+    // (--theme-shell-top). The reading line sits just below it.
+    const margin = els.length ? parseFloat(getComputedStyle(els[0]).scrollMarginTop) || 0 : 0
+    const line = (margin + SCROLL_SPY_GAP) * zoom
+    const active = held !== null && ids.includes(held) ? held : activeSubcategory(tops, line, atEnd)
+    // The header is gone once it slides under the fixed titlebar/top-bar band, which the bar's top
+    // padding spans. Waiting for the viewport edge left the section named nowhere under a top bar.
+    const bar = root.querySelector<HTMLElement>('[data-settings-sticky]')
+    const band = bar ? (parseFloat(getComputedStyle(bar).paddingTop) || 0) * zoom : 0
+    const state: SectionScrollState = { ids, active, stuck: header.getBoundingClientRect().bottom <= band }
     const key = JSON.stringify(state)
     if (key === last) return
     last = key

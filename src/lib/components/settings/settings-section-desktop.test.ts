@@ -74,6 +74,14 @@ describe('SettingsSection on desktop', () => {
     expect(attr(chip, 'onclick')?.raw).toBe('onclick={() => tracker?.jump(id)}')
   })
 
+  it('labels the chip row with the section title, so it reads as one group of jumps', () => {
+    const [chips] = withAttr('data-settings-chips')
+    const [title] = withAttr('data-settings-page-title')
+    expect(staticAttr(chips, 'role')).toBe('group')
+    expect(attr(chips, 'aria-labelledby')?.raw).toBe('aria-labelledby="settings-section-{def.id}-title"')
+    expect(attr(title, 'id')?.raw).toBe('id="settings-section-{def.id}-title"')
+  })
+
   it('pins a compact "icon · Section › Subcategory" bar while the header is out of view', () => {
     const [bar] = withAttr('data-settings-sticky')
     expect(attr(bar, 'data-visible')?.raw).toBe("data-visible={scroll.stuck ? '' : undefined}")
@@ -85,6 +93,10 @@ describe('SettingsSection on desktop', () => {
     expect(source).toContain('<span class="text-muted-foreground">›</span>')
     expect(source).toContain('{titleOf(scroll.active)}')
     expect(source).toContain('.settings-sticky:not([data-visible]) { visibility: hidden;')
+    // The bar clears the titlebar/top-bar band; SettingsSubcategory's scroll margin follows the same variable.
+    expect(source).toContain('style:padding-top="calc(var(--theme-shell-top, 2rem) + 0.625rem)"')
+    // Game mode: a CSS transition's end blinks on WebKitGTK and the tween softens the bar's text.
+    expect(source).toContain(':global(html.gamemode) .settings-sticky { transition: none; }')
     expect(source).toContain(':global(.settings-child) [data-settings-section-header] { display: none; }')
     // Never IntersectionObserver: CSS zoom makes it misreport (util/near-viewport.ts).
     expect(source).not.toContain('IntersectionObserver')

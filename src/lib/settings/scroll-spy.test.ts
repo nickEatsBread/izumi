@@ -29,7 +29,8 @@ describe('activeSubcategory', () => {
   })
 
   it('keeps the line below the subcategory scroll margin, so a chip jump lights its own chip', () => {
-    // SettingsSubcategory's scroll-mt-24 lands a jumped-to heading 96 px below the viewport top.
+    // With the default 2rem titlebar band, SettingsSubcategory's scroll margin lands a jumped-to
+    // heading 96 px below the viewport top.
     expect(SCROLL_SPY_LINE).toBeGreaterThan(96)
     expect(activeSubcategory(scrolledBy(1400 - 96))).toBe('advanced')
   })

@@ -68,7 +68,8 @@ describe('SettingsSubcategory', () => {
     expect(attr(section, 'data-settings-subcategory')?.raw).toBe('data-settings-subcategory={id}')
     expect(attr(section, 'data-collapsed')?.raw).toBe("data-collapsed={collapsed ? '' : undefined}")
     expect(attr(section, 'aria-labelledby')?.raw).toBe('aria-labelledby={`${id}-heading`}')
-    expect(staticAttr(section, 'class')).toBe('mb-7 scroll-mt-24')
+    // A chip jump lands the heading below the sticky bar, which grows with the titlebar/top-bar band.
+    expect(staticAttr(section, 'class')).toBe('mb-7 scroll-mt-[calc(var(--theme-shell-top,2rem)+4rem)]')
   })
 
   it('makes a foldable heading a d-pad toggle and a fixed one a plain heading', () => {

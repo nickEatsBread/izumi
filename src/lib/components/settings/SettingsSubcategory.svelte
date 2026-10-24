@@ -50,7 +50,7 @@
 </script>
 
 <section bind:this={root} id={id} data-settings-subcategory={id} data-collapsed={collapsed ? '' : undefined}
-         aria-labelledby={`${id}-heading`} class="mb-7 scroll-mt-24">
+         aria-labelledby={`${id}-heading`} class="mb-7 scroll-mt-[calc(var(--theme-shell-top,2rem)+4rem)]">
   {#if folds}
     <h3 id={`${id}-heading`} class="mb-2">
       <button type="button" data-focusable data-subcategory-toggle aria-expanded={!collapsed} aria-controls={`${id}-body`}
