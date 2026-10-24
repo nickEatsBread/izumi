@@ -3,11 +3,16 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { SETTINGS_ROOT, isSettingsPath, settingsNode, settingsPageTitle, settingsParent, settingsRailHref } from './hierarchy'
+import { LEGACY_SETTINGS_ROUTES, SETTINGS_SECTIONS, SETTINGS_SUB_PAGES } from './sections'
 
 const S = (rest = '') => (rest ? `${SETTINGS_ROOT}/${rest}` : SETTINGS_ROOT)
 
 // route below /app/settings, level, parent href, accepts, rail href, title
 type Row = [string, number, string, string[], string | null, string | null]
+
+// A parent's old routes that still render it count as the parent too, so Back returns through them.
+const LIBRARY = [S('library'), S('catalog'), S('history'), S('scenes')]
+const APPEARANCE = [S('appearance'), S('interface'), S('navigation')]
 
 const sections: Row[] = [
   ['playback', 1, S(), [S()], S('playback'), 'Playback'],
@@ -26,11 +31,11 @@ const sections: Row[] = [
 const subPages: Row[] = [
   ['sources/manage', 2, S('sources'), [S('sources')], S('sources'), 'Manage sources'],
   ['sources/priority', 2, S('sources'), [S('sources')], S('sources'), 'Source priority'],
-  ['store', 2, S('sources'), [S('sources'), S('library')], S('sources'), 'Store'],
-  ['library/home', 2, S('library'), [S('library')], S('library'), 'Customize Home'],
-  ['library/collections', 2, S('library'), [S('library'), S('library/home')], S('library'), 'Collections and covers'],
-  ['themes', 2, S('appearance'), [S('appearance')], S('appearance'), 'Themes'],
-  ['theme-studio', 2, S('appearance'), [S('appearance'), S('themes')], S('appearance'), 'Theme Studio'],
+  ['store', 2, S('sources'), [S('sources'), ...LIBRARY], S('sources'), 'Store'],
+  ['library/home', 2, S('library'), LIBRARY, S('library'), 'Customize Home'],
+  ['library/collections', 2, S('library'), [...LIBRARY, S('library/home'), S('catalog/home')], S('library'), 'Collections and covers'],
+  ['themes', 2, S('appearance'), APPEARANCE, S('appearance'), 'Themes'],
+  ['theme-studio', 2, S('appearance'), [...APPEARANCE, S('themes')], S('appearance'), 'Theme Studio'],
   ['about/changelog', 2, S('about'), [S('about')], S('about'), 'Changelog'],
   ['about/license-information', 2, S('about'), [S('about')], S('about'), 'License information'],
 ]
@@ -40,8 +45,8 @@ const legacy: Row[] = [
   ['player', 1, S(), [S()], S('playback'), 'Playback'],
   ['hotkeys', 1, S(), [S()], S('playback'), 'Playback'],
   ['catalog', 1, S(), [S()], S('library'), 'Home and library'],
-  ['catalog/home', 2, S('library'), [S('library')], S('library'), 'Customize Home'],
-  ['catalog/collections', 2, S('library'), [S('library'), S('library/home')], S('library'), 'Collections and covers'],
+  ['catalog/home', 2, S('library'), LIBRARY, S('library'), 'Customize Home'],
+  ['catalog/collections', 2, S('library'), [...LIBRARY, S('library/home'), S('catalog/home')], S('library'), 'Collections and covers'],
   ['extensions', 2, S('sources'), [S('sources')], S('sources'), 'Manage sources'],
   ['storage', 1, S(), [S()], S('downloads'), 'Downloads and storage'],
   ['profiles', 1, S(), [S()], S('accounts'), 'Accounts and profiles'],
@@ -79,7 +84,7 @@ describe('settings hierarchy', () => {
     expect(settingsPageTitle(path)).toBe(title)
   })
 
-  it('titles every Settings route that exists and lights a rail item for it', () => {
+  it('names every Settings route that exists in the registry, titles it and lights a rail item for it', () => {
     const root = fileURLToPath(new URL('../../routes/app/settings', import.meta.url))
     const routes: string[] = []
     const walk = (dir: string, rest: string) => {
@@ -90,7 +95,9 @@ describe('settings hierarchy', () => {
     }
     walk(root, '')
     expect(routes.length).toBeGreaterThan(20)
+    const named = new Set([...SETTINGS_SECTIONS.map((section) => section.id), ...SETTINGS_SUB_PAGES.keys(), ...LEGACY_SETTINGS_ROUTES.keys()])
     for (const rest of routes) {
+      expect(named.has(rest), `${rest} needs a section, sub-page or old-route entry in sections.ts`).toBe(true)
       expect(settingsPageTitle(S(rest)), rest).not.toBeNull()
       expect(settingsRailHref(S(rest)), rest).not.toBeNull()
     }

@@ -70,8 +70,8 @@
   // `visibleGroups` directly, and that whole branch is already gated on $isMobile).
   const flat = $derived(visibleGroups.flatMap((g) => g.items).filter((it) => it.href !== '/app/settings/navigation')) // desktop rail order
   // The lit rail item comes from the shared route table (settings/hierarchy.ts): a sub-page keeps its
-  // category lit (Store → Sources, Customize Home → Catalog), and the bare /app/settings landing,
-  // which renders the Player pane on desktop, lights Player.
+  // section lit (Store → Sources and store, Customize Home → Home and library), and the bare
+  // /app/settings landing lights Playback.
   const active = (href: string) => settingsRailHref($page.url.pathname) === href
   // Rail links keep focus through the navigation (SvelteKit's keep-focus attribute below), so a
   // controller or keyboard user stays on the rail. A pointer click (detail > 0) lets go instead: no

@@ -32,6 +32,15 @@ const ALSO_ACCEPTS: ReadonlyMap<string, readonly string[]> = new Map<string, rea
   ['theme-studio', [route('themes')]],
 ])
 
+/** Old routes that still render each route's content (LEGACY_SETTINGS_ROUTES reversed), so Back
+ *  also returns through history to an old page standing in for the parent. */
+const LEGACY_ALIASES = new Map<string, string[]>()
+for (const [old, target] of LEGACY_SETTINGS_ROUTES) {
+  const path = route(target.split('#')[0])
+  LEGACY_ALIASES.set(path, [...(LEGACY_ALIASES.get(path) ?? []), route(old)])
+}
+const withLegacyAliases = (paths: readonly string[]) => paths.flatMap((path) => [path, ...(LEGACY_ALIASES.get(path) ?? [])])
+
 /** Strip the query, the hash and any trailing slash. */
 export function normaliseSettingsPath(pathname: string): string {
   return pathname.split(/[?#]/)[0].replace(/\/+$/, '') || '/'
@@ -50,7 +59,7 @@ function known(rest: string): KnownNode | null {
   const sub = SETTINGS_SUB_PAGES.get(rest)
   if (sub) {
     const parent = settingsSection(sub.section).href
-    return { level: 2, parent, accepts: [parent, ...(ALSO_ACCEPTS.get(rest) ?? [])], railHref: parent, title: sub.title }
+    return { level: 2, parent, accepts: withLegacyAliases([parent, ...(ALSO_ACCEPTS.get(rest) ?? [])]), railHref: parent, title: sub.title }
   }
   const section = SETTINGS_SECTIONS.find((candidate) => candidate.id === rest)
   return section ? { level: 1, parent: SETTINGS_ROOT, accepts: [SETTINGS_ROOT], railHref: section.href, title: section.title } : null

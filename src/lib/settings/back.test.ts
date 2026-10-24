@@ -138,6 +138,16 @@ describe('goUp', () => {
     expect(mocks.goto).not.toHaveBeenCalled()
   })
 
+  it('returns through an old route that still renders the parent', () => {
+    visit(1, '/app/settings/catalog/home'); visit(2, '/app/settings/catalog/collections')
+    goUp()
+    expect(history.back).toHaveBeenCalledTimes(1)
+    visit(1, '/app/settings/catalog'); visit(2, '/app/settings/store')
+    goUp()
+    expect(history.back).toHaveBeenCalledTimes(2)
+    expect(mocks.goto).not.toHaveBeenCalled()
+  })
+
   it('with no trail (a fresh start on a sub-page) goes to the parent section, replacing', () => {
     history.replaceState({ [HISTORY_INDEX]: 5 }, '', '/app/settings/store')
     goUp()
