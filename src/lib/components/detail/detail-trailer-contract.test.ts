@@ -36,7 +36,8 @@ describe('series page trailers (API 6 detail.preview: "trailer")', () => {
     expect(catalog).toContain("import { youtubeTrailerId } from '$lib/components/cards/youtube-embed'")
     expect(catalog).toContain("import { resolveDetail } from '$lib/themes/presentation'")
     expect(catalog).toContain("import { themePresentation } from '$lib/themes/runtime'")
-    expect(catalog).toContain("const trailerOn = $derived(resolveDetail($themePresentation).preview === 'trailer')")
+    expect(catalog).toContain('const detailTheme = $derived(resolveDetail($themePresentation))')
+    expect(catalog).toContain("const trailerOn = $derived(detailTheme.preview === 'trailer')")
     expect(catalog).toMatch(/<BackdropTrailer id=\{youtubeTrailerId\(media\.trailer\)\} title=\{title\(media\)\} enabled=\{trailerOn\} dwell=\{DETAIL_TRAILER_DWELL\}\s+part="detail\.video" mutePart="detail\.mute" muteClass="[^"]*z-\d+[^"]*" \/>/)
     expect(catalog.indexOf('<BackdropTrailer')).toBeGreaterThan(catalog.indexOf('<img data-part="detail.backdrop"'))
     // Everything painted after it passes clicks through to the mute button, except the title block and cover.

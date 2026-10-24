@@ -58,3 +58,37 @@ describe('catalog switcher', () => {
     expect(source).toContain('text-left text-sm font-bold text-muted-foreground transition hover:bg-accent hover:text-foreground')
   })
 })
+
+describe('custom screens in the catalog switcher', () => {
+  const screensSettings = readFileSync(fileURLToPath(new URL('./CatalogScreensSettings.svelte', import.meta.url)), 'utf8')
+  const dialog = readFileSync(fileURLToPath(new URL('./NewScreenDialog.svelte', import.meta.url)), 'utf8')
+  const homePage = readFileSync(fileURLToPath(new URL('../../../routes/app/home/+page.svelte', import.meta.url)), 'utf8')
+
+  it('offers New screen and labels custom screens by name', () => {
+    expect(source).toContain('onclick={newScreen}')
+    expect(source).toContain('New screen…')
+    expect(source).toContain('{catalogLabel(provider, $customScreens)}')
+    expect(source).toContain("isCustomScreen(provider) ? 'Your own screen' : descriptions[provider]")
+    expect(source).toContain('<NewScreenDialog onclose={() => (creatingScreen = false)} />')
+  })
+
+  it('creates the screen with its theme, then opens Edit Home on it', () => {
+    expect(dialog).toContain('createCustomScreen(name, (theme || null) as ScreenThemeRef | null)')
+    expect(dialog).toContain("await goto('/app/home')")
+    expect(dialog).toContain('homeEditorOpen.set(true)')
+    expect(dialog).toContain('options={screenThemeOptions($studioThemes)}')
+  })
+
+  it('gives every screen a theme picker and custom screens rename and delete', () => {
+    expect(screensSettings).toContain('catalogScreens($catalogProviders, $customScreens)')
+    expect(screensSettings).toContain('setScreenTheme(screen, (value || null) as ScreenThemeRef | null)')
+    expect(screensSettings).toContain('renameCustomScreen(renaming, draft)')
+    expect(screensSettings).toContain('deleteCustomScreen(screen)')
+    expect(screensSettings).toContain('settingKey="catalog-screens"')
+  })
+
+  it('renders a custom screen as a Merged Home of its own', () => {
+    expect(homePage).toContain('{:else if isMergedScreen($catalogScreen)}')
+    expect(homePage).toContain('{#key $catalogScreen}<MergedCatalogHome target={$catalogScreen} anilistHero={heroMedias} />{/key}')
+  })
+})

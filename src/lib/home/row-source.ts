@@ -12,7 +12,7 @@ import type { CatalogHomeTarget } from '$lib/catalog/home-layout'
 import { decodeMergedCatalogHomeRowId, loadCatalogProvider } from '$lib/catalog/registry'
 import type { CatalogHomeRowOption, CatalogHomeSection } from '$lib/catalog/types'
 import { gameMode } from '$lib/player/session'
-import type { CatalogSelection } from '$lib/settings/catalog'
+import { isMergedScreen, type CatalogSelection } from '$lib/settings/catalog'
 import { dismissedRecentReleaseIds, showAdult } from '$lib/settings/ui'
 
 /** One page of a row. `episodes` (the recently aired row only) is the latest aired episode of each
@@ -33,8 +33,9 @@ export function appendUnique(current: Media[], next: Media[]): Media[] {
   return [...current, ...next.filter((item) => !seen.has(item.id) && seen.add(item.id))]
 }
 
-/** A catalog row a theme slot can show: not a block, the banner, or a local or tracker row. */
-export const isContentRow = (id: string): boolean => id !== 'hero' && !id.startsWith('block:') && !LOCAL_ROLES.has(bareRole(id))
+/** A catalog row a theme slot can show: not a block, a collection, the banner, or a local or tracker row. */
+export const isContentRow = (id: string): boolean =>
+  id !== 'hero' && !id.startsWith('block:') && !id.startsWith('collection:') && !LOCAL_ROLES.has(bareRole(id))
 
 /** Rows a tab can show: catalog rows and the recently aired schedule. Local and tracker rows have
  * their own sections. */
@@ -48,7 +49,7 @@ export function tabbableRows(options: CatalogHomeRowOption[]): CatalogHomeRowOpt
  * `<origin>:<catalog>`, the JVM catalog's `popular:<source>`), so those must survive unchanged.
  * Merged Home needs an exact id or picks the first catalog that offers the bare role. */
 export function resolveRowId(target: CatalogHomeTarget, role: string, optionIds: string[]): string | null {
-  if (target !== 'merged') {
+  if (!isMergedScreen(target)) {
     const decoded = decodeMergedCatalogHomeRowId(role)
     return decoded ? decoded.rowId : role
   }
@@ -111,7 +112,7 @@ export function resolveRoles(target: CatalogHomeTarget, roles: string[], optionI
 }
 
 export function rowSource(target: CatalogHomeTarget, rowId: string): RowSource | null {
-  if (target === 'merged') {
+  if (isMergedScreen(target)) {
     const decoded = decodeMergedCatalogHomeRowId(rowId)
     if (!decoded) return null
     return decoded.selection === 'auto' || decoded.selection === 'anilist'

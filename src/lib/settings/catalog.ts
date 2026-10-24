@@ -2,7 +2,9 @@ import { persisted } from 'svelte-persisted-store'
 import { derived, get, writable } from 'svelte/store'
 
 export type CatalogSelection = 'auto' | 'anilist' | 'kitsu' | 'tmdb' | 'stremio' | 'jvm'
-export type CatalogScreen = CatalogSelection | 'merged'
+/** A user-made screen: a named Merged screen with a Home layout (and optionally a theme) of its own. */
+export type CustomScreenId = `custom:${string}`
+export type CatalogScreen = CatalogSelection | 'merged' | CustomScreenId
 export type CatalogDefaultSelection = CatalogScreen | 'adaptive'
 export type CatalogMode = 'separate' | 'merged'
 export type ContinueWatchingCatalogScope = 'provider' | 'all'
@@ -11,7 +13,30 @@ export type StremioHeroArtwork = 'backdrop' | 'cover'
 
 export const CATALOG_SELECTIONS: CatalogSelection[] = ['auto', 'anilist', 'kitsu', 'tmdb', 'stremio', 'jvm']
 
-export const catalogLabel = (provider: CatalogDefaultSelection): string => ({
+export interface CustomScreen { id: string; name: string }
+export const CUSTOM_SCREEN_LIMIT = 12
+const CUSTOM_SCREEN_ID = /^[a-z0-9]{1,24}$/
+
+export function normalizeCustomScreens(value: unknown): CustomScreen[] {
+  if (!Array.isArray(value)) return []
+  const screens = new Map<string, CustomScreen>()
+  for (const item of value) {
+    const raw = item && typeof item === 'object' ? item as Partial<CustomScreen> : {}
+    const name = typeof raw.name === 'string' ? raw.name.trim().replace(/\s+/g, ' ').slice(0, 32) : ''
+    if (typeof raw.id !== 'string' || !CUSTOM_SCREEN_ID.test(raw.id) || !name || screens.has(raw.id)) continue
+    screens.set(raw.id, { id: raw.id, name })
+    if (screens.size >= CUSTOM_SCREEN_LIMIT) break
+  }
+  return [...screens.values()]
+}
+
+export const customScreens = persisted<CustomScreen[]>('catalog-custom-screens-v1', [], { beforeRead: normalizeCustomScreens })
+export const customScreenId = (id: string): CustomScreenId => `custom:${id}`
+export const isCustomScreen = (screen: unknown): screen is CustomScreenId => typeof screen === 'string' && screen.startsWith('custom:')
+/** Screens that compose rows from every enabled catalog: Merged, and every custom screen. */
+export const isMergedScreen = (screen: unknown): screen is 'merged' | CustomScreenId => screen === 'merged' || isCustomScreen(screen)
+
+const CATALOG_LABELS: Record<Exclude<CatalogDefaultSelection, CustomScreenId>, string> = {
   adaptive: 'Adaptive',
   merged: 'Merged',
   auto: 'Automatic anime',
@@ -20,7 +45,13 @@ export const catalogLabel = (provider: CatalogDefaultSelection): string => ({
   tmdb: 'TMDB',
   stremio: 'Stremio',
   jvm: 'Aniyomi sources',
-})[provider]
+}
+
+/** Pass `custom` from a component's `$customScreens`, so a renamed screen relabels at once. */
+export function catalogLabel(provider: CatalogDefaultSelection, custom: CustomScreen[] = get(customScreens)): string {
+  if (!isCustomScreen(provider)) return CATALOG_LABELS[provider]
+  return custom.find((screen) => customScreenId(screen.id) === provider)?.name ?? 'Custom screen'
+}
 
 export function normalizeCatalogProviders(value: unknown, fallback: CatalogSelection = 'auto'): CatalogSelection[] {
   if (!Array.isArray(value)) return [fallback]
@@ -94,29 +125,33 @@ if (legacyWasMerged) catalogDefaultProvider.set('merged')
 
 /** Merged is useful only when it can combine at least two distinct provider experiences. Automatic
  * anime already contains AniList, so enabling both does not manufacture a duplicate screen. */
-export function catalogScreens(value: unknown): CatalogScreen[] {
+/** Custom screens follow the built-in ones. Callers that must only see built-in screens (the TV
+ *  companion) leave `custom` out. */
+export function catalogScreens(value: unknown, custom: CustomScreen[] = []): CatalogScreen[] {
   const providers = normalizeCatalogProviders(value)
-  return mergedCatalogProviders(providers).length > 1 ? [...providers, 'merged'] : providers
+  const builtIn: CatalogScreen[] = mergedCatalogProviders(providers).length > 1 ? [...providers, 'merged'] : providers
+  return [...builtIn, ...custom.map((screen) => customScreenId(screen.id))]
 }
 
-export const enabledCatalogScreens = derived(catalogProviders, ($providers) => catalogScreens($providers))
+export const enabledCatalogScreens = derived([catalogProviders, customScreens], ([$providers, $custom]) => catalogScreens($providers, $custom))
 
 function adjacentCatalogScreen(
   current: CatalogScreen,
   providers: unknown,
   direction: 1 | -1,
+  custom: CustomScreen[],
 ): CatalogScreen {
-  const screens = catalogScreens(providers)
+  const screens = catalogScreens(providers, custom)
   const index = screens.indexOf(current)
   if (index < 0) return screens[0]
   return screens[(index + direction + screens.length) % screens.length]
 }
 
-export const nextCatalogScreen = (current: CatalogScreen, providers: unknown): CatalogScreen =>
-  adjacentCatalogScreen(current, providers, 1)
+export const nextCatalogScreen = (current: CatalogScreen, providers: unknown, custom: CustomScreen[] = []): CatalogScreen =>
+  adjacentCatalogScreen(current, providers, 1, custom)
 
-export const previousCatalogScreen = (current: CatalogScreen, providers: unknown): CatalogScreen =>
-  adjacentCatalogScreen(current, providers, -1)
+export const previousCatalogScreen = (current: CatalogScreen, providers: unknown, custom: CustomScreen[] = []): CatalogScreen =>
+  adjacentCatalogScreen(current, providers, -1, custom)
 
 /** The last platform the user actually selected. It is written at switch time rather than only on
  * exit, so Adaptive also survives a crash or forced Steam shutdown. A fixed default does not alter
@@ -140,8 +175,9 @@ export function resolveCatalogScreenStartup(
   defaultProvider: unknown,
   lastScreen: unknown,
   providers: unknown,
+  custom: CustomScreen[] = [],
 ): CatalogScreen {
-  const screens = catalogScreens(providers)
+  const screens = catalogScreens(providers, custom)
   if (defaultProvider === 'adaptive'
       && typeof lastScreen === 'string'
       && screens.includes(lastScreen as CatalogScreen)) return lastScreen as CatalogScreen
@@ -156,6 +192,7 @@ export const catalogScreen = writable<CatalogScreen>(resolveCatalogScreenStartup
   get(catalogDefaultProvider),
   get(catalogLastScreen),
   get(catalogProviders),
+  get(customScreens),
 ))
 
 if (legacyWasMerged) legacyCatalogMode.set('separate')
@@ -216,13 +253,17 @@ export function selectCatalogProvider(provider: CatalogSelection): void {
 }
 
 export function selectCatalogScreen(screen: CatalogScreen): void {
-  if (screen === 'merged') {
+  if (isMergedScreen(screen)) {
     catalogScreen.set(screen)
     catalogLastScreen.set(screen)
     return
   }
   selectCatalogProvider(screen)
 }
+
+/** The TV companion and cloud profile know only built-in screens: a custom one reads as its concrete provider. */
+export const companionScreen = (screen: CatalogScreen): Exclude<CatalogScreen, CustomScreenId> =>
+  isCustomScreen(screen) ? get(catalogProvider) : screen
 
 /** A desktop app cannot safely embed a shared TMDB application credential in its distributable.
  * Users may supply their own read token; packaged/private builds can instead set PUBLIC_TMDB_READ_TOKEN. */

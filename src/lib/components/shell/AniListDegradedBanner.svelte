@@ -9,6 +9,7 @@
   import {
     catalogProvider,
     catalogScreen,
+    isMergedScreen,
     catalogProviders,
     isLegacyAniListCatalog,
     mergedCatalogProviders,
@@ -23,7 +24,7 @@
   const stripsAbove = $derived(($offlineMode || !$online ? 1 : 0) + ($incognito ? 1 : 0))
   const offset = $derived(`${stripsAbove * 1.75}rem`)
   const desktopInset = $derived($isMacOS ? 'sm:left-28 sm:right-0' : 'sm:left-14 sm:right-[8.25rem]')
-  const usesAniList = $derived($catalogScreen === 'merged'
+  const usesAniList = $derived(isMergedScreen($catalogScreen)
     ? mergedCatalogProviders($catalogProviders).some(isLegacyAniListCatalog)
     : isLegacyAniListCatalog($catalogProvider))
 </script>

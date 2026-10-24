@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { CatalogScreen } from '$lib/settings/catalog'
+  import { isCustomScreen, type CatalogScreen, type CustomScreenId } from '$lib/settings/catalog'
 
   let {
     platform,
@@ -11,7 +11,7 @@
 
   // Keep the Izumi silhouette while borrowing the selected catalog's brand colours. The active
   // screen is persisted by the catalog store, so the shell can keep this identity across routes.
-  const gradients: Record<CatalogScreen, readonly [string, string, string]> = {
+  const gradients: Record<Exclude<CatalogScreen, CustomScreenId>, readonly [string, string, string]> = {
     merged: ['#67E8F9', '#3B82F6', '#8B5CF6'],
     auto: ['#5CEAD8', '#1FA6F0', '#4E63F5'],
     anilist: ['#5CEAD8', '#1FA6F0', '#4E63F5'],
@@ -21,7 +21,8 @@
     jvm: ['#F7D7AA', '#D8894C', '#8D4B32'],
   }
 
-  const colors = $derived(gradients[platform])
+  // Every custom screen shares one gradient, matching its tile in the catalog picker.
+  const colors = $derived(isCustomScreen(platform) ? (['#E879F9', '#F43F5E', '#FB923C'] as const) : gradients[platform])
 </script>
 
 <span

@@ -14,6 +14,8 @@
   import { isAndroid, isAndroidTv, isMobile } from '$lib/platform'
   import { settingsControllerMode } from '$lib/settings/surface'
   import { m } from '$lib/paraglide/messages.js'
+  import { catalogLabel, catalogScreen, customScreens } from '$lib/settings/catalog'
+  import { screenThemeName, setScreenTheme } from '$lib/themes/screen-theme'
 
   const presets = [
     { value: 'izumi', label: 'Izumi', description: 'Dark, rose accent' },
@@ -46,6 +48,14 @@
 <SettingsSection section="appearance">
   <SettingsSubcategory id="theme">
     <SettingsChoiceRow settingKey="theme-preset" title={m.settings_theme()} description={m.settings_theme_hint()} value={$themePreset} options={presetOptions} onChange={(value) => ($themePreset = value as ThemePreset)} preview={palettePreview} />
+    {#if $screenThemeName !== null}
+      <!-- The open catalog screen has a theme of its own, which hides the app theme picked above. -->
+      <SettingsRow title={`${catalogLabel($catalogScreen, $customScreens)} uses ${$screenThemeName}`} description="This screen has its own theme; the theme above shows on your other screens">
+        {#snippet control()}
+          <button type="button" data-focusable onclick={() => setScreenTheme($catalogScreen, null)} class="min-h-10 rounded-lg bg-secondary px-3 text-sm font-bold hover:bg-accent">Use app theme here</button>
+        {/snippet}
+      </SettingsRow>
+    {/if}
     <SettingsRow title="Themes" description="Install, update and manage themes" href="/app/settings/themes" chevron />
     <SetupElsewhere title="Theme Studio" status={$themePreset === 'custom' ? 'In use' : 'Not used'} where="Needs a mouse and keyboard: connect them to design here">
       <SettingsRow title="Theme Studio" description="Design your own colours, type and backdrop" href="/app/settings/theme-studio" chevron />

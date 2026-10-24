@@ -134,6 +134,6 @@ describe('top bar categories menu', () => {
   it('opens the merged catalog scope a link names', () => {
     const search = read('../../../routes/app/search/+page.svelte')
     expect(search).toContain("const urlScope = params.get('provider') as CatalogSelection | null")
-    expect(search).toContain("if (linked && $catalogScreen === 'merged' && urlScope && urlScope !== mergedScope && mergedSelections.includes(urlScope)) mergedScope = urlScope")
+    expect(search).toContain("if (linked && isMergedScreen($catalogScreen) && urlScope && urlScope !== mergedScope && mergedSelections.includes(urlScope)) mergedScope = urlScope")
   })
 })

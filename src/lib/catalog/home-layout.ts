@@ -1,11 +1,11 @@
 import { persisted } from 'svelte-persisted-store'
 import { get } from 'svelte/store'
 import { hiddenHomeRows, homeRowOrder } from '$lib/settings/ui'
-import type { CatalogSelection } from '$lib/settings/catalog'
+import type { CatalogScreen, CustomScreenId } from '$lib/settings/catalog'
 import type { CatalogHomeRowOption } from './types'
 
-export type CatalogHomeLayoutKey = 'anilist' | 'kitsu' | 'tmdb' | 'stremio' | 'jvm' | 'merged'
-export type CatalogHomeTarget = CatalogSelection | 'merged'
+export type CatalogHomeLayoutKey = 'anilist' | 'kitsu' | 'tmdb' | 'stremio' | 'jvm' | 'merged' | CustomScreenId
+export type CatalogHomeTarget = CatalogScreen
 
 export interface CatalogHomeLayout {
   /** Contains visible and hidden rows so a hidden row remembers its former position. */

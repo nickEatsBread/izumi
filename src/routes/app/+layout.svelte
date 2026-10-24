@@ -45,7 +45,7 @@
   import { playing, fullscreen, pictureInPicture, exitPictureInPicture, gameMode, gameModeResolved, initGameMode, debridCaching, playerStage } from '$lib/player/session'
   import { playerInsets, sameInsets, type PlayerInsets } from '$lib/player/insets'
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes, hotkeyBindings } from '$lib/settings/ui'
-  import { catalogDefaultProvider, catalogLastProvider, catalogProvider, catalogProviders, catalogScreen, catalogScreens, enabledCatalogProviders, enabledCatalogScreens, nextCatalogScreen, previousCatalogScreen, resolveCatalogStartup, selectCatalogProvider, selectCatalogScreen } from '$lib/settings/catalog'
+  import { catalogDefaultProvider, catalogLastProvider, catalogProvider, catalogProviders, catalogScreen, catalogScreens, customScreens, enabledCatalogProviders, isMergedScreen, enabledCatalogScreens, nextCatalogScreen, previousCatalogScreen, resolveCatalogStartup, selectCatalogProvider, selectCatalogScreen } from '$lib/settings/catalog'
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation'
   import { page } from '$app/state'
   import { invoke } from '@tauri-apps/api/core'
@@ -130,13 +130,13 @@
   $effect(() => {
     const enabled = $enabledCatalogProviders
     if (!enabled.length) return
-    const screens = catalogScreens(enabled)
+    const screens = catalogScreens(enabled, $customScreens)
     if ($catalogDefaultProvider !== 'adaptive' && !screens.includes($catalogDefaultProvider)) {
       $catalogDefaultProvider = enabled[0]
     }
     const fallback = resolveCatalogStartup($catalogDefaultProvider, $catalogLastProvider, enabled)
     if (!enabled.includes($catalogProvider)) {
-      if ($catalogScreen === 'merged' && screens.includes('merged')) {
+      if (isMergedScreen($catalogScreen) && screens.includes($catalogScreen)) {
         $catalogProvider = fallback
         $catalogLastProvider = fallback
       } else {
@@ -164,8 +164,8 @@
       event.preventDefault()
       h.tap()
       selectCatalogScreen(catalogAction === 'homePreviousCatalog'
-        ? previousCatalogScreen($catalogScreen, $catalogProviders)
-        : nextCatalogScreen($catalogScreen, $catalogProviders))
+        ? previousCatalogScreen($catalogScreen, $catalogProviders, $customScreens)
+        : nextCatalogScreen($catalogScreen, $catalogProviders, $customScreens))
       void goto('/app/home')
       return
     }

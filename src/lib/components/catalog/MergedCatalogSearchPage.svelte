@@ -118,7 +118,7 @@
 
   {#if failedProviders.length && media.length}
     <p class="mt-5 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-      Results are partial — {failedProviders.map(catalogLabel).join(', ')} could not be reached.
+      Results are partial — {failedProviders.map((provider) => catalogLabel(provider)).join(', ')} could not be reached.
     </p>
   {/if}
 

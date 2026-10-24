@@ -98,7 +98,8 @@ describe('the Home hero placeholder', () => {
     // when the theme's Home does not open on its banner.
     for (const page of [merged, catalog]) {
       expect(page).toContain('&& !$themePresentation?.hero?.hidden}\n      <HeroPlaceholder />')
-      expect(page).toContain("themeHomeHas($activeThemeLayout?.home, 'hero', true) ?? true")
+      // Merged Home reads the theme layout through `themeLayout`, which a custom screen leaves empty.
+      expect(page).toMatch(/themeHomeHas\((\$activeThemeLayout|themeLayout)\?\.home, 'hero', true\) \?\? true/)
     }
   })
 

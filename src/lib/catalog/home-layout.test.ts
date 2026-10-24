@@ -80,3 +80,10 @@ describe('catalog Home layouts', () => {
     expect(resolveCatalogHomeRows('anilist', options, {}).map((row) => row.id)[0]).toBe('hero')
   })
 })
+
+
+describe('custom screen layouts', () => {
+  it('keys a custom screen layout by its screen id', () => {
+    expect(catalogHomeLayoutKey('custom:night')).toBe('custom:night')
+  })
+})

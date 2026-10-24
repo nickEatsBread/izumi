@@ -23,6 +23,8 @@
   import { catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
   import { homeEditorOpen } from '$lib/catalog/home-editor'
   import { ANILIST_HOME_ROWS } from '$lib/catalog/home-options'
+  import { homeCollections } from '$lib/catalog/collections/store'
+  import { collectionIdOf, collectionRowOptions } from '$lib/catalog/collections/rows'
   import { activeThemeLayout } from '$lib/themes/layout-state'
   import { themePresentation } from '$lib/themes/runtime'
   import MediaListSheet from '$lib/components/detail/MediaListSheet.svelte'
@@ -35,6 +37,7 @@
     catalogSwitcherPlacement,
     enabledCatalogScreens,
     isLegacyAniListCatalog,
+    isMergedScreen,
     mergedCatalogProviders,
     resolveCatalogSwitcherPlacement,
   } from '$lib/settings/catalog'
@@ -58,7 +61,7 @@
   const mergedUsesAniList = $derived(mergedCatalogProviders($catalogProviders).some((provider) => isLegacyAniListCatalog(provider)))
   const searchMode = $derived($interfaceMode === 'search')
   // A paused hero: no catalog query while the search screen is showing.
-  const usesAniListHome = $derived(!searchMode && ($catalogScreen === 'merged' ? mergedUsesAniList : legacyCatalog))
+  const usesAniListHome = $derived(!searchMode && (isMergedScreen($catalogScreen) ? mergedUsesAniList : legacyCatalog))
   const sections = homeSections(new Date())
 
   // Top-bar icons come from the nav config (items the user placed 'top'), or the theme's header list,
@@ -68,7 +71,7 @@
   // Personalized rows use the connected AniList account name (from OAuth) if present,
   // otherwise the manually-entered username.
   const listUser = $derived($anilistUserName || $anilistUser)
-  const anilistRows = $derived(resolveCatalogHomeRows('anilist', [...ANILIST_HOME_ROWS, ...blockRowOptions('anilist', $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts)
+  const anilistRows = $derived(resolveCatalogHomeRows('anilist', [...ANILIST_HOME_ROWS, ...collectionRowOptions($homeCollections), ...blockRowOptions('anilist', $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts)
     .filter((row) => row.enabled))
   const rowOptionIds = ANILIST_HOME_ROWS.map((row) => row.id)
   // While a theme layout is active, it replaces the row order below (the user's own layout, in
@@ -76,6 +79,8 @@
   // for lookups so a theme block renders exactly like a real one.
   const themeHome = $derived($activeThemeLayout?.home ? resolveThemeHome($activeThemeLayout.home, $catalogProvider, rowOptionIds) : null)
   const allBlocks = $derived(themeHome ? { ...$homeBlocks, ...themeHome.blocks } : $homeBlocks)
+  // A theme layout places only catalog rows, so the collections on this Home keep their place after the banner.
+  const themeCollectionIds = $derived(themeHome ? anilistRows.flatMap((row) => collectionIdOf(row.id) ?? []) : [])
   const orderedRows = $derived(themeHome?.rows ?? anilistRows.map((row) => row.id))
   // The hero renders full-bleed above HomeColumns only while it truly leads the row order; while
   // Edit Home is open it always flows through HomeColumns instead, so it can be dragged/hidden like
@@ -225,8 +230,8 @@
     {/if}
     <DownloadedLibrary />
   </div>
-{:else if $catalogScreen === 'merged'}
-  <MergedCatalogHome anilistHero={heroMedias} />
+{:else if isMergedScreen($catalogScreen)}
+  {#key $catalogScreen}<MergedCatalogHome target={$catalogScreen} anilistHero={heroMedias} />{/key}
 {:else if !legacyCatalog}
   <CatalogHome />
 {:else}
@@ -242,13 +247,15 @@
     {/snippet}
 
     {#if heroFirst}{@render heroBlock()}{/if}
-    <CollectionsHome />
+    {#if themeHome}<CollectionsHome ids={themeCollectionIds} />{/if}
     {#snippet homeRow(row: string)}
       {@const rowOption = anilistRows.find((option) => option.id === row) ?? (isThemeBlockId(row) ? { id: row, title: blockTitle(allBlocks[row]) } : ANILIST_HOME_ROWS.find((option) => option.id === row))}
       {@const visibleIds = columns.main.includes(row) ? columns.main : columns.aside}
       <HomeRowFrame rowId={row} title={rowOption?.title ?? row} target={$catalogProvider} {visibleIds} locked={!!themeHome} role={themeHome?.roles[row]}>
         {#if row === 'hero'}
           {@render heroBlock()}
+        {:else if collectionIdOf(row)}
+          <CollectionsHome ids={[collectionIdOf(row) ?? '']} />
         {:else if isBlockId(row) || isThemeBlockId(row)}
           <HomeBlockView id={row} target={$catalogProvider} optionIds={rowOptionIds} block={allBlocks[row]} />
         {:else if row === 'continue'}

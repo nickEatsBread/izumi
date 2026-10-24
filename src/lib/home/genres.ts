@@ -2,11 +2,12 @@ import { anilist } from '$lib/anilist/client'
 import { GENRE_COLLECTION } from '$lib/anilist/detail-queries'
 import type { CatalogHomeTarget } from '$lib/catalog/home-layout'
 import { loadCatalogProvider } from '$lib/catalog/registry'
+import { isMergedScreen } from '$lib/settings/catalog'
 import { TOP_GENRES } from './blocks'
 
 /** Genres the current Home's catalog knows. AniList for AniList and Merged Homes. */
 export async function loadGenres(target: CatalogHomeTarget, signal?: AbortSignal): Promise<string[]> {
-  if (target === 'merged' || target === 'auto' || target === 'anilist') {
+  if (isMergedScreen(target) || target === 'auto' || target === 'anilist') {
     const result = await anilist.query(GENRE_COLLECTION, {}).toPromise()
     return (result.data?.GenreCollection as string[] | undefined) ?? []
   }

@@ -19,6 +19,7 @@
     catalogProvider,
     catalogProviders,
     isLegacyAniListCatalog,
+    isMergedScreen,
     mergedCatalogProviders,
     type CatalogSelection,
   } from '$lib/settings/catalog'
@@ -63,7 +64,7 @@
   })
 
   $effect(() => {
-    if ($catalogScreen !== 'merged') return
+    if (!isMergedScreen($catalogScreen)) return
     if (mergedScope === 'all') {
       const search = mergedQuery.trim() || undefined
       if (filters.search !== search) filters = { search }
@@ -107,7 +108,7 @@
     const linked = navigation.type === 'link' || navigation.type === 'goto'
     // On the merged catalog such a link also names the catalog it filters in.
     const urlScope = params.get('provider') as CatalogSelection | null
-    if (linked && $catalogScreen === 'merged' && urlScope && urlScope !== mergedScope && mergedSelections.includes(urlScope)) mergedScope = urlScope
+    if (linked && isMergedScreen($catalogScreen) && urlScope && urlScope !== mergedScope && mergedSelections.includes(urlScope)) mergedScope = urlScope
     if (linked && (urlGenre || urlSort) && (urlGenre !== shownGenre || urlSort !== shownSort)) catalogSearchKey += 1
     const currentGenre = filters.genres?.length === 1 ? filters.genres[0] : undefined
     if (linked && (urlGenre || urlSort) && (urlGenre !== currentGenre || urlSort !== filters.sort)) {
@@ -179,12 +180,12 @@
   // the return trip and look like the filters had been mangled.
   $effect(() => {
     const f = debounced
-    if ($catalogScreen !== 'merged' && !legacyCatalog) return
-    if ($catalogScreen === 'merged' && mergedScope !== 'all' && !isLegacyAniListCatalog(mergedScope)) return
+    if (!isMergedScreen($catalogScreen) && !legacyCatalog) return
+    if (isMergedScreen($catalogScreen) && mergedScope !== 'all' && !isLegacyAniListCatalog(mergedScope)) return
     const params = new URLSearchParams()
-    if ($catalogScreen === 'merged' && mergedScope !== 'all') params.set('provider', mergedScope)
+    if (isMergedScreen($catalogScreen) && mergedScope !== 'all') params.set('provider', mergedScope)
     if (f.search) params.set('search', f.search)
-    if ($catalogScreen !== 'merged' || mergedScope !== 'all') {
+    if (!isMergedScreen($catalogScreen) || mergedScope !== 'all') {
       if (f.sort) params.set('sort', f.sort)
       if (f.genres?.[0]) params.set('genre', f.genres[0])
       if (f.season) params.set('season', f.season)
@@ -216,7 +217,7 @@
 {#snippet searchPage()}
 {#if $offlineMode}
   <OfflineUnavailable title="Search is unavailable offline" subtitle="Searching needs a connection. Your downloaded titles are available on the Downloads page." />
-{:else if $catalogScreen === 'merged'}
+{:else if isMergedScreen($catalogScreen)}
   <div class="px-4 pt-4 sm:px-8 sm:pt-8">
     <h1 data-part="search.title" class="text-2xl font-black">{m.nav_search()}</h1>
     <p class="mt-1 text-sm text-muted-foreground">Search everything together, or choose one catalog to unlock its filters.</p>

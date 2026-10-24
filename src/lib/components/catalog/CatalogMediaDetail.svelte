@@ -35,10 +35,17 @@
   import { youtubeTrailerId } from '$lib/components/cards/youtube-embed'
   import { resolveDetail } from '$lib/themes/presentation'
   import { themePresentation } from '$lib/themes/runtime'
+  import { mediaDisplayModel } from '$lib/themes/host-model'
+  import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
 
   let { provider, type, id }: { provider: CatalogProviderId; type: CatalogContentType; id: string } = $props()
   const ref = $derived({ provider, type, id } as MediaRef)
-  const trailerOn = $derived(resolveDetail($themePresentation).preview === 'trailer')
+  const detailTheme = $derived(resolveDetail($themePresentation))
+  const trailerOn = $derived(detailTheme.preview === 'trailer')
+  // A theme's overlay page (`detail.layout: "overlay"`) is drawn for an anime's series page: the title over
+  // the artwork alone. Give it the same parts here (no poster, an icon Save, its header template), or its
+  // rules land on boxes this page arranges differently. Without that layout this page keeps its own look.
+  const themedOverlay = $derived(detailTheme.layout === 'overlay' && !$isMobile)
   let media = $state<Media | null>(null)
   let loading = $state(true)
   let error = $state('')
@@ -159,12 +166,14 @@
       <!-- API 6 detail.preview: a muted trailer over the art; the layers after it pass clicks through to its mute button. -->
       <BackdropTrailer id={youtubeTrailerId(media.trailer)} title={title(media)} enabled={trailerOn} dwell={DETAIL_TRAILER_DWELL}
                        part="detail.video" mutePart="detail.mute" muteClass="right-8 top-24 z-20" />
-      <div class="pointer-events-none absolute inset-0 bg-gradient-to-r from-background via-background/75 to-background/15"></div>
-      <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-background via-transparent to-black/35"></div>
+      <div data-part="detail.scrim" data-dir="left" class="pointer-events-none absolute inset-0 bg-gradient-to-r from-background via-background/75 to-background/15"></div>
+      <div data-part="detail.scrim" data-dir="bottom" class="pointer-events-none absolute inset-0 bg-gradient-to-t from-background via-transparent to-black/35"></div>
       <button data-focusable onclick={() => history.length > 1 ? history.back() : goto('/app/home')} aria-label="Back"
         class="absolute left-4 top-10 z-10 grid size-10 place-items-center rounded-full bg-black/55 text-white backdrop-blur sm:left-8"><ChevronLeft size={22} /></button>
       <div class="relative flex min-h-[52vh] max-w-6xl items-end gap-8 px-5 pb-8 pt-24 sm:px-8 pointer-events-none [&>*]:pointer-events-auto">
-        <img data-part="detail.poster" src={cover(media)} alt="" class="hidden aspect-[2/3] rounded-xl bg-muted object-cover shadow-2xl md:block md:w-48 lg:w-56 xl:w-64" />
+        {#if !themedOverlay}
+          <img data-part="detail.poster" src={cover(media)} alt="" class="hidden aspect-[2/3] rounded-xl bg-muted object-cover shadow-2xl md:block md:w-48 lg:w-56 xl:w-64" />
+        {/if}
         <div data-part="detail.body" class="min-w-0 flex-1">
           {#if provider === 'kitsu'}
             <div class="mb-2 text-xs font-black uppercase tracking-[0.18em] text-theme">Kitsu</div>
@@ -177,6 +186,11 @@
             </h1>
           {:else}
             <h1 data-part="detail.title" class="text-3xl font-black leading-tight sm:text-5xl">{title(media)}</h1>
+          {/if}
+          {#if themedOverlay && detailTheme.header}
+            <div data-part="detail.header" class="mt-3">
+              <ThemeNode node={detailTheme.header} model={mediaDisplayModel(media)} />
+            </div>
           {/if}
           <div data-part="detail.meta" class="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-sm text-foreground/75">
             {#if format(media)}<span>{format(media)}</span>{/if}
@@ -198,8 +212,10 @@
           {/if}
           <div data-part="detail.actions" class="mt-5 flex flex-wrap gap-2">
             <button data-part="button" data-variant="primary" data-action="play" data-focusable onclick={() => play(videos[0])} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {isMovie ? 'Play' : 'Play episode 1'}</button>
-            <button data-part="button" data-variant="secondary" data-action="save" data-state={savedLocally ? 'saved' : undefined} data-focusable onclick={() => (showLocalLists = true)} class="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold">
-              {#if savedLocally}<BookmarkCheck size={18} class="text-theme" /> Saved{:else}<BookmarkPlus size={18} /> Save{/if}
+            <button data-part="button" data-variant="secondary" data-action="save" data-state={savedLocally ? 'saved' : undefined} data-focusable onclick={() => (showLocalLists = true)}
+                    aria-label={savedLocally ? 'Saved' : 'Save to lists'} title="Save to lists"
+                    class={themedOverlay ? 'grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25' : 'flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold'}>
+              {#if savedLocally}<BookmarkCheck size={18} class={themedOverlay ? undefined : 'text-theme'} />{:else}<BookmarkPlus size={18} />{/if}{#if !themedOverlay}{savedLocally ? 'Saved' : 'Save'}{/if}
             </button>
             {#if media.trailer?.id}
               <button
@@ -210,7 +226,7 @@
                 title="Watch trailer"
                 aria-label="Watch trailer"
                 onclick={watchTrailer}
-                class="grid size-11 place-items-center rounded-lg bg-secondary transition-colors hover:bg-accent"
+                class={themedOverlay ? 'grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25' : 'grid size-11 place-items-center rounded-lg bg-secondary transition-colors hover:bg-accent'}
               ><Clapperboard size={19} /></button>
             {/if}
             {#if externalUrl}

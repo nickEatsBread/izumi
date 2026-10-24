@@ -30,6 +30,8 @@
   import { themeStudioOpen } from '$lib/settings/theme-studio-session'
   import { activeStudioThemeId, studioThemes } from '$lib/settings/theme-studio'
   import { themePreset } from '$lib/settings/ui'
+  import { catalogLabel, catalogScreen, customScreens } from '$lib/settings/catalog'
+  import { screenThemeName, setScreenTheme } from '$lib/themes/screen-theme'
   import { protectedSurface, themeSafeMode } from '$lib/themes/safe-mode'
   import { themeCssStatus } from '$lib/theme'
   import { navLayer } from '$lib/nav/overlay'
@@ -229,6 +231,7 @@
   </header>
   {#if $themeStudioOpen}<p class="message">Finish or discard your Theme Studio draft before applying another theme.</p>{/if}
   {#if $themeSafeMode}<p class="message">Safe mode is on: izumi's default appearance is showing until you turn themes back on or restart. <button type="button" class="text-close inline" data-focusable onclick={() => themeSafeMode.set(false)}>Turn themes back on</button></p>{/if}
+  {#if $screenThemeName !== null}<p class="message">{catalogLabel($catalogScreen, $customScreens)} has its own theme, {$screenThemeName}, so a theme you apply here shows on your other screens. <button type="button" class="text-close inline" data-focusable onclick={() => setScreenTheme($catalogScreen, null)}>Use the app theme on {catalogLabel($catalogScreen, $customScreens)}</button></p>{/if}
   {#if $themeCssStatus.state === 'rejected'}<p role="alert" class="message error">The active theme's stylesheet was not applied: {$themeCssStatus.reason}</p>{/if}
   <input bind:this={fileInput} type="file" accept=".json,application/json" multiple class="hidden" onchange={(event) => { const input = event.currentTarget; void fromFiles(input.files); input.value = '' }} aria-label="Import theme package files" />
   <input bind:this={folderInput} type="file" accept=".json,application/json" multiple webkitdirectory class="hidden" onchange={(event) => { const input = event.currentTarget; void fromFiles(input.files); input.value = '' }} aria-label="Import theme package folder" />

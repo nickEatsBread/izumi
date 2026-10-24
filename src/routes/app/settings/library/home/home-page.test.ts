@@ -26,8 +26,8 @@ describe('Home row customization screen', () => {
 
   it('customizes Merged Home as an independent target', () => {
     expect(source).toContain("selection: 'merged' as CatalogHomeTarget")
-    expect(source).toContain("selection === 'merged'")
-    expect(source).toContain('mergedCatalogHomeRowOptions($catalogProviders')
+    expect(source).toContain('homeRowOptions(selection, $catalogProviders, abort.signal)')
+    expect(source).toContain('selection: customScreenId(screen.id) as CatalogHomeTarget')
     expect(source).toContain("label: 'Merged'")
   })
 

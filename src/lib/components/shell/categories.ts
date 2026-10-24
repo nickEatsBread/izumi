@@ -1,6 +1,6 @@
 // Where the theme top bar's Categories menu leads, and where its panel sits. Kept pure so it can be
 // tested without a DOM.
-import { isLegacyAniListCatalog, mergedCatalogProviders, type CatalogScreen, type CatalogSelection } from '$lib/settings/catalog'
+import { isLegacyAniListCatalog, isMergedScreen, mergedCatalogProviders, type CatalogScreen, type CatalogSelection } from '$lib/settings/catalog'
 
 /** What the Categories menu browses. */
 export interface CategoriesCatalog {
@@ -13,7 +13,7 @@ export interface CategoriesCatalog {
 /** The catalog on screen. Merged search filters only inside one of its catalogs, so a Merged screen
  *  browses the AniList-based catalog it includes, else its first one. */
 export function categoriesCatalog(screen: CatalogScreen, providers: unknown): CategoriesCatalog {
-  if (screen !== 'merged') return { catalog: screen }
+  if (!isMergedScreen(screen)) return { catalog: screen }
   const scopes = mergedCatalogProviders(providers)
   const scope = scopes.find(isLegacyAniListCatalog) ?? scopes[0]
   return { catalog: scope, provider: scope }

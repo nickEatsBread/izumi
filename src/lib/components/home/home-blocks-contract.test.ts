@@ -33,7 +33,8 @@ describe('Home blocks wiring', () => {
 
   it('does not let a block-only edit refetch a provider or external Home', () => {
     const catalogHome = read('../catalog/CatalogHome.svelte')
-    expect(catalogHome, 'CatalogHome.svelte').toContain('layout.order.filter((id) => !isBlockId(id))')
+    expect(catalogHome, 'CatalogHome.svelte').toContain('const local = (id: string) => isBlockId(id) || !!collectionIdOf(id)')
+    expect(catalogHome, 'CatalogHome.svelte').toContain('layout.order.filter((id) => !local(id))')
     const mergedHome = read('../catalog/MergedCatalogHome.svelte')
     expect(mergedHome, 'MergedCatalogHome.svelte').toContain("import { untrack } from 'svelte'")
     expect(mergedHome, 'MergedCatalogHome.svelte').toContain('untrack(() => rows)')
@@ -88,7 +89,8 @@ describe('Home blocks wiring', () => {
   it('follows the active theme layout without touching the user layout', () => {
     for (const file of RENDERERS) {
       const source = read(file)
-      expect(source, file).toContain('$activeThemeLayout?.home')
+      // A custom screen ignores it (MergedCatalogHome reads it through `themeLayout`).
+      expect(source, file).toMatch(/\$activeThemeLayout\?\.home|const themeLayout = \$derived\(isCustomScreen\(target\) \? null : \$activeThemeLayout\)/)
       expect(source, file).toContain('resolveThemeHome(')
       expect(source, file).toContain('locked={!!themeHome}')
     }

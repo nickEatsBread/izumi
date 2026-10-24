@@ -6,15 +6,20 @@
   import { isOskTarget } from '$lib/nav/osk'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Pencil from '@lucide/svelte/icons/pencil'
+  import Plus from '@lucide/svelte/icons/plus'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import CatalogBrandLogo from './CatalogBrandLogo.svelte'
   import CatalogPlatformLogo from './CatalogPlatformLogo.svelte'
+  import NewScreenDialog from './NewScreenDialog.svelte'
   import {
     catalogLabel,
     catalogScreen,
+    customScreens,
     enabledCatalogScreens,
+    isCustomScreen,
     selectCatalogScreen,
     type CatalogScreen,
+    type CustomScreenId,
   } from '$lib/settings/catalog'
   import { homeEditorOpen } from '$lib/catalog/home-editor'
   import { isMobile } from '$lib/platform'
@@ -43,7 +48,7 @@
     open?: boolean
   } = $props()
 
-  const descriptions: Record<CatalogScreen, string> = {
+  const descriptions: Record<Exclude<CatalogScreen, CustomScreenId>, string> = {
     merged: 'Your custom mix from every catalog',
     auto: 'Anime-first with smart metadata fallbacks',
     anilist: 'Anime discovery from AniList',
@@ -57,7 +62,8 @@
   let trigger = $state<HTMLButtonElement>()
   let listbox = $state<HTMLDivElement>()
   const choices = $derived($enabledCatalogScreens)
-  const activeLabel = $derived(catalogLabel($catalogScreen))
+  const activeLabel = $derived(catalogLabel($catalogScreen, $customScreens))
+  let creatingScreen = $state(false)
   const canSwitch = $derived(choices.length > 1)
 
   async function setOpen(next: boolean, refocus = false) {
@@ -81,6 +87,11 @@
     void setOpen(false, true)
   }
 
+  function newScreen() {
+    h.tap()
+    open = false
+    creatingScreen = true
+  }
   function editHome() {
     h.tap()
     open = false
@@ -279,8 +290,8 @@
             >
               <CatalogPlatformLogo platform={provider} />
               <span class="min-w-0 flex-1">
-                <span class="block truncate text-sm font-black">{catalogLabel(provider)}</span>
-                <span class="mt-0.5 block truncate text-xs text-muted-foreground">{descriptions[provider]}</span>
+                <span class="block truncate text-sm font-black">{catalogLabel(provider, $customScreens)}</span>
+                <span class="mt-0.5 block truncate text-xs text-muted-foreground">{isCustomScreen(provider) ? 'Your own screen' : descriptions[provider]}</span>
               </span>
               {#if provider === $catalogScreen}<Check size={18} class="shrink-0 text-theme" />{/if}
             </button>
@@ -288,6 +299,15 @@
         </div>
 
         <div class="border-t border-border p-2">
+          <button
+            type="button"
+            data-focusable
+            onclick={newScreen}
+            class="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold text-muted-foreground transition hover:bg-accent hover:text-foreground focus:bg-accent focus:text-foreground"
+          >
+            <Plus size={17} />
+            <span class="flex-1">New screen…</span>
+          </button>
           <button
             type="button"
             data-focusable
@@ -313,6 +333,7 @@
     </div>
   </div>
 {/if}
+{#if creatingScreen}<NewScreenDialog onclose={() => (creatingScreen = false)} />{/if}
 
 <style>
   :global(html[data-scheme='light']) .catalog-brand-wordmark {
