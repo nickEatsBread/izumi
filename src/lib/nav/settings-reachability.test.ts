@@ -452,7 +452,7 @@ describe('Settings reachability: markers the generic rules cannot infer (spec §
     const condition = (el: MarkupElement, name: string, on: string) =>
       attr(el, name)?.raw.match(new RegExp(`^${name}=\\{\\s*(.+?)\\s*\\?\\s*${on}\\s*:\\s*undefined\\s*\\}$`))?.[1]
     for (const rel of [
-      'src/routes/app/settings/changelog/+page.svelte',
+      'src/routes/app/settings/about/changelog/+page.svelte',
       'src/routes/app/settings/library/collections/+page.svelte',
       'src/lib/components/catalog/NuvioCloudSettings.svelte',
     ]) {

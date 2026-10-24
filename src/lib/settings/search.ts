@@ -186,13 +186,16 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'VPN adapter binding', category: 'Network and P2P', href: '/app/settings/network', keywords: 'torrent bind network interface adapter kill switch vpn nordvpn nordlynx mullvad proton wireguard surfshark expressvpn qbittorrent direct p2p', desktopOnly: true, section: 'network', subcategory: 'advanced', advanced: true },
   { title: 'Continue seeding after playback', category: 'Network and P2P', href: '/app/settings/network', keywords: 'android torrent charging unmetered wifi ratio', key: 'continue-seeding-after-playback', androidOnly: true, section: 'network', subcategory: 'advanced', advanced: true },
 
-  { title: 'Check for updates', category: 'About', href: '/app/settings/about', keywords: 'auto check upgrade release launch new version', key: 'updates', section: 'about', subcategory: 'version' },
-  { title: 'Release channel', category: 'About', href: '/app/settings/about', keywords: 'update channel stable beta pre-release', key: 'release-channel', desktopOnly: true, section: 'about', subcategory: 'advanced', advanced: true },
-  { title: 'Developer tools', category: 'About', href: '/app/settings/about', keywords: 'inspect element console network logs debug errors', key: 'developer-tools', desktopOnly: true, section: 'about', subcategory: 'advanced', advanced: true },
-  { title: 'Diagnostics report', category: 'About', href: '/app/settings/about', keywords: 'errors logs copy save bug report debug support', key: 'developer-tools', section: 'about', subcategory: 'advanced', advanced: true },
-  { title: 'Reset izumi to defaults', category: 'About', href: '/app/settings/about', keywords: 'factory reset clear delete all local data start fresh wipe', key: 'reset-defaults', section: 'about', subcategory: 'reset' },
-  { title: 'Changelog', category: 'About', href: '/app/settings/changelog', keywords: 'new changes release notes version', section: 'about', subcategory: 'changelog' },
-  { title: 'App version and licences', category: 'About', href: '/app/settings/about', keywords: 'about legal open source', section: 'about', subcategory: 'version' },
+  { title: 'App version and licences', category: 'About', href: '/app/settings/about', section: 'about', subcategory: 'version', keywords: 'about legal open source version build', key: 'app-version' },
+  { title: 'Check for updates', category: 'About', href: '/app/settings/about', section: 'about', subcategory: 'version', keywords: 'auto check upgrade release launch new version', key: 'updates' },
+  { title: 'Changelog', category: 'About', href: '/app/settings/about/changelog', section: 'about', subcategory: 'changelog', keywords: 'new changes release notes version' },
+  { title: 'License information', category: 'About', href: '/app/settings/about/license-information', section: 'about', subcategory: 'licenses', keywords: 'licence license open source agpl tmdb attribution legal' },
+  { title: 'Setup assistant', category: 'About', href: '/app/settings/about', section: 'about', subcategory: 'reset', keywords: 'onboarding wizard first run setup again language playback', key: 'setup-assistant' },
+  { title: 'Reset izumi to defaults', category: 'About', href: '/app/settings/about', section: 'about', subcategory: 'reset', keywords: 'factory reset clear delete all local data start fresh wipe', key: 'reset-defaults' },
+  { title: 'Release channel', category: 'About', href: '/app/settings/about', section: 'about', subcategory: 'advanced', advanced: true, keywords: 'update channel stable beta pre-release', key: 'release-channel', desktopOnly: true },
+  { title: 'Developer logging', category: 'About', href: '/app/settings/about', section: 'about', subcategory: 'advanced', advanced: true, keywords: 'verbose debug logs devtools jvm native', key: 'developer-logging', desktopOnly: true },
+  { title: 'Diagnostics report', category: 'About', href: '/app/settings/about', section: 'about', subcategory: 'advanced', advanced: true, keywords: 'errors logs copy save bug report debug support', key: 'diagnostics-report' },
+  { title: 'Developer tools', category: 'About', href: '/app/settings/about', section: 'about', subcategory: 'advanced', advanced: true, keywords: 'inspect element console network logs debug errors', key: 'developer-tools', desktopOnly: true },
 ]
 
 const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9+]+/g, ' ').trim()

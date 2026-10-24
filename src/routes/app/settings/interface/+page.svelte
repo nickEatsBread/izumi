@@ -4,7 +4,6 @@
   import { isAndroid, isAndroidTv, isMobile } from '$lib/platform'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import { m } from '$lib/paraglide/messages.js'
-  import { restartOnboarding } from '$lib/settings/onboarding'
 
   const themes: { value: ThemePreset; label: string; background: string; surface: string; foreground: string; accent: string }[] = [
     { value: 'izumi', label: 'Izumi', background: '#09090b', surface: '#27272a', foreground: '#fafafa', accent: '#e93b69' },
@@ -21,11 +20,6 @@
   <p class="mb-4 text-sm text-muted-foreground">{m.settings_interface_intro()}</p>
 
   <div class="max-w-2xl">
-    <div class="mb-5 flex items-center justify-between gap-3 rounded-md border border-border p-4 sm:p-3">
-      <span><span class="block font-bold">{m.settings_setup_assistant()}</span><span class="text-xs text-muted-foreground">{m.settings_setup_assistant_hint()}</span></span>
-      <button data-focusable onclick={restartOnboarding} class="shrink-0 rounded-lg bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">{m.settings_run_setup()}</button>
-    </div>
-
     <h3 class="mb-1 text-sm font-black">{m.settings_theme()}</h3>
     <p class="mb-2 text-xs text-muted-foreground">{m.settings_theme_hint()}</p>
     <div class="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">

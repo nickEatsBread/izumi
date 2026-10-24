@@ -56,7 +56,7 @@
       <div data-focusable={stops ? '' : undefined} tabindex={stops ? 0 : undefined} class="flex flex-col gap-1 rounded-lg border border-border p-3 sm:flex-row sm:items-baseline sm:gap-3">
         <span class="shrink-0 text-xs tabular-nums text-muted-foreground">{fmt(e.date)}</span>
         <span class="min-w-0 flex-1 text-sm">{e.message}</span>
-        <span class="shrink-0 font-mono text-xs text-muted-foreground sm:text-[0.65rem]">{e.sha.slice(0, 7)}</span>
+        <span class="shrink-0 font-mono text-xs text-muted-foreground">{e.sha.slice(0, 7)}</span>
       </div>
     {/each}
 

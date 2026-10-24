@@ -8,9 +8,9 @@ const about = readFileSync(fileURLToPath(new URL('../+page.svelte', import.meta.
 const layout = readFileSync(fileURLToPath(new URL('../../+layout.svelte', import.meta.url)), 'utf8')
 
 describe('About license information', () => {
-  it('shows a simple License Information hyperlink beneath the information card', () => {
+  it('links License information from the About page as a sub-page row', () => {
     expect(about).toContain('href="/app/settings/about/license-information"')
-    expect(about).toContain('>License Information</a>')
+    expect(about).toContain('title="License information"')
     expect(about).not.toContain('Credits')
     expect(about).not.toContain('This product uses the TMDB API')
   })

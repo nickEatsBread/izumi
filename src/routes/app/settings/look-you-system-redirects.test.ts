@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { legacySettingsRedirect } from '$lib/settings/legacy-routes'
 import { load as accountsLoad } from './accounts/+page'
 import { load as profilesLoad } from './profiles/+page'
+import { load as changelogLoad } from './changelog/+page'
 
 const BASE = 'https://izumi.invalid'
 const here = (relative: string) => fileURLToPath(new URL(relative, import.meta.url))
@@ -21,6 +22,7 @@ function redirectOf(load: (event: never) => unknown, href: string): { status: nu
 /** Old route, its load, and where it lands (contract §1). Later tasks add rows. */
 const LEGACY: Array<[string, (event: never) => unknown, string]> = [
   ['profiles', profilesLoad, '/app/settings/accounts#profiles'],
+  ['changelog', changelogLoad, '/app/settings/about/changelog'],
 ]
 
 describe('Look, You and System legacy routes', () => {

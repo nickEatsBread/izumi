@@ -24,9 +24,8 @@ const PAGE_TITLES: Array<[string, string]> = [
   ['sync/+page.svelte', '<h2 data-settings-page-title class="mb-2 text-3xl font-bold tracking-tight">Device sync</h2>'],
   ['backup/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Backup &amp; restore</h2>'],
   ['network/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Network</h2>'],
-  ['changelog/+page.svelte', '<h1 data-settings-page-title class="text-xl font-bold">Changelog</h1>'],
-  ['about/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">About</h2>'],
-  ['about/license-information/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">License Information</h2>'],
+  ['about/changelog/+page.svelte', '<h1 data-settings-page-title class="text-xl font-bold">Changelog</h1>'],
+  ['about/license-information/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">License information</h2>'],
 ]
 
 describe('phone settings titles', () => {
