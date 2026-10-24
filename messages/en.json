@@ -239,11 +239,6 @@
   "onboarding_sync_pending": "Waiting",
   "onboarding_sync_retry": "Retry",
   "onboarding_sync_failed": "That import did not finish.",
-  "onboarding_sync_extras_title": "Also bring over",
-  "onboarding_sync_extras_body": "These write your watch state, so they are off unless you ask for them.",
-  "onboarding_sync_library": "Library",
-  "onboarding_sync_progress": "Continue watching",
-  "onboarding_sync_history": "History",
   "onboarding_task_stremio": "Stremio add-ons",
   "onboarding_task_nuvio_sources": "Nuvio sources",
   "onboarding_task_nuvio_collections": "Nuvio collections",
@@ -317,10 +312,6 @@
   "onboarding_ready_extras_trackers": "Track your anime (optional)",
   "onboarding_ready_tmdb_tip": "Want richer film and TV details? Add a free TMDB key in Settings → Catalog.",
   "onboarding_start_cta": "Get started",
-  "onboarding_start_import_prompt": "Already use Stremio or Nuvio?",
-  "onboarding_start_import_link": "Sign in instead",
-  "onboarding_start_transfer_prompt": "izumi on another device?",
-  "onboarding_start_transfer_link": "Copy its setup",
   "onboarding_sources_add_title": "Add a source",
   "onboarding_sources_url_placeholder": "Paste an add-on, repo or catalog URL",
   "onboarding_sources_add": "Add",
@@ -331,5 +322,7 @@
   "onboarding_back_to_setup": "Back to setup",
   "onboarding_start_feature_library": "Anime, films and series in one library",
   "onboarding_start_feature_sources": "Your own sources, nothing locked in",
-  "onboarding_start_feature_tracking": "Progress synced with AniList or MyAnimeList"
+  "onboarding_start_feature_tracking": "Progress synced with AniList or MyAnimeList",
+  "onboarding_start_import_button": "Sign in with Stremio or Nuvio",
+  "onboarding_start_transfer_button": "Copy setup from another device"
 }

@@ -23,9 +23,12 @@
   let {
     connections = $bindable(),
     busy = $bindable(),
-    nuvioExtras = $bindable({ library: false, progress: false, history: false }),
     imported = $bindable(false),
-  }: { connections: ConnectStates; busy: boolean; nuvioExtras?: NuvioExtras; imported?: boolean } = $props()
+  }: { connections: ConnectStates; busy: boolean; imported?: boolean } = $props()
+
+  /** Signing in during setup is the opt-in: there is no other reason to do it here, so everything an
+   *  account holds comes over, watch state included. */
+  const EVERYTHING: NuvioExtras = { library: true, progress: true, history: true }
 
   /** Setup always imports the primary Nuvio profile. Choosing between profiles stays on the Nuvio
    *  account screen in settings, which already handles PIN-protected ones. */
@@ -108,7 +111,7 @@
   /** Called when a source account finishes signing in: what it holds comes over straight away, so
    *  there is no separate import screen to wait on. */
   function enqueue(service: 'stremio' | 'nuvio') {
-    const fresh = plannedSyncTasks([service], nuvioExtras).filter((id) => !tasks.some((task) => task.id === id))
+    const fresh = plannedSyncTasks([service], EVERYTHING).filter((id) => !tasks.some((task) => task.id === id))
     tasks = [...tasks, ...fresh.map((id): SyncTask => ({ id, state: { status: 'pending' } }))]
     void drain()
   }
@@ -328,20 +331,6 @@
         <p role="status" class="mt-3 flex items-center justify-center gap-2 text-sm text-muted-foreground"><LoaderCircle size={15} class="tile-spinner" />{connections.nuvio.completing ? m.onboarding_nuvio_completing() : m.onboarding_nuvio_waiting()}</p>
         <button type="button" data-focusable onclick={() => cancel('nuvio')} class="mt-3 min-h-10 w-full rounded-lg text-sm font-semibold hover:bg-secondary">{m.onboarding_nuvio_cancel()}</button>
       {:else}
-        <!-- Asked before signing in, because the import starts the moment the account connects.
-             These write watch state, so every box starts off. -->
-        <fieldset class="mb-4" aria-describedby="connect-nuvio-extras-hint">
-          <legend class="text-sm font-semibold">{m.onboarding_sync_extras_title()}</legend>
-          <p id="connect-nuvio-extras-hint" class="mt-1 text-xs leading-relaxed text-muted-foreground">{m.onboarding_sync_extras_body()}</p>
-          <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2">
-            {#each [{ key: 'library' as const, label: m.onboarding_sync_library() }, { key: 'progress' as const, label: m.onboarding_sync_progress() }, { key: 'history' as const, label: m.onboarding_sync_history() }] as extra}
-              <label class="flex cursor-pointer items-center gap-2 text-sm">
-                <input type="checkbox" data-focusable checked={nuvioExtras[extra.key]} onchange={(event) => nuvioExtras = { ...nuvioExtras, [extra.key]: event.currentTarget.checked }} />
-                {extra.label}
-              </label>
-            {/each}
-          </div>
-        </fieldset>
         {#if nuvioMode === 'device'}
           <button type="button" data-focusable onclick={connectNuvioDevice} class="setup-inline-button w-full bg-foreground text-background">{m.onboarding_nuvio_connect()}</button>
           <p class="mt-3 text-center text-xs leading-relaxed text-muted-foreground">{m.onboarding_nuvio_device_hint()}</p>

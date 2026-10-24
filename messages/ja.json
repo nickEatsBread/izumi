@@ -239,11 +239,6 @@
   "onboarding_sync_pending": "待機中",
   "onboarding_sync_retry": "再試行",
   "onboarding_sync_failed": "取り込みが完了しませんでした。",
-  "onboarding_sync_extras_title": "あわせて取り込む",
-  "onboarding_sync_extras_body": "視聴状況を上書きするため、指定しない限りオフのままです。",
-  "onboarding_sync_library": "ライブラリ",
-  "onboarding_sync_progress": "続きから再生",
-  "onboarding_sync_history": "履歴",
   "onboarding_task_stremio": "Stremio アドオン",
   "onboarding_task_nuvio_sources": "Nuvio のソース",
   "onboarding_task_nuvio_collections": "Nuvio のコレクション",
@@ -317,10 +312,6 @@
   "onboarding_ready_extras_trackers": "アニメを記録する（任意）",
   "onboarding_ready_tmdb_tip": "映画やドラマの情報をより充実させたい場合は、「設定 → カタログ」で無料の TMDB キーを追加できます。",
   "onboarding_start_cta": "はじめる",
-  "onboarding_start_import_prompt": "Stremio や Nuvio を使っていますか？",
-  "onboarding_start_import_link": "サインインして引き継ぐ",
-  "onboarding_start_transfer_prompt": "別の端末で izumi を使っていますか？",
-  "onboarding_start_transfer_link": "設定をコピーする",
   "onboarding_sources_add_title": "ソースを追加",
   "onboarding_sources_url_placeholder": "アドオン・リポジトリ・カタログの URL を貼り付け",
   "onboarding_sources_add": "追加",
@@ -331,5 +322,7 @@
   "onboarding_back_to_setup": "セットアップに戻る",
   "onboarding_start_feature_library": "アニメ・映画・ドラマをひとつのライブラリで",
   "onboarding_start_feature_sources": "自分のソースを使えて、縛りなし",
-  "onboarding_start_feature_tracking": "視聴状況を AniList や MyAnimeList と同期"
+  "onboarding_start_feature_tracking": "視聴状況を AniList や MyAnimeList と同期",
+  "onboarding_start_import_button": "Stremio・Nuvio でサインイン",
+  "onboarding_start_transfer_button": "別の端末から設定をコピー"
 }

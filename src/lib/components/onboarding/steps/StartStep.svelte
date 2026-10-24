@@ -1,6 +1,8 @@
 <script lang="ts">
   import ListChecks from '@lucide/svelte/icons/list-checks'
+  import LogIn from '@lucide/svelte/icons/log-in'
   import MonitorPlay from '@lucide/svelte/icons/monitor-play'
+  import MonitorSmartphone from '@lucide/svelte/icons/monitor-smartphone'
   import Plug from '@lucide/svelte/icons/plug'
   import { m } from '$lib/paraglide/messages.js'
 
@@ -24,7 +26,9 @@
   {/each}
 </ul>
 
-<div class="mt-7 grid gap-2 text-sm">
-  <p><span class="text-muted-foreground">{m.onboarding_start_import_prompt()}</span> <button type="button" data-focusable onclick={onimport} class="font-semibold underline underline-offset-4 hover:opacity-80">{m.onboarding_start_import_link()}</button></p>
-  <p><span class="text-muted-foreground">{m.onboarding_start_transfer_prompt()}</span> <button type="button" data-focusable onclick={ontransfer} class="font-semibold underline underline-offset-4 hover:opacity-80">{m.onboarding_start_transfer_link()}</button></p>
+<!-- The other two ways to start, as real buttons. They stay outlined so Get started remains the
+     one filled action on the screen. -->
+<div class="mt-7 flex flex-wrap gap-2">
+  <button type="button" data-focusable onclick={onimport} class="setup-inline-button border border-border px-4 text-sm hover:bg-secondary"><LogIn size={16} />{m.onboarding_start_import_button()}</button>
+  <button type="button" data-focusable onclick={ontransfer} class="setup-inline-button border border-border px-4 text-sm hover:bg-secondary"><MonitorSmartphone size={16} />{m.onboarding_start_transfer_button()}</button>
 </div>

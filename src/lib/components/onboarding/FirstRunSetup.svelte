@@ -21,7 +21,6 @@
   import { idleConnectStates, type ConnectStates } from '$lib/onboarding/connect-state'
   import type { SetupReadiness } from '$lib/onboarding/readiness'
   import { defaultPlaybackLanguages } from '$lib/onboarding/playback-languages'
-  import type { NuvioExtras } from '$lib/onboarding/sync-receipt'
   import {
     catalogDefaultProvider,
     catalogLastScreen,
@@ -76,7 +75,6 @@
     films: initialBoth || initialProvider === 'tmdb' || initialProvider === 'stremio',
   })
   let connections = $state<ConnectStates>(idleConnectStates())
-  let nuvioExtras = $state<NuvioExtras>({ library: false, progress: false, history: false })
   let imported = $state(false)
 
   // Cinemeta (added for film users) only supplies metadata, so it does not count as a way to play.
@@ -310,7 +308,7 @@
             {:else if step === 'watch'}
               <WatchStep bind:intent />
             {:else if step === 'connect'}
-              <ConnectStep bind:connections bind:nuvioExtras bind:imported bind:busy />
+              <ConnectStep bind:connections bind:imported bind:busy />
             {:else if step === 'sources'}
               <SourcesStep bind:this={sourcesStep} synced={imported} bind:busy onbrowse={() => void browseStore()} />
             {:else}

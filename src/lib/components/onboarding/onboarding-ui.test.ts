@@ -264,7 +264,7 @@ describe('onboarding presentation contracts', () => {
 
   it('imports what a source account holds as soon as it connects, one task at a time', () => {
     const connect = steps.ConnectStep
-    expect(connect).toContain('plannedSyncTasks([service], nuvioExtras)')
+    expect(connect).toContain('plannedSyncTasks([service], EVERYTHING)')
     expect(connect).toContain("enqueue('stremio')")
     expect(connect).toContain("enqueue('nuvio')")
     // Stremio and Nuvio write the same source list, so imports go through the tested serial drain.
@@ -272,9 +272,11 @@ describe('onboarding presentation contracts', () => {
     expect(connect).toContain('importAbort.abort()')
   })
 
-  it('asks about Nuvio watch-state imports inside the Nuvio tile, off by default', () => {
-    expect(steps.ConnectStep).toContain('m.onboarding_sync_extras_title()')
-    expect(steps.ConnectStep).toContain('nuvioExtras = $bindable({ library: false, progress: false, history: false })')
+  it('brings everything over on sign-in, with no boxes to tick first', () => {
+    // Signing in during setup has no other purpose, so watch state comes with it.
+    expect(steps.ConnectStep).toContain('const EVERYTHING: NuvioExtras = { library: true, progress: true, history: true }')
+    expect(steps.ConnectStep).not.toContain('onboarding_sync_extras')
+    expect(steps.ConnectStep).not.toContain('type="checkbox"')
   })
 
   it('shares one set of tracker tiles between sign-in and the final screen', () => {
@@ -318,7 +320,8 @@ describe('onboarding presentation contracts', () => {
     const start = read('./steps/StartStep.svelte')
     for (const handler of ['onimport', 'ontransfer']) expect(start).toContain(`onclick={${handler}}`)
     // Get started sits bottom right in the footer beside Skip setup, like every screen's forward action.
-    expect(start).not.toContain('setup-inline-button')
+    // The other two starts are real buttons, outlined so Get started stays the one filled action.
+    expect(start.match(/setup-inline-button border border-border/g)).toHaveLength(2)
     const footer = shell.slice(shell.lastIndexOf('<footer class="setup-actions'))
     expect(footer.indexOf('onclick={skip}')).toBeLessThan(footer.indexOf("onclick={() => choosePath('new')}"))
     expect(start).toContain('data-step-heading tabindex="-1" aria-describedby="setup-progress"')
