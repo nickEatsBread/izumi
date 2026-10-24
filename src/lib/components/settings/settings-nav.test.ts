@@ -8,41 +8,33 @@ const layout = readFileSync(fileURLToPath(new URL('../../../routes/app/settings/
 const dpad = readFileSync(fileURLToPath(new URL('../../nav/index.ts', import.meta.url)), 'utf8')
 
 describe('SettingsNav', () => {
-  it('imports the Captions icon from lucide', () => {
-    expect(src).toContain("import Captions from '@lucide/svelte/icons/captions'")
+  it('builds the phone index and the desktop rail from the section registry', () => {
+    expect(src).toContain("import { SETTINGS_GROUPS, SETTINGS_SECTIONS } from '$lib/settings/sections'")
+    expect(src).toContain("import { sectionIcon } from './section-icons'")
+    expect(src).not.toMatch(/href: '\/app\/settings\//)
   })
 
-  it('has a Subtitles nav entry pointing at the subtitles route', () => {
-    expect(src).toContain("{ title: 'Subtitles', href: '/app/settings/subtitles', icon: Captions")
+  it('groups the phone index under the group labels, each row with its static subtitle', () => {
+    expect(src).toContain('const groups = SETTINGS_GROUPS.map((group) => ({ ...group, items: SETTINGS_SECTIONS.filter((section) => section.group === group.id) }))')
+    expect(src).toContain('{#each groups as g (g.id)}')
+    expect(src).toContain('text-xs font-bold uppercase tracking-wide text-muted-foreground">{g.label}</div>')
+    expect(src).toContain('<span class="mt-0.5 block truncate text-xs text-muted-foreground">{it.subtitle}</span>')
   })
 
-  it('groups Subtitles under Playback, ahead of the Content entries', () => {
-    const player = src.indexOf("href: '/app/settings/player'")
-    const subs = src.indexOf("href: '/app/settings/subtitles'")
-    const sources = src.indexOf("href: '/app/settings/sources'")
-    const dl = src.indexOf("href: '/app/settings/downloads'")
-    expect(player).toBeGreaterThan(-1)
-    expect(subs).toBeGreaterThan(player)
-    expect(sources).toBeGreaterThan(subs)
-    expect(dl).toBeGreaterThan(sources)
+  it('renders the desktop rail flat, one link per section, tagged with its section and group', () => {
+    expect(src).toContain('{#each SETTINGS_SECTIONS as it (it.id)}')
+    const rail = markupElementsFromSource(src.replace(/\r\n/g, '\n'), 'SettingsNav.svelte')
+      .filter((el) => el.name === 'a' && el.ancestors[0]?.name === 'nav')
+    expect(rail).toHaveLength(1)
+    expect(attr(rail[0], 'data-section')?.raw).toBe('data-section={it.id}')
+    expect(attr(rail[0], 'data-group')?.raw).toBe('data-group={it.group}')
   })
 
-  it('presents addons and community providers as one Sources destination', () => {
-    expect(src.match(/title: 'Sources'/g)).toHaveLength(1)
-    expect(src).not.toContain("title: 'Extensions'")
-    expect(src).not.toContain("href: '/app/settings/extensions'")
-  })
-
-  it('keeps the Source Store inside Sources instead of as a separate navigation item', () => {
-    expect(src).not.toContain("{ title: 'Source Store', href: '/app/settings/store'")
-  })
-
-  it('drops the Hotkeys category on Android, keyed on $isAndroid rather than $isMobile', () => {
-    // A narrow desktop window is $isMobile but still has a keyboard, so the filter must not use it.
-    expect(src).toContain("import { isAndroid, isMobile } from '$lib/platform'")
-    expect(src).toContain("$isAndroid")
-    expect(src).toContain("it.href !== '/app/settings/hotkeys'")
-    expect(src).toContain('{#each visibleGroups as g (g.label)}')
+  it('has nothing to filter per platform: Hotkeys and Navigation are no longer categories', () => {
+    // The Playback and Appearance pages gate those old pages instead (section-routes.test.ts).
+    expect(src).not.toContain('isAndroid')
+    expect(src).not.toContain('/app/settings/hotkeys')
+    expect(src).not.toContain('/app/settings/navigation')
   })
 
   it('scrolls the desktop category rail independently through the off-screen About item', () => {
