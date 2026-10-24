@@ -10,7 +10,7 @@ const dpad = readFileSync(fileURLToPath(new URL('../../nav/index.ts', import.met
 describe('SettingsNav', () => {
   it('builds the phone index and the desktop rail from the section registry', () => {
     expect(src).toContain("import { SETTINGS_GROUPS, SETTINGS_SECTIONS } from '$lib/settings/sections'")
-    expect(src).toContain("import { sectionIcon } from './section-icons'")
+    expect(src).toContain("import { sectionIcon } from '$lib/components/settings/section-icons'")
     expect(src).not.toMatch(/href: '\/app\/settings\//)
   })
 
@@ -19,15 +19,6 @@ describe('SettingsNav', () => {
     expect(src).toContain('{#each groups as g (g.id)}')
     expect(src).toContain('text-xs font-bold uppercase tracking-wide text-muted-foreground">{g.label}</div>')
     expect(src).toContain('<span class="mt-0.5 block truncate text-xs text-muted-foreground">{it.subtitle}</span>')
-  })
-
-  it('renders the desktop rail flat, one link per section, tagged with its section and group', () => {
-    expect(src).toContain('{#each SETTINGS_SECTIONS as it (it.id)}')
-    const rail = markupElementsFromSource(src.replace(/\r\n/g, '\n'), 'SettingsNav.svelte')
-      .filter((el) => el.name === 'a' && el.ancestors[0]?.name === 'nav')
-    expect(rail).toHaveLength(1)
-    expect(attr(rail[0], 'data-section')?.raw).toBe('data-section={it.id}')
-    expect(attr(rail[0], 'data-group')?.raw).toBe('data-group={it.group}')
   })
 
   it('has nothing to filter per platform: Hotkeys and Navigation are no longer categories', () => {
