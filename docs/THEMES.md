@@ -541,6 +541,7 @@ State values:
 | `library` | slot | The library page. |  |
 | `library.tabs` | part | The library section tabs. |  |
 | `library.grid` | slot | The library card grid. |  |
+| `settings.section.icon` | part | The icon tile beside a Settings section heading. |  |
 
 The hidden `search.title` is shown by undoing its visually hidden box, for example `[data-part="search.title"]:not([data-variant]) { position: static; width: auto; height: auto; margin: 0 0 12px; overflow: visible; clip: auto; white-space: normal; }`; its text follows the app language.
 

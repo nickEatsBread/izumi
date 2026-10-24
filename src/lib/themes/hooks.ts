@@ -273,6 +273,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'library', kind: 'slot', description: 'The library page.' },
     { name: 'library.tabs', kind: 'part', description: 'The library section tabs.' },
     { name: 'library.grid', kind: 'slot', description: 'The library card grid.' },
+    { name: 'settings.section.icon', kind: 'part', description: 'The icon tile beside a Settings section heading.' },
   ],
   primitives: [
     { name: 'button', kind: 'part', description: 'A button. Series page actions carry `data-action` (Save also `data-state="saved"`; every Play button `data-state` `start` or `resume`, the episode it opens in `data-episode` and, when the episode metadata knows it, that episode\'s season in `data-season` and its number within the season in `data-season-episode`; the header\'s Download `data-state` `none`, `queued`, `progress` or `done` and the episode it queues in `data-episode`); profile-header shortcuts carry their destination in `data-dest`.', states: ['data-variant', 'data-action', 'data-dest', 'data-state', 'data-episode', 'data-season', 'data-season-episode'] },
