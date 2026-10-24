@@ -79,3 +79,9 @@ describe('a release stays a release outside the player core', () => {
     expect(read('../components/player/PlayerOverlay.svelte')).toContain('private: !!media?.isAdult || !!media?.release ||')
   })
 })
+
+describe('a release name stays on this device', () => {
+  it('never searches comment providers by a release name', () => {
+    expect(body(read('../comments/index.ts'), 'export function fetchDiscussion(')).toContain('if (media.release) return Promise.resolve([])')
+  })
+})

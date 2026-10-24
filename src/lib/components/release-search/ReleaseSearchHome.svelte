@@ -100,8 +100,7 @@
       </div>
     {:else if searched}
       <p class="mt-3 text-sm text-muted-foreground" aria-live="polite">
-        {rows.length} {rows.length === 1 ? 'release' : 'releases'}{#if searching}&nbsp;· searching…{/if}
-        {#if skipped}&nbsp;· <a href="/app/settings/sources" class="underline underline-offset-2">{skipped} {skipped === 1 ? "source can't" : "sources can't"} search by text</a>{/if}
+        {rows.length} {rows.length === 1 ? 'release' : 'releases'}{searching ? ' · searching…' : ''}{#if skipped}{' · '}<a href="/app/settings/sources" class="underline underline-offset-2">{skipped} {skipped === 1 ? "source can't" : "sources can't"} search by text</a>{/if}
       </p>
       {#if rows.length}
         <div class="mt-3 flex items-center gap-1 text-xs text-muted-foreground" role="radiogroup" aria-label="Sort">
