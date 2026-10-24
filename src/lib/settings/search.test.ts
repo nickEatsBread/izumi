@@ -3,6 +3,8 @@ import {
   SETTINGS_SEARCH_INDEX, SETTING_FALLBACK_PARAM, SETTING_PARAM, searchSettings, settingHref, settingKey,
   settingVisible, type SettingSearchItem,
 } from './search'
+import { isSettingsPath, settingsPageTitle } from './hierarchy'
+import { SETTINGS_SECTIONS, settingsSection, subcategoryDef } from './sections'
 
 describe('settings search', () => {
   it('ranks direct title matches ahead of keyword matches', () => {
@@ -27,9 +29,11 @@ describe('settings search', () => {
     expect(searchSettings('discord rpc', true)).toHaveLength(0)
     expect(searchSettings('title language', true)[0]).toMatchObject({
       title: 'Title language',
-      category: 'Interface',
-      href: '/app/settings/interface',
+      category: 'Languages',
+      href: '/app/settings/appearance',
       key: 'title-language',
+      section: 'languages',
+      subcategory: 'app',
     })
   })
 
@@ -38,7 +42,7 @@ describe('settings search', () => {
   })
 
   it('finds the rating settings by the words people use for scoring', () => {
-    expect(searchSettings('rating style')[0]).toMatchObject({ title: 'Rating style', href: '/app/settings/interface', key: 'rating-style' })
+    expect(searchSettings('rating style')[0]).toMatchObject({ title: 'Rating style', href: '/app/settings/appearance', key: 'rating-style', section: 'library', subcategory: 'ratings' })
     expect(searchSettings('stars')[0]?.title).toBe('Rating style')
     expect(searchSettings('score').map((r) => r.title)).toContain('Show rating on the series page')
     expect(settingKey('Rating style')).toBe('rating-style')
@@ -85,7 +89,7 @@ describe('settings search', () => {
 
   it('finds the series-wide numbering toggle now that it left the series page', () => {
     expect(searchSettings('absolute episode numbers')[0]?.title).toBe('Series-wide episode numbers')
-    expect(searchSettings('absolute')[0]?.category).toBe('Interface')
+    expect(searchSettings('absolute')[0]).toMatchObject({ category: 'Home and library', section: 'library', subcategory: 'advanced', advanced: true })
   })
 
   it('uses the same stable keys as Toggle rows', () => {
@@ -150,12 +154,14 @@ describe('settings search per device', () => {
   })
 
   it('decides visibility with the same rules the search uses', () => {
-    const item: SettingSearchItem = { title: 'x', category: 'x', href: '/app/settings/player', hideOn: ['tv', 'lite'] }
+    const item: SettingSearchItem = { title: 'x', category: 'x', href: '/app/settings/playback', section: 'playback', subcategory: 'up-next', hideOn: ['tv', 'lite'] }
     expect(settingVisible(item, { android: true })).toBe(true)
     expect(settingVisible(item, { android: true, tv: true })).toBe(false)
     expect(settingVisible(item, { android: false, lite: true })).toBe(false)
     expect(settingVisible({ ...item, hideOn: undefined, desktopOnly: true }, { android: true })).toBe(false)
     expect(settingVisible({ ...item, hideOn: undefined, androidOnly: true }, { android: false })).toBe(false)
+    expect(settingVisible({ ...item, hideOn: ['gamemode'] }, { android: false, gamemode: true })).toBe(false)
+    expect(settingVisible({ ...item, hideOn: ['gamemode'] }, { android: false })).toBe(true)
   })
 })
 
@@ -211,10 +217,35 @@ describe('settingHref', () => {
     expect(SETTING_PARAM).toBe('setting')
     expect(SETTING_FALLBACK_PARAM).toBe('settingFallback')
     const gif = SETTINGS_SEARCH_INDEX.find((item) => item.title === 'Include subtitles in GIFs')!
-    expect(settingHref(gif)).toBe('/app/settings/player?setting=include-subtitles-in-gifs&settingFallback=gif-recorder')
+    expect(settingHref(gif)).toBe('/app/settings/playback?setting=include-subtitles-in-gifs&settingFallback=gif-recorder')
     const threshold = SETTINGS_SEARCH_INDEX.find((item) => item.title === 'Episodes before Watchlist')!
     expect(settingHref(threshold)).toBe('/app/settings/accounts?section=behaviour&setting=episodes-before-watchlist')
     const caches = SETTINGS_SEARCH_INDEX.find((item) => item.title === 'Cache sizes')!
-    expect(settingHref(caches)).toBe('/app/settings/storage')
+    expect(settingHref(caches)).toBe('/app/settings/downloads')
+  })
+})
+
+describe('settings search metadata', () => {
+  it('files every hit under a registry section and subcategory, titled after its section', () => {
+    expect(SETTINGS_SEARCH_INDEX.length).toBeGreaterThanOrEqual(131)
+    for (const item of SETTINGS_SEARCH_INDEX) {
+      const sub = subcategoryDef(item.section, item.subcategory)
+      expect(sub, `${item.title}: ${item.section}#${item.subcategory}`).toBeDefined()
+      expect(item.category, item.title).toBe(settingsSection(item.section).title)
+      // `advanced` marks exactly the rows of the folded Advanced subcategory.
+      expect(item.advanced === true, `${item.title} advanced`).toBe(sub?.advanced === true)
+    }
+  })
+
+  it('opens every Settings hit on a route the route table knows', () => {
+    for (const item of SETTINGS_SEARCH_INDEX) {
+      if (isSettingsPath(item.href)) expect(settingsPageTitle(item.href), item.href).not.toBeNull()
+    }
+  })
+
+  it('gives every section at least one hit', () => {
+    for (const section of SETTINGS_SECTIONS) {
+      expect(SETTINGS_SEARCH_INDEX.some((item) => item.section === section.id), section.id).toBe(true)
+    }
   })
 })
