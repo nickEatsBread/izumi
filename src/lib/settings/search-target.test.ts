@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { inputType } from '$lib/nav/input'
 import { isTv } from '$lib/platform'
 import { DESTRUCTIVE_SELECTOR, revealBlock, revealSetting, settingFocusTarget } from './search-target'
+import { SUBCATEGORY_OPEN_EVENT } from './sections'
 
 const scrollIntoView = vi.fn()
 const byKey = (key: string) => document.querySelector<HTMLElement>(`[data-setting-key="${key}"]`)!
@@ -149,6 +150,43 @@ describe('revealSetting', () => {
     expect(settled).toBeUndefined()
     await vi.advanceTimersByTimeAsync(50)
     expect(settled).toBeNull()
+  })
+
+  it('unfolds the folded subcategory holding the row, then reveals the row once it shows', async () => {
+    vi.useFakeTimers()
+    document.body.innerHTML = `<section data-settings-subcategory="advanced" data-collapsed id="sub">
+      <div data-settings-subcategory-body hidden><div data-setting-key="player-cache-size"></div></div></section>`
+    const sub = document.getElementById('sub')!
+    const opened = vi.fn()
+    // SettingsSubcategory's side: unfold on the event, applied by Svelte a tick later.
+    sub.addEventListener(SUBCATEGORY_OPEN_EVENT, () => {
+      opened()
+      queueMicrotask(() => { sub.removeAttribute('data-collapsed'); sub.querySelector('[hidden]')!.removeAttribute('hidden') })
+    })
+    const pending = revealSetting('player-cache-size', null, live())
+    expect(opened).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(50)
+    await expect(pending).resolves.toBe(byKey('player-cache-size'))
+    expect(opened).toHaveBeenCalledTimes(1)
+  })
+
+  it('unfolds the fallback row’s subcategory when the row itself is not on the page', async () => {
+    document.body.innerHTML = `<section data-settings-subcategory="advanced" data-collapsed id="sub">
+      <div data-settings-subcategory-body hidden><div data-setting-key="gif-recorder"></div></div></section>`
+    const sub = document.getElementById('sub')!
+    sub.addEventListener(SUBCATEGORY_OPEN_EVENT, () => { sub.removeAttribute('data-collapsed'); sub.querySelector('[hidden]')!.removeAttribute('hidden') })
+    await expect(revealSetting('include-subtitles-in-gifs', 'gif-recorder', live())).resolves.toBe(byKey('gif-recorder'))
+  })
+
+  it('leaves an open subcategory and a hidden Accounts section alone', async () => {
+    document.body.innerHTML = `<section data-settings-subcategory="up-next" id="open"><div data-setting-key="auto-play-next-episode"></div></section>
+      <div hidden><section data-settings-subcategory="trackers" id="tab"><div data-setting-key="anilist-account"></div></section></div>`
+    const heard = vi.fn()
+    document.getElementById('open')!.addEventListener(SUBCATEGORY_OPEN_EVENT, heard)
+    document.getElementById('tab')!.addEventListener(SUBCATEGORY_OPEN_EVENT, heard)
+    await expect(revealSetting('auto-play-next-episode', null, live())).resolves.toBe(byKey('auto-play-next-episode'))
+    await expect(revealSetting('anilist-account', null, live(), { attempts: 1 })).resolves.toBeNull()
+    expect(heard).not.toHaveBeenCalled()
   })
 
   it('stops when aborted, before starting or while waiting', async () => {

@@ -1,6 +1,7 @@
 import { isNavigable } from '$lib/nav/focusable'
 import { focusRestoreAllowed } from '$lib/nav/focus-memory'
 import { isTextEntryField } from '$lib/nav/text-field'
+import { SUBCATEGORY_OPEN_EVENT } from './sections'
 
 /** Controls a search hit never focuses: one A press there would disconnect, delete or reset
  *  (Accounts Disconnect, Reset izumi, a trash button). */
@@ -41,6 +42,16 @@ function findRow(key: string, accept: (el: HTMLElement) => boolean): HTMLElement
   return null
 }
 
+/** The folded subcategory (Advanced) a row waits in, hidden; null when it is not in one. */
+const foldedSubcategory = (el: HTMLElement) => el.closest<HTMLElement>('[data-settings-subcategory][data-collapsed]')
+
+/** Asks the folded subcategory holding a `key` row to unfold (SettingsSubcategory listens), so a
+ *  later attempt finds the row rendered. */
+function unfold(key: string): void {
+  const row = findRow(key, (el) => foldedSubcategory(el) !== null)
+  if (row) foldedSubcategory(row)!.dispatchEvent(new CustomEvent(SUBCATEGORY_OPEN_EVENT))
+}
+
 /** Resolves true after `ms`, or false at once when `signal` aborts. */
 function pause(ms: number, signal: AbortSignal): Promise<boolean> {
   return new Promise((done) => {
@@ -69,7 +80,8 @@ export async function revealBlock(id: string, signal: AbortSignal): Promise<HTML
 /**
  * Brings a searched row into view. Polls `attempts` × `intervalMs` (default 20 × 50 ms) for a
  * rendered `[data-setting-key=key]`: the page may still be mounting, or the row may sit in a section
- * that opens once the page reads its URL. `fallbackKey` stands in when the row is absent from the page
+ * that opens once the page reads its URL; a row in a folded subcategory unfolds it first (and so does
+ * the fallback row when the row itself is absent). `fallbackKey` stands in when the row is absent from the page
  * (not rendered on this device or build), or on the last attempt. The row is scrolled to the centre
  * and tinted for 1.8 s; on a pad or TV (focusRestoreAllowed) focus moves to settingFocusTarget(row).
  * Resolves the revealed row, or null when aborted or nothing turned up.
@@ -85,6 +97,8 @@ export async function revealSetting(
   for (let attempt = 0; attempt < attempts; attempt++) {
     if (signal.aborted) return null
     const last = attempt === attempts - 1
+    unfold(key)
+    if (fallbackKey && !findRow(key, () => true)) unfold(fallbackKey)
     const row = findRow(key, rendered)
       ?? (fallbackKey && (last || !findRow(key, () => true)) ? findRow(fallbackKey, rendered) : null)
     if (row) {
