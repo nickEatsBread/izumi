@@ -90,7 +90,8 @@ describe('SelectMenu in controller mode (spec §3.5)', () => {
 
   it('skips placement work for the centred picker, which never reads it', () => {
     expect(source).toContain('if (!trigger || $settingsControllerMode) return')
-    expect(source).toContain('if (!open || $settingsControllerMode) return')
+    // Only a preview card, which sits beside the picker, keeps the listeners there.
+    expect(source).toContain('if (!open || ($settingsControllerMode && !preview)) return')
   })
 
   // The option lookup, stepping and reveal are tested in src/lib/settings/controller-picker.test.ts.
