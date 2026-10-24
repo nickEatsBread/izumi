@@ -47,6 +47,7 @@ export interface EpisodeWant {
   abs?: number      // absolute episode number (long-runners / TVDB absolute)
   season?: number   // wanted season — gates files that parse a contradicting season
   filename?: string // addon behaviorHints.filename: the exact in-pack file, when known
+  strict?: boolean  // no largest-file fallback: a search box pack past its last episode must fail
 }
 
 export interface ResolveOpts {

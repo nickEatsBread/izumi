@@ -405,6 +405,10 @@
       playerNotice.set('No episode is available to bookmark')
       return
     }
+    if (current.media.release) {
+      playerNotice.set('Scene bookmarks need a catalog title')
+      return
+    }
     const quote = await playerGetProperty('sub-text').catch(() => '')
     const result = addSceneBookmark({
       media: current.media,

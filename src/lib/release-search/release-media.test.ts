@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { compatibilityMediaId } from '$lib/catalog/identity'
 import type { Stream } from '$lib/stremio/parse'
-import { isPackRelease, isReleaseMedia, releaseMedia } from './release-media'
+import { isPackRelease, isReleaseMedia, releaseMedia, shareableReleaseMedia } from './release-media'
 
 const single: Stream = { infoHash: 'ab'.repeat(20), title: 'Quiet Harbor 05 [720p]', behaviorHints: { filename: 'Quiet Harbor 05 [720p]' } }
 const pack: Stream = { infoHash: 'CD'.repeat(20), title: 'Quiet.Harbor.S01.1080p.BluRay.x265', __batch: true, behaviorHints: { filename: 'Quiet.Harbor.S01.1080p.BluRay.x265' } }
@@ -32,5 +32,16 @@ describe('releaseMedia', () => {
   it('treats a batch-named release as a pack even when its source did not say so', () => {
     expect(isPackRelease({ infoHash: 'ef'.repeat(20), title: 'Quiet Harbor (01-12) [Batch] [1080p]' })).toBe(true)
     expect(isPackRelease(single)).toBe(false)
+  })
+})
+
+describe('shareableReleaseMedia', () => {
+  it('drops the magnet, .torrent link and icon before a release leaves the device', () => {
+    const secret: Stream = { ...pack, __magnet: 'magnet:?xt=urn:btih:x&tr=https://tracker.invalid/announce/passkey', __torrentUrl: 'https://feed.invalid/dl?apikey=k', __logo: 'data:image/png;base64,AAAA' }
+    const shared = shareableReleaseMedia(releaseMedia(secret, { episode: 2, season: 1 }))
+    expect(shared.release?.stream).toEqual({ infoHash: pack.infoHash, title: pack.title, behaviorHints: pack.behaviorHints, __batch: true })
+    expect(shared.release?.season).toBe(1)
+    const title = { id: 7, title: { romaji: 'Example' } }
+    expect(shareableReleaseMedia(title)).toBe(title)
   })
 })

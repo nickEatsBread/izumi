@@ -17,9 +17,12 @@ describe('recent releases', () => {
     expect(list.filter((item) => item.mediaId === -5)).toHaveLength(1)
   })
 
-  it('drops the source icon so the list stays small', () => {
-    rememberRelease(entry(1))
-    expect(get(recentReleases)[0].stream.__logo).toBeUndefined()
+  it('drops the source icon and any .torrent link (it can carry a feed key)', () => {
+    rememberRelease({ ...entry(1), stream: { ...entry(1).stream, __torrentUrl: 'https://feed.invalid/dl?apikey=k', __magnet: 'magnet:?xt=urn:btih:1' } })
+    const [kept] = get(recentReleases)
+    expect(kept.stream.__logo).toBeUndefined()
+    expect(kept.stream.__torrentUrl).toBeUndefined()
+    expect(kept.stream.__magnet).toBe('magnet:?xt=urn:btih:1')
   })
 
   it('writes nothing in incognito', () => {

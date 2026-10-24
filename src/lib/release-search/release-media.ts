@@ -23,3 +23,11 @@ export function releaseMedia(stream: Stream, want?: SearchEpisode): Media {
 }
 
 export const isReleaseMedia = (media: Pick<Media, 'release'> | null | undefined): boolean => !!media?.release
+
+/** The stand-in as it may leave this device (Watch Together). A magnet can carry a private
+ *  tracker passkey and a feed's .torrent link its API key; guests get the infohash anyway. */
+export function shareableReleaseMedia(media: Media): Media {
+  if (!media.release) return media
+  const { infoHash, title, behaviorHints, __batch } = media.release.stream
+  return { ...media, release: { ...media.release, stream: { infoHash, title, behaviorHints, __batch } } }
+}

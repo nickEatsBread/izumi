@@ -19,8 +19,10 @@ export const recentReleases = profiledPersisted<RecentRelease[]>('recent-release
 
 export function rememberRelease(entry: Omit<RecentRelease, 'playedAt'>): void {
   if (get(incognito)) return
-  // Extension icons can be inline base64; twenty of them would bloat every save.
-  const stream = { ...entry.stream, __logo: undefined }
+  // Extension icons can be inline base64 (twenty would bloat every save), and a feed's .torrent
+  // link can carry its API key, which izumi keeps only in secret storage. A replay without the
+  // link starts from the magnet or the infohash instead.
+  const stream = { ...entry.stream, __logo: undefined, __torrentUrl: undefined }
   recentReleases.update((list) => [
     { ...entry, stream, playedAt: Date.now() },
     ...list.filter((item) => item.mediaId !== entry.mediaId),

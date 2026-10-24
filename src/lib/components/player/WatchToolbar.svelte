@@ -24,6 +24,8 @@
 
   const context = $derived($nowPlayingMedia)
   const media = $derived(context?.media ?? null)
+  // A search box release has no title to resolve a download by.
+  const shown = $derived(media?.release ? items.filter((item) => item !== 'download') : items)
   const current = $derived($nowPlaying.episode ?? context?.episode ?? null)
   const aired = $derived(media ? airedCount(media) : 0)
   const numbers = $derived(media ? animeEpisodeNumbers(media).filter((n) => aired <= 0 || n <= aired) : [])
@@ -125,8 +127,8 @@
           : 'Download'
 </script>
 
-<div bind:this={root} data-slot="watch.toolbar" class="relative grid w-full bg-card text-card-foreground" style:grid-template-columns={`repeat(${items.length}, minmax(0, 1fr))`}>
-  {#each items as item (item)}
+<div bind:this={root} data-slot="watch.toolbar" class="relative grid w-full bg-card text-card-foreground" style:grid-template-columns={`repeat(${shown.length}, minmax(0, 1fr))`}>
+  {#each shown as item (item)}
     <div class="relative min-w-0">
       <button type="button" data-part="watch.toolbar.item" data-item={item} data-state={open === item ? 'open' : 'closed'} data-focusable
               aria-haspopup="menu" aria-expanded={open === item} disabled={busy}

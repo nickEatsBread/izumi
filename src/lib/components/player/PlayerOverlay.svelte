@@ -488,6 +488,10 @@
       playerNotice.set('No episode is available to bookmark')
       return
     }
+    if (current.media.release) {
+      playerNotice.set('Scene bookmarks need a catalog title')
+      return
+    }
     const quote = await playerGetProperty('sub-text').catch(() => '')
     const result = addSceneBookmark({ media: current.media, episode: current.episode, position: pos, duration: dur, quote })
     playerNotice.set(result.created ? 'Scene bookmark saved' : 'This scene is already bookmarked')
@@ -732,7 +736,8 @@
       // titles this effect can see the OUTGOING title next to the INCOMING isAdult flag. Treat a
       // mismatched pair as private: the panel shows the placeholder for the second it takes the
       // two stores to agree instead of publishing the previous (possibly adult) episode name.
-      private: !!media?.isAdult || $incognito || (media != null && np.id != null && media.id !== np.id),
+      // A search box release is named by its raw file name, which is not for a public status.
+      private: !!media?.isAdult || !!media?.release || $incognito || (media != null && np.id != null && media.id !== np.id),
       seekSeconds: $seekDuration,
     }
     const decision = presenceDecision(presenceThrottle, payload, Date.now())

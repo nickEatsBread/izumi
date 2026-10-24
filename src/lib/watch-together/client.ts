@@ -6,6 +6,7 @@ import { nowPlayingMedia, nowPlayingPartySource, playing } from '$lib/player/ses
 import { isAndroid } from '$lib/platform'
 import { androidMpvActive, seekAbsolute, setPaused } from '$lib/player/android-mpv'
 import type { Media } from '$lib/anilist/types'
+import { shareableReleaseMedia } from '$lib/release-search/release-media'
 import { parseSharedSource, sharedSourceKey, streamFromSharedSource, type SharedSource } from './source'
 import {
   bestOffsetMs, bufferGateDecision, clockSample, driftDecision, hostPositionNow, pushSample,
@@ -802,7 +803,7 @@ export function reportWatchPlayback(position: number, duration: number, paused: 
   const shared = get(nowPlayingPartySource)
   lastPublished = now
   const playback: PartyPlayback = {
-    media: current.media, episode: current.episode, position, duration, paused, buffering,
+    media: shareableReleaseMedia(current.media), episode: current.episode, position, duration, paused, buffering,
     source: shared.source ?? undefined, sourceError: shared.error || undefined,
     sequence: ++sequence, sentAt: now,
   }

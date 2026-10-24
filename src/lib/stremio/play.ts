@@ -1490,8 +1490,11 @@ export function preloadResolveNoAdd(stream: Stream): boolean {
 // match hint. Best-effort — an empty want keeps the legacy behavior.
 export async function episodeWant(media: Media, episode: number | undefined, stream?: Stream): Promise<EpisodeWant | undefined> {
   if (episode == null) return undefined
-  // A search box release has no season map: the episode (and season) came from the search text.
-  if (media.release) return { episode, season: media.release.season, filename: stream?.behaviorHints?.filename }
+  // A search box release has no season map: a pack's episode (and season) came from the search
+  // text and must match a file exactly; a single release plays its main video, whatever it is named.
+  if (media.release) return media.release.pack
+    ? { episode, season: media.release.season, filename: stream?.behaviorHints?.filename, strict: true }
+    : undefined
   const map = await mediaSeasonMap(media)
   const sm = map[episode]
   const video = mediaVideo(media, episode)
@@ -1652,7 +1655,8 @@ export async function resolveDirectPreloadStream(
  *  background so the transition is instant. Best-effort; cached-only (never
  *  proactively starts a debrid download). */
 async function prefetchNext(media: Media, episode: number) {
-  if (!get(bingePreload) && !get(autoplayNext)) return
+  // A release's next episode is the next file of the same torrent; there is nothing to look up.
+  if (media.release || (!get(bingePreload) && !get(autoplayNext))) return
   const airedTotal = airedTotalOf(media)
   const next = episode + 1
   if (next > airedTotal || prefetching) return
@@ -1865,6 +1869,12 @@ export async function playEpisode(
   if (!profileAllowsMedia(media, get(activeProfile))) {
     onState({ status: 'error', message: 'This title is blocked by the active profile’s parental controls.' })
     return
+  }
+  // A search box release is its own source: there is no title to look other sources up by.
+  if (media.release) {
+    if (!options.forceManual) return playStream(media, episode ?? 1, media.release.stream, onState, { autoplay: options.autoplay })
+    playerNotice.set('To change the release, pick another one from your search.')
+    return onState({ status: 'idle' })
   }
   const pickerStore = options.pickerStore ?? streamPicker
   const resolveSession = options.resolveSession ?? localResolveSession
@@ -2750,7 +2760,7 @@ async function resolveAndPlayBest(
   autoplay = true,
 ) {
   // A search box release replays its own torrent: the next episode is the next file in the pack.
-  if (media.release) return playStream(media, episode, media.release.stream, onState, { autoplay })
+  if (media.release) return playStream(media, episode, media.release.stream, onState, { autoplay, keepMini: true })
   const generation = ++advanceGeneration
   onState({ status: 'resolving' })
   // Cover the previous file immediately. Resolving the remembered release can take several
@@ -3968,6 +3978,13 @@ export async function recoverPlaybackSource(
     else markRouteDead(failed)
   }
   if (!stillOwnsPlayback()) return false
+  // A search box release has no title to find a replacement by: re-searching by its file name
+  // could swap in an unrelated torrent. Say so and leave the choice to the search screen.
+  if (context.media.release) {
+    playbackRecovery.set({ ...context, attempted: [...attempted], recovering: false })
+    playerNotice.set('This release stopped working. Pick another one from your search.')
+    return false
+  }
   playbackRecovery.set({ ...context, attempted: [...attempted], recovering: true })
   playerNotice.set(notice)
 
