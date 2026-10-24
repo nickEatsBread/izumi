@@ -161,6 +161,7 @@ const valueRows = `
 
 describe('value rows with a controller', () => {
   it('Down from a full-width header lands on the inline trigger in the row below, not the next header', () => {
+    controllerMode.set(true)
     document.body.innerHTML = valueRows
     el('App and titles').focus()
     press('ArrowDown')
@@ -173,20 +174,22 @@ describe('value rows with a controller', () => {
     expect(document.activeElement).toBe(el('Romaji'))
   })
 
-  it('navRect measures a marked trigger by its row on Up/Down only, else by its own box', () => {
+  it('navRect measures a marked trigger by its row on controller Up/Down only, else by its own box', () => {
     document.body.innerHTML = `${valueRows}<button data-nav-measure-row data-rect="10,10,40,20">Loose</button>`
-    expect(navRect(el('English')).width).toBe(760)
-    expect(navRect(el('English'), false).width).toBe(120)
+    expect(navRect(el('English'), true, true).width).toBe(760)
+    expect(navRect(el('English'), false, true).width).toBe(120)
+    // Desktop arrow keys keep the trigger's own box.
+    expect(navRect(el('English')).width).toBe(120)
     // No SettingsRow around it, or no marker at all: the element's own box.
-    expect(navRect(document.querySelector('button:not([data-focusable])')!).width).toBe(40)
-    expect(navRect(el('Region')).width).toBe(760)
+    expect(navRect(document.querySelector('button:not([data-focusable])')!, true, true).width).toBe(40)
+    expect(navRect(el('Region'), true, true).width).toBe(760)
     expect(navRect(document.querySelector('[data-setting-key]')!).height).toBe(56)
   })
 
   it('measures a trigger by its own row, not by a [data-setting-key] block wrapping several rows', () => {
     document.body.innerHTML = `<div data-setting-key="gif-recorder" data-rect="260,100,760,168">${valueRows}</div>`
-    expect(navRect(el('English')).height).toBe(56)
-    expect(navRect(el('English')).top).toBe(150)
+    expect(navRect(el('English'), true, true).height).toBe(56)
+    expect(navRect(el('English'), true, true).top).toBe(150)
   })
 })
 
@@ -240,9 +243,9 @@ describe('controls on a [data-nav-line] with a controller', () => {
     expect(navRect(field('Username'), true, true).top).toBe(214)
     expect(navRect(el('Add to Watchlist automatically'), true, true).width).toBe(760)
     expect(navRect(el('Option A'), true, true).width).toBe(160)
-    // An inline trigger with no line around it is still measured by its row, on every surface.
+    // An inline trigger with no line around it is measured by its row on a controller; desktop keeps its box.
     expect(navRect(el('English'), true, true).width).toBe(760)
-    expect(navRect(el('English')).width).toBe(760)
+    expect(navRect(el('English')).width).toBe(120)
     expect(navRect(el('English'), false, true).width).toBe(120)
   })
 

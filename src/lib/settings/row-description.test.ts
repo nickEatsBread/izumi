@@ -54,6 +54,16 @@ it('describes a control the snippet renders later, until the action is destroyed
   expect(describedBy('after')).toBeNull()
 })
 
+it('describes a bare native control a TV reaches, and keeps the row id when a control rewrites its own', async () => {
+  const node = row()
+  node.querySelector('[data-nav-line]')!.insertAdjacentHTML('beforeend', '<input id="bare" />')
+  describeRowFocusables(node, 'learn')
+  expect(describedBy('bare')).toBe('learn')
+  document.getElementById('connect')!.setAttribute('aria-describedby', 'connect-error')
+  await flush()
+  expect(describedBy('connect')).toBe('connect-error learn')
+})
+
 it('does nothing outside controller mode', () => {
   describeRowFocusables(row(), undefined)
   expect(describedBy('manage')).toBeNull()

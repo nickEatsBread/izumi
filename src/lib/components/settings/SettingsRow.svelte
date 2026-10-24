@@ -140,6 +140,7 @@
   </div>
 {:else}
   <div data-setting-row data-setting-key={settingKey} use:describeRowFocusables={describedBy}
+       role={describedBy ? 'group' : undefined} aria-label={describedBy ? title : undefined}
        class="{large ? 'px-3.5 py-3.5' : 'px-3 py-2.5'}">
     {@render header()}
     {#if learnMore}<div data-learn-more={describedBy ? '' : undefined} class="mt-1"><LearnMore text={learnMore} label={title} id={learnId} /></div>{/if}

@@ -6,7 +6,8 @@
 export function describeRowFocusables(node: HTMLElement, id: string | undefined) {
   let current = id
   const toggle = (token: string, on: boolean) => {
-    for (const el of node.querySelectorAll('[data-focusable]')) {
+    // The TV focusable set (nav focusables): a television also reaches bare native controls.
+    for (const el of node.querySelectorAll('[data-focusable], button, a[href], input, textarea, select, [tabindex]')) {
       if (el.closest('[data-setting-row]') !== node) continue
       const ids = (el.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean)
       if (ids.includes(token) === on) continue
@@ -16,7 +17,8 @@ export function describeRowFocusables(node: HTMLElement, id: string | undefined)
     }
   }
   const observer = new MutationObserver(() => { if (current) toggle(current, true) })
-  observer.observe(node, { childList: true, subtree: true })
+  // aria-describedby too: a control that rewrites its own description must not drop the row's.
+  observer.observe(node, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-describedby'] })
   if (current) toggle(current, true)
   return {
     update(next: string | undefined) {

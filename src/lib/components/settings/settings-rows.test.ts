@@ -65,7 +65,8 @@ describe('LearnMore', () => {
     // control row's snippet control announces it, not a wrapper that never takes focus.
     expect(row.split('data-setting-row data-setting-key={settingKey} use:describeRowFocusables={describedBy}')).toHaveLength(4)
     expect(row).not.toContain('aria-describedby')
-    expect(row).not.toContain('role=')
+    // A control-only row names its controls' group with its title (the action carries the description).
+    expect(row).toContain("role={describedBy ? 'group' : undefined} aria-label={describedBy ? title : undefined}")
     const css = read('../../../app.css')
     expect(css).toContain('[data-learn-more] { display: none; }\n:focus-within > [data-learn-more] { display: block; }')
     // The row showing that text takes the ring and fill (settings-row-focus.test.ts).
