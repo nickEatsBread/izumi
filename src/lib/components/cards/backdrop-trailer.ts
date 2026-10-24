@@ -5,6 +5,8 @@ export const DETAIL_TRAILER_DWELL = 1500
 export interface BackdropTrailerGate {
   enabled: boolean
   id?: string
+  /** The viewer's Theme trailers setting (Settings → Interface). */
+  setting: boolean
   /** Desktop only: no phone, Android, TV or Game mode. */
   desktop: boolean
   reducedMotion: boolean
@@ -17,5 +19,5 @@ export interface BackdropTrailerGate {
 }
 
 export function backdropTrailerOn(g: BackdropTrailerGate): boolean {
-  return g.enabled && !!g.id && g.desktop && !g.reducedMotion && !g.saveData && !g.playerUp && !g.pageHidden && !g.held
+  return g.enabled && !!g.id && g.setting && g.desktop && !g.reducedMotion && !g.saveData && !g.playerUp && !g.pageHidden && !g.held
 }

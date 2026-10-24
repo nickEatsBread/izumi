@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, dragCarousels, episodeQueueEnabled, sceneBookmarksEnabled, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, androidTvMode, cwDismissAction, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, titleLanguage, ratingStyle, ratingOnPage, type RatingStyle, type RatingOnPage, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
+  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, dragCarousels, episodeQueueEnabled, sceneBookmarksEnabled, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, androidTvMode, cwDismissAction, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, backdropTrailers, highContrast, largeInteractionTargets, titleLanguage, ratingStyle, ratingOnPage, type RatingStyle, type RatingOnPage, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid, isAndroidTv, isMobile } from '$lib/platform'
   import { setAiringNotificationsEnabled } from '$lib/notifications/airing'
@@ -118,6 +118,10 @@
           { value: 'system', label: m.settings_system() }, { value: 'reduce', label: m.settings_reduced() }, { value: 'full', label: m.settings_full() },
         ]} />
       </label>
+      <!-- Android never plays them (BackdropTrailer is desktop only). -->
+      {#if !$isAndroid}
+        <Toggle label="Theme trailers" desc="Play the trailer some themes show behind the Home banner and series art." value={$backdropTrailers} onToggle={() => ($backdropTrailers = !$backdropTrailers)} />
+      {/if}
       <Toggle label={m.settings_high_contrast()} desc={m.settings_high_contrast_hint()} value={$highContrast} onToggle={() => ($highContrast = !$highContrast)} />
       <Toggle label={m.settings_large_targets()} desc={m.settings_large_targets_hint()} value={$largeInteractionTargets} onToggle={() => ($largeInteractionTargets = !$largeInteractionTargets)} />
     </div>

@@ -511,5 +511,8 @@ export type ThemePreset = 'izumi' | 'midnight' | 'sakura' | 'ocean' | 'light' | 
 export type MotionPreference = 'system' | 'reduce' | 'full'
 export const themePreset = persisted<ThemePreset>('theme-preset', 'izumi')
 export const motionPreference = persisted<MotionPreference>('motion-preference', 'system')
+/** The muted trailer some themes play behind the Home banner and series art (API 6 `hero.preview` /
+ *  `detail.preview`). On by default: the theme asked for it; off keeps the artwork still. */
+export const backdropTrailers = persisted<boolean>('backdrop-trailers', true)
 export const highContrast = persisted<boolean>('high-contrast', false)
 export const largeInteractionTargets = persisted<boolean>('large-interaction-targets', false)

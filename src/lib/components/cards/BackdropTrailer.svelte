@@ -1,8 +1,8 @@
 <script lang="ts">
   // The API 6 backdrop trailer: after `dwell` ms, the title's YouTube trailer plays once, muted, over the
   // artwork (fading in and out over 500 ms), then the artwork returns. Desktop only; never under reduced
-  // motion, data saver, the player or a hidden window. `onended(natural)` fires once for a trailer that
-  // started playing: natural = it reached its end. A trailer that has not started 10 s after it mounted
+  // motion, data saver, the player, a hidden window or the Theme trailers setting off. `onended(natural)`
+  // fires once for a trailer that started playing: natural = it reached its end. A trailer that has not started 10 s after it mounted
   // counts as failed. Its mute state is the backdrop one, so hover previews never unmute it. It holds
   // while the full trailer dialog or a hover-preview trailer is up, so two videos never play at once.
   import { untrack } from 'svelte'
@@ -10,7 +10,7 @@
   import { backdropTrailerOn } from './backdrop-trailer'
   import { isAndroid, isMobile, isTv } from '$lib/platform'
   import { gameMode, playing as playerUp } from '$lib/player/session'
-  import { motionPreference } from '$lib/settings/ui'
+  import { backdropTrailers, motionPreference } from '$lib/settings/ui'
   import { windowMinimized } from '$lib/stores/window-state'
   import { backdropTrailerMuted, hoverTrailers, trailerPopup } from '$lib/stores/trailer'
 
@@ -22,7 +22,7 @@
   let pageHidden = $state(typeof document !== 'undefined' && document.hidden)
   const saveData = typeof navigator !== 'undefined' && (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true
   const on = $derived(backdropTrailerOn({
-    enabled, id, desktop: !$isMobile && !$isAndroid && !$isTv && !$gameMode,
+    enabled, id, setting: $backdropTrailers, desktop: !$isMobile && !$isAndroid && !$isTv && !$gameMode,
     // The same rule as reducedMotion() in gm-motion.ts, written against the store so it stays reactive.
     reducedMotion: $motionPreference === 'reduce' || ($motionPreference !== 'full' && typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches),
     saveData, playerUp: $playerUp, pageHidden: pageHidden || $windowMinimized, held: held || $trailerPopup !== null || $hoverTrailers > 0,

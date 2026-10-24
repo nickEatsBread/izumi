@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { backdropTrailerOn } from './backdrop-trailer'
 import { youtubeTrailerId } from './youtube-embed'
 
-const on = { enabled: true, id: 'abc', desktop: true, reducedMotion: false, saveData: false, playerUp: false, pageHidden: false, held: false }
+const on = { enabled: true, id: 'abc', setting: true, desktop: true, reducedMotion: false, saveData: false, playerUp: false, pageHidden: false, held: false }
 
 describe('backdrop trailers', () => {
   it('plays only when the theme asks, there is a trailer and nothing holds it back', () => {
     expect(backdropTrailerOn(on)).toBe(true)
-    for (const key of ['enabled', 'desktop'] as const) expect(backdropTrailerOn({ ...on, [key]: false })).toBe(false)
+    for (const key of ['enabled', 'setting', 'desktop'] as const) expect(backdropTrailerOn({ ...on, [key]: false })).toBe(false)
     for (const key of ['reducedMotion', 'saveData', 'playerUp', 'pageHidden', 'held'] as const) expect(backdropTrailerOn({ ...on, [key]: true })).toBe(false)
     expect(backdropTrailerOn({ ...on, id: undefined })).toBe(false)
   })
