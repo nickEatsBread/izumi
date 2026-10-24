@@ -85,7 +85,7 @@ ignores them; the Worker returns `403` if they're missing/wrong.
    package **`com.nicho.izumi`** and the SHA-256 certificate digest of the same release keystore held
    in `ANDROID_KEYSTORE_BASE64`. Obtain the digest from any release APK without exposing the key:
    ```sh
-   apksigner verify --print-certs izumi-android-full.apk
+   apksigner verify --print-certs izumi-v0.1.73-android-arm64-full.apk
    ```
    Repeat the registration if the package name or signing key ever changes. This is an account-side
    release gate; changing the in-app GitHub downloader cannot bypass it.
