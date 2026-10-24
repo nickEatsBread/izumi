@@ -9,6 +9,19 @@ import { describe, expect, it } from 'vitest'
 const android = readFileSync(fileURLToPath(new URL('./AndroidPlayer.svelte', import.meta.url)), 'utf8')
 const desktop = readFileSync(fileURLToPath(new URL('./PlayerOverlay.svelte', import.meta.url)), 'utf8')
 
+describe('skipping without clicking', () => {
+  it('lets the TV remote OK skip while the prompt is up, before it can pause', () => {
+    const skip = android.indexOf("if (!controlsShown && event.key === 'Enter' && showSkip) {")
+    expect(skip).toBeGreaterThan(-1)
+    expect(skip).toBeLessThan(android.indexOf("if (event.key === 'Enter') pressPause()"))
+  })
+
+  it('gives the desktop skip key to the player only inside a segment', () => {
+    expect(desktop).toContain("if (action === 'playerSkipSegment' && !currentSeg) return")
+    expect(desktop).toContain("else if (action === 'playerSkipSegment' && currentSeg) seekTo(currentSeg.end + 0.5)")
+  })
+})
+
 describe('Android skip button auto-hide', () => {
   it('hides itself on a timer like the desktop overlay', () => {
     expect(android).toContain('let skipTimer = $state(false)')

@@ -36,6 +36,12 @@ describe('hotkeys', () => {
     }
     expect(findHotkey(commandTab, {}, 'Home', true)).toBeNull()
   })
+
+  it('skips an opening or ending with Enter without clashing with another player key', () => {
+    const enter = { key: 'Enter', ctrlKey: false, shiftKey: false, altKey: false, metaKey: false } as KeyboardEvent
+    expect(findHotkey(enter, {}, 'Player')).toBe('playerSkipSegment')
+    expect(conflictingHotkey('playerSkipSegment', 'Enter', {})).toBeNull()
+  })
 })
 
 describe('playerHotkeyEligible', () => {
