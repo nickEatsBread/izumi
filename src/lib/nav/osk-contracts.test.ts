@@ -103,7 +103,7 @@ describe('outside-press closers', () => {
     'lib/components/search/MultiSelect.svelte',
     'lib/components/settings/SelectMenu.svelte',
     'lib/components/shell/CategoriesMenu.svelte',
-    'routes/app/settings/sources/+page.svelte',
+    'routes/app/settings/sources/manage/+page.svelte',
   ]
   const closers = FILES.filter((file) => !NOT_CLOSERS.includes(file) && PRESS.test(read(file)))
 

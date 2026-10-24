@@ -5,6 +5,8 @@ import { load as catalogHome } from './catalog/home/+page'
 import { load as catalogCollections } from './catalog/collections/+page'
 import { load as history } from './history/+page'
 import { load as scenes } from './scenes/+page'
+import { load as extensions } from './extensions/+page'
+import { load as sources } from './sources/+page'
 
 const BASE = 'https://izumi.invalid'
 type Load = (event: { url: URL }) => unknown
@@ -26,6 +28,10 @@ describe('Library routes that moved', () => {
     ['/app/settings/catalog/collections', catalogCollections, '/app/settings/library/collections', ''],
     ['/app/settings/history', history, '/app/settings/library', '#history'],
     ['/app/settings/scenes', scenes, '/app/settings/library', '#scenes'],
+    ['/app/settings/extensions', extensions, '/app/settings/sources/manage', ''],
+    ['/app/settings/sources?tab=manage', sources, '/app/settings/sources/manage', ''],
+    ['/app/settings/sources?tab=ordering', sources, '/app/settings/sources', '#priority'],
+    ['/app/settings/sources?tab=playback', sources, '/app/settings/playback', '#quality'],
   ] as Array<[string, Load, string, string]>)('%s redirects through legacySettingsRedirect', (href, load, path, hash) => {
     const target = redirectOf(load, href)
     expect(target?.status).toBe(307)
@@ -33,6 +39,11 @@ describe('Library routes that moved', () => {
     const landed = new URL(target!.location, BASE)
     expect(landed.pathname).toBe(path)
     expect(landed.hash).toBe(hash)
+  })
+
+  it('renders the Sources section itself without a redirect', () => {
+    expect(redirectOf(sources, '/app/settings/sources')).toBeUndefined()
+    expect(redirectOf(sources, '/app/settings/sources?setting=default-discussion-source')).toBeUndefined()
   })
 
   it('keeps the searched row when an old link carries ?setting=', () => {

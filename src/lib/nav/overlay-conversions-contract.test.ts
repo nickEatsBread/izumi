@@ -78,7 +78,7 @@ const FILES = {
   profileSwitcher: '../components/profiles/ProfileSwitcher.svelte',
   homeEditor: '../components/catalog/HomeEditor.svelte',
   degradedBanner: '../components/shell/AniListDegradedBanner.svelte',
-  sources: '../../routes/app/settings/sources/+page.svelte',
+  sources: '../../routes/app/settings/sources/manage/+page.svelte',
   themes: '../../routes/app/settings/themes/+page.svelte',
   profiles: '../../routes/app/settings/profiles/+page.svelte',
   accounts: '../../routes/app/settings/accounts/+page.svelte',
@@ -327,13 +327,6 @@ describe('legacy traps close on B and Escape', () => {
 })
 
 describe('page tab strips for the theme bumpers (data-page-tabs, Themes page-tabs.ts)', () => {
-  it('marks the Sources tablist, whose active tab is aria-selected', () => {
-    const source = read(FILES.sources)
-    const [strip] = tagsWith(source, 'role="tablist"')
-    expect(bare(strip, 'data-page-tabs'), strip).toBe(true)
-    expect(source).toContain('aria-selected={activeTab === tab.id}')
-  })
-
   it('marks the Accounts and Sync section navs, whose active item is aria-current', () => {
     const accounts = read(FILES.accounts)
     const [accountsNav] = tagsWith(accounts, 'aria-label="Account settings sections"')

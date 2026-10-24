@@ -16,7 +16,7 @@ const PAGE_TITLES: Array<[string, string]> = [
   ['library/home/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Customize Home</h2>'],
   ['library/collections/+page.svelte', '<a data-settings-page-title href="/app/settings/library" data-focusable class="text-sm text-muted-foreground">← Home and library</a>'],
   ['library/collections/+page.svelte', '<h1 data-settings-page-title class="mt-3 text-2xl font-black">Collections & covers</h1>'],
-  ['sources/+page.svelte', '<h2 data-settings-page-title class="text-xl font-black">Sources</h2>'],
+  ['sources/manage/+page.svelte', '<h2 data-settings-page-title class="text-xl font-black">Manage sources</h2>'],
   ['sources/priority/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Source priority</h2>'],
   ['downloads/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Downloads</h2>'],
   ['storage/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Storage</h2>'],

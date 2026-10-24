@@ -12,7 +12,7 @@ const read = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
 
 const SETTINGS = '../../../routes/app/settings/'
-const SOURCES = `${SETTINGS}sources/+page.svelte`
+const SOURCES = `${SETTINGS}sources/manage/+page.svelte`
 const EXTENSIONS = `${SETTINGS}extensions/+page.svelte`
 const ACCOUNTS = `${SETTINGS}accounts/+page.svelte`
 const TRAKT = './TraktAccountSettings.svelte'

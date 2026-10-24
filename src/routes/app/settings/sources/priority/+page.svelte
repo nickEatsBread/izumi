@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { sourcePriority, sourcePriorityMode } from '$lib/settings/ui'
-  import type { SourcePriorityMode } from '$lib/stremio/source-priority'
+  import { sourcePriority } from '$lib/settings/ui'
   import { priorityCandidates } from '$lib/settings/source-origins'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import ChevronUp from '@lucide/svelte/icons/chevron-up'
@@ -34,11 +33,6 @@
     h.tap()
     $sourcePriority = []
   }
-
-  const priorityModes: { value: SourcePriorityMode; label: string; hint: string }[] = [
-    { value: 'prefer', label: 'Prefer', hint: 'Try these first. Other sources are still used when the listed ones have nothing.' },
-    { value: 'strict', label: 'Strict', hint: 'Use only these sources. Nothing else is offered, even when they come back empty.' },
-  ]
 </script>
 
 <div class="p-4 sm:p-8">
@@ -123,30 +117,6 @@
         </div>
       {/if}
     </section>
-
-    {#if $sourcePriority.length}
-      <section aria-labelledby="priority-mode-heading">
-        <h3 id="priority-mode-heading" class="mb-1 text-sm font-black">How strictly to apply it</h3>
-        <p class="mb-2 text-xs text-muted-foreground">What happens to the sources you did not list.</p>
-        <div class="grid gap-2 sm:grid-cols-2">
-          {#each priorityModes as opt (opt.value)}
-            <button
-              data-focusable
-              onclick={() => { h.tap(); $sourcePriorityMode = opt.value }}
-              aria-pressed={$sourcePriorityMode === opt.value}
-              class="rounded-xl border p-3 text-left transition-colors
-                {$sourcePriorityMode === opt.value ? 'border-primary bg-primary/10' : 'border-border hover:bg-secondary'}"
-            >
-              <div class="flex items-center justify-between">
-                <span class="font-bold">{opt.label}</span>
-                {#if $sourcePriorityMode === opt.value}<span class="text-xs font-bold text-primary">Selected</span>{/if}
-              </div>
-              <p class="mt-1 text-xs text-muted-foreground">{opt.hint}</p>
-            </button>
-          {/each}
-        </div>
-      </section>
-    {/if}
 
     <section aria-labelledby="priority-add-heading">
       <h3 id="priority-add-heading" class="mb-2 text-sm font-black">

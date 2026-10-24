@@ -18,7 +18,7 @@ const appCss = read('../../../app.css')
 const SWITCH_SOURCES: Array<[string, string]> = [
   ['Toggle.svelte', read('./Toggle.svelte')],
   ['SettingsSwitch.svelte', read('./SettingsSwitch.svelte')],
-  ['settings/sources/+page.svelte', read('../../../routes/app/settings/sources/+page.svelte')],
+  ['settings/sources/manage/+page.svelte', read('../../../routes/app/settings/sources/manage/+page.svelte')],
   ['settings/extensions/+page.svelte', read('../../../routes/app/settings/extensions/+page.svelte')],
 ]
 
