@@ -29,9 +29,9 @@ const layout = `
   <aside data-nav-region="settings" data-rect="0,0,224,720">
     <button data-focusable data-rect="16,64,192,36">Search settings</button>
     <nav data-settings-rail data-nav-scroll-container data-rect="16,112,192,560">
-      <a href="/app/settings/player" data-focusable data-rect="16,112,192,36">Player</a>
+      <a href="/app/settings/playback" data-focusable data-rect="16,112,192,36">Playback</a>
       <a href="/app/settings/subtitles" data-focusable data-rect="16,152,192,36">Subtitles</a>
-      <a href="/app/settings/themes" data-focusable data-nav-region-default aria-current="page" data-rect="16,192,192,36">Themes</a>
+      <a href="/app/settings/appearance" data-focusable data-nav-region-default aria-current="page" data-rect="16,192,192,36">Appearance</a>
       <a href="/app/settings/about" data-focusable data-rect="16,232,192,36">About</a>
     </nav>
   </aside>
@@ -68,8 +68,8 @@ beforeEach(() => {
   inputType.set('dpad')
   history.replaceState({ [HISTORY_INDEX]: 1 }, '', '/app/home')
   recordTrail('/app/home', 'link')
-  history.replaceState({ [HISTORY_INDEX]: 2 }, '', '/app/settings/themes')
-  recordTrail('/app/settings/themes', 'link')
+  history.replaceState({ [HISTORY_INDEX]: 2 }, '', '/app/settings/appearance')
+  recordTrail('/app/settings/appearance', 'link')
   vi.spyOn(history, 'go').mockImplementation(() => {})
   vi.spyOn(history, 'back').mockImplementation(() => {})
   document.body.innerHTML = layout
@@ -85,10 +85,10 @@ afterEach(() => {
 
 describe('the Settings rail with a controller', () => {
   it('lands the first press after a tap on the rail on the rail item, not Search', () => {
-    el('Themes').focus()
-    el('Themes').blur() // a pointer click on a rail link lets focus go (SettingsNav)
+    el('Appearance').focus()
+    el('Appearance').blur() // a pointer click on a rail link lets focus go (SettingsNav)
     press('ArrowDown')
-    expect(document.activeElement).toBe(el('Themes'))
+    expect(document.activeElement).toBe(el('Appearance'))
   })
 
   it('lets a pending focus hint beat the rail default', () => {
@@ -100,14 +100,14 @@ describe('the Settings rail with a controller', () => {
   it('B on the page goes to the rail item, and Right comes back to the same row', () => {
     el('Apply').focus()
     expect(handleLayeredBack('gamepad')).toBe(true)
-    expect(document.activeElement).toBe(el('Themes'))
+    expect(document.activeElement).toBe(el('Appearance'))
     expect(el('Apply').dataset.navId).toBe(RAIL_RETURN_ID)
     press('ArrowRight')
     expect(document.activeElement).toBe(el('Apply'))
   })
 
   it('B on the rail leaves Settings for the page it was entered from', () => {
-    el('Themes').focus()
+    el('Appearance').focus()
     expect(handleLayeredBack('gamepad')).toBe(true)
     expect(history.go).toHaveBeenCalledWith(-1)
   })
@@ -115,7 +115,7 @@ describe('the Settings rail with a controller', () => {
   it('Left from the page lands on the current category', () => {
     el('Add theme').focus()
     press('ArrowLeft')
-    expect(document.activeElement).toBe(el('Themes'))
+    expect(document.activeElement).toBe(el('Appearance'))
   })
 
   it('never leaves the rail vertically, and Down at the end of the page never drops into it', () => {

@@ -24,7 +24,7 @@ describe('About license information', () => {
   it('titles the nested route before the broader About prefix', () => {
     // The phone header takes its title from the shared route table, where the longest prefix wins.
     expect(layout).toContain('settingsPageTitle($page.url.pathname)')
-    expect(settingsPageTitle('/app/settings/about/license-information')).toBe('License Information')
+    expect(settingsPageTitle('/app/settings/about/license-information')).toBe('License information')
     expect(settingsPageTitle('/app/settings/about')).toBe('About')
   })
 })
