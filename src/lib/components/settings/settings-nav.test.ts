@@ -40,12 +40,14 @@ describe('SettingsNav', () => {
 
   // The engine side (regionOf, the region default, data-nav-scroll-x) is exercised in
   // src/lib/nav/regions.test.ts; this only checks the markers the engine reads.
-  it('makes the desktop rail its own nav region, entered on the current category (off TV)', () => {
+  it('makes the Settings rail its own nav region on every rail layout, TV included', () => {
     const shell = markupElementsFromSource(layout.replace(/\r\n/g, '\n'), '+layout.svelte')
     const regions = shell.filter((el) => hasAttr(el, 'data-nav-region'))
-    expect(regions.map((el) => el.name)).toEqual(['aside'])
-    expect(attr(regions[0], 'data-nav-region')?.raw).toBe(`data-nav-region={$isTv ? undefined : 'settings'}`)
-    expect(shell.filter((el) => staticAttr(el, 'data-nav-surface') === 'settings')).toHaveLength(2)
+    // The controller layout's aside, then the desktop one.
+    expect(regions.map((el) => el.name)).toEqual(['aside', 'aside'])
+    expect(regions.map((el) => staticAttr(el, 'data-nav-region'))).toEqual(['settings', 'settings'])
+    // The phone child, the controller pane and the desktop content.
+    expect(shell.filter((el) => staticAttr(el, 'data-nav-surface') === 'settings')).toHaveLength(3)
     const links = markupElementsFromSource(src.replace(/\r\n/g, '\n'), 'SettingsNav.svelte')
       .filter((el) => el.name === 'a' && hasAttr(el, 'data-nav-region-default'))
     // The controller rail and the desktop rail.

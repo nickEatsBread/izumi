@@ -85,11 +85,11 @@ describe('desktop Settings rail selection', () => {
     expect(nav).toContain("import { sectionIcon } from '$lib/components/settings/section-icons'")
     expect(nav).not.toContain('it.icon')
     // Focus is the global ring alone: no app.css rule fills a desktop rail link. Controller
-    // surfaces (Game mode, Android TV, a paired pad) style their own focus.
-    for (const [, selectors, body] of appCss.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    // surfaces (Game mode, Android TV, a paired pad, the controller Settings layout) style their own focus.
+    for (const [, selectors, body] of appCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
       if (!/background/.test(body)) continue
       for (const selector of selectors.split(',').map((part) => part.trim())) {
-        if (selector.includes('data-settings-rail')) expect(selector).toMatch(/^(html)?\.(gamemode|tv-mode|controller-mode)\b/)
+        if (selector.includes('data-settings-rail')) expect(selector).toMatch(/^(html)?(\.(gamemode|tv-mode|controller-mode)\b|\[data-settings-controller\] )/)
       }
     }
     expect(nav).not.toContain('data-nav-sidebar')
