@@ -22,7 +22,7 @@ function arrowGuards(): Array<{ direction: string; condition: string }> {
 
 describe('Carousel edge arrows', () => {
   it('derives the mobile signal from the shared platform store', () => {
-    expect(src).toContain("import { isMobile } from '$lib/platform'")
+    expect(src).toContain("import { isMobile, isTv } from '$lib/platform'")
     expect(src).toContain('const mob = $derived($isMobile)')
   })
 
