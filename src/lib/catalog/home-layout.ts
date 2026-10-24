@@ -40,11 +40,7 @@ export function resolveCatalogHomeRows(
   // A layout saved before the hero was a row gets it FIRST, not appended at the end, so an
   // existing Home looks the same after this row is introduced.
   const heroIsNew = optionById.has('hero') && !rawOrder.includes('hero')
-  // A new lead row (a collection) joins right after the banner, where collections always sat.
-  const lead = newIds.filter((id) => optionById.get(id)?.lead)
-  const base = heroIsNew ? ['hero', ...savedOrder] : savedOrder
-  const afterHero = base.indexOf('hero') + 1
-  const order = [...base.slice(0, afterHero), ...lead, ...base.slice(afterHero), ...newIds.filter((id) => id !== 'hero' && !lead.includes(id))]
+  const order = heroIsNew ? ['hero', ...savedOrder, ...newIds.filter((id) => id !== 'hero')] : [...savedOrder, ...newIds]
   const disabled = new Set(layout ? rawDisabled : options.filter((option) => option.defaultEnabled === false).map((option) => option.id))
 
   // A preset introduced after a user saved this provider follows its shipped default. Existing

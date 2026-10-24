@@ -81,31 +81,9 @@ describe('catalog Home layouts', () => {
   })
 })
 
-describe('lead rows', () => {
-  const options = [
-    { id: 'hero', title: 'Hero' },
-    { id: 'continue', title: 'Continue' },
-    { id: 'trending', title: 'Trending' },
-    { id: 'collection:a', title: 'Studio picks', lead: true },
-  ]
 
-  it('places a lead row new to a saved layout right after the hero', () => {
-    const rows = resolveCatalogHomeRows('tmdb', options, { tmdb: { order: ['continue', 'hero', 'trending'], disabled: [] } })
-    expect(rows.map((row) => row.id)).toEqual(['continue', 'hero', 'collection:a', 'trending'])
-  })
-
-  it('places a lead row first when the Home has no banner, and keeps a saved position', () => {
-    const noHero = options.filter((option) => option.id !== 'hero')
-    expect(resolveCatalogHomeRows('tmdb', noHero, { tmdb: { order: ['continue', 'trending'], disabled: [] } }).map((row) => row.id))
-      .toEqual(['collection:a', 'continue', 'trending'])
-    expect(resolveCatalogHomeRows('tmdb', options, { tmdb: { order: ['hero', 'trending', 'collection:a', 'continue'], disabled: [] } }).map((row) => row.id))
-      .toEqual(['hero', 'trending', 'collection:a', 'continue'])
-  })
-
-  it('keeps an opt-in lead row off on a custom screen', () => {
-    const custom = options.map((option) => option.id === 'collection:a' ? { ...option, defaultEnabled: false } : option)
-    const rows = resolveCatalogHomeRows('custom:night', custom, { 'custom:night': { order: ['hero', 'continue'], disabled: [] } })
-    expect(rows.find((row) => row.id === 'collection:a')?.enabled).toBe(false)
+describe('custom screen layouts', () => {
+  it('keys a custom screen layout by its screen id', () => {
     expect(catalogHomeLayoutKey('custom:night')).toBe('custom:night')
   })
 })

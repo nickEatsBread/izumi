@@ -108,7 +108,7 @@
 
   // Collections and blocks live in the same saved layout as ordinary rows, so they must be offered here
   // too — else any move, hide or add on this screen would `save()` a layout with every one of them dropped.
-  const rows = $derived(resolveCatalogHomeRows(selected, [...options, ...collectionRowOptions($homeCollections, selected), ...blockRowOptions(selected, $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts))
+  const rows = $derived(resolveCatalogHomeRows(selected, [...options, ...collectionRowOptions($homeCollections), ...blockRowOptions(selected, $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts))
   const visibleRows = $derived(rows.filter((row) => row.enabled))
   const availableGroups = $derived.by(() => {
     const grouped = new Map<string, typeof rows>()

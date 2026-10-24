@@ -71,7 +71,7 @@
   const anilistSections = homeSections(new Date())
   const anilistSectionMap = new Map(anilistSections.map((section) => [section.key, section]))
   const selections = $derived(mergedCatalogProviders($catalogProviders))
-  const collectionOptions = $derived(collectionRowOptions($homeCollections, target))
+  const collectionOptions = $derived(collectionRowOptions($homeCollections))
   const rows = $derived(resolveCatalogHomeRows(target, [...options, ...collectionOptions, ...blockRowOptions(target, $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts).filter((row) => row.enabled))
   // A custom screen features AniList's banner only when it shows an AniList row; Merged whenever AniList is on.
   const hasAniList = $derived(isCustomScreen(target)

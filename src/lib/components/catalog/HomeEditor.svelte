@@ -34,7 +34,7 @@
   // Custom screens never take a theme's Home layout (MergedCatalogHome), so their editor is never locked by one.
   const themeLayout = $derived(isCustomScreen(target) ? null : $activeThemeLayout)
   const label = $derived(catalogLabel(target, $customScreens))
-  const rows = $derived(resolveCatalogHomeRows(target, [...options, ...collectionRowOptions($homeCollections, target), ...blockRowOptions(target, $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts))
+  const rows = $derived(resolveCatalogHomeRows(target, [...options, ...collectionRowOptions($homeCollections), ...blockRowOptions(target, $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts))
   const usesAniList = $derived(isMergedScreen(target) ? mergedCatalogProviders($catalogProviders).some((provider) => isLegacyAniListCatalog(provider)) : isLegacyAniListCatalog(target))
   const tabRows = $derived(tabbableRows(options))
   const blockTypes = $derived.by(() => {

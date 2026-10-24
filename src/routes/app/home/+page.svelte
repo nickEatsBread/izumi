@@ -67,7 +67,7 @@
   // Personalized rows use the connected AniList account name (from OAuth) if present,
   // otherwise the manually-entered username.
   const listUser = $derived($anilistUserName || $anilistUser)
-  const anilistRows = $derived(resolveCatalogHomeRows('anilist', [...ANILIST_HOME_ROWS, ...collectionRowOptions($homeCollections, 'anilist'), ...blockRowOptions('anilist', $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts)
+  const anilistRows = $derived(resolveCatalogHomeRows('anilist', [...ANILIST_HOME_ROWS, ...collectionRowOptions($homeCollections), ...blockRowOptions('anilist', $catalogHomeLayouts, $homeBlocks)], $catalogHomeLayouts)
     .filter((row) => row.enabled))
   const rowOptionIds = ANILIST_HOME_ROWS.map((row) => row.id)
   // While a theme layout is active, it replaces the row order below (the user's own layout, in

@@ -63,7 +63,7 @@
     try {
       await installCollectionImport(pending, selectedAddons, controller.signal)
       if (controller.signal.aborted) return
-      notice = `Imported ${countLabel(pending.collections.length, 'collection')} with ${countLabel(folders.length, 'folder')}. Open Home to browse them.`
+      notice = `Imported ${countLabel(pending.collections.length, 'collection')} with ${countLabel(folders.length, 'folder')}. New ones start hidden: add them to any Home with Edit Home → Add section.`
       preview = null
       input = ''
     } catch (reason) {

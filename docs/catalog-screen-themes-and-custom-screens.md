@@ -142,10 +142,13 @@ Differences from Merged:
 Today every collection renders at the top of every Home (`CollectionsHome`), outside the row layout.
 
 - Each collection with folders is offered as a Home row `collection:<collectionId>` on every screen.
-- **Built-in screens**: default on, and a collection new to a saved layout joins right after the hero
-  (a new `lead` flag on `CatalogHomeRowOption`, handled next to the existing "new hero goes first" rule
-  in `resolveCatalogHomeRows`). Existing Homes look the same as before.
-- **Custom screens**: default off, like every other section there.
+- **A new collection starts off on every screen** (changed after review: one imported for films showed up
+  on the anime Home too). Edit Home's *Add section* lists it under Collections, and the import message
+  says so.
+- **Collections someone already has stay where they were.** Once per install
+  (`catalog-collection-rows-placed-v1`), `placeExistingCollections` places them right after the banner on
+  every built-in screen's layout, unless that layout already places or hides them. A screen that never
+  had a saved layout resolves the same rows as before, plus the collections.
 - They move, hide and re-add like any row. `isContentRow` excludes them, so a theme layout never
   assigns one to a theme slot; while a theme layout is in force, the enabled collection rows still
   render after the hero, as they do today.
@@ -168,7 +171,7 @@ Unit (vitest, `--pool=threads`):
 - screen theme resolution: none / preset / design / deleted design / safe mode / preview precedence;
 - `catalogScreens` with custom screens; next/previous wrap; startup with a removed custom screen;
 - create/rename/delete custom screen (layout, theme entry, default screen, active screen);
-- `resolveCatalogHomeRows` lead rows: a new collection lands after the hero; custom screens start off;
+- collection rows: a new collection starts off everywhere; existing ones are placed after the banner once;
 - `isMergedScreen`, `resolveRowId` on a custom target, `isContentRow('collection:…')`;
 - markup tests for the Screens settings group and the switcher's New screen entry.
 

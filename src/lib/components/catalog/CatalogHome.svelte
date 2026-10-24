@@ -53,7 +53,7 @@
   const listUser = $derived($anilistUserName || $anilistUser)
   type ContentRow = { id: string; kind: 'hero' } | { id: string; kind: 'continue' } | { id: string; kind: 'block' } | { id: string; kind: 'collection'; collectionId: string } | { id: string; kind: 'section'; section: CatalogHomeSection }
   const continueEnabled = $derived(resolveCatalogHomeRows($catalogProvider, [CONTINUE_HOME_ROW], $catalogHomeLayouts)[0]?.enabled ?? true)
-  const collectionOptions = $derived(collectionRowOptions($homeCollections, $catalogProvider))
+  const collectionOptions = $derived(collectionRowOptions($homeCollections))
   // Known before the provider answers (and under a theme layout, which places only catalog rows): the
   // collections this Home shows, in their layout order.
   const collectionIds = $derived(resolveCatalogHomeRows($catalogProvider, [HERO_HOME_ROW, CONTINUE_HOME_ROW, ...collectionOptions], $catalogHomeLayouts)
