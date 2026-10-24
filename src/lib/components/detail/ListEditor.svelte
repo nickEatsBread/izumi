@@ -101,6 +101,8 @@
     const outside = (event: PointerEvent) => {
       // A tap on the on-screen keyboard is typing into this editor, not a press outside it.
       if (isOskTarget(event.target)) return
+      // Nor is a press on the controller picker of a menu in this editor: SelectMenu portals it to <body>.
+      if (event.target instanceof Element && event.target.closest('[data-select-picker-backdrop]')) return
       if (!popover) return
       const target = event.target as Node | null
       if (!target || panel?.contains(target) || anchor?.contains(target)) return
@@ -219,7 +221,7 @@
         class="grid size-11 place-items-center rounded-md bg-background/70 transition-colors hover:bg-accent disabled:opacity-30"><Minus size={18} /></button>
       <label class="min-w-0 text-center">
         <span class="sr-only">Episodes watched</span>
-        <input type="number" data-focusable min="0" max={total || undefined} bind:value={progress}
+        <input type="number" data-focusable data-nav-no-step min="0" max={total || undefined} bind:value={progress}
           class="progress-input w-16 bg-transparent text-center text-lg font-black tabular-nums outline-none" />
         <span class="text-sm text-muted-foreground"> / {total || '?'}</span>
       </label>
@@ -259,7 +261,7 @@
       {#if customized}
         <p class="text-xs text-muted-foreground">
           Saved. You can change this anytime in
-          <a href="/app/settings/interface?setting=rating-style" onclick={onclose} class="font-bold text-foreground underline underline-offset-2">Settings → Interface</a>.
+          <a href="/app/settings/library?setting=rating-style" onclick={onclose} class="font-bold text-foreground underline underline-offset-2">Settings → Home and library</a>.
         </p>
       {/if}
     </div>

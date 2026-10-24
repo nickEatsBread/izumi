@@ -10,32 +10,17 @@ const layout = read('./+layout.svelte')
 const css = read('../../../app.css')
 
 /** Each settings page's leading title as it reads with the marker (spec §5.4). Collections marks its
- *  "← Catalog" link too: on the phone the back-header replaces both. */
+ *  "← Home and library" link too: on the phone the back-header replaces both. */
 const PAGE_TITLES: Array<[string, string]> = [
-  ['player/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Player</h2>'],
-  ['subtitles/+page.svelte', '<h2 data-settings-page-title class="mb-2 text-3xl font-bold tracking-tight">Subtitles</h2>'],
-  ['hotkeys/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Hotkeys</h2>'],
   ['store/+page.svelte', '<h2 data-settings-page-title class="text-xl font-black">Store</h2>'],
-  ['catalog/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Catalog</h2>'],
-  ['catalog/home/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Customize Home</h2>'],
-  ['catalog/collections/+page.svelte', '<a data-settings-page-title href="/app/settings/catalog" data-focusable class="text-sm text-muted-foreground">← Catalog</a>'],
-  ['catalog/collections/+page.svelte', '<h1 data-settings-page-title class="mt-3 text-2xl font-black">Collections & covers</h1>'],
-  ['sources/+page.svelte', '<h2 data-settings-page-title class="text-xl font-black">Sources</h2>'],
+  ['library/home/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Customize Home</h2>'],
+  ['library/collections/+page.svelte', '<a data-settings-page-title href="/app/settings/library" data-focusable class="text-sm text-muted-foreground">← Home and library</a>'],
+  ['library/collections/+page.svelte', '<h1 data-settings-page-title class="mt-3 text-2xl font-black">Collections & covers</h1>'],
+  ['sources/manage/+page.svelte', '<h2 data-settings-page-title class="text-xl font-black">Manage sources</h2>'],
   ['sources/priority/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Source priority</h2>'],
-  ['downloads/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Downloads</h2>'],
-  ['storage/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Storage</h2>'],
-  ['interface/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">{m.settings_interface()}</h2>'],
   ['themes/+page.svelte', '<h2 data-settings-page-title>Themes</h2>'],
-  ['navigation/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Navigation</h2>'],
-  ['history/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">History</h2>'],
-  ['scenes/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Scene bookmarks</h2>'],
-  ['sync/+page.svelte', '<h2 data-settings-page-title class="mb-2 text-3xl font-bold tracking-tight">Device sync</h2>'],
-  ['backup/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Backup &amp; restore</h2>'],
-  ['accounts/+page.svelte', '<h2 data-settings-page-title class="text-3xl font-bold tracking-tight">Accounts</h2>'],
-  ['network/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">Network</h2>'],
-  ['changelog/+page.svelte', '<h1 data-settings-page-title class="text-xl font-bold">Changelog</h1>'],
-  ['about/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">About</h2>'],
-  ['about/license-information/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">License Information</h2>'],
+  ['about/changelog/+page.svelte', '<h1 data-settings-page-title class="text-xl font-bold">Changelog</h1>'],
+  ['about/license-information/+page.svelte', '<h2 data-settings-page-title class="mb-1 text-xl font-black">License information</h2>'],
 ]
 
 describe('phone settings titles', () => {
@@ -71,17 +56,20 @@ describe('phone settings titles', () => {
 
 describe('settings search reveal', () => {
   it('reveals the searched row from afterNavigate, never on a history step', () => {
-    expect(layout).toContain("import { afterNavigate } from '$app/navigation'")
+    expect(layout).toContain("import { afterNavigate, beforeNavigate } from '$app/navigation'")
     expect(layout).toContain("import { SETTING_FALLBACK_PARAM, SETTING_PARAM } from '$lib/settings/search'")
-    expect(layout).toContain("import { revealSetting } from '$lib/settings/search-target'")
+    expect(layout).toContain("import { revealBlock, revealSetting } from '$lib/settings/search-target'")
     const start = layout.indexOf('afterNavigate((navigation) => {')
     const abort = layout.indexOf('revealAbort?.abort()', start)
     const popstate = layout.indexOf("if (navigation.type === 'popstate') return", start)
-    const reveal = layout.indexOf('void revealSetting(key, url.searchParams.get(SETTING_FALLBACK_PARAM), controller.signal)', start)
+    const reveal = layout.indexOf('if (key) void revealSetting(key, url.searchParams.get(SETTING_FALLBACK_PARAM), controller.signal)', start)
+    // A keyless hit's `#subcategory` block, same abort and history-step rules.
+    const block = layout.indexOf('else void revealBlock(decodeURIComponent(url.hash.slice(1)), controller.signal)', start)
     expect(start).toBeGreaterThan(-1)
     expect(abort).toBeGreaterThan(start)
     expect(popstate).toBeGreaterThan(abort)
     expect(reveal).toBeGreaterThan(popstate)
+    expect(block).toBeGreaterThan(reveal)
     expect(layout).toContain('onDestroy(() => revealAbort?.abort())')
   })
 

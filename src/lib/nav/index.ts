@@ -2,11 +2,12 @@ import { get } from 'svelte/store'
 import { gameMode, playing } from '$lib/player/session'
 import { isTv } from '$lib/platform'
 import { controllerMode } from './input'
-import { pickInDirection, type Dir } from './spatial'
+import { navLine, navRect, pickInDirection, type Dir } from './spatial'
 import { activeNavTrap, visibleNavTraps } from './traps'
 import { takeFocusHint } from './focus-hint'
 import { isNavigable, isRovingTab } from './focusable'
 import { isPadEvent, padAdjust } from './pad-controls'
+import { isTextEntryField } from './text-field'
 import { navEpoch, navInFlight } from './nav-state'
 export * from './input'
 export * from './actions'
@@ -15,8 +16,8 @@ export * from './browser-gamepad'
 
 interface ElCand { id: string; rect: DOMRect; el: HTMLElement }
 
-// A text field auto-opens the on-screen keyboard on focus (Deck) and captures the arrows, so it
-// must never be the AUTO-landing target — the user reaches it deliberately, not by entering a page.
+// A text field opens the on-screen keyboard on A (the TV remote's OK) and a keyboard's arrows walk
+// its caret, so it must never be the AUTO-landing target — the user reaches it deliberately.
 const isTextInput = (el: HTMLElement) =>
   el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable
 
@@ -45,19 +46,24 @@ const ENTER_INERT_INPUT_TYPES = ['checkbox', 'radio', 'range', 'color']
 // Controls with no caret at all, where an arrow is never "move the cursor". Swallowing their arrows
 // would strand keyboard focus on a checkbox with no way back out, so nav keeps all four. A slider is
 // the one exception: under a keyboard off TV it keeps the horizontal pair for its native step
-// (`rangeOwnsHorizontal`) while Up/Down still leave; pad arrows skip field ownership altogether and
-// reach sliders through `padAdjust` instead. The tail already activates on Enter by itself (they
-// behave like buttons), which is why it is excluded from the list above.
+// (`rangeOwnsHorizontal`) while Up/Down still leave; pad arrows and TV remote arrows reach sliders
+// through `padAdjust` instead. The tail already activates on Enter by itself (they behave like
+// buttons), which is why it is excluded from the list above.
 const CARETLESS_INPUT_TYPES = [...ENTER_INERT_INPUT_TYPES, 'button', 'submit', 'reset', 'file', 'image']
 
-// Steppers: Up/Down change the value and Left/Right walk between segments, so all four are theirs.
+// Steppers: Up/Down change the value and Left/Right walk between segments, so all four are theirs
+// (on TV a number field gives all four to the engine; see numberSteps).
 const STEPPER_INPUT_TYPES = ['number', 'date', 'datetime-local', 'month', 'time', 'week']
 
 /** Caller context for `fieldOwnsArrow`, kept out of the shape so the rules stay a pure function. */
 export interface FieldArrowOptions {
   /** A keyboard-focused slider steps with Left/Right (web standard, owner decision 2). The nav
-   *  handler passes `!get(isTv)`: a TV remote keeps Left/Right as focus moves (spec §3.11). */
+   *  handler passes `!get(isTv)`: on TV the engine steps the slider itself (padAdjust, spec §5.4). */
   rangeOwnsHorizontal?: boolean
+  /** TV (spec §5.4): a number field is a stepper row. The engine steps it with Left/Right
+   *  (padAdjust) and Up/Down leave it, so the field keeps no arrow. The nav handler passes
+   *  `get(isTv)`. */
+  numberSteps?: boolean
   /** Arrow navigation (`focusByNav`) just landed on this select or number/date stepper and nothing
    *  has engaged it yet: Up/Down pass over it (owner decision 2). The nav handler reads it from
    *  `isNavArrived` (never armed on TV) for an arrow without a shortcut chord; pad arrows never
@@ -100,6 +106,7 @@ export function fieldOwnsArrow(field: FieldShape, key: ArrowKey, options: FieldA
     // A keyboard slider steps natively with Left/Right; Up/Down stay nav's, so it never traps.
     if (type === 'range' && options.rangeOwnsHorizontal) return !vertical
     if (CARETLESS_INPUT_TYPES.includes(type)) return false
+    if (type === 'number' && options.numberSteps) return false
     if (STEPPER_INPUT_TYPES.includes(type)) return true
     // Single-line text-ish (text/search/password/url/email/tel): only the horizontal pair walks the
     // caret, and nav must not consume those — it preventDefaults, which froze the caret.
@@ -158,6 +165,23 @@ export function revealAxisDelta(input: RevealAxisInput): number {
   if (input.itemStart < start) return input.itemStart - start
   if (input.itemEnd > end) return input.itemEnd - end
   return 0
+}
+
+/** Pure. How far to scroll so the item's centre sits at `pivot` (0 top, 1 bottom) of the port. A
+ *  shift under `minShift` px (default 12) is skipped while the item is fully in view, as NuvioTV
+ *  does, so a short step never nudges the list. */
+export function pivotScrollDelta(input: {
+  itemStart: number
+  itemEnd: number
+  portStart: number
+  portEnd: number
+  pivot: number
+  minShift?: number
+}): number {
+  const target = input.portStart + (input.portEnd - input.portStart) * input.pivot
+  const delta = Math.round((input.itemStart + input.itemEnd) / 2 - target)
+  const inView = input.itemStart >= input.portStart && input.itemEnd <= input.portEnd
+  return inView && Math.abs(delta) < (input.minShift ?? 12) ? 0 : delta
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
@@ -238,6 +262,9 @@ function visibleRowCandidates(root: HTMLElement): ElCand[] {
     .filter(({ rect }) => containedInAxis(rect.left, rect.right, port.left, port.right))
 }
 
+/** A controller drives this surface: Deck Game mode, a TV, or a pad on desktop or phone. */
+const controllerSurface = () => get(gameMode) || get(isTv) || get(controllerMode)
+
 /**
  * Fast path for the Home/Browse surface in Game mode. A geometric search across the entire page
  * forces WebKitGTK to style and lay out every card before it can move the focus ring. Rows expose
@@ -248,7 +275,7 @@ function visibleRowCandidates(root: HTMLElement): ElCand[] {
  * generic search may still cross into the sidebar.
  */
 function pickInNavRows(active: HTMLElement, dir: Dir): HTMLElement | null | undefined {
-  if (!get(gameMode) && !get(isTv) && !get(controllerMode)) return undefined
+  if (!controllerSurface()) return undefined
   const row = active.closest<HTMLElement>('[data-nav-row]')
   if (!row) return undefined
 
@@ -436,7 +463,7 @@ function deadEndScroll(active: HTMLElement, dir: Dir, rapid = false): boolean {
     room = scrollRoom(null, direction)
   }
   if (!room) return false
-  const item = active.getBoundingClientRect()
+  const item = navRect(active, true, controllerSurface())
   // The window's port leaves out the fixed chrome over the page: the desktop titlebar on top and
   // a theme's button-hint bar at the bottom (the same band revealFocused keeps at its start).
   const inset = clamp(window.innerHeight * 0.12, 40, 96)
@@ -491,7 +518,7 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
       if (!pane) return
     }
   }
-  const item = el.getBoundingClientRect()
+  const item = navRect(el, vertical, controllerSurface())
   const port = pane?.getBoundingClientRect() ?? {
     top: 0,
     left: 0,
@@ -500,16 +527,26 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
   }
   const portHeight = Math.max(0, port.bottom - port.top)
   const portWidth = Math.max(0, port.right - port.left)
+  // A settings section's pinned bar (SettingsSection) sits under the titlebar/top bar, and under a
+  // top bar the two outgrow the start margin: keep the control clear of the bar's bottom edge.
+  const pinned = vertical && !pane
+    ? document.querySelector('[data-settings-sticky][data-visible]')?.getBoundingClientRect().bottom ?? 0
+    : 0
   // Keep extra space in the direction of travel. This makes the NEXT row/card visible and prevents
   // controller focus from slowly riding the bottom/right edge until it disappears from view.
-  const top = revealAxisDelta({
-    itemStart: item.top,
-    itemEnd: item.bottom,
-    portStart: port.top,
-    portEnd: port.bottom,
-    startMargin: clamp(portHeight * 0.12, 40, 96),
-    endMargin: clamp(portHeight * 0.2, 64, 144),
-  })
+  // A list that keeps its focused row at one height (data-nav-scroll-pivot: the controller Settings
+  // rail and pane, NuvioTV's 42%) centres the row there instead of riding the edge margins.
+  const pivot = vertical && pane ? Number(pane.dataset.navScrollPivot) : Number.NaN
+  const top = Number.isFinite(pivot)
+    ? pivotScrollDelta({ itemStart: item.top, itemEnd: item.bottom, portStart: port.top, portEnd: port.bottom, pivot })
+    : revealAxisDelta({
+      itemStart: item.top,
+      itemEnd: item.bottom,
+      portStart: port.top,
+      portEnd: port.bottom,
+      startMargin: Math.max(clamp(portHeight * 0.12, 40, 96), pinned + 16),
+      endMargin: clamp(portHeight * 0.2, 64, 144),
+    })
   const left = revealAxisDelta({
     itemStart: item.left,
     itemEnd: item.right,
@@ -697,11 +734,12 @@ const TRIGGER_OPEN_KEYS = ['Enter', ' ', 'ArrowDown', 'ArrowUp']
  *  and ArrowUp do, except an arrow while arrow navigation has the trigger landed (isNavArrived): the
  *  nav engine walks on past it with that arrow instead (owner decision 2), modified or not. A trigger
  *  focused any other way opens on its arrows as before; pad arrows never reach a trigger's keydown
- *  (they are dispatched on window). */
+ *  (they are dispatched on window). A TV remote's arrows do reach it, so on TV they always walk on and
+ *  only OK opens it. */
 export function triggerOpensOnKey(event: KeyboardEvent): boolean {
   if (!TRIGGER_OPEN_KEYS.includes(event.key)) return false
   const arrow = event.key === 'ArrowDown' || event.key === 'ArrowUp'
-  return !(arrow && isNavArrived(event.currentTarget))
+  return !(arrow && (get(isTv) || isNavArrived(event.currentTarget)))
 }
 
 // ---- Focus-loss recovery (body fallback step 2) ----------------------------------------------------
@@ -833,6 +871,18 @@ export function resetNavLandingForTests(): void {
   lastNav = null
 }
 
+/** A surface's own say over an arrow move, asked after the slider step and before the named
+ *  overrides: the element to focus, null to swallow the press, or undefined to leave the move to the
+ *  engine. One owner at a time (controller Settings, settings/controller-zones.ts). */
+export type NavMoveOwner = (active: HTMLElement, dir: Dir) => HTMLElement | null | undefined
+let moveOwner: NavMoveOwner | null = null
+
+/** Install `owner`; returns its removal, which leaves a newer owner in place. */
+export function setNavMoveOwner(owner: NavMoveOwner): () => void {
+  moveOwner = owner
+  return () => { if (moveOwner === owner) moveOwner = null }
+}
+
 // The live keydown handler is kept on a registered symbol on globalThis. A second initDpadNav()
 // (Vite HMR re-running the app layout, or a duplicate copy of this module) then replaces the first
 // handler instead of stacking another one that moves focus twice per press.
@@ -851,12 +901,14 @@ export function initDpadNav() {
     const map: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }
     const dir = map[e.key]
     // Pad arrows always navigate (owner decision 3): a field the d-pad lands on never keeps them.
+    // On TV the remote's arrows are its d-pad, so a text field gives them up too: the on-screen
+    // keyboard types only at the end, so a caret walk would only trap focus.
     // Only a real keyboard's arrows are the field's own to walk its caret or cycle its value.
-    const field = dir && !isPadEvent(e) ? fieldShape(e.target) : null
+    const field = dir && !isPadEvent(e) && !(get(isTv) && isTextEntryField(e.target)) ? fieldShape(e.target) : null
     // Owner decision 2: Up/Down pass over a field that arrow navigation just landed on. A shortcut
     // chord stays the field's own (Alt+Down opens a native select's popup on Windows).
     const navArrived = !!field && isNavArrived(e.target) && !isShortcutChord(e)
-    if (field && fieldOwnsArrow(field, e.key as ArrowKey, { rangeOwnsHorizontal: !get(isTv), navArrived })) return
+    if (field && fieldOwnsArrow(field, e.key as ArrowKey, { rangeOwnsHorizontal: !get(isTv), numberSteps: get(isTv), navArrived })) return
     // A passed-over select or number/date field never keeps the press, even where nothing lies that
     // way (the first control of a page, the last one of a page or a dialog): the browser's default
     // would silently change its value, which is what the pass-over exists to prevent. A dropdown
@@ -944,10 +996,20 @@ export function initDpadNav() {
       }
       return
     }
-    // A focused slider takes the pad's Left/Right as steps; TV keeps them as focus moves (spec
-    // §3.11). This sits after the landing block, so it only acts on a slider that already holds
-    // focus, and before the named overrides, so a data-nav-left/right can never pre-empt stepping.
-    if (isPadEvent(e) && !get(isTv) && padAdjust(active, dir, e.repeat)) {
+    // A focused slider or number field takes Left/Right as steps (spec §5.4): every pad press, and
+    // on TV the remote's arrows too. This sits after the landing block, so it only acts on a control
+    // that already holds focus, and before the move owner and the named overrides, so neither can
+    // pre-empt stepping.
+    if ((isPadEvent(e) || get(isTv)) && padAdjust(active, dir, e.repeat)) {
+      e.preventDefault()
+      return
+    }
+    // A surface that owns some moves (controller Settings: Right from its rail enters the pane on the
+    // row last used there). Never inside a trap: an open picker or dialog keeps its own moves.
+    const owned = trap ? undefined : moveOwner?.(active, dir)
+    if (owned !== undefined) {
+      // An owner hands over a row in a vertical list (a pane): reveal it along that list.
+      if (owned) focusByNav(owned, true, e.repeat)
       e.preventDefault()
       return
     }
@@ -988,7 +1050,10 @@ export function initDpadNav() {
       return
     }
     const els = focusables(root)
-    const cur = active.getBoundingClientRect()
+    // Controller surfaces measure a control on a [data-nav-line] by its line (navRect) and walk the
+    // line in reading order; desktop keeps own boxes, so every control on a line stays reachable.
+    const lines = controllerSurface()
+    const cur = navRect(active, vertical, lines)
     if (!cur) return
     // Regions (regionOf): the app sidebar or top bar and every [data-nav-region] (the Settings
     // category rail, Theme Studio) are separate from the page content and from each other.
@@ -998,9 +1063,15 @@ export function initDpadNav() {
     // above it (the "fantasy row can't reach the menu" bug), and lands on the entered region's
     // default item when it has one.
     const activeRegion = regionOf(active)
-    const all: ElCand[] = els.filter(el => el !== active).map(el => ({ id: '', rect: el.getBoundingClientRect(), el }))
+    const all: ElCand[] = els.filter(el => el !== active).map(el => ({ id: '', rect: navRect(el, vertical, lines), el }))
     const sameRegion = all.filter(c => regionOf(c.el) === activeRegion)
-    let pick = pickInDirection(cur, sameRegion, dir)
+    // Left/Right on a [data-nav-line] step to the line's neighbour in reading order: a line that wraps
+    // (a button group, a paragraph's links) is one box on Up/Down, so its wrapped part stays reachable.
+    const line = vertical || !lines ? null : navLine(active)
+    const onLine = line ? els.filter((el) => navLine(el) === line) : []
+    const at = onLine.indexOf(active)
+    const neighbour = at < 0 ? undefined : onLine[at + (dir === 'right' ? 1 : -1)]
+    let pick: ElCand | null = neighbour ? { id: '', rect: navRect(neighbour, false), el: neighbour } : pickInDirection(cur, sameRegion, dir)
     let entersRegionDefault = false
     if (!pick) {
       if (vertical) {

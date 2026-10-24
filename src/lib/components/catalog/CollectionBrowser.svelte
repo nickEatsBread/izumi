@@ -79,7 +79,7 @@
     <a href="/app/home" data-focusable class="text-sm text-muted-foreground hover:text-foreground">← Home · {collection.title}</a>
     <h1 class="mt-4 text-3xl font-black">{folder.title}</h1>
     <p class="mt-2 text-sm text-muted-foreground">{folder.sources.length} {folder.sources.length === 1 ? 'catalog' : 'catalogs'}</p>
-    <a href="/app/settings/catalog/collections" data-focusable class="mt-3 inline-block text-sm font-semibold text-primary">Edit collection and cover</a>
+    <a href="/app/settings/library/collections" data-focusable class="mt-3 inline-block text-sm font-semibold text-primary">Edit collection and cover</a>
   </div>
 
   {#if folder.sources.length > 1}
@@ -95,7 +95,7 @@
     <div role="status" class="mx-4 mb-4 rounded-xl border border-destructive/30 p-4 sm:mx-8">
       <p class="font-bold">{collectionSourceTitle(folder.sources[index], index)}</p>
       <p class="mt-1 text-sm text-muted-foreground">{state.error}</p>
-      <a data-focusable href={folder.sources[index].provider === 'addon' ? '/app/settings/sources' : folder.sources[index].provider === 'trakt' ? '/app/settings/accounts' : '/app/settings/catalog'} class="mt-3 mr-3 inline-block text-sm font-bold text-primary">Configure source</a>
+      <a data-focusable href={folder.sources[index].provider === 'addon' ? '/app/settings/sources' : folder.sources[index].provider === 'trakt' ? '/app/settings/accounts' : '/app/settings/library'} class="mt-3 mr-3 inline-block text-sm font-bold text-primary">Configure source</a>
       <button data-focusable onclick={() => load(index)} class="mt-3 min-h-10 rounded-md bg-secondary px-4 text-sm font-bold">Retry</button>
     </div>
   {/each}

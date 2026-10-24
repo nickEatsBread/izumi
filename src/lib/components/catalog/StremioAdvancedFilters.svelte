@@ -132,6 +132,7 @@
                 max="100"
                 inputmode="numeric"
                 data-focusable
+                data-nav-no-step
                 value={draft.minScore ?? ''}
                 oninput={(event) => set({ minScore: numberValue(event.currentTarget.value, 100) })}
                 class="min-w-0 rounded-md bg-secondary px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-accent"
@@ -146,6 +147,7 @@
                 max="100"
                 inputmode="numeric"
                 data-focusable
+                data-nav-no-step
                 value={draft.maxScore ?? ''}
                 oninput={(event) => set({ maxScore: numberValue(event.currentTarget.value, 100) })}
                 class="min-w-0 rounded-md bg-secondary px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-accent"
@@ -165,6 +167,7 @@
                 min="0"
                 inputmode="numeric"
                 data-focusable
+                data-nav-no-step
                 value={draft.runtimeMin ?? ''}
                 oninput={(event) => set({ runtimeMin: numberValue(event.currentTarget.value) })}
                 class="min-w-0 rounded-md bg-secondary px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-accent"
@@ -178,6 +181,7 @@
                 min="0"
                 inputmode="numeric"
                 data-focusable
+                data-nav-no-step
                 value={draft.runtimeMax ?? ''}
                 oninput={(event) => set({ runtimeMax: numberValue(event.currentTarget.value) })}
                 class="min-w-0 rounded-md bg-secondary px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-accent"

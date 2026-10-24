@@ -10,8 +10,8 @@
 
   // The built-in on-screen keyboard: Steam Deck Game mode (the Steam keyboard cannot be summoned
   // reliably from the sandboxed Flatpak under gamescope), a phone or desktop driven by a pad, and
-  // Android TV. Every rule lives in $lib/nav/osk.ts: when it opens (A on a field, never d-pad focus,
-  // except on TV), typing, Done, closing and where focus goes. This component only draws the keys for
+  // Android TV. Every rule lives in $lib/nav/osk.ts: when it opens (A on a field, the remote's OK on
+  // TV, never d-pad focus), typing, Done, closing and where focus goes. This component only draws the keys for
   // the open session. It is portalled to <body> at z-190: above every dialog, the select chooser (175)
   // and the exit prompt (170); below only the intro ident and the fatal alert (200).
 

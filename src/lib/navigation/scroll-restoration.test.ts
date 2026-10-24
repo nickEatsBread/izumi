@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { restoreScroll } from './scroll-restoration'
+import { forgetScroll, restoreScroll } from './scroll-restoration'
 
 class TestWindow extends EventTarget {
   scrollTo = vi.fn()
@@ -44,6 +44,22 @@ describe('scroll restoration', () => {
     expect(testWindow.scrollTo).not.toHaveBeenCalled()
   })
 
+  it('keeps the anchor scroll of a `#id` the page renders, even over a stored position', () => {
+    stored = '420'
+    vi.stubGlobal('document', { getElementById: (id: string) => (id === 'storage' ? {} : null) })
+    restoreScroll(new URL('https://izumi.test/app/settings/downloads#storage'))
+    flushFrames()
+
+    expect(testWindow.scrollTo).not.toHaveBeenCalled()
+  })
+
+  it('still resets a page whose `#id` names nothing on it', () => {
+    vi.stubGlobal('document', { getElementById: () => null })
+    restoreScroll(new URL('https://izumi.test/app/settings/downloads#missing'))
+
+    expect(testWindow.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'instant' })
+  })
+
   it('cancels an older delayed restore when a new route wins', () => {
     stored = '420'
     restoreScroll(new URL('https://izumi.test/app/browse'))
@@ -53,5 +69,13 @@ describe('scroll restoration', () => {
 
     expect(testWindow.scrollTo).toHaveBeenCalledOnce()
     expect(testWindow.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'instant' })
+  })
+
+  it('forgets a remembered position, so the next visit to that URL starts at the top', () => {
+    const removeItem = vi.fn()
+    vi.stubGlobal('sessionStorage', { getItem: () => stored, removeItem })
+    forgetScroll(new URL('https://izumi.test/app/settings/subtitles?x=1'))
+
+    expect(removeItem).toHaveBeenCalledWith('izumi-scroll:/app/settings/subtitles?x=1')
   })
 })

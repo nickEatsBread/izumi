@@ -1,0 +1,230 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { parse } from 'svelte/compiler'
+import { describe, expect, it } from 'vitest'
+import { settingKey as keyForSetting } from '$lib/settings/search'
+
+const read = (relative: string) =>
+  readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
+
+// Spec §5.1: the Playback page shows a row wherever the player that reads the setting runs. The
+// evaluator below walks the page markup with the build's {#if} gates decided and lists the settings
+// stores a user can reach. A gate on other runtime state ($developerLogging, the chosen preset, the
+// audio output mode, a pending consent) counts as "either way": both branches are reachable.
+const page = read('./+page.svelte')
+
+type Gate = '$isAndroid' | '$isAndroidTv' | '$inAppPlayerAvailable' | '$isWindows'
+type Env = Record<Gate, boolean>
+const ENVIRONMENTS = {
+  // Windows desktop, the widest desktop build (it adds Windows driver upscaling).
+  desktop: { $isAndroid: false, $isAndroidTv: false, $inAppPlayerAvailable: true, $isWindows: true },
+  // Android phone or tablet, full build: the embedded player plugin is compiled in.
+  full: { $isAndroid: true, $isAndroidTv: false, $inAppPlayerAvailable: true, $isWindows: false },
+  // Android TV, full build.
+  tv: { $isAndroid: true, $isAndroidTv: true, $inAppPlayerAvailable: true, $isWindows: false },
+  // Android lite build: videos open in the device's own video player.
+  lite: { $isAndroid: true, $isAndroidTv: false, $inAppPlayerAvailable: false, $isWindows: false },
+} satisfies Record<string, Env>
+type EnvName = keyof typeof ENVIRONMENTS
+
+interface AstNode { type: string; [key: string]: unknown }
+interface Fragment { nodes: AstNode[] }
+interface Reached { stores: string[]; texts: string[]; elements: AstNode[] }
+
+/** true or false when the build decides the expression; null when runtime state does. */
+function evaluate(node: AstNode, env: Env): boolean | null {
+  if (node.type === 'Identifier') {
+    const name = node.name as string
+    return name in env ? env[name as Gate] : null
+  }
+  if (node.type === 'UnaryExpression' && node.operator === '!') {
+    const value = evaluate(node.argument as AstNode, env)
+    return value === null ? null : !value
+  }
+  if (node.type === 'LogicalExpression' && (node.operator === '&&' || node.operator === '||')) {
+    const left = evaluate(node.left as AstNode, env)
+    const right = evaluate(node.right as AstNode, env)
+    if (node.operator === '&&') {
+      if (left === false || right === false) return false
+      return left === true && right === true ? true : null
+    }
+    if (left === true || right === true) return true
+    return left === false && right === false ? false : null
+  }
+  return null
+}
+
+/** Every `$store` read inside an expression or an attribute list (handlers too), in source order.
+ *  The four build gates are left out: they decide rows, they are not rows. */
+function collectStores(value: unknown, into: string[]) {
+  if (!value || typeof value !== 'object') return
+  if (Array.isArray(value)) {
+    for (const item of value) collectStores(item, into)
+    return
+  }
+  const node = value as AstNode
+  const name = node.type === 'Identifier' ? node.name : undefined
+  if (typeof name === 'string' && name.startsWith('$') && !(name in ENVIRONMENTS.desktop)
+      && !into.includes(name.slice(1))) {
+    into.push(name.slice(1))
+  }
+  for (const [key, child] of Object.entries(node)) if (key !== 'type') collectStores(child, into)
+}
+
+function visit(nodes: AstNode[], env: Env, reached: Reached) {
+  for (const node of nodes) {
+    switch (node.type) {
+      case 'Comment':
+        break
+      case 'Text': {
+        const text = String(node.data).replace(/\s+/g, ' ').trim()
+        if (text) reached.texts.push(text)
+        break
+      }
+      case 'IfBlock': {
+        const truth = evaluate(node.test as AstNode, env)
+        if (truth !== false) visit((node.consequent as Fragment).nodes, env, reached)
+        const alternate = node.alternate as Fragment | null
+        if (truth !== true && alternate) visit(alternate.nodes, env, reached)
+        break
+      }
+      case 'EachBlock':
+        collectStores(node.expression, reached.stores)
+        visit((node.body as Fragment).nodes, env, reached)
+        if (node.fallback) visit((node.fallback as Fragment).nodes, env, reached)
+        break
+      // A row's control snippet is declared inside the row and rendered by it.
+      case 'SnippetBlock':
+        visit((node.body as Fragment).nodes, env, reached)
+        break
+      case 'ExpressionTag':
+      case 'HtmlTag':
+      case 'RenderTag':
+        collectStores(node.expression, reached.stores)
+        break
+      case 'RegularElement':
+      case 'Component':
+        reached.elements.push(node)
+        collectStores(node.attributes, reached.stores)
+        visit((node.fragment as Fragment).nodes, env, reached)
+        break
+      default:
+        throw new Error(`the Playback page has a ${node.type} node; teach this evaluator about it`)
+    }
+  }
+}
+
+const pageRoot = (parse(page, { modern: true }) as unknown as { fragment: Fragment }).fragment
+
+function reach(name: EnvName): Reached {
+  const reached: Reached = { stores: [], texts: [], elements: [] }
+  visit(pageRoot.nodes, ENVIRONMENTS[name], reached)
+  return reached
+}
+
+/** Static value of an attribute: its text, true when bare, null when it is an expression, undefined
+ *  when absent. */
+function attribute(element: AstNode, name: string): string | true | null | undefined {
+  const found = (element.attributes as AstNode[]).find((attr) => attr.type === 'Attribute' && attr.name === name)
+  if (!found) return undefined
+  if (found.value === true) return true
+  const parts = (Array.isArray(found.value) ? found.value : [found.value]) as AstNode[]
+  return parts.every((part) => part.type === 'Text') ? parts.map((part) => String(part.data)).join('') : null
+}
+
+const sorted = (values: readonly string[]) => [...values].sort()
+
+/** Rows every build shows: they steer source choice and the end-of-series prompt, not a player. */
+const EVERY_BUILD = ['seriesRatingPrompt', 'preferredQuality', 'continueSourcePreference', 'adaptiveSourceMode', 'seadexAnnotations']
+/** Settings the in-app player reads: desktop mpv and the Android full build's embedded player. */
+const IN_APP = [
+  'videoQualityPreset', 'qualityNotice', 'rawMpvOptions', 'qualityFailedKeys', 'audioProcessing',
+  'p2pStatusVisibility', 'autoplayNext', 'upNextOverlay', 'keepAwakeWhilePlaying', 'bingePreload',
+  'autoSkip', 'skipPreviews', 'skipFiller', 'scrubThumbnails', 'gifIncludeSubtitles', 'seekDuration',
+  'audioOutputMode', 'audioPassthroughAc3', 'audioPassthroughEac3', 'audioPassthroughTruehd',
+  'audioPassthroughDts', 'audioPassthroughDtsHd', 'audioExclusive', 'dolbyVisionOutputMode',
+  'dolbyCapabilities', 'drmDolbyStatus', 'dolbyCapabilityError',
+]
+/** Desktop mpv tuning and OS / Game-mode integrations. */
+const DESKTOP_ONLY = [
+  'windowsVsr', 'systemMediaControls', 'discordRichPresence', 'hideSidebarWhilePlaying', 'playerProgressAnimations',
+  'subtitleLineNavigation', 'gifScale', 'gifMaxSeconds', 'playerCacheMb', 'enableExternalPlayer',
+  'externalPlayerPath', 'audioOutputDevice', 'playerTitleTop',
+]
+const LITE_NOTICE = "This build plays videos in your device's video player, so the in-app player options are not shown."
+
+describe('Playback settings per build (spec §5.1)', () => {
+  it('keeps every desktop row, in subcategory order', () => {
+    expect(reach('desktop').stores).toEqual([
+      'autoplayNext', 'upNextOverlay', 'bingePreload', 'seriesRatingPrompt', 'autoSkip', 'skipPreviews',
+      'skipFiller', 'seekDuration', 'scrubThumbnails', 'keepAwakeWhilePlaying', 'systemMediaControls',
+      'discordRichPresence', 'hideSidebarWhilePlaying', 'p2pStatusVisibility', 'gifIncludeSubtitles', 'gifScale',
+      'gifMaxSeconds', 'preferredQuality', 'continueSourcePreference', 'videoQualityPreset', 'qualityNotice',
+      'rawMpvOptions', 'qualityFailedKeys', 'windowsVsr', 'playerCacheMb', 'audioProcessing', 'audioOutputMode',
+      'audioPassthroughAc3', 'audioPassthroughEac3', 'audioPassthroughTruehd', 'audioPassthroughDts',
+      'audioPassthroughDtsHd', 'audioExclusive', 'audioOutputDevice', 'dolbyCapabilities',
+      'dolbyVisionOutputMode', 'enableExternalPlayer', 'externalPlayerPath', 'playerProgressAnimations',
+      'subtitleLineNavigation', 'playerTitleTop', 'adaptiveSourceMode', 'seadexAnnotations',
+      'drmDolbyStatus', 'dolbyCapabilityError',
+    ])
+    expect(sorted(reach('desktop').stores)).toEqual(sorted([...EVERY_BUILD, ...IN_APP, ...DESKTOP_ONLY]))
+  })
+
+  it('shows the Android full build every row its embedded player reads, plus the miniplayer', () => {
+    expect(sorted(reach('full').stores)).toEqual(sorted([...EVERY_BUILD, ...IN_APP, 'androidAutoPip']))
+  })
+
+  it('shows Android TV the same rows without the phone miniplayer', () => {
+    expect(sorted(reach('tv').stores)).toEqual(sorted([...EVERY_BUILD, ...IN_APP]))
+  })
+
+  it('hides every in-app player row on the lite build behind one notice', () => {
+    expect(sorted(reach('lite').stores)).toEqual(sorted(EVERY_BUILD))
+    expect(reach('lite').texts).toContain(LITE_NOTICE)
+    for (const name of ['desktop', 'full', 'tv'] as const) expect(reach(name).texts, name).not.toContain(LITE_NOTICE)
+    expect(page).not.toContain("The mpv tuning options further down don't apply on this platform.")
+  })
+
+  it('gives Android a preset menu for the seek step, never a number field', () => {
+    for (const name of ['full', 'tv'] as const) {
+      const { elements } = reach(name)
+      expect(elements.filter((el) => el.name === 'input' && attribute(el, 'type') === 'number'), name).toEqual([])
+      const seek = elements.filter((el) => el.name === 'SettingsChoiceRow' && attribute(el, 'settingKey') === 'seek-duration')
+      expect(seek, name).toHaveLength(1)
+      expect(attribute(seek[0], 'searchable'), name).toBeUndefined()
+    }
+    // Desktop keeps its two number fields: the custom player cache and the seek step.
+    expect(reach('desktop').elements.filter((el) => el.name === 'input' && attribute(el, 'type') === 'number')).toHaveLength(2)
+    expect(page).toContain('const SEEK_PRESETS = [5, 10, 15, 20, 30, 45, 60, 90]')
+    expect(page).toContain('options={seekOptions}')
+  })
+
+  it('documents that Binge also advances with Auto-play off (decision 11)', () => {
+    const binge = reach('desktop').elements.find((el) => el.name === 'SettingsRow' && attribute(el, 'settingKey') === 'binge-next-episode-preload')
+    expect(binge && attribute(binge, 'description')).toContain('even with Auto-play off')
+  })
+
+  it('keys every switch row, keeping the keys the old Toggle labels made', () => {
+    const switches = [...reach('desktop').elements, ...reach('full').elements]
+      .filter((el) => el.name === 'SettingsRow' && attribute(el, 'onActivate') !== undefined)
+    for (const el of switches) expect(typeof attribute(el, 'settingKey')).toBe('string')
+    expect([...new Set(switches.map((el) => attribute(el, 'settingKey') as string))].sort()).toEqual([
+      'animate-player-progress-controls', 'ask-for-a-rating-when-a-series-ends', 'auto-play-next-episode',
+      'auto-skip-next-episode-previews', 'auto-skip-openings-endings', 'binge-next-episode-preload',
+      'discord-rich-presence', 'dolby-digital', 'dolby-digital-plus', 'dolby-truehd', 'dts', 'dts-hd-dts-x',
+      'enable-external-player', 'exclusive-audio-device', 'hide-sidebar-while-playing', 'include-subtitles-in-gifs',
+      'keep-screen-awake-while-playing', 'mark-best-releases', 'miniplayer-when-you-leave-the-app',
+      'scrub-preview-thumbnails', 'show-up-next-countdown', 'skip-filler-episodes', 'subtitle-line-navigation',
+      'system-media-controls', 'title-at-top-of-player-game-mode',
+    ])
+  })
+
+  it('uses the keys English already derives, so search anchors do not move in English', () => {
+    const en = JSON.parse(read('../../../../../messages/en.json')) as Record<string, string>
+    expect(keyForSetting(en.player_autoplay_next)).toBe('auto-play-next-episode')
+    expect(keyForSetting(en.player_up_next_overlay)).toBe('show-up-next-countdown')
+    expect(keyForSetting(en.player_series_rating_prompt)).toBe('ask-for-a-rating-when-a-series-ends')
+    expect(keyForSetting('Include subtitles in GIFs')).toBe('include-subtitles-in-gifs')
+    expect(keyForSetting('Hide sidebar while playing')).toBe('hide-sidebar-while-playing')
+  })
+})

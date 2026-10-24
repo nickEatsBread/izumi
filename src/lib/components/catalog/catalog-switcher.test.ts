@@ -47,7 +47,7 @@ describe('catalog switcher', () => {
   })
 
   it('keeps catalog configuration one step away', () => {
-    expect(source).toContain('href="/app/settings/catalog"')
+    expect(source).toContain('href="/app/settings/library"')
     expect(source).toContain('Manage catalogs')
   })
 

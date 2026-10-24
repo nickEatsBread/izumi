@@ -558,8 +558,8 @@ html.controller-mode [data-carousel-scroller] { padding-top: max(1.125rem, 18px)
    focus language without inheriting its gamescope/native-snapshot behaviour. */
 .tv-mode { font-size: 18px; }
 .tv-mode, .tv-mode * { cursor: none !important; }
-.tv-mode main { margin-left: 5rem !important; margin-bottom: 0 !important; }
-.tv-mode [data-nav-sidebar] { width: 5rem !important; }
+.tv-mode main { margin-left: 4rem !important; margin-bottom: 0 !important; }
+.tv-mode [data-nav-sidebar] { width: 4rem !important; }
 .tv-mode [data-nav-sidebar]:focus-within { width: 14rem !important; }
 .tv-mode .browse-render-row,
 .tv-mode .browse-render-list-item,
@@ -596,6 +596,58 @@ html.controller-mode [data-carousel-scroller] { padding-top: max(1.125rem, 18px)
 .tv-mode .player-shell button:focus {
   transform: scale(1.1);
 }
+
+/* Settings in controller mode (Android TV, Deck Game mode; spec §5.1). The layout sizes itself in
+   rem against the TV's 18px root; these rules only reach into components it does not own. Folded
+   subcategories replace the desktop chips and sticky bar. */
+[data-settings-controller] [data-settings-chips],
+[data-settings-controller] [data-settings-sticky] { display: none !important; }
+[data-settings-controller] [data-settings-section] { padding: 0; }
+[data-settings-controller] [data-settings-subcategory-body] > [data-setting-key],
+[data-settings-controller] [data-row-activate],
+[data-settings-controller] [data-subcategory-toggle] { min-height: 3.111rem; }
+/* izumi's ring plus a row fill; no scale. */
+[data-settings-controller] [data-settings-subcategory-body] [data-focusable]:focus,
+[data-settings-controller] [data-subcategory-toggle]:focus,
+[data-settings-controller] [data-settings-rail] a:focus { background-color: hsl(var(--foreground) / 0.1); }
+/* A SettingsRow ([data-setting-row]) lights as a whole on a controller while its own header holds focus:
+   a control on its header line (nav `navRect` measures it by that line on Up/Down), or the row button
+   or link of a row whose Learn more text shows below it, so the text sits inside the ring and fill.
+   Child combinators keep a block wrapping several rows, a row's expanded children and a row nested in
+   them from lighting it; those controls keep their own ring. A header-line control drops its ring but
+   keeps its fill, which tells two controls on one line apart; an inline trigger alone on its line, and
+   a Learn more row's own button, drop both. Desktop focus-visible keeps every control's own ring. */
+.gamemode [data-setting-row]:is(:has(> [data-nav-line] [data-focusable]:focus), :has(> [data-learn-more]):has(> [data-focusable]:focus)) { box-shadow: var(--izumi-safe-focus-ring); }
+.controller-mode [data-setting-row]:is(:has(> [data-nav-line] [data-focusable]:focus), :has(> [data-learn-more]):has(> [data-focusable]:focus)) {
+  box-shadow: var(--izumi-safe-focus-ring), 0 8px 24px rgb(0 0 0 / 0.4);
+  position: relative;
+  z-index: 10;
+}
+.tv-mode [data-setting-row]:is(:has(> [data-nav-line] [data-focusable]:focus), :has(> [data-learn-more]):has(> [data-focusable]:focus)) {
+  box-shadow: 0 0 0 4px #fff, 0 8px 28px rgb(0 0 0 / 0.45);
+  position: relative;
+  z-index: 10;
+}
+[data-settings-controller] [data-setting-row]:is(:has(> [data-nav-line] [data-focusable]:focus), :has(> [data-learn-more]):has(> [data-focusable]:focus)) { background-color: hsl(var(--foreground) / 0.1); }
+:is(.gamemode, .controller-mode, .tv-mode) :is([data-setting-row] > [data-nav-line] [data-focusable], [data-setting-row]:has(> [data-learn-more]) > [data-focusable]):focus { box-shadow: none; }
+:is(.gamemode, .controller-mode, .tv-mode) :is([data-setting-row] > [data-nav-line]:not(:has([data-focusable]:not([data-nav-measure-row]))) [data-nav-measure-row], [data-setting-row]:has(> [data-learn-more]) > [data-focusable]):focus { background-color: transparent; }
+/* Controller mode's Learn more (SettingsRow, spec §5.1): no button; the text shows while its row has focus. */
+[data-learn-more] { display: none; }
+:focus-within > [data-learn-more] { display: block; }
+/* NuvioTV: while the rail has focus, only the focused item is lit. */
+[data-settings-controller] [data-settings-rail]:focus-within a[aria-current="page"]:not(:focus) { background-color: transparent; }
+/* The layout fills the height main leaves instead of scrolling the window: below a Game-mode top bar
+   row (the page pads under it), above a Game-mode bottom bar (main keeps its room) and above the hint
+   bar (the body keeps its 2.5rem). TV always shows the side strip, whatever the theme's nav. */
+[data-settings-controller] {
+  --settings-top: 0px; --settings-bar: 0px; --settings-hints: 0px;
+  height: calc(100vh - var(--settings-top) - var(--settings-bar) - var(--settings-hints));
+}
+html.gamemode[data-theme-nav='top'] [data-settings-controller] { --settings-top: var(--theme-top-row); }
+html.gamemode[data-theme-nav='bottom'] [data-settings-controller] { --settings-bar: var(--theme-bottom-nav, 4rem); }
+html[data-theme-hints] [data-settings-controller] { --settings-hints: 2.5rem; }
+/* The controller picker's options: NuvioTV's roomy cards, not the desktop menu's compact rows. */
+[data-select-picker] [data-select-value] { min-height: 3rem; font-size: 1rem; }
 
 /* Press ripple (see src/lib/actions/ripple.ts). Transform/opacity only, so it stays off the layout
    path; the span deletes itself on animationend. */

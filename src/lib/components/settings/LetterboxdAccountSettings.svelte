@@ -1,8 +1,6 @@
 <script lang="ts">
   import { openUrl } from '@tauri-apps/plugin-opener'
-  import Film from '@lucide/svelte/icons/film'
   import Rss from '@lucide/svelte/icons/rss'
-  import SettingsGroup from './SettingsGroup.svelte'
   import SettingsRow from './SettingsRow.svelte'
   import { letterboxdFeedCache, letterboxdFeedUpdatedAt, letterboxdUsername } from '$lib/letterboxd/config'
   import { validLetterboxdUsername } from '$lib/letterboxd/feed'
@@ -51,19 +49,14 @@
   <button type="button" data-focusable aria-expanded={formOpen} data-touch-target onclick={() => (formOpen = !formOpen)} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold hover:bg-accent">{formOpen ? 'Close' : $letterboxdUsername ? 'Manage' : 'Set up'}</button>
 {/snippet}
 
-<SettingsGroup
-  icon={Film}
-  title="Letterboxd"
-  desc="A supported public-diary and data-export experience; no scraping or unofficial sign-in."
->
-  <SettingsRow settingKey="letterboxd-account" title="Letterboxd profile" leading={leading} meta={meta} control={control} expanded={formOpen || Boolean(error)}>
+  <SettingsRow settingKey="letterboxd-account" title="Letterboxd profile" learnMore="A supported public-diary and data-export experience; no scraping or unofficial sign-in." leading={leading} meta={meta} control={control} expanded={formOpen || Boolean(error)}>
     <div class="flex flex-col gap-2 sm:flex-row">
       <label class="sr-only" for="letterboxd-username">Letterboxd username</label>
       <input id="letterboxd-username" bind:value={usernameInput} autocomplete="username" data-focusable placeholder="Letterboxd username" class="h-10 min-w-0 flex-1 rounded-md bg-input px-3 text-base sm:text-sm" onkeydown={(event) => event.key === 'Enter' && save()} />
       <button type="button" data-focusable data-touch-target onclick={save} class="min-h-10 rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Save</button>
       {#if $letterboxdUsername}<button type="button" data-focusable data-touch-target onclick={clear} class="min-h-10 rounded-md px-3 text-sm font-bold text-destructive hover:bg-destructive/10">Clear</button>{/if}
     </div>
-    <div class="mt-3 flex flex-col gap-2 text-[11px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+    <div class="mt-3 flex flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
       <span class="inline-flex items-center gap-1.5"><Rss size={13} />Izumi reads Letterboxd’s official per-profile RSS feed. Import the official export ZIP in the hub for older history and Watchlist.</span>
       <div class="flex shrink-0 gap-2">
         <button type="button" data-focusable data-touch-target onclick={() => openUrl('https://letterboxd.com/user/exportdata/')} class="min-h-9 rounded-md bg-secondary px-3 text-xs font-bold hover:bg-accent">Export data</button>
@@ -72,4 +65,3 @@
     </div>
     {#if error}<p role="alert" class="mt-2 text-xs text-destructive">{error}</p>{/if}
   </SettingsRow>
-</SettingsGroup>

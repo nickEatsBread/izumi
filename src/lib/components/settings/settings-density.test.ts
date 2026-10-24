@@ -6,8 +6,7 @@ import { describe, expect, it } from 'vitest'
 // platform rows: a comfortable target, a subtitle for context, and ink that follows the finger.
 
 const nav = readFileSync(fileURLToPath(new URL('./SettingsNav.svelte', import.meta.url)), 'utf8')
-const toggle = readFileSync(fileURLToPath(new URL('./Toggle.svelte', import.meta.url)), 'utf8')
-const group = readFileSync(fileURLToPath(new URL('./SettingsGroup.svelte', import.meta.url)), 'utf8')
+const subcategory = readFileSync(fileURLToPath(new URL('./SettingsSubcategory.svelte', import.meta.url)), 'utf8')
 const row = readFileSync(fileURLToPath(new URL('./SettingsRow.svelte', import.meta.url)), 'utf8')
 
 describe('mobile settings rows', () => {
@@ -32,17 +31,11 @@ describe('mobile settings rows', () => {
 })
 
 describe('compact settings content', () => {
-  it('keeps shared toggle rows compact while preserving a touch-sized row', () => {
-    expect(toggle).toContain('min-h-12')
-    expect(toggle).toContain('px-3 py-2.5')
-    expect(toggle).toContain('text-xs leading-4')
-  })
-
   it('groups related rows with dividers instead of separate floating cards', () => {
-    expect(group).toContain('divide-y divide-border/70')
-    expect(group).not.toContain('overflow-hidden')
-    expect(group).toContain('[&>*:first-child]:rounded-t-[calc(0.75rem-1px)]')
-    expect(group).toContain('[&>*:last-child]:rounded-b-[calc(0.75rem-1px)]')
+    expect(subcategory).toContain('divide-y divide-border/70')
+    expect(subcategory).not.toContain('overflow-hidden')
+    expect(subcategory).toContain('[&>*:first-child]:rounded-t-[calc(0.75rem-1px)]')
+    expect(subcategory).toContain('[&>*:last-child]:rounded-b-[calc(0.75rem-1px)]')
     expect(row).toContain('px-3 py-2.5')
   })
 

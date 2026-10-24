@@ -8,41 +8,24 @@ const layout = readFileSync(fileURLToPath(new URL('../../../routes/app/settings/
 const dpad = readFileSync(fileURLToPath(new URL('../../nav/index.ts', import.meta.url)), 'utf8')
 
 describe('SettingsNav', () => {
-  it('imports the Captions icon from lucide', () => {
-    expect(src).toContain("import Captions from '@lucide/svelte/icons/captions'")
+  it('builds the phone index and the desktop rail from the section registry', () => {
+    expect(src).toContain("import { SETTINGS_GROUPS, SETTINGS_SECTIONS } from '$lib/settings/sections'")
+    expect(src).toContain("import { sectionIcon } from '$lib/components/settings/section-icons'")
+    expect(src).not.toMatch(/href: '\/app\/settings\//)
   })
 
-  it('has a Subtitles nav entry pointing at the subtitles route', () => {
-    expect(src).toContain("{ title: 'Subtitles', href: '/app/settings/subtitles', icon: Captions")
+  it('groups the phone index under the group labels, each row with its static subtitle', () => {
+    expect(src).toContain('const groups = SETTINGS_GROUPS.map((group) => ({ ...group, items: SETTINGS_SECTIONS.filter((section) => section.group === group.id) }))')
+    expect(src).toContain('{#each groups as g (g.id)}')
+    expect(src).toContain('text-xs font-bold uppercase tracking-wide text-muted-foreground">{g.label}</div>')
+    expect(src).toContain('<span class="mt-0.5 block truncate text-xs text-muted-foreground">{it.subtitle}</span>')
   })
 
-  it('groups Subtitles under Playback, ahead of the Content entries', () => {
-    const player = src.indexOf("href: '/app/settings/player'")
-    const subs = src.indexOf("href: '/app/settings/subtitles'")
-    const sources = src.indexOf("href: '/app/settings/sources'")
-    const dl = src.indexOf("href: '/app/settings/downloads'")
-    expect(player).toBeGreaterThan(-1)
-    expect(subs).toBeGreaterThan(player)
-    expect(sources).toBeGreaterThan(subs)
-    expect(dl).toBeGreaterThan(sources)
-  })
-
-  it('presents addons and community providers as one Sources destination', () => {
-    expect(src.match(/title: 'Sources'/g)).toHaveLength(1)
-    expect(src).not.toContain("title: 'Extensions'")
-    expect(src).not.toContain("href: '/app/settings/extensions'")
-  })
-
-  it('keeps the Source Store inside Sources instead of as a separate navigation item', () => {
-    expect(src).not.toContain("{ title: 'Source Store', href: '/app/settings/store'")
-  })
-
-  it('drops the Hotkeys category on Android, keyed on $isAndroid rather than $isMobile', () => {
-    // A narrow desktop window is $isMobile but still has a keyboard, so the filter must not use it.
-    expect(src).toContain("import { isAndroid, isMobile } from '$lib/platform'")
-    expect(src).toContain("$isAndroid")
-    expect(src).toContain("it.href !== '/app/settings/hotkeys'")
-    expect(src).toContain('{#each visibleGroups as g (g.label)}')
+  it('has nothing to filter per platform: Hotkeys and Navigation are no longer categories', () => {
+    // The Playback and Appearance pages gate those old pages instead (section-routes.test.ts).
+    expect(src).not.toContain('isAndroid')
+    expect(src).not.toContain('/app/settings/hotkeys')
+    expect(src).not.toContain('/app/settings/navigation')
   })
 
   it('scrolls the desktop category rail independently through the off-screen About item', () => {
@@ -57,17 +40,21 @@ describe('SettingsNav', () => {
 
   // The engine side (regionOf, the region default, data-nav-scroll-x) is exercised in
   // src/lib/nav/regions.test.ts; this only checks the markers the engine reads.
-  it('makes the desktop rail its own nav region, entered on the current category (off TV)', () => {
+  it('makes the Settings rail its own nav region on every rail layout, TV included', () => {
     const shell = markupElementsFromSource(layout.replace(/\r\n/g, '\n'), '+layout.svelte')
     const regions = shell.filter((el) => hasAttr(el, 'data-nav-region'))
-    expect(regions.map((el) => el.name)).toEqual(['aside'])
-    expect(attr(regions[0], 'data-nav-region')?.raw).toBe(`data-nav-region={$isTv ? undefined : 'settings'}`)
-    expect(shell.filter((el) => staticAttr(el, 'data-nav-surface') === 'settings')).toHaveLength(2)
+    // The controller layout's aside, then the desktop one.
+    expect(regions.map((el) => el.name)).toEqual(['aside', 'aside'])
+    expect(regions.map((el) => staticAttr(el, 'data-nav-region'))).toEqual(['settings', 'settings'])
+    // The phone child, the controller pane and the desktop content.
+    expect(shell.filter((el) => staticAttr(el, 'data-nav-surface') === 'settings')).toHaveLength(3)
     const links = markupElementsFromSource(src.replace(/\r\n/g, '\n'), 'SettingsNav.svelte')
       .filter((el) => el.name === 'a' && hasAttr(el, 'data-nav-region-default'))
-    expect(links).toHaveLength(1)
-    expect(attr(links[0], 'data-nav-region-default')?.raw).toBe(`data-nav-region-default={active(it.href) ? '' : undefined}`)
-    expect(attr(links[0], 'aria-current')?.raw).toBe(`aria-current={active(it.href) ? 'page' : undefined}`)
+    // The controller rail and the desktop rail.
+    expect(links).toHaveLength(2)
+    for (const link of links) {
+      expect(attr(link, 'aria-current')?.raw).toMatch(/^aria-current=\{active\(\w+\.href\) \? 'page' : undefined\}$/)
+    }
   })
 })
 
@@ -85,8 +72,8 @@ describe('Settings Back wiring (commit 10)', () => {
     expect(nav).toContain('<nav data-settings-rail data-nav-scroll-container')
     expect(nav).toContain('data-sveltekit-keepfocus onclick={releasePointerFocus}')
     expect(nav).toContain('if (event.detail > 0) (event.currentTarget as HTMLElement).blur()')
-    // The desktop rail only: the phone list keeps its own navigation and haptics.
-    expect(nav.split('data-sveltekit-keepfocus').length - 1).toBe(1)
+    // The desktop and controller rails only: the phone list keeps its own navigation and haptics.
+    expect(nav.split('data-sveltekit-keepfocus').length - 1).toBe(2)
   })
 
   it('titles the phone header and points its back arrow at the structural parent, through settingsBack', () => {
@@ -97,5 +84,36 @@ describe('Settings Back wiring (commit 10)', () => {
     expect(shell).toContain("<a href={parentHref} data-focusable onclick={(event) => { event.preventDefault(); h.tap(); settingsBack('header') }} aria-label={m.common_back_to_settings()}")
     expect(shell).not.toContain('const childTitles')
     expect(shell).not.toContain('backHref')
+  })
+})
+
+describe('controller rail (spec §5.1)', () => {
+  const nav = src.replace(/\r\n/g, '\n')
+
+  it('renders first in controller mode, with a divider between groups', () => {
+    const controller = nav.indexOf('{#if $settingsControllerMode}')
+    expect(controller).toBeGreaterThan(-1)
+    expect(nav.indexOf('{:else if $isMobile}')).toBeGreaterThan(controller)
+    expect(nav).toContain("import { settingsControllerMode } from '$lib/settings/surface'")
+    expect(nav).toContain('{#if index > 0 && SETTINGS_SECTIONS[index - 1].group !== section.group}')
+    expect(nav).toContain('<div role="separator" class="mx-4 my-1 h-px shrink-0 bg-border"></div>')
+  })
+
+  it('keeps the markers the zones, Back and search read, as 48-56 px pills with a pivoting scroll', () => {
+    expect(nav).toContain('<nav data-settings-rail data-nav-scroll-container data-nav-scroll-pivot="0.42"')
+    const link = markupElementsFromSource(nav, 'SettingsNav.svelte').find((el) => el.name === 'a' && hasAttr(el, 'data-section'))!
+    expect(attr(link, 'data-section')?.raw).toBe('data-section={section.id}')
+    expect(attr(link, 'data-group')?.raw).toBe('data-group={section.group}')
+    expect(hasAttr(link, 'data-sveltekit-keepfocus')).toBe(true)
+    expect(attr(link, 'data-nav-region-default')?.raw).toBe(`data-nav-region-default={active(section.href) ? '' : undefined}`)
+    expect(nav).toContain('class="flex h-12 shrink-0 items-center gap-3 rounded-full px-4 text-base transition-colors')
+  })
+
+  it('prints the short rail label, with the full section title for hover and screen readers', () => {
+    const link = markupElementsFromSource(nav, 'SettingsNav.svelte').find((el) => el.name === 'a' && hasAttr(el, 'data-section'))!
+    expect(attr(link, 'title')?.raw).toBe('title={section.title}')
+    expect(attr(link, 'aria-label')?.raw).toBe('aria-label={section.title}')
+    expect(nav).toContain('<span class="truncate">{section.railTitle}</span>')
+    expect(nav).not.toContain('{section.title}</span>')
   })
 })

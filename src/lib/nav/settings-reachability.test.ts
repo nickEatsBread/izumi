@@ -423,7 +423,7 @@ describe('Settings reachability: markers the generic rules cannot infer (spec §
   it('marks the in-page capped lists nested: extension packages, the import preview, izumi collections', () => {
     for (const [rel, name] of [
       ['src/routes/app/settings/extensions/+page.svelte', 'ul'],
-      ['src/routes/app/settings/catalog/collections/+page.svelte', 'ul'],
+      ['src/routes/app/settings/library/collections/+page.svelte', 'ul'],
       ['src/lib/components/catalog/NuvioCloudCollections.svelte', 'div'],
     ]) {
       const nested = elementsOf(rel).filter((el) => staticAttr(el, 'data-nav-scroll-container') === 'nested')
@@ -437,7 +437,7 @@ describe('Settings reachability: markers the generic rules cannot infer (spec §
   })
 
   it('takes the three read-only sync secrets out of the d-pad order (their Copy buttons act)', () => {
-    const sync = elementsOf('src/routes/app/settings/sync/+page.svelte')
+    const sync = elementsOf('src/routes/app/settings/devices/+page.svelte')
     for (const label of ['Cloudflare setup secret', 'Cloudflare device invite', 'Pairing ticket']) {
       const field = sync.find((el) => staticAttr(el, 'aria-label') === label && hasAttr(el, 'readonly'))
       expect(field, label).toBeDefined()
@@ -452,8 +452,8 @@ describe('Settings reachability: markers the generic rules cannot infer (spec §
     const condition = (el: MarkupElement, name: string, on: string) =>
       attr(el, name)?.raw.match(new RegExp(`^${name}=\\{\\s*(.+?)\\s*\\?\\s*${on}\\s*:\\s*undefined\\s*\\}$`))?.[1]
     for (const rel of [
-      'src/routes/app/settings/changelog/+page.svelte',
-      'src/routes/app/settings/catalog/collections/+page.svelte',
+      'src/routes/app/settings/about/changelog/+page.svelte',
+      'src/routes/app/settings/library/collections/+page.svelte',
       'src/lib/components/catalog/NuvioCloudSettings.svelte',
     ]) {
       const stops = scanOf(rel).elements.filter((el) => {
@@ -484,19 +484,20 @@ describe('Settings reachability: markers the generic rules cannot infer (spec §
     expect(functionSource(scan.source, 'moveKeepingFocus')).toMatch(/\bmoveRowKeepingFocus\(/)
   })
 
-  it('answers the Anime shader prompt from the pad and hands focus back to Video quality', () => {
-    const scan = scanOf('src/routes/app/settings/player/+page.svelte')
+  it('answers the Anime shader prompt from the pad and hands focus back to Rendering preset', () => {
+    const scan = scanOf('src/routes/app/settings/playback/+page.svelte')
     for (const answer of ['answerAnimeConsent(true)', 'answerAnimeConsent(false)']) {
       const button = scan.elements.find((el) => el.name === 'button' && (attr(el, 'onclick')?.raw ?? '').includes(answer))
       expect(button, answer).toBeDefined()
       expect(staticAttr(button!, 'type'), answer).toBe('button')
       expect(hasAttr(button!, 'data-focusable'), answer).toBe(true)
     }
-    const field = scan.elements.find((el) => attr(el, 'bind:this')?.raw === 'bind:this={qualityField}')
-    expect(field?.name).toBe('label')
+    const row = scan.elements.find((el) => attr(el, 'bind:this')?.raw === 'bind:this={qualityRow}')
+    expect(row?.name).toBe('div')
     // No component mount in vitest: the answer hands focus back through handFocusBack (focus when
     // a restore is allowed, otherwise a hint for the first pad press; focus-memory.test.ts).
     expect(functionSource(scan.source, 'answerAnimeConsent')).toMatch(/\bhandFocusBack\(/)
+    expect(functionSource(scan.source, 'answerAnimeConsent')).toContain('button[aria-haspopup="listbox"]')
   })
 })
 
@@ -627,10 +628,11 @@ describe('reachability scanner self-tests', () => {
   it('reports the line of each element and its nearest-first ancestors', () => {
     const file = fromRepo('src/lib/components/settings/SettingsNav.svelte')
     const lines = readSvelteSource(file).split('\n')
-    const railLink = markupElements(file).find((el) => el.name === 'a' && el.ancestors[0]?.name === 'nav')
-    expect(railLink?.ancestors.map((el) => el.name)).toEqual(['nav'])
+    // The desktop rail's link, inside its group box (the controller rail's sit straight in the nav).
+    const railLink = markupElements(file).find((el) => el.name === 'a' && attr(el, 'data-section')?.raw === 'data-section={it.id}')
+    expect(railLink?.ancestors.map((el) => el.name)).toEqual(['div', 'nav'])
     // Each reported line is where that element's tag opens, whatever the file's length.
-    const [nav] = railLink!.ancestors
+    const nav = railLink!.ancestors[1]
     expect(lines[nav.line - 1]).toMatch(/^\s*<nav\b/)
     expect(lines[railLink!.line - 1]).toMatch(/^\s*<a\b/)
     expect(railLink!.line).toBeGreaterThan(nav.line)

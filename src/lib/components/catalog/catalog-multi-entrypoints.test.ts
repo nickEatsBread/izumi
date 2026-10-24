@@ -9,7 +9,7 @@ describe('multi-platform catalog entry points', () => {
   const layout = read('../../../routes/app/+layout.svelte')
   const search = read('../../../routes/app/search/+page.svelte')
   const sidebar = read('../shell/Sidebar.svelte')
-  const catalogSettings = read('../../../routes/app/settings/catalog/+page.svelte')
+  const catalogSettings = read('../../../routes/app/settings/library/+page.svelte')
   const catalogStore = read('../../settings/catalog.ts')
 
   it('removes the horizontal platform tabs from Home and Search', () => {
@@ -117,7 +117,7 @@ describe('multi-platform catalog entry points', () => {
     for (const file of ['./CatalogHome.svelte', './CatalogSearchPage.svelte', './CatalogMediaDetail.svelte']) {
       const source = read(file)
       expect(source).toContain('reason instanceof CatalogConfigurationError')
-      expect(source).toContain('href="/app/settings/catalog"')
+      expect(source).toContain('href="/app/settings/library"')
       expect(source).toContain('Add TMDB token')
     }
     const mergedHome = read('./MergedCatalogHome.svelte')

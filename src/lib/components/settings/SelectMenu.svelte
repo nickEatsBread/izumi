@@ -7,10 +7,14 @@
   import { gameMode } from '$lib/player/session'
   import { controllerMode } from '$lib/nav/input'
   import { navLayer } from '$lib/nav/overlay'
+  import { setFocusHint } from '$lib/nav/focus-hint'
   import type { NavLayerCloseReason } from '$lib/nav/layers'
   import { rootZoom } from '$lib/components/cards/preview-pos'
   import { menuPlacement } from '$lib/components/menu-placement'
   import { triggerOpensOnKey } from '$lib/nav'
+  import { portal } from '$lib/util/portal'
+  import { settingsControllerMode } from '$lib/settings/surface'
+  import { centrePickerValue, openingOption, stepMenuOption } from '$lib/settings/controller-picker'
 
   export type SelectOption = {
     value: string
@@ -22,6 +26,7 @@
 
   let {
     value = $bindable(),
+    open = $bindable(false),
     options,
     onChange,
     className = '',
@@ -31,8 +36,11 @@
     separator = '·',
     columns = false,
     filter,
+    variant = 'field',
   }: {
     value: string
+    /** Bindable, so a settings row can open its own picker. */
+    open?: boolean
     options: SelectOption[]
     onChange?: (value: string) => void
     className?: string
@@ -50,11 +58,15 @@
     /** A search page filter: the trigger is the `search.filter` hook with this name in `data-filter`,
      *  and `data-active` while an option other than the first (the default) is chosen. */
     filter?: string
+    /** `field` (default): the filled input-style trigger. `inline`: a borderless, right-aligned muted
+     *  value and caret for a settings row (SettingsChoiceRow). Same menu, keys and phone sheet. */
+    variant?: 'field' | 'inline'
   } = $props()
 
   let root: HTMLDivElement
   let trigger: HTMLButtonElement
-  let open = $state(false)
+  // The controller picker's visible heading names its dialog and listbox (aria-labelledby).
+  const pickerTitle = $props.id()
   let query = $state('')
   let searchInput = $state<HTMLInputElement>()
   const filteredOptions = $derived(options.filter(option => !query || `${option.label} ${option.value}`.toLowerCase().includes(query.toLowerCase())))
@@ -67,6 +79,8 @@
   // the bottom, unreachable, with no page scroll to bring it back. menuPlacement flips it up and
   // caps its height to the room on whichever side it chose (see that module for the zoom caveat).
   let menu = $state<HTMLDivElement>()
+  // The controller picker's dimmed backdrop: a tap on it dismisses on click (see the template).
+  let backdrop = $state<HTMLDivElement>()
   let placement = $state<'down' | 'up'>('down')
   let maxHeight = $state(260)
   // Viewport offsets in LOCAL px for the fixed mobile panel (same pattern as MultiSelect): the
@@ -81,7 +95,8 @@
 
   /** @param content the menu's natural height in local px, once it has rendered. */
   function measure(content?: number) {
-    if (!trigger) return
+    // The centred controller picker never reads the placement: skip the layout reads.
+    if (!trigger || $settingsControllerMode) return
     const rect = trigger.getBoundingClientRect()
     const zoom = rootZoom()
     const fit = menuPlacement({
@@ -106,9 +121,10 @@
     await tick()
     // Now that it exists, re-decide against the real content height rather than the estimate.
     measure(menu?.scrollHeight)
-    const current = root.querySelector<HTMLElement>(`[data-select-value="${CSS.escape(value)}"]`)
-    const first = root.querySelector<HTMLElement>('[data-select-value]:not(:disabled)')
-    ;(searchable && !controllerUi ? searchInput : current ?? first)?.focus({ preventScroll: true })
+    // The controller picker is portalled to <body>, so options are looked up in the open panel.
+    const list: ParentNode = menu ?? root
+    ;(searchable && !controllerUi ? searchInput : openingOption(list, value))?.focus({ preventScroll: true })
+    if ($settingsControllerMode) centrePickerValue(list, value)
     // Decision 7: the searchable language menu is a typing-only launcher, so a controller gets the
     // built-in keyboard for its search at once. A no-op for mouse, touch and keyboard users.
     if (searchable && searchInput) openOskForField(searchInput)
@@ -148,17 +164,17 @@
     // This handler moves focus itself; stop the arrow here so the d-pad engine's window listener
     // does not move it a second time.
     event.stopPropagation()
-    const items = [...root.querySelectorAll<HTMLButtonElement>('[data-select-value]:not(:disabled)')]
-    const current = items.indexOf(document.activeElement as HTMLButtonElement)
-    const step = event.key === 'ArrowDown' ? 1 : -1
-    items[(current + step + items.length) % items.length]?.focus({ preventScroll: true })
+    // Which is also why the picker's capped list must scroll to the new option itself.
+    stepMenuOption(menu ?? root, event.key === 'ArrowDown' ? 1 : -1, $settingsControllerMode)
   }
 
   onMount(() => {
     const closeOutside = (event: PointerEvent) => {
       // A tap on the on-screen keyboard types into this menu's search; it is not a press outside.
       if (isOskTarget(event.target)) return
-      if (open && !root.contains(event.target as Node)) open = false
+      // The picker's backdrop closes on its own click: a touch pointerdown fires at touchstart, and a
+      // picker removed then lets the emulated click that follows land on the settings row behind it.
+      if (open && !root.contains(event.target as Node) && !backdrop?.contains(event.target as Node)) open = false
     }
     const closeOnBlur = () => { open = false }
     window.addEventListener('pointerdown', closeOutside, true)
@@ -172,7 +188,7 @@
   // The trigger moves under an open menu when the page scrolls (including the scroll the keyboard
   // shoves the view up by on Android), so re-decide the side rather than leave it stale.
   $effect(() => {
-    if (!open) return
+    if (!open || $settingsControllerMode) return
     const remeasure = () => measure(menu?.scrollHeight)
     window.addEventListener('resize', remeasure)
     window.addEventListener('scroll', remeasure, true)
@@ -183,10 +199,13 @@
   })
 </script>
 
+{#snippet searchBox()}
+  <input bind:this={searchInput} bind:value={query} type="search" data-focusable aria-label={`Search ${ariaLabel ?? 'options'}`} placeholder="Search languages…" class="sticky top-0 mb-1 w-full rounded-md border border-border bg-background px-3 py-3 text-sm outline-none focus:border-foreground" />
+{/snippet}
+
 {#snippet optionList()}
-  {#if searchable}
-    <input bind:this={searchInput} bind:value={query} type="search" data-focusable aria-label={`Search ${ariaLabel ?? 'options'}`} placeholder="Search languages…" class="sticky top-0 mb-1 w-full rounded-md border border-border bg-background px-3 py-3 text-sm outline-none focus:border-foreground" />
-  {/if}
+  <!-- The controller picker draws the search box above its capped list instead (see there). -->
+  {#if searchable && !$settingsControllerMode}{@render searchBox()}{/if}
   <!-- Conditional listbox is programmatically focusable only; never a positive tab stop. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div role={searchable ? 'listbox' : undefined} aria-label={searchable ? ariaLabel : undefined} tabindex={searchable ? -1 : undefined}>
@@ -221,19 +240,60 @@
     data-label={filter ? ariaLabel : undefined}
     data-active={(filter && value !== options[0]?.value) || undefined}
     data-focusable
+    data-nav-measure-row={variant === 'inline' || undefined}
     aria-label={ariaLabel}
-    aria-haspopup="listbox"
+    aria-haspopup={$settingsControllerMode ? 'dialog' : 'listbox'}
     aria-expanded={open}
-    class="flex min-h-11 w-full items-center justify-between gap-3 rounded-md bg-input px-3 py-2.5 text-left text-base sm:min-h-0 sm:py-2 sm:text-sm"
+    class={variant === 'inline'
+      ? 'flex min-h-11 max-w-[16rem] items-center justify-end gap-1.5 rounded-md px-2 py-2 text-right text-sm text-muted-foreground transition-colors hover:text-foreground sm:min-h-0 sm:py-1.5'
+      : 'flex min-h-11 w-full items-center justify-between gap-3 rounded-md bg-input px-3 py-2.5 text-left text-base sm:min-h-0 sm:py-2 sm:text-sm'}
     onclick={() => void setOpen(!open)}
     onkeydown={onTriggerKeydown}
   >
-    <span class="truncate">{selected?.label ?? value}{#if selected?.description}<span class="ml-1.5 text-muted-foreground">{#if separator}<span class="mr-1.5">{separator}</span>{/if}{selected.description}</span>{/if}</span>
+    <span class="truncate">{selected?.label ?? value}{#if selected?.description && variant !== 'inline'}<span class="ml-1.5 text-muted-foreground">{#if separator}<span class="mr-1.5">{separator}</span>{/if}{selected.description}</span>{/if}</span>
     <ChevronDown size={15} class="shrink-0 transition-transform {open ? 'rotate-180' : ''}" />
   </button>
 
   {#if open}
-    {#if $isMobile}
+    {#if $settingsControllerMode}
+      <!-- Controller mode (spec §3.5, NuvioTV's single-choice dialog): a centred picker 420 px wide
+           whose list stops at 320 px, opened on the current value. A picks, saves and closes; B
+           closes it unchanged (the nav layer). Portalled to <body>, so a section's cross-fade
+           transform can never become its containing block. z-[165]: above every dialog that can
+           host a SelectMenu (first-run setup is 160), below the native picker sheet (175) and the
+           on-screen keyboard (190). data-select-picker-backdrop lets a host that closes on outside
+           presses (ListEditor's popover) treat a press on the picker as inside it. A backdrop tap
+           leaves the trigger as a focus hint: the next d-pad press resumes there, with no ring
+           painted for the touch. -->
+      <div use:portal bind:this={backdrop} class="fixed inset-0 z-[165] grid place-items-center bg-black/60 p-4" role="presentation"
+           data-select-picker-backdrop
+           onclick={(event) => { if (event.target === event.currentTarget) { open = false; setFocusHint(trigger) } }}>
+        <div
+          bind:this={menu}
+          role="dialog"
+          aria-modal="true"
+          tabindex="-1"
+          aria-labelledby={ariaLabel ? pickerTitle : undefined}
+          aria-label={ariaLabel ? undefined : 'Options'}
+          data-nav-trap
+          data-nav-escape
+          data-nav-scroll-container
+          data-select-picker
+          use:navLayer={{ kind: 'select-menu', onClose: closeMenu, initialFocus: 'none', returnFocus: 'none' }}
+          class="w-[23.333rem] max-w-full rounded-2xl border border-border bg-card p-3 text-card-foreground shadow-2xl"
+          onkeydown={onMenuKeydown}
+        >
+          {#if ariaLabel}<h2 id={pickerTitle} class="truncate px-3 pb-2 text-base font-bold">{ariaLabel}</h2>{/if}
+          <!-- The search box sits above the capped list, not sticky inside it: a row revealed at the
+               list's top edge would otherwise scroll in behind it. A searchable list carries its
+               own listbox inside the snippet. -->
+          {#if searchable}{@render searchBox()}{/if}
+          <div data-nav-scroll-container role={searchable ? undefined : 'listbox'} aria-labelledby={searchable || !ariaLabel ? undefined : pickerTitle} class="max-h-[17.778rem] overflow-y-auto overscroll-contain">
+            {@render optionList()}
+          </div>
+        </div>
+      </div>
+    {:else if $isMobile}
       <!-- Mobile: a viewport-anchored sheet (same pattern as MultiSelect). The absolutely-positioned
            desktop dropdown reads as a desktop widget on a phone and can be clipped by a narrow
            parent; the fixed panel gets the full width minus margins. -->
@@ -280,7 +340,7 @@
         data-nav-escape
         data-nav-scroll-container
         use:navLayer={{ kind: 'select-menu', onClose: closeMenu, initialFocus: 'none', returnFocus: 'none' }}
-        class="absolute left-0 z-[80] min-w-full overflow-y-auto overscroll-contain rounded-md border border-border bg-background p-1 text-foreground shadow-xl
+        class="absolute {variant === 'inline' ? 'right-0' : 'left-0'} z-[80] min-w-full overflow-y-auto overscroll-contain rounded-md border border-border bg-background p-1 text-foreground shadow-xl
           {placement === 'down' ? 'top-[calc(100%+0.25rem)]' : 'bottom-[calc(100%+0.25rem)]'}"
         style="max-height:{maxHeight}px"
         onkeydown={onMenuKeydown}

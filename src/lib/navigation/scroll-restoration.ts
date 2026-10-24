@@ -11,10 +11,18 @@ export function rememberScroll(url: URL) {
   try { sessionStorage.setItem(key(url), String(window.scrollY)) } catch { /* unavailable */ }
 }
 
+/** Drop a remembered position, so the next restore of `url` starts at the top. */
+export function forgetScroll(url: URL) {
+  try { sessionStorage.removeItem(key(url)) } catch { /* unavailable */ }
+}
+
 export function restoreScroll(url: URL) {
   cleanupPendingRestore?.()
   cleanupPendingRestore = null
   const generation = ++restoreGeneration
+  // A `#id` on the page (a settings search hit's block) was scrolled into view by SvelteKit just
+  // before afterNavigate; resetting or restoring here would undo it.
+  if (url.hash && document.getElementById(decodeURIComponent(url.hash.slice(1)))) return
   let value: string | null = null
   try { value = sessionStorage.getItem(key(url)) } catch { /* unavailable */ }
   if (value == null) {

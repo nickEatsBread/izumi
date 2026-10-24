@@ -1,0 +1,43 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { describe, expect, it } from 'vitest'
+
+const source = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.url)), 'utf8')
+const catalogPage = readFileSync(fileURLToPath(new URL('../+page.svelte', import.meta.url)), 'utf8')
+const appearancePage = readFileSync(fileURLToPath(new URL('../../appearance/+page.svelte', import.meta.url)), 'utf8')
+
+describe('Home row customization screen', () => {
+  it('is entered from Home and library rather than general Appearance settings', () => {
+    expect(catalogPage).toContain('/app/settings/library/home?provider=')
+    expect(catalogPage).toContain('Customize Home')
+    expect(appearancePage).not.toContain('DEFAULT_HOME_ROWS')
+    expect(appearancePage).not.toContain('homeRowOrder')
+  })
+
+  it('switches providers and separates ordered and available rows', () => {
+    expect(source).toContain('role="tablist"')
+    expect(source).toContain('On your Home')
+    expect(source).toContain('Available rows')
+    expect(source).toContain('move(row.id, -1)')
+    expect(source).toContain('move(row.id, 1)')
+    expect(source).toContain('add(row.id)')
+    expect(source).toContain('hide(row.id)')
+  })
+
+  it('customizes Merged Home as an independent target', () => {
+    expect(source).toContain("selection: 'merged' as CatalogHomeTarget")
+    expect(source).toContain("selection === 'merged'")
+    expect(source).toContain('mergedCatalogHomeRowOptions($catalogProviders')
+    expect(source).toContain("label: 'Merged'")
+  })
+
+  it('offers a per-provider reset', () => {
+    expect(source).toContain('resetCatalogHomeLayout(selected)')
+    expect(source).toContain('pruneHomeBlocks()')
+  })
+
+  it('keeps Home blocks in its row list so a move, hide or add here cannot drop them', () => {
+    expect(source).toContain("blockRowOptions(selected, $catalogHomeLayouts, $homeBlocks)")
+    expect(source).toContain("import { blockRowOptions, pruneHomeBlocks } from '$lib/home/block-rows'")
+  })
+})

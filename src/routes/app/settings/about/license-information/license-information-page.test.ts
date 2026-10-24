@@ -8,9 +8,9 @@ const about = readFileSync(fileURLToPath(new URL('../+page.svelte', import.meta.
 const layout = readFileSync(fileURLToPath(new URL('../../+layout.svelte', import.meta.url)), 'utf8')
 
 describe('About license information', () => {
-  it('shows a simple License Information hyperlink beneath the information card', () => {
+  it('links License information from the About page as a sub-page row', () => {
     expect(about).toContain('href="/app/settings/about/license-information"')
-    expect(about).toContain('>License Information</a>')
+    expect(about).toContain('title="License information"')
     expect(about).not.toContain('Credits')
     expect(about).not.toContain('This product uses the TMDB API')
   })
@@ -24,7 +24,7 @@ describe('About license information', () => {
   it('titles the nested route before the broader About prefix', () => {
     // The phone header takes its title from the shared route table, where the longest prefix wins.
     expect(layout).toContain('settingsPageTitle($page.url.pathname)')
-    expect(settingsPageTitle('/app/settings/about/license-information')).toBe('License Information')
+    expect(settingsPageTitle('/app/settings/about/license-information')).toBe('License information')
     expect(settingsPageTitle('/app/settings/about')).toBe('About')
   })
 })

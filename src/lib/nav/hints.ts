@@ -1,13 +1,14 @@
 /** A prompt in the button-hint bar; `l2r2` is the page-tab trigger pair. */
-export type HintButton = 'a' | 'x' | 'b' | 'l2r2' | 'start'
+export type HintButton = 'a' | 'x' | 'y' | 'b' | 'l2r2' | 'start'
 export interface Hint { button: HintButton; label: string }
 /** `dialog`: a dialog (`[data-nav-trap]`) is open, whether or not focus made it inside. `back`: what
- *  the layered Back model says B does next (`data-nav-back-hint` on `<html>`), when it says. */
-export interface HintContext { home: boolean; pageTabs: boolean; dialog?: boolean; back?: string }
+ *  the layered Back model says B does next (`data-nav-back-hint` on `<html>`), when it says. `y`:
+ *  what Y does on this page (`data-nav-hint-y` on `<html>`: Settings' Search in controller mode). */
+export interface HintContext { home: boolean; pageTabs: boolean; dialog?: boolean; back?: string; y?: string }
 
 const BACK_LABELS: Record<string, string> = { close: 'Close', parent: 'Back', rail: 'Categories', leave: 'Back', exit: 'Exit' }
 
-const ORDER: HintButton[] = ['a', 'x', 'b', 'l2r2', 'start']
+const ORDER: HintButton[] = ['a', 'x', 'y', 'b', 'l2r2', 'start']
 const isContinue = (element: Element) => element.matches('[data-part="card"][data-family="continue"]')
 
 /** A plain control's own name ("Watch Now", "Share"), when it is short enough to read as a prompt. */
@@ -38,6 +39,7 @@ export function hintsFor(focused: Element | null, context: HintContext): Hint[] 
     const x = element.dataset.hintX ?? (isContinue(element) ? 'Remove' : undefined)
     if (x) labels.x = x
   }
+  if (context.y && !dialog) labels.y = context.y
   labels.b = context.back ? BACK_LABELS[context.back] ?? 'Back' : dialog ? 'Close' : context.home ? 'Exit' : 'Back'
   if (context.pageTabs) labels.l2r2 = 'Tabs'
   if (!dialog) labels.start = 'Menu'
