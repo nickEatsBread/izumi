@@ -55,7 +55,7 @@ describe('Home and library section', () => {
 
   it('renders the registry subcategories in order with Advanced last', () => {
     const ids = subcategories.map((sub) => sub.id)
-    expect(ids).toEqual(['home', 'layouts', 'ratings', 'notifications', 'history', 'scenes', 'features', 'advanced'])
+    expect(ids).toEqual(['home', 'screens', 'layouts', 'ratings', 'notifications', 'history', 'scenes', 'features', 'advanced'])
     expect(ids).toEqual(settingsSection('library').subcategories.map((sub) => sub.id))
   })
 
