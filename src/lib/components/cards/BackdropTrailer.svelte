@@ -2,7 +2,7 @@
   // The API 6 backdrop trailer: after `dwell` ms, the title's YouTube trailer plays once, muted, over the
   // artwork (fading in and out over 500 ms), then the artwork returns. Desktop only; never under reduced
   // motion, data saver, the player, a hidden window or the Theme trailers setting off. `onended(natural)`
-  // fires once for a trailer that started playing: natural = it reached its end. A trailer that has not started 10 s after it mounted
+  // fires once for a trailer that started playing: natural = it reached its end. A trailer that has not shown 15 s after it mounted
   // counts as failed. Its mute state is the backdrop one, so hover previews never unmute it. It holds
   // while the full trailer dialog or a hover-preview trailer is up, so two videos never play at once.
   import { untrack } from 'svelte'
@@ -44,7 +44,7 @@
     if (!on || !id || finished.has(id)) return
     const dwellTimer = setTimeout(() => {
       mounted = true
-      startTimer = setTimeout(() => onEnd(false), 10_000)
+      startTimer = setTimeout(() => onEnd(false), 15_000)
     }, untrack(() => dwell))
     return () => {
       clearTimeout(dwellTimer)

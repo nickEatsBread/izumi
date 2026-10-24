@@ -36,11 +36,39 @@
   let poll: ReturnType<typeof setInterval> | undefined
   let ended = false // YouTube can repeat ENDED; a play-once trailer reports it once
   const keyboardOwner = Symbol('hover-trailer')
+  // YouTube's player draws its own controls (a play/pause button on a dark scrim) until 4 s after
+  // every start of playback, the first one and each restart, and while it buffers or has ended,
+  // whatever `controls=0` says. So the picture fades in once playback has run 4.5 s, fades out just
+  // before the end, and drops at once when playback stops early (a stall). `playing` (the mute
+  // button, `onplaying`) waits for the first reveal.
+  const CONTROLS_SETTLE_MS = 4500
+  let shown = $state(false)
+  let fading = $state(false) // the opacity change animates: a reveal, or the fade before the end
+  let duration = 0
+  let revealTimer: ReturnType<typeof setTimeout> | undefined
+  function settle(running: boolean) {
+    if (!running) {
+      clearTimeout(revealTimer)
+      revealTimer = undefined
+      fading = false
+      shown = false
+      return
+    }
+    if (shown || revealTimer) return
+    revealTimer = setTimeout(() => {
+      revealTimer = undefined
+      fading = true
+      shown = true
+      if (!playing) { playing = true; onplaying?.() }
+    }, CONTROLS_SETTLE_MS)
+  }
 
   $effect(() => {
     const videoId = id
     let cancelled = false
     embed = undefined
+    settle(false)
+    duration = 0
     playing = false
     dead = false
     ended = false
@@ -84,6 +112,7 @@
     if (dead) return
     dead = true
     clearInterval(poll)
+    settle(false)
     onended?.(false)
   }
   function send(func: string, args: unknown[] = []) {
@@ -136,15 +165,22 @@
       payload = e.data
     }
     if (typeof payload !== 'string') return
-    let json: { event?: string; info?: number | { playerState?: number; videoData?: { isPlayable?: boolean } } }
+    let json: { event?: string; info?: number | { playerState?: number; currentTime?: number; duration?: number; videoData?: { isPlayable?: boolean } } }
     try { json = JSON.parse(payload) } catch { return }
     const info = typeof json.info === 'object' ? json.info : undefined
+    const state = json.event === 'infoDelivery' || json.event === 'initialDelivery' ? info?.playerState : undefined
     if (json.event === 'onReady') { send('setVolume', [30]); clearInterval(poll) }
     if (json.event === 'onError') fail()
     if (json.event === 'initialDelivery' && info?.videoData?.isPlayable === false) fail()
-    if (json.event === 'infoDelivery' && info?.playerState === 1 && !playing) { playing = true; onplaying?.() }
-    // ENDED (0): restart from the top instead of showing YouTube's end screen, or, playing once, fade
-    // out (the iframe's opacity transition) before the end screen can show.
+    // YouTube turns a caption track on by itself (no embed parameter stops it) and loads the captions
+    // module again on later API changes, so it is unloaded each time.
+    if (json.event === 'apiInfoDelivery' || state === 1) send('unloadModule', ['captions'])
+    if (typeof state === 'number') settle(state === 1)
+    if (info?.duration) duration = info.duration
+    // The reported duration is rounded up to the second and the time arrives every ~0.3 s: 2 s of margin.
+    if (shown && duration && (info?.currentTime ?? 0) >= duration - 2) { fading = true; shown = false }
+    // ENDED (0), the picture already faded out: restart from the top instead of showing YouTube's end
+    // screen, or, playing once, report the end.
     if (json.event === 'infoDelivery' && info?.playerState === 0) {
       if (loop) { send('seekTo', [0, true]); send('playVideo') } else if (!ended) { ended = true; playing = false; onended?.(true) }
     }
@@ -173,6 +209,7 @@
       const at = activeKeyboardTrailers.indexOf(keyboardOwner)
       if (at >= 0) activeKeyboardTrailers.splice(at, 1)
       clearInterval(poll)
+      clearTimeout(revealTimer)
     }
   })
 </script>
@@ -185,7 +222,7 @@
     allow="autoplay"
     referrerpolicy="strict-origin-when-cross-origin"
     {src}
-    class="pointer-events-none absolute {fit === 'cover' ? 'left-1/2 top-1/2 -translate-x-1/2' : 'left-0 top-1/2 h-[calc(100%+200px)] w-full'} -translate-y-1/2 border-0 transition-opacity duration-500 {playing ? 'opacity-100' : 'opacity-0'}"
+    class="pointer-events-none absolute {fit === 'cover' ? 'left-1/2 top-1/2 -translate-x-1/2' : 'left-0 top-1/2 h-[calc(100%+200px)] w-full'} -translate-y-1/2 border-0 transition-opacity {fading ? 'duration-500' : 'duration-0'} {shown ? 'opacity-100' : 'opacity-0'}"
     style={fit === 'cover' ? COVER_STYLE : undefined}
   ></iframe>
 {/snippet}
