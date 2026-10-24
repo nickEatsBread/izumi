@@ -237,18 +237,60 @@ describe('anchored rows', () => {
     expect(windowScrolls).toEqual([])
   })
 
+  // Row a's cards, 18 px apart from `by` px of scroll, card `wide` grown to a theme's 905 px tile.
+  const layOut = (wide: number, by: number) => {
+    let left = 32 - by
+    for (const [i, card] of [...track('a').children].entries()) {
+      const width = i === wide ? 905 : 312
+      card.setAttribute('data-rect', `${left},450,${width},280`)
+      left += width + 18
+    }
+  }
+  // The CSS transitions row a reports running, as [card, property]; jsdom has no Web Animations.
+  const running = (...transitions: [string, string][]) => {
+    track('a').getAnimations = () => transitions.map(([label, transitionProperty]) =>
+      ({ transitionProperty, effect: { target: button(label) } })) as unknown as Animation[]
+  }
+  const widthEnd = () => button('a1').dispatchEvent(new TransitionEvent('transitionend', { propertyName: 'width', bubbles: true }))
+
+  it('aims for where the cards before the focused one settle once their width transitions end', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    layOut(0, 0)
+    // a0 shrinks back to a resting card's 312 px as a1 grows.
+    running(['a0', 'width'], ['a1', 'width'])
+    button('a0').focus()
+    press('ArrowRight')
+    frame(0)
+    frame(300)
+    // Measured with a0 still 905 px wide (923), yet heading for a1's settled place from the start.
+    expect(track('a').scrollLeft).toBeCloseTo(330 * reference(300 / ANCHOR_SLIDE_MS), 6)
+    running()
+    layOut(1, track('a').scrollLeft)
+    widthEnd()
+    frame(ANCHOR_SLIDE_MS)
+    expect(track('a').scrollLeft).toBe(330)
+    expect(Math.max(...trackScrolls.get(track('a'))!.map((options) => options.left!))).toBe(330)
+    // On to a2: a0 rests, so only a1's shrink counts (1253 measured, 660 settled).
+    layOut(1, 330)
+    running(['a1', 'width'], ['a2', 'width'])
+    press('ArrowRight')
+    frame(1000)
+    frame(1000 + ANCHOR_SLIDE_MS)
+    expect(track('a').scrollLeft).toBe(660)
+    // Back left: a2 shrinks after a1, and a1's own growth never moves its left edge.
+    layOut(2, 660)
+    running(['a1', 'width'], ['a2', 'width'])
+    press('ArrowLeft')
+    frame(2000)
+    frame(2000 + ANCHOR_SLIDE_MS)
+    expect(track('a').scrollLeft).toBe(330)
+  })
+
   it("re-anchors when a theme's card-width transition ends, then stops listening", () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    // Row a's cards, 18 px apart from `by` px of scroll, card `wide` grown to a theme's 905 px tile.
-    const layOut = (wide: number, by: number) => {
-      let left = 32 - by
-      for (const [i, card] of [...track('a').children].entries()) {
-        const width = i === wide ? 905 : 312
-        card.setAttribute('data-rect', `${left},450,${width},280`)
-        left += width + 18
-      }
-    }
     layOut(0, 0)
+    // a0's only running transition is not of its width, so no correction.
+    running(['a0', 'opacity'])
     button('a0').focus()
     press('ArrowRight')
     expect(document.activeElement).toBe(button('a1'))
@@ -257,7 +299,7 @@ describe('anchored rows', () => {
     // Measured while a0 was still wide, so heading for 923, past a1's settled place.
     expect(track('a').scrollLeft).toBeGreaterThan(330)
     // The transition ends: a0 is back to 312 and a1 is 905.
-    const widthEnd = () => button('a1').dispatchEvent(new TransitionEvent('transitionend', { propertyName: 'width', bubbles: true }))
+    running()
     layOut(1, track('a').scrollLeft)
     widthEnd()
     frame(400)

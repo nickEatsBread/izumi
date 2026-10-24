@@ -411,13 +411,36 @@ const anchorSettles = new WeakMap<HTMLElement, () => void>()
 const ANCHOR_SETTLE_PROPS = new Set(['width', 'min-width', 'max-width', 'flex-basis'])
 const ANCHOR_SETTLE_MS = 1000
 
+/** Px the cards before `item` will lose once their running width transitions end. None of them is
+ *  focused, so each heads back to the width of a card in the track that is not animating; with no
+ *  such card there is nothing to aim for. `transitionProperty` is only on a CSSTransition. */
+function settlingShrink(item: HTMLElement, track: HTMLElement): number {
+  const moving = new Set<Element>()
+  for (const animation of track.getAnimations?.({ subtree: true }) ?? []) {
+    const target = (animation.effect as KeyframeEffect | null)?.target
+    if (target && ANCHOR_SETTLE_PROPS.has((animation as CSSTransition).transitionProperty)) moving.add(trackItem(target as HTMLElement, track))
+  }
+  if (!moving.size) return 0
+  const cards = [...track.children]
+  const rest = cards.find((card) => card !== item && !moving.has(card))
+  if (!rest) return 0
+  const restWidth = rest.getBoundingClientRect().width
+  let shrink = 0
+  for (const card of cards) {
+    if (card === item) break
+    if (moving.has(card)) shrink += card.getBoundingClientRect().width - restWidth
+  }
+  return shrink
+}
+
 /** Anchored rows (`data-row-focus="anchor"`, a theme's `rows.*.focus`; the Netflix TV model): a
  *  sideways move slides the track until the focused card sits where the first card rests (clamped
  *  at the track's ends), and entering the row snaps its top to its scroll-margin-top, or 16 px under
  *  the top bar when it has none. `instant`: a held repeat or reduced motion jumps. A theme may
  *  animate the focused card's width (a portrait tile growing to 16:9), so the slide is measured
- *  while the previous card is still wide: for a second, each width transition ending in the track
- *  re-measures and slides the rest of the way. */
+ *  while the previous card is still wide: it aims for where that card's shrink will leave the
+ *  focused one, and for a second each width transition ending in the track re-measures and slides
+ *  the rest of the way. */
 function revealAnchored(el: HTMLElement, track: HTMLElement, row: HTMLElement, vertical: boolean, instant: boolean): void {
   if (vertical) {
     const to = anchorScrollTop({
@@ -430,7 +453,7 @@ function revealAnchored(el: HTMLElement, track: HTMLElement, row: HTMLElement, v
     return
   }
   const measure = () => anchorScrollLeft({
-    cardLeft: trackItem(el, track).getBoundingClientRect().left,
+    cardLeft: trackItem(el, track).getBoundingClientRect().left - settlingShrink(trackItem(el, track), track),
     trackLeft: track.getBoundingClientRect().left + track.clientLeft,
     paddingLeft: parseFloat(getComputedStyle(track).paddingLeft) || 0,
     scrollLeft: track.scrollLeft,
