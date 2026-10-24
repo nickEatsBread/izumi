@@ -44,22 +44,10 @@ describe('SelectMenu in controller mode (spec §3.5)', () => {
     expect(source).toContain('data-select-picker')
   })
 
-  it('lets the d-pad measure an inline trigger by its row, and lights that row in controller mode', () => {
-    // nav `navRect` reads this marker; a field-variant trigger keeps its own box.
+  it('lets the d-pad measure an inline trigger by its row', () => {
+    // nav `navRect` reads this marker; a field-variant trigger keeps its own box. The row highlight
+    // it gets in controller mode is checked against app.css in settings-row-focus.test.ts.
     expect(source).toContain("data-nav-measure-row={variant === 'inline' || undefined}")
-    const css = read('../../../app.css')
-    // One rule set lights the row for an inline trigger and for any control on a row's [data-nav-line].
-    const lit = '[data-setting-key]:has([data-nav-line] [data-focusable]:focus, [data-nav-measure-row]:focus)'
-    expect(css).toContain(`.gamemode ${lit} { box-shadow: var(--izumi-safe-focus-ring); }`)
-    expect(css).toContain(`.controller-mode ${lit} {\n  box-shadow: var(--izumi-safe-focus-ring), 0 8px 24px rgb(0 0 0 / 0.4);`)
-    expect(css).toContain(`.tv-mode ${lit} {\n  box-shadow: 0 0 0 4px #fff, 0 8px 28px rgb(0 0 0 / 0.45);`)
-    expect(css).toContain(`[data-settings-controller] ${lit} { background-color: hsl(var(--foreground) / 0.1); }`)
-    expect(css).not.toContain('[data-setting-key]:has([data-nav-measure-row]:focus)')
-    // The control's own ring goes. The inline trigger also loses its fill, after (and as specific as)
-    // the row-fill rule; a control on a line keeps it, so two controls on one line stay apart.
-    expect(css).toContain(':is(.gamemode, .controller-mode, .tv-mode) :is([data-setting-key] [data-nav-line] [data-focusable], [data-focusable][data-nav-measure-row]):focus { box-shadow: none; }')
-    const suppress = css.indexOf(':is(.gamemode, .controller-mode, .tv-mode) [data-focusable][data-nav-measure-row]:focus { background-color: transparent; }')
-    expect(suppress).toBeGreaterThan(css.indexOf('[data-settings-controller] [data-settings-subcategory-body] [data-focusable]:focus'))
   })
 
   it('is a modal dialog whose list is the listbox, not a listbox around a heading', () => {
