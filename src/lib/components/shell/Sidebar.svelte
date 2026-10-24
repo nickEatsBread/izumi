@@ -37,6 +37,8 @@
   import { incognito, toggleIncognito } from '$lib/stores/incognito'
   import { offlineMode } from '$lib/stores/offline'
   import { catalogScreen, catalogSwitcherPlacement, enabledCatalogScreens, resolveCatalogSwitcherPlacement } from '$lib/settings/catalog'
+  import { interfaceMode } from '$lib/settings/interface-mode'
+  import { searchModeNav } from '$lib/settings/nav-rules'
   import * as h from '$lib/haptics'
   import { m } from '$lib/paraglide/messages.js'
   import { themePresentation } from '$lib/themes/runtime'
@@ -57,7 +59,7 @@
   const labelMode = $derived(top ? topBar.labels ?? 'icons' : 'icons')
   const brandCentered = $derived(top && topBar.brand === 'center')
   // A theme top bar search field (`shell.top.search`) replaces the Search destination link.
-  const searchField = $derived(top && (topBar.search === 'field-center' || topBar.search === 'field-end'))
+  const searchField = $derived(top && $interfaceMode !== 'search' && (topBar.search === 'field-center' || topBar.search === 'field-end'))
   // A centred brand owns the middle of the bar, so a centre field moves to the end instead of under it.
   const fieldCenter = $derived(searchField && topBar.search === 'field-center' && !brandCentered)
   const fieldEnd = $derived(searchField && !fieldCenter)
@@ -72,7 +74,7 @@
     { id: 'library', href: '/app/library', icon: LibraryBig, label: 'Library', anim: '' },
   ]
   const settingsItem = { id: 'settings', href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }
-  const shown = $derived(searchField ? items.filter((it) => it.href !== '/app/search') : items)
+  const shown = $derived($interfaceMode === 'search' ? searchModeNav(items) : searchField ? items.filter((it) => it.href !== '/app/search') : items)
   // `menu: "side"`: the menu is a pinned panel down the left on windows from 1100 px (the bar keeps
   // only its brand, search and trailing buttons); the menu button folds it away, and narrower
   // windows fall back to the drawer. Hidden while a video plays, like the rail goes inert.
