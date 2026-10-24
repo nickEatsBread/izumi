@@ -138,7 +138,7 @@ describe('empty source recovery', () => {
     expect(source).toContain('No sources set up')
     expect(source).not.toContain('No sources to show.')
     expect(source).not.toContain('>Open Sources</button>')
-    expect(source).toContain("goto('/app/settings/sources?tab=manage', { replaceState })")
+    expect(source).toContain("goto('/app/settings/sources/manage', { replaceState })")
   })
 
   it('uses one empty panel instead of an error banner plus a leftover list message', () => {

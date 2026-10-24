@@ -10,7 +10,7 @@ const defaultCapability = JSON.parse(readFileSync(fileURLToPath(new URL('../../s
 
 describe('deep links', () => {
   it('routes validated Trakt returns without putting the code in navigation history', () => {
-    expect(parseDeepLink(`izumi://auth/trakt#state=${'a'.repeat(64)}&code=private-code`)?.path).toBe('/app/settings/accounts?section=connections')
+    expect(parseDeepLink(`izumi://auth/trakt#state=${'a'.repeat(64)}&code=private-code`)?.path).toBe('/app/settings/accounts#trackers')
     expect(parseDeepLink('izumi://auth/trakt#state=invalid&code=private-code')).toBeNull()
   })
   it('routes anime and episode links', () => {

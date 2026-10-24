@@ -10,9 +10,9 @@ describe('a theme TV top bar on Android TV (API 6)', () => {
   const theme = read('../../theme.ts')
 
   it('keeps the TV rail sizing to the side rail and the page margin to rail layouts', () => {
-    expect(css).toContain(".tv-mode [data-slot='nav.side'] { width: 5rem !important; }")
+    expect(css).toContain(".tv-mode [data-slot='nav.side'] { width: 4rem !important; }")
     expect(css).toContain(".tv-mode [data-slot='nav.side']:focus-within { width: 14rem !important; }")
-    expect(css).toContain(".tv-mode:not([data-theme-nav='top']) main { margin-left: 5rem !important; }")
+    expect(css).toContain(".tv-mode:not([data-theme-nav='top']) main { margin-left: 4rem !important; }")
     expect(css).not.toContain('.tv-mode [data-nav-sidebar] { width')
   })
 

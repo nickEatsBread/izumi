@@ -156,7 +156,7 @@
           {notificationSetupStarted ? 'Open notification setup again' : 'Enable TV notifications'}
         </button>
       {/if}
-      <button type="button" data-focusable onclick={() => goto(complete ? '/app/home' : '/app/settings/sync')}
+      <button type="button" data-focusable onclick={() => goto(complete ? '/app/home' : '/app/settings/devices')}
         class="min-h-12 rounded-xl bg-secondary px-5 font-bold">
         {complete ? 'Done' : 'Device sync settings'}
       </button>

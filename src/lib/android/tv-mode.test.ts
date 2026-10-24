@@ -43,7 +43,8 @@ describe('Android TV mode contract', () => {
     expect(layout).toContain("classList.toggle('tv-mode', $isTv)")
     expect(layout).toContain('getCurrentWindow().close()')
     expect(css).toContain('.tv-mode .player-shell button:focus')
-    expect(keyboard).toContain("if (input.isTv) return 'focus-legacy'")
+    expect(keyboard).toContain("return input.gameMode || input.isTv || input.controllerMode ? 'activate' : 'off'")
+    expect(keyboard).not.toContain('focus-legacy')
   })
 
   it('keeps playback and modal controls inside a TV focus trap', () => {

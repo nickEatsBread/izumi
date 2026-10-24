@@ -24,4 +24,10 @@ describe('native Trakt account settings', () => {
     expect(component).toContain('src="/brand/trakt.svg"')
     expect(component).not.toContain('>TRAKT</span>')
   })
+
+  it('renders one row that sits in the Trackers and lists card', () => {
+    expect(component).not.toContain('SettingsGroup')
+    expect(component).toContain('learnMore="Native history, Watchlist, rating sync, and a dedicated recommendation hub for this Izumi profile."')
+    expect(component).not.toMatch(/text-\[1[01]px\]/)
+  })
 })

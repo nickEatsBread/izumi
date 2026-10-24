@@ -70,7 +70,7 @@
 </script>
 {#if $libraryStorageError && !captureControlsWindow}
   <div role="alert" class="fixed inset-x-0 top-0 z-[200] bg-destructive px-4 py-3 text-sm text-destructive-foreground">
-    {$libraryStorageError} <a href="/app/settings/backup" class="font-bold underline">Export backup</a>
+    {$libraryStorageError} <a href="/app/settings/devices#backup" class="font-bold underline">Export backup</a>
   </div>
 {/if}
 {@render children()}

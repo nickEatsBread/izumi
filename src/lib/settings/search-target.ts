@@ -1,6 +1,7 @@
 import { isNavigable } from '$lib/nav/focusable'
 import { focusRestoreAllowed } from '$lib/nav/focus-memory'
 import { isTextEntryField } from '$lib/nav/text-field'
+import { SUBCATEGORY_OPEN_EVENT } from './sections'
 
 /** Controls a search hit never focuses: one A press there would disconnect, delete or reset
  *  (Accounts Disconnect, Reset izumi, a trash button). */
@@ -11,6 +12,10 @@ const HIT_MS = 1800
 
 /** Reachable, not destructive and not a text field (A on a field would open the keyboard). */
 const safe = (el: HTMLElement) => !el.matches(DESTRUCTIVE_SELECTOR) && !isTextEntryField(el) && isNavigable(el)
+
+/** The first safe `[data-focusable]` under `root`: where a pad lands after a jump into a block. */
+export const firstSafeControl = (root: ParentNode): HTMLElement | null =>
+  [...root.querySelectorAll<HTMLElement>('[data-focusable]')].find(safe) ?? null
 
 /**
  * Where focus goes for a revealed row: its SettingsRow activation button (`data-row-activate`); else
@@ -41,6 +46,16 @@ function findRow(key: string, accept: (el: HTMLElement) => boolean): HTMLElement
   return null
 }
 
+/** The folded subcategory (Advanced) a row waits in, hidden; null when it is not in one. */
+const foldedSubcategory = (el: HTMLElement) => el.closest<HTMLElement>('[data-settings-subcategory][data-collapsed]')
+
+/** Asks the folded subcategory holding a `key` row to unfold (SettingsSubcategory listens), so a
+ *  later attempt finds the row rendered. */
+function unfold(key: string): void {
+  const row = findRow(key, (el) => foldedSubcategory(el) !== null)
+  if (row) foldedSubcategory(row)!.dispatchEvent(new CustomEvent(SUBCATEGORY_OPEN_EVENT))
+}
+
 /** Resolves true after `ms`, or false at once when `signal` aborts. */
 function pause(ms: number, signal: AbortSignal): Promise<boolean> {
   return new Promise((done) => {
@@ -53,9 +68,24 @@ function pause(ms: number, signal: AbortSignal): Promise<boolean> {
 }
 
 /**
+ * A keyless hit opens on its `#id` block, which SvelteKit scrolls into view. On a pad or TV focus
+ * moves to the block's first safe control, so the first press starts there and not at the top of the
+ * page. It waits one task, behind SvelteKit's fragment focus reset (it re-applies the hash in a
+ * timeout queued before afterNavigate), which would otherwise clear this focus. Resolves the control.
+ */
+export async function revealBlock(id: string, signal: AbortSignal): Promise<HTMLElement | null> {
+  if (!(await pause(0, signal)) || !focusRestoreAllowed()) return null
+  const block = document.getElementById(id)
+  const target = block && firstSafeControl(block)
+  target?.focus({ preventScroll: true })
+  return target || null
+}
+
+/**
  * Brings a searched row into view. Polls `attempts` × `intervalMs` (default 20 × 50 ms) for a
  * rendered `[data-setting-key=key]`: the page may still be mounting, or the row may sit in a section
- * that opens once the page reads its URL. `fallbackKey` stands in when the row is absent from the page
+ * that opens once the page reads its URL; a row in a folded subcategory unfolds it first (and so does
+ * the fallback row when the row itself is absent). `fallbackKey` stands in when the row is absent from the page
  * (not rendered on this device or build), or on the last attempt. The row is scrolled to the centre
  * and tinted for 1.8 s; on a pad or TV (focusRestoreAllowed) focus moves to settingFocusTarget(row).
  * Resolves the revealed row, or null when aborted or nothing turned up.
@@ -71,6 +101,8 @@ export async function revealSetting(
   for (let attempt = 0; attempt < attempts; attempt++) {
     if (signal.aborted) return null
     const last = attempt === attempts - 1
+    unfold(key)
+    if (fallbackKey && !findRow(key, () => true)) unfold(fallbackKey)
     const row = findRow(key, rendered)
       ?? (fallbackKey && (last || !findRow(key, () => true)) ? findRow(fallbackKey, rendered) : null)
     if (row) {

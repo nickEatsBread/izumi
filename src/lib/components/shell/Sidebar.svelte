@@ -28,7 +28,8 @@
   import { inputType } from '$lib/nav'
   import { controllerMode } from '$lib/nav/input'
   import { onPadButton } from '$lib/nav/pad-events'
-  import { bumperTabs, stepSection } from '$lib/nav/bumpers'
+  import { bumperTabs, pageBumpers, stepSection } from '$lib/nav/bumpers'
+  import { settingsControllerMode } from '$lib/settings/surface'
   import { stepPageTabs } from '$lib/nav/page-tabs'
   import { glyphFamily, lastPadId, rememberPad } from '$lib/nav/glyphs'
   import { activeProfile, profileSwitcherOpen, profilesEnabled } from '$lib/profiles/store'
@@ -204,6 +205,8 @@
       if (name === 'l2' || name === 'r2') { stepPageTabs(name === 'l2' ? -1 : 1); return }
       if (dialog) return
       if (name === 'l1' || name === 'r1') {
+        // Settings in controller mode steps its own sections with the bumpers (spec §5.5).
+        if (get(pageBumpers)) return
         const href = stepSection(shown.map((item) => item.href), lastSection, name === 'l1' ? -1 : 1)
         if (href) void goto(href)
       } else if (name === 'select') void goto('/app/search')
@@ -339,8 +342,11 @@
 {/snippet}
 
 {#snippet settingsLink()}
+  <!-- Left from the controller Settings rail lands on Settings in a side strip; in a top bar the link
+       sits at the far right, so a move there would read as a jump across the screen. -->
   <a data-part="nav.action" data-action="settings" data-active={active('/app/settings') || undefined} href="/app/settings" title={m.nav_settings()} data-focusable={df} tabindex={tab}
      aria-current={active('/app/settings') ? 'page' : undefined}
+     data-nav-region-default={active('/app/settings') && $settingsControllerMode && !top ? '' : undefined}
      class={destClass(active('/app/settings'))}>
     <span data-part="nav.action.icon" class="grid {top ? 'size-5' : 'w-8'} shrink-0 place-items-center"><Settings size={20} class="group-hover:animate-[spin_0.6s_ease]" /></span>
     {#if top}

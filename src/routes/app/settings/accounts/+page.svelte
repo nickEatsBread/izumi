@@ -1,13 +1,20 @@
 <script lang="ts">
   import { anilistUser } from '$lib/anilist/account'
-  import SettingsGroup from '$lib/components/settings/SettingsGroup.svelte'
+  import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
+  import SettingsSubcategory from '$lib/components/settings/SettingsSubcategory.svelte'
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
   import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte'
   import TrackerProviderBadge from '$lib/components/settings/TrackerProviderBadge.svelte'
   import TraktAccountSettings from '$lib/components/settings/TraktAccountSettings.svelte'
-  import { nuvioSession } from '$lib/nuvio/auth'
   import LetterboxdAccountSettings from '$lib/components/settings/LetterboxdAccountSettings.svelte'
-  import { autoWatchlistEnabled, autoWatchlistEpisodes } from '$lib/settings/ui'
+  import ProfileManager from '$lib/components/profiles/ProfileManager.svelte'
+  import { nuvioSession } from '$lib/nuvio/auth'
+  import {
+    autoIncognitoAdult, autoWatchlistEnabled, autoWatchlistEpisodes, debridKey, jimakuApiKey, openSubtitlesToken, showAdult, subDlApiKey,
+  } from '$lib/settings/ui'
+  import { omdbApiKey, tmdbReadToken } from '$lib/settings/catalog'
+  import { KEY_HUB, keyHubHref, type KeyHubId } from '$lib/settings/keys-hub'
+  import { m } from '$lib/paraglide/messages.js'
   import {
     anilistToken,
     anilistUserName,
@@ -35,19 +42,25 @@
   import Blocks from '@lucide/svelte/icons/blocks'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Clock3 from '@lucide/svelte/icons/clock-3'
-  import Eye from '@lucide/svelte/icons/eye'
-  import Link2 from '@lucide/svelte/icons/link-2'
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
   import ShieldCheck from '@lucide/svelte/icons/shield-check'
   import { page } from '$app/state'
-  import { activeProfile, profilesEnabled } from '$lib/profiles/store'
+  import { activeProfile, profiles, profilesEnabled } from '$lib/profiles/store'
   import { profileAvatarUrl } from '$lib/profiles/avatars'
-  type AccountSection = 'connections' | 'libraries' | 'behaviour'
-  let section = $state<AccountSection>('connections')
-  $effect(() => {
-    const requested = page.url.searchParams.get('section')
-    if (requested === 'libraries' || requested === 'behaviour' || requested === 'connections') section = requested
+
+  // The household manager is full screen with its own PIN gate and exit path; it opens over this
+  // page from Profiles and from the profile switcher.
+  const managingProfiles = $derived(page.url.searchParams.get('manage') === 'profiles')
+
+  const keySaved = $derived<Record<KeyHubId, boolean>>({
+    tmdb: !!$tmdbReadToken.trim(),
+    omdb: !!$omdbApiKey.trim(),
+    opensubtitles: !!$openSubtitlesToken,
+    subdl: !!$subDlApiKey.trim(),
+    jimaku: !!$jimakuApiKey.trim(),
+    debrid: !!$debridKey.trim(),
   })
+  const keyValue = (id: KeyHubId) => (!keySaved[id] ? 'Not set' : id === 'opensubtitles' ? 'Signed in' : 'Saved · hidden')
 
   type PublicProfile = 'anilist' | 'mal'
 
@@ -73,10 +86,6 @@
   let stremioPassword = $state('')
   let stremioBusy = $state<'connect' | 'sync' | 'disconnect' | ''>('')
   let stremioError = $state('')
-
-  const connectedCount = $derived(
-    [$anilistToken, $malToken, $kitsuToken, $simklToken].filter(Boolean).length,
-  )
 
   function togglePublicProfile(profile: PublicProfile) {
     publicProfileOpen = publicProfileOpen === profile ? null : profile
@@ -374,25 +383,16 @@
 {#snippet queueMeta()}
   <span>{$trackerQueue.length} update{$trackerQueue.length === 1 ? '' : 's'} will retry automatically when the connection returns.</span>
 {/snippet}
+{#snippet profileLeading()}
+  <img src={profileAvatarUrl($activeProfile.avatar, $activeProfile.color)} alt="" class="size-8 rounded-lg" />
+{/snippet}
+{#snippet adultSwitch()}<SettingsSwitch value={$showAdult} onToggle={() => ($showAdult = !$showAdult)} label={m.settings_show_adult()} interactive={false} />{/snippet}
+{#snippet incognitoSwitch()}<SettingsSwitch value={$autoIncognitoAdult} onToggle={() => ($autoIncognitoAdult = !$autoIncognitoAdult)} label={m.settings_auto_incognito()} interactive={false} />{/snippet}
 
-<div class="mx-auto max-w-4xl p-4 pb-24 sm:p-8">
-  <header class="mb-8 flex max-w-2xl flex-wrap items-center justify-between gap-4">
-    <div><h2 data-settings-page-title class="text-3xl font-bold tracking-tight">Accounts</h2><p class="mt-2 text-sm text-muted-foreground">{$profilesEnabled ? `Connections for ${$activeProfile.name}` : 'Your connected services, in one place.'}</p></div>
-    <a href="/app/settings/profiles" data-focusable class="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground">{#if $profilesEnabled}<img src={profileAvatarUrl($activeProfile.avatar, $activeProfile.color)} alt="" class="size-8 rounded-lg" />Manage profiles{:else}Set up profiles{/if}</a>
-  </header>
-  <nav aria-label="Account settings sections" data-page-tabs data-nav-scroll-x class="mb-7 flex max-w-2xl gap-5 overflow-x-auto border-b border-border">
-    {#each [{ id: 'connections', label: 'Connections' }, { id: 'libraries', label: 'Lists & imports' }, { id: 'behaviour', label: 'Sync behaviour' }] as item}
-      <button type="button" data-focusable aria-current={section === item.id ? 'page' : undefined} onclick={() => section = item.id as AccountSection} class="min-h-12 shrink-0 border-b-2 px-1 text-sm font-bold transition-colors {section === item.id ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}">{item.label}</button>
-    {/each}
-  </nav>
-  <div hidden={section !== 'connections'}>
-  <p class="mb-6 max-w-2xl text-sm leading-6 text-muted-foreground">Connect once to keep watching activity up to date. Sign-in credentials stay on this device; Cloudflare sync does not copy account tokens between people.</p>
+<SettingsSection section="accounts">
+  {#if managingProfiles}<ProfileManager />{/if}
 
-  <SettingsGroup
-    icon={Link2}
-    title="Tracker accounts"
-    desc={`${connectedCount} of 4 connected. Connected accounts can receive progress, list status, and ratings.`}
-  >
+  <SettingsSubcategory id="trackers">
     <SettingsRow settingKey="anilist-account" title="AniList" leading={anilistBadge} meta={anilistMeta} control={anilistControl} expanded={Boolean(aniError)}>
       {#if aniError}<p role="alert" class="text-xs text-destructive">{aniError}</p>{/if}
     </SettingsRow>
@@ -418,7 +418,7 @@
         />
       </div>
       <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <span class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground"><ShieldCheck size={13} aria-hidden="true" />Your password is exchanged once and never saved.</span>
+        <span class="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><ShieldCheck size={13} aria-hidden="true" />Your password is exchanged once and never saved.</span>
         <button type="button" data-focusable onclick={connectKitsuClick} disabled={kitsuBusy || !kitsuLogin.trim() || !kitsuPassword} class="min-h-9 rounded-md bg-primary px-3 text-xs font-bold text-primary-foreground disabled:opacity-40">{kitsuBusy ? 'Signing in…' : 'Sign in'}</button>
       </div>
       {#if kitsuError}<p role="alert" class="mt-2 text-xs text-destructive">{kitsuError}</p>{/if}
@@ -427,30 +427,21 @@
     <SettingsRow settingKey="simkl-account" title="Simkl" leading={simklBadge} meta={simklMeta} control={simklControl} expanded={Boolean(simklPin || simklError)}>
       {#if simklPin}
         <div class="rounded-lg bg-secondary/70 px-3 py-3">
-          <p class="text-[11px] text-muted-foreground">The approval page is open in your browser. Enter this code:</p>
+          <p class="text-xs text-muted-foreground">The approval page is open in your browser. Enter this code:</p>
           <strong class="mt-1 block font-mono text-xl tracking-[0.18em]">{simklPin.code}</strong>
         </div>
       {/if}
       {#if simklError}<p role="alert" class="mt-2 text-xs text-destructive">{simklError}</p>{/if}
     </SettingsRow>
-  </SettingsGroup>
 
-  <TraktAccountSettings />
+    <TraktAccountSettings />
 
-  <SettingsGroup icon={Blocks} title="Nuvio" desc="Manage Nuvio profiles, collections, sources, library, playback data, and preferences.">
-    <SettingsRow title={$nuvioSession ? 'Nuvio connected' : 'Connect Nuvio'} description={$nuvioSession?.email || 'Approve a device code on Nuvio, or sign in with your email.'}>
-      {#snippet control()}<a href="/app/nuvio" data-focusable class="min-h-10 rounded-lg bg-secondary px-4 py-2.5 text-sm font-bold">{$nuvioSession ? 'Browse' : 'Connect'} →</a>{/snippet}
-    </SettingsRow>
-  </SettingsGroup>
+    <SettingsRow title={$nuvioSession ? 'Nuvio connected' : 'Connect Nuvio'} description={$nuvioSession?.email || 'Approve a device code on Nuvio, or sign in with email'} href="/app/nuvio" chevron />
 
-  <SettingsGroup
-    icon={Blocks}
-    title="Stremio add-on sync"
-    desc="Keep installed Stremio add-ons aligned with your Stremio account. Other Izumi sources are excluded."
-  >
     <SettingsRow
       settingKey="stremio-addon-account"
-      title="Stremio"
+      title="Stremio add-on sync"
+      learnMore="Keeps installed Stremio add-ons aligned with your Stremio account. Other Izumi sources are excluded."
       leading={stremioLeading}
       meta={stremioMeta}
       control={stremioControl}
@@ -458,7 +449,7 @@
     >
       {#if $stremioAuthKey}
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p class="min-w-0 text-[11px] leading-5 text-muted-foreground">
+          <p class="min-w-0 text-xs leading-5 text-muted-foreground">
             Add, remove, or reconfigure a Stremio add-on in either app and the collection is reconciled on the next sync.
           </p>
           <div class="flex shrink-0 justify-end gap-2">
@@ -495,7 +486,7 @@
           />
         </div>
         <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <span class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground"><ShieldCheck size={13} aria-hidden="true" />Your password is exchanged once and never saved.</span>
+          <span class="inline-flex items-center gap-1.5 text-xs text-muted-foreground"><ShieldCheck size={13} aria-hidden="true" />Your password is exchanged once and never saved.</span>
           <button
             type="button"
             data-focusable
@@ -509,18 +500,13 @@
         <p role="alert" class="mt-2 text-xs text-destructive">{stremioError || ($stremioAddonSyncState.state === 'error' ? $stremioAddonSyncState.message : '')}</p>
       {/if}
     </SettingsRow>
-  </SettingsGroup>
 
-  </div>
-  <div hidden={section !== 'libraries'}>
-  <p class="mb-6 max-w-2xl text-sm leading-6 text-muted-foreground">Bring in lists without adding more sidebar destinations. Browse everything in <a href="/app/library" data-focusable class="font-bold text-foreground underline underline-offset-4">Library</a>, or choose which feeds appear on Home.</p>
-  <LetterboxdAccountSettings />
-  <p class="mb-6 max-w-2xl border-b border-border pb-6 text-sm leading-6 text-muted-foreground">Trakt lists use your connection in <button type="button" data-focusable onclick={() => section = 'connections'} class="font-semibold text-foreground underline underline-offset-4">Connections</button>. Additional list add-ons belong in <a href="/app/settings/sources" data-focusable class="font-semibold text-foreground underline underline-offset-4">Sources</a>; manage their rows in <a href="/app/settings/catalog/home?provider=stremio" data-focusable class="font-semibold text-foreground underline underline-offset-4">Home layout</a>.</p>
+    <LetterboxdAccountSettings />
 
-  <SettingsGroup icon={Eye} title="Public libraries" desc="Browse a public AniList or MyAnimeList library without signing in. These profiles are never updated.">
     <SettingsRow
       settingKey="anilist-public-profile"
       title="AniList public profile"
+      learnMore="Browse a public AniList or MyAnimeList library without signing in. These profiles are never updated."
       leading={anilistBadge}
       meta={aniPublicMeta}
       control={aniPublicControl}
@@ -557,15 +543,12 @@
         </div>
       </div>
     </SettingsRow>
-  </SettingsGroup>
 
-  </div>
-  <div hidden={section !== 'behaviour'}>
-  <SettingsGroup icon={RefreshCw} title="List behaviour" desc="Local list state works without an account and is mirrored to connected trackers.">
     <SettingsRow
       settingKey="automatically-add-watched-shows"
       title="Automatically add watched shows"
       description="After enough episodes are watched, add the title to the device Watchlist."
+      learnMore="Local list state works without an account and is mirrored to connected trackers."
       control={autoWatchlistControl}
       onActivate={() => ($autoWatchlistEnabled = !$autoWatchlistEnabled)}
       pressed={$autoWatchlistEnabled}
@@ -579,7 +562,29 @@
     {#if $trackerQueue.length}
       <SettingsRow title="Pending tracker updates" leading={queueLeading} meta={queueMeta} />
     {/if}
-  </SettingsGroup>
-  <p class="mt-6 max-w-2xl text-sm leading-6 text-muted-foreground">Looking for cross-device history and TV pairing? <a href="/app/settings/sync" data-focusable class="font-bold text-foreground underline underline-offset-4">Open device sync</a>.</p>
-  </div>
-</div>
+    <p data-nav-line class="px-3 py-2.5 text-xs leading-5 text-muted-foreground">Browse lists in <a href="/app/library" data-focusable class="font-bold text-foreground underline underline-offset-4">Library</a>. Add list add-ons in <a href="/app/settings/sources" data-focusable class="font-semibold text-foreground underline underline-offset-4">Sources</a> and arrange their rows in <a href="/app/settings/library/home?provider=stremio" data-focusable class="font-semibold text-foreground underline underline-offset-4">Customize Home</a>.</p>
+  </SettingsSubcategory>
+
+  <SettingsSubcategory id="keys">
+    {#each KEY_HUB as entry (entry.id)}
+      <SettingsRow settingKey={`key-${entry.id}`} title={entry.title} description={entry.description} value={keyValue(entry.id)} href={keyHubHref(entry)} chevron />
+    {/each}
+  </SettingsSubcategory>
+
+  <SettingsSubcategory id="profiles">
+    <SettingsRow
+      settingKey="household-profiles"
+      title="Household profiles"
+      description="Own watchlist, history and accounts for each person, with optional PINs"
+      value={$profilesEnabled ? `${$profiles.length} ${$profiles.length === 1 ? 'profile' : 'profiles'}` : 'Off'}
+      leading={$profilesEnabled ? profileLeading : undefined}
+      href="/app/settings/accounts?manage=profiles"
+      chevron
+    />
+  </SettingsSubcategory>
+
+  <SettingsSubcategory id="content">
+    <SettingsRow settingKey="show-18-content" title={m.settings_show_adult()} description={m.settings_show_adult_hint()} control={adultSwitch} onActivate={() => ($showAdult = !$showAdult)} pressed={$showAdult} />
+    <SettingsRow settingKey="incognito-for-18-titles" title={m.settings_auto_incognito()} description={m.settings_auto_incognito_hint()} learnMore={m.settings_auto_incognito_more()} control={incognitoSwitch} onActivate={() => ($autoIncognitoAdult = !$autoIncognitoAdult)} pressed={$autoIncognitoAdult} />
+  </SettingsSubcategory>
+</SettingsSection>

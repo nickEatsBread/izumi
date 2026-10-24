@@ -142,7 +142,7 @@
       <h1 class="text-xl font-black">{error ? 'Couldn’t load this title' : 'Title not found'}</h1>
       {#if error}<p class="mt-2 text-sm text-muted-foreground">{error}</p>{/if}
       {#if tmdbNeedsConfiguration}
-        <a href="/app/settings/catalog" data-focusable class="mt-4 inline-flex min-h-10 items-center rounded-md bg-primary px-4 font-bold text-primary-foreground">Add TMDB token</a>
+        <a href="/app/settings/library" data-focusable class="mt-4 inline-flex min-h-10 items-center rounded-md bg-primary px-4 font-bold text-primary-foreground">Add TMDB token</a>
       {:else}
         <button data-focusable onclick={() => retry++} class="mt-4 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Retry</button>
       {/if}

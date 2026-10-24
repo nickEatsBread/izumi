@@ -5,7 +5,7 @@ export const DETAIL_TRAILER_DWELL = 1500
 export interface BackdropTrailerGate {
   enabled: boolean
   id?: string
-  /** The viewer's Theme trailers setting (Settings → Interface). */
+  /** The viewer's Theme trailers setting (Settings → Appearance). */
   setting: boolean
   /** Desktop only: no phone, Android, TV or Game mode. */
   desktop: boolean

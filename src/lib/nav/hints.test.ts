@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it } from 'vitest'
 import { hintsFor } from './hints'
 
@@ -52,5 +53,20 @@ describe('hintsFor', () => {
   it('shows only Back and Menu when nothing holds focus', () => {
     expect(labels(hintsFor(document.body, { home: false, pageTabs: false }))).toEqual(['b:Back', 'start:Menu'])
     expect(labels(hintsFor(null, { home: false, pageTabs: false }))).toEqual(['b:Back', 'start:Menu'])
+  })
+})
+
+describe('the Y prompt (spec §5.5)', () => {
+  it('shows what the page names for Y, never inside a dialog', () => {
+    const row = el('<button data-focusable>Use custom subtitle style everywhere</button>', 'button')
+    expect(labels(hintsFor(row, { home: false, pageTabs: false, y: 'Search' }))).toEqual(['a:Select', 'y:Search', 'b:Back', 'start:Menu'])
+    expect(labels(hintsFor(row, { home: false, pageTabs: false, y: 'Search', dialog: true }))).toEqual(['a:Select', 'b:Close'])
+  })
+
+  it('ButtonHints reads it from <html data-nav-hint-y>', () => {
+    // A cwd-relative path: in a jsdom file Vite rewrites `new URL(…, import.meta.url)` to a web URL.
+    const source = readFileSync('src/lib/components/shell/ButtonHints.svelte', 'utf8')
+    expect(source).toContain('y = document.documentElement.dataset.navHintY || undefined')
+    expect(source).toContain('hintsFor(focused, { home, pageTabs, dialog, back, y })')
   })
 })

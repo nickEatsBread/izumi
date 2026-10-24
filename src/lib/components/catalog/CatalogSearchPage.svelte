@@ -483,7 +483,7 @@
     <div class="mt-5 rounded-xl border border-destructive/30 bg-destructive/10 p-5">
       <p class="text-sm">{error}</p>
       {#if tmdbNeedsConfiguration}
-        <a href="/app/settings/catalog" data-focusable class="mt-3 inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Add TMDB token</a>
+        <a href="/app/settings/library" data-focusable class="mt-3 inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Add TMDB token</a>
       {:else}
         <button data-focusable onclick={() => { error = ''; hasNext = true; void loadMore() }} class="mt-3 rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">Retry</button>
       {/if}

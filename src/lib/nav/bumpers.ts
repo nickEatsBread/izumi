@@ -11,3 +11,7 @@ export function stepSection(hrefs: string[], current: string | undefined, dir: -
   if (index < 0) return hrefs[dir > 0 ? 0 : hrefs.length - 1] ?? null
   return hrefs[index + dir] ?? null
 }
+
+/** True while a page steps its own sections with L1/R1 (Settings in controller mode, spec §5.5); the
+ *  theme's bumper tabs leave L1/R1 to it there. */
+export const pageBumpers = writable(false)

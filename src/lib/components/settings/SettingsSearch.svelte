@@ -6,8 +6,10 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import { isAndroid, isMobile, isTv } from '$lib/platform'
   import { inAppPlayerAvailable } from '$lib/player/in-app-player'
+  import { gameMode } from '$lib/player/session'
   import * as h from '$lib/haptics'
   import { searchSettings, settingHref, type SettingSearchItem } from '$lib/settings/search'
+  import { subcategoryDef } from '$lib/settings/sections'
   import { openOskForField } from '$lib/nav/osk'
   import { navLayer } from '$lib/nav/overlay'
 
@@ -17,9 +19,10 @@
   let input = $state<HTMLInputElement>()
   let trigger = $state<HTMLButtonElement>()
   let returnFocus: HTMLElement | null = null
-  // Hits for rows this device does not show are left out: phone layout, Android TV, and the lite
-  // build (no in-app player; `null` while the probe runs counts as lite, so hits never flash in).
-  const results = $derived(searchSettings(query, { android: $isAndroid, phone: $isMobile, tv: $isTv, lite: !$inAppPlayerAvailable }).slice(0, 14))
+  // Hits for rows this device does not show are left out: phone layout, Android TV, Steam Deck Game
+  // mode, and the lite build (no in-app player; `null` while the probe runs counts as lite, so hits
+  // never flash in).
+  const results = $derived(searchSettings(query, { android: $isAndroid, phone: $isMobile, tv: $isTv, lite: !$inAppPlayerAvailable, gamemode: $gameMode }).slice(0, 14))
 
   // The desktop launcher lives inside a sticky sidebar, which is its own stacking context. Move
   // the actual overlay to <body> so focused controls in the page can never paint over the dialog.
@@ -92,11 +95,12 @@
           <p class="px-3 py-8 text-center text-sm text-muted-foreground">Type a setting, feature, or keyword.</p>
         {:else if results.length}
           {#each results as item (item.category + item.title)}
+            {@const sub = subcategoryDef(item.section, item.subcategory)}
             <button type="button" data-focusable onclick={() => choose(item)}
               class="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors active:bg-accent hover:bg-secondary">
               <span class="min-w-0 flex-1">
                 <span class="block font-bold">{item.title}</span>
-                <span class="block text-xs text-muted-foreground">{item.category}</span>
+                <span class="block text-xs text-muted-foreground">{sub ? `${item.category} › ${sub.title}` : item.category}</span>
               </span>
               <ChevronRight size={18} class="shrink-0 text-muted-foreground" />
             </button>

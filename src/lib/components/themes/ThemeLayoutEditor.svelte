@@ -202,7 +202,7 @@
       <label>{control.label} <output>{row[control.key as keyof RowPresentation] ?? control.fallback}px</output><input type="range" aria-label={control.label} min={control.min} max={control.max} value={Number(row[control.key as keyof RowPresentation] ?? control.fallback)} oninput={event => setRow({ [control.key]: Number(value(event)) })} data-focusable /></label>
     {/each}
     <p class="help">{scope === 'rows' ? 'Applies to all home rows unless a row has its own override.' : 'Only this row changes. Its identity stays the same when reordered.'} Custom card templates control their own artwork shape.</p>
-    <a href="/app/settings/catalog/home" data-focusable>Arrange or hide home rows</a>
+    <a href="/app/settings/library/home" data-focusable>Arrange or hide home rows</a>
   {/if}
 
   {#if showTemplate}

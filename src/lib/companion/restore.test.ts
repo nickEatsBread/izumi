@@ -581,8 +581,8 @@ describe('restore staging and profile isolation', () => {
 
 describe('restore entry points', () => {
   it('offers restore under the TV tab before any configured-sync condition', () => {
-    const page = readFileSync(new URL('../../routes/app/settings/sync/+page.svelte', import.meta.url), 'utf8')
-    const tvTab = page.slice(page.indexOf("{#if syncSection === 'tv'}"))
+    const page = readFileSync(new URL('../../routes/app/settings/devices/+page.svelte', import.meta.url), 'utf8')
+    const tvTab = page.slice(page.indexOf('<SettingsSubcategory id="tv">'))
     expect(tvTab.indexOf('href="/app/companion-restore"')).toBeGreaterThan(0)
     expect(tvTab.indexOf('href="/app/companion-restore"')).toBeLessThan(tvTab.indexOf("{#if $syncProvider === 'cloudflare' && paired}"))
   })
