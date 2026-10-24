@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { importClosure } from '../../test/svelte-markup'
 import { SETTINGS_SEARCH_INDEX, type SettingSearchItem } from './search'
-import { sectionForPath, subcategoryDef } from './sections'
+import { SETTINGS_SECTIONS, SETTINGS_SUB_PAGES, sectionForPath, subcategoryDef } from './sections'
 
 // Every search hit that names a row (`key`, `fallbackKey`) must land on markup that renders that
 // `data-setting-key`, searched through the destination page's transitive .svelte imports. Keys built
@@ -51,6 +51,17 @@ function renderedKeys(page: string): Set<string> {
 
 const keyed = SETTINGS_SEARCH_INDEX.filter((item) => item.key || item.fallbackKey)
 
+/** Every section page and sub-page; each row they render needs a hit (spec §3.4). */
+const SETTINGS_PAGES = [
+  ...SETTINGS_SECTIONS.map((section) => section.href),
+  ...[...SETTINGS_SUB_PAGES.keys()].map((path) => `/app/settings/${path}`),
+]
+
+// Rendered keys with no hit of their own. The per-platform items of the Catalog platforms list are
+// built from ids (DYNAMIC_KEYS above): its hit lands on catalog-platform-auto, and tmdb and jvm are
+// already fallbacks of the token and per-extension hits.
+const UNINDEXED_KEYS = new Set(['catalog-platform-anilist', 'catalog-platform-kitsu', 'catalog-platform-stremio'])
+
 describe('settings search anchors', () => {
   it('opens a real route for every hit', () => {
     for (const item of SETTINGS_SEARCH_INDEX) expect(existsSync(routeFile(item.href)), item.href).toBe(true)
@@ -72,6 +83,13 @@ describe('settings search anchors', () => {
     const keys = [...renderedKeys(routeFile(item.href))]
     if (item.key) expect(keys, `${item.key} on ${item.href}`).toContain(item.key)
     if (item.fallbackKey) expect(keys, `${item.fallbackKey} on ${item.href}`).toContain(item.fallbackKey)
+  })
+
+  it('gives every row a settings page renders a hit', () => {
+    const indexed = new Set(SETTINGS_SEARCH_INDEX.flatMap((item) => [item.key, item.fallbackKey]))
+    const missing = SETTINGS_PAGES.flatMap((href) =>
+      [...renderedKeys(routeFile(href))].filter((key) => !indexed.has(key) && !UNINDEXED_KEYS.has(key)).map((key) => `${href}: ${key}`))
+    expect(missing).toEqual([])
   })
 
   it('keeps the runtime key templates in their files', () => {
