@@ -23,3 +23,24 @@ describe('search box releases stay out of history and trackers', () => {
     expect(body(read('../trackers/index.ts'), 'export function markWatched(')).toContain('if (media.release) return 0')
   })
 })
+
+describe('playStream treats a release as its own torrent, not a title', () => {
+  const play = read('../stremio/play.ts')
+
+  it('takes the episode and season from the search, not a season map', () => {
+    expect(body(play, 'export async function episodeWant(')).toContain('if (media.release) return { episode, season: media.release.season')
+  })
+
+  it('skips title-bound subtitle search and source memory, and remembers the release instead', () => {
+    expect(play).toContain('|| get(offlineMode) || !!media.release')
+    expect(play).toMatch(/const rememberSuccess = \(\) => \{\n\s*\/\/[^\n]*\n\s*if \(media\.release\) return/)
+    expect(play).toContain('if (media.release && episode != null) rememberRelease({')
+  })
+
+  it('offers Next only inside a pack, and replays the same torrent for it', () => {
+    expect(play).toContain('const airedTotal = media.release?.pack && episode != null ? episode + 1 : airedTotalOf(media) || null')
+    expect(play).toContain('const airedTotal = media.release?.pack ? episode + 1 : airedTotalOf(media)')
+    expect(play).toContain('if (media.release) return playStream(media, episode, media.release.stream, onState, { autoplay })')
+    expect(body(play, 'export function playNext(')).toContain("if (currentMedia.release && !currentMedia.release.pack) return onState({ status: 'error', message: 'This release has no next episode.' })")
+  })
+})

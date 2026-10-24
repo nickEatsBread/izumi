@@ -101,6 +101,7 @@ import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched, positions, progressKey } from '$lib/player/progress'
 import { desktopCastSession, desktopCastStatus } from '$lib/player/desktop-cast'
 import { recordPlay, localHistory } from '$lib/player/history'
+import { rememberRelease } from '$lib/release-search/recent'
 import { maybeAutoEnterIncognito } from '$lib/player/auto-incognito'
 import { incognito } from '$lib/stores/incognito'
 import { episodeSourceOrigins, rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
@@ -709,7 +710,7 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
     // Auto-advancing here would race the user's pick with the next episode and land the session
     // one episode off. Their choice (or the picker's own continuation) owns what plays next.
     if (get(streamPicker)) return
-    const airedTotal = airedTotalOf(media)
+    const airedTotal = media.release?.pack ? episode + 1 : airedTotalOf(media)
     let next = episode + 1
     // Optionally skip past filler episodes (AnimeFillerList).
     if (get(skipFiller)) {
@@ -1489,6 +1490,8 @@ export function preloadResolveNoAdd(stream: Stream): boolean {
 // match hint. Best-effort — an empty want keeps the legacy behavior.
 export async function episodeWant(media: Media, episode: number | undefined, stream?: Stream): Promise<EpisodeWant | undefined> {
   if (episode == null) return undefined
+  // A search box release has no season map: the episode (and season) came from the search text.
+  if (media.release) return { episode, season: media.release.season, filename: stream?.behaviorHints?.filename }
   const map = await mediaSeasonMap(media)
   const sm = map[episode]
   const video = mediaVideo(media, episode)
@@ -2746,6 +2749,8 @@ async function resolveAndPlayBest(
   onState: (s: PlayState) => void,
   autoplay = true,
 ) {
+  // A search box release replays its own torrent: the next episode is the next file in the pack.
+  if (media.release) return playStream(media, episode, media.release.stream, onState, { autoplay })
   const generation = ++advanceGeneration
   onState({ status: 'resolving' })
   // Cover the previous file immediately. Resolving the remembered release can take several
@@ -3250,7 +3255,7 @@ export async function playStream(
   // loopback stream for an exact subtitle hash would compete with mpv's startup reads, so search by
   // episode/filename instead and attach the results after player_embed.
   const subtitlesStartedAt = performance.now()
-  const skipExternalSubtitles = (get(isAndroid) ? !androidEmbedded : get(enableExternalPlayer)) || get(offlineMode)
+  const skipExternalSubtitles = (get(isAndroid) ? !androidEmbedded : get(enableExternalPlayer)) || get(offlineMode) || !!media.release
   if (skipExternalSubtitles) traceResolve(trace, 'external subtitle search skipped')
   else traceResolve(trace, 'external subtitle search start', { addOnCount: get(enabledAddonUrls).length })
   const subsP: Promise<SubtitleCandidate[]> = (skipExternalSubtitles
@@ -3299,22 +3304,28 @@ export async function playStream(
     })
     if (!stillOwnsPlayback()) return
   }
-  const rememberSuccess = () => rememberSourceOrigin(media.id, stream.__origin, {
-    infoHash: stream.infoHash,
-    bingeGroup: stream.behaviorHints?.bingeGroup,
-    group: describe(stream).group,
-  }, episode)
+  const rememberSuccess = () => {
+    // A release is not a catalog episode, so there is no episode source to remember for it.
+    if (media.release) return
+    rememberSourceOrigin(media.id, stream.__origin, {
+      infoHash: stream.infoHash,
+      bingeGroup: stream.behaviorHints?.bingeGroup,
+      group: describe(stream).group,
+    }, episode)
+  }
   try {
     currentMedia = media
     playerLoadId.update((id) => id + 1)
     // Resume from the last saved position for this exact episode, if any.
     const startSeconds = options.startSeconds ?? (episode != null ? getPosition(media.id, episode) : 0)
-    const label = episode != null ? `${title(media)} — Episode ${episode}` : title(media)
+    const label = episode != null && (!media.release || media.release.pack) ? `${title(media)} — Episode ${episode}` : title(media)
     // Schedule-aware so the Next button + "Ep X / N" work on airing-schedule-only titles
     // (episodes/nextAiringEpisode both null on AniList). null when genuinely unknown, so the
     // Next gate (`airedTotal != null && episode < airedTotal`) stays hidden rather than wrong.
-    const airedTotal = airedTotalOf(media) || null
-    const total = totalEpisodes(media) || airedTotal
+    // shortcut: a pack's size is unknown before playback, so a pack release always offers Next and
+    // a missing episode fails closed in the native file matcher; list the pack's files to upgrade.
+    const airedTotal = media.release?.pack && episode != null ? episode + 1 : airedTotalOf(media) || null
+    const total = media.release ? null : totalEpisodes(media) || airedTotal
     nowPlaying.set({
       title: label, animeTitle: title(media), id: media.id, malId: media.idMal ?? null,
       episode: episode ?? null, total, airedTotal,
@@ -3324,6 +3335,7 @@ export async function playStream(
     // Watching lists this show even with no AniList/MyAnimeList linked. Also remember this source's
     // release identity so Continue Watching can resume the SAME release later. Progress bumps on watch.
     recordPlay(media, episode, { group: describe(stream).group, bingeGroup: stream.behaviorHints?.bingeGroup })
+    if (media.release && episode != null) rememberRelease({ mediaId: media.id, episode, season: media.release.season, title: title(media), stream: recoveryOriginal })
 
     // Remember this stream's release identity so the next episode can continue from the SAME
     // release without re-picking — by pack infoHash / Stremio bingeGroup, or the parsed release
@@ -4141,6 +4153,7 @@ export function playPrev(onState: (s: PlayState) => void = noticeState, autoplay
 export function playNext(onState: (s: PlayState) => void = noticeState, autoplay = true) {
   const ep = get(nowPlaying).episode
   if (!currentMedia || ep == null) return
+  if (currentMedia.release && !currentMedia.release.pack) return onState({ status: 'error', message: 'This release has no next episode.' })
   const airedTotal = airedTotalOf(currentMedia)
   // At the newest aired episode there is genuinely nowhere to go — but returning silently is
   // indistinguishable from the button being broken, so say so.
