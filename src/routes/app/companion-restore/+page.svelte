@@ -83,7 +83,7 @@
 <svelte:head><title>Restore from TV · izumi</title></svelte:head>
 
 <div class="mx-auto w-full max-w-2xl px-4 py-8 sm:py-12">
-  <a href="/app/settings/sync?section=tv" data-focusable class="inline-flex min-h-10 items-center text-sm font-bold text-muted-foreground hover:text-foreground">TV connections</a>
+  <a href="/app/settings/devices#tv" data-focusable class="inline-flex min-h-10 items-center text-sm font-bold text-muted-foreground hover:text-foreground">TV connections</a>
   <div class="mt-5 flex items-center gap-3">
     <span class="grid size-12 shrink-0 place-items-center rounded-xl bg-primary/15 text-primary"><MonitorSmartphone size={25} /></span>
     <div><p class="text-xs font-bold text-primary">izumi Companion</p><h1 class="text-3xl font-black">Restore from TV</h1></div>

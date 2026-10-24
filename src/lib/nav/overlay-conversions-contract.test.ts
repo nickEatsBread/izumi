@@ -81,7 +81,6 @@ const FILES = {
   sources: '../../routes/app/settings/sources/manage/+page.svelte',
   themes: '../../routes/app/settings/themes/+page.svelte',
   profiles: '../components/profiles/ProfileManager.svelte',
-  sync: '../../routes/app/settings/sync/+page.svelte',
 } as const
 
 /** Every layer node keeps the literal trap markers: hints.ts, page-tabs.ts and the button-hint bar
@@ -322,14 +321,5 @@ describe('legacy traps close on B and Escape', () => {
 
   it('keeps the Home editor section picker pin (escape after class=)', () => {
     expect(read(FILES.homeEditor)).toContain('data-nav-trap class="pointer-events-auto')
-  })
-})
-
-describe('page tab strips for the theme bumpers (data-page-tabs, Themes page-tabs.ts)', () => {
-  it('marks the Accounts and Sync section navs, whose active item is aria-current', () => {
-    const sync = read(FILES.sync)
-    const [syncNav] = tagsWith(sync, 'aria-label="Device sync sections"')
-    expect(bare(syncNav, 'data-page-tabs'), syncNav).toBe(true)
-    expect(sync).toContain("aria-current={syncSection === item.id ? 'page' : undefined}")
   })
 })

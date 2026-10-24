@@ -437,7 +437,7 @@ describe('Settings reachability: markers the generic rules cannot infer (spec §
   })
 
   it('takes the three read-only sync secrets out of the d-pad order (their Copy buttons act)', () => {
-    const sync = elementsOf('src/routes/app/settings/sync/+page.svelte')
+    const sync = elementsOf('src/routes/app/settings/devices/+page.svelte')
     for (const label of ['Cloudflare setup secret', 'Cloudflare device invite', 'Pairing ticket']) {
       const field = sync.find((el) => staticAttr(el, 'aria-label') === label && hasAttr(el, 'readonly'))
       expect(field, label).toBeDefined()

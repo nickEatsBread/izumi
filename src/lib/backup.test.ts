@@ -262,7 +262,7 @@ describe('restoring under the storage-key policy', () => {
 })
 
 describe('backup page redaction copy', () => {
-  const page = readFileSync(fileURLToPath(new URL('../routes/app/settings/backup/+page.svelte', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
+  const page = readFileSync(fileURLToPath(new URL('./components/settings/BackupRestore.svelte', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
 
   it('tells the user how many settings were left out after saving', () => {
     expect(page).toContain('(JSON.parse(text) as AppBackup).redacted?.keys.length ?? 0')

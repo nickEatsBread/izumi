@@ -203,7 +203,7 @@ describe('settings search entries', () => {
   })
 
   it('finds the settings that had no entry', () => {
-    expect(searchSettings('backup')[0]?.title).toBe('Backup & restore')
+    expect(searchSettings('backup')[0]?.title).toBe('Backup and restore')
     expect(searchSettings('reset izumi')[0]).toMatchObject({ title: 'Reset izumi to defaults', key: 'reset-defaults' })
     expect(searchSettings('diagnostics', true)[0]).toMatchObject({ title: 'Diagnostics report', key: 'diagnostics-report' })
     expect(searchSettings('hotkeys')[0]?.title).toBe('Hotkeys')

@@ -7,7 +7,7 @@ const shell = read('./FirstRunSetup.svelte')
 const transfer = read('./steps/TransferStep.svelte')
 const watch = read('./steps/WatchStep.svelte')
 const qr = read('../QrCode.svelte')
-const syncPage = read('../../../routes/app/settings/sync/+page.svelte')
+const syncPage = read('../../../routes/app/settings/devices/+page.svelte')
 const deepLink = read('../../deep-link-target.ts')
 const client = read('../../sync/client.ts')
 

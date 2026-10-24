@@ -7,6 +7,8 @@ import { load as profilesLoad } from './profiles/+page'
 import { load as changelogLoad } from './changelog/+page'
 import { load as interfaceLoad } from './interface/+page'
 import { load as navigationLoad } from './navigation/+page'
+import { load as syncLoad } from './sync/+page'
+import { load as backupLoad } from './backup/+page'
 
 const BASE = 'https://izumi.invalid'
 const here = (relative: string) => fileURLToPath(new URL(relative, import.meta.url))
@@ -27,6 +29,8 @@ const LEGACY: Array<[string, (event: never) => unknown, string]> = [
   ['changelog', changelogLoad, '/app/settings/about/changelog'],
   ['interface', interfaceLoad, '/app/settings/appearance'],
   ['navigation', navigationLoad, '/app/settings/appearance#navigation'],
+  ['sync', syncLoad, '/app/settings/devices#devices'],
+  ['backup', backupLoad, '/app/settings/devices#backup'],
 ]
 
 describe('Look, You and System legacy routes', () => {
@@ -47,6 +51,15 @@ describe('Look, You and System legacy routes', () => {
     const url = new URL(thrown.location, BASE)
     expect(url.pathname).toBe('/app/settings/accounts')
     expect(url.searchParams.get('setting')).toBe('show-18-content')
+  })
+
+  it('keeps a Device sync row and the QR offer on Devices', () => {
+    const row = new URL(redirectOf(syncLoad, '/app/settings/sync?setting=device-name').location, BASE)
+    expect(row.pathname).toBe('/app/settings/devices')
+    expect(row.searchParams.get('setting')).toBe('device-name')
+    const offer = new URL(redirectOf(syncLoad, '/app/settings/sync?offer=abc123').location, BASE)
+    expect(offer.pathname).toBe('/app/settings/devices')
+    expect(offer.searchParams.get('offer')).toBe('abc123')
   })
 
   it('sends old Accounts sections to Trackers and leaves current Accounts URLs alone', () => {
