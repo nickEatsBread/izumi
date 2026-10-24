@@ -769,7 +769,7 @@ function attachAndroid(
     // Same guard as the desktop handler: an open picker means the user is mid-choice (Change
     // source), and the outgoing file reaching EOF must not race their pick with an auto-advance.
     if (get(streamPicker)) return
-    const airedTotal = airedTotalOf(media)
+    const airedTotal = media.release?.pack ? episode + 1 : airedTotalOf(media)
     let next = episode + 1
     if (get(skipFiller)) {
       const anilistId = anilistIdOf(media)

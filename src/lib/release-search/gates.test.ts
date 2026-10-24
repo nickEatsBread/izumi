@@ -39,7 +39,8 @@ describe('playStream treats a release as its own torrent, not a title', () => {
 
   it('offers Next only inside a pack, and replays the same torrent for it', () => {
     expect(play).toContain('const airedTotal = media.release?.pack && episode != null ? episode + 1 : airedTotalOf(media) || null')
-    expect(play).toContain('const airedTotal = media.release?.pack ? episode + 1 : airedTotalOf(media)')
+    // Desktop and Android each have their own end-of-file handler; both advance inside a pack.
+    expect(play.split('const airedTotal = media.release?.pack ? episode + 1 : airedTotalOf(media)\n').length - 1).toBe(2)
     expect(play).toContain('if (media.release) return playStream(media, episode, media.release.stream, onState, { autoplay })')
     expect(body(play, 'export function playNext(')).toContain("if (currentMedia.release && !currentMedia.release.pack) return onState({ status: 'error', message: 'This release has no next episode.' })")
   })
