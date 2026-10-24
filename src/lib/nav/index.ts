@@ -160,6 +160,23 @@ export function revealAxisDelta(input: RevealAxisInput): number {
   return 0
 }
 
+/** Pure. How far to scroll so the item's centre sits at `pivot` (0 top, 1 bottom) of the port. A
+ *  shift under `minShift` px (default 12) is skipped while the item is fully in view, as NuvioTV
+ *  does, so a short step never nudges the list. */
+export function pivotScrollDelta(input: {
+  itemStart: number
+  itemEnd: number
+  portStart: number
+  portEnd: number
+  pivot: number
+  minShift?: number
+}): number {
+  const target = input.portStart + (input.portEnd - input.portStart) * input.pivot
+  const delta = Math.round((input.itemStart + input.itemEnd) / 2 - target)
+  const inView = input.itemStart >= input.portStart && input.itemEnd <= input.portEnd
+  return inView && Math.abs(delta) < (input.minShift ?? 12) ? 0 : delta
+}
+
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
 /** The nav region holding `el`: the app's side or top bar (`[data-nav-sidebar]`) or a
@@ -507,14 +524,19 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
     : 0
   // Keep extra space in the direction of travel. This makes the NEXT row/card visible and prevents
   // controller focus from slowly riding the bottom/right edge until it disappears from view.
-  const top = revealAxisDelta({
-    itemStart: item.top,
-    itemEnd: item.bottom,
-    portStart: port.top,
-    portEnd: port.bottom,
-    startMargin: Math.max(clamp(portHeight * 0.12, 40, 96), pinned + 16),
-    endMargin: clamp(portHeight * 0.2, 64, 144),
-  })
+  // A list that keeps its focused row at one height (data-nav-scroll-pivot: the controller Settings
+  // rail and pane, NuvioTV's 42%) centres the row there instead of riding the edge margins.
+  const pivot = vertical && pane ? Number(pane.dataset.navScrollPivot) : Number.NaN
+  const top = Number.isFinite(pivot)
+    ? pivotScrollDelta({ itemStart: item.top, itemEnd: item.bottom, portStart: port.top, portEnd: port.bottom, pivot })
+    : revealAxisDelta({
+      itemStart: item.top,
+      itemEnd: item.bottom,
+      portStart: port.top,
+      portEnd: port.bottom,
+      startMargin: Math.max(clamp(portHeight * 0.12, 40, 96), pinned + 16),
+      endMargin: clamp(portHeight * 0.2, 64, 144),
+    })
   const left = revealAxisDelta({
     itemStart: item.left,
     itemEnd: item.right,
@@ -838,6 +860,18 @@ export function resetNavLandingForTests(): void {
   lastNav = null
 }
 
+/** A surface's own say over an arrow move, asked after the slider step and before the named
+ *  overrides: the element to focus, null to swallow the press, or undefined to leave the move to the
+ *  engine. One owner at a time (controller Settings, settings/controller-zones.ts). */
+export type NavMoveOwner = (active: HTMLElement, dir: Dir) => HTMLElement | null | undefined
+let moveOwner: NavMoveOwner | null = null
+
+/** Install `owner`; returns its removal, which leaves a newer owner in place. */
+export function setNavMoveOwner(owner: NavMoveOwner): () => void {
+  moveOwner = owner
+  return () => { if (moveOwner === owner) moveOwner = null }
+}
+
 // The live keydown handler is kept on a registered symbol on globalThis. A second initDpadNav()
 // (Vite HMR re-running the app layout, or a duplicate copy of this module) then replaces the first
 // handler instead of stacking another one that moves focus twice per press.
@@ -953,6 +987,15 @@ export function initDpadNav() {
     // §3.11). This sits after the landing block, so it only acts on a slider that already holds
     // focus, and before the named overrides, so a data-nav-left/right can never pre-empt stepping.
     if (isPadEvent(e) && !get(isTv) && padAdjust(active, dir, e.repeat)) {
+      e.preventDefault()
+      return
+    }
+    // A surface that owns some moves (controller Settings: Right from its rail enters the pane on the
+    // row last used there). Never inside a trap: an open picker or dialog keeps its own moves.
+    const owned = trap ? undefined : moveOwner?.(active, dir)
+    if (owned !== undefined) {
+      // An owner hands over a row in a vertical list (a pane): reveal it along that list.
+      if (owned) focusByNav(owned, true, e.repeat)
       e.preventDefault()
       return
     }
