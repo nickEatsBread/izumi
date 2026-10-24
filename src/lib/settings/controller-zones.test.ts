@@ -252,11 +252,22 @@ describe('entering and leaving the pane', () => {
     expect(document.activeElement).toBe(row('Text size'))
   })
 
-  it('a slow switch starts once however often Right repeats, and moving on keeps focus in the rail', async () => {
+  /** A goto that waits for loads[n](); like the app, a load superseded by a later goto shows nothing. */
+  function slowLoads(): Array<() => void> {
     const loads: Array<() => void> = []
     mocks.goto.mockImplementation((href: string) => new Promise<void>((resolve) => {
-      loads.push(() => { show(href.split('/').pop() as Section); resolve() })
+      const call = loads.length
+      loads.push(() => {
+        if (call === loads.length - 1) show(href.split('/').pop() as Section)
+        resolve()
+      })
     }))
+    return loads
+  }
+
+  it('a slow switch starts once however often Right repeats, and moving on keeps focus in the rail and previews it', async () => {
+    vi.useFakeTimers()
+    const loads = slowLoads()
     rail('subtitles').focus()
     press('ArrowDown')
     press('ArrowRight')
@@ -267,6 +278,34 @@ describe('entering and leaving the pane', () => {
     await settle()
     expect(rail('languages').getAttribute('aria-current')).toBe('page')
     expect(document.activeElement).toBe(rail('subtitles'))
+    vi.advanceTimersByTime(RAIL_PREVIEW_MS)
+    expect(mocks.goto).toHaveBeenCalledTimes(2)
+    expect(mocks.goto).toHaveBeenLastCalledWith('/app/settings/subtitles', SWITCH)
+    loads[1]()
+    await settle()
+    expect(rail('subtitles').getAttribute('aria-current')).toBe('page')
+    expect(document.activeElement).toBe(rail('subtitles'))
+  })
+
+  it('Right on the lit item while another section loads switches back first, then enters', async () => {
+    vi.useFakeTimers()
+    const loads = slowLoads()
+    rail('subtitles').focus()
+    press('ArrowDown')
+    vi.advanceTimersByTime(RAIL_PREVIEW_MS)
+    press('ArrowUp')
+    press('ArrowRight')
+    expect(mocks.goto).toHaveBeenCalledTimes(2)
+    expect(mocks.goto).toHaveBeenLastCalledWith('/app/settings/subtitles', SWITCH)
+    expect(document.activeElement).toBe(rail('subtitles'))
+    loads[0]()
+    await settle()
+    expect(document.activeElement).toBe(rail('subtitles'))
+    loads[1]()
+    await settle()
+    expect(document.activeElement).toBe(row('Subtitles basics'))
+    vi.advanceTimersByTime(RAIL_PREVIEW_MS)
+    expect(mocks.goto).toHaveBeenCalledTimes(2)
   })
 
   it('the bare landing keeps its rows under Playback, the section it shows', () => {
@@ -304,6 +343,17 @@ describe('entering and leaving the pane', () => {
     expect(document.activeElement).toBe(rail('subtitles'))
   })
 
+  it('a keyless row is remembered among its twins in the pane, not the whole document', () => {
+    const body = document.querySelector('[data-settings-pane] [data-settings-subcategory-body]')!
+    body.insertAdjacentHTML('beforeend', [0, 1].map((index) =>
+      `<button type="button" data-focusable aria-label="Search settings" data-rect="352,${300 + index * 64},540,56"></button>`).join(''))
+    const twins = document.querySelectorAll<HTMLElement>('[data-settings-pane] [aria-label="Search settings"]')
+    twins[1].focus()
+    rail('subtitles').focus()
+    press('ArrowRight')
+    expect(document.activeElement).toBe(twins[1])
+  })
+
   it('paneEntryTarget falls back to the first control when the remembered row is gone', () => {
     row('Text size').focus()
     document.querySelector('[data-setting-key="subtitles-1"]')!.remove()
@@ -335,10 +385,12 @@ describe('entering Settings', () => {
     expect(mocks.goto).not.toHaveBeenCalled()
   })
 
-  it('leaves focus alone after a history step, a search hit, or a touch', async () => {
+  it('leaves focus alone after a history step, a search hit, a #block link, or a touch', async () => {
     await controllerLanded({ type: 'popstate', from: url('/app/home'), to: url('/app/settings/subtitles') }, root)
     expect(document.activeElement).toBe(document.body)
     await controllerLanded({ type: 'link', from: url('/app/home'), to: url('/app/settings/subtitles?setting=text-size') }, root)
+    expect(document.activeElement).toBe(document.body)
+    await controllerLanded({ type: 'link', from: url('/app/home'), to: url('/app/settings/subtitles#text-size') }, root)
     expect(document.activeElement).toBe(document.body)
     inputType.set('touch')
     await controllerLanded({ type: 'link', from: url('/app/home'), to: url('/app/settings/subtitles') }, root)

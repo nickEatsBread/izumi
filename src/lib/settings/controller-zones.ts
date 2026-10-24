@@ -59,7 +59,8 @@ export interface ControllerNavigation { type: string; from: URL | null; to: URL 
 /** The settings layout's afterNavigate in controller mode. Entering Settings at its bare route opens
  *  the section remembered from earlier this session (the bare route shows Playback), and entering it
  *  with a pad or a remote puts focus on the lit rail item. A history step keeps route focus memory's
- *  restore and a search hit keeps its own reveal. Every landing remembers the lit section. */
+ *  restore and a search hit or a #block link keeps its own reveal. Every landing remembers the lit
+ *  section. */
 export async function controllerLanded(navigation: ControllerNavigation, root: ParentNode = document): Promise<void> {
   const { type, from, to } = navigation
   if (!to) return
@@ -72,7 +73,7 @@ export async function controllerLanded(navigation: ControllerNavigation, root: P
   }
   const lit = root.querySelector(LIT_LINK)?.getAttribute('href')
   if (lit) lastSection = lit
-  if (entering && !to.searchParams.has(SETTING_PARAM) && focusRestoreAllowed()) focusRailEntry(root)
+  if (entering && !reveal && focusRestoreAllowed()) focusRailEntry(root)
 }
 
 /** Install the zones on the controller layout's root; returns the teardown. */
@@ -82,6 +83,8 @@ export function installControllerZones(root: HTMLElement): () => void {
   // instead of restarting the same load.
   let showing: { href: string; done: Promise<void> } | null = null
   const pane = () => root.querySelector<HTMLElement>('[data-settings-pane]')
+  // The section on screen once the switch in flight lands: aria-current moves only when it has.
+  const shownHref = () => showing?.href ?? root.querySelector(LIT_LINK)?.getAttribute('href') ?? null
   const cancelPreview = () => {
     if (pending !== null) clearTimeout(pending)
     pending = null
@@ -103,13 +106,14 @@ export function installControllerZones(root: HTMLElement): () => void {
     return entry.done
   }
 
-  /** Right or A on a rail item: show its section now if it is not the one shown, then focus the
-   *  pane's entry control unless focus moved on while the section loaded. */
+  /** Right or A on a rail item: show its section now unless it is on screen with no switch loading
+   *  (a load still running for another section would replace the pane), then focus the pane's entry
+   *  control unless focus moved on while the section loaded. */
   async function enterPane(link: HTMLAnchorElement): Promise<void> {
     cancelPreview()
     const from = document.activeElement
     const href = link.getAttribute('href')
-    if (href && !isLit(link)) await showSection(href)
+    if (href && (showing || !isLit(link))) await showSection(href)
     await tick()
     if (document.activeElement !== from) return
     const scroller = pane()
@@ -122,8 +126,8 @@ export function installControllerZones(root: HTMLElement): () => void {
     const link = active.closest<HTMLAnchorElement>(RAIL_LINK)
     if (!link || !root.contains(link)) return undefined
     const scroller = pane()
-    if (isLit(link)) return scroller ? paneEntryTarget(scroller) : null
-    void enterPane(link)
+    if (!showing && isLit(link)) return scroller ? paneEntryTarget(scroller) : null
+    enterPane(link).catch(() => {})
     return null
   }
 
@@ -136,14 +140,15 @@ export function installControllerZones(root: HTMLElement): () => void {
       const armed = get(navEpoch)
       // A Back or any other navigation started meanwhile wins: the preview's replacing goto would
       // supersede it and overwrite the history entry it moved to.
-      if (href && !isLit(link)) pending = setTimeout(() => {
+      if (href && href !== shownHref()) pending = setTimeout(() => {
         pending = null
-        if (!backPending() && get(navEpoch) === armed) void showSection(href)
+        if (!backPending() && get(navEpoch) === armed) showSection(href).catch(() => {})
       }, RAIL_PREVIEW_MS)
       return
     }
-    if (!pane()?.contains(event.target)) return
-    const row = describeFocus(event.target)
+    const scroller = pane()
+    if (!scroller?.contains(event.target)) return
+    const row = describeFocus(event.target, scroller)
     if (row) lastRows.set(pageKey(location.pathname), row)
   }
 
@@ -160,7 +165,7 @@ export function installControllerZones(root: HTMLElement): () => void {
     const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>(RAIL_LINK) : null
     if (!link || event.detail > 0 || event.defaultPrevented) return
     event.preventDefault()
-    void enterPane(link)
+    enterPane(link).catch(() => {})
   }
 
   root.addEventListener('focusin', onFocusIn)
