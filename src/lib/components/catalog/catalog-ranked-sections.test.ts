@@ -15,4 +15,10 @@ describe('ranked catalog sections', () => {
     expect(row).toContain("font-feature-settings: 'tnum' 1")
     expect(row).not.toContain('-webkit-text-stroke')
   })
+
+  // A theme's Top 10 card (`rankPosition`) needs the card's place on every catalog, as AniList rows give it.
+  it('tells each card of a plain row its place in the row', () => {
+    expect(row).toContain('{#each section.media as media, index (media.catalog?.id ?? media.id)}')
+    expect(row).toContain('<div class="shrink-0"><SmallCard {media} {showCatalogSource} position={index + 1} /></div>')
+  })
 })

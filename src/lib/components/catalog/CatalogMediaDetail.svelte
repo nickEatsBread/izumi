@@ -9,6 +9,9 @@
   import { openUrl } from '@tauri-apps/plugin-opener'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import Carousel from '$lib/components/cards/Carousel.svelte'
+  import Tabs from '$lib/components/detail/Tabs.svelte'
+  import SeasonPicker from '$lib/components/detail/SeasonPicker.svelte'
+  import { resolveSections } from '$lib/detail/sections'
   import CatalogSourceAttribution from './CatalogSourceAttribution.svelte'
   import { loadCatalogProvider } from '$lib/catalog/registry'
   import { CatalogConfigurationError } from '$lib/catalog/types'
@@ -33,9 +36,9 @@
   import BackdropTrailer from '$lib/components/cards/BackdropTrailer.svelte'
   import { DETAIL_TRAILER_DWELL } from '$lib/components/cards/backdrop-trailer'
   import { youtubeTrailerId } from '$lib/components/cards/youtube-embed'
-  import { resolveDetail } from '$lib/themes/presentation'
+  import { episodesBelow, episodesOnSide, resolveDetail, type DetailSection } from '$lib/themes/presentation'
   import { themePresentation } from '$lib/themes/runtime'
-  import { mediaDisplayModel } from '$lib/themes/host-model'
+  import { episodeDisplayModel, mediaDisplayModel } from '$lib/themes/host-model'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
 
   let { provider, type, id }: { provider: CatalogProviderId; type: CatalogContentType; id: string } = $props()
@@ -93,6 +96,41 @@
     if (!media?.releaseDate) return ''
     const date = new Date(`${media.releaseDate}T00:00:00`)
     return Number.isNaN(date.valueOf()) ? media.releaseDate : new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(date)
+  })
+  // A theme that composes the series page (sections, tabs, episode cards) composes this page too, as an
+  // anime's: the episodes below the header or in a tab, the sections it lists in its order and names.
+  const detailThemed = $derived(!!$themePresentation?.detail)
+  // A stacked (or split) series page puts the title block under the artwork, in `detail.content` with the
+  // sections, so a theme that pins the art behind the page (as Starlight does) pins only the art. That
+  // wrapper pads the page, so the sections inside it drop their own side padding.
+  const themedStack = $derived(detailThemed && detailTheme.layout !== 'overlay' && !$isMobile)
+  const sidePad = $derived(themedStack ? '' : 'px-5 sm:px-8')
+  const factsTemplate = $derived(themedStack && (detailTheme.factsStyle ?? 'template') === 'template' ? detailTheme.facts : undefined)
+  const seriesEpisodes = $derived(!isMovie && videos.length > 0)
+  // This page has no episode rail, so a rail theme's episodes sit below the header here.
+  const episodesTabbed = $derived(!episodesBelow($themePresentation, !$isMobile) && !episodesOnSide($themePresentation, !$isMobile))
+  const sectionView = $derived(resolveSections(detailTheme.sections, { phone: $isMobile, episodesTabbed: seriesEpisodes && episodesTabbed }))
+  const hasOverview = $derived(!!(media?.genres?.length || parsedDescription.links.length || parsedDescription.facts.length
+    || releaseDate || media?.duration || media?.originalLanguage || media?.studios?.nodes?.length))
+  const hasSection = (section: DetailSection): boolean => section === 'episodes' ? seriesEpisodes
+    : section === 'overview' ? hasOverview : section === 'relations' ? relations.length > 0
+    : section === 'recommended' ? recommendations.length > 0 : section === 'characters' ? cast.length + crew.length > 0 : false
+  const sectionTabs = $derived(sectionView.tabs.filter(hasSection))
+  const sectionFolded = $derived(sectionView.folded.filter(hasSection))
+  let pickedTab = $state('')
+  const shownTab = $derived(sectionTabs.find((tab) => tab === pickedTab) ?? (sectionTabs.includes(sectionView.initial) ? sectionView.initial : sectionTabs[0]))
+  const episodeCard = $derived(detailTheme.episodes?.card)
+  const episodeArrangement = $derived(detailTheme.episodes?.arrangement)
+  // One season at a time, as a theme's season dropdown shows them; specials (season 0) last.
+  const seasonNumbers = $derived([...new Set(videos.map((video) => video.season ?? 1))].sort((a, b) => (a || Infinity) - (b || Infinity)))
+  let pickedSeason = $state<{ title: string; season: number } | null>(null)
+  const currentSeason = $derived(pickedSeason?.title === id && seasonNumbers.includes(pickedSeason.season) ? pickedSeason.season : seasonNumbers[0])
+  const seasonVideos = $derived(seasonNumbers.length > 1 ? videos.filter((video) => (video.season ?? 1) === currentSeason) : videos)
+  const seasonEntries = $derived(media && seasonNumbers.length > 1
+    ? seasonNumbers.map((number) => ({ media: media!, label: number === 0 ? 'Specials' : `Season ${number}`, active: number === currentSeason }))
+    : [])
+  const episodeModel = (video: MediaVideo) => episodeDisplayModel(media!, video.episode ?? video.number, {
+    title: video.title, overview: video.overview, image: video.thumbnail, airDate: video.released, season: video.season, seasonEpisode: video.episode,
   })
   const attributedMedia = $derived.by(() => {
     if (!media || media.catalog?.provider !== 'jvm') return media
@@ -160,7 +198,7 @@
 {:else}
   <!-- The series page's styling hooks (as on an anime's overlay page), so a theme styles a movie or
        a show from any catalog like its series pages. -->
-  <div data-slot="detail" data-layout="overlay" data-variant={$isMobile ? 'phone' : 'desktop'} class="pb-20">
+  <div data-slot="detail" data-layout={themedStack ? detailTheme.layout : 'overlay'} data-variant={$isMobile ? 'phone' : 'desktop'} class="relative pb-20">
     <section data-slot="detail.banner" data-art="banner" class="relative isolate min-h-[52vh] overflow-hidden">
       <img data-part="detail.backdrop" data-art="banner" src={banner(media)} alt="" class="absolute inset-0 h-full w-full object-cover" />
       <!-- API 6 detail.preview: a muted trailer over the art; the layers after it pass clicks through to its mute button. -->
@@ -168,13 +206,24 @@
                        part="detail.video" mutePart="detail.mute" muteClass="right-8 top-24 z-20" />
       <div data-part="detail.scrim" data-dir="left" class="pointer-events-none absolute inset-0 bg-gradient-to-r from-background via-background/75 to-background/15"></div>
       <div data-part="detail.scrim" data-dir="bottom" class="pointer-events-none absolute inset-0 bg-gradient-to-t from-background via-transparent to-black/35"></div>
+      {#if !themedStack}
+        {@render backButton('z-10')}
+        <div class="relative flex min-h-[52vh] max-w-6xl items-end gap-8 px-5 pb-8 pt-24 sm:px-8 pointer-events-none [&>*]:pointer-events-auto">
+          {#if !themedOverlay}
+            <img data-part="detail.poster" src={cover(media)} alt="" class="hidden aspect-[2/3] rounded-xl bg-muted object-cover shadow-2xl md:block md:w-48 lg:w-56 xl:w-64" />
+          {/if}
+          <div data-part="detail.body" class="min-w-0 flex-1">{@render headerInfo(media)}</div>
+        </div>
+      {/if}
+      <CatalogAwards {media} />
+    </section>
+
+    {#snippet backButton(className: string)}
       <button data-focusable onclick={() => history.length > 1 ? history.back() : goto('/app/home')} aria-label="Back"
-        class="absolute left-4 top-10 z-10 grid size-10 place-items-center rounded-full bg-black/55 text-white backdrop-blur sm:left-8"><ChevronLeft size={22} /></button>
-      <div class="relative flex min-h-[52vh] max-w-6xl items-end gap-8 px-5 pb-8 pt-24 sm:px-8 pointer-events-none [&>*]:pointer-events-auto">
-        {#if !themedOverlay}
-          <img data-part="detail.poster" src={cover(media)} alt="" class="hidden aspect-[2/3] rounded-xl bg-muted object-cover shadow-2xl md:block md:w-48 lg:w-56 xl:w-64" />
-        {/if}
-        <div data-part="detail.body" class="min-w-0 flex-1">
+        class="absolute left-4 top-10 grid size-10 place-items-center rounded-full bg-black/55 text-white backdrop-blur sm:left-8 {className}"><ChevronLeft size={22} /></button>
+    {/snippet}
+
+    {#snippet headerInfo(media: Media)}
           {#if provider === 'kitsu'}
             <div class="mb-2 text-xs font-black uppercase tracking-[0.18em] text-theme">Kitsu</div>
           {/if}
@@ -187,11 +236,14 @@
           {:else}
             <h1 data-part="detail.title" class="text-3xl font-black leading-tight sm:text-5xl">{title(media)}</h1>
           {/if}
-          {#if themedOverlay && detailTheme.header}
+          {#if (themedOverlay || themedStack) && detailTheme.header}
             <div data-part="detail.header" class="mt-3">
               <ThemeNode node={detailTheme.header} model={mediaDisplayModel(media)} />
             </div>
           {/if}
+          {#if factsTemplate}
+            <div data-part="detail.facts" class="mt-3"><ThemeNode node={factsTemplate} model={mediaDisplayModel(media)} /></div>
+          {:else}
           <div data-part="detail.meta" class="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-sm text-foreground/75">
             {#if format(media)}<span>{format(media)}</span>{/if}
             {#if season(media)}<span>{season(media)}</span>{/if}
@@ -199,6 +251,7 @@
             {#if media.startDate?.year}<span>{media.startDate.year}</span>{/if}
             {#if media.contentRating}<span class="rounded border border-foreground/25 px-1.5 font-bold">{media.contentRating}</span>{/if}
           </div>
+          {/if}
           <div class="mt-3"><MediaRatings {media} embeddedScore={parsedDescription.score} /></div>
           {#if media.tagline}<p class="mt-4 text-base font-semibold italic text-foreground/75">“{media.tagline}”</p>{/if}
           {#if parsedDescription.synopsis}
@@ -234,16 +287,27 @@
             {/if}
           </div>
           {#if playState.status === 'error'}<p class="mt-3 text-sm text-destructive">{playState.message}</p>{/if}
-        </div>
-      </div>
-      <CatalogAwards {media} />
-    </section>
+    {/snippet}
 
-    {#if media.genres?.length || parsedDescription.links.length}
-      <div class="flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-5 sm:px-8">
-        {#if media.genres?.length}
+    {#if themedStack}
+      {@render backButton('z-20')}
+      <!-- Pulled up over the art, as an anime's stacked page; only its contents take the pointer, so the
+           trailer's mute button stays reachable. -->
+      <div data-part="detail.content" class="pointer-events-none relative z-10 -mt-[18vh] px-5 pb-16 sm:px-8 [&>*]:pointer-events-auto">
+        <div data-part="detail.row" class="mb-4 flex flex-col gap-5 md:flex-row md:items-end">
+          <img data-part="detail.poster" src={cover(media)} alt="" class="hidden aspect-[2/3] w-44 shrink-0 rounded-lg bg-muted object-cover shadow-lg md:block" />
+          <div data-part="detail.summary" class="min-w-0 flex-1">{@render headerInfo(media)}</div>
+        </div>
+        {@render themedLower()}
+      </div>
+    {/if}
+
+    {#snippet overviewBody(m: Media)}
+    {#if m.genres?.length || parsedDescription.links.length}
+      <div class="flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 {sidePad}">
+        {#if m.genres?.length}
           <div data-part="detail.genres" class="flex flex-wrap gap-2">
-            {#each media.genres as genre}<span data-part="chip" class="rounded-full bg-secondary px-3 py-1 text-xs font-bold">{genre}</span>{/each}
+            {#each m.genres as genre}<span data-part="chip" class="rounded-full bg-secondary px-3 py-1 text-xs font-bold">{genre}</span>{/each}
           </div>
         {/if}
         {#if parsedDescription.links.length}
@@ -259,7 +323,7 @@
     {/if}
 
     {#if parsedDescription.facts.length}
-      <section class="mt-3 max-w-6xl px-5 sm:px-8" aria-label="Source information">
+      <section class="mt-3 max-w-6xl {sidePad}" aria-label="Source information">
         <dl data-part="detail.facts" class="flex flex-wrap gap-x-7 gap-y-3 border-y border-border/60 py-3">
           {#each parsedDescription.facts as fact (fact.label)}
             <div data-part="fact" data-key={fact.label.toLowerCase()} class="min-w-24 max-w-sm">
@@ -271,28 +335,122 @@
       </section>
     {/if}
 
-    {#if releaseDate || media.duration || media.originalLanguage || media.studios?.nodes?.length}
-      <section class="mt-3 max-w-6xl px-5 sm:px-8" aria-label="Title information">
+    {#if releaseDate || m.duration || m.originalLanguage || m.studios?.nodes?.length}
+      <section class="mt-3 max-w-6xl {sidePad}" aria-label="Title information">
         <dl data-part="detail.facts" class="flex flex-wrap gap-x-7 gap-y-3 border-y border-border/60 py-3">
           {#if releaseDate}<div data-part="fact" data-key="aired"><dt data-part="fact.label" class="text-[0.7rem] font-semibold text-muted-foreground">Released</dt><dd data-part="fact.value" class="mt-0.5 text-sm font-bold">{releaseDate}</dd></div>{/if}
-          {#if media.duration}<div data-part="fact" data-key="duration"><dt data-part="fact.label" class="text-[0.7rem] font-semibold text-muted-foreground">Runtime</dt><dd data-part="fact.value" class="mt-0.5 text-sm font-bold">{media.duration} min</dd></div>{/if}
-          {#if media.originalLanguage}<div data-part="fact" data-key="language"><dt data-part="fact.label" class="text-[0.7rem] font-semibold text-muted-foreground">Original language</dt><dd data-part="fact.value" class="mt-0.5 text-sm font-bold uppercase">{media.originalLanguage}</dd></div>{/if}
-          {#if media.studios?.nodes?.length}<div data-part="fact" data-key="studio" class="max-w-xl"><dt data-part="fact.label" class="text-[0.7rem] font-semibold text-muted-foreground">Studios & networks</dt><dd data-part="fact.value" class="mt-0.5 text-sm font-bold">{media.studios.nodes.map((studio) => studio.name).join(', ')}</dd></div>{/if}
+          {#if m.duration}<div data-part="fact" data-key="duration"><dt data-part="fact.label" class="text-[0.7rem] font-semibold text-muted-foreground">Runtime</dt><dd data-part="fact.value" class="mt-0.5 text-sm font-bold">{m.duration} min</dd></div>{/if}
+          {#if m.originalLanguage}<div data-part="fact" data-key="language"><dt data-part="fact.label" class="text-[0.7rem] font-semibold text-muted-foreground">Original language</dt><dd data-part="fact.value" class="mt-0.5 text-sm font-bold uppercase">{m.originalLanguage}</dd></div>{/if}
+          {#if m.studios?.nodes?.length}<div data-part="fact" data-key="studio" class="max-w-xl"><dt data-part="fact.label" class="text-[0.7rem] font-semibold text-muted-foreground">Studios & networks</dt><dd data-part="fact.value" class="mt-0.5 text-sm font-bold">{m.studios.nodes.map((studio) => studio.name).join(', ')}</dd></div>{/if}
         </dl>
       </section>
     {/if}
 
-    {#if !isMovie && videos.length}
-      <section data-slot="detail.episodes" class="mt-8 px-5 sm:px-8">
-        <h2 data-part="detail.section-title" class="mb-4 text-xl font-black">Episodes <span class="text-sm font-normal text-muted-foreground">{videos.length}</span></h2>
+    {/snippet}
+
+    {#snippet episodeTiles(list: MediaVideo[])}
         <div data-part="episodes.grid" class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {#each videos as video (video.id ?? video.number)}
+          {#each list as video (video.id ?? video.number)}
             <button data-part="episode" data-variant={video.thumbnail ? 'thumb' : 'compact'} data-focusable onclick={() => play(video)} class="group flex min-h-16 items-center gap-3 rounded-lg bg-secondary/60 p-2 text-left hover:bg-secondary">
               {#if video.thumbnail}<img data-part="episode.still" src={video.thumbnail} alt="" loading="lazy" class="aspect-video w-24 rounded-md bg-muted object-cover" />{/if}
               <span class="min-w-0"><span data-part="episode.number" class="block text-xs text-muted-foreground">{video.season != null && video.episode != null ? `S${video.season} E${video.episode}` : `Episode ${video.number}`}</span><span data-part="episode.title" class="line-clamp-2 text-sm font-bold">{video.title || `Episode ${video.number}`}</span></span>
             </button>
           {/each}
         </div>
+    {/snippet}
+
+    {#snippet castTrack()}
+        <div data-part="detail.track" class="flex gap-3 overflow-x-auto pb-2">
+          {#each [...cast.slice(0, 14), ...crew.slice(0, 10)] as credit, index (`${credit.node.id}:${index}`)}
+            <div class="w-28 shrink-0">
+              {#if credit.node.image?.large}<img src={credit.node.image.large} alt="" loading="lazy" class="aspect-[2/3] w-full rounded-lg bg-muted object-cover" />{:else}<div class="grid aspect-[2/3] place-items-center rounded-lg bg-secondary text-3xl font-black text-muted-foreground">{credit.node.name.full?.[0] ?? '?'}</div>{/if}
+              <div class="mt-1 line-clamp-2 text-xs font-bold">{credit.node.name.full}</div><div class="truncate text-[0.65rem] text-muted-foreground">{credit.role}</div>
+            </div>
+          {/each}
+        </div>
+    {/snippet}
+
+    {#snippet themedEpisodes()}
+      <section data-slot="detail.episodes" class="mt-8 {sidePad}">
+        <div data-slot="episodes.toolbar" data-variant="header" class="relative mb-4 flex flex-wrap items-center gap-2">
+          {#if seasonEntries.length}
+            <div class="mr-auto min-w-0"><SeasonPicker entries={seasonEntries} variant="dropdown" inline onpick={(index) => (pickedSeason = { title: id, season: seasonNumbers[index] })} /></div>
+          {:else}
+            <h2 data-part="episodes.heading" class="mr-auto flex items-baseline gap-2 text-lg font-black">
+              Episodes<span data-part="episodes.count" class="text-sm font-bold text-muted-foreground">{seasonVideos.length}</span>
+            </h2>
+          {/if}
+        </div>
+        {#if episodeCard}
+          <div data-part="episodes.grid" class="grid select-none {episodeArrangement === 'list' ? 'grid-cols-1 gap-2' : 'grid-cols-1 gap-4 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]'}">
+            {#each seasonVideos as video (video.id ?? video.number)}
+              <button type="button" data-part="episode" data-variant="template" data-focusable onclick={() => play(video)} title={`Play — ${video.title || `Episode ${video.number}`}`}
+                      class="theme-episode flex w-full min-w-0 select-none overflow-hidden bg-secondary text-left {episodeArrangement === 'list' ? 'rounded-sm' : 'flex-col rounded-xl sm:rounded-lg'}">
+                <ThemeNode node={episodeCard} model={episodeModel(video)} />
+              </button>
+            {/each}
+          </div>
+        {:else}
+          {@render episodeTiles(seasonVideos)}
+        {/if}
+      </section>
+    {/snippet}
+
+    {#snippet sectionBody(section: DetailSection, m: Media)}
+      {#if section === 'episodes'}
+        {@render themedEpisodes()}
+      {:else if section === 'overview'}
+        {@render overviewBody(m)}
+      {:else if section === 'relations'}
+        <div data-slot="detail.relations" class="flex flex-wrap gap-x-6 gap-y-8 {sidePad}">
+          {#each relations as item (item.catalog?.id ?? item.id)}<div data-part="relation" class="shrink-0"><SmallCard media={item} /></div>{/each}
+        </div>
+      {:else if section === 'recommended'}
+        <div data-slot="detail.recommended" data-part="detail.track" class="grid grid-cols-2 gap-4 sm:flex sm:flex-wrap {sidePad}">
+          {#each recommendations as item (item.catalog?.id ?? item.id)}<div class="min-w-0 sm:w-[152px]"><SmallCard media={item} fill /></div>{/each}
+        </div>
+      {:else if section === 'characters'}
+        <div class={sidePad}>{@render castTrack()}</div>
+      {/if}
+    {/snippet}
+
+    {#snippet themedLower()}
+      <div class="pb-4">
+        {#if seriesEpisodes && !sectionTabs.includes('episodes') && !sectionFolded.includes('episodes')}{@render themedEpisodes()}{/if}
+        {#if sectionView.mode === 'stack'}
+          {#each [...sectionTabs, ...sectionFolded] as id (id)}
+            <section data-slot="detail.section" data-section={id} class="mt-8">
+              <h2 data-part="detail.section-title" class="mb-3 text-lg font-black {sidePad}">{sectionView.labels[id]}</h2>
+              {@render sectionBody(id, media!)}
+            </section>
+          {/each}
+        {:else if sectionTabs.length}
+          <div class="mt-8 {sidePad}">
+            <Tabs tabs={sectionTabs} labels={sectionView.labels} bind:active={() => shownTab, (tab) => (pickedTab = tab)}
+                  variant={!$isMobile && detailTheme.tabs === 'bottom' ? 'underline' : detailTheme.tabs} page />
+          </div>
+          <div class="mt-4">{@render sectionBody(shownTab, media!)}</div>
+          {#if shownTab === 'overview'}
+            {#each sectionFolded as id (id)}
+              <section data-slot="detail.section" data-section={id} class="mt-8">
+                <h2 data-part="detail.section-title" class="mb-3 text-lg font-black {sidePad}">{sectionView.labels[id]}</h2>
+                {@render sectionBody(id, media!)}
+              </section>
+            {/each}
+          {/if}
+        {/if}
+      </div>
+    {/snippet}
+
+    {#if detailThemed}
+      {#if !themedStack}{@render themedLower()}{/if}
+    {:else}
+      {@render overviewBody(media)}
+
+    {#if !isMovie && videos.length}
+      <section data-slot="detail.episodes" class="mt-8 px-5 sm:px-8">
+        <h2 data-part="detail.section-title" class="mb-4 text-xl font-black">Episodes <span class="text-sm font-normal text-muted-foreground">{videos.length}</span></h2>
+        {@render episodeTiles(videos)}
       </section>
     {/if}
 
@@ -302,15 +460,9 @@
     {#if cast.length || crew.length}
       <section data-slot="detail.characters" class="mt-8 px-5 sm:px-8">
         <h2 data-part="detail.heading" class="mb-4 text-xl font-black">Cast & crew</h2>
-        <div data-part="detail.track" class="flex gap-3 overflow-x-auto pb-2">
-          {#each [...cast.slice(0, 14), ...crew.slice(0, 10)] as credit, index (`${credit.node.id}:${index}`)}
-            <div class="w-28 shrink-0">
-              {#if credit.node.image?.large}<img src={credit.node.image.large} alt="" loading="lazy" class="aspect-[2/3] w-full rounded-lg bg-muted object-cover" />{:else}<div class="grid aspect-[2/3] place-items-center rounded-lg bg-secondary text-3xl font-black text-muted-foreground">{credit.node.name.full?.[0] ?? '?'}</div>{/if}
-              <div class="mt-1 line-clamp-2 text-xs font-bold">{credit.node.name.full}</div><div class="truncate text-[0.65rem] text-muted-foreground">{credit.role}</div>
-            </div>
-          {/each}
-        </div>
+        {@render castTrack()}
       </section>
+    {/if}
     {/if}
   </div>
   {#if showLocalLists}<LocalListPicker {media} onclose={() => (showLocalLists = false)} />{/if}
