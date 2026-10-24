@@ -94,3 +94,21 @@ describe('SelectMenu in controller mode (spec §3.5)', () => {
     expect(source).toContain("stepMenuOption(menu ?? root, event.key === 'ArrowDown' ? 1 : -1, $settingsControllerMode)")
   })
 })
+
+describe('setup-heavy rows in controller mode (spec §5.4)', () => {
+  const component = read('./SetupElsewhere.svelte')
+  const page = (name: string) => read(`../../../routes/app/settings/${name}/+page.svelte`)
+
+  it('renders a status row in controller mode and the full controls elsewhere', () => {
+    expect(component).toContain('{#if $settingsControllerMode}')
+    expect(component).toContain('<SettingsRow {title} description={where} value={status} {settingKey} chevron onActivate={() => (expanded = !expanded)} {expanded} {children} />')
+    expect(component).toContain('{@render children()}')
+  })
+
+  it('wraps custom mpv options, the subtitle text filter, Worker setup and Theme Studio', () => {
+    expect(page('playback')).toMatch(/<SetupElsewhere title="Custom mpv options"[^>]*>[\s\S]*?bind:value=\{\$rawMpvOptions\}[\s\S]*?<\/SetupElsewhere>/)
+    expect(page('subtitles')).toMatch(/<SetupElsewhere title="Text filter"[^>]*>[\s\S]*?\$subtitleRegexFilter[\s\S]*?<\/SetupElsewhere>/)
+    expect(page('devices')).toMatch(/<SetupElsewhere title="Worker setup and updates"[^>]*>[\s\S]*?<\/SetupElsewhere>/)
+    expect(page('appearance')).toMatch(/<SetupElsewhere title="Theme Studio"[^>]*>[\s\S]*?href="\/app\/settings\/theme-studio"[\s\S]*?<\/SetupElsewhere>/)
+  })
+})

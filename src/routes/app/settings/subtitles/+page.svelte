@@ -32,6 +32,7 @@
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
   import SettingsChoiceRow from '$lib/components/settings/SettingsChoiceRow.svelte'
   import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte'
+  import SetupElsewhere from '$lib/components/settings/SetupElsewhere.svelte'
   import SubtitleProviderBadge from '$lib/components/settings/SubtitleProviderBadge.svelte'
   import ExternalLink from '@lucide/svelte/icons/external-link'
   import { isAndroid } from '$lib/platform'
@@ -372,11 +373,13 @@
             {#snippet control()}<SettingsSwitch interactive={false} label="Stronger SDH removal" value={$subtitleStripSdhHarder} onToggle={() => ($subtitleStripSdhHarder = !$subtitleStripSdhHarder)} />{/snippet}
           </SettingsRow>
         {/if}
-        <SettingsRow settingKey="text-filter" title="Text filter" description="Hide lines matching an mpv regular expression.">
-          {#snippet control()}
-            <input type="text" bind:value={$subtitleRegexFilter} data-focusable aria-label="Subtitle text filter" placeholder="Optional regex" class="h-9 w-36 rounded-md bg-input px-3 text-sm sm:w-48" />
-          {/snippet}
-        </SettingsRow>
+        <SetupElsewhere title="Text filter" status={$subtitleRegexFilter.trim() ? 'Set' : 'Off'} where="Keyboard needed: connect one, or set it up on a computer" settingKey="text-filter">
+          <SettingsRow settingKey="text-filter" title="Text filter" description="Hide lines matching an mpv regular expression.">
+            {#snippet control()}
+              <input type="text" bind:value={$subtitleRegexFilter} data-focusable aria-label="Subtitle text filter" placeholder="Optional regex" class="h-9 w-36 rounded-md bg-input px-3 text-sm sm:w-48" />
+            {/snippet}
+          </SettingsRow>
+        </SetupElsewhere>
       {/if}
     </SettingsSubcategory>
   {/if}

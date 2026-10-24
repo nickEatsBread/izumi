@@ -27,6 +27,7 @@
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
   import SettingsChoiceRow from '$lib/components/settings/SettingsChoiceRow.svelte'
   import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte'
+  import SetupElsewhere from '$lib/components/settings/SetupElsewhere.svelte'
   import HotkeyBindings from '$lib/components/settings/HotkeyBindings.svelte'
   import { m } from '$lib/paraglide/messages.js'
   import { tick } from 'svelte'
@@ -292,18 +293,20 @@
           <p class="px-3 py-2.5 text-sm text-yellow-500">{$qualityNotice}</p>
         {/if}
         {#if $videoQualityPreset === 'custom'}
-          <SettingsRow settingKey="custom-mpv-options" title="Custom mpv options" description="One key=value per line. Some options apply from the next video.">
-            <textarea
-              data-focusable
-              aria-label="Custom mpv options"
-              class="min-h-32 w-full rounded-md bg-input px-3 py-2.5 font-mono text-base sm:py-2 sm:text-sm"
-              placeholder="scale=ewa_lanczossharp&#10;deband=yes&#10;glsl-shaders=C:/path/to/shader.glsl"
-              bind:value={$rawMpvOptions}
-            ></textarea>
-            {#if $qualityFailedKeys.length}
-              <p class="mt-1 text-xs text-yellow-500">No live effect (check spelling, or applies next video): {$qualityFailedKeys.join(', ')}</p>
-            {/if}
-          </SettingsRow>
+          <SetupElsewhere title="Custom mpv options" status={$rawMpvOptions.trim() ? 'Set' : 'Not set'} where="Keyboard needed: connect one, or set it up on a computer" settingKey="custom-mpv-options">
+            <SettingsRow settingKey="custom-mpv-options" title="Custom mpv options" description="One key=value per line. Some options apply from the next video.">
+              <textarea
+                data-focusable
+                aria-label="Custom mpv options"
+                class="min-h-32 w-full rounded-md bg-input px-3 py-2.5 font-mono text-base sm:py-2 sm:text-sm"
+                placeholder="scale=ewa_lanczossharp&#10;deband=yes&#10;glsl-shaders=C:/path/to/shader.glsl"
+                bind:value={$rawMpvOptions}
+              ></textarea>
+              {#if $qualityFailedKeys.length}
+                <p class="mt-1 text-xs text-yellow-500">No live effect (check spelling, or applies next video): {$qualityFailedKeys.join(', ')}</p>
+              {/if}
+            </SettingsRow>
+          </SetupElsewhere>
         {/if}
       </div>
     {/if}

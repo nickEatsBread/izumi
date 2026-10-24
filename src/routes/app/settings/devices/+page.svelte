@@ -28,6 +28,7 @@
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
   import SettingsChoiceRow from '$lib/components/settings/SettingsChoiceRow.svelte'
   import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte'
+  import SetupElsewhere from '$lib/components/settings/SetupElsewhere.svelte'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import BackupRestore from '$lib/components/settings/BackupRestore.svelte'
   import { SUBCATEGORY_OPEN_EVENT } from '$lib/settings/sections'
@@ -1281,108 +1282,110 @@
       />
     </div>
 
-    {#if $cloudflareSyncConfig.endpoint && $cloudflareSyncConfig.deviceToken}
-      {#snippet workerUpdateControl()}
-        <button type="button" data-focusable disabled={!!busy} onclick={() => { h.impact(); openCloudflareWorkerUpdate() }} class="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50">
-          <RefreshCw size={16} class={busy === 'worker-check' ? 'animate-spin' : ''} />
-          {busy === 'worker-check' ? 'Checking…' : 'Update Worker'}
-        </button>
-      {/snippet}
-      <SettingsRow
-        settingKey="worker-updates"
-        title="Worker updates"
-        description={$cloudflareSyncConfig.workerVersion ? `Installed ${$cloudflareSyncConfig.workerVersion}; stable updates install automatically` : 'Stable updates install automatically; check now to update sooner'}
-        control={workerUpdateControl}
-        expanded={!!$cloudflareWorkerUpdateAvailable || cloudflareNeedsDeploymentAccess || !!cloudflareUpdateFailure}
-      >
-        {#if $cloudflareWorkerUpdateAvailable || cloudflareNeedsDeploymentAccess || cloudflareUpdateFailure}
-          <section bind:this={cloudflareUpdatePanel} tabindex="-1" aria-labelledby="worker-update-available-title">
-            <h4 id="worker-update-available-title" class="font-black text-amber-300">{$cloudflareWorkerUpdateAvailable ? `Worker update ${$cloudflareWorkerUpdateAvailable} is available` : cloudflareNeedsDeploymentAccess ? 'Update Worker deployment access' : 'The automatic update could not finish'}</h4>
-            {#if cloudflareUpdateFailure && !cloudflareNeedsDeploymentAccess}<p class="mt-1 text-xs leading-5 text-muted-foreground">{cloudflareUpdateFailure} Installing it directly from here replaces the Worker with the current version.</p>{/if}
-            {#if $cloudflareSyncConfig.deployment}
-              <p class="mt-1 text-xs leading-5 text-muted-foreground">Authorize this update with your Cloudflare deployment token. izumi also enables future automatic updates, keeping your data and device links.</p>
-              <div class="mt-3 flex flex-wrap gap-2">
-                <button type="button" data-focusable onclick={() => openCloudflareTokenSetup()} class="inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={15} /> Create update token</button>
-                <button type="button" data-focusable onclick={() => openUrl(CLOUDFLARE_TOKEN_MANAGE_URL)} class="min-h-10 rounded-lg bg-secondary px-3 py-2 text-sm font-bold">Manage tokens</button>
-              </div>
-              <input
-                type="password"
-                data-focusable
-                value={cloudflareApiToken}
-                oninput={updateCloudflareToken}
-                autocomplete="off"
-                autocapitalize="off"
-                spellcheck="false"
-                aria-label="Cloudflare deployment token"
-                placeholder="Paste Cloudflare deployment token"
-                class="mt-3 w-full rounded-lg bg-input px-3 py-2.5 font-mono text-base sm:text-sm"
-              />
-              <p class="mt-1 text-xs text-muted-foreground">Your private Worker keeps this token as an encrypted secret for future updates. It is never sent to the TV.</p>
-              <button type="button" data-focusable disabled={!!busy || !cloudflareApiToken} onclick={() => { h.impact(); updateCloudflareDeployment() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
-                {#if busy === 'cloudflare-update'}<LoaderCircle size={16} class="animate-spin" />{/if}
-                {busy === 'cloudflare-update' ? 'Updating Worker…' : 'Install Worker update'}
-              </button>
-            {:else}
-              <p class="mt-1 text-xs leading-5 text-muted-foreground">Update from the device that created this Worker, or follow its original deployment method.</p>
-              <button type="button" data-focusable onclick={() => openUrl(CLOUDFLARE_UPDATE_GUIDE)} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={15} /> Open update guide</button>
-            {/if}
-          </section>
-        {/if}
-      </SettingsRow>
-    {/if}
+    <SetupElsewhere title="Worker setup and updates" status={$cloudflareSyncConfig.endpoint ? 'Connected' : 'Not set up'} where="Set up from izumi on a computer, then pair this device" settingKey="worker-updates">
+      {#if $cloudflareSyncConfig.endpoint && $cloudflareSyncConfig.deviceToken}
+        {#snippet workerUpdateControl()}
+          <button type="button" data-focusable disabled={!!busy} onclick={() => { h.impact(); openCloudflareWorkerUpdate() }} class="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50">
+            <RefreshCw size={16} class={busy === 'worker-check' ? 'animate-spin' : ''} />
+            {busy === 'worker-check' ? 'Checking…' : 'Update Worker'}
+          </button>
+        {/snippet}
+        <SettingsRow
+          settingKey="worker-updates"
+          title="Worker updates"
+          description={$cloudflareSyncConfig.workerVersion ? `Installed ${$cloudflareSyncConfig.workerVersion}; stable updates install automatically` : 'Stable updates install automatically; check now to update sooner'}
+          control={workerUpdateControl}
+          expanded={!!$cloudflareWorkerUpdateAvailable || cloudflareNeedsDeploymentAccess || !!cloudflareUpdateFailure}
+        >
+          {#if $cloudflareWorkerUpdateAvailable || cloudflareNeedsDeploymentAccess || cloudflareUpdateFailure}
+            <section bind:this={cloudflareUpdatePanel} tabindex="-1" aria-labelledby="worker-update-available-title">
+              <h4 id="worker-update-available-title" class="font-black text-amber-300">{$cloudflareWorkerUpdateAvailable ? `Worker update ${$cloudflareWorkerUpdateAvailable} is available` : cloudflareNeedsDeploymentAccess ? 'Update Worker deployment access' : 'The automatic update could not finish'}</h4>
+              {#if cloudflareUpdateFailure && !cloudflareNeedsDeploymentAccess}<p class="mt-1 text-xs leading-5 text-muted-foreground">{cloudflareUpdateFailure} Installing it directly from here replaces the Worker with the current version.</p>{/if}
+              {#if $cloudflareSyncConfig.deployment}
+                <p class="mt-1 text-xs leading-5 text-muted-foreground">Authorize this update with your Cloudflare deployment token. izumi also enables future automatic updates, keeping your data and device links.</p>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <button type="button" data-focusable onclick={() => openCloudflareTokenSetup()} class="inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={15} /> Create update token</button>
+                  <button type="button" data-focusable onclick={() => openUrl(CLOUDFLARE_TOKEN_MANAGE_URL)} class="min-h-10 rounded-lg bg-secondary px-3 py-2 text-sm font-bold">Manage tokens</button>
+                </div>
+                <input
+                  type="password"
+                  data-focusable
+                  value={cloudflareApiToken}
+                  oninput={updateCloudflareToken}
+                  autocomplete="off"
+                  autocapitalize="off"
+                  spellcheck="false"
+                  aria-label="Cloudflare deployment token"
+                  placeholder="Paste Cloudflare deployment token"
+                  class="mt-3 w-full rounded-lg bg-input px-3 py-2.5 font-mono text-base sm:text-sm"
+                />
+                <p class="mt-1 text-xs text-muted-foreground">Your private Worker keeps this token as an encrypted secret for future updates. It is never sent to the TV.</p>
+                <button type="button" data-focusable disabled={!!busy || !cloudflareApiToken} onclick={() => { h.impact(); updateCloudflareDeployment() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
+                  {#if busy === 'cloudflare-update'}<LoaderCircle size={16} class="animate-spin" />{/if}
+                  {busy === 'cloudflare-update' ? 'Updating Worker…' : 'Install Worker update'}
+                </button>
+              {:else}
+                <p class="mt-1 text-xs leading-5 text-muted-foreground">Update from the device that created this Worker, or follow its original deployment method.</p>
+                <button type="button" data-focusable onclick={() => openUrl(CLOUDFLARE_UPDATE_GUIDE)} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={15} /> Open update guide</button>
+              {/if}
+            </section>
+          {/if}
+        </SettingsRow>
+      {/if}
 
-    {#if cloudflareSetupOpen}
-      <SettingsRow
-        title="Deploy into my Cloudflare account"
-        description="Paste a scoped setup token once; izumi deploys there"
-        learnMore="Prefer an account you already manage? Create a narrowly scoped setup token and paste it once. Your private Worker stores the token as an encrypted secret for automatic updates; it is never sent to your TV or synced to other devices. Keep it valid for updates to continue."
-      >
-        <button type="button" data-focusable onclick={() => { h.impact(); openCloudflareTokenSetup() }} class="inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={16} /> Create setup token</button>
-        <input
-          id="cloudflare-api-token"
-          type="password"
-          data-focusable
-          value={cloudflareApiToken}
-          oninput={updateCloudflareToken}
-          autocomplete="off"
-          autocapitalize="off"
-          spellcheck="false"
-          aria-label="Cloudflare setup token"
-          placeholder="Paste Cloudflare API token"
-          class="mt-2 w-full rounded-lg bg-input px-3 py-2.5 font-mono text-base sm:text-sm"
-        />
-        {#if cloudflareAccounts.length > 1}
-          <div class="mt-3">
-            <SelectMenu value={cloudflareAccountId} onChange={(value) => (cloudflareAccountId = value)} ariaLabel="Cloudflare account" options={[
-              { value: '', label: 'Choose an account…' },
-              ...cloudflareAccounts.map((account) => ({ value: account.id, label: account.name })),
-            ]} />
-          </div>
-        {/if}
-        <button type="button" data-focusable disabled={!!busy || !cloudflareApiToken} onclick={() => { h.impact(); deployCloudflare() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50">
-          {#if busy === 'cloudflare-deploy'}<LoaderCircle size={16} class="animate-spin" />{/if}
-          {busy === 'cloudflare-deploy' ? 'Setting up Worker…' : cloudflareAccounts.length > 1 && !cloudflareAccountId ? 'Continue' : 'Deploy into this account'}
-        </button>
-      </SettingsRow>
-      <SettingsRow
-        title="Connect a manual Worker"
-        description="For Wrangler or Git deploys, using a bootstrap secret"
-        learnMore="Generate the secret before deploying, configure it as BOOTSTRAP_SECRET, then paste the resulting Worker URL."
-      >
-        {#if $cloudflareSetupSecret}
-          <div class="flex gap-2">
-            <input type="password" readonly value={$cloudflareSetupSecret} aria-label="Cloudflare setup secret" tabindex="-1" class="min-w-0 flex-1 rounded-lg bg-input px-3 py-2 font-mono text-xs" />
-            <button type="button" data-focusable aria-label="Copy setup secret" onclick={() => copyCloudflare($cloudflareSetupSecret, 'Setup secret')} class="grid min-h-10 min-w-10 place-items-center rounded-lg bg-secondary"><Copy size={16} /></button>
-          </div>
-        {:else}
-          <button type="button" data-focusable onclick={() => { h.impact(); prepareCloudflare() }} class="inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><KeyRound size={16} /> Generate secret</button>
-        {/if}
-        <button type="button" data-focusable onclick={() => { h.impact(); deployCloudflareFromGit() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={16} /> Optional Git-based deploy</button>
-        <label for="cloudflare-endpoint" class="mt-3 block text-xs font-bold text-muted-foreground">Deployed Worker URL</label>
-        <input id="cloudflare-endpoint" type="url" data-focusable bind:value={cloudflareEndpoint} placeholder="https://izumi-sync.you.workers.dev" class="mt-1 w-full rounded-lg bg-input px-3 py-2.5 text-base sm:text-sm" />
-        <button type="button" data-focusable disabled={!!busy || !cloudflareEndpoint.trim() || !$cloudflareSetupSecret.trim()} onclick={() => { h.impact(); connectCloudflare() }} class="mt-2 min-h-10 rounded-lg bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50">{busy === 'cloudflare-connect' ? 'Connecting…' : 'Connect existing Worker'}</button>
-      </SettingsRow>
-    {/if}
+      {#if cloudflareSetupOpen}
+        <SettingsRow
+          title="Deploy into my Cloudflare account"
+          description="Paste a scoped setup token once; izumi deploys there"
+          learnMore="Prefer an account you already manage? Create a narrowly scoped setup token and paste it once. Your private Worker stores the token as an encrypted secret for automatic updates; it is never sent to your TV or synced to other devices. Keep it valid for updates to continue."
+        >
+          <button type="button" data-focusable onclick={() => { h.impact(); openCloudflareTokenSetup() }} class="inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={16} /> Create setup token</button>
+          <input
+            id="cloudflare-api-token"
+            type="password"
+            data-focusable
+            value={cloudflareApiToken}
+            oninput={updateCloudflareToken}
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            aria-label="Cloudflare setup token"
+            placeholder="Paste Cloudflare API token"
+            class="mt-2 w-full rounded-lg bg-input px-3 py-2.5 font-mono text-base sm:text-sm"
+          />
+          {#if cloudflareAccounts.length > 1}
+            <div class="mt-3">
+              <SelectMenu value={cloudflareAccountId} onChange={(value) => (cloudflareAccountId = value)} ariaLabel="Cloudflare account" options={[
+                { value: '', label: 'Choose an account…' },
+                ...cloudflareAccounts.map((account) => ({ value: account.id, label: account.name })),
+              ]} />
+            </div>
+          {/if}
+          <button type="button" data-focusable disabled={!!busy || !cloudflareApiToken} onclick={() => { h.impact(); deployCloudflare() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50">
+            {#if busy === 'cloudflare-deploy'}<LoaderCircle size={16} class="animate-spin" />{/if}
+            {busy === 'cloudflare-deploy' ? 'Setting up Worker…' : cloudflareAccounts.length > 1 && !cloudflareAccountId ? 'Continue' : 'Deploy into this account'}
+          </button>
+        </SettingsRow>
+        <SettingsRow
+          title="Connect a manual Worker"
+          description="For Wrangler or Git deploys, using a bootstrap secret"
+          learnMore="Generate the secret before deploying, configure it as BOOTSTRAP_SECRET, then paste the resulting Worker URL."
+        >
+          {#if $cloudflareSetupSecret}
+            <div class="flex gap-2">
+              <input type="password" readonly value={$cloudflareSetupSecret} aria-label="Cloudflare setup secret" tabindex="-1" class="min-w-0 flex-1 rounded-lg bg-input px-3 py-2 font-mono text-xs" />
+              <button type="button" data-focusable aria-label="Copy setup secret" onclick={() => copyCloudflare($cloudflareSetupSecret, 'Setup secret')} class="grid min-h-10 min-w-10 place-items-center rounded-lg bg-secondary"><Copy size={16} /></button>
+            </div>
+          {:else}
+            <button type="button" data-focusable onclick={() => { h.impact(); prepareCloudflare() }} class="inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><KeyRound size={16} /> Generate secret</button>
+          {/if}
+          <button type="button" data-focusable onclick={() => { h.impact(); deployCloudflareFromGit() }} class="mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-bold"><ExternalLink size={16} /> Optional Git-based deploy</button>
+          <label for="cloudflare-endpoint" class="mt-3 block text-xs font-bold text-muted-foreground">Deployed Worker URL</label>
+          <input id="cloudflare-endpoint" type="url" data-focusable bind:value={cloudflareEndpoint} placeholder="https://izumi-sync.you.workers.dev" class="mt-1 w-full rounded-lg bg-input px-3 py-2.5 text-base sm:text-sm" />
+          <button type="button" data-focusable disabled={!!busy || !cloudflareEndpoint.trim() || !$cloudflareSetupSecret.trim()} onclick={() => { h.impact(); connectCloudflare() }} class="mt-2 min-h-10 rounded-lg bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50">{busy === 'cloudflare-connect' ? 'Connecting…' : 'Connect existing Worker'}</button>
+        </SettingsRow>
+      {/if}
+    </SetupElsewhere>
 
     {#if irohLobby}
       {#snippet ticketIcon()}

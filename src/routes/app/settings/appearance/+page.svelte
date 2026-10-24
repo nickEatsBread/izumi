@@ -4,6 +4,7 @@
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
   import SettingsChoiceRow from '$lib/components/settings/SettingsChoiceRow.svelte'
   import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte'
+  import SetupElsewhere from '$lib/components/settings/SetupElsewhere.svelte'
   import PhoneNavEditor from '$lib/components/settings/PhoneNavEditor.svelte'
   import {
     androidTvMode, dragCarousels, haptics, highContrast, largeInteractionTargets, motionPreference, themePreset, uiScale, wheelScrollAcross,
@@ -43,7 +44,9 @@
   <SettingsSubcategory id="theme">
     <SettingsChoiceRow settingKey="theme-preset" title={m.settings_theme()} description={m.settings_theme_hint()} value={$themePreset} options={presetOptions} onChange={(value) => ($themePreset = value as ThemePreset)} />
     <SettingsRow title="Themes" description="Install, update and manage themes" href="/app/settings/themes" chevron />
-    <SettingsRow title="Theme Studio" description="Design your own colours, type and backdrop" href="/app/settings/theme-studio" chevron />
+    <SetupElsewhere title="Theme Studio" status={$themePreset === 'custom' ? 'In use' : 'Not used'} where="Design themes in izumi on a computer or phone">
+      <SettingsRow title="Theme Studio" description="Design your own colours, type and backdrop" href="/app/settings/theme-studio" chevron />
+    </SetupElsewhere>
   </SettingsSubcategory>
 
   <SettingsSubcategory id="accessibility">
