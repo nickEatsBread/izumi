@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { importClosure } from '../../test/svelte-markup'
 import { openingTagAt } from '../../test/svelte-source'
 import { SETTINGS_SEARCH_INDEX, settingKey, type SettingSearchItem } from './search'
+import { sectionForPath, subcategoryDef } from './sections'
 
 // Every search hit that names a row (`key`, `fallbackKey`) must land on markup that renders that
 // `data-setting-key`, searched through the destination page's transitive .svelte imports. Keys built
@@ -82,10 +83,15 @@ describe('settings search anchors', () => {
     for (const item of SETTINGS_SEARCH_INDEX) expect(existsSync(routeFile(item.href)), item.href).toBe(true)
   })
 
-  it('opens every anchored hit on a block its page renders with that id', () => {
-    for (const item of SETTINGS_SEARCH_INDEX) {
-      const hash = new URL(item.href, BASE).hash.slice(1)
-      if (hash) expect(read(routeFile(item.href)), item.href).toContain(`id="${hash}"`)
+  it("opens every anchored hit on a subcategory block of its page's section", () => {
+    const anchored = SETTINGS_SEARCH_INDEX.filter((item) => new URL(item.href, BASE).hash)
+    expect(anchored.length).toBeGreaterThan(0)
+    for (const item of anchored) {
+      const url = new URL(item.href, BASE)
+      const hash = url.hash.slice(1)
+      const section = sectionForPath(url.pathname)
+      expect(section && subcategoryDef(section.id, hash), `${item.href}: registry subcategory`).toBeTruthy()
+      expect(read(routeFile(item.href)), item.href).toMatch(new RegExp(`<SettingsSubcategory id="${hash}"[\\s/>]`))
     }
   })
 
@@ -128,7 +134,8 @@ describe('SettingsSearch', () => {
     const search = read(here('../components/settings/SettingsSearch.svelte'))
     expect(search).toContain("import { searchSettings, settingHref, type SettingSearchItem } from '$lib/settings/search'")
     expect(search).toContain("import { inAppPlayerAvailable } from '$lib/player/in-app-player'")
-    expect(search).toContain('searchSettings(query, { android: $isAndroid, phone: $isMobile, tv: $isTv, lite: !$inAppPlayerAvailable })')
+    expect(search).toContain("import { gameMode } from '$lib/player/session'")
+    expect(search).toContain('searchSettings(query, { android: $isAndroid, phone: $isMobile, tv: $isTv, lite: !$inAppPlayerAvailable, gamemode: $gameMode })')
     expect(search).toContain('await goto(settingHref(item))')
     expect(search).not.toContain('item.anchored')
   })

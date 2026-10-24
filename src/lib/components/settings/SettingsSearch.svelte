@@ -6,6 +6,7 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import { isAndroid, isMobile, isTv } from '$lib/platform'
   import { inAppPlayerAvailable } from '$lib/player/in-app-player'
+  import { gameMode } from '$lib/player/session'
   import * as h from '$lib/haptics'
   import { searchSettings, settingHref, type SettingSearchItem } from '$lib/settings/search'
   import { openOskForField } from '$lib/nav/osk'
@@ -17,9 +18,10 @@
   let input = $state<HTMLInputElement>()
   let trigger = $state<HTMLButtonElement>()
   let returnFocus: HTMLElement | null = null
-  // Hits for rows this device does not show are left out: phone layout, Android TV, and the lite
-  // build (no in-app player; `null` while the probe runs counts as lite, so hits never flash in).
-  const results = $derived(searchSettings(query, { android: $isAndroid, phone: $isMobile, tv: $isTv, lite: !$inAppPlayerAvailable }).slice(0, 14))
+  // Hits for rows this device does not show are left out: phone layout, Android TV, Steam Deck Game
+  // mode, and the lite build (no in-app player; `null` while the probe runs counts as lite, so hits
+  // never flash in).
+  const results = $derived(searchSettings(query, { android: $isAndroid, phone: $isMobile, tv: $isTv, lite: !$inAppPlayerAvailable, gamemode: $gameMode }).slice(0, 14))
 
   // The desktop launcher lives inside a sticky sidebar, which is its own stacking context. Move
   // the actual overlay to <body> so focused controls in the page can never paint over the dialog.
