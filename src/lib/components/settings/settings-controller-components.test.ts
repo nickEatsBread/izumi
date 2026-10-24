@@ -50,11 +50,32 @@ describe('SelectMenu in controller mode (spec §3.5)', () => {
     expect(picker).toContain('aria-modal="true"')
     // The trigger announces what opens: the picker dialog here, the listbox menu elsewhere.
     expect(source).toContain("aria-haspopup={$settingsControllerMode ? 'dialog' : 'listbox'}")
-    expect(picker).toContain("<div data-nav-scroll-container role={searchable ? undefined : 'listbox'} aria-label={searchable ? undefined : ariaLabel}")
+    expect(picker).toContain("<div data-nav-scroll-container role={searchable ? undefined : 'listbox'} aria-labelledby={searchable || !ariaLabel ? undefined : pickerTitle}")
+  })
+
+  it('names the dialog and its list once, from the visible heading, with a fallback name', () => {
+    const picker = source.slice(source.indexOf('{#if $settingsControllerMode}'), source.indexOf('{:else if $isMobile}'))
+    expect(source).toContain('const pickerTitle = $props.id()')
+    expect(picker).toContain('<h2 id={pickerTitle} class="truncate px-3 pb-2 text-base font-bold">{ariaLabel}</h2>')
+    expect(picker).toContain('aria-labelledby={ariaLabel ? pickerTitle : undefined}')
+    expect(picker).toContain("aria-label={ariaLabel ? undefined : 'Options'}")
+    expect(picker).not.toContain('aria-label={ariaLabel}')
+  })
+
+  it('draws the search box above the capped list, never sticky inside it over a revealed row', () => {
+    const picker = source.slice(source.indexOf('{#if $settingsControllerMode}'), source.indexOf('{:else if $isMobile}'))
+    const search = picker.indexOf('{#if searchable}{@render searchBox()}{/if}')
+    expect(search).toBeGreaterThan(-1)
+    expect(picker.indexOf('<div data-nav-scroll-container role=')).toBeGreaterThan(search)
+    // The shared option list draws it itself only for the anchored menus.
+    const list = source.slice(source.indexOf('{#snippet optionList()}'), source.indexOf('{/snippet}', source.indexOf('{#snippet optionList()}')))
+    expect(list).toContain('{#if searchable && !$settingsControllerMode}{@render searchBox()}{/if}')
   })
 
   it('dismisses from a click on the backdrop, never the pointerdown a touch tap starts with', () => {
-    expect(source).toContain('onclick={(event) => { if (event.target === event.currentTarget) open = false }}')
+    // The trigger becomes the focus hint, so the next d-pad press resumes on it instead of <body>.
+    expect(source).toContain("import { setFocusHint } from '$lib/nav/focus-hint'")
+    expect(source).toContain('onclick={(event) => { if (event.target === event.currentTarget) { open = false; setFocusHint(trigger) } }}')
     expect(source).toContain('!backdrop?.contains(event.target as Node)) open = false')
     // A host that closes on outside presses (ListEditor) recognises the portalled picker by this.
     const backdrop = source.slice(source.indexOf('<div use:portal bind:this={backdrop}'), source.indexOf('bind:this={menu}'))

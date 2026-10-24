@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { centrePickerValue, openingOption, stepMenuOption } from './controller-picker'
 
 // The picker's markup: a fixed panel (itself a nav scroll container) around the capped list.
@@ -67,8 +67,14 @@ describe('centrePickerValue (spec §3.5)', () => {
   })
 
   it('scrolls only the list, never the fixed picker panel or the window behind it', () => {
-    Element.prototype.scrollIntoView ??= () => {}
-    const scrollIntoView = vi.spyOn(Element.prototype, 'scrollIntoView')
+    // jsdom has no scrollIntoView: install a spy for this test only and put the prototype back after.
+    const original = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
+    onTestFinished(() => {
+      if (original) Object.defineProperty(Element.prototype, 'scrollIntoView', original)
+      else delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+    })
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
     const windowScroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
     centrePickerValue(panel(), 'de')
     expect(panel().scrollTop).toBe(0)

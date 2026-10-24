@@ -7,6 +7,7 @@
   import { gameMode } from '$lib/player/session'
   import { controllerMode } from '$lib/nav/input'
   import { navLayer } from '$lib/nav/overlay'
+  import { setFocusHint } from '$lib/nav/focus-hint'
   import type { NavLayerCloseReason } from '$lib/nav/layers'
   import { rootZoom } from '$lib/components/cards/preview-pos'
   import { menuPlacement } from '$lib/components/menu-placement'
@@ -64,6 +65,8 @@
 
   let root: HTMLDivElement
   let trigger: HTMLButtonElement
+  // The controller picker's visible heading names its dialog and listbox (aria-labelledby).
+  const pickerTitle = $props.id()
   let query = $state('')
   let searchInput = $state<HTMLInputElement>()
   const filteredOptions = $derived(options.filter(option => !query || `${option.label} ${option.value}`.toLowerCase().includes(query.toLowerCase())))
@@ -196,10 +199,13 @@
   })
 </script>
 
+{#snippet searchBox()}
+  <input bind:this={searchInput} bind:value={query} type="search" data-focusable aria-label={`Search ${ariaLabel ?? 'options'}`} placeholder="Search languages…" class="sticky top-0 mb-1 w-full rounded-md border border-border bg-background px-3 py-3 text-sm outline-none focus:border-foreground" />
+{/snippet}
+
 {#snippet optionList()}
-  {#if searchable}
-    <input bind:this={searchInput} bind:value={query} type="search" data-focusable aria-label={`Search ${ariaLabel ?? 'options'}`} placeholder="Search languages…" class="sticky top-0 mb-1 w-full rounded-md border border-border bg-background px-3 py-3 text-sm outline-none focus:border-foreground" />
-  {/if}
+  <!-- The controller picker draws the search box above its capped list instead (see there). -->
+  {#if searchable && !$settingsControllerMode}{@render searchBox()}{/if}
   <!-- Conditional listbox is programmatically focusable only; never a positive tab stop. -->
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div role={searchable ? 'listbox' : undefined} aria-label={searchable ? ariaLabel : undefined} tabindex={searchable ? -1 : undefined}>
@@ -255,16 +261,19 @@
            transform can never become its containing block. z-[165]: above every dialog that can
            host a SelectMenu (first-run setup is 160), below the native picker sheet (175) and the
            on-screen keyboard (190). data-select-picker-backdrop lets a host that closes on outside
-           presses (ListEditor's popover) treat a press on the picker as inside it. -->
+           presses (ListEditor's popover) treat a press on the picker as inside it. A backdrop tap
+           leaves the trigger as a focus hint: the next d-pad press resumes there, with no ring
+           painted for the touch. -->
       <div use:portal bind:this={backdrop} class="fixed inset-0 z-[165] grid place-items-center bg-black/60 p-4" role="presentation"
            data-select-picker-backdrop
-           onclick={(event) => { if (event.target === event.currentTarget) open = false }}>
+           onclick={(event) => { if (event.target === event.currentTarget) { open = false; setFocusHint(trigger) } }}>
         <div
           bind:this={menu}
           role="dialog"
           aria-modal="true"
           tabindex="-1"
-          aria-label={ariaLabel}
+          aria-labelledby={ariaLabel ? pickerTitle : undefined}
+          aria-label={ariaLabel ? undefined : 'Options'}
           data-nav-trap
           data-nav-escape
           data-nav-scroll-container
@@ -273,9 +282,12 @@
           class="w-[23.333rem] max-w-full rounded-2xl border border-border bg-card p-3 text-card-foreground shadow-2xl"
           onkeydown={onMenuKeydown}
         >
-          {#if ariaLabel}<h2 class="truncate px-3 pb-2 text-base font-bold">{ariaLabel}</h2>{/if}
-          <!-- A searchable list carries its own listbox inside the snippet, after the search box. -->
-          <div data-nav-scroll-container role={searchable ? undefined : 'listbox'} aria-label={searchable ? undefined : ariaLabel} class="max-h-[17.778rem] overflow-y-auto overscroll-contain">
+          {#if ariaLabel}<h2 id={pickerTitle} class="truncate px-3 pb-2 text-base font-bold">{ariaLabel}</h2>{/if}
+          <!-- The search box sits above the capped list, not sticky inside it: a row revealed at the
+               list's top edge would otherwise scroll in behind it. A searchable list carries its
+               own listbox inside the snippet. -->
+          {#if searchable}{@render searchBox()}{/if}
+          <div data-nav-scroll-container role={searchable ? undefined : 'listbox'} aria-labelledby={searchable || !ariaLabel ? undefined : pickerTitle} class="max-h-[17.778rem] overflow-y-auto overscroll-contain">
             {@render optionList()}
           </div>
         </div>
