@@ -7,8 +7,6 @@ export type SyncTaskId =
   | 'nuvio-library'
   | 'nuvio-progress'
   | 'nuvio-history'
-  | 'anilist'
-  | 'mal'
 
 export type SyncTaskState =
   | { status: 'pending' }
@@ -37,21 +35,7 @@ export function plannedSyncTasks(services: readonly ConnectService[], extras: Nu
     if (extras.progress) tasks.push('nuvio-progress')
     if (extras.history) tasks.push('nuvio-history')
   }
-  if (services.includes('anilist')) tasks.push('anilist')
-  if (services.includes('mal')) tasks.push('mal')
   return tasks
-}
-
-export function syncSettled(tasks: readonly SyncTask[]): boolean {
-  return tasks.every((task) => task.state.status === 'done' || task.state.status === 'failed')
-}
-
-export function syncSucceededAny(tasks: readonly SyncTask[]): boolean {
-  return tasks.some((task) => task.state.status === 'done')
-}
-
-export function syncFailures(tasks: readonly SyncTask[]): SyncTask[] {
-  return tasks.filter((task) => task.state.status === 'failed')
 }
 
 /** The tasks that can actually put a playable source in the user's list. Collections are home-screen

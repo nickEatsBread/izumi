@@ -9,7 +9,7 @@
   import { addonSuggestions, packageSuggestions, type SourceSuggestion } from '$lib/onboarding/source-suggestions'
   import { listCommunityAddons } from '$lib/stremio/community-store'
   import { fetchManifest } from '$lib/stremio/manifest'
-  import { addonUrls, disabledSources, normalizeBase } from '$lib/stremio/sources'
+  import { addonUrls, CINEMETA_BASE, disabledSources, normalizeBase } from '$lib/stremio/sources'
   import { OFFICIAL_ANIME_CATALOG, PackageInstalledElsewhereError, fetchExtensionInfo, installCatalogPackage } from '$lib/extensions/manager'
   import type { ExtensionCatalogPackage } from '$lib/extensions/catalog'
   import { disabledExtensions, disabledPlugins, extensionUrls } from '$lib/settings/ui'
@@ -29,7 +29,9 @@
   let errorAlert = $state<HTMLElement>()
   const abort = new AbortController()
 
-  const configured = $derived($addonUrls.length > 0 || $extensionUrls.length > 0)
+  // Cinemeta only supplies metadata, so it does not count as a source.
+  const streamAddons = $derived($addonUrls.filter((url) => normalizeBase(url) !== normalizeBase(CINEMETA_BASE)))
+  const configured = $derived(streamAddons.length > 0 || $extensionUrls.length > 0)
   const reviewFace = $derived(synced && configured)
 
   // Two things hold the footer here: an install in flight and a debrid key still being checked.
@@ -167,7 +169,7 @@
     {:else if health === 'error'}<TriangleAlert size={21} class="shrink-0 text-destructive" />
     {:else}<Check size={21} class="shrink-0" />{/if}
     <div class="min-w-0">
-      <p class="font-semibold">{m.onboarding_count_sources({ count: String($addonUrls.length + $extensionUrls.length) })}</p>
+      <p class="font-semibold">{m.onboarding_count_sources({ count: String(streamAddons.length + $extensionUrls.length) })}</p>
       <p class="mt-1 text-sm text-muted-foreground">{health === 'checking' ? m.onboarding_checking() : health === 'error' ? m.onboarding_source_unavailable() : m.onboarding_ready()}</p>
     </div>
   </div>

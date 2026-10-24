@@ -75,8 +75,8 @@
             {#each films as _, index}
               {@const mixedAnime = (index + column) % 2 === 0}
               <div class="poster">
-                <img src={films[(index + column * 2) % films.length]} class:shown={mode === 'movies' || (mode === 'both' && !mixedAnime)} alt="" draggable="false" decoding="async" referrerpolicy="no-referrer" onload={(event) => (event.currentTarget as HTMLImageElement).dataset.loaded = 'true'} onerror={(event) => delete (event.currentTarget as HTMLImageElement).dataset.loaded} />
-                <img src={anime[(index + column * 2) % anime.length]} class:shown={mode === 'anime' || (mode === 'both' && mixedAnime)} alt="" draggable="false" decoding="async" referrerpolicy="no-referrer" onload={(event) => (event.currentTarget as HTMLImageElement).dataset.loaded = 'true'} onerror={(event) => delete (event.currentTarget as HTMLImageElement).dataset.loaded} />
+                <img src={films[(index + column * 5) % films.length]} class:shown={mode === 'movies' || (mode === 'both' && !mixedAnime)} alt="" draggable="false" decoding="async" referrerpolicy="no-referrer" onload={(event) => (event.currentTarget as HTMLImageElement).dataset.loaded = 'true'} onerror={(event) => delete (event.currentTarget as HTMLImageElement).dataset.loaded} />
+                <img src={anime[(index + column * 5) % anime.length]} class:shown={mode === 'anime' || (mode === 'both' && mixedAnime)} alt="" draggable="false" decoding="async" referrerpolicy="no-referrer" onload={(event) => (event.currentTarget as HTMLImageElement).dataset.loaded = 'true'} onerror={(event) => delete (event.currentTarget as HTMLImageElement).dataset.loaded} />
               </div>
             {/each}
           </div>

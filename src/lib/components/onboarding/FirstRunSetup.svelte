@@ -138,7 +138,8 @@
 
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') {
-      goBack()
+      if (mode === 'transfer') leaveTransfer()
+      else goBack()
       return
     }
     if (event.key !== 'Tab' || !root) return
@@ -224,7 +225,8 @@
 
   // Publish what Back means here for the app-wide controller translator. Without this it applies
   // its generic rule — history.back() anywhere but home — to a wizard that is itself standing in
-  // for home, so B did nothing a user could see on a Deck's first launch.
+  // for home, so B did nothing a user could see on a Deck's first launch. From the transfer screen,
+  // Back returns to the start screen, where the transfer card is.
   $effect(() => {
     if ($onboardingComplete) {
       onboardingNav.set(null)
@@ -232,8 +234,8 @@
     }
     onboardingNav.set({
       introRunning,
-      canGoBack: mode === 'wizard' && stepIndex > 0 && !busy,
-      back: goBack,
+      canGoBack: mode === 'transfer' || (stepIndex > 0 && !busy),
+      back: () => (mode === 'transfer' ? leaveTransfer() : goBack()),
     })
     return () => onboardingNav.set(null)
   })

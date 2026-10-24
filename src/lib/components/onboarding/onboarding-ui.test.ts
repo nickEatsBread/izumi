@@ -200,8 +200,8 @@ describe('onboarding presentation contracts', () => {
     // anywhere but home — either walks into the page being replaced or opens the exit prompt
     // underneath an opaque full-screen surface. Both read as "B does nothing".
     expect(shell).toContain('onboardingNav.set({')
-    expect(shell).toContain('canGoBack: mode === \'wizard\' && stepIndex > 0 && !busy')
-    expect(shell).toContain('back: goBack')
+    expect(shell).toContain('canGoBack: mode === \'transfer\' || (stepIndex > 0 && !busy)')
+    expect(shell).toContain('back: () => (mode === \'transfer\' ? leaveTransfer() : goBack())')
     expect(shell).toContain('onboardingNav.set(null)')
 
     const branch = gamepad.slice(gamepad.indexOf('const onboarding = get(onboardingNav)'))

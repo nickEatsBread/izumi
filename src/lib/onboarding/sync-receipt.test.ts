@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { plannedSyncTasks, serialDrain, sourcesLanded, syncFailures, syncSettled, syncSucceededAny, tasksFor, type SyncTask, type SyncTaskId } from './sync-receipt'
+import { plannedSyncTasks, serialDrain, sourcesLanded, tasksFor, type SyncTask, type SyncTaskId } from './sync-receipt'
 
 const noExtras = { library: false, progress: false, history: false }
 
@@ -8,8 +8,8 @@ describe('planned sync tasks', () => {
     expect(plannedSyncTasks([], noExtras)).toEqual([])
   })
 
-  it('plans one task per connected tracker', () => {
-    expect(plannedSyncTasks(['anilist', 'mal'], noExtras)).toEqual(['anilist', 'mal'])
+  it('plans nothing for trackers, whose lists are read live', () => {
+    expect(plannedSyncTasks(['anilist', 'mal'], noExtras)).toEqual([])
   })
 
   it('always brings Nuvio sources and collections, and only the extras that were ticked', () => {
@@ -24,43 +24,22 @@ describe('planned sync tasks', () => {
 
   it('runs sources before lists so the sources screen has something to review', () => {
     expect(plannedSyncTasks(['mal', 'nuvio', 'stremio'], noExtras))
-      .toEqual(['stremio', 'nuvio-sources', 'nuvio-collections', 'mal'])
+      .toEqual(['stremio', 'nuvio-sources', 'nuvio-collections'])
   })
 })
 
 describe('sync receipt', () => {
   const task = (id: SyncTask['id'], state: SyncTask['state']): SyncTask => ({ id, state })
 
-  it('is not settled while any task is pending or running', () => {
-    expect(syncSettled([task('stremio', { status: 'running' })])).toBe(false)
-    expect(syncSettled([task('stremio', { status: 'pending' })])).toBe(false)
-  })
-
-  it('is settled once every task has finished either way', () => {
-    expect(syncSettled([
-      task('stremio', { status: 'done', detail: '7 add-ons' }),
-      task('mal', { status: 'failed', message: 'offline' }),
-    ])).toBe(true)
-  })
-
-  it('separates a total failure from a partial one', () => {
-    const partial = [task('stremio', { status: 'done', detail: '7 add-ons' }), task('mal', { status: 'failed', message: 'offline' })]
-    const total = [task('mal', { status: 'failed', message: 'offline' })]
-    expect(syncSucceededAny(partial)).toBe(true)
-    expect(syncSucceededAny(total)).toBe(false)
-    expect(syncFailures(partial).map((entry) => entry.id)).toEqual(['mal'])
-    expect(syncFailures(total)).toHaveLength(1)
-  })
-
   it('counts only source-producing tasks as sources landing', () => {
     expect(sourcesLanded([task('stremio', { status: 'done', detail: '7 sources' })])).toBe(true)
     expect(sourcesLanded([task('nuvio-sources', { status: 'done', detail: '3 sources' })])).toBe(true)
   })
 
-  it('does not treat collections or a tracker as a source', () => {
+  it('does not treat collections or watch state as a source', () => {
     expect(sourcesLanded([
       task('nuvio-collections', { status: 'done', detail: '4 collections' }),
-      task('mal', { status: 'done', detail: 'alex' }),
+      task('nuvio-library', { status: 'done', detail: '12 items' }),
     ])).toBe(false)
   })
 
@@ -71,13 +50,13 @@ describe('sync receipt', () => {
 })
 
 describe('tasks for one service', () => {
-  const all: SyncTask[] = (['stremio', 'nuvio-sources', 'nuvio-library', 'anilist', 'mal'] as const)
+  const all: SyncTask[] = (['stremio', 'nuvio-sources', 'nuvio-library'] as const)
     .map((id): SyncTask => ({ id, state: { status: 'pending' } }))
 
   it('gives each connect tile only its own imports', () => {
     expect(tasksFor(all, 'stremio').map((task) => task.id)).toEqual(['stremio'])
     expect(tasksFor(all, 'nuvio').map((task) => task.id)).toEqual(['nuvio-sources', 'nuvio-library'])
-    expect(tasksFor(all, 'mal').map((task) => task.id)).toEqual(['mal'])
+    expect(tasksFor(all, 'anilist')).toEqual([])
   })
 })
 

@@ -51,8 +51,6 @@
     'nuvio-library': m.onboarding_task_nuvio_library(),
     'nuvio-progress': m.onboarding_task_nuvio_progress(),
     'nuvio-history': m.onboarding_task_nuvio_history(),
-    'anilist': m.onboarding_task_anilist(),
-    'mal': m.onboarding_task_mal(),
   })[id]
 
   // The footer stays disabled while a tile waits on an approval or an import is still writing, so
@@ -80,6 +78,8 @@
   onDestroy(() => {
     importAbort.abort()
     for (const controller of Object.values(controllers)) controller?.abort()
+    // The shell's busy flag is bound to this screen and nothing else would clear it.
+    busy = false
   })
 
   function begin(service: ConnectService) {
@@ -166,14 +166,10 @@
       }
       return m.onboarding_count_collections({ count: String(installed) })
     }
-    if (id === 'nuvio-library' || id === 'nuvio-progress' || id === 'nuvio-history') {
-      const kind = id === 'nuvio-library' ? 'library' : id === 'nuvio-progress' ? 'progress' : 'history'
-      const items = await nuvioCloud.snapshot(kind, NUVIO_PROFILE, importAbort.signal)
-      const result = await importCloudItems(kind, items, importAbort.signal)
-      return m.onboarding_count_items({ count: String(result.imported) })
-    }
-    // Trackers are never queued here: their lists are read live, so there is nothing to import.
-    throw new Error(m.onboarding_sync_failed())
+    const kind = id === 'nuvio-library' ? 'library' : id === 'nuvio-progress' ? 'progress' : 'history'
+    const items = await nuvioCloud.snapshot(kind, NUVIO_PROFILE, importAbort.signal)
+    const result = await importCloudItems(kind, items, importAbort.signal)
+    return m.onboarding_count_items({ count: String(result.imported) })
   }
 
   function retry(id: SyncTaskId) {
