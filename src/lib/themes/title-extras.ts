@@ -191,7 +191,18 @@ export function audioLabel(info: ScheduleInfo | null | undefined): string | unde
 // ani.zip records are cached in IndexedDB already; this keeps one parsed lookup per title (and logo
 // languages) for the session. Empty results are dropped so a title that failed offline is retried.
 // `tmdb` and `trakt` are where a logo in a wanted language may still be found, when ani.zip's own is not one.
-interface ZipArt { art: TitleArt; tmdb?: { kind: 'tv' | 'movie'; id: string; languages: string[] }; trakt?: { kind: 'tv' | 'movie'; ids: TraktIds } }
+// `shared`: the record answered, but its artwork is the whole series' (`startsSeries`), so none is used.
+interface ZipArt { art: TitleArt; tmdb?: { kind: 'tv' | 'movie'; id: string; languages: string[] }; trakt?: { kind: 'tv' | 'movie'; ids: TraktIds }; shared?: true }
+
+/** Whether a title starts its TVDB series. ani.zip copies the series' artwork into every title mapped to
+ *  it, so a later season, a later cour or a film filed under the series' specials would wear the first
+ *  season's key art, logo and poster, and a search for the show would list identical cards. A title
+ *  whose first episode is not S1E1 is one of those; a title without episodes (a film) is its own. */
+export function startsSeries(episodes: unknown): boolean {
+  const first = (episodes as Record<string, { seasonNumber?: unknown; episodeNumber?: unknown } | undefined> | undefined)?.['1']
+  if (typeof first?.seasonNumber !== 'number') return true
+  return first.seasonNumber === 1 && (first.episodeNumber === undefined || first.episodeNumber === 1)
+}
 const artCache = new Map<string, Promise<ZipArt>>()
 // The same lookups once they have answered with artwork, readable without waiting.
 const artFound = new Map<number, TitleArt>()
@@ -204,7 +215,8 @@ function aniZipArt(anilistId: number, media: Pick<Media, 'format' | 'countryOfOr
   const promise = fetchAniZip(anilistId)
     .then((record): ZipArt => {
       const images = record?.images as ArtImage[] | undefined
-      const art = pickTitleArt(images, languages, native)
+      const shared = !!record && !startsSeries(record.episodes)
+      const art = shared ? {} : pickTitleArt(images, languages, native)
       // ani.zip names no logo language, so its logo is the title's own (or of unknown language). A
       // logo in the app's language or English from TMDB wins over it when the viewer has TMDB set up,
       // then Trakt's English one when the app wants English before the title's own language.
@@ -212,13 +224,16 @@ function aniZipArt(anilistId: number, media: Pick<Media, 'format' | 'countryOfOr
       const mappings = record?.mappings
       const tmdbId = mappings?.themoviedb_id
       const kind = media.format === 'MOVIE' || (mappings as { type?: string } | undefined)?.type === 'MOVIE' ? 'movie' : 'tv'
+      // A film has its own TMDB and Trakt entry; a later season only has the show's, so its logo too.
+      const lookup = !shared || kind === 'movie'
       const english = languages.indexOf('en')
       const own = languages.indexOf(native)
-      const trakt = !tagged && english >= 0 && (own < 0 || english < own)
+      const trakt = lookup && !tagged && english >= 0 && (own < 0 || english < own)
       return {
         art,
-        ...(!tagged && tmdbId ? { tmdb: { kind, id: String(tmdbId), languages } } : {}),
+        ...(lookup && !tagged && tmdbId ? { tmdb: { kind, id: String(tmdbId), languages } } : {}),
         ...(trakt ? { trakt: { kind, ids: { tvdb: mappings?.thetvdb_id, tmdb: tmdbId, imdb: mappings?.imdb_id } } } : {}),
+        ...(shared ? { shared: true as const } : {}),
       }
     })
     // A failed fetch and a record that cannot be read are both simply no art: the cache must never
@@ -226,7 +241,7 @@ function aniZipArt(anilistId: number, media: Pick<Media, 'format' | 'countryOfOr
     .catch((): ZipArt => ({ art: {} }))
     .then((zip) => {
       const { art } = zip
-      if (!art.keyart && !art.logo && !art.posterHd && !zip.tmdb) artCache.delete(key)
+      if (!art.keyart && !art.logo && !art.posterHd && !zip.tmdb && !zip.shared) artCache.delete(key)
       else if (art.keyart || art.logo || art.posterHd) artFound.set(anilistId, { ...art })
       return zip
     })

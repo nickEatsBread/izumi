@@ -238,6 +238,36 @@ describe('an English title logo from Trakt', () => {
   })
 })
 
+describe('series artwork on a later season or a film', () => {
+  // ani.zip copies the TVDB series' artwork into every title it maps to that series.
+  const series = { images: [{ coverType: 'Fanart', url: FANART }, { coverType: 'Clearlogo', url: LOGO }, { coverType: 'Poster', url: POSTER }], mappings: { thetvdb_id: 377543, themoviedb_id: 95479, imdb_id: 'tt12343534', type: 'TV' } }
+  const startsAt = (seasonNumber: number, episodeNumber: number) => ({ '1': { seasonNumber, episodeNumber } })
+  const art = new Set(['keyart', 'logo', 'posterHd'] as const)
+  it('stays on the title that starts the series', async () => {
+    mocks.fetchAniZip.mockResolvedValue({ ...series, episodes: startsAt(1, 1) })
+    await expect(loadTitleExtras(media(), art)).resolves.toEqual({ keyart: FANART, logo: LOGO, posterHd: POSTER })
+  })
+  it('is left off a later season or a later cour, and no show-wide logo is asked for', async () => {
+    tmdbReadToken.set('token')
+    for (const [season, episode] of [[2, 1], [1, 13]]) {
+      clearTitleExtrasCache()
+      mocks.fetchAniZip.mockResolvedValue({ ...series, episodes: startsAt(season, episode) })
+      await expect(loadTitleExtras(media(), art)).resolves.toEqual({})
+    }
+    expect(mocks.tmdb).not.toHaveBeenCalled()
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    // The record answered: it is not asked for again.
+    await loadTitleExtras(media(), art)
+    expect(mocks.fetchAniZip).toHaveBeenCalledTimes(2)
+  })
+  it("is left off a film filed under the series' specials, which keeps its own logo", async () => {
+    mocks.fetchAniZip.mockResolvedValue({ ...series, mappings: { ...series.mappings, themoviedb_id: 810693, type: 'MOVIE' }, episodes: startsAt(0, 1) })
+    mocks.fetch.mockImplementation(answer([{ type: 'movie', movie: { images: { logo: ['media.trakt.tv/images/movies/1/logos/medium/zero.png.webp'] } } }]))
+    await expect(loadTitleExtras(media({ format: 'MOVIE' }), art)).resolves.toEqual({ logo: 'https://media.trakt.tv/images/movies/1/logos/full/zero.png.webp' })
+    expect(mocks.fetch.mock.calls[0][0]).toBe('https://api.trakt.tv/search/tmdb/810693?type=movie&extended=images')
+  })
+})
+
 describe('labels', () => {
   it('shortens MyAnimeList ratings to badges', () => {
     expect(malAgeRating('G - All Ages')).toBe('G')
