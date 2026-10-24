@@ -22,7 +22,7 @@ describe('layered Back markers on Settings pages', () => {
   })
 
   it('Hotkeys: B while recording cancels the recording instead of leaving', () => {
-    const hotkeys = read('./hotkeys/+page.svelte')
+    const hotkeys = read('../../../lib/components/settings/HotkeyBindings.svelte')
     expect(hotkeys).toContain("data-nav-escape-local={recording === hotkey.id ? '' : undefined}")
     expect(hotkeys).toContain("if (event.key === 'Escape') {\n      recording = null")
   })

@@ -484,19 +484,20 @@ describe('Settings reachability: markers the generic rules cannot infer (spec §
     expect(functionSource(scan.source, 'moveKeepingFocus')).toMatch(/\bmoveRowKeepingFocus\(/)
   })
 
-  it('answers the Anime shader prompt from the pad and hands focus back to Video quality', () => {
-    const scan = scanOf('src/routes/app/settings/player/+page.svelte')
+  it('answers the Anime shader prompt from the pad and hands focus back to Rendering preset', () => {
+    const scan = scanOf('src/routes/app/settings/playback/+page.svelte')
     for (const answer of ['answerAnimeConsent(true)', 'answerAnimeConsent(false)']) {
       const button = scan.elements.find((el) => el.name === 'button' && (attr(el, 'onclick')?.raw ?? '').includes(answer))
       expect(button, answer).toBeDefined()
       expect(staticAttr(button!, 'type'), answer).toBe('button')
       expect(hasAttr(button!, 'data-focusable'), answer).toBe(true)
     }
-    const field = scan.elements.find((el) => attr(el, 'bind:this')?.raw === 'bind:this={qualityField}')
-    expect(field?.name).toBe('label')
+    const row = scan.elements.find((el) => attr(el, 'bind:this')?.raw === 'bind:this={qualityRow}')
+    expect(row?.name).toBe('div')
     // No component mount in vitest: the answer hands focus back through handFocusBack (focus when
     // a restore is allowed, otherwise a hint for the first pad press; focus-memory.test.ts).
     expect(functionSource(scan.source, 'answerAnimeConsent')).toMatch(/\bhandFocusBack\(/)
+    expect(functionSource(scan.source, 'answerAnimeConsent')).toContain('button[aria-haspopup="listbox"]')
   })
 })
 
