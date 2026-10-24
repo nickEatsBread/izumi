@@ -187,7 +187,7 @@
         <h2 class="font-black">Couldn’t load {$catalogProvider === 'stremio' ? 'Stremio metadata' : $catalogProvider === 'jvm' ? 'Aniyomi sources' : $catalogProvider.toUpperCase()}</h2>
         <p class="mt-1 text-sm text-muted-foreground">{error}</p>
         {#if tmdbNeedsConfiguration}
-          <a href="/app/settings/catalog" data-focusable class="mt-4 inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Add TMDB token</a>
+          <a href="/app/settings/library" data-focusable class="mt-4 inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Add TMDB token</a>
         {:else}
           <button data-focusable onclick={() => retry++} class="mt-4 rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">Retry</button>
         {/if}

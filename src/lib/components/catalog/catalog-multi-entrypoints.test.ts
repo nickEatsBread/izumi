@@ -117,7 +117,7 @@ describe('multi-platform catalog entry points', () => {
     for (const file of ['./CatalogHome.svelte', './CatalogSearchPage.svelte', './CatalogMediaDetail.svelte']) {
       const source = read(file)
       expect(source).toContain('reason instanceof CatalogConfigurationError')
-      expect(source).toContain('href="/app/settings/catalog"')
+      expect(source).toContain('href="/app/settings/library"')
       expect(source).toContain('Add TMDB token')
     }
     const mergedHome = read('./MergedCatalogHome.svelte')

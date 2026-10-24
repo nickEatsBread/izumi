@@ -30,7 +30,7 @@ export function parseDeepLink(raw: string): DeepLinkTarget | null {
       // Straight to sync settings with the waiting device selected. The confirmation still
       // happens there: scanning a code is aiming at a device, not agreeing to send it anything.
       return endpoint
-        ? { path: `/app/settings/sync?offer=${endpoint}`, notice: 'New device ready to set up' }
+        ? { path: `/app/settings/devices?offer=${endpoint}`, notice: 'New device ready to set up' }
         : null
     }
     if (kind === 'companion' && parts[0] === 'push-enrolled') {

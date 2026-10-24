@@ -256,7 +256,7 @@
           <section class="space-y-3 border-t border-border pt-5">
             <h3 class="font-extrabold">Sources for these folders</h3>
             {#if !sourceProviders.length}<p class="text-sm text-muted-foreground">These folders have no catalog sources yet.</p>{/if}
-            {#if sourceProviders.includes('tmdb')}<p class="text-sm text-muted-foreground">TMDB feeds use your token in <a href="/app/settings/catalog" data-focusable class="font-bold text-foreground underline underline-offset-4">Catalog settings</a>.</p>{/if}
+            {#if sourceProviders.includes('tmdb')}<p class="text-sm text-muted-foreground">TMDB feeds use your token in <a href="/app/settings/library" data-focusable class="font-bold text-foreground underline underline-offset-4">Catalog settings</a>.</p>{/if}
             {#if sourceProviders.includes('trakt')}<p class="text-sm text-muted-foreground">Trakt lists use your connected <a href="/app/settings/accounts" data-focusable class="font-bold text-foreground underline underline-offset-4">Trakt account</a>.</p>{/if}
             {#if missingManifests.length}<p class="text-sm text-muted-foreground">Uses {missingManifests.join(', ')} from your enabled <a href="/app/settings/sources" data-focusable class="font-bold text-foreground underline underline-offset-4">Sources</a>. Add your configured manifests there if needed.</p>{/if}
             {#if tab === 'mine' && missingManifests.length}<button data-focusable disabled={findingSources || saving} onclick={findSources} class="control disabled:opacity-50">{findingSources ? 'Finding profile sources…' : 'Find sources in this Nuvio profile'}</button>{/if}

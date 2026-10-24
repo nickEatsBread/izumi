@@ -298,7 +298,7 @@
             <span class="flex-1">Edit this Home</span>
           </button>
           <a
-            href="/app/settings/catalog"
+            href="/app/settings/library"
             data-focusable
             onclick={() => { h.tap(); open = false }}
             class="flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-bold text-muted-foreground transition hover:bg-accent hover:text-foreground focus:bg-accent focus:text-foreground"

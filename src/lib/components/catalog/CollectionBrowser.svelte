@@ -95,7 +95,7 @@
     <div role="status" class="mx-4 mb-4 rounded-xl border border-destructive/30 p-4 sm:mx-8">
       <p class="font-bold">{collectionSourceTitle(folder.sources[index], index)}</p>
       <p class="mt-1 text-sm text-muted-foreground">{state.error}</p>
-      <a data-focusable href={folder.sources[index].provider === 'addon' ? '/app/settings/sources' : folder.sources[index].provider === 'trakt' ? '/app/settings/accounts' : '/app/settings/catalog'} class="mt-3 mr-3 inline-block text-sm font-bold text-primary">Configure source</a>
+      <a data-focusable href={folder.sources[index].provider === 'addon' ? '/app/settings/sources' : folder.sources[index].provider === 'trakt' ? '/app/settings/accounts' : '/app/settings/library'} class="mt-3 mr-3 inline-block text-sm font-bold text-primary">Configure source</a>
       <button data-focusable onclick={() => load(index)} class="mt-3 min-h-10 rounded-md bg-secondary px-4 text-sm font-bold">Retry</button>
     </div>
   {/each}

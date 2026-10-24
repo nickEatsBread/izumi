@@ -174,6 +174,6 @@ describe('sending a setup from the device that has one', () => {
     expect(syncPage).toContain("page.url.searchParams.get('offer')")
     const body = syncPage.slice(syncPage.indexOf("page.url.searchParams.get('offer')"))
     expect(body.slice(0, body.indexOf('\n  }'))).toContain('askToSendSetup(match)')
-    expect(deepLink).toContain("path: `/app/settings/sync?offer=${endpoint}`")
+    expect(deepLink).toContain("path: `/app/settings/devices?offer=${endpoint}`")
   })
 })

@@ -201,7 +201,7 @@
 {#if warning}
   <div class="mb-5 rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
     {warning}
-    {#if movieSeedCount > 0}<a data-focusable href="/app/settings/catalog" class="ml-1 font-black underline underline-offset-4">Open settings</a>{/if}
+    {#if movieSeedCount > 0}<a data-focusable href="/app/settings/library" class="ml-1 font-black underline underline-offset-4">Open settings</a>{/if}
   </div>
 {/if}
 
