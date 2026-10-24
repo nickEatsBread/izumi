@@ -7,8 +7,6 @@ export type SyncTaskId =
   | 'nuvio-library'
   | 'nuvio-progress'
   | 'nuvio-history'
-  | 'anilist'
-  | 'mal'
 
 export type SyncTaskState =
   | { status: 'pending' }
@@ -37,21 +35,7 @@ export function plannedSyncTasks(services: readonly ConnectService[], extras: Nu
     if (extras.progress) tasks.push('nuvio-progress')
     if (extras.history) tasks.push('nuvio-history')
   }
-  if (services.includes('anilist')) tasks.push('anilist')
-  if (services.includes('mal')) tasks.push('mal')
   return tasks
-}
-
-export function syncSettled(tasks: readonly SyncTask[]): boolean {
-  return tasks.every((task) => task.state.status === 'done' || task.state.status === 'failed')
-}
-
-export function syncSucceededAny(tasks: readonly SyncTask[]): boolean {
-  return tasks.some((task) => task.state.status === 'done')
-}
-
-export function syncFailures(tasks: readonly SyncTask[]): SyncTask[] {
-  return tasks.filter((task) => task.state.status === 'failed')
 }
 
 /** The tasks that can actually put a playable source in the user's list. Collections are home-screen
@@ -61,4 +45,26 @@ const SOURCE_TASKS: readonly SyncTaskId[] = ['stremio', 'nuvio-sources']
 /** Whether the next screen can show a review of real sources instead of an empty picker. */
 export function sourcesLanded(tasks: readonly SyncTask[]): boolean {
   return tasks.some((task) => SOURCE_TASKS.includes(task.id) && task.state.status === 'done')
+}
+
+/** The tasks a service owns, so its sign-in tile can show its own import result. */
+export function tasksFor(tasks: readonly SyncTask[], service: ConnectService): SyncTask[] {
+  return tasks.filter((task) => task.id === service || task.id.startsWith(`${service}-`))
+}
+
+/**
+ * Runs pending tasks one at a time. Calling the returned function while a run is in progress
+ * joins it: the running loop picks up anything queued meanwhile, so two writers never overlap.
+ */
+export function serialDrain(next: () => SyncTaskId | undefined, run: (id: SyncTaskId) => Promise<void>, signal: AbortSignal): () => Promise<void> {
+  let draining = false
+  return async () => {
+    if (draining) return
+    draining = true
+    try {
+      for (let id = next(); id && !signal.aborted; id = next()) await run(id)
+    } finally {
+      draining = false
+    }
+  }
 }

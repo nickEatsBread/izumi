@@ -16,6 +16,7 @@
     expanded = false,
     onexpand,
     panel,
+    footer,
   }: {
     name: string
     logo: string
@@ -25,6 +26,7 @@
     expanded?: boolean
     onexpand: () => void
     panel?: Snippet
+    footer?: Snippet
   } = $props()
 
   let logoBroken = $state(false)
@@ -58,5 +60,6 @@
   {#if expanded && connection.status !== 'connected' && panel}
     <div class="mt-4 border-t border-border pt-4">{@render panel()}</div>
   {/if}
+  {#if footer}{@render footer()}{/if}
   {#if connection.status === 'error'}<p role="alert" class="mt-3 text-sm leading-relaxed text-destructive">{connection.message}</p>{/if}
 </div>

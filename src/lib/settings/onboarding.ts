@@ -9,16 +9,11 @@ export interface OnboardingIntent {
 export type OnboardingMovieMetadata = 'tmdb' | 'stremio'
 export type OnboardingStartupLibrary = 'movies' | 'auto' | 'merged' | 'adaptive'
 /** Named so the footer, the artwork and the tests stop depending on step numbers. */
-export type StepId =
-  | 'watch'
-  | 'metadata'
-  | 'access'
-  | 'startup'
-  | 'connect'
-  | 'sync'
-  | 'sources'
-  | 'playback'
-  | 'ready'
+export type StepId = 'start' | 'watch' | 'connect' | 'sources' | 'ready'
+
+/** The route chosen on the start screen. Device transfer is not a path: it replaces the wizard
+ *  outright, so it never reaches the step list. */
+export type OnboardingPath = 'new' | 'import'
 
 export interface OnboardingCatalogPlan {
   providers: CatalogSelection[]
@@ -45,35 +40,29 @@ export function onboardingCatalogPlan(
 /**
  * The screens to show, in order.
  *
- * Four are conditional, and each is a screen rather than a block folded into the one before it.
- * An earlier draft nested the metadata choice, the TMDB key and the startup choice underneath the
- * two library checkboxes; that put four unrelated decisions on one screen and read as a wall.
- * One decision per screen costs a click and reads far better, and the conditions mean an
- * anime-only run never sees any of the three film screens.
+ * Everything that used to be asked about films — provider, TMDB key, startup library — is now
+ * derived instead, and import progress shows inside each sign-in tile, so the only difference
+ * between the paths is the sign-in screen itself.
  */
-export function onboardingSteps(
-  connected: boolean,
-  intent: OnboardingIntent,
-  movieMetadata: OnboardingMovieMetadata,
-  sourcesConfigured = false,
-): StepId[] {
-  const steps: StepId[] = ['watch']
-  if (intent.films) {
-    steps.push('metadata')
-    // Picking TMDB means supplying a token, which is a screen's worth of work on its own.
-    if (movieMetadata === 'tmdb') steps.push('access')
-  }
-  // Only meaningful when there are two libraries to choose between.
-  if (intent.anime && intent.films) steps.push('startup')
-  steps.push('connect')
-  if (connected) steps.push('sync')
-  steps.push('sources')
-  // Someone who imported or picked sources already has a way to play. Asking them to choose
-  // between debrid and peer-to-peer before they have watched anything is a decision without a
-  // context; it belongs at first playback, and it stays available in settings meanwhile.
-  if (!sourcesConfigured) steps.push('playback')
-  steps.push('ready')
-  return steps
+export function onboardingSteps(path: OnboardingPath): StepId[] {
+  return path === 'import'
+    ? ['start', 'watch', 'connect', 'sources', 'ready']
+    : ['start', 'watch', 'sources', 'ready']
+}
+
+/** Setup never asks for an API key. TMDB is used only when a token is already available (saved on
+ *  an earlier run or built into a private build); otherwise the keyless catalog. */
+export function onboardingMovieMetadata(hasTmdbToken: boolean): OnboardingMovieMetadata {
+  return hasTmdbToken ? 'tmdb' : 'stremio'
+}
+
+/** Not asked during setup either: a re-run keeps the library the user already opens on, and a
+ *  fresh install with both libraries opens on the merged one. */
+export function onboardingStartupLibrary(defaultProvider: CatalogDefaultSelection, bothEnabled: boolean): OnboardingStartupLibrary {
+  if (defaultProvider === 'adaptive') return 'adaptive'
+  if (bothEnabled && defaultProvider === 'auto') return 'auto'
+  if (bothEnabled && (defaultProvider === 'tmdb' || defaultProvider === 'stremio')) return 'movies'
+  return 'merged'
 }
 
 /** Versioned so a future materially different setup flow can be offered without losing history. */

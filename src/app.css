@@ -607,7 +607,7 @@ html.controller-mode [data-carousel-scroller] { padding-top: max(1.125rem, 18px)
 }
 @keyframes ripple-expand { to { transform: scale(1); opacity: 0; } }
 
-.setup-heading { font-size: clamp(1.8rem, 2.8vw, 2.75rem); line-height: 1.15; text-wrap: balance; font-weight: 700; letter-spacing: -0.02em; }
+.setup-heading { max-width: 42rem; font-size: clamp(1.8rem, 2.8vw, 2.75rem); line-height: 1.15; text-wrap: balance; font-weight: 700; letter-spacing: -0.02em; }
 .setup-heading:focus { outline: none; box-shadow: none; }
 .setup-choice { border: 1px solid hsl(var(--border)); border-radius: .75rem; transition: background 150ms, border-color 150ms; }
 .setup-choice:hover { background: hsl(var(--secondary)); }

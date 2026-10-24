@@ -9,14 +9,13 @@
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import { m } from '$lib/paraglide/messages.js'
   import { providerList, accountInfo } from '$lib/stremio/debrid'
-  import { debridKey, debridProvider, torrentPlaybackMode, type AudioLang, type SubLang } from '$lib/settings/ui'
+  import { debridKey, debridProvider, torrentPlaybackMode } from '$lib/settings/ui'
 
-  // Audio and subtitle defaults are derived from the chosen libraries instead of asked for; see
-  // defaultPlaybackLanguages. This screen is only about how a torrent becomes a playable stream.
-  let { busy = $bindable() }: { busy: boolean } = $props()
+  /** How a torrent becomes a playable stream. `checking` is true while a debrid key is being
+   *  verified; the sources screen folds it into the footer's busy state. */
+  let { checking = $bindable(false) }: { checking?: boolean } = $props()
 
   let showKey = $state(false)
-  let checking = $state(false)
   let keyState = $state<'idle' | 'valid' | 'invalid'>('idle')
   let keyMessage = $state('')
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -31,6 +30,8 @@
   async function validate() {
     const key = $debridKey.trim()
     if (!key) {
+      generation += 1
+      checking = false
       keyState = 'idle'
       keyMessage = ''
       return
@@ -39,7 +40,6 @@
     // the newest may write the verdict, or a stale answer lands on top of a fresher one.
     const attempt = ++generation
     checking = true
-    busy = true
     try {
       await accountInfo($debridProvider, key)
       if (attempt !== generation) return
@@ -50,41 +50,42 @@
       keyState = 'invalid'
       keyMessage = cause instanceof Error ? cause.message : m.onboarding_playback_key_invalid()
     } finally {
-      if (attempt === generation) {
-        checking = false
-        busy = false
-      }
+      if (attempt === generation) checking = false
     }
   }
 
   /** Always debounced, blur included: blur lands on mousedown, so checking there and then would
-   * flip `busy` — and disable the footer button being clicked — before the click arrived. */
+   * flip `checking` — and disable the footer button being clicked — before the click arrived. */
   function scheduleValidate() {
     keyState = 'idle'
     keyMessage = ''
     clearTimeout(timer)
     timer = setTimeout(() => void validate(), 700)
   }
+
+  /** Peer-to-peer needs no key, so a pending or in-flight key check must not keep holding Next. */
+  function chooseDirect() {
+    clearTimeout(timer)
+    generation += 1
+    checking = false
+    $torrentPlaybackMode = 'direct'
+  }
 </script>
 
-<h1 id="setup-title" data-step-heading tabindex="-1" aria-describedby="setup-progress" class="setup-heading">{m.onboarding_playback_title()}</h1>
-<p class="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">{m.onboarding_playback_body()}</p>
-
-<div class="mt-7 grid gap-3 sm:grid-cols-2">
-  <button type="button" data-focusable onclick={() => $torrentPlaybackMode = 'debrid'} aria-pressed={$torrentPlaybackMode === 'debrid'} class="setup-choice p-5 text-left {$torrentPlaybackMode === 'debrid' ? 'selected' : ''}">
-    <Cloud size={25} class="text-muted-foreground" />
-    <span class="mt-5 block text-lg font-semibold">{m.onboarding_playback_debrid()}</span>
-    <span class="mt-2 block text-sm leading-relaxed text-muted-foreground">{m.onboarding_playback_debrid_body()}</span>
+<h2 id="setup-playback-title" class="mt-10 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{m.onboarding_playback_choice_title()}</h2>
+<div role="group" aria-labelledby="setup-playback-title" class="mt-3 grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2">
+  <button type="button" data-focusable onclick={() => $torrentPlaybackMode = 'debrid'} aria-pressed={$torrentPlaybackMode === 'debrid'} class="setup-choice flex items-start gap-3 p-4 text-left {$torrentPlaybackMode === 'debrid' ? 'selected' : ''}">
+    <Cloud size={22} class="mt-0.5 shrink-0 text-muted-foreground" />
+    <span class="min-w-0"><span class="block font-semibold">{m.onboarding_playback_debrid()}</span><span class="mt-1 block text-sm leading-relaxed text-muted-foreground">{m.onboarding_playback_debrid_body()}</span></span>
   </button>
-  <button type="button" data-focusable onclick={() => $torrentPlaybackMode = 'direct'} aria-pressed={$torrentPlaybackMode === 'direct'} class="setup-choice p-5 text-left {$torrentPlaybackMode === 'direct' ? 'selected' : ''}">
-    <Share2 size={25} class="text-muted-foreground" />
-    <span class="mt-5 block text-lg font-semibold">{m.onboarding_playback_p2p()}</span>
-    <span class="mt-2 block text-sm leading-relaxed text-muted-foreground">{m.onboarding_playback_p2p_body()}</span>
+  <button type="button" data-focusable onclick={chooseDirect} aria-pressed={$torrentPlaybackMode === 'direct'} class="setup-choice flex items-start gap-3 p-4 text-left {$torrentPlaybackMode === 'direct' ? 'selected' : ''}">
+    <Share2 size={22} class="mt-0.5 shrink-0 text-muted-foreground" />
+    <span class="min-w-0"><span class="block font-semibold">{m.onboarding_playback_p2p()}</span><span class="mt-1 block text-sm leading-relaxed text-muted-foreground">{m.onboarding_playback_p2p_body()}</span></span>
   </button>
 </div>
 
 {#if $torrentPlaybackMode === 'debrid'}
-  <div class="mt-5 grid gap-4">
+  <div class="mt-4 grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
     <!-- A verdict belongs to the provider it was fetched from, so re-check instead of leaving a
          stale tick behind when the provider changes. -->
     <label class="grid gap-2 text-sm font-semibold">{m.onboarding_playback_provider()}
