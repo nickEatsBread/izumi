@@ -87,14 +87,14 @@ The raw `.flatpakref` is still published for other distributions. Note that Stea
 > [!WARNING]
 > On Windows, you may need to do the following to run the install after open: SmartScreen → **More info → Run anyway**.
 
-[exe]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-x64-setup.exe
-[msi]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-x64.msi
-[dmg]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-aarch64.dmg
-[app]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-x86_64.AppImage
-[deb]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-amd64.deb
-[rpm]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-x86_64.rpm
-[apkf]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-android-full.apk
-[apkl]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-android-lite.apk
+[exe]: https://izumi.watch/download#windows
+[msi]: https://izumi.watch/download#windows
+[dmg]: https://izumi.watch/download#macos
+[app]: https://izumi.watch/download#linux
+[deb]: https://izumi.watch/download#linux
+[rpm]: https://izumi.watch/download#linux
+[apkf]: https://izumi.watch/download#android
+[apkl]: https://izumi.watch/download#android
 [deck]: https://flatpak.izumi.watch/install.desktop
 [deckref]: https://flatpak.izumi.watch/stable/com.nicho.izumi.flatpakref
 
