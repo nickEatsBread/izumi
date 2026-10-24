@@ -30,7 +30,7 @@ describe('settings search', () => {
     expect(searchSettings('title language', true)[0]).toMatchObject({
       title: 'Title language',
       category: 'Languages',
-      href: '/app/settings/appearance',
+      href: '/app/settings/languages',
       key: 'title-language',
       section: 'languages',
       subcategory: 'app',

@@ -1,11 +1,10 @@
 <script lang="ts">
-  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, dragCarousels, episodeQueueEnabled, sceneBookmarksEnabled, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, androidTvMode, cwDismissAction, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, titleLanguage, ratingStyle, ratingOnPage, type RatingStyle, type RatingOnPage, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
+  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, dragCarousels, episodeQueueEnabled, sceneBookmarksEnabled, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, androidTvMode, cwDismissAction, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, ratingStyle, ratingOnPage, type RatingStyle, type RatingOnPage, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid, isAndroidTv, isMobile } from '$lib/platform'
   import { setAiringNotificationsEnabled } from '$lib/notifications/airing'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import { m } from '$lib/paraglide/messages.js'
-  import { getLocale, setLocale, type Locale } from '$lib/paraglide/runtime.js'
   import { restartOnboarding } from '$lib/settings/onboarding'
   import ScoreScale from '$lib/components/detail/ScoreScale.svelte'
 
@@ -16,9 +15,6 @@
     { value: 'dropdown', label: 'Dropdown', hint: 'A menu of 1–10 with a short descriptor beside each.' },
   ]
   let ratingDemo = $state(8)
-
-  const locale = getLocale()
-  const changeLocale = (value: string) => setLocale(value as Locale)
 
   let notificationError = $state('')
   async function toggleAiringNotifications() {
@@ -69,26 +65,10 @@
   <p class="mb-4 text-sm text-muted-foreground">{m.settings_interface_intro()}</p>
 
   <div class="max-w-2xl">
-    <label data-setting-key="app-language" class="mb-5 flex items-center justify-between gap-3 rounded-md border border-border p-4 sm:p-3">
-      <span><span class="block font-bold">{m.settings_language()}</span><span class="text-xs text-muted-foreground">{m.settings_language_hint()}</span></span>
-      <SelectMenu value={locale} onChange={changeLocale} ariaLabel={m.settings_language()} options={[
-        { value: 'en', label: m.language_english() }, { value: 'ja', label: m.language_japanese() },
-      ]} />
-    </label>
-
     <div class="mb-5 flex items-center justify-between gap-3 rounded-md border border-border p-4 sm:p-3">
       <span><span class="block font-bold">{m.settings_setup_assistant()}</span><span class="text-xs text-muted-foreground">{m.settings_setup_assistant_hint()}</span></span>
       <button data-focusable onclick={restartOnboarding} class="shrink-0 rounded-lg bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">{m.settings_run_setup()}</button>
     </div>
-
-    <label data-setting-key="title-language" class="mb-5 flex flex-col gap-1">
-      <span class="text-sm font-bold">Title language</span>
-      <SelectMenu bind:value={$titleLanguage} className="sm:max-w-xs" ariaLabel="Title language" options={[
-        { value: 'romaji', label: 'Romaji' },
-        { value: 'english', label: 'English' },
-      ]} />
-      <span class="text-xs text-muted-foreground">Show anime titles in Romaji (e.g. Shingeki no Kyojin) or English (Attack on Titan). Falls back to the other when a title has only one.</span>
-    </label>
 
     <h3 class="mb-1 text-sm font-black">{m.settings_theme()}</h3>
     <p class="mb-2 text-xs text-muted-foreground">{m.settings_theme_hint()}</p>

@@ -144,7 +144,7 @@ function attribute(element: AstNode, name: string): string | true | null | undef
 const sorted = (values: readonly string[]) => [...values].sort()
 
 /** Rows every build shows: they steer source choice and the end-of-series prompt, not a player. */
-const EVERY_BUILD = ['preferredAudioLang', 'preferredSubLang', 'continueSourcePreference', 'seriesRatingPrompt']
+const EVERY_BUILD = ['continueSourcePreference', 'seriesRatingPrompt']
 /** Settings the in-app player reads: desktop mpv and the Android full build's embedded player. */
 const IN_APP = [
   'videoQualityPreset', 'qualityNotice', 'rawMpvOptions', 'qualityFailedKeys', 'audioProcessing',
@@ -165,7 +165,7 @@ const LITE_NOTICE = "This build plays videos in your device's video player, so t
 describe('Player settings per build (spec §5.1)', () => {
   it('keeps every desktop row, in the order it had before the gates', () => {
     expect(reach('desktop').stores).toEqual([
-      'preferredAudioLang', 'preferredSubLang', 'videoQualityPreset', 'qualityNotice', 'rawMpvOptions',
+      'videoQualityPreset', 'qualityNotice', 'rawMpvOptions',
       'qualityFailedKeys', 'windowsVsr', 'audioProcessing', 'p2pStatusVisibility', 'continueSourcePreference',
       'autoplayNext', 'upNextOverlay', 'seriesRatingPrompt', 'systemMediaControls', 'discordRichPresence',
       'keepAwakeWhilePlaying', 'bingePreload', 'autoSkip', 'skipPreviews', 'skipFiller', 'scrubThumbnails',

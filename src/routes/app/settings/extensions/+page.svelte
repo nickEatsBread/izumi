@@ -13,7 +13,7 @@
     sortRanks = new Map<string, number>(),
     manageSortEntries = $bindable([]),
   }: {
-    section?: 'manage' | 'community-results' | 'torrent-debrid'
+    section?: 'manage' | 'torrent-debrid'
     hasManageRows?: boolean
     orphanCount?: number
     visibleManageRows?: number
@@ -26,7 +26,7 @@
     manageSortEntries?: ManagedSourceSortEntry[]
   } = $props()
 
-  import { debridKey, debridProvider, extensionUrls, disabledExtensions, disabledPlugins, torrentPlaybackMode, providerLanguages, providerAudio } from '$lib/settings/ui'
+  import { debridKey, debridProvider, extensionUrls, disabledExtensions, disabledPlugins, torrentPlaybackMode } from '$lib/settings/ui'
   import {
     fetchExtensionInfo,
     installCatalogPackage,
@@ -52,8 +52,6 @@
     type SourceTypeFilter,
   } from '$lib/settings/source-filters'
   import { langName } from '$lib/player/track-label'
-  import { SOURCE_LANGUAGES } from '$lib/stremio/sublang'
-  import MultiSelect from '$lib/components/search/MultiSelect.svelte'
   import { accountInfo, providerList, providerMeta, type DebridAccountInfo } from '$lib/stremio/debrid'
   import Boxes from '@lucide/svelte/icons/boxes'
   import Search from '@lucide/svelte/icons/search'
@@ -172,10 +170,6 @@
   const metaByUrl = $derived(new Map($extensionUrls.map((u) =>
     [u, fetchExtensionInfo(u).catch((): ExtensionSourceInfo => ({ configs: [], problem: 'That URL could not be fetched.' }))] as const)))
   const langLabel = (l: string) => langName(l) ?? l.toUpperCase()
-  // Which languages the installed sources actually declare — used only to sort those to the top of
-  // the list, NOT to limit it: a source may declare no language at all, and a language can be
-  // chosen before adding a source that serves it.
-  let installedLangs = $state<string[]>([])
   // Which stored specs turned out to be package catalogs. Needed OUTSIDE the {#await} below, where
   // the row-level enable switch and the dimming live: a catalog runs nothing itself, so switching
   // its URL off would have no effect and must not be offered.
@@ -193,7 +187,6 @@
       catalogPackagesByUrl = new Map()
       sourceSearchTextByUrl = new Map()
       catalogsReady = true
-      installedLangs = [...new Set(localPackages.map((extension) => extension.lang).filter((lang): lang is string => !!lang))]
       return
     }
     catalogsReady = false
@@ -214,10 +207,6 @@
         ]),
       ].filter(Boolean).join(' ')]))
       catalogsReady = true
-      installedLangs = [...new Set([
-        ...entries.flatMap(([, info]) => info.configs).map((m) => m.lang).filter((l): l is string => !!l),
-        ...localPackages.map((extension) => extension.lang).filter((lang): lang is string => !!lang),
-      ])]
     })
     return () => { stale = true }
   })
@@ -287,16 +276,6 @@
       })),
     ]
   })
-  // Installed languages first (alphabetically within each group), then the rest.
-  const langOptions = $derived(
-    [...SOURCE_LANGUAGES].sort((a, b) => {
-      const ia = installedLangs.includes(a) ? 0 : 1
-      const ib = installedLangs.includes(b) ? 0 : 1
-      return ia - ib || langLabel(a).localeCompare(langLabel(b))
-    }),
-  )
-  // Empty = every language, matching the resolver's "no allowlist means all" rule.
-  const allLangs = $derived($providerLanguages.length === 0)
 
   // Per-plugin switches. One source URL expands to many plugins (a marketplace index yields ~18),
   // so the URL toggle above is all-or-nothing and this is the finer control. A catalog row expands
@@ -463,53 +442,6 @@
       </section>
     {/if}
 
-  </div>
-{/if}
-
-{#if section === 'community-results'}
-  <div class="max-w-2xl">
-    <div class="mb-3">
-      <h3 class="text-base font-black">Community source results</h3>
-      <p class="mt-1 text-xs text-muted-foreground">Limit the audio variants and languages requested from community sources.</p>
-    </div>
-
-    <div class="grid items-start gap-x-4 gap-y-4 sm:grid-cols-2">
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-bold">Audio</span>
-        <SelectMenu bind:value={$providerAudio} ariaLabel="Audio" options={[
-          { value: 'both', label: 'Subbed and dubbed' },
-          { value: 'sub', label: 'Subbed only' },
-          { value: 'dub', label: 'Dubbed only' },
-        ]} />
-        <span class="text-xs text-muted-foreground">
-          {#if $providerAudio === 'both'}Both are offered when a source carries them, each labelled SUB or DUB.{:else}Only {$providerAudio === 'dub' ? 'dubbed' : 'subbed'} results are requested — sources that carry nothing else are skipped entirely, which also makes the search faster.{/if}
-        </span>
-      </label>
-
-      <div class="flex flex-col gap-1">
-        <span class="text-sm font-bold">Source languages</span>
-        <div class="mt-1 flex flex-wrap items-center gap-2">
-          <MultiSelect
-            label="Languages"
-            options={langOptions}
-            selected={$providerLanguages}
-            labelOf={langLabel}
-            onchange={(v) => ($providerLanguages = v)}
-          />
-          {#if !allLangs}
-            <button data-focusable onclick={() => ($providerLanguages = [])}
-              class="rounded-md px-2 py-1 text-xs font-bold text-muted-foreground hover:bg-accent">Clear (all languages)</button>
-          {/if}
-        </div>
-        <span class="mt-1 text-xs text-muted-foreground">
-          {#if allLangs}
-            Every language is searched. Pick one or more to narrow it — sources serving other languages are then not queried at all, which also speeds up the source list.
-          {:else}
-            Only {$providerLanguages.map(langLabel).join(', ')} {$providerLanguages.length === 1 ? 'is' : 'are'} searched. Sources that don't declare a language are always included.
-          {/if}
-        </span>
-      </div>
-    </div>
   </div>
 {/if}
 

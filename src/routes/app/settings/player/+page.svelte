@@ -1,6 +1,6 @@
 <script lang="ts">
   import {
-    autoSkip, skipPreviews, skipFiller, preferredAudioLang, preferredSubLang,
+    autoSkip, skipPreviews, skipFiller,
     autoplayNext, upNextOverlay, seriesRatingPrompt, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
     scrubThumbnails, playerProgressAnimations, playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying,
     videoQualityPreset, rawMpvOptions, gifIncludeSubtitles, gifScale, gifMaxSeconds, androidAutoPip,
@@ -22,7 +22,6 @@
   import { open } from '@tauri-apps/plugin-dialog'
   import { isAndroid, isAndroidTv, isWindows } from '$lib/platform'
   import { inAppPlayerAvailable } from '$lib/player/in-app-player'
-  import { PLAYBACK_LANGUAGES } from '$lib/shared/languages'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import { m } from '$lib/paraglide/messages.js'
   import { tick } from 'svelte'
@@ -90,15 +89,6 @@
   <p class="mb-4 text-sm text-muted-foreground">Languages, playback behaviour, and the external player.</p>
 
   <div class="mb-4 grid max-w-2xl gap-3 sm:grid-cols-2">
-    <label class="flex flex-col gap-1">
-      <span class="text-sm font-bold">{m.player_audio_language()}</span>
-      <SelectMenu bind:value={$preferredAudioLang} ariaLabel={m.player_audio_language()} searchable options={PLAYBACK_LANGUAGES} />
-    </label>
-    <label class="flex flex-col gap-1">
-      <span class="text-sm font-bold">{m.player_subtitle_language()}</span>
-      <SelectMenu bind:value={$preferredSubLang} ariaLabel={m.player_subtitle_language()} searchable options={[...PLAYBACK_LANGUAGES.slice(0, 2), { value: 'none', label: m.cast_subtitles_off() }, ...PLAYBACK_LANGUAGES.slice(2)]} />
-    </label>
-
     {#if $inAppPlayerAvailable}
     <!-- Video-quality presets drive desktop mpv and the embedded Android libmpv plugin.
          Anime shaders need the desktop-only `ensure_upscale_shader` download, so that

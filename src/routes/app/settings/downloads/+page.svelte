@@ -7,7 +7,7 @@
   import { invoke } from '@tauri-apps/api/core'
   import { open } from '@tauri-apps/plugin-dialog'
   import {
-    downloadDir, downloadConcurrency, downloadCachedOnly, downloadQuality, downloadAudio,
+    downloadDir, downloadConcurrency, downloadCachedOnly, downloadQuality,
     downloadCodec, autoDownloadDelayMinutes,
   } from '$lib/settings/ui'
   import { isAndroid } from '$lib/platform'
@@ -97,17 +97,12 @@
     <section class="rounded-md border border-border p-4 sm:p-3">
       <div class="font-bold">Source matching</div>
       <p class="mt-1 text-xs text-muted-foreground">Used by both manual downloads and automatic new-episode downloads. A preference falls back to the best available match when no exact match exists.</p>
-      <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label class="text-sm font-bold">Quality
           <SelectMenu bind:value={$downloadQuality} className="mt-1 w-full font-normal" ariaLabel="Download quality" options={[
             { value: '2160', label: '4K' }, { value: '1080', label: '1080p' },
             { value: '720', label: '720p' }, { value: '480', label: '480p' },
             { value: 'any', label: 'Any' },
-          ]} />
-        </label>
-        <label class="text-sm font-bold">Audio
-          <SelectMenu bind:value={$downloadAudio} className="mt-1 w-full font-normal" ariaLabel="Download audio" options={[
-            { value: 'sub', label: 'Sub' }, { value: 'dub', label: 'Dub' }, { value: 'any', label: 'Any' },
           ]} />
         </label>
         <label class="text-sm font-bold">Codec

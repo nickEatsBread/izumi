@@ -376,9 +376,7 @@
 
   {#if activeTab === 'playback'}
   <div id="sources-panel-playback" role="tabpanel" aria-labelledby="sources-tab-playback">
-  <CommunitySources section="community-results" />
-
-  <div class="mt-6"><CommunitySources section="torrent-debrid" /></div>
+  <CommunitySources section="torrent-debrid" />
 
   <section class="mt-10" aria-labelledby="automatic-selection-heading">
     <div class="mb-4">

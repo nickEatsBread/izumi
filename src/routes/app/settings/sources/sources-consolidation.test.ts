@@ -34,9 +34,10 @@ describe('unified Sources settings', () => {
     expect(page).toContain("{ id: 'playback', label: 'Playback'")
     expect(page).toContain("{ id: 'ordering', label: 'Ordering'")
     expect(page).toMatch(/<CommunitySources\s+[\s\S]*?section="manage"/)
-    expect(page).toContain('<CommunitySources section="community-results" />')
+    // Sub/dub and source languages moved to Settings › Languages (settings redesign P1B).
+    expect(page).not.toContain('section="community-results"')
+    expect(communitySources).not.toContain("section === 'community-results'")
     expect(page).toContain('<CommunitySources section="torrent-debrid" />')
-    expect(page.indexOf('section="community-results"')).toBeLessThan(page.indexOf('section="torrent-debrid"'))
     expect(page.indexOf('section="torrent-debrid"')).toBeLessThan(page.indexOf('automatic-selection-heading'))
     expect(communitySources).not.toContain('Community sources run third-party code')
   })
