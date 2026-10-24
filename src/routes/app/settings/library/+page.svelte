@@ -388,7 +388,8 @@
       options={ratingStyles}
       onChange={(value) => ($ratingStyle = value as RatingStyle)}
     />
-    <div class="px-3 py-2.5">
+    <!-- One line of rating steps for the d-pad (data-nav-line), whatever the style. -->
+    <div data-nav-line class="px-3 py-2.5">
       <p class="mb-2 text-xs font-semibold text-muted-foreground">Preview — try it</p>
       <ScoreScale value={ratingDemo} onpick={(n) => (ratingDemo = n)} />
     </div>

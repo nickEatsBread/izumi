@@ -182,3 +182,94 @@ describe('value rows with a controller', () => {
     expect(navRect(document.querySelector('[data-setting-key]')!).height).toBe(56)
   })
 })
+
+// Settings › Accounts in controller mode: a full-width switch row (its header line inside the row
+// button), a row whose header line ends in two narrow buttons above two stacked fields, then a row
+// whose expanded body holds a button group that wraps onto a second line.
+const lineRows = `
+  <div data-nav-surface="settings" data-rect="224,0,1056,720">
+    <div data-setting-key="auto-watchlist" data-rect="260,100,760,56">
+      <button data-focusable data-row-activate data-rect="260,100,760,56">
+        <div data-nav-line data-rect="272,110,736,36">Add to Watchlist automatically</div>
+      </button>
+    </div>
+    <div data-setting-key="kitsu-account" data-rect="260,156,760,150">
+      <div data-nav-line data-rect="272,166,736,36">
+        <span>Kitsu</span>
+        <button data-focusable data-rect="900,168,60,32">Manage</button>
+        <button data-focusable data-rect="964,168,44,32">Connect</button>
+      </div>
+      <input data-focusable aria-label="Username" data-rect="272,214,736,36">
+      <input data-focusable aria-label="Password" data-rect="272,258,736,36">
+    </div>
+    <div data-setting-key="import-export-history" data-rect="260,306,760,190">
+      <div data-nav-line data-rect="272,316,736,36"><span>Import and export</span></div>
+      <div data-nav-line data-rect="272,364,736,80">
+        <button data-focusable data-rect="272,364,260,36">Export JSON</button>
+        <button data-focusable data-rect="540,364,290,36">Export XML</button>
+        <button data-focusable data-rect="272,408,200,36">Import JSON</button>
+      </div>
+    </div>
+    <button data-focusable data-subcategory-toggle data-rect="260,500,760,40">Keys</button>
+  </div>`
+
+const field = (label: string) => document.querySelector<HTMLElement>(`[aria-label="${label}"]`)!
+
+describe('controls on a [data-nav-line] with a controller', () => {
+  it('navRect measures a control on a line by the line on Up/Down only; the old marker still works outside one', () => {
+    // A MultiSelect-style panel open inside a line: its options step on their own boxes.
+    const openMenu = `<div data-nav-line data-rect="272,600,736,36"><div data-nav-trap data-rect="840,640,168,80">
+      <button data-focusable data-rect="844,644,160,32">Option A</button></div></div>`
+    document.body.innerHTML = `${lineRows}${valueRows}${openMenu}`
+    expect(navRect(el('Connect')).width).toBe(736)
+    expect(navRect(el('Connect')).top).toBe(166)
+    expect(navRect(el('Connect'), false).width).toBe(44)
+    // Closest line wins: the wrapped group, not the row's header line.
+    expect(navRect(el('Import JSON')).height).toBe(80)
+    // Expanded fields off any line, the row button holding a line, and a menu opened inside a line
+    // all keep their own boxes.
+    expect(navRect(field('Username')).top).toBe(214)
+    expect(navRect(el('Add to Watchlist automatically')).width).toBe(760)
+    expect(navRect(el('Option A')).width).toBe(160)
+    // An inline trigger with no line around it is still measured by its [data-setting-key] row.
+    expect(navRect(el('English')).width).toBe(760)
+    expect(navRect(el('English'), false).width).toBe(120)
+  })
+
+  it('Down from a full-width row reaches the narrow right-aligned control on the next row\'s header line', () => {
+    document.body.innerHTML = lineRows
+    el('Add to Watchlist automatically').focus()
+    press('ArrowDown')
+    // The line's first control, then Right steps along the line on the controls' own boxes.
+    expect(document.activeElement).toBe(el('Manage'))
+    press('ArrowRight')
+    expect(document.activeElement).toBe(el('Connect'))
+    // Down leaves the line for the stacked fields below, which keep stepping one at a time.
+    press('ArrowDown')
+    expect(document.activeElement).toBe(field('Username'))
+    press('ArrowDown')
+    expect(document.activeElement).toBe(field('Password'))
+    press('ArrowUp')
+    expect(document.activeElement).toBe(field('Username'))
+    press('ArrowUp')
+    expect(document.activeElement).toBe(el('Manage'))
+    press('ArrowUp')
+    expect(document.activeElement).toBe(el('Add to Watchlist automatically'))
+  })
+
+  it('walks a wrapped line in reading order, so its second visual line stays reachable', () => {
+    document.body.innerHTML = lineRows
+    field('Password').focus()
+    press('ArrowDown')
+    expect(document.activeElement).toBe(el('Export JSON'))
+    press('ArrowRight')
+    expect(document.activeElement).toBe(el('Export XML'))
+    // Nothing lies right of Export XML on screen: the next control on the line, wrapped below.
+    press('ArrowRight')
+    expect(document.activeElement).toBe(el('Import JSON'))
+    press('ArrowLeft')
+    expect(document.activeElement).toBe(el('Export XML'))
+    press('ArrowDown')
+    expect(document.activeElement).toBe(el('Keys'))
+  })
+})

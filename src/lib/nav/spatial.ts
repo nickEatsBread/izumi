@@ -26,11 +26,20 @@ export function pickInDirection<T extends Cand>(cur: DOMRect, cands: T[], dir: D
   return best
 }
 
-/** The box a directional move measures `el` by. A narrow control marked data-nav-measure-row (the
- *  inline SelectMenu trigger at a settings row's right edge) counts as its whole [data-setting-key]
- *  row on Up/Down, so the full-width row above or below reaches it instead of skipping it. Left/Right
- *  keep its own box: from the row's centre, Right would jump to the next row's right-hand control. */
+/** The [data-nav-line] (one visual line of controls, e.g. a settings row's header) that `el` sits on,
+ *  unless a menu opened inside that line (an absolute SelectMenu or MultiSelect panel) holds it. */
+export function navLine(el: Element): Element | null {
+  const line = el.closest('[data-nav-line]')
+  return line && !line.contains(el.closest('[data-nav-trap]')) ? line : null
+}
+
+/** The box a directional move measures `el` by. On Up/Down a control on a [data-nav-line] counts as
+ *  that whole line, and outside one a control marked data-nav-measure-row (an inline SelectMenu
+ *  trigger) as its [data-setting-key] row, so the full-width row above or below reaches a narrow
+ *  right-aligned control instead of skipping it. Left/Right keep its own box, so they still step
+ *  between the controls of one line; from the line's centre, Right would jump to the next row. */
 export function navRect(el: Element, vertical = true): DOMRect {
-  const row = vertical && el.hasAttribute('data-nav-measure-row') ? el.closest('[data-setting-key]') : null
-  return (row ?? el).getBoundingClientRect()
+  const box = !vertical ? null
+    : navLine(el) ?? (el.hasAttribute('data-nav-measure-row') ? el.closest('[data-setting-key]') : null)
+  return (box ?? el).getBoundingClientRect()
 }

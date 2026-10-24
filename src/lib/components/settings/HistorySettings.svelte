@@ -93,7 +93,7 @@
   description="Back up history or move it to another install"
   learnMore="The XML export imports into MyAnimeList and AniList directly, so it can also set up a tracker account."
 >
-  <div class="flex flex-wrap gap-2">
+  <div data-nav-line class="flex flex-wrap gap-2">
     <button data-focusable onclick={doExportJson} class="flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-2.5 text-sm font-bold transition-colors active:bg-accent sm:py-2 sm:hover:bg-accent">
       <Download size={15} /> Export (izumi JSON)
     </button>

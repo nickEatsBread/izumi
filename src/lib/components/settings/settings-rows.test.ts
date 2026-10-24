@@ -44,7 +44,27 @@ describe('LearnMore', () => {
   it('names each button after its row and points it at the text it opens', () => {
     expect(attr(button, 'aria-label')?.raw).toBe('aria-label={label ? `Learn more about ${label}` : undefined}')
     expect(attr(button, 'aria-controls')?.raw).toBe('aria-controls={id}')
-    expect(source).toContain('const id = $props.id()')
+    // The row owns the id, so its focusable can name the text in controller mode.
+    expect(source).toContain('let { text, label, id }: { text: string; label?: string; id: string } = $props()')
+    expect(read('./SettingsRow.svelte')).toContain('const learnId = $props.id()')
+  })
+
+  it('is no d-pad stop in controller mode: the text shows on row focus and describes the row', () => {
+    // Spec §5.1: one-line descriptions, full text on focus. Desktop and phone keep the button.
+    expect(source).toContain("import { settingsControllerMode } from '$lib/settings/surface'")
+    const controller = source.slice(source.indexOf('{#if $settingsControllerMode}'), source.indexOf('{:else}'))
+    expect(controller).toContain('<p {id} class="text-xs text-muted-foreground">{text}</p>')
+    expect(controller).not.toMatch(/<button|data-focusable|hidden=/)
+    expect(source.indexOf('>Learn more</button>')).toBeGreaterThan(source.indexOf('{:else}'))
+    // The row's wrapper hides the text until the row has focus; aria-describedby reads hidden text.
+    const row = read('./SettingsRow.svelte')
+    expect(row).toContain('const describedBy = $derived(learnMore && $settingsControllerMode ? learnId : undefined)')
+    expect(row.split("data-learn-more={describedBy ? '' : undefined}")).toHaveLength(3)
+    expect(row.split('aria-describedby={describedBy}')).toHaveLength(4)
+    // A control-only row has no row focusable of its own, so a named group carries the description.
+    expect(row).toContain("role={describedBy ? 'group' : undefined} aria-label={describedBy ? title : undefined} aria-describedby={describedBy}")
+    const css = read('../../../app.css')
+    expect(css).toContain('[data-learn-more] { display: none; }\n:focus-within > [data-learn-more] { display: block; }')
   })
 
   it('keeps the muted paragraph in the page, hidden while closed, so aria-controls always resolves', () => {
@@ -54,7 +74,7 @@ describe('LearnMore', () => {
   it('sits above the row button its negative top margin overlaps', () => {
     // The row button is a positioned .ripple-host; a non-positioned Learn more would lose its top strip to it.
     expect(staticAttr(button, 'class')?.split(/\s+/)).toContain('relative')
-    expect(read('./SettingsRow.svelte')).toContain('<div class="-mt-1.5 ')
+    expect(read('./SettingsRow.svelte')).toContain(' class="-mt-1.5 ')
   })
 })
 
@@ -99,7 +119,17 @@ describe('SettingsRow additions', () => {
     expect(learnMores).toHaveLength(2)
     expect(renders).toHaveLength(2)
     for (const ancestors of [...learnMores, ...renders]) expect(insideControl(ancestors), ancestors.join(' < ')).toBe(false)
-    expect(source.split('<LearnMore text={learnMore} label={title} />')).toHaveLength(3)
+    expect(source.split('<LearnMore text={learnMore} label={title} id={learnId} />')).toHaveLength(3)
+  })
+
+  it('marks its header as one d-pad line, outside the row button and the expanded children', () => {
+    // nav `navRect` measures a narrow control on this line by the whole line on Up/Down.
+    const lines = rowElements.filter((el) => hasAttr(el, 'data-nav-line'))
+    expect(lines).toHaveLength(1)
+    expect(source).toContain('{#snippet header()}\n  <div data-nav-line class="flex gap-3 ')
+    // A row button or link holds the line, so it keeps its own box; the expanded children sit outside
+    // the line, so their stacked fields keep their own boxes too.
+    expect(source.slice(source.indexOf('{#snippet header()}'), source.indexOf('{/snippet}'))).not.toContain('children')
   })
 
   it('keeps the leading icon beside the title when a stacked row drops its controls below', () => {

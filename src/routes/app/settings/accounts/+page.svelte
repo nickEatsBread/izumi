@@ -562,7 +562,7 @@
     {#if $trackerQueue.length}
       <SettingsRow title="Pending tracker updates" leading={queueLeading} meta={queueMeta} />
     {/if}
-    <p class="px-3 py-2.5 text-xs leading-5 text-muted-foreground">Browse lists in <a href="/app/library" data-focusable class="font-bold text-foreground underline underline-offset-4">Library</a>. Add list add-ons in <a href="/app/settings/sources" data-focusable class="font-semibold text-foreground underline underline-offset-4">Sources</a> and arrange their rows in <a href="/app/settings/library/home?provider=stremio" data-focusable class="font-semibold text-foreground underline underline-offset-4">Customize Home</a>.</p>
+    <p data-nav-line class="px-3 py-2.5 text-xs leading-5 text-muted-foreground">Browse lists in <a href="/app/library" data-focusable class="font-bold text-foreground underline underline-offset-4">Library</a>. Add list add-ons in <a href="/app/settings/sources" data-focusable class="font-semibold text-foreground underline underline-offset-4">Sources</a> and arrange their rows in <a href="/app/settings/library/home?provider=stremio" data-focusable class="font-semibold text-foreground underline underline-offset-4">Customize Home</a>.</p>
   </SettingsSubcategory>
 
   <SettingsSubcategory id="keys">

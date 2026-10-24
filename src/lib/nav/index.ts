@@ -2,7 +2,7 @@ import { get } from 'svelte/store'
 import { gameMode, playing } from '$lib/player/session'
 import { isTv } from '$lib/platform'
 import { controllerMode } from './input'
-import { navRect, pickInDirection, type Dir } from './spatial'
+import { navLine, navRect, pickInDirection, type Dir } from './spatial'
 import { activeNavTrap, visibleNavTraps } from './traps'
 import { takeFocusHint } from './focus-hint'
 import { isNavigable, isRovingTab } from './focusable'
@@ -1059,7 +1059,13 @@ export function initDpadNav() {
     const activeRegion = regionOf(active)
     const all: ElCand[] = els.filter(el => el !== active).map(el => ({ id: '', rect: navRect(el, vertical), el }))
     const sameRegion = all.filter(c => regionOf(c.el) === activeRegion)
-    let pick = pickInDirection(cur, sameRegion, dir)
+    // Left/Right on a [data-nav-line] step to the line's neighbour in reading order: a line that wraps
+    // (a button group, a paragraph's links) is one box on Up/Down, so its wrapped part stays reachable.
+    const line = vertical ? null : navLine(active)
+    const onLine = line ? els.filter((el) => navLine(el) === line) : []
+    const at = onLine.indexOf(active)
+    const neighbour = at < 0 ? undefined : onLine[at + (dir === 'right' ? 1 : -1)]
+    let pick: ElCand | null = neighbour ? { id: '', rect: navRect(neighbour, false), el: neighbour } : pickInDirection(cur, sameRegion, dir)
     let entersRegionDefault = false
     if (!pick) {
       if (vertical) {

@@ -15,7 +15,7 @@
   import { ripple } from '$lib/actions/ripple'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import LearnMore from './LearnMore.svelte'
-  import { controllerHides, controllerSurfaces } from '$lib/settings/surface'
+  import { controllerHides, controllerSurfaces, settingsControllerMode } from '$lib/settings/surface'
 
   let {
     title,
@@ -61,10 +61,15 @@
   // nothing, so a row is hidden exactly where its search hit is.
   const shown = $derived(!controllerHides(settingKey, $controllerSurfaces))
   const large = $derived(size === 'lg')
+  // Controller mode (spec §5.1): Learn more is no extra d-pad stop. Its text shows while the row has
+  // focus (app.css [data-learn-more]) and describes the row's focusable for screen readers.
+  const learnId = $props.id()
+  const describedBy = $derived(learnMore && $settingsControllerMode ? learnId : undefined)
 </script>
 
+<!-- data-nav-line: the d-pad measures a narrow control here by this whole line on Up/Down (nav navRect). -->
 {#snippet header()}
-  <div class="flex gap-3 {large ? 'min-h-12' : 'min-h-9'} {controlLayout === 'stack' ? 'flex-col items-stretch sm:flex-row sm:items-center' : 'items-center'}">
+  <div data-nav-line class="flex gap-3 {large ? 'min-h-12' : 'min-h-9'} {controlLayout === 'stack' ? 'flex-col items-stretch sm:flex-row sm:items-center' : 'items-center'}">
     <!-- One inner row, so a stacked row drops only its controls below and the icon stays beside the title. -->
     <div class="flex min-w-0 flex-1 items-center gap-3">
       {#if leading}<span class="shrink-0">{@render leading()}</span>{/if}
@@ -89,7 +94,7 @@
 
 <!-- Learn more sits after the row's own button or link: one control never nests inside another. -->
 {#snippet more()}
-  {#if learnMore}<div class="-mt-1.5 pb-2.5 {large ? 'px-3.5' : 'px-3'}"><LearnMore text={learnMore} label={title} /></div>{/if}
+  {#if learnMore}<div data-learn-more={describedBy ? '' : undefined} class="-mt-1.5 pb-2.5 {large ? 'px-3.5' : 'px-3'}"><LearnMore text={learnMore} label={title} id={learnId} /></div>{/if}
 {/snippet}
 
 {#if shown}
@@ -98,6 +103,7 @@
     <a
       href={href}
       data-focusable
+      aria-describedby={describedBy}
       use:ripple
       onclick={() => h.tap()}
       class="ripple-host block w-full rounded-[inherit] text-left transition-colors active:bg-secondary sm:hover:bg-secondary/70
@@ -115,6 +121,7 @@
       use:ripple
       data-row-activate
       aria-pressed={pressed}
+      aria-describedby={describedBy}
       aria-expanded={children ? expanded : undefined}
       onclick={() => { h.tap(); onActivate() }}
       class="ripple-host block w-full text-left transition-colors active:bg-secondary sm:hover:bg-secondary/70
@@ -129,9 +136,11 @@
     {/if}
   </div>
 {:else}
-  <div data-setting-key={settingKey} class="{large ? 'px-3.5 py-3.5' : 'px-3 py-2.5'}">
+  <!-- Its focusables live in the control snippet, so a group carries the controller description. -->
+  <div data-setting-key={settingKey} role={describedBy ? 'group' : undefined} aria-label={describedBy ? title : undefined} aria-describedby={describedBy}
+       class="{large ? 'px-3.5 py-3.5' : 'px-3 py-2.5'}">
     {@render header()}
-    {#if learnMore}<div class="mt-1"><LearnMore text={learnMore} label={title} /></div>{/if}
+    {#if learnMore}<div data-learn-more={describedBy ? '' : undefined} class="mt-1"><LearnMore text={learnMore} label={title} id={learnId} /></div>{/if}
     {#if children && expanded}
       <div class="mt-2.5 border-t border-border/70 pt-3">{@render children()}</div>
     {/if}

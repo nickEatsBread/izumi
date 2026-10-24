@@ -48,12 +48,17 @@ describe('SelectMenu in controller mode (spec §3.5)', () => {
     // nav `navRect` reads this marker; a field-variant trigger keeps its own box.
     expect(source).toContain("data-nav-measure-row={variant === 'inline' || undefined}")
     const css = read('../../../app.css')
-    expect(css).toContain('.gamemode [data-setting-key]:has([data-nav-measure-row]:focus) { box-shadow: var(--izumi-safe-focus-ring); }')
-    expect(css).toContain('.controller-mode [data-setting-key]:has([data-nav-measure-row]:focus) {\n  box-shadow: var(--izumi-safe-focus-ring), 0 8px 24px rgb(0 0 0 / 0.4);')
-    expect(css).toContain('.tv-mode [data-setting-key]:has([data-nav-measure-row]:focus) {\n  box-shadow: 0 0 0 4px #fff, 0 8px 28px rgb(0 0 0 / 0.45);')
-    expect(css).toContain('[data-settings-controller] [data-setting-key]:has([data-nav-measure-row]:focus) { background-color: hsl(var(--foreground) / 0.1); }')
-    // The trigger's own ring and fill are suppressed, after (and as specific as) the row-fill rule.
-    const suppress = css.indexOf(':is(.gamemode, .controller-mode, .tv-mode) [data-focusable][data-nav-measure-row]:focus { box-shadow: none; background-color: transparent; }')
+    // One rule set lights the row for an inline trigger and for any control on a row's [data-nav-line].
+    const lit = '[data-setting-key]:has([data-nav-line] [data-focusable]:focus, [data-nav-measure-row]:focus)'
+    expect(css).toContain(`.gamemode ${lit} { box-shadow: var(--izumi-safe-focus-ring); }`)
+    expect(css).toContain(`.controller-mode ${lit} {\n  box-shadow: var(--izumi-safe-focus-ring), 0 8px 24px rgb(0 0 0 / 0.4);`)
+    expect(css).toContain(`.tv-mode ${lit} {\n  box-shadow: 0 0 0 4px #fff, 0 8px 28px rgb(0 0 0 / 0.45);`)
+    expect(css).toContain(`[data-settings-controller] ${lit} { background-color: hsl(var(--foreground) / 0.1); }`)
+    expect(css).not.toContain('[data-setting-key]:has([data-nav-measure-row]:focus)')
+    // The control's own ring goes. The inline trigger also loses its fill, after (and as specific as)
+    // the row-fill rule; a control on a line keeps it, so two controls on one line stay apart.
+    expect(css).toContain(':is(.gamemode, .controller-mode, .tv-mode) :is([data-setting-key] [data-nav-line] [data-focusable], [data-focusable][data-nav-measure-row]):focus { box-shadow: none; }')
+    const suppress = css.indexOf(':is(.gamemode, .controller-mode, .tv-mode) [data-focusable][data-nav-measure-row]:focus { background-color: transparent; }')
     expect(suppress).toBeGreaterThan(css.indexOf('[data-settings-controller] [data-settings-subcategory-body] [data-focusable]:focus'))
   })
 
@@ -157,5 +162,18 @@ describe('Playback › Controls in Game mode (spec §5.5)', () => {
     const map = read('./ControllerMap.svelte')
     expect(map).toContain('{#each CONTROLLER_MAP as group (group.title)}')
     expect(map).toContain('<Glyph {family} button={key} />')
+  })
+})
+
+describe('one-line control groups outside a row header (d-pad lines)', () => {
+  // nav `navRect` measures these by the whole line on Up/Down, so Down from the full-width row above
+  // lands on the line's first control instead of skipping the narrow ones at its left edge.
+  it.each([
+    ['../../../routes/app/settings/devices/+page.svelte', '<div data-nav-line class="flex flex-col gap-3 sm:flex-row sm:items-center">'],
+    ['../../../routes/app/settings/library/+page.svelte', '<div data-nav-line class="px-3 py-2.5">\n      <p class="mb-2 text-xs font-semibold text-muted-foreground">Preview — try it</p>'],
+    ['../../../routes/app/settings/accounts/+page.svelte', '<p data-nav-line class="px-3 py-2.5 text-xs leading-5 text-muted-foreground">Browse lists in <a href="/app/library"'],
+    ['./HistorySettings.svelte', '<div data-nav-line class="flex flex-wrap gap-2">'],
+  ])('%s marks its control group', (file, markup) => {
+    expect(read(file)).toContain(markup)
   })
 })

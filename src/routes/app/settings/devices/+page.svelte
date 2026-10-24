@@ -1123,7 +1123,7 @@
   <SettingsSubcategory id="tv">
     <SettingsRow title="Restore from TV" description="Bring your TV's setup and progress here; no sync needed" href="/app/companion-restore" chevron />
     <SettingsRow settingKey="tv-pairing" title="Pair a Samsung TV" description="Enter the code shown on the TV; both on the same Wi-Fi" learnMore="Adds izumi Companion without scanning the QR code.">
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div data-nav-line class="flex flex-col gap-3 sm:flex-row sm:items-center">
         <input
           id="tv-pairing-code"
           value={tvPairingCode}

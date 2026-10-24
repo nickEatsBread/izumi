@@ -38,7 +38,7 @@ describe('rows hidden in controller mode (spec §5.6)', () => {
     const search = read('../components/settings/SettingsSearch.svelte')
     const row = read('../components/settings/SettingsRow.svelte')
     expect(search).toContain('lite: !$inAppPlayerAvailable, gamemode: $gameMode')
-    expect(row).toContain("import { controllerHides, controllerSurfaces } from '$lib/settings/surface'")
+    expect(row).toContain("import { controllerHides, controllerSurfaces, settingsControllerMode } from '$lib/settings/surface'")
     expect(row).toContain('const shown = $derived(!controllerHides(settingKey, $controllerSurfaces))')
     expect(row).toContain('{#if shown}')
     expect(row.trimEnd().endsWith('{/if}')).toBe(true)
