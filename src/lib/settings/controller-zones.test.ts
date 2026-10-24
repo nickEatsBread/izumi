@@ -7,11 +7,12 @@ import { initDpadNav, resetNavLandingForTests } from '$lib/nav'
 import { resetLayeredBackForTests } from '$lib/nav/back'
 import { inputType } from '$lib/nav/input'
 import { resetNavLayersForTests } from '$lib/nav/layers'
-import { clearBackPending } from '$lib/nav/nav-state'
+import { clearBackPending, navEpoch } from '$lib/nav/nav-state'
 import { dispatchPadKey, resetPadControlsForTests } from '$lib/nav/pad-controls'
 import {
   RAIL_PREVIEW_MS, controllerLanded, installControllerZones, paneEntryTarget, resetControllerZonesForTests, scrollEdges,
 } from './controller-zones'
+import { leaveSettings } from './back'
 
 // NuvioTV's two focus zones in controller Settings (spec §5.2), on the markup the controller layout
 // renders: the app sidebar, the settings rail (its own region) and the pane. A section switch is a
@@ -181,6 +182,43 @@ describe('rail preview', () => {
     vi.advanceTimersByTime(RAIL_PREVIEW_MS)
     expect(mocks.goto).not.toHaveBeenCalled()
   })
+
+  it('a Back from the rail, or any other navigation, drops a waiting preview while focus stays put', () => {
+    vi.useFakeTimers()
+    rail('subtitles').focus()
+    press('ArrowDown')
+    leaveSettings()
+    vi.advanceTimersByTime(RAIL_PREVIEW_MS)
+    expect(history.go).toHaveBeenCalledWith(-1)
+    clearBackPending()
+    rail('subtitles').focus()
+    press('ArrowDown')
+    navEpoch.update((epoch) => epoch + 1)
+    vi.advanceTimersByTime(RAIL_PREVIEW_MS)
+    expect(mocks.goto).not.toHaveBeenCalled()
+  })
+
+  it('uninstalling drops a waiting preview and hands the rail and the pane back to the engine', () => {
+    vi.useFakeTimers()
+    rail('subtitles').focus()
+    press('ArrowDown')
+    uninstall()
+    vi.advanceTimersByTime(RAIL_PREVIEW_MS)
+    row('Text size').focus()
+    rail('languages').focus()
+    press('ArrowRight')
+    vi.advanceTimersByTime(RAIL_PREVIEW_MS)
+    expect(mocks.goto).not.toHaveBeenCalled()
+    expect(document.activeElement).not.toBe(rail('languages'))
+    const seen: boolean[] = []
+    document.addEventListener('click', (event) => { seen.push(event.defaultPrevented); event.preventDefault() }, { once: true })
+    rail('languages').click()
+    expect(seen).toEqual([false])
+    uninstall = installControllerZones(root)
+    rail('subtitles').focus()
+    press('ArrowRight')
+    expect(document.activeElement).toBe(row('Subtitles basics'))
+  })
 })
 
 describe('entering and leaving the pane', () => {
@@ -212,6 +250,33 @@ describe('entering and leaving the pane', () => {
     press('ArrowRight')
     await settle()
     expect(document.activeElement).toBe(row('Text size'))
+  })
+
+  it('a slow switch starts once however often Right repeats, and moving on keeps focus in the rail', async () => {
+    const loads: Array<() => void> = []
+    mocks.goto.mockImplementation((href: string) => new Promise<void>((resolve) => {
+      loads.push(() => { show(href.split('/').pop() as Section); resolve() })
+    }))
+    rail('subtitles').focus()
+    press('ArrowDown')
+    press('ArrowRight')
+    press('ArrowRight')
+    expect(mocks.goto).toHaveBeenCalledTimes(1)
+    press('ArrowUp')
+    loads[0]()
+    await settle()
+    expect(rail('languages').getAttribute('aria-current')).toBe('page')
+    expect(document.activeElement).toBe(rail('subtitles'))
+  })
+
+  it('the bare landing keeps its rows under Playback, the section it shows', () => {
+    show('playback')
+    history.replaceState({ [HISTORY_INDEX]: 2 }, '', '/app/settings')
+    row('Skip intros').focus()
+    show('playback')
+    rail('playback').focus()
+    press('ArrowRight')
+    expect(document.activeElement).toBe(row('Skip intros'))
   })
 
   it('A on a rail item enters the pane; a tap or a mouse click stays a plain link', async () => {
@@ -260,6 +325,14 @@ describe('entering Settings', () => {
     await controllerLanded({ type: 'link', from: url('/app/home'), to: url('/app/settings') }, root)
     expect(mocks.goto).toHaveBeenCalledWith('/app/settings/languages', { replaceState: true, noScroll: true })
     expect(document.activeElement).toBe(rail('languages'))
+  })
+
+  it('a search hit on the bare landing keeps its reveal instead of opening the remembered section', async () => {
+    show('languages')
+    await controllerLanded({ type: 'goto', from: url('/app/settings/subtitles'), to: url('/app/settings/languages') }, root)
+    await controllerLanded({ type: 'link', from: url('/app/home'), to: url('/app/settings?setting=text-size') }, root)
+    await controllerLanded({ type: 'link', from: url('/app/home'), to: url('/app/settings#text-size') }, root)
+    expect(mocks.goto).not.toHaveBeenCalled()
   })
 
   it('leaves focus alone after a history step, a search hit, or a touch', async () => {

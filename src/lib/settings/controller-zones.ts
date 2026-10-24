@@ -1,9 +1,11 @@
 import { tick } from 'svelte'
+import { get } from 'svelte/store'
 import { goto } from '$app/navigation'
 import { focusByNav, setNavMoveOwner, type Dir } from '$lib/nav'
 import { describeFocus, focusRestoreAllowed, resolveFocus, type FocusDescriptor } from '$lib/nav/focus-memory'
 import { isNavigable } from '$lib/nav/focusable'
-import { isSettingsPath, normaliseSettingsPath } from './hierarchy'
+import { backPending, navEpoch } from '$lib/nav/nav-state'
+import { SETTINGS_ROOT, isSettingsPath, normaliseSettingsPath, settingsRailHref } from './hierarchy'
 import { SETTING_PARAM } from './search'
 
 // NuvioTV's two focus zones for Settings in controller mode (Android TV, Steam Deck Game mode; spec
@@ -24,11 +26,16 @@ let lastSection: string | null = null
 const lastRows = new Map<string, FocusDescriptor>()
 
 const isLit = (link: Element) => link.getAttribute('aria-current') === 'page'
+/** Pane memory's key for a page. The bare landing shows Playback, so it shares Playback's key. */
+function pageKey(pathname: string): string {
+  const path = normaliseSettingsPath(pathname)
+  return path === SETTINGS_ROOT ? settingsRailHref(path) ?? path : path
+}
 
 /** Where Right or A lands in `pane`: the control last focused on page `path` while it is still
  *  there, else the pane's first control. null for an empty pane. */
 export function paneEntryTarget(pane: ParentNode, path: string = location.pathname): HTMLElement | null {
-  const remembered = lastRows.get(path)
+  const remembered = lastRows.get(pageKey(path))
   const hit = remembered ? resolveFocus(remembered, pane) : null
   if (hit && isNavigable(hit)) return hit
   return [...pane.querySelectorAll<HTMLElement>('[data-focusable]')].find(isNavigable) ?? null
@@ -57,7 +64,8 @@ export async function controllerLanded(navigation: ControllerNavigation, root: P
   const { type, from, to } = navigation
   if (!to) return
   const entering = (!from || !isSettingsPath(from.pathname)) && type !== 'popstate'
-  if (entering && lastSection && normaliseSettingsPath(to.pathname) === '/app/settings') {
+  const reveal = to.searchParams.has(SETTING_PARAM) || to.hash !== ''
+  if (entering && lastSection && !reveal && normaliseSettingsPath(to.pathname) === SETTINGS_ROOT) {
     await goto(lastSection, { replaceState: true, noScroll: true })
     if (focusRestoreAllowed()) focusRailEntry(root)
     return
@@ -70,25 +78,40 @@ export async function controllerLanded(navigation: ControllerNavigation, root: P
 /** Install the zones on the controller layout's root; returns the teardown. */
 export function installControllerZones(root: HTMLElement): () => void {
   let pending: ReturnType<typeof setTimeout> | null = null
+  // The section switch in flight, so a held Right or a Right during a preview's load waits on it
+  // instead of restarting the same load.
+  let showing: { href: string; done: Promise<void> } | null = null
   const pane = () => root.querySelector<HTMLElement>('[data-settings-pane]')
   const cancelPreview = () => {
     if (pending !== null) clearTimeout(pending)
     pending = null
   }
 
-  async function showSection(href: string): Promise<void> {
-    await goto(href, SWITCH)
-    const scroller = pane()
-    if (scroller) scroller.scrollTop = 0
+  function showSection(href: string): Promise<void> {
+    if (showing?.href === href) return showing.done
+    const entry = { href, done: Promise.resolve() }
+    showing = entry
+    entry.done = (async () => {
+      try {
+        await goto(href, SWITCH)
+      } finally {
+        if (showing === entry) showing = null
+      }
+      const scroller = pane()
+      if (scroller) scroller.scrollTop = 0
+    })()
+    return entry.done
   }
 
   /** Right or A on a rail item: show its section now if it is not the one shown, then focus the
-   *  pane's entry control. */
+   *  pane's entry control unless focus moved on while the section loaded. */
   async function enterPane(link: HTMLAnchorElement): Promise<void> {
     cancelPreview()
+    const from = document.activeElement
     const href = link.getAttribute('href')
     if (href && !isLit(link)) await showSection(href)
     await tick()
+    if (document.activeElement !== from) return
     const scroller = pane()
     const target = scroller ? paneEntryTarget(scroller) : null
     if (target) focusByNav(target, true)
@@ -110,12 +133,18 @@ export function installControllerZones(root: HTMLElement): () => void {
     if (link) {
       cancelPreview()
       const href = link.getAttribute('href')
-      if (href && !isLit(link)) pending = setTimeout(() => { pending = null; void showSection(href) }, RAIL_PREVIEW_MS)
+      const armed = get(navEpoch)
+      // A Back or any other navigation started meanwhile wins: the preview's replacing goto would
+      // supersede it and overwrite the history entry it moved to.
+      if (href && !isLit(link)) pending = setTimeout(() => {
+        pending = null
+        if (!backPending() && get(navEpoch) === armed) void showSection(href)
+      }, RAIL_PREVIEW_MS)
       return
     }
     if (!pane()?.contains(event.target)) return
     const row = describeFocus(event.target)
-    if (row) lastRows.set(location.pathname, row)
+    if (row) lastRows.set(pageKey(location.pathname), row)
   }
 
   // Focus leaving the rail (Left to the app strip, a dialog) drops a preview still waiting.
