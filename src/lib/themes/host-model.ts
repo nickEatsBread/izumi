@@ -62,6 +62,39 @@ export function seriesKindText(format: string | null | undefined): string | unde
   }
 }
 
+const DAY = 86_400
+// Sequel wording when the catalog record carries no usable relations (cards, search results and some
+// backup catalogs send none). A bare 1 ("Season 1") is the first season, and the Roman numerals are
+// case-sensitive so a lowercase " iv " in a title is not a sequel.
+const SEQUEL_TITLE = /\b(season|part|cour)\s*(?!0*1\b)\d+\b|\b(?!0*1st\b)\d+(st|nd|rd|th)\s+season\b/i
+const SEQUEL_ROMAN = /\s(II|III|IV)\b/
+
+/** The freshness ribbon streaming apps put on fresh titles (API 6 `newBadge`): "New Season" for a sequel
+ *  that started in the last 21 days, "New Series" / "New Movie" for anything else that started in the last
+ *  30, else "New Episode" while a running series' weekly episode aired in the last 7 days (its next one is
+ *  at most a week away, or at most a week overdue). Never "New Episode" for a film. Nothing otherwise,
+ *  and nothing without dates. */
+export function newBadgeText(media: Pick<Media, 'format' | 'status' | 'startDate' | 'nextAiringEpisode' | 'relations' | 'title'>, now = Date.now()): string | undefined {
+  const seconds = Math.floor(now / 1000)
+  const start = media.startDate
+  const startedAt = start?.year && start.month && start.day ? Date.UTC(start.year, start.month - 1, start.day) / 1000 : undefined
+  const age = startedAt !== undefined ? seconds - startedAt : undefined
+  const movie = media.format === 'MOVIE'
+  if (age !== undefined && age >= 0 && age <= 30 * DAY) {
+    if (movie) return 'New Movie'
+    const edges = media.relations?.edges
+    const sequel = edges?.length
+      ? edges.some((edge) => edge.relationType === 'PREQUEL' && (edge.node.type ?? 'ANIME') === 'ANIME')
+      : [media.title?.romaji, media.title?.english].some((name) => !!name && (SEQUEL_TITLE.test(name) || SEQUEL_ROMAN.test(name)))
+    if (!sequel) return 'New Series'
+    if (age <= 21 * DAY) return 'New Season'
+  }
+  const next = media.nextAiringEpisode
+  if (movie || media.status !== 'RELEASING' || !next || next.episode < 2) return undefined
+  const left = next.airingAt ? next.airingAt - seconds : next.timeUntilAiring
+  return left >= -7 * DAY && left <= 7 * DAY ? 'New Episode' : undefined
+}
+
 /** Shared host bindings so every surface formats score, duration and artwork the same way.
  *  `now` lets a live surface (the hero clock) re-derive the countdown without refetching. */
 export function mediaDisplayModel(media: Media, extras: Partial<DisplayModel> = {}, coverWidth = 0, now = Date.now()): DisplayModel {
@@ -103,9 +136,11 @@ export function mediaDisplayModel(media: Media, extras: Partial<DisplayModel> = 
     genre3: media.genres?.[2] || undefined,
     members: media.popularity ? compact.format(media.popularity) : undefined,
     episodeCount: media.episodes != null ? String(media.episodes) : undefined,
+    // "1 Episode" / "12 Episodes" (API 6), so a template never writes "1 Episodes".
+    episodeCountLabel: media.episodes ? `${media.episodes} ${media.episodes === 1 ? 'Episode' : 'Episodes'}` : undefined,
     duration: media.duration || undefined,
     // An episode host passes its own runtime as `duration`; the long form follows it.
-    durationLong: durationLongText(extras.duration ?? media.duration),
+    durationLong: durationLongText(extras.duration || media.duration),
     source: media.source ? media.source.replace(/_/g, ' ').toLowerCase() : undefined,
     country: ({ JP: 'Japan', KR: 'South Korea', CN: 'China', TW: 'Taiwan', HK: 'Hong Kong', US: 'United States' } as Record<string, string>)[media.countryOfOrigin ?? ''] ?? media.countryOfOrigin,
     nextEpisode: next?.episode || undefined,
@@ -114,6 +149,8 @@ export function mediaDisplayModel(media: Media, extras: Partial<DisplayModel> = 
     // The countdown has run out but the catalog has not moved on to a newer episode yet: the next
     // episode is due ("EP 13 SOON") rather than unknown.
     airingSoon: next?.episode && secondsLeft != null && secondsLeft <= 0 ? 'Soon' : undefined,
+    // "New Episode", "New Season", "New Series" or "New Movie" (API 6) for a freshness ribbon.
+    newBadge: newBadgeText(media, now),
     episodesAired: aired,
     ...extras,
   }
@@ -145,7 +182,8 @@ export function episodeDisplayModel(
     episodeNo: extras.episodeNo ?? String(ep),
     episodeCode: extras.episodeCode ?? episodeCodeText(ep, meta?.season, meta?.seasonEpisode),
     description: extras.description ?? (strip(meta?.overview) || undefined),
-    duration: extras.duration ?? meta?.runtime ?? media.duration ?? undefined,
+    // A runtime of 0 is unknown (a movie's single episode), never "0m".
+    duration: extras.duration || meta?.runtime || media.duration || undefined,
     airDate: extras.airDate ?? meta?.airDate,
     airDateLong: extras.airDateLong ?? longDayText(extras.airDate ?? meta?.airDate),
     still: extras.still ?? meta?.image,

@@ -5,7 +5,9 @@ import { themePreset } from './ui'
 import { activeStudioTheme, activeStudioThemeId, defaultStudioTheme, saveStudioTheme, studioThemes, themeStudioPreview } from './theme-studio'
 import { closeThemeStudio, currentStudioDesign, openThemeStudio, resetToShippedTheme, themeStudioMinimized, themeStudioOpen } from './theme-studio-session'
 import { startThemeSync, THEME_PRESETS } from '$lib/theme'
-import { previewTheme, themeInstallPreview } from '$lib/themes/installed'
+import { cancelThemePreview, previewTheme, themeInstallPreview } from '$lib/themes/installed'
+import { gameMode } from '$lib/player/session'
+import { isTv } from '$lib/platform'
 import { parseThemePackage } from '$lib/themes/packages'
 
 let stopSync: () => void
@@ -134,5 +136,53 @@ describe('Theme Studio live client session', () => {
     expect(get(activeStudioTheme).tokens).toEqual(draft.tokens)
     expect(document.documentElement.style.getPropertyValue('--theme')).toBe(draft.tokens.theme)
     expect(document.documentElement.style.getPropertyValue('--radius')).toBe('1.2rem')
+  })
+})
+
+describe('the TV surface on the document (API 6)', () => {
+  const root = document.documentElement
+  // A design whose shared shell puts the navigation at the side and whose TV block moves it to the top.
+  const previewTvDesign = () => previewTheme({
+    package: parseThemePackage({ app: 'izumi', kind: 'theme-package', schemaVersion: 1, themeApi: 6, id: 'test.tv', name: 'TV', author: 'Test', description: 'TV design.', version: '1.0.0', design: { presentation: { shell: { nav: 'sidebar' }, tv: { shell: { nav: 'top' } } } } }),
+    origin: 'https://example.test/tv.json',
+  })
+  afterEach(() => {
+    cancelThemePreview()
+    isTv.set(false)
+    gameMode.set(false)
+  })
+
+  it('an Android TV gets the surface and the top bar that the TV block asks for', () => {
+    previewTvDesign()
+    isTv.set(true)
+    expect(root.dataset.surface).toBe('tv')
+    expect(root.dataset.themeNav).toBe('top')
+  })
+
+  it('Game mode gets the surface and follows the resolved shell, which is the TV block', () => {
+    previewTvDesign()
+    gameMode.set(true)
+    expect(root.dataset.surface).toBe('tv')
+    expect(root.dataset.themeNav).toBe('top')
+  })
+
+  it('a desktop gets no surface and the shared shell', () => {
+    previewTvDesign()
+    expect(root.dataset.surface).toBeUndefined()
+    expect(root.dataset.themeNav).toBe('sidebar')
+  })
+
+  it('a TV with no custom design or preview gets no surface and the side rail', () => {
+    isTv.set(true)
+    expect(root.dataset.surface).toBeUndefined()
+    expect(root.dataset.themeNav).toBe('sidebar')
+  })
+
+  it('leaves the surface when the TV is switched off again', () => {
+    previewTvDesign()
+    isTv.set(true)
+    isTv.set(false)
+    expect(root.dataset.surface).toBeUndefined()
+    expect(root.dataset.themeNav).toBe('sidebar')
   })
 })

@@ -24,7 +24,10 @@
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { themePresentation } from '$lib/themes/runtime'
   import { episodeDisplayModel, seriesRatingText, timeLeftLabel } from '$lib/themes/host-model'
+  import { useCardArt } from '$lib/themes/card-art.svelte'
+  import { nearViewport } from '$lib/util/near-viewport'
   import { ROW_CONTEXT, densityScale, resolveCard, resolveRow, type RowScope } from '$lib/themes/presentation'
+  import { cardMedia } from './card-registry'
 
   let { media, progress }: { media: Media; progress: number } = $props()
 
@@ -62,6 +65,9 @@
   const themeRow = $derived(rowScope ? resolveRow($themePresentation, rowScope().id) : {})
   const cardWidth = $derived(themeRow.width ?? ($isTv ? 320 : 264) * densityScale($themePresentation))
   const continueTemplate = $derived(resolveCard($themePresentation, 'continue'))
+  // API 6: key art and a title logo, only when the template binds them (see useCardArt).
+  let root: HTMLElement | undefined
+  const cardArt = useCardArt(() => continueTemplate, () => media, () => root)
   // A resume card stands for its title, so `rating` is the series score here (an episode card binds
   // the episode's own), and `episodesWatched` is the count this card resumes from.
   const continueModel = $derived(episodeDisplayModel(media, ep, meta[ep], {
@@ -69,7 +75,11 @@
     timeLeft: timeLeftLabel(savedPosition),
     rating: seriesRatingText(media),
     episodesWatched: progress,
+    ...cardArt.art,
   }))
+  // A row's caption template binds this card's own model through the registry: the resume episode, and
+  // the few series fields a Continue row loads.
+  $effect(() => { const node = root; if (!node) return; cardMedia.set(node, { media, model: continueModel }); return () => cardMedia.delete(node) })
 
   let resolving = $state(false)
   // Prefer the last successful origin/release; if it is missing or fails, resumeEpisode opens the
@@ -94,6 +104,8 @@
 <div
   data-part="card"
   data-family="continue"
+  bind:this={root}
+  use:nearViewport={cardArt.wanted.size ? cardArt.gate : undefined}
   data-focusable
   data-nav-key={`continue:${media.id}`}
   data-caption-title={name}

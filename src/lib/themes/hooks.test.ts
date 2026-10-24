@@ -26,6 +26,11 @@ for (const file of svelteFiles(SRC)) {
   for (const match of text.matchAll(/data-(slot|part)=\{([^}]*)\}/g)) {
     for (const literal of match[2].matchAll(/'([a-z][a-z0-9.-]*)'/g)) add(match[1], literal[1])
   }
+  // Component props a child renders as `data-part` (VirtualGrid's `part`, BackdropTrailer's `part` and `mutePart`).
+  for (const match of text.matchAll(/\s(?:part|mutePart)=(?:"([a-z][a-z0-9.-]*)"|\{([^}]*)\})/g)) {
+    if (match[1]) add('part', match[1])
+    for (const literal of (match[2] ?? '').matchAll(/'([a-z][a-z0-9.-]*)'/g)) add('part', literal[1])
+  }
 }
 
 describe('theme styling hook contract', () => {

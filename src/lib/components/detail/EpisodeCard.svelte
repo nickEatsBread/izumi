@@ -19,7 +19,7 @@
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import EpisodeDownload from './EpisodeDownload.svelte'
   import { episodeDisplayModel } from '$lib/themes/host-model'
-  import { episodeNameText, episodeNoText, episodeRatingText } from '$lib/themes/episode-fields'
+  import { arrivalDayText, episodeNameText, episodeNoText, episodeRatingText, upcomingText } from '$lib/themes/episode-fields'
   import type { EpisodeTileKind } from './episode-tile'
   import type { ThemeNode as EpisodeThemeNode } from '$lib/themes/presentation'
 
@@ -37,7 +37,7 @@
     watchedThrough: number
     filler?: boolean
     dl?: DownloadItem
-    next?: { episode: number; timeUntilAiring: number } | null
+    next?: { episode: number; airingAt?: number; timeUntilAiring: number } | null
     onplay: (ep: number, event?: MouseEvent) => void
     onintent?: (ep: number) => void
     onqueue?: (ep: number) => void
@@ -80,6 +80,10 @@
   const pct = $derived(episodeBarPercent(savedPosition, trackedDone, released))
   const spoiler = $derived($hideSpoilers && !trackedDone)
   const labels = $derived(episodeLabels(ep, meta?.title, spoiler))
+  // The day an unaired episode arrives: its airing time from the schedule (or the next-airing record),
+  // else the episode metadata's air day.
+  const arrival = $derived(released ? undefined : arrivalDayText(
+    media.airingSchedule?.nodes?.find((node) => node.episode === ep)?.airingAt ?? (isNext ? next?.airingAt : undefined), meta?.airDate))
   const themeModel = $derived(episodeDisplayModel(media, ep, meta, {
     episodeTitle: labels.primary || `Episode ${ep}`,
     // The real title alone (no "Episode N" stand-in), so a template can tell the two apart.
@@ -92,6 +96,7 @@
     watched: trackedDone ? 'Watched' : undefined,
     filler: filler ? 'Filler' : undefined,
     rating: episodeRatingText(meta?.rating, released),
+    upcoming: upcomingText(released, arrival),
   }))
 
   const dlPct = $derived(dl && dl.bytes ? Math.round((dl.downloaded / dl.bytes) * 100) : 0)
@@ -197,7 +202,7 @@
         </span>
       {:else if !released}
         <span class="absolute bottom-2 left-2 text-[0.7rem] font-bold text-theme">
-          {isNext ? `airing in ${countdown(next?.timeUntilAiring)}` : 'Not aired'}
+          {isNext ? `airing in ${countdown(next?.timeUntilAiring)}` : arrival ? `Coming ${arrival}` : 'Not aired'}
         </span>
       {/if}
 
@@ -232,7 +237,7 @@
         {#if isNext}
           <span data-part="episode.meta" class="block text-[0.7rem] font-bold text-theme">airing in {countdown(next?.timeUntilAiring)}</span>
         {:else if !released}
-          <span data-part="episode.meta" class="block text-[0.7rem] text-muted-foreground">Not aired</span>
+          <span data-part="episode.meta" class="block text-[0.7rem] text-muted-foreground">{arrival ? `Coming ${arrival}` : 'Not aired'}</span>
         {:else if !labels.concealSecondary}
           <span data-part="episode.meta" class="block truncate text-[0.7rem] text-muted-foreground">{labels.secondary}{dl?.status === 'done' ? ' · Downloaded' : ''}</span>
         {/if}

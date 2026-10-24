@@ -9,6 +9,9 @@
   import type { Media } from '$lib/anilist/types'
   import { nearViewport } from '$lib/util/near-viewport'
   import { gameMode } from '$lib/player/session'
+  import { getContext } from 'svelte'
+  import { themePresentation } from '$lib/themes/runtime'
+  import { ROW_CONTEXT, resolveRow, type RowScope } from '$lib/themes/presentation'
 
   let { title, vars, preferLinkedRating = false }: {
     title: string
@@ -17,6 +20,9 @@
   } = $props()
 
   const client = getContextClient()
+  // Game mode leaves out the hover-preview fields, but a row's caption template binds the synopsis among them.
+  const rowScope = getContext<(() => RowScope) | undefined>(ROW_CONTEXT)
+  const captionData = $derived(!!rowScope && !!resolveRow($themePresentation, rowScope().id).captionTemplate)
 
   // Deferred fetch: hold this row's AniList query until the row nears the viewport. The home mounts
   // 6 public rows; fetching them ALL eagerly at mount fired 6 simultaneous requests (stressing
@@ -31,7 +37,7 @@
   const store = $derived(queryStore<{ Page: { media: Media[] } }>({
     client,
     query: pageQuery(),
-    variables: { perPage: 20, withPreview: !$gameMode, ...vars },
+    variables: { perPage: 20, withPreview: !$gameMode || captionData, ...vars },
     pause: !active,
   }))
 

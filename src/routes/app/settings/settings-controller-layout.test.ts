@@ -59,8 +59,9 @@ describe('Settings controller layout (spec §5.1)', () => {
 
 describe('controller CSS (spec §5.1)', () => {
   it('narrows the TV app strip to 72 px', () => {
-    expect(css).toContain('.tv-mode main { margin-left: 4rem !important; margin-bottom: 0 !important; }')
-    expect(css).toContain('.tv-mode [data-nav-sidebar] { width: 4rem !important; }')
+    // The rail only: a theme's TV top bar keeps its width and the page under it no margin.
+    expect(css).toContain(".tv-mode:not([data-theme-nav='top']) main { margin-left: 4rem !important; }")
+    expect(css).toContain(".tv-mode [data-slot='nav.side'] { width: 4rem !important; }")
   })
 
   it('drops the desktop chips and sticky bar, fills focused rows and lights one rail item at a time', () => {

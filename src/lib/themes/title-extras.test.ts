@@ -7,8 +7,10 @@ const mocks = vi.hoisted(() => ({
   getScheduleInfo: vi.fn(),
   getScheduleInfoMany: vi.fn(),
   tmdb: vi.fn(),
+  fetch: vi.fn(),
   locale: 'en',
 }))
+vi.mock('$lib/trakt/config', async () => ({ traktAppClientId: '', traktClientId: (await import('svelte/store')).writable('') }))
 vi.mock('$lib/anizip', () => ({ fetchAniZip: mocks.fetchAniZip }))
 vi.mock('$lib/anilist/jikan', () => ({ fetchMalRating: mocks.fetchMalRating }))
 vi.mock('$lib/catalog/providers/tmdb', () => ({ tmdb: mocks.tmdb }))
@@ -19,11 +21,14 @@ vi.mock('$lib/anime/animeschedule', () => ({
   scheduleTitles: (t: { romaji?: string; english?: string }) => [t.romaji, t.english],
 }))
 
-import { ART_EXTRAS, artNeeds, audioLabel, clearTitleExtrasCache, languageCode, loadTitleExtras, logoLanguages, malAgeRating, metaNeeds, nativeLanguage, peekTitleArt, pickTitleArt, pickTitleLogo, primeTitleExtras, templateNeeds, titleExtrasKey } from './title-extras'
+import { ART_EXTRAS, artNeeds, audioLabel, clearTitleExtrasCache, languageCode, loadTitleExtras, logoLanguages, malAgeRating, metaNeeds, nativeLanguage, peekTitleArt, pickTitleArt, pickTitleLogo, primeTitleExtras, queueTitleArt, templateNeeds, titleExtrasKey, type TitleExtras } from './title-extras'
 import { tmdbReadToken } from '$lib/settings/catalog'
+import { traktClientId } from '$lib/trakt/config'
 import type { ThemeNode } from './presentation'
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+// A stubbed `fetch` answer.
+const answer = (body: unknown, status = 200) => async () => ({ ok: status < 400, status, json: async () => body })
 
 const FANART = 'https://artworks.thetvdb.com/banners/v4/series/424536/backgrounds/64e6cbe29d9c0.jpg'
 const LOGO = 'https://artworks.thetvdb.com/banners/v4/series/424536/clearlogo/696a802a5aa22.png'
@@ -33,9 +38,12 @@ const all = new Set(['keyart', 'logo', 'ageRating', 'audio'] as const)
 
 beforeEach(() => {
   clearTitleExtrasCache()
-  for (const mock of [mocks.fetchAniZip, mocks.fetchMalRating, mocks.getScheduleInfo, mocks.getScheduleInfoMany, mocks.tmdb]) mock.mockReset()
+  for (const mock of [mocks.fetchAniZip, mocks.fetchMalRating, mocks.getScheduleInfo, mocks.getScheduleInfoMany, mocks.tmdb, mocks.fetch]) mock.mockReset()
   mocks.locale = 'en'
   tmdbReadToken.set('')
+  traktClientId.set('trakt-id')
+  mocks.fetch.mockImplementation(answer([]))
+  vi.stubGlobal('fetch', mocks.fetch)
   mocks.fetchAniZip.mockResolvedValue({ images: [
     { coverType: 'Banner', url: 'https://artworks.thetvdb.com/banners/v4/series/424536/banners/a.jpg' },
     { coverType: 'Fanart', url: FANART },
@@ -161,6 +169,102 @@ describe('an English title logo from TMDB', () => {
     mocks.locale = 'ja'
     await expect(loadTitleExtras(media(), new Set(['logo']))).resolves.toEqual({ logo: 'https://image.tmdb.org/t/p/w500/ja-logo.png' })
     expect(mocks.tmdb).toHaveBeenCalledWith('/tv/209867/images', { include_image_language: 'ja,en' })
+  })
+})
+
+describe('an English title logo from Trakt', () => {
+  const TRAKT_LOGO = 'media.trakt.tv/images/shows/000/173/241/logos/medium/066bcd9b77.png.webp'
+  const TRAKT_FULL = 'https://media.trakt.tv/images/shows/000/173/241/logos/full/066bcd9b77.png.webp'
+  const mappings = { thetvdb_id: 397934, themoviedb_id: '114410', imdb_id: 'tt13616990' }
+  const logoOnly = new Set(['logo'] as const)
+  beforeEach(() => {
+    mocks.fetchAniZip.mockResolvedValue({ images: [{ coverType: 'Fanart', url: FANART }, { coverType: 'Clearlogo', url: LOGO }], mappings })
+    mocks.fetch.mockImplementation(answer([{ type: 'show', show: { images: { logo: [TRAKT_LOGO] } } }]))
+  })
+  it('replaces the untagged TVDB logo when TMDB is not set up, at full size', async () => {
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: TRAKT_FULL })
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+    const [url, init] = mocks.fetch.mock.calls[0]
+    expect(url).toBe('https://api.trakt.tv/search/tvdb/397934?type=show&extended=images')
+    expect(init.headers).toMatchObject({ 'trakt-api-version': '2', 'trakt-api-key': 'trakt-id' })
+    expect(peekTitleArt(154587)).toMatchObject({ keyart: FANART, logo: TRAKT_FULL })
+  })
+  it('looks a film up by its TMDB id, and keeps a URL that already names its scheme', async () => {
+    mocks.fetch.mockImplementation(answer([{ type: 'movie', movie: { images: { logo: ['https://media.trakt.tv/images/movies/000/001/logos/medium/a.png.webp'] } } }]))
+    await expect(loadTitleExtras(media({ format: 'MOVIE' }), logoOnly)).resolves.toEqual({ logo: 'https://media.trakt.tv/images/movies/000/001/logos/full/a.png.webp' })
+    expect(mocks.fetch.mock.calls[0][0]).toBe('https://api.trakt.tv/search/tmdb/114410?type=movie&extended=images')
+  })
+  it('comes after an English TMDB logo, and before the TVDB one when TMDB has none', async () => {
+    tmdbReadToken.set('token')
+    mocks.tmdb.mockResolvedValue({ logos: [{ file_path: '/en.png', iso_639_1: 'en' }] })
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: 'https://image.tmdb.org/t/p/w500/en.png' })
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    clearTitleExtrasCache()
+    mocks.tmdb.mockResolvedValue({ logos: [] })
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: TRAKT_FULL })
+  })
+  it('is not asked when the TVDB logo is tagged English', async () => {
+    mocks.fetchAniZip.mockResolvedValue({ images: [{ coverType: 'Clearlogo', url: LOGO, language: 'eng' }], mappings })
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: LOGO })
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+  it('is never asked without a client id', async () => {
+    traktClientId.set('')
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: LOGO })
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+  it("keeps the title's own logo for an app in the title's language", async () => {
+    mocks.locale = 'ja'
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: LOGO })
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    // A Korean title has no own-language claim on a Japanese app: English still beats it.
+    await expect(loadTitleExtras(media({ id: 7, countryOfOrigin: 'KR' }), logoOnly)).resolves.toEqual({ logo: TRAKT_FULL })
+  })
+  it('falls back to the TVDB logo when the request fails, and asks again next time', async () => {
+    mocks.fetch.mockImplementationOnce(answer({ error: 'rate limited' }, 429))
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: LOGO })
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: TRAKT_FULL })
+    await loadTitleExtras(media(), logoOnly)
+    expect(mocks.fetch).toHaveBeenCalledTimes(2)
+    clearTitleExtrasCache()
+    mocks.fetch.mockRejectedValueOnce(new DOMException('timed out', 'TimeoutError'))
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: LOGO })
+  })
+  it('keeps the TVDB logo when Trakt has none, without asking again', async () => {
+    mocks.fetch.mockImplementation(answer([]))
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: LOGO })
+    await expect(loadTitleExtras(media(), logoOnly)).resolves.toEqual({ logo: LOGO })
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('series artwork on a later season or a film', () => {
+  // ani.zip copies the TVDB series' artwork into every title it maps to that series.
+  const series = { images: [{ coverType: 'Fanart', url: FANART }, { coverType: 'Clearlogo', url: LOGO }, { coverType: 'Poster', url: POSTER }], mappings: { thetvdb_id: 377543, themoviedb_id: 95479, imdb_id: 'tt12343534', type: 'TV' } }
+  const startsAt = (seasonNumber: number, episodeNumber: number) => ({ '1': { seasonNumber, episodeNumber } })
+  const art = new Set(['keyart', 'logo', 'posterHd'] as const)
+  it('stays on the title that starts the series', async () => {
+    mocks.fetchAniZip.mockResolvedValue({ ...series, episodes: startsAt(1, 1) })
+    await expect(loadTitleExtras(media(), art)).resolves.toEqual({ keyart: FANART, logo: LOGO, posterHd: POSTER })
+  })
+  it('is left off a later season or a later cour, and no show-wide logo is asked for', async () => {
+    tmdbReadToken.set('token')
+    for (const [season, episode] of [[2, 1], [1, 13]]) {
+      clearTitleExtrasCache()
+      mocks.fetchAniZip.mockResolvedValue({ ...series, episodes: startsAt(season, episode) })
+      await expect(loadTitleExtras(media(), art)).resolves.toEqual({})
+    }
+    expect(mocks.tmdb).not.toHaveBeenCalled()
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    // The record answered: it is not asked for again.
+    await loadTitleExtras(media(), art)
+    expect(mocks.fetchAniZip).toHaveBeenCalledTimes(2)
+  })
+  it("is left off a film filed under the series' specials, which keeps its own logo", async () => {
+    mocks.fetchAniZip.mockResolvedValue({ ...series, mappings: { ...series.mappings, themoviedb_id: 810693, type: 'MOVIE' }, episodes: startsAt(0, 1) })
+    mocks.fetch.mockImplementation(answer([{ type: 'movie', movie: { images: { logo: ['media.trakt.tv/images/movies/1/logos/medium/zero.png.webp'] } } }]))
+    await expect(loadTitleExtras(media({ format: 'MOVIE' }), art)).resolves.toEqual({ logo: 'https://media.trakt.tv/images/movies/1/logos/full/zero.png.webp' })
+    expect(mocks.fetch.mock.calls[0][0]).toBe('https://api.trakt.tv/search/tmdb/810693?type=movie&extended=images')
   })
 })
 
@@ -314,5 +418,162 @@ describe('titleExtrasKey', () => {
     const tmdb = (bannerImage: string) => media({ bannerImage, catalog: { provider: 'tmdb', type: 'anime', id: '1' } } as Partial<Media>)
     expect(titleExtrasKey(tmdb('a.jpg'))).not.toBe(titleExtrasKey(tmdb('b.jpg')))
     expect(titleExtrasKey(media({ bannerImage: 'a.jpg' }))).toBe(titleExtrasKey(media({ bannerImage: 'b.jpg' })))
+  })
+})
+
+describe('queueTitleArt', () => {
+  const keyart = new Set<'keyart'>(['keyart'])
+  // A lookup that stays open until released, so a test decides when each slot frees.
+  function lookups() {
+    let running = 0
+    let peak = 0
+    const started: number[] = []
+    const releases = new Map<number, () => void>()
+    const load = (m: Media) => new Promise<TitleExtras>((resolve) => {
+      const id = m.id as number
+      running++; peak = Math.max(peak, running); started.push(id)
+      releases.set(id, () => { running--; releases.delete(id); resolve({ keyart: `k${id}` }) })
+    })
+    const drain = async () => { while (releases.size) { releases.values().next().value!(); await settle() } }
+    return { load, started, releases, drain, running: () => running, peak: () => peak }
+  }
+  const call = (id: number, options: Parameters<typeof queueTitleArt>[2]) => queueTitleArt({ id } as Media, keyart, options)
+
+  it('runs at most four lookups at once and hands each freed slot to the next caller', async () => {
+    const { load, releases, drain, running, peak } = lookups()
+    const results = Array.from({ length: 7 }, (_, i) => call(i, { load }))
+    await settle()
+    expect(running()).toBe(4)
+    // Free one slot, and start a fresh call in the same tick: the freed slot goes to a waiter, never over 4.
+    releases.get(0)!()
+    const late = call(99, { load })
+    await settle()
+    expect(running()).toBe(4)
+    expect(peak()).toBe(4)
+    await drain()
+    expect((await Promise.all([...results, late])).map((r) => r.keyart)).toEqual(['k0', 'k1', 'k2', 'k3', 'k4', 'k5', 'k6', 'k99'])
+  })
+
+  it('serves waiters in the order they queued when none says how far it is', async () => {
+    const { load, releases, started, drain } = lookups()
+    const all = [0, 1, 2, 3, 4, 5, 6].map((id) => call(id, { load }))
+    await settle()
+    for (const id of [0, 1, 2]) { releases.get(id)!(); await settle() }
+    expect(started).toEqual([0, 1, 2, 3, 4, 5, 6])
+    await drain()
+    await Promise.all(all)
+  })
+
+  it('hands a freed slot to the nearest waiter, judged when the slot frees', async () => {
+    const { load, releases, started, drain } = lookups()
+    const far: Record<number, number> = { 4: 900, 5: 600, 6: 300 }
+    const all = [0, 1, 2, 3].map((id) => call(id, { load }))
+    all.push(...[4, 5, 6].map((id) => call(id, { load, distance: () => far[id] })))
+    await settle()
+    expect(started).toEqual([0, 1, 2, 3])
+    // 4 was the farthest when it queued; by the time a slot frees it is the second nearest.
+    far[4] = 450
+    for (const id of [0, 1, 2]) { releases.get(id)!(); await settle() }
+    expect(started.slice(4)).toEqual([6, 4, 5])
+    await drain()
+    await Promise.all(all)
+  })
+
+  it('keeps first come first served between waiters at the same distance', async () => {
+    const { load, releases, started, drain } = lookups()
+    const all = [0, 1, 2, 3].map((id) => call(id, { load }))
+    all.push(...[4, 5, 6, 7].map((id) => call(id, { load, distance: () => (id === 7 ? 10 : 50) })))
+    await settle()
+    for (const id of [0, 1, 2]) { releases.get(id)!(); await settle() }
+    expect(started.slice(4)).toEqual([7, 4, 5])
+    await drain()
+    await Promise.all(all)
+  })
+
+  it('skips callers that are gone without a lookup and without taking a slot', async () => {
+    const { load, releases, started, drain, running } = lookups()
+    const gone = new Set<number>()
+    const all = [0, 1, 2, 3].map((id) => call(id, { load }))
+    const dead = [4, 5].map((id) => call(id, { load, alive: () => !gone.has(id), distance: () => 0 }))
+    const live = call(6, { load, distance: () => 800 })
+    // They were alive when queued and are gone by the time a slot frees.
+    await settle()
+    gone.add(4); gone.add(5)
+    releases.get(0)!(); await settle()
+    // The two dead waiters are nearer but never load; the live one takes the slot.
+    expect(started).toEqual([0, 1, 2, 3, 6])
+    expect(running()).toBe(4)
+    expect(await Promise.all(dead)).toEqual([{}, {}])
+    // A caller that is already gone does not load even when a slot is free.
+    for (const id of [1, 2, 3, 6]) { releases.get(id)!(); await settle() }
+    expect(running()).toBe(0)
+    expect(await call(7, { load, alive: () => false })).toEqual({})
+    expect(started).toEqual([0, 1, 2, 3, 6])
+    // Every slot is still there to use.
+    const next = Array.from({ length: 5 }, (_, i) => call(10 + i, { load }))
+    await settle()
+    expect(running()).toBe(4)
+    await drain()
+    await Promise.all([...all, live, ...next])
+  })
+
+  it('serves a waiter whose distance throws after the others, with the slot count intact', async () => {
+    const { load, releases, started, drain, running, peak } = lookups()
+    const all = [0, 1, 2, 3].map((id) => call(id, { load }))
+    all.push(call(4, { load, distance: () => { throw new Error('detached') } }))
+    all.push(...[5, 6].map((id) => call(id, { load, distance: () => id * 100 })))
+    await settle()
+    for (const id of [0, 1, 2]) { releases.get(id)!(); await settle() }
+    expect(started.slice(4)).toEqual([5, 6, 4])
+    expect(running()).toBe(4)
+    await drain()
+    await Promise.all(all)
+    expect(running()).toBe(0)
+    const next = Array.from({ length: 5 }, (_, i) => call(10 + i, { load }))
+    await settle()
+    expect(running()).toBe(4)
+    expect(peak()).toBe(4)
+    await drain()
+    await Promise.all(next)
+  })
+
+  it('drops a waiter whose alive check throws without a lookup and without leaking the slot', async () => {
+    const { load, releases, started, drain, running } = lookups()
+    let broken = false
+    const all = [0, 1, 2, 3].map((id) => call(id, { load }))
+    const bad = call(4, { load, alive: () => { if (broken) throw new Error('detached'); return true } })
+    await settle()
+    broken = true
+    for (const id of [0, 1, 2, 3]) { releases.get(id)!(); await settle() }
+    expect(await bad).toEqual({})
+    expect(started).toEqual([0, 1, 2, 3])
+    expect(running()).toBe(0)
+    // A check that throws up front is gone too.
+    expect(await call(5, { load, alive: () => { throw new Error('detached') } })).toEqual({})
+    const next = Array.from({ length: 5 }, (_, i) => call(10 + i, { load }))
+    await settle()
+    expect(running()).toBe(4)
+    await drain()
+    await Promise.all([...all, ...next])
+  })
+
+  it('frees its slot when a lookup fails', async () => {
+    const failing = () => Promise.reject(new Error('offline'))
+    await expect(call(1, { load: failing })).rejects.toThrow('offline')
+    const ok = await call(2, { load: async () => ({ logo: 'l' }) })
+    expect(ok.logo).toBe('l')
+  })
+
+  it('hands the slot on when the lookup a waiter was queued behind fails', async () => {
+    const { load, started, drain } = lookups()
+    const failing = () => new Promise<TitleExtras>((_, reject) => setTimeout(() => reject(new Error('offline')), 5))
+    const held = [0, 1, 2].map((id) => call(id, { load }))
+    const bad = call(3, { load: failing })
+    const waiter = call(4, { load })
+    await expect(bad).rejects.toThrow('offline')
+    await settle()
+    expect(started).toEqual([0, 1, 2, 4])
+    await drain()
+    await Promise.all([...held, waiter])
   })
 })

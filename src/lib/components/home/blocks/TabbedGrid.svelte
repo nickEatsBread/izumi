@@ -85,7 +85,7 @@
 <section bind:this={section} data-block data-slot="block.tabbed-grid" use:nearViewport={{ onEnter: () => (visible = true) }}
   class="mb-8 scroll-mt-20 px-4 sm:px-8">
   {#if block.title}<h2 data-part="block.title" class="mb-3 text-lg font-black">{block.title}</h2>{/if}
-  {#if labels.length > 1}<div data-nav-row><Tabs tabs={labels} bind:active={() => current, choose} /></div>{/if}
+  {#if labels.length > 1}<div data-part="block.tabs" data-nav-row><Tabs tabs={labels} bind:active={() => current, choose} /></div>{/if}
   {#if !block.tabs.length}
     <p class="text-sm text-muted-foreground">Choose rows for this block in Edit Home.</p>
   {:else}
@@ -97,7 +97,7 @@
     <div data-part="block.grid" data-nav-row data-nav-row-wrap data-nav-row-items class="grid gap-x-3 gap-y-5" style:grid-template-columns={`repeat(${columns}, minmax(0, 1fr))`}>
       {#if !visible || (loading && !media.length)}
         {#each Array.from({ length: Math.min(block.pageSize, columns * 2) }) as _, index (index)}
-          <div class="aspect-[2/3] rounded-md skeloader"></div>
+          <div data-part="row.skeleton" class="aspect-[2/3] rounded-md skeloader"></div>
         {/each}
       {:else}
         {#each media as item, index (item.id)}
