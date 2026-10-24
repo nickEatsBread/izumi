@@ -276,64 +276,71 @@
 {#if !$onboardingComplete}
   <div bind:this={root} role="dialog" aria-modal="true" aria-labelledby="setup-title" tabindex="-1" data-nav-trap={browsing ? undefined : ''} class:keyboard-open={keyboardOpen} class:setup-away={browsing} class="onboarding-surface fixed inset-0 z-[160] flex h-[100dvh] w-screen flex-col overflow-hidden bg-background text-foreground" onkeydown={handleKeydown}>
     <span id="setup-progress" class="sr-only">{m.onboarding_step_count({ current: String(stepIndex + 1), total: String(totalSteps) })}</span>
-    <div class="setup-art" aria-hidden="true"><SetupArtwork {intent} /></div>
-    <!-- Signs the screen from its corner, outside the sheet, where the old art panel carried it. -->
-    <div class="setup-wordmark"><Wordmark /></div>
-    <main class="setup-main min-w-0 flex-1">
-      <!-- Every word on screen sits on this solid sheet; the posters stay behind it, never under text.
-           Its width follows the content: the welcome is a short read, the sources screen is landscape. -->
-      <div class="setup-sheet" class:narrow={mode === 'wizard' && step === 'start'} class:wide={mode === 'wizard' && (step === 'connect' || step === 'sources')}>
-      {#if mode === 'transfer'}
-        <!-- Its own branch rather than a step: this screen is not "2 of 4" of anything, it is
-             the alternative to the whole wizard, and it owns its own footer. -->
-        <div class="setup-step">
-          <section class="setup-content max-w-2xl">
-            <TransferStep oncancel={leaveTransfer} onfinished={completeTransfer} />
-          </section>
-        </div>
-        <footer class="setup-actions flex items-center justify-between gap-3">
-          <button type="button" data-focusable onclick={leaveTransfer} class="setup-button text-muted-foreground hover:bg-secondary">
-            <ChevronLeft size={17} />{m.onboarding_transfer_manual()}
-          </button>
-        </footer>
-      {:else}
-      <div class="setup-step">
-        <!-- No Svelte transitions on this block: a step clears the shell's busy flag when it is
-             destroyed, which must happen before the next step mounts and sets its own. -->
-        {#key step}
-        <section class="setup-content">
-          {#if step === 'start'}
-            <StartStep onnew={() => choosePath('new')} onimport={() => choosePath('import')} ontransfer={enterTransfer} />
-          {:else if step === 'watch'}
-            <WatchStep bind:intent />
-          {:else if step === 'connect'}
-            <ConnectStep bind:connections bind:nuvioExtras bind:imported bind:busy />
-          {:else if step === 'sources'}
-            <SourcesStep bind:this={sourcesStep} synced={imported} bind:busy onbrowse={() => void browseStore()} />
-          {:else}
-            <ReadyStep {readiness} bind:connections trackers={intent.anime} tmdbTip={intent.films && movieMetadata === 'stremio'} />
-          {/if}
-        </section>
-        {/key}
-      </div>
-      <footer class="setup-actions flex items-center justify-between gap-3">
-        {#if stepIndex === 0}<button type="button" data-focusable onclick={skip} class="setup-button text-muted-foreground hover:bg-secondary"><SkipForward size={17} />{m.onboarding_skip()}</button>
-        {:else}<button type="button" data-focusable onclick={goBack} disabled={busy} class="setup-button hover:bg-secondary"><ChevronLeft size={17} />{m.onboarding_back()}</button>{/if}
-        {#if step === 'ready'}
-          <button type="button" data-focusable onclick={complete} class="setup-button bg-foreground text-background"><Check size={17} />{m.onboarding_ready_start()}</button>
-        {:else if step !== 'start'}
-          <!-- The start screen has no Next: each of its cards is the way forward. -->
-          <div class="flex items-center gap-3">
-            {#if step === 'connect' || step === 'sources'}
-              <button type="button" data-focusable onclick={skipStep} disabled={busy} class="setup-button text-muted-foreground hover:bg-secondary">{m.onboarding_skip_step()}</button>
-            {/if}
-            <button type="button" data-focusable onclick={() => void goNext()} disabled={busy || blocked} class="setup-button bg-foreground text-background">{m.onboarding_next()}<ArrowRight size={17} /></button>
+    <div class="setup-stage min-h-0 flex-1">
+      <!-- The posters get a panel of their own, as in the original design, and never sit behind text. -->
+      <aside class="setup-art-panel" aria-hidden="true">
+        <SetupArtwork {intent} />
+        <div class="art-wordmark"><Wordmark /></div>
+      </aside>
+      <main class="setup-main min-w-0">
+        <!-- The column's width follows the content: the welcome is a short read, the sources screen
+             is landscape. -->
+        <div class="setup-column" class:narrow={mode === 'wizard' && step === 'start'} class:wide={mode === 'wizard' && (step === 'connect' || step === 'sources')}>
+        {#if mode === 'transfer'}
+          <!-- Its own branch rather than a step: this screen is not "2 of 4" of anything, it is
+               the alternative to the whole wizard, and it owns its own footer. -->
+          <div class="setup-step">
+            <section class="setup-content max-w-2xl">
+              <TransferStep oncancel={leaveTransfer} onfinished={completeTransfer} />
+            </section>
           </div>
+          <footer class="setup-actions flex items-center justify-between gap-3">
+            <button type="button" data-focusable onclick={leaveTransfer} class="setup-button text-muted-foreground hover:bg-secondary">
+              <ChevronLeft size={17} />{m.onboarding_transfer_manual()}
+            </button>
+          </footer>
+        {:else}
+        <div class="setup-step">
+          <!-- No Svelte transitions on this block: a step clears the shell's busy flag when it is
+               destroyed, which must happen before the next step mounts and sets its own. -->
+          {#key step}
+          <section class="setup-content">
+            {#if step === 'start'}
+              <StartStep onimport={() => choosePath('import')} ontransfer={enterTransfer} />
+            {:else if step === 'watch'}
+              <WatchStep bind:intent />
+            {:else if step === 'connect'}
+              <ConnectStep bind:connections bind:nuvioExtras bind:imported bind:busy />
+            {:else if step === 'sources'}
+              <SourcesStep bind:this={sourcesStep} synced={imported} bind:busy onbrowse={() => void browseStore()} />
+            {:else}
+              <ReadyStep {readiness} bind:connections trackers={intent.anime} tmdbTip={intent.films && movieMetadata === 'stremio'} />
+            {/if}
+          </section>
+          {/key}
+        </div>
+        <!-- The forward action always sits bottom right, with the way to skip beside it; Back, when
+             there is one, keeps the left. -->
+        <footer class="setup-actions flex items-center justify-between gap-3">
+          {#if stepIndex > 0}<button type="button" data-focusable onclick={goBack} disabled={busy} class="setup-button hover:bg-secondary"><ChevronLeft size={17} />{m.onboarding_back()}</button>{/if}
+          <div class="ml-auto flex items-center gap-3">
+            {#if step === 'start'}
+              <button type="button" data-focusable onclick={skip} class="setup-button text-muted-foreground hover:bg-secondary"><SkipForward size={17} />{m.onboarding_skip()}</button>
+              <button type="button" data-focusable onclick={() => choosePath('new')} class="setup-button bg-foreground text-background">{m.onboarding_start_cta()}<ArrowRight size={17} /></button>
+            {:else if step === 'ready'}
+              <button type="button" data-focusable onclick={complete} class="setup-button bg-foreground text-background"><Check size={17} />{m.onboarding_ready_start()}</button>
+            {:else}
+              {#if step === 'connect' || step === 'sources'}
+                <button type="button" data-focusable onclick={skipStep} disabled={busy} class="setup-button text-muted-foreground hover:bg-secondary">{m.onboarding_skip_step()}</button>
+              {/if}
+              <button type="button" data-focusable onclick={() => void goNext()} disabled={busy || blocked} class="setup-button bg-foreground text-background">{m.onboarding_next()}<ArrowRight size={17} /></button>
+            {/if}
+          </div>
+        </footer>
         {/if}
-      </footer>
-      {/if}
-      </div>
-    </main>
+        </div>
+      </main>
+    </div>
     {#if introRunning}<IntroSequence oncomplete={() => (introRunning = false)} />{/if}
   </div>
   {#if browsing}
@@ -344,44 +351,42 @@
 {/if}
 
 <style>
-  .setup-art { position: absolute; inset: 0; pointer-events: none; }
-  /* With every word on the sheet the wall is only backdrop: dimmed, and darker toward the edges so
-     the eye settles on the centre instead of roaming the posters. */
-  .setup-art::after { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at center, hsl(var(--background) / .7) 0%, hsl(var(--background) / .82) 55%, hsl(var(--background) / .95) 100%); }
-  .setup-main { position: relative; z-index: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: safe center; padding: max(2rem, env(safe-area-inset-top)) clamp(1rem, 4vw, 3rem) max(2rem, env(safe-area-inset-bottom)); }
-  .setup-sheet { display: flex; flex-direction: column; min-height: 0; max-height: 100%; width: 100%; max-width: 52rem; padding: 1.75rem 2.25rem 1.25rem; border: 1px solid hsl(var(--border)); border-radius: 1.25rem; background: hsl(var(--background) / .97); box-shadow: 0 24px 80px rgb(0 0 0 / .45); }
-  .setup-sheet.narrow { max-width: 40rem; }
-  .setup-sheet.wide { max-width: 64rem; }
-  /* Below the sheet in paint order, so on a narrow window the sheet covers it rather than the reverse. */
-  .setup-wordmark { position: absolute; right: max(2rem, env(safe-area-inset-right)); bottom: max(1.75rem, env(safe-area-inset-bottom)); display: flex; }
+  .setup-stage { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+  .setup-art-panel { grid-column: 2; grid-row: 1; position: relative; overflow: hidden; background: #111216; }
+  .art-wordmark { position: absolute; bottom: max(2.5rem, env(safe-area-inset-bottom)); right: max(2.5rem, env(safe-area-inset-right)); display: flex; color: white; }
+  .setup-main { grid-column: 1; grid-row: 1; min-height: 0; display: flex; flex-direction: column; justify-content: safe center; padding: max(2.5rem, env(safe-area-inset-top)) clamp(1.5rem, 4.5vw, 5rem) max(2.5rem, env(safe-area-inset-bottom)); }
+  .setup-column { display: flex; flex-direction: column; min-height: 0; width: 100%; max-width: 44rem; margin-inline: auto; }
+  .setup-column.narrow { max-width: 38rem; }
+  .setup-column.wide { max-width: 60rem; }
   .setup-away { display: none !important; }
   .setup-step { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px; scroll-behavior: auto; }
   .setup-content { animation: step-enter 320ms cubic-bezier(.2, .7, .2, 1) both; }
-  .setup-actions { flex-shrink: 0; margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid hsl(var(--border) / .65); }
+  .setup-actions { flex-shrink: 0; margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid hsl(var(--border) / .65); }
   @keyframes step-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
   /* A docked Deck or a small laptop: tighter margins give the step its height back. */
   @media (max-height: 760px) {
-    .setup-main { padding-block: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-bottom)); }
-    .setup-sheet { padding-top: 1.25rem; }
-    .setup-actions { margin-top: 1rem; padding-top: 1rem; }
+    .setup-main { padding-block: max(1.25rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-bottom)); }
+    .setup-actions { margin-top: 1.25rem; padding-top: 1rem; }
   }
   @media (max-width: 767px), (max-height: 500px) and (pointer: coarse) {
     .onboarding-surface { height: var(--setup-viewport-height, 100dvh); top: var(--setup-viewport-top, 0px); width: 100%; }
-    /* A bottom sheet: a strip of posters stays visible above it. */
-    .setup-main { justify-content: flex-end; padding: max(3.5rem, calc(env(safe-area-inset-top) + 2.5rem)) 0 0; }
-    .setup-sheet { flex: 1; max-width: none; padding: 1.25rem max(1.25rem, env(safe-area-inset-right)) 0 max(1.25rem, env(safe-area-inset-left)); border-width: 1px 0 0; border-radius: 1.25rem 1.25rem 0 0; background: hsl(var(--background)); box-shadow: none; }
-    /* The bottom sheet covers the corner, so the mark moves into the poster strip above it. */
-    .setup-wordmark { top: max(1rem, env(safe-area-inset-top)); bottom: auto; left: max(1.25rem, env(safe-area-inset-left)); right: auto; }
+    .setup-stage { position: relative; display: flex; }
+    .setup-art-panel { position: absolute; inset: 0; pointer-events: none; }
+    .setup-art-panel::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, hsl(var(--background) / .12), hsl(var(--background) / .94) 24%, hsl(var(--background)) 65%); }
+    .art-wordmark { z-index: 1; top: max(1.5rem, env(safe-area-inset-top)); bottom: auto; left: max(1.5rem, env(safe-area-inset-left)); right: auto; }
+    .setup-main { z-index: 1; width: 100%; justify-content: flex-start; padding: max(6rem, calc(env(safe-area-inset-top) + 4.5rem)) max(1.5rem, env(safe-area-inset-right)) 0 max(1.5rem, env(safe-area-inset-left)); }
+    .setup-column, .setup-column.narrow, .setup-column.wide { flex: 1; max-width: 34rem; }
     .setup-step { flex: 1; padding: 4px 4px 1rem; }
     .setup-content :global(.text-sm) { font-size: 14px; }
     .setup-content :global(.text-xs) { font-size: 12px; }
     .setup-actions { margin-top: 0; padding: 1rem 0 max(1rem, env(safe-area-inset-bottom)); background: hsl(var(--background)); }
     .setup-actions .setup-button { min-height: 48px; font-size: 14px; }
-    /* Keep the forward action off the screen edge on a phone. The last child is the primary button
-       on the final screen and the skip/next pair everywhere else, so this targets whichever it is. */
+    /* Keep the forward action off the screen edge on a phone. The last child is the right-hand
+       cluster holding it, on every screen. */
     .setup-actions > :last-child { max-width: 72%; }
-    .keyboard-open .setup-main { padding-top: max(.5rem, env(safe-area-inset-top)); }
-    .keyboard-open .setup-wordmark { display: none; }
+    .keyboard-open .setup-main { padding-top: max(1rem, env(safe-area-inset-top)); }
+    .keyboard-open .art-wordmark { display: none; }
+    .keyboard-open .setup-art-panel::after { background: hsl(var(--background) / .97); }
   }
   @media (max-height: 600px) and (max-width: 767px), (max-height: 500px) and (pointer: coarse) {
     .setup-actions { padding-top: .6rem; }

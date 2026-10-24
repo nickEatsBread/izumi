@@ -102,7 +102,7 @@
 {/if}
 
 <!-- Landscape: adding sources and choosing playback sit side by side instead of stacking into a scroll. -->
-<div class="mt-7 grid grid-cols-[minmax(0,1fr)] gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+<div class="mt-7 grid grid-cols-[minmax(0,1fr)] gap-x-10 gap-y-8 xl:grid-cols-2">
   <section aria-labelledby="setup-add-source-title">
     <h2 id="setup-add-source-title" class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{m.onboarding_sources_add_title()}</h2>
     <form class="mt-3 flex gap-2" onsubmit={(event) => { event.preventDefault(); void add() }}>

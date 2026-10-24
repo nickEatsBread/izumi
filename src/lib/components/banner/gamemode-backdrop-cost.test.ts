@@ -22,9 +22,7 @@ describe('Game mode backdrop cost', () => {
       fileURLToPath(new URL('../onboarding/SetupArtwork.svelte', import.meta.url)),
       'utf8',
     )
-    // The setup poster wall no longer animates anywhere, which covers Game mode by construction.
-    expect(artwork).not.toMatch(/animation:/)
-    expect(artwork).not.toContain('@keyframes')
+    expect(artwork).toMatch(/:global\(html\.gamemode\) \.poster-column \{\s*animation:\s*none;?\s*\}/)
   })
 
   it('lets browse images appear in place under Game mode instead of tweening in', () => {

@@ -22,9 +22,9 @@ const sources = steps.SourcesStep
 describe('onboarding presentation contracts', () => {
   it('keeps a single artwork wordmark without captions or a visible step header', () => {
     expect(shell.match(/<Wordmark\b/g)).toHaveLength(1)
-    expect(shell).toContain('class="setup-wordmark"><Wordmark />')
-    // Outside the sheet, signing the screen from its corner as the old art panel did.
-    expect(shell.indexOf('class="setup-wordmark"')).toBeLessThan(shell.indexOf('<main'))
+    expect(shell).toContain('class="art-wordmark"><Wordmark />')
+    // On the poster panel, bottom right, as in the original design.
+    expect(shell.indexOf('<aside class="setup-art-panel"')).toBeLessThan(shell.indexOf('class="art-wordmark"'))
     expect(shell).not.toContain('<header')
     expect(shell).not.toContain('step-progress')
     expect(shell).not.toContain('art-caption')
@@ -61,9 +61,8 @@ describe('onboarding presentation contracts', () => {
     }
   })
 
-  it('crossfades mounted images over a still wall, with reduced-motion support', () => {
-    // Drifting columns behind the form felt queasy; the wall stays put and only crossfades.
-    expect(artwork).not.toContain('@keyframes')
+  it('crossfades mounted images and loops identical groups with reduced-motion support', () => {
+    expect(artwork).toContain('translateY(-50%)')
     expect(artwork).toContain('{#each [0, 1] as repeat (repeat)}')
     expect(artwork).toContain('transition: opacity')
     expect(artwork).toContain('img.shown:global([data-loaded])')
@@ -305,7 +304,7 @@ describe('onboarding presentation contracts', () => {
 
   it('adds sources by URL or from the real Store, side by side with playback', () => {
     expect(sources).toContain('onclick={onbrowse}')
-    expect(sources).toContain('lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]')
+    expect(sources).toContain('xl:grid-cols-2')
     // Setup steps aside for the Store and comes back to the same step: hidden, never unmounted,
     // with its nav trap and scroll lock released meanwhile.
     expect(shell).toContain("await goto('/app/settings/store')")
@@ -317,8 +316,11 @@ describe('onboarding presentation contracts', () => {
 
   it('opens on one way forward, with the other two starts as links', () => {
     const start = read('./steps/StartStep.svelte')
-    for (const handler of ['onnew', 'onimport', 'ontransfer']) expect(start).toContain(`onclick={${handler}}`)
-    expect(start.match(/setup-inline-button/g)).toHaveLength(1)
+    for (const handler of ['onimport', 'ontransfer']) expect(start).toContain(`onclick={${handler}}`)
+    // Get started sits bottom right in the footer beside Skip setup, like every screen's forward action.
+    expect(start).not.toContain('setup-inline-button')
+    const footer = shell.slice(shell.lastIndexOf('<footer class="setup-actions'))
+    expect(footer.indexOf('onclick={skip}')).toBeLessThan(footer.indexOf("onclick={() => choosePath('new')}"))
     expect(start).toContain('data-step-heading tabindex="-1" aria-describedby="setup-progress"')
     // Three lines on what izumi is, so the first screen is not just a heading and a button.
     for (const key of ['library', 'sources', 'tracking']) expect(start).toContain(`m.onboarding_start_feature_${key}()`)
@@ -332,23 +334,19 @@ describe('onboarding presentation contracts', () => {
     expect(ready).not.toContain('onboarding_ready_metadata')
   })
 
-  it('puts every word on one solid sheet over the poster wall, in izumi\'s own font', () => {
-    expect(shell).not.toContain('setup-art-panel')
-    expect(shell).not.toContain('minmax(0, 1.3fr)')
-    expect(shell).toContain('<div class="setup-sheet"')
-    expect(shell).toMatch(/\.setup-sheet \{[^}]*max-width: 52rem;[^}]*background: hsl\(var\(--background\) \/ \.97\)/)
+  it('keeps the posters in a panel of their own, never behind text, in izumi\'s own font', () => {
+    // Content gets the wider share so the sources screen can sit side by side.
+    expect(shell).toContain('<aside class="setup-art-panel" aria-hidden="true">')
+    expect(shell).toContain('grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);')
+    expect(shell).not.toContain('setup-sheet')
     // A re-run inherits whatever theme is active; setup keeps the brand font regardless.
     expect(css).toContain(".onboarding-surface { font-family: 'Nunito Variable', sans-serif; }")
-    expect(artwork).toContain('{#each [0, 1, 2, 3, 4, 5, 6, 7] as column}')
-    expect(artwork).toContain('grid-template-columns: repeat(8, 1fr);')
     expect(css).toMatch(/\.setup-heading \{[^}]*max-width: 42rem;/)
   })
 
-  it('installs ticked sources before leaving the sources screen, and lets the user skip instead', () => {
+  it('adds a pasted source before leaving the sources screen, and lets the user skip instead', () => {
     expect(shell).toContain("if (step === 'sources' && sourcesStep && !(await sourcesStep.install())) return")
     expect(shell).toContain('onclick={skipStep}')
-    // Start's cards are the way forward; it has no Next of its own.
-    expect(shell).toContain("{:else if step !== 'start'}")
   })
 
   it.each([['en', 'home screen'], ['ja', 'ホーム画面']])('no longer promises a home-screen checklist in %s', (locale, phrase) => {

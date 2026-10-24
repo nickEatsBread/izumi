@@ -1,11 +1,11 @@
 <script lang="ts">
-  import ArrowRight from '@lucide/svelte/icons/arrow-right'
   import ListChecks from '@lucide/svelte/icons/list-checks'
   import MonitorPlay from '@lucide/svelte/icons/monitor-play'
   import Plug from '@lucide/svelte/icons/plug'
   import { m } from '$lib/paraglide/messages.js'
 
-  let { onnew, onimport, ontransfer }: { onnew: () => void; onimport: () => void; ontransfer: () => void } = $props()
+  // Get started lives in the shell's footer, bottom right like every other screen's forward action.
+  let { onimport, ontransfer }: { onimport: () => void; ontransfer: () => void } = $props()
 
   // What izumi is, in three lines, for someone who has never opened it.
   const features = [
@@ -23,10 +23,6 @@
     <li class="flex items-center gap-3"><span aria-hidden="true" class="grid size-8 shrink-0 place-items-center rounded-lg bg-secondary text-muted-foreground"><feature.Icon size={16} /></span>{feature.label}</li>
   {/each}
 </ul>
-
-<!-- Most people are new, so that path is the one button. The other two starts are offered as plain
-     links instead of competing with it as equal cards. -->
-<button type="button" data-focusable onclick={onnew} class="setup-inline-button mt-7 bg-foreground px-5 text-background">{m.onboarding_start_cta()}<ArrowRight size={17} /></button>
 
 <div class="mt-7 grid gap-2 text-sm">
   <p><span class="text-muted-foreground">{m.onboarding_start_import_prompt()}</span> <button type="button" data-focusable onclick={onimport} class="font-semibold underline underline-offset-4 hover:opacity-80">{m.onboarding_start_import_link()}</button></p>
