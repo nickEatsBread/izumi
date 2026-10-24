@@ -1,9 +1,14 @@
 <script module lang="ts">
+  import { cubicOut } from 'svelte/easing'
   // ONE shared carousel-nav latch for ALL cards. A row moving under a stationary cursor must not
   // start another trailer; only a real pointer movement over a card explicitly rearms previews.
   let needsPointerMove = false
   if (typeof window !== 'undefined') {
     window.addEventListener('carousel-nav', () => { needsPointerMove = true })
+  }
+  // Grows the preview out of the card: at scale 2/3 the 1.5x box sits exactly on it (expand-pos.ts).
+  function grow(_node: Element, { duration }: { duration: number }) {
+    return { duration, easing: cubicOut, css: (t: number) => `transform: scale(${2 / 3 + t / 3}); opacity: ${Math.min(1, t * 4)}` }
   }
 </script>
 
@@ -12,6 +17,8 @@
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import { themePresentation } from '$lib/themes/runtime'
   import { mediaDisplayModel } from '$lib/themes/host-model'
+  import { useCardArt } from '$lib/themes/card-art.svelte'
+  import { nearViewport } from '$lib/util/near-viewport'
   import { seriesCompletion, seriesProgress } from '$lib/themes/series-progress'
   import { ambientFromHex } from '$lib/themes/ambient'
   import { CARD_FAMILY, ROW_CONTEXT, densityScale, resolveCard, resolveRow, type CardFamily, type RowScope } from '$lib/themes/presentation'
@@ -20,7 +27,6 @@
   import { title, cardCover, season, format, mediaHref, status } from '$lib/anilist/media'
   import { rememberDetail } from '$lib/anilist/detail-hint'
   import { fade } from 'svelte/transition'
-  import { cubicOut } from 'svelte/easing'
   import { get } from 'svelte/store'
   import { gameMode } from '$lib/player/session'
   import { controllerMode } from '$lib/nav/input'
@@ -30,6 +36,9 @@
   import Play from '@lucide/svelte/icons/play'
   import PreviewCard from './PreviewCard.svelte'
   import { previewPos, rootZoom, SIDEBAR_W } from './preview-pos'
+  import { cardMedia } from './card-registry'
+  import { expandPos, type ExpandBox } from './expand-pos'
+  import { reducedMotion } from '$lib/motion/gm-motion'
   import { portal } from '$lib/util/portal'
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   import { compactRatingLabel, primaryRating } from '$lib/catalog/media-metadata'
@@ -67,6 +76,8 @@
   const cardTemplate = $derived(resolveCard($themePresentation, cardFamily, themeScope?.().id ?? ''))
   const coverWidth = $derived((themeRow.width ?? (fill ? 0 : $isTv ? 198 : $isMobile ? 131 : 152)) * (themeRow.width ? 1 : densityScale($themePresentation)))
   const coverSrc = $derived(cardCover(media, coverWidth))
+  // API 6: key art and a title logo, only when the card's template binds them (see useCardArt).
+  const cardArt = useCardArt(() => cardTemplate, () => media, () => el)
   // Only a template binds the watched count and the finished mark, so izumi's own card never
   // subscribes to the lookups.
   const cardModel = $derived(cardTemplate ? mediaDisplayModel(media, {
@@ -74,12 +85,19 @@
     ...(position ? { rankPosition: position, rank: String(position).padStart(2, '0') } : {}),
     episodesWatched: $seriesProgress(media),
     completed: $seriesCompletion(media) ? 'Completed' : undefined,
+    ...cardArt.art,
   }, coverWidth) : undefined)
   let coverReady = $state(false)
   $effect(() => { void coverSrc; coverReady = false })
   let pos = $state({ left: 0, top: 0 })
   let el: HTMLElement
+  // A row's caption template binds the focused card's media through the registry.
+  $effect(() => { const node = el; cardMedia.set(node, { media }); return () => cardMedia.delete(node) })
   let closeT: ReturnType<typeof setTimeout>
+  // API 6 `cardPreview: "expand"`: the preview grows out of the card after a dwell (expand-pos.ts).
+  const expandMode = $derived($themePresentation?.cardPreview === 'expand')
+  let expandBox = $state<ExpandBox | undefined>()
+  let openT: ReturnType<typeof setTimeout> | undefined
   const dot = (m: Media) => m.status === 'RELEASING' ? '#3db4f2'
     : m.status === 'NOT_YET_RELEASED' ? '#f79a63'
     : m.catalog?.provider === 'jvm' && !m.status ? undefined
@@ -102,11 +120,12 @@
   // preview-pos.ts for why the UI-scale setting otherwise throws the popup off by that factor.
   function place() {
     const r = el.getBoundingClientRect()
-    const art = el.querySelector<HTMLElement>('.theme-artwork, img')
+    const art = el.querySelector<HTMLElement>('[data-part="preview.anchor"]') ?? el.querySelector<HTMLElement>('.theme-artwork, img')
     const box = art?.getBoundingClientRect() ?? r
     const nav = document.documentElement.dataset.themeNav
     const rail = nav === 'top' || nav === 'bottom' ? 0 : SIDEBAR_W
-    pos = previewPos(box, { width: window.innerWidth, height: window.innerHeight }, rootZoom(), rail)
+    if (expandMode) expandBox = expandPos({ left: box.left, top: box.top, width: box.width, height: box.height }, { width: window.innerWidth, height: window.innerHeight }, rootZoom(), rail)
+    else pos = previewPos(box, { width: window.innerWidth, height: window.innerHeight }, rootZoom(), rail)
   }
   // Hovercard bridge: opening cancels any pending close; leaving the card (or the
   // preview) schedules a short delayed close so the pointer can travel card→preview
@@ -118,13 +137,21 @@
   // affordance.
   // A theme that draws its own hover panel in the card template switches the popup off (API 3 `cardPreview`).
   const previewOff = $derived(simpleHover || $themePresentation?.cardPreview === 'none')
-  function open() { if (previewOff || get(gameMode) || get(controllerMode) || get(isMobile) || get(isTv) || needsPointerMove) return; clearTimeout(closeT); place(); hovered = true }
+  const blocked = () => get(gameMode) || get(controllerMode) || get(isMobile) || get(isTv) || needsPointerMove
+  function open() { if (previewOff || blocked()) return
+    clearTimeout(closeT)
+    if (!expandMode) { place(); hovered = true; return }
+    clearTimeout(openT)
+    // The guards can change during the dwell, and a row that moved (`carousel-nav`) slides the card
+    // out from under a still pointer: check both again before opening.
+    openT = setTimeout(() => { if (previewOff || blocked() || !el.matches(':hover')) return; place(); hovered = true }, 500)
+  }
   function openAfterPointerMove() {
     if (!needsPointerMove) return
     needsPointerMove = false
     open()
   }
-  function scheduleClose() { clearTimeout(closeT); closeT = setTimeout(() => (hovered = false), 60) }
+  function scheduleClose() { clearTimeout(openT); clearTimeout(closeT); closeT = setTimeout(() => (hovered = false), 60) }
   function keepOpen() { clearTimeout(closeT) }
   // The hover preview is portalled to <body>, so a wheel over it cannot naturally bubble to the
   // row it came from. Forward the same deltas to that exact row; Carousel owns normalization,
@@ -159,7 +186,7 @@
   // listener meant hundreds firing on every scroll on big grids (the accumulating scroll lag).
   $effect(() => {
     if (!hovered) return
-    const close = () => (hovered = false)
+    const close = () => { clearTimeout(openT); hovered = false }
     window.addEventListener('scroll', close, true)
     window.addEventListener('carousel-nav', close)
     return () => {
@@ -167,10 +194,10 @@
       window.removeEventListener('carousel-nav', close)
     }
   })
-  $effect(() => () => clearTimeout(closeT))
+  $effect(() => () => { clearTimeout(closeT); clearTimeout(openT) })
 </script>
 
-<div data-part="card" data-family={cardFamily} bind:this={el} data-theme-card style:--cover-rgb={ambientFromHex(media.coverImage?.color)} class={fill ? 'w-full' : $isTv ? 'w-44 shrink-0' : 'w-36 shrink-0 sm:w-[152px]'} style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
+<div data-part="card" data-family={cardFamily} bind:this={el} use:nearViewport={cardArt.wanted.size ? cardArt.gate : undefined} data-theme-card style:--cover-rgb={ambientFromHex(media.coverImage?.color)} class={fill ? 'w-full' : $isTv ? 'w-44 shrink-0' : 'w-36 shrink-0 sm:w-[152px]'} style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
   <a href={mediaHref(media)} data-focusable draggable="false" onclick={() => { rememberDetail(media); h.tap() }}
      data-nav-key={`media:${media.catalog?.id ?? media.id}`} data-caption-title={title(media)} data-caption-meta={captionMeta}
      aria-label={title(media)} style:width={themeRow.width || cardTemplate ? '100%' : undefined}
@@ -231,10 +258,19 @@
   </a>
 </div>
 
-{#if hovered && !previewOff}
-  <!-- use:portal — re-parent to <body>. In place, the row's `.load-in` transform animation makes
-       the card wrapper the containing block for this `fixed` popup (offset by the card's origin,
-       clipped by the carousel, painted under sibling posters). From <body>, fixed = viewport. -->
+<!-- use:portal — re-parent to <body>. In place, the row's `.load-in` transform animation makes
+     the card wrapper the containing block for this `fixed` popup (offset by the card's origin,
+     clipped by the carousel, painted under sibling posters). From <body>, fixed = viewport.
+     Two sibling blocks, not one nested in the other: Svelte transitions are local to their block. -->
+{#if hovered && !previewOff && expandMode && expandBox}
+  <div use:portal class="pointer-events-auto fixed z-50 will-change-[transform,opacity]"
+       style={`left:${expandBox.left}px;top:${expandBox.top}px;width:${expandBox.width}px;transform-origin:${expandBox.originX}px ${expandBox.originY}px`}
+       in:grow={{ duration: reducedMotion() ? 0 : 300 }} out:grow={{ duration: reducedMotion() ? 0 : 220 }}
+       onpointerenter={keepOpen} onpointerleave={scheduleClose} onwheel={forwardPreviewWheel} role="presentation">
+    <PreviewCard {media} {preferLinkedRating} variant="expand" artHeight={expandBox.artHeight} logo={cardArt.art.logo} />
+  </div>
+{/if}
+{#if hovered && !previewOff && !expandMode}
   <div use:portal class="pointer-events-auto fixed z-50 will-change-[transform,opacity]" style={`left:${pos.left}px;top:${pos.top}px`}
        in:fade={{ duration: 140, easing: cubicOut }} out:fade={{ duration: 120, easing: cubicOut }}
        onpointerenter={keepOpen} onpointerleave={scheduleClose} onwheel={forwardPreviewWheel} role="presentation">

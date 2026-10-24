@@ -22,6 +22,16 @@ describe('episode states for theme stylesheets', () => {
     expect(list.match(/\sstate=\{stateOf\(ep\)\}/g)?.length).toBe(2)
     expect(list.match(/cta=\{ep === ctaEpisode && ep <= aired\}/g)?.length).toBe(2)
   })
+  it("says when an unaired episode arrives, to templates and in izumi's own tiles", () => {
+    // The schedule's airing time (or the next-airing record's), else the episode metadata's air day.
+    expect(card).toContain('const arrival = $derived(released ? undefined : arrivalDayText(')
+    expect(card).toContain('media.airingSchedule?.nodes?.find((node) => node.episode === ep)?.airingAt ?? (isNext ? next?.airingAt : undefined), meta?.airDate))')
+    expect(card).toContain('upcoming: upcomingText(released, arrival),')
+    // izumi's own tiles keep the next episode's countdown and "Not aired" when no day is known.
+    expect(card.match(/arrival \? `Coming \$\{arrival\}` : 'Not aired'/g)?.length).toBe(2)
+    expect(list).toContain("{arrival ? `Coming ${arrival}` : 'Not aired'}")
+    expect(list).toContain('arrivalDayText(media.airingSchedule?.nodes?.find((node) => node.episode === ep)?.airingAt, meta[ep]?.airDate)')
+  })
   it('takes the Play target from the page CTA rule and the playable count from the shared helper', () => {
     expect(list).toContain('const ctaEpisode = $derived(offline')
     expect(list).toContain(': animeResumeEpisode(media, resumeThrough))')

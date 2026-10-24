@@ -12,7 +12,7 @@ describe('catalog detail trailer action', () => {
     expect(detail).toContain("import { openTrailerPopup } from '$lib/stores/trailer'")
     expect(detail).toContain('{#if media.trailer?.id}')
     expect(detail).toContain('aria-label="Watch trailer"')
-    expect(detail).toContain('openTrailerPopup(media.trailer.id, `${title(media)} trailer`)')
+    expect(detail).toContain('openTrailerPopup(media.trailer.id, title(media))')
     expect(detail).toContain('onclick={watchTrailer}')
   })
 

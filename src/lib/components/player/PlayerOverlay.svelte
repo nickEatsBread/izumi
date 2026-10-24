@@ -6,6 +6,7 @@
   import { invoke } from '@tauri-apps/api/core'
   import { getCurrentWindow } from '@tauri-apps/api/window'
   import Controls from './Controls.svelte'
+  import PausedSummary from './PausedSummary.svelte'
   import SubtitleEditor from './SubtitleEditor.svelte'
   import TrackMenu from './TrackMenu.svelte'
   import CommentsPanel from './CommentsPanel.svelte'
@@ -68,8 +69,8 @@
   import X from '@lucide/svelte/icons/x'
   import PlayPauseIcon from './PlayPauseIcon.svelte'
   import { isMobile, isWindows } from '$lib/platform'
-  import { themePresentation, shellNav } from '$lib/themes/runtime'
-  import { resolvePlayerDock, type PlayerChrome } from '$lib/themes/presentation'
+  import { playerCoversWindow, themePresentation, shellNav } from '$lib/themes/runtime'
+  import { resolvePlayerControls, resolvePlayerDock, type PlayerChrome } from '$lib/themes/presentation'
   import { oskDismissedAt, playerStage } from '$lib/player/session'
   import { measureStage } from '$lib/player/insets'
   import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
@@ -142,7 +143,7 @@
   const gmMode = $derived($gameMode)
   // Browse chrome is around the video (windowed playback): the root is inset from the edge the
   // navigation occupies and reports its geometry to the native surface.
-  const windowedChrome = $derived(!$fullscreen && !gmMode && !$pictureInPicture)
+  const windowedChrome = $derived(!$fullscreen && !gmMode && !$pictureInPicture && !$playerCoversWindow)
   // The sidebar is beside the video, unless the player setting tucks it away during playback.
   const sidebarRail = $derived($shellNav === 'sidebar' && !$sidebarHiddenForPlayback)
   // A theme's docked watch layout: the video keeps to a stage with the episode rail beside or below
@@ -287,8 +288,25 @@
   // measured geometry), but do not turn a hidden player into the complete title/button chrome.
   // Triggers and touch retain the established reveal behaviour.
   const quietDpadScrub = $derived(gmMode && $scrub.active && $scrub.source === 'dpad')
+  const playerControls = $derived(resolvePlayerControls($themePresentation))
+  // API 6 paused summary: five seconds after the last input while paused on the full (not docked)
+  // player, never in Game mode, at the end of the file, under an open menu or prompt, over the stats or while a cast plays it. `inputTick` is bumped by poke(), so any
+  // input restarts the wait and hides it. While it shows, the controls give way (see `controlsVisible`).
+  let inputTick = $state(0)
+  let pausedIdle = $state(false)
+  $effect(() => {
+    const armed = playerControls.paused === 'summary' && transportPaused && !loading && !eof && !gmMode && !docked && !$isMobile && !$pictureInPicture
+      && !$scrubActive && !$playerMenuOpen && !$trackMenuOpen && !$commentsOpen && !subtitleEditorOpen
+      && !sourcePickerVisible && !sourceConnectingVisible && !$upNextPrompt && !$seriesRatingPrompt && !$oskOpen && !$navLayerOpen
+      && !$playerStatsOpen && !remoteCastOwnsPlayback
+    pausedIdle = false
+    if (!armed) return
+    void inputTick
+    const t = setTimeout(() => { pausedIdle = true }, 5000)
+    return () => clearTimeout(t)
+  })
   const controlsVisible = $derived(
-    visible || (!(quietPadSeek || quietDpadScrub) && (transportPaused || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen,
+    visible || (!(quietPadSeek || quietDpadScrub) && ((transportPaused && !pausedIdle) || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen,
   )
   // Game mode: the video window is unmapped behind the menu stage (gm-freeze.ts). Until it is back,
   // the HTML controls stay mounted and own the chrome, so a closing menu inside them slides out.
@@ -324,6 +342,7 @@
   const showSkip = $derived(!!currentSeg && !autoSkipCurrent && (skipTimer || controlsVisible))
 
   function poke() {
+    untrack(() => { inputTick++ })
     visible = true
     clearTimeout(hideT)
     // Match Crunchy Deck's breathing room: the chrome itself fades for 300ms after this hold.
@@ -485,6 +504,10 @@
     const current = get(nowPlayingMedia)
     if (!current) {
       playerNotice.set('No episode is available to bookmark')
+      return
+    }
+    if (current.media.release) {
+      playerNotice.set('Scene bookmarks need a catalog title')
       return
     }
     const quote = await playerGetProperty('sub-text').catch(() => '')
@@ -731,7 +754,8 @@
       // titles this effect can see the OUTGOING title next to the INCOMING isAdult flag. Treat a
       // mismatched pair as private: the panel shows the placeholder for the second it takes the
       // two stores to agree instead of publishing the previous (possibly adult) episode name.
-      private: !!media?.isAdult || $incognito || (media != null && np.id != null && media.id !== np.id),
+      // A search box release is named by its raw file name, which is not for a public status.
+      private: !!media?.isAdult || !!media?.release || $incognito || (media != null && np.id != null && media.id !== np.id),
       seekSeconds: $seekDuration,
     }
     const decision = presenceDecision(presenceThrottle, payload, Date.now())
@@ -1861,7 +1885,8 @@
 <!-- Arrow seeks are RELATIVE + EXACT (mpv computes from its OWN live position, so a repeated tap
      advances instead of looping a keyframe). Keys are handled by the CAPTURE-phase listener in
      onMount (above) — NOT here — so they never leak to the spatial nav and move focus. -->
-<svelte:window onmousemove={poke} />
+<!-- Keys and presses that poke() never sees (an unbound key, a click on the scrim) still count as input for the paused summary. -->
+<svelte:window onmousemove={poke} onkeydowncapture={() => inputTick++} onpointerdowncapture={() => inputTick++} onwheel={() => inputTick++} />
 
 <!-- Transparent full-window overlay: mpv shows through, controls composite on top.
      z-20 keeps it below the sidebar nav (z-30) and titlebar (z-50), so those stay
@@ -2033,7 +2058,8 @@
        unless the controls are up. -->
   {#if showSkip && currentSeg}
     <button
-      data-focusable
+      data-part="player.skip" data-kind={currentSeg.type}
+      data-focusable data-theme-unthemed={gmMode || undefined}
       transition:fade={{ duration: gmMode ? 0 : 150 }}
       class="izumi-hud absolute z-10 font-bold
         {gmMode
@@ -2043,6 +2069,10 @@
     >
       Skip {currentSeg.label}
     </button>
+  {/if}
+
+  {#if pausedIdle}
+    <PausedSummary media={$nowPlayingMedia?.media} episode={$nowPlayingMedia?.episode ?? np.episode ?? undefined} title={np.animeTitle || np.title} />
   {/if}
 
   {#if controlsVisible && $pictureInPicture}

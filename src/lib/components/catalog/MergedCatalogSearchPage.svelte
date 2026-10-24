@@ -13,6 +13,7 @@
   import { rankQuickSearchResults } from '$lib/search/global-search'
   import VirtualGrid from '$lib/components/VirtualGrid.svelte'
   import { CARD_FAMILY } from '$lib/themes/presentation'
+  import { searchGridKeyboard } from '$lib/themes/runtime'
 
   setContext(CARD_FAMILY, 'search')
 
@@ -104,6 +105,8 @@
       data-part="search.field"
       bind:value={query}
       data-focusable
+      data-search-input
+      inputmode={$searchGridKeyboard ? 'none' : undefined}
       type="search"
       placeholder="Search every enabled catalog…"
       aria-label="Search all catalogs"

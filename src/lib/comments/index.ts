@@ -131,6 +131,8 @@ export function fetchDiscussion(
   episode: number | null | undefined,
   onEarly?: (threads: DiscussionThread[]) => void,
 ): Promise<DiscussionThread[]> {
+  // A search box release is named by its raw file name; that must not reach a comment search.
+  if (media.release) return Promise.resolve([])
   const key = discussionKey(media, episode)
   const hit = discussionCache.get(key)
   if (hit && Date.now() - hit.at < DISCUSSION_TTL_MS) {

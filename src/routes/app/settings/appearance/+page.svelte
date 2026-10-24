@@ -6,8 +6,9 @@
   import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte'
   import SetupElsewhere from '$lib/components/settings/SetupElsewhere.svelte'
   import PhoneNavEditor from '$lib/components/settings/PhoneNavEditor.svelte'
+  import PaletteHomePreview from '$lib/components/settings/PaletteHomePreview.svelte'
   import {
-    androidTvMode, dragCarousels, haptics, highContrast, largeInteractionTargets, motionPreference, themePreset, uiScale, wheelScrollAcross,
+    androidTvMode, backdropTrailers, dragCarousels, haptics, highContrast, largeInteractionTargets, motionPreference, themePreset, uiScale, wheelScrollAcross,
     type AndroidTvMode, type MotionPreference, type ThemePreset,
   } from '$lib/settings/ui'
   import { isAndroid, isAndroidTv, isMobile } from '$lib/platform'
@@ -28,10 +29,12 @@
     : presets)
 </script>
 
+{#snippet palettePreview(value: string)}{#if value !== 'custom'}<PaletteHomePreview preset={value as Exclude<ThemePreset, 'custom'>} />{/if}{/snippet}
 {#snippet contrastSwitch()}<SettingsSwitch value={$highContrast} onToggle={() => ($highContrast = !$highContrast)} label={m.settings_high_contrast()} interactive={false} />{/snippet}
 {#snippet targetsSwitch()}<SettingsSwitch value={$largeInteractionTargets} onToggle={() => ($largeInteractionTargets = !$largeInteractionTargets)} label={m.settings_large_targets()} interactive={false} />{/snippet}
 {#snippet hapticsSwitch()}<SettingsSwitch value={$haptics} onToggle={() => ($haptics = !$haptics)} label={m.settings_haptics()} interactive={false} />{/snippet}
 {#snippet wheelSwitch()}<SettingsSwitch value={$wheelScrollAcross} onToggle={() => ($wheelScrollAcross = !$wheelScrollAcross)} label="Wheel-scroll carousels" interactive={false} />{/snippet}
+{#snippet trailersSwitch()}<SettingsSwitch value={$backdropTrailers} onToggle={() => ($backdropTrailers = !$backdropTrailers)} label="Theme trailers" interactive={false} />{/snippet}
 {#snippet dragSwitch()}<SettingsSwitch value={$dragCarousels} onToggle={() => ($dragCarousels = !$dragCarousels)} label="Mouse-drag carousels" interactive={false} />{/snippet}
 {#snippet scaleControl()}
   <span class="flex w-full items-center gap-3 sm:w-auto">
@@ -42,11 +45,15 @@
 
 <SettingsSection section="appearance">
   <SettingsSubcategory id="theme">
-    <SettingsChoiceRow settingKey="theme-preset" title={m.settings_theme()} description={m.settings_theme_hint()} value={$themePreset} options={presetOptions} onChange={(value) => ($themePreset = value as ThemePreset)} />
+    <SettingsChoiceRow settingKey="theme-preset" title={m.settings_theme()} description={m.settings_theme_hint()} value={$themePreset} options={presetOptions} onChange={(value) => ($themePreset = value as ThemePreset)} preview={palettePreview} />
     <SettingsRow title="Themes" description="Install, update and manage themes" href="/app/settings/themes" chevron />
     <SetupElsewhere title="Theme Studio" status={$themePreset === 'custom' ? 'In use' : 'Not used'} where="Needs a mouse and keyboard: connect them to design here">
       <SettingsRow title="Theme Studio" description="Design your own colours, type and backdrop" href="/app/settings/theme-studio" chevron />
     </SetupElsewhere>
+    <!-- Android never plays them (BackdropTrailer is desktop only). -->
+    {#if !$isAndroid}
+      <SettingsRow settingKey="theme-trailers" title="Theme trailers" description="Play the trailer some themes show behind the Home banner and series art" control={trailersSwitch} onActivate={() => ($backdropTrailers = !$backdropTrailers)} pressed={$backdropTrailers} />
+    {/if}
   </SettingsSubcategory>
 
   <SettingsSubcategory id="accessibility">

@@ -165,5 +165,9 @@ export function pickVideoFile<T extends { name: string; bytes: number }>(
   files: T[],
   want?: EpisodeWant,
 ): T | undefined {
-  return pickEpisodeVideo(files, want) ?? pickLargestVideo(files)
+  const picked = pickEpisodeVideo(files, want)
+  if (picked || !want?.strict) return picked ?? pickLargestVideo(files)
+  // Strict: a lone video is still unambiguous, as in the native P2P file matcher.
+  const videos = files.filter((f) => VIDEO.test(f.name) && !isJunkName(f.name))
+  return videos.length === 1 ? videos[0] : undefined
 }

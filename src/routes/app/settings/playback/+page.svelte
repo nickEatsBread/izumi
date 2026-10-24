@@ -4,7 +4,7 @@
     seekDuration, enableExternalPlayer, externalPlayerPath, scrubThumbnails, playerProgressAnimations,
     playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying, videoQualityPreset, rawMpvOptions,
     gifIncludeSubtitles, gifScale, gifMaxSeconds, androidAutoPip, audioProcessing, windowsVsr,
-    systemMediaControls, discordRichPresence, subtitleLineNavigation, hideSidebarWhilePlaying,
+    systemMediaControls, discordRichPresence, subtitleLineNavigation, hideSidebarWhilePlaying, trailerOpenMode,
     audioOutputMode, audioOutputDevice, audioExclusive,
     audioPassthroughAc3, audioPassthroughEac3, audioPassthroughTruehd,
     audioPassthroughDts, audioPassthroughDtsHd, dolbyVisionOutputMode,
@@ -207,6 +207,11 @@
         <SettingsRow settingKey="hide-sidebar-while-playing" title="Hide sidebar while playing" description="Tucks the sidebar away while a video is open, so the player fills the window." learnMore="It comes back when you leave the player. Has no effect when the navigation sits at the top or bottom." onActivate={() => ($hideSidebarWhilePlaying = !$hideSidebarWhilePlaying)} pressed={$hideSidebarWhilePlaying}>
           {#snippet control()}<SettingsSwitch value={$hideSidebarWhilePlaying} onToggle={() => ($hideSidebarWhilePlaying = !$hideSidebarWhilePlaying)} label="Hide sidebar while playing" interactive={false} />{/snippet}
         </SettingsRow>
+        <!-- Hidden in Game mode by its search entry (hideOn), where trailers always open in the player. -->
+        <SettingsChoiceRow settingKey="trailers-open-in" title="Trailers open in" description="With a controller, trailers always open in izumi's player." value={$trailerOpenMode} onChange={(value) => ($trailerOpenMode = value as typeof $trailerOpenMode)} options={[
+          { value: 'player', label: "izumi's player" },
+          { value: 'popup', label: 'A popup' },
+        ]} />
       {/if}
       <SettingsChoiceRow settingKey="p2p-playback-status" title="P2P playback status" description="Peers and live speeds at the top of the player during Direct P2P playback." learnMore="Debrid playback never shows it." value={$p2pStatusVisibility} onChange={(value) => ($p2pStatusVisibility = value as typeof $p2pStatusVisibility)} options={[
         { value: 'hidden', label: 'Always hidden' },

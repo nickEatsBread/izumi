@@ -17,7 +17,7 @@ describe('player top row', () => {
 
   it('keeps Back clickable under the windowed titlebar without losing the window drag', () => {
     const controls = read('./Controls.svelte')
-    expect(controls).toContain("const underTitlebar = $derived(!gm && !$fullscreen && !$isMobile && !$isTv && $shellNav !== 'top')")
+    expect(controls).toContain("const underTitlebar = $derived(!gm && !$fullscreen && !$isMobile && !$isTv && ($shellNav !== 'top' || $playerCoversWindow))")
     expect(controls).toContain('<div data-tauri-drag-region class="pointer-events-auto absolute inset-x-0 top-0 h-8"></div>')
     expect(controls).toContain('class="pointer-events-auto relative flex shrink-0 select-none items-center')
     expect(controls).toContain('playerTopBarUnderTitlebar.set(true)')

@@ -37,8 +37,11 @@
   import { incognito, toggleIncognito } from '$lib/stores/incognito'
   import { offlineMode } from '$lib/stores/offline'
   import { catalogScreen, catalogSwitcherPlacement, enabledCatalogScreens, resolveCatalogSwitcherPlacement } from '$lib/settings/catalog'
+  import { interfaceMode } from '$lib/settings/interface-mode'
+  import { searchModeNav } from '$lib/settings/nav-rules'
   import * as h from '$lib/haptics'
   import { m } from '$lib/paraglide/messages.js'
+  import { isTv } from '$lib/platform'
   import { themePresentation } from '$lib/themes/runtime'
 
   let { placement = 'sidebar' }: { placement?: 'sidebar' | 'top' } = $props()
@@ -57,7 +60,7 @@
   const labelMode = $derived(top ? topBar.labels ?? 'icons' : 'icons')
   const brandCentered = $derived(top && topBar.brand === 'center')
   // A theme top bar search field (`shell.top.search`) replaces the Search destination link.
-  const searchField = $derived(top && (topBar.search === 'field-center' || topBar.search === 'field-end'))
+  const searchField = $derived(top && $interfaceMode !== 'search' && (topBar.search === 'field-center' || topBar.search === 'field-end'))
   // A centred brand owns the middle of the bar, so a centre field moves to the end instead of under it.
   const fieldCenter = $derived(searchField && topBar.search === 'field-center' && !brandCentered)
   const fieldEnd = $derived(searchField && !fieldCenter)
@@ -72,7 +75,7 @@
     { id: 'library', href: '/app/library', icon: LibraryBig, label: 'Library', anim: '' },
   ]
   const settingsItem = { id: 'settings', href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }
-  const shown = $derived(searchField ? items.filter((it) => it.href !== '/app/search') : items)
+  const shown = $derived($interfaceMode === 'search' ? searchModeNav(items) : searchField ? items.filter((it) => it.href !== '/app/search') : items)
   // `menu: "side"`: the menu is a pinned panel down the left on windows from 1100 px (the bar keeps
   // only its brand, search and trailing buttons); the menu button folds it away, and narrower
   // windows fall back to the drawer. Hidden while a video plays, like the rail goes inert.
@@ -232,19 +235,19 @@
        {top ? '' : open ? 'w-[200px]' : compact ? 'w-12' : 'w-14'}
        {$playing || open ? 'bg-background' : ''} {open ? 'shadow-2xl' : $playing || top ? '' : 'drop-shadow-md'}
        {brandCentered ? '!grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]' : ''}
-       {top && $gameMode ? '!h-[var(--theme-top-row)] !pt-0' : ''}">
+       {top && ($gameMode || $isTv) ? '!h-[var(--theme-top-row)] !pt-0' : ''}">
   {#if brandCentered}
     <!-- A centred brand gets its own grid column instead of sharing the flex row: the links (or the
          trailing cluster) otherwise run under the absolutely-centred brand and steal its clicks once
          the row gets crowded (labels: both around 1280px, text below ~1150px). The left cell clips/
          scrolls instead of pushing into the brand's column. -->
-    <div class="flex min-w-0 items-center gap-1 overflow-hidden">
+    <div data-part="nav.start" class="flex min-w-0 items-center gap-1 overflow-hidden">
       {@render menuButton()}
       {@render belowSwitcher()}
       {@render navLinks()}
     </div>
     {@render brandBlock()}
-    <div class="flex items-center justify-end gap-1">
+    <div data-part="nav.end" class="flex items-center justify-end gap-1">
       {#if fieldEnd}<TopSearchField className="mr-2 w-64" focusable={!$playing && !barOffPad} tabindex={tab} />{/if}
       {@render incognitoToggle()}
       {@render settingsLink()}
@@ -258,7 +261,7 @@
 
     <!-- Spacer pushes Settings + profile to the bottom of the rail, or the trailing cluster to the
          right of a top bar. A theme top bar search field (`field-center`) takes its place instead. -->
-    <div class="flex flex-1 justify-center px-4">{#if fieldCenter}<TopSearchField className="w-full max-w-md" focusable={!$playing && !barOffPad} tabindex={tab} />{/if}</div>
+    <div data-part="nav.spacer" class="flex flex-1 justify-center px-4">{#if fieldCenter}<TopSearchField className="w-full max-w-md" focusable={!$playing && !barOffPad} tabindex={tab} />{/if}</div>
     {#if fieldEnd}<TopSearchField className="mr-2 w-64" focusable={!$playing && !barOffPad} tabindex={tab} />{/if}
     {@render incognitoToggle()}
     {@render settingsLink()}
@@ -331,7 +334,7 @@
      aria-pressed={$incognito}
      class="{destClass($incognito)} {top ? '' : 'text-left'}">
     {#if $incognito && !top}<span class="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-violet-500"></span>{/if}
-    <span class="grid {top ? 'size-5' : 'w-8'} shrink-0 place-items-center"><VenetianMask size={20} class="group-hover:animate-[wiggle_0.4s_ease] {$incognito ? 'text-violet-400' : ''}" /></span>
+    <span data-part="nav.action.icon" class="grid {top ? 'size-5' : 'w-8'} shrink-0 place-items-center"><VenetianMask size={20} class="group-hover:animate-[wiggle_0.4s_ease] {$incognito ? 'text-violet-400' : ''}" /></span>
     {#if top}
       <span data-part="nav.action.label" class="sr-only">{m.nav_incognito()}</span>
     {:else}
@@ -347,7 +350,7 @@
      aria-current={active('/app/settings') ? 'page' : undefined}
      data-nav-region-default={active('/app/settings') && $settingsControllerMode && !top ? '' : undefined}
      class={destClass(active('/app/settings'))}>
-    <span class="grid {top ? 'size-5' : 'w-8'} shrink-0 place-items-center"><Settings size={20} class="group-hover:animate-[spin_0.6s_ease]" /></span>
+    <span data-part="nav.action.icon" class="grid {top ? 'size-5' : 'w-8'} shrink-0 place-items-center"><Settings size={20} class="group-hover:animate-[spin_0.6s_ease]" /></span>
     {#if top}
       <span data-part="nav.action.label" class="sr-only">{m.nav_settings()}</span>
     {:else}
@@ -359,7 +362,7 @@
 {#snippet accountButton()}
   <button type="button" data-part="nav.action" data-action="account" onclick={() => $profilesEnabled ? ($profileSwitcherOpen = true) : goto('/app/settings/accounts')} title={$profilesEnabled ? `Switch profile · ${$activeProfile.name}` : accountLabel} data-focusable={df} tabindex={tab}
      class="{top ? destClass(false) : 'group mt-1 flex h-12 w-full shrink-0 items-center gap-3 rounded-md pl-3 text-left text-muted-foreground transition-colors hover:bg-accent hover:text-foreground'}">
-    <span class="grid {top ? 'size-8' : 'w-8'} shrink-0 place-items-center">
+    <span data-part="nav.action.icon" class="grid {top ? 'size-8' : 'w-8'} shrink-0 place-items-center">
       {#if $profilesEnabled}
         <img src={profileAvatarUrl($activeProfile.avatar, $activeProfile.color)} alt="" class="size-8 rounded-lg" />
       {:else if accountAvatar}

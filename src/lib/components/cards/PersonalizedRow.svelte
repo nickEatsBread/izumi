@@ -30,6 +30,8 @@
   const rowScope = getContext<(() => RowScope) | undefined>(ROW_CONTEXT)
   const themedWidth = $derived(rowScope ? resolveRow($themePresentation, rowScope().id).width : undefined)
   const tileWidth = $derived(themedWidth ?? Math.round(152 * densityScale($themePresentation)))
+  // Game mode leaves out the hover-preview fields, but a row's caption template binds the synopsis among them.
+  const captionData = $derived(!!rowScope && !!resolveRow($themePresentation, rowScope().id).captionTemplate)
   let visible = $state(false)
   const reveal = () => { visible = true }
   const localSeeds = $derived(historySeeds($durableHistory).filter((seed) => $showAdult || !seed.media.isAdult))
@@ -50,13 +52,13 @@
   const accountStore = $derived(queryStore<AccountRecommendationData>({
     client,
     query: PERSONAL_RECOMMENDATIONS_QUERY,
-    variables: { userName, withPreview: !$gameMode },
+    variables: { userName, withPreview: !$gameMode || captionData },
     pause: !visible || !userName,
   }))
   const historyStore = $derived(queryStore<HistoryRecommendationData>({
     client,
     query: LOCAL_RECOMMENDATIONS_QUERY,
-    variables: { seedIds, withPreview: !$gameMode },
+    variables: { seedIds, withPreview: !$gameMode || captionData },
     pause: !visible || seedIds.length === 0,
   }))
   const loading = $derived(

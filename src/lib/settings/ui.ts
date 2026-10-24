@@ -189,6 +189,10 @@ export const seekDuration = persisted<number>('player-seek-seconds', 10)
 export const subtitleLineNavigation = persisted<boolean>('player-subtitle-line-navigation', false)
 /** Hide the left sidebar while the player is open, so windowed video takes its width. On by default. */
 export const hideSidebarWhilePlaying = persisted<boolean>('player-hide-sidebar', true)
+/** Where a desktop trailer opens with mouse and keyboard: izumi's full-window trailer player or the
+ *  popup. TV, Game mode and a controller always use the player, phones the popup (trailerOpensIn). */
+export type TrailerOpenMode = 'player' | 'popup'
+export const trailerOpenMode = persisted<TrailerOpenMode>('trailer-open-mode', 'player')
 /** Show the frame-preview thumbnail while skimming the seek bar. Off = time/chapter only
  *  (also skips the on-demand frame grab — lighter on the Deck iGPU). */
 export const scrubThumbnails = persisted<boolean>('player-scrub-thumbnails', true)
@@ -511,5 +515,8 @@ export type ThemePreset = 'izumi' | 'midnight' | 'sakura' | 'ocean' | 'light' | 
 export type MotionPreference = 'system' | 'reduce' | 'full'
 export const themePreset = persisted<ThemePreset>('theme-preset', 'izumi')
 export const motionPreference = persisted<MotionPreference>('motion-preference', 'system')
+/** The muted trailer some themes play behind the Home banner and series art (API 6 `hero.preview` /
+ *  `detail.preview`). On by default: the theme asked for it; off keeps the artwork still. */
+export const backdropTrailers = persisted<boolean>('backdrop-trailers', true)
 export const highContrast = persisted<boolean>('high-contrast', false)
 export const largeInteractionTargets = persisted<boolean>('large-interaction-targets', false)

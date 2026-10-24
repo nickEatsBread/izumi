@@ -8,6 +8,7 @@ import { env as publicEnv } from '$env/dynamic/public'
 import { get } from 'svelte/store'
 import { getLocale } from '$lib/paraglide/runtime.js'
 import { tmdbReadToken } from '$lib/settings/catalog'
+import { traktAppClientId, traktClientId } from '$lib/trakt/config'
 import type { ThemeNode } from './presentation'
 
 /** Per-title data a theme template can bind that catalog responses do not carry. Loaded only for
@@ -132,6 +133,43 @@ function tmdbTitleLogo(kind: 'tv' | 'movie', id: string, languages: readonly str
   return request
 }
 
+/** An English logo from Trakt's public catalog (no sign-in, only the app's client id), for the TVDB
+ *  series ani.zip maps or else its TMDB or IMDb title. TVDB ids name a film's parent series, so a
+ *  film is looked up by its TMDB or IMDb id only. A failed request is not remembered. */
+type TraktIds = { tvdb?: number | string | null; tmdb?: number | string | null; imdb?: string | null }
+const traktLogoCache = new Map<string, Promise<string | undefined>>()
+function traktTitleLogo(kind: 'tv' | 'movie', ids: TraktIds): Promise<string | undefined> {
+  const clientId = get(traktClientId).trim() || traktAppClientId
+  const [source, id] = ([['tvdb', kind === 'tv' ? ids.tvdb : undefined], ['tmdb', ids.tmdb], ['imdb', ids.imdb]] as const)
+    .map(([name, value]) => [name, String(value ?? '').trim()] as const)
+    .find(([, value]) => value) ?? []
+  if (!clientId || !source || !id) return Promise.resolve(undefined)
+  const type = kind === 'tv' ? 'show' : 'movie'
+  const key = `${type}:${source}:${id}`
+  const hit = traktLogoCache.get(key)
+  if (hit) return hit
+  // The timeout keeps a stalled request from holding one of the card art slots.
+  const request = fetch(`https://api.trakt.tv/search/${source}/${encodeURIComponent(id)}?type=${type}&extended=images`, {
+    headers: { 'trakt-api-version': '2', 'trakt-api-key': clientId },
+    signal: AbortSignal.timeout(10_000),
+  })
+    .then((response) => {
+      if (!response.ok) throw new Error(`Trakt answered ${response.status}`)
+      return response.json() as Promise<{ show?: { images?: { logo?: unknown[] } }; movie?: { images?: { logo?: unknown[] } } }[]>
+    })
+    .then((results) => {
+      // Trakt names its images without a scheme ("media.trakt.tv/…/logos/medium/x.png.webp").
+      const logo = results?.[0]?.[type]?.images?.logo?.[0]
+      return typeof logo === 'string' && logo ? `https://${logo.replace(/^https?:\/\//, '').replace('/medium/', '/full/')}` : undefined
+    })
+    .catch(() => {
+      traktLogoCache.delete(key)
+      return undefined
+    })
+  traktLogoCache.set(key, request)
+  return request
+}
+
 /** MyAnimeList's rating ("PG-13 - Teens 13 or older") as a badge. */
 export function malAgeRating(rating: string | null | undefined): string | undefined {
   const value = rating?.trim() ?? ''
@@ -152,8 +190,19 @@ export function audioLabel(info: ScheduleInfo | null | undefined): string | unde
 
 // ani.zip records are cached in IndexedDB already; this keeps one parsed lookup per title (and logo
 // languages) for the session. Empty results are dropped so a title that failed offline is retried.
-// `tmdb` is where a logo in a wanted language may still be found, when ani.zip's own is not one.
-interface ZipArt { art: TitleArt; tmdb?: { kind: 'tv' | 'movie'; id: string; languages: string[] } }
+// `tmdb` and `trakt` are where a logo in a wanted language may still be found, when ani.zip's own is not one.
+// `shared`: the record answered, but its artwork is the whole series' (`startsSeries`), so none is used.
+interface ZipArt { art: TitleArt; tmdb?: { kind: 'tv' | 'movie'; id: string; languages: string[] }; trakt?: { kind: 'tv' | 'movie'; ids: TraktIds }; shared?: true }
+
+/** Whether a title starts its TVDB series. ani.zip copies the series' artwork into every title mapped to
+ *  it, so a later season, a later cour or a film filed under the series' specials would wear the first
+ *  season's key art, logo and poster, and a search for the show would list identical cards. A title
+ *  whose first episode is not S1E1 is one of those; a title without episodes (a film) is its own. */
+export function startsSeries(episodes: unknown): boolean {
+  const first = (episodes as Record<string, { seasonNumber?: unknown; episodeNumber?: unknown } | undefined> | undefined)?.['1']
+  if (typeof first?.seasonNumber !== 'number') return true
+  return first.seasonNumber === 1 && (first.episodeNumber === undefined || first.episodeNumber === 1)
+}
 const artCache = new Map<string, Promise<ZipArt>>()
 // The same lookups once they have answered with artwork, readable without waiting.
 const artFound = new Map<number, TitleArt>()
@@ -166,20 +215,33 @@ function aniZipArt(anilistId: number, media: Pick<Media, 'format' | 'countryOfOr
   const promise = fetchAniZip(anilistId)
     .then((record): ZipArt => {
       const images = record?.images as ArtImage[] | undefined
-      const art = pickTitleArt(images, languages, native)
+      const shared = !!record && !startsSeries(record.episodes)
+      const art = shared ? {} : pickTitleArt(images, languages, native)
       // ani.zip names no logo language, so its logo is the title's own (or of unknown language). A
-      // logo in the app's language or English from TMDB wins over it when the viewer has TMDB set up.
+      // logo in the app's language or English from TMDB wins over it when the viewer has TMDB set up,
+      // then Trakt's English one when the app wants English before the title's own language.
       const tagged = Array.isArray(images) && images.some((image) => image?.url === art.logo && languages.includes(languageCode(image.language ?? image.lang) ?? ''))
-      const tmdbId = record?.mappings?.themoviedb_id
-      const kind = media.format === 'MOVIE' || (record?.mappings as { type?: string } | undefined)?.type === 'MOVIE' ? 'movie' : 'tv'
-      return { art, ...(!tagged && tmdbId ? { tmdb: { kind, id: String(tmdbId), languages } } : {}) }
+      const mappings = record?.mappings
+      const tmdbId = mappings?.themoviedb_id
+      const kind = media.format === 'MOVIE' || (mappings as { type?: string } | undefined)?.type === 'MOVIE' ? 'movie' : 'tv'
+      // A film has its own TMDB and Trakt entry; a later season only has the show's, so its logo too.
+      const lookup = !shared || kind === 'movie'
+      const english = languages.indexOf('en')
+      const own = languages.indexOf(native)
+      const trakt = lookup && !tagged && english >= 0 && (own < 0 || english < own)
+      return {
+        art,
+        ...(lookup && !tagged && tmdbId ? { tmdb: { kind, id: String(tmdbId), languages } } : {}),
+        ...(trakt ? { trakt: { kind, ids: { tvdb: mappings?.thetvdb_id, tmdb: tmdbId, imdb: mappings?.imdb_id } } } : {}),
+        ...(shared ? { shared: true as const } : {}),
+      }
     })
     // A failed fetch and a record that cannot be read are both simply no art: the cache must never
     // hold a rejected lookup, which would fail every later load of the title.
     .catch((): ZipArt => ({ art: {} }))
     .then((zip) => {
       const { art } = zip
-      if (!art.keyart && !art.logo && !art.posterHd && !zip.tmdb) artCache.delete(key)
+      if (!art.keyart && !art.logo && !art.posterHd && !zip.tmdb && !zip.shared) artCache.delete(key)
       else if (art.keyart || art.logo || art.posterHd) artFound.set(anilistId, { ...art })
       return zip
     })
@@ -187,14 +249,16 @@ function aniZipArt(anilistId: number, media: Pick<Media, 'format' | 'countryOfOr
   return promise
 }
 
-/** The title logo for an ani.zip lookup: TMDB's in a wanted language when there is one (only asked
- *  for when a logo is needed, so key art never waits on it), else ani.zip's own. */
+/** The title logo for an ani.zip lookup: TMDB's in a wanted language when there is one, else Trakt's
+ *  English one (both only asked for when a logo is needed, so key art never waits on them), else
+ *  ani.zip's own. */
 async function zipLogo(anilistId: number, zip: ZipArt): Promise<string | undefined> {
-  const tmdb = zip.tmdb ? await tmdbTitleLogo(zip.tmdb.kind, zip.tmdb.id, zip.tmdb.languages) : undefined
-  if (tmdb) {
+  const better = (zip.tmdb ? await tmdbTitleLogo(zip.tmdb.kind, zip.tmdb.id, zip.tmdb.languages) : undefined)
+    ?? (zip.trakt ? await traktTitleLogo(zip.trakt.kind, zip.trakt.ids) : undefined)
+  if (better) {
     // A page opened again paints the same logo on its first frame.
-    artFound.set(anilistId, { ...artFound.get(anilistId), ...zip.art, logo: tmdb })
-    return tmdb
+    artFound.set(anilistId, { ...artFound.get(anilistId), ...zip.art, logo: better })
+    return better
   }
   return zip.art.logo
 }
@@ -226,6 +290,7 @@ const primedSchedule = new Map<number, Promise<unknown>>()
 export function clearTitleExtrasCache(): void {
   artCache.clear()
   tmdbLogoCache.clear()
+  traktLogoCache.clear()
   artFound.clear()
   primedSchedule.clear()
 }
@@ -260,6 +325,48 @@ export async function loadTitleExtras(media: Media, needs: ReadonlySet<TitleExtr
   }
   await Promise.all(tasks)
   return Object.fromEntries(Object.entries(out).filter(([, value]) => value)) as TitleExtras
+}
+
+// API 6: card templates that bind key art or a logo load them through this queue — at most four lookups
+// at once, so a Home of a hundred cards never floods ani.zip. A finished lookup hands its slot straight to
+// a waiter, so a call arriving in between can never push the count past the cap. The waiter is chosen then,
+// not when it queued: cards that are gone (`alive`) are dropped without a lookup, and of the rest the one
+// nearest the screen (`distance`, earliest queued on a tie) goes next, so a fast scroll past many rows
+// spends the slots on the rows on screen.
+const CARD_ART_SLOTS = 4
+let cardArtRunning = 0
+const cardArtWaiting: { alive: () => boolean; distance: () => number; resolve: (slot: boolean) => void }[] = []
+export interface QueueTitleArtOptions {
+  load?: typeof loadTitleExtras
+  /** False once the caller no longer wants the result (its card is gone): the lookup is skipped. */
+  alive?: () => boolean
+  /** How far the caller is from being seen, read each time a slot frees; smallest goes first. */
+  distance?: () => number
+}
+// A caller's checks run while a slot is being handed on: one that throws must not strand the slot, so a
+// failing `alive` counts as gone and a failing `distance` as infinitely far.
+const safe = <T>(check: () => T, fallback: T): T => { try { return check() } catch { return fallback } }
+function handOffCardArtSlot(): void {
+  for (let i = cardArtWaiting.length - 1; i >= 0; i--) {
+    if (!safe(cardArtWaiting[i].alive, false)) cardArtWaiting.splice(i, 1)[0].resolve(false)
+  }
+  let best = 0
+  const far = cardArtWaiting.map((waiter) => safe(waiter.distance, Infinity))
+  for (let i = 1; i < far.length; i++) if (far[i] < far[best]) best = i
+  const next = cardArtWaiting.splice(best, 1)[0]
+  if (next) next.resolve(true)
+  else cardArtRunning--
+}
+export async function queueTitleArt(media: Media, needs: ReadonlySet<TitleExtra>, options: QueueTitleArtOptions = {}): Promise<TitleExtras> {
+  const { load = loadTitleExtras, alive = () => true, distance = () => 0 } = options
+  if (!safe(alive, false)) return {}
+  if (cardArtRunning < CARD_ART_SLOTS) cardArtRunning++
+  else if (!await new Promise<boolean>((resolve) => cardArtWaiting.push({ alive, distance, resolve }))) return {}
+  try {
+    return await load(media, needs)
+  } finally {
+    handOffCardArtSlot()
+  }
 }
 
 /** Warm the batchable lookups for a list (the hero's slides): AnimeSchedule answers up to 18 titles

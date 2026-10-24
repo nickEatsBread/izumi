@@ -34,7 +34,7 @@ describe('theme stylesheet sanitiser', () => {
     expect(result.global).toContain('@keyframes k')
     expect(result.global).not.toContain('https:')
     expect(result.css).toContain('.g')
-    expect(themeStyleText(result, true)).toMatch(/^@keyframes[\s\S]*@scope \(:root\) to \(\[data-theme-protected\]\) \{/)
+    expect(themeStyleText(result, true)).toMatch(/^@keyframes[\s\S]*@scope \(:root\) to \(\[data-theme-protected\], \[data-theme-unthemed\]\) \{/)
   })
   it('deletes a rule whose serialized text still loads a URL (var() shorthands)', () => {
     const deleted: number[] = []

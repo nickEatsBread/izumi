@@ -17,7 +17,7 @@ const ROWS: Record<string, string[]> = {
   seeking: ['seek-duration', 'scrub-preview-thumbnails'],
   'player-window': [
     'miniplayer-when-you-leave-the-app', 'keep-screen-awake-while-playing', 'system-media-controls',
-    'discord-rich-presence', 'hide-sidebar-while-playing', 'p2p-playback-status', 'gif-recorder',
+    'discord-rich-presence', 'hide-sidebar-while-playing', 'trailers-open-in', 'p2p-playback-status', 'gif-recorder',
     'include-subtitles-in-gifs', 'gif-width', 'gif-max-length',
   ],
   quality: ['auto-play-the-best-source', 'preferred-quality', 'continue-watching-source'],
@@ -46,6 +46,7 @@ const SEARCH: Array<[string, string, boolean]> = [
   ['Keep screen awake while playing', 'player-window', false],
   ['Discord Rich Presence', 'player-window', false],
   ['Hide sidebar while playing', 'player-window', false],
+  ['Trailers open in', 'player-window', false],
   ['P2P playback status', 'player-window', false],
   ['GIF recorder', 'player-window', false],
   ['Include subtitles in GIFs', 'player-window', false],

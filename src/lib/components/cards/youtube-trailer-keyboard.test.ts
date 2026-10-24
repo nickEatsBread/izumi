@@ -14,6 +14,12 @@ describe('hover trailer keyboard mute', () => {
     expect(trailer).toContain('activeKeyboardTrailers[activeKeyboardTrailers.length - 1] !== keyboardOwner')
   })
 
+  it('leaves M alone while a backdrop trailer shows no mute button', () => {
+    const onKey = trailer.slice(trailer.indexOf('function onKey('), trailer.indexOf('function onMessage('))
+    expect(onKey).toContain('if (!loop && !playing) return')
+    expect(onKey.indexOf('if (!loop && !playing) return')).toBeLessThan(onKey.indexOf('toggleMute()'))
+  })
+
   it('sends the audio command synchronously from the user gesture', () => {
     expect(trailer).toContain("if (playing) send($trailerMuted ? 'mute' : 'unMute')")
     expect(trailer).toContain('onclick={(e) => { e.stopPropagation(); toggleMute() }}')
