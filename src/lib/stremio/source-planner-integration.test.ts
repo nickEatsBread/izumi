@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const play = readFileSync(fileURLToPath(new URL('./play.ts', import.meta.url)), 'utf8')
-const settings = readFileSync(fileURLToPath(new URL('../../routes/app/settings/sources/+page.svelte', import.meta.url)), 'utf8')
+const settings = readFileSync(fileURLToPath(new URL('../../routes/app/settings/playback/+page.svelte', import.meta.url)), 'utf8')
 
 describe('adaptive source rollout integration', () => {
   it('keeps active selection behind an explicit rollout mode', () => {
