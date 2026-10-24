@@ -42,13 +42,14 @@
         <div role="separator" class="mx-4 my-1 h-px shrink-0 bg-border"></div>
       {/if}
       <a href={section.href} data-focusable data-section={section.id} data-group={section.group}
+         title={section.title} aria-label={section.title}
          data-nav-region-default={active(section.href) ? '' : undefined}
          aria-current={active(section.href) ? 'page' : undefined}
          data-sveltekit-keepfocus
          class="flex h-12 shrink-0 items-center gap-3 rounded-full px-4 text-base transition-colors
            {active(section.href) ? 'bg-foreground/10 font-semibold text-foreground' : 'font-medium text-muted-foreground'}">
         <Icon size={18} class="shrink-0" />
-        <span class="truncate">{section.title}</span>
+        <span class="truncate">{section.railTitle}</span>
       </a>
     {/each}
   </nav>
@@ -79,8 +80,9 @@
 {:else}
   <!-- Desktop: the sections under their group labels. One indicator slides behind the current item
        (rail-indicator.ts) in the theme's marker style; hover is a faint fill and keyboard or pad
-       focus the ring alone, so selected, hovered and focused never look alike. Long titles wrap
-       inside the 14rem column instead of overflowing it; the indicator takes the item's height. -->
+       focus the ring alone, so selected, hovered and focused never look alike. Both rails print the
+       short railTitle (a remote cannot hover a cut-off name); the link's title and aria-label keep the
+       full one. Anything that still wraps stays inside the 14rem column; the indicator takes its height. -->
   <nav data-settings-rail data-nav-scroll-container use:railIndicator={litSection}
        class="relative flex h-full flex-col overflow-y-auto overscroll-contain pr-1">
     <div data-part="settings.rail.indicator" data-marker={$settingsRailMarker} aria-hidden="true" hidden class="settings-rail-indicator"></div>
@@ -90,12 +92,13 @@
         {#each SETTINGS_SECTIONS.filter((section) => section.group === group.id) as it (it.id)}
           {@const Icon = sectionIcon(it.id)}
           <a href={it.href} data-focusable data-section={it.id} data-group={it.group}
+             title={it.title} aria-label={it.title}
              data-nav-region-default={active(it.href) ? '' : undefined}
              aria-current={active(it.href) ? 'page' : undefined}
              data-sveltekit-keepfocus onclick={releasePointerFocus}
              class="relative flex shrink-0 items-center gap-3 rounded-lg px-3 py-2 text-sm leading-tight transition-colors focus-visible:outline-offset-[-2px]
                {active(it.href) ? 'font-medium text-foreground' : 'text-muted-foreground hover:bg-foreground/5 hover:text-foreground'}">
-            <Icon size={18} class={active(it.href) ? 'text-theme' : ''} aria-hidden="true" /> {it.title}
+            <Icon size={18} class={active(it.href) ? 'text-theme' : ''} aria-hidden="true" /> {it.railTitle}
           </a>
         {/each}
       </div>

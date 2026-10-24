@@ -20,6 +20,8 @@ export interface SettingsSectionDef {
   id: SettingsSectionId
   group: SettingsGroupId
   title: string
+  /** One-word label for the desktop and controller rails, which would wrap or cut the full title. */
+  railTitle: string
   /** Static one-line phone index subtitle (no live values). */
   subtitle: string
   href: `/app/settings/${string}`
@@ -46,7 +48,7 @@ export const SETTINGS_GROUPS: readonly { id: SettingsGroupId; label: string }[] 
 
 export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   {
-    id: 'playback', group: 'watch', title: 'Playback', subtitle: 'Autoplay, skipping and the player',
+    id: 'playback', group: 'watch', title: 'Playback', railTitle: 'Playback', subtitle: 'Autoplay, skipping and the player',
     href: '/app/settings/playback', iconName: 'play',
     subcategories: [
       { id: 'up-next', title: 'Up next and autoplay' },
@@ -59,7 +61,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     ],
   },
   {
-    id: 'subtitles', group: 'watch', title: 'Subtitles', subtitle: 'Style, saved styles and providers',
+    id: 'subtitles', group: 'watch', title: 'Subtitles', railTitle: 'Subtitles', subtitle: 'Style, saved styles and providers',
     href: '/app/settings/subtitles', iconName: 'captions',
     subcategories: [
       { id: 'appearance', title: 'Appearance' },
@@ -69,7 +71,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     ],
   },
   {
-    id: 'languages', group: 'watch', title: 'Languages', subtitle: 'App, audio, subtitle and source languages',
+    id: 'languages', group: 'watch', title: 'Languages', railTitle: 'Languages', subtitle: 'App, audio, subtitle and source languages',
     href: '/app/settings/languages', iconName: 'languages',
     subcategories: [
       { id: 'app', title: 'App and titles' },
@@ -79,7 +81,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     ],
   },
   {
-    id: 'library', group: 'library', title: 'Home and library', subtitle: 'Platforms, Home, layouts and history',
+    id: 'library', group: 'library', title: 'Home and library', railTitle: 'Library', subtitle: 'Platforms, Home, layouts and history',
     href: '/app/settings/library', iconName: 'library',
     subcategories: [
       { id: 'home', title: 'Platforms and Home' },
@@ -93,7 +95,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     ],
   },
   {
-    id: 'sources', group: 'library', title: 'Sources and store', subtitle: 'Add, manage and order sources',
+    id: 'sources', group: 'library', title: 'Sources and store', railTitle: 'Sources', subtitle: 'Add, manage and order sources',
     href: '/app/settings/sources', iconName: 'rss',
     subcategories: [
       { id: 'my-sources', title: 'My sources' },
@@ -105,7 +107,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     ],
   },
   {
-    id: 'downloads', group: 'library', title: 'Downloads and storage', subtitle: 'Offline library, folder and caches',
+    id: 'downloads', group: 'library', title: 'Downloads and storage', railTitle: 'Downloads', subtitle: 'Offline library, folder and caches',
     href: '/app/settings/downloads', iconName: 'download',
     subcategories: [
       { id: 'offline', title: 'Offline mode' },
@@ -115,7 +117,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     ],
   },
   {
-    id: 'appearance', group: 'look', title: 'Appearance', subtitle: 'Theme, accessibility and navigation',
+    id: 'appearance', group: 'look', title: 'Appearance', railTitle: 'Appearance', subtitle: 'Theme, accessibility and navigation',
     href: '/app/settings/appearance', iconName: 'palette',
     subcategories: [
       { id: 'theme', title: 'Theme' },
@@ -126,7 +128,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     ],
   },
   {
-    id: 'accounts', group: 'you', title: 'Accounts and profiles', subtitle: 'Trackers, keys and household profiles',
+    id: 'accounts', group: 'you', title: 'Accounts and profiles', railTitle: 'Accounts', subtitle: 'Trackers, keys and household profiles',
     href: '/app/settings/accounts', iconName: 'user',
     subcategories: [
       { id: 'trackers', title: 'Trackers and lists' },
@@ -136,7 +138,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     ],
   },
   {
-    id: 'devices', group: 'you', title: 'Devices and backup', subtitle: 'Device sync, TV connections and backups',
+    id: 'devices', group: 'you', title: 'Devices and backup', railTitle: 'Devices', subtitle: 'Device sync, TV connections and backups',
     href: '/app/settings/devices', iconName: 'refresh-cw',
     subcategories: [
       { id: 'devices', title: 'Devices' },
@@ -147,7 +149,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     ],
   },
   {
-    id: 'network', group: 'system', title: 'Network and P2P', subtitle: 'P2P limits, DNS and VPN',
+    id: 'network', group: 'system', title: 'Network and P2P', railTitle: 'Network', subtitle: 'P2P limits, DNS and VPN',
     href: '/app/settings/network', iconName: 'globe',
     subcategories: [
       { id: 'p2p', title: 'P2P status and limits' },
@@ -155,7 +157,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     ],
   },
   {
-    id: 'about', group: 'system', title: 'About', subtitle: 'Version, changelog and licences',
+    id: 'about', group: 'system', title: 'About', railTitle: 'About', subtitle: 'Version, changelog and licences',
     href: '/app/settings/about', iconName: 'info',
     subcategories: [
       { id: 'version', title: 'Version and updates' },

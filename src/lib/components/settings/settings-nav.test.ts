@@ -108,4 +108,12 @@ describe('controller rail (spec §5.1)', () => {
     expect(attr(link, 'data-nav-region-default')?.raw).toBe(`data-nav-region-default={active(section.href) ? '' : undefined}`)
     expect(nav).toContain('class="flex h-12 shrink-0 items-center gap-3 rounded-full px-4 text-base transition-colors')
   })
+
+  it('prints the short rail label, with the full section title for hover and screen readers', () => {
+    const link = markupElementsFromSource(nav, 'SettingsNav.svelte').find((el) => el.name === 'a' && hasAttr(el, 'data-section'))!
+    expect(attr(link, 'title')?.raw).toBe('title={section.title}')
+    expect(attr(link, 'aria-label')?.raw).toBe('aria-label={section.title}')
+    expect(nav).toContain('<span class="truncate">{section.railTitle}</span>')
+    expect(nav).not.toContain('{section.title}</span>')
+  })
 })

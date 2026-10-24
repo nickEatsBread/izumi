@@ -71,6 +71,9 @@ describe('desktop Settings rail selection', () => {
     expect(attr(link, 'data-nav-region-default')?.raw).toBe("data-nav-region-default={active(it.href) ? '' : undefined}")
     expect(hasAttr(link, 'data-sveltekit-keepfocus')).toBe(true)
     expect(attr(link, 'onclick')?.raw).toBe('onclick={releasePointerFocus}')
+    // The short rail label is printed; hover and screen readers still get the full section title.
+    expect(attr(link, 'title')?.raw).toBe('title={it.title}')
+    expect(attr(link, 'aria-label')?.raw).toBe('aria-label={it.title}')
   })
 
   it('keeps selected, hovered and focused apart', () => {
@@ -79,7 +82,7 @@ describe('desktop Settings rail selection', () => {
     expect(classes).toContain("'text-muted-foreground hover:bg-foreground/5 hover:text-foreground'")
     expect(classes).toContain('focus-visible:outline-offset-[-2px]')
     expect(classes).not.toMatch(/font-bold|bg-secondary|focus(-visible)?:bg-/)
-    expect(nav).toContain(`<Icon size={18} class={active(it.href) ? 'text-theme' : ''} aria-hidden="true" /> {it.title}`)
+    expect(nav).toContain(`<Icon size={18} class={active(it.href) ? 'text-theme' : ''} aria-hidden="true" /> {it.railTitle}`)
     // Amendment 1: icons come from section-icons.ts, never from the registry.
     expect(nav).toContain('{@const Icon = sectionIcon(it.id)}')
     expect(nav).toContain("import { sectionIcon } from '$lib/components/settings/section-icons'")

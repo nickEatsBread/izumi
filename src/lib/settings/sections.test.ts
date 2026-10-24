@@ -35,6 +35,13 @@ describe('settings section registry', () => {
     ])
   })
 
+  it('gives each section a one-word rail label, so neither rail cuts or wraps a name', () => {
+    expect(SETTINGS_SECTIONS.map((section) => section.railTitle)).toEqual([
+      'Playback', 'Subtitles', 'Languages', 'Library', 'Sources', 'Downloads', 'Appearance', 'Accounts', 'Devices', 'Network', 'About',
+    ])
+    for (const section of SETTINGS_SECTIONS) expect(section.railTitle, section.id).not.toContain(' ')
+  })
+
   it('routes each section to /app/settings/<id> with a short static subtitle and a Lucide icon name', () => {
     expect(SETTINGS_SECTIONS.map((section) => section.iconName)).toEqual([
       'play', 'captions', 'languages', 'library', 'rss', 'download', 'palette', 'user', 'refresh-cw', 'globe', 'info',
