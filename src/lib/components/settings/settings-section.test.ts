@@ -81,7 +81,9 @@ describe('SettingsSubcategory', () => {
     expect(staticAttr(toggle, 'type')).toBe('button')
     expect(hasAttr(toggle, 'data-focusable')).toBe(true)
     expect(attr(toggle, 'aria-expanded')?.raw).toBe('aria-expanded={!collapsed}')
-    expect(source).toContain('<h3 id={`${id}-heading`} class="mb-2 px-1 text-sm font-black">{heading}</h3>')
+    // Spec §4: subcategory headings are 13–14 px semibold, toggle and plain heading alike.
+    expect(staticAttr(toggle, 'class')).toContain('text-sm font-semibold')
+    expect(source).toContain('<h3 id={`${id}-heading`} class="mb-2 px-1 text-sm font-semibold">{heading}</h3>')
   })
 
   it('keeps a folded body in the DOM, hidden, in the row card unless plain', () => {

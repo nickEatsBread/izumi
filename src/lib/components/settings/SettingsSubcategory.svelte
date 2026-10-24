@@ -85,14 +85,14 @@
     <h3 id={`${id}-heading`} class="mb-2">
       <button type="button" data-focusable data-subcategory-toggle aria-expanded={!collapsed} aria-controls={`${id}-body`}
               onclick={() => setCollapsed(!collapsed)}
-              class="flex w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left text-sm font-black">
+              class="flex w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left text-sm font-semibold">
         <span class="shrink-0">{heading}</span>
         <span class="min-w-0 flex-1 truncate text-xs font-normal text-muted-foreground">{collapsed || $settingsControllerMode ? line : ''}</span>
         <ChevronDown size={16} aria-hidden="true" class="shrink-0 text-muted-foreground transition-transform {collapsed ? '' : 'rotate-180'}" />
       </button>
     </h3>
   {:else}
-    <h3 id={`${id}-heading`} class="mb-2 px-1 text-sm font-black">{heading}</h3>
+    <h3 id={`${id}-heading`} class="mb-2 px-1 text-sm font-semibold">{heading}</h3>
   {/if}
   <div bind:this={body} id={`${id}-body`} data-settings-subcategory-body hidden={collapsed || undefined}
        class={plain ? '' : 'relative divide-y divide-border/70 rounded-xl border border-border bg-card/25 [&>*:first-child]:rounded-t-[calc(0.75rem-1px)] [&>*:last-child]:rounded-b-[calc(0.75rem-1px)]'}>
