@@ -1201,7 +1201,11 @@ export function displayText(field: DisplayField, model: DisplayModel): string {
   if (field === 'episodeNumber') return `E${value}`
   return String(value)
 }
-export function nodeStyle(node: ThemeNode): string {
+/** A template node's inline style. `unit`, when given, is what one template px is worth: on a TV
+ *  surface the host passes the stylesheet's canvas unit (`var(--u, 1px)`), so a template authored on the
+ *  stylesheet's 1920-wide canvas sizes with it instead of in screen px (docs/THEMES.md, Sizing). */
+export function nodeStyle(node: ThemeNode, unit?: string): string {
+  const px = (value: unknown) => (unit ? `calc(${value} * ${unit})` : `${value}px`)
   const styles: Record<string, string> = { 'box-sizing': 'border-box' }
   if (['stack', 'row', 'grid', 'overlay'].includes(node.type)) {
     styles['min-width'] = '0'
@@ -1235,7 +1239,7 @@ export function nodeStyle(node: ThemeNode): string {
     } else if (key === 'columns') styles['grid-template-columns'] = `repeat(${Math.round(Number(value))},minmax(0,1fr))`
     else if (key === 'anchor') anchor = String(value)
     else if (key === 'color' || key === 'background') styles[property] = String(value).startsWith('#') || value === 'transparent' ? String(value) : `hsl(var(--${value}))`
-    else styles[property] = `${value}${numericStyles[key]?.[2] ?? ''}`
+    else styles[property] = numericStyles[key]?.[2] === 'px' ? px(value) : `${value}${numericStyles[key]?.[2] ?? ''}`
   }
   // A nowrap row may scroll sideways, never vertically: `overflow-x` alone computes `overflow-y: auto`,
   // and the row then took vertical swipes and wheels meant for the page. A card or badge tile is a
@@ -1245,7 +1249,7 @@ export function nodeStyle(node: ThemeNode): string {
     if (tileNodes.has(node)) styles.overflow = 'hidden'
     else { styles['overflow-x'] = 'auto'; styles['overflow-y'] = 'hidden' }
   }
-  if (node.type === 'artwork' && node.style?.maxWidth !== undefined) styles.width = `${Number(node.style.maxWidth)}px`
+  if (node.type === 'artwork' && node.style?.maxWidth !== undefined) styles.width = px(Number(node.style.maxWidth))
   if (anchor !== undefined) {
     styles.position = 'absolute'
     if (anchor === 'fill') { styles.inset = '0'; styles.width = '100%'; styles.height = '100%' }

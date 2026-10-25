@@ -1,6 +1,7 @@
 <script lang="ts">
   import { nodeStyle, visibleNode, displayText, type ThemeNode, type DisplayModel, type ThemeAction, type ThemeIcon } from '$lib/themes/presentation'
   import type { Snippet } from 'svelte'
+  import { tvSurface } from '$lib/themes/runtime'
   import TrendingUp from '@lucide/svelte/icons/trending-up'
   import Tv from '@lucide/svelte/icons/tv'
   import Clapperboard from '@lucide/svelte/icons/clapperboard'
@@ -31,6 +32,8 @@
   const model = $derived<DisplayModel>(failedArtwork.length
     ? Object.fromEntries(Object.entries(boundModel).filter(([, value]) => !(typeof value === 'string' && failedArtwork.includes(value)))) as DisplayModel
     : boundModel)
+  // A TV stylesheet works on a canvas (`--u`, e.g. 1920 wide); its templates' px follow it on a TV surface.
+  const unit = $derived($tvSurface ? 'var(--u, 1px)' : undefined)
   const labels: Record<ThemeAction, string> = { play: 'Watch', details: 'Details', favorite: 'Favorite', previous: 'Previous slide', next: 'Next slide', list: 'Add to list', trailer: 'Trailer', share: 'Share', studio: 'Studio' }
   const icons: Record<ThemeIcon, typeof TrendingUp> = {
     score: TrendingUp, format: Tv, episodes: Clapperboard, reviews: Users, studio: Building2,
@@ -44,13 +47,13 @@
 {#snippet renderNode(item: ThemeNode)}
   {#if visibleNode(item, model)}
     {#if item.type === 'text'}
-      <svelte:element this={titleHeading && item.field === 'title' ? 'h1' : 'span'} style={nodeStyle(item)} class="theme-text" data-part={item.part}>{item.field ? displayText(item.field, model) : item.text ?? ''}</svelte:element>
+      <svelte:element this={titleHeading && item.field === 'title' ? 'h1' : 'span'} style={nodeStyle(item, unit)} class="theme-text" data-part={item.part}>{item.field ? displayText(item.field, model) : item.text ?? ''}</svelte:element>
     {:else if item.type === 'artwork' && item.artwork === 'trailer'}
       <!-- API 6: where a hero template plays its trailer (the host passes it; elsewhere this is empty). -->
-      {#if trailer}<div class="theme-artwork relative" style={nodeStyle(item)} data-part={item.part}>{@render trailer()}</div>{/if}
+      {#if trailer}<div class="theme-artwork relative" style={nodeStyle(item, unit)} data-part={item.part}>{@render trailer()}</div>{/if}
     {:else if item.type === 'artwork'}
       {@const src = model[item.artwork ?? 'poster']}
-      <div class="theme-artwork" class:theme-artwork-fallback={!src} style={nodeStyle(item)} data-part={item.part}>
+      <div class="theme-artwork" class:theme-artwork-fallback={!src} style={nodeStyle(item, unit)} data-part={item.part}>
         {#if src}<img src={String(src)} alt="" draggable="false" loading={eager ? 'eager' : 'lazy'} decoding="async" onerror={() => markFailed(String(src))} class="duration-150 ease-out transition-transform group-hover:scale-105" />{/if}
       </div>
     {:else if item.type === 'action'}
@@ -59,18 +62,18 @@
       {#if item.action && actions[item.action] && (item.action !== 'studio' || model.studio)}
         {@const ActionIcon = item.icon ? icons[item.icon] : item.action === 'play' ? Play : undefined}
         {@const label = item.text || (item.icon ? '' : item.action === 'studio' ? displayText('studio', model) : labels[item.action])}
-        <button type="button" data-focusable class="theme-action" style={nodeStyle(item)} data-part={item.part} data-action={item.action === 'studio' ? 'studio' : undefined} onclick={actions[item.action]} aria-label={label ? undefined : item.action === 'studio' ? `${labels.studio}: ${displayText('studio', model)}` : labels[item.action]}>{#if ActionIcon}<ActionIcon size={item.icon ? Number(item.style?.fontSize) || 20 : 16} fill={item.icon ? 'none' : 'currentColor'} />{/if}{label}</button>
+        <button type="button" data-focusable class="theme-action" style={nodeStyle(item, unit)} data-part={item.part} data-action={item.action === 'studio' ? 'studio' : undefined} onclick={actions[item.action]} aria-label={label ? undefined : item.action === 'studio' ? `${labels.studio}: ${displayText('studio', model)}` : labels[item.action]}>{#if ActionIcon}<ActionIcon size={item.icon ? Number(item.style?.fontSize) || 20 : 16} fill={item.icon ? 'none' : 'currentColor'} />{/if}{label}</button>
       {/if}
     {:else if item.type === 'icon' && item.icon}
       {@const Icon = icons[item.icon]}
-      <span class="theme-icon" style={nodeStyle(item)} data-part={item.part} aria-hidden="true"><Icon size={Number(item.style?.fontSize) || 18} /></span>
+      <span class="theme-icon" style={nodeStyle(item, unit)} data-part={item.part} aria-hidden="true"><Icon size={Number(item.style?.fontSize) || 18} /></span>
     {:else if item.type === 'meter' && item.field}
       {@const amount = model[item.field]}
-      <div class="theme-meter" style={nodeStyle(item)} data-part={item.part} role="presentation">
+      <div class="theme-meter" style={nodeStyle(item, unit)} data-part={item.part} role="presentation">
         <span style:width={`${typeof amount === 'number' ? Math.max(0, Math.min(100, amount)) : 0}%`}></span>
       </div>
     {:else}
-      <div style={nodeStyle(item)} data-part={item.part} class:theme-overlay={item.type === 'overlay'} class:theme-nowrap={item.type === 'row' && item.style?.wrap === 'nowrap'}>
+      <div style={nodeStyle(item, unit)} data-part={item.part} class:theme-overlay={item.type === 'overlay'} class:theme-nowrap={item.type === 'row' && item.style?.wrap === 'nowrap'}>
         {#each item.children ?? [] as child}{@render renderNode(child)}{/each}
       </div>
     {/if}
