@@ -476,7 +476,7 @@ function stremioHomeEntries(sources: StremioCatalogSource[]): StremioHomeEntry[]
 
 function stremioHomeOptions(entries: StremioHomeEntry[]): CatalogHomeRowOption[] {
   return [CONTINUE_HOME_ROW, ...entries.map(({ id, title, description, group, defaultEnabled }) => ({
-    id: 'stremio',
+    id,
     title,
     description,
     group,

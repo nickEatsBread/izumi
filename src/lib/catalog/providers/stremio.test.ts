@@ -196,6 +196,8 @@ describe('Stremio catalog identity', () => {
       },
     }])
     expect(rows[0].id).toBe('continue')
+    // Every row keeps its own id: Home looks rows up by it.
+    expect(new Set(rows.map((row) => row.id)).size).toBe(rows.length)
     expect(rows.slice(1).map((row) => ({ title: row.title, group: row.group, defaultEnabled: row.defaultEnabled }))).toEqual([
       { title: 'Watchlist Movies', group: 'Trakt lists · Movies', defaultEnabled: false },
       { title: 'Recommendations TV', group: 'Trakt lists · TV', defaultEnabled: false },
