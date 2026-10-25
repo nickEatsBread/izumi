@@ -81,6 +81,8 @@ import { kitsuIdFromLinks } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
 import { episodeOffset, fetchSeasonChain, mayListSeasons } from '$lib/anilist/seasons'
 import { anilistIdOf, externalIdsOf, kitsuIdOf } from '$lib/catalog/identity'
+import { sourceProgressReporter, sourceStreams } from '$lib/catalog/source-streams'
+import { isSourceOrigin } from '$lib/catalog/source-catalogs'
 import { downloadOf, getDownloadedMedia, type DownloadPreferences } from '$lib/downloads/state'
 import { resolveHash, resolveSidecars, providerName, cacheCheckMode, checkCached, isDebridBlocked, type EpisodeWant } from './debrid'
 import { annotateCache } from './cache-state'
@@ -570,9 +572,13 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
   let lastPosition = 0
   let lastDuration = 0
   let sourceAlive = false
+  // A source catalog that asked for the playhead gets it back (its own Continue Watching).
+  const sourceProgress = sourceProgressReporter(stream)
+  if (sourceProgress) stop.push(() => sourceProgress.flush())
   const onProgress = (pos: number, dur: number) => {
     lastPosition = pos
     lastDuration = dur
+    sourceProgress?.progress(pos)
     if (dur > 0) {
       if (!sourceAlive) { sourceAlive = true; markAlive(stream) }
       markSourceObservation(observation, 'first-frame')
@@ -657,6 +663,7 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
     const dur = remote?.durationSeconds && remote.durationSeconds > 0
       ? remote.durationSeconds
       : local.dur
+    sourceProgress?.flush(pos)
     if (!dur || dur <= 0) return
     // If EOF already tombstoned this episode (cleared), a near-end finalize must NOT resurrect a
     // ~100% resume point — that would reopen the episode seeked to the very end AND destroy the
@@ -996,6 +1003,19 @@ export function embeddedVideoStreams(
   }
 }
 
+/** A source catalog's own title plays from that source; any other title keeps its embedded streams
+ *  (synchronously: the picker's fan-out must not wait a tick for titles that are not a source's). */
+function catalogVideoStreams(media: Media, episode: number | undefined): { declared: boolean; streams: Stream[] } | Promise<{ declared: boolean; streams: Stream[] }> {
+  return isSourceOrigin(media.catalog?.addonId) ? sourceVideoStreams(media, episode) : embeddedVideoStreams(media, episode)
+}
+
+async function sourceVideoStreams(media: Media, episode: number | undefined): Promise<{ declared: boolean; streams: Stream[] }> {
+  const video = mediaVideo(media, episode)
+  const own = video?.id ? await sourceStreams(media, video.id, video.title) : null
+  if (!own) return embeddedVideoStreams(media, episode)
+  return embeddedVideoStreams({ ...media, videos: media.videos?.map((item) => (item === video ? { ...item, streams: own } : item)) }, episode)
+}
+
 async function mediaSeasonMap(media: Media): Promise<Record<number, { season?: number; abs?: number }>> {
   const native: Record<number, { season?: number; abs?: number }> = {}
   for (const video of media.videos ?? []) {
@@ -1109,7 +1129,8 @@ export function prefetchSourceMetadata(
 }
 
 async function resolveStreams(media: Media, episode: number | undefined): Promise<{ streams: Stream[]; cachedCount: number; want?: EpisodeWant; kitsu?: number }> {
-  const embedded = embeddedVideoStreams(media, episode)
+  const pending = catalogVideoStreams(media, episode)
+  const embedded = pending instanceof Promise ? await pending : pending
   if (embedded.declared) {
     const want = episode != null ? await episodeWant(media, episode) : undefined
     let streams = refineStreams(media, embedded.streams).kept
@@ -2114,7 +2135,8 @@ export async function playEpisode(
       }
     }
 
-    const embedded = embeddedVideoStreams(media, episode)
+    const ownStreams = catalogVideoStreams(media, episode)
+    const embedded = ownStreams instanceof Promise ? await ownStreams : ownStreams
     const bases = get(enabledAddonUrls)
     const addonBases = embedded.declared ? [] : bases
     const extensionCheckStartedAt = performance.now()

@@ -17,7 +17,12 @@ import { normalizeBase } from '$lib/stremio/origin-id'
 import { addonUrls } from '$lib/stremio/sources'
 import { prepareRelease } from '$lib/themes/catalog'
 import { applyInstalledTheme, installTheme, installedThemes, removeInstalledTheme } from '$lib/themes/installed'
-import { forgetPackRecord, installedPacks, savePackRecord, type PackRecordItem } from './installed'
+import { registerSourceCatalog, sourceSelection } from '$lib/catalog/source-catalogs'
+import {
+  catalogDefaultProvider, catalogLastProvider, catalogProvider, catalogProviders, normalizeCatalogProviders,
+  resolveCatalogStartup, selectCatalogProvider, type CatalogDefaultSelection,
+} from '$lib/settings/catalog'
+import { forgetPackRecord, installedPacks, savePackRecord, type PackRecordItem, type PackScreen } from './installed'
 import type { Installed, ListingSummary, PackDeps } from './session'
 
 async function sha256Hex(text: string): Promise<string> {
@@ -111,6 +116,29 @@ export const defaultPackDeps: PackDeps = {
     }
   },
   removeItem,
+  async showSourceScreen(packageId, makeDefault): Promise<PackScreen> {
+    await registerSourceCatalog(packageId)
+    const selection = sourceSelection(packageId)
+    const current = normalizeCatalogProviders(get(catalogProviders), get(catalogProvider))
+    const addedProvider = !current.includes(selection)
+    if (addedProvider) catalogProviders.set([...current, selection])
+    const previousDefault = makeDefault ? get(catalogDefaultProvider) : undefined
+    if (makeDefault) {
+      catalogDefaultProvider.set(selection)
+      selectCatalogProvider(selection)
+    }
+    return { packageId, addedProvider, ...(previousDefault !== undefined ? { previousDefault } : {}) }
+  },
+  hideSourceScreen(screen) {
+    const selection = sourceSelection(screen.packageId)
+    if (screen.addedProvider) catalogProviders.set(get(catalogProviders).filter((provider) => provider !== selection))
+    if (screen.previousDefault !== undefined && get(catalogDefaultProvider) === selection) {
+      catalogDefaultProvider.set(screen.previousDefault as CatalogDefaultSelection)
+    }
+    if (screen.addedProvider && get(catalogProvider) === selection) {
+      selectCatalogProvider(resolveCatalogStartup(get(catalogDefaultProvider), get(catalogLastProvider), get(catalogProviders)))
+    }
+  },
   requestModule: async (id, by) => { await requestModule(id, by) },
   releaseModule: (id, by) => releaseModule(id, by),
   setStartup: async (video, by) => { await setStartupAnimation(video, by) },

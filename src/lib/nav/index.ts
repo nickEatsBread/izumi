@@ -1257,6 +1257,10 @@ export function initDpadNav() {
       const target = rovingEntry(pick.el, active)
       focusByNav(target, vertical, e.repeat, entersRegionDefault)
       e.preventDefault()
+    } else if (dir === 'left' && !trap && document.documentElement.dataset.themeNav === 'drawer') {
+      // Left from the left edge opens the drawer navigation, where the rail would have been.
+      window.dispatchEvent(new Event('nav-drawer-open'))
+      e.preventDefault()
     }
   }
   host[NAV_KEYDOWN] = onKeydown

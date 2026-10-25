@@ -21,6 +21,8 @@
   import type { Media, MediaVideo } from '$lib/anilist/types'
   import { detailHints } from '$lib/anilist/detail-hint'
   import { playEpisode, type PlayState } from '$lib/stremio/play'
+  import { getPosition } from '$lib/player/progress'
+  import { setSourceWatchlist } from '$lib/catalog/source-streams'
   import { parseCatalogDescription } from '$lib/catalog/description'
   import MediaRatings from './MediaRatings.svelte'
   import CatalogAwards from './CatalogAwards.svelte'
@@ -57,6 +59,9 @@
   let retry = $state(0)
   let failedLogo = $state('')
   let showLocalLists = $state(false)
+  // The source's own watchlist, once this page changed it (until then, what the source said).
+  let sourceListed = $state<boolean | undefined>()
+  let sourceListBusy = $state(false)
 
   $effect(() => {
     const request = ref
@@ -67,6 +72,7 @@
     error = ''
     tmdbNeedsConfiguration = false
     media = null
+    sourceListed = undefined
     void loadCatalogProvider(request.provider).then((catalog) => catalog.detail(request, abort.signal)).then((result) => {
       if (!abort.signal.aborted) media = result
     }).catch((reason) => {
@@ -131,7 +137,27 @@
     : [])
   const episodeModel = (video: MediaVideo) => episodeDisplayModel(media!, video.episode ?? video.number, {
     title: video.title, overview: video.overview, image: video.thumbnail, airDate: video.released, season: video.season, seasonEpisode: video.episode,
+  }, video.progress !== undefined ? { progress: Math.round(video.progress * 100) } : {})
+  // A source catalog says where the viewer is up to (on any device) and keeps its own watchlist.
+  const upNext = $derived.by(() => {
+    const next = media?.sourceFacts?.upNext
+    const video = next && videos.find((item) => item.id === next.videoId)
+    return next && video ? { video, label: next.label, playhead: next.playhead } : undefined
   })
+  const watchlistUrl = $derived(media?.sourceFacts?.watchlistUrl)
+  const onSourceList = $derived(sourceListed ?? media?.sourceFacts?.watchlist ?? false)
+
+  async function toggleSourceList() {
+    if (!watchlistUrl || sourceListBusy) return
+    sourceListBusy = true
+    try {
+      sourceListed = await setSourceWatchlist(watchlistUrl, !onSourceList)
+    } catch (reason) {
+      playState = { status: 'error', message: reason instanceof Error ? reason.message : String(reason) }
+    } finally {
+      sourceListBusy = false
+    }
+  }
   const attributedMedia = $derived.by(() => {
     if (!media || media.catalog?.provider !== 'jvm') return media
     const remembered = $detailHints[media.id]
@@ -139,10 +165,12 @@
     return alternatives.length ? { ...media, catalogAlternatives: alternatives } : media
   })
 
-  function play(video?: MediaVideo) {
+  function play(video?: MediaVideo, startSeconds?: number) {
     if (!media) return
     const episode = isMovie ? undefined : video?.number ?? 1
-    void playEpisode(media, episode, (state) => (playState = state))
+    // The source's playhead resumes an episode this device has no resume point for.
+    const resume = startSeconds ?? (video?.playhead && !video.watched && !getPosition(media.id, episode ?? 1) ? video.playhead : undefined)
+    void playEpisode(media, episode, (state) => (playState = state), resume ? { startSeconds: resume } : {})
   }
 
   // Local and notification-delivered TV requests both arrive here after the app has loaded the
@@ -264,7 +292,17 @@
             </div>
           {/if}
           <div data-part="detail.actions" class="mt-5 flex flex-wrap gap-2">
-            <button data-part="button" data-variant="primary" data-action="play" data-focusable onclick={() => play(videos[0])} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {isMovie ? 'Play' : 'Play episode 1'}</button>
+            {#if upNext}
+              <button data-part="button" data-variant="primary" data-action="play" data-focusable onclick={() => play(upNext.video, upNext.playhead || undefined)} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {upNext.playhead ? 'Continue' : 'Play'}{upNext.label ? ` ${upNext.label}` : ''}</button>
+            {:else}
+              <button data-part="button" data-variant="primary" data-action="play" data-focusable onclick={() => play(videos[0])} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {isMovie ? 'Play' : 'Play episode 1'}</button>
+            {/if}
+            {#if watchlistUrl}
+              <button data-part="button" data-variant="secondary" data-action="watchlist" data-state={onSourceList ? 'saved' : undefined} data-focusable disabled={sourceListBusy} onclick={toggleSourceList}
+                      class="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold disabled:opacity-60">
+                {#if onSourceList}<BookmarkCheck size={18} class="text-theme" />{:else}<BookmarkPlus size={18} />{/if}{onSourceList ? 'In Watchlist' : 'Add to Watchlist'}
+              </button>
+            {/if}
             <button data-part="button" data-variant="secondary" data-action="save" data-state={savedLocally ? 'saved' : undefined} data-focusable onclick={() => (showLocalLists = true)}
                     aria-label={savedLocally ? 'Saved' : 'Save to lists'} title="Save to lists"
                     class={themedOverlay ? 'grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25' : 'flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold'}>
@@ -352,7 +390,12 @@
         <div data-part="episodes.grid" class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {#each list as video (video.id ?? video.number)}
             <button data-part="episode" data-variant={video.thumbnail ? 'thumb' : 'compact'} data-focusable onclick={() => play(video)} class="group flex min-h-16 items-center gap-3 rounded-lg bg-secondary/60 p-2 text-left hover:bg-secondary">
-              {#if video.thumbnail}<img data-part="episode.still" src={video.thumbnail} alt="" loading="lazy" class="aspect-video w-24 rounded-md bg-muted object-cover" />{/if}
+              {#if video.thumbnail}
+                <span class="relative shrink-0">
+                  <img data-part="episode.still" src={video.thumbnail} alt="" loading="lazy" class="aspect-video w-24 rounded-md bg-muted object-cover" />
+                  {#if video.progress}<span data-part="episode.progress" class="absolute inset-x-0 bottom-0 h-1 overflow-hidden rounded-b-md bg-white/25"><span class="block h-full bg-primary" style:width={`${Math.round(video.progress * 100)}%`}></span></span>{/if}
+                </span>
+              {/if}
               <span class="min-w-0"><span data-part="episode.number" class="block text-xs text-muted-foreground">{video.season != null && video.episode != null ? `S${video.season} E${video.episode}` : `Episode ${video.number}`}</span><span data-part="episode.title" class="line-clamp-2 text-sm font-bold">{video.title || `Episode ${video.number}`}</span></span>
             </button>
           {/each}

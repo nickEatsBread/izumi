@@ -13,7 +13,7 @@
   import { afterNavigate, beforeNavigate, replaceState } from '$app/navigation'
   import type { Snapshot } from './$types'
   import {
-    CATALOG_SELECTIONS,
+    isCatalogSelection,
     catalogLabel,
     catalogScreen,
     catalogProvider,
@@ -53,8 +53,7 @@
   let debounced = $state<SearchFilters>({ ...seed })
   type MergedScope = 'all' | CatalogSelection
   const requestedScope = sp.get('provider')
-  let mergedScope = $state<MergedScope>(requestedScope && CATALOG_SELECTIONS.includes(requestedScope as CatalogSelection)
-    ? requestedScope as CatalogSelection : 'all')
+  let mergedScope = $state<MergedScope>(isCatalogSelection(requestedScope) ? requestedScope : 'all')
   let mergedQuery = $state(seed.search ?? '')
   let t: ReturnType<typeof setTimeout>
   const mergedSelections = $derived(mergedCatalogProviders($catalogProviders))

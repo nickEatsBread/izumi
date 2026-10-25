@@ -5,7 +5,7 @@ import type { ModuleStatus } from '$lib/modules/modules'
 import type { StoreAdapterId, StoreEntry } from '$lib/store/types'
 import { canonicalStoreUrl } from '$lib/store/url'
 import { compareVersions, MAX_PACK_BYTES, parsePack, type PackItem, type PackManifest } from './format'
-import { sharedWithOtherPack, type PackRecord, type PackRecordItem } from './installed'
+import { sharedWithOtherPack, type PackRecord, type PackRecordItem, type PackScreen } from './installed'
 
 export interface ListingSummary {
   name: string
@@ -39,6 +39,9 @@ export interface PackDeps {
   removeItem(item: PackRecordItem): Promise<void>
   requestModule(id: string, by: string): Promise<void>
   releaseModule(id: string, by: string): Promise<void>
+  /** Switches on an installed source's own catalog screen (and makes it the startup screen). */
+  showSourceScreen(packageId: string, makeDefault: boolean): Promise<PackScreen>
+  hideSourceScreen(screen: PackScreen): void
   setStartup(video: NonNullable<PackManifest['startup']>, by: string): Promise<void>
   clearStartup(by: string): Promise<void>
   installedPacks(): PackRecord[]
@@ -165,6 +168,7 @@ export async function loadPackPlan(url: string, deps: PackDeps): Promise<PackPla
 export type ApplyStep =
   | { key: `store:${string}`; label: string }
   | { key: `item:${string}`; label: string }
+  | { key: `screen:${string}`; label: string }
   | { key: `module:${string}`; label: string }
   | { key: 'startup'; label: string }
 
@@ -175,6 +179,9 @@ export function applySteps(plan: PackPlan): ApplyStep[] {
     ...plan.items.map((planned) => ({
       key: `item:${planned.item.ref}` as const,
       label: `${planned.item.kind === 'theme' ? 'Install theme' : 'Install'} ${planned.entry?.name ?? planned.item.id}`,
+    })),
+    ...plan.items.filter((planned) => planned.item.screen).map((planned) => ({
+      key: `screen:${planned.item.ref}` as const, label: `Add the ${planned.entry?.name ?? planned.item.id} screen`,
     })),
     ...plan.modules.filter((m) => m.needed).map((m) => ({ key: `module:${m.id}` as const, label: `Start downloading ${m.name}` })),
     ...(plan.pack.startup ? [{ key: 'startup' as const, label: 'Save the startup animation' }] : []),
@@ -234,6 +241,23 @@ export async function applyPack(plan: PackPlan, deps: PackDeps, progress: ApplyP
       })
       progress(current, 'done', result.added ? undefined : 'Already installed')
     }
+    // A screen that can't be added yet (its source didn't start) is reported, not fatal: the source
+    // is installed and its screen can be switched on later.
+    const screens: PackScreen[] = []
+    for (const planned of plan.items.filter((p) => p.item.screen)) {
+      current = `screen:${planned.item.ref}`
+      progress(current, 'working')
+      const installed = items.find((item) => item.ref === planned.item.ref)
+      try {
+        if (!installed) throw new Error(`${planned.item.id} is not installed.`)
+        const screen = await deps.showSourceScreen(installed.installedId, planned.item.screen === 'default')
+        screens.push(screen)
+        undo.push(async () => deps.hideSourceScreen(screen))
+        progress(current, 'done')
+      } catch (error) {
+        progress(current, 'failed', message(error))
+      }
+    }
     const modules: string[] = []
     for (const status of plan.modules.filter((m) => m.needed)) {
       current = `module:${status.id}`
@@ -260,6 +284,7 @@ export async function applyPack(plan: PackPlan, deps: PackDeps, progress: ApplyP
       id: plan.pack.id, name: plan.pack.name, version: plan.pack.version, url: plan.url, sha256: plan.sha256,
       author: plan.pack.author, icon: plan.pack.icon, appliedAt: deps.now(),
       items, addedStores, modules, startup, steps: plan.pack.steps,
+      ...(screens.length ? { screens } : {}),
     }
     deps.saveRecord(record)
     return record
@@ -275,6 +300,9 @@ export async function removePack(record: PackRecord, deps: PackDeps): Promise<st
   const problems: string[] = []
   const others = deps.installedPacks().filter((pack) => pack.id !== record.id)
   const by = packBy(record.id)
+  for (const screen of record.screens ?? []) {
+    try { deps.hideSourceScreen(screen) } catch (error) { problems.push(`Screen: ${message(error)}`) }
+  }
   for (const item of [...record.items].reverse()) {
     if (!item.added || sharedWithOtherPack(others, record.id, { installedId: item.installedId })) continue
     try { await deps.removeItem(item) } catch (error) { problems.push(`${item.name}: ${message(error)}`) }

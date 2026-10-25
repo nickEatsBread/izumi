@@ -36,7 +36,9 @@
   import { profileAvatarUrl } from '$lib/profiles/avatars'
   import { incognito, toggleIncognito } from '$lib/stores/incognito'
   import { offlineMode } from '$lib/stores/offline'
-  import { catalogScreen, catalogSwitcherPlacement, enabledCatalogScreens, resolveCatalogSwitcherPlacement } from '$lib/settings/catalog'
+  import {
+    catalogLabel, catalogScreen, catalogSwitcherPlacement, customScreens, enabledCatalogScreens, resolveCatalogSwitcherPlacement, selectCatalogScreen,
+  } from '$lib/settings/catalog'
   import { interfaceMode } from '$lib/settings/interface-mode'
   import { searchModeNav } from '$lib/settings/nav-rules'
   import * as h from '$lib/haptics'
@@ -44,9 +46,12 @@
   import { isTv } from '$lib/platform'
   import { themePresentation } from '$lib/themes/runtime'
 
-  let { placement = 'sidebar' }: { placement?: 'sidebar' | 'top' } = $props()
+  let { placement = 'sidebar' }: { placement?: 'sidebar' | 'top' | 'drawer' } = $props()
   const compact = $derived($themePresentation?.shell?.compact === true)
   const top = $derived(placement === 'top')
+  // `shell.nav: "drawer"` (API 7): no rail and no bar. Every destination, the screens and the account
+  // live in a drawer that Start, Left from the left edge or the menu button opens.
+  const drawerNav = $derived(placement === 'drawer')
   // `data-scrolled` once the page has scrolled, so a theme can keep the bar clear over the top of a page.
   let scrolled = $state(false)
   $effect(() => {
@@ -174,7 +179,7 @@
   let drawerWasOpen = false
   $effect(() => {
     if (drawerWasOpen && !drawerOpen) {
-      if (!bumpers) menuBtn?.focus({ preventScroll: true })
+      if (!bumpers && !drawerNav) menuBtn?.focus({ preventScroll: true })
       else if (drawerReturn?.isConnected) drawerReturn.focus({ preventScroll: true })
       drawerReturn = null
     }
@@ -214,13 +219,29 @@
       } else if (name === 'select') void goto('/app/search')
     })
   })
+  $effect(() => {
+    if (!drawerNav) return
+    const toggle = () => { if (!get(playing)) toggleDrawer() }
+    const show = () => { if (!get(playing) && !drawerOpen) toggleDrawer() }
+    window.addEventListener('nav-drawer-toggle', toggle)
+    window.addEventListener('nav-drawer-open', show)
+    return () => {
+      window.removeEventListener('nav-drawer-toggle', toggle)
+      window.removeEventListener('nav-drawer-open', show)
+    }
+  })
+  function openScreen(screen: typeof $enabledCatalogScreens[number]) {
+    selectCatalogScreen(screen)
+    drawerOpen = false
+    void goto('/app/home')
+  }
   // This component only mounts in the desktop shell. Automatic therefore makes the brand itself
   // the catalog trigger, while an explicit Below choice still gets its own rail row.
   const switcherPlacement = $derived(resolveCatalogSwitcherPlacement($catalogSwitcherPlacement, false))
 </script>
 
 <!-- Browse: soft scrim so the banner shows through and fades into the page. Hidden while playing. -->
-{#if !$playing && !top}
+{#if !$playing && !top && !drawerNav}
   <div class="theme-sidebar-scrim pointer-events-none fixed inset-y-0 left-0 z-20 w-32 bg-gradient-to-r from-background/90 via-background/30 to-transparent"></div>
 {/if}
 
@@ -228,6 +249,13 @@
      expanded, so no per-state markup swap. `main` keeps its 56px margin — the expanded rail
      overlays the content (fixed) rather than reflowing it. Selection uses a quiet active-row fill;
      keyboard/gamepad FOCUS fills the row more strongly (see app.css) — no squared ring. -->
+{#if drawerNav}
+  {#if !$playing && !padUi}
+    <button type="button" data-part="nav.menu" bind:this={menuBtn} data-focusable aria-label="Menu" aria-expanded={drawerOpen} onclick={toggleDrawer}
+      class="fixed left-3 z-30 grid size-10 place-items-center rounded-lg bg-background/70 text-foreground backdrop-blur transition-colors hover:bg-accent {$gameMode ? 'top-3' : 'top-10'}"><Menu size={20} /></button>
+  {/if}
+  <NavDrawer bind:open={drawerOpen} items={shown} {active} head={drawerHead} after={drawerScreens} foot={drawerFoot} slide={288} duration={240} closeOnRight />
+{:else}
 <nav data-slot={top ? 'nav.top' : 'nav.side'} data-scrolled={top && scrolled || undefined} data-nav-sidebar data-theme-surface="shell" onfocusin={onFocusIn} onfocusout={onFocusOut}
      class="fixed z-30 flex gap-1 transition-[width] duration-200 ease-out
        {top ? 'inset-x-0 top-0 h-[var(--theme-top-bar)] w-full flex-row items-center border-b border-border/50 bg-background px-3 pt-8' : 'inset-y-0 left-0 flex-col py-3 pt-9'}
@@ -268,9 +296,56 @@
     {@render accountButton()}
   {/if}
 </nav>
+{/if}
 {#if top && (topBar.menu === 'drawer' || bumpers || (sideMenu && !wide))}<NavDrawer bind:open={drawerOpen} items={[...items, settingsItem]} {active} />{/if}
 {#if panelShown}<NavPanel width={sideWidth} items={[...shown, settingsItem]} {active} />{/if}
 {#if $themePresentation?.shell?.hints}<ButtonHints />{/if}
+
+{#snippet drawerHead()}
+  <a data-part="nav.drawer.head" href="/app/home" tabindex={-1} onclick={() => (drawerOpen = false)} class="mb-3 flex items-center gap-3 px-2">
+    <CatalogBrandLogo platform={$catalogScreen} />
+    <BrandText className="whitespace-nowrap text-base font-extrabold" />
+  </a>
+{/snippet}
+
+{#snippet drawerScreens()}
+  {#if !$offlineMode && $enabledCatalogScreens.length > 1}
+    <div data-part="nav.drawer.heading" class="mt-4 px-3 pb-1 text-[0.625rem] font-extrabold uppercase tracking-[0.14em] text-muted-foreground">Screens</div>
+    {#each $enabledCatalogScreens as screen (screen)}
+      {@const on = $catalogScreen === screen}
+      <button type="button" data-part="nav.item" data-variant="screen" data-screen={screen} data-active={on || undefined} data-focusable onclick={() => openScreen(screen)}
+        class="flex h-11 shrink-0 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold transition-colors hover:bg-accent {on ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}">
+        <span data-part="nav.item.icon" class="grid w-6 place-items-center"><CatalogBrandLogo platform={screen} className="scale-75" /></span>
+        <span data-part="nav.item.label" class="truncate">{catalogLabel(screen, $customScreens)}</span>
+      </button>
+    {/each}
+  {/if}
+{/snippet}
+
+{#snippet drawerFoot()}
+  <div data-part="nav.drawer.foot" class="mt-auto flex shrink-0 items-center gap-1 border-t border-border/50 pt-3">
+    <button type="button" data-part="nav.action" data-action="account" data-focusable title={accountLabel}
+      onclick={() => { drawerOpen = false; if ($profilesEnabled) $profileSwitcherOpen = true; else void goto('/app/settings/accounts') }}
+      class="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-2 text-left text-sm font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+      <span data-part="nav.action.icon" class="grid size-8 shrink-0 place-items-center">
+        {#if $profilesEnabled}<img src={profileAvatarUrl($activeProfile.avatar, $activeProfile.color)} alt="" class="size-8 rounded-lg" />
+        {:else if accountAvatar}<img src={accountAvatar} alt="" class="size-8 rounded-full object-cover" />
+        {:else}<LogIn size={20} />{/if}
+      </span>
+      <span data-part="nav.action.label" class="truncate">{accountLabel}</span>
+    </button>
+    <button type="button" data-part="nav.action" data-action="incognito" data-active={$incognito || undefined} data-focusable aria-pressed={$incognito} title={m.nav_incognito()} onclick={toggleIncognito}
+      class="grid size-10 shrink-0 place-items-center rounded-lg transition-colors hover:bg-accent {$incognito ? 'text-violet-400' : 'text-muted-foreground'}">
+      <span data-part="nav.action.icon" class="grid place-items-center"><VenetianMask size={20} /></span>
+      <span data-part="nav.action.label" class="sr-only">{m.nav_incognito()}</span>
+    </button>
+    <a data-part="nav.action" data-action="settings" data-active={active('/app/settings') || undefined} data-focusable href="/app/settings" title={m.nav_settings()} onclick={() => (drawerOpen = false)}
+      class="grid size-10 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+      <span data-part="nav.action.icon" class="grid place-items-center"><Settings size={20} /></span>
+      <span data-part="nav.action.label" class="sr-only">{m.nav_settings()}</span>
+    </a>
+  </div>
+{/snippet}
 
 {#snippet menuButton()}
   {#if top && (topBar.menu === 'drawer' || sideMenu)}

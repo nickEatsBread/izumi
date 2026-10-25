@@ -269,6 +269,13 @@ async function finishPackageInstall(installed: InstalledExtensionPackage): Promi
   }
   if (installed.backend === 'izumi-service') {
     await invoke('extension_service_stop', { id: installed.id }).catch(() => {})
+    // A restarted service gets a new port; a source catalog reads its address again.
+    const sources = await import('$lib/catalog/source-catalogs')
+    sources.forgetSourceAddon(installed.id)
+    // A newly installed source that serves a catalog becomes a screen the user can switch on.
+    if (!get(sources.sourceCatalogs).some((item) => item.packageId === installed.id)) {
+      void sources.registerSourceCatalog(installed.id).catch(() => {})
+    }
   }
   installedRevision += 1
   resetRunning()
@@ -290,6 +297,7 @@ function scheduleJvmWarm(delayMs = 1_500): void {
 export async function removeInstalledExtension(id: string): Promise<void> {
   await invoke('extension_service_stop', { id }).catch(() => {})
   await invoke('extension_remove', { id })
+  ;(await import('$lib/catalog/source-catalogs')).unregisterSourceCatalog(id)
   // Gone, so no store is its origin any more.
   forgetPackageOrigin(id)
   await invoke('jvm_extension_reload').catch(() => {})

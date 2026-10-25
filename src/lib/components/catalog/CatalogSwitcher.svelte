@@ -21,6 +21,7 @@
     type CatalogScreen,
     type CustomScreenId,
   } from '$lib/settings/catalog'
+  import { isSourceSelection, type SourceSelection } from '$lib/catalog/source-catalogs'
   import { homeEditorOpen } from '$lib/catalog/home-editor'
   import { isMobile } from '$lib/platform'
   import { triggerOpensOnKey } from '$lib/nav'
@@ -48,7 +49,7 @@
     open?: boolean
   } = $props()
 
-  const descriptions: Record<Exclude<CatalogScreen, CustomScreenId>, string> = {
+  const descriptions: Record<Exclude<CatalogScreen, CustomScreenId | SourceSelection>, string> = {
     merged: 'Your custom mix from every catalog',
     auto: 'Anime-first with smart metadata fallbacks',
     anilist: 'Anime discovery from AniList',
@@ -291,7 +292,7 @@
               <CatalogPlatformLogo platform={provider} />
               <span class="min-w-0 flex-1">
                 <span class="block truncate text-sm font-black">{catalogLabel(provider, $customScreens)}</span>
-                <span class="mt-0.5 block truncate text-xs text-muted-foreground">{isCustomScreen(provider) ? 'Your own screen' : descriptions[provider]}</span>
+                <span class="mt-0.5 block truncate text-xs text-muted-foreground">{isCustomScreen(provider) ? 'Your own screen' : isSourceSelection(provider) ? 'This source’s own catalog' : descriptions[provider]}</span>
               </span>
               {#if provider === $catalogScreen}<Check size={18} class="shrink-0 text-theme" />{/if}
             </button>

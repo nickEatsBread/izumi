@@ -18,6 +18,15 @@ export interface PackRecordItem {
   added: boolean
 }
 
+/** A source screen the pack switched on, and what it changed to do so. */
+export interface PackScreen {
+  packageId: string
+  /** The screen was not on before the pack. */
+  addedProvider: boolean
+  /** The startup screen before the pack made this one the startup screen. */
+  previousDefault?: string
+}
+
 export interface PackRecord {
   id: string
   name: string
@@ -33,6 +42,7 @@ export interface PackRecord {
   modules: string[]
   startup: boolean
   steps: PackStep[]
+  screens?: PackScreen[]
 }
 
 export const installedPacks = persisted<PackRecord[]>('pack-installs-v1', [])

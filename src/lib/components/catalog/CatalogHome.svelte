@@ -20,7 +20,9 @@
   import { CatalogConfigurationError, type CatalogHome, type CatalogHomeSection } from '$lib/catalog/types'
   import { loadCatalogProvider } from '$lib/catalog/registry'
   import { homeEditorOpen } from '$lib/catalog/home-editor'
-  import { catalogProvider, jvmCatalogSourceOverrides, stremioHeroArtwork } from '$lib/settings/catalog'
+  import { catalogLabel, catalogProvider, jvmCatalogSourceOverrides, stremioHeroArtwork } from '$lib/settings/catalog'
+  import { forgetSourceAddon, isSourceSelection, sourcePackageOf } from '$lib/catalog/source-catalogs'
+  import ExtensionServiceSettings from '$lib/components/settings/ExtensionServiceSettings.svelte'
   import { catalogHomeLayoutKey, catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
   import { CONTINUE_HOME_ROW, HERO_HOME_ROW } from '$lib/catalog/home-options'
   import { tmdbCustomHomeRows } from '$lib/catalog/tmdb-custom-rows'
@@ -59,11 +61,21 @@
   const collectionIds = $derived(resolveCatalogHomeRows($catalogProvider, [HERO_HOME_ROW, CONTINUE_HOME_ROW, ...collectionOptions], $catalogHomeLayouts)
     .flatMap((row) => (row.enabled && collectionIdOf(row.id)) || []))
   const sectionMap = $derived(new Map((home?.sections ?? []).map((section) => [section.id, section])))
+  // A source catalog's own Continue Watching (its cross-device list) takes the Continue row's place.
+  const ownContinue = $derived(home?.continue ? sectionMap.get(home.continue) : undefined)
+  const sourceScreen = $derived(isSourceSelection($catalogProvider))
+  // A source answers with nothing until it is set up (signed in): its settings open from here.
+  let sourceSetup = $state(false)
+  function closeSourceSetup() {
+    sourceSetup = false
+    if (isSourceSelection($catalogProvider)) forgetSourceAddon(sourcePackageOf($catalogProvider))
+    retry++
+  }
   // Shared by the user's own resolved rows and a theme row naming an id the user has hidden (a
   // theme layout can show a row regardless of the user's own Edit Home choices).
   function toContentRow(id: string): ContentRow | null {
     if (id === 'hero') return { id, kind: 'hero' }
-    if (id === 'continue') return { id, kind: 'continue' }
+    if (id === 'continue') return ownContinue ? { id, kind: 'section', section: ownContinue } : sourceScreen ? null : { id, kind: 'continue' }
     if (isBlockId(id) || isThemeBlockId(id)) return { id, kind: 'block' }
     const collectionId = collectionIdOf(id)
     if (collectionId) return { id, kind: 'collection', collectionId }
@@ -75,7 +87,7 @@
     const options = [
       HERO_HOME_ROW,
       CONTINUE_HOME_ROW,
-      ...home.sections.map((section) => ({ id: section.id, title: section.title })),
+      ...home.sections.filter((section) => section.id !== home!.continue).map((section) => ({ id: section.id, title: section.title })),
       ...collectionOptions,
       ...blockRowOptions($catalogProvider, $catalogHomeLayouts, $homeBlocks),
     ]
@@ -93,7 +105,7 @@
   // for AniList's rows: its slots take this catalog's poster rows, and the rows it left follow it.
   const themeHome = $derived($activeThemeLayout?.home && home
     ? resolveThemeHome($activeThemeLayout.home, $catalogProvider,
-      [HERO_HOME_ROW, CONTINUE_HOME_ROW, ...home.sections.filter((section) => section.presentation !== 'providers' && section.presentation !== 'editorial')].map((option) => option.id),
+      [HERO_HOME_ROW, CONTINUE_HOME_ROW, ...home.sections.filter((section) => section.id !== home!.continue && section.presentation !== 'providers' && section.presentation !== 'editorial')].map((option) => option.id),
       contentRows.flatMap((row) => (row.kind === 'section' ? [row.id] : [])))
     : null)
   const allBlocks = $derived(themeHome ? { ...$homeBlocks, ...themeHome.blocks } : $homeBlocks)
@@ -140,7 +152,8 @@
     const publish = (result: CatalogHome, complete = false) => {
       if (abort.signal.aborted) return
       home = result
-      providerHomeCache.set(cacheKey, { storedAt: Date.now(), home: result, complete })
+      // An empty answer is not kept: a source that is not set up yet answers with nothing.
+      if (result.hero.length || result.sections.length) providerHomeCache.set(cacheKey, { storedAt: Date.now(), home: result, complete })
       if (result.hero.length || result.sections.length) loading = false
     }
     void loadCatalogProvider(selection).then((provider) => provider.home(abort.signal, undefined, publish)).then((result) => {
@@ -189,18 +202,19 @@
 
   <div class="space-y-5">
     {#if !home || themeHome}<CollectionsHome ids={collectionIds} />{/if}
-    {#if (themeHomeHas($activeThemeLayout?.home, 'continue') ?? continueEnabled) && !home}
+    {#if (themeHomeHas($activeThemeLayout?.home, 'continue') ?? continueEnabled) && !home && !sourceScreen}
       {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />{/key}
     {/if}
 
     {#if error}
       <div class="mx-4 rounded-xl border border-destructive/30 bg-destructive/10 p-5 sm:mx-8">
-        <h2 class="font-black">Couldn’t load {$catalogProvider === 'stremio' ? 'Stremio metadata' : $catalogProvider === 'jvm' ? 'Aniyomi sources' : $catalogProvider.toUpperCase()}</h2>
+        <h2 class="font-black">Couldn’t load {$catalogProvider === 'stremio' ? 'Stremio metadata' : $catalogProvider === 'jvm' ? 'Aniyomi sources' : sourceScreen ? catalogLabel($catalogProvider) : $catalogProvider.toUpperCase()}</h2>
         <p class="mt-1 text-sm text-muted-foreground">{error}</p>
         {#if tmdbNeedsConfiguration}
           <a href="/app/settings/library" data-focusable class="mt-4 inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Add TMDB token</a>
         {:else}
           <button data-focusable onclick={() => retry++} class="mt-4 rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">Retry</button>
+          {#if sourceScreen}<button data-focusable onclick={() => (sourceSetup = true)} class="ml-2 mt-4 rounded-md bg-secondary px-4 py-2 text-sm font-bold">Source settings</button>{/if}
         {/if}
       </div>
     {/if}
@@ -229,16 +243,24 @@
             {:else}
               {@const section = row.section}
               <CatalogSectionRow {section} viewMoreHref={section.more ? moreHref(section.more) : undefined}
-                showCatalogSource={$catalogProvider !== 'jvm'} />
+                showCatalogSource={$catalogProvider !== 'jvm' && !sourceScreen} />
             {/if}
           </HomeRowFrame>
         {/if}
       {/snippet}
       <HomeColumns main={columns.main} aside={columns.aside} asideWidth={$activeThemeLayout?.asideWidth ?? $homeAsideWidth} asideGap={$activeThemeLayout?.asideGap} asideStart={$activeThemeLayout?.asideStart} stack="space-y-5" row={contentRow} />
-      {#if !contentRows.length && !error}
+      {#if sourceScreen && !home.hero.length && !home.sections.length && !error}
+        <div class="mx-4 rounded-xl bg-secondary/50 p-6 text-center text-sm text-muted-foreground sm:mx-8">
+          {catalogLabel($catalogProvider)} has nothing to show yet. Sign in or finish setting it up.
+          <div><button data-focusable onclick={() => (sourceSetup = true)} class="mt-4 rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">Open {catalogLabel($catalogProvider)} settings</button></div>
+        </div>
+      {:else if !contentRows.length && !error}
         <div class="mx-4 rounded-xl bg-secondary/50 p-6 text-center text-sm text-muted-foreground sm:mx-8">This provider returned no browseable catalogs.</div>
       {/if}
     {/if}
   </div>
 </div>
 {#if listMedia}<MediaListSheet media={listMedia} onclose={() => (listMedia = null)} />{/if}
+{#if sourceSetup && isSourceSelection($catalogProvider)}
+  <ExtensionServiceSettings id={sourcePackageOf($catalogProvider)} name={catalogLabel($catalogProvider)} onclose={closeSourceSetup} />
+{/if}

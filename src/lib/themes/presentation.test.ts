@@ -516,8 +516,12 @@ describe('phone replica keys (API 4)', () => {
     expect(() => parsePresentation(presentation, 3)).toThrow('unsupported')
   })
   it('is still accepted by the newest API, the default for personal designs', () => {
-    expect(LATEST_THEME_API).toBe(6)
+    expect(LATEST_THEME_API).toBe(7)
     expect(parsePresentation({ detail: { countdown: 'words' } }).detail?.countdown).toBe('words')
+  })
+  it('accepts the drawer navigation on API 7 packages only', () => {
+    expect(parsePresentation({ shell: { nav: 'drawer' } }, 7).shell?.nav).toBe('drawer')
+    expect(() => parsePresentation({ shell: { nav: 'drawer' } }, 6)).toThrow()
   })
   it('binds the worded air date from API 5', () => {
     expect(parseNode({ type: 'text', field: 'airDateLong' }, undefined, 0, false, 5)).toEqual({ type: 'text', field: 'airDateLong' })

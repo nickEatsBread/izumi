@@ -57,8 +57,10 @@
   import TmdbCredentialGuide from '$lib/components/catalog/TmdbCredentialGuide.svelte'
   import ScoreScale from '$lib/components/detail/ScoreScale.svelte'
   import CircleHelp from '@lucide/svelte/icons/circle-help'
+  import { sourceCatalogs, sourceSelection } from '$lib/catalog/source-catalogs'
+  import { disabledPlugins } from '$lib/settings/ui'
 
-  const platforms: Array<{ id: CatalogSelection; label: string; description: string }> = [
+  const builtInPlatforms: Array<{ id: CatalogSelection; label: string; description: string }> = [
     { id: 'auto', label: 'Automatic anime', description: 'AniList with automatic Kitsu and Jikan fallbacks.' },
     { id: 'anilist', label: 'AniList', description: 'Anime browsing, schedules, rich details, and search.' },
     { id: 'kitsu', label: 'Kitsu', description: 'Independent anime and manga catalogs.' },
@@ -66,6 +68,13 @@
     { id: 'stremio', label: 'Stremio metadata add-ons', description: 'Catalogs exposed by your enabled add-ons.' },
     { id: 'jvm', label: 'Aniyomi sources', description: 'Browse anime directly from installed Aniyomi sources.' },
   ]
+  // Installed sources that serve their own catalog get a screen of their own.
+  const platforms = $derived([
+    ...builtInPlatforms,
+    ...$sourceCatalogs.filter((source) => !$disabledPlugins.includes(source.packageId)).map((source) => ({
+      id: sourceSelection(source.packageId) as CatalogSelection, label: source.name, description: 'This source’s own catalog, with its titles, details and progress.',
+    })),
+  ])
 
   let jvmSources = $state<JvmCatalogSource[]>([])
   let jvmSourcesLoading = $state(false)

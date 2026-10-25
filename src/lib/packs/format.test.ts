@@ -84,6 +84,18 @@ describe('pack format', () => {
     if (!twice.ok) expect(twice.errors).toEqual(['Item 3: ref "b" is used twice.', 'Only one theme can be applied.'])
   })
 
+  it('lets a source add its own screen, one of them opening at startup', () => {
+    const on = parsePack(pack({ items: [{ ref: 'source', kind: 'source', from: { store: STORE, id: 'example.source' }, screen: 'default' }] }), URL_)
+    expect(on.ok && on.pack.items[0]?.screen).toBe('default')
+    const bad = parsePack(pack({ items: [
+      { ref: 'a', kind: 'source', from: { store: STORE, id: 'src.one' }, screen: 'default' },
+      { ref: 'b', kind: 'source', from: { store: STORE, id: 'src.two' }, screen: 'default' },
+      { ref: 'c', kind: 'theme', from: { store: STORE, id: 'one-look' }, screen: true },
+    ], setup: {} }), URL_)
+    expect(bad.ok).toBe(false)
+    if (!bad.ok) expect(bad.errors).toEqual(['Item 3: screen is true or "default", on a source.', 'Only one screen can open at startup.'])
+  })
+
   it('compares versions and picks localized text', () => {
     expect(compareVersions('0.1.75', '0.1.74')).toBe(1)
     expect(compareVersions('0.1.9', '0.1.75')).toBe(-1)

@@ -26,7 +26,8 @@ export type ArtworkKind = 'poster' | 'backdrop' | 'logo' | 'still' | 'keyart' | 
 export type ThemeAction = 'play' | 'details' | 'favorite' | 'previous' | 'next' | 'list' | 'trailer' | 'share' | 'studio'
 export type CardFamily = 'poster' | 'continue' | 'search' | 'ranked'
 export type ThemeDensity = 'compact' | 'comfortable' | 'large'
-export type ThemeNavPlacement = 'sidebar' | 'top' | 'bottom'
+/** API 7 `drawer`: no rail and no bar; every destination lives in a drawer that slides in from the left. */
+export type ThemeNavPlacement = 'sidebar' | 'top' | 'bottom' | 'drawer'
 export type DetailLayout = 'stack' | 'split' | 'overlay'
 export type EpisodePlacement = 'tab' | 'right' | 'below'
 export type EpisodeArrangement = 'list' | 'grid' | 'carousel'
@@ -216,7 +217,7 @@ export interface RowPresentation {
 /** Theme API 1 is the original contract; API 2 adds the phone block, bottom-bar and slide-marker
  *  chrome, row headings, series tabs and the docked player. A package declares which it uses, so
  *  a client that only knows API 1 refuses an API 2 package cleanly instead of failing mid-parse. */
-export type ThemeApi = 1 | 2 | 3 | 4 | 5 | 6
+export type ThemeApi = 1 | 2 | 3 | 4 | 5 | 6 | 7
 /** The newest theme API this client renders. API 3 adds stylesheets, fonts, template parts,
  *  airing and slide fields, and the text wordmark. API 4 adds the phone root size, scroll chrome,
  *  the series header buttons, fact keys, names and formats, the Information section, the synopsis
@@ -229,8 +230,8 @@ export type ThemeApi = 1 | 2 | 3 | 4 | 5 | 6
  *  choice, the kind of title and the Continue Watching empty state. API 6 adds the TV block (applied on
  *  Android TV and in Game mode), the freshness badge field, artwork on card templates and the Suggested
  *  tab name; later API 6 keys add player controls, the expanding preview, trailer backgrounds, anchored
- *  TV rows and the grid search keyboard. */
-export const LATEST_THEME_API: ThemeApi = 6
+ *  TV rows and the grid search keyboard. API 7 adds the drawer navigation (`shell.nav: "drawer"`). */
+export const LATEST_THEME_API: ThemeApi = 7
 /** Series-page tab strip: an underlined row, pills, an iOS-style segmented control, or a bar of
  *  equal tabs with a tinted pill behind the active one (the two-tab Info/Watch bar of some apps).
  *  API 3 `bottom`: on phones the tabs become a bar fixed to the bottom of the screen in place of the
@@ -961,7 +962,7 @@ function parseDetail(value: unknown, api: ThemeApi): DetailPresentation {
 function parseShell(value: unknown, api: ThemeApi): ShellPresentation {
   const raw = record(value); only(raw, ['nav', 'compact', 'overlay', 'press', ...api2(api, ['bottomNav']), ...api3(api, ['top', 'hints'])])
   const result: ShellPresentation = {}
-  if (raw.nav !== undefined) result.nav = choice(raw.nav, ['sidebar', 'top', 'bottom'])
+  if (raw.nav !== undefined) result.nav = choice(raw.nav, api >= 7 ? ['sidebar', 'top', 'bottom', 'drawer'] : ['sidebar', 'top', 'bottom'])
   if (raw.compact !== undefined) result.compact = flag(raw.compact)
   if (raw.overlay !== undefined) result.overlay = choice(raw.overlay, ['none', 'fade'])
   if (raw.press !== undefined) result.press = choice(raw.press, ['none', 'sink'])
@@ -1254,7 +1255,9 @@ export function nodeStyle(node: ThemeNode): string {
   return Object.entries(styles).map(([key, value]) => `${key}:${value}`).join(';')
 }
 export function resolveRow(layout: ThemePresentation | undefined, id = ''): RowPresentation {
-  const role = id.includes(':') ? id.slice(id.indexOf(':') + 1) : id
+  // A source screen's own target has a colon too (`source:<package>:continue`).
+  const cut = id.startsWith('source:') ? id.indexOf(':', 7) : id.indexOf(':')
+  const role = cut >= 0 ? id.slice(cut + 1) : id
   return { ...layout?.rows?.defaults, ...layout?.rows?.byId?.[role], ...layout?.rows?.byId?.[id] }
 }
 export function resolveCard(layout: ThemePresentation | undefined, family: CardFamily = 'poster', rowId = ''): ThemeNode | undefined {

@@ -568,7 +568,7 @@
 {#if !($playing && ($fullscreen || $gameMode || $pictureInPicture)) && (!$androidMpvActive || $androidMiniPlayer)}
   <!-- Mobile: a bottom tab bar instead of the left rail. -->
   <!-- A theme's `player.window: "full"` gives the windowed player the whole window too (the titlebar stays). -->
-  {#if $isMobile || $shellNav === 'bottom'}{#if !$bottomNavSuppressed}<BottomNav />{/if}{:else if !$sidebarHiddenForPlayback && !($playing && $playerCoversWindow)}<Sidebar placement={$shellNav === 'top' ? 'top' : 'sidebar'} />{/if}
+  {#if $isMobile || $shellNav === 'bottom'}{#if !$bottomNavSuppressed}<BottomNav />{/if}{:else if !$sidebarHiddenForPlayback && !($playing && $playerCoversWindow)}<Sidebar placement={$shellNav === 'top' || $shellNav === 'drawer' ? $shellNav : 'sidebar'} />{/if}
   <!-- No window-control titlebar in Game mode (gamescope owns the fullscreen window; the
        minimize/maximize/close icons are meaningless + unreachable there) or on mobile. -->
   {#if !$gameMode && !$isMobile && !$isTv}<Titlebar />{/if}

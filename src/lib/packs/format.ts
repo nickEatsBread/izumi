@@ -24,6 +24,8 @@ export interface PackItem {
   id: string
   /** Themes: make it the active theme. */
   apply: boolean
+  /** Sources that serve their own catalog: add its screen (`on`), and open izumi on it (`default`). */
+  screen?: 'on' | 'default'
 }
 
 export interface PackStep {
@@ -147,9 +149,14 @@ export function parsePack(raw: unknown, packUrl: string, locale = 'en'): PackPar
     const store = addStore(from.store, where)
     const entryId = validId(from.id) ? from.id : undefined
     if (!entryId) errors.push(`${where}: from.id is missing or invalid.`)
-    if (store && entryId) items.push({ ref, kind, store, id: entryId, apply: kind === 'theme' && item?.apply === true })
+    const screen = item?.screen === true ? 'on' : item?.screen === 'default' ? 'default' : undefined
+    if (item?.screen !== undefined && (!screen || kind !== 'source')) errors.push(`${where}: screen is true or "default", on a source.`)
+    if (store && entryId) {
+      items.push({ ref, kind, store, id: entryId, apply: kind === 'theme' && item?.apply === true, ...(screen && kind === 'source' ? { screen } : {}) })
+    }
   }
   if (items.filter((item) => item.apply).length > 1) errors.push('Only one theme can be applied.')
+  if (items.filter((item) => item.screen === 'default').length > 1) errors.push('Only one screen can open at startup.')
 
   const modules: string[] = []
   if (doc.modules !== undefined && !Array.isArray(doc.modules)) errors.push('modules must be a list.')

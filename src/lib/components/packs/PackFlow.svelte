@@ -202,7 +202,7 @@
           {#each sources as planned (planned.item.ref)}
             <li class="flex gap-3">
               <Puzzle class="mt-0.5 shrink-0 text-theme" size={18} />
-              <span class="text-sm"><span class="font-bold">Install the source {planned.entry?.name ?? planned.item.id}</span> <span class="text-muted-foreground">from {planned.storeName}{planned.entry?.install.type === 'package' && planned.entry.install.pkg.backend === 'izumi-service' ? ', a program that runs on this device' : ''}.</span></span>
+              <span class="text-sm"><span class="font-bold">Install the source {planned.entry?.name ?? planned.item.id}</span> <span class="text-muted-foreground">from {planned.storeName}{planned.entry?.install.type === 'package' && planned.entry.install.pkg.backend === 'izumi-service' ? ', a program that runs on this device' : ''}.{planned.item.screen ? ` Adds its own catalog as a screen${planned.item.screen === 'default' ? ' and opens izumi on it' : ''}.` : ''}</span></span>
             </li>
           {/each}
           {#each themes as planned (planned.item.ref)}

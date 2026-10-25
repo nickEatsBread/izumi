@@ -269,6 +269,11 @@ export function startGamepadNav(): () => void {
       // which expands the labelled rail via its focus-driven expand. In the player, ☰ is the
       // track menu (handled by TrackMenu before this) — inPlayer() above already returned.
       case 'start': {
+        // The drawer navigation (theme `shell.nav: "drawer"`) has no rail: Start opens the drawer.
+        if (document.documentElement.dataset.themeNav === 'drawer') {
+          window.dispatchEvent(new Event('nav-drawer-toggle'))
+          break
+        }
         const items = [...document.querySelectorAll<HTMLElement>('[data-nav-sidebar] [data-focusable]')]
         const path = location.pathname.replace(/\/$/, '')
         const cur = items.find((el) => {

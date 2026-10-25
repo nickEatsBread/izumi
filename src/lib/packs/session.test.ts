@@ -49,6 +49,8 @@ function fakeDeps(overrides: Partial<PackDeps> = {}) {
     removeItem: async (item) => { log.push(`remove ${item.installedId}`) },
     requestModule: async (id, by) => { log.push(`want ${id} ${by}`) },
     releaseModule: async (id, by) => { log.push(`release ${id} ${by}`) },
+    showSourceScreen: async (packageId, makeDefault) => { log.push(`screen ${packageId} default=${makeDefault}`); return { packageId, addedProvider: true } },
+    hideSourceScreen: (screen) => { log.push(`hide-screen ${screen.packageId}`) },
     setStartup: async (_v, by) => { log.push(`startup ${by}`) },
     clearStartup: async (by) => { log.push(`clear-startup ${by}`) },
     installedPacks: () => records,
@@ -130,6 +132,28 @@ describe('pack session', () => {
     const record = await applyPack(await loadPackPlan(PACK_URL, deps), deps, progress)
     expect(record.startup).toBe(false)
     expect(progress).toHaveBeenCalledWith('startup', 'failed', 'offline')
+  })
+
+  it('switches on the screen of a source after installing it, and switches it off on removal', async () => {
+    const withScreen = { ...PACK, items: [{ ...PACK.items[0], screen: 'default' }, PACK.items[1]] }
+    const { deps, log } = fakeDeps({ fetchText: async () => JSON.stringify(withScreen) })
+    const plan = await loadPackPlan(PACK_URL, deps)
+    expect(applySteps(plan).map((s) => s.key)).toContain('screen:source')
+    const record = await applyPack(plan, deps)
+    expect(log.indexOf('screen example.source default=true')).toBeGreaterThan(log.indexOf('theme example-look apply=true'))
+    expect(record.screens).toEqual([{ packageId: 'example.source', addedProvider: true }])
+    log.length = 0
+    await removePack(record, deps)
+    expect(log[0]).toBe('hide-screen example.source')
+  })
+
+  it('keeps going when a screen cannot be added yet', async () => {
+    const withScreen = { ...PACK, items: [{ ...PACK.items[0], screen: true }, PACK.items[1]] }
+    const { deps } = fakeDeps({ fetchText: async () => JSON.stringify(withScreen), showSourceScreen: async () => { throw new Error('not running') } })
+    const progress = vi.fn()
+    const record = await applyPack(await loadPackPlan(PACK_URL, deps), deps, progress)
+    expect(record.screens).toBeUndefined()
+    expect(progress).toHaveBeenCalledWith('screen:source', 'failed', 'not running')
   })
 
   it('removes only what the pack added and no other pack uses', async () => {

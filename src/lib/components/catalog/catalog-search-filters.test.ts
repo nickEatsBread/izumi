@@ -117,8 +117,8 @@ describe('Stremio search filters', () => {
   })
 
   it('loads add-on and genre options and applies metadata filters in the provider', () => {
-    expect(stremioProvider).toContain('async function genres()')
-    expect(stremioProvider).toContain('async function searchOptions()')
+    expect(stremioProvider).toContain('async function genres(load: SourceLoader)')
+    expect(stremioProvider).toContain('async function searchOptions(load: SourceLoader)')
     expect(stremioProvider).toContain('filterAndSortStremioMedia(media, request)')
     expect(stremioProvider).toContain('sourceAddonId')
   })

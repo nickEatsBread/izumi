@@ -113,7 +113,12 @@
   const cardRating = $derived((showRating ?? !animeCard) ? primaryRating(media) : undefined)
   // The row focus caption's detail line. `data-nav-key` below is the focus-memory key (a focus
   // restore composes it with the row's `data-row`).
-  const captionMeta = $derived(subline ?? [format(media), season(media) || media.startDate?.year, media.episodes ? `${media.episodes} episodes` : ''].filter(Boolean).join(' · '))
+  // A source catalog card that stands for one episode ("S2 E1 · 12m left") is a 16:9 still.
+  const sourceCard = $derived(media.sourceFacts?.card)
+  const sourceLine = $derived(sourceCard ? [sourceCard.label, sourceCard.remainingSec ? `${Math.max(1, Math.round(sourceCard.remainingSec / 60))}m left` : ''].filter(Boolean).join(' · ') || undefined : undefined)
+  const line = $derived(subline ?? sourceLine)
+  const widthClass = $derived(fill ? 'w-full' : sourceCard ? ($isTv ? 'w-80' : 'w-64') : $isTv ? 'w-44' : 'w-36 sm:w-[152px]')
+  const captionMeta = $derived(line ?? [format(media), season(media) || media.startDate?.year, media.episodes ? `${media.episodes} episodes` : ''].filter(Boolean).join(' · '))
 
   // Preview is rendered `fixed` (escapes the carousel's overflow clipping) and clamped to the
   // viewport so it never gets cut off by the sidebar or edges. The math is zoom-aware — see
@@ -197,15 +202,15 @@
   $effect(() => () => { clearTimeout(closeT); clearTimeout(openT) })
 </script>
 
-<div data-part="card" data-family={cardFamily} bind:this={el} use:nearViewport={cardArt.wanted.size ? cardArt.gate : undefined} data-theme-card style:--cover-rgb={ambientFromHex(media.coverImage?.color)} class={fill ? 'w-full' : $isTv ? 'w-44 shrink-0' : 'w-36 shrink-0 sm:w-[152px]'} style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
+<div data-part="card" data-family={cardFamily} bind:this={el} use:nearViewport={cardArt.wanted.size ? cardArt.gate : undefined} data-theme-card style:--cover-rgb={ambientFromHex(media.coverImage?.color)} class="{widthClass} {fill ? '' : 'shrink-0'}" style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
   <a href={mediaHref(media)} data-focusable draggable="false" onclick={() => { rememberDetail(media); h.tap() }}
      data-nav-key={`media:${media.catalog?.id ?? media.id}`} data-caption-title={title(media)} data-caption-meta={captionMeta}
      aria-label={title(media)} style:width={themeRow.width || cardTemplate ? '100%' : undefined}
-     class="group block {fill ? 'w-full' : $isTv ? 'w-44' : 'w-36 sm:w-[152px]'} {$isAndroid ? 'android-card-press' : ''}">
+     class="group block {widthClass} {$isAndroid ? 'android-card-press' : ''}">
     {#if cardTemplate && cardModel}
       <ThemeNode node={cardTemplate} model={cardModel} />
     {:else}
-    <div data-part="card.art" class="focus-cover relative aspect-[2/3] w-full overflow-hidden rounded-md bg-muted" style:aspect-ratio={themeRow.aspect === 'landscape' ? '16 / 9' : themeRow.aspect === 'square' ? '1' : undefined} style:border-radius={themeRow.radius !== undefined ? `${themeRow.radius}px` : undefined}>
+    <div data-part="card.art" class="focus-cover relative aspect-[2/3] w-full overflow-hidden rounded-md bg-muted" style:aspect-ratio={themeRow.aspect === 'landscape' || (sourceCard && !themeRow.aspect) ? '16 / 9' : themeRow.aspect === 'square' ? '1' : undefined} style:border-radius={themeRow.radius !== undefined ? `${themeRow.radius}px` : undefined}>
       <!-- No `transform-gpu`/`will-change`: those permanently promote EVERY cover to its own
            GPU layer (hundreds on a grid → the Deck iGPU thrashes + lag accumulates). The
            browser promotes the one card being hovered on demand; that's all this needs. -->
@@ -224,6 +229,9 @@
       {#if badge}
         <span data-part="card.badge" class="absolute bottom-2 left-2 rounded-md bg-black/85 px-2 py-1 text-[0.65rem] font-black uppercase tracking-wide text-white shadow-lg backdrop-blur">{badge}</span>
       {/if}
+      {#if sourceCard?.progress}
+        <span data-part="card.progress" class="absolute inset-x-0 bottom-0 h-1 bg-white/25"><span class="block h-full bg-primary" style:width={`${Math.round(sourceCard.progress * 100)}%`}></span></span>
+      {/if}
       {#if cardRating}
         <span data-part="card.score" class="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-md bg-black/80 px-1.5 py-1 text-[0.65rem] font-black text-white shadow-lg backdrop-blur"
           title={`${cardRating.source} rating`} aria-label={`${cardRating.source} rating ${compactRatingLabel(cardRating)} out of 10`}>
@@ -238,8 +246,8 @@
     <div data-part="card.title" data-theme-card-label class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight">
       {#if dot(media)}<span class="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={`background:${dot(media)}`}></span>{/if}{title(media)}
     </div>
-    {#if subline}
-      <div data-part="card.meta" data-theme-card-label class="mt-0.5 truncate text-[0.7rem] font-semibold text-foreground/70">{subline}</div>
+    {#if line}
+      <div data-part="card.meta" data-theme-card-label class="mt-0.5 truncate text-[0.7rem] font-semibold text-foreground/70">{line}</div>
     {:else if jvmSource}
       <div data-part="card.meta" data-theme-card-label class="mt-0.5 flex min-w-0 items-center justify-between gap-1.5 text-[0.7rem] text-muted-foreground">
         <span class="flex min-w-0 items-center gap-1">
