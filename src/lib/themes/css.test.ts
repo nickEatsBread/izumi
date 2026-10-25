@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { sanitizeRules, sanitizeThemeCss, themeStyleText } from './css'
+import { mirrorFocusSelectors, pinViewportUnits, sanitizeRules, sanitizeThemeCss, themeStyleText } from './css'
 
 const flat = (css: string) => {
   const result = sanitizeThemeCss(css)
@@ -51,5 +51,38 @@ describe('theme stylesheet sanitiser', () => {
   })
   it('leaves the text unwrapped for engines without @scope', () => {
     expect(themeStyleText({ css: '.a { color: red; }', global: '' }, false)).toBe('.a { color: red; }')
+  })
+})
+
+describe('Game mode stylesheet rewrites', () => {
+  it('writes viewport units as multiples of the host px variables', () => {
+    expect(pinViewportUnits('.a { font-size: calc(100vw / 1920 * 32); height: -.5dvh; width: 2.5vmin; margin: 1VMAX; }'))
+      .toBe('.a { font-size: calc(calc(100 * var(--izumi-safe-vw)) / 1920 * 32); height: calc(-.5 * var(--izumi-safe-vh)); width: calc(2.5 * var(--izumi-safe-vmin)); margin: calc(1 * var(--izumi-safe-vmax)); }')
+  })
+  it('leaves strings, url(), identifiers and other units alone', () => {
+    const css = '.a { content: "10vw"; background: url(x-10vh.png); --gap-10vw: 1px; animation-name: k5vh; width: 10vwx; height: 4rem; }'
+    expect(pinViewportUnits(css)).toBe(css)
+  })
+  it('turns focus pseudo-classes into the focus mirror attributes, keeping :focus-visible', () => {
+    const { css, watches } = mirrorFocusSelectors('.a:focus, .b:focus-within .c, .d:focus-visible, .e:is(:focus, :focus-within) { content: ":focus"; }')
+    expect(css).toBe('.a[data-izumi-focus], .b[data-izumi-focus-within] .c, .d:focus-visible, .e:is([data-izumi-focus], [data-izumi-focus-within]) { content: ":focus"; }')
+    expect(watches).toEqual([])
+  })
+  it('gives each :has() focus compound its own watch token', () => {
+    const { css, watches } = mirrorFocusSelectors([
+      ':root:has([data-slot="nav.top"]:focus-within) .x { opacity: .5 }',
+      '.row:has(> .card:not(.off):focus) { color: red }',
+      '.y:has([data-slot="nav.top"]:focus-within, :focus) { color: blue }',
+    ].join('\n'))
+    expect(css).toBe([
+      ':root:has([data-slot="nav.top"][data-izumi-has-focus~="w0"]) .x { opacity: .5 }',
+      '.row:has(> .card:not(.off)[data-izumi-has-focus~="f1"]) { color: red }',
+      '.y:has([data-slot="nav.top"][data-izumi-has-focus~="w0"], [data-izumi-has-focus~="f2"]) { color: blue }',
+    ].join('\n'))
+    expect(watches).toEqual([
+      { token: 'w0', selector: '[data-slot="nav.top"]', kind: 'within' },
+      { token: 'f1', selector: '.card:not(.off)', kind: 'focus' },
+      { token: 'f2', selector: '*', kind: 'focus' },
+    ])
   })
 })

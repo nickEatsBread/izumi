@@ -97,6 +97,7 @@
   import { instantScrollUntil, rememberScroll, restoreScroll } from '$lib/navigation/scroll-restoration'
   import { initGmTouchWatchdog, restoreGmTouchAfterTransition } from '$lib/player/gm-touch-watchdog'
   import { startGmCssMotion } from '$lib/motion/gm-css-motion'
+  import { startFocusMirror } from '$lib/themes/focus-mirror'
   import { deckWebviewZoom } from '$lib/deck/webview-zoom'
   import { globalSearchOpen, closeGlobalSearch, openGlobalSearch } from '$lib/search/global-search'
   import { trailerPopup } from '$lib/stores/trailer'
@@ -211,6 +212,8 @@
   })
   // WebKitGTK blinks an element as its CSS animation or transition ends; Game mode replays them from script.
   $effect(() => { if ($gameModeResolved && $gameMode) return startGmCssMotion() })
+  // A theme reads focus from attributes in Game mode, which WebKitGTK restyles far more cheaply (focus-mirror.ts).
+  $effect(() => { if ($gameModeResolved && $gameMode) return startFocusMirror() })
   // WebKitGTK decodes an image only when it first paints, and paints it blank until then: a theme's wide
   // art, loaded hidden and shown on focus, left the focused tile empty for two frames. Decode hidden
   // images as they load so they are ready; visible ones decode with their first paint as before.
