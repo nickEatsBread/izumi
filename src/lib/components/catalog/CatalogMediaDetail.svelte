@@ -314,9 +314,9 @@
           {/if}
           <div data-part="detail.actions" class="mt-5 flex flex-wrap gap-2">
             {#if upNext}
-              <button data-part="button" data-variant="primary" data-action="play" data-focusable onclick={() => play(upNext.video, upNext.playhead || undefined)} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> Continue{upNext.label ? ` · ${upNext.label}` : ''}</button>
+              <button data-part="button" data-variant="primary" data-action="play" data-focusable data-nav-scroll-top onclick={() => play(upNext.video, upNext.playhead || undefined)} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> Continue{upNext.label ? ` · ${upNext.label}` : ''}</button>
             {:else}
-              <button data-part="button" data-variant="primary" data-action="play" data-focusable onclick={() => play(videos[0])} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {isMovie ? 'Play' : 'Play episode 1'}</button>
+              <button data-part="button" data-variant="primary" data-action="play" data-focusable data-nav-scroll-top onclick={() => play(videos[0])} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {isMovie ? 'Play' : 'Play episode 1'}</button>
             {/if}
             {#if watchlistUrl}
               <button data-part="button" data-variant="secondary" data-action="watchlist" data-state={onSourceList ? 'saved' : undefined} data-focusable disabled={sourceListBusy} onclick={toggleSourceList}

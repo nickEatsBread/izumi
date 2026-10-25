@@ -627,6 +627,14 @@ function deadEndScroll(active: HTMLElement, dir: Dir, rapid = false): boolean {
   return true
 }
 
+/** Any control of a Home banner that opens the page (a theme template's buttons as much as izumi's
+ *  own Play): reaching it shows the whole banner, as the page looked when it opened. A banner placed
+ *  further down by a theme layout is revealed like any other row. */
+export function inTopBanner(el: Element, scrollY = window.scrollY): boolean {
+  const hero = el.closest('[data-slot="home.hero"]')
+  return !!hero && hero.getBoundingClientRect().top + scrollY < 160
+}
+
 /** Reveal controller focus without asking scrollIntoView to move every scrollable ancestor. The
  * settings category rail owns its own viewport; moving it must never scroll the category content. */
 function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void {
@@ -640,7 +648,7 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
   const behavior: ScrollBehavior = rapid || reduced ? 'auto' : 'smooth'
   // The featured carousel is taller than the safe-band math can infer from its bottom action row.
   // Entering its primary action means reveal the whole feature, not just the focused button.
-  if (vertical && el.hasAttribute('data-nav-scroll-top')) {
+  if (vertical && (el.hasAttribute('data-nav-scroll-top') || inTopBanner(el))) {
     runControllerScroll(window, behavior, () => window.scrollTo({ top: 0, behavior }))
     return
   }
