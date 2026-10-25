@@ -170,7 +170,8 @@ async fn post_licence(req: &Request, body: Vec<u8>) -> Result<Vec<u8>> {
 }
 
 fn requested_mode(req: &Request) -> Option<VideoMode> {
-    let wanted = std::env::var("IZUMI_WIDEVINE_VIDEO").ok().or_else(|| req.video_mode.clone());
+    // The player's own request (the fallback after a refusal) beats the diagnostic override.
+    let wanted = req.video_mode.clone().filter(|m| m != "auto").or_else(|| std::env::var("IZUMI_WIDEVINE_VIDEO").ok());
     match wanted.as_deref() {
         Some("module") => Some(VideoMode::Module),
         Some("hardware") => Some(VideoMode::Hardware),

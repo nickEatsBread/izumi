@@ -63,7 +63,9 @@ unsafe extern "C" fn read(cookie: *mut c_void, buf: *mut c_char, nbytes: u64) ->
             n as i64
         }
         Ok(Err(e)) => {
-            if !r.cancel.is_cancelled() {
+            if r.cancel.is_cancelled() {
+                eprintln!("[widevine] {} read at {pos} stopped: mpv cancelled the stream", r.source.name());
+            } else {
                 eprintln!("[widevine] {} read at {pos} failed: {e:#}", r.source.name());
             }
             -1

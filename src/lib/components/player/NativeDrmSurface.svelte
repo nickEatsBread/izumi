@@ -54,6 +54,9 @@
   let qualityMode: 'auto' | number = 'auto'
   let activeHeight = 0
   let heights: number[] = []
+  let videoPath: 'module' | 'hardware' | '' = ''
+  // After the module refused a sample once, later reloads (dub, quality) stay on its decoder.
+  let moduleOnly = false
   let loadGen = 0
   let embedding = false
   let pendingSid: string | null = null
@@ -158,12 +161,13 @@
           licenseHeaders: drm.licenseHeaders,
           serverCertificateUrl: drm.serverCertificateUrl,
           maxHeight: qualityMode === 'auto' ? undefined : qualityMode,
-          videoMode,
+          videoMode: videoMode ?? (moduleOnly ? 'module' : undefined),
         },
       })
       if (gen !== loadGen) return false
       activeManifest = manifest
       if (prepared) {
+        videoPath = prepared.mode === 'hardware' ? 'hardware' : 'module'
         activeHeight = prepared.height
         heights = prepared.heights.filter((h) => h >= 240)
         emitQuality()
@@ -222,7 +226,8 @@
         id: HARD_ID + i,
         type: 'sub',
         lang: t.lang,
-        title: `${t.title || t.lang || 'Subtitles'} (burned in)`,
+        // The menu prefixes the language name, so the title only says what kind of track it is.
+        title: t.title ? `${t.title} (burned in)` : 'Burned in',
         selected: !!hard && langsEqual(t.lang, hard),
         switchUrl: t.switchUrl,
       }))
@@ -265,6 +270,7 @@
 
   async function load() {
     const gen = ++loadGen
+    moduleOnly = false
     liveSubs = subtitles
     liveAudio = audioChoices
     liveAudioLang = audioLang
@@ -311,6 +317,10 @@
   }))
   // The hardware path met a sample the module will not release: continue with its own decoder.
   $effect(() => listenSafe('player-drm-video-refused', () => {
+    // A late refusal from the hardware stream being replaced must not reload again.
+    if (videoPath !== 'hardware') return
+    videoPath = 'module'
+    moduleOnly = true
     const target = activeManifest || url
     activeManifest = ''
     void embed(target, pos, 'module')
