@@ -189,17 +189,8 @@ pub async fn prepare(data: &std::path::Path, manifest_url: &str, req: &Request, 
         ensure!(ks == "com.widevine.alpha", "{ks} is not supported on this device");
     }
     let data = data.to_path_buf();
+    // Updates are the module worker's job (`crate::modules`).
     let installed = fetch::installed(&data).ok_or_else(|| anyhow!("{}", super::NOT_INSTALLED))?;
-    {
-        let data = data.clone();
-        tauri::async_runtime::spawn(async move {
-            match fetch::update_if_due(http(), &data).await {
-                Ok(Some(v)) => eprintln!("[widevine] module {v} installed; it is used from the next start"),
-                Ok(None) => {}
-                Err(e) => eprintln!("[widevine] module update check failed: {e:#}"),
-            }
-        });
-    }
     let library = installed.library.clone();
     let version = blocking(move || cdm::load_module(&library)).await?;
     if version == installed.version {

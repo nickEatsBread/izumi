@@ -23,7 +23,8 @@
   import { isAndroid, isAndroidTv, isWindows } from '$lib/platform'
   import { inAppPlayerAvailable } from '$lib/player/in-app-player'
   import { gameMode } from '$lib/player/session'
-  import { nativeDrmSupported, type WidevineStatus } from '$lib/player/native-drm'
+  import { nativeDrmSupported } from '$lib/player/native-drm'
+  import { modules, moduleOnItsWay, modulePercent, moduleProgressText, refreshModules, retryModules } from '$lib/modules/modules'
   import { invoke } from '@tauri-apps/api/core'
   import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
   import SettingsSubcategory from '$lib/components/settings/SettingsSubcategory.svelte'
@@ -46,19 +47,26 @@
   }
 
   let pendingAnime = $state(false) // shows the one-time shader consent
-  // Linux: Google's Widevine module, downloaded on the first protected stream after consent.
-  let widevineVersion = $state<string | null>(null)
+  // Linux: Google's Widevine module, downloaded on the first protected stream after consent, or in
+  // the background when a pack asked for it.
   let widevineBusy = $state(false)
+  const widevine = $derived($modules.widevine)
+  const widevineVersion = $derived(widevine?.state === 'ready' ? widevine.version : null)
+  const widevineLabel = $derived.by(() => {
+    if (!widevine) return 'Not installed'
+    if (widevineVersion) return `Installed (${widevineVersion})`
+    if (moduleOnItsWay(widevine)) return `${moduleProgressText(widevine)}${widevine.state === 'downloading' ? ` (${modulePercent(widevine)}%)` : ''}`
+    return 'Not installed'
+  })
   $effect(() => {
-    if (!$nativeDrmSupported) return
-    void invoke<WidevineStatus>('widevine_status').then((status) => { widevineVersion = status.installed }).catch(() => {})
+    if ($nativeDrmSupported) void refreshModules()
   })
   async function removeWidevine() {
     widevineBusy = true
     try {
       await invoke('widevine_remove')
-      widevineVersion = null
     } catch { /* keep showing the installed version */ }
+    await refreshModules()
     widevineBusy = false
   }
   let qualityRow = $state<HTMLDivElement>()
@@ -464,10 +472,13 @@
       { value: 'off', label: 'Off' },
     ]} />
     {#if $nativeDrmSupported}
-      <SettingsRow settingKey="protected-video-module" title="Protected video" description="Google's Widevine module, used to play encrypted streams." learnMore="Downloaded from Google the first time an encrypted stream plays, after you accept Google's licence. Video is decrypted only in izumi's memory and decoded by the module, as in Chrome and Firefox on Linux. Removing it asks again next time.">
+      <SettingsRow settingKey="protected-video-module" title="Protected video" description="Google's Widevine module, used to play encrypted streams." learnMore="Downloaded from Google the first time an encrypted stream plays, after you accept Google's licence, or in the background when a pack you set up asks for it. Video is decrypted only in izumi's memory and decoded by the module, as in Chrome and Firefox on Linux. Removing it asks again next time.">
         {#snippet control()}
-          <span class="text-xs text-muted-foreground">{widevineVersion ? `Installed (${widevineVersion})` : 'Not installed'}</span>
-          {#if widevineVersion}
+          <span class="text-xs tabular-nums text-muted-foreground">{widevineLabel}</span>
+          {#if widevine?.state === 'failed'}
+            <button type="button" data-focusable class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold hover:bg-accent" onclick={() => void retryModules()}>Try again</button>
+          {/if}
+          {#if widevineVersion || moduleOnItsWay(widevine)}
             <button type="button" data-focusable disabled={widevineBusy} class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold hover:bg-accent disabled:opacity-60" onclick={() => void removeWidevine()}>Remove</button>
           {/if}
         {/snippet}

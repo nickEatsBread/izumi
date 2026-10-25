@@ -69,6 +69,8 @@ mod steam_osk;
 // protected streams in their webview's EME.
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod widevine;
+// Optional native modules (packs ask for them by id), downloaded in the background.
+mod modules;
 
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -485,6 +487,30 @@ async fn player_embed(
     // and the overlay spun forever while every `player_command` failed with "no player".
     player::require_live_core(player.has_core())?;
     Ok(protected)
+}
+
+/// Every module izumi knows, with whether it is wanted, installed or downloading on this device.
+#[tauri::command]
+fn module_status() -> Result<Vec<modules::Status>, String> {
+    modules::module_status()
+}
+
+/// Asks for a module on behalf of `by` (`pack:<id>` or `user`) after its licence was shown.
+#[tauri::command]
+fn module_request(id: String, by: String) -> Result<modules::Status, String> {
+    modules::module_request(id, by)
+}
+
+/// Tries a failed module download again now.
+#[tauri::command]
+fn module_retry() -> Result<(), String> {
+    modules::module_retry()
+}
+
+/// Withdraws a request; the module is deleted once nobody wants it (`by` = null: delete now).
+#[tauri::command]
+fn module_release(id: String, by: Option<String>) -> Result<(), String> {
+    modules::module_release(id, by)
 }
 
 /// Whether izumi's own player can play protected streams here, and which module version is ready.
@@ -5926,6 +5952,7 @@ pub fn run() {
             // stat walk over an abandoned torrent payload must not sit between launch and paint.
             cache_gc::sweep_at_startup(app.handle());
             subtitle_fonts::init(app.handle());
+            modules::start(app.handle());
             // Stash a magnet URL only when the OS/user explicitly launched this executable with
             // one. Izumi never registers or claims the magnet scheme itself.
             #[cfg(not(target_os = "android"))]
@@ -6636,6 +6663,10 @@ pub fn run() {
             widevine_download,
             widevine_accept,
             widevine_remove,
+            module_status,
+            module_request,
+            module_retry,
+            module_release,
             player_diag,
             mpv_version,
             player_command,
@@ -6711,6 +6742,10 @@ pub fn run() {
         // Always answers None on Android (no argv), but keeping it registered means the shared
         // deep-link bootstrap doesn't have to branch per platform.
         take_pending_magnet,
+        module_status,
+        module_request,
+        module_retry,
+        module_release,
         // Android has no scrub tiles (playback is delegated), but it does accumulate the torrent,
         // subtitle and update buckets, and the Storage screen is shared.
         cache_usage,

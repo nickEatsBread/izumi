@@ -21,7 +21,9 @@
     type NativeQuality,
   } from '$lib/player/native-drm'
   import type { DrmAudioChoice, DrmSubtitle, DrmTrack, StreamDrm } from '$lib/player/drm'
+  import { moduleOnItsWay, refreshModules, waitForModule } from '$lib/modules/modules'
   import WidevineConsent from './WidevineConsent.svelte'
+  import ModuleWait from './ModuleWait.svelte'
 
   let {
     url,
@@ -64,6 +66,9 @@
   const released = new Set<string>()
   let consent = $state(false)
   let waitingForConsent: ((ok: boolean) => void) | null = null
+  // A pack already asked for the module and it is still downloading: wait instead of asking.
+  let moduleWait = $state(false)
+  let moduleWaitAbort: AbortController | null = null
 
   function release(target: string) {
     if (!target || released.has(target)) return
@@ -123,6 +128,22 @@
     resolve?.(ok)
   }
 
+  /** Waits for the background download; false if the user closes the player first. */
+  async function waitForBackgroundModule(): Promise<boolean> {
+    moduleWaitAbort?.abort()
+    const abort = new AbortController()
+    moduleWaitAbort = abort
+    moduleWait = true
+    try {
+      return await waitForModule('widevine', abort.signal)
+    } finally {
+      if (moduleWaitAbort === abort) {
+        moduleWait = false
+        moduleWaitAbort = null
+      }
+    }
+  }
+
   async function embed(manifest: string, start: number, videoMode?: 'module'): Promise<boolean> {
     const gen = loadGen
     embedding = true
@@ -177,6 +198,13 @@
       if (gen !== loadGen) return false
       const message = String(e)
       if (message.includes(NOT_INSTALLED)) {
+        const onItsWay = moduleOnItsWay((await refreshModules()).widevine)
+        if (gen !== loadGen) return false
+        if (onItsWay) {
+          if (await waitForBackgroundModule()) return embed(manifest, start, videoMode)
+          onclose?.()
+          return false
+        }
         if (await askForModule()) return embed(manifest, start, videoMode)
         playerNotice.set('Protected video needs the Widevine module')
         onclose?.()
@@ -333,6 +361,7 @@
     loadGen++
     setNativeDrm(null)
     finishConsent(false)
+    moduleWaitAbort?.abort()
     previews?.dispose()
     previews = null
     release(activeRelease)
@@ -341,4 +370,6 @@
 
 {#if consent}
   <WidevineConsent onaccepted={() => finishConsent(true)} ondeclined={() => finishConsent(false)} />
+{:else if moduleWait}
+  <ModuleWait id="widevine" onclose={() => moduleWaitAbort?.abort()} />
 {/if}

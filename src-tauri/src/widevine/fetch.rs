@@ -299,8 +299,9 @@ pub async fn stage(client: &reqwest::Client, data_dir: &Path, progress: &(dyn Fn
     Ok(Staged { license: staged_license(&dest), version: offer.version })
 }
 
-/// Records the user's acceptance and moves the staged module to where the player loads it.
-pub fn accept(data_dir: &Path, version: &str) -> Result<Installed> {
+/// Records the licence acceptance and moves the staged module to where the player loads it. `via`
+/// says where it was accepted: `user` (the player's prompt) or `pack:<id>` (a pack's review screen).
+pub fn accept(data_dir: &Path, version: &str, via: &str) -> Result<Installed> {
     ensure!(valid_version(version), "bad version");
     let staged = staged_dir(data_dir, version);
     let dest = root(data_dir).join(version);
@@ -310,7 +311,7 @@ pub fn accept(data_dir: &Path, version: &str) -> Result<Installed> {
     } else {
         let _ = fs::remove_dir_all(&staged);
     }
-    let consent = json!({ "acceptedVersion": version, "acceptedAt": unix_now() });
+    let consent = json!({ "acceptedVersion": version, "acceptedAt": unix_now(), "acceptedVia": via });
     fs::write(root(data_dir).join(CONSENT_FILE), serde_json::to_vec_pretty(&consent)?)?;
     let found = installed_at(&dest)?;
     // Older versions stay until this one has loaded once (see prune_old).
@@ -442,7 +443,7 @@ mod tests {
         assert!(installed(&data).is_none(), "nothing is usable before the licence is accepted");
         assert_eq!(staged_license(&staged_dir(&data, "4.10.3112.0")), "module licence text");
 
-        let got = accept(&data, "4.10.3112.0").unwrap();
+        let got = accept(&data, "4.10.3112.0", "user").unwrap();
         assert_eq!(got.version, "4.10.3112.0");
         assert_eq!(got.interface, 11);
         assert!(got.library.ends_with("widevine/4.10.3112.0/libwidevinecdm.so"));

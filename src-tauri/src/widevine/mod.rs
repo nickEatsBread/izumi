@@ -95,11 +95,13 @@ pub fn widevine_status(app: AppHandle) -> Result<Status, String> {
     Ok(Status { supported: true, installed: fetch::installed(&data).map(|i| i.version) })
 }
 
+/// One module download at a time, shared by the player's prompt and the background module worker.
+pub(crate) static DOWNLOAD: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Downloads and verifies Google's current module into a staging folder; returns its licence text
 /// for the user to read. Nothing is usable until [`widevine_accept`].
 pub async fn widevine_download(app: AppHandle) -> Result<Staged, String> {
-    static BUSY: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-    let _one_at_a_time = BUSY.lock().await;
+    let _one_at_a_time = DOWNLOAD.lock().await;
     let data = data_dir(&app)?;
     let client = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(15))
@@ -116,11 +118,18 @@ pub async fn widevine_download(app: AppHandle) -> Result<Staged, String> {
 
 pub fn widevine_accept(app: AppHandle, version: String) -> Result<String, String> {
     let data = data_dir(&app)?;
-    fetch::accept(&data, &version).map(|i| i.version).map_err(|e| format!("{e:#}"))
+    let installed = fetch::accept(&data, &version, "user").map(|i| i.version).map_err(|e| format!("{e:#}"))?;
+    // Recorded as wanted so the background worker keeps it updated like a pack's module.
+    if let Err(e) = crate::modules::module_request("widevine".into(), "user".into()) {
+        eprintln!("[widevine] could not record the module request: {e}");
+    }
+    Ok(installed)
 }
 
+/// Deletes the module and every request for it (Settings > Remove).
 pub fn widevine_remove(app: AppHandle) -> Result<(), String> {
     let data = data_dir(&app)?;
+    crate::modules::module_release("widevine".into(), None)?;
     fetch::remove(&data).map_err(|e| format!("{e:#}"))
 }
 
