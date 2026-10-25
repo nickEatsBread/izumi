@@ -228,24 +228,24 @@
                 <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {!!values[field.key] ? 'translate-x-4' : 'translate-x-0.5'}"></span>
               </span>
             </button>
-          {:else if field.type === 'select' && field.role === 'action'}
-          <!-- A button list rather than a native select: select popups are unreliable with a controller. -->
-          <span role="radiogroup" aria-label={field.label} class="flex flex-col gap-2">
-            {#each field.options ?? [] as option (option.value)}
-              <button
-                type="button"
-                data-focusable
-                role="radio"
-                aria-checked={values[field.key] === option.value}
-                onclick={() => setValue(field.key, option.value)}
-                class="rounded-lg border px-3 py-2.5 text-left text-sm {values[field.key] === option.value ? 'border-theme bg-theme/15' : 'border-border bg-input'}"
-              >
-                <span class="block font-bold">{option.label}</span>
-                {#if option.description}<span class="mt-0.5 block text-xs text-muted-foreground">{option.description}</span>{/if}
-              </button>
-            {/each}
-          </span>
-        {:else if field.type === 'select'}
+          {:else if field.type === 'select' && (field.role === 'action' || (field.options?.length ?? 0) <= 6)}
+            <!-- Short lists are buttons, not a native select: select popups are unreliable with a controller. -->
+            <span role="radiogroup" aria-label={field.label} class="flex flex-col gap-2">
+              {#each field.options ?? [] as option (option.value)}
+                <button
+                  type="button"
+                  data-focusable
+                  role="radio"
+                  aria-checked={values[field.key] === option.value}
+                  onclick={() => setValue(field.key, option.value)}
+                  class="rounded-lg border px-3 py-2.5 text-left text-sm {values[field.key] === option.value ? 'border-theme bg-theme/15' : 'border-border bg-input'}"
+                >
+                  <span class="block font-bold">{option.label}</span>
+                  {#if option.description}<span class="mt-0.5 block text-xs text-muted-foreground">{option.description}</span>{/if}
+                </button>
+              {/each}
+            </span>
+          {:else if field.type === 'select'}
             <select
               data-focusable
               value={String(values[field.key] ?? '')}
