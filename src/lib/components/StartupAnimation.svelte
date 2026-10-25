@@ -12,7 +12,6 @@
     startupAnimationPlaying,
     startupAnimationRequest,
     startupAnimationUrl,
-    syncStartupAnimationInfo,
   } from '$lib/startup/animation'
 
   let src = $state('')
@@ -32,10 +31,9 @@
     playing = true
     leaving = false
     try { sessionStorage.setItem(STARTUP_PLAYED_KEY, '1') } catch { /* private storage */ }
+    // Re-reads the info from Rust, so a cached copy that outlived the file paints no cover next time.
     const url = await startupAnimationUrl()
     if (!url) {
-      // The cached info outlived the file: forget it so the next launch paints no cover.
-      void syncStartupAnimationInfo()
       playing = false
       uncover()
       return
@@ -58,13 +56,11 @@
     clearTimeout(cap)
     stopReveal?.()
     uncover()
-    const done = src
     setTimeout(() => {
       src = ''
       leaving = false
       playing = false
       startupAnimationPlaying.set(false)
-      if (done) URL.revokeObjectURL(done)
     }, 320)
   }
 
@@ -90,7 +86,6 @@
       window.removeEventListener('keydown', onKey, true)
       clearTimeout(cap)
       stopReveal?.()
-      if (src) URL.revokeObjectURL(src)
       uncover()
     }
   })

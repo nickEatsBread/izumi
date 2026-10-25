@@ -70,7 +70,10 @@
 
   async function focusPrimary() {
     await tick()
-    root?.querySelector<HTMLElement>('[data-pack-primary]')?.focus({ preventScroll: true })
+    const primary = root?.querySelector<HTMLElement>('[data-pack-primary]')
+    primary?.focus({ preventScroll: true })
+    // The page scrolls: a focused button below the fold must come into view.
+    primary?.scrollIntoView({ block: 'nearest' })
   }
 
   async function load() {
@@ -205,7 +208,7 @@
           {#each themes as planned (planned.item.ref)}
             <li class="flex gap-3">
               <Palette class="mt-0.5 shrink-0 text-theme" size={18} />
-              <span class="text-sm"><span class="font-bold">Install the theme {planned.entry?.name ?? planned.item.id}</span>{#if planned.item.apply} <span class="text-muted-foreground">and use it.</span>{/if}</span>
+              <span class="text-sm"><span class="font-bold">Install the theme {planned.entry?.name ?? planned.item.id}</span>{#if planned.item.apply}{' '}<span class="text-muted-foreground">and use it.</span>{/if}</span>
             </li>
           {/each}
           {#each plan.modules as module (module.id)}
@@ -231,7 +234,7 @@
           {#each pack.steps as step, index (index)}
             <li class="flex gap-3">
               <KeyRound class="mt-0.5 shrink-0 text-theme" size={18} />
-              <span class="text-sm"><span class="font-bold">Then ask you to {step.title ? step.title.toLowerCase() : `set up ${plan.items.find((i) => i.item.ref === step.item)?.entry?.name ?? 'a source'}`}.</span></span>
+              <span class="text-sm"><span class="font-bold">Then ask you to {step.title ? step.title[0].toLowerCase() + step.title.slice(1) : `set up ${plan.items.find((i) => i.item.ref === step.item)?.entry?.name ?? 'a source'}`}.</span></span>
             </li>
           {/each}
         </ul>

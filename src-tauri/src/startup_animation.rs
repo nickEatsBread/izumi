@@ -1,8 +1,9 @@
 //! The startup animation a pack can set: one short video izumi plays full-screen while it starts.
 //!
 //! The file is downloaded once over HTTPS, checked against the size and SHA-256 the pack pinned, and
-//! kept in `<data>/startup/`. The frontend reads it back over IPC and plays it from a blob URL, so
-//! no file path or custom scheme is exposed to the webview.
+//! kept in `<data>/startup/`. The webview plays it from `izstartup://` ([`protocol`]), which serves
+//! only that one file and answers range requests: WebKitGTK's media loader reads video in ranges and
+//! fails to decode the same file from a blob URL.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -142,12 +143,48 @@ pub fn startup_animation_info(app: AppHandle) -> Result<Option<Info>, String> {
     Ok(read_info(&dir(&app)?))
 }
 
-/// The video itself, as raw bytes for a blob URL.
-#[tauri::command]
-pub fn startup_animation_bytes(app: AppHandle) -> Result<tauri::ipc::Response, String> {
-    let dir = dir(&app)?;
-    read_info(&dir).ok_or("no startup animation")?;
-    std::fs::read(dir.join(FILE)).map(tauri::ipc::Response::new).map_err(|e| e.to_string())
+/// `bytes=a-b`, `bytes=a-` or `bytes=-n` as an inclusive range within `len`; None if unsatisfiable.
+fn byte_range(header: &str, len: u64) -> Option<(u64, u64)> {
+    let spec = header.trim().strip_prefix("bytes=")?.split(',').next()?.trim();
+    let (start, end) = spec.split_once('-')?;
+    let (start, end) = match (start.trim(), end.trim()) {
+        ("", suffix) => {
+            let n: u64 = suffix.parse().ok()?;
+            (len.checked_sub(n.min(len))?, len.checked_sub(1)?)
+        }
+        (a, "") => (a.parse().ok()?, len.checked_sub(1)?),
+        (a, b) => (a.parse().ok()?, b.parse::<u64>().ok()?.min(len.checked_sub(1)?)),
+    };
+    (start <= end && end < len).then_some((start, end))
+}
+
+/// `izstartup://localhost/animation` (`http://izstartup.localhost/animation` on Windows and
+/// Android): the saved video with range support, and nothing else.
+pub fn protocol(app: &AppHandle, request: tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
+    use tauri::http::{header, Response, StatusCode};
+    let empty = |status: StatusCode| Response::builder().status(status).body(Vec::new()).expect("valid response");
+    let Ok(dir) = dir(app) else { return empty(StatusCode::NOT_FOUND) };
+    let Some(info) = read_info(&dir) else { return empty(StatusCode::NOT_FOUND) };
+    let Ok(body) = std::fs::read(dir.join(FILE)) else { return empty(StatusCode::NOT_FOUND) };
+    let len = body.len() as u64;
+    let response = Response::builder()
+        .header(header::CONTENT_TYPE, info.mime)
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CACHE_CONTROL, "no-store");
+    let range = request.headers().get(header::RANGE).and_then(|value| value.to_str().ok());
+    let response = match range.map(|value| byte_range(value, len)) {
+        None => response.status(StatusCode::OK).header(header::CONTENT_LENGTH, len).body(body),
+        Some(None) => response
+            .status(StatusCode::RANGE_NOT_SATISFIABLE)
+            .header(header::CONTENT_RANGE, format!("bytes */{len}"))
+            .body(Vec::new()),
+        Some(Some((start, end))) => response
+            .status(StatusCode::PARTIAL_CONTENT)
+            .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{len}"))
+            .header(header::CONTENT_LENGTH, end - start + 1)
+            .body(body[start as usize..=end as usize].to_vec()),
+    };
+    response.unwrap_or_else(|_| empty(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
 #[cfg(test)]
@@ -178,6 +215,19 @@ mod tests {
         assert!(verify(&body, body.len() as u64, &"0".repeat(64)).is_err());
         let html = b"<html>not a video</html>".to_vec();
         assert!(verify(&html, html.len() as u64, &sha256_hex(&html)).is_err());
+    }
+
+    #[test]
+    fn ranges_follow_http_rules() {
+        assert_eq!(byte_range("bytes=0-", 100), Some((0, 99)));
+        assert_eq!(byte_range("bytes=10-19", 100), Some((10, 19)));
+        assert_eq!(byte_range("bytes=90-500", 100), Some((90, 99)));
+        assert_eq!(byte_range("bytes=-30", 100), Some((70, 99)));
+        assert_eq!(byte_range("bytes=-300", 100), Some((0, 99)));
+        assert_eq!(byte_range("bytes=100-", 100), None);
+        assert_eq!(byte_range("bytes=20-10", 100), None);
+        assert_eq!(byte_range("items=0-1", 100), None);
+        assert_eq!(byte_range("bytes=0-", 0), None);
     }
 
     #[test]
