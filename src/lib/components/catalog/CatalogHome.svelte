@@ -34,6 +34,8 @@
   import { blockRowOptions, blockTitle, splitHomeColumns } from '$lib/home/block-rows'
   import { homeAsideWidth, homeBlocks, isBlockId } from '$lib/home/blocks'
   import { mediaHref } from '$lib/anilist/media'
+  import { mediaRef } from '$lib/catalog/identity'
+  import { playEpisode } from '$lib/stremio/play'
   import { anilistUser } from '$lib/anilist/account'
   import { isMobile } from '$lib/platform'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
@@ -66,6 +68,23 @@
   const sourceScreen = $derived(isSourceSelection($catalogProvider))
   // A source answers with nothing until it is set up (signed in): its settings open from here.
   let sourceSetup = $state(false)
+  // A source's own featured title plays from the banner where the source says the viewer is up to
+  // (else from its first episode), as the source's own app does; every other title opens its page.
+  async function playFromHero(media: Media) {
+    if (!sourceScreen || !media.catalog) return goto(mediaHref(media))
+    try {
+      const provider = await loadCatalogProvider('stremio')
+      const detail = await provider.detail(mediaRef(media))
+      const resume = detail?.sourceFacts?.upNext
+      const video = (resume && detail?.videos?.find((item) => item.id === resume.videoId)) ?? detail?.videos?.[0]
+      if (!detail || !video) return goto(mediaHref(media))
+      const movie = detail.catalog?.type === 'movie' || detail.format === 'MOVIE'
+      // The source picker reports its own failures.
+      await playEpisode(detail, movie ? undefined : video.number, () => {}, resume?.playhead ? { startSeconds: resume.playhead } : {})
+    } catch {
+      void goto(mediaHref(media))
+    }
+  }
   function closeSourceSetup() {
     sourceSetup = false
     if (isSourceSelection($catalogProvider)) forgetSourceAddon(sourcePackageOf($catalogProvider))
@@ -190,7 +209,7 @@
   {#snippet heroBlock()}
     {#if home?.hero.length}
       <Hero medias={heroSlides} artworkMode={$catalogProvider === 'stremio' ? $stremioHeroArtwork : 'backdrop'}
-        onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} onlist={(media) => (listMedia = media)} />
+        onplay={(media) => void playFromHero(media)} oninfo={(media) => goto(mediaHref(media))} onlist={(media) => (listMedia = media)} />
     {:else if loading && !$themePresentation?.hero?.hidden}
       <HeroPlaceholder />
     {/if}

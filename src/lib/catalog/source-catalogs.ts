@@ -13,7 +13,7 @@ export type SourceSelection = `source:${string}`
 export interface SourceCatalogInfo {
   packageId: string
   name: string
-  /** The manifest's https logo, for the screen's tile. */
+  /** The manifest's logo for the screen's tile: an https image or a small inline image. */
   logo?: string
 }
 
@@ -30,12 +30,16 @@ export interface SourceAddon {
 }
 
 const PACKAGE_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/i
+// A logo izumi draws in an <img>: https, or an inline raster/SVG image up to 32 KB.
+const LOGO = /^(https:\/\/|data:image\/(png|jpeg|webp|svg\+xml)[;,])/
+const logoOf = (value: unknown): string | undefined =>
+  typeof value === 'string' && value.length <= 32_768 && LOGO.test(value) ? value : undefined
 
 /** Source catalogs seen on this device, for labels and the screen list before a service starts. */
 export const sourceCatalogs = persisted<SourceCatalogInfo[]>('source-catalogs-v1', [], {
   beforeRead: (value) => (Array.isArray(value)
     ? value.filter((item): item is SourceCatalogInfo => !!item && typeof item.packageId === 'string' && PACKAGE_ID.test(item.packageId) && typeof item.name === 'string'
-      && (item.logo === undefined || (typeof item.logo === 'string' && item.logo.startsWith('https://'))))
+      && (item.logo === undefined || logoOf(item.logo) !== undefined))
     : []),
 })
 
@@ -56,7 +60,7 @@ export function knownSourceSelection(value: unknown): value is SourceSelection {
 const infoOf = (packageId: string, manifest: AddonManifest, fallback: string): SourceCatalogInfo => ({
   packageId,
   name: manifest.name || fallback,
-  ...(typeof manifest.logo === 'string' && manifest.logo.startsWith('https://') ? { logo: manifest.logo } : {}),
+  ...(logoOf(manifest.logo) ? { logo: manifest.logo } : {}),
 })
 
 export const sourceCatalogLogo = (selection: SourceSelection): string | undefined =>
