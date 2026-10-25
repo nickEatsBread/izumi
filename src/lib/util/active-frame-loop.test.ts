@@ -52,4 +52,25 @@ describe('ActiveFrameLoop', () => {
     expect(f.cancel).toHaveBeenCalledOnce()
     expect(f.pending.size).toBe(0)
   })
+
+  it('calls the real frame functions as globals, never on itself', () => {
+    // A browser rejects requestAnimationFrame called on any object but the window.
+    const strict = <T,>(result: T) => vi.fn(function (this: unknown) {
+      if (this !== undefined && this !== globalThis) throw new TypeError('Can only call Window.requestAnimationFrame on instances of Window')
+      return result
+    })
+    const raf = strict(7)
+    const caf = strict(undefined)
+    vi.stubGlobal('requestAnimationFrame', raf)
+    vi.stubGlobal('cancelAnimationFrame', caf)
+    try {
+      const loop = new ActiveFrameLoop(() => true)
+      expect(() => loop.start()).not.toThrow()
+      expect(() => loop.stop()).not.toThrow()
+      expect(raf).toHaveBeenCalledOnce()
+      expect(caf).toHaveBeenCalledWith(7)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })
