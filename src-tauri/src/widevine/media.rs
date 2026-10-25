@@ -535,7 +535,12 @@ impl RawVideo {
             return Ok(p.clone());
         }
         let behind = st.out.front().is_some_and(|p| k < p.idx);
-        let far = st.produced.map_or(st.next != (0, 0), |p| k > p + FORWARD_FRAMES);
+        let far = match st.produced {
+            Some(p) => k > p + FORWARD_FRAMES,
+            // Nothing decoded yet (a fresh stream opened at a resume point, or just after a reset):
+            // start at the fragment that holds `k` unless the decoder already sits at its start.
+            None => st.next != (self.fragment_of(k), 0),
+        };
         if behind || far {
             self.reset(&mut st, k)?;
         }
@@ -551,14 +556,18 @@ impl RawVideo {
         }
     }
 
+    /// The fragment whose leading IDR starts the decode for picture `k`.
+    fn fragment_of(&self, k: u64) -> usize {
+        self.frag_start_frame.partition_point(|s| *s <= k).saturating_sub(1)
+    }
+
     fn reset(&self, st: &mut State, k: u64) -> Result<()> {
         self.cdm.video_reset()?;
         st.out.clear();
         st.produced = None;
         st.fresh = true;
         st.drained = false;
-        let f = self.frag_start_frame.partition_point(|s| *s <= k).saturating_sub(1);
-        st.next = (f, 0);
+        st.next = (self.fragment_of(k), 0);
         Ok(())
     }
 
