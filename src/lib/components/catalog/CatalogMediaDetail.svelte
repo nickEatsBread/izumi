@@ -55,6 +55,7 @@
   import { getContextClient } from '@urql/svelte'
   import { downloads, enqueue, enqueueMany } from '$lib/downloads/store'
   import { keyFor } from '$lib/downloads/state'
+  import { currentDownloadPreferences } from '$lib/downloads/rules'
   import { findAnilistMatch } from '$lib/catalog/anilist-match'
   import { PAGE_OPTIONS_EVENT } from '$lib/nav/gamepad'
 
@@ -242,7 +243,7 @@
             label: state === 'done' ? 'Downloaded' : state === 'progress' ? 'Downloading' : state === 'queued' ? 'Waiting to download' : 'Download episode',
             icon: state === 'done' ? CircleCheck : Download,
             disabled: !!state && state !== 'error',
-            onselect: () => { if (media) enqueue(media, episode.number) },
+            onselect: () => { if (media) enqueue(media, episode.number, currentDownloadPreferences()) },
           },
         ],
       })
@@ -269,7 +270,7 @@
             detail: `${savedCount(season)} of ${season.length} saved`,
             icon: Download,
             disabled: !saveable(season).length,
-            onselect: () => { if (media) enqueueMany(media, saveable(season).map((video) => video.number)) },
+            onselect: () => { if (media) enqueueMany(media, saveable(season).map((video) => video.number), currentDownloadPreferences()) },
           }] : []),
           {
             id: 'download-all',
@@ -277,7 +278,7 @@
             detail: isMovie ? undefined : `${savedCount(all)} of ${all.length} saved`,
             icon: Download,
             disabled: !saveable(all).length,
-            onselect: () => { if (media) enqueueMany(media, saveable(all).map((video) => video.number)) },
+            onselect: () => { if (media) enqueueMany(media, saveable(all).map((video) => video.number), currentDownloadPreferences()) },
           },
         ],
       })
