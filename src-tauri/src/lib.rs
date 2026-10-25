@@ -2195,7 +2195,7 @@ async fn player_add_subtitle(
         token.as_deref(),
     )
     .await?;
-    player.add_subtitle(&path, &lang, &title)
+    player.add_subtitle(&path, &lang, &title).await
 }
 
 /// Android uses the same provider download/ZIP/charset pipeline, then hands the returned private
@@ -2239,7 +2239,7 @@ async fn player_attach_subtitle_url(
 ) -> Result<(), String> {
     // Direct-P2P online subtitles can land while the video is still opening; see sidecars_ready.
     player.sidecars_ready().await?;
-    player.add_subtitle_auto(&url, &lang, &title)
+    player.add_subtitle_auto(&url, &lang, &title).await
 }
 
 /// Warm the debrid/CDN edge for a resolved next-episode URL by pulling its first few

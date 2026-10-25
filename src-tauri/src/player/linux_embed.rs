@@ -22,7 +22,7 @@
 //! schedules a `glib::idle_add_once`; it never touches GL directly.
 //!
 //! ## mpv ownership / lifetimes
-//! The mpv core is owned by `PlayerHandle` (its `Mutex<Option<Mpv>>`), so all
+//! The mpv core is owned by `PlayerHandle` (its `Mutex<Option<Arc<Mpv>>>`), so all
 //! the existing controls (`command`/`get_property`/`tracks`/…) and the progress
 //! event loop work unchanged. [`attach`] builds a [`RenderContext`] bound to
 //! that core; libmpv2 ties the context's lifetime to a `&Mpv` borrow, which we

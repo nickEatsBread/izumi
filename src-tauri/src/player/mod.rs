@@ -9,7 +9,7 @@
 //! ## Send/Sync approach
 //! `libmpv2::Mpv` declares `unsafe impl Send for Mpv {}` and
 //! `unsafe impl Sync for Mpv {}` (see libmpv2 6.0.0 `src/mpv.rs`), so a plain
-//! `Mutex<Option<Mpv>>` is `Send + Sync` and satisfies Tauri's `State`
+//! `Mutex<Option<Arc<Mpv>>>` is `Send + Sync` and satisfies Tauri's `State`
 //! requirements directly.
 //!
 //! ## Event loop
@@ -198,7 +198,9 @@ pub struct ThumbInfo {
 /// lifetime of the app. Dropping the `Mpv` destroys the mpv core and closes
 /// its window, so we must retain it in state.
 pub struct PlayerHandle {
-    mpv: Mutex<Option<Mpv>>,
+    /// Shared so a command that blocks on the network can run with the lock released
+    /// (see `add_subtitle_with_flag`).
+    mpv: Mutex<Option<Arc<Mpv>>>,
     /// Commands originating in Game-mode UI must never synchronously enter libmpv from GTK's
     /// main thread. The dispatcher owns a separate client and coalesces seek/overlay bursts.
     #[cfg(target_os = "linux")]
@@ -321,7 +323,7 @@ impl PlayerHandle {
             &self.sidecar_gate,
         )?;
 
-        *guard = Some(mpv);
+        *guard = Some(Arc::new(mpv));
         Ok(())
     }
 
@@ -423,7 +425,7 @@ impl PlayerHandle {
             &self.sidecar_gate,
         )?;
 
-        *self.mpv.lock().map_err(|e| e.to_string())? = Some(mpv);
+        *self.mpv.lock().map_err(|e| e.to_string())? = Some(Arc::new(mpv));
         Ok(())
     }
 
@@ -522,7 +524,7 @@ impl PlayerHandle {
             &self.sidecar_gate,
         )?;
 
-        *self.mpv.lock().map_err(|e| e.to_string())? = Some(mpv);
+        *self.mpv.lock().map_err(|e| e.to_string())? = Some(Arc::new(mpv));
         Ok(())
     }
 
@@ -663,7 +665,7 @@ impl PlayerHandle {
             self.sidecar_gate.clone(),
         )
         .map_err(|e| e.to_string())?;
-        *guard = Some(mpv);
+        *guard = Some(Arc::new(mpv));
         Ok(true)
     }
 
@@ -1314,14 +1316,20 @@ impl PlayerHandle {
     /// menu. mpv's arg order is `sub-add <url> <flags> <title> <lang>`, so `title` (the menu label)
     /// goes in the title slot and `lang` (iso code) in the lang slot. Errors if no player is running.
     /// `player_tracks` then re-reads the live `track-list` to show the new track.
-    pub fn add_subtitle(&self, path: &str, lang: &str, title: &str) -> Result<(), String> {
+    pub async fn add_subtitle(&self, path: &str, lang: &str, title: &str) -> Result<(), String> {
         self.add_subtitle_with_flag(path, lang, title, "select")
+            .await
     }
 
     /// Add a subtitle to the live core without forcing it over the user's current selection.
     /// Used by direct-torrent sidecars that arrive after video playback has already started.
-    pub fn add_subtitle_auto(&self, path: &str, lang: &str, title: &str) -> Result<(), String> {
-        self.add_subtitle_with_flag(path, lang, title, "auto")
+    pub async fn add_subtitle_auto(
+        &self,
+        path: &str,
+        lang: &str,
+        title: &str,
+    ) -> Result<(), String> {
+        self.add_subtitle_with_flag(path, lang, title, "auto").await
     }
 
     /// Resolves once a subtitle URL may be added to the current video, or errors if that video is
@@ -1334,17 +1342,31 @@ impl PlayerHandle {
         self.sidecar_gate.ready()
     }
 
-    fn add_subtitle_with_flag(
+    async fn add_subtitle_with_flag(
         &self,
         path: &str,
         lang: &str,
         title: &str,
         flag: &str,
     ) -> Result<(), String> {
-        let guard = self.mpv.lock().map_err(|e| e.to_string())?;
-        let mpv = guard.as_ref().ok_or("no player")?;
-        mpv.command("sub-add", &[path, flag, title, lang])
-            .map_err(|e| e.to_string())
+        // A URL `sub-add` returns only when its read ends: after mpv's network timeout and retries,
+        // or never for a torrent piece nobody seeds. Under the player lock that stalled every player
+        // command, and on macOS the main thread that runs them, so no IPC call (the next play's
+        // `player_embed` included) could get through. mpv answers other calls meanwhile, so the
+        // read only needs the lock released and a blocking thread of its own.
+        let mpv = self
+            .mpv
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone()
+            .ok_or("no player")?;
+        let args = [path, flag, title, lang].map(str::to_owned);
+        tauri::async_runtime::spawn_blocking(move || {
+            mpv.command("sub-add", &args.each_ref().map(String::as_str))
+                .map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| e.to_string())?
     }
 
     /// Add/replace a raw-memory OSD overlay on the video (Game-mode controls). `pixels` is an owned
@@ -2537,8 +2559,59 @@ mod tests {
         // No mpv core has been created, so add_subtitle must report "no player" rather than panic.
         let h = PlayerHandle::new();
         assert_eq!(
-            h.add_subtitle("/tmp/x.srt", "en", "English"),
+            tauri::async_runtime::block_on(h.add_subtitle("/tmp/x.srt", "en", "English")),
             Err("no player".to_string())
+        );
+    }
+
+    #[test]
+    fn a_stalled_subtitle_add_leaves_the_player_lock_free() {
+        // Accepts and never answers, like a torrent sidecar whose pieces have not arrived.
+        let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/stalled.srt", server.local_addr().unwrap());
+        std::thread::spawn(move || {
+            let _held: Vec<_> = server.incoming().collect();
+        });
+        let mpv = Mpv::with_initializer(|init| {
+            init.set_option("vo", "null")?;
+            init.set_option("ao", "null")?;
+            init.set_option("network-timeout", "3")?;
+            Ok(())
+        })
+        .unwrap();
+        mpv.command("loadfile", &["av://lavfi:sine"]).unwrap();
+        // `sub-add` fails at once without a playing file, which would prove nothing.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while mpv.get_property::<f64>("time-pos").is_err() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the test file never started"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let player = Arc::new(PlayerHandle::new());
+        *player.mpv.lock().unwrap() = Some(Arc::new(mpv));
+
+        let adding = {
+            let player = player.clone();
+            std::thread::spawn(move || {
+                let started = std::time::Instant::now();
+                let _ =
+                    tauri::async_runtime::block_on(player.add_subtitle_auto(&url, "en", "Stalled"));
+                started.elapsed()
+            })
+        };
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let asked = std::time::Instant::now();
+        player.get_property("pause").unwrap();
+        assert!(
+            asked.elapsed() < std::time::Duration::from_millis(500),
+            "a player command waited {:?} behind a stalled subtitle read",
+            asked.elapsed()
+        );
+        assert!(
+            adding.join().unwrap() >= std::time::Duration::from_secs(1),
+            "the subtitle read never stalled"
         );
     }
 
