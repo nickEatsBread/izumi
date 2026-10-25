@@ -9,6 +9,8 @@
   import { androidMiniPlayer, androidMpvActive } from '$lib/player/android-mpv'
   import { probeInAppPlayer } from '$lib/player/in-app-player'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
+  import { useSteamKeyboard } from '$lib/nav/osk'
+  import { showSteamKeyboard } from '$lib/deck/steam-keyboard'
   import NativePickerSheet from '$lib/components/shell/NativePickerSheet.svelte'
   // Lazy-mounted: the player stack + its source-resolve overlays are substantial but never render
   // until playback/resolve starts. Loading them on demand
@@ -461,7 +463,11 @@
       if (get(navInFlight) || get(playing)) return
       window.scrollTo({ top: back.y, behavior: 'instant' })
       if (document.activeElement && document.activeElement !== document.body) return
-      void restoreRouteFocus(back.key, { focus: (el) => { focusByNav(el, false, true); focusByNav(el, true, true) } })
+      const focus = (el: HTMLElement) => { focusByNav(el, false, true); focusByNav(el, true, true) }
+      // A page can name where a return from its episode lands (a series page: its Continue button).
+      const landing = document.querySelector<HTMLElement>('[data-nav-player-return]')
+      if (landing && focusRestoreAllowed()) focus(landing)
+      else void restoreRouteFocus(back.key, { focus })
     })
   }))
 
@@ -570,6 +576,11 @@
   })
   // What B does next, on <html> for the button-hint bar (nav/back.ts); removed when the shell goes.
   onMount(() => startBackHint())
+  // On a Steam Deck the keyboard for a text field is Steam's own; the built-in one only when Steam declines.
+  onMount(() => {
+    useSteamKeyboard(showSteamKeyboard)
+    return () => useSteamKeyboard(null)
+  })
   // Scroll chrome (`shell.bottomNav.hide`): one tracker for the whole shell, so <html data-chrome>
   // keeps following the page where a series page hides the bar. Only the bottom-bar shell has a bar
   // that moves; every navigation starts with the chrome shown.

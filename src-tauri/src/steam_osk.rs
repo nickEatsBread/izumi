@@ -10,6 +10,12 @@
 //!
 //! Requires the Flatpak to reach the host Steam pipe + the .so: `--filesystem=~/.steam:ro` (see the
 //! manifest). `SteamAPI_RunCallbacks` is pumped on a background thread to keep the pipe alive.
+//!
+//! SteamOS ships no `libsteam_api.so` of its own (only games do), so on a Deck the usual path finds
+//! nothing. Steam's own `steamclient.so` is always there: [`init_client`] then does what
+//! libsteam_api does inside — `CreateInterface("SteamClient021")`, a pipe, the user, and
+//! `ISteamUtils010` — and calls the floating keyboard through the interface's vtable. A non-Steam
+//! shortcut's app id is refused by the client, so it falls back to Steam's public test app id.
 #![cfg(target_os = "linux")]
 
 use std::ffi::{c_char, c_int, c_void, CStr, CString};
@@ -27,6 +33,81 @@ type ShowFn = unsafe extern "C" fn(*mut c_void, c_int, c_int, c_int, c_int, c_in
 struct Steam {
     utils: *mut c_void,
     show: ShowFn,
+}
+
+// ISteamClient021 / ISteamUtils010 vtable slots (isteamclient.h, isteamutils.h). Checked on a Deck:
+// GetAppID answers the app id it connected with and IsSteamRunningOnSteamDeck answers true.
+const CLIENT_CREATE_PIPE: usize = 0;
+const CLIENT_CONNECT_GLOBAL_USER: usize = 2;
+const CLIENT_GET_UTILS: usize = 9;
+const UTILS_GET_APP_ID: usize = 9;
+const UTILS_SHOW_FLOATING: usize = 35;
+
+unsafe fn slot(object: *mut c_void, index: usize) -> *mut c_void {
+    let table = *(object as *const *const *mut c_void);
+    *table.add(index)
+}
+
+/// The floating keyboard through Steam's own client library, for a Steam with no libsteam_api.so.
+fn init_client() -> Option<Steam> {
+    unsafe {
+        let mut h = std::ptr::null_mut();
+        for p in [
+            "/home/deck/.local/share/Steam/linux64/steamclient.so",
+            "/home/deck/.steam/sdk64/steamclient.so",
+            "/home/deck/.steam/steam/linux64/steamclient.so",
+        ] {
+            if let Ok(c) = CString::new(p) {
+                h = dlopen(c.as_ptr(), RTLD_NOW);
+                if !h.is_null() {
+                    break;
+                }
+            }
+        }
+        if h.is_null() {
+            crate::player::linux_embed::elog("steam_osk: steamclient.so not found");
+            return None;
+        }
+        let create: unsafe extern "C" fn(*const c_char, *mut c_int) -> *mut c_void =
+            std::mem::transmute(sym(h, "CreateInterface")?);
+        let version = CString::new("SteamClient021").ok()?;
+        let client = create(version.as_ptr(), std::ptr::null_mut());
+        if client.is_null() {
+            crate::player::linux_embed::elog("steam_osk: SteamClient021 unavailable");
+            return None;
+        }
+        let create_pipe: unsafe extern "C" fn(*mut c_void) -> i32 = std::mem::transmute(slot(client, CLIENT_CREATE_PIPE));
+        let connect: unsafe extern "C" fn(*mut c_void, i32) -> i32 = std::mem::transmute(slot(client, CLIENT_CONNECT_GLOBAL_USER));
+        let get_utils: unsafe extern "C" fn(*mut c_void, i32, *const c_char) -> *mut c_void =
+            std::mem::transmute(slot(client, CLIENT_GET_UTILS));
+        let launched = std::env::var("SteamAppId").ok();
+        // The shortcut's own id first (in case Steam ever accepts it), then the public test id.
+        for app in launched.iter().map(String::as_str).chain(std::iter::once("480")) {
+            std::env::set_var("SteamAppId", app);
+            let pipe = create_pipe(client);
+            if pipe == 0 || connect(client, pipe) == 0 {
+                continue;
+            }
+            let utils_version = CString::new("SteamUtils010").ok()?;
+            let utils = get_utils(client, pipe, utils_version.as_ptr());
+            if utils.is_null() {
+                continue;
+            }
+            // A wrong slot here would call the wrong method: insist on the app id it connected with.
+            let app_id: unsafe extern "C" fn(*mut c_void) -> u32 = std::mem::transmute(slot(utils, UTILS_GET_APP_ID));
+            if app.parse::<u32>().ok() != Some(app_id(utils)) {
+                crate::player::linux_embed::elog("steam_osk: ISteamUtils010 layout not recognised");
+                return None;
+            }
+            crate::player::linux_embed::elog(&format!("steam_osk: floating keyboard through steamclient (app {app})"));
+            return Some(Steam { utils, show: std::mem::transmute(slot(utils, UTILS_SHOW_FLOATING)) });
+        }
+        if let Some(app) = launched {
+            std::env::set_var("SteamAppId", app);
+        }
+        crate::player::linux_embed::elog("steam_osk: Steam refused the connection");
+        None
+    }
 }
 // SAFETY: the ISteamUtils pointer + fn pointer are process-global; SteamAPI flat calls are
 // serialised through the OnceLock init and only invoked from Tauri command threads.
@@ -76,7 +157,7 @@ fn init() -> Option<Steam> {
             crate::player::linux_embed::elog(&format!(
                 "steam_osk: libsteam_api.so load failed: {last_error}"
             ));
-            return None;
+            return init_client();
         }
 
         // Steam needs an app id to locate the pipe. Steam usually sets SteamAppId for a launched
