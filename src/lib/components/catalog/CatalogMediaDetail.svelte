@@ -24,6 +24,7 @@
   import { detailHints } from '$lib/anilist/detail-hint'
   import { playEpisode, type PlayState } from '$lib/stremio/play'
   import { getPosition } from '$lib/player/progress'
+  import { playing } from '$lib/player/session'
   import { setSourceWatchlist } from '$lib/catalog/source-streams'
   import { parseCatalogDescription } from '$lib/catalog/description'
   import MediaRatings from './MediaRatings.svelte'
@@ -152,6 +153,20 @@
   })
   const watchlistUrl = $derived(media?.sourceFacts?.watchlistUrl)
   const onSourceList = $derived(sourceListed ?? media?.sourceFacts?.watchlist ?? false)
+
+  // A source keeps the viewer's progress itself: once the player closes, its episode progress and
+  // where to resume have changed there, so the page reads them again (quietly, keeping the page).
+  let wasPlaying = false
+  $effect(() => {
+    const now = $playing
+    if (wasPlaying && !now && media?.sourceFacts) void refreshSourceFacts(ref)
+    wasPlaying = now
+  })
+  async function refreshSourceFacts(request: MediaRef) {
+    if (request.provider === 'anilist') return
+    const fresh = await loadCatalogProvider(request.provider).then((catalog) => catalog.detail(request)).catch(() => null)
+    if (fresh && request === ref) media = fresh
+  }
 
   async function toggleSourceList() {
     if (!watchlistUrl || sourceListBusy) return

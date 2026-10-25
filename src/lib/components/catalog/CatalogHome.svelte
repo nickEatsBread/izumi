@@ -176,7 +176,8 @@
       if (result.hero.length || result.sections.length) loading = false
     }
     void loadCatalogProvider(selection).then((provider) => provider.home(abort.signal, undefined, publish)).then((result) => {
-      publish(result, result.partial !== true)
+      // A source's Home carries the viewer's own progress: shown from the cache at once, always read again.
+      publish(result, result.partial !== true && !isSourceSelection(selection))
     }).catch((reason) => {
       if (!abort.signal.aborted) {
         error = reason instanceof Error ? reason.message : String(reason)
