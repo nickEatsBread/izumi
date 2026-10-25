@@ -170,6 +170,9 @@
       : { gameModeOnly: true, opacity: [0, shown], xPercent: [navDirection * 3, 0], scale: [1.015, 1], duration: 480, easing: quintOut }
   const slideOut = (carousel: boolean, shown: number): MotionParams =>
     ({ gameModeOnly: true, opacity: [0, shown], duration: carousel && !fadeTransition ? 480 : 0, easing: quintOut })
+  // A template hero's outgoing copy fades out over the incoming one. In Game mode its keyframes ended
+  // with the same layer-drop blink, so there it fades from script as well.
+  const copyOut: MotionParams = { gameModeOnly: true, opacity: [1, 0], duration: FADE_MS, easing: linear }
   const copyIn = (): MotionParams => fadeTransition
     ? { gameModeOnly: true, opacity: [0, 1], duration: FADE_MS, easing: linear }
     : { gameModeOnly: true, opacity: [0, 1], xPercent: [navDirection * 1.5, 0], y: [8, 0], duration: 360, easing: quintOut }
@@ -678,7 +681,7 @@
         {#key fadeFrom.key}
           <!-- The same markup as the live slide (its title an h1 too), so heading styles never change
                as the fade starts; aria-hidden keeps the copy's heading out of the page outline. -->
-          <div class="hero-fade-out" aria-hidden="true" inert><ThemeNode node={heroTheme.template} model={fadeFrom.model} eager titleHeading actions={fadeActions} /></div>
+          <div class="hero-fade-out" aria-hidden="true" inert in:motion={copyOut}><ThemeNode node={heroTheme.template} model={fadeFrom.model} eager titleHeading actions={fadeActions} /></div>
         {/key}
       {/if}
       {#if medias.length > 1}
@@ -1153,7 +1156,8 @@
      2.52: one frame without the artwork ~480 ms after each step), so in Game mode the slides and
      their copy carry no CSS animation at all: `slideIn`/`copyIn` drive them from script. */
   :global(html.gamemode) .hero-carousel-slide,
-  :global(html.gamemode) .hero-copy { animation: none; }
+  :global(html.gamemode) .hero-copy,
+  :global(html.gamemode) .hero-fade-out { animation: none; }
   /* The bar keeps its layer but no tween: the script above steps `scale` at 15 fps. */
   :global(html.gamemode) .hero-progress { animation: none; scale: 0 1; }
   /* A one-off tween or transition would hand its layer back when it ends, so these stay static in

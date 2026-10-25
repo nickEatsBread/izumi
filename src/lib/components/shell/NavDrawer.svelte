@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { fade, fly } from 'svelte/transition'
   import type { Component, Snippet } from 'svelte'
+  import { motion } from '$lib/motion/gm-motion'
   import X from '@lucide/svelte/icons/x'
 
   // Every destination in a drawer from the left (the theme top bar's `menu: "drawer"`, or the whole
@@ -36,8 +36,9 @@
 <svelte:window onkeydowncapture={onKeydown} />
 
 {#if open}
-  <button type="button" tabindex="-1" aria-label="Close menu" onclick={() => (open = false)} class="fixed inset-0 z-[70] bg-black/60" transition:fade={{ duration: 120 }}></button>
-  <div bind:this={panel} data-slot="nav.drawer" role="dialog" aria-modal="true" aria-label="Menu" data-nav-trap data-nav-escape class="fixed inset-y-0 left-0 z-[71] flex w-72 flex-col border-r border-border bg-background p-3 pt-10 shadow-2xl" transition:fly={{ x: -slide, duration }}>
+  <!-- Script-driven in Game mode (gm-motion): a CSS slide there blinks the drawer away as it ends. -->
+  <button type="button" tabindex="-1" aria-label="Close menu" onclick={() => (open = false)} class="fixed inset-0 z-[70] bg-black/60" in:motion={{ opacity: [0, 1], duration: 120 }} out:motion={{ opacity: [0, 1], duration: 120 }}></button>
+  <div bind:this={panel} data-slot="nav.drawer" role="dialog" aria-modal="true" aria-label="Menu" data-nav-trap data-nav-escape class="fixed inset-y-0 left-0 z-[71] flex w-72 flex-col border-r border-border bg-background p-3 pt-10 shadow-2xl" in:motion={{ x: [-slide, 0], duration }} out:motion={{ x: [-slide, 0], duration }}>
     {#if head}{@render head()}{:else}
       <button type="button" data-focusable aria-label="Close menu" onclick={() => (open = false)} class="mb-2 grid size-10 shrink-0 place-items-center self-end rounded-lg hover:bg-accent"><X size={20} /></button>
     {/if}

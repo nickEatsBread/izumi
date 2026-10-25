@@ -33,6 +33,13 @@ function keydown(key: string, repeat = false) {
   dispatchPadKey(key, { repeat })
 }
 
+/** A held direction repeats from the frame loop. A step can stall the page (a scroll and layout on
+ *  the Deck can take longer than the repeat delay), and the first frame after the stall may run
+ *  before the release that arrived meanwhile is handled: the press then looks held and fires a
+ *  second step. After a frame gap this long, the loop waits one more frame before it repeats. */
+export const REPEAT_STALL_MS = 100
+export const repeatAllowed = (previousFrame: number, now: number): boolean => now - previousFrame <= REPEAT_STALL_MS
+
 /// Start the translator. Returns a stop function. Runs for the whole app while in Game mode.
 export function startGamepadNav(): () => void {
   const held: Record<Dir, boolean> = { up: false, down: false, left: false, right: false }
@@ -43,9 +50,12 @@ export function startGamepadNav(): () => void {
   let unlisten: (() => void) | null = null
   let stopped = false
 
+  let previousFrame = 0
   const repeatLoop = new ActiveFrameLoop(() => {
     const now = performance.now()
-    for (const dir of DIRS) if (held[dir] && timers[dir].tick(now)) fireDir(dir, true)
+    const allowed = repeatAllowed(previousFrame, now)
+    previousFrame = now
+    if (allowed) for (const dir of DIRS) if (held[dir] && timers[dir].tick(now)) fireDir(dir, true)
     return DIRS.some((dir) => held[dir])
   })
 
@@ -120,6 +130,8 @@ export function startGamepadNav(): () => void {
     held[dir] = true
     timers[dir].press(performance.now())
     fireDir(dir)
+    // Measured after the step, so the step's own stall counts as one.
+    previousFrame = performance.now()
     repeatLoop.start()
   }
 
