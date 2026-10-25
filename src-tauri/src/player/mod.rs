@@ -2190,14 +2190,10 @@ fn create_mpv_for_embed(wid: Option<i64>, app: &AppHandle) -> Result<Mpv, String
     }
 }
 
-/// Build an mpv core for the Linux/macOS embedded player: `vo=libmpv` (required
-/// by the OpenGL render API) with no window of its own. cocoa-cb `--wid` is not
-/// used: on macOS it creates a separate NSWindow. mpv handles NO input (the HTML
-/// overlay owns the controls); streaming/quality options mirror the Windows path.
+/// mpv_create() returns NULL unless LC_NUMERIC == "C". GTK (Linux) overwrites the process locale
+/// from the environment (a KDE X11 desktop session sets LANG=en_US.UTF-8); macOS may too via AppKit.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn new_mpv_libmpv(game_mode_wayland: bool) -> Result<Mpv, libmpv2::Error> {
-    // mpv_create() returns NULL unless LC_NUMERIC == "C". GTK (Linux) overwrites
-    // the process locale from the environment; macOS may too via AppKit.
+fn force_c_numeric_locale() {
     unsafe {
         extern "C" {
             fn setlocale(
@@ -2212,6 +2208,15 @@ fn new_mpv_libmpv(game_mode_wayland: bool) -> Result<Mpv, libmpv2::Error> {
         const LC_NUMERIC: std::os::raw::c_int = 4;
         setlocale(LC_NUMERIC, c"C".as_ptr());
     }
+}
+
+/// Build an mpv core for the Linux/macOS embedded player: `vo=libmpv` (required
+/// by the OpenGL render API) with no window of its own. cocoa-cb `--wid` is not
+/// used: on macOS it creates a separate NSWindow. mpv handles NO input (the HTML
+/// overlay owns the controls); streaming/quality options mirror the Windows path.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn new_mpv_libmpv(game_mode_wayland: bool) -> Result<Mpv, libmpv2::Error> {
+    force_c_numeric_locale();
     let mpv = Mpv::with_initializer(|init| {
         // vo=libmpv is the ONLY MANDATORY option — the render API can't work without
         // it. Every other option is BEST-EFFORT (`let _ =`): mpv option availability
@@ -2368,6 +2373,10 @@ fn b64(data: &[u8]) -> String {
 /// `force-window` (the handle already is the output surface). If `wid` is
 /// `None`, we ask mpv to create its own window via `force-window`.
 fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
+    // Game mode starts izumi with a C locale; a desktop X11 session does not, and then every
+    // embed failed with libmpv2's `Null` error.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    force_c_numeric_locale();
     let mpv = Mpv::with_initializer(|init| {
         match wid {
             // Embedded: render into the host window. `wid` is an init-time
