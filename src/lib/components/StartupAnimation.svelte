@@ -127,7 +127,8 @@
   .startup-animation {
     position: fixed;
     inset: 0;
-    z-index: 2147483600;
+    /* Above the on-screen keyboard (190), like the first-run intro ident. */
+    z-index: 200;
     background: #000;
     outline: none;
     opacity: 1;
