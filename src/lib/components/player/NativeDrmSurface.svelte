@@ -44,7 +44,6 @@
   } = $props()
 
   const HARD_ID = NATIVE_SWITCH_ID + 1_000
-  const QUALITIES = new Set([2160, 1440, 1080, 720, 576, 540, 480, 360])
 
   let liveSubs: DrmSubtitle[] = []
   let liveAudio: DrmAudioChoice[] = []
@@ -166,7 +165,7 @@
       activeManifest = manifest
       if (prepared) {
         activeHeight = prepared.height
-        heights = prepared.heights.filter((h) => QUALITIES.has(h))
+        heights = prepared.heights.filter((h) => h >= 240)
         emitQuality()
       }
       return true

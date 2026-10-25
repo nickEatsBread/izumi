@@ -157,7 +157,13 @@ fn run(rx: mpsc::Receiver<Job>) {
     let mut instances: HashMap<u64, Instance> = HashMap::new();
     let mut next_id = 1u64;
     loop {
-        let job = match rx.recv_timeout(Duration::from_millis(50)) {
+        // With no instance open there are no module timers to fire: sleep until the next job.
+        let next = if instances.is_empty() {
+            rx.recv().map_err(|_| mpsc::RecvTimeoutError::Disconnected)
+        } else {
+            rx.recv_timeout(Duration::from_millis(50))
+        };
+        let job = match next {
             Ok(job) => job,
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 for i in instances.values() {
