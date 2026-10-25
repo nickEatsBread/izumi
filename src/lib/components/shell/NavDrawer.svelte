@@ -37,10 +37,12 @@
 
 {#if open}
   <button type="button" tabindex="-1" aria-label="Close menu" onclick={() => (open = false)} class="fixed inset-0 z-[70] bg-black/60" transition:fade={{ duration: 120 }}></button>
-  <div bind:this={panel} data-slot="nav.drawer" role="dialog" aria-modal="true" aria-label="Menu" data-nav-trap data-nav-escape class="fixed inset-y-0 left-0 z-[71] flex w-72 flex-col gap-1 overflow-y-auto border-r border-border bg-background p-3 pt-10 shadow-2xl" transition:fly={{ x: -slide, duration }}>
+  <div bind:this={panel} data-slot="nav.drawer" role="dialog" aria-modal="true" aria-label="Menu" data-nav-trap data-nav-escape class="fixed inset-y-0 left-0 z-[71] flex w-72 flex-col border-r border-border bg-background p-3 pt-10 shadow-2xl" transition:fly={{ x: -slide, duration }}>
     {#if head}{@render head()}{:else}
-      <button type="button" data-focusable aria-label="Close menu" onclick={() => (open = false)} class="mb-2 grid size-10 place-items-center self-end rounded-lg hover:bg-accent"><X size={20} /></button>
+      <button type="button" data-focusable aria-label="Close menu" onclick={() => (open = false)} class="mb-2 grid size-10 shrink-0 place-items-center self-end rounded-lg hover:bg-accent"><X size={20} /></button>
     {/if}
+    <!-- The list scrolls between the head and the foot, which stay put. -->
+    <div data-part="nav.drawer.list" class="-mx-3 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3">
     {#each items as item (item.href)}
       {@const on = active(item.href)}
       <a data-part="nav.item" data-dest={item.id} data-active={on || undefined} data-focusable href={item.href} aria-current={on ? 'page' : undefined} onclick={() => (open = false)}
@@ -50,6 +52,7 @@
       </a>
     {/each}
     {@render after?.()}
+    </div>
     {@render foot?.()}
   </div>
 {/if}

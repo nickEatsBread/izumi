@@ -347,6 +347,7 @@ State values:
 | `nav.spacer` | part | The empty flexible gap that pushes the `nav.action` buttons to the bottom of the side rail, or to the end of a top bar whose brand is not centred. It holds the search field when the bar puts it in the middle (`shell.top.search: "field-center"`). |  |
 | `nav.drawer` | slot | The side drawer of destinations (top bar `menu: "drawer"`, or the whole navigation with `shell.nav: "drawer"`); items are `nav.item`. |  |
 | `nav.drawer.head` | part | The brand at the top of the drawer navigation (`shell.nav: "drawer"`): izumi's mark and name, a link Home. |  |
+| `nav.drawer.list` | part | The scrolling list of a drawer between its head and its foot: the destinations, then (drawer navigation) the catalog screens. |  |
 | `nav.drawer.heading` | part | The Screens heading in the drawer navigation, over the catalog screens (`nav.item` with `data-variant="screen"`). |  |
 | `nav.drawer.foot` | part | The row at the bottom of the drawer navigation: the account, incognito and settings `nav.action` buttons. |  |
 | `nav.panel` | slot | The pinned menu panel down the left (top bar `menu: "side"`); items are `nav.item`. |  |

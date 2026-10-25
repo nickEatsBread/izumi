@@ -40,6 +40,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'nav.spacer', kind: 'part', description: "The empty flexible gap that pushes the `nav.action` buttons to the bottom of the side rail, or to the end of a top bar whose brand is not centred. It holds the search field when the bar puts it in the middle (`shell.top.search: \"field-center\"`)." },
     { name: 'nav.drawer', kind: 'slot', description: 'The side drawer of destinations (top bar `menu: "drawer"`, or the whole navigation with `shell.nav: "drawer"`); items are `nav.item`.' },
     { name: 'nav.drawer.head', kind: 'part', description: "The brand at the top of the drawer navigation (`shell.nav: \"drawer\"`): izumi's mark and name, a link Home." },
+    { name: 'nav.drawer.list', kind: 'part', description: 'The scrolling list of a drawer between its head and its foot: the destinations, then (drawer navigation) the catalog screens.' },
     { name: 'nav.drawer.heading', kind: 'part', description: 'The Screens heading in the drawer navigation, over the catalog screens (`nav.item` with `data-variant="screen"`).' },
     { name: 'nav.drawer.foot', kind: 'part', description: 'The row at the bottom of the drawer navigation: the account, incognito and settings `nav.action` buttons.' },
     { name: 'nav.panel', kind: 'slot', description: 'The pinned menu panel down the left (top bar `menu: "side"`); items are `nav.item`.' },
