@@ -125,7 +125,10 @@ fn http() -> &'static reqwest::Client {
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(90))
+            // A source whose proxy stops sending must not freeze playback for long: a stalled
+            // read fails after 15 s and Remote::range retries on a fresh request.
+            .read_timeout(Duration::from_secs(15))
+            .timeout(Duration::from_secs(120))
             .build()
             .expect("HTTP client")
     })
