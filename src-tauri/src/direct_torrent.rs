@@ -1921,7 +1921,7 @@ pub async fn torrent_playback_add_subtitle(
         current.torrent_id
     };
     let url = crate::direct_torrent_stream::player_stream_url(engine.port, torrent_id, file_index);
-    player.add_subtitle_auto(&url, &lang, &title)
+    player.add_subtitle_auto(&url, &lang, &title).await
 }
 
 /// Report actual progress for the selected video. The web player uses this to distinguish a
