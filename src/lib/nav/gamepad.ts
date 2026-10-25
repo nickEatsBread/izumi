@@ -212,6 +212,8 @@ export function startGamepadNav(): () => void {
     if (topNavLayer()) {
       if (name === 'a') padActivate()
       else if (name === 'b') closeTopNavLayer('back')
+      // ☰ opened a page's side menu, so ☰ closes it too, as in the player.
+      else if (name === 'start' && topNavLayer()?.kind === 'options-sheet') closeTopNavLayer('back')
       return
     }
     // Global search is a browse-level modal: A activates its focused result/control and B

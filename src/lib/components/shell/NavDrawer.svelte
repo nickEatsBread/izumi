@@ -22,10 +22,12 @@
     if (!open) return
     if (event.key === 'Escape') open = false
     else if (closeOnRight && event.key === 'ArrowRight') {
-      // A row in the foot (account, settings) takes Right to its next control first.
-      const row = (event.target as HTMLElement | null)?.closest('[data-part="nav.drawer.foot"]')
+      // A row in the foot (account, settings) takes Right to its next control first. A controller's
+      // keys are sent to the window, so the focused control is the one Right starts from.
+      const from = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      const row = from?.closest('[data-part="nav.drawer.foot"]')
       const controls = row ? [...row.querySelectorAll<HTMLElement>('[data-focusable]')] : []
-      if (controls.length && controls.at(-1) !== event.target) return
+      if (controls.length && controls.at(-1) !== from) return
       event.preventDefault()
       event.stopImmediatePropagation()
       open = false

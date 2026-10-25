@@ -121,6 +121,19 @@ describe('controller B and A with a nav layer open', () => {
     expect(document.activeElement?.id).toBe('option')
   })
 
+  it('Start closes a page side menu it opened, and nothing else', () => {
+    const layer = openLayer()
+    press('start')
+    expect(layer.close).not.toHaveBeenCalled()
+    resetNavLayersForTests()
+    document.getElementById('layer')?.remove()
+    const sheet = { ...openLayer(), kind: 'options-sheet' }
+    resetNavLayersForTests()
+    pushNavLayer(sheet)
+    press('start')
+    expect(sheet.close).toHaveBeenCalledTimes(1)
+  })
+
   it('B with nothing open still walks history outside Home and outside Settings', () => {
     history.replaceState(null, '', '/app/series/9')
     const back = vi.spyOn(history, 'back').mockImplementation(() => {})

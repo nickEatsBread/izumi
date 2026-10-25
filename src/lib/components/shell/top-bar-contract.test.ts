@@ -137,3 +137,11 @@ describe('top bar categories menu', () => {
     expect(search).toContain("if (linked && isMergedScreen($catalogScreen) && urlScope && urlScope !== mergedScope && mergedSelections.includes(urlScope)) mergedScope = urlScope")
   })
 })
+
+describe('drawer navigation and the controller', () => {
+  it('closes on Right from the focused control: controller keys are sent to the window, not to it', () => {
+    const drawer = read('./NavDrawer.svelte')
+    expect(drawer).toContain("const from = document.activeElement instanceof HTMLElement ? document.activeElement : null")
+    expect(drawer).not.toContain('(event.target as HTMLElement | null)?.closest')
+  })
+})
