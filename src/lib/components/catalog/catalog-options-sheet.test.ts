@@ -53,3 +53,14 @@ describe('catalog title page while it loads', () => {
     expect(detail).toContain('data-part="detail.skeleton.title" data-state="known"')
   })
 })
+
+describe('catalog title page downloads on each episode', () => {
+  const detail = read('./CatalogMediaDetail.svelte')
+
+  it('shows waiting, downloading, paused, saved and failed apart, with progress while it downloads', () => {
+    for (const icon of ["state === 'done'}<CircleCheck", "state === 'progress'}<Download", "state === 'paused'}<Pause", "state === 'queued'}<Clock", '{:else}<CircleAlert']) expect(detail).toContain(icon)
+    expect(detail).toContain("{#if state === 'progress' || state === 'paused'}")
+    expect(detail).toContain('data-part="episode.saved.progress"')
+    expect(detail).toContain('style:--download-progress={`${percent}%`}')
+  })
+})

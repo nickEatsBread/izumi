@@ -567,11 +567,13 @@ State values:
 
 | Hook | Kind | What | States |
 |---|---|---|---|
-| `episode` | part | One episode: a card, a thumbnail row, a compact row or a number tile. On a catalog title page it carries its number in `data-episode` and what this device has of it in `data-download` (`done`, `progress`, `queued` or `error`). | `data-variant`, `data-state`, `data-next`, `data-filler`, `data-episode`, `data-download` |
+| `episode` | part | One episode: a card, a thumbnail row, a compact row or a number tile. On a catalog title page it carries its number in `data-episode` and what this device has of it in `data-download` (`done`, `progress`, `paused`, `queued` or `error`). | `data-variant`, `data-state`, `data-next`, `data-filler`, `data-episode`, `data-download` |
 | `episode.still` | part | The episode thumbnail. |  |
 | `episode.number` | part | The episode number. |  |
 | `episode.progress` | part | The watch-progress track over an episode thumbnail on a catalog title page, where the source reports progress; the fill is its child. |  |
-| `episode.saved` | part | A badge over a catalog title page episode this device has, or is getting: `data-state` is `done`, `progress` (downloading), `queued` or `error`. Not a control; the episode itself carries the same state in `data-download`. | `data-state` |
+| `episode.saved` | part | What this device has of a catalog title page episode, over its 16:9 artwork (the whole row for a list row): `data-state` is `queued` (waiting), `progress` (downloading), `paused`, `done` or `error`, and `--download-progress` the share downloaded ("42%"). Holds `episode.saved.icon` and, while downloading or paused, `episode.saved.progress`. Not a control; the episode itself carries the same state in `data-download`. | `data-state` |
+| `episode.saved.icon` | part | The round download status icon: a clock while waiting, an arrow while downloading, pause, a check once saved, an alert after a failure. |  |
+| `episode.saved.progress` | part | The download progress track along the bottom of the artwork; its child `span` is the fill. |  |
 | `episode.title` | part | The episode title. |  |
 | `episode.meta` | part | The line under an episode card title: the episode label, the airing countdown or Not aired. |  |
 | `episode.download` | part | An episode's own download button, the last control inside every episode card and row but the number tiles (`detail.episodes.download: "button"`; not offline, not in select mode, disabled before the episode airs). A press queues the episode with the Settings → Downloads defaults, or opens Downloads once it is queued, downloading or saved; it never plays the episode. `data-state` is `none`, `queued`, `progress` (downloading or paused) or `done`, and `--download-progress` the share downloaded ("42%"). | `data-state` |

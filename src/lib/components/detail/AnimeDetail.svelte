@@ -1065,7 +1065,7 @@
         {@render seriesTitle(m, 'text-5xl font-black leading-[1.02] text-white drop-shadow-md sm:text-6xl')}
         {@render seriesHeader(m, '')}
         <div data-part="detail.actions" class="flex flex-wrap items-center gap-3">
-          <button data-part="button" data-variant="primary" data-action="play" data-state={ctaState} data-episode={ctaEp(m)} data-season={ctaSeason(m)?.season} data-season-episode={ctaSeason(m)?.episode} data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
+          <button data-part="button" data-variant="primary" data-action="play" data-state={ctaState} data-episode={ctaEp(m)} data-season={ctaSeason(m)?.season} data-season-episode={ctaSeason(m)?.episode} data-focusable data-nav-id="series-primary-action" data-nav-scroll-top data-nav-player-return
                   data-nav-down={controllerUi ? 'series-quick-episode' : undefined}
                   onpointerenter={warmPlay}
                   onfocus={warmPlay}
@@ -1167,7 +1167,7 @@
     {#snippet actionsBlock()}
         <!-- Action bar -->
         <div data-part="detail.actions" class="flex flex-wrap items-center gap-2">
-          <button data-part="button" data-variant="primary" data-action="play" data-state={ctaState} data-episode={ctaEp(m)} data-season={ctaSeason(m)?.season} data-season-episode={ctaSeason(m)?.episode} data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
+          <button data-part="button" data-variant="primary" data-action="play" data-state={ctaState} data-episode={ctaEp(m)} data-season={ctaSeason(m)?.season} data-season-episode={ctaSeason(m)?.episode} data-focusable data-nav-id="series-primary-action" data-nav-scroll-top data-nav-player-return
                   data-nav-down={controllerUi ? 'series-quick-episode' : undefined}
                   onpointerenter={warmPlay}
                   onfocus={warmPlay}

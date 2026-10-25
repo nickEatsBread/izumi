@@ -210,6 +210,9 @@ html.gamemode .group:hover .group-hover\:scale-105 {
    shimmer is a main-thread repaint at the panel rate — dozens of them while Home rows wait behind
    the AniList limiter. Placeholders stay; only the sweep goes. */
 html.gamemode .skeloader::before { animation: none; }
+/* A title page's few placeholders keep theirs: a still page reads as stuck (an endless sweep never
+   ends, so it never drops its layer either). */
+html.gamemode [data-slot="detail.skeleton"] .skeloader::before { animation: skeleton-swipe 1.5s infinite; }
 /* Game mode: a cover's fade-in (and the shared banner's fade) promotes that image to a compositor
    layer for the tween. Under the Deck's page zoom a promoted layer rasterises soft and snaps crisp
    the moment it is dropped — a pixel pop per card as each row loads, and a blink on every banner.

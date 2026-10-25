@@ -49,6 +49,10 @@
   import MediaListSheet from '$lib/components/detail/MediaListSheet.svelte'
   import Download from '@lucide/svelte/icons/download'
   import CircleCheck from '@lucide/svelte/icons/circle-check'
+  import CircleAlert from '@lucide/svelte/icons/circle-alert'
+  import Clock from '@lucide/svelte/icons/clock'
+  import Pause from '@lucide/svelte/icons/pause'
+  import { focusOnMount } from '$lib/nav'
   import ListPlus from '@lucide/svelte/icons/list-plus'
   import ListChecks from '@lucide/svelte/icons/list-checks'
   import Ellipsis from '@lucide/svelte/icons/ellipsis'
@@ -209,10 +213,15 @@
   })
 
   // What each episode of this title has on this device: saved, on its way, or nothing.
-  const downloadState = (video: MediaVideo): 'done' | 'progress' | 'queued' | 'error' | undefined => {
-    const item = media ? $downloads[keyFor(media.id, video.number)] : undefined
+  const downloadOfVideo = (video: MediaVideo) => (media ? $downloads[keyFor(media.id, video.number)] : undefined)
+  const downloadState = (video: MediaVideo): 'done' | 'progress' | 'paused' | 'queued' | 'error' | undefined => {
+    const item = downloadOfVideo(video)
     if (!item) return undefined
-    return item.status === 'done' ? 'done' : item.status === 'downloading' ? 'progress' : item.status === 'error' ? 'error' : 'queued'
+    return item.status === 'done' ? 'done' : item.status === 'downloading' ? 'progress' : item.status === 'paused' ? 'paused' : item.status === 'error' ? 'error' : 'queued'
+  }
+  const downloadPercent = (video: MediaVideo): number => {
+    const item = downloadOfVideo(video)
+    return item?.bytes ? Math.max(0, Math.min(100, Math.round((item.downloaded / item.bytes) * 100))) : 0
   }
   const saveable = (list: MediaVideo[]) => list.filter((video) => !downloadState(video) || downloadState(video) === 'error')
   const savedCount = (list: MediaVideo[]) => list.filter((video) => downloadState(video) === 'done').length
@@ -351,6 +360,7 @@
   <div data-slot="detail.skeleton" class="min-h-screen">
     <div data-part="detail.skeleton.banner" class="relative h-[52vh] overflow-hidden skeloader">
       {#if hintArt}<img src={hintArt} alt="" class="absolute inset-0 h-full w-full scale-110 object-cover opacity-60 blur-2xl" />{/if}
+      <div class="absolute inset-0 bg-gradient-to-r from-background via-background/60 to-transparent"></div>
       <div class="absolute inset-0 bg-gradient-to-t from-background via-transparent"></div>
       <div data-part="detail.skeleton.copy" class="absolute bottom-8 left-5 right-5 max-w-xl sm:left-8">
         {#if hint}
@@ -452,9 +462,9 @@
           {/if}
           <div data-part="detail.actions" class="mt-5 flex flex-wrap gap-2">
             {#if upNext}
-              <button data-part="button" data-variant="primary" data-action="play" data-focusable data-nav-scroll-top onclick={() => play(upNext.video, upNext.playhead || undefined)} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> Continue{upNext.label ? ` · ${upNext.label}` : ''}</button>
+              <button data-part="button" data-variant="primary" data-action="play" data-focusable data-nav-scroll-top data-nav-player-return use:focusOnMount onclick={() => play(upNext.video, upNext.playhead || undefined)} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> Continue{upNext.label ? ` · ${upNext.label}` : ''}</button>
             {:else}
-              <button data-part="button" data-variant="primary" data-action="play" data-focusable data-nav-scroll-top onclick={() => play(videos[0])} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {isMovie ? 'Play' : 'Play episode 1'}</button>
+              <button data-part="button" data-variant="primary" data-action="play" data-focusable data-nav-scroll-top data-nav-player-return use:focusOnMount onclick={() => play(videos[0])} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {isMovie ? 'Play' : 'Play episode 1'}</button>
             {/if}
             <button data-part="button" data-variant="secondary" data-action="more" data-focusable onclick={openOptions} aria-label="More options" title="More options"
                     class="grid size-11 place-items-center rounded-lg bg-secondary transition-colors hover:bg-accent"><Ellipsis size={20} /></button>
@@ -567,10 +577,23 @@
     {#snippet downloadBadge(video: MediaVideo)}
       {@const state = downloadState(video)}
       {#if state}
-        <!-- Not a control: the options (☰) menu downloads; this says what this device has. -->
-        <span data-part="episode.saved" data-state={state} aria-label={state === 'done' ? 'Downloaded' : 'Downloading'}
-              class="pointer-events-none absolute left-2 top-2 z-10 grid size-7 place-items-center rounded-full bg-black/70 text-white {state === 'error' ? 'text-destructive' : ''}">
-          {#if state === 'done'}<CircleCheck size={16} />{:else}<Download size={15} class={state === 'progress' ? 'animate-pulse' : 'opacity-70'} />{/if}
+        {@const percent = downloadPercent(video)}
+        <!-- Not a control: the options (☰) menu downloads; this says what this device has. Over the
+             episode's 16:9 artwork: an icon (waiting, downloading, paused, saved, failed) and, while
+             it downloads, a progress bar along the artwork's bottom. -->
+        <span data-part="episode.saved" data-state={state} style:--download-progress={`${percent}%`}
+              class="pointer-events-none absolute inset-x-0 top-0 z-10 overflow-hidden {episodeCard ? 'aspect-video' : 'bottom-0'}">
+          <span data-part="episode.saved.icon" role="img" class="absolute left-2 top-2 grid size-7 place-items-center rounded-full bg-black/70 text-white {state === 'error' ? 'text-destructive' : ''}"
+                aria-label={state === 'done' ? 'Downloaded' : state === 'progress' ? `Downloading, ${percent}%` : state === 'paused' ? `Download paused at ${percent}%` : state === 'queued' ? 'Waiting to download' : 'Download failed'}>
+            {#if state === 'done'}<CircleCheck size={16} />
+            {:else if state === 'progress'}<Download size={15} class="animate-pulse" />
+            {:else if state === 'paused'}<Pause size={14} />
+            {:else if state === 'queued'}<Clock size={15} />
+            {:else}<CircleAlert size={15} />{/if}
+          </span>
+          {#if state === 'progress' || state === 'paused'}
+            <span data-part="episode.saved.progress" class="absolute inset-x-0 bottom-0 h-1 bg-white/20"><span class="block h-full bg-blue-400" style:width={`${percent}%`}></span></span>
+          {/if}
         </span>
       {/if}
     {/snippet}

@@ -105,6 +105,12 @@ describe('closing the player', () => {
     expect(layout).toContain("playerReturn = { key: `player-return:${++playerReturns}`, y: window.scrollY }")
     expect(layout).toContain('rememberRouteFocus(playerReturn.key)')
     expect(layout).toContain("if (get(navInFlight) || get(playing)) return\n      window.scrollTo({ top: back.y, behavior: 'instant' })")
-    expect(layout).toContain('void restoreRouteFocus(back.key, {')
+    expect(layout).toContain('else void restoreRouteFocus(back.key, { focus })')
+  })
+  it("lands on the place a page names, a series page's Continue", () => {
+    expect(layout).toContain("const landing = document.querySelector<HTMLElement>('[data-nav-player-return]')")
+    const detail = read('../../lib/components/catalog/CatalogMediaDetail.svelte')
+    expect(detail.match(/data-action="play" data-focusable data-nav-scroll-top data-nav-player-return use:focusOnMount/g)?.length).toBe(2)
+    expect(read('../../lib/components/detail/AnimeDetail.svelte')).toContain('data-nav-id="series-primary-action" data-nav-scroll-top data-nav-player-return')
   })
 })
