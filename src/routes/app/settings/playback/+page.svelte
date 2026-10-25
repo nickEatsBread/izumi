@@ -5,6 +5,7 @@
     playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying, videoQualityPreset, rawMpvOptions,
     gifIncludeSubtitles, gifScale, gifMaxSeconds, androidAutoPip, audioProcessing, windowsVsr,
     systemMediaControls, discordRichPresence, subtitleLineNavigation, hideSidebarWhilePlaying, trailerOpenMode,
+    PLAYER_CONTROLS, playerHiddenControls, type PlayerControlId,
     audioOutputMode, audioOutputDevice, audioExclusive,
     audioPassthroughAc3, audioPassthroughEac3, audioPassthroughTruehd,
     audioPassthroughDts, audioPassthroughDtsHd, dolbyVisionOutputMode,
@@ -33,6 +34,14 @@
   import { m } from '$lib/paraglide/messages.js'
   import { tick } from 'svelte'
   import { handFocusBack } from '$lib/nav/focus-memory'
+  import Check from '@lucide/svelte/icons/check'
+
+  const shown = (id: PlayerControlId) => !$playerHiddenControls.includes(id)
+  function toggleControl(id: PlayerControlId) {
+    $playerHiddenControls = $playerHiddenControls.includes(id)
+      ? $playerHiddenControls.filter((hidden) => hidden !== id)
+      : [...$playerHiddenControls, id]
+  }
 
   let pendingAnime = $state(false) // shows the one-time shader consent
   let qualityRow = $state<HTMLDivElement>()
@@ -212,6 +221,16 @@
           { value: 'player', label: "izumi's player" },
           { value: 'popup', label: 'A popup' },
         ]} />
+        <SettingsRow settingKey="player-buttons" title="Player buttons" description="Choose which buttons show on the player's control bar." learnMore="Hidden buttons stay one right-click away on the video, and their hotkeys keep working. Episodes adds a list of the series' episodes you can jump to without leaving the player.">
+          <div class="flex flex-wrap gap-2" role="group" aria-label="Player buttons">
+            {#each PLAYER_CONTROLS as control (control.id)}
+              <button type="button" data-focusable aria-pressed={shown(control.id)} onclick={() => toggleControl(control.id)}
+                      class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors {shown(control.id) ? 'border-border bg-secondary text-foreground' : 'border-dashed border-border text-muted-foreground hover:text-foreground'}">
+                {#if shown(control.id)}<Check size={14} aria-hidden="true" />{/if}{control.label}
+              </button>
+            {/each}
+          </div>
+        </SettingsRow>
       {/if}
       <SettingsChoiceRow settingKey="p2p-playback-status" title="P2P playback status" description="Peers and live speeds at the top of the player during Direct P2P playback." learnMore="Debrid playback never shows it." value={$p2pStatusVisibility} onChange={(value) => ($p2pStatusVisibility = value as typeof $p2pStatusVisibility)} options={[
         { value: 'hidden', label: 'Always hidden' },
