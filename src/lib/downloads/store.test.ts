@@ -5,7 +5,7 @@ import { get } from 'svelte/store'
 // preference with no debrid credential is a fully supported setup, so it has to produce a real
 // download attempt through the native torrent engine — never a "add a debrid key" dead end.
 
-const invoke = vi.fn(async (command: string, _args?: Record<string, unknown>) =>
+const invoke = vi.fn(async (command: string, _args?: Record<string, unknown>): Promise<unknown> =>
   (command === 'download_dir_default' ? '/downloads' : undefined))
 const resolveDownloadUrl = vi.fn()
 const storeShakaOffline = vi.fn()

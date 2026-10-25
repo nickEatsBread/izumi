@@ -37,6 +37,9 @@ function keydown(key: string, repeat = false) {
  *  the Deck can take longer than the repeat delay), and the first frame after the stall may run
  *  before the release that arrived meanwhile is handled: the press then looks held and fires a
  *  second step. After a frame gap this long, the loop waits one more frame before it repeats. */
+/** ☰ in browse: a page that has its own side menu cancels this event and opens it. */
+export const PAGE_OPTIONS_EVENT = 'page-options'
+
 export const REPEAT_STALL_MS = 100
 export const repeatAllowed = (previousFrame: number, now: number): boolean => now - previousFrame <= REPEAT_STALL_MS
 
@@ -281,6 +284,8 @@ export function startGamepadNav(): () => void {
       // which expands the labelled rail via its focus-driven expand. In the player, ☰ is the
       // track menu (handled by TrackMenu before this) — inPlayer() above already returned.
       case 'start': {
+        // A page with its own options (a title page's side menu) takes ☰ first.
+        if (!window.dispatchEvent(new CustomEvent(PAGE_OPTIONS_EVENT, { cancelable: true }))) break
         // The drawer navigation (theme `shell.nav: "drawer"`) has no rail: Start opens the drawer.
         if (document.documentElement.dataset.themeNav === 'drawer') {
           window.dispatchEvent(new Event('nav-drawer-toggle'))

@@ -544,15 +544,34 @@ State values:
 | `detail.progress.label` | part | The progress row's "Episode 4 of 12". |  |
 | `detail.progress.value` | part | The share of the series watched ("31%"). |  |
 | `detail.progress.meter` | part | The progress row's track; its child `span` is the fill. |  |
+| `options.sheet` | slot | The options side menu a catalog title page opens on its More button (`button` with `data-action="more"`) or the options (☰) button: the dimmed layer over the page that holds `options.panel`; a tap on it closes the menu. |  |
+| `options.panel` | part | The options menu panel on the right: `options.title`, `options.list`, and with a controller `options.hints`. |  |
+| `options.title` | part | The options menu heading (the title's name). |  |
+| `options.list` | part | The scrolling list of option groups. |  |
+| `options.heading` | part | A group heading in the options menu: the focused episode ("Episode 4 · Title") or "Downloads". |  |
+| `options.item` | part | One option, named by `data-option`: `play-episode` and `download-episode` (the episode that had focus when the menu opened), `watchlist` (the source's own watchlist), `lists` (the device lists), `tracker` (AniList and MyAnimeList, found by title for a source's own title), `download-season` and `download-all`. `disabled` while it cannot run (an episode already saved or on its way). | `data-option` |
+| `options.item.icon` | part | An option's icon. |  |
+| `options.item.label` | part | An option's label. |  |
+| `options.item.detail` | part | A short value on the right of an option ("3 of 12 saved", or what a tracker search found). |  |
+| `options.hints` | part | The controller hints under the options menu (A Select, B Close), shown in Game mode and controller mode. |  |
+| `detail.skeleton` | slot | A catalog title page while it loads: `detail.skeleton.banner` (with `detail.skeleton.copy` over it) and `detail.skeleton.episodes`. Placeholders are `.skeloader` boxes. |  |
+| `detail.skeleton.banner` | part | The artwork placeholder; the art of the card that opened the page, blurred, when there is one. |  |
+| `detail.skeleton.copy` | part | The box over the artwork placeholder holding the title, synopsis lines and Play placeholders. |  |
+| `detail.skeleton.title` | part | The title placeholder; `data-state="known"` when it is the real title, from the card that opened the page. | `data-state` |
+| `detail.skeleton.line` | part | One synopsis line placeholder (three, each shorter). |  |
+| `detail.skeleton.button` | part | The Play button placeholder. |  |
+| `detail.skeleton.episodes` | part | The grid of episode placeholders. |  |
+| `detail.skeleton.episode` | part | One 16:9 episode placeholder. |  |
 
 #### Episodes
 
 | Hook | Kind | What | States |
 |---|---|---|---|
-| `episode` | part | One episode: a card, a thumbnail row, a compact row or a number tile. | `data-variant`, `data-state`, `data-next`, `data-filler` |
+| `episode` | part | One episode: a card, a thumbnail row, a compact row or a number tile. On a catalog title page it carries its number in `data-episode` and what this device has of it in `data-download` (`done`, `progress`, `queued` or `error`). | `data-variant`, `data-state`, `data-next`, `data-filler`, `data-episode`, `data-download` |
 | `episode.still` | part | The episode thumbnail. |  |
 | `episode.number` | part | The episode number. |  |
 | `episode.progress` | part | The watch-progress track over an episode thumbnail on a catalog title page, where the source reports progress; the fill is its child. |  |
+| `episode.saved` | part | A badge over a catalog title page episode this device has, or is getting: `data-state` is `done`, `progress` (downloading), `queued` or `error`. Not a control; the episode itself carries the same state in `data-download`. | `data-state` |
 | `episode.title` | part | The episode title. |  |
 | `episode.meta` | part | The line under an episode card title: the episode label, the airing countdown or Not aired. |  |
 | `episode.download` | part | An episode's own download button, the last control inside every episode card and row but the number tiles (`detail.episodes.download: "button"`; not offline, not in select mode, disabled before the episode airs). A press queues the episode with the Settings → Downloads defaults, or opens Downloads once it is queued, downloading or saved; it never plays the episode. `data-state` is `none`, `queued`, `progress` (downloading or paused) or `done`, and `--download-progress` the share downloaded ("42%"). | `data-state` |
@@ -673,7 +692,7 @@ The hidden `search.title` is shown by undoing its visually hidden box, for examp
 
 | Hook | Kind | What | States |
 |---|---|---|---|
-| `button` | part | A button. Series page actions carry `data-action` (Save also `data-state="saved"`; every Play button `data-state` `start` or `resume`, the episode it opens in `data-episode` and, when the episode metadata knows it, that episode's season in `data-season` and its number within the season in `data-season-episode`; the header's Download `data-state` `none`, `queued`, `progress` or `done` and the episode it queues in `data-episode`); profile-header shortcuts carry their destination in `data-dest`. | `data-variant`, `data-action`, `data-dest`, `data-state`, `data-episode`, `data-season`, `data-season-episode` |
+| `button` | part | A button. Series page actions carry `data-action` (Save also `data-state="saved"`; every Play button `data-state` `start` or `resume`, the episode it opens in `data-episode` and, when the episode metadata knows it, that episode's season in `data-season` and its number within the season in `data-season-episode`; the header's Download `data-state` `none`, `queued`, `progress` or `done` and the episode it queues in `data-episode`); a catalog title page's More (`data-action="more"`) opens `options.sheet`; profile-header shortcuts carry their destination in `data-dest`. | `data-variant`, `data-action`, `data-dest`, `data-state`, `data-episode`, `data-season`, `data-season-episode` |
 | `chip` | part | A chip or pill (genre, tag, alternative title, filter, scope, episode range). A tag carries its rank in `data-rank`. | `data-active`, `data-rank` |
 | `chip.meta` | part | Extra text at the end of a chip, hidden (`display: none`) until a theme shows it: a tag's rank ("94%"). Where izumi prints the rank itself (reading pages), it shows after " · ". |  |
 | `input` | part | A text input. |  |

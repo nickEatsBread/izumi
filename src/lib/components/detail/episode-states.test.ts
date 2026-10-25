@@ -51,7 +51,7 @@ describe('episode states for theme stylesheets', () => {
     expect(card).toContain('rating: episodeRatingText(meta?.rating, released)')
   })
   it('documents the states', () => {
-    expect(THEME_HOOKS.episodes?.find((hook) => hook.name === 'episode')?.states).toEqual(['data-variant', 'data-state', 'data-next', 'data-filler'])
+    expect(THEME_HOOKS.episodes?.find((hook) => hook.name === 'episode')?.states).toEqual(['data-variant', 'data-state', 'data-next', 'data-filler', 'data-episode', 'data-download'])
     expect(docs).toContain('| `data-state` | `episode` |')
     expect(docs).toContain('| `data-next` | `episode` |')
     expect(docs).toContain('| `data-filler` | `episode` |')
