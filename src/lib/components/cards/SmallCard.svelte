@@ -124,7 +124,6 @@
   // source's own app does. Its page opens when the source has nothing to play.
   let resolving = $state(false)
   function openCard(event: MouseEvent) {
-    rememberDetail(media)
     h.tap()
     const episode = sourceCard?.videoId
     if (!episode) return
@@ -222,7 +221,7 @@
 </script>
 
 <div data-part="card" data-family={cardFamily} data-shape={sourceCard ? 'episode' : undefined} bind:this={el} use:nearViewport={cardArt.wanted.size ? cardArt.gate : undefined} data-theme-card style:--cover-rgb={ambientFromHex(media.coverImage?.color)} class="{widthClass} {fill ? '' : 'shrink-0'}" style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
-  <a href={mediaHref(media)} data-focusable draggable="false" onclick={openCard}
+  <a href={mediaHref(media)} data-focusable draggable="false" onclick={(event) => { rememberDetail(media); openCard(event) }}
      data-nav-key={`media:${media.catalog?.id ?? media.id}`} data-caption-title={title(media)} data-caption-meta={captionMeta}
      aria-label={title(media)} style:width={themeRow.width || cardTemplate ? '100%' : undefined}
      class="group block {widthClass} {$isAndroid ? 'android-card-press' : ''}">
