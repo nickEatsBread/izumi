@@ -1,7 +1,7 @@
 /** The startup animation a pack can set (Rust `startup_animation`): one short video played
  *  full-screen while izumi starts. `app.html` reads the two keys below before any script loads, so
  *  the window paints black instead of flashing Home first. */
-import { convertFileSrc, invoke } from '@tauri-apps/api/core'
+import { invoke } from '@tauri-apps/api/core'
 import { persisted } from 'svelte-persisted-store'
 import { get, writable } from 'svelte/store'
 
@@ -58,11 +58,11 @@ export async function syncStartupAnimationInfo(): Promise<StartupAnimationInfo |
   }
 }
 
-/** The video's URL (Rust `startup_animation::protocol`, which answers the range requests WebKitGTK's
- *  media loader needs), or null when there is none. */
+/** The video's address on izumi's loopback server (Rust `startup_animation_url`, which answers the
+ *  range requests WebKitGTK's media loader needs), or null when there is none. */
 export async function startupAnimationUrl(): Promise<string | null> {
-  const info = (await syncStartupAnimationInfo()) ?? null
-  return info ? `${convertFileSrc('animation', 'izstartup')}?v=${info.sha256.slice(0, 16)}` : null
+  if (!(await syncStartupAnimationInfo())) return null
+  return invoke<string | null>('startup_animation_url').catch(() => null)
 }
 
 export function playStartupAnimationNow(): void {

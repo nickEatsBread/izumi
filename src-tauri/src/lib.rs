@@ -5951,10 +5951,6 @@ pub fn run() {
             .js_init_script(DISQUS_PROFILE_SCRIPT.to_string())
             .build(),
     );
-    // The startup animation's video, with the range requests WebKit's media loader needs.
-    let builder = builder.register_uri_scheme_protocol("izstartup", |ctx, request| {
-        startup_animation::protocol(ctx.app_handle(), request)
-    });
     let builder = builder.setup(|app| {
             // Reclaim what the last session left behind, before anything writes more. Detached: a
             // stat walk over an abandoned torrent payload must not sit between launch and paint.
@@ -6678,6 +6674,7 @@ pub fn run() {
             startup_animation::startup_animation_set,
             startup_animation::startup_animation_clear,
             startup_animation::startup_animation_info,
+            startup_animation::startup_animation_url,
             pending_pack::pack_take_pending,
             player_diag,
             mpv_version,
@@ -6761,6 +6758,7 @@ pub fn run() {
         startup_animation::startup_animation_set,
         startup_animation::startup_animation_clear,
         startup_animation::startup_animation_info,
+        startup_animation::startup_animation_url,
         pending_pack::pack_take_pending,
         // Android has no scrub tiles (playback is delegated), but it does accumulate the torrent,
         // subtitle and update buckets, and the Storage screen is shared.

@@ -1,9 +1,10 @@
 //! The startup animation a pack can set: one short video izumi plays full-screen while it starts.
 //!
 //! The file is downloaded once over HTTPS, checked against the size and SHA-256 the pack pinned, and
-//! kept in `<data>/startup/`. The webview plays it from `izstartup://` ([`protocol`]), which serves
-//! only that one file and answers range requests: WebKitGTK's media loader reads video in ranges and
-//! fails to decode the same file from a blob URL.
+//! kept in `<data>/startup/`. The webview plays it from a loopback HTTP server under a random path
+//! ([`startup_animation_url`]) that serves only that file and answers range requests. WebKitGTK's
+//! media loader needs exactly that: it can't decode the file from a blob URL and refuses custom
+//! URI schemes for media.
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -158,20 +159,17 @@ fn byte_range(header: &str, len: u64) -> Option<(u64, u64)> {
     (start <= end && end < len).then_some((start, end))
 }
 
-/// `izstartup://localhost/animation` (`http://izstartup.localhost/animation` on Windows and
-/// Android): the saved video with range support, and nothing else.
-pub fn protocol(app: &AppHandle, request: tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
-    use tauri::http::{header, Response, StatusCode};
+/// The saved video, or the part of it `range` asks for.
+fn respond(dir: &Path, range: Option<&str>) -> axum::http::Response<Vec<u8>> {
+    use axum::http::{header, Response, StatusCode};
     let empty = |status: StatusCode| Response::builder().status(status).body(Vec::new()).expect("valid response");
-    let Ok(dir) = dir(app) else { return empty(StatusCode::NOT_FOUND) };
-    let Some(info) = read_info(&dir) else { return empty(StatusCode::NOT_FOUND) };
+    let Some(info) = read_info(dir) else { return empty(StatusCode::NOT_FOUND) };
     let Ok(body) = std::fs::read(dir.join(FILE)) else { return empty(StatusCode::NOT_FOUND) };
     let len = body.len() as u64;
     let response = Response::builder()
         .header(header::CONTENT_TYPE, info.mime)
         .header(header::ACCEPT_RANGES, "bytes")
         .header(header::CACHE_CONTROL, "no-store");
-    let range = request.headers().get(header::RANGE).and_then(|value| value.to_str().ok());
     let response = match range.map(|value| byte_range(value, len)) {
         None => response.status(StatusCode::OK).header(header::CONTENT_LENGTH, len).body(body),
         Some(None) => response
@@ -185,6 +183,45 @@ pub fn protocol(app: &AppHandle, request: tauri::http::Request<Vec<u8>>) -> taur
             .body(body[start as usize..=end as usize].to_vec()),
     };
     response.unwrap_or_else(|_| empty(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+static SERVER: tokio::sync::OnceCell<String> = tokio::sync::OnceCell::const_new();
+
+/// Starts the loopback server once and returns the video's address on it. The random path keeps
+/// other local programs from guessing it; it serves the startup video and nothing else.
+async fn server_url(dir: PathBuf) -> Result<String, String> {
+    SERVER
+        .get_or_try_init(|| async move {
+            let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await.map_err(|e| e.to_string())?;
+            let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+            let mut token = [0u8; 16];
+            getrandom::fill(&mut token).map_err(|e| e.to_string())?;
+            let path = format!("/{}/animation", token.iter().map(|b| format!("{b:02x}")).collect::<String>());
+            let route = axum::routing::get(move |headers: axum::http::HeaderMap| {
+                let dir = dir.clone();
+                async move {
+                    let range = headers.get(axum::http::header::RANGE).and_then(|value| value.to_str().ok());
+                    respond(&dir, range).map(axum::body::Body::from)
+                }
+            });
+            let router = axum::Router::new().route(&path, route);
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = axum::serve(listener, router).await {
+                    eprintln!("[startup] animation server stopped: {error}");
+                }
+            });
+            Ok::<_, String>(format!("http://127.0.0.1:{port}{path}"))
+        })
+        .await
+        .cloned()
+}
+
+/// Where the webview can play the startup video, or None when there is none.
+#[tauri::command]
+pub async fn startup_animation_url(app: AppHandle) -> Result<Option<String>, String> {
+    let dir = dir(&app)?;
+    let Some(info) = read_info(&dir) else { return Ok(None) };
+    Ok(Some(format!("{}?v={}", server_url(dir).await?, &info.sha256[..16])))
 }
 
 #[cfg(test)]
@@ -244,8 +281,17 @@ mod tests {
         let info = Info { mime: "video/mp4".into(), bytes: body.len() as u64, sha256: sha256_hex(&body), by: "pack:a".into() };
         store(&dir, &body, &info).unwrap();
         assert_eq!(read_info(&dir), Some(info));
+        let whole = respond(&dir, None);
+        assert_eq!((whole.status().as_u16(), whole.body().len()), (200, body.len()));
+        let part = respond(&dir, Some("bytes=4-7"));
+        assert_eq!(part.status().as_u16(), 206);
+        assert_eq!(part.body().as_slice(), b"ftyp");
+        assert_eq!(part.headers()["content-range"], format!("bytes 4-7/{}", body.len()));
+        assert_eq!(part.headers()["content-type"], "video/mp4");
+        assert_eq!(respond(&dir, Some("bytes=999-")).status().as_u16(), 416);
         std::fs::remove_file(dir.join(FILE)).unwrap();
         assert_eq!(read_info(&dir), None, "metadata without the file is not an animation");
+        assert_eq!(respond(&dir, None).status().as_u16(), 404);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
