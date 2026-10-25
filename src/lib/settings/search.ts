@@ -151,6 +151,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Adaptive source planner', category: 'Playback', section: 'playback', subcategory: 'advanced', advanced: true, href: '/app/settings/playback', keywords: 'learn local reliability preview shadow agent automatic ranking', key: 'adaptive-source-planner' },
   { title: 'Add-on sources', category: 'Sources and store', href: '/app/settings/sources/manage', section: 'sources', subcategory: 'my-sources', keywords: 'stremio manifest url torrent debrid add install' },
   { title: 'Mark best releases', category: 'Playback', section: 'playback', subcategory: 'advanced', advanced: true, href: '/app/settings/playback', keywords: 'seadex releases.moe curated encode quality badge recommended', key: 'mark-best-releases' },
+  { title: 'Protected video', category: 'Playback', section: 'playback', subcategory: 'advanced', advanced: true, href: '/app/settings/playback', keywords: 'widevine drm encrypted module licence google linux steam deck', key: 'protected-video-module', hideOn: ['lite'] },
   { title: 'Source priority', category: 'Sources and store', href: '/app/settings/sources', section: 'sources', subcategory: 'priority', keywords: 'order trust prefer strict addon extension provider first reorder', key: 'source-priority' },
   { title: 'Default discussion source', category: 'Sources and store', href: '/app/settings/sources', section: 'sources', subcategory: 'discussion', keywords: 'comments reddit anilist mal youtube disqus forum', key: 'default-discussion-source' },
 

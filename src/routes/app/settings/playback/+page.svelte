@@ -23,6 +23,8 @@
   import { isAndroid, isAndroidTv, isWindows } from '$lib/platform'
   import { inAppPlayerAvailable } from '$lib/player/in-app-player'
   import { gameMode } from '$lib/player/session'
+  import { nativeDrmSupported, type WidevineStatus } from '$lib/player/native-drm'
+  import { invoke } from '@tauri-apps/api/core'
   import SettingsSection from '$lib/components/settings/SettingsSection.svelte'
   import SettingsSubcategory from '$lib/components/settings/SettingsSubcategory.svelte'
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
@@ -44,6 +46,21 @@
   }
 
   let pendingAnime = $state(false) // shows the one-time shader consent
+  // Linux: Google's Widevine module, downloaded on the first protected stream after consent.
+  let widevineVersion = $state<string | null>(null)
+  let widevineBusy = $state(false)
+  $effect(() => {
+    if (!$nativeDrmSupported) return
+    void invoke<WidevineStatus>('widevine_status').then((status) => { widevineVersion = status.installed }).catch(() => {})
+  })
+  async function removeWidevine() {
+    widevineBusy = true
+    try {
+      await invoke('widevine_remove')
+      widevineVersion = null
+    } catch { /* keep showing the installed version */ }
+    widevineBusy = false
+  }
   let qualityRow = $state<HTMLDivElement>()
 
   // Answering the Anime shader prompt removes the button that held focus. Focus goes back to the
@@ -446,6 +463,16 @@
       { value: 'shadow', label: 'Preview — learn without changing playback' },
       { value: 'off', label: 'Off' },
     ]} />
+    {#if $nativeDrmSupported}
+      <SettingsRow settingKey="protected-video-module" title="Protected video" description="Google's Widevine module, used to play encrypted streams." learnMore="Downloaded from Google the first time an encrypted stream plays, after you accept Google's licence. Video is decrypted only in izumi's memory and decoded by the module, as in Chrome and Firefox on Linux. Removing it asks again next time.">
+        {#snippet control()}
+          <span class="text-xs text-muted-foreground">{widevineVersion ? `Installed (${widevineVersion})` : 'Not installed'}</span>
+          {#if widevineVersion}
+            <button type="button" data-focusable disabled={widevineBusy} class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold hover:bg-accent disabled:opacity-60" onclick={() => void removeWidevine()}>Remove</button>
+          {/if}
+        {/snippet}
+      </SettingsRow>
+    {/if}
     <SettingsRow settingKey="mark-best-releases" title="Mark best releases" description="Badges the curated best release and lists it first at its resolution." learnMore="Checks a community-curated release list for the release its curators rate best for each title. It never picks a lower resolution than you would have got without it, and adds no source: it only annotates what your sources already found." onActivate={() => ($seadexAnnotations = !$seadexAnnotations)} pressed={$seadexAnnotations}>
       {#snippet control()}<SettingsSwitch value={$seadexAnnotations} onToggle={() => ($seadexAnnotations = !$seadexAnnotations)} label="Mark best releases" interactive={false} />{/snippet}
     </SettingsRow>

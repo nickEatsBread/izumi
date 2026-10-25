@@ -27,7 +27,7 @@ const ROWS: Record<string, string[]> = {
     'audio-processing', 'home-theatre-audio', 'audio-output', 'dolby-digital', 'dolby-digital-plus', 'dolby-truehd',
     'dts', 'dts-hd-dts-x', 'exclusive-audio-device', 'mpv-audio-device', 'dolby-vision-source-handling',
     'enable-external-player', 'external-video-player', 'animate-player-progress-controls', 'subtitle-line-navigation',
-    'title-at-top-of-player-game-mode', 'adaptive-source-planner', 'mark-best-releases',
+    'title-at-top-of-player-game-mode', 'adaptive-source-planner', 'mark-best-releases', 'protected-video-module',
   ],
 }
 
@@ -64,6 +64,7 @@ const SEARCH: Array<[string, string, boolean]> = [
   ['Title at top of player (Game mode)', 'advanced', true],
   ['Adaptive source planner', 'advanced', true],
   ['Mark best releases', 'advanced', true],
+  ['Protected video', 'advanced', true],
 ]
 
 describe('Playback section', () => {

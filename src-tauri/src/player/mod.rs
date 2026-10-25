@@ -122,6 +122,40 @@ pub struct AudioTrack {
     pub lang: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
+    /// Select this track once attached (the only audio of a protected stream), instead of leaving
+    /// the choice to mpv's language preference.
+    #[serde(default)]
+    pub select: bool,
+}
+
+/// Per-file mpv options for the next `loadfile` of one URL (protected streams need their own
+/// demuxer and cache settings, which must not leak onto the next file).
+static FILE_OPTIONS: Mutex<Option<(String, Vec<(String, String)>)>> = Mutex::new(None);
+
+pub(crate) fn set_file_options(url: &str, options: Vec<(String, String)>) {
+    if let Ok(mut slot) = FILE_OPTIONS.lock() {
+        *slot = Some((url.to_string(), options));
+    }
+}
+
+fn take_file_options(url: &str) -> Option<String> {
+    let mut slot = FILE_OPTIONS.lock().ok()?;
+    if slot.as_ref().is_some_and(|(u, _)| u == url) {
+        let (_, options) = slot.take()?;
+        return Some(options.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(","));
+    }
+    None
+}
+
+/// Lets a playback core open protected `izcr://` streams. Never called for the headless
+/// thumbnail core, which therefore cannot read them.
+fn enable_protected_streams(mpv: &Mpv) {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    if let Err(error) = crate::widevine::register_protocol(mpv) {
+        eprintln!("{error}");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = mpv;
 }
 
 /// Sidecar tracks waiting for mpv to finish loading their parent stream.
@@ -296,6 +330,7 @@ impl PlayerHandle {
 
         // First launch: build a fresh mpv core with good defaults.
         let mpv = create_mpv(None).map_err(|e| e.to_string())?;
+        enable_protected_streams(&mpv);
 
         // Spawn the event loop ONCE, on first mpv creation, before loading.
         spawn_event_loop(
@@ -397,6 +432,7 @@ impl PlayerHandle {
         // thread, and a sync `player_command` on main that locks the same mutex would
         // deadlock.
         let mpv = create_mpv_for_embed(if wid != 0 { Some(wid) } else { None }, &app)?;
+        enable_protected_streams(&mpv);
 
         // Spawn the event loop ONCE, on first mpv creation, before loading.
         spawn_event_loop(
@@ -493,6 +529,7 @@ impl PlayerHandle {
         #[cfg(target_os = "macos")]
         let game_mode_wayland = false;
         let mpv = new_mpv_libmpv(game_mode_wayland).map_err(|e| e.to_string())?;
+        enable_protected_streams(&mpv);
         spawn_event_loop(
             &mpv,
             app,
@@ -603,6 +640,8 @@ impl PlayerHandle {
             let _ = mpv.command("quit", &[]);
         }
         *guard = None;
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        crate::widevine::end_all();
         #[cfg(target_os = "linux")]
         UI_LITE_HOLDERS.store(0, AtomicOrdering::SeqCst);
         // Drop the current url and tear down the headless thumbnail decoder.
@@ -630,6 +669,8 @@ impl PlayerHandle {
         if let Some(mpv) = self.mpv.lock().map_err(|e| e.to_string())?.as_ref() {
             let _ = mpv.command("stop", &[]);
         }
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        crate::widevine::end_all();
         *self.current_url.lock().map_err(|e| e.to_string())? = None;
         *self
             .pending_external_tracks
@@ -656,6 +697,7 @@ impl PlayerHandle {
             return Ok(false);
         }
         let mpv = create_mpv_for_embed(Some(wid), &app)?;
+        enable_protected_streams(&mpv);
         spawn_event_loop(
             &mpv,
             app,
@@ -1737,7 +1779,12 @@ fn load_file(
         audio_tracks: audio_tracks.to_vec(),
     });
 
-    if let Err(error) = mpv.command("loadfile", &[url]) {
+    let loaded = match take_file_options(url) {
+        // `loadfile <url> <flags> <index> <options>`; the index is ignored for `replace`.
+        Some(options) => mpv.command("loadfile", &[url, "replace", "-1", options.as_str()]),
+        None => mpv.command("loadfile", &[url]),
+    };
+    if let Err(error) = loaded {
         *pending_external_tracks.lock().map_err(|e| e.to_string())? = None;
         return Err(error.to_string());
     }
@@ -1780,8 +1827,9 @@ fn attach_external_tracks(mpv: &Mpv, tracks: PendingExternalTracks) -> usize {
             .as_deref()
             .filter(|value| !value.is_empty())
             .unwrap_or(lang);
+        let flag = if track.select { "select" } else { "auto" };
         if mpv
-            .command("audio-add", &[track.url.as_str(), "auto", title, lang])
+            .command("audio-add", &[track.url.as_str(), flag, title, lang])
             .is_err()
         {
             failures += 1;

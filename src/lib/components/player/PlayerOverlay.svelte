@@ -11,6 +11,8 @@
   import TrackMenu from './TrackMenu.svelte'
   import CommentsPanel from './CommentsPanel.svelte'
   import DrmSurface from './DrmSurface.svelte'
+  import NativeDrmSurface from './NativeDrmSurface.svelte'
+  import { nativeDrmSupported, usesNativeDrm } from '$lib/player/native-drm'
   import { playerCommand, playerGetProperty, playerGifAbort, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
   import type { DrmSnapshot } from '$lib/player/drm'
   import { overlayIsLoading } from '$lib/player/overlay-loading'
@@ -363,6 +365,10 @@
     hideT = setTimeout(() => (visible = false), 3500)
   }
   const drmActive = $derived(!!$nowPlayingStream.drm)
+  // Linux plays protected streams in izumi's own mpv player: the mpv-side features (subtitle
+  // policy, Game-mode menu stage) work as for any file. Elsewhere the webview's <video> plays them.
+  const drmNative = $derived(drmActive && usesNativeDrm($nowPlayingStream.drm, $nativeDrmSupported))
+  const drmWebview = $derived(drmActive && !drmNative)
   let overlayRoot = $state<HTMLDivElement | undefined>(undefined)
   // The root's edges as fractions of a full-viewport probe (zoom-agnostic), handed to the app shell
   // as `playerStage` for the native insets. Size changes arrive through ResizeObserver; a re-docked
@@ -881,7 +887,7 @@
   let subtitlePolicyKey = ''
   $effect(() => {
     const key = loadedKey
-    if (drmActive || !firstFrame || !key || subtitlePolicyKey === key) return
+    if (drmWebview || !firstFrame || !key || subtitlePolicyKey === key) return
     subtitlePolicyKey = key
     void playerTracks()
       .then((raw) => {
@@ -931,7 +937,7 @@
   const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || subtitleEditorOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible || sourcePickerVisible || sourceConnectingVisible || $navLayerOpen || $oskOpen)
   // A menu, the source picker, the switching card or a prompt is up: the video pauses and those
   // surfaces render live over its frozen frame (gm-freeze.ts). Comments still unmap the video.
-  const gmMenuStage = $derived(gmBitmapMode && $playing && !drmActive && !$commentsOpen && gameModeLiveMenuOpen({
+  const gmMenuStage = $derived(gmBitmapMode && $playing && !drmWebview && !$commentsOpen && gameModeLiveMenuOpen({
     playerMenuOpen: $playerMenuOpen,
     trackMenuOpen: $trackMenuOpen,
     sourcePickerOpen: sourcePickerVisible,
@@ -2014,7 +2020,18 @@
     </div>
   {/if}
 
-  {#if drmActive && $nowPlayingStream.drm}
+  {#if drmNative && $nowPlayingStream.drm}
+    <NativeDrmSurface
+      url={$nowPlayingStream.url}
+      drm={$nowPlayingStream.drm}
+      startSeconds={$nowPlayingStream.startSeconds ?? 0}
+      subtitles={$nowPlayingStream.subtitles}
+      audioLang={$nowPlayingStream.audioLang ?? ''}
+      audioChoices={$nowPlayingStream.audioTracks}
+      previewUrl={$nowPlayingStream.previewUrl ?? ''}
+      onclose={() => void close()}
+    />
+  {:else if drmActive && $nowPlayingStream.drm}
     <DrmSurface
       url={$nowPlayingStream.url}
       drm={$nowPlayingStream.drm}

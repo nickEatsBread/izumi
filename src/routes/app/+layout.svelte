@@ -43,6 +43,7 @@
   const loadLofiPlayer = () => import('$lib/components/shell/LofiPlayer.svelte')
   import { streamPicker, connecting, exitPrompt, nowPlayingMedia } from '$lib/player/session'
   import { playing, fullscreen, pictureInPicture, exitPictureInPicture, gameMode, gameModeResolved, initGameMode, debridCaching, playerStage } from '$lib/player/session'
+  import { initNativeDrm } from '$lib/player/native-drm'
   import { playerInsets, sameInsets, type PlayerInsets } from '$lib/player/insets'
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes, hotkeyBindings } from '$lib/settings/ui'
   import { catalogDefaultProvider, catalogLastProvider, catalogProvider, catalogProviders, catalogScreen, catalogScreens, customScreens, enabledCatalogProviders, isMergedScreen, enabledCatalogScreens, nextCatalogScreen, previousCatalogScreen, resolveCatalogStartup, selectCatalogProvider, selectCatalogScreen } from '$lib/settings/catalog'
@@ -241,6 +242,7 @@
     initInput()
     initDpadNav()
     initGameMode() // resolve gamescope/Deck fullscreen-touch mode once (drives chrome-hiding)
+    void initNativeDrm() // Linux: protected streams play in izumi's own player
     attachDownloadEvents() // wire download progress/done events + resume interrupted jobs (guarded, once)
     const stopVpnToasts = initTorrentVpnToasts()
     let stopDeepLinks: () => void = () => {}

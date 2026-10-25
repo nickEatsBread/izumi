@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { playerCommand } from '$lib/player/native'
 import { DRM_ENDED_EVENT, DRM_PROGRESS_EVENT } from '$lib/player/drm'
+import { usesNativeDrm } from '$lib/player/native-drm'
 import { downloadAudioLang, offlineManifestUrl, preferredDrmPresentation, refreshDrmSource } from '$lib/player/preferred-drm'
 import { listen, type EventCallback } from '@tauri-apps/api/event'
 import { get } from 'svelte/store'
@@ -3388,9 +3389,10 @@ export async function playStream(
       return
     }
 
-    // Encrypted DASH (Widevine etc.) cannot go through mpv — it would paint CENC as rainbow
-    // scramble. Play in the webview CDM instead. This also wins over Android mpv and the
-    // external-player setting: those backends cannot decrypt either.
+    // Encrypted DASH (Widevine etc.) cannot go through plain mpv — it would paint CENC as rainbow
+    // scramble. Windows/macOS play it in the webview CDM; Linux (no EME in WebKitGTK) plays it in
+    // izumi's own player through NativeDrmSurface. This also wins over Android mpv and the
+    // external-player setting: those backends cannot decrypt.
     if (stream.__drm) {
       if (await abandonIfStale()) return
       nowPlayingStream.set({
@@ -3423,7 +3425,10 @@ export async function playStream(
       rememberSuccess()
       playing.set(true)
       onState({ status: 'playing' })
-      void invoke('close_player').catch(() => {})
+      // The native path reuses the player: stop the old file now, the protected one loads once
+      // its licence is in. The webview path needs the native player gone.
+      if (usesNativeDrm(stream.__drm)) void invoke('player_command', { name: 'stop', args: [] }).catch(() => {})
+      else void invoke('close_player').catch(() => {})
       if (episode != null) attach(media, episode, onState, observation, recoveryOriginal)
       return
     }

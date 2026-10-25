@@ -6,6 +6,7 @@
   import { scrub, beginScrub, moveScrub, endScrub } from '$lib/player/scrub'
   import { scrubThumbnails } from '$lib/settings/ui'
   import { getDrmEngine } from '$lib/player/drm'
+  import { getNativeDrm } from '$lib/player/native-drm'
   import { onThumbReset, onThumbTile, thumbEpoch, thumbTiles } from '$lib/player/thumb-tiles'
   import type { Segment } from '$lib/stremio/aniskip'
   import { themePresentation } from '$lib/themes/runtime'
@@ -188,10 +189,10 @@
     thumbApprox = !!near
     const run = async () => {
       if (my !== reqSeq) return
-      const drm = getDrmEngine()
-      if (drm?.thumbnail) {
+      const preview = getDrmEngine()?.thumbnail ?? getNativeDrm()?.thumbnail
+      if (preview) {
         try {
-          const url = await drm.thumbnail(t)
+          const url = await preview(t)
           if (my !== reqSeq) return
           if (url) {
             const idx = interval > 0 ? Math.round(t / interval) : 0

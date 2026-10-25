@@ -65,6 +65,10 @@ mod subsync;
 // Steam Deck on-screen keyboard via Steamworks (Linux/Game mode); no-op elsewhere.
 #[cfg(target_os = "linux")]
 mod steam_osk;
+// Protected (Widevine) playback through izumi's own player. Linux only: other desktops play
+// protected streams in their webview's EME.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+mod widevine;
 
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -318,8 +322,9 @@ async fn player_embed(
     headers: Option<std::collections::HashMap<String, String>>,
     subtitles: Option<Vec<player::Subtitle>>,
     audio_tracks: Option<Vec<player::AudioTrack>>,
+    drm: Option<serde_json::Value>,
     player: tauri::State<'_, player::PlayerHandle>,
-) -> Result<(), String> {
+) -> Result<Option<serde_json::Value>, String> {
     let autoplay = autoplay.unwrap_or(true);
     if let Some(bytes) = cache_bytes {
         player::PLAYER_CACHE_BYTES.store(
@@ -327,6 +332,43 @@ async fn player_embed(
             std::sync::atomic::Ordering::Relaxed,
         );
     }
+    // A protected stream: license it and play its decrypted-in-memory `izcr://` streams instead.
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    let (url, audio_tracks, protected) = match drm {
+        Some(drm) => {
+            let request: widevine::Request =
+                serde_json::from_value(drm).map_err(|e| format!("bad protected-stream request: {e}"))?;
+            let prepared = widevine::prepare(&app, &url, &request)
+                .await
+                .map_err(|e| format!("{e:#}"))?;
+            player::set_file_options(&prepared.video_url, prepared.file_options.clone());
+            let lang = prepared.audio_lang.clone();
+            let audio = vec![player::AudioTrack {
+                url: prepared.audio_url.clone(),
+                title: lang.clone(),
+                lang,
+                select: true,
+            }];
+            let info = serde_json::to_value(&prepared).map_err(|e| e.to_string())?;
+            (prepared.video_url, Some(audio), Some(info))
+        }
+        None => {
+            widevine::end_all();
+            (url, audio_tracks, None)
+        }
+    };
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let protected: Option<serde_json::Value> = match drm {
+        Some(_) => return Err("protected streams play in the webview on this platform".into()),
+        None => None,
+    };
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    let url = if protected.is_some() {
+        url
+    } else {
+        hls_proxy::prepare_playback_url(&url, headers.as_ref()).await?
+    };
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
     let url = hls_proxy::prepare_playback_url(&url, headers.as_ref()).await?;
     let mut subtitles = subtitles;
     if let Some(tracks) = subtitles.as_mut() {
@@ -441,7 +483,60 @@ async fn player_embed(
     }
     // Never report success without a live core. The old macOS path returned Ok in ~1ms
     // and the overlay spun forever while every `player_command` failed with "no player".
-    player::require_live_core(player.has_core())
+    player::require_live_core(player.has_core())?;
+    Ok(protected)
+}
+
+/// Whether izumi's own player can play protected streams here, and which module version is ready.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn widevine_status(app: AppHandle) -> Result<serde_json::Value, String> {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return widevine::widevine_status(app).and_then(|s| serde_json::to_value(s).map_err(|e| e.to_string()));
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    {
+        let _ = app;
+        Ok(serde_json::json!({ "supported": false, "installed": null }))
+    }
+}
+
+/// Downloads Google's Widevine module into staging and returns its licence text.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn widevine_download(app: AppHandle) -> Result<serde_json::Value, String> {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return widevine::widevine_download(app).await.and_then(|s| serde_json::to_value(s).map_err(|e| e.to_string()));
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    {
+        let _ = app;
+        Err("unsupported".into())
+    }
+}
+
+/// Installs the staged module after the user accepted its licence.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn widevine_accept(app: AppHandle, version: String) -> Result<String, String> {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return widevine::widevine_accept(app, version);
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    {
+        let _ = (app, version);
+        Err("unsupported".into())
+    }
+}
+
+/// Deletes the downloaded module and the recorded licence acceptance.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn widevine_remove(app: AppHandle) -> Result<(), String> {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return widevine::widevine_remove(app);
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    {
+        let _ = app;
+        Err("unsupported".into())
+    }
 }
 
 /// Serializes Linux X11 embeds against a close that is still releasing mpv's output, so an embed
@@ -768,6 +863,13 @@ fn player_sprite_start(
     width: Option<i32>,
     player: tauri::State<'_, player::PlayerHandle>,
 ) -> Result<bool, String> {
+    // Seek-bar tiles are decoded by a second core and cached as JPEG files; protected media never
+    // goes there (that core cannot open `izcr://` either). Protected streams use the source's own
+    // preview images.
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    if widevine::is_protected_url(&url) {
+        return Ok(false);
+    }
     let cache_root = app
         .path()
         .app_cache_dir()
@@ -4369,6 +4471,11 @@ async fn player_capture_segment(
     if source.is_empty() {
         return Err("no-player-source".into());
     }
+    // Protected media is decrypted in memory only; it is never re-encoded into a file.
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    if widevine::is_protected_url(&source) {
+        return Err("protected-capture-unavailable".into());
+    }
     let headers = player
         .get_property("http-header-fields")
         .unwrap_or_default();
@@ -6525,6 +6632,10 @@ pub fn run() {
             player_gif_stop,
             player_gif_abort,
             player_capture_segment,
+            widevine_status,
+            widevine_download,
+            widevine_accept,
+            widevine_remove,
             player_diag,
             mpv_version,
             player_command,
