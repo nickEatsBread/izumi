@@ -97,15 +97,16 @@ describe('Steam Deck featured banner flicker', () => {
     expect(rule).not.toMatch(/steps\(|animation-timing-function/)
     expect(hero).not.toContain('hero-progress-steps')
     expect(hero).not.toContain('@keyframes hero-progress-fill-layer')
-    // A script steps it from the slide clock instead, restarted with the slide.
-    const fps = Number(hero.match(/const GM_BAR_FPS = (\d+)/)?.[1])
-    expect(fps).toBeGreaterThanOrEqual(15)
+    // A script steps it from the slide clock instead, on display frames (a 15 fps timer jittered on
+    // the Deck), restarted with the slide.
     expect(hero).toContain('const progress = Math.min(1, (performance.now() - start) / DURATION)')
-    expect(hero).toContain('bar.style.scale = `${progress} 1`')
-    expect(hero).toContain('ticker = setInterval(paint, 1000 / GM_BAR_FPS)')
+    expect(hero).toContain('bar.style.scale = `${value} 1`')
+    expect(hero).toContain('frame = progress < 1 ? requestAnimationFrame(paint) : 0')
+    expect(hero).not.toContain('setInterval(paint')
     expect(hero).toContain('const stopPlaying = playing.subscribe(restart)')
-    // A visibly ticking fill is what made the old steps(24) bar read as broken: the widest stock
-    // bar (5rem on the Deck) must move under half a pixel per step at the default interval.
-    expect(80 / 15 / fps).toBeLessThan(0.5)
+    // It writes only when the fill has moved a visible fraction of a pixel, not on every frame.
+    const step = Number(hero.match(/const GM_BAR_STEP_PX = ([\d.]+)/)?.[1])
+    expect(step).toBeGreaterThan(0)
+    expect(step).toBeLessThanOrEqual(0.5)
   })
 })
