@@ -129,11 +129,28 @@ Deck's 1024x640 CSS viewport, then compared side by side with gamescope captures
   host px variables (`--izumi-safe-vw` and friends, kept equal to the viewport by `theme.ts`), which
   zoom once. After the fix, Marquee Home, Search, Schedule and Detail and the default Home match
   Chromium in layout.
-- **Text still about 2% wider than Chromium, not fixed.** WebKit's Skia text forces subpixel
-  positioning but uses linear glyph metrics only when hinting is off. GNOME's slight hinting rounds
-  each advance, so a line runs about 2% longer. Matching Chromium means setting hinting to none for
-  the webview (Rust, GTK settings) and a devel build to verify. Not done in this pass: the build
-  takes about 35 minutes in WSL and the laptop had under 1 GB free.
+- **Text 1–2.5% wider than Chromium (all text).** WebKit's Skia text forces subpixel positioning
+  but uses linear glyph metrics only when hinting is off. GNOME's slight hinting rounds each advance,
+  so every line ran longer. Chromium lays text out unhinted on linear metrics at a scale factor above
+  1, which the Deck's page zoom is. WebKitGTK's GTK port takes hinting from GTK's settings
+  (`gtk-xft-hinting`, `gtk-xft-hintstyle`; WebKit's `SystemSettings` maps them for Skia). Fix: under
+  gamescope the app sets hinting off before the webview exists (`lib.rs` setup). An application
+  value outranks `settings.ini` and XSETTINGS, which is why an earlier `settings.ini` test did
+  nothing.
+
+  Verified on the Deck with a devel build (branch `hinting`). The same title string was measured in
+  the same font files in both engines (`tmp/deck/textw3.js`):
+
+  | Font | Deck, slight hinting | Deck, unhinted | Chromium |
+  | --- | --- | --- | --- |
+  | Inter 700, 14 px | 509.10 | 496.60 | 496.60 |
+  | Inter 400, 12.8 px | 451.84 | 442.05 | 442.05 |
+  | Inter 400, 16 px | 562.00 | 552.56 | 552.56 |
+  | Nunito 400, 14 px | 462.65 | 457.94 | 457.95 |
+  | Nunito 800, 18 px | 632.65 | 625.95 | 625.95 |
+
+  Gamescope captures show clean grayscale-antialiased text, slightly softer than hinted text, as
+  unhinted text is.
 - **Each D-pad move spent 42–67 ms in style (themes using `:focus`, `:focus-within`, `:has()`).**
   WebKitGTK invalidates far more than it needs to when focus moves under rules like
   `:is(:focus, :focus-within)`. One such rule cost 18 ms on a page where it matched nothing. A
@@ -207,14 +224,7 @@ presses decide between three causes:
 
 ## Deck state left by this session
 
-The devel build is current, with the flatpak override
-`WEBKIT_INSPECTOR_HTTP_SERVER=127.0.0.1:9339` and `IZUMI_GAMEPAD_LOG=1`. The user unit `izinputlog` is
-running. To restore, run on the Deck:
-
-```
-flatpak kill com.nicho.izumi; flatpak make-current --user com.nicho.izumi stable
-flatpak uninstall --user -y --noninteractive com.nicho.izumi//devel
-flatpak override --user --reset com.nicho.izumi
-systemctl --user stop izinputlog; rm -f /tmp/izinput.log ~/izumi-test/izumi-devel.flatpak
-rm -f ~/.var/app/com.nicho.izumi/data/com.nicho.izumi/localstorage/http_localhost_1437.localstorage*
-```
+Restored. `stable` is the current and only izumi branch. There are no flatpak overrides, no test
+origin storage, no test bundles, and the input logger is stopped and its log removed. The hinting
+check ran as a separate branch (`hinting`), built in its own WSL tree, so no other session's build
+or install was touched.
