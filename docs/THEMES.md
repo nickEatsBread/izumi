@@ -440,7 +440,7 @@ State values:
 
 | Hook | Kind | What | States |
 |---|---|---|---|
-| `card` | part | A media card: poster, search, continue or preview. | `data-family` |
+| `card` | part | A media card: poster, search, continue or preview. `data-shape="episode"` on a catalog card that stands for one episode (a source catalog Continue Watching or new-episode card): a 16:9 still with its episode label. | `data-family`, `data-shape` |
 | `card.art` | part | The card artwork frame. |  |
 | `card.title` | part | The card title. |  |
 | `card.meta` | part | The line under the title (season, format, source, episode). |  |

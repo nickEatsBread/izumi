@@ -67,7 +67,9 @@ describe('catalog title page follows the theme series page', () => {
     expect(detail).toContain('data-part="episode" data-variant="template"')
     expect(detail).toContain('<ThemeNode node={episodeCard} model={episodeModel(video)} />')
     expect(detail).toContain('<div data-slot="episodes.toolbar" data-variant="header"')
-    expect(detail).toContain('<SeasonPicker entries={seasonEntries} variant="dropdown" inline onpick={(index) => (pickedSeason = { title: id, season: seasonNumbers[index] })} />')
+    expect(detail).toContain("<SeasonPicker entries={seasonEntries} variant={detailTheme.episodes?.seasons === 'chips' ? 'chips' : 'dropdown'} inline onpick={(index) => (pickedSeason = { title: id, season: seasonNumbers[index] })} />")
+    // Chips (`detail.episodes.seasons: "chips"`) switch the season in place too.
+    expect(picker).toContain('onclick={onpick ? (event) => { event.preventDefault(); onpick(index) } : undefined}')
     expect(picker).toContain('onpick?: (index: number) => void')
     expect(picker).toContain('onclick={() => { onpick(index); close(true) }}')
   })

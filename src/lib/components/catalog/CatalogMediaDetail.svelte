@@ -137,7 +137,11 @@
     : [])
   const episodeModel = (video: MediaVideo) => episodeDisplayModel(media!, video.episode ?? video.number, {
     title: video.title, overview: video.overview, image: video.thumbnail, airDate: video.released, season: video.season, seasonEpisode: video.episode,
-  }, video.progress !== undefined ? { progress: Math.round(video.progress * 100) } : {})
+  }, {
+    ...(video.progress !== undefined ? { progress: Math.round(video.progress * 100) } : {}),
+    ...(video.durationSec ? { duration: Math.round(video.durationSec / 60) } : {}),
+    ...(video.watched ? { watched: 'Watched' } : {}),
+  })
   // A source catalog says where the viewer is up to (on any device) and keeps its own watchlist.
   const upNext = $derived.by(() => {
     const next = media?.sourceFacts?.upNext
@@ -417,7 +421,7 @@
       <section data-slot="detail.episodes" class="mt-8 {sidePad}">
         <div data-slot="episodes.toolbar" data-variant="header" class="relative mb-4 flex flex-wrap items-center gap-2">
           {#if seasonEntries.length}
-            <div class="mr-auto min-w-0"><SeasonPicker entries={seasonEntries} variant="dropdown" inline onpick={(index) => (pickedSeason = { title: id, season: seasonNumbers[index] })} /></div>
+            <div class="mr-auto min-w-0"><SeasonPicker entries={seasonEntries} variant={detailTheme.episodes?.seasons === 'chips' ? 'chips' : 'dropdown'} inline onpick={(index) => (pickedSeason = { title: id, season: seasonNumbers[index] })} /></div>
           {:else}
             <h2 data-part="episodes.heading" class="mr-auto flex items-baseline gap-2 text-lg font-black">
               Episodes<span data-part="episodes.count" class="text-sm font-bold text-muted-foreground">{seasonVideos.length}</span>

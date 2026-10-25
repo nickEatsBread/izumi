@@ -124,7 +124,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'airing.time', kind: 'part', description: 'The local airing time of an airing-today entry: a tick once aired, a clock before.' },
   ],
   cards: [
-    { name: 'card', kind: 'part', description: 'A media card: poster, search, continue or preview.', states: ['data-family'] },
+    { name: 'card', kind: 'part', description: 'A media card: poster, search, continue or preview. `data-shape="episode"` on a catalog card that stands for one episode (a source catalog Continue Watching or new-episode card): a 16:9 still with its episode label.', states: ['data-family', 'data-shape'] },
     { name: 'card.art', kind: 'part', description: 'The card artwork frame.' },
     { name: 'card.title', kind: 'part', description: 'The card title.' },
     { name: 'card.meta', kind: 'part', description: 'The line under the title (season, format, source, episode).' },

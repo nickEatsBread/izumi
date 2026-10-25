@@ -202,7 +202,7 @@
   $effect(() => () => { clearTimeout(closeT); clearTimeout(openT) })
 </script>
 
-<div data-part="card" data-family={cardFamily} bind:this={el} use:nearViewport={cardArt.wanted.size ? cardArt.gate : undefined} data-theme-card style:--cover-rgb={ambientFromHex(media.coverImage?.color)} class="{widthClass} {fill ? '' : 'shrink-0'}" style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
+<div data-part="card" data-family={cardFamily} data-shape={sourceCard ? 'episode' : undefined} bind:this={el} use:nearViewport={cardArt.wanted.size ? cardArt.gate : undefined} data-theme-card style:--cover-rgb={ambientFromHex(media.coverImage?.color)} class="{widthClass} {fill ? '' : 'shrink-0'}" style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
   <a href={mediaHref(media)} data-focusable draggable="false" onclick={() => { rememberDetail(media); h.tap() }}
      data-nav-key={`media:${media.catalog?.id ?? media.id}`} data-caption-title={title(media)} data-caption-meta={captionMeta}
      aria-label={title(media)} style:width={themeRow.width || cardTemplate ? '100%' : undefined}
