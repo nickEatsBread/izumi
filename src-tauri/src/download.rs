@@ -845,6 +845,15 @@ pub fn download_cancel(
 /// Delete a completed downloaded file.
 #[tauri::command]
 pub fn download_delete(path: String) -> Result<(), String> {
+    let target = std::path::Path::new(&path);
+    // A saved protected episode is a folder (widevine/save.rs). Only a folder that records itself as
+    // one is removed whole; any other folder is refused.
+    if target.is_dir() {
+        if !target.join("drm.json").is_file() && !target.extension().is_some_and(|e| e == "protected") {
+            return Err("not a download".into());
+        }
+        return std::fs::remove_dir_all(target).map_err(|e| e.to_string());
+    }
     std::fs::remove_file(&path).map_err(|e| e.to_string())
 }
 

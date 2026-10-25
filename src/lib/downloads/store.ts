@@ -11,6 +11,8 @@ import { downloadTaskbarProgress } from './taskbar'
 import { formatBytes, formatSpeed } from '$lib/util/format'
 import type { Media } from '$lib/anilist/types'
 import { abortShakaOffline, removeShakaOffline, storeShakaOffline } from './shaka-offline'
+import { usesNativeDrm } from '$lib/player/native-drm'
+import { invokeNativeHttp } from '$lib/net/http'
 
 // Download queue + actions + event wiring. Reads data from ./state (which play.ts
 // also imports, cycle-free). Files stream to disk via the Rust `download_*` commands.
@@ -97,8 +99,11 @@ async function runJob(item: DownloadItem) {
     // it when a queued job actually runs, not whenever the app shell attaches download listeners.
     const { resolveDownloadUrl } = await import('$lib/stremio/play')
     const r = await resolveDownloadUrl(item.mediaId, item.episode, item.preferences)
+    // Linux plays protected video through izumi's own Widevine module, and its webview has no EME
+    // for Shaka to store with: the module's encrypted files are saved instead (widevine/save.rs).
+    const native = r.kind === 'shaka' && usesNativeDrm(r.drm)
     setItem(item.id, {
-      kind: r.kind, url: r.kind === 'http' ? r.url : undefined,
+      kind: native ? 'drm-local' : r.kind, url: r.kind === 'http' ? r.url : undefined,
       hls: r.kind === 'http' ? r.hls : undefined,
       filename: r.filename, infoHash: r.infoHash, provider: r.provider, quality: r.quality,
       sourceOriginId: r.kind === 'shaka' ? r.sourceOriginId : item.sourceOriginId,
@@ -113,6 +118,29 @@ async function runJob(item: DownloadItem) {
         episode: r.episode, absoluteEpisode: r.absoluteEpisode, season: r.season,
         ...torrentEngineNetworkOptions(),
       })
+    } else if (r.kind === 'shaka' && native) {
+      const path = await invoke<string>('widevine_save_folder', { dir, name: r.filename })
+      setItem(item.id, { path })
+      try {
+        const saved = await invoke<{ path: string; bytes: number; height: number }>('widevine_save', {
+          id: item.id, manifestUrl: r.url, dir, name: r.filename, maxHeight: r.preferredHeight ?? null,
+        })
+        setItem(item.id, {
+          status: 'done',
+          path: saved.path,
+          requiresOnlineLicense: true,
+          sourceOriginId: r.sourceOriginId,
+          preferences: { ...item.preferences, ...(r.sourceOriginId ? { sourceOriginId: r.sourceOriginId } : {}) },
+          quality: `${saved.height}p`,
+          downloaded: saved.bytes,
+          bytes: saved.bytes,
+          completedAt: Date.now(),
+        })
+        setSpeed(item.id, undefined)
+      } finally {
+        // The source opened a playback session for the download; it is not needed any more.
+        if (r.drm?.releaseUrl) void invokeNativeHttp('ext_fetch', { url: r.drm.releaseUrl, method: 'DELETE', headers: {} }, { timeoutMs: 10_000 }).catch(() => {})
+      }
     } else if (r.kind === 'shaka') {
       const stored = await storeShakaOffline(item.id, r, ({ downloaded, bytes, speed }) => {
         const current = get(downloads)[item.id]?.downloaded ?? 0
@@ -152,6 +180,11 @@ async function runJob(item: DownloadItem) {
 /** Stop an in-flight job through the engine that owns it. `discard` throws the partial data away
  *  (cancel); otherwise it is kept so a later resume continues from it (pause). */
 async function stopJob(id: string, it: DownloadItem | undefined, discard: boolean) {
+  if (it?.kind === 'drm-local') {
+    await invoke('widevine_save_cancel', { id }).catch(() => {})
+    if (discard && it.path) await invoke('download_delete', { path: it.path }).catch(() => {})
+    return
+  }
   if (it?.kind === 'shaka') {
     await abortShakaOffline(id)
     if (discard && it.offlineUri) await removeShakaOffline(it.offlineUri).catch(() => {})

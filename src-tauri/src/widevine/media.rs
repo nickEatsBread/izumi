@@ -51,20 +51,30 @@ impl Drop for Clear {
     }
 }
 
-/// HTTP range reads of one media file.
+/// HTTP range reads of one media file, or reads of a saved copy of it (a download).
 #[derive(Clone)]
 pub struct Remote {
     http: reqwest::Client,
     url: String,
+    local: Option<std::path::PathBuf>,
 }
 
 impl Remote {
     pub fn new(http: reqwest::Client, url: String) -> Remote {
-        Remote { http, url }
+        Remote { http, url, local: None }
+    }
+
+    /// A media file saved on this device. It is stored as the source sent it, still encrypted, and
+    /// is decrypted in memory on the way to the player exactly like a streamed one.
+    pub fn local(http: reqwest::Client, path: std::path::PathBuf) -> Remote {
+        Remote { http, url: path.display().to_string(), local: Some(path) }
     }
 
     /// Bytes `from..=to` and the file's total size from Content-Range.
     pub async fn range(&self, from: u64, to: u64) -> Result<(Vec<u8>, Option<u64>)> {
+        if let Some(path) = &self.local {
+            return read_local(path, from, to);
+        }
         let mut last = anyhow!("not fetched");
         for attempt in 0..3u64 {
             if attempt > 0 {
@@ -142,6 +152,19 @@ impl Remote {
             }
         }
     }
+}
+
+/// Bytes `from..=to` of a saved file (fewer at its end) and its size.
+fn read_local(path: &std::path::Path, from: u64, to: u64) -> Result<(Vec<u8>, Option<u64>)> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).with_context(|| format!("the downloaded file {} could not be opened", path.display()))?;
+    let total = file.metadata()?.len();
+    ensure!(from < total, "read past the end of the downloaded file");
+    let end = to.min(total - 1);
+    file.seek(SeekFrom::Start(from))?;
+    let mut out = vec![0u8; (end - from + 1) as usize];
+    file.read_exact(&mut out)?;
+    Ok((out, Some(total)))
 }
 
 /// Called once when the module refuses a video sample the hardware path asked it to decrypt.

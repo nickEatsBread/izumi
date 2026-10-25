@@ -569,6 +569,42 @@ fn widevine_remove(app: AppHandle) -> Result<(), String> {
     }
 }
 
+/// Saves a protected episode for offline use: its encrypted files, played later through the module.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn widevine_save(app: AppHandle, id: String, manifest_url: String, dir: String, name: String, max_height: Option<u32>) -> Result<serde_json::Value, String> {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return widevine::save_download(&app, id, manifest_url, dir, name, max_height).await;
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    {
+        let _ = (app, id, manifest_url, dir, name, max_height);
+        Err("unsupported".into())
+    }
+}
+
+/// The folder a protected download named `name` is saved in, so a cancel can discard it.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn widevine_save_folder(dir: String, name: String) -> String {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return widevine::save::folder_for(std::path::Path::new(&dir), &name).display().to_string();
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    {
+        let _ = name;
+        dir
+    }
+}
+
+/// Pauses a running `widevine_save`.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn widevine_save_cancel(id: String) {
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    widevine::cancel_save(&id);
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = id;
+}
+
 /// Serializes Linux X11 embeds against a close that is still releasing mpv's output, so an embed
 /// never loads into a core, or reuses a container, that the close is taking down.
 #[cfg(target_os = "linux")]
@@ -6666,6 +6702,9 @@ pub fn run() {
             widevine_status,
             widevine_download,
             widevine_accept,
+            widevine_save,
+            widevine_save_folder,
+            widevine_save_cancel,
             widevine_remove,
             module_status,
             module_request,

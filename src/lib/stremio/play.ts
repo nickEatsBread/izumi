@@ -83,6 +83,7 @@ import { episodeOffset, fetchSeasonChain, mayListSeasons } from '$lib/anilist/se
 import { anilistIdOf, externalIdsOf, kitsuIdOf } from '$lib/catalog/identity'
 import { sourceProgressReporter, sourceStreams } from '$lib/catalog/source-streams'
 import { isSourceOrigin } from '$lib/catalog/source-catalogs'
+import { phttp } from '$lib/net/http'
 import { downloadOf, getDownloadedMedia, type DownloadPreferences } from '$lib/downloads/state'
 import { resolveHash, resolveSidecars, providerName, cacheCheckMode, checkCached, isDebridBlocked, type EpisodeWant } from './debrid'
 import { annotateCache } from './cache-state'
@@ -1945,6 +1946,22 @@ export async function playEpisode(
   // Offline first: a completed local download plays instantly — no resolve, no
   // picker. libmpv opens an absolute local path exactly like a remote URL.
   const local = !options.remoteOnly && episode != null ? downloadOf(media.id, episode) : undefined
+  if (local?.status === 'done' && local.kind === 'drm-local' && local.path) {
+    // A protected episode saved by izumi's own Widevine module: its files are on this device and
+    // its licence comes from the source again, so playing it needs the source to be reachable.
+    traceResolve(trace, 'completed protected download hit; licensing it again')
+    onState({ status: 'resolving' })
+    const fresh = await resolveDownloadUrl(media.id, episode!, { ...local.preferences, sourceOriginId: local.sourceOriginId })
+    if (fresh.kind !== 'shaka' || !fresh.drm?.licenseUrl) throw new Error('The source no longer provides a licence for this download.')
+    // Some sources only accept a licence request for a presentation that was asked for.
+    await phttp(fresh.url, { timeoutMs: 20_000 }).catch(() => undefined)
+    return await playStream(media, episode, {
+      url: `file://${local.path}`,
+      name: '📥 Downloaded',
+      __manifest: 'dash',
+      __drm: fresh.drm,
+    } as Stream, onState, { autoplay, startSeconds: options.startSeconds })
+  }
   if (local?.status === 'done' && (local.path || local.offlineUri)) {
     traceResolve(trace, 'completed download hit; skipping source discovery')
     let offlineDrm: Stream['__drm'] = local.offlineUri
@@ -4262,7 +4279,9 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
   // extension-only setup played episodes fine and then reported "no source found" the moment a
   // download was queued. Fold both extension flavours in exactly like playback does, then put the
   // merged list through the same refine + season gates.
-  if (await hasConfiguredExtensions()) {
+  // A source catalog's own title has its streams from that source: searching every other
+  // extension by its title would only add other providers' copies.
+  if (!isSourceOrigin(media.catalog?.addonId) && await hasConfiguredExtensions()) {
     let extra: Stream[] = []
     // Bounded: a download is a queued background job and must survive one wedged provider —
     // whatever folded in before the budget expires is what gets considered.

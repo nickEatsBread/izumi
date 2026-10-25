@@ -12,6 +12,7 @@ mod fmp4;
 mod media;
 mod mpd;
 mod protocol;
+pub(crate) mod save;
 mod seccomp;
 pub(crate) mod session;
 
@@ -34,6 +35,25 @@ pub async fn prepare(app: &AppHandle, manifest_url: &str, req: &Request) -> anyh
         let _ = emitter.emit("player-drm-video-refused", ());
     });
     session::prepare(&data, manifest_url, req, on_refused).await
+}
+
+/// Saves a protected episode for offline use (`save.rs`), reporting progress as `download-progress`
+/// for download `id`. Returns the folder; the player opens it as `file://<folder>`.
+pub async fn save_download(app: &AppHandle, id: String, manifest_url: String, dir: String, name: String, max_height: Option<u32>) -> Result<serde_json::Value, String> {
+    let emitter = app.clone();
+    let progress_id = id.clone();
+    let folder = save::folder_for(std::path::Path::new(&dir), &name);
+    let result = save::save(&id, &manifest_url, &folder, max_height, move |received, total, speed| {
+        let _ = emitter.emit("download-progress", (progress_id.as_str(), received, total, speed));
+    })
+    .await
+    .map_err(|e| format!("{e:#}"))?;
+    Ok(serde_json::json!({ "path": folder.display().to_string(), "bytes": result.bytes, "height": result.height }))
+}
+
+/// Stops a running `save_download`; the partial files stay so a resume continues them.
+pub fn cancel_save(id: &str) {
+    save::cancel(id);
 }
 
 /// Error text the frontend recognises to offer the module download.

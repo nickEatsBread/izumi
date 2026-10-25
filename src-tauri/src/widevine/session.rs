@@ -11,6 +11,7 @@ use super::fetch;
 use super::media::{Cancel, OnRefused, RawVideo, Remote, Track};
 use super::mpd;
 use super::protocol::SCHEME;
+use super::save::{self, Saved};
 
 /// Settings a source's `StreamDrm` carries, plus the player's choices.
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -198,35 +199,62 @@ pub async fn prepare(data: &std::path::Path, manifest_url: &str, req: &Request, 
         std::thread::spawn(move || fetch::prune_old(&data, &keep));
     }
 
-    let text = http()
-        .get(manifest_url)
-        .send()
-        .await
-        .context("the manifest could not be fetched")?
-        .error_for_status()
-        .context("the manifest could not be fetched")?
-        .text()
-        .await?;
-    let manifest = mpd::parse(&text, manifest_url)?;
     let forced = requested_mode(req);
-    // The module only decodes H.264; the hardware path takes whatever the manifest offers.
-    let codec = if forced == Some(VideoMode::Hardware) { None } else { Some("avc1") };
-    let video_rep = manifest
-        .video(req.max_height, codec)
-        .or_else(|| manifest.video(req.max_height, None))
-        .context("the manifest has no video")?
-        .clone();
-    let audio_rep = manifest.audio(None).context("the manifest has no audio")?.clone();
-    let heights = manifest.heights(codec);
+    // A download (`file://<folder>`): its two saved files instead of the manifest's, still licensed
+    // online through the fresh licence URL the player resolved for it.
+    let (video_remote, audio_remote, manifest_pssh, video_rep, audio_lang, heights) = if let Some(dir) = save::saved_dir(manifest_url) {
+        let saved = Saved::read(&dir)?;
+        let rep = mpd::Representation {
+            kind: mpd::Kind::Video,
+            id: saved.video_id.clone(),
+            url: String::new(),
+            bandwidth: saved.bandwidth,
+            width: saved.width,
+            height: saved.height,
+            codecs: saved.codecs.clone(),
+            lang: None,
+        };
+        (
+            Remote::local(http().clone(), dir.join(&saved.video)),
+            Remote::local(http().clone(), dir.join(&saved.audio)),
+            saved.pssh(),
+            rep,
+            saved.audio_lang.clone(),
+            vec![saved.height],
+        )
+    } else {
+        let text = http()
+            .get(manifest_url)
+            .send()
+            .await
+            .context("the manifest could not be fetched")?
+            .error_for_status()
+            .context("the manifest could not be fetched")?
+            .text()
+            .await?;
+        let manifest = mpd::parse(&text, manifest_url)?;
+        // The module only decodes H.264; the hardware path takes whatever the manifest offers.
+        let codec = if forced == Some(VideoMode::Hardware) { None } else { Some("avc1") };
+        let video_rep = manifest
+            .video(req.max_height, codec)
+            .or_else(|| manifest.video(req.max_height, None))
+            .context("the manifest has no video")?
+            .clone();
+        let audio_rep = manifest.audio(None).context("the manifest has no audio")?.clone();
+        (
+            Remote::new(http().clone(), video_rep.url.clone()),
+            Remote::new(http().clone(), audio_rep.url.clone()),
+            manifest.pssh.clone(),
+            video_rep,
+            audio_rep.lang.clone(),
+            manifest.heights(codec),
+        )
+    };
 
-    let video_remote = Remote::new(http().clone(), video_rep.url.clone());
-    let audio_remote = Remote::new(http().clone(), audio_rep.url.clone());
     let (video_head, audio_head) = tokio::join!(video_remote.head(), audio_remote.head());
     let (video_head, video_total) = video_head.context("the video file could not be read")?;
     let (audio_head, audio_total) = audio_head.context("the audio file could not be read")?;
-    let init_data = manifest
-        .pssh
-        .clone()
+    let init_data = manifest_pssh
         .or_else(|| Some(video_head.pssh.clone()).filter(|p| !p.is_empty()))
         .or_else(|| Some(audio_head.pssh.clone()).filter(|p| !p.is_empty()))
         .context("the stream carries no Widevine licence data")?;
@@ -321,7 +349,7 @@ pub async fn prepare(data: &std::path::Path, manifest_url: &str, req: &Request, 
     Ok(Prepared {
         video_url: format!("{SCHEME}://{id}/video"),
         audio_url: format!("{SCHEME}://{id}/audio"),
-        audio_lang: audio_rep.lang,
+        audio_lang,
         mode,
         height: video_rep.height,
         heights,
