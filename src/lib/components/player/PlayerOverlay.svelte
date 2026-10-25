@@ -3,6 +3,7 @@
   import { fade } from 'svelte/transition'
   import { listen } from '@tauri-apps/api/event'
   import { listenSafe } from '$lib/util/listen'
+  import { armTouchReveal, clearTouchReveal } from '$lib/player/touch-reveal'
   import { invoke } from '@tauri-apps/api/core'
   import { getCurrentWindow } from '@tauri-apps/api/window'
   import Controls from './Controls.svelte'
@@ -207,6 +208,7 @@
     // retain their ordinary touch/click behaviour.
     if (!gmMode || controlsVisible || get(commentsOpen) || get(playerMenuOpen) || get(trackMenuOpen) || subtitleEditorOpen) return false
     suppressTouchRevealClickUntil = performance.now() + 900
+    armTouchReveal()
     poke()
     return true
   }
@@ -225,6 +227,7 @@
         // touch's own click is a real press on whatever the reveal put there.
         suppressTouchRevealClickUntil = 0
         revealTouch = null
+        clearTouchReveal()
       } else {
         // Gamescope's native touch-begin armed the reveal a moment before this DOM start.
         revealTouch = { x: touch.clientX, y: touch.clientY }
@@ -248,6 +251,7 @@
     if (Math.hypot(touch.clientX - revealTouch.x, touch.clientY - revealTouch.y) > 12) {
       suppressTouchRevealClickUntil = 0
       revealTouch = null
+      clearTouchReveal()
     }
   }
 
@@ -256,6 +260,7 @@
     if (revealTouch && Math.hypot(e.clientX - revealTouch.x, e.clientY - revealTouch.y) > 24) return
     suppressTouchRevealClickUntil = 0
     revealTouch = null
+    clearTouchReveal()
     e.preventDefault()
     e.stopImmediatePropagation()
   }

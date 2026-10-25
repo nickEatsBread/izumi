@@ -11,6 +11,7 @@
   import type { Segment } from '$lib/stremio/aniskip'
   import { themePresentation } from '$lib/themes/runtime'
   import { cssThemeColor } from '$lib/themes/presentation'
+  import { touchRevealArmed } from '$lib/player/touch-reveal'
 
   // Seekbar for the libmpv player. Renders stacked layers (buffered,
   // OP/ED segment tints, hover-scrub, played) plus chapter ticks and a hover
@@ -352,6 +353,8 @@
     hoverT = t
   }
   function ondown(e: PointerEvent) {
+    // The touch that revealed the hidden controls is not a press on the bar it revealed.
+    if (gm && touchRevealArmed()) return
     measureBar()
     const t = timeAt(e.clientX)
     hoverT = t

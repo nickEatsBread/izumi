@@ -174,7 +174,9 @@ describe('PlayerOverlay Game-mode wiring', () => {
     // is a real press on whatever the reveal put there. The window keeps its full length: the
     // compatibility click's latency after the lift is not something to guess.
     expect(body).toContain('      if (revealTouch) {\n')
-    expect(body).toContain('        suppressTouchRevealClickUntil = 0\n        revealTouch = null\n      } else {')
+    expect(body).toContain('        suppressTouchRevealClickUntil = 0\n        revealTouch = null\n        clearTouchReveal()\n      } else {')
+    // The revealing touch's own pointer events reach the controls it mounted: they ignore its press.
+    expect(body).toContain('    armTouchReveal()\n    poke()')
     expect(body).not.toContain('onOverlayTouchEnd')
     // A drag disarms it too, and a tap elsewhere inside the window is a real press.
     expect(body).toContain('Math.hypot(touch.clientX - revealTouch.x, touch.clientY - revealTouch.y) > 12')
