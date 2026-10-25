@@ -187,6 +187,19 @@ export const bingePreload = persisted<boolean>('player-binge-preload', true)
 export const seekDuration = persisted<number>('player-seek-seconds', 10)
 /** Show controls that seek playback to the previous, current, or next subtitle cue. */
 export const subtitleLineNavigation = persisted<boolean>('player-subtitle-line-navigation', false)
+/** Desktop control-bar buttons the user can hide. Core transport, volume, the settings gear, the
+ *  audio/subtitle menu and fullscreen always show. */
+export const PLAYER_CONTROLS = [
+  { id: 'episode-nav', label: 'Previous and next episode' },
+  { id: 'discussion', label: 'Discussion' },
+  { id: 'episodes', label: 'Episodes' },
+  { id: 'cast', label: 'Cast' },
+  { id: 'screenshot', label: 'Screenshot' },
+  { id: 'miniplayer', label: 'Miniplayer' },
+] as const
+export type PlayerControlId = (typeof PLAYER_CONTROLS)[number]['id']
+/** Hidden control-bar buttons. The Episodes switcher starts hidden; the rest start shown. */
+export const playerHiddenControls = persisted<PlayerControlId[]>('player-hidden-controls', ['episodes'])
 /** Hide the left sidebar while the player is open, so windowed video takes its width. On by default. */
 export const hideSidebarWhilePlaying = persisted<boolean>('player-hide-sidebar', true)
 /** Where a desktop trailer opens with mouse and keyboard: izumi's full-window trailer player or the

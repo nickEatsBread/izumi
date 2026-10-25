@@ -54,6 +54,7 @@ describe('theme host display model', () => {
     expect(mediaDisplayModel({ ...media, episodes: 1 }).episodeCountLabel).toBe('1 Episode')
     expect(mediaDisplayModel({ ...media, episodes: undefined }).episodeCountLabel).toBeUndefined()
     expect(mediaDisplayModel({ ...media, episodes: 0 }).episodeCountLabel).toBeUndefined()
+    expect(mediaDisplayModel({ ...media, format: 'MOVIE', episodes: 1 }).episodeCountLabel).toBeUndefined()
   })
   it('strips complete markup and leftover angle brackets from descriptions', () => {
     expect(mediaDisplayModel({ ...media, description: '<i>A story.</i>' }).description).toBe('A story.')

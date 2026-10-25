@@ -14,6 +14,8 @@ import { interleaveFeatured, rankFeaturedMedia } from '../featured-context'
 interface StremioVideo {
   id?: string
   title?: string
+  /** Metadata add-ons name an episode here (`title` is older, and often absent). */
+  name?: string
   season?: number
   episode?: number
   released?: string
@@ -133,7 +135,7 @@ export function mapStremioMeta(raw: StremioMeta, base: string, forcedType?: stri
     number: index + 1,
     season: video.season,
     episode: video.episode,
-    title: video.title,
+    title: video.title || video.name,
     overview: video.overview,
     thumbnail: video.thumbnail,
     released: video.released,

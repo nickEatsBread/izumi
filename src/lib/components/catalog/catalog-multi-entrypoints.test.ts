@@ -164,7 +164,7 @@ describe('multi-platform catalog entry points', () => {
 
   it('places external links above the compact fact band and omits alternative titles', () => {
     const detail = read('./CatalogMediaDetail.svelte')
-    expect(detail).toContain('media.genres?.length || parsedDescription.links.length')
+    expect(detail).toContain('m.genres?.length || parsedDescription.links.length')
     expect(detail).toContain('ml-auto flex shrink-0 flex-wrap items-center justify-end')
     expect(detail.indexOf('aria-label="External links"')).toBeLessThan(detail.indexOf('aria-label="Source information"'))
     expect(detail).toContain('section class="mt-3 max-w-6xl')
