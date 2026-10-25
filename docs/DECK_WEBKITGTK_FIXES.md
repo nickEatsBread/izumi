@@ -112,7 +112,66 @@ received the release but never the press. Fix: the defaults call the globals.
   make `<html>` composite (`negativeZIndexChildren`), and `main` composites above them (`overlap`).
   On Home that is two full-document layers of about 50 MB and 30 MB.
 
-## D-pad moving two stops: still open
+### Rendering parity with Chromium and per-move cost (second follow-up)
+
+The owner clarified "pixelated": the UI feels laggy and patchy, and should render as it does in
+Chromium.
+
+Parity method: the live Deck DOM was serialised with scripts stripped and scroll and focus restored
+by an inline script (`tmp/deck/snap-*.js`). It was served statically and rendered in Chromium at the
+Deck's 1024x640 CSS viewport, then compared side by side with gamescope captures.
+
+- **Theme text 25% too big (any theme sizing text in viewport units).** Under the Deck's native page
+  zoom (1.25), WebKitGTK zooms a `font-size` given in `vw`/`vh` twice. Widths, line heights and
+  letter spacing in the same units are right. Marquee's 32u headings drew at 21.3 CSS px where
+  Chromium draws 17.1 px, so text wrapped early and pushed rows apart. Fix
+  (`themes/css.ts` `pinViewportUnits`): in Game mode a theme's viewport units become multiples of
+  host px variables (`--izumi-safe-vw` and friends, kept equal to the viewport by `theme.ts`), which
+  zoom once. After the fix, Marquee Home, Search, Schedule and Detail and the default Home match
+  Chromium in layout.
+- **Text still about 2% wider than Chromium, not fixed.** WebKit's Skia text forces subpixel
+  positioning but uses linear glyph metrics only when hinting is off. GNOME's slight hinting rounds
+  each advance, so a line runs about 2% longer. Matching Chromium means setting hinting to none for
+  the webview (Rust, GTK settings) and a devel build to verify. Not done in this pass: the build
+  takes about 35 minutes in WSL and the laptop had under 1 GB free.
+- **Each D-pad move spent 42–67 ms in style (themes using `:focus`, `:focus-within`, `:has()`).**
+  WebKitGTK invalidates far more than it needs to when focus moves under rules like
+  `:is(:focus, :focus-within)`. One such rule cost 18 ms on a page where it matched nothing. A
+  root-level `:has([data-slot="nav.top"]:focus-within)` cost 12 ms on every move between cards.
+  Fix: in Game mode the theme stylesheet reads focus from attributes the host keeps on the focus path
+  (`themes/focus-mirror.ts`, rewrite in `themes/css.ts` `mirrorFocusSelectors`):
+  - `data-izumi-focus` on the focused element;
+  - `data-izumi-focus-within` on it and its ancestors;
+  - `data-izumi-has-focus` tokens on elements matching a compound that a `:has()` argument watches.
+    The nav-dimming rule then changes only when focus enters or leaves the bar.
+
+  Only elements whose state changes are touched, and `:focus-visible` stays a pseudo-class.
+  Measured on Marquee Home, a move between two cards went from 22 ms of style (attributes, no
+  tokens) to 2 ms in focus handlers and 0 ms of style.
+- **Layout per move, still open.** Each move still costs 11–16 ms of layout. Run-to-run variance is
+  large, and on a 60 Hz panel that is most of a frame. Measured so far:
+  - containment on rows or cards changes nothing;
+  - hiding every other row changes nothing;
+  - holding the focused tile's width (no 312u to 905u change) or its opacity toggles saves 2–5 ms;
+  - each frame of the 0.65 s width transition costs 2–3 ms of layout.
+
+  The rest is in the focused row and not yet attributed.
+- **Hero progress bar measured itself 15 times a second.** The Game-mode bar ticker called
+  `getBoundingClientRect` on every tick to skip off-screen writes. That forced a style and layout
+  pass in the middle of D-pad moves and scrolls. It now uses an IntersectionObserver.
+- **Row gates measured every card.** `near-viewport.ts` checked each card's own rect on every scroll
+  frame, a few hundred measurements. A parent still below the line now rules out all its children
+  with one measurement.
+- **Open costs, not changed:**
+  - The first visit to a row stalls for 130–270 ms while it mounts and loads its art.
+  - Anchored-row slides call `scrollTo` every frame, which forces layout while the theme's width
+    transitions run.
+
+## D-pad moving two stops: not reproduced
+
+The owner's physical presses (see "Physical D-pad presses" above) settled this: one edge and one
+move per press. The likely source of the report is the row-edge jumps, blank tiles and blinks fixed
+above. The notes below are from before those presses were recorded.
 
 Injected presses (the same `gamepad-input` path the Rust reader uses) move exactly one stop on the
 default theme and on Marquee: one keydown and one focus change per press, every time. The Rust
