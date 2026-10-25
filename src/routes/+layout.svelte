@@ -21,6 +21,7 @@
     debridKey, torrentBindInterface, torrentPlaybackMode, torrentProxyEnabled, torrentProxyUrl,
   } from '$lib/settings/ui'
   import { torrentProxyEndpoint } from '$lib/player/torrent-proxy'
+  import StartupAnimation from '$lib/components/StartupAnimation.svelte'
   setContextClient(anilist)
   let { children } = $props()
   // Resolve TV mode before the app shell decides whether desktop-only chrome should mount.
@@ -74,3 +75,4 @@
   </div>
 {/if}
 {@render children()}
+{#if !captureControlsWindow}<StartupAnimation />{/if}

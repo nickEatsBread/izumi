@@ -13,6 +13,21 @@
          (which then stays zoomed). The app has its own UI-scale setting; browser zoom isn't wanted. -->
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>izumi</title>
+    <!-- A pack's startup animation plays at launch: paint black from the first frame so Home never
+         shows before it. The keys are kept by src/lib/startup/animation.ts. -->
+    <style>html.startup-cover::after{content:'';position:fixed;inset:0;z-index:2147483647;background:#000}</style>
+    <script>
+      try {
+        var store = window.localStorage, info = store.getItem('startup-animation-info-v1')
+        if (location.pathname.indexOf('/app') === 0 && info && info !== 'null'
+          && store.getItem('startup-animation-enabled-v1') !== 'false'
+          && store.getItem('motion-preference') !== '"reduce"'
+          && !window.sessionStorage.getItem('startup-animation-played')
+          && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+          document.documentElement.classList.add('startup-cover')
+        }
+      } catch (e) { /* storage blocked: no cover, the app starts as usual */ }
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

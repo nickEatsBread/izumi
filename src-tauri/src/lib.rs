@@ -71,6 +71,8 @@ mod steam_osk;
 mod widevine;
 // Optional native modules (packs ask for them by id), downloaded in the background.
 mod modules;
+// The short video a pack can set to play while izumi starts.
+mod startup_animation;
 
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -6667,6 +6669,10 @@ pub fn run() {
             module_request,
             module_retry,
             module_release,
+            startup_animation::startup_animation_set,
+            startup_animation::startup_animation_clear,
+            startup_animation::startup_animation_info,
+            startup_animation::startup_animation_bytes,
             player_diag,
             mpv_version,
             player_command,
@@ -6746,6 +6752,10 @@ pub fn run() {
         module_request,
         module_retry,
         module_release,
+        startup_animation::startup_animation_set,
+        startup_animation::startup_animation_clear,
+        startup_animation::startup_animation_info,
+        startup_animation::startup_animation_bytes,
         // Android has no scrub tiles (playback is delegated), but it does accumulate the torrent,
         // subtitle and update buckets, and the Storage screen is shared.
         cache_usage,
