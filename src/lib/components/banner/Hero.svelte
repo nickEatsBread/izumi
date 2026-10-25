@@ -32,7 +32,7 @@
   import { androidMpvActive } from '$lib/player/android-mpv'
   import { airingCountdown, airingCountdownAccessible } from '$lib/anime/airing-labels'
   import { dragCarousels, wheelScrollAcross } from '$lib/settings/ui'
-  import { untrack } from 'svelte'
+  import { tick, untrack } from 'svelte'
   import { animeAwardHref, findTopAnimeAward } from '$lib/catalog/anime-awards'
   import { createSlideScheduler } from './hero-slides'
   import { heroBackdrop, heroNeedsKeyart, type HeroKeyart } from './hero-art'
@@ -127,7 +127,11 @@
   })
   function commitSlide(n: number, direction: 1 | -1, ready: boolean) {
     if (!medias[n]) return
-    if (fadeTransition && n !== i && medias[i] && motionAllowed()) startFade()
+    if (fadeTransition && n !== i && medias[i] && motionAllowed()) startFade(() => applySlide(n, direction, ready))
+    else applySlide(n, direction, ready)
+  }
+  function applySlide(n: number, direction: 1 | -1, ready: boolean) {
+    if (!medias[n]) return
     navDirection = direction
     // Ready artwork settles BEFORE the swap, so the first paint of the new slide is the image
     // itself, never the skeleton. A slow or broken image keeps the old path: skeleton until the
@@ -170,28 +174,64 @@
       : { gameModeOnly: true, opacity: [0, shown], xPercent: [navDirection * 3, 0], scale: [1.015, 1], duration: 480, easing: quintOut }
   const slideOut = (carousel: boolean, shown: number): MotionParams =>
     ({ gameModeOnly: true, opacity: [0, shown], duration: carousel && !fadeTransition ? 480 : 0, easing: quintOut })
-  // A template hero's outgoing copy fades out over the incoming one. In Game mode its keyframes ended
-  // with the same layer-drop blink, so there it fades from script as well. `|global`: the layer is
-  // created with its `{#if}`, and a local intro would not play, leaving the old slide fully drawn
-  // until it vanished.
-  const copyOut: MotionParams = { gameModeOnly: true, opacity: [1, 0], duration: FADE_MS, easing: linear }
+  // A template hero's outgoing copy fades out over the incoming one (`.running`). In Game mode its
+  // keyframes ended with the same layer-drop blink, so there it fades from script instead.
+  function fadeOutWhen(node: HTMLElement, running: boolean) {
+    let frame = 0
+    const run = (on: boolean) => {
+      if (!on || frame || node.classList.contains('running')) return
+      if (!get(gameMode)) { node.classList.add('running'); return }
+      const start = performance.now()
+      const step = (now: number) => {
+        const t = Math.min(1, (now - start) / FADE_MS)
+        node.style.opacity = String(1 - t)
+        frame = t < 1 ? requestAnimationFrame(step) : 0
+      }
+      frame = requestAnimationFrame(step)
+    }
+    run(running)
+    return { update: run, destroy: () => cancelAnimationFrame(frame) }
+  }
   const copyIn = (): MotionParams => fadeTransition
     ? { gameModeOnly: true, opacity: [0, 1], duration: FADE_MS, easing: linear }
     : { gameModeOnly: true, opacity: [0, 1], xPercent: [navDirection * 1.5, 0], y: [8, 0], duration: 360, easing: quintOut }
   const fadeTransition = $derived(showOverlay && heroTheme?.transition === 'fade')
-  let fadeFrom = $state<{ key: number; model: DisplayModel; art?: string } | null>(null)
+  let fadeFrom = $state<{ key: number; model: DisplayModel; art?: string; running: boolean } | null>(null)
+  let fadeGen = 0
+  let pendingSlide: (() => void) | null = null
   let fadeTimer: ReturnType<typeof setTimeout> | undefined
   const motionAllowed = () => {
     const motion = get(motionPreference)
     return motion !== 'reduce' && (motion === 'full' || !matchMedia('(prefers-reduced-motion: reduce)').matches)
   }
-  function startFade() {
+  function startFade(apply: () => void) {
     clearTimeout(fadeTimer)
+    // A step while the previous one still waits lands that one first, so quick presses all count.
+    pendingSlide?.()
+    pendingSlide = apply
     // The built-in layouts' outgoing artwork: the phone card's cover, the desktop banner (a desktop
     // hero showing covers just fades its incoming slide in).
     const art = !current ? undefined : get(isMobile) ? cover(current) : artworkMode === 'cover' ? undefined : backdropSrc || undefined
-    fadeFrom = { key: (fadeFrom?.key ?? 0) + 1, model: themeModel, art }
-    fadeTimer = setTimeout(() => (fadeFrom = null), FADE_MS)
+    fadeFrom = { key: (fadeFrom?.key ?? 0) + 1, model: themeModel, art, running: false }
+    // The outgoing slide is drawn again over the live one, still showing the same slide, and the swap
+    // waits until that copy's artwork has painted: on the Deck a new layer's image can take a few
+    // frames, and the incoming slide showed through it meanwhile.
+    const gen = ++fadeGen
+    void tick().then(outgoingPainted).then(() => {
+      if (gen !== fadeGen) return
+      pendingSlide = null
+      apply()
+      if (fadeFrom) fadeFrom = { ...fadeFrom, running: true }
+      fadeTimer = setTimeout(() => (fadeFrom = null), FADE_MS)
+    })
+  }
+  const OUTGOING_PAINT_MS = 300
+  async function outgoingPainted() {
+    const images = [...document.querySelectorAll<HTMLImageElement>('[data-slot="home.hero"] :is(.hero-fade-out, [data-state="leaving"]) img')]
+    const decoded = Promise.all(images.map((img) => img.decode().catch(() => {})))
+    await Promise.race([decoded, new Promise((resolve) => setTimeout(resolve, OUTGOING_PAINT_MS))])
+    // Decoded is not yet painted: two frames put it on screen before the live slide changes under it.
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   }
 
   // `now` (a finger swipe) moves at once: waiting for the incoming artwork to decode made a quick run
@@ -690,7 +730,7 @@
         {#key fadeFrom.key}
           <!-- The same markup as the live slide (its title an h1 too), so heading styles never change
                as the fade starts; aria-hidden keeps the copy's heading out of the page outline. -->
-          <div class="hero-fade-out" aria-hidden="true" inert in:motion|global={copyOut}><ThemeNode node={heroTheme.template} model={fadeFrom.model} eager titleHeading actions={fadeActions} /></div>
+          <div class="hero-fade-out" aria-hidden="true" inert use:fadeOutWhen={fadeFrom.running}><ThemeNode node={heroTheme.template} model={fadeFrom.model} eager titleHeading actions={fadeActions} /></div>
         {/key}
       {/if}
       {#if medias.length > 1}
@@ -1146,7 +1186,8 @@
   }
   .hero-fade .hero-slide-in,
   .hero-fade .hero-copy { animation: hero-fade-in 650ms ease both; }
-  .hero-fade-out { position: absolute; inset: 0; z-index: 1; pointer-events: none; transform: translateZ(0); animation: hero-fade-out 650ms ease both; }
+  .hero-fade-out { position: absolute; inset: 0; z-index: 1; pointer-events: none; transform: translateZ(0); }
+  .hero-fade-out:global(.running) { animation: hero-fade-out 650ms ease both; }
   /* Game mode (the Deck's WebKitGTK 2.52). A transform or opacity tween lifts its element onto a
      compositor layer for the tween only. When the tween ends the layer is dropped and its pixels are
      repainted into the page's tiles, and since 2.52 WebKit composites without waiting for that
