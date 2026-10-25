@@ -1883,6 +1883,21 @@ function retainRecoveryCandidates(media: Media, episode: number | undefined, str
 // `playStream` starts it. `continuation` (set by auto-advance) carries the previous episode's
 // release identity: as sources fold in, a same-release one auto-continues without the user
 // touching the picker — a ready one instantly, an uncached one after the list settles.
+/** A protected episode saved by izumi's own Widevine module, as a stream: its folder, with the
+ *  licence a fresh resolution brought. The saved files are the presentation that plays: no track
+ *  refresh, and no subtitle that would switch to another (burned-in) presentation, which would
+ *  stream that instead. */
+export function savedProtectedStream(path: string, fresh: ResolvedShakaDownload): Stream {
+  return {
+    url: `file://${path}`,
+    name: '📥 Downloaded',
+    __manifest: 'dash',
+    __drm: { ...fresh.drm, refreshUrl: undefined },
+    __audioLang: fresh.audioLang,
+    __subtitles: fresh.subtitles?.filter((track) => track.url && !track.switchUrl),
+  } as Stream
+}
+
 export async function playEpisode(
   media: Media,
   episode: number | undefined,
@@ -1955,12 +1970,7 @@ export async function playEpisode(
     if (fresh.kind !== 'shaka' || !fresh.drm?.licenseUrl) throw new Error('The source no longer provides a licence for this download.')
     // Some sources only accept a licence request for a presentation that was asked for.
     await phttp(fresh.url, { timeoutMs: 20_000 }).catch(() => undefined)
-    return await playStream(media, episode, {
-      url: `file://${local.path}`,
-      name: '📥 Downloaded',
-      __manifest: 'dash',
-      __drm: fresh.drm,
-    } as Stream, onState, { autoplay, startSeconds: options.startSeconds })
+    return await playStream(media, episode, savedProtectedStream(local.path, fresh), onState, { autoplay, startSeconds: options.startSeconds })
   }
   if (local?.status === 'done' && (local.path || local.offlineUri)) {
     traceResolve(trace, 'completed download hit; skipping source discovery')

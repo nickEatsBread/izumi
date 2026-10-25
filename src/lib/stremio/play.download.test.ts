@@ -113,7 +113,7 @@ vi.mock('$lib/player/session', () => ({
   playbackRecovery: writable(null),
 }))
 
-const { resolveDownloadUrl } = await import('./play')
+const { resolveDownloadUrl, savedProtectedStream } = await import('./play')
 
 const media = {
   id: 1,
@@ -334,5 +334,28 @@ describe('resolveDownloadUrl failure copy', () => {
 
     await expect(resolveDownloadUrl(1, 2)).rejects.toThrow(/no downloadable link|no source found/i)
     await expect(resolveDownloadUrl(1, 2)).rejects.not.toThrow(/debrid|key/i)
+  })
+})
+
+describe('a protected episode saved on this device', () => {
+  const fresh = {
+    kind: 'shaka' as const,
+    url: 'http://127.0.0.1:4000/v/1/manifest.mpd',
+    filename: 'Test Anime - E2.mkv',
+    audioLang: 'ja-JP',
+    drm: { keySystem: 'com.widevine.alpha', licenseUrl: 'http://127.0.0.1:4000/v/1/license', releaseUrl: 'http://127.0.0.1:4000/v/1/session', refreshUrl: 'http://127.0.0.1:4000/v/1/source' },
+    subtitles: [
+      { url: 'http://127.0.0.1:4000/v/1/subs/en.ass', lang: 'en' },
+      { url: '', lang: 'en', switchUrl: 'http://127.0.0.1:4000/v/1/manifest.mpd?hard=en' },
+    ],
+  }
+
+  it('plays its folder with the fresh licence, never a presentation that would stream instead', () => {
+    const stream = savedProtectedStream('/downloads/Test Anime - E2.protected', fresh)
+    expect(stream.url).toBe('file:///downloads/Test Anime - E2.protected')
+    expect(stream.__drm).toMatchObject({ licenseUrl: fresh.drm.licenseUrl, releaseUrl: fresh.drm.releaseUrl })
+    expect(stream.__drm?.refreshUrl).toBeUndefined()
+    expect(stream.__subtitles).toEqual([fresh.subtitles[0]])
+    expect(stream.__audioLang).toBe('ja-JP')
   })
 })
