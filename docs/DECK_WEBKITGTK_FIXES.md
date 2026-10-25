@@ -85,6 +85,33 @@ The Season, Year and Sort selects stay 44 px tall: that is the owner's Game-mode
 The throw also aborted Tauri's listener loop for that press: a listener registered after nav's own
 received the release but never the press. Fix: the defaults call the globals.
 
+### Owner follow-up, same day
+
+- **Left at a row's first card "went nowhere" (Marquee).** The d-pad fell back to a page-wide
+  geometric search, which picked a card of another row that the anchored slide had moved off screen.
+  The owner's own presses showed focus moving to such a card. Now a move past a row's end only
+  crosses into a region beside the row (the side rail). A region crossed sideways must sit level with
+  the focused card, so under a top bar Left stays on the card. Right from the hero's last button no
+  longer drops into the row below.
+- **Big gaps between rows (Marquee).** Template px were screen px while the stylesheet works on a
+  1920-wide canvas (`--u`). The row caption's `minHeight: 120` reserved 120 CSS px on every row instead
+  of 120 canvas px (64 px). On a TV surface, template lengths are now multiples of `--u`. Per-row
+  pitch went from 494 to 438 CSS px; the empty band under a focused row's synopsis went from about
+  160 to about 65 device px.
+- **Physical D-pad presses.** `inputlog.py` recorded about 60 real presses. Each one was one hidraw
+  change, one Steam virtual pad hat change, one Rust edge, one keydown and one focus move. There
+  were no lizard-mode keys and press lengths were 90–200 ms. In this build the D-pad does not
+  double-step.
+- **"Pixelated" fonts.** Not found in gamescope captures:
+  - Text renders with GNOME's slight hinting and grayscale AA (inside the sandbox: hinting slight,
+    antialiasing grayscale, `10-sub-pixel-none.conf`).
+  - De-promoting the composited page layer gave byte-identical text.
+  - `text-rendering: geometricPrecision` gave byte-identical text.
+  - Marquee's TV sizes are small on the Deck: the synopsis is 24u = 12.8 CSS px = 16 device px.
+- **Compositing cost, not changed.** The fixed `-z-30` app background and `-z-20` theme backdrop
+  make `<html>` composite (`negativeZIndexChildren`), and `main` composites above them (`overlap`).
+  On Home that is two full-document layers of about 50 MB and 30 MB.
+
 ## D-pad moving two stops: still open
 
 Injected presses (the same `gamepad-input` path the Rust reader uses) move exactly one stop on the
