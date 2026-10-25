@@ -249,6 +249,8 @@
     const stopVpnToasts = initTorrentVpnToasts()
     let stopDeepLinks: () => void = () => {}
     initDeepLinks().then((stop) => { stopDeepLinks = stop }).catch(() => {})
+    // A pack the Deck installer was asked to set up opens its review screen once.
+    void invoke<string | null>('pack_take_pending').then((url) => { if (url) void goto(`/app/pack?url=${encodeURIComponent(url)}`) }).catch(() => {})
     // Background services. None of them is needed for the first paint, and statically importing
     // them put ~3k lines of companion / watch-together / device-sync / tracker-queue / updater code
     // (plus, via the source bridge, the whole play stack) into the shell's boot chunk. They load and

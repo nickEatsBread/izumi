@@ -73,6 +73,8 @@ mod widevine;
 mod modules;
 // The short video a pack can set to play while izumi starts.
 mod startup_animation;
+// A pack the Deck installer was asked to set up, offered once at the next launch.
+mod pending_pack;
 
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -6673,6 +6675,7 @@ pub fn run() {
             startup_animation::startup_animation_clear,
             startup_animation::startup_animation_info,
             startup_animation::startup_animation_bytes,
+            pending_pack::pack_take_pending,
             player_diag,
             mpv_version,
             player_command,
@@ -6756,6 +6759,7 @@ pub fn run() {
         startup_animation::startup_animation_clear,
         startup_animation::startup_animation_info,
         startup_animation::startup_animation_bytes,
+        pending_pack::pack_take_pending,
         // Android has no scrub tiles (playback is delegated), but it does accumulate the torrent,
         // subtitle and update buckets, and the Storage screen is shared.
         cache_usage,
