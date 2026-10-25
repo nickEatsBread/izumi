@@ -34,7 +34,7 @@ describe('series page trailers (API 6 detail.preview: "trailer")', () => {
     expect(catalog).toContain("import BackdropTrailer from '$lib/components/cards/BackdropTrailer.svelte'")
     expect(catalog).toContain("import { DETAIL_TRAILER_DWELL } from '$lib/components/cards/backdrop-trailer'")
     expect(catalog).toContain("import { youtubeTrailerId } from '$lib/components/cards/youtube-embed'")
-    expect(catalog).toContain("import { resolveDetail } from '$lib/themes/presentation'")
+    expect(catalog).toContain("import { episodesBelow, episodesOnSide, resolveDetail, type DetailSection } from '$lib/themes/presentation'")
     expect(catalog).toContain("import { themePresentation } from '$lib/themes/runtime'")
     expect(catalog).toContain('const detailTheme = $derived(resolveDetail($themePresentation))')
     expect(catalog).toContain("const trailerOn = $derived(detailTheme.preview === 'trailer')")

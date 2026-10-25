@@ -49,7 +49,7 @@ describe('season picker', () => {
   it('opens a chip or poster row on the current season unless the theme starts it at the first', () => {
     const picker = readFileSync(path('./SeasonPicker.svelte'), 'utf8')
     // `active` is the default, so a theme without the key keeps the row centred on the current season.
-    expect(picker).toContain("let { entries, variant, inline = false, scroll = 'active' }: {")
+    expect(picker).toContain("let { entries, variant, inline = false, scroll = 'active', onpick }: {")
     expect(picker).toMatch(/\$effect\(\(\) => \{\s+if \(scroll === 'start'\) return\s+const row = track/)
     expect(list).toContain('<SeasonPicker entries={seasonList} variant={seasonVariant} scroll={episodeTheme?.seasonsScroll} />')
   })

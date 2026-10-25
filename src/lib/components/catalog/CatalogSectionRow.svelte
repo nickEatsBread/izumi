@@ -38,8 +38,8 @@
       </div>
     {/each}
   {:else}
-    {#each section.media as media (media.catalog?.id ?? media.id)}
-      <div class="shrink-0"><SmallCard {media} {showCatalogSource} /></div>
+    {#each section.media as media, index (media.catalog?.id ?? media.id)}
+      <div class="shrink-0"><SmallCard {media} {showCatalogSource} position={index + 1} /></div>
     {/each}
   {/if}
 </Carousel>

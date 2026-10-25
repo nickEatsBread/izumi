@@ -20,7 +20,7 @@
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Check from '@lucide/svelte/icons/check'
 
-  let { entries, variant, inline = false, scroll = 'active' }: {
+  let { entries, variant, inline = false, scroll = 'active', onpick }: {
     entries: SeasonEntry[]
     variant: 'chips' | 'posters' | 'dropdown'
     /** The dropdown sits inside a heading-row toolbar (no margin of its own). */
@@ -28,6 +28,9 @@
     /** API 4 `detail.episodes.seasonsScroll`: a `chips` or `posters` row opens scrolled to the current
      *  season (`active`) or at its start, the first season (`start`). */
     scroll?: 'active' | 'start'
+    /** The dropdown over one title's own seasons (a catalog series): a pick calls this with the
+     *  entry's index instead of opening another title. */
+    onpick?: (index: number) => void
   } = $props()
   const current = $derived(entries.find((entry) => entry.active))
   let open = $state(false)
@@ -101,14 +104,23 @@
     {#if open}
       <div use:portal bind:this={panel} data-part="episodes.menu" data-variant="seasons" data-nav-trap data-nav-escape style={place} data-nav-scroll-container
            class="fixed z-[60] w-56 overflow-y-auto overscroll-contain rounded-lg border border-border bg-card p-1.5 shadow-2xl">
-        {#each entries as entry (entry.media.id)}
-          <a data-part="season" data-active={entry.active || undefined} data-focusable href={mediaHref(entry.media)} use:detailLink={entry.media}
-             aria-current={entry.active ? 'page' : undefined} onclick={() => close(true)}
-             class="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
-            <span data-part="season.label" class="flex-1">{entry.label}</span>
-            {#if entry.year}<span data-part="season.year" class="text-xs font-semibold text-muted-foreground">{entry.year}</span>{/if}
-            {#if entry.active}<Check size={15} class="text-theme" />{/if}
-          </a>
+        {#each entries as entry, index (onpick ? entry.label : entry.media.id)}
+          {#if onpick}
+            <button type="button" data-part="season" data-active={entry.active || undefined} data-focusable
+                    aria-current={entry.active ? 'true' : undefined} onclick={() => { onpick(index); close(true) }}
+                    class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-bold hover:bg-accent">
+              <span data-part="season.label" class="flex-1">{entry.label}</span>
+              {#if entry.active}<Check size={15} class="text-theme" />{/if}
+            </button>
+          {:else}
+            <a data-part="season" data-active={entry.active || undefined} data-focusable href={mediaHref(entry.media)} use:detailLink={entry.media}
+               aria-current={entry.active ? 'page' : undefined} onclick={() => close(true)}
+               class="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
+              <span data-part="season.label" class="flex-1">{entry.label}</span>
+              {#if entry.year}<span data-part="season.year" class="text-xs font-semibold text-muted-foreground">{entry.year}</span>{/if}
+              {#if entry.active}<Check size={15} class="text-theme" />{/if}
+            </a>
+          {/if}
         {/each}
       </div>
     {/if}

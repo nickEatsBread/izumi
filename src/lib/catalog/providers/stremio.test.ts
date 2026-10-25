@@ -116,6 +116,14 @@ describe('Stremio catalog identity', () => {
     })
   })
 
+  it('names each episode from the add-on video name, as metadata add-ons send it', () => {
+    const media = mapStremioMeta({
+      id: 'tt0000003', type: 'series', name: 'Example series',
+      videos: [{ id: 'tt0000003:1:1', season: 1, episode: 1, name: 'Pilot' }, { id: 'tt0000003:1:2', season: 1, episode: 2, title: 'Second' }],
+    }, 'https://addon.test')
+    expect(media?.videos?.map((video) => video.title)).toEqual(['Pilot', 'Second'])
+  })
+
   it('applies rich metadata filters with inclusive boundaries', () => {
     const matching = mapStremioMeta({
       id: 'tt0000001', type: 'movie', name: 'Matching title', poster: 'poster.jpg',
