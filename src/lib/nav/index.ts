@@ -1221,7 +1221,11 @@ export function initDpadNav() {
     const onLine = line ? els.filter((el) => navLine(el) === line) : []
     const at = onLine.indexOf(active)
     const neighbour = at < 0 ? undefined : onLine[at + (dir === 'right' ? 1 : -1)]
-    let pick: ElCand | null = neighbour ? { id: '', rect: navRect(neighbour, false), el: neighbour } : pickInDirection(cur, sameRegion, dir)
+    // Left/Right past a row's first or last card (pickInNavRows found its end) never lands on another
+    // row's card: an anchored row slides its earlier cards off screen, so that pick was invisible and
+    // focus seemed to vanish. Only a region beside the row (the side rail) can take the press.
+    const rowEnd = rowPick === null && !vertical
+    let pick: ElCand | null = neighbour ? { id: '', rect: navRect(neighbour, false), el: neighbour } : rowEnd ? null : pickInDirection(cur, sameRegion, dir)
     let entersRegionDefault = false
     if (!pick) {
       if (vertical) {
@@ -1237,7 +1241,18 @@ export function initDpadNav() {
           return
         }
       } else {
-        const otherRegion = all.filter(c => regionOf(c.el) !== activeRegion)
+        // A region crossed sideways has to sit beside the focused control, level with it, and the
+        // target has to lie that way on screen: a top bar is above the page, not beside it, so Left at
+        // the page's edge stays put instead of climbing into the bar.
+        const beside = (c: ElCand) => {
+          const r = c.rect
+          const region = regionOf(c.el)?.getBoundingClientRect()
+          return (dir === 'left' ? r.right <= cur.left + 1 : r.left >= cur.right - 1)
+            // A region with no box of its own (display: contents) cannot be judged and is not filtered.
+            && (!region?.height || (region.top < cur.bottom && region.bottom > cur.top))
+            && r.bottom > 0 && r.top < window.innerHeight && r.right > 0 && r.left < window.innerWidth
+        }
+        const otherRegion = all.filter(c => regionOf(c.el) !== activeRegion && beside(c))
         pick = pickInDirection(cur, otherRegion, dir, /* cone */ false)
         // Entering a region lands on its default (the Settings rail's current category), not on
         // whichever of its items happens to be nearest.

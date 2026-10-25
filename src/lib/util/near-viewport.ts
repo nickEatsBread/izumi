@@ -80,12 +80,22 @@ function remove(entry: Entry): void {
 function check(): void {
   frame = 0
   const height = viewportHeight()
+  // Every card of a row waits on its own gate, so a scroll frame measured a few hundred cards. A child
+  // starts no higher than its parent, so a parent still below the line rules out all of its children
+  // with one measurement. shortcut: a child pulled above its parent (negative margin) waits for the parent.
+  const parentTops = new Map<Element, number>()
   for (const entry of [...entries]) {
     // An earlier onEnter in this pass can switch a sibling's gate off through Svelte effects.
     if (!entries.has(entry)) continue
     if (!entry.node.isConnected) {
       remove(entry)
       continue
+    }
+    const parent = entry.node.parentElement
+    if (parent) {
+      let top = parentTops.get(parent)
+      if (top === undefined) parentTops.set(parent, top = parent.getBoundingClientRect().top)
+      if (!isNearViewport(top, height, entry.options.marginViewports)) continue
     }
     if (!isNearViewport(
       entry.node.getBoundingClientRect().top,

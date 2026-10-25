@@ -5819,6 +5819,20 @@ pub fn run() {
             // stat walk over an abandoned torrent payload must not sit between launch and paint.
             cache_gc::sweep_at_startup(app.handle());
             subtitle_fonts::init(app.handle());
+            // Game mode: WebKitGTK takes text hinting from GTK's settings. GNOME's slight hinting
+            // rounds every glyph advance, so under the Deck's page zoom each line of text ran about
+            // 2% longer than in Chromium, which lays text out unhinted on linear metrics at a
+            // scale factor above 1. Unhinted, WebKit's Skia text uses the same metrics. Set before
+            // the webview exists so its first settings snapshot already has it; an application
+            // value outranks settings.ini and XSETTINGS.
+            #[cfg(target_os = "linux")]
+            if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some() {
+                if let Some(settings) = gtk::Settings::default() {
+                    use glib::prelude::ObjectExt;
+                    settings.set_property("gtk-xft-hinting", 0i32);
+                    settings.set_property("gtk-xft-hintstyle", "hintnone");
+                }
+            }
             // Stash a magnet URL only when the OS/user explicitly launched this executable with
             // one. Izumi never registers or claims the magnet scheme itself.
             #[cfg(not(target_os = "android"))]

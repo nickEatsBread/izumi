@@ -358,11 +358,17 @@
     void cycle
     let start = 0
     let ticker: ReturnType<typeof setInterval> | undefined
+    // Scrolled out of view a write would still cost a full-screen composite. Visibility comes from an
+    // observer: measuring the bar on every tick forced a style and layout pass 15 times a second, in
+    // the middle of every D-pad move and scroll (Game mode zooms natively, so the observer is exact).
+    const visible = new WeakMap<Element, boolean>()
+    const visibility = new IntersectionObserver((entries) => { for (const entry of entries) visible.set(entry.target, entry.isIntersecting) })
     const paint = () => {
       const progress = Math.min(1, (performance.now() - start) / DURATION)
       for (const bar of document.querySelectorAll<HTMLElement>('[data-slot="home.hero"] .hero-progress')) {
-        // Scrolled out of view: a write would still cost a full-screen composite.
-        if (bar.getBoundingClientRect().bottom > 0) bar.style.scale = `${progress} 1`
+        const hero = bar.closest('[data-slot="home.hero"]')!
+        if (!visible.has(hero)) { visible.set(hero, true); visibility.observe(hero) }
+        if (visible.get(hero)) bar.style.scale = `${progress} 1`
       }
       if (progress >= 1) clearInterval(ticker)
     }
@@ -379,6 +385,7 @@
     const stopAndroidMpv = androidMpvActive.subscribe(restart)
     return () => {
       clearInterval(ticker)
+      visibility.disconnect()
       document.removeEventListener('visibilitychange', restart)
       stopPlaying()
       stopAndroidMpv()

@@ -8,7 +8,9 @@ import { resolvePresentation } from '$lib/themes/presentation'
 import { shellNav, tvSurface } from '$lib/themes/runtime'
 import { fontStack } from '$lib/themes/font-ids'
 import { loadThemeFont } from '$lib/themes/fonts'
-import { sanitizeThemeCssCached, themeStyleText } from '$lib/themes/css'
+import { mirrorFocusSelectors, pinViewportUnits, sanitizeThemeCssCached, themeStyleText } from '$lib/themes/css'
+import { gameMode } from '$lib/player/session'
+import { setFocusWatches } from '$lib/themes/focus-mirror'
 import { protectedSurfaceCount, scopeSupported, themeSafeMode } from '$lib/themes/safe-mode'
 
 export { resolvedThemeTokens, THEME_PRESETS, type ThemeTokens } from '$lib/theme-tokens'
@@ -46,7 +48,12 @@ function applyThemeCss(text: string | undefined): void {
     if (previous.state !== 'rejected' || previous.reason !== result.error) themeCssStatus.set({ state: 'rejected', reason: result.error })
     return
   }
-  const content = themeStyleText(result, scoped)
+  // Game mode (WebKitGTK with native page zoom): viewport units become host px variables and focus
+  // pseudo-classes become the focus mirror's attributes (pinViewportUnits, mirrorFocusSelectors).
+  const styled = themeStyleText(result, scoped)
+  const mirrored = get(gameMode) ? mirrorFocusSelectors(pinViewportUnits(styled)) : undefined
+  setFocusWatches(mirrored?.watches ?? [])
+  const content = mirrored?.css ?? styled
   const style = existing ?? Object.assign(document.createElement('style'), { id: THEME_STYLE_ID })
   if (style.textContent !== content) style.textContent = content
   // Last in <head>, so an equally specific theme rule beats the app's own.
@@ -54,8 +61,24 @@ function applyThemeCss(text: string | undefined): void {
   if (get(themeCssStatus).state !== 'applied') themeCssStatus.set({ state: 'applied' })
 }
 
+/** The px a viewport unit is worth right now, for pinViewportUnits (Game mode only). */
+function syncViewportUnits(): void {
+  const root = document.documentElement
+  if (!get(gameMode)) {
+    for (const unit of ['vw', 'vh', 'vmin', 'vmax']) root.style.removeProperty(`--izumi-safe-${unit}`)
+    return
+  }
+  const vw = window.innerWidth / 100
+  const vh = window.innerHeight / 100
+  root.style.setProperty('--izumi-safe-vw', `${vw}px`)
+  root.style.setProperty('--izumi-safe-vh', `${vh}px`)
+  root.style.setProperty('--izumi-safe-vmin', `${Math.min(vw, vh)}px`)
+  root.style.setProperty('--izumi-safe-vmax', `${Math.max(vw, vh)}px`)
+}
+
 function apply() {
   if (typeof document === 'undefined') return
+  syncViewportUnits()
   const safe = get(themeSafeMode)
   const media = matchMedia('(prefers-color-scheme: dark)')
   // The active catalog screen's own theme, else the app theme (screen-theme.ts).
@@ -145,9 +168,11 @@ export function startThemeSync(): () => void {
   const media = matchMedia('(prefers-color-scheme: dark)')
   const subscriptions = [
     effectiveThemePreset, highContrast, largeInteractionTargets, motionPreference,
-    effectiveStudioTheme, themeStudioPreview, isMobile, tvSurface, shellNav, themeSafeMode, protectedSurfaceCount,
+    effectiveStudioTheme, themeStudioPreview, isMobile, tvSurface, shellNav, themeSafeMode, protectedSurfaceCount, gameMode,
   ].map((store) => store.subscribe(apply))
   media.addEventListener('change', apply)
+  // The Deck's page zoom changes the viewport (1:1 under the player), and so what a unit is worth.
+  window.addEventListener('resize', syncViewportUnits)
   apply()
   const headObserver = new MutationObserver(keepThemeStyleLast)
   headObserver.observe(document.head, { childList: true })
@@ -155,6 +180,7 @@ export function startThemeSync(): () => void {
     started = false
     subscriptions.forEach((unsubscribe) => unsubscribe())
     media.removeEventListener('change', apply)
+    window.removeEventListener('resize', syncViewportUnits)
     headObserver.disconnect()
   }
 }

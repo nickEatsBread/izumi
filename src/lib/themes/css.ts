@@ -81,3 +81,60 @@ export function themeStyleText(result: { css: string; global: string }, scoped: 
   const body = scoped ? `@scope (:root) to ([data-theme-protected], [data-theme-unthemed]) {\n${result.css}\n}` : result.css
   return result.global ? `${result.global}\n${body}` : body
 }
+
+const VIEWPORT_UNITS = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|url\([^)]*\))|(?<![\w.#-])(-?(?:\d+\.\d+|\d+|\.\d+))[sld]?(vw|vh|vmin|vmax)(?![\w-])/gi
+
+/** WebKitGTK zooms a `font-size` given in viewport units twice under the Deck's native page zoom: a
+ *  heading of 32 units on a 1920 canvas drew at 21.3 px where Chromium draws 17.1 px, while widths in
+ *  the same units are right. Game mode therefore writes a theme's viewport units as multiples of host
+ *  px variables (`--izumi-safe-vw` and friends, kept equal to the viewport), which zoom once. Strings
+ *  and url() stay as they are. */
+export function pinViewportUnits(css: string): string {
+  return css.replace(VIEWPORT_UNITS, (match, kept: string | undefined, value: string, unit: string) =>
+    kept ?? `calc(${value} * var(--izumi-safe-${unit.toLowerCase()}))`)
+}
+
+const FOCUS_PSEUDO = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|url\([^)]*\))|:focus-within(?![\w-])|:focus(?![\w-])/gi
+// The compound selector a focus pseudo-class is attached to inside a :has() argument.
+const HAS_FOCUS = /((?:[a-zA-Z][\w-]*|\*)?(?:\[[^\]]*\]|[.#][\w-]+|:(?!focus)[\w-]+(?:\([^()]*\))?)*):(focus-within|focus)(?![\w-])/g
+
+/** A compound selector the focus mirror watches for a `:has()` argument: elements on the focus path
+ *  (`within`) or the focused element (`focus`) that match it carry `token` in `data-izumi-has-focus`. */
+export interface FocusWatch { token: string; selector: string; kind: 'within' | 'focus' }
+
+/** Game mode reads focus from attributes the host keeps on the focus path (themes/focus-mirror.ts):
+ *  `:focus-within` and `:focus` become attribute selectors, which WebKitGTK restyles precisely. Inside
+ *  a `:has()` argument each one gets its own token instead, set only on elements matching the compound
+ *  it is attached to: a page-wide `:has([data-slot="nav.top"]:focus-within)` then changes only when
+ *  focus enters or leaves the bar, not on every move between cards (12 ms a move otherwise, measured).
+ *  `:focus-visible`, strings and url() stay as they are. */
+export function mirrorFocusSelectors(css: string): { css: string; watches: FocusWatch[] } {
+  const watches: FocusWatch[] = []
+  const tokenFor = (selector: string, kind: FocusWatch['kind']) => {
+    const known = watches.find((watch) => watch.selector === selector && watch.kind === kind)
+    if (known) return known.token
+    const token = `${kind === 'within' ? 'w' : 'f'}${watches.length}`
+    watches.push({ token, selector, kind })
+    return token
+  }
+  let out = ''
+  let at = 0
+  for (let open = css.indexOf(':has(', at); open >= 0; open = css.indexOf(':has(', at)) {
+    let depth = 0
+    let end = open + 4
+    for (; end < css.length; end++) {
+      if (css[end] === '(') depth++
+      else if (css[end] === ')' && --depth === 0) break
+    }
+    const argument = css.slice(open + 5, end).replace(HAS_FOCUS, (match, compound: string, pseudo: string) =>
+      `${compound}[data-izumi-has-focus~="${tokenFor(compound || '*', pseudo === 'focus-within' ? 'within' : 'focus')}"]`)
+    out += css.slice(at, open + 5) + argument
+    at = end
+  }
+  out += css.slice(at)
+  return {
+    css: out.replace(FOCUS_PSEUDO, (match, kept: string | undefined) =>
+      kept ?? (match.toLowerCase() === ':focus-within' ? '[data-izumi-focus-within]' : '[data-izumi-focus]')),
+    watches,
+  }
+}

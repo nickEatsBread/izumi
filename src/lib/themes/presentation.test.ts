@@ -7,6 +7,16 @@ describe('theme presentation contract', () => {
     expect(nodeStyle(node)).toContain('grid-template-columns:repeat(2,minmax(0,1fr))')
     expect(nodeStyle(node.children![0])).toContain('color:hsl(var(--theme))')
   })
+  it('writes a template’s px sizes in the TV canvas unit when the host passes one', () => {
+    const node = parseNode({ type: 'stack', style: { gap: 10, minHeight: 120, width: 50, fontWeight: 700 }, children: [{ type: 'artwork', artwork: 'logo', style: { maxWidth: 300 } }] })
+    expect(nodeStyle(node)).toContain('gap:10px')
+    expect(nodeStyle(node, 'var(--u, 1px)')).toContain('gap:calc(10 * var(--u, 1px))')
+    expect(nodeStyle(node, 'var(--u, 1px)')).toContain('min-height:calc(120 * var(--u, 1px))')
+    // Percentages and unitless values are not lengths on the canvas.
+    expect(nodeStyle(node, 'var(--u, 1px)')).toContain('width:50%')
+    expect(nodeStyle(node, 'var(--u, 1px)')).toContain('font-weight:700')
+    expect(nodeStyle(node.children![0], 'var(--u, 1px)')).toContain('width:calc(300 * var(--u, 1px))')
+  })
   it.each([
     { type: 'script', text: 'alert(1)' },
     { type: 'text', style: { background: 'url(https://example.test)' } },
