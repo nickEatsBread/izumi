@@ -50,8 +50,10 @@
       {#if trailer}<div class="theme-artwork relative" style={nodeStyle(item)} data-part={item.part}>{@render trailer()}</div>{/if}
     {:else if item.type === 'artwork'}
       {@const src = model[item.artwork ?? 'poster']}
+      <!-- Eager = the banner, whose artwork is decoded before each step: decoded in the first paint,
+           the outgoing slide's copy never shows the slide under it while its art decodes. -->
       <div class="theme-artwork" class:theme-artwork-fallback={!src} style={nodeStyle(item)} data-part={item.part}>
-        {#if src}<img src={String(src)} alt="" draggable="false" loading={eager ? 'eager' : 'lazy'} decoding="async" onerror={() => markFailed(String(src))} class="duration-150 ease-out transition-transform group-hover:scale-105" />{/if}
+        {#if src}<img src={String(src)} alt="" draggable="false" loading={eager ? 'eager' : 'lazy'} decoding={eager ? 'sync' : 'async'} onerror={() => markFailed(String(src))} class="duration-150 ease-out transition-transform group-hover:scale-105" />{/if}
       </div>
     {:else if item.type === 'action'}
       <!-- API 4 `studio` (the series header and facts): the main studio's name as a button, there only

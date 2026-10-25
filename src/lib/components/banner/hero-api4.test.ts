@@ -53,7 +53,7 @@ describe('hero slide count, pool and transition (API 4)', () => {
     expect(hero).toContain('const FADE_MS = 650')
     // The outgoing template copy is inert and hidden from assistive technology, and renders the same
     // markup as the live slide (its title an h1), so heading styles do not change as it starts fading.
-    expect(hero).toContain('<div class="hero-fade-out" aria-hidden="true" inert in:motion={copyOut}><ThemeNode node={heroTheme.template} model={fadeFrom.model} eager titleHeading actions={fadeActions} /></div>')
+    expect(hero).toContain('<div class="hero-fade-out" aria-hidden="true" inert in:motion|global={copyOut}><ThemeNode node={heroTheme.template} model={fadeFrom.model} eager titleHeading actions={fadeActions} /></div>')
     // Game mode fades the outgoing copy from script: its keyframes blinked as they ended.
     expect(hero).toContain(':global(html.gamemode) .hero-fade-out { animation: none; }')
     expect(hero).toContain('<div data-part="hero.slide" data-state="leaving" aria-hidden="true" class="absolute inset-0">')

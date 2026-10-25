@@ -171,7 +171,9 @@
   const slideOut = (carousel: boolean, shown: number): MotionParams =>
     ({ gameModeOnly: true, opacity: [0, shown], duration: carousel && !fadeTransition ? 480 : 0, easing: quintOut })
   // A template hero's outgoing copy fades out over the incoming one. In Game mode its keyframes ended
-  // with the same layer-drop blink, so there it fades from script as well.
+  // with the same layer-drop blink, so there it fades from script as well. `|global`: the layer is
+  // created with its `{#if}`, and a local intro would not play, leaving the old slide fully drawn
+  // until it vanished.
   const copyOut: MotionParams = { gameModeOnly: true, opacity: [1, 0], duration: FADE_MS, easing: linear }
   const copyIn = (): MotionParams => fadeTransition
     ? { gameModeOnly: true, opacity: [0, 1], duration: FADE_MS, easing: linear }
@@ -681,7 +683,7 @@
         {#key fadeFrom.key}
           <!-- The same markup as the live slide (its title an h1 too), so heading styles never change
                as the fade starts; aria-hidden keeps the copy's heading out of the page outline. -->
-          <div class="hero-fade-out" aria-hidden="true" inert in:motion={copyOut}><ThemeNode node={heroTheme.template} model={fadeFrom.model} eager titleHeading actions={fadeActions} /></div>
+          <div class="hero-fade-out" aria-hidden="true" inert in:motion|global={copyOut}><ThemeNode node={heroTheme.template} model={fadeFrom.model} eager titleHeading actions={fadeActions} /></div>
         {/key}
       {/if}
       {#if medias.length > 1}
