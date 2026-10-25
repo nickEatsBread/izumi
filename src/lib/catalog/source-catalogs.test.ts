@@ -6,6 +6,7 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke }))
 import { isSourceSelection, sourcePackageOf } from './source-catalogs'
 import { sourceProgressReporter, sourceStream } from './source-streams'
 import { sourceFacts } from './providers/stremio'
+import { refineStreams } from '$lib/stremio/refine'
 
 const BASE = 'http://127.0.0.1:40001/stremio'
 
@@ -41,6 +42,13 @@ describe('source catalogs', () => {
     const foreign = sourceStream({ url: 'https://cdn.test/a.mp4', izumi: { progressUrl: 'https://elsewhere.test/p' } }, BASE, 'Example', 'example.source', 1)
     expect(foreign?.__progressUrl).toBeUndefined()
     expect(sourceStream({ name: 'no url' }, BASE, 'Example', 'example.source', 2)).toBeUndefined()
+  })
+
+  it('keeps a source stream whose episode has its own name', () => {
+    const media = { id: -5, title: { romaji: 'Black Clover', english: 'Black Clover' }, catalog: { provider: 'stremio', type: 'series', id: 'x', addonId: 'source-example.source' } } as never
+    const own = sourceStream({ url: `${BASE}/v/1/manifest.mpd`, type: 'dash', izumi: { onlinestream: true } }, BASE, 'Example', 'example.source', 0, 'Asta and Yuno', 'Black Clover')!
+    const plain = sourceStream({ url: 'https://cdn.test/e1.mp4', name: 'Example', title: 'Asta and Yuno' }, BASE, 'Example', 'example.source', 1, 'Asta and Yuno', 'Black Clover')!
+    expect(refineStreams(media, [own, plain]).kept).toHaveLength(2)
   })
 
   it('reports the playhead at most every interval and once more at the end', () => {

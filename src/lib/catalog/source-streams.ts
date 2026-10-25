@@ -1,6 +1,7 @@
 /** Playing a source catalog's own titles: the source's stream endpoint answers for the episode, and
  *  the playhead goes back to the source so its Continue Watching follows the viewer across devices. */
 import type { Media } from '$lib/anilist/types'
+import { title } from '$lib/anilist/media'
 import { invokeNativeHttp, phttp } from '$lib/net/http'
 import type { Stream } from '$lib/stremio/parse'
 import { videoSourceToStream, type SnVideoSource } from '$lib/stremio/onlinestream'
@@ -21,8 +22,10 @@ function sameOrigin(value: unknown, base: string): string | undefined {
 }
 
 /** One stream from a source's answer. `izumi.onlinestream` marks a direct video source (the same
- *  shape an online source returns for an episode); anything else is a plain Stremio stream. */
-export function sourceStream(raw: unknown, base: string, provider: string, packageId: string, index: number, epTitle?: string): Stream | undefined {
+ *  shape an online source returns for an episode); anything else is a plain Stremio stream. Either
+ *  way it is the source's own stream for its own title, so it carries that title (`showTitle`): the
+ *  episode's name ("Asta and Yuno") is not a different show. */
+export function sourceStream(raw: unknown, base: string, provider: string, packageId: string, index: number, epTitle?: string, showTitle?: string): Stream | undefined {
   const value = record(raw)
   if (!value || typeof value.url !== 'string') return undefined
   const extras = record(value.izumi)
@@ -30,12 +33,18 @@ export function sourceStream(raw: unknown, base: string, provider: string, packa
   if (extras?.onlinestream === true) {
     const headers = Object.fromEntries(Object.entries(record(extras.headers) ?? {}).filter(([, header]) => typeof header === 'string')) as Record<string, string>
     return {
-      ...videoSourceToStream(value as unknown as SnVideoSource, 'default', headers, provider, epTitle, undefined, packageId, undefined, false, undefined, undefined, index),
+      ...videoSourceToStream(value as unknown as SnVideoSource, 'default', headers, provider, epTitle, undefined, packageId, undefined, false, undefined, showTitle, index),
       ...(progressUrl ? { __progressUrl: progressUrl } : {}),
     }
   }
   const { izumi: _izumi, ...stream } = value
-  return { ...(stream as Stream), __addonName: provider, ...(progressUrl ? { __progressUrl: progressUrl } : {}) }
+  return {
+    ...(stream as Stream),
+    __addonName: provider,
+    __accuracy: 'high',
+    ...(showTitle ? { __sourceTitle: showTitle } : {}),
+    ...(progressUrl ? { __progressUrl: progressUrl } : {}),
+  }
 }
 
 /** The streams a source offers for one of its own titles' videos; null for any other title. */
@@ -51,7 +60,8 @@ export async function sourceStreams(media: Media, videoId: string, epTitle?: str
   if (!response.ok) throw new Error(`The source answered HTTP ${response.status}.`)
   const body = record(await response.json())
   const list = Array.isArray(body?.streams) ? body.streams : []
-  return list.flatMap((raw, index) => sourceStream(raw, addon.base, addon.manifest.name, addon.packageId, index, epTitle) ?? [])
+  const showTitle = title(media)
+  return list.flatMap((raw, index) => sourceStream(raw, addon.base, addon.manifest.name, addon.packageId, index, epTitle, showTitle) ?? [])
 }
 
 /** Sends the playhead to `stream.__progressUrl`: every 30 s while playing and once more when playback
