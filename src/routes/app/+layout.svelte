@@ -92,7 +92,7 @@
   // driven purely by the prompt store, which the gated Settings pages set.
   import { householdPrompt } from '$lib/profiles/household-gate'
   const loadHouseholdPinDialog = () => import('$lib/components/profiles/HouseholdPinDialog.svelte')
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import { derived, get } from 'svelte/store'
   import { initCrashReporting } from '$lib/diagnostics'
   import { initDeveloperLogging } from '$lib/debug/native-logging'
@@ -441,6 +441,29 @@
     if ($gameMode && playerWasOpen && !open) restoreGmTouchAfterTransition()
     playerWasOpen = open
   })
+  // The page is display: none under the player, which drops its focus and scroll position: a d-pad
+  // user closing the player was back at the top with nothing focused. Remember both as playback
+  // starts (the store emits before the page hides) and put them back when it ends, unless a
+  // navigation closed it.
+  let playerReturns = 0
+  let playerReturn: { key: string; y: number } | null = null
+  onMount(() => playing.subscribe((open) => {
+    if (open) {
+      if (playerReturn) return
+      playerReturn = { key: `player-return:${++playerReturns}`, y: window.scrollY }
+      rememberRouteFocus(playerReturn.key)
+      return
+    }
+    const back = playerReturn
+    playerReturn = null
+    if (!back) return
+    void tick().then(() => {
+      if (get(navInFlight) || get(playing)) return
+      window.scrollTo({ top: back.y, behavior: 'instant' })
+      if (document.activeElement && document.activeElement !== document.body) return
+      void restoreRouteFocus(back.key, { focus: (el) => { focusByNav(el, false, true); focusByNav(el, true, true) } })
+    })
+  }))
 
   // Single-window player: mpv renders into THIS window, behind the webview. When
   // playing, punch a transparent hole — drop the opaque app background (app.css

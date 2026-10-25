@@ -53,7 +53,8 @@ describe('Settings Back and route focus memory in the app layout (commit 10)', (
     expect(scroll).toBeGreaterThan(0)
     expect(statements[scroll + 1]).toBe('if (from?.url) rememberRouteFocus(routeFocusKey(from.url))')
     expect(statements[scroll + 2]).toBe('routeFocusRestore?.abort()')
-    expect(layout.split('rememberRouteFocus(').length - 1).toBe(1)
+    // Route focus is remembered once, as a page is left (the player keeps its own return key).
+    expect(layout.split('rememberRouteFocus(routeFocusKey(').length - 1).toBe(1)
   })
 
   it('after every navigation: trail, Back guard, focus back on a history return, the B prompt republished', () => {
@@ -96,5 +97,14 @@ describe('phone system Back bridge', () => {
     expect(bridge).toContain("const bridge = () => handleLayeredBack('system')")
     expect(bridge).toContain('target.__izumiBack = bridge')
     expect(bridge).toContain('if (target.__izumiBack === bridge) delete target.__izumiBack')
+  })
+})
+
+describe('closing the player', () => {
+  it('puts the page focus and scroll back, which the hidden page dropped', () => {
+    expect(layout).toContain("playerReturn = { key: `player-return:${++playerReturns}`, y: window.scrollY }")
+    expect(layout).toContain('rememberRouteFocus(playerReturn.key)')
+    expect(layout).toContain("if (get(navInFlight) || get(playing)) return\n      window.scrollTo({ top: back.y, behavior: 'instant' })")
+    expect(layout).toContain('void restoreRouteFocus(back.key, {')
   })
 })
