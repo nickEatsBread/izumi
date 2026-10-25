@@ -90,6 +90,25 @@ describe('nearViewport action', () => {
     nextFrame()
     expect(onEnterB).not.toHaveBeenCalled()
   })
+
+  it('measures a far parent once and none of its children', async () => {
+    const { window, nearViewport, nextFrame } = await setup()
+    const parentRect = vi.fn(() => ({ top: 5000 }))
+    const parent = { getBoundingClientRect: parentRect }
+    const childRect = vi.fn(() => ({ top: 5000 }))
+    const child = () => ({ isConnected: true, parentElement: parent, getBoundingClientRect: childRect }) as unknown as HTMLElement
+    const onEnter = vi.fn()
+    for (let i = 0; i < 3; i++) nearViewport(child(), { onEnter, observeParent: false })
+    nextFrame()
+    expect(parentRect).toHaveBeenCalledTimes(1)
+    expect(childRect).not.toHaveBeenCalled()
+    parentRect.mockReturnValue({ top: 100 })
+    childRect.mockReturnValue({ top: 100 })
+    const onScroll = window.addEventListener.mock.calls.find(([type]) => type === 'scroll')![1] as () => void
+    onScroll()
+    nextFrame()
+    expect(onEnter).toHaveBeenCalledTimes(3)
+  })
 })
 
 describe('offscreenDistance', () => {
