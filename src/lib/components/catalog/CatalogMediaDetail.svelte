@@ -6,6 +6,8 @@
   import Clapperboard from '@lucide/svelte/icons/clapperboard'
   import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus'
   import BookmarkCheck from '@lucide/svelte/icons/bookmark-check'
+  import Plus from '@lucide/svelte/icons/plus'
+  import Check from '@lucide/svelte/icons/check'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import Carousel from '$lib/components/cards/Carousel.svelte'
@@ -297,14 +299,14 @@
           {/if}
           <div data-part="detail.actions" class="mt-5 flex flex-wrap gap-2">
             {#if upNext}
-              <button data-part="button" data-variant="primary" data-action="play" data-focusable onclick={() => play(upNext.video, upNext.playhead || undefined)} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {upNext.playhead ? 'Continue' : 'Play'}{upNext.label ? ` ${upNext.label}` : ''}</button>
+              <button data-part="button" data-variant="primary" data-action="play" data-focusable onclick={() => play(upNext.video, upNext.playhead || undefined)} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> Continue{upNext.label ? ` · ${upNext.label}` : ''}</button>
             {:else}
               <button data-part="button" data-variant="primary" data-action="play" data-focusable onclick={() => play(videos[0])} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {isMovie ? 'Play' : 'Play episode 1'}</button>
             {/if}
             {#if watchlistUrl}
               <button data-part="button" data-variant="secondary" data-action="watchlist" data-state={onSourceList ? 'saved' : undefined} data-focusable disabled={sourceListBusy} onclick={toggleSourceList}
                       class="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold disabled:opacity-60">
-                {#if onSourceList}<BookmarkCheck size={18} class="text-theme" />{:else}<BookmarkPlus size={18} />{/if}{onSourceList ? 'In Watchlist' : 'Add to Watchlist'}
+                {#if onSourceList}<Check size={18} />{:else}<Plus size={18} />{/if}{onSourceList ? 'In Watchlist' : 'Watchlist'}
               </button>
             {/if}
             <button data-part="button" data-variant="secondary" data-action="save" data-state={savedLocally ? 'saved' : undefined} data-focusable onclick={() => (showLocalLists = true)}

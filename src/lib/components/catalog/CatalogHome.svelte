@@ -68,15 +68,15 @@
   const sourceScreen = $derived(isSourceSelection($catalogProvider))
   // A source answers with nothing until it is set up (signed in): its settings open from here.
   let sourceSetup = $state(false)
-  // A source's own featured title plays from the banner where the source says the viewer is up to
-  // (else from its first episode), as the source's own app does; every other title opens its page.
+  // A source's own featured title the viewer has started resumes from the banner where the source
+  // says they are up to, as the source's own app does; every other title opens its page.
   async function playFromHero(media: Media) {
-    if (!sourceScreen || !media.catalog) return goto(mediaHref(media))
+    if (!sourceScreen || !media.catalog || !media.sourceFacts?.card) return goto(mediaHref(media))
     try {
       const provider = await loadCatalogProvider('stremio')
       const detail = await provider.detail(mediaRef(media))
-      const resume = detail?.sourceFacts?.upNext
-      const video = (resume && detail?.videos?.find((item) => item.id === resume.videoId)) ?? detail?.videos?.[0]
+      const resume = detail?.sourceFacts?.upNext ?? { videoId: media.sourceFacts.card.videoId ?? '', playhead: undefined }
+      const video = detail?.videos?.find((item) => item.id === resume.videoId) ?? detail?.videos?.[0]
       if (!detail || !video) return goto(mediaHref(media))
       const movie = detail.catalog?.type === 'movie' || detail.format === 'MOVIE'
       // The source picker reports its own failures.
