@@ -473,7 +473,8 @@
       </VirtualGrid>
     </div>
   {:else if !loading && !error}
-    <div class="rounded-xl bg-secondary/40 p-8 text-center text-muted-foreground">No results.</div>
+    <!-- A catalog that lists nothing without a query (a source's own search) asks for one instead. -->
+    <div data-part="search.empty" data-state={query.trim() ? 'none' : 'idle'} class="rounded-xl bg-secondary/40 p-8 text-center text-muted-foreground">{query.trim() ? 'No results.' : 'Type to search.'}</div>
   {/if}
 
   {#if loading}
