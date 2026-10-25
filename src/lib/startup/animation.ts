@@ -32,6 +32,8 @@ export const startupAnimationInfo = persisted<StartupAnimationInfo | null>(START
 export const startupAnimationEnabled = persisted<boolean>(STARTUP_ENABLED_KEY, true)
 /** Bumped to play the animation now, outside a launch (right after a pack is set up). */
 export const startupAnimationRequest = writable(0)
+/** True while the animation is on screen. */
+export const startupAnimationPlaying = writable(false)
 
 export async function setStartupAnimation(video: StartupVideo, by: string): Promise<StartupAnimationInfo> {
   const info = await invoke<StartupAnimationInfo>('startup_animation_set', { ...video, by })
@@ -70,6 +72,24 @@ export async function startupAnimationUrl(): Promise<string | null> {
 
 export function playStartupAnimationNow(): void {
   startupAnimationRequest.update((n) => n + 1)
+}
+
+/** Plays the animation now and resolves when it has finished (or straight away if there is none). */
+export function playStartupAnimationAndWait(startWithinMs = 2_000): Promise<void> {
+  return new Promise((resolve) => {
+    let started = false
+    let stop = () => {}
+    const giveUp = setTimeout(() => { if (!started) { stop(); resolve() } }, startWithinMs)
+    stop = startupAnimationPlaying.subscribe((playing) => {
+      if (playing) started = true
+      else if (started) {
+        clearTimeout(giveUp)
+        queueMicrotask(() => stop())
+        resolve()
+      }
+    })
+    playStartupAnimationNow()
+  })
 }
 
 /** Whether a cold launch plays the animation: one is set, it is on, motion is not reduced, and this

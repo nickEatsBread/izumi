@@ -1198,6 +1198,8 @@ export interface ServiceSettingsDocument {
   submittingLabel?: string
   notice?: ServiceSettingsNotice
   refreshAfterMs?: number
+  /** The service's own "set up and ready" signal (signed in, for example). Pack setup steps use it. */
+  complete?: boolean
   fields: ServiceSettingField[]
   values: Record<string, ServiceSettingValue>
 }

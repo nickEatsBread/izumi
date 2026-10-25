@@ -44,6 +44,15 @@ describe('deep links', () => {
     expect(parseDeepLink('izumi://store/add?url=http%3A%2F%2Fplain.example.test%2Findex.json')).toBeNull()
     expect(parseDeepLink('izumi://store/add')).toBeNull()
   })
+  it('opens pack links on the review screen, never applying silently', () => {
+    expect(parseDeepLink('izumi://pack?url=https%3A%2F%2Fexample.github.io%2Fpack%2Fpack.json'))
+      .toEqual({ path: '/app/pack?url=https%3A%2F%2Fexample.github.io%2Fpack%2Fpack.json', notice: 'Pack link opened' })
+    expect(parseDeepLink('izumi://pack?url=https%3A%2F%2Fgithub.com%2Fsomeone%2Fpack%2Fblob%2Fmain%2Fpack.json')?.path)
+      .toBe('/app/pack?url=https%3A%2F%2Fraw.githubusercontent.com%2Fsomeone%2Fpack%2Fmain%2Fpack.json')
+    expect(parseDeepLink('izumi://pack?url=http%3A%2F%2Fplain.example.test%2Fpack.json')).toBeNull()
+    expect(parseDeepLink('izumi://pack?url=https%3A%2F%2F192.168.1.2%2Fpack.json')).toBeNull()
+    expect(parseDeepLink('izumi://pack')).toBeNull()
+  })
   it('routes the safe-mode link to Themes with safe mode requested', () => {
     expect(parseDeepLink('izumi://safe-mode')).toEqual({ path: '/app/settings/themes?safe=1', notice: 'Safe mode: theme styles are off' })
   })

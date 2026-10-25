@@ -679,7 +679,8 @@
 {/if}
 <!-- Cross-platform update toast (available → downloading → ready); opt-in to apply. -->
 <UpdateToast />
-{#if !$onboardingComplete && page.url.pathname !== '/app/companion-restore'}<Lazy load={loadFirstRunSetup} />{/if}
+<!-- A pack runs its own setup (it ends onboarding when it finishes). -->
+{#if !$onboardingComplete && page.url.pathname !== '/app/companion-restore' && page.url.pathname !== '/app/pack'}<Lazy load={loadFirstRunSetup} />{/if}
 <UpNextOverlay />
 <!-- End-of-series rating; app-level for the same reason as Up Next, and it outlives the player so
      a finale finished by backing out after the watch threshold asks over the series page. -->

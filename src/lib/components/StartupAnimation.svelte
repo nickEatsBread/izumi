@@ -9,6 +9,7 @@
     STARTUP_COVER_CLASS,
     STARTUP_MAX_MS,
     STARTUP_PLAYED_KEY,
+    startupAnimationPlaying,
     startupAnimationRequest,
     startupAnimationUrl,
     syncStartupAnimationInfo,
@@ -40,6 +41,7 @@
       return
     }
     src = url
+    startupAnimationPlaying.set(true)
     cap = setTimeout(finish, STARTUP_MAX_MS)
     await tick()
     root?.focus({ preventScroll: true })
@@ -61,6 +63,7 @@
       src = ''
       leaving = false
       playing = false
+      startupAnimationPlaying.set(false)
       if (done) URL.revokeObjectURL(done)
     }, 320)
   }
