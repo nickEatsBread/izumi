@@ -31,7 +31,15 @@ export function restoreScroll(url: URL) {
     window.scrollTo({ top: 0, behavior: 'instant' })
     return
   }
-  const top = Number(value)
+  const top = Number.isFinite(Number(value)) ? Number(value) : 0
+  // A page already long enough (a cached list, Back to a page that kept its rows) is restored in the
+  // navigation's own frame, so its first painted frame is already in place. Waiting two frames here
+  // painted it at the top first and then jumped: a second flash on every route change.
+  const room = typeof document === 'undefined' ? -1 : document.documentElement.scrollHeight - window.innerHeight
+  if (top <= room) {
+    window.scrollTo({ top, behavior: 'instant' })
+    return
+  }
   let cancelled = false
   const cleanup = () => {
     for (const event of RESTORE_CANCEL_EVENTS) window.removeEventListener(event, cancel, true)
@@ -46,6 +54,21 @@ export function restoreScroll(url: URL) {
   requestAnimationFrame(() => requestAnimationFrame(() => {
     cleanup()
     if (cancelled || generation !== restoreGeneration) return
-    window.scrollTo({ top: Number.isFinite(top) ? top : 0, behavior: 'instant' })
+    window.scrollTo({ top, behavior: 'instant' })
   }))
+}
+
+let instantHolds = 0
+
+/** A route change is state, not motion. app.css smooth-scrolls every programmatic window scroll, so
+ *  SvelteKit's own reset (to the top, or to a Back's saved spot) slid from the old page's offset: the
+ *  new page painted mid-slide, then jumped when restoreScroll landed. Window scrolls stay instant until
+ *  `done` (the navigation) settles; overlapping navigations share the hold. */
+export function instantScrollUntil(done: Promise<unknown>): void {
+  const root = document.documentElement
+  instantHolds++
+  root.style.scrollBehavior = 'auto'
+  void done.catch(() => {}).finally(() => {
+    if (--instantHolds === 0) root.style.removeProperty('scroll-behavior')
+  })
 }

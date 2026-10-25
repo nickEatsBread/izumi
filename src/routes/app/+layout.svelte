@@ -94,8 +94,9 @@
   import { derived, get } from 'svelte/store'
   import { initCrashReporting } from '$lib/diagnostics'
   import { initDeveloperLogging } from '$lib/debug/native-logging'
-  import { rememberScroll, restoreScroll } from '$lib/navigation/scroll-restoration'
+  import { instantScrollUntil, rememberScroll, restoreScroll } from '$lib/navigation/scroll-restoration'
   import { initGmTouchWatchdog, restoreGmTouchAfterTransition } from '$lib/player/gm-touch-watchdog'
+  import { startGmCssMotion } from '$lib/motion/gm-css-motion'
   import { deckWebviewZoom } from '$lib/deck/webview-zoom'
   import { globalSearchOpen, closeGlobalSearch, openGlobalSearch } from '$lib/search/global-search'
   import { trailerPopup } from '$lib/stores/trailer'
@@ -207,6 +208,20 @@
     // Gamescope touch survival: gesture-aware keepalive hold + stuck-pointer recovery (a lost
     // touch-up strands the pointer forever on this WebKitGTK — no pointercancel exists there).
     return initGmTouchWatchdog()
+  })
+  // WebKitGTK blinks an element as its CSS animation or transition ends; Game mode replays them from script.
+  $effect(() => { if ($gameModeResolved && $gameMode) return startGmCssMotion() })
+  // WebKitGTK decodes an image only when it first paints, and paints it blank until then: a theme's wide
+  // art, loaded hidden and shown on focus, left the focused tile empty for two frames. Decode hidden
+  // images as they load so they are ready; visible ones decode with their first paint as before.
+  $effect(() => {
+    if (!$gameModeResolved || !$gameMode) return
+    const decodeHidden = (event: Event) => {
+      const img = event.target
+      if (img instanceof HTMLImageElement && img.checkVisibility?.({ opacityProperty: true, visibilityProperty: true }) === false) img.decode().catch(() => {})
+    }
+    document.addEventListener('load', decodeHidden, true)
+    return () => document.removeEventListener('load', decodeHidden, true)
   })
   $effect(() => {
     if (!$gameModeResolved) return
@@ -494,6 +509,8 @@
     navEpoch.update((epoch) => epoch + 1)
     navInFlight.set(true)
     void navigation.complete.catch(() => {}).finally(() => navInFlight.set(false))
+    // A `#block` link keeps SvelteKit's smooth reveal of its block; every other route change lands at once.
+    if (!navigation.to?.url.hash) instantScrollUntil(navigation.complete)
     const { from } = navigation
     if (from?.url) rememberScroll(from.url)
     // Route focus memory (spec §3.9): what held focus here, for a Back that returns to this page.

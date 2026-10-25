@@ -15,16 +15,19 @@
 
 <!-- The TV themes' search keyboard (`search.keyboard`): `search.key` buttons named by `data-key`.
      Controller focus starts on "a". Sticky, so it stays beside the results as they scroll, 1rem under
-     the top bar (`search.layout` aligns its items to the start, which lets it stick). -->
+     the top bar (`search.layout` aligns its items to the start, which lets it stick). Its six columns
+     share the keyboard's width, so a theme that sizes the keyboard in viewport units (a 1920-wide TV
+     design shown in the Deck's 1024 px) gets keys that fit it instead of fixed 3.25rem columns
+     spilling over the search field and the results. -->
 <div data-part="search.keyboard" role="group" aria-label="Search keyboard"
-     class="sticky top-[calc(var(--theme-shell-top,2rem)+1rem)] ml-4 mt-4 grid shrink-0 grid-cols-[repeat(6,3.25rem)] auto-rows-[3.25rem] gap-1 sm:ml-8 sm:mt-8">
+     class="sticky top-[calc(var(--theme-shell-top,2rem)+1rem)] ml-4 mt-4 grid w-[20.75rem] shrink-0 grid-cols-6 gap-1 sm:ml-8 sm:mt-8">
   {#each GRID_KEYBOARD_ROWS.flat() as key (key.key)}
     <button type="button" data-part="search.key" data-key={key.key} data-focusable
             aria-label={key.key === 'backspace' ? 'Backspace' : undefined}
             style:grid-column="span {key.span}"
             use:focusWhenIdle={key.key === 'a'}
             onclick={() => press(key.key)}
-            class="rounded bg-[#333] text-white transition-colors hover:bg-[#444] focus:bg-white focus:text-black focus-visible:outline-none {key.span > 1 ? 'text-base font-semibold' : 'text-xl'}">
+            class="h-[3.25rem] min-w-0 rounded bg-[#333] text-white transition-colors hover:bg-[#444] focus:bg-white focus:text-black focus-visible:outline-none {key.span > 1 ? 'text-base font-semibold' : 'text-xl'}">
       {key.label}
     </button>
   {/each}
