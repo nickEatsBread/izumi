@@ -33,13 +33,14 @@ function keydown(key: string, repeat = false) {
   dispatchPadKey(key, { repeat })
 }
 
-/** A held direction repeats from the frame loop. A step can stall the page (a scroll and layout on
- *  the Deck can take longer than the repeat delay), and the first frame after the stall may run
- *  before the release that arrived meanwhile is handled: the press then looks held and fires a
- *  second step. After a frame gap this long, the loop waits one more frame before it repeats. */
 /** ☰ in browse: a page that has its own side menu cancels this event and opens it. */
 export const PAGE_OPTIONS_EVENT = 'page-options'
 
+/** A held browser-gamepad direction repeats from the frame loop. A step can stall the page (a scroll
+ *  and layout on the Deck can take longer than the repeat delay), and the first frame after the
+ *  stall may run before the release that arrived meanwhile is handled: the press then looks held
+ *  and fires a second step. After a frame gap this long, the loop waits one more frame before it
+ *  repeats. The native reader times its own repeats (`gamepad-repeat`) and never uses this loop. */
 export const REPEAT_STALL_MS = 100
 export const repeatAllowed = (previousFrame: number, now: number): boolean => now - previousFrame <= REPEAT_STALL_MS
 
@@ -51,6 +52,7 @@ export function startGamepadNav(): () => void {
     up: new RepeatTimer(cfg), down: new RepeatTimer(cfg), left: new RepeatTimer(cfg), right: new RepeatTimer(cfg),
   }
   let unlisten: (() => void) | null = null
+  let unlistenRepeat: (() => void) | null = null
   let stopped = false
 
   let previousFrame = 0
@@ -128,11 +130,14 @@ export function startGamepadNav(): () => void {
     keydown(ARROW[dir], repeat)
   }
 
-  // One press of a direction: fire now, then repeat (accelerating) while it is held.
+  // One press of a direction: fire now, then repeat (accelerating) while it is held. The native
+  // reader sends its own repeats, timed from the controller's real press and release.
+  let nativeRepeats = false
   function pressDir(dir: Dir) {
     held[dir] = true
-    timers[dir].press(performance.now())
     fireDir(dir)
+    if (nativeRepeats) return
+    timers[dir].press(performance.now())
     // Measured after the step, so the step's own stall counts as one.
     previousFrame = performance.now()
     repeatLoop.start()
@@ -337,26 +342,32 @@ export function startGamepadNav(): () => void {
     }
   }
 
-  const routeInput = (input: { name: string; pressed: boolean }) => {
+  const routeInput = (input: { name: string; pressed: boolean }, native: boolean) => {
+    nativeRepeats = native
     if (input.pressed) onPress(input.name)
     else onRelease(input.name)
   }
   const onBrowserInput = (event: Event) => {
-    routeInput((event as CustomEvent<{ name: GamepadInputName; pressed: boolean }>).detail)
+    routeInput((event as CustomEvent<{ name: GamepadInputName; pressed: boolean }>).detail, false)
   }
   window.addEventListener(BROWSER_GAMEPAD_EVENT, onBrowserInput)
 
   // Browser previews have their own input bridge and no native event runtime.
   if ('__TAURI_INTERNALS__' in window) {
     void listen<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
-      routeInput(e.payload)
+      routeInput(e.payload, true)
     }).then((u) => { if (stopped) u(); else unlisten = u }).catch(() => {})
+    void listen<{ name: string }>('gamepad-repeat', (e) => {
+      const dir = e.payload.name as Dir
+      if (DIRS.includes(dir) && held[dir]) fireDir(dir, true)
+    }).then((u) => { if (stopped) u(); else unlistenRepeat = u }).catch(() => {})
   }
 
   return () => {
     stopped = true
     repeatLoop.stop()
     unlisten?.()
+    unlistenRepeat?.()
     unsubPlaying()
     unsubOwners()
     window.removeEventListener(BROWSER_GAMEPAD_EVENT, onBrowserInput)
