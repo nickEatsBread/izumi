@@ -66,3 +66,23 @@ describe('source catalogs', () => {
     expect(sourceProgressReporter({ url: 'x' })).toBeUndefined()
   })
 })
+
+describe('playing a source title from a card', () => {
+  it('plays the card episode from its playhead, else where the source resumes, else the first', async () => {
+    const { sourcePlayTarget } = await import('./source-play')
+    const detail = {
+      id: -1, title: { romaji: 'One' },
+      videos: [
+        { id: 'x:E1', number: 1, playhead: 1300, watched: true },
+        { id: 'x:E2', number: 2, playhead: 300 },
+        { id: 'x:E3', number: 3 },
+      ],
+      sourceFacts: { upNext: { videoId: 'x:E2', playhead: 320 } },
+    } as never
+    expect(sourcePlayTarget(detail, 'x:E3')).toEqual({ video: expect.objectContaining({ id: 'x:E3' }) })
+    expect(sourcePlayTarget(detail, 'x:E1')).toEqual({ video: expect.objectContaining({ id: 'x:E1' }) })
+    expect(sourcePlayTarget(detail, 'x:E2')?.startSeconds).toBe(320)
+    expect(sourcePlayTarget(detail)?.video.id).toBe('x:E2')
+    expect(sourcePlayTarget({ ...(detail as object), videos: [] } as never)).toBeUndefined()
+  })
+})

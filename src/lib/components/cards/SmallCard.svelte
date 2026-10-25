@@ -34,6 +34,8 @@
   import { isAndroid, isMobile, isTv } from '$lib/platform'
   import * as h from '$lib/haptics'
   import Play from '@lucide/svelte/icons/play'
+  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import { goto } from '$app/navigation'
   import PreviewCard from './PreviewCard.svelte'
   import { previewPos, rootZoom, SIDEBAR_W } from './preview-pos'
   import { cardMedia } from './card-registry'
@@ -118,6 +120,23 @@
   const sourceLine = $derived(sourceCard ? [sourceCard.label, sourceCard.remainingSec ? `${Math.max(1, Math.round(sourceCard.remainingSec / 60))}m left` : ''].filter(Boolean).join(' · ') || undefined : undefined)
   const line = $derived(subline ?? sourceLine)
   const widthClass = $derived(fill ? 'w-full' : sourceCard ? ($isTv ? 'w-80' : 'w-64') : $isTv ? 'w-44' : 'w-36 sm:w-[152px]')
+  // A source card that stands for one episode plays (resumes) it rather than opening the series, as the
+  // source's own app does. Its page opens when the source has nothing to play.
+  let resolving = $state(false)
+  function openCard(event: MouseEvent) {
+    rememberDetail(media)
+    h.tap()
+    const episode = sourceCard?.videoId
+    if (!episode) return
+    event.preventDefault()
+    if (resolving) return
+    resolving = true
+    void import('$lib/catalog/source-play')
+      .then(({ playSourceTitle }) => playSourceTitle(media, episode))
+      .then((played) => { if (!played) void goto(mediaHref(media)) })
+      .catch(() => goto(mediaHref(media)))
+      .finally(() => (resolving = false))
+  }
   const captionMeta = $derived(line ?? [format(media), season(media) || media.startDate?.year, media.episodes ? `${media.episodes} episodes` : ''].filter(Boolean).join(' · '))
 
   // Preview is rendered `fixed` (escapes the carousel's overflow clipping) and clamped to the
@@ -203,7 +222,7 @@
 </script>
 
 <div data-part="card" data-family={cardFamily} data-shape={sourceCard ? 'episode' : undefined} bind:this={el} use:nearViewport={cardArt.wanted.size ? cardArt.gate : undefined} data-theme-card style:--cover-rgb={ambientFromHex(media.coverImage?.color)} class="{widthClass} {fill ? '' : 'shrink-0'}" style:width={!fill && themeRow.width ? `${themeRow.width}px` : undefined} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
-  <a href={mediaHref(media)} data-focusable draggable="false" onclick={() => { rememberDetail(media); h.tap() }}
+  <a href={mediaHref(media)} data-focusable draggable="false" onclick={openCard}
      data-nav-key={`media:${media.catalog?.id ?? media.id}`} data-caption-title={title(media)} data-caption-meta={captionMeta}
      aria-label={title(media)} style:width={themeRow.width || cardTemplate ? '100%' : undefined}
      class="group block {widthClass} {$isAndroid ? 'android-card-press' : ''}">
@@ -228,6 +247,9 @@
       {/if}
       {#if badge}
         <span data-part="card.badge" class="absolute bottom-2 left-2 rounded-md bg-black/85 px-2 py-1 text-[0.65rem] font-black uppercase tracking-wide text-white shadow-lg backdrop-blur">{badge}</span>
+      {/if}
+      {#if resolving}
+        <span data-part="card.overlay" data-state="resolving" class="absolute inset-0 z-10 grid place-items-center bg-black/50"><LoaderCircle size={28} class="animate-spin text-white" /></span>
       {/if}
       {#if sourceCard?.progress}
         <span data-part="card.progress" class="absolute inset-x-0 bottom-0 h-1 bg-white/25"><span class="block h-full bg-primary" style:width={`${Math.round(sourceCard.progress * 100)}%`}></span></span>

@@ -34,8 +34,7 @@
   import { blockRowOptions, blockTitle, splitHomeColumns } from '$lib/home/block-rows'
   import { homeAsideWidth, homeBlocks, isBlockId } from '$lib/home/blocks'
   import { mediaHref } from '$lib/anilist/media'
-  import { mediaRef } from '$lib/catalog/identity'
-  import { playEpisode } from '$lib/stremio/play'
+  import { playSourceTitle } from '$lib/catalog/source-play'
   import { anilistUser } from '$lib/anilist/account'
   import { isMobile } from '$lib/platform'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
@@ -73,14 +72,7 @@
   async function playFromHero(media: Media) {
     if (!sourceScreen || !media.catalog || !media.sourceFacts?.card) return goto(mediaHref(media))
     try {
-      const provider = await loadCatalogProvider('stremio')
-      const detail = await provider.detail(mediaRef(media))
-      const resume = detail?.sourceFacts?.upNext ?? { videoId: media.sourceFacts.card.videoId ?? '', playhead: undefined }
-      const video = detail?.videos?.find((item) => item.id === resume.videoId) ?? detail?.videos?.[0]
-      if (!detail || !video) return goto(mediaHref(media))
-      const movie = detail.catalog?.type === 'movie' || detail.format === 'MOVIE'
-      // The source picker reports its own failures.
-      await playEpisode(detail, movie ? undefined : video.number, () => {}, resume?.playhead ? { startSeconds: resume.playhead } : {})
+      if (!(await playSourceTitle(media, media.sourceFacts.card.videoId))) void goto(mediaHref(media))
     } catch {
       void goto(mediaHref(media))
     }
