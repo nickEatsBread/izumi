@@ -366,6 +366,16 @@
   })
   const showSkip = $derived(!!currentSeg && !autoSkipCurrent && (skipTimer || controlsVisible))
 
+  // WebKit also sends a mousemove when the page changes under a cursor that has not moved: the
+  // player appearing under the Deck's parked, hidden cursor brought its controls up over black.
+  // Only a pointer that really moved shows them.
+  let lastPointer = ''
+  function onPointerMove(event: MouseEvent) {
+    const at = `${event.screenX},${event.screenY}`
+    const moved = !!lastPointer && at !== lastPointer
+    lastPointer = at
+    if (moved) poke()
+  }
   function poke() {
     untrack(() => { inputTick++ })
     visible = true
@@ -1928,7 +1938,7 @@
      advances instead of looping a keyframe). Keys are handled by the CAPTURE-phase listener in
      onMount (above) — NOT here — so they never leak to the spatial nav and move focus. -->
 <!-- Keys and presses that poke() never sees (an unbound key, a click on the scrim) still count as input for the paused summary. -->
-<svelte:window onmousemove={poke} onkeydowncapture={() => inputTick++} onpointerdowncapture={() => inputTick++} onwheel={() => inputTick++} />
+<svelte:window onmousemove={onPointerMove} onkeydowncapture={() => inputTick++} onpointerdowncapture={() => inputTick++} onwheel={() => inputTick++} />
 
 <!-- Transparent full-window overlay: mpv shows through, controls composite on top.
      z-20 keeps it below the sidebar nav (z-30) and titlebar (z-50), so those stay
