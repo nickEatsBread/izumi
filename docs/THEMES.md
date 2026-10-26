@@ -547,10 +547,12 @@ State values:
 | `detail.progress.meter` | part | The progress row's track; its child `span` is the fill. |  |
 | `options.sheet` | slot | The options side menu a catalog title page opens on its More button (`button` with `data-action="more"`) or the options (☰) button: the dimmed layer over the page that holds `options.panel`; a tap on it closes the menu. |  |
 | `options.panel` | part | The options menu panel on the right: `options.title`, `options.list`, and with a controller `options.hints`. |  |
-| `options.title` | part | The options menu heading (the title's name). |  |
+| `options.title` | part | The options menu heading (the title's name). The device-lists picker ("Save to lists") is the same sheet. |  |
+| `options.subtitle` | part | A line under the heading (the lists picker: the title and where the lists are kept). |  |
+| `options.footer` | part | A row under the list (the lists picker: the field that makes a new list). |  |
 | `options.list` | part | The scrolling list of option groups. |  |
 | `options.heading` | part | A group heading in the options menu: the focused episode ("Episode 4 · Title") or "Downloads". |  |
-| `options.item` | part | One option, named by `data-option`: `play-episode` and `download-episode` (the episode that had focus when the menu opened), `watchlist` (the source's own watchlist), `lists` (the device lists), `tracker` (AniList and MyAnimeList, found by title for a source's own title), `download-season` and `download-all`. `disabled` while it cannot run (an episode already saved or on its way). | `data-option` |
+| `options.item` | part | One option, named by `data-option`: `play-episode` and `download-episode` (the episode that had focus when the menu opened), `watchlist` (the source's own watchlist), `lists` (the device lists), `tracker` (AniList and MyAnimeList, found by title for a source's own title), `download-season` and `download-all`; `list-<id>` in the lists picker, `data-state="on"` (and `aria-pressed`) when the title is in that list. `disabled` while it cannot run (an episode already saved or on its way). | `data-option`, `data-state` |
 | `options.item.icon` | part | An option's icon. |  |
 | `options.item.label` | part | An option's label. |  |
 | `options.item.detail` | part | A short value on the right of an option ("3 of 12 saved", or what a tracker search found). |  |

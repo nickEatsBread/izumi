@@ -15,7 +15,13 @@ describe('account-independent saved lists UI', () => {
     expect(animeDetail).toContain('{#if showLocalLists && media}<LocalListPicker media={media}')
     expect(picker).toContain('No account needed.')
     expect(picker).toContain('createLocalList(newListName)')
-    expect(picker).toContain('event.target === event.currentTarget')
+  })
+
+  it('is the options side sheet, so a controller can tick lists and B closes it', () => {
+    // The old centred dialog had no trap: the d-pad wandered onto the page behind and B left the page.
+    expect(picker).toContain('<OptionsSheet title="Save to lists"')
+    expect(picker).toContain('pressed: on,\n        keepOpen: true,')
+    expect(picker).toContain('{#snippet footer()}')
   })
 
   it('makes card watchlist saving available without tracker gating', () => {
