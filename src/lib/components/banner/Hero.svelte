@@ -403,10 +403,10 @@
   // Game mode: the bar's 15 s compositor tween made WebKitGTK composite the whole Deck screen at
   // 60 Hz, which was nearly all of Home's idle cost (~40% CPU, ~20% GPU). A timer stepping it at
   // 15 fps jittered visibly on the Deck. The fill follows the display's frames from the slide clock,
-  // but writes only when it has moved a quarter pixel, so a narrow bar repaints a few dozen times a
-  // second, each step on a frame. Like the auto-advance above, it restarts when Home comes back
-  // from under the player.
-  const GM_BAR_STEP_PX = 0.25
+  // but writes only when it reaches the next device pixel: WebKitGTK draws the bar's edge on whole
+  // device pixels anyway, and quarter-pixel writes landed those one-pixel steps unevenly (6, 9, 7
+  // frames apart on the Deck), a visible stutter. Like the auto-advance above, it restarts when Home
+  // comes back from under the player.
   $effect(() => {
     if (!$gameMode || !medias.length || !showOverlay || heroTheme?.hidden) return
     void cycle
@@ -418,7 +418,7 @@
       for (const bar of document.querySelectorAll<HTMLElement>('[data-slot="home.hero"] .hero-progress')) {
         // Scrolled out of view: a write would still cost a full-screen composite.
         if (bar.getBoundingClientRect().bottom <= 0) continue
-        const steps = Math.max(1, bar.offsetWidth / GM_BAR_STEP_PX)
+        const steps = Math.max(1, Math.round(bar.offsetWidth * devicePixelRatio))
         const value = Math.round(progress * steps) / steps
         if (painted.get(bar) === value) continue
         painted.set(bar, value)

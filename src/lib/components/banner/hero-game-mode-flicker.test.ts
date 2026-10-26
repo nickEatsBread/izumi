@@ -104,9 +104,8 @@ describe('Steam Deck featured banner flicker', () => {
     expect(hero).toContain('frame = progress < 1 ? requestAnimationFrame(paint) : 0')
     expect(hero).not.toContain('setInterval(paint')
     expect(hero).toContain('const stopPlaying = playing.subscribe(restart)')
-    // It writes only when the fill has moved a visible fraction of a pixel, not on every frame.
-    const step = Number(hero.match(/const GM_BAR_STEP_PX = ([\d.]+)/)?.[1])
-    expect(step).toBeGreaterThan(0)
-    expect(step).toBeLessThanOrEqual(0.5)
+    // It writes only when the fill reaches the next device pixel, not on every frame: the edge is
+    // drawn on whole device pixels, and finer writes made those steps land unevenly (a stutter).
+    expect(hero).toContain('const steps = Math.max(1, Math.round(bar.offsetWidth * devicePixelRatio))')
   })
 })
