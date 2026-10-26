@@ -144,4 +144,10 @@ describe('drawer navigation and the controller', () => {
     expect(drawer).toContain("const from = document.activeElement instanceof HTMLElement ? document.activeElement : null")
     expect(drawer).not.toContain('(event.target as HTMLElement | null)?.closest')
   })
+
+  it('returns focus to the control that opened it, even re-rendered while it was open', () => {
+    const sidebar = read('./Sidebar.svelte')
+    expect(sidebar).toContain('describeFocus(document.activeElement) : null')
+    expect(sidebar).toContain('else if (drawerReturn) restoreFocus(drawerReturn)')
+  })
 })

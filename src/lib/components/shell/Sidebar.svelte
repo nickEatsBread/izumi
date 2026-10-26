@@ -28,6 +28,7 @@
   import { inputType } from '$lib/nav'
   import { controllerMode } from '$lib/nav/input'
   import { onPadButton } from '$lib/nav/pad-events'
+  import { describeFocus, restoreFocus, type FocusDescriptor } from '$lib/nav/focus-memory'
   import { bumperTabs, pageBumpers, stepSection } from '$lib/nav/bumpers'
   import { settingsControllerMode } from '$lib/settings/surface'
   import { stepPageTabs } from '$lib/nav/page-tabs'
@@ -180,7 +181,7 @@
   $effect(() => {
     if (drawerWasOpen && !drawerOpen) {
       if (!bumpers && !drawerNav) menuBtn?.focus({ preventScroll: true })
-      else if (drawerReturn?.isConnected) drawerReturn.focus({ preventScroll: true })
+      else if (drawerReturn) restoreFocus(drawerReturn)
       drawerReturn = null
     }
     drawerWasOpen = drawerOpen
@@ -197,9 +198,11 @@
   })
   // Start opens the drawer from wherever focus is and closing it returns there (not to the menu
   // button, which is off the d-pad order under bumper tabs). A page change drops the return target.
-  let drawerReturn: HTMLElement | null = null
+  // Described, not held: the control can be re-rendered while the drawer is open (the banner's
+  // buttons change with its slide), and the same control, re-rendered, is where focus returns.
+  let drawerReturn: FocusDescriptor | null = null
   function toggleDrawer() {
-    if (!drawerOpen) drawerReturn = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null
+    if (!drawerOpen) drawerReturn = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? describeFocus(document.activeElement) : null
     drawerOpen = !drawerOpen
   }
   $effect(() => {

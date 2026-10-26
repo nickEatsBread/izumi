@@ -250,7 +250,8 @@
     if (episode && !isMovie) {
       const state = downloadState(episode)
       groups.push({
-        title: episode.title ? `Episode ${episode.number} · ${episode.title}` : `Episode ${episode.number}`,
+        // The number the episode's own card shows (the source's), not its place in the page's list.
+        title: `Episode ${episode.episode ?? episode.number}${episode.title ? ` · ${episode.title}` : ''}`,
         options: [
           { id: 'play-episode', label: 'Play', icon: Play, onselect: () => { optionsOpen = false; play(episode) } },
           {
