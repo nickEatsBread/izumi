@@ -18,6 +18,16 @@ describe('catalog Home builds only the rows near the screen', () => {
     expect(home).toContain('if (revealQueue.length) revealFrame = requestAnimationFrame(revealNext)')
   })
 
+  it('builds a row\'s first cards, the rest once focus nears them or a pointer comes over it', () => {
+    // 334 cards over twenty rows held the Deck's page for 1.5 s every time Home opened.
+    const row = readFileSync(fileURLToPath(new URL('./CatalogSectionRow.svelte', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
+    expect(row).toContain('const cards = $derived(all ? section.media : section.media.slice(0, FIRST_CARDS))')
+    expect(row).toContain('const near = (index: number) => { if (index >= FIRST_CARDS - 3) expand() }')
+    expect(row.match(/onfocusin=\{\(\) => near\(index\)\} onpointerenter=\{expand\}/g)).toHaveLength(2)
+    // A row opened once stays whole, so focus can come back to a card further along.
+    expect(row).toContain('let all = $state(fullRows.has(section.id))')
+  })
+
   it('starts each screen from the rows it had built, not over for a refreshed answer', () => {
     // Coming back reopens the page where the viewer was: skeletons there looked broken.
     expect(home).toContain('revealed = new Set(builtRows.get($catalogProvider))')
