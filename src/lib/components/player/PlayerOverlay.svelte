@@ -329,7 +329,8 @@
     return () => clearTimeout(t)
   })
   const controlsVisible = $derived(
-    visible || (!(quietPadSeek || quietDpadScrub) && ((transportPaused && !pausedIdle) || (loading && firstFrame) || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen,
+    // A new file starts out paused and loading: neither pins the chrome before there is a picture.
+    visible || (firstFrame && !(quietPadSeek || quietDpadScrub) && ((transportPaused && !pausedIdle) || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen,
   )
   $effect(() => { if (firstFrame) untrack(poke) })
   // Game mode: the video window is unmapped behind the menu stage (gm-freeze.ts). Until it is back,
