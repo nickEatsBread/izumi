@@ -359,4 +359,13 @@ describe('a protected episode saved on this device', () => {
     expect(stream.__subtitles).toEqual([fresh.subtitles[0]])
     expect(stream.__audioLang).toBe('ja-JP')
   })
+
+  it('holds the connecting screen from the click while the source licenses it again', async () => {
+    const { readFileSync } = await import('node:fs')
+    const play = readFileSync(new URL('./play.ts', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
+    const branch = play.slice(play.indexOf("'completed protected download hit"), play.indexOf('savedProtectedStream(local.path, fresh)'))
+    expect(branch.indexOf('connecting.set({')).toBeLessThan(branch.indexOf('await resolveDownloadUrl('))
+    expect(branch).toContain("cancel: () => { connecting.set(null); abort.abort(); onState({ status: 'idle' }) }")
+    expect(branch).toContain('if (!signal.aborted) connecting.set(null)\n      throw error')
+  })
 })

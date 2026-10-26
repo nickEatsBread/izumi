@@ -1967,10 +1967,23 @@ export async function playEpisode(
     // its licence comes from the source again, so playing it needs the source to be reachable.
     traceResolve(trace, 'completed protected download hit; licensing it again')
     onState({ status: 'resolving' })
-    const fresh = await resolveDownloadUrl(media.id, episode!, { ...local.preferences, sourceOriginId: local.sourceOriginId })
-    if (fresh.kind !== 'shaka' || !fresh.drm?.licenseUrl) throw new Error('The source no longer provides a licence for this download.')
-    // Some sources only accept a licence request for a presentation that was asked for.
-    await phttp(fresh.url, { timeoutMs: 20_000 }).catch(() => undefined)
+    // The fresh licence takes the source a few seconds: the connecting screen holds from the click
+    // (the page sat there as if the press was lost), and playStream takes it over.
+    connecting.set({
+      title: title(media), art: banner(media) || cover(media), media, episode,
+      cancel: () => { connecting.set(null); abort.abort(); onState({ status: 'idle' }) },
+    })
+    let fresh: Awaited<ReturnType<typeof resolveDownloadUrl>>
+    try {
+      fresh = await resolveDownloadUrl(media.id, episode!, { ...local.preferences, sourceOriginId: local.sourceOriginId })
+      if (fresh.kind !== 'shaka' || !fresh.drm?.licenseUrl) throw new Error('The source no longer provides a licence for this download.')
+      // Some sources only accept a licence request for a presentation that was asked for.
+      if (!signal.aborted) await phttp(fresh.url, { timeoutMs: 20_000 }).catch(() => undefined)
+    } catch (error) {
+      if (!signal.aborted) connecting.set(null)
+      throw error
+    }
+    if (signal.aborted) return
     return await playStream(media, episode, savedProtectedStream(local.path, fresh), onState, { autoplay, startSeconds: options.startSeconds })
   }
   if (local?.status === 'done' && (local.path || local.offlineUri)) {
