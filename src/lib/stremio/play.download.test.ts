@@ -352,7 +352,8 @@ describe('a protected episode saved on this device', () => {
 
   it('plays its folder with the fresh licence, never a presentation that would stream instead', () => {
     const stream = savedProtectedStream('/downloads/Test Anime - E2.protected', fresh)
-    expect(stream.url).toBe('file:///downloads/Test Anime - E2.protected')
+    expect(stream.url).toBe('file:///downloads/Test%20Anime%20-%20E2.protected')
+    expect(savedProtectedStream('/downloads/Q&A #1? 100%.protected', fresh).url).toBe('file:///downloads/Q%26A%20%231%3F%20100%25.protected')
     expect(stream.__drm).toMatchObject({ licenseUrl: fresh.drm.licenseUrl, releaseUrl: fresh.drm.releaseUrl })
     expect(stream.__drm?.refreshUrl).toBeUndefined()
     expect(stream.__subtitles).toEqual([fresh.subtitles[0]])

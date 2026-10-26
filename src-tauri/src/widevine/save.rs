@@ -51,9 +51,14 @@ impl Saved {
     }
 }
 
-/// The folder behind a `file://` URL the player was given, when it holds a saved episode.
+/// The folder behind a `file://` URL the player was given, when it holds a saved episode. Parsed as
+/// a URL: the player hands it on re-serialised (a space as `%20`) and may add presentation queries.
 pub fn saved_dir(url: &str) -> Option<PathBuf> {
-    let dir = PathBuf::from(url.strip_prefix("file://")?);
+    let parsed = url::Url::parse(url).ok()?;
+    if parsed.scheme() != "file" {
+        return None;
+    }
+    let dir = parsed.to_file_path().ok()?;
     dir.join(SAVED_INFO).is_file().then_some(dir)
 }
 
@@ -225,7 +230,8 @@ mod tests {
 
     #[test]
     fn a_saved_record_round_trips_and_stays_in_its_folder() {
-        let dir = std::env::temp_dir().join(format!("izumi-saved-{}", std::process::id()));
+        // Saved folders are named after the episode, so they have spaces (`Show - E1.protected`).
+        let dir = std::env::temp_dir().join(format!("izumi saved - {}.protected", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let saved = Saved {
             video: "video.mp4".into(),
@@ -241,7 +247,9 @@ mod tests {
         std::fs::write(dir.join(SAVED_INFO), serde_json::to_vec(&saved).unwrap()).unwrap();
         assert_eq!(Saved::read(&dir).unwrap(), saved);
         assert_eq!(saved.pssh(), Some(vec![1, 2, 3]));
-        assert_eq!(saved_dir(&format!("file://{}", dir.display())), Some(dir.clone()));
+        let url = url::Url::from_file_path(&dir).unwrap();
+        assert_eq!(saved_dir(url.as_str()), Some(dir.clone()));
+        assert_eq!(saved_dir(&format!("{url}?hard=en-US")), Some(dir.clone()));
         assert_eq!(saved_dir("https://example.test/manifest.mpd"), None);
 
         let escaping = Saved { video: "../secret".into(), ..saved };

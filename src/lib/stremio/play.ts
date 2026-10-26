@@ -1889,7 +1889,8 @@ function retainRecoveryCandidates(media: Media, episode: number | undefined, str
  *  stream that instead. */
 export function savedProtectedStream(path: string, fresh: ResolvedShakaDownload): Stream {
   return {
-    url: `file://${path}`,
+    // Encoded: a `#`, `?` or `%` in the episode's name would otherwise end or garble the path.
+    url: `file://${path.split('/').map(encodeURIComponent).join('/')}`,
     name: '📥 Downloaded',
     __manifest: 'dash',
     __drm: { ...fresh.drm, refreshUrl: undefined },
