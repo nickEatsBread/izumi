@@ -36,7 +36,7 @@
        in:motion={{ x: [48, 0], opacity: [0, 1], duration: 180 }}
        class="absolute inset-y-0 right-0 flex w-[min(30rem,90vw)] flex-col border-l border-white/10 bg-[#101012]/95 text-white shadow-2xl"
        onclick={(event) => event.stopPropagation()}>
-    <h2 data-part="options.title" class="line-clamp-1 shrink-0 px-6 pb-3 pt-7 text-2xl font-bold">{title}</h2>
+    <h2 data-part="options.title" class="shrink-0 px-6 pb-3 pt-7 text-2xl font-bold leading-tight"><span class="line-clamp-2">{title}</span></h2>
     <div data-part="options.list" class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3">
       {#each groups as group, g (g)}
         {#if group.options.length}
