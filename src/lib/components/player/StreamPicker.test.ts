@@ -105,7 +105,10 @@ describe('mobile source picker layout', () => {
   })
 
   it('keeps instant automatic selection out of the source-list dialog', () => {
-    expect(source).toContain('{#if $isAndroid && autoImmediate && !playbackError}')
+    expect(source).toContain('{#if ($isAndroid ? autoImmediate : autoPicking) && !playbackError}')
+    // Elsewhere the list stays away while an automatic pick is coming or under way: it flashed
+    // between the resolve and the player. An error, or nothing to take, shows it again.
+    expect(source).toContain('const autoPicking = $derived(autoImmediate && !error && (resolving || busy || !!best))')
     expect(source).not.toContain('<AndroidPreparingPlayer')
     expect(source).toContain('<AndroidConnectionStatus')
     expect(source).not.toContain('class="android-prepare fixed inset-x-4')

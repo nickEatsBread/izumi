@@ -132,7 +132,9 @@
     ? $desktopCastStatus?.state === 'paused'
     : paused)
 
-  let visible = $state(true)
+  // No chrome before the first frame (a title bar and buttons over black read as a broken player):
+  // the controls first show when the picture does, unless the viewer asks for them sooner.
+  let visible = $state(false)
   let hideT: ReturnType<typeof setTimeout>
   let quietPadSeek = $state(false)
   let quietPadSeekT: ReturnType<typeof setTimeout>
@@ -327,8 +329,9 @@
     return () => clearTimeout(t)
   })
   const controlsVisible = $derived(
-    visible || (!(quietPadSeek || quietDpadScrub) && ((transportPaused && !pausedIdle) || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen,
+    visible || (!(quietPadSeek || quietDpadScrub) && ((transportPaused && !pausedIdle) || (loading && firstFrame) || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen,
   )
+  $effect(() => { if (firstFrame) untrack(poke) })
   // Game mode: the video window is unmapped behind the menu stage (gm-freeze.ts). Until it is back,
   // the HTML controls stay mounted and own the chrome, so a closing menu inside them slides out.
   let gmVideoHidden = $state(false)
@@ -374,6 +377,10 @@
   // policy, Game-mode menu stage) work as for any file. Elsewhere the webview's <video> plays them.
   const drmNative = $derived(drmActive && usesNativeDrm($nowPlayingStream.drm, $nativeDrmSupported))
   const drmWebview = $derived(drmActive && !drmNative)
+  // mpv's Game-mode spinner (gm_osd.rs loading_overlay): 24 segments, the head opaque at the top and
+  // each one behind it (anticlockwise) fading by the same ASS alphas, 00 to D8.
+  const GM_RING = Array.from({ length: 24 }, (_, i) =>
+    [1, 0.95, 0.9, 0.84, 0.75, 0.65, 0.55, 0.43, 0.31, 0.22, 0.15][Math.min((24 - i) % 24, 10)])
   let overlayRoot = $state<HTMLDivElement | undefined>(undefined)
   // The root's edges as fractions of a full-viewport probe (zoom-agnostic), handed to the app shell
   // as `playerStage` for the native insets. Size changes arrive through ResizeObserver; a re-docked
@@ -1903,7 +1910,6 @@
         })
         .finally(() => { recoveryBusy = false })
     }, 1_000)
-    poke()
     return () => {
       uns.forEach((u) => u.then((f) => f()))
       window.removeEventListener('pointerup', endStuckScrub)
@@ -2082,6 +2088,17 @@
         class="size-12 animate-spin rounded-full border-4 border-white/25 border-t-white"
         style={gmMode ? 'animation-timing-function: steps(8)' : ''}
       ></div>
+    </div>
+  {:else if loading && !firstFrame && $gmFrozenFrame == null}
+    <!-- Game mode before mpv's window is up (a protected stream fetches its licence first): mpv's
+         own spinner cannot draw yet, so the page draws the same ring in the same place
+         (gm_osd.rs loading_overlay) and the handover to it does not show. -->
+    <div class="izumi-hud pointer-events-none absolute inset-0 flex items-center justify-center bg-black">
+      <svg viewBox="-32 -32 64 64" class="size-[3.2rem] animate-spin" style="animation-timing-function: steps(24)" aria-hidden="true">
+        {#each GM_RING as opacity, i (i)}
+          <line x1="0" y1="-24" x2="0" y2="-31" stroke="white" stroke-width="2.5" {opacity} transform="rotate({i * 15})" />
+        {/each}
+      </svg>
     </div>
   {/if}
 

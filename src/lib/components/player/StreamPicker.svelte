@@ -256,6 +256,9 @@
   // return dozens of single-ep files even after collapsing batch packs).
   const resolving = $derived(!!pick?.resolving)
   const autoReady = $derived(!!pick?.autoReady)
+  // "Immediately" with something to take: an automatic pick is coming or under way, so the list is
+  // not a choice to show. It flashed for a frame or two between the resolve and the player.
+  const autoPicking = $derived(autoImmediate && !error && (resolving || busy || !!best))
   const RENDER_CAP = 40
   let showAll = $state(false)
   const renderedMain = $derived(showAll ? shown : shown.slice(0, RENDER_CAP))
@@ -891,9 +894,10 @@
      nothing to choose, but the resolve flow still needs the picker to exist to recognise its own
      request. Errors clear the flag, so a failure is never silent. -->
 {#if pick && !pick.hidden}
-  {#if $isAndroid && autoImmediate && !playbackError}
-    <!-- The persistent Android watch page is mounted once by the app layout. An instant automatic
-         selection is not a choice screen, so this local picker surface remains intentionally empty. -->
+  {#if ($isAndroid ? autoImmediate : autoPicking) && !playbackError}
+    <!-- An instant automatic selection is not a choice screen, so this surface stays empty: the
+         loader below covers a slow resolve, and Android's persistent watch page (mounted once by
+         the app layout) covers its own. -->
   {:else}
   <!-- No backdrop-blur in Game mode: this is a full-viewport filtered stacking context on the
        Deck's iGPU, and the spinner + the 50ms progress-width write INSIDE it re-dirty the region
