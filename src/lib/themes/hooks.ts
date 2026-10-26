@@ -152,7 +152,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'detail.poster', kind: 'part', description: 'The cover image.' },
     { name: 'detail.column', kind: 'slot', description: 'The left column headed by the poster (`detail.column: "poster"`): the trailer button, the countdown and the facts.' },
     { name: 'detail.trailer', kind: 'part', description: 'The labelled Watch Trailer button in the poster column.' },
-    { name: 'detail.title', kind: 'part', description: 'The title.' },
+    { name: 'detail.title', kind: 'part', description: 'The title. `data-length="long"` past 40 characters, to set long titles smaller.' },
     { name: 'detail.logo', kind: 'part', description: 'The title logo inside `detail.title` (`detail.title: "logo"`).' },
     { name: 'detail.backdrop', kind: 'part', description: 'The header artwork of the series page (the phone band, the backdrop of an overlay page): the banner or key art, or the portrait poster (`detail.art: "portrait"`). On a title with none of them, the cover: shown, sharp, with `detail.artFallback: "cover"`, else hidden behind a wash of its colour until a theme shows it (`data-art="cover"`).', states: ['data-art'] },
     { name: 'detail.video', kind: 'part', description: 'API 6 `detail.preview: "trailer"`: the layer the muted trailer plays in, over the header artwork of the series page; `data-state="playing"` while it plays.', states: ['data-state'] },

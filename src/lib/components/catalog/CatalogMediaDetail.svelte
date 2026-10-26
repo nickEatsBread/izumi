@@ -432,13 +432,13 @@
             <div class="mb-2 text-xs font-black uppercase tracking-[0.18em] text-theme">Kitsu</div>
           {/if}
           {#if titleLogo}
-            <h1 data-part="detail.title" aria-label={title(media)} class="h-28 w-[min(34rem,82vw)]">
+            <h1 data-part="detail.title" aria-label={title(media)} data-length={title(media).length > 40 ? 'long' : undefined} class="h-28 w-[min(34rem,82vw)]">
               <img data-part="detail.logo" src={titleLogo} alt="" loading="eager" decoding="async"
                    onerror={titleLogoFailed}
                    class="h-full w-full object-contain object-left drop-shadow-[2px_2px_6px_rgba(0,0,0,.85)]" />
             </h1>
           {:else}
-            <h1 data-part="detail.title" class="text-3xl font-black leading-tight sm:text-5xl">{title(media)}</h1>
+            <h1 data-part="detail.title" data-length={title(media).length > 40 ? 'long' : undefined} class="text-3xl font-black leading-tight sm:text-5xl">{title(media)}</h1>
           {/if}
           {#if (themedOverlay || themedStack) && detailTheme.header}
             <div data-part="detail.header" class="mt-3">

@@ -1526,14 +1526,14 @@
      shows a placeholder line inside the heading. -->
 {#snippet seriesTitle(m: Media, className: string)}
   {#if detailLogo}
-    <h1 data-part="detail.title" aria-label={named(m) ? title(m) : undefined} class={className}>
+    <h1 data-part="detail.title" aria-label={named(m) ? title(m) : undefined} data-length={title(m).length > 40 ? 'long' : undefined} class={className}>
       <img data-part="detail.logo" src={detailLogo} alt="" onerror={() => (failedDetailLogo = detailLogo)}
            class="block max-h-44 w-auto max-w-[min(26rem,85%)] object-contain object-left-bottom" />
     </h1>
   {:else if unnamed(m)}
     <h1 data-part="detail.title" class={className}><span class="inline-block w-3/5 min-w-32 max-w-full rounded-md align-top skeloader" aria-hidden="true">&nbsp;</span><span class="sr-only">Loading</span></h1>
   {:else}
-    <h1 data-part="detail.title" class="{className} {detailTheme.title === 'logo' && !detailExtrasSettled ? 'opacity-0' : ''}">{title(m)}</h1>
+    <h1 data-part="detail.title" data-length={title(m).length > 40 ? 'long' : undefined} class="{className} {detailTheme.title === 'logo' && !detailExtrasSettled ? 'opacity-0' : ''}">{title(m)}</h1>
   {/if}
 {/snippet}
 
