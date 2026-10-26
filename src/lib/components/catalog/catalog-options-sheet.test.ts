@@ -36,6 +36,14 @@ describe('catalog title page options menu', () => {
     expect(detail).toContain("const saveable = (list: MediaVideo[]) => list.filter((video) => !downloadState(video) || downloadState(video) === 'error')")
   })
 
+  it('closes after a choice, focus back on what opened it; only the AniList lookup stays to report', () => {
+    // A download turns its own item disabled while focused: left open, the d-pad was stranded.
+    const sheet = read('../detail/OptionsSheet.svelte')
+    expect(sheet).toContain('option.onselect(); if (!option.keepOpen) onclose()')
+    expect(detail.match(/keepOpen: true/g)).toHaveLength(1)
+    expect(detail).toContain("id: 'tracker', label: 'Track on AniList / MyAnimeList', detail: trackerNote || undefined, icon: ListChecks, keepOpen: true")
+  })
+
   it('opens the AniList entry the source names for the episode, else finds the title by name', () => {
     expect(detail).toContain('const tracked = (optionsEpisode ?? upNext?.video)?.track ?? videos.find((video) => video.track)?.track')
     expect(detail).toContain('? await fetchMediaById(tracked.anilist).catch(() => null)')

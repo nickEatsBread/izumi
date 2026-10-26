@@ -271,7 +271,7 @@
           disabled: sourceListBusy, onselect: () => void toggleSourceList(),
         }] : []),
         { id: 'lists', label: savedLocally ? 'Saved to your lists' : 'Save to a list', icon: savedLocally ? ListChecks : ListPlus, onselect: () => { optionsOpen = false; showLocalLists = true } },
-        { id: 'tracker', label: 'Track on AniList / MyAnimeList', detail: trackerNote || undefined, icon: ListChecks, onselect: () => void trackOnLists() },
+        { id: 'tracker', label: 'Track on AniList / MyAnimeList', detail: trackerNote || undefined, icon: ListChecks, keepOpen: true, onselect: () => void trackOnLists() },
       ],
     })
     if (seriesEpisodes || isMovie) {

@@ -7,6 +7,9 @@
     detail?: string
     icon?: Component<{ size?: number }>
     disabled?: boolean
+    /** Stay open after the choice: the option reports its progress in `detail` and closes the menu
+     *  itself when done. Every other choice closes the menu, focus going back to what opened it. */
+    keepOpen?: boolean
     onselect: () => void
   }
   export interface SheetGroup {
@@ -43,7 +46,7 @@
           {#if group.title}<div data-part="options.heading" class="px-4 pb-1 pt-4 text-xs font-extrabold uppercase tracking-[0.14em] text-white/40">{group.title}</div>{/if}
           {#each group.options as option (option.id)}
             <button type="button" data-part="options.item" data-option={option.id} data-focusable disabled={option.disabled}
-                    onclick={() => { if (!option.disabled) option.onselect() }}
+                    onclick={() => { if (option.disabled) return; option.onselect(); if (!option.keepOpen) onclose() }}
                     class="my-0.5 flex min-h-[3.75rem] w-full select-none items-center gap-4 rounded-xl px-4 text-left text-lg font-semibold outline-none hover:bg-white/10 focus-visible:bg-white focus-visible:text-black disabled:opacity-40">
               <span data-part="options.item.icon" class="grid w-7 shrink-0 place-items-center">{#if option.icon}<option.icon size={22} />{/if}</span>
               <span data-part="options.item.label" class="min-w-0 flex-1">{option.label}</span>
