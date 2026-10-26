@@ -34,8 +34,8 @@ finish-args:
                              # (L2/R2 seek in Game mode); without it the sandbox hides all pads.
                              # (This flatpak version lacks the narrower --device=input.)
   - --filesystem=xdg-download # offline downloads
-  # Steam Deck on-screen keyboard: reach the host Steam install to dlopen libsteam_api.so and talk
-  # to the Steam client pipe (Steamworks ShowFloatingGamepadTextInput). ~/.steam is a symlink into
+  # Steam Deck on-screen keyboard: reach the host Steam install to dlopen Steam's steamclient.so and
+  # talk to the Steam client pipe (Steamworks ShowFloatingGamepadTextInput). ~/.steam is a symlink into
   # ~/.local/share/Steam; grant both so the pipe + the .so resolve. Falls back to the HTML keyboard
   # if Steam is unreachable.
   - --filesystem=~/.steam
