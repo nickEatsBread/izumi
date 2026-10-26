@@ -130,6 +130,25 @@
   // opted out of `phone`), or there would be no way to reach its settings/remove button on a phone.
   const columns = $derived(splitHomeColumns(homeRowIds, allBlocks, $isMobile && !$homeEditorOpen))
 
+  // A cached Home (coming back from a series page) used to build every row and card in one pass:
+  // hundreds of cards held the Deck's page for over a second before anything showed. The first
+  // screenful renders at once and the rest join a row per frame, each a skeleton until its turn.
+  // Only a new screen (or a Home appearing) starts over; a refreshed answer keeps what is shown.
+  const FIRST_ROWS = 4
+  let shownRows = $state(FIRST_ROWS)
+  const hasHome = $derived(!!home)
+  $effect(() => {
+    void $catalogProvider
+    if (!hasHome) return
+    shownRows = FIRST_ROWS
+    let frame = requestAnimationFrame(function grow() {
+      shownRows += 1
+      if (shownRows < homeRowIds.length) frame = requestAnimationFrame(grow)
+    })
+    return () => cancelAnimationFrame(frame)
+  })
+  const rowShown = (id: string) => $homeEditorOpen || homeRowIds.indexOf(id) < shownRows
+
   $effect(() => {
     const selection = $catalogProvider
     void retry
@@ -242,7 +261,12 @@
       {#snippet contentRow(id: string)}
         {@const row = toContentRow(id)}
         {@const visibleIds = columns.main.includes(id) ? columns.main : columns.aside}
-        {#if row}
+        {#if row && !rowShown(id)}
+          <div data-part="row.pending" class="px-4 sm:px-8" aria-hidden="true">
+            <div class="mb-3 h-5 w-40 rounded skeloader"></div>
+            <div class="flex gap-3 overflow-hidden">{#each Array.from({ length: 8 }) as _}<div data-part="row.skeleton" class="aspect-[2/3] w-36 shrink-0 rounded-md skeloader sm:w-[152px]"></div>{/each}</div>
+          </div>
+        {:else if row}
           <HomeRowFrame rowId={row.id} title={row.kind === 'hero' ? HERO_HOME_ROW.title : row.kind === 'continue' ? 'Continue Watching' : row.kind === 'block' ? (allBlocks[row.id] ? blockTitle(allBlocks[row.id]) : row.id) : row.kind === 'collection' ? (collectionOptions.find((option) => option.id === row.id)?.title ?? row.id) : row.section.title} target={$catalogProvider} {visibleIds} locked={!!themeHome} role={themeHome?.roles[row.id]}>
             {#if row.kind === 'hero'}
               {@render heroBlock()}

@@ -567,6 +567,8 @@
         routeFocusRestore = controller
         void restoreRouteFocus(routeFocusKey(to.url), {
           signal: controller.signal,
+          // Home adds its rows a frame at a time: the remembered card's row can take a moment.
+          timeoutMs: 3000,
           // The nav engine's own reveal, instantly: the card's row first, then the page.
           focus: (el) => { focusByNav(el, false, true); focusByNav(el, true, true) },
         })
