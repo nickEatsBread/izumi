@@ -1132,6 +1132,12 @@ export function initDpadNav() {
         e.preventDefault()
         return
       }
+      // Nothing to come back to and the navigation is a drawer: Left opens it, as from the left edge.
+      if (dir === 'left' && !trap && document.documentElement.dataset.themeNav === 'drawer') {
+        window.dispatchEvent(new Event('nav-drawer-open'))
+        e.preventDefault()
+        return
+      }
       // Step 3: focus left a region (a tap on a Settings rail link, whose route change blurs it):
       // go back to that region's current item rather than to whatever comes first.
       const regionDefault = regionReturnTarget(root)
