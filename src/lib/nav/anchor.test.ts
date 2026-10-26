@@ -360,7 +360,7 @@ describe('anchored rows', () => {
     expect(frames.size).toBe(1)
     frame(200)
     frame(1200)
-    expect(windowScrolls.at(-1)).toEqual({ top: 0, behavior: 'instant' })
+    expect(windowScrolls.at(-1)).toEqual({ top: 0, left: 0, behavior: 'instant' })
     // Straight back down: the page is stopped where it is before the snap starts.
     windowScrolls = []
     press('ArrowDown')

@@ -383,7 +383,9 @@ describe('dead-end scroll', () => {
       document.body.innerHTML = page(600)
       el('Last').focus()
       dispatchPadKey('ArrowDown')
-      expect(vi.mocked(window.scrollTo).mock.lastCall?.[0]).toMatchObject({ top: 743, behavior: 'instant' })
+      // Both axes on every write: WebKitGTK fills a missing one in device pixels (a left-only write
+      // moved the page down a quarter at 1.25, so a reveal to the right ran it to the end).
+      expect(vi.mocked(window.scrollTo).mock.lastCall?.[0]).toEqual({ top: 743, left: 0, behavior: 'instant' })
       expect(windowMoves.mock.lastCall?.[0]).toMatchObject({ top: 243, behavior: 'smooth' })
     } finally {
       Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 })

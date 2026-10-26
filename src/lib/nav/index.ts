@@ -415,7 +415,13 @@ function scrollByExact(target: RevealScrollTarget, top: number, left: number, be
   // shortcut: not clamped to the scroll range; the browser clamps each write, so a reveal past the
   // end stops there late in its easing. Clamp here if that stop ever shows.
   const to = get() + (vertical ? top : left)
-  const set = (value: number) => target.scrollTo(vertical ? { top: value, behavior: 'instant' } : { left: value, behavior: 'instant' })
+  // Both axes, always: WebKitGTK fills a missing one with its position in device pixels, so each
+  // left-only write moved the page down by the pixel ratio (a quarter at 1.25) and a reveal to the
+  // right ran the page to its end.
+  const set = (value: number) => {
+    const [x, y] = el ? [el.scrollLeft, el.scrollTop] : [window.scrollX, window.scrollY]
+    target.scrollTo(vertical ? { top: value, left: x, behavior: 'instant' } : { left: value, top: y, behavior: 'instant' })
+  }
   animateScroll(target, get, set, to, behavior === 'smooth' ? REVEAL_SCROLL_MS : 0)
 }
 
