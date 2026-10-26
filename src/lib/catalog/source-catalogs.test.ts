@@ -5,7 +5,7 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke }))
 
 import { isSourceSelection, sourcePackageOf } from './source-catalogs'
 import { sourceProgressReporter, sourceStream } from './source-streams'
-import { sourceFacts } from './providers/stremio'
+import { mapStremioMeta, sourceFacts } from './providers/stremio'
 import { refineStreams } from '$lib/stremio/refine'
 
 const BASE = 'http://127.0.0.1:40001/stremio'
@@ -84,5 +84,23 @@ describe('playing a source title from a card', () => {
     expect(sourcePlayTarget(detail, 'x:E2')?.startSeconds).toBe(320)
     expect(sourcePlayTarget(detail)?.video.id).toBe('x:E2')
     expect(sourcePlayTarget({ ...(detail as object), videos: [] } as never)).toBeUndefined()
+  })
+})
+
+describe('source episodes named on AniList', () => {
+  it('keeps the AniList entry and episode a source gives each video, and only whole ids', () => {
+    const media = mapStremioMeta({
+      id: 'cr:1', type: 'series', name: 'Some Series',
+      videos: [
+        { id: 'cr:a', season: 1, episode: 1, izumi: { track: { anilist: 700, mal: 7700, episode: 1 } } },
+        { id: 'cr:b', season: 3, episode: 1, izumi: { track: { anilist: 701, episode: 1 } } },
+        { id: 'cr:c', season: 3, episode: 2, izumi: { track: { anilist: '701', episode: 2.5 } } },
+      ],
+    } as never, BASE)
+    expect(media?.videos?.map((video) => video.track)).toEqual([
+      { anilist: 700, mal: 7700, episode: 1 },
+      { anilist: 701, episode: 1 },
+      undefined,
+    ])
   })
 })

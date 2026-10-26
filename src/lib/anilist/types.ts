@@ -87,6 +87,9 @@ export interface MediaVideo {
   playhead?: number
   watched?: boolean
   durationSec?: number
+  /** The AniList (and MyAnimeList) entry a source catalog says this episode is, and its number
+   *  there: a source's own title is tracked on that entry. */
+  track?: { anilist: number; mal?: number; episode: number }
 }
 
 /** What a source catalog says about a title beyond plain metadata. Every field is optional. */

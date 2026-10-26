@@ -36,8 +36,10 @@ describe('catalog title page options menu', () => {
     expect(detail).toContain("const saveable = (list: MediaVideo[]) => list.filter((video) => !downloadState(video) || downloadState(video) === 'error')")
   })
 
-  it('finds a source title on AniList before opening the list editor', () => {
-    expect(detail).toContain('const match = await findAnilistMatch(urql, media)')
+  it('opens the AniList entry the source names for the episode, else finds the title by name', () => {
+    expect(detail).toContain('const tracked = (optionsEpisode ?? upNext?.video)?.track ?? videos.find((video) => video.track)?.track')
+    expect(detail).toContain('? await fetchMediaById(tracked.anilist).catch(() => null)')
+    expect(detail).toContain(': await findAnilistMatch(urql, media).catch(() => null)')
     expect(detail).toContain('<MediaListSheet media={trackerMedia}')
   })
 })

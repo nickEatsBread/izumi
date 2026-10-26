@@ -61,6 +61,7 @@
   import { keyFor } from '$lib/downloads/state'
   import { currentDownloadPreferences } from '$lib/downloads/rules'
   import { findAnilistMatch } from '$lib/catalog/anilist-match'
+  import { fetchMediaById } from '$lib/anilist/fetch-media'
   import { PAGE_OPTIONS_EVENT } from '$lib/nav/gamepad'
 
   let { provider, type, id }: { provider: CatalogProviderId; type: CatalogContentType; id: string } = $props()
@@ -230,8 +231,13 @@
     if (!media) return
     // A title with an AniList identity edits it directly; a source's own title is found on AniList.
     if (anilistIdOf(media)) { optionsOpen = false; trackerMedia = media; return }
+    // The source names each episode's AniList entry (a season, a cour): the focused episode's, else
+    // the one up next, else the first it names. Otherwise the title is looked up by name.
+    const tracked = (optionsEpisode ?? upNext?.video)?.track ?? videos.find((video) => video.track)?.track
     trackerNote = 'Looking for this title on AniList…'
-    const match = await findAnilistMatch(urql, media).catch(() => null)
+    const match = tracked
+      ? await fetchMediaById(tracked.anilist).catch(() => null)
+      : await findAnilistMatch(urql, media).catch(() => null)
     if (!match) { trackerNote = 'This title could not be found on AniList.'; return }
     optionsOpen = false
     trackerMedia = match

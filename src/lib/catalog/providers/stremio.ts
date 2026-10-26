@@ -142,6 +142,16 @@ export function sourceFacts(raw: unknown, base: string): MediaSourceFacts | unde
   return Object.keys(facts).length ? facts : undefined
 }
 
+/** `izumi.track` on a source's video: the AniList entry and episode it is. Whole positive numbers only. */
+function videoTrack(raw: unknown): Pick<MediaVideo, 'track'> {
+  const track = raw && typeof raw === 'object' ? (raw as Record<string, unknown>).track : undefined
+  if (!track || typeof track !== 'object') return {}
+  const { anilist, mal, episode } = track as Record<string, unknown>
+  const id = (value: unknown) => (typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined)
+  if (!id(anilist) || !id(episode)) return {}
+  return { track: { anilist: id(anilist)!, episode: id(episode)!, ...(id(mal) ? { mal: id(mal) } : {}) } }
+}
+
 function videoProgress(raw: unknown): Pick<MediaVideo, 'progress' | 'playhead' | 'watched' | 'durationSec'> {
   if (!raw || typeof raw !== 'object') return {}
   const value = raw as Record<string, unknown>
@@ -206,6 +216,7 @@ export function mapStremioMeta(raw: StremioMeta, base: string, forcedType?: stri
     released: video.released,
     streams: video.streams,
     ...videoProgress(video.izumi),
+    ...videoTrack(video.izumi),
   }))
   if (!videos.length && stremioType === 'movie') videos.push({ id: raw.id, number: 1, title: raw.name })
   const rating = Number(raw.imdbRating)
