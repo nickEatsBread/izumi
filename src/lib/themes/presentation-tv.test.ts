@@ -88,6 +88,9 @@ describe('resolving the TV block', () => {
     expect(shellNavFor(false, false, top, resolvePresentation(top, false))).toBe('top')
     expect(shellNavFor(false, false, tvTop, resolvePresentation(tvTop, false, true))).toBe('top')
     expect(shellNavFor(false, false, undefined, undefined)).toBe('sidebar')
+    // Game mode with no `shell.nav`: the drawer, keeping the handheld's width; a theme's own choice stands.
+    expect(shellNavFor(false, false, undefined, undefined, true)).toBe('drawer')
+    expect(shellNavFor(false, false, top, resolvePresentation(top, false, true), true)).toBe('top')
   })
 
   it('counts what the TV block styles in the coverage chips', () => {

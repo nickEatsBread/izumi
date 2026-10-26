@@ -1180,12 +1180,13 @@ function layerBlock(shared: ThemePresentation, block: MobilePresentation & TvPre
 }
 /** Where the navigation chrome sits: phones always use the bottom bar; a television (`tv`: any
  *  supported television runtime) the side rail unless the theme's TV block asks for the top bar (API 6);
- *  desktops and Game mode follow the resolved `shell.nav`. `layout` is the unresolved presentation,
- *  `resolved` the one for this surface. */
-export function shellNavFor(mobile: boolean, tv: boolean, layout: ThemePresentation | undefined, resolved: ThemePresentation | undefined): ThemeNavPlacement {
+ *  desktops and Game mode follow the resolved `shell.nav`. Without one, Game mode gets the drawer: the
+ *  handheld's narrow screen keeps its whole width, and nothing animates the rail open and shut.
+ *  `layout` is the unresolved presentation, `resolved` the one for this surface. */
+export function shellNavFor(mobile: boolean, tv: boolean, layout: ThemePresentation | undefined, resolved: ThemePresentation | undefined, gameMode = false): ThemeNavPlacement {
   if (mobile) return 'bottom'
   if (tv) return layout?.tv?.shell?.nav === 'top' ? 'top' : 'sidebar'
-  return resolved?.shell?.nav ?? 'sidebar'
+  return resolved?.shell?.nav ?? (gameMode ? 'drawer' : 'sidebar')
 }
 export function visibleNode(node: ThemeNode, model: DisplayModel): boolean {
   if (!node.when) return true

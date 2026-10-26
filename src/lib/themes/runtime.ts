@@ -31,5 +31,5 @@ export const playerCoversWindow = derived([isMobile, isTv, themePresentation], (
 // Where the navigation chrome sits on THIS surface: phones always use the bottom bar, Android TVs the side
 // rail (or the top bar their TV block asks for), and desktops and Game mode follow the theme's `shell.nav`.
 // The app shell and the player both read it, so the video is inset from exactly the edge the chrome occupies.
-export const shellNav = derived([isMobile, isTv, activeLayout, themePresentation], ([mobile, tv, layout, presentation]): ThemeNavPlacement =>
-  shellNavFor(mobile, tv, layout, presentation))
+export const shellNav = derived([isMobile, isTv, activeLayout, themePresentation, gameMode], ([mobile, tv, layout, presentation, gm]): ThemeNavPlacement =>
+  shellNavFor(mobile, tv, layout, presentation, gm))
