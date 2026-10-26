@@ -37,6 +37,7 @@
   import { playSourceTitle } from '$lib/catalog/source-play'
   import { anilistUser } from '$lib/anilist/account'
   import { isMobile } from '$lib/platform'
+  import { nearViewport } from '$lib/util/near-viewport'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
 
   // Provider payloads are immutable snapshots. Deep-proxying every Media object gives Svelte's
@@ -132,22 +133,30 @@
 
   // A cached Home (coming back from a series page) used to build every row and card in one pass:
   // hundreds of cards held the Deck's page for over a second before anything showed. The first
-  // screenful renders at once and the rest join a row per frame, each a skeleton until its turn.
-  // Only a new screen (or a Home appearing) starts over; a refreshed answer keeps what is shown.
+  // screenful renders at once; a row further down stays a skeleton until it comes near the screen,
+  // then joins, one row a frame. A new screen starts over; a refreshed answer keeps what is shown.
   const FIRST_ROWS = 4
-  let shownRows = $state(FIRST_ROWS)
-  const hasHome = $derived(!!home)
+  let revealed = $state(new Set<string>())
+  let revealQueue: string[] = []
+  let revealFrame = 0
+  function reveal(id: string) {
+    if (revealed.has(id) || revealQueue.includes(id)) return
+    revealQueue.push(id)
+    if (!revealFrame) revealFrame = requestAnimationFrame(revealNext)
+  }
+  function revealNext() {
+    revealFrame = 0
+    const id = revealQueue.shift()
+    if (id) revealed = new Set(revealed).add(id)
+    if (revealQueue.length) revealFrame = requestAnimationFrame(revealNext)
+  }
   $effect(() => {
     void $catalogProvider
-    if (!hasHome) return
-    shownRows = FIRST_ROWS
-    let frame = requestAnimationFrame(function grow() {
-      shownRows += 1
-      if (shownRows < homeRowIds.length) frame = requestAnimationFrame(grow)
-    })
-    return () => cancelAnimationFrame(frame)
+    revealed = new Set()
+    revealQueue = []
+    return () => { cancelAnimationFrame(revealFrame); revealFrame = 0 }
   })
-  const rowShown = (id: string) => $homeEditorOpen || homeRowIds.indexOf(id) < shownRows
+  const rowShown = (id: string) => $homeEditorOpen || homeRowIds.indexOf(id) < FIRST_ROWS || revealed.has(id)
 
   $effect(() => {
     const selection = $catalogProvider
@@ -262,7 +271,7 @@
         {@const row = toContentRow(id)}
         {@const visibleIds = columns.main.includes(id) ? columns.main : columns.aside}
         {#if row && !rowShown(id)}
-          <div data-part="row.pending" class="px-4 sm:px-8" aria-hidden="true">
+          <div data-part="row.pending" class="px-4 sm:px-8" aria-hidden="true" use:nearViewport={{ onEnter: () => reveal(id), marginViewports: 1.5 }}>
             <div class="mb-3 h-5 w-40 rounded skeloader"></div>
             <div class="flex gap-3 overflow-hidden">{#each Array.from({ length: 8 }) as _}<div data-part="row.skeleton" class="aspect-[2/3] w-36 shrink-0 rounded-md skeloader sm:w-[152px]"></div>{/each}</div>
           </div>

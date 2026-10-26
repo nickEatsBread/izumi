@@ -390,7 +390,7 @@ State values:
 | `row.more` | part | The row's view-more link. Continue Watching has one (to the Library) only when the theme sets `heading.viewMore` on that row itself. |  |
 | `row.track` | part | The scrolling track or grid holding the cards. |  |
 | `row.skeleton` | part | A placeholder card in a Home row while the row loads (`.skeloader`): posters, or 16:9 cards on Continue Watching. A tabbed grid's placeholder posters carry it too, inside `block.grid`. |  |
-| `row.pending` | part | A Home row still waiting for its turn while Home builds its rows a frame at a time (coming back to a cached Home): a title bar placeholder and `row.skeleton` cards, replaced by the row. |  |
+| `row.pending` | part | A catalog Home row not built yet: Home builds the rows near the screen, and a row further down waits as this until it comes near: a title bar placeholder and `row.skeleton` cards, replaced by the row. |  |
 | `row.caption` | part | The focus caption line under a row (`caption: "focus"`, pad in use), `data-active` while a card in that row has focus. With API 6 `captionTemplate` it holds the template's nodes instead of `row.caption.title` and `row.caption.meta`, drawn afresh on every focus move; while no card in the row has focus it stays laid out but hidden. | `data-active` |
 | `row.caption.title` | part | The focused card's full title in the caption. |  |
 | `row.caption.meta` | part | The focused card's detail line: episode, episode title and time left on Continue Watching; format, season and episodes on posters. |  |
