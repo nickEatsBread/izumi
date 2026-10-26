@@ -3,6 +3,8 @@
 
   const HOME_CACHE_MS = 5 * 60_000
   const providerHomeCache = new Map<string, { storedAt: number; home: CatalogHomeData; complete: boolean }>()
+  /** The rows each screen has built, kept for its next visit (see `reveal`). */
+  const builtRows = new Map<string, Set<string>>()
 </script>
 
 <script lang="ts">
@@ -134,7 +136,8 @@
   // A cached Home (coming back from a series page) used to build every row and card in one pass:
   // hundreds of cards held the Deck's page for over a second before anything showed. The first
   // screenful renders at once; a row further down stays a skeleton until it comes near the screen,
-  // then joins, one row a frame. A new screen starts over; a refreshed answer keeps what is shown.
+  // then joins, one row a frame. Coming back builds at once the rows the viewer had already reached
+  // (skeletons there, where the page reopens, looked broken); a refreshed answer keeps what is shown.
   const FIRST_ROWS = 4
   let revealed = $state(new Set<string>())
   let revealQueue: string[] = []
@@ -147,12 +150,14 @@
   function revealNext() {
     revealFrame = 0
     const id = revealQueue.shift()
-    if (id) revealed = new Set(revealed).add(id)
+    if (id) {
+      revealed = new Set(revealed).add(id)
+      builtRows.set($catalogProvider, revealed)
+    }
     if (revealQueue.length) revealFrame = requestAnimationFrame(revealNext)
   }
   $effect(() => {
-    void $catalogProvider
-    revealed = new Set()
+    revealed = new Set(builtRows.get($catalogProvider))
     revealQueue = []
     return () => { cancelAnimationFrame(revealFrame); revealFrame = 0 }
   })

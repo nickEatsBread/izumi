@@ -18,7 +18,9 @@ describe('catalog Home builds only the rows near the screen', () => {
     expect(home).toContain('if (revealQueue.length) revealFrame = requestAnimationFrame(revealNext)')
   })
 
-  it('starts over for a new screen, not for a refreshed answer', () => {
-    expect(home).toContain('void $catalogProvider\n    revealed = new Set()')
+  it('starts each screen from the rows it had built, not over for a refreshed answer', () => {
+    // Coming back reopens the page where the viewer was: skeletons there looked broken.
+    expect(home).toContain('revealed = new Set(builtRows.get($catalogProvider))')
+    expect(home).toContain('builtRows.set($catalogProvider, revealed)')
   })
 })

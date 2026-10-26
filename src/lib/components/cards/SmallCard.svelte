@@ -6,6 +6,9 @@
   if (typeof window !== 'undefined') {
     window.addEventListener('carousel-nav', () => { needsPointerMove = true })
   }
+  // Covers already shown this session: a card built again for one (coming back to Home) shows it at
+  // once, not a shimmer and a fade while the cached image reports in.
+  const shownCovers = new Set<string>()
   // Grows the preview out of the card: at scale 2/3 the 1.5x box sits exactly on it (expand-pos.ts).
   function grow(_node: Element, { duration }: { duration: number }) {
     return { duration, easing: cubicOut, css: (t: number) => `transform: scale(${2 / 3 + t / 3}); opacity: ${Math.min(1, t * 4)}` }
@@ -90,7 +93,7 @@
     ...cardArt.art,
   }, coverWidth) : undefined)
   let coverReady = $state(false)
-  $effect(() => { void coverSrc; coverReady = false })
+  $effect(() => { coverReady = !!coverSrc && shownCovers.has(coverSrc) })
   let pos = $state({ left: 0, top: 0 })
   let el: HTMLElement
   // A row's caption template binds the focused card's media through the registry.
@@ -235,7 +238,7 @@
       {#if !coverReady}<div class="absolute inset-0 skeloader"></div>{/if}
       <!-- Keep image loading lazy: large browse grids and several library rows can still put many
            cards in the DOM, even though each AniList preview query is now capped to thirty. -->
-      <img use:reliableImage={coverSrc} alt={title(media)} draggable="false" loading="lazy" decoding="async" onload={() => (coverReady = true)}
+      <img use:reliableImage={coverSrc} alt={title(media)} draggable="false" loading="lazy" decoding="async" onload={() => { coverReady = true; if (coverSrc) shownCovers.add(coverSrc) }}
            class="relative h-full w-full object-cover transition-[opacity,transform] duration-150 ease-out {coverReady ? 'opacity-100' : 'opacity-0'} group-hover:scale-105" />
       {#if simpleHover}
         <span data-part="card.overlay" class="pointer-events-none absolute inset-0 grid place-items-center bg-black/0 transition-colors duration-150 group-hover:bg-black/40 group-focus-visible:bg-black/40">
