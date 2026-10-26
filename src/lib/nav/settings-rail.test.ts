@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { asMove } from '../../test/scroll-moves'
 import { isMobile } from '$lib/platform'
 import { HISTORY_INDEX, recordTrail, resetHistoryTrail } from '$lib/navigation/history-trail'
 import { RAIL_RETURN_ID } from '$lib/settings/back'
@@ -126,8 +127,8 @@ describe('the Settings rail with a controller', () => {
       el('Add theme').focus()
       press('ArrowUp')
       expect(document.activeElement).toBe(el('Browse'))
-      const [options] = vi.mocked(window.scrollBy).mock.lastCall as unknown as [ScrollToOptions]
-      return options
+      const [options] = vi.mocked(window.scrollTo).mock.lastCall as unknown as [ScrollToOptions]
+      return asMove(window, options)!
     }
     // Hidden (the header is in view): the usual margin.
     expect(upToBrowse().top).toBeCloseTo(64 - 720 * 0.12)

@@ -399,6 +399,14 @@ function abortOngoingScroll(target: RevealScrollTarget): void {
   }
 }
 
+/** scrollBy as an absolute scrollTo. WebKitGTK's smooth scrollBy travels the delta divided by the
+ *  device pixel ratio (240 of 300 px on the Deck, at 1.25), so a row reached by Up stopped under the
+ *  top edge; a smooth scrollTo lands where asked. */
+function scrollByExact(target: RevealScrollTarget, top: number, left: number, behavior: ScrollBehavior): void {
+  const [y, x] = target instanceof HTMLElement ? [target.scrollTop, target.scrollLeft] : [window.scrollY, window.scrollX]
+  target.scrollTo({ top: y + top, left: x + left, behavior })
+}
+
 function runControllerScroll(
   target: RevealScrollTarget,
   behavior: ScrollBehavior,
@@ -623,7 +631,7 @@ function deadEndScroll(active: HTMLElement, dir: Dir, rapid = false): boolean {
     || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   const behavior: ScrollBehavior = rapid || reduced ? 'auto' : 'smooth'
   const target: RevealScrollTarget = pane ?? window
-  runControllerScroll(target, behavior, () => target.scrollBy({ top: delta, behavior }))
+  runControllerScroll(target, behavior, () => scrollByExact(target, delta, 0, behavior))
   return true
 }
 
@@ -724,12 +732,12 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
       startMargin: clamp(window.innerHeight * 0.12, 40, 96),
       endMargin: clamp(window.innerHeight * 0.2, 64, 144),
     })
-    if (windowTop) runControllerScroll(window, behavior, () => window.scrollBy({ top: windowTop, behavior }))
+    if (windowTop) runControllerScroll(window, behavior, () => scrollByExact(window, windowTop, 0, behavior))
   }
   if (!top && !left) return
   const target: RevealScrollTarget = pane ?? window
   runControllerScroll(target, behavior, () => {
-    target.scrollBy({ top: vertical ? top : 0, left: vertical ? 0 : left, behavior })
+    scrollByExact(target, vertical ? top : 0, vertical ? 0 : left, behavior)
   })
 }
 
@@ -791,7 +799,7 @@ export function revealAboveKeyboard(field: HTMLElement, keyboardTop: number): ()
     padded.style.paddingBottom = `${current + delta - room}px`
   }
   const scroller: RevealScrollTarget = pane ?? window
-  scroller.scrollBy({ top: delta, left: 0, behavior: 'auto' })
+  scrollByExact(scroller, delta, 0, 'auto')
   return room < delta ? () => { padded.style.paddingBottom = previousPadding } : () => {}
 }
 
