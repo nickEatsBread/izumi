@@ -23,6 +23,8 @@ describe('a theme TV top bar on Android TV (API 6)', () => {
   })
 
   it('names the placement the TV actually renders on the document', () => {
-    expect(theme).toContain("root.dataset.themeNav = get(isTv) ? get(shellNav) : presentation?.shell?.nav ?? 'sidebar'")
+    // Game mode's default drawer too: the attribute said sidebar, so the page kept the rail's margin
+    // and Start never opened the drawer.
+    expect(theme).toContain("root.dataset.themeNav = get(isTv) || !get(isMobile) ? get(shellNav) : presentation?.shell?.nav ?? 'sidebar'")
   })
 })

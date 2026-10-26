@@ -103,8 +103,9 @@ function apply() {
   if (customActive && get(tvSurface) && !get(isMobile)) root.dataset.surface = 'tv'
   else delete root.dataset.surface
   root.dataset.themeDensity = presentation?.density ?? 'comfortable'
-  // On an Android TV the rendered placement can differ from the theme's shared `shell.nav` (API 6).
-  root.dataset.themeNav = get(isTv) ? get(shellNav) : presentation?.shell?.nav ?? 'sidebar'
+  // The rendered placement, which can differ from the theme's shared `shell.nav`: an Android TV's (API 6),
+  // and Game mode's drawer when a theme names none. Phones keep the theme's own value.
+  root.dataset.themeNav = get(isTv) || !get(isMobile) ? get(shellNav) : presentation?.shell?.nav ?? 'sidebar'
   root.classList.toggle('theme-true-black', !!presentation?.trueBlack && tokens.scheme === 'dark')
   root.classList.toggle('theme-hide-labels', !!presentation?.hideCardLabels)
   root.classList.toggle('theme-shell-compact', !!presentation?.shell?.compact)
