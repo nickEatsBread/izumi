@@ -3,12 +3,12 @@
 
   const HOME_CACHE_MS = 5 * 60_000
   const providerHomeCache = new Map<string, { storedAt: number; home: CatalogHomeData; complete: boolean }>()
-  /** The rows each screen has built, kept for its next visit (see `reveal`). */
-  const builtRows = new Map<string, Set<string>>()
+  /** The rows each screen had on or near the screen when the viewer left it, built at once on return. */
+  const shownRows = new Map<string, Set<string>>()
 </script>
 
 <script lang="ts">
-  import { goto } from '$app/navigation'
+  import { beforeNavigate, goto } from '$app/navigation'
   import Hero from '$lib/components/banner/Hero.svelte'
   import HeroPlaceholder from '$lib/components/banner/HeroPlaceholder.svelte'
   import MediaListSheet from '$lib/components/detail/MediaListSheet.svelte'
@@ -136,8 +136,9 @@
   // A cached Home (coming back from a series page) used to build every row and card in one pass:
   // hundreds of cards held the Deck's page for over a second before anything showed. The first
   // screenful renders at once; a row further down stays a skeleton until it comes near the screen,
-  // then joins, one row a frame. Coming back builds at once the rows the viewer had already reached
-  // (skeletons there, where the page reopens, looked broken); a refreshed answer keeps what is shown.
+  // then joins, one row a frame. Coming back builds at once only the rows that were on or near the
+  // screen when the viewer left (skeletons there, where the page reopens, looked broken; rebuilding
+  // every row reached before held Back for about a second); a refreshed answer keeps what is shown.
   const FIRST_ROWS = 4
   let revealed = $state(new Set<string>())
   let revealQueue: string[] = []
@@ -150,16 +151,23 @@
   function revealNext() {
     revealFrame = 0
     const id = revealQueue.shift()
-    if (id) {
-      revealed = new Set(revealed).add(id)
-      builtRows.set($catalogProvider, revealed)
-    }
+    if (id) revealed = new Set(revealed).add(id)
     if (revealQueue.length) revealFrame = requestAnimationFrame(revealNext)
   }
   $effect(() => {
-    revealed = new Set(builtRows.get($catalogProvider))
+    revealed = new Set(shownRows.get($catalogProvider))
     revealQueue = []
     return () => { cancelAnimationFrame(revealFrame); revealFrame = 0 }
+  })
+  beforeNavigate(() => {
+    const near = new Set<string>()
+    const height = window.innerHeight
+    for (const id of homeRowIds) {
+      // A row's carousel is named `<screen>:<role or id>` (HomeRowFrame's row context).
+      const box = document.querySelector(`[data-row="${CSS.escape(`${$catalogProvider}:${themeHome?.roles[id] ?? id}`)}"]`)?.getBoundingClientRect()
+      if (box && box.bottom > -height && box.top < height * 2) near.add(id)
+    }
+    shownRows.set($catalogProvider, near)
   })
   const rowShown = (id: string) => $homeEditorOpen || homeRowIds.indexOf(id) < FIRST_ROWS || revealed.has(id)
 

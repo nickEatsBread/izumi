@@ -28,9 +28,10 @@ describe('catalog Home builds only the rows near the screen', () => {
     expect(row).toContain('let all = $state(fullRows.has(section.id))')
   })
 
-  it('starts each screen from the rows it had built, not over for a refreshed answer', () => {
-    // Coming back reopens the page where the viewer was: skeletons there looked broken.
-    expect(home).toContain('revealed = new Set(builtRows.get($catalogProvider))')
-    expect(home).toContain('builtRows.set($catalogProvider, revealed)')
+  it('builds on return the rows that were near the screen when the viewer left, and no more', () => {
+    // Skeletons where the page reopens looked broken; rebuilding every row reached held Back ~1 s.
+    expect(home).toContain('revealed = new Set(shownRows.get($catalogProvider))')
+    expect(home).toContain('if (box && box.bottom > -height && box.top < height * 2) near.add(id)')
+    expect(home).toContain('beforeNavigate(() => {')
   })
 })
