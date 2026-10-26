@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { asMove } from '../../test/scroll-moves'
+import { asMove, framesAtOnce } from '../../test/scroll-moves'
 import { focusNearestFocusable, revealAboveKeyboard } from './index'
 import { oskDismissedAt, oskOpen } from '$lib/player/session'
 import { isNavigable } from './focusable'
@@ -22,6 +22,7 @@ const paneScrolls: Array<{ el: Element; options: ScrollToOptions }> = []
 let windowMoves: ReturnType<typeof vi.fn<(options: ScrollToOptions) => void>>
 
 beforeEach(() => {
+  framesAtOnce()
   Element.prototype.getBoundingClientRect = rectOf
   Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 })
   Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get() { return extent(this, 0) } })
@@ -51,7 +52,7 @@ describe('revealAboveKeyboard', () => {
     document.body.innerHTML = '<input id="f" data-rect="100,700,300,40">'
     const undo = revealAboveKeyboard(byId('f'), 500)
     // Field bottom 740 + 16 px gap - keyboard top 500.
-    expect(windowMoves).toHaveBeenCalledWith({ top: 256, left: 0, behavior: 'auto' })
+    expect(windowMoves).toHaveBeenCalledWith({ top: 256, left: 0, behavior: 'instant' })
     expect(paneScrolls).toEqual([])
     undo()
     expect(document.body.style.paddingBottom).toBe('')
@@ -63,7 +64,7 @@ describe('revealAboveKeyboard', () => {
     const undo = revealAboveKeyboard(byId('f'), 500)
     // 256 px needed, 100 px of scroll left.
     expect(document.body.style.paddingBottom).toBe('156px')
-    expect(windowMoves).toHaveBeenCalledWith({ top: 256, left: 0, behavior: 'auto' })
+    expect(windowMoves).toHaveBeenCalledWith({ top: 256, left: 0, behavior: 'instant' })
     undo()
     expect(document.body.style.paddingBottom).toBe('')
   })
@@ -74,7 +75,7 @@ describe('revealAboveKeyboard', () => {
         <input id="f" data-rect="100,700,300,40">
       </div>`
     revealAboveKeyboard(byId('f'), 500)
-    expect(paneScrolls).toEqual([{ el: byId('pane'), options: { top: 256, left: 0, behavior: 'auto' } }])
+    expect(paneScrolls).toEqual([{ el: byId('pane'), options: { top: 256, left: 0, behavior: 'instant' } }])
     expect(windowMoves).not.toHaveBeenCalled()
     expect(byId('pane').style.paddingBottom).toBe('')
   })
@@ -86,7 +87,7 @@ describe('revealAboveKeyboard', () => {
       </div>`
     const undo = revealAboveKeyboard(byId('f'), 500)
     expect(byId('dialog').style.paddingBottom).toBe('256px')
-    expect(paneScrolls).toEqual([{ el: byId('dialog'), options: { top: 256, left: 0, behavior: 'auto' } }])
+    expect(paneScrolls).toEqual([{ el: byId('dialog'), options: { top: 256, left: 0, behavior: 'instant' } }])
     expect(windowMoves).not.toHaveBeenCalled()
     undo()
     expect(byId('dialog').style.paddingBottom).toBe('')
@@ -107,7 +108,7 @@ describe('revealAboveKeyboard', () => {
     document.body.innerHTML = '<textarea id="t" data-rect="100,100,600,640"></textarea>'
     revealAboveKeyboard(byId('t'), 500)
     // The overlap is 256, but the top may only rise to the 16 px gap: 100 - 16.
-    expect(windowMoves).toHaveBeenCalledWith({ top: 84, left: 0, behavior: 'auto' })
+    expect(windowMoves).toHaveBeenCalledWith({ top: 84, left: 0, behavior: 'instant' })
   })
 })
 

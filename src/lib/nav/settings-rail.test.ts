@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { asMove } from '../../test/scroll-moves'
+import { asMove, framesAtOnce } from '../../test/scroll-moves'
 import { isMobile } from '$lib/platform'
 import { HISTORY_INDEX, recordTrail, resetHistoryTrail } from '$lib/navigation/history-trail'
 import { RAIL_RETURN_ID } from '$lib/settings/back'
@@ -52,6 +52,7 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
+  framesAtOnce()
   Element.prototype.getBoundingClientRect = rectOf
   window.scrollBy = vi.fn() as unknown as typeof window.scrollBy
   window.scrollTo = vi.fn() as unknown as typeof window.scrollTo

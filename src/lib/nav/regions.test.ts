@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { asMove } from '../../test/scroll-moves'
+import { asMove, framesAtOnce } from '../../test/scroll-moves'
 import { isTv } from '$lib/platform'
 import { deadEndScrollDelta, initDpadNav, regionOf } from './index'
 import { dispatchPadKey } from './pad-controls'
@@ -114,6 +114,7 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
+  framesAtOnce()
   Element.prototype.getBoundingClientRect = rectOf
   paneScrolls.length = 0
   HTMLElement.prototype.scrollTo = function (this: HTMLElement, options?: ScrollToOptions | number) {
@@ -376,13 +377,14 @@ describe('dead-end scroll', () => {
     expect(windowMoves.mock.calls[0][0]).toMatchObject({ top: 243 })
   })
 
-  it('asks for the destination itself, not a distance (WebKitGTK cuts a smooth scrollBy short)', () => {
+  it('eases to the destination itself, not by a distance (WebKitGTK cuts a smooth scrollBy short)', () => {
     Object.defineProperty(window, 'scrollY', { configurable: true, value: 500 })
     try {
       document.body.innerHTML = page(600)
       el('Last').focus()
       dispatchPadKey('ArrowDown')
-      expect(vi.mocked(window.scrollTo).mock.lastCall?.[0]).toMatchObject({ top: 743, behavior: 'smooth' })
+      expect(vi.mocked(window.scrollTo).mock.lastCall?.[0]).toMatchObject({ top: 743, behavior: 'instant' })
+      expect(windowMoves.mock.lastCall?.[0]).toMatchObject({ top: 243, behavior: 'smooth' })
     } finally {
       Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 })
     }
@@ -396,7 +398,7 @@ describe('dead-end scroll', () => {
     // A repeat inside the previous step's smooth window would abort it mid-flight on WebKitGTK.
     dispatchPadKey('ArrowDown', { repeat: true })
     expect(windowMoves).toHaveBeenCalledTimes(2)
-    expect(windowMoves.mock.calls[1][0]).toMatchObject({ top: 243, behavior: 'auto' })
+    expect(windowMoves.mock.calls[1][0]).toMatchObject({ top: 243, behavior: 'instant' })
   })
 
   it('never scrolls the focused control out of view or under the titlebar', () => {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { asMove } from '../../test/scroll-moves'
+import { asMove, framesAtOnce } from '../../test/scroll-moves'
 import { initDpadNav } from './index'
 import { oskOpen } from '$lib/player/session'
 
@@ -41,6 +41,7 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
+  framesAtOnce()
   Element.prototype.getBoundingClientRect = rectOf
   paneScrolls.length = 0
   HTMLElement.prototype.scrollTo = function (this: HTMLElement, options?: ScrollToOptions | number) {

@@ -354,17 +354,19 @@ describe('anchored rows', () => {
     frame(0)
     frame(100)
     expect(frames.size).toBe(1)
-    // Up into the hero keeps its smooth scroll to the top, and stops the snap still running.
+    // Up into the hero eases the page to the top, the snap still running stopped: one frame loop.
     press('ArrowUp')
     expect(document.activeElement).toBe(button('Play'))
-    expect(frames.size).toBe(0)
-    expect(windowScrolls.at(-1)).toEqual({ top: 0, behavior: 'smooth' })
-    // Straight back down: that smooth scroll is stopped where it is before the snap starts.
+    expect(frames.size).toBe(1)
+    frame(200)
+    frame(1200)
+    expect(windowScrolls.at(-1)).toEqual({ top: 0, behavior: 'instant' })
+    // Straight back down: the page is stopped where it is before the snap starts.
     windowScrolls = []
     press('ArrowDown')
     expect(windowScrolls[0]).toMatchObject({ left: window.scrollX, top: 0, behavior: 'instant' })
-    frame(1000)
-    frame(1000 + ANCHOR_SNAP_MS)
+    frame(2000)
+    frame(2000 + ANCHOR_SNAP_MS)
     expect(pageY).toBe(400 - 137)
   })
 

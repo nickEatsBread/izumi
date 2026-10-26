@@ -60,13 +60,15 @@ export function animateScroll(key: object, get: () => number, set: (v: number) =
     return () => {}
   }
   let start: number | undefined
-  let frame = requestAnimationFrame(function step(now) {
+  let frame = 0
+  const step = (now: number) => {
     start ??= now
     const t = Math.min(1, (now - start) / ms)
     set(t < 1 ? from + (to - from) * anchorEase(t) : to)
     if (t < 1) frame = requestAnimationFrame(step)
     else running.delete(key)
-  })
+  }
+  frame = requestAnimationFrame(step)
   const cancel = () => {
     cancelAnimationFrame(frame)
     if (running.get(key) === cancel) running.delete(key)

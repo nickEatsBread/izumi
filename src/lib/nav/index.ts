@@ -399,12 +399,24 @@ function abortOngoingScroll(target: RevealScrollTarget): void {
   }
 }
 
-/** scrollBy as an absolute scrollTo. WebKitGTK's smooth scrollBy travels the delta divided by the
- *  device pixel ratio (240 of 300 px on the Deck, at 1.25), so a row reached by Up stopped under the
- *  top edge; a smooth scrollTo lands where asked. */
+/** How long a d-pad press's eased scroll takes (scrollByExact). */
+const REVEAL_SCROLL_MS = 450
+
+/** Scroll `target` by `top` or `left` (a reveal moves one axis), landing exactly. WebKitGTK's own
+ *  smooth scrolling fails both ways on the Deck: a smooth scrollBy travels the delta divided by the
+ *  device pixel ratio (240 of 300 px at 1.25: a row reached by Up stopped under the top edge), and a
+ *  smooth scrollTo paints frames with whole rows missing (a black flash on about one press in four).
+ *  So 'smooth' eases here, one instant write a frame, as anchored rows do; anything else jumps at
+ *  once ('instant': the page's scroll-behavior: smooth would turn 'auto' into WebKit's own). */
 function scrollByExact(target: RevealScrollTarget, top: number, left: number, behavior: ScrollBehavior): void {
-  const [y, x] = target instanceof HTMLElement ? [target.scrollTop, target.scrollLeft] : [window.scrollY, window.scrollX]
-  target.scrollTo({ top: y + top, left: x + left, behavior })
+  const vertical = left === 0
+  const el = target instanceof HTMLElement ? target : null
+  const get = vertical ? () => el?.scrollTop ?? window.scrollY : () => el?.scrollLeft ?? window.scrollX
+  // shortcut: not clamped to the scroll range; the browser clamps each write, so a reveal past the
+  // end stops there late in its easing. Clamp here if that stop ever shows.
+  const to = get() + (vertical ? top : left)
+  const set = (value: number) => target.scrollTo(vertical ? { top: value, behavior: 'instant' } : { left: value, behavior: 'instant' })
+  animateScroll(target, get, set, to, behavior === 'smooth' ? REVEAL_SCROLL_MS : 0)
 }
 
 function runControllerScroll(
@@ -657,7 +669,7 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
   // The featured carousel is taller than the safe-band math can infer from its bottom action row.
   // Entering its primary action means reveal the whole feature, not just the focused button.
   if (vertical && (el.hasAttribute('data-nav-scroll-top') || inTopBanner(el))) {
-    runControllerScroll(window, behavior, () => window.scrollTo({ top: 0, behavior }))
+    runControllerScroll(window, behavior, () => scrollByExact(window, -window.scrollY, 0, behavior))
     return
   }
   const track = el.closest<HTMLElement>('[data-carousel-scroller]')
