@@ -21,11 +21,20 @@ const FONT_STACKS: Record<StudioTheme['font'], string> = {
 }
 
 const THEME_STYLE_ID = 'izumi-theme-css'
+/** Whether a stylesheet follows `style` in <head>. Only one can outrank it, and moving the theme's
+ *  stylesheet restyles the whole page (~0.35 s on the Deck's Home): every lazily loaded chunk appends
+ *  a modulepreload <link>, which must not cost that. */
+export function stylesheetAfter(style: Element): boolean {
+  for (let next = style.nextElementSibling; next; next = next.nextElementSibling) {
+    if (next instanceof HTMLStyleElement || (next instanceof HTMLLinkElement && next.rel.split(/\s+/).includes('stylesheet'))) return true
+  }
+  return false
+}
 /** Code-split routes and dev tooling append their own styles to <head> later; keep the theme's
- *  stylesheet last so an equally specific theme rule still wins. */
+ *  stylesheet after them so an equally specific theme rule still wins. */
 function keepThemeStyleLast(): void {
   const style = document.getElementById(THEME_STYLE_ID)
-  if (style && style !== document.head.lastElementChild) document.head.append(style)
+  if (style && stylesheetAfter(style)) document.head.append(style)
 }
 /** Whether the active theme's stylesheet is in effect; the Themes page shows rejections. */
 export const themeCssStatus = writable<{ state: 'off' | 'applied' | 'rejected'; reason?: string }>({ state: 'off' })
@@ -50,7 +59,7 @@ function applyThemeCss(text: string | undefined): void {
   const style = existing ?? Object.assign(document.createElement('style'), { id: THEME_STYLE_ID })
   if (style.textContent !== content) style.textContent = content
   // Last in <head>, so an equally specific theme rule beats the app's own.
-  if (!existing || style !== document.head.lastElementChild) document.head.append(style)
+  if (!existing || stylesheetAfter(style)) document.head.append(style)
   if (get(themeCssStatus).state !== 'applied') themeCssStatus.set({ state: 'applied' })
 }
 
