@@ -32,7 +32,8 @@
   const loadStreamPicker = () => import('$lib/components/player/StreamPicker.svelte')
   const loadDebridCaching = () => import('$lib/components/player/DebridCaching.svelte')
   const loadSourceConnecting = () => import('$lib/components/player/SourceConnecting.svelte')
-  const loadExitPrompt = () => import('$lib/components/shell/ExitPrompt.svelte')
+  // Not split off: loading it on the first B press held the dialog back about 0.2 s on the Deck.
+  import ExitPrompt from '$lib/components/shell/ExitPrompt.svelte'
   const loadGlobalSearch = () => import('$lib/components/search/GlobalSearch.svelte')
   const loadTrailerDialog = () => import('$lib/components/cards/TrailerDialog.svelte')
   const loadTrailerPlayer = () => import('$lib/components/cards/TrailerPlayer.svelte')
@@ -43,7 +44,7 @@
   // component; it self-gates its own dialog.
   import DeckKeyboardWarning from '$lib/components/shell/DeckKeyboardWarning.svelte'
   const loadLofiPlayer = () => import('$lib/components/shell/LofiPlayer.svelte')
-  import { streamPicker, connecting, exitPrompt, nowPlayingMedia } from '$lib/player/session'
+  import { streamPicker, connecting, nowPlayingMedia } from '$lib/player/session'
   import { playing, fullscreen, pictureInPicture, exitPictureInPicture, gameMode, gameModeResolved, initGameMode, debridCaching, playerStage } from '$lib/player/session'
   import { initNativeDrm } from '$lib/player/native-drm'
   import { initModules } from '$lib/modules/modules'
@@ -681,7 +682,7 @@
   </Lazy>
 {/if}
 {#if $debridCaching}<Lazy load={loadDebridCaching} />{/if}
-{#if $exitPrompt}<Lazy load={loadExitPrompt} />{/if}
+<ExitPrompt />
 {#if globalSearchMounted}<Lazy load={loadGlobalSearch} />{/if}
 {#if trailerDialogMounted}<Lazy load={loadTrailerDialog} />{/if}
 {#if trailerPlayerMounted}<Lazy load={loadTrailerPlayer} />{/if}
