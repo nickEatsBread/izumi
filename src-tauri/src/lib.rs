@@ -6885,8 +6885,14 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_haptics::init());
 
     builder
-        .run(isolate_dev_context(tauri::generate_context!()))
-        .expect("error while running tauri application");
+        .build(isolate_dev_context(tauri::generate_context!()))
+        .expect("error while running tauri application")
+        .run(|_app, _event| {
+            #[cfg(not(target_os = "android"))]
+            if let tauri::RunEvent::Exit = _event {
+                extension_service::stop_all_on_exit(_app);
+            }
+        });
 }
 
 #[cfg(not(target_os = "android"))]
