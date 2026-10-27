@@ -23,7 +23,9 @@ describe('catalog Home builds only the rows near the screen', () => {
     const row = readFileSync(fileURLToPath(new URL('./CatalogSectionRow.svelte', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')
     expect(row).toContain('const cards = $derived(all ? section.media : section.media.slice(0, FIRST_CARDS))')
     expect(row).toContain('const near = (index: number) => { if (index >= FIRST_CARDS - 3) expand() }')
-    expect(row.match(/onfocusin=\{\(\) => near\(index\)\} onpointerenter=\{expand\}/g)).toHaveLength(2)
+    expect(row.match(/onfocusin=\{\(\) => near\(index\)\} onpointerenter=\{pointer\} onpointerdown=\{pointer\} onwheel=\{expand\}/g)).toHaveLength(2)
+    // Not for a row scrolling under Game mode's parked cursor.
+    expect(row).toContain("const pointer = (event: PointerEvent) => { if (!$gameMode || event.pointerType !== 'mouse' || event.type === 'pointerdown') expand() }")
     // A row opened once stays whole, so focus can come back to a card further along.
     expect(row).toContain('let all = $state(fullRows.has(section.id))')
   })
