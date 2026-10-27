@@ -284,7 +284,7 @@
         {@const row = toContentRow(id)}
         {@const visibleIds = columns.main.includes(id) ? columns.main : columns.aside}
         {#if row && !rowShown(id)}
-          <div data-part="row.pending" class="px-4 sm:px-8" aria-hidden="true" use:nearViewport={{ onEnter: () => reveal(id), marginViewports: 1.5 }}>
+          <div data-part="row.pending" class="px-4 sm:px-8" aria-hidden="true" use:nearViewport={{ onEnter: () => reveal(id), marginViewports: 1.5, bothWays: true }}>
             <div class="mb-3 h-5 w-40 rounded skeloader"></div>
             <div class="flex gap-3 overflow-hidden">{#each Array.from({ length: 8 }) as _}<div data-part="row.skeleton" class="aspect-[2/3] w-36 shrink-0 rounded-md skeloader sm:w-[152px]"></div>{/each}</div>
           </div>

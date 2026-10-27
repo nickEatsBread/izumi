@@ -14,7 +14,7 @@ describe('catalog Home builds only the rows near the screen', () => {
 
   it('holds a row further down as a skeleton until it comes near the screen, then adds it a row a frame', () => {
     expect(home).toContain('{#if row && !rowShown(id)}\n          <div data-part="row.pending"')
-    expect(home).toContain('use:nearViewport={{ onEnter: () => reveal(id), marginViewports: 1.5 }}')
+    expect(home).toContain('use:nearViewport={{ onEnter: () => reveal(id), marginViewports: 1.5, bothWays: true }}')
     expect(home).toContain('if (revealQueue.length) revealFrame = requestAnimationFrame(revealNext)')
   })
 

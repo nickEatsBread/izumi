@@ -30,7 +30,7 @@ describe('nearViewport action', () => {
     vi.stubGlobal('cancelAnimationFrame', () => { frames = [] })
     vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
     const { nearViewport } = await import('./near-viewport')
-    const node = (top: number) => ({ isConnected: true, parentElement: null, getBoundingClientRect: () => ({ top }) }) as unknown as HTMLElement
+    const node = (top: number, bottom = top + 200) => ({ isConnected: true, parentElement: null, getBoundingClientRect: () => ({ top, bottom }) }) as unknown as HTMLElement
     // A frame runs the queued checks, as the browser would before the next paint.
     const nextFrame = () => { const due = frames; frames = []; due.forEach((callback) => callback()) }
     return { window, nearViewport, node, nextFrame }
@@ -79,6 +79,21 @@ describe('nearViewport action', () => {
     nextFrame()
     expect(onEnter).toHaveBeenCalledTimes(1)
     expect(window.addEventListener).toHaveBeenCalledTimes(2)
+  })
+
+  it('with bothWays keeps a node far above the screen waiting too', async () => {
+    // Home reopened far down must not build every row it skipped on the way.
+    const { nearViewport, node, nextFrame } = await setup()
+    const farAbove = vi.fn()
+    const justAbove = vi.fn()
+    const plain = vi.fn()
+    nearViewport(node(-3000, -2800), { onEnter: farAbove, bothWays: true })
+    nearViewport(node(-600, -400), { onEnter: justAbove, bothWays: true })
+    nearViewport(node(-3000, -2800), { onEnter: plain })
+    nextFrame()
+    expect(farAbove).not.toHaveBeenCalled()
+    expect(justAbove).toHaveBeenCalledTimes(1)
+    expect(plain).toHaveBeenCalledTimes(1)
   })
 
   it('skips a node released by an earlier node in the same pass', async () => {
