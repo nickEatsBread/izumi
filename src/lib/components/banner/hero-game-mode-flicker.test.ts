@@ -89,23 +89,23 @@ describe('Steam Deck featured banner flicker', () => {
 
   it('fills the rotation progress bar smoothly in Game mode without a 60 Hz tween', () => {
     const rule = gameMode('.hero-progress')
-    // The bar keeps a layer for its whole life, so a write to `scale` never drops it.
+    // The bar keeps a layer for its whole life, so a write to `translate` never drops it.
     expect(rule).toContain('transform: translateZ(0)')
     // A running tween composited the whole screen every frame (nearly all of Home's idle cost);
     // CSS steps() did not help, since WebKitGTK still composited at the display rate.
-    expect(rule).toContain('animation: none; scale: 0 1;')
+    expect(rule).toContain('animation: none; translate: -100% 0;')
     expect(rule).not.toMatch(/steps\(|animation-timing-function/)
     expect(hero).not.toContain('hero-progress-steps')
     expect(hero).not.toContain('@keyframes hero-progress-fill-layer')
     // A script steps it from the slide clock instead, on display frames (a 15 fps timer jittered on
     // the Deck), restarted with the slide.
     expect(hero).toContain('const progress = Math.min(1, (performance.now() - start) / DURATION)')
-    expect(hero).toContain('bar.style.scale = `${value} 1`')
     expect(hero).toContain('frame = progress < 1 ? requestAnimationFrame(paint) : 0')
     expect(hero).not.toContain('setInterval(paint')
     expect(hero).toContain('const stopPlaying = playing.subscribe(restart)')
-    // It writes only when the fill reaches the next device pixel, not on every frame: the edge is
-    // drawn on whole device pixels, and finer writes made those steps land unevenly (a stutter).
-    expect(hero).toContain('const steps = Math.max(1, Math.round(bar.offsetWidth * devicePixelRatio))')
+    // It slides in rather than grows: a scaled layer's edge is redrawn on whole device pixels (a
+    // stutter), a translated one moves on the compositor at sub-pixel positions.
+    expect(hero).toContain('bar.style.translate = `${((progress - 1) * 100).toFixed(3)}% 0`')
+    expect(hero).not.toContain('bar.style.scale')
   })
 })

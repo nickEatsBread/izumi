@@ -402,27 +402,22 @@
 
   // Game mode: the bar's 15 s compositor tween made WebKitGTK composite the whole Deck screen at
   // 60 Hz, which was nearly all of Home's idle cost (~40% CPU, ~20% GPU). A timer stepping it at
-  // 15 fps jittered visibly on the Deck. The fill follows the display's frames from the slide clock,
-  // but writes only when it reaches the next device pixel: WebKitGTK draws the bar's edge on whole
-  // device pixels anyway, and quarter-pixel writes landed those one-pixel steps unevenly (6, 9, 7
-  // frames apart on the Deck), a visible stutter. Like the auto-advance above, it restarts when Home
-  // comes back from under the player.
+  // 15 fps jittered visibly on the Deck. The fill follows the display's frames from the slide clock.
+  // It slides in (`translate`) rather than growing (`scale`): WebKitGTK redraws a scaled layer with its
+  // edge snapped to whole device pixels, a step every few frames that read as a stutter, while a
+  // translated layer moves on the compositor at sub-pixel positions. Like the auto-advance above, it
+  // restarts when Home comes back from under the player.
   $effect(() => {
     if (!$gameMode || !medias.length || !showOverlay || heroTheme?.hidden) return
     void cycle
     let start = 0
     let frame = 0
-    const painted = new WeakMap<HTMLElement, number>()
     const paint = () => {
       const progress = Math.min(1, (performance.now() - start) / DURATION)
       for (const bar of document.querySelectorAll<HTMLElement>('[data-slot="home.hero"] .hero-progress')) {
         // Scrolled out of view: a write would still cost a full-screen composite.
         if (bar.getBoundingClientRect().bottom <= 0) continue
-        const steps = Math.max(1, Math.round(bar.offsetWidth * devicePixelRatio))
-        const value = Math.round(progress * steps) / steps
-        if (painted.get(bar) === value) continue
-        painted.set(bar, value)
-        bar.style.scale = `${value} 1`
+        bar.style.translate = `${((progress - 1) * 100).toFixed(3)}% 0`
       }
       frame = progress < 1 ? requestAnimationFrame(paint) : 0
     }
@@ -1216,8 +1211,8 @@
   :global(html.gamemode) .hero-carousel-slide,
   :global(html.gamemode) .hero-copy,
   :global(html.gamemode) .hero-fade-out { animation: none; }
-  /* The bar keeps its layer but no tween: the script above steps `scale` on display frames. */
-  :global(html.gamemode) .hero-progress { animation: none; scale: 0 1; }
+  /* The bar keeps its layer but no tween: the script above slides it (`translate`) on display frames. */
+  :global(html.gamemode) .hero-progress { animation: none; translate: -100% 0; }
   /* A one-off tween or transition would hand its layer back when it ends, so these stay static in
      Game mode: a detail banner (a single slide, nothing to animate between), artwork that arrives
      after the decode deadline, and the dim when Home scrolls. */
