@@ -103,9 +103,11 @@ describe('Steam Deck featured banner flicker', () => {
     expect(hero).toContain('frame = progress < 1 ? requestAnimationFrame(paint) : 0')
     expect(hero).not.toContain('setInterval(paint')
     expect(hero).toContain('const stopPlaying = playing.subscribe(restart)')
-    // It slides in rather than grows: a scaled layer's edge is redrawn on whole device pixels (a
-    // stutter), a translated one moves on the compositor at sub-pixel positions.
-    expect(hero).toContain('bar.style.translate = `${((progress - 1) * 100).toFixed(3)}% 0`')
+    // A scaled or translated layer's edge lands on whole pixels (a stutter); the fill is a gradient
+    // with a one-pixel soft edge, drawn between pixels, written on quarter-pixel changes only.
+    expect(hero).toContain('const edge = Math.round(progress * bar.offsetWidth * 4) / 4')
+    expect(hero).toContain('if (painted.get(bar) === edge) continue')
+    expect(hero).toContain('linear-gradient(90deg, ${colors.get(bar)} ${edge}px, transparent ${edge + 1}px)')
     expect(hero).not.toContain('bar.style.scale')
   })
 })

@@ -403,21 +403,31 @@
   // Game mode: the bar's 15 s compositor tween made WebKitGTK composite the whole Deck screen at
   // 60 Hz, which was nearly all of Home's idle cost (~40% CPU, ~20% GPU). A timer stepping it at
   // 15 fps jittered visibly on the Deck. The fill follows the display's frames from the slide clock.
-  // It slides in (`translate`) rather than growing (`scale`): WebKitGTK redraws a scaled layer with its
-  // edge snapped to whole device pixels, a step every few frames that read as a stutter, while a
-  // translated layer moves on the compositor at sub-pixel positions. Like the auto-advance above, it
-  // restarts when Home comes back from under the player.
+  // WebKitGTK puts a scaled or translated layer's edge on whole pixels, so a fill growing ~8 px a
+  // second jumped a pixel every 7 frames (measured on the Deck), and a layer plus a faded edge pixel
+  // drifted a frame apart at each pixel. The fill is one gradient with a one-pixel soft edge instead,
+  // which draws between pixels in a single paint. Quarter pixels: WebKitGTK repaints it ~30 times a
+  // second here anyway, so finer writes only cost CPU. Like the auto-advance above, it restarts when
+  // Home comes back from under the player.
   $effect(() => {
     if (!$gameMode || !medias.length || !showOverlay || heroTheme?.hidden) return
     void cycle
     let start = 0
     let frame = 0
+    const painted = new WeakMap<HTMLElement, number>()
+    const colors = new WeakMap<HTMLElement, string>()
     const paint = () => {
       const progress = Math.min(1, (performance.now() - start) / DURATION)
       for (const bar of document.querySelectorAll<HTMLElement>('[data-slot="home.hero"] .hero-progress')) {
         // Scrolled out of view: a write would still cost a full-screen composite.
         if (bar.getBoundingClientRect().bottom <= 0) continue
-        bar.style.translate = `${((progress - 1) * 100).toFixed(3)}% 0`
+        const edge = Math.round(progress * bar.offsetWidth * 4) / 4
+        if (painted.get(bar) === edge) continue
+        painted.set(bar, edge)
+        // The template's or theme's fill colour, read before the gradient replaces it.
+        if (!colors.has(bar)) colors.set(bar, getComputedStyle(bar).backgroundColor)
+        bar.style.translate = '0 0'
+        bar.style.background = `linear-gradient(90deg, ${colors.get(bar)} ${edge}px, transparent ${edge + 1}px)`
       }
       frame = progress < 1 ? requestAnimationFrame(paint) : 0
     }
@@ -1211,7 +1221,7 @@
   :global(html.gamemode) .hero-carousel-slide,
   :global(html.gamemode) .hero-copy,
   :global(html.gamemode) .hero-fade-out { animation: none; }
-  /* The bar keeps its layer but no tween: the script above slides it (`translate`) on display frames. */
+  /* The bar keeps its layer but no tween: the script above shows it and paints the fill as a gradient. */
   :global(html.gamemode) .hero-progress { animation: none; translate: -100% 0; }
   /* A one-off tween or transition would hand its layer back when it ends, so these stay static in
      Game mode: a detail banner (a single slide, nothing to animate between), artwork that arrives
