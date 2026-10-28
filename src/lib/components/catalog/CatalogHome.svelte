@@ -35,11 +35,14 @@
   import { isThemeBlockId, resolveThemeHome, themeHomeHas } from '$lib/home/theme-layout'
   import { blockRowOptions, blockTitle, splitHomeColumns } from '$lib/home/block-rows'
   import { homeAsideWidth, homeBlocks, isBlockId } from '$lib/home/blocks'
-  import { mediaHref } from '$lib/anilist/media'
+  import { cardCover, mediaHref } from '$lib/anilist/media'
   import { playSourceTitle } from '$lib/catalog/source-play'
   import { anilistUser } from '$lib/anilist/account'
-  import { isMobile } from '$lib/platform'
+  import { isMobile, isTv } from '$lib/platform'
   import { nearViewport } from '$lib/util/near-viewport'
+  import { warmRowsBelow } from '$lib/util/image-warm'
+  import { coverWidthFor } from '$lib/components/cards/SmallCard.svelte'
+  import { densityScale, resolveRow } from '$lib/themes/presentation'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
 
   // Provider payloads are immutable snapshots. Deep-proxying every Media object gives Svelte's
@@ -170,6 +173,15 @@
     shownRows.set($catalogProvider, near)
   })
   const rowShown = (id: string) => $homeEditorOpen || homeRowIds.indexOf(id) < FIRST_ROWS || revealed.has(id)
+  // The covers a row still waiting to be built will show (its SmallCards' own URLs, first cards only),
+  // so Home can decode them before the row is reached (warmRowsBelow).
+  function pendingCovers(id: string): string[] {
+    const row = toContentRow(id)
+    if (row?.kind !== 'section' || row.section.presentation === 'providers' || row.section.presentation === 'editorial') return []
+    const width = coverWidthFor(resolveRow($themePresentation, `${$catalogProvider}:${themeHome?.roles[id] ?? id}`), densityScale($themePresentation),
+      row.section.presentation === 'ranked', $isTv, $isMobile)
+    return row.section.media.slice(0, 8).map((media) => cardCover(media, width))
+  }
 
   $effect(() => {
     const selection = $catalogProvider
@@ -239,7 +251,7 @@
 
 <!-- The bounded Aniyomi loader now reconciles rows in two batches, so its placeholders can use the
      same loading shimmer as every other catalog without repeatedly remounting the card tree. -->
-<div data-slot="home" data-variant="catalog" class="pb-16">
+<div data-slot="home" data-variant="catalog" class="pb-16" use:warmRowsBelow={pendingCovers}>
   {#snippet heroBlock()}
     {#if home?.hero.length}
       <Hero medias={heroSlides} artworkMode={$catalogProvider === 'stremio' ? $stremioHeroArtwork : 'backdrop'}
@@ -284,7 +296,7 @@
         {@const row = toContentRow(id)}
         {@const visibleIds = columns.main.includes(id) ? columns.main : columns.aside}
         {#if row && !rowShown(id)}
-          <div data-part="row.pending" class="px-4 sm:px-8" aria-hidden="true" use:nearViewport={{ onEnter: () => reveal(id), marginViewports: 1.5, bothWays: true }}>
+          <div data-part="row.pending" data-pending-row={id} class="px-4 sm:px-8" aria-hidden="true" use:nearViewport={{ onEnter: () => reveal(id), marginViewports: 1.5, bothWays: true }}>
             <div class="mb-3 h-5 w-40 rounded skeloader"></div>
             <div class="flex gap-3 overflow-hidden">{#each Array.from({ length: 8 }) as _}<div data-part="row.skeleton" class="aspect-[2/3] w-36 shrink-0 rounded-md skeloader sm:w-[152px]"></div>{/each}</div>
           </div>

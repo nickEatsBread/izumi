@@ -1,5 +1,6 @@
 <script module lang="ts">
   import { cubicOut } from 'svelte/easing'
+  import type { RowPresentation } from '$lib/themes/presentation'
   // ONE shared carousel-nav latch for ALL cards. A row moving under a stationary cursor must not
   // start another trailer; only a real pointer movement over a card explicitly rearms previews.
   let needsPointerMove = false
@@ -12,6 +13,10 @@
   // Grows the preview out of the card: at scale 2/3 the 1.5x box sits exactly on it (expand-pos.ts).
   function grow(_node: Element, { duration }: { duration: number }) {
     return { duration, easing: cubicOut, css: (t: number) => `transform: scale(${2 / 3 + t / 3}); opacity: ${Math.min(1, t * 4)}` }
+  }
+  /** The width a card asks `cardCover` for. Home decodes the same URL for a row it has not built yet. */
+  export function coverWidthFor(row: RowPresentation, density: number, fill: boolean, tv: boolean, mobile: boolean): number {
+    return (row.width ?? (fill ? 0 : tv ? 198 : mobile ? 131 : 152)) * (row.width ? 1 : density)
   }
 </script>
 
@@ -79,7 +84,7 @@
   const cardFamily = getContext<CardFamily | undefined>(CARD_FAMILY) ?? 'poster'
   const themeRow = $derived(themeScope ? resolveRow($themePresentation, themeScope().id) : {})
   const cardTemplate = $derived(resolveCard($themePresentation, cardFamily, themeScope?.().id ?? ''))
-  const coverWidth = $derived((themeRow.width ?? (fill ? 0 : $isTv ? 198 : $isMobile ? 131 : 152)) * (themeRow.width ? 1 : densityScale($themePresentation)))
+  const coverWidth = $derived(coverWidthFor(themeRow, densityScale($themePresentation), fill, $isTv, $isMobile))
   const coverSrc = $derived(cardCover(media, coverWidth))
   // API 6: key art and a title logo, only when the card's template binds them (see useCardArt).
   const cardArt = useCardArt(() => cardTemplate, () => media, () => el)
