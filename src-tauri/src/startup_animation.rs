@@ -224,6 +224,24 @@ pub async fn startup_animation_url(app: AppHandle) -> Result<Option<String>, Str
     Ok(Some(format!("{}?v={}", server_url(dir).await?, &info.sha256[..16])))
 }
 
+/// A line for the main window's launch script naming the startup video's address, or nothing when
+/// there is none. `app.html` starts the video from it before any app code has loaded, so a launch
+/// opens on the animation instead of a black screen while the app's code loads.
+pub fn launch_script(app: &AppHandle) -> String {
+    let Ok(dir) = dir(app) else { return String::new() };
+    let Some(info) = read_info(&dir) else { return String::new() };
+    match tauri::async_runtime::block_on(server_url(dir)) {
+        Ok(url) => format!(
+            "window.__IZUMI_STARTUP_URL__={};",
+            serde_json::to_string(&format!("{url}?v={}", &info.sha256[..16])).unwrap_or_default()
+        ),
+        Err(error) => {
+            eprintln!("[startup] animation server not started: {error}");
+            String::new()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

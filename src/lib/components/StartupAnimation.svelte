@@ -20,6 +20,8 @@
   let root = $state<HTMLElement>()
   let playing = false
   let cap: ReturnType<typeof setTimeout> | undefined
+  /** The video `app.html` started before any app code loaded, taken over rather than started again. */
+  let early: HTMLVideoElement | null = null
   let stopReveal: (() => void) | undefined
 
   function uncover() {
@@ -31,6 +33,19 @@
     playing = true
     leaving = false
     try { sessionStorage.setItem(STARTUP_PLAYED_KEY, '1') } catch { /* private storage */ }
+    early = document.getElementById('boot-intro') as HTMLVideoElement | null
+    if (early) {
+      startupAnimationPlaying.set(true)
+      cap = setTimeout(finish, STARTUP_MAX_MS)
+      early.addEventListener('ended', finish, { once: true })
+      early.addEventListener('error', finish, { once: true })
+      early.addEventListener('pointerdown', finish)
+      // The black cover only hides the app until the video is up; the video is above everything.
+      if (!early.paused && early.readyState > 2) uncover()
+      else early.addEventListener('playing', uncover, { once: true })
+      if (early.ended || early.error) finish()
+      return
+    }
     // Re-reads the info from Rust, so a cached copy that outlived the file paints no cover next time.
     const url = await startupAnimationUrl()
     if (!url) {
@@ -56,7 +71,15 @@
     clearTimeout(cap)
     stopReveal?.()
     uncover()
+    const adopted = early
+    if (adopted) {
+      adopted.style.transition = 'opacity 0.3s ease'
+      adopted.style.opacity = '0'
+      adopted.style.pointerEvents = 'none'
+    }
     setTimeout(() => {
+      adopted?.remove()
+      early = null
       src = ''
       leaving = false
       playing = false

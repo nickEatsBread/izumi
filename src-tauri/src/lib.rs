@@ -6096,11 +6096,16 @@ pub fn run() {
                     .visible(false)
                     // Native Deck zoom is applied by the frontend after it reads the persisted UI
                     // scale. Hide the first document paint until then to prevent a launch zoom-in.
-                    .initialization_script(if gamescope {
-                        "(function(){function hide(){if(!document.documentElement)return false;document.documentElement.classList.add('deck-launch-pending');return true}if(!hide())document.addEventListener('DOMContentLoaded',hide,{once:true})})();"
-                    } else {
-                        ""
-                    })
+                    // A pack's startup animation starts from app.html, before the app's code loads.
+                    .initialization_script(format!(
+                        "{}{}",
+                        startup_animation::launch_script(app.handle()),
+                        if gamescope {
+                            "(function(){function hide(){if(!document.documentElement)return false;document.documentElement.classList.add('deck-launch-pending');return true}if(!hide())document.addEventListener('DOMContentLoaded',hide,{once:true})})();"
+                        } else {
+                            ""
+                        }
+                    ))
                     .on_page_load(|win, payload| {
                         #[cfg(windows)]
                         install_webview_frame_scripts(&win);
