@@ -39,12 +39,22 @@
     return m > 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : m > 0 ? `${m}m` : `${Math.round(s)}s`
   }
 
+  // The episode a Play press is opening (its title may first be read online), and why one could not open.
+  let starting = $state<string | null>(null)
+  let playErrors = $state<Record<string, string>>({})
   async function playLocal(d: DownloadItem) {
+    starting = d.id
+    const { [d.id]: _, ...rest } = playErrors
+    playErrors = rest
     try {
       // Offline-first: use the cached series snapshot (no network); fall back online.
       const m = getDownloadedMedia(d.mediaId) ?? await fetchMediaById(d.mediaId)
       playEpisode(m, d.episode, () => {})
-    } catch { /* ignore */ }
+    } catch (err) {
+      playErrors = { ...playErrors, [d.id]: `Couldn't open this episode: ${err instanceof Error ? err.message : String(err)}` }
+    } finally {
+      starting = null
+    }
   }
 </script>
 
@@ -71,12 +81,13 @@
         <div class="mt-0.5 truncate text-[0.7rem] text-destructive" title={d.error}>{d.error ?? 'Failed'}</div>
       {:else}
         <div class="mt-0.5 text-[0.7rem] text-muted-foreground">{fmtBytes(d.bytes)} · downloaded</div>
+        {#if playErrors[d.id]}<div role="alert" class="mt-0.5 text-[0.7rem] text-destructive">{playErrors[d.id]}</div>{/if}
       {/if}
     </div>
 
     <div class="flex shrink-0 items-center gap-1">
       {#if d.status === 'done'}
-        <button data-focusable title="Play" onclick={() => playLocal(d)} class="grid size-10 place-items-center rounded-md sm:size-8 hover:bg-accent"><Play size={16} /></button>
+        <button data-focusable title="Play" aria-busy={starting === d.id} onclick={() => playLocal(d)} class="grid size-10 place-items-center rounded-md sm:size-8 hover:bg-accent">{#if starting === d.id}<span data-part="spinner" class="size-4 animate-spin rounded-full border-2 border-foreground/20 border-t-primary"></span>{:else}<Play size={16} />{/if}</button>
         {#if !d.offlineUri}<button data-focusable title="Reveal in folder" onclick={() => revealDownload(d.id)} class="grid size-10 place-items-center rounded-md sm:size-8 hover:bg-accent"><FolderOpen size={16} /></button>{/if}
         <button data-focusable title="Delete file" onclick={() => deleteDownload(d.id)} class="grid size-10 place-items-center rounded-md sm:size-8 text-destructive hover:bg-accent"><Trash2 size={16} /></button>
       {:else if d.status === 'downloading'}
