@@ -206,9 +206,12 @@ html.gamemode .group:hover .group-hover\:scale-105 {
 /* Rows held below the near-viewport fetch gate keep their layout placeholder, but do not spend a
    compositor animation on skeletons the user cannot see yet. The class is removed before fetch. */
 .deferred-skeleton .skeloader::before { animation-play-state: paused; }
-/* Game mode keeps the sweep: a still placeholder reads as stuck. Without compositor promotion each
-   sweeping skeleton is a main-thread repaint, measured on the Deck at 16 poster skeletons: web
-   process 12% → 24% CPU, frame times unchanged. Rows below the fold pause theirs (above). */
+/* Game mode keeps the sweep, a still placeholder reads as stuck, on its own compositor layer: the
+   blanket `will-change: auto` above made every sweeping skeleton a main-thread repaint, which dropped
+   frames scrolling Home on the Deck (9 frames over 34 ms in one walk, 2 with the sweep layered or
+   off). A gradient has no text to rasterise soft, and an endless sweep never ends, so it never drops
+   its layer. Rows below the fold still pause theirs (above). */
+html.gamemode .skeloader::before { will-change: transform !important; }
 /* Game mode: a cover's fade-in (and the shared banner's fade) promotes that image to a compositor
    layer for the tween. Under the Deck's page zoom a promoted layer rasterises soft and snaps crisp
    the moment it is dropped — a pixel pop per card as each row loads, and a blink on every banner.
