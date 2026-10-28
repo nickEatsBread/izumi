@@ -52,7 +52,7 @@
   import { playerInsets, sameInsets, type PlayerInsets } from '$lib/player/insets'
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes, hotkeyBindings } from '$lib/settings/ui'
   import { catalogDefaultProvider, catalogLastProvider, catalogProvider, catalogProviders, catalogScreen, catalogScreens, customScreens, enabledCatalogProviders, isMergedScreen, enabledCatalogScreens, nextCatalogScreen, previousCatalogScreen, resolveCatalogStartup, selectCatalogProvider, selectCatalogScreen } from '$lib/settings/catalog'
-  import { afterNavigate, beforeNavigate, goto } from '$app/navigation'
+  import { afterNavigate, beforeNavigate, goto, preloadCode } from '$app/navigation'
   import { page } from '$app/state'
   import { invoke } from '@tauri-apps/api/core'
   import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -392,6 +392,21 @@
   // Phone system Back: MainActivity's back callback runs the layered Back pipeline through the
   // bridge installed here (nav/system-back.ts) and falls through to stock Back when it answers false.
   onMount(() => installSystemBack())
+  // A link the d-pad or Tab lands on starts loading its page's code, as a hover does for a mouse
+  // (data-sveltekit-preload-data on <body>): by the press, the page is ready to open at once.
+  onMount(() => {
+    const preloaded = new Set<string>()
+    const preload = (event: FocusEvent) => {
+      const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null
+      if (!link) return
+      const url = new URL(link.href, location.href)
+      if (url.origin !== location.origin || preloaded.has(url.pathname)) return
+      preloaded.add(url.pathname)
+      void preloadCode(url.pathname).catch(() => {})
+    }
+    window.addEventListener('focusin', preload)
+    return () => window.removeEventListener('focusin', preload)
+  })
 
   $effect(() => {
     document.documentElement.classList.toggle('tv-mode', $isTv)
