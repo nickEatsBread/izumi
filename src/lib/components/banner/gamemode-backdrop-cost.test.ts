@@ -16,8 +16,10 @@ describe('Game mode backdrop cost', () => {
   })
 
   it('does not run main-thread infinite animations in Game mode', () => {
-    // No compositor promotion there, so an infinite transform animation is a repaint per frame.
-    expect(css).toMatch(/html\.gamemode \.skeloader::before \{\s*animation:\s*none;?\s*\}/)
+    // No compositor promotion there, so an infinite transform animation is a repaint per frame. The
+    // loading shimmer is the one kept (a still placeholder reads as stuck); off-screen rows pause it.
+    expect(css).not.toMatch(/html\.gamemode \.skeloader::before \{\s*animation:\s*none/)
+    expect(css).toMatch(/\.deferred-skeleton \.skeloader::before \{\s*animation-play-state:\s*paused;?\s*\}/)
     const artwork = readFileSync(
       fileURLToPath(new URL('../onboarding/SetupArtwork.svelte', import.meta.url)),
       'utf8',
