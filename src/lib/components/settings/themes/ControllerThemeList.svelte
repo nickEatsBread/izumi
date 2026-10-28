@@ -96,6 +96,7 @@
     <li class="row" data-nav-line data-installed-theme={card.id}>
       <button type="button" class="card" data-focusable data-nav-id={themeCardNavId(card.id)} data-theme-key={card.item ? `${card.item.origin}|${card.item.id}` : undefined}
         data-hint-a="Apply" data-hint-start={card.item ? 'Options' : undefined} aria-pressed={on} aria-disabled={locked || undefined}
+        data-pane-entry={on || undefined}
         onclick={(event) => pick(card, event.currentTarget)}>
         <span class="thumb" style:background={card.tokens && !card.image ? `hsl(${card.tokens.background})` : undefined}>
           {#if card.image}<img src={card.image} alt="" loading="lazy" referrerpolicy="no-referrer" />
