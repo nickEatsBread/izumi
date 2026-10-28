@@ -256,9 +256,6 @@
   // return dozens of single-ep files even after collapsing batch packs).
   const resolving = $derived(!!pick?.resolving)
   const autoReady = $derived(!!pick?.autoReady)
-  // "Immediately" with something to take: an automatic pick is coming or under way, so the list is
-  // not a choice to show. It flashed for a frame or two between the resolve and the player.
-  const autoPicking = $derived(autoImmediate && !error && (resolving || busy || !!best))
   const RENDER_CAP = 40
   let showAll = $state(false)
   const renderedMain = $derived(showAll ? shown : shown.slice(0, RENDER_CAP))
@@ -331,6 +328,9 @@
   }
   let busy = $state(false)
   let error = $state('')
+  // "Immediately" with something to take: an automatic pick is coming or under way, so the list is
+  // not a choice to show. It flashed for a frame or two between the resolve and the player.
+  const autoPicking = $derived(autoImmediate && !error && (resolving || busy || !!best))
   // The stream whose debrid resolve was refused for legal/content reasons (RD 451 etc). The block
   // is the service's, not the swarm's, so the error row offers a one-off direct-P2P retry of
   // exactly this stream. Set only together with `error`, cleared wherever `error` is.
