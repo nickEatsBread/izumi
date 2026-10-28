@@ -22,6 +22,9 @@
   } from '$lib/settings/ui'
   import { torrentProxyEndpoint } from '$lib/player/torrent-proxy'
   import StartupAnimation from '$lib/components/StartupAnimation.svelte'
+  import { dropPadKeyCopies } from '$lib/nav/pad-key-copies'
+  // Before any other key listener: Steam's keyboard copies of controller buttons never reach them.
+  if (typeof window !== 'undefined') dropPadKeyCopies()
   setContextClient(anilist)
   let { children } = $props()
   // Resolve TV mode before the app shell decides whether desktop-only chrome should mount.
