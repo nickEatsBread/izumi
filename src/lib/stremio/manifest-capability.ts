@@ -16,6 +16,9 @@ export interface AddonCatalog {
   /** Legacy manifest field. Modern add-ons expose these as genre extra options. */
   genres?: string[]
   extra?: AddonCatalogExtra[]
+  /** izumi-only hints: `home: false` keeps the listing off Home (Browse still lists it);
+   *  `homeFilters: false` offers no filtered Home rows (one per genre, say), only the plain one. */
+  izumi?: { home?: boolean; homeFilters?: boolean }
 }
 
 export interface AddonManifest {

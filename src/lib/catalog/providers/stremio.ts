@@ -403,6 +403,7 @@ const extraKey = (extra: Record<string, string>): string => Object.entries(extra
  * catalogs) become their valid concrete rows; optional filters keep the unfiltered row and add
  * opt-in variants. Required user-history inputs without declared options remain non-browsable. */
 export function stremioCatalogVariants(entry: AddonCatalog): StremioCatalogVariant[] {
+  if (entry.izumi?.home === false) return []
   const extras = entry.extra ?? []
   const required = extras.filter((extra) => extra.isRequired)
   if (required.some((extra) => !extra.options?.length)) return []
@@ -411,7 +412,7 @@ export function stremioCatalogVariants(entry: AddonCatalog): StremioCatalogVaria
   for (const extra of required) {
     bases = bases.flatMap((base) => (extra.options ?? []).map((value) => ({ ...base, [extra.name]: value })))
   }
-  const optional = extras.filter((extra) => !extra.isRequired && extra.options?.length)
+  const optional = entry.izumi?.homeFilters === false ? [] : extras.filter((extra) => !extra.isRequired && extra.options?.length)
   const values = [
     ...bases.map((extra) => ({ extra, defaultEnabled: required.length === 0 })),
     ...bases.flatMap((base) => optional.flatMap((extra) => (extra.options ?? []).map((value) => ({

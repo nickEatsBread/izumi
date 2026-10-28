@@ -63,6 +63,13 @@ describe('Stremio catalog identity', () => {
     ])
   })
 
+  it('keeps a listing off Home, or offers only its plain row, when the add-on asks', () => {
+    const extra = [{ name: 'genre', options: ['Action', 'Comedy'] }]
+    expect(stremioCatalogVariants({ type: 'series', id: 'az', name: 'A-Z', extra, izumi: { home: false } })).toEqual([])
+    expect(stremioCatalogVariants({ type: 'series', id: 'top', name: 'Popular', extra, izumi: { homeFilters: false } })
+      .map(({ extra: filters, defaultEnabled }) => ({ filters, defaultEnabled }))).toEqual([{ filters: {}, defaultEnabled: true }])
+  })
+
   it('materializes required year catalogs but skips required history inputs it cannot invent', () => {
     expect(stremioCatalogVariants({
       type: 'series', id: 'year', name: 'New',
