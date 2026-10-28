@@ -68,6 +68,8 @@
   // instead of a page-level banner far from the row that was clicked.
   let packageStatus = $state<{ url: string; text: string; ok: boolean } | null>(null)
   let packageBusy = $state(false)
+  /** The package being installed or removed, so its own button says so. */
+  let packageWork = $state<{ id: string; kind: 'install' | 'remove' } | null>(null)
   let serviceSettings = $state<{ id: string; name: string } | null>(null)
   let jvmSourceSettings = $state<{ id: string; name: string } | null>(null)
   /** A package already installed from another store or source: the user confirms before it's replaced. */
@@ -97,7 +99,9 @@
     void installedPackageIcons(localPackages).then((icons) => { jvmIcons = icons })
   }
   async function installFromCatalog(url: string, extension: ExtensionCatalogPackage, replaceInstalled = false) {
+    if (packageBusy) return
     packageBusy = true
+    packageWork = { id: extension.id, kind: 'install' }
     packageStatus = null
     try {
       const installed = await installCatalogPackage(extension, url, { replaceInstalled })
@@ -112,10 +116,13 @@
       }
     } finally {
       packageBusy = false
+      packageWork = null
     }
   }
   async function removePackage(url: string, id: string) {
+    if (packageBusy) return
     packageBusy = true
+    packageWork = { id, kind: 'remove' }
     packageStatus = null
     try {
       await removeInstalledExtension(id)
@@ -124,6 +131,7 @@
       packageStatus = { url, text: String(error), ok: false }
     } finally {
       packageBusy = false
+      packageWork = null
     }
   }
   function openServiceSettings(id: string, name: string) {
@@ -540,13 +548,13 @@
                           {/if}
                           <button
                             data-focusable
-                            disabled={packageBusy}
+                            aria-disabled={packageBusy} aria-busy={packageWork?.id === p.id && packageWork.kind === 'install'}
                             data-touch-target onclick={() => installFromCatalog(url, p)}
-                            class="shrink-0 rounded-md px-3 py-2 text-xs font-bold sm:px-2 sm:py-1 {inst ? 'bg-secondary text-muted-foreground hover:bg-accent sm:bg-transparent' : 'bg-primary text-primary-foreground'} disabled:opacity-50"
-                          >{!inst ? 'Install' : !mayUpdateFrom(url, p, inst) ? 'Replace' : inst.version === p.version ? 'Reinstall' : 'Update'}</button>
+                            class="shrink-0 rounded-md px-3 py-2 text-xs font-bold sm:px-2 sm:py-1 {inst ? 'bg-secondary text-muted-foreground hover:bg-accent sm:bg-transparent' : 'bg-primary text-primary-foreground'} aria-disabled:opacity-50"
+                          >{packageWork?.id === p.id && packageWork.kind === 'install' ? (inst ? 'Updating…' : 'Installing…') : !inst ? 'Install' : !mayUpdateFrom(url, p, inst) ? 'Replace' : inst.version === p.version ? 'Reinstall' : 'Update'}</button>
                           {#if inst}
-                            <button data-focusable disabled={packageBusy} data-touch-target onclick={() => removePackage(url, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
-                              class="grid size-9 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent disabled:opacity-50 sm:size-7"><Trash2 size={16} /></button>
+                            <button data-focusable aria-disabled={packageBusy} aria-busy={packageWork?.id === p.id && packageWork.kind === 'remove'} data-touch-target onclick={() => removePackage(url, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
+                              class="grid size-9 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent aria-disabled:opacity-50 sm:size-7">{#if packageWork?.id === p.id && packageWork.kind === 'remove'}<span data-part="spinner" class="size-4 animate-spin rounded-full border-2 border-current/25 border-t-current"></span>{:else}<Trash2 size={16} />{/if}</button>
                           {/if}
                         </div>
                       </li>
@@ -629,8 +637,8 @@
               class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {pOff ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
               <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {pOff ? 'translate-x-0.5' : 'translate-x-4'}"></span>
             </button>
-            <button data-focusable disabled={packageBusy} data-touch-target onclick={() => removePackage(p.id, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
-              class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent disabled:opacity-50 sm:size-8"><Trash2 size={16} /></button>
+            <button data-focusable aria-disabled={packageBusy} aria-busy={packageWork?.id === p.id && packageWork.kind === 'remove'} data-touch-target onclick={() => removePackage(p.id, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
+              class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent aria-disabled:opacity-50 sm:size-8">{#if packageWork?.id === p.id && packageWork.kind === 'remove'}<span data-part="spinner" class="size-4 animate-spin rounded-full border-2 border-current/25 border-t-current"></span>{:else}<Trash2 size={16} />{/if}</button>
           </div>
         </li>
       {/each}
