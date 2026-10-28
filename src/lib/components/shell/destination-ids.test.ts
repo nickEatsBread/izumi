@@ -20,10 +20,10 @@ describe('destination ids', () => {
   })
 
   it("uses the bottom bar's ids on the rail and in the menus", () => {
-    expect(NAV_IDS).toEqual(['schedule', 'downloads', 'watch', 'settings', 'search', 'trakt', 'letterboxd', 'library'])
+    expect(NAV_IDS).toEqual(['schedule', 'downloads', 'watch', 'settings', 'search', 'trakt', 'letterboxd', 'library', 'browse'])
     const sidebar = read('./Sidebar.svelte')
     const ids = [...sidebar.matchAll(/\{ id: '([a-z]+)', href: '\/app\/([a-z]+)'/g)].map((match) => [match[1], match[2]])
-    expect(ids.map(([id]) => id)).toEqual(['home', 'schedule', 'search', 'downloads', 'watch', 'library', 'settings'])
+    expect(ids.map(([id]) => id)).toEqual(['home', 'schedule', 'search', 'browse', 'downloads', 'watch', 'library', 'settings'])
     for (const [id, route] of ids) {
       expect(route).toBe(id)
       if (id !== 'home') expect(NAV_IDS).toContain(id)

@@ -489,6 +489,8 @@ export interface ThemeNav {
 /** API 3: the theme's Home and navigation, applied while the theme is active and its layout switch is on. */
 export interface ThemeLayout {
   home?: ThemeLayoutEntry[]
+  /** Blocks in the Browse screen's side column, under its categories. */
+  browse?: ThemeLayoutEntry[]
   asideWidth?: number
   /** The gutter between Home's main column and its side column, in px (default 32). */
   asideGap?: number
@@ -1028,7 +1030,7 @@ function destinationList(value: unknown, max: number): NavDestination[] {
   })
 }
 function parseLayout(value: unknown, phone: boolean, api: ThemeApi): ThemeLayout {
-  const raw = record(value); only(raw, ['home', 'asideWidth', 'asideGap', 'asideStart', ...(phone ? [] : ['nav'])])
+  const raw = record(value); only(raw, ['home', 'browse', 'asideWidth', 'asideGap', 'asideStart', ...(phone ? [] : ['nav'])])
   const result: ThemeLayout = {}
   if (raw.home !== undefined) {
     if (!Array.isArray(raw.home) || raw.home.length < 1 || raw.home.length > 30) throw new Error('A theme home layout needs 1–30 entries.')
@@ -1047,6 +1049,10 @@ function parseLayout(value: unknown, phone: boolean, api: ThemeApi): ThemeLayout
       const { type, ...settings } = parseThemeBlock(item, api)
       return { block: type, ...settings } as ThemeLayoutEntry
     })
+  }
+  if (raw.browse !== undefined) {
+    if (!Array.isArray(raw.browse) || raw.browse.length > 8) throw new Error('A theme browse layout takes up to 8 blocks.')
+    result.browse = raw.browse.map((entry) => { const { type, ...settings } = parseThemeBlock(record(entry), api); return { block: type, ...settings } as ThemeLayoutEntry })
   }
   if (raw.asideWidth !== undefined) result.asideWidth = number(raw.asideWidth, 240, 420)
   if (raw.asideGap !== undefined) result.asideGap = number(raw.asideGap, 0, 96)

@@ -9,6 +9,7 @@
   import Home from '@lucide/svelte/icons/house'
   import Calendar from '@lucide/svelte/icons/calendar'
   import Search from '@lucide/svelte/icons/search'
+  import LayoutGrid from '@lucide/svelte/icons/layout-grid'
   import Download from '@lucide/svelte/icons/download'
   import Users from '@lucide/svelte/icons/users'
   import Settings from '@lucide/svelte/icons/settings'
@@ -76,6 +77,7 @@
     { id: 'home', href: '/app/home', icon: Home, label: m.nav_home(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
     { id: 'schedule', href: '/app/schedule', icon: Calendar, label: m.nav_schedule(), anim: 'group-hover:animate-[swing_0.5s_ease]' },
     { id: 'search', href: '/app/search', icon: Search, label: m.nav_search(), anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
+    { id: 'browse', href: '/app/browse', icon: LayoutGrid, label: 'Browse', anim: '' },
     { id: 'downloads', href: '/app/downloads', icon: Download, label: m.nav_downloads(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
     { id: 'watch', href: '/app/watch', icon: Users, label: m.nav_watch_together(), anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
     { id: 'library', href: '/app/library', icon: LibraryBig, label: 'Library', anim: '' },

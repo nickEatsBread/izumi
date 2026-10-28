@@ -703,6 +703,17 @@ State values:
 | `downloads.more` | part | The row's More button, which opens its options sheet. |  |
 | `downloads.progress` | part | A download's progress track; its child span is the fill. |  |
 | `downloads.empty` | part | The empty state shown when nothing is saved. |  |
+| `browse` | slot | The Browse screen; data-variant is anilist, catalog or source. |  |
+| `browse.title` | part | The Browse heading. |  |
+| `browse.sorts` | part | The sort strip (Popular, Newest, A-Z and what the catalog offers); L1 and R1 step it (L2 and R2 under bumper tabs). |  |
+| `browse.sort` | part | One sort pill; data-sort names it and data-state is active on the chosen one. |  |
+| `browse.sort.marker` | part | The chosen pill's fill, which slides over from the previous pill. |  |
+| `browse.side` | slot | The side column: the categories, then a theme's own blocks (layout.browse); its own d-pad region. |  |
+| `browse.categories` | part | The category list, All first; chips on phones. |  |
+| `browse.category` | part | One category; data-state is active on the chosen one. |  |
+| `browse.grid` | part | The poster grid; data-variant is grid and data-state is loading while skeletons show. |  |
+| `browse.empty` | part | Shown when a listing has nothing or failed; data-state is empty or error, with Retry. |  |
+| `browse.more` | part | Loading more at the end of the grid, or data-state error with Retry. |  |
 | `settings.section.icon` | part | The icon tile beside a Settings section heading. |  |
 | `settings.rail.indicator` | part | The Settings rail's selection marker, which slides to the current section. `data-marker` is its style: `accent` (default), `fill`, `bar`, `tile` or `dot`. | `data-marker` |
 
