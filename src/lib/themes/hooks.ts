@@ -362,6 +362,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'schedule', kind: 'slot', description: 'The airing schedule page.' },
     { name: 'schedule.day', kind: 'part', description: 'One day of airings: a day of the week agenda, or the selected day.' },
     { name: 'schedule.item', kind: 'part', description: 'One airing entry.' },
+    { name: 'schedule.error', kind: 'part', description: 'The message shown when the schedule could not be loaded, with a Try again button.' },
     { name: 'library', kind: 'slot', description: 'The library page.' },
     { name: 'library.tabs', kind: 'part', description: 'The library section tabs.' },
     { name: 'library.grid', kind: 'slot', description: 'The library card grid.' },

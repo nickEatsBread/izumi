@@ -690,6 +690,7 @@ State values:
 | `schedule` | slot | The airing schedule page. |  |
 | `schedule.day` | part | One day of airings: a day of the week agenda, or the selected day. |  |
 | `schedule.item` | part | One airing entry. |  |
+| `schedule.error` | part | The message shown when the schedule could not be loaded, with a Try again button. |  |
 | `library` | slot | The library page. |  |
 | `library.tabs` | part | The library section tabs. |  |
 | `library.grid` | slot | The library card grid. |  |
