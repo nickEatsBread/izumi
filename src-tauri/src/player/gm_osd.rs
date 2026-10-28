@@ -482,7 +482,47 @@ fn sanitize_state(mut state: GmDynamicOverlay) -> GmDynamicOverlay {
     state
         .chapter_marks
         .retain(|time| time.is_finite() && *time > 0.0 && *time < state.dur);
+    // Theme colours go straight into ASS override tags: anything but BBGGRR hex keeps the white.
+    for color in [&mut state.theme_accent, &mut state.theme_focus] {
+        if color.len() != 6 || !color.bytes().all(|b| b.is_ascii_hexdigit()) {
+            color.clear();
+        }
+        color.make_ascii_uppercase();
+    }
     state
+}
+
+/// A theme colour from the frontend (ASS BGR hex, already sanitized), or the OSD's own white.
+fn theme_color(value: &str) -> &str {
+    if value.is_empty() {
+        "FFFFFF"
+    } else {
+        value
+    }
+}
+
+/// Black or white, whichever reads better on `color` (ASS BGR hex), by WCAG relative luminance:
+/// a dark theme accent behind a focused control must not swallow its black glyph.
+fn ink_on(color: &str) -> &'static str {
+    let channel = |at: usize| {
+        let c = color
+            .get(at..at + 2)
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok())
+            .unwrap_or(255) as f64
+            / 255.0;
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    // BGR: blue at 0, green at 2, red at 4. Above 0.179 black has the higher contrast.
+    let luminance = 0.0722 * channel(0) + 0.7152 * channel(2) + 0.2126 * channel(4);
+    if luminance > 0.179 {
+        "000000"
+    } else {
+        "FFFFFF"
+    }
 }
 
 fn draw(
@@ -711,13 +751,11 @@ fn scrub_dynamic_ass(
     let mut lines = Vec::new();
     let top = y - bh / 2.0;
     let scrub_pct = pct(state.scrub_time, state.dur);
+    let accent = theme_color(&state.theme_accent);
 
     // Played to the scrub point (opaque).
     let alpha = alpha_hex(master_opacity);
-    push(
-        &mut lines,
-        rect(x, top, bw * scrub_pct, bh, "FFFFFF", &alpha),
-    );
+    push(&mut lines, rect(x, top, bw * scrub_pct, bh, accent, &alpha));
     // Chromium reference: a 16px thumb that appears with the 6px -> 10px track expansion.
     let knob_x = x + bw * scrub_pct;
     let interaction = ((bh - NATIVE_SEEKBAR_IDLE_PX)
@@ -729,7 +767,7 @@ fn scrub_dynamic_ass(
             knob_x,
             y,
             8.0,
-            "FFFFFF",
+            accent,
             &alpha_hex(master_opacity * interaction),
         ),
     );
@@ -767,7 +805,7 @@ fn progress_dynamic_ass(
             top,
             bw * pct(state.pos, state.dur),
             bh,
-            "FFFFFF",
+            theme_color(&state.theme_accent),
             &alpha_hex(master_opacity),
         ),
     );
@@ -915,17 +953,23 @@ fn controls_content_ass(
             ),
         );
     }
+    let accent = theme_color(&state.theme_accent);
+    let focus = theme_color(&state.theme_focus);
     for item in &state.control_items {
-        control_item_ass(item, opacity, y_offset, play, &mut lines);
+        control_item_ass(item, opacity, y_offset, play, accent, focus, &mut lines);
     }
     lines.join("\n")
 }
 
+/// `accent` fills the focused control (Play keeps its white fill until focused); `focus` draws the
+/// ring around a focused Play. Both are white without a theme.
 fn control_item_ass(
     item: &GmControlItem,
     opacity: f64,
     y_offset: f64,
     play: f64,
+    accent: &str,
+    focus: &str,
     lines: &mut Vec<String>,
 ) {
     let scale = if item.focused {
@@ -946,10 +990,11 @@ fn control_item_ass(
     } else {
         0.0
     };
+    let fill = if item.focused { accent } else { "FFFFFF" };
     if fill_opacity > 0.0 {
         push(
             lines,
-            circle(cx, cy, radius, "FFFFFF", &alpha_hex(fill_opacity * opacity)),
+            circle(cx, cy, radius, fill, &alpha_hex(fill_opacity * opacity)),
         );
     }
     if item.focused && !focused_fill {
@@ -960,13 +1005,13 @@ fn control_item_ass(
                 cy,
                 radius + 1.0,
                 radius + 4.0,
-                "FFFFFF",
+                focus,
                 &alpha_hex(opacity),
             ),
         );
     }
     let icon_color = if item.primary || focused_fill {
-        "000000"
+        ink_on(fill)
     } else {
         "FFFFFF"
     };
@@ -1441,12 +1486,12 @@ fn loading_ass(state: &GmDynamicOverlay, phase: u32, w: f64, h: f64) -> String {
         push(&mut lines, rect(0.0, 0.0, w, h, "000000", "00"));
     }
     if state.loading {
-        loading_overlay(phase, w, h, &mut lines);
+        loading_overlay(phase, w, h, theme_color(&state.theme_accent), &mut lines);
     }
     lines.join("\n")
 }
 
-fn loading_overlay(phase: u32, w: f64, h: f64, lines: &mut Vec<String>) {
+fn loading_overlay(phase: u32, w: f64, h: f64, color: &str, lines: &mut Vec<String>) {
     let cx = w / 2.0;
     let cy = h / 2.0;
     let segments = 24usize;
@@ -1463,16 +1508,7 @@ fn loading_overlay(phase: u32, w: f64, h: f64, lines: &mut Vec<String>) {
         let half = PI / segments as f64 * 0.34;
         push(
             lines,
-            ring_segment(
-                cx,
-                cy,
-                24.0,
-                31.0,
-                theta - half,
-                theta + half,
-                "FFFFFF",
-                alpha,
-            ),
+            ring_segment(cx, cy, 24.0, 31.0, theta - half, theta + half, color, alpha),
         );
     }
 }
@@ -1662,7 +1698,15 @@ mod tests {
     fn play_pause_glyphs_crossfade() {
         let shapes = |play| {
             let mut lines = Vec::new();
-            control_item_ass(&button("Play"), 1.0, 0.0, play, &mut lines);
+            control_item_ass(
+                &button("Play"),
+                1.0,
+                0.0,
+                play,
+                "FFFFFF",
+                "FFFFFF",
+                &mut lines,
+            );
             lines.len()
         };
         // Mid-fade draws the triangle and both bars; at either end only one glyph remains.
@@ -1683,5 +1727,66 @@ mod tests {
         assert_eq!(fade.step(&[], true, ms(170)), (1.0, false));
         // Animations off: a toggle swaps instantly.
         assert_eq!(fade.step(&[button("Pause")], false, ms(300)), (0.0, false));
+    }
+
+    #[test]
+    fn theme_colors_must_be_bgr_hex() {
+        let state = sanitize_state(GmDynamicOverlay {
+            theme_accent: "2175f4".into(),
+            theme_focus: "FF}\\p0".into(),
+            ..Default::default()
+        });
+        assert_eq!(state.theme_accent, "2175F4");
+        assert_eq!(state.theme_focus, "");
+        for junk in ["FFF", "GG0000", "2175F4AA", "&H2175F4&"] {
+            let state = sanitize_state(GmDynamicOverlay {
+                theme_accent: junk.into(),
+                ..Default::default()
+            });
+            assert_eq!(state.theme_accent, "", "{junk}");
+        }
+    }
+
+    #[test]
+    fn theme_accent_colours_the_bar_spinner_and_focus() {
+        let themed = GmDynamicOverlay {
+            pos: 5.0,
+            dur: 10.0,
+            loading: true,
+            theme_accent: "2175F4".into(),
+            ..Default::default()
+        };
+        assert!(progress_dynamic_ass(&themed, 0.0, 10.0, 100.0, 6.0, 1.0).contains("\\1c&H2175F4&"));
+        assert!(loading_ass(&themed, 0, 1280.0, 800.0).contains("\\1c&H2175F4&"));
+        // No theme: today's white.
+        let plain = GmDynamicOverlay {
+            theme_accent: String::new(),
+            ..themed
+        };
+        let plain_bar = progress_dynamic_ass(&plain, 0.0, 10.0, 100.0, 6.0, 1.0);
+        assert!(
+            !plain_bar.contains("2175F4")
+                && plain_bar.starts_with("{\\an7\\pos(0,0)\\bord0\\shad0\\1c&HFFFFFF&")
+        );
+
+        let mut focused = button("Play");
+        focused.focused = true;
+        let mut lines = Vec::new();
+        control_item_ass(&focused, 1.0, 0.0, 1.0, "2175F4", "00FF00", &mut lines);
+        let ass = lines.join("\n");
+        assert!(ass.contains("\\1c&H2175F4&"), "accent fill");
+        assert!(ass.contains("\\1c&H00FF00&"), "focus ring");
+        assert!(
+            ass.contains("\\1c&H000000&"),
+            "dark glyph on a light accent"
+        );
+    }
+
+    #[test]
+    fn glyph_ink_contrasts_with_the_fill() {
+        assert_eq!(ink_on("FFFFFF"), "000000");
+        assert_eq!(ink_on("2175F4"), "000000");
+        assert_eq!(ink_on("000000"), "FFFFFF");
+        assert_eq!(ink_on("8B0000"), "FFFFFF"); // dark blue
     }
 }

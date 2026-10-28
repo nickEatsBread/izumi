@@ -247,6 +247,11 @@ pub(crate) struct GmDynamicOverlay {
     pub(crate) timeline_segments: Vec<GmTimelineSegment>,
     #[serde(default)]
     pub(crate) chapter_marks: Vec<f64>,
+    // The active theme's colours as ASS BGR hex (theme-gm-osd.ts); empty keeps the OSD's white.
+    #[serde(default)]
+    pub(crate) theme_accent: String,
+    #[serde(default)]
+    pub(crate) theme_focus: String,
 }
 
 #[derive(Clone, Default, serde::Deserialize)]

@@ -62,6 +62,7 @@
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
   import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeLiveMenuOpen, gameModeSideSheetCrop, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay, usesGameModeBitmapCompositor } from '$lib/player/gm-overlay'
   import { GM_THAW_DELAY_MS, captureFrozenFrame, framePainted, gmFrozenFrame, gmPanel, gmPanelOut, gmStage } from '$lib/player/gm-freeze'
+  import { readGmOsdTheme, type GmOsdTheme } from '$lib/player/theme-gm-osd'
   import { motion } from '$lib/motion/gm-motion'
   import { deckWebviewZoom } from '$lib/deck/webview-zoom'
   import { findHotkey, playerHotkeyEligible } from '$lib/hotkeys'
@@ -1227,6 +1228,20 @@
   let gmScrubBasePos = $state(0)
   let gmScrubBaseBuffer = $state(0)
   let gmScrubWasActive = false
+  // The native OSD draws in the theme's colours. Read once the player opens, then whenever theme.ts
+  // rewrites <html>'s palette or theme mark, so a theme switch reaches an open player too.
+  let gmTheme = $state.raw<GmOsdTheme>({ themeAccent: '', themeFocus: '' })
+  $effect(() => {
+    if (!gmBitmapMode) return
+    const read = () => {
+      const next = readGmOsdTheme()
+      if (next.themeAccent !== gmTheme.themeAccent || next.themeFocus !== gmTheme.themeFocus) gmTheme = next
+    }
+    untrack(read)
+    const observer = new MutationObserver(read)
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-surface'] })
+    return () => observer.disconnect()
+  })
 
   $effect(() => {
     const active = gmBitmapMode && $scrub.active
@@ -1299,6 +1314,8 @@
     controlItems: [],
     timelineSegments: [],
     chapterMarks: [],
+    // The controls' native fade-out finishes after this, still in the theme's colours.
+    ...gmTheme,
   })
 
   function measureSeekBar() {
@@ -1434,6 +1451,7 @@
       })),
       chapterMarks: chapters.map((chapter) => chapter.time),
       ...chrome,
+      ...gmTheme,
     }
   }
 
@@ -1461,7 +1479,7 @@
   }
 
   $effect(() => {
-    gmMode; gmBitmapMode; $playing; loading; firstFrame; controlsVisible; transportPaused; gmDynamicPos; transportDur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive; gmNativeControls; gmFocusRev; $playerProgressAnimations; segments; chapters
+    gmMode; gmBitmapMode; $playing; loading; firstFrame; controlsVisible; transportPaused; gmDynamicPos; transportDur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive; gmNativeControls; gmFocusRev; $playerProgressAnimations; segments; chapters; gmTheme
     scheduleGmDynamicOverlay()
   })
 
