@@ -230,6 +230,8 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'detail.progress.meter', kind: 'part', description: 'The progress row\'s track; its child `span` is the fill.' },
     { name: 'options.sheet', kind: 'slot', description: 'The options side menu a catalog title page opens on its More button (`button` with `data-action="more"`) or the options (☰) button: the dimmed layer over the page that holds `options.panel`; a tap on it closes the menu.' },
     { name: 'options.panel', kind: 'part', description: 'The options menu panel on the right: `options.title`, `options.list`, and with a controller `options.hints`.' },
+    { name: 'list.loading', kind: 'slot', description: 'The list editor (`Edit list`) while it reads the entry for the title from your trackers, so a save never starts from a blank status: the dimmed layer and panel with a `spinner`.' },
+    { name: 'spinner', kind: 'part', description: 'A spinning ring for a wait with nothing yet to show in its place (the list editor reading an entry, a page loading). Coloured by the primary colour on its top edge.' },
     { name: 'options.title', kind: 'part', description: 'The options menu heading (the title\'s name). The device-lists picker ("Save to lists") is the same sheet.' },
     { name: 'options.subtitle', kind: 'part', description: 'A line under the heading (the lists picker: the title and where the lists are kept).' },
     { name: 'options.footer', kind: 'part', description: 'A row under the list (the lists picker: the field that makes a new list).' },

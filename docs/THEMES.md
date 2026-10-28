@@ -549,6 +549,8 @@ State values:
 | `detail.progress.meter` | part | The progress row's track; its child `span` is the fill. |  |
 | `options.sheet` | slot | The options side menu a catalog title page opens on its More button (`button` with `data-action="more"`) or the options (☰) button: the dimmed layer over the page that holds `options.panel`; a tap on it closes the menu. |  |
 | `options.panel` | part | The options menu panel on the right: `options.title`, `options.list`, and with a controller `options.hints`. |  |
+| `list.loading` | slot | The list editor (`Edit list`) while it reads the entry for the title from your trackers, so a save never starts from a blank status: the dimmed layer and panel with a `spinner`. |  |
+| `spinner` | part | A spinning ring for a wait with nothing yet to show in its place (the list editor reading an entry, a page loading). Coloured by the primary colour on its top edge. |  |
 | `options.title` | part | The options menu heading (the title's name). The device-lists picker ("Save to lists") is the same sheet. |  |
 | `options.subtitle` | part | A line under the heading (the lists picker: the title and where the lists are kept). |  |
 | `options.footer` | part | A row under the list (the lists picker: the field that makes a new list). |  |
