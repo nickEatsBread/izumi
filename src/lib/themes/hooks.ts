@@ -365,6 +365,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'library', kind: 'slot', description: 'The library page.' },
     { name: 'library.tabs', kind: 'part', description: 'The library section tabs.' },
     { name: 'library.grid', kind: 'slot', description: 'The library card grid.' },
+    { name: 'library.error', kind: 'part', description: 'A notice on the watchlist naming the trackers whose lists could not be read this time, with a Try again button, so a list that failed to load is never shown as empty.' },
     { name: 'settings.section.icon', kind: 'part', description: 'The icon tile beside a Settings section heading.' },
     { name: 'settings.rail.indicator', kind: 'part', description: "The Settings rail's selection marker, which slides to the current section. `data-marker` is its style: `accent` (default), `fill`, `bar`, `tile` or `dot`.", states: ['data-marker'] },
   ],

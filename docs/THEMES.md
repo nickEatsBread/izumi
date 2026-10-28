@@ -693,6 +693,7 @@ State values:
 | `library` | slot | The library page. |  |
 | `library.tabs` | part | The library section tabs. |  |
 | `library.grid` | slot | The library card grid. |  |
+| `library.error` | part | A notice on the watchlist naming the trackers whose lists could not be read this time, with a Try again button, so a list that failed to load is never shown as empty. |  |
 | `settings.section.icon` | part | The icon tile beside a Settings section heading. |  |
 | `settings.rail.indicator` | part | The Settings rail's selection marker, which slides to the current section. `data-marker` is its style: `accent` (default), `fill`, `bar`, `tile` or `dot`. | `data-marker` |
 

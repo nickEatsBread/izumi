@@ -49,6 +49,9 @@
   let trackerMalEntries = $state<MalListEntry[]>([])
   let trackerMalMedia = $state<Media[]>([])
   let loading = $state(true)
+  /** Trackers whose list could not be read this time, so the page never calls a list it lacks empty. */
+  let failed = $state<string[]>([])
+  let reloads = $state(0)
   let selectedListId = $state(WATCHLIST_ID)
   const savedLists = $derived(browsableLocalLists($localLibrary).filter((list) => $episodeQueueEnabled || list.id !== EPISODE_QUEUE_ID))
   const queue = $derived($localLibrary.queue ?? [])
@@ -93,19 +96,19 @@
     if ($autoWatchlistEnabled) syncWatchedHistoryToWatchlist($durableHistory, $autoWatchlistEpisodes)
   })
 
-  // Best-effort per source (same policy as loadMySets): a failing tracker just contributes
-  // nothing instead of blanking the whole list.
-  async function aniEntries(userName: string): Promise<Entry[]> {
+  // Best-effort per source (same policy as loadMySets): a failing tracker (null) contributes nothing
+  // instead of blanking the whole list, and is named in a notice with a retry.
+  async function aniEntries(userName: string): Promise<Entry[] | null> {
     try {
       const r = await client.query(LIST_STATUSES_QUERY, {
         userName, statuses: ['CURRENT', 'REPEATING'],
       }).toPromise()
-      return r.error ? [] : flattenEntries(r.data)
+      return r.error ? null : flattenEntries(r.data)
     }
-    catch { return [] }
+    catch { return null }
   }
 
-  async function malSide(): Promise<{ entries: MalListEntry[]; media: Media[] }> {
+  async function malSide(): Promise<{ entries: MalListEntry[]; media: Media[] } | null> {
     try {
       const list = await getMalAnimeListMediaOrThrow('watching', 100)
       // MAL's list payload knows the planned total but carries no next-airing episode or schedule.
@@ -128,10 +131,10 @@
         media: list.map((entry) => enrichedByMal.get(entry.media.idMal) ?? entry.media),
       }
     }
-    catch { return { entries: [], media: [] } }
+    catch { return null }
   }
 
-  async function simklSide(): Promise<Entry[]> {
+  async function simklSide(): Promise<Entry[] | null> {
     try {
       const list = await getSimklAnimeListEntries('watching', 100)
       if (!list.length) return []
@@ -143,10 +146,11 @@
         return matched ? [{ media: matched, progress: entry.progress, updatedAt: entry.updatedAt }] : []
       })
     }
-    catch { return [] }
+    catch { return null }
   }
 
   $effect(() => {
+    void reloads
     const user = listUser
     const useMal = malActive
     const useSimkl = simklActive
@@ -158,9 +162,10 @@
       useSimkl ? simklSide() : Promise.resolve([]),
     ]).then(([ani, mal, simkl]) => {
       if (cancelled) return
-      trackerEntries = [...ani, ...simkl]
-      trackerMalEntries = mal.entries
-      trackerMalMedia = mal.media
+      failed = [ani ? '' : 'AniList', mal ? '' : 'MyAnimeList', simkl ? '' : 'SIMKL'].filter(Boolean)
+      trackerEntries = [...(ani ?? []), ...(simkl ?? [])]
+      trackerMalEntries = mal?.entries ?? []
+      trackerMalMedia = mal?.media ?? []
       loading = false
     })
     return () => { cancelled = true }
@@ -303,12 +308,15 @@
     {:else}
       <p class="rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">{m.lists_queue_empty()}</p>
     {/if}
+  {:else if !items.length && failed.length && selectedListId === WATCHLIST_ID}
+    {@render trackerNotice()}
   {:else if !items.length}
     <div class="rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
       <p class="font-bold text-foreground">{selectedListId === WATCHLIST_ID ? 'Your watchlist is empty' : `${selectedList?.name ?? 'This list'} is empty`}</p>
       <p class="mt-1">Save a show from its card or details page. No account is required.</p>
     </div>
   {:else}
+  {#if failed.length && selectedListId === WATCHLIST_ID}{@render trackerNotice()}{/if}
   <!-- Toolbar: filter + sort + layout, one wrapping row like the episode controls. -->
   <div class="mb-4 flex flex-wrap items-center gap-2">
     <label class="relative min-w-0 flex-1 basis-48">
@@ -467,3 +475,10 @@
 {/if}
 
 {#if managingLists}<LocalListManager onclose={() => (managingLists = false)} />{/if}
+
+{#snippet trackerNotice()}
+  <div data-part="library.error" role="alert" class="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-sm">
+    <p class="min-w-0 flex-1 text-muted-foreground"><span class="font-bold text-foreground">Couldn't reach {failed.join(' and ')}.</span> Shows on {failed.length > 1 ? 'those lists' : 'that list'} are missing for now.</p>
+    <button data-focusable type="button" onclick={() => { loading = true; reloads++ }} class="rounded-md bg-secondary px-3 py-1.5 font-semibold hover:bg-secondary/80">Try again</button>
+  </div>
+{/snippet}
