@@ -34,6 +34,8 @@
     const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
     return !navigator.onLine || connection?.saveData === true
   }
+  // app.html's boot spinner goes once the app is up (and the startup animation's cover is gone).
+  onMount(() => document.documentElement.classList.add('booted'))
   onMount(() => {
     // The controls mirror is a deliberately inert second WebView. Starting the normal client
     // services here would duplicate sync, update, DHT and notification work while recording.
