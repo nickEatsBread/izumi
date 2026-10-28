@@ -34,6 +34,7 @@
   const loadSourceConnecting = () => import('$lib/components/player/SourceConnecting.svelte')
   // Not split off: loading it on the first B press held the dialog back about 0.2 s on the Deck.
   import ExitPrompt from '$lib/components/shell/ExitPrompt.svelte'
+  import NavPending from '$lib/components/shell/NavPending.svelte'
   const loadGlobalSearch = () => import('$lib/components/search/GlobalSearch.svelte')
   const loadTrailerDialog = () => import('$lib/components/cards/TrailerDialog.svelte')
   const loadTrailerPlayer = () => import('$lib/components/cards/TrailerPlayer.svelte')
@@ -683,6 +684,7 @@
 {/if}
 {#if $debridCaching}<Lazy load={loadDebridCaching} />{/if}
 <ExitPrompt />
+<NavPending />
 {#if globalSearchMounted}<Lazy load={loadGlobalSearch} />{/if}
 {#if trailerDialogMounted}<Lazy load={loadTrailerDialog} />{/if}
 {#if trailerPlayerMounted}<Lazy load={loadTrailerPlayer} />{/if}

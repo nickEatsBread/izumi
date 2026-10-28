@@ -341,6 +341,8 @@ State values:
 | `search.suggestion.meta` | part | The format, episode count, year and status line of a live result. |  |
 | `search.suggestion.all` | part | The "View all results" link at the end of the panel. |  |
 | `nav.menu` | part | The menu button that opens the drawer: on the top bar, or floating at the top left with the drawer navigation (`shell.nav: "drawer"`, hidden while a pad is in use). |  |
+| `nav.pending` | part | A thin track along the top of the window while a page takes more than a moment to open (its code loading, a heavy page building). Never shown for a quick change. |  |
+| `nav.pending.bar` | part | The segment that sweeps along `nav.pending`, in the primary colour. |  |
 | `nav.bumper` | part | The L1 or R1 glyph at either end of the top bar's tabs (`shell.top.bumpers`, pad in use). | `data-button` |
 | `nav.start` | part | The cell before the brand on a top bar that centres it (`shell.top.brand: "center"`): the menu button, the destinations and the Categories menu. It clips what does not fit instead of running under the brand. A bar with the brand elsewhere has none. |  |
 | `nav.end` | part | The cell after the brand on a top bar that centres it: the search field (when it sits at the end), then the incognito, settings and account `nav.action` buttons, right-aligned. A bar with the brand elsewhere has none. |  |

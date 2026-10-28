@@ -34,6 +34,8 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'search.suggestion.meta', kind: 'part', description: 'The format, episode count, year and status line of a live result.' },
     { name: 'search.suggestion.all', kind: 'part', description: 'The "View all results" link at the end of the panel.' },
     { name: 'nav.menu', kind: 'part', description: 'The menu button that opens the drawer: on the top bar, or floating at the top left with the drawer navigation (`shell.nav: "drawer"`, hidden while a pad is in use).' },
+    { name: 'nav.pending', kind: 'part', description: 'A thin track along the top of the window while a page takes more than a moment to open (its code loading, a heavy page building). Never shown for a quick change.' },
+    { name: 'nav.pending.bar', kind: 'part', description: 'The segment that sweeps along `nav.pending`, in the primary colour.' },
     { name: 'nav.bumper', kind: 'part', description: "The L1 or R1 glyph at either end of the top bar's tabs (`shell.top.bumpers`, pad in use).", states: ['data-button'] },
     { name: 'nav.start', kind: 'part', description: "The cell before the brand on a top bar that centres it (`shell.top.brand: \"center\"`): the menu button, the destinations and the Categories menu. It clips what does not fit instead of running under the brand. A bar with the brand elsewhere has none." },
     { name: 'nav.end', kind: 'part', description: "The cell after the brand on a top bar that centres it: the search field (when it sits at the end), then the incognito, settings and account `nav.action` buttons, right-aligned. A bar with the brand elsewhere has none." },
