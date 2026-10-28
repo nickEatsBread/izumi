@@ -47,3 +47,17 @@ describe('themes store front', () => {
     expect(page).toContain("platformFor(entry, $isMobile ? 'phone' : 'desktop')")
   })
 })
+
+describe('themes installed list with a controller', () => {
+  it('shows the controller card list in Game mode, on TV or with a pad, and keeps the desktop rows otherwise', () => {
+    expect(page).toContain('const pad = $derived($gameMode || $isTv || $controllerMode)')
+    expect(page).toContain('{#if pad}\n      <ControllerThemeList')
+    expect(page).toContain('onclick={() => apply(item)}>Apply</button>')
+  })
+  it('opens on Installed for a controller unless a theme page is in the URL', () => {
+    expect(page).toContain("get(installedThemes).length && !page.url.searchParams.has('theme') ? 'installed' : 'browse'")
+  })
+  it('returns focus to the theme from an update view', () => {
+    expect(page).toContain("close(prepared ? keyOf(prepared.origin, prepared.package.id) : '')")
+  })
+})

@@ -35,9 +35,16 @@
   import { protectedSurface, themeSafeMode } from '$lib/themes/safe-mode'
   import { themeCssStatus } from '$lib/theme'
   import { navLayer } from '$lib/nav/overlay'
-  import { isMobile } from '$lib/platform'
+  import { controllerMode } from '$lib/nav/input'
+  import { gameMode } from '$lib/player/session'
+  import { isMobile, isTv } from '$lib/platform'
+  import ControllerThemeList from '$lib/components/settings/themes/ControllerThemeList.svelte'
 
-  let tab = $state<'browse' | 'installed'>('browse')
+  // Game mode, TV or a pad: Installed is a list of large cards (ControllerThemeList), the same rule the
+  // nav engine uses for its controller surfaces.
+  const pad = $derived($gameMode || $isTv || $controllerMode)
+  // A controller opens on the themes to switch between; a theme page in the URL keeps the store under it.
+  let tab = $state<'browse' | 'installed'>((get(gameMode) || get(isTv) || get(controllerMode)) && get(installedThemes).length && !page.url.searchParams.has('theme') ? 'installed' : 'browse')
   // Raw, never proxied: listingFor is keyed by these exact objects.
   let entries = $state.raw<ThemeRelease[]>([])
   let listingFor = $state.raw(new Map<ThemeRelease, ThemeListing>())
@@ -125,7 +132,8 @@
     void tick().then(() => document.querySelector<HTMLElement>(`[data-theme-key="${CSS.escape(key)}"]`)?.focus())
   }
   function back() {
-    if (!selectedKey || !page.url.searchParams.has('theme')) { selected = null; prepared = null; error = ''; return }
+    // An update view (no theme page in the URL) returns focus to its theme's Installed card.
+    if (!selectedKey || !page.url.searchParams.has('theme')) { close(prepared ? keyOf(prepared.origin, prepared.package.id) : ''); return }
     if (pushed) { pushed = false; history.back() } else void goto(page.url.pathname, { replaceState: true })
   }
   // Leaves the theme page without a history step (after installing, or switching tabs).
@@ -209,10 +217,17 @@
   function apply(item: InstalledTheme) { try { applyInstalledTheme(item); notice = `${item.package.name} applied.` } catch (cause) { error = failure(cause) } }
   function remove(item: InstalledTheme) { try { removeInstalledTheme(item.id); notice = `${item.package.name} removed.` } catch (cause) { error = failure(cause) } }
   function restore(item: InstalledTheme) { try { rollbackTheme(item.id); notice = 'Previous version restored.' } catch (cause) { error = failure(cause) } }
+  function useDefault() { $themePreset = 'izumi'; notice = 'Default appearance restored.' }
+  // The store listing an install came from, while its store still lists it.
+  const entryOf = (item: InstalledTheme) => entries.find(candidate => candidate.id === item.id && originOf(candidate) === item.origin)
   // The Installed tab's thumbnail: the listing's own screenshot, when the theme is still listed.
   function thumbOf(item: InstalledTheme) {
-    const entry = entries.find(candidate => candidate.id === item.id && originOf(candidate) === item.origin)
+    const entry = entryOf(item)
     return entry ? shotsFor(entry, platformFor(entry, $isMobile ? 'phone' : 'desktop'))[0]?.url : undefined
+  }
+  function openStorePage(item: InstalledTheme) {
+    const entry = entryOf(item), listing = entry && listingFor.get(entry)
+    if (listing) open(listing)
   }
 </script>
 
@@ -283,8 +298,14 @@
     {:else if !filtered.length}<div class="empty"><Palette size={36} /><h3>{entries.length ? 'No matching themes' : 'Your next look starts here'}</h3><p>{entries.length ? 'Try another name or style.' : 'Refresh the catalog, or add a theme from a link, file or folder.'}</p></div>
     {:else}<ThemeBrowse listings={filteredListings} filtered={!!query.trim()} official={THEME_CATALOG_URL} installed={(listing) => isInstalled(listing.release)} note={listingNote} onopen={open} />{/if}
   {:else}
-    <div class="default-theme"><div><strong>Izumi default</strong><p>The original appearance is always available.</p></div><button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => { $themePreset = 'izumi'; notice = 'Default appearance restored.' }}>Use default</button></div>
-    {#each $installedThemes as item (item.id)}{@const thumb = thumbOf(item)}<article class="installed-theme"><div class="installed-thumb">{#if thumb}<img src={thumb} alt="" loading="lazy" referrerpolicy="no-referrer" />{:else}<Palette size={22} />{/if}</div><div><h3>{item.package.name}</h3><p>By {item.package.author} · {item.package.version}{#if $themePreset === 'custom' && $activeStudioThemeId === item.designId} · Applied{/if}</p><p class="summary">{item.package.description}</p></div><div class="installed-actions"><button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => apply(item)}>Apply</button>{#if $allStores.some((store) => store.url === item.origin) || item.updateUrl}<button class="control" data-focusable disabled={busy || $themeStudioOpen} onclick={() => update(item)}>Check update</button>{/if}{#if item.previous}<button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => restore(item)}>Restore previous</button>{/if}<button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => remove(item)}>Remove</button></div></article>{/each}
+    {#if pad}
+      <ControllerThemeList items={$installedThemes} thumb={thumbOf} locked={$themeStudioOpen} {busy}
+        canUpdate={(item) => $allStores.some((store) => store.url === item.origin) || !!item.updateUrl} listed={(item) => !!entryOf(item)}
+        ondefault={useDefault} onapply={apply} onupdate={update} onrestore={restore} onremove={remove} onstore={openStorePage} />
+    {:else}
+      <div class="default-theme"><div><strong>Izumi default</strong><p>The original appearance is always available.</p></div><button class="control" data-focusable disabled={$themeStudioOpen} onclick={useDefault}>Use default</button></div>
+      {#each $installedThemes as item (item.id)}{@const thumb = thumbOf(item)}<article class="installed-theme"><div class="installed-thumb">{#if thumb}<img src={thumb} alt="" loading="lazy" referrerpolicy="no-referrer" />{:else}<Palette size={22} />{/if}</div><div><h3>{item.package.name}</h3><p>By {item.package.author} · {item.package.version}{#if $themePreset === 'custom' && $activeStudioThemeId === item.designId} · Applied{/if}</p><p class="summary">{item.package.description}</p></div><div class="installed-actions"><button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => apply(item)}>Apply</button>{#if $allStores.some((store) => store.url === item.origin) || item.updateUrl}<button class="control" data-focusable disabled={busy || $themeStudioOpen} onclick={() => update(item)}>Check update</button>{/if}{#if item.previous}<button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => restore(item)}>Restore previous</button>{/if}<button class="control" data-focusable disabled={$themeStudioOpen} onclick={() => remove(item)}>Remove</button></div></article>{/each}
+    {/if}
     {#if !$installedThemes.length}<div class="empty"><Palette size={36} /><h3>A home for your themes</h3><p>Installed themes stay here, ready to use offline.</p><button class="control" data-focusable onclick={() => tab = 'browse'}>Browse themes</button></div>{/if}
   {/if}
 </div>
