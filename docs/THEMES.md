@@ -695,6 +695,14 @@ State values:
 | `library.tabs` | part | The library section tabs. |  |
 | `library.grid` | slot | The library card grid. |  |
 | `library.error` | part | A notice on the watchlist naming the trackers whose lists could not be read this time, with a Try again button, so a list that failed to load is never shown as empty. |  |
+| `downloads` | slot | The Downloads page. |  |
+| `downloads.header` | part | The page title, the summary of saved and downloading episodes, the Cloud link and the filter. |  |
+| `downloads.series` | part | One series group: poster, title, episode count and size on disk (data-media-id names the title). |  |
+| `downloads.item` | part | One episode row; data-state is its status (done, downloading, paused, queued, error). |  |
+| `downloads.action` | part | The row's primary button; data-action is play, pause, resume, retry or options. |  |
+| `downloads.more` | part | The row's More button, which opens its options sheet. |  |
+| `downloads.progress` | part | A download's progress track; its child span is the fill. |  |
+| `downloads.empty` | part | The empty state shown when nothing is saved. |  |
 | `settings.section.icon` | part | The icon tile beside a Settings section heading. |  |
 | `settings.rail.indicator` | part | The Settings rail's selection marker, which slides to the current section. `data-marker` is its style: `accent` (default), `fill`, `bar`, `tile` or `dot`. | `data-marker` |
 
