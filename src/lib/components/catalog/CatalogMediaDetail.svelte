@@ -46,6 +46,7 @@
   import { episodeDisplayModel, mediaDisplayModel } from '$lib/themes/host-model'
   import ThemeNode from '$lib/components/themes/ThemeNode.svelte'
   import OptionsSheet, { type SheetGroup } from '$lib/components/detail/OptionsSheet.svelte'
+  import { describeFocus, restoreFocus, type FocusDescriptor } from '$lib/nav/focus-memory'
   import MediaListSheet from '$lib/components/detail/MediaListSheet.svelte'
   import Download from '@lucide/svelte/icons/download'
   import CircleCheck from '@lucide/svelte/icons/circle-check'
@@ -192,8 +193,15 @@
     if (fresh && request === ref) media = fresh
   }
 
+  // What opened the options menu: focus goes back there when a list editor opened from it closes (the
+  // menu's own control is gone by then, so the editor alone would leave focus on nothing).
+  let optionsReturn: FocusDescriptor | null = null
+  const returnFromOptions = () => requestAnimationFrame(() => {
+    if (!document.activeElement || document.activeElement === document.body) restoreFocus(optionsReturn)
+  })
   function openOptions() {
     if (!media) return
+    optionsReturn = describeFocus(document.activeElement)
     const tile = document.activeElement?.closest<HTMLElement>('[data-part="episode"][data-episode]')
     const number = tile ? Number(tile.dataset.episode) : Number.NaN
     optionsEpisode = videos.find((video) => video.number === number) ?? null
@@ -712,7 +720,7 @@
     {/if}
     {/if}
   </div>
-  {#if showLocalLists}<LocalListPicker {media} onclose={() => (showLocalLists = false)} />{/if}
+  {#if showLocalLists}<LocalListPicker {media} onclose={() => { showLocalLists = false; returnFromOptions() }} />{/if}
   {#if optionsOpen}<OptionsSheet title={title(media)} groups={optionGroups} onclose={() => (optionsOpen = false)} />{/if}
-  {#if trackerMedia}<MediaListSheet media={trackerMedia} onclose={() => (trackerMedia = null)} />{/if}
+  {#if trackerMedia}<MediaListSheet media={trackerMedia} onclose={() => { trackerMedia = null; returnFromOptions() }} />{/if}
 {/if}
