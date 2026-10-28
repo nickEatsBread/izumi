@@ -129,7 +129,8 @@
       const result = await saveExtensionServiceSettings(id, { ...values })
       if (result.ok === false) throw new Error(result.message || 'The local service rejected these settings.')
       if (result.version === 1 && result.fields && result.values) {
-        applyDocument({ ...document, ...result, version: 1, fields: result.fields, values: result.values })
+        // A full result's picture is its own: a signed-out one has none to inherit.
+        applyDocument({ ...document, image: undefined, ...result, version: 1, fields: result.fields, values: result.values })
         dirtyKeys.clear()
         schedulePoll()
       }
@@ -180,7 +181,12 @@
       <div class="skeloader h-10 rounded-lg"></div>
     </div>
   {:else if document}
-    {#if document.description}<p class="mb-4 text-sm text-muted-foreground">{document.description}</p>{/if}
+    {#if document.description}
+      <p class="mb-4 flex items-center gap-3 text-sm text-muted-foreground">
+        {#if document.image}<img src={document.image} alt="" class="size-12 shrink-0 rounded-lg object-cover" />{/if}
+        {document.description}
+      </p>
+    {/if}
     {#if notice}
       <section class="mb-4 rounded-xl border p-4 {noticeClass(notice.tone)}" aria-live="polite">
         {#if notice.title}<h4 class="font-black">{notice.title}</h4>{/if}
@@ -228,8 +234,8 @@
                 <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {!!values[field.key] ? 'translate-x-4' : 'translate-x-0.5'}"></span>
               </span>
             </button>
-          {:else if field.type === 'select' && (field.role === 'action' || (field.options?.length ?? 0) <= 6)}
-            <!-- Short lists are buttons, not a native select: select popups are unreliable with a controller. -->
+          {:else if field.type === 'select' && (field.role === 'action' || (field.options?.length ?? 0) <= 6 || field.options?.some((option) => option.image || option.backdrop))}
+            <!-- Short lists (and pictured ones) are buttons, not a native select: select popups are unreliable with a controller. -->
             <span role="radiogroup" aria-label={field.label} class="flex flex-col gap-2">
               {#each field.options ?? [] as option (option.value)}
                 <button
@@ -238,10 +244,14 @@
                   role="radio"
                   aria-checked={values[field.key] === option.value}
                   onclick={() => setValue(field.key, option.value)}
-                  class="rounded-lg border px-3 py-2.5 text-left text-sm {values[field.key] === option.value ? 'border-theme bg-theme/15' : 'border-border bg-input'}"
+                  class="relative flex items-center gap-3 overflow-hidden rounded-lg border px-3 py-2.5 text-left text-sm {values[field.key] === option.value ? 'border-theme bg-theme/15' : 'border-border bg-input'}"
                 >
-                  <span class="block font-bold">{option.label}</span>
-                  {#if option.description}<span class="mt-0.5 block text-xs text-muted-foreground">{option.description}</span>{/if}
+                  {#if option.backdrop}<img src={option.backdrop} alt="" class="pointer-events-none absolute inset-0 size-full object-cover opacity-30" />{/if}
+                  {#if option.image}<img src={option.image} alt="" class="relative size-10 shrink-0 rounded-md object-cover" />{/if}
+                  <span class="relative min-w-0 flex-1">
+                    <span class="block font-bold">{option.label}</span>
+                    {#if option.description}<span class="mt-0.5 block text-xs text-muted-foreground">{option.description}</span>{/if}
+                  </span>
                 </button>
               {/each}
             </span>

@@ -1175,6 +1175,10 @@ export interface ServiceSettingOption {
   submittingLabel?: string
   intent?: 'primary' | 'danger'
   hideSubmit?: boolean
+  /** A small square picture beside the label (a profile avatar, say). */
+  image?: string
+  /** A wide picture behind the option, dimmed under the text. */
+  backdrop?: string
 }
 export interface ServiceSettingField {
   key: string
@@ -1202,6 +1206,8 @@ export interface ServiceSettingsDocument {
   version: 1
   title?: string
   description?: string
+  /** A picture shown beside the description (the signed-in account's avatar, say). */
+  image?: string
   submitLabel?: string
   submittingLabel?: string
   notice?: ServiceSettingsNotice
@@ -1218,6 +1224,7 @@ export interface ServiceSettingsSaveResult {
   version?: 1
   title?: string
   description?: string
+  image?: string
   submitLabel?: string
   submittingLabel?: string
   notice?: ServiceSettingsNotice
