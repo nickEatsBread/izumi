@@ -419,7 +419,7 @@
   // The main pages' code loads once at launch instead: behind the startup animation when one plays,
   // else on the first idle moment.
   onMount(() => {
-    const pages = ['/app/media/stremio/series/preload', '/app/anime/1', '/app/search', '/app/browse', '/app/categories', '/app/schedule', '/app/library', '/app/downloads', '/app/settings']
+    const pages = ['/app/media/stremio/series/preload', '/app/anime/1', '/app/search', '/app/browse', '/app/categories', '/app/listing', '/app/schedule', '/app/library', '/app/downloads', '/app/settings']
     const load = () => { for (const path of pages) void preloadCode(path).catch(() => {}) }
     if (document.documentElement.classList.contains('startup-cover') || document.getElementById('boot-intro')) { load(); return }
     const idle = window.requestIdleCallback?.(load, { timeout: 3000 }) ?? window.setTimeout(load, 1500)

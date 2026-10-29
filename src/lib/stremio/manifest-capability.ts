@@ -19,8 +19,11 @@ export interface AddonCatalog {
   genres?: string[]
   extra?: AddonCatalogExtra[]
   /** izumi-only hints: `home: false` keeps the listing off Home (Browse still lists it);
-   *  `homeFilters: false` offers no filtered Home rows (one per genre, say), only the plain one. */
-  izumi?: { home?: boolean; homeFilters?: boolean }
+   *  `homeFilters: false` offers no filtered Home rows (one per genre, say), only the plain one;
+   *  `browse: false` keeps it out of Browse's listings; `menu` lists it in the drawer as its own
+   *  screen (a watchlist, a history), opening on a wall of the named extra's options first when it
+   *  names one (`extra: "season"`). */
+  izumi?: { home?: boolean; homeFilters?: boolean; browse?: boolean; menu?: { label?: string; icon?: string; extra?: string } }
 }
 
 export interface AddonManifest {

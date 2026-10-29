@@ -48,7 +48,8 @@ export function sourceBrowseCatalogs(manifest: AddonManifest): AddonCatalog[] {
   return (manifest.catalogs ?? []).filter((entry) => {
     const roles = (entry as SourceCatalogEntry).izumi
     const extra = entry.extra ?? []
-    return !roles?.hero && !roles?.continue && extra.some((item) => item.name === 'skip') && !extra.some((item) => item.isRequired)
+    return !roles?.hero && !roles?.continue && entry.izumi?.browse !== false
+      && extra.some((item) => item.name === 'skip') && !extra.some((item) => item.isRequired)
   })
 }
 

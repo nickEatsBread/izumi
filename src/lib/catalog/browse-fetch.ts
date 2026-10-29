@@ -19,6 +19,7 @@ import {
   type BrowseFetch, type BrowseOption,
 } from './browse'
 import type { CatalogPage, CatalogSearchRequest } from './types'
+import type { AddonCatalog } from '$lib/stremio/manifest'
 
 export interface BrowseCatalog {
   sorts: BrowseOption[]
@@ -55,8 +56,25 @@ async function anilistGenres(client: Client): Promise<string[]> {
   return get(showAdult) ? genres : genres.filter((genre) => genre !== 'Hentai')
 }
 
+/** Pages through one of a source's listings, narrowed by `extra` (a category, a season). */
+export function sourceListingFetch(packageId: string, entry: AddonCatalog, extra: Record<string, string> = {}): BrowseFetch {
+  return async (page, offset, signal) => {
+    const stremio = await import('./providers/stremio')
+    // Re-read each time: a restarted source service comes back on another port.
+    const live = await sourceAddon(packageId)
+    const narrowed = Object.fromEntries(Object.entries(extra).filter(([, value]) => value))
+    const url = stremio.stremioCatalogUrl(live.base, entry, { ...narrowed, skip: offset || undefined })
+    const response = await phttp(url, { signal, timeoutMs: 20_000, maxBytes: 4 * 1024 * 1024 })
+    if (!response.ok) throw new Error(`The source answered HTTP ${response.status}.`)
+    const metas = ((await response.json()) as { metas?: StremioMeta[] }).metas ?? []
+    const media = metas.flatMap((meta) => stremio.mapStremioMeta(meta, live.base, entry.type) ?? [])
+    // A listing pages until it returns nothing: the protocol has no page size.
+    return { media, page, hasNextPage: metas.length > 0 }
+  }
+}
+
 async function sourceCatalog(packageId: string): Promise<BrowseCatalog> {
-  const [addon, stremio] = await Promise.all([sourceAddon(packageId), import('./providers/stremio')])
+  const addon = await sourceAddon(packageId)
   const entries = sourceBrowseCatalogs(addon.manifest)
   const entryOf = (sort: string) => entries.find((entry) => sourceSortValue(entry) === sort)
   const images = sourceGenreImages(addon.manifest)
@@ -64,18 +82,9 @@ async function sourceCatalog(packageId: string): Promise<BrowseCatalog> {
     sorts: sourceBrowseSorts(addon.manifest),
     genres: (sort) => sourceBrowseGenres(entryOf(sort)),
     genreImage: (genre) => images[genre],
-    fetch: (sort, genre) => async (page, offset, signal) => {
+    fetch: (sort, genre) => {
       const entry = entryOf(sort)
-      if (!entry) return { media: [], page, hasNextPage: false }
-      // Re-read each time: a restarted source service comes back on another port.
-      const live = await sourceAddon(packageId)
-      const url = stremio.stremioCatalogUrl(live.base, entry, { genre: genre || undefined, skip: offset || undefined })
-      const response = await phttp(url, { signal, timeoutMs: 20_000, maxBytes: 4 * 1024 * 1024 })
-      if (!response.ok) throw new Error(`The source answered HTTP ${response.status}.`)
-      const metas = ((await response.json()) as { metas?: StremioMeta[] }).metas ?? []
-      const media = metas.flatMap((meta) => stremio.mapStremioMeta(meta, live.base, entry.type) ?? [])
-      // A listing pages until it returns nothing: the protocol has no page size.
-      return { media, page, hasNextPage: metas.length > 0 }
+      return entry ? sourceListingFetch(packageId, entry, { genre }) : async (page) => ({ media: [], page, hasNextPage: false })
     },
   }
 }

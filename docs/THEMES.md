@@ -158,7 +158,7 @@ The hooks added with them (`page-step`, `block.grid`, `hero.edge`, `nav.action`,
 
 A package declares `themeApi: 7` to use the drawer navigation; the validator refuses it in an older package.
 
-- **Drawer navigation (`shell.nav: "drawer"`).** No side rail and no top bar: the page takes the whole window (`--theme-shell-left` is 0 and `data-theme-nav` on `<html>` is `drawer`). Every destination lives in a drawer (`nav.drawer`, 288 px wide) that slides in from the left over a scrim. Start opens and closes it, Left from the left edge of the page opens it, and Right, Back (B) or Escape closes it; a floating menu button (`nav.menu`) at the top left opens it for a mouse and hides while a pad is in use. The drawer holds izumi's mark and name (`nav.drawer.head`), the destinations (`nav.item`, with Categories after Browse: the catalog's categories as a wall of chips, `categories`), a Screens heading (`nav.drawer.heading`) over the catalog screens when more than one is on (`nav.item` with `data-variant="screen"` and `data-screen`; choosing one opens Home on it), and a foot row (`nav.drawer.foot`) with the account, incognito and settings buttons (`nav.action`). Phones keep the bottom bar and Android TV the side rail. While a video plays the drawer stays closed and the player takes the whole window.
+- **Drawer navigation (`shell.nav: "drawer"`).** No side rail and no top bar: the page takes the whole window (`--theme-shell-left` is 0 and `data-theme-nav` on `<html>` is `drawer`). Every destination lives in a drawer (`nav.drawer`, 288 px wide) that slides in from the left over a scrim. Start opens and closes it, Left from the left edge of the page opens it, and Right, Back (B) or Escape closes it; a floating menu button (`nav.menu`) at the top left opens it for a mouse and hides while a pad is in use. The drawer holds izumi's mark and name (`nav.drawer.head`), the destinations (`nav.item`, with Categories after Browse: the catalog's categories as a wall of chips, `categories`; on a source's screen, the lists that source puts in the menu follow it, each a `listing`), a Screens heading (`nav.drawer.heading`) over the catalog screens when more than one is on (`nav.item` with `data-variant="screen"` and `data-screen`; choosing one opens Home on it), and a foot row (`nav.drawer.foot`) with the account, incognito and settings buttons (`nav.action`). Phones keep the bottom bar and Android TV the side rail. While a video plays the drawer stays closed and the player takes the whole window.
 
 ### Theme API 6
 
@@ -737,6 +737,13 @@ State values:
 | `categories.backdrop` | part | The focused category's artwork, full-bleed behind the wall, when the source gives its categories artwork. |  |
 | `categories.scrim` | part | The gradient over the backdrop that keeps the chips readable. |  |
 | `categories.empty` | part | Shown when the catalog has no categories (data-state empty) or they failed to load (data-state error, with Try again). |  |
+| `listing` | slot | A list a source puts in the drawer (its watchlist, history or seasons) as a grid of its titles; data-state is choosing while it shows the wall of options it opens on. |  |
+| `listing.title` | part | The list name, or the option chosen from its wall. |  |
+| `listing.chips` | part | The wall of options a list opens on (a season, say). |  |
+| `listing.chip` | part | One option, a link to the list narrowed to it. |  |
+| `listing.grid` | part | The poster grid; data-variant is grid and data-state is loading while skeletons show. |  |
+| `listing.empty` | part | Shown when the list has nothing (data-state empty) or failed to load (data-state error, with Retry). |  |
+| `listing.more` | part | Loading more at the end of the grid, or data-state error with Retry. |  |
 | `settings.section.icon` | part | The icon tile beside a Settings section heading. |  |
 | `settings.rail.indicator` | part | The Settings rail's selection marker, which slides to the current section. `data-marker` is its style: `accent` (default), `fill`, `bar`, `tile` or `dot`. | `data-marker` |
 

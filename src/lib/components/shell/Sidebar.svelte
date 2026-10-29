@@ -11,6 +11,10 @@
   import Search from '@lucide/svelte/icons/search'
   import LayoutGrid from '@lucide/svelte/icons/layout-grid'
   import Shapes from '@lucide/svelte/icons/shapes'
+  import Bookmark from '@lucide/svelte/icons/bookmark'
+  import History from '@lucide/svelte/icons/clock-arrow-down'
+  import CalendarDays from '@lucide/svelte/icons/calendar-days'
+  import List from '@lucide/svelte/icons/list'
   import Download from '@lucide/svelte/icons/download'
   import Users from '@lucide/svelte/icons/users'
   import Settings from '@lucide/svelte/icons/settings'
@@ -40,8 +44,10 @@
   import { incognito, toggleIncognito } from '$lib/stores/incognito'
   import { offlineMode } from '$lib/stores/offline'
   import {
-    catalogLabel, catalogScreen, catalogSwitcherPlacement, customScreens, enabledCatalogScreens, resolveCatalogSwitcherPlacement, selectCatalogScreen,
+    catalogLabel, catalogProvider, catalogScreen, catalogSwitcherPlacement, customScreens, enabledCatalogScreens, resolveCatalogSwitcherPlacement, selectCatalogScreen,
   } from '$lib/settings/catalog'
+  import { isSourceSelection, sourceAddon, sourcePackageOf } from '$lib/catalog/source-catalogs'
+  import { listingHref, sourceMenus, type SourceMenu } from '$lib/catalog/source-menus'
   import { interfaceMode } from '$lib/settings/interface-mode'
   import { searchModeNav } from '$lib/settings/nav-rules'
   import * as h from '$lib/haptics'
@@ -88,7 +94,19 @@
   // The drawer has room for Categories after Browse (the catalog's categories as a wall of chips);
   // the rail and the top bar keep their set.
   const categoriesItem = { id: 'categories', href: '/app/categories', icon: Shapes, label: 'Categories', anim: '' }
-  const drawerItems = $derived(shown.flatMap((item) => item.id === 'browse' ? [item, categoriesItem] : [item]))
+  // A source screen adds the lists its source puts in the menu (its watchlist, history, seasons).
+  let menus = $state<SourceMenu[]>([])
+  $effect(() => {
+    const selection = $catalogProvider
+    menus = []
+    if (!isSourceSelection(selection)) return
+    let live = true
+    sourceAddon(sourcePackageOf(selection)).then((addon) => { if (live) menus = sourceMenus(addon.manifest) }).catch(() => {})
+    return () => { live = false }
+  })
+  const MENU_ICONS = { bookmark: Bookmark, history: History, calendar: CalendarDays, list: List }
+  const menuItems = $derived(menus.map((menu) => ({ id: 'listing', href: listingHref(menu), icon: MENU_ICONS[menu.icon], label: menu.label, anim: '' })))
+  const drawerItems = $derived(shown.flatMap((item) => item.id === 'browse' ? [item, categoriesItem, ...menuItems] : [item]))
   // `menu: "side"`: the menu is a pinned panel down the left on windows from 1100 px (the bar keeps
   // only its brand, search and trailing buttons); the menu button folds it away, and narrower
   // windows fall back to the drawer. Hidden while a video plays, like the rail goes inert.
@@ -195,7 +213,8 @@
   })
   // No active-item highlight while a video plays — the rail is inert then (you're in the player,
   // not browsing), so highlighting the page you launched from (e.g. Home) reads as "selected".
-  const active = (href: string) => !$playing && (page.url.pathname.startsWith(href) || href === '/app/library' && ['/app/trakt', '/app/letterboxd'].includes(page.url.pathname))
+  // A menu list's address carries its query, so it lights up only on its own list.
+  const active = (href: string) => !$playing && ((page.url.pathname + page.url.search).startsWith(href) || href === '/app/library' && ['/app/trakt', '/app/letterboxd'].includes(page.url.pathname))
   // The tab L1/R1 steps from: the current page's, else the last one visited (a series page opened
   // from Home still steps from Home).
   let lastSection = $state<string | undefined>()
