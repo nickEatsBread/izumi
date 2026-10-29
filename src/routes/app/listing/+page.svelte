@@ -77,18 +77,21 @@
   const loadAtEnd = () => { if (!error && !loading) void more() }
   const retry = () => { error = ''; void more() }
 
-  // With a pad, the grid lands on its first title once one shows, as Browse does.
+  // With a pad, the screen lands on its first chip or title once one shows, as Browse does (a chip
+  // focused as it mounted lost focus to the page change that opened it).
   let results = $state<HTMLElement>()
+  let chips = $state<HTMLElement>()
   let landedFor = ''
   $effect(() => {
-    if (!$gameMode || !feed?.media.length || landedFor === key) return
-    landedFor = key
+    const target = choosing ? chips : feed?.media.length ? results : undefined
+    const view = `${key}|${choosing}`
+    if (!$gameMode || !target || landedFor === view) return
+    landedFor = view
     requestAnimationFrame(() => {
       if (document.activeElement && document.activeElement !== document.body) return
-      results?.querySelector<HTMLElement>('[data-focusable]')?.focus({ preventScroll: true })
+      target.querySelector<HTMLElement>('[data-focusable]')?.focus({ preventScroll: true })
     })
   })
-  const focusOnMountIf = (node: HTMLElement, on: boolean) => { if (on) focusOnMount(node) }
   const skeletons = Array.from({ length: 12 })
 </script>
 
@@ -107,9 +110,9 @@
   {:else if addon && !menu}
     <p data-part="listing.empty" data-state="empty" class="text-sm text-muted-foreground">This source no longer offers this list.</p>
   {:else if choosing && menu}
-    <div data-part="listing.chips" role="list" class="flex flex-wrap gap-3">
-      {#each menu.options as choice, index (choice)}
-        <a role="listitem" data-part="listing.chip" data-focusable href={listingHref(menu, choice)} use:focusOnMountIf={index === 0}
+    <div data-part="listing.chips" role="list" bind:this={chips} class="flex flex-wrap gap-3">
+      {#each menu.options as choice (choice)}
+        <a role="listitem" data-part="listing.chip" data-focusable href={listingHref(menu, choice)}
            class="rounded-full bg-secondary/90 px-5 py-2.5 text-sm font-bold text-foreground/85 outline-none hover:bg-accent focus-visible:bg-primary focus-visible:text-primary-foreground">{choice}</a>
       {/each}
     </div>
