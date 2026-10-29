@@ -2,7 +2,7 @@
   import { onDestroy, untrack } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
   import {
-    preferredAudioLang, preferredSubLang, videoFit,
+    preferredAudioLang, preferredSubLang, preferredQuality, videoFit,
     gifScale, gifMaxSeconds,
     subtitleStyleEnabled, subtitleOverrideScope, subtitleFont as savedSubtitleFont, subtitleBold as savedSubtitleBold, subtitleFontSize as savedSubtitleFontSize,
     subtitleTextColor, subtitleBorderColor as savedSubtitleBorderColor,
@@ -14,6 +14,7 @@
   import { pickSubtitleTrackId } from '$lib/player/track-policy'
   import { DRM_CATALOG_WAIT_MS, preferredDrmPresentation, shouldAutoReloadHardsub, waitForCatalog } from '$lib/player/preferred-drm'
   import { AUTO_ABR, abrMaxHeight, shouldPinFastStart } from '$lib/player/abr'
+  import { preferredDrmQuality } from './drm-quality'
   import { gifCapturePlan } from '$lib/player/gif-settings'
   import { BUFFER_SPINNER_DELAY_MS, bufferSpinnerAction } from '$lib/player/overlay-loading'
   import {
@@ -126,6 +127,7 @@
   let capturePresentationWarmed = false
   let abrWarmTimer: ReturnType<typeof setTimeout> | undefined
   let qualityMode: 'auto' | number = 'auto'
+  let qualityPicked = false
   let lastGoodDur = 0
   let lastGoodPos = 0
   let dolbyPolicySignature = ''
@@ -249,6 +251,12 @@
       w.__izumiDrm = snapshot
       w.__izumiDrmTracks = () => engine.tracks()
     }
+  }
+
+  // mpv announces pause with `player-paused`; this is the protected player's equivalent, which the
+  // source progress reporter (catalog/source-streams.ts) listens for to save the playhead on a pause.
+  function emitPauseChange() {
+    window.dispatchEvent(new CustomEvent('izumi-drm-pause', { detail: snapshot() }))
   }
 
   type ShakaText = {
@@ -499,6 +507,7 @@
   function setQuality(mode: string) {
     if (mode === 'auto') {
       qualityMode = 'auto'
+      qualityPicked = true
       applyAbrPolicy()
       emitQualityInfo()
       return
@@ -506,6 +515,7 @@
     const height = Number(mode.replace(/p$/i, ''))
     if (!Number.isFinite(height) || height <= 0 || !qualityInfo().heights.includes(height)) return
     qualityMode = height
+    qualityPicked = true
     selectManualQuality(height, true)
   }
 
@@ -1350,6 +1360,10 @@
     loopA = null
     loopB = null
     subtitleScale = 1
+    // Each load starts on Auto's fast-start rung; the preferred quality is applied once the
+    // manifest names its heights, and a menu pick from then on lasts until the next load.
+    qualityMode = 'auto'
+    qualityPicked = false
     liveSubs = subtitles
     liveAudio = audioChoices
     liveAudioLang = audioLang
@@ -1485,6 +1499,14 @@
         activeManifest = fallback
         error = null
       }
+      if (gen === loadGen && !qualityPicked) {
+        const start = preferredDrmQuality(get(preferredQuality), qualityInfo().heights)
+        // Kept buffer: the low startup segment still gives the first frame, then the pick takes over.
+        if (start !== 'auto') {
+          qualityMode = start
+          selectManualQuality(start, false)
+        }
+      }
       await enforceDrmDolbyPolicy(true)
       booting = false
       if (gen !== loadGen) return
@@ -1558,8 +1580,8 @@
     publish()
   }}
   onloadedmetadata={() => publish()}
-  onpause={() => publish()}
-  onplay={() => publish()}
+  onpause={() => { publish(); emitPauseChange() }}
+  onplay={() => { publish(); emitPauseChange() }}
   onwaiting={() => setBuffering(true)}
   onseeking={() => {
     setSegmentPrefetch(0)

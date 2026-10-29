@@ -3,6 +3,7 @@
 import type { Media } from '$lib/anilist/types'
 import { title } from '$lib/anilist/media'
 import { invokeNativeHttp, phttp } from '$lib/net/http'
+import { listenSafe } from '$lib/util/listen'
 import type { Stream } from '$lib/stremio/parse'
 import { videoSourceToStream, type SnVideoSource } from '$lib/stremio/onlinestream'
 import { isSourceOrigin, sourceAddonForOrigin } from './source-catalogs'
@@ -64,31 +65,67 @@ export async function sourceStreams(media: Media, videoId: string, epTitle?: str
   return list.flatMap((raw, index) => sourceStream(raw, addon.base, addon.manifest.name, addon.packageId, index, epTitle, showTitle) ?? [])
 }
 
-/** Sends the playhead to `stream.__progressUrl`: every 30 s while playing and once more when playback
- *  ends. Nothing for a stream that did not ask. Failures are dropped: the next report carries on. */
-export function sourceProgressReporter(stream: Stream, intervalMs = 30_000): { progress(pos: number): void; flush(pos?: number): void } | undefined {
+/** The protected player's pause/resume event (DrmSurface.svelte); its detail carries `paused`, `pos`, `dur`. */
+export const DRM_PAUSE_EVENT = 'izumi-drm-pause'
+/** A pause shorter than this (a scrub, a quick pause/resume) sends nothing. */
+const PAUSE_SETTLE_MS = 2_000
+/** A pause report never follows another report sooner than this. */
+const PAUSE_GAP_MS = 5_000
+
+/** Sends the playhead to `stream.__progressUrl`: every 30 s while playing, once a pause has held, and
+ *  once more when playback ends. Nothing for a stream that did not ask. Failures are dropped: the
+ *  next report carries on. Pauses come from mpv's `player-paused` and the protected player's
+ *  `DRM_PAUSE_EVENT`; `flush` is the last report and stops listening for them. */
+export function sourceProgressReporter(stream: Stream, intervalMs = 30_000): { progress(pos: number, dur?: number): void; flush(pos?: number): void } | undefined {
   const url = stream.__progressUrl
   if (!url) return undefined
   let position = 0
+  let duration = 0
   let sentAt = 0
   let sent = -1
+  let pauseTimer: ReturnType<typeof setTimeout> | undefined
   const send = () => {
     const seconds = Math.floor(position)
-    if (seconds <= 0 || seconds === sent) return
+    if (seconds <= 0 || (duration > 0 && seconds > duration) || seconds === sent) return
     sent = seconds
     void invokeNativeHttp('ext_fetch', {
       url, method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ position: seconds }),
     }, { timeoutMs: 10_000, maxBytes: 64 * 1024 }).catch(() => {})
   }
+  const take = (pos: number, dur?: number) => {
+    if (Number.isFinite(pos)) position = pos
+    if (dur !== undefined && Number.isFinite(dur) && dur > 0) duration = dur
+  }
+  const pauseChanged = (paused: boolean) => {
+    clearTimeout(pauseTimer)
+    pauseTimer = undefined
+    if (!paused) return
+    pauseTimer = setTimeout(() => {
+      pauseTimer = undefined
+      sentAt = Date.now()
+      send()
+    }, Math.max(PAUSE_SETTLE_MS, sentAt + PAUSE_GAP_MS - Date.now()))
+  }
+  const onDrmPause = (event: Event) => {
+    const detail = record((event as CustomEvent).detail)
+    take(Number(detail?.pos), Number(detail?.dur))
+    pauseChanged(detail?.paused === true)
+  }
+  const stopMpv = listenSafe<boolean>('player-paused', ({ payload }) => pauseChanged(payload === true))
+  if (typeof window !== 'undefined') window.addEventListener(DRM_PAUSE_EVENT, onDrmPause)
   return {
-    progress(pos) {
-      position = pos
+    progress(pos, dur) {
+      take(pos, dur)
       if (Date.now() - sentAt < intervalMs) return
       sentAt = Date.now()
       send()
     },
     flush(pos) {
-      if (pos !== undefined && Number.isFinite(pos)) position = pos
+      clearTimeout(pauseTimer)
+      pauseTimer = undefined
+      stopMpv()
+      if (typeof window !== 'undefined') window.removeEventListener(DRM_PAUSE_EVENT, onDrmPause)
+      if (pos !== undefined) take(pos)
       send()
     },
   }

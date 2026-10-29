@@ -2,9 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const invoke = vi.hoisted(() => vi.fn())
 vi.mock('@tauri-apps/api/core', () => ({ invoke }))
+const listen = vi.hoisted(() => vi.fn(async (_event: string, _handler: (e: { payload: boolean }) => void) => () => {}))
+vi.mock('@tauri-apps/api/event', () => ({ listen }))
 
+import { readFileSync } from 'node:fs'
 import { isSourceSelection, sourcePackageOf } from './source-catalogs'
-import { sourceProgressReporter, sourceStream } from './source-streams'
+import { DRM_PAUSE_EVENT, sourceProgressReporter, sourceStream } from './source-streams'
 import { mapStremioMeta, sourceFacts } from './providers/stremio'
 import { refineStreams } from '$lib/stremio/refine'
 
@@ -64,6 +67,52 @@ describe('source catalogs', () => {
     const bodies = invoke.mock.calls.filter(([command]) => command === 'ext_fetch').map(([, args]) => JSON.parse(args.body).position)
     expect(bodies).toEqual([10, 40, 55])
     expect(sourceProgressReporter({ url: 'x' })).toBeUndefined()
+  })
+
+  it('reports a pause that holds, at most once every few seconds, never 0 or past the end', () => {
+    invoke.mockResolvedValue({ status: 200, body: '' })
+    vi.useFakeTimers()
+    vi.stubGlobal('window', new EventTarget())
+    try {
+      const reporter = sourceProgressReporter({ url: 'x', __progressUrl: `${BASE}/progress?video=x` }, 30_000)!
+      const mpvPaused = listen.mock.calls.find(([event]) => event === 'player-paused')![1]
+      const drmPause = (detail: object) => window.dispatchEvent(new CustomEvent(DRM_PAUSE_EVENT, { detail }))
+      const bodies = () => invoke.mock.calls.filter(([command]) => command === 'ext_fetch').map(([, args]) => JSON.parse(args.body).position)
+      reporter.progress(10, 1400)
+      vi.advanceTimersByTime(10_000)
+      reporter.progress(20)
+      mpvPaused({ payload: true })
+      vi.advanceTimersByTime(1_000)
+      mpvPaused({ payload: false })
+      vi.advanceTimersByTime(10_000)
+      mpvPaused({ payload: true })
+      vi.advanceTimersByTime(2_000)
+      mpvPaused({ payload: false })
+      reporter.progress(22)
+      mpvPaused({ payload: true })
+      vi.advanceTimersByTime(2_000)
+      expect(bodies()).toEqual([10, 20])
+      vi.advanceTimersByTime(3_000)
+      drmPause({ paused: true, pos: 1500, dur: 1400 })
+      vi.advanceTimersByTime(6_000)
+      drmPause({ paused: true, pos: 0, dur: 1400 })
+      vi.advanceTimersByTime(6_000)
+      drmPause({ paused: true, pos: 30.4, dur: 1400 })
+      vi.advanceTimersByTime(6_000)
+      reporter.flush()
+      drmPause({ paused: true, pos: 40, dur: 1400 })
+      vi.advanceTimersByTime(6_000)
+      expect(bodies()).toEqual([10, 20, 22, 30])
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('hears the protected player under the name it announces pauses with', () => {
+    const surface = readFileSync(new URL('../components/player/DrmSurface.svelte', import.meta.url), 'utf8')
+    expect(surface).toContain(`new CustomEvent('${DRM_PAUSE_EVENT}', { detail: snapshot() })`)
+    expect(surface).toMatch(/onpause=\{\(\) => \{ publish\(\); emitPauseChange\(\) \}\}/)
+    expect(surface).toMatch(/onplay=\{\(\) => \{ publish\(\); emitPauseChange\(\) \}\}/)
   })
 })
 
