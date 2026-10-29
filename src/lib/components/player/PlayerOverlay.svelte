@@ -330,10 +330,12 @@
     const t = setTimeout(() => { pausedIdle = true }, 5000)
     return () => clearTimeout(t)
   })
-  const controlsVisible = $derived(
+  // Set the moment the player starts closing (close()): no chrome comes up for the pause it makes.
+  let exiting = $state(false)
+  const controlsVisible = $derived(!exiting && (
     // A new file starts out paused and loading: neither pins the chrome before there is a picture.
-    visible || (firstFrame && !(quietPadSeek || quietDpadScrub) && ((transportPaused && !pausedIdle) || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen,
-  )
+    visible || (firstFrame && !(quietPadSeek || quietDpadScrub) && ((transportPaused && !pausedIdle) || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen
+  ))
   $effect(() => { if (firstFrame) untrack(poke) })
   // Game mode: the video window is unmapped behind the menu stage (gm-freeze.ts). Until it is back,
   // the HTML controls stay mounted and own the chrome, so a closing menu inside them slides out.
@@ -740,6 +742,10 @@
   async function close() {
     if (closing) return
     closing = true
+    // Answer the press at once. Putting the page back under the video takes a moment on the Deck,
+    // and a picture still playing meanwhile (with the controls up) read as B being ignored.
+    exiting = true
+    void invoke('player_command', { name: 'set', args: ['pause', 'yes'] }).catch(() => {})
     await exitFullscreen()
     await exitPictureInPicture()
     playerSleep.set({ deadline: null, atEpisodeEnd: false })
