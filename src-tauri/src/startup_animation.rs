@@ -230,7 +230,9 @@ pub async fn startup_animation_url(app: AppHandle) -> Result<Option<String>, Str
 pub fn launch_script(app: &AppHandle) -> String {
     let Ok(dir) = dir(app) else { return String::new() };
     let Some(info) = read_info(&dir) else { return String::new() };
-    match tauri::async_runtime::block_on(server_url(dir)) {
+    let served = tauri::async_runtime::block_on(server_url(dir));
+    crate::startup_trace::mark("intro.server");
+    match served {
         Ok(url) => format!(
             "window.__IZUMI_STARTUP_URL__={};",
             serde_json::to_string(&format!("{url}?v={}", &info.sha256[..16])).unwrap_or_default()

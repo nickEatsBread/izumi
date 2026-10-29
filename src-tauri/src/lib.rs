@@ -75,6 +75,8 @@ mod modules;
 mod startup_animation;
 // A pack the Deck installer was asked to set up, offered once at the next launch.
 mod pending_pack;
+// How long each launch step took, for measuring startup on a device.
+mod startup_trace;
 
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -5884,6 +5886,7 @@ fn configure_gamescope_native_wayland_prototype() {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[cfg(not(test))]
 pub fn run() {
+    startup_trace::mark("run");
     #[cfg(target_os = "linux")]
     configure_gamescope_native_wayland_prototype();
     // Linux: the embedded player composites mpv (a wl_subsurface) BELOW the webview,
@@ -5993,6 +5996,7 @@ pub fn run() {
             .build(),
     );
     let builder = builder.setup(|app| {
+            startup_trace::mark("setup");
             // Reclaim what the last session left behind, before anything writes more. Detached: a
             // stat walk over an abandoned torrent payload must not sit between launch and paint.
             cache_gc::sweep_at_startup(app.handle());
@@ -6037,6 +6041,7 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 sync::initialize_if_configured(sync_app).await
             });
+            startup_trace::mark("setup.services");
 
             // Create the desktop main window HERE (not in tauri.conf.json) so we can attach an
             // on_new_window handler. Tauri denies `window.open` by default, which silently blocks the
@@ -6121,7 +6126,11 @@ pub fn run() {
                         #[cfg(windows)]
                         install_webview_frame_scripts(&win);
                         if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                            startup_trace::mark("page.finished");
                             let _ = win.show();
+                            startup_trace::mark("window.shown");
+                        } else {
+                            startup_trace::mark("page.started");
                         }
                     })
                     .on_new_window(move |url, features| {
@@ -6382,6 +6391,7 @@ pub fn run() {
                     &app.config().identifier,
                 )
                 .build()?;
+                startup_trace::mark("window.built");
 
                 // The window above is built hidden and `on_page_load` is the ONLY thing that ever
                 // reveals it. When that first load never reaches Finished — a webview that fails to
@@ -6605,6 +6615,7 @@ pub fn run() {
             }
             #[cfg(not(any(windows, target_os = "linux")))]
             let _ = app;
+            startup_trace::mark("setup.done");
             Ok(())
         });
 
@@ -6749,6 +6760,7 @@ pub fn run() {
             download::download_delete,
             download::download_dir_default,
             download::download_disk_space,
+            startup_trace::startup_marks,
             download::reveal_in_folder,
             direct_torrent::torrent_engine_warmup,
             direct_torrent::torrent_metadata_prefetch,
@@ -6848,6 +6860,7 @@ pub fn run() {
         download::download_delete,
         download::download_dir_default,
         download::download_disk_space,
+        startup_trace::startup_marks,
         download::reveal_in_folder,
         direct_torrent::torrent_engine_warmup,
         direct_torrent::torrent_metadata_prefetch,
@@ -6902,6 +6915,7 @@ pub fn run() {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     let builder = builder.plugin(tauri_plugin_haptics::init());
 
+    startup_trace::mark("builder");
     builder
         .build(isolate_dev_context(tauri::generate_context!()))
         .expect("error while running tauri application")
