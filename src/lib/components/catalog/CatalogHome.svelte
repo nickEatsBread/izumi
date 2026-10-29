@@ -141,11 +141,13 @@
   // A cached Home (coming back from a series page) used to build every row and card in one pass:
   // hundreds of cards held the Deck's page for over a second before anything showed. The first
   // screenful renders at once; a row further down stays a skeleton until it comes near the screen,
-  // then joins, one row a frame. Coming back builds at once only the rows that were on or near the
-  // screen when the viewer left (skeletons there, where the page reopens, looked broken; rebuilding
-  // every row reached before held Back for about a second); a refreshed answer keeps what is shown.
+  // then joins, one row a frame. Coming back builds at once only the rows that were on the screen or
+  // the one above when the viewer left (skeletons there, where the page reopens, looked broken;
+  // rebuilding every row within two screens held Back for 0.47 s on the Deck); the rows below join
+  // a frame at a time. A refreshed answer keeps what is shown.
   const FIRST_ROWS = 4
-  let revealed = $state(new Set<string>())
+  // Starts from the rows remembered on leaving, so a return never draws a frame of skeletons first.
+  let revealed = $state(new Set<string>(shownRows.get($catalogProvider)))
   let revealQueue: string[] = []
   let revealFrame = 0
   function reveal(id: string) {
@@ -170,11 +172,12 @@
     for (const id of homeRowIds) {
       // A row's carousel is named `<screen>:<role or id>` (HomeRowFrame's row context).
       const box = document.querySelector(`[data-row="${CSS.escape(`${$catalogProvider}:${themeHome?.roles[id] ?? id}`)}"]`)?.getBoundingClientRect()
-      if (box && box.bottom > -height && box.top < height * 2) near.add(id)
+      if (box && box.bottom > -height && box.top < height) near.add(id)
     }
     shownRows.set($catalogProvider, near)
   })
-  const rowShown = (id: string) => $homeEditorOpen || homeRowIds.indexOf(id) < FIRST_ROWS || revealed.has(id)
+  const returning = shownRows.has($catalogProvider)
+  const rowShown = (id: string) => $homeEditorOpen || (!returning && homeRowIds.indexOf(id) < FIRST_ROWS) || revealed.has(id)
   // The rest are built ahead while Home sits still, one per quiet moment: built as the first walk
   // down reached them, each held a Deck frame for 70-140 ms mid-scroll. Not during the startup
   // video, a scroll, a banner change or playback; a row the walk reaches first still joins as above.

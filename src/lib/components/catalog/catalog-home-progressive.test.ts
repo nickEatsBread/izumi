@@ -9,7 +9,7 @@ const home = readFileSync(fileURLToPath(new URL('./CatalogHome.svelte', import.m
 describe('catalog Home builds only the rows near the screen', () => {
   it('shows the first rows at once', () => {
     expect(home).toContain('const FIRST_ROWS = 4')
-    expect(home).toContain('const rowShown = (id: string) => $homeEditorOpen || homeRowIds.indexOf(id) < FIRST_ROWS || revealed.has(id)')
+    expect(home).toContain('const rowShown = (id: string) => $homeEditorOpen || (!returning && homeRowIds.indexOf(id) < FIRST_ROWS) || revealed.has(id)')
   })
 
   it('holds a row further down as a skeleton until it comes near the screen, then adds it a row a frame', () => {
@@ -35,10 +35,11 @@ describe('catalog Home builds only the rows near the screen', () => {
     expect(row).toContain('let all = $state(fullRows.has(section.id))')
   })
 
-  it('builds on return the rows that were near the screen when the viewer left, and no more', () => {
-    // Skeletons where the page reopens looked broken; rebuilding every row reached held Back ~1 s.
+  it('builds on return the rows that were on the screen (or the one above) when the viewer left, and no more', () => {
+    // Skeletons where the page reopens looked broken; rebuilding every row within two screens held Back 0.47 s.
     expect(home).toContain('revealed = new Set(shownRows.get($catalogProvider))')
-    expect(home).toContain('if (box && box.bottom > -height && box.top < height * 2) near.add(id)')
+    expect(home).toContain('if (box && box.bottom > -height && box.top < height) near.add(id)')
+    expect(home).toContain('(!returning && homeRowIds.indexOf(id) < FIRST_ROWS)')
     expect(home).toContain('beforeNavigate(() => {')
   })
 })
