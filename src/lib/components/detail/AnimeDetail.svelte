@@ -71,6 +71,7 @@
   import { openTrailerPopup } from '$lib/stores/trailer'
   import { connecting, gameMode } from '$lib/player/session'
   import { controllerMode } from '$lib/nav/input'
+  import { PAGE_OPTIONS_EVENT } from '$lib/nav/gamepad'
   import { getEpisodeMeta, getKitsuId } from '$lib/anizip'
   import type { EpMeta } from '$lib/anizip/types'
   import { positions, positionPercent, progressKey } from '$lib/player/progress'
@@ -612,6 +613,18 @@
     optionsReturn = describeFocus(document.activeElement)
     optionsOpen = true
   }
+  // ☰ opens the same menu, as on a catalog title page; ☰ again closes it.
+  $effect(() => {
+    const claim = (event: Event) => {
+      if (!media) return
+      if (optionsOpen) { event.preventDefault(); optionsOpen = false; return }
+      if (showEditor || showLocalLists || document.querySelector('[data-nav-trap]')) return
+      event.preventDefault()
+      openOptions()
+    }
+    window.addEventListener(PAGE_OPTIONS_EVENT, claim)
+    return () => window.removeEventListener(PAGE_OPTIONS_EVENT, claim)
+  })
   const optionGroups = $derived<SheetGroup[]>([{
     options: [
       {
