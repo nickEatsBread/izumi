@@ -50,6 +50,10 @@ pub struct Prepared {
     pub mode: VideoMode,
     pub height: u32,
     pub heights: Vec<u32>,
+    /// Where mpv opens the stream: the asked start, moved to the start of its fragment on the
+    /// module path.
+    #[serde(skip)]
+    pub start: Option<f64>,
     #[serde(skip)]
     pub file_options: Vec<(String, String)>,
 }
@@ -183,95 +187,125 @@ fn requested_mode(req: &Request) -> Option<VideoMode> {
     }
 }
 
-/// Licenses `manifest_url` and registers its streams. The returned URLs are what mpv loads.
-/// `on_refused` runs if the module later refuses a sample on the hardware-decoding path.
-pub async fn prepare(data: &std::path::Path, manifest_url: &str, req: &Request, on_refused: OnRefused) -> Result<Prepared> {
+/// Starts a licence session for `init_data` and applies the server's answer.
+async fn license(cdm: Arc<Cdm>, req: &Request, init_data: Vec<u8>) -> Result<cdm::KeyReport> {
+    let c = cdm.clone();
+    let challenge = blocking(move || c.licence_request(init_data)).await?;
+    let licence = post_licence(req, challenge).await?;
+    blocking(move || cdm.update(licence)).await
+}
+
+/// The fragment holding `start` seconds: the first one without a start.
+fn fragment_at(head: &super::fmp4::Head, start: Option<f64>) -> usize {
+    let Some(start) = start.filter(|s| *s > 0.0) else { return 0 };
+    let target = (start * head.timescale as f64) as u64;
+    let mut begins = 0u64;
+    for (index, duration) in head.fragment_durations.iter().enumerate() {
+        if begins + duration > target {
+            return index;
+        }
+        begins += duration;
+    }
+    head.fragment_durations.len().saturating_sub(1)
+}
+
+/// Milliseconds since `since`, for the one-line timing report.
+fn ms(since: std::time::Instant) -> u128 {
+    since.elapsed().as_millis()
+}
+
+/// Licenses `manifest_url` and registers its streams. The returned URLs are what mpv loads, from
+/// `Prepared::start` (playback opens at the start of the fragment holding `start`, so the module's
+/// first picture needs one decode instead of up to a fragment's worth). `on_refused` runs if the
+/// module later refuses a sample on the hardware-decoding path.
+///
+/// Opening used to run every step after the one before it. Now what does not depend on the stream
+/// (the module and its instance) gets ready while the manifest downloads, the licence goes out while
+/// the file heads download, and the fragment playback starts in downloads while the licence is out:
+/// encrypted bytes need no key.
+pub async fn prepare(data: &std::path::Path, manifest_url: &str, req: &Request, start: Option<f64>, on_refused: OnRefused) -> Result<Prepared> {
+    let begun = std::time::Instant::now();
     if let Some(ks) = req.key_system.as_deref() {
         ensure!(ks == "com.widevine.alpha", "{ks} is not supported on this device");
     }
     let data = data.to_path_buf();
     // Updates are the module worker's job (`crate::modules`).
     let installed = fetch::installed(&data).ok_or_else(|| anyhow!("{}", super::NOT_INSTALLED))?;
-    let library = installed.library.clone();
-    let version = blocking(move || cdm::load_module(&library)).await?;
+    let forced = requested_mode(req);
+
+    let (renewals_tx, mut renewals_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    let module = {
+        let library = installed.library.clone();
+        let interface = installed.interface;
+        let certificate_url = req.server_certificate_url.clone().filter(|u| !u.is_empty());
+        async move {
+            let version = blocking(move || cdm::load_module(&library)).await?;
+            let cdm = Arc::new(blocking(move || Cdm::open(interface, renewals_tx)).await?);
+            if let Some(url) = certificate_url {
+                let certificate = http().get(&url).send().await?.error_for_status()?.bytes().await?.to_vec();
+                let c = cdm.clone();
+                blocking(move || c.set_server_certificate(certificate)).await?;
+            }
+            Ok::<_, anyhow::Error>((version, cdm, ms(begun)))
+        }
+    };
+    let media = media_files(manifest_url, req.max_height, forced);
+    let (module, media) = tokio::join!(module, media);
+    let (version, cdm, module_ms) = module?;
+    let (video_remote, audio_remote, manifest_pssh, video_rep, audio_lang, heights) = media?;
+    let manifest_ms = ms(begun);
     if version == installed.version {
         let (data, keep) = (data.clone(), version.clone());
         std::thread::spawn(move || fetch::prune_old(&data, &keep));
     }
 
-    let forced = requested_mode(req);
-    // A download (`file://<folder>`): its two saved files instead of the manifest's, still licensed
-    // online through the fresh licence URL the player resolved for it.
-    let (video_remote, audio_remote, manifest_pssh, video_rep, audio_lang, heights) = if let Some(dir) = save::saved_dir(manifest_url) {
-        let saved = Saved::read(&dir)?;
-        let rep = mpd::Representation {
-            kind: mpd::Kind::Video,
-            id: saved.video_id.clone(),
-            url: String::new(),
-            bandwidth: saved.bandwidth,
-            width: saved.width,
-            height: saved.height,
-            codecs: saved.codecs.clone(),
-            lang: None,
-        };
-        (
-            Remote::local(http().clone(), dir.join(&saved.video)),
-            Remote::local(http().clone(), dir.join(&saved.audio)),
-            saved.pssh(),
-            rep,
-            saved.audio_lang.clone(),
-            vec![saved.height],
-        )
-    } else {
-        let text = http()
-            .get(manifest_url)
-            .send()
-            .await
-            .context("the manifest could not be fetched")?
-            .error_for_status()
-            .context("the manifest could not be fetched")?
-            .text()
-            .await?;
-        let manifest = mpd::parse(&text, manifest_url)?;
-        // The module only decodes H.264; the hardware path takes whatever the manifest offers.
-        let codec = if forced == Some(VideoMode::Hardware) { None } else { Some("avc1") };
-        let video_rep = manifest
-            .video(req.max_height, codec)
-            .or_else(|| manifest.video(req.max_height, None))
-            .context("the manifest has no video")?
-            .clone();
-        let audio_rep = manifest.audio(None).context("the manifest has no audio")?.clone();
-        (
-            Remote::new(http().clone(), video_rep.url.clone()),
-            Remote::new(http().clone(), audio_rep.url.clone()),
-            manifest.pssh.clone(),
-            video_rep,
-            audio_rep.lang.clone(),
-            manifest.heights(codec),
-        )
+    // The module's decoder starts on the fragment playback opens in (the hardware path reads its own).
+    let first_fragment = |head: &super::fmp4::Head| (forced != Some(VideoMode::Hardware)).then(|| fragment_at(head, start));
+    let fetch_first = |head: super::fmp4::Head, index: Option<usize>| {
+        let remote = video_remote.clone();
+        async move {
+            let first = match index {
+                Some(index) => {
+                    let (offset, size) = head.fragments[index];
+                    Some((index, remote.range(offset, offset + size - 1).await.context("the video could not be read")?.0))
+                }
+                None => None,
+            };
+            Ok::<_, anyhow::Error>((head, first, ms(begun)))
+        }
     };
-
-    let (video_head, audio_head) = tokio::join!(video_remote.head(), audio_remote.head());
-    let (video_head, video_total) = video_head.context("the video file could not be read")?;
-    let (audio_head, audio_total) = audio_head.context("the audio file could not be read")?;
-    let init_data = manifest_pssh
-        .or_else(|| Some(video_head.pssh.clone()).filter(|p| !p.is_empty()))
-        .or_else(|| Some(audio_head.pssh.clone()).filter(|p| !p.is_empty()))
-        .context("the stream carries no Widevine licence data")?;
-
-    let (renewals_tx, mut renewals_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-    let interface = installed.interface;
-    let cdm = Arc::new(blocking(move || Cdm::open(interface, renewals_tx)).await?);
-    if let Some(url) = req.server_certificate_url.as_deref().filter(|u| !u.is_empty()) {
-        let certificate = http().get(url).send().await?.error_for_status()?.bytes().await?.to_vec();
-        let c = cdm.clone();
-        blocking(move || c.set_server_certificate(certificate)).await?;
-    }
-    let c = cdm.clone();
-    let challenge = blocking(move || c.licence_request(init_data)).await?;
-    let licence = post_licence(req, challenge).await?;
-    let c = cdm.clone();
-    let keys = blocking(move || c.update(licence)).await?;
+    let heads = async {
+        let (video, audio) = tokio::join!(video_remote.head(), audio_remote.head());
+        Ok::<_, anyhow::Error>((video.context("the video file could not be read")?, audio.context("the audio file could not be read")?, ms(begun)))
+    };
+    let licensed = |init_data: Vec<u8>| {
+        let cdm = cdm.clone();
+        async move { license(cdm, req, init_data).await.map(|keys| (keys, ms(begun))) }
+    };
+    let ((video_head, first, fragment_ms), video_total, (audio_head, audio_total), heads_ms, (keys, licence_ms)) = match manifest_pssh {
+        // The manifest's own init data: the licence goes out at once, beside the heads and the fragment.
+        Some(init_data) => {
+            let media = async {
+                let ((video_head, video_total), audio, heads_ms) = heads.await?;
+                let index = first_fragment(&video_head);
+                Ok::<_, anyhow::Error>((fetch_first(video_head, index).await?, video_total, audio, heads_ms))
+            };
+            let (keys, media) = tokio::join!(licensed(init_data), media);
+            let (video, video_total, audio, heads_ms) = media?;
+            (video, video_total, audio, heads_ms, keys?)
+        }
+        // Init data from the file heads: the licence and the fragment go out together once they are in.
+        None => {
+            let ((video_head, video_total), audio, heads_ms) = heads.await?;
+            let init_data = Some(video_head.pssh.clone())
+                .filter(|p| !p.is_empty())
+                .or_else(|| Some(audio.0.pssh.clone()).filter(|p| !p.is_empty()))
+                .context("the stream carries no Widevine licence data")?;
+            let index = first_fragment(&video_head);
+            let (keys, video) = tokio::join!(licensed(init_data), fetch_first(video_head, index));
+            (video?, video_total, audio, heads_ms, keys?)
+        }
+    };
     ensure!(
         keys.usable > 0,
         "the licence gave this device no usable keys{}",
@@ -299,9 +333,11 @@ pub async fn prepare(data: &std::path::Path, manifest_url: &str, req: &Request, 
         ("cache-secs".to_string(), "20".to_string()),
         ("cache-on-disk".to_string(), "no".to_string()),
     ];
+    let mut opens_at = start;
     let video = match mode {
         VideoMode::Module => {
-            let raw = RawVideo::open(video_remote, video_head, cdm.clone()).await?;
+            let raw = RawVideo::open(video_remote, video_head, cdm.clone(), first).await?;
+            opens_at = start.filter(|s| *s > 0.0).map(|s| raw.snap_to_fragment(s));
             file_options.extend([
                 ("demuxer".into(), "rawvideo".into()),
                 ("demuxer-rawvideo-w".into(), raw.width.to_string()),
@@ -320,6 +356,10 @@ pub async fn prepare(data: &std::path::Path, manifest_url: &str, req: &Request, 
         VideoMode::Hardware => Source::Track(Track::new(video_remote, video_head, video_total, cdm.clone(), Some(on_refused)), "video"),
     };
     let audio = Source::Track(Track::new(audio_remote, audio_head, audio_total, cdm.clone(), None), "audio");
+    eprintln!(
+        "[widevine] ready in {} ms: module {module_ms} ms, manifest {manifest_ms} ms, file heads {heads_ms} ms, licence {licence_ms} ms, first fragment {fragment_ms} ms (all from the start)",
+        ms(begun)
+    );
 
     // Licence renewals the module asks for while this session is current. The task ends with the
     // session (Drop aborts it), so it never keeps an old CDM instance alive.
@@ -353,6 +393,64 @@ pub async fn prepare(data: &std::path::Path, manifest_url: &str, req: &Request, 
         mode,
         height: video_rep.height,
         heights,
+        start: opens_at,
         file_options,
+    })
+}
+
+type MediaFiles = (Remote, Remote, Option<Vec<u8>>, mpd::Representation, Option<String>, Vec<u32>);
+
+/// The two files to play (and what the manifest says about them): a download's saved pair, or the
+/// manifest's best H.264 rung (any codec on the hardware path).
+async fn media_files(manifest_url: &str, max_height: Option<u32>, forced: Option<VideoMode>) -> Result<MediaFiles> {
+    // A download (`file://<folder>`): its two saved files instead of the manifest's, still licensed
+    // online through the fresh licence URL the player resolved for it.
+    Ok(if let Some(dir) = save::saved_dir(manifest_url) {
+        let saved = Saved::read(&dir)?;
+        let rep = mpd::Representation {
+            kind: mpd::Kind::Video,
+            id: saved.video_id.clone(),
+            url: String::new(),
+            bandwidth: saved.bandwidth,
+            width: saved.width,
+            height: saved.height,
+            codecs: saved.codecs.clone(),
+            lang: None,
+        };
+        (
+            Remote::local(http().clone(), dir.join(&saved.video)),
+            Remote::local(http().clone(), dir.join(&saved.audio)),
+            saved.pssh(),
+            rep,
+            saved.audio_lang.clone(),
+            vec![saved.height],
+        )
+    } else {
+        let text = http()
+            .get(manifest_url)
+            .send()
+            .await
+            .context("the manifest could not be fetched")?
+            .error_for_status()
+            .context("the manifest could not be fetched")?
+            .text()
+            .await?;
+        let manifest = mpd::parse(&text, manifest_url)?;
+        // The module only decodes H.264; the hardware path takes whatever the manifest offers.
+        let codec = if forced == Some(VideoMode::Hardware) { None } else { Some("avc1") };
+        let video_rep = manifest
+            .video(max_height, codec)
+            .or_else(|| manifest.video(max_height, None))
+            .context("the manifest has no video")?
+            .clone();
+        let audio_rep = manifest.audio(None).context("the manifest has no audio")?.clone();
+        (
+            Remote::new(http().clone(), video_rep.url.clone()),
+            Remote::new(http().clone(), audio_rep.url.clone()),
+            manifest.pssh.clone(),
+            video_rep,
+            audio_rep.lang.clone(),
+            manifest.heights(codec),
+        )
     })
 }

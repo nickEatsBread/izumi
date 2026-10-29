@@ -26,15 +26,16 @@ fn data_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     app.path().app_data_dir().map_err(|e| format!("no app data folder: {e}"))
 }
 
-/// Licenses a protected manifest and registers its in-memory streams for the player.
-pub async fn prepare(app: &AppHandle, manifest_url: &str, req: &Request) -> anyhow::Result<session::Prepared> {
+/// Licenses a protected manifest and registers its in-memory streams for the player, opening at `start`
+/// seconds (see `Prepared::start`).
+pub async fn prepare(app: &AppHandle, manifest_url: &str, req: &Request, start: Option<f64>) -> anyhow::Result<session::Prepared> {
     let data = data_dir(app).map_err(anyhow::Error::msg)?;
     let emitter = app.clone();
     let on_refused: media::OnRefused = Arc::new(move || {
         eprintln!("[widevine] the module refused a video sample; switching to its own decoder");
         let _ = emitter.emit("player-drm-video-refused", ());
     });
-    session::prepare(&data, manifest_url, req, on_refused).await
+    session::prepare(&data, manifest_url, req, start, on_refused).await
 }
 
 /// Saves a protected episode for offline use (`save.rs`), reporting progress as `download-progress`

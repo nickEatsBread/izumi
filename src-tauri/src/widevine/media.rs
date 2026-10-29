@@ -489,7 +489,10 @@ pub struct RawVideo {
 }
 
 impl RawVideo {
-    pub async fn open(remote: Remote, head: Head, cdm: Arc<Cdm>) -> Result<Arc<RawVideo>> {
+    /// `first` is the fragment playback opens in (index and its bytes, still encrypted), fetched while
+    /// the licence was out; without one the stream opens on fragment 0. Its samples give the frame
+    /// timing, and the decoder starts on it.
+    pub async fn open(remote: Remote, head: Head, cdm: Arc<Cdm>, first: Option<(usize, Vec<u8>)>) -> Result<Arc<RawVideo>> {
         ensure!(&head.format == b"avc1" || &head.format == b"avc3", "the module decodes H.264 only; this video is {}", String::from_utf8_lossy(&head.format));
         let avcc = head.avcc.clone().context("video track has no avcC")?;
         let (profile, param_sets) = param_sets(&avcc)?;
@@ -502,18 +505,24 @@ impl RawVideo {
             ready: Arc::new(Mutex::new(HashMap::new())),
             inflight: Arc::new(Mutex::new(HashSet::new())),
         };
-        let (start, size) = head.fragments[0];
-        let (mut bytes, _) = remote.range(start, start + size - 1).await?;
+        let (index, mut bytes) = match first {
+            Some((index, bytes)) if index < head.fragments.len() => (index, bytes),
+            _ => {
+                let (start, size) = head.fragments[0];
+                (0, remote.range(start, start + size - 1).await?.0)
+            }
+        };
         let samples = fmp4::plan_fragment(&mut bytes, head.iv_size)?;
         let first: Fetched = Arc::new((Clear(bytes), samples));
         let frame_dur = first.1.first().map(|s| s.duration as u64).filter(|d| *d > 0).context("no sample duration")?;
-        let pts0 = first.1.iter().map(|s| s.dts as i64 + s.cto).min().unwrap_or(0);
         let mut frag_start_frame = Vec::with_capacity(head.fragment_durations.len());
         let mut cum = 0u64;
         for d in &head.fragment_durations {
             frag_start_frame.push((cum as f64 / frame_dur as f64).round() as u64);
             cum += d;
         }
+        // Every fragment opens on an IDR, so the earliest picture of this one is its first frame.
+        let pts0 = first.1.iter().map(|s| s.dts as i64 + s.cto).min().unwrap_or(0) - frag_start_frame[index] as i64 * frame_dur as i64;
         let frames = (cum as f64 / frame_dur as f64).round() as u64;
         let frame_size = width as u64 * height as u64 + 2 * (width as u64).div_ceil(2) * (height as u64).div_ceil(2);
         let init = {
@@ -532,7 +541,7 @@ impl RawVideo {
             pts0,
             frag_start_frame,
             param_sets,
-            state: Mutex::new(State { frag: Some((0, first)), next: (0, 0), fresh: true, drained: false, out: VecDeque::new(), produced: None }),
+            state: Mutex::new(State { frag: Some((index, first)), next: (index, 0), fresh: true, drained: false, out: VecDeque::new(), produced: None }),
             prefetch,
             pool: Arc::new(PicturePool(Mutex::new(Vec::new()))),
             decoded: AtomicU64::new(0),
@@ -577,6 +586,14 @@ impl RawVideo {
             }
             self.feed_one(&mut st, cancel)?;
         }
+    }
+
+    /// `seconds`, moved back to the first frame of its fragment: opening there, the first picture
+    /// needs one decode instead of every frame from the fragment's IDR up to `seconds`. A quarter
+    /// frame in, so mpv's frame rounding cannot land on the fragment before.
+    pub fn snap_to_fragment(&self, seconds: f64) -> f64 {
+        let frame = (seconds * self.fps).max(0.0) as u64;
+        (self.frag_start_frame[self.fragment_of(frame)] as f64 + 0.25) / self.fps
     }
 
     /// The fragment whose leading IDR starts the decode for picture `k`.

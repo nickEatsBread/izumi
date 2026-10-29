@@ -347,11 +347,11 @@ async fn player_embed(
     }
     // A protected stream: license it and play its decrypted-in-memory `izcr://` streams instead.
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    let (url, audio_tracks, protected) = match drm {
+    let (url, audio_tracks, protected, start_seconds) = match drm {
         Some(drm) => {
             let request: widevine::Request =
                 serde_json::from_value(drm).map_err(|e| format!("bad protected-stream request: {e}"))?;
-            let prepared = widevine::prepare(&app, &url, &request)
+            let prepared = widevine::prepare(&app, &url, &request, start_seconds)
                 .await
                 .map_err(|e| format!("{e:#}"))?;
             player::set_file_options(&prepared.video_url, prepared.file_options.clone());
@@ -363,11 +363,11 @@ async fn player_embed(
                 select: true,
             }];
             let info = serde_json::to_value(&prepared).map_err(|e| e.to_string())?;
-            (prepared.video_url, Some(audio), Some(info))
+            (prepared.video_url, Some(audio), Some(info), prepared.start)
         }
         None => {
             widevine::end_all();
-            (url, audio_tracks, None)
+            (url, audio_tracks, None, start_seconds)
         }
     };
     #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
