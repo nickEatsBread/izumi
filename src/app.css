@@ -201,7 +201,9 @@ html.gamemode .group:hover .group-hover\:scale-105 {
 @keyframes heroIn { from { opacity: 0; } to { opacity: 0.7; } }
 /* Skeleton shimmer (swipe) for loading placeholders. */
 @keyframes skeleton-swipe { 100% { transform: translateX(100%); } }
-.skeloader { position: relative; overflow: hidden; background: hsl(var(--muted)); }
+/* In the components layer so a placeholder's own utilities win: unlayered, `position: relative` beat
+   `absolute inset-0` and every banner's shimmer layer collapsed to nothing. */
+@layer components { .skeloader { position: relative; overflow: hidden; background: hsl(var(--muted)); } }
 .skeloader::before { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.08), transparent); animation: skeleton-swipe 1.5s infinite; }
 /* Rows held below the near-viewport fetch gate keep their layout placeholder, but do not spend a
    compositor animation on skeletons the user cannot see yet. The class is removed before fetch. */

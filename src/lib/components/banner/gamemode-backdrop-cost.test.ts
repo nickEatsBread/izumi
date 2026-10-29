@@ -27,6 +27,12 @@ describe('Game mode backdrop cost', () => {
     expect(artwork).toMatch(/:global\(html\.gamemode\) \.poster-column \{\s*animation:\s*none;?\s*\}/)
   })
 
+  it('lets a placeholder\'s own position utilities beat the shimmer class', () => {
+    // Unlayered, `.skeloader { position: relative }` beat `absolute inset-0` and every loading
+    // banner's shimmer layer was 0 px tall: Home loaded with no banner placeholder at all.
+    expect(css).toContain('@layer components { .skeloader { position: relative; overflow: hidden; background: hsl(var(--muted)); } }')
+  })
+
   it('lets browse images appear in place under Game mode instead of tweening in', () => {
     // Each opacity fade promotes the image to a compositor layer that rasterises soft under the
     // Deck's page zoom and snaps crisp when dropped: a pixel pop per card, a blink per banner.

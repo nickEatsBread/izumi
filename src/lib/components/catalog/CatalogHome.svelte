@@ -352,7 +352,7 @@
 
     {#if loading && !home}
       {#each Array.from({ length: 4 }) as _}
-        <div class="px-4 sm:px-8">
+        <div data-part="row.pending" data-state="loading" class="px-4 sm:px-8">
           <div class="mb-3 h-5 w-40 rounded skeloader"></div>
           <div class="flex gap-3 overflow-hidden">{#each Array.from({ length: 8 }) as _}<div data-part="row.skeleton" class="aspect-[2/3] w-36 shrink-0 rounded-md skeloader sm:w-[152px]"></div>{/each}</div>
         </div>
