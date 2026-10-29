@@ -17,7 +17,9 @@
   import CatalogSourceAttribution from './CatalogSourceAttribution.svelte'
   import { loadCatalogProvider } from '$lib/catalog/registry'
   import { takePrefetchedDetail } from '$lib/catalog/detail-prefetch'
-  import { CatalogConfigurationError } from '$lib/catalog/types'
+  import { CatalogConfigurationError, SourceSignInError } from '$lib/catalog/types'
+  import ExtensionServiceSettings from '$lib/components/settings/ExtensionServiceSettings.svelte'
+  import { sourceCatalogName, sourceSelection } from '$lib/catalog/source-catalogs'
   import type { CatalogContentType, CatalogProviderId, MediaRef } from '$lib/catalog/identity'
   import { anilistIdOf, compatibilityMediaId, providerExternalUrl } from '$lib/catalog/identity'
   import { banner, cover, format, season, status, title } from '$lib/anilist/media'
@@ -78,6 +80,9 @@
   let loading = $state(true)
   let error = $state('')
   let tmdbNeedsConfiguration = $state(false)
+  // A signed-out source's title: its package, for the sign-in, and whether that sheet is open.
+  let signInSource = $state<string | null>(null)
+  let signingIn = $state(false)
   let playState = $state<PlayState>({ status: 'idle' })
   let retry = $state(0)
   let failedLogo = $state('')
@@ -100,6 +105,7 @@
     loading = true
     error = ''
     tmdbNeedsConfiguration = false
+    signInSource = null
     media = null
     sourceListed = undefined
     void (takePrefetchedDetail(request) ?? loadCatalogProvider(request.provider).then((catalog) => catalog.detail(request, abort.signal))).then((result) => {
@@ -108,6 +114,7 @@
       if (!abort.signal.aborted) {
         error = reason instanceof Error ? reason.message : String(reason)
         tmdbNeedsConfiguration = request.provider === 'tmdb' && reason instanceof CatalogConfigurationError
+        signInSource = reason instanceof SourceSignInError ? reason.packageId : null
       }
     }).finally(() => { if (!abort.signal.aborted) loading = false })
     return () => abort.abort()
@@ -407,15 +414,20 @@
 {:else if error || !media}
   <div class="grid min-h-[70vh] place-items-center p-6">
     <div class="max-w-lg rounded-xl border border-destructive/30 bg-destructive/10 p-6 text-center">
-      <h1 class="text-xl font-black">{error ? 'Couldn’t load this title' : 'Title not found'}</h1>
-      {#if error}<p class="mt-2 text-sm text-muted-foreground">{error}</p>{/if}
-      {#if tmdbNeedsConfiguration}
+      <h1 class="text-xl font-black">{signInSource ? 'Sign in to see this title' : error ? 'Couldn’t load this title' : 'Title not found'}</h1>
+      {#if error}<p class="mt-2 text-sm text-muted-foreground">{signInSource ? `${sourceCatalogName(sourceSelection(signInSource))} is signed out.` : error}</p>{/if}
+      {#if signInSource}
+        <button data-focusable onclick={() => (signingIn = true)} class="mt-4 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Sign in</button>
+      {:else if tmdbNeedsConfiguration}
         <a href="/app/settings/library" data-focusable class="mt-4 inline-flex min-h-10 items-center rounded-md bg-primary px-4 font-bold text-primary-foreground">Add TMDB token</a>
       {:else}
         <button data-focusable onclick={() => retry++} class="mt-4 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Retry</button>
       {/if}
     </div>
   </div>
+  {#if signingIn && signInSource}
+    <ExtensionServiceSettings id={signInSource} name={sourceCatalogName(sourceSelection(signInSource))} onclose={() => { signingIn = false; retry++ }} />
+  {/if}
 {:else if !profileAllowsMedia(media, $activeProfile)}
   <ParentalBlock />
 {:else}

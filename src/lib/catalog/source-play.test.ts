@@ -41,3 +41,14 @@ describe('playing a source title from a card or the banner', () => {
     expect(playEpisode).not.toHaveBeenCalled()
   })
 })
+
+describe('a signed-out source', () => {
+  it('turns its 401 into a sign-in for that source, not "not found"', async () => {
+    const { readFileSync } = await import('node:fs')
+    const provider = readFileSync('src/lib/catalog/providers/stremio.ts', 'utf8')
+    expect(provider).toContain("throw new SourceSignInError('Sign in to this source to see its titles.', sourceAddonInfo.packageId)")
+    const page = readFileSync('src/lib/components/catalog/CatalogMediaDetail.svelte', 'utf8')
+    expect(page).toContain('signInSource = reason instanceof SourceSignInError ? reason.packageId : null')
+    expect(page).toContain("{signInSource ? 'Sign in to see this title'")
+  })
+})

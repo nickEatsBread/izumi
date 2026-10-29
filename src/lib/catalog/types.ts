@@ -137,3 +137,11 @@ export class CatalogConfigurationError extends Error {
     this.name = 'CatalogConfigurationError'
   }
 }
+
+/** A source that is signed out (it answered 401): its titles need its sign-in, not a retry. */
+export class SourceSignInError extends CatalogConfigurationError {
+  constructor(message: string, readonly packageId: string) {
+    super(message)
+    this.name = 'SourceSignInError'
+  }
+}

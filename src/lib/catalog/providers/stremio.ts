@@ -10,7 +10,7 @@ import {
 import { catalogHomeLayouts, resolveCatalogHomeRows, type CatalogHomeTarget } from '../home-layout'
 import { CONTINUE_HOME_ROW } from '../home-options'
 import { compatibilityMediaId, type CatalogContentType, type MediaRef } from '../identity'
-import { CatalogConfigurationError, type CatalogHome, type CatalogHomeRowOption, type CatalogPage, type CatalogProvider, type CatalogSearchRequest } from '../types'
+import { CatalogConfigurationError, SourceSignInError, type CatalogHome, type CatalogHomeRowOption, type CatalogPage, type CatalogProvider, type CatalogSearchRequest } from '../types'
 import { enrichOmdbRatings } from './omdb'
 import { interleaveFeatured, rankFeaturedMedia } from '../featured-context'
 
@@ -344,7 +344,7 @@ export function stremioMetaUrl(base: string, type: string, id: string): string {
 
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const response = await phttp(url, { signal, timeoutMs: 15_000, maxBytes: 4 * 1024 * 1024 })
-  if (!response.ok) throw new Error(`Stremio metadata add-on returned HTTP ${response.status}`)
+  if (!response.ok) throw Object.assign(new Error(`Stremio metadata add-on returned HTTP ${response.status}`), { status: response.status })
   return response.json() as Promise<T>
 }
 
@@ -643,6 +643,10 @@ async function loadDetail(ref: MediaRef, signal?: AbortSignal, includeExternalRa
       if (media) return includeExternalRatings ? enrichOmdbRatings(media, signal) : media
     } catch (error) {
       if (signal?.aborted) throw error
+      // A signed-out source says so: its page then asks for the sign-in instead of "not found".
+      if (sourceAddonInfo && candidate.base === base && (error as { status?: number }).status === 401) {
+        throw new SourceSignInError('Sign in to this source to see its titles.', sourceAddonInfo.packageId)
+      }
       // Catalog-only add-ons are expected to miss this route. A transient add-on metadata error
       // should likewise fall through to Cinemeta/the already rendered catalog record.
     }
