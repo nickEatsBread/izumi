@@ -1969,6 +1969,9 @@ pub(crate) fn spawn_event_loop(
     // the overlay re-reads the track whenever mpv switches it — by the user, by `sid=auto` at load,
     // or by the full-dialogue preference below.
     client.observe_property("sid", Format::String, 0)?;
+    // Game mode's X11 container is mapped once mpv's output is up (linux_x11::show_container).
+    #[cfg(target_os = "linux")]
+    client.observe_property("current-vo", Format::String, 0)?;
 
     std::thread::spawn(move || {
         let mut duration = 0f64;
@@ -1979,7 +1982,17 @@ pub(crate) fn spawn_event_loop(
         // re-derive on the same box as mpv's render thread, so 80–90% of them were pure waste.
         let mut last_pos_bucket: i64 = i64::MIN;
         let mut last_buf = f64::MIN;
+        #[cfg(target_os = "linux")]
+        let started = std::time::Instant::now();
+        #[cfg(target_os = "linux")]
+        let mut container_shown = false;
         loop {
+            // An output that never reports itself must not leave the video unseen.
+            #[cfg(target_os = "linux")]
+            if !container_shown && started.elapsed() > std::time::Duration::from_millis(1500) {
+                linux_x11::show_container();
+                container_shown = true;
+            }
             // Block up to 1s waiting for the next event on this client's queue.
             match client.wait_event(1.0) {
                 Some(Ok(Event::FileLoaded)) => {
@@ -2103,6 +2116,15 @@ pub(crate) fn spawn_event_loop(
                     }
                     ("sid", PropertyData::Str(sid)) => {
                         let _ = app.emit("player-sub-track", sid.to_string());
+                    }
+                    #[cfg(target_os = "linux")]
+                    ("current-vo", PropertyData::Str(vo)) if !vo.is_empty() && !container_shown => {
+                        linux_embed::elog(&format!(
+                            "x11: mpv output {vo} up {} ms after its core",
+                            started.elapsed().as_millis()
+                        ));
+                        linux_x11::show_container();
+                        container_shown = true;
                     }
                     ("eof-reached", PropertyData::Flag(v)) => {
                         let _ = app.emit("player-eof", v);
