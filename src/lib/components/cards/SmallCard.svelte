@@ -127,8 +127,9 @@
   const sourceCard = $derived(media.sourceFacts?.card)
   const sourceLine = $derived(sourceCard ? [sourceCard.label, sourceCard.remainingSec ? `${Math.max(1, Math.round(sourceCard.remainingSec / 60))}m left` : ''].filter(Boolean).join(' · ') || undefined : undefined)
   const line = $derived(subline ?? sourceLine)
-  // A source flags its fresh titles (a new show or season); the reference handheld app tags those "New".
-  const shownBadge = $derived(badge ?? (media.sourceFacts?.isNew ? 'New' : undefined))
+  // A source flags its fresh titles (a new show or season); the reference handheld app tags those "New"
+  // on its posters. A card standing for one episode (Continue Watching) has its own label instead.
+  const shownBadge = $derived(badge ?? (media.sourceFacts?.isNew && !media.sourceFacts.card ? 'New' : undefined))
   const widthClass = $derived(fill ? 'w-full' : sourceCard ? ($isTv ? 'w-80' : 'w-64') : $isTv ? 'w-44' : 'w-36 sm:w-[152px]')
   // A source card that stands for one episode plays (resumes) it rather than opening the series, as the
   // source's own app does. Its page opens when the source has nothing to play.
