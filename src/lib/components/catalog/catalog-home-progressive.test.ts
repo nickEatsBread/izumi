@@ -19,7 +19,7 @@ describe('catalog Home builds only the rows near the screen', () => {
   })
 
   it('builds the rows further down ahead while Home sits still, never mid-scroll or behind the startup video', () => {
-    expect(home).toContain("if (homeBusy(AHEAD_QUIET_MS) || document.getElementById('boot-intro')) {")
+    expect(home).toContain("if (homeBusy(AHEAD_QUIET_MS) || $startupAnimationPlaying || document.documentElement.classList.contains('startup-cover')) {")
     expect(home).toContain('reveal(id)\n      handle = idle(next, 1000)')
   })
 

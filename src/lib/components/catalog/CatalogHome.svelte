@@ -42,6 +42,7 @@
   import { nearViewport } from '$lib/util/near-viewport'
   import { homeBusy, warmRowsBelow } from '$lib/util/image-warm'
   import { idle } from '$lib/util/idle'
+  import { startupAnimationPlaying } from '$lib/startup/animation'
   import { coverWidthFor } from '$lib/components/cards/SmallCard.svelte'
   import { densityScale, resolveRow } from '$lib/themes/presentation'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
@@ -185,7 +186,7 @@
     function next() {
       const id = homeRowIds.find((row) => !rowShown(row) && !revealQueue.includes(row))
       if (!id) return
-      if (homeBusy(AHEAD_QUIET_MS) || document.getElementById('boot-intro')) {
+      if (homeBusy(AHEAD_QUIET_MS) || $startupAnimationPlaying || document.documentElement.classList.contains('startup-cover')) {
         timer = setTimeout(() => (handle = idle(next, 1000)), 300)
         return
       }
