@@ -1,6 +1,7 @@
 import { get } from 'svelte/store'
 import { playing } from '$lib/player/session'
 import { idle } from './idle'
+import { onPadButton } from '$lib/nav/pad-events'
 
 // WebKitGTK decodes an image the first time it paints, and on the Deck that decode holds the frame:
 // a row's posters reached for the first time froze Home for 60-120 ms on each Down, while a second
@@ -74,6 +75,8 @@ const ROW_CARDS = 8
 const SETTLE_MS = 200
 const DECODE_TIMEOUT_MS = 4000
 let scrolledAt = -Infinity
+/** The last controller button, key or pointer press: the viewer is moving about (opening the drawer, say). */
+let pressedAt = -Infinity
 
 // The banner's slide change: its outgoing slide stays drawn beside the incoming one until it ends.
 function bannerMoving(): boolean {
@@ -93,10 +96,10 @@ const homeWarmer = createImageWarmer<HTMLImageElement>({
   busy: () => homeBusy(),
 })
 
-/** Whether Home is moving (a scroll eased in the last `quietMs`, the banner changing slide), playing
- *  a video or out of sight: no moment for work that holds the page for a frame. */
+/** Whether Home is moving (a scroll or press in the last `quietMs`, the banner changing slide),
+ *  playing a video or out of sight: no moment for work that holds the page for a frame. */
 export function homeBusy(quietMs = SETTLE_MS): boolean {
-  return get(playing) || document.hidden || performance.now() - scrolledAt < quietMs || bannerMoving()
+  return get(playing) || document.hidden || performance.now() - Math.max(scrolledAt, pressedAt) < quietMs || bannerMoving()
 }
 
 /** Svelte action for a Home's root. Each time the page settles (a scroll ends, rows arrive), the
@@ -119,15 +122,22 @@ export function warmRowsBelow(node: HTMLElement, covers: (id: string) => string[
   const soon = () => { clearTimeout(settle); settle = setTimeout(warm, SETTLE_MS) }
   // Capture also hears a row's own sideways scroll; passive keeps it off the scroll's path.
   const scrolled = () => { scrolledAt = performance.now(); soon() }
+  const pressed = () => { pressedAt = performance.now() }
   const resize = new ResizeObserver(soon)
   resize.observe(node)
   window.addEventListener('scroll', scrolled, { capture: true, passive: true })
+  window.addEventListener('keydown', pressed, { capture: true, passive: true })
+  window.addEventListener('pointerdown', pressed, { capture: true, passive: true })
+  const stopPad = onPadButton(pressed)
   return {
     update(next: (id: string) => string[]) { covers = next },
     destroy() {
       clearTimeout(settle)
       resize.disconnect()
       window.removeEventListener('scroll', scrolled, { capture: true })
+      window.removeEventListener('keydown', pressed, { capture: true })
+      window.removeEventListener('pointerdown', pressed, { capture: true })
+      stopPad()
       homeWarmer.stop()
     },
   }
