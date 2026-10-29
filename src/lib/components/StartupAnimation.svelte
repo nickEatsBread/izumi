@@ -53,6 +53,14 @@
       uncover()
       return
     }
+    // A video in the page keeps WebKit loading, and the window only appears once it has finished.
+    if (document.visibilityState !== 'visible') {
+      await new Promise<void>((resolve) => document.addEventListener('visibilitychange', function shown() {
+        if (document.visibilityState !== 'visible') return
+        document.removeEventListener('visibilitychange', shown)
+        resolve()
+      }))
+    }
     src = url
     startupAnimationPlaying.set(true)
     cap = setTimeout(finish, STARTUP_MAX_MS)

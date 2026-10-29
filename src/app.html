@@ -42,9 +42,9 @@
     <div id="boot-wait" role="progressbar" aria-label="Starting izumi"></div>
     <!-- A pack's startup animation starts here, before any app code has run (Rust's launch script
          names the video), so a launch opens on it; StartupAnimation.svelte takes it over from here.
-         Shown even while Game mode hides the page until its zoom is applied. It starts just after the
-         page's load event: a video in the page holds that event back until it can play (419 ms on the
-         Deck, against 46 ms without), and the window only appears once the event has fired. -->
+         Shown even while Game mode hides the page until its zoom is applied. It starts once the page
+         has loaded and the window is on screen: the window only appears when WebKit has finished
+         loading, and a video in the page keeps it loading (on the Deck the window came 440 ms later). -->
     <script>
       (function () {
         var url = window.__IZUMI_STARTUP_URL__
@@ -63,8 +63,17 @@
           var started = video.play()
           if (started && started.catch) started.catch(function () {})
         }
-        if (document.readyState === 'complete') start()
-        else window.addEventListener('load', start, { once: true })
+        var begun = false
+        function ready() {
+          if (begun || document.readyState !== 'complete' || document.visibilityState !== 'visible') return
+          begun = true
+          window.removeEventListener('load', ready)
+          document.removeEventListener('visibilitychange', ready)
+          start()
+        }
+        window.addEventListener('load', ready)
+        document.addEventListener('visibilitychange', ready)
+        ready()
       })()
     </script>
     <div style="display: contents">%sveltekit.body%</div>

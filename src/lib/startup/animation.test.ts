@@ -20,4 +20,12 @@ describe('startup animation', () => {
       expect(html).toContain(key)
     }
   })
+
+  // The window appears once WebKit has finished loading, and a video in the page keeps it loading.
+  it('loads the video only once the window is on screen', () => {
+    const html = readFileSync('src/app.html', 'utf8')
+    expect(html).toContain("if (begun || document.readyState !== 'complete' || document.visibilityState !== 'visible') return")
+    const component = readFileSync('src/lib/components/StartupAnimation.svelte', 'utf8')
+    expect(component.indexOf("if (document.visibilityState !== 'visible') {")).toBeLessThan(component.indexOf('    src = url'))
+  })
 })
