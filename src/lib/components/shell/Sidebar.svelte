@@ -352,7 +352,7 @@
 {#snippet drawerHead()}
   <a data-part="nav.drawer.head" href="/app/home" tabindex={-1} onclick={() => (drawerOpen = false)} class="mb-3 flex items-center gap-3 px-2">
     <CatalogBrandLogo platform={$catalogScreen} />
-    <BrandText className="whitespace-nowrap text-base font-extrabold" />
+    <BrandText weight={800} />
   </a>
 {/snippet}
 
@@ -363,7 +363,8 @@
       {@const on = $catalogScreen === screen}
       <button type="button" data-part="nav.item" data-variant="screen" data-screen={screen} data-active={on || undefined} data-focusable onclick={() => openScreen(screen)}
         class="flex h-11 shrink-0 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold transition-colors hover:bg-accent {on ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}">
-        <span data-part="nav.item.icon" class="grid w-6 place-items-center"><CatalogBrandLogo platform={screen} className="scale-75" /></span>
+        <!-- The brand mark pins its own transform, so the scale is on a wrapper. -->
+        <span data-part="nav.item.icon" class="grid w-6 place-items-center"><span class="grid scale-75"><CatalogBrandLogo platform={screen} /></span></span>
         <span data-part="nav.item.label" class="truncate">{catalogLabel(screen, $customScreens)}</span>
       </button>
     {/each}
@@ -414,9 +415,10 @@
         <CatalogBrandLogo platform={$catalogScreen} />
       </a>
     {/if}
-    {#if top}<BrandText className="whitespace-nowrap font-black" />{/if}
+    {#if top}<BrandText />{/if}
     {#if !top}
-      <BrandText className="whitespace-nowrap font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}" />
+      <!-- The text pins its own opacity, so the rail's fade is on a wrapper. -->
+      <span class="flex transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}"><BrandText /></span>
     {/if}
   </div>
 {/snippet}

@@ -108,8 +108,9 @@ body { overflow-x: clip; }
 :root { --izumi-safe-rem: calc(16px * var(--izumi-safe-font-scale, 1)); }
 @media (max-width: 640px) { :root { --izumi-safe-rem: calc(14.5px * var(--izumi-safe-font-scale, 1)); } }
 :root.tv-mode { --izumi-safe-rem: 18px; }
-/* Home's integrated catalog switcher draws the wordmark beside the mark (CatalogSwitcher.svelte). */
-[data-theme-protected].catalog-brand-wordmark { height: calc(1.25 * var(--izumi-safe-rem)); }
+/* The white wordmark of Home's header (Wordmark.svelte `white`) turns black on light palettes. It draws in a
+   shadow root, which reads this reserved property; theme stylesheets cannot set it. */
+html[data-scheme='light'] { --izumi-safe-wordmark-filter: brightness(0) saturate(100%); }
 /* Touch feel. Android's WebView paints its own grey flash on every tapped link or button and starts
    a text selection when a card title is held; both read as a web page rather than an app. The app
    supplies its own press feedback (android-*-press, theme-press-sink), so the WebView's stays off
@@ -736,7 +737,8 @@ html.theme-shell-fade .theme-sidebar-scrim {
 
 /* Protected surfaces (Themes page, Theme Studio's panel, the install preview bar, safe-mode banner,
    later pack review) read the client-owned palette mirror written by src/lib/theme.ts. Theme
-   stylesheets cannot declare --izumi-safe-* and, with @scope, cannot match inside these subtrees. */
+   stylesheets cannot declare --izumi-safe-*, and while one is open (use:protectedSurface) the
+   stylesheet's @scope form cannot match inside these subtrees. */
 [data-theme-protected] {
   --background: var(--izumi-safe-background);
   --foreground: var(--izumi-safe-foreground);

@@ -76,6 +76,7 @@
   import { isMobile, isWindows } from '$lib/platform'
   import { playerCoversWindow, themePresentation, shellNav } from '$lib/themes/runtime'
   import { resolvePlayerControls, resolvePlayerDock, type PlayerChrome } from '$lib/themes/presentation'
+  import { protectedSurface } from '$lib/themes/safe-mode'
   import { oskDismissedAt, playerStage } from '$lib/player/session'
   import { measureStage } from '$lib/player/insets'
   import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
@@ -2158,7 +2159,7 @@
   {#if showSkip && currentSeg}
     <button
       data-part="player.skip" data-kind={currentSeg.type}
-      data-focusable data-theme-unthemed={gmMode || undefined}
+      data-focusable data-theme-unthemed={gmMode || undefined} use:protectedSurface={gmMode}
       transition:fade={{ duration: gmMode ? 0 : 150 }}
       class="izumi-hud absolute z-10 font-bold
         {gmMode

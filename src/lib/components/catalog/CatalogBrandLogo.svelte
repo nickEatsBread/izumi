@@ -1,6 +1,7 @@
 <script lang="ts">
   import { isCustomScreen, type CatalogScreen, type CustomScreenId } from '$lib/settings/catalog'
   import { isSourceSelection, type SourceSelection } from '$lib/catalog/source-catalogs'
+  import { brandShadow } from '$lib/themes/brand'
 
   let {
     platform,
@@ -26,24 +27,21 @@
   // A source's own screen has one shared gradient too: izumi does not borrow a source's brand.
   const colors = $derived(isCustomScreen(platform) ? (['#E879F9', '#F43F5E', '#FB923C'] as const)
     : isSourceSelection(platform) ? (['#A3E635', '#22C55E', '#0D9488'] as const) : gradients[platform])
+
+  // Drawn in a shadow root (themes/brand.ts) and sized from the brand's rem (app.css), so neither a theme's
+  // stylesheet nor its root size changes the mark.
+  const brand = $derived({
+    display: 'inline-flex',
+    html: '<span></span>',
+    css: `span {
+      display: inline-block;
+      width: calc(1.75 * var(--izumi-safe-rem));
+      height: calc(1.75 * var(--izumi-safe-rem));
+      background: linear-gradient(135deg, ${colors[0]} 0%, ${colors[1]} 55%, ${colors[2]} 100%);
+      -webkit-mask: url('/brand/izumi-mark-color.svg') center / contain no-repeat;
+      mask: url('/brand/izumi-mark-color.svg') center / contain no-repeat;
+    }`,
+  })
 </script>
 
-<span
-  data-theme-protected
-  aria-hidden="true"
-  class="catalog-provider-mark {className}"
-  style={`--catalog-start:${colors[0]};--catalog-mid:${colors[1]};--catalog-end:${colors[2]}`}
-></span>
-
-<style>
-  /* Sized from the brand's rem (app.css), so a theme's root size never changes the mark. */
-  .catalog-provider-mark {
-    display: inline-block;
-    flex: none;
-    width: calc(1.75 * var(--izumi-safe-rem));
-    height: calc(1.75 * var(--izumi-safe-rem));
-    background: linear-gradient(135deg, var(--catalog-start) 0%, var(--catalog-mid) 55%, var(--catalog-end) 100%);
-    -webkit-mask: url('/brand/izumi-mark-color.svg') center / contain no-repeat;
-    mask: url('/brand/izumi-mark-color.svg') center / contain no-repeat;
-  }
-</style>
+<span data-theme-protected aria-hidden="true" class="catalog-provider-mark {className}" use:brandShadow={brand}></span>

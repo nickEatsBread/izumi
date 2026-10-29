@@ -34,6 +34,7 @@
     type ThemeFont,
   } from '$lib/settings/theme-studio'
   import { THEME_PRESETS, type ThemeTokens } from '$lib/theme-tokens'
+  import { protectedSurface } from '$lib/themes/safe-mode'
 
   type PresetName = keyof typeof THEME_PRESETS
   type EditableToken = Exclude<keyof ThemeTokens, 'scheme'>
@@ -243,7 +244,7 @@
      region until the TV pass (as the rail does). Known limit for the TV/phone pass: at 640px or
      narrower the panel is a full-width bottom sheet, which vertical moves never enter; only a
      Left/Right with nothing further that way on the page crosses into it. -->
-<aside class="studio-panel" class:minimized={$themeStudioMinimized} aria-labelledby="studio-heading" data-nav-back-scope data-theme-studio data-theme-protected data-nav-region={$isTv ? undefined : 'theme-studio'}>
+<aside class="studio-panel" class:minimized={$themeStudioMinimized} aria-labelledby="studio-heading" data-nav-back-scope data-theme-studio data-theme-protected use:protectedSurface data-nav-region={$isTv ? undefined : 'theme-studio'}>
   <header class="studio-header">
     <div class="studio-title-row">
       <h2 id="studio-heading" bind:this={panelHeading} tabindex="-1"><Palette size={18} /> Theme Studio</h2>

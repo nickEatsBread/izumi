@@ -27,6 +27,7 @@
   import { gmPanel, gmPanelOut } from '$lib/player/gm-freeze'
   import { motion } from '$lib/motion/gm-motion'
   import Glyph from '$lib/components/shell/Glyph.svelte'
+  import { protectedSurface } from '$lib/themes/safe-mode'
 
   // Game-mode (Deck) audio/subtitle/server picker: a controller-navigable CASCADING column menu.
   // Opens on the ☰ (start) button; d-pad up/down moves within a column, →/A descends into the
@@ -322,6 +323,7 @@
   <div
     data-gm-menu-surface
     data-theme-unthemed
+    use:protectedSurface
     class="fixed inset-0 z-40 bg-black/50"
     onclick={closeMenu}
     role="presentation"

@@ -6,6 +6,7 @@
   import { SCREEN_LABELS, shotsFor } from '$lib/themes/packages'
   import { PREVIEW_SCREENS, newestSeriesId, screenOf, screenRoute, themePageUrl } from '$lib/themes/preview-routes'
   import { stepOutOfPreview } from '$lib/themes/preview-transition'
+  import { protectedSurface } from '$lib/themes/safe-mode'
   import { cwSnapshot } from '$lib/player/continue-watching'
   import { allStores } from '$lib/store/feeds'
   import { isMobile } from '$lib/platform'
@@ -33,7 +34,7 @@
   }
 </script>
 {#if $themeInstallPreview}
-  <aside class="theme-preview-bar" aria-label="Theme installation preview" data-theme-protected>
+  <aside class="theme-preview-bar" aria-label="Theme installation preview" data-theme-protected use:protectedSurface>
     <div class="who"><strong>Previewing {$themeInstallPreview.package.name}</strong><p>Your saved appearance is unchanged.</p>{#if error}<p role="alert">{error}</p>{/if}</div>
     <nav class="stops" aria-label="Preview screens">{#each stops as screen (screen)}<button type="button" data-focusable aria-current={current === screen ? 'page' : undefined} onclick={() => void goto(screenRoute(screen, seriesId))}>{SCREEN_LABELS[screen]}</button>{/each}</nav>
     <div class="actions"><button type="button" data-focusable onclick={exit}>Exit preview</button><button type="button" data-focusable class="apply" onclick={apply}>Install & apply</button></div>

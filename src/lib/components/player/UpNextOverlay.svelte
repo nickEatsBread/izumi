@@ -8,6 +8,7 @@
   import { m } from '$lib/paraglide/messages.js'
   import { gmPanel, gmPanelOut } from '$lib/player/gm-freeze'
   import { motion } from '$lib/motion/gm-motion'
+  import { protectedSurface } from '$lib/themes/safe-mode'
 
   let remaining = $state(0)
   let activePrompt = $state<typeof $upNextPrompt>(null)
@@ -45,6 +46,7 @@
     aria-label={m.up_next_title()}
     data-gm-menu-surface
     data-theme-unthemed={$gameMode || undefined}
+    use:protectedSurface={$gameMode}
     class="fixed inset-0 z-[85] flex items-end justify-center bg-black/55 p-4 sm:items-center"
   >
     <div data-part="player.upnext" use:gmPanel={'bottom'} out:motion={gmPanelOut('bottom')} class="w-full max-w-lg overflow-hidden rounded-2xl border border-white/15 bg-neutral-950 text-white shadow-2xl">

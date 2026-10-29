@@ -16,6 +16,7 @@
   import { cwSnapshot } from '$lib/player/continue-watching'
   import { banner, cardCover, resumeEp, title } from '$lib/anilist/media'
   import { resolvedThemeTokens } from '$lib/theme-tokens'
+  import { protectedSurface } from '$lib/themes/safe-mode'
   import type { ThemePreset } from '$lib/settings/ui'
 
   // Home in a palette, drawn live at a 1280×800 window and scaled to fit: Sidebar's icon rail,
@@ -40,7 +41,7 @@
   let width = $state(0)
 </script>
 
-<div bind:clientWidth={width} data-theme-protected class="relative aspect-[16/10] w-full overflow-hidden bg-background" style={palette}>
+<div bind:clientWidth={width} data-theme-protected use:protectedSurface class="relative aspect-[16/10] w-full overflow-hidden bg-background" style={palette}>
   <div class="absolute left-0 top-0 h-[800px] w-[1280px] origin-top-left overflow-hidden bg-background text-foreground" style:transform={`scale(${width / 1280})`}>
     <div class="ml-14">
       <div class="relative mb-6 h-[400px]">

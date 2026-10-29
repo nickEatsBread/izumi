@@ -46,6 +46,7 @@
   import MergedCatalogHome from '$lib/components/catalog/MergedCatalogHome.svelte'
   import CatalogSwitcher from '$lib/components/catalog/CatalogSwitcher.svelte'
   import CatalogBrandLogo from '$lib/components/catalog/CatalogBrandLogo.svelte'
+  import Wordmark from '$lib/components/Wordmark.svelte'
   import HomeEditor from '$lib/components/catalog/HomeEditor.svelte'
   import ReleaseSearchHome from '$lib/components/release-search/ReleaseSearchHome.svelte'
   import HomeRowFrame from '$lib/components/catalog/HomeRowFrame.svelte'
@@ -186,7 +187,7 @@
       {:else}
         <div class="flex items-center gap-2" aria-label="izumi">
           <CatalogBrandLogo platform={$catalogScreen} />
-          <img src="/brand/izumi-wordmark-white.svg" alt="izumi" data-theme-protected class="home-wordmark" draggable="false" />
+          <Wordmark white />
         </div>
       {/if}
       {#if topNav.length}
@@ -209,14 +210,6 @@
 {/if}
 
 {#if !$offlineMode && !searchMode}<HomeEditor target={$catalogScreen} />{/if}
-
-<style>
-  /* The brand's rem (app.css), so a theme's phone root size never changes the wordmark. */
-  .home-wordmark { height: calc(1.25 * var(--izumi-safe-rem)); }
-  :global(html[data-scheme='light']) .home-wordmark {
-    filter: brightness(0) saturate(100%);
-  }
-</style>
 
 {#if searchMode}
   <ReleaseSearchHome />

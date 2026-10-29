@@ -132,9 +132,8 @@
   .mark { width: 100%; height: auto; transform-origin: 50% 50%; animation: mark-curl 900ms cubic-bezier(.18, .9, .24, 1) 560ms both; }
   .intro.reduced .mark { animation: fade-in 260ms ease both; }
 
-  .word { color: #F4F8FF; animation: word-rise 560ms cubic-bezier(.2, .7, .2, 1) 1180ms both; }
+  .word { --izumi-safe-wordmark-width: clamp(10rem, 27vmin, 23rem); color: #F4F8FF; animation: word-rise 560ms cubic-bezier(.2, .7, .2, 1) 1180ms both; }
   .intro.reduced .word { animation: fade-in 260ms ease 80ms both; }
-  .word :global(.izumi-wordmark) { width: clamp(10rem, 27vmin, 23rem); height: auto; aspect-ratio: 6.8 / 2; }
 
   /* The drop is the mark's own story: one source falling in. It elongates as it accelerates and
      flattens on contact, which is what sells the impact the rings then answer. */

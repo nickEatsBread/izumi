@@ -47,6 +47,7 @@
   import { playerCoversWindow, shellNav, themePresentation } from '$lib/themes/runtime'
   import { sidebarHiddenForPlayback } from '$lib/shell/chrome'
   import { resolvePlayerControls } from '$lib/themes/presentation'
+  import { protectedSurface } from '$lib/themes/safe-mode'
   import { loadEpisodeMeta, episodeName } from '$lib/player/episode-info'
   import type { EpMeta } from '$lib/anizip/types'
   import { listenSafe } from '$lib/util/listen'
@@ -919,7 +920,7 @@
 {/snippet}
 
 <!-- stopPropagation: control clicks must not bubble to the video click-to-pause. -->
-<div bind:this={root} data-slot="player.controls" data-variant={gm ? 'game' : 'desktop'} data-gm-control-root data-theme-unthemed={gm || undefined} class="pointer-events-none absolute inset-0" onclick={(e) => e.stopPropagation()} role="presentation">
+<div bind:this={root} data-slot="player.controls" data-variant={gm ? 'game' : 'desktop'} data-gm-control-root data-theme-unthemed={gm || undefined} use:protectedSurface={gm} class="pointer-events-none absolute inset-0" onclick={(e) => e.stopPropagation()} role="presentation">
   <!-- Top bar: Back button (Desktop only — Game mode uses the B button to leave, so no
        redundant on-screen Back) and, when the Game-mode "title at top" option is on, the
        title. Rendered only when it has something to show. -->

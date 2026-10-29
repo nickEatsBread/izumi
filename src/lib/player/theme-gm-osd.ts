@@ -1,5 +1,6 @@
 /** Theme colours for Game mode's mpv-drawn player (src-tauri/src/player/gm_osd.rs). That chrome is ASS
  *  inside mpv, so no stylesheet reaches it: the active theme's colours travel with its OSD state instead. */
+import { protectedSurface } from '$lib/themes/safe-mode'
 
 export type GmOsdTheme = { themeAccent: string; themeFocus: string }
 
@@ -33,6 +34,9 @@ export function readGmOsdTheme(): GmOsdTheme {
   const probe = document.createElement('span')
   probe.hidden = true
   probe.setAttribute('data-theme-unthemed', '')
+  // A surface, so the theme stylesheet is in its scoped form, which skips the probe. The open player's HUD
+  // usually counts already.
+  const surface = protectedSurface(probe)
   document.body.append(probe)
   const read = (color: string) => {
     probe.style.color = color
@@ -42,5 +46,6 @@ export function readGmOsdTheme(): GmOsdTheme {
   const accent = root.style.getPropertyValue('--theme-seekbar-color') ? 'var(--theme-seekbar-color)' : 'hsl(var(--primary))'
   const theme = { themeAccent: read(accent), themeFocus: read('hsl(var(--ring))') }
   probe.remove()
+  surface.destroy()
   return theme
 }

@@ -1,6 +1,7 @@
 import { goto } from '$app/navigation'
 import { cubicOut } from 'svelte/easing'
 import { reducedMotion } from '$lib/motion/gm-motion'
+import { protectedSurface } from '$lib/themes/safe-mode'
 
 // Script-driven on purpose: WebKitGTK 2.52 (Deck) blinks at the end of CSS and Web Animations
 // motion, so the clone moves by per-frame style writes on elements pinned to their own layer.
@@ -45,6 +46,7 @@ function stage(src: string) {
   image.src = src
   image.style.cssText = 'position:absolute;object-fit:cover;transform:translateZ(0)'
   root.append(scrim, image)
+  const surface = protectedSurface(root)
   document.body.append(root)
   const place = (from: Box, to: Box, t: number, radius: number) => {
     image.style.left = `${mix(from.left, to.left, t)}px`
@@ -53,7 +55,8 @@ function stage(src: string) {
     image.style.height = `${mix(from.height, to.height, t)}px`
     image.style.borderRadius = `${radius}px`
   }
-  return { root, scrim, image, place }
+  const remove = () => { root.remove(); surface.destroy() }
+  return { root, scrim, image, place, remove }
 }
 
 async function waitFor(target: () => Element | null, timeout: number): Promise<Element | null> {
@@ -71,7 +74,7 @@ async function waitFor(target: () => Element | null, timeout: number): Promise<E
 export async function stepIntoPreview(from: HTMLImageElement | null, start: () => void, route: string): Promise<void> {
   if (!from || reducedMotion()) { start(); await goto(route); return }
   const box = boxOf(from)
-  const { root, scrim, place } = stage(from.currentSrc || from.src)
+  const { root, scrim, place, remove } = stage(from.currentSrc || from.src)
   place(box, box, 0, 12)
   try {
     await tween(GROW_MS, (t) => { place(box, viewport(), t, 12 * (1 - t)); scrim.style.opacity = String(t) })
@@ -79,7 +82,7 @@ export async function stepIntoPreview(from: HTMLImageElement | null, start: () =
     await goto(route)
     await frames(6)
     await tween(FADE_MS, (t) => { root.style.opacity = String(1 - t) })
-  } finally { root.remove() }
+  } finally { remove() }
 }
 
 /** Dim the live screen, end the preview and return to the theme page underneath, then fade this
@@ -87,7 +90,7 @@ export async function stepIntoPreview(from: HTMLImageElement | null, start: () =
  *  The live screen never crossfades with the screenshot: their content differs. */
 export async function stepOutOfPreview(src: string | null, end: () => void, route: string, target: () => Element | null): Promise<void> {
   if (!src || reducedMotion()) { end(); await goto(route); return }
-  const { root, scrim, image, place } = stage(src)
+  const { scrim, image, place, remove } = stage(src)
   place(viewport(), viewport(), 0, 0)
   image.style.opacity = '0'
   try {
@@ -101,5 +104,5 @@ export async function stepOutOfPreview(src: string | null, end: () => void, rout
     } else {
       await tween(FADE_MS, (t) => { scrim.style.opacity = String(1 - t) })
     }
-  } finally { root.remove() }
+  } finally { remove() }
 }

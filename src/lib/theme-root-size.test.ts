@@ -44,21 +44,29 @@ describe('phone root size and the brand pin', () => {
   })
 
   it('sizes every izumi mark and wordmark from the brand rem', () => {
-    expect(read('./components/Wordmark.svelte')).toContain('height: calc(2 * var(--izumi-safe-rem));')
+    const wordmark = read('./components/Wordmark.svelte')
+    // 6.8 × 2 brand rem unless a caller sets the reserved width; the height follows the ratio.
+    expect(wordmark).toContain('width: var(--izumi-safe-wordmark-width, calc(6.8 * var(--izumi-safe-rem)));')
+    expect(wordmark).toContain('aspect-ratio: 6.8 / 2;')
+    // The white header wordmark (Home and the catalog switcher).
+    expect(wordmark).toContain('height: calc(1.25 * var(--izumi-safe-rem));')
+    expect(read('./components/onboarding/IntroSequence.svelte')).toContain('.word { --izumi-safe-wordmark-width: clamp(10rem, 27vmin, 23rem);')
     expect(read('./components/BrandText.svelte')).toContain('font-size: calc(1.125 * var(--izumi-safe-rem));')
     const logo = read('./components/catalog/CatalogBrandLogo.svelte')
     expect(logo).toContain('height: calc(1.75 * var(--izumi-safe-rem));')
     expect(logo).toContain("className = '',")
     const home = read('../routes/app/home/+page.svelte')
-    expect(home).toContain('.home-wordmark { height: calc(1.25 * var(--izumi-safe-rem)); }')
-    expect(home).not.toContain('home-wordmark h-5')
-    expect(read('./../app.css')).toContain('[data-theme-protected].catalog-brand-wordmark { height: calc(1.25 * var(--izumi-safe-rem)); }')
+    expect(home).toContain('<Wordmark white />')
+    expect(home).not.toContain('home-wordmark')
+    expect(read('./../app.css')).toContain("html[data-scheme='light'] { --izumi-safe-wordmark-filter: brightness(0) saturate(100%); }")
     // The sidebar's "izumi" text takes its size from BrandText, not a rem utility.
     expect(read('./components/shell/Sidebar.svelte')).not.toMatch(/<BrandText className="[^"]*text-lg/)
   })
 
-  it('keeps the brand rem out of reach of theme stylesheets', () => {
+  it('keeps the brand rem and the wordmark settings out of reach of theme stylesheets', () => {
     expect(() => precheckThemeCss(':scope{--izumi-safe-rem:20px}')).toThrow('reserved')
     expect(() => precheckThemeCss(':scope{--izumi-safe-font-scale:2}')).toThrow('reserved')
+    expect(() => precheckThemeCss('.x{--izumi-safe-wordmark-width:1px}')).toThrow('reserved')
+    expect(() => precheckThemeCss('.x{--izumi-safe-wordmark-filter:invert(1)}')).toThrow('reserved')
   })
 })

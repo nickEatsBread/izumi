@@ -42,8 +42,10 @@ const TOKEN_NAMES = ['background', 'foreground', 'muted', 'muted-foreground', 'p
 
 function applyThemeCss(text: string | undefined): void {
   const existing = document.getElementById(THEME_STYLE_ID)
-  const scoped = scopeSupported()
-  if (!text || (!scoped && get(protectedSurfaceCount) > 0)) {
+  // Plain rules restyle far faster than `@scope`, so the scoped form that keeps the theme off protected
+  // surfaces is only used while one is mounted. Without `@scope` the stylesheet is removed instead.
+  const scoped = get(protectedSurfaceCount) > 0
+  if (!text || (scoped && !scopeSupported())) {
     existing?.remove()
     if (get(themeCssStatus).state !== 'off') themeCssStatus.set({ state: 'off' })
     return
@@ -62,6 +64,9 @@ function applyThemeCss(text: string | undefined): void {
   if (!existing || stylesheetAfter(style)) document.head.append(style)
   if (get(themeCssStatus).state !== 'applied') themeCssStatus.set({ state: 'applied' })
 }
+
+/** The active theme's stylesheet text, as `apply()` last resolved it. */
+let themeCss: string | undefined
 
 function apply() {
   if (typeof document === 'undefined') return
@@ -145,7 +150,8 @@ function apply() {
   root.classList.toggle('a11y-large-targets', get(largeInteractionTargets))
   root.classList.toggle('a11y-reduce-motion', get(motionPreference) === 'reduce')
   root.classList.toggle('a11y-full-motion', get(motionPreference) === 'full')
-  applyThemeCss(customActive ? studio.css : undefined)
+  themeCss = customActive ? studio.css : undefined
+  applyThemeCss(themeCss)
 }
 
 let started = false
@@ -155,8 +161,11 @@ export function startThemeSync(): () => void {
   const media = matchMedia('(prefers-color-scheme: dark)')
   const subscriptions = [
     effectiveThemePreset, highContrast, largeInteractionTargets, motionPreference,
-    effectiveStudioTheme, themeStudioPreview, isMobile, tvSurface, shellNav, themeSafeMode, protectedSurfaceCount,
+    effectiveStudioTheme, themeStudioPreview, isMobile, tvSurface, shellNav, themeSafeMode,
   ].map((store) => store.subscribe(apply))
+  // A surface opening or closing changes only the stylesheet's form, never <html>: Game mode's OSD colours
+  // watch <html> and open a surface to read them, which would otherwise feed back into themselves.
+  subscriptions.push(protectedSurfaceCount.subscribe(() => applyThemeCss(themeCss)))
   media.addEventListener('change', apply)
   apply()
   const headObserver = new MutationObserver(keepThemeStyleLast)

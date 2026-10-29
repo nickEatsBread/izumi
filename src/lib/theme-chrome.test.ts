@@ -55,12 +55,12 @@ describe('theme chrome application', () => {
     expect(theme).toContain('`--izumi-safe-${name}`')
     expect(theme).toContain("'--font-heading'")
     expect(theme).toContain('loadThemeFont(')
-    expect(theme).toContain('themeSafeMode, protectedSurfaceCount')
+    expect(theme).toContain('protectedSurfaceCount.subscribe(() => applyThemeCss(themeCss))')
   })
   it('marks every recovery surface as protected and re-maps its palette', () => {
     expect(read('../app.css')).toContain('[data-theme-protected] {')
-    expect(read('./components/settings/ThemeStudio.svelte')).toContain('data-theme-studio data-theme-protected')
-    expect(read('./components/themes/ThemeInstallPreview.svelte')).toContain('aria-label="Theme installation preview" data-theme-protected')
+    expect(read('./components/settings/ThemeStudio.svelte')).toContain('data-theme-studio data-theme-protected use:protectedSurface')
+    expect(read('./components/themes/ThemeInstallPreview.svelte')).toContain('aria-label="Theme installation preview" data-theme-protected use:protectedSurface')
     const page = read('../routes/app/settings/themes/+page.svelte')
     expect(page).toContain('<div class="themes-page" data-theme-protected use:protectedSurface>')
   })
@@ -79,19 +79,21 @@ describe('theme chrome application', () => {
   })
   it('keeps the izumi logo out of reach of theme stylesheets', () => {
     // The mark and the wordmark always render as izumi's own: the app font and palette, no theme styling.
+    // They draw in a shadow root (themes/brand.ts) rather than counting as protected surfaces.
     for (const file of ['./components/Wordmark.svelte', './components/BrandText.svelte', './components/catalog/CatalogBrandLogo.svelte']) {
       const source = read(file)
       expect(source, file).toContain('data-theme-protected')
+      expect(source, file).toContain('use:brandShadow=')
       expect(source, file).not.toMatch(/data-(slot|part)="?\{?'?brand/)
     }
     for (const file of ['./components/Wordmark.svelte', './components/shell/Sidebar.svelte', '../routes/app/home/+page.svelte', './components/catalog/CatalogSwitcher.svelte']) {
       expect(read(file), file).not.toContain('themePresentation?.brand')
     }
-    expect(read('../routes/app/home/+page.svelte')).toMatch(/<img src="\/brand\/izumi-wordmark-white\.svg"[^>]*data-theme-protected/)
+    expect(read('../routes/app/home/+page.svelte')).toContain('<Wordmark white />')
   })
   it('shows the plain izumi text beside the mark in the top bar, as the open rail does', () => {
     const sidebar = read('./components/shell/Sidebar.svelte')
-    expect(sidebar).toContain('{#if top}<BrandText className=')
+    expect(sidebar).toContain('{#if top}<BrandText />')
     expect(sidebar).not.toContain('data-slot="brand"')
   })
   it('keeps the theme stylesheet last in <head> as routes add their own styles', () => {
@@ -110,7 +112,7 @@ describe('theme chrome application', () => {
     expect(read('./components/themes/ThemeSafeModeBanner.svelte')).toContain('$themeSafeMode && !$playing')
   })
   it('protects the Store trust and install dialogs from theme stylesheets', () => {
-    for (const file of ['StoresDialog', 'StoreEntrySheet', 'ReplacePackageDialog']) expect(read(`./components/store/${file}.svelte`), file).toContain('data-theme-protected')
+    for (const file of ['StoresDialog', 'StoreEntrySheet', 'ReplacePackageDialog']) expect(read(`./components/store/${file}.svelte`), file).toContain('data-theme-protected use:protectedSurface')
     expect(read('../app.css')).toContain('pointer-events: auto;')
   })
   it('publishes each series cover colour on cards, ranked rows and the series page', () => {

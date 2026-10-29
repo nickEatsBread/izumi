@@ -10,6 +10,7 @@
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import CatalogBrandLogo from './CatalogBrandLogo.svelte'
   import CatalogPlatformLogo from './CatalogPlatformLogo.svelte'
+  import Wordmark from '$lib/components/Wordmark.svelte'
   import NewScreenDialog from './NewScreenDialog.svelte'
   import {
     catalogLabel,
@@ -210,9 +211,7 @@
             class="absolute -bottom-1 -right-1 rounded-full bg-background/85 p-px text-foreground drop-shadow-md transition-transform {open ? 'rotate-180' : ''}"
           />
         </span>
-        {#if showWordmark}
-          <img src="/brand/izumi-wordmark-white.svg" alt="" data-theme-protected class="catalog-brand-wordmark h-5" draggable="false" />
-        {/if}
+        {#if showWordmark}<Wordmark white />{/if}
       {:else if display === 'icon'}
         <!-- The provider tile is the button face, rather than a smaller tile floating inside a
              second dark circle. Scale it to the 44px hit area and clip its corners to the circle. -->
@@ -335,9 +334,3 @@
   </div>
 {/if}
 {#if creatingScreen}<NewScreenDialog onclose={() => (creatingScreen = false)} />{/if}
-
-<style>
-  :global(html[data-scheme='light']) .catalog-brand-wordmark {
-    filter: brightness(0) saturate(100%);
-  }
-</style>
