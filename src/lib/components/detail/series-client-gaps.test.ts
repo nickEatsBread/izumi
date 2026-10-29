@@ -70,7 +70,7 @@ describe('the series progress row', () => {
 })
 
 describe('the folding actions row', () => {
-  it('reveals Save, Share and Trailer on the first tap, and opens the menu on the next', () => {
+  it('reveals Watchlist, Share and Trailer on the first tap, and opens the menu on the next', () => {
     expect(detail).toContain("const actionsFold = $derived(detailTheme.actions === 'expand')")
     expect(detail).toContain('if (actionsFold && !actionsOpen) { actionsOpen = true; return }')
     expect(detail).toContain("<div data-part=\"detail.actions\" data-expanded={actionsFold && actionsOpen ? '' : undefined}")

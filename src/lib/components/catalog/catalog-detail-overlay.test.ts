@@ -31,7 +31,9 @@ describe('catalog title page under a theme overlay layout', () => {
     expect(detail).toContain("{watchlisted ? 'In Watchlist' : 'Watchlist'}")
     expect(detail).toContain("class={themedOverlay ? 'flex h-12 items-center gap-2 rounded-full bg-white/15")
     expect(detail.match(/class=\{themedOverlay \? 'grid h-12 w-12 place-items-center rounded-full bg-white\/15/g)).toHaveLength(1)
-    expect(anime).toContain('title="Save to lists"\n                  class="grid h-12 w-12 place-items-center rounded-full')
+    // An anime's overlay page draws its Watchlist the same pill, with a round More beside it.
+    expect(anime).toContain('toggleMediaInLocalList(full, WATCHLIST_ID))}\n                  class="flex h-12 items-center gap-2 rounded-full bg-white/15 px-5 font-bold text-white')
+    expect(anime).toContain('title="More options" aria-haspopup="dialog"\n                  class="grid h-12 w-12 place-items-center rounded-full')
   })
 })
 

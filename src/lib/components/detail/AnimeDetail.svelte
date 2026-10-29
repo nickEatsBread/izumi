@@ -37,9 +37,14 @@
   import { incognito } from '$lib/stores/incognito'
   import { ratingOnPage } from '$lib/settings/ui'
   import LocalListPicker from '$lib/components/library/LocalListPicker.svelte'
-  import { localLibrary, localTrackingForMedia, localTrackingKey, localTrackingRemoved, mediaIsSaved } from '$lib/library/local-lists'
+  import OptionsSheet, { type SheetGroup } from '$lib/components/detail/OptionsSheet.svelte'
+  import { describeFocus, restoreFocus, type FocusDescriptor } from '$lib/nav/focus-memory'
+  import { WATCHLIST_ID, localLibrary, localTrackingForMedia, localTrackingKey, localTrackingRemoved, mediaIsInLocalList, mediaIsSaved, toggleMediaInLocalList } from '$lib/library/local-lists'
   import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus'
   import BookmarkCheck from '@lucide/svelte/icons/bookmark-check'
+  import Plus from '@lucide/svelte/icons/plus'
+  import ListPlus from '@lucide/svelte/icons/list-plus'
+  import ListChecks from '@lucide/svelte/icons/list-checks'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Share2 from '@lucide/svelte/icons/share-2'
   import Clapperboard from '@lucide/svelte/icons/clapperboard'
@@ -592,6 +597,31 @@
   const canRemove = $derived(!entryRemoved && (hasEntry || (!!media && Object.values($localHistory)
     .some((entry) => localTrackingKey(entry.media) === localTrackingKey(media)))))
   const savedLocally = $derived(shown ? mediaIsSaved($localLibrary, shown) : false)
+  // One press puts the title on izumi's Watchlist or takes it off, as on a catalog title page; the
+  // other device lists are in the More menu, and tracking stays with the list button.
+  const watchlisted = $derived(shown ? mediaIsInLocalList($localLibrary, shown, WATCHLIST_ID) : false)
+
+  // The desktop More menu: the Watchlist, the other device lists and the trackers, as a catalog title
+  // page's. Focus goes back to More when a list editor opened from it closes.
+  let optionsOpen = $state(false)
+  let optionsReturn: FocusDescriptor | null = null
+  const returnFromOptions = () => requestAnimationFrame(() => {
+    if (!document.activeElement || document.activeElement === document.body) restoreFocus(optionsReturn)
+  })
+  function openOptions() {
+    optionsReturn = describeFocus(document.activeElement)
+    optionsOpen = true
+  }
+  const optionGroups = $derived<SheetGroup[]>([{
+    options: [
+      {
+        id: 'watchlist', label: watchlisted ? 'Remove from Watchlist' : 'Add to Watchlist', icon: watchlisted ? BookmarkCheck : BookmarkPlus,
+        onselect: () => { if (media) toggleMediaInLocalList(media, WATCHLIST_ID) },
+      },
+      { id: 'lists', label: savedLocally ? 'Saved to your lists' : 'Save to a list', icon: savedLocally ? ListChecks : ListPlus, onselect: () => { optionsOpen = false; showLocalLists = true } },
+      { id: 'tracker', label: 'Track on AniList / MyAnimeList', detail: effStatus ? STATUS_LABEL[effStatus] : undefined, icon: ListChecks, onselect: () => { optionsOpen = false; showEditor = true } },
+    ],
+  }])
   // "Your rating" sits on the page itself once the viewer has actually watched something — rating a
   // title from the plan-to-watch pile is noise, and before this the score was only reachable three
   // clicks deep inside the list editor and never shown anywhere.
@@ -976,11 +1006,12 @@
               <ThemeNode node={detailTheme.actionsLead} model={leadModel(m)} />
             </div>
           {/if}
-          <!-- API 4 `detail.actions: "expand"`: Save, Share and Trailer only while More has unfolded them. -->
+          <!-- API 4 `detail.actions: "expand"`: Watchlist, Share and Trailer only while More has unfolded them. -->
           {#if !actionsFold || actionsOpen}
-          <button data-part="button" data-variant="secondary" data-action="save" data-state={savedLocally ? 'saved' : undefined} data-focusable onclick={ready(() => { h.tap(); showLocalLists = true })} aria-label="Save to lists"
+          <!-- The Watchlist button keeps data-action="save": published themes style it by that name. -->
+          <button data-part="button" data-variant="secondary" data-action="save" data-state={watchlisted ? 'saved' : undefined} data-focusable aria-pressed={watchlisted} onclick={ready((full) => { h.tap(); toggleMediaInLocalList(full, WATCHLIST_ID) })}
                   class="flex h-11 flex-[2] items-center justify-center gap-1.5 rounded-lg bg-secondary px-2 text-sm font-bold">
-            {#if savedLocally}<BookmarkCheck size={17} class="text-theme" /> Saved{:else}<BookmarkPlus size={17} /> Save{/if}
+            {#if watchlisted}<Check size={17} class="text-theme" />{:else}<Plus size={17} />{/if}{watchlisted ? 'In Watchlist' : 'Watchlist'}
           </button>
           <button data-part="button" data-variant="icon" data-action="share" data-focusable onclick={ready((full) => { h.tap(); void onShare(full) })} aria-label="Share series"
                   class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
@@ -1008,6 +1039,10 @@
               <button data-part="detail.list-button" data-action="list" data-state={effStatus ? 'listed' : undefined} data-focusable onclick={ready(() => { h.tap(); closeMenu(); showEditor = true })}
                       class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
                 <ChevronDown size={15} /> {effStatus ? `Edit ${STATUS_LABEL[effStatus]}` : 'Add to list'}
+              </button>
+              <button data-focusable onclick={ready(() => { h.tap(); closeMenu(); showLocalLists = true })}
+                      class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
+                {#if savedLocally}<ListChecks size={15} /> Saved to your lists{:else}<ListPlus size={15} /> Save to a list{/if}
               </button>
               {#if shownButtons.includes('download')}
                 <button data-focusable onclick={ready((full) => downloadSelect(full))}
@@ -1073,9 +1108,13 @@
                   class="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 font-bold text-primary-foreground">
             <Play size={18} />{ctaStarted ? `Play · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
           </button>
-          <button data-part="button" data-variant="secondary" data-action="save" data-state={savedLocally ? 'saved' : undefined} data-focusable onclick={ready(() => (showLocalLists = true))} title="Save to lists"
+          <button data-part="button" data-variant="secondary" data-action="save" data-state={watchlisted ? 'saved' : undefined} data-focusable aria-pressed={watchlisted} onclick={ready((full) => toggleMediaInLocalList(full, WATCHLIST_ID))}
+                  class="flex h-12 items-center gap-2 rounded-full bg-white/15 px-5 font-bold text-white transition-colors hover:bg-white/25">
+            {#if watchlisted}<Check size={18} />{:else}<Plus size={18} />{/if}{watchlisted ? 'In Watchlist' : 'Watchlist'}
+          </button>
+          <button data-part="detail.action" data-action="more" data-focusable onclick={ready(() => openOptions())} aria-label="More options" title="More options" aria-haspopup="dialog"
                   class="grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25">
-            {#if savedLocally}<BookmarkCheck size={20} />{:else}<BookmarkPlus size={20} />{/if}
+            <MoreHorizontal size={20} />
           </button>
         </div>
         {#if m.studios?.nodes?.[0]}
@@ -1176,9 +1215,9 @@
             <Play size={detailTheme.cta === 'large' ? 18 : 16} />{detailTheme.cta === 'large' ? (effStatus === 'COMPLETED' ? 'Rewatch Now' : ctaStarted ? 'Continue Now' : 'Watch Now') : (ctaStarted ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play')}
           </button>
 
-          <button data-part="button" data-variant="secondary" data-action="save" data-state={savedLocally ? 'saved' : undefined} data-focusable onclick={ready(() => (showLocalLists = true))} title="Save to lists"
+          <button data-part="button" data-variant="secondary" data-action="save" data-state={watchlisted ? 'saved' : undefined} data-focusable aria-pressed={watchlisted} onclick={ready((full) => toggleMediaInLocalList(full, WATCHLIST_ID))}
                   class="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 font-bold transition-colors hover:bg-accent">
-            {#if savedLocally}<BookmarkCheck size={18} class="text-theme" /> Saved{:else}<BookmarkPlus size={18} /> Save{/if}
+            {#if watchlisted}<Check size={18} class="text-theme" />{:else}<Plus size={18} />{/if}{watchlisted ? 'In Watchlist' : 'Watchlist'}
           </button>
 
           {#if detailTheme.listButton !== 'hidden'}
@@ -1212,6 +1251,11 @@
               <TrackerProviderBadge provider={tracker.id} compact />
             </button>
           {/each}
+
+          <button data-part="detail.action" data-action="more" data-focusable onclick={ready(() => openOptions())} aria-label="More options" title="More options" aria-haspopup="dialog"
+                  class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
+            <MoreHorizontal size={18} />
+          </button>
         </div>
     {/snippet}
 
@@ -1334,11 +1378,12 @@
       {hasEntry}
       {canRemove}
       anchor={editorAnchor}
-      onclose={() => (showEditor = false)}
+      onclose={() => { showEditor = false; returnFromOptions() }}
       onsaved={(patch) => { listOpt = { ...listEntry.edit, ...patch }; watchedBefore = watched }}
     />
   {/if}
-  {#if showLocalLists && media}<LocalListPicker media={media} onclose={() => (showLocalLists = false)} />{/if}
+  {#if showLocalLists && media}<LocalListPicker media={media} onclose={() => { showLocalLists = false; returnFromOptions() }} />{/if}
+  {#if optionsOpen && media}<OptionsSheet title={title(media)} groups={optionGroups} onclose={() => (optionsOpen = false)} />{/if}
 {:else if $offlineMode}
   <div class="grid min-h-[50vh] place-items-center p-8 text-center">
     <div class="max-w-sm text-muted-foreground">

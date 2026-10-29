@@ -252,9 +252,9 @@ State values:
 | `data-variant` | `detail.facts` | `table`, `cards`, `chips` (none for a template) |
 | `data-variant` | `detail.countdown` | `compact`, `long`; API 4 `words`, `full`, `date` |
 | `data-variant` | `detail.list-button` | `full` (the full-width button) |
-| `data-action` | series page actions: `button`, `detail.action`, `detail.list-button` | `play`, `save`, `share`, `download` (`button`: every series Play button, Save, Share and the header's Download button); `trailer`, `more` (`detail.action`); `list` (`detail.list-button`, also inside the phone's More menu) |
+| `data-action` | series page actions: `button`, `detail.action`, `detail.list-button` | `play`, `save`, `share`, `download` (`button`: every series Play button, the Watchlist button (still named `save`), Share and the header's Download button); `trailer`, `more` (`detail.action`; More is on the desktop bar and overlay too, opening the options menu); `list` (`detail.list-button`, also inside the phone's More menu) |
 | `data-state` | `detail.list-button` | `listed` while the title is on a tracker list |
-| `data-state` | `button` with `data-action="save"` | `saved` while the title is saved on this device |
+| `data-state` | `button` with `data-action="save"` | `saved` while the title is on izumi's Watchlist (the button toggles it in one press; other lists are under More) |
 | `data-state` | `button` with `data-action="download"` (the header's Download E{n}) | the download of the episode it names, as on `episode.download`: `none` (a tap queues it), `queued`, `progress` (downloading or paused), `done`; `--download-progress` is the share downloaded ("42%") |
 | `data-action` | a `studio` action of the `detail.header` or `detail.facts` template (API 4) | `studio` |
 | `data-action` | `preview.action` | `play`, `list`, `favorite`, `details` |
@@ -540,14 +540,14 @@ State values:
 | `detail.overview` | part | The phone Overview's own content: the facts (with `sections.info: "overview"`) and the Synopsis, Information, Themes and Alternative titles blocks. |  |
 | `detail.banner.fade` | part | The gradient that fades the phone artwork into the page: the bottom of the band, or the scrim under the text of an overlay page. |  |
 | `detail.airing.wrap` | part | The box holding `detail.airing` and its spacing (under the phone facts; on desktop, where the release timing leaves the episode toolbar). Hide it, not `detail.airing`, to drop the release timing with its margin. |  |
-| `detail.menu` | part | The phone More menu (the list button, "Download episodes" beside a header Download, and the tracker links), open while the More action (`detail.action` with `data-action="more"`) is expanded; with `detail.actions: "expand"` a tap on More while the row is unfolded opens it. |  |
+| `detail.menu` | part | The phone More menu (the list button, Save to a list, "Download episodes" beside a header Download, and the tracker links), open while the More action (`detail.action` with `data-action="more"`) is expanded; with `detail.actions: "expand"` a tap on More while the row is unfolded opens it. |  |
 | `detail.home` | part | The Home link after Back in `detail.bar` (`detail.bar.home`). |  |
 | `detail.bar.logo` | part | The title logo inside `detail.bar.title` once the artwork has scrolled under the bar (`detail.bar.title: "logo"`). |  |
 | `detail.progress` | part | The phone series progress row under the header buttons (`detail.progress: "row"`), once the series is under way. `data-episode` is the episode Play opens and `--progress` the share watched ("31%"). | `data-episode` |
 | `detail.progress.label` | part | The progress row's "Episode 4 of 12". |  |
 | `detail.progress.value` | part | The share of the series watched ("31%"). |  |
 | `detail.progress.meter` | part | The progress row's track; its child `span` is the fill. |  |
-| `options.sheet` | slot | The options side menu a catalog title page opens on its More button (`button` with `data-action="more"`) or the options (☰) button: the dimmed layer over the page that holds `options.panel`; a tap on it closes the menu. |  |
+| `options.sheet` | slot | The options side menu a catalog title page opens on its More button (`button` with `data-action="more"`) or the options (☰) button, and a series page opens on its desktop More (`detail.action` with `data-action="more"`): the dimmed layer over the page that holds `options.panel`; a tap on it closes the menu. |  |
 | `options.panel` | part | The options menu panel on the right: `options.title`, `options.list`, and with a controller `options.hints`. |  |
 | `list.loading` | slot | The list editor (`Edit list`) while it reads the entry for the title from your trackers, so a save never starts from a blank status: the dimmed layer and panel with a `spinner`. |  |
 | `spinner` | part | A spinning ring for a wait with nothing yet to show in its place (the list editor reading an entry, a page loading). Coloured by the primary colour on its top edge. |  |

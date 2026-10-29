@@ -26,6 +26,8 @@ describe('account-independent saved lists UI', () => {
 
   it('makes card watchlist saving available without tracker gating', () => {
     expect(preview).toContain('toggleMediaInLocalList(media, WATCHLIST_ID)')
+    // Worded as the title pages' Watchlist button.
+    expect(preview.match(/aria-label=\{inWatchlist \? 'In Watchlist' : 'Watchlist'\}/g)).toHaveLength(2)
     expect(preview).not.toContain('anyTrackerConnected')
     expect(preview).not.toContain('Connect a tracker to bookmark')
   })
