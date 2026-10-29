@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ANCHOR_SLIDE_MS, ANCHOR_SNAP_MS, anchorEase, anchorScrollLeft, anchorScrollTop, animateScroll, stopScroll } from './anchor'
+import { ANCHOR_SLIDE_MS, ANCHOR_SNAP_MS, anchorEase, anchorScrollLeft, anchorScrollTop, animateScroll, chaseScroll, isChasing, stopScroll } from './anchor'
 import { initDpadNav } from './index'
 import { controllerMode } from './input'
 import { navInFlight } from './nav-state'
@@ -153,6 +153,43 @@ describe('animateScroll', () => {
     stopScroll(key)
     expect(frames.size).toBe(0)
     stopScroll({})
+  })
+})
+
+describe('chaseScroll', () => {
+  it('stays stable and never overshoots when frames come far apart, as on a busy Deck', () => {
+    let value = 0
+    const key = {}
+    chaseScroll(key, () => value, (v) => { value = v }, 660)
+    let previous = 0
+    for (let now = 0; now <= 900; now += 90) {
+      frame(now)
+      expect(value).toBeGreaterThanOrEqual(previous)
+      expect(value).toBeLessThanOrEqual(660)
+      previous = value
+    }
+    expect(value).toBe(660)
+    expect(isChasing(key)).toBe(false)
+  })
+
+  it('takes a new target while it runs, and stopScroll or an eased scroll ends it', () => {
+    let value = 0
+    const key = {}
+    chaseScroll(key, () => value, (v) => { value = v }, 300)
+    frame(0)
+    chaseScroll(key, () => value, (v) => { value = v }, 600)
+    expect(frames.size).toBe(1)
+    for (let now = 16; now <= 1000; now += 16) frame(now)
+    expect(value).toBe(600)
+    chaseScroll(key, () => value, (v) => { value = v }, 0)
+    expect(isChasing(key)).toBe(true)
+    stopScroll(key)
+    expect(isChasing(key)).toBe(false)
+    expect(frames.size).toBe(0)
+    chaseScroll(key, () => value, (v) => { value = v }, 0)
+    animateScroll(key, () => value, (v) => { value = v }, 100, 0)
+    expect(isChasing(key)).toBe(false)
+    expect(value).toBe(100)
   })
 })
 

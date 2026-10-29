@@ -102,10 +102,15 @@ export function chaseScroll(key: object, get: () => number, set: (v: number) => 
   let last: number | undefined
   let frame = 0
   const step = (now: number) => {
-    const dt = Math.min(0.05, last === undefined ? 1 / 60 : (now - last) / 1000)
+    const dt = last === undefined ? 1 / 60 : (now - last) / 1000
     last = now
-    v += (CHASE_RATE * CHASE_RATE * (target.to - x) - 2 * CHASE_RATE * v) * dt
-    x += v * dt
+    // The spring's exact solution over dt, not an Euler step: the Deck's frames come 30-90 ms apart
+    // while a held direction keeps the page busy, and an Euler step diverges past about 25 ms.
+    const e = x - target.to
+    const c = v + CHASE_RATE * e
+    const decay = Math.exp(-CHASE_RATE * dt)
+    x = target.to + (e + c * dt) * decay
+    v = (v - CHASE_RATE * c * dt) * decay
     if (Math.abs(target.to - x) < 0.5 && Math.abs(v) < 30) {
       set(target.to)
       cancel()
