@@ -189,10 +189,16 @@ fn requested_mode(req: &Request) -> Option<VideoMode> {
 
 /// Starts a licence session for `init_data` and applies the server's answer.
 async fn license(cdm: Arc<Cdm>, req: &Request, init_data: Vec<u8>) -> Result<cdm::KeyReport> {
+    let begun = std::time::Instant::now();
     let c = cdm.clone();
     let challenge = blocking(move || c.licence_request(init_data)).await?;
+    let (challenge_ms, challenge_bytes) = (ms(begun), challenge.len());
     let licence = post_licence(req, challenge).await?;
-    blocking(move || cdm.update(licence)).await
+    let posted_ms = ms(begun);
+    let keys = blocking(move || cdm.update(licence)).await;
+    // The first licence of a run took about three times as long as later ones; this says which step.
+    eprintln!("[widevine] licence: request {challenge_ms} ms ({challenge_bytes} bytes), server {} ms, applied {} ms", posted_ms - challenge_ms, ms(begun) - posted_ms);
+    keys
 }
 
 /// The fragment holding `start` seconds: the first one without a start.
