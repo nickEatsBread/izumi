@@ -1202,25 +1202,9 @@ fn control_icon_ass(
             ),
         );
     } else if label == "playback options" {
-        // Lucide Settings silhouette. The HTML button is a gear, not the Settings-2 sliders that
-        // were previously substituted in the native HUD.
-        let u = size / 24.0;
-        let stroke = 2.0 * u;
-        let point = |angle: f64, radius: f64| {
-            (cx + angle.cos() * radius * u, cy + angle.sin() * radius * u)
-        };
-        let mut outline = Vec::with_capacity(33);
-        for i in 0..32 {
-            let angle = -PI / 2.0 + i as f64 * PI / 16.0;
-            let radius = match i % 4 {
-                0 | 1 => 10.0,
-                _ => 8.0,
-            };
-            outline.push(point(angle, radius));
-        }
-        outline.push(outline[0]);
-        push(lines, stroke_polyline(&outline, stroke, color, &a));
-        push(lines, circle_ring(cx, cy, 2.0 * u, 4.0 * u, color, &a));
+        // A solid gear, as the HTML button's gear reads at this size. A star outline of joined
+        // strokes looked rough and low-resolution on the Deck.
+        push(lines, gear(cx, cy, size / 24.0, color, &a));
     } else if label == "discussion" {
         // Lucide MessageSquare, matching the HTML control. Real strokes keep the speech bubble
         // hollow and crisp under libass instead of collapsing into a filled low-resolution blob.
@@ -1609,6 +1593,36 @@ fn arc_band(
     for i in (0..=steps).rev() {
         let (x, y) = p(inner, at(i));
         path.push_str(&format!(" l {x} {y}"));
+    }
+    format!("{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{color}&\\1a&H{alpha}&\\p4}}{path}{{\\p0}}")
+}
+
+/// A solid gear 22 units across (`u` px each) with a round hole: eight teeth on eased flanks,
+/// sampled finely enough to draw smooth, the first tooth at the top.
+fn gear(cx: f64, cy: f64, u: f64, color: &str, alpha: &str) -> String {
+    const TEETH: usize = 8;
+    const STEPS: usize = 24;
+    let (tip, root, hole) = (11.0 * u, 8.0 * u, 3.5 * u);
+    let ease = |x: f64| {
+        let x = x.clamp(0.0, 1.0);
+        x * x * (3.0 - 2.0 * x)
+    };
+    let n = TEETH * STEPS;
+    let mut path = String::new();
+    for i in 0..n {
+        // Across one tooth's turn: a gap at the root, a flank up, the flat top, a flank down.
+        let t = (i % STEPS) as f64 / STEPS as f64;
+        let lift = if t < 0.5 { ease((t - 0.15) / 0.15) } else { ease((0.85 - t) / 0.15) };
+        let r = root + (tip - root) * lift;
+        let a = -PI / 2.0 - PI / TEETH as f64 + i as f64 / n as f64 * 2.0 * PI;
+        let verb = if i == 0 { "m" } else { " l" };
+        path.push_str(&format!("{verb} {} {}", dr(cx + a.cos() * r), dr(cy + a.sin() * r)));
+    }
+    // The hole runs the other way round, so it stays open under either fill rule.
+    for i in 0..32 {
+        let a = -(i as f64) / 32.0 * 2.0 * PI;
+        let verb = if i == 0 { "m" } else { "l" };
+        path.push_str(&format!(" {verb} {} {}", dr(cx + a.cos() * hole), dr(cy + a.sin() * hole)));
     }
     format!("{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{color}&\\1a&H{alpha}&\\p4}}{path}{{\\p0}}")
 }
@@ -2012,5 +2026,28 @@ mod tests {
         assert_eq!(lines.len(), 2);
         assert!(lines[0].contains("\\1c&HFFFFFF&") && lines[0].contains(&format!("\\1a&H{}&", alpha_hex(0.15))));
         assert!(lines[1].contains("\\1c&H2175F4&\\1a&H00&"));
+    }
+
+    #[test]
+    fn the_options_gear_is_one_smooth_solid_shape_with_a_hole() {
+        let mut lines = Vec::new();
+        control_icon_ass("playback options", 100.0, 100.0, 24.0, "FFFFFF", 1.0, &mut lines);
+        assert_eq!(lines.len(), 1, "one shape, not joined strokes");
+        let path = &lines[0][lines[0].find("\\p4}").unwrap() + 4..lines[0].rfind("{\\p0}").unwrap()];
+        assert_eq!(path.matches('m').count(), 2, "the gear and its hole");
+        let points: Vec<(f64, f64)> = path
+            .split(['m', 'l'])
+            .filter_map(|part| {
+                let mut xy = part.split_whitespace().map(|v| v.parse::<f64>().unwrap() / 8.0);
+                Some((xy.next()? - 100.0, xy.next()? - 100.0))
+            })
+            .collect();
+        assert_eq!(points.len(), 8 * 24 + 32);
+        let radii: Vec<f64> = points.iter().map(|(x, y)| x.hypot(*y)).collect();
+        let (gear, hole) = radii.split_at(8 * 24);
+        assert!(gear.iter().all(|r| (7.8..=11.2).contains(r)));
+        assert!(gear.iter().filter(|r| **r > 10.8).count() >= 8 * 6, "eight flat-topped teeth");
+        assert!(hole.iter().all(|r| (3.4..=3.6).contains(r)));
+        assert!(points[12].1 < -10.8 && points[12].0.abs() < 0.2, "a tooth at the top");
     }
 }

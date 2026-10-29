@@ -385,7 +385,7 @@ describe('Game-mode Leanback motion', () => {
     expect(controls).toContain('MessageSquare')
     expect(controls).toContain('aria-label="Audio, subtitles and server"><Captions')
     expect(controls).not.toContain('aria-label="Switch server"')
-    expect(nativeHud).toContain('Lucide Settings silhouette')
+    expect(nativeHud).toContain('push(lines, gear(cx, cy, size / 24.0, color, &a));')
     expect(nativeHud).toContain('Lucide MessageSquare')
     expect(nativeHud).toContain('Lucide Captions')
     expect(nativeHud).toContain('\\\\p4')
