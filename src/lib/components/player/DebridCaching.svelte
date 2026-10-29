@@ -2,7 +2,7 @@
   import { debridCaching } from '$lib/player/session'
   import { isAndroid } from '$lib/platform'
   import { formatBytes, formatSpeed } from '$lib/util/format'
-  import Loader from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import Users from '@lucide/svelte/icons/users'
   import Gauge from '@lucide/svelte/icons/gauge'
   import AndroidConnectionStatus from './AndroidConnectionStatus.svelte'
@@ -49,7 +49,7 @@
 
     <div class="relative flex w-full max-w-md flex-col items-center gap-5 text-center">
       <div class="flex items-center gap-2 text-sm uppercase tracking-wide text-white/60">
-        <Loader size={16} class="loading-spinner animate-spin" /> Caching via {c.provider}
+        <Spinner inline /> Caching via {c.provider}
       </div>
 
       <h2 class="text-xl font-bold">{c.title}{c.episode != null ? ` · Ep ${c.episode}` : ''}</h2>

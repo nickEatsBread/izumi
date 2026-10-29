@@ -44,7 +44,7 @@
        onclick={(event) => event.stopPropagation()}>
     <h2 data-part="options.title" class="shrink-0 px-6 pb-3 pt-7 text-2xl font-bold leading-tight"><span class="line-clamp-2">{title}</span>
       {#if subtitle}<span data-part="options.subtitle" class="mt-1 block text-sm font-medium text-white/50">{subtitle}</span>{/if}</h2>
-    <div data-part="options.list" class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3">
+    <div data-part="options.list" data-nav-scroll-container class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-3">
       {#each groups as group, g (g)}
         {#if group.options.length}
           {#if group.title}<div data-part="options.heading" class="px-4 pb-1 pt-4 text-xs font-extrabold uppercase tracking-[0.14em] text-white/40">{group.title}</div>{/if}

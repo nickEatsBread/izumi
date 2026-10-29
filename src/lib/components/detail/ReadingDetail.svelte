@@ -28,9 +28,9 @@
 
 {#if $store.fetching}
   <div class="p-4 sm:p-8">
-    <div class="h-72 animate-pulse rounded-2xl bg-muted"></div>
-    <div class="mt-6 h-8 w-64 animate-pulse rounded bg-muted"></div>
-    <div class="mt-3 h-24 max-w-4xl animate-pulse rounded bg-muted"></div>
+    <div class="skeloader h-72 rounded-2xl"></div>
+    <div class="skeloader mt-6 h-8 w-64 rounded"></div>
+    <div class="skeloader mt-3 h-24 max-w-4xl rounded"></div>
   </div>
 {:else if $store.error || !media}
   <div class="grid min-h-[65vh] place-items-center p-6 text-center">

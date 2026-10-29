@@ -551,6 +551,22 @@ State values:
 | `options.panel` | part | The options menu panel on the right: `options.title`, `options.list`, and with a controller `options.hints`. |  |
 | `list.loading` | slot | The list editor (`Edit list`) while it reads the entry for the title from your trackers, so a save never starts from a blank status: the dimmed layer and panel with a `spinner`. |  |
 | `spinner` | part | A spinning ring for a wait with nothing yet to show in its place (the list editor reading an entry, a page loading). Coloured by the primary colour on its top edge. |  |
+| `sources` | slot | The source picker; data-variant is dialog, phone or panel (the Game mode side panel), and data-state is loading while sources are being found. |  |
+| `sources.status` | part | The line under the picker title: a spinner and Finding sources, then the counts. |  |
+| `sources.list` | part | The scrolling list of sources. |  |
+| `sources.row` | part | One source; data-best marks the best pick, and placeholder rows have data-state loading with a skeleton inside. |  |
+| `sources.group` | part | One release and its routes: its first row, the N more toggle and the expanded rows. |  |
+| `sources.more` | part | Finding more sources, with a spinner. |  |
+| `sources.empty` | part | Shown when there is nothing to pick; data-state is setup (no sources set up) or none (nothing matches). |  |
+| `sources.error` | part | The alert shown when playback failed. |  |
+| `sources.problems` | part | The sources that failed, each with its reason. |  |
+| `play.connecting` | slot | The full-screen connecting screen, also shown while the player loads; data-variant switch is the Game mode card when changing source mid-playback. |  |
+| `play.backdrop` | part | The blurred artwork behind the connecting screen. |  |
+| `play.loader` | part | The connecting screen's centred column. |  |
+| `play.loader.title` | part | The series title on the connecting screen. |  |
+| `play.loader.bar` | part | The connecting screen's sweeping bar; its ::before is the moving segment. |  |
+| `play.loader.caption` | part | What is happening: Connecting, Switching source or Preparing download. |  |
+| `play.loader.detail` | part | The release name on the connecting screen. |  |
 | `options.title` | part | The options menu heading (the title's name). The device-lists picker ("Save to lists") is the same sheet. |  |
 | `options.subtitle` | part | A line under the heading (the lists picker: the title and where the lists are kept). |  |
 | `options.footer` | part | A row under the list (the lists picker: the field that makes a new list). |  |

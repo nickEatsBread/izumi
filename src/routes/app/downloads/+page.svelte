@@ -26,6 +26,7 @@
   import Trash2 from '@lucide/svelte/icons/trash-2'
   import FolderOpen from '@lucide/svelte/icons/folder-open'
   import Ellipsis from '@lucide/svelte/icons/ellipsis'
+  import Spinner from '$lib/components/Spinner.svelte'
 
   heroMedia.set(null)
 
@@ -144,7 +145,7 @@
             onclick={() => primary(d)}
             class="flex min-h-[4.5rem] min-w-0 flex-1 items-center gap-4 rounded-xl bg-secondary/40 px-4 py-3 text-left outline-none hover:bg-secondary focus-visible:bg-secondary">
       <span class="grid size-11 shrink-0 place-items-center rounded-full {d.status === 'done' ? 'bg-primary text-primary-foreground' : d.status === 'error' ? 'bg-destructive/20 text-destructive' : 'bg-foreground/10'}">
-        {#if busy}<span data-part="spinner" class="size-5 animate-spin rounded-full border-2 border-current border-t-transparent"></span>{:else}<Icon size={20} />{/if}
+        {#if busy}<Spinner size="md" inline />{:else}<Icon size={20} />{/if}
       </span>
       <span class="min-w-0 flex-1">
         <span class="flex items-center gap-2">

@@ -7,7 +7,7 @@
   import Package from '@lucide/svelte/icons/package'
   import Check from '@lucide/svelte/icons/check'
   import X from '@lucide/svelte/icons/x'
-  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
   import Store from '@lucide/svelte/icons/store'
   import Palette from '@lucide/svelte/icons/palette'
@@ -150,7 +150,7 @@
   <div class="mx-auto flex min-h-full w-full max-w-2xl flex-col px-5 pb-10 pt-[max(2.5rem,env(safe-area-inset-top))] sm:px-8">
     {#if phase === 'loading'}
       <div class="grid flex-1 place-items-center">
-        <p class="flex items-center gap-3 text-muted-foreground"><LoaderCircle class="animate-spin" size={20} /> Reading the pack from {domain}…</p>
+        <p class="flex items-center gap-3 text-muted-foreground"><Spinner size="md" /> Reading the pack from {domain}…</p>
       </div>
     {:else if phase === 'unreadable'}
       <div class="flex flex-1 flex-col justify-center">
@@ -265,7 +265,7 @@
             <li class="flex items-center gap-3 text-sm">
               {#if state === 'done'}<Check class="text-emerald-400" size={18} />
               {:else if state === 'failed'}<X class="text-destructive" size={18} />
-              {:else if state === 'working'}<LoaderCircle class="animate-spin text-theme" size={18} />
+              {:else if state === 'working'}<Spinner class="mx-px" />
               {:else}<span class="size-[18px] rounded-full border border-border"></span>{/if}
               <span class:text-muted-foreground={!state}>{step.label}</span>
               {#if progress[step.key]?.detail}<span class="text-xs text-muted-foreground">{progress[step.key]?.detail}</span>{/if}

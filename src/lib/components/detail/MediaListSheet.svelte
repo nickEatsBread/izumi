@@ -20,6 +20,7 @@
   import LocalListPicker from '$lib/components/library/LocalListPicker.svelte'
   import { navLayer } from '$lib/nav/overlay'
   import X from '@lucide/svelte/icons/x'
+  import Spinner from '$lib/components/Spinner.svelte'
 
   let { media, onclose }: { media: Media; onclose: () => void } = $props()
 
@@ -89,7 +90,7 @@
         <button data-focusable aria-label="Close" onclick={onclose} class="grid size-8 place-items-center rounded-md hover:bg-accent"><X size={18} /></button>
       </div>
       <div class="flex flex-col items-center gap-3 px-5 pb-10 pt-6 text-sm text-muted-foreground">
-        <span data-part="spinner" class="size-8 animate-spin rounded-full border-2 border-foreground/15 border-t-primary"></span>
+        <Spinner size="lg" />
         Reading your list entry…
       </div>
     </div>

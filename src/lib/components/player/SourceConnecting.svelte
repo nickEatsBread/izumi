@@ -29,6 +29,8 @@
   <!-- A mid-playback source swap must not replace the current frame with a black loading page.
        This compact card renders live over the paused video's frozen frame (gm-freeze.ts). -->
   <div
+    data-slot="play.connecting"
+    data-variant="switch"
     data-gm-menu-surface
     class="fixed inset-0 z-[55] grid place-items-center bg-black/45"
     onclick={() => c?.cancel()}
@@ -41,6 +43,7 @@
   </div>
   {:else}
   <div
+    data-slot="play.connecting"
     class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black"
     onclick={() => c?.cancel()}
     onkeydown={(e) => e.key === 'Escape' && c?.cancel()}
@@ -50,7 +53,7 @@
     {#if backdrop}
       <!-- Desktop blurs this static image. Game mode's loading-backdrop rule removes the filter:
            animating over a full-screen filtered layer makes Deck WebKit repaint it every frame. -->
-      <img src={backdrop} alt="" class="loading-backdrop pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-25 blur-2xl" />
+      <img data-part="play.backdrop" src={backdrop} alt="" class="loading-backdrop pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-25 blur-2xl" />
     {/if}
     <button data-focusable onclick={(e) => { e.stopPropagation(); c?.cancel() }} class="absolute right-4 top-4 z-10 grid size-10 place-items-center rounded-full bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white" aria-label="Close">✕</button>
     <div class="relative" onclick={(e) => e.stopPropagation()} role="presentation">

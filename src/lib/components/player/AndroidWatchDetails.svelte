@@ -452,7 +452,7 @@
            bootstrap height each time. -->
       <div class:hidden={active !== 'comments'}>
         {#if commentsLoading && !discussion}
-          <div class="space-y-2">{#each Array.from({ length: 4 }) as _}<div class="h-20 animate-pulse rounded-xl bg-white/[0.06]"></div>{/each}</div>
+          <div class="space-y-2">{#each Array.from({ length: 4 }) as _}<div class="skeloader h-20 rounded-xl"></div>{/each}</div>
         {:else if discussion?.kind === 'disqus'}
           {#if commentsLoading}
             <div class="mb-2 h-1 overflow-hidden rounded-full bg-white/[0.08]"><div class="bar-loader h-full w-full"></div></div>

@@ -17,9 +17,9 @@
 
 </script>
 
-<div class="flex w-full max-w-xl flex-col items-center gap-6 px-6 text-center">
+<div data-part="play.loader" class="flex w-full max-w-xl flex-col items-center gap-6 px-6 text-center">
   {#if title}
-    <h1 class="text-3xl font-black leading-tight tracking-tight text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.6)] sm:text-4xl">
+    <h1 data-part="play.loader.title" class="text-3xl font-black leading-tight tracking-tight text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.6)] sm:text-4xl">
       {title}
     </h1>
   {/if}
@@ -27,7 +27,7 @@
   <!-- Transform-only and explicitly compositor-promoted in app.css. Unlike the old SVG/SMIL
        transcription, this keeps moving while source and native-player setup occupy the UI thread. -->
   <div class="grid h-28 w-52 place-items-center" aria-hidden="true">
-    <div class="bar-loader h-1 w-40 rounded-full bg-white/20"></div>
+    <div data-part="play.loader.bar" class="bar-loader h-1 w-40 rounded-full bg-white/20"></div>
   </div>
 
   <!-- `w-full min-w-0` is load-bearing: the column centres its children rather than stretching them,
@@ -36,9 +36,9 @@
        INSIDE the box, and the box itself was the thing overflowing. Bounded to the parent, it
        ellipsizes as intended. -->
   <div class="w-full min-w-0 space-y-2">
-    <p class="text-xs font-bold uppercase tracking-[0.36em] text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)]">{caption}</p>
+    <p data-part="play.loader.caption" class="text-xs font-bold uppercase tracking-[0.36em] text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)]">{caption}</p>
     {#if detail}
-      <p class="mx-auto w-full max-w-md truncate text-sm text-white/75" {title}>{detail}</p>
+      <p data-part="play.loader.detail" class="mx-auto w-full max-w-md truncate text-sm text-white/75" {title}>{detail}</p>
     {/if}
   </div>
 

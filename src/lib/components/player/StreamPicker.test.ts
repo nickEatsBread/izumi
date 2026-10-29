@@ -93,7 +93,7 @@ describe('mobile source picker layout', () => {
     expect(source).toContain('return !isTextEntryField(item)')
     expect(source).toContain("target.scrollIntoView({ block: 'nearest'")
     expect(source).toContain('spinnerFrame = (spinnerFrame + 1) % 8')
-    expect(source).toContain('class:animate-spin={!$gameMode}')
+    expect(source.match(/<Spinner size="xs" frame=\{\$gameMode \? spinnerFrame : undefined\} \/>/g)).toHaveLength(2)
   })
 
   it('shares the nav text-field test and stops the auto countdown when a select takes focus', () => {

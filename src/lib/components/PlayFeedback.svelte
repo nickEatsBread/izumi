@@ -22,19 +22,19 @@
 
 <!-- Same z-index band and same opaque black as the overlays it precedes, so nothing renders on top
      of it and the real screen replaces this in place with no brightness pop. -->
-<div class="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-black px-8" role="status" aria-live="polite">
+<div data-slot="play.connecting" class="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-black px-8" role="status" aria-live="polite">
   {#if art}
     <!-- Desktop blurs this still; game mode's `loading-backdrop` rule drops the filter, because
          animating over a full-screen filtered layer makes Deck WebKit repaint it every frame. -->
-    <img src={art} alt="" class="loading-backdrop pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-25 blur-2xl" />
+    <img data-part="play.backdrop" src={art} alt="" class="loading-backdrop pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-25 blur-2xl" />
   {/if}
-  <div class="relative flex w-full max-w-xl flex-col items-center gap-6 px-6 text-center">
+  <div data-part="play.loader" class="relative flex w-full max-w-xl flex-col items-center gap-6 px-6 text-center">
     {#if label}
-      <h1 class="text-3xl font-black leading-tight tracking-tight text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.6)] sm:text-4xl">{label}</h1>
+      <h1 data-part="play.loader.title" class="text-3xl font-black leading-tight tracking-tight text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.6)] sm:text-4xl">{label}</h1>
     {/if}
     <div class="grid h-28 w-52 place-items-center" aria-hidden="true">
-      <div class="bar-loader h-1 w-40 rounded-full bg-white/20"></div>
+      <div data-part="play.loader.bar" class="bar-loader h-1 w-40 rounded-full bg-white/20"></div>
     </div>
-    <p class="text-xs font-bold uppercase tracking-[0.36em] text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)]">{caption}</p>
+    <p data-part="play.loader.caption" class="text-xs font-bold uppercase tracking-[0.36em] text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)]">{caption}</p>
   </div>
 </div>

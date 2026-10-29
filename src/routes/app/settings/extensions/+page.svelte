@@ -59,6 +59,7 @@
   import ExtensionServiceSettings from '$lib/components/settings/ExtensionServiceSettings.svelte'
   import JvmSourcePreferences from '$lib/components/catalog/JvmSourcePreferences.svelte'
   import Settings from '@lucide/svelte/icons/settings'
+  import Spinner from '$lib/components/Spinner.svelte'
   import { masonryItem } from '$lib/actions/masonry'
   import { onDestroy } from 'svelte'
   import { adultSourcesAllowed, cancelHouseholdPrompt, lockAdultSources, requestAdultSources } from '$lib/profiles/household-gate'
@@ -554,7 +555,7 @@
                           >{packageWork?.id === p.id && packageWork.kind === 'install' ? (inst ? 'Updating…' : 'Installing…') : !inst ? 'Install' : !mayUpdateFrom(url, p, inst) ? 'Replace' : inst.version === p.version ? 'Reinstall' : 'Update'}</button>
                           {#if inst}
                             <button data-focusable aria-disabled={packageBusy} aria-busy={packageWork?.id === p.id && packageWork.kind === 'remove'} data-touch-target onclick={() => removePackage(url, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
-                              class="grid size-9 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent aria-disabled:opacity-50 sm:size-7">{#if packageWork?.id === p.id && packageWork.kind === 'remove'}<span data-part="spinner" class="size-4 animate-spin rounded-full border-2 border-current/25 border-t-current"></span>{:else}<Trash2 size={16} />{/if}</button>
+                              class="grid size-9 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent aria-disabled:opacity-50 sm:size-7">{#if packageWork?.id === p.id && packageWork.kind === 'remove'}<Spinner inline />{:else}<Trash2 size={16} />{/if}</button>
                           {/if}
                         </div>
                       </li>
@@ -638,7 +639,7 @@
               <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {pOff ? 'translate-x-0.5' : 'translate-x-4'}"></span>
             </button>
             <button data-focusable aria-disabled={packageBusy} aria-busy={packageWork?.id === p.id && packageWork.kind === 'remove'} data-touch-target onclick={() => removePackage(p.id, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
-              class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent aria-disabled:opacity-50 sm:size-8">{#if packageWork?.id === p.id && packageWork.kind === 'remove'}<span data-part="spinner" class="size-4 animate-spin rounded-full border-2 border-current/25 border-t-current"></span>{:else}<Trash2 size={16} />{/if}</button>
+              class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent aria-disabled:opacity-50 sm:size-8">{#if packageWork?.id === p.id && packageWork.kind === 'remove'}<Spinner inline />{:else}<Trash2 size={16} />{/if}</button>
           </div>
         </li>
       {/each}

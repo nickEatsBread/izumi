@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import Trash2 from '@lucide/svelte/icons/trash-2'
-  import RefreshCw from '@lucide/svelte/icons/refresh-cw'
+  import Spinner from '$lib/components/Spinner.svelte'
   import { allStores, directoryEnabled, pinStoreKey, removeStore, setStoreEnabled, type StoreFeed } from '$lib/store/feeds'
   import { confirmStore, previewStore, type StorePreview } from '$lib/store/service'
   import { storeTrustText } from '$lib/store/trust'
@@ -135,7 +135,7 @@
                class="min-w-0 flex-1 rounded-md bg-input px-3 py-2.5 text-base sm:text-sm" />
         <button type="submit" data-focusable disabled={busy || !input.trim()}
                 class="flex items-center justify-center gap-1 rounded-md bg-secondary px-4 py-2.5 text-sm font-black disabled:opacity-40">
-          {#if busy}<RefreshCw size={14} class="animate-spin" />{/if} Check
+          {#if busy}<Spinner size="xs" inline />{/if} Check
         </button>
       </form>
       {#if preview}

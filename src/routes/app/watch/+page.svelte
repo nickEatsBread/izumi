@@ -12,7 +12,7 @@
   import { torrentPlaybackMode, debridKey, debridRoomNoticeAck } from '$lib/settings/ui'
   import DebridRoomNotice from '$lib/components/watch/DebridRoomNotice.svelte'
   import { isEffectiveDebridMode, shouldWarnBeforeHosting } from '$lib/watch-together/debrid-warning'
-  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import CircleCheck from '@lucide/svelte/icons/circle-check'
   import Clock3 from '@lucide/svelte/icons/clock-3'
   import RefreshButton from '$lib/components/RefreshButton.svelte'
@@ -88,7 +88,7 @@
       {#if $partyNotice}<div class="mt-3 text-sm font-bold text-muted-foreground">{$partyNotice}</div>{/if}
       {#if $partyHostTransfer}
         <div class="mx-auto mt-3 flex w-fit items-center gap-2 rounded-full bg-theme/15 px-3 py-1.5 text-xs font-black text-theme">
-          <LoaderCircle size={13} class="animate-spin" /> Host transfer · {$partyHostTransfer.targetName}
+          <Spinner size="xs" inline /> Host transfer · {$partyHostTransfer.targetName}
         </div>
       {/if}
     </section>
@@ -118,7 +118,7 @@
               : participant.readiness === 'ready' ? 'bg-emerald-500/15 text-emerald-400'
               : 'bg-background text-muted-foreground'}">
             {#if participant.readiness === 'buffering' || participant.readiness === 'loading'}
-              <LoaderCircle size={11} class="animate-spin" />
+              <Spinner size="xs" inline />
             {:else if participant.readiness === 'ready'}
               <CircleCheck size={11} />
             {:else}

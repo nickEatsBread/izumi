@@ -294,7 +294,7 @@
     {/key}
   {:else if tab === 'browse'}
     {#if cached}<p class="message">Showing the saved catalog. <button type="button" class="text-close inline" data-focusable disabled={loading} onclick={() => refresh(true)}>Refresh</button> when you’re back online.</p>{/if}
-    {#if loading && !entries.length}<div class="skeletons" aria-label="Loading themes" aria-busy="true">{#each [1, 2, 3] as item (item)}<div class="skeleton" aria-hidden="true"></div>{/each}</div>
+    {#if loading && !entries.length}<div class="skeletons" aria-label="Loading themes" aria-busy="true">{#each [1, 2, 3] as item (item)}<div class="skeleton skeloader" aria-hidden="true"></div>{/each}</div>
     {:else if !filtered.length}<div class="empty"><Palette size={36} /><h3>{entries.length ? 'No matching themes' : 'Your next look starts here'}</h3><p>{entries.length ? 'Try another name or style.' : 'Refresh the catalog, or add a theme from a link, file or folder.'}</p></div>
     {:else}<ThemeBrowse listings={filteredListings} filtered={!!query.trim()} official={THEME_CATALOG_URL} installed={(listing) => isInstalled(listing.release)} note={listingNote} onopen={open} />{/if}
   {:else}

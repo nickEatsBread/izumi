@@ -90,7 +90,7 @@
 {#snippet skeletonRow(title: string)}
   <Carousel {title} attribution="Trakt">
     {#each Array(7) as _, index (index)}
-      <div class="h-[238px] w-36 shrink-0 animate-pulse rounded-xl bg-secondary sm:w-[152px]"></div>
+      <div class="skeloader h-[238px] w-36 shrink-0 rounded-xl sm:w-[152px]"></div>
     {/each}
   </Carousel>
 {/snippet}

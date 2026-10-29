@@ -46,7 +46,7 @@
   import ExternalLink from '@lucide/svelte/icons/external-link'
   import Play from '@lucide/svelte/icons/play'
   import Download from '@lucide/svelte/icons/download'
-  import Loader from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import Check from '@lucide/svelte/icons/check'
   import MoreHorizontal from '@lucide/svelte/icons/ellipsis'
   import { isAndroid, isMobile } from '$lib/platform'
@@ -1434,7 +1434,7 @@
       <button data-part="button" data-variant="secondary" data-action="download" data-state={downloadState} data-episode={downloadEp} data-focusable onclick={ready((full) => downloadCta(full))}
               style:--download-progress="{episodeDownloadPercent(download)}%" aria-label={episodeDownloadLabel(download, String(downloadEp))}
               class="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-secondary py-2.5 text-sm font-bold">
-        {#if downloadState === 'done'}<Check size={17} class="text-theme" />{:else if downloadState === 'queued'}<Loader size={17} class="animate-spin" />{:else}<Download size={17} />{/if}<span aria-live="polite">{episodeDownloadText(download, String(downloadEp))}</span>
+        {#if downloadState === 'done'}<Check size={17} class="text-theme" />{:else if downloadState === 'queued'}<Spinner inline />{:else}<Download size={17} />{/if}<span aria-live="polite">{episodeDownloadText(download, String(downloadEp))}</span>
       </button>
     {/if}
   {/each}

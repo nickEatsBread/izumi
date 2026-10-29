@@ -4,7 +4,7 @@
   import Cloud from '@lucide/svelte/icons/cloud'
   import Eye from '@lucide/svelte/icons/eye'
   import EyeOff from '@lucide/svelte/icons/eye-off'
-  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import Share2 from '@lucide/svelte/icons/share-2'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import { m } from '$lib/paraglide/messages.js'
@@ -98,7 +98,7 @@
     </div>
   </div>
   <p role="status" aria-live="polite" class="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-    {#if checking}<LoaderCircle size={14} class="tile-spinner" />{m.onboarding_playback_key_checking()}
+    {#if checking}<Spinner size="xs" inline class="mx-px" />{m.onboarding_playback_key_checking()}
     {:else if keyState === 'valid'}<Check size={14} />{m.onboarding_playback_key_valid()}
     {:else if keyState === 'invalid'}{keyMessage || m.onboarding_playback_key_invalid()}
     {:else}{m.onboarding_playback_key_hint()}{/if}

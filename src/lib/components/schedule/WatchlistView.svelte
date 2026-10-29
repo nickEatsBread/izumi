@@ -34,7 +34,7 @@
   import List from '@lucide/svelte/icons/list'
   import Play from '@lucide/svelte/icons/play'
   import Plus from '@lucide/svelte/icons/plus'
-  import Loader from '@lucide/svelte/icons/loader-circle'
+  import Spinner from '$lib/components/Spinner.svelte'
   import Settings2 from '@lucide/svelte/icons/settings-2'
   import ChevronUp from '@lucide/svelte/icons/chevron-up'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
@@ -373,7 +373,7 @@
             {$isMobile ? '' : 'opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100'}">
             <button data-focusable onclick={() => play(it)} aria-label="Play episode {resumeEp(it.media, it.progress)}"
                     class="grid size-8 place-items-center rounded-full bg-black/70 text-white shadow-lg transition-colors hover:bg-theme">
-              {#if resolvingId === it.media.id}<Loader size={14} class="animate-spin" />
+              {#if resolvingId === it.media.id}<Spinner size="xs" inline />
               {:else}<Play size={14} class="translate-x-px fill-current" />{/if}
             </button>
             {#if canTrackProgress}
@@ -407,7 +407,7 @@
               <button data-focusable onclick={() => play(it)}
                       class="flex min-w-0 items-center gap-1.5 truncate font-bold text-muted-foreground transition-colors hover:text-theme"
                       aria-label="Continue watching {mediaTitle(it.media)} at episode {resumeEp(it.media, it.progress)}">
-                {#if resolvingId === it.media.id}<Loader size={13} class="shrink-0 animate-spin" />
+                {#if resolvingId === it.media.id}<Spinner size="xs" inline />
                 {:else}<Play size={12} class="shrink-0 fill-current" />{/if}
                 <span class="truncate">Continue watching →</span>
               </button>
