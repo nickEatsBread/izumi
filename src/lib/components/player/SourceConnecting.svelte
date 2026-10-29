@@ -58,10 +58,10 @@
     class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black"
     onclick={() => c?.cancel()}
     onkeydown={(e) => e.key === 'Escape' && c?.cancel()}
-    role="status"
-    aria-label={`Opening ${c.title}`}
+    role="presentation"
     transition:fade={{ duration: $gameMode ? 0 : 160 }}
   >
+    <span class="sr-only" role="status">Opening {c.title}</span>
     <button data-focusable data-part="play.connecting.back" onclick={(e) => { e.stopPropagation(); c?.cancel() }} class="absolute left-6 top-6 z-10 grid size-11 place-items-center rounded-full bg-black/40 text-xl text-white/85 transition-colors hover:bg-white/20 hover:text-white" aria-label="Back">‹</button>
     <div data-part="play.loader" class="grid place-items-center" aria-hidden="true"><Spinner size="player" /></div>
     <!-- A long wait (add-on searches, a slow source) says what it is waiting on, under the ring. -->
