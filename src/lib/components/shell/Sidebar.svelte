@@ -254,9 +254,17 @@
     const show = () => { if (!get(playing) && !drawerOpen) toggleDrawer() }
     window.addEventListener('nav-drawer-toggle', toggle)
     window.addEventListener('nav-drawer-open', show)
+    // View opens Search, as on the top bar's handheld layout (and in the reference handheld app).
+    const stopView = onPadButton(({ name, pressed }) => {
+      if (!pressed || name !== 'select' || get(playing)) return
+      if ([...document.querySelectorAll<HTMLElement>('[data-nav-trap]')].some((trap) => trap.checkVisibility?.() ?? true)) return
+      drawerOpen = false
+      void goto('/app/search')
+    })
     return () => {
       window.removeEventListener('nav-drawer-toggle', toggle)
       window.removeEventListener('nav-drawer-open', show)
+      stopView()
     }
   })
   function openScreen(screen: typeof $enabledCatalogScreens[number]) {
