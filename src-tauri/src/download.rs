@@ -369,6 +369,57 @@ pub fn download_dir_default(app: AppHandle) -> Result<String, String> {
     Ok(d.to_string_lossy().into_owned())
 }
 
+/// Free (to this user) and total bytes of a filesystem.
+#[derive(serde::Serialize, Debug)]
+pub struct DiskSpace {
+    free: u64,
+    total: u64,
+}
+
+/// The space left on the drive holding the downloads folder `dir`, or None where it can't be read.
+#[tauri::command]
+pub async fn download_disk_space(dir: String) -> Option<DiskSpace> {
+    disk_space_of(existing_ancestor(&dir)?)
+}
+
+/// `dir` itself or its nearest existing parent: a chosen folder is only created by its first download.
+fn existing_ancestor(dir: &str) -> Option<&std::path::Path> {
+    std::path::Path::new(dir).ancestors().find(|p| p.is_dir())
+}
+
+#[cfg(windows)]
+fn disk_space_of(path: &std::path::Path) -> Option<DiskSpace> {
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetDiskFreeSpaceExW(dir: *const u16, free_to_caller: *mut u64, total: *mut u64, total_free: *mut u64) -> i32;
+    }
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let (mut free, mut total) = (0u64, 0u64);
+    // SAFETY: a NUL-terminated path and live out-pointers; the last one is optional.
+    let ok = unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut free, &mut total, std::ptr::null_mut()) };
+    (ok != 0).then_some(DiskSpace { free, total })
+}
+
+#[cfg(target_os = "linux")]
+fn disk_space_of(path: &std::path::Path) -> Option<DiskSpace> {
+    use std::os::unix::ffi::OsStrExt;
+    let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+    // SAFETY: statvfs is plain data, and the call gets a NUL-terminated path and a live out-struct.
+    let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(c_path.as_ptr(), &mut s) } != 0 {
+        return None;
+    }
+    let block = s.f_frsize as u64;
+    Some(DiskSpace { free: s.f_bavail as u64 * block, total: s.f_blocks as u64 * block })
+}
+
+// shortcut: no libc dependency on macOS/Android, so the page shows no free space there; add one to support them.
+#[cfg(not(any(windows, target_os = "linux")))]
+fn disk_space_of(_: &std::path::Path) -> Option<DiskSpace> {
+    None
+}
+
 /// Stream `url` to `<dir>/<filename>`. Resolves when the file is fully written (or
 /// paused). Progress arrives via `download-progress` events. Resumes an existing
 /// `.part` via a Range request.
@@ -1000,5 +1051,18 @@ mod tests {
         assert_eq!(sanitize("console.log"), "console.log");
         // Degenerate results collapse to a safe placeholder.
         assert_eq!(sanitize(".."), "_");
+    }
+
+    #[test]
+    fn disk_space_reads_the_nearest_existing_folder() {
+        let tmp = std::env::temp_dir();
+        let missing = tmp.join("izumi-no-such-folder").join("downloads");
+        assert_eq!(existing_ancestor(&missing.to_string_lossy()), Some(tmp.as_path()));
+        assert_eq!(existing_ancestor(""), None);
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            let space = disk_space_of(&tmp).expect("the temp folder's drive");
+            assert!(space.total > 0 && space.free <= space.total, "{space:?}");
+        }
     }
 }

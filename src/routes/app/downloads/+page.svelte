@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick, type Component } from 'svelte'
   import { get } from 'svelte/store'
-  import { downloads, speeds, pauseDownload, resumeDownload, cancelDownload, deleteDownload, revealDownload, type DownloadItem } from '$lib/downloads/store'
+  import { downloads, speeds, pauseDownload, resumeDownload, cancelDownload, deleteDownload, revealDownload, diskSpace, type DiskSpace, type DownloadItem } from '$lib/downloads/store'
   import { downloadedMedia, getDownloadedMedia } from '$lib/downloads/state'
   import { playEpisode } from '$lib/stremio/play'
   import { fetchMediaById } from '$lib/anilist/fetch-media'
@@ -14,7 +14,7 @@
   import { themePresentation } from '$lib/themes/runtime'
   import OptionsSheet, { type SheetOption } from '$lib/components/detail/OptionsSheet.svelte'
   import ButtonHints from '$lib/components/shell/ButtonHints.svelte'
-  import { groupDownloads, neighbourOf, primaryActionOf, seriesTitle, sizeOnDisk, PRIMARY_LABEL, type PrimaryAction } from './group'
+  import { groupDownloads, lowOnSpace, neighbourOf, primaryActionOf, seriesTitle, sizeOnDisk, PRIMARY_LABEL, type PrimaryAction } from './group'
   import Search from '@lucide/svelte/icons/search'
   import Cloud from '@lucide/svelte/icons/cloud'
   import Play from '@lucide/svelte/icons/play'
@@ -44,6 +44,17 @@
     downloading: all.filter((d) => d.status === 'downloading').length,
     queued: all.filter((d) => d.status === 'queued').length,
     failed: all.filter((d) => d.status === 'error').length,
+  })
+
+  // Free space on the downloads drive, read again when an episode finishes or leaves the list (a
+  // string key, so progress ticks don't re-read it).
+  let space = $state<DiskSpace | null>(null)
+  const spaceKey = $derived(`${saved}:${all.length}`)
+  $effect(() => {
+    void spaceKey
+    let live = true
+    diskSpace().then((s) => { if (live) space = s })
+    return () => { live = false }
   })
 
   const ICON: Record<PrimaryAction, Component<{ size?: number }>> = { play: Play, pause: Pause, resume: Download, retry: RotateCw, options: Clock }
@@ -196,6 +207,7 @@
       <h1 class="text-2xl font-black">Downloads</h1>
       <p class="mt-0.5 flex flex-wrap gap-x-2 text-sm text-muted-foreground">
         <span>{saved} saved · {formatBytes(used) || '0 B'} on this device</span>
+        {#if space}<span class={lowOnSpace(space) ? 'text-amber-400' : ''} title={`${formatBytes(space.total)} drive`}>· {formatBytes(space.free)} free</span>{/if}
         {#if counts.downloading}<span>· {counts.downloading} downloading</span>{/if}
         {#if counts.queued}<span>· {counts.queued} queued</span>{/if}
         {#if counts.failed}<span class="text-destructive">· {counts.failed} failed</span>{/if}

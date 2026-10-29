@@ -24,6 +24,16 @@ async function ensureDir(): Promise<string> {
   if (!dir) { dir = await invoke<string>('download_dir_default'); downloadDir.set(dir) }
   return dir
 }
+export type DiskSpace = { free: number, total: number }
+/** Space left on the drive holding the downloads folder; null where it can't be read (a web preview,
+ *  macOS, Android). Reads the default folder without saving it as the user's choice. */
+export async function diskSpace(): Promise<DiskSpace | null> {
+  try {
+    return await invoke<DiskSpace | null>('download_disk_space', { dir: get(downloadDir) || await invoke<string>('download_dir_default') })
+  } catch {
+    return null
+  }
+}
 const posterOf = (m: Media) => m.coverImage?.extraLarge ?? m.coverImage?.medium
 const filenameOf = (it?: DownloadItem) => it?.filename ?? `${it?.title ?? 'download'}.mkv`
 

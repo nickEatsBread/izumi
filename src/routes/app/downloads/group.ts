@@ -60,3 +60,6 @@ export function neighbourOf(groups: DownloadGroup[], id: string): string | null 
   const at = ids.indexOf(id)
   return at < 0 ? null : ids[at + 1] ?? ids[at - 1] ?? null
 }
+
+/** Under 2 GB, or 5% of the drive, free reads as low: another episode or two could fill it. */
+export const lowOnSpace = ({ free, total }: { free: number, total: number }) => free < 2 * 1024 ** 3 || free < total * 0.05

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { DownloadItem } from '$lib/downloads/state'
-import { groupDownloads, neighbourOf, primaryActionOf } from './group'
+import { groupDownloads, lowOnSpace, neighbourOf, primaryActionOf } from './group'
 
 const item = (mediaId: number, episode: number, patch: Partial<DownloadItem> = {}): DownloadItem => ({
   id: `${mediaId}:${episode}`, mediaId, episode, title: `Show ${mediaId} — E${episode}`,
@@ -42,6 +42,14 @@ describe('Downloads grouping', () => {
     expect(neighbourOf(groups, '2:2')).toBe('2:1')
     expect(neighbourOf(groupDownloads([item(1, 1)]), '1:1')).toBeNull()
   })
+
+  it('warns when under 2 GB or 5% of the drive is free', () => {
+    const GB = 1024 ** 3
+    expect(lowOnSpace({ free: 1.5 * GB, total: 1000 * GB })).toBe(true)
+    expect(lowOnSpace({ free: 10 * GB, total: 500 * GB })).toBe(true)
+    expect(lowOnSpace({ free: 10 * GB, total: 100 * GB })).toBe(false)
+    expect(lowOnSpace({ free: 3 * GB, total: 50 * GB })).toBe(false)
+  })
 })
 
 describe('Downloads controller contract', () => {
@@ -57,5 +65,10 @@ describe('Downloads controller contract', () => {
   it('opens the options sheet from ☰ on a row', () => {
     expect(page).toContain('window.addEventListener(PAGE_OPTIONS_EVENT, claim)')
     expect(page).toContain('<OptionsSheet')
+  })
+
+  it('shows free space only once the drive could be read', () => {
+    expect(page).toContain('{#if space}')
+    expect(page).toContain('lowOnSpace(space)')
   })
 })
