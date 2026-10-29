@@ -509,10 +509,10 @@
             {:else}
               <button data-part="button" data-variant="primary" data-action="play" data-focusable data-nav-scroll-top data-nav-player-return use:focusOnMount onclick={() => play(videos[0])} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {isMovie ? 'Play' : 'Play episode 1'}</button>
             {/if}
-            <button data-part="button" data-variant="secondary" data-action="more" data-focusable onclick={openOptions} aria-label="More options" title="More options"
+            <button data-part="button" data-variant="secondary" data-action="more" data-focusable data-nav-scroll-top onclick={openOptions} aria-label="More options" title="More options"
                     class="grid size-11 place-items-center rounded-lg bg-secondary transition-colors hover:bg-accent"><Ellipsis size={20} /></button>
             <!-- One press saves to izumi's Watchlist and the source's own; other lists are in the ☰ menu. -->
-            <button data-part="button" data-variant="secondary" data-action="watchlist" data-state={watchlisted ? 'saved' : undefined} data-focusable aria-pressed={watchlisted} aria-busy={sourceListBusy} onclick={toggleWatchlist}
+            <button data-part="button" data-variant="secondary" data-action="watchlist" data-state={watchlisted ? 'saved' : undefined} data-focusable data-nav-scroll-top aria-pressed={watchlisted} aria-busy={sourceListBusy} onclick={toggleWatchlist}
                     class={themedOverlay ? 'flex h-12 items-center gap-2 rounded-full bg-white/15 px-5 font-bold text-white transition-colors hover:bg-white/25' : 'flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold'}>
               {#if watchlisted}<Check size={18} class={themedOverlay ? undefined : 'text-theme'} />{:else}<Plus size={18} />{/if}{watchlisted ? 'In Watchlist' : 'Watchlist'}
             </button>
@@ -522,6 +522,7 @@
                 data-part="detail.action"
                 data-action="trailer"
                 data-focusable
+                data-nav-scroll-top
                 title="Watch trailer"
                 aria-label="Watch trailer"
                 onclick={watchTrailer}

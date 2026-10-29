@@ -1021,7 +1021,7 @@
           <!-- API 4 `detail.actions: "expand"`: Watchlist, Share and Trailer only while More has unfolded them. -->
           {#if !actionsFold || actionsOpen}
           <!-- The Watchlist button keeps data-action="save": published themes style it by that name. -->
-          <button data-part="button" data-variant="secondary" data-action="save" data-state={watchlisted ? 'saved' : undefined} data-focusable aria-pressed={watchlisted} onclick={ready((full) => { h.tap(); toggleMediaInLocalList(full, WATCHLIST_ID) })}
+          <button data-part="button" data-variant="secondary" data-action="save" data-state={watchlisted ? 'saved' : undefined} data-focusable data-nav-scroll-top aria-pressed={watchlisted} onclick={ready((full) => { h.tap(); toggleMediaInLocalList(full, WATCHLIST_ID) })}
                   class="flex h-11 flex-[2] items-center justify-center gap-1.5 rounded-lg bg-secondary px-2 text-sm font-bold">
             {#if watchlisted}<Check size={17} class="text-theme" />{:else}<Plus size={17} />{/if}{watchlisted ? 'In Watchlist' : 'Watchlist'}
           </button>
@@ -1030,13 +1030,13 @@
             {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
           </button>
           {#if m.trailer?.id}
-            <button data-part="detail.action" data-action="trailer" data-focusable onclick={ready((full) => { if (!full.trailer?.id) return; h.tap(); openTrailerPopup(full.trailer.id, title(full)) })} aria-label="Trailer"
+            <button data-part="detail.action" data-action="trailer" data-focusable data-nav-scroll-top onclick={ready((full) => { if (!full.trailer?.id) return; h.tap(); openTrailerPopup(full.trailer.id, title(full)) })} aria-label="Trailer"
                     class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
               <Clapperboard size={18} />
             </button>
           {/if}
           {/if}
-          <button data-part="detail.action" data-action="more" data-focusable onclick={pressMore} aria-label="More"
+          <button data-part="detail.action" data-action="more" data-focusable data-nav-scroll-top onclick={pressMore} aria-label="More"
                   aria-haspopup="true" aria-expanded={actionsFold ? actionsOpen : showMore}
                   class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
             <MoreHorizontal size={18} />
@@ -1120,11 +1120,11 @@
                   class="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-3 font-bold text-primary-foreground">
             <Play size={18} />{ctaStarted ? `Play · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
           </button>
-          <button data-part="button" data-variant="secondary" data-action="save" data-state={watchlisted ? 'saved' : undefined} data-focusable aria-pressed={watchlisted} onclick={ready((full) => toggleMediaInLocalList(full, WATCHLIST_ID))}
+          <button data-part="button" data-variant="secondary" data-action="save" data-state={watchlisted ? 'saved' : undefined} data-focusable data-nav-scroll-top aria-pressed={watchlisted} onclick={ready((full) => toggleMediaInLocalList(full, WATCHLIST_ID))}
                   class="flex h-12 items-center gap-2 rounded-full bg-white/15 px-5 font-bold text-white transition-colors hover:bg-white/25">
             {#if watchlisted}<Check size={18} />{:else}<Plus size={18} />{/if}{watchlisted ? 'In Watchlist' : 'Watchlist'}
           </button>
-          <button data-part="detail.action" data-action="more" data-focusable onclick={ready(() => openOptions())} aria-label="More options" title="More options" aria-haspopup="dialog"
+          <button data-part="detail.action" data-action="more" data-focusable data-nav-scroll-top onclick={ready(() => openOptions())} aria-label="More options" title="More options" aria-haspopup="dialog"
                   class="grid h-12 w-12 place-items-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25">
             <MoreHorizontal size={20} />
           </button>
@@ -1227,7 +1227,7 @@
             <Play size={detailTheme.cta === 'large' ? 18 : 16} />{detailTheme.cta === 'large' ? (effStatus === 'COMPLETED' ? 'Rewatch Now' : ctaStarted ? 'Continue Now' : 'Watch Now') : (ctaStarted ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play')}
           </button>
 
-          <button data-part="button" data-variant="secondary" data-action="save" data-state={watchlisted ? 'saved' : undefined} data-focusable aria-pressed={watchlisted} onclick={ready((full) => toggleMediaInLocalList(full, WATCHLIST_ID))}
+          <button data-part="button" data-variant="secondary" data-action="save" data-state={watchlisted ? 'saved' : undefined} data-focusable data-nav-scroll-top aria-pressed={watchlisted} onclick={ready((full) => toggleMediaInLocalList(full, WATCHLIST_ID))}
                   class="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 font-bold transition-colors hover:bg-accent">
             {#if watchlisted}<Check size={18} class="text-theme" />{:else}<Plus size={18} />{/if}{watchlisted ? 'In Watchlist' : 'Watchlist'}
           </button>
@@ -1251,7 +1251,7 @@
           </button>
 
           {#if m.trailer?.id && !posterColumn}
-            <button data-part="detail.action" data-action="trailer" data-focusable onclick={ready((full) => { if (full.trailer?.id) openTrailerPopup(full.trailer.id, title(full)) })} title="Watch trailer"
+            <button data-part="detail.action" data-action="trailer" data-focusable data-nav-scroll-top onclick={ready((full) => { if (full.trailer?.id) openTrailerPopup(full.trailer.id, title(full)) })} title="Watch trailer"
                     class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
               <Clapperboard size={18} />
             </button>
@@ -1264,7 +1264,7 @@
             </button>
           {/each}
 
-          <button data-part="detail.action" data-action="more" data-focusable onclick={ready(() => openOptions())} aria-label="More options" title="More options" aria-haspopup="dialog"
+          <button data-part="detail.action" data-action="more" data-focusable data-nav-scroll-top onclick={ready(() => openOptions())} aria-label="More options" title="More options" aria-haspopup="dialog"
                   class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
             <MoreHorizontal size={18} />
           </button>

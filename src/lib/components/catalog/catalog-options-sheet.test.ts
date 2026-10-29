@@ -19,7 +19,7 @@ describe('catalog title page options menu', () => {
   })
 
   it('opens from a visible More button too', () => {
-    expect(detail).toContain('data-action="more" data-focusable onclick={openOptions}')
+    expect(detail).toContain('data-action="more" data-focusable data-nav-scroll-top onclick={openOptions}')
   })
 
   it('offers the focused episode, the lists, the trackers and the downloads', () => {

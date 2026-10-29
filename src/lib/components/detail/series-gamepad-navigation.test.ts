@@ -7,6 +7,16 @@ const list = readFileSync(fileURLToPath(new URL('./EpisodeList.svelte', import.m
 const card = readFileSync(fileURLToPath(new URL('./EpisodeCard.svelte', import.meta.url)), 'utf8')
 
 describe('series page gamepad fast lane', () => {
+  it('brings the whole header back into view when Up reaches any of its buttons, not only Play', () => {
+    // From the second episode Up lands on More options or Watchlist: the page stayed scrolled with the
+    // title cut off, while Up from the first episode (to Play) went back to the top.
+    const source = readFileSync(fileURLToPath(new URL('../catalog/CatalogMediaDetail.svelte', import.meta.url)), 'utf8')
+    expect(source).toContain('data-action="more" data-focusable data-nav-scroll-top')
+    expect(source).toContain("data-action=\"watchlist\" data-state={watchlisted ? 'saved' : undefined} data-focusable data-nav-scroll-top")
+    expect(detail.match(/data-action="save" data-state=\{watchlisted \? 'saved' : undefined\} data-focusable data-nav-scroll-top/g)).toHaveLength(3)
+    expect(detail.match(/data-part="detail.action" data-action="more" data-focusable data-nav-scroll-top/g)).toHaveLength(3)
+  })
+
   it('routes Down from the primary action straight to the relevant episode', () => {
     expect(detail).toContain('data-nav-id="series-primary-action"')
     expect(detail).toContain('data-nav-id="series-primary-action" data-nav-scroll-top')

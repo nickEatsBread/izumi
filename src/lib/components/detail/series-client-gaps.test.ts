@@ -75,7 +75,7 @@ describe('the folding actions row', () => {
     expect(detail).toContain('if (actionsFold && !actionsOpen) { actionsOpen = true; return }')
     expect(detail).toContain("<div data-part=\"detail.actions\" data-expanded={actionsFold && actionsOpen ? '' : undefined}")
     expect(detail).toContain('{#if !actionsFold || actionsOpen}')
-    expect(detail).toContain('data-action="more" data-focusable onclick={pressMore}')
+    expect(detail).toContain('data-action="more" data-focusable data-nav-scroll-top onclick={pressMore}')
   })
   it('folds again when the menu closes', () => {
     expect(detail).toContain('function closeMenu() {\n    showMore = false\n    if (actionsFold) actionsOpen = false\n  }')

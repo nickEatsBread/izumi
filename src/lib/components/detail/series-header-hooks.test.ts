@@ -41,7 +41,7 @@ describe('the Watchlist button', () => {
     expect(menu).toContain("onclick={ready(() => { h.tap(); closeMenu(); showLocalLists = true })}")
     expect(menu).toContain('Save to a list')
     for (const option of ['watchlist', 'lists', 'tracker']) expect(detail).toContain(`id: '${option}'`)
-    expect(detail.match(/data-action="more" data-focusable onclick=\{ready\(\(\) => openOptions\(\)\)\}/g)?.length).toBe(2)
+    expect(detail.match(/data-action="more" data-focusable data-nav-scroll-top onclick=\{ready\(\(\) => openOptions\(\)\)\}/g)?.length).toBe(2)
     expect(detail).toContain('{#if optionsOpen && media}<OptionsSheet title={title(media)} groups={optionGroups}')
   })
 })
