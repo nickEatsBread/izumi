@@ -40,7 +40,8 @@
   import { anilistUser } from '$lib/anilist/account'
   import { isMobile, isTv } from '$lib/platform'
   import { nearViewport } from '$lib/util/near-viewport'
-  import { warmRowsBelow } from '$lib/util/image-warm'
+  import { homeBusy, warmRowsBelow } from '$lib/util/image-warm'
+  import { idle } from '$lib/util/idle'
   import { coverWidthFor } from '$lib/components/cards/SmallCard.svelte'
   import { densityScale, resolveRow } from '$lib/themes/presentation'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
@@ -173,6 +174,26 @@
     shownRows.set($catalogProvider, near)
   })
   const rowShown = (id: string) => $homeEditorOpen || homeRowIds.indexOf(id) < FIRST_ROWS || revealed.has(id)
+  // The rest are built ahead while Home sits still, one per quiet moment: built as the first walk
+  // down reached them, each held a Deck frame for 70-140 ms mid-scroll. Not during the startup
+  // video, a scroll, a banner change or playback; a row the walk reaches first still joins as above.
+  const AHEAD_QUIET_MS = 600
+  $effect(() => {
+    if (!home || $homeEditorOpen) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let handle = idle(next, 1000)
+    function next() {
+      const id = homeRowIds.find((row) => !rowShown(row) && !revealQueue.includes(row))
+      if (!id) return
+      if (homeBusy(AHEAD_QUIET_MS) || document.getElementById('boot-intro')) {
+        timer = setTimeout(() => (handle = idle(next, 1000)), 300)
+        return
+      }
+      reveal(id)
+      handle = idle(next, 1000)
+    }
+    return () => { handle.cancel(); clearTimeout(timer) }
+  })
   // The covers a row still waiting to be built will show (its SmallCards' own URLs, first cards only),
   // so Home can decode them before the row is reached (warmRowsBelow).
   function pendingCovers(id: string): string[] {

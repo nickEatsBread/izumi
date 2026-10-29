@@ -18,6 +18,11 @@ describe('catalog Home builds only the rows near the screen', () => {
     expect(home).toContain('if (revealQueue.length) revealFrame = requestAnimationFrame(revealNext)')
   })
 
+  it('builds the rows further down ahead while Home sits still, never mid-scroll or behind the startup video', () => {
+    expect(home).toContain("if (homeBusy(AHEAD_QUIET_MS) || document.getElementById('boot-intro')) {")
+    expect(home).toContain('reveal(id)\n      handle = idle(next, 1000)')
+  })
+
   it('builds a row\'s first cards, the rest once focus nears them or a pointer comes over it', () => {
     // 334 cards over twenty rows held the Deck's page for 1.5 s every time Home opened.
     const row = readFileSync(fileURLToPath(new URL('./CatalogSectionRow.svelte', import.meta.url)), 'utf8').replace(/\r\n/g, '\n')

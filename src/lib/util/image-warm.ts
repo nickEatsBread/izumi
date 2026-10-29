@@ -90,8 +90,14 @@ const homeWarmer = createImageWarmer<HTMLImageElement>({
   },
   // A fetch that hangs must not hold up the rest of the rows.
   decode: (img) => Promise.race([img.decode().then(() => true), new Promise<boolean>((resolve) => setTimeout(resolve, DECODE_TIMEOUT_MS, false))]),
-  busy: () => get(playing) || document.hidden || performance.now() - scrolledAt < SETTLE_MS || bannerMoving(),
+  busy: () => homeBusy(),
 })
+
+/** Whether Home is moving (a scroll eased in the last `quietMs`, the banner changing slide), playing
+ *  a video or out of sight: no moment for work that holds the page for a frame. */
+export function homeBusy(quietMs = SETTLE_MS): boolean {
+  return get(playing) || document.hidden || performance.now() - scrolledAt < quietMs || bannerMoving()
+}
 
 /** Svelte action for a Home's root. Each time the page settles (a scroll ends, rows arrive), the
  *  posters of the rows just below the screen are decoded ahead. A built row gives the exact `src`

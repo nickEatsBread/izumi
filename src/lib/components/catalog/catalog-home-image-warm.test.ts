@@ -27,7 +27,8 @@ describe('catalog Home decodes the rows below the screen ahead', () => {
   })
 
   it('never decodes while the page scrolls, the banner changes slide, a video plays or the window is hidden', () => {
-    expect(warm).toContain('busy: () => get(playing) || document.hidden || performance.now() - scrolledAt < SETTLE_MS || bannerMoving(),')
+    expect(warm).toContain('busy: () => homeBusy(),')
+    expect(warm).toContain('return get(playing) || document.hidden || performance.now() - scrolledAt < quietMs || bannerMoving()')
     expect(warm).toContain("window.addEventListener('scroll', scrolled, { capture: true, passive: true })")
     expect(warm).not.toContain('getAnimations')
     expect(warm).toContain('homeWarmer.stop()')
