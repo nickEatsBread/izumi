@@ -978,7 +978,6 @@
                stretched cover reads as broken art. -->
           {@render hiddenCover(m, '')}
         {:else}
-          <!-- `!absolute`: app.css declares `.skeloader { position: relative }` after the utilities. -->
           <span class="!absolute inset-0 skeloader" aria-hidden="true"></span>
         {/if}
         <div data-part="detail.banner.fade" class="absolute inset-x-0 bottom-0 h-1/6 bg-gradient-to-b from-transparent to-background"></div>
