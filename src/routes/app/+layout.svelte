@@ -407,6 +407,17 @@
     window.addEventListener('focusin', preload)
     return () => window.removeEventListener('focusin', preload)
   })
+  // Each page's code brings its stylesheet, and adding one restyles the whole page: on the Deck the
+  // first card focused on Home froze two frames (0.22 s and 0.37 s) as the title page's code arrived.
+  // The main pages' code loads once at launch instead: behind the startup animation when one plays,
+  // else on the first idle moment.
+  onMount(() => {
+    const pages = ['/app/media/stremio/series/preload', '/app/anime/1', '/app/search', '/app/browse', '/app/schedule', '/app/library', '/app/downloads', '/app/settings']
+    const load = () => { for (const path of pages) void preloadCode(path).catch(() => {}) }
+    if (document.documentElement.classList.contains('startup-cover') || document.getElementById('boot-intro')) { load(); return }
+    const idle = window.requestIdleCallback?.(load, { timeout: 3000 }) ?? window.setTimeout(load, 1500)
+    return () => { window.cancelIdleCallback?.(idle); window.clearTimeout(idle) }
+  })
 
   $effect(() => {
     document.documentElement.classList.toggle('tv-mode', $isTv)
