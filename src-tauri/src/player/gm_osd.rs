@@ -619,7 +619,11 @@ fn draw(
 
     // --- Loading: pre-first-frame black backdrop + buffering spinner (animates every frame).
     if state.loading {
-        let ass = loading_ass(state, phase, wf, hf);
+        // The ring keeps one size on screen whatever canvas the page last described: its first
+        // state can still carry the browse page's zoom, which drew it a quarter bigger and then
+        // shrank it once the next state came. The page's own ring is that size too.
+        let unit = player.get_property("osd-width").ok().and_then(|v| v.parse::<f64>().ok()).filter(|px| *px > 0.0).map_or(1.0, |px| wf / px);
+        let ass = loading_ass(state, phase, wf, hf, unit);
         if ass.is_empty() {
             if shown.loading {
                 let _ = player.osd_overlay_remove(OSD_LOADING_ID);
@@ -1487,18 +1491,19 @@ fn circle_ring(cx: f64, cy: f64, inner: f64, outer: f64, color: &str, alpha: &st
 /// LOADING layer: an opaque black backdrop before the first frame (covers the white webview and
 /// the transparent hole) plus the buffering spinner. Animates every frame (the spinner sweeps),
 /// so it's always re-pushed while loading.
-fn loading_ass(state: &GmDynamicOverlay, phase: u32, w: f64, h: f64) -> String {
+fn loading_ass(state: &GmDynamicOverlay, phase: u32, w: f64, h: f64, unit: f64) -> String {
     let mut lines = Vec::new();
     if state.loading && !state.first_frame {
         push(&mut lines, rect(0.0, 0.0, w, h, "000000", "00"));
     }
     if state.loading {
-        loading_overlay(phase, w, h, theme_color(&state.theme_accent), &mut lines);
+        loading_overlay(phase, w, h, unit, theme_color(&state.theme_accent), &mut lines);
     }
     lines.join("\n")
 }
 
-fn loading_overlay(phase: u32, w: f64, h: f64, color: &str, lines: &mut Vec<String>) {
+/// `unit` is canvas units per screen pixel, so the ring is 62 screen pixels across like the page's.
+fn loading_overlay(phase: u32, w: f64, h: f64, unit: f64, color: &str, lines: &mut Vec<String>) {
     let cx = w / 2.0;
     let cy = h / 2.0;
     let segments = 24usize;
@@ -1515,7 +1520,7 @@ fn loading_overlay(phase: u32, w: f64, h: f64, color: &str, lines: &mut Vec<Stri
         let half = PI / segments as f64 * 0.34;
         push(
             lines,
-            ring_segment(cx, cy, 24.0, 31.0, theta - half, theta + half, color, alpha),
+            ring_segment(cx, cy, 24.0 * unit, 31.0 * unit, theta - half, theta + half, color, alpha),
         );
     }
 }
@@ -1764,7 +1769,7 @@ mod tests {
             ..Default::default()
         };
         assert!(progress_dynamic_ass(&themed, 0.0, 10.0, 100.0, 6.0, 1.0).contains("\\1c&H2175F4&"));
-        assert!(loading_ass(&themed, 0, 1280.0, 800.0).contains("\\1c&H2175F4&"));
+        assert!(loading_ass(&themed, 0, 1280.0, 800.0, 1.0).contains("\\1c&H2175F4&"));
         // No theme: today's white.
         let plain = GmDynamicOverlay {
             theme_accent: String::new(),
