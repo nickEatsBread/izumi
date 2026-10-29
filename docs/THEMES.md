@@ -158,7 +158,7 @@ The hooks added with them (`page-step`, `block.grid`, `hero.edge`, `nav.action`,
 
 A package declares `themeApi: 7` to use the drawer navigation; the validator refuses it in an older package.
 
-- **Drawer navigation (`shell.nav: "drawer"`).** No side rail and no top bar: the page takes the whole window (`--theme-shell-left` is 0 and `data-theme-nav` on `<html>` is `drawer`). Every destination lives in a drawer (`nav.drawer`, 288 px wide) that slides in from the left over a scrim. Start opens and closes it, Left from the left edge of the page opens it, and Right, Back (B) or Escape closes it; a floating menu button (`nav.menu`) at the top left opens it for a mouse and hides while a pad is in use. The drawer holds izumi's mark and name (`nav.drawer.head`), the destinations (`nav.item`), a Screens heading (`nav.drawer.heading`) over the catalog screens when more than one is on (`nav.item` with `data-variant="screen"` and `data-screen`; choosing one opens Home on it), and a foot row (`nav.drawer.foot`) with the account, incognito and settings buttons (`nav.action`). Phones keep the bottom bar and Android TV the side rail. While a video plays the drawer stays closed and the player takes the whole window.
+- **Drawer navigation (`shell.nav: "drawer"`).** No side rail and no top bar: the page takes the whole window (`--theme-shell-left` is 0 and `data-theme-nav` on `<html>` is `drawer`). Every destination lives in a drawer (`nav.drawer`, 288 px wide) that slides in from the left over a scrim. Start opens and closes it, Left from the left edge of the page opens it, and Right, Back (B) or Escape closes it; a floating menu button (`nav.menu`) at the top left opens it for a mouse and hides while a pad is in use. The drawer holds izumi's mark and name (`nav.drawer.head`), the destinations (`nav.item`, with Categories after Browse: the catalog's categories as a wall of chips, `categories`), a Screens heading (`nav.drawer.heading`) over the catalog screens when more than one is on (`nav.item` with `data-variant="screen"` and `data-screen`; choosing one opens Home on it), and a foot row (`nav.drawer.foot`) with the account, incognito and settings buttons (`nav.action`). Phones keep the bottom bar and Android TV the side rail. While a video plays the drawer stays closed and the player takes the whole window.
 
 ### Theme API 6
 
@@ -223,7 +223,7 @@ State values:
 | `data-past` | `hero.dot` | present on the markers of slides before the current one |
 | `data-variant` | `nav.item` | `menu` (the Categories menu button; `data-active` while it is open), `screen` (a catalog screen in the drawer navigation) |
 | `data-screen` | `nav.item` (`data-variant="screen"`) | the catalog screen: `auto`, `anilist`, `kitsu`, `tmdb`, `stremio`, `jvm`, `merged`, `custom:<id>` or `source:<package>` |
-| `data-dest` | `nav.item` (every bar, rail, drawer and panel), `home.header.action`, `button` (profile-header block buttons) | `home`, `schedule`, `downloads`, `watch`, `settings`, `search`, `trakt`, `letterboxd`, `library`; none on the Categories menu button. People reorder their destinations, so style one by `data-dest`, never by position (`:nth-child`) or link target |
+| `data-dest` | `nav.item` (every bar, rail, drawer and panel), `home.header.action`, `button` (profile-header block buttons) | `home`, `schedule`, `downloads`, `watch`, `settings`, `search`, `trakt`, `letterboxd`, `library`, `browse`, `categories` (drawer only); none on the Categories menu button. People reorder their destinations, so style one by `data-dest`, never by position (`:nth-child`) or link target |
 | `data-chrome` | `<html>` (`:scope` in a theme stylesheet) | `shown`, `hidden`, `collapsed`: the phone scroll-chrome state (`shell.bottomNav.hide`, `threshold`, `idle`), also on pages that hide the bottom bar |
 | `data-surface` | `<html>` (`:scope` in a theme stylesheet) | `tv` while a theme is active on an Android TV or in Game mode (API 6) |
 | `data-state` | `nav.bottom` | `shown`, `hidden`, `collapsed` (the same state as `data-chrome`) |
@@ -730,6 +730,13 @@ State values:
 | `browse.grid` | part | The poster grid; data-variant is grid and data-state is loading while skeletons show. |  |
 | `browse.empty` | part | Shown when a listing has nothing or failed; data-state is empty or error, with Retry. |  |
 | `browse.more` | part | Loading more at the end of the grid, or data-state error with Retry. |  |
+| `categories` | slot | The Categories screen: the catalog's categories as a wall of chips, each opening Browse narrowed to it. |  |
+| `categories.title` | part | The screen's heading. |  |
+| `categories.chips` | part | The wall of chips; data-state is loading while skeletons show. |  |
+| `categories.chip` | part | One category, a link to Browse narrowed to it; the focused one sets the backdrop. |  |
+| `categories.backdrop` | part | The focused category's artwork, full-bleed behind the wall, when the source gives its categories artwork. |  |
+| `categories.scrim` | part | The gradient over the backdrop that keeps the chips readable. |  |
+| `categories.empty` | part | Shown when the catalog has no categories (data-state empty) or they failed to load (data-state error, with Try again). |  |
 | `settings.section.icon` | part | The icon tile beside a Settings section heading. |  |
 | `settings.rail.indicator` | part | The Settings rail's selection marker, which slides to the current section. `data-marker` is its style: `accent` (default), `fill`, `bar`, `tile` or `dot`. | `data-marker` |
 

@@ -7,6 +7,8 @@ export interface AddonCatalogExtra {
   isRequired?: boolean
   options?: string[]
   optionsLimit?: number
+  /** izumi-only: artwork for some of the options (a category's backdrop on the Categories screen). */
+  izumi?: { images?: Record<string, string> }
 }
 
 export interface AddonCatalog {

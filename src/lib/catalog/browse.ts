@@ -64,6 +64,16 @@ export function sourceBrowseGenres(entry: AddonCatalog | undefined): string[] {
   return [...new Set(options)]
 }
 
+/** Artwork a source gave its categories (`extra[genre].izumi.images`), across all its listings. */
+export function sourceGenreImages(manifest: AddonManifest): Record<string, string> {
+  const images: Record<string, string> = {}
+  for (const entry of sourceBrowseCatalogs(manifest)) {
+    const given = entry.extra?.find((item) => item.name === 'genre')?.izumi?.images ?? {}
+    for (const [genre, url] of Object.entries(given)) if (typeof url === 'string' && /^https?:\/\//.test(url)) images[genre] ??= url
+  }
+  return images
+}
+
 /** The address bar form of a listing; Popular and All are left out. */
 export function browseSearch(sort: string, genre: string, defaultSort: string): string {
   const params = new URLSearchParams()

@@ -15,7 +15,7 @@ import type { StremioMeta } from './providers/stremio'
 import { loadCatalogProvider } from './registry'
 import { isSourceSelection, sourceAddon, sourcePackageOf } from './source-catalogs'
 import {
-  anilistBrowseFilters, browseSorts, sourceBrowseCatalogs, sourceBrowseGenres, sourceBrowseSorts, sourceSortValue,
+  anilistBrowseFilters, browseSorts, sourceBrowseCatalogs, sourceBrowseGenres, sourceBrowseSorts, sourceGenreImages, sourceSortValue,
   type BrowseFetch, type BrowseOption,
 } from './browse'
 import type { CatalogPage, CatalogSearchRequest } from './types'
@@ -24,6 +24,8 @@ export interface BrowseCatalog {
   sorts: BrowseOption[]
   /** The categories a sort can be narrowed to (each of a source's listings has its own). */
   genres(sort: string): string[]
+  /** A category's artwork, when the catalog has any (the Categories screen's backdrop). */
+  genreImage?(genre: string): string | undefined
   fetch(sort: string, genre: string): BrowseFetch
 }
 
@@ -57,9 +59,11 @@ async function sourceCatalog(packageId: string): Promise<BrowseCatalog> {
   const [addon, stremio] = await Promise.all([sourceAddon(packageId), import('./providers/stremio')])
   const entries = sourceBrowseCatalogs(addon.manifest)
   const entryOf = (sort: string) => entries.find((entry) => sourceSortValue(entry) === sort)
+  const images = sourceGenreImages(addon.manifest)
   return {
     sorts: sourceBrowseSorts(addon.manifest),
     genres: (sort) => sourceBrowseGenres(entryOf(sort)),
+    genreImage: (genre) => images[genre],
     fetch: (sort, genre) => async (page, offset, signal) => {
       const entry = entryOf(sort)
       if (!entry) return { media: [], page, hasNextPage: false }

@@ -10,6 +10,7 @@
   import Calendar from '@lucide/svelte/icons/calendar'
   import Search from '@lucide/svelte/icons/search'
   import LayoutGrid from '@lucide/svelte/icons/layout-grid'
+  import Shapes from '@lucide/svelte/icons/shapes'
   import Download from '@lucide/svelte/icons/download'
   import Users from '@lucide/svelte/icons/users'
   import Settings from '@lucide/svelte/icons/settings'
@@ -84,6 +85,10 @@
   ]
   const settingsItem = { id: 'settings', href: '/app/settings', icon: Settings, label: m.nav_settings(), anim: '' }
   const shown = $derived($interfaceMode === 'search' ? searchModeNav(items) : searchField ? items.filter((it) => it.href !== '/app/search') : items)
+  // The drawer has room for Categories after Browse (the catalog's categories as a wall of chips);
+  // the rail and the top bar keep their set.
+  const categoriesItem = { id: 'categories', href: '/app/categories', icon: Shapes, label: 'Categories', anim: '' }
+  const drawerItems = $derived(shown.flatMap((item) => item.id === 'browse' ? [item, categoriesItem] : [item]))
   // `menu: "side"`: the menu is a pinned panel down the left on windows from 1100 px (the bar keeps
   // only its brand, search and trailing buttons); the menu button folds it away, and narrower
   // windows fall back to the drawer. Hidden while a video plays, like the rail goes inert.
@@ -259,7 +264,7 @@
     <button type="button" data-part="nav.menu" bind:this={menuBtn} data-focusable aria-label="Menu" aria-expanded={drawerOpen} onclick={toggleDrawer}
       class="fixed left-3 z-30 grid size-10 place-items-center rounded-lg bg-background/70 text-foreground backdrop-blur transition-colors hover:bg-accent {$gameMode ? 'top-3' : 'top-10'}"><Menu size={20} /></button>
   {/if}
-  <NavDrawer bind:open={drawerOpen} items={shown} {active} head={drawerHead} after={drawerScreens} foot={drawerFoot} slide={288} duration={240} closeOnRight />
+  <NavDrawer bind:open={drawerOpen} items={drawerItems} {active} head={drawerHead} after={drawerScreens} foot={drawerFoot} slide={288} duration={240} closeOnRight />
 {:else}
 <nav data-slot={top ? 'nav.top' : 'nav.side'} data-scrolled={top && scrolled || undefined} data-nav-sidebar data-theme-surface="shell" onfocusin={onFocusIn} onfocusout={onFocusOut}
      class="fixed z-30 flex gap-1 transition-[width] duration-200 ease-out

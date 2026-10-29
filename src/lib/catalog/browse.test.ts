@@ -132,3 +132,15 @@ describe('browse feeds', () => {
     expect(feeds.cached('c')).toBeDefined()
   })
 })
+
+describe('category artwork from a source', () => {
+  it('collects the images a source gives its listings\' categories, web addresses only', async () => {
+    const { sourceGenreImages } = await import('./browse')
+    const extra = (images: Record<string, string>) => [{ name: 'skip' }, { name: 'genre', options: Object.keys(images), izumi: { images } }]
+    const manifest = { id: 'x', version: '1', name: 'x', resources: [], types: [], catalogs: [
+      { type: 'series', id: 'popular', name: 'Popular', extra: extra({ Action: 'https://img.example/a.jpg', Drama: 'javascript:alert(1)' }) },
+      { type: 'series', id: 'new', name: 'New', extra: extra({ Action: 'https://img.example/other.jpg', Comedy: 'https://img.example/c.jpg' }) },
+    ] }
+    expect(sourceGenreImages(manifest as never)).toEqual({ Action: 'https://img.example/a.jpg', Comedy: 'https://img.example/c.jpg' })
+  })
+})
