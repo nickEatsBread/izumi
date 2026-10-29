@@ -13,7 +13,7 @@ describe('catalog Home builds only the rows near the screen', () => {
   })
 
   it('holds a row further down as a skeleton until it comes near the screen, then adds it a row a frame', () => {
-    expect(home).toContain('{#if row && !rowShown(id)}\n          <div data-part="row.pending"')
+    expect(home).toContain('{#if row && !rowShown(id)}\n          {@const size = returnSizes?.get(id)}\n          <div data-part="row.pending"')
     expect(home).toContain('use:nearViewport={{ onEnter: () => reveal(id), marginViewports: 1.5, bothWays: true }}')
     expect(home).toContain('if (revealQueue.length) revealFrame = requestAnimationFrame(revealNext)')
   })
@@ -35,10 +35,15 @@ describe('catalog Home builds only the rows near the screen', () => {
     expect(row).toContain('let all = $state(fullRows.has(section.id))')
   })
 
-  it('builds on return the rows that were on the screen (or the one above) when the viewer left, and no more', () => {
+  it('builds on return the rows that were on the screen, with exactly sized placeholders above', () => {
     // Skeletons where the page reopens looked broken; rebuilding every row within two screens held Back 0.47 s.
     expect(home).toContain('revealed = new Set(shownRows.get($catalogProvider))')
-    expect(home).toContain('if (box && box.bottom > -height && box.top < height) near.add(id)')
+    expect(home).toContain('if (box.bottom > 0 && box.top < height) near.add(id)')
+    // A placeholder keeps the row's height and bottom margin (which collapses with the next row's gap).
+    expect(home).toContain('sizes.set(id, { height: box.height, margin: parseFloat(getComputedStyle(row).marginBottom) || 0 })')
+    expect(home).toContain('style:height={size ? `${size.height}px` : undefined} style:margin-bottom={size ? `${size.margin}px` : undefined}')
+    // A row with no carousel to measure is built on return, as before.
+    expect(home).toContain('if (!row) { if (rowShown(id)) near.add(id); continue }')
     expect(home).toContain('(!returning && homeRowIds.indexOf(id) < FIRST_ROWS)')
     expect(home).toContain('beforeNavigate(() => {')
   })

@@ -5,6 +5,9 @@
   const providerHomeCache = new Map<string, { storedAt: number; home: CatalogHomeData; complete: boolean }>()
   /** The rows each screen had on or near the screen when the viewer left it, built at once on return. */
   const shownRows = new Map<string, Set<string>>()
+  /** Each row's size when the viewer left (its height and bottom margin, which collapses with the next
+   *  row's gap): a row above the screen comes back as a placeholder of exactly that size. */
+  const rowSizes = new Map<string, Map<string, { height: number; margin: number }>>()
 </script>
 
 <script lang="ts">
@@ -196,14 +199,24 @@
   })
   beforeNavigate(() => {
     const near = new Set<string>()
+    const sizes = new Map<string, { height: number; margin: number }>()
     const height = window.innerHeight
     for (const id of homeRowIds) {
       // A row's carousel is named `<screen>:<role or id>` (HomeRowFrame's row context).
-      const box = document.querySelector(`[data-row="${CSS.escape(`${$catalogProvider}:${themeHome?.roles[id] ?? id}`)}"]`)?.getBoundingClientRect()
-      if (box && box.bottom > -height && box.top < height) near.add(id)
+      const row = document.querySelector<HTMLElement>(`[data-row="${CSS.escape(`${$catalogProvider}:${themeHome?.roles[id] ?? id}`)}"]`)
+      // One without a carousel to measure (a block) is built on return, wherever it was.
+      if (!row) { if (rowShown(id)) near.add(id); continue }
+      const box = row.getBoundingClientRect()
+      sizes.set(id, { height: box.height, margin: parseFloat(getComputedStyle(row).marginBottom) || 0 })
+      // On screen it is built on return; above it, a placeholder of its exact size stands in until it
+      // comes near, so the restored scroll lands where it was (rebuilding every row within two screens
+      // held Back for 0.47 s on the Deck).
+      if (box.bottom > 0 && box.top < height) near.add(id)
     }
     shownRows.set($catalogProvider, near)
+    rowSizes.set($catalogProvider, sizes)
   })
+  const returnSizes = rowSizes.get($catalogProvider)
   const returning = shownRows.has($catalogProvider)
   const rowShown = (id: string) => $homeEditorOpen || (!returning && homeRowIds.indexOf(id) < FIRST_ROWS) || revealed.has(id)
   // The rest are built ahead while Home sits still, one per quiet moment: built as the first walk
@@ -349,7 +362,10 @@
         {@const row = toContentRow(id)}
         {@const visibleIds = columns.main.includes(id) ? columns.main : columns.aside}
         {#if row && !rowShown(id)}
-          <div data-part="row.pending" data-pending-row={id} class="px-4 sm:px-8" aria-hidden="true" use:nearViewport={{ onEnter: () => reveal(id), marginViewports: 1.5, bothWays: true }}>
+          {@const size = returnSizes?.get(id)}
+          <div data-part="row.pending" data-pending-row={id} class="px-4 sm:px-8" class:overflow-hidden={!!size} aria-hidden="true"
+               style:height={size ? `${size.height}px` : undefined} style:margin-bottom={size ? `${size.margin}px` : undefined}
+               use:nearViewport={{ onEnter: () => reveal(id), marginViewports: 1.5, bothWays: true }}>
             <div class="mb-3 h-5 w-40 rounded skeloader"></div>
             <div class="flex gap-3 overflow-hidden">{#each Array.from({ length: 8 }) as _}<div data-part="row.skeleton" class="aspect-[2/3] w-36 shrink-0 rounded-md skeloader sm:w-[152px]"></div>{/each}</div>
           </div>
