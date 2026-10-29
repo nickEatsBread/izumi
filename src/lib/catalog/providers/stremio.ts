@@ -622,7 +622,9 @@ async function loadDetail(ref: MediaRef, signal?: AbortSignal, includeExternalRa
   const base = sourceAddonInfo?.base ?? get(enabledAddonUrls).map(normalizeBase).find((url) => addonOriginId(url) === decoded.addonId)
   if (!base) throw new CatalogConfigurationError('The Stremio metadata add-on that supplied this item is no longer enabled.')
   const summary = summaryCache.get(ref.id)
-  const expected: StremioIdentity = summary ? {
+  // A source's ids are its own: a card it titles differently ("… S3" on its banner) still opens that
+  // title's details, so only the id is checked there.
+  const expected: StremioIdentity = summary && !sourceAddonInfo ? {
     ...decoded,
     expectedTitle: summary.title.english ?? summary.title.romaji ?? summary.title.userPreferred,
     expectedYear: summary.startDate?.year,
