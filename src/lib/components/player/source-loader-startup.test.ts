@@ -29,6 +29,14 @@ describe('connecting loader startup', () => {
     expect(opening).not.toContain('<SourceLoader')
     expect(feedback).toContain("{#if variant === 'player'}")
     expect(read('../../../routes/app/+layout.svelte')).toContain(`<PlayFeedback variant="player" label={$connecting?.title ?? ''} />`)
+    // The source-list phase before a stream is chosen draws the same loader, so a Continue press
+    // shows one ring from the press to the picture.
+    const picker = read('./StreamPicker.svelte')
+    const listing = picker.slice(picker.indexOf('data-slot="play.connecting"'))
+    expect(listing.slice(0, 1500)).toContain('data-variant="player"')
+    expect(listing.slice(0, 1500)).toContain('<Spinner size="player" />')
+    expect(picker).not.toContain('<SourceLoader')
+    expect(picker).not.toContain('play.backdrop')
   })
 
   it('commits the loader without charging playback two animation frames', () => {

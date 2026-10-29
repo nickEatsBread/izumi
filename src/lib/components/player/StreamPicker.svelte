@@ -18,7 +18,6 @@
   import { isDead, markDead, markRouteDead } from '$lib/stremio/dead-sources'
   import AddonLogo from './AddonLogo.svelte'
   import AndroidConnectionStatus from './AndroidConnectionStatus.svelte'
-  import SourceLoader from './SourceLoader.svelte'
   import Spinner from '$lib/components/Spinner.svelte'
   import { scoreInfo } from '$lib/stremio/score'
   import { playStream, cancelResolve, commitResolveSelection, prefetchSourceMetadata, type PlayState, type ResolveSession } from '$lib/stremio/play'
@@ -1234,28 +1233,21 @@
         />
       </div>
     {:else}
+    <!-- The player's own loader, as SourceConnecting draws it once a stream is chosen: the one ring on
+         black where the player's appears, so the hand-off changes nothing until the picture. A
+         "Connecting" screen with its own art, title and caption read as a stop on the way. -->
     <div
       data-slot="play.connecting"
+      data-variant="player"
       class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black"
       onclick={close}
       onkeydown={(e) => e.key === 'Escape' && close()}
       role="presentation"
       transition:fade={{ duration: $gameMode ? 0 : 160 }}
     >
-      {#if backdrop}
-        <!-- Desktop blurs this static image; Game mode removes the filter via loading-backdrop so
-             the loader cannot trigger a full-screen filtered repaint on every frame. -->
-        <img data-part="play.backdrop" src={backdrop} alt="" class="loading-backdrop pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-25 blur-2xl" />
-      {/if}
-      <button data-focusable onclick={(e) => { e.stopPropagation(); close() }} class="absolute z-10 grid place-items-center rounded-full bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white {$isMobile ? 'right-[max(1rem,env(safe-area-inset-right))] top-[max(1rem,env(safe-area-inset-top))] size-11' : 'right-4 top-4 size-10'}" aria-label="Close">✕</button>
-      <div class="relative" onclick={(e) => e.stopPropagation()} role="presentation">
-        <SourceLoader
-          title={pick ? title(pick.media) : ''}
-          caption={directP2p ? 'Preparing download' : 'Connecting'}
-          detail={chosenLabel}
-          onCancel={cancelChoice}
-        />
-      </div>
+      <span class="sr-only" role="status">{directP2p ? 'Preparing download' : 'Connecting'}{pick ? ` ${title(pick.media)}` : ''}</span>
+      <button data-focusable data-part="play.connecting.back" onclick={(e) => { e.stopPropagation(); close() }} class="absolute z-10 grid place-items-center rounded-full bg-black/40 text-xl text-white/85 transition-colors hover:bg-white/20 hover:text-white {$isMobile ? 'left-[max(1rem,env(safe-area-inset-left))] top-[max(1rem,env(safe-area-inset-top))] size-11' : 'left-6 top-6 size-11'}" aria-label="Back">‹</button>
+      <div data-part="play.loader" class="grid place-items-center" aria-hidden="true"><Spinner size="player" /></div>
     </div>
     {/if}
   {/if}
