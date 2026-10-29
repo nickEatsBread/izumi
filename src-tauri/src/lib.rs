@@ -6014,16 +6014,22 @@ pub fn run() {
             // single time. The scheme comes from the config so a side-by-side build claims its own
             // and never evicts the installed release's registration.
             // `magnet:` is deliberately not touched here — see PENDING_MAGNET.
+            // Never inside a Flatpak: the sandbox ships neither tool and its data dir is private,
+            // so it failed on every launch; only the exported desktop file can claim a scheme.
             #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
-            {
-                use tauri_plugin_deep_link::DeepLinkExt;
+            if !running_in_flatpak() {
                 let scheme = configured_deep_link_scheme(app.config());
-                let deep_link = app.deep_link();
-                if !deep_link.is_registered(&scheme).unwrap_or(false) {
-                    if let Err(error) = deep_link.register(&scheme) {
-                        eprintln!("[izumi] {scheme}:// handler registration skipped: {error}");
+                let handle = app.handle().clone();
+                // Off the main thread: the check alone spawns xdg-mime, which delayed the window.
+                std::thread::spawn(move || {
+                    use tauri_plugin_deep_link::DeepLinkExt;
+                    let deep_link = handle.deep_link();
+                    if !deep_link.is_registered(&scheme).unwrap_or(false) {
+                        if let Err(error) = deep_link.register(&scheme) {
+                            eprintln!("[izumi] {scheme}:// handler registration skipped: {error}");
+                        }
                     }
-                }
+                });
             }
             // Restore iroh only for devices that already opted into a sync group. Fresh
             // installs remain fully offline until the user enables Device Sync explicitly.
