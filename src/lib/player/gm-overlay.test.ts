@@ -448,7 +448,8 @@ describe('Game-mode skip chip + settings sheet', () => {
   it('uses a white pill Skip button and a dimmed right settings sheet', () => {
     const overlay = readFileSync(fileURLToPath(new URL('../components/player/PlayerOverlay.svelte', import.meta.url)), 'utf8')
     expect(overlay).toContain('rounded-full bg-white')
-    expect(overlay).toContain("Skip {currentSeg.label}")
+    expect(overlay).toContain('{skipLabel}')
+    expect(overlay).toContain("`Skip ${currentSeg?.label ?? ''}`")
     expect(overlay).not.toContain('class:opacity-0={gmMode && !overlayActive}')
     const controls = readFileSync(fileURLToPath(new URL('../components/player/Controls.svelte', import.meta.url)), 'utf8')
     expect(controls).toContain('fixed inset-0 z-40 bg-black/50')

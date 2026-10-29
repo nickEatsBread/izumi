@@ -3,7 +3,12 @@ import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 // AniSkip OP/ED/recap "skip times" for an episode, used to draw seekbar segments
 // and drive the "Skip Opening/Ending" button.
 export type SkipType = 'op' | 'ed' | 'recap' | 'preview'
-export interface Segment { start: number; end: number; type: SkipType; label: string }
+export interface Segment {
+  start: number; end: number; type: SkipType; label: string
+  /** The stream's source marked this ending as the episode's credits, so its button can go on to
+   *  the next episode. A crowd-sourced ending may still have a scene after it, so it never does. */
+  credits?: true
+}
 
 export const LABELS: Record<SkipType, string> = {
   op: 'Opening', ed: 'Ending', recap: 'Recap', preview: 'Preview',

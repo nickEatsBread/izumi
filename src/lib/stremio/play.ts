@@ -579,7 +579,7 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
   const onProgress = (pos: number, dur: number) => {
     lastPosition = pos
     lastDuration = dur
-    sourceProgress?.progress(pos)
+    sourceProgress?.progress(pos, dur)
     if (dur > 0) {
       if (!sourceAlive) { sourceAlive = true; markAlive(stream) }
       markSourceObservation(observation, 'first-frame')
@@ -3482,6 +3482,7 @@ export async function playStream(
           switchUrl: s.switchUrl,
         })),
         previewUrl: stream.__previewUrl,
+        skip: stream.__skip,
       })
       spriteKey.set(stream.infoHash ?? `${media.id}-${episode ?? 0}`)
       recordPlaybackIdentity({ media, episode, stream: recoveryOriginal })
@@ -3585,6 +3586,7 @@ export async function playStream(
             kind: subtitle.kind,
             headers: subtitle.headers,
           })),
+          skip: stream.__skip,
         })
         await startMpvEvents()
         if (await abandonIfStale()) return
@@ -3811,6 +3813,7 @@ export async function playStream(
         kind: 'kind' in subtitle ? subtitle.kind : undefined,
         headers: 'headers' in subtitle ? subtitle.headers : undefined,
       })),
+      skip: stream.__skip,
     })
     // alang/slang drive mpv's preferred-language track auto-selection.
     const embedStartedAt = performance.now()

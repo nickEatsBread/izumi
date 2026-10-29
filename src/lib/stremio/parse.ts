@@ -111,6 +111,8 @@ export interface Stream {
   __previewUrl?: string
   /** Where a source catalog wants the playhead reported (its own address only). */
   __progressUrl?: string
+  /** The episode's skip segments as its source marks them, validated by `sourceSkipSegments`. */
+  __skip?: import('./aniskip').Segment[]
   /** Provider-supplied network-safe equivalent for Watch Together guests. The local player
    * continues to use the faster loopback source; this is only serialized into the room. */
   __party?: Pick<Stream, 'url' | '__headers' | '__drm' | '__subtitles' | '__audioTracks' | '__previewUrl' | '__audioLang'>

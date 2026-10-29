@@ -18,7 +18,8 @@ describe('skipping without clicking', () => {
 
   it('gives the desktop skip key to the player only inside a segment', () => {
     expect(desktop).toContain("if (action === 'playerSkipSegment' && !currentSeg) return")
-    expect(desktop).toContain("else if (action === 'playerSkipSegment' && currentSeg) seekTo(currentSeg.end + 0.5)")
+    expect(desktop).toContain("else if (action === 'playerSkipSegment' && currentSeg) skipSegment()")
+    expect(desktop).toContain('else if (currentSeg) seekTo(currentSeg.end + 0.5)')
   })
 })
 

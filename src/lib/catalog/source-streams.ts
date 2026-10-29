@@ -1,5 +1,6 @@
 /** Playing a source catalog's own titles: the source's stream endpoint answers for the episode, and
  *  the playhead goes back to the source so its Continue Watching follows the viewer across devices. */
+import { sourceSkipSegments } from '$lib/stremio/skip-segments'
 import type { Media } from '$lib/anilist/types'
 import { title } from '$lib/anilist/media'
 import { invokeNativeHttp, phttp } from '$lib/net/http'
@@ -31,11 +32,14 @@ export function sourceStream(raw: unknown, base: string, provider: string, packa
   if (!value || typeof value.url !== 'string') return undefined
   const extras = record(value.izumi)
   const progressUrl = sameOrigin(extras?.progressUrl, base)
+  // The source's own intro, recap and credits markers, checked before the player sees them.
+  const skip = sourceSkipSegments(extras?.skip)
   if (extras?.onlinestream === true) {
     const headers = Object.fromEntries(Object.entries(record(extras.headers) ?? {}).filter(([, header]) => typeof header === 'string')) as Record<string, string>
     return {
       ...videoSourceToStream(value as unknown as SnVideoSource, 'default', headers, provider, epTitle, undefined, packageId, undefined, false, undefined, showTitle, index),
       ...(progressUrl ? { __progressUrl: progressUrl } : {}),
+      ...(skip.length ? { __skip: skip } : {}),
     }
   }
   const { izumi: _izumi, ...stream } = value
@@ -45,6 +49,7 @@ export function sourceStream(raw: unknown, base: string, provider: string, packa
     __accuracy: 'high',
     ...(showTitle ? { __sourceTitle: showTitle } : {}),
     ...(progressUrl ? { __progressUrl: progressUrl } : {}),
+    ...(skip.length ? { __skip: skip } : {}),
   }
 }
 

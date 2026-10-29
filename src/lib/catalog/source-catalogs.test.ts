@@ -153,3 +153,14 @@ describe('source episodes named on AniList', () => {
     ])
   })
 })
+
+describe('a source stream with its own skip markers', () => {
+  it('carries the checked markers to the player, on both kinds of stream', async () => {
+    const { sourceStream } = await import('./source-streams')
+    const skip = [{ type: 'intro', start: 10, end: 90 }, { type: 'credits', start: 1300, end: 1390 }, { type: 'intro', start: 'x', end: 5 }]
+    const own = sourceStream({ url: 'http://127.0.0.1:1/v.mpd', izumi: { onlinestream: true, skip } }, 'http://127.0.0.1:1', 'Example', 'example.source', 0)
+    const plain = sourceStream({ url: 'https://cdn.test/a.mp4', izumi: { skip } }, 'http://127.0.0.1:1', 'Example', 'example.source', 1)
+    for (const stream of [own, plain]) expect(stream?.__skip?.map((segment) => [segment.type, segment.start, segment.end])).toEqual([['op', 10, 90], ['ed', 1300, 1390]])
+    expect(sourceStream({ url: 'https://cdn.test/b.mp4' }, 'http://127.0.0.1:1', 'Example', 'example.source', 2)?.__skip).toBeUndefined()
+  })
+})

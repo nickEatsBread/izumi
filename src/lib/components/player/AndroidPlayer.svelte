@@ -382,8 +382,11 @@
     if (dur > 0 && key !== segKey) {
       segKey = key
       void (async () => {
+        // The stream's own markers need no lookup, so they show while AniSkip and IntroDB are asked.
+        const own = get(nowPlayingStream).skip ?? []
+        if (own.length) segments = own
         const [segs, chapterList] = await Promise.all([
-          getMediaSkipSegments($nowPlayingMedia?.media, np.episode, dur),
+          getMediaSkipSegments($nowPlayingMedia?.media, np.episode, dur, own),
           getChapterList().catch(() => []),
         ])
         if (key !== segKey) return
@@ -458,7 +461,13 @@
         autoSkipPending = pending
       })
   })
-  function skipSegment() { if (currentSeg) void seekAbsolute(currentSeg.end + 0.5).catch(() => {}) }
+  // Where an episode follows, the source's credits button goes on to it the way the Next button does;
+  // every other segment's button seeks past the segment.
+  const skipToNext = $derived(!!currentSeg?.credits && hasNext)
+  function skipSegment() {
+    if (skipToNext) void playNext(undefined, !paused)
+    else if (currentSeg) void seekAbsolute(currentSeg.end + 0.5).catch(() => {})
+  }
 
   // The manual Skip button shows for ~5s after entering a segment, then hides itself unless the
   // controls happen to be up — the same rule the desktop overlay follows. Without the timer the
@@ -2387,7 +2396,7 @@
   {/if}
 
   {#if showSkip && currentSeg}
-    <button transition:fade={{ duration: 180 }} data-part="player.skip" data-kind={currentSeg.type} onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skipSegment() }} class="absolute bottom-14 right-3 z-10 rounded-lg bg-white/90 px-4 py-2 text-sm font-bold text-black shadow-lg">Skip {currentSeg.label}</button>
+    <button transition:fade={{ duration: 180 }} data-part="player.skip" data-kind={currentSeg.type} onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skipSegment() }} class="absolute bottom-14 right-3 z-10 rounded-lg bg-white/90 px-4 py-2 text-sm font-bold text-black shadow-lg">{skipToNext ? 'Next episode' : `Skip ${currentSeg.label}`}</button>
   {/if}
 
   {#if pausedIdle}

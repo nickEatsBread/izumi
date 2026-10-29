@@ -367,6 +367,14 @@
     return () => clearTimeout(skipT)
   })
   const showSkip = $derived(!!currentSeg && !autoSkipCurrent && (skipTimer || controlsVisible))
+  // Where an episode follows, the source's credits button goes on to it the way the Next button does
+  // (the same aired gate as Controls); every other segment's button seeks past the segment.
+  const skipToNext = $derived(!!currentSeg?.credits && np.episode != null && np.airedTotal != null && np.episode < np.airedTotal)
+  const skipLabel = $derived(skipToNext ? 'Next episode' : `Skip ${currentSeg?.label ?? ''}`)
+  function skipSegment() {
+    if (skipToNext) playNext(undefined, !paused)
+    else if (currentSeg) seekTo(currentSeg.end + 0.5)
+  }
 
   // WebKit also sends a mousemove when the page changes under a cursor that has not moved: the
   // player appearing under the Deck's parked, hidden cursor brought its controls up over black.
@@ -824,7 +832,10 @@
     // probe for a still-buffering torrent left the skip button missing even when AniSkip
     // already had the opening.
     const media = $nowPlayingMedia?.media
-    const segs = await getMediaSkipSegments(media, episode, length)
+    // The stream's own markers need no lookup, so they show while AniSkip and IntroDB are asked.
+    const own = $nowPlayingStream.skip ?? []
+    if (own.length) segments = own
+    const segs = await getMediaSkipSegments(media, episode, length, own)
     if (key !== loadedKey) return
     segments = mergeSkipSegments(segs, [])
     void invoke<string>('player_chapters')
@@ -1387,7 +1398,7 @@
     const s = get(scrub)
     // The exact HTML pill is snapshotted in Game mode. Native text is fallback-only so we never
     // stack the simplified ASS chip over the polished button.
-    const skipText = gmBitmapMode && showSkip && currentSeg && !overlayActive ? `Skip ${currentSeg.label}` : ''
+    const skipText = gmBitmapMode && showSkip && currentSeg && !overlayActive ? skipLabel : ''
     const liveControls = controlsVisible && firstFrame && dur > 0
     const nativeControls = liveControls && gmNativeControls
     const visible = gmBitmapMode && get(playing) && (loading || s.active || nativeControls || !!skipText)
@@ -1644,7 +1655,7 @@
       }
       switch (e.payload.name) {
         case 'a':
-          if (showSkip && currentSeg) seekTo(currentSeg.end + 0.5)
+          if (showSkip && currentSeg) skipSegment()
           else togglePlayback()
           break
         case 'b':
@@ -1850,7 +1861,7 @@
         const t = nextChapterTarget(chapters, transportPos)
         if (t !== null) seekTo(t)
       }
-      else if (action === 'playerSkipSegment' && currentSeg) seekTo(currentSeg.end + 0.5)
+      else if (action === 'playerSkipSegment' && currentSeg) skipSegment()
       else if (action === 'playerVolumeUp') cmd('add', ['volume', '5'])
       else if (action === 'playerVolumeDown') cmd('add', ['volume', '-5'])
       else if (action === 'playerMute') cmd('cycle', ['mute'])
@@ -2147,9 +2158,9 @@
         {gmMode
           ? 'bottom-36 right-10 rounded-full bg-white px-8 py-3.5 text-2xl tracking-wide text-black shadow-[0_10px_32px_rgba(0,0,0,.45)]'
           : 'bottom-28 right-8 rounded-lg border border-white/20 bg-black/70 px-5 py-2.5 text-sm text-white transition hover:bg-black/90'}"
-      onclick={(e) => { e.stopPropagation(); seekTo(currentSeg.end + 0.5) }}
+      onclick={(e) => { e.stopPropagation(); skipSegment() }}
     >
-      Skip {currentSeg.label}
+      {skipLabel}
     </button>
   {/if}
 

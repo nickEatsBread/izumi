@@ -167,6 +167,8 @@ export const nowPlayingStream = writable<{
     headers?: Record<string, string>
   }[]
   previewUrl?: string
+  /** The episode's skip segments as the stream's source marks them (`Stream.__skip`). */
+  skip?: import('$lib/stremio/aniskip').Segment[]
 }>({ url: '', headers: {}, infoHash: null })
 
 /** Source candidates retained after the picker closes. The playback watchdog uses this exact
