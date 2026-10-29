@@ -5703,6 +5703,58 @@ fn configure_gamescope_native_wayland_prototype() {
     ));
 }
 
+/// Synchronous commands that call into the libmpv core. Tauri runs sync commands on the UI
+/// thread, which also receives every IPC request, and a libmpv call waits for as long as the core
+/// is busy: a hardware-decoder reinit held it for seconds on a memory-starved iGPU. While one
+/// waited, every invoke in the app hung, `plugin:app|version` included.
+#[cfg(not(target_os = "android"))]
+const PLAYER_THREAD_COMMANDS: &[&str] = &[
+    "player_play",
+    "player_play_embedded",
+    "player_get_property",
+    "player_command",
+    "player_sprite_start",
+    "player_tracks",
+    "player_chapters",
+    "player_set_render_opts",
+    "player_set_enhancement_opts",
+    "player_set_dolby_opts",
+    "player_dolby_capabilities",
+    "player_screenshot",
+    "player_diag",
+    "player_gif_start",
+    "player_gif_abort",
+];
+
+/// Run [`PLAYER_THREAD_COMMANDS`] on one thread of their own instead of the UI thread. A single
+/// thread keeps the order they arrive in, as the UI thread did, so a burst of seeks still lands
+/// last-one-wins and a read after a command still sees its effect.
+#[cfg(not(target_os = "android"))]
+fn route_player_commands<R: tauri::Runtime>(
+    handler: impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static,
+) -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
+    let handler = std::sync::Arc::new(handler);
+    let (queue, inbox) = std::sync::mpsc::channel::<tauri::ipc::Invoke<R>>();
+    let worker = handler.clone();
+    let _ = std::thread::Builder::new()
+        .name("izumi-player-ipc".into())
+        .spawn(move || {
+            for invoke in inbox {
+                // One panicking command must not take every later player call down with it.
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| worker(invoke)));
+            }
+        });
+    move |invoke| {
+        if !PLAYER_THREAD_COMMANDS.contains(&invoke.message.command()) {
+            return handler(invoke);
+        }
+        // Only if the player thread is gone does the command fall back to the UI thread.
+        queue
+            .send(invoke)
+            .map_or_else(|unsent| handler(unsent.0), |()| true)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[cfg(not(test))]
 pub fn run() {
@@ -6440,7 +6492,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(player::PlayerHandle::new())
         .manage(desktop_presence::DesktopPresence::default())
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(route_player_commands(tauri::generate_handler![
             greet,
             reset::reset_local_data,
             open_developer_tools,
@@ -6605,7 +6657,7 @@ pub fn run() {
             watch_room::watch_room_leave,
             youtube_embed::youtube_embed_url,
             youtube_embed::youtube_embed_lan_url
-        ]);
+        ]));
 
     #[cfg(target_os = "android")]
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -6735,6 +6787,29 @@ mod discussanime_reaction_tests {
         assert!(da_reaction_url("http://discussanime.moe", "thread-12").is_err());
         assert!(da_reaction_url("https://notdiscussanime.moe", "thread-12").is_err());
         assert!(da_reaction_url("https://discussanime.moe", "").is_err());
+    }
+}
+
+#[cfg(test)]
+#[cfg(not(target_os = "android"))]
+mod player_thread_tests {
+    use super::*;
+
+    /// A renamed command would silently drop back onto the UI thread. Each name must stay a sync
+    /// command (async ones already run off it) registered in the desktop handler.
+    #[test]
+    fn player_thread_commands_are_registered_sync_commands() {
+        let source = include_str!("lib.rs").replace("\r\n", "\n");
+        for name in PLAYER_THREAD_COMMANDS {
+            assert!(
+                source.contains(&format!("#[tauri::command]\nfn {name}(")),
+                "{name} is not a sync command"
+            );
+            assert!(
+                source.contains(&format!("\n            {name},\n")),
+                "{name} is not registered"
+            );
+        }
     }
 }
 
