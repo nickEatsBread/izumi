@@ -12,6 +12,7 @@ import { handleLayeredBack, isDuplicateBackPress } from './back'
 import { markBackPending } from './nav-state'
 import { closeOsk, oskBackspace, oskInsert } from './osk'
 import { oskDismissedAt } from '$lib/player/session'
+import { startupAnimationPlaying } from '$lib/startup/animation'
 import { closeAllNavLayers, closeTopNavLayer, topNavLayer } from './layers'
 import { padActivate } from './pad-controls'
 import { dispatchPadKey } from './pad-controls'
@@ -150,6 +151,9 @@ export function startGamepadNav(): () => void {
     // One physical B can arrive twice on Android (this pad edge and the system Back it also raises).
     // Whichever comes second within BACK_DEBOUNCE_MS is dropped here, before any owner below sees it.
     if (name === 'b' && isDuplicateBackPress('gamepad')) return
+    // The startup video owns the pad while it plays: its own listener skips it, and the same press
+    // must not reach the page too (B skipping it on Home also opened the exit prompt).
+    if (get(startupAnimationPlaying)) return
     // Keep every controller action inside the warning. A continues, B cancels, and every other
     // button is swallowed so it cannot affect the page or player underneath.
     if (get(deckKeyboardWarning)) {

@@ -8,7 +8,7 @@ describe('handheld shortcuts and sign-in', () => {
   it('View opens Search from the drawer navigation, never over a dialog or a playing video', () => {
     const sidebar = read('./Sidebar.svelte')
     const drawer = sidebar.slice(sidebar.indexOf('if (!drawerNav) return'))
-    expect(drawer).toContain("if (!pressed || name !== 'select' || get(playing)) return")
+    expect(drawer).toContain("if (!pressed || name !== 'select' || get(playing) || get(startupAnimationPlaying)) return")
     expect(drawer).toContain("void goto('/app/search')")
     expect(drawer).toContain('stopView()')
   })

@@ -31,6 +31,7 @@
   import { traktUserName, traktUserAvatar } from '$lib/trakt/config'
   import { page } from '$app/state'
   import { gameMode, playing } from '$lib/player/session'
+  import { startupAnimationPlaying } from '$lib/startup/animation'
   import { inputType } from '$lib/nav'
   import { controllerMode } from '$lib/nav/input'
   import { onPadButton } from '$lib/nav/pad-events'
@@ -244,7 +245,7 @@
   $effect(() => {
     if (!bumpers) return
     return onPadButton(({ name, pressed }) => {
-      if (!pressed || get(playing)) return
+      if (!pressed || get(playing) || get(startupAnimationPlaying)) return
       rememberPad()
       const dialog = [...document.querySelectorAll<HTMLElement>('[data-nav-trap]')].some((trap) => trap.checkVisibility?.() ?? true)
       if (name === 'start') { if (!dialog || drawerOpen) toggleDrawer(); return }
@@ -266,7 +267,7 @@
     window.addEventListener('nav-drawer-open', show)
     // View opens Search, as on the top bar's handheld layout (and in the reference handheld app).
     const stopView = onPadButton(({ name, pressed }) => {
-      if (!pressed || name !== 'select' || get(playing)) return
+      if (!pressed || name !== 'select' || get(playing) || get(startupAnimationPlaying)) return
       if ([...document.querySelectorAll<HTMLElement>('[data-nav-trap]')].some((trap) => trap.checkVisibility?.() ?? true)) return
       drawerOpen = false
       void goto('/app/search')

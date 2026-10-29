@@ -21,6 +21,7 @@ import { BACK_PENDING_MS, backPending, clearBackPending } from './nav-state'
 import { BROWSER_GAMEPAD_EVENT } from './browser-gamepad'
 import { isPadEvent } from './pad-controls'
 import { pushNavLayer, resetNavLayersForTests, type NavLayer } from './layers'
+import { startupAnimationPlaying } from '$lib/startup/animation'
 import {
   advancedFiltersOpen, exitPrompt, listEditorOpen, onboardingNav, oskDismissedAt, oskOpen, playing, streamPicker, trackMenuOpen,
   type StreamPickerState,
@@ -234,5 +235,20 @@ describe('the keyboard and the pad owners above the layer', () => {
     const layer = openLayer()
     exitPrompt.set(true)
     expect(layer.close).toHaveBeenCalledWith('preempted')
+  })
+})
+
+describe('the startup video', () => {
+  afterEach(() => startupAnimationPlaying.set(false))
+  it('owns every button while it plays: B skipping it does not also offer to exit Home', () => {
+    history.replaceState(null, '', '/app/home')
+    startupAnimationPlaying.set(true)
+    press('b')
+    press('x')
+    expect(get(exitPrompt)).toBe(false)
+    expect(padKeys).toEqual([])
+    startupAnimationPlaying.set(false)
+    press('b')
+    expect(get(exitPrompt)).toBe(true)
   })
 })
