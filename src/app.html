@@ -40,23 +40,31 @@
   </head>
   <body data-sveltekit-preload-data="hover">
     <div id="boot-wait" role="progressbar" aria-label="Starting izumi"></div>
-    <!-- A pack's startup animation starts here, before any app code has loaded (Rust's launch script
+    <!-- A pack's startup animation starts here, before any app code has run (Rust's launch script
          names the video), so a launch opens on it; StartupAnimation.svelte takes it over from here.
-         Shown even while Game mode hides the page until its zoom is applied. -->
+         Shown even while Game mode hides the page until its zoom is applied. It starts just after the
+         page's load event: a video in the page holds that event back until it can play (419 ms on the
+         Deck, against 46 ms without), and the window only appears once the event has fired. -->
     <script>
       (function () {
         var url = window.__IZUMI_STARTUP_URL__
         if (!url || !document.documentElement.classList.contains('startup-cover')) return
-        var video = document.createElement('video')
-        video.id = 'boot-intro'
-        video.muted = true
-        video.playsInline = true
-        video.preload = 'auto'
-        video.setAttribute('style', 'position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:2147483647;visibility:visible')
-        video.src = url
-        document.body.appendChild(video)
-        var started = video.play()
-        if (started && started.catch) started.catch(function () {})
+        function start() {
+          // The app may have mounted first and started the animation itself.
+          try { if (window.sessionStorage.getItem('startup-animation-played')) return } catch (e) { /* storage blocked */ }
+          var video = document.createElement('video')
+          video.id = 'boot-intro'
+          video.muted = true
+          video.playsInline = true
+          video.preload = 'auto'
+          video.setAttribute('style', 'position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000;z-index:2147483647;visibility:visible')
+          video.src = url
+          document.body.appendChild(video)
+          var started = video.play()
+          if (started && started.catch) started.catch(function () {})
+        }
+        if (document.readyState === 'complete') start()
+        else window.addEventListener('load', start, { once: true })
       })()
     </script>
     <div style="display: contents">%sveltekit.body%</div>
