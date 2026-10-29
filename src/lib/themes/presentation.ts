@@ -424,6 +424,12 @@ export interface PlayerPresentation {
   /** API 6: `full` gives the windowed desktop player the whole window, as full screen does: the navigation
    *  hides while a video plays. `app` (the default) keeps the video beside or under the navigation. */
   window?: 'app' | 'full'
+  /** API 7: `text` names the audio and subtitle buttons in words ("Audio", "Subtitles") instead of the
+   *  captions icon, in Game mode too; each opens its own page of the player settings. */
+  trackButtons?: 'icon' | 'text'
+  /** API 7: `intro` fades the title's age rating in at the top right as an episode opens, holds it for
+   *  3.6 s and fades it out, as TV apps show their rating card. */
+  rating?: 'none' | 'intro'
 }
 export type PlayerButton = 'restart' | 'next'
 /** API 6, TV block only: how the Search page takes text. */
@@ -744,6 +750,7 @@ const api3 = (api: ThemeApi, keys: string[]) => (api >= 3 ? keys : [])
 const api5 = (api: ThemeApi, keys: string[]) => (api >= 5 ? keys : [])
 const api4 = (api: ThemeApi, keys: string[]) => (api >= 4 ? keys : [])
 const api6 = (api: ThemeApi, keys: string[]) => (api >= 6 ? keys : [])
+const api7 = (api: ThemeApi, keys: string[]) => (api >= 7 ? keys : [])
 function parseHeading(value: unknown): RowHeading {
   const raw = record(value); only(raw, ['weight', 'transform', 'accent', 'viewMore'])
   const result: RowHeading = {}
@@ -974,7 +981,7 @@ function parseShell(value: unknown, api: ThemeApi): ShellPresentation {
   return result
 }
 function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
-  const raw = record(value); only(raw, ['seekbarHeight', 'seekbarColor', ...api2(api, ['layout', 'dock']), ...api6(api, ['seekButtons', 'time', 'title', 'paused', 'buttons', 'window'])])
+  const raw = record(value); only(raw, ['seekbarHeight', 'seekbarColor', ...api2(api, ['layout', 'dock']), ...api6(api, ['seekButtons', 'time', 'title', 'paused', 'buttons', 'window']), ...api7(api, ['trackButtons', 'rating'])])
   const result: PlayerPresentation = {}
   if (raw.seekbarHeight !== undefined) result.seekbarHeight = number(raw.seekbarHeight, 2, 16)
   if (raw.seekbarColor !== undefined) result.seekbarColor = themeColor(raw.seekbarColor)
@@ -998,6 +1005,8 @@ function parsePlayer(value: unknown, api: ThemeApi): PlayerPresentation {
   if (raw.paused !== undefined) result.paused = choice(raw.paused, ['none', 'summary'])
   if (raw.buttons !== undefined) result.buttons = uniqueChoices(raw.buttons, ['restart', 'next'], 'player.buttons', 0)
   if (raw.window !== undefined) result.window = choice(raw.window, ['app', 'full'])
+  if (raw.trackButtons !== undefined) result.trackButtons = choice(raw.trackButtons, ['icon', 'text'])
+  if (raw.rating !== undefined) result.rating = choice(raw.rating, ['none', 'intro'])
   return result
 }
 /** A list of distinct values from a fixed set, in the theme's order (`min`, 1 by default, to every value). */
@@ -1372,11 +1381,13 @@ export interface ResolvedPlayerControls {
   paused: NonNullable<PlayerPresentation['paused']>
   buttons: PlayerButton[]
   window: NonNullable<PlayerPresentation['window']>
+  trackButtons: NonNullable<PlayerPresentation['trackButtons']>
+  rating: NonNullable<PlayerPresentation['rating']>
 }
 /** API 6 player control choices with their defaults (izumi's own player). */
 export function resolvePlayerControls(layout?: ThemePresentation): ResolvedPlayerControls {
   const player = layout?.player
-  return { seekButtons: player?.seekButtons ?? false, time: player?.time ?? 'default', title: player?.title ?? 'default', paused: player?.paused ?? 'none', buttons: player?.buttons ?? [], window: player?.window ?? 'app' }
+  return { seekButtons: player?.seekButtons ?? false, time: player?.time ?? 'default', title: player?.title ?? 'default', paused: player?.paused ?? 'none', buttons: player?.buttons ?? [], window: player?.window ?? 'app', trackButtons: player?.trackButtons ?? 'icon', rating: player?.rating ?? 'none' }
 }
 /** API 6: how the Search page takes text on this surface (only a TV block can ask for the grid). */
 export function resolveSearch(layout?: ThemePresentation): { keyboard: NonNullable<SearchPresentation['keyboard']> } {

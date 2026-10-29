@@ -25,9 +25,20 @@ describe('player controls (API 6)', () => {
   })
 
   it('resolves defaults, and the TV block can change them', () => {
-    expect(resolvePlayerControls(undefined)).toEqual({ seekButtons: false, time: 'default', title: 'default', paused: 'none', buttons: [], window: 'app' })
+    expect(resolvePlayerControls(undefined)).toEqual({ seekButtons: false, time: 'default', title: 'default', paused: 'none', buttons: [], window: 'app', trackButtons: 'icon', rating: 'none' })
     const layout = parsePresentation({ player: { time: 'remaining' }, tv: { player: { time: 'split', paused: 'summary' } } })
     expect(resolvePlayerControls(resolvePresentation(layout, false))).toMatchObject({ time: 'remaining', paused: 'none' })
     expect(resolvePlayerControls(resolvePresentation(layout, false, true))).toMatchObject({ time: 'split', paused: 'summary' })
+  })
+})
+
+describe('API 7 player keys', () => {
+  it('names the track buttons in words and shows the rating card when asked', () => {
+    const layout = parsePresentation({ player: { trackButtons: 'text', rating: 'intro' } }, 7)
+    expect(resolvePlayerControls(layout)).toMatchObject({ trackButtons: 'text', rating: 'intro' })
+  })
+  it('refuses them before API 7 and refuses unknown values', () => {
+    expect(() => parsePresentation({ player: { trackButtons: 'text' } }, 6)).toThrow()
+    expect(() => parsePresentation({ player: { rating: 'always' } }, 7)).toThrow()
   })
 })
