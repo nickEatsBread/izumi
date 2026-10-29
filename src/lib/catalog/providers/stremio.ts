@@ -123,6 +123,12 @@ export function sourceFacts(raw: unknown, base: string): MediaSourceFacts | unde
   const upNext = value.upNext as Record<string, unknown> | undefined
   const upNextId = upNext && typeof upNext === 'object' ? shortText(upNext.videoId, 256) : undefined
   const watchlistUrl = ownUrl(value.watchlistUrl, base)
+  const seasons = (Array.isArray(value.seasons) ? value.seasons.slice(0, 100) : []).flatMap((season) => {
+    const entry = season as Record<string, unknown> | null
+    const number = entry?.number
+    const name = shortText(entry?.title, 80)
+    return typeof number === 'number' && Number.isInteger(number) && number >= 0 && name ? [{ number, title: name }] : []
+  })
   const facts: MediaSourceFacts = {
     ...(shortText(value.rating, 12) ? { rating: shortText(value.rating, 12) } : {}),
     ...(shortText(value.audio, 32) ? { audio: shortText(value.audio, 32) } : {}),
@@ -138,6 +144,7 @@ export function sourceFacts(raw: unknown, base: string): MediaSourceFacts | unde
     ...(upNextId ? { upNext: { videoId: upNextId, label: shortText(upNext!.label, 24), playhead: secondsOf(upNext!.playhead) } } : {}),
     ...(typeof value.watchlist === 'boolean' ? { watchlist: value.watchlist } : {}),
     ...(watchlistUrl ? { watchlistUrl } : {}),
+    ...(seasons.length ? { seasons } : {}),
   }
   return Object.keys(facts).length ? facts : undefined
 }

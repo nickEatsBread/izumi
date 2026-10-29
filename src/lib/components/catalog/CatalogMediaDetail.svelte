@@ -169,7 +169,12 @@
   const currentSeason = $derived(pickedSeason?.title === id && seasonNumbers.includes(pickedSeason.season) ? pickedSeason.season : seasonNumbers[0])
   const seasonVideos = $derived(seasonNumbers.length > 1 ? videos.filter((video) => (video.season ?? 1) === currentSeason) : videos)
   const seasonEntries = $derived(media && seasonNumbers.length > 1
-    ? seasonNumbers.map((number) => ({ media: media!, label: number === 0 ? 'Specials' : `Season ${number}`, active: number === currentSeason }))
+    ? seasonNumbers.map((number) => ({
+      media: media!,
+      // The source's own season name ("Part 2", a sequel's title) where it gives one.
+      label: media!.sourceFacts?.seasons?.find((season) => season.number === number)?.title ?? (number === 0 ? 'Specials' : `Season ${number}`),
+      active: number === currentSeason,
+    }))
     : [])
   const episodeModel = (video: MediaVideo) => episodeDisplayModel(media!, video.episode ?? video.number, {
     title: video.title, overview: video.overview, image: video.thumbnail, airDate: video.released, season: video.season, seasonEpisode: video.episode,

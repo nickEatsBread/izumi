@@ -164,3 +164,10 @@ describe('a source stream with its own skip markers', () => {
     expect(sourceStream({ url: 'https://cdn.test/b.mp4' }, 'http://127.0.0.1:1', 'Example', 'example.source', 2)?.__skip).toBeUndefined()
   })
 })
+
+describe("a source's season names", () => {
+  it('keeps whole season numbers with a name, and drops the rest', () => {
+    const facts = sourceFacts({ seasons: [{ number: 1, title: 'Part 1' }, { number: 2, title: 'The Second' }, { number: 1.5, title: 'x' }, { number: 3 }, { number: -1, title: 'y' }] }, 'http://127.0.0.1:1')
+    expect(facts?.seasons).toEqual([{ number: 1, title: 'Part 1' }, { number: 2, title: 'The Second' }])
+  })
+})

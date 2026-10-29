@@ -106,6 +106,8 @@ export interface MediaSourceFacts {
   /** Whether the title is on the source's own watchlist, and where to change that. */
   watchlist?: boolean
   watchlistUrl?: string
+  /** The source's own names for the title's seasons, by the `season` its videos carry. */
+  seasons?: Array<{ number: number; title: string }>
 }
 
 export interface Media {
