@@ -106,6 +106,8 @@
       const { resumeEpisode } = await loadPlayback()
       if (cancelled) return
       await resumeEpisode(media, ep, (s: PlayState) => { resolving = s.status === 'resolving' })
+      // A play refused before it began (a profile's limits) leaves the stand-in up.
+      connecting.update((c) => (c === pending ? null : c))
     } catch {
       resolving = false
       connecting.update((c) => (c === pending ? null : c))
