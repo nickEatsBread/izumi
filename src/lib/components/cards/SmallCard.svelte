@@ -127,6 +127,8 @@
   const sourceCard = $derived(media.sourceFacts?.card)
   const sourceLine = $derived(sourceCard ? [sourceCard.label, sourceCard.remainingSec ? `${Math.max(1, Math.round(sourceCard.remainingSec / 60))}m left` : ''].filter(Boolean).join(' · ') || undefined : undefined)
   const line = $derived(subline ?? sourceLine)
+  // A source flags its fresh titles (a new show or season); the reference handheld app tags those "New".
+  const shownBadge = $derived(badge ?? (media.sourceFacts?.isNew ? 'New' : undefined))
   const widthClass = $derived(fill ? 'w-full' : sourceCard ? ($isTv ? 'w-80' : 'w-64') : $isTv ? 'w-44' : 'w-36 sm:w-[152px]')
   // A source card that stands for one episode plays (resumes) it rather than opening the series, as the
   // source's own app does. Its page opens when the source has nothing to play.
@@ -252,8 +254,8 @@
           </span>
         </span>
       {/if}
-      {#if badge}
-        <span data-part="card.badge" class="absolute bottom-2 left-2 rounded-md bg-black/85 px-2 py-1 text-[0.65rem] font-black uppercase tracking-wide text-white shadow-lg backdrop-blur">{badge}</span>
+      {#if shownBadge}
+        <span data-part="card.badge" data-variant={badge ? undefined : 'new'} class="absolute bottom-2 left-2 rounded-md bg-black/85 px-2 py-1 text-[0.65rem] font-black uppercase tracking-wide text-white shadow-lg backdrop-blur">{shownBadge}</span>
       {/if}
       {#if resolving}
         <span data-part="card.overlay" data-state="resolving" class="absolute inset-0 z-10 grid place-items-center bg-black/50"><LoaderCircle size={28} class="animate-spin text-white" /></span>

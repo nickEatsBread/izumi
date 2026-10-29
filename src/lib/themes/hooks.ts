@@ -132,7 +132,7 @@ export const THEME_HOOKS: Partial<Record<ThemeHookGroup, ThemeHook[]>> = {
     { name: 'card.art', kind: 'part', description: 'The card artwork frame.' },
     { name: 'card.title', kind: 'part', description: 'The card title.' },
     { name: 'card.meta', kind: 'part', description: 'The line under the title (season, format, source, episode).' },
-    { name: 'card.badge', kind: 'part', description: 'The label on the artwork (for example "Episode 5").' },
+    { name: 'card.badge', kind: 'part', description: 'The label on the artwork (for example "Episode 5"); data-variant new is the "New" tag on a title its source flags as new.' },
     { name: 'card.score', kind: 'part', description: 'The score badge.' },
     { name: 'card.progress', kind: 'part', description: 'The watch-progress track; the fill is its child.' },
     { name: 'card.episode', kind: 'part', description: 'The episode number on resume cards.' },

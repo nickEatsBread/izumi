@@ -235,6 +235,7 @@ State values:
 | `data-state` | `hero.slide` | `leaving` on the outgoing artwork during a `fade` transition |
 | `data-state` | `hero.video`, `detail.video` | `playing` while the trailer plays (API 6) |
 | `data-variant` | `hero.indicator` | `default`, `bars`, `dots`, `pills`, `counter` |
+| `data-variant` | `card.badge` | `new` (a title its source flags as new; the tag reads "New") |
 | `data-layout` | `row` | `carousel`, `grid` |
 | `data-row`, `data-role` | `row` | the row's stable id; the role is the part after its `:` (the whole id when it has none) |
 | `data-row-focus` | `row` | `anchor` on a carousel whose theme sets `focus: "anchor"` (API 6); absent otherwise, grids included |
@@ -448,7 +449,7 @@ State values:
 | `card.art` | part | The card artwork frame. |  |
 | `card.title` | part | The card title. |  |
 | `card.meta` | part | The line under the title (season, format, source, episode). |  |
-| `card.badge` | part | The label on the artwork (for example "Episode 5"). |  |
+| `card.badge` | part | The label on the artwork (for example "Episode 5"); data-variant new is the "New" tag on a title its source flags as new. |  |
 | `card.score` | part | The score badge. |  |
 | `card.progress` | part | The watch-progress track; the fill is its child. |  |
 | `card.episode` | part | The episode number on resume cards. |  |
